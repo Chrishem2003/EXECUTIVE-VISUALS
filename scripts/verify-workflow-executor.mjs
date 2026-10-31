@@ -81,10 +81,16 @@ try{
  const provider={
   id:"provider",projectId:"",revision:1,nodes:[
    {id:"text",kind:"text",label:"Brief",inputs:[],outputs:[{id:"text",type:"text"}],config:{text:"Create a scene"}},
+   {id:"gate",kind:"approval",label:"Approved gate",inputs:[],outputs:[{id:"approved",type:"any"}],config:{}},
    {id:"image",kind:"image.generate",label:"Image generation",inputs:[{id:"prompt",type:"text",required:true}],outputs:[{id:"image",type:"image"}],config:{}}
-  ],edges:[{id:"prompt-edge",sourceNodeId:"text",sourcePortId:"text",targetNodeId:"image",targetPortId:"prompt"}]
+  ],edges:[
+   {id:"prompt-edge",sourceNodeId:"text",sourcePortId:"text",targetNodeId:"image",targetPortId:"prompt"},
+   {id:"approval-edge",sourceNodeId:"gate",sourcePortId:"approved",targetNodeId:"image",targetPortId:"prompt"}
+  ]
  };
  const providerJob=seedRun("run-provider",provider);
+ db.prepare("UPDATE workflow_node_runs SET status='completed',output_json=?,completed_at=? WHERE run_id=? AND node_id='gate'")
+  .run(json({approved:true}),now,"run-provider");
  await assert.rejects(()=>executeWorkflowRun({db,job:providerJob,mediaRoot,activeProcesses:new Map(),onProgress:()=>{}}),/No local execution adapter/);
  assert.equal(db.prepare("SELECT status FROM workflow_runs WHERE id=?").get("run-provider").status,"blocked");
  assert.equal(db.prepare("SELECT status FROM workflow_node_runs WHERE run_id=? AND node_id='image'").get("run-provider").status,"blocked");
