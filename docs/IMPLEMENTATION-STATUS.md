@@ -10,7 +10,7 @@
 |---|---|---|
 | Product shell | Unified browser application with creative, planning and management workspaces | Browser app |
 | Capability explorer | Search and domain filters; displays stable ID, inputs, outputs, evidence, execution modes and approval gates | Registry browsing |
-| Research & knowledge workspace | Project-scoped source register, HTTP/HTTPS source validation, publication/access metadata, rights notes, tagged findings/decisions, source-linked evidence records and full-text filtering | Persistent revision-checked project workspace; live web discovery, automatic extraction and independent source verification are not claimed |
+| Research & knowledge workspace | Project-scoped source register, HTTP/HTTPS source validation, publication/access metadata, rights notes, tagged findings/decisions, source-linked evidence records, server-enforced evidence for verified records and full-text filtering | Persistent revision-checked project workspace; live web discovery, automatic extraction and independent source verification are not claimed |
 | Workflow knowledge retrieval | Typed workflow node searches saved project knowledge, ranks title/tag/content matches and returns the linked source provenance | Deterministic keyword retrieval only; no vector index or live internet search |
 | Capability registry | **110 typed capabilities across 23 domains** | Contract/readiness metadata, not provider availability |
 | Cross-ecosystem capability expansion | Model evaluation/routing, structured template autofill, brand glossary, live presence, proxy review, remote recording, motion template rendering, continuity checks, semantic asset search, workflow diff/batch and analytics feedback | Specification-only until adapters and end-to-end tests exist |
