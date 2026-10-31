@@ -183,6 +183,8 @@ create index if not exists ev_assets_owner_created on executive_visuals.assets(o
 create index if not exists ev_assets_project_created on executive_visuals.assets(project_id,created_at desc);
 create index if not exists ev_jobs_status_created on executive_visuals.jobs(status,created_at);
 create index if not exists ev_jobs_owner_created on executive_visuals.jobs(owner_id,created_at desc);
+create index if not exists ev_jobs_available on executive_visuals.jobs(status,available_at,created_at) where status='queued';
+create index if not exists ev_jobs_lease on executive_visuals.jobs(status,lease_expires_at) where status='processing';
 create index if not exists ev_workflow_runs_workflow on executive_visuals.workflow_runs(workflow_id,created_at desc);
 create index if not exists ev_workflow_runs_owner on executive_visuals.workflow_runs(owner_id,created_at desc);
 create index if not exists ev_workflow_node_runs_run on executive_visuals.workflow_node_runs(run_id,node_id);
