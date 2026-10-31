@@ -101,7 +101,7 @@ function queueCreativeDraft(document:Record<string,unknown>){
    const revision=workspaceRevisions.get(projectId)||0;
    const result=await apiRequest<{revision:number}>("/api/projects/"+projectId+"/workspace",{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({revision,document})});
    workspaceRevisions.set(projectId,result.revision);
-  }).catch(error=>{state.message=error instanceof Error?"Creative draft save failed: "+error.message:"Creative draft save failed.";});
+  }).catch(error=>{state.message=error instanceof Error?"Creative draft save failed: "+error.message:"Creative draft save failed.";paint();});
  },600);
  workspaceSaveTimers.set(projectId,timer);
 }
