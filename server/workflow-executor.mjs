@@ -5,8 +5,9 @@ import { searchProjectKnowledge, formatKnowledgeForWorkflow } from "./knowledge-
 import { generateText } from "./ai-gateway.mjs";
 import { generateImage } from "./image-gateway.mjs";
 import { generateFalVideo } from "./fal-video-gateway.mjs";
-import { storeGeneratedImage, storeGeneratedVideo } from "./generated-assets.mjs";
+import { storeGeneratedImage, storeGeneratedVideo, storeGeneratedAudio } from "./generated-assets.mjs";
 import { assertIdentityUseAllowed } from "./identity-consent.mjs";
+import { generateVoice } from "./voice-gateway.mjs";
 
 const now=()=>new Date().toISOString();
 export function hasApprovedAncestor(graph,nodeId,outputs){
@@ -133,6 +134,14 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
     const query=String(values.query??values.text??values.input??config.query??"");
     const result=searchProjectKnowledge(document,query,{limit:config.limit??10});
     output=nodeOutput(node,result);output.document=result;output.records=result.records;output.sources=result.records.flatMap(record=>record.evidence);output.text=formatKnowledgeForWorkflow(result);
+   }else if(node.kind==="voice.generate"){
+    enforceIdentityPermission(db,job,config,values,"voice");
+    if(!hasApprovedAncestor(graph,nodeId,outputs))throw Object.assign(new Error("A completed upstream human-approval node is required before voice generation."),{code:"APPROVAL_REQUIRED"});
+    const script=String(values.script??values.text??values.input??config.script??config.text??"");
+    if(!script.trim())throw Object.assign(new Error("Voice-generation node requires a non-empty script input."),{code:"SCRIPT_REQUIRED"});
+    const result=await generateVoice({text:script,voice:String(config.voice||""),format:String(config.format||"mp3"),speed:Number(config.speed||1)});
+    const asset=await storeGeneratedAudio({db,mediaRoot,ownerId:job.owner_id,projectId:job.project_id||null,jobId:job.id,prompt:script,model:result.model,buffer:result.buffer,mimeType:result.mimeType});
+    output=nodeOutput(node,asset.id);output.asset=asset.id;output.assetId=asset.id;output.mimeType=asset.mediaType;output.sha256=asset.sha256;output.voice=result.voice;output.usage=result.usage;
    }else if(node.kind==="image.generate"){
     enforceIdentityPermission(db,job,config,values,"likeness");
     if(!hasApprovedAncestor(graph,nodeId,outputs))throw Object.assign(new Error("A completed upstream human-approval node is required before image generation."),{code:"APPROVAL_REQUIRED"});
@@ -213,7 +222,7 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
     return {status:"cancelled",runId,completedNodes:completedCount,totalNodes:nodeCount};
    }
    const detail={code:error.code||"NODE_FAILED",message:error.message||"Workflow node failed."};
-   const blockedCodes=new Set(["ENGINE_UNAVAILABLE","APPROVAL_REQUIRED","AI_GATEWAY_DISABLED","AI_GATEWAY_CONFIG_INVALID","AI_GATEWAY_INSECURE_URL","AI_GATEWAY_REMOTE_DISABLED","IMAGE_GATEWAY_DISABLED","IMAGE_GATEWAY_CONFIG_INVALID","IMAGE_GATEWAY_INSECURE_URL","IMAGE_GATEWAY_REMOTE_DISABLED","IMAGE_GATEWAY_UNSUPPORTED_INPUT","VIDEO_GATEWAY_DISABLED","VIDEO_GATEWAY_CONFIG_INVALID","VIDEO_GATEWAY_REMOTE_DISABLED","VIDEO_GATEWAY_UNSUPPORTED_INPUT"]);
+   const blockedCodes=new Set(["ENGINE_UNAVAILABLE","APPROVAL_REQUIRED","AI_GATEWAY_DISABLED","AI_GATEWAY_CONFIG_INVALID","AI_GATEWAY_INSECURE_URL","AI_GATEWAY_REMOTE_DISABLED","IMAGE_GATEWAY_DISABLED","IMAGE_GATEWAY_CONFIG_INVALID","IMAGE_GATEWAY_INSECURE_URL","IMAGE_GATEWAY_REMOTE_DISABLED","IMAGE_GATEWAY_UNSUPPORTED_INPUT","VIDEO_GATEWAY_DISABLED","VIDEO_GATEWAY_CONFIG_INVALID","VIDEO_GATEWAY_REMOTE_DISABLED","VIDEO_GATEWAY_UNSUPPORTED_INPUT","VOICE_GATEWAY_DISABLED","VOICE_GATEWAY_CONFIG_INVALID","VOICE_GATEWAY_INSECURE_URL","VOICE_GATEWAY_REMOTE_DISABLED","VOICE_GATEWAY_TIMEOUT","VOICE_GATEWAY_UNAVAILABLE","VOICE_GATEWAY_RATE_LIMITED","VOICE_GATEWAY_SERVER_ERROR","VOICE_GATEWAY_REQUEST_REJECTED","VOICE_GATEWAY_INVALID_RESPONSE"]);
    const blocked=blockedCodes.has(detail.code);
    saveNode(db,runId,nodeId,blocked?"blocked":"failed",{input:nodeInput,error:detail,attempt});
    const status=blocked?"blocked":completedCount>0?"partial":"failed";
