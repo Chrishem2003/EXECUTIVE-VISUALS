@@ -148,6 +148,42 @@ test("workflow graphs are validated, versioned and owner-scoped",async()=>{
   assert.equal(hidden.status,404);
 });
 
+
+test("timelines persist with asset ownership, revision checks and interchange exports",async()=>{
+  const cookie=await register("timeline-owner@example.test");
+  const upload=await request("/api/assets",{method:"POST",headers:{"content-type":"video/mp4","x-file-name":"timeline-source.mp4"},body:Buffer.from([0,0,0,24,0x66,0x74,0x79,0x70,0x69,0x73,0x6f,0x6d,0,0,0,1])},cookie);
+  assert.equal(upload.status,201);
+  const asset=(await upload.json()).asset;
+  const document={
+    id:"client-timeline",projectId:null,name:"Test sequence",revision:1,
+    frameRate:{numerator:24,denominator:1},width:1920,height:1080,pixelAspectRatio:1,
+    tracks:[{id:"track-1",name:"Video 1",kind:"video",enabled:true,locked:false,clips:[
+      {id:"clip-1",assetId:asset.id,name:"Opening",sourceRange:{start:{value:0,rate:24},duration:{value:240,rate:24}},timelineStart:{value:0,rate:24},duration:{value:240,rate:24},enabled:true}
+    ]}],
+    markers:[]
+  };
+  const create=await request("/api/timelines",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({name:"Test sequence",timeline:document,otio:{OTIO_SCHEMA:"Timeline.1",name:"Test sequence"}})},cookie);
+  assert.equal(create.status,201,await create.clone().text());
+  const timeline=(await create.json()).timeline;
+  const get=await request("/api/timelines/"+timeline.id,{},cookie);
+  assert.equal(get.status,200);
+  assert.equal((await get.json()).timeline.document.tracks[0].clips[0].assetId,asset.id);
+  const exportResponse=await request("/api/timelines/"+timeline.id+"/otio",{},cookie);
+  assert.equal((await exportResponse.json()).otio.OTIO_SCHEMA,"Timeline.1");
+  const update=await request("/api/timelines/"+timeline.id,{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({revision:1,name:"Test sequence v2",timeline:document,otio:{OTIO_SCHEMA:"Timeline.1",name:"Test sequence v2"}})},cookie);
+  assert.equal(update.status,200);
+  assert.equal((await update.json()).revision,2);
+  const stale=await request("/api/timelines/"+timeline.id,{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({revision:1,timeline:document})},cookie);
+  assert.equal(stale.status,409);
+  const other=await register("timeline-other@example.test");
+  const hidden=await request("/api/timelines/"+timeline.id,{},other);
+  assert.equal(hidden.status,404);
+  const invalid={...document,tracks:[{...document.tracks[0],clips:[...document.tracks[0].clips,{...document.tracks[0].clips[0],id:"clip-overlap",timelineStart:{value:120,rate:24}}]}]};
+  const reject=await request("/api/timelines",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({timeline:invalid})},cookie);
+  assert.equal(reject.status,422);
+  assert.equal((await reject.json()).error.code,"TIMELINE_INVALID");
+});
+
 test.after(async()=>{
   child.kill("SIGTERM");
   await new Promise(resolve=>{const timer=setTimeout(resolve,1500);child.once("exit",()=>{clearTimeout(timer);resolve();});});
