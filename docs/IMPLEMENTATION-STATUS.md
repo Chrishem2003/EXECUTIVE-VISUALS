@@ -180,3 +180,6 @@ The provider catalog is now an execution gate, not only a status display. Workfl
 
 
 Cloud asset authorization: `server/cloud-asset-auth.mjs` implements fail-closed project role checks against the isolated `executive_visuals` schema. Project owners and editors may write; editors, reviewers and viewers may read. Personal assets are owner-scoped by the asset repository. The authorization adapter is contract-tested and composed with storage and metadata through `server/cloud-asset-service.mjs`; the service factory is opt-in and is not wired to the live HTTP API; do not configure it with untrusted actor IDs or expose service-role credentials.
+
+
+Cloud media IO: `server/cloud-media-io.mjs` provides an opt-in FFmpeg-worker boundary for materializing authorized cloud assets into isolated temporary files and publishing generated files through the cloud asset repository. It enforces download/upload size limits, verifies downloaded SHA-256 and byte size against metadata, rejects redirects, and exposes idempotent temporary-directory cleanup. Contract-tested, but **not yet wired into `executeMediaJob`, timeline rendering, the HTTP asset routes, or a cloud worker deployment**. The current SQLite/local-disk execution path remains the active path.
