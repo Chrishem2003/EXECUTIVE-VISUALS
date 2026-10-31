@@ -153,3 +153,8 @@ The bridge does not silently modify a saved timeline, translate captions or call
 - A local mock-gateway end-to-end test verifies approval, exact cue timing preservation, order and usage normalization. No paid provider request was used.
 
 The text gateway remains disabled unless configured and explicitly enabled. Translation does not estimate provider cost; review provider pricing before enabling a remote endpoint.
+
+
+## Subtitle-to-timeline handoff
+
+Generated WebVTT assets now include their exact duration in metadata as well as cue count, source-audio ID, language, job provenance and SHA-256. The editorial timeline's existing asset picker reads that duration for VTT files and pre-fills the clip duration. The editor already validates caption-track media types and saves timeline changes with optimistic revision checks. An editor can therefore select the generated VTT asset, place it on a caption track, save the sequence and queue the existing MP4 master renderer. The workflow does not silently mutate a timeline; placement is an explicit editing action.
