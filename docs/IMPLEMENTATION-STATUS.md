@@ -14,7 +14,7 @@
 | Machine-readable catalog | JSON catalog generated from typed registry | Build verifier enforces ID/domain/label parity |
 | Workflow graph | Draggable visual node editor, typed ports, connections, node configuration, server-side graph validation, immutable run snapshots, per-node status, approval pause/resume and local adapter execution | Text/data, asset references, frame extraction, audio extraction, probe, transcode, export and timeline nodes run locally; unsupported provider/model nodes are explicitly blocked |
 | Graph validation | Duplicate IDs, missing nodes/ports, incompatible ports, duplicate single-input edges, required inputs and cycle detection | Validation only |
-| Targeted execution planning | Full graph, single-node and selected-subgraph dependency planning | Produces a plan only; not yet wired to external model execution |
+| Targeted execution | Full graph, single-node and selected-subgraph dependency planning; branch routing; locked-output reuse; immutable run snapshots; per-node state and approval pause/resume | Local adapters execute; remote generation nodes fail closed with an explicit adapter-unavailable status |
 | Output locking | Locked nodes with saved output IDs are reused; targeted reruns can stop at locked ancestors | Local planner behavior tested |
 | Local API | HTTP API, development accounts, hashed passwords, HttpOnly sessions and owner-scoped resources | Local password auth is development-only |
 | Projects | Persistent project creation, listing, optimistic revision updates and archive | SQLite local database |
@@ -27,7 +27,7 @@
 | Review and approvals | Timecoded comments, approve/request-changes decisions and status updates | Local API persistence; external review links and visual drawing annotations not implemented |
 | Editorial timeline | Multi-track clips, rational source timebases, trim, split, move, markers, overlap validation, interchange export and local MP4 master render | No preview playback, transitions, overlays, captions or effects rendering yet |
 | Timeline persistence | Owner-scoped timelines, asset ownership checks, optimistic revisions and saved interchange package | SQLite local DB; isolated SQL migration pending dedicated database review |
-| Database migration | Dedicated multi-tenant schema, row-level security and private object-storage policies | Migration is committed for review; **not applied** to shared staging |
+| Database migration | Dedicated multi-tenant schema, row-level security, immutable workflow-run snapshots, server-only job/audit writes and private object-storage policies | Migration is committed and statically guarded; **not applied** to shared staging or another product's database |
 | Quality checks | Capability parity, workflow planner, timeline validation, render-worker checks, real FFmpeg MP4 render/probe integration and API integration tests | CI verifies local render output and API behavior, not cloud durability or external provider integrations |
 
 ## Build verification
