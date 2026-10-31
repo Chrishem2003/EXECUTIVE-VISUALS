@@ -34,6 +34,15 @@ export function openDatabase(filename) {
       archived_at TEXT
     );
     CREATE INDEX IF NOT EXISTS projects_owner_idx ON projects(owner_id, updated_at DESC);
+    CREATE TABLE IF NOT EXISTS project_members (
+      project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      member_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      role TEXT NOT NULL CHECK(role IN ('editor','reviewer','viewer')),
+      invited_by TEXT NOT NULL REFERENCES users(id),
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      PRIMARY KEY(project_id,member_id)
+    );
+    CREATE INDEX IF NOT EXISTS project_members_member_idx ON project_members(member_id,project_id);
     CREATE TABLE IF NOT EXISTS assets (
       id TEXT PRIMARY KEY,
       owner_id TEXT NOT NULL REFERENCES users(id),
@@ -149,4 +158,25 @@ export function getOwnedProject(db, ownerId, projectId) {
 }
 export function getOwnedAsset(db, ownerId, assetId) {
   return db.prepare("SELECT * FROM assets WHERE id=? AND owner_id=? AND deleted_at IS NULL").get(assetId, ownerId);
+}
+
+export function getProjectAccess(db,userId,projectId){
+  const project=db.prepare("SELECT * FROM projects WHERE id=? AND archived_at IS NULL").get(projectId);
+  if(!project)return null;
+  if(project.owner_id===userId)return {...project,access_role:"owner"};
+  const membership=db.prepare("SELECT role FROM project_members WHERE project_id=? AND member_id=?").get(projectId,userId);
+  return membership?{...project,access_role:membership.role}:null;
+}
+export function canWriteProject(db,userId,projectId){
+  const access=getProjectAccess(db,userId,projectId);
+  return !!access&&["owner","editor"].includes(access.access_role);
+}
+export function getAccessibleAsset(db,userId,assetId,write=false){
+  const asset=db.prepare("SELECT * FROM assets WHERE id=? AND deleted_at IS NULL").get(assetId);
+  if(!asset)return null;
+  if(asset.owner_id===userId)return asset;
+  if(!asset.project_id)return null;
+  const access=getProjectAccess(db,userId,asset.project_id);
+  if(!access||write&&!["owner","editor"].includes(access.access_role))return null;
+  return asset;
 }
