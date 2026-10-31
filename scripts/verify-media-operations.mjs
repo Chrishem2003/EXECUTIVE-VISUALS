@@ -24,11 +24,11 @@ assert.throws(()=>buildMediaOperationArgs({jobType:"media.color",input:{brightne
 assert.throws(()=>buildMediaOperationArgs({jobType:"media.resize",input:{width:1280,height:720,fit:"stretch"},...base}),e=>e.code==="INVALID_MEDIA_OPTIONS");
 assert.throws(()=>buildMediaOperationArgs({jobType:"media.interpolate",input:{fps:120},...base}),e=>e.code==="INVALID_MEDIA_OPTIONS");
 assert.throws(()=>buildMediaOperationArgs({jobType:"media.execute-shell",input:{},...base}),e=>e.code==="INVALID_MEDIA_OPTIONS");
-const root=await mkdtemp(join(tmpdir(),"executive-visuals-enhancement-"));
+const audioArgs=buildMediaOperationArgs({jobType:"media.audio-clean",input:{noiseFloor:-30,targetLufs:-18},sourcePath:base.sourcePath,outputPath:"/private/cleaned.wav"});\nassert.equal(audioArgs[audioArgs.indexOf("-af")+1],"afftdn=nf=-30.0:tn=1,loudnorm=I=-18.0:TP=-1.5:LRA=11");\nassert.ok(audioArgs.includes("pcm_s16le"));\nassert.throws(()=>buildMediaOperationArgs({jobType:"media.audio-clean",input:{noiseFloor:-90},sourcePath:base.sourcePath,outputPath:base.outputPath}),e=>e.code==="INVALID_MEDIA_OPTIONS");\nconst root=await mkdtemp(join(tmpdir(),"executive-visuals-enhancement-"));
 try{
  const ffmpeg=process.env.FFMPEG_PATH||"ffmpeg",ffprobe=process.env.FFPROBE_PATH||"ffprobe",source=join(root,"source.mp4");
  execFileSync(ffmpeg,["-hide_banner","-loglevel","error","-y","-f","lavfi","-i","testsrc=size=320x180:rate=24","-f","lavfi","-i","sine=frequency=440:sample_rate=48000","-t","1","-c:v","libx264","-pix_fmt","yuv420p","-c:a","aac",source],{stdio:"pipe",timeout:60000});
- for(let index=0;index<cases.length;index++){
+ const audioSource=join(root,"source.wav"),cleaned=join(root,"cleaned.wav");\n execFileSync(ffmpeg,["-hide_banner","-loglevel","error","-y","-f","lavfi","-i","sine=frequency=440:sample_rate=48000","-t","1","-c:a","pcm_s16le",audioSource],{stdio:"pipe",timeout:60000});\n const cleanArgs=buildMediaOperationArgs({jobType:"media.audio-clean",input:{noiseFloor:-25,targetLufs:-16},sourcePath:audioSource,outputPath:cleaned});\n execFileSync(ffmpeg,cleanArgs,{stdio:"pipe",timeout:120000});\n assert.ok((await stat(cleaned)).size>1000,"audio cleanup must produce a non-empty WAV");\n const audioMetadata=JSON.parse(execFileSync(ffprobe,["-v","error","-show_entries","stream=codec_type,sample_rate","-of","json",cleaned],{encoding:"utf8",stdio:["ignore","pipe","pipe"]}));\n assert.ok(audioMetadata.streams.some(stream=>stream.codec_type==="audio"),"cleaned output must contain an audio stream");\n for(let index=0;index<cases.length;index++){
   const [kind,input]=cases[index],output=join(root,"result-"+index+".mp4");
   const args=buildMediaOperationArgs({jobType:kind,input,sourcePath:source,outputPath:output});
   execFileSync(ffmpeg,args,{stdio:"pipe",timeout:120000});
@@ -36,5 +36,5 @@ try{
   const metadata=JSON.parse(execFileSync(ffprobe,["-v","error","-show_entries","stream=codec_type,width,height","-of","json",output],{encoding:"utf8",stdio:["ignore","pipe","pipe"]}));
   assert.ok(metadata.streams.some(stream=>stream.codec_type==="video"),kind+" output must contain a video stream");
  }
- console.log("Verified 6 enhancement operations through FFmpeg and FFprobe, plus 5 invalid-input rejections.");
+ console.log("Verified 6 video enhancement operations and audio cleanup through FFmpeg/FFprobe, plus invalid-input rejections.");
 }finally{await rm(root,{recursive:true,force:true})}
