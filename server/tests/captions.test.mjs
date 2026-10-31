@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { openDatabase } from "../db.mjs";
-import { buildWebVtt, storeCaptionAsset } from "../captions.mjs";
+import { buildWebVtt, storeCaptionAsset, applyTranslatedSegments } from "../captions.mjs";
 
 const root=await mkdtemp(join(tmpdir(),"executive-visuals-captions-"));
 const mediaRoot=join(root,"media");
@@ -21,6 +21,11 @@ try{
  assert.ok(!vtt.includes("<script>"));
  assert.throws(()=>buildWebVtt([{start:2,end:1,text:"bad"}]),/invalid caption cue/i);
  assert.throws(()=>buildWebVtt([]),/timestamped transcript segments/i);
+ const translated=applyTranslatedSegments(segments.map(item=>({start:item.start,end:item.end,text:item.text})),[{index:0,text:"Ligne d'ouverture"},{index:1,text:"Bonjour & bienvenue"}]);
+ assert.equal(translated[0].start,1.25);
+ assert.equal(translated[0].end,2.4);
+ assert.equal(translated[0].text,"Ligne d'ouverture");
+ assert.throws(()=>applyTranslatedSegments(segments,[{index:1,text:"wrong order"},{index:0,text:"wrong order"}]),/order or shape/i);
  const asset=await storeCaptionAsset({db,mediaRoot,ownerId:"caption-user",jobId:"caption-job",sourceAssetId:"audio-source",language:"en",segments,content:vtt});
  assert.equal(asset.mediaType,"text/vtt");
  assert.equal(asset.metadata.segmentCount,2);
