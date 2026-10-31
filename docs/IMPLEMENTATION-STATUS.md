@@ -172,3 +172,8 @@ The workflow inspector now exposes a dedicated target-language field for caption
 - The registry reports no invented prices and does not submit provider requests. It is an inspection and routing foundation, not a claim that a remote provider has been live-tested.
 - Added unit and API tests for default-deny behavior, local gateway readiness, remote opt-in, malformed URLs, authentication, secret non-disclosure and no-request behavior.
 
+
+
+### Shared provider execution enforcement
+
+The provider catalog is now an execution gate, not only a status display. Workflow execution resolves readiness through the shared registry before invoking text generation, caption translation, image generation, video generation, voice synthesis or transcription. Missing, disabled, malformed or non-approved remote provider configuration blocks the node before its adapter is called. Remote permission is derived only from the corresponding server-side opt-in flag; a workflow cannot grant itself remote access. Existing human approval checks remain mandatory, and model-usage records use the selected shared provider identity. Provider readiness checks do not submit generation requests and do not expose credentials.
