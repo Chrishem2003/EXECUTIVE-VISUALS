@@ -84,6 +84,7 @@ async function refresh(){
  ]);
  state.projects=projects.projects;state.assets=assets.assets;state.jobs=jobs.jobs;state.audit=audit.events;window.dispatchEvent(new Event("ev:assets-updated"));
  if(state.projectId&&!state.projects.some(p=>p.id===state.projectId))state.projectId="";
+ if(!state.projectId&&state.projects.length)state.projectId=state.projects[0].id;
  if(state.projectId){try{const response=await apiRequest<{members:Array<{id:string;email:string;role:string;createdAt:string}>}>("/api/projects/"+state.projectId+"/members");state.members=response.members;}catch{state.members=[];}
   try{const response=await apiRequest<{reviews:RuntimeReview[]}>("/api/reviews?projectId="+encodeURIComponent(state.projectId));state.reviews=response.reviews;}catch{state.reviews=[];}
  }
