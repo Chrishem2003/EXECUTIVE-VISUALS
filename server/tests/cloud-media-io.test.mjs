@@ -42,6 +42,15 @@ test("publishes generated media using asset repository metadata and bytes",async
  assert.equal(call.args.ownerId,"owner-1");assert.equal(call.args.projectId,"project-1");assert.deepEqual(call.args.bytes,content);
  await rm(f.root,{recursive:true,force:true});
 });
+test("publishes worker output through the streaming repository method when available",async()=>{
+ const root=await mkdtemp(join(tmpdir(),"ev-media-stream-test-")),path=join(root,"master.mp4");await writeFile(path,content);
+ let call=null;
+ const assets={async createSignedUrl(){},async createFromFile(args){call=args;return{id:"streamed-asset"}}};
+ const io=createCloudMediaAssetIO({assets,tempRoot:root,maxBytes:100});
+ const result=await io.publish({ownerId:"owner-1",projectId:"project-1",filename:"master.mp4",mediaType:"video/mp4",path,metadata:{operation:"timeline.render"}});
+ assert.equal(result.id,"streamed-asset");assert.equal(call.filePath,path);assert.equal(call.ownerId,"owner-1");
+ await rm(root,{recursive:true,force:true});
+});
 test("rejects oversized output before reading it into memory or calling the repository",async()=>{
  const f=await fixture({maxBytes:5});const path=join(f.root,"large.mp4");await writeFile(path,Buffer.alloc(6));
  await assert.rejects(()=>f.io.publish({ownerId:"owner-1",filename:"large.mp4",mediaType:"video/mp4",path}),e=>e.code==="CLOUD_MEDIA_TOO_LARGE");
