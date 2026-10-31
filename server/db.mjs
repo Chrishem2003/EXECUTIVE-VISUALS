@@ -125,6 +125,21 @@ export function openDatabase(filename) {
       archived_at TEXT
     );
     CREATE INDEX IF NOT EXISTS timelines_owner_idx ON timelines(owner_id,updated_at DESC);
+    CREATE TABLE IF NOT EXISTS reviews (
+      id TEXT PRIMARY KEY,
+      owner_id TEXT NOT NULL REFERENCES users(id),
+      project_id TEXT NOT NULL REFERENCES projects(id),
+      asset_id TEXT REFERENCES assets(id),
+      reviewer_id TEXT REFERENCES users(id),
+      version INTEGER NOT NULL DEFAULT 1,
+      timecode_seconds REAL,
+      decision TEXT NOT NULL DEFAULT 'comment' CHECK(decision IN ('comment','approve','request_changes')),
+      body TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open','resolved','dismissed')),
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      resolved_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS reviews_project_created_idx ON reviews(project_id,created_at DESC);
     CREATE TABLE IF NOT EXISTS consents (
       id TEXT PRIMARY KEY,
       owner_id TEXT NOT NULL REFERENCES users(id),
