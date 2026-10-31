@@ -1,4 +1,4 @@
-import { getOwnedAsset } from "./db.mjs";
+import { getAccessibleAsset } from "./db.mjs";
 const seconds=time=>Number(time?.value)/Number(time?.rate);
 export function validateTimelineDocument(timeline,db,ownerId){
  const issues=[];
@@ -14,7 +14,7 @@ export function validateTimelineDocument(timeline,db,ownerId){
   for(const clip of [...(track.clips||[])].sort((a,b)=>seconds(a.timelineStart)-seconds(b.timelineStart))){
    clipCount++;
    if(!clip.id||ids.has(clip.id))issues.push("Clip and track IDs must be unique and non-empty.");ids.add(clip.id);
-   if(!clip.assetId||!getOwnedAsset(db,ownerId,clip.assetId))issues.push("Every timeline clip must reference a source asset owned by this account.");
+   if(!clip.assetId||!getAccessibleAsset(db,ownerId,clip.assetId,true))issues.push("Every timeline clip must reference a source asset owned by this account.");
    const start=seconds(clip.timelineStart),duration=seconds(clip.duration),sourceStart=seconds(clip.sourceRange?.start),sourceDuration=seconds(clip.sourceRange?.duration);
    if(!Number.isFinite(start)||!Number.isFinite(duration)||!Number.isFinite(sourceStart)||!Number.isFinite(sourceDuration)||start<0||duration<=0||sourceStart<0||sourceDuration<=0)issues.push("Timeline clip has invalid source or record timing.");
    if(Number.isFinite(start)&&Number.isFinite(duration)&&start+0.000001<end)issues.push("Clips overlap on the same track; use a separate overlay track.");
