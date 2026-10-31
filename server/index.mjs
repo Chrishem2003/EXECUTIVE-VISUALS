@@ -13,6 +13,7 @@ import { executeWorkflowRun } from "./workflow-executor.mjs";
 import { claimNextJob, recoverExpiredJobs, renewJobLease } from "./queue.mjs";
 import { sanitizeCreativeWorkspaceDocument } from "./workspace-documents.mjs";
 import { importResearchUrl } from "./research-import.mjs";
+import { getProviderCatalog } from "./provider-registry.mjs";
 
 const PORT = Number(process.env.API_PORT || process.env.PORT || 4179);
 const HOST = process.env.API_HOST || "127.0.0.1";
@@ -290,6 +291,10 @@ export function createAppServer() {
       const user=await authenticate(req);
       if(!user){fail(res,401,"AUTH_REQUIRED","Sign in to access this workspace.");return;}
       if(path==="/api/me"&&req.method==="GET"){send(res,200,{user,authMode:AUTH_MODE},cors);return;}
+      if(path==="/api/providers"&&req.method==="GET"){
+        const catalog=getProviderCatalog(process.env,{ffmpeg:executableAvailable("ffmpeg"),ffprobe:executableAvailable("ffprobe")});
+        send(res,200,catalog,cors);return;
+      }
       if(path==="/api/usage"&&req.method==="GET"){
         const projectId=url.searchParams.get("projectId");
         if(projectId&&!getProjectAccess(db,user.id,projectId)){fail(res,404,"PROJECT_NOT_FOUND","Project not found.");return;}
