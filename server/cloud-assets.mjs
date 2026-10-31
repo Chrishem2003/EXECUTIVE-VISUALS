@@ -100,6 +100,34 @@ export function createCloudAssetRepository({
         throw error;
       }
     },
+    async createFromFile({ownerId,projectId=null,originalName,mediaType,filePath,derivativeOf=null,metadata={}}) {
+      ownerId=validUuid(ownerId,"owner ID");
+      if(projectId!==null&&projectId!==undefined&&projectId!=="")projectId=validUuid(projectId,"project ID");else projectId=null;
+      if(derivativeOf!==null&&derivativeOf!==undefined)derivativeOf=validUuid(derivativeOf,"derivative ID");else derivativeOf=null;
+      if(!EXTENSIONS.has(mediaType))throw new Error("Unsupported cloud asset media type.");
+      if(typeof filePath!=="string"||!filePath)throw new Error("Cloud asset file path is required.");
+      if(!plainObject(metadata))throw new Error("Cloud asset metadata must be a JSON object.");
+      if(JSON.stringify(metadata).length>16000)throw new Error("Cloud asset metadata exceeds the 16 KB limit.");
+      if(typeof storage.uploadFile!=="function")throw new Error("Cloud storage adapter does not support streaming file uploads.");
+      await allowed(ownerId,projectId,"write");
+      const id=randomUUID(),name=safeName(originalName),objectPath=buildCloudAssetObjectPath({ownerId,projectId,assetId:id,filename:"original."+EXTENSIONS.get(mediaType)});
+      const uploaded=await storage.uploadFile(objectPath,filePath,mediaType);
+      if(uploaded?.bucket!=="executive-visuals-media"||uploaded?.path!==objectPath||!Number.isSafeInteger(uploaded?.size)||uploaded.size<1||typeof uploaded?.sha256!=="string"||!/^[a-f0-9]{64}$/i.test(uploaded.sha256)){
+        try{await storage.remove(objectPath);}catch{}
+        throw new Error("Cloud storage returned an unexpected streaming upload receipt.");
+      }
+      try{
+        const rows=await request("assets?select=id,owner_id,project_id,original_name,media_type,byte_size,sha256,storage_bucket,object_path,derivative_of,metadata,created_at",{
+          method:"POST",prefer:"return=representation",
+          body:{id,owner_id:ownerId,project_id:projectId,original_name:name,media_type:mediaType,byte_size:uploaded.size,sha256:uploaded.sha256,storage_bucket:uploaded.bucket,object_path:objectPath,derivative_of:derivativeOf,metadata}
+        });
+        if(!Array.isArray(rows)||rows.length!==1||rows[0].id!==id||rows[0].owner_id!==ownerId||rows[0].project_id!==projectId||rows[0].object_path!==objectPath||rows[0].storage_bucket!=="executive-visuals-media"||Number(rows[0].byte_size)!==uploaded.size||rows[0].sha256!==uploaded.sha256)throw new Error("Cloud asset metadata insert did not return the expected streaming record.");
+        return publicAsset(rows[0]);
+      }catch(error){
+        try{await storage.remove(objectPath);}catch{error.cleanupPending=true;}
+        throw error;
+      }
+    },
     async createSignedUrl({ownerId,assetId,expiresIn=300}) {
       ownerId=validUuid(ownerId,"owner ID");assetId=validUuid(assetId,"asset ID");
       const rows=await request("assets?select=id,owner_id,project_id,original_name,media_type,byte_size,sha256,storage_bucket,object_path,derivative_of,metadata,created_at,deleted_at&id=eq."+encodeURIComponent(assetId)+"&deleted_at=is.null&limit=1");
