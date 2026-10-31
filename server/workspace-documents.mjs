@@ -5,6 +5,9 @@ export function sanitizeCreativeWorkspaceDocument(input){
  const sourceRows=Array.isArray(input.researchSources)?input.researchSources.slice(0,300).filter(item=>item&&typeof item==="object"&&!Array.isArray(item)):[];
  const sources=sourceRows.map(item=>{const url=text(item.url,2048);let parsed;try{parsed=new URL(url);}catch{throw Object.assign(new Error("Research source URL must be a valid HTTP or HTTPS URL."),{code:"INVALID_RESEARCH_SOURCE_URL"});}if(!["http:","https:"].includes(parsed.protocol))throw Object.assign(new Error("Research source URL must use HTTP or HTTPS."),{code:"INVALID_RESEARCH_SOURCE_URL"});return {id:text(item.id,80),title:text(item.title,240),url:parsed.toString(),sourceType:text(item.sourceType,80),author:text(item.author,240),publishedAt:text(item.publishedAt,40),accessedAt:text(item.accessedAt,40),summary:text(item.summary,4000),rights:text(item.rights,500),createdAt:text(item.createdAt,40)};});
  const sourceIds=new Set(sources.map(item=>item.id));
+ const knowledgeRows=Array.isArray(input.knowledgeRecords)?input.knowledgeRecords.slice(0,500).filter(item=>item&&typeof item==="object"&&!Array.isArray(item)):[];
+ const knowledgeRecords=knowledgeRows.map(item=>({id:text(item.id,80),title:text(item.title,240),content:text(item.content,12000),tags:Array.isArray(item.tags)?item.tags.slice(0,30).map(value=>text(value,80)):[],sourceIds:Array.isArray(item.sourceIds)?item.sourceIds.slice(0,100).map(value=>text(value,80)).filter(id=>sourceIds.has(id)):[],kind:text(item.kind,80),status:text(item.status,80),createdAt:text(item.createdAt,40),updatedAt:text(item.updatedAt,40)}));
+ if(knowledgeRecords.some(item=>item.status==="Verified"&&item.sourceIds.length===0))throw Object.assign(new Error("Verified knowledge records must cite at least one saved project source."),{code:"KNOWLEDGE_EVIDENCE_REQUIRED"});
  const document={
   schemaVersion:1,
   creativeProjects:records(input.creativeProjects,100,[["id",80],["name",160],["brief",10000],["audience",2000],["style",200],["created",40]]),
@@ -16,7 +19,7 @@ export function sanitizeCreativeWorkspaceDocument(input){
   script:text(input.script,50000),
   variants:Array.isArray(input.variants)?input.variants.slice(0,100).map(value=>text(value,4000)):[],
   researchSources:sources,
-  knowledgeRecords:Array.isArray(input.knowledgeRecords)?input.knowledgeRecords.slice(0,500).filter(item=>item&&typeof item==="object"&&!Array.isArray(item)).map(item=>({id:text(item.id,80),title:text(item.title,240),content:text(item.content,12000),tags:Array.isArray(item.tags)?item.tags.slice(0,30).map(value=>text(value,80)):[],sourceIds:Array.isArray(item.sourceIds)?item.sourceIds.slice(0,100).map(value=>text(value,80)).filter(id=>sourceIds.has(id)):[],kind:text(item.kind,80),status:text(item.status,80),createdAt:text(item.createdAt,40),updatedAt:text(item.updatedAt,40)})) : [],
+  knowledgeRecords,
  };
  if(Buffer.byteLength(JSON.stringify(document),"utf8")>2*1024*1024)throw Object.assign(new Error("Workspace document exceeds the 2 MiB limit."),{code:"WORKSPACE_TOO_LARGE"});
  return document;
