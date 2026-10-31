@@ -209,7 +209,7 @@ returns setof executive_visuals.jobs
 language plpgsql
 security definer
 set search_path = pg_catalog, executive_visuals
-as $
+as $$
 declare
   claimed executive_visuals.jobs;
 begin
@@ -248,14 +248,14 @@ begin
   end if;
   return;
 end;
-$;
+$$;
 
 create or replace function executive_visuals.recover_expired_jobs(p_limit integer default 100)
 returns integer
 language plpgsql
 security definer
 set search_path = pg_catalog, executive_visuals
-as $
+as $$
 declare
   expired executive_visuals.jobs;
   retryable boolean;
@@ -311,7 +311,7 @@ begin
   end loop;
   return recovered;
 end;
-$;
+$$;
 
 
 create or replace function executive_visuals.renew_job_lease(
@@ -323,7 +323,7 @@ returns boolean
 language plpgsql
 security definer
 set search_path = pg_catalog, executive_visuals
-as $
+as $$
 declare
   renewed integer;
 begin
@@ -342,7 +342,7 @@ begin
   get diagnostics renewed = row_count;
   return renewed = 1;
 end;
-$;
+$$;
 
 create or replace function executive_visuals.finish_job(
   p_job_id uuid,
@@ -355,7 +355,7 @@ returns boolean
 language plpgsql
 security definer
 set search_path = pg_catalog, executive_visuals
-as $
+as $$
 declare
   finished executive_visuals.jobs;
 begin
@@ -399,7 +399,7 @@ begin
   );
   return true;
 end;
-$;
+$$;
 
 revoke all on function executive_visuals.renew_job_lease(uuid, text, integer) from public, anon, authenticated;
 revoke all on function executive_visuals.finish_job(uuid, text, text, jsonb, jsonb) from public, anon, authenticated;
