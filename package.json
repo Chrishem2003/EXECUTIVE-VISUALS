@@ -5,9 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
-    "build": "tsc -b && vite build",
+    "build": "npm run verify:capabilities && tsc -b && vite build",
     "preview": "vite preview --host 0.0.0.0",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "verify:capabilities": "node scripts/verify-capability-atlas.mjs"
   },
   "devDependencies": {
     "typescript": "^5.8.3",
