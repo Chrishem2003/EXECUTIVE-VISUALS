@@ -23,3 +23,12 @@ Use private object storage, short-lived signed URLs, streaming uploads and check
 
 ## Consent record
 Store subject, scope, permitted operations, proof reference, timestamp, expiry/revocation and verifying actor. Do not store raw identity documents unless essential. A UI toggle alone is not production-grade consent evidence.
+
+
+## Worker leases and recovery
+
+The local queue uses database-conditional claims so two API processes sharing the same SQLite database cannot both claim the same queued job. A claimed job records its worker ID, lease expiry and heartbeat timestamp. Workers renew leases while work is active. If a process disappears, another worker can recover an expired lease, retry within the bounded attempt count and apply exponential delay before the next attempt.
+
+Cancellation is persisted in the job row. Media workers poll that state while an external process is running, so a cancellation request can stop a process even when the API request reaches a different worker process. The active child is also terminated immediately when the owning worker loses its lease.
+
+This is multi-process coordination on one shared SQLite database and media volume. It is not a multi-host distributed queue: multiple machines require a shared transactional database, shared object storage, and a separately deployed worker service. The cloud SQL migration includes corresponding lease fields but remains unapplied until an isolated staging database is approved.
