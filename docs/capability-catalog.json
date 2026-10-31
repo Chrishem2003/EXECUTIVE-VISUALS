@@ -499,6 +499,11 @@
       "Translate incoming speech in real time"
     ],
     [
+      "agent.text-generate",
+      "agent",
+      "Generate and transform text"
+    ],
+    [
       "integration.discover-model-capabilities",
       "integration",
       "Discover model-specific inputs, limits and costs"
@@ -556,6 +561,6 @@
     "Secrets never enter client bundles, prompts or logs."
   ],
   "sourceOfTruth": "src/core/capability-atlas.ts",
-  "capabilityCount": 96,
+  "capabilityCount": 97,
   "domainCount": 22
 }
