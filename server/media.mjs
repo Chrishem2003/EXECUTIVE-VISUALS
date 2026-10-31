@@ -84,7 +84,7 @@ export function buildMediaOperationArgs({jobType,input={},sourcePath,outputPath}
   const height=Math.round(number(input.height,jobType==="media.upscale"?1440:1080,144,4320)/2)*2;
   const mode=String(input.fit||"contain");
   if(!["contain","cover"].includes(mode))fail("Choose contain or cover for the resize fit mode.");
-  filter=mode==="cover"?`scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height}`:`scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:color=black`;
+  filter=mode==="cover"?`scale=${width}:${height}:force_original_aspect_ratio=increase:flags=lanczos,crop=${width}:${height}`:`scale=${width}:${height}:force_original_aspect_ratio=decrease:flags=lanczos,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:color=black`;
   filter+=",setsar=1";
  }else if(jobType==="media.interpolate"){
   const fps=number(input.fps,30,24,60);
