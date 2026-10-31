@@ -18,6 +18,7 @@ if(audioGenerated.status!==0)throw new Error("Could not create audio fixture: "+
 const overlayGenerated=spawnSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-loglevel","error","-f","lavfi","-i","color=c=red:s=80x60","-frames:v","1","-y",overlay],{encoding:"utf8"});
 if(overlayGenerated.status!==0)throw new Error("Could not create overlay fixture: "+overlayGenerated.stderr);
 await writeFile(captions,"1\n00:00:00,500 --> 00:00:01,500\nHELLO WORLD\n","utf8");
+await writeFile(vtt,"WEBVTT\n\n00:00:01.500 --> 00:00:01.900\nWEBVTT CAPTION\n","utf8");
 const db=openDatabase(join(root,"runtime.sqlite"));
 try{
  db.prepare("INSERT INTO users(id,email) VALUES(?,?)").run("real-user","real-render@example.test");
