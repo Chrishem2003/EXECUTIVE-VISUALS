@@ -84,6 +84,10 @@ export function openDatabase(filename) {
       idempotency_key TEXT,
       attempt_count INTEGER NOT NULL DEFAULT 0,
       max_attempts INTEGER NOT NULL DEFAULT 2,
+      available_at TEXT,
+      lease_owner TEXT,
+      lease_expires_at TEXT,
+      lease_heartbeat_at TEXT,
       created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
       updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
       started_at TEXT,
@@ -184,6 +188,16 @@ export function openDatabase(filename) {
       created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
     );
   `);
+  const jobColumns = new Set(db.prepare("PRAGMA table_info(jobs)").all().map(column => column.name));
+  for (const [name, definition] of [
+    ["available_at", "TEXT"],
+    ["lease_owner", "TEXT"],
+    ["lease_expires_at", "TEXT"],
+    ["lease_heartbeat_at", "TEXT"]
+  ]) {
+    if (!jobColumns.has(name)) db.exec("ALTER TABLE jobs ADD COLUMN " + name + " " + definition);
+  }
+  db.exec("CREATE INDEX IF NOT EXISTS jobs_available_idx ON jobs(status, available_at, created_at)");
   return db;
 }
 
