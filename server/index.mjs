@@ -10,6 +10,7 @@ import { executeMediaJob, executableAvailable } from "./media.mjs";
 import { validateWorkflowGraph, planWorkflowTarget } from "./workflow-validation.mjs";
 import { validateTimelineDocument } from "./timeline-validation.mjs";
 import { executeWorkflowRun } from "./workflow-executor.mjs";
+import { claimNextJob, recoverExpiredJobs, renewJobLease } from "./queue.mjs";
 
 const PORT = Number(process.env.API_PORT || process.env.PORT || 4179);
 const HOST = process.env.API_HOST || "127.0.0.1";
@@ -40,6 +41,7 @@ const EXTENSIONS = {
 const MEDIA_JOBS = new Set(["media.probe","media.thumbnail","media.transcode","media.audio_extract","media.proxy","timeline.render"]);
 const db = openDatabase(DB_FILE);
 const activeProcesses = new Map();
+const WORKER_ID = randomUUID();
 const rateBuckets = new Map();
 function rateAllowed(key,limit,windowMs){const time=Date.now();const old=rateBuckets.get(key);if(!old||time-old.start>=windowMs){rateBuckets.set(key,{start:time,count:1});return true;}old.count++;return old.count<=limit;}
 await mkdir(join(MEDIA_ROOT,"uploads"), { recursive:true });
@@ -166,42 +168,56 @@ async function storeUpload(req,user,projectId) {
   return {id,projectId:projectId||null,name:originalName,mediaType,size,sha256,createdAt:now()};
 }
 async function processNextJob() {
-  const job=db.prepare("SELECT * FROM jobs WHERE status='queued' ORDER BY created_at ASC LIMIT 1").get();
-  if(!job)return;
-  const updated=db.prepare("UPDATE jobs SET status='running',progress=5,attempt_count=attempt_count+1,started_at=?,updated_at=? WHERE id=? AND status='queued'")
-    .run(now(),now(),job.id);
-  if(updated.changes!==1)return;
-  const current=db.prepare("SELECT * FROM jobs WHERE id=?").get(job.id);
-  addJobEvent(db,job.id,job.owner_id,"job.started",{attempt:current.attempt_count});
+  recoverExpiredJobs(db);
+  const current=claimNextJob(db,WORKER_ID);
+  if(!current)return;
+  const job=current;
+  addJobEvent(db,job.id,job.owner_id,"job.started",{attempt:current.attempt_count,workerLease:true});
+  let leaseLost=false;
+  const heartbeat=setInterval(()=>{
+    if(!renewJobLease(db,job.id,WORKER_ID)){
+      leaseLost=true;
+      const active=activeProcesses.get(job.id);
+      if(active&&!active.killed)active.kill("SIGTERM");
+    }
+  },15000);
+  heartbeat.unref();
   try {
     const execute=current.job_type==="workflow.execute"?executeWorkflowRun:executeMediaJob;
     const result=await execute({
       db,job:current,mediaRoot:MEDIA_ROOT,activeProcesses,
       onProgress:value=>{
-        db.prepare("UPDATE jobs SET progress=?,updated_at=? WHERE id=? AND status='running'").run(value,now(),job.id);
-        addJobEvent(db,job.id,job.owner_id,"job.progress",{progress:value});
+        const changed=db.prepare("UPDATE jobs SET progress=?,updated_at=? WHERE id=? AND status='running' AND lease_owner=?")
+          .run(value,now(),job.id,WORKER_ID);
+        if(changed.changes===1)addJobEvent(db,job.id,job.owner_id,"job.progress",{progress:value});
       }
     });
-    const latest=db.prepare("SELECT status FROM jobs WHERE id=?").get(job.id);
-    if(latest?.status==="cancelled")return;
+    const latest=db.prepare("SELECT status,lease_owner FROM jobs WHERE id=?").get(job.id);
+    if(latest?.status==="cancelled"||leaseLost||latest?.lease_owner!==WORKER_ID)return;
     if(current.job_type==="media.probe"&&result.metadata){
       const input=parseJson(current.input_json),source=getAccessibleAsset(db,current.owner_id,String(input.sourceAssetId||""),true);
       if(source){const existing=parseJson(source.metadata_json,{});db.prepare("UPDATE assets SET metadata_json=? WHERE id=?").run(json({...existing,probe:result.metadata}),source.id);}
     }
-    db.prepare("UPDATE jobs SET status='succeeded',progress=100,output_json=?,updated_at=?,completed_at=? WHERE id=?")
-      .run(json(result),now(),now(),job.id);
-    addJobEvent(db,job.id,job.owner_id,"job.succeeded",{output:result});
-    audit(db,job.owner_id,"job.succeeded","job",job.id,{jobType:job.job_type},job.project_id);
+    const completed=db.prepare("UPDATE jobs SET status='succeeded',progress=100,output_json=?,updated_at=?,completed_at=?,available_at=NULL,lease_owner=NULL,lease_expires_at=NULL,lease_heartbeat_at=NULL WHERE id=? AND status='running' AND lease_owner=?")
+      .run(json(result),now(),now(),job.id,WORKER_ID);
+    if(completed.changes===1){
+      addJobEvent(db,job.id,job.owner_id,"job.succeeded",{output:result});
+      audit(db,job.owner_id,"job.succeeded","job",job.id,{jobType:job.job_type},job.project_id);
+    }
   } catch(error) {
-    const latest=db.prepare("SELECT status,attempt_count,max_attempts FROM jobs WHERE id=?").get(job.id);
-    if(latest?.status==="cancelled")return;
+    const latest=db.prepare("SELECT status,attempt_count,max_attempts,lease_owner FROM jobs WHERE id=?").get(job.id);
+    if(latest?.status==="cancelled"||leaseLost||latest?.lease_owner!==WORKER_ID)return;
     const retryable=["MEDIA_TIMEOUT","MEDIA_PROCESS_FAILED"].includes(error.code);
     const retry=retryable&&latest.attempt_count<latest.max_attempts;
     const status=retry?"queued":"failed";
-    const details={code:error.code||"MEDIA_JOB_FAILED",message:String(error.message||"Media job failed.").slice(0,1000),retryable};
-    db.prepare("UPDATE jobs SET status=?,error_json=?,updated_at=?,completed_at=? WHERE id=?")
-      .run(status,json(details),now(),retry?null:now(),job.id);
-    addJobEvent(db,job.id,job.owner_id,retry?"job.retry_scheduled":"job.failed",details);
+    const delayMs=retry?Math.min(60000,1000*Math.pow(2,Math.max(0,latest.attempt_count-1))):0;
+    const availableAt=retry?new Date(Date.now()+delayMs).toISOString():null;
+    const details={code:error.code||"MEDIA_JOB_FAILED",message:String(error.message||"Media job failed.").slice(0,1000),retryable,retryDelayMs:delayMs};
+    const changed=db.prepare("UPDATE jobs SET status=?,error_json=?,updated_at=?,completed_at=?,available_at=?,lease_owner=NULL,lease_expires_at=NULL,lease_heartbeat_at=NULL WHERE id=? AND status='running' AND lease_owner=?")
+      .run(status,json(details),now(),retry?null:now(),availableAt,job.id,WORKER_ID);
+    if(changed.changes===1)addJobEvent(db,job.id,job.owner_id,retry?"job.retry_scheduled":"job.failed",details);
+  } finally {
+    clearInterval(heartbeat);
   }
 }
 let workerBusy=false;
