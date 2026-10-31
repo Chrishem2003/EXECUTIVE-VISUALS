@@ -1,0 +1,40 @@
+import assert from "node:assert/strict";
+import { mkdtemp, rm } from "node:fs/promises";
+import { join } from "node:path";
+import { openDatabase } from "../server/db.mjs";
+import { claimNextJob, recoverExpiredJobs, renewJobLease } from "../server/queue.mjs";
+
+const root=await mkdtemp(join(process.env.TMPDIR||"/tmp","ev-queue-"));
+const db=openDatabase(join(root,"queue.sqlite"));
+const now="2026-10-31T12:00:00.000Z";
+try{
+ db.prepare("INSERT INTO users(id,email) VALUES(?,?)").run("u1","queue@example.test");
+ const insert=db.prepare("INSERT INTO jobs(id,owner_id,job_type,status,input_json,attempt_count,max_attempts,available_at) VALUES(?,?,'media.probe','queued','{}',0,2,?)");
+ insert.run("ready","u1",null);
+ insert.run("delayed","u1","2026-10-31T12:01:00.000Z");
+ const first=claimNextJob(db,"worker-a",90000,now);
+ assert.equal(first.id,"ready");
+ assert.equal(first.attempt_count,1);
+ assert.equal(first.lease_owner,"worker-a");
+ assert.equal(claimNextJob(db,"worker-b",90000,now),null,"a claimed job must not be claimed by another worker");
+ assert.equal(renewJobLease(db,"ready","worker-b",90000,now),false,"a non-owner cannot renew a lease");
+ assert.equal(renewJobLease(db,"ready","worker-a",90000,now),true);
+ db.prepare("UPDATE jobs SET lease_expires_at=? WHERE id='ready'").run("2026-10-31T11:59:00.000Z");
+ assert.equal(recoverExpiredJobs(db,now),1);
+ const retried=db.prepare("SELECT * FROM jobs WHERE id='ready'").get();
+ assert.equal(retried.status,"queued");
+ assert.equal(retried.lease_owner,null);
+ assert.equal(retried.error_json.includes("WORKER_LEASE_EXPIRED"),true);
+ const second=claimNextJob(db,"worker-b",90000,now);
+ assert.equal(second.id,"ready");
+ assert.equal(second.attempt_count,2);
+ db.prepare("UPDATE jobs SET lease_expires_at=? WHERE id='ready'").run("2026-10-31T11:59:00.000Z");
+ assert.equal(recoverExpiredJobs(db,now),1);
+ const failed=db.prepare("SELECT * FROM jobs WHERE id='ready'").get();
+ assert.equal(failed.status,"failed","exhausted jobs must become terminal rather than loop forever");
+ assert.equal(claimNextJob(db,"worker-c",90000,now),null,"future-scheduled jobs must not be claimed early");
+ const legacy=db.prepare("INSERT INTO jobs(id,owner_id,job_type,status,input_json,attempt_count,max_attempts) VALUES('legacy','u1','media.probe','running','{}',1,2)").run();
+ assert.equal(recoverExpiredJobs(db,now),1,"legacy running rows without leases must be recovered");
+ assert.equal(db.prepare("SELECT status FROM jobs WHERE id='legacy'").get().status,"queued");
+ console.log("Queue lease checks passed: exclusive claims, owner-only heartbeats, stale-worker recovery, bounded retries and delayed scheduling.");
+}finally{db.close();await rm(root,{recursive:true,force:true});}
