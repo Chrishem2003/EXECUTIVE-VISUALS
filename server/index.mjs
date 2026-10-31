@@ -227,7 +227,7 @@ export function createAppServer() {
       if(assetMatch){
         const asset=getOwnedAsset(db,user.id,assetMatch[1]);if(!asset){fail(res,404,"ASSET_NOT_FOUND","Asset not found.");return;}
         if(assetMatch[2]==="file"&&req.method==="GET"){
-          const file=resolve(MEDIA_ROOT,asset.storage_path);if(!file.startsWith(MEDIA_ROOT+process.platform==="win32"?"\\":"")){fail(res,404,"ASSET_NOT_FOUND","Asset not found.");return;}
+          const file=resolve(MEDIA_ROOT,asset.storage_path);const mediaPrefix=MEDIA_ROOT.endsWith(sep)?MEDIA_ROOT:MEDIA_ROOT+sep;if(!file.startsWith(mediaPrefix)){fail(res,404,"ASSET_NOT_FOUND","Asset not found.");return;}
           res.writeHead(200,{"content-type":asset.media_type,"content-length":asset.byte_size,"content-disposition":`inline; filename="${safeName(asset.original_name)}"`,"x-content-type-options":"nosniff",...cors});
           createReadStream(file).pipe(res);return;
         }
