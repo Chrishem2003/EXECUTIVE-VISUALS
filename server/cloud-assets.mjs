@@ -128,6 +128,14 @@ export function createCloudAssetRepository({
         throw error;
       }
     },
+    async get({ownerId,assetId}) {
+      ownerId=validUuid(ownerId,"owner ID");assetId=validUuid(assetId,"asset ID");
+      const rows=await request("assets?select=id,owner_id,project_id,original_name,media_type,byte_size,sha256,storage_bucket,object_path,derivative_of,metadata,created_at,deleted_at&id=eq."+encodeURIComponent(assetId)+"&deleted_at=is.null&limit=1");
+      const row=Array.isArray(rows)?rows[0]:null;
+      if(!row||(!row.project_id&&row.owner_id!==ownerId)){const error=new Error("Cloud asset not found.");error.code="CLOUD_ASSET_NOT_FOUND";throw error;}
+      await allowed(ownerId,row.project_id||null,"read");
+      return publicAsset(row);
+    },
     async createSignedUrl({ownerId,assetId,expiresIn=300}) {
       ownerId=validUuid(ownerId,"owner ID");assetId=validUuid(assetId,"asset ID");
       const rows=await request("assets?select=id,owner_id,project_id,original_name,media_type,byte_size,sha256,storage_bucket,object_path,derivative_of,metadata,created_at,deleted_at&id=eq."+encodeURIComponent(assetId)+"&deleted_at=is.null&limit=1");
