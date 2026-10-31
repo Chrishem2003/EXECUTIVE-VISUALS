@@ -27,3 +27,10 @@ The frontend is a brief and project workspace. Actual media generation is dispat
 - Speech, transcription and localization.
 - Consent-gated presenter/avatar generation.
 - Enhancement operations.
+
+
+## Text-model adapter
+
+A server-side, OpenAI-compatible chat-completions gateway can execute text-processing nodes. It is disabled unless `AI_GATEWAY_ENABLED=true`, a base URL and model are configured, and the node has a completed upstream human-approval node. Local loopback gateways may use HTTP; non-local gateways must use HTTPS. Credentials are read only from server environment variables, never from workflow JSON or browser storage.
+
+The adapter clamps temperature and token limits, applies a request timeout, normalizes usage metadata, and returns sanitized errors without echoing credentials or provider response bodies. No request is sent when the gateway is disabled or the approval ancestry is missing. It does not claim a price estimate; billable usage must be checked with the configured gateway before enabling paid execution.
