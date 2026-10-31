@@ -344,9 +344,9 @@ export function createAppServer() {
         const validation=validateWorkflowGraph(graph);
         if(!validation.valid){send(res,422,{error:{code:"WORKFLOW_INVALID",message:"Workflow graph failed validation.",issues:validation.issues}},cors);return;}
         if(body.projectId&&!canWriteProject(db,user.id,body.projectId)){fail(res,404,"PROJECT_NOT_FOUND","Project not found or editor access required.");return;}
-        const id=randomUUID(),graphJson=json(graph),graphHash=hash(graphJson);
-        db.prepare("INSERT INTO workflows(id,owner_id,project_id,name,graph_json,graph_hash) VALUES(?,?,?,?,?,?)").run(id,user.id,body.projectId||null,name,graphJson,graphHash);
-        audit(db,user.id,"workflow.created","workflow",id,{graphHash},body.projectId||null);send(res,201,{workflow:{id,name,revision:1,graphHash}},cors);return;
+        const id=randomUUID(),projectId=body.projectId||null,persistedGraph={...graph,id,projectId:projectId||""},graphJson=json(persistedGraph),graphHash=hash(graphJson);
+        db.prepare("INSERT INTO workflows(id,owner_id,project_id,name,graph_json,graph_hash) VALUES(?,?,?,?,?,?)").run(id,user.id,projectId,name,graphJson,graphHash);
+        audit(db,user.id,"workflow.created","workflow",id,{graphHash},projectId);send(res,201,{workflow:{id,projectId,name,revision:1,graphHash,graph:persistedGraph}},cors);return;
       }
 
       if(path==="/api/timelines"&&req.method==="GET"){
