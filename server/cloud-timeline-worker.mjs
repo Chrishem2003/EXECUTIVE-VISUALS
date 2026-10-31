@@ -20,7 +20,7 @@ export function createCloudTimelineWorker({
   const timelineRepository=timelines||service.timelines;
   const assetRepository=assets||service.assets;
   const io=mediaIO||createCloudMediaAssetIO({assets:assetRepository,fetchImpl,tempRoot,maxBytes,timeoutMs});
-  const execute=createCloudTimelineExecutor({timelines:timelineRepository,mediaIO:io,renderTimeline,tempRoot,maxOutputBytes});
+  const execute=createCloudTimelineExecutor({timelines:timelineRepository,mediaIO:io,renderTimeline,tempRoot,maxOutputBytes:maxOutputBytes??maxBytes??250*1024*1024});
   const timelineQueue=Object.freeze({
     claim:(id,leaseSeconds)=>cloudQueue.claim(id,leaseSeconds,TIMELINE_JOB_TYPES),
     renew:(...args)=>cloudQueue.renew(...args),
