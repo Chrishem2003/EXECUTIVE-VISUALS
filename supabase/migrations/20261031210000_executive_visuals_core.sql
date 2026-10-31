@@ -122,6 +122,7 @@ create table if not exists executive_visuals.reviews (
   reviewer_id uuid references auth.users(id),
   timecode_seconds numeric(12,3),
   body text not null check (char_length(body) between 1 and 10000),
+  decision text not null default 'comment' check (decision in ('comment','approve','request_changes')),
   status text not null default 'open' check (status in ('open','resolved','dismissed')),
   created_at timestamptz not null default now(),
   resolved_at timestamptz
