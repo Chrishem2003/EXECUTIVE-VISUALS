@@ -123,7 +123,7 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
     const document=parseJson(workspace?.document_json,{});
     const query=String(values.query??values.text??values.input??config.query??"");
     const result=searchProjectKnowledge(document,query,{limit:config.limit??10});
-    output=nodeOutput(node,result);output.document=result;output.records=result.records;output.sources=result.records.flatMap(record=>record.evidence);output.text=result.records.map(record=>"["+record.status+"] "+record.title+"\\n"+record.content+"\\nEvidence: "+record.evidence.map(source=>source.title+" — "+source.url).join("; ")).join("\\n\\n");
+    output=nodeOutput(node,result);output.document=result;output.records=result.records;output.sources=result.records.flatMap(record=>record.evidence);output.text=result.records.map(record=>"["+record.status+"] "+record.title+"\n"+record.content+"\nEvidence: "+record.evidence.map(source=>source.title+" — "+source.url).join("; ")).join("\n\n");
    }else if(node.kind==="image.generate"){
     if(!hasApprovedAncestor(graph,nodeId,outputs))throw Object.assign(new Error("A completed upstream human-approval node is required before image generation."),{code:"APPROVAL_REQUIRED"});
     const prompt=String(values.prompt??values.text??values.input??config.prompt??"");
