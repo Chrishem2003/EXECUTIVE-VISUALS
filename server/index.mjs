@@ -12,6 +12,7 @@ import { validateTimelineDocument } from "./timeline-validation.mjs";
 import { executeWorkflowRun } from "./workflow-executor.mjs";
 import { claimNextJob, recoverExpiredJobs, renewJobLease } from "./queue.mjs";
 import { sanitizeCreativeWorkspaceDocument } from "./workspace-documents.mjs";
+import { importResearchUrl } from "./research-import.mjs";
 
 const PORT = Number(process.env.API_PORT || process.env.PORT || 4179);
 const HOST = process.env.API_HOST || "127.0.0.1";
@@ -242,8 +243,8 @@ export function createAppServer() {
     if(req.method==="OPTIONS"){res.writeHead(204,{"access-control-allow-methods":"GET,POST,PUT,DELETE,OPTIONS","access-control-allow-headers":"content-type,authorization,x-file-name,x-project-id,idempotency-key","access-control-max-age":"600",...cors});res.end();return;}
     const url=new URL(req.url||"/","http://localhost");
     const path=url.pathname;
-    const ratePath=path.startsWith("/api/auth/")?"/auth":path==="/api/assets"&&req.method==="POST"?"/upload":"";
-    if(ratePath){const key=(req.socket.remoteAddress||"unknown")+ratePath;const limit=ratePath==="/auth"?AUTH_RATE_LIMIT:30;if(!rateAllowed(key,limit,60000)){fail(res,429,"RATE_LIMITED","Too many requests. Wait before trying again.");return;}}
+    const ratePath=path.startsWith("/api/auth/")?"/auth":path==="/api/assets"&&req.method==="POST"?"/upload":path.endsWith("/research/import")&&req.method==="POST"?"/research":"";
+    if(ratePath){const key=(req.socket.remoteAddress||"unknown")+ratePath;const limit=ratePath==="/auth"?AUTH_RATE_LIMIT:ratePath==="/research"?10:30;if(!rateAllowed(key,limit,60000)){fail(res,429,"RATE_LIMITED","Too many requests. Wait before trying again.");return;}}
     try {
       if(!path.startsWith("/api/")&&req.method==="GET"){
         const decoded=decodeURIComponent(path);
@@ -345,6 +346,32 @@ export function createAppServer() {
         }
       }
 
+
+      const researchImportMatch=path.match(new RegExp("^/api/projects/([0-9a-f-]+)/research/import$","i"));
+      if(researchImportMatch&&req.method==="POST"){
+        const projectId=researchImportMatch[1],access=getProjectAccess(db,user.id,projectId);
+        if(!access){fail(res,404,"PROJECT_NOT_FOUND","Project not found.");return;}
+        if(!canWriteProject(db,user.id,projectId)){fail(res,403,"EDITOR_REQUIRED","Owner or editor access is required to import research.");return;}
+        const body=await readJson(req,16*1024);
+        const current=db.prepare("SELECT revision,document_json FROM project_workspace_documents WHERE project_id=?").get(projectId);
+        const expected=Number(body.revision);
+        if(!Number.isInteger(expected)||expected!==(current?.revision||0)){fail(res,409,"REVISION_CONFLICT","Project knowledge changed since it was loaded. Refresh before importing.");return;}
+        const extracted=await importResearchUrl(body.url);
+        const timestamp=now(),sourceId=randomUUID(),recordId=randomUUID();
+        const prior=parseJson(current?.document_json,{});
+        const source={id:sourceId,title:extracted.title,url:extracted.url,sourceType:"Web article",author:extracted.author,publishedAt:extracted.publishedAt,accessedAt:extracted.fetchedAt,summary:"Imported "+extracted.characterCount+" source characters ("+extracted.contentType+").",rights:"Imported public webpage; verify copyright and licensing before reuse.",createdAt:timestamp};
+        const record={id:recordId,title:extracted.title+" — extracted source text",content:extracted.text,tags:["imported-source","needs-review"],sourceIds:[sourceId],kind:"Source extract",status:"Needs verification",createdAt:timestamp,updatedAt:timestamp};
+        let document;
+        try{document=sanitizeCreativeWorkspaceDocument({...prior,researchSources:[...(prior.researchSources||[]),source],knowledgeRecords:[...(prior.knowledgeRecords||[]),record]});}
+        catch(error){fail(res,400,error.code||"INVALID_WORKSPACE_DOCUMENT",error.message);return;}
+        const nextRevision=expected+1;
+        const changed=current
+          ?db.prepare("UPDATE project_workspace_documents SET revision=?,document_json=?,updated_at=? WHERE project_id=? AND revision=?").run(nextRevision,json(document),timestamp,projectId,expected)
+          :db.prepare("INSERT OR IGNORE INTO project_workspace_documents(project_id,revision,document_json,updated_at) VALUES(?,?,?,?)").run(projectId,nextRevision,json(document),timestamp);
+        if(changed.changes!==1){fail(res,409,"REVISION_CONFLICT","Project knowledge changed while importing. Refresh and retry.");return;}
+        audit(db,user.id,"workspace.research_imported","project_workspace",projectId,{sourceId,recordId,host:new URL(extracted.url).hostname,characters:extracted.text.length},projectId);
+        send(res,201,{ok:true,revision:nextRevision,source,record,extracted:{contentType:extracted.contentType,characterCount:extracted.characterCount}},cors);return;
+      }
 
       const workspaceMatch=path.match(new RegExp("^/api/projects/([0-9a-f-]+)/workspace$","i"));
       if(workspaceMatch){
