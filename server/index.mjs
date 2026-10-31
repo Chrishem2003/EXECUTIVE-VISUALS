@@ -2,7 +2,7 @@ import { createServer } from "node:http";
 import { createHash, randomBytes, randomUUID, scryptSync, timingSafeEqual } from "node:crypto";
 import { createReadStream, createWriteStream } from "node:fs";
 import { mkdir, unlink } from "node:fs/promises";
-import { dirname, extname, join, resolve, basename } from "node:path";
+import { dirname, extname, join, resolve, basename, sep } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { Transform } from "node:stream";
 import { openDatabase, audit, addJobEvent, getOwnedProject, getOwnedAsset, json, parseJson } from "./db.mjs";
@@ -262,7 +262,7 @@ export function createAppServer() {
         const key=String(req.headers["idempotency-key"]||body.idempotencyKey||"").slice(0,180);
         if(key){const existing=db.prepare("SELECT * FROM jobs WHERE owner_id=? AND idempotency_key=?").get(user.id,key);if(existing){send(res,200,{job:recordJob(existing),idempotentReplay:true},cors);return;}}
         const id=randomUUID(),input={...body};delete input.idempotencyKey;
-        db.prepare("INSERT INTO jobs(id,owner_id,project_id,job_type,status,input_json,idempotency_key) VALUES(?,?,?,?,'queued',?,?,?)")
+        db.prepare("INSERT INTO jobs(id,owner_id,project_id,job_type,status,input_json,idempotency_key) VALUES(?,?,?,?,'queued',?,?)")
           .run(id,user.id,body.projectId||null,type,json(input),key||null);
         addJobEvent(db,id,user.id,"job.queued",{jobType:type});audit(db,user.id,"job.queued","job",id,{jobType:type},body.projectId||null);
         send(res,202,{job:recordJob(db.prepare("SELECT * FROM jobs WHERE id=?").get(id))},cors);return;
@@ -306,6 +306,6 @@ if (AUTH_MODE==="supabase"&&(!process.env.SUPABASE_URL||!process.env.SUPABASE_PU
 if (process.env.NODE_ENV!=="test") {
   const server=createAppServer();
   server.listen(PORT,HOST,()=>process.stdout.write(`Executive Visuals API listening on http://${HOST}:${PORT}\n`));
-  const shutdown=()=>{clearInterval(workerTimer);server.close(()=>{db.close();process.exit(0);});setTimeout(()=>process.exit(1),10000).unref();};
+  const shutdown=()=>{if(workerTimer)clearInterval(workerTimer);server.close(()=>{db.close();process.exit(0);});setTimeout(()=>process.exit(1),10000).unref();};
   process.on("SIGINT",shutdown);process.on("SIGTERM",shutdown);
 }
