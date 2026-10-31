@@ -1,0 +1,43 @@
+import assert from "node:assert/strict";
+import { addClip, addMarker, addTrack, createTimeline, moveClip, rational, seconds, splitClip, toOpenTimelineIo, trimClip, validateTimeline } from "../src/core/timeline.ts";
+
+let timeline=createTimeline("project-1","timeline-1","Pilot episode",{numerator:24,denominator:1});
+timeline=addTrack(timeline,{id:"v1",name:"Video 1",kind:"video",enabled:true,locked:false,clips:[]});
+timeline=addTrack(timeline,{id:"v2",name:"Overlays",kind:"overlay",enabled:true,locked:false,clips:[]});
+timeline=addClip(timeline,"v1",{id:"clip-a",assetId:"asset-a",name:"Opening",sourceRange:{start:rational(0,24),duration:rational(240,24)},timelineStart:rational(0,24),duration:rational(240,24),enabled:true});
+timeline=addClip(timeline,"v1",{id:"clip-b",assetId:"asset-b",name:"Second scene",sourceRange:{start:rational(0,24),duration:rational(120,24)},timelineStart:rational(300,24),duration:rational(120,24),enabled:true});
+assert.equal(validateTimeline(timeline).valid,true);
+timeline=trimClip(timeline,"v1","clip-a",24,24);
+const trimmed=timeline.tracks[0].clips.find(x=>x.id==="clip-a");
+assert.equal(trimmed.sourceRange.start.value,24);
+assert.equal(trimmed.sourceRange.duration.value,192);
+assert.equal(trimmed.timelineStart.value,24);
+assert.equal(trimmed.duration.value,192);
+timeline=splitClip(timeline,"v1","clip-a",120,"clip-a-part-b");
+assert.equal(timeline.tracks[0].clips.length,3);
+const partB=timeline.tracks[0].clips.find(x=>x.id==="clip-a-part-b");
+assert.equal(partB.sourceRange.start.value,120);
+assert.equal(partB.sourceRange.duration.value,96);
+assert.equal(partB.timelineStart.value,120);
+timeline=moveClip(timeline,"v1","clip-b","v2",500);
+assert.equal(timeline.tracks[0].clips.some(x=>x.id==="clip-b"),false);
+assert.equal(timeline.tracks[1].clips[0].timelineStart.value,500);
+timeline=moveClip(timeline,"v1","clip-a-part-b","v1",150);
+assert.equal(timeline.tracks[0].clips.some(x=>x.id==="clip-a-part-b"),true);
+assert.equal(validateTimeline(timeline).valid,true);
+timeline=addMarker(timeline,{id:"marker-1",name:"Review hook",start:rational(144,24),color:"YELLOW",note:"Check the opening"});
+const interchange=toOpenTimelineIo(timeline);
+assert.equal(interchange.OTIO_SCHEMA,"Timeline.1");
+assert.equal(interchange.tracks.children.length,2);
+assert.equal(interchange.markers.length,1);
+assert.equal(interchange.markers[0].name,"Review hook");
+assert.ok(JSON.stringify(interchange).includes("asset://asset-a"));
+assert.ok(seconds(rational(48,24))===2);
+
+const overlap={...timeline,tracks:timeline.tracks.map(track=>track.id==="v1"?{...track,clips:[...track.clips,{id:"overlap",assetId:"asset-x",name:"Overlap",sourceRange:{start:rational(0,24),duration:rational(60,24)},timelineStart:rational(60,24),duration:rational(60,24),enabled:true}]}:track)};
+assert.equal(validateTimeline(overlap).issues.some(x=>x.code==="overlap"),true);
+assert.throws(()=>toOpenTimelineIo(overlap),/overlap/);
+const locked={...timeline,tracks:timeline.tracks.map(track=>track.id==="v1"?{...track,locked:true}:track)};
+assert.throws(()=>moveClip(locked,"v1","clip-a","v2",600),/locked/);
+
+console.log("Timeline engine checks passed: rational timing, source trims, split, cross-track and same-track moves, overlap protection, markers and editorial interchange export.");
