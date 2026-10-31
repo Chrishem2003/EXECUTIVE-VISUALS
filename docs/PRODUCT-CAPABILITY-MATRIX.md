@@ -206,45 +206,45 @@ A production project owns the brief, audience, brand, cast/identity and consent,
 ## 6. Research sources
 
 ### Platform A
-- [Public source ref EXT-001] A.ai/creator-hub/help-center/getting-started/what-is-Platform A
-- [Public source ref EXT-001] A.ai/creator-hub/help-center/tools/which-Platform A-tool-should-i-use
-- [Public source ref EXT-001] A.ai/creator-hub/help-center/tools/how-do-i-use-cinema-studio
-- [Public source ref EXT-001] A.ai/creator-hub/help-center/tools/how-do-i-use-marketing-studio-to-create-video-ads
-- [Public source ref EXT-001] A.ai/creator-hub/help-center/tools/how-do-i-use-canvas
-- [Public source ref EXT-001] A.ai/creator-hub/help-center/tools/how-do-i-use-supercomputer
-- [Public source ref EXT-001] A.ai/creator-hub/help-center/tools/how-do-i-use-ai-influencer
-- [Public source ref EXT-001] A.ai/creator-hub/changelog
-- [Public source ref EXT-001] A.ai/cinematic-video-generator
-- [Public source ref EXT-001] A.ai/soul-intro
+- [Source URL redacted] A.ai/creator-hub/help-center/getting-started/what-is-Platform A
+- [Source URL redacted] A.ai/creator-hub/help-center/tools/which-Platform A-tool-should-i-use
+- [Source URL redacted] A.ai/creator-hub/help-center/tools/how-do-i-use-cinema-studio
+- [Source URL redacted] A.ai/creator-hub/help-center/tools/how-do-i-use-marketing-studio-to-create-video-ads
+- [Source URL redacted] A.ai/creator-hub/help-center/tools/how-do-i-use-canvas
+- [Source URL redacted] A.ai/creator-hub/help-center/tools/how-do-i-use-supercomputer
+- [Source URL redacted] A.ai/creator-hub/help-center/tools/how-do-i-use-ai-influencer
+- [Source URL redacted] A.ai/creator-hub/changelog
+- [Source URL redacted] A.ai/cinematic-video-generator
+- [Source URL redacted] A.ai/soul-intro
 
 ### Platform B
-- [Public source ref EXT-002] B.com/llms.txt
-- [Public source ref EXT-003] B.com/llms.txt
-- [Public source ref EXT-003] B.com/
-- [Public source ref EXT-003] B.com/mcp/overview
-- [Public source ref EXT-002] B.com/tool
-- [Public source ref EXT-002] B.com/avatars
-- [Public source ref EXT-002] B.com/translate
-- [Public source ref EXT-002] B.com/enterprise
-- [Public source ref EXT-002] B.com/security
+- [Source URL redacted] B.com/llms.txt
+- [Source URL redacted] B.com/llms.txt
+- [Source URL redacted] B.com/
+- [Source URL redacted] B.com/mcp/overview
+- [Source URL redacted] B.com/tool
+- [Source URL redacted] B.com/avatars
+- [Source URL redacted] B.com/translate
+- [Source URL redacted] B.com/enterprise
+- [Source URL redacted] B.com/security
 
 ### Platform C
-- [Public source ref EXT-001] C.ai/workspace
-- [Public source ref EXT-001] C.ai/ai-workflow
-- [Public source ref EXT-001] C.ai/
-- [Public source ref EXT-001] C.ai/benefits
-- [Public source ref EXT-001] C.ai/about-us
-- [Public source ref EXT-001] C.ai/video-enhancer/upload
-- [Public source ref EXT-001] C.ai/video-repair/upload
-- [Public source ref EXT-001] C.ai/video-upscaler/upload
-- [Public source ref EXT-001] C.ai/video-retouch/upload
-- [Public source ref EXT-001] C.ai/video-watermark-remover/upload
-- [Public source ref EXT-001] C.ai/video-frame-interpolation/upload
-- [Public source ref EXT-001] C.ai/ai-video-extender/upload
-- [Public source ref EXT-001] C.ai/video-color-match/upload
-- [Public source ref EXT-001] C.ai/remove-object-from-video
-- [Public source ref EXT-001] C.ai/text-to-video-ai
+- [Source URL redacted] C.ai/workspace
+- [Source URL redacted] C.ai/ai-workflow
+- [Source URL redacted] C.ai/
+- [Source URL redacted] C.ai/benefits
+- [Source URL redacted] C.ai/about-us
+- [Source URL redacted] C.ai/video-enhancer/upload
+- [Source URL redacted] C.ai/video-repair/upload
+- [Source URL redacted] C.ai/video-upscaler/upload
+- [Source URL redacted] C.ai/video-retouch/upload
+- [Source URL redacted] C.ai/video-watermark-remover/upload
+- [Source URL redacted] C.ai/video-frame-interpolation/upload
+- [Source URL redacted] C.ai/ai-video-extender/upload
+- [Source URL redacted] C.ai/video-color-match/upload
+- [Source URL redacted] C.ai/remove-object-from-video
+- [Source URL redacted] C.ai/text-to-video-ai
 
 ### Method
-- [Public source ref EXT-004]
-- [Public source ref EXT-005]
+- [Source URL redacted]
+- [Source URL redacted]
