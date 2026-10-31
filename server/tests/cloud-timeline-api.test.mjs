@@ -52,6 +52,6 @@ test("cloud timeline API refuses a public media bucket",async()=>{
 });
 test("cloud timeline API readiness fails closed when a required schema table is unavailable",async()=>{
  let count=0;
- const api=createCloudTimelineApi({url:"https://example.supabase.co",serviceRoleKey:"service-secret",timelineService:{timelines:{},assets:{}},authorize:async()=>true,fetchImpl:async()=>({ok:++count!==3,status:++count!==3?200:404,async text(){return"[]";},async json(){return{public:false};}})});
+ const api=createCloudTimelineApi({url:"https://example.supabase.co",serviceRoleKey:"service-secret",timelineService:{timelines:{},assets:{}},authorize:async()=>true,fetchImpl:async()=>{count++;return{ok:count!==3,status:count===3?404:200,async text(){return"[]";},async json(){return{public:false};}};}});
  await assert.rejects(()=>api.checkReadiness());
 });
