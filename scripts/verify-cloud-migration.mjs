@@ -56,7 +56,7 @@ if (!sql.includes("limit 1\n    for update skip locked") || !sql.includes("limit
 if (!sql.includes("revoke all on function executive_visuals.renew_job_lease(uuid, text, integer) from public, anon, authenticated;") || !sql.includes("revoke all on function executive_visuals.finish_job(uuid, text, text, jsonb, jsonb) from public, anon, authenticated;")) {
   issues.push("Lease renewal and job completion RPCs must be unavailable to untrusted roles.");
 }
-if (!sql.includes("create or replace function executive_visuals.claim_next_job(") || !sql.includes("for update skip locked") || !sql.includes("grant execute on function executive_visuals.claim_next_job(text, integer) to service_role")) {
+if (!sql.includes("create or replace function executive_visuals.claim_next_job(") || !sql.includes("for update skip locked") || !sql.includes("job_type = any(p_job_types)") || !sql.includes("grant execute on function executive_visuals.claim_next_job(text, integer, text[]) to service_role")) {
   issues.push("Cloud workers need an atomic SKIP LOCKED claim RPC restricted to service_role.");
 }
 
@@ -72,7 +72,7 @@ if (!sql.includes("create or replace function executive_visuals.recover_expired_
 if (!sql.includes("started_at timestamptz") || !sql.includes("set status = 'processing'") || !sql.includes("lease_expires_at = clock_timestamp() + make_interval")) {
   issues.push("Cloud job claim must persist its start time, processing state and lease expiry.");
 }
-if (!sql.includes("revoke all on function executive_visuals.claim_next_job(text, integer) from public, anon, authenticated;") || !sql.includes("revoke all on function executive_visuals.recover_expired_jobs(integer) from public, anon, authenticated;")) {
+if (!sql.includes("revoke all on function executive_visuals.claim_next_job(text, integer, text[]) from public, anon, authenticated;") || !sql.includes("revoke all on function executive_visuals.recover_expired_jobs(integer) from public, anon, authenticated;")) {
   issues.push("Cloud queue mutation functions must not be callable by untrusted roles.");
 }
 if (!sql.includes("lease_expires_at timestamptz") || !sql.includes("available_at timestamptz") || !sql.includes("lease_heartbeat_at timestamptz")) {
