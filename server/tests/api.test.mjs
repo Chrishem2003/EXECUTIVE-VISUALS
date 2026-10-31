@@ -209,6 +209,17 @@ test("project membership separates editor, reviewer and viewer permissions",asyn
   assert.equal((await viewerAssets.json()).assets.length,1);
   const blockedUpload=await request("/api/assets",{method:"POST",headers:{"content-type":"image/png","x-file-name":"blocked.png","x-project-id":project.id},body:Buffer.from([137,80,78,71,13,10,26,10,0])},viewer);
   assert.equal(blockedUpload.status,404);
+  const reviewerComment=await request("/api/reviews",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({projectId:project.id,assetId:asset.id,timecodeSeconds:4.25,decision:"comment",body:"Check the subject framing at this moment."})},reviewer);
+  assert.equal(reviewerComment.status,201);
+  const comment=(await reviewerComment.json()).review;
+  assert.equal(comment.timecodeSeconds,4.25);
+  const viewerComment=await request("/api/reviews",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({projectId:project.id,decision:"comment",body:"Viewer cannot comment."})},viewer);
+  assert.equal(viewerComment.status,403);
+  const approve=await request("/api/reviews",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({projectId:project.id,decision:"approve",body:"Approved for the next stage."})},reviewer);
+  assert.equal(approve.status,201);
+  assert.equal((await approve.json()).review.status,"resolved");
+  const reviews=await request("/api/reviews?projectId="+project.id,{},viewer);
+  assert.equal((await reviews.json()).reviews.length,2);
   const timeline={
     id:"shared-sequence",projectId:project.id,name:"Shared sequence",revision:1,
     frameRate:{numerator:24,denominator:1},width:1920,height:1080,pixelAspectRatio:1,
