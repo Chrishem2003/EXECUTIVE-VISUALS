@@ -156,3 +156,8 @@
 .wf-plan pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:8px;line-height:1.6;color:#c5dbcb}
 @media(max-width:1150px){.wf-layout{grid-template-columns:150px minmax(0,1fr)}.wf-inspector{grid-column:1/-1}.wf-inspector form{grid-template-columns:1fr 1fr}.wf-inspector form button{grid-column:1/-1}}
 @media(max-width:700px){.wf-layout{grid-template-columns:1fr}.wf-palette{display:grid;grid-template-columns:repeat(2,1fr);gap:6px}.wf-palette .eyebrow,.wf-palette h3,.wf-palette p{grid-column:1/-1}.wf-palette button{margin:0}#wf-connect-form{grid-template-columns:1fr 1fr}.wf-inspector form{grid-template-columns:1fr}}
+
+.wf-run-status{display:grid;gap:7px;margin-top:13px;padding-top:10px;border-top:1px solid var(--line)}
+.wf-run-status>div{display:flex;align-items:center;gap:8px;font-size:9px;color:#d7c59f;flex-wrap:wrap}
+.wf-run-status span{display:block;font-size:8px;color:#b8c4d4;border:1px solid var(--line);border-radius:4px;padding:6px}
+.wf-run-status button{border:1px solid #6c5b40;background:#292319;color:#e9d0a0;border-radius:4px;padding:5px 7px;font-size:8px}
