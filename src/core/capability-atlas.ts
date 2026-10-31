@@ -302,6 +302,10 @@ export const CAPABILITY_ATLAS: readonly CapabilityDefinition[] = [
   spec("review.approval", "collaboration", "Record approval or requested changes",
     [p("review","structured-data","Review session"),p("decision","structured-data","Approve, reject or request changes")],
     [p("decision-record","structured-data","Auditable approval state")], {execution:["sync"]}),
+  spec("timeline.render-master", "editing", "Render a timeline to a video master",
+    [p("timeline","timeline","Validated and saved timeline"),p("render-profile","structured-data","Output codec, dimensions and frame rate",false)],
+    [p("master","video","Rendered MP4 master"),p("render-report","structured-data","Render settings and source lineage")],
+    {evidence:"inferred",readiness:"adapter-required",execution:["local","async"]}),
 ] as const;
 
 export function validateCapabilityAtlas(
