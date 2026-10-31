@@ -287,7 +287,7 @@ export function createAppServer() {
       }
       const assetMatch=path.match(/^\/api\/assets\/([0-9a-f-]+)(?:\/(file))?$/i);
       if(assetMatch){
-        const asset=getOwnedAsset(db,user.id,assetMatch[1]);if(!asset){fail(res,404,"ASSET_NOT_FOUND","Asset not found.");return;}
+        const asset=getAccessibleAsset(db,user.id,assetMatch[1],req.method==="DELETE");if(!asset){fail(res,404,"ASSET_NOT_FOUND","Asset not found.");return;}
         if(assetMatch[2]==="file"&&req.method==="GET"){
           const file=resolve(MEDIA_ROOT,asset.storage_path);const mediaPrefix=MEDIA_ROOT.endsWith(sep)?MEDIA_ROOT:MEDIA_ROOT+sep;if(!file.startsWith(mediaPrefix)){fail(res,404,"ASSET_NOT_FOUND","Asset not found.");return;}
           res.writeHead(200,{"content-type":asset.media_type,"content-length":asset.byte_size,"content-disposition":`inline; filename="${safeName(asset.original_name)}"`,"x-content-type-options":"nosniff",...cors});
@@ -308,7 +308,7 @@ export function createAppServer() {
         if(!graph||!Array.isArray(graph.nodes)||!Array.isArray(graph.edges)){fail(res,400,"INVALID_WORKFLOW","A workflow graph with nodes and edges is required.");return;}
         const validation=validateWorkflowGraph(graph);
         if(!validation.valid){send(res,422,{error:{code:"WORKFLOW_INVALID",message:"Workflow graph failed validation.",issues:validation.issues}},cors);return;}
-        if(body.projectId&&!getOwnedProject(db,user.id,body.projectId)){fail(res,404,"PROJECT_NOT_FOUND","Project not found.");return;}
+        if(body.projectId&&!canWriteProject(db,user.id,body.projectId)){fail(res,404,"PROJECT_NOT_FOUND","Project not found or editor access required.");return;}
         const id=randomUUID(),graphJson=json(graph),graphHash=hash(graphJson);
         db.prepare("INSERT INTO workflows(id,owner_id,project_id,name,graph_json,graph_hash) VALUES(?,?,?,?,?,?)").run(id,user.id,body.projectId||null,name,graphJson,graphHash);
         audit(db,user.id,"workflow.created","workflow",id,{graphHash},body.projectId||null);send(res,201,{workflow:{id,name,revision:1,graphHash}},cors);return;
@@ -321,7 +321,7 @@ export function createAppServer() {
       if(path==="/api/timelines"&&req.method==="POST"){
         const body=await readJson(req,4*1024*1024),timeline=body.timeline;
         const projectId=body.projectId||timeline?.projectId||null;
-        if(projectId&&!getOwnedProject(db,user.id,projectId)){fail(res,404,"PROJECT_NOT_FOUND","Project not found.");return;}
+        if(projectId&&!canWriteProject(db,user.id,projectId)){fail(res,404,"PROJECT_NOT_FOUND","Project not found or editor access required.");return;}
         const validation=validateTimelineDocument(timeline,db,user.id);
         if(!validation.valid){send(res,422,{error:{code:"TIMELINE_INVALID",message:"Timeline failed validation.",issues:validation.issues}},cors);return;}
         const id=randomUUID(),name=String(body.name||timeline.name||"Untitled sequence").trim().slice(0,160);
@@ -383,14 +383,14 @@ export function createAppServer() {
         }
       }
       if(path==="/api/jobs"&&req.method==="GET"){
-        const rows=db.prepare("SELECT * FROM jobs WHERE owner_id=? ORDER BY created_at DESC LIMIT 100").all(user.id);
+        const rows=db.prepare("SELECT * FROM jobs WHERE owner_id=? OR project_id IN (SELECT project_id FROM project_members WHERE member_id=?) ORDER BY created_at DESC LIMIT 100").all(user.id,user.id);
         send(res,200,{jobs:rows.map(recordJob)},cors);return;
       }
       if(path==="/api/jobs"&&req.method==="POST"){
         const body=await readJson(req);const type=String(body.jobType||"");
         if(!MEDIA_JOBS.has(type)){fail(res,409,"ENGINE_UNAVAILABLE","This capability has no connected execution adapter yet. No paid request was sent.");return;}
         if(body.projectId&&!getOwnedProject(db,user.id,body.projectId)){fail(res,404,"PROJECT_NOT_FOUND","Project not found.");return;}
-        if(!body.sourceAssetId||!getOwnedAsset(db,user.id,String(body.sourceAssetId))){fail(res,404,"SOURCE_ASSET_NOT_FOUND","Choose a source asset you own.");return;}
+        if(!body.sourceAssetId||!getAccessibleAsset(db,user.id,String(body.sourceAssetId),true)){fail(res,404,"SOURCE_ASSET_NOT_FOUND","Choose a source asset you own or can edit.");return;}
         const key=String(req.headers["idempotency-key"]||body.idempotencyKey||"").slice(0,180);
         if(key){const existing=db.prepare("SELECT * FROM jobs WHERE owner_id=? AND idempotency_key=?").get(user.id,key);if(existing){send(res,200,{job:recordJob(existing),idempotentReplay:true},cors);return;}}
         const id=randomUUID(),input={...body};delete input.idempotencyKey;
@@ -401,7 +401,7 @@ export function createAppServer() {
       }
       const jobMatch=path.match(/^\/api\/jobs\/([0-9a-f-]+)(?:\/(cancel|events))?$/i);
       if(jobMatch){
-        const job=ownedJob(user.id,jobMatch[1]);if(!job){fail(res,404,"JOB_NOT_FOUND","Job not found.");return;}
+        const job=accessibleJob(user.id,jobMatch[1],jobMatch[2]==="cancel");if(!job){fail(res,404,"JOB_NOT_FOUND","Job not found.");return;}
         if(jobMatch[2]==="cancel"&&req.method==="POST"){
           if(["succeeded","failed","cancelled"].includes(job.status)){fail(res,409,"JOB_TERMINAL","This job has already finished.");return;}
           db.prepare("UPDATE jobs SET status='cancelled',updated_at=?,completed_at=? WHERE id=?").run(now(),now(),job.id);
@@ -421,7 +421,7 @@ export function createAppServer() {
       }
 
       if(path==="/api/audit"&&req.method==="GET"){
-        const rows=db.prepare("SELECT id,project_id,event_type,subject_type,subject_id,details_json,created_at FROM audit_events WHERE owner_id=? ORDER BY id DESC LIMIT 200").all(user.id);
+        const rows=db.prepare("SELECT id,project_id,event_type,subject_type,subject_id,details_json,created_at FROM audit_events WHERE owner_id=? OR project_id IN (SELECT project_id FROM project_members WHERE member_id=?) ORDER BY id DESC LIMIT 200").all(user.id,user.id);
         send(res,200,{events:rows.map(x=>({id:x.id,projectId:x.project_id,type:x.event_type,subjectType:x.subject_type,subjectId:x.subject_id,details:parseJson(x.details_json),createdAt:x.created_at}))},cors);return;
       }
       fail(res,404,"NOT_FOUND","API route not found.");
