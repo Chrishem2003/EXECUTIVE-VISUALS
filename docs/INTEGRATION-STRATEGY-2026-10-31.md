@@ -121,3 +121,16 @@ The adapter restricts queue status/result URLs to the provider's queue host, req
 ## Evidence and status discipline
 
 This matrix is a recommended integration plan derived from public official documentation and the repository's inspected gateway/media architecture. It does not mean a provider has been connected, credentials have been configured, or live generation has been tested. Keep each provider in `planned`, `adapter-ready`, `configured`, `connected`, `verified`, or `disabled` state based on evidence.
+
+## Implementation update — asynchronous video adapter
+
+The working branch now contains a separate prompt-to-video adapter connected to the workflow executor as the provider-neutral `video.generate` node. Execution requires a completed upstream human-approval node. The adapter submits an asynchronous request, polls queue state, validates the queue host and final media host, downloads with a strict 250 MiB cap, checks the MP4 `ftyp` signature, and persists the output as a private checksummed asset.
+
+**Server-side configuration only:**
+- `VIDEO_GATEWAY_ENABLED=true`
+- `VIDEO_GATEWAY_ALLOW_REMOTE=true` (explicit remote-call opt-in)
+- `FAL_KEY=<server-side secret>`
+- `FAL_VIDEO_MODEL=<video model endpoint slug>`
+- Optional `VIDEO_GATEWAY_TIMEOUT_MS` (bounded to 1–600 seconds)
+
+The current adapter is prompt-only. It passes duration (1–30 seconds) and aspect ratio (16:9, 9:16 or 1:1), but does not yet support reference-image conditioning, multi-shot generation, callbacks, cancellation, cost estimation or provider fallback. The provider's model-specific input schema must be verified before configuring a live model. Tests mock the queue and media responses; they do not prove live provider compatibility, quality, availability or price. The adapter is **implemented and mock-tested, not configured or live-verified**. Keep it disabled until model schema, pricing, quota enforcement and durable cloud storage are independently verified.
