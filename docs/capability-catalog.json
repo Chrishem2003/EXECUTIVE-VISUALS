@@ -442,6 +442,11 @@
       "review.approval",
       "collaboration",
       "Record approval or requested changes"
+    ],
+    [
+      "timeline.render-master",
+      "editing",
+      "Render a timeline to a video master"
     ]
   ],
   "requiredCapabilityFields": [
@@ -491,6 +496,6 @@
     "Secrets never enter client bundles, prompts or logs."
   ],
   "sourceOfTruth": "src/core/capability-atlas.ts",
-  "capabilityCount": 83,
+  "capabilityCount": 84,
   "domainCount": 22
 }
