@@ -176,3 +176,4 @@ document.addEventListener("click",event=>{
  if(action)void runAction(action);
 });
 window.addEventListener("ev:authenticated",()=>void initTimelineWorkspace());
+window.addEventListener("ev:assets-updated",()=>void refresh().then(paint).catch(error=>{state.message=error.message;paint();}));
