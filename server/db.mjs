@@ -103,6 +103,19 @@ export function openDatabase(filename) {
       created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
     );
     CREATE INDEX IF NOT EXISTS audit_owner_idx ON audit_events(owner_id, id DESC);
+    CREATE TABLE IF NOT EXISTS timelines (
+      id TEXT PRIMARY KEY,
+      owner_id TEXT NOT NULL REFERENCES users(id),
+      project_id TEXT REFERENCES projects(id),
+      name TEXT NOT NULL,
+      revision INTEGER NOT NULL DEFAULT 1,
+      timeline_json TEXT NOT NULL,
+      otio_json TEXT,
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      archived_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS timelines_owner_idx ON timelines(owner_id,updated_at DESC);
     CREATE TABLE IF NOT EXISTS consents (
       id TEXT PRIMARY KEY,
       owner_id TEXT NOT NULL REFERENCES users(id),
