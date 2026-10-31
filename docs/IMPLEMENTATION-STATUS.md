@@ -25,10 +25,10 @@
 | Runtime console | Sign-in, project creation, uploads, media job submission, job inspection and audit view | Browser UI uses the local API |
 | Project collaboration | Owner-managed invitations with editor, reviewer and viewer roles; access revocation enforced across project records | Existing local accounts only; invitation email delivery not connected |
 | Review and approvals | Timecoded comments, approve/request-changes decisions and status updates | Local API persistence; external review links and visual drawing annotations not implemented |
-| Editorial timeline | Multi-track clips, rational source timebases, trim, split, move, markers, overlap validation, interchange export and local MP4 master render | No preview playback, transitions, overlays, captions or effects rendering yet |
+| Editorial timeline | Multi-track clips, rational source timebases, trim, split, move, markers, overlap validation, interchange export and local MP4 master render | FFmpeg supports synchronized audio, still-image overlays, burned-in SRT/VTT captions and per-clip gain; preview playback, transitions, effects and animated/video overlays remain pending |
 | Timeline persistence | Owner-scoped timelines, asset ownership checks, optimistic revisions and saved interchange package | SQLite local DB; isolated SQL migration pending dedicated database review |
 | Database migration | Dedicated multi-tenant schema, row-level security, immutable workflow-run snapshots, server-only job/audit writes and private object-storage policies | Migration is committed and statically guarded; **not applied** to shared staging or another product's database |
-| Quality checks | Capability parity, workflow planner, timeline validation, render-worker checks, real FFmpeg MP4 render/probe integration and API integration tests | CI verifies local render output and API behavior, not cloud durability or external provider integrations |
+| Quality checks | Capability parity, workflow planner, timeline validation, render-worker checks, real FFmpeg MP4 render/probe integration with overlay placement and SRT/VTT caption pixel checks, plus API integration tests | CI verifies local render output and API behavior, not cloud durability or external provider integrations |
 
 ## Build verification
 
