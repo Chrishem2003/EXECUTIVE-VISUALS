@@ -29,13 +29,13 @@ const ALLOWED_MEDIA = new Set([
   "image/jpeg","image/png","image/webp","image/gif",
   "video/mp4","video/webm","video/quicktime","video/x-matroska",
   "audio/mpeg","audio/wav","audio/x-wav","audio/mp4","audio/ogg",
-  "application/pdf","text/plain","application/json"
+  "application/pdf","text/plain","text/vtt","application/json"
 ]);
 const EXTENSIONS = {
   "image/jpeg":"jpg","image/png":"png","image/webp":"webp","image/gif":"gif",
   "video/mp4":"mp4","video/webm":"webm","video/quicktime":"mov","video/x-matroska":"mkv",
   "audio/mpeg":"mp3","audio/wav":"wav","audio/x-wav":"wav","audio/mp4":"m4a","audio/ogg":"ogg",
-  "application/pdf":"pdf","text/plain":"txt","application/json":"json"
+  "application/pdf":"pdf","text/plain":"txt","text/vtt":"vtt","application/json":"json"
 };
 const MEDIA_JOBS = new Set(["media.probe","media.thumbnail","media.transcode","media.audio_extract","media.proxy","timeline.render"]);
 const db = openDatabase(DB_FILE);
