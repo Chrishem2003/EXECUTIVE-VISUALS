@@ -12,7 +12,7 @@ const asset={id:assetId,name:"scene.mp4",mediaType:"video/mp4",size:12,sha256:"a
 function response(rows,status=200){return{ok:status>=200&&status<300,status,async text(){return JSON.stringify(rows);}};}
 function setup({authorize=async()=>true,assetLookup=async()=>asset,fetchImpl}={}){
  const calls=[];let row=null;
- const fetcher=fetchImpl||async(url,options)=>{
+ const fetcher=fetchImpl||(async(url,options)=>{
   calls.push({url,options});
   if(options.method==="POST"){row={...JSON.parse(options.body),created_at:"2026-11-01T00:00:00Z",updated_at:"2026-11-01T00:00:00Z"};return response([row]);}
   if(options.method==="GET")return response(row?[row]:[]);
@@ -22,7 +22,7 @@ function setup({authorize=async()=>true,assetLookup=async()=>asset,fetchImpl}={}
    row={...row,...JSON.parse(options.body)};return response([row]);
   }
   return response([],405);
- };
+ });
  const repo=createCloudTimelineRepository({...base,authorize,getAsset:assetLookup,fetchImpl:fetcher});
  return{repo,calls,get row(){return row;}};
 }
