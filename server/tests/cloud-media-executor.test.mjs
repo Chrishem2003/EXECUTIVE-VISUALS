@@ -57,7 +57,7 @@ test("cloud media enhancement publishes a checksummed derivative using the claim
   await writeFile(source, "source-media");
   const ffmpeg = await executable(directory, "ffmpeg", 'for last do :; done\nprintf "rendered-media" > "$last"');
   process.env.FFMPEG_PATH = ffmpeg;
-  let published, cleaned = false;
+  let published, publishedContent, cleaned = false;
   try {
     const execute = createCloudMediaExecutor({
       tempRoot: directory,
@@ -93,7 +93,7 @@ test("cloud media enhancement publishes a checksummed derivative using the claim
     assert.equal(result.sha256.length, 64);
     assert.equal(result.byteSize, Buffer.byteLength("rendered-media"));
     assert.equal(cleaned, true);
-    assert.equal((await readFile(published.path, "utf8")), "rendered-media");
+    assert.equal(publishedContent, "rendered-media");
   } finally {
     if (previous === undefined) delete process.env.FFMPEG_PATH;
     else process.env.FFMPEG_PATH = previous;
