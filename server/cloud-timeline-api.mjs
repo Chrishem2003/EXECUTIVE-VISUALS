@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { createWriteStream } from "node:fs";
-import { mkdtemp, open, rm } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, extname, join } from "node:path";
+import { basename, join } from "node:path";
 import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { createCloudAssetAuthorizer } from "./cloud-asset-auth.mjs";
@@ -103,7 +103,8 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
    }
    return null;
   }catch(error){
-   if(["CLOUD_TIMELINE_NOT_FOUND","CLOUD_ASSET_NOT_FOUND"].includes(error.code))return response(404,{error:{code:"TIMELINE_NOT_FOUND",message:"Timeline or one of its assets was not found."}});
+   if(error.code==="CLOUD_ASSET_NOT_FOUND")return response(404,{error:{code:"ASSET_NOT_FOUND",message:"Asset not found."}});
+   if(error.code==="CLOUD_TIMELINE_NOT_FOUND")return response(404,{error:{code:"TIMELINE_NOT_FOUND",message:"Timeline not found."}});
    if(["CLOUD_TIMELINE_ACCESS_DENIED","CLOUD_ASSET_ACCESS_DENIED"].includes(error.code))return response(404,{error:{code:"TIMELINE_NOT_FOUND",message:"Timeline not found."}});
    if(error.code==="CLOUD_TIMELINE_REVISION_CONFLICT")return response(409,{error:{code:"REVISION_CONFLICT",message:"Timeline changed since it was loaded. Refresh and retry."}});
    if(error.code==="CLOUD_TIMELINE_INVALID")return response(422,{error:{code:"TIMELINE_INVALID",message:error.message,issues:error.issues||[]}});
@@ -159,6 +160,7 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
    return response(201,{asset});
   }catch(error){
    if(error.code==="UPLOAD_TOO_LARGE")return response(413,{error:{code:error.code,message:error.message}});
+   if(error.code==="CLOUD_ASSET_ACCESS_DENIED"||error.code==="CLOUD_ASSET_NOT_FOUND")return response(404,{error:{code:"ASSET_NOT_FOUND",message:"Asset not found."}});
    throw error;
   }finally{await rm(directory,{recursive:true,force:true}).catch(()=>{});}
  }
