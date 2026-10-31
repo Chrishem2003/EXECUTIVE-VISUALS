@@ -5,8 +5,8 @@ type RuntimeProject={id:string;name:string;description?:string;revision?:number;
 type RuntimeAsset={id:string;projectId?:string|null;name:string;mediaType:string;size:number;sha256:string;createdAt:string};
 type RuntimeJob={id:string;projectId?:string|null;jobType:string;status:string;progress:number;input:Record<string,unknown>;output?:Record<string,unknown>|null;error?:{code?:string;message?:string}|null;createdAt:string;updatedAt:string};
 type RuntimeReview={id:string;project_id:string;asset_id?:string|null;timecode_seconds?:number|null;decision:string;body:string;status:string;created_at:string};
-const state:{status:"checking"|"offline"|"auth-required"|"online";authMode:"local"|"supabase";user:RuntimeUser|null;projects:RuntimeProject[];assets:RuntimeAsset[];jobs:RuntimeJob[];audit:Array<Record<string,unknown>>;members:Array<{id:string;email:string;role:string;createdAt:string}>;reviews:RuntimeReview[];projectId:string;message:string;ffmpeg:boolean;ffprobe:boolean}={
- status:"checking",authMode:"local",user:null,projects:[],assets:[],jobs:[],audit:[],members:[],reviews:[],projectId:"",message:"",ffmpeg:false,ffprobe:false
+const state:{status:"checking"|"offline"|"auth-required"|"online";authMode:"local"|"supabase";user:RuntimeUser|null;projects:RuntimeProject[];assets:RuntimeAsset[];jobs:RuntimeJob[];audit:Array<Record<string,unknown>>;members:Array<{id:string;email:string;role:string;createdAt:string}>;reviews:RuntimeReview[];projectId:string;message:string;ffmpeg:boolean;ffprobe:boolean;textGatewayEnabled:boolean;textGatewayConfigured:boolean}={
+ status:"checking",authMode:"local",user:null,projects:[],assets:[],jobs:[],audit:[],members:[],reviews:[],projectId:"",message:"",ffmpeg:false,ffprobe:false,textGatewayEnabled:false,textGatewayConfigured:false
 };
 const esc=(value:unknown)=>String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]||c));
 const fmt=(value:string)=>new Date(value).toLocaleString();
@@ -41,7 +41,7 @@ function renderJobs(){
  return '<div class="runtime-jobs">'+state.jobs.map(j=>'<article class="runtime-job"><div class="runtime-job-heading"><b>'+esc(j.jobType)+'</b><span class="job-status '+esc(j.status)+'">'+esc(j.status)+'</span></div><code>'+esc(j.id)+'</code><div class="progress"><i style="width:'+Math.max(0,Math.min(100,j.progress))+'%"></i></div><small>'+Math.round(j.progress)+'% · '+fmt(j.createdAt)+'</small>'+(j.error?'<p class="job-error">'+esc(j.error.code||"ERROR")+' · '+esc(j.error.message||"")+'</p>':'')+(j.status==="queued"||j.status==="running"?'<button data-ev-cancel="'+esc(j.id)+'">Cancel</button>':'')+((j.output&&typeof j.output==="object"&&"outputAsset" in j.output&&j.output.outputAsset&&typeof j.output.outputAsset==="object"&&"id" in j.output.outputAsset)?'<a class="download-output" href="/api/assets/'+esc((j.output.outputAsset as {id:string}).id)+'/file">Download output · '+esc((j.output.outputAsset as {name?:string}).name||"media file")+'</a>':'')+'</article>').join("")+'</div>';
 }
 export function renderRuntimeWorkspace(){
- return '<div id="runtime-workspace"><div class="runtime-toolbar">'+statusMarkup()+'<button class="secondary" data-ev-action="refresh">↻ Refresh</button>'+(state.user?'<button class="secondary" data-ev-action="logout">Sign out · '+esc(state.user.email)+'</button>':'')+'</div>'+
+ return '<div id="runtime-workspace" data-runtime-view="runtime"><div class="runtime-toolbar">'+statusMarkup()+'<button class="secondary" data-ev-action="refresh">↻ Refresh</button>'+(state.user?'<button class="secondary" data-ev-action="logout">Sign out · '+esc(state.user.email)+'</button>':'')+'</div>'+
  (state.status==="offline"?'<div class="notice">The local API is not reachable. Start the complete stack with <code>npm run dev</code>. Planning workspaces remain available; uploads and processing require the API.</div>':'')+
  (state.status==="auth-required"?'<div class="notice">Sign in to activate persistent project and media storage. Other planning workspaces remain available.</div>':'')+
  '<div class="runtime-summary"><div><small>Projects</small><b>'+state.projects.length+'</b></div><div><small>Stored assets</small><b>'+state.assets.length+'</b></div><div><small>Jobs</small><b>'+state.jobs.length+'</b></div><div><small>Local media tools</small><b>'+(state.ffmpeg&&state.ffprobe?"Ready":state.ffprobe?"Probe only":"Not detected")+'</b></div></div>'+
@@ -53,6 +53,26 @@ export function renderRuntimeWorkspace(){
  '<div class="review-list">'+state.reviews.map(r=>'<article><div><b>'+esc(r.decision.replace("_"," "))+'</b><span class="job-status">'+esc(r.status)+'</span></div><p>'+esc(r.body)+'</p><small>'+(r.timecode_seconds===null||r.timecode_seconds===undefined?"No timecode":r.timecode_seconds.toFixed(3)+"s")+' · '+esc(r.created_at)+'</small>'+(state.projects.find(p=>p.id===state.projectId)?.access_role==="owner"||["editor","reviewer"].includes(state.projects.find(p=>p.id===state.projectId)?.access_role||"")?'<div><button data-ev-review-status="resolved" data-ev-review-id="'+esc(r.id)+'">Resolve</button><button data-ev-review-status="open" data-ev-review-id="'+esc(r.id)+'">Reopen</button></div>':'')+'</article>').join("")+'</div></section>'+
  '<section class="panel"><div class="eyebrow">AUDIT TRAIL</div><h3>Recent workspace events</h3>'+(state.audit.length?'<div class="audit-list">'+state.audit.slice(0,25).map(e=>'<div><b>'+esc(e.type)+'</b><small>'+esc(e.subjectType)+' · '+esc(e.subjectId)+' · '+esc(e.createdAt)+'</small></div>').join("")+'</div>':'<div class="empty">No events recorded yet.</div>')+'</section></div>';
 }
+
+export function renderAssetLibrary(){
+ return '<div id="runtime-workspace" data-runtime-view="library"><div class="runtime-toolbar">'+statusMarkup()+'<button class="secondary" data-ev-action="refresh">↻ Refresh</button>'+(state.user?'<button class="secondary" data-ev-action="logout">Sign out</button>':'')+'</div>'+
+ (state.status==="offline"||state.status==="auth-required"?'<div class="notice">Sign in to use the persistent asset library. Browser planning drafts remain available offline.</div>':'')+
+ '<section class="panel"><div class="runtime-section-heading"><div><div class="eyebrow">PRIVATE MEDIA LIBRARY</div><h3>Originals and derivatives</h3></div><span>'+state.assets.length+' stored assets</span></div><label>Project scope</label><select id="ev-project-select">'+projectOptions()+'</select><p>Upload originals, inspect media metadata, create thumbnails, proxies and audio extracts. Source files remain unchanged.</p><label class="upload primary">＋ Import media<input id="ev-upload" type="file" multiple accept="image/*,video/*,audio/*,application/pdf,text/plain"></label>'+renderAssets()+'</section>'+
+ '<section class="panel"><div class="eyebrow">PROCESSING HISTORY</div><h3>Recent media jobs</h3>'+renderJobs()+'</section></div>';
+}
+export function renderEngineStatus(){
+ const local=state.ffmpeg&&state.ffprobe?"Ready":state.ffprobe?"Probe only":"Unavailable";
+ const text=state.textGatewayEnabled&&state.textGatewayConfigured?"Enabled · approval-gated":state.textGatewayEnabled?"Enabled but incomplete":"Disabled by default";
+ return '<div id="runtime-workspace" data-runtime-view="engines"><div class="runtime-toolbar">'+statusMarkup()+'<button class="secondary" data-ev-action="refresh">↻ Refresh status</button></div>'+
+ '<div class="runtime-summary"><div><small>Local media engine</small><b>'+local+'</b></div><div><small>Text gateway</small><b>'+text+'</b></div><div><small>Stored assets</small><b>'+state.assets.length+'</b></div><div><small>Active jobs</small><b>'+state.jobs.filter(j=>["queued","running"].includes(j.status)).length+'</b></div></div>'+
+ '<section class="panel"><div class="eyebrow">CONNECTED LOCAL ADAPTERS</div><h3>Media processing</h3><div class="engine-grid">'+["Media probe · FFprobe","Thumbnails · FFmpeg","Transcode · FFmpeg","Audio extraction · FFmpeg","Proxy generation · FFmpeg","Timeline master render · FFmpeg"].map(label=>'<div class="engine"><i></i><b>'+label+'</b><small>'+(state.ffmpeg||label.startsWith("Media probe")&&state.ffprobe?"Local adapter connected":"Engine unavailable")+'</small></div>').join("")+'</div></section>'+
+ '<section class="panel"><div class="eyebrow">APPROVAL-GATED TEXT ADAPTER</div><h3>Text-model gateway</h3><p>'+text+'. Configure <code>AI_GATEWAY_ENABLED</code>, <code>AI_GATEWAY_URL</code> and <code>AI_GATEWAY_MODEL</code> on the server. The API key remains server-side. A completed upstream human-approval node is required before any text request is sent.</p></section>'+
+ '<section class="panel"><div class="eyebrow">NOT CONNECTED</div><h3>External media generation</h3><p>Image generation, video generation, voice generation, dubbing, lip-sync, enhancement models and publishing adapters are not connected. Their nodes fail closed; the application does not pretend a missing provider has completed a job.</p></section></div>';
+}
+export function renderRuntimeOverview(){
+ return '<div id="runtime-workspace" data-runtime-view="overview" class="stats"><div><small>Persistent projects</small><b>'+state.projects.length+'</b><span>API-backed</span></div><div><small>Stored assets</small><b>'+state.assets.length+'</b><span>Private media storage</span></div><div><small>Active jobs</small><b>'+state.jobs.filter(j=>["queued","running"].includes(j.status)).length+'</b><span>Leased worker queue</span></div><div><small>Local media tools</small><b>'+(state.ffmpeg&&state.ffprobe?"Ready":state.ffprobe?"Probe only":"Unavailable")+'</b><span>FFmpeg / FFprobe</span></div></div>';
+}
+
 async function refresh(){
  const [projects,assets,jobs,audit]=await Promise.all([
   apiRequest<{projects:RuntimeProject[]}>("/api/projects"),
@@ -60,18 +80,18 @@ async function refresh(){
   apiRequest<{jobs:RuntimeJob[]}>("/api/jobs"),
   apiRequest<{events:Array<Record<string,unknown>>}>("/api/audit")
  ]);
- state.projects=projects.projects;state.assets=assets.assets;state.jobs=jobs.jobs;state.audit=audit.events;
+ state.projects=projects.projects;state.assets=assets.assets;state.jobs=jobs.jobs;state.audit=audit.events;window.dispatchEvent(new Event("ev:assets-updated"));
  if(state.projectId&&!state.projects.some(p=>p.id===state.projectId))state.projectId="";
  if(state.projectId){try{const response=await apiRequest<{members:Array<{id:string;email:string;role:string;createdAt:string}>}>("/api/projects/"+state.projectId+"/members");state.members=response.members;}catch{state.members=[];}
   try{const response=await apiRequest<{reviews:RuntimeReview[]}>("/api/reviews?projectId="+encodeURIComponent(state.projectId));state.reviews=response.reviews;}catch{state.reviews=[];}
  }
  else {state.members=[];state.reviews=[];}
 }
-function paint(){updateShell();renderGate();const root=document.querySelector<HTMLElement>("#runtime-workspace");if(root)root.outerHTML=renderRuntimeWorkspace();}
+function paint(){updateShell();renderGate();const root=document.querySelector<HTMLElement>("#runtime-workspace");if(root){const view=root.dataset.runtimeView;root.outerHTML=view==="library"?renderAssetLibrary():view==="engines"?renderEngineStatus():view==="overview"?renderRuntimeOverview():renderRuntimeWorkspace();}}
 export async function initRuntime(){
  try{
-  const health=await apiRequest<{authMode:"local"|"supabase";media:{ffmpeg:boolean;ffprobe:boolean}}>("/api/health");
-  state.authMode=health.authMode;state.ffmpeg=health.media.ffmpeg;state.ffprobe=health.media.ffprobe;
+  const health=await apiRequest<{authMode:"local"|"supabase";media:{ffmpeg:boolean;ffprobe:boolean};textGateway:{enabled:boolean;configured:boolean}}>("/api/health");
+  state.authMode=health.authMode;state.ffmpeg=health.media.ffmpeg;state.ffprobe=health.media.ffprobe;state.textGatewayEnabled=health.textGateway.enabled;state.textGatewayConfigured=health.textGateway.configured;
   try{const me=await apiRequest<{user:RuntimeUser}>("/api/me");state.user=me.user;state.status="online";await refresh();window.dispatchEvent(new Event("ev:authenticated"));}
   catch(error){if(error instanceof ApiError&&error.status===401)state.status="auth-required";else throw error;}
  }catch(error){state.status="offline";state.message=error instanceof Error?error.message:"API unavailable";}
