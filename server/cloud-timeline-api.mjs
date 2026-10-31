@@ -11,20 +11,24 @@ const object=(value)=>value!==null&&typeof value==="object"&&!Array.isArray(valu
  * by the app's verified authentication middleware; request bodies never set
  * owner_id. Service-role credentials remain inside this server-only module.
  */
-export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRoleKey=process.env.SUPABASE_SERVICE_ROLE_KEY,fetchImpl=globalThis.fetch,timelineService,authorize,maxJobBytes=16*1024}={}){
+export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRoleKey=process.env.SUPABASE_SERVICE_ROLE_KEY,fetchImpl=globalThis.fetch,timelineService,authorize,maxJobBytes=5*1024*1024,timeoutMs=15000}={}){
  if(!url||!serviceRoleKey)throw new Error("Cloud timeline API requires server-side Supabase credentials.");
  if(typeof fetchImpl!=="function")throw new Error("Cloud timeline API requires fetch.");
- if(!Number.isInteger(maxJobBytes)||maxJobBytes<1024||maxJobBytes>65536)throw new Error("Cloud timeline API job payload limit is invalid.");
+ if(!Number.isInteger(maxJobBytes)||maxJobBytes<1024||maxJobBytes>10*1024*1024)throw new Error("Cloud timeline API payload limit is invalid.");
+ if(!Number.isInteger(timeoutMs)||timeoutMs<1000||timeoutMs>60000)throw new Error("Cloud timeline API timeout is invalid.");
  const service=timelineService||createCloudTimelineService({url,serviceRoleKey,fetchImpl});
  const allow=authorize||createCloudAssetAuthorizer({url,serviceRoleKey,fetchImpl});
  const base=new URL(url).origin;
  async function request(path,{method="GET",body=null,prefer="return=representation"}={}){
+  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs);
+  try{
   const headers={apikey:serviceRoleKey,authorization:"Bearer "+serviceRoleKey,"accept-profile":"executive_visuals","content-profile":"executive_visuals",accept:"application/json",prefer};
   if(body!==null)headers["content-type"]="application/json";
-  const response=await fetchImpl(base+"/rest/v1/"+path,{method,headers,...(body===null?{}:{body:JSON.stringify(body)})});
+  const response=await fetchImpl(base+"/rest/v1/"+path,{method,headers,...(body===null?{}:{body:JSON.stringify(body)}),signal:controller.signal});
   const raw=await response.text();let data=null;if(raw){try{data=JSON.parse(raw);}catch{throw new Error("Cloud timeline API received an invalid database response.");}}
   if(!response.ok){const error=new Error("Cloud timeline API database request failed (HTTP "+response.status+").");error.status=response.status;error.code="CLOUD_TIMELINE_API_DATABASE_ERROR";throw error;}
   return data;
+  }catch(error){if(error?.name==="AbortError"){const timeout=new Error("Cloud timeline API request timed out.");timeout.code="CLOUD_TIMELINE_API_TIMEOUT";throw timeout;}throw error;}finally{clearTimeout(timer);}
  }
  const response=(status,body)=>({status,body});
  async function handle({method,path,ownerId,body={},idempotencyKey=null}={}){
