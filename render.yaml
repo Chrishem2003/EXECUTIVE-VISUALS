@@ -29,6 +29,6 @@ services:
       - key: AUTH_MODE
         value: local
       - key: REQUIRE_PERSISTENT_DATA_DIR
-        value: true
+        value: "true"
       - key: MAX_UPLOAD_BYTES
-        value: 262144000
+        value: "262144000"
