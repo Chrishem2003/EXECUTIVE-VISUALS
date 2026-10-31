@@ -183,3 +183,16 @@ Cloud asset authorization: `server/cloud-asset-auth.mjs` implements fail-closed 
 
 
 Cloud media IO: `server/cloud-media-io.mjs` provides an opt-in FFmpeg-worker boundary for materializing authorized cloud assets into isolated temporary files and publishing generated files through the cloud asset repository. It enforces download/upload size limits, validates signed download URLs as HTTPS without embedded credentials, verifies downloaded SHA-256 and byte size against metadata, rejects redirects, prefers checksum-producing streaming uploads for generated media files (with bounded buffered fallback for repositories that do not implement streaming), bounds fallback output-file reads before allocation, detects output mutation during reads, and exposes idempotent temporary-directory cleanup. The cloud storage adapter now streams regular files to the private bucket with a fixed content length, byte limit, SHA-256 receipt and mutation checks; the cloud asset repository can persist the returned receipt without buffering the entire render in memory. Contract-tested, but **not yet wired into `executeMediaJob`, timeline rendering, the HTTP asset routes, or a cloud worker deployment**. The current SQLite/local-disk execution path remains the active path.
+
+
+## Cloud timeline renderer — implemented and contract-tested
+
+The cloud timeline worker now defaults to a real FFmpeg renderer that consumes the verified temporary files supplied by the cloud media IO layer. It no longer requires an external render callback for the standard path.
+
+- Reuses the shared FFmpeg process runner and the existing subtitle timing/style helpers; the local SQLite renderer remains unchanged.
+- Renders a primary video track with still-image or video sources, black gap-fill, synchronized audio tracks, gain control, still-image overlays with bounded placement/opacity, and burned-in SRT/VTT caption clips.
+- Enforces a single primary video track, non-overlapping clips, supported media types, bounded output dimensions/frame rate, no unimplemented speed changes, and a 2 MiB caption-source limit.
+- Uses the cloud worker's abort signal for process cancellation, writes only inside the isolated job work directory, and returns a private MP4 master for checksum publication by the cloud timeline executor.
+- CI includes a real FFmpeg/FFprobe integration test that verifies the rendered output contains both video and audio streams, plus overlap and cancellation checks.
+
+This closes the renderer-adapter gap in the cloud timeline execution contract. It does **not** mean the cloud path is deployed or live: the isolated database migration is still unapplied, the custom schema/API exposure and credentials are not configured, and the cloud worker is not connected to the HTTP API or a running service. SQLite/local-disk rendering remains the active application path.
