@@ -330,9 +330,9 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
     args.push(outputPath);
   }
   const outputPath = join(outputDir,id+"."+ext);
-  progress(35);
+  onProgress(35);
   await run("ffmpeg", args,30*60*1000,job.id,activeProcesses,cancelled);
-  progress(85);
+  onProgress(85);
   if (cancelled()) { await unlink(outputPath).catch(()=>{}); throw Object.assign(new Error("Job cancelled."), { code:"JOB_CANCELLED" }); }
   
   const fileStat = await stat(outputPath);
