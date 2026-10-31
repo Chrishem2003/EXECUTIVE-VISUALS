@@ -82,10 +82,10 @@ try{
   id:"provider",projectId:"",revision:1,nodes:[
    {id:"text",kind:"text",label:"Brief",inputs:[],outputs:[{id:"text",type:"text"}],config:{text:"Create a scene"}},
    {id:"gate",kind:"approval",label:"Approved gate",inputs:[],outputs:[{id:"approved",type:"any"}],config:{}},
-   {id:"image",kind:"image.generate",label:"Image generation",inputs:[{id:"prompt",type:"text",required:true}],outputs:[{id:"image",type:"image"}],config:{}}
+   {id:"image",kind:"image.generate",label:"Image generation",inputs:[{id:"prompt",type:"text",required:true},{id:"approval",type:"any"}],outputs:[{id:"image",type:"image"}],config:{}}
   ],edges:[
    {id:"prompt-edge",sourceNodeId:"text",sourcePortId:"text",targetNodeId:"image",targetPortId:"prompt"},
-   {id:"approval-edge",sourceNodeId:"gate",sourcePortId:"approved",targetNodeId:"image",targetPortId:"prompt"}
+   {id:"approval-edge",sourceNodeId:"gate",sourcePortId:"approved",targetNodeId:"image",targetPortId:"approval"}
   ]
  };
  const providerJob=seedRun("run-provider",provider);
