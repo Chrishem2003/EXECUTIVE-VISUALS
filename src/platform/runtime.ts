@@ -83,6 +83,7 @@ export function renderRuntimeOverview(){
 }
 
 export function getCurrentProjectId(){return state.projectId;}
+export function canEditCurrentProject(){const project=state.projects.find(item=>item.id===state.projectId);return Boolean(project&&["owner","editor"].includes(project.access_role||""));}
 export async function loadCreativeDraft(projectId=state.projectId){
  if(!projectId||state.status!=="online")return null;
  const result=await apiRequest<{document:Record<string,unknown>;revision:number}>("/api/projects/"+projectId+"/workspace");
