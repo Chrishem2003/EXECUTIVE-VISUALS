@@ -103,6 +103,21 @@ All remote jobs must be idempotent, bounded by timeouts and retry policy, rate-l
 - Google Gemini API video generation: https://ai.google.dev/gemini-api/docs/video
 - OpenAI audio guide: https://developers.openai.com/api/docs/guides/audio
 
+
+## Implementation update — asynchronous image adapter
+
+The working branch now includes an opt-in asynchronous image adapter for the first remote-provider candidate. It submits a generation request, polls normalized queue states, fetches the completed result, and returns bytes to the existing generated-asset persistence path. The generic workflow executor still requires its existing human approval checkpoint before the image node can run.
+
+**Server-side configuration only** (never place these values in browser code):
+- `IMAGE_GATEWAY_ENABLED=true`
+- `IMAGE_GATEWAY_PROVIDER=fal`
+- `IMAGE_GATEWAY_ALLOW_REMOTE=true` (explicit remote-call opt-in)
+- `FAL_KEY=<server-side secret>`
+- `FAL_IMAGE_MODEL=<model endpoint slug>`
+- Optional `IMAGE_GATEWAY_TIMEOUT_MS` (bounded to 1–300 seconds)
+
+The adapter restricts queue status/result URLs to the provider's queue host, requires HTTPS, disables redirects, restricts output downloads to the provider media domain, caps response/image bytes, and uses generic errors that do not disclose credentials. The existing generated-asset store performs image-signature validation and private asset persistence after bytes are returned. This integration is **adapter-ready, not connected or live-verified**: no provider secret has been configured and no paid request has been made. Automated tests mock the upstream API; they prove request/poll/output-host behavior, not real-provider availability, model-specific schema compatibility, price or image quality. Before any production enablement, run a controlled acceptance test, verify current model input schema and pricing, add quota/cost enforcement and durable cloud media storage, and check the provider's current output-host contract.
+
 ## Evidence and status discipline
 
 This matrix is a recommended integration plan derived from public official documentation and the repository's inspected gateway/media architecture. It does not mean a provider has been connected, credentials have been configured, or live generation has been tested. Keep each provider in `planned`, `adapter-ready`, `configured`, `connected`, `verified`, or `disabled` state based on evidence.
