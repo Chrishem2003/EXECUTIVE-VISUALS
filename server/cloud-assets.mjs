@@ -86,12 +86,13 @@ export function createCloudAssetRepository({
       const id=randomUUID(),name=safeName(originalName),sha256=createHash("sha256").update(bytes).digest("hex");
       const objectPath=buildCloudAssetObjectPath({ownerId,projectId,assetId:id,filename:"original."+EXTENSIONS.get(mediaType)});
       const uploaded=await storage.upload(objectPath,bytes,mediaType);
+      if(uploaded?.bucket!=="executive-visuals-media"||uploaded?.path!==objectPath||uploaded?.size!==bytes.byteLength){try{await storage.remove(objectPath);}catch{}throw new Error("Cloud storage returned an unexpected upload receipt.");}
       try {
         const rows=await request("assets?select=id,owner_id,project_id,original_name,media_type,byte_size,sha256,storage_bucket,object_path,derivative_of,metadata,created_at",{
           method:"POST",prefer:"return=representation",
           body:{id,owner_id:ownerId,project_id:projectId,original_name:name,media_type:mediaType,byte_size:bytes.byteLength,sha256,storage_bucket:uploaded.bucket,object_path:objectPath,derivative_of:derivativeOf,metadata}
         });
-        if(!Array.isArray(rows)||rows.length!==1||rows[0].id!==id||rows[0].owner_id!==ownerId||rows[0].object_path!==objectPath) throw new Error("Cloud asset metadata insert did not return the expected record.");
+        if(!Array.isArray(rows)||rows.length!==1||rows[0].id!==id||rows[0].owner_id!==ownerId||rows[0].project_id!==projectId||rows[0].object_path!==objectPath||rows[0].storage_bucket!=="executive-visuals-media"||Number(rows[0].byte_size)!==bytes.byteLength||rows[0].sha256!==sha256) throw new Error("Cloud asset metadata insert did not return the expected record.");
         return publicAsset(rows[0]);
       } catch(error) {
         try { await storage.remove(objectPath); }
@@ -105,7 +106,8 @@ export function createCloudAssetRepository({
       const row=Array.isArray(rows)?rows[0]:null;
       if(!row||(!row.project_id&&row.owner_id!==ownerId)) {const error=new Error("Cloud asset not found.");error.code="CLOUD_ASSET_NOT_FOUND";throw error;}
       await allowed(ownerId,row.project_id||null,"read");
-      if(row.storage_bucket!=="executive-visuals-media"||typeof row.object_path!=="string") throw new Error("Cloud asset storage reference is invalid.");
+      const expectedPrefix=(row.project_id||row.owner_id)+"/"+row.id+"/";
+      if(row.storage_bucket!=="executive-visuals-media"||typeof row.object_path!=="string"||!row.object_path.startsWith(expectedPrefix)) throw new Error("Cloud asset storage reference is invalid.");
       return {asset:publicAsset(row),url:await storage.createSignedUrl(row.object_path,expiresIn)};
     },
     async softDelete({ownerId,assetId}) {
@@ -114,6 +116,8 @@ export function createCloudAssetRepository({
       const row=Array.isArray(rows)?rows[0]:null;
       if(!row||(!row.project_id&&row.owner_id!==ownerId)) {const error=new Error("Cloud asset not found.");error.code="CLOUD_ASSET_NOT_FOUND";throw error;}
       await allowed(ownerId,row.project_id||null,"write");
+      const expectedPrefix=(row.project_id||row.owner_id)+"/"+row.id+"/";
+      if(row.storage_bucket!=="executive-visuals-media"||typeof row.object_path!=="string"||!row.object_path.startsWith(expectedPrefix)) throw new Error("Cloud asset storage reference is invalid.");
       const changed=await request("assets?id=eq."+encodeURIComponent(assetId)+"&deleted_at=is.null",{method:"PATCH",prefer:"return=representation",body:{deleted_at:new Date().toISOString()}});
       if(!Array.isArray(changed)||changed.length!==1) throw new Error("Cloud asset could not be safely marked deleted.");
       let storageRemoved=false;
