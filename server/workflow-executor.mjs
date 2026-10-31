@@ -158,7 +158,7 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
     const checksum=createHash("sha256").update(buffer).digest("hex");
     if(checksum!==source.sha256)throw Object.assign(new Error("Audio asset checksum verification failed."),{code:"ASSET_CHECKSUM_MISMATCH"});
     const result=await transcribeVoice({buffer,mimeType:source.media_type,filename:source.original_name,language:String(config.language||"")});
-    output=nodeOutput(node,result.text);output.transcript=result.text;output.text=result.text;output.language=result.language;output.duration=result.duration;output.segments=result.segments;output.sourceAssetId=source.id;output.sourceAudio=source.id;output.model=result.model;
+    output=nodeOutput(node,result.text);output.transcript=result.text;output.text=result.text;output.language=result.language;output.duration=result.duration;output.segments=result.segments;output.sourceAssetId=source.id;output.sourceAudio=source.id;output.language=result.language;output.model=result.model;
    }else if(node.kind==="voice.caption"){
     const segments=values.segments??config.segments;
     const sourceAssetId=String(values.sourceAudio??values.sourceAssetId??config.sourceAssetId??"");
