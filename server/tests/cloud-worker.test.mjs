@@ -62,7 +62,7 @@ test("worker stops and does not finish when lease renewal is lost",async()=>{
 
 test("worker validates inputs and output before finishing",async()=>{
  const queue=queueFor();
- await assert.rejects(()=>runCloudWorkerCycle({queue,workerId:"",execute:async()=>({})}),/Worker ID/);
+ await assert.rejects(()=>runCloudWorkerCycle({queue,workerId:"",execute:async()=>({})}),/worker ID/i);
  await assert.rejects(()=>runCloudWorkerCycle({queue,workerId:"worker-1",execute:async()=>({}),leaseSeconds:15,heartbeatIntervalMs:15000}),/Heartbeat interval/);
  const invalid=await runCloudWorkerCycle({
   queue:queueFor(),workerId:"worker-1",heartbeatIntervalMs:60000,
