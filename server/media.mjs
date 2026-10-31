@@ -195,7 +195,7 @@ async function renderTimelineJob({db,job,mediaRoot,activeProcesses,onProgress}){
     if(duration<=0)continue;
     const asset=getAccessibleAsset(db,job.owner_id,String(clip.assetId),true);
     const extension=extname(asset?.original_name||"").toLowerCase();
-    if(!asset||asset.media_type!=="text/plain"||![".srt",".vtt"].includes(extension))throw Object.assign(new Error("Caption tracks require accessible SRT or VTT text assets."),{code:"UNSUPPORTED_CAPTION_SOURCE"});
+    if(!asset||!["text/plain","text/vtt"].includes(asset.media_type)||![".srt",".vtt"].includes(extension))throw Object.assign(new Error("Caption tracks require accessible SRT or VTT text assets."),{code:"UNSUPPORTED_CAPTION_SOURCE"});
     const captionPath=join(mediaRoot,asset.storage_path),captionContent=await readFile(captionPath,"utf8");
     if(Buffer.byteLength(captionContent,"utf8")>2*1024*1024)throw Object.assign(new Error("Caption source exceeds the 2 MB limit."),{code:"CAPTION_LIMIT_EXCEEDED"});
     const adjusted=buildSrt(captionContent,clip);
