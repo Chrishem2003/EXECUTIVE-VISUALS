@@ -192,14 +192,14 @@ create or replace function executive_visuals.prevent_owner_reassignment()
 returns trigger
 language plpgsql
 set search_path = pg_catalog
-as $
+as $$
 begin
   if new.owner_id is distinct from old.owner_id then
     raise exception 'owner_id is immutable';
   end if;
   return new;
 end;
-$;
+$$;
 
 create trigger ev_projects_owner_immutable before update of owner_id on executive_visuals.projects
 for each row execute function executive_visuals.prevent_owner_reassignment();
