@@ -93,6 +93,9 @@ test("local media jobs are queued with idempotency and no duplicate execution",a
   const replayBody=await replay.json();
   assert.equal(replayBody.idempotentReplay,true);
   assert.equal(replayBody.job.id,firstJob.id);
+  const conflictingReplay=await request("/api/jobs",{method:"POST",headers:{"content-type":"application/json","idempotency-key":"probe-001"},body:JSON.stringify({jobType:"media.thumbnail",sourceAssetId:asset.id})},cookie);
+  assert.equal(conflictingReplay.status,409);
+  assert.equal((await conflictingReplay.json()).error.code,"IDEMPOTENCY_CONFLICT");
   const events=await request("/api/jobs/"+firstJob.id+"/events",{},cookie);
   assert.ok((await events.json()).events.some(x=>x.type==="job.queued"));
 });
@@ -230,7 +233,7 @@ test("project membership separates editor, reviewer and viewer permissions",asyn
       {id:"clip",assetId:asset.id,name:"Shared image",sourceRange:{start:{value:0,rate:24},duration:{value:120,rate:24}},timelineStart:{value:0,rate:24},duration:{value:120,rate:24},enabled:true}
     ]}],markers:[]
   };
-  const save=await request("/api/timelines",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({projectId:project.id,timeline})},editor);
+  const save=await request("/api/timelines",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({projectId:project.id,timeline})},owner);
   assert.equal(save.status,201,await save.clone().text());
   const timelineId=(await save.json()).timeline.id;
   const viewerRead=await request("/api/timelines/"+timelineId,{},viewer);
@@ -239,6 +242,17 @@ test("project membership separates editor, reviewer and viewer permissions",asyn
   assert.equal(viewerEdit.status,403);
   const editorEdit=await request("/api/timelines/"+timelineId,{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({revision:1,timeline})},editor);
   assert.equal(editorEdit.status,200);
+  assert.equal((await editorEdit.json()).revision,2);
+  const afterEditorEdit=await request("/api/timelines/"+timelineId,{},owner);
+  assert.equal((await afterEditorEdit.json()).timeline.revision,2,"editor changes must actually persist on an owner-created timeline");
+
+  const sharedGraph={nodes:[{id:"input",kind:"text",label:"Input",inputs:[],outputs:[{id:"out",type:"text"}],config:{}},{id:"output",kind:"llm.prompt",label:"Output",inputs:[{id:"in",type:"text",required:true}],outputs:[{id:"out",type:"text"}],config:{}}],edges:[{id:"edge",sourceNodeId:"input",sourcePortId:"out",targetNodeId:"output",targetPortId:"in"}]};
+  const ownerWorkflow=await request("/api/workflows",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({projectId:project.id,name:"Shared graph",graph:sharedGraph})},owner);
+  assert.equal(ownerWorkflow.status,201);
+  const workflowId=(await ownerWorkflow.json()).workflow.id;
+  const editorWorkflow=await request("/api/workflows/"+workflowId,{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({revision:1,name:"Edited by team member",graph:sharedGraph})},editor);
+  assert.equal(editorWorkflow.status,200);
+  assert.equal((await editorWorkflow.json()).revision,2,"editor changes must persist on an owner-created workflow");
   const editorInvite=await request("/api/projects/"+project.id+"/members",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({email:"owner-a@example.test",role:"viewer"})},editor);
   assert.equal(editorInvite.status,403);
   const remove=await request("/api/projects/"+project.id+"/members/"+JSON.parse(await addEditor.clone().text()).member.id,{method:"DELETE"},owner);
