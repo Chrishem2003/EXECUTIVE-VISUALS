@@ -23,13 +23,14 @@ test("uploads private assets to the fixed bucket using server credentials",async
 
 test("signed URLs are short-lived, validated and pinned to the configured origin",async()=>{
  const calls=[];
- const storage=createCloudStorage({...config,fetchImpl:async(url,options)=>{calls.push({url,options});return response({signedURL:"/storage/v1/object/sign/executive-visuals-media/"+path+"?token=temporary"});}});
+ const storage=createCloudStorage({...config,fetchImpl:async(url,options)=>{calls.push({url,options});return response({signedURL:"/object/sign/executive-visuals-media/"+path+"?token=temporary"});}});
  const url=await storage.createSignedUrl(path,300);
  assert.equal(new URL(url).origin,"https://example.supabase.co");
+ assert.ok(new URL(url).pathname.startsWith("/storage/v1/object/sign/"));
  assert.equal(calls[0].options.method,"POST");
  assert.deepEqual(JSON.parse(calls[0].options.body),{expiresIn:300});
  await assert.rejects(()=>storage.createSignedUrl(path,10),/expiry/);
- const foreign=createCloudStorage({...config,fetchImpl:async()=>response({signedURL:"https://attacker.example/steal"})});
+ const foreign=createCloudStorage({...config,fetchImpl:async()=>response({signedURL:"https://example.supabase.co/not-a-storage-link"})});
  await assert.rejects(()=>foreign.createSignedUrl(path),/unsafe signed URL/);
 });
 
