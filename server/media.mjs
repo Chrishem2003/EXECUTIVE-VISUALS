@@ -70,7 +70,6 @@ async function renderTimelineJob({db,job,mediaRoot,activeProcesses,onProgress}){
   const width=Math.max(256,Math.min(7680,Math.floor(Number(timeline.width)||1920)));
   const height=Math.max(144,Math.min(4320,Math.floor(Number(timeline.height)||1080)));
   const fpsNum=Number(timeline.frameRate?.numerator)||24,fpsDen=Number(timeline.frameRate?.denominator)||1;
-  const fpsValue=fpsNum/fpsDen;
   const outputDir=join(mediaRoot,"derived");await mkdir(outputDir,{recursive:true});
   const outputId=randomUUID(),outputPath=join(outputDir,outputId+".mp4"),args=["-hide_banner","-y"];
   const segments=[];let cursor=0,inputIndex=0,segmentIndex=0;
@@ -84,7 +83,6 @@ async function renderTimelineJob({db,job,mediaRoot,activeProcesses,onProgress}){
       const gap=start-cursor;
       args.push("-f","lavfi","-t",gap.toFixed(6),"-i",`color=c=black:s=${width}x${height}:r=${fpsNum}/${fpsDen}`);
       const label="v"+segmentIndex++;
-      args.push();
       segments.push({index:inputIndex,label,filter:`[${inputIndex}:v]fps=${fpsNum}/${fpsDen},format=yuv420p,setsar=1[${label}]`});
       inputIndex++;
     }
@@ -129,7 +127,17 @@ async function renderTimelineJob({db,job,mediaRoot,activeProcesses,onProgress}){
   args.push("-filter_complex",filterGraph,"-map","[vout]");
   if(audioFilters.length)args.push("-map","[aout]","-c:a","aac","-b:a","192k");else args.push("-an");
   args.push("-c:v","libx264","-preset","veryfast","-crf","20","-pix_fmt","yuv420p","-movflags","+faststart","-r",`${fpsNum}/${fpsDen}`,outputPath);
-  await run("ffmpeg",args,60*60*1000,job.id,activeProcesses);
+  const cancelled=()=>db.prepare("SELECT status FROM jobs WHERE id=?").get(job.id)?.status==="cancelled";
+  try {
+    await run("ffmpeg",args,60*60*1000,job.id,activeProcesses);
+  } catch(error) {
+    await unlink(outputPath).catch(()=>{});
+    throw error;
+  }
+  if(cancelled()){
+    await unlink(outputPath).catch(()=>{});
+    throw Object.assign(new Error("Job cancelled."),{code:"JOB_CANCELLED"});
+  }
   onProgress(92);
   const fileStat=await stat(outputPath),hash=createHash("sha256");
   await pipeline(createReadStream(outputPath),new Transform({transform(chunk,enc,cb){hash.update(chunk);cb(null,chunk);}}),new Transform({transform(chunk,enc,cb){cb();}}));
