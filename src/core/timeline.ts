@@ -60,7 +60,11 @@ export function trimClip(timeline:EditorialTimeline,trackId:string,clipId:string
   const removeLeft=Math.max(0,Math.floor(leftFrames)),removeRight=Math.max(0,Math.floor(rightFrames));
   const remaining=clip.duration.value-removeLeft-removeRight;
   if(remaining<=0)throw new Error("Trim would remove the entire clip.");
-  const changed={...clip,sourceRange:{start:rational(clip.sourceRange.start.value+removeLeft,clip.sourceRange.start.rate),duration:rational(remaining,clip.sourceRange.duration.rate)},timelineStart:rational(clip.timelineStart.value+removeLeft,clip.timelineStart.rate),duration:rational(remaining,fps)};
+  const sourceLeft=Math.round(removeLeft/fps*clip.sourceRange.start.rate);
+  const sourceRight=Math.round(removeRight/fps*clip.sourceRange.duration.rate);
+  const sourceRemaining=clip.sourceRange.duration.value-sourceLeft-sourceRight;
+  if(sourceRemaining<=0)throw new Error("Trim would remove the entire source range.");
+  const changed={...clip,sourceRange:{start:rational(clip.sourceRange.start.value+sourceLeft,clip.sourceRange.start.rate),duration:rational(sourceRemaining,clip.sourceRange.duration.rate)},timelineStart:rational(clip.timelineStart.value+removeLeft,clip.timelineStart.rate),duration:rational(remaining,fps)};
   return {...timeline,revision:timeline.revision+1,updatedAt:new Date().toISOString(),tracks:timeline.tracks.map(item=>item.id===trackId?{...item,clips:item.clips.map(c=>c.id===clipId?changed:c)}:item)};
 }
 export function splitClip(timeline:EditorialTimeline,trackId:string,clipId:string,atFrame:number,newClipId:string):EditorialTimeline{
@@ -73,8 +77,11 @@ export function splitClip(timeline:EditorialTimeline,trackId:string,clipId:strin
   if(offset<=0||offset>=duration)throw new Error("Split point must be inside the clip.");
   if(track.clips.some(item=>item.id===newClipId))throw new Error("New clip ID already exists.");
   const fps=timeline.frameRate.numerator/timeline.frameRate.denominator;
-  const first={...clip,duration:rational(offset,fps),sourceRange:{...clip.sourceRange,duration:rational(offset,clip.sourceRange.duration.rate)}};
-  const second={...clip,id:newClipId,name:clip.name+" · B",timelineStart:rational(start+offset,fps),duration:rational(duration-offset,fps),sourceRange:{start:rational(clip.sourceRange.start.value+offset,clip.sourceRange.start.rate),duration:rational(duration-offset,clip.sourceRange.duration.rate)}};
+  const sourceOffset=Math.round(offset/fps*clip.sourceRange.start.rate);
+  const sourceRemaining=clip.sourceRange.duration.value-sourceOffset;
+  if(sourceRemaining<=0)throw new Error("Split point is outside the source range.");
+  const first={...clip,duration:rational(offset,fps),sourceRange:{...clip.sourceRange,duration:rational(sourceOffset,clip.sourceRange.duration.rate)}};
+  const second={...clip,id:newClipId,name:clip.name+" · B",timelineStart:rational(start+offset,fps),duration:rational(duration-offset,fps),sourceRange:{start:rational(clip.sourceRange.start.value+sourceOffset,clip.sourceRange.start.rate),duration:rational(sourceRemaining,clip.sourceRange.duration.rate)}};
   return {...timeline,revision:timeline.revision+1,updatedAt:new Date().toISOString(),tracks:timeline.tracks.map(item=>item.id===trackId?{...item,clips:item.clips.flatMap(c=>c.id===clipId?[first,second]:[c])}:item)};
 }
 export function moveClip(timeline:EditorialTimeline,fromTrackId:string,clipId:string,toTrackId:string,toFrame:number):EditorialTimeline{
@@ -85,11 +92,13 @@ export function moveClip(timeline:EditorialTimeline,fromTrackId:string,clipId:st
   if(to.clips.some(item=>item.id===clipId))throw new Error("Destination already contains this clip.");
   const fps=timeline.frameRate.numerator/timeline.frameRate.denominator;
   const moved={...clip,timelineStart:rational(Math.max(0,Math.floor(toFrame)),fps)};
-  const tracks=timeline.tracks.map(track=>{
-    if(track.id===fromTrackId)return {...track,clips:track.clips.filter(item=>item.id!==clipId)};
-    if(track.id===toTrackId)return {...track,clips:[...track.clips,moved].sort((a,b)=>seconds(a.timelineStart)-seconds(b.timelineStart))};
-    return track;
-  });
+  const tracks=fromTrackId===toTrackId
+    ? timeline.tracks.map(track=>track.id===fromTrackId?{...track,clips:track.clips.map(item=>item.id===clipId?moved:item).sort((a,b)=>seconds(a.timelineStart)-seconds(b.timelineStart))}:track)
+    : timeline.tracks.map(track=>{
+        if(track.id===fromTrackId)return {...track,clips:track.clips.filter(item=>item.id!==clipId)};
+        if(track.id===toTrackId)return {...track,clips:[...track.clips,moved].sort((a,b)=>seconds(a.timelineStart)-seconds(b.timelineStart))};
+        return track;
+      });
   const updated={...timeline,revision:timeline.revision+1,updatedAt:new Date().toISOString(),tracks};
   const validation=validateTimeline(updated);if(!validation.valid)throw new Error(validation.issues[0].message);
   return updated;
@@ -138,5 +147,5 @@ export function toOpenTimelineIo(timeline:EditorialTimeline):OtioObject{
     }
     return {OTIO_SCHEMA:"Track.1",name:track.name,kind:track.kind==="audio"?"Audio":"Video",children,metadata:{executiveVisuals:{trackId:track.id,role:track.kind,enabled:track.enabled,locked:track.locked}}};
   });
-  return {OTIO_SCHEMA:"Timeline.1",name:timeline.name,global_start_time:otioTime(rational(0,timeline.frameRate.numerator/timeline.frameRate.denominator)),tracks:{OTIO_SCHEMA:"Stack.1",name:"Tracks",children:tracks},metadata:{executiveVisuals:{id:timeline.id,projectId:timeline.projectId,revision:timeline.revision,frameRate:timeline.frameRate,width:timeline.width,height:timeline.height,pixelAspectRatio:timeline.pixelAspectRatio,markers:timeline.markers}}};
+  return {OTIO_SCHEMA:"Timeline.1",name:timeline.name,global_start_time:otioTime(rational(0,timeline.frameRate.numerator/timeline.frameRate.denominator)),tracks:{OTIO_SCHEMA:"Stack.1",name:"Tracks",children:tracks},markers:timeline.markers.map(marker=>({OTIO_SCHEMA:"Marker.2",name:marker.name,marked_range:otioRange({start:marker.start,duration:marker.duration||rational(0,marker.start.rate)}),color:marker.color||"GREEN",metadata:{executiveVisuals:{id:marker.id,note:marker.note||""}}})),metadata:{executiveVisuals:{id:timeline.id,projectId:timeline.projectId,revision:timeline.revision,frameRate:timeline.frameRate,width:timeline.width,height:timeline.height,pixelAspectRatio:timeline.pixelAspectRatio}}};
 }
