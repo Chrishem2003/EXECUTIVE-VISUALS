@@ -46,7 +46,7 @@ test("renew, recovery and finish map to the committed RPC contracts",async()=>{
 test("configuration, arguments and HTTP errors fail closed",async()=>{
   assert.throws(()=>createCloudQueue({url:"http://remote.example",serviceRoleKey:"secret"}),/HTTPS/);
   assert.throws(()=>createCloudQueue({url:base.url}),/SUPABASE_SERVICE_ROLE_KEY/);
-  const queue=createCloudQueue({...base,fetchImpl:async()=>response({message:"permission denied"},403)});
+  const queue=createCloudQueue({...base,fetchImpl:async()=>response({message:"permission denied: "+base.serviceRoleKey},403)});
   await assert.rejects(()=>queue.claim("worker-1"),error=>error.code==="CLOUD_QUEUE_HTTP_403"&&!error.message.includes(base.serviceRoleKey));
   await assert.rejects(()=>queue.claim(""),/Worker ID/);
   await assert.rejects(()=>queue.claim("worker-1",10),/Lease duration/);
