@@ -72,6 +72,30 @@ try{
  );
  assert.equal(db.prepare("SELECT status FROM workflow_runs WHERE id='run-2'").get().status,"blocked");
  assert.equal(db.prepare("SELECT status FROM workflow_node_runs WHERE run_id='run-2' AND node_id='generate'").get().status,"blocked");
+
+ const branchGraph={id:"branch-graph",projectId:"",revision:1,name:"Conditional route",nodes:[
+  {id:"input",kind:"text",label:"Input",inputs:[],outputs:[{id:"text",type:"text"}],config:{text:"publish"}},
+  {id:"branch",kind:"branch",label:"Route",inputs:[{id:"input",type:"any",required:true}],outputs:[{id:"true",type:"any"},{id:"false",type:"any"}],config:{operator:"equals",compareTo:"publish"}},
+  {id:"yes",kind:"merge",label:"True path",inputs:[{id:"items",type:"any",required:true,multiple:true}],outputs:[{id:"result",type:"any"}],config:{}},
+  {id:"no",kind:"merge",label:"False path",inputs:[{id:"items",type:"any",required:true,multiple:true}],outputs:[{id:"result",type:"any"}],config:{}}
+ ],edges:[
+  {id:"input-branch",sourceNodeId:"input",sourcePortId:"text",targetNodeId:"branch",targetPortId:"input"},
+  {id:"branch-yes",sourceNodeId:"branch",sourcePortId:"true",targetNodeId:"yes",targetPortId:"items"},
+  {id:"branch-no",sourceNodeId:"branch",sourcePortId:"false",targetNodeId:"no",targetPortId:"items"}
+ ]};
+ db.prepare("INSERT INTO workflows(id,owner_id,project_id,name,graph_json,graph_hash) VALUES(?,?,?,?,?,?)")
+  .run("workflow-3","workflow-user",null,"Conditional route",JSON.stringify(branchGraph),"f".repeat(64));
+ db.prepare("INSERT INTO workflow_runs(id,workflow_id,owner_id,workflow_revision,snapshot_hash,snapshot_json,status,job_id) VALUES(?,?,?,?,?,?,'queued',?)")
+  .run("run-3","workflow-3","workflow-user",1,"1".repeat(64),JSON.stringify({...branchGraph,runPlan:{executionOrder:["input","branch","yes","no"]}}),"job-3");
+ for(const nodeId of ["input","branch","yes","no"])db.prepare("INSERT INTO workflow_node_runs(id,run_id,node_id,status) VALUES(?,?,?,'pending')").run("node-run-"+nodeId,"run-3",nodeId);
+ db.prepare("INSERT INTO jobs(id,owner_id,job_type,status,progress,input_json) VALUES(?,?,?,'running',5,?)")
+  .run("job-3","workflow-user","workflow.execute",JSON.stringify({runId:"run-3"}));
+ const branchResult=await executeWorkflowRun({db,job:{...job,id:"job-3",input_json:JSON.stringify({runId:"run-3"})},mediaRoot,activeProcesses:new Map(),onProgress:()=>{}});
+ assert.equal(branchResult.status,"completed");
+ assert.equal(db.prepare("SELECT status FROM workflow_node_runs WHERE run_id='run-3' AND node_id='yes'").get().status,"completed");
+ assert.equal(db.prepare("SELECT status FROM workflow_node_runs WHERE run_id='run-3' AND node_id='no'").get().status,"skipped");
+ const trueOutput=JSON.parse(db.prepare("SELECT output_json FROM workflow_node_runs WHERE run_id='run-3' AND node_id='yes'").get().output_json);
+ assert.deepEqual(trueOutput.result,["publish"]);
  console.log("Workflow executor integration passed: locked output reuse, partial target execution, approval pause/resume, durable node history and safe blocking of unconnected generation adapters.");
 }finally{
  db.close();
