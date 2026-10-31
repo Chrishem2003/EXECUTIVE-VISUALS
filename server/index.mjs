@@ -451,6 +451,46 @@ export function createAppServer() {
         }
       }
 
+      if(path==="/api/reviews"&&req.method==="GET"){
+        const projectId=url.searchParams.get("projectId");
+        if(projectId&&!getProjectAccess(db,user.id,projectId)){fail(res,404,"PROJECT_NOT_FOUND","Project not found.");return;}
+        const rows=projectId
+          ? db.prepare("SELECT * FROM reviews WHERE project_id=? ORDER BY created_at DESC").all(projectId)
+          : db.prepare("SELECT * FROM reviews WHERE (project_id IS NULL AND owner_id=?) OR project_id IN (SELECT id FROM projects WHERE owner_id=?) OR project_id IN (SELECT project_id FROM project_members WHERE member_id=?) ORDER BY created_at DESC LIMIT 200").all(user.id,user.id,user.id);
+        send(res,200,{reviews:rows},cors);return;
+      }
+      if(path==="/api/reviews"&&req.method==="POST"){
+        const body=await readJson(req),projectId=String(body.projectId||"");
+        const access=getProjectAccess(db,user.id,projectId);
+        if(!access){fail(res,404,"PROJECT_NOT_FOUND","Project not found.");return;}
+        if(!["owner","editor","reviewer"].includes(access.access_role)){fail(res,403,"REVIEWER_REQUIRED","Reviewer permission is required to comment or approve.");return;}
+        const text=String(body.body||"").trim(),decision=String(body.decision||"comment");
+        if(!text||text.length>10000){fail(res,400,"INVALID_REVIEW","Review text must contain 1 to 10,000 characters.");return;}
+        if(!["comment","approve","request_changes"].includes(decision)){fail(res,400,"INVALID_DECISION","Choose comment, approve or request_changes.");return;}
+        const timecode=body.timecodeSeconds===undefined||body.timecodeSeconds===null?null:Number(body.timecodeSeconds);
+        if(timecode!==null&&(!Number.isFinite(timecode)||timecode<0)){fail(res,400,"INVALID_TIMECODE","Review timecode must be a non-negative number.");return;}
+        const assetId=body.assetId||null;
+        if(assetId){const asset=getAccessibleAsset(db,user.id,String(assetId));if(!asset||asset.project_id&&asset.project_id!==projectId){fail(res,404,"ASSET_NOT_FOUND","Review asset is not accessible in this project.");return;}}
+        const id=randomUUID(),status=decision==="approve"?"resolved":"open";
+        db.prepare("INSERT INTO reviews(id,owner_id,project_id,asset_id,reviewer_id,timecode_seconds,decision,body,status,resolved_at) VALUES(?,?,?,?,?,?,?,?,?,?)")
+          .run(id,user.id,projectId,assetId,decision==="comment"?null:user.id,timecode,decision,text,status,status==="resolved"?now():null);
+        audit(db,user.id,"review.created","review",id,{decision,timecodeSeconds:timecode},projectId);
+        send(res,201,{review:{id,projectId,assetId,decision,body:text,status,timecodeSeconds:timecode,createdAt:now()}},cors);return;
+      }
+      const reviewMatch=path.match(/^\/api\/reviews\/([0-9a-f-]+)$/i);
+      if(reviewMatch){
+        const review=db.prepare("SELECT * FROM reviews WHERE id=?").get(reviewMatch[1]);
+        if(!review||!getProjectAccess(db,user.id,review.project_id)){fail(res,404,"REVIEW_NOT_FOUND","Review not found.");return;}
+        const access=getProjectAccess(db,user.id,review.project_id);
+        if(req.method==="PUT"){
+          if(!["owner","editor","reviewer"].includes(access.access_role)){fail(res,403,"REVIEWER_REQUIRED","Reviewer permission is required to update review status.");return;}
+          const body=await readJson(req),status=String(body.status||"");
+          if(!["open","resolved","dismissed"].includes(status)){fail(res,400,"INVALID_REVIEW_STATUS","Choose open, resolved or dismissed.");return;}
+          db.prepare("UPDATE reviews SET status=?,resolved_at=? WHERE id=?").run(status,status==="open"?null:now(),review.id);
+          audit(db,user.id,"review.status_changed","review",review.id,{status},review.project_id);
+          send(res,200,{ok:true,status},cors);return;
+        }
+      }
       if(path==="/api/audit"&&req.method==="GET"){
         const rows=db.prepare("SELECT id,project_id,event_type,subject_type,subject_id,details_json,created_at FROM audit_events WHERE (project_id IS NULL AND owner_id=?) OR project_id IN (SELECT id FROM projects WHERE owner_id=?) OR project_id IN (SELECT project_id FROM project_members WHERE member_id=?) ORDER BY id DESC LIMIT 200").all(user.id,user.id,user.id);
         send(res,200,{events:rows.map(x=>({id:x.id,projectId:x.project_id,type:x.event_type,subjectType:x.subject_type,subjectId:x.subject_id,details:parseJson(x.details_json),createdAt:x.created_at}))},cors);return;
