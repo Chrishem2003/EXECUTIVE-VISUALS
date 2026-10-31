@@ -9,7 +9,7 @@
 | Area | Implemented behavior | Boundary |
 |---|---|---|
 | Product shell | Unified browser application with creative, planning and management workspaces | Browser app |
-| Capability explorer | Search and domain filters; displays stable ID, inputs, outputs, evidence, execution modes and approval gates | Registry browsing |
+| Capability explorer | Search and domain filters; displays stable ID, inputs, outputs, evidence, execution modes and approval gates | Registry browsing |\n| Research & knowledge workspace | Project-scoped source register, HTTP/HTTPS source validation, publication/access metadata, rights notes, tagged findings/decisions, source-linked evidence records and full-text filtering | Persistent revision-checked project workspace; live web discovery, automatic extraction and independent source verification are not claimed |\n| Workflow knowledge retrieval | Typed workflow node searches saved project knowledge, ranks title/tag/content matches and returns the linked source provenance | Deterministic keyword retrieval only; no vector index or live internet search |
 | Capability registry | **110 typed capabilities across 23 domains** | Contract/readiness metadata, not provider availability |
 | Cross-ecosystem capability expansion | Model evaluation/routing, structured template autofill, brand glossary, live presence, proxy review, remote recording, motion template rendering, continuity checks, semantic asset search, workflow diff/batch and analytics feedback | Specification-only until adapters and end-to-end tests exist |
 | Machine-readable catalog | JSON catalog generated from typed registry | Build verifier enforces ID/domain/label parity |
@@ -22,8 +22,8 @@
 | Media ingest | Binary uploads to local disk, MIME allowlist, upload-size limit and SHA-256 checksum | Local disk; cloud object storage not connected |
 | Asset library | Owner isolation, metadata, original/derivative relationship, private file reads, image/video/audio/document previews and processing history | Local media volume; no cloud storage or signed URLs yet |
 | Job queue | Persistent queue, idempotency keys, normalized states, progress events, renewable worker leases, stale-worker recovery, bounded retries with exponential backoff, cross-process cancellation polling and audit trail | Multi-process lease coordination on a shared SQLite database; multi-host workers still require a shared Postgres queue |
-| Local media engine | Probe, thumbnail, transcode, audio extraction, proxy generation, video denoise, color correction, resize/reframe, frame interpolation, FFmpeg scaling, audio denoise/loudness normalization and timeline MP4 master rendering | Requires FFmpeg/FFprobe; enhancement operations are video-only; neural restoration, advanced stabilization, animated/video overlays, transitions and advanced effects remain pending |
-| Runtime console | Sign-in, project creation, persistent asset library, live engine readiness, uploads, media job submission, job inspection and audit view | Browser UI uses the local API; creative briefs, shot lists and characters sync to project workspace documents |
+| Local media engine | Probe, thumbnail, transcode, audio extraction, proxy generation, video denoise, color correction, resize/reframe, frame interpolation, FFmpeg scaling, audio denoise/loudness normalization and timeline MP4 master rendering | Requires FFmpeg/FFprobe; neural restoration, advanced stabilization, animated/video overlays, transitions and advanced effects remain pending |
+| Runtime console | Sign-in, project creation, persistent asset library, live engine readiness, uploads, media job submission, job inspection and audit view | Browser UI uses the local API; creative briefs, shot lists, characters, research sources and linked knowledge records sync to project workspace documents |
 | Project collaboration | Owner-managed invitations with editor, reviewer and viewer roles; access revocation enforced across project records | Existing local accounts only; invitation email delivery not connected |
 | Review and approvals | Timecoded comments, approve/request-changes decisions and status updates | Local API persistence; external review links and visual drawing annotations not implemented |
 | Editorial timeline | Multi-track clips, rational source timebases, trim, split, move, markers, overlap validation, interchange export and local MP4 master render | FFmpeg supports synchronized audio, still-image overlays, burned-in SRT/VTT captions and per-clip gain; preview playback, transitions, effects and animated/video overlays remain pending |
@@ -37,9 +37,9 @@
 
 The build pipeline runs:
 1. Capability catalog parity and completeness checks.
-2. Workflow graph validation and targeted-run behavior checks.
+2. Workflow graph validation, targeted-run behavior and project-knowledge retrieval checks.
 3. API integration tests for authentication, ownership isolation, project workspace persistence, revision conflicts, role permissions, uploads and idempotency.
-4. Mock-gateway tests for server-side text generation, remote-access controls and approval gating.
+4. Mock-gateway tests for server-side text generation, remote-access controls and approval gating.\n5. API tests for research-source URL validation, source-linked knowledge persistence, partial document saves and role enforcement.
 5. Real FFmpeg rendering and output inspection.\n6. Real FFmpeg/FFprobe fixture execution for denoise, color correction, resize, interpolation and scaling with invalid-parameter rejection.
 6. TypeScript typecheck.
 7. Production Vite build.
