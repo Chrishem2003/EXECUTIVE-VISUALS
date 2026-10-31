@@ -114,3 +114,6 @@
 .review-list small{font-size:8px;color:var(--muted)}
 .review-list button{margin:8px 5px 0 0;border:1px solid #414b5d;background:#202735;color:#d9c49a;border-radius:4px;padding:5px 7px;font-size:8px}
 @media(max-width:700px){.review-list{grid-template-columns:1fr}}
+
+.download-output{display:inline-flex;margin-top:9px;border:1px solid #557563;background:#16251f;color:#b8e4c8;border-radius:5px;padding:6px 8px;font-size:8px;text-decoration:none}
+.download-output:hover{border-color:#83b89a}
