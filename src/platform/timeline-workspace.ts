@@ -107,6 +107,9 @@ document.addEventListener("submit",event=>{
   event.preventDefault();const data=new FormData(form),assetId=String(data.get("assetId")||""),trackId=String(data.get("trackId")||"");
   const start=Math.max(0,Number(data.get("start"))||0),sourceIn=Math.max(0,Number(data.get("sourceIn"))||0),duration=Math.max(1,Number(data.get("duration"))||1);
   const asset=state.assets.find(a=>a.id===assetId);if(!asset)return;
+  const destination=state.timeline.tracks.find(t=>t.id===trackId);
+  if(destination?.kind==="audio"&&!asset.mediaType.startsWith("audio/")){alert("Audio tracks require audio assets.");return;}
+  if(destination?.kind==="video"&&!asset.mediaType.startsWith("video/")&&!asset.mediaType.startsWith("image/")){alert("Video tracks require image or video assets.");return;}
   try{state.timeline=addClip(state.timeline,trackId,{id:crypto.randomUUID(),assetId,name:asset.name,sourceRange:{start:rational(sourceIn,fps()),duration:rational(duration,fps())},timelineStart:rational(start,fps()),duration:rational(duration,fps()),enabled:true});}
   catch(error){alert(error instanceof Error?error.message:String(error));return;}
   void persist().then(paint).catch(error=>{state.message=error.message;paint();});
