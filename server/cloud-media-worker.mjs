@@ -4,6 +4,12 @@ import { createCloudMediaAssetIO } from "./cloud-media-io.mjs";
 import { createCloudMediaExecutor } from "./cloud-media-executor.mjs";
 import { runCloudWorkerCycle } from "./cloud-worker.mjs";
 
+const MEDIA_JOB_TYPES = Object.freeze([
+  "media.probe", "media.thumbnail", "media.audio_extract", "media.audio-clean",
+  "media.denoise", "media.color", "media.resize", "media.interpolate",
+  "media.upscale", "media.transcode", "media.proxy"
+]);
+
 /**
  * Assemble the cloud queue, private asset boundary and FFmpeg executor into
  * one explicit worker entry point. Construction is opt-in; importing this
@@ -45,12 +51,20 @@ export function createCloudMediaWorker({
     ffprobe,
     timeoutMs
   });
+  // The cloud queue is shared by future worker families. Restrict this worker
+  // at claim time so it never leases and fails workflow or other job types.
+  const mediaQueue = Object.freeze({
+    claim: (id, leaseSeconds) => cloudQueue.claim(id, leaseSeconds, MEDIA_JOB_TYPES),
+    renew: (...args) => cloudQueue.renew(...args),
+    finish: (...args) => cloudQueue.finish(...args),
+    recover: (...args) => cloudQueue.recover(...args)
+  });
 
   return Object.freeze({
     workerId,
     async runCycle(options = {}) {
       return runCloudWorkerCycle({
-        queue: cloudQueue,
+        queue: mediaQueue,
         workerId,
         execute: executor,
         leaseSeconds: options.leaseSeconds ?? 90,
