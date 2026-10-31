@@ -108,6 +108,46 @@ test("unauthenticated requests and unsupported upload types are rejected",async(
   assert.equal((await mismatch.json()).error.code,"MEDIA_SIGNATURE_MISMATCH");
 });
 
+
+test("workflow graphs are validated, versioned and owner-scoped",async()=>{
+  const cookie=await register("workflow-owner@example.test");
+  const graph={
+    id:"workflow-1",projectId:"local",revision:1,
+    nodes:[
+      {id:"brief",kind:"text",label:"Brief",inputs:[],outputs:[{id:"text",type:"text"}],config:{}},
+      {id:"writer",kind:"llm.prompt",label:"Writer",inputs:[{id:"prompt",type:"text",required:true}],outputs:[{id:"script",type:"script"}],config:{}}
+    ],
+    edges:[{id:"edge-1",sourceNodeId:"brief",sourcePortId:"text",targetNodeId:"writer",targetPortId:"prompt"}]
+  };
+  const created=await request("/api/workflows",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({name:"Episode pipeline",graph})},cookie);
+  assert.equal(created.status,201,await created.clone().text());
+  const workflow=(await created.json()).workflow;
+  const read=await request("/api/workflows/"+workflow.id,{},cookie);
+  assert.equal(read.status,200);
+  assert.equal((await read.json()).workflow.graphHash,workflow.graphHash);
+  const updated=await request("/api/workflows/"+workflow.id,{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({revision:1,name:"Episode pipeline v2",graph})},cookie);
+  assert.equal(updated.status,200);
+  assert.equal((await updated.json()).revision,2);
+  const stale=await request("/api/workflows/"+workflow.id,{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({revision:1,graph})},cookie);
+  assert.equal(stale.status,409);
+  const cycle={
+    nodes:[
+      {id:"a",inputs:[{id:"in",type:"text",required:true}],outputs:[{id:"out",type:"text"}],config:{}},
+      {id:"b",inputs:[{id:"in",type:"text",required:true}],outputs:[{id:"out",type:"text"}],config:{}}
+    ],
+    edges:[
+      {id:"ab",sourceNodeId:"a",sourcePortId:"out",targetNodeId:"b",targetPortId:"in"},
+      {id:"ba",sourceNodeId:"b",sourcePortId:"out",targetNodeId:"a",targetPortId:"in"}
+    ]
+  };
+  const invalid=await request("/api/workflows",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({name:"Cycle",graph:cycle})},cookie);
+  assert.equal(invalid.status,422);
+  assert.equal((await invalid.json()).error.code,"WORKFLOW_INVALID");
+  const other=await register("workflow-other@example.test");
+  const hidden=await request("/api/workflows/"+workflow.id,{},other);
+  assert.equal(hidden.status,404);
+});
+
 test.after(async()=>{
   child.kill("SIGTERM");
   await new Promise(resolve=>{const timer=setTimeout(resolve,1500);child.once("exit",()=>{clearTimeout(timer);resolve();});});
