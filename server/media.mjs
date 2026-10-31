@@ -73,7 +73,6 @@ export function buildMediaOperationArgs({jobType,input={},sourcePath,outputPath}
   const noiseFloor=number(input.noiseFloor,-25,-60,-5),target=number(input.targetLufs,-16,-24,-12);
   const audioFilter="afftdn=nf="+noiseFloor.toFixed(1)+":tn=1,loudnorm=I="+target.toFixed(1)+":TP=-1.5:LRA=11";
   return [...base,"-vn","-af",audioFilter,"-c:a","pcm_s16le","-ar","48000",outputPath];
- }
  }else if(jobType==="media.denoise"){
   const luma=number(input.luma,4,0,10),chroma=number(input.chroma,3,0,10);
   filter=`hqdn3d=${luma.toFixed(2)}:${chroma.toFixed(2)}:${(luma*0.75).toFixed(2)}:${(chroma*0.75).toFixed(2)}`;
