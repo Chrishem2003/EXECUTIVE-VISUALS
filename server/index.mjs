@@ -7,6 +7,7 @@ import { pipeline } from "node:stream/promises";
 import { Transform } from "node:stream";
 import { openDatabase, audit, addJobEvent, getOwnedProject, getOwnedAsset, json, parseJson } from "./db.mjs";
 import { executeMediaJob, executableAvailable } from "./media.mjs";
+import { validateWorkflowGraph } from "./workflow-validation.mjs";
 
 const PORT = Number(process.env.API_PORT || process.env.PORT || 4179);
 const HOST = process.env.API_HOST || "127.0.0.1";
@@ -298,12 +299,34 @@ export function createAppServer() {
       if(path==="/api/workflows"&&req.method==="POST"){
         const body=await readJson(req);const name=String(body.name||"Untitled workflow").trim().slice(0,160);const graph=body.graph;
         if(!graph||!Array.isArray(graph.nodes)||!Array.isArray(graph.edges)){fail(res,400,"INVALID_WORKFLOW","A workflow graph with nodes and edges is required.");return;}
+        const validation=validateWorkflowGraph(graph);
+        if(!validation.valid){send(res,422,{error:{code:"WORKFLOW_INVALID",message:"Workflow graph failed validation.",issues:validation.issues}},cors);return;}
         if(body.projectId&&!getOwnedProject(db,user.id,body.projectId)){fail(res,404,"PROJECT_NOT_FOUND","Project not found.");return;}
         const id=randomUUID(),graphJson=json(graph),graphHash=hash(graphJson);
         db.prepare("INSERT INTO workflows(id,owner_id,project_id,name,graph_json,graph_hash) VALUES(?,?,?,?,?,?)").run(id,user.id,body.projectId||null,name,graphJson,graphHash);
         audit(db,user.id,"workflow.created","workflow",id,{graphHash},body.projectId||null);send(res,201,{workflow:{id,name,revision:1,graphHash}},cors);return;
       }
 
+      const workflowMatch=path.match(/^\/api\/workflows\/([0-9a-f-]+)$/i);
+      if(workflowMatch){
+        const workflow=db.prepare("SELECT * FROM workflows WHERE id=? AND owner_id=?").get(workflowMatch[1],user.id);
+        if(!workflow){fail(res,404,"WORKFLOW_NOT_FOUND","Workflow not found.");return;}
+        if(req.method==="GET"){
+          send(res,200,{workflow:{id:workflow.id,projectId:workflow.project_id,name:workflow.name,revision:workflow.revision,graph:parseJson(workflow.graph_json),graphHash:workflow.graph_hash,createdAt:workflow.created_at,updatedAt:workflow.updated_at}},cors);return;
+        }
+        if(req.method==="PUT"){
+          const body=await readJson(req);
+          if(Number(body.revision)!==workflow.revision){fail(res,409,"REVISION_CONFLICT","Workflow changed since it was loaded. Refresh and retry.");return;}
+          if(!body.graph||!Array.isArray(body.graph.nodes)||!Array.isArray(body.graph.edges)){fail(res,400,"INVALID_WORKFLOW","A workflow graph with nodes and edges is required.");return;}
+          const validation=validateWorkflowGraph(body.graph);
+          if(!validation.valid){send(res,422,{error:{code:"WORKFLOW_INVALID",message:"Workflow graph failed validation.",issues:validation.issues}},cors);return;}
+          const graphJson=json(body.graph),graphHash=hash(graphJson),name=String(body.name||workflow.name).trim().slice(0,160);
+          db.prepare("UPDATE workflows SET name=?,graph_json=?,graph_hash=?,revision=revision+1,updated_at=? WHERE id=? AND owner_id=?")
+            .run(name,graphJson,graphHash,now(),workflow.id,user.id);
+          audit(db,user.id,"workflow.updated","workflow",workflow.id,{revision:workflow.revision+1,graphHash},workflow.project_id);
+          send(res,200,{ok:true,revision:workflow.revision+1,graphHash},cors);return;
+        }
+      }
       if(path==="/api/jobs"&&req.method==="GET"){
         const rows=db.prepare("SELECT * FROM jobs WHERE owner_id=? ORDER BY created_at DESC LIMIT 100").all(user.id);
         send(res,200,{jobs:rows.map(recordJob)},cors);return;
