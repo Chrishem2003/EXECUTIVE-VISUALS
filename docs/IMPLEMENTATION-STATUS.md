@@ -88,3 +88,17 @@ The shared production engine now exposes a first set of local, FFmpeg-backed fin
 Video operations are available to workflow graphs as `media.denoise`, `media.color`, `media.resize`, `media.interpolate` and `media.upscale` (with `video.resize` mapped to the same resize adapter). They require an accessible video source and create a new private MP4 derivative with SHA-256 lineage. Speech cleanup is available as `media.audio-clean`, accepts an accessible audio source and creates a private WAV derivative. Original source media is preserved. All numeric inputs and fit modes are bounded and shell commands are passed as argument arrays, not user-built shell strings.
 
 The build now includes real FFmpeg/FFprobe fixture checks for each video operation and speech cleanup, plus invalid-parameter rejection tests. The Enhancement Lab and asset library submit these operations to the persistent job queue, and the output is returned as a private derivative. These are local media operations; they do not imply remote model-based restoration, face retouching, generative object removal, advanced stabilization, or paid enhancement services are available.
+
+
+## Presenter identity authorization update — scoped permissions
+
+Presenter and character profiles now persist a structured identity-permission record rather than relying on a boolean confirmation:
+
+- Profile categories distinguish fictional, documented-authorized and not-granted identities.
+- Authorization scopes are explicit: likeness, voice, face animation, lip-sync and identity transfer.
+- Real-person authorization requires a non-sensitive evidence reference and a valid calendar expiry date.
+- The workflow executor checks the saved project profile before identity-linked image or video generation; absent, expired or out-of-scope permission blocks execution.
+- Existing legacy boolean consent values are normalized to `not-granted`; they are not silently upgraded to authorization.
+- Unit and API tests cover scope enforcement, expiry, missing evidence and persistence.
+
+This is an enforceable authorization foundation, not a claim that voice cloning, dubbing or lip-sync generation is implemented. Identity references are still not accepted by the current generic image/video adapters, which remain limited to their documented inputs.
