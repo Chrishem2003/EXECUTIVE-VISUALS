@@ -29,7 +29,7 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
  const fpsDen=Math.max(1,Math.min(1001,Math.floor(Number(timeline.frameRate?.denominator)||1)));
  const outputId=randomUUID(),outputPath=join(workDir,outputId+".mp4");
  await mkdir(workDir,{recursive:true});
- const args=["-hide_banner","-y"],segments=[],audioFilters=[],videoEffects=[],captionTempPaths=[];
+ const args=["-hide_banner","-y"],segments=[],audioFilters=[],videoEffects=[],captionTempPaths=[],overlayInputs=[];
  let cursor=0,inputIndex=0,segmentIndex=0,overlayIndex=0,captionIndex=0;
  const getAsset=(assetId)=>{
   const entry=assets.get(String(assetId));
@@ -75,28 +75,23 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
    const metadata=clip.metadata||{},overlayWidth=Math.max(16,Math.min(width,Math.round(Number(metadata.width)||width*.24))),overlayHeight=Math.max(16,Math.min(height,Math.round(Number(metadata.height)||height*.24)));
    const rawX=Number(metadata.x),rawY=Number(metadata.y),x=Math.max(0,Math.min(width-overlayWidth,Number.isFinite(rawX)?Math.round(rawX):width-overlayWidth-24)),y=Math.max(0,Math.min(height-overlayHeight,Number.isFinite(rawY)?Math.round(rawY):24)),opacity=Math.max(0,Math.min(1,Number(metadata.opacity??1)));
    args.push("-loop","1","-t",(start+duration).toFixed(6),"-i",asset.path);
-   const imageLabel="overlay-image-"+overlayIndex,videoLabel="overlay-video-"+overlayIndex++;
-   videoEffects.push(`[${inputIndex}:v]scale=${overlayWidth}:${overlayHeight}:force_original_aspect_ratio=decrease,format=rgba,colorchannelmixer=aa=${opacity.toFixed(3)}[${imageLabel}]`);
-   videoEffects.push(`${videoEffects.length?videoEffects.length>1?"[overlay-video-"+(overlayIndex-2)+"]":"[vbase]":"[vbase]"}[${imageLabel}]overlay=x=${x}:y=${y}:eof_action=pass:enable='between(t,${start.toFixed(6)},${(start+duration).toFixed(6)})'[${videoLabel}]`);
-   inputIndex++;
+   overlayInputs.push({inputIndex,clip});
+   overlayIndex++;inputIndex++;
   }
   const concat=segments.map(item=>`[${item.label}]`).join("")+`concat=n=${segments.length}:v=1:a=0[vbase]`;
   const videoGraph=segments.map(item=>item.filter).join(";")+";"+concat;
   let currentVideo="[vbase]";
-  // Rebuild overlay chains deterministically from their labels.
-  if(overlayClips.length){
-   const overlayGraph=[];let chain="[vbase]",index=0;
-   for(const clip of overlayClips){
-    const start=seconds(clip.timelineStart);if(start>=cursor)continue;
-    const duration=Math.min(seconds(clip.duration),cursor-start);if(duration<=0)continue;
-    const asset=getAsset(clip.assetId),metadata=clip.metadata||{},ow=Math.max(16,Math.min(width,Math.round(Number(metadata.width)||width*.24))),oh=Math.max(16,Math.min(height,Math.round(Number(metadata.height)||height*.24)));
-    const x=Math.max(0,Math.min(width-ow,Number.isFinite(Number(metadata.x))?Math.round(Number(metadata.x)):width-ow-24)),y=Math.max(0,Math.min(height-oh,Number.isFinite(Number(metadata.y))?Math.round(Number(metadata.y)):24)),opacity=Math.max(0,Math.min(1,Number(metadata.opacity??1)));
-    const imageLabel="overlay-image-"+index,videoLabel="overlay-video-"+index;
-    overlayGraph.push(`[${inputIndex-overlayClips.filter(c=>seconds(c.timelineStart)<cursor).length+index}:v]scale=${ow}:${oh}:force_original_aspect_ratio=decrease,format=rgba,colorchannelmixer=aa=${opacity.toFixed(3)}[${imageLabel}]`);
-    overlayGraph.push(`${chain}[${imageLabel}]overlay=x=${x}:y=${y}:eof_action=pass:enable='between(t,${start.toFixed(6)},${(start+duration).toFixed(6)})'[${videoLabel}]`);
-    chain=`[${videoLabel}]`;index++;
-   }
-   currentVideo=chain;
+  for(const [index,item] of overlayInputs.entries()){
+   const clip=item.clip,start=seconds(clip.timelineStart);
+   if(start>=cursor)continue;
+   const duration=Math.min(seconds(clip.duration),cursor-start);if(duration<=0)continue;
+   const asset=getAsset(clip.assetId),metadata=clip.metadata||{};
+   const ow=Math.max(16,Math.min(width,Math.round(Number(metadata.width)||width*.24))),oh=Math.max(16,Math.min(height,Math.round(Number(metadata.height)||height*.24)));
+   const x=Math.max(0,Math.min(width-ow,Number.isFinite(Number(metadata.x))?Math.round(Number(metadata.x)):width-ow-24)),y=Math.max(0,Math.min(height-oh,Number.isFinite(Number(metadata.y))?Math.round(Number(metadata.y)):24)),opacity=Math.max(0,Math.min(1,Number(metadata.opacity??1)));
+   const imageLabel="overlay-image-"+index,videoLabel="overlay-video-"+index;
+   videoEffects.push(`[${item.inputIndex}:v]scale=${ow}:${oh}:force_original_aspect_ratio=decrease,format=rgba,colorchannelmixer=aa=${opacity.toFixed(3)}[${imageLabel}]`);
+   videoEffects.push(`${currentVideo}[${imageLabel}]overlay=x=${x}:y=${y}:eof_action=pass:enable='between(t,${start.toFixed(6)},${(start+duration).toFixed(6)})'[${videoLabel}]`);
+   currentVideo=`[${videoLabel}]`;
   }
   for(const clip of captionClips){
    const start=seconds(clip.timelineStart);if(start>=cursor)continue;
@@ -108,7 +103,6 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
    const adjusted=buildSrt(captionContent,clip);if(!adjusted)continue;
    const tempPath=join(workDir,outputId+"-captions-"+captionIndex+".srt");await writeFile(tempPath,adjusted,"utf8");captionTempPaths.push(tempPath);
    const videoLabel="caption-video-"+captionIndex++,style=captionStyle(clip.metadata||{});
-   currentVideoLabel=""; // marker intentionally unused; keeps caption chain explicit below.
    const nextLabel="caption-chain-"+captionIndex;
    videoEffects.push(`${currentVideo}subtitles=filename='${escapeFilterPath(tempPath)}':force_style='${style}'[${nextLabel}]`);
    currentVideo=`[${nextLabel}]`;
