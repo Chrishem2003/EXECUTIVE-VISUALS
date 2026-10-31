@@ -120,6 +120,16 @@ document.addEventListener("submit",event=>{
   void persist().then(paint).catch(error=>{state.message=error.message;paint();});
  }
 });
+document.addEventListener("change",event=>{
+ const target=event.target as HTMLSelectElement;
+ if(target.id==="tl-asset-select"){
+  const asset=state.assets.find(a=>a.id===target.value);
+  const probe=asset?.metadata?.probe as {format?:{duration?:string}}|undefined;
+  const duration=Number(probe?.format?.duration);
+  const input=document.querySelector<HTMLInputElement>('#tl-add-clip input[name="duration"]');
+  if(input&&Number.isFinite(duration))input.value=String(Math.max(1,Math.floor(duration*fps())));
+ }
+});
 document.addEventListener("click",event=>{
  const target=event.target as HTMLElement,action=target.closest<HTMLElement>("[data-tl-action]");
  if(action)void runAction(action);
