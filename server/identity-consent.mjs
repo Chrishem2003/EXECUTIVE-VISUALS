@@ -12,7 +12,8 @@ export function assertIdentityUseAllowed(profile,scope,at=new Date()){
   const evidence=String(consent.evidenceReference||"").trim();
   if(!evidence||evidence.length>500)fail("A consent evidence reference is required before this identity can be used.");
   const expires=String(consent.expiresAt||"").trim();
-  if(!expires||!/^\\d{4}-\\d{2}-\\d{2}$/.test(expires)||!Number.isFinite(Date.parse(expires+"T23:59:59Z")))fail("A valid consent expiry date is required.");
+  const expiryDate=new Date(expires+"T00:00:00Z");
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(expires)||!Number.isFinite(expiryDate.getTime())||expiryDate.toISOString().slice(0,10)!==expires)fail("A valid consent expiry date is required.");
   if(Date.parse(expires+"T23:59:59Z")<at.getTime())fail("Recorded identity permission has expired.","IDENTITY_PERMISSION_EXPIRED");
   return {profileId:String(profile.id||""),scope,basis:"documented-authorization",evidenceReference:evidence,expiresAt:expires};
 }
