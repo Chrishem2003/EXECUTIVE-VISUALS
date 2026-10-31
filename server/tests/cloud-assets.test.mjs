@@ -89,3 +89,13 @@ test("rejects malformed identifiers, unsupported media and non-object metadata",
  await assert.rejects(()=>f.repo.create({ownerId,originalName:"x",mediaType:"application/x-executable",bytes}),/Unsupported/);
  await assert.rejects(()=>f.repo.create({ownerId,originalName:"x",mediaType:"video/mp4",bytes,metadata:[]}),/JSON object/);
 });
+
+test("project collaborators can read and delete shared assets when the role callback authorizes them",async()=>{
+ const collaboratorId="423e4567-e89b-42d3-a456-426614174000";
+ const f=fixture({authorize:async({ownerId:actor,projectId:project,action})=>actor===collaboratorId&&project===projectId&&["read","write"].includes(action)});
+ const signed=await f.repo.createSignedUrl({ownerId:collaboratorId,assetId});
+ assert.equal(signed.asset.ownerId,ownerId);
+ assert.equal(f.storageCalls[0].op,"sign");
+ const deleted=await f.repo.softDelete({ownerId:collaboratorId,assetId});
+ assert.equal(deleted.deleted,true);
+});
