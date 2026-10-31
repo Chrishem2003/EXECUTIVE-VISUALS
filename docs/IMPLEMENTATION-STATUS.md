@@ -16,7 +16,7 @@
 | Graph validation | Duplicate IDs, missing nodes/ports, incompatible ports, duplicate single-input edges, required inputs and cycle detection | Validation only |
 | Targeted execution | Full graph, single-node and selected-subgraph dependency planning; branch routing; locked-output reuse; immutable run snapshots; per-node state and approval pause/resume | Local adapters execute; remote generation nodes fail closed with an explicit adapter-unavailable status |
 | Output locking | Locked nodes with saved output IDs are reused; targeted reruns can stop at locked ancestors | Local planner behavior tested |
-| Local API | HTTP API, development accounts, hashed passwords, HttpOnly sessions and owner-scoped resources | Local password auth is development-only |
+| Local API | HTTP API, development accounts, hashed passwords, HttpOnly sessions, owner-scoped resources, restrictive HTML CSP, anti-framing and referrer/security headers | Local password auth is development-only |
 | Projects | Persistent project creation, listing, optimistic revision updates and archive | SQLite local database |
 | Media ingest | Binary uploads to local disk, MIME allowlist, upload-size limit and SHA-256 checksum | Local disk; cloud object storage not connected |
 | Asset library | Owner isolation, metadata, original/derivative relationship and private file reads | No cloud storage or signed URLs yet |
@@ -28,7 +28,7 @@
 | Editorial timeline | Multi-track clips, rational source timebases, trim, split, move, markers, overlap validation, interchange export and local MP4 master render | FFmpeg supports synchronized audio, still-image overlays, burned-in SRT/VTT captions and per-clip gain; preview playback, transitions, effects and animated/video overlays remain pending |
 | Timeline persistence | Owner-scoped timelines, asset ownership checks, optimistic revisions and saved interchange package | SQLite local DB; isolated SQL migration pending dedicated database review |
 | Database migration | Dedicated multi-tenant schema, row-level security, immutable workflow-run snapshots, server-only job/audit writes and private object-storage policies | Migration is committed and statically guarded; **not applied** to shared staging or another product's database |
-| Quality checks | Capability parity, workflow planner, timeline validation, render-worker checks, real FFmpeg MP4 render/probe integration with overlay placement and SRT/VTT caption pixel checks, plus API integration tests | CI verifies local render output and API behavior, not cloud durability or external provider integrations |
+| Quality checks | Capability parity, lease/retry queue checks, workflow planner, timeline validation, render-worker checks, real FFmpeg MP4 render/probe integration with overlay placement and SRT/VTT caption pixel checks, plus API security and integration tests | CI verifies local render output and API behavior, not cloud durability or external provider integrations |
 
 ## Build verification
 
@@ -47,7 +47,7 @@ A green build does not prove external provider execution, cloud durability, fram
 - Production OAuth/session refresh, email invitations and distributed multi-tenant collaboration.
 - Multi-host workers, dead-letter queue, lease metrics and guaranteed process-tree termination on cancellation.
 - Resumable/chunked uploads, media signature sniffing and range downloads.
-- Timeline preview playback, transitions, effects/overlay/caption compositing, cache invalidation and round-trip tests against an independent interchange implementation.
+- Timeline preview playback, transitions, effects, animated/video overlays, cache invalidation and round-trip tests against an independent interchange implementation.
 - Full workflow node editor, per-node run history, partial reruns and provider execution.
 - Local model inventory, hardware preflight and model adapters.
 - Voice generation, transcription, diarization, dubbing and lip synchronization integrations.
