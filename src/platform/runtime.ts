@@ -37,8 +37,11 @@ function projectOptions(){return '<option value="">Personal library</option>'+st
 function renderAssets(){
  if(!state.assets.length)return '<div class="empty">No stored media yet. Upload a source file to begin.</div>';
  return '<div class="runtime-assets">'+state.assets.map(a=>{
-   const isVideo=a.mediaType.startsWith("video/"),isAudio=a.mediaType.startsWith("audio/"),isImage=a.mediaType.startsWith("image/");
-   return '<article class="runtime-asset"><div class="runtime-asset-preview">'+(isImage?'<img src="/api/assets/'+esc(a.id)+'/file" alt="">':isVideo?"▶":isAudio?"♫":"▤")+'</div><div class="runtime-asset-info"><b>'+esc(a.name)+'</b><small>'+Math.max(1,Math.round(a.size/1024))+' KB · '+esc(a.mediaType)+'</small><code>'+esc(a.sha256.slice(0,20))+'…</code></div><div class="runtime-asset-actions"><button data-ev-job="media.probe" data-ev-asset="'+esc(a.id)+'">Inspect</button>'+(isVideo?'<button data-ev-job="media.thumbnail" data-ev-asset="'+esc(a.id)+'">Extract frame</button><button data-ev-job="media.proxy" data-ev-asset="'+esc(a.id)+'">Create proxy</button><button data-ev-job="media.audio_extract" data-ev-asset="'+esc(a.id)+'">Extract audio</button>':isAudio?'<button data-ev-job="media.probe" data-ev-asset="'+esc(a.id)+'">Inspect audio</button>':'')+'</div></article>';
+  const isVideo=a.mediaType.startsWith("video/"),isAudio=a.mediaType.startsWith("audio/"),isImage=a.mediaType.startsWith("image/");
+  const file="/api/assets/"+esc(a.id)+"/file";
+  const preview=isImage?'<img loading="lazy" src="'+file+'" alt="">':isVideo?'<video controls preload="metadata" src="'+file+'"></video>':isAudio?'<audio controls preload="metadata" src="'+file+'"></audio>':'<a href="'+file+'" target="_blank" rel="noopener">Open file</a>';
+  const actions='<a class="download-output" href="'+file+'" target="_blank" rel="noopener">Open original</a><button data-ev-job="media.probe" data-ev-asset="'+esc(a.id)+'">Inspect</button>'+(isVideo?'<button data-ev-job="media.thumbnail" data-ev-asset="'+esc(a.id)+'">Extract frame</button><button data-ev-job="media.proxy" data-ev-asset="'+esc(a.id)+'">Create proxy</button><button data-ev-job="media.audio_extract" data-ev-asset="'+esc(a.id)+'">Extract audio</button>':isAudio?'<button data-ev-job="media.probe" data-ev-asset="'+esc(a.id)+'">Inspect audio</button>':'');
+  return '<article class="runtime-asset"><div class="runtime-asset-preview">'+preview+'</div><div class="runtime-asset-info"><b>'+esc(a.name)+'</b><small>'+Math.max(1,Math.round(a.size/1024))+' KB · '+esc(a.mediaType)+'</small><code>'+esc(a.sha256.slice(0,20))+'…</code></div><div class="runtime-asset-actions">'+actions+'</div></article>';
  }).join("")+'</div>';
 }
 function renderJobs(){
