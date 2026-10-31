@@ -12,7 +12,7 @@
 | Capability explorer | Search and domain filters; displays stable ID, inputs, outputs, evidence, execution modes and approval gates | Registry browsing |
 | Capability registry | **96 typed capabilities across 22 domains** | Contract/readiness metadata, not provider availability |
 | Machine-readable catalog | JSON catalog generated from typed registry | Build verifier enforces ID/domain/label parity |
-| Workflow graph | Draggable visual node editor, typed ports, connections, node configuration, graph validation, server-side versioning and partial-run planning | Planning only; model/provider execution is not connected |
+| Workflow graph | Draggable visual node editor, typed ports, connections, node configuration, server-side graph validation, immutable run snapshots, per-node status, approval pause/resume and local adapter execution | Text/data, asset references, frame extraction, audio extraction, probe, transcode, export and timeline nodes run locally; unsupported provider/model nodes are explicitly blocked |
 | Graph validation | Duplicate IDs, missing nodes/ports, incompatible ports, duplicate single-input edges, required inputs and cycle detection | Validation only |
 | Targeted execution planning | Full graph, single-node and selected-subgraph dependency planning | Produces a plan only; not yet wired to external model execution |
 | Output locking | Locked nodes with saved output IDs are reused; targeted reruns can stop at locked ancestors | Local planner behavior tested |
@@ -20,7 +20,7 @@
 | Projects | Persistent project creation, listing, optimistic revision updates and archive | SQLite local database |
 | Media ingest | Binary uploads to local disk, MIME allowlist, upload-size limit and SHA-256 checksum | Local disk; cloud object storage not connected |
 | Asset library | Owner isolation, metadata, original/derivative relationship and private file reads | No cloud storage or signed URLs yet |
-| Job queue | Persistent queue, idempotency keys, normalized states, progress events, process cancellation and audit trail | Single local worker; distributed workers and lease recovery pending |
+| Job queue | Persistent queue, idempotency keys, normalized states, progress events, process cancellation and audit trail | Single local worker; distributed workers, lease recovery and retry scheduling pending |
 | Local media engine | Probe, thumbnail, transcode, audio extraction, proxy generation and timeline MP4 master rendering with synchronized audio tracks | Requires FFmpeg/FFprobe installed; master renderer supports one primary video track and audio-only clips; overlays/captions/effects are pending |
 | Runtime console | Sign-in, project creation, uploads, media job submission, job inspection and audit view | Browser UI uses the local API |
 | Project collaboration | Owner-managed invitations with editor, reviewer and viewer roles; access revocation enforced across project records | Existing local accounts only; invitation email delivery not connected |
