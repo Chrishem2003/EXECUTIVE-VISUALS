@@ -28,14 +28,14 @@ function requestPinned(url,addresses){
   const address=addresses[0];
   const req=httpsRequest({protocol:"https:",hostname:url.hostname,port:443,path:url.pathname+url.search,method:"GET",headers:{"user-agent":"ExecutiveVisualsResearchBot/1.0 (+source extraction; respects HTTP status and size limits)","accept":"text/html,application/xhtml+xml,text/plain;q=0.9","accept-encoding":"identity"},lookup:(_host,_options,callback)=>callback(null,address.address,address.family),servername:url.hostname,timeout:TIMEOUT_MS},res=>{
    const status=res.statusCode||0;
-   if([301,302,303,307,308].includes(status)){res.resume();resolve({redirect:res.headers.location,status});return;}
+   if([301,302,303,307,308].includes(status)){res.resume();if(!res.headers.location){reject(Object.assign(new Error("The source returned a redirect without a destination."),{code:"INVALID_RESEARCH_REDIRECT",status:422}));return;}resolve({redirect:res.headers.location,status});return;}
    if(status<200||status>=300){res.resume();reject(Object.assign(new Error("The source returned HTTP "+status+"."),{code:"RESEARCH_HTTP_ERROR",status:502}));return;}
    const type=String(res.headers["content-type"]||"").split(";")[0].trim().toLowerCase();
    if(!["text/html","application/xhtml+xml","text/plain"].includes(type)){res.resume();reject(Object.assign(new Error("Only HTML and plain-text sources can currently be extracted."),{code:"UNSUPPORTED_RESEARCH_CONTENT",status:415}));return;}
    const declared=Number(res.headers["content-length"]||0);
    if(declared>MAX_BYTES){res.destroy();reject(Object.assign(new Error("The source is larger than the 2 MB extraction limit."),{code:"RESEARCH_SOURCE_TOO_LARGE",status:413}));return;}
    const chunks=[];let size=0;
-   res.on("data",chunk=>{size+=chunk.length;if(size>MAX_BYTES){res.destroy(Object.assign(new Error("The source is larger than the 2 MB extraction limit."),{code:"RESEARCH_SOURCE_TOO_LARGE"}));return;}chunks.push(chunk);});
+   res.on("data",chunk=>{size+=chunk.length;if(size>MAX_BYTES){res.destroy(Object.assign(new Error("The source is larger than the 2 MB extraction limit."),{code:"RESEARCH_SOURCE_TOO_LARGE",status:413}));return;}chunks.push(chunk);});
    res.on("end",()=>resolve({type,body:Buffer.concat(chunks).toString("utf8")}));
    res.on("error",reject);
   });
