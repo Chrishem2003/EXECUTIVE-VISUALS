@@ -93,7 +93,7 @@ export const CAPABILITY_ATLAS: readonly CapabilityDefinition[] = [
     [p("provider-identity","structured-data","Provider-scoped identity handle")], {approvals:["paid-execution","likeness"]}),
   spec("image.generate", "image", "Generate image",
     [p("prompt","prompt","Generation prompt"),p("references","image","Typed references",false,true),p("brand","brand-kit","Optional brand kit",false)],
-    [p("image","image","Generated image")], {readiness:"credentials-required",approvals:["paid-execution"],notes:"Server-side image gateway is disabled by default; requires a completed upstream human-approval node and validated base64 image output."}),
+    [p("image","image","Generated image")], {readiness:"credentials-required",approvals:["paid-execution"],notes:"Server-side prompt-only image gateway is disabled by default; requires a completed upstream human-approval node and validated base64 image output. Reference-image and brand-kit conditioning are not supported by the current generic adapter."}),
   spec("image.edit", "image", "Edit image with instruction and mask",
     [p("source","image","Source image"),p("prompt","prompt","Edit instruction"),p("mask","mask","Optional region mask",false)],
     [p("image","image","Edited image")], {approvals:["paid-execution"]}),
