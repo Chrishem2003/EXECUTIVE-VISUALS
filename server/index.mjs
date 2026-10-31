@@ -292,8 +292,8 @@ export function createAppServer() {
       const user=await authenticate(req);
       if(!user){fail(res,401,"AUTH_REQUIRED","Sign in to access this workspace.");return;}
       if(path==="/api/me"&&req.method==="GET"){send(res,200,{user,authMode:AUTH_MODE},cors);return;}
-      if(cloudTimelineApi && path.startsWith("/api/cloud/timelines")){
-        const isTimelineMutation=req.method==="POST"||req.method==="PUT";
+      if(cloudTimelineApi && (path.startsWith("/api/cloud/timelines")||path.startsWith("/api/cloud/jobs"))){
+        const isTimelineMutation=path.startsWith("/api/cloud/timelines")&&(req.method==="POST"||req.method==="PUT");
         const body=isTimelineMutation?await readJson(req,5*1024*1024):{};
         const cloudResult=await cloudTimelineApi.handle({
           method:req.method,path,ownerId:user.id,body,
