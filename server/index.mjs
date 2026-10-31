@@ -7,7 +7,7 @@ import { pipeline } from "node:stream/promises";
 import { Transform } from "node:stream";
 import { openDatabase, audit, addJobEvent, getOwnedProject, getOwnedAsset, getProjectAccess, canWriteProject, getAccessibleAsset, json, parseJson } from "./db.mjs";
 import { executeMediaJob, executableAvailable } from "./media.mjs";
-import { validateWorkflowGraph } from "./workflow-validation.mjs";
+import { validateWorkflowGraph, planWorkflowTarget } from "./workflow-validation.mjs";
 import { validateTimelineDocument } from "./timeline-validation.mjs";
 import { executeWorkflowRun } from "./workflow-executor.mjs";
 
@@ -410,15 +410,29 @@ export function createAppServer() {
         if(workflow.project_id?!canWriteProject(db,user.id,workflow.project_id):workflow.owner_id!==user.id){fail(res,403,"EDITOR_REQUIRED","Editor access is required to run this workflow.");return;}
         const graph=parseJson(workflow.graph_json),validation=validateWorkflowGraph(graph);
         if(!validation.valid){send(res,422,{error:{code:"WORKFLOW_INVALID",message:"Workflow graph failed validation.",issues:validation.issues}},cors);return;}
-        const runId=randomUUID(),jobId=randomUUID(),snapshotJson=json(graph),snapshotHash=hash(snapshotJson);
+        const body=await readJson(req),target=body.target||{kind:"all"},plan=planWorkflowTarget(graph,target);
+        if(!plan.valid){send(res,422,{error:{code:"WORKFLOW_TARGET_INVALID",message:"Workflow run target failed validation.",issues:plan.issues}},cors);return;}
+        for(const nodeId of plan.reusedNodeIds){
+          const node=graph.nodes.find(item=>item.id===nodeId);
+          for(const assetId of node?.lockedOutputIds||[]){
+            if(!getAccessibleAsset(db,user.id,String(assetId),false)){fail(res,422,"LOCKED_OUTPUT_MISSING","A locked node references an output asset that is not accessible.");return;}
+          }
+        }
+        const runId=randomUUID(),jobId=randomUUID();
+        const snapshot={...graph,runPlan:{target:plan.target,includedNodeIds:plan.includedNodeIds,executionOrder:plan.executionOrder,runNodeIds:plan.runNodeIds,reusedNodeIds:plan.reusedNodeIds}};
+        const snapshotJson=json(snapshot),snapshotHash=hash(snapshotJson);
         db.prepare("INSERT INTO workflow_runs(id,workflow_id,owner_id,project_id,workflow_revision,snapshot_hash,snapshot_json,status,job_id) VALUES(?,?,?,?,?,?,?,'queued',?)")
           .run(runId,workflow.id,user.id,workflow.project_id,workflow.revision,snapshotHash,snapshotJson,jobId);
-        for(const node of graph.nodes)db.prepare("INSERT INTO workflow_node_runs(id,run_id,node_id,status) VALUES(?,?,?,'pending')").run(randomUUID(),runId,node.id);
+        for(const nodeId of plan.includedNodeIds){
+          const node=graph.nodes.find(item=>item.id===nodeId),reused=plan.reusedNodeIds.includes(nodeId);
+          db.prepare("INSERT INTO workflow_node_runs(id,run_id,node_id,status,output_json) VALUES(?,?,?,?,?)")
+            .run(randomUUID(),runId,nodeId,reused?"skipped":"pending",reused?json({lockedOutputIds:node?.lockedOutputIds||[]}):null);
+        }
         db.prepare("INSERT INTO jobs(id,owner_id,project_id,job_type,status,progress,input_json) VALUES(?,?,?,'workflow.execute','queued',0,?)")
           .run(jobId,user.id,workflow.project_id,json({runId}));
         addJobEvent(db,jobId,user.id,"job.queued",{jobType:"workflow.execute",runId});
-        audit(db,user.id,"workflow.run_queued","workflow_run",runId,{workflowId:workflow.id,revision:workflow.revision,snapshotHash},workflow.project_id);
-        send(res,202,{runId,jobId,status:"queued",snapshotHash},cors);return;
+        audit(db,user.id,"workflow.run_queued","workflow_run",runId,{workflowId:workflow.id,revision:workflow.revision,snapshotHash,target:plan.target,includedNodes:plan.includedNodeIds},workflow.project_id);
+        send(res,202,{runId,jobId,status:"queued",snapshotHash,target:plan.target,executionOrder:plan.executionOrder,reusedNodeIds:plan.reusedNodeIds},cors);return;
       }
       const workflowRunsMatch=path.match(/^\/api\/workflows\/([0-9a-f-]+)\/runs$/i);
       if(workflowRunsMatch&&req.method==="GET"){
@@ -436,7 +450,8 @@ export function createAppServer() {
         const access=run.project_id?getProjectAccess(db,user.id,run.project_id):{access_role:run.owner_id===user.id?"owner":null};
         if(req.method==="GET"&&!workflowRunDetail[2]){
           const nodes=db.prepare("SELECT node_id,status,attempt,input_json,output_json,error_json,started_at,completed_at FROM workflow_node_runs WHERE run_id=? ORDER BY rowid").all(run.id);
-          send(res,200,{run:{id:run.id,workflowId:run.workflow_id,revision:run.workflow_revision,status:run.status,snapshotHash:run.snapshot_hash,error:parseJson(run.error_json,null),createdAt:run.created_at,updatedAt:run.updated_at,completedAt:run.completed_at},nodes:nodes.map(node=>({...node,input:parseJson(node.input_json,{}),output:parseJson(node.output_json,null),error:parseJson(node.error_json,null)}))},cors);return;
+          const snapshot=parseJson(run.snapshot_json);
+          send(res,200,{run:{id:run.id,workflowId:run.workflow_id,revision:run.workflow_revision,status:run.status,snapshotHash:run.snapshot_hash,target:snapshot.runPlan?.target||{kind:"all"},executionOrder:snapshot.runPlan?.executionOrder||[],error:parseJson(run.error_json,null),createdAt:run.created_at,updatedAt:run.updated_at,completedAt:run.completed_at},nodes:nodes.map(node=>({...node,input:parseJson(node.input_json,{}),output:parseJson(node.output_json,null),error:parseJson(node.error_json,null)}))},cors);return;
         }
         if(req.method==="POST"&&workflowRunDetail[2]==="approve"){
           if(!["owner","editor","reviewer"].includes(access?.access_role||"")){fail(res,403,"REVIEWER_REQUIRED","Reviewer permission is required to approve this step.");return;}
@@ -450,8 +465,8 @@ export function createAppServer() {
           db.prepare("UPDATE workflow_node_runs SET status='completed',output_json=?,completed_at=? WHERE id=?").run(json(output),now(),waiting.id);
           const jobId=randomUUID();
           db.prepare("UPDATE workflow_runs SET status='queued',job_id=?,updated_at=?,error_json=NULL WHERE id=?").run(jobId,now(),run.id);
-          db.prepare("INSERT INTO jobs(id,owner_id,project_id,job_type,status,progress,input_json) VALUES(?,?,?,'workflow.execute','queued',0,?)").run(jobId,user.id,run.project_id,json({runId:run.id}));
-          addJobEvent(db,jobId,user.id,"job.queued",{jobType:"workflow.execute",runId:run.id,approvedNodeId:waiting.node_id});
+          db.prepare("INSERT INTO jobs(id,owner_id,project_id,job_type,status,progress,input_json) VALUES(?,?,?,'workflow.execute','queued',0,?)").run(jobId,run.owner_id,run.project_id,json({runId:run.id}));
+          addJobEvent(db,jobId,run.owner_id,"job.queued",{jobType:"workflow.execute",runId:run.id,approvedNodeId:waiting.node_id});
           audit(db,user.id,"workflow.step_approved","workflow_run",run.id,{nodeId:waiting.node_id},run.project_id);
           send(res,202,{runId:run.id,jobId,status:"queued"},cors);return;
         }
