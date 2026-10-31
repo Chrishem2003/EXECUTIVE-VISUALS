@@ -103,7 +103,7 @@ export function createCloudAssetRepository({
       ownerId=validUuid(ownerId,"owner ID");assetId=validUuid(assetId,"asset ID");
       const rows=await request("assets?select=id,owner_id,project_id,original_name,media_type,byte_size,sha256,storage_bucket,object_path,derivative_of,metadata,created_at,deleted_at&id=eq."+encodeURIComponent(assetId)+"&deleted_at=is.null&limit=1");
       const row=Array.isArray(rows)?rows[0]:null;
-      if(!row||row.owner_id!==ownerId) {const error=new Error("Cloud asset not found.");error.code="CLOUD_ASSET_NOT_FOUND";throw error;}
+      if(!row||(!row.project_id&&row.owner_id!==ownerId)) {const error=new Error("Cloud asset not found.");error.code="CLOUD_ASSET_NOT_FOUND";throw error;}
       await allowed(ownerId,row.project_id||null,"read");
       if(row.storage_bucket!=="executive-visuals-media"||typeof row.object_path!=="string") throw new Error("Cloud asset storage reference is invalid.");
       return {asset:publicAsset(row),url:await storage.createSignedUrl(row.object_path,expiresIn)};
@@ -112,7 +112,7 @@ export function createCloudAssetRepository({
       ownerId=validUuid(ownerId,"owner ID");assetId=validUuid(assetId,"asset ID");
       const rows=await request("assets?select=id,owner_id,project_id,object_path,storage_bucket&id=eq."+encodeURIComponent(assetId)+"&deleted_at=is.null&limit=1");
       const row=Array.isArray(rows)?rows[0]:null;
-      if(!row||row.owner_id!==ownerId) {const error=new Error("Cloud asset not found.");error.code="CLOUD_ASSET_NOT_FOUND";throw error;}
+      if(!row||(!row.project_id&&row.owner_id!==ownerId)) {const error=new Error("Cloud asset not found.");error.code="CLOUD_ASSET_NOT_FOUND";throw error;}
       await allowed(ownerId,row.project_id||null,"write");
       const changed=await request("assets?id=eq."+encodeURIComponent(assetId)+"&deleted_at=is.null",{method:"PATCH",prefer:"return=representation",body:{deleted_at:new Date().toISOString()}});
       if(!Array.isArray(changed)||changed.length!==1) throw new Error("Cloud asset could not be safely marked deleted.");
