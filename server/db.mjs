@@ -174,8 +174,7 @@ export function canWriteProject(db,userId,projectId){
 export function getAccessibleAsset(db,userId,assetId,write=false){
   const asset=db.prepare("SELECT * FROM assets WHERE id=? AND deleted_at IS NULL").get(assetId);
   if(!asset)return null;
-  if(asset.owner_id===userId)return asset;
-  if(!asset.project_id)return null;
+  if(!asset.project_id)return asset.owner_id===userId?asset:null;
   const access=getProjectAccess(db,userId,asset.project_id);
   if(!access||write&&!["owner","editor"].includes(access.access_role))return null;
   return asset;
