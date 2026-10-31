@@ -28,6 +28,8 @@ try{
   id:"timeline-1",projectId:null,name:"Render test",revision:1,frameRate:{numerator:24,denominator:1},width:1280,height:720,pixelAspectRatio:1,
   tracks:[{id:"video-1",name:"Video 1",kind:"video",enabled:true,locked:false,clips:[
    {id:"clip-1",assetId:"asset-1",name:"Source",sourceRange:{start:{value:0,rate:24},duration:{value:48,rate:24}},timelineStart:{value:0,rate:24},duration:{value:48,rate:24},enabled:true}
+  ]},{id:"audio-1",name:"Music",kind:"audio",enabled:true,locked:false,clips:[
+   {id:"music-clip",assetId:"audio-1",name:"Music",sourceRange:{start:{value:0,rate:24},duration:{value:48,rate:24}},timelineStart:{value:0,rate:24},duration:{value:48,rate:24},enabled:true}
   ]}],markers:[]
  };
  db.prepare("INSERT INTO timelines(id,owner_id,project_id,name,timeline_json) VALUES(?,?,?,?,?)")
