@@ -7,7 +7,7 @@
  */
 export type CapabilityDomain =
   | "direction" | "preproduction" | "identity" | "image" | "video"
-  | "cinema" | "editing" | "audio" | "localization" | "enhancement"
+  | "cinema" | "editing" | "motion" | "audio" | "localization" | "enhancement"
   | "workflow" | "agent" | "campaign" | "design" | "assets"
   | "collaboration" | "integration" | "operations" | "quality" | "spatial" | "production" | "capture";
 
@@ -26,7 +26,7 @@ export type SemanticMediaRole =
   | "mask" | "identity-reference" | "style-reference" | "product-reference"
   | "start-frame" | "end-frame" | "keyframe" | "motion-reference"
   | "transcript" | "subtitle" | "voice-profile" | "brand-kit"
-  | "glossary" | "timeline" | "structured-data" | "asset" | "3d-scene" | "mesh" | "camera-data" | "timecode" | "proxy" | "timeline-package";
+  | "glossary" | "timeline" | "structured-data" | "asset" | "creative-set" | "character" | "storyboard" | "3d-scene" | "mesh" | "camera-data" | "timecode" | "proxy" | "timeline-package";
 
 export interface CapabilityPort {
   id: string;
@@ -386,7 +386,7 @@ export const CAPABILITY_ATLAS: readonly CapabilityDefinition[] = [
     {evidence:"publicly-documented",readiness:"adapter-required",execution:["async"]}),
   spec("capture.remote-recording", "capture", "Record remote participants as synchronized isolated tracks",
     [p("participants","structured-data","Participant identities and recording devices"),p("consent","structured-data","Recording and likeness consent records")],
-    [p("tracks","media","Synchronized source tracks"),p("sync","timecode","Shared recording timebase")],
+    [p("tracks","asset","Synchronized source tracks"),p("sync","timecode","Shared recording timebase")],
     {evidence:"publicly-documented",readiness:"adapter-required",execution:["interactive","async"],approvals:["recording-consent"]}),
   spec("production.analytics-feedback", "production", "Turn campaign performance into creative recommendations",
     [p("campaign","structured-data","Published campaign and variants"),p("analytics","structured-data","Reach, retention, conversion and engagement metrics")],
