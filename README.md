@@ -1,37 +1,30 @@
 # Executive Visuals
 
-**One workspace for AI-directed visual production.**
+**One integrated creative production platform — from idea to final deliverable.**
 
-Executive Visuals is an original, provider-independent creative production workspace that brings together avatar-led video, cinematic image/video creation, editing, enhancement, voice, and campaign workflows.
+Executive Visuals combines publicly observable capability families of avatar-led video, cinematic generation, editing, enhancement and campaign production into one original product. It does not copy proprietary source, private APIs, protected prompts, model weights or third-party brand assets.
 
-> This project is an independent implementation. It does not contain copied source code, proprietary assets, private APIs, or branding from third-party products.
+## Workspaces
+- AI Director — briefs, hooks, scripts, storyboards and shot planning.
+- Workflow Canvas — connect creative steps into repeatable graphs.
+- Characters & Voices — reusable identity/voice profiles and consent.
+- Cinematic Studio — scene continuity, camera, lens, lighting and movement.
+- Image Studio — prompt, references, variations and image edits.
+- Video Editor — timeline, audio, captions, transitions and export planning.
+- Voice & Localization — narration, transcription, translation, dubbing and lip-sync.
+- Enhancement Lab — upscale, restore, denoise, repair, retouch, cleanup and color.
+- Campaign Factory — product ads, UGC concepts and channel variants.
+- Asset Library — references, source media and derivatives.
+- Creative Engines — provider-neutral capability registry.
+- Settings — rights, privacy, retention and budgets.
 
-## Product direction
+## Current milestone
+This branch consolidates the product architecture and adds a richer local-first interactive workspace. Local planning and project records work in the browser. Actual AI generation, durable media storage, collaboration, authenticated jobs and rendering are not represented as complete; they require trusted server infrastructure and authorized adapters.
 
-- **Director** — briefs, scripts, shot lists, storyboards, and production plans.
-- **Avatar Studio** — consent-based presenter profiles and avatar-video workflows.
-- **Cinematic Studio** — image/video generation briefs with shot, camera, lens, lighting, and continuity controls.
-- **Image Studio** — image creation, variations, and edit workflows.
-- **Video Studio** — project timeline, scene assembly, captions, and export planning.
-- **Enhancement Lab** — restoration, upscale, retouch, denoise, object removal, and background workflows.
-- **Voice & Localization** — speech, voice profiles, transcription, translation, dubbing, and lip-sync workflows.
-- **Campaign Studio** — product ads, UGC-style concepts, social variants, and batch briefs.
-- **Asset Library** — project assets, references, reusable characters, brand kits, and outputs.
+## Run
+npm install
+npm run dev
+npm run typecheck
+npm run build
 
-## Architecture principles
-
-1. Provider-independent capability contracts; no vendor lock-in.
-2. Local-first development with optional authorized cloud providers.
-3. Explicit consent and rights checks for likeness, voice, and uploaded media.
-4. Transparent job states, provider attribution, and estimated/actual costs.
-5. Durable project/asset metadata with pluggable storage.
-6. No secret values in browser bundles, logs, or committed files.
-7. A capability is not marked available until its adapter is implemented and tested.
-
-## Status
-
-The repository is being bootstrapped from an empty GitHub repository. Initial milestone: a coherent application shell, documented capability map, provider/job architecture, and testable local development foundation. Actual generative output requires a configured local model or an authorized provider adapter.
-
-## Development
-
-See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for setup and configuration. See [docs/REVERSE-ENGINEERING.md](docs/REVERSE-ENGINEERING.md) for evidence standards and the independent implementation plan.
+See docs/UNIFIED-REVERSE-ENGINEERING.md and docs/EXECUTION-ARCHITECTURE.md for the research dossier, data model, workflows, API and acceptance gates.

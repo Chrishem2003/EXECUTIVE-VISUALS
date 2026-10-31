@@ -1,64 +1,12 @@
-export type CapabilityId =
-  | "brief.plan" | "avatar.video" | "image.generate" | "video.generate"
-  | "video.edit" | "voice.speech" | "voice.translate" | "media.enhance"
-  | "media.remove-object" | "media.upscale" | "campaign.variants";
-
-export type ProviderReadiness = "available" | "needs-credentials" | "unsupported" | "disabled";
-export type JobState = "queued" | "running" | "succeeded" | "failed" | "cancelled";
-
-export interface CapabilityDescriptor {
-  id: CapabilityId;
-  label: string;
-  inputs: string[];
-  outputs: string[];
-  requiresConsent?: boolean;
-}
-
-export interface ProviderDescriptor {
-  id: string;
-  label: string;
-  capabilities: CapabilityId[];
-  readiness: ProviderReadiness;
-  docsUrl?: string;
-}
-
-export interface CreativeJob<TInput = Record<string, unknown>> {
-  id: string;
-  capability: CapabilityId;
-  input: TInput;
-  state: JobState;
-  providerId?: string;
-  createdAt: string;
-  updatedAt: string;
-  outputAssetIds: string[];
-  error?: { code: string; message: string; retryable: boolean };
-}
-
-export interface CapabilityAdapter {
-  readonly provider: ProviderDescriptor;
-  supports(capability: CapabilityId): boolean;
-  execute<TInput>(capability: CapabilityId, input: TInput, signal?: AbortSignal): Promise<{
-    providerJobId?: string;
-    output: unknown;
-    usage?: { inputUnits?: number; outputUnits?: number; estimatedCost?: number; currency?: string };
-  }>;
-}
-
-/**
- * Providers must implement this contract on the trusted server.
- * Browser code must never receive provider credentials.
- * Consent-gated capabilities must validate rights/consent before dispatch.
- */
-export const capabilityCatalog: CapabilityDescriptor[] = [
-  { id: "brief.plan", label: "Creative planning", inputs: ["brief", "references"], outputs: ["production-plan"] },
-  { id: "avatar.video", label: "Presenter video", inputs: ["script", "consented-avatar", "voice"], outputs: ["video"], requiresConsent: true },
-  { id: "image.generate", label: "Image generation", inputs: ["prompt", "references"], outputs: ["image"] },
-  { id: "video.generate", label: "Video generation", inputs: ["prompt", "references", "shot-plan"], outputs: ["video"] },
-  { id: "video.edit", label: "Video editing", inputs: ["video", "edit-instructions"], outputs: ["video"] },
-  { id: "voice.speech", label: "Speech generation", inputs: ["script", "voice-profile"], outputs: ["audio"], requiresConsent: true },
-  { id: "voice.translate", label: "Dubbing and localization", inputs: ["source-video", "target-language"], outputs: ["localized-video"], requiresConsent: true },
-  { id: "media.enhance", label: "Media restoration", inputs: ["image-or-video", "enhancement-profile"], outputs: ["image-or-video"] },
-  { id: "media.remove-object", label: "Object removal", inputs: ["image-or-video", "mask"], outputs: ["image-or-video"] },
-  { id: "media.upscale", label: "Super-resolution", inputs: ["image-or-video", "target-resolution"], outputs: ["image-or-video"] },
-  { id: "campaign.variants", label: "Campaign variants", inputs: ["campaign-brief", "channels"], outputs: ["creative-variants"] }
+export type Capability="director.plan"|"story.script"|"storyboard.create"|"character.profile"|"image.generate"|"image.edit"|"video.generate"|"video.edit"|"video.timeline"|"avatar.generate"|"voice.generate"|"voice.transcribe"|"voice.translate"|"voice.lipsync"|"media.upscale"|"media.restore"|"media.denoise"|"media.stabilize"|"media.interpolate"|"media.remove-object"|"media.remove-background"|"media.expand"|"media.color"|"media.convert"|"campaign.variants"|"export.render";
+export type Readiness="available"|"needs-credentials"|"unsupported"|"disabled";
+export type JobStatus="queued"|"running"|"succeeded"|"failed"|"cancelled";
+export interface CapabilitySpec{id:Capability;label:string;inputs:string[];outputs:string[];consent?:"likeness"|"voice"|"source-rights";}
+export interface ProviderSpec{id:string;name:string;capabilities:Capability[];readiness:Readiness;docsUrl?:string;region?:string;pricingModel?:string;}
+export interface MediaAsset{id:string;projectId:string;name:string;mimeType:string;size:number;storageKey:string;checksum?:string;source:"upload"|"generated"|"derived";parentAssetId?:string;}
+export interface CreativeJob<T=Record<string,unknown>>{id:string;projectId:string;capability:Capability;providerId?:string;input:T;status:JobStatus;createdAt:string;updatedAt:string;outputAssetIds:string[];estimatedCost?:number;actualCost?:number;error?:{code:string;message:string;retryable:boolean};}
+export interface AdapterContext{userId:string;projectId:string;requestId:string;signal:AbortSignal;}
+export interface CapabilityAdapter{readonly provider:ProviderSpec;supports(id:Capability):boolean;execute<T>(capability:Capability,input:T,context:AdapterContext):Promise<{providerJobId?:string;output:unknown;usage?:{units?:number;cost?:number;currency?:string}}>}
+export const capabilityCatalog:CapabilitySpec[]=[
+{id:"director.plan",label:"Creative direction",inputs:["brief","audience","references"],outputs:["production-plan"]},{id:"story.script",label:"Script and hooks",inputs:["brief","duration","tone"],outputs:["script"]},{id:"storyboard.create",label:"Storyboard and shot list",inputs:["script","character-bible","camera-language"],outputs:["storyboard"]},{id:"character.profile",label:"Reusable character profile",inputs:["visual-description","wardrobe","references"],outputs:["character-profile"],consent:"likeness"},{id:"image.generate",label:"Image generation",inputs:["prompt","references","aspect-ratio"],outputs:["image"]},{id:"image.edit",label:"Image editing and inpainting",inputs:["source-image","instruction","mask"],outputs:["image"]},{id:"video.generate",label:"Video generation",inputs:["prompt","shot","references","camera-motion"],outputs:["video"]},{id:"video.edit",label:"Video editing",inputs:["source-video","edit-instructions"],outputs:["video"]},{id:"video.timeline",label:"Timeline assembly",inputs:["clips","audio","captions","transitions"],outputs:["video"]},{id:"avatar.generate",label:"Presenter video",inputs:["script","avatar-profile","voice-profile"],outputs:["video"],consent:"likeness"},{id:"voice.generate",label:"Speech generation",inputs:["script","voice-profile","language"],outputs:["audio"],consent:"voice"},{id:"voice.transcribe",label:"Speech transcription",inputs:["audio"],outputs:["transcript"]},{id:"voice.translate",label:"Translation and dubbing",inputs:["source-media","language","glossary"],outputs:["localized-media"],consent:"voice"},{id:"voice.lipsync",label:"Lip synchronization",inputs:["video","audio","consent-record"],outputs:["video"],consent:"likeness"},{id:"media.upscale",label:"Super-resolution",inputs:["source-media","target-resolution"],outputs:["media"]},{id:"media.restore",label:"Media restoration",inputs:["source-media","profile"],outputs:["media"]},{id:"media.denoise",label:"Denoise",inputs:["source-media","strength"],outputs:["media"]},{id:"media.stabilize",label:"Stabilization and repair",inputs:["source-video"],outputs:["video"]},{id:"media.interpolate",label:"Frame interpolation",inputs:["source-video","target-fps"],outputs:["video"]},{id:"media.remove-object",label:"Object removal",inputs:["source-media","mask"],outputs:["media"]},{id:"media.remove-background",label:"Background removal",inputs:["source-media"],outputs:["media"]},{id:"media.expand",label:"Generative expansion",inputs:["source-media","target-ratio"],outputs:["media"]},{id:"media.color",label:"Color correction",inputs:["source-video","reference"],outputs:["video"]},{id:"media.convert",label:"Format conversion",inputs:["source-media","target-format"],outputs:["media"]},{id:"campaign.variants",label:"Campaign variations",inputs:["campaign-brief","channels","approved-assets"],outputs:["creative-set"]},{id:"export.render",label:"Final render",inputs:["timeline","format","delivery-profile"],outputs:["deliverable"]}
 ];
