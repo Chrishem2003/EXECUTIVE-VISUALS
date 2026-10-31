@@ -98,6 +98,8 @@ test("creative workspace drafts persist per project with revision and editor-rol
     shots:[{id:"shot-1",scene:"Opening",action:"Aerial approach",camera:"Wide",lens:"24mm",movement:"Slow push",lighting:"Golden hour",duration:5}],
     characters:[{id:"character-1",name:"Presenter",description:"Original fictional presenter",voice:"Not assigned",consent:false}],
     prompt:"Creative brief prompt",plan:"Three-act plan",script:"Opening narration",variants:["A","B"],
+    researchSources:[{id:"source-1",title:"Official evidence report",url:"https://example.org/report",sourceType:"Official report",author:"Research Office",summary:"Primary evidence",rights:"Public"}],
+    knowledgeRecords:[{id:"record-1",title:"Verified finding",content:"Finding supported by the official report.",tags:["evidence"],sourceIds:["source-1","unknown-source"],kind:"Finding",status:"Verified"}],
     ignoredSecret:"must not be persisted"
   };
   const saved=await request("/api/projects/"+project.id+"/workspace",{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({revision:0,document})},owner);
@@ -108,16 +110,26 @@ test("creative workspace drafts persist per project with revision and editor-rol
   assert.equal(loadedBody.revision,1);
   assert.equal(loadedBody.document.creativeProjects[0].name,"Launch film");
   assert.equal(loadedBody.document.shots[0].duration,5);
+  assert.equal(loadedBody.document.researchSources[0].url,"https://example.org/report");
+  assert.deepEqual(loadedBody.document.knowledgeRecords[0].sourceIds,["source-1"]);
   assert.equal("ignoredSecret" in loadedBody.document,false);
+  const unsafe=await request("/api/projects/"+project.id+"/workspace",{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({revision:1,document:{researchSources:[{id:"bad",title:"Unsafe",url:"javascript:alert(1)"}]}})},owner);
+  assert.equal(unsafe.status,400);
+  assert.equal((await unsafe.json()).error.code,"INVALID_RESEARCH_SOURCE_URL");
   const stale=await request("/api/projects/"+project.id+"/workspace",{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({revision:0,document})},owner);
   assert.equal(stale.status,409);
   const editor=await register("workspace-editor@example.test");
   const viewer=await register("workspace-viewer@example.test");
   await request("/api/projects/"+project.id+"/members",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({email:"workspace-editor@example.test",role:"editor"})},owner);
   await request("/api/projects/"+project.id+"/members",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({email:"workspace-viewer@example.test",role:"viewer"})},owner);
-  const editorSave=await request("/api/projects/"+project.id+"/workspace",{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({revision:1,document:{...document,plan:"Edited by collaborator"}})},editor);
+  const editorSave=await request("/api/projects/"+project.id+"/workspace",{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({revision:1,document:{knowledgeRecords:[{id:"record-2",title:"Collaborator note",content:"Partial workspace save.",tags:[],sourceIds:["source-1"],kind:"Decision",status:"Draft"}]}})},editor);
   assert.equal(editorSave.status,200);
   assert.equal((await editorSave.json()).revision,2);
+  const merged=await request("/api/projects/"+project.id+"/workspace",{},owner);
+  const mergedDoc=(await merged.json()).document;
+  assert.equal(mergedDoc.creativeProjects[0].name,"Launch film","partial knowledge saves preserve creative project data");
+  assert.equal(mergedDoc.researchSources[0].title,"Official evidence report","partial knowledge saves preserve source records");
+  assert.equal(mergedDoc.knowledgeRecords[0].title,"Collaborator note");
   const viewerSave=await request("/api/projects/"+project.id+"/workspace",{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({revision:2,document})},viewer);
   assert.equal(viewerSave.status,403);
 });
