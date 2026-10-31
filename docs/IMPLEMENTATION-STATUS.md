@@ -10,9 +10,9 @@
 |---|---|---|
 | Product shell | Unified browser application with creative, planning and management workspaces | Browser app |
 | Capability explorer | Search and domain filters; displays stable ID, inputs, outputs, evidence, execution modes and approval gates | Registry browsing |
-| Capability registry | **83 typed capabilities across 22 domains** | Contract/readiness metadata, not provider availability |
+| Capability registry | **84 typed capabilities across 22 domains** | Contract/readiness metadata, not provider availability |
 | Machine-readable catalog | JSON catalog generated from typed registry | Build verifier enforces ID/domain/label parity |
-| Workflow graph | Typed node kinds, semantic media ports, graph edges, server-side validation and optimistic workflow versioning | Graph persistence and validation are real; visual node canvas still needs full drag/drop editing |
+| Workflow graph | Draggable visual node editor, typed ports, connections, node configuration, graph validation, server-side versioning and partial-run planning | Planning only; model/provider execution is not connected |
 | Graph validation | Duplicate IDs, missing nodes/ports, incompatible ports, duplicate single-input edges, required inputs and cycle detection | Validation only |
 | Targeted execution planning | Full graph, single-node and selected-subgraph dependency planning | Produces a plan only; not yet wired to external model execution |
 | Output locking | Locked nodes with saved output IDs are reused; targeted reruns can stop at locked ancestors | Local planner behavior tested |
@@ -21,11 +21,11 @@
 | Media ingest | Binary uploads to local disk, MIME allowlist, upload-size limit and SHA-256 checksum | Local disk; cloud object storage not connected |
 | Asset library | Owner isolation, metadata, original/derivative relationship and private file reads | No cloud storage or signed URLs yet |
 | Job queue | Persistent queue, idempotency keys, normalized states, progress events, process cancellation and audit trail | Single local worker; distributed workers and lease recovery pending |
-| Local media engine | Probe, thumbnail, transcode, audio extraction and proxy operations with signature-checked ingest | Requires FFmpeg/FFprobe installed on worker |
+| Local media engine | Probe, thumbnail, transcode, audio extraction, proxy generation and timeline MP4 master rendering with synchronized audio tracks | Requires FFmpeg/FFprobe installed; master renderer supports one primary video track and audio-only clips; overlays/captions/effects are pending |
 | Runtime console | Sign-in, project creation, uploads, media job submission, job inspection and audit view | Browser UI uses the local API |
-| Project collaboration | Owner-managed invitations with editor, reviewer and viewer roles; access revocation | Existing local accounts only; invitation email delivery not connected |
-| Review and approvals | Timecoded comments, approve/request-changes decisions and status updates | Local API persistence; external review links not implemented |
-| Editorial timeline | Multi-track clips, rational frame timing, source trims, split, move, markers, overlap validation and interchange export | No preview playback, transitions or render engine yet |
+| Project collaboration | Owner-managed invitations with editor, reviewer and viewer roles; access revocation enforced across project records | Existing local accounts only; invitation email delivery not connected |
+| Review and approvals | Timecoded comments, approve/request-changes decisions and status updates | Local API persistence; external review links and visual drawing annotations not implemented |
+| Editorial timeline | Multi-track clips, rational source timebases, trim, split, move, markers, overlap validation, interchange export and local MP4 master render | No preview playback, transitions, overlays, captions or effects rendering yet |
 | Timeline persistence | Owner-scoped timelines, asset ownership checks, optimistic revisions and saved interchange package | SQLite local DB; isolated SQL migration pending dedicated database review |
 | Database migration | Dedicated multi-tenant schema, row-level security and private object-storage policies | Migration is committed for review; **not applied** to shared staging |
 | Quality checks | Capability parity, workflow planner checks and API integration tests | CI validates local contracts and API behavior, not cloud/provider integrations |
