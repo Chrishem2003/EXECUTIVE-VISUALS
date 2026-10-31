@@ -7,7 +7,7 @@ import { pipeline } from "node:stream/promises";
 import { createHash } from "node:crypto";
 import { stat } from "node:fs/promises";
 import { Transform } from "node:stream";
-import { addJobEvent, getOwnedAsset, getAccessibleAsset, json, parseJson } from "./db.mjs";
+import { addJobEvent, getAccessibleAsset, json, parseJson } from "./db.mjs";
 
 const ALLOWED_JOBS = new Set(["media.probe", "media.thumbnail", "media.transcode", "media.audio_extract", "media.proxy", "timeline.render"]);
 const CONTAINERS = new Set(["mp4", "webm", "mov", "mkv", "mp3", "wav"]);
@@ -125,7 +125,7 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
   if (!executableAvailable("ffmpeg") && job.job_type !== "media.probe") throw Object.assign(new Error("FFmpeg is not installed on this worker."), { code:"MEDIA_ENGINE_MISSING" });
   if (!executableAvailable("ffprobe")) throw Object.assign(new Error("FFprobe is not installed on this worker."), { code:"MEDIA_ENGINE_MISSING" });
   const input = parseJson(job.input_json);
-  const source = getOwnedAsset(db, job.owner_id, input.sourceAssetId);
+  const source = getAccessibleAsset(db, job.owner_id, input.sourceAssetId, true);
   if (!source) throw Object.assign(new Error("Source asset does not exist or is not accessible."), { code:"SOURCE_ASSET_NOT_FOUND" });
   const sourcePath = join(mediaRoot, source.storage_path);
   const id = randomUUID();
