@@ -118,7 +118,7 @@ async function renderTimelineJob({db,job,mediaRoot,activeProcesses,onProgress}){
   const clips=videoTracks[0].clips.filter(clip=>clip.enabled!==false).sort((a,b)=>Number(a.timelineStart.value)/Number(a.timelineStart.rate)-Number(b.timelineStart.value)/Number(b.timelineStart.rate));
   const audioClips=audioTracks.flatMap(track=>track.clips.filter(clip=>clip.enabled!==false)).sort((a,b)=>Number(a.timelineStart.value)/Number(a.timelineStart.rate)-Number(b.timelineStart.value)/Number(b.timelineStart.rate));
   const overlayClips=overlayTracks.flatMap(track=>track.clips.filter(clip=>clip.enabled!==false)).sort((a,b)=>Number(a.timelineStart.value)/Number(a.timelineStart.rate)-Number(b.timelineStart.value)/Number(b.timelineStart.rate));
-  const captionClips=captionTracks.flatMap(track=>track.clips.filter(clip=>clip.enabled!==false)).sort((a,b)=>Number(a.timelineStart.value)/Number(b.timelineStart.rate)-Number(b.timelineStart.value)/Number(b.timelineStart.rate));
+  const captionClips=captionTracks.flatMap(track=>track.clips.filter(clip=>clip.enabled!==false)).sort((a,b)=>Number(a.timelineStart.value)/Number(a.timelineStart.rate)-Number(b.timelineStart.value)/Number(b.timelineStart.rate));
   if(!clips.length)throw Object.assign(new Error("Add at least one enabled clip to the primary video track."),{code:"EMPTY_TIMELINE"});
   const width=Math.max(256,Math.min(7680,Math.floor(Number(timeline.width)||1920)));
   const height=Math.max(144,Math.min(4320,Math.floor(Number(timeline.height)||1080)));
@@ -203,7 +203,7 @@ async function renderTimelineJob({db,job,mediaRoot,activeProcesses,onProgress}){
     const tempPath=join(outputDir,outputId+"-captions-"+captionIndex+".srt");
     await writeFile(tempPath,adjusted,"utf8");captionTempPaths.push(tempPath);
     const videoLabel="caption-video-"+captionIndex++,style=captionStyle(clip.metadata||{}),escaped=escapeFilterPath(tempPath);
-    videoEffects.push(`${currentVideo}subtitles=filename='${escaped}':force_style='${style}':enable='between(t,${start.toFixed(6)},${(start+duration).toFixed(6)})'[${videoLabel}]`);
+    videoEffects.push(`${currentVideo}subtitles=filename='${escaped}':force_style='${style}'[${videoLabel}]`);
     currentVideo=`[${videoLabel}]`;
   }
   const concatGraph=segments.map(item=>`[${item.label}]`).join("")+`concat=n=${segments.length}:v=1:a=0[vbase]`;
