@@ -125,13 +125,26 @@ async function storeUpload(req,user,projectId) {
   const mediaType=String(req.headers["content-type"]||"application/octet-stream").split(";")[0].toLowerCase();
   if(!ALLOWED_MEDIA.has(mediaType))throw Object.assign(new Error("Unsupported media type."),{status:415,code:"UNSUPPORTED_MEDIA_TYPE"});
   if(projectId&&!getOwnedProject(db,user.id,projectId))throw Object.assign(new Error("Project not found."),{status:404,code:"PROJECT_NOT_FOUND"});
-  const originalName=safeName(decodeURIComponent(req.headers["x-file-name"]||"upload"));
+  const declaredSize=Number(req.headers["content-length"]||0);
+  if(declaredSize>MAX_UPLOAD_BYTES)throw Object.assign(new Error("Upload exceeds the configured size limit."),{status:413,code:"UPLOAD_TOO_LARGE"});
+  let decodedName="upload";
+  try{decodedName=decodeURIComponent(String(req.headers["x-file-name"]||"upload"));}
+  catch{throw Object.assign(new Error("File name header is malformed."),{status:400,code:"INVALID_FILE_NAME"});}
+  const originalName=safeName(decodedName);
   const id=randomUUID(), ext=EXTENSIONS[mediaType]||"bin", relative="uploads/"+id+"."+ext, absolute=join(MEDIA_ROOT,relative);
   const digest=createHash("sha256");let size=0;
   const meter=new Transform({transform(chunk,encoding,callback){size+=chunk.length;if(size>MAX_UPLOAD_BYTES){callback(Object.assign(new Error("Upload exceeds the configured size limit."),{status:413,code:"UPLOAD_TOO_LARGE"}));return;}digest.update(chunk);callback(null,chunk);}});
   try { await pipeline(req,meter,createWriteStream(absolute,{flags:"wx"})); }
   catch(error){await unlink(absolute).catch(()=>{});throw error;}
   if(size===0){await unlink(absolute).catch(()=>{});throw Object.assign(new Error("Empty uploads are not accepted."),{status:400,code:"EMPTY_UPLOAD"});}
+  const handle=await open(absolute,"r");
+  const header=Buffer.alloc(32);
+  const read=await handle.read(header,0,32,0);
+  await handle.close();
+  if(!validFileSignature(mediaType,header.subarray(0,read.bytesRead))){
+    await unlink(absolute).catch(()=>{});
+    throw Object.assign(new Error("File signature does not match the declared media type."),{status:415,code:"MEDIA_SIGNATURE_MISMATCH"});
+  }
   const sha256=digest.digest("hex");
   db.prepare("INSERT INTO assets(id,owner_id,project_id,original_name,media_type,byte_size,sha256,storage_path) VALUES(?,?,?,?,?,?,?,?)")
     .run(id,user.id,projectId||null,originalName,mediaType,size,sha256,relative);
