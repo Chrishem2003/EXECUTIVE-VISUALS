@@ -2,20 +2,20 @@
 
 Date: 31 October 2026  
 Project: Executive Visuals  
-Targets: Higgsfield, HeyGen, Wink  
+Targets: Platform A, Platform B, Platform C  
 Method: REA-inspired inspection of official first-party documentation and unauthenticated public pages.
 
 > This is independent product research, not a claim of private reverse engineering. It records observed workflows and implementation implications. It does not copy source code, private assets, hidden prompts, private APIs or model weights.
 
-## 1. Higgsfield — director studio, node canvas and agent workspace
+## 1. Platform A — director studio, node canvas and agent workspace
 
 Sources:
-- https://higgsfield.ai/creator-hub/help-center/tools/how-do-i-use-cinema-studio
-- https://higgsfield.ai/creator-hub/help-center/tools/how-do-i-use-canvas
-- https://higgsfield.ai/creator-hub/help-center/tools/how-do-i-use-marketing-studio-to-create-video-ads
-- https://higgsfield.ai/creator-hub/help-center/tools/how-do-i-use-supercomputer
-- https://higgsfield.ai/creator-hub/help-center/tools/how-do-i-use-ai-influencer
-- https://higgsfield.ai/creator-hub/help-center/ai-models/how-do-i-create-and-use-a-soul-id-character
+- [Public source ref EXT-001] A.ai/creator-hub/help-center/tools/how-do-i-use-cinema-studio
+- [Public source ref EXT-001] A.ai/creator-hub/help-center/tools/how-do-i-use-canvas
+- [Public source ref EXT-001] A.ai/creator-hub/help-center/tools/how-do-i-use-marketing-studio-to-create-video-ads
+- [Public source ref EXT-001] A.ai/creator-hub/help-center/tools/how-do-i-use-supercomputer
+- [Public source ref EXT-001] A.ai/creator-hub/help-center/tools/how-do-i-use-ai-influencer
+- [Public source ref EXT-001] A.ai/creator-hub/help-center/ai-models/how-do-i-create-and-use-a-soul-id-character
 
 ### Cinema Studio workflow
 
@@ -65,23 +65,23 @@ AI Influencer is a menu-driven character builder with base identity fields and a
 
 **Design implications:** Keep the agent plan visible/editable; route through a provider registry; preserve step outputs and rerun only affected descendants; make skills versioned and inspectable; represent identity training as a consent-gated provider-scoped asset.
 
-## 2. HeyGen — programmable avatar/video system and agent tools
+## 2. Platform B — programmable avatar/video system and agent tools
 
 Sources:
-- https://developers.heygen.com/
-- https://developers.heygen.com/docs/quick-start
-- https://developers.heygen.com/mcp/overview
-- https://developers.heygen.com/skills/overview
-- https://developers.heygen.com/docs/webhooks
-- https://developers.heygen.com/docs/usage-limits
+- [Public source ref EXT-002] B.com/
+- [Public source ref EXT-002] B.com/docs/quick-start
+- [Public source ref EXT-002] B.com/mcp/overview
+- [Public source ref EXT-002] B.com/skills/overview
+- [Public source ref EXT-002] B.com/docs/webhooks
+- [Public source ref EXT-002] B.com/docs/usage-limits
 
 ### Integration and authentication
 
-The public developer docs expose REST API authentication with an API key in the X-Api-Key header, and a remote MCP endpoint at https://mcp.heygen.com/mcp/v1/ using OAuth to connect an agent to a user's existing plan.
+The public developer docs expose REST API authentication with an API key in the X-Api-Key header, and a remote MCP endpoint at [Public source ref EXT-003] B.com/mcp/v1/ using OAuth to connect an agent to a user's existing plan.
 
 The quick start describes creating a Video Agent session, receiving a session_id, polling until a video_id is assigned, then polling the video until completed or failed. The output includes a video URL and duration. Webhooks can replace frequent polling.
 
-HeyGen Skills are a higher-level layer: skills encode task expertise/instructions, while MCP and CLI expose tools. The documented skill chain is avatar skill → reusable avatar/voice identity handoff → video skill → finished video → translate skill. This is a useful architecture pattern: durable human-readable handoff state between reusable procedures. Executive Visuals should create its own skill contracts and project state, not copy HeyGen skill files or prompts.
+Platform B Skills are a higher-level layer: skills encode task expertise/instructions, while MCP and CLI expose tools. The documented skill chain is avatar skill → reusable avatar/voice identity handoff → video skill → finished video → translate skill. This is a useful architecture pattern: durable human-readable handoff state between reusable procedures. Executive Visuals should create its own skill contracts and project state, not copy Platform B skill files or prompts.
 
 ### Public MCP tool families
 
@@ -106,16 +106,16 @@ Webhook docs state that deliveries are HMAC-SHA256 signatures over the raw reque
 
 ### Constraints and capability metadata
 
-HeyGen publishes plan-specific concurrency, per-endpoint rate limits, input formats/sizes, script/prompt limits, output ratios, scene limits and pagination. It documents 429 responses with Retry-After and rate-limit headers. Values are endpoint/plan specific and change; Executive Visuals should load provider capability metadata and expose it in preflight, not hard-code current limits as universal rules. Respect retry headers and bounded backoff. Never put provider API keys in browser code or logs.
+Platform B publishes plan-specific concurrency, per-endpoint rate limits, input formats/sizes, script/prompt limits, output ratios, scene limits and pagination. It documents 429 responses with Retry-After and rate-limit headers. Values are endpoint/plan specific and change; Executive Visuals should load provider capability metadata and expose it in preflight, not hard-code current limits as universal rules. Respect retry headers and bounded backoff. Never put provider API keys in browser code or logs.
 
-## 3. Wink — media repair and ordered enhancement workflow
+## 3. Platform C — media repair and ordered enhancement workflow
 
 Sources:
-- https://wink.ai/workspace
-- https://wink.ai/ai-workflow
-- https://wink.ai/video-enhancer/upload
-- https://wink.ai/video-repair/upload
-- https://wink.ai/video-retouch/upload
+- [Public source ref EXT-001] C.ai/workspace
+- [Public source ref EXT-001] C.ai/ai-workflow
+- [Public source ref EXT-001] C.ai/video-enhancer/upload
+- [Public source ref EXT-001] C.ai/video-repair/upload
+- [Public source ref EXT-001] C.ai/video-retouch/upload
 
 ### Public workflow observations
 
