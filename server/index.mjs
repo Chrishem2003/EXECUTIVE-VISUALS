@@ -14,6 +14,7 @@ import { claimNextJob, completeJob, recoverExpiredJobs, renewJobLease } from "./
 import { sanitizeCreativeWorkspaceDocument } from "./workspace-documents.mjs";
 import { importResearchUrl } from "./research-import.mjs";
 import { getProviderCatalog } from "./provider-registry.mjs";
+import { createCloudTimelineApi } from "./cloud-timeline-api.mjs";
 
 const PORT = Number(process.env.API_PORT || process.env.PORT || 4179);
 const HOST = process.env.API_HOST || "127.0.0.1";
@@ -43,6 +44,9 @@ const EXTENSIONS = {
 };
 const MEDIA_JOBS = new Set(["media.probe","media.thumbnail","media.transcode","media.audio_extract","media.audio-clean","media.proxy","media.denoise","media.color","media.resize","media.interpolate","media.upscale","timeline.render"]);
 const db = openDatabase(DB_FILE);
+const cloudTimelineApiEnabled = process.env.CLOUD_TIMELINE_API_ENABLED === "true";
+if (cloudTimelineApiEnabled && AUTH_MODE !== "supabase") throw new Error("Cloud timeline API requires verified Supabase authentication.");
+const cloudTimelineApi = cloudTimelineApiEnabled ? createCloudTimelineApi() : null;
 const activeProcesses = new Map();
 const WORKER_ID = randomUUID();
 const rateBuckets = new Map();
@@ -288,6 +292,15 @@ export function createAppServer() {
       const user=await authenticate(req);
       if(!user){fail(res,401,"AUTH_REQUIRED","Sign in to access this workspace.");return;}
       if(path==="/api/me"&&req.method==="GET"){send(res,200,{user,authMode:AUTH_MODE},cors);return;}
+      if(cloudTimelineApi && path.startsWith("/api/cloud/timelines")){
+        const isTimelineMutation=req.method==="POST"||req.method==="PUT";
+        const body=isTimelineMutation?await readJson(req,5*1024*1024):{};
+        const cloudResult=await cloudTimelineApi.handle({
+          method:req.method,path,ownerId:user.id,body,
+          idempotencyKey:String(req.headers["idempotency-key"]||"")
+        });
+        if(cloudResult){send(res,cloudResult.status,cloudResult.body,cors);return;}
+      }
       if(path==="/api/providers"&&req.method==="GET"){
         const catalog=getProviderCatalog(process.env,{ffmpeg:executableAvailable("ffmpeg"),ffprobe:executableAvailable("ffprobe")});
         send(res,200,catalog,cors);return;
