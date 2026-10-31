@@ -1,3 +1,9 @@
+import { createReadStream } from "node:fs";
+import { stat } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { Transform } from "node:stream";
+import { pipeline } from "node:stream/promises";
+
 const BUCKET = "executive-visuals-media";
 const MIME_TYPES = new Set([
   "image/jpeg","image/png","image/webp","image/gif",
@@ -111,6 +117,37 @@ export function createCloudStorage({
         body:bytes
       });
       return { bucket:BUCKET, path:objectPath, size:bytes.byteLength, contentType };
+    },
+    async uploadFile(objectPath,filePath,contentType) {
+      const path=safeObjectPath(objectPath);
+      if(!MIME_TYPES.has(contentType))throw new Error("Unsupported cloud media content type.");
+      const info=await stat(filePath);
+      if(!info.isFile()||info.size<1||info.size>maxBytes)throw new Error("Cloud media file is empty or exceeds the configured size limit.");
+      const digest=createHash("sha256");let size=0;
+      const meter=new Transform({transform(chunk,encoding,callback){size+=chunk.length;if(size>maxBytes){callback(Object.assign(new Error("Cloud media file exceeds the configured size limit."),{code:"CLOUD_STORAGE_TOO_LARGE"}));return;}digest.update(chunk);callback(null,chunk);}});
+      const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs);
+      const source=createReadStream(filePath);source.on("error",error=>meter.destroy(error));
+      const streamDone=pipeline(source,meter);
+      try{
+        const response=await fetchImpl(base+"/storage/v1/object/"+BUCKET+"/"+path,{
+          method:"POST",
+          headers:{apikey:serviceRoleKey,authorization:"Bearer "+serviceRoleKey,"content-type":contentType,"content-length":String(info.size),"cache-control":"max-age=3600","x-upsert":"false"},
+          body:meter,duplex:"half",signal:controller.signal
+        });
+        await streamDone;
+        const raw=await response.text();let parsed=null;
+        if(raw){try{parsed=JSON.parse(raw);}catch{if(response.ok)throw new Error("Cloud storage returned a non-JSON response.");}}
+        if(!response.ok){const message=typeof parsed?.message==="string"?parsed.message.replaceAll(serviceRoleKey,"[redacted]").slice(0,300):"Cloud storage request failed.";const error=new Error(message);error.code="CLOUD_STORAGE_HTTP_"+response.status;error.status=response.status;throw error;}
+        if(size!==info.size)throw new Error("Cloud media file changed while it was uploaded.");
+        const after=await stat(filePath);
+        if(after.size!==info.size||after.mtimeMs!==info.mtimeMs)throw new Error("Cloud media file changed while it was uploaded.");
+        return{bucket:BUCKET,path,size,contentType,sha256:digest.digest("hex")};
+      }catch(error){
+        controller.abort();source.destroy();meter.destroy();
+        await streamDone.catch(()=>{});
+        if(error?.name==="AbortError"){const timeout=new Error("Cloud storage request timed out.");timeout.code="CLOUD_STORAGE_TIMEOUT";throw timeout;}
+        throw error;
+      }finally{clearTimeout(timer);}
     },
     async createSignedUrl(objectPath, expiresIn = 300) {
       const path = safeObjectPath(objectPath);
