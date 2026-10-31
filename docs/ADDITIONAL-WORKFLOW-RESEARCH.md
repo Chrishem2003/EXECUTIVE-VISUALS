@@ -53,4 +53,4 @@ This file records product-neutral findings that expanded the Executive Visuals s
 10. Never claim a feature is operational until its adapter, test fixture and end-to-end verification exist.
 
 ## Primary public references
-The underlying first-party documentation was inspected during the research pass. Source references are retained as neutral IDs in the research workspace; this product-facing note intentionally does not reproduce vendor names or branded UI labels.
+The underlying first-party documentation was inspected during the research pass. Source destinations are intentionally redacted from product-facing documentation; this note preserves capability findings without reproducing vendor names or branded UI labels.
