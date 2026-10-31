@@ -149,6 +149,40 @@ create index if not exists ev_job_events_job on executive_visuals.job_events(job
 create index if not exists ev_reviews_project_created on executive_visuals.reviews(project_id,created_at);
 create index if not exists ev_audit_owner_id on executive_visuals.audit_events(owner_id,id desc);
 
+
+-- Ownership is immutable even when an editor is allowed to update a shared record.
+create or replace function executive_visuals.prevent_owner_reassignment()
+returns trigger
+language plpgsql
+set search_path = pg_catalog
+as $
+begin
+  if new.owner_id is distinct from old.owner_id then
+    raise exception 'owner_id is immutable';
+  end if;
+  return new;
+end;
+$;
+
+create trigger ev_projects_owner_immutable before update of owner_id on executive_visuals.projects
+for each row execute function executive_visuals.prevent_owner_reassignment();
+create trigger ev_workflows_owner_immutable before update of owner_id on executive_visuals.workflows
+for each row execute function executive_visuals.prevent_owner_reassignment();
+create trigger ev_timelines_owner_immutable before update of owner_id on executive_visuals.timelines
+for each row execute function executive_visuals.prevent_owner_reassignment();
+create trigger ev_assets_owner_immutable before update of owner_id on executive_visuals.assets
+for each row execute function executive_visuals.prevent_owner_reassignment();
+create trigger ev_jobs_owner_immutable before update of owner_id on executive_visuals.jobs
+for each row execute function executive_visuals.prevent_owner_reassignment();
+create trigger ev_reviews_owner_immutable before update of owner_id on executive_visuals.reviews
+for each row execute function executive_visuals.prevent_owner_reassignment();
+create trigger ev_consents_owner_immutable before update of owner_id on executive_visuals.consents
+for each row execute function executive_visuals.prevent_owner_reassignment();
+create trigger ev_job_events_owner_immutable before update of owner_id on executive_visuals.job_events
+for each row execute function executive_visuals.prevent_owner_reassignment();
+create trigger ev_audit_events_owner_immutable before update of owner_id on executive_visuals.audit_events
+for each row execute function executive_visuals.prevent_owner_reassignment();
+
 alter table executive_visuals.projects enable row level security;
 alter table executive_visuals.project_members enable row level security;
 alter table executive_visuals.workflows enable row level security;
@@ -161,6 +195,8 @@ alter table executive_visuals.reviews enable row level security;
 alter table executive_visuals.audit_events enable row level security;
 
 grant select,insert,update,delete on all tables in schema executive_visuals to authenticated;
+revoke insert,update,delete on executive_visuals.job_events from authenticated;
+revoke insert,update,delete on executive_visuals.audit_events from authenticated;
 grant usage,select on all sequences in schema executive_visuals to authenticated;
 
 create policy ev_projects_read on executive_visuals.projects for select to authenticated
@@ -190,33 +226,31 @@ using (exists (select 1 from executive_visuals.projects p where p.id=project_mem
 
 create policy ev_workflows_read on executive_visuals.workflows for select to authenticated
 using (owner_id=(select auth.uid()) or exists (select 1 from executive_visuals.projects p where p.id=workflows.project_id and p.owner_id=(select auth.uid())) or exists (select 1 from executive_visuals.project_members m where m.project_id=workflows.project_id and m.member_id=(select auth.uid())));create policy ev_workflows_insert on executive_visuals.workflows for insert to authenticated
-with check (owner_id=(select auth.uid()) and (project_id is null or exists (select 1 from executive_visuals.projects p where p.id=project_id and p.owner_id=(select auth.uid())) or exists (select 1 from executive_visuals.project_members m where m.project_id=project_id and m.member_id=(select auth.uid()) and m.role='editor')));create policy ev_workflows_update on executive_visuals.workflows for update to authenticated
+with check ((project_id is null and owner_id=(select auth.uid())) or exists (select 1 from executive_visuals.projects p where p.id=project_id and p.owner_id=(select auth.uid())) or exists (select 1 from executive_visuals.project_members m where m.project_id=project_id and m.member_id=(select auth.uid()) and m.role='editor'));create policy ev_workflows_update on executive_visuals.workflows for update to authenticated
 using (owner_id=(select auth.uid()) or exists (select 1 from executive_visuals.projects p where p.id=workflows.project_id and p.owner_id=(select auth.uid())) or exists (select 1 from executive_visuals.project_members m where m.project_id=workflows.project_id and m.member_id=(select auth.uid()) and m.role='editor'))
-with check (owner_id=(select auth.uid()) and (project_id is null or exists (select 1 from executive_visuals.projects p where p.id=project_id and p.owner_id=(select auth.uid())) or exists (select 1 from executive_visuals.project_members m where m.project_id=project_id and m.member_id=(select auth.uid()) and m.role='editor')));create policy ev_workflows_delete on executive_visuals.workflows for delete to authenticated
+with check ((project_id is null and owner_id=(select auth.uid())) or exists (select 1 from executive_visuals.projects p where p.id=project_id and p.owner_id=(select auth.uid())) or exists (select 1 from executive_visuals.project_members m where m.project_id=project_id and m.member_id=(select auth.uid()) and m.role='editor'));create policy ev_workflows_delete on executive_visuals.workflows for delete to authenticated
 using (owner_id=(select auth.uid()) or exists (select 1 from executive_visuals.projects p where p.id=workflows.project_id and p.owner_id=(select auth.uid())));
 create policy ev_timelines_read on executive_visuals.timelines for select to authenticated
 using (owner_id=(select auth.uid()) or exists (select 1 from executive_visuals.projects p where p.id=timelines.project_id and p.owner_id=(select auth.uid())) or exists (select 1 from executive_visuals.project_members m where m.project_id=timelines.project_id and m.member_id=(select auth.uid())));create policy ev_timelines_insert on executive_visuals.timelines for insert to authenticated
-with check (owner_id=(select auth.uid()) and (project_id is null or exists (select 1 from executive_visuals.projects p where p.id=project_id and p.owner_id=(select auth.uid())) or exists (select 1 from executive_visuals.project_members m where m.project_id=project_id and m.member_id=(select auth.uid()) and m.role='editor')));create policy ev_timelines_update on executive_visuals.timelines for update to authenticated
+with check ((project_id is null and owner_id=(select auth.uid())) or exists (select 1 from executive_visuals.projects p where p.id=project_id and p.owner_id=(select auth.uid())) or exists (select 1 from executive_visuals.project_members m where m.project_id=project_id and m.member_id=(select auth.uid()) and m.role='editor'));create policy ev_timelines_update on executive_visuals.timelines for update to authenticated
 using (owner_id=(select auth.uid()) or exists (select 1 from executive_visuals.projects p where p.id=timelines.project_id and p.owner_id=(select auth.uid())) or exists (select 1 from executive_visuals.project_members m where m.project_id=timelines.project_id and m.member_id=(select auth.uid()) and m.role='editor'))
-with check (owner_id=(select auth.uid()) and (project_id is null or exists (select 1 from executive_visuals.projects p where p.id=project_id and p.owner_id=(select auth.uid())) or exists (select 1 from executive_visuals.project_members m where m.project_id=project_id and m.member_id=(select auth.uid()) and m.role='editor')));create policy ev_timelines_delete on executive_visuals.timelines for delete to authenticated
+with check ((project_id is null and owner_id=(select auth.uid())) or exists (select 1 from executive_visuals.projects p where p.id=project_id and p.owner_id=(select auth.uid())) or exists (select 1 from executive_visuals.project_members m where m.project_id=project_id and m.member_id=(select auth.uid()) and m.role='editor'));create policy ev_timelines_delete on executive_visuals.timelines for delete to authenticated
 using (owner_id=(select auth.uid()) or exists (select 1 from executive_visuals.projects p where p.id=timelines.project_id and p.owner_id=(select auth.uid())));
 create policy ev_assets_read on executive_visuals.assets for select to authenticated
 using (owner_id=(select auth.uid()) or exists (select 1 from executive_visuals.projects p where p.id=assets.project_id and p.owner_id=(select auth.uid())) or exists (select 1 from executive_visuals.project_members m where m.project_id=assets.project_id and m.member_id=(select auth.uid())));create policy ev_assets_insert on executive_visuals.assets for insert to authenticated
-with check (owner_id=(select auth.uid()) and (project_id is null or exists (select 1 from executive_visuals.projects p where p.id=project_id and p.owner_id=(select auth.uid())) or exists (select 1 from executive_visuals.project_members m where m.project_id=project_id and m.member_id=(select auth.uid()) and m.role='editor')));create policy ev_assets_update on executive_visuals.assets for update to authenticated
+with check ((project_id is null and owner_id=(select auth.uid())) or exists (select 1 from executive_visuals.projects p where p.id=project_id and p.owner_id=(select auth.uid())) or exists (select 1 from executive_visuals.project_members m where m.project_id=project_id and m.member_id=(select auth.uid()) and m.role='editor'));create policy ev_assets_update on executive_visuals.assets for update to authenticated
 using (owner_id=(select auth.uid()) or exists (select 1 from executive_visuals.projects p where p.id=assets.project_id and p.owner_id=(select auth.uid())) or exists (select 1 from executive_visuals.project_members m where m.project_id=assets.project_id and m.member_id=(select auth.uid()) and m.role='editor'))
-with check (owner_id=(select auth.uid()) and (project_id is null or exists (select 1 from executive_visuals.projects p where p.id=project_id and p.owner_id=(select auth.uid())) or exists (select 1 from executive_visuals.project_members m where m.project_id=project_id and m.member_id=(select auth.uid()) and m.role='editor')));create policy ev_assets_delete on executive_visuals.assets for delete to authenticated
+with check ((project_id is null and owner_id=(select auth.uid())) or exists (select 1 from executive_visuals.projects p where p.id=project_id and p.owner_id=(select auth.uid())) or exists (select 1 from executive_visuals.project_members m where m.project_id=project_id and m.member_id=(select auth.uid()) and m.role='editor'));create policy ev_assets_delete on executive_visuals.assets for delete to authenticated
 using (owner_id=(select auth.uid()) or exists (select 1 from executive_visuals.projects p where p.id=assets.project_id and p.owner_id=(select auth.uid()))
 or exists (select 1 from executive_visuals.project_members m where m.project_id=assets.project_id and m.member_id=(select auth.uid()) and m.role='editor'));
 create policy ev_jobs_read on executive_visuals.jobs for select to authenticated
 using (owner_id=(select auth.uid()) or exists (select 1 from executive_visuals.projects p where p.id=jobs.project_id and p.owner_id=(select auth.uid())) or exists (select 1 from executive_visuals.project_members m where m.project_id=jobs.project_id and m.member_id=(select auth.uid())));create policy ev_jobs_insert on executive_visuals.jobs for insert to authenticated
-with check (owner_id=(select auth.uid()) and (project_id is null or exists (select 1 from executive_visuals.projects p where p.id=project_id and p.owner_id=(select auth.uid())) or exists (select 1 from executive_visuals.project_members m where m.project_id=project_id and m.member_id=(select auth.uid()) and m.role='editor')));create policy ev_jobs_update on executive_visuals.jobs for update to authenticated
+with check ((project_id is null and owner_id=(select auth.uid())) or exists (select 1 from executive_visuals.projects p where p.id=project_id and p.owner_id=(select auth.uid())) or exists (select 1 from executive_visuals.project_members m where m.project_id=project_id and m.member_id=(select auth.uid()) and m.role='editor'));create policy ev_jobs_update on executive_visuals.jobs for update to authenticated
 using (owner_id=(select auth.uid()) or exists (select 1 from executive_visuals.projects p where p.id=jobs.project_id and p.owner_id=(select auth.uid())) or exists (select 1 from executive_visuals.project_members m where m.project_id=jobs.project_id and m.member_id=(select auth.uid()) and m.role='editor'))
-with check (owner_id=(select auth.uid()) and (project_id is null or exists (select 1 from executive_visuals.projects p where p.id=project_id and p.owner_id=(select auth.uid())) or exists (select 1 from executive_visuals.project_members m where m.project_id=project_id and m.member_id=(select auth.uid()) and m.role='editor')));create policy ev_jobs_delete on executive_visuals.jobs for delete to authenticated
+with check ((project_id is null and owner_id=(select auth.uid())) or exists (select 1 from executive_visuals.projects p where p.id=project_id and p.owner_id=(select auth.uid())) or exists (select 1 from executive_visuals.project_members m where m.project_id=project_id and m.member_id=(select auth.uid()) and m.role='editor'));create policy ev_jobs_delete on executive_visuals.jobs for delete to authenticated
 using (owner_id=(select auth.uid()) or exists (select 1 from executive_visuals.projects p where p.id=jobs.project_id and p.owner_id=(select auth.uid())));
 create policy ev_job_events_read on executive_visuals.job_events for select to authenticated
-using (owner_id=(select auth.uid()) or exists (select 1 from executive_visuals.jobs j where j.id=job_events.job_id and (exists (select 1 from executive_visuals.projects p where p.id=j.project_id and p.owner_id=(select auth.uid())) or exists (select 1 from executive_visuals.project_members m where m.project_id=j.project_id and m.member_id=(select auth.uid())))));create policy ev_job_events_insert on executive_visuals.job_events for insert to authenticated
-with check (owner_id=(select auth.uid()));
-
+using (owner_id=(select auth.uid()) or exists (select 1 from executive_visuals.jobs j where j.id=job_events.job_id and (exists (select 1 from executive_visuals.projects p where p.id=j.project_id and p.owner_id=(select auth.uid())) or exists (select 1 from executive_visuals.project_members m where m.project_id=j.project_id and m.member_id=(select auth.uid())))));
 create policy ev_consents_read on executive_visuals.consents for select to authenticated
 using (owner_id=(select auth.uid()) or exists (select 1 from executive_visuals.projects p where p.id=consents.project_id and p.owner_id=(select auth.uid())) or exists (select 1 from executive_visuals.project_members m where m.project_id=consents.project_id and m.member_id=(select auth.uid())));create policy ev_consents_insert on executive_visuals.consents for insert to authenticated
 with check (owner_id=(select auth.uid()));
@@ -227,11 +261,9 @@ create policy ev_reviews_read on executive_visuals.reviews for select to authent
 using (owner_id=(select auth.uid()) or exists (select 1 from executive_visuals.projects p where p.id=reviews.project_id and p.owner_id=(select auth.uid())) or exists (select 1 from executive_visuals.project_members m where m.project_id=reviews.project_id and m.member_id=(select auth.uid())));create policy ev_reviews_insert on executive_visuals.reviews for insert to authenticated
 with check (owner_id=(select auth.uid()) and (project_id is null or exists (select 1 from executive_visuals.projects p where p.id=project_id and p.owner_id=(select auth.uid())) or exists (select 1 from executive_visuals.project_members m where m.project_id=project_id and m.member_id=(select auth.uid()) and m.role='editor') or exists (select 1 from executive_visuals.project_members m where m.project_id=reviews.project_id and m.member_id=(select auth.uid()) and m.role in ('editor','reviewer'))));create policy ev_reviews_update on executive_visuals.reviews for update to authenticated
 using (owner_id=(select auth.uid()) or exists (select 1 from executive_visuals.projects p where p.id=reviews.project_id and p.owner_id=(select auth.uid())) or exists (select 1 from executive_visuals.project_members m where m.project_id=reviews.project_id and m.member_id=(select auth.uid()) and m.role in ('editor','reviewer')))
-with check (owner_id=(select auth.uid()) and (project_id is null or exists (select 1 from executive_visuals.projects p where p.id=project_id and p.owner_id=(select auth.uid())) or exists (select 1 from executive_visuals.project_members m where m.project_id=project_id and m.member_id=(select auth.uid()) and m.role in ('editor','reviewer'))));
+with check (owner_id=(select auth.uid()) or exists (select 1 from executive_visuals.projects p where p.id=project_id and p.owner_id=(select auth.uid())) or exists (select 1 from executive_visuals.project_members m where m.project_id=project_id and m.member_id=(select auth.uid()) and m.role in ('editor','reviewer')));
 create policy ev_audit_read on executive_visuals.audit_events for select to authenticated
-using (owner_id=(select auth.uid()) or exists (select 1 from executive_visuals.projects p where p.id=audit_events.project_id and p.owner_id=(select auth.uid())) or exists (select 1 from executive_visuals.project_members m where m.project_id=audit_events.project_id and m.member_id=(select auth.uid())));create policy ev_audit_insert on executive_visuals.audit_events for insert to authenticated
-with check (owner_id=(select auth.uid()));
-
+using (owner_id=(select auth.uid()) or exists (select 1 from executive_visuals.projects p where p.id=audit_events.project_id and p.owner_id=(select auth.uid())) or exists (select 1 from executive_visuals.project_members m where m.project_id=audit_events.project_id and m.member_id=(select auth.uid())));
 insert into storage.buckets(id,name,public,file_size_limit,allowed_mime_types)
 values ('executive-visuals-media','executive-visuals-media',false,262144000,
   array['image/jpeg','image/png','image/webp','image/gif','video/mp4','video/webm','video/quicktime','video/x-matroska','audio/mpeg','audio/wav','audio/x-wav','audio/mp4','audio/ogg','application/pdf','text/plain','application/json'])
