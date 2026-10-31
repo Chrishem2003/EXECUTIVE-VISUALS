@@ -26,7 +26,7 @@ try{
  assert.equal(retried.status,"queued");
  assert.equal(retried.lease_owner,null);
  assert.equal(retried.error_json.includes("WORKER_LEASE_EXPIRED"),true);
- const second=claimNextJob(db,"worker-b",90000,now);
+ const second=claimNextJob(db,"worker-b",90000,"2026-10-31T12:00:02.000Z");
  assert.equal(second.id,"ready");
  assert.equal(second.attempt_count,2);
  db.prepare("UPDATE jobs SET lease_expires_at=? WHERE id='ready'").run("2026-10-31T11:59:00.000Z");
