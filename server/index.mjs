@@ -308,7 +308,7 @@ export function createAppServer() {
 
       if(path==="/api/assets"&&req.method==="GET"){
         const projectId=url.searchParams.get("projectId");
-        const rows=projectId&&!getProjectAccess(db,user.id,projectId)?[]:db.prepare("SELECT id,project_id,original_name,media_type,byte_size,sha256,derivative_of,metadata_json,created_at FROM assets WHERE deleted_at IS NULL AND (owner_id=? OR project_id IN (SELECT project_id FROM project_members WHERE member_id=?)) AND (? IS NULL OR project_id=?) ORDER BY created_at DESC").all(user.id,user.id,projectId,projectId);
+        const rows=projectId&&!getProjectAccess(db,user.id,projectId)?[]:db.prepare("SELECT id,project_id,original_name,media_type,byte_size,sha256,derivative_of,metadata_json,created_at FROM assets WHERE deleted_at IS NULL AND (owner_id=? OR project_id IN (SELECT id FROM projects WHERE owner_id=?) OR project_id IN (SELECT project_id FROM project_members WHERE member_id=?)) AND (? IS NULL OR project_id=?) ORDER BY created_at DESC").all(user.id,user.id,user.id,projectId,projectId);
         send(res,200,{assets:rows.map(x=>({id:x.id,projectId:x.project_id,name:x.original_name,mediaType:x.media_type,size:x.byte_size,sha256:x.sha256,derivativeOf:x.derivative_of,metadata:parseJson(x.metadata_json),createdAt:x.created_at}))},cors);return;
       }
       if(path==="/api/assets"&&req.method==="POST"){
@@ -329,7 +329,7 @@ export function createAppServer() {
       }
 
       if(path==="/api/workflows"&&req.method==="GET"){
-        const rows=db.prepare("SELECT id,project_id,name,revision,graph_json,graph_hash,created_at,updated_at FROM workflows WHERE owner_id=? OR project_id IN (SELECT project_id FROM project_members WHERE member_id=?) ORDER BY updated_at DESC").all(user.id,user.id);
+        const rows=db.prepare("SELECT id,project_id,name,revision,graph_json,graph_hash,created_at,updated_at FROM workflows WHERE owner_id=? OR project_id IN (SELECT id FROM projects WHERE owner_id=?) OR project_id IN (SELECT project_id FROM project_members WHERE member_id=?) ORDER BY updated_at DESC").all(user.id,user.id,user.id);
         send(res,200,{workflows:rows.map(x=>({id:x.id,projectId:x.project_id,name:x.name,revision:x.revision,graph:parseJson(x.graph_json),graphHash:x.graph_hash,createdAt:x.created_at,updatedAt:x.updated_at}))},cors);return;
       }
       if(path==="/api/workflows"&&req.method==="POST"){
@@ -415,7 +415,7 @@ export function createAppServer() {
         }
       }
       if(path==="/api/jobs"&&req.method==="GET"){
-        const rows=db.prepare("SELECT * FROM jobs WHERE owner_id=? OR project_id IN (SELECT project_id FROM project_members WHERE member_id=?) ORDER BY created_at DESC LIMIT 100").all(user.id,user.id);
+        const rows=db.prepare("SELECT * FROM jobs WHERE owner_id=? OR project_id IN (SELECT id FROM projects WHERE owner_id=?) OR project_id IN (SELECT project_id FROM project_members WHERE member_id=?) ORDER BY created_at DESC LIMIT 100").all(user.id,user.id,user.id);
         send(res,200,{jobs:rows.map(recordJob)},cors);return;
       }
       if(path==="/api/jobs"&&req.method==="POST"){
@@ -453,7 +453,7 @@ export function createAppServer() {
       }
 
       if(path==="/api/audit"&&req.method==="GET"){
-        const rows=db.prepare("SELECT id,project_id,event_type,subject_type,subject_id,details_json,created_at FROM audit_events WHERE owner_id=? OR project_id IN (SELECT project_id FROM project_members WHERE member_id=?) ORDER BY id DESC LIMIT 200").all(user.id,user.id);
+        const rows=db.prepare("SELECT id,project_id,event_type,subject_type,subject_id,details_json,created_at FROM audit_events WHERE owner_id=? OR project_id IN (SELECT id FROM projects WHERE owner_id=?) OR project_id IN (SELECT project_id FROM project_members WHERE member_id=?) ORDER BY id DESC LIMIT 200").all(user.id,user.id,user.id);
         send(res,200,{events:rows.map(x=>({id:x.id,projectId:x.project_id,type:x.event_type,subjectType:x.subject_type,subjectId:x.subject_id,details:parseJson(x.details_json),createdAt:x.created_at}))},cors);return;
       }
       fail(res,404,"NOT_FOUND","API route not found.");
