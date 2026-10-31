@@ -44,6 +44,18 @@ if (!sql.includes("as $$") || !sql.includes("end;\n$$;") || /as \$(?!\$)\s*begin
 if (/\b(drop\s+table|truncate|delete\s+from)\b/i.test(sql)) issues.push("Destructive DDL/DML is not allowed in the initial isolated migration.");
 if (!sql.startsWith("-- Executive Visuals isolated data model.")) issues.push("Migration must identify its isolated deployment boundary.");
 
+if (!sql.includes("create or replace function executive_visuals.claim_next_job(") || !sql.includes("for update skip locked") || !sql.includes("grant execute on function executive_visuals.claim_next_job(text, integer) to service_role")) {
+  issues.push("Cloud workers need an atomic SKIP LOCKED claim RPC restricted to service_role.");
+}
+if (!sql.includes("create or replace function executive_visuals.recover_expired_jobs(") || !sql.includes("WORKER_LEASE_EXPIRED") || !sql.includes("grant execute on function executive_visuals.recover_expired_jobs(integer) to service_role")) {
+  issues.push("Cloud workers need bounded expired-lease recovery restricted to service_role.");
+}
+if (!sql.includes("started_at timestamptz") || !sql.includes("set status = 'processing'") || !sql.includes("lease_expires_at = clock_timestamp() + make_interval")) {
+  issues.push("Cloud job claim must persist its start time, processing state and lease expiry.");
+}
+if (!sql.includes("revoke all on function executive_visuals.claim_next_job(text, integer) from public, anon, authenticated;") || !sql.includes("revoke all on function executive_visuals.recover_expired_jobs(integer) from public, anon, authenticated;")) {
+  issues.push("Cloud queue mutation functions must not be callable by untrusted roles.");
+}
 if (!sql.includes("lease_expires_at timestamptz") || !sql.includes("available_at timestamptz") || !sql.includes("lease_heartbeat_at timestamptz")) {
   issues.push("Durable worker lease and delayed retry fields are missing from the cloud job contract.");
 }
