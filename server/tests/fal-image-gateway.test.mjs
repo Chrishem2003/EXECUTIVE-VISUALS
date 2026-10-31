@@ -66,3 +66,17 @@ test("async image adapter fails closed without remote opt-in and rejects untrust
     restore();
   }
 });
+
+test("image gateway rejects unknown provider names instead of silently falling back", async () => {
+  const originalFetch = globalThis.fetch;
+  process.env.IMAGE_GATEWAY_PROVIDER = "unknown-provider";
+  let requested = false;
+  globalThis.fetch = async () => { requested = true; throw new Error("network should not be used"); };
+  try {
+    await assert.rejects(() => generateImage({ prompt: "test" }), error => error.code === "IMAGE_GATEWAY_CONFIG_INVALID");
+    assert.equal(requested, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+    restore();
+  }
+});
