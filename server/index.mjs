@@ -41,6 +41,7 @@ await mkdir(join(MEDIA_ROOT,"derived"), { recursive:true });
 
 const now = () => new Date().toISOString();
 const hash = value => createHash("sha256").update(value).digest("hex");
+const stableJson = value => Array.isArray(value) ? "["+value.map(stableJson).join(",")+"]" : value && typeof value==="object" ? "{"+Object.keys(value).sort().map(key=>JSON.stringify(key)+":"+stableJson(value[key])).join(",")+"}" : JSON.stringify(value);
 const safeName = value => basename(String(value || "upload")).replace(/[\u0000-\u001f\u007f]/g,"").replace(/[^\p{L}\p{N}._() -]/gu,"_").slice(0,180) || "upload";
 const send = (res,status,body,headers={}) => { res.writeHead(status,{"content-type":"application/json; charset=utf-8","cache-control":"no-store","x-content-type-options":"nosniff",...headers});res.end(JSON.stringify(body)); };
 const fail = (res,status,code,message) => send(res,status,{error:{code,message}});
@@ -235,6 +236,7 @@ export function createAppServer() {
       if(path==="/api/auth/login"&&req.method==="POST"){
         if(AUTH_MODE!=="local"){fail(res,403,"USE_EXTERNAL_AUTH","Sign in through the configured identity provider.");return;}
         const body=await readJson(req);const email=String(body.email||"").trim().toLowerCase();const password=String(body.password||"");
+        if(password.length===0||password.length>256){fail(res,401,"INVALID_CREDENTIALS","Email or password is incorrect.");return;}
         const user=db.prepare("SELECT * FROM users WHERE email=? COLLATE NOCASE").get(email);
         const candidate=user?scryptSync(password,user.password_salt,64).toString("hex"):"";
         const valid=!!user&&candidate.length===user.password_hash.length&&timingSafeEqual(Buffer.from(candidate,"hex"),Buffer.from(user.password_hash,"hex"));
@@ -322,8 +324,9 @@ export function createAppServer() {
           createReadStream(file).pipe(res);return;
         }
         if(req.method==="DELETE"){
-          db.prepare("UPDATE assets SET deleted_at=? WHERE id=? AND owner_id=?").run(now(),asset.id,user.id);
-          audit(db,user.id,"asset.archived","asset",asset.id,{});send(res,200,{ok:true},cors);return;
+          const changed=db.prepare("UPDATE assets SET deleted_at=? WHERE id=? AND deleted_at IS NULL").run(now(),asset.id);
+          if(changed.changes!==1){fail(res,404,"ASSET_NOT_FOUND","Asset not found.");return;}
+          audit(db,user.id,"asset.archived","asset",asset.id,{},asset.project_id);send(res,200,{ok:true},cors);return;
         }
       }
 
@@ -380,8 +383,9 @@ export function createAppServer() {
           if(projectId&&!canWriteProject(db,user.id,projectId)){fail(res,404,"PROJECT_NOT_FOUND","Project not found or editor access required.");return;}
           const revision=record.revision+1,name=String(body.name||timeline.name||record.name).trim().slice(0,160);
           const saved={...timeline,id:record.id,projectId,name,revision};
-          db.prepare("UPDATE timelines SET project_id=?,name=?,revision=?,timeline_json=?,otio_json=?,updated_at=? WHERE id=? AND owner_id=?")
-            .run(projectId,name,revision,json(saved),body.otio?json(body.otio):record.otio_json,now(),record.id,user.id);
+          const changed=db.prepare("UPDATE timelines SET project_id=?,name=?,revision=?,timeline_json=?,otio_json=?,updated_at=? WHERE id=? AND revision=?")
+            .run(projectId,name,revision,json(saved),body.otio?json(body.otio):record.otio_json,now(),record.id,record.revision);
+          if(changed.changes!==1){fail(res,409,"REVISION_CONFLICT","Timeline changed while saving. Refresh and retry.");return;}
           audit(db,user.id,"timeline.updated","timeline",record.id,{revision},projectId);
           send(res,200,{ok:true,revision},cors);return;
         }
@@ -407,8 +411,9 @@ export function createAppServer() {
           const validation=validateWorkflowGraph(body.graph);
           if(!validation.valid){send(res,422,{error:{code:"WORKFLOW_INVALID",message:"Workflow graph failed validation.",issues:validation.issues}},cors);return;}
           const graphJson=json(body.graph),graphHash=hash(graphJson),name=String(body.name||workflow.name).trim().slice(0,160);
-          db.prepare("UPDATE workflows SET name=?,graph_json=?,graph_hash=?,revision=revision+1,updated_at=? WHERE id=? AND owner_id=?")
-            .run(name,graphJson,graphHash,now(),workflow.id,user.id);
+          const changed=db.prepare("UPDATE workflows SET name=?,graph_json=?,graph_hash=?,revision=revision+1,updated_at=? WHERE id=? AND revision=?")
+            .run(name,graphJson,graphHash,now(),workflow.id,workflow.revision);
+          if(changed.changes!==1){fail(res,409,"REVISION_CONFLICT","Workflow changed while saving. Refresh and retry.");return;}
           audit(db,user.id,"workflow.updated","workflow",workflow.id,{revision:workflow.revision+1,graphHash},workflow.project_id);
           send(res,200,{ok:true,revision:workflow.revision+1,graphHash},cors);return;
         }
@@ -432,10 +437,19 @@ export function createAppServer() {
           if(!body.sourceAssetId||!getAccessibleAsset(db,user.id,String(body.sourceAssetId),true)){fail(res,404,"SOURCE_ASSET_NOT_FOUND","Choose a source asset you own or can edit.");return;}
         }
         const key=String(req.headers["idempotency-key"]||body.idempotencyKey||"").slice(0,180);
-        if(key){const existing=db.prepare("SELECT * FROM jobs WHERE owner_id=? AND idempotency_key=?").get(user.id,key);if(existing){send(res,200,{job:recordJob(existing),idempotentReplay:true},cors);return;}}
-        const id=randomUUID(),input={...body};delete input.idempotencyKey;
+        const input={...body};delete input.idempotencyKey;
+        const inputJson=stableJson(input);
+        if(key){
+          const existing=db.prepare("SELECT * FROM jobs WHERE owner_id=? AND idempotency_key=?").get(user.id,key);
+          if(existing){
+            const sameRequest=existing.job_type===type&&existing.project_id===projectId&&stableJson(parseJson(existing.input_json))===inputJson;
+            if(!sameRequest){fail(res,409,"IDEMPOTENCY_CONFLICT","This idempotency key was already used for a different job request.");return;}
+            send(res,200,{job:recordJob(existing),idempotentReplay:true},cors);return;
+          }
+        }
+        const id=randomUUID();
         db.prepare("INSERT INTO jobs(id,owner_id,project_id,job_type,status,input_json,idempotency_key) VALUES(?,?,?,?,'queued',?,?)")
-          .run(id,user.id,projectId,type,json(input),key||null);
+          .run(id,user.id,projectId,type,inputJson,key||null);
         addJobEvent(db,id,user.id,"job.queued",{jobType:type});audit(db,user.id,"job.queued","job",id,{jobType:type},projectId);
         send(res,202,{job:recordJob(db.prepare("SELECT * FROM jobs WHERE id=?").get(id))},cors);return;
       }
