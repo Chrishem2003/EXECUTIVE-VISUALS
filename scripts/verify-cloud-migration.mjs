@@ -29,7 +29,7 @@ if (!sql.includes("status in ('draft','awaiting_approval')")) issues.push("Clien
 if (!sql.includes("values ('executive-visuals-media','executive-visuals-media',false")) issues.push("Media storage bucket must be private.");
 if (!sql.includes("create policy ev_storage_insert")) issues.push("Storage upload policy is missing.");
 if (!sql.includes("create policy ev_storage_read")) issues.push("Storage read policy is missing.");
-if (/\\b(drop\\s+table|truncate|delete\\s+from)\\b/i.test(sql)) issues.push("Destructive DDL/DML is not allowed in the initial isolated migration.");
+if (/\b(drop\s+table|truncate|delete\s+from)\b/i.test(sql)) issues.push("Destructive DDL/DML is not allowed in the initial isolated migration.");
 if (!sql.startsWith("-- Executive Visuals isolated data model.")) issues.push("Migration must identify its isolated deployment boundary.");
 
 if (issues.length) {
