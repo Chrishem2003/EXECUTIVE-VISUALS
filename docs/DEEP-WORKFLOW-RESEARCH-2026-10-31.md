@@ -10,12 +10,12 @@ Method: REA-inspired inspection of official first-party documentation and unauth
 ## 1. Platform A — director studio, node canvas and agent workspace
 
 Sources:
-- [Public source ref EXT-001] A.ai/creator-hub/help-center/tools/how-do-i-use-cinema-studio
-- [Public source ref EXT-001] A.ai/creator-hub/help-center/tools/how-do-i-use-canvas
-- [Public source ref EXT-001] A.ai/creator-hub/help-center/tools/how-do-i-use-marketing-studio-to-create-video-ads
-- [Public source ref EXT-001] A.ai/creator-hub/help-center/tools/how-do-i-use-supercomputer
-- [Public source ref EXT-001] A.ai/creator-hub/help-center/tools/how-do-i-use-ai-influencer
-- [Public source ref EXT-001] A.ai/creator-hub/help-center/ai-models/how-do-i-create-and-use-a-soul-id-character
+- [Source URL redacted] A.ai/creator-hub/help-center/tools/how-do-i-use-cinema-studio
+- [Source URL redacted] A.ai/creator-hub/help-center/tools/how-do-i-use-canvas
+- [Source URL redacted] A.ai/creator-hub/help-center/tools/how-do-i-use-marketing-studio-to-create-video-ads
+- [Source URL redacted] A.ai/creator-hub/help-center/tools/how-do-i-use-supercomputer
+- [Source URL redacted] A.ai/creator-hub/help-center/tools/how-do-i-use-ai-influencer
+- [Source URL redacted] A.ai/creator-hub/help-center/ai-models/how-do-i-create-and-use-a-soul-id-character
 
 ### Cinema Studio workflow
 
@@ -68,16 +68,16 @@ AI Influencer is a menu-driven character builder with base identity fields and a
 ## 2. Platform B — programmable avatar/video system and agent tools
 
 Sources:
-- [Public source ref EXT-002] B.com/
-- [Public source ref EXT-002] B.com/docs/quick-start
-- [Public source ref EXT-002] B.com/mcp/overview
-- [Public source ref EXT-002] B.com/skills/overview
-- [Public source ref EXT-002] B.com/docs/webhooks
-- [Public source ref EXT-002] B.com/docs/usage-limits
+- [Source URL redacted] B.com/
+- [Source URL redacted] B.com/docs/quick-start
+- [Source URL redacted] B.com/mcp/overview
+- [Source URL redacted] B.com/skills/overview
+- [Source URL redacted] B.com/docs/webhooks
+- [Source URL redacted] B.com/docs/usage-limits
 
 ### Integration and authentication
 
-The public developer docs expose REST API authentication with an API key in the X-Api-Key header, and a remote MCP endpoint at [Public source ref EXT-003] B.com/mcp/v1/ using OAuth to connect an agent to a user's existing plan.
+The public developer docs expose REST API authentication with an API key in the X-Api-Key header, and a remote MCP endpoint at [Source URL redacted] B.com/mcp/v1/ using OAuth to connect an agent to a user's existing plan.
 
 The quick start describes creating a Video Agent session, receiving a session_id, polling until a video_id is assigned, then polling the video until completed or failed. The output includes a video URL and duration. Webhooks can replace frequent polling.
 
@@ -111,11 +111,11 @@ Platform B publishes plan-specific concurrency, per-endpoint rate limits, input 
 ## 3. Platform C — media repair and ordered enhancement workflow
 
 Sources:
-- [Public source ref EXT-001] C.ai/workspace
-- [Public source ref EXT-001] C.ai/ai-workflow
-- [Public source ref EXT-001] C.ai/video-enhancer/upload
-- [Public source ref EXT-001] C.ai/video-repair/upload
-- [Public source ref EXT-001] C.ai/video-retouch/upload
+- [Source URL redacted] C.ai/workspace
+- [Source URL redacted] C.ai/ai-workflow
+- [Source URL redacted] C.ai/video-enhancer/upload
+- [Source URL redacted] C.ai/video-repair/upload
+- [Source URL redacted] C.ai/video-retouch/upload
 
 ### Public workflow observations
 
