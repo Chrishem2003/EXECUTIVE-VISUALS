@@ -80,7 +80,7 @@ test("unsupported generation is rejected instead of being represented as a worki
 
 test("local media jobs are queued with idempotency and no duplicate execution",async()=>{
   const cookie=await register("owner-d@example.test");
-  const upload=await request("/api/assets",{method:"POST",headers:{"content-type":"video/mp4","x-file-name":"sample.mp4"},body:Buffer.from("not-a-real-video")},cookie);
+  const upload=await request("/api/assets",{method:"POST",headers:{"content-type":"video/mp4","x-file-name":"sample.mp4"},body:Buffer.from([0,0,0,24,0x66,0x74,0x79,0x70,0x69,0x73,0x6f,0x6d,0,0,0,1])},cookie);
   assert.equal(upload.status,201);
   const asset=(await upload.json()).asset;
   const payload={jobType:"media.probe",sourceAssetId:asset.id};
