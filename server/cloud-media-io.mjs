@@ -51,6 +51,7 @@ export function createCloudMediaAssetIO({assets,fetchImpl=globalThis.fetch,tempR
    }catch(error){await rm(directory,{recursive:true,force:true}).catch(()=>{});throw error;}
   },
   async publish({ownerId,projectId=null,filename,mediaType,path,derivativeOf=null,metadata={}}){
+   if(typeof assets.createFromFile==="function")return assets.createFromFile({ownerId,projectId,originalName:filename,mediaType,filePath:path,derivativeOf,metadata});
    const handle=await open(path,"r");
    let bytes;
    try{
