@@ -295,7 +295,7 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
     args = ["-hide_banner","-y","-i",sourcePath,"-vn","-c:a","libmp3lame","-q:a","2",join(outputDir,id+"."+ext)];
   } else if(["media.denoise","media.color","media.resize","media.interpolate","media.upscale"].includes(job.job_type)){
     if(!source.media_type.startsWith("video/"))throw Object.assign(new Error("This enhancement operation currently requires a video source."),{code:"UNSUPPORTED_MEDIA_TYPE"});
-    ext="mp4";mime="video/mp4";outputName=source.original_name.replace(/\\.[^.]+$/,"")+"-"+job.job_type.split(".")[1]+".mp4";
+    ext="mp4";mime="video/mp4";outputName=(source.original_name.includes(".")?source.original_name.slice(0,source.original_name.lastIndexOf(".")):source.original_name)+"-"+job.job_type.split(".")[1]+".mp4";
     args=buildMediaOperationArgs({jobType:job.job_type,input,sourcePath,outputPath:join(outputDir,id+"."+ext)});
   } else {
     const container = String(input.container || (job.job_type === "media.proxy" ? "mp4" : "mp4")).toLowerCase();
