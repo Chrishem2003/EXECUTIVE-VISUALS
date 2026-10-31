@@ -148,8 +148,8 @@ async function processNextJob() {
   }
 }
 let workerBusy=false;
-const workerTimer=setInterval(async()=>{if(workerBusy)return;workerBusy=true;try{await processNextJob();}catch(error){process.stderr.write("Worker cycle failed: "+String(error.message)+"\n");}finally{workerBusy=false;}},500);
-workerTimer.unref();
+const workerTimer=process.env.DISABLE_WORKER==="true"?null:setInterval(async()=>{if(workerBusy)return;workerBusy=true;try{await processNextJob();}catch(error){process.stderr.write("Worker cycle failed: "+String(error.message)+"\\n");}finally{workerBusy=false;}},500);
+workerTimer?.unref();
 
 export function createAppServer() {
   return createServer(async(req,res)=>{
