@@ -84,6 +84,43 @@ test("registration, project ownership, binary upload and asset isolation work",a
   assert.equal(ownProject.status,404);
 });
 
+test("creative workspace drafts persist per project with revision and editor-role guards",async()=>{
+  const owner=await register("workspace-owner@example.test");
+  const created=await request("/api/projects",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({name:"Persistent creative workspace"})},owner);
+  assert.equal(created.status,201);
+  const project=(await created.json()).project;
+  const initial=await request("/api/projects/"+project.id+"/workspace",{},owner);
+  assert.equal(initial.status,200);
+  assert.equal((await initial.json()).revision,0);
+  const document={
+    creativeProjects:[{id:"draft-1",name:"Launch film",brief:"A durable creative brief",audience:"Customers",style:"Documentary",created:"2026-10-31"}],
+    tasks:[{id:"task-1",name:"Build storyboard",category:"Pre-production",status:"planned",created:"2026-10-31",detail:"Create scene cards"}],
+    shots:[{id:"shot-1",scene:"Opening",action:"Aerial approach",camera:"Wide",lens:"24mm",movement:"Slow push",lighting:"Golden hour",duration:5}],
+    characters:[{id:"character-1",name:"Presenter",description:"Original fictional presenter",voice:"Not assigned",consent:false}],
+    prompt:"Creative brief prompt",plan:"Three-act plan",script:"Opening narration",variants:["A","B"],
+    ignoredSecret:"must not be persisted"
+  };
+  const saved=await request("/api/projects/"+project.id+"/workspace",{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({revision:0,document})},owner);
+  assert.equal(saved.status,200);
+  assert.equal((await saved.json()).revision,1);
+  const loaded=await request("/api/projects/"+project.id+"/workspace",{},owner);
+  const loadedBody=await loaded.json();
+  assert.equal(loadedBody.revision,1);
+  assert.equal(loadedBody.document.creativeProjects[0].name,"Launch film");
+  assert.equal(loadedBody.document.shots[0].duration,5);
+  assert.equal("ignoredSecret" in loadedBody.document,false);
+  const stale=await request("/api/projects/"+project.id+"/workspace",{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({revision:0,document})},owner);
+  assert.equal(stale.status,409);
+  const editor=await register("workspace-editor@example.test");
+  const viewer=await register("workspace-viewer@example.test");
+  await request("/api/projects/"+project.id+"/members",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({email:"workspace-editor@example.test",role:"editor"})},owner);
+  await request("/api/projects/"+project.id+"/members",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({email:"workspace-viewer@example.test",role:"viewer"})},owner);
+  const editorSave=await request("/api/projects/"+project.id+"/workspace",{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({revision:1,document:{...document,plan:"Edited by collaborator"}})},editor);
+  assert.equal(editorSave.status,200);
+  assert.equal((await editorSave.json()).revision,2);
+  const viewerSave=await request("/api/projects/"+project.id+"/workspace",{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({revision:2,document})},viewer);
+  assert.equal(viewerSave.status,403);
+});
 test("unsupported generation is rejected instead of being represented as a working job",async()=>{
   const cookie=await register("owner-c@example.test");
   const response=await request("/api/jobs",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({jobType:"video.generate",sourceAssetId:"not-real"})},cookie);
