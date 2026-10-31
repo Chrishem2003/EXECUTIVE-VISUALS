@@ -102,3 +102,15 @@
 .runtime-project-list button:hover{border-color:#a45e5e}
 #ev-member-form{border-top:1px solid var(--line);padding-top:10px}
 #ev-member-form button{margin-top:4px}
+
+#ev-review-form{display:grid;gap:8px;margin:14px 0}
+#ev-review-form label{font-size:9px;color:var(--muted)}
+#ev-review-form input,#ev-review-form select,#ev-review-form textarea{width:100%;background:#0b1018;color:#fff;border:1px solid var(--line);border-radius:6px;padding:9px;font-size:10px}
+.review-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin-top:13px}
+.review-list article{border:1px solid var(--line);background:#0f141d;border-radius:7px;padding:11px;min-width:0}
+.review-list article>div{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.review-list b{font-size:9px;text-transform:uppercase}
+.review-list p{font-size:10px;line-height:1.6;color:#d1d7e0}
+.review-list small{font-size:8px;color:var(--muted)}
+.review-list button{margin:8px 5px 0 0;border:1px solid #414b5d;background:#202735;color:#d9c49a;border-radius:4px;padding:5px 7px;font-size:8px}
+@media(max-width:700px){.review-list{grid-template-columns:1fr}}
