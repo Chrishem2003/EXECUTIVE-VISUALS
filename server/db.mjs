@@ -92,6 +92,37 @@ export function openDatabase(filename) {
     );
     CREATE INDEX IF NOT EXISTS jobs_queue_idx ON jobs(status, created_at);
     CREATE INDEX IF NOT EXISTS jobs_owner_idx ON jobs(owner_id, created_at DESC);
+    CREATE TABLE IF NOT EXISTS workflow_runs (
+      id TEXT PRIMARY KEY,
+      workflow_id TEXT NOT NULL REFERENCES workflows(id),
+      owner_id TEXT NOT NULL REFERENCES users(id),
+      project_id TEXT REFERENCES projects(id),
+      workflow_revision INTEGER NOT NULL,
+      snapshot_hash TEXT NOT NULL,
+      snapshot_json TEXT NOT NULL,
+      status TEXT NOT NULL CHECK(status IN ('queued','running','awaiting_approval','completed','partial','failed','blocked','cancelled')),
+      job_id TEXT,
+      error_json TEXT,
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      completed_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS workflow_runs_workflow_idx ON workflow_runs(workflow_id,created_at DESC);
+    CREATE INDEX IF NOT EXISTS workflow_runs_owner_idx ON workflow_runs(owner_id,created_at DESC);
+    CREATE TABLE IF NOT EXISTS workflow_node_runs (
+      id TEXT PRIMARY KEY,
+      run_id TEXT NOT NULL REFERENCES workflow_runs(id) ON DELETE CASCADE,
+      node_id TEXT NOT NULL,
+      status TEXT NOT NULL CHECK(status IN ('pending','running','completed','failed','blocked','awaiting_approval','skipped')),
+      attempt INTEGER NOT NULL DEFAULT 0,
+      input_json TEXT NOT NULL DEFAULT '{}',
+      output_json TEXT,
+      error_json TEXT,
+      started_at TEXT,
+      completed_at TEXT,
+      UNIQUE(run_id,node_id)
+    );
+    CREATE INDEX IF NOT EXISTS workflow_node_runs_run_idx ON workflow_node_runs(run_id,node_id);
     CREATE TABLE IF NOT EXISTS job_events (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       job_id TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
