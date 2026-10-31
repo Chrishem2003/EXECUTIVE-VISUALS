@@ -9,6 +9,7 @@ import { openDatabase, audit, addJobEvent, getOwnedProject, getOwnedAsset, getPr
 import { executeMediaJob, executableAvailable } from "./media.mjs";
 import { validateWorkflowGraph } from "./workflow-validation.mjs";
 import { validateTimelineDocument } from "./timeline-validation.mjs";
+import { executeWorkflowRun } from "./workflow-executor.mjs";
 
 const PORT = Number(process.env.API_PORT || process.env.PORT || 4179);
 const HOST = process.env.API_HOST || "127.0.0.1";
@@ -168,7 +169,8 @@ async function processNextJob() {
   const current=db.prepare("SELECT * FROM jobs WHERE id=?").get(job.id);
   addJobEvent(db,job.id,job.owner_id,"job.started",{attempt:current.attempt_count});
   try {
-    const result=await executeMediaJob({
+    const execute=current.job_type==="workflow.execute"?executeWorkflowRun:executeMediaJob;
+    const result=await execute({
       db,job:current,mediaRoot:MEDIA_ROOT,activeProcesses,
       onProgress:value=>{
         db.prepare("UPDATE jobs SET progress=?,updated_at=? WHERE id=? AND status='running'").run(value,now(),job.id);
