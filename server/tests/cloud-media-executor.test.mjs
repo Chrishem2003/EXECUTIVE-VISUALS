@@ -36,7 +36,7 @@ test("cloud media probe uses the leased owner and cleans up its materialized sou
       }
     });
     const result = await execute({
-      job: { id: "job-1", owner_id: "verified-owner", project_id: "project-1", job_type: "media.probe", input_json: JSON.stringify({ sourceAssetId: "asset-1" }) },
+      job: { id: "job-1", owner_id: "verified-owner", project_id: "project-1", job_type: "media.probe", input: { sourceAssetId: "asset-1" } },
       onProgress() {}
     });
     assert.deepEqual(materializedArgs, { ownerId: "verified-owner", assetId: "asset-1" });
@@ -81,7 +81,7 @@ test("cloud media enhancement publishes a checksummed derivative using the claim
       job: {
         id: "job-2", owner_id: "verified-owner", project_id: "project-2",
         job_type: "media.color",
-        input_json: JSON.stringify({ sourceAssetId: "asset-source", brightness: 0.1, contrast: 1, saturation: 1 })
+        input: { sourceAssetId: "asset-source", brightness: 0.1, contrast: 1, saturation: 1 }
       },
       onProgress() {}
     });
