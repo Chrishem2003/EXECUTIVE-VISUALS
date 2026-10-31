@@ -1,11 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { createServer } from "node:http";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-const port=43271;
+const port=await new Promise(resolve=>{const probe=createServer();probe.listen(0,"127.0.0.1",()=>{const address=probe.address();probe.close(()=>resolve(address.port));});});
 const dataDir=await mkdtemp(join(tmpdir(),"ev-api-test-"));
 const child=spawn(process.execPath,["server/index.mjs"],{
   cwd:process.cwd(),
@@ -26,9 +27,9 @@ async function waitForApi(){
 }
 await waitForApi();
 
-async function register(email){
+async function expectStatus(response,status){if(response.status!==status)throw new Error("Expected HTTP "+status+", got "+response.status+": "+await response.text());}\nasync function register(email){
   const r=await fetch(base+"/api/auth/register",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({email,password:"local-test-password-123"})});
-  assert.equal(r.status,201,await r.text());
+  await expectStatus(r,201);
   return r.headers.get("set-cookie").split(";")[0];
 }
 async function request(path,options={},cookie){
@@ -51,7 +52,7 @@ test("registration, project ownership, binary upload and asset isolation work",a
   const project=(await projectResponse.json()).project;
 
   const upload=await request("/api/assets",{method:"POST",headers:{"content-type":"image/png","x-file-name":encodeURIComponent("frame.png"),"x-project-id":project.id},body:Buffer.from([137,80,78,71,13,10,26,10,0,1,2,3])},cookieA);
-  assert.equal(upload.status,201,await upload.text());
+  await expectStatus(upload,201);
   const asset=(await upload.json()).asset;
   assert.equal(asset.name,"frame.png");
   assert.equal(asset.size,12);
