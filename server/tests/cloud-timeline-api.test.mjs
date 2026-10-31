@@ -41,3 +41,17 @@ test("cloud render job event history is available only after job access is verif
  const result=await f.api.handle({method:"GET",path:"/api/cloud/jobs/"+job.id+"/events",ownerId:owner});
  assert.equal(result.status,200);assert.deepEqual(result.body.events,[]);
 });
+
+test("cloud timeline API readiness requires exposed schema tables and a private bucket",async()=>{
+ const api=createCloudTimelineApi({url:"https://example.supabase.co",serviceRoleKey:"service-secret",timelineService:{timelines:{},assets:{}},authorize:async()=>true,fetchImpl:async(url)=>({ok:true,status:200,async text(){return"[]";},async json(){return{public:false};}})});
+ const result=await api.checkReadiness();assert.equal(result.ready,true);assert.equal(result.storage,"private");
+});
+test("cloud timeline API refuses a public media bucket",async()=>{
+ const api=createCloudTimelineApi({url:"https://example.supabase.co",serviceRoleKey:"service-secret",timelineService:{timelines:{},assets:{}},authorize:async()=>true,fetchImpl:async(url)=>({ok:true,status:200,async text(){return"[]";},async json(){return{public:true};}})});
+ await assert.rejects(()=>api.checkReadiness(),/refuses a public media bucket/);
+});
+test("cloud timeline API readiness fails closed when a required schema table is unavailable",async()=>{
+ let count=0;
+ const api=createCloudTimelineApi({url:"https://example.supabase.co",serviceRoleKey:"service-secret",timelineService:{timelines:{},assets:{}},authorize:async()=>true,fetchImpl:async()=>({ok:++count!==3,status:++count!==3?200:404,async text(){return"[]";},async json(){return{public:false};}})});
+ await assert.rejects(()=>api.checkReadiness());
+});
