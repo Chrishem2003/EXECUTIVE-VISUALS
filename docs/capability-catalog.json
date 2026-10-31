@@ -22,7 +22,10 @@
     "collaboration-governance",
     "integrations-developer-platform",
     "operations-cost-reliability",
-    "quality-accessibility-delivery"
+    "quality-accessibility-delivery",
+    "spatial-3d",
+    "production-tracking",
+    "capture-ingest-interchange"
   ],
   "capabilities": [
     [
@@ -239,6 +242,66 @@
       "quality.delivery",
       "quality-accessibility-delivery",
       "technical QC, accessibility, brand, continuity, manifest"
+    ],
+    [
+      "spatial.scene",
+      "spatial-3d",
+      "3D scenes, collections, objects, meshes, cameras, lights, materials"
+    ],
+    [
+      "spatial.procedural",
+      "spatial-3d",
+      "Procedural geometry, node materials, compositing and simulations"
+    ],
+    [
+      "spatial.animation",
+      "spatial-3d",
+      "Rigging, skeletal/facial animation, motion retargeting and camera tracking"
+    ],
+    [
+      "spatial.render",
+      "spatial-3d",
+      "Render layers, passes, frame ranges, render farm and compositing"
+    ],
+    [
+      "production.tracking",
+      "production-tracking",
+      "Show/project/sequence/shot/task hierarchy, assignments, dependencies, status"
+    ],
+    [
+      "production.review",
+      "production-tracking",
+      "Version stacks, playlists, review links, timecoded notes and approvals"
+    ],
+    [
+      "production.compare",
+      "production-tracking",
+      "Side-by-side, wipe, ghost/overlay and revision comparison"
+    ],
+    [
+      "capture.record",
+      "capture-ingest-interchange",
+      "Camera, microphone, screen, multi-source capture and synchronized tracks"
+    ],
+    [
+      "capture.live",
+      "capture-ingest-interchange",
+      "Live preview, stream recording, remote guest and recording health"
+    ],
+    [
+      "media.ingest",
+      "capture-ingest-interchange",
+      "Checksum-verified ingest, metadata, growing files and transfer integrity"
+    ],
+    [
+      "media.proxy",
+      "capture-ingest-interchange",
+      "Proxy creation, original linking, relink and selective sync"
+    ],
+    [
+      "timeline.interchange",
+      "capture-ingest-interchange",
+      "Timeline interchange, round-trip, relink manifests and unsupported-effect reports"
     ]
   ],
   "requiredCapabilityFields": [
