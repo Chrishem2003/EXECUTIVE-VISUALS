@@ -67,10 +67,15 @@ export function createCloudQueue({
   }
 
   return Object.freeze({
-    async claim(workerId, leaseSeconds = 90) {
+    async claim(workerId, leaseSeconds = 90, jobTypes = null) {
       if (typeof workerId !== "string" || workerId.trim().length < 1 || workerId.length > 128) throw new Error("Worker ID must contain between 1 and 128 characters.");
       if (!Number.isInteger(leaseSeconds) || leaseSeconds < 15 || leaseSeconds > 900) throw new Error("Lease duration must be between 15 and 900 seconds.");
-      const rows = await call("claim_next_job", { p_worker_id: workerId, p_lease_seconds: leaseSeconds });
+      if (jobTypes !== null && (!Array.isArray(jobTypes) || jobTypes.length < 1 || jobTypes.length > 100 || jobTypes.some(type => typeof type !== "string" || !type.trim() || type.length > 128) || new Set(jobTypes).size !== jobTypes.length)) {
+        throw new Error("Job type filters must be a non-empty list of unique, non-empty strings.");
+      }
+      const args = { p_worker_id: workerId, p_lease_seconds: leaseSeconds };
+      if (jobTypes !== null) args.p_job_types = jobTypes;
+      const rows = await call("claim_next_job", args);
       if (rows === null || rows === undefined) return null;
       if (!Array.isArray(rows) || rows.length > 1) throw new Error("Cloud queue claim returned an invalid result.");
       const row = rows[0] || null;
