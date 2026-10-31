@@ -19,7 +19,7 @@ export function validateTimelineDocument(timeline,db,ownerId){
    if(!Number.isFinite(start)||!Number.isFinite(duration)||!Number.isFinite(sourceStart)||!Number.isFinite(sourceDuration)||start<0||duration<=0||sourceStart<0||sourceDuration<=0)issues.push("Timeline clip has invalid source or record timing.");
    if(Number.isFinite(start)&&Number.isFinite(duration)&&start+0.000001<end)issues.push("Clips overlap on the same track; use a separate overlay track.");
    if(Number.isFinite(start)&&Number.isFinite(duration))end=Math.max(end,start+duration);
-   if(Number.isFinite(duration)&&Number.isFinite(sourceDuration)&&Math.abs(duration-sourceDuration)>0.0001)issues.push("Clip source and timeline durations must match until time-remapping is implemented.");
+   if(Number.isFinite(duration)&&Number.isFinite(sourceDuration)&&Math.abs(duration-sourceDuration)>Math.max(0.0001,0.5/Number(clip.sourceRange.duration.rate)))issues.push("Clip source and timeline durations must match within half a source frame until time-remapping is implemented.");
   }
  }
  if(clipCount>5000)issues.push("Timeline exceeds the 5,000 clip limit.");
