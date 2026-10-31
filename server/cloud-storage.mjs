@@ -17,6 +17,20 @@ function origin(value) {
   return url.origin;
 }
 
+export function buildCloudAssetObjectPath({ ownerId, projectId = null, assetId, filename }) {
+  const owner = String(ownerId || "");
+  const project = projectId === null || projectId === undefined || projectId === "" ? null : String(projectId);
+  const asset = String(assetId || "");
+  const name = String(filename || "");
+  if (!UUID.test(owner) || project !== null && !UUID.test(project) || !UUID.test(asset)) {
+    throw new Error("Cloud asset path requires valid owner, optional project and asset UUIDs.");
+  }
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,179}$/.test(name) || name === "." || name === "..") {
+    throw new Error("Cloud asset filename is invalid.");
+  }
+  return (project || owner) + "/" + asset + "/" + name;
+}
+
 function safeObjectPath(value) {
   if (typeof value !== "string" || value.length > 1024 || value.startsWith("/") || value.includes("\\")) {
     throw new Error("Storage object path is invalid.");
