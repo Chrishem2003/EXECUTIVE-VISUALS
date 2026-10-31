@@ -9,7 +9,7 @@ export type CapabilityDomain =
   | "direction" | "preproduction" | "identity" | "image" | "video"
   | "cinema" | "editing" | "audio" | "localization" | "enhancement"
   | "workflow" | "agent" | "campaign" | "design" | "assets"
-  | "collaboration" | "integration" | "operations" | "quality";
+  | "collaboration" | "integration" | "operations" | "quality" | "spatial" | "production" | "capture";
 
 export type EvidenceStatus =
   | "publicly-documented" | "publicly-visible" | "inferred" | "unverified";
@@ -26,7 +26,7 @@ export type SemanticMediaRole =
   | "mask" | "identity-reference" | "style-reference" | "product-reference"
   | "start-frame" | "end-frame" | "keyframe" | "motion-reference"
   | "transcript" | "subtitle" | "voice-profile" | "brand-kit"
-  | "glossary" | "timeline" | "structured-data" | "asset";
+  | "glossary" | "timeline" | "structured-data" | "asset" | "3d-scene" | "mesh" | "camera-data" | "timecode" | "proxy" | "timeline-package";
 
 export interface CapabilityPort {
   id: string;
@@ -192,6 +192,43 @@ export const CAPABILITY_ATLAS: readonly CapabilityDefinition[] = [
     [p("event","structured-data","Signed event and deduplication key")],[p("job-update","structured-data","Normalized job event")], {execution:["sync"]}),
   spec("operations.cost-estimate", "operations", "Estimate execution cost",
     [p("plan","structured-data","Validated plan and provider options")],[p("estimate","structured-data","Cost range and usage assumptions")], {execution:["sync"]}),
+
+  spec("spatial.scene", "spatial", "Manage 3D scene and assets",
+    [p("scene","3d-scene","Scene graph and dependencies"),p("assets","asset","Linked models and textures",false,true)],
+    [p("scene","3d-scene","Versioned 3D scene package")], {execution:["local","sync"]}),
+  spec("spatial.procedural", "spatial", "Build procedural geometry and materials",
+    [p("scene","3d-scene","Target scene"),p("graph","structured-data","Procedural node graph")],
+    [p("scene","3d-scene","Updated procedural scene")], {execution:["local"]}),
+  spec("spatial.animation", "spatial", "Rig and animate character",
+    [p("mesh","mesh","Character mesh"),p("motion","motion-reference","Motion capture or animation reference")],
+    [p("scene","3d-scene","Animated scene")], {execution:["local","async"]}),
+  spec("spatial.render", "spatial", "Render 3D scene",
+    [p("scene","3d-scene","Scene and dependencies"),p("camera","camera-data","Camera setup"),p("settings","structured-data","Render settings")],
+    [p("frames","asset","Rendered frames",true,true)], {execution:["local","async"]}),
+  spec("production.track", "production", "Track production work",
+    [p("production","structured-data","Project, sequence, shot and task records")],
+    [p("status","structured-data","Assignments, dependencies and progress")], {execution:["sync"]}),
+  spec("production.review", "production", "Review and approve versioned media",
+    [p("asset","asset","Specific version to review"),p("notes","structured-data","Frame-accurate notes",false,true)],
+    [p("decision","structured-data","Review outcome and resolved notes")], {execution:["interactive"]}),
+  spec("production.compare", "production", "Compare media versions",
+    [p("versions","asset","Two or more ordered versions",true,true)],
+    [p("comparison","asset","Comparison view or report")], {execution:["local","sync"]}),
+  spec("capture.record", "capture", "Capture synchronized media sources",
+    [p("devices","structured-data","Camera, microphone and screen sources"),p("session","structured-data","Capture session configuration")],
+    [p("tracks","asset","Recorded source tracks",true,true)], {execution:["local","interactive"]}),
+  spec("capture.live", "capture", "Operate live capture session",
+    [p("sources","asset","Live source inputs",true,true),p("settings","structured-data","Stream and recording settings")],
+    [p("recording","asset","Live recording and health manifest")], {execution:["interactive"]}),
+  spec("media.ingest", "capture", "Ingest and verify source media",
+    [p("sources","asset","Source files and cards",true,true)],
+    [p("ingest","structured-data","Checksum, metadata and transfer report")], {execution:["local","async"]}),
+  spec("media.proxy", "capture", "Create and link proxies",
+    [p("originals","asset","Original source media",true,true),p("profile","structured-data","Proxy profile")],
+    [p("proxies","proxy","Proxy assets linked to originals",true,true)], {execution:["local","async"]}),
+  spec("timeline.interchange", "capture", "Import or export timeline interchange",
+    [p("timeline","timeline","Editable timeline"),p("package","timeline-package","Interchange package")],
+    [p("result","timeline-package","Round-trip package and compatibility report")], {execution:["local","sync"]}),
   spec("quality.preflight", "quality", "Validate media delivery requirements",
     [p("asset","asset","Candidate deliverable"),p("profile","structured-data","Target delivery profile")],
     [p("report","structured-data","Technical and accessibility checks")], {execution:["sync"]})
