@@ -20,7 +20,7 @@
 | Projects | Persistent project creation, listing, optimistic revision updates and archive | SQLite local database |
 | Media ingest | Binary uploads to local disk, MIME allowlist, upload-size limit and SHA-256 checksum | Local disk; cloud object storage not connected |
 | Asset library | Owner isolation, metadata, original/derivative relationship and private file reads | No cloud storage or signed URLs yet |
-| Job queue | Persistent queue, idempotency keys, normalized states, progress events, process cancellation and audit trail | Single local worker; distributed workers, lease recovery and retry scheduling pending |
+| Job queue | Persistent queue, idempotency keys, normalized states, progress events, renewable worker leases, stale-worker recovery, bounded retries with exponential backoff, cross-process cancellation polling and audit trail | Multi-process lease coordination on a shared SQLite database; multi-host workers still require a shared Postgres queue |
 | Local media engine | Probe, thumbnail, transcode, audio extraction, proxy generation and timeline MP4 master rendering with synchronized audio tracks | Requires FFmpeg/FFprobe installed; master renderer supports one primary video track and audio-only clips; overlays/captions/effects are pending |
 | Runtime console | Sign-in, project creation, uploads, media job submission, job inspection and audit view | Browser UI uses the local API |
 | Project collaboration | Owner-managed invitations with editor, reviewer and viewer roles; access revocation enforced across project records | Existing local accounts only; invitation email delivery not connected |
@@ -45,7 +45,7 @@ A green build does not prove external provider execution, cloud durability, fram
 
 - Durable cloud database and object storage in a dedicated isolated project.
 - Production OAuth/session refresh, email invitations and distributed multi-tenant collaboration.
-- Distributed workers, leases, retries, dead-letter queue and actual process termination on cancellation.
+- Multi-host workers, dead-letter queue, lease metrics and guaranteed process-tree termination on cancellation.
 - Resumable/chunked uploads, media signature sniffing and range downloads.
 - Timeline preview playback, transitions, effects/overlay/caption compositing, cache invalidation and round-trip tests against an independent interchange implementation.
 - Full workflow node editor, per-node run history, partial reruns and provider execution.
