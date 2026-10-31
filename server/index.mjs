@@ -358,7 +358,8 @@ export function createAppServer() {
           if(!canWriteProject(db,user.id,projectId)){fail(res,403,"EDITOR_REQUIRED","Owner or editor access is required to save creative workspace data.");return;}
           const body=await readJson(req,3*1024*1024);
           let document;
-          try{document=sanitizeCreativeWorkspaceDocument(body.document);}catch(error){fail(res,400,error.code||"INVALID_WORKSPACE_DOCUMENT",error.message);return;}
+          const prior=db.prepare("SELECT document_json FROM project_workspace_documents WHERE project_id=?").get(projectId);
+          try{document=sanitizeCreativeWorkspaceDocument({...parseJson(prior?.document_json,{}),...(body.document||{})});}catch(error){fail(res,400,error.code||"INVALID_WORKSPACE_DOCUMENT",error.message);return;}
           const current=db.prepare("SELECT revision FROM project_workspace_documents WHERE project_id=?").get(projectId);
           const expected=Number(body.revision);
           if(!Number.isInteger(expected)||expected!==(current?.revision||0)){fail(res,409,"REVISION_CONFLICT","Creative workspace changed since it was loaded. Refresh before saving again.");return;}
