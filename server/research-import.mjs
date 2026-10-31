@@ -16,11 +16,11 @@ const blockedV6=(ip)=>{
 export async function resolvePublicHttpsUrl(value){
  let url;try{url=new URL(String(value||""));}catch{throw Object.assign(new Error("Enter a valid HTTPS source URL."),{code:"INVALID_RESEARCH_URL",status:400});}
  if(url.protocol!=="https:"||url.username||url.password||url.port&&url.port!=="443")throw Object.assign(new Error("Research import accepts public HTTPS URLs on the standard port only."),{code:"UNSAFE_RESEARCH_URL",status:400});
- if(!url.hostname||url.hostname==="localhost"||url.hostname.endsWith(".localhost")||url.hostname.endsWith(".local"))throw Object.assign(new Error("Local and private network addresses cannot be imported."),{code:"UNSAFE_RESEARCH_URL"});
+ if(!url.hostname||url.hostname==="localhost"||url.hostname.endsWith(".localhost")||url.hostname.endsWith(".local"))throw Object.assign(new Error("Local and private network addresses cannot be imported."),{code:"UNSAFE_RESEARCH_URL",status:400});
  const family=isIP(url.hostname);
  let addresses;
  try{addresses=family?[{address:url.hostname,family}]:await lookup(url.hostname,{all:true,verbatim:true});}catch{throw Object.assign(new Error("The source host could not be resolved."),{code:"RESEARCH_HOST_UNAVAILABLE",status:422});}
- if(!addresses.length||addresses.some(item=>item.family===4?blockedV4(item.address):item.family===6?blockedV6(item.address):true))throw Object.assign(new Error("The source host resolves to a private or reserved network address."),{code:"UNSAFE_RESEARCH_URL"});
+ if(!addresses.length||addresses.some(item=>item.family===4?blockedV4(item.address):item.family===6?blockedV6(item.address):true))throw Object.assign(new Error("The source host resolves to a private or reserved network address."),{code:"UNSAFE_RESEARCH_URL",status:400});
  return {url,addresses};
 }
 function requestPinned(url,addresses){
