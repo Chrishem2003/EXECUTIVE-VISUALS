@@ -10,11 +10,16 @@ const esc=(v:unknown)=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&l
 const port=(id:string,type:MediaPortType,required=false,multiple=false):WorkflowPort=>({id,label:id,type,required,multiple});
 const palette:Record<string,{kind:WorkflowNodeKind;label:string;inputs:WorkflowPort[];outputs:WorkflowPort[]}>={
  text:{kind:"text",label:"Text / Prompt",inputs:[],outputs:[port("text","text")]},
+ upload:{kind:"upload",label:"Use Uploaded Asset",inputs:[],outputs:[port("asset","asset"),port("media","media")]},
+ reference:{kind:"reference",label:"Reference Asset",inputs:[],outputs:[port("asset","asset"),port("media","media")]},
  llm:{kind:"llm.prompt",label:"AI Text Processor",inputs:[port("prompt","text",true)],outputs:[port("text","text")]},
  image:{kind:"image.generate",label:"Image Generation",inputs:[port("prompt","text",true),port("reference","image",false,true)],outputs:[port("image","image")]},
  video:{kind:"video.generate",label:"Video Generation",inputs:[port("prompt","text",true),port("start-frame","start-frame"),port("reference","video",false,true)],outputs:[port("video","video")]},
  voice:{kind:"voice.generate",label:"Voice Generation",inputs:[port("script","text",true)],outputs:[port("audio","audio")]},
  frame:{kind:"utility.frame-extract",label:"Extract Video Frame",inputs:[port("video","video",true)],outputs:[port("image","image")]},
+ audio:{kind:"video.extract-audio",label:"Extract Audio",inputs:[port("video","video",true)],outputs:[port("audio","audio")]},
+ transcode:{kind:"utility.convert",label:"Convert / Compress",inputs:[port("asset","asset",true)],outputs:[port("asset","asset")]},
+ timeline:{kind:"timeline",label:"Render Saved Timeline",inputs:[],outputs:[port("video","video")]},
  upscale:{kind:"media.upscale",label:"Image Upscale",inputs:[port("image","image",true)],outputs:[port("image","image")]},
  approval:{kind:"approval",label:"Human Approval",inputs:[port("media","media",true)],outputs:[port("media","media")]},
  quality:{kind:"quality-check",label:"Quality Gate",inputs:[port("media","media",true)],outputs:[port("report","structured-data")]},
