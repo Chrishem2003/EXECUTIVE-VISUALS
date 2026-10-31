@@ -7,14 +7,15 @@
     "dev": "node scripts/dev.mjs",
     "dev:web": "vite --host 0.0.0.0",
     "dev:api": "node server/index.mjs",
-    "build": "npm run verify:capabilities && npm run verify:workflow && npm run verify:timeline && npm run verify:server && tsc -b && vite build",
+    "build": "npm run verify:capabilities && npm run verify:workflow && npm run verify:timeline && npm run verify:render && npm run verify:server && tsc -b && vite build",
     "start": "node server/index.mjs",
     "preview": "vite preview --host 0.0.0.0",
     "typecheck": "tsc --noEmit",
     "verify:capabilities": "node scripts/verify-capability-atlas.mjs",
     "verify:workflow": "node --experimental-strip-types scripts/verify-workflow-engine.mjs",
     "verify:server": "node --test server/tests/*.test.mjs",
-    "verify:timeline": "node --experimental-strip-types scripts/verify-timeline.mjs"
+    "verify:timeline": "node --experimental-strip-types scripts/verify-timeline.mjs",
+    "verify:render": "node scripts/verify-render-worker.mjs"
   },
   "devDependencies": {
     "typescript": "^5.8.3",
