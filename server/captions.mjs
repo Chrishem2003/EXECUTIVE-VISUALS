@@ -43,3 +43,16 @@ export async function storeCaptionAsset({db,mediaRoot,ownerId,projectId=null,job
   return {id,projectId,name,mediaType:"text/vtt",size:buffer.length,sha256,storagePath,metadata};
  }catch(error){await unlink(absolute).catch(()=>{});throw error;}
 }
+
+export function applyTranslatedSegments(sourceSegments,translatedPayload){
+ if(!Array.isArray(sourceSegments)||sourceSegments.length===0||sourceSegments.length>500)throw Object.assign(new Error("Translation requires between 1 and 500 timed caption segments."),{code:"TRANSLATION_SEGMENTS_INVALID"});
+ const translated=Array.isArray(translatedPayload)?translatedPayload:translatedPayload?.segments;
+ if(!Array.isArray(translated)||translated.length!==sourceSegments.length)throw Object.assign(new Error("Translation response must contain exactly one result for every source cue."),{code:"TRANSLATION_RESPONSE_INVALID"});
+ return sourceSegments.map((source,index)=>{
+  const item=translated[index];
+  if(Number(item?.index)!==index||typeof item?.text!=="string")throw Object.assign(new Error("Translation response cue order or shape is invalid."),{code:"TRANSLATION_RESPONSE_INVALID"});
+  const text=cleanText(item.text);
+  if(!text||text.length>MAX_TEXT)throw Object.assign(new Error("Translated caption text is empty or too long."),{code:"TRANSLATION_RESPONSE_INVALID"});
+  return {start:Number(source.start),end:Number(source.end),text};
+ });
+}
