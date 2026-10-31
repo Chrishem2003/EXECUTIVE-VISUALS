@@ -36,7 +36,7 @@ export async function storeCaptionAsset({db,mediaRoot,ownerId,projectId=null,job
  try{
   await writeFile(absolute,buffer,{flag:"wx"});
   const sha256=createHash("sha256").update(buffer).digest("hex");
-  const metadata={generated:true,kind:"webvtt-captions",sourceAssetId:String(sourceAssetId||""),language:String(language||"").slice(0,32),segmentCount:Array.isArray(segments)?segments.length:0,jobId,createdAt:new Date().toISOString()};
+  const metadata={generated:true,kind:"webvtt-captions",sourceAssetId:String(sourceAssetId||""),language:String(language||"").slice(0,32),segmentCount:Array.isArray(segments)?segments.length:0,durationSeconds:Array.isArray(segments)?Math.max(0,...segments.map(segment=>Number(segment?.end)||0)):0,jobId,createdAt:new Date().toISOString()};
   const name="captions-"+id+".vtt";
   db.prepare("INSERT INTO assets(id,owner_id,project_id,original_name,media_type,byte_size,sha256,storage_path,metadata_json) VALUES(?,?,?,?,?,?,?,?,?)")
    .run(id,ownerId,projectId,name,"text/vtt",buffer.length,sha256,storagePath,json(metadata));
