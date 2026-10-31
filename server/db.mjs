@@ -1,4 +1,4 @@
-import { DatabaseSync } from "node:sqlite";
+import { DatabaseSync } from "node:sqlite";\nimport { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 
@@ -142,6 +142,26 @@ export function openDatabase(filename) {
       created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
     );
     CREATE INDEX IF NOT EXISTS job_events_job_idx ON job_events(job_id, id);
+    CREATE TABLE IF NOT EXISTS model_usage_events (
+      id TEXT PRIMARY KEY,
+      owner_id TEXT NOT NULL REFERENCES users(id),
+      project_id TEXT REFERENCES projects(id),
+      job_id TEXT,
+      workflow_run_id TEXT,
+      node_id TEXT,
+      provider TEXT NOT NULL,
+      capability TEXT NOT NULL,
+      model TEXT NOT NULL,
+      prompt_tokens INTEGER,
+      completion_tokens INTEGER,
+      total_tokens INTEGER,
+      duration_ms INTEGER NOT NULL DEFAULT 0 CHECK(duration_ms >= 0),
+      estimated_cost_micros INTEGER,
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    );
+    CREATE INDEX IF NOT EXISTS model_usage_owner_idx ON model_usage_events(owner_id,created_at DESC);
+    CREATE INDEX IF NOT EXISTS model_usage_project_idx ON model_usage_events(project_id,created_at DESC);
+    CREATE INDEX IF NOT EXISTS model_usage_job_idx ON model_usage_events(job_id);
     CREATE TABLE IF NOT EXISTS audit_events (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       owner_id TEXT NOT NULL REFERENCES users(id),
@@ -219,6 +239,21 @@ export function addJobEvent(db, jobId, ownerId, type, details = {}) {
   db.prepare("INSERT INTO job_events(job_id,owner_id,event_type,event_json) VALUES(?,?,?,?)")
     .run(jobId, ownerId, type, json(details));
 }
+export function recordModelUsage(db, {
+  ownerId, projectId = null, jobId = null, workflowRunId = null, nodeId = null,
+  provider, capability, model, usage = null, durationMs = 0
+}) {
+  if (!ownerId || !provider || !capability || !model) throw new Error("Model usage requires owner, provider, capability and model identifiers.");
+  const integer = value => Number.isFinite(Number(value)) && Number(value) >= 0 ? Math.min(2147483647, Math.floor(Number(value))) : null;
+  const promptTokens = integer(usage?.promptTokens ?? usage?.inputTokens);
+  const completionTokens = integer(usage?.completionTokens ?? usage?.outputTokens);
+  const totalTokens = integer(usage?.totalTokens) ?? (promptTokens !== null || completionTokens !== null ? (promptTokens || 0) + (completionTokens || 0) : null);
+  const id = crypto.randomUUID();
+  db.prepare("INSERT INTO model_usage_events(id,owner_id,project_id,job_id,workflow_run_id,node_id,provider,capability,model,prompt_tokens,completion_tokens,total_tokens,duration_ms,estimated_cost_micros) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,NULL)")
+    .run(id, ownerId, projectId, jobId, workflowRunId, nodeId, String(provider).slice(0,80), String(capability).slice(0,80), String(model).slice(0,160), promptTokens, completionTokens, totalTokens, integer(durationMs) ?? 0);
+  return { id, promptTokens, completionTokens, totalTokens, estimatedCost: null };
+}
+
 export function getOwnedProject(db, ownerId, projectId) {
   return db.prepare("SELECT * FROM projects WHERE id=? AND owner_id=? AND archived_at IS NULL").get(projectId, ownerId);
 }

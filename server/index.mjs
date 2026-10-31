@@ -290,6 +290,15 @@ export function createAppServer() {
       const user=await authenticate(req);
       if(!user){fail(res,401,"AUTH_REQUIRED","Sign in to access this workspace.");return;}
       if(path==="/api/me"&&req.method==="GET"){send(res,200,{user,authMode:AUTH_MODE},cors);return;}
+      if(path==="/api/usage"&&req.method==="GET"){
+        const projectId=url.searchParams.get("projectId");
+        if(projectId&&!getProjectAccess(db,user.id,projectId)){fail(res,404,"PROJECT_NOT_FOUND","Project not found.");return;}
+        const rows=projectId
+          ?db.prepare("SELECT id,project_id,job_id,workflow_run_id,node_id,provider,capability,model,prompt_tokens,completion_tokens,total_tokens,duration_ms,estimated_cost_micros,created_at FROM model_usage_events WHERE project_id=? ORDER BY created_at DESC LIMIT 200").all(projectId)
+          :db.prepare("SELECT id,project_id,job_id,workflow_run_id,node_id,provider,capability,model,prompt_tokens,completion_tokens,total_tokens,duration_ms,estimated_cost_micros,created_at FROM model_usage_events WHERE owner_id=? ORDER BY created_at DESC LIMIT 200").all(user.id);
+        const totals=rows.reduce((sum,row)=>({requests:sum.requests+1,promptTokens:sum.promptTokens+(row.prompt_tokens||0),completionTokens:sum.completionTokens+(row.completion_tokens||0),totalTokens:sum.totalTokens+(row.total_tokens||0),durationMs:sum.durationMs+(row.duration_ms||0)}),{requests:0,promptTokens:0,completionTokens:0,totalTokens:0,durationMs:0});
+        send(res,200,{events:rows.map(row=>({id:row.id,projectId:row.project_id,jobId:row.job_id,workflowRunId:row.workflow_run_id,nodeId:row.node_id,provider:row.provider,capability:row.capability,model:row.model,promptTokens:row.prompt_tokens,completionTokens:row.completion_tokens,totalTokens:row.total_tokens,durationMs:row.duration_ms,estimatedCostMicros:row.estimated_cost_micros,createdAt:row.created_at})),totals,costs:"not_estimated"},cors);return;
+      }
 
       if(path==="/api/projects"&&req.method==="GET"){
         const rows=db.prepare("SELECT DISTINCT p.id,p.name,p.description,p.settings_json,p.revision,p.created_at,p.updated_at,CASE WHEN p.owner_id=? THEN 'owner' ELSE m.role END AS access_role FROM projects p LEFT JOIN project_members m ON m.project_id=p.id AND m.member_id=? WHERE (p.owner_id=? OR m.member_id=?) AND p.archived_at IS NULL ORDER BY p.updated_at DESC").all(user.id,user.id,user.id,user.id);
