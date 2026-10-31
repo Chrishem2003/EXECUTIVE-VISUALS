@@ -1,6 +1,7 @@
 import { executeMediaJob } from "./media.mjs";
 import { getAccessibleAsset, json, parseJson } from "./db.mjs";
 import { validateWorkflowGraph } from "./workflow-validation.mjs";
+import { searchProjectKnowledge } from "./knowledge-search.mjs";
 import { generateText } from "./ai-gateway.mjs";
 import { generateImage } from "./image-gateway.mjs";
 import { generateFalVideo } from "./fal-video-gateway.mjs";
@@ -117,6 +118,12 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
     else condition=Boolean(left);
     const payload=values.input??left;
     output=condition?{true:payload}:{false:payload};
+   }else if(node.kind==="knowledge.search"){
+    const workspace=db.prepare("SELECT document_json FROM project_workspace_documents WHERE project_id=?").get(job.project_id||run.project_id);
+    const document=parseJson(workspace?.document_json,{});
+    const query=String(values.query??values.text??values.input??config.query??"");
+    const result=searchProjectKnowledge(document,query,{limit:config.limit??10});
+    output=nodeOutput(node,result);output.document=result;output.records=result.records;output.sources=result.records.flatMap(record=>record.evidence);
    }else if(node.kind==="image.generate"){
     if(!hasApprovedAncestor(graph,nodeId,outputs))throw Object.assign(new Error("A completed upstream human-approval node is required before image generation."),{code:"APPROVAL_REQUIRED"});
     const prompt=String(values.prompt??values.text??values.input??config.prompt??"");
