@@ -107,8 +107,11 @@ export function createCloudStorage({
         body:JSON.stringify({expiresIn})
       });
       if (typeof result?.signedURL !== "string" || !result.signedURL) throw new Error("Cloud storage did not return a signed URL.");
-      const signed = new URL(result.signedURL, base);
-      if (signed.origin !== base) {
+      const signedPath = result.signedURL.startsWith("/object/")
+        ? "/storage/v1" + result.signedURL
+        : result.signedURL;
+      const signed = new URL(signedPath, base);
+      if (signed.origin !== base || !signed.pathname.startsWith("/storage/v1/object/sign/")) {
         throw new Error("Cloud storage returned an unsafe signed URL.");
       }
       return signed.toString();
