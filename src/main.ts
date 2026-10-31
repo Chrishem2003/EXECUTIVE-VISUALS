@@ -133,5 +133,5 @@ document.addEventListener("click",e=>{
 });
 document.addEventListener("submit",e=>{if((e.target as HTMLElement).id==="brief-form"){e.preventDefault();createBrief(e.target as HTMLFormElement);}});
 document.addEventListener("change",e=>{const t=e.target as HTMLInputElement;if(t.id==="asset-upload")addFiles(t);});
-document.addEventListener("input",e=>{const t=e.target as HTMLInputElement;if(t.id==="library-query"){state.query=t.value;const pos=t.selectionStart;renderView();const next=$("#library-query");next.focus();next.setSelectionRange(pos,pos);}});
+document.addEventListener("input",e=>{const t=e.target as HTMLInputElement;if(t.id==="library-query"){state.query=t.value;const pos=t.selectionStart;renderView();const next=$("#library-query");next.focus();next.setSelectionRange(pos ?? 0,pos ?? 0);}});
 load(); shell();
