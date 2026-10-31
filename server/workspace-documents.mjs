@@ -13,7 +13,16 @@ export function sanitizeCreativeWorkspaceDocument(input){
   creativeProjects:records(input.creativeProjects,100,[["id",80],["name",160],["brief",10000],["audience",2000],["style",200],["created",40]]),
   tasks:records(input.tasks,500,[["id",80],["name",200],["category",120],["status",40],["created",40],["detail",4000]]),
   shots:records(input.shots,500,[["id",80],["scene",200],["action",4000],["camera",300],["lens",120],["movement",300],["lighting",500]]).map((item,index)=>({...item,duration:Math.max(0,Math.min(3600,Number(input.shots[index]?.duration)||0))})),
-  characters:records(input.characters,200,[["id",80],["name",160],["description",6000],["voice",160]]).map((item,index)=>({...item,consent:input.characters[index]?.consent===true})),
+  characters:records(input.characters,200,[["id",80],["name",160],["description",6000],["voice",160]]).map((item,index)=>{
+   const raw=input.characters[index]?.consent;
+   const consent=raw&&typeof raw==="object"&&!Array.isArray(raw)?{
+    kind:["fictional","authorized","not-granted"].includes(raw.kind)?raw.kind:"not-granted",
+    scopes:Array.isArray(raw.scopes)?[...new Set(raw.scopes.filter(scope=>["likeness","voice","face-animation","lip-sync","identity-transfer"].includes(scope)))].slice(0,5):[],
+    evidenceReference:text(raw.evidenceReference,500),
+    expiresAt:text(raw.expiresAt,10)
+   }:{kind:"not-granted",scopes:[],evidenceReference:"",expiresAt:""};
+   return {...item,consent};
+  }),
   prompt:text(input.prompt,20000),
   plan:text(input.plan,50000),
   script:text(input.script,50000),
