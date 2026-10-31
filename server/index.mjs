@@ -252,7 +252,7 @@ export function createAppServer() {
       if(path==="/api/me"&&req.method==="GET"){send(res,200,{user,authMode:AUTH_MODE},cors);return;}
 
       if(path==="/api/projects"&&req.method==="GET"){
-        const rows=db.prepare("SELECT id,name,description,settings_json,revision,created_at,updated_at FROM projects WHERE owner_id=? AND archived_at IS NULL ORDER BY updated_at DESC").all(user.id);
+        const rows=db.prepare("SELECT DISTINCT p.id,p.name,p.description,p.settings_json,p.revision,p.created_at,p.updated_at,CASE WHEN p.owner_id=? THEN 'owner' ELSE m.role END AS access_role FROM projects p LEFT JOIN project_members m ON m.project_id=p.id AND m.member_id=? WHERE (p.owner_id=? OR m.member_id=?) AND p.archived_at IS NULL ORDER BY p.updated_at DESC").all(user.id,user.id,user.id,user.id);
         send(res,200,{projects:rows.map(x=>({...x,settings:parseJson(x.settings_json)}))},cors);return;
       }
       if(path==="/api/projects"&&req.method==="POST"){
@@ -279,7 +279,7 @@ export function createAppServer() {
 
       if(path==="/api/assets"&&req.method==="GET"){
         const projectId=url.searchParams.get("projectId");
-        const rows=projectId&&!getOwnedProject(db,user.id,projectId)?[]:db.prepare("SELECT id,project_id,original_name,media_type,byte_size,sha256,derivative_of,metadata_json,created_at FROM assets WHERE owner_id=? AND deleted_at IS NULL AND (? IS NULL OR project_id=?) ORDER BY created_at DESC").all(user.id,projectId,projectId);
+        const rows=projectId&&!getProjectAccess(db,user.id,projectId)?[]:db.prepare("SELECT id,project_id,original_name,media_type,byte_size,sha256,derivative_of,metadata_json,created_at FROM assets WHERE deleted_at IS NULL AND (owner_id=? OR project_id IN (SELECT project_id FROM project_members WHERE member_id=?)) AND (? IS NULL OR project_id=?) ORDER BY created_at DESC").all(user.id,user.id,projectId,projectId);
         send(res,200,{assets:rows.map(x=>({id:x.id,projectId:x.project_id,name:x.original_name,mediaType:x.media_type,size:x.byte_size,sha256:x.sha256,derivativeOf:x.derivative_of,metadata:parseJson(x.metadata_json),createdAt:x.created_at}))},cors);return;
       }
       if(path==="/api/assets"&&req.method==="POST"){
