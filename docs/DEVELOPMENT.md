@@ -26,13 +26,14 @@ The `data/` directory is ignored by Git. Preserve it when backing up local proje
 - `POST /api/auth/register`, `POST /api/auth/login`, `POST /api/auth/logout`, `GET /api/me`
 - `GET/POST /api/projects`, `PUT/DELETE /api/projects/:id`
 - `GET/POST /api/assets`, `GET /api/assets/:id/file`, `DELETE /api/assets/:id`
-- `GET/POST /api/workflows`
+- `GET/POST /api/workflows`, `GET/PUT /api/workflows/:id`
+- `GET/POST /api/timelines`, `GET/PUT/DELETE /api/timelines/:id`, `GET /api/timelines/:id/otio`
 - `GET/POST /api/jobs`, `GET /api/jobs/:id`, `GET /api/jobs/:id/events`, `POST /api/jobs/:id/cancel`
 - `GET /api/audit`
 
 Uploads are raw binary request bodies. The client sends `Content-Type`, `X-File-Name` and optional `X-Project-Id` headers. Maximum size defaults to 250 MiB.
 
-## Local media jobs
+## Editorial timeline\nThe Video Editor now uses a persisted multi-track timeline model with rational frame timing, source ranges, track locking, clip placement, trim, split, move, markers, overlap validation and interchange JSON export. Timelines are owner-scoped, versioned and saved through optimistic revision checks. Preview playback, transitions, effects rendering and audio mixing are not yet implemented.\n\n## Local media jobs
 - `media.probe` — inspect streams and container metadata.
 - `media.thumbnail` — extract a still frame.
 - `media.transcode` — transcode to an allowlisted container/codec.
