@@ -227,8 +227,8 @@ begin
       and (available_at is null or available_at <= clock_timestamp())
       and attempt_count < max_attempts
     order by created_at, id
-    for update skip locked
     limit 1
+    for update skip locked
   )
   update executive_visuals.jobs as j
   set status = 'processing',
@@ -274,8 +274,8 @@ begin
     where status = 'processing'
       and (lease_expires_at is null or lease_expires_at <= clock_timestamp())
     order by lease_expires_at nulls first, created_at
-    for update skip locked
     limit p_limit
+    for update skip locked
   loop
     retryable := expired.attempt_count < expired.max_attempts;
     delay_seconds := case when retryable
