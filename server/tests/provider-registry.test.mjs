@@ -62,3 +62,17 @@ test("unsupported image provider identifiers never appear ready",()=>{
  assert.equal(image.status,"needs_configuration");
  assert.equal(findProviderForCapability(catalog,"image.generate",{allowRemote:true}),null);
 });
+
+test("provider readiness never advertises unimplemented reference or image-to-video inputs",()=>{
+ const catalog=getProviderCatalog({
+  IMAGE_GATEWAY_ENABLED:"true",IMAGE_GATEWAY_URL:"https://images.example.test/v1",IMAGE_GATEWAY_MODEL:"image-model",IMAGE_GATEWAY_ALLOW_REMOTE:"true",
+  VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",FAL_KEY:"secret",FAL_VIDEO_MODEL:"video/model"
+ });
+ const image=catalog.providers.find(x=>x.id==="image");
+ const video=catalog.providers.find(x=>x.id==="video");
+ assert.deepEqual(image.capabilities,["image.generate"]);
+ assert.deepEqual(video.capabilities,["video.generate"]);
+ assert.equal(findProviderForCapability(catalog,"image.reference",{allowRemote:true}),null);
+ assert.equal(findProviderForCapability(catalog,"image.variation",{allowRemote:true}),null);
+ assert.equal(findProviderForCapability(catalog,"video.image_to_video",{allowRemote:true}),null);
+});
