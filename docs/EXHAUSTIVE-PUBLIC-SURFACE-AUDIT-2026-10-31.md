@@ -44,7 +44,7 @@ The important architecture distinction is **model vs tool vs workflow**:
 
 ## 2. Cinema Studio — project and shot-level directing
 
-Official guide: [Public source ref EXT-001] A.ai/creator-hub/help-center/tools/how-do-i-use-cinema-studio
+Official guide: [Source URL redacted] A.ai/creator-hub/help-center/tools/how-do-i-use-cinema-studio
 
 ### Version-specific workflow
 
@@ -105,7 +105,7 @@ Official guide: [Public source ref EXT-001] A.ai/creator-hub/help-center/tools/h
 
 ## 3. Canvas — visual node workflow
 
-Official guide: [Public source ref EXT-001] A.ai/creator-hub/help-center/tools/how-do-i-use-canvas
+Official guide: [Source URL redacted] A.ai/creator-hub/help-center/tools/how-do-i-use-canvas
 
 **DOCUMENTED sequence**
 1. Create a canvas.
@@ -126,7 +126,7 @@ Official guide: [Public source ref EXT-001] A.ai/creator-hub/help-center/tools/h
 
 ## 4. Marketing Studio and Ad Multiplier
 
-Official guide: [Public source ref EXT-001] A.ai/creator-hub/help-center/tools/how-do-i-use-marketing-studio-to-create-video-ads
+Official guide: [Source URL redacted] A.ai/creator-hub/help-center/tools/how-do-i-use-marketing-studio-to-create-video-ads
 
 Documented entry patterns:
 - Template-first: choose a campaign/task template, attach a product, choose/adjust presenter, hook and setting, then generate.
@@ -143,8 +143,8 @@ MCP docs also describe **Ad Multiplier**: use a reference ad and the user's prod
 ## 5. Supercomputer, AI Director and Apps
 
 Official sources:
-- [Public source ref EXT-001] A.ai/creator-hub/help-center/tools/how-do-i-use-supercomputer
-- [Public source ref EXT-001] A.ai/creator-hub/help-center/tools/what-are-Platform A-apps
+- [Source URL redacted] A.ai/creator-hub/help-center/tools/how-do-i-use-supercomputer
+- [Source URL redacted] A.ai/creator-hub/help-center/tools/what-are-Platform A-apps
 
 Supercomputer is described as a chat-driven agentic workspace:
 - Understand a natural-language task.
@@ -163,8 +163,8 @@ Platform A Apps lets a user describe and create a generative application within 
 ## 6. AI Influencer, Soul ID and character continuity
 
 Official sources:
-- [Public source ref EXT-001] A.ai/creator-hub/help-center/tools/how-do-i-use-ai-influencer
-- [Public source ref EXT-001] A.ai/creator-hub/help-center/ai-models/how-do-i-create-and-use-a-soul-id-character
+- [Source URL redacted] A.ai/creator-hub/help-center/tools/how-do-i-use-ai-influencer
+- [Source URL redacted] A.ai/creator-hub/help-center/ai-models/how-do-i-create-and-use-a-soul-id-character
 
 Documented concepts:
 - AI Influencer builder has base identity attributes and advanced Face, Body and Style controls.
@@ -179,8 +179,8 @@ Documented concepts:
 ## 7. Soul image family and Popcorn storyboards
 
 Official sources:
-- [Public source ref EXT-001] A.ai/creator-hub/help-center/ai-models/how-do-i-use-soul-to-generate-images
-- [Public source ref EXT-001] A.ai/creator-hub/help-center/ai-models/how-do-i-use-popcorn
+- [Source URL redacted] A.ai/creator-hub/help-center/ai-models/how-do-i-use-soul-to-generate-images
+- [Source URL redacted] A.ai/creator-hub/help-center/ai-models/how-do-i-use-popcorn
 
 ### Soul / Soul 2.0 / Soul Cinema
 - Soul is the native image family for cinematic/fashion/aesthetic images and character consistency.
@@ -202,9 +202,9 @@ Official sources:
 ## 8. DoP, Genjutsu, lipsync and audio
 
 Official sources:
-- [Public source ref EXT-001] A.ai/creator-hub/help-center/ai-models/how-do-i-use-dop
-- [Public source ref EXT-001] A.ai/creator-hub/help-center/tools/how-do-i-use-genjutsu
-- [Public source ref EXT-001] A.ai/creator-hub/help-center/ai-models/how-do-i-use-lipsync-voiceover-and-aspect-ratios
+- [Source URL redacted] A.ai/creator-hub/help-center/ai-models/how-do-i-use-dop
+- [Source URL redacted] A.ai/creator-hub/help-center/tools/how-do-i-use-genjutsu
+- [Source URL redacted] A.ai/creator-hub/help-center/ai-models/how-do-i-use-lipsync-voiceover-and-aspect-ratios
 
 ### DoP
 - Image/keyframe-to-video workflow.
@@ -226,11 +226,11 @@ Official sources:
 ## 9. Platform A API vs MCP vs CLI + Skills
 
 Official sources:
-- [Public source ref EXT-001] A.ai/creator-hub/help-center/integrations/what-is-the-Platform A-api
-- [Public source ref EXT-001] A.ai/creator-hub/help-center/integrations/what-is-Platform A-mcp
-- [Public source ref EXT-001] A.ai/creator-hub/help-center/integrations/how-do-i-access-Platform A-via-cli
-- [Public source ref EXT-001] A.ai/creator-hub/help-center/integrations/how-do-i-connect-Platform A-to-ai-agent
-- [Public source ref EXT-001] A.ai/creator-hub/help-center/integrations/how-do-i-use-katana
+- [Source URL redacted] A.ai/creator-hub/help-center/integrations/what-is-the-Platform A-api
+- [Source URL redacted] A.ai/creator-hub/help-center/integrations/what-is-Platform A-mcp
+- [Source URL redacted] A.ai/creator-hub/help-center/integrations/how-do-i-access-Platform A-via-cli
+- [Source URL redacted] A.ai/creator-hub/help-center/integrations/how-do-i-connect-Platform A-to-ai-agent
+- [Source URL redacted] A.ai/creator-hub/help-center/integrations/how-do-i-use-katana
 
 | Surface | Auth/account | Billing | Best fit |
 |---|---|---|---|
@@ -254,7 +254,7 @@ Official sources:
 - The model catalog has per-model resolution, duration, rates and sample code.
 
 ### MCP facts
-- Connector URL: [Public source ref EXT-002] A.ai/mcp
+- Connector URL: [Source URL redacted] A.ai/mcp
 - OAuth, no separate API key.
 - Uses existing account and credits.
 - Unlimited web entitlements/free generations do not apply to automated MCP/CLI/Canvas/Supercomputer generation.
@@ -297,10 +297,10 @@ Official sources:
 
 ## 11. Product and developer surfaces
 
-Primary index: [Public source ref EXT-003] B.com/llms.txt  
-MCP index: [Public source ref EXT-003] B.com/mcp/overview  
-REST reference: [Public source ref EXT-003] B.com/docs/quick-start  
-Public product site: [Public source ref EXT-004] B.com/
+Primary index: [Source URL redacted] B.com/llms.txt  
+MCP index: [Source URL redacted] B.com/mcp/overview  
+REST reference: [Source URL redacted] B.com/docs/quick-start  
+Public product site: [Source URL redacted] B.com/
 
 The developer index is extensive and includes API reference, MCP, Skills, CLI, models, guides, examples, webhooks, batch APIs, rendering, avatar workflows, voices, translation and changelog. It should be re-read before implementing each adapter because identifiers and constraints evolve.
 
@@ -308,7 +308,7 @@ The developer index is extensive and includes API reference, MCP, Skills, CLI, m
 
 Documented integration paths:
 - API key in the `X-Api-Key` header for direct REST calls.
-- OAuth remote MCP at `[Public source ref EXT-002] B.com/mcp/v1/`, connected to the user's Platform B workspace and plan credits.
+- OAuth remote MCP at `[Source URL redacted] B.com/mcp/v1/`, connected to the user's Platform B workspace and plan credits.
 - CLI/official Skills for coding-agent workflows.
 - Official SDK/docs and webhooks for production automation.
 
@@ -317,12 +317,12 @@ The current developer onboarding index recommends API key first for repeatable/p
 ## 13. Avatar data model and creation
 
 Official sources:
-- [Public source ref EXT-003] B.com/docs/create-avatar
-- [Public source ref EXT-003] B.com/docs/avatar-from-video
-- [Public source ref EXT-003] B.com/docs/avatar-from-photo
-- [Public source ref EXT-003] B.com/docs/avatar-from-prompt
-- [Public source ref EXT-003] B.com/docs/avatars
-- [Public source ref EXT-003] B.com/avatar-iv
+- [Source URL redacted] B.com/docs/create-avatar
+- [Source URL redacted] B.com/docs/avatar-from-video
+- [Source URL redacted] B.com/docs/avatar-from-photo
+- [Source URL redacted] B.com/docs/avatar-from-prompt
+- [Source URL redacted] B.com/docs/avatars
+- [Source URL redacted] B.com/avatar-iv
 
 ### Character vs look
 - A **character/avatar group** is the identity container.
@@ -371,10 +371,10 @@ Creation is asynchronous. Look and group statuses are distinct:
 ## 14. Video creation and Video Agent
 
 Official sources:
-- [Public source ref EXT-003] B.com/docs/video-agent
-- [Public source ref EXT-003] B.com/docs/interactive-sessions
-- [Public source ref EXT-003] B.com/docs/edit-scenes
-- [Public source ref EXT-003] B.com/docs/models/Platform B-video
+- [Source URL redacted] B.com/docs/video-agent
+- [Source URL redacted] B.com/docs/interactive-sessions
+- [Source URL redacted] B.com/docs/edit-scenes
+- [Source URL redacted] B.com/docs/models/Platform B-video
 
 ### Video Agent modes
 - `generate`: one-shot prompt-to-video, fire-and-forget.
@@ -420,10 +420,10 @@ Platform B Video documented modes:
 ## 16. Templates, brand kits and brand glossary
 
 Official sources:
-- [Public source ref EXT-003] B.com/create-template
-- [Public source ref EXT-003] B.com/docs/brand-kits
-- [Public source ref EXT-003] B.com/docs/brand-glossary
-- [Public source ref EXT-003] B.com/docs/on-brand
+- [Source URL redacted] B.com/create-template
+- [Source URL redacted] B.com/docs/brand-kits
+- [Source URL redacted] B.com/docs/brand-glossary
+- [Source URL redacted] B.com/docs/on-brand
 
 ### Templates
 - Templates are edited in the web editor; API lists API-ready templates with variables.
@@ -453,11 +453,11 @@ Official sources:
 ## 17. Voices, speech, audio and lip-sync
 
 Official sources:
-- [Public source ref EXT-003] B.com/docs/voices/Platform B-voice-instant-clone
-- [Public source ref EXT-003] B.com/docs/voices/professional-voice-clone
-- [Public source ref EXT-003] B.com/docs/voices/Platform B-voice-speech
-- [Public source ref EXT-003] B.com/lipsync-speed
-- [Public source ref EXT-003] B.com/lipsync-precision
+- [Source URL redacted] B.com/docs/voices/Platform B-voice-instant-clone
+- [Source URL redacted] B.com/docs/voices/professional-voice-clone
+- [Source URL redacted] B.com/docs/voices/Platform B-voice-speech
+- [Source URL redacted] B.com/lipsync-speed
+- [Source URL redacted] B.com/lipsync-precision
 
 Documented functions:
 - Browse/filter public and workspace voices by language, gender, engine/type.
@@ -475,9 +475,9 @@ Documented functions:
 ## 18. Translation, proofread, subtitles and localization
 
 Official sources:
-- [Public source ref EXT-003] B.com/docs/video-translate
-- [Public source ref EXT-003] B.com/reference/create-proofread-session
-- [Public source ref EXT-003] B.com/docs/brand-glossary
+- [Source URL redacted] B.com/docs/video-translate
+- [Source URL redacted] B.com/reference/create-proofread-session
+- [Source URL redacted] B.com/docs/brand-glossary
 
 Documented translation workflow:
 1. Query supported target language codes.
@@ -493,8 +493,8 @@ Proofread sessions support video, output languages, brand voice/glossary, speake
 ## 19. AI clipping and filler-word removal
 
 Official sources:
-- [Public source ref EXT-003] B.com/reference/create-ai-clipping
-- [Public source ref EXT-003] B.com/filler-word-removal
+- [Source URL redacted] B.com/reference/create-ai-clipping
+- [Source URL redacted] B.com/filler-word-removal
 
 ### AI clipping
 - Submit source video and optional input language.
@@ -514,8 +514,8 @@ Official sources:
 ## 20. Hyperframes — programmable video composition and rendering
 
 Official sources:
-- [Public source ref EXT-003] B.com/hyperframes-overview
-- [Public source ref EXT-003] B.com/hyperframes
+- [Source URL redacted] B.com/hyperframes-overview
+- [Source URL redacted] B.com/hyperframes
 
 Hyperframes is an HTML/CSS/JS composition rendered as video:
 - HTML is the scene/timeline representation.
@@ -531,7 +531,7 @@ Hyperframes is an HTML/CSS/JS composition rendered as video:
 
 ## 21. Platform B MCP — documented tool groups
 
-Official index: [Public source ref EXT-003] B.com/mcp/overview
+Official index: [Source URL redacted] B.com/mcp/overview
 
 The public MCP catalogue includes the following groups. Tool names are preserved as published; schemas must be refreshed before implementation.
 
@@ -573,7 +573,7 @@ The public MCP catalogue includes the following groups. Tool names are preserved
 
 ## 22. Usage limits and API constraints
 
-Official page: [Public source ref EXT-003] B.com/docs/usage-limits
+Official page: [Source URL redacted] B.com/docs/usage-limits
 
 The published limits are plan- and endpoint-specific and include:
 - Concurrent workflow capacity by plan, with Enterprise burst behavior.
@@ -592,11 +592,11 @@ Examples visible in the current public docs include video generation input MP4/W
 ## 23. Public surfaces and platform split
 
 Sources:
-- [Public source ref EXT-001] C.ai/
-- [Public source ref EXT-001] C.ai/workspace
-- [Public source ref EXT-001] C.ai/ai-workflow
-- [Public source ref EXT-001] C.ai/pricing
-- [Public source ref EXT-001] C.ai/download-guidance
+- [Source URL redacted] C.ai/
+- [Source URL redacted] C.ai/workspace
+- [Source URL redacted] C.ai/ai-workflow
+- [Source URL redacted] C.ai/pricing
+- [Source URL redacted] C.ai/download-guidance
 
 Platform C publicly presents itself as an AI video and image enhancement/editing product across web, desktop, mobile and a Premiere Pro plug-in. Public pages describe a broad tool catalogue, but the actual feature set and controls differ by platform and plan. The unauthenticated workspace shell exposes navigation and upload entry points; signed-in workspace state was not accessed.
 
@@ -626,7 +626,7 @@ Other public site pages/catalogue entries include object removal, video clearer,
 
 ## 25. Custom AI Workflow — ordered enhancement chain
 
-Official page: [Public source ref EXT-001] C.ai/ai-workflow
+Official page: [Source URL redacted] C.ai/ai-workflow
 
 Publicly visible chain:
 1. AI Enhancer
@@ -647,8 +647,8 @@ Page text states that after upload the file is processed in order using the step
 ## 26. Video Enhancer and scenario selection
 
 Official pages:
-- [Public source ref EXT-001] C.ai/video-enhancer
-- [Public source ref EXT-001] C.ai/video-enhancer/upload
+- [Source URL redacted] C.ai/video-enhancer
+- [Source URL redacted] C.ai/video-enhancer/upload
 
 Public upload UI labels:
 - HD
@@ -668,10 +668,10 @@ Marketing page also describes Regular and Scenario sections, batch upload/folder
 ## 27. Video Repair, clarity and unpixelation
 
 Official sources:
-- [Public source ref EXT-001] C.ai/ai-video-repair
-- [Public source ref EXT-001] C.ai/video-repair/upload
-- [Public source ref EXT-001] C.ai/video-clearer
-- [Public source ref EXT-001] C.ai/unpixelate-video
+- [Source URL redacted] C.ai/ai-video-repair
+- [Source URL redacted] C.ai/video-repair/upload
+- [Source URL redacted] C.ai/video-clearer
+- [Source URL redacted] C.ai/unpixelate-video
 
 Documented target defects:
 - Exposure/lighting problems.
@@ -694,8 +694,8 @@ Unpixelate workflow routes through Video Enhancer, offers HD/Ultra HD/Portrait/A
 ## 28. Upscaling and frame interpolation
 
 Official sources:
-- [Public source ref EXT-001] C.ai/video-upscaler/upload
-- [Public source ref EXT-001] C.ai/video-frame-interpolation
+- [Source URL redacted] C.ai/video-upscaler/upload
+- [Source URL redacted] C.ai/video-frame-interpolation
 
 ### Upscaler
 - Public upload page exposes resolution tiers: 1080P HD, 2K UHD, 4K Ultimate, 8K Master.
@@ -714,8 +714,8 @@ Official sources:
 ## 29. Object removal, watermark/text removal and rights
 
 Official sources:
-- [Public source ref EXT-001] C.ai/remove-object-from-video
-- [Public source ref EXT-001] C.ai/video-watermark-remover/upload
+- [Source URL redacted] C.ai/remove-object-from-video
+- [Source URL redacted] C.ai/video-watermark-remover/upload
 
 ### Object removal
 - Upload video/photo.
@@ -734,8 +734,8 @@ Official sources:
 ## 30. Retouch and portrait workflows
 
 Official sources:
-- [Public source ref EXT-001] C.ai/video-retouch/upload
-- [Public source ref EXT-001] C.ai/
+- [Source URL redacted] C.ai/video-retouch/upload
+- [Source URL redacted] C.ai/
 
 Public homepage describes:
 - Auto-Retouch.
@@ -789,7 +789,7 @@ Unknown publicly: exact max file size/duration, signed URL lifetime, queue concu
 
 ## 34. Plans and credit economy
 
-Official page: [Public source ref EXT-001] C.ai/pricing
+Official page: [Source URL redacted] C.ai/pricing
 
 The current public web pricing page documents:
 - Free: basic models, limited AI generations with credits, exports include watermark.
@@ -910,80 +910,80 @@ Required job metadata:
 ## 40. Source register
 
 ### Platform A
-- [Public source ref EXT-001] A.ai/creator-hub/help-center/getting-started/what-is-Platform A
-- [Public source ref EXT-001] A.ai/creator-hub/help-center/tools/which-Platform A-tool-should-i-use
-- [Public source ref EXT-001] A.ai/creator-hub/help-center/tools/how-do-i-use-cinema-studio
-- [Public source ref EXT-001] A.ai/creator-hub/help-center/tools/how-do-i-use-canvas
-- [Public source ref EXT-001] A.ai/creator-hub/help-center/tools/how-do-i-use-marketing-studio-to-create-video-ads
-- [Public source ref EXT-001] A.ai/creator-hub/help-center/tools/how-do-i-use-supercomputer
-- [Public source ref EXT-001] A.ai/creator-hub/help-center/tools/what-are-Platform A-apps
-- [Public source ref EXT-001] A.ai/creator-hub/help-center/tools/how-do-i-use-ai-influencer
-- [Public source ref EXT-001] A.ai/creator-hub/help-center/tools/how-do-i-use-genjutsu
-- [Public source ref EXT-001] A.ai/creator-hub/help-center/ai-models/how-do-i-use-popcorn
-- [Public source ref EXT-001] A.ai/creator-hub/help-center/ai-models/how-do-i-use-dop
-- [Public source ref EXT-001] A.ai/creator-hub/help-center/ai-models/how-do-i-use-soul-to-generate-images
-- [Public source ref EXT-001] A.ai/creator-hub/help-center/ai-models/how-do-i-create-and-use-a-soul-id-character
-- [Public source ref EXT-001] A.ai/creator-hub/help-center/ai-models/how-do-i-use-lipsync-voiceover-and-aspect-ratios
-- [Public source ref EXT-001] A.ai/creator-hub/help-center/ai-models/which-ai-model-should-i-use
-- [Public source ref EXT-001] A.ai/creator-hub/help-center/integrations/what-is-the-Platform A-api
-- [Public source ref EXT-001] A.ai/creator-hub/help-center/integrations/what-is-Platform A-mcp
-- [Public source ref EXT-001] A.ai/creator-hub/help-center/integrations/how-do-i-access-Platform A-via-cli
-- [Public source ref EXT-001] A.ai/creator-hub/help-center/integrations/how-do-i-connect-Platform A-to-ai-agent
-- [Public source ref EXT-001] A.ai/creator-hub/help-center/integrations/how-do-i-use-katana
-- [Public source ref EXT-001] A.ai/creator-hub/help-center/account/who-owns-my-generations-and-can-i-use-them-commercially
-- [Public source ref EXT-001] A.ai/creator-hub/help-center/credits/what-uses-my-credits
+- [Source URL redacted] A.ai/creator-hub/help-center/getting-started/what-is-Platform A
+- [Source URL redacted] A.ai/creator-hub/help-center/tools/which-Platform A-tool-should-i-use
+- [Source URL redacted] A.ai/creator-hub/help-center/tools/how-do-i-use-cinema-studio
+- [Source URL redacted] A.ai/creator-hub/help-center/tools/how-do-i-use-canvas
+- [Source URL redacted] A.ai/creator-hub/help-center/tools/how-do-i-use-marketing-studio-to-create-video-ads
+- [Source URL redacted] A.ai/creator-hub/help-center/tools/how-do-i-use-supercomputer
+- [Source URL redacted] A.ai/creator-hub/help-center/tools/what-are-Platform A-apps
+- [Source URL redacted] A.ai/creator-hub/help-center/tools/how-do-i-use-ai-influencer
+- [Source URL redacted] A.ai/creator-hub/help-center/tools/how-do-i-use-genjutsu
+- [Source URL redacted] A.ai/creator-hub/help-center/ai-models/how-do-i-use-popcorn
+- [Source URL redacted] A.ai/creator-hub/help-center/ai-models/how-do-i-use-dop
+- [Source URL redacted] A.ai/creator-hub/help-center/ai-models/how-do-i-use-soul-to-generate-images
+- [Source URL redacted] A.ai/creator-hub/help-center/ai-models/how-do-i-create-and-use-a-soul-id-character
+- [Source URL redacted] A.ai/creator-hub/help-center/ai-models/how-do-i-use-lipsync-voiceover-and-aspect-ratios
+- [Source URL redacted] A.ai/creator-hub/help-center/ai-models/which-ai-model-should-i-use
+- [Source URL redacted] A.ai/creator-hub/help-center/integrations/what-is-the-Platform A-api
+- [Source URL redacted] A.ai/creator-hub/help-center/integrations/what-is-Platform A-mcp
+- [Source URL redacted] A.ai/creator-hub/help-center/integrations/how-do-i-access-Platform A-via-cli
+- [Source URL redacted] A.ai/creator-hub/help-center/integrations/how-do-i-connect-Platform A-to-ai-agent
+- [Source URL redacted] A.ai/creator-hub/help-center/integrations/how-do-i-use-katana
+- [Source URL redacted] A.ai/creator-hub/help-center/account/who-owns-my-generations-and-can-i-use-them-commercially
+- [Source URL redacted] A.ai/creator-hub/help-center/credits/what-uses-my-credits
 
 ### Platform B
-- [Public source ref EXT-003] B.com/llms.txt
-- [Public source ref EXT-003] B.com/mcp/overview
-- [Public source ref EXT-003] B.com/docs/quick-start
-- [Public source ref EXT-003] B.com/docs/usage-limits
-- [Public source ref EXT-003] B.com/docs/create-avatar
-- [Public source ref EXT-003] B.com/docs/avatar-from-video
-- [Public source ref EXT-003] B.com/docs/avatar-from-photo
-- [Public source ref EXT-003] B.com/docs/avatar-from-prompt
-- [Public source ref EXT-003] B.com/avatar-iv
-- [Public source ref EXT-003] B.com/docs/video-agent
-- [Public source ref EXT-003] B.com/docs/interactive-sessions
-- [Public source ref EXT-003] B.com/docs/edit-scenes
-- [Public source ref EXT-003] B.com/docs/models/Platform B-video
-- [Public source ref EXT-003] B.com/create-template
-- [Public source ref EXT-003] B.com/docs/brand-kits
-- [Public source ref EXT-003] B.com/docs/brand-glossary
-- [Public source ref EXT-003] B.com/docs/on-brand
-- [Public source ref EXT-003] B.com/docs/voices/Platform B-voice-instant-clone
-- [Public source ref EXT-003] B.com/docs/voices/professional-voice-clone
-- [Public source ref EXT-003] B.com/docs/voices/Platform B-voice-speech
-- [Public source ref EXT-003] B.com/lipsync-speed
-- [Public source ref EXT-003] B.com/lipsync-precision
-- [Public source ref EXT-003] B.com/docs/video-translate
-- [Public source ref EXT-003] B.com/reference/create-proofread-session
-- [Public source ref EXT-003] B.com/reference/create-ai-clipping
-- [Public source ref EXT-003] B.com/filler-word-removal
-- [Public source ref EXT-003] B.com/hyperframes-overview
-- [Public source ref EXT-003] B.com/hyperframes
+- [Source URL redacted] B.com/llms.txt
+- [Source URL redacted] B.com/mcp/overview
+- [Source URL redacted] B.com/docs/quick-start
+- [Source URL redacted] B.com/docs/usage-limits
+- [Source URL redacted] B.com/docs/create-avatar
+- [Source URL redacted] B.com/docs/avatar-from-video
+- [Source URL redacted] B.com/docs/avatar-from-photo
+- [Source URL redacted] B.com/docs/avatar-from-prompt
+- [Source URL redacted] B.com/avatar-iv
+- [Source URL redacted] B.com/docs/video-agent
+- [Source URL redacted] B.com/docs/interactive-sessions
+- [Source URL redacted] B.com/docs/edit-scenes
+- [Source URL redacted] B.com/docs/models/Platform B-video
+- [Source URL redacted] B.com/create-template
+- [Source URL redacted] B.com/docs/brand-kits
+- [Source URL redacted] B.com/docs/brand-glossary
+- [Source URL redacted] B.com/docs/on-brand
+- [Source URL redacted] B.com/docs/voices/Platform B-voice-instant-clone
+- [Source URL redacted] B.com/docs/voices/professional-voice-clone
+- [Source URL redacted] B.com/docs/voices/Platform B-voice-speech
+- [Source URL redacted] B.com/lipsync-speed
+- [Source URL redacted] B.com/lipsync-precision
+- [Source URL redacted] B.com/docs/video-translate
+- [Source URL redacted] B.com/reference/create-proofread-session
+- [Source URL redacted] B.com/reference/create-ai-clipping
+- [Source URL redacted] B.com/filler-word-removal
+- [Source URL redacted] B.com/hyperframes-overview
+- [Source URL redacted] B.com/hyperframes
 
 ### Platform C
-- [Public source ref EXT-001] C.ai/
-- [Public source ref EXT-001] C.ai/workspace
-- [Public source ref EXT-001] C.ai/ai-workflow
-- [Public source ref EXT-001] C.ai/pricing
-- [Public source ref EXT-001] C.ai/video-enhancer
-- [Public source ref EXT-001] C.ai/video-enhancer/upload
-- [Public source ref EXT-001] C.ai/ai-video-repair
-- [Public source ref EXT-001] C.ai/video-repair/upload
-- [Public source ref EXT-001] C.ai/video-clearer
-- [Public source ref EXT-001] C.ai/unpixelate-video
-- [Public source ref EXT-001] C.ai/video-upscaler/upload
-- [Public source ref EXT-001] C.ai/video-frame-interpolation
-- [Public source ref EXT-001] C.ai/video-color-match/upload
-- [Public source ref EXT-001] C.ai/remove-object-from-video
-- [Public source ref EXT-001] C.ai/video-watermark-remover/upload
-- [Public source ref EXT-001] C.ai/video-retouch/upload
-- [Public source ref EXT-001] C.ai/ai-video-extender/upload
-- [Public source ref EXT-001] C.ai/text-to-video-ai
-- [Public source ref EXT-001] C.ai/ai-animal-video
-- [Public source ref EXT-001] C.ai/download-guidance
+- [Source URL redacted] C.ai/
+- [Source URL redacted] C.ai/workspace
+- [Source URL redacted] C.ai/ai-workflow
+- [Source URL redacted] C.ai/pricing
+- [Source URL redacted] C.ai/video-enhancer
+- [Source URL redacted] C.ai/video-enhancer/upload
+- [Source URL redacted] C.ai/ai-video-repair
+- [Source URL redacted] C.ai/video-repair/upload
+- [Source URL redacted] C.ai/video-clearer
+- [Source URL redacted] C.ai/unpixelate-video
+- [Source URL redacted] C.ai/video-upscaler/upload
+- [Source URL redacted] C.ai/video-frame-interpolation
+- [Source URL redacted] C.ai/video-color-match/upload
+- [Source URL redacted] C.ai/remove-object-from-video
+- [Source URL redacted] C.ai/video-watermark-remover/upload
+- [Source URL redacted] C.ai/video-retouch/upload
+- [Source URL redacted] C.ai/ai-video-extender/upload
+- [Source URL redacted] C.ai/text-to-video-ai
+- [Source URL redacted] C.ai/ai-animal-video
+- [Source URL redacted] C.ai/download-guidance
 
 ## Final status
 
