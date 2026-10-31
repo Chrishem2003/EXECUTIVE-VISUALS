@@ -139,7 +139,8 @@ create table if not exists executive_visuals.audit_events (
 );
 
 create index if not exists ev_projects_owner_updated on executive_visuals.projects(owner_id,updated_at desc);
-create index if not exists ev_timelines_owner_updated on executive_visuals.timelines(owner_id,updated_at desc);\ncreate index if not exists ev_assets_owner_created on executive_visuals.assets(owner_id,created_at desc);
+create index if not exists ev_timelines_owner_updated on executive_visuals.timelines(owner_id,updated_at desc);
+create index if not exists ev_assets_owner_created on executive_visuals.assets(owner_id,created_at desc);
 create index if not exists ev_assets_project_created on executive_visuals.assets(project_id,created_at desc);
 create index if not exists ev_jobs_status_created on executive_visuals.jobs(status,created_at);
 create index if not exists ev_jobs_owner_created on executive_visuals.jobs(owner_id,created_at desc);
