@@ -17,6 +17,7 @@ const palette:Record<string,{kind:WorkflowNodeKind;label:string;inputs:WorkflowP
  image:{kind:"image.generate",label:"Image Generation",inputs:[port("prompt","text",true)],outputs:[port("image","image")]},
  video:{kind:"video.generate",label:"Video Generation",inputs:[port("prompt","text",true),port("start-frame","start-frame"),port("reference","video",false,true)],outputs:[port("video","video")]},
  voice:{kind:"voice.generate",label:"Voice Generation",inputs:[port("script","text",true)],outputs:[port("audio","audio")]},
+ transcribe:{kind:"voice.transcribe",label:"Audio Transcription",inputs:[port("audio","audio",true)],outputs:[port("transcript","transcript"),port("text","text")]},
  frame:{kind:"utility.frame-extract",label:"Extract Video Frame",inputs:[port("media","media",true)],outputs:[port("image","image")]},
  audio:{kind:"video.extract-audio",label:"Extract Audio",inputs:[port("media","media",true)],outputs:[port("audio","audio")]},
  transcode:{kind:"utility.convert",label:"Convert / Compress",inputs:[port("asset","asset",true)],outputs:[port("asset","asset")]},
