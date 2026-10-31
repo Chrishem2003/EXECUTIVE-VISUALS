@@ -236,11 +236,31 @@ values ('executive-visuals-media','executive-visuals-media',false,262144000,
 on conflict (id) do nothing;
 
 create policy ev_storage_read on storage.objects for select to authenticated
-using (bucket_id='executive-visuals-media' and (storage.foldername(name))[1]=(select auth.uid())::text);
+using (bucket_id='executive-visuals-media' and (
+  (storage.foldername(name))[1]=(select auth.uid())::text or
+  exists (select 1 from executive_visuals.projects p where p.id::text=(storage.foldername(name))[1] and p.owner_id=(select auth.uid())) or
+  exists (select 1 from executive_visuals.project_members m where m.project_id::text=(storage.foldername(name))[1] and m.member_id=(select auth.uid()))
+));
 create policy ev_storage_insert on storage.objects for insert to authenticated
-with check (bucket_id='executive-visuals-media' and (storage.foldername(name))[1]=(select auth.uid())::text);
+with check (bucket_id='executive-visuals-media' and (
+  (storage.foldername(name))[1]=(select auth.uid())::text or
+  exists (select 1 from executive_visuals.projects p where p.id::text=(storage.foldername(name))[1] and p.owner_id=(select auth.uid())) or
+  exists (select 1 from executive_visuals.project_members m where m.project_id::text=(storage.foldername(name))[1] and m.member_id=(select auth.uid()) and m.role='editor')
+));
 create policy ev_storage_update on storage.objects for update to authenticated
-using (bucket_id='executive-visuals-media' and (storage.foldername(name))[1]=(select auth.uid())::text)
-with check (bucket_id='executive-visuals-media' and (storage.foldername(name))[1]=(select auth.uid())::text);
+using (bucket_id='executive-visuals-media' and (
+  (storage.foldername(name))[1]=(select auth.uid())::text or
+  exists (select 1 from executive_visuals.projects p where p.id::text=(storage.foldername(name))[1] and p.owner_id=(select auth.uid())) or
+  exists (select 1 from executive_visuals.project_members m where m.project_id::text=(storage.foldername(name))[1] and m.member_id=(select auth.uid()) and m.role='editor')
+))
+with check (bucket_id='executive-visuals-media' and (
+  (storage.foldername(name))[1]=(select auth.uid())::text or
+  exists (select 1 from executive_visuals.projects p where p.id::text=(storage.foldername(name))[1] and p.owner_id=(select auth.uid())) or
+  exists (select 1 from executive_visuals.project_members m where m.project_id::text=(storage.foldername(name))[1] and m.member_id=(select auth.uid()) and m.role='editor')
+));
 create policy ev_storage_delete on storage.objects for delete to authenticated
-using (bucket_id='executive-visuals-media' and (storage.foldername(name))[1]=(select auth.uid())::text);
+using (bucket_id='executive-visuals-media' and (
+  (storage.foldername(name))[1]=(select auth.uid())::text or
+  exists (select 1 from executive_visuals.projects p where p.id::text=(storage.foldername(name))[1] and p.owner_id=(select auth.uid())) or
+  exists (select 1 from executive_visuals.project_members m where m.project_id::text=(storage.foldername(name))[1] and m.member_id=(select auth.uid()) and m.role='editor')
+));
