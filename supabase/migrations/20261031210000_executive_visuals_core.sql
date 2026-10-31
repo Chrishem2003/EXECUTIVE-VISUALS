@@ -4,7 +4,11 @@
 
 create schema if not exists executive_visuals;
 revoke all on schema executive_visuals from public, anon;
-grant usage on schema executive_visuals to authenticated;
+grant usage on schema executive_visuals to authenticated, service_role;
+grant all privileges on all tables in schema executive_visuals to service_role;
+grant usage,select on all sequences in schema executive_visuals to service_role;
+alter default privileges in schema executive_visuals grant all on tables to service_role;
+alter default privileges in schema executive_visuals grant usage,select on sequences to service_role;
 
 create table if not exists executive_visuals.projects (
   id uuid primary key default gen_random_uuid(),
