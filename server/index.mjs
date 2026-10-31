@@ -109,7 +109,7 @@ function recordJob(dbRow) {
   return {
     id:dbRow.id,projectId:dbRow.project_id,jobType:dbRow.job_type,status:dbRow.status,
     progress:dbRow.progress,input:parseJson(dbRow.input_json),output:parseJson(dbRow.output_json,null),
-    error:parseJson(dbRow.error_json,null),attempts:dbRow.attempt_count,
+    error:parseJson(dbRow.error_json,null),attempts:dbRow.attempt_count,availableAt:dbRow.available_at,
     createdAt:dbRow.created_at,updatedAt:dbRow.updated_at,startedAt:dbRow.started_at,completedAt:dbRow.completed_at
   };
 }
