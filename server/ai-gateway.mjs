@@ -27,7 +27,7 @@ export async function generateText({prompt,systemPrompt="",temperature=0.7,maxTo
   };
   try{
     let response;
-    try{response=await fetch(endpoint,{method:"POST",headers,body:JSON.stringify(request),signal:controller.signal});}
+    try{response=await fetch(endpoint,{method:"POST",headers,body:JSON.stringify(request),signal:controller.signal,redirect:"error"});}
     catch(error){
       if(error?.name==="AbortError")throw Object.assign(new Error("Text gateway request timed out."),{code:"AI_GATEWAY_TIMEOUT"});
       throw Object.assign(new Error("Text gateway could not be reached."),{code:"AI_GATEWAY_UNAVAILABLE"});
