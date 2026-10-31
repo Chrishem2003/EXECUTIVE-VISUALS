@@ -84,6 +84,15 @@ export function renderRuntimeOverview(){
 
 export function getCurrentProjectId(){return state.projectId;}
 export function canEditCurrentProject(){const project=state.projects.find(item=>item.id===state.projectId);return Boolean(project&&["owner","editor"].includes(project.access_role||""));}
+export async function importResearchIntoProject(projectId:string,url:string){
+ const project=state.projects.find(item=>item.id===projectId);
+ if(!project||!["owner","editor"].includes(project.access_role||""))throw new Error("Owner or editor access is required to import research.");
+ const workspace=await loadCreativeDraft(projectId);
+ if(!workspace)throw new Error("Project workspace is not available.");
+ const result=await apiRequest<{ok:boolean;revision:number;source:Record<string,unknown>;record:Record<string,unknown>;extracted:{contentType:string;characterCount:number}}>("/api/projects/"+projectId+"/research/import",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({revision:workspace.revision,url})});
+ workspaceRevisions.set(projectId,result.revision);
+ return result;
+}
 export async function loadCreativeDraft(projectId=state.projectId){
  if(!projectId||state.status!=="online")return null;
  const result=await apiRequest<{document:Record<string,unknown>;revision:number}>("/api/projects/"+projectId+"/workspace");
