@@ -73,6 +73,7 @@ test("cloud media enhancement publishes a checksummed derivative using the claim
         },
         async publish(args) {
           published = args;
+          publishedContent = await readFile(args.path, "utf8");
           return { id: "asset-output", name: args.filename, mediaType: args.mediaType };
         }
       }
