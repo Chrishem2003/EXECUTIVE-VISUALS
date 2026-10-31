@@ -49,7 +49,7 @@ test("approved transcription workflow verifies source audio and persists timesta
   const graph={id:"transcription",projectId:"",revision:1,nodes:[
    {id:"source",kind:"upload",label:"Source audio",inputs:[],outputs:[{id:"audio",type:"audio"}],config:{assetId:"audio-asset"}},
    {id:"approval",kind:"approval",label:"Human approval",inputs:[{id:"audio",type:"audio"}],outputs:[{id:"approved",type:"any"}],config:{}},
-   {id:"transcribe",kind:"voice.transcribe",label:"Transcribe audio",inputs:[{id:"audio",type:"audio",required:true}],outputs:[{id:"transcript",type:"transcript"},{id:"text",type:"text"}],config:{}}
+   {id:"transcribe",kind:"voice.transcribe",label:"Transcribe audio",inputs:[{id:"audio",type:"audio",required:true},{id:"approval",type:"any"}],outputs:[{id:"transcript",type:"transcript"},{id:"text",type:"text"}],config:{}}
   ],edges:[
    {id:"source-approval",sourceNodeId:"source",sourcePortId:"audio",targetNodeId:"approval",targetPortId:"audio"},
    {id:"source-transcribe",sourceNodeId:"source",sourcePortId:"audio",targetNodeId:"transcribe",targetPortId:"audio"},
