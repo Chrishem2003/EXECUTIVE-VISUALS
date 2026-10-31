@@ -44,8 +44,8 @@ export function claimNextJob(db, workerId, leaseMs = 90000, timestamp = new Date
 export function renewJobLease(db, jobId, workerId, leaseMs = 90000, timestamp = new Date().toISOString()) {
   const expires = iso(Date.parse(timestamp) + leaseMs);
   const result = db.prepare(
-    "UPDATE jobs SET lease_expires_at=?,lease_heartbeat_at=? WHERE id=? AND status='running' AND lease_owner=?"
-  ).run(expires, timestamp, jobId, workerId);
+    "UPDATE jobs SET lease_expires_at=?,lease_heartbeat_at=?,updated_at=? WHERE id=? AND status='running' AND lease_owner=? AND lease_expires_at>?"
+  ).run(expires, timestamp, timestamp, jobId, workerId, timestamp);
   return result.changes === 1;
 }
 
@@ -53,4 +53,14 @@ export function releaseJobLease(db, jobId, workerId) {
   return db.prepare(
     "UPDATE jobs SET lease_owner=NULL,lease_expires_at=NULL,lease_heartbeat_at=NULL WHERE id=? AND lease_owner=?"
   ).run(jobId, workerId).changes === 1;
+}
+
+export function completeJob(db, jobId, workerId, output, timestamp = new Date().toISOString()) {
+  const result = db.prepare(
+    "UPDATE jobs SET status='succeeded',progress=100,output_json=?,updated_at=?,completed_at=?,available_at=NULL,lease_owner=NULL,lease_expires_at=NULL,lease_heartbeat_at=NULL WHERE id=? AND status='running' AND lease_owner=? AND lease_expires_at>?"
+  ).run(json(output), timestamp, timestamp, jobId, workerId, timestamp);
+  if (result.changes !== 1) return false;
+  const job = db.prepare("SELECT owner_id FROM jobs WHERE id=?").get(jobId);
+  if (job) addJobEvent(db, jobId, job.owner_id, "job.succeeded", { output });
+  return true;
 }
