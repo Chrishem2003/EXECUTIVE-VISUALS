@@ -9,7 +9,7 @@ import { stat } from "node:fs/promises";
 import { Transform } from "node:stream";
 import { addJobEvent, getAccessibleAsset, json, parseJson } from "./db.mjs";
 
-const ALLOWED_JOBS = new Set(["media.probe", "media.thumbnail", "media.transcode", "media.audio_extract", "media.proxy", "media.denoise", "media.color", "media.resize", "media.interpolate", "media.upscale", "timeline.render"]);
+const ALLOWED_JOBS = new Set(["media.probe", "media.thumbnail", "media.transcode", "media.audio_extract", "media.proxy", "media.denoise", "media.color", "media.resize", "media.interpolate", "media.upscale", "media.audio-clean", "timeline.render"]);
 const CONTAINERS = new Set(["mp4", "webm", "mov", "mkv", "mp3", "wav"]);
 const VIDEO_CODECS = new Set(["libx264", "libx265", "libvpx-vp9", "copy"]);
 const AUDIO_CODECS = new Set(["aac", "libmp3lame", "libopus", "copy"]);
@@ -69,7 +69,7 @@ export function buildMediaOperationArgs({jobType,input={},sourcePath,outputPath}
  const number=(value,fallback,min,max)=>{const parsed=Number(value??fallback);if(!Number.isFinite(parsed)||parsed<min||parsed>max)fail("Media operation parameter is outside the supported range.");return parsed};
  const base=["-hide_banner","-y","-i",sourcePath],video=["-c:v","libx264","-preset","veryfast","-crf","19","-pix_fmt","yuv420p","-c:a","aac","-b:a","192k","-movflags","+faststart",outputPath];
  let filter;
- if(jobType==="media.denoise"){
+ if(jobType==="media.audio-clean"){\n  const noiseFloor=number(input.noiseFloor,-25,-60,-5),target=number(input.targetLufs,-16,-24,-12);\n  const audioFilter=`afftdn=nf=${noiseFloor.toFixed(1)}:tn=1,loudnorm=I=${target.toFixed(1)}:TP=-1.5:LRA=11`;\n  return [...base,"-vn","-af",audioFilter,"-c:a","pcm_s16le","-ar","48000",outputPath];\n }else if(jobType==="media.denoise"){
   const luma=number(input.luma,4,0,10),chroma=number(input.chroma,3,0,10);
   filter=`hqdn3d=${luma.toFixed(2)}:${chroma.toFixed(2)}:${(luma*0.75).toFixed(2)}:${(chroma*0.75).toFixed(2)}`;
  }else if(jobType==="media.color"){
@@ -293,7 +293,7 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
   } else if (job.job_type === "media.audio_extract") {
     ext = "mp3"; outputName = source.original_name.replace(/\.[^.]+$/, "")+"-audio.mp3"; mime = "audio/mpeg";
     args = ["-hide_banner","-y","-i",sourcePath,"-vn","-c:a","libmp3lame","-q:a","2",join(outputDir,id+"."+ext)];
-  } else if(["media.denoise","media.color","media.resize","media.interpolate","media.upscale"].includes(job.job_type)){
+  } else if(job.job_type==="media.audio-clean"){\n    if(!source.media_type.startsWith("audio/"))throw Object.assign(new Error("Audio cleanup requires an audio source."),{code:"UNSUPPORTED_MEDIA_TYPE"});\n    ext="wav";mime="audio/wav";outputName=(source.original_name.includes(".")?source.original_name.slice(0,source.original_name.lastIndexOf(".")):source.original_name)+"-cleaned.wav";\n    args=buildMediaOperationArgs({jobType:job.job_type,input,sourcePath,outputPath:join(outputDir,id+"."+ext)});\n  } else if(["media.denoise","media.color","media.resize","media.interpolate","media.upscale"].includes(job.job_type)){
     if(!source.media_type.startsWith("video/"))throw Object.assign(new Error("This enhancement operation currently requires a video source."),{code:"UNSUPPORTED_MEDIA_TYPE"});
     ext="mp4";mime="video/mp4";outputName=(source.original_name.includes(".")?source.original_name.slice(0,source.original_name.lastIndexOf(".")):source.original_name)+"-"+job.job_type.split(".")[1]+".mp4";
     args=buildMediaOperationArgs({jobType:job.job_type,input,sourcePath,outputPath:join(outputDir,id+"."+ext)});
