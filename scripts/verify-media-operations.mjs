@@ -8,10 +8,10 @@ const base={sourcePath:"/private/source.mp4",outputPath:"/private/output.mp4"};
 const cases=[
  ["media.denoise",{luma:5,chroma:2},"hqdn3d=5.00:2.00:3.75:1.50"],
  ["media.color",{brightness:0.1,contrast:1.2,saturation:1.4},"eq=brightness=0.100:contrast=1.200:saturation=1.400"],
- ["media.resize",{width:320,height:180,fit:"contain"},"scale=320:180:force_original_aspect_ratio=decrease,pad=320:180:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1"],
- ["media.resize",{width:320,height:180,fit:"cover"},"scale=320:180:force_original_aspect_ratio=increase,crop=320:180,setsar=1"],
+ ["media.resize",{width:320,height:180,fit:"contain"},"scale=320:180:force_original_aspect_ratio=decrease:flags=lanczos,pad=320:180:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1"],
+ ["media.resize",{width:320,height:180,fit:"cover"},"scale=320:180:force_original_aspect_ratio=increase:flags=lanczos,crop=320:180,setsar=1"],
  ["media.interpolate",{fps:30},"minterpolate=fps=30.000:mi_mode=mci:mc_mode=aobmc:me_mode=bidir:vsbmc=1"],
- ["media.upscale",{width:640,height:360},"scale=640:360:force_original_aspect_ratio=decrease,pad=640:360:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1"]
+ ["media.upscale",{width:640,height:360},"scale=640:360:force_original_aspect_ratio=decrease:flags=lanczos,pad=640:360:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1"]
 ];
 for(const [kind,input,expected] of cases){
  const args=buildMediaOperationArgs({jobType:kind,input,...base});
