@@ -203,7 +203,8 @@ create index if not exists ev_audit_owner_id on executive_visuals.audit_events(o
 -- concurrent hosts cannot receive the same queued job.
 create or replace function executive_visuals.claim_next_job(
   p_worker_id text,
-  p_lease_seconds integer default 90
+  p_lease_seconds integer default 90,
+  p_job_types text[] default null
 )
 returns setof executive_visuals.jobs
 language plpgsql
@@ -219,11 +220,18 @@ begin
   if p_lease_seconds is null or p_lease_seconds not between 15 and 900 then
     raise exception 'lease_seconds must be between 15 and 900';
   end if;
+  if p_job_types is not null and (
+    cardinality(p_job_types) = 0
+    or exists (select 1 from unnest(p_job_types) as requested(job_type) where requested.job_type is null or char_length(btrim(requested.job_type)) = 0)
+  ) then
+    raise exception 'job_types must be null or a non-empty array of non-empty values';
+  end if;
 
   with candidate as (
     select id
     from executive_visuals.jobs
     where status = 'queued'
+      and (p_job_types is null or job_type = any(p_job_types))
       and (available_at is null or available_at <= clock_timestamp())
       and attempt_count < max_attempts
     order by created_at, id
@@ -406,7 +414,7 @@ revoke all on function executive_visuals.finish_job(uuid, text, text, jsonb, jso
 grant execute on function executive_visuals.renew_job_lease(uuid, text, integer) to service_role;
 grant execute on function executive_visuals.finish_job(uuid, text, text, jsonb, jsonb) to service_role;
 
-revoke all on function executive_visuals.claim_next_job(text, integer) from public, anon, authenticated;
+revoke all on function executive_visuals.claim_next_job(text, integer, text[]) from public, anon, authenticated;
 revoke all on function executive_visuals.recover_expired_jobs(integer) from public, anon, authenticated;
 grant execute on function executive_visuals.claim_next_job(text, integer) to service_role;
 grant execute on function executive_visuals.recover_expired_jobs(integer) to service_role;
