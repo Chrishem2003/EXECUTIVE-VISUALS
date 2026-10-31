@@ -184,6 +184,48 @@ test("timelines persist with asset ownership, revision checks and interchange ex
   assert.equal((await reject.json()).error.code,"TIMELINE_INVALID");
 });
 
+
+test("project membership separates editor, reviewer and viewer permissions",async()=>{
+  const owner=await register("team-owner@example.test");
+  const created=await request("/api/projects",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({name:"Shared production"})},owner);
+  const project=(await created.json()).project;
+  const editor=await register("team-editor@example.test");
+  const viewer=await register("team-viewer@example.test");
+  const addEditor=await request("/api/projects/"+project.id+"/members",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({email:"team-editor@example.test",role:"editor"})},owner);
+  assert.equal(addEditor.status,201);
+  const addViewer=await request("/api/projects/"+project.id+"/members",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({email:"team-viewer@example.test",role:"viewer"})},owner);
+  assert.equal(addViewer.status,201);
+  const sharedProjects=await request("/api/projects",{},editor);
+  assert.equal((await sharedProjects.json()).projects[0].access_role,"editor");
+  const upload=await request("/api/assets",{method:"POST",headers:{"content-type":"image/png","x-file-name":"shared.png","x-project-id":project.id},body:Buffer.from([137,80,78,71,13,10,26,10,0,1,2,3])},editor);
+  assert.equal(upload.status,201);
+  const asset=(await upload.json()).asset;
+  const ownerAssets=await request("/api/assets?projectId="+project.id,{},owner);
+  assert.equal((await ownerAssets.json()).assets.length,1);
+  const viewerAssets=await request("/api/assets?projectId="+project.id,{},viewer);
+  assert.equal((await viewerAssets.json()).assets.length,1);
+  const blockedUpload=await request("/api/assets",{method:"POST",headers:{"content-type":"image/png","x-file-name":"blocked.png","x-project-id":project.id},body:Buffer.from([137,80,78,71,13,10,26,10,0])},viewer);
+  assert.equal(blockedUpload.status,404);
+  const timeline={
+    id:"shared-sequence",projectId:project.id,name:"Shared sequence",revision:1,
+    frameRate:{numerator:24,denominator:1},width:1920,height:1080,pixelAspectRatio:1,
+    tracks:[{id:"track",name:"Video 1",kind:"video",enabled:true,locked:false,clips:[
+      {id:"clip",assetId:asset.id,name:"Shared image",sourceRange:{start:{value:0,rate:24},duration:{value:120,rate:24}},timelineStart:{value:0,rate:24},duration:{value:120,rate:24},enabled:true}
+    ]}],markers:[]
+  };
+  const save=await request("/api/timelines",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({projectId:project.id,timeline})},editor);
+  assert.equal(save.status,201,await save.clone().text());
+  const timelineId=(await save.json()).timeline.id;
+  const viewerRead=await request("/api/timelines/"+timelineId,{},viewer);
+  assert.equal(viewerRead.status,200);
+  const viewerEdit=await request("/api/timelines/"+timelineId,{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({revision:1,timeline})},viewer);
+  assert.equal(viewerEdit.status,403);
+  const editorEdit=await request("/api/timelines/"+timelineId,{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({revision:1,timeline})},editor);
+  assert.equal(editorEdit.status,200);
+  const editorInvite=await request("/api/projects/"+project.id+"/members",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({email:"owner-a@example.test",role:"viewer"})},editor);
+  assert.equal(editorInvite.status,403);
+});
+
 test.after(async()=>{
   child.kill("SIGTERM");
   await new Promise(resolve=>{const timer=setTimeout(resolve,1500);child.once("exit",()=>{clearTimeout(timer);resolve();});});
