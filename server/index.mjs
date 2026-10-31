@@ -31,7 +31,7 @@ const EXTENSIONS = {
   "audio/mpeg":"mp3","audio/wav":"wav","audio/x-wav":"wav","audio/mp4":"m4a","audio/ogg":"ogg",
   "application/pdf":"pdf","text/plain":"txt","application/json":"json"
 };
-const MEDIA_JOBS = new Set(["media.probe","media.thumbnail","media.transcode","media.audio_extract","media.proxy"]);
+const MEDIA_JOBS = new Set(["media.probe","media.thumbnail","media.transcode","media.audio_extract","media.proxy","timeline.render"]);
 const db = openDatabase(DB_FILE);
 const activeProcesses = new Map();
 const rateBuckets = new Map();
