@@ -23,7 +23,7 @@
     "verify:workflow-run": "node scripts/verify-workflow-run.mjs",
     "verify:deployment": "node scripts/verify-deployment.mjs",
     "verify:queue": "node scripts/verify-queue-leases.mjs",
-    "verify:cloud-queue": "node --test server/tests/cloud-queue.test.mjs",
+    "verify:cloud-queue": "node --test server/tests/cloud-queue.test.mjs server/tests/cloud-storage.test.mjs",
     "verify:ai-workflow": "node scripts/verify-ai-workflow.mjs"
   },
   "devDependencies": {
