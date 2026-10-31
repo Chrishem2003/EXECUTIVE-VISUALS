@@ -1,0 +1,14 @@
+project_id = "executive-visuals"
+
+[api]
+enabled = true
+schemas = ["public", "graphql_public", "executive_visuals"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+major_version = 17
+
+[storage]
+enabled = true
+file_size_limit = "250MiB"
