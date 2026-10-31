@@ -261,10 +261,38 @@ export function createAppServer() {
         const id=randomUUID();db.prepare("INSERT INTO projects(id,owner_id,name,description,settings_json) VALUES(?,?,?,?,?)").run(id,user.id,name,String(body.description||"").slice(0,4000),json(body.settings));
         audit(db,user.id,"project.created","project",id,{name});send(res,201,{project:{id,name,description:body.description||"",revision:1}},cors);return;
       }
+      const membersMatch=path.match(/^\/api\/projects\/([0-9a-f-]+)\/members(?:\/([0-9a-f-]+))?$/i);
+      if(membersMatch){
+        const projectId=membersMatch[1],access=getProjectAccess(db,user.id,projectId);
+        if(!access){fail(res,404,"PROJECT_NOT_FOUND","Project not found.");return;}
+        if(req.method==="GET"){
+          const members=db.prepare("SELECT u.id,u.email,m.role,m.created_at FROM project_members m JOIN users u ON u.id=m.member_id WHERE m.project_id=? ORDER BY m.created_at").all(projectId);
+          send(res,200,{owner:{id:access.owner_id},members:members.map(m=>({id:m.id,email:m.email,role:m.role,createdAt:m.created_at}))},cors);return;
+        }
+        if(access.access_role!=="owner"){fail(res,403,"OWNER_REQUIRED","Only the project owner can manage membership.");return;}
+        if(req.method==="POST"&&!membersMatch[2]){
+          const body=await readJson(req),email=String(body.email||"").trim().toLowerCase(),role=String(body.role||"viewer");
+          if(!["editor","reviewer","viewer"].includes(role)){fail(res,400,"INVALID_ROLE","Choose editor, reviewer or viewer.");return;}
+          const member=db.prepare("SELECT id,email FROM users WHERE email=? COLLATE NOCASE").get(email);
+          if(!member){fail(res,404,"USER_NOT_FOUND","This email has no account in this workspace. Ask the person to register first.");return;}
+          if(member.id===access.owner_id){fail(res,409,"OWNER_MEMBERSHIP","The owner already has full access.");return;}
+          db.prepare("INSERT INTO project_members(project_id,member_id,role,invited_by) VALUES(?,?,?,?) ON CONFLICT(project_id,member_id) DO UPDATE SET role=excluded.role")
+            .run(projectId,member.id,role,user.id);
+          audit(db,user.id,"project.member_added","project_member",member.id,{role,email},projectId);
+          send(res,201,{member:{id:member.id,email:member.email,role}},cors);return;
+        }
+        if(req.method==="DELETE"&&membersMatch[2]){
+          db.prepare("DELETE FROM project_members WHERE project_id=? AND member_id=?").run(projectId,membersMatch[2]);
+          audit(db,user.id,"project.member_removed","project_member",membersMatch[2],{},projectId);
+          send(res,200,{ok:true},cors);return;
+        }
+      }
       const projectMatch=path.match(/^\/api\/projects\/([0-9a-f-]+)$/i);
       if(projectMatch){
-        const id=projectMatch[1],project=getOwnedProject(db,user.id,id);if(!project){fail(res,404,"PROJECT_NOT_FOUND","Project not found.");return;}
+        const id=projectMatch[1],project=getProjectAccess(db,user.id,id);if(!project){fail(res,404,"PROJECT_NOT_FOUND","Project not found.");return;}
+        if(req.method==="GET"){send(res,200,{project:{id:project.id,name:project.name,description:project.description,settings:parseJson(project.settings_json),revision:project.revision,accessRole:project.access_role}},cors);return;}
         if(req.method==="PUT"){
+          if(project.access_role!=="owner"){fail(res,403,"OWNER_REQUIRED","Only the project owner can change project settings.");return;}
           const body=await readJson(req);if(Number(body.revision)!==project.revision){fail(res,409,"REVISION_CONFLICT","Project changed since it was loaded. Refresh and retry.");return;}
           const name=String(body.name||project.name).trim().slice(0,160);
           db.prepare("UPDATE projects SET name=?,description=?,settings_json=?,revision=revision+1,updated_at=? WHERE id=? AND owner_id=?")
@@ -272,6 +300,7 @@ export function createAppServer() {
           audit(db,user.id,"project.updated","project",id,{revision:project.revision+1});send(res,200,{ok:true,revision:project.revision+1},cors);return;
         }
         if(req.method==="DELETE"){
+          if(project.access_role!=="owner"){fail(res,403,"OWNER_REQUIRED","Only the project owner can archive this project.");return;}
           db.prepare("UPDATE projects SET archived_at=?,updated_at=? WHERE id=? AND owner_id=?").run(now(),now(),id,user.id);
           audit(db,user.id,"project.archived","project",id,{});send(res,200,{ok:true},cors);return;
         }
@@ -348,7 +377,7 @@ export function createAppServer() {
           const timeline=body.timeline,validation=validateTimelineDocument(timeline,db,user.id);
           if(!validation.valid){send(res,422,{error:{code:"TIMELINE_INVALID",message:"Timeline failed validation.",issues:validation.issues}},cors);return;}
           const projectId=body.projectId??record.project_id;
-          if(projectId&&!getOwnedProject(db,user.id,projectId)){fail(res,404,"PROJECT_NOT_FOUND","Project not found.");return;}
+          if(projectId&&!canWriteProject(db,user.id,projectId)){fail(res,404,"PROJECT_NOT_FOUND","Project not found or editor access required.");return;}
           const revision=record.revision+1,name=String(body.name||timeline.name||record.name).trim().slice(0,160);
           const saved={...timeline,id:record.id,projectId,name,revision};
           db.prepare("UPDATE timelines SET project_id=?,name=?,revision=?,timeline_json=?,otio_json=?,updated_at=? WHERE id=? AND owner_id=?")
@@ -389,7 +418,7 @@ export function createAppServer() {
       if(path==="/api/jobs"&&req.method==="POST"){
         const body=await readJson(req);const type=String(body.jobType||"");
         if(!MEDIA_JOBS.has(type)){fail(res,409,"ENGINE_UNAVAILABLE","This capability has no connected execution adapter yet. No paid request was sent.");return;}
-        if(body.projectId&&!getOwnedProject(db,user.id,body.projectId)){fail(res,404,"PROJECT_NOT_FOUND","Project not found.");return;}
+        if(body.projectId&&!canWriteProject(db,user.id,body.projectId)){fail(res,404,"PROJECT_NOT_FOUND","Project not found or editor access required.");return;}
         if(!body.sourceAssetId||!getAccessibleAsset(db,user.id,String(body.sourceAssetId),true)){fail(res,404,"SOURCE_ASSET_NOT_FOUND","Choose a source asset you own or can edit.");return;}
         const key=String(req.headers["idempotency-key"]||body.idempotencyKey||"").slice(0,180);
         if(key){const existing=db.prepare("SELECT * FROM jobs WHERE owner_id=? AND idempotency_key=?").get(user.id,key);if(existing){send(res,200,{job:recordJob(existing),idempotentReplay:true},cors);return;}}
