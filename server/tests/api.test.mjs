@@ -224,6 +224,12 @@ test("project membership separates editor, reviewer and viewer permissions",asyn
   assert.equal(editorEdit.status,200);
   const editorInvite=await request("/api/projects/"+project.id+"/members",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({email:"owner-a@example.test",role:"viewer"})},editor);
   assert.equal(editorInvite.status,403);
+  const remove=await request("/api/projects/"+project.id+"/members/"+JSON.parse(await addEditor.clone().text()).member.id,{method:"DELETE"},owner);
+  assert.equal(remove.status,200);
+  const revokedAssets=await request("/api/assets?projectId="+project.id,{},editor);
+  assert.equal((await revokedAssets.json()).assets.length,0);
+  const revokedTimeline=await request("/api/timelines/"+timelineId,{},editor);
+  assert.equal(revokedTimeline.status,404);
 });
 
 test.after(async()=>{
