@@ -5,6 +5,7 @@ import { createServer } from "node:http";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { openDatabase, json } from "../db.mjs";
 
 const port=await new Promise(resolve=>{const probe=createServer();probe.listen(0,"127.0.0.1",()=>{const address=probe.address();probe.close(()=>resolve(address.port));});});
 const dataDir=await mkdtemp(join(tmpdir(),"ev-api-test-"));
@@ -214,6 +215,31 @@ test("workflow runs snapshot revisions, plan partial targets and isolate node hi
   assert.ok((await runs.json()).runs.some(item=>item.id===run.runId));
 });
 
+
+test("workflow approval endpoint resumes a paused immutable run",async()=>{
+  const cookie=await register("workflow-approval@example.test");
+  const graph={id:"approval-graph",projectId:"",revision:1,nodes:[
+    {id:"approval",kind:"approval",label:"Human approval",inputs:[{id:"media",type:"media",required:true}],outputs:[{id:"media",type:"media"}],config:{media:"asset-placeholder"}}
+  ],edges:[]};
+  const created=await request("/api/workflows",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({name:"Approval workflow",graph})},cookie);
+  assert.equal(created.status,201);
+  const workflow=(await created.json()).workflow;
+  const queued=await request("/api/workflows/"+workflow.id+"/run",{method:"POST"},cookie);
+  assert.equal(queued.status,202);
+  const runId=(await queued.json()).runId;
+  const db=openDatabase(join(dataDir,"executive-visuals.sqlite"));
+  try{
+    db.prepare("UPDATE workflow_runs SET status='awaiting_approval' WHERE id=?").run(runId);
+    db.prepare("UPDATE workflow_node_runs SET status='awaiting_approval',input_json=? WHERE run_id=? AND node_id='approval'").run(json({media:"asset-placeholder"}),runId);
+  }finally{db.close();}
+  const approved=await request("/api/workflow-runs/"+runId+"/approve",{method:"POST"},cookie);
+  assert.equal(approved.status,202);
+  const detail=await request("/api/workflow-runs/"+runId,{},cookie);
+  const body=await detail.json();
+  assert.equal(body.run.status,"queued");
+  assert.equal(body.nodes[0].status,"completed");
+  assert.equal(body.nodes[0].output.approved,true);
+});
 
 test("timelines persist with asset ownership, revision checks and interchange exports",async()=>{
   const cookie=await register("timeline-owner@example.test");
