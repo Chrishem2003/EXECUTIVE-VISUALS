@@ -361,7 +361,7 @@ export function createAppServer() {
       }
       const timelineMatch=path.match(/^\/api\/timelines\/([0-9a-f-]+)(?:\/(otio))?$/i);
       if(timelineMatch){
-        const record=db.prepare("SELECT * FROM timelines WHERE id=? AND archived_at IS NULL AND (owner_id=? OR project_id IN (SELECT id FROM projects WHERE owner_id=?) OR project_id IN (SELECT project_id FROM project_members WHERE member_id=?))").get(timelineMatch[1],user.id,user.id,user.id);
+        const record=db.prepare("SELECT * FROM timelines WHERE id=? AND archived_at IS NULL AND ((project_id IS NULL AND owner_id=?) OR project_id IN (SELECT id FROM projects WHERE owner_id=?) OR project_id IN (SELECT project_id FROM project_members WHERE member_id=?))").get(timelineMatch[1],user.id,user.id,user.id);
         if(!record){fail(res,404,"TIMELINE_NOT_FOUND","Timeline not found.");return;}
         if(timelineMatch[2]==="otio"&&req.method==="GET"){
           if(!record.otio_json){fail(res,404,"INTERCHANGE_NOT_AVAILABLE","No interchange export has been saved.");return;}
@@ -394,7 +394,7 @@ export function createAppServer() {
       }
       const workflowMatch=path.match(/^\/api\/workflows\/([0-9a-f-]+)$/i);
       if(workflowMatch){
-        const workflow=db.prepare("SELECT * FROM workflows WHERE id=? AND (owner_id=? OR project_id IN (SELECT id FROM projects WHERE owner_id=?) OR project_id IN (SELECT project_id FROM project_members WHERE member_id=?))").get(workflowMatch[1],user.id,user.id,user.id);
+        const workflow=db.prepare("SELECT * FROM workflows WHERE id=? AND ((project_id IS NULL AND owner_id=?) OR project_id IN (SELECT id FROM projects WHERE owner_id=?) OR project_id IN (SELECT project_id FROM project_members WHERE member_id=?))").get(workflowMatch[1],user.id,user.id,user.id);
         if(!workflow){fail(res,404,"WORKFLOW_NOT_FOUND","Workflow not found.");return;}
         if(req.method==="GET"){
           send(res,200,{workflow:{id:workflow.id,projectId:workflow.project_id,name:workflow.name,revision:workflow.revision,graph:parseJson(workflow.graph_json),graphHash:workflow.graph_hash,createdAt:workflow.created_at,updatedAt:workflow.updated_at}},cors);return;
