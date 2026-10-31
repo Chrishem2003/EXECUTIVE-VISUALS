@@ -102,3 +102,18 @@ Presenter and character profiles now persist a structured identity-permission re
 - Unit and API tests cover scope enforcement, expiry, missing evidence and persistence.
 
 This is an enforceable authorization foundation, not a claim that voice cloning, dubbing or lip-sync generation is implemented. Identity references are still not accepted by the current generic image/video adapters, which remain limited to their documented inputs.
+
+
+## Approved narration generation — connected workflow capability
+
+The existing voice-generation workflow node now has a real, provider-neutral OpenAI-compatible speech gateway:
+
+- Uses server-side configuration only; provider credentials are never sent to the browser.
+- Disabled by default. Remote HTTPS calls require a separate explicit server-side opt-in after provider pricing is reviewed.
+- Requires a completed upstream human-approval node and, when a presenter identity profile is selected, an explicit voice permission scope.
+- Bounds script length, voice identifier, playback speed, request timeout and output size.
+- Rejects redirects, insecure remote URLs, oversized responses and mismatched/unsupported audio signatures.
+- Streams output with a hard 50 MiB cap, stores the generated narration as a private project asset, and records checksum plus generation provenance.
+- No provider credentials or live paid calls were used for verification; tests use a local mock HTTP server.
+
+This enables approved narration generation where a compatible provider is configured. It does not implement voice cloning, identity imitation, transcription, dubbing or lip-sync.
