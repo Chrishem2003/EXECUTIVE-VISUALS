@@ -107,4 +107,30 @@ function filterCapabilities(){
  const count=document.querySelector<HTMLElement>("#capability-count");
  if(count)count.textContent=items.length+" of "+CAPABILITY_ATLAS.length+" capabilities";
 }
+window.addEventListener("ev:project-changed",async event=>{
+ const projectId=(event as CustomEvent<{projectId:string}>).detail?.projectId||"";
+ try{
+  const response=projectId?await loadCreativeDraft(projectId):null;
+  if(projectId!==getCurrentProjectId())return;
+  const hasLocal=state.projects.length+state.tasks.length+state.shots.length+state.characters.length>0||Boolean(state.prompt||state.plan||state.script||state.variants.length);
+  if(response?.document&&Number(response.document.schemaVersion)===1){
+   const doc=response.document;
+   state.projects=(doc.creativeProjects as Project[])||[];
+   state.tasks=(doc.tasks as Task[])||[];
+   state.shots=(doc.shots as Shot[])||[];
+   state.characters=(doc.characters as Character[])||[];
+   state.prompt=String(doc.prompt||"");state.plan=String(doc.plan||"");state.script=String(doc.script||"");
+   state.variants=Array.isArray(doc.variants)?doc.variants as string[]:[];
+  }else if(state.apiProjectId&&state.apiProjectId!==projectId){
+   state.projects=[];state.tasks=[];state.shots=[];state.characters=[];state.prompt="";state.plan="";state.script="";state.variants=[];
+  }else if(!hasLocal){
+   state.projects=[];state.tasks=[];state.shots=[];state.characters=[];state.prompt="";state.plan="";state.script="";state.variants=[];
+  }else{
+   window.dispatchEvent(new CustomEvent("ev:save-creative-draft",{detail:{creativeProjects:state.projects,tasks:state.tasks,shots:state.shots,characters:state.characters,prompt:state.prompt,plan:state.plan,script:state.script,variants:state.variants}}));
+  }
+  state.apiProjectId=projectId;
+  localStorage.setItem(KEY,JSON.stringify({...state,tab:"home"}));
+  render();
+ }catch(error){console.warn("Creative workspace load failed",error);}
+});
 load();$<HTMLElement>("#app").innerHTML='<div class="shell"><aside class="sidebar"><a class="brand" data-tab="home"><span class="brand-mark">EV</span><span><b>EXECUTIVE</b><small>VISUALS</small></span></a><div class="workspace-label"><i></i><span><b>Creative workspace</b><small id="project-name">Untitled production</small></span></div><nav id="nav"></nav><div class="sidebar-foot"><i class="local-dot"></i><span><b>Production runtime</b><small>Connecting to local API…</small></span></div></aside><main class="main"><header class="topbar"><div><span>WORKSPACE</span><b>/</b><strong id="crumb">Command centre</strong></div><div><span class="local-badge">CONNECTING</span><button class="secondary" data-tab="director">＋ New brief</button></div></header><section id="view" class="content"></section></main></div>';render();void initRuntime();void initTimelineWorkspace();void initWorkflowWorkspace();
