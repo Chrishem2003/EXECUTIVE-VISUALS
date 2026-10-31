@@ -49,14 +49,15 @@ test("approved transcription workflow verifies source audio and persists timesta
   const graph={id:"transcription",projectId:"",revision:1,nodes:[
    {id:"source",kind:"upload",label:"Source audio",inputs:[],outputs:[{id:"audio",type:"audio"}],config:{assetId:"audio-asset"}},
    {id:"approval",kind:"approval",label:"Human approval",inputs:[{id:"audio",type:"audio"}],outputs:[{id:"approved",type:"any"}],config:{}},
-   {id:"transcribe",kind:"voice.transcribe",label:"Transcribe audio",inputs:[{id:"audio",type:"audio",required:true},{id:"approval",type:"any"}],outputs:[{id:"transcript",type:"transcript"},{id:"text",type:"text"},{id:"segments",type:"structured-data"},{id:"sourceAudio",type:"audio"}],config:{}},
-   {id:"captions",kind:"voice.caption",label:"Create captions",inputs:[{id:"segments",type:"structured-data",required:true},{id:"sourceAudio",type:"audio"}],outputs:[{id:"subtitle",type:"subtitle-file"},{id:"asset",type:"asset"}],config:{}}
+   {id:"transcribe",kind:"voice.transcribe",label:"Transcribe audio",inputs:[{id:"audio",type:"audio",required:true},{id:"approval",type:"any"}],outputs:[{id:"transcript",type:"transcript"},{id:"text",type:"text"},{id:"segments",type:"structured-data"},{id:"sourceAudio",type:"audio"},{id:"language",type:"text"}],config:{}},
+   {id:"captions",kind:"voice.caption",label:"Create captions",inputs:[{id:"segments",type:"structured-data",required:true},{id:"sourceAudio",type:"audio"},{id:"language",type:"text"}],outputs:[{id:"subtitle",type:"subtitle-file"},{id:"asset",type:"asset"}],config:{}}
   ],edges:[
    {id:"source-approval",sourceNodeId:"source",sourcePortId:"audio",targetNodeId:"approval",targetPortId:"audio"},
    {id:"source-transcribe",sourceNodeId:"source",sourcePortId:"audio",targetNodeId:"transcribe",targetPortId:"audio"},
    {id:"approval-transcribe",sourceNodeId:"approval",sourcePortId:"approved",targetNodeId:"transcribe",targetPortId:"approval"},
    {id:"transcribe-captions",sourceNodeId:"transcribe",sourcePortId:"segments",targetNodeId:"captions",targetPortId:"segments"},
-   {id:"transcribe-source-captions",sourceNodeId:"transcribe",sourcePortId:"sourceAudio",targetNodeId:"captions",targetPortId:"sourceAudio"}
+   {id:"transcribe-source-captions",sourceNodeId:"transcribe",sourcePortId:"sourceAudio",targetNodeId:"captions",targetPortId:"sourceAudio"},
+   {id:"transcribe-language-captions",sourceNodeId:"transcribe",sourcePortId:"language",targetNodeId:"captions",targetPortId:"language"}
   ]};
   const snapshot=JSON.stringify(graph);
   db.prepare("INSERT INTO workflows(id,owner_id,project_id,name,revision,graph_json,graph_hash) VALUES(?,?,NULL,?,1,?,?)").run("workflow-1","transcribe-user","Transcription",snapshot,"f".repeat(64));
@@ -82,6 +83,7 @@ test("approved transcription workflow verifies source audio and persists timesta
   const captionAsset=db.prepare("SELECT * FROM assets WHERE id=?").get(captionOutput.subtitleAssetId);
   assert.equal(captionAsset.media_type,"text/vtt");
   assert.equal(captionOutput.cueCount,1);
+  assert.equal(captionAsset.metadata_json.includes("\\"language\\":\\"en\\""),true);
   const captionText=await readFile(join(mediaRoot,captionAsset.storage_path),"utf8");
   assert.match(captionText,/WEBVTT/);
   assert.match(captionText,/00:00:00.000 --> 00:00:02.400/);
