@@ -11,6 +11,7 @@ import { validateWorkflowGraph, planWorkflowTarget } from "./workflow-validation
 import { validateTimelineDocument } from "./timeline-validation.mjs";
 import { executeWorkflowRun } from "./workflow-executor.mjs";
 import { claimNextJob, recoverExpiredJobs, renewJobLease } from "./queue.mjs";
+import { sanitizeCreativeWorkspaceDocument } from "./workspace-documents.mjs";
 
 const PORT = Number(process.env.API_PORT || process.env.PORT || 4179);
 const HOST = process.env.API_HOST || "127.0.0.1";
@@ -340,6 +341,33 @@ export function createAppServer() {
           if(project.access_role!=="owner"){fail(res,403,"OWNER_REQUIRED","Only the project owner can archive this project.");return;}
           db.prepare("UPDATE projects SET archived_at=?,updated_at=? WHERE id=? AND owner_id=?").run(now(),now(),id,user.id);
           audit(db,user.id,"project.archived","project",id,{});send(res,200,{ok:true},cors);return;
+        }
+      }
+
+
+      const workspaceMatch=path.match(new RegExp("^/api/projects/([0-9a-f-]+)/workspace$","i"));
+      if(workspaceMatch){
+        const projectId=workspaceMatch[1],access=getProjectAccess(db,user.id,projectId);
+        if(!access){fail(res,404,"PROJECT_NOT_FOUND","Project not found.");return;}
+        if(req.method==="GET"){
+          const row=db.prepare("SELECT revision,document_json,updated_at FROM project_workspace_documents WHERE project_id=?").get(projectId);
+          send(res,200,{document:row?parseJson(row.document_json,{}):{},revision:row?.revision||0,updatedAt:row?.updated_at||null},cors);return;
+        }
+        if(req.method==="PUT"){
+          if(!canWriteProject(db,user.id,projectId)){fail(res,403,"EDITOR_REQUIRED","Owner or editor access is required to save creative workspace data.");return;}
+          const body=await readJson(req,3*1024*1024);
+          let document;
+          try{document=sanitizeCreativeWorkspaceDocument(body.document);}catch(error){fail(res,400,error.code||"INVALID_WORKSPACE_DOCUMENT",error.message);return;}
+          const current=db.prepare("SELECT revision FROM project_workspace_documents WHERE project_id=?").get(projectId);
+          const expected=Number(body.revision);
+          if(!Number.isInteger(expected)||expected!==(current?.revision||0)){fail(res,409,"REVISION_CONFLICT","Creative workspace changed since it was loaded. Refresh before saving again.");return;}
+          const nextRevision=expected+1;
+          const changed=current
+            ?db.prepare("UPDATE project_workspace_documents SET revision=?,document_json=?,updated_at=? WHERE project_id=? AND revision=?").run(nextRevision,json(document),now(),projectId,expected)
+            :db.prepare("INSERT OR IGNORE INTO project_workspace_documents(project_id,revision,document_json,updated_at) VALUES(?,?,?,?)").run(projectId,nextRevision,json(document),now());
+          if(changed.changes!==1){fail(res,409,"REVISION_CONFLICT","Creative workspace changed while saving. Refresh and retry.");return;}
+          audit(db,user.id,"workspace.document_saved","project_workspace",projectId,{revision:nextRevision},projectId);
+          send(res,200,{ok:true,revision:nextRevision,updatedAt:now()},cors);return;
         }
       }
 
