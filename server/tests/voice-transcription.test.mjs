@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { createHash } from "node:crypto";
-import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openDatabase, json } from "../db.mjs";
@@ -49,11 +49,14 @@ test("approved transcription workflow verifies source audio and persists timesta
   const graph={id:"transcription",projectId:"",revision:1,nodes:[
    {id:"source",kind:"upload",label:"Source audio",inputs:[],outputs:[{id:"audio",type:"audio"}],config:{assetId:"audio-asset"}},
    {id:"approval",kind:"approval",label:"Human approval",inputs:[{id:"audio",type:"audio"}],outputs:[{id:"approved",type:"any"}],config:{}},
-   {id:"transcribe",kind:"voice.transcribe",label:"Transcribe audio",inputs:[{id:"audio",type:"audio",required:true},{id:"approval",type:"any"}],outputs:[{id:"transcript",type:"transcript"},{id:"text",type:"text"}],config:{}}
+   {id:"transcribe",kind:"voice.transcribe",label:"Transcribe audio",inputs:[{id:"audio",type:"audio",required:true},{id:"approval",type:"any"}],outputs:[{id:"transcript",type:"transcript"},{id:"text",type:"text"},{id:"segments",type:"structured-data"},{id:"sourceAudio",type:"audio"}],config:{}},
+   {id:"captions",kind:"voice.caption",label:"Create captions",inputs:[{id:"segments",type:"structured-data",required:true},{id:"sourceAudio",type:"audio"}],outputs:[{id:"subtitle",type:"subtitle-file"},{id:"asset",type:"asset"}],config:{}}
   ],edges:[
    {id:"source-approval",sourceNodeId:"source",sourcePortId:"audio",targetNodeId:"approval",targetPortId:"audio"},
    {id:"source-transcribe",sourceNodeId:"source",sourcePortId:"audio",targetNodeId:"transcribe",targetPortId:"audio"},
-   {id:"approval-transcribe",sourceNodeId:"approval",sourcePortId:"approved",targetNodeId:"transcribe",targetPortId:"approval"}
+   {id:"approval-transcribe",sourceNodeId:"approval",sourcePortId:"approved",targetNodeId:"transcribe",targetPortId:"approval"},
+   {id:"transcribe-captions",sourceNodeId:"transcribe",sourcePortId:"segments",targetNodeId:"captions",targetPortId:"segments"},
+   {id:"transcribe-source-captions",sourceNodeId:"transcribe",sourcePortId:"sourceAudio",targetNodeId:"captions",targetPortId:"sourceAudio"}
   ]};
   const snapshot=JSON.stringify(graph);
   db.prepare("INSERT INTO workflows(id,owner_id,project_id,name,revision,graph_json,graph_hash) VALUES(?,?,NULL,?,1,?,?)").run("workflow-1","transcribe-user","Transcription",snapshot,"f".repeat(64));
@@ -73,6 +76,16 @@ test("approved transcription workflow verifies source audio and persists timesta
   assert.equal(output.duration,2.4);
   assert.equal(output.segments[0].start,0);
   assert.equal(output.sourceAssetId,"audio-asset");
+  const captionRow=db.prepare("SELECT status,output_json FROM workflow_node_runs WHERE run_id=? AND node_id=?").get("run-1","captions");
+  assert.equal(captionRow.status,"completed");
+  const captionOutput=JSON.parse(captionRow.output_json);
+  const captionAsset=db.prepare("SELECT * FROM assets WHERE id=?").get(captionOutput.subtitleAssetId);
+  assert.equal(captionAsset.media_type,"text/vtt");
+  assert.equal(captionOutput.cueCount,1);
+  const captionText=await readFile(join(mediaRoot,captionAsset.storage_path),"utf8");
+  assert.match(captionText,/WEBVTT/);
+  assert.match(captionText,/00:00:00.000 --> 00:00:02.400/);
+  assert.match(captionText,/A clear transcript for the production timeline\./);
  }finally{
   restore();db.close();await new Promise(resolve=>server.close(resolve));await rm(root,{recursive:true,force:true});
  }
