@@ -93,7 +93,7 @@ function outputPlan(jobType, input, source, sourcePath, outputPath) {
     };
   }
   if (jobType === "media.proxy" || jobType === "media.transcode") {
-    const container = String(input.container || "mp4").toLowerCase();
+    const container = String(jobType === "media.proxy" ? "mp4" : input.container || "mp4").toLowerCase();
     const allowed = new Set(["mp4", "webm", "mov", "mkv", "mp3", "wav"]);
     if (!allowed.has(container) || (["mp3", "wav"].includes(container) && jobType !== "media.transcode")) {
       throw Object.assign(new Error("Unsupported output container."), { code: "INVALID_MEDIA_OPTIONS" });
@@ -105,7 +105,7 @@ function outputPlan(jobType, input, source, sourcePath, outputPath) {
     if (["mp3", "wav"].includes(container)) args.push("-vn");
     else args.push("-c:v", videoCodec);
     args.push("-c:a", audioCodec, outputPath);
-    const mediaType = container === "mp3" ? "audio/mpeg" : container === "wav" ? "audio/wav" : "video/mp4";
+    const mediaType = container === "mp3" ? "audio/mpeg" : container === "wav" ? "audio/wav" : container === "webm" ? "video/webm" : container === "mov" ? "video/quicktime" : container === "mkv" ? "video/x-matroska" : "video/mp4";
     return { args, name: baseName + (jobType === "media.proxy" ? "-proxy." : "-transcoded.") + container, mediaType };
   }
   throw Object.assign(new Error("This cloud worker does not yet support the requested media job."), { code: "CLOUD_MEDIA_OPERATION_UNSUPPORTED" });
