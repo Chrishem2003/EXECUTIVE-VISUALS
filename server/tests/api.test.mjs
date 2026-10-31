@@ -103,6 +103,9 @@ test("unauthenticated requests and unsupported upload types are rejected",async(
   const cookie=await register("owner-e@example.test");
   const upload=await request("/api/assets",{method:"POST",headers:{"content-type":"application/x-msdownload","x-file-name":"payload.exe"},body:Buffer.from("no")},cookie);
   assert.equal(upload.status,415);
+  const mismatch=await request("/api/assets",{method:"POST",headers:{"content-type":"image/png","x-file-name":"fake.png"},body:Buffer.from("not a PNG signature")},cookie);
+  assert.equal(mismatch.status,415);
+  assert.equal((await mismatch.json()).error.code,"MEDIA_SIGNATURE_MISMATCH");
 });
 
 test.after(async()=>{
