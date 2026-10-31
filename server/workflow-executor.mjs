@@ -178,7 +178,7 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
       const assetId=result.outputAsset.id;
       output=nodeOutput(node,assetId);output.asset=assetId;
       if(mediaType==="media.thumbnail")output.image=assetId;
-      if(mediaType==="media.audio_extract")output.audio=assetId;
+      if(mediaType==="media.audio_extract"||mediaType==="media.audio-clean")output.audio=assetId;
       if(mediaType==="media.transcode"||mediaType==="timeline.render")output.video=assetId;
     }else if(result.metadata){
       output=nodeOutput(node,result.metadata);output.report=result.metadata;
