@@ -44,6 +44,17 @@ if (!sql.includes("as $$") || !sql.includes("end;\n$$;") || /as \$(?!\$)\s*begin
 if (/\b(drop\s+table|truncate|delete\s+from)\b/i.test(sql)) issues.push("Destructive DDL/DML is not allowed in the initial isolated migration.");
 if (!sql.startsWith("-- Executive Visuals isolated data model.")) issues.push("Migration must identify its isolated deployment boundary.");
 
+
+if ((sql.match(/create or replace function executive_visuals\.(?:claim_next_job|renew_job_lease|recover_expired_jobs|finish_job)\(/g) || []).length !== 4) {
+  issues.push("All four cloud queue RPC definitions must be present exactly once.");
+}
+if (/as \$(?:\r?\n)|\r?\n\$;/.test(sql)) issues.push("Cloud queue PL/pgSQL functions contain an invalid single-dollar delimiter.");
+if (!sql.includes("limit 1\n    for update skip locked") || !sql.includes("limit p_limit\n    for update skip locked")) {
+  issues.push("Cloud worker row locks must use valid PostgreSQL LIMIT/FOR UPDATE ordering.");
+}
+if (!sql.includes("revoke all on function executive_visuals.renew_job_lease(uuid, text, integer) from public, anon, authenticated;") || !sql.includes("revoke all on function executive_visuals.finish_job(uuid, text, text, jsonb, jsonb) from public, anon, authenticated;")) {
+  issues.push("Lease renewal and job completion RPCs must be unavailable to untrusted roles.");
+}
 if (!sql.includes("create or replace function executive_visuals.claim_next_job(") || !sql.includes("for update skip locked") || !sql.includes("grant execute on function executive_visuals.claim_next_job(text, integer) to service_role")) {
   issues.push("Cloud workers need an atomic SKIP LOCKED claim RPC restricted to service_role.");
 }
