@@ -246,7 +246,7 @@ export function createAppServer() {
     if(req.method==="OPTIONS"){res.writeHead(204,{"access-control-allow-methods":"GET,POST,PUT,DELETE,OPTIONS","access-control-allow-headers":"content-type,authorization,x-file-name,x-project-id,idempotency-key","access-control-max-age":"600",...cors});res.end();return;}
     const url=new URL(req.url||"/","http://localhost");
     const path=url.pathname;
-    const ratePath=path.startsWith("/api/auth/")?"/auth":path==="/api/assets"&&req.method==="POST"?"/upload":path.endsWith("/research/import")&&req.method==="POST"?"/research":"";
+    const ratePath=path.startsWith("/api/auth/")?"/auth":(path==="/api/assets"||path==="/api/cloud/assets")&&req.method==="POST"?"/upload":path.endsWith("/research/import")&&req.method==="POST"?"/research":"";
     if(ratePath){const key=(req.socket.remoteAddress||"unknown")+ratePath;const limit=ratePath==="/auth"?AUTH_RATE_LIMIT:ratePath==="/research"?10:30;if(!rateAllowed(key,limit,60000)){fail(res,429,"RATE_LIMITED","Too many requests. Wait before trying again.");return;}}
     try {
       if(!path.startsWith("/api/")&&req.method==="GET"){
@@ -293,7 +293,15 @@ export function createAppServer() {
       const user=await authenticate(req);
       if(!user){fail(res,401,"AUTH_REQUIRED","Sign in to access this workspace.");return;}
       if(path==="/api/me"&&req.method==="GET"){send(res,200,{user,authMode:AUTH_MODE},cors);return;}
-      if(cloudTimelineApi && (path.startsWith("/api/cloud/timelines")||path.startsWith("/api/cloud/jobs"))){
+      if(cloudTimelineApi && path==="/api/cloud/assets" && req.method==="POST"){
+        const uploadResult=await cloudTimelineApi.uploadAsset({
+          req,ownerId:user.id,projectId:String(req.headers["x-project-id"]||""),
+          originalName:String(req.headers["x-file-name"]||"upload"),
+          mediaType:String(req.headers["content-type"]||"application/octet-stream")
+        });
+        send(res,uploadResult.status,uploadResult.body,cors);return;
+      }
+      if(cloudTimelineApi && (path.startsWith("/api/cloud/timelines")||path.startsWith("/api/cloud/jobs")||path.startsWith("/api/cloud/assets"))){
         const isTimelineMutation=path.startsWith("/api/cloud/timelines")&&(req.method==="POST"||req.method==="PUT");
         const body=isTimelineMutation?await readJson(req,5*1024*1024):{};
         const cloudResult=await cloudTimelineApi.handle({
