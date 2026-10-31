@@ -171,7 +171,7 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
     return {status:"cancelled",runId,completedNodes:completedCount,totalNodes:nodeCount};
    }
    const detail={code:error.code||"NODE_FAILED",message:error.message||"Workflow node failed."};
-   const blockedCodes=new Set(["ENGINE_UNAVAILABLE","APPROVAL_REQUIRED","AI_GATEWAY_DISABLED","AI_GATEWAY_CONFIG_INVALID","AI_GATEWAY_INSECURE_URL"]);
+   const blockedCodes=new Set(["ENGINE_UNAVAILABLE","APPROVAL_REQUIRED","AI_GATEWAY_DISABLED","AI_GATEWAY_CONFIG_INVALID","AI_GATEWAY_INSECURE_URL","AI_GATEWAY_REMOTE_DISABLED"]);
    const blocked=blockedCodes.has(detail.code);
    saveNode(db,runId,nodeId,blocked?"blocked":"failed",{input:nodeInput,error:detail,attempt});
    const status=blocked?"blocked":completedCount>0?"partial":"failed";
