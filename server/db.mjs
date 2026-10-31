@@ -34,6 +34,12 @@ export function openDatabase(filename) {
       archived_at TEXT
     );
     CREATE INDEX IF NOT EXISTS projects_owner_idx ON projects(owner_id, updated_at DESC);
+    CREATE TABLE IF NOT EXISTS project_workspace_documents (
+      project_id TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+      revision INTEGER NOT NULL DEFAULT 1 CHECK(revision > 0),
+      document_json TEXT NOT NULL DEFAULT '{}',
+      updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    );
     CREATE TABLE IF NOT EXISTS project_members (
       project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
       member_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
