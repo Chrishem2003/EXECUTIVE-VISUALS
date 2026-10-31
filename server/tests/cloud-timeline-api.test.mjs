@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { Readable } from "node:stream";
+import { readFile } from "node:fs/promises";
 import { createCloudTimelineApi } from "../cloud-timeline-api.mjs";
 
 const owner="123e4567-e89b-42d3-a456-426614174000",editor="223e4567-e89b-42d3-a456-426614174000",project="423e4567-e89b-42d3-a456-426614174000",timelineId="523e4567-e89b-42d3-a456-426614174000";
@@ -54,4 +56,38 @@ test("cloud timeline API readiness fails closed when a required schema table is 
  let count=0;
  const api=createCloudTimelineApi({url:"https://example.supabase.co",serviceRoleKey:"service-secret",timelineService:{timelines:{},assets:{}},authorize:async()=>true,fetchImpl:async()=>{count++;return{ok:count!==3,status:count===3?404:200,async text(){return"[]";},async json(){return{public:false};}};}});
  await assert.rejects(()=>api.checkReadiness());
+});
+
+test("cloud asset upload streams a signature-checked file to the private repository",async()=>{
+ const bytes=Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]),Buffer.from("png-fixture")]);
+ let stored=null;
+ const api=createCloudTimelineApi({url:"https://example.supabase.co",serviceRoleKey:"service-secret",timelineService:{timelines:{},assets:{async createFromFile(input){stored={...input,bytes:await readFile(input.filePath)};return{id:"723e4567-e89b-42d3-a456-426614174000",ownerId:input.ownerId,projectId:input.projectId,name:input.originalName,mediaType:input.mediaType,size:bytes.length};}}},authorize:async()=>true});
+ const req=Readable.from([bytes]);req.headers={"content-length":String(bytes.length)};
+ const result=await api.uploadAsset({req,ownerId:owner,projectId:project,originalName:"my image.png",mediaType:"image/png"});
+ assert.equal(result.status,201);assert.equal(stored.ownerId,owner);assert.equal(stored.projectId,project);assert.equal(stored.mediaType,"image/png");assert.deepEqual(stored.bytes,bytes);
+});
+test("cloud asset upload rejects mismatched file signatures and cleans temporary data",async()=>{
+ let called=false;
+ const api=createCloudTimelineApi({url:"https://example.supabase.co",serviceRoleKey:"service-secret",timelineService:{timelines:{},assets:{async createFromFile(){called=true;}}},authorize:async()=>true});
+ const req=Readable.from([Buffer.from("not-a-png")]);req.headers={"content-length":"9"};
+ const result=await api.uploadAsset({req,ownerId:owner,originalName:"bad.png",mediaType:"image/png"});
+ assert.equal(result.status,415);assert.equal(called,false);
+});
+test("cloud asset upload enforces the configured streaming byte limit",async()=>{
+ let called=false;
+ const api=createCloudTimelineApi({url:"https://example.supabase.co",serviceRoleKey:"service-secret",maxUploadBytes:8,timelineService:{timelines:{},assets:{async createFromFile(){called=true;}}},authorize:async()=>true});
+ const req=Readable.from([Buffer.from([137,80,78,71,13,10,26,10,1])]);req.headers={"content-length":"9"};
+ const result=await api.uploadAsset({req,ownerId:owner,originalName:"large.png",mediaType:"image/png"});
+ assert.equal(result.status,413);assert.equal(called,false);
+});
+test("cloud asset signed read and delete delegate to the owner-aware private repository",async()=>{
+ const calls=[];
+ const api=createCloudTimelineApi({url:"https://example.supabase.co",serviceRoleKey:"service-secret",timelineService:{timelines:{},assets:{
+  async createSignedUrl(input){calls.push(["read",input]);return{asset:{id:input.assetId},url:"https://signed.example/private",expiresIn:300};},
+  async softDelete(input){calls.push(["delete",input]);return{id:input.assetId,deleted:true,storageRemoved:true,cleanupPending:false;}
+ }},authorize:async()=>true});
+ const read=await api.handle({method:"GET",path:"/api/cloud/assets/"+timelineId,ownerId:owner});
+ assert.equal(read.status,200);assert.equal(read.body.expiresIn,300);
+ const deleted=await api.handle({method:"DELETE",path:"/api/cloud/assets/"+timelineId,ownerId:owner});
+ assert.equal(deleted.status,200);assert.deepEqual(calls.map(call=>call[0]),["read","delete"]);
 });
