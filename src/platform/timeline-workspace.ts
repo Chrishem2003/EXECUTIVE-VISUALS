@@ -164,7 +164,7 @@ document.addEventListener("change",event=>{
  if(target.id==="tl-asset-select"){
   const asset=state.assets.find(a=>a.id===target.value);
   const probe=asset?.metadata?.probe as {format?:{duration?:string}}|undefined;
-  const duration=Number(probe?.format?.duration);
+  const duration=asset?.mediaType==="text/vtt"?Number(asset.metadata?.durationSeconds):Number(probe?.format?.duration);
   const input=document.querySelector<HTMLInputElement>('#tl-add-clip input[name="duration"]');
   if(input&&Number.isFinite(duration))input.value=String(Math.max(1,Math.floor(duration*fps())));
  }
