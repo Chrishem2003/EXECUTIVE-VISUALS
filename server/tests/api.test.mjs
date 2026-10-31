@@ -413,7 +413,7 @@ test("workflow approval requires reviewer permissions and cannot be replayed",as
   const created=await request("/api/workflows",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({projectId:project.id,name:"Approval security",graph})},owner);
   assert.equal(created.status,201);
   const workflowId=(await created.json()).workflow.id;
-  const started=await request("/api/workflows/"+workflowId+"/runs",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({target:{kind:"all"}})},owner);
+  const started=await request("/api/workflows/"+workflowId+"/run",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({target:{kind:"all"}})},owner);
   assert.equal(started.status,202,await started.clone().text());
   const runId=(await started.json()).runId;
   const testDb=openDatabase(join(dataDir,"executive-visuals.sqlite"));
