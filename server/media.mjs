@@ -62,9 +62,10 @@ async function renderTimelineJob({db,job,mediaRoot,activeProcesses,onProgress}){
   const timeline=parseJson(record.timeline_json);
   const activeTracks=(timeline.tracks||[]).filter(track=>track.enabled!==false&&(track.clips||[]).some(clip=>clip.enabled!==false));
   const videoTracks=activeTracks.filter(track=>track.kind==="video");
-  const unsupported=activeTracks.filter(track=>track.kind!=="video");
-  if(videoTracks.length!==1||unsupported.length)throw Object.assign(new Error("This renderer currently supports one primary video track. Audio, overlay and caption tracks require the next render-engine milestone."),{code:"UNSUPPORTED_TIMELINE_FEATURE"});
+  const unsupported=activeTracks.filter(track=>!["video","audio"].includes(track.kind));
+  if(videoTracks.length!==1||unsupported.length)throw Object.assign(new Error("This renderer supports one primary video track and audio-only clips on audio tracks. Overlay and caption tracks require a later render-engine milestone."),{code:"UNSUPPORTED_TIMELINE_FEATURE"});
   const clips=videoTracks[0].clips.filter(clip=>clip.enabled!==false).sort((a,b)=>Number(a.timelineStart.value)/Number(a.timelineStart.rate)-Number(b.timelineStart.value)/Number(b.timelineStart.rate));
+  const audioClips=activeTracks.filter(track=>track.kind==="audio").flatMap(track=>track.clips.filter(clip=>clip.enabled!==false)).sort((a,b)=>Number(a.timelineStart.value)/Number(a.timelineStart.rate)-Number(b.timelineStart.value)/Number(b.timelineStart.rate));
   if(!clips.length)throw Object.assign(new Error("Add at least one enabled clip to the primary video track."),{code:"EMPTY_TIMELINE"});
   const width=Math.max(256,Math.min(7680,Math.floor(Number(timeline.width)||1920)));
   const height=Math.max(144,Math.min(4320,Math.floor(Number(timeline.height)||1080)));
@@ -105,8 +106,29 @@ async function renderTimelineJob({db,job,mediaRoot,activeProcesses,onProgress}){
     onProgress(Math.min(80,10+Math.round(segmentIndex/Math.max(clips.length,1)*65)));
   }
   if(!segments.length)throw Object.assign(new Error("No renderable clips were found."),{code:"EMPTY_TIMELINE"});
-  const filterGraph=segments.map(x=>x.filter).join(";")+";"+segments.map(x=>`[${x.label}]`).join("")+`concat=n=${segments.length}:v=1:a=0[vout]`;
-  args.push("-filter_complex",filterGraph,"-map","[vout]","-an","-c:v","libx264","-preset","veryfast","-crf","20","-pix_fmt","yuv420p","-movflags","+faststart","-r",`${fpsNum}/${fpsDen}`,outputPath);
+  const audioFilters=[];
+  let audioIndex=0;
+  for(const clip of audioClips){
+    const start=safeSeconds(Number(clip.timelineStart.value)/Number(clip.timelineStart.rate));
+    if(start>=cursor)continue;
+    const requested=safeSeconds(Number(clip.duration.value)/Number(clip.duration.rate));
+    const duration=Math.min(requested,cursor-start);
+    if(duration<=0)continue;
+    const asset=getAccessibleAsset(db,job.owner_id,String(clip.assetId),true);
+    if(!asset||!asset.media_type.startsWith("audio/"))throw Object.assign(new Error("Audio tracks currently require accessible audio-only source assets."),{code:"UNSUPPORTED_AUDIO_SOURCE"});
+    const file=join(mediaRoot,asset.storage_path);
+    const sourceStart=safeSeconds(Number(clip.sourceRange?.start?.value)/Number(clip.sourceRange?.start?.rate));
+    args.push("-ss",sourceStart.toFixed(6),"-t",duration.toFixed(6),"-i",file);
+    const delay=Math.max(0,Math.round(start*1000)),label="a"+audioIndex++;
+    audioFilters.push(`[${inputIndex}:a]atrim=duration=${duration.toFixed(6)},asetpts=PTS-STARTPTS,adelay=${delay}|${delay},apad=whole_dur=${cursor.toFixed(6)},atrim=duration=${cursor.toFixed(6)},aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo[${label}]`);
+    inputIndex++;
+  }
+  const videoGraph=segments.map(x=>x.filter).join(";")+";"+segments.map(x=>`[${x.label}]`).join("")+`concat=n=${segments.length}:v=1:a=0[vout]`;
+  const audioGraph=audioFilters.length?";"+audioFilters.join(";")+";"+audioFilters.map((_,i)=>`[a${i}]`).join("")+`amix=inputs=${audioFilters.length}:duration=longest:dropout_transition=0,alimiter=limit=0.95[aout]`:"";
+  const filterGraph=videoGraph+audioGraph;
+  args.push("-filter_complex",filterGraph,"-map","[vout]");
+  if(audioFilters.length)args.push("-map","[aout]","-c:a","aac","-b:a","192k");else args.push("-an");
+  args.push("-c:v","libx264","-preset","veryfast","-crf","20","-pix_fmt","yuv420p","-movflags","+faststart","-r",`${fpsNum}/${fpsDen}`,outputPath);
   await run("ffmpeg",args,60*60*1000,job.id,activeProcesses);
   onProgress(92);
   const fileStat=await stat(outputPath),hash=createHash("sha256");
