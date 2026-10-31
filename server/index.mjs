@@ -107,8 +107,7 @@ function recordJob(dbRow) {
 function accessibleJob(ownerId,id,write=false) {
   const job=db.prepare("SELECT * FROM jobs WHERE id=?").get(id);
   if(!job)return null;
-  if(job.owner_id===ownerId)return job;
-  if(!job.project_id)return null;
+  if(!job.project_id)return job.owner_id===ownerId?job:null;
   const access=getProjectAccess(db,ownerId,job.project_id);
   if(!access||write&&!["owner","editor"].includes(access.access_role))return null;
   return job;
@@ -308,7 +307,7 @@ export function createAppServer() {
 
       if(path==="/api/assets"&&req.method==="GET"){
         const projectId=url.searchParams.get("projectId");
-        const rows=projectId&&!getProjectAccess(db,user.id,projectId)?[]:db.prepare("SELECT id,project_id,original_name,media_type,byte_size,sha256,derivative_of,metadata_json,created_at FROM assets WHERE deleted_at IS NULL AND (owner_id=? OR project_id IN (SELECT id FROM projects WHERE owner_id=?) OR project_id IN (SELECT project_id FROM project_members WHERE member_id=?)) AND (? IS NULL OR project_id=?) ORDER BY created_at DESC").all(user.id,user.id,user.id,projectId,projectId);
+        const rows=projectId&&!getProjectAccess(db,user.id,projectId)?[]:db.prepare("SELECT id,project_id,original_name,media_type,byte_size,sha256,derivative_of,metadata_json,created_at FROM assets WHERE deleted_at IS NULL AND ((project_id IS NULL AND owner_id=?) OR project_id IN (SELECT id FROM projects WHERE owner_id=?) OR project_id IN (SELECT project_id FROM project_members WHERE member_id=?)) AND (? IS NULL OR project_id=?) ORDER BY created_at DESC").all(user.id,user.id,user.id,projectId,projectId);
         send(res,200,{assets:rows.map(x=>({id:x.id,projectId:x.project_id,name:x.original_name,mediaType:x.media_type,size:x.byte_size,sha256:x.sha256,derivativeOf:x.derivative_of,metadata:parseJson(x.metadata_json),createdAt:x.created_at}))},cors);return;
       }
       if(path==="/api/assets"&&req.method==="POST"){
@@ -329,7 +328,7 @@ export function createAppServer() {
       }
 
       if(path==="/api/workflows"&&req.method==="GET"){
-        const rows=db.prepare("SELECT id,project_id,name,revision,graph_json,graph_hash,created_at,updated_at FROM workflows WHERE owner_id=? OR project_id IN (SELECT id FROM projects WHERE owner_id=?) OR project_id IN (SELECT project_id FROM project_members WHERE member_id=?) ORDER BY updated_at DESC").all(user.id,user.id,user.id);
+        const rows=db.prepare("SELECT id,project_id,name,revision,graph_json,graph_hash,created_at,updated_at FROM workflows WHERE (project_id IS NULL AND owner_id=?) OR project_id IN (SELECT id FROM projects WHERE owner_id=?) OR project_id IN (SELECT project_id FROM project_members WHERE member_id=?) ORDER BY updated_at DESC").all(user.id,user.id,user.id);
         send(res,200,{workflows:rows.map(x=>({id:x.id,projectId:x.project_id,name:x.name,revision:x.revision,graph:parseJson(x.graph_json),graphHash:x.graph_hash,createdAt:x.created_at,updatedAt:x.updated_at}))},cors);return;
       }
       if(path==="/api/workflows"&&req.method==="POST"){
@@ -344,7 +343,7 @@ export function createAppServer() {
       }
 
       if(path==="/api/timelines"&&req.method==="GET"){
-        const rows=db.prepare("SELECT id,project_id,name,revision,created_at,updated_at FROM timelines WHERE archived_at IS NULL AND (owner_id=? OR project_id IN (SELECT id FROM projects WHERE owner_id=?) OR project_id IN (SELECT project_id FROM project_members WHERE member_id=?)) ORDER BY updated_at DESC").all(user.id,user.id,user.id);
+        const rows=db.prepare("SELECT id,project_id,name,revision,created_at,updated_at FROM timelines WHERE archived_at IS NULL AND ((project_id IS NULL AND owner_id=?) OR project_id IN (SELECT id FROM projects WHERE owner_id=?) OR project_id IN (SELECT project_id FROM project_members WHERE member_id=?)) ORDER BY updated_at DESC").all(user.id,user.id,user.id);
         send(res,200,{timelines:rows.map(x=>({id:x.id,projectId:x.project_id,name:x.name,revision:x.revision,createdAt:x.created_at,updatedAt:x.updated_at}))},cors);return;
       }
       if(path==="/api/timelines"&&req.method==="POST"){
@@ -372,7 +371,7 @@ export function createAppServer() {
           send(res,200,{timeline:{id:record.id,projectId:record.project_id,name:record.name,revision:record.revision,document:parseJson(record.timeline_json),createdAt:record.created_at,updatedAt:record.updated_at}},cors);return;
         }
         if(!timelineMatch[2]&&req.method==="PUT"){
-          if(record.owner_id!==user.id&&(!record.project_id||!canWriteProject(db,user.id,record.project_id))){fail(res,403,"EDITOR_REQUIRED","Editor access is required to edit this timeline.");return;}
+          if(record.project_id?!canWriteProject(db,user.id,record.project_id):record.owner_id!==user.id){fail(res,403,"EDITOR_REQUIRED","Editor access is required to edit this timeline.");return;}
           const body=await readJson(req,4*1024*1024);
           if(Number(body.revision)!==record.revision){fail(res,409,"REVISION_CONFLICT","Timeline changed since it was loaded. Refresh and retry.");return;}
           const timeline=body.timeline,validation=validateTimelineDocument(timeline,db,user.id);
@@ -401,7 +400,7 @@ export function createAppServer() {
           send(res,200,{workflow:{id:workflow.id,projectId:workflow.project_id,name:workflow.name,revision:workflow.revision,graph:parseJson(workflow.graph_json),graphHash:workflow.graph_hash,createdAt:workflow.created_at,updatedAt:workflow.updated_at}},cors);return;
         }
         if(req.method==="PUT"){
-          if(workflow.owner_id!==user.id&&(!workflow.project_id||!canWriteProject(db,user.id,workflow.project_id))){fail(res,403,"EDITOR_REQUIRED","Editor access is required to change this workflow.");return;}
+          if(workflow.project_id?!canWriteProject(db,user.id,workflow.project_id):workflow.owner_id!==user.id){fail(res,403,"EDITOR_REQUIRED","Editor access is required to change this workflow.");return;}
           const body=await readJson(req);
           if(Number(body.revision)!==workflow.revision){fail(res,409,"REVISION_CONFLICT","Workflow changed since it was loaded. Refresh and retry.");return;}
           if(!body.graph||!Array.isArray(body.graph.nodes)||!Array.isArray(body.graph.edges)){fail(res,400,"INVALID_WORKFLOW","A workflow graph with nodes and edges is required.");return;}
@@ -415,7 +414,7 @@ export function createAppServer() {
         }
       }
       if(path==="/api/jobs"&&req.method==="GET"){
-        const rows=db.prepare("SELECT * FROM jobs WHERE owner_id=? OR project_id IN (SELECT id FROM projects WHERE owner_id=?) OR project_id IN (SELECT project_id FROM project_members WHERE member_id=?) ORDER BY created_at DESC LIMIT 100").all(user.id,user.id,user.id);
+        const rows=db.prepare("SELECT * FROM jobs WHERE (project_id IS NULL AND owner_id=?) OR project_id IN (SELECT id FROM projects WHERE owner_id=?) OR project_id IN (SELECT project_id FROM project_members WHERE member_id=?) ORDER BY created_at DESC LIMIT 100").all(user.id,user.id,user.id);
         send(res,200,{jobs:rows.map(recordJob)},cors);return;
       }
       if(path==="/api/jobs"&&req.method==="POST"){
@@ -453,7 +452,7 @@ export function createAppServer() {
       }
 
       if(path==="/api/audit"&&req.method==="GET"){
-        const rows=db.prepare("SELECT id,project_id,event_type,subject_type,subject_id,details_json,created_at FROM audit_events WHERE owner_id=? OR project_id IN (SELECT id FROM projects WHERE owner_id=?) OR project_id IN (SELECT project_id FROM project_members WHERE member_id=?) ORDER BY id DESC LIMIT 200").all(user.id,user.id,user.id);
+        const rows=db.prepare("SELECT id,project_id,event_type,subject_type,subject_id,details_json,created_at FROM audit_events WHERE (project_id IS NULL AND owner_id=?) OR project_id IN (SELECT id FROM projects WHERE owner_id=?) OR project_id IN (SELECT project_id FROM project_members WHERE member_id=?) ORDER BY id DESC LIMIT 200").all(user.id,user.id,user.id);
         send(res,200,{events:rows.map(x=>({id:x.id,projectId:x.project_id,type:x.event_type,subjectType:x.subject_type,subjectId:x.subject_id,details:parseJson(x.details_json),createdAt:x.created_at}))},cors);return;
       }
       fail(res,404,"NOT_FOUND","API route not found.");
