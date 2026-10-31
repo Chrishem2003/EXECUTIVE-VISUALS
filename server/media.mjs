@@ -7,7 +7,7 @@ import { pipeline } from "node:stream/promises";
 import { createHash } from "node:crypto";
 import { stat } from "node:fs/promises";
 import { Transform } from "node:stream";
-import { addJobEvent, getOwnedAsset, json, parseJson } from "./db.mjs";
+import { addJobEvent, getOwnedAsset, getAccessibleAsset, json, parseJson } from "./db.mjs";
 
 const ALLOWED_JOBS = new Set(["media.probe", "media.thumbnail", "media.transcode", "media.audio_extract", "media.proxy", "timeline.render"]);
 const CONTAINERS = new Set(["mp4", "webm", "mov", "mkv", "mp3", "wav"]);
