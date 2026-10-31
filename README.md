@@ -49,3 +49,8 @@ npm run verify:server
 Production mode refuses local-password authentication. Configure a trusted identity provider, persistent storage, HTTPS, rate limits and deployment-specific security controls before exposing the service. Do not attach this project to another product's database. A dedicated database migration is included for review but is not automatically applied.
 
 Actual model-based image/video generation, timeline preview playback, transitions, effects, overlay/caption compositing, cloud collaboration and publishing are not considered complete until their adapters and end-to-end tests pass.
+
+
+## Staging deployment
+
+A Docker-based Render Blueprint is provided in `render.yaml`. It uses a private 1 GB persistent disk mounted at `/var/data`; the API refuses to start when the required mount is absent, preventing accidental use of an ephemeral filesystem. The staging blueprint uses local account authentication and one local worker. Do not deploy this blueprint on the free ephemeral plan for user data. Review the monthly compute and disk charge before creating the service.
