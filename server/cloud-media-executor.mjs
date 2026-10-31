@@ -126,7 +126,7 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
       throw Object.assign(new Error("Cloud media job is missing required lease-scoped fields or uses an unsupported operation."), { code: "CLOUD_MEDIA_OPERATION_UNSUPPORTED" });
     }
     if (signal?.aborted) throw Object.assign(new Error("Media job was cancelled."), { code: "JOB_CANCELLED" });
-    const input = parseInput(job.input_json);
+    const input = parseInput(job.input ?? job.input_json);
     const sourceId = String(input.sourceAssetId || "");
     if (!sourceId) throw Object.assign(new Error("Cloud media job requires a source asset."), { code: "SOURCE_ASSET_NOT_FOUND" });
     const materialized = await mediaIO.materialize({ ownerId: job.owner_id, assetId: sourceId });
