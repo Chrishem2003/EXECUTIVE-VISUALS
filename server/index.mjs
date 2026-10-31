@@ -402,6 +402,60 @@ export function createAppServer() {
           send(res,200,{ok:true},cors);return;
         }
       }
+      const workflowRunMatch=path.match(/^\/api\/workflows\/([0-9a-f-]+)\/run$/i);
+      if(workflowRunMatch&&req.method==="POST"){
+        const workflow=db.prepare("SELECT * FROM workflows WHERE id=? AND ((project_id IS NULL AND owner_id=?) OR project_id IN (SELECT id FROM projects WHERE owner_id=?) OR project_id IN (SELECT project_id FROM project_members WHERE member_id=?))")
+          .get(workflowRunMatch[1],user.id,user.id,user.id);
+        if(!workflow){fail(res,404,"WORKFLOW_NOT_FOUND","Workflow not found.");return;}
+        if(workflow.project_id?!canWriteProject(db,user.id,workflow.project_id):workflow.owner_id!==user.id){fail(res,403,"EDITOR_REQUIRED","Editor access is required to run this workflow.");return;}
+        const graph=parseJson(workflow.graph_json),validation=validateWorkflowGraph(graph);
+        if(!validation.valid){send(res,422,{error:{code:"WORKFLOW_INVALID",message:"Workflow graph failed validation.",issues:validation.issues}},cors);return;}
+        const runId=randomUUID(),jobId=randomUUID(),snapshotJson=json(graph),snapshotHash=hash(snapshotJson);
+        db.prepare("INSERT INTO workflow_runs(id,workflow_id,owner_id,project_id,workflow_revision,snapshot_hash,snapshot_json,status,job_id) VALUES(?,?,?,?,?,?,?,'queued',?)")
+          .run(runId,workflow.id,user.id,workflow.project_id,workflow.revision,snapshotHash,snapshotJson,jobId);
+        for(const node of graph.nodes)db.prepare("INSERT INTO workflow_node_runs(id,run_id,node_id,status) VALUES(?,?,?,'pending')").run(randomUUID(),runId,node.id);
+        db.prepare("INSERT INTO jobs(id,owner_id,project_id,job_type,status,progress,input_json) VALUES(?,?,?,'workflow.execute','queued',0,?)")
+          .run(jobId,user.id,workflow.project_id,json({runId}));
+        addJobEvent(db,jobId,user.id,"job.queued",{jobType:"workflow.execute",runId});
+        audit(db,user.id,"workflow.run_queued","workflow_run",runId,{workflowId:workflow.id,revision:workflow.revision,snapshotHash},workflow.project_id);
+        send(res,202,{runId,jobId,status:"queued",snapshotHash},cors);return;
+      }
+      const workflowRunsMatch=path.match(/^\/api\/workflows\/([0-9a-f-]+)\/runs$/i);
+      if(workflowRunsMatch&&req.method==="GET"){
+        const workflow=db.prepare("SELECT * FROM workflows WHERE id=? AND ((project_id IS NULL AND owner_id=?) OR project_id IN (SELECT id FROM projects WHERE owner_id=?) OR project_id IN (SELECT project_id FROM project_members WHERE member_id=?))")
+          .get(workflowRunsMatch[1],user.id,user.id,user.id);
+        if(!workflow){fail(res,404,"WORKFLOW_NOT_FOUND","Workflow not found.");return;}
+        const runs=db.prepare("SELECT id,workflow_id,workflow_revision,snapshot_hash,status,job_id,error_json,created_at,updated_at,completed_at FROM workflow_runs WHERE workflow_id=? ORDER BY created_at DESC LIMIT 50").all(workflow.id);
+        send(res,200,{runs:runs.map(run=>({...run,error:parseJson(run.error_json,null)}))},cors);return;
+      }
+      const workflowRunDetail=path.match(/^\/api\/workflow-runs\/([0-9a-f-]+)(?:\/(approve))?$/i);
+      if(workflowRunDetail){
+        const run=db.prepare("SELECT * FROM workflow_runs WHERE id=? AND ((project_id IS NULL AND owner_id=?) OR project_id IN (SELECT id FROM projects WHERE owner_id=?) OR project_id IN (SELECT project_id FROM project_members WHERE member_id=?))")
+          .get(workflowRunDetail[1],user.id,user.id,user.id);
+        if(!run){fail(res,404,"WORKFLOW_RUN_NOT_FOUND","Workflow run not found.");return;}
+        const access=run.project_id?getProjectAccess(db,user.id,run.project_id):{access_role:run.owner_id===user.id?"owner":null};
+        if(req.method==="GET"&&!workflowRunDetail[2]){
+          const nodes=db.prepare("SELECT node_id,status,attempt,input_json,output_json,error_json,started_at,completed_at FROM workflow_node_runs WHERE run_id=? ORDER BY rowid").all(run.id);
+          send(res,200,{run:{id:run.id,workflowId:run.workflow_id,revision:run.workflow_revision,status:run.status,snapshotHash:run.snapshot_hash,error:parseJson(run.error_json,null),createdAt:run.created_at,updatedAt:run.updated_at,completedAt:run.completed_at},nodes:nodes.map(node=>({...node,input:parseJson(node.input_json,{}),output:parseJson(node.output_json,null),error:parseJson(node.error_json,null)}))},cors);return;
+        }
+        if(req.method==="POST"&&workflowRunDetail[2]==="approve"){
+          if(!["owner","editor","reviewer"].includes(access?.access_role||"")){fail(res,403,"REVIEWER_REQUIRED","Reviewer permission is required to approve this step.");return;}
+          if(run.status!=="awaiting_approval"){fail(res,409,"APPROVAL_NOT_PENDING","This workflow is not waiting for approval.");return;}
+          const waiting=db.prepare("SELECT * FROM workflow_node_runs WHERE run_id=? AND status='awaiting_approval' ORDER BY rowid LIMIT 1").get(run.id);
+          if(!waiting){fail(res,409,"APPROVAL_NODE_NOT_FOUND","No approval node is waiting.");return;}
+          const graph=parseJson(run.snapshot_json),node=graph.nodes.find(item=>item.id===waiting.node_id),nodeInput=parseJson(waiting.input_json,{});
+          const passthrough=nodeInput.media??nodeInput.asset??nodeInput.input??null;
+          const output=Object.fromEntries((node?.outputs||[]).map(port=>[port.id,nodeInput[port.id]??passthrough]));
+          output.approved=true;output.approvedBy=user.id;output.approvedAt=now();
+          db.prepare("UPDATE workflow_node_runs SET status='completed',output_json=?,completed_at=? WHERE id=?").run(json(output),now(),waiting.id);
+          const jobId=randomUUID();
+          db.prepare("UPDATE workflow_runs SET status='queued',job_id=?,updated_at=?,error_json=NULL WHERE id=?").run(jobId,now(),run.id);
+          db.prepare("INSERT INTO jobs(id,owner_id,project_id,job_type,status,progress,input_json) VALUES(?,?,?,'workflow.execute','queued',0,?)").run(jobId,user.id,run.project_id,json({runId:run.id}));
+          addJobEvent(db,jobId,user.id,"job.queued",{jobType:"workflow.execute",runId:run.id,approvedNodeId:waiting.node_id});
+          audit(db,user.id,"workflow.step_approved","workflow_run",run.id,{nodeId:waiting.node_id},run.project_id);
+          send(res,202,{runId:run.id,jobId,status:"queued"},cors);return;
+        }
+      }
       const workflowMatch=path.match(/^\/api\/workflows\/([0-9a-f-]+)$/i);
       if(workflowMatch){
         const workflow=db.prepare("SELECT * FROM workflows WHERE id=? AND ((project_id IS NULL AND owner_id=?) OR project_id IN (SELECT id FROM projects WHERE owner_id=?) OR project_id IN (SELECT project_id FROM project_members WHERE member_id=?))").get(workflowMatch[1],user.id,user.id,user.id);
