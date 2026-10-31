@@ -11,7 +11,9 @@ export function sanitizeCreativeWorkspaceDocument(input){
   prompt:text(input.prompt,20000),
   plan:text(input.plan,50000),
   script:text(input.script,50000),
-  variants:Array.isArray(input.variants)?input.variants.slice(0,100).map(value=>text(value,4000)):[]
+  variants:Array.isArray(input.variants)?input.variants.slice(0,100).map(value=>text(value,4000)):[],
+  researchSources:Array.isArray(input.researchSources)?input.researchSources.slice(0,300).filter(item=>item&&typeof item==="object"&&!Array.isArray(item)).map(item=>({id:text(item.id,80),title:text(item.title,240),url:text(item.url,2048),sourceType:text(item.sourceType,80),author:text(item.author,240),publishedAt:text(item.publishedAt,40),accessedAt:text(item.accessedAt,40),summary:text(item.summary,4000),rights:text(item.rights,500),createdAt:text(item.createdAt,40)})) : [],
+  knowledgeRecords:Array.isArray(input.knowledgeRecords)?input.knowledgeRecords.slice(0,500).filter(item=>item&&typeof item==="object"&&!Array.isArray(item)).map(item=>({id:text(item.id,80),title:text(item.title,240),content:text(item.content,12000),tags:Array.isArray(item.tags)?item.tags.slice(0,30).map(value=>text(value,80)):[],sourceIds:Array.isArray(item.sourceIds)?item.sourceIds.slice(0,100).map(value=>text(value,80)):[],kind:text(item.kind,80),status:text(item.status,80),createdAt:text(item.createdAt,40),updatedAt:text(item.updatedAt,40)})) : []
  };
  if(Buffer.byteLength(JSON.stringify(document),"utf8")>2*1024*1024)throw Object.assign(new Error("Workspace document exceeds the 2 MiB limit."),{code:"WORKSPACE_TOO_LARGE"});
  return document;
