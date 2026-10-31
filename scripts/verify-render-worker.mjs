@@ -40,8 +40,8 @@ try{
  const args=await readFile(capture,"utf8");
  assert.match(args,/concat=n=1/);
  assert.match(args,/libx264/);
- assert.ok(await stat(join(mediaRoot,"derived",result.outputAsset.id+".mp4")));
  const stored=db.prepare("SELECT * FROM assets WHERE id=?").get(result.outputAsset.id);
+ assert.ok(await stat(join(mediaRoot,stored.storage_path)));
  assert.equal(stored.derivative_of,null);
  assert.equal(JSON.parse(stored.metadata_json).timelineId,"timeline-1");
  console.log("Timeline render worker checks passed: authorized source resolution, FFmpeg filter graph, progress, MP4 output and derivative asset persistence.");
