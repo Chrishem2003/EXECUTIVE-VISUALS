@@ -151,7 +151,8 @@ create index if not exists ev_audit_owner_id on executive_visuals.audit_events(o
 alter table executive_visuals.projects enable row level security;
 alter table executive_visuals.project_members enable row level security;
 alter table executive_visuals.workflows enable row level security;
-alter table executive_visuals.assets enable row level security;\nalter table executive_visuals.timelines enable row level security;
+alter table executive_visuals.assets enable row level security;
+alter table executive_visuals.timelines enable row level security;
 alter table executive_visuals.jobs enable row level security;
 alter table executive_visuals.job_events enable row level security;
 alter table executive_visuals.consents enable row level security;
