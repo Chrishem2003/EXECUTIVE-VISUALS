@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 
 const sql = await readFile(resolve(process.cwd(), "supabase/migrations/20261031210000_executive_visuals_core.sql"), "utf8");
 const issues = [];
-const tables = ["projects","project_members","workflows","workflow_runs","workflow_node_runs","timelines","assets","jobs","job_events","consents","reviews","audit_events"];
+const tables = ["projects","project_members","project_workspace_documents","workflows","workflow_runs","workflow_node_runs","timelines","assets","jobs","job_events","consents","reviews","audit_events"];
 for (const table of tables) {
   if (!sql.includes(`alter table executive_visuals.${table} enable row level security;`)) {
     issues.push(`RLS is not enabled for ${table}.`);
