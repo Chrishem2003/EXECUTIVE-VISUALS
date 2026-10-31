@@ -4,304 +4,329 @@
   "status": "specification-only",
   "policy": "Capabilities are product targets. No provider is marked supported until a versioned adapter contract and conformance test prove it.",
   "domains": [
-    "creative-direction",
-    "story-preproduction",
-    "identity-presenters",
-    "image-creation-editing",
-    "video-generation-motion",
-    "cinematography",
-    "timeline-postproduction",
-    "audio-speech",
-    "translation-localization",
-    "enhancement-restoration",
-    "workflow-automation",
-    "agent-orchestration",
-    "campaign-commerce",
-    "design-documents",
-    "asset-project-management",
-    "collaboration-governance",
-    "integrations-developer-platform",
-    "operations-cost-reliability",
-    "quality-accessibility-delivery",
-    "spatial-3d",
-    "production-tracking",
-    "capture-ingest-interchange"
+    "agent",
+    "assets",
+    "audio",
+    "campaign",
+    "capture",
+    "cinema",
+    "collaboration",
+    "design",
+    "direction",
+    "editing",
+    "enhancement",
+    "identity",
+    "image",
+    "integration",
+    "localization",
+    "operations",
+    "preproduction",
+    "production",
+    "quality",
+    "spatial",
+    "video",
+    "workflow"
   ],
   "capabilities": [
     [
-      "direction.brief",
-      "creative-direction",
-      "brief analysis, audience, channel, constraints, clarification"
+      "direction.brief-analyze",
+      "direction",
+      "Analyze creative brief"
     ],
     [
       "direction.plan",
-      "creative-direction",
-      "creative concepts, moodboards, shot plan, editable production plan"
+      "direction",
+      "Build creative production plan"
+    ],
+    [
+      "direction.critique",
+      "direction",
+      "Creative critique and continuity review"
+    ],
+    [
+      "story.research",
+      "preproduction",
+      "Research story topic"
     ],
     [
       "story.script",
-      "story-preproduction",
-      "research, hooks, scripts, dialogue, timing, alternate takes"
+      "preproduction",
+      "Write and revise script"
     ],
     [
       "story.storyboard",
-      "story-preproduction",
-      "storyboards, animatics, multi-frame sequences, continuity"
+      "preproduction",
+      "Create storyboard"
     ],
     [
-      "story.shot-list",
-      "story-preproduction",
-      "shot numbering, framing, duration, transitions, coverage"
+      "story.shot-plan",
+      "preproduction",
+      "Create shot plan"
     ],
     [
-      "identity.character",
-      "identity-presenters",
-      "character bible, reusable identity, looks, wardrobe, consent"
+      "identity.profile",
+      "identity",
+      "Create reusable identity profile"
     ],
     [
-      "identity.presenter",
-      "identity-presenters",
-      "presenter selection, photo/footage creation, training lifecycle"
-    ],
-    [
-      "identity.motion",
-      "identity-presenters",
-      "gesture, motion references, performance, motion transfer"
+      "identity.train",
+      "identity",
+      "Train provider-scoped identity"
     ],
     [
       "image.generate",
-      "image-creation-editing",
-      "text/reference generation, batch, seeds, contact sheets"
+      "image",
+      "Generate image"
     ],
     [
       "image.edit",
-      "image-creation-editing",
-      "inpainting, outpainting, generative fill, regional instruction edits"
+      "image",
+      "Edit image with instruction and mask"
     ],
     [
       "image.composite",
-      "image-creation-editing",
-      "product placement, lighting/shadow/texture harmonization"
+      "image",
+      "Composite product into generated scene"
     ],
     [
       "image.restore",
-      "image-creation-editing",
-      "photo repair, scratch removal, colorization, face restoration"
+      "image",
+      "Restore and repair image"
     ],
     [
       "image.upscale",
-      "image-creation-editing",
-      "super-resolution, detail recovery, format and aspect conversion"
-    ],
-    [
-      "image.remove-object",
-      "image-creation-editing",
-      "mask-based object removal and background reconstruction"
+      "image",
+      "Upscale image"
     ],
     [
       "video.generate",
-      "video-generation-motion",
-      "text/image/video/reference-to-video, keyframes, native audio"
+      "video",
+      "Generate video from prompt"
+    ],
+    [
+      "video.image-to-video",
+      "video",
+      "Animate image"
     ],
     [
       "video.extend",
-      "video-generation-motion",
-      "continuation, forward/backward extension, scene expansion"
+      "video",
+      "Extend video"
     ],
     [
       "video.regional-edit",
-      "video-generation-motion",
-      "localized video edits, masks, object replacement"
+      "video",
+      "Edit selected video region"
     ],
     [
-      "cinema.direct",
-      "cinematography",
-      "camera body, lens, focal length, aperture, movement, lighting, grade"
+      "cinema.shot-direct",
+      "cinema",
+      "Direct a cinematic shot"
     ],
     [
-      "editing.timeline",
-      "timeline-postproduction",
-      "multitrack editing, transitions, keyframes, titles, markers"
+      "editing.timeline-assemble",
+      "editing",
+      "Assemble multitrack timeline"
     ],
     [
       "editing.motion-graphics",
-      "timeline-postproduction",
-      "animated typography, overlays, lower thirds, compositions"
-    ],
-    [
-      "editing.render",
-      "timeline-postproduction",
-      "render queue, codec, bitrate, delivery profiles, archive"
-    ],
-    [
-      "audio.speech",
-      "audio-speech",
-      "TTS, streaming, voice catalogue, authorized voice creation"
+      "editing",
+      "Create motion graphics"
     ],
     [
       "audio.transcribe",
-      "audio-speech",
-      "transcription, word timing, diarization, key terms"
+      "audio",
+      "Transcribe audio with timing"
     ],
     [
-      "audio.design",
-      "audio-speech",
-      "music, sound effects, ambience, isolation, mixing"
+      "audio.diarize",
+      "audio",
+      "Separate and identify speakers"
+    ],
+    [
+      "audio.speech",
+      "audio",
+      "Generate speech"
+    ],
+    [
+      "audio.clone",
+      "audio",
+      "Create authorized voice profile"
+    ],
+    [
+      "audio.sound-design",
+      "audio",
+      "Generate music and sound effects"
     ],
     [
       "audio.lipsync",
-      "audio-speech",
-      "audio-driven presenter synchronization"
+      "audio",
+      "Synchronize speech to presenter"
+    ],
+    [
+      "localization.translate",
+      "localization",
+      "Translate and localize content"
     ],
     [
       "localization.dub",
-      "translation-localization",
-      "translation, dubbing, speaker map, lip sync, glossary"
+      "localization",
+      "Dub and synchronize language version"
     ],
     [
-      "localization.subtitles",
-      "translation-localization",
-      "SRT/VTT, captions, locale typography and timing"
+      "enhance.upscale",
+      "enhancement",
+      "Upscale media"
     ],
     [
-      "enhancement.restore",
-      "enhancement-restoration",
-      "denoise, deblur, stabilize, interpolate, low-light, HDR"
+      "enhance.denoise",
+      "enhancement",
+      "Denoise media"
     ],
     [
-      "enhancement.batch",
-      "enhancement-restoration",
-      "folder ingest, preview, hardware-aware model manager"
+      "enhance.interpolate",
+      "enhancement",
+      "Interpolate frames"
     ],
     [
-      "workflow.canvas",
-      "workflow-automation",
-      "typed graph, utility/LLM/model nodes, branches, templates"
+      "enhance.stabilize",
+      "enhancement",
+      "Stabilize video"
     ],
     [
-      "workflow.run",
-      "workflow-automation",
-      "run all/node/subgraph, lock outputs, concurrency, cancellation"
+      "enhance.remove-object",
+      "enhancement",
+      "Remove object with tracked mask"
     ],
     [
-      "workflow.version",
-      "workflow-automation",
-      "version history, restore, share, clone, publish"
+      "workflow.validate",
+      "workflow",
+      "Validate workflow graph"
     ],
     [
-      "agent.orchestrate",
-      "agent-orchestration",
-      "plan, route, checkpoint, resume, scheduled task, approval"
+      "workflow.simulate",
+      "workflow",
+      "Simulate workflow without paid execution"
     ],
     [
-      "campaign.product",
-      "campaign-commerce",
-      "product ingestion, source-linked facts, brand kit"
+      "workflow.execute",
+      "workflow",
+      "Execute approved workflow snapshot"
+    ],
+    [
+      "agent.plan",
+      "agent",
+      "Plan multi-step creative task"
+    ],
+    [
+      "agent.checkpoint",
+      "agent",
+      "Persist and resume task checkpoint"
+    ],
+    [
+      "campaign.product-ingest",
+      "campaign",
+      "Ingest product facts and media"
     ],
     [
       "campaign.variants",
-      "campaign-commerce",
-      "hooks, UGC, static/video ads, SKU and creative matrices"
+      "campaign",
+      "Generate campaign variant matrix"
     ],
     [
       "design.autofill",
-      "design-documents",
-      "brand templates, data-driven population, bulk exports"
+      "design",
+      "Populate brand template from data"
     ],
     [
-      "design.collaboration",
-      "design-documents",
-      "comments, replies, page analytics, editor handoff"
+      "assets.ingest",
+      "assets",
+      "Ingest and fingerprint asset"
     ],
     [
-      "assets.library",
-      "asset-project-management",
-      "upload, metadata, tags, search, versions, lineage, packaging"
+      "assets.package",
+      "assets",
+      "Package project for delivery"
     ],
     [
-      "governance.approvals",
-      "collaboration-governance",
-      "roles, permissions, consent, rights, review, audit"
+      "collaboration.review",
+      "collaboration",
+      "Collect timecoded review"
     ],
     [
-      "integration.providers",
-      "integrations-developer-platform",
-      "REST, SDK, OAuth, API keys, webhooks, CLI, MCP"
+      "integration.webhook",
+      "integration",
+      "Receive verified provider event"
     ],
     [
-      "operations.jobs",
-      "operations-cost-reliability",
-      "queues, state machine, retry, idempotency, observability"
-    ],
-    [
-      "operations.cost",
-      "operations-cost-reliability",
-      "preflight, usage units, estimate, budget ceiling, ledger"
-    ],
-    [
-      "quality.delivery",
-      "quality-accessibility-delivery",
-      "technical QC, accessibility, brand, continuity, manifest"
+      "operations.cost-estimate",
+      "operations",
+      "Estimate execution cost"
     ],
     [
       "spatial.scene",
-      "spatial-3d",
-      "3D scenes, collections, objects, meshes, cameras, lights, materials"
+      "spatial",
+      "Manage 3D scene and assets"
     ],
     [
       "spatial.procedural",
-      "spatial-3d",
-      "Procedural geometry, node materials, compositing and simulations"
+      "spatial",
+      "Build procedural geometry and materials"
     ],
     [
       "spatial.animation",
-      "spatial-3d",
-      "Rigging, skeletal/facial animation, motion retargeting and camera tracking"
+      "spatial",
+      "Rig and animate character"
     ],
     [
       "spatial.render",
-      "spatial-3d",
-      "Render layers, passes, frame ranges, render farm and compositing"
+      "spatial",
+      "Render 3D scene"
     ],
     [
-      "production.tracking",
-      "production-tracking",
-      "Show/project/sequence/shot/task hierarchy, assignments, dependencies, status"
+      "production.track",
+      "production",
+      "Track production work"
     ],
     [
       "production.review",
-      "production-tracking",
-      "Version stacks, playlists, review links, timecoded notes and approvals"
+      "production",
+      "Review and approve versioned media"
     ],
     [
       "production.compare",
-      "production-tracking",
-      "Side-by-side, wipe, ghost/overlay and revision comparison"
+      "production",
+      "Compare media versions"
     ],
     [
       "capture.record",
-      "capture-ingest-interchange",
-      "Camera, microphone, screen, multi-source capture and synchronized tracks"
+      "capture",
+      "Capture synchronized media sources"
     ],
     [
       "capture.live",
-      "capture-ingest-interchange",
-      "Live preview, stream recording, remote guest and recording health"
+      "capture",
+      "Operate live capture session"
     ],
     [
       "media.ingest",
-      "capture-ingest-interchange",
-      "Checksum-verified ingest, metadata, growing files and transfer integrity"
+      "capture",
+      "Ingest and verify source media"
     ],
     [
       "media.proxy",
-      "capture-ingest-interchange",
-      "Proxy creation, original linking, relink and selective sync"
+      "capture",
+      "Create and link proxies"
     ],
     [
       "timeline.interchange",
-      "capture-ingest-interchange",
-      "Timeline interchange, round-trip, relink manifests and unsupported-effect reports"
+      "capture",
+      "Import or export timeline interchange"
+    ],
+    [
+      "quality.preflight",
+      "quality",
+      "Validate media delivery requirements"
     ]
   ],
   "requiredCapabilityFields": [
@@ -349,5 +374,8 @@
     "Consent and rights are scoped, auditable and revocable.",
     "Provider outputs are persisted before remote URLs expire.",
     "Secrets never enter client bundles, prompts or logs."
-  ]
+  ],
+  "sourceOfTruth": "src/core/capability-atlas.ts",
+  "capabilityCount": 60,
+  "domainCount": 22
 }
