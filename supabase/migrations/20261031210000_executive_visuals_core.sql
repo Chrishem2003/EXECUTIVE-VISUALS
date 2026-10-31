@@ -313,6 +313,99 @@ begin
 end;
 $;
 
+
+create or replace function executive_visuals.renew_job_lease(
+  p_job_id uuid,
+  p_worker_id text,
+  p_lease_seconds integer default 90
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = pg_catalog, executive_visuals
+as $
+declare
+  renewed integer;
+begin
+  if p_worker_id is null or char_length(btrim(p_worker_id)) not between 1 and 128
+     or p_lease_seconds is null or p_lease_seconds not between 15 and 900 then
+    raise exception 'invalid worker lease parameters';
+  end if;
+  update executive_visuals.jobs
+  set lease_expires_at = clock_timestamp() + make_interval(secs => p_lease_seconds),
+      lease_heartbeat_at = clock_timestamp(),
+      updated_at = clock_timestamp()
+  where id = p_job_id
+    and status = 'processing'
+    and lease_owner = p_worker_id
+    and lease_expires_at > clock_timestamp();
+  get diagnostics renewed = row_count;
+  return renewed = 1;
+end;
+$;
+
+create or replace function executive_visuals.finish_job(
+  p_job_id uuid,
+  p_worker_id text,
+  p_status text,
+  p_output jsonb default null,
+  p_error jsonb default null
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = pg_catalog, executive_visuals
+as $
+declare
+  finished executive_visuals.jobs;
+begin
+  if p_worker_id is null or char_length(btrim(p_worker_id)) not between 1 and 128 then
+    raise exception 'worker_id must contain between 1 and 128 characters';
+  end if;
+  if p_status not in ('succeeded','partial','failed','cancelled') then
+    raise exception 'invalid terminal job status';
+  end if;
+  if (p_output is not null and jsonb_typeof(p_output) <> 'object')
+     or (p_error is not null and jsonb_typeof(p_error) <> 'object') then
+    raise exception 'job output and error must be JSON objects';
+  end if;
+
+  update executive_visuals.jobs
+  set status = p_status,
+      progress = case when p_status in ('succeeded','partial') then 100 else progress end,
+      output = p_output,
+      error = p_error,
+      completed_at = clock_timestamp(),
+      updated_at = clock_timestamp(),
+      lease_owner = null,
+      lease_expires_at = null,
+      lease_heartbeat_at = null
+  where id = p_job_id
+    and status = 'processing'
+    and lease_owner = p_worker_id
+    and lease_expires_at > clock_timestamp()
+  returning * into finished;
+
+  if finished.id is null then
+    return false;
+  end if;
+
+  insert into executive_visuals.job_events(job_id, owner_id, event_type, event_data)
+  values (
+    finished.id,
+    finished.owner_id,
+    'job.' || p_status,
+    jsonb_build_object('status', p_status)
+  );
+  return true;
+end;
+$;
+
+revoke all on function executive_visuals.renew_job_lease(uuid, text, integer) from public, anon, authenticated;
+revoke all on function executive_visuals.finish_job(uuid, text, text, jsonb, jsonb) from public, anon, authenticated;
+grant execute on function executive_visuals.renew_job_lease(uuid, text, integer) to service_role;
+grant execute on function executive_visuals.finish_job(uuid, text, text, jsonb, jsonb) to service_role;
+
 revoke all on function executive_visuals.claim_next_job(text, integer) from public, anon, authenticated;
 revoke all on function executive_visuals.recover_expired_jobs(integer) from public, anon, authenticated;
 grant execute on function executive_visuals.claim_next_job(text, integer) to service_role;
