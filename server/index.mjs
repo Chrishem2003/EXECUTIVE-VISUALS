@@ -420,14 +420,23 @@ export function createAppServer() {
       if(path==="/api/jobs"&&req.method==="POST"){
         const body=await readJson(req);const type=String(body.jobType||"");
         if(!MEDIA_JOBS.has(type)){fail(res,409,"ENGINE_UNAVAILABLE","This capability has no connected execution adapter yet. No paid request was sent.");return;}
-        if(body.projectId&&!canWriteProject(db,user.id,body.projectId)){fail(res,404,"PROJECT_NOT_FOUND","Project not found or editor access required.");return;}
-        if(!body.sourceAssetId||!getAccessibleAsset(db,user.id,String(body.sourceAssetId),true)){fail(res,404,"SOURCE_ASSET_NOT_FOUND","Choose a source asset you own or can edit.");return;}
+        let projectId=body.projectId||null;
+        if(type==="timeline.render"){
+          const timeline=db.prepare("SELECT * FROM timelines WHERE id=? AND archived_at IS NULL").get(String(body.timelineId||""));
+          if(!timeline){fail(res,404,"TIMELINE_NOT_FOUND","Timeline not found.");return;}
+          if(timeline.project_id?!canWriteProject(db,user.id,timeline.project_id):timeline.owner_id!==user.id){fail(res,404,"TIMELINE_NOT_FOUND","Timeline not found or editor access required.");return;}
+          if(projectId&&projectId!==timeline.project_id){fail(res,400,"PROJECT_MISMATCH","Job project must match the saved timeline.");return;}
+          projectId=timeline.project_id;
+        }else{
+          if(projectId&&!canWriteProject(db,user.id,projectId)){fail(res,404,"PROJECT_NOT_FOUND","Project not found or editor access required.");return;}
+          if(!body.sourceAssetId||!getAccessibleAsset(db,user.id,String(body.sourceAssetId),true)){fail(res,404,"SOURCE_ASSET_NOT_FOUND","Choose a source asset you own or can edit.");return;}
+        }
         const key=String(req.headers["idempotency-key"]||body.idempotencyKey||"").slice(0,180);
         if(key){const existing=db.prepare("SELECT * FROM jobs WHERE owner_id=? AND idempotency_key=?").get(user.id,key);if(existing){send(res,200,{job:recordJob(existing),idempotentReplay:true},cors);return;}}
         const id=randomUUID(),input={...body};delete input.idempotencyKey;
         db.prepare("INSERT INTO jobs(id,owner_id,project_id,job_type,status,input_json,idempotency_key) VALUES(?,?,?,?,'queued',?,?)")
-          .run(id,user.id,body.projectId||null,type,json(input),key||null);
-        addJobEvent(db,id,user.id,"job.queued",{jobType:type});audit(db,user.id,"job.queued","job",id,{jobType:type},body.projectId||null);
+          .run(id,user.id,projectId,type,json(input),key||null);
+        addJobEvent(db,id,user.id,"job.queued",{jobType:type});audit(db,user.id,"job.queued","job",id,{jobType:type},projectId);
         send(res,202,{job:recordJob(db.prepare("SELECT * FROM jobs WHERE id=?").get(id))},cors);return;
       }
       const jobMatch=path.match(/^\/api\/jobs\/([0-9a-f-]+)(?:\/(cancel|events))?$/i);
