@@ -164,6 +164,57 @@ test("workflow graphs are validated, versioned and owner-scoped",async()=>{
 });
 
 
+test("workflow runs snapshot revisions, plan partial targets and isolate node history",async()=>{
+  const owner=await register("workflow-run-owner@example.test");
+  const upload=await request("/api/assets",{method:"POST",headers:{"content-type":"image/png","x-file-name":"run-source.png"},body:Buffer.from([137,80,78,71,13,10,26,10,0,1,2,3])},owner);
+  assert.equal(upload.status,201);
+  const asset=(await upload.json()).asset;
+  const graph={
+    id:"run-graph",projectId:null,revision:1,
+    nodes:[
+      {id:"source",kind:"upload",label:"Source asset",inputs:[],outputs:[{id:"asset",type:"asset"},{id:"media",type:"media"}],config:{assetId:asset.id},locked:true,lockedOutputIds:[asset.id]},
+      {id:"approval",kind:"approval",label:"Human approval",inputs:[{id:"media",type:"media",required:true}],outputs:[{id:"media",type:"media"}],config:{}},
+      {id:"export",kind:"export",label:"Export",inputs:[{id:"media",type:"media",required:true}],outputs:[{id:"deliverable",type:"asset"}],config:{}}
+    ],
+    edges:[
+      {id:"source-approval",sourceNodeId:"source",sourcePortId:"media",targetNodeId:"approval",targetPortId:"media"},
+      {id:"approval-export",sourceNodeId:"approval",sourcePortId:"media",targetNodeId:"export",targetPortId:"media"}
+    ]
+  };
+  const created=await request("/api/workflows",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({name:"Approval pipeline",graph})},owner);
+  assert.equal(created.status,201,await created.clone().text());
+  const workflow=(await created.json()).workflow;
+  const runResponse=await request("/api/workflows/"+workflow.id+"/run",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({target:{kind:"node",nodeId:"export"}})},owner);
+  assert.equal(runResponse.status,202,await runResponse.clone().text());
+  const run=(await runResponse.json());
+  assert.deepEqual(run.executionOrder,["source","approval","export"]);
+  assert.deepEqual(run.reusedNodeIds,["source"]);
+  const detailResponse=await request("/api/workflow-runs/"+run.runId,{},owner);
+  assert.equal(detailResponse.status,200);
+  const detail=await detailResponse.json();
+  assert.equal(detail.run.revision,1);
+  assert.equal(detail.run.snapshotHash,run.snapshotHash);
+  assert.equal(detail.run.status,"queued");
+  assert.deepEqual(detail.run.target,{kind:"node",nodeId:"export"});
+  assert.equal(detail.nodes.length,3);
+  assert.equal(detail.nodes.find(node=>node.node_id==="source").status,"skipped");
+  assert.equal(detail.nodes.find(node=>node.node_id==="approval").status,"pending");
+
+  const changedGraph={...graph,nodes:graph.nodes.map(node=>node.id==="export"?{...node,label:"Updated export"}:node)};
+  const update=await request("/api/workflows/"+workflow.id,{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({revision:1,name:"Approval pipeline v2",graph:changedGraph})},owner);
+  assert.equal(update.status,200);
+  const after=await request("/api/workflow-runs/"+run.runId,{},owner);
+  const afterBody=await after.json();
+  assert.equal(afterBody.run.revision,1,"run keeps the source workflow revision");
+  assert.equal(afterBody.run.snapshotHash,run.snapshotHash,"later workflow edits cannot mutate the run snapshot");
+  const other=await register("workflow-run-other@example.test");
+  const hidden=await request("/api/workflow-runs/"+run.runId,{},other);
+  assert.equal(hidden.status,404);
+  const runs=await request("/api/workflows/"+workflow.id+"/runs",{},owner);
+  assert.ok((await runs.json()).runs.some(item=>item.id===run.runId));
+});
+
+
 test("timelines persist with asset ownership, revision checks and interchange exports",async()=>{
   const cookie=await register("timeline-owner@example.test");
   const upload=await request("/api/assets",{method:"POST",headers:{"content-type":"video/mp4","x-file-name":"timeline-source.mp4"},body:Buffer.from([0,0,0,24,0x66,0x74,0x79,0x70,0x69,0x73,0x6f,0x6d,0,0,0,1])},cookie);
