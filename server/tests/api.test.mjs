@@ -96,7 +96,7 @@ test("creative workspace drafts persist per project with revision and editor-rol
     creativeProjects:[{id:"draft-1",name:"Launch film",brief:"A durable creative brief",audience:"Customers",style:"Documentary",created:"2026-10-31"}],
     tasks:[{id:"task-1",name:"Build storyboard",category:"Pre-production",status:"planned",created:"2026-10-31",detail:"Create scene cards"}],
     shots:[{id:"shot-1",scene:"Opening",action:"Aerial approach",camera:"Wide",lens:"24mm",movement:"Slow push",lighting:"Golden hour",duration:5}],
-    characters:[{id:"character-1",name:"Presenter",description:"Original fictional presenter",voice:"Not assigned",consent:false}],
+    characters:[{id:"character-1",name:"Presenter",description:"Original fictional presenter",voice:"Not assigned",consent:{kind:"authorized",scopes:["likeness","voice"],evidenceReference:"release-record-7",expiresAt:"2027-06-30"}}],
     prompt:"Creative brief prompt",plan:"Three-act plan",script:"Opening narration",variants:["A","B"],
     researchSources:[{id:"source-1",title:"Official evidence report",url:"https://example.org/report",sourceType:"Official report",author:"Research Office",summary:"Primary evidence",rights:"Public"}],
     knowledgeRecords:[{id:"record-1",title:"Verified finding",content:"Finding supported by the official report.",tags:["evidence"],sourceIds:["source-1","unknown-source"],kind:"Finding",status:"Verified"}],
@@ -110,6 +110,7 @@ test("creative workspace drafts persist per project with revision and editor-rol
   assert.equal(loadedBody.revision,1);
   assert.equal(loadedBody.document.creativeProjects[0].name,"Launch film");
   assert.equal(loadedBody.document.shots[0].duration,5);
+  assert.deepEqual(loadedBody.document.characters[0].consent,{kind:"authorized",scopes:["likeness","voice"],evidenceReference:"release-record-7",expiresAt:"2027-06-30"});
   assert.equal(loadedBody.document.researchSources[0].url,"https://example.org/report");
   assert.deepEqual(loadedBody.document.knowledgeRecords[0].sourceIds,["source-1"]);
   assert.equal("ignoredSecret" in loadedBody.document,false);
