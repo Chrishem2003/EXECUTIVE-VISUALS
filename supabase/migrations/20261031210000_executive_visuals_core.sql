@@ -211,6 +211,28 @@ create trigger ev_assets_owner_immutable before update of owner_id on executive_
 for each row execute function executive_visuals.prevent_owner_reassignment();
 create trigger ev_jobs_owner_immutable before update of owner_id on executive_visuals.jobs
 for each row execute function executive_visuals.prevent_owner_reassignment();
+create or replace function executive_visuals.prevent_workflow_run_snapshot_mutation()
+returns trigger
+language plpgsql
+set search_path = pg_catalog
+as $
+begin
+  if new.owner_id is distinct from old.owner_id
+     or new.project_id is distinct from old.project_id
+     or new.workflow_id is distinct from old.workflow_id
+     or new.workflow_revision is distinct from old.workflow_revision
+     or new.snapshot_hash is distinct from old.snapshot_hash
+     or new.snapshot is distinct from old.snapshot then
+    raise exception 'workflow run snapshot is immutable';
+  end if;
+  return new;
+end;
+$;
+
+create trigger ev_workflow_runs_snapshot_immutable
+before update on executive_visuals.workflow_runs
+for each row execute function executive_visuals.prevent_workflow_run_snapshot_mutation();
+
 create trigger ev_reviews_owner_immutable before update of owner_id on executive_visuals.reviews
 for each row execute function executive_visuals.prevent_owner_reassignment();
 create trigger ev_consents_owner_immutable before update of owner_id on executive_visuals.consents
