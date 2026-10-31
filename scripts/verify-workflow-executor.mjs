@@ -3,7 +3,28 @@ import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openDatabase, json } from "../server/db.mjs";
-import { executeWorkflowRun } from "../server/workflow-executor.mjs";
+import { executeWorkflowRun, hasApprovedAncestor } from "../server/workflow-executor.mjs";
+
+
+const approvalGraph={
+ nodes:[
+  {id:"brief",kind:"text"},
+  {id:"gate",kind:"approval"},
+  {id:"model",kind:"llm.prompt"}
+ ],
+ edges:[
+  {id:"brief-gate",sourceNodeId:"brief",targetNodeId:"gate"},
+  {id:"gate-model",sourceNodeId:"gate",targetNodeId:"model"}
+ ]
+};
+assert.equal(hasApprovedAncestor(approvalGraph,"model",new Map()),false,
+ "a model node must not run before its upstream approval is completed");
+assert.equal(hasApprovedAncestor(approvalGraph,"model",new Map([["gate",{approved:false}]])),false,
+ "an unapproved gate must not authorize model execution");
+assert.equal(hasApprovedAncestor(approvalGraph,"model",new Map([["gate",{approved:true}]])),true,
+ "a completed upstream approval authorizes the gated model node");
+assert.equal(hasApprovedAncestor(approvalGraph,"brief",new Map([["gate",{approved:true}]])),false,
+ "an approval node downstream cannot authorize an upstream model node");
 
 const root=await mkdtemp(join(tmpdir(),"executive-visuals-workflow-"));
 const mediaRoot=join(root,"media");await mkdir(join(mediaRoot,"uploads"),{recursive:true});
