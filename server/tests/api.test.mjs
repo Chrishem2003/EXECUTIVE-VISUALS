@@ -165,6 +165,9 @@ test("timelines persist with asset ownership, revision checks and interchange ex
   const create=await request("/api/timelines",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({name:"Test sequence",timeline:document,otio:{OTIO_SCHEMA:"Timeline.1",name:"Test sequence"}})},cookie);
   assert.equal(create.status,201,await create.clone().text());
   const timeline=(await create.json()).timeline;
+  const renderJob=await request("/api/jobs",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({jobType:"timeline.render",timelineId:timeline.id})},cookie);
+  assert.equal(renderJob.status,202,await renderJob.clone().text());
+  assert.equal((await renderJob.json()).job.jobType,"timeline.render");
   const get=await request("/api/timelines/"+timeline.id,{},cookie);
   assert.equal(get.status,200);
   assert.equal((await get.json()).timeline.document.tracks[0].clips[0].assetId,asset.id);
