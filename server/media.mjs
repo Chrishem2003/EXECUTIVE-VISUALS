@@ -33,25 +33,25 @@ function buildSrt(content,clip){
  const timelineStart=Number(clip.timelineStart?.value)/Number(clip.timelineStart?.rate);
  const timelineDuration=Number(clip.duration?.value)/Number(clip.duration?.rate);
  const sourceEnd=sourceStart+sourceDuration,timelineEnd=timelineStart+timelineDuration;
- const blocks=String(content||"").replace(/^\\uFEFF/,"").replace(/\\r/g,"").split(/\\n\\s*\\n/);
+ const blocks=String(content||"").replace(/^\uFEFF/,"").replace(/\r/g,"").split(/\n\s*\n/);
  const cues=[];
  for(const block of blocks){
-  const lines=block.split("\\n"),timeIndex=lines.findIndex(line=>line.includes("-->"));
+  const lines=block.split("\n"),timeIndex=lines.findIndex(line=>line.includes("-->"));
   if(timeIndex<0)continue;
-  const timing=lines[timeIndex].split("-->"),start=parseSubtitleTime(timing[0]?.trim().split(/\\s+/)[0]),end=parseSubtitleTime(timing[1]?.trim().split(/\\s+/)[0]);
+  const timing=lines[timeIndex].split("-->"),start=parseSubtitleTime(timing[0]?.trim().split(/\s+/)[0]),end=parseSubtitleTime(timing[1]?.trim().split(/\s+/)[0]);
   if(!Number.isFinite(start)||!Number.isFinite(end)||end<=start)continue;
   const clippedStart=Math.max(start,sourceStart),clippedEnd=Math.min(end,sourceEnd);
   if(clippedEnd<=clippedStart)continue;
   const outStart=timelineStart+clippedStart-sourceStart,outEnd=Math.min(timelineEnd,timelineStart+clippedEnd-sourceStart);
   if(outEnd<=outStart)continue;
-  const text=lines.slice(timeIndex+1).join("\\n").replace(/<[^>]*>/g,"").replace(/\\{[^}]*\\}/g,"").trim().slice(0,2000);
+  const text=lines.slice(timeIndex+1).join("\n").replace(/<[^>]*>/g,"").replace(/\{[^}]*\}/g,"").trim().slice(0,2000);
   if(text)cues.push({start:outStart,end:outEnd,text});
   if(cues.length>5000)throw Object.assign(new Error("Caption file exceeds the 5,000 cue limit."),{code:"CAPTION_LIMIT_EXCEEDED"});
  }
- return cues.map((cue,index)=>(index+1)+"\\n"+formatSubtitleTime(cue.start)+" --> "+formatSubtitleTime(cue.end)+"\\n"+cue.text).join("\\n\\n");
+ return cues.map((cue,index)=>(index+1)+"\n"+formatSubtitleTime(cue.start)+" --> "+formatSubtitleTime(cue.end)+"\n"+cue.text).join("\n\n");
 }
 function escapeFilterPath(value){
- return String(value).replace(/\\\\/g,"\\\\\\\\").replace(/:/g,"\\\\:").replace(/'/g,"\\\\'").replace(/,/g,"\\\\,").replace(/\\[/g,"\\\\[").replace(/\\]/g,"\\\\]");
+ return String(value).replace(/\\/g,"\\\\").replace(/:/g,"\\:").replace(/'/g,"\\'").replace(/,/g,"\\,").replace(/\[/g,"\\[").replace(/\]/g,"\\]");
 }
 function captionStyle(metadata={}){
  const fontName=String(metadata.fontName||"DejaVu Sans").replace(/[^A-Za-z0-9 _-]/g,"").slice(0,48)||"DejaVu Sans";
@@ -179,7 +179,7 @@ async function renderTimelineJob({db,job,mediaRoot,activeProcesses,onProgress}){
     const asset=getAccessibleAsset(db,job.owner_id,String(clip.assetId),true);
     if(!asset||!asset.media_type.startsWith("image/"))throw Object.assign(new Error("Overlay tracks currently require accessible still-image assets."),{code:"UNSUPPORTED_OVERLAY_SOURCE"});
     const metadata=clip.metadata||{},overlayWidth=Math.max(16,Math.min(width,Math.round(Number(metadata.width)||width*0.24))),overlayHeight=Math.max(16,Math.min(height,Math.round(Number(metadata.height)||height*0.24)));
-    const x=Math.max(0,Math.min(width-overlayWidth,Math.round(Number(metadata.x)??width-overlayWidth-24))),y=Math.max(0,Math.min(height-overlayHeight,Math.round(Number(metadata.y)??24)));
+    const rawX=Number(metadata.x),rawY=Number(metadata.y),x=Math.max(0,Math.min(width-overlayWidth,Number.isFinite(rawX)?Math.round(rawX):width-overlayWidth-24)),y=Math.max(0,Math.min(height-overlayHeight,Number.isFinite(rawY)?Math.round(rawY):24));
     const opacity=Math.max(0,Math.min(1,Number(metadata.opacity??1)));
     const file=join(mediaRoot,asset.storage_path);
     args.push("-loop","1","-t",(start+duration).toFixed(6),"-i",file);
