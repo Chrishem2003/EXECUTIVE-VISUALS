@@ -69,19 +69,21 @@ export function executableAvailable(name) {
   const result = spawnSync(executable, ["-version"], { stdio: "ignore", timeout: 3000, windowsHide: true });
   return !result.error && result.status === 0;
 }
-function run(bin, args, timeoutMs = 30 * 60 * 1000, jobId = null, activeProcesses = null) {
+function run(bin, args, timeoutMs = 30 * 60 * 1000, jobId = null, activeProcesses = null, shouldCancel = null) {
   return new Promise((resolve, reject) => {
     const executable=bin==="ffmpeg"?(process.env.FFMPEG_PATH||bin):bin==="ffprobe"?(process.env.FFPROBE_PATH||bin):bin;
     const child = spawn(executable, args, { stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
     if(jobId&&activeProcesses)activeProcesses.set(jobId,child);
-    let stdout = "", stderr = "", timer;
+    let stdout = "", stderr = "", timer, cancellationTimer;
     const append = (current, chunk) => (current + chunk.toString()).slice(-16000);
     child.stdout.on("data", chunk => { stdout = append(stdout, chunk); });
     child.stderr.on("data", chunk => { stderr = append(stderr, chunk); });
     timer = setTimeout(() => { child.kill("SIGKILL"); reject(Object.assign(new Error("Media operation timed out."), { code:"MEDIA_TIMEOUT" })); }, timeoutMs);
-    child.on("error", error => { clearTimeout(timer); if(jobId&&activeProcesses)activeProcesses.delete(jobId); reject(Object.assign(new Error("Media engine could not start."), { code:"MEDIA_ENGINE_MISSING", cause:error })); });
+    if(shouldCancel)cancellationTimer=setInterval(()=>{if(shouldCancel()&&!child.killed)child.kill("SIGTERM");},500);
+    child.on("error", error => { clearTimeout(timer); if(cancellationTimer)clearInterval(cancellationTimer); if(jobId&&activeProcesses)activeProcesses.delete(jobId); reject(Object.assign(new Error("Media engine could not start."), { code:"MEDIA_ENGINE_MISSING", cause:error })); });
     child.on("close", code => {
       clearTimeout(timer);
+      if(cancellationTimer)clearInterval(cancellationTimer);
       if(jobId&&activeProcesses)activeProcesses.delete(jobId);
       if (code === 0) resolve({ stdout, stderr });
       else reject(Object.assign(new Error((stderr || "Media operation failed.").slice(-3000)), { code:"MEDIA_PROCESS_FAILED" }));
@@ -215,7 +217,7 @@ async function renderTimelineJob({db,job,mediaRoot,activeProcesses,onProgress}){
   args.push("-c:v","libx264","-preset","veryfast","-crf","20","-pix_fmt","yuv420p","-movflags","+faststart","-r",`${fpsNum}/${fpsDen}`,outputPath);
   const cancelled=()=>db.prepare("SELECT status FROM jobs WHERE id=?").get(job.id)?.status==="cancelled";
   try {
-    await run("ffmpeg",args,60*60*1000,job.id,activeProcesses);
+    await run("ffmpeg",args,60*60*1000,job.id,activeProcesses,cancelled);
   } catch(error) {
     await unlink(outputPath).catch(()=>{});
     throw error;
@@ -254,7 +256,7 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
   emit("media.started", { operation:job.job_type, sourceAssetId:source.id });
 
   if (job.job_type === "media.probe") {
-    const result = await run("ffprobe", ["-v","error","-show_format","-show_streams","-of","json",sourcePath],30*60*1000,job.id,activeProcesses);
+    const result = await run("ffprobe", ["-v","error","-show_format","-show_streams","-of","json",sourcePath],30*60*1000,job.id,activeProcesses,cancelled);
     const metadata = JSON.parse(result.stdout || "{}");
     return { metadata, outputAsset:null };
   }
@@ -293,7 +295,7 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
   }
   const outputPath = join(outputDir,id+"."+ext);
   progress(35);
-  await run("ffmpeg", args,30*60*1000,job.id,activeProcesses);
+  await run("ffmpeg", args,30*60*1000,job.id,activeProcesses,cancelled);
   progress(85);
   if (cancelled()) { await unlink(outputPath).catch(()=>{}); throw Object.assign(new Error("Job cancelled."), { code:"JOB_CANCELLED" }); }
   
