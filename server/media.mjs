@@ -27,7 +27,7 @@ function formatSubtitleTime(value){
  const ms=Math.max(0,Math.round(value*1000)),hours=Math.floor(ms/3600000),minutes=Math.floor(ms%3600000/60000),seconds=Math.floor(ms%60000/1000),millis=ms%1000;
  return String(hours).padStart(2,"0")+":"+String(minutes).padStart(2,"0")+":"+String(seconds).padStart(2,"0")+","+String(millis).padStart(3,"0");
 }
-function buildSrt(content,clip){
+export function buildSrt(content,clip){
  const sourceStart=Number(clip.sourceRange?.start?.value)/Number(clip.sourceRange?.start?.rate);
  const sourceDuration=Number(clip.sourceRange?.duration?.value)/Number(clip.sourceRange?.duration?.rate);
  const timelineStart=Number(clip.timelineStart?.value)/Number(clip.timelineStart?.rate);
@@ -50,10 +50,10 @@ function buildSrt(content,clip){
  }
  return cues.map((cue,index)=>(index+1)+"\n"+formatSubtitleTime(cue.start)+" --> "+formatSubtitleTime(cue.end)+"\n"+cue.text).join("\n\n");
 }
-function escapeFilterPath(value){
+export function escapeFilterPath(value){
  return String(value).replace(/\\/g,"\\\\").replace(/:/g,"\\:").replace(/'/g,"\\'").replace(/,/g,"\\,").replace(/\[/g,"\\[").replace(/\]/g,"\\]");
 }
-function captionStyle(metadata={}){
+export function captionStyle(metadata={}){
  const fontName=String(metadata.fontName||"DejaVu Sans").replace(/[^A-Za-z0-9 _-]/g,"").slice(0,48)||"DejaVu Sans";
  const fontSize=Math.max(12,Math.min(72,Math.round(Number(metadata.fontSize)||28)));
  const alignment=Math.max(1,Math.min(9,Math.round(Number(metadata.alignment)||2)));
@@ -97,7 +97,7 @@ export function executableAvailable(name) {
   const result = spawnSync(executable, ["-version"], { stdio: "ignore", timeout: 3000, windowsHide: true });
   return !result.error && result.status === 0;
 }
-function run(bin, args, timeoutMs = 30 * 60 * 1000, jobId = null, activeProcesses = null, shouldCancel = null) {
+export function run(bin, args, timeoutMs = 30 * 60 * 1000, jobId = null, activeProcesses = null, shouldCancel = null) {
   return new Promise((resolve, reject) => {
     const executable=bin==="ffmpeg"?(process.env.FFMPEG_PATH||bin):bin==="ffprobe"?(process.env.FFPROBE_PATH||bin):bin;
     const child = spawn(executable, args, { stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
