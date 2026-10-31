@@ -38,7 +38,7 @@ Uploads are raw binary request bodies. The client sends `Content-Type`, `X-File-
 Project owners can invite existing accounts as editor, reviewer or viewer. Editors can upload and modify project production records, reviewers can comment and approve/request changes, and viewers are read-only. Removing a member revokes access to project-scoped assets, jobs, workflows and timelines. Review comments support optional timecodes and auditable status changes.
 
 ## Editorial timeline
-The Video Editor now uses a persisted multi-track timeline model with rational frame timing, source ranges, track locking, clip placement, trim, split, move, markers, overlap validation and interchange JSON export. Timelines are owner-scoped, versioned and saved through optimistic revision checks. Preview playback, transitions, effects rendering and audio mixing are not yet implemented.
+The Video Editor now uses a persisted multi-track timeline model with rational frame timing, source ranges, track locking, clip placement, trim, split, move, markers, overlap validation and interchange JSON export. Timelines are owner-scoped, versioned and saved through optimistic revision checks. Local MP4 master rendering now supports one primary video track plus audio-only clips mixed into AAC. Preview playback, transitions, overlays, captions and effects rendering are not yet implemented.
 
 ## Local media jobs
 - `media.probe` — inspect streams and container metadata.
