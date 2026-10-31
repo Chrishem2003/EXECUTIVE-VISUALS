@@ -16,7 +16,7 @@ export async function generateVoice({text,voice,format="mp3",speed=1}={}){
  if(!script)throw fail("Voice generation requires a non-empty script.","SCRIPT_REQUIRED");
  const voiceName=String(voice||process.env.VOICE_GATEWAY_VOICE||"alloy").trim().slice(0,100);
  if(!/^[a-zA-Z0-9_.-]+$/.test(voiceName))throw fail("The configured voice identifier is invalid.","VOICE_GATEWAY_CONFIG_INVALID");
- const outputFormat=["mp3","wav","opus","aac","flac","pcm"].includes(format)?format:"mp3";
+ const outputFormat=["mp3","wav","flac","ogg"].includes(format)?format:"mp3";
  const timeoutMs=Math.max(1000,Math.min(300000,Number(process.env.VOICE_GATEWAY_TIMEOUT_MS)||120000));
  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs);
  const headers={"content-type":"application/json"};
@@ -38,7 +38,7 @@ export async function generateVoice({text,voice,format="mp3",speed=1}={}){
   const signature=buffer.length>=12&&buffer.toString("ascii",0,4)==="RIFF"&&buffer.toString("ascii",8,12)==="WAVE"
    ?"wav":buffer.length>=3&&buffer[0]===0x49&&buffer[1]===0x44&&buffer[2]===0x33||buffer.length>=2&&buffer[0]===0xff&&(buffer[1]&0xe0)===0xe0
    ?"mp3":buffer.length>=4&&buffer.toString("ascii",0,4)==="fLaC"?"flac":buffer.length>=4&&buffer.toString("ascii",0,4)==="OggS"?"ogg":null;
-  const allowed={"audio/mpeg":"mp3","audio/mp3":"mp3","audio/wav":"wav","audio/x-wav":"wav","audio/flac":"flac","audio/ogg":"ogg","audio/opus":"ogg","audio/aac":"aac","audio/mp4":"aac","application/octet-stream":outputFormat};
+  const allowed={"audio/mpeg":"mp3","audio/mp3":"mp3","audio/wav":"wav","audio/x-wav":"wav","audio/flac":"flac","audio/ogg":"ogg","application/octet-stream":outputFormat};
   if(!signature||!(signature===allowed[type]||type==="application/octet-stream"&&signature===outputFormat))throw fail("Voice gateway returned an unsupported or mismatched audio format.","VOICE_GATEWAY_INVALID_RESPONSE");
   const mimeType=signature==="mp3"?"audio/mpeg":signature==="wav"?"audio/wav":signature==="flac"?"audio/flac":"audio/ogg";
   return {buffer,model,voice:voiceName,mimeType,format:signature,usage:null};
