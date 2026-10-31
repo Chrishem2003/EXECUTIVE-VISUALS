@@ -38,6 +38,7 @@ if (!sql.includes("status in ('draft','awaiting_approval')")) issues.push("Clien
 if (!sql.includes("values ('executive-visuals-media','executive-visuals-media',false")) issues.push("Media storage bucket must be private.");
 if (!sql.includes("on conflict (id) do update set") || !sql.includes("public=false") || !sql.includes("file_size_limit=excluded.file_size_limit") || !sql.includes("allowed_mime_types=excluded.allowed_mime_types")) issues.push("Existing media bucket configuration must be reconciled to the private, bounded policy.");
 if (!sql.includes("create policy ev_storage_insert") || !sql.includes("create policy ev_storage_read")) issues.push("Private storage access policies are incomplete.");
+if (!sql.includes("'text/vtt'")) issues.push("Private storage must allow generated WebVTT caption assets.");
 if (!sql.includes("as $$") || !sql.includes("end;\n$$;") || /as \$(?!\$)\s*begin/.test(sql) || /\n\$(?!\$);/.test(sql)) {
   issues.push("PL/pgSQL trigger functions must use valid dollar quoting.");
 }
