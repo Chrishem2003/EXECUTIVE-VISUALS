@@ -44,3 +44,55 @@ export async function generateVoice({text,voice,format="mp3",speed=1}={}){
   return {buffer,model,voice:voiceName,mimeType,format:signature,usage:null};
  }finally{clearTimeout(timer)}
 }
+
+
+/**
+ * Transcribe an existing, owner-authorized audio asset through the same
+ * server-side speech gateway used for narration. Transcript text is returned
+ * to the workflow executor and persisted in its immutable node-run output.
+ */
+export async function transcribeVoice({buffer,mimeType,filename="source-audio",language}={}){
+ if(process.env.VOICE_TRANSCRIPTION_ENABLED!=="true")throw fail("Audio transcription is disabled by server configuration.","VOICE_TRANSCRIPTION_DISABLED");
+ if(process.env.VOICE_GATEWAY_ENABLED!=="true")throw fail("The speech gateway is disabled by server configuration.","VOICE_GATEWAY_DISABLED");
+ if(!Buffer.isBuffer(buffer)||buffer.length<4||buffer.length>MAX_AUDIO_BYTES)throw fail("Transcription requires a valid audio asset no larger than 50 MiB.","VOICE_TRANSCRIPTION_INVALID_INPUT");
+ const accepted=new Set(["audio/mpeg","audio/mp3","audio/wav","audio/x-wav","audio/flac","audio/ogg","audio/mp4","audio/aac","audio/webm"]);
+ if(!accepted.has(String(mimeType||"").toLowerCase()))throw fail("The source asset format is not supported for transcription.","VOICE_TRANSCRIPTION_INVALID_INPUT");
+ const signature=buffer.subarray(0,3).toString("ascii")==="ID3"||buffer[0]===0xff&&(buffer[1]&0xe0)===0xe0
+  ?"mp3":buffer.length>=12&&buffer.toString("ascii",0,4)==="RIFF"&&buffer.toString("ascii",8,12)==="WAVE"
+  ?"wav":buffer.subarray(0,4).toString("ascii")==="fLaC"?"flac":buffer.subarray(0,4).toString("ascii")==="OggS"?"ogg"
+  :buffer.length>=8&&buffer.toString("ascii",4,8)==="ftyp"?"mp4":buffer.subarray(0,4).equals(Buffer.from([0x1a,0x45,0xdf,0xa3]))?"webm":null;
+ if(!signature)throw fail("The source audio failed binary signature validation.","VOICE_TRANSCRIPTION_INVALID_INPUT");
+ const rawUrl=String(process.env.VOICE_GATEWAY_URL||"").trim(),model=String(process.env.VOICE_TRANSCRIPTION_MODEL||process.env.VOICE_GATEWAY_MODEL||"").trim();
+ if(!rawUrl||!model)throw fail("Configure the server-side transcription gateway URL and model before running this node.","VOICE_GATEWAY_CONFIG_INVALID");
+ let base;try{base=new URL(rawUrl)}catch{throw fail("The configured voice gateway URL is invalid.","VOICE_GATEWAY_CONFIG_INVALID")}
+ if(base.username||base.password||base.search||base.hash)throw fail("The voice gateway URL must not contain credentials, query parameters or fragments.","VOICE_GATEWAY_CONFIG_INVALID");
+ const local=loopbacks.has(base.hostname.toLowerCase());
+ if(base.protocol!=="https:"&&!local)throw fail("Non-local voice gateways must use HTTPS.","VOICE_GATEWAY_INSECURE_URL");
+ if(!local&&process.env.VOICE_GATEWAY_ALLOW_REMOTE!=="true")throw fail("Remote voice gateways are disabled. Verify provider pricing and explicitly enable remote access on the server.","VOICE_GATEWAY_REMOTE_DISABLED");
+ const prefix=base.pathname.endsWith("/")?base.pathname:base.pathname+"/";
+ const endpoint=new URL(prefix+"audio/transcriptions",base.origin);
+ const timeoutMs=Math.max(1000,Math.min(300000,Number(process.env.VOICE_GATEWAY_TIMEOUT_MS)||120000));
+ const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs);
+ const form=new FormData();
+ const safeFilename=String(filename||"source-audio").replace(/[^a-zA-Z0-9._-]/g,"_").slice(0,100)||"source-audio";
+ form.append("file",new Blob([buffer],{type:mimeType}),safeFilename);
+ form.append("model",model);
+ form.append("response_format","verbose_json");
+ if(typeof language==="string"&&/^[a-zA-Z-]{2,12}$/.test(language))form.append("language",language);
+ const headers={};const key=String(process.env.VOICE_GATEWAY_API_KEY||"").trim();if(key)headers.authorization="Bearer "+key;
+ try{
+  let response;try{response=await fetch(endpoint,{method:"POST",headers,body:form,signal:controller.signal,redirect:"error"})}
+  catch(error){throw fail(error?.name==="AbortError"?"Transcription request timed out.":"Transcription gateway could not be reached.",error?.name==="AbortError"?"VOICE_TRANSCRIPTION_TIMEOUT":"VOICE_TRANSCRIPTION_UNAVAILABLE")}
+  if(response.status===429)throw fail("Transcription gateway rate limit reached.","VOICE_TRANSCRIPTION_RATE_LIMITED");
+  if(response.status>=500)throw fail("Transcription gateway returned a temporary server error.","VOICE_TRANSCRIPTION_SERVER_ERROR");
+  if(!response.ok)throw fail("Transcription gateway rejected the request ("+response.status+").","VOICE_TRANSCRIPTION_REQUEST_REJECTED");
+  const declared=Number(response.headers.get("content-length")||0);
+  if(declared>2*1024*1024)throw fail("Transcription response exceeds the 2 MiB limit.","VOICE_TRANSCRIPTION_INVALID_RESPONSE");
+  const raw=await response.text();if(Buffer.byteLength(raw,"utf8")>2*1024*1024)throw fail("Transcription response exceeds the 2 MiB limit.","VOICE_TRANSCRIPTION_INVALID_RESPONSE");
+  let payload;try{payload=JSON.parse(raw)}catch{throw fail("Transcription gateway returned invalid JSON.","VOICE_TRANSCRIPTION_INVALID_RESPONSE")}
+  const text=String(payload.text||"").trim();
+  if(!text||text.length>1000000)throw fail("Transcription gateway returned an empty or oversized transcript.","VOICE_TRANSCRIPTION_INVALID_RESPONSE");
+  const segments=Array.isArray(payload.segments)?payload.segments.slice(0,20000).map(segment=>({start:Number(segment.start)||0,end:Number(segment.end)||0,text:String(segment.text||"").slice(0,4000)})).filter(segment=>segment.end>=segment.start):[];
+  return {text,language:String(payload.language||language||"").slice(0,32),duration:Number.isFinite(Number(payload.duration))?Number(payload.duration):null,segments,model,usage:null};
+ }finally{clearTimeout(timer)}
+}
