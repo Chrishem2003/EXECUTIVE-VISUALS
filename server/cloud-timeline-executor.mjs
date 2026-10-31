@@ -23,10 +23,9 @@ function referencedAssets(timeline){
 }
 
 /**
- * Timeline execution boundary. The render engine is injected deliberately:
- * the repository and media IO are cloud-ready, while the existing FFmpeg
- * timeline renderer remains local-path/SQLite coupled and is not silently
- * reused against cloud records.
+ * Timeline execution boundary. The cloud renderer is injected by the worker
+ * assembly and receives only verified materialized asset paths; the local
+ * SQLite renderer is never passed cloud records or storage references.
  */
 export function createCloudTimelineExecutor({timelines,mediaIO,renderTimeline,tempRoot,maxAssets=5000,maxOutputBytes=1024*1024*1024}={}){
   if(!timelines||typeof timelines.get!=="function")throw new Error("Cloud timeline executor requires the cloud timeline repository.");
