@@ -15,10 +15,10 @@ test("cloud timeline worker only claims timeline render jobs",async()=>{
  assert.deepEqual(filters,["timeline.render"]);
 });
 
-test("cloud timeline worker requires an explicit renderer",()=>{
- assert.throws(()=>createCloudTimelineWorker({
+test("cloud timeline worker defaults to the cloud FFmpeg renderer",()=>{
+ assert.doesNotThrow(()=>createCloudTimelineWorker({
   workerId:"timeline-worker-2",queue:{claim(){},renew(){},finish(){},recover(){}},
   timelineService:{timelines:{get(){}},assets:{}},
   mediaIO:{materialize(){},publish(){}}
- }),/render engine/);
+ }));
 });
