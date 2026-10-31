@@ -21,6 +21,12 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
  const outputs=new Map(completed),nodeCount=Math.max(1,validation.executionOrder.length);
  let completedCount=completed.size;
  for(const nodeId of validation.executionOrder){
+  const currentJob=db.prepare("SELECT status FROM jobs WHERE id=?").get(job.id);
+  if(currentJob?.status==="cancelled"){
+   db.prepare("UPDATE workflow_runs SET status='cancelled',updated_at=?,completed_at=? WHERE id=?").run(now(),now(),runId);
+   db.prepare("UPDATE workflow_node_runs SET status='skipped',completed_at=? WHERE run_id=? AND status='pending'").run(now(),runId);
+   return {status:"cancelled",runId,completedNodes:completedCount,totalNodes:nodeCount};
+  }
   const node=graph.nodes.find(item=>item.id===nodeId);if(!node)continue;
   if(outputs.has(nodeId))continue;
   const values={};
@@ -94,6 +100,12 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
    saveNode(db,runId,nodeId,"completed",{input:nodeInput,output,attempt});
    completedCount++;onProgress(Math.min(95,Math.round(completedCount/nodeCount*95)));
   }catch(error){
+   const latestJob=db.prepare("SELECT status FROM jobs WHERE id=?").get(job.id);
+   if(latestJob?.status==="cancelled"){
+    saveNode(db,runId,nodeId,"skipped",{input:nodeInput,attempt});
+    db.prepare("UPDATE workflow_runs SET status='cancelled',updated_at=?,completed_at=? WHERE id=?").run(now(),now(),runId);
+    return {status:"cancelled",runId,completedNodes:completedCount,totalNodes:nodeCount};
+   }
    const detail={code:error.code||"NODE_FAILED",message:error.message||"Workflow node failed."};
    saveNode(db,runId,nodeId,detail.code==="ENGINE_UNAVAILABLE"?"blocked":"failed",{input:nodeInput,error:detail,attempt});
    const status=detail.code==="ENGINE_UNAVAILABLE"?"blocked":completedCount>0?"partial":"failed";
