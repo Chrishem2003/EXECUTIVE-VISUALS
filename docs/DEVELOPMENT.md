@@ -42,7 +42,7 @@ Project owners can invite existing accounts as editor, reviewer or viewer. Edito
 Workflow runs store an immutable graph snapshot and hash plus a status record for every node. Local nodes include text/data, uploaded asset references, frame extraction, audio extraction, media probe, transcode/compress, approval, merge/batch, export and timeline render. Approval nodes pause the run until an authorized owner/editor/reviewer approves. Nodes without a registered local adapter are marked blocked; they do not call a paid service.
 
 ## Editorial timeline
-The Video Editor now uses a persisted multi-track timeline model with rational frame timing, source ranges, track locking, clip placement, trim, split, move, markers, overlap validation and interchange JSON export. Timelines are owner-scoped, versioned and saved through optimistic revision checks. Local MP4 master rendering now supports one primary video track plus audio-only clips mixed into AAC. Preview playback, transitions, overlays, captions and effects rendering are not yet implemented.
+The Video Editor uses a persisted multi-track timeline model with rational frame timing, source ranges, track locking, clip placement, trim, split, move, markers, overlap validation and interchange JSON export. Timelines are owner-scoped, versioned and saved through optimistic revision checks. Local MP4 master rendering supports one primary video track, synchronized audio-only clips mixed into AAC, still-image overlays, per-clip gain and burned-in SRT/VTT captions. Preview playback, transitions, advanced effects, animated/video overlays and multi-video compositing remain pending.
 
 ## Local media jobs
 - `media.probe` — inspect streams and container metadata.
