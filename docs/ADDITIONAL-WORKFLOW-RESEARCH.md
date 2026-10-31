@@ -54,3 +54,25 @@ This file records product-neutral findings that expanded the Executive Visuals s
 
 ## Primary public references
 The underlying first-party documentation was inspected during the research pass. Source destinations are intentionally redacted from product-facing documentation; this note preserves capability findings without reproducing vendor names or branded UI labels.
+
+
+## Additional model and real-time media capabilities (31 October 2026)
+
+- Video generation contracts must distinguish prompt-only, image-to-video, first/last-frame interpolation, timestamped keyframes, subject/style references, reference audio, source-video editing and scene extension. These are separate modes, not interchangeable generic reference uploads.
+- Some model contracts expose timestamped interior keyframes plus pinned start/end frames. Keyframe count, timing grid, duration, resolution and allowed combinations are model-version-specific and must be discovered at runtime.
+- Stateful video editing sessions can preserve source revisions, edit plans, checkpoints and multi-turn instructions. Store immutable source snapshots and edit-version lineage; reject stale edits rather than silently overwriting newer versions.
+- Native audiovisual generation may return synchronized video and audio. Keep both tracks and timing metadata rather than flattening the result into an opaque file.
+- Long-running media generation should use asynchronous job creation, stable job IDs, status polling or signed callbacks, idempotency keys and a durable output-copy step. Some billing models charge on successful delivery rather than request acceptance; cost accounting must represent provider-specific billing events.
+- Speech synthesis may support full-file output, chunked HTTP streaming, WebSocket incremental text and word-aligned audio. These are distinct execution modes and output contracts.
+- Transcription can emit partial text deltas, final transcript events, detected language, speaker-labelled segments and timestamps. Preserve event order and segment identity for live captions and editing.
+- Live translation and voice isolation belong in the real-time media graph, not only in offline post-production.
+- Provider model discovery must capture API version, supported reference modalities, frame controls, maximum duration, output resolution, price unit, rate limits and retirement status per model. Never treat a provider-wide feature list as a universal model contract.
+- Retention and retrieval guarantees vary by API and job type. Store outputs durably before temporary result links expire and retain the provider's source job ID for audit and support.
+
+## New capability contracts
+- Keyframe-controlled video generation, reference-directed generation, video extension and stateful conversational edits.
+- Synchronized native audiovisual generation.
+- Streaming speech synthesis, streaming transcription, word alignment, voice isolation and live translation.
+- Runtime model-capability discovery and output-retention verification.
+
+These additions are public-documentation-derived design inputs. They do not claim that the corresponding paid or cloud adapters are connected.
