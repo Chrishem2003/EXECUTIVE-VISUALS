@@ -1,0 +1,91 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { createCloudAssetRepository } from "../cloud-assets.mjs";
+
+const ownerId="123e4567-e89b-42d3-a456-426614174000";
+const projectId="223e4567-e89b-42d3-a456-426614174000";
+const assetId="323e4567-e89b-42d3-a456-426614174000";
+const bytes=new Uint8Array([1,2,3,4]);
+const config={url:"https://example.supabase.co",serviceRoleKey:"private-service-key"};
+function response(body,status=200){return{ok:status>=200&&status<300,status,async text(){return JSON.stringify(body);}};}
+function fixture({authorize=async()=>true,insertResponse=null,removeError=false}={}) {
+ const calls=[],storageCalls=[];
+ const storage={
+  async upload(path,data,type){storageCalls.push({op:"upload",path,data,type});return{bucket:"executive-visuals-media",path,size:data.byteLength,contentType:type};},
+  async createSignedUrl(path,expiry){storageCalls.push({op:"sign",path,expiry});return"https://example.supabase.co/storage/signed";},
+  async remove(path){storageCalls.push({op:"remove",path});if(removeError)throw new Error("storage cleanup unavailable");return true;}
+ };
+ const row={id:assetId,owner_id:ownerId,project_id:projectId,original_name:"final cut.mp4",media_type:"video/mp4",byte_size:4,sha256:createHash("sha256").update(bytes).digest("hex"),storage_bucket:"executive-visuals-media",object_path:projectId+"/"+assetId+"/original.mp4",derivative_of:null,metadata:{role:"master"},created_at:"2026-11-01T00:00:00Z"};
+ const fetchImpl=async(url,options)=>{
+  calls.push({url,options});
+  if(options.method==="POST")return response(insertResponse===null?[row]:insertResponse);
+  if(options.method==="PATCH")return response([row]);
+  return response([row]);
+ };
+ return {repo:createCloudAssetRepository({...config,storage,authorize,fetchImpl}),calls,storageCalls,row};
+}
+
+test("creates a cloud asset only after project authorization and verifies metadata ownership",async()=>{
+ let authorized=null;const f=fixture({authorize:async value=>{authorized=value;return true;}});
+ const asset=await f.repo.create({ownerId,projectId,originalName:"final cut.mp4",mediaType:"video/mp4",bytes,metadata:{role:"master"}});
+ assert.equal(authorized.action,"write");assert.equal(authorized.projectId,projectId);
+ assert.equal(asset.sha256,createHash("sha256").update(bytes).digest("hex"));
+ assert.equal(f.storageCalls[0].op,"upload");assert.equal(f.calls[0].options.method,"POST");
+ assert.equal(f.calls[0].options.headers["content-profile"],"executive_visuals");
+ assert.equal(f.calls[0].options.headers.authorization,"Bearer "+config.serviceRoleKey);
+ assert.equal(JSON.parse(f.calls[0].options.body).object_path,asset.objectPath);
+});
+
+test("denies upload before touching storage when project role authorization fails",async()=>{
+ const f=fixture({authorize:async()=>false});
+ await assert.rejects(()=>f.repo.create({ownerId,projectId,originalName:"x.mp4",mediaType:"video/mp4",bytes}),e=>e.code==="CLOUD_ASSET_ACCESS_DENIED");
+ assert.equal(f.storageCalls.length,0);assert.equal(f.calls.length,0);
+});
+
+test("compensates an uploaded object when metadata persistence fails",async()=>{
+ const f=fixture({insertResponse:[]});
+ await assert.rejects(()=>f.repo.create({ownerId,projectId,originalName:"x.mp4",mediaType:"video/mp4",bytes}),/expected record/);
+ assert.deepEqual(f.storageCalls.map(x=>x.op),["upload","remove"]);
+});
+
+test("reports cleanup pending when metadata insert fails and object removal also fails",async()=>{
+ const f=fixture({insertResponse:[],removeError:true});
+ await assert.rejects(()=>f.repo.create({ownerId,projectId,originalName:"x.mp4",mediaType:"video/mp4",bytes}),e=>e.cleanupPending===true);
+});
+
+test("signed URL lookup checks record owner and project authorization",async()=>{
+ let authorized=null;const f=fixture({authorize:async value=>{authorized=value;return true;}});
+ const result=await f.repo.createSignedUrl({ownerId,assetId,expiresIn:300});
+ assert.equal(result.url,"https://example.supabase.co/storage/signed");
+ assert.equal(authorized.action,"read");assert.equal(authorized.projectId,projectId);
+ assert.equal(f.storageCalls[0].op,"sign");
+});
+
+test("does not sign assets belonging to another owner",async()=>{
+ const f=fixture();
+ await assert.rejects(()=>f.repo.createSignedUrl({ownerId:"423e4567-e89b-42d3-a456-426614174000",assetId}),e=>e.code==="CLOUD_ASSET_NOT_FOUND");
+ assert.equal(f.storageCalls.length,0);
+});
+
+test("soft-deletes metadata before removing the exact object and reports cleanup state",async()=>{
+ const f=fixture();
+ const result=await f.repo.softDelete({ownerId,assetId});
+ assert.equal(result.deleted,true);assert.equal(result.storageRemoved,true);
+ assert.equal(f.calls[1].options.method,"PATCH");
+ assert.deepEqual(f.storageCalls.map(x=>x.op),["remove"]);
+ assert.equal(f.storageCalls[0].path,f.row.object_path);
+});
+
+test("soft deletion remains private and exposes cleanup pending if object removal fails",async()=>{
+ const f=fixture({removeError:true});
+ const result=await f.repo.softDelete({ownerId,assetId});
+ assert.equal(result.deleted,true);assert.equal(result.cleanupPending,true);
+});
+
+test("rejects malformed identifiers, unsupported media and non-object metadata",async()=>{
+ const f=fixture();
+ await assert.rejects(()=>f.repo.create({ownerId:"bad",originalName:"x",mediaType:"video/mp4",bytes}),/UUID/);
+ await assert.rejects(()=>f.repo.create({ownerId,originalName:"x",mediaType:"application/x-executable",bytes}),/Unsupported/);
+ await assert.rejects(()=>f.repo.create({ownerId,originalName:"x",mediaType:"video/mp4",bytes,metadata:[]}),/JSON object/);
+});
