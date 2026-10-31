@@ -74,7 +74,7 @@ create table if not exists executive_visuals.jobs (
   project_id uuid references executive_visuals.projects(id) on delete cascade,
   workflow_id uuid references executive_visuals.workflows(id) on delete set null,
   job_type text not null,
-  status text not null check (status in ('draft','validated','awaiting_approval','queued','submitted','processing','reviewing','succeeded','partial','failed','cancelled','blocked','needs_input','expired')),
+  status text not null default 'draft' check (status in ('draft','validated','awaiting_approval','queued','submitted','processing','reviewing','succeeded','partial','failed','cancelled','blocked','needs_input','expired')),
   progress numeric(5,2) not null default 0 check (progress between 0 and 100),
   input jsonb not null check (jsonb_typeof(input)='object'),
   output jsonb check (output is null or jsonb_typeof(output)='object'),
@@ -196,6 +196,7 @@ alter table executive_visuals.audit_events enable row level security;
 
 grant select,insert,update,delete on all tables in schema executive_visuals to authenticated;
 revoke insert,update,delete on executive_visuals.job_events from authenticated;
+revoke update,delete on executive_visuals.jobs from authenticated;
 revoke insert,update,delete on executive_visuals.audit_events from authenticated;
 grant usage,select on all sequences in schema executive_visuals to authenticated;
 
@@ -245,7 +246,7 @@ using (owner_id=(select auth.uid()) or exists (select 1 from executive_visuals.p
 or exists (select 1 from executive_visuals.project_members m where m.project_id=assets.project_id and m.member_id=(select auth.uid()) and m.role='editor'));
 create policy ev_jobs_read on executive_visuals.jobs for select to authenticated
 using (owner_id=(select auth.uid()) or exists (select 1 from executive_visuals.projects p where p.id=jobs.project_id and p.owner_id=(select auth.uid())) or exists (select 1 from executive_visuals.project_members m where m.project_id=jobs.project_id and m.member_id=(select auth.uid())));create policy ev_jobs_insert on executive_visuals.jobs for insert to authenticated
-with check (owner_id=(select auth.uid()) and (project_id is null or exists (select 1 from executive_visuals.projects p where p.id=project_id and p.owner_id=(select auth.uid())) or exists (select 1 from executive_visuals.project_members m where m.project_id=project_id and m.member_id=(select auth.uid()) and m.role='editor')));create policy ev_jobs_update on executive_visuals.jobs for update to authenticated
+with check (owner_id=(select auth.uid()) and status in ('draft','awaiting_approval') and progress=0 and output is null and error is null and attempt_count=0 and approved_by is null and approved_at is null and (project_id is null or exists (select 1 from executive_visuals.projects p where p.id=project_id and p.owner_id=(select auth.uid())) or exists (select 1 from executive_visuals.project_members m where m.project_id=project_id and m.member_id=(select auth.uid()) and m.role='editor')));create policy ev_jobs_update on executive_visuals.jobs for update to authenticated
 using (owner_id=(select auth.uid()) or exists (select 1 from executive_visuals.projects p where p.id=jobs.project_id and p.owner_id=(select auth.uid())) or exists (select 1 from executive_visuals.project_members m where m.project_id=jobs.project_id and m.member_id=(select auth.uid()) and m.role='editor'))
 with check ((project_id is null and owner_id=(select auth.uid())) or exists (select 1 from executive_visuals.projects p where p.id=project_id and p.owner_id=(select auth.uid())) or exists (select 1 from executive_visuals.project_members m where m.project_id=project_id and m.member_id=(select auth.uid()) and m.role='editor'));create policy ev_jobs_delete on executive_visuals.jobs for delete to authenticated
 using (owner_id=(select auth.uid()) or exists (select 1 from executive_visuals.projects p where p.id=jobs.project_id and p.owner_id=(select auth.uid())));
