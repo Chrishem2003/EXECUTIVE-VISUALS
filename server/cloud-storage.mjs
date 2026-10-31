@@ -108,7 +108,7 @@ export function createCloudStorage({
       });
       if (typeof result?.signedURL !== "string" || !result.signedURL) throw new Error("Cloud storage did not return a signed URL.");
       const signed = new URL(result.signedURL, base);
-      if (signed.origin !== base || signed.protocol !== "https:" && !base.startsWith("http://localhost") && !base.startsWith("http://127.0.0.1")) {
+      if (signed.origin !== base) {
         throw new Error("Cloud storage returned an unsafe signed URL.");
       }
       return signed.toString();
