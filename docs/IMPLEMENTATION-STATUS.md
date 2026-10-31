@@ -161,3 +161,14 @@ Generated WebVTT assets now include their exact duration in metadata as well as 
 
 
 The workflow inspector now exposes a dedicated target-language field for caption localization, while retaining advanced JSON configuration for other settings. Source caption cues are explicitly treated as untrusted content by the translation instruction, and commands embedded in cues must not be followed. The latest full CI run before this final instruction-only hardening passed TypeScript and the complete build pipeline; the prompt-hardening commit is included in the current branch and awaits its own CI confirmation.
+
+## Shared provider control layer — implemented
+
+- Added a server-side provider registry for text, image, video, speech synthesis, transcription and local media execution.
+- Added authenticated `GET /api/providers` so the signed-in workspace can inspect provider readiness without receiving API keys, endpoint credentials or other secrets.
+- Readiness distinguishes disabled, needs configuration, remote opt-in required, ready and unavailable states.
+- Capability matching only selects a provider that is enabled, correctly configured and policy-eligible. Remote selection requires an explicit caller opt-in as well as the relevant server-side remote setting.
+- Model identifiers and capability names may be shown; credentials and raw endpoint URLs are never returned.
+- The registry reports no invented prices and does not submit provider requests. It is an inspection and routing foundation, not a claim that a remote provider has been live-tested.
+- Added unit and API tests for default-deny behavior, local gateway readiness, remote opt-in, malformed URLs, authentication, secret non-disclosure and no-request behavior.
+
