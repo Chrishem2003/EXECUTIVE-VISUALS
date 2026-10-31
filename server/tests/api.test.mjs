@@ -401,6 +401,30 @@ test("project membership separates editor, reviewer and viewer permissions",asyn
   assert.equal(revokedTimeline.status,404);
 });
 
+test("workflow approval requires reviewer permissions and cannot be replayed",async()=>{
+  const owner=await register("approval-owner@example.test");
+  const viewer=await register("approval-viewer@example.test");
+  const editor=await register("approval-editor@example.test");
+  const projectResponse=await request("/api/projects",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({name:"Approval security"})},owner);
+  const project=(await projectResponse.json()).project;
+  await request("/api/projects/"+project.id+"/members",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({email:"approval-viewer@example.test",role:"viewer"})},owner);
+  await request("/api/projects/"+project.id+"/members",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({email:"approval-editor@example.test",role:"editor"})},owner);
+  const graph={nodes:[{id:"brief",kind:"text",inputs:[],outputs:[{id:"text",type:"text"}],config:{text:"Review scene"}},{id:"gate",kind:"approval",inputs:[{id:"text",type:"text",required:true}],outputs:[{id:"text",type:"text"}],config:{}}],edges:[{id:"edge",sourceNodeId:"brief",sourcePortId:"text",targetNodeId:"gate",targetPortId:"text"}]};
+  const created=await request("/api/workflows",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({projectId:project.id,name:"Approval security",graph})},owner);
+  assert.equal(created.status,201);
+  const workflowId=(await created.json()).workflow.id;
+  const started=await request("/api/workflows/"+workflowId+"/runs",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({target:{kind:"all"}})},owner);
+  assert.equal(started.status,202,await started.clone().text());
+  const runId=(await started.json()).runId;
+  const testDb=openDatabase(join(dataDir,"executive-visuals.sqlite"));
+  try{testDb.prepare("UPDATE workflow_runs SET status='awaiting_approval' WHERE id=?").run(runId);testDb.prepare("UPDATE workflow_node_runs SET status='awaiting_approval',input_json=? WHERE run_id=? AND node_id='gate'").run(JSON.stringify({text:"Review scene"}),runId);}finally{testDb.close();}
+  const denied=await request("/api/workflow-runs/"+runId+"/approve",{method:"POST"},viewer);
+  assert.equal(denied.status,403);assert.equal((await denied.json()).error.code,"REVIEWER_REQUIRED");
+  const approved=await request("/api/workflow-runs/"+runId+"/approve",{method:"POST"},editor);
+  assert.equal(approved.status,202);
+  const replay=await request("/api/workflow-runs/"+runId+"/approve",{method:"POST"},editor);
+  assert.equal(replay.status,409);
+});
 test.after(async()=>{
   child.kill("SIGTERM");
   await new Promise(resolve=>{const timer=setTimeout(resolve,1500);child.once("exit",()=>{clearTimeout(timer);resolve();});});
