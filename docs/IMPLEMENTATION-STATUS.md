@@ -28,7 +28,7 @@
 | Editorial timeline | Multi-track clips, rational source timebases, trim, split, move, markers, overlap validation, interchange export and local MP4 master render | No preview playback, transitions, overlays, captions or effects rendering yet |
 | Timeline persistence | Owner-scoped timelines, asset ownership checks, optimistic revisions and saved interchange package | SQLite local DB; isolated SQL migration pending dedicated database review |
 | Database migration | Dedicated multi-tenant schema, row-level security and private object-storage policies | Migration is committed for review; **not applied** to shared staging |
-| Quality checks | Capability parity, workflow planner checks and API integration tests | CI validates local contracts and API behavior, not cloud/provider integrations |
+| Quality checks | Capability parity, workflow planner, timeline validation, render-worker checks, real FFmpeg MP4 render/probe integration and API integration tests | CI verifies local render output and API behavior, not cloud durability or external provider integrations |
 
 ## Build verification
 
@@ -47,7 +47,7 @@ A green build does not prove external provider execution, cloud durability, fram
 - Production OAuth/session refresh, email invitations and distributed multi-tenant collaboration.
 - Distributed workers, leases, retries, dead-letter queue and actual process termination on cancellation.
 - Resumable/chunked uploads, media signature sniffing and range downloads.
-- Timeline preview playback, transitions, effects rendering, cache invalidation and round-trip tests against an independent interchange implementation.
+- Timeline preview playback, transitions, effects/overlay/caption compositing, cache invalidation and round-trip tests against an independent interchange implementation.
 - Full workflow node editor, per-node run history, partial reruns and provider execution.
 - Local model inventory, hardware preflight and model adapters.
 - Voice generation, transcription, diarization, dubbing and lip synchronization integrations.
