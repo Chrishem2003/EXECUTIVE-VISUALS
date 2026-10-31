@@ -125,9 +125,12 @@ test("workflow graphs are validated, versioned and owner-scoped",async()=>{
   const created=await request("/api/workflows",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({name:"Episode pipeline",graph})},cookie);
   assert.equal(created.status,201,await created.clone().text());
   const workflow=(await created.json()).workflow;
+  assert.equal(workflow.graph.id,workflow.id,"server workflow ID and graph ID must match");
   const read=await request("/api/workflows/"+workflow.id,{},cookie);
   assert.equal(read.status,200);
-  assert.equal((await read.json()).workflow.graphHash,workflow.graphHash);
+  const readBody=await read.json();
+  assert.equal(readBody.workflow.graphHash,workflow.graphHash);
+  assert.equal(readBody.workflow.graph.id,workflow.id);
   const updated=await request("/api/workflows/"+workflow.id,{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({revision:1,name:"Episode pipeline v2",graph})},cookie);
   assert.equal(updated.status,200);
   assert.equal((await updated.json()).revision,2);
