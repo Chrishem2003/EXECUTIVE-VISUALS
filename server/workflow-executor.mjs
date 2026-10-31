@@ -164,7 +164,7 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
     const segments=values.segments??config.segments;
     if(!Array.isArray(segments)||segments.length===0||segments.length>500)throw Object.assign(new Error("Caption translation accepts 1 to 500 timed segments per request."),{code:"TRANSLATION_SEGMENTS_INVALID"});
     const targetLanguage=String(config.targetLanguage??values.targetLanguage??"").trim().slice(0,48);
-    if(!targetLanguage||!/^[\\p{L}\\p{M}0-9 _-]+$/u.test(targetLanguage))throw Object.assign(new Error("Choose a valid target language before translating captions."),{code:"TRANSLATION_LANGUAGE_REQUIRED"});
+    if(!targetLanguage||!/^[\p{L}\p{M}0-9 _-]+$/u.test(targetLanguage))throw Object.assign(new Error("Choose a valid target language before translating captions."),{code:"TRANSLATION_LANGUAGE_REQUIRED"});
     const sourceLanguage=String(values.language||config.sourceLanguage||"").slice(0,32);
     const inputSegments=segments.map((segment,index)=>({index,text:String(segment?.text??"")}));
     if(inputSegments.some(segment=>!segment.text.trim())||inputSegments.reduce((sum,item)=>sum+item.text.length,0)>30000)throw Object.assign(new Error("Caption text is empty or exceeds the 30,000-character translation limit."),{code:"TRANSLATION_SEGMENTS_INVALID"});
