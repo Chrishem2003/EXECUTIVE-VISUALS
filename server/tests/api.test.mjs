@@ -12,7 +12,7 @@ const dataDir=await mkdtemp(join(tmpdir(),"ev-api-test-"));
 const webDir=join(dataDir,"web");await mkdir(webDir,{recursive:true});await writeFile(join(webDir,"index.html"),"<!doctype html><html><body>test</body></html>");
 const child=spawn(process.execPath,["server/index.mjs"],{
   cwd:process.cwd(),
-  env:{...process.env,NODE_ENV:"development",AUTH_MODE:"local",API_HOST:"127.0.0.1",API_PORT:String(port),DATA_DIR:dataDir,MEDIA_ROOT:join(dataDir,"media"),WEB_ROOT:webDir,DISABLE_WORKER:"true"},
+  env:{...process.env,NODE_ENV:"development",AUTH_MODE:"local",AUTH_RATE_LIMIT:"1000",API_HOST:"127.0.0.1",API_PORT:String(port),DATA_DIR:dataDir,MEDIA_ROOT:join(dataDir,"media"),WEB_ROOT:webDir,DISABLE_WORKER:"true"},
   stdio:["ignore","pipe","pipe"]
 });
 let stdout="",stderr="";
