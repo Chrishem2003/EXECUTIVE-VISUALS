@@ -1,0 +1,113 @@
+import { apiRequest } from "../core/api";
+import { addClip, addMarker, addTrack, createTimeline, moveClip, rational, splitClip, toOpenTimelineIo, trimClip, type EditorialTimeline, type TimelineTrack } from "../core/timeline";
+
+type Asset={id:string;name:string;mediaType:string;size:number;metadata?:Record<string,unknown>};
+type SavedTimeline={id:string;projectId?:string|null;name:string;revision:number;document?:EditorialTimeline};
+const state:{timeline:EditorialTimeline|null;serverRevision:number;timelines:SavedTimeline[];assets:Asset[];status:"loading"|"ready"|"offline"|"auth";message:string;selectedTrack:string}={
+ timeline:null,serverRevision:0,timelines:[],assets:[],status:"loading",message:"Loading editorial workspace…",selectedTrack:""
+};
+const esc=(v:unknown)=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]||c));
+const fps=()=>state.timeline?state.timeline.frameRate.numerator/state.timeline.frameRate.denominator:24;
+const maxEnd=()=>Math.max(1,...(state.timeline?.tracks.flatMap(t=>t.clips.map(c=>c.timelineStart.value+c.duration.value))||[240]));
+const assetOptions=()=>state.assets.map(a=>'<option value="'+esc(a.id)+'">'+esc(a.name)+' · '+esc(a.mediaType)+'</option>').join("");
+function timelineCanvas(){
+ if(!state.timeline)return '<div class="empty">'+esc(state.message)+'</div>';
+ const total=maxEnd();
+ return '<div class="timeline-ruler"><span>00:00</span><span>'+Math.round(total/2/fps())+'s</span><span>'+Math.round(total/fps())+'s</span></div>'+
+ state.timeline.tracks.map(track=>'<div class="editor-track"><div class="editor-track-label"><b>'+esc(track.name)+'</b><small>'+esc(track.kind)+(track.locked?' · locked':'')+'</small></div><div class="editor-track-lane">'+track.clips.map(clip=>'<article class="editor-clip" style="left:'+Math.max(0,clip.timelineStart.value/total*100)+'%;width:'+Math.max(4,clip.duration.value/total*100)+'%"><b>'+esc(clip.name)+'</b><small>'+esc(clip.assetId.slice(0,8))+' · '+Math.round(clip.duration.value)+'f</small><div class="editor-clip-actions"><button data-tl-action="split" data-track="'+esc(track.id)+'" data-clip="'+esc(clip.id)+'">Split</button><button data-tl-action="trim" data-track="'+esc(track.id)+'" data-clip="'+esc(clip.id)+'">Trim 12f</button><button data-tl-action="move" data-track="'+esc(track.id)+'" data-clip="'+esc(clip.id)+'">Next track</button></div></article>').join("")+'</div></div>').join("");
+}
+export function renderTimelineWorkspace(){
+ return '<div id="timeline-workspace"><div class="timeline-toolbar"><span class="runtime-status '+state.status+'"><i></i>'+esc(state.status==="ready"?"TIMELINE SAVED":state.status==="auth"?"SIGN IN REQUIRED":state.status==="offline"?"API OFFLINE":"LOADING")+'</span><button class="secondary" data-tl-action="refresh">↻ Refresh</button><button class="secondary" data-tl-action="export">Export OTIO JSON</button></div>'+
+ (state.message?'<div class="notice">'+esc(state.message)+'</div>':'')+
+ '<div class="timeline-editor-grid"><section class="panel"><div class="eyebrow">SEQUENCE SETTINGS</div><h3>'+(state.timeline?esc(state.timeline.name):"No sequence loaded")+'</h3>'+
+ '<form id="tl-add-track"><label>Track name</label><input name="name" required placeholder="Video 2 / Music / Captions"><label>Track type</label><select name="kind"><option value="video">Video</option><option value="audio">Audio</option><option value="overlay">Overlay</option><option value="caption">Captions</option></select><button class="secondary">＋ Add track</button></form>'+
+ '<div class="eyebrow" style="margin-top:18px">ADD SOURCE CLIP</div><form id="tl-add-clip"><label>Source asset</label><select name="assetId" required>'+assetOptions()+'</select><label>Destination track</label><select name="trackId">'+(state.timeline?.tracks.map(t=>'<option value="'+esc(t.id)+'">'+esc(t.name)+'</option>').join("")||"")+'</select><div class="form-grid"><div><label>Timeline start (frames)</label><input name="start" type="number" min="0" value="'+maxEnd()+'"></div><div><label>Source in (frames)</label><input name="sourceIn" type="number" min="0" value="0"></div><div><label>Duration (frames)</label><input name="duration" type="number" min="1" value="'+(fps()*5)+'"></div></div><button class="primary wide">＋ Place clip on timeline</button></form>'+
+ '<form id="tl-add-marker"><div class="eyebrow" style="margin-top:18px">REVIEW MARKER</div><label>Marker title</label><input name="name" required placeholder="Hook / transition / review note"><label>Position (frames)</label><input name="frame" type="number" min="0" value="0"><button class="secondary">＋ Add marker</button></form></section>'+
+ '<section class="panel"><div class="timeline-panel-heading"><div><div class="eyebrow">MULTI-TRACK EDITOR</div><h3>Sequence timeline</h3></div><small>'+(state.timeline?.frameRate.numerator+"/"+state.timeline?.frameRate.denominator+" fps")+'</small></div>'+
+ (state.timeline?timelineCanvas():'<div class="empty">Sign in and create a sequence to begin.</div>')+
+ '<div class="timeline-marker-list">'+(state.timeline?.markers.map(m=>'<span>◆ '+esc(m.name)+' · '+Math.round(m.start.value)+'f</span>').join("")||"No review markers yet.")+'</div></section></div>'+
+ '<div class="notice">This is a real editable timeline model with source in/out, track placement, trims, splits, markers and an interchange export. Frame preview, playback, transitions, effects rendering and audio mixing are the next engine milestone.</div></div>';
+}
+async function refresh(){
+ const [assetResponse,timelineResponse]=await Promise.all([
+  apiRequest<{assets:Asset[]}>("/api/assets"),
+  apiRequest<{timelines:SavedTimeline[]}>("/api/timelines")
+ ]);
+ state.assets=assetResponse.assets;
+ state.timelines=timelineResponse.timelines;
+ if(state.timeline&&state.timelines.some(t=>t.id===state.timeline?.id)){
+  const saved=await apiRequest<{timeline:SavedTimeline}>("/api/timelines/"+state.timeline.id);
+  state.timeline=saved.timeline.document||state.timeline;state.serverRevision=saved.timeline.revision;
+ }else if(state.timelines.length){
+  const saved=await apiRequest<{timeline:SavedTimeline}>("/api/timelines/"+state.timelines[0].id);
+  state.timeline=saved.timeline.document||null;state.serverRevision=saved.timeline.revision;
+ }else{
+  let timeline=createTimeline("","local-sequence","Untitled sequence",{numerator:24,denominator:1});
+  timeline=addTrack(timeline,{id:crypto.randomUUID(),name:"Video 1",kind:"video",enabled:true,locked:false,clips:[]});
+  timeline=addTrack(timeline,{id:crypto.randomUUID(),name:"Audio 1",kind:"audio",enabled:true,locked:false,clips:[]});
+  const created=await apiRequest<{timeline:SavedTimeline}>("/api/timelines",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({name:timeline.name,timeline})});
+  state.timeline=created.timeline.document||null;state.serverRevision=created.timeline.revision;
+ }
+ state.selectedTrack=state.timeline?.tracks[0]?.id||"";
+ state.status="ready";state.message="";
+}
+async function persist(){
+ if(!state.timeline)return;
+ const otio=toOpenTimelineIo(state.timeline);
+ const result=await apiRequest<{revision:number}>("/api/timelines/"+state.timeline.id,{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({revision:state.serverRevision,name:state.timeline.name,timeline:state.timeline,otio})});
+ state.serverRevision=result.revision;state.timeline={...state.timeline,revision:result.revision};state.status="ready";state.message="Saved revision "+result.revision+".";
+}
+export async function initTimelineWorkspace(){
+ try{await refresh();}catch(error){state.status=error instanceof Error&&error.message.includes("Sign in")?"auth":"offline";state.message=error instanceof Error?error.message:"Timeline service unavailable.";}
+ paint();
+}
+function paint(){const root=document.querySelector<HTMLElement>("#timeline-workspace");if(root)root.outerHTML=renderTimelineWorkspace();}
+async function runAction(action:HTMLElement){
+ const type=action.dataset.tlAction||"";
+ if(type==="refresh"){await refresh();paint();return;}
+ if(!state.timeline)return;
+ const trackId=action.dataset.track||"",clipId=action.dataset.clip||"";
+ if(type==="split"){
+  const track=state.timeline.tracks.find(t=>t.id===trackId),clip=track?.clips.find(c=>c.id===clipId);if(!track||!clip)return;
+  const splitAt=Math.round(clip.timelineStart.value+clip.duration.value/2);
+  state.timeline=splitClip(state.timeline,trackId,clipId,splitAt,crypto.randomUUID());
+ }else if(type==="trim")state.timeline=trimClip(state.timeline,trackId,clipId,12,12);
+ else if(type==="move"){
+  const from=state.timeline.tracks.findIndex(t=>t.id===trackId);const target=state.timeline.tracks[(from+1)%state.timeline.tracks.length];if(!target)return;
+  const clip=state.timeline.tracks[from].clips.find(c=>c.id===clipId);if(!clip)return;
+  const start=maxEnd()+12;state.timeline=moveClip(state.timeline,trackId,clipId,target.id,start);
+ }else if(type==="export"){
+  const content=JSON.stringify(toOpenTimelineIo(state.timeline),null,2);
+  const blob=new Blob([content],{type:"application/json"}),url=URL.createObjectURL(blob),a=document.createElement("a");
+  a.href=url;a.download=(state.timeline.name||"timeline").replace(/[^a-z0-9-_]/gi,"-")+".otio.json";a.click();URL.revokeObjectURL(url);return;
+ }
+ state.message="Saving timeline revision…";paint();
+ try{await persist();}catch(error){state.message=error instanceof Error?error.message:"Save failed.";state.status="offline";}paint();
+}
+document.addEventListener("submit",event=>{
+ const form=event.target as HTMLFormElement;if(!state.timeline)return;
+ if(form.id==="tl-add-track"){
+  event.preventDefault();const data=new FormData(form),name=String(data.get("name")||"").trim(),kind=String(data.get("kind")||"video") as TimelineTrack["kind"];
+  if(!name)return;
+  state.timeline=addTrack(state.timeline,{id:crypto.randomUUID(),name,kind,enabled:true,locked:false,clips:[]});
+  void persist().then(paint).catch(error=>{state.message=error.message;paint();});
+ }
+ if(form.id==="tl-add-clip"){
+  event.preventDefault();const data=new FormData(form),assetId=String(data.get("assetId")||""),trackId=String(data.get("trackId")||"");
+  const start=Math.max(0,Number(data.get("start"))||0),sourceIn=Math.max(0,Number(data.get("sourceIn"))||0),duration=Math.max(1,Number(data.get("duration"))||1);
+  const asset=state.assets.find(a=>a.id===assetId);if(!asset)return;
+  try{state.timeline=addClip(state.timeline,trackId,{id:crypto.randomUUID(),assetId,name:asset.name,sourceRange:{start:rational(sourceIn,fps()),duration:rational(duration,fps())},timelineStart:rational(start,fps()),duration:rational(duration,fps()),enabled:true});}
+  catch(error){alert(error instanceof Error?error.message:String(error));return;}
+  void persist().then(paint).catch(error=>{state.message=error.message;paint();});
+ }
+ if(form.id==="tl-add-marker"){
+  event.preventDefault();const data=new FormData(form);
+  state.timeline=addMarker(state.timeline,{id:crypto.randomUUID(),name:String(data.get("name")),start:rational(Math.max(0,Number(data.get("frame"))||0),fps()),color:"YELLOW"});
+  void persist().then(paint).catch(error=>{state.message=error.message;paint();});
+ }
+});
+document.addEventListener("click",event=>{
+ const target=event.target as HTMLElement,action=target.closest<HTMLElement>("[data-tl-action]");
+ if(action)void runAction(action);
+});
+window.addEventListener("ev:authenticated",()=>void initTimelineWorkspace());
