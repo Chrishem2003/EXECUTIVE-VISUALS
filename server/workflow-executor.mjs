@@ -8,6 +8,7 @@ import { generateFalVideo } from "./fal-video-gateway.mjs";
 import { storeGeneratedImage, storeGeneratedVideo, storeGeneratedAudio } from "./generated-assets.mjs";
 import { assertIdentityUseAllowed } from "./identity-consent.mjs";
 import { generateVoice, transcribeVoice } from "./voice-gateway.mjs";
+import { buildWebVtt, storeCaptionAsset } from "./captions.mjs";
 import { readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { resolve, relative, sep } from "node:path";
@@ -157,7 +158,15 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
     const checksum=createHash("sha256").update(buffer).digest("hex");
     if(checksum!==source.sha256)throw Object.assign(new Error("Audio asset checksum verification failed."),{code:"ASSET_CHECKSUM_MISMATCH"});
     const result=await transcribeVoice({buffer,mimeType:source.media_type,filename:source.original_name,language:String(config.language||"")});
-    output=nodeOutput(node,result.text);output.transcript=result.text;output.text=result.text;output.language=result.language;output.duration=result.duration;output.segments=result.segments;output.sourceAssetId=source.id;output.model=result.model;
+    output=nodeOutput(node,result.text);output.transcript=result.text;output.text=result.text;output.language=result.language;output.duration=result.duration;output.segments=result.segments;output.sourceAssetId=source.id;output.sourceAudio=source.id;output.model=result.model;
+   }else if(node.kind==="voice.caption"){
+    const segments=values.segments??config.segments;
+    const sourceAssetId=String(values.sourceAudio??values.sourceAssetId??config.sourceAssetId??"");
+    const source=sourceAssetId?getAccessibleAsset(db,job.owner_id,sourceAssetId,false):null;
+    if(sourceAssetId&&(!source||!String(source.media_type||"").startsWith("audio/")))throw Object.assign(new Error("Caption source audio is missing or inaccessible."),{code:"SOURCE_AUDIO_NOT_FOUND"});
+    const vtt=buildWebVtt(segments,{offsetSeconds:Number(config.offsetSeconds??0)});
+    const asset=await storeCaptionAsset({db,mediaRoot,ownerId:job.owner_id,projectId:job.project_id||null,jobId:job.id,sourceAssetId:source?.id||"",language:String(values.language||config.language||""),segments,content:vtt});
+    output=nodeOutput(node,asset.id);output.asset=asset.id;output.subtitle=asset.id;output.subtitleAssetId=asset.id;output.mimeType=asset.mediaType;output.sha256=asset.sha256;output.sourceAssetId=source?.id||null;output.cueCount=segments.length;
    }else if(node.kind==="image.generate"){
     enforceIdentityPermission(db,job,config,values,"likeness");
     if(!hasApprovedAncestor(graph,nodeId,outputs))throw Object.assign(new Error("A completed upstream human-approval node is required before image generation."),{code:"APPROVAL_REQUIRED"});
