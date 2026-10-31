@@ -10,7 +10,7 @@
 |---|---|---|
 | Product shell | Unified browser application with creative, planning and management workspaces | Browser app |
 | Capability explorer | Search and domain filters; displays stable ID, inputs, outputs, evidence, execution modes and approval gates | Registry browsing |
-| Capability registry | **84 typed capabilities across 22 domains** | Contract/readiness metadata, not provider availability |
+| Capability registry | **96 typed capabilities across 22 domains** | Contract/readiness metadata, not provider availability |
 | Machine-readable catalog | JSON catalog generated from typed registry | Build verifier enforces ID/domain/label parity |
 | Workflow graph | Draggable visual node editor, typed ports, connections, node configuration, graph validation, server-side versioning and partial-run planning | Planning only; model/provider execution is not connected |
 | Graph validation | Duplicate IDs, missing nodes/ports, incompatible ports, duplicate single-input edges, required inputs and cycle detection | Validation only |
