@@ -1,12 +1,10 @@
 # Public tool-directory inventory
 
-Research date: 31 October 2026. This file records names and canonical destinations visible in public product directories. It is an inventory, not a claim that every tool is available to every account, region or plan.
+Research date: 31 October 2026. These are names and destinations exposed by public directories, not copied implementations. Availability can vary by plan, platform, region and time.
 
 ## HeyGen public tools directory
 
 Source: https://www.heygen.com/tool
-
-The public directory describes a broad set of task-specific entry points. The names below are retained as a catalogue of user problems, not as a UI or brand naming specification for Executive Visuals.
 
 - Image to video — https://www.heygen.com/tool/image-to-video
 - Face Swap Video — https://www.heygen.com/tool/face-swap-video
@@ -101,42 +99,71 @@ The public directory describes a broad set of task-specific entry points. The na
 - AI Santa Video — https://www.heygen.com/tool/ai-santa-video
 - Video Ad Creator: Make Video Ads Without a Camera — https://www.heygen.com/tool/video-ad-creator
 
-Total returned by public directory extraction: 92 tool entries.
+Extracted entries: 92.
 
 ## Wink public workspace
 
 Source: https://wink.ai/workspace
 
-The unauthenticated workspace catalogue shows Home, Video, Image and Recents navigation, a custom workflow surface, AI Sets, Enhancer modes and templates. Private account history and editor state were not accessed.
+The public workspace shell exposes Home, Video, Image and Recents. It also exposes a custom workflow area, AI Sets, Enhancer modes and templates. The authenticated workspace and private account data were not accessed.
 
-- **AI Sets** — Video Upscaler: https://wink.ai/video-upscaler/upload
-- **AI Sets** — Video Retouch: https://wink.ai/video-retouch/upload
-- **AI Sets** — AI Photo Restoration: https://wink.ai/photo-restoration/upload
-- **AI Sets** — Video Converter: https://wink.ai/video-format-converter/upload
-- **AI Sets** — Video Compressor: https://wink.ai/video-compression/upload
-- **AI Sets** — Video Denoiser: https://wink.ai/video-denoise/upload
-- **AI Sets** — AI Video Expansion: https://wink.ai/ai-video-extender/upload
-- **AI Sets** — Video Color Matching: https://wink.ai/video-color-match/upload
-- **AI Sets** — AI Anime: https://wink.ai/video-to-animation-converter/upload
-- **AI Sets** — Video Color Correction: https://wink.ai/video-color-correction/upload
-- **AI Sets** — AI Frame Interpolation: https://wink.ai/video-frame-interpolation/upload
-- **AI Sets** — LowLight Video Enhancer: https://wink.ai/video-night-scene/upload
-- **Enhancer** — AI UHD: https://wink.ai/video-enhancer/upload?functionId=63093
-- **Enhancer** — Pro Restoration: https://wink.ai/video-enhancer/upload?functionId=63100
-- **Enhancer** — Portrait: https://wink.ai/video-enhancer/upload?functionId=63092
-- **Enhancer** — AI-Gen Visuals: https://wink.ai/video-enhancer/upload?functionId=63101
-- **Enhancer** — Blurry Photos: https://wink.ai/image-enhancer/upload?functionId=63098
-- **Enhancer** — Concert: https://wink.ai/video-enhancer/upload?functionId=63099
-- **Enhancer** — Product images: https://wink.ai/image-enhancer/upload?functionId=63094
-- **Enhancer** — Text: https://wink.ai/image-enhancer/upload?functionId=63095
-- **Enhancer** — Game: https://wink.ai/video-enhancer/upload?functionId=63096
-- **Enhancer** — Animation: https://wink.ai/video-enhancer/upload?functionId=63097
+- Video Enhancer — https://wink.ai/video-enhancer/upload
+- Video Watermark Remover — https://wink.ai/video-watermark-remover/upload
+- Video Repair — https://wink.ai/video-repair/upload
+- Video Upscaler — https://wink.ai/video-upscaler/upload
+- Video Retouch — https://wink.ai/video-retouch/upload
+- AI Photo Restoration — https://wink.ai/photo-restoration/upload
+- Video Converter — https://wink.ai/video-format-converter/upload
+- Video Compressor — https://wink.ai/video-compression/upload
+- Video Denoiser — https://wink.ai/video-denoise/upload
+- AI Video Expansion — https://wink.ai/ai-video-extender/upload
+- Video Color Matching — https://wink.ai/video-color-match/upload
+- AI Anime — https://wink.ai/video-to-animation-converter/upload
+- Video Color Correction — https://wink.ai/video-color-correction/upload
+- AI Frame Interpolation — https://wink.ai/video-frame-interpolation/upload
+- LowLight Video Enhancer — https://wink.ai/video-night-scene/upload
+- AI UHD — https://wink.ai/video-enhancer/upload?functionId=63093
+- Pro Restoration — https://wink.ai/video-enhancer/upload?functionId=63100
+- Portrait — https://wink.ai/video-enhancer/upload?functionId=63092
+- AI-Gen Visuals — https://wink.ai/video-enhancer/upload?functionId=63101
+- Blurry Photos — https://wink.ai/image-enhancer/upload?functionId=63098
+- Concert — https://wink.ai/video-enhancer/upload?functionId=63099
+- Product images — https://wink.ai/image-enhancer/upload?functionId=63094
+- Text — https://wink.ai/image-enhancer/upload?functionId=63095
+- Game — https://wink.ai/video-enhancer/upload?functionId=63096
+- Animation — https://wink.ai/video-enhancer/upload?functionId=63097
+- Pets Magic Night — https://wink.ai/template-to-video/upload?templateId=ai_imagination_PetsMagicNight
+- Star Card Draw — https://wink.ai/template-to-video/upload?templateId=ai_imagination_StarCardDraw
+- Star Card Live — https://wink.ai/template-to-video/upload?templateId=ai_imagination_StarCardLive
+- Stickers — https://wink.ai/template-to-video/upload?templateId=ai_imagination_Stickers
+- Stadium Fan — https://wink.ai/template-to-video/upload?templateId=ai_imagination_StadiumFan
+- World Cup Live — https://wink.ai/template-to-video/upload?templateId=ai_imagination_WorldCupLive
+- Hype Moment — https://wink.ai/template-to-video/upload?templateId=ai_imagination_HypeMoment
+- Game Interface — https://wink.ai/template-to-video/upload?templateId=ai_imagination_GameInterface
+- Game Interface2 — https://wink.ai/template-to-video/upload?templateId=ai_imagination_GameInterface2
+- Beach Walk — https://wink.ai/template-to-video/upload?templateId=ai_imagination_BeachWalk
+- Photobooth — https://wink.ai/template-to-video/upload?templateId=ai_imagination_Photobooth
+- Sports TV — https://wink.ai/template-to-video/upload?templateId=ai_imagination_SportsTV
+- Awards — https://wink.ai/template-to-video/upload?templateId=ai_imagination_Awards
+- Race Car — https://wink.ai/template-to-video/upload?templateId=ai_imagination_RaceCar
+- Street Interview — https://wink.ai/template-to-video/upload?templateId=ai_imagination_StreetInterview
+- Live 2D — https://wink.ai/template-to-video/upload?templateId=ai_imagination_Live2D
+- Headstand — https://wink.ai/template-to-video/upload?templateId=ai_imagination_Headstand
+- BeanLive — https://wink.ai/template-to-video/upload?templateId=ai_imagination_BeanLive
+- Glitch — https://wink.ai/template-to-video/upload?templateId=ai_imagination_Glitch
+- Popout — https://wink.ai/template-to-video/upload?templateId=ai_imagination_Popout
+- Fireworks Movie — https://wink.ai/template-to-video/upload?templateId=ai_imagination_FireworksMovie
+- OOTD Track — https://wink.ai/template-to-video/upload?templateId=ai_imagination_OOTDTrack
+- Fireworks Film — https://wink.ai/template-to-video/upload?templateId=ai_imagination_FireworksFilm
+- 3D camera movement — https://wink.ai/template-to-video/upload?templateId=ai_imagination_3Dcameramovement
+- Hot — https://wink.ai/template-to-image/upload?templateId=35
+- Hot — https://wink.ai/template-to-image/upload?templateId=50
 
-Total returned by public workspace extraction: 22 entries, including tools, enhancer modes and templates.
+Extracted unique destinations: 51.
 
-## Interpretation
+## Product interpretation
 
-- HeyGen's directory is strongly outcome-oriented: script, URL, PDF, slides, audio, podcast, training, avatar, captions, repurposing and channel-specific deliverables.
-- Wink's workspace is operation-oriented: users select an enhancement or editing task, upload/import media, configure a focused operation or sequence, then preview/export.
-- Executive Visuals should combine both interaction styles: outcome-first project planning plus a composable, inspectable processing pipeline.
-- This catalogue will change as the vendors add, rename or retire tools. Keep provider catalogues versioned and refreshed rather than hard-coding vendor tool lists into the product.
+- HeyGen's public catalogue is outcome-oriented: scripts, URLs, PDFs, slides, audio, podcasts, training, avatars, captions, repurposing, presentations and channel-specific deliverables.
+- Wink's workspace is operation-oriented: select an enhancement/edit task, upload or import media, configure a focused operation or sequence, then preview/export.
+- Executive Visuals should combine both patterns: outcome-first project planning plus a composable, inspectable processing pipeline.
+- Keep provider catalogues versioned and refreshable. Do not hard-code third-party tool lists, plan entitlements or costs as permanent truths.
