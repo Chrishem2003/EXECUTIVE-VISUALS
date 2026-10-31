@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { searchProjectKnowledge } from "../knowledge-search.mjs";
+import { validateWorkflowGraph } from "../workflow-validation.mjs";
 
 test("project knowledge search ranks findings and returns their source provenance",()=>{
  const document={researchSources:[{id:"s1",title:"Wetland monitoring report",url:"https://example.org/wetlands",sourceType:"Official report",author:"Agency",publishedAt:"2026-01-01",rights:"Public"}],knowledgeRecords:[
@@ -18,4 +19,12 @@ test("project knowledge search rejects blank queries and clamps result limits",(
  assert.throws(()=>searchProjectKnowledge({knowledgeRecords:[]},"   "),error=>error.code==="KNOWLEDGE_QUERY_REQUIRED");
  const records=Array.from({length:60},(_,i)=>({id:String(i),title:"Wetland "+i,content:"Wetland change",tags:[],sourceIds:[]}));
  assert.equal(searchProjectKnowledge({knowledgeRecords:records},"wetland",{limit:100}).matchedCount,50);
+});
+
+test("knowledge retrieval is a valid typed workflow node fed by a text query",()=>{
+ const graph={id:"research-graph",projectId:"project-1",revision:1,nodes:[
+  {id:"query",kind:"text",label:"Query",inputs:[],outputs:[{id:"text",label:"Text",type:"text"}],config:{text:"wetland vegetation"}},
+  {id:"search",kind:"knowledge.search",label:"Search Project Knowledge",inputs:[{id:"query",label:"Query",type:"text",required:true}],outputs:[{id:"document",label:"Document",type:"document"}],config:{}}
+ ],edges:[{id:"edge-1",sourceNodeId:"query",sourcePortId:"text",targetNodeId:"search",targetPortId:"query"}]};
+ assert.equal(validateWorkflowGraph(graph).valid,true);
 });
