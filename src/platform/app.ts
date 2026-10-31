@@ -1,7 +1,7 @@
 import "./style.css";
 import { CAPABILITY_ATLAS, type CapabilityDefinition } from "../core/capability-atlas";
 import { planWorkflowExecution, validateWorkflow, type WorkflowGraph } from "../core/workflow";
-import { renderRuntimeWorkspace, renderAssetLibrary, renderEngineStatus, renderRuntimeOverview, initRuntime } from "./runtime";
+import { renderRuntimeWorkspace, renderAssetLibrary, renderEngineStatus, renderRuntimeOverview, loadCreativeDraft, getCurrentProjectId, initRuntime } from "./runtime";
 import { renderTimelineWorkspace, initTimelineWorkspace } from "./timeline-workspace";
 import { renderWorkflowWorkspace, initWorkflowWorkspace } from "./workflow-workspace";
 type Tab="home"|"director"|"canvas"|"characters"|"cinema"|"images"|"video"|"voice"|"enhance"|"campaigns"|"library"|"engines"|"settings"|"capabilities"|"runtime";
@@ -14,10 +14,16 @@ const KEY="executive-visuals:unified:v1";
 const tabs:{id:Tab;label:string;group:string;icon:string}[]=[
 {id:"home",label:"Command centre",group:"Workspace",icon:"⌂"},{id:"director",label:"AI Director",group:"Plan & direct",icon:"✳"},{id:"canvas",label:"Workflow canvas",group:"Plan & direct",icon:"⌘"},{id:"characters",label:"Characters & voices",group:"Plan & direct",icon:"◉"},{id:"cinema",label:"Cinematic studio",group:"Create",icon:"▣"},{id:"images",label:"Image studio",group:"Create",icon:"▧"},{id:"video",label:"Video editor",group:"Create",icon:"▷"},{id:"voice",label:"Voice & localization",group:"Create",icon:"♫"},{id:"enhance",label:"Enhancement lab",group:"Refine",icon:"✧"},{id:"campaigns",label:"Campaign factory",group:"Refine",icon:"◇"},{id:"library",label:"Asset library",group:"Manage",icon:"▤"},{id:"engines",label:"Creative engines",group:"Manage",icon:"⛭"},{id:"settings",label:"Project settings",group:"Manage",icon:"⚙"},{id:"capabilities",label:"Capability atlas",group:"Manage",icon:"◈"},{id:"runtime",label:"Runtime console",group:"Manage",icon:"◉"}];
 const baseGraph=["Creative brief","Character reference","Image generation","Video generation","Edit & captions","Enhancement","Export"];
-const state={projects:[] as Project[],tasks:[] as Task[],shots:[] as Shot[],characters:[] as Character[],assets:[] as Asset[],graph:baseGraph.slice(),tab:"home" as Tab,activeProject:"",prompt:"",plan:"",script:"",variants:[] as string[],workflowPreview:""};
+const state={projects:[] as Project[],tasks:[] as Task[],shots:[] as Shot[],characters:[] as Character[],assets:[] as Asset[],graph:baseGraph.slice(),tab:"home" as Tab,activeProject:"",prompt:"",plan:"",script:"",variants:[] as string[],workflowPreview:"",apiProjectId:""};
 const urls=new Map<string,string>();const uid=()=>crypto.randomUUID();const esc=(v:string)=>v.replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]||c));const $=<T extends HTMLElement>(s:string)=>document.querySelector<T>(s)!;
 function load(){try{Object.assign(state,JSON.parse(localStorage.getItem(KEY)||"{}"));}catch{}state.tab="home";}
-function save(){localStorage.setItem(KEY,JSON.stringify({...state,tab:"home"}));}
+function save(){
+ localStorage.setItem(KEY,JSON.stringify({...state,tab:"home"}));
+ window.dispatchEvent(new CustomEvent("ev:save-creative-draft",{detail:{
+  creativeProjects:state.projects,tasks:state.tasks,shots:state.shots,characters:state.characters,
+  prompt:state.prompt,plan:state.plan,script:state.script,variants:state.variants
+ }}));
+}
 function task(name:string,category:string,detail:string){state.tasks.unshift({id:uid(),name,category,status:"needs-engine",created:new Date().toISOString(),detail});save();render();}
 function header(k:string,t:string,d:string,a:string){return '<div class="page-head"><div><div class="eyebrow">'+k+'</div><h1>'+t+'</h1><p>'+d+'</p></div>'+a+'</div>';}
 function panel(t:string,b:string){return '<section class="panel"><h3>'+t+'</h3>'+b+'</section>';}
