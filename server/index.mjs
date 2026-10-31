@@ -8,6 +8,7 @@ import { Transform } from "node:stream";
 import { openDatabase, audit, addJobEvent, getOwnedProject, getOwnedAsset, json, parseJson } from "./db.mjs";
 import { executeMediaJob, executableAvailable } from "./media.mjs";
 import { validateWorkflowGraph } from "./workflow-validation.mjs";
+import { validateTimelineDocument } from "./timeline-validation.mjs";
 
 const PORT = Number(process.env.API_PORT || process.env.PORT || 4179);
 const HOST = process.env.API_HOST || "127.0.0.1";
@@ -307,6 +308,54 @@ export function createAppServer() {
         audit(db,user.id,"workflow.created","workflow",id,{graphHash},body.projectId||null);send(res,201,{workflow:{id,name,revision:1,graphHash}},cors);return;
       }
 
+      if(path==="/api/timelines"&&req.method==="GET"){
+        const rows=db.prepare("SELECT id,project_id,name,revision,created_at,updated_at FROM timelines WHERE owner_id=? AND archived_at IS NULL ORDER BY updated_at DESC").all(user.id);
+        send(res,200,{timelines:rows.map(x=>({id:x.id,projectId:x.project_id,name:x.name,revision:x.revision,createdAt:x.created_at,updatedAt:x.updated_at}))},cors);return;
+      }
+      if(path==="/api/timelines"&&req.method==="POST"){
+        const body=await readJson(req,4*1024*1024),timeline=body.timeline;
+        const projectId=body.projectId||timeline?.projectId||null;
+        if(projectId&&!getOwnedProject(db,user.id,projectId)){fail(res,404,"PROJECT_NOT_FOUND","Project not found.");return;}
+        const validation=validateTimelineDocument(timeline,db,user.id);
+        if(!validation.valid){send(res,422,{error:{code:"TIMELINE_INVALID",message:"Timeline failed validation.",issues:validation.issues}},cors);return;}
+        const id=randomUUID(),name=String(body.name||timeline.name||"Untitled sequence").trim().slice(0,160);
+        const saved={...timeline,id,projectId,name,revision:1};
+        db.prepare("INSERT INTO timelines(id,owner_id,project_id,name,timeline_json,otio_json) VALUES(?,?,?,?,?,?)")
+          .run(id,user.id,projectId,name,json(saved),body.otio?json(body.otio):null);
+        audit(db,user.id,"timeline.created","timeline",id,{revision:1},projectId);
+        send(res,201,{timeline:{id,projectId,name,revision:1,document:saved}},cors);return;
+      }
+      const timelineMatch=path.match(/^\/api\/timelines\/([0-9a-f-]+)(?:\/(otio))?$/i);
+      if(timelineMatch){
+        const record=db.prepare("SELECT * FROM timelines WHERE id=? AND owner_id=? AND archived_at IS NULL").get(timelineMatch[1],user.id);
+        if(!record){fail(res,404,"TIMELINE_NOT_FOUND","Timeline not found.");return;}
+        if(timelineMatch[2]==="otio"&&req.method==="GET"){
+          if(!record.otio_json){fail(res,404,"INTERCHANGE_NOT_AVAILABLE","No interchange export has been saved.");return;}
+          send(res,200,{otio:parseJson(record.otio_json)},cors);return;
+        }
+        if(!timelineMatch[2]&&req.method==="GET"){
+          send(res,200,{timeline:{id:record.id,projectId:record.project_id,name:record.name,revision:record.revision,document:parseJson(record.timeline_json),createdAt:record.created_at,updatedAt:record.updated_at}},cors);return;
+        }
+        if(!timelineMatch[2]&&req.method==="PUT"){
+          const body=await readJson(req,4*1024*1024);
+          if(Number(body.revision)!==record.revision){fail(res,409,"REVISION_CONFLICT","Timeline changed since it was loaded. Refresh and retry.");return;}
+          const timeline=body.timeline,validation=validateTimelineDocument(timeline,db,user.id);
+          if(!validation.valid){send(res,422,{error:{code:"TIMELINE_INVALID",message:"Timeline failed validation.",issues:validation.issues}},cors);return;}
+          const projectId=body.projectId??record.project_id;
+          if(projectId&&!getOwnedProject(db,user.id,projectId)){fail(res,404,"PROJECT_NOT_FOUND","Project not found.");return;}
+          const revision=record.revision+1,name=String(body.name||timeline.name||record.name).trim().slice(0,160);
+          const saved={...timeline,id:record.id,projectId,name,revision};
+          db.prepare("UPDATE timelines SET project_id=?,name=?,revision=?,timeline_json=?,otio_json=?,updated_at=? WHERE id=? AND owner_id=?")
+            .run(projectId,name,revision,json(saved),body.otio?json(body.otio):record.otio_json,now(),record.id,user.id);
+          audit(db,user.id,"timeline.updated","timeline",record.id,{revision},projectId);
+          send(res,200,{ok:true,revision},cors);return;
+        }
+        if(!timelineMatch[2]&&req.method==="DELETE"){
+          db.prepare("UPDATE timelines SET archived_at=?,updated_at=? WHERE id=? AND owner_id=?").run(now(),now(),record.id,user.id);
+          audit(db,user.id,"timeline.archived","timeline",record.id,{},record.project_id);
+          send(res,200,{ok:true},cors);return;
+        }
+      }
       const workflowMatch=path.match(/^\/api\/workflows\/([0-9a-f-]+)$/i);
       if(workflowMatch){
         const workflow=db.prepare("SELECT * FROM workflows WHERE id=? AND owner_id=?").get(workflowMatch[1],user.id);
