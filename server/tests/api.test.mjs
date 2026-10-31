@@ -27,7 +27,8 @@ async function waitForApi(){
 }
 await waitForApi();
 
-async function expectStatus(response,status){if(response.status!==status)throw new Error("Expected HTTP "+status+", got "+response.status+": "+await response.text());}\nasync function register(email){
+async function expectStatus(response,status){if(response.status!==status)throw new Error("Expected HTTP "+status+", got "+response.status+": "+await response.text());}
+async function register(email){
   const r=await fetch(base+"/api/auth/register",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({email,password:"local-test-password-123"})});
   await expectStatus(r,201);
   return r.headers.get("set-cookie").split(";")[0];
