@@ -6,7 +6,7 @@ A provider-neutral platform for creative planning, media ingest, graph workflows
 
 ## Workspaces
 - Creative direction, research, briefs, scripts and storyboards.
-- Workflow canvas, typed media ports, validation and targeted run planning.
+- Workflow canvas, typed media ports, server-side validation and targeted run planning.\n- Multi-track editorial timeline with frame-based trims, splits, clip movement, review markers and interchange export.
 - Character, voice, identity, wardrobe and consent records.
 - Cinematic shot planning and continuity.
 - Image and video production planning.
