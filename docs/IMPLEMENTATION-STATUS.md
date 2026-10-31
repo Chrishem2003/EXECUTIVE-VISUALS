@@ -207,7 +207,18 @@ This closes the renderer-adapter gap in the cloud timeline execution contract. I
 - Server-role credentials remain server-side. Database requests are bounded by a timeout and API payloads are capped at 5 MiB. Cloud API routes are disabled unless CLOUD_TIMELINE_API_ENABLED=true; startup also requires AUTH_MODE=supabase.
 - Added mock-backed tests for verified ownership, revision conflicts, render enqueue, role enforcement, idempotency, job visibility and event history.
 
-**Not yet connected:** cloud asset listing, asset-library browser UI, the cloud worker process, and cloud workflow execution. The API must remain disabled until the dedicated executive_visuals schema and private bucket policies are applied to an isolated Supabase project and verified. No migration was applied and no cloud job was submitted during implementation.
+**Not yet connected:** cloud asset listing, asset-library browser UI, cloud worker deployment/activation, and cloud workflow execution. The API must remain disabled until the dedicated executive_visuals schema and private bucket policies are applied to an isolated Supabase project and verified. No migration was applied and no cloud job was submitted during implementation.
 
 - Cloud asset ingest is streamed to an isolated temporary file, enforces the configured upload ceiling and MIME/file-signature agreement, then publishes through the private storage repository with checksum metadata. Temporary files are removed after completion or failure. The API exposes short-lived signed reads and soft deletion; original objects are not made public.
 - Startup readiness checks verify the required isolated-schema tables and confirm the media bucket is private. The check runs only when the cloud API opt-in is enabled.
+
+
+## Separate cloud worker process — implemented, not deployed
+
+- Added a standalone `start:cloud-worker` entry point for separately hosted media and timeline worker families. It is independent of the web API process and does not start when imported.
+- Both worker families are disabled by default and require explicit `CLOUD_WORKER_ENABLED`, `CLOUD_MEDIA_WORKER_ENABLED` and/or `CLOUD_TIMELINE_WORKER_ENABLED` flags plus server-side Supabase credentials.
+- Startup checks the isolated schema and private media bucket, verifies FFmpeg/FFprobe availability, validates lease/heartbeat/poll/byte limits, and fails closed when prerequisites are missing.
+- The supervisor runs supported worker cycles, recovers expired leases, reports bounded structured status/error events, and stops scheduling work during graceful shutdown.
+- Tests cover disabled configuration, missing credentials/families, configuration bounds, recovery, family cycles and shutdown.
+
+This is a runnable worker entry point, not a deployed worker. Do not set the enable flags until the isolated database migration, private bucket policies, API schema exposure and service credentials have been reviewed. No worker service was created or launched.
