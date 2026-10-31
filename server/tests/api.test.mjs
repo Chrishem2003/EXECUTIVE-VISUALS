@@ -126,6 +126,15 @@ test("workflow graphs are validated, versioned and owner-scoped",async()=>{
   assert.equal(created.status,201,await created.clone().text());
   const workflow=(await created.json()).workflow;
   assert.equal(workflow.graph.id,workflow.id,"server workflow ID and graph ID must match");
+  const runResponse=await request("/api/workflows/"+workflow.id+"/run",{method:"POST"},cookie);
+  assert.equal(runResponse.status,202);
+  const run=(await runResponse.json());
+  assert.equal(run.status,"queued");
+  const runRead=await request("/api/workflow-runs/"+run.runId,{},cookie);
+  assert.equal(runRead.status,200);
+  assert.equal((await runRead.json()).run.status,"queued");
+  const runList=await request("/api/workflows/"+workflow.id+"/runs",{},cookie);
+  assert.equal((await runList.json()).runs.length,1);
   const read=await request("/api/workflows/"+workflow.id,{},cookie);
   assert.equal(read.status,200);
   const readBody=await read.json();
