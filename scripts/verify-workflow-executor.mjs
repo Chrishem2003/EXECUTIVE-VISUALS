@@ -91,8 +91,8 @@ try{
  const providerJob=seedRun("run-provider",provider);
  db.prepare("UPDATE workflow_node_runs SET status='completed',output_json=?,completed_at=? WHERE run_id=? AND node_id='gate'")
   .run(json({approved:true}),now,"run-provider");
- await assert.rejects(()=>executeWorkflowRun({db,job:providerJob,mediaRoot,activeProcesses:new Map(),onProgress:()=>{}}),/No local execution adapter/);
+ await assert.rejects(()=>executeWorkflowRun({db,job:providerJob,mediaRoot,activeProcesses:new Map(),onProgress:()=>{}}),error=>error.code==="IMAGE_GATEWAY_DISABLED");
  assert.equal(db.prepare("SELECT status FROM workflow_runs WHERE id=?").get("run-provider").status,"blocked");
  assert.equal(db.prepare("SELECT status FROM workflow_node_runs WHERE run_id=? AND node_id='image'").get("run-provider").status,"blocked");
- console.log("Workflow executor checks passed: DAG data propagation, local node execution, human approval pause/resume and explicit blocking of unavailable provider nodes.");
+ console.log("Workflow executor checks passed: DAG data propagation, local node execution, human approval pause/resume and explicit blocking of disabled provider nodes.");
 }finally{db.close();await rm(root,{recursive:true,force:true});}
