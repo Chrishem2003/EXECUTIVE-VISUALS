@@ -2,8 +2,9 @@ import { apiRequest } from "../core/api";
 import { createEmptyWorkflow, planWorkflowExecution, validateWorkflow, type MediaPortType, type WorkflowEdge, type WorkflowGraph, type WorkflowNode, type WorkflowNodeKind, type WorkflowPort } from "../core/workflow";
 
 type SavedWorkflow={id:string;projectId?:string|null;name:string;revision:number;graph?:WorkflowGraph;graphHash?:string};
-const state:{graph:WorkflowGraph|null;workflows:SavedWorkflow[];serverRevision:number;status:"loading"|"ready"|"offline"|"auth";message:string;selectedNode:string;plan:string}={
- graph:null,workflows:[],serverRevision:0,status:"loading",message:"Loading workflow canvas…",selectedNode:"",plan:""
+type WorkflowRunNode={node_id:string;status:string;error?:{code?:string;message?:string}|null};
+const state:{graph:WorkflowGraph|null;workflows:SavedWorkflow[];serverRevision:number;status:"loading"|"ready"|"offline"|"auth";message:string;selectedNode:string;plan:string;latestRunId:string;runStatus:string;runNodes:WorkflowRunNode[]}={
+ graph:null,workflows:[],serverRevision:0,status:"loading",message:"Loading workflow canvas…",selectedNode:"",plan:"",latestRunId:"",runStatus:"",runNodes:[]
 };
 const esc=(v:unknown)=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]||c));
 const port=(id:string,type:MediaPortType,required=false,multiple=false):WorkflowPort=>({id,label:id,type,required,multiple});
@@ -58,13 +59,13 @@ function renderCanvas(){
 export function renderWorkflowWorkspace(){
  const nodes=state.graph?.nodes||[];
  const selected=nodes.find(n=>n.id===state.selectedNode)||nodes[0];
- return '<div id="workflow-workspace"><div class="wf-toolbar"><span class="runtime-status '+state.status+'"><i></i>'+esc(state.status==="ready"?"WORKFLOW SAVED":state.status==="auth"?"SIGN IN REQUIRED":state.status==="offline"?"API OFFLINE":"LOADING")+'</span><select id="wf-select">'+options(state.workflows.map(w=>({id:w.id,label:w.name+" · r"+w.revision})),state.graph?.id||"")+'</select><button class="secondary" data-wf-action="new">＋ New workflow</button><button class="secondary" data-wf-action="validate">Validate</button><button class="secondary" data-wf-action="plan">Preview run</button><button class="primary" data-wf-action="save">Save version</button></div>'+
+ return '<div id="workflow-workspace"><div class="wf-toolbar"><span class="runtime-status '+state.status+'"><i></i>'+esc(state.status==="ready"?"WORKFLOW SAVED":state.status==="auth"?"SIGN IN REQUIRED":state.status==="offline"?"API OFFLINE":"LOADING")+'</span><select id="wf-select">'+options(state.workflows.map(w=>({id:w.id,label:w.name+" · r"+w.revision})),state.graph?.id||"")+'</select><button class="secondary" data-wf-action="new">＋ New workflow</button><button class="secondary" data-wf-action="validate">Validate</button><button class="secondary" data-wf-action="plan">Preview run</button><button class="primary" data-wf-action="run">Run local workflow</button><button class="primary" data-wf-action="save">Save version</button></div>'+
  (state.message?'<div class="notice">'+esc(state.message)+'</div>':'')+
  '<div class="wf-layout"><aside class="panel wf-palette"><div class="eyebrow">NODE PALETTE</div><h3>Build a workflow</h3><p>Drag nodes into the canvas, position them, then connect typed ports.</p>'+Object.entries(palette).map(([key,value])=>'<button data-wf-add="'+key+'">＋ '+esc(value.label)+'</button>').join("")+'</aside>'+
  '<section class="panel wf-main"><div class="wf-canvas-heading"><div><div class="eyebrow">VISUAL NODE GRAPH</div><h3>'+(state.graph?esc(state.graph.name||"Untitled workflow"):"Workflow")+'</h3></div><span>'+nodes.length+' nodes · '+(state.graph?.edges.length||0)+' connections</span></div>'+renderCanvas()+
  '<div class="wf-connection"><div class="eyebrow">CONNECT NODES</div><form id="wf-connect-form"><label>Source node</label><select name="sourceNode">'+options(nodes.map(n=>({id:n.id,label:n.label+" · "+n.id.slice(0,6)})))+'</select><label>Output port</label><select name="sourcePort">'+portOptions(nodes[0],"outputs")+'</select><label>Target node</label><select name="targetNode">'+options(nodes.map(n=>({id:n.id,label:n.label+" · "+n.id.slice(0,6)})))+'</select><label>Input port</label><select name="targetPort">'+portOptions(nodes[0],"inputs")+'</select><button class="secondary">＋ Connect ports</button></form><div class="wf-edge-list">'+renderEdges()+'</div></div></section>'+
  '<aside class="panel wf-inspector"><div class="eyebrow">NODE INSPECTOR</div><h3>Configuration</h3>'+(selected?'<form id="wf-config-form"><input type="hidden" name="nodeId" value="'+esc(selected.id)+'"><label>Node label</label><input name="label" value="'+esc(selected.label)+'" maxlength="120"><label>Node configuration (JSON)</label><textarea name="config" rows="9">'+esc(JSON.stringify(selected.config,null,2))+'</textarea><button class="secondary">Apply configuration</button></form>':'<div class="empty">Select a node to configure it.</div>')+
- '<div class="wf-plan">'+(state.plan?'<pre>'+esc(state.plan)+'</pre>':'<p>Validation and execution planning are non-billable. No model or provider jobs are submitted from this canvas yet.</p>')+'</div></aside></div></div>';
+ '<div class="wf-run-status">'+(state.latestRunId?'<div><b>Latest run</b> · '+esc(state.runStatus)+' <button data-wf-action="refresh-run">Refresh</button>'+(state.runStatus==="awaiting_approval"?'<button data-wf-action="approve">Approve step</button>':'')+'</div>'+state.runNodes.map(n=>'<span>'+esc(n.node_id)+' · '+esc(n.status)+(n.error?.message?' · '+esc(n.error.message):'')+'</span>').join(""):'No workflow runs yet.')+'</div><div class="wf-plan">'+(state.plan?'<pre>'+esc(state.plan)+'</pre>':'<p>Run planning uses registered local adapters only. Unsupported provider nodes are blocked; no paid provider calls are made.</p>')+'</div></aside></div></div>';
 }
 async function refresh(){
  const list=await apiRequest<{workflows:SavedWorkflow[]}>("/api/workflows");state.workflows=list.workflows;
@@ -79,7 +80,16 @@ async function refresh(){
   const created=await apiRequest<{workflow:SavedWorkflow}>("/api/workflows",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({name:"Untitled workflow",graph})});
   state.graph=created.workflow.graph||graph;state.serverRevision=created.workflow.revision;
  }
- state.selectedNode=state.graph?.nodes[0]?.id||"";state.status="ready";state.message="";
+ state.selectedNode=state.graph?.nodes[0]?.id||"";
+ const runs=await apiRequest<{runs:Array<{id:string;status:string}>}>("/api/workflows/"+state.graph!.id+"/runs");
+ state.latestRunId=runs.runs[0]?.id||"";
+ if(state.latestRunId)await loadRun();else{state.runStatus="";state.runNodes=[];}
+ state.status="ready";state.message="";
+}
+async function loadRun(){
+ if(!state.latestRunId)return;
+ const response=await apiRequest<{run:{status:string};nodes:WorkflowRunNode[]}>("/api/workflow-runs/"+state.latestRunId);
+ state.runStatus=response.run.status;state.runNodes=response.nodes;
 }
 async function persist(){
  if(!state.graph)return;
@@ -98,8 +108,11 @@ export async function initWorkflowWorkspace(){
 function paint(){const root=document.querySelector<HTMLElement>("#workflow-workspace");if(root)root.outerHTML=renderWorkflowWorkspace();}
 async function action(actionName:string){
  if(actionName==="new"){await createNew();return;}
+ if(actionName==="refresh-run"){await loadRun();paint();return;}
+ if(actionName==="approve"){if(!state.latestRunId)return;const result=await apiRequest<{status:string}>("/api/workflow-runs/"+state.latestRunId+"/approve",{method:"POST"});state.runStatus=result.status;await loadRun();window.dispatchEvent(new Event("ev:jobs-updated"));paint();return;}
  if(!state.graph)return;
  if(actionName==="save"){await persist();paint();return;}
+ if(actionName==="run"){await persist();const result=await apiRequest<{runId:string;status:string}>("/api/workflows/"+state.graph.id+"/run",{method:"POST"});state.latestRunId=result.runId;state.runStatus=result.status;await loadRun();window.dispatchEvent(new Event("ev:jobs-updated"));state.message="Workflow run queued. Only registered local adapters execute; unsupported provider nodes are blocked.";paint();return;}
  if(actionName==="validate"||actionName==="plan"){
   const validation=validateWorkflow(state.graph),plan=planWorkflowExecution(state.graph,{kind:"all"});
   state.plan=validation.valid&&plan.valid
