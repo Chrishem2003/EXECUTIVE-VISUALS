@@ -65,7 +65,7 @@ export function createCloudTimelineExecutor({timelines,mediaIO,renderTimeline,te
       onProgress(90);
       const outputAsset=await mediaIO.publish({
         ownerId:job.owner_id,projectId:record.projectId,filename:output.filename,mediaType:output.mediaType,
-        path:output.path,metadata:{operation:"timeline.render",timelineId:record.id,timelineRevision:record.revision,sha256,...(output.metadata||{})}
+        path:output.path,metadata:{...(output.metadata||{}),operation:"timeline.render",timelineId:record.id,timelineRevision:record.revision,sha256}
       });
       onProgress(100);
       return{timelineId:record.id,timelineRevision:record.revision,outputAsset,sha256,byteSize:info.size,render:output.render||{}};
