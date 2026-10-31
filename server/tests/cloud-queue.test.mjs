@@ -10,14 +10,14 @@ function response(body, status=200) {
 test("cloud queue uses server credentials and pins PostgREST to the private schema", async()=>{
   const requests=[];
   const queue=createCloudQueue({...base,fetchImpl:async(url,options)=>{requests.push({url,options});return response([{id:"job-1",status:"processing",lease_owner:"worker-1",lease_expires_at:"2026-11-01T12:01:30Z"}]);}});
-  const job=await queue.claim("worker-1");
+  const job=await queue.claim("worker-1",90,["media.color"]);
   assert.equal(job.id,"job-1");
   assert.equal(requests[0].url,"https://example.supabase.co/rest/v1/rpc/claim_next_job");
   assert.equal(requests[0].options.headers["accept-profile"],"executive_visuals");
   assert.equal(requests[0].options.headers["content-profile"],"executive_visuals");
   assert.equal(requests[0].options.headers.apikey,base.serviceRoleKey);
   assert.equal(requests[0].options.headers.authorization,"Bearer "+base.serviceRoleKey);
-  assert.deepEqual(JSON.parse(requests[0].options.body),{p_worker_id:"worker-1",p_lease_seconds:90});
+  assert.deepEqual(JSON.parse(requests[0].options.body),{p_worker_id:"worker-1",p_lease_seconds:90,p_job_types:["media.color"]});
 });
 
 test("claim accepts an empty queue and rejects malformed or foreign leases",async()=>{
@@ -50,6 +50,8 @@ test("configuration, arguments and HTTP errors fail closed",async()=>{
   await assert.rejects(()=>queue.claim("worker-1"),error=>error.code==="CLOUD_QUEUE_HTTP_403"&&!error.message.includes(base.serviceRoleKey));
   await assert.rejects(()=>queue.claim(""),/Worker ID/);
   await assert.rejects(()=>queue.claim("worker-1",10),/Lease duration/);
+  await assert.rejects(()=>queue.claim("worker-1",90,[]),/Job type filters/);
+  await assert.rejects(()=>queue.claim("worker-1",90,["media.color","media.color"]),/Job type filters/);
   await assert.rejects(()=>queue.recover(1001),/Recovery limit/);
   await assert.rejects(()=>queue.finish("job-1","worker-1","processing"),/terminal job status/);
   await assert.rejects(()=>queue.finish("job-1","worker-1","failed",[]),/must be an object/);
