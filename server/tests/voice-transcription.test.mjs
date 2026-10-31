@@ -83,7 +83,7 @@ test("approved transcription workflow verifies source audio and persists timesta
   const captionAsset=db.prepare("SELECT * FROM assets WHERE id=?").get(captionOutput.subtitleAssetId);
   assert.equal(captionAsset.media_type,"text/vtt");
   assert.equal(captionOutput.cueCount,1);
-  assert.equal(captionAsset.metadata_json.includes("\\"language\\":\\"en\\""),true);
+  assert.equal(JSON.parse(captionAsset.metadata_json).language,"en");
   const captionText=await readFile(join(mediaRoot,captionAsset.storage_path),"utf8");
   assert.match(captionText,/WEBVTT/);
   assert.match(captionText,/00:00:00.000 --> 00:00:02.400/);
