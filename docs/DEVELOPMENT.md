@@ -26,7 +26,8 @@ The `data/` directory is ignored by Git. Preserve it when backing up local proje
 - `POST /api/auth/register`, `POST /api/auth/login`, `POST /api/auth/logout`, `GET /api/me`
 - `GET/POST /api/projects`, `PUT/DELETE /api/projects/:id`
 - `GET/POST /api/assets`, `GET /api/assets/:id/file`, `DELETE /api/assets/:id`
-- `GET/POST /api/workflows`, `GET/PUT /api/workflows/:id`
+- `GET/POST /api/workflows`, `GET/PUT /api/workflows/:id`, `POST /api/workflows/:id/run`, `GET /api/workflows/:id/runs`
+- `GET /api/workflow-runs/:id`, `POST /api/workflow-runs/:id/approve`
 - `GET/POST /api/timelines`, `GET/PUT/DELETE /api/timelines/:id`, `GET /api/timelines/:id/otio`
 - `GET/POST /api/jobs`, `GET /api/jobs/:id`, `GET /api/jobs/:id/events`, `POST /api/jobs/:id/cancel`
 - `GET/POST /api/reviews`, `PUT /api/reviews/:id`
@@ -36,6 +37,9 @@ Uploads are raw binary request bodies. The client sends `Content-Type`, `X-File-
 
 ## Project collaboration and review
 Project owners can invite existing accounts as editor, reviewer or viewer. Editors can upload and modify project production records, reviewers can comment and approve/request changes, and viewers are read-only. Removing a member revokes access to project-scoped assets, jobs, workflows and timelines. Review comments support optional timecodes and auditable status changes.
+
+## Workflow execution
+Workflow runs store an immutable graph snapshot and hash plus a status record for every node. Local nodes include text/data, uploaded asset references, frame extraction, audio extraction, media probe, transcode/compress, approval, merge/batch, export and timeline render. Approval nodes pause the run until an authorized owner/editor/reviewer approves. Nodes without a registered local adapter are marked blocked; they do not call a paid service.
 
 ## Editorial timeline
 The Video Editor now uses a persisted multi-track timeline model with rational frame timing, source ranges, track locking, clip placement, trim, split, move, markers, overlap validation and interchange JSON export. Timelines are owner-scoped, versioned and saved through optimistic revision checks. Local MP4 master rendering now supports one primary video track plus audio-only clips mixed into AAC. Preview playback, transitions, overlays, captions and effects rendering are not yet implemented.
