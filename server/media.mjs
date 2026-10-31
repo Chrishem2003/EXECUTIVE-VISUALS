@@ -64,7 +64,7 @@ function captionStyle(metadata={}){
  const primary=colour(metadata.primaryColour)||"&H00FFFFFF",outlineColour=colour(metadata.outlineColour)||"&H00000000";
  return ["FontName="+fontName,"FontSize="+fontSize,"PrimaryColour="+primary,"OutlineColour="+outlineColour,"Outline="+outline,"Shadow="+shadow,"Alignment="+alignment,"MarginV="+marginV].join(",");
 }
-\nexport function executableAvailable(name) {
+export function executableAvailable(name) {
   const executable=name==="ffmpeg"?(process.env.FFMPEG_PATH||name):name==="ffprobe"?(process.env.FFPROBE_PATH||name):name;
   const result = spawnSync(executable, ["-version"], { stdio: "ignore", timeout: 3000, windowsHide: true });
   return !result.error && result.status === 0;
