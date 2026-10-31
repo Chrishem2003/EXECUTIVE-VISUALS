@@ -68,7 +68,7 @@ try{
   .run("job-2","workflow-user","workflow.execute",JSON.stringify({runId:"run-2"}));
  await assert.rejects(
   executeWorkflowRun({db,job:{...job,id:"job-2",input_json:JSON.stringify({runId:"run-2"})},mediaRoot,activeProcesses:new Map(),onProgress:()=>{}}),
-  error=>error.code==="ENGINE_UNAVAILABLE"
+  error=>error.code==="APPROVAL_REQUIRED"
  );
  assert.equal(db.prepare("SELECT status FROM workflow_runs WHERE id='run-2'").get().status,"blocked");
  assert.equal(db.prepare("SELECT status FROM workflow_node_runs WHERE run_id='run-2' AND node_id='generate'").get().status,"blocked");
