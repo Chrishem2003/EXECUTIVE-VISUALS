@@ -39,6 +39,19 @@ create table if not exists executive_visuals.workflows (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists executive_visuals.timelines (
+  id uuid primary key default gen_random_uuid(),
+  owner_id uuid not null references auth.users(id) on delete cascade,
+  project_id uuid references executive_visuals.projects(id) on delete cascade,
+  name text not null check (char_length(name) between 1 and 160),
+  revision integer not null default 1 check (revision > 0),
+  timeline jsonb not null check (jsonb_typeof(timeline)='object'),
+  otio jsonb check (otio is null or jsonb_typeof(otio)='object'),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  archived_at timestamptz
+);
+
 create table if not exists executive_visuals.assets (
   id uuid primary key default gen_random_uuid(),
   owner_id uuid not null references auth.users(id) on delete cascade,
@@ -126,7 +139,7 @@ create table if not exists executive_visuals.audit_events (
 );
 
 create index if not exists ev_projects_owner_updated on executive_visuals.projects(owner_id,updated_at desc);
-create index if not exists ev_assets_owner_created on executive_visuals.assets(owner_id,created_at desc);
+create index if not exists ev_timelines_owner_updated on executive_visuals.timelines(owner_id,updated_at desc);\ncreate index if not exists ev_assets_owner_created on executive_visuals.assets(owner_id,created_at desc);
 create index if not exists ev_assets_project_created on executive_visuals.assets(project_id,created_at desc);
 create index if not exists ev_jobs_status_created on executive_visuals.jobs(status,created_at);
 create index if not exists ev_jobs_owner_created on executive_visuals.jobs(owner_id,created_at desc);
@@ -137,7 +150,7 @@ create index if not exists ev_audit_owner_id on executive_visuals.audit_events(o
 alter table executive_visuals.projects enable row level security;
 alter table executive_visuals.project_members enable row level security;
 alter table executive_visuals.workflows enable row level security;
-alter table executive_visuals.assets enable row level security;
+alter table executive_visuals.assets enable row level security;\nalter table executive_visuals.timelines enable row level security;
 alter table executive_visuals.jobs enable row level security;
 alter table executive_visuals.job_events enable row level security;
 alter table executive_visuals.consents enable row level security;
@@ -181,6 +194,17 @@ with check (owner_id=(select auth.uid()));
 create policy ev_workflows_update on executive_visuals.workflows for update to authenticated
 using (owner_id=(select auth.uid())) with check (owner_id=(select auth.uid()));
 create policy ev_workflows_delete on executive_visuals.workflows for delete to authenticated
+using (owner_id=(select auth.uid()));
+
+create policy ev_timelines_read on executive_visuals.timelines for select to authenticated
+using (owner_id=(select auth.uid()) or exists (
+  select 1 from executive_visuals.project_members m where m.project_id=timelines.project_id and m.member_id=(select auth.uid())
+));
+create policy ev_timelines_insert on executive_visuals.timelines for insert to authenticated
+with check (owner_id=(select auth.uid()));
+create policy ev_timelines_update on executive_visuals.timelines for update to authenticated
+using (owner_id=(select auth.uid())) with check (owner_id=(select auth.uid()));
+create policy ev_timelines_delete on executive_visuals.timelines for delete to authenticated
 using (owner_id=(select auth.uid()));
 
 create policy ev_assets_read on executive_visuals.assets for select to authenticated
