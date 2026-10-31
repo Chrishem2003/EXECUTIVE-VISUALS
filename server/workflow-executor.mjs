@@ -4,7 +4,7 @@ import { validateWorkflowGraph } from "./workflow-validation.mjs";
 import { generateText } from "./ai-gateway.mjs";
 
 const now=()=>new Date().toISOString();
-function hasApprovedAncestor(graph,nodeId,outputs){
+export function hasApprovedAncestor(graph,nodeId,outputs){
  const parents=new Map(graph.nodes.map(node=>[node.id,[]]));
  for(const edge of graph.edges)parents.get(edge.targetNodeId)?.push(edge.sourceNodeId);
  const pending=[...(parents.get(nodeId)||[])],seen=new Set();
