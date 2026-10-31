@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createCloudStorage } from "../cloud-storage.mjs";
+import { createCloudStorage, buildCloudAssetObjectPath } from "../cloud-storage.mjs";
 
 const config={url:"https://example.supabase.co",serviceRoleKey:"storage-secret"};
 const uuid="123e4567-e89b-42d3-a456-426614174000";
@@ -51,4 +51,14 @@ test("unsafe paths, unsupported media, oversized data and credential-bearing URL
  await assert.rejects(()=>storage.upload(path,new Uint8Array(5),"video/mp4"),/size limit/);
  await assert.rejects(()=>storage.upload(path,new Uint8Array(0),"video/mp4"),/empty/);
  assert.throws(()=>createCloudStorage({url:"https://user:pass@example.supabase.co",serviceRoleKey:"secret"}),/HTTPS/);
+});
+
+test("cloud asset object paths match owner and project storage policy prefixes",()=>{
+ const ownerId="123e4567-e89b-42d3-a456-426614174000";
+ const projectId="223e4567-e89b-42d3-a456-426614174000";
+ const assetId="323e4567-e89b-42d3-a456-426614174000";
+ assert.equal(buildCloudAssetObjectPath({ownerId,assetId,filename:"master.mp4"}),ownerId+"/"+assetId+"/master.mp4");
+ assert.equal(buildCloudAssetObjectPath({ownerId,projectId,assetId,filename:"master.mp4"}),projectId+"/"+assetId+"/master.mp4");
+ assert.throws(()=>buildCloudAssetObjectPath({ownerId:"invalid",assetId,filename:"x.mp4"}),/UUID/);
+ assert.throws(()=>buildCloudAssetObjectPath({ownerId,assetId,filename:"../escape.mp4"}),/filename/);
 });
