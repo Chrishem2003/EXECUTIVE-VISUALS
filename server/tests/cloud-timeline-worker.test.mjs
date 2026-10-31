@@ -1,0 +1,24 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { createCloudTimelineWorker } from "../cloud-timeline-worker.mjs";
+
+test("cloud timeline worker only claims timeline render jobs",async()=>{
+ let filters=null;
+ const queue={async claim(id,leaseSeconds,jobTypes){filters=jobTypes;return null;},async renew(){return true;},async finish(){return true;},async recover(){return 0;}};
+ const worker=createCloudTimelineWorker({
+  workerId:"timeline-worker-1",queue,
+  timelineService:{timelines:{get(){}},assets:{}},
+  mediaIO:{materialize(){},publish(){}},
+  async renderTimeline(){}
+ });
+ assert.deepEqual(await worker.runCycle(),{claimed:false});
+ assert.deepEqual(filters,["timeline.render"]);
+});
+
+test("cloud timeline worker requires an explicit renderer",()=>{
+ assert.throws(()=>createCloudTimelineWorker({
+  workerId:"timeline-worker-2",queue:{claim(){},renew(){},finish(){},recover(){}},
+  timelineService:{timelines:{get(){}},assets:{}},
+  mediaIO:{materialize(){},publish(){}}
+ }),/render engine/);
+});
