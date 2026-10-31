@@ -22,7 +22,7 @@
 | Media ingest | Binary uploads to local disk, MIME allowlist, upload-size limit and SHA-256 checksum | Local disk; cloud object storage not connected |
 | Asset library | Owner isolation, metadata, original/derivative relationship, private file reads, image/video/audio/document previews and processing history | Local media volume; no cloud storage or signed URLs yet |
 | Job queue | Persistent queue, idempotency keys, normalized states, progress events, renewable worker leases, stale-worker recovery, bounded retries with exponential backoff, cross-process cancellation polling and audit trail | Multi-process lease coordination on a shared SQLite database; multi-host workers still require a shared Postgres queue |
-| Local media engine | Probe, thumbnail, transcode, audio extraction, proxy generation and timeline MP4 master rendering with synchronized audio, still-image overlays, per-clip gain and burned-in SRT/VTT captions | Requires FFmpeg/FFprobe; one primary video track; animated/video overlays, transitions and advanced effects remain pending |
+| Local media engine | Probe, thumbnail, transcode, audio extraction, proxy generation, video denoise, color correction, resize/reframe, frame interpolation, FFmpeg scaling and timeline MP4 master rendering | Requires FFmpeg/FFprobe; enhancement operations are video-only; neural restoration, advanced stabilization, animated/video overlays, transitions and advanced effects remain pending |
 | Runtime console | Sign-in, project creation, persistent asset library, live engine readiness, uploads, media job submission, job inspection and audit view | Browser UI uses the local API; creative briefs, shot lists and characters sync to project workspace documents |
 | Project collaboration | Owner-managed invitations with editor, reviewer and viewer roles; access revocation enforced across project records | Existing local accounts only; invitation email delivery not connected |
 | Review and approvals | Timecoded comments, approve/request-changes decisions and status updates | Local API persistence; external review links and visual drawing annotations not implemented |
@@ -40,7 +40,7 @@ The build pipeline runs:
 2. Workflow graph validation and targeted-run behavior checks.
 3. API integration tests for authentication, ownership isolation, project workspace persistence, revision conflicts, role permissions, uploads and idempotency.
 4. Mock-gateway tests for server-side text generation, remote-access controls and approval gating.
-5. Real FFmpeg rendering and output inspection.
+5. Real FFmpeg rendering and output inspection.\n6. Real FFmpeg/FFprobe fixture execution for denoise, color correction, resize, interpolation and scaling with invalid-parameter rejection.
 6. TypeScript typecheck.
 7. Production Vite build.
 
