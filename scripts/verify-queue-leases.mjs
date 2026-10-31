@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { openDatabase } from "../server/db.mjs";
 import { claimNextJob, recoverExpiredJobs, renewJobLease } from "../server/queue.mjs";
 
-const root=await mkdtemp(join(process.env.TMPDIR||"/tmp","ev-queue-"));
+const root=await mkdtemp(join(tmpdir(),"ev-queue-"));
 const db=openDatabase(join(root,"queue.sqlite"));
 const now="2026-10-31T12:00:00.000Z";
 try{
