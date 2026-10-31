@@ -27,3 +27,12 @@ export function findProviderForCapability(catalog,capability,{allowRemote=false}
  const match=catalog.providers.find(provider=>provider.capabilities.includes(capability)&&provider.status==="ready"&&(!provider.remote||allowRemote));
  return match?{provider:match.provider,model:match.model,remote:match.remote}:null;
 }
+
+export function requireProviderForCapability(catalog,capability,{allowRemote=false}={}){
+ const selected=findProviderForCapability(catalog,capability,{allowRemote});
+ if(selected)return selected;
+ const provider=catalog.providers.find(item=>item.capabilities.includes(capability));
+ throw Object.assign(new Error(provider?.reason||"No configured provider is ready for this capability."),{
+  code:"PROVIDER_NOT_READY",capability,providerStatus:provider?.status||"unavailable"
+ });
+}
