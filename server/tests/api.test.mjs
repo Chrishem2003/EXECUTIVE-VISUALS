@@ -50,6 +50,22 @@ test("health reports local storage and media-engine availability without secrets
   assert.equal(response.headers.get("referrer-policy"),"strict-origin-when-cross-origin");
 });
 
+test("provider catalog is authenticated, safe and read-only",async()=>{
+  const anonymous=await fetch(base+"/api/providers");
+  assert.equal(anonymous.status,401);
+  const cookie=await register("provider-owner@example.test");
+  const response=await request("/api/providers",{},cookie);
+  assert.equal(response.status,200);
+  const catalog=await response.json();
+  assert.equal(catalog.version,1);
+  assert.equal(catalog.providers.length,6);
+  assert.equal(catalog.policy.requestsSubmitted,false);
+  assert.equal(catalog.policy.credentialsExposed,false);
+  assert.equal(catalog.policy.pricesEstimated,false);
+  assert.equal(JSON.stringify(catalog).includes("API_KEY"),false);
+  assert.equal(JSON.stringify(catalog).includes("Bearer "),false);
+});
+
 test("static application shell applies a restrictive content security policy",async()=>{
   const response=await fetch(base+"/");
   assert.equal(response.status,200);
