@@ -1,7 +1,7 @@
 export function searchProjectKnowledge(document,query,{limit=10}={}){
  const needle=String(query||"").trim().toLowerCase();
  if(!needle)throw Object.assign(new Error("Knowledge search requires a non-empty query."),{code:"KNOWLEDGE_QUERY_REQUIRED"});
- const terms=[...new Set(needle.split(/[^\\p{L}\\p{N}]+/u).filter(term=>term.length>2))];
+ const terms=[...new Set(needle.split(/[^\p{L}\p{N}]+/u).filter(term=>term.length>2))];
  const sources=Array.isArray(document?.researchSources)?document.researchSources:[];
  const sourceMap=new Map(sources.map(source=>[source.id,source]));
  const records=Array.isArray(document?.knowledgeRecords)?document.knowledgeRecords:[];
