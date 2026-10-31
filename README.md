@@ -13,7 +13,7 @@ A provider-neutral platform for creative planning, media ingest, graph workflows
 - Voice, transcription, translation and localization.
 - Media enhancement, repair and derivatives.
 - Campaign and multi-format production.
-- Asset library, provenance and version lineage.
+- Asset library, provenance and version lineage.\n- Project collaboration with owner, editor, reviewer and viewer roles.\n- Timecoded review comments, approvals and change requests.
 - Operations, capability readiness and audit history.
 
 ## Runtime milestone
