@@ -18,6 +18,7 @@ const palette:Record<string,{kind:WorkflowNodeKind;label:string;inputs:WorkflowP
  video:{kind:"video.generate",label:"Video Generation",inputs:[port("prompt","text",true),port("start-frame","start-frame"),port("reference","video",false,true)],outputs:[port("video","video")]},
  voice:{kind:"voice.generate",label:"Voice Generation",inputs:[port("script","text",true)],outputs:[port("audio","audio")]},
  transcribe:{kind:"voice.transcribe",label:"Audio Transcription",inputs:[port("audio","audio",true),port("approval","any")],outputs:[port("transcript","transcript"),port("text","text"),port("segments","structured-data"),port("sourceAudio","audio"),port("language","text")]},
+ translate:{kind:"voice.translate",label:"Translate Captions",inputs:[port("segments","structured-data",true),port("approval","any"),port("language","text")],outputs:[port("segments","structured-data"),port("language","text")]},
  captions:{kind:"voice.caption",label:"Create Timed Captions",inputs:[port("segments","structured-data",true),port("sourceAudio","audio"),port("language","text")],outputs:[port("subtitle","subtitle-file"),port("asset","asset")]},
  frame:{kind:"utility.frame-extract",label:"Extract Video Frame",inputs:[port("media","media",true)],outputs:[port("image","image")]},
  audio:{kind:"video.extract-audio",label:"Extract Audio",inputs:[port("media","media",true)],outputs:[port("audio","audio")]},
