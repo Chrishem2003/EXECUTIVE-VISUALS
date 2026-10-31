@@ -11,7 +11,7 @@ This is an evidence-led capability map for an independently designed product. It
 
 ---
 
-## 1. Higgsfield
+## 1. Platform A
 
 ### Product and capability inventory
 
@@ -68,7 +68,7 @@ Persistent project memory must be distinct from transient chat context. Recurrin
 
 ---
 
-## 2. HeyGen
+## 2. Platform B
 
 ### Avatar and identity families
 
@@ -122,7 +122,7 @@ Executive Visuals should provide tenant-scoped brand spaces, role-based access, 
 
 ---
 
-## 3. Wink
+## 3. Platform C
 
 ### Public workspace structure
 
@@ -205,46 +205,46 @@ A production project owns the brief, audience, brand, cast/identity and consent,
 
 ## 6. Research sources
 
-### Higgsfield
-- https://higgsfield.ai/creator-hub/help-center/getting-started/what-is-higgsfield
-- https://higgsfield.ai/creator-hub/help-center/tools/which-higgsfield-tool-should-i-use
-- https://higgsfield.ai/creator-hub/help-center/tools/how-do-i-use-cinema-studio
-- https://higgsfield.ai/creator-hub/help-center/tools/how-do-i-use-marketing-studio-to-create-video-ads
-- https://higgsfield.ai/creator-hub/help-center/tools/how-do-i-use-canvas
-- https://higgsfield.ai/creator-hub/help-center/tools/how-do-i-use-supercomputer
-- https://higgsfield.ai/creator-hub/help-center/tools/how-do-i-use-ai-influencer
-- https://higgsfield.ai/creator-hub/changelog
-- https://higgsfield.ai/cinematic-video-generator
-- https://higgsfield.ai/soul-intro
+### Platform A
+- [Public source ref EXT-001] A.ai/creator-hub/help-center/getting-started/what-is-Platform A
+- [Public source ref EXT-001] A.ai/creator-hub/help-center/tools/which-Platform A-tool-should-i-use
+- [Public source ref EXT-001] A.ai/creator-hub/help-center/tools/how-do-i-use-cinema-studio
+- [Public source ref EXT-001] A.ai/creator-hub/help-center/tools/how-do-i-use-marketing-studio-to-create-video-ads
+- [Public source ref EXT-001] A.ai/creator-hub/help-center/tools/how-do-i-use-canvas
+- [Public source ref EXT-001] A.ai/creator-hub/help-center/tools/how-do-i-use-supercomputer
+- [Public source ref EXT-001] A.ai/creator-hub/help-center/tools/how-do-i-use-ai-influencer
+- [Public source ref EXT-001] A.ai/creator-hub/changelog
+- [Public source ref EXT-001] A.ai/cinematic-video-generator
+- [Public source ref EXT-001] A.ai/soul-intro
 
-### HeyGen
-- https://www.heygen.com/llms.txt
-- https://developers.heygen.com/llms.txt
-- https://developers.heygen.com/
-- https://developers.heygen.com/mcp/overview
-- https://www.heygen.com/tool
-- https://www.heygen.com/avatars
-- https://www.heygen.com/translate
-- https://www.heygen.com/enterprise
-- https://www.heygen.com/security
+### Platform B
+- [Public source ref EXT-002] B.com/llms.txt
+- [Public source ref EXT-003] B.com/llms.txt
+- [Public source ref EXT-003] B.com/
+- [Public source ref EXT-003] B.com/mcp/overview
+- [Public source ref EXT-002] B.com/tool
+- [Public source ref EXT-002] B.com/avatars
+- [Public source ref EXT-002] B.com/translate
+- [Public source ref EXT-002] B.com/enterprise
+- [Public source ref EXT-002] B.com/security
 
-### Wink
-- https://wink.ai/workspace
-- https://wink.ai/ai-workflow
-- https://wink.ai/
-- https://wink.ai/benefits
-- https://wink.ai/about-us
-- https://wink.ai/video-enhancer/upload
-- https://wink.ai/video-repair/upload
-- https://wink.ai/video-upscaler/upload
-- https://wink.ai/video-retouch/upload
-- https://wink.ai/video-watermark-remover/upload
-- https://wink.ai/video-frame-interpolation/upload
-- https://wink.ai/ai-video-extender/upload
-- https://wink.ai/video-color-match/upload
-- https://wink.ai/remove-object-from-video
-- https://wink.ai/text-to-video-ai
+### Platform C
+- [Public source ref EXT-001] C.ai/workspace
+- [Public source ref EXT-001] C.ai/ai-workflow
+- [Public source ref EXT-001] C.ai/
+- [Public source ref EXT-001] C.ai/benefits
+- [Public source ref EXT-001] C.ai/about-us
+- [Public source ref EXT-001] C.ai/video-enhancer/upload
+- [Public source ref EXT-001] C.ai/video-repair/upload
+- [Public source ref EXT-001] C.ai/video-upscaler/upload
+- [Public source ref EXT-001] C.ai/video-retouch/upload
+- [Public source ref EXT-001] C.ai/video-watermark-remover/upload
+- [Public source ref EXT-001] C.ai/video-frame-interpolation/upload
+- [Public source ref EXT-001] C.ai/ai-video-extender/upload
+- [Public source ref EXT-001] C.ai/video-color-match/upload
+- [Public source ref EXT-001] C.ai/remove-object-from-video
+- [Public source ref EXT-001] C.ai/text-to-video-ai
 
 ### Method
-- https://github.com/morluto/rea
-- https://github.com/morluto/rea/blob/main/.agents/skills/reverse-engineer-anything/SKILL.md
+- [Public source ref EXT-004]
+- [Public source ref EXT-005]
