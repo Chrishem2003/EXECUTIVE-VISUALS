@@ -5,7 +5,7 @@ import { mkdir, unlink, open } from "node:fs/promises";
 import { dirname, extname, join, resolve, basename, sep } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { Transform } from "node:stream";
-import { openDatabase, audit, addJobEvent, getOwnedProject, getOwnedAsset, json, parseJson } from "./db.mjs";
+import { openDatabase, audit, addJobEvent, getOwnedProject, getOwnedAsset, getProjectAccess, canWriteProject, getAccessibleAsset, json, parseJson } from "./db.mjs";
 import { executeMediaJob, executableAvailable } from "./media.mjs";
 import { validateWorkflowGraph } from "./workflow-validation.mjs";
 import { validateTimelineDocument } from "./timeline-validation.mjs";
@@ -104,8 +104,14 @@ function recordJob(dbRow) {
     createdAt:dbRow.created_at,updatedAt:dbRow.updated_at,startedAt:dbRow.started_at,completedAt:dbRow.completed_at
   };
 }
-function ownedJob(ownerId,id) {
-  return db.prepare("SELECT * FROM jobs WHERE id=? AND owner_id=?").get(id,ownerId);
+function accessibleJob(ownerId,id,write=false) {
+  const job=db.prepare("SELECT * FROM jobs WHERE id=?").get(id);
+  if(!job)return null;
+  if(job.owner_id===ownerId)return job;
+  if(!job.project_id)return null;
+  const access=getProjectAccess(db,ownerId,job.project_id);
+  if(!access||write&&!["owner","editor"].includes(access.access_role))return null;
+  return job;
 }
 
 function validFileSignature(type,header){
@@ -126,7 +132,7 @@ function validFileSignature(type,header){
 async function storeUpload(req,user,projectId) {
   const mediaType=String(req.headers["content-type"]||"application/octet-stream").split(";")[0].toLowerCase();
   if(!ALLOWED_MEDIA.has(mediaType))throw Object.assign(new Error("Unsupported media type."),{status:415,code:"UNSUPPORTED_MEDIA_TYPE"});
-  if(projectId&&!getOwnedProject(db,user.id,projectId))throw Object.assign(new Error("Project not found."),{status:404,code:"PROJECT_NOT_FOUND"});
+  if(projectId&&!canWriteProject(db,user.id,projectId))throw Object.assign(new Error("Project not found or you do not have editor access."),{status:404,code:"PROJECT_NOT_FOUND"});
   const declaredSize=Number(req.headers["content-length"]||0);
   if(declaredSize>MAX_UPLOAD_BYTES)throw Object.assign(new Error("Upload exceeds the configured size limit."),{status:413,code:"UPLOAD_TOO_LARGE"});
   let decodedName="upload";
