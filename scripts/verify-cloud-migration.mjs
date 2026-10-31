@@ -47,6 +47,13 @@ if (!sql.startsWith("-- Executive Visuals isolated data model.")) issues.push("M
 if (!sql.includes("create or replace function executive_visuals.claim_next_job(") || !sql.includes("for update skip locked") || !sql.includes("grant execute on function executive_visuals.claim_next_job(text, integer) to service_role")) {
   issues.push("Cloud workers need an atomic SKIP LOCKED claim RPC restricted to service_role.");
 }
+
+if (!sql.includes("create or replace function executive_visuals.renew_job_lease(") || !sql.includes("lease_owner = p_worker_id") || !sql.includes("grant execute on function executive_visuals.renew_job_lease(uuid, text, integer) to service_role")) {
+  issues.push("Cloud workers need owner-bound lease heartbeats restricted to service_role.");
+}
+if (!sql.includes("create or replace function executive_visuals.finish_job(") || !sql.includes("lease_expires_at > clock_timestamp()") || !sql.includes("grant execute on function executive_visuals.finish_job(uuid, text, text, jsonb, jsonb) to service_role")) {
+  issues.push("Cloud job completion must be fenced to the current, unexpired worker lease.");
+}
 if (!sql.includes("create or replace function executive_visuals.recover_expired_jobs(") || !sql.includes("WORKER_LEASE_EXPIRED") || !sql.includes("grant execute on function executive_visuals.recover_expired_jobs(integer) to service_role")) {
   issues.push("Cloud workers need bounded expired-lease recovery restricted to service_role.");
 }
