@@ -1,6 +1,6 @@
 # Executive Visuals — implementation status
 
-**Updated:** 31 October 2026  
+**Updated:** 1 November 2026  
 **Branch:** `feat/executive-visuals-unified-platform`  
 **Delivery posture:** local runtime implemented; cloud and paid integrations remain gated.
 
@@ -9,7 +9,9 @@
 | Area | Implemented behavior | Boundary |
 |---|---|---|
 | Product shell | Unified browser application with creative, planning and management workspaces | Browser app |
-| Capability explorer | Search and domain filters; displays stable ID, inputs, outputs, evidence, execution modes and approval gates | Registry browsing |\n| Research & knowledge workspace | Project-scoped source register, HTTP/HTTPS source validation, publication/access metadata, rights notes, tagged findings/decisions, source-linked evidence records and full-text filtering | Persistent revision-checked project workspace; live web discovery, automatic extraction and independent source verification are not claimed |\n| Workflow knowledge retrieval | Typed workflow node searches saved project knowledge, ranks title/tag/content matches and returns the linked source provenance | Deterministic keyword retrieval only; no vector index or live internet search |
+| Capability explorer | Search and domain filters; displays stable ID, inputs, outputs, evidence, execution modes and approval gates | Registry browsing |
+| Research & knowledge workspace | Project-scoped source register, HTTP/HTTPS source validation, publication/access metadata, rights notes, tagged findings/decisions, source-linked evidence records and full-text filtering | Persistent revision-checked project workspace; live web discovery, automatic extraction and independent source verification are not claimed |
+| Workflow knowledge retrieval | Typed workflow node searches saved project knowledge, ranks title/tag/content matches and returns the linked source provenance | Deterministic keyword retrieval only; no vector index or live internet search |
 | Capability registry | **110 typed capabilities across 23 domains** | Contract/readiness metadata, not provider availability |
 | Cross-ecosystem capability expansion | Model evaluation/routing, structured template autofill, brand glossary, live presence, proxy review, remote recording, motion template rendering, continuity checks, semantic asset search, workflow diff/batch and analytics feedback | Specification-only until adapters and end-to-end tests exist |
 | Machine-readable catalog | JSON catalog generated from typed registry | Build verifier enforces ID/domain/label parity |
@@ -39,8 +41,10 @@ The build pipeline runs:
 1. Capability catalog parity and completeness checks.
 2. Workflow graph validation, targeted-run behavior and project-knowledge retrieval checks.
 3. API integration tests for authentication, ownership isolation, project workspace persistence, revision conflicts, role permissions, uploads and idempotency.
-4. Mock-gateway tests for server-side text generation, remote-access controls and approval gating.\n5. API tests for research-source URL validation, source-linked knowledge persistence, partial document saves and role enforcement.
-5. Real FFmpeg rendering and output inspection.\n6. Real FFmpeg/FFprobe fixture execution for denoise, color correction, resize, interpolation and scaling with invalid-parameter rejection.
+4. Mock-gateway tests for server-side text generation, remote-access controls and approval gating.
+5. API tests for research-source URL validation, source-linked knowledge persistence, partial document saves and role enforcement.
+5. Real FFmpeg rendering and output inspection.
+6. Real FFmpeg/FFprobe fixture execution for denoise, color correction, resize, interpolation and scaling with invalid-parameter rejection.
 6. TypeScript typecheck.
 7. Production Vite build.
 
@@ -74,7 +78,8 @@ A green build does not prove external provider execution, cloud durability, fram
 
 The shared production engine now exposes a first set of local, FFmpeg-backed finishing operations through the same persistent job and asset-lineage path as existing media processing:
 
-- Video denoise using bounded `hqdn3d` parameters.\n- Speech cleanup using `afftdn` noise reduction and `loudnorm` normalization to a bounded target loudness.
+- Video denoise using bounded `hqdn3d` parameters.
+- Speech cleanup using `afftdn` noise reduction and `loudnorm` normalization to a bounded target loudness.
 - Color correction using bounded brightness, contrast and saturation.
 - Aspect-ratio reframing with contain/cover modes and safe even-dimension output.
 - Frame interpolation using bounded `minterpolate` frame rates.
