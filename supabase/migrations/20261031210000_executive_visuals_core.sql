@@ -416,7 +416,7 @@ grant execute on function executive_visuals.finish_job(uuid, text, text, jsonb, 
 
 revoke all on function executive_visuals.claim_next_job(text, integer, text[]) from public, anon, authenticated;
 revoke all on function executive_visuals.recover_expired_jobs(integer) from public, anon, authenticated;
-grant execute on function executive_visuals.claim_next_job(text, integer) to service_role;
+grant execute on function executive_visuals.claim_next_job(text, integer, text[]) to service_role;
 grant execute on function executive_visuals.recover_expired_jobs(integer) to service_role;
 
 
