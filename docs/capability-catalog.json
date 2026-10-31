@@ -1,0 +1,290 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-10-31",
+  "status": "specification-only",
+  "policy": "Capabilities are product targets. No provider is marked supported until a versioned adapter contract and conformance test prove it.",
+  "domains": [
+    "creative-direction",
+    "story-preproduction",
+    "identity-presenters",
+    "image-creation-editing",
+    "video-generation-motion",
+    "cinematography",
+    "timeline-postproduction",
+    "audio-speech",
+    "translation-localization",
+    "enhancement-restoration",
+    "workflow-automation",
+    "agent-orchestration",
+    "campaign-commerce",
+    "design-documents",
+    "asset-project-management",
+    "collaboration-governance",
+    "integrations-developer-platform",
+    "operations-cost-reliability",
+    "quality-accessibility-delivery"
+  ],
+  "capabilities": [
+    [
+      "direction.brief",
+      "creative-direction",
+      "brief analysis, audience, channel, constraints, clarification"
+    ],
+    [
+      "direction.plan",
+      "creative-direction",
+      "creative concepts, moodboards, shot plan, editable production plan"
+    ],
+    [
+      "story.script",
+      "story-preproduction",
+      "research, hooks, scripts, dialogue, timing, alternate takes"
+    ],
+    [
+      "story.storyboard",
+      "story-preproduction",
+      "storyboards, animatics, multi-frame sequences, continuity"
+    ],
+    [
+      "story.shot-list",
+      "story-preproduction",
+      "shot numbering, framing, duration, transitions, coverage"
+    ],
+    [
+      "identity.character",
+      "identity-presenters",
+      "character bible, reusable identity, looks, wardrobe, consent"
+    ],
+    [
+      "identity.presenter",
+      "identity-presenters",
+      "presenter selection, photo/footage creation, training lifecycle"
+    ],
+    [
+      "identity.motion",
+      "identity-presenters",
+      "gesture, motion references, performance, motion transfer"
+    ],
+    [
+      "image.generate",
+      "image-creation-editing",
+      "text/reference generation, batch, seeds, contact sheets"
+    ],
+    [
+      "image.edit",
+      "image-creation-editing",
+      "inpainting, outpainting, generative fill, regional instruction edits"
+    ],
+    [
+      "image.composite",
+      "image-creation-editing",
+      "product placement, lighting/shadow/texture harmonization"
+    ],
+    [
+      "image.restore",
+      "image-creation-editing",
+      "photo repair, scratch removal, colorization, face restoration"
+    ],
+    [
+      "image.upscale",
+      "image-creation-editing",
+      "super-resolution, detail recovery, format and aspect conversion"
+    ],
+    [
+      "image.remove-object",
+      "image-creation-editing",
+      "mask-based object removal and background reconstruction"
+    ],
+    [
+      "video.generate",
+      "video-generation-motion",
+      "text/image/video/reference-to-video, keyframes, native audio"
+    ],
+    [
+      "video.extend",
+      "video-generation-motion",
+      "continuation, forward/backward extension, scene expansion"
+    ],
+    [
+      "video.regional-edit",
+      "video-generation-motion",
+      "localized video edits, masks, object replacement"
+    ],
+    [
+      "cinema.direct",
+      "cinematography",
+      "camera body, lens, focal length, aperture, movement, lighting, grade"
+    ],
+    [
+      "editing.timeline",
+      "timeline-postproduction",
+      "multitrack editing, transitions, keyframes, titles, markers"
+    ],
+    [
+      "editing.motion-graphics",
+      "timeline-postproduction",
+      "animated typography, overlays, lower thirds, compositions"
+    ],
+    [
+      "editing.render",
+      "timeline-postproduction",
+      "render queue, codec, bitrate, delivery profiles, archive"
+    ],
+    [
+      "audio.speech",
+      "audio-speech",
+      "TTS, streaming, voice catalogue, authorized voice creation"
+    ],
+    [
+      "audio.transcribe",
+      "audio-speech",
+      "transcription, word timing, diarization, key terms"
+    ],
+    [
+      "audio.design",
+      "audio-speech",
+      "music, sound effects, ambience, isolation, mixing"
+    ],
+    [
+      "audio.lipsync",
+      "audio-speech",
+      "audio-driven presenter synchronization"
+    ],
+    [
+      "localization.dub",
+      "translation-localization",
+      "translation, dubbing, speaker map, lip sync, glossary"
+    ],
+    [
+      "localization.subtitles",
+      "translation-localization",
+      "SRT/VTT, captions, locale typography and timing"
+    ],
+    [
+      "enhancement.restore",
+      "enhancement-restoration",
+      "denoise, deblur, stabilize, interpolate, low-light, HDR"
+    ],
+    [
+      "enhancement.batch",
+      "enhancement-restoration",
+      "folder ingest, preview, hardware-aware model manager"
+    ],
+    [
+      "workflow.canvas",
+      "workflow-automation",
+      "typed graph, utility/LLM/model nodes, branches, templates"
+    ],
+    [
+      "workflow.run",
+      "workflow-automation",
+      "run all/node/subgraph, lock outputs, concurrency, cancellation"
+    ],
+    [
+      "workflow.version",
+      "workflow-automation",
+      "version history, restore, share, clone, publish"
+    ],
+    [
+      "agent.orchestrate",
+      "agent-orchestration",
+      "plan, route, checkpoint, resume, scheduled task, approval"
+    ],
+    [
+      "campaign.product",
+      "campaign-commerce",
+      "product ingestion, source-linked facts, brand kit"
+    ],
+    [
+      "campaign.variants",
+      "campaign-commerce",
+      "hooks, UGC, static/video ads, SKU and creative matrices"
+    ],
+    [
+      "design.autofill",
+      "design-documents",
+      "brand templates, data-driven population, bulk exports"
+    ],
+    [
+      "design.collaboration",
+      "design-documents",
+      "comments, replies, page analytics, editor handoff"
+    ],
+    [
+      "assets.library",
+      "asset-project-management",
+      "upload, metadata, tags, search, versions, lineage, packaging"
+    ],
+    [
+      "governance.approvals",
+      "collaboration-governance",
+      "roles, permissions, consent, rights, review, audit"
+    ],
+    [
+      "integration.providers",
+      "integrations-developer-platform",
+      "REST, SDK, OAuth, API keys, webhooks, CLI, MCP"
+    ],
+    [
+      "operations.jobs",
+      "operations-cost-reliability",
+      "queues, state machine, retry, idempotency, observability"
+    ],
+    [
+      "operations.cost",
+      "operations-cost-reliability",
+      "preflight, usage units, estimate, budget ceiling, ledger"
+    ],
+    [
+      "quality.delivery",
+      "quality-accessibility-delivery",
+      "technical QC, accessibility, brand, continuity, manifest"
+    ]
+  ],
+  "requiredCapabilityFields": [
+    "stableId",
+    "version",
+    "inputSchema",
+    "outputSchema",
+    "semanticMediaRoles",
+    "providerModelPlanConstraints",
+    "fileAndDurationLimits",
+    "executionMode",
+    "costModel",
+    "consentAndRights",
+    "retryAndIdempotency",
+    "cancellation",
+    "webhookBehavior",
+    "dataResidency",
+    "retention",
+    "readiness",
+    "evidence",
+    "lastVerifiedAt"
+  ],
+  "jobStates": [
+    "draft",
+    "validated",
+    "needs_input",
+    "blocked",
+    "awaiting_approval",
+    "queued",
+    "submitted",
+    "processing",
+    "reviewing",
+    "completed",
+    "partial",
+    "failed",
+    "cancelled",
+    "expired"
+  ],
+  "invariants": [
+    "Planning and validation are free of paid side effects.",
+    "Paid execution requires an approved immutable run snapshot.",
+    "Successful outputs are immutable and preserve lineage.",
+    "A failed node cannot erase successful sibling outputs.",
+    "Unknown constraints are never guessed.",
+    "Consent and rights are scoped, auditable and revocable.",
+    "Provider outputs are persisted before remote URLs expire.",
+    "Secrets never enter client bundles, prompts or logs."
+  ]
+}
