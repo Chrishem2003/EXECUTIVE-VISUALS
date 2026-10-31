@@ -5,11 +5,12 @@ type RuntimeProject={id:string;name:string;description?:string;revision?:number;
 type RuntimeAsset={id:string;projectId?:string|null;name:string;mediaType:string;size:number;sha256:string;createdAt:string};
 type RuntimeJob={id:string;projectId?:string|null;jobType:string;status:string;progress:number;input:Record<string,unknown>;output?:Record<string,unknown>|null;error?:{code?:string;message?:string}|null;createdAt:string;updatedAt:string};
 type RuntimeReview={id:string;project_id:string;asset_id?:string|null;timecode_seconds?:number|null;decision:string;body:string;status:string;created_at:string};
+type ProviderStatus={id:string;provider:string;enabled:boolean;configured:boolean;remote:boolean;model:string|null;status:"ready"|"disabled"|"needs_configuration"|"remote_opt_in_required"|"unavailable";reason:string;capabilities:string[]};
 let workspaceRevisions=new Map<string,number>();
 let workspaceSaveTimers=new Map<string,ReturnType<typeof setTimeout>>();
 let workspaceSaveChain:Promise<void>=Promise.resolve();
-const state:{status:"checking"|"offline"|"auth-required"|"online";authMode:"local"|"supabase";user:RuntimeUser|null;projects:RuntimeProject[];assets:RuntimeAsset[];jobs:RuntimeJob[];audit:Array<Record<string,unknown>>;members:Array<{id:string;email:string;role:string;createdAt:string}>;reviews:RuntimeReview[];projectId:string;message:string;ffmpeg:boolean;ffprobe:boolean;textGatewayEnabled:boolean;textGatewayConfigured:boolean;imageGatewayEnabled:boolean;imageGatewayConfigured:boolean}={
- status:"checking",authMode:"local",user:null,projects:[],assets:[],jobs:[],audit:[],members:[],reviews:[],projectId:"",message:"",ffmpeg:false,ffprobe:false,textGatewayEnabled:false,textGatewayConfigured:false,imageGatewayEnabled:false,imageGatewayConfigured:false
+const state:{status:"checking"|"offline"|"auth-required"|"online";authMode:"local"|"supabase";user:RuntimeUser|null;projects:RuntimeProject[];assets:RuntimeAsset[];jobs:RuntimeJob[];audit:Array<Record<string,unknown>>;members:Array<{id:string;email:string;role:string;createdAt:string}>;reviews:RuntimeReview[];projectId:string;message:string;ffmpeg:boolean;ffprobe:boolean;textGatewayEnabled:boolean;textGatewayConfigured:boolean;imageGatewayEnabled:boolean;imageGatewayConfigured:boolean;providers:ProviderStatus[]}={
+ status:"checking",authMode:"local",user:null,projects:[],assets:[],jobs:[],audit:[],members:[],reviews:[],projectId:"",message:"",ffmpeg:false,ffprobe:false,textGatewayEnabled:false,textGatewayConfigured:false,imageGatewayEnabled:false,imageGatewayConfigured:false,providers:[]
 };
 const esc=(value:unknown)=>String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]||c));
 const fmt=(value:string)=>new Date(value).toLocaleString();
@@ -74,7 +75,7 @@ export function renderEngineStatus(){
  const image=state.imageGatewayEnabled&&state.imageGatewayConfigured?"Enabled · approval-gated":state.imageGatewayEnabled?"Enabled but incomplete":"Disabled by default";
  return '<div id="runtime-workspace" data-runtime-view="engines"><div class="runtime-toolbar">'+statusMarkup()+'<button class="secondary" data-ev-action="refresh">↻ Refresh status</button></div>'+
  '<div class="runtime-summary"><div><small>Local media engine</small><b>'+local+'</b></div><div><small>Text gateway</small><b>'+text+'</b></div><div><small>Image gateway</small><b>'+image+'</b></div><div><small>Stored assets</small><b>'+state.assets.length+'</b></div><div><small>Active jobs</small><b>'+state.jobs.filter(j=>["queued","running"].includes(j.status)).length+'</b></div></div>'+
- '<section class="panel"><div class="eyebrow">CONNECTED LOCAL ADAPTERS</div><h3>Media processing</h3><div class="engine-grid">'+["Media probe · FFprobe","Thumbnails · FFmpeg","Transcode · FFmpeg","Audio extraction · FFmpeg","Proxy generation · FFmpeg","Denoise · hqdn3d","Color correction · eq","Resize / reframe · scale + pad","Frame interpolation · minterpolate","Upscale / scaling · Lanczos","Speech cleanup · afftdn + loudnorm","Timeline master render · FFmpeg"].map(label=>'<div class="engine"><i></i><b>'+label+'</b><small>'+(state.ffmpeg||label.startsWith("Media probe")&&state.ffprobe?"Local adapter connected":"Engine unavailable")+'</small></div>').join("")+'</div></section>'+
+ '<section class="panel"><div class="eyebrow">UNIFIED PROVIDER CONTROL</div><h3>Capability routing & readiness</h3><p>One shared registry for all production workspaces. Status checks do not submit generation requests. Remote execution remains blocked until server-side opt-in is configured.</p><div class="engine-grid">'+state.providers.map(provider=>'<div class="engine"><i></i><b>'+esc(provider.id.replace(/-/g," "))+' · '+esc(provider.status.replace(/_/g," "))+'</b><small>'+esc(provider.model||"No model selected")+' · '+esc(provider.reason)+'</small><small>Capabilities: '+esc(provider.capabilities.join(", "))+'</small></div>').join("")+'</div></section>'+<section class="panel"><div class="eyebrow">CONNECTED LOCAL ADAPTERS</div><h3>Media processing</h3><div class="engine-grid">'+["Media probe · FFprobe","Thumbnails · FFmpeg","Transcode · FFmpeg","Audio extraction · FFmpeg","Proxy generation · FFmpeg","Denoise · hqdn3d","Color correction · eq","Resize / reframe · scale + pad","Frame interpolation · minterpolate","Upscale / scaling · Lanczos","Speech cleanup · afftdn + loudnorm","Timeline master render · FFmpeg"].map(label=>'<div class="engine"><i></i><b>'+label+'</b><small>'+(state.ffmpeg||label.startsWith("Media probe")&&state.ffprobe?"Local adapter connected":"Engine unavailable")+'</small></div>').join("")+'</div></section>'+
  '<section class="panel"><div class="eyebrow">APPROVAL-GATED TEXT ADAPTER</div><h3>Text-model gateway</h3><p>'+text+'. Configure <code>AI_GATEWAY_ENABLED</code>, <code>AI_GATEWAY_URL</code> and <code>AI_GATEWAY_MODEL</code> on the server. The API key remains server-side. A completed upstream human-approval node is required before any text request is sent.</p></section>'+
  '<section class="panel"><div class="eyebrow">APPROVAL-GATED IMAGE ADAPTER</div><h3>Image generation</h3><p>'+image+'. Configure <code>IMAGE_GATEWAY_ENABLED</code>, <code>IMAGE_GATEWAY_URL</code> and <code>IMAGE_GATEWAY_MODEL</code> on the server. Outputs are validated and stored as private assets. A completed upstream human-approval node is required before a request is sent.</p></section><section class="panel"><div class="eyebrow">NOT CONNECTED</div><h3>Other external media generation</h3><p>Remote video generation, voice generation, dubbing, lip-sync, neural restoration models and publishing adapters are not connected. Local video denoise, color correction, resize/reframe, interpolation and scaling are available from video asset actions. Their nodes fail closed; the application does not pretend a missing provider has completed a job.</p></section></div>';
 }
@@ -123,13 +124,14 @@ window.addEventListener("ev:save-creative-draft",event=>{
 
 async function refresh(){
  const previousProjectId=state.projectId;
- const [projects,assets,jobs,audit]=await Promise.all([
+ const [projects,assets,jobs,audit,providerCatalog]=await Promise.all([
   apiRequest<{projects:RuntimeProject[]}>("/api/projects"),
   apiRequest<{assets:RuntimeAsset[]}>("/api/assets"),
   apiRequest<{jobs:RuntimeJob[]}>("/api/jobs"),
-  apiRequest<{events:Array<Record<string,unknown>>}>("/api/audit")
+  apiRequest<{events:Array<Record<string,unknown>>}>("/api/audit"),
+  apiRequest<{providers:ProviderStatus[]}>("/api/providers")
  ]);
- state.projects=projects.projects;state.assets=assets.assets;state.jobs=jobs.jobs;state.audit=audit.events;window.dispatchEvent(new Event("ev:assets-updated"));
+ state.projects=projects.projects;state.assets=assets.assets;state.jobs=jobs.jobs;state.audit=audit.events;state.providers=providerCatalog.providers;window.dispatchEvent(new Event("ev:assets-updated"));
  if(state.projectId&&!state.projects.some(p=>p.id===state.projectId))state.projectId="";
  if(!state.projectId&&state.projects.length)state.projectId=state.projects[0].id;
  if(previousProjectId!==state.projectId)window.dispatchEvent(new CustomEvent("ev:project-changed",{detail:{projectId:state.projectId}}));
