@@ -1,0 +1,151 @@
+import { apiRequest } from "../core/api";
+import { createEmptyWorkflow, planWorkflowExecution, validateWorkflow, type MediaPortType, type WorkflowEdge, type WorkflowGraph, type WorkflowNode, type WorkflowNodeKind, type WorkflowPort } from "../core/workflow";
+
+type SavedWorkflow={id:string;projectId?:string|null;name:string;revision:number;graph?:WorkflowGraph;graphHash?:string};
+const state:{graph:WorkflowGraph|null;workflows:SavedWorkflow[];serverRevision:number;status:"loading"|"ready"|"offline"|"auth";message:string;selectedNode:string;plan:string}={
+ graph:null,workflows:[],serverRevision:0,status:"loading",message:"Loading workflow canvas…",selectedNode:"",plan:""
+};
+const esc=(v:unknown)=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]||c));
+const port=(id:string,type:MediaPortType,required=false,multiple=false):WorkflowPort=>({id,label:id,type,required,multiple});
+const palette:Record<string,{kind:WorkflowNodeKind;label:string;inputs:WorkflowPort[];outputs:WorkflowPort[]}>={
+ text:{kind:"text",label:"Text / Prompt",inputs:[],outputs:[port("text","text")]},
+ llm:{kind:"llm.prompt",label:"AI Text Processor",inputs:[port("prompt","text",true)],outputs:[port("text","text")]},
+ image:{kind:"image.generate",label:"Image Generation",inputs:[port("prompt","text",true),port("reference","image",false,true)],outputs:[port("image","image")]},
+ video:{kind:"video.generate",label:"Video Generation",inputs:[port("prompt","text",true),port("start-frame","start-frame"),port("reference","video",false,true)],outputs:[port("video","video")]},
+ voice:{kind:"voice.generate",label:"Voice Generation",inputs:[port("script","text",true)],outputs:[port("audio","audio")]},
+ frame:{kind:"utility.frame-extract",label:"Extract Video Frame",inputs:[port("video","video",true)],outputs:[port("image","image")]},
+ upscale:{kind:"media.upscale",label:"Image Upscale",inputs:[port("image","image",true)],outputs:[port("image","image")]},
+ approval:{kind:"approval",label:"Human Approval",inputs:[port("media","media",true)],outputs:[port("media","media")]},
+ quality:{kind:"quality-check",label:"Quality Gate",inputs:[port("media","media",true)],outputs:[port("report","structured-data")]},
+ export:{kind:"export",label:"Export Deliverable",inputs:[port("media","media",true)],outputs:[port("deliverable","asset")]},
+ merge:{kind:"merge",label:"Merge Branches",inputs:[port("items","any",true,true)],outputs:[port("result","any")]},
+ batch:{kind:"batch",label:"Batch Inputs",inputs:[port("items","asset",true,true)],outputs:[port("results","asset",false,true)]}
+};
+function nodePosition(index:number){return {x:30+(index%3)*300,y:30+Math.floor(index/3)*210};}
+function addNode(definition:keyof typeof palette){
+ if(!state.graph)return;
+ const spec=palette[definition],id=crypto.randomUUID();
+ const node:WorkflowNode={id,kind:spec.kind,label:spec.label,inputs:spec.inputs.map(x=>({...x})),outputs:spec.outputs.map(x=>({...x})),config:{},position:nodePosition(state.graph.nodes.length)};
+ state.graph={...state.graph,revision:state.graph.revision+1,nodes:[...state.graph.nodes,node]};
+ state.selectedNode=id;state.plan="";void persist().then(paint).catch(error=>{state.message=error.message;paint();});
+}
+function options(values:Array<{id:string;label:string}> ,selected=""){return values.map(x=>'<option value="'+esc(x.id)+'" '+(selected===x.id?"selected":"")+'>'+esc(x.label)+'</option>').join("");}
+function portOptions(node:WorkflowNode|undefined,side:"inputs"|"outputs"){
+ return (node?.[side]||[]).map(p=>'<option value="'+esc(p.id)+'">'+esc(p.label)+' · '+esc(p.type)+'</option>').join("");
+}
+function renderNode(node:WorkflowNode){
+ const position=node.position||{x:30,y:30};
+ return '<article class="wf-node" draggable="true" data-wf-node="'+esc(node.id)+'" style="left:'+position.x+'px;top:'+position.y+'px"><header><span>'+esc(node.kind)+'</span><button data-wf-remove-node="'+esc(node.id)+'">×</button></header><b>'+esc(node.label)+'</b><small>'+esc(node.id.slice(0,8))+'</small><div class="wf-ports"><div><strong>IN</strong>'+node.inputs.map(p=>'<span>'+esc(p.label)+' · '+esc(p.type)+'</span>').join("")+'</div><div><strong>OUT</strong>'+node.outputs.map(p=>'<span>'+esc(p.label)+' · '+esc(p.type)+'</span>').join("")+'</div></div></article>';
+}
+function renderEdges(){
+ return state.graph?.edges.map(edge=>'<div class="wf-edge-row"><span>'+esc(state.graph?.nodes.find(n=>n.id===edge.sourceNodeId)?.label||edge.sourceNodeId)+' / '+esc(edge.sourcePortId)+' → '+esc(state.graph?.nodes.find(n=>n.id===edge.targetNodeId)?.label||edge.targetNodeId)+' / '+esc(edge.targetPortId)+'</span><button data-wf-remove-edge="'+esc(edge.id)+'">Remove</button></div>').join("")||'<div class="empty">No connections yet.</div>';
+}
+function renderGraphSvg(){
+ if(!state.graph)return "";
+ const paths=state.graph.edges.map(edge=>{
+  const source=state.graph!.nodes.find(n=>n.id===edge.sourceNodeId),target=state.graph!.nodes.find(n=>n.id===edge.targetNodeId);
+  if(!source||!target)return "";
+  const s=source.position||{x:30,y:30},t=target.position||{x:30,y:30};
+  const x1=s.x+238,y1=s.y+92,x2=t.x,y2=t.y+92,curve=Math.max(40,Math.abs(x2-x1)*.45);
+  return '<path d="M '+x1+' '+y1+' C '+(x1+curve)+' '+y1+', '+(x2-curve)+' '+y2+', '+x2+' '+y2+'" />';
+ }).join("");
+ return '<svg class="wf-links" width="1400" height="900" viewBox="0 0 1400 900">'+paths+'</svg>';
+}
+function renderCanvas(){
+ if(!state.graph)return '<div class="empty">'+esc(state.message)+'</div>';
+ return '<div class="wf-canvas-scroll"><div id="wf-canvas" class="wf-canvas">'+renderGraphSvg()+state.graph.nodes.map(renderNode).join("")+'</div></div>';
+}
+export function renderWorkflowWorkspace(){
+ const nodes=state.graph?.nodes||[];
+ const selected=nodes.find(n=>n.id===state.selectedNode)||nodes[0];
+ return '<div id="workflow-workspace"><div class="wf-toolbar"><span class="runtime-status '+state.status+'"><i></i>'+esc(state.status==="ready"?"WORKFLOW SAVED":state.status==="auth"?"SIGN IN REQUIRED":state.status==="offline"?"API OFFLINE":"LOADING")+'</span><select id="wf-select">'+options(state.workflows.map(w=>({id:w.id,label:w.name+" · r"+w.revision})),state.graph?.id||"")+'</select><button class="secondary" data-wf-action="new">＋ New workflow</button><button class="secondary" data-wf-action="validate">Validate</button><button class="secondary" data-wf-action="plan">Preview run</button><button class="primary" data-wf-action="save">Save version</button></div>'+
+ (state.message?'<div class="notice">'+esc(state.message)+'</div>':'')+
+ '<div class="wf-layout"><aside class="panel wf-palette"><div class="eyebrow">NODE PALETTE</div><h3>Build a workflow</h3><p>Drag nodes into the canvas, position them, then connect typed ports.</p>'+Object.entries(palette).map(([key,value])=>'<button data-wf-add="'+key+'">＋ '+esc(value.label)+'</button>').join("")+'</aside>'+
+ '<section class="panel wf-main"><div class="wf-canvas-heading"><div><div class="eyebrow">VISUAL NODE GRAPH</div><h3>'+(state.graph?esc(state.graph.name||"Untitled workflow"):"Workflow")+'</h3></div><span>'+nodes.length+' nodes · '+(state.graph?.edges.length||0)+' connections</span></div>'+renderCanvas()+
+ '<div class="wf-connection"><div class="eyebrow">CONNECT NODES</div><form id="wf-connect-form"><label>Source node</label><select name="sourceNode">'+options(nodes.map(n=>({id:n.id,label:n.label+" · "+n.id.slice(0,6)})))+'</select><label>Output port</label><select name="sourcePort">'+portOptions(nodes[0],"outputs")+'</select><label>Target node</label><select name="targetNode">'+options(nodes.map(n=>({id:n.id,label:n.label+" · "+n.id.slice(0,6)})))+'</select><label>Input port</label><select name="targetPort">'+portOptions(nodes[0],"inputs")+'</select><button class="secondary">＋ Connect ports</button></form><div class="wf-edge-list">'+renderEdges()+'</div></div></section>'+
+ '<aside class="panel wf-inspector"><div class="eyebrow">NODE INSPECTOR</div><h3>Configuration</h3>'+(selected?'<form id="wf-config-form"><input type="hidden" name="nodeId" value="'+esc(selected.id)+'"><label>Node label</label><input name="label" value="'+esc(selected.label)+'" maxlength="120"><label>Node configuration (JSON)</label><textarea name="config" rows="9">'+esc(JSON.stringify(selected.config,null,2))+'</textarea><button class="secondary">Apply configuration</button></form>':'<div class="empty">Select a node to configure it.</div>')+
+ '<div class="wf-plan">'+(state.plan?'<pre>'+esc(state.plan)+'</pre>':'<p>Validation and execution planning are non-billable. No model or provider jobs are submitted from this canvas yet.</p>')+'</div></aside></div></div>';
+}
+async function refresh(){
+ const list=await apiRequest<{workflows:SavedWorkflow[]}>("/api/workflows");state.workflows=list.workflows;
+ if(state.graph&&state.workflows.some(w=>w.id===state.graph?.id)){
+  const current=await apiRequest<{workflow:SavedWorkflow}>("/api/workflows/"+state.graph.id);
+  state.graph=current.workflow.graph||null;state.serverRevision=current.workflow.revision;
+ }else if(state.workflows.length){
+  const current=await apiRequest<{workflow:SavedWorkflow}>("/api/workflows/"+state.workflows[0].id);
+  state.graph=current.workflow.graph||null;state.serverRevision=current.workflow.revision;
+ }else{
+  const graph=createEmptyWorkflow("","local-workflow");
+  const created=await apiRequest<{workflow:SavedWorkflow}>("/api/workflows",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({name:"Untitled workflow",graph})});
+  state.graph=created.workflow.graph||graph;state.serverRevision=created.workflow.revision;
+ }
+ state.selectedNode=state.graph?.nodes[0]?.id||"";state.status="ready";state.message="";
+}
+async function persist(){
+ if(!state.graph)return;
+ const result=await apiRequest<{revision:number}>("/api/workflows/"+state.graph.id,{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({revision:state.serverRevision,name:state.graph.name||"Untitled workflow",graph:state.graph})});
+ state.serverRevision=result.revision;state.graph={...state.graph,revision:result.revision};state.status="ready";state.message="Saved workflow revision "+result.revision+".";
+}
+async function createNew(){
+ const graph=createEmptyWorkflow("","local-workflow");
+ const created=await apiRequest<{workflow:SavedWorkflow}>("/api/workflows",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({name:"Untitled workflow",graph})});
+ state.graph=created.workflow.graph||graph;state.serverRevision=created.workflow.revision;state.workflows.unshift(created.workflow);state.selectedNode="";state.plan="";state.message="New workflow created.";paint();
+}
+export async function initWorkflowWorkspace(){
+ try{await refresh();}catch(error){state.status=error instanceof Error&&error.message.includes("Sign in")?"auth":"offline";state.message=error instanceof Error?error.message:"Workflow service unavailable.";}
+ paint();
+}
+function paint(){const root=document.querySelector<HTMLElement>("#workflow-workspace");if(root)root.outerHTML=renderWorkflowWorkspace();}
+async function action(actionName:string){
+ if(actionName==="new"){await createNew();return;}
+ if(!state.graph)return;
+ if(actionName==="save"){await persist();paint();return;}
+ if(actionName==="validate"||actionName==="plan"){
+  const validation=validateWorkflow(state.graph),plan=planWorkflowExecution(state.graph,{kind:"all"});
+  state.plan=validation.valid&&plan.valid
+   ?"VALID · "+plan.executionOrder.length+" nodes\n\n"+plan.executionOrder.map((id,i)=>(i+1)+". "+(state.graph?.nodes.find(n=>n.id===id)?.label||id)).join("\n")+(plan.reusedNodeIds.length?"\n\nREUSED OUTPUTS\n"+plan.reusedNodeIds.join(", "):"")+(plan.runNodeIds.length?"\n\nPLANNED NODES\n"+plan.runNodeIds.join(", "):"")+(actionName==="plan"?"\n\nPlanning only · no provider calls":"")
+   :"BLOCKED\n"+[...validation.issues,...plan.issues].map(issue=>issue.code+": "+issue.message).join("\n");
+  paint();return;
+ }
+}
+document.addEventListener("click",event=>{
+ const target=event.target as HTMLElement;
+ const actionButton=target.closest<HTMLElement>("[data-wf-action]");if(actionButton){void action(actionButton.dataset.wfAction||"");return;}
+ const add=target.closest<HTMLElement>("[data-wf-add]");if(add){addNode(add.dataset.wfAdd as keyof typeof palette);return;}
+ const removeNode=target.closest<HTMLElement>("[data-wf-remove-node]");
+ if(removeNode&&state.graph){const id=removeNode.dataset.wfRemoveNode||"";state.graph={...state.graph,revision:state.graph.revision+1,nodes:state.graph.nodes.filter(n=>n.id!==id),edges:state.graph.edges.filter(e=>e.sourceNodeId!==id&&e.targetNodeId!==id)};state.selectedNode="";state.plan="";void persist().then(paint).catch(error=>{state.message=error.message;paint();});return;}
+ const removeEdge=target.closest<HTMLElement>("[data-wf-remove-edge]");
+ if(removeEdge&&state.graph){const id=removeEdge.dataset.wfRemoveEdge||"";state.graph={...state.graph,revision:state.graph.revision+1,edges:state.graph.edges.filter(e=>e.id!==id)};void persist().then(paint).catch(error=>{state.message=error.message;paint();});return;}
+ const node=target.closest<HTMLElement>("[data-wf-node]");
+ if(node){state.selectedNode=node.dataset.wfNode||"";paint();}
+});
+document.addEventListener("submit",event=>{
+ const form=event.target as HTMLFormElement;if(!state.graph)return;
+ if(form.id==="wf-connect-form"){
+  event.preventDefault();const data=new FormData(form),sourceNodeId=String(data.get("sourceNode")),sourcePortId=String(data.get("sourcePort")),targetNodeId=String(data.get("targetNode")),targetPortId=String(data.get("targetPort"));
+  const edge:WorkflowEdge={id:crypto.randomUUID(),sourceNodeId,sourcePortId,targetNodeId,targetPortId};
+  state.graph={...state.graph,revision:state.graph.revision+1,edges:[...state.graph.edges,edge]};state.plan="";void persist().then(paint).catch(error=>{state.message=error.message;paint();});
+ }
+ if(form.id==="wf-config-form"){
+  event.preventDefault();const data=new FormData(form),nodeId=String(data.get("nodeId")),node=state.graph.nodes.find(n=>n.id===nodeId);if(!node)return;
+  try{const config=JSON.parse(String(data.get("config")||"{}"));if(!config||typeof config!=="object"||Array.isArray(config))throw new Error("Configuration must be a JSON object.");node.label=String(data.get("label")||node.label).trim().slice(0,120);node.config=config;state.graph={...state.graph,revision:state.graph.revision+1};state.plan="";void persist().then(paint).catch(error=>{state.message=error.message;paint();});}
+  catch(error){alert(error instanceof Error?error.message:String(error));}
+ }
+});
+document.addEventListener("change",event=>{
+ const target=event.target as HTMLSelectElement;if(!state.graph)return;
+ if(target.id==="wf-select"){void apiRequest<{workflow:SavedWorkflow}>("/api/workflows/"+target.value).then(response=>{state.graph=response.workflow.graph||null;state.serverRevision=response.workflow.revision;state.selectedNode=state.graph?.nodes[0]?.id||"";state.plan="";paint();}).catch(error=>alert(error.message||error));}
+ if(target.name==="sourceNode"||target.name==="targetNode"){const form=target.closest("form");if(!form)return;const source=form.querySelector<HTMLSelectElement>('[name="sourceNode"]'),targetNode=form.querySelector<HTMLSelectElement>('[name="targetNode"]');const sourceNode=state.graph.nodes.find(n=>n.id===source?.value),dest=state.graph.nodes.find(n=>n.id===targetNode?.value);const sourcePort=form.querySelector<HTMLSelectElement>('[name="sourcePort"]'),targetPort=form.querySelector<HTMLSelectElement>('[name="targetPort"]');if(sourcePort)sourcePort.innerHTML=portOptions(sourceNode,"outputs");if(targetPort)targetPort.innerHTML=portOptions(dest,"inputs");}
+});
+document.addEventListener("dragstart",event=>{
+ const target=event.target as HTMLElement,node=target.closest<HTMLElement>("[data-wf-node]");
+ if(node&&event.dataTransfer){event.dataTransfer.setData("text/plain",node.dataset.wfNode||"");event.dataTransfer.effectAllowed="move";}
+});
+document.addEventListener("dragover",event=>{if((event.target as HTMLElement).closest("#wf-canvas"))event.preventDefault();});
+document.addEventListener("drop",event=>{
+ const canvas=(event.target as HTMLElement).closest<HTMLElement>("#wf-canvas");if(!canvas||!state.graph)return;
+ event.preventDefault();const id=event.dataTransfer?.getData("text/plain")||"",node=state.graph.nodes.find(n=>n.id===id);if(!node)return;
+ const rect=canvas.getBoundingClientRect(),x=Math.max(0,Math.round(event.clientX-rect.left)),y=Math.max(0,Math.round(event.clientY-rect.top));
+ node.position={x,y};state.graph={...state.graph,revision:state.graph.revision+1};void persist().then(paint).catch(error=>{state.message=error.message;paint();});
+});
+window.addEventListener("ev:authenticated",()=>void initWorkflowWorkspace());
