@@ -74,7 +74,26 @@ export async function generateFalImage({ prompt, size = "1024x1024", quality = "
     if (!response.ok) throw Object.assign(new Error("Generated image download failed."), { code: "IMAGE_GATEWAY_INVALID_RESPONSE" });
     const declared = Number(response.headers.get("content-length") || 0);
     if (declared > MAX_OUTPUT_BYTES) throw Object.assign(new Error("Generated image exceeds the 50 MiB limit."), { code: "IMAGE_GATEWAY_INVALID_RESPONSE" });
-    const bytes = Buffer.from(await response.arrayBuffer());
+    let bytes;
+    if (response.body && typeof response.body.getReader === "function") {
+      const reader = response.body.getReader(), chunks = [];
+      let total = 0;
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          total += value.byteLength;
+          if (total > MAX_OUTPUT_BYTES) {
+            await reader.cancel().catch(() => {});
+            throw Object.assign(new Error("Generated image exceeds the 50 MiB limit."), { code: "IMAGE_GATEWAY_INVALID_RESPONSE" });
+          }
+          chunks.push(Buffer.from(value));
+        }
+      } finally { reader.releaseLock(); }
+      bytes = Buffer.concat(chunks, total);
+    } else {
+      bytes = Buffer.from(await response.arrayBuffer());
+    }
     if (!bytes.length || bytes.length > MAX_OUTPUT_BYTES) throw Object.assign(new Error("Generated image is empty or exceeds the 50 MiB limit."), { code: "IMAGE_GATEWAY_INVALID_RESPONSE" });
     return { buffer: bytes, model, usage: null, provider: "fal", requestId };
   } finally { clearTimeout(timer); }
