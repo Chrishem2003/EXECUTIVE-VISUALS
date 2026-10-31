@@ -33,7 +33,7 @@
 | Database migration | Dedicated multi-tenant schema, row-level security, immutable workflow-run snapshots, server-only job/audit writes and private object-storage policies | Migration is committed and statically guarded; **not applied** to shared staging or another product's database |
 | Text-model adapter | Server-side chat-completions-compatible text gateway with request timeouts, sanitized errors, usage normalization, server-only credentials and upstream approval ancestry | Disabled by default; remote gateways require explicit server opt-in; no provider price estimator; local/remote endpoint must be configured |
 | Speech synthesis | Approved `voice.generate` workflow node using a provider-neutral speech gateway; checks presenter voice scope when an identity profile is selected; validates and stores MP3/WAV/FLAC/OGG narration as a private checksummed asset | Disabled by default; remote HTTPS requires explicit server opt-in; no live provider call used for verification; transcription, diarization, cloning, dubbing and lip-sync remain unimplemented |
-| Speech transcription | `voice.transcribe` workflow node accepts an accessible audio asset, verifies its path, size and SHA-256, requires upstream human approval, sends bounded multipart audio to the configured speech gateway and persists transcript, language, duration and timestamped segments in the immutable workflow node output | Disabled by default; shares server-side speech gateway and remote HTTPS opt-in; local mock-server end-to-end test; no provider call used |
+| Speech transcription | `voice.transcribe` workflow node accepts an accessible audio asset, verifies its path, size and SHA-256, requires upstream human approval, sends bounded multipart audio to the configured speech gateway and persists transcript, language, duration and timestamped segments in the immutable workflow node output | Disabled by default; shares server-side speech gateway and remote HTTPS opt-in; local mock-server end-to-end test; no provider call used |\n| Timed captions | `voice.caption` converts timestamped transcript segments into sanitized WebVTT, persists a private `text/vtt` asset with SHA-256 and source-audio/language provenance, and exposes typed subtitle/asset outputs for downstream editorial workflows | Up to 5,000 cues and 2 MiB per caption asset; captions can be placed on an existing timeline caption track; no automatic timeline mutation |
 | Security posture | Restrictive HTML CSP, anti-framing, referrer and cross-origin headers; role-checked project documents; no provider secrets in browser | Cloud identity/session hardening still pending |
 | Quality checks | Capability parity, queue lease/retry tests, approval-gated AI workflow integration, project workspace API role/revision tests, workflow planner, timeline validation, real FFmpeg MP4 output/probe and pixel checks, API security tests, TypeScript and Vite build | CI verifies local behavior, not cloud durability or external media-generation providers |
 
@@ -129,3 +129,16 @@ This enables approved narration generation where a compatible provider is config
 - Transcription is independently disabled by default with `VOICE_TRANSCRIPTION_ENABLED=false`; remote calls additionally require the existing explicit HTTPS gateway opt-in.
 - An end-to-end local mock-server test verifies the approval gate, source-audio integrity, multipart request and durable transcript output. No paid provider call was used.
 - This is transcription, not speaker diarization, voice cloning, dubbing or lip-sync.
+
+
+## Transcription-to-editing bridge — timed caption assets
+
+The speech workflow now continues beyond transcript storage:
+
+- `voice.transcribe` exposes timestamped segments, source-audio identity and detected language as typed workflow outputs.
+- A new `voice.caption` node validates cue timing, orders cues, removes markup/control characters, escapes caption text and emits WebVTT.
+- The generated subtitle is stored as a private `text/vtt` asset with SHA-256, source-audio ID, detected language, cue count and job provenance.
+- The caption node exposes typed subtitle-file and asset outputs. Connect the subtitle asset to a caption track in the existing timeline editor; the current FFmpeg master renderer already supports WebVTT caption clips.
+- The end-to-end mock-gateway test now runs approval → transcription → caption generation and verifies the durable VTT asset, cue timing and language/source lineage. A separate caption test checks malformed cues, sanitization and private asset storage.
+
+The bridge does not silently modify a saved timeline, translate captions or call a paid service. Timeline placement remains an explicit editorial action, and the speech gateway remains disabled unless configured and explicitly enabled.
