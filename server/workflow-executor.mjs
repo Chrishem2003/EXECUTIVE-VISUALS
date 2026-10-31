@@ -156,7 +156,7 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
       mediaType="media.audio_extract";mediaInput={sourceAssetId};
     }else if(["utility.convert","utility.compress","media.convert","media.compress"].includes(node.kind)){
       mediaType="media.transcode";mediaInput={sourceAssetId,outputFormat:String(config.outputFormat||"mp4"),preset:String(config.preset||"medium")};
-    }else if(["media.denoise","media.color","media.resize","media.interpolate","media.upscale","video.resize"].includes(node.kind)){
+    }else if(node.kind==="media.audio-clean"){\n      mediaType="media.audio-clean";mediaInput={sourceAssetId,noiseFloor:Number(config.noiseFloor??-25),targetLufs:Number(config.targetLufs??-16)};\n    }else if(["media.denoise","media.color","media.resize","media.interpolate","media.upscale","video.resize"].includes(node.kind)){
       mediaType=node.kind==="video.resize"?"media.resize":node.kind;
       mediaInput={sourceAssetId,width:Number(config.width||(node.kind==="media.upscale"?2560:1920)),height:Number(config.height||(node.kind==="media.upscale"?1440:1080)),fit:String(config.fit||"contain"),luma:Number(config.luma??4),chroma:Number(config.chroma??3),brightness:Number(config.brightness??0),contrast:Number(config.contrast??1),saturation:Number(config.saturation??1),fps:Number(config.fps||30)};
     }else if(node.kind==="quality-check"){
