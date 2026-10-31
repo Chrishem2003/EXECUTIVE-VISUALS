@@ -3,14 +3,28 @@ import type { Capability } from "./contracts";
 export type MediaPortType =
   | "text" | "image" | "video" | "audio" | "mask" | "document"
   | "script" | "storyboard" | "character" | "voice" | "transcript"
-  | "subtitle-file" | "asset" | "media" | "creative-set" | "any";
+  | "subtitle-file" | "asset" | "media" | "creative-set" | "any"
+  | "identity-reference" | "style-reference" | "product-reference"
+  | "start-frame" | "end-frame" | "keyframe" | "motion-reference"
+  | "timeline" | "structured-data" | "3d-scene" | "mesh" | "camera-data"
+  | "timecode" | "proxy" | "timeline-package";
 
 export type WorkflowNodeKind =
   | "prompt" | "text" | "upload" | "reference" | "script" | "storyboard"
-  | "image.generate" | "image.edit" | "video.generate" | "avatar.generate"
-  | "voice.generate" | "voice.transcribe" | "voice.translate" | "voice.lipsync"
-  | "media.process" | "campaign.create" | "approval" | "quality-check"
-  | "timeline" | "export" | "connector";
+  | "image.generate" | "image.edit" | "image.upscale" | "image.remove-background"
+  | "video.generate" | "video.extract-frame" | "video.stitch" | "video.add-audio"
+  | "video.extract-audio" | "video.reframe"
+  | "avatar.generate" | "voice.generate" | "voice.transcribe"
+  | "voice.translate" | "voice.lipsync"
+  | "llm.prompt" | "llm.analyze"
+  | "utility.frame-extract" | "utility.video-stitch" | "utility.audio-add"
+  | "utility.audio-extract" | "utility.reframe" | "utility.remove-background"
+  | "utility.convert" | "utility.compress"
+  | "media.process" | "media.upscale" | "media.denoise" | "media.interpolate"
+  | "media.stabilize" | "media.remove-object" | "media.convert" | "media.compress"
+  | "media.audio-extract" | "media.color-match" | "media.compare"
+  | "campaign.create" | "approval" | "quality-check" | "timeline" | "export"
+  | "connector" | "branch" | "merge" | "batch" | "subworkflow";
 
 export interface WorkflowPort {
   id: string;
@@ -18,6 +32,13 @@ export interface WorkflowPort {
   type: MediaPortType;
   required?: boolean;
   multiple?: boolean;
+}
+
+export type WorkflowCachePolicy = "default" | "bypass" | "reuse-only";
+export interface WorkflowRetryPolicy {
+  maxAttempts: number;
+  retryableCodes?: string[];
+  backoffMs?: number;
 }
 
 export interface WorkflowNode {
@@ -29,6 +50,16 @@ export interface WorkflowNode {
   outputs: WorkflowPort[];
   config: Record<string, unknown>;
   position?: { x: number; y: number };
+  /** A locked node reuses its frozen outputs on subsequent runs. */
+  locked?: boolean;
+  lockedOutputIds?: string[];
+  providerId?: string;
+  modelId?: string;
+  capabilityVersion?: number;
+  settingsRevision?: number;
+  estimatedCost?: { amount: number; currency: string; unit?: string };
+  cachePolicy?: WorkflowCachePolicy;
+  retryPolicy?: WorkflowRetryPolicy;
 }
 
 export interface WorkflowEdge {
@@ -37,21 +68,27 @@ export interface WorkflowEdge {
   sourcePortId: string;
   targetNodeId: string;
   targetPortId: string;
+  label?: string;
+  condition?: string;
 }
 
 export interface WorkflowGraph {
   id: string;
   projectId: string;
   revision: number;
+  name?: string;
   nodes: WorkflowNode[];
   edges: WorkflowEdge[];
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export type WorkflowIssueCode =
   | "duplicate_node" | "duplicate_edge" | "missing_source_node"
   | "missing_target_node" | "missing_source_port" | "missing_target_port"
   | "incompatible_port_types" | "duplicate_input_connection"
-  | "required_input_unconnected" | "cycle_detected";
+  | "required_input_unconnected" | "cycle_detected"
+  | "invalid_execution_target" | "locked_node_missing_output";
 
 export interface WorkflowIssue {
   code: WorkflowIssueCode;
@@ -66,12 +103,63 @@ export interface WorkflowValidation {
   executionOrder: string[];
 }
 
+export type WorkflowExecutionTarget =
+  | { kind: "all" }
+  | { kind: "node"; nodeId: string }
+  | { kind: "subgraph"; nodeIds: string[] };
+
+export interface WorkflowExecutionPlan {
+  valid: boolean;
+  target: WorkflowExecutionTarget;
+  issues: WorkflowIssue[];
+  includedNodeIds: string[];
+  executionOrder: string[];
+  runNodeIds: string[];
+  reusedNodeIds: string[];
+}
+
+export type WorkflowRunStatus =
+  | "draft" | "validated" | "awaiting_approval" | "queued" | "submitted"
+  | "processing" | "reviewing" | "completed" | "partial" | "failed"
+  | "cancelled" | "blocked" | "needs_input" | "expired";
+
+export interface WorkflowRunSnapshot {
+  id: string;
+  workflowId: string;
+  workflowRevision: number;
+  snapshotHash: string;
+  target: WorkflowExecutionTarget;
+  executionOrder: string[];
+  approvedAt?: string;
+  approvedBy?: string;
+  budgetCeiling?: { amount: number; currency: string };
+  createdAt: string;
+}
+
+export interface WorkflowNodeRun {
+  id: string;
+  runId: string;
+  nodeId: string;
+  status: "pending" | "queued" | "processing" | "completed" | "reused"
+    | "failed" | "cancelled" | "blocked" | "needs_input";
+  attempt: number;
+  cacheHit: boolean;
+  inputAssetIds: string[];
+  outputAssetIds: string[];
+  providerJobId?: string;
+  error?: { code: string; message: string; retryable: boolean };
+}
+
+const mediaTypes = new Set<MediaPortType>([
+  "image", "video", "audio", "mask", "asset", "media", "identity-reference",
+  "style-reference", "product-reference", "start-frame", "end-frame", "keyframe",
+  "motion-reference", "proxy", "3d-scene", "mesh", "timeline-package"
+]);
+
 const compatible = (source: MediaPortType, target: MediaPortType): boolean =>
   source === target || source === "any" || target === "any" ||
-  (source === "image" && target === "media") ||
-  (source === "video" && target === "media") ||
-  (source === "audio" && target === "media") ||
-  (source === "asset" && target === "media");
+  (target === "media" && mediaTypes.has(source)) ||
+  (target === "asset" && mediaTypes.has(source));
 
 export function validateWorkflow(graph: WorkflowGraph): WorkflowValidation {
   const issues: WorkflowIssue[] = [];
@@ -133,7 +221,7 @@ export function validateWorkflow(graph: WorkflowGraph): WorkflowValidation {
 
   for (const node of nodes.values()) {
     for (const port of node.inputs) {
-      if (port.required && !port.multiple && !connectedInputs.has(`${node.id}:${port.id}`) && !(port.id in node.config)) {
+      if (port.required && !connectedInputs.has(`${node.id}:${port.id}`) && !(port.id in node.config)) {
         issues.push({ code: "required_input_unconnected", nodeId: node.id, message: `Required input is not connected or configured: ${port.id}` });
       }
     }
@@ -157,6 +245,82 @@ export function validateWorkflow(graph: WorkflowGraph): WorkflowValidation {
     issues.push({ code: "cycle_detected", message: "Workflow graph contains a dependency cycle." });
   }
   return { valid: issues.length === 0, issues, executionOrder };
+}
+
+/**
+ * Plan a full graph, one node, or a selected subgraph without executing anything.
+ * For targeted runs, locked ancestors with saved outputs are reused and their
+ * upstream dependencies are not rerun. For full runs, all nodes remain visible
+ * in the plan but locked nodes are reused rather than executed.
+ */
+export function planWorkflowExecution(
+  graph: WorkflowGraph,
+  target: WorkflowExecutionTarget = { kind: "all" }
+): WorkflowExecutionPlan {
+  const validation = validateWorkflow(graph);
+  const issues = [...validation.issues];
+  const nodeMap = new Map(graph.nodes.map(node => [node.id, node]));
+  const parents = new Map<string, Set<string>>();
+  for (const node of graph.nodes) parents.set(node.id, new Set());
+  for (const edge of graph.edges) parents.get(edge.targetNodeId)?.add(edge.sourceNodeId);
+
+  let requested = new Set<string>();
+  if (target.kind === "all") {
+    requested = new Set(graph.nodes.map(node => node.id));
+  } else {
+    const ids = target.kind === "node" ? [target.nodeId] : target.nodeIds;
+    if (ids.length === 0) {
+      issues.push({ code: "invalid_execution_target", message: "At least one node must be selected." });
+    }
+    for (const id of ids) {
+      if (!nodeMap.has(id)) {
+        issues.push({ code: "invalid_execution_target", nodeId: id, message: `Selected node does not exist: ${id}` });
+      } else {
+        requested.add(id);
+      }
+    }
+  }
+
+  const included = new Set<string>();
+  const visit = (id: string): void => {
+    if (included.has(id)) return;
+    included.add(id);
+    const node = nodeMap.get(id);
+    if (node?.locked && (node.lockedOutputIds?.length ?? 0) > 0) return;
+    for (const parent of parents.get(id) ?? []) visit(parent);
+  };
+  if (target.kind === "all") {
+    for (const id of requested) included.add(id);
+  } else {
+    for (const id of requested) visit(id);
+  }
+
+  const executionOrder = validation.executionOrder.filter(id => included.has(id));
+  const reusedNodeIds: string[] = [];
+  const runNodeIds: string[] = [];
+  for (const id of executionOrder) {
+    const node = nodeMap.get(id);
+    if (!node) continue;
+    if (node.locked) {
+      if ((node.lockedOutputIds?.length ?? 0) === 0) {
+        issues.push({ code: "locked_node_missing_output", nodeId: id, message: `Locked node has no saved output to reuse: ${id}` });
+      } else {
+        reusedNodeIds.push(id);
+      }
+    } else {
+      runNodeIds.push(id);
+    }
+  }
+
+  return {
+    valid: issues.length === 0,
+    target,
+    issues,
+    includedNodeIds: executionOrder,
+    executionOrder,
+    runNodeIds,
+    reusedNodeIds
+  };
 }
 
 export function createEmptyWorkflow(projectId: string, id: string): WorkflowGraph {
