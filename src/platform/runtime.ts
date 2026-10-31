@@ -65,7 +65,7 @@ export async function initRuntime(){
  try{
   const health=await apiRequest<{authMode:"local"|"supabase";media:{ffmpeg:boolean;ffprobe:boolean}}>("/api/health");
   state.authMode=health.authMode;state.ffmpeg=health.media.ffmpeg;state.ffprobe=health.media.ffprobe;
-  try{const me=await apiRequest<{user:RuntimeUser}>("/api/me");state.user=me.user;state.status="online";await refresh();}
+  try{const me=await apiRequest<{user:RuntimeUser}>("/api/me");state.user=me.user;state.status="online";await refresh();window.dispatchEvent(new Event("ev:authenticated"));}
   catch(error){if(error instanceof ApiError&&error.status===401)state.status="auth-required";else throw error;}
  }catch(error){state.status="offline";state.message=error instanceof Error?error.message:"API unavailable";}
  paint();
@@ -79,7 +79,7 @@ async function authenticate(form:HTMLFormElement){
    const response=await apiRequest<{user:RuntimeUser}>("/api/auth/"+(mode==="register"?"register":"login"),{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({email:String(data.get("email")),password:String(data.get("password"))})});
    state.user=response.user;
   }
-  const me=await apiRequest<{user:RuntimeUser}>("/api/me");state.user=me.user;state.status="online";state.message="";await refresh();paint();
+  const me=await apiRequest<{user:RuntimeUser}>("/api/me");state.user=me.user;state.status="online";state.message="";await refresh();window.dispatchEvent(new Event("ev:authenticated"));paint();
  }catch(error){clearApiAccessToken();state.status="auth-required";state.message=error instanceof Error?error.message:"Authentication failed.";paint();}
 }
 document.addEventListener("submit",event=>{
