@@ -177,6 +177,10 @@ async function processNextJob() {
     });
     const latest=db.prepare("SELECT status FROM jobs WHERE id=?").get(job.id);
     if(latest?.status==="cancelled")return;
+    if(current.job_type==="media.probe"&&result.metadata){
+      const input=parseJson(current.input_json),source=getAccessibleAsset(db,current.owner_id,String(input.sourceAssetId||""),true);
+      if(source){const existing=parseJson(source.metadata_json,{});db.prepare("UPDATE assets SET metadata_json=? WHERE id=?").run(json({...existing,probe:result.metadata}),source.id);}
+    }
     db.prepare("UPDATE jobs SET status='succeeded',progress=100,output_json=?,updated_at=?,completed_at=? WHERE id=?")
       .run(json(result),now(),now(),job.id);
     addJobEvent(db,job.id,job.owner_id,"job.succeeded",{output:result});
