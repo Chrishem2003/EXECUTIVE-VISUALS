@@ -1,7 +1,7 @@
 import { createServer } from "node:http";
 import { createHash, randomBytes, randomUUID, scryptSync, timingSafeEqual } from "node:crypto";
 import { createReadStream, createWriteStream, existsSync, statSync } from "node:fs";
-import { mkdir, unlink } from "node:fs/promises";
+import { mkdir, unlink, open } from "node:fs/promises";
 import { dirname, extname, join, resolve, basename, sep } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { Transform } from "node:stream";
@@ -31,6 +31,9 @@ const EXTENSIONS = {
 };
 const MEDIA_JOBS = new Set(["media.probe","media.thumbnail","media.transcode","media.audio_extract","media.proxy"]);
 const db = openDatabase(DB_FILE);
+const activeProcesses = new Map();
+const rateBuckets = new Map();
+function rateAllowed(key,limit,windowMs){const time=Date.now();const old=rateBuckets.get(key);if(!old||time-old.start>=windowMs){rateBuckets.set(key,{start:time,count:1});return true;}old.count++;return old.count<=limit;}
 await mkdir(join(MEDIA_ROOT,"uploads"), { recursive:true });
 await mkdir(join(MEDIA_ROOT,"derived"), { recursive:true });
 
