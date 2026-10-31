@@ -6,6 +6,7 @@ import { generateText } from "./ai-gateway.mjs";
 import { generateImage } from "./image-gateway.mjs";
 import { generateFalVideo } from "./fal-video-gateway.mjs";
 import { storeGeneratedImage, storeGeneratedVideo } from "./generated-assets.mjs";
+import { assertIdentityUseAllowed } from "./identity-consent.mjs";
 
 const now=()=>new Date().toISOString();
 export function hasApprovedAncestor(graph,nodeId,outputs){
@@ -22,6 +23,14 @@ export function hasApprovedAncestor(graph,nodeId,outputs){
 }
 
 const inputAsset=(values,config)=>String(values.asset||values.media||values.video||values.image||values.audio||values.input||config.assetId||config.sourceAssetId||"");
+function enforceIdentityPermission(db,job,config,values,scope){
+ const profileId=String(config.identityProfileId||values.identityProfileId||"").trim();
+ if(!profileId)return null;
+ const row=db.prepare("SELECT document_json FROM project_workspace_documents WHERE project_id=?").get(job.project_id);
+ const document=parseJson(row?.document_json,{});
+ const profile=(document.characters||[]).find(item=>String(item.id)===profileId);
+ return assertIdentityUseAllowed(profile,scope);
+}
 const nodeOutput=(node,value)=>Object.fromEntries((node.outputs||[]).map((port,index)=>[port.id,index===0?value:undefined]).filter(([,v])=>v!==undefined));
 function saveNode(db,runId,nodeId,status,{input={},output=null,error=null,attempt=0}={}){
  db.prepare("UPDATE workflow_node_runs SET status=?,attempt=?,input_json=?,output_json=?,error_json=?,completed_at=? WHERE run_id=? AND node_id=?")
@@ -125,6 +134,7 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
     const result=searchProjectKnowledge(document,query,{limit:config.limit??10});
     output=nodeOutput(node,result);output.document=result;output.records=result.records;output.sources=result.records.flatMap(record=>record.evidence);output.text=formatKnowledgeForWorkflow(result);
    }else if(node.kind==="image.generate"){
+    enforceIdentityPermission(db,job,config,values,"likeness");
     if(!hasApprovedAncestor(graph,nodeId,outputs))throw Object.assign(new Error("A completed upstream human-approval node is required before image generation."),{code:"APPROVAL_REQUIRED"});
     const prompt=String(values.prompt??values.text??values.input??config.prompt??"");
     if(values.reference||values.references||values.brand)throw Object.assign(new Error("The configured generic image adapter currently supports prompt-only generation; reference and brand inputs are not supported."),{code:"IMAGE_GATEWAY_UNSUPPORTED_INPUT"});
@@ -133,6 +143,7 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
     const asset=await storeGeneratedImage({db,mediaRoot,ownerId:job.owner_id,projectId:job.project_id||null,jobId:job.id,prompt,model:result.model,buffer:result.buffer});
     output=nodeOutput(node,asset.id);output.asset=asset.id;output.assetId=asset.id;output.mimeType=asset.mediaType;output.sha256=asset.sha256;output.usage=result.usage;
    }else if(node.kind==="video.generate"){
+    enforceIdentityPermission(db,job,config,values,"face-animation");
     if(!hasApprovedAncestor(graph,nodeId,outputs))throw Object.assign(new Error("A completed upstream human-approval node is required before video generation."),{code:"APPROVAL_REQUIRED"});
     const prompt=String(values.prompt??values.text??values.input??config.prompt??"");
     if(values.reference||values.references||values.image||values.brand)throw Object.assign(new Error("The configured video adapter currently supports prompt-only generation; reference-image and brand inputs are not supported."),{code:"VIDEO_GATEWAY_UNSUPPORTED_INPUT"});
