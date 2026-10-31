@@ -40,6 +40,6 @@ test("usage ledger accepts missing provider token telemetry without inventing us
   db.prepare("INSERT INTO users(id,email) VALUES(?,?)").run("usage-owner","usage@example.test");
   const event=recordModelUsage(db,{ownerId:"usage-owner",provider:"speech-gateway",capability:"voice.transcribe",model:"speech-local",usage:null,durationMs:0});
   const row=db.prepare("SELECT prompt_tokens,completion_tokens,total_tokens,estimated_cost_micros FROM model_usage_events WHERE id=?").get(event.id);
-  assert.deepEqual(row,{prompt_tokens:null,completion_tokens:null,total_tokens:null,estimated_cost_micros:null});
+  assert.deepEqual({...row},{prompt_tokens:null,completion_tokens:null,total_tokens:null,estimated_cost_micros:null});
  }finally{db.close();await rm(root,{recursive:true,force:true});}
 });
