@@ -75,6 +75,14 @@ export function createCloudTimelineRepository({url=process.env.SUPABASE_URL,serv
   }
   async function checkedDocument(ownerId,document){const issues=await validateAssets(ownerId,document);if(issues.length){const error=new Error("Timeline validation failed: "+issues.slice(0,8).join(" "));error.code="CLOUD_TIMELINE_INVALID";error.issues=issues;throw error;}const size=Buffer.byteLength(JSON.stringify(document));if(size>maxDocumentBytes){const error=new Error("Timeline document exceeds the configured size limit.");error.code="CLOUD_TIMELINE_TOO_LARGE";throw error;}return document;}
 
+  async function getTimeline({ownerId,timelineId}={}){
+    ownerId=validOwner(ownerId);if(typeof timelineId!=="string"||!UUID.test(timelineId))throw new Error("Timeline ID must be a UUID.");
+    const rows=await request("timelines?select=id,owner_id,project_id,name,revision,timeline,otio,created_at,updated_at&id=eq."+encodeURIComponent(timelineId)+"&archived_at=is.null&limit=1",{prefer:"return=representation"});
+    const row=Array.isArray(rows)?rows[0]:null;if(!row)return null;
+    await allowed(ownerId,row.project_id||null,"read");
+    if(!row.project_id&&row.owner_id!==ownerId)return null;
+    return map(row);
+  }
   return Object.freeze({
     async create({ownerId,projectId=null,name="Untitled timeline",timeline,otio=null}={}){
       ownerId=validOwner(ownerId);if(projectId!==null&&projectId!==undefined&&projectId!==""){if(typeof projectId!=="string"||!UUID.test(projectId))throw new Error("Project ID must be a UUID.");}else projectId=null;
@@ -85,14 +93,7 @@ export function createCloudTimelineRepository({url=process.env.SUPABASE_URL,serv
       if(!Array.isArray(rows)||rows.length!==1||rows[0].owner_id!==ownerId)throw new Error("Cloud timeline creation returned an invalid record.");
       return map(rows[0]);
     },
-    async get({ownerId,timelineId}={}){
-      ownerId=validOwner(ownerId);if(typeof timelineId!=="string"||!UUID.test(timelineId))throw new Error("Timeline ID must be a UUID.");
-      const rows=await request("timelines?select=id,owner_id,project_id,name,revision,timeline,otio,created_at,updated_at&id=eq."+encodeURIComponent(timelineId)+"&archived_at=is.null&limit=1",{prefer:"return=representation"});
-      const row=Array.isArray(rows)?rows[0]:null;if(!row) return null;
-      await allowed(ownerId,row.project_id||null,"read");
-      if(!row.project_id&&row.owner_id!==ownerId)return null;
-      return map(row);
-    },
+    get:getTimeline,
     async update({ownerId,timelineId,expectedRevision,timeline,otio}={}){
       ownerId=validOwner(ownerId);if(typeof timelineId!=="string"||!UUID.test(timelineId))throw new Error("Timeline ID must be a UUID.");
       if(!Number.isInteger(expectedRevision)||expectedRevision<1)throw new Error("Expected timeline revision must be a positive integer.");
