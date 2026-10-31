@@ -6,7 +6,7 @@ A provider-neutral platform for creative planning, media ingest, graph workflows
 
 ## Workspaces
 - Creative direction, research, briefs, scripts and storyboards.
-- Workflow canvas, typed media ports, server-side validation and targeted run planning.\n- Multi-track editorial timeline with frame-based trims, splits, clip movement, review markers, interchange export and local MP4 master rendering (H.264 video plus synchronized AAC audio).
+- Workflow canvas, typed media ports, server-side validation and targeted run planning.\n- Multi-track editorial timeline with frame-based trims, splits, clip movement, review markers, interchange export and local MP4 master rendering (H.264 video, synchronized AAC audio, still-image overlays and burned-in SRT/VTT captions).
 - Character, voice, identity, wardrobe and consent records.
 - Cinematic shot planning and continuity.
 - Image and video production planning.
@@ -48,7 +48,7 @@ npm run verify:server
 ## Production boundary
 Production mode refuses local-password authentication. Configure a trusted identity provider, persistent storage, HTTPS, rate limits and deployment-specific security controls before exposing the service. Do not attach this project to another product's database. A dedicated database migration is included for review but is not automatically applied.
 
-Actual model-based image/video generation, timeline preview playback, transitions, effects, overlay/caption compositing, cloud collaboration and publishing are not considered complete until their adapters and end-to-end tests pass.
+Actual model-based image/video generation, timeline preview playback, transitions, effects, animated/video overlays, cloud collaboration and publishing are not considered complete until their adapters and end-to-end tests pass.
 
 
 ## Staging deployment
