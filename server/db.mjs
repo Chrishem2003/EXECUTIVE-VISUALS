@@ -1,4 +1,5 @@
-import { DatabaseSync } from "node:sqlite";\nimport { randomUUID } from "node:crypto";
+import { DatabaseSync } from "node:sqlite";
+import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 
