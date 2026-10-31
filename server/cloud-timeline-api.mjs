@@ -1,4 +1,10 @@
 import { randomUUID } from "node:crypto";
+import { createWriteStream } from "node:fs";
+import { mkdtemp, open, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { basename, extname, join } from "node:path";
+import { Transform } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import { createCloudAssetAuthorizer } from "./cloud-asset-auth.mjs";
 import { createCloudTimelineService } from "./cloud-timeline-service.mjs";
 
@@ -10,11 +16,12 @@ const safeId=(value)=>typeof value==="string"&&UUID.test(value);
  * by the app's verified authentication middleware; request bodies never set
  * owner_id. Service-role credentials remain inside this server-only module.
  */
-export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRoleKey=process.env.SUPABASE_SERVICE_ROLE_KEY,fetchImpl=globalThis.fetch,timelineService,authorize,maxJobBytes=5*1024*1024,timeoutMs=15000}={}){
+export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRoleKey=process.env.SUPABASE_SERVICE_ROLE_KEY,fetchImpl=globalThis.fetch,timelineService,authorize,maxJobBytes=5*1024*1024,timeoutMs=15000,maxUploadBytes=250*1024*1024,tempRoot=tmpdir()}={}){
  if(!url||!serviceRoleKey)throw new Error("Cloud timeline API requires server-side Supabase credentials.");
  if(typeof fetchImpl!=="function")throw new Error("Cloud timeline API requires fetch.");
  if(!Number.isInteger(maxJobBytes)||maxJobBytes<1024||maxJobBytes>10*1024*1024)throw new Error("Cloud timeline API payload limit is invalid.");
  if(!Number.isInteger(timeoutMs)||timeoutMs<1000||timeoutMs>60000)throw new Error("Cloud timeline API timeout is invalid.");
+ if(!Number.isInteger(maxUploadBytes)||maxUploadBytes<1||maxUploadBytes>1024*1024*1024)throw new Error("Cloud asset upload limit is invalid.");
  const service=timelineService||createCloudTimelineService({url,serviceRoleKey,fetchImpl});
  const allow=authorize||createCloudAssetAuthorizer({url,serviceRoleKey,fetchImpl});
  const base=new URL(url).origin;
@@ -31,13 +38,24 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
  }
  const response=(status,body)=>({status,body});
  async function handle({method,path,ownerId,body={},idempotencyKey=null}={}){
-  if(!["GET","POST","PUT"].includes(method)||typeof path!=="string")return null;
+  if(!["GET","POST","PUT","DELETE"].includes(method)||typeof path!=="string")return null;
   if(!safeId(ownerId))return response(401,{error:{code:"AUTH_REQUIRED",message:"A verified account identity is required."}});
   if(Buffer.byteLength(JSON.stringify(body||{}))>maxJobBytes)return response(413,{error:{code:"PAYLOAD_TOO_LARGE",message:"Cloud timeline request is too large."}});
   try{
    if(path==="/api/cloud/timelines"&&method==="POST"){
     const timeline=await service.timelines.create({ownerId,projectId:body.projectId||null,name:body.name||"Untitled timeline",timeline:body.timeline,otio:body.otio??null});
     return response(201,{timeline});
+   }
+   const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
+   if(assetMatch&&safeId(assetMatch[1])){
+    if(method==="GET"){
+     const signed=await service.assets.createSignedUrl({ownerId,assetId:assetMatch[1],expiresIn:300});
+     return response(200,{asset:signed.asset,url:signed.url,expiresIn:300});
+    }
+    if(method==="DELETE"){
+     const result=await service.assets.softDelete({ownerId,assetId:assetMatch[1]});
+     return response(200,{asset:result});
+    }
    }
    const jobMatch=path.match(/^\/api\/cloud\/jobs\/([0-9a-f-]+)(?:\/(events))?$/i);
    if(jobMatch&&safeId(jobMatch[1])&&method==="GET"){
@@ -109,5 +127,40 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
   finally{clearTimeout(timer);}
   return{ready:true,storage:"private",schema:"executive_visuals"};
  }
- return Object.freeze({handle,checkReadiness});
+ async function uploadAsset({req,ownerId,projectId=null,originalName="upload",mediaType="application/octet-stream"}={}){
+  if(!safeId(ownerId))return response(401,{error:{code:"AUTH_REQUIRED",message:"A verified account identity is required."}});
+  if(projectId!==null&&projectId!==undefined&&projectId!==""&&!safeId(projectId))return response(400,{error:{code:"INVALID_PROJECT_ID",message:"Project ID must be a UUID."}});
+  projectId=projectId||null;mediaType=String(mediaType).split(";")[0].trim().toLowerCase();
+  const extensions={"image/jpeg":"jpg","image/png":"png","image/webp":"webp","image/gif":"gif","video/mp4":"mp4","video/webm":"webm","video/quicktime":"mov","video/x-matroska":"mkv","audio/mpeg":"mp3","audio/wav":"wav","audio/x-wav":"wav","audio/mp4":"m4a","audio/ogg":"ogg","application/pdf":"pdf","text/plain":"txt","text/vtt":"vtt","application/json":"json"};
+  if(!extensions[mediaType])return response(415,{error:{code:"UNSUPPORTED_MEDIA_TYPE",message:"This media type is not accepted."}});
+  if(!req||typeof req[Symbol.asyncIterator]!=="function")return response(400,{error:{code:"UPLOAD_STREAM_REQUIRED",message:"A binary upload stream is required."}});
+  let name="upload";try{name=decodeURIComponent(String(originalName||"upload"));}catch{return response(400,{error:{code:"INVALID_FILE_NAME",message:"File name header is malformed."}});}
+  name=basename(name.replace(/[\\/\u0000-\u001f\u007f]/g,"_")).normalize("NFKC").replace(/[^\p{L}\p{N}._() -]/gu,"_").slice(0,180)||"upload";
+  const declared=Number(req.headers?.["content-length"]||0);if(declared>maxUploadBytes)return response(413,{error:{code:"UPLOAD_TOO_LARGE",message:"Upload exceeds the configured size limit."}});
+  const directory=await mkdtemp(join(tempRoot,"ev-cloud-upload-")),filePath=join(directory,randomUUID()+"."+extensions[mediaType]);
+  let size=0,header=Buffer.alloc(0);
+  const meter=new Transform({transform(chunk,encoding,callback){size+=chunk.length;if(size>maxUploadBytes){callback(Object.assign(new Error("Upload exceeds the configured size limit."),{code:"UPLOAD_TOO_LARGE"}));return;}if(header.length<32)header=Buffer.concat([header,chunk.subarray(0,32-header.length)]);callback(null,chunk);}});
+  try{
+   await pipeline(req,meter,createWriteStream(filePath,{flags:"wx"}));
+   if(size<1)return response(400,{error:{code:"EMPTY_UPLOAD",message:"Empty uploads are not accepted."}});
+   const valid=mediaType==="image/png"?header.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10]))
+    :mediaType==="image/jpeg"?header[0]===255&&header[1]===216&&header[2]===255
+    :mediaType==="image/webp"?header.subarray(0,4).toString()==="RIFF"&&header.subarray(8,12).toString()==="WEBP"
+    :mediaType==="image/gif"?["GIF87a","GIF89a"].includes(header.subarray(0,6).toString())
+    :["video/mp4","video/quicktime","audio/mp4"].includes(mediaType)?header.subarray(4,8).toString()==="ftyp"
+    :["video/webm","video/x-matroska"].includes(mediaType)?header.subarray(0,4).equals(Buffer.from([26,69,223,163]))
+    :["audio/wav","audio/x-wav"].includes(mediaType)?header.subarray(0,4).toString()==="RIFF"&&header.subarray(8,12).toString()==="WAVE"
+    :mediaType==="audio/ogg"?header.subarray(0,4).toString()==="OggS"
+    :mediaType==="audio/mpeg"?header.subarray(0,3).toString()==="ID3"||(header[0]===255&&(header[1]&224)===224)
+    :mediaType==="application/pdf"?header.subarray(0,5).toString()==="%PDF-"
+    :!header.includes(0);
+   if(!valid)return response(415,{error:{code:"MEDIA_SIGNATURE_MISMATCH",message:"File signature does not match the declared media type."}});
+   const asset=await service.assets.createFromFile({ownerId,projectId,originalName:name,mediaType,filePath,metadata:{ingest:"cloud-api"}});
+   return response(201,{asset});
+  }catch(error){
+   if(error.code==="UPLOAD_TOO_LARGE")return response(413,{error:{code:error.code,message:error.message}});
+   throw error;
+  }finally{await rm(directory,{recursive:true,force:true}).catch(()=>{});}
+ }
+ return Object.freeze({handle,uploadAsset,checkReadiness});
 }
