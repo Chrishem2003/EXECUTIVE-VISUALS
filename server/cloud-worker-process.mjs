@@ -15,11 +15,13 @@ export function readCloudWorkerConfig(env=process.env){
  const media=truth(env.CLOUD_MEDIA_WORKER_ENABLED),timeline=truth(env.CLOUD_TIMELINE_WORKER_ENABLED);
  if(!media&&!timeline)throw new Error("Enable at least one supported cloud worker family.");
  if(!env.SUPABASE_URL||!env.SUPABASE_SERVICE_ROLE_KEY)throw new Error("Cloud workers require server-side Supabase credentials.");
+ const leaseSeconds=integer(env.CLOUD_WORKER_LEASE_SECONDS,90,30,900,"Cloud worker lease duration");
+ const heartbeatIntervalMs=integer(env.CLOUD_WORKER_HEARTBEAT_MS,15000,1000,30000,"Cloud worker heartbeat");
+ if(heartbeatIntervalMs>=leaseSeconds*1000)throw new Error("Cloud worker heartbeat must be shorter than the lease duration.");
  return Object.freeze({
   media,timeline,
   pollMs:integer(env.CLOUD_WORKER_POLL_MS,1000,500,10000,"Cloud worker poll interval"),
-  leaseSeconds:integer(env.CLOUD_WORKER_LEASE_SECONDS,90,30,900,"Cloud worker lease duration"),
-  heartbeatIntervalMs:integer(env.CLOUD_WORKER_HEARTBEAT_MS,15000,1000,30000,"Cloud worker heartbeat"),
+  leaseSeconds,heartbeatIntervalMs,
   maxBytes:integer(env.CLOUD_WORKER_MAX_BYTES,250*1024*1024,1024,1024*1024*1024,"Cloud worker media limit"),
   tempRoot:resolve(env.CLOUD_WORKER_TEMP_ROOT||tmpdir())
  });
