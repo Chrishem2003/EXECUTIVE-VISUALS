@@ -43,3 +43,23 @@ export async function storeGeneratedVideo({db,mediaRoot,ownerId,projectId=null,j
   return {id,projectId,name,mediaType:"video/mp4",size:buffer.length,sha256,storagePath,metadata};
  }catch(error){await unlink(absolute).catch(()=>{});throw error;}
 }
+
+export async function storeGeneratedAudio({db,mediaRoot,ownerId,projectId=null,jobId,prompt,model,buffer,mimeType="audio/mpeg"}){
+ const types={"audio/mpeg":"mp3","audio/wav":"wav","audio/flac":"flac","audio/ogg":"ogg"};
+ const extension=types[mimeType];
+ if(!extension||!Buffer.isBuffer(buffer)||buffer.length<4||buffer.length>50*1024*1024)throw Object.assign(new Error("Generated audio has an unsupported format or exceeds the 50 MiB limit."),{code:"AUDIO_SIGNATURE_INVALID"});
+ const signature=extension==="mp3"?(buffer.subarray(0,3).toString("ascii")==="ID3"||buffer[0]===0xff&&(buffer[1]&0xe0)===0xe0):extension==="wav"?(buffer.length>=12&&buffer.toString("ascii",0,4)==="RIFF"&&buffer.toString("ascii",8,12)==="WAVE"):extension==="flac"?buffer.toString("ascii",0,4)==="fLaC":buffer.toString("ascii",0,4)==="OggS";
+ if(!signature)throw Object.assign(new Error("Generated audio failed binary signature validation."),{code:"AUDIO_SIGNATURE_INVALID"});
+ const id=randomUUID(),directory=join(mediaRoot,safeSegment(ownerId),safeSegment(projectId||"personal"));
+ const absolute=resolve(directory,id+"."+extension),root=resolve(mediaRoot),storagePath=relative(root,absolute).split(sep).join("/");
+ if(storagePath.startsWith("..")||resolve(root,storagePath)!==absolute)throw Object.assign(new Error("Generated audio path failed validation."),{code:"ASSET_PATH_INVALID"});
+ await mkdir(directory,{recursive:true});
+ try{
+  await writeFile(absolute,buffer,{flag:"wx"});
+  const sha256=createHash("sha256").update(buffer).digest("hex"),promptHash=createHash("sha256").update(String(prompt||"")).digest("hex");
+  const name="generated-"+id+"."+extension,metadata={generated:true,model,promptHash,jobId,createdAt:new Date().toISOString()};
+  db.prepare("INSERT INTO assets(id,owner_id,project_id,original_name,media_type,byte_size,sha256,storage_path,metadata_json) VALUES(?,?,?,?,?,?,?,?,?)")
+   .run(id,ownerId,projectId,name,mimeType,buffer.length,sha256,storagePath,json(metadata));
+  return {id,projectId,name,mediaType:mimeType,size:buffer.length,sha256,storagePath,metadata};
+ }catch(error){await unlink(absolute).catch(()=>{});throw error;}
+}
