@@ -12,7 +12,7 @@ import { Transform } from "node:stream";
  * Metadata authorization and persistence remain in the asset repository.
  */
 export function createCloudMediaAssetIO({assets,fetchImpl=globalThis.fetch,tempRoot=tmpdir(),maxBytes=250*1024*1024,timeoutMs=30000}={}){
- if(!assets||typeof assets.createSignedUrl!=="function"||typeof assets.create!=="function")throw new Error("Cloud media IO requires the cloud asset repository.");
+ if(!assets||typeof assets.createSignedUrl!=="function"||typeof assets.create!=="function"&&typeof assets.createFromFile!=="function")throw new Error("Cloud media IO requires the cloud asset repository.");
  if(typeof fetchImpl!=="function")throw new Error("Cloud media IO requires fetch.");
  if(!Number.isInteger(maxBytes)||maxBytes<1||maxBytes>1024*1024*1024)throw new Error("Cloud media IO byte limit is invalid.");
  if(!Number.isInteger(timeoutMs)||timeoutMs<1000||timeoutMs>120000)throw new Error("Cloud media IO timeout is invalid.");
