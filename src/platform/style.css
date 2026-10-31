@@ -161,3 +161,13 @@
 .wf-run-status>div{display:flex;align-items:center;gap:8px;font-size:9px;color:#d7c59f;flex-wrap:wrap}
 .wf-run-status span{display:block;font-size:8px;color:#b8c4d4;border:1px solid var(--line);border-radius:4px;padding:6px}
 .wf-run-status button{border:1px solid #6c5b40;background:#292319;color:#e9d0a0;border-radius:4px;padding:5px 7px;font-size:8px}
+
+.editor-clip{cursor:pointer}
+.editor-clip.selected{z-index:3;border:2px solid #f1d39a;box-shadow:0 0 0 2px rgba(241,211,154,.16),0 8px 24px rgba(0,0,0,.3)}
+.timeline-clip-inspector{margin-top:14px;padding:14px;border:1px solid var(--line);border-radius:9px;background:#101722}
+.timeline-clip-inspector .eyebrow{margin-bottom:10px}
+.timeline-clip-inspector .form-grid{grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px}
+.timeline-clip-inspector label{display:block;font-size:9px;color:var(--muted);margin:0 0 5px}
+.timeline-clip-inspector input,.timeline-clip-inspector select{width:100%;min-width:0;border:1px solid var(--line);border-radius:6px;background:#0d131d;color:var(--text);padding:9px;font-size:10px}
+.timeline-clip-inspector button{margin-top:12px}
+@media(max-width:600px){.timeline-clip-inspector .form-grid{grid-template-columns:1fr 1fr}}
