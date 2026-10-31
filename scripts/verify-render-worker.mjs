@@ -8,8 +8,9 @@ import { executeMediaJob } from "../server/media.mjs";
 const root=await mkdtemp(join(tmpdir(),"executive-visuals-render-"));
 const mediaRoot=join(root,"media"),uploads=join(mediaRoot,"uploads"),derived=join(mediaRoot,"derived");
 await mkdir(uploads,{recursive:true});await mkdir(derived,{recursive:true});
-const source=join(uploads,"source.mp4");
+const source=join(uploads,"source.mp4"),audio=join(uploads,"music.wav");
 await writeFile(source,Buffer.from([0,0,0,24,0x66,0x74,0x79,0x70,0x69,0x73,0x6f,0x6d,0,0,0,1]));
+await writeFile(audio,Buffer.from("fake-audio"));
 const capture=join(root,"ffmpeg-args.txt");
 const stub=join(root,"ffmpeg-stub.sh");
 await writeFile(stub,'#!/bin/sh\nif [ "$1" = "-version" ]; then echo "ffmpeg test stub"; exit 0; fi\nprintf "%s\\n" "$@" > "$FFMPEG_CAPTURE"\nfor arg in "$@"; do last="$arg"; done\nprintf "test-mp4-output" > "$last"\n');
@@ -21,6 +22,8 @@ try{
  db.prepare("INSERT INTO users(id,email) VALUES(?,?)").run("user-1","render@example.test");
  db.prepare("INSERT INTO assets(id,owner_id,original_name,media_type,byte_size,sha256,storage_path,metadata_json) VALUES(?,?,?,?,?,?,?,?)")
    .run("asset-1","user-1","source.mp4","video/mp4",(await stat(source)).size,"a".repeat(64),"uploads/source.mp4","{}");
+ db.prepare("INSERT INTO assets(id,owner_id,original_name,media_type,byte_size,sha256,storage_path,metadata_json) VALUES(?,?,?,?,?,?,?,?)")
+   .run("audio-1","user-1","music.wav","audio/wav",(await stat(audio)).size,"c".repeat(64),"uploads/music.wav","{}");
  const timeline={
   id:"timeline-1",projectId:null,name:"Render test",revision:1,frameRate:{numerator:24,denominator:1},width:1280,height:720,pixelAspectRatio:1,
   tracks:[{id:"video-1",name:"Video 1",kind:"video",enabled:true,locked:false,clips:[
@@ -40,6 +43,7 @@ try{
  const args=await readFile(capture,"utf8");
  assert.match(args,/concat=n=1/);
  assert.match(args,/libx264/);
+ assert.match(args,/amix=inputs=1/);
  const stored=db.prepare("SELECT * FROM assets WHERE id=?").get(result.outputAsset.id);
  assert.ok(await stat(join(mediaRoot,stored.storage_path)));
  assert.equal(stored.derivative_of,null);
