@@ -3,8 +3,8 @@ import { addClip, addMarker, addTrack, createTimeline, moveClip, rational, split
 
 type Asset={id:string;name:string;mediaType:string;size:number;metadata?:Record<string,unknown>};
 type SavedTimeline={id:string;projectId?:string|null;name:string;revision:number;document?:EditorialTimeline};
-const state:{timeline:EditorialTimeline|null;serverRevision:number;timelines:SavedTimeline[];assets:Asset[];status:"loading"|"ready"|"offline"|"auth";message:string;selectedTrack:string}={
- timeline:null,serverRevision:0,timelines:[],assets:[],status:"loading",message:"Loading editorial workspace…",selectedTrack:""
+const state:{timeline:EditorialTimeline|null;serverRevision:number;timelines:SavedTimeline[];assets:Asset[];status:"loading"|"ready"|"offline"|"auth";message:string;selectedTrack:string;ffmpeg:boolean}={
+ timeline:null,serverRevision:0,timelines:[],assets:[],status:"loading",message:"Loading editorial workspace…",selectedTrack:"",ffmpeg:false
 };
 const esc=(v:unknown)=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]||c));
 const fps=()=>state.timeline?state.timeline.frameRate.numerator/state.timeline.frameRate.denominator:24;
@@ -17,7 +17,7 @@ function timelineCanvas(){
  state.timeline.tracks.map(track=>'<div class="editor-track"><div class="editor-track-label"><b>'+esc(track.name)+'</b><small>'+esc(track.kind)+(track.locked?' · locked':'')+'</small></div><div class="editor-track-lane">'+track.clips.map(clip=>'<article class="editor-clip" style="left:'+Math.max(0,clip.timelineStart.value/total*100)+'%;width:'+Math.max(4,clip.duration.value/total*100)+'%"><b>'+esc(clip.name)+'</b><small>'+esc(clip.assetId.slice(0,8))+' · '+Math.round(clip.duration.value)+'f</small><div class="editor-clip-actions"><button data-tl-action="split" data-track="'+esc(track.id)+'" data-clip="'+esc(clip.id)+'">Split</button><button data-tl-action="trim" data-track="'+esc(track.id)+'" data-clip="'+esc(clip.id)+'">Trim 12f</button><button data-tl-action="move" data-track="'+esc(track.id)+'" data-clip="'+esc(clip.id)+'">Next track</button></div></article>').join("")+'</div></div>').join("");
 }
 export function renderTimelineWorkspace(){
- return '<div id="timeline-workspace"><div class="timeline-toolbar"><span class="runtime-status '+state.status+'"><i></i>'+esc(state.status==="ready"?"TIMELINE SAVED":state.status==="auth"?"SIGN IN REQUIRED":state.status==="offline"?"API OFFLINE":"LOADING")+'</span><button class="secondary" data-tl-action="refresh">↻ Refresh</button><button class="secondary" data-tl-action="export">Export OTIO JSON</button></div>'+
+ return '<div id="timeline-workspace"><div class="timeline-toolbar"><span class="runtime-status '+state.status+'"><i></i>'+esc(state.status==="ready"?"TIMELINE SAVED":state.status==="auth"?"SIGN IN REQUIRED":state.status==="offline"?"API OFFLINE":"LOADING")+'</span><button class="secondary" data-tl-action="refresh">↻ Refresh</button><button class="secondary" data-tl-action="export">Export OTIO JSON</button>'+(state.ffmpeg?'<button class="primary" data-tl-action="render">Render master MP4</button>':'<span class="muted">FFmpeg required for master render</span>')+'</div>'+
  (state.message?'<div class="notice">'+esc(state.message)+'</div>':'')+
  '<div class="timeline-editor-grid"><section class="panel"><div class="eyebrow">SEQUENCE SETTINGS</div><h3>'+(state.timeline?esc(state.timeline.name):"No sequence loaded")+'</h3>'+
  '<form id="tl-add-track"><label>Track name</label><input name="name" required placeholder="Video 2 / Music / Captions"><label>Track type</label><select name="kind"><option value="video">Video</option><option value="audio">Audio</option><option value="overlay">Overlay</option><option value="caption">Captions</option></select><button class="secondary">＋ Add track</button></form>'+
@@ -29,6 +29,7 @@ export function renderTimelineWorkspace(){
  '<div class="notice">This is a real editable timeline model with source in/out, track placement, trims, splits, markers and an interchange export. Frame preview, playback, transitions, effects rendering and audio mixing are the next engine milestone.</div></div>';
 }
 async function refresh(){
+ const health=await apiRequest<{media:{ffmpeg:boolean}}>("/api/health");state.ffmpeg=health.media.ffmpeg;
  const [assetResponse,timelineResponse]=await Promise.all([
   apiRequest<{assets:Asset[]}>("/api/assets"),
   apiRequest<{timelines:SavedTimeline[]}>("/api/timelines")
@@ -65,6 +66,16 @@ function paint(){const root=document.querySelector<HTMLElement>("#timeline-works
 async function runAction(action:HTMLElement){
  const type=action.dataset.tlAction||"";
  if(type==="refresh"){await refresh();paint();return;}
+ if(type==="render"){
+  if(!state.timeline||!state.ffmpeg){state.message="FFmpeg is required to render a master file.";paint();return;}
+  try{
+   await persist();
+   await apiRequest("/api/jobs",{method:"POST",headers:{"content-type":"application/json","idempotency-key":crypto.randomUUID()},body:JSON.stringify({jobType:"timeline.render",timelineId:state.timeline.id,projectId:state.timeline.projectId||undefined})});
+   state.message="Master render queued. Check Production Operations for progress and the finished MP4.";
+   window.dispatchEvent(new Event("ev:jobs-updated"));
+  }catch(error){state.message=error instanceof Error?error.message:"Render could not be queued.";}
+  paint();return;
+ }
  if(!state.timeline)return;
  const trackId=action.dataset.track||"",clipId=action.dataset.clip||"";
  if(type==="split"){
