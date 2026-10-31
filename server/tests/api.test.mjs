@@ -2,16 +2,17 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openDatabase, json } from "../db.mjs";
 
 const port=await new Promise(resolve=>{const probe=createServer();probe.listen(0,"127.0.0.1",()=>{const address=probe.address();probe.close(()=>resolve(address.port));});});
 const dataDir=await mkdtemp(join(tmpdir(),"ev-api-test-"));
+const webDir=join(dataDir,"web");await mkdir(webDir,{recursive:true});await writeFile(join(webDir,"index.html"),"<!doctype html><html><body>test</body></html>");
 const child=spawn(process.execPath,["server/index.mjs"],{
   cwd:process.cwd(),
-  env:{...process.env,NODE_ENV:"development",AUTH_MODE:"local",API_HOST:"127.0.0.1",API_PORT:String(port),DATA_DIR:dataDir,MEDIA_ROOT:join(dataDir,"media"),DISABLE_WORKER:"true"},
+  env:{...process.env,NODE_ENV:"development",AUTH_MODE:"local",API_HOST:"127.0.0.1",API_PORT:String(port),DATA_DIR:dataDir,MEDIA_ROOT:join(dataDir,"media"),WEB_ROOT:webDir,DISABLE_WORKER:"true"},
   stdio:["ignore","pipe","pipe"]
 });
 let stdout="",stderr="";
@@ -45,6 +46,17 @@ test("health reports local storage and media-engine availability without secrets
   assert.equal(body.status,"ok");
   assert.equal(body.storage,"local-disk");
   assert.equal("SUPABASE_SERVICE_ROLE_KEY" in body,false);
+  assert.equal(response.headers.get("x-frame-options"),"DENY");
+  assert.equal(response.headers.get("referrer-policy"),"strict-origin-when-cross-origin");
+});
+
+test("static application shell applies a restrictive content security policy",async()=>{
+  const response=await fetch(base+"/");
+  assert.equal(response.status,200);
+  const policy=response.headers.get("content-security-policy")||"";
+  assert.ok(policy.includes("script-src 'self'"));
+  assert.ok(policy.includes("frame-ancestors 'none'"));
+  assert.ok(policy.includes("object-src 'none'"));
 });
 
 test("registration, project ownership, binary upload and asset isolation work",async()=>{
