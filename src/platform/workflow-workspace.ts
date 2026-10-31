@@ -9,7 +9,7 @@ const state:{graph:WorkflowGraph|null;workflows:SavedWorkflow[];serverRevision:n
 const esc=(v:unknown)=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]||c));
 const port=(id:string,type:MediaPortType,required=false,multiple=false):WorkflowPort=>({id,label:id,type,required,multiple});
 const palette:Record<string,{kind:WorkflowNodeKind;label:string;inputs:WorkflowPort[];outputs:WorkflowPort[]}>={
- knowledge:{kind:"knowledge.search",label:"Search Project Knowledge",inputs:[port("query","text",true)],outputs:[port("document","document"),port("records","structured-data"),port("sources","document",false,true)]},
+ knowledge:{kind:"knowledge.search",label:"Search Project Knowledge",inputs:[port("query","text",true)],outputs:[port("document","document"),port("records","structured-data"),port("sources","document",false,true),port("text","text")]},
  text:{kind:"text",label:"Text / Prompt",inputs:[],outputs:[port("text","text")]},
  upload:{kind:"upload",label:"Use Uploaded Asset",inputs:[],outputs:[port("asset","asset"),port("media","media")]},
  reference:{kind:"reference",label:"Reference Asset",inputs:[],outputs:[port("asset","asset"),port("media","media")]},
