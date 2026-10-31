@@ -105,6 +105,22 @@ function recordJob(dbRow) {
 function ownedJob(ownerId,id) {
   return db.prepare("SELECT * FROM jobs WHERE id=? AND owner_id=?").get(id,ownerId);
 }
+
+function validFileSignature(type,header){
+  if(type==="image/png")return header.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10]));
+  if(type==="image/jpeg")return header[0]===0xff&&header[1]===0xd8&&header[2]===0xff;
+  if(type==="image/webp")return header.subarray(0,4).toString()==="RIFF"&&header.subarray(8,12).toString()==="WEBP";
+  if(type==="image/gif")return ["GIF87a","GIF89a"].includes(header.subarray(0,6).toString());
+  if(["video/mp4","video/quicktime","audio/mp4"].includes(type))return header.subarray(4,8).toString()==="ftyp";
+  if(["video/webm","video/x-matroska"].includes(type))return header.subarray(0,4).equals(Buffer.from([0x1a,0x45,0xdf,0xa3]));
+  if(type==="audio/mpeg")return header.subarray(0,3).toString()==="ID3"||(header[0]===0xff&&(header[1]&0xe0)===0xe0);
+  if(type==="audio/wav"||type==="audio/x-wav")return header.subarray(0,4).toString()==="RIFF"&&header.subarray(8,12).toString()==="WAVE";
+  if(type==="audio/ogg")return header.subarray(0,4).toString()==="OggS";
+  if(type==="application/pdf")return header.subarray(0,5).toString()==="%PDF-";
+  if(type==="text/plain")return !header.includes(0);
+  if(type==="application/json")return true;
+  return false;
+}
 async function storeUpload(req,user,projectId) {
   const mediaType=String(req.headers["content-type"]||"application/octet-stream").split(";")[0].toLowerCase();
   if(!ALLOWED_MEDIA.has(mediaType))throw Object.assign(new Error("Unsupported media type."),{status:415,code:"UNSUPPORTED_MEDIA_TYPE"});
