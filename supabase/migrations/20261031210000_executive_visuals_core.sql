@@ -577,7 +577,7 @@ create policy ev_audit_read on executive_visuals.audit_events for select to auth
 using (owner_id=(select auth.uid()) or exists (select 1 from executive_visuals.projects p where p.id=audit_events.project_id and p.owner_id=(select auth.uid())) or exists (select 1 from executive_visuals.project_members m where m.project_id=audit_events.project_id and m.member_id=(select auth.uid())));
 insert into storage.buckets(id,name,public,file_size_limit,allowed_mime_types)
 values ('executive-visuals-media','executive-visuals-media',false,262144000,
-  array['image/jpeg','image/png','image/webp','image/gif','video/mp4','video/webm','video/quicktime','video/x-matroska','audio/mpeg','audio/wav','audio/x-wav','audio/mp4','audio/ogg','application/pdf','text/plain','application/json'])
+  array['image/jpeg','image/png','image/webp','image/gif','video/mp4','video/webm','video/quicktime','video/x-matroska','audio/mpeg','audio/wav','audio/x-wav','audio/mp4','audio/ogg','application/pdf','text/plain','text/vtt','application/json'])
 on conflict (id) do update set
   name=excluded.name,
   public=false,
