@@ -4,7 +4,7 @@ import { createServer } from "node:http";
 import { generateText } from "../ai-gateway.mjs";
 
 const saved={};
-const keys=["AI_GATEWAY_ENABLED","AI_GATEWAY_URL","AI_GATEWAY_MODEL","AI_GATEWAY_API_KEY","AI_GATEWAY_TIMEOUT_MS"];
+const keys=["AI_GATEWAY_ENABLED","AI_GATEWAY_URL","AI_GATEWAY_MODEL","AI_GATEWAY_API_KEY","AI_GATEWAY_TIMEOUT_MS","AI_GATEWAY_ALLOW_REMOTE"];
 for(const key of keys)saved[key]=process.env[key];
 function restore(){for(const key of keys){if(saved[key]===undefined)delete process.env[key];else process.env[key]=saved[key];}}
 test("text gateway sends approved request configuration and normalizes response usage",async()=>{
@@ -35,6 +35,8 @@ test("text gateway is disabled by default and rejects insecure remote endpoints"
  await assert.rejects(()=>generateText({prompt:"hello"}),error=>error.code==="AI_GATEWAY_DISABLED");
  process.env.AI_GATEWAY_ENABLED="true";process.env.AI_GATEWAY_URL="http://example.com/v1";process.env.AI_GATEWAY_MODEL="test-model";
  await assert.rejects(()=>generateText({prompt:"hello"}),error=>error.code==="AI_GATEWAY_INSECURE_URL");
+ process.env.AI_GATEWAY_URL="https://gateway.example.test/v1";
+ await assert.rejects(()=>generateText({prompt:"hello"}),error=>error.code==="AI_GATEWAY_REMOTE_DISABLED");
  restore();
 });
 test("text gateway rate limits and server failures are normalized without leaking secrets",async()=>{
