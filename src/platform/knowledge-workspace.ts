@@ -22,6 +22,7 @@ export function renderKnowledgeWorkspace(){
  '<div class="notice">Evidence discipline: a saved note is not automatically verified. Keep source URLs, dates, author/organization, rights and verification status visible. This workspace stores and organizes evidence; it does not claim to have independently checked a source or run a live web search.</div>';
 }
 async function load(projectId:string){
+ state.sources=[];state.records=[];
  if(!projectId){state.sources=[];state.records=[];state.message="Select a project to create its source library and knowledge base.";return;}
  state.loading=true;state.message="Loading project research and knowledge…";
  try{const result=await loadCreativeDraft(projectId);if(projectId!==getCurrentProjectId())return;const doc=result?.document||{};state.sources=Array.isArray(doc.researchSources)?doc.researchSources as ResearchSource[]:[];state.records=Array.isArray(doc.knowledgeRecords)?doc.knowledgeRecords as KnowledgeRecord[]:[];state.message="Project-scoped records are saved through revision-checked workspace storage.";}
