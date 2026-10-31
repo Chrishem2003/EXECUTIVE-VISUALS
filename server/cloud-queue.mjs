@@ -47,7 +47,7 @@ export function createCloudQueue({
         catch { throw new Error("Cloud queue returned a non-JSON response (HTTP " + response.status + ")."); }
       }
       if (!response.ok) {
-        const message = typeof parsed?.message === "string" ? parsed.message.slice(0, 300) : "Cloud queue request failed.";
+        const message = typeof parsed?.message === "string" ? parsed.message.replaceAll(serviceRoleKey, "[redacted]").slice(0, 300) : "Cloud queue request failed.";
         const error = new Error(message);
         error.code = "CLOUD_QUEUE_HTTP_" + response.status;
         error.status = response.status;
