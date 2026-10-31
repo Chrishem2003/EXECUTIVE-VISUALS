@@ -1,8 +1,9 @@
 import { spawn } from "node:child_process";
-import { createReadStream, createWriteStream } from "node:fs";
-import { mkdir, rm, stat } from "node:fs/promises";
+import { createReadStream } from "node:fs";
+import { copyFile, mkdtemp, rm, stat } from "node:fs/promises";
 import { randomUUID, createHash } from "node:crypto";
 import { extname, join } from "node:path";
+import { tmpdir } from "node:os";
 import { pipeline } from "node:stream/promises";
 import { Transform } from "node:stream";
 import { buildMediaOperationArgs, executableAvailable } from "./media.mjs";
@@ -135,7 +136,7 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
     const sourcePath = join(workDir, "source" + extension);
     const outputPath = join(workDir, randomUUID() + ".out");
     try {
-      await import("node:fs/promises").then(fs => fs.copyFile(materialized.path, sourcePath));
+      await copyFile(materialized.path, sourcePath);
       if (job.job_type === "media.probe") {
         if (!executableAvailable("ffprobe")) throw Object.assign(new Error("FFprobe is not installed on this worker."), { code: "MEDIA_ENGINE_MISSING" });
         const result = await runProcess(ffprobe, ["-v", "error", "-show_format", "-show_streams", "-of", "json", sourcePath], { signal, timeoutMs, onProgress });
