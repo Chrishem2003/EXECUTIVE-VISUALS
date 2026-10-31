@@ -97,6 +97,7 @@ create table if not exists executive_visuals.jobs (
   lease_owner text,
   lease_expires_at timestamptz,
   lease_heartbeat_at timestamptz,
+  started_at timestamptz,
   estimated_cost jsonb check (estimated_cost is null or jsonb_typeof(estimated_cost)='object'),
   approved_by uuid references auth.users(id),
   approved_at timestamptz,
