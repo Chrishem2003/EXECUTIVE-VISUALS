@@ -1,5 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { createHash } from "node:crypto";
 import { createCloudStorage, buildCloudAssetObjectPath } from "../cloud-storage.mjs";
 
 const config={url:"https://example.supabase.co",serviceRoleKey:"storage-secret"};
@@ -21,6 +25,20 @@ test("uploads private assets to the fixed bucket using server credentials",async
  assert.equal(calls[0].options.body,bytes);
 });
 
+test("streams media files to private storage and returns the streamed checksum",async()=>{
+ const root=await mkdtemp(join(tmpdir(),"ev-storage-test-")),file=join(root,"large.mp4"),bytes=Buffer.from("streamed-media-content"),calls=[];
+ await writeFile(file,bytes);
+ const storage=createCloudStorage({...config,fetchImpl:async(url,options)=>{
+  const chunks=[];for await(const chunk of options.body)chunks.push(Buffer.from(chunk));
+  calls.push({url,options,bytes:Buffer.concat(chunks)});
+  return response({Key:"streamed"});
+ }});
+ const result=await storage.uploadFile(path,file,"video/mp4");
+ assert.equal(result.size,bytes.length);assert.equal(result.sha256,createHash("sha256").update(bytes).digest("hex"));
+ assert.deepEqual(calls[0].bytes,bytes);assert.equal(calls[0].options.duplex,"half");
+ assert.equal(calls[0].options.headers["content-length"],String(bytes.length));
+ await rm(root,{recursive:true,force:true});
+});
 test("signed URLs are short-lived, validated and pinned to the configured origin",async()=>{
  const calls=[];
  const storage=createCloudStorage({...config,fetchImpl:async(url,options)=>{calls.push({url,options});return response({signedURL:"/object/sign/executive-visuals-media/"+path+"?token=temporary"});}});
