@@ -329,7 +329,7 @@ export function createAppServer() {
       }
 
       if(path==="/api/workflows"&&req.method==="GET"){
-        const rows=db.prepare("SELECT id,project_id,name,revision,graph_json,graph_hash,created_at,updated_at FROM workflows WHERE owner_id=? ORDER BY updated_at DESC").all(user.id);
+        const rows=db.prepare("SELECT id,project_id,name,revision,graph_json,graph_hash,created_at,updated_at FROM workflows WHERE owner_id=? OR project_id IN (SELECT project_id FROM project_members WHERE member_id=?) ORDER BY updated_at DESC").all(user.id,user.id);
         send(res,200,{workflows:rows.map(x=>({id:x.id,projectId:x.project_id,name:x.name,revision:x.revision,graph:parseJson(x.graph_json),graphHash:x.graph_hash,createdAt:x.created_at,updatedAt:x.updated_at}))},cors);return;
       }
       if(path==="/api/workflows"&&req.method==="POST"){
@@ -344,7 +344,7 @@ export function createAppServer() {
       }
 
       if(path==="/api/timelines"&&req.method==="GET"){
-        const rows=db.prepare("SELECT id,project_id,name,revision,created_at,updated_at FROM timelines WHERE owner_id=? AND archived_at IS NULL ORDER BY updated_at DESC").all(user.id);
+        const rows=db.prepare("SELECT id,project_id,name,revision,created_at,updated_at FROM timelines WHERE archived_at IS NULL AND (owner_id=? OR project_id IN (SELECT project_id FROM project_members WHERE member_id=?)) ORDER BY updated_at DESC").all(user.id,user.id);
         send(res,200,{timelines:rows.map(x=>({id:x.id,projectId:x.project_id,name:x.name,revision:x.revision,createdAt:x.created_at,updatedAt:x.updated_at}))},cors);return;
       }
       if(path==="/api/timelines"&&req.method==="POST"){
@@ -362,7 +362,7 @@ export function createAppServer() {
       }
       const timelineMatch=path.match(/^\/api\/timelines\/([0-9a-f-]+)(?:\/(otio))?$/i);
       if(timelineMatch){
-        const record=db.prepare("SELECT * FROM timelines WHERE id=? AND owner_id=? AND archived_at IS NULL").get(timelineMatch[1],user.id);
+        const record=db.prepare("SELECT * FROM timelines WHERE id=? AND archived_at IS NULL AND (owner_id=? OR project_id IN (SELECT project_id FROM project_members WHERE member_id=?))").get(timelineMatch[1],user.id,user.id);
         if(!record){fail(res,404,"TIMELINE_NOT_FOUND","Timeline not found.");return;}
         if(timelineMatch[2]==="otio"&&req.method==="GET"){
           if(!record.otio_json){fail(res,404,"INTERCHANGE_NOT_AVAILABLE","No interchange export has been saved.");return;}
@@ -372,6 +372,7 @@ export function createAppServer() {
           send(res,200,{timeline:{id:record.id,projectId:record.project_id,name:record.name,revision:record.revision,document:parseJson(record.timeline_json),createdAt:record.created_at,updatedAt:record.updated_at}},cors);return;
         }
         if(!timelineMatch[2]&&req.method==="PUT"){
+          if(record.owner_id!==user.id&&(!record.project_id||!canWriteProject(db,user.id,record.project_id))){fail(res,403,"EDITOR_REQUIRED","Editor access is required to edit this timeline.");return;}
           const body=await readJson(req,4*1024*1024);
           if(Number(body.revision)!==record.revision){fail(res,409,"REVISION_CONFLICT","Timeline changed since it was loaded. Refresh and retry.");return;}
           const timeline=body.timeline,validation=validateTimelineDocument(timeline,db,user.id);
@@ -386,6 +387,7 @@ export function createAppServer() {
           send(res,200,{ok:true,revision},cors);return;
         }
         if(!timelineMatch[2]&&req.method==="DELETE"){
+          if(record.owner_id!==user.id){fail(res,403,"OWNER_REQUIRED","Only the timeline owner can archive it.");return;}
           db.prepare("UPDATE timelines SET archived_at=?,updated_at=? WHERE id=? AND owner_id=?").run(now(),now(),record.id,user.id);
           audit(db,user.id,"timeline.archived","timeline",record.id,{},record.project_id);
           send(res,200,{ok:true},cors);return;
@@ -393,12 +395,13 @@ export function createAppServer() {
       }
       const workflowMatch=path.match(/^\/api\/workflows\/([0-9a-f-]+)$/i);
       if(workflowMatch){
-        const workflow=db.prepare("SELECT * FROM workflows WHERE id=? AND owner_id=?").get(workflowMatch[1],user.id);
+        const workflow=db.prepare("SELECT * FROM workflows WHERE id=? AND (owner_id=? OR project_id IN (SELECT project_id FROM project_members WHERE member_id=?))").get(workflowMatch[1],user.id,user.id);
         if(!workflow){fail(res,404,"WORKFLOW_NOT_FOUND","Workflow not found.");return;}
         if(req.method==="GET"){
           send(res,200,{workflow:{id:workflow.id,projectId:workflow.project_id,name:workflow.name,revision:workflow.revision,graph:parseJson(workflow.graph_json),graphHash:workflow.graph_hash,createdAt:workflow.created_at,updatedAt:workflow.updated_at}},cors);return;
         }
         if(req.method==="PUT"){
+          if(workflow.owner_id!==user.id&&(!workflow.project_id||!canWriteProject(db,user.id,workflow.project_id))){fail(res,403,"EDITOR_REQUIRED","Editor access is required to change this workflow.");return;}
           const body=await readJson(req);
           if(Number(body.revision)!==workflow.revision){fail(res,409,"REVISION_CONFLICT","Workflow changed since it was loaded. Refresh and retry.");return;}
           if(!body.graph||!Array.isArray(body.graph.nodes)||!Array.isArray(body.graph.edges)){fail(res,400,"INVALID_WORKFLOW","A workflow graph with nodes and edges is required.");return;}
@@ -440,7 +443,7 @@ export function createAppServer() {
           send(res,200,{ok:true},cors);return;
         }
         if(jobMatch[2]==="events"&&req.method==="GET"){
-          const events=db.prepare("SELECT id,event_type,event_json,created_at FROM job_events WHERE job_id=? AND owner_id=? ORDER BY id ASC").all(job.id,user.id);
+          const events=db.prepare("SELECT id,event_type,event_json,created_at FROM job_events WHERE job_id=? ORDER BY id ASC").all(job.id);
           send(res,200,{events:events.map(x=>({id:x.id,type:x.event_type,data:parseJson(x.event_json),createdAt:x.created_at}))},cors);return;
         }
         if(!jobMatch[2]&&req.method==="GET"){
