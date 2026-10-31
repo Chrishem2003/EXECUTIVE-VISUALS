@@ -46,11 +46,17 @@ function requestPinned(url,addresses){
 const decodeEntities=value=>String(value).replace(/&nbsp;/gi," ").replace(/&amp;/gi,"&").replace(/&quot;/gi,'"').replace(/&#39;|&apos;/gi,"'").replace(/&lt;/gi,"<").replace(/&gt;/gi,">").replace(/&#(\\d+);/g,(_,n)=>String.fromCodePoint(Math.min(0x10ffff,Number(n)))).replace(/&#x([0-9a-f]+);/gi,(_,n)=>String.fromCodePoint(Math.min(0x10ffff,parseInt(n,16))));
 export function extractResearchContent(body,type="text/html"){
  const source=String(body||"");
- const meta=(name)=>{const escaped=name.replace(/[.*+?^${}()|[\\]\\\\]/g,"\\\\$&");const patterns=[new RegExp('<meta[^>]+(?:name|property)=["\\']'+escaped+'["\\'][^>]+content=["\\']([^"\\']*)["\\']','i'),new RegExp('<meta[^>]+content=["\\']([^"\\']*)["\\'][^>]+(?:name|property)=["\\']'+escaped+'["\\']','i')];for(const pattern of patterns){const match=source.match(pattern);if(match)return decodeEntities(match[1]);}return "";};
+ const meta=(name)=>{
+  for(const tag of source.match(/<meta\\b[^>]*>/gi)||[]){
+   const attrs=Object.fromEntries([...tag.matchAll(/([a-zA-Z_:][-a-zA-Z0-9_:]*)\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))/g)].map(match=>[match[1].toLowerCase(),match[2]??match[3]??match[4]??""]));
+   if(String(attrs.name||attrs.property||"").toLowerCase()===name.toLowerCase()&&attrs.content)return decodeEntities(attrs.content);
+  }
+  return "";
+ };
  const title=type==="text/plain"?"Imported research source":decodeEntities((source.match(/<title[^>]*>([\\s\\S]*?)<\\/title>/i)||[])[1]||meta("og:title")||meta("twitter:title")).replace(/\\s+/g," ").trim().slice(0,240);
  const author=meta("author")||meta("article:author")||"";
  const publishedAt=meta("article:published_time")||meta("date")||"";
- const cleaned=type==="text/plain"?source:source.replace(/<(script|style|noscript|svg|nav|footer|header|form|iframe)[^>]*>[\\s\\S]*?<\\/\\1>/gi," ").replace(/<!--([\\s\\S]*?)-->/g," ").replace(/<(br|p|div|li|h[1-6]|article|section|tr)[^>]*>/gi,"\\n").replace(/<[^>]+>/g," ");
+ const cleaned=type==="text/plain"?source:source.replace(/<(script|style|noscript|svg|nav|footer|header|form|iframe)\\b[^>]*>[\\s\\S]*?<\\/\\1>/gi," ").replace(/<!--[\\s\\S]*?-->/g," ").replace(/<(br|p|div|li|h[1-6]|article|section|tr)\\b[^>]*>/gi,"\\n").replace(/<[^>]+>/g," ");
  const text=decodeEntities(cleaned).replace(/[\\t\\r ]+/g," ").replace(/ *\\n */g,"\\n").replace(/\\n{3,}/g,"\\n\\n").trim().slice(0,MAX_TEXT);
  if(text.length<80)throw Object.assign(new Error("The page did not contain enough readable text to create a research record."),{code:"RESEARCH_TEXT_EMPTY"});
  return {title:title||"Imported research source",author,publishedAt,text};
