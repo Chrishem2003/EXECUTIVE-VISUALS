@@ -131,7 +131,7 @@ function validFileSignature(type,header){
   if(type==="audio/wav"||type==="audio/x-wav")return header.subarray(0,4).toString()==="RIFF"&&header.subarray(8,12).toString()==="WAVE";
   if(type==="audio/ogg")return header.subarray(0,4).toString()==="OggS";
   if(type==="application/pdf")return header.subarray(0,5).toString()==="%PDF-";
-  if(type==="text/plain")return !header.includes(0);
+  if(type==="text/plain"||type==="text/vtt")return !header.includes(0);
   if(type==="application/json")return true;
   return false;
 }
