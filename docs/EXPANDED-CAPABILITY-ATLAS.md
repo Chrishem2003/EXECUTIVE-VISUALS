@@ -429,3 +429,72 @@ These must remain unknown until verified. No fabricated parity claims.
 - Local compute pool and remote worker orchestration.
 
 **Current implementation status:** the repository has an early local-first planning/workflow foundation. This atlas is a target specification; it does not imply that generation, rendering, storage, collaboration, or provider integrations are complete.
+
+
+## 9. Additional professional-production domains
+
+### Spatial, 3D and procedural creation
+- 3D scene, collection, object, mesh, camera, light and material management.
+- Procedural geometry and node-based material/compositing graphs.
+- Modeling, sculpting, UVs, texture painting, baking and material assignment.
+- Character rigging, skeletal animation, facial animation and motion retargeting.
+- Camera tracking, object tracking, match-moving and scene reconstruction.
+- Physics, particles, cloth, hair, fluids and simulation caches.
+- 3D asset import/export, linked assets and dependency packaging.
+- Render layers/passes, render farms, frame-range scheduling and render-farm telemetry.
+- 2D/3D compositing, masks, keying, rotoscoping, tracking and color integration.
+- Virtual set/blocking previews and real-time scene playback.
+- USD, glTF, FBX, Alembic and other interchange formats only where the chosen toolchain supports them.
+
+### Production tracking and review operations
+- Production hierarchy: show/series → project → sequence → shot → task → version.
+- Assignments, owners, departments, due dates, dependencies, status and workload.
+- Asset/shot version stacks with deterministic version ordering.
+- Playlists, review sessions, screening links and access expiry.
+- Frame-accurate annotations, drawing overlays, timecoded notes and attachments.
+- Compare modes: side-by-side, wipe, ghost/overlay and previous-version hold.
+- Notes resolved against specific versions and frame/time ranges.
+- Approval rounds, change requests, review history and decision audit.
+- Activity streams and notifications tied to production entities.
+- Review access must not accidentally expose source media, unrelated project files or private outputs.
+
+### Media ingest, proxy and interchange
+- Camera-card/folder ingest with checksum verification and copy verification.
+- Capture metadata, camera/lens metadata, timecode, reel and clip naming.
+- Growing-file monitoring and safe ingest of media still being recorded.
+- Proxy creation, original/proxy linking, relinking and selective synchronization.
+- Background transcode, transcode queue, progress, pause and retry.
+- Media inspection for codec, color space, frame rate, audio layout and duration.
+- Editorial interchange packages and timeline round-tripping.
+- Relink manifests, missing-media reports and dependency collection.
+- Archive and restore with checksum validation.
+- Transfer acceleration, resumable uploads and transfer integrity reports.
+
+### Live capture and remote production
+- Camera, microphone, screen and application-window capture.
+- Multi-source recording with synchronized start and timecode where available.
+- Remote guest contribution, isolated tracks and local recording where supported.
+- Live preview, recording health, dropped-frame and audio-clipping indicators.
+- Stream input, stream recording and stream-to-edit handoff.
+- Virtual camera/output and live graphics overlays where supported.
+- Permissioned remote control and operator handoff.
+- Capture session manifest, device metadata and per-source media lineage.
+
+## 10. Expanded end-to-end workflows
+
+11. **Live Session → Finished Episode:** schedule → invite guests → test devices → capture isolated tracks → transcribe → select highlights → edit timeline → add graphics/music → review → publish package.
+12. **3D Asset → Cinematic Shot:** ingest model → validate dependencies → materials/rig → camera/light setup → motion/physics → render passes → composite → grade → editorial timeline.
+13. **Production Review Loop:** publish version → create playlist → invite reviewers → collect frame-accurate notes → compare versions → assign fixes → submit new version → resolve notes → approve.
+14. **Camera Media → Editorial:** checksum ingest → metadata parse → proxy generation → timeline assembly → relink originals → grade/finish → archive package.
+15. **Timeline Round Trip:** export interchange package → edit in external tool → import updated timeline → resolve media references → compare revisions → approve.
+
+## 11. Added implementation invariants
+
+16. Ingest is not complete until source copies are checksum-verified.
+17. Proxy and original media remain explicitly linked and are never silently substituted for final delivery.
+18. Review comments bind to a specific asset version and frame/time coordinate.
+19. Version comparisons must preserve source timing and version identity.
+20. A timeline interchange import must report unsupported effects, missing media and lossy conversions.
+21. 3D renders preserve scene, asset and render-setting manifests.
+22. Live capture exposes recording health and records device/source metadata.
+23. Local model and render jobs disclose hardware, storage and estimated resource needs before installation or execution.
