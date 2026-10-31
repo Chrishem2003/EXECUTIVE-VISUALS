@@ -7,7 +7,10 @@ import { generateImage } from "./image-gateway.mjs";
 import { generateFalVideo } from "./fal-video-gateway.mjs";
 import { storeGeneratedImage, storeGeneratedVideo, storeGeneratedAudio } from "./generated-assets.mjs";
 import { assertIdentityUseAllowed } from "./identity-consent.mjs";
-import { generateVoice } from "./voice-gateway.mjs";
+import { generateVoice, transcribeVoice } from "./voice-gateway.mjs";
+import { readFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { resolve, relative, sep } from "node:path";
 
 const now=()=>new Date().toISOString();
 export function hasApprovedAncestor(graph,nodeId,outputs){
@@ -142,6 +145,19 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
     const result=await generateVoice({text:script,voice:String(config.voice||""),format:String(config.format||"mp3"),speed:Number(config.speed||1)});
     const asset=await storeGeneratedAudio({db,mediaRoot,ownerId:job.owner_id,projectId:job.project_id||null,jobId:job.id,prompt:script,model:result.model,buffer:result.buffer,mimeType:result.mimeType});
     output=nodeOutput(node,asset.id);output.asset=asset.id;output.assetId=asset.id;output.mimeType=asset.mediaType;output.sha256=asset.sha256;output.voice=result.voice;output.usage=result.usage;
+   }else if(node.kind==="voice.transcribe"){
+    if(!hasApprovedAncestor(graph,nodeId,outputs))throw Object.assign(new Error("A completed upstream human-approval node is required before audio transcription."),{code:"APPROVAL_REQUIRED"});
+    const sourceAssetId=inputAsset(values,config);
+    const source=getAccessibleAsset(db,job.owner_id,sourceAssetId,false);
+    if(!source||!String(source.media_type||"").startsWith("audio/"))throw Object.assign(new Error("Transcription requires an accessible audio asset."),{code:"SOURCE_AUDIO_NOT_FOUND"});
+    const root=resolve(mediaRoot),absolute=resolve(root,source.storage_path),storedRelative=relative(root,absolute);
+    if(!storedRelative||storedRelative===".."||storedRelative.startsWith(".."+sep)||absolute===root)throw Object.assign(new Error("Audio asset path failed validation."),{code:"ASSET_PATH_INVALID"});
+    const buffer=await readFile(absolute);
+    if(!buffer.length||buffer.length>50*1024*1024||buffer.length!==source.byte_size)throw Object.assign(new Error("Audio asset is empty, oversized or changed since ingest."),{code:"VOICE_TRANSCRIPTION_INVALID_INPUT"});
+    const checksum=createHash("sha256").update(buffer).digest("hex");
+    if(checksum!==source.sha256)throw Object.assign(new Error("Audio asset checksum verification failed."),{code:"ASSET_CHECKSUM_MISMATCH"});
+    const result=await transcribeVoice({buffer,mimeType:source.media_type,filename:source.original_name,language:String(config.language||"")});
+    output=nodeOutput(node,result.text);output.transcript=result.text;output.text=result.text;output.language=result.language;output.duration=result.duration;output.segments=result.segments;output.sourceAssetId=source.id;output.model=result.model;
    }else if(node.kind==="image.generate"){
     enforceIdentityPermission(db,job,config,values,"likeness");
     if(!hasApprovedAncestor(graph,nodeId,outputs))throw Object.assign(new Error("A completed upstream human-approval node is required before image generation."),{code:"APPROVAL_REQUIRED"});
@@ -222,7 +238,7 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
     return {status:"cancelled",runId,completedNodes:completedCount,totalNodes:nodeCount};
    }
    const detail={code:error.code||"NODE_FAILED",message:error.message||"Workflow node failed."};
-   const blockedCodes=new Set(["ENGINE_UNAVAILABLE","APPROVAL_REQUIRED","AI_GATEWAY_DISABLED","AI_GATEWAY_CONFIG_INVALID","AI_GATEWAY_INSECURE_URL","AI_GATEWAY_REMOTE_DISABLED","IMAGE_GATEWAY_DISABLED","IMAGE_GATEWAY_CONFIG_INVALID","IMAGE_GATEWAY_INSECURE_URL","IMAGE_GATEWAY_REMOTE_DISABLED","IMAGE_GATEWAY_UNSUPPORTED_INPUT","VIDEO_GATEWAY_DISABLED","VIDEO_GATEWAY_CONFIG_INVALID","VIDEO_GATEWAY_REMOTE_DISABLED","VIDEO_GATEWAY_UNSUPPORTED_INPUT","VOICE_GATEWAY_DISABLED","VOICE_GATEWAY_CONFIG_INVALID","VOICE_GATEWAY_INSECURE_URL","VOICE_GATEWAY_REMOTE_DISABLED","VOICE_GATEWAY_TIMEOUT","VOICE_GATEWAY_UNAVAILABLE","VOICE_GATEWAY_RATE_LIMITED","VOICE_GATEWAY_SERVER_ERROR","VOICE_GATEWAY_REQUEST_REJECTED","VOICE_GATEWAY_INVALID_RESPONSE"]);
+   const blockedCodes=new Set(["ENGINE_UNAVAILABLE","APPROVAL_REQUIRED","AI_GATEWAY_DISABLED","AI_GATEWAY_CONFIG_INVALID","AI_GATEWAY_INSECURE_URL","AI_GATEWAY_REMOTE_DISABLED","IMAGE_GATEWAY_DISABLED","IMAGE_GATEWAY_CONFIG_INVALID","IMAGE_GATEWAY_INSECURE_URL","IMAGE_GATEWAY_REMOTE_DISABLED","IMAGE_GATEWAY_UNSUPPORTED_INPUT","VIDEO_GATEWAY_DISABLED","VIDEO_GATEWAY_CONFIG_INVALID","VIDEO_GATEWAY_REMOTE_DISABLED","VIDEO_GATEWAY_UNSUPPORTED_INPUT","VOICE_TRANSCRIPTION_DISABLED","VOICE_TRANSCRIPTION_INVALID_INPUT","VOICE_TRANSCRIPTION_TIMEOUT","VOICE_TRANSCRIPTION_UNAVAILABLE","VOICE_TRANSCRIPTION_RATE_LIMITED","VOICE_TRANSCRIPTION_SERVER_ERROR","VOICE_TRANSCRIPTION_REQUEST_REJECTED","VOICE_TRANSCRIPTION_INVALID_RESPONSE","VOICE_GATEWAY_DISABLED","VOICE_GATEWAY_CONFIG_INVALID","VOICE_GATEWAY_INSECURE_URL","VOICE_GATEWAY_REMOTE_DISABLED","VOICE_GATEWAY_TIMEOUT","VOICE_GATEWAY_UNAVAILABLE","VOICE_GATEWAY_RATE_LIMITED","VOICE_GATEWAY_SERVER_ERROR","VOICE_GATEWAY_REQUEST_REJECTED","VOICE_GATEWAY_INVALID_RESPONSE"]);
    const blocked=blockedCodes.has(detail.code);
    saveNode(db,runId,nodeId,blocked?"blocked":"failed",{input:nodeInput,error:detail,attempt});
    const status=blocked?"blocked":completedCount>0?"partial":"failed";
