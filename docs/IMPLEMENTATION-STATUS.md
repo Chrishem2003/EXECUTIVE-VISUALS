@@ -10,34 +10,36 @@
 |---|---|---|
 | Product shell | Unified browser application with creative, planning and management workspaces | Browser app |
 | Capability explorer | Search and domain filters; displays stable ID, inputs, outputs, evidence, execution modes and approval gates | Registry browsing |
-| Capability registry | **96 typed capabilities across 22 domains** | Contract/readiness metadata, not provider availability |
+| Capability registry | **97 typed capabilities across 22 domains** | Contract/readiness metadata, not provider availability |
 | Machine-readable catalog | JSON catalog generated from typed registry | Build verifier enforces ID/domain/label parity |
-| Workflow graph | Draggable visual node editor, typed ports, connections, node configuration, server-side graph validation, immutable run snapshots, per-node status, approval pause/resume and local adapter execution | Text/data, asset references, frame extraction, audio extraction, probe, transcode, export and timeline nodes run locally; unsupported provider/model nodes are explicitly blocked |
+| Workflow graph | Draggable visual node editor, typed ports, connections, node configuration, server-side graph validation, immutable run snapshots, per-node status, approval pause/resume, local adapter execution and approval-gated text-model execution | Text/data, asset references, frame extraction, audio extraction, probe, transcode, export and timeline nodes run locally; unsupported provider/model nodes are explicitly blocked |
 | Graph validation | Duplicate IDs, missing nodes/ports, incompatible ports, duplicate single-input edges, required inputs and cycle detection | Validation only |
-| Targeted execution | Full graph, single-node and selected-subgraph dependency planning; branch routing; locked-output reuse; immutable run snapshots; per-node state and approval pause/resume | Local adapters execute; remote generation nodes fail closed with an explicit adapter-unavailable status |
+| Targeted execution | Full graph, single-node and selected-subgraph dependency planning; branch routing; locked-output reuse; partial reruns; immutable run snapshots; per-node state and approval pause/resume | Local adapters execute; remote generation nodes fail closed with an explicit adapter-unavailable status |
 | Output locking | Locked nodes with saved output IDs are reused; targeted reruns can stop at locked ancestors | Local planner behavior tested |
 | Local API | HTTP API, development accounts, hashed passwords, HttpOnly sessions, owner-scoped resources, restrictive HTML CSP, anti-framing and referrer/security headers | Local password auth is development-only |
-| Projects | Persistent project creation, listing, optimistic revision updates and archive | SQLite local database |
+| Projects | Persistent project creation, listing, optimistic revision updates, archive and project-scoped creative workspace documents with revision conflict protection | SQLite local database; owner/editor writes and viewer reads |
 | Media ingest | Binary uploads to local disk, MIME allowlist, upload-size limit and SHA-256 checksum | Local disk; cloud object storage not connected |
-| Asset library | Owner isolation, metadata, original/derivative relationship and private file reads | No cloud storage or signed URLs yet |
+| Asset library | Owner isolation, metadata, original/derivative relationship, private file reads, image/video/audio/document previews and processing history | Local media volume; no cloud storage or signed URLs yet |
 | Job queue | Persistent queue, idempotency keys, normalized states, progress events, renewable worker leases, stale-worker recovery, bounded retries with exponential backoff, cross-process cancellation polling and audit trail | Multi-process lease coordination on a shared SQLite database; multi-host workers still require a shared Postgres queue |
-| Local media engine | Probe, thumbnail, transcode, audio extraction, proxy generation and timeline MP4 master rendering with synchronized audio tracks | Requires FFmpeg/FFprobe installed; master renderer supports one primary video track and audio-only clips; overlays/captions/effects are pending |
-| Runtime console | Sign-in, project creation, uploads, media job submission, job inspection and audit view | Browser UI uses the local API |
+| Local media engine | Probe, thumbnail, transcode, audio extraction, proxy generation and timeline MP4 master rendering with synchronized audio, still-image overlays, per-clip gain and burned-in SRT/VTT captions | Requires FFmpeg/FFprobe; one primary video track; animated/video overlays, transitions and advanced effects remain pending |
+| Runtime console | Sign-in, project creation, persistent asset library, live engine readiness, uploads, media job submission, job inspection and audit view | Browser UI uses the local API; creative briefs, shot lists and characters sync to project workspace documents |
 | Project collaboration | Owner-managed invitations with editor, reviewer and viewer roles; access revocation enforced across project records | Existing local accounts only; invitation email delivery not connected |
 | Review and approvals | Timecoded comments, approve/request-changes decisions and status updates | Local API persistence; external review links and visual drawing annotations not implemented |
 | Editorial timeline | Multi-track clips, rational source timebases, trim, split, move, markers, overlap validation, interchange export and local MP4 master render | FFmpeg supports synchronized audio, still-image overlays, burned-in SRT/VTT captions and per-clip gain; preview playback, transitions, effects and animated/video overlays remain pending |
 | Timeline persistence | Owner-scoped timelines, asset ownership checks, optimistic revisions and saved interchange package | SQLite local DB; isolated SQL migration pending dedicated database review |
 | Database migration | Dedicated multi-tenant schema, row-level security, immutable workflow-run snapshots, server-only job/audit writes and private object-storage policies | Migration is committed and statically guarded; **not applied** to shared staging or another product's database |
-| Quality checks | Capability parity, lease/retry queue checks, workflow planner, timeline validation, render-worker checks, real FFmpeg MP4 render/probe integration with overlay placement and SRT/VTT caption pixel checks, plus API security and integration tests | CI verifies local render output and API behavior, not cloud durability or external provider integrations |
+| Text-model adapter | Server-side chat-completions-compatible text gateway with request timeouts, sanitized errors, usage normalization, server-only credentials and upstream approval ancestry | Disabled by default; remote gateways require explicit server opt-in; no provider price estimator; local/remote endpoint must be configured |\n| Security posture | Restrictive HTML CSP, anti-framing, referrer and cross-origin headers; role-checked project documents; no provider secrets in browser | Cloud identity/session hardening still pending |\n| Quality checks | Capability parity, queue lease/retry tests, approval-gated AI workflow integration, project workspace API role/revision tests, workflow planner, timeline validation, real FFmpeg MP4 output/probe and pixel checks, API security tests, TypeScript and Vite build | CI verifies local behavior, not cloud durability or external media-generation providers |
 
 ## Build verification
 
 The build pipeline runs:
 1. Capability catalog parity and completeness checks.
 2. Workflow graph validation and targeted-run behavior checks.
-3. API integration tests for authentication, ownership isolation, uploads, idempotency and unsupported-job rejection.
-4. TypeScript typecheck.
-5. Production Vite build.
+3. API integration tests for authentication, ownership isolation, project workspace persistence, revision conflicts, role permissions, uploads and idempotency.
+4. Mock-gateway tests for server-side text generation, remote-access controls and approval gating.
+5. Real FFmpeg rendering and output inspection.
+6. TypeScript typecheck.
+7. Production Vite build.
 
 A green build does not prove external provider execution, cloud durability, frame-accurate playback or collaborative editing.
 
@@ -46,10 +48,10 @@ A green build does not prove external provider execution, cloud durability, fram
 - Durable cloud database and object storage in a dedicated isolated project.
 - Production OAuth/session refresh, email invitations and distributed multi-tenant collaboration.
 - Multi-host workers, dead-letter queue, lease metrics and guaranteed process-tree termination on cancellation.
-- Resumable/chunked uploads, media signature sniffing and range downloads.
+- Resumable/chunked uploads and range downloads.
 - Timeline preview playback, transitions, effects, animated/video overlays, cache invalidation and round-trip tests against an independent interchange implementation.
-- Full workflow node editor, per-node run history, partial reruns and provider execution.
-- Local model inventory, hardware preflight and model adapters.
+- External image/video generation, speech, dubbing, lip-sync and enhancement provider adapters; the text gateway is the only remote model adapter implemented.
+- Local model inventory, hardware preflight and model routing/benchmarking.
 - Voice generation, transcription, diarization, dubbing and lip synchronization integrations.
 - 3D rendering, live capture, remote recording and stream ingest.
 - Review links, comments, annotations, sequence locks, presence and publish checkpoints.
@@ -58,7 +60,7 @@ A green build does not prove external provider execution, cloud durability, fram
 ## Safety and delivery rules
 
 - Do not present a planned capability as available.
-- Do not send paid provider requests without explicit approval and a cost estimate.
+- Do not send billable provider requests without explicit human approval and a verified price/budget check. The generic text adapter records token usage but does not estimate provider cost; remote gateway access is disabled by default.
 - Keep provider credentials server-side.
 - Preserve original assets and immutable run snapshots.
 - Record provenance, consent and source rights.
