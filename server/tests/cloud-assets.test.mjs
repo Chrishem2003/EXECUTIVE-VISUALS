@@ -19,7 +19,7 @@ function fixture({authorize=async()=>true,insertResponse=null,removeError=false}
  const row={id:assetId,owner_id:ownerId,project_id:projectId,original_name:"final cut.mp4",media_type:"video/mp4",byte_size:4,sha256:createHash("sha256").update(bytes).digest("hex"),storage_bucket:"executive-visuals-media",object_path:projectId+"/"+assetId+"/original.mp4",derivative_of:null,metadata:{role:"master"},created_at:"2026-11-01T00:00:00Z"};
  const fetchImpl=async(url,options)=>{
   calls.push({url,options});
-  if(options.method==="POST")return response(insertResponse===null?[row]:insertResponse);
+  if(options.method==="POST"){const payload=JSON.parse(options.body);return response(insertResponse===null?[{...row,...payload,created_at:row.created_at}]:insertResponse);}
   if(options.method==="PATCH")return response([row]);
   return response([row]);
  };
