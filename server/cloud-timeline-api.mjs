@@ -4,7 +4,6 @@ import { createCloudTimelineService } from "./cloud-timeline-service.mjs";
 
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const safeId=(value)=>typeof value==="string"&&UUID.test(value);
-const object=(value)=>value!==null&&typeof value==="object"&&!Array.isArray(value);
 
 /**
  * Authenticated cloud timeline API. The caller must pass the user ID returned
@@ -39,6 +38,19 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
    if(path==="/api/cloud/timelines"&&method==="POST"){
     const timeline=await service.timelines.create({ownerId,projectId:body.projectId||null,name:body.name||"Untitled timeline",timeline:body.timeline,otio:body.otio??null});
     return response(201,{timeline});
+   }
+   const jobMatch=path.match(/^\/api\/cloud\/jobs\/([0-9a-f-]+)(?:\/(events))?$/i);
+   if(jobMatch&&safeId(jobMatch[1])&&method==="GET"){
+    const jobRows=await request("jobs?select=id,owner_id,project_id,job_type,status,progress,input,output,error,attempt_count,created_at,updated_at,completed_at&id=eq."+encodeURIComponent(jobMatch[1])+"&limit=1");
+    const job=Array.isArray(jobRows)?jobRows[0]:null;
+    if(!job)return response(404,{error:{code:"JOB_NOT_FOUND",message:"Job not found."}});
+    if(job.project_id){if(await allow({ownerId,projectId:job.project_id,action:"read"})!==true)return response(404,{error:{code:"JOB_NOT_FOUND",message:"Job not found."}});}
+    else if(job.owner_id!==ownerId)return response(404,{error:{code:"JOB_NOT_FOUND",message:"Job not found."}});
+    if(jobMatch[2]){
+     const events=await request("job_events?select=id,event_type,event_data,created_at&job_id=eq."+encodeURIComponent(job.id)+"&order=id.asc");
+     return response(200,{events:Array.isArray(events)?events.map(event=>({id:event.id,type:event.event_type,data:event.event_data,createdAt:event.created_at})):[]});
+    }
+    return response(200,{job});
    }
    const match=path.match(/^\/api\/cloud\/timelines\/([0-9a-f-]+)(?:\/(render))?$/i);
    if(!match||!safeId(match[1]))return null;
