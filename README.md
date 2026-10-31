@@ -1,30 +1,51 @@
 # Executive Visuals
 
-**One integrated creative production platform — from idea to final deliverable.**
+**One integrated visual-production system — from creative brief to reviewed deliverable.**
 
-Executive Visuals combines publicly observable capability families of avatar-led video, cinematic generation, editing, enhancement and campaign production into one original product. It does not copy proprietary source, private APIs, protected prompts, model weights or third-party brand assets.
+A provider-neutral platform for creative planning, media ingest, graph workflows, local processing, editing, enhancement, localization, review and campaign production. The implementation is original and based on publicly observable product behavior and public developer documentation.
 
 ## Workspaces
-- AI Director — briefs, hooks, scripts, storyboards and shot planning.
-- Workflow Canvas — connect creative steps into repeatable graphs.
-- Characters & Voices — reusable identity/voice profiles and consent.
-- Cinematic Studio — scene continuity, camera, lens, lighting and movement.
-- Image Studio — prompt, references, variations and image edits.
-- Video Editor — timeline, audio, captions, transitions and export planning.
-- Voice & Localization — narration, transcription, translation, dubbing and lip-sync.
-- Enhancement Lab — upscale, restore, denoise, repair, retouch, cleanup and color.
-- Campaign Factory — product ads, UGC concepts and channel variants.
-- Asset Library — references, source media and derivatives.
-- Creative Engines — provider-neutral capability registry.
-- Settings — rights, privacy, retention and budgets.
+- Creative direction, research, briefs, scripts and storyboards.
+- Workflow canvas, typed media ports, validation and targeted run planning.
+- Character, voice, identity, wardrobe and consent records.
+- Cinematic shot planning and continuity.
+- Image and video production planning.
+- Voice, transcription, translation and localization.
+- Media enhancement, repair and derivatives.
+- Campaign and multi-format production.
+- Asset library, provenance and version lineage.
+- Operations, capability readiness and audit history.
 
-## Current milestone
-This branch consolidates the product architecture and adds a richer local-first interactive workspace. Local planning and project records work in the browser. Actual AI generation, durable media storage, collaboration, authenticated jobs and rendering are not represented as complete; they require trusted server infrastructure and authorized adapters.
+## Runtime milestone
+The application now includes a local API service with:
+- Local account registration and sign-in for development.
+- User-owned projects and optimistic revision checks.
+- Binary media uploads to local disk with SHA-256 integrity metadata.
+- Asset ownership isolation and original/derivative relationships.
+- Persistent workflow records and an observable job/event queue.
+- A local media adapter for probe, thumbnail, transcode, audio extraction and proxy generation when FFmpeg/FFprobe are installed.
+- Explicit rejection of unimplemented generation capabilities; no fake success and no paid provider call.
+- Audit events, idempotency keys, upload limits, secure cookies and server-side credential boundaries.
 
-## Run
+The browser and API run together in development. SQLite and media files are stored under `data/`, which is ignored by Git. Back up that folder if you need to preserve local work.
+
+## Run locally
+```bash
 npm install
 npm run dev
+```
+Open the Vite URL (normally http://localhost:5173). The API health endpoint is http://127.0.0.1:4179/api/health.
+
+For media processing, install FFmpeg and FFprobe and ensure both executables are available on PATH.
+
+## Verify
+```bash
 npm run typecheck
 npm run build
+npm run verify:server
+```
 
-See docs/UNIFIED-REVERSE-ENGINEERING.md and docs/EXECUTION-ARCHITECTURE.md for the research dossier, data model, workflows, API and acceptance gates.
+## Production boundary
+Production mode refuses local-password authentication. Configure a trusted identity provider, persistent storage, HTTPS, rate limits and deployment-specific security controls before exposing the service. Do not attach this project to another product's database. A dedicated database migration is included for review but is not automatically applied.
+
+Actual model-based image/video generation, timeline playback/rendering, cloud collaboration and publishing are not considered complete until their adapters and end-to-end tests pass.
