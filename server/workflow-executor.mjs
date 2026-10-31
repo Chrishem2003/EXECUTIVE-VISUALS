@@ -2,6 +2,8 @@ import { executeMediaJob } from "./media.mjs";
 import { getAccessibleAsset, json, parseJson } from "./db.mjs";
 import { validateWorkflowGraph } from "./workflow-validation.mjs";
 import { generateText } from "./ai-gateway.mjs";
+import { generateImage } from "./image-gateway.mjs";
+import { storeGeneratedImage } from "./generated-assets.mjs";
 
 const now=()=>new Date().toISOString();
 export function hasApprovedAncestor(graph,nodeId,outputs){
@@ -114,6 +116,13 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
     else condition=Boolean(left);
     const payload=values.input??left;
     output=condition?{true:payload}:{false:payload};
+   }else if(node.kind==="image.generate"){
+    if(!hasApprovedAncestor(graph,nodeId,outputs))throw Object.assign(new Error("A completed upstream human-approval node is required before image generation."),{code:"APPROVAL_REQUIRED"});
+    const prompt=String(values.prompt??values.text??values.input??config.prompt??"");
+    if(!prompt.trim())throw Object.assign(new Error("Image-generation node requires a non-empty prompt input."),{code:"PROMPT_REQUIRED"});
+    const result=await generateImage({prompt,size:String(config.size||"1024x1024"),quality:String(config.quality||"medium")});
+    const asset=await storeGeneratedImage({db,mediaRoot,ownerId:job.owner_id,projectId:job.project_id||null,jobId:job.id,prompt,model:result.model,buffer:result.buffer});
+    output=nodeOutput(node,asset.id);output.asset=asset.id;output.assetId=asset.id;output.mimeType=asset.mediaType;output.sha256=asset.sha256;output.usage=result.usage;
    }else if(node.kind==="llm.prompt"||node.kind==="llm.analyze"){
     if(!hasApprovedAncestor(graph,nodeId,outputs))throw Object.assign(new Error("A completed upstream human-approval node is required before text-model execution."),{code:"APPROVAL_REQUIRED"});
     const prompt=String(values.prompt??values.text??values.input??config.prompt??config.text??"");
@@ -171,7 +180,7 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
     return {status:"cancelled",runId,completedNodes:completedCount,totalNodes:nodeCount};
    }
    const detail={code:error.code||"NODE_FAILED",message:error.message||"Workflow node failed."};
-   const blockedCodes=new Set(["ENGINE_UNAVAILABLE","APPROVAL_REQUIRED","AI_GATEWAY_DISABLED","AI_GATEWAY_CONFIG_INVALID","AI_GATEWAY_INSECURE_URL","AI_GATEWAY_REMOTE_DISABLED"]);
+   const blockedCodes=new Set(["ENGINE_UNAVAILABLE","APPROVAL_REQUIRED","AI_GATEWAY_DISABLED","AI_GATEWAY_CONFIG_INVALID","AI_GATEWAY_INSECURE_URL","AI_GATEWAY_REMOTE_DISABLED","IMAGE_GATEWAY_DISABLED","IMAGE_GATEWAY_CONFIG_INVALID","IMAGE_GATEWAY_INSECURE_URL","IMAGE_GATEWAY_REMOTE_DISABLED"]);
    const blocked=blockedCodes.has(detail.code);
    saveNode(db,runId,nodeId,blocked?"blocked":"failed",{input:nodeInput,error:detail,attempt});
    const status=blocked?"blocked":completedCount>0?"partial":"failed";
