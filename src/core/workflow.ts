@@ -24,7 +24,7 @@ export type WorkflowNodeKind =
   | "media.stabilize" | "media.remove-object" | "media.convert" | "media.compress"
   | "media.audio-extract" | "media.color-match" | "media.compare"
   | "campaign.create" | "approval" | "quality-check" | "timeline" | "export"
-  | "connector" | "branch" | "merge" | "batch" | "subworkflow";
+  | "connector" | "branch" | "merge" | "batch" | "subworkflow" | "knowledge.search";
 
 export interface WorkflowPort {
   id: string;
