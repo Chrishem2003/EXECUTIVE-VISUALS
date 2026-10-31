@@ -447,6 +447,66 @@
       "timeline.render-master",
       "editing",
       "Render a timeline to a video master"
+    ],
+    [
+      "video.keyframe-control",
+      "video",
+      "Generate video between pinned keyframes"
+    ],
+    [
+      "video.reference-directing",
+      "video",
+      "Direct video with subject, style and audio references"
+    ],
+    [
+      "video.extend-scene",
+      "video",
+      "Continue or extend an existing video scene"
+    ],
+    [
+      "video.conversational-edit",
+      "video",
+      "Iteratively edit video through a stateful session"
+    ],
+    [
+      "video.native-audio",
+      "video",
+      "Generate synchronized video with native audio"
+    ],
+    [
+      "speech.stream-tts",
+      "audio",
+      "Stream speech from incremental text"
+    ],
+    [
+      "speech.stream-transcription",
+      "audio",
+      "Transcribe audio with partial streaming events"
+    ],
+    [
+      "speech.word-alignment",
+      "audio",
+      "Align transcript words to audio timestamps"
+    ],
+    [
+      "speech.voice-isolation",
+      "audio",
+      "Isolate speech and suppress background noise"
+    ],
+    [
+      "speech.live-translation",
+      "localization",
+      "Translate incoming speech in real time"
+    ],
+    [
+      "integration.discover-model-capabilities",
+      "integration",
+      "Discover model-specific inputs, limits and costs"
+    ],
+    [
+      "assets.retention-verify",
+      "assets",
+      "Verify output availability and retention policy"
     ]
   ],
   "requiredCapabilityFields": [
@@ -496,6 +556,6 @@
     "Secrets never enter client bundles, prompts or logs."
   ],
   "sourceOfTruth": "src/core/capability-atlas.ts",
-  "capabilityCount": 84,
+  "capabilityCount": 96,
   "domainCount": 22
 }
