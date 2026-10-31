@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { getProviderCatalog, findProviderForCapability } from "../provider-registry.mjs";
+import { getProviderCatalog, findProviderForCapability, requireProviderForCapability } from "../provider-registry.mjs";
 
 test("provider catalog is safe by default and never exposes credentials or submits work",()=>{
  const catalog=getProviderCatalog({});
