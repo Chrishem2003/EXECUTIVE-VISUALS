@@ -51,7 +51,16 @@ const now = () => new Date().toISOString();
 const hash = value => createHash("sha256").update(value).digest("hex");
 const stableJson = value => Array.isArray(value) ? "["+value.map(stableJson).join(",")+"]" : value && typeof value==="object" ? "{"+Object.keys(value).sort().map(key=>JSON.stringify(key)+":"+stableJson(value[key])).join(",")+"}" : JSON.stringify(value);
 const safeName = value => basename(String(value || "upload")).replace(/[\u0000-\u001f\u007f]/g,"").replace(/[^\p{L}\p{N}._() -]/gu,"_").slice(0,180) || "upload";
-const send = (res,status,body,headers={}) => { res.writeHead(status,{"content-type":"application/json; charset=utf-8","cache-control":"no-store","x-content-type-options":"nosniff",...headers});res.end(JSON.stringify(body)); };
+const SECURITY_HEADERS = {
+  "x-content-type-options":"nosniff",
+  "x-frame-options":"DENY",
+  "referrer-policy":"strict-origin-when-cross-origin",
+  "cross-origin-opener-policy":"same-origin",
+  "cross-origin-resource-policy":"same-origin",
+  "permissions-policy":"camera=(), microphone=(), geolocation=()"
+};
+const HTML_CSP = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'";
+const send = (res,status,body,headers={}) => { res.writeHead(status,{"content-type":"application/json; charset=utf-8","cache-control":"no-store",...SECURITY_HEADERS,...headers});res.end(JSON.stringify(body)); };
 const fail = (res,status,code,message) => send(res,status,{error:{code,message}});
 const readJson = async (req,limit=1024*1024) => {
   const chunks=[];let size=0;
@@ -243,7 +252,7 @@ export function createAppServer() {
         if(existsSync(file)&&statSync(file).isFile()){
           const ext=extname(file).toLowerCase();
           const types={".html":"text/html; charset=utf-8",".js":"text/javascript; charset=utf-8",".css":"text/css; charset=utf-8",".svg":"image/svg+xml",".png":"image/png",".jpg":"image/jpeg",".webp":"image/webp",".woff2":"font/woff2",".json":"application/json"};
-          res.writeHead(200,{"content-type":types[ext]||"application/octet-stream","x-content-type-options":"nosniff","cache-control":ext===".html"?"no-cache":"public, max-age=31536000, immutable",...cors});
+          res.writeHead(200,{"content-type":types[ext]||"application/octet-stream","cache-control":ext===".html"?"no-cache":"public, max-age=31536000, immutable",...SECURITY_HEADERS,...(ext===".html"?{"content-security-policy":HTML_CSP}:{}),...cors});
           createReadStream(file).pipe(res);return;
         }
       }
@@ -347,7 +356,7 @@ export function createAppServer() {
         const asset=getAccessibleAsset(db,user.id,assetMatch[1],req.method==="DELETE");if(!asset){fail(res,404,"ASSET_NOT_FOUND","Asset not found.");return;}
         if(assetMatch[2]==="file"&&req.method==="GET"){
           const file=resolve(MEDIA_ROOT,asset.storage_path);const mediaPrefix=MEDIA_ROOT.endsWith(sep)?MEDIA_ROOT:MEDIA_ROOT+sep;if(!file.startsWith(mediaPrefix)){fail(res,404,"ASSET_NOT_FOUND","Asset not found.");return;}
-          res.writeHead(200,{"content-type":asset.media_type,"content-length":asset.byte_size,"content-disposition":`inline; filename="${safeName(asset.original_name)}"`,"x-content-type-options":"nosniff",...cors});
+          res.writeHead(200,{"content-type":asset.media_type,"content-length":asset.byte_size,"content-disposition":`inline; filename="${safeName(asset.original_name)}"`,...SECURITY_HEADERS,...cors});
           createReadStream(file).pipe(res);return;
         }
         if(req.method==="DELETE"){
