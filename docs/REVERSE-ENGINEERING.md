@@ -40,3 +40,7 @@ Public documentation describes image/video restoration, super-resolution, portra
 4. Editing and enhancement: timeline, captions, audio, retouch, restoration and exports.
 5. Production operations: durable storage, background jobs, collaboration, permissions, audit and cost controls.
 6. Verification: capability-by-capability acceptance tests, provider failure handling, security and rights review.
+
+## Consolidated local enhancement adapters
+
+The platform now routes denoise, color correction, resize/reframe, frame interpolation and FFmpeg scaling through its shared media job and asset pipeline. All outputs are private derived assets with checksums. These adapters are local processing capabilities, not a claim that advanced neural restoration, generative editing or every catalogued capability is implemented.
