@@ -131,6 +131,8 @@ export function validateTimeline(timeline:EditorialTimeline):{valid:boolean;issu
 function otioTime(time:RationalTime){return {OTIO_SCHEMA:"RationalTime.1",value:time.value,rate:time.rate};}
 function otioRange(range:TimeRange){return {OTIO_SCHEMA:"TimeRange.1",start_time:otioTime(range.start),duration:otioTime(range.duration)};}
 export function toOpenTimelineIo(timeline:EditorialTimeline):OtioObject{
+  const validation=validateTimeline(timeline);
+  if(!validation.valid)throw new Error(validation.issues[0].message);
   const tracks=timeline.tracks.map(track=>{
     const children:OtioObject[]=[];let cursor=0;
     const fps=timeline.frameRate.numerator/timeline.frameRate.denominator;
