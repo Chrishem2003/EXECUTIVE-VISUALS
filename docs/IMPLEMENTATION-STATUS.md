@@ -32,6 +32,7 @@
 | Timeline persistence | Owner-scoped timelines, asset ownership checks, optimistic revisions and saved interchange package | SQLite local DB; isolated SQL migration pending dedicated database review |
 | Database migration | Dedicated multi-tenant schema, row-level security, immutable workflow-run snapshots, server-only job/audit writes and private object-storage policies | Migration is committed and statically guarded; **not applied** to shared staging or another product's database |
 | Text-model adapter | Server-side chat-completions-compatible text gateway with request timeouts, sanitized errors, usage normalization, server-only credentials and upstream approval ancestry | Disabled by default; remote gateways require explicit server opt-in; no provider price estimator; local/remote endpoint must be configured |
+| Speech synthesis | Approved `voice.generate` workflow node using a provider-neutral speech gateway; checks presenter voice scope when an identity profile is selected; validates and stores MP3/WAV/FLAC/OGG narration as a private checksummed asset | Disabled by default; remote HTTPS requires explicit server opt-in; no live provider call used for verification; transcription, diarization, cloning, dubbing and lip-sync remain unimplemented |
 | Security posture | Restrictive HTML CSP, anti-framing, referrer and cross-origin headers; role-checked project documents; no provider secrets in browser | Cloud identity/session hardening still pending |
 | Quality checks | Capability parity, queue lease/retry tests, approval-gated AI workflow integration, project workspace API role/revision tests, workflow planner, timeline validation, real FFmpeg MP4 output/probe and pixel checks, API security tests, TypeScript and Vite build | CI verifies local behavior, not cloud durability or external media-generation providers |
 
@@ -57,9 +58,9 @@ A green build does not prove external provider execution, cloud durability, fram
 - Multi-host workers, dead-letter queue, lease metrics and guaranteed process-tree termination on cancellation.
 - Resumable/chunked uploads and range downloads.
 - Timeline preview playback, transitions, effects, animated/video overlays, cache invalidation and round-trip tests against an independent interchange implementation.
-- External image/video generation, speech, dubbing, lip-sync and enhancement provider adapters; the text gateway is the only remote model adapter implemented.
+- External image/video generation and enhancement remain provider-gated; approved speech synthesis is implemented through a separate provider-neutral gateway. Transcription, diarization, voice cloning, dubbing and lip-sync remain unimplemented.
 - Local model inventory, hardware preflight and model routing/benchmarking.
-- Voice generation, transcription, diarization, dubbing and lip synchronization integrations.
+- Transcription, diarization, dubbing and lip synchronization integrations; voice synthesis is implemented but remains disabled until a compatible gateway is configured.
 - 3D rendering, live capture, remote recording and stream ingest.
 - Review links, comments, annotations, sequence locks, presence and publish checkpoints.
 - Publishing, channel analytics and campaign feedback loops.
