@@ -30,7 +30,7 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
  const outputId=randomUUID(),outputPath=join(workDir,outputId+".mp4");
  await mkdir(workDir,{recursive:true});
  const args=["-hide_banner","-y"],segments=[],audioFilters=[],videoEffects=[],captionTempPaths=[],overlayInputs=[];
- let cursor=0,inputIndex=0,segmentIndex=0,overlayIndex=0,captionIndex=0;
+ let cursor=0,inputIndex=0,segmentIndex=0,captionIndex=0;
  const getAsset=(assetId)=>{
   const entry=assets.get(String(assetId));
   if(!entry||typeof entry.path!=="string"||!entry.asset)fail("A timeline source asset is missing or inaccessible.","SOURCE_ASSET_NOT_FOUND");
@@ -72,11 +72,8 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
    const start=seconds(clip.timelineStart);if(start>=cursor)continue;
    const duration=Math.min(seconds(clip.duration),cursor-start);if(duration<=0)continue;
    const asset=getAsset(clip.assetId);if(!String(asset.mediaType||"").startsWith("image/"))fail("Overlay tracks require still-image assets.","UNSUPPORTED_OVERLAY_SOURCE");
-   const metadata=clip.metadata||{},overlayWidth=Math.max(16,Math.min(width,Math.round(Number(metadata.width)||width*.24))),overlayHeight=Math.max(16,Math.min(height,Math.round(Number(metadata.height)||height*.24)));
-   const rawX=Number(metadata.x),rawY=Number(metadata.y),x=Math.max(0,Math.min(width-overlayWidth,Number.isFinite(rawX)?Math.round(rawX):width-overlayWidth-24)),y=Math.max(0,Math.min(height-overlayHeight,Number.isFinite(rawY)?Math.round(rawY):24)),opacity=Math.max(0,Math.min(1,Number(metadata.opacity??1)));
    args.push("-loop","1","-t",(start+duration).toFixed(6),"-i",asset.path);
-   overlayInputs.push({inputIndex,clip});
-   overlayIndex++;inputIndex++;
+   overlayInputs.push({inputIndex,clip});inputIndex++;
   }
   const concat=segments.map(item=>`[${item.label}]`).join("")+`concat=n=${segments.length}:v=1:a=0[vbase]`;
   const videoGraph=segments.map(item=>item.filter).join(";")+";"+concat;
