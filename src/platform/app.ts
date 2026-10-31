@@ -45,7 +45,7 @@ function capabilityCards(items:readonly CapabilityDefinition[]){
 }
 function capabilities(){
  const domains=[...new Set(CAPABILITY_ATLAS.map(item=>item.domain))].sort();
- return header("SYSTEM MAP · '+String(CAPABILITY_ATLAS.length)+' CAPABILITIES","Capability atlas","A searchable map of the complete planned production system, with inputs, outputs, execution modes and approval requirements.",'<span class="count-pill">'+CAPABILITY_ATLAS.length+' definitions</span>')+
+ return header("SYSTEM MAP · "+CAPABILITY_ATLAS.length+" CAPABILITIES","Capability atlas","A searchable map of the complete planned production system, with inputs, outputs, execution modes and approval requirements.",'<span class="count-pill">'+CAPABILITY_ATLAS.length+' definitions</span>')+
  '<div class="capability-filters"><input id="capability-search" type="search" placeholder="Search capabilities, IDs or media roles..."><select id="capability-domain"><option value="">All domains</option>'+domains.map(domain=>'<option value="'+esc(domain)+'">'+esc(domain.replace(/-/g," "))+'</option>').join("")+'</select><span id="capability-count">'+CAPABILITY_ATLAS.length+' capabilities</span></div>'+
  '<div id="capability-list">'+capabilityCards(CAPABILITY_ATLAS)+'</div>'+
  '<div class="notice">Registry status is specification-only until a provider or local adapter passes contract, safety and end-to-end tests. Browsing this catalog does not trigger paid jobs.</div>';
@@ -73,8 +73,3 @@ function filterCapabilities(){
  if(count)count.textContent=items.length+" of "+CAPABILITY_ATLAS.length+" capabilities";
 }
 load();$<HTMLElement>("#app").innerHTML='<div class="shell"><aside class="sidebar"><a class="brand" data-tab="home"><span class="brand-mark">EV</span><span><b>EXECUTIVE</b><small>VISUALS</small></span></a><div class="workspace-label"><i></i><span><b>Creative workspace</b><small id="project-name">Untitled production</small></span></div><nav id="nav"></nav><div class="sidebar-foot"><i class="local-dot"></i><span><b>Local planning mode</b><small>Media engines not connected</small></span></div></aside><main class="main"><header class="topbar"><div><span>WORKSPACE</span><b>/</b><strong id="crumb">Command centre</strong></div><div><span class="local-badge">LOCAL MODE</span><button class="secondary" data-tab="director">＋ New brief</button></div></header><section id="view" class="content"></section></main></div>';render();
-
-document.addEventListener("change",e=>{const i=e.target as HTMLInputElement;if(i.id==="upload"&&i.files){for(const f of Array.from(i.files)){const id=uid();state.assets.unshift({id,name:f.name,type:f.type,size:f.size});urls.set(id,URL.createObjectURL(f));}save();render();}});
-load();
-$<HTMLElement>("#app").innerHTML='<div class="shell"><aside class="sidebar"><a class="brand" data-tab="home"><span class="brand-mark">EV</span><span><b>EXECUTIVE</b><small>VISUALS</small></span></a><div class="workspace-label"><i></i><span><b>Creative workspace</b><small id="project-name">Untitled production</small></span></div><nav id="nav"></nav><div class="sidebar-foot"><i class="local-dot"></i><span><b>Local planning mode</b><small>Media engines not connected</small></span></div></aside><main class="main"><header class="topbar"><div><span>WORKSPACE</span><b>/</b><strong id="crumb">Command centre</strong></div><div><span class="local-badge">LOCAL MODE</span><button class="secondary" data-tab="director">＋ New brief</button></div></header><section id="view" class="content"></section></main></div>';
-render();
