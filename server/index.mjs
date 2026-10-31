@@ -18,6 +18,11 @@ const DATA_DIR = resolve(process.env.DATA_DIR || "./data");
 const MEDIA_ROOT = resolve(process.env.MEDIA_ROOT || join(DATA_DIR, "media"));
 const WEB_ROOT = resolve(process.env.WEB_ROOT || "./dist");
 const DB_FILE = resolve(process.env.DB_FILE || join(DATA_DIR, "executive-visuals.sqlite"));
+const REQUIRE_PERSISTENT_DATA_DIR = process.env.REQUIRE_PERSISTENT_DATA_DIR === "true";
+const isWithinDataDir = path => path === DATA_DIR || path.startsWith(DATA_DIR + sep);
+if (REQUIRE_PERSISTENT_DATA_DIR && (!existsSync(DATA_DIR) || !isWithinDataDir(DB_FILE) || !isWithinDataDir(MEDIA_ROOT))) {
+  throw new Error("Persistent storage is required. Mount the configured data volume before starting the service.");
+}
 const MAX_UPLOAD_BYTES = Number(process.env.MAX_UPLOAD_BYTES || 250 * 1024 * 1024);
 const SESSION_DAYS = 30;
 const ALLOWED_MEDIA = new Set([
