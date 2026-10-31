@@ -46,7 +46,7 @@ export interface CapabilityDefinition {
   execution: ExecutionMode[];
   inputs: CapabilityPort[];
   outputs: CapabilityPort[];
-  approvals?: Array<"paid-execution" | "likeness" | "voice" | "publishing" | "external-action" | "destructive-action" | "source-rights">;
+  approvals?: Array<"paid-execution" | "likeness" | "voice" | "publishing" | "external-action" | "destructive-action" | "source-rights" | "brand-approval" | "recording-consent" | "render-budget" | "batch-budget">;
   notes?: string;
 }
 
@@ -401,7 +401,7 @@ export const CAPABILITY_ATLAS: readonly CapabilityDefinition[] = [
     [p("report","document","Continuity issues and corrective suggestions")],
     {evidence:"inferred",readiness:"adapter-required",execution:["async"]}),
   spec("assets.semantic-search", "assets", "Find media by meaning, content and production context",
-    [p("query","text","Natural-language asset query"),p("scope","structured-data","Workspace, project and permission scope")],
+    [p("query","prompt","Natural-language asset query"),p("scope","structured-data","Workspace, project and permission scope")],
     [p("matches","asset","Ranked authorized asset references")],
     {evidence:"inferred",readiness:"adapter-required",execution:["async"]}),
   spec("workflow.version-diff", "workflow", "Compare two workflow revisions",
