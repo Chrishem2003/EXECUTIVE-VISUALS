@@ -327,6 +327,121 @@
       "quality.preflight",
       "quality",
       "Validate media delivery requirements"
+    ],
+    [
+      "timeline.sequence",
+      "editing",
+      "Create and version an editorial sequence"
+    ],
+    [
+      "timeline.track",
+      "editing",
+      "Manage ordered media tracks"
+    ],
+    [
+      "timeline.clip",
+      "editing",
+      "Trim, split and place timeline clips"
+    ],
+    [
+      "timeline.relink",
+      "editing",
+      "Relink missing source media"
+    ],
+    [
+      "timeline.export",
+      "editing",
+      "Export editorial interchange package"
+    ],
+    [
+      "collaboration.lock",
+      "collaboration",
+      "Acquire project or sequence edit lock"
+    ],
+    [
+      "collaboration.publish",
+      "collaboration",
+      "Publish a reviewed revision to collaborators"
+    ],
+    [
+      "collaboration.annotation",
+      "collaboration",
+      "Attach frame-accurate review annotation"
+    ],
+    [
+      "collaboration.presence",
+      "collaboration",
+      "Track collaborator presence and activity"
+    ],
+    [
+      "workflow.subgraph",
+      "workflow",
+      "Create reusable workflow subgraph"
+    ],
+    [
+      "workflow.batch",
+      "workflow",
+      "Run workflow across a batch of inputs"
+    ],
+    [
+      "workflow.partial-run",
+      "workflow",
+      "Execute selected outputs and dependencies only"
+    ],
+    [
+      "assets.proxy-cache",
+      "assets",
+      "Generate and invalidate preview proxies and caches"
+    ],
+    [
+      "assets.verify-integrity",
+      "assets",
+      "Verify checksum and asset lineage"
+    ],
+    [
+      "capture.resumable-ingest",
+      "capture",
+      "Resume interrupted media ingest"
+    ],
+    [
+      "speech.diarize",
+      "audio",
+      "Separate speakers and align transcript"
+    ],
+    [
+      "speech.remove-filler",
+      "audio",
+      "Remove filler words and long silences"
+    ],
+    [
+      "speech.glossary-apply",
+      "localization",
+      "Apply pronunciation and translation glossary"
+    ],
+    [
+      "runtime.discover-models",
+      "operations",
+      "Discover installed model and node capabilities"
+    ],
+    [
+      "runtime.preflight",
+      "operations",
+      "Preflight execution against runtime resources"
+    ],
+    [
+      "runtime.schedule",
+      "operations",
+      "Schedule jobs across eligible workers"
+    ],
+    [
+      "review.share-link",
+      "collaboration",
+      "Create controlled review link"
+    ],
+    [
+      "review.approval",
+      "collaboration",
+      "Record approval or requested changes"
     ]
   ],
   "requiredCapabilityFields": [
@@ -376,6 +491,6 @@
     "Secrets never enter client bundles, prompts or logs."
   ],
   "sourceOfTruth": "src/core/capability-atlas.ts",
-  "capabilityCount": 60,
+  "capabilityCount": 83,
   "domainCount": 22
 }
