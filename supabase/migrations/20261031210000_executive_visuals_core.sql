@@ -256,12 +256,14 @@ alter table executive_visuals.reviews enable row level security;
 alter table executive_visuals.audit_events enable row level security;
 
 grant select,insert,update,delete on all tables in schema executive_visuals to authenticated;
+grant all privileges on all tables in schema executive_visuals to service_role;
 revoke insert,update,delete on executive_visuals.job_events from authenticated;
 revoke update,delete on executive_visuals.jobs from authenticated;
 revoke update,delete on executive_visuals.workflow_runs from authenticated;
+revoke update,delete on executive_visuals.workflow_runs from authenticated;
 revoke insert,update,delete on executive_visuals.workflow_node_runs from authenticated;
 revoke insert,update,delete on executive_visuals.audit_events from authenticated;
-grant usage,select on all sequences in schema executive_visuals to authenticated;
+grant usage,select on all sequences in schema executive_visuals to authenticated, service_role;
 
 create policy ev_projects_read on executive_visuals.projects for select to authenticated
 using (owner_id=(select auth.uid()) or exists (
@@ -297,21 +299,7 @@ using (owner_id=(select auth.uid()) or exists (select 1 from executive_visuals.p
 create policy ev_workflow_runs_read on executive_visuals.workflow_runs for select to authenticated
 using (owner_id=(select auth.uid()) or exists (select 1 from executive_visuals.projects p where p.id=workflow_runs.project_id and p.owner_id=(select auth.uid())) or exists (select 1 from executive_visuals.project_members m where m.project_id=workflow_runs.project_id and m.member_id=(select auth.uid())));
 create policy ev_workflow_runs_insert on executive_visuals.workflow_runs for insert to authenticated
-with check (
-  owner_id=(select auth.uid())
-  and status='awaiting_approval'
-  and job_id is null
-  and error is null
-  and completed_at is null
-  and exists (
-    select 1 from executive_visuals.workflows w
-    where w.id=workflow_id
-      and w.project_id is not distinct from project_id
-      and (w.owner_id=(select auth.uid())
-        or exists (select 1 from executive_visuals.projects p where p.id=w.project_id and p.owner_id=(select auth.uid()))
-        or exists (select 1 from executive_visuals.project_members m where m.project_id=w.project_id and m.member_id=(select auth.uid()) and m.role='editor'))
-  )
-);
+with check (owner_id=(select auth.uid()) and status='awaiting_approval' and job_id is null and (project_id is null or exists (select 1 from executive_visuals.projects p where p.id=project_id and p.owner_id=(select auth.uid())) or exists (select 1 from executive_visuals.project_members m where m.project_id=project_id and m.member_id=(select auth.uid()) and m.role='editor')));
 create policy ev_workflow_runs_update on executive_visuals.workflow_runs for update to authenticated
 using (owner_id=(select auth.uid()) or exists (select 1 from executive_visuals.projects p where p.id=workflow_runs.project_id and p.owner_id=(select auth.uid())) or exists (select 1 from executive_visuals.project_members m where m.project_id=workflow_runs.project_id and m.member_id=(select auth.uid()) and m.role='editor'))
 with check (owner_id=(select auth.uid()) or exists (select 1 from executive_visuals.projects p where p.id=workflow_runs.project_id and p.owner_id=(select auth.uid())) or exists (select 1 from executive_visuals.project_members m where m.project_id=workflow_runs.project_id and m.member_id=(select auth.uid()) and m.role='editor'));
