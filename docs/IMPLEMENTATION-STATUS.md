@@ -22,7 +22,9 @@
 | Asset library | Owner isolation, metadata, original/derivative relationship and private file reads | No cloud storage or signed URLs yet |
 | Job queue | Persistent queue, idempotency keys, normalized states, progress events, process cancellation and audit trail | Single local worker; distributed workers and lease recovery pending |
 | Local media engine | Probe, thumbnail, transcode, audio extraction and proxy operations with signature-checked ingest | Requires FFmpeg/FFprobe installed on worker |
-| Runtime console | Sign-in, project creation, uploads, media job submission, job inspection and audit view | Browser UI uses the local API |\n| Project collaboration | Owner-managed invitations with editor, reviewer and viewer roles; access revocation | Existing local accounts only; invitation email delivery not connected |\n| Review and approvals | Timecoded comments, approve/request-changes decisions and status updates | Local API persistence; external review links not implemented |
+| Runtime console | Sign-in, project creation, uploads, media job submission, job inspection and audit view | Browser UI uses the local API |
+| Project collaboration | Owner-managed invitations with editor, reviewer and viewer roles; access revocation | Existing local accounts only; invitation email delivery not connected |
+| Review and approvals | Timecoded comments, approve/request-changes decisions and status updates | Local API persistence; external review links not implemented |
 | Editorial timeline | Multi-track clips, rational frame timing, source trims, split, move, markers, overlap validation and interchange export | No preview playback, transitions or render engine yet |
 | Timeline persistence | Owner-scoped timelines, asset ownership checks, optimistic revisions and saved interchange package | SQLite local DB; isolated SQL migration pending dedicated database review |
 | Database migration | Dedicated multi-tenant schema, row-level security and private object-storage policies | Migration is committed for review; **not applied** to shared staging |
