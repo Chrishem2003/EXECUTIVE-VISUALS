@@ -32,6 +32,7 @@ function run(bin, args, timeoutMs = 30 * 60 * 1000, jobId = null, activeProcesse
     child.on("error", error => { clearTimeout(timer); if(jobId&&activeProcesses)activeProcesses.delete(jobId); reject(Object.assign(new Error("Media engine could not start."), { code:"MEDIA_ENGINE_MISSING", cause:error })); });
     child.on("close", code => {
       clearTimeout(timer);
+      if(jobId&&activeProcesses)activeProcesses.delete(jobId);
       if (code === 0) resolve({ stdout, stderr });
       else reject(Object.assign(new Error((stderr || "Media operation failed.").slice(-3000)), { code:"MEDIA_PROCESS_FAILED" }));
     });
