@@ -1,31 +1,59 @@
 # Development
 
 ## Requirements
-- Node.js 20.19+ or 22.12+
+- Node.js 22.12+ (Node 22 is used in CI)
 - npm
+- Optional: FFmpeg and FFprobe for local media processing
 
-## Run locally
+## Run the complete local stack
 ```bash
 npm install
 npm run dev
 ```
-Open the URL printed by Vite (normally http://localhost:5173).
+This starts the API on `127.0.0.1:4179` and the Vite frontend on `0.0.0.0:5173`. Vite proxies `/api` requests to the API service.
 
-## Validate
+Create a local development account on first use. Passwords are hashed with scrypt; session tokens are random, stored only as SHA-256 hashes, and sent in HttpOnly, SameSite=Strict cookies.
+
+## Runtime storage
+- SQLite database: `data/executive-visuals.sqlite`
+- Original media: `data/media/uploads/`
+- Derived media: `data/media/derived/`
+
+The `data/` directory is ignored by Git. Preserve it when backing up local projects and media.
+
+## Implemented API
+- `GET /api/health`
+- `POST /api/auth/register`, `POST /api/auth/login`, `POST /api/auth/logout`, `GET /api/me`
+- `GET/POST /api/projects`, `PUT/DELETE /api/projects/:id`
+- `GET/POST /api/assets`, `GET /api/assets/:id/file`, `DELETE /api/assets/:id`
+- `GET/POST /api/workflows`
+- `GET/POST /api/jobs`, `GET /api/jobs/:id`, `GET /api/jobs/:id/events`, `POST /api/jobs/:id/cancel`
+- `GET /api/audit`
+
+Uploads are raw binary request bodies. The client sends `Content-Type`, `X-File-Name` and optional `X-Project-Id` headers. Maximum size defaults to 250 MiB.
+
+## Local media jobs
+- `media.probe` — inspect streams and container metadata.
+- `media.thumbnail` — extract a still frame.
+- `media.transcode` — transcode to an allowlisted container/codec.
+- `media.audio_extract` — extract audio.
+- `media.proxy` — create a lower-resolution editing proxy.
+
+The worker runs only jobs with registered local adapters. Unsupported AI generation tasks return `ENGINE_UNAVAILABLE` rather than pretending to run.
+
+## Verification
 ```bash
 npm run typecheck
+npm run verify:capabilities
+npm run verify:workflow
+npm run verify:server
 npm run build
 ```
 
-## Current local capabilities
-- Switch between production workspaces.
-- Create and persist creative briefs in browser local storage.
-- Create shot/production jobs with explicit capability and provider status.
-- Add reference files to a local asset shelf for the current browser session.
-- Filter the project/job library and inspect job details.
-- Provider readiness is explicitly marked as unconfigured until a real adapter exists.
-
-The current browser-only foundation does not upload files to a server or generate media. Uploaded file previews are held in memory and disappear on refresh; project and job metadata persist locally. A future storage adapter will replace this development behavior.
-
-## Security
-Keep provider credentials on a trusted server. Do not expose secrets in frontend environment variables, local storage, source control, URLs, or logs. Use only media and likenesses for which you have appropriate rights and consent.
+## Production safety
+- Local auth is development-only; production startup rejects it.
+- Production authentication requires a verified bearer token from the configured identity service.
+- Never expose a service-role key or provider credential to the browser.
+- Keep persistent media storage outside the application bundle.
+- Do not reuse another application's database without a dedicated schema, explicit RLS policies and an approved isolated environment.
+- No paid media generation or provider call is enabled by default.
