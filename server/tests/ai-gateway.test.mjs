@@ -33,7 +33,7 @@ test("text gateway sends approved request configuration and normalizes response 
 test("text gateway is disabled by default and rejects insecure remote endpoints",async()=>{
  process.env.AI_GATEWAY_ENABLED="false";
  await assert.rejects(()=>generateText({prompt:"hello"}),error=>error.code==="AI_GATEWAY_DISABLED");
- process.env.AI_GATEWAY_ENABLED="true";process.env.AI_GATEWAY_URL="http://example.com/v1";process.env.AI_GATEWAY_MODEL="test-model";
+ process.env.AI_GATEWAY_ENABLED="true";process.env.AI_GATEWAY_ALLOW_REMOTE="false";process.env.AI_GATEWAY_URL="http://example.com/v1";process.env.AI_GATEWAY_MODEL="test-model";
  await assert.rejects(()=>generateText({prompt:"hello"}),error=>error.code==="AI_GATEWAY_INSECURE_URL");
  process.env.AI_GATEWAY_URL="https://gateway.example.test/v1";
  await assert.rejects(()=>generateText({prompt:"hello"}),error=>error.code==="AI_GATEWAY_REMOTE_DISABLED");
