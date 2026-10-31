@@ -63,3 +63,21 @@ Observability: structured logs, trace IDs, queue health, failure classification 
 
 ## Current boundary
 This branch consolidates the product architecture and adds a local-first interactive workspace with project briefs, storyboard records, character profiles, workflow graph, local asset previews and campaign concept scaffolding. It does not yet include authentication, durable storage, actual model execution, rendering, or provider adapters. Those require trusted backend infrastructure and authorized provider accounts or a local inference/render environment.
+
+
+## Public source register
+The following first-party sources informed the capability map. Product pages are evidence of advertised workflows, not proof of implementation parity or access to private internals.
+
+- HeyGen AI Video Generator / Video Agent: https://www.heygen.com/tool/ai-video-generator
+- HeyGen public AI video workflow: https://www.heygen.com/en-in/tool/ai-video-generator
+- Higgsfield product overview: https://higgsfield.ai/creator-hub/help-center/getting-started/what-is-higgsfield
+- Higgsfield Cinema Studio: https://higgsfield.ai/cinematic-video-generator
+- Higgsfield Canvas: https://higgsfield.ai/canvas-intro
+- Higgsfield platform catalogue: https://higgsfield.ai/
+- Wink workspace: https://wink.ai/workspace
+- Wink public product catalogue: https://wink.ai/
+- Wink benefits and processing catalogue: https://wink.ai/benefits
+- REA repository and evidence-first workflow: https://github.com/morluto/rea
+- REA reverse-engineering skill: https://github.com/morluto/rea/blob/main/.agents/skills/reverse-engineer-anything/SKILL.md
+
+Research boundary: public page inspection only. The authenticated HeyGen application was gated by sign-in/anti-bot checks; no private workspace, undocumented endpoint, hidden API or account-specific feature was inspected.
