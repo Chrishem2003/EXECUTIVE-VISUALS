@@ -116,6 +116,9 @@ test("creative workspace drafts persist per project with revision and editor-rol
   const unsafe=await request("/api/projects/"+project.id+"/workspace",{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({revision:1,document:{researchSources:[{id:"bad",title:"Unsafe",url:"javascript:alert(1)"}]}})},owner);
   assert.equal(unsafe.status,400);
   assert.equal((await unsafe.json()).error.code,"INVALID_RESEARCH_SOURCE_URL");
+  const ungrounded=await request("/api/projects/"+project.id+"/workspace",{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({revision:1,document:{knowledgeRecords:[{id:"ungrounded",title:"Unsupported claim",content:"No source attached.",kind:"Finding",status:"Verified",sourceIds:[]}]}})},owner);
+  assert.equal(ungrounded.status,400);
+  assert.equal((await ungrounded.json()).error.code,"KNOWLEDGE_EVIDENCE_REQUIRED");
   const stale=await request("/api/projects/"+project.id+"/workspace",{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({revision:0,document})},owner);
   assert.equal(stale.status,409);
   const editor=await register("workspace-editor@example.test");
