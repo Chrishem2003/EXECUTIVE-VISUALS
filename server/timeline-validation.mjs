@@ -9,12 +9,22 @@ export function validateTimelineDocument(timeline,db,ownerId){
  const ids=new Set();let clipCount=0;
  for(const track of timeline.tracks||[]){
   if(!track.id||ids.has(track.id))issues.push("Track IDs must be unique and non-empty.");ids.add(track.id);
+  if(!["video","audio","overlay","caption"].includes(track.kind))issues.push("Track kind must be video, audio, overlay or caption.");
   if(!Array.isArray(track.clips))issues.push("Every track must contain a clips array.");
   let end=0;
   for(const clip of [...(track.clips||[])].sort((a,b)=>seconds(a.timelineStart)-seconds(b.timelineStart))){
    clipCount++;
    if(!clip.id||ids.has(clip.id))issues.push("Clip and track IDs must be unique and non-empty.");ids.add(clip.id);
-   if(!clip.assetId||!getAccessibleAsset(db,ownerId,clip.assetId,true))issues.push("Every timeline clip must reference a source asset owned by this account.");
+   const asset=clip.assetId?getAccessibleAsset(db,ownerId,clip.assetId,true):null;
+   if(!asset)issues.push("Every timeline clip must reference a source asset accessible to this account.");
+   else if(track.kind==="video"&&!asset.media_type.startsWith("video/")&&!asset.media_type.startsWith("image/"))issues.push("Primary video tracks accept only video or still-image assets.");
+   else if(track.kind==="audio"&&!asset.media_type.startsWith("audio/"))issues.push("Audio tracks accept only audio assets.");
+   else if(track.kind==="overlay"&&!asset.media_type.startsWith("image/"))issues.push("Overlay tracks currently accept only still-image assets.");
+   else if(track.kind==="caption"&&(asset.media_type!=="text/plain"||![".srt",".vtt"].includes(String(asset.original_name||"").toLowerCase().slice(String(asset.original_name||"").lastIndexOf(".")))))issues.push("Caption tracks accept only SRT or VTT text assets.");
+   if(Number(clip.speed??1)!==1)issues.push("Clip speed changes are not supported until time remapping is implemented.");
+   if(track.kind==="audio"&&clip.gainDb!==undefined&&(!Number.isFinite(Number(clip.gainDb))||Number(clip.gainDb)<-60||Number(clip.gainDb)>24))issues.push("Audio gain must be between -60 dB and +24 dB.");
+   if(track.kind==="overlay"&&clip.metadata&&clip.metadata.opacity!==undefined&&(!Number.isFinite(Number(clip.metadata.opacity))||Number(clip.metadata.opacity)<0||Number(clip.metadata.opacity)>1))issues.push("Overlay opacity must be between 0 and 1.");
+   if(track.kind==="caption"&&clip.metadata?.fontSize!==undefined&&(!Number.isFinite(Number(clip.metadata.fontSize))||Number(clip.metadata.fontSize)<12||Number(clip.metadata.fontSize)>72))issues.push("Caption font size must be between 12 and 72.");
    const start=seconds(clip.timelineStart),duration=seconds(clip.duration),sourceStart=seconds(clip.sourceRange?.start),sourceDuration=seconds(clip.sourceRange?.duration);
    if(!Number.isFinite(start)||!Number.isFinite(duration)||!Number.isFinite(sourceStart)||!Number.isFinite(sourceDuration)||start<0||duration<=0||sourceStart<0||sourceDuration<=0)issues.push("Timeline clip has invalid source or record timing.");
    if(Number.isFinite(start)&&Number.isFinite(duration)&&start+0.000001<end)issues.push("Clips overlap on the same track; use a separate overlay track.");
