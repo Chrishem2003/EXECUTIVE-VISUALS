@@ -5,6 +5,9 @@ type RuntimeProject={id:string;name:string;description?:string;revision?:number;
 type RuntimeAsset={id:string;projectId?:string|null;name:string;mediaType:string;size:number;sha256:string;createdAt:string};
 type RuntimeJob={id:string;projectId?:string|null;jobType:string;status:string;progress:number;input:Record<string,unknown>;output?:Record<string,unknown>|null;error?:{code?:string;message?:string}|null;createdAt:string;updatedAt:string};
 type RuntimeReview={id:string;project_id:string;asset_id?:string|null;timecode_seconds?:number|null;decision:string;body:string;status:string;created_at:string};
+let workspaceRevisions=new Map<string,number>();
+let workspaceSaveTimers=new Map<string,ReturnType<typeof setTimeout>>();
+let workspaceSaveChain:Promise<void>=Promise.resolve();
 const state:{status:"checking"|"offline"|"auth-required"|"online";authMode:"local"|"supabase";user:RuntimeUser|null;projects:RuntimeProject[];assets:RuntimeAsset[];jobs:RuntimeJob[];audit:Array<Record<string,unknown>>;members:Array<{id:string;email:string;role:string;createdAt:string}>;reviews:RuntimeReview[];projectId:string;message:string;ffmpeg:boolean;ffprobe:boolean;textGatewayEnabled:boolean;textGatewayConfigured:boolean}={
  status:"checking",authMode:"local",user:null,projects:[],assets:[],jobs:[],audit:[],members:[],reviews:[],projectId:"",message:"",ffmpeg:false,ffprobe:false,textGatewayEnabled:false,textGatewayConfigured:false
 };
@@ -75,7 +78,37 @@ export function renderRuntimeOverview(){
  return '<div id="runtime-workspace" data-runtime-view="overview" class="stats"><div><small>Persistent projects</small><b>'+state.projects.length+'</b><span>API-backed</span></div><div><small>Stored assets</small><b>'+state.assets.length+'</b><span>Private media storage</span></div><div><small>Active jobs</small><b>'+state.jobs.filter(j=>["queued","running"].includes(j.status)).length+'</b><span>Leased worker queue</span></div><div><small>Local media tools</small><b>'+(state.ffmpeg&&state.ffprobe?"Ready":state.ffprobe?"Probe only":"Unavailable")+'</b><span>FFmpeg / FFprobe</span></div></div>';
 }
 
+export function getCurrentProjectId(){return state.projectId;}
+export async function loadCreativeDraft(projectId=state.projectId){
+ if(!projectId||state.status!=="online")return null;
+ const result=await apiRequest<{document:Record<string,unknown>;revision:number}>("/api/projects/"+projectId+"/workspace");
+ workspaceRevisions.set(projectId,result.revision);
+ return result;
+}
+function queueCreativeDraft(document:Record<string,unknown>){
+ const projectId=state.projectId;
+ const project=state.projects.find(item=>item.id===projectId);
+ if(!projectId||state.status!=="online"||!project||!["owner","editor"].includes(project.access_role||""))return;
+ const old=workspaceSaveTimers.get(projectId);if(old)clearTimeout(old);
+ const timer=setTimeout(()=>{
+  workspaceSaveTimers.delete(projectId);
+  workspaceSaveChain=workspaceSaveChain.then(async()=>{
+   const current=state.projects.find(item=>item.id===projectId);
+   if(state.status!=="online"||!current||!["owner","editor"].includes(current.access_role||""))return;
+   const revision=workspaceRevisions.get(projectId)||0;
+   const result=await apiRequest<{revision:number}>("/api/projects/"+projectId+"/workspace",{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({revision,document})});
+   workspaceRevisions.set(projectId,result.revision);
+  }).catch(error=>{state.message=error instanceof Error?"Creative draft save failed: "+error.message:"Creative draft save failed.";});
+ },600);
+ workspaceSaveTimers.set(projectId,timer);
+}
+window.addEventListener("ev:save-creative-draft",event=>{
+ const detail=(event as CustomEvent<Record<string,unknown>>).detail;
+ if(detail&&typeof detail==="object")queueCreativeDraft(detail);
+});
+
 async function refresh(){
+ const previousProjectId=state.projectId;
  const [projects,assets,jobs,audit]=await Promise.all([
   apiRequest<{projects:RuntimeProject[]}>("/api/projects"),
   apiRequest<{assets:RuntimeAsset[]}>("/api/assets"),
@@ -85,6 +118,7 @@ async function refresh(){
  state.projects=projects.projects;state.assets=assets.assets;state.jobs=jobs.jobs;state.audit=audit.events;window.dispatchEvent(new Event("ev:assets-updated"));
  if(state.projectId&&!state.projects.some(p=>p.id===state.projectId))state.projectId="";
  if(!state.projectId&&state.projects.length)state.projectId=state.projects[0].id;
+ if(previousProjectId!==state.projectId)window.dispatchEvent(new CustomEvent("ev:project-changed",{detail:{projectId:state.projectId}}));
  if(state.projectId){try{const response=await apiRequest<{members:Array<{id:string;email:string;role:string;createdAt:string}>}>("/api/projects/"+state.projectId+"/members");state.members=response.members;}catch{state.members=[];}
   try{const response=await apiRequest<{reviews:RuntimeReview[]}>("/api/reviews?projectId="+encodeURIComponent(state.projectId));state.reviews=response.reviews;}catch{state.reviews=[];}
  }
@@ -115,13 +149,13 @@ async function authenticate(form:HTMLFormElement){
 document.addEventListener("submit",event=>{
  const form=event.target as HTMLFormElement;
  if(form.id==="ev-auth"||form.id==="ev-auth-token"){event.preventDefault();void authenticate(form);}
- if(form.id==="ev-project-form"){event.preventDefault();const name=String(new FormData(form).get("name")||"").trim();if(!name)return;void apiRequest<{project:RuntimeProject}>("/api/projects",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({name})}).then(async result=>{state.projectId=result.project.id;await refresh();paint();}).catch(error=>alert(error.message||error));}
+ if(form.id==="ev-project-form"){event.preventDefault();const name=String(new FormData(form).get("name")||"").trim();if(!name)return;void apiRequest<{project:RuntimeProject}>("/api/projects",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({name})}).then(async result=>{state.projectId=result.project.id;await refresh();window.dispatchEvent(new CustomEvent("ev:project-changed",{detail:{projectId:state.projectId}}));paint();}).catch(error=>alert(error.message||error));}
  if(form.id==="ev-member-form"){event.preventDefault();const data=new FormData(form);void apiRequest("/api/projects/"+state.projectId+"/members",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({email:String(data.get("email")),role:String(data.get("role"))})}).then(async()=>{await refresh();paint();}).catch(error=>alert(error.message||error));}
  if(form.id==="ev-review-form"){event.preventDefault();const data=new FormData(form),timecode=String(data.get("timecode")||"");void apiRequest("/api/reviews",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({projectId:state.projectId,decision:String(data.get("decision")),body:String(data.get("body")),timecodeSeconds:timecode?Number(timecode):null})}).then(async()=>{await refresh();paint();}).catch(error=>alert(error.message||error));}
 });
 document.addEventListener("change",event=>{
  const target=event.target as HTMLInputElement;
- if(target.id==="ev-project-select"){state.projectId=target.value;void refresh().then(paint).catch(error=>alert(error.message||error));return;}
+ if(target.id==="ev-project-select"){state.projectId=target.value;void refresh().then(()=>{window.dispatchEvent(new CustomEvent("ev:project-changed",{detail:{projectId:state.projectId}}));paint();}).catch(error=>alert(error.message||error));return;}
  if(target.id==="ev-upload"&&target.files){const files=Array.from(target.files);void (async()=>{for(const file of files){try{await apiRequest("/api/assets",{method:"POST",headers:{"content-type":file.type||"application/octet-stream","x-file-name":encodeURIComponent(file.name),"x-project-id":state.projectId},body:file});}catch(error){alert(file.name+": "+(error instanceof Error?error.message:"Upload failed"));}}await refresh();paint();})();}
 });
 document.addEventListener("click",event=>{
