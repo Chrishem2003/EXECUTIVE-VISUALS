@@ -144,3 +144,13 @@ tenants, users, memberships, roles, provider_connections, projects, project_revi
 
 ## Definition of done
 A capability is operational only when a real authorized adapter or local engine executes it, the output is persisted, the job lifecycle is visible, costs are accounted for, failure handling works, and an automated test verifies the result. A UI control, prompt template or provider documentation link is not completion.
+
+## Unified production engine
+
+The application combines three capability families under one project and asset model:
+
+1. **Presenter and identity production:** reusable character/presenter profiles, approved likeness and voice records, script-driven presenter workflows, localization and lip-sync capability contracts.
+2. **Cinematic generation and direction:** briefs, scripts, storyboards, shot lists, camera/lens/lighting controls, image and video generation contracts, scene continuity and campaign variants.
+3. **Finishing and delivery:** shared editorial timeline, captions, audio tracks, local FFmpeg processing, image/video enhancement operations, export and asset provenance.
+
+The families are not separate products. They share project permissions, creative briefs, assets, workflow graphs, approval checkpoints, job status, output lineage and export paths. Provider/model integrations are replaceable adapters behind the capability contracts. A capability remains unavailable until its implementation and readiness evidence are verified; a catalog entry alone is not an executable feature.
