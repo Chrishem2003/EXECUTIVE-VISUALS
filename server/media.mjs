@@ -17,12 +17,14 @@ const PRESETS = new Set(["ultrafast", "veryfast", "fast", "medium", "slow"]);
 const MIME_BY_EXT = { jpg:"image/jpeg", jpeg:"image/jpeg", png:"image/png", webp:"image/webp", mp4:"video/mp4", webm:"video/webm", mov:"video/quicktime", mkv:"video/x-matroska", mp3:"audio/mpeg", wav:"audio/wav" };
 
 export function executableAvailable(name) {
-  const result = spawnSync(name, ["-version"], { stdio: "ignore", timeout: 3000, windowsHide: true });
+  const executable=name==="ffmpeg"?(process.env.FFMPEG_PATH||name):name==="ffprobe"?(process.env.FFPROBE_PATH||name):name;
+  const result = spawnSync(executable, ["-version"], { stdio: "ignore", timeout: 3000, windowsHide: true });
   return !result.error && result.status === 0;
 }
 function run(bin, args, timeoutMs = 30 * 60 * 1000, jobId = null, activeProcesses = null) {
   return new Promise((resolve, reject) => {
-    const child = spawn(bin, args, { stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
+    const executable=bin==="ffmpeg"?(process.env.FFMPEG_PATH||bin):bin==="ffprobe"?(process.env.FFPROBE_PATH||bin):bin;
+    const child = spawn(executable, args, { stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
     if(jobId&&activeProcesses)activeProcesses.set(jobId,child);
     let stdout = "", stderr = "", timer;
     const append = (current, chunk) => (current + chunk.toString()).slice(-16000);
