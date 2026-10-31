@@ -79,7 +79,7 @@ function run(bin, args, timeoutMs = 30 * 60 * 1000, jobId = null, activeProcesse
     child.stdout.on("data", chunk => { stdout = append(stdout, chunk); });
     child.stderr.on("data", chunk => { stderr = append(stderr, chunk); });
     timer = setTimeout(() => { child.kill("SIGKILL"); reject(Object.assign(new Error("Media operation timed out."), { code:"MEDIA_TIMEOUT" })); }, timeoutMs);
-    if(shouldCancel)cancellationTimer=setInterval(()=>{if(shouldCancel()&&!child.killed)child.kill("SIGTERM");},500);
+    if(shouldCancel)cancellationTimer=setInterval(()=>{try{if(shouldCancel()&&!child.killed)child.kill("SIGTERM");}catch{}},500);
     child.on("error", error => { clearTimeout(timer); if(cancellationTimer)clearInterval(cancellationTimer); if(jobId&&activeProcesses)activeProcesses.delete(jobId); reject(Object.assign(new Error("Media engine could not start."), { code:"MEDIA_ENGINE_MISSING", cause:error })); });
     child.on("close", code => {
       clearTimeout(timer);
