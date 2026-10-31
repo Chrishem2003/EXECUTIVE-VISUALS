@@ -1,11 +1,11 @@
 import { apiRequest, ApiError, setApiAccessToken, clearApiAccessToken } from "../core/api";
 
 type RuntimeUser={id:string;email:string};
-type RuntimeProject={id:string;name:string;description?:string;revision?:number};
+type RuntimeProject={id:string;name:string;description?:string;revision?:number;access_role?:"owner"|"editor"|"reviewer"|"viewer"};
 type RuntimeAsset={id:string;projectId?:string|null;name:string;mediaType:string;size:number;sha256:string;createdAt:string};
 type RuntimeJob={id:string;projectId?:string|null;jobType:string;status:string;progress:number;input:Record<string,unknown>;output?:Record<string,unknown>|null;error?:{code?:string;message?:string}|null;createdAt:string;updatedAt:string};
-const state:{status:"checking"|"offline"|"auth-required"|"online";authMode:"local"|"supabase";user:RuntimeUser|null;projects:RuntimeProject[];assets:RuntimeAsset[];jobs:RuntimeJob[];audit:Array<Record<string,unknown>>;projectId:string;message:string;ffmpeg:boolean;ffprobe:boolean}={
- status:"checking",authMode:"local",user:null,projects:[],assets:[],jobs:[],audit:[],projectId:"",message:"",ffmpeg:false,ffprobe:false
+const state:{status:"checking"|"offline"|"auth-required"|"online";authMode:"local"|"supabase";user:RuntimeUser|null;projects:RuntimeProject[];assets:RuntimeAsset[];jobs:RuntimeJob[];audit:Array<Record<string,unknown>>;members:Array<{id:string;email:string;role:string;createdAt:string}>;projectId:string;message:string;ffmpeg:boolean;ffprobe:boolean}={
+ status:"checking",authMode:"local",user:null,projects:[],assets:[],jobs:[],audit:[],members:[],projectId:"",message:"",ffmpeg:false,ffprobe:false
 };
 const esc=(value:unknown)=>String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]||c));
 const fmt=(value:string)=>new Date(value).toLocaleString();
@@ -59,6 +59,8 @@ async function refresh(){
  ]);
  state.projects=projects.projects;state.assets=assets.assets;state.jobs=jobs.jobs;state.audit=audit.events;
  if(state.projectId&&!state.projects.some(p=>p.id===state.projectId))state.projectId="";
+ if(state.projectId){try{const response=await apiRequest<{members:Array<{id:string;email:string;role:string;createdAt:string}>}>("/api/projects/"+state.projectId+"/members");state.members=response.members;}catch{state.members=[];}}
+ else state.members=[];
 }
 function paint(){updateShell();renderGate();const root=document.querySelector<HTMLElement>("#runtime-workspace");if(root)root.outerHTML=renderRuntimeWorkspace();}
 export async function initRuntime(){
@@ -86,10 +88,11 @@ document.addEventListener("submit",event=>{
  const form=event.target as HTMLFormElement;
  if(form.id==="ev-auth"||form.id==="ev-auth-token"){event.preventDefault();void authenticate(form);}
  if(form.id==="ev-project-form"){event.preventDefault();const name=String(new FormData(form).get("name")||"").trim();if(!name)return;void apiRequest<{project:RuntimeProject}>("/api/projects",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({name})}).then(async result=>{state.projectId=result.project.id;await refresh();paint();}).catch(error=>alert(error.message||error));}
+ if(form.id==="ev-member-form"){event.preventDefault();const data=new FormData(form);void apiRequest("/api/projects/"+state.projectId+"/members",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({email:String(data.get("email")),role:String(data.get("role"))})}).then(async()=>{await refresh();paint();}).catch(error=>alert(error.message||error));}
 });
 document.addEventListener("change",event=>{
  const target=event.target as HTMLInputElement;
- if(target.id==="ev-project-select"){state.projectId=target.value;return;}
+ if(target.id==="ev-project-select"){state.projectId=target.value;void refresh().then(paint).catch(error=>alert(error.message||error));return;}
  if(target.id==="ev-upload"&&target.files){const files=Array.from(target.files);void (async()=>{for(const file of files){try{await apiRequest("/api/assets",{method:"POST",headers:{"content-type":file.type||"application/octet-stream","x-file-name":encodeURIComponent(file.name),"x-project-id":state.projectId},body:file});}catch(error){alert(file.name+": "+(error instanceof Error?error.message:"Upload failed"));}}await refresh();paint();})();}
 });
 document.addEventListener("click",event=>{
@@ -99,6 +102,8 @@ document.addEventListener("click",event=>{
  if(action?.dataset.evAction==="logout"){void apiRequest("/api/auth/logout",{method:"POST"}).catch(()=>{});clearApiAccessToken();state.user=null;state.status="auth-required";state.jobs=[];state.assets=[];state.projects=[];paint();return;}
  const job=target.closest<HTMLElement>("[data-ev-job]");
  if(job){const assetId=job.dataset.evAsset||"",jobType=job.dataset.evJob||"";void apiRequest("/api/jobs",{method:"POST",headers:{"content-type":"application/json","idempotency-key":crypto.randomUUID()},body:JSON.stringify({jobType,sourceAssetId:assetId,projectId:state.projectId||undefined})}).then(async()=>{await refresh();paint();}).catch(error=>alert(error.message||error));return;}
+ const remove=target.closest<HTMLElement>("[data-ev-remove-member]");
+ if(remove){void apiRequest("/api/projects/"+state.projectId+"/members/"+remove.dataset.evRemoveMember,{method:"DELETE"}).then(async()=>{await refresh();paint();}).catch(error=>alert(error.message||error));return;}
  const cancel=target.closest<HTMLElement>("[data-ev-cancel]");
  if(cancel){void apiRequest("/api/jobs/"+cancel.dataset.evCancel+"/cancel",{method:"POST"}).then(async()=>{await refresh();paint();}).catch(error=>alert(error.message||error));}
 });
