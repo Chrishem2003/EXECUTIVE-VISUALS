@@ -103,7 +103,7 @@ create table if not exists executive_visuals.workflow_runs (
   workflow_revision integer not null check (workflow_revision > 0),
   snapshot_hash text not null check (char_length(snapshot_hash)=64),
   snapshot jsonb not null check (jsonb_typeof(snapshot)='object'),
-  status text not null check (status in ('queued','running','awaiting_approval','completed','partial','failed','blocked','cancelled')),
+  status text not null default 'awaiting_approval' check (status in ('queued','running','awaiting_approval','completed','partial','failed','blocked','cancelled')),
   job_id uuid references executive_visuals.jobs(id) on delete set null,
   error jsonb check (error is null or jsonb_typeof(error)='object'),
   created_at timestamptz not null default now(),
@@ -215,7 +215,7 @@ create or replace function executive_visuals.prevent_workflow_run_snapshot_mutat
 returns trigger
 language plpgsql
 set search_path = pg_catalog
-as $
+as $$
 begin
   if new.owner_id is distinct from old.owner_id
      or new.project_id is distinct from old.project_id
@@ -227,7 +227,7 @@ begin
   end if;
   return new;
 end;
-$;
+$$;
 
 create trigger ev_workflow_runs_snapshot_immutable
 before update on executive_visuals.workflow_runs
