@@ -1,6 +1,6 @@
 import { createServer } from "node:http";
 import { createHash, randomBytes, randomUUID, scryptSync, timingSafeEqual } from "node:crypto";
-import { createReadStream, createWriteStream } from "node:fs";
+import { createReadStream, createWriteStream, existsSync, statSync } from "node:fs";
 import { mkdir, unlink } from "node:fs/promises";
 import { dirname, extname, join, resolve, basename, sep } from "node:path";
 import { pipeline } from "node:stream/promises";
@@ -13,6 +13,7 @@ const HOST = process.env.API_HOST || "127.0.0.1";
 const AUTH_MODE = process.env.AUTH_MODE || "local";
 const DATA_DIR = resolve(process.env.DATA_DIR || "./data");
 const MEDIA_ROOT = resolve(process.env.MEDIA_ROOT || join(DATA_DIR, "media"));
+const WEB_ROOT = resolve(process.env.WEB_ROOT || "./dist");
 const DB_FILE = resolve(process.env.DB_FILE || join(DATA_DIR, "executive-visuals.sqlite"));
 const MAX_UPLOAD_BYTES = Number(process.env.MAX_UPLOAD_BYTES || 250 * 1024 * 1024);
 const SESSION_DAYS = 30;
@@ -158,6 +159,19 @@ export function createAppServer() {
     const url=new URL(req.url||"/","http://localhost");
     const path=url.pathname;
     try {
+      if(!path.startsWith("/api/")&&req.method==="GET"){
+        const decoded=decodeURIComponent(path);
+        let file=resolve(WEB_ROOT,"."+decoded);
+        const webPrefix=WEB_ROOT.endsWith(sep)?WEB_ROOT:WEB_ROOT+sep;
+        if(!file.startsWith(webPrefix)&&file!==join(WEB_ROOT,"index.html"))file=join(WEB_ROOT,"index.html");
+        if(!existsSync(file)||!statSync(file).isFile())file=join(WEB_ROOT,"index.html");
+        if(existsSync(file)&&statSync(file).isFile()){
+          const ext=extname(file).toLowerCase();
+          const types={".html":"text/html; charset=utf-8",".js":"text/javascript; charset=utf-8",".css":"text/css; charset=utf-8",".svg":"image/svg+xml",".png":"image/png",".jpg":"image/jpeg",".webp":"image/webp",".woff2":"font/woff2",".json":"application/json"};
+          res.writeHead(200,{"content-type":types[ext]||"application/octet-stream","x-content-type-options":"nosniff","cache-control":ext===".html"?"no-cache":"public, max-age=31536000, immutable",...cors});
+          createReadStream(file).pipe(res);return;
+        }
+      }
       if(path==="/api/health"&&req.method==="GET"){
         send(res,200,{status:"ok",storage:"local-disk",database:"sqlite",media:{ffmpeg:executableAvailable("ffmpeg"),ffprobe:executableAvailable("ffprobe")},authMode:AUTH_MODE,version:"0.1.0"},cors);return;
       }
