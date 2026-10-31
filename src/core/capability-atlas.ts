@@ -46,7 +46,7 @@ export interface CapabilityDefinition {
   execution: ExecutionMode[];
   inputs: CapabilityPort[];
   outputs: CapabilityPort[];
-  approvals?: Array<"paid-execution" | "likeness" | "voice" | "publishing" | "external-action" | "destructive-action">;
+  approvals?: Array<"paid-execution" | "likeness" | "voice" | "publishing" | "external-action" | "destructive-action" | "source-rights">;
   notes?: string;
 }
 
@@ -99,7 +99,7 @@ export const CAPABILITY_ATLAS: readonly CapabilityDefinition[] = [
     [p("image","image","Edited image")], {approvals:["paid-execution"]}),
   spec("image.composite", "image", "Composite product into generated scene",
     [p("product","product-reference","Product image"),p("scene","image","Background or generated scene"),p("brand","brand-kit","Brand constraints",false)],
-    [p("image","image","Composited image")], {approvals:["paid-execution","source-rights" as never]}),
+    [p("image","image","Composited image")], {approvals:["paid-execution","source-rights"]}),
   spec("image.restore", "image", "Restore and repair image",
     [p("source","image","Original image")],[p("restored","image","Restored image")]),
   spec("image.upscale", "image", "Upscale image",
@@ -209,11 +209,13 @@ export function validateCapabilityAtlas(
     if (!Number.isInteger(item.version) || item.version < 1) issues.push(`Invalid version for ${item.id}`);
     if (!item.label.trim()) issues.push(`Missing label for ${item.id}`);
     if (item.outputs.length === 0) issues.push(`Capability has no outputs: ${item.id}`);
-    const portIds = new Set<string>();
-    for (const port of [...item.inputs, ...item.outputs]) {
-      if (portIds.has(port.id)) issues.push(`Duplicate port ID in ${item.id}: ${port.id}`);
-      portIds.add(port.id);
-      if (!port.description.trim()) issues.push(`Missing port description in ${item.id}: ${port.id}`);
+    for (const [direction, ports] of [["input", item.inputs], ["output", item.outputs]] as const) {
+      const portIds = new Set<string>();
+      for (const port of ports) {
+        if (portIds.has(port.id)) issues.push(`Duplicate ${direction} port ID in ${item.id}: ${port.id}`);
+        portIds.add(port.id);
+        if (!port.description.trim()) issues.push(`Missing port description in ${item.id}: ${port.id}`);
+      }
     }
     if (item.readiness === "tested" && item.evidence === "unverified") {
       issues.push(`Tested capability cannot have unverified evidence: ${item.id}`);
