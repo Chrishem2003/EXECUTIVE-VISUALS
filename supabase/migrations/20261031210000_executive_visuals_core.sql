@@ -198,6 +198,125 @@ create index if not exists ev_workflow_node_runs_run on executive_visuals.workfl
 create index if not exists ev_job_events_job on executive_visuals.job_events(job_id,id);
 create index if not exists ev_reviews_project_created on executive_visuals.reviews(project_id,created_at);
 create index if not exists ev_audit_owner_id on executive_visuals.audit_events(owner_id,id desc);
+-- Atomic server-side queue operations. Workers claim with SKIP LOCKED so
+-- concurrent hosts cannot receive the same queued job.
+create or replace function executive_visuals.claim_next_job(
+  p_worker_id text,
+  p_lease_seconds integer default 90
+)
+returns setof executive_visuals.jobs
+language plpgsql
+security definer
+set search_path = pg_catalog, executive_visuals
+as $
+declare
+  claimed executive_visuals.jobs;
+begin
+  if p_worker_id is null or char_length(btrim(p_worker_id)) not between 1 and 128 then
+    raise exception 'worker_id must contain between 1 and 128 characters';
+  end if;
+  if p_lease_seconds is null or p_lease_seconds not between 15 and 900 then
+    raise exception 'lease_seconds must be between 15 and 900';
+  end if;
+
+  with candidate as (
+    select id
+    from executive_visuals.jobs
+    where status = 'queued'
+      and (available_at is null or available_at <= clock_timestamp())
+      and attempt_count < max_attempts
+    order by created_at, id
+    for update skip locked
+    limit 1
+  )
+  update executive_visuals.jobs as j
+  set status = 'processing',
+      progress = 5,
+      attempt_count = j.attempt_count + 1,
+      started_at = coalesce(j.started_at, clock_timestamp()),
+      updated_at = clock_timestamp(),
+      lease_owner = p_worker_id,
+      lease_expires_at = clock_timestamp() + make_interval(secs => p_lease_seconds),
+      lease_heartbeat_at = clock_timestamp()
+  from candidate
+  where j.id = candidate.id
+  returning j.* into claimed;
+
+  if claimed.id is not null then
+    return next claimed;
+  end if;
+  return;
+end;
+$;
+
+create or replace function executive_visuals.recover_expired_jobs(p_limit integer default 100)
+returns integer
+language plpgsql
+security definer
+set search_path = pg_catalog, executive_visuals
+as $
+declare
+  expired executive_visuals.jobs;
+  retryable boolean;
+  delay_seconds integer;
+  next_status text;
+  details jsonb;
+  recovered integer := 0;
+begin
+  if p_limit is null or p_limit not between 1 and 1000 then
+    raise exception 'limit must be between 1 and 1000';
+  end if;
+
+  for expired in
+    select *
+    from executive_visuals.jobs
+    where status = 'processing'
+      and (lease_expires_at is null or lease_expires_at <= clock_timestamp())
+    order by lease_expires_at nulls first, created_at
+    for update skip locked
+    limit p_limit
+  loop
+    retryable := expired.attempt_count < expired.max_attempts;
+    delay_seconds := case when retryable
+      then least(60, 1 * (2 ^ greatest(0, expired.attempt_count - 1)))
+      else 0 end;
+    next_status := case when retryable then 'queued' else 'failed' end;
+    details := jsonb_build_object(
+      'code', 'WORKER_LEASE_EXPIRED',
+      'message', 'The worker lease expired before the job completed.',
+      'retryable', retryable,
+      'retryDelaySeconds', delay_seconds
+    );
+
+    update executive_visuals.jobs
+    set status = next_status,
+        error = details,
+        updated_at = clock_timestamp(),
+        completed_at = case when retryable then null else clock_timestamp() end,
+        available_at = case when retryable then clock_timestamp() + make_interval(secs => delay_seconds) else null end,
+        lease_owner = null,
+        lease_expires_at = null,
+        lease_heartbeat_at = null
+    where id = expired.id;
+
+    insert into executive_visuals.job_events(job_id, owner_id, event_type, event_data)
+    values (
+      expired.id,
+      expired.owner_id,
+      case when retryable then 'job.lease_expired_retry' else 'job.lease_expired_failed' end,
+      details
+    );
+    recovered := recovered + 1;
+  end loop;
+  return recovered;
+end;
+$;
+
+revoke all on function executive_visuals.claim_next_job(text, integer) from public, anon, authenticated;
+revoke all on function executive_visuals.recover_expired_jobs(integer) from public, anon, authenticated;
+grant execute on function executive_visuals.claim_next_job(text, integer) to service_role;
+grant execute on function executive_visuals.recover_expired_jobs(integer) to service_role;
+
 
 
 -- Ownership is immutable even when an editor is allowed to update a shared record.
