@@ -45,7 +45,7 @@ export function addClip(timeline:EditorialTimeline,trackId:string,clip:TimelineC
   if(track.locked)throw new Error("Track is locked.");
   if(track.clips.some(item=>item.id===clip.id))throw new Error("Clip ID already exists.");
   if(clip.duration.value<=0||clip.sourceRange.duration.value<=0)throw new Error("Clip duration must be positive.");
-  if(Math.abs(seconds(clip.duration)-seconds(clip.sourceRange.duration))>0.000001)throw new Error("Timeline and source duration must match for constant-speed clips.");
+  if(Math.abs(seconds(clip.duration)-seconds(clip.sourceRange.duration))>Math.max(0.000001,0.5/clip.sourceRange.duration.rate))throw new Error("Timeline and source duration must match within half a source frame for constant-speed clips.");
   const next={...track,clips:[...track.clips,{...clip}].sort((a,b)=>seconds(a.timelineStart)-seconds(b.timelineStart))};
   const updated={...timeline,revision:timeline.revision+1,updatedAt:new Date().toISOString(),tracks:timeline.tracks.map(item=>item.id===trackId?next:item)};
   const validation=validateTimeline(updated);
@@ -121,6 +121,7 @@ export function validateTimeline(timeline:EditorialTimeline):{valid:boolean;issu
       const start=seconds(clip.timelineStart),duration=seconds(clip.duration);
       if(!clip.assetId)issues.push({code:"missing_asset",trackId:track.id,clipId:clip.id,message:"Clip has no source asset."});
       if(start<0||duration<=0||clip.sourceRange.start.value<0||clip.sourceRange.duration.value<=0)issues.push({code:"invalid_range",trackId:track.id,clipId:clip.id,message:"Clip has an invalid source or record range."});
+      if(Math.abs(duration-seconds(clip.sourceRange.duration))>Math.max(0.000001,0.5/clip.sourceRange.duration.rate))issues.push({code:"timebase_mismatch",trackId:track.id,clipId:clip.id,message:"Source and timeline durations differ by more than half a source frame."});
       if(start+0.000001<end)issues.push({code:"overlap",trackId:track.id,clipId:clip.id,message:"Clips overlap on the same track; use another track for overlays."});
       end=Math.max(end,start+duration);
     }
