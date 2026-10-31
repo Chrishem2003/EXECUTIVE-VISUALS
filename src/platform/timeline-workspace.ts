@@ -138,6 +138,19 @@ document.addEventListener("submit",event=>{
   catch(error){alert(error instanceof Error?error.message:String(error));return;}
   void persist().then(paint).catch(error=>{state.message=error.message;paint();});
  }
+ if(form.id==="tl-clip-inspector"){
+  event.preventDefault();const data=new FormData(form),trackId=form.dataset.track||"",clipId=form.dataset.clip||"";
+  const track=state.timeline.tracks.find(item=>item.id===trackId),clip=track?.clips.find(item=>item.id===clipId);if(!track||!clip)return;
+  const asset=state.assets.find(item=>item.id===clip.assetId);if(!asset)return;
+  const start=Math.max(0,Number(data.get("start"))||0),duration=Math.max(1,Number(data.get("duration"))||1),sourceIn=Math.max(0,Number(data.get("sourceIn"))||0),sourceFps=sourceRate(asset,track.kind);
+  clip.name=String(data.get("name")||clip.name).trim()||clip.name;
+  clip.timelineStart=rational(start,fps());clip.duration=rational(duration,fps());
+  clip.sourceRange={start:rational(sourceIn,sourceFps),duration:rational(duration/fps()*sourceFps,sourceFps)};
+  if(track.kind==="audio")clip.gainDb=Math.max(-60,Math.min(24,Number(data.get("gainDb"))||0));
+  if(track.kind==="overlay")clip.metadata={...clip.metadata,x:Number(data.get("x"))||0,y:Number(data.get("y"))||0,width:Math.max(16,Number(data.get("width"))||16),height:Math.max(16,Number(data.get("height"))||16),opacity:Math.max(0,Math.min(1,Number(data.get("opacity")??1)))};
+  if(track.kind==="caption")clip.metadata={...clip.metadata,fontName:String(data.get("fontName")||"DejaVu Sans"),fontSize:Math.max(12,Math.min(72,Number(data.get("fontSize"))||28)),alignment:Math.max(1,Math.min(9,Number(data.get("alignment"))||2)),marginV:Math.max(0,Math.min(240,Number(data.get("marginV"))||42))};
+  state.message="Saving clip properties…";void persist().then(paint).catch(error=>{state.message=error.message;paint();});
+ }
  if(form.id==="tl-add-marker"){
   event.preventDefault();const data=new FormData(form);
   state.timeline=addMarker(state.timeline,{id:crypto.randomUUID(),name:String(data.get("name")),start:rational(Math.max(0,Number(data.get("frame"))||0),fps()),color:"YELLOW"});
@@ -155,7 +168,9 @@ document.addEventListener("change",event=>{
  }
 });
 document.addEventListener("click",event=>{
- const target=event.target as HTMLElement,action=target.closest<HTMLElement>("[data-tl-action]");
+ const target=event.target as HTMLElement,select=target.closest<HTMLElement>("[data-tl-select]");
+ if(select&&state.timeline){state.selectedTrack=select.dataset.track||"";state.selectedClipId=select.dataset.clip||"";paint();}
+ const action=target.closest<HTMLElement>("[data-tl-action]");
  if(action)void runAction(action);
 });
 window.addEventListener("ev:authenticated",()=>void initTimelineWorkspace());
