@@ -23,6 +23,13 @@ if (!sql.includes("revoke all on schema executive_visuals from public, anon;")) 
 if (!sql.includes("grant usage on schema executive_visuals to authenticated, service_role;")) issues.push("Authenticated and server roles need schema usage.");
 if (!sql.includes("grant all privileges on all tables in schema executive_visuals to service_role;")) issues.push("Trusted server role needs table privileges.");
 if (!sql.includes("revoke update,delete on executive_visuals.jobs from authenticated;")) issues.push("Clients must not forge job state transitions.");
+if (!sql.includes("create trigger ev_workflow_runs_snapshot_immutable")) issues.push("Workflow run snapshots must be immutable.");
+if (!sql.includes("create policy ev_workflow_runs_read")) issues.push("Workflow run read policy is missing.");
+if (!sql.includes("create policy ev_workflow_node_runs_read")) issues.push("Per-node run history read policy is missing.");
+if (!sql.includes("revoke update,delete on executive_visuals.workflow_runs from authenticated;")) issues.push("Clients must not forge workflow run states.");
+if (!sql.includes("revoke insert,update,delete on executive_visuals.workflow_node_runs from authenticated;")) issues.push("Per-node run history must be server-written.");
+if (!sql.includes("status='awaiting_approval'") || !sql.includes("and job_id is null")) issues.push("Client workflow runs must begin in a gated, unsubmitted state.");
+if (!sql.includes("as $") || !sql.includes("end;\n$;")) issues.push("PL/pgSQL trigger functions must use valid dollar quoting.");
 if (!sql.includes("revoke update,delete on executive_visuals.workflow_runs from authenticated;")) issues.push("Clients must not forge workflow run states.");
 if (!sql.includes("status='awaiting_approval'") || !sql.includes("and job_id is null")) issues.push("Client workflow runs must begin in a gated, unsubmitted state.");
 if (!sql.includes("create policy ev_workflow_node_runs_read")) issues.push("Per-node run history read policy is missing.");
