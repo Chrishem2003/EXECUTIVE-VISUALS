@@ -8,7 +8,7 @@ import { generateFalVideo } from "./fal-video-gateway.mjs";
 import { storeGeneratedImage, storeGeneratedVideo, storeGeneratedAudio } from "./generated-assets.mjs";
 import { assertIdentityUseAllowed } from "./identity-consent.mjs";
 import { generateVoice, transcribeVoice } from "./voice-gateway.mjs";
-import { buildWebVtt, storeCaptionAsset } from "./captions.mjs";
+import { buildWebVtt, storeCaptionAsset, applyTranslatedSegments } from "./captions.mjs";
 import { readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { resolve, relative, sep } from "node:path";
@@ -159,6 +159,19 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
     if(checksum!==source.sha256)throw Object.assign(new Error("Audio asset checksum verification failed."),{code:"ASSET_CHECKSUM_MISMATCH"});
     const result=await transcribeVoice({buffer,mimeType:source.media_type,filename:source.original_name,language:String(config.language||"")});
     output=nodeOutput(node,result.text);output.transcript=result.text;output.text=result.text;output.language=result.language;output.duration=result.duration;output.segments=result.segments;output.sourceAssetId=source.id;output.sourceAudio=source.id;output.language=result.language;output.model=result.model;
+   }else if(node.kind==="voice.translate"){
+    if(!hasApprovedAncestor(graph,nodeId,outputs))throw Object.assign(new Error("A completed upstream human-approval node is required before caption translation."),{code:"APPROVAL_REQUIRED"});
+    const segments=values.segments??config.segments;
+    if(!Array.isArray(segments)||segments.length===0||segments.length>500)throw Object.assign(new Error("Caption translation accepts 1 to 500 timed segments per request."),{code:"TRANSLATION_SEGMENTS_INVALID"});
+    const targetLanguage=String(config.targetLanguage??values.targetLanguage??"").trim().slice(0,48);
+    if(!targetLanguage||!/^[\\p{L}\\p{M}0-9 _-]+$/u.test(targetLanguage))throw Object.assign(new Error("Choose a valid target language before translating captions."),{code:"TRANSLATION_LANGUAGE_REQUIRED"});
+    const sourceLanguage=String(values.language||config.sourceLanguage||"").slice(0,32);
+    const inputSegments=segments.map((segment,index)=>({index,text:String(segment?.text??"")}));
+    if(inputSegments.some(segment=>!segment.text.trim())||inputSegments.reduce((sum,item)=>sum+item.text.length,0)>30000)throw Object.assign(new Error("Caption text is empty or exceeds the 30,000-character translation limit."),{code:"TRANSLATION_SEGMENTS_INVALID"});
+    const result=await generateText({systemPrompt:"Translate each caption cue into the requested target language. Return only valid JSON with the exact shape {\\"segments\\":[{\\"index\\":0,\\"text\\":\\"translated cue\\"}]}. Preserve every index and cue order. Translate text only; do not add, remove or combine cues. Do not return timestamps or commentary.",prompt:JSON.stringify({sourceLanguage,targetLanguage,segments:inputSegments}),temperature:0.2,maxTokens:Math.min(4096,Math.max(512,segments.length*40))});
+    let payload;try{payload=JSON.parse(result.text.trim());}catch{throw Object.assign(new Error("Translation gateway did not return valid JSON caption cues."),{code:"TRANSLATION_RESPONSE_INVALID"});}
+    const translated=applyTranslatedSegments(segments,payload);
+    output=nodeOutput(node,translated);output.segments=translated;output.language=targetLanguage;output.sourceLanguage=sourceLanguage;output.usage=result.usage;output.model=result.model;
    }else if(node.kind==="voice.caption"){
     const segments=values.segments??config.segments;
     const sourceAssetId=String(values.sourceAudio??values.sourceAssetId??config.sourceAssetId??"");
