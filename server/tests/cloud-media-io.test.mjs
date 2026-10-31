@@ -42,6 +42,17 @@ test("publishes generated media using asset repository metadata and bytes",async
  assert.equal(call.args.ownerId,"owner-1");assert.equal(call.args.projectId,"project-1");assert.deepEqual(call.args.bytes,content);
  await rm(f.root,{recursive:true,force:true});
 });
+test("rejects oversized output before reading it into memory or calling the repository",async()=>{
+ const f=await fixture({maxBytes:5});const path=join(f.root,"large.mp4");await writeFile(path,Buffer.alloc(6));
+ await assert.rejects(()=>f.io.publish({ownerId:"owner-1",filename:"large.mp4",mediaType:"video/mp4",path}),e=>e.code==="CLOUD_MEDIA_TOO_LARGE");
+ assert.equal(f.calls.some(x=>x.op==="create"),false);await rm(f.root,{recursive:true,force:true});
+});
+test("rejects unsafe signed download URLs before making a request",async()=>{
+ const root=await mkdtemp(join(tmpdir(),"ev-media-test-")),calls=[];
+ const io=createCloudMediaAssetIO({tempRoot:root,assets:{async createSignedUrl(){return{url:"http://attacker.example/file",asset:{size:4,sha256:digest}}},async create(){}},fetchImpl:async()=>{calls.push("fetch");return response(content)}});
+ await assert.rejects(()=>io.materialize({ownerId:"owner-1",assetId:"asset-1"}),/unsafe signed URL/);
+ assert.equal(calls.length,0);await rm(root,{recursive:true,force:true});
+});
 test("requires explicit repository methods and valid limits",()=>{
  assert.throws(()=>createCloudMediaAssetIO({}),/asset repository/);
  assert.throws(()=>createCloudMediaAssetIO({assets:{createSignedUrl(){},create(){}},maxBytes:0}),/byte limit/);
