@@ -55,3 +55,10 @@ test("malformed, credential-bearing and insecure non-local URLs fail readiness",
  assert.equal(catalog.providers.find(x=>x.id==="text").status,"needs_configuration");
  assert.equal(catalog.providers.find(x=>x.id==="image").status,"needs_configuration");
 });
+
+test("unsupported image provider identifiers never appear ready",()=>{
+ const catalog=getProviderCatalog({IMAGE_GATEWAY_ENABLED:"true",IMAGE_GATEWAY_PROVIDER:"unknown",IMAGE_GATEWAY_URL:"https://images.example.test/v1",IMAGE_GATEWAY_MODEL:"model",IMAGE_GATEWAY_ALLOW_REMOTE:"true"});
+ const image=catalog.providers.find(item=>item.id==="image");
+ assert.equal(image.status,"needs_configuration");
+ assert.equal(findProviderForCapability(catalog,"image.generate",{allowRemote:true}),null);
+});
