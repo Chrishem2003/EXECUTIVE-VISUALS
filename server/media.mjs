@@ -1,9 +1,11 @@
 import { spawn, spawnSync } from "node:child_process";
-import { createReadStream, createWriteStream } from "node:fs";
+import { createReadStream } from "node:fs";
 import { mkdir, unlink } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { join, extname } from "node:path";
 import { pipeline } from "node:stream/promises";
+import { createHash } from "node:crypto";
+import { stat } from "node:fs/promises";
 import { Transform } from "node:stream";
 import { addJobEvent, getOwnedAsset, json, parseJson } from "./db.mjs";
 
@@ -92,14 +94,14 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
     if (["mp3","wav"].includes(ext)) args.push("-vn");
     if (videoCodec !== "copy" && !["mp3","wav"].includes(ext)) args.push("-c:v",videoCodec,"-preset",preset);
     else if (videoCodec === "copy" && !["mp3","wav"].includes(ext)) args.push("-c:v","copy");
-    if (audioCodec !== "copy") args.push("-c:a",audioCodec);
+    if (["mp3","wav"].includes(ext)) args.push("-c:a",ext==="mp3"?"libmp3lame":"pcm_s16le");\n    else if (audioCodec !== "copy") args.push("-c:a",audioCodec);
     else args.push("-c:a","copy");
     args.push(outputPath);
   }
   const outputPath = join(outputDir,id+"."+ext);
   await run("ffmpeg", args);
   if (cancelled()) { await unlink(outputPath).catch(()=>{}); throw Object.assign(new Error("Job cancelled."), { code:"JOB_CANCELLED" }); }
-  const { stat, createHash } = await import("node:fs/promises").then(async fs => ({ stat:fs.stat, createHash:(await import("node:crypto")).createHash }));
+  
   const fileStat = await stat(outputPath);
   const hash = createHash("sha256");
   await pipeline(createReadStream(outputPath), new Transform({ transform(chunk, enc, cb) { hash.update(chunk); cb(null, chunk); } }), new Transform({ transform(chunk, enc, cb) { cb(); } }));
