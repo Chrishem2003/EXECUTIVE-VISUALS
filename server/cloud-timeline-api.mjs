@@ -93,5 +93,21 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
    throw error;
   }
  }
- return Object.freeze({handle});
+ async function checkReadiness(){
+  const required=["projects","project_members","assets","timelines","jobs","job_events"];
+  for(const table of required){
+   const rows=await request(table+"?select=id&limit=0");
+   if(!Array.isArray(rows))throw new Error("Cloud timeline API readiness check failed for table "+table+".");
+  }
+  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs);
+  try{
+   const result=await fetchImpl(base+"/storage/v1/bucket/executive-visuals-media",{headers:{apikey:serviceRoleKey,authorization:"Bearer "+serviceRoleKey,accept:"application/json"},signal:controller.signal});
+   if(!result.ok)throw new Error("Cloud timeline API private storage bucket is unavailable (HTTP "+result.status+").");
+   const bucket=await result.json();
+   if(bucket.public===true)throw new Error("Cloud timeline API refuses a public media bucket.");
+  }catch(error){if(error?.name==="AbortError")throw new Error("Cloud timeline API storage readiness check timed out.");throw error;}
+  finally{clearTimeout(timer);}
+  return{ready:true,storage:"private",schema:"executive_visuals"};
+ }
+ return Object.freeze({handle,checkReadiness});
 }
