@@ -33,6 +33,7 @@
 | Database migration | Dedicated multi-tenant schema, row-level security, immutable workflow-run snapshots, server-only job/audit writes and private object-storage policies | Migration is committed and statically guarded; **not applied** to shared staging or another product's database |
 | Text-model adapter | Server-side chat-completions-compatible text gateway with request timeouts, sanitized errors, usage normalization, server-only credentials and upstream approval ancestry | Disabled by default; remote gateways require explicit server opt-in; no provider price estimator; local/remote endpoint must be configured |
 | Speech synthesis | Approved `voice.generate` workflow node using a provider-neutral speech gateway; checks presenter voice scope when an identity profile is selected; validates and stores MP3/WAV/FLAC/OGG narration as a private checksummed asset | Disabled by default; remote HTTPS requires explicit server opt-in; no live provider call used for verification; transcription, diarization, cloning, dubbing and lip-sync remain unimplemented |
+| Speech transcription | `voice.transcribe` workflow node accepts an accessible audio asset, verifies its path, size and SHA-256, requires upstream human approval, sends bounded multipart audio to the configured speech gateway and persists transcript, language, duration and timestamped segments in the immutable workflow node output | Disabled by default; shares server-side speech gateway and remote HTTPS opt-in; local mock-server end-to-end test; no provider call used |
 | Security posture | Restrictive HTML CSP, anti-framing, referrer and cross-origin headers; role-checked project documents; no provider secrets in browser | Cloud identity/session hardening still pending |
 | Quality checks | Capability parity, queue lease/retry tests, approval-gated AI workflow integration, project workspace API role/revision tests, workflow planner, timeline validation, real FFmpeg MP4 output/probe and pixel checks, API security tests, TypeScript and Vite build | CI verifies local behavior, not cloud durability or external media-generation providers |
 
@@ -60,7 +61,7 @@ A green build does not prove external provider execution, cloud durability, fram
 - Timeline preview playback, transitions, effects, animated/video overlays, cache invalidation and round-trip tests against an independent interchange implementation.
 - External image/video generation and enhancement remain provider-gated; approved speech synthesis is implemented through a separate provider-neutral gateway. Transcription, diarization, voice cloning, dubbing and lip-sync remain unimplemented.
 - Local model inventory, hardware preflight and model routing/benchmarking.
-- Transcription, diarization, dubbing and lip synchronization integrations; voice synthesis is implemented but remains disabled until a compatible gateway is configured.
+- Diarization, dubbing and lip synchronization integrations; speech synthesis and transcription are implemented as separately gated workflow nodes and remain disabled until configured.
 - 3D rendering, live capture, remote recording and stream ingest.
 - Review links, comments, annotations, sequence locks, presence and publish checkpoints.
 - Publishing, channel analytics and campaign feedback loops.
@@ -117,4 +118,14 @@ The existing voice-generation workflow node now has a real, provider-neutral Ope
 - Streams output with a hard 50 MiB cap, stores the generated narration as a private project asset, and records checksum plus generation provenance.
 - No provider credentials or live paid calls were used for verification; tests use a local mock HTTP server.
 
-This enables approved narration generation where a compatible provider is configured. It does not implement voice cloning, identity imitation, transcription, dubbing or lip-sync.
+This enables approved narration generation where a compatible provider is configured. It does not implement voice cloning, identity imitation, diarization, dubbing or lip-sync.
+
+## Approved audio transcription — connected workflow capability
+
+- Added a real `voice.transcribe` workflow node and a matching visual workflow-palette entry.
+- Requires an accessible audio asset, a completed upstream human-approval node, a verified storage path, a 50 MiB input cap and SHA-256 integrity verification before dispatch.
+- Sends multipart audio to the configured server-side speech gateway, requests timestamped verbose output, caps response size and transcript length, and normalizes language, duration and segment timestamps.
+- Transcript and timing data are saved in the workflow node-run output, preserving the source asset and run history without creating a mutable replacement.
+- Transcription is independently disabled by default with `VOICE_TRANSCRIPTION_ENABLED=false`; remote calls additionally require the existing explicit HTTPS gateway opt-in.
+- An end-to-end local mock-server test verifies the approval gate, source-audio integrity, multipart request and durable transcript output. No paid provider call was used.
+- This is transcription, not speaker diarization, voice cloning, dubbing or lip-sync.
