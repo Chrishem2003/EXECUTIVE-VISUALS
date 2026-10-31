@@ -96,7 +96,7 @@ export function createCloudTimelineRepository({url=process.env.SUPABASE_URL,serv
     async update({ownerId,timelineId,expectedRevision,timeline,otio}={}){
       ownerId=validOwner(ownerId);if(typeof timelineId!=="string"||!UUID.test(timelineId))throw new Error("Timeline ID must be a UUID.");
       if(!Number.isInteger(expectedRevision)||expectedRevision<1)throw new Error("Expected timeline revision must be a positive integer.");
-      const current=await this.get({ownerId,timelineId});if(!current){const error=new Error("Timeline not found.");error.code="CLOUD_TIMELINE_NOT_FOUND";throw error;}
+      const current=await getTimeline({ownerId,timelineId});if(!current){const error=new Error("Timeline not found.");error.code="CLOUD_TIMELINE_NOT_FOUND";throw error;}
       await allowed(ownerId,current.projectId,"write");await checkedDocument(ownerId,timeline);
       if(otio!==undefined&&otio!==null&&!object(otio))throw new Error("OTIO document must be a JSON object.");
       const body={timeline,revision:expectedRevision+1,updated_at:new Date().toISOString()};
@@ -106,7 +106,7 @@ export function createCloudTimelineRepository({url=process.env.SUPABASE_URL,serv
       return map(rows[0]);
     },
     async archive({ownerId,timelineId,expectedRevision}={}){
-      ownerId=validOwner(ownerId);const current=await this.get({ownerId,timelineId});if(!current){const error=new Error("Timeline not found.");error.code="CLOUD_TIMELINE_NOT_FOUND";throw error;}
+      ownerId=validOwner(ownerId);const current=await getTimeline({ownerId,timelineId});if(!current){const error=new Error("Timeline not found.");error.code="CLOUD_TIMELINE_NOT_FOUND";throw error;}
       await allowed(ownerId,current.projectId,"write");
       const rows=await request("timelines?id=eq."+encodeURIComponent(timelineId)+"&revision=eq."+expectedRevision+"&archived_at=is.null",{method:"PATCH",body:{archived_at:new Date().toISOString(),revision:expectedRevision+1,updated_at:new Date().toISOString()}});
       if(!Array.isArray(rows)||rows.length!==1){const error=new Error("Timeline changed before it could be archived.");error.code="CLOUD_TIMELINE_REVISION_CONFLICT";throw error;}
