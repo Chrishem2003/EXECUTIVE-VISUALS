@@ -231,7 +231,7 @@ export const CAPABILITY_ATLAS: readonly CapabilityDefinition[] = [
     [p("result","timeline-package","Round-trip package and compatibility report")], {execution:["local","sync"]}),
   spec("quality.preflight", "quality", "Validate media delivery requirements",
     [p("asset","asset","Candidate deliverable"),p("profile","structured-data","Target delivery profile")],
-    [p("report","structured-data","Technical and accessibility checks")], {execution:["sync"]})
+    [p("report","structured-data","Technical and accessibility checks")], {execution:["sync"]}),
 
   spec("timeline.sequence", "editing", "Create and version an editorial sequence",
     [p("project","structured-data","Project and sequence settings"),p("frame-rate","structured-data","Rational frame rate")],
