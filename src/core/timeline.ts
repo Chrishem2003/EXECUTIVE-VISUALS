@@ -89,7 +89,7 @@ export function moveClip(timeline:EditorialTimeline,fromTrackId:string,clipId:st
   if(!from||!to)throw new Error("Source or destination track not found.");
   if(from.locked||to.locked)throw new Error("Source or destination track is locked.");
   const clip=from.clips.find(item=>item.id===clipId);if(!clip)throw new Error("Clip not found.");
-  if(to.clips.some(item=>item.id===clipId))throw new Error("Destination already contains this clip.");
+  if(fromTrackId!==toTrackId&&to.clips.some(item=>item.id===clipId))throw new Error("Destination already contains this clip.");
   const fps=timeline.frameRate.numerator/timeline.frameRate.denominator;
   const moved={...clip,timelineStart:rational(Math.max(0,Math.floor(toFrame)),fps)};
   const tracks=fromTrackId===toTrackId
