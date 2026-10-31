@@ -131,10 +131,15 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
     if (!sourceId) throw Object.assign(new Error("Cloud media job requires a source asset."), { code: "SOURCE_ASSET_NOT_FOUND" });
     const materialized = await mediaIO.materialize({ ownerId: job.owner_id, assetId: sourceId });
     const directory = tempRoot || undefined;
-    const workDir = await import("node:fs/promises").then(fs => fs.mkdtemp(join(directory || process.env.TMPDIR || "/tmp", "ev-cloud-job-")));
+    const workDir = await mkdtemp(join(tempRoot || tmpdir(), "ev-cloud-job-"));
     const extension = extname(materialized.asset.name || "").slice(0, 12);
     const sourcePath = join(workDir, "source" + extension);
-    const outputPath = join(workDir, randomUUID() + ".out");
+    const outputExtension = job.job_type === "media.thumbnail" ? "jpg"
+      : job.job_type === "media.audio_extract" ? "mp3"
+      : job.job_type === "media.audio-clean" ? "wav"
+      : ["media.denoise", "media.color", "media.resize", "media.interpolate", "media.upscale", "media.proxy"].includes(job.job_type) ? "mp4"
+      : String(input.container || "mp4").toLowerCase();
+    const outputPath = join(workDir, randomUUID() + "." + outputExtension);
     try {
       await copyFile(materialized.path, sourcePath);
       if (job.job_type === "media.probe") {
