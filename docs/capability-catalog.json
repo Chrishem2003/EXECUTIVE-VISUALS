@@ -19,6 +19,7 @@
     "image",
     "integration",
     "localization",
+    "motion",
     "operations",
     "preproduction",
     "production",
@@ -512,6 +513,71 @@
       "assets.retention-verify",
       "assets",
       "Verify output availability and retention policy"
+    ],
+    [
+      "operations.model-benchmark",
+      "operations",
+      "Benchmark candidate models against a shared evaluation set"
+    ],
+    [
+      "operations.model-route",
+      "operations",
+      "Route a task to the best eligible model"
+    ],
+    [
+      "design.template-autofill",
+      "design",
+      "Populate reusable designs from structured data"
+    ],
+    [
+      "design.brand-glossary",
+      "design",
+      "Manage brand terminology and localization rules"
+    ],
+    [
+      "collaboration.live-presence",
+      "collaboration",
+      "Coordinate presence and editing locks in shared sessions"
+    ],
+    [
+      "editing.proxy-review",
+      "editing",
+      "Review low-bandwidth proxies with source-linked annotations"
+    ],
+    [
+      "capture.remote-recording",
+      "capture",
+      "Record remote participants as synchronized isolated tracks"
+    ],
+    [
+      "production.analytics-feedback",
+      "production",
+      "Turn campaign performance into creative recommendations"
+    ],
+    [
+      "motion.template-render",
+      "motion",
+      "Render parameterized motion-graphics templates"
+    ],
+    [
+      "video.continuity-check",
+      "video",
+      "Evaluate visual and narrative continuity across shots"
+    ],
+    [
+      "assets.semantic-search",
+      "assets",
+      "Find media by meaning, content and production context"
+    ],
+    [
+      "workflow.version-diff",
+      "workflow",
+      "Compare two workflow revisions"
+    ],
+    [
+      "workflow.batch-execution",
+      "workflow",
+      "Execute a workflow against a batch of inputs"
     ]
   ],
   "requiredCapabilityFields": [
@@ -561,6 +627,6 @@
     "Secrets never enter client bundles, prompts or logs."
   ],
   "sourceOfTruth": "src/core/capability-atlas.ts",
-  "capabilityCount": 97,
-  "domainCount": 22
+  "capabilityCount": 110,
+  "domainCount": 23
 }
