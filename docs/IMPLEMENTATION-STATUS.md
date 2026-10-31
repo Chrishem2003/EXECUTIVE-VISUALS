@@ -22,7 +22,7 @@
 | Media ingest | Binary uploads to local disk, MIME allowlist, upload-size limit and SHA-256 checksum | Local disk; cloud object storage not connected |
 | Asset library | Owner isolation, metadata, original/derivative relationship, private file reads, image/video/audio/document previews and processing history | Local media volume; no cloud storage or signed URLs yet |
 | Job queue | Persistent queue, idempotency keys, normalized states, progress events, renewable worker leases, stale-worker recovery, bounded retries with exponential backoff, cross-process cancellation polling and audit trail | Multi-process lease coordination on a shared SQLite database; multi-host workers still require a shared Postgres queue |
-| Local media engine | Probe, thumbnail, transcode, audio extraction, proxy generation, video denoise, color correction, resize/reframe, frame interpolation, FFmpeg scaling and timeline MP4 master rendering | Requires FFmpeg/FFprobe; enhancement operations are video-only; neural restoration, advanced stabilization, animated/video overlays, transitions and advanced effects remain pending |
+| Local media engine | Probe, thumbnail, transcode, audio extraction, proxy generation, video denoise, color correction, resize/reframe, frame interpolation, FFmpeg scaling, audio denoise/loudness normalization and timeline MP4 master rendering | Requires FFmpeg/FFprobe; enhancement operations are video-only; neural restoration, advanced stabilization, animated/video overlays, transitions and advanced effects remain pending |
 | Runtime console | Sign-in, project creation, persistent asset library, live engine readiness, uploads, media job submission, job inspection and audit view | Browser UI uses the local API; creative briefs, shot lists and characters sync to project workspace documents |
 | Project collaboration | Owner-managed invitations with editor, reviewer and viewer roles; access revocation enforced across project records | Existing local accounts only; invitation email delivery not connected |
 | Review and approvals | Timecoded comments, approve/request-changes decisions and status updates | Local API persistence; external review links and visual drawing annotations not implemented |
@@ -74,7 +74,7 @@ A green build does not prove external provider execution, cloud durability, fram
 
 The shared production engine now exposes a first set of local, FFmpeg-backed finishing operations through the same persistent job and asset-lineage path as existing media processing:
 
-- Video denoise using bounded `hqdn3d` parameters.
+- Video denoise using bounded `hqdn3d` parameters.\n- Speech cleanup using `afftdn` noise reduction and `loudnorm` normalization to a bounded target loudness.
 - Color correction using bounded brightness, contrast and saturation.
 - Aspect-ratio reframing with contain/cover modes and safe even-dimension output.
 - Frame interpolation using bounded `minterpolate` frame rates.
@@ -82,4 +82,4 @@ The shared production engine now exposes a first set of local, FFmpeg-backed fin
 
 These operations are available to workflow graphs as `media.denoise`, `media.color`, `media.resize`, `media.interpolate` and `media.upscale` (with `video.resize` mapped to the same resize adapter). They require an accessible video source and create a new private MP4 derivative with SHA-256 lineage; original source media is preserved. All numeric inputs and fit modes are bounded and shell commands are passed as argument arrays, not user-built shell strings.
 
-The build now includes a real FFmpeg/FFprobe fixture check for each operation plus invalid-parameter rejection tests. These are local media operations; they do not imply remote model-based restoration, face retouching, generative object removal, advanced stabilization, or paid enhancement services are available. The production UI's enhancement workspace still needs to be wired to these persistent API jobs rather than merely creating planning tasks.
+The build now includes real FFmpeg/FFprobe fixture checks for each video operation and speech cleanup, plus invalid-parameter rejection tests. These are local media operations; they do not imply remote model-based restoration, face retouching, generative object removal, advanced stabilization, or paid enhancement services are available. The production UI's enhancement workspace still needs to be wired to these persistent API jobs rather than merely creating planning tasks.
