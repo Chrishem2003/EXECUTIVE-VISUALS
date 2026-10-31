@@ -93,11 +93,13 @@ All remote jobs must be idempotent, bounded by timeouts and retry policy, rate-l
 
 - Hugging Face Inference Providers: https://huggingface.co/docs/inference-providers/index
 - Hugging Face Diffusers: https://huggingface.co/docs/diffusers/main/index
+- fal.ai queue API: https://fal.ai/docs/api-reference/inference-api/queue/submit
 - Runway developer API: https://docs.dev.runwayml.com/
 - Replicate webhooks: https://replicate.com/docs/topics/webhooks
 - Remotion rendering: https://www.remotion.dev/docs/render
 - FFmpeg documentation: https://www.ffmpeg.org/documentation.html
 - n8n documentation/API: https://docs.n8n.io/ and https://docs.n8n.io/api/
+- OpenTelemetry: https://opentelemetry.io/docs/what-is-opentelemetry/
 - Google Gemini API video generation: https://ai.google.dev/gemini-api/docs/video
 - OpenAI audio guide: https://developers.openai.com/api/docs/guides/audio
 
