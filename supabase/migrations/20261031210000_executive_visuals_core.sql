@@ -91,6 +91,36 @@ create table if not exists executive_visuals.jobs (
   unique(owner_id,idempotency_key)
 );
 
+create table if not exists executive_visuals.workflow_runs (
+  id uuid primary key default gen_random_uuid(),
+  workflow_id uuid not null references executive_visuals.workflows(id) on delete cascade,
+  owner_id uuid not null references auth.users(id) on delete cascade,
+  project_id uuid references executive_visuals.projects(id) on delete cascade,
+  workflow_revision integer not null check (workflow_revision > 0),
+  snapshot_hash text not null check (char_length(snapshot_hash)=64),
+  snapshot jsonb not null check (jsonb_typeof(snapshot)='object'),
+  status text not null check (status in ('queued','running','awaiting_approval','completed','partial','failed','blocked','cancelled')),
+  job_id uuid references executive_visuals.jobs(id) on delete set null,
+  error jsonb check (error is null or jsonb_typeof(error)='object'),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  completed_at timestamptz
+);
+
+create table if not exists executive_visuals.workflow_node_runs (
+  id uuid primary key default gen_random_uuid(),
+  run_id uuid not null references executive_visuals.workflow_runs(id) on delete cascade,
+  node_id text not null,
+  status text not null check (status in ('pending','running','completed','failed','blocked','awaiting_approval','skipped')),
+  attempt integer not null default 0 check (attempt >= 0),
+  input jsonb not null default '{}'::jsonb check (jsonb_typeof(input)='object'),
+  output jsonb check (output is null or jsonb_typeof(output)='object'),
+  error jsonb check (error is null or jsonb_typeof(error)='object'),
+  started_at timestamptz,
+  completed_at timestamptz,
+  unique(run_id,node_id)
+);
+
 create table if not exists executive_visuals.job_events (
   id bigint generated always as identity primary key,
   job_id uuid not null references executive_visuals.jobs(id) on delete cascade,
@@ -145,6 +175,9 @@ create index if not exists ev_assets_owner_created on executive_visuals.assets(o
 create index if not exists ev_assets_project_created on executive_visuals.assets(project_id,created_at desc);
 create index if not exists ev_jobs_status_created on executive_visuals.jobs(status,created_at);
 create index if not exists ev_jobs_owner_created on executive_visuals.jobs(owner_id,created_at desc);
+create index if not exists ev_workflow_runs_workflow on executive_visuals.workflow_runs(workflow_id,created_at desc);
+create index if not exists ev_workflow_runs_owner on executive_visuals.workflow_runs(owner_id,created_at desc);
+create index if not exists ev_workflow_node_runs_run on executive_visuals.workflow_node_runs(run_id,node_id);
 create index if not exists ev_job_events_job on executive_visuals.job_events(job_id,id);
 create index if not exists ev_reviews_project_created on executive_visuals.reviews(project_id,created_at);
 create index if not exists ev_audit_owner_id on executive_visuals.audit_events(owner_id,id desc);
@@ -186,6 +219,8 @@ for each row execute function executive_visuals.prevent_owner_reassignment();
 alter table executive_visuals.projects enable row level security;
 alter table executive_visuals.project_members enable row level security;
 alter table executive_visuals.workflows enable row level security;
+alter table executive_visuals.workflow_runs enable row level security;
+alter table executive_visuals.workflow_node_runs enable row level security;
 alter table executive_visuals.assets enable row level security;
 alter table executive_visuals.timelines enable row level security;
 alter table executive_visuals.jobs enable row level security;
@@ -197,6 +232,7 @@ alter table executive_visuals.audit_events enable row level security;
 grant select,insert,update,delete on all tables in schema executive_visuals to authenticated;
 revoke insert,update,delete on executive_visuals.job_events from authenticated;
 revoke update,delete on executive_visuals.jobs from authenticated;
+revoke insert,update,delete on executive_visuals.workflow_node_runs from authenticated;
 revoke insert,update,delete on executive_visuals.audit_events from authenticated;
 grant usage,select on all sequences in schema executive_visuals to authenticated;
 
@@ -231,6 +267,15 @@ with check (owner_id=(select auth.uid()) and (project_id is null or exists (sele
 using (owner_id=(select auth.uid()) or exists (select 1 from executive_visuals.projects p where p.id=workflows.project_id and p.owner_id=(select auth.uid())) or exists (select 1 from executive_visuals.project_members m where m.project_id=workflows.project_id and m.member_id=(select auth.uid()) and m.role='editor'))
 with check ((project_id is null and owner_id=(select auth.uid())) or exists (select 1 from executive_visuals.projects p where p.id=project_id and p.owner_id=(select auth.uid())) or exists (select 1 from executive_visuals.project_members m where m.project_id=project_id and m.member_id=(select auth.uid()) and m.role='editor'));create policy ev_workflows_delete on executive_visuals.workflows for delete to authenticated
 using (owner_id=(select auth.uid()) or exists (select 1 from executive_visuals.projects p where p.id=workflows.project_id and p.owner_id=(select auth.uid())));
+create policy ev_workflow_runs_read on executive_visuals.workflow_runs for select to authenticated
+using (owner_id=(select auth.uid()) or exists (select 1 from executive_visuals.projects p where p.id=workflow_runs.project_id and p.owner_id=(select auth.uid())) or exists (select 1 from executive_visuals.project_members m where m.project_id=workflow_runs.project_id and m.member_id=(select auth.uid())));
+create policy ev_workflow_runs_insert on executive_visuals.workflow_runs for insert to authenticated
+with check (owner_id=(select auth.uid()) and (project_id is null or exists (select 1 from executive_visuals.projects p where p.id=project_id and p.owner_id=(select auth.uid())) or exists (select 1 from executive_visuals.project_members m where m.project_id=project_id and m.member_id=(select auth.uid()) and m.role='editor')));
+create policy ev_workflow_runs_update on executive_visuals.workflow_runs for update to authenticated
+using (owner_id=(select auth.uid()) or exists (select 1 from executive_visuals.projects p where p.id=workflow_runs.project_id and p.owner_id=(select auth.uid())) or exists (select 1 from executive_visuals.project_members m where m.project_id=workflow_runs.project_id and m.member_id=(select auth.uid()) and m.role='editor'))
+with check (owner_id=(select auth.uid()) or exists (select 1 from executive_visuals.projects p where p.id=workflow_runs.project_id and p.owner_id=(select auth.uid())) or exists (select 1 from executive_visuals.project_members m where m.project_id=workflow_runs.project_id and m.member_id=(select auth.uid()) and m.role='editor'));
+create policy ev_workflow_node_runs_read on executive_visuals.workflow_node_runs for select to authenticated
+using (exists (select 1 from executive_visuals.workflow_runs r where r.id=workflow_node_runs.run_id and (r.owner_id=(select auth.uid()) or exists (select 1 from executive_visuals.projects p where p.id=r.project_id and p.owner_id=(select auth.uid())) or exists (select 1 from executive_visuals.project_members m where m.project_id=r.project_id and m.member_id=(select auth.uid())))));
 create policy ev_timelines_read on executive_visuals.timelines for select to authenticated
 using (owner_id=(select auth.uid()) or exists (select 1 from executive_visuals.projects p where p.id=timelines.project_id and p.owner_id=(select auth.uid())) or exists (select 1 from executive_visuals.project_members m where m.project_id=timelines.project_id and m.member_id=(select auth.uid())));create policy ev_timelines_insert on executive_visuals.timelines for insert to authenticated
 with check (owner_id=(select auth.uid()) and (project_id is null or exists (select 1 from executive_visuals.projects p where p.id=project_id and p.owner_id=(select auth.uid())) or exists (select 1 from executive_visuals.project_members m where m.project_id=project_id and m.member_id=(select auth.uid()) and m.role='editor')));create policy ev_timelines_update on executive_visuals.timelines for update to authenticated
