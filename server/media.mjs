@@ -9,7 +9,7 @@ import { stat } from "node:fs/promises";
 import { Transform } from "node:stream";
 import { addJobEvent, getAccessibleAsset, json, parseJson } from "./db.mjs";
 
-const ALLOWED_JOBS = new Set(["media.probe", "media.thumbnail", "media.transcode", "media.audio_extract", "media.proxy", "timeline.render"]);
+const ALLOWED_JOBS = new Set(["media.probe", "media.thumbnail", "media.transcode", "media.audio_extract", "media.proxy", "media.denoise", "media.color", "media.resize", "media.interpolate", "media.upscale", "timeline.render"]);
 const CONTAINERS = new Set(["mp4", "webm", "mov", "mkv", "mp3", "wav"]);
 const VIDEO_CODECS = new Set(["libx264", "libx265", "libvpx-vp9", "copy"]);
 const AUDIO_CODECS = new Set(["aac", "libmp3lame", "libopus", "copy"]);
@@ -63,6 +63,30 @@ function captionStyle(metadata={}){
  const colour=value=>/^&H[0-9A-Fa-f]{8}$/.test(String(value||""))?String(value):null;
  const primary=colour(metadata.primaryColour)||"&H00FFFFFF",outlineColour=colour(metadata.outlineColour)||"&H00000000";
  return ["FontName="+fontName,"FontSize="+fontSize,"PrimaryColour="+primary,"OutlineColour="+outlineColour,"Outline="+outline,"Shadow="+shadow,"Alignment="+alignment,"MarginV="+marginV].join(",");
+}
+export function buildMediaOperationArgs({jobType,input={},sourcePath,outputPath}){
+ const fail=message=>{throw Object.assign(new Error(message),{code:"INVALID_MEDIA_OPTIONS"})};
+ const number=(value,fallback,min,max)=>{const parsed=Number(value??fallback);if(!Number.isFinite(parsed)||parsed<min||parsed>max)fail("Media operation parameter is outside the supported range.");return parsed};
+ const base=["-hide_banner","-y","-i",sourcePath],video=["-c:v","libx264","-preset","veryfast","-crf","19","-pix_fmt","yuv420p","-c:a","aac","-b:a","192k","-movflags","+faststart",outputPath];
+ let filter;
+ if(jobType==="media.denoise"){
+  const luma=number(input.luma,4,0,10),chroma=number(input.chroma,3,0,10);
+  filter=`hqdn3d=${luma.toFixed(2)}:${chroma.toFixed(2)}:${(luma*0.75).toFixed(2)}:${(chroma*0.75).toFixed(2)}`;
+ }else if(jobType==="media.color"){
+  const brightness=number(input.brightness,0,-1,1),contrast=number(input.contrast,1,0,2),saturation=number(input.saturation,1,0,3);
+  filter=`eq=brightness=${brightness.toFixed(3)}:contrast=${contrast.toFixed(3)}:saturation=${saturation.toFixed(3)}`;
+ }else if(jobType==="media.resize"||jobType==="media.upscale"){
+  const width=Math.round(number(input.width,jobType==="media.upscale"?2560:1920,256,4320)/2)*2;
+  const height=Math.round(number(input.height,jobType==="media.upscale"?1440:1080,144,4320)/2)*2;
+  const mode=String(input.fit||"contain");
+  if(!["contain","cover"].includes(mode))fail("Choose contain or cover for the resize fit mode.");
+  filter=mode==="cover"?`scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height}`:`scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:color=black`;
+  filter+=",setsar=1";
+ }else if(jobType==="media.interpolate"){
+  const fps=number(input.fps,30,24,60);
+  filter=`minterpolate=fps=${fps.toFixed(3)}:mi_mode=mci:mc_mode=aobmc:me_mode=bidir:vsbmc=1`;
+ }else fail("Unsupported local media operation.");
+ return [...base,"-vf",filter,...video];
 }
 export function executableAvailable(name) {
   const executable=name==="ffmpeg"?(process.env.FFMPEG_PATH||name):name==="ffprobe"?(process.env.FFPROBE_PATH||name):name;
@@ -269,6 +293,10 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
   } else if (job.job_type === "media.audio_extract") {
     ext = "mp3"; outputName = source.original_name.replace(/\.[^.]+$/, "")+"-audio.mp3"; mime = "audio/mpeg";
     args = ["-hide_banner","-y","-i",sourcePath,"-vn","-c:a","libmp3lame","-q:a","2",join(outputDir,id+"."+ext)];
+  } else if(["media.denoise","media.color","media.resize","media.interpolate","media.upscale"].includes(job.job_type)){
+    if(!source.media_type.startsWith("video/"))throw Object.assign(new Error("This enhancement operation currently requires a video source."),{code:"UNSUPPORTED_MEDIA_TYPE"});
+    ext="mp4";mime="video/mp4";outputName=source.original_name.replace(/\\.[^.]+$/,"")+"-"+job.job_type.split(".")[1]+".mp4";
+    args=buildMediaOperationArgs({jobType:job.job_type,input,sourcePath,outputPath:join(outputDir,id+"."+ext)});
   } else {
     const container = String(input.container || (job.job_type === "media.proxy" ? "mp4" : "mp4")).toLowerCase();
     if (!CONTAINERS.has(container) || ["mp3","wav"].includes(container) && job.job_type !== "media.transcode") {
