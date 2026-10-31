@@ -12,6 +12,8 @@ const esc=(value:unknown)=>String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;"
 const fmt=(value:string)=>new Date(value).toLocaleString();
 function statusMarkup(){return '<span class="runtime-status '+state.status+'"><i></i>'+esc(state.status==="online"?"API CONNECTED":state.status==="auth-required"?"SIGN IN REQUIRED":state.status==="offline"?"OFFLINE":"CONNECTING")+'</span>';}
 function updateShell(){
+ const projectLabel=document.querySelector<HTMLElement>("#project-name");
+ if(projectLabel)projectLabel.textContent=state.projects.find(project=>project.id===state.projectId)?.name||"No project selected";
  const foot=document.querySelector<HTMLElement>(".sidebar-foot small");
  if(foot)foot.textContent=state.status==="online"?"Persistent API · "+(state.user?.email||"authenticated"):state.status==="auth-required"?"Sign in to enable persistent projects":state.status==="offline"?"API offline · local planning only":"Connecting to local API";
  const badge=document.querySelector<HTMLElement>(".local-badge");
