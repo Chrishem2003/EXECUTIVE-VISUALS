@@ -21,7 +21,7 @@ const palette:Record<string,{kind:WorkflowNodeKind;label:string;inputs:WorkflowP
  transcode:{kind:"utility.convert",label:"Convert / Compress",inputs:[port("asset","asset",true)],outputs:[port("asset","asset")]},
  timeline:{kind:"timeline",label:"Render Saved Timeline",inputs:[],outputs:[port("video","video")]},
  upscale:{kind:"media.upscale",label:"Image Upscale",inputs:[port("image","image",true)],outputs:[port("image","image")]},
- approval:{kind:"approval",label:"Human Approval",inputs:[port("media","media",true)],outputs:[port("media","media")]},
+ approval:{kind:"approval",label:"Human Approval",inputs:[port("input","any",true)],outputs:[port("result","any"),port("approved","structured-data")]},
  quality:{kind:"quality-check",label:"Quality Gate",inputs:[port("media","media",true)],outputs:[port("report","structured-data")]},
  export:{kind:"export",label:"Export Deliverable",inputs:[port("media","media",true)],outputs:[port("deliverable","asset")]},
  merge:{kind:"merge",label:"Merge Branches",inputs:[port("items","any",true,true)],outputs:[port("result","any")]},
