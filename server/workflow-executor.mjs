@@ -15,12 +15,13 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
  if(!run)throw Object.assign(new Error("Workflow run not found."),{code:"WORKFLOW_RUN_NOT_FOUND"});
  const graph=parseJson(run.snapshot_json),validation=validateWorkflowGraph(graph);
  if(!validation.valid)throw Object.assign(new Error("Saved workflow snapshot failed validation."),{code:"WORKFLOW_INVALID",details:validation.issues});
+ const executionOrder=Array.isArray(graph.runPlan?.executionOrder)?graph.runPlan.executionOrder:validation.executionOrder;
  db.prepare("UPDATE workflow_runs SET status='running',updated_at=? WHERE id=?").run(now(),runId);
  const stored=db.prepare("SELECT * FROM workflow_node_runs WHERE run_id=?").all(runId);
  const completed=new Map(stored.filter(row=>row.status==="completed").map(row=>[row.node_id,parseJson(row.output_json,{})]));
- const outputs=new Map(completed),nodeCount=Math.max(1,validation.executionOrder.length);
+ const outputs=new Map(completed),nodeCount=Math.max(1,executionOrder.length);
  let completedCount=completed.size;
- for(const nodeId of validation.executionOrder){
+ for(const nodeId of executionOrder){
   const currentJob=db.prepare("SELECT status FROM jobs WHERE id=?").get(job.id);
   if(currentJob?.status==="cancelled"){
    db.prepare("UPDATE workflow_runs SET status='cancelled',updated_at=?,completed_at=? WHERE id=?").run(now(),now(),runId);
@@ -29,6 +30,23 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
   }
   const node=graph.nodes.find(item=>item.id===nodeId);if(!node)continue;
   if(outputs.has(nodeId))continue;
+  if(node.locked&&(node.lockedOutputIds?.length||0)>0){
+   const lockedOutput={};
+   for(let index=0;index<(node.outputs||[]).length;index++){
+    const assetId=String(node.lockedOutputIds[index]||"");
+    if(!assetId)continue;
+    const asset=getAccessibleAsset(db,job.owner_id,assetId,false);
+    if(!asset)throw Object.assign(new Error("Locked output asset is missing or inaccessible: "+assetId),{code:"LOCKED_OUTPUT_MISSING"});
+    lockedOutput[node.outputs[index].id]=asset.id;lockedOutput.asset=asset.id;lockedOutput.media=asset.id;
+    if(asset.media_type.startsWith("image/"))lockedOutput.image=asset.id;
+    if(asset.media_type.startsWith("video/"))lockedOutput.video=asset.id;
+    if(asset.media_type.startsWith("audio/"))lockedOutput.audio=asset.id;
+   }
+   outputs.set(nodeId,lockedOutput);
+   saveNode(db,runId,nodeId,"skipped",{input:{locked:true},output:lockedOutput,attempt:0});
+   completedCount++;onProgress(Math.min(95,Math.round(completedCount/nodeCount*95)));
+   continue;
+  }
   const values={};
   for(const edge of graph.edges.filter(item=>item.targetNodeId===nodeId)){
    const upstream=outputs.get(edge.sourceNodeId)||{};
