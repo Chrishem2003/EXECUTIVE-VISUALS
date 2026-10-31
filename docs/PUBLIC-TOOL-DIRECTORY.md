@@ -156,10 +156,8 @@ The public workspace shell exposes Home, Video, Image and Recents. It also expos
 - OOTD Track — https://wink.ai/template-to-video/upload?templateId=ai_imagination_OOTDTrack
 - Fireworks Film — https://wink.ai/template-to-video/upload?templateId=ai_imagination_FireworksFilm
 - 3D camera movement — https://wink.ai/template-to-video/upload?templateId=ai_imagination_3Dcameramovement
-- Hot — https://wink.ai/template-to-image/upload?templateId=35
-- Hot — https://wink.ai/template-to-image/upload?templateId=50
 
-Extracted unique destinations: 51.
+Extracted unique destinations: 49 after excluding two badge-image artifacts.
 
 ## Product interpretation
 
