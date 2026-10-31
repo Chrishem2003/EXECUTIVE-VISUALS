@@ -29,8 +29,11 @@ export async function generateVoice({text,voice,format="mp3",speed=1}={}){
   if(!response.ok)throw fail("Voice gateway rejected the request ("+response.status+").","VOICE_GATEWAY_REQUEST_REJECTED");
   const declared=Number(response.headers.get("content-length")||0);
   if(declared>MAX_AUDIO_BYTES)throw fail("Generated audio exceeds the 50 MiB limit.","VOICE_GATEWAY_INVALID_RESPONSE");
-  const buffer=Buffer.from(await response.arrayBuffer());
-  if(!buffer.length||buffer.length>MAX_AUDIO_BYTES)throw fail("Generated audio is empty or exceeds the 50 MiB limit.","VOICE_GATEWAY_INVALID_RESPONSE");
+  if(!response.body?.getReader)throw fail("Voice gateway response cannot be streamed safely.","VOICE_GATEWAY_INVALID_RESPONSE");
+  const reader=response.body.getReader(),chunks=[];let total=0;
+  try{while(true){const {done,value}=await reader.read();if(done)break;total+=value.byteLength;if(total>MAX_AUDIO_BYTES){await reader.cancel().catch(()=>{});throw fail("Generated audio exceeds the 50 MiB limit.","VOICE_GATEWAY_INVALID_RESPONSE")}chunks.push(Buffer.from(value))}}finally{reader.releaseLock()}
+  const buffer=Buffer.concat(chunks,total);
+  if(!buffer.length)throw fail("Voice gateway returned empty audio.","VOICE_GATEWAY_INVALID_RESPONSE");
   const type=String(response.headers.get("content-type")||"").split(";")[0].trim().toLowerCase();
   const signature=buffer.length>=12&&buffer.toString("ascii",0,4)==="RIFF"&&buffer.toString("ascii",8,12)==="WAVE"
    ?"wav":buffer.length>=3&&buffer[0]===0x49&&buffer[1]===0x44&&buffer[2]===0x33||buffer.length>=2&&buffer[0]===0xff&&(buffer[1]&0xe0)===0xe0
