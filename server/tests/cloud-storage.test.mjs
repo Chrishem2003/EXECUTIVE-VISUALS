@@ -39,6 +39,12 @@ test("streams media files to private storage and returns the streamed checksum",
  assert.equal(calls[0].options.headers["content-length"],String(bytes.length));
  await rm(root,{recursive:true,force:true});
 });
+test("rejects oversized files before starting a streaming storage request",async()=>{
+ const root=await mkdtemp(join(tmpdir(),"ev-storage-limit-")),file=join(root,"large.mp4");await writeFile(file,Buffer.alloc(5));
+ let called=false;const storage=createCloudStorage({...config,maxBytes:4,fetchImpl:async()=>{called=true;return response({});}});
+ await assert.rejects(()=>storage.uploadFile(path,file,"video/mp4"),/size limit/);
+ assert.equal(called,false);await rm(root,{recursive:true,force:true});
+});
 test("signed URLs are short-lived, validated and pinned to the configured origin",async()=>{
  const calls=[];
  const storage=createCloudStorage({...config,fetchImpl:async(url,options)=>{calls.push({url,options});return response({signedURL:"/object/sign/executive-visuals-media/"+path+"?token=temporary"});}});
