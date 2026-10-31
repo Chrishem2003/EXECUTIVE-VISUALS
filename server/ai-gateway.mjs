@@ -9,6 +9,7 @@ export async function generateText({prompt,systemPrompt="",temperature=0.7,maxTo
   if(base.username||base.password||base.search||base.hash)throw Object.assign(new Error("The text gateway URL must not contain credentials, query parameters or fragments."),{code:"AI_GATEWAY_CONFIG_INVALID"});
   const loopback=["localhost","127.0.0.1","::1"].includes(base.hostname.toLowerCase());
   if(base.protocol!=="https:"&&!loopback)throw Object.assign(new Error("Non-local text gateways must use HTTPS."),{code:"AI_GATEWAY_INSECURE_URL"});
+  if(!loopback&&process.env.AI_GATEWAY_ALLOW_REMOTE!=="true")throw Object.assign(new Error("Remote text gateways are disabled. Verify provider pricing and explicitly enable remote gateway access on the server."),{code:"AI_GATEWAY_REMOTE_DISABLED"});
   const prefix=base.pathname.endsWith("/")?base.pathname:base.pathname+"/";
   const endpoint=new URL(prefix+"chat/completions",base.origin);
   const timeoutMs=Math.max(1000,Math.min(180000,Number(process.env.AI_GATEWAY_TIMEOUT_MS)||90000));
