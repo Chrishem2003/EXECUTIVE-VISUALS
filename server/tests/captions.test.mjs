@@ -29,6 +29,7 @@ try{
  const asset=await storeCaptionAsset({db,mediaRoot,ownerId:"caption-user",jobId:"caption-job",sourceAssetId:"audio-source",language:"en",segments,content:vtt});
  assert.equal(asset.mediaType,"text/vtt");
  assert.equal(asset.metadata.segmentCount,2);
+ assert.equal(asset.metadata.durationSeconds,2.4);
  const row=db.prepare("SELECT * FROM assets WHERE id=?").get(asset.id);
  assert.equal(row.media_type,"text/vtt");
  assert.equal(row.sha256,asset.sha256);
