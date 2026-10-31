@@ -22,6 +22,13 @@ create table if not exists executive_visuals.projects (
   archived_at timestamptz
 );
 
+create table if not exists executive_visuals.project_workspace_documents (
+  project_id uuid primary key references executive_visuals.projects(id) on delete cascade,
+  revision integer not null default 1 check (revision > 0),
+  document jsonb not null default '{}'::jsonb check (jsonb_typeof(document)='object'),
+  updated_at timestamptz not null default now()
+);
+
 create table if not exists executive_visuals.project_members (
   project_id uuid not null references executive_visuals.projects(id) on delete cascade,
   member_id uuid not null references auth.users(id) on delete cascade,
@@ -250,6 +257,7 @@ for each row execute function executive_visuals.prevent_owner_reassignment();
 
 alter table executive_visuals.projects enable row level security;
 alter table executive_visuals.project_members enable row level security;
+alter table executive_visuals.project_workspace_documents enable row level security;
 alter table executive_visuals.workflows enable row level security;
 alter table executive_visuals.workflow_runs enable row level security;
 alter table executive_visuals.workflow_node_runs enable row level security;
@@ -269,6 +277,8 @@ revoke update,delete on executive_visuals.workflow_runs from authenticated;
 revoke update,delete on executive_visuals.workflow_runs from authenticated;
 revoke insert,update,delete on executive_visuals.workflow_node_runs from authenticated;
 revoke insert,update,delete on executive_visuals.audit_events from authenticated;
+revoke delete on executive_visuals.project_workspace_documents from authenticated;
+grant select,insert,update on executive_visuals.project_workspace_documents to authenticated;
 grant usage,select on all sequences in schema executive_visuals to authenticated, service_role;
 
 create policy ev_projects_read on executive_visuals.projects for select to authenticated
@@ -296,6 +306,13 @@ with check (exists (select 1 from executive_visuals.projects p where p.id=projec
 create policy ev_members_delete on executive_visuals.project_members for delete to authenticated
 using (exists (select 1 from executive_visuals.projects p where p.id=project_members.project_id and p.owner_id=(select auth.uid())));
 
+create policy ev_project_workspace_read on executive_visuals.project_workspace_documents for select to authenticated
+using (exists (select 1 from executive_visuals.projects p where p.id=project_workspace_documents.project_id and (p.owner_id=(select auth.uid()) or exists (select 1 from executive_visuals.project_members m where m.project_id=p.id and m.member_id=(select auth.uid())))));
+create policy ev_project_workspace_insert on executive_visuals.project_workspace_documents for insert to authenticated
+with check (exists (select 1 from executive_visuals.projects p where p.id=project_workspace_documents.project_id and (p.owner_id=(select auth.uid()) or exists (select 1 from executive_visuals.project_members m where m.project_id=p.id and m.member_id=(select auth.uid()) and m.role='editor'))));
+create policy ev_project_workspace_update on executive_visuals.project_workspace_documents for update to authenticated
+using (exists (select 1 from executive_visuals.projects p where p.id=project_workspace_documents.project_id and (p.owner_id=(select auth.uid()) or exists (select 1 from executive_visuals.project_members m where m.project_id=p.id and m.member_id=(select auth.uid()) and m.role='editor'))))
+with check (exists (select 1 from executive_visuals.projects p where p.id=project_workspace_documents.project_id and (p.owner_id=(select auth.uid()) or exists (select 1 from executive_visuals.project_members m where m.project_id=p.id and m.member_id=(select auth.uid()) and m.role='editor'))));
 create policy ev_workflows_read on executive_visuals.workflows for select to authenticated
 using (owner_id=(select auth.uid()) or exists (select 1 from executive_visuals.projects p where p.id=workflows.project_id and p.owner_id=(select auth.uid())) or exists (select 1 from executive_visuals.project_members m where m.project_id=workflows.project_id and m.member_id=(select auth.uid())));create policy ev_workflows_insert on executive_visuals.workflows for insert to authenticated
 with check (owner_id=(select auth.uid()) and (project_id is null or exists (select 1 from executive_visuals.projects p where p.id=project_id and p.owner_id=(select auth.uid())) or exists (select 1 from executive_visuals.project_members m where m.project_id=project_id and m.member_id=(select auth.uid()) and m.role='editor')));create policy ev_workflows_update on executive_visuals.workflows for update to authenticated
