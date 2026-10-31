@@ -158,3 +158,6 @@ The text gateway remains disabled unless configured and explicitly enabled. Tran
 ## Subtitle-to-timeline handoff
 
 Generated WebVTT assets now include their exact duration in metadata as well as cue count, source-audio ID, language, job provenance and SHA-256. The editorial timeline's existing asset picker reads that duration for VTT files and pre-fills the clip duration. The editor already validates caption-track media types and saves timeline changes with optimistic revision checks. An editor can therefore select the generated VTT asset, place it on a caption track, save the sequence and queue the existing MP4 master renderer. The workflow does not silently mutate a timeline; placement is an explicit editing action.
+
+
+The workflow inspector now exposes a dedicated target-language field for caption localization, while retaining advanced JSON configuration for other settings. Source caption cues are explicitly treated as untrusted content by the translation instruction, and commands embedded in cues must not be followed. The latest full CI run before this final instruction-only hardening passed TypeScript and the complete build pipeline; the prompt-hardening commit is included in the current branch and awaits its own CI confirmation.
