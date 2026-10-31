@@ -2,16 +2,17 @@ import { createCloudQueue } from "./cloud-queue.mjs";
 import { createCloudMediaAssetIO } from "./cloud-media-io.mjs";
 import { createCloudTimelineService } from "./cloud-timeline-service.mjs";
 import { createCloudTimelineExecutor } from "./cloud-timeline-executor.mjs";
+import { renderCloudTimeline } from "./cloud-ffmpeg-timeline-renderer.mjs";
 import { runCloudWorkerCycle } from "./cloud-worker.mjs";
 
 const TIMELINE_JOB_TYPES=Object.freeze(["timeline.render"]);
 
 /**
- * Explicit timeline worker assembly. A render engine must be supplied; this
- * prevents accidentally passing SQLite file paths into the cloud worker.
+ * Explicit timeline worker assembly. Uses the cloud-materialized FFmpeg
+ * renderer by default; callers may inject a compatible renderer for testing.
  */
 export function createCloudTimelineWorker({
-  workerId,queue,timelineService,timelines,assets,mediaIO,renderTimeline,
+  workerId,queue,timelineService,timelines,assets,mediaIO,renderTimeline=renderCloudTimeline,
   url,serviceRoleKey,fetchImpl,tempRoot,maxBytes,maxOutputBytes,timeoutMs
 }={}){
   if(typeof workerId!=="string"||!workerId.trim()||workerId.length>128)throw new Error("Cloud timeline worker ID must contain between 1 and 128 characters.");
