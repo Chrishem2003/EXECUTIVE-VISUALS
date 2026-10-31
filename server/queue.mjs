@@ -10,14 +10,17 @@ export function recoverExpiredJobs(db, timestamp = new Date().toISOString()) {
   for (const job of expired) {
     const retryable = job.attempt_count < job.max_attempts;
     const status = retryable ? "queued" : "failed";
+    const retryDelayMs = retryable ? Math.min(60000, 1000 * Math.pow(2, Math.max(0, job.attempt_count - 1))) : 0;
+    const availableAt = retryable ? iso(Date.parse(timestamp) + retryDelayMs) : null;
     const details = {
       code: "WORKER_LEASE_EXPIRED",
       message: "The worker stopped renewing its execution lease before the job finished.",
-      retryable
+      retryable,
+      retryDelayMs
     };
     const changed = db.prepare(
       "UPDATE jobs SET status=?,error_json=?,updated_at=?,completed_at=?,available_at=?,lease_owner=NULL,lease_expires_at=NULL,lease_heartbeat_at=NULL WHERE id=? AND status='running' AND (lease_expires_at IS NULL OR lease_expires_at<=?)"
-    ).run(status, json(details), timestamp, retryable ? null : timestamp, retryable ? timestamp : null, job.id, timestamp);
+    ).run(status, json(details), timestamp, retryable ? null : timestamp, availableAt, job.id, timestamp);
     if (changed.changes !== 1) continue;
     addJobEvent(db, job.id, job.owner_id, retryable ? "job.lease_expired_retry" : "job.lease_expired_failed", details);
     recovered++;
