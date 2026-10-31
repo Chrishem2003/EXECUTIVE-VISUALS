@@ -94,7 +94,8 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
     if (["mp3","wav"].includes(ext)) args.push("-vn");
     if (videoCodec !== "copy" && !["mp3","wav"].includes(ext)) args.push("-c:v",videoCodec,"-preset",preset);
     else if (videoCodec === "copy" && !["mp3","wav"].includes(ext)) args.push("-c:v","copy");
-    if (["mp3","wav"].includes(ext)) args.push("-c:a",ext==="mp3"?"libmp3lame":"pcm_s16le");\n    else if (audioCodec !== "copy") args.push("-c:a",audioCodec);
+    if (["mp3","wav"].includes(ext)) args.push("-c:a",ext==="mp3"?"libmp3lame":"pcm_s16le");
+    else if (audioCodec !== "copy") args.push("-c:a",audioCodec);
     else args.push("-c:a","copy");
     args.push(outputPath);
   }
