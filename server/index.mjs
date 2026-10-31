@@ -160,7 +160,13 @@ async function processNextJob() {
   const current=db.prepare("SELECT * FROM jobs WHERE id=?").get(job.id);
   addJobEvent(db,job.id,job.owner_id,"job.started",{attempt:current.attempt_count});
   try {
-    const result=await executeMediaJob({db,job:current,mediaRoot:MEDIA_ROOT});
+    const result=await executeMediaJob({
+      db,job:current,mediaRoot:MEDIA_ROOT,activeProcesses,
+      onProgress:value=>{
+        db.prepare("UPDATE jobs SET progress=?,updated_at=? WHERE id=? AND status='running'").run(value,now(),job.id);
+        addJobEvent(db,job.id,job.owner_id,"job.progress",{progress:value});
+      }
+    });
     const latest=db.prepare("SELECT status FROM jobs WHERE id=?").get(job.id);
     if(latest?.status==="cancelled")return;
     db.prepare("UPDATE jobs SET status='succeeded',progress=100,output_json=?,updated_at=?,completed_at=? WHERE id=?")
@@ -319,7 +325,10 @@ export function createAppServer() {
         if(jobMatch[2]==="cancel"&&req.method==="POST"){
           if(["succeeded","failed","cancelled"].includes(job.status)){fail(res,409,"JOB_TERMINAL","This job has already finished.");return;}
           db.prepare("UPDATE jobs SET status='cancelled',updated_at=?,completed_at=? WHERE id=?").run(now(),now(),job.id);
-          addJobEvent(db,job.id,user.id,"job.cancelled",{});send(res,200,{ok:true},cors);return;
+          addJobEvent(db,job.id,user.id,"job.cancelled",{});
+          const active=activeProcesses.get(job.id);
+          if(active&&!active.killed)active.kill("SIGTERM");
+          send(res,200,{ok:true},cors);return;
         }
         if(jobMatch[2]==="events"&&req.method==="GET"){
           const events=db.prepare("SELECT id,event_type,event_json,created_at FROM job_events WHERE job_id=? AND owner_id=? ORDER BY id ASC").all(job.id,user.id);
@@ -352,6 +361,6 @@ if (AUTH_MODE==="supabase"&&(!process.env.SUPABASE_URL||!process.env.SUPABASE_PU
 if (process.env.NODE_ENV!=="test") {
   const server=createAppServer();
   server.listen(PORT,HOST,()=>process.stdout.write(`Executive Visuals API listening on http://${HOST}:${PORT}\n`));
-  const shutdown=()=>{if(workerTimer)clearInterval(workerTimer);server.close(()=>{db.close();process.exit(0);});setTimeout(()=>process.exit(1),10000).unref();};
+  const shutdown=()=>{if(workerTimer)clearInterval(workerTimer);for(const child of activeProcesses.values())if(!child.killed)child.kill("SIGTERM");server.close(()=>{db.close();process.exit(0);});setTimeout(()=>process.exit(1),10000).unref();};
   process.on("SIGINT",shutdown);process.on("SIGTERM",shutdown);
 }
