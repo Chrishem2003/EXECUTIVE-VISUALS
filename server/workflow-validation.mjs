@@ -31,3 +31,38 @@ export function validateWorkflowGraph(graph){
  if(executionOrder.length!==nodes.size)issues.push({code:"cycle_detected",message:"Workflow contains a dependency cycle."});
  return {valid:issues.length===0,issues,executionOrder};
 }
+
+export function planWorkflowTarget(graph,target={kind:"all"}){
+ const validation=validateWorkflowGraph(graph);
+ const issues=[...validation.issues];
+ const nodes=new Map((graph?.nodes||[]).map(node=>[node.id,node]));
+ let requested=[];
+ if(target?.kind==="all")requested=[...nodes.keys()];
+ else if(target?.kind==="node")requested=[target.nodeId];
+ else if(target?.kind==="subgraph"&&Array.isArray(target.nodeIds))requested=target.nodeIds;
+ else issues.push({code:"invalid_execution_target",message:"Choose all nodes, one node, or a selected subgraph."});
+ if(!requested.length)issues.push({code:"invalid_execution_target",message:"At least one target node is required."});
+ for(const id of requested)if(!nodes.has(id))issues.push({code:"invalid_execution_target",nodeId:id,message:"Target node does not exist: "+id});
+ const parents=new Map([...nodes.keys()].map(id=>[id,new Set()]));
+ for(const edge of graph?.edges||[])if(nodes.has(edge.sourceNodeId)&&nodes.has(edge.targetNodeId))parents.get(edge.targetNodeId).add(edge.sourceNodeId);
+ const included=new Set();
+ const visit=id=>{
+  if(included.has(id))return;
+  included.add(id);
+  const node=nodes.get(id);
+  if(node?.locked&&(node.lockedOutputIds?.length||0)>0)return;
+  for(const parent of parents.get(id)||[])visit(parent);
+ };
+ if(target?.kind==="all")for(const id of requested)included.add(id);
+ else for(const id of requested)if(nodes.has(id))visit(id);
+ const executionOrder=validation.executionOrder.filter(id=>included.has(id));
+ const runNodeIds=[],reusedNodeIds=[];
+ for(const id of executionOrder){
+  const node=nodes.get(id);
+  if(node?.locked){
+   if(!(node.lockedOutputIds?.length)){issues.push({code:"locked_node_missing_output",nodeId:id,message:"Locked node has no saved output to reuse: "+id});}
+   else reusedNodeIds.push(id);
+  }else runNodeIds.push(id);
+ }
+ return {valid:issues.length===0,target,includedNodeIds:executionOrder,executionOrder,runNodeIds,reusedNodeIds,issues};
+}
