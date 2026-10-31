@@ -36,6 +36,7 @@ if (!sql.includes("revoke update,delete on executive_visuals.jobs from authentic
 if (!sql.includes("revoke delete on executive_visuals.project_workspace_documents from authenticated;")) issues.push("Project workspace documents must not be client-deleted.");
 if (!sql.includes("status in ('draft','awaiting_approval')")) issues.push("Client job creation must be limited to draft/approval states.");
 if (!sql.includes("values ('executive-visuals-media','executive-visuals-media',false")) issues.push("Media storage bucket must be private.");
+if (!sql.includes("on conflict (id) do update set") || !sql.includes("public=false") || !sql.includes("file_size_limit=excluded.file_size_limit") || !sql.includes("allowed_mime_types=excluded.allowed_mime_types")) issues.push("Existing media bucket configuration must be reconciled to the private, bounded policy.");
 if (!sql.includes("create policy ev_storage_insert") || !sql.includes("create policy ev_storage_read")) issues.push("Private storage access policies are incomplete.");
 if (!sql.includes("as $$") || !sql.includes("end;\n$$;") || /as \$(?!\$)\s*begin/.test(sql) || /\n\$(?!\$);/.test(sql)) {
   issues.push("PL/pgSQL trigger functions must use valid dollar quoting.");
