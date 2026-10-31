@@ -191,10 +191,13 @@ test("project membership separates editor, reviewer and viewer permissions",asyn
   const project=(await created.json()).project;
   const editor=await register("team-editor@example.test");
   const viewer=await register("team-viewer@example.test");
+  const reviewer=await register("team-reviewer@example.test");
   const addEditor=await request("/api/projects/"+project.id+"/members",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({email:"team-editor@example.test",role:"editor"})},owner);
   assert.equal(addEditor.status,201);
   const addViewer=await request("/api/projects/"+project.id+"/members",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({email:"team-viewer@example.test",role:"viewer"})},owner);
   assert.equal(addViewer.status,201);
+  const addReviewer=await request("/api/projects/"+project.id+"/members",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({email:"team-reviewer@example.test",role:"reviewer"})},owner);
+  assert.equal(addReviewer.status,201);
   const sharedProjects=await request("/api/projects",{},editor);
   assert.equal((await sharedProjects.json()).projects[0].access_role,"editor");
   const upload=await request("/api/assets",{method:"POST",headers:{"content-type":"image/png","x-file-name":"shared.png","x-project-id":project.id},body:Buffer.from([137,80,78,71,13,10,26,10,0,1,2,3])},editor);
