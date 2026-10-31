@@ -116,6 +116,11 @@ test("creative workspace drafts persist per project with revision and editor-rol
   const unsafe=await request("/api/projects/"+project.id+"/workspace",{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({revision:1,document:{researchSources:[{id:"bad",title:"Unsafe",url:"javascript:alert(1)"}]}})},owner);
   assert.equal(unsafe.status,400);
   assert.equal((await unsafe.json()).error.code,"INVALID_RESEARCH_SOURCE_URL");
+  const blockedImport=await request("/api/projects/"+project.id+"/research/import",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({revision:1,url:"https://127.0.0.1/private"})},owner);
+  assert.equal(blockedImport.status,400);
+  assert.equal((await blockedImport.json()).error.code,"UNSAFE_RESEARCH_URL");
+  const afterBlockedImport=await request("/api/projects/"+project.id+"/workspace",{},owner);
+  assert.equal((await afterBlockedImport.json()).revision,1,"rejected private-network imports must not change project revision");
   const ungrounded=await request("/api/projects/"+project.id+"/workspace",{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({revision:1,document:{knowledgeRecords:[{id:"ungrounded",title:"Unsupported claim",content:"No source attached.",kind:"Finding",status:"Verified",sourceIds:[]}]}})},owner);
   assert.equal(ungrounded.status,400);
   assert.equal((await ungrounded.json()).error.code,"KNOWLEDGE_EVIDENCE_REQUIRED");
@@ -133,6 +138,8 @@ test("creative workspace drafts persist per project with revision and editor-rol
   assert.equal(mergedDoc.creativeProjects[0].name,"Launch film","partial knowledge saves preserve creative project data");
   assert.equal(mergedDoc.researchSources[0].title,"Official evidence report","partial knowledge saves preserve source records");
   assert.equal(mergedDoc.knowledgeRecords[0].title,"Collaborator note");
+  const viewerImport=await request("/api/projects/"+project.id+"/research/import",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({revision:2,url:"https://example.org/report"})},viewer);
+  assert.equal(viewerImport.status,403,"viewers cannot trigger outbound research imports");
   const viewerSave=await request("/api/projects/"+project.id+"/workspace",{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({revision:2,document})},viewer);
   assert.equal(viewerSave.status,403);
 });
