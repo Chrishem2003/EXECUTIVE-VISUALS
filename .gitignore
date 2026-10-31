@@ -8,3 +8,7 @@ dist/
 .vscode/
 .idea/
 coverage/
+data/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
