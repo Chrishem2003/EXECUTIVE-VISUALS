@@ -9,7 +9,8 @@ const save=()=>window.dispatchEvent(new CustomEvent("ev:save-creative-draft",{de
 const fmt=(v:string)=>v?new Date(v).toLocaleDateString():"Date not recorded";
 export function getKnowledgeDocument(){return {researchSources:state.sources,knowledgeRecords:state.records};}
 export function renderKnowledgeWorkspace(){
- const q=state.query.trim().toLowerCase();\n const projectReady=Boolean(getCurrentProjectId());
+ const q=state.query.trim().toLowerCase();
+ const projectReady=Boolean(getCurrentProjectId());
  const sources=state.sources.filter(x=>!q||[x.title,x.url,x.author,x.summary,x.sourceType].join(" ").toLowerCase().includes(q));
  const records=state.records.filter(x=>!q||[x.title,x.content,x.kind,x.status,...x.tags].join(" ").toLowerCase().includes(q));
  return '<div class="page-head"><div><div class="eyebrow">RESEARCH · EVIDENCE · KNOWLEDGE</div><h1>Research & knowledge</h1><p>Capture sources, record evidence-backed findings, preserve provenance and turn research into reusable project knowledge.</p></div><span class="count-pill">'+state.sources.length+' sources · '+state.records.length+' records</span></div>'+
