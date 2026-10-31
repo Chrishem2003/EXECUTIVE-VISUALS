@@ -47,12 +47,27 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
    completedCount++;onProgress(Math.min(95,Math.round(completedCount/nodeCount*95)));
    continue;
   }
+  const incomingEdges=graph.edges.filter(item=>item.targetNodeId===nodeId);
   const values={};
-  for(const edge of graph.edges.filter(item=>item.targetNodeId===nodeId)){
+  for(const edge of incomingEdges){
    const upstream=outputs.get(edge.sourceNodeId)||{};
-   if(upstream[edge.sourcePortId]!==undefined)values[edge.targetPortId]=upstream[edge.sourcePortId];
+   if(upstream[edge.sourcePortId]!==undefined){
+    const current=values[edge.targetPortId];
+    values[edge.targetPortId]=current===undefined?upstream[edge.sourcePortId]:Array.isArray(current)?[...current,upstream[edge.sourcePortId]]:[current,upstream[edge.sourcePortId]];
+   }
   }
-  const config=node.config||{},nodeInput={...values,...config};
+  const config=node.config||{};
+  const missingRequired=(node.inputs||[]).some(port=>{
+   if(!port.required||Object.hasOwn(config,port.id))return false;
+   const connected=incomingEdges.filter(edge=>edge.targetPortId===port.id);
+   return connected.length>0&&!connected.some(edge=>(outputs.get(edge.sourceNodeId)||{})[edge.sourcePortId]!==undefined);
+  });
+  if(missingRequired){
+   saveNode(db,runId,nodeId,"skipped",{input:values,output:{},attempt:0});
+   completedCount++;onProgress(Math.min(95,Math.round(completedCount/nodeCount*95)));
+   continue;
+  }
+  const nodeInput={...values,...config};
   const attempt=(stored.find(row=>row.node_id===nodeId)?.attempt||0)+1;
   saveNode(db,runId,nodeId,"running",{input:nodeInput,attempt});
   try{
@@ -72,8 +87,19 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
     const collected=Object.values(values).flat().filter(value=>value!==undefined);
     output=nodeOutput(node,collected);
    }else if(node.kind==="branch"){
-    const condition=Boolean(values.input??config.value??false);
-    output={true:condition?values.input:undefined,false:condition?undefined:values.input};
+    const left=values[config.field||"input"]??values.input??config.value??false;
+    const right=config.compareTo;
+    const operator=String(config.operator||"truthy");
+    let condition=false;
+    if(operator==="equals")condition=String(left)===String(right);
+    else if(operator==="not-equals")condition=String(left)!==String(right);
+    else if(operator==="contains")condition=String(left??"").includes(String(right??""));
+    else if(operator==="greater-than")condition=Number(left)>Number(right);
+    else if(operator==="less-than")condition=Number(left)<Number(right);
+    else if(operator==="falsy")condition=!Boolean(left);
+    else condition=Boolean(left);
+    const payload=values.input??left;
+    output=condition?{true:payload}:{false:payload};
    }else if(node.kind==="approval"){
     saveNode(db,runId,nodeId,"awaiting_approval",{input:nodeInput,attempt});
     db.prepare("UPDATE workflow_runs SET status='awaiting_approval',updated_at=? WHERE id=?").run(now(),runId);
