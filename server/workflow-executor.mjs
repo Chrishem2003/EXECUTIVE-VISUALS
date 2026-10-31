@@ -17,7 +17,7 @@ export function hasApprovedAncestor(graph,nodeId,outputs){
  return false;
 }
 
-const inputAsset=(values,config)=>String(config.assetId||config.sourceAssetId||values.asset||values.media||values.video||values.image||values.audio||values.input||"");
+const inputAsset=(values,config)=>String(values.asset||values.media||values.video||values.image||values.audio||values.input||config.assetId||config.sourceAssetId||"");
 const nodeOutput=(node,value)=>Object.fromEntries((node.outputs||[]).map((port,index)=>[port.id,index===0?value:undefined]).filter(([,v])=>v!==undefined));
 function saveNode(db,runId,nodeId,status,{input={},output=null,error=null,attempt=0}={}){
  db.prepare("UPDATE workflow_node_runs SET status=?,attempt=?,input_json=?,output_json=?,error_json=?,completed_at=? WHERE run_id=? AND node_id=?")
@@ -81,7 +81,7 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
    completedCount++;onProgress(Math.min(95,Math.round(completedCount/nodeCount*95)));
    continue;
   }
-  const nodeInput={...values,...config};
+  const nodeInput={...config,...values};
   const attempt=(stored.find(row=>row.node_id===nodeId)?.attempt||0)+1;
   saveNode(db,runId,nodeId,"running",{input:nodeInput,attempt});
   try{
