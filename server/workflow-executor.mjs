@@ -1,8 +1,22 @@
 import { executeMediaJob } from "./media.mjs";
 import { getAccessibleAsset, json, parseJson } from "./db.mjs";
 import { validateWorkflowGraph } from "./workflow-validation.mjs";
+import { generateText } from "./ai-gateway.mjs";
 
 const now=()=>new Date().toISOString();
+function hasApprovedAncestor(graph,nodeId,outputs){
+ const parents=new Map(graph.nodes.map(node=>[node.id,[]]));
+ for(const edge of graph.edges)parents.get(edge.targetNodeId)?.push(edge.sourceNodeId);
+ const pending=[...(parents.get(nodeId)||[])],seen=new Set();
+ while(pending.length){
+  const id=pending.pop();if(seen.has(id))continue;seen.add(id);
+  const node=graph.nodes.find(item=>item.id===id);
+  if(node?.kind==="approval"&&outputs.get(id)?.approved===true)return true;
+  pending.push(...(parents.get(id)||[]));
+ }
+ return false;
+}
+
 const inputAsset=(values,config)=>String(config.assetId||config.sourceAssetId||values.asset||values.media||values.video||values.image||values.audio||values.input||"");
 const nodeOutput=(node,value)=>Object.fromEntries((node.outputs||[]).map((port,index)=>[port.id,index===0?value:undefined]).filter(([,v])=>v!==undefined));
 function saveNode(db,runId,nodeId,status,{input={},output=null,error=null,attempt=0}={}){
@@ -100,6 +114,12 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
     else condition=Boolean(left);
     const payload=values.input??left;
     output=condition?{true:payload}:{false:payload};
+   }else if(node.kind==="llm.prompt"||node.kind==="llm.analyze"){
+    if(!hasApprovedAncestor(graph,nodeId,outputs))throw Object.assign(new Error("A completed upstream human-approval node is required before text-model execution."),{code:"APPROVAL_REQUIRED"});
+    const prompt=String(values.prompt??values.text??values.input??config.prompt??config.text??"");
+    if(!prompt.trim())throw Object.assign(new Error("Text-model node requires a non-empty prompt input."),{code:"PROMPT_REQUIRED"});
+    const result=await generateText({prompt,systemPrompt:config.systemPrompt||values.system||"",temperature:config.temperature??0.7,maxTokens:config.maxTokens??1024});
+    output=nodeOutput(node,result.text);output.text=result.text;output.model=result.model;output.usage=result.usage;
    }else if(node.kind==="approval"){
     saveNode(db,runId,nodeId,"awaiting_approval",{input:nodeInput,attempt});
     db.prepare("UPDATE workflow_runs SET status='awaiting_approval',updated_at=? WHERE id=?").run(now(),runId);
@@ -151,8 +171,10 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
     return {status:"cancelled",runId,completedNodes:completedCount,totalNodes:nodeCount};
    }
    const detail={code:error.code||"NODE_FAILED",message:error.message||"Workflow node failed."};
-   saveNode(db,runId,nodeId,detail.code==="ENGINE_UNAVAILABLE"?"blocked":"failed",{input:nodeInput,error:detail,attempt});
-   const status=detail.code==="ENGINE_UNAVAILABLE"?"blocked":completedCount>0?"partial":"failed";
+   const blockedCodes=new Set(["ENGINE_UNAVAILABLE","APPROVAL_REQUIRED","AI_GATEWAY_DISABLED","AI_GATEWAY_CONFIG_INVALID","AI_GATEWAY_INSECURE_URL"]);
+   const blocked=blockedCodes.has(detail.code);
+   saveNode(db,runId,nodeId,blocked?"blocked":"failed",{input:nodeInput,error:detail,attempt});
+   const status=blocked?"blocked":completedCount>0?"partial":"failed";
    db.prepare("UPDATE workflow_runs SET status=?,error_json=?,updated_at=?,completed_at=? WHERE id=?").run(status,json(detail),now(),now(),runId);
    throw Object.assign(new Error("Workflow stopped at node "+node.label+": "+detail.message),{code:detail.code});
   }
