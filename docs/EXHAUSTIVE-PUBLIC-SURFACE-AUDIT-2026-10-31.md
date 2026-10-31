@@ -1,4 +1,4 @@
-# Exhaustive public-surface audit — Higgsfield, HeyGen and Wink
+# Exhaustive public-surface audit — Platform A, Platform B and Platform C
 
 **Project:** Executive Visuals  
 **Audit date:** 31 October 2026  
@@ -10,11 +10,11 @@
 ## 0. Coverage and evidence rules
 
 Public URL maps returned:
-- Higgsfield Help Center: 112 indexed URLs.
-- HeyGen Developer documentation: at least 150 URLs in the first mapped page of results; the official `llms.txt` index itself is approximately 48 KB and enumerates the developer surface.
-- Wink public site: 247 URLs in the initial broad map, including localized duplicates, marketing pages, tool landing pages, model pages and blog pages. A narrower root map returned 132 URLs.
+- Platform A Help Center: 112 indexed URLs.
+- Platform B Developer documentation: at least 150 URLs in the first mapped page of results; the official `llms.txt` index itself is approximately 48 KB and enumerates the developer surface.
+- Platform C public site: 247 URLs in the initial broad map, including localized duplicates, marketing pages, tool landing pages, model pages and blog pages. A narrower root map returned 132 URLs.
 
-Counts are URL discovery counts, not counts of unique backend capabilities. The Wink map contains localized duplicates and editorial pages; the HeyGen docs map is capped/paginated and must not be read as a final endpoint count.
+Counts are URL discovery counts, not counts of unique backend capabilities. The Platform C map contains localized duplicates and editorial pages; the Platform B docs map is capped/paginated and must not be read as a final endpoint count.
 
 Evidence labels used throughout:
 - **DOCUMENTED:** stated in an official first-party page or API reference.
@@ -24,13 +24,13 @@ Evidence labels used throughout:
 
 ---
 
-# PART I — HIGGSFIELD
+# PART I — Platform A
 
 ## 1. Product surfaces and major capability families
 
 The official help center groups the product into:
 - Image generation: Soul, Soul 2.0, Soul Cinema, Nano Banana families, GPT Image, Seedream, Recraft, FLUX and other catalogued models.
-- Video generation: Seedance, Kling, Higgsfield DoP, Wan, Grok Imagine, Sora, Veo, Minimax/Hailuo and other model families.
+- Video generation: Seedance, Kling, Platform A DoP, Wan, Grok Imagine, Sora, Veo, Minimax/Hailuo and other model families.
 - Audio: Seed Audio, Eleven, Seed Speech, MiniMax Speech, VibeVoice and related voice/audio models.
 - Creation workspaces: Cinema Studio, Canvas, Marketing Studio, Supercomputer and AI Influencer.
 - Transformation: Genjutsu, image/video extension/editing, lip-sync, voiceover, translation and upscale.
@@ -44,7 +44,7 @@ The important architecture distinction is **model vs tool vs workflow**:
 
 ## 2. Cinema Studio — project and shot-level directing
 
-Official guide: https://higgsfield.ai/creator-hub/help-center/tools/how-do-i-use-cinema-studio
+Official guide: [Public source ref EXT-001] A.ai/creator-hub/help-center/tools/how-do-i-use-cinema-studio
 
 ### Version-specific workflow
 
@@ -105,7 +105,7 @@ Official guide: https://higgsfield.ai/creator-hub/help-center/tools/how-do-i-use
 
 ## 3. Canvas — visual node workflow
 
-Official guide: https://higgsfield.ai/creator-hub/help-center/tools/how-do-i-use-canvas
+Official guide: [Public source ref EXT-001] A.ai/creator-hub/help-center/tools/how-do-i-use-canvas
 
 **DOCUMENTED sequence**
 1. Create a canvas.
@@ -126,7 +126,7 @@ Official guide: https://higgsfield.ai/creator-hub/help-center/tools/how-do-i-use
 
 ## 4. Marketing Studio and Ad Multiplier
 
-Official guide: https://higgsfield.ai/creator-hub/help-center/tools/how-do-i-use-marketing-studio-to-create-video-ads
+Official guide: [Public source ref EXT-001] A.ai/creator-hub/help-center/tools/how-do-i-use-marketing-studio-to-create-video-ads
 
 Documented entry patterns:
 - Template-first: choose a campaign/task template, attach a product, choose/adjust presenter, hook and setting, then generate.
@@ -143,8 +143,8 @@ MCP docs also describe **Ad Multiplier**: use a reference ad and the user's prod
 ## 5. Supercomputer, AI Director and Apps
 
 Official sources:
-- https://higgsfield.ai/creator-hub/help-center/tools/how-do-i-use-supercomputer
-- https://higgsfield.ai/creator-hub/help-center/tools/what-are-higgsfield-apps
+- [Public source ref EXT-001] A.ai/creator-hub/help-center/tools/how-do-i-use-supercomputer
+- [Public source ref EXT-001] A.ai/creator-hub/help-center/tools/what-are-Platform A-apps
 
 Supercomputer is described as a chat-driven agentic workspace:
 - Understand a natural-language task.
@@ -156,15 +156,15 @@ Supercomputer is described as a chat-driven agentic workspace:
 - Use reusable Skills and workspace memory/storage.
 - Support scheduled/ongoing tasks where exposed by the product.
 
-Higgsfield Apps lets a user describe and create a generative application within Supercomputer, customize and publish/share it. Public docs position this as a no-code app-building path.
+Platform A Apps lets a user describe and create a generative application within Supercomputer, customize and publish/share it. Public docs position this as a no-code app-building path.
 
 **INFERRED:** an Executive Visuals Director should show a step graph and a human-readable execution plan before any paid action. Every step should disclose provider, inputs, output type, expected cost and permissions. Skills should be versioned procedures, not hidden prompt blobs. App generation should be isolated from production services until tested.
 
 ## 6. AI Influencer, Soul ID and character continuity
 
 Official sources:
-- https://higgsfield.ai/creator-hub/help-center/tools/how-do-i-use-ai-influencer
-- https://higgsfield.ai/creator-hub/help-center/ai-models/how-do-i-create-and-use-a-soul-id-character
+- [Public source ref EXT-001] A.ai/creator-hub/help-center/tools/how-do-i-use-ai-influencer
+- [Public source ref EXT-001] A.ai/creator-hub/help-center/ai-models/how-do-i-create-and-use-a-soul-id-character
 
 Documented concepts:
 - AI Influencer builder has base identity attributes and advanced Face, Body and Style controls.
@@ -179,8 +179,8 @@ Documented concepts:
 ## 7. Soul image family and Popcorn storyboards
 
 Official sources:
-- https://higgsfield.ai/creator-hub/help-center/ai-models/how-do-i-use-soul-to-generate-images
-- https://higgsfield.ai/creator-hub/help-center/ai-models/how-do-i-use-popcorn
+- [Public source ref EXT-001] A.ai/creator-hub/help-center/ai-models/how-do-i-use-soul-to-generate-images
+- [Public source ref EXT-001] A.ai/creator-hub/help-center/ai-models/how-do-i-use-popcorn
 
 ### Soul / Soul 2.0 / Soul Cinema
 - Soul is the native image family for cinematic/fashion/aesthetic images and character consistency.
@@ -202,9 +202,9 @@ Official sources:
 ## 8. DoP, Genjutsu, lipsync and audio
 
 Official sources:
-- https://higgsfield.ai/creator-hub/help-center/ai-models/how-do-i-use-dop
-- https://higgsfield.ai/creator-hub/help-center/tools/how-do-i-use-genjutsu
-- https://higgsfield.ai/creator-hub/help-center/ai-models/how-do-i-use-lipsync-voiceover-and-aspect-ratios
+- [Public source ref EXT-001] A.ai/creator-hub/help-center/ai-models/how-do-i-use-dop
+- [Public source ref EXT-001] A.ai/creator-hub/help-center/tools/how-do-i-use-genjutsu
+- [Public source ref EXT-001] A.ai/creator-hub/help-center/ai-models/how-do-i-use-lipsync-voiceover-and-aspect-ratios
 
 ### DoP
 - Image/keyframe-to-video workflow.
@@ -223,23 +223,23 @@ Official sources:
 - Aspect ratio controls are part of the output workflow.
 - Some video models create native audio as part of the generation pass; standalone audio models are not necessarily present in the API catalog.
 
-## 9. Higgsfield API vs MCP vs CLI + Skills
+## 9. Platform A API vs MCP vs CLI + Skills
 
 Official sources:
-- https://higgsfield.ai/creator-hub/help-center/integrations/what-is-the-higgsfield-api
-- https://higgsfield.ai/creator-hub/help-center/integrations/what-is-higgsfield-mcp
-- https://higgsfield.ai/creator-hub/help-center/integrations/how-do-i-access-higgsfield-via-cli
-- https://higgsfield.ai/creator-hub/help-center/integrations/how-do-i-connect-higgsfield-to-ai-agent
-- https://higgsfield.ai/creator-hub/help-center/integrations/how-do-i-use-katana
+- [Public source ref EXT-001] A.ai/creator-hub/help-center/integrations/what-is-the-Platform A-api
+- [Public source ref EXT-001] A.ai/creator-hub/help-center/integrations/what-is-Platform A-mcp
+- [Public source ref EXT-001] A.ai/creator-hub/help-center/integrations/how-do-i-access-Platform A-via-cli
+- [Public source ref EXT-001] A.ai/creator-hub/help-center/integrations/how-do-i-connect-Platform A-to-ai-agent
+- [Public source ref EXT-001] A.ai/creator-hub/help-center/integrations/how-do-i-use-katana
 
 | Surface | Auth/account | Billing | Best fit |
 |---|---|---|---|
 | Web app | User session | Subscription/credits; some plan entitlements | Human creative work |
 | MCP | OAuth to existing account | Standard credits for every automated generation | Chat agents |
-| CLI + Skills | Authenticated Higgsfield account | Standard credits | Coding agents and repeatable skill calls |
+| CLI + Skills | Authenticated Platform A account | Standard credits | Coding agents and repeatable skill calls |
 | API | Separate developer account and API key | USD prepaid/pay-as-you-go | Product integrations and production pipelines |
 
-### API facts documented by Higgsfield
+### API facts documented by Platform A
 - One API key covers the current API catalog (the help page advertises 50+ image/video models).
 - Separate from the website subscription and plan credits.
 - REST API plus Python and TypeScript SDKs.
@@ -254,7 +254,7 @@ Official sources:
 - The model catalog has per-model resolution, duration, rates and sample code.
 
 ### MCP facts
-- Connector URL: https://mcp.higgsfield.ai/mcp
+- Connector URL: [Public source ref EXT-002] A.ai/mcp
 - OAuth, no separate API key.
 - Uses existing account and credits.
 - Unlimited web entitlements/free generations do not apply to automated MCP/CLI/Canvas/Supercomputer generation.
@@ -263,9 +263,9 @@ Official sources:
 - User is responsible for the actions an authorized agent takes with their account.
 
 ### CLI + Skills facts
-- Install package documented as `npm i -g @higgsfield/cli`.
-- Skills package documented as `npx skills add higgsfield-ai/skills`.
-- Login with `higgsfield auth login`.
+- Install package documented as `npm i -g @Platform A/cli`.
+- Skills package documented as `npx skills add Platform A-ai/skills`.
+- Login with `Platform A auth login`.
 - Documented skill names: `generate`, `soul`, `product-photoshoot`.
 - Product-photo presets include product_shot, lifestyle_scene, closeup_product_with_person, pinterest_pin, hero_banner, social_carousel, ad_creative_pack, virtual_model_tryout, conceptual_product and restyle.
 - Video presets include UGC, Tutorial, Unboxing, Hyper Motion, Product Review, TV Spot, Wild Card, UGC Virtual Try On and Pro Virtual Try On.
@@ -273,7 +273,7 @@ Official sources:
 - CLI skills and Supercomputer skills are distinct systems.
 
 ### Katana
-- Public help page describes reference-video edit recreation through Higgsfield MCP in Claude.
+- Public help page describes reference-video edit recreation through Platform A MCP in Claude.
 - The workflow uses an authorized reference video plus the user's own characters, products or clothing, then adapts the edit to the new subjects.
 - Presets/uploads/credits are part of the public guide.
 - The exact authenticated editor internals and hidden model parameters are not public.
@@ -293,14 +293,14 @@ Official sources:
 
 ---
 
-# PART II — HEYGEN
+# PART II — Platform B
 
 ## 11. Product and developer surfaces
 
-Primary index: https://developers.heygen.com/llms.txt  
-MCP index: https://developers.heygen.com/mcp/overview  
-REST reference: https://developers.heygen.com/docs/quick-start  
-Public product site: https://www.heygen.com/
+Primary index: [Public source ref EXT-003] B.com/llms.txt  
+MCP index: [Public source ref EXT-003] B.com/mcp/overview  
+REST reference: [Public source ref EXT-003] B.com/docs/quick-start  
+Public product site: [Public source ref EXT-004] B.com/
 
 The developer index is extensive and includes API reference, MCP, Skills, CLI, models, guides, examples, webhooks, batch APIs, rendering, avatar workflows, voices, translation and changelog. It should be re-read before implementing each adapter because identifiers and constraints evolve.
 
@@ -308,7 +308,7 @@ The developer index is extensive and includes API reference, MCP, Skills, CLI, m
 
 Documented integration paths:
 - API key in the `X-Api-Key` header for direct REST calls.
-- OAuth remote MCP at `https://mcp.heygen.com/mcp/v1/`, connected to the user's HeyGen workspace and plan credits.
+- OAuth remote MCP at `[Public source ref EXT-002] B.com/mcp/v1/`, connected to the user's Platform B workspace and plan credits.
 - CLI/official Skills for coding-agent workflows.
 - Official SDK/docs and webhooks for production automation.
 
@@ -317,12 +317,12 @@ The current developer onboarding index recommends API key first for repeatable/p
 ## 13. Avatar data model and creation
 
 Official sources:
-- https://developers.heygen.com/docs/create-avatar
-- https://developers.heygen.com/docs/avatar-from-video
-- https://developers.heygen.com/docs/avatar-from-photo
-- https://developers.heygen.com/docs/avatar-from-prompt
-- https://developers.heygen.com/docs/avatars
-- https://developers.heygen.com/avatar-iv
+- [Public source ref EXT-003] B.com/docs/create-avatar
+- [Public source ref EXT-003] B.com/docs/avatar-from-video
+- [Public source ref EXT-003] B.com/docs/avatar-from-photo
+- [Public source ref EXT-003] B.com/docs/avatar-from-prompt
+- [Public source ref EXT-003] B.com/docs/avatars
+- [Public source ref EXT-003] B.com/avatar-iv
 
 ### Character vs look
 - A **character/avatar group** is the identity container.
@@ -371,10 +371,10 @@ Creation is asynchronous. Look and group statuses are distinct:
 ## 14. Video creation and Video Agent
 
 Official sources:
-- https://developers.heygen.com/docs/video-agent
-- https://developers.heygen.com/docs/interactive-sessions
-- https://developers.heygen.com/docs/edit-scenes
-- https://developers.heygen.com/docs/models/heygen-video
+- [Public source ref EXT-003] B.com/docs/video-agent
+- [Public source ref EXT-003] B.com/docs/interactive-sessions
+- [Public source ref EXT-003] B.com/docs/edit-scenes
+- [Public source ref EXT-003] B.com/docs/models/Platform B-video
 
 ### Video Agent modes
 - `generate`: one-shot prompt-to-video, fire-and-forget.
@@ -403,27 +403,27 @@ Documented states include thinking, waiting_for_input, reviewing, generating, co
 
 **INFERRED:** build immutable cuts/revisions, scene IDs and edit plans; track parent revision, changed scenes, approval, output and provenance. Never re-render unaffected scenes when a provider supports scoped edits.
 
-## 15. HeyGen Video model vs avatar rendering
+## 15. Platform B Video model vs avatar rendering
 
 These are different product families:
 - Avatar rendering animates an existing look from a script/audio and voice.
-- HeyGen Video generates a complete scene (subject, setting, light, sound) from prompt/reference.
+- Platform B Video generates a complete scene (subject, setting, light, sound) from prompt/reference.
 
-HeyGen Video documented modes:
+Platform B Video documented modes:
 - Text-to-video: prompt → new scene with sound.
 - Image-to-video: prompt + one image → clip begins on that image as first frame.
 - Reference-to-video: prompt + reference images/videos/audio → new scene preserving supplied products/people/places.
-- Model identifier: `heygen-video-1`.
+- Model identifier: `Platform B-video-1`.
 - Documented compatible text/image clips can reach 30 seconds; reference-to-video is 5–15 seconds.
 - MCP tool path has a narrower 5–15 second duration limit for this model; HTTP API supports longer compatible settings. This is a concrete example of why capability must be scoped by interface, model and plan.
 
 ## 16. Templates, brand kits and brand glossary
 
 Official sources:
-- https://developers.heygen.com/create-template
-- https://developers.heygen.com/docs/brand-kits
-- https://developers.heygen.com/docs/brand-glossary
-- https://developers.heygen.com/docs/on-brand
+- [Public source ref EXT-003] B.com/create-template
+- [Public source ref EXT-003] B.com/docs/brand-kits
+- [Public source ref EXT-003] B.com/docs/brand-glossary
+- [Public source ref EXT-003] B.com/docs/on-brand
 
 ### Templates
 - Templates are edited in the web editor; API lists API-ready templates with variables.
@@ -453,11 +453,11 @@ Official sources:
 ## 17. Voices, speech, audio and lip-sync
 
 Official sources:
-- https://developers.heygen.com/docs/voices/heygen-voice-instant-clone
-- https://developers.heygen.com/docs/voices/professional-voice-clone
-- https://developers.heygen.com/docs/voices/heygen-voice-speech
-- https://developers.heygen.com/lipsync-speed
-- https://developers.heygen.com/lipsync-precision
+- [Public source ref EXT-003] B.com/docs/voices/Platform B-voice-instant-clone
+- [Public source ref EXT-003] B.com/docs/voices/professional-voice-clone
+- [Public source ref EXT-003] B.com/docs/voices/Platform B-voice-speech
+- [Public source ref EXT-003] B.com/lipsync-speed
+- [Public source ref EXT-003] B.com/lipsync-precision
 
 Documented functions:
 - Browse/filter public and workspace voices by language, gender, engine/type.
@@ -466,7 +466,7 @@ Documented functions:
 - Professional voice cloning and instant voice cloning have different training/slot/usage constraints.
 - Text-to-speech returns audio URL/duration and may include word timestamps.
 - Speech can be streamed via Server-Sent Events.
-- Speech engines include HeyGen Voice, Starfish and supported ElevenLabs models; vendor access may be restricted by workspace policy.
+- Speech engines include Platform B Voice, Starfish and supported ElevenLabs models; vendor access may be restricted by workspace policy.
 - Speech endpoints document per-member rate limits and language/engine compatibility errors.
 - Lip-sync takes source video + replacement audio, then redraws mouth movement; Speed and Precision trade latency for fidelity.
 - Lip-sync is distinct from translation: lip-sync uses supplied audio; translation transcribes/translates/generates audio and can optionally add lip-sync.
@@ -475,9 +475,9 @@ Documented functions:
 ## 18. Translation, proofread, subtitles and localization
 
 Official sources:
-- https://developers.heygen.com/docs/video-translate
-- https://developers.heygen.com/reference/create-proofread-session
-- https://developers.heygen.com/docs/brand-glossary
+- [Public source ref EXT-003] B.com/docs/video-translate
+- [Public source ref EXT-003] B.com/reference/create-proofread-session
+- [Public source ref EXT-003] B.com/docs/brand-glossary
 
 Documented translation workflow:
 1. Query supported target language codes.
@@ -493,8 +493,8 @@ Proofread sessions support video, output languages, brand voice/glossary, speake
 ## 19. AI clipping and filler-word removal
 
 Official sources:
-- https://developers.heygen.com/reference/create-ai-clipping
-- https://developers.heygen.com/filler-word-removal
+- [Public source ref EXT-003] B.com/reference/create-ai-clipping
+- [Public source ref EXT-003] B.com/filler-word-removal
 
 ### AI clipping
 - Submit source video and optional input language.
@@ -514,8 +514,8 @@ Official sources:
 ## 20. Hyperframes — programmable video composition and rendering
 
 Official sources:
-- https://developers.heygen.com/hyperframes-overview
-- https://developers.heygen.com/hyperframes
+- [Public source ref EXT-003] B.com/hyperframes-overview
+- [Public source ref EXT-003] B.com/hyperframes
 
 Hyperframes is an HTML/CSS/JS composition rendered as video:
 - HTML is the scene/timeline representation.
@@ -529,9 +529,9 @@ Hyperframes is an HTML/CSS/JS composition rendered as video:
 
 **INFERRED:** Executive Visuals should separate the visual timeline/composition engine from AI video generation. This provides reliable typography, charts, lower-thirds, data visualizations and repeatable brand variants without depending on generative-video consistency.
 
-## 21. HeyGen MCP — documented tool groups
+## 21. Platform B MCP — documented tool groups
 
-Official index: https://developers.heygen.com/mcp/overview
+Official index: [Public source ref EXT-003] B.com/mcp/overview
 
 The public MCP catalogue includes the following groups. Tool names are preserved as published; schemas must be refreshed before implementation.
 
@@ -573,7 +573,7 @@ The public MCP catalogue includes the following groups. Tool names are preserved
 
 ## 22. Usage limits and API constraints
 
-Official page: https://developers.heygen.com/docs/usage-limits
+Official page: [Public source ref EXT-003] B.com/docs/usage-limits
 
 The published limits are plan- and endpoint-specific and include:
 - Concurrent workflow capacity by plan, with Enterprise burst behavior.
@@ -587,18 +587,18 @@ Examples visible in the current public docs include video generation input MP4/W
 
 ---
 
-# PART III — WINK
+# PART III — Platform C
 
 ## 23. Public surfaces and platform split
 
 Sources:
-- https://wink.ai/
-- https://wink.ai/workspace
-- https://wink.ai/ai-workflow
-- https://wink.ai/pricing
-- https://wink.ai/download-guidance
+- [Public source ref EXT-001] C.ai/
+- [Public source ref EXT-001] C.ai/workspace
+- [Public source ref EXT-001] C.ai/ai-workflow
+- [Public source ref EXT-001] C.ai/pricing
+- [Public source ref EXT-001] C.ai/download-guidance
 
-Wink publicly presents itself as an AI video and image enhancement/editing product across web, desktop, mobile and a Premiere Pro plug-in. Public pages describe a broad tool catalogue, but the actual feature set and controls differ by platform and plan. The unauthenticated workspace shell exposes navigation and upload entry points; signed-in workspace state was not accessed.
+Platform C publicly presents itself as an AI video and image enhancement/editing product across web, desktop, mobile and a Premiere Pro plug-in. Public pages describe a broad tool catalogue, but the actual feature set and controls differ by platform and plan. The unauthenticated workspace shell exposes navigation and upload entry points; signed-in workspace state was not accessed.
 
 ## 24. Workspace tool directory — public navigation inventory
 
@@ -626,7 +626,7 @@ Other public site pages/catalogue entries include object removal, video clearer,
 
 ## 25. Custom AI Workflow — ordered enhancement chain
 
-Official page: https://wink.ai/ai-workflow
+Official page: [Public source ref EXT-001] C.ai/ai-workflow
 
 Publicly visible chain:
 1. AI Enhancer
@@ -647,8 +647,8 @@ Page text states that after upload the file is processed in order using the step
 ## 26. Video Enhancer and scenario selection
 
 Official pages:
-- https://wink.ai/video-enhancer
-- https://wink.ai/video-enhancer/upload
+- [Public source ref EXT-001] C.ai/video-enhancer
+- [Public source ref EXT-001] C.ai/video-enhancer/upload
 
 Public upload UI labels:
 - HD
@@ -668,10 +668,10 @@ Marketing page also describes Regular and Scenario sections, batch upload/folder
 ## 27. Video Repair, clarity and unpixelation
 
 Official sources:
-- https://wink.ai/ai-video-repair
-- https://wink.ai/video-repair/upload
-- https://wink.ai/video-clearer
-- https://wink.ai/unpixelate-video
+- [Public source ref EXT-001] C.ai/ai-video-repair
+- [Public source ref EXT-001] C.ai/video-repair/upload
+- [Public source ref EXT-001] C.ai/video-clearer
+- [Public source ref EXT-001] C.ai/unpixelate-video
 
 Documented target defects:
 - Exposure/lighting problems.
@@ -694,8 +694,8 @@ Unpixelate workflow routes through Video Enhancer, offers HD/Ultra HD/Portrait/A
 ## 28. Upscaling and frame interpolation
 
 Official sources:
-- https://wink.ai/video-upscaler/upload
-- https://wink.ai/video-frame-interpolation
+- [Public source ref EXT-001] C.ai/video-upscaler/upload
+- [Public source ref EXT-001] C.ai/video-frame-interpolation
 
 ### Upscaler
 - Public upload page exposes resolution tiers: 1080P HD, 2K UHD, 4K Ultimate, 8K Master.
@@ -714,8 +714,8 @@ Official sources:
 ## 29. Object removal, watermark/text removal and rights
 
 Official sources:
-- https://wink.ai/remove-object-from-video
-- https://wink.ai/video-watermark-remover/upload
+- [Public source ref EXT-001] C.ai/remove-object-from-video
+- [Public source ref EXT-001] C.ai/video-watermark-remover/upload
 
 ### Object removal
 - Upload video/photo.
@@ -734,8 +734,8 @@ Official sources:
 ## 30. Retouch and portrait workflows
 
 Official sources:
-- https://wink.ai/video-retouch/upload
-- https://wink.ai/
+- [Public source ref EXT-001] C.ai/video-retouch/upload
+- [Public source ref EXT-001] C.ai/
 
 Public homepage describes:
 - Auto-Retouch.
@@ -789,7 +789,7 @@ Unknown publicly: exact max file size/duration, signed URL lifetime, queue concu
 
 ## 34. Plans and credit economy
 
-Official page: https://wink.ai/pricing
+Official page: [Public source ref EXT-001] C.ai/pricing
 
 The current public web pricing page documents:
 - Free: basic models, limited AI generations with credits, exports include watermark.
@@ -884,18 +884,18 @@ Required job metadata:
 ## 39. Verification backlog — do not claim these as completed
 
 ### Requires authorized authenticated product access
-- Exact Higgsfield Cinema Studio editor states for each version.
+- Exact Platform A Cinema Studio editor states for each version.
 - Actual Canvas node catalog, ports, connection rules, graph persistence and rerun semantics.
 - Supercomputer plan editing, skills management, connectors and scheduled tasks.
 - Katana UI and its actual reference-video edit controls.
-- HeyGen signed-in Studio scene editor, avatar creation UX, translation proofreading and template editor.
-- Wink signed-in workflow builder: add/remove/reorder steps, per-stage settings, run controls, progress, Recent, export options and batch management.
-- Cross-device differences among Wink Web, desktop, mobile and Premiere plugin.
+- Platform B signed-in Studio scene editor, avatar creation UX, translation proofreading and template editor.
+- Platform C signed-in workflow builder: add/remove/reorder steps, per-stage settings, run controls, progress, Recent, export options and batch management.
+- Cross-device differences among Platform C Web, desktop, mobile and Premiere plugin.
 
 ### Requires schema/API verification
-- Current Higgsfield API OpenAPI model catalogue and exact request schemas.
-- Current HeyGen API OpenAPI schema, event payloads, pagination, error codes and all endpoint-level limits.
-- Any public Wink API/SDK (none established by the pages inspected).
+- Current Platform A API OpenAPI model catalogue and exact request schemas.
+- Current Platform B API OpenAPI schema, event payloads, pagination, error codes and all endpoint-level limits.
+- Any public Platform C API/SDK (none established by the pages inspected).
 - Current provider pricing, quotas and retention policies before live integrations.
 
 ### Requires hands-on output testing
@@ -909,81 +909,81 @@ Required job metadata:
 
 ## 40. Source register
 
-### Higgsfield
-- https://higgsfield.ai/creator-hub/help-center/getting-started/what-is-higgsfield
-- https://higgsfield.ai/creator-hub/help-center/tools/which-higgsfield-tool-should-i-use
-- https://higgsfield.ai/creator-hub/help-center/tools/how-do-i-use-cinema-studio
-- https://higgsfield.ai/creator-hub/help-center/tools/how-do-i-use-canvas
-- https://higgsfield.ai/creator-hub/help-center/tools/how-do-i-use-marketing-studio-to-create-video-ads
-- https://higgsfield.ai/creator-hub/help-center/tools/how-do-i-use-supercomputer
-- https://higgsfield.ai/creator-hub/help-center/tools/what-are-higgsfield-apps
-- https://higgsfield.ai/creator-hub/help-center/tools/how-do-i-use-ai-influencer
-- https://higgsfield.ai/creator-hub/help-center/tools/how-do-i-use-genjutsu
-- https://higgsfield.ai/creator-hub/help-center/ai-models/how-do-i-use-popcorn
-- https://higgsfield.ai/creator-hub/help-center/ai-models/how-do-i-use-dop
-- https://higgsfield.ai/creator-hub/help-center/ai-models/how-do-i-use-soul-to-generate-images
-- https://higgsfield.ai/creator-hub/help-center/ai-models/how-do-i-create-and-use-a-soul-id-character
-- https://higgsfield.ai/creator-hub/help-center/ai-models/how-do-i-use-lipsync-voiceover-and-aspect-ratios
-- https://higgsfield.ai/creator-hub/help-center/ai-models/which-ai-model-should-i-use
-- https://higgsfield.ai/creator-hub/help-center/integrations/what-is-the-higgsfield-api
-- https://higgsfield.ai/creator-hub/help-center/integrations/what-is-higgsfield-mcp
-- https://higgsfield.ai/creator-hub/help-center/integrations/how-do-i-access-higgsfield-via-cli
-- https://higgsfield.ai/creator-hub/help-center/integrations/how-do-i-connect-higgsfield-to-ai-agent
-- https://higgsfield.ai/creator-hub/help-center/integrations/how-do-i-use-katana
-- https://higgsfield.ai/creator-hub/help-center/account/who-owns-my-generations-and-can-i-use-them-commercially
-- https://higgsfield.ai/creator-hub/help-center/credits/what-uses-my-credits
+### Platform A
+- [Public source ref EXT-001] A.ai/creator-hub/help-center/getting-started/what-is-Platform A
+- [Public source ref EXT-001] A.ai/creator-hub/help-center/tools/which-Platform A-tool-should-i-use
+- [Public source ref EXT-001] A.ai/creator-hub/help-center/tools/how-do-i-use-cinema-studio
+- [Public source ref EXT-001] A.ai/creator-hub/help-center/tools/how-do-i-use-canvas
+- [Public source ref EXT-001] A.ai/creator-hub/help-center/tools/how-do-i-use-marketing-studio-to-create-video-ads
+- [Public source ref EXT-001] A.ai/creator-hub/help-center/tools/how-do-i-use-supercomputer
+- [Public source ref EXT-001] A.ai/creator-hub/help-center/tools/what-are-Platform A-apps
+- [Public source ref EXT-001] A.ai/creator-hub/help-center/tools/how-do-i-use-ai-influencer
+- [Public source ref EXT-001] A.ai/creator-hub/help-center/tools/how-do-i-use-genjutsu
+- [Public source ref EXT-001] A.ai/creator-hub/help-center/ai-models/how-do-i-use-popcorn
+- [Public source ref EXT-001] A.ai/creator-hub/help-center/ai-models/how-do-i-use-dop
+- [Public source ref EXT-001] A.ai/creator-hub/help-center/ai-models/how-do-i-use-soul-to-generate-images
+- [Public source ref EXT-001] A.ai/creator-hub/help-center/ai-models/how-do-i-create-and-use-a-soul-id-character
+- [Public source ref EXT-001] A.ai/creator-hub/help-center/ai-models/how-do-i-use-lipsync-voiceover-and-aspect-ratios
+- [Public source ref EXT-001] A.ai/creator-hub/help-center/ai-models/which-ai-model-should-i-use
+- [Public source ref EXT-001] A.ai/creator-hub/help-center/integrations/what-is-the-Platform A-api
+- [Public source ref EXT-001] A.ai/creator-hub/help-center/integrations/what-is-Platform A-mcp
+- [Public source ref EXT-001] A.ai/creator-hub/help-center/integrations/how-do-i-access-Platform A-via-cli
+- [Public source ref EXT-001] A.ai/creator-hub/help-center/integrations/how-do-i-connect-Platform A-to-ai-agent
+- [Public source ref EXT-001] A.ai/creator-hub/help-center/integrations/how-do-i-use-katana
+- [Public source ref EXT-001] A.ai/creator-hub/help-center/account/who-owns-my-generations-and-can-i-use-them-commercially
+- [Public source ref EXT-001] A.ai/creator-hub/help-center/credits/what-uses-my-credits
 
-### HeyGen
-- https://developers.heygen.com/llms.txt
-- https://developers.heygen.com/mcp/overview
-- https://developers.heygen.com/docs/quick-start
-- https://developers.heygen.com/docs/usage-limits
-- https://developers.heygen.com/docs/create-avatar
-- https://developers.heygen.com/docs/avatar-from-video
-- https://developers.heygen.com/docs/avatar-from-photo
-- https://developers.heygen.com/docs/avatar-from-prompt
-- https://developers.heygen.com/avatar-iv
-- https://developers.heygen.com/docs/video-agent
-- https://developers.heygen.com/docs/interactive-sessions
-- https://developers.heygen.com/docs/edit-scenes
-- https://developers.heygen.com/docs/models/heygen-video
-- https://developers.heygen.com/create-template
-- https://developers.heygen.com/docs/brand-kits
-- https://developers.heygen.com/docs/brand-glossary
-- https://developers.heygen.com/docs/on-brand
-- https://developers.heygen.com/docs/voices/heygen-voice-instant-clone
-- https://developers.heygen.com/docs/voices/professional-voice-clone
-- https://developers.heygen.com/docs/voices/heygen-voice-speech
-- https://developers.heygen.com/lipsync-speed
-- https://developers.heygen.com/lipsync-precision
-- https://developers.heygen.com/docs/video-translate
-- https://developers.heygen.com/reference/create-proofread-session
-- https://developers.heygen.com/reference/create-ai-clipping
-- https://developers.heygen.com/filler-word-removal
-- https://developers.heygen.com/hyperframes-overview
-- https://developers.heygen.com/hyperframes
+### Platform B
+- [Public source ref EXT-003] B.com/llms.txt
+- [Public source ref EXT-003] B.com/mcp/overview
+- [Public source ref EXT-003] B.com/docs/quick-start
+- [Public source ref EXT-003] B.com/docs/usage-limits
+- [Public source ref EXT-003] B.com/docs/create-avatar
+- [Public source ref EXT-003] B.com/docs/avatar-from-video
+- [Public source ref EXT-003] B.com/docs/avatar-from-photo
+- [Public source ref EXT-003] B.com/docs/avatar-from-prompt
+- [Public source ref EXT-003] B.com/avatar-iv
+- [Public source ref EXT-003] B.com/docs/video-agent
+- [Public source ref EXT-003] B.com/docs/interactive-sessions
+- [Public source ref EXT-003] B.com/docs/edit-scenes
+- [Public source ref EXT-003] B.com/docs/models/Platform B-video
+- [Public source ref EXT-003] B.com/create-template
+- [Public source ref EXT-003] B.com/docs/brand-kits
+- [Public source ref EXT-003] B.com/docs/brand-glossary
+- [Public source ref EXT-003] B.com/docs/on-brand
+- [Public source ref EXT-003] B.com/docs/voices/Platform B-voice-instant-clone
+- [Public source ref EXT-003] B.com/docs/voices/professional-voice-clone
+- [Public source ref EXT-003] B.com/docs/voices/Platform B-voice-speech
+- [Public source ref EXT-003] B.com/lipsync-speed
+- [Public source ref EXT-003] B.com/lipsync-precision
+- [Public source ref EXT-003] B.com/docs/video-translate
+- [Public source ref EXT-003] B.com/reference/create-proofread-session
+- [Public source ref EXT-003] B.com/reference/create-ai-clipping
+- [Public source ref EXT-003] B.com/filler-word-removal
+- [Public source ref EXT-003] B.com/hyperframes-overview
+- [Public source ref EXT-003] B.com/hyperframes
 
-### Wink
-- https://wink.ai/
-- https://wink.ai/workspace
-- https://wink.ai/ai-workflow
-- https://wink.ai/pricing
-- https://wink.ai/video-enhancer
-- https://wink.ai/video-enhancer/upload
-- https://wink.ai/ai-video-repair
-- https://wink.ai/video-repair/upload
-- https://wink.ai/video-clearer
-- https://wink.ai/unpixelate-video
-- https://wink.ai/video-upscaler/upload
-- https://wink.ai/video-frame-interpolation
-- https://wink.ai/video-color-match/upload
-- https://wink.ai/remove-object-from-video
-- https://wink.ai/video-watermark-remover/upload
-- https://wink.ai/video-retouch/upload
-- https://wink.ai/ai-video-extender/upload
-- https://wink.ai/text-to-video-ai
-- https://wink.ai/ai-animal-video
-- https://wink.ai/download-guidance
+### Platform C
+- [Public source ref EXT-001] C.ai/
+- [Public source ref EXT-001] C.ai/workspace
+- [Public source ref EXT-001] C.ai/ai-workflow
+- [Public source ref EXT-001] C.ai/pricing
+- [Public source ref EXT-001] C.ai/video-enhancer
+- [Public source ref EXT-001] C.ai/video-enhancer/upload
+- [Public source ref EXT-001] C.ai/ai-video-repair
+- [Public source ref EXT-001] C.ai/video-repair/upload
+- [Public source ref EXT-001] C.ai/video-clearer
+- [Public source ref EXT-001] C.ai/unpixelate-video
+- [Public source ref EXT-001] C.ai/video-upscaler/upload
+- [Public source ref EXT-001] C.ai/video-frame-interpolation
+- [Public source ref EXT-001] C.ai/video-color-match/upload
+- [Public source ref EXT-001] C.ai/remove-object-from-video
+- [Public source ref EXT-001] C.ai/video-watermark-remover/upload
+- [Public source ref EXT-001] C.ai/video-retouch/upload
+- [Public source ref EXT-001] C.ai/ai-video-extender/upload
+- [Public source ref EXT-001] C.ai/text-to-video-ai
+- [Public source ref EXT-001] C.ai/ai-animal-video
+- [Public source ref EXT-001] C.ai/download-guidance
 
 ## Final status
 
