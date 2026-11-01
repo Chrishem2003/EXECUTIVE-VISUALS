@@ -86,7 +86,8 @@ export function buildMediaOperationArgs({jobType,input={},sourcePath,outputPath}
   if(!["contain","cover"].includes(mode))fail("Choose contain or cover for the resize fit mode.");
   const algorithm=jobType==="media.upscale"?String(input.algorithm||"lanczos"):"lanczos";
   if(!["lanczos","bicubic","spline36"].includes(algorithm))fail("Choose lanczos, bicubic, or spline36 for scaling.");
-  filter=mode==="cover"?`scale=${width}:${height}:force_original_aspect_ratio=increase:flags=${algorithm},crop=${width}:${height}`:`scale=${width}:${height}:force_original_aspect_ratio=decrease:flags=${algorithm},pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:color=black`;
+  const ffmpegScaleFlag=algorithm==="spline36"?"spline":algorithm;
+  filter=mode==="cover"?`scale=${width}:${height}:force_original_aspect_ratio=increase:flags=${ffmpegScaleFlag},crop=${width}:${height}`:`scale=${width}:${height}:force_original_aspect_ratio=decrease:flags=${ffmpegScaleFlag},pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:color=black`;
   if(jobType==="media.upscale"){
    const sharpness=number(input.sharpness,0,0,1.5);
    if(sharpness>0)filter+=`,unsharp=5:5:${sharpness.toFixed(2)}:5:5:0.0`;
