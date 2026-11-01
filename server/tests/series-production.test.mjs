@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import {buildSeriesProductionPlan,validateSeriesProductionPlan,buildEpisodeTimelineDocument,upsertStoryBibleEntry,setEpisodeDirectionOverrides,resolveEpisodeDirection,buildEpisodeShotPackage,MAX_EPISODE_SECONDS,MAX_GENERATED_CLIP_SECONDS} from "../../src/core/series-production.ts";
+import {buildSeriesProductionPlan,validateSeriesProductionPlan,buildEpisodeTimelineDocument,upsertStoryBibleEntry,setEpisodeDirectionOverrides,resolveEpisodeDirection,buildEpisodeShotPackage,setEpisodeStoryBibleBindings,MAX_EPISODE_SECONDS,MAX_GENERATED_CLIP_SECONDS} from "../../src/core/series-production.ts";
 const input={title:"Future Makers",premise:"A series exploring practical ideas shaping tomorrow.",format:"education",genre:"Science",seasonCount:2,episodesPerSeason:6,episodeRuntimeSeconds:300,shotLengthSeconds:8,aspectRatio:"16:9",frameRate:30,resolution:"2160p",visualStyle:"Cinematic realism",language:"English",voiceMode:"Natural narration",captions:"Both",music:"Adaptive cinematic score",cameraLanguage:"Mixed cinematic coverage",shotComposition:"Mixed shot scale",pacing:"Cinematic dramatic",colorGrade:"Natural / true-to-life",continuityNotes:"Keep presenter wardrobe consistent."};
 const plan=buildSeriesProductionPlan(input);assert.equal(plan.seasons.length,2);assert.equal(plan.seasons[0].episodes.length,6);
 for(const season of plan.seasons)for(const ep of season.episodes){assert.equal(ep.runtimeSeconds,MAX_EPISODE_SECONDS);assert.equal(ep.scenes.reduce((n,s)=>n+s.shots.reduce((x,k)=>x+k.durationSeconds,0),0),300);for(const scene of ep.scenes)for(const shot of scene.shots)assert.ok(shot.durationSeconds<=MAX_GENERATED_CLIP_SECONDS);}
@@ -76,3 +76,10 @@ const duplicateBinding=structuredClone(boundPlan);
 duplicateBinding.seasons[0].episodes[0].scenes[0].storyBibleEntryIds=[bindingBase.id,bindingBase.id];
 assert.equal(validateSeriesProductionPlan(duplicateBinding).valid,false);
 console.log("Shot-level continuity binding verification passed: scoped entity context, inherited scene bindings, deduplicated references and unknown-ID rejection.");
+
+const boundScenePlan=setEpisodeStoryBibleBindings(withBible,withBible.seasons[0].episodes[0].id,withBible.seasons[0].episodes[0].scenes[0].id,null,[bindingBase.id]);
+assert.deepEqual(boundScenePlan.seasons[0].episodes[0].scenes[0].storyBibleEntryIds,[bindingBase.id]);
+const boundShotPlan=setEpisodeStoryBibleBindings(withBible,withBible.seasons[0].episodes[0].id,withBible.seasons[0].episodes[0].scenes[0].id,bindingShot.id,[bindingBase.id]);
+assert.deepEqual(boundShotPlan.seasons[0].episodes[0].scenes[0].shots[0].storyBibleEntryIds,[bindingBase.id]);
+assert.throws(()=>setEpisodeStoryBibleBindings(withBible,withBible.seasons[0].episodes[0].id,bindingScene.id,null,["unknown"]),/existing story bible/);
+console.log("Scene and shot binding mutation verification passed: immutable updates and known-record enforcement.");
