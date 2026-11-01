@@ -233,3 +233,34 @@ case "$last" in */source.mp4) printf '%s' '{"streams":[{"codec_type":"video"},{"
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+
+test("cloud upscale refuses to publish when the output duration drifts from source", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "ev-cloud-upscale-duration-test-"));
+  const previousFfmpeg = process.env.FFMPEG_PATH;
+  const previousFfprobe = process.env.FFPROBE_PATH;
+  const source = join(directory, "source.mp4");
+  await writeFile(source, "source-media-duration");
+  process.env.FFMPEG_PATH = await executable(directory, "ffmpeg", 'for last do :; done\nprintf "upscaled-media" > "$last"');
+  process.env.FFPROBE_PATH = await executable(directory, "ffprobe", String.raw`for last do :; done
+case "$last" in */source.mp4) printf '%s' '{"streams":[{"codec_type":"video"},{"codec_type":"audio"}],"format":{"duration":"1.25"}}';; *) printf '%s' '{"streams":[{"codec_type":"video","width":640,"height":360},{"codec_type":"audio"}],"format":{"duration":"2.5"}}';; esac`);
+  let publishCount = 0;
+  try {
+    const execute = createCloudMediaExecutor({
+      tempRoot: directory,
+      mediaIO: {
+        async materialize() { return { path: source, asset: { id: "asset-duration", name: "scene.mp4", mediaType: "video/mp4", sha256: "f".repeat(64) }, async cleanup() {} }; },
+        async publish() { publishCount++; }
+      }
+    });
+    await assert.rejects(
+      execute({ job: { id: "job-duration", owner_id: "owner", job_type: "media.upscale", input: { sourceAssetId: "asset-duration", width: 640, height: 360 } }, onProgress() {} }),
+      error => error.code === "MEDIA_OUTPUT_VALIDATION_FAILED"
+    );
+    assert.equal(publishCount, 0, "duration-drift derivative must never be published");
+  } finally {
+    if (previousFfmpeg === undefined) delete process.env.FFMPEG_PATH; else process.env.FFMPEG_PATH = previousFfmpeg;
+    if (previousFfprobe === undefined) delete process.env.FFPROBE_PATH; else process.env.FFPROBE_PATH = previousFfprobe;
+    await rm(directory, { recursive: true, force: true });
+  }
+});
