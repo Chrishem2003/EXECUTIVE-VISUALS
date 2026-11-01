@@ -285,14 +285,14 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
      prompt,
      durationSeconds:Number(config.duration??5),
      aspectRatio:String(config.aspectRatio??"16:9"),
-     resolution:String(config.resolution??"720p"),
+     resolution:String(config.resolution??"provider_default"),
      audioMode:String(config.audioMode??"provider_default"),
      referenceAssetIds:referenceId?[referenceId]:[],
     });
     assertVideoCapabilities(generationRequest,{
      referenceImages:Boolean(process.env.FAL_VIDEO_IMAGE_INPUT_FIELD),
      aspectRatios:["16:9","9:16","1:1"],
-     resolutions:["720p"],
+     resolutions:["provider_default"],
      audioModes:[],
      minDurationSeconds:1,
      maxDurationSeconds:30,
