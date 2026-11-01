@@ -46,6 +46,12 @@ For every adapter, run mock-server tests for valid requests, authentication fail
 ### B2. Reference-conditioned workflows
 Add reference image, image edit, first/last frame, video continuation, masks and audio conditioning as distinct typed ports rather than ambiguous prompt JSON. Preserve source assets and record conditioning inputs and consent/right basis in provenance. Never silently drop an input an adapter cannot honor.
 
+### C2. Deterministic derivative provenance — implemented, awaiting CI
+- Local FFmpeg-derived media assets now record a versioned processing provenance object: operation, engine, method, allowlisted parameters, source asset ID and source SHA-256.
+- Deterministic scaling is explicitly labeled as deterministic resampling, not neural inference; the provenance marks `aiInferencePerformed: false`.
+- Unknown job types return no generic provenance record, and arbitrary input fields are not copied into metadata.
+- The media-operation verification script checks provenance, lineage, method labels and parameter allowlisting. CI/local execution still needs confirmation.
+
 ## Wave C — upscale and post-production truthfulness
 - Keep Real-ESRGAN fail-closed until the configured executable and model files pass an execution self-test. Report execution verification separately from inference-quality verification: a successful process and plausible file header do not prove neural inference or perceptual quality. Mock binaries test contracts only.
 - Add verified engine/model readiness, input/output dimensions and format checks, resource/time/output ceilings, cancellation and derivative lineage. Do not report `inferenceVerified` from file metadata or process exit alone; require independent fixture-based checks before asserting model inference/quality.
