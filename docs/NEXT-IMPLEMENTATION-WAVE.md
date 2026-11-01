@@ -147,3 +147,10 @@ Every capability must report state/evidence date, supported inputs/outputs, loca
 - Tests cover diagnostic parsing, threshold filtering, sustained black intervals, sustained silence and trailing silence at end-of-file.
 - These are heuristic signal checks. Intentional black transitions and pauses may be valid creative choices; this does not assess clipping, loudness standards, lip-sync, colour, faces, motion or perceptual quality.
 - Each FFmpeg analysis command has a bounded timeout and uses the existing job cancellation mechanism. Live media fixture/worker verification and CI remain pending.
+
+### E4. Audio signal metrics — implemented, awaiting CI
+- Audio probes now run FFmpeg silence detection, `astats` and `ebur128` in one bounded analysis pass.
+- Reports include clipped-sample count, sample peak, RMS level and integrated loudness (LUFS) when the installed FFmpeg build emits those metrics.
+- Clipping and peaks within 1 dB of full scale produce review warnings. Integrated loudness is reported without imposing a universal target; delivery standards differ by platform and programme type.
+- Regression tests cover diagnostic parsing, clipping/peak warnings and quality-report integration.
+- True-peak compliance, loudness-range conformance, channel balance, dialogue intelligibility and perceptual listening review remain future work. FFmpeg build/filter availability must be confirmed on target workers.
