@@ -7,7 +7,7 @@
     "dev": "node scripts/dev.mjs",
     "dev:web": "vite --host 0.0.0.0",
     "dev:api": "node server/index.mjs",
-    "build": "npm run verify:deployment && npm run verify:cloud && npm run verify:queue && npm run verify:cloud-queue && npm run verify:media-operations && npm run verify:capabilities && npm run verify:workflow && npm run verify:workflow-run && npm run verify:ai-workflow && npm run verify:workflow-executor && npm run verify:timeline && npm run verify:render && npm run verify:real-render && npm run verify:server && tsc -b && vite build",
+    "build": "npm run verify:deployment && npm run verify:cloud && npm run verify:queue && npm run verify:cloud-queue && npm run verify:media-operations && npm run verify:capabilities && npm run verify:workflow && npm run verify:workflow-run && npm run verify:ai-workflow && npm run verify:workflow-executor && npm run verify:timeline && npm run verify:series && npm run verify:render && npm run verify:real-render && npm run verify:server && tsc -b && vite build",
     "start": "node server/index.mjs",
     "preview": "vite preview --host 0.0.0.0",
     "typecheck": "tsc --noEmit",
@@ -25,7 +25,8 @@
     "verify:queue": "node scripts/verify-queue-leases.mjs",
     "verify:cloud-queue": "node --test server/tests/cloud-queue.test.mjs server/tests/cloud-storage.test.mjs server/tests/cloud-worker.test.mjs server/tests/cloud-assets.test.mjs server/tests/cloud-asset-auth.test.mjs server/tests/cloud-asset-service.test.mjs server/tests/cloud-media-io.test.mjs server/tests/cloud-media-executor.test.mjs server/tests/cloud-media-worker.test.mjs server/tests/cloud-timelines.test.mjs server/tests/cloud-timeline-executor.test.mjs server/tests/cloud-timeline-worker.test.mjs server/tests/cloud-ffmpeg-timeline-renderer.test.mjs server/tests/cloud-timeline-api.test.mjs server/tests/cloud-projects.test.mjs server/tests/cloud-worker-process.test.mjs",
     "verify:ai-workflow": "node scripts/verify-ai-workflow.mjs",
-    "start:cloud-worker": "node server/cloud-worker-process.mjs"
+    "start:cloud-worker": "node server/cloud-worker-process.mjs",
+    "verify:series": "node --experimental-strip-types --test server/tests/series-production.test.mjs"
   },
   "devDependencies": {
     "typescript": "^5.8.3",
