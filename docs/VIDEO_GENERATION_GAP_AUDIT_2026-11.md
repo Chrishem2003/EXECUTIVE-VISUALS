@@ -232,3 +232,17 @@ Episode-level direction overrides can inherit series defaults or set runtime, as
 The first UI controls are live for adding story-bible records and setting runtime, aspect ratio, visual style and camera language per episode. Other supported overrides are available through the shared contract for later UI expansion. Story bible and episode overrides persist with the series plan in cloud project settings.
 
 Still to build: visual reference matching and similarity review, per-entity timeline bindings, episode script authoring, season arc editor, provider capability/cost routing, shot generation approvals and final render quality gates.
+
+
+## Engine-neutral episode shot packages — 2026-11-01
+
+A deterministic shot-package compiler now turns each planned episode into a structured JSON handoff. Each shot carries its own prompt assembled from series premise, episode and scene context, shot direction, effective episode settings, continuity rules, negative prompt guidance and story-bible reference asset IDs. The package records episode identity, season, effective runtime, settings, story-bible schema version, shot count and duration totals.
+
+The Series Producer exposes a per-episode download action. This is a planning/export operation only: it does not invoke a generation provider, spend credits, create media or claim engine compatibility. Provider routing remains a separate approval-gated stage and must validate every requested field against the selected model's declared capabilities.
+
+Next integration steps:
+1. Bind story-bible entries to specific shots/scenes rather than applying all references indiscriminately.
+2. Add a capability-aware routing preview with explicit unsupported-setting warnings and provider-neutral cost estimates only where verified pricing is available.
+3. Add per-shot approval, retry, seed and reference-lock metadata with immutable prompt revisions.
+4. Add actual generation job submission through the existing authenticated workflow executor, preserving identity-consent checks, budget limits, audit provenance and user approval.
+5. Add real AI super-resolution as a separately selected, capability-tested enhancement stage; retain classical scaling as the no-model fallback and label the two methods accurately.
