@@ -26,4 +26,4 @@ assert.match(server,/REQUIRE_PERSISTENT_DATA_DIR/);
 assert.match(server,/isWithinDataDir\(DB_FILE\)/);
 assert.equal(pkg.scripts.start,"node server/index.mjs");
 assert.ok(pkg.scripts.build.includes("npm run verify:deployment"));
-console.log("Deployment guard passed: Docker includes FFmpeg, the staging blueprint mounts durable storage, and the API refuses an unmounted data directory.");
+console.log("Deployment guard passed: Docker includes FFmpeg, staging requires external auth and durable storage, and the API refuses an unmounted data directory.");
