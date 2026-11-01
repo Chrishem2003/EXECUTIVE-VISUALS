@@ -221,3 +221,14 @@ A dedicated Series Producer workspace now organises work as series → seasons �
 The workspace exposes project-level defaults for aspect ratio, frame rate, master delivery resolution, visual direction, camera language, shot composition, pacing, color grade, language, voice approach, caption mode and music direction. It includes a reusable continuity-notes field for recurring characters, wardrobe, locations, visual identity and brand rules. Series plans persist as local drafts and can be saved into an authenticated cloud project's creative-production settings using the existing revision-checked project API. Generated media is not fabricated: episodes and shots remain planned until a compatible provider is configured and an approved workflow is executed.
 
 **Architectural extensions to build next:** (1) episode-specific overrides over series defaults; (2) a versioned story-world graph linking characters, props, locations, wardrobe and timeline events across episodes; (3) reference-lock and continuity-drift review across approved frames; (4) season arcs, episode loglines, recap/next-episode hooks and story beat coverage; (5) per-shot provider capability routing with a runtime-aware cost/budget estimate before approval; (6) automated aspect-ratio reframing and localized caption/voice variants from one master edit; (7) review annotations, approvals and immutable cut versions; and (8) final-delivery quality gates for duration, black frames, audio peaks, caption coverage, resolution, frame rate, checksums and asset lineage.
+
+
+## Story-world continuity and episode direction controls — 2026-11-01
+
+The Series Producer now includes a versioned story-bible registry for recurring characters/presenters, locations, props, wardrobe, voice identity and brand rules. Each record has a stable ID, descriptive and visual constraints, tags, timestamps and optional private asset IDs; binary media is never embedded in project settings.
+
+Episode-level direction overrides can inherit series defaults or set runtime, aspect ratio, frame rate, resolution, visual style, camera language, shot composition, pacing, colour grade, language, voice, captions and music. Runtime overrides rebalance scene and shot durations while preserving the five-minute episode cap and the 30-second planned-clip cap. The timeline scaffold uses the effective episode aspect ratio and frame rate.
+
+The first UI controls are live for adding story-bible records and setting runtime, aspect ratio, visual style and camera language per episode. Other supported overrides are available through the shared contract for later UI expansion. Story bible and episode overrides persist with the series plan in cloud project settings.
+
+Still to build: visual reference matching and similarity review, per-entity timeline bindings, episode script authoring, season arc editor, provider capability/cost routing, shot generation approvals and final render quality gates.
