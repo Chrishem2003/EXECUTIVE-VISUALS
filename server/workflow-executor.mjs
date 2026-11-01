@@ -15,7 +15,7 @@ import { createHash } from "node:crypto";
 import { reserveRemoteRequest } from "./usage-guardrails.mjs";
 import { resolve, relative, sep } from "node:path";
 import { buildShotContinuityPrompt, getShotContinuityReferenceIds } from "./shot-continuity.mjs";
-import { normalizeVideoGenerationRequest, assertVideoCapabilities } from "./video-generation-contract.mjs";
+import { normalizeVideoGenerationRequest, assertVideoCapabilities, createVideoRequestProvenance } from "./video-generation-contract.mjs";
 
 const now=()=>new Date().toISOString();
 function requireExecutionProvider(capability,remoteOptInVariable){
@@ -285,20 +285,25 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
      prompt,
      durationSeconds:Number(config.duration??5),
      aspectRatio:String(config.aspectRatio??"16:9"),
+     resolution:String(config.resolution??"720p"),
+     audioMode:String(config.audioMode??"provider_default"),
      referenceAssetIds:referenceId?[referenceId]:[],
     });
     assertVideoCapabilities(generationRequest,{
      referenceImages:Boolean(process.env.FAL_VIDEO_IMAGE_INPUT_FIELD),
      aspectRatios:["16:9","9:16","1:1"],
+     resolutions:["720p"],
+     audioModes:[],
      minDurationSeconds:1,
      maxDurationSeconds:30,
     });
     const usageStarted=Date.now();
     const provider=requireExecutionProvider("video.generate","VIDEO_GATEWAY_ALLOW_REMOTE");
     reserveRemoteRequest(db,{ownerId:job.owner_id,projectId:job.project_id||null,jobId:job.id,provider,capability:"video.generate"});
-    const result=await generateFalVideo({prompt,duration:Number(config.duration||5),aspectRatio:String(config.aspectRatio||"16:9"),referenceImageDataUrl});
+    const result=await generateFalVideo({prompt:generationRequest.prompt,duration:generationRequest.durationSeconds,aspectRatio:generationRequest.aspectRatio,referenceImageDataUrl});
+    const provenance=createVideoRequestProvenance(generationRequest,{provider:result.provider,model:result.model,adapterVersion:"fal-video-gateway-v1"});
     recordModelUsage(db,{ownerId:job.owner_id,projectId:job.project_id||null,jobId:job.id,workflowRunId:runId,nodeId,provider:provider.provider,capability:"video.generate",model:result.model,usage:result.usage,durationMs:Date.now()-usageStarted});
-    const asset=await storeGeneratedVideo({db,mediaRoot,ownerId:job.owner_id,projectId:job.project_id||null,jobId:job.id,prompt,model:result.model,buffer:result.buffer});
+    const asset=await storeGeneratedVideo({db,mediaRoot,ownerId:job.owner_id,projectId:job.project_id||null,jobId:job.id,prompt:generationRequest.prompt,model:result.model,provenance,buffer:result.buffer});
     output=nodeOutput(node,asset.id);output.asset=asset.id;output.assetId=asset.id;output.mimeType=asset.mediaType;output.sha256=asset.sha256;output.usage=result.usage;
    }else if(node.kind==="llm.prompt"||node.kind==="llm.analyze"){
     if(!hasApprovedAncestor(graph,nodeId,outputs))throw Object.assign(new Error("A completed upstream human-approval node is required before text-model execution."),{code:"APPROVAL_REQUIRED"});
