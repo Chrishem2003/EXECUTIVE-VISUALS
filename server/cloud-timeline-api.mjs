@@ -37,11 +37,30 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
   }catch(error){if(error?.name==="AbortError"){const timeout=new Error("Cloud timeline API request timed out.");timeout.code="CLOUD_TIMELINE_API_TIMEOUT";throw timeout;}throw error;}finally{clearTimeout(timer);}
  }
  const response=(status,body)=>({status,body});
- async function handle({method,path,ownerId,body={},idempotencyKey=null}={}){
+ async function handle({method,path,ownerId,body={},query={},idempotencyKey=null}={}){
   if(!["GET","POST","PUT","DELETE"].includes(method)||typeof path!=="string")return null;
   if(!safeId(ownerId))return response(401,{error:{code:"AUTH_REQUIRED",message:"A verified account identity is required."}});
   if(Buffer.byteLength(JSON.stringify(body||{}))>maxJobBytes)return response(413,{error:{code:"PAYLOAD_TOO_LARGE",message:"Cloud timeline request is too large."}});
   try{
+   if(path==="/api/cloud/projects"&&method==="POST"){
+    const project=await service.projects.create({ownerId,name:body.name,description:body.description||"",settings:body.settings||{}});
+    return response(201,{project});
+   }
+   if(path==="/api/cloud/projects"&&method==="GET"){
+    const projects=await service.projects.list({ownerId,limit:Number(query.limit)||50,offset:Number(query.offset)||0});
+    return response(200,{projects});
+   }
+   const projectMatch=path.match(/^\/api\/cloud\/projects\/([0-9a-f-]+)$/i);
+   if(projectMatch&&safeId(projectMatch[1])){
+    const projectId=projectMatch[1];
+    if(method==="GET"){const project=await service.projects.get({ownerId,projectId});return project?response(200,{project}):response(404,{error:{code:"PROJECT_NOT_FOUND",message:"Project not found."}});}
+    if(method==="PATCH"){const project=await service.projects.update({ownerId,projectId,expectedRevision:Number(body.expectedRevision),name:body.name,description:body.description,settings:body.settings});return response(200,{project});}
+    if(method==="DELETE"){const archived=await service.projects.archive({ownerId,projectId,expectedRevision:Number(body.expectedRevision)});return response(200,{project:archived});}
+   }
+   if(path==="/api/cloud/assets"&&method==="GET"){
+    const assets=await service.assets.list({ownerId,projectId:query.projectId||null,limit:Number(query.limit)||50,offset:Number(query.offset)||0});
+    return response(200,{assets});
+   }
    if(path==="/api/cloud/timelines"&&method==="POST"){
     const timeline=await service.timelines.create({ownerId,projectId:body.projectId||null,name:body.name||"Untitled timeline",timeline:body.timeline,otio:body.otio??null});
     return response(201,{timeline});
@@ -103,6 +122,8 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
    }
    return null;
   }catch(error){
+   if(error.code==="CLOUD_PROJECT_NOT_FOUND"||error.code==="CLOUD_PROJECT_ACCESS_DENIED")return response(404,{error:{code:"PROJECT_NOT_FOUND",message:"Project not found."}});
+   if(error.code==="CLOUD_PROJECT_REVISION_CONFLICT")return response(409,{error:{code:"REVISION_CONFLICT",message:"Project changed since it was loaded. Refresh and retry."}});
    if(error.code==="CLOUD_ASSET_NOT_FOUND")return response(404,{error:{code:"ASSET_NOT_FOUND",message:"Asset not found."}});
    if(error.code==="CLOUD_TIMELINE_NOT_FOUND")return response(404,{error:{code:"TIMELINE_NOT_FOUND",message:"Timeline not found."}});
    if(error.code==="CLOUD_ASSET_ACCESS_DENIED")return response(404,{error:{code:"ASSET_NOT_FOUND",message:"Asset not found."}});
