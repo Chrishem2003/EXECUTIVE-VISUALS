@@ -365,6 +365,7 @@ test("cloud AI upscale publishes a separate image derivative with engine provena
   const directory = await mkdtemp(join(tmpdir(), "ev-cloud-ai-upscale-test-"));
   const previousBinary = process.env.REALESRGAN_NCNN_PATH;
   const previousModels = process.env.REALESRGAN_MODEL_DIR;
+  const previousEnabled = process.env.AI_UPSCALE_ENABLED;
   const source = join(directory, "source.png");
   const model = "realesrgan-x4plus";
   const binary = await executable(directory, "realesrgan-ncnn-vulkan", String.raw`while [ "$1" != "" ]; do if [ "$1" = "-o" ]; then shift; printf '\211PNG\r\n\032\n\000\000\000\015IHDR\000\000\000\001\000\000\000\001' > "$1"; fi; shift; done`);
@@ -373,6 +374,7 @@ test("cloud AI upscale publishes a separate image derivative with engine provena
   await writeFile(join(directory, model + ".bin"), "weights");
   process.env.REALESRGAN_NCNN_PATH = binary;
   process.env.REALESRGAN_MODEL_DIR = directory;
+  process.env.AI_UPSCALE_ENABLED = "true";
   let published;
   try {
     const execute = createCloudMediaExecutor({
@@ -402,6 +404,7 @@ test("cloud AI upscale publishes a separate image derivative with engine provena
   } finally {
     if (previousBinary === undefined) delete process.env.REALESRGAN_NCNN_PATH; else process.env.REALESRGAN_NCNN_PATH = previousBinary;
     if (previousModels === undefined) delete process.env.REALESRGAN_MODEL_DIR; else process.env.REALESRGAN_MODEL_DIR = previousModels;
+    if (previousEnabled === undefined) delete process.env.AI_UPSCALE_ENABLED; else process.env.AI_UPSCALE_ENABLED = previousEnabled;
     await rm(directory, { recursive: true, force: true });
   }
 });
