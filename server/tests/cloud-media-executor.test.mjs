@@ -208,7 +208,7 @@ test("cloud upscale refuses to publish when the source audio stream is lost", as
   const previousFfprobe = process.env.FFPROBE_PATH;
   const source = join(directory, "source.mp4");
   await writeFile(source, "source-media");
-  process.env.FFMPEG_PATH = await executable(directory, "ffmpeg", 'for last do :; done\\nprintf "upscaled-media" > "$last"');
+  process.env.FFMPEG_PATH = await executable(directory, "ffmpeg", 'for last do :; done\nprintf "upscaled-media" > "$last"');
   process.env.FFPROBE_PATH = await executable(directory, "ffprobe", String.raw`for last do :; done
 case "$last" in */source.mp4) printf '%s' '{"streams":[{"codec_type":"video"},{"codec_type":"audio"}]}';; *) printf '%s' '{"streams":[{"codec_type":"video","width":640,"height":360}],"format":{"duration":"1.25"}}';; esac`);
   let publishCount = 0;
