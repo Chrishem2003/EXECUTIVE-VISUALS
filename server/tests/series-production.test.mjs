@@ -83,3 +83,12 @@ const boundShotPlan=setEpisodeStoryBibleBindings(withBible,withBible.seasons[0].
 assert.deepEqual(boundShotPlan.seasons[0].episodes[0].scenes[0].shots[0].storyBibleEntryIds,[bindingBase.id]);
 assert.throws(()=>setEpisodeStoryBibleBindings(withBible,withBible.seasons[0].episodes[0].id,bindingScene.id,null,["unknown"]),/existing story bible/);
 console.log("Scene and shot binding mutation verification passed: immutable updates and known-record enforcement.");
+
+const shotOnlyPlan=setEpisodeStoryBibleBindings(withBible,withBible.seasons[0].episodes[0].id,bindingScene.id,bindingShot.id,[bindingBase.id]);
+const shotOnlyPackage=buildEpisodeShotPackage(shotOnlyPlan,shotOnlyPlan.seasons[0].episodes[0]);
+const targetShot=shotOnlyPackage.shots.find(item=>item.shotId===bindingShot.id);
+const siblingShot=shotOnlyPackage.shots.find(item=>item.sceneId===bindingScene.id&&item.shotId!==bindingShot.id);
+assert.ok(targetShot.continuityContext.some(rule=>rule.includes("Host One")));
+assert.ok(!siblingShot.continuityContext.some(rule=>rule.includes("Host One")));
+assert.deepEqual(targetShot.referenceAssetIds,[]);
+console.log("Shot-only continuity isolation verification passed.");
