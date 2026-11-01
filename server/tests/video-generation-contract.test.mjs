@@ -95,3 +95,19 @@ test("provenance records a stable request hash and provider identity", () => {
   assert.equal(first.model, "mock-video-v1");
   assert.match(first.requestHash, /^[a-f0-9]{64}$/);
 });
+
+
+test("allows owner-scoped generation without a project workspace", () => {
+  const request = normalizeVideoGenerationRequest({ prompt: "Standalone short film" });
+  assert.equal(request.projectId, undefined);
+  assert.equal(createVideoRequestProvenance(request, { provider: "fal", model: "example/model" }).projectId, undefined);
+});
+
+test("rejects resolution or audio settings the configured adapter cannot honor", () => {
+  const highResolution = normalizeVideoGenerationRequest({ ...base, resolution: "1080p" });
+  assert.throws(() => assertVideoCapabilities(highResolution, { resolutions: ["720p"] }),
+    (error) => error.code === "VIDEO_GENERATION_UNSUPPORTED_CAPABILITY");
+  const noAudio = normalizeVideoGenerationRequest({ ...base, audioMode: "none" });
+  assert.throws(() => assertVideoCapabilities(noAudio, { audioModes: [] }),
+    (error) => error.code === "VIDEO_GENERATION_UNSUPPORTED_CAPABILITY");
+});
