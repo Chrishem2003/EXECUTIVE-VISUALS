@@ -124,8 +124,8 @@ test("creative workspace drafts persist per project with revision and editor-rol
   const document={
     creativeProjects:[{id:"draft-1",name:"Launch film",brief:"A durable creative brief",audience:"Customers",style:"Documentary",created:"2026-10-31"}],
     tasks:[{id:"task-1",name:"Build storyboard",category:"Pre-production",status:"planned",created:"2026-10-31",detail:"Create scene cards"}],
-    shots:[{id:"shot-1",scene:"Opening",action:"Aerial approach",camera:"Wide",lens:"24mm",movement:"Slow push",lighting:"Golden hour",duration:5}],
-    characters:[{id:"character-1",name:"Presenter",description:"Original fictional presenter",voice:"Not assigned",consent:{kind:"authorized",scopes:["likeness","voice"],evidenceReference:"release-record-7",expiresAt:"2027-06-30"}}],
+    shots:[{id:"shot-1",scene:"Opening",action:"Aerial approach",camera:"Wide",lens:"24mm",movement:"Slow push",lighting:"Golden hour",duration:5,characterIds:["character-1"],location:"Lake shore",timeOfDay:"Sunrise",visualPrompt:"Maintain the same jacket and hairstyle",continuityIn:"Character enters from frame left",continuityOut:"Camera settles on the shoreline",referenceAssetIds:["asset-ref-1"],aspectRatio:"16:9"}],
+    characters:[{id:"character-1",name:"Presenter",description:"Original fictional presenter",voice:"Not assigned",appearance:"Short dark hair; distinctive round glasses",wardrobe:"Navy jacket, white shirt",voiceProfile:"Warm mid-range delivery; measured pace",continuityNotes:"Keep glasses and hairstyle unchanged across scenes",referenceAssetIds:["asset-ref-1","asset-ref-2"],consent:{kind:"authorized",scopes:["likeness","voice"],evidenceReference:"release-record-7",expiresAt:"2027-06-30"}}],
     prompt:"Creative brief prompt",plan:"Three-act plan",script:"Opening narration",variants:["A","B"],
     researchSources:[{id:"source-1",title:"Official evidence report",url:"https://example.org/report",sourceType:"Official report",author:"Research Office",summary:"Primary evidence",rights:"Public"}],
     knowledgeRecords:[{id:"record-1",title:"Verified finding",content:"Finding supported by the official report.",tags:["evidence"],sourceIds:["source-1","unknown-source"],kind:"Finding",status:"Verified"}],
@@ -139,6 +139,14 @@ test("creative workspace drafts persist per project with revision and editor-rol
   assert.equal(loadedBody.revision,1);
   assert.equal(loadedBody.document.creativeProjects[0].name,"Launch film");
   assert.equal(loadedBody.document.shots[0].duration,5);
+  assert.deepEqual(loadedBody.document.shots[0].characterIds,["character-1"]);
+  assert.equal(loadedBody.document.shots[0].location,"Lake shore");
+  assert.equal(loadedBody.document.shots[0].continuityOut,"Camera settles on the shoreline");
+  assert.deepEqual(loadedBody.document.shots[0].referenceAssetIds,["asset-ref-1"]);
+  assert.equal(loadedBody.document.shots[0].aspectRatio,"16:9");
+  assert.equal(loadedBody.document.characters[0].wardrobe,"Navy jacket, white shirt");
+  assert.equal(loadedBody.document.characters[0].voiceProfile,"Warm mid-range delivery; measured pace");
+  assert.deepEqual(loadedBody.document.characters[0].referenceAssetIds,["asset-ref-1","asset-ref-2"]);
   assert.deepEqual(loadedBody.document.characters[0].consent,{kind:"authorized",scopes:["likeness","voice"],evidenceReference:"release-record-7",expiresAt:"2027-06-30"});
   assert.equal(loadedBody.document.researchSources[0].url,"https://example.org/report");
   assert.deepEqual(loadedBody.document.knowledgeRecords[0].sourceIds,["source-1"]);
