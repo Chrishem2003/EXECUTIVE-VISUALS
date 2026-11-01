@@ -25,7 +25,7 @@ export function buildFalVideoPayload({prompt,duration=5,aspectRatio="16:9",refer
  if(referenceImageDataUrl){
   const field=String(imageInputField||"").trim();
   if(!IMAGE_INPUT_FIELDS.has(field))throw fail("Configure FAL_VIDEO_IMAGE_INPUT_FIELD to a field supported by the selected image-to-video model before passing a reference image.","VIDEO_GATEWAY_IMAGE_INPUT_UNCONFIGURED");
-  if(typeof referenceImageDataUrl!=="string"||referenceImageDataUrl.length>14*1024*1024||!/^data:image\\/(?:jpeg|png|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(referenceImageDataUrl))throw fail("The reference image data URL is invalid or oversized.","VIDEO_GATEWAY_INVALID_INPUT");
+  if(typeof referenceImageDataUrl!=="string"||referenceImageDataUrl.length>14*1024*1024||!/^data:image\/(?:jpeg|png|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(referenceImageDataUrl))throw fail("The reference image data URL is invalid or oversized.","VIDEO_GATEWAY_INVALID_INPUT");
   payload[field]=referenceImageDataUrl;
  }
  return payload;
