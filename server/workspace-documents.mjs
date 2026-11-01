@@ -1,5 +1,6 @@
 const text=(value,max)=>String(value??"").slice(0,max);
 const records=(value,limit,fields)=>Array.isArray(value)?value.slice(0,limit).filter(item=>item&&typeof item==="object"&&!Array.isArray(item)).map(item=>Object.fromEntries(fields.map(([key,max])=>[key,text(item[key],max)]))):[];
+const stringList=(value,limit=30,max=240)=>Array.isArray(value)?[...new Set(value.slice(0,limit).map(item=>text(item,max).trim()).filter(Boolean))]:[];
 export function sanitizeCreativeWorkspaceDocument(input){
  if(!input||typeof input!=="object"||Array.isArray(input))throw Object.assign(new Error("Workspace document must be a JSON object."),{code:"INVALID_WORKSPACE_DOCUMENT"});
  const sourceRows=Array.isArray(input.researchSources)?input.researchSources.slice(0,300).filter(item=>item&&typeof item==="object"&&!Array.isArray(item)):[];
@@ -12,7 +13,18 @@ export function sanitizeCreativeWorkspaceDocument(input){
   schemaVersion:1,
   creativeProjects:records(input.creativeProjects,100,[["id",80],["name",160],["brief",10000],["audience",2000],["style",200],["created",40]]),
   tasks:records(input.tasks,500,[["id",80],["name",200],["category",120],["status",40],["created",40],["detail",4000]]),
-  shots:records(input.shots,500,[["id",80],["scene",200],["action",4000],["camera",300],["lens",120],["movement",300],["lighting",500]]).map((item,index)=>({...item,duration:Math.max(0,Math.min(3600,Number(input.shots[index]?.duration)||0))})),
+  shots:records(input.shots,500,[["id",80],["scene",200],["action",4000],["camera",300],["lens",120],["movement",300],["lighting",500]]).map((item,index)=>({
+   ...item,
+   duration:Math.max(0,Math.min(3600,Number(input.shots[index]?.duration)||0)),
+   characterIds:stringList(input.shots[index]?.characterIds,30,80),
+   location:text(input.shots[index]?.location,300),
+   timeOfDay:text(input.shots[index]?.timeOfDay,120),
+   visualPrompt:text(input.shots[index]?.visualPrompt,6000),
+   continuityIn:text(input.shots[index]?.continuityIn,2000),
+   continuityOut:text(input.shots[index]?.continuityOut,2000),
+   referenceAssetIds:stringList(input.shots[index]?.referenceAssetIds,20,80),
+   aspectRatio:text(input.shots[index]?.aspectRatio,20)
+  })),
   characters:records(input.characters,200,[["id",80],["name",160],["description",6000],["voice",160]]).map((item,index)=>{
    const raw=input.characters[index]?.consent;
    const consent=raw&&typeof raw==="object"&&!Array.isArray(raw)?{
@@ -21,7 +33,7 @@ export function sanitizeCreativeWorkspaceDocument(input){
     evidenceReference:text(raw.evidenceReference,500),
     expiresAt:text(raw.expiresAt,10)
    }:{kind:"not-granted",scopes:[],evidenceReference:"",expiresAt:""};
-   return {...item,consent};
+   return {...item,appearance:text(input.characters[index]?.appearance,3000),wardrobe:text(input.characters[index]?.wardrobe,3000),voiceProfile:text(input.characters[index]?.voiceProfile,2000),continuityNotes:text(input.characters[index]?.continuityNotes,3000),referenceAssetIds:stringList(input.characters[index]?.referenceAssetIds,20,80),consent};
   }),
   prompt:text(input.prompt,20000),
   plan:text(input.plan,50000),
