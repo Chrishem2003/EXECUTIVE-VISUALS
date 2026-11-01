@@ -66,6 +66,12 @@ Add reference image, image edit, first/last frame, video continuation, masks and
 - Tests cover disabled, execution-only, claimed-inference-only and evidence-backed states.
 - CI is pending; do not treat this slice as verified until the workflow completes successfully.
 
+### E1. Local derivative validation before publication — implemented, awaiting CI
+- Local media jobs now run FFprobe against the produced derivative before registering it as an asset.
+- Publication is rejected when the expected audio/video stream is absent, duration is invalid/unverifiable, metadata is malformed, or the output file is empty.
+- Validation reports stream count, duration and expected stream type; this is structural validation, not perceptual quality scoring.
+- Verification script includes valid video/audio/image-thumbnail probe cases and malformed/mismatched output rejection. CI/local execution remains to be confirmed.
+
 ## Wave D — presenter, dubbing and continuity
 - Keep narration TTS, transcription, translation, avatar rendering, voice cloning and lip-sync as separate capabilities with separate readiness and permissions.
 - Add timestamped transcript alignment and optional diarization only through tested adapters.
