@@ -34,7 +34,7 @@ test("rejects recipes with unsupported operations, invalid options and incompati
 });
 
 test("plans audio cleanup only for audio assets",()=>{
- const plan=planEnhancementRecipe({sourceAsset:{id:"audio",media_type:"audio/wav"},steps:[{operation:"media.audio-clean",parameters:{noiseFloor:-30,targetLufs:-18}}]});
+ const plan=planEnhancementRecipe({sourceAsset:{id:"audio",media_type:"audio/wav"},steps:[{operation:"media.audio-clean",parameters:{noiseFloor:-30,targetLufs:-18,privateToken:"must-not-leak"}}]});
  assert.equal(plan.steps[0].method,"classical-audio-filtering");
  assert.deepEqual(plan.steps[0].parameters,{noiseFloor:-30,targetLufs:-18});
 });
