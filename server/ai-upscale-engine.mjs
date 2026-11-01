@@ -42,13 +42,13 @@ function run(binary, args, timeoutMs, signal) {
       killTimer.unref?.();
       finish(fail("AI upscaling job was cancelled.", "JOB_CANCELLED"));
     };
-    if (signal?.aborted) { abort(); return; }
-    signal?.addEventListener("abort", abort, { once: true });
     const timer = setTimeout(() => {
       child.kill("SIGKILL");
       finish(fail("AI upscaling process exceeded its time limit.", "AI_UPSCALE_TIMEOUT"));
     }, timeoutMs);
     timer.unref?.();
+    if (signal?.aborted) abort();
+    else signal?.addEventListener("abort", abort, { once: true });
     child.stderr.on("data", chunk => { stderr = (stderr + chunk.toString()).slice(-4000); });
     child.once("error", () => finish(fail("AI upscaling executable could not start.", "AI_UPSCALE_ENGINE_UNAVAILABLE")));
     child.once("close", code => code === 0
