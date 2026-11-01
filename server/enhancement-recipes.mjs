@@ -18,10 +18,14 @@ export function planEnhancementRecipe({name="Enhancement recipe",sourceAsset,ste
   const mediaType=sourceAsset.media_type;
   let currentType=mediaType;
   const planned=steps.map((step,index)=>{
-    const operation=String(step?.operation||"");
+    if(!step||typeof step!=="object"||Array.isArray(step))throw Object.assign(new Error("Each recipe step must be an object."),{code:"RECIPE_STEP_INVALID",step:index});
+    const operation=String(step.operation||"");
+    const rawParameters=step.parameters??{};
+    if(!rawParameters||typeof rawParameters!=="object"||Array.isArray(rawParameters))throw Object.assign(new Error("Recipe step parameters must be an object."),{code:"RECIPE_PARAMETERS_INVALID",step:index});
+    const parameters=Object.fromEntries(Object.entries(rawParameters).filter(([key])=>(PARAMETER_KEYS[operation]||[]).includes(key)));
     if(VIDEO_STEPS.has(operation)) {
       if(!currentType.startsWith("video/"))throw Object.assign(new Error(operation+" requires a video source."),{code:"RECIPE_MEDIA_TYPE_MISMATCH",step:index});
-      buildMediaOperationArgs({jobType:operation,input:step.parameters||{},sourcePath:"/recipe/source.mp4",outputPath:"/recipe/output.mp4"});
+      buildMediaOperationArgs({jobType:operation,input:parameters,sourcePath:"/recipe/source.mp4",outputPath:"/recipe/output.mp4"});
     } else if(AUDIO_STEPS.has(operation)) {
       if(!currentType.startsWith("audio/"))throw Object.assign(new Error(operation+" requires an audio source."),{code:"RECIPE_MEDIA_TYPE_MISMATCH",step:index});
       buildMediaOperationArgs({jobType:operation,input:step.parameters||{},sourcePath:"/recipe/source.wav",outputPath:"/recipe/output.wav"});
@@ -32,7 +36,7 @@ export function planEnhancementRecipe({name="Enhancement recipe",sourceAsset,ste
     return {
       index,
       operation,
-      parameters:{...(step.parameters||{})},
+      parameters,
       engine:"ffmpeg",
       method:operation==="media.upscale"||operation==="media.resize"?"deterministic-resampling":
         operation==="media.interpolate"?"optical-flow-frame-interpolation":
