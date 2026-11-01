@@ -12,8 +12,22 @@ export function parseSilenceEvents(stderr="",durationSeconds=0){
  }
  return events.sort((a,b)=>a.startSeconds-b.startSeconds);
 }
-export function buildMediaSignalFindings({blackFrames=[],silence=[],durationSeconds=0,blackThresholdSeconds=1,silenceThresholdSeconds=2}={}){
+export function parseFreezeEvents(stderr=""){
+ const text=String(stderr||""),events=[];
+ const starts=[...text.matchAll(/freeze_start:\s*([0-9.]+)/g)];
+ for(const match of starts){
+  const startSeconds=Number(match[1]),tail=text.slice(match.index);
+  const end=tail.match(/freeze_end:\s*([0-9.]+)/),duration=tail.match(/freeze_duration:\s*([0-9.]+)/);
+  if(end&&duration){const event={startSeconds,endSeconds:Number(end[1]),durationSeconds:Number(duration[1])};if(Object.values(event).every(Number.isFinite))events.push(event);}
+ }
+ return events;
+}
+export function parseSceneChangeTimes(stderr=""){
+ return [...String(stderr||"").matchAll(/pts_time:\s*(-?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+))/g)].map(match=>Number(match[1])).filter(Number.isFinite);
+}
+export function buildMediaSignalFindings({blackFrames=[],silence=[],freezes=[],durationSeconds=0,blackThresholdSeconds=1,silenceThresholdSeconds=2,freezeThresholdSeconds=2}={}){
  const findings=[];
+ for(const event of freezes){if(event.durationSeconds>=freezeThresholdSeconds)findings.push({code:"FROZEN_VIDEO_INTERVAL",severity:"warning",startSeconds:event.startSeconds,endSeconds:event.endSeconds,durationSeconds:event.durationSeconds,message:"A sustained low-motion interval was detected; review whether it is an intentional hold."});}
  for(const event of blackFrames){
   if(event.durationSeconds>=blackThresholdSeconds)findings.push({code:"SUSTAINED_BLACK_FRAME",severity:"warning",startSeconds:event.startSeconds,endSeconds:event.endSeconds,durationSeconds:event.durationSeconds,message:"Sustained black video interval detected; review whether intentional."});
  }
