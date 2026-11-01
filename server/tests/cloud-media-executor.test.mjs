@@ -57,7 +57,7 @@ test("cloud media enhancement publishes a checksummed derivative using the claim
   const source = join(directory, "source.mp4");
   await writeFile(source, "source-media");
   const ffmpeg = await executable(directory, "ffmpeg", 'for last do :; done\nprintf "rendered-media" > "$last"');
-  const ffprobe = await executable(directory, "ffprobe", String.raw\`printf '%s' '{"streams":[{"codec_type":"video","width":640,"height":360}],"format":{"duration":"1.0"}}'\`);
+  const ffprobe = await executable(directory, "ffprobe", String.raw`printf '%s' '{"streams":[{"codec_type":"video","width":640,"height":360}],"format":{"duration":"1.0"}}'`);
   process.env.FFMPEG_PATH = ffmpeg;
   process.env.FFPROBE_PATH = ffprobe;
   let published, publishedContent, cleaned = false;
