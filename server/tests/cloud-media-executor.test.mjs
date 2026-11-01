@@ -135,7 +135,7 @@ test("cloud upscale verifies requested dimensions before publishing and records 
   await writeFile(source, "source-media");
   const ffmpeg = await executable(directory, "ffmpeg", 'for last do :; done\nprintf "upscaled-media" > "$last"');
   const ffprobe = await executable(directory, "ffprobe", String.raw`for last do :; done
-case "$last" in */source.mp4) printf '%s' '{"streams":[{"codec_type":"video"},{"codec_type":"audio"}]}';; *) printf '%s' '{"streams":[{"codec_type":"video","width":642,"height":360},{"codec_type":"audio"}],"format":{"duration":"1.25"}}';; esac`);
+case "$last" in */source.mp4) printf '%s' '{"streams":[{"codec_type":"video"},{"codec_type":"audio"}],"format":{"duration":"1.25"}}';; *) printf '%s' '{"streams":[{"codec_type":"video","width":642,"height":360},{"codec_type":"audio"}],"format":{"duration":"1.25"}}';; esac`);
   process.env.FFMPEG_PATH = ffmpeg;
   process.env.FFPROBE_PATH = ffprobe;
   let published;
@@ -157,7 +157,9 @@ case "$last" in */source.mp4) printf '%s' '{"streams":[{"codec_type":"video"},{"
     assert.equal(result.processing.algorithm, "spline36");
     assert.equal(result.processing.targetWidth, 642);
     assert.equal(result.processing.targetHeight, 360);
+    assert.equal(result.processing.sourceDurationSeconds, 1.25);
     assert.equal(result.processing.outputDurationSeconds, 1.25);
+    assert.equal(result.processing.durationDeltaSeconds, 0);
     assert.equal(result.processing.sourceAudioStreamCount, 1);
     assert.equal(result.processing.outputAudioStreamCount, 1);
     assert.equal(result.processing.audioPreserved, true);
@@ -179,7 +181,7 @@ test("cloud upscale refuses to publish when FFprobe dimensions differ from the r
   await writeFile(source, "source-media");
   process.env.FFMPEG_PATH = await executable(directory, "ffmpeg", 'for last do :; done\nprintf "bad-size" > "$last"');
   process.env.FFPROBE_PATH = await executable(directory, "ffprobe", String.raw`for last do :; done
-case "$last" in */source.mp4) printf '%s' '{"streams":[{"codec_type":"video"},{"codec_type":"audio"}]}';; *) printf '%s' '{"streams":[{"codec_type":"video","width":320,"height":180},{"codec_type":"audio"}],"format":{"duration":"1.25"}}';; esac`);
+case "$last" in */source.mp4) printf '%s' '{"streams":[{"codec_type":"video"},{"codec_type":"audio"}],"format":{"duration":"1.25"}}';; *) printf '%s' '{"streams":[{"codec_type":"video","width":320,"height":180},{"codec_type":"audio"}],"format":{"duration":"1.25"}}';; esac`);
   let publishCount = 0;
   try {
     const execute = createCloudMediaExecutor({
@@ -210,7 +212,7 @@ test("cloud upscale refuses to publish when the source audio stream is lost", as
   await writeFile(source, "source-media");
   process.env.FFMPEG_PATH = await executable(directory, "ffmpeg", 'for last do :; done\nprintf "upscaled-media" > "$last"');
   process.env.FFPROBE_PATH = await executable(directory, "ffprobe", String.raw`for last do :; done
-case "$last" in */source.mp4) printf '%s' '{"streams":[{"codec_type":"video"},{"codec_type":"audio"}]}';; *) printf '%s' '{"streams":[{"codec_type":"video","width":640,"height":360}],"format":{"duration":"1.25"}}';; esac`);
+case "$last" in */source.mp4) printf '%s' '{"streams":[{"codec_type":"video"},{"codec_type":"audio"}],"format":{"duration":"1.25"}}';; *) printf '%s' '{"streams":[{"codec_type":"video","width":640,"height":360}],"format":{"duration":"1.25"}}';; esac`);
   let publishCount = 0;
   try {
     const execute = createCloudMediaExecutor({
