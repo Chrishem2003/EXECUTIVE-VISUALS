@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import {buildSeriesProductionPlan,validateSeriesProductionPlan,buildEpisodeTimelineDocument,upsertStoryBibleEntry,setEpisodeDirectionOverrides,resolveEpisodeDirection,buildEpisodeShotPackage,setEpisodeStoryBibleBindings,MAX_EPISODE_SECONDS,MAX_GENERATED_CLIP_SECONDS} from "../../src/core/series-production.ts";
+import {buildSeriesProductionPlan,validateSeriesProductionPlan,buildEpisodeTimelineDocument,upsertStoryBibleEntry,setEpisodeDirectionOverrides,resolveEpisodeDirection,buildEpisodeShotPackage,setEpisodeStoryBibleBindings,updateEpisodeShotDirection,MAX_EPISODE_SECONDS,MAX_GENERATED_CLIP_SECONDS} from "../../src/core/series-production.ts";
 const input={title:"Future Makers",premise:"A series exploring practical ideas shaping tomorrow.",format:"education",genre:"Science",seasonCount:2,episodesPerSeason:6,episodeRuntimeSeconds:300,shotLengthSeconds:8,aspectRatio:"16:9",frameRate:30,resolution:"2160p",visualStyle:"Cinematic realism",language:"English",voiceMode:"Natural narration",captions:"Both",music:"Adaptive cinematic score",cameraLanguage:"Mixed cinematic coverage",shotComposition:"Mixed shot scale",pacing:"Cinematic dramatic",colorGrade:"Natural / true-to-life",continuityNotes:"Keep presenter wardrobe consistent."};
 const plan=buildSeriesProductionPlan(input);assert.equal(plan.seasons.length,2);assert.equal(plan.seasons[0].episodes.length,6);
 for(const season of plan.seasons)for(const ep of season.episodes){assert.equal(ep.runtimeSeconds,MAX_EPISODE_SECONDS);assert.equal(ep.scenes.reduce((n,s)=>n+s.shots.reduce((x,k)=>x+k.durationSeconds,0),0),300);for(const scene of ep.scenes)for(const shot of scene.shots)assert.ok(shot.durationSeconds<=MAX_GENERATED_CLIP_SECONDS);}
@@ -92,3 +92,15 @@ assert.ok(targetShot.continuityContext.some(rule=>rule.includes("Host One")));
 assert.ok(!siblingShot.continuityContext.some(rule=>rule.includes("Host One")));
 assert.deepEqual(targetShot.referenceAssetIds,[]);
 console.log("Shot-only continuity isolation verification passed.");
+
+const directedPlan=updateEpisodeShotDirection(withBible,withBible.seasons[0].episodes[0].id,bindingScene.id,bindingShot.id,{prompt:"Host enters the archive and studies the evidence.",camera:"Slow dolly-in",framing:"Medium close-up",movement:"Moves from frame right to centre",lens:"50mm",negativePrompt:"No jump cuts or identity drift."});
+const directedShot=directedPlan.seasons[0].episodes[0].scenes[0].shots[0];
+assert.equal(directedShot.camera,"Slow dolly-in");
+assert.equal(directedShot.framing,"Medium close-up");
+assert.equal(directedPlan.seasons[0].episodes[0].scenes[0].shots[1].camera,undefined);
+const directedPackage=buildEpisodeShotPackage(directedPlan,directedPlan.seasons[0].episodes[0]);
+assert.ok(directedPackage.shots[0].prompt.includes("Shot camera: Slow dolly-in"));
+assert.equal(directedPackage.shots[0].negativePrompt,"No jump cuts or identity drift.");
+assert.throws(()=>updateEpisodeShotDirection(withBible,withBible.seasons[0].episodes[0].id,bindingScene.id,bindingShot.id,{prompt:"x".repeat(2001)}),/2000 characters/);
+assert.throws(()=>updateEpisodeShotDirection(withBible,withBible.seasons[0].episodes[0].id,bindingScene.id,"missing-shot",{camera:"dolly"}),/does not belong/);
+console.log("Shot direction verification passed: isolated edits, prompt compilation, negative prompt and bounds.");
