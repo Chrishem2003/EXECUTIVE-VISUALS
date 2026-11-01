@@ -1,0 +1,30 @@
+export function buildMediaQualityReport(metadata={},options={}) {
+  const streams=Array.isArray(metadata.streams)?metadata.streams:[];
+  const video=streams.filter(stream=>stream.codec_type==="video");
+  const audio=streams.filter(stream=>stream.codec_type==="audio");
+  const duration=Number(metadata.format?.duration);
+  const findings=[];
+  if(!streams.length)findings.push({code:"NO_STREAMS",severity:"error",message:"No readable media streams were found."});
+  if(!Number.isFinite(duration)||duration<=0)findings.push({code:"INVALID_DURATION",severity:"error",message:"Media duration is missing or invalid."});
+  if(options.requireVideo&&!video.length)findings.push({code:"VIDEO_STREAM_MISSING",severity:"error",message:"A video stream is required but was not found."});
+  if(options.requireAudio&&!audio.length)findings.push({code:"AUDIO_STREAM_MISSING",severity:"warning",message:"No audio stream was found."});
+  for(const [index,stream] of video.entries()){
+    const width=Number(stream.width),height=Number(stream.height);
+    if(!Number.isFinite(width)||!Number.isFinite(height)||width<=0||height<=0)findings.push({code:"INVALID_VIDEO_DIMENSIONS",severity:"error",stream:index,message:"Video dimensions are missing or invalid."});
+    else if(width<1280||height<720)findings.push({code:"BELOW_HD",severity:"warning",stream:index,message:"Video is below 720p; review delivery requirements."});
+    const fps=String(stream.avg_frame_rate||stream.r_frame_rate||"").split("/");
+    const numerator=Number(fps[0]),denominator=Number(fps[1]||1),rate=numerator/denominator;
+    if(!Number.isFinite(rate)||rate<=0)findings.push({code:"INVALID_FRAME_RATE",severity:"warning",stream:index,message:"Video frame rate is missing or invalid."});
+  }
+  if(!video.length&&!audio.length)findings.push({code:"UNSUPPORTED_STREAM_LAYOUT",severity:"error",message:"No supported audio or video stream was found."});
+  const errors=findings.filter(item=>item.severity==="error").length;
+  const warnings=findings.filter(item=>item.severity==="warning").length;
+  return {
+    schemaVersion:1,method:"ffprobe-structural-analysis",durationSeconds:Number.isFinite(duration)&&duration>0?duration:null,
+    streams:{total:streams.length,video:video.length,audio:audio.length},
+    video:video.map(stream=>({codec:stream.codec_name||null,width:Number(stream.width)||null,height:Number(stream.height)||null,frameRate:stream.avg_frame_rate||stream.r_frame_rate||null})),
+    audio:audio.map(stream=>({codec:stream.codec_name||null,sampleRate:Number(stream.sample_rate)||null,channels:Number(stream.channels)||null})),
+    status:errors?"needs-attention":warnings?"review":"passed",counts:{errors,warnings},findings,
+    limitations:["Structural metadata checks only; this report does not assess visual quality, black frames, silence, clipping, synchronization or perceptual quality."]
+  };
+}
