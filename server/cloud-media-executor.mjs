@@ -7,14 +7,15 @@ import { tmpdir } from "node:os";
 import { pipeline } from "node:stream/promises";
 import { Transform } from "node:stream";
 import { buildMediaOperationArgs, executableAvailable } from "./media.mjs";
+import { createRealEsrganAdapter } from "./ai-upscale-engine.mjs";
 
 const EXTENSION = Object.freeze({
-  "image/jpeg": "jpg", "audio/mpeg": "mp3", "audio/wav": "wav", "video/mp4": "mp4"
+  "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "audio/mpeg": "mp3", "audio/wav": "wav", "video/mp4": "mp4"
 });
 const SUPPORTED = new Set([
   "media.probe", "media.thumbnail", "media.audio_extract", "media.audio-clean",
   "media.denoise", "media.color", "media.resize", "media.interpolate",
-  "media.upscale", "media.transcode", "media.proxy"
+  "media.upscale", "media.ai-upscale", "media.transcode", "media.proxy"
 ]);
 
 function parseInput(value) {
@@ -134,7 +135,8 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
     const workDir = await mkdtemp(join(tempRoot || tmpdir(), "ev-cloud-job-"));
     const extension = extname(materialized.asset.name || "").slice(0, 12);
     const sourcePath = join(workDir, "source" + extension);
-    const outputExtension = job.job_type === "media.thumbnail" ? "jpg"
+    const outputExtension = job.job_type === "media.ai-upscale" ? String(input.format || "png")
+      : job.job_type === "media.thumbnail" ? "jpg"
       : job.job_type === "media.audio_extract" ? "mp3"
       : job.job_type === "media.audio-clean" ? "wav"
       : ["media.denoise", "media.color", "media.resize", "media.interpolate", "media.upscale", "media.proxy"].includes(job.job_type) ? "mp4"
@@ -142,6 +144,32 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
     const outputPath = join(workDir, randomUUID() + "." + outputExtension);
     try {
       await copyFile(materialized.path, sourcePath);
+      if (job.job_type === "media.ai-upscale") {
+        if (!String(materialized.asset.mediaType || "").startsWith("image/")) {
+          throw Object.assign(new Error("AI super-resolution currently accepts still images only; video frame processing is not enabled."), { code: "UNSUPPORTED_MEDIA_TYPE" });
+        }
+        const adapter = createRealEsrganAdapter({ timeoutMs, maxOutputBytes: 250 * 1024 * 1024 });
+        const format = String(input.format || "png");
+        if (!["png", "jpg", "webp"].includes(format)) throw Object.assign(new Error("AI upscale output format is unsupported."), { code: "INVALID_MEDIA_OPTIONS" });
+        const result = await adapter.execute({
+          inputPath: sourcePath, outputPath, model: input.model || "realesrgan-x4plus",
+          scale: input.scale ?? 4, tile: input.tile ?? 0, format
+        });
+        if (signal?.aborted) throw Object.assign(new Error("Media job was cancelled."), { code: "JOB_CANCELLED" });
+        const info = await stat(outputPath);
+        const digest = await checksum(outputPath);
+        const mediaType = format === "jpg" ? "image/jpeg" : "image/" + format;
+        const sourceName = String(materialized.asset.name || "image");
+        const plan = { name: sourceName.replace(/\.[^.]+$/, "").slice(0, 140) + "-ai-upscaled." + format, mediaType };
+        const processing = { engine: result.engine, method: result.method, model: result.model, scale: result.scale, tile: Number(input.tile ?? 0) };
+        const asset = await mediaIO.publish({
+          ownerId: job.owner_id, projectId: job.project_id || null, filename: plan.name,
+          mediaType, path: outputPath, derivativeOf: sourceId,
+          metadata: { operation: job.job_type, sourceSha256: materialized.asset.sha256, sha256: digest, processing }
+        });
+        onProgress(100);
+        return { sourceAssetId: sourceId, outputAsset: asset, sha256: digest, byteSize: info.size, operation: job.job_type, processing };
+      }
       if (job.job_type === "media.probe") {
         if (!executableAvailable("ffprobe")) throw Object.assign(new Error("FFprobe is not installed on this worker."), { code: "MEDIA_ENGINE_MISSING" });
         const result = await runProcess(ffprobe, ["-v", "error", "-show_format", "-show_streams", "-of", "json", sourcePath], { signal, timeoutMs, onProgress });
