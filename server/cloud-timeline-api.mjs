@@ -38,7 +38,7 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
  }
  const response=(status,body)=>({status,body});
  async function handle({method,path,ownerId,body={},query={},idempotencyKey=null}={}){
-  if(!["GET","POST","PUT","DELETE"].includes(method)||typeof path!=="string")return null;
+  if(!["GET","POST","PUT","PATCH","DELETE"].includes(method)||typeof path!=="string")return null;
   if(!safeId(ownerId))return response(401,{error:{code:"AUTH_REQUIRED",message:"A verified account identity is required."}});
   if(Buffer.byteLength(JSON.stringify(body||{}))>maxJobBytes)return response(413,{error:{code:"PAYLOAD_TOO_LARGE",message:"Cloud timeline request is too large."}});
   try{
