@@ -14,6 +14,8 @@ import { claimNextJob, completeJob, recoverExpiredJobs, renewJobLease } from "./
 import { sanitizeCreativeWorkspaceDocument } from "./workspace-documents.mjs";
 import { importResearchUrl } from "./research-import.mjs";
 import { getProviderCatalog } from "./provider-registry.mjs";
+import { executeStudioJob, isStudioJob, prepareStudioJob, studioCatalog } from "./studio.mjs";
+import { isGatewayRetryableCode } from "./gateway-core.mjs";
 import { ensureRemoteUsageTable, getRemoteUsagePolicy } from "./usage-guardrails.mjs";
 import { createCloudTimelineApi } from "./cloud-timeline-api.mjs";
 
@@ -202,7 +204,7 @@ async function processNextJob() {
   },15000);
   heartbeat.unref();
   try {
-    const execute=current.job_type==="workflow.execute"?executeWorkflowRun:executeMediaJob;
+    const execute=current.job_type==="workflow.execute"?executeWorkflowRun:isStudioJob(current.job_type)?executeStudioJob:executeMediaJob;
     const result=await execute({
       db,job:current,mediaRoot:MEDIA_ROOT,activeProcesses,
       onProgress:value=>{
@@ -223,7 +225,7 @@ async function processNextJob() {
   } catch(error) {
     const latest=db.prepare("SELECT status,attempt_count,max_attempts,lease_owner,lease_expires_at FROM jobs WHERE id=?").get(job.id);
     if(latest?.status==="cancelled"||leaseLost||latest?.lease_owner!==WORKER_ID||!latest?.lease_expires_at||Date.parse(latest.lease_expires_at)<=Date.now())return;
-    const retryable=["MEDIA_TIMEOUT","MEDIA_PROCESS_FAILED"].includes(error.code);
+    const retryable=["MEDIA_TIMEOUT","MEDIA_PROCESS_FAILED"].includes(error.code)||isGatewayRetryableCode(error.code);
     const retry=retryable&&latest.attempt_count<latest.max_attempts;
     const status=retry?"queued":"failed";
     const delayMs=retry?Math.min(60000,1000*Math.pow(2,Math.max(0,latest.attempt_count-1))):0;
@@ -652,6 +654,24 @@ export function createAppServer() {
         db.prepare("INSERT INTO jobs(id,owner_id,project_id,job_type,status,input_json,idempotency_key) VALUES(?,?,?,?,'queued',?,?)")
           .run(id,user.id,projectId,type,inputJson,key||null);
         addJobEvent(db,id,user.id,"job.queued",{jobType:type});audit(db,user.id,"job.queued","job",id,{jobType:type},projectId);
+        send(res,202,{job:recordJob(db.prepare("SELECT * FROM jobs WHERE id=?").get(id))},cors);return;
+      }
+      if(path==="/api/studio/capabilities"&&req.method==="GET"){send(res,200,studioCatalog(),cors);return;}
+      if(path==="/api/studio/runs"&&req.method==="POST"){
+        const body=await readJson(req);
+        const prepared=prepareStudioJob(db,user,body);
+        const key=String(req.headers["idempotency-key"]||body.idempotencyKey||"").slice(0,180);
+        const inputJson=stableJson(prepared.input);
+        if(key){
+          const existing=db.prepare("SELECT * FROM jobs WHERE owner_id=? AND idempotency_key=?").get(user.id,key);
+          if(existing){
+            if(existing.job_type!==prepared.jobType||existing.project_id!==prepared.projectId||stableJson(parseJson(existing.input_json))!==inputJson){fail(res,409,"IDEMPOTENCY_CONFLICT","This idempotency key was already used for a different request.");return;}
+            send(res,200,{job:recordJob(existing),idempotentReplay:true},cors);return;
+          }
+        }
+        const id=randomUUID();
+        db.prepare("INSERT INTO jobs(id,owner_id,project_id,job_type,status,input_json,idempotency_key) VALUES(?,?,?,?,'queued',?,?)").run(id,user.id,prepared.projectId,prepared.jobType,inputJson,key||null);
+        addJobEvent(db,id,user.id,"job.queued",{jobType:prepared.jobType});audit(db,user.id,"job.queued","job",id,{jobType:prepared.jobType},prepared.projectId);
         send(res,202,{job:recordJob(db.prepare("SELECT * FROM jobs WHERE id=?").get(id))},cors);return;
       }
       const jobMatch=path.match(/^\/api\/jobs\/([0-9a-f-]+)(?:\/(cancel|events))?$/i);

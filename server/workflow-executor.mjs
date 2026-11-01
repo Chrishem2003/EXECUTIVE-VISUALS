@@ -14,6 +14,22 @@ import { readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { reserveRemoteRequest } from "./usage-guardrails.mjs";
 import { resolve, relative, sep } from "node:path";
+import { executeStudioJob, prepareStudioJob } from "./studio.mjs";
+import { isGatewayBlockedCode } from "./gateway-core.mjs";
+
+/** Nodes served by the studio engines (neural enhancement and presenter video). */
+const STUDIO_ENHANCE_KINDS={"media.stabilize":"stabilize","image.remove-background":"remove-background"};
+const isStudioNode=kind=>kind==="avatar.generate"||Object.hasOwn(STUDIO_ENHANCE_KINDS,kind);
+function studioRequest(node,values,config,sourceAssetId){
+ const params={...(config.params&&typeof config.params==="object"?config.params:{})};
+ if(node.kind==="avatar.generate"){
+  const script=String(values.script??values.text??config.script??"");
+  if(script)params.script=script;
+  const audio=values.audio??config.audioAssetId;
+  return {jobType:"studio.avatar",identityProfileId:String(config.identityProfileId||values.identityProfileId||""),params,...(audio?{audioAssetId:String(audio)}:{})};
+ }
+ return {jobType:"studio.enhance",operation:STUDIO_ENHANCE_KINDS[node.kind],sourceAssetId,params};
+}
 
 const now=()=>new Date().toISOString();
 function requireExecutionProvider(capability,remoteOptInVariable){
@@ -232,6 +248,15 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
     recordModelUsage(db,{ownerId:job.owner_id,projectId:job.project_id||null,jobId:job.id,workflowRunId:runId,nodeId,provider:provider.provider,capability:"image.generate",model:result.model,usage:result.usage,durationMs:Date.now()-usageStarted});
     const asset=await storeGeneratedImage({db,mediaRoot,ownerId:job.owner_id,projectId:job.project_id||null,jobId:job.id,prompt,model:result.model,buffer:result.buffer});
     output=nodeOutput(node,asset.id);output.asset=asset.id;output.assetId=asset.id;output.mimeType=asset.mediaType;output.sha256=asset.sha256;output.usage=result.usage;
+   }else if(isStudioNode(node.kind)){
+    if(!hasApprovedAncestor(graph,nodeId,outputs))throw Object.assign(new Error("A completed upstream human-approval node is required before paid generation or processing."),{code:"APPROVAL_REQUIRED"});
+    const prepared=prepareStudioJob(db,{id:job.owner_id},{...studioRequest(node,values,config,inputAsset(values,config)),projectId:job.project_id||undefined,rightsAttested:config.rightsAttested===true});
+    const studioJob={...job,job_type:prepared.jobType,input_json:json(prepared.input)};
+    const result=await executeStudioJob({db,job:studioJob,mediaRoot,parentJobId:job.id,nodeId,workflowRunId:runId,onProgress:value=>onProgress(Math.min(94,Math.round((completedCount+value/100)/nodeCount*100)))});
+    const asset=result.outputAsset;
+    output=nodeOutput(node,asset.id);output.asset=asset.id;output.assetId=asset.id;output.mimeType=asset.mediaType;output.sha256=asset.sha256;
+    if(asset.mediaType.startsWith("image/"))output.image=asset.id;
+    if(asset.mediaType.startsWith("video/"))output.video=asset.id;
    }else if(node.kind==="video.generate"){
     enforceIdentityPermission(db,job,config,values,"face-animation");
     if(!hasApprovedAncestor(graph,nodeId,outputs))throw Object.assign(new Error("A completed upstream human-approval node is required before video generation."),{code:"APPROVAL_REQUIRED"});
@@ -330,7 +355,7 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
    }
    const detail={code:error.code||"NODE_FAILED",message:error.message||"Workflow node failed."};
    const blockedCodes=new Set(["ENGINE_UNAVAILABLE","APPROVAL_REQUIRED","PROVIDER_NOT_READY","AI_GATEWAY_DISABLED","AI_GATEWAY_CONFIG_INVALID","AI_GATEWAY_INSECURE_URL","AI_GATEWAY_REMOTE_DISABLED","IMAGE_GATEWAY_DISABLED","IMAGE_GATEWAY_CONFIG_INVALID","IMAGE_GATEWAY_INSECURE_URL","IMAGE_GATEWAY_REMOTE_DISABLED","IMAGE_GATEWAY_UNSUPPORTED_INPUT","VIDEO_GATEWAY_DISABLED","VIDEO_GATEWAY_CONFIG_INVALID","VIDEO_GATEWAY_REMOTE_DISABLED","VIDEO_GATEWAY_UNSUPPORTED_INPUT","VOICE_TRANSCRIPTION_DISABLED","VOICE_TRANSCRIPTION_INVALID_INPUT","VOICE_TRANSCRIPTION_TIMEOUT","VOICE_TRANSCRIPTION_UNAVAILABLE","VOICE_TRANSCRIPTION_RATE_LIMITED","VOICE_TRANSCRIPTION_SERVER_ERROR","VOICE_TRANSCRIPTION_REQUEST_REJECTED","VOICE_TRANSCRIPTION_INVALID_RESPONSE","VOICE_GATEWAY_DISABLED","VOICE_GATEWAY_CONFIG_INVALID","VOICE_GATEWAY_INSECURE_URL","VOICE_GATEWAY_REMOTE_DISABLED","VOICE_GATEWAY_TIMEOUT","VOICE_GATEWAY_UNAVAILABLE","VOICE_GATEWAY_RATE_LIMITED","VOICE_GATEWAY_SERVER_ERROR","VOICE_GATEWAY_REQUEST_REJECTED","VOICE_GATEWAY_INVALID_RESPONSE"]);
-   const blocked=blockedCodes.has(detail.code);
+   const blocked=blockedCodes.has(detail.code)||isGatewayBlockedCode(detail.code);
    saveNode(db,runId,nodeId,blocked?"blocked":"failed",{input:nodeInput,error:detail,attempt});
    const status=blocked?"blocked":completedCount>0?"partial":"failed";
    db.prepare("UPDATE workflow_runs SET status=?,error_json=?,updated_at=?,completed_at=? WHERE id=?").run(status,json(detail),now(),now(),runId);
