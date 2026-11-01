@@ -119,6 +119,13 @@ Add reference image, image edit, first/last frame, video continuation, masks and
 - Preserve source/target transcript lineage, glossary version, subtitle cue order and timing; detect drift and missing dialogue.
 - Add scene/shot continuity records for identity, wardrobe, location, props, camera movement, lighting and color. Surface evidence-backed warnings without silently rewriting creative decisions.
 
+### E5. Freeze-frame and edit-point diagnostics — implemented, awaiting CI
+- Video probes now run a bounded FFmpeg motion-analysis pass using freezedetect and scene-change selection/showinfo.
+- Sustained low-motion intervals are surfaced as review warnings; scene-change timestamps are retained as editorial evidence for future timeline tooling.
+- The report does not assume every freeze is an error or every scene-change marker is a valid cut. Intentional holds, static graphics and camera lock-offs require creative review.
+- Parsing and report-integration tests are included in the existing media signal and media quality suites.
+- This is a heuristic signal pass, not semantic scene recognition, shot classification, or an automatic edit decision system.
+
 ## Wave E — editorial, QA and delivery
 - Add proxy-backed timeline preview, frame-accurate seeking, multi-video compositing, transitions, overlays and effect graphs in incremental tested slices.
 - Run FFprobe checks for streams, duration, frame rate, dimensions, audio layout and codec after render.
