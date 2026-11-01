@@ -27,6 +27,8 @@ test("rejects recipes with unsupported operations, invalid options and incompati
  assert.throws(()=>planEnhancementRecipe({sourceAsset:video,steps:[{operation:"media.ai-upscale"}]}),e=>e.code==="RECIPE_OPERATION_UNSUPPORTED");
  assert.throws(()=>planEnhancementRecipe({sourceAsset:video,steps:[{operation:"media.upscale",parameters:{width:9000}}]}),e=>e.code==="INVALID_MEDIA_OPTIONS");
  assert.throws(()=>planEnhancementRecipe({sourceAsset:{id:"audio",media_type:"audio/wav"},steps:[{operation:"media.color"}]}),e=>e.code==="RECIPE_MEDIA_TYPE_MISMATCH");
+ assert.throws(()=>planEnhancementRecipe({sourceAsset:video,steps:[{operation:"media.color",parameters:[]}]}),e=>e.code==="RECIPE_PARAMETERS_INVALID");
+ assert.throws(()=>planEnhancementRecipe({sourceAsset:video,steps:[null]}),e=>e.code==="RECIPE_STEP_INVALID");
  assert.throws(()=>planEnhancementRecipe({sourceAsset:video,steps:[]}),e=>e.code==="RECIPE_STEP_LIMIT");
  assert.throws(()=>planEnhancementRecipe({sourceAsset:video,steps:Array.from({length:13},()=>({operation:"media.color"}))}),e=>e.code==="RECIPE_STEP_LIMIT");
 });
