@@ -90,3 +90,24 @@ test("video provider catalog exposes the configured adapter's actual model capab
  assert.equal(configuredReference.providers.find(item=>item.id==="video").modelCapabilities.referenceImages,true);
  assert.equal(JSON.stringify(unconfigured).includes("secret"),false);
 });
+
+
+test("AI upscaler is visible as a separate local capability and remains unavailable without a configured engine",()=>{
+ const catalog=getProviderCatalog({});
+ const provider=catalog.providers.find(item=>item.id==="ai-upscale");
+ assert.equal(provider.status,"unavailable");
+ assert.deepEqual(provider.capabilities,[]);
+ assert.equal(findProviderForCapability(catalog,"media.ai-upscale"),null);
+});
+
+test("AI upscaler is advertised only when engine readiness and explicit execution opt-in are both true",()=>{
+ const installed=getProviderCatalog({}, {aiUpscale:{available:true,executionEnabled:false,model:"realesrgan-x4plus",reason:"Execution is disabled."}});
+ const installedProvider=installed.providers.find(item=>item.id==="ai-upscale");
+ assert.equal(installedProvider.status,"disabled");
+ assert.deepEqual(installedProvider.capabilities,[]);
+ const enabled=getProviderCatalog({}, {aiUpscale:{available:true,executionEnabled:true,model:"realesrgan-x4plus",reason:"Configured for approved jobs."}});
+ const enabledProvider=enabled.providers.find(item=>item.id==="ai-upscale");
+ assert.equal(enabledProvider.status,"ready");
+ assert.deepEqual(enabledProvider.capabilities,["media.ai-upscale"]);
+ assert.equal(findProviderForCapability(enabled,"media.ai-upscale").provider,"local");
+});
