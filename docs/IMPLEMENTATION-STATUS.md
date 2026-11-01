@@ -224,6 +224,14 @@ This closes the renderer-adapter gap in the cloud timeline execution contract. I
 This is a runnable worker entry point, not a deployed worker. Do not set the enable flags until the isolated database migration, private bucket policies, API schema exposure and service credentials have been reviewed. No worker service was created or launched.
 
 
+## Shared local/cloud editorial editor — 1 November 2026
+
+- The existing multi-track timeline editor now has a workspace selector for local storage or an authorized cloud project. The editor loads the selected project's private cloud assets and saved timelines through the authenticated cloud API; no separate cloud-only editor is introduced.
+- Cloud timelines can be created from the editor, selected from the saved-sequence control, edited using the existing clip/track/marker tools, and saved using optimistic cloud revision checks. The local SQLite timeline path remains unchanged.
+- Cloud master renders are submitted as durable, idempotent `timeline.render` jobs. The editor retains the returned job ID and exposes a manual status refresh for queued/processing/succeeded/failed states; a successful refresh reloads the project's asset register.
+- The cloud renderer and worker composition are implemented and tested, but cloud use still requires the isolated schema, private bucket, Supabase auth/API configuration and a running worker. The UI integration does not activate these services or imply cloud rendering is live.
+- Verification of this editor integration is pending the current branch CI run.
+
 ## Cloud workspace consolidation — 1 November 2026
 
 - Added a server-side cloud project repository with owner/member-aware listing, project creation, role-authorized reads and writes, optimistic revision checks, and soft archival.
