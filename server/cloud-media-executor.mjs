@@ -175,10 +175,13 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
       let outputProbe = null;
       if (job.job_type === "media.upscale") {
         if (!executableAvailable("ffprobe")) throw Object.assign(new Error("FFprobe is required to verify upscaled output."), { code: "MEDIA_ENGINE_MISSING" });
-        const probe = await runProcess(ffprobe, ["-v", "error", "-show_entries", "stream=codec_type,width,height:format=duration", "-of", "json", outputPath], { signal, timeoutMs, onProgress });
+        const probe = await runProcess(ffprobe, ["-v", "error", "-show_entries", "stream=codec_type,width,height,codec_name,pix_fmt:format=duration", "-of", "json", outputPath], { signal, timeoutMs, onProgress });
         try { outputProbe = JSON.parse(probe.stdout || "{}"); }
         catch { throw Object.assign(new Error("FFprobe returned invalid upscaling metadata."), { code: "MEDIA_PROBE_INVALID" }); }
         const video = (outputProbe.streams || []).find(stream => stream.codec_type === "video");
+        if (!video || video.codec_name !== "h264" || video.pix_fmt !== "yuv420p") {
+          throw Object.assign(new Error("Upscale output must be H.264 with yuv420p pixel format; derivative was not published."), { code: "MEDIA_OUTPUT_VALIDATION_FAILED" });
+        }
         const outputAudioStreamCount = (outputProbe.streams || []).filter(stream => stream.codec_type === "audio").length;
         if (sourceAudioStreamCount > 0 && outputAudioStreamCount === 0) {
           throw Object.assign(new Error("Upscale output lost the source audio stream; derivative was not published."), { code: "MEDIA_OUTPUT_VALIDATION_FAILED" });
