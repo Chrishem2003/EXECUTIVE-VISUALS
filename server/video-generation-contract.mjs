@@ -81,7 +81,7 @@ export function normalizeVideoGenerationRequest(input) {
 
   const request = {
     requestId: boundedString(input.requestId, "requestId", 160) ?? randomUUID(),
-    projectId: boundedString(input.projectId, "projectId", 160, { required: true }),
+    ...(input.projectId != null && String(input.projectId).trim() ? { projectId: boundedString(String(input.projectId), "projectId", 160, { required: true }) } : {}),
     prompt,
     aspectRatio,
     resolution,
