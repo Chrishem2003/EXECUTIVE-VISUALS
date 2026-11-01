@@ -39,7 +39,8 @@ const referenceAssetGraph = {
 };
 assert.equal(validateWorkflow(referenceAssetGraph).valid, true,
   "private asset/media outputs must connect to the optional image reference input");
-\nassert.equal(validateWorkflow(graph).valid, true, "valid graph should pass validation");
+
+assert.equal(validateWorkflow(graph).valid, true, "valid graph should pass validation");
 const nodePlan = planWorkflowExecution(graph, { kind: "node", nodeId: "video" });
 assert.equal(nodePlan.valid, true);
 assert.deepEqual(nodePlan.includedNodeIds, ["brief", "image", "video"], "single-node execution includes only upstream dependencies");
