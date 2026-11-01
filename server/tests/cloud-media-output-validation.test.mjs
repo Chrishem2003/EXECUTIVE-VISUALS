@@ -19,7 +19,7 @@ test("cloud media executor blocks publication when a derivative lacks its expect
   const source = join(directory, "source.mp4");
   await writeFile(source, "source");
   process.env.FFMPEG_PATH = await executable(directory, "ffmpeg", 'for last do :; done\nprintf "output" > "$last"');
-  process.env.FFPROBE_PATH = await executable(directory, "ffprobe", "printf '{}'");
+  process.env.FFPROBE_PATH = await executable(directory, "ffprobe", "printf '%s\\n' '{\"streams\":[{\"codec_type\":\"audio\"}],\"format\":{\"duration\":\"1.0\"}}'");
   let publishCount = 0;
   try {
     const execute = createCloudMediaExecutor({
