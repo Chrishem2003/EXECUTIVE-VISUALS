@@ -256,3 +256,10 @@ The Series Producer now supports explicit shot-level as well as scene-level stor
 - Provider/model-specific capability declarations must be populated from verified provider metadata before a shot can be marked generation-ready.
 - Shot queue submission must use the existing authenticated workflow executor, remote opt-in, approval and usage guardrails.
 - AI super-resolution requires a separately validated model/runtime adapter and objective output checks; classical FFmpeg resampling remains clearly labelled as non-AI.
+
+
+## Implementation update — shot generation readiness preflight
+
+Added `src/core/shot-readiness.ts` with a provider-neutral, no-network readiness assessment for every compiled shot. It compares aspect ratio, resolution, frame rate, duration, negative-prompt support and reference-image limits against explicit model declarations. Each feature is classified as supported, unsupported or unverified; unsupported requirements block readiness, while missing declarations remain unverified rather than being guessed. Reports include per-shot reasons and aggregate counts. The report explicitly records that no provider was submitted and no prices were estimated. The check is included in the production build verification sequence.
+
+This is a preflight contract, not a live provider capability feed. The next integration must populate declarations from a verified adapter/catalog and pass approved requests through the existing authenticated workflow and usage guardrails.
