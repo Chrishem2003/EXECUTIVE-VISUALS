@@ -163,6 +163,8 @@ case "$last" in */source.mp4) printf '%s' '{"streams":[{"codec_type":"video"},{"
     assert.equal(result.processing.sourceAudioStreamCount, 1);
     assert.equal(result.processing.outputAudioStreamCount, 1);
     assert.equal(result.processing.audioPreserved, true);
+    assert.equal(result.processing.outputVideo.codec_name, "h264");
+    assert.equal(result.processing.outputVideo.pix_fmt, "yuv420p");
     assert.equal(result.processing.outputVideo.width, 642);
     assert.equal(result.processing.outputVideo.height, 360);
     assert.equal(published.metadata.processing.sharpness, 0.5);
