@@ -63,6 +63,7 @@ A Docker-based Render Blueprint is provided in `render.yaml`. It uses a private 
 
 ## Research and implementation records
 
+- [Public release gates](docs/PUBLIC-RELEASE-GATES.md)
 - [Implementation status](docs/IMPLEMENTATION-STATUS.md)
 - [Cross-ecosystem capability expansion](docs/CROSS-ECOSYSTEM-CAPABILITY-EXPANSION.md)
 - [Expanded capability atlas](docs/EXPANDED-CAPABILITY-ATLAS.md)
