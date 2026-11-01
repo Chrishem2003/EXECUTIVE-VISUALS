@@ -65,9 +65,11 @@ export function assessEpisodeShotReadiness(
     check("resolution:" + shot.resolution, resolutionList === undefined ? undefined : resolutionList.some(value => requestedResolution.includes(value.trim().toLowerCase())));
     const frameRates = capabilities?.frameRates;
     check("frameRate:" + shot.frameRate, frameRates === undefined ? undefined : frameRates.includes(shot.frameRate));
-    const durationOk = capabilities?.minDurationSeconds === undefined && capabilities?.maxDurationSeconds === undefined
+    const minDuration = capabilities?.minDurationSeconds;
+    const maxDuration = capabilities?.maxDurationSeconds;
+    const durationOk = minDuration === undefined && maxDuration === undefined
       ? undefined
-      : shot.durationSeconds >= (capabilities.minDurationSeconds ?? 1) && shot.durationSeconds <= (capabilities.maxDurationSeconds ?? 180);
+      : shot.durationSeconds >= (minDuration ?? 1) && shot.durationSeconds <= (maxDuration ?? 180);
     check("duration:" + shot.durationSeconds + "s", durationOk);
     if (shot.negativePrompt.trim()) check("negativePrompt", capabilities?.negativePrompt);
     if (shot.referenceAssetIds.length) {
