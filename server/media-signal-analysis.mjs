@@ -39,3 +39,12 @@ export function buildAudioMetricFindings(metrics={}){
  if(Number.isFinite(metrics.peakDbfs)&&metrics.peakDbfs>=-1)findings.push({code:"AUDIO_PEAK_NEAR_FULL_SCALE",severity:"warning",peakDbfs:metrics.peakDbfs,message:"Audio peaks are within 1 dB of full scale; review true-peak and delivery headroom."});
  return findings;
 }
+
+export async function runOptionalSignalCheck(check,{isCancelled=()=>false}={}) {
+ try {
+  return {status:"completed",result:await check()};
+ } catch(error) {
+  if(isCancelled())throw error;
+  return {status:"unavailable",reason:String(error?.code||"ANALYSIS_FAILED").slice(0,80)};
+ }
+}
