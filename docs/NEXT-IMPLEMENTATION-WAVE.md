@@ -103,6 +103,15 @@ Add reference image, image edit, first/last frame, video continuation, masks and
 - Existing stricter video-upscale checks remain in place for codec, pixel format, requested dimensions, audio preservation and duration drift.
 - Added a cloud executor regression test proving a structurally invalid derivative is never published. Structural checks do not establish visual quality or correct creative content.
 
+
+### D1. Declared shot-continuity analysis — implemented, awaiting CI
+- Added a bounded continuity report for up to 500 shots, grouped by explicit continuity group.
+- Compares declared identity, wardrobe, location, props, lighting and colour-grade metadata against the first shot in each group.
+- Variations are review warnings, not automatic corrections; missing baseline fields are informational.
+- Camera framing and movement remain free to vary between shots.
+- Added regression tests and included them in the main build verification chain.
+- This is metadata comparison only. It does not inspect pixels, recognize faces, infer wardrobe/props or prove visual continuity.
+
 ## Wave D — presenter, dubbing and continuity
 - Keep narration TTS, transcription, translation, avatar rendering, voice cloning and lip-sync as separate capabilities with separate readiness and permissions.
 - Add timestamped transcript alignment and optional diarization only through tested adapters.
