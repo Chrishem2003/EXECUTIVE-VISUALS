@@ -84,7 +84,13 @@ export function buildMediaOperationArgs({jobType,input={},sourcePath,outputPath}
   const height=Math.round(number(input.height,jobType==="media.upscale"?1440:1080,144,4320)/2)*2;
   const mode=String(input.fit||"contain");
   if(!["contain","cover"].includes(mode))fail("Choose contain or cover for the resize fit mode.");
-  filter=mode==="cover"?`scale=${width}:${height}:force_original_aspect_ratio=increase:flags=lanczos,crop=${width}:${height}`:`scale=${width}:${height}:force_original_aspect_ratio=decrease:flags=lanczos,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:color=black`;
+  const algorithm=jobType==="media.upscale"?String(input.algorithm||"lanczos"):"lanczos";
+  if(!["lanczos","bicubic","spline36"].includes(algorithm))fail("Choose lanczos, bicubic, or spline36 for scaling.");
+  filter=mode==="cover"?`scale=${width}:${height}:force_original_aspect_ratio=increase:flags=${algorithm},crop=${width}:${height}`:`scale=${width}:${height}:force_original_aspect_ratio=decrease:flags=${algorithm},pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:color=black`;
+  if(jobType==="media.upscale"){
+   const sharpness=number(input.sharpness,0,0,1.5);
+   if(sharpness>0)filter+=`,unsharp=5:5:${sharpness.toFixed(2)}:5:5:0.0`;
+  }
   filter+=",setsar=1";
  }else if(jobType==="media.interpolate"){
   const fps=number(input.fps,30,24,60);
