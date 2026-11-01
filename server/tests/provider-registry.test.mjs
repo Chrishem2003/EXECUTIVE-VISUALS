@@ -100,20 +100,24 @@ test("AI upscaler is visible as a separate local capability and remains unavaila
  assert.equal(findProviderForCapability(catalog,"media.ai-upscale"),null);
 });
 
-test("AI upscaler is advertised only when engine readiness and explicit execution opt-in are both true",()=>{
+test("AI upscaler requires independent fixture evidence, not a claimed inference flag",()=>{
  const installed=getProviderCatalog({}, {aiUpscale:{available:true,executionEnabled:false,model:"realesrgan-x4plus",reason:"Execution is disabled."}});
  const installedProvider=installed.providers.find(item=>item.id==="ai-upscale");
  assert.equal(installedProvider.status,"disabled");
  assert.deepEqual(installedProvider.capabilities,[]);
- const enabled=getProviderCatalog({}, {aiUpscale:{available:true,executionEnabled:true,inferenceVerified:false,model:"realesrgan-x4plus",reason:"Self-test required."}});
+ const enabled=getProviderCatalog({}, {aiUpscale:{available:true,executionEnabled:true,executionVerified:false,inferenceVerified:false,model:"realesrgan-x4plus",reason:"Self-test required."}});
  const enabledProvider=enabled.providers.find(item=>item.id==="ai-upscale");
  assert.equal(enabledProvider.status,"unverified");
  assert.deepEqual(enabledProvider.capabilities,[]);
  assert.equal(enabled.summary.unverified,1);
  assert.equal(findProviderForCapability(enabled,"media.ai-upscale"),null);
- const verified=getProviderCatalog({}, {aiUpscale:{available:true,executionEnabled:true,inferenceVerified:true,model:"realesrgan-x4plus",reason:"Inference self-test passed."}});
- const verifiedProvider=verified.providers.find(item=>item.id==="ai-upscale");
+ const executionOnly=getProviderCatalog({}, {aiUpscale:{available:true,executionEnabled:true,executionVerified:true,inferenceVerified:true,model:"realesrgan-x4plus",reason:"A caller-supplied flag is not evidence."}});
+ const executionProvider=executionOnly.providers.find(item=>item.id==="ai-upscale");
+ assert.equal(executionProvider.status,"unverified");
+ assert.deepEqual(executionProvider.capabilities,[]);
+ const qualityChecked=getProviderCatalog({}, {aiUpscale:{available:true,executionEnabled:true,executionVerified:true,qualityVerified:true,qualityEvidence:{fixtureId:"fixture-set-v1",checkedAt:"2026-11-01T00:00:00.000Z"},model:"realesrgan-x4plus",reason:"Fixture quality checks passed."}});
+ const verifiedProvider=qualityChecked.providers.find(item=>item.id==="ai-upscale");
  assert.equal(verifiedProvider.status,"ready");
  assert.deepEqual(verifiedProvider.capabilities,["media.ai-upscale"]);
- assert.equal(findProviderForCapability(verified,"media.ai-upscale").provider,"local");
+ assert.equal(findProviderForCapability(qualityChecked,"media.ai-upscale").provider,"local");
 });
