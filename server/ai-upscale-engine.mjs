@@ -85,7 +85,7 @@ export function createRealEsrganAdapter({
   if (!Number.isInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 2 * 60 * 60 * 1000) throw new Error("AI upscale timeout is invalid.");
   if (!Number.isInteger(maxOutputBytes) || maxOutputBytes < 1024 || maxOutputBytes > 2 * 1024 * 1024 * 1024) throw new Error("AI upscale output limit is invalid.");
 
-  const verifiedFingerprints = new Map();
+  const executionFingerprints = new Map();
 
   async function fingerprint(model) {
     const files = [binaryPath, resolve(modelDirectory || ".", model + ".param"), resolve(modelDirectory || ".", model + ".bin")];
@@ -102,16 +102,17 @@ export function createRealEsrganAdapter({
       await regularFile(resolve(modelDirectory || ".", selected + ".bin"));
     const configured = binaryReady && modelReady;
     const currentFingerprint = configured ? await fingerprint(selected) : null;
-    const inferenceVerified = Boolean(currentFingerprint && verifiedFingerprints.get(selected) === currentFingerprint);
+    const executionVerified = Boolean(currentFingerprint && executionFingerprints.get(selected) === currentFingerprint);
     return {
       engine: "realesrgan-ncnn-vulkan",
       available: configured,
-      inferenceVerified,
+      executionVerified,
+      inferenceVerified: false,
       executionEnabled: Boolean(enabled),
       binaryReady,
       modelReady,
       model: selected,
-      reason: !binaryReady ? "Configure a readable NCNN/Vulkan executable." : !modelReady ? "The selected allowlisted model files are not installed." : !enabled ? "Engine is installed, but AI_UPSCALE_ENABLED is not enabled on this worker." : "Configured, but a real inference self-test has not passed on this worker."
+      reason: !binaryReady ? "Configure a readable NCNN/Vulkan executable." : !modelReady ? "The selected allowlisted model files are not installed." : !enabled ? "Engine is installed, but AI_UPSCALE_ENABLED is not enabled on this worker." : executionVerified ? "Execution self-test passed; neural inference quality has not been independently verified." : "Configured, but an execution self-test has not passed on this worker."
     };
   }
 
@@ -128,10 +129,10 @@ export function createRealEsrganAdapter({
       const result = await execute({ inputPath, outputPath, model: selected, scale, tile, format, signal });
       const after = await fingerprint(selected);
       if (!after || before !== after) throw fail("Engine or model files changed during the self-test.", "AI_UPSCALE_SELF_TEST_FAILED");
-      verifiedFingerprints.set(selected, after);
-      return { passed: true, inferenceVerified: true, engine: result.engine, model: result.model, scale: result.scale, outputBytes: result.byteSize };
+      executionFingerprints.set(selected, after);
+      return { passed: true, executionVerified: true, inferenceVerified: false, engine: result.engine, model: result.model, scale: result.scale, outputBytes: result.byteSize };
     } catch (error) {
-      verifiedFingerprints.delete(selected);
+      executionFingerprints.delete(selected);
       throw error;
     } finally { await rm(directory, { recursive: true, force: true }).catch(() => {}); }
   }
