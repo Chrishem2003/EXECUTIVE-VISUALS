@@ -3,6 +3,14 @@ import { randomUUID } from "node:crypto";
 const DEFAULT_REMOTE_DAILY_LIMIT = 50;
 const MAX_REMOTE_DAILY_LIMIT = 10000;
 
+export function getRemoteUsagePolicy() {
+  try { return { valid: true, limit: readLimit() }; }
+  catch { return { valid: false, limit: null }; }
+}
+
+export function ensureRemoteUsageTable(db) {
+  db.exec("CREATE TABLE IF NOT EXISTS remote_usage_reservations (id TEXT PRIMARY KEY, owner_id TEXT NOT NULL, project_id TEXT, job_id TEXT, provider TEXT NOT NULL, capability TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))); CREATE INDEX IF NOT EXISTS remote_usage_owner_created_idx ON remote_usage_reservations(owner_id, created_at DESC);");
+}
 function readLimit(raw = process.env.REMOTE_AI_DAILY_REQUEST_LIMIT) {
   if (raw === undefined || raw === "") return DEFAULT_REMOTE_DAILY_LIMIT;
   if (!/^[0-9]+$/.test(String(raw))) {
@@ -41,19 +49,7 @@ export function reserveRemoteRequest(db, {
       code: "REMOTE_USAGE_LIMIT_CONFIG_INVALID"
     });
   }
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS remote_usage_reservations (
-      id TEXT PRIMARY KEY,
-      owner_id TEXT NOT NULL,
-      project_id TEXT,
-      job_id TEXT,
-      provider TEXT NOT NULL,
-      capability TEXT NOT NULL,
-      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
-    );
-    CREATE INDEX IF NOT EXISTS remote_usage_owner_created_idx
-      ON remote_usage_reservations(owner_id, created_at DESC);
-  `);
+  ensureRemoteUsageTable(db);
   if (limit === 0) {
     throw Object.assign(new Error("Remote AI execution is disabled by the configured request limit."), {
       code: "REMOTE_USAGE_LIMIT_REACHED", limit, window: "rolling_24_hours"
