@@ -213,7 +213,7 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
     const prompt=String(values.prompt??values.text??values.input??config.prompt??"");
     if(values.references||values.brand)throw Object.assign(new Error("Multiple reference images and brand bundles are not supported by the configured video adapter."),{code:"VIDEO_GATEWAY_UNSUPPORTED_INPUT"});
     if(!prompt.trim())throw Object.assign(new Error("Video-generation node requires a non-empty prompt input."),{code:"PROMPT_REQUIRED"});
-    const referenceId=String(values.image??values.referenceImage??values.reference??config.referenceAssetId??"").trim();
+    const referenceId=String(values["start-frame"]??values.image??values.referenceImage??values.reference??config.referenceAssetId??"").trim();
     let referenceImageDataUrl="";
     if(referenceId){
      const source=getAccessibleAsset(db,job.owner_id,referenceId,false);
