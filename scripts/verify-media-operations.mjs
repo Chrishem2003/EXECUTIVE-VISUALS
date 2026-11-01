@@ -11,7 +11,8 @@ const cases=[
  ["media.resize",{width:320,height:180,fit:"contain"},"scale=320:180:force_original_aspect_ratio=decrease:flags=lanczos,pad=320:180:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1"],
  ["media.resize",{width:320,height:180,fit:"cover"},"scale=320:180:force_original_aspect_ratio=increase:flags=lanczos,crop=320:180,setsar=1"],
  ["media.interpolate",{fps:30},"minterpolate=fps=30.000:mi_mode=mci:mc_mode=aobmc:me_mode=bidir:vsbmc=1"],
- ["media.upscale",{width:640,height:360},"scale=640:360:force_original_aspect_ratio=decrease:flags=lanczos,pad=640:360:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1"]
+ ["media.upscale",{width:640,height:360},"scale=640:360:force_original_aspect_ratio=decrease:flags=lanczos,pad=640:360:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1"],
+ ["media.upscale",{width:640,height:360,algorithm:"spline36",sharpness:0.5},"scale=640:360:force_original_aspect_ratio=decrease:flags=spline36,pad=640:360:(ow-iw)/2:(oh-ih)/2:color=black,unsharp=5:5:0.50:5:5:0.0,setsar=1"]
 ];
 for(const [kind,input,expected] of cases){
  const args=buildMediaOperationArgs({jobType:kind,input,...base});
@@ -23,6 +24,8 @@ assert.throws(()=>buildMediaOperationArgs({jobType:"media.denoise",input:{luma:9
 assert.throws(()=>buildMediaOperationArgs({jobType:"media.color",input:{brightness:2},...base}),e=>e.code==="INVALID_MEDIA_OPTIONS");
 assert.throws(()=>buildMediaOperationArgs({jobType:"media.resize",input:{width:1280,height:720,fit:"stretch"},...base}),e=>e.code==="INVALID_MEDIA_OPTIONS");
 assert.throws(()=>buildMediaOperationArgs({jobType:"media.interpolate",input:{fps:120},...base}),e=>e.code==="INVALID_MEDIA_OPTIONS");
+assert.throws(()=>buildMediaOperationArgs({jobType:"media.upscale",input:{width:640,height:360,algorithm:"made-up"},...base}),e=>e.code==="INVALID_MEDIA_OPTIONS");
+assert.throws(()=>buildMediaOperationArgs({jobType:"media.upscale",input:{width:640,height:360,sharpness:5},...base}),e=>e.code==="INVALID_MEDIA_OPTIONS");
 assert.throws(()=>buildMediaOperationArgs({jobType:"media.execute-shell",input:{},...base}),e=>e.code==="INVALID_MEDIA_OPTIONS");
 const audioArgs=buildMediaOperationArgs({jobType:"media.audio-clean",input:{noiseFloor:-30,targetLufs:-18},sourcePath:base.sourcePath,outputPath:"/private/cleaned.wav"});
 assert.equal(audioArgs[audioArgs.indexOf("-af")+1],"afftdn=nf=-30.0:tn=1,loudnorm=I=-18.0:TP=-1.5:LRA=11");
