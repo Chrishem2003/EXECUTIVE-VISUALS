@@ -7,6 +7,7 @@ export type DeclaredShotCapabilities = {
   minDurationSeconds?: number;
   maxDurationSeconds?: number;
   maxReferenceImages?: number;
+  referenceImages?: boolean;
   negativePrompt?: boolean;
 };
 export type ShotCapabilityStatus = "ready" | "blocked" | "unverified";
@@ -74,7 +75,8 @@ export function assessEpisodeShotReadiness(
     if (shot.negativePrompt.trim()) check("negativePrompt", capabilities?.negativePrompt);
     if (shot.referenceAssetIds.length) {
       const max = capabilities?.maxReferenceImages;
-      check("referenceImages:" + shot.referenceAssetIds.length, max === undefined ? undefined : shot.referenceAssetIds.length <= max);
+      const referenceSupport = max === undefined ? capabilities?.referenceImages : shot.referenceAssetIds.length <= max;
+      check("referenceImages:" + shot.referenceAssetIds.length, referenceSupport);
     }
     const status: ShotCapabilityStatus = unsupported.length ? "blocked" : unverified.length ? "unverified" : "ready";
     return { shotId: shot.shotId, sequence: shot.sequence, status, supported, unsupported, unverified, durationSeconds: shot.durationSeconds, referenceCount: shot.referenceAssetIds.length };
