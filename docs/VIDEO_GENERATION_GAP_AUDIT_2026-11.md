@@ -246,3 +246,13 @@ Next integration steps:
 3. Add per-shot approval, retry, seed and reference-lock metadata with immutable prompt revisions.
 4. Add actual generation job submission through the existing authenticated workflow executor, preserving identity-consent checks, budget limits, audit provenance and user approval.
 5. Add real AI super-resolution as a separately selected, capability-tested enhancement stage; retain classical scaling as the no-model fallback and label the two methods accurately.
+
+
+## Implementation update — shot-level production controls
+
+The Series Producer now supports explicit shot-level as well as scene-level story-bible bindings. Shot packages include only the bound story-world references for a shot, plus series-wide continuity rules. The interface also exposes editable shot action prompts, camera direction, framing, movement, lens guidance and negative prompts. Updates are immutable, bounded and isolated to the selected shot; package compilation carries these fields into the engine-neutral handoff. Validation rejects unknown/duplicate story-bible IDs and overlong shot-direction fields. These controls plan and compile generation instructions; they do not imply a provider has generated footage.
+
+### Remaining integration gates
+- Provider/model-specific capability declarations must be populated from verified provider metadata before a shot can be marked generation-ready.
+- Shot queue submission must use the existing authenticated workflow executor, remote opt-in, approval and usage guardrails.
+- AI super-resolution requires a separately validated model/runtime adapter and objective output checks; classical FFmpeg resampling remains clearly labelled as non-AI.
