@@ -54,6 +54,14 @@ Add reference image, image edit, first/last frame, video continuation, masks and
 
 ## Wave C — upscale and post-production truthfulness
 ### C3. Recipe input boundary hardening — implemented, awaiting CI
+### C4. Recipe-to-workflow compilation — implemented, awaiting CI
+- Validated video/audio enhancement recipes can now compile into the platform's existing typed workflow graph.
+- The generated graph starts with an accessible source-asset node, pauses at a dedicated human approval node, then runs the requested operations in order.
+- The compiler validates the resulting graph with the same workflow graph validator used by workflow execution.
+- Compilation is dry-run only: it does not enqueue jobs, run FFmpeg, activate providers or spend credits.
+- Regression tests assert graph validity, operation order, approval placement and rejection of unsupported recipe operations.
+- The actual queue submission/resume path remains a separate integration and must preserve the approval boundary.
+
 - Recipe steps now reject null, array and non-object step payloads.
 - Parameters must be plain object-shaped input; only operation-specific allowlisted keys are retained before the media argument validator runs.
 - Unknown fields are discarded so credentials, arbitrary metadata and unrelated caller values cannot flow into the dry-run plan.
