@@ -72,6 +72,12 @@ Add reference image, image edit, first/last frame, video continuation, masks and
 - Validation reports stream count, duration and expected stream type; this is structural validation, not perceptual quality scoring.
 - Verification script includes valid video/audio/image-thumbnail probe cases and malformed/mismatched output rejection. CI/local execution remains to be confirmed.
 
+### C3. Approval-gated enhancement recipe planner — implemented, awaiting CI
+- Added a reusable dry-run planner for ordered video/audio enhancement steps, with operation-specific parameter validation and media-type compatibility checks.
+- Recipes are limited to 12 steps, reject unsupported operations (including unverified AI upscale), and whitelist parameters before returning the plan.
+- Each planned step carries a truthful engine/method label and explicit approval requirement; plans report no fabricated duration or cost estimate.
+- Added focused tests and included them in the main build verification command. Planner does not yet enqueue or execute batch jobs; that requires the next approval-aware workflow integration.
+
 ## Wave D — presenter, dubbing and continuity
 - Keep narration TTS, transcription, translation, avatar rendering, voice cloning and lip-sync as separate capabilities with separate readiness and permissions.
 - Add timestamped transcript alignment and optional diarization only through tested adapters.
