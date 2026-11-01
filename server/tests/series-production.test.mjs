@@ -107,7 +107,7 @@ console.log("Shot direction verification passed: isolated edits, prompt compilat
 
 import { assessEpisodeShotReadiness } from "../../src/core/shot-readiness.ts";
 const readinessPackage=buildEpisodeShotPackage(directedPlan,directedPlan.seasons[0].episodes[0]);
-const readyCapabilities={aspectRatios:[readinessPackage.shots[0].aspectRatio],resolutions:["1080p"],frameRates:[readinessPackage.shots[0].frameRate],minDurationSeconds:1,maxDurationSeconds:30,negativePrompt:true};
+const readyCapabilities={aspectRatios:[readinessPackage.shots[0].aspectRatio],resolutions:[readinessPackage.shots[0].resolution],frameRates:[readinessPackage.shots[0].frameRate],minDurationSeconds:1,maxDurationSeconds:30,negativePrompt:true};
 const readyReport=assessEpisodeShotReadiness(readinessPackage,{provider:"declared-provider",model:"declared-model",capabilities:readyCapabilities});
 assert.equal(readyReport.status,"ready");
 assert.equal(readyReport.readyShots,readinessPackage.shotCount);
