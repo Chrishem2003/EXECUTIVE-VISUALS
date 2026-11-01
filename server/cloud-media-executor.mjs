@@ -158,10 +158,14 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
       let outputProbe = null;
       if (job.job_type === "media.upscale") {
         if (!executableAvailable("ffprobe")) throw Object.assign(new Error("FFprobe is required to verify upscaled output."), { code: "MEDIA_ENGINE_MISSING" });
-        const probe = await runProcess(ffprobe, ["-v", "error", "-show_entries", "stream=codec_type,width,height", "-of", "json", outputPath], { signal, timeoutMs, onProgress });
+        const probe = await runProcess(ffprobe, ["-v", "error", "-show_entries", "stream=codec_type,width,height:format=duration", "-of", "json", outputPath], { signal, timeoutMs, onProgress });
         try { outputProbe = JSON.parse(probe.stdout || "{}"); }
         catch { throw Object.assign(new Error("FFprobe returned invalid upscaling metadata."), { code: "MEDIA_PROBE_INVALID" }); }
         const video = (outputProbe.streams || []).find(stream => stream.codec_type === "video");
+        const outputDuration = Number(outputProbe.format?.duration);
+        if (!Number.isFinite(outputDuration) || outputDuration <= 0) {
+          throw Object.assign(new Error("Upscale output has no valid media duration; derivative was not published."), { code: "MEDIA_OUTPUT_VALIDATION_FAILED" });
+        }
         // Match buildMediaOperationArgs exactly: validate bounds, then round to an even pixel count.
         const requestedWidth = Number(input.width ?? 2560);
         const requestedHeight = Number(input.height ?? 1440);
@@ -183,6 +187,7 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
         sharpness: Number(input.sharpness ?? 0),
         targetWidth: expectedWidth,
         targetHeight: expectedHeight,
+        outputDurationSeconds: Number(outputProbe?.format?.duration),
         outputVideo: outputProbe?.streams?.find(stream => stream.codec_type === "video") || null
       } : null;
       const asset = await mediaIO.publish({
