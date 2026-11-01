@@ -334,3 +334,13 @@ This is a runnable worker entry point, not a deployed worker. Do not set the ena
 - Only explicitly linked characters are included. Missing or duplicate shot or character IDs fail closed. Every linked character must pass the existing authorization check for image likeness or video face-animation use before continuity details are sent to a provider.
 - Reference asset IDs are not automatically attached. The existing path still requires a separately connected, owner-accessible, checksum-verified single image and a model-specific input field explicitly configured on the server.
 - Prompt-builder tests cover context construction, missing and ambiguous links, empty prompts and per-character authorization. This feature does not make provider calls by itself, bypass approval gates, enable remote generation or change production data.
+
+
+## Saved reference-image continuity — 1 November 2026
+
+- Shot and linked-character reference asset IDs are now resolved from the selected saved project shot when an image or video generation node uses `shotId`.
+- A connected reference asset explicitly selected in the workflow takes precedence. Otherwise, the executor considers only references attached to the selected shot and its linked characters.
+- Automatic selection is deliberately limited to exactly one distinct reference. Multiple candidates fail closed and ask the editor to connect the intended asset explicitly; unrelated character references are not included.
+- The selected identifier must resolve to an owner/project-accessible image asset before the existing generation adapter validates its storage path, byte size, SHA-256 checksum and JPEG/PNG/WebP signature.
+- The model-specific reference input field remains an explicit server configuration. If the model has not been configured to accept reference images, the gateway continues to fail closed rather than silently ignoring the reference.
+- Tests cover deterministic reference collection, deduplication, ignoring unlinked characters and missing/ambiguous shots. No provider request, paid generation, production data change or deployment was performed.
