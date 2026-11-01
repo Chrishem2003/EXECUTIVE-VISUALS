@@ -48,6 +48,7 @@ test("fails closed when a provider lacks a requested capability", () => {
 test("accepts explicitly declared capabilities", () => {
   const request = normalizeVideoGenerationRequest({
     ...base,
+    resolution: "720p",
     seed: 42,
     startFrameAssetId: "frame-start",
     endFrameAssetId: "frame-end",
