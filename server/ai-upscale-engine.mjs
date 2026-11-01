@@ -76,7 +76,8 @@ export function createRealEsrganAdapter({
   binaryPath = process.env.REALESRGAN_NCNN_PATH || "",
   modelDirectory = process.env.REALESRGAN_MODEL_DIR || "",
   timeoutMs = 30 * 60 * 1000,
-  maxOutputBytes = 250 * 1024 * 1024
+  maxOutputBytes = 250 * 1024 * 1024,
+  enabled = process.env.AI_UPSCALE_ENABLED === "true"
 } = {}) {
   if (!Number.isInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 2 * 60 * 60 * 1000) throw new Error("AI upscale timeout is invalid.");
   if (!Number.isInteger(maxOutputBytes) || maxOutputBytes < 1024 || maxOutputBytes > 2 * 1024 * 1024 * 1024) throw new Error("AI upscale output limit is invalid.");
@@ -89,11 +90,11 @@ export function createRealEsrganAdapter({
     return {
       engine: "realesrgan-ncnn-vulkan",
       available: binaryReady && modelReady,
+      executionEnabled: Boolean(enabled),
       binaryReady,
       modelReady,
       model: selected,
-      executionEnabled: false,
-      reason: !binaryReady ? "Configure a readable NCNN/Vulkan executable." : !modelReady ? "The selected allowlisted model files are not installed." : "Ready for an explicitly approved image job."
+      reason: !binaryReady ? "Configure a readable NCNN/Vulkan executable." : !modelReady ? "The selected allowlisted model files are not installed." : !enabled ? "Engine is installed, but AI_UPSCALE_ENABLED is not enabled on this worker." : "Configured for explicitly approved image jobs; GPU self-test is still required."
     };
   }
 
@@ -115,7 +116,7 @@ export function createRealEsrganAdapter({
   async function execute(options = {}) {
     const prepared = plan(options);
     const readiness = await probe(prepared.model);
-    if (!readiness.available) throw fail(readiness.reason, "AI_UPSCALE_ENGINE_UNAVAILABLE");
+    if (!readiness.available || !readiness.executionEnabled) throw fail(readiness.reason, "AI_UPSCALE_ENGINE_UNAVAILABLE");
     const input = resolve(options.inputPath), output = resolve(options.outputPath);
     if (!(await regularFile(input))) throw fail("AI upscale input must be an existing regular file.", "AI_UPSCALE_INVALID_INPUT");
     try { await lstat(output); throw fail("AI upscale output already exists; source files are never overwritten.", "AI_UPSCALE_OUTPUT_EXISTS"); }
