@@ -224,6 +224,13 @@ This closes the renderer-adapter gap in the cloud timeline execution contract. I
 This is a runnable worker entry point, not a deployed worker. Do not set the enable flags until the isolated database migration, private bucket policies, API schema exposure and service credentials have been reviewed. No worker service was created or launched.
 
 
+## Private cloud asset preview and download — 1 November 2026
+
+- The Cloud Projects asset register now requests a short-lived signed URL from the authenticated asset route only when the user asks to open an asset.
+- The UI exposes an open/download link after the server has verified ownership or project read permission. The underlying bucket remains private; no public object URL is introduced.
+- Signed URLs are held in transient browser memory, not persisted with workspace drafts, and are cleared when switching projects. The link lifetime is five minutes; users can request a fresh one.
+- This is a link-based preview/download path. It does not yet provide inline video playback, image thumbnails, or a cloud asset preview modal. Verification is pending current CI.
+
 ## Shared local/cloud editorial editor — 1 November 2026
 
 - The existing multi-track timeline editor now has a workspace selector for local storage or an authorized cloud project. The editor loads the selected project's private cloud assets and saved timelines through the authenticated cloud API; no separate cloud-only editor is introduced.
