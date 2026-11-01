@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildShotContinuityPrompt } from "../shot-continuity.mjs";
+import { buildShotContinuityPrompt, getShotContinuityReferenceIds } from "../shot-continuity.mjs";
 const document={
  shots:[{id:"shot-1",scene:"Arrival",action:"Walks into frame",characterIds:["char-1","char-1"],location:"Kampala studio",timeOfDay:"Golden hour",visualPrompt:"Warm cinematic close-up",continuityIn:"Jacket buttoned",continuityOut:"Turns left",camera:"Medium close-up",lens:"50mm",movement:"Slow dolly",lighting:"Soft key",aspectRatio:"16:9"}],
  characters:[{id:"char-1",name:"Amina",description:"Presenter",appearance:"Short natural hair",wardrobe:"Blue jacket",voiceProfile:"Warm and measured",continuityNotes:"Keep jacket buttoned"}]
@@ -25,4 +25,13 @@ test("authorizes every linked character before exposing continuity details",()=>
  assert.deepEqual(authorized,["char-1"]);
  assert.ok(result.includes("Amina"));
  assert.throws(()=>buildShotContinuityPrompt({document,shotId:"shot-1",prompt:"Create a frame",authorizeCharacter:()=>{throw Object.assign(new Error("No consent"),{code:"IDENTITY_PERMISSION_REQUIRED"});}}),error=>error.code==="IDENTITY_PERMISSION_REQUIRED");
+});
+
+test("collects only references attached to the selected shot and its linked characters",()=>{
+ const referenced={...document,shots:[{...document.shots[0],referenceAssetIds:["shot-ref","shared-ref"]}],characters:[{...document.characters[0],referenceAssetIds:["character-ref","shared-ref"]},{id:"char-2",name:"Other",referenceAssetIds:["unlinked-ref"]}]};
+ assert.deepEqual(getShotContinuityReferenceIds({document:referenced,shotId:"shot-1"}),["shot-ref","shared-ref","character-ref"]);
+});
+test("rejects missing or ambiguous shots while resolving references",()=>{
+ assert.throws(()=>getShotContinuityReferenceIds({document,shotId:"missing"}),error=>error.code==="SHOT_CONTEXT_NOT_FOUND");
+ assert.throws(()=>getShotContinuityReferenceIds({document:{...document,shots:[...document.shots,document.shots[0]]},shotId:"shot-1"}),error=>error.code==="SHOT_CONTEXT_NOT_FOUND");
 });
