@@ -152,6 +152,8 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
       if (!executableAvailable("ffmpeg")) throw Object.assign(new Error("FFmpeg is not installed on this worker."), { code: "MEDIA_ENGINE_MISSING" });
       let sourceAudioStreamCount = null;
       let sourceDurationSeconds = null;
+      let expectedWidth = null;
+      let expectedHeight = null;
       if (job.job_type === "media.upscale") {
         if (!executableAvailable("ffprobe")) throw Object.assign(new Error("FFprobe is required to verify upscaled output."), { code: "MEDIA_ENGINE_MISSING" });
         const sourceProbe = await runProcess(ffprobe, ["-v", "error", "-show_entries", "stream=codec_type:format=duration", "-of", "json", sourcePath], { signal, timeoutMs, onProgress });
@@ -197,8 +199,8 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
             !Number.isFinite(requestedHeight) || requestedHeight < 144 || requestedHeight > 4320) {
           throw Object.assign(new Error("Upscale dimensions are outside the supported range."), { code: "INVALID_MEDIA_OPTIONS" });
         }
-        const expectedWidth = Math.round(Math.round(requestedWidth) / 2) * 2;
-        const expectedHeight = Math.round(Math.round(requestedHeight) / 2) * 2;
+        expectedWidth = Math.round(Math.round(requestedWidth) / 2) * 2;
+        expectedHeight = Math.round(Math.round(requestedHeight) / 2) * 2;
         if (!video || Number(video.width) !== expectedWidth || Number(video.height) !== expectedHeight) {
           throw Object.assign(new Error("Upscale output dimensions do not match the requested dimensions; derivative was not published."), { code: "MEDIA_OUTPUT_VALIDATION_FAILED" });
         }
