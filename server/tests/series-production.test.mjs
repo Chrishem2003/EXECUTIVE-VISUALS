@@ -71,7 +71,7 @@ assert.ok(!unboundSceneShot.continuityContext.some(rule=>rule.includes("Host One
 const invalidBinding=structuredClone(boundPlan);
 invalidBinding.seasons[0].episodes[0].scenes[0].shots[0].storyBibleEntryIds=["missing-entry"];
 assert.throws(()=>buildEpisodeShotPackage(invalidBinding,invalidBinding.seasons[0].episodes[0]),/unknown story bible entry/);
-assert.equal(validateSeriesProductionPlan(invalidBinding).valid,true);
+assert.equal(validateSeriesProductionPlan(invalidBinding).valid,false);
 const duplicateBinding=structuredClone(boundPlan);
 duplicateBinding.seasons[0].episodes[0].scenes[0].storyBibleEntryIds=[bindingBase.id,bindingBase.id];
 assert.equal(validateSeriesProductionPlan(duplicateBinding).valid,false);
