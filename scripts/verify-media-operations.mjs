@@ -3,8 +3,19 @@ import {execFileSync} from "node:child_process";
 import {mkdtemp,stat,rm} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
-import {buildMediaOperationArgs} from "../server/media.mjs";
+import {buildMediaOperationArgs,buildMediaProcessingProvenance} from "../server/media.mjs";
 const base={sourcePath:"/private/source.mp4",outputPath:"/private/output.mp4"};
+
+const classical=buildMediaProcessingProvenance({jobType:"media.upscale",input:{width:1920,height:1080,algorithm:"lanczos",sharpness:0.4,secret:"must-not-be-copied"},sourceAsset:{id:"source-1",sha256:"a".repeat(64)}});
+assert.equal(classical.engine,"ffmpeg");
+assert.equal(classical.method,"deterministic-resampling");
+assert.equal(classical.aiInferencePerformed,false);
+assert.equal(classical.sourceAssetId,"source-1");
+assert.equal(classical.sourceSha256,"a".repeat(64));
+assert.deepEqual(classical.parameters,{width:1920,height:1080,algorithm:"lanczos",sharpness:0.4});
+assert.equal(buildMediaProcessingProvenance({jobType:"media.ai-upscale",input:{model:"realesrgan-x4plus"}}),null,"AI upscale uses its separate engine-specific provenance");
+assert.equal(buildMediaProcessingProvenance({jobType:"media.color",input:{brightness:0.1,contrast:1,saturation:1},sourceAsset:{id:"source-2"}}).method,"deterministic-color-adjustment");
+
 const cases=[
  ["media.denoise",{luma:5,chroma:2},"hqdn3d=5.00:2.00:3.75:1.50"],
  ["media.color",{brightness:0.1,contrast:1.2,saturation:1.4},"eq=brightness=0.100:contrast=1.200:saturation=1.400"],
