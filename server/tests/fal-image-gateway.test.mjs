@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { generateImage } from "../image-gateway.mjs";
 
-const keys = ["IMAGE_GATEWAY_ENABLED", "IMAGE_GATEWAY_ALLOW_REMOTE", "IMAGE_GATEWAY_PROVIDER", "IMAGE_GATEWAY_TIMEOUT_MS", "FAL_KEY", "FAL_IMAGE_MODEL"];
+const keys = ["IMAGE_GATEWAY_ENABLED", "IMAGE_GATEWAY_ALLOW_REMOTE", "IMAGE_GATEWAY_PROVIDER", "IMAGE_GATEWAY_TIMEOUT_MS", "FAL_KEY", "FAL_IMAGE_MODEL", "FAL_IMAGE_REFERENCE_FIELD"];
 const saved = Object.fromEntries(keys.map(key => [key, process.env[key]]));
 function restore() { for (const key of keys) saved[key] === undefined ? delete process.env[key] : process.env[key] = saved[key]; }
 function response(status, body, headers = {}) {
@@ -37,6 +37,43 @@ test("optional async image adapter submits, polls, and returns provider image by
     assert.equal(calls[0].headers.authorization, "Key test-key");
     assert.equal(JSON.parse(calls[0].body).prompt, "A cinematic original landscape");
     assert.equal(calls.length, 4);
+  } finally {
+    globalThis.fetch = originalFetch;
+    restore();
+  }
+});
+
+
+test("reference image is sent only through the explicitly configured model input field", async () => {
+  const originalFetch = globalThis.fetch;
+  process.env.IMAGE_GATEWAY_ENABLED = "true";
+  process.env.IMAGE_GATEWAY_ALLOW_REMOTE = "true";
+  process.env.IMAGE_GATEWAY_PROVIDER = "fal";
+  process.env.IMAGE_GATEWAY_TIMEOUT_MS = "10000";
+  process.env.FAL_KEY = "test-key";
+  process.env.FAL_IMAGE_MODEL = "fal-ai/flux/dev";
+  process.env.FAL_IMAGE_REFERENCE_FIELD = "image_url";
+  let submittedPayload;
+  globalThis.fetch = async (url, options = {}) => {
+    const parsed = new URL(url);
+    if (options.method === "POST") {
+      submittedPayload = JSON.parse(options.body);
+      return response(200, { request_id: "reference_123", status_url: "https://queue.fal.run/fal-ai/flux/dev/requests/reference_123/status", response_url: "https://queue.fal.run/fal-ai/flux/dev/requests/reference_123" });
+    }
+    if (parsed.pathname.endsWith("/status")) return response(200, { status: "COMPLETED" });
+    if (parsed.hostname === "queue.fal.run") return response(200, { images: [{ url: "https://v3.fal.media/files/reference-output.png" }] });
+    if (parsed.hostname === "v3.fal.media") return response(200, Buffer.from([137,80,78,71,13,10,26,10,1,2,3]), { "content-length": "11" });
+    throw new Error("Unexpected outbound host");
+  };
+  try {
+    const referenceImageDataUrl = "data:image/png;base64," + Buffer.from([137,80,78,71,13,10,26,10,1,2,3]).toString("base64");
+    await generateImage({ prompt: "Match the reference composition", referenceImageDataUrl });
+    assert.equal(submittedPayload.image_url, referenceImageDataUrl);
+    assert.equal(submittedPayload.prompt, "Match the reference composition");
+    process.env.FAL_IMAGE_REFERENCE_FIELD = "";
+    await assert.rejects(() => generateImage({ prompt: "Must not silently drop reference", referenceImageDataUrl }), error => error.code === "IMAGE_GATEWAY_UNSUPPORTED_INPUT");
+    process.env.FAL_IMAGE_REFERENCE_FIELD = "arbitrary_field";
+    await assert.rejects(() => generateImage({ prompt: "Invalid field", referenceImageDataUrl }), error => error.code === "IMAGE_GATEWAY_CONFIG_INVALID");
   } finally {
     globalThis.fetch = originalFetch;
     restore();
