@@ -344,3 +344,11 @@ This is a runnable worker entry point, not a deployed worker. Do not set the ena
 - The selected identifier must resolve to an owner/project-accessible image asset before the existing generation adapter validates its storage path, byte size, SHA-256 checksum and JPEG/PNG/WebP signature.
 - The model-specific reference input field remains an explicit server configuration. If the model has not been configured to accept reference images, the gateway continues to fail closed rather than silently ignoring the reference.
 - Tests cover deterministic reference collection, deduplication, ignoring unlinked characters and missing/ambiguous shots. No provider request, paid generation, production data change or deployment was performed.
+
+
+## Pre-delivery timeline quality checks — 1 November 2026
+
+- Added a sequence-health panel to the existing editorial workspace. It checks for missing primary picture, gaps in the first enabled video track, missing audio, missing captions, empty overlay tracks, source assets absent from the currently loaded library, clip source ranges exceeding probed media duration, and review markers beyond the edit.
+- Findings are severity-labelled as errors, warnings or information. The panel gives editors concrete issue descriptions before master export.
+- These checks are advisory except for missing picture, missing source assets and source ranges exceeding known media duration. The existing server-side timeline validator and render path remain authoritative; the client panel cannot authorize or bypass rendering.
+- This adds no provider calls, paid services, production migrations or deployment.
