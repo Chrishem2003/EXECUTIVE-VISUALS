@@ -14,6 +14,7 @@ import { claimNextJob, completeJob, recoverExpiredJobs, renewJobLease } from "./
 import { sanitizeCreativeWorkspaceDocument } from "./workspace-documents.mjs";
 import { importResearchUrl } from "./research-import.mjs";
 import { getProviderCatalog } from "./provider-registry.mjs";
+import { ensureRemoteUsageTable, getRemoteUsagePolicy } from "./usage-guardrails.mjs";
 import { createCloudTimelineApi } from "./cloud-timeline-api.mjs";
 
 const PORT = Number(process.env.API_PORT || process.env.PORT || 4179);
@@ -321,7 +322,12 @@ export function createAppServer() {
           ?db.prepare("SELECT id,project_id,job_id,workflow_run_id,node_id,provider,capability,model,prompt_tokens,completion_tokens,total_tokens,duration_ms,estimated_cost_micros,created_at FROM model_usage_events WHERE project_id=? ORDER BY created_at DESC LIMIT 200").all(projectId)
           :db.prepare("SELECT id,project_id,job_id,workflow_run_id,node_id,provider,capability,model,prompt_tokens,completion_tokens,total_tokens,duration_ms,estimated_cost_micros,created_at FROM model_usage_events WHERE owner_id=? ORDER BY created_at DESC LIMIT 200").all(user.id);
         const totals=rows.reduce((sum,row)=>({requests:sum.requests+1,promptTokens:sum.promptTokens+(row.prompt_tokens||0),completionTokens:sum.completionTokens+(row.completion_tokens||0),totalTokens:sum.totalTokens+(row.total_tokens||0),durationMs:sum.durationMs+(row.duration_ms||0)}),{requests:0,promptTokens:0,completionTokens:0,totalTokens:0,durationMs:0});
-        send(res,200,{events:rows.map(row=>({id:row.id,projectId:row.project_id,jobId:row.job_id,workflowRunId:row.workflow_run_id,nodeId:row.node_id,provider:row.provider,capability:row.capability,model:row.model,promptTokens:row.prompt_tokens,completionTokens:row.completion_tokens,totalTokens:row.total_tokens,durationMs:row.duration_ms,estimatedCostMicros:row.estimated_cost_micros,createdAt:row.created_at})),totals,costs:"not_estimated"},cors);return;
+        ensureRemoteUsageTable(db);
+        const usagePolicy=getRemoteUsagePolicy();
+        const accountUsage=db.prepare("SELECT COUNT(*) AS count FROM remote_usage_reservations WHERE owner_id=? AND created_at>=strftime('%Y-%m-%dT%H:%M:%fZ','now','-24 hours')").get(user.id).count;
+        const projectUsage=projectId?db.prepare("SELECT COUNT(*) AS count FROM remote_usage_reservations WHERE owner_id=? AND project_id=? AND created_at>=strftime('%Y-%m-%dT%H:%M:%fZ','now','-24 hours')").get(user.id,projectId).count:null;
+        const remoteUsage={window:"rolling_24_hours",configurationValid:usagePolicy.valid,limit:usagePolicy.limit,used:accountUsage,remaining:usagePolicy.valid?Math.max(0,usagePolicy.limit-accountUsage):null,projectUsed:projectUsage,remoteDisabled:usagePolicy.valid&&usagePolicy.limit===0};
+        send(res,200,{events:rows.map(row=>({id:row.id,projectId:row.project_id,jobId:row.job_id,workflowRunId:row.workflow_run_id,nodeId:row.node_id,provider:row.provider,capability:row.capability,model:row.model,promptTokens:row.prompt_tokens,completionTokens:row.completion_tokens,totalTokens:row.total_tokens,durationMs:row.duration_ms,estimatedCostMicros:row.estimated_cost_micros,createdAt:row.created_at})),totals,remoteUsage,costs:"not_estimated"},cors);return;
       }
 
       if(path==="/api/projects"&&req.method==="GET"){
