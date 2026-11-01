@@ -29,7 +29,7 @@ export async function storeGeneratedImage({db,mediaRoot,ownerId,projectId=null,j
  }catch(error){await unlink(absolute).catch(()=>{});throw error;}
 }
 
-export async function storeGeneratedVideo({db,mediaRoot,ownerId,projectId=null,jobId,prompt,model,buffer}){
+export async function storeGeneratedVideo({db,mediaRoot,ownerId,projectId=null,jobId,prompt,model,provenance=null,buffer}){
  if(!Buffer.isBuffer(buffer)||buffer.length<12||buffer.toString("ascii",4,8)!=="ftyp"||buffer.length>250*1024*1024)throw Object.assign(new Error("Generated video has an unsupported signature or exceeds the 250 MiB limit."),{code:"VIDEO_SIGNATURE_INVALID"});
  const id=randomUUID(),directory=join(mediaRoot,safeSegment(ownerId),safeSegment(projectId||"personal"));
  const absolute=resolve(directory,id+".mp4"),root=resolve(mediaRoot),storagePath=relative(root,absolute).split(sep).join("/");
@@ -38,7 +38,7 @@ export async function storeGeneratedVideo({db,mediaRoot,ownerId,projectId=null,j
  try{
   await writeFile(absolute,buffer,{flag:"wx"});
   const sha256=createHash("sha256").update(buffer).digest("hex"),promptHash=createHash("sha256").update(String(prompt||"")).digest("hex");
-  const name="generated-"+id+".mp4",metadata={generated:true,model,promptHash,jobId,createdAt:new Date().toISOString()};
+  const name="generated-"+id+".mp4",metadata={generated:true,model,promptHash,jobId,createdAt:new Date().toISOString(),...(provenance?{generationProvenance:provenance}:{})};
   db.prepare("INSERT INTO assets(id,owner_id,project_id,original_name,media_type,byte_size,sha256,storage_path,metadata_json) VALUES(?,?,?,?,?,?,?,?,?)").run(id,ownerId,projectId,name,"video/mp4",buffer.length,sha256,storagePath,json(metadata));
   return {id,projectId,name,mediaType:"video/mp4",size:buffer.length,sha256,storagePath,metadata};
  }catch(error){await unlink(absolute).catch(()=>{});throw error;}
