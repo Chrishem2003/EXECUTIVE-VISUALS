@@ -130,6 +130,45 @@ function safeExtension(name, fallback) {
   const ext = extname(name || "").replace(".","").toLowerCase();
   return CONTAINERS.has(ext) || ["jpg","jpeg","png","webp"].includes(ext) ? ext : fallback;
 }
+export function buildMediaProcessingProvenance({jobType,input={},sourceAsset={}}={}) {
+  const allowed = {
+    "media.denoise":["luma","chroma"],
+    "media.color":["brightness","contrast","saturation"],
+    "media.resize":["width","height","fit"],
+    "media.upscale":["width","height","fit","algorithm","sharpness"],
+    "media.interpolate":["fps"],
+    "media.audio-clean":["noiseFloor","targetLufs"],
+    "media.transcode":["container","videoCodec","audioCodec","preset"],
+    "media.proxy":["container","videoCodec","audioCodec","preset"],
+    "media.audio_extract":[],
+    "media.thumbnail":["seconds"]
+  };
+  if (!Object.hasOwn(allowed,jobType)) return null;
+  const parameters={};
+  for(const key of allowed[jobType]) {
+    const value=input?.[key];
+    if(typeof value==="string"&&value.length<=32) parameters[key]=value;
+    else if(typeof value==="number"&&Number.isFinite(value)) parameters[key]=value;
+    else if(typeof value==="boolean") parameters[key]=value;
+  }
+  return {
+    schemaVersion:1,
+    operation:jobType,
+    engine:"ffmpeg",
+    method:jobType==="media.upscale"||jobType==="media.resize"?"deterministic-resampling":
+      jobType==="media.interpolate"?"optical-flow-frame-interpolation":
+      jobType==="media.denoise"?"classical-video-denoising":
+      jobType==="media.color"?"deterministic-color-adjustment":
+      jobType==="media.audio-clean"?"classical-audio-filtering":
+      jobType==="media.audio_extract"?"audio-stream-extraction":
+      jobType==="media.thumbnail"?"frame-extraction":"deterministic-transcoding",
+    sourceAssetId:typeof sourceAsset.id==="string"?sourceAsset.id:null,
+    sourceSha256:typeof sourceAsset.sha256==="string"?sourceAsset.sha256:null,
+    parameters,
+    aiInferencePerformed:false
+  };
+}
+
 function addAsset(db, job, filePath, originalName, mediaType, size, sha256, derivativeOf, metadata = {}) {
   const id = randomUUID();
   db.prepare("INSERT INTO assets(id,owner_id,project_id,original_name,media_type,byte_size,sha256,storage_path,derivative_of,metadata_json) VALUES(?,?,?,?,?,?,?,?,?,?)")
@@ -373,7 +412,8 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
   const fileStat = await stat(outputPath);
   const hash = createHash("sha256");
   await pipeline(createReadStream(outputPath), new Transform({ transform(chunk, enc, cb) { hash.update(chunk); cb(null, chunk); } }), new Transform({ transform(chunk, enc, cb) { cb(); } }));
-  const outputAsset = addAsset(db, job, "derived/"+id+"."+ext, outputName, mime, fileStat.size, hash.digest("hex"), source.id, { operation:job.job_type });
+  const provenance=buildMediaProcessingProvenance({jobType:job.job_type,input,sourceAsset:source});
+  const outputAsset = addAsset(db, job, "derived/"+id+"."+ext, outputName, mime, fileStat.size, hash.digest("hex"), source.id, { operation:job.job_type, ...(provenance?{processing:provenance}:{}) });
   emit("media.output_created", { assetId:outputAsset.id, sha256:outputAsset.sha256 });
   return { outputAsset };
 }
