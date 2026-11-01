@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { access, lstat, stat } from "node:fs/promises";
+import { access, lstat, stat, open } from "node:fs/promises";
 import { constants } from "node:fs";
 import { dirname, resolve, sep } from "node:path";
 
@@ -57,6 +57,21 @@ function run(binary, args, timeoutMs, signal) {
   });
 }
 
+async function validateImageOutput(path, format) {
+  const handle = await open(path, "r");
+  try {
+    const header = Buffer.alloc(32);
+    const { bytesRead } = await handle.read(header, 0, header.length, 0);
+    const bytes = header.subarray(0, bytesRead);
+    const valid = format === "png"
+      ? bytes.length >= 24 && bytes.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10])) && bytes.toString("ascii",12,16) === "IHDR"
+      : format === "jpg"
+        ? bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff
+        : bytes.length >= 12 && bytes.toString("ascii",0,4) === "RIFF" && bytes.toString("ascii",8,12) === "WEBP";
+    if (!valid) throw fail("AI upscaling output does not match the requested image format.", "AI_UPSCALE_OUTPUT_INVALID");
+  } finally { await handle.close(); }
+}
+
 export function createRealEsrganAdapter({
   binaryPath = process.env.REALESRGAN_NCNN_PATH || "",
   modelDirectory = process.env.REALESRGAN_MODEL_DIR || "",
@@ -108,8 +123,9 @@ export function createRealEsrganAdapter({
     if (dirname(output) === input || output.startsWith(input + sep)) throw fail("AI upscale output path is invalid.", "AI_UPSCALE_INVALID_PATH");
     await run(prepared.binary, prepared.args, timeoutMs, options.signal);
     const info = await stat(output).catch(() => null);
-    if (!info?.isFile() || info.size < 8 || info.size > maxOutputBytes) throw fail("AI upscale output is missing, empty or exceeds the configured size limit.", "AI_UPSCALE_OUTPUT_INVALID");
-    return { path: output, byteSize: info.size, model: prepared.model, scale: prepared.scale, engine: "realesrgan-ncnn-vulkan", method: "ai-super-resolution" };
+    if (!info?.isFile() || info.size < 24 || info.size > maxOutputBytes) throw fail("AI upscale output is missing, empty or exceeds the configured size limit.", "AI_UPSCALE_OUTPUT_INVALID");
+    await validateImageOutput(output, prepared.format);
+    return { path: output, byteSize: info.size, model: prepared.model, scale: prepared.scale, tile: prepared.tile, format: prepared.format, engine: "realesrgan-ncnn-vulkan", method: "ai-super-resolution" };
   }
 
   return Object.freeze({ probe, plan, execute });
