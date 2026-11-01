@@ -1,6 +1,6 @@
 export type SeriesFormat="documentary"|"docuseries"|"education"|"fiction"|"interview"|"brand"|"children"|"shorts";
 export type SeriesDefaults={episodeRuntimeSeconds:number;shotLengthSeconds:number;aspectRatio:string;frameRate:number;resolution:string;visualStyle:string;language:string;voiceMode:string;captions:string;music:string;cameraLanguage:string;shotComposition:string;pacing:string;colorGrade:string};
-export type EpisodeShot={id:string;durationSeconds:number;prompt:string;status:"planned";storyBibleEntryIds?:string[]};
+export type EpisodeShot={id:string;durationSeconds:number;prompt:string;status:"planned";camera?:string;framing?:string;movement?:string;lens?:string;negativePrompt?:string;storyBibleEntryIds?:string[]};
 export type EpisodeScene={id:string;title:string;purpose:string;durationSeconds:number;shots:EpisodeShot[];storyBibleEntryIds?:string[]};
 export type EpisodeDirectionOverrides=Partial<Pick<SeriesDefaults,"episodeRuntimeSeconds"|"aspectRatio"|"frameRate"|"resolution"|"visualStyle"|"cameraLanguage"|"shotComposition"|"pacing"|"colorGrade"|"language"|"voiceMode"|"captions"|"music">>;
 export type StoryBibleKind="character"|"location"|"prop"|"wardrobe"|"voice"|"brand-rule";
@@ -127,7 +127,24 @@ export function setEpisodeStoryBibleBindings(series:SeriesProductionPlan,episode
  return{...series,seasons,updatedAt:new Date().toISOString()};
 }
 
-export type EpisodeShotPackageItem={shotId:string;sceneId:string;sceneTitle:string;sequence:number;durationSeconds:number;prompt:string;negativePrompt:string;aspectRatio:string;frameRate:number;resolution:string;visualStyle:string;cameraLanguage:string;shotComposition:string;pacing:string;colorGrade:string;language:string;voiceMode:string;captions:string;music:string;referenceAssetIds:string[];continuityContext:string[]};
+export type EpisodeShotDirectionPatch=Partial<Pick<EpisodeShot,"prompt"|"camera"|"framing"|"movement"|"lens"|"negativePrompt">>;
+/** Update shot-specific creative direction without changing episode timing or sibling shots. */
+export function updateEpisodeShotDirection(series:SeriesProductionPlan,episodeId:string,sceneId:string,shotId:string,patch:EpisodeShotDirectionPatch):SeriesProductionPlan{
+ const limits:{[K in keyof EpisodeShotDirectionPatch]:number}={prompt:2000,camera:240,framing:160,movement:240,lens:120,negativePrompt:1200};
+ for(const [key,value] of Object.entries(patch)){if(typeof value!=="string"||value.length>limits[key as keyof EpisodeShotDirectionPatch])throw new Error("Shot "+key+" must be text within "+limits[key as keyof EpisodeShotDirectionPatch]+" characters.");}
+ let episodeFound=false,sceneFound=false,shotFound=false;
+ const seasons=series.seasons.map(season=>({...season,episodes:season.episodes.map(episode=>{
+  if(episode.id!==episodeId)return episode;episodeFound=true;
+  return{...episode,scenes:episode.scenes.map(scene=>{
+   if(scene.id!==sceneId)return scene;sceneFound=true;
+   return{...scene,shots:scene.shots.map(shot=>{if(shot.id!==shotId)return shot;shotFound=true;return{...shot,...patch};})};
+  })};
+ })}));
+ if(!episodeFound||!sceneFound||!shotFound)throw new Error("The selected shot does not belong to this series episode.");
+ return{...series,seasons,updatedAt:new Date().toISOString()};
+}
+
+export type EpisodeShotPackageItem={shotId:string;sceneId:string;sceneTitle:string;sequence:number;durationSeconds:number;prompt:string;negativePrompt:string;camera:string;framing:string;movement:string;lens:string;aspectRatio:string;frameRate:number;resolution:string;visualStyle:string;cameraLanguage:string;shotComposition:string;pacing:string;colorGrade:string;language:string;voiceMode:string;captions:string;music:string;referenceAssetIds:string[];continuityContext:string[]};
 export type EpisodeShotPackage={schemaVersion:1;seriesId:string;seriesTitle:string;seasonNumber:number;episodeId:string;episodeNumber:number;episodeTitle:string;runtimeSeconds:number;settings:SeriesDefaults;storyBibleVersion:number;shotCount:number;totalShotSeconds:number;shots:EpisodeShotPackageItem[];createdAt:string};
 /** Compile an episode into a deterministic, engine-neutral handoff. No provider is invoked. */
 export function buildEpisodeShotPackage(series:SeriesProductionPlan,episode:SeriesEpisode):EpisodeShotPackage{
@@ -137,9 +154,9 @@ export function buildEpisodeShotPackage(series:SeriesProductionPlan,episode:Seri
  let sequence=0;
  const shots=episode.scenes.flatMap(scene=>scene.shots.map(shot=>{
   sequence++;
-  const promptParts=[series.premise,"Series: "+series.title,"Episode: "+episode.title,"Scene: "+scene.title,"Scene purpose: "+scene.purpose,"Shot "+sequence+" action and direction: "+shot.prompt,"Visual style: "+direction.visualStyle,"Camera language: "+direction.cameraLanguage,"Composition: "+direction.shotComposition,"Pacing: "+direction.pacing,"Colour grade: "+direction.colorGrade,"Aspect ratio: "+direction.aspectRatio,"Frame rate: "+direction.frameRate+" fps","Language: "+direction.language,"Voice: "+direction.voiceMode,"Captions: "+direction.captions,"Music: "+direction.music,...globalRules];
+  const promptParts=[series.premise,"Series: "+series.title,"Episode: "+episode.title,"Scene: "+scene.title,"Scene purpose: "+scene.purpose,"Shot "+sequence+" action and direction: "+shot.prompt,"Shot camera: "+(shot.camera||direction.cameraLanguage),"Shot framing: "+(shot.framing||direction.shotComposition),"Shot movement: "+(shot.movement||"As defined by the scene action"),"Shot lens: "+(shot.lens||"Natural cinematic perspective"),"Visual style: "+direction.visualStyle,"Camera language: "+direction.cameraLanguage,"Composition: "+direction.shotComposition,"Pacing: "+direction.pacing,"Colour grade: "+direction.colorGrade,"Aspect ratio: "+direction.aspectRatio,"Frame rate: "+direction.frameRate+" fps","Language: "+direction.language,"Voice: "+direction.voiceMode,"Captions: "+direction.captions,"Music: "+direction.music,...globalRules];
   const boundIds=[...new Set([...(scene.storyBibleEntryIds||[]),...(shot.storyBibleEntryIds||[])])],boundEntries=boundIds.map(id=>{const entry=bibleById.get(id);if(!entry)throw new Error("Shot or scene references an unknown story bible entry: "+id);return entry;}),referenceAssetIds=[...new Set(boundEntries.flatMap(entry=>entry.referenceAssetIds))],continuityContext=[...globalRules,...boundEntries.map(entry=>entry.kind.toUpperCase()+" — "+entry.name+": "+entry.description+(entry.visualRules?" Visual rules: "+entry.visualRules:""))];
-  return{shotId:shot.id,sceneId:scene.id,sceneTitle:scene.title,sequence,durationSeconds:shot.durationSeconds,prompt:promptParts.filter(Boolean).join("\n"),negativePrompt:"Do not change established character identity, wardrobe, location geography, props, screen direction, lighting continuity or visual style. Avoid unintended text, logos, watermarks, flicker, warped anatomy and abrupt camera or exposure changes.",aspectRatio:direction.aspectRatio,frameRate:direction.frameRate,resolution:direction.resolution,visualStyle:direction.visualStyle,cameraLanguage:direction.cameraLanguage,shotComposition:direction.shotComposition,pacing:direction.pacing,colorGrade:direction.colorGrade,language:direction.language,voiceMode:direction.voiceMode,captions:direction.captions,music:direction.music,referenceAssetIds,continuityContext};
+  return{shotId:shot.id,sceneId:scene.id,sceneTitle:scene.title,sequence,durationSeconds:shot.durationSeconds,prompt:promptParts.filter(Boolean).join("\n"),negativePrompt:shot.negativePrompt||"Do not change established character identity, wardrobe, location geography, props, screen direction, lighting continuity or visual style. Avoid unintended text, logos, watermarks, flicker, warped anatomy and abrupt camera or exposure changes.",camera:shot.camera||direction.cameraLanguage,framing:shot.framing||direction.shotComposition,movement:shot.movement||"As defined by the scene action",lens:shot.lens||"Natural cinematic perspective",aspectRatio:direction.aspectRatio,frameRate:direction.frameRate,resolution:direction.resolution,visualStyle:direction.visualStyle,cameraLanguage:direction.cameraLanguage,shotComposition:direction.shotComposition,pacing:direction.pacing,colorGrade:direction.colorGrade,language:direction.language,voiceMode:direction.voiceMode,captions:direction.captions,music:direction.music,referenceAssetIds,continuityContext};
  }));
  const totalShotSeconds=shots.reduce((sum,shot)=>sum+shot.durationSeconds,0);
  if(totalShotSeconds!==direction.episodeRuntimeSeconds)throw new Error("Shot package duration does not equal the effective episode runtime.");
