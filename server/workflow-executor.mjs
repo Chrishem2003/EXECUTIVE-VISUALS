@@ -199,11 +199,31 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
     enforceIdentityPermission(db,job,config,values,"likeness");
     if(!hasApprovedAncestor(graph,nodeId,outputs))throw Object.assign(new Error("A completed upstream human-approval node is required before image generation."),{code:"APPROVAL_REQUIRED"});
     const prompt=String(values.prompt??values.text??values.input??config.prompt??"");
-    if(values.reference||values.references||values.brand)throw Object.assign(new Error("The configured generic image adapter currently supports prompt-only generation; reference and brand inputs are not supported."),{code:"IMAGE_GATEWAY_UNSUPPORTED_INPUT"});
+    if(values.brand)throw Object.assign(new Error("Brand bundles are not supported by the configured image adapter."),{code:"IMAGE_GATEWAY_UNSUPPORTED_INPUT"});
+    const rawReference=values.reference??values.image??values.referenceImage??config.referenceAssetId??"";
+    if(Array.isArray(rawReference)||Array.isArray(values.references))throw Object.assign(new Error("Image generation accepts at most one reference image."),{code:"IMAGE_GATEWAY_UNSUPPORTED_INPUT"});
+    const referenceId=String(rawReference||"").trim();
+    let referenceImageDataUrl="";
+    if(referenceId){
+     const source=getAccessibleAsset(db,job.owner_id,referenceId,false);
+     if(!source||!String(source.media_type||"").startsWith("image/"))throw Object.assign(new Error("Image reference must be an accessible image asset."),{code:"IMAGE_GATEWAY_INVALID_INPUT"});
+     const root=resolve(mediaRoot),absolute=resolve(root,source.storage_path),storedRelative=relative(root,absolute);
+     if(!storedRelative||storedRelative===".."||storedRelative.startsWith(".."+sep)||absolute===root)throw Object.assign(new Error("Image reference asset path failed validation."),{code:"ASSET_PATH_INVALID"});
+     const buffer=await readFile(absolute);
+     if(!buffer.length||buffer.length>10*1024*1024||buffer.length!==source.byte_size)throw Object.assign(new Error("Image reference is empty, oversized or changed since ingest."),{code:"IMAGE_GATEWAY_INVALID_INPUT"});
+     const checksum=createHash("sha256").update(buffer).digest("hex");
+     if(checksum!==source.sha256)throw Object.assign(new Error("Image reference checksum verification failed."),{code:"ASSET_CHECKSUM_MISMATCH"});
+     const mime=String(source.media_type).toLowerCase();
+     const validSignature=mime==="image/jpeg"?buffer.length>=3&&buffer[0]===0xff&&buffer[1]===0xd8&&buffer[2]===0xff
+      :mime==="image/png"?buffer.length>=8&&buffer.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10]))
+      :mime==="image/webp"?buffer.length>=12&&buffer.toString("ascii",0,4)==="RIFF"&&buffer.toString("ascii",8,12)==="WEBP":false;
+     if(!validSignature)throw Object.assign(new Error("Image reference must be a valid JPEG, PNG or WebP image."),{code:"IMAGE_GATEWAY_INVALID_INPUT"});
+     referenceImageDataUrl="data:"+mime+";base64,"+buffer.toString("base64");
+    }
     if(!prompt.trim())throw Object.assign(new Error("Image-generation node requires a non-empty prompt input."),{code:"PROMPT_REQUIRED"});
     const usageStarted=Date.now();
     const provider=requireExecutionProvider("image.generate","IMAGE_GATEWAY_ALLOW_REMOTE");
-    const result=await generateImage({prompt,size:String(config.size||"1024x1024"),quality:String(config.quality||"medium")});
+    const result=await generateImage({prompt,size:String(config.size||"1024x1024"),quality:String(config.quality||"medium"),referenceImageDataUrl});
     recordModelUsage(db,{ownerId:job.owner_id,projectId:job.project_id||null,jobId:job.id,workflowRunId:runId,nodeId,provider:provider.provider,capability:"image.generate",model:result.model,usage:result.usage,durationMs:Date.now()-usageStarted});
     const asset=await storeGeneratedImage({db,mediaRoot,ownerId:job.owner_id,projectId:job.project_id||null,jobId:job.id,prompt,model:result.model,buffer:result.buffer});
     output=nodeOutput(node,asset.id);output.asset=asset.id;output.assetId=asset.id;output.mimeType=asset.mediaType;output.sha256=asset.sha256;output.usage=result.usage;
