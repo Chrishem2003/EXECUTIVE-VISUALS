@@ -119,6 +119,7 @@ export function createRealEsrganAdapter({
     if (!enabled) throw fail("AI_UPSCALE_ENABLED must be explicitly enabled before a GPU self-test.", "AI_UPSCALE_ENGINE_UNAVAILABLE");
     if (!(await regularFile(inputPath, "self-test image"))) throw fail("A readable test image is required for the inference self-test.", "AI_UPSCALE_INVALID_INPUT");
     const selected = String(model || "realesrgan-x4plus");
+    if (!MODELS.has(selected)) throw fail("The selected AI model is not allowlisted.", "AI_UPSCALE_INVALID_MODEL");
     const before = await fingerprint(selected);
     if (!before) throw fail("The selected engine and model files are not installed.", "AI_UPSCALE_ENGINE_UNAVAILABLE");
     const directory = await mkdtemp(join(tmpdir(), "ev-ai-upscale-selftest-"));
