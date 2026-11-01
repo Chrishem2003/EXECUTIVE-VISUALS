@@ -46,6 +46,7 @@ const EXTENSIONS = {
 };
 const MEDIA_JOBS = new Set(["media.probe","media.thumbnail","media.transcode","media.audio_extract","media.audio-clean","media.proxy","media.denoise","media.color","media.resize","media.interpolate","media.upscale","media.ai-upscale","timeline.render"]);
 const db = openDatabase(DB_FILE);
+const aiUpscaleAdapter = createRealEsrganAdapter();
 const cloudTimelineApiEnabled = process.env.CLOUD_TIMELINE_API_ENABLED === "true";
 if (cloudTimelineApiEnabled && AUTH_MODE !== "supabase") throw new Error("Cloud timeline API requires verified Supabase authentication.");
 const cloudTimelineApi = cloudTimelineApiEnabled ? createCloudTimelineApi({maxUploadBytes:Number(process.env.CLOUD_MEDIA_MAX_UPLOAD_BYTES || MAX_UPLOAD_BYTES)}) : null;
@@ -252,7 +253,7 @@ export function createAppServer() {
     if(req.method==="OPTIONS"){res.writeHead(204,{"access-control-allow-methods":"GET,POST,PUT,DELETE,OPTIONS","access-control-allow-headers":"content-type,authorization,x-file-name,x-project-id,idempotency-key","access-control-max-age":"600",...cors});res.end();return;}
     const url=new URL(req.url||"/","http://localhost");
     const path=url.pathname;
-    const ratePath=path.startsWith("/api/auth/")?"/auth":(path==="/api/assets"||path==="/api/cloud/assets")&&req.method==="POST"?"/upload":path.endsWith("/research/import")&&req.method==="POST"?"/research":"";
+    const ratePath=path.startsWith("/api/auth/")?"/auth":(path==="/api/assets"||path==="/api/cloud/assets")&&req.method==="POST"?"/upload":path.endsWith("/research/import")&&req.method==="POST"?"/research":path==="/api/admin/ai-upscale/self-test"&&req.method==="POST"?"/ai-upscale-self-test":"";
     if(ratePath){const key=(req.socket.remoteAddress||"unknown")+ratePath;const limit=ratePath==="/auth"?AUTH_RATE_LIMIT:ratePath==="/research"?10:30;if(!rateAllowed(key,limit,60000)){fail(res,429,"RATE_LIMITED","Too many requests. Wait before trying again.");return;}}
     try {
       if(!path.startsWith("/api/")&&req.method==="GET"){
@@ -316,8 +317,39 @@ export function createAppServer() {
         });
         if(cloudResult){send(res,cloudResult.status,cloudResult.body,cors);return;}
       }
+      if(path==="/api/admin/ai-upscale/self-test"&&req.method==="POST"){
+        const allowedAdmins=String(process.env.AI_UPSCALE_ADMIN_EMAILS||"").split(",").map(value=>value.trim().toLowerCase()).filter(Boolean);
+        if(!allowedAdmins.length||!allowedAdmins.includes(String(user.email||"").toLowerCase())){
+          fail(res,403,"AI_UPSCALE_ADMIN_REQUIRED","An explicitly allowlisted administrator is required to run the worker inference self-test.");return;
+        }
+        const body=await readJson(req,16*1024);
+        const sourceAssetId=String(body.sourceAssetId||"");
+        if(!/^[0-9a-f-]{36}$/i.test(sourceAssetId)){
+          fail(res,400,"AI_UPSCALE_INVALID_INPUT","Provide a valid uploaded image asset ID.");return;
+        }
+        const asset=getAccessibleAsset(db,user.id,sourceAssetId,true);
+        if(!asset||!["image/png","image/jpeg","image/webp"].includes(asset.media_type)||asset.byte_size>5*1024*1024){
+          fail(res,400,"AI_UPSCALE_INVALID_INPUT","The test asset must be an accessible PNG, JPEG or WebP image no larger than 5 MB.");return;
+        }
+        const inputPath=resolve(MEDIA_ROOT,asset.storage_path);
+        const mediaPrefix=MEDIA_ROOT.endsWith(sep)?MEDIA_ROOT:MEDIA_ROOT+sep;
+        if(!inputPath.startsWith(mediaPrefix)||!existsSync(inputPath)||!statSync(inputPath).isFile()){
+          fail(res,400,"AI_UPSCALE_INVALID_INPUT","The uploaded test image is not available in managed media storage.");return;
+        }
+        try{
+          const model=String(body.model||"realesrgan-x4plus");
+          const scale=Number(body.scale||2);
+          if(![2,3,4].includes(scale)){fail(res,400,"AI_UPSCALE_INVALID_OPTIONS","Self-test scale must be 2, 3 or 4.");return;}
+          const result=await aiUpscaleAdapter.selfTest({inputPath,model,scale,format:"png"});
+          audit(db,user.id,"ai_upscale.inference_self_test_passed","asset",asset.id,{engine:result.engine,model:result.model,scale:result.scale,outputBytes:result.outputBytes});
+          send(res,200,{selfTest:{passed:true,inferenceVerified:true,engine:result.engine,model:result.model,scale:result.scale,outputBytes:result.outputBytes}},cors);return;
+        }catch(error){
+          audit(db,user.id,"ai_upscale.inference_self_test_failed","asset",asset.id,{code:error.code||"AI_UPSCALE_SELF_TEST_FAILED"});
+          fail(res,422,error.code||"AI_UPSCALE_SELF_TEST_FAILED",String(error.message||"Worker inference self-test failed.").slice(0,500));return;
+        }
+      }
       if(path==="/api/providers"&&req.method==="GET"){
-        const aiUpscale=await createRealEsrganAdapter().probe();
+        const aiUpscale=await aiUpscaleAdapter.probe();
         const catalog=getProviderCatalog(process.env,{ffmpeg:executableAvailable("ffmpeg"),ffprobe:executableAvailable("ffprobe"),aiUpscale});
         send(res,200,catalog,cors);return;
       }
