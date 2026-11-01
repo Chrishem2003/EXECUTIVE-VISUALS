@@ -36,11 +36,15 @@ export function createCloudWorkerSupervisor({workers,leaseSeconds=90,heartbeatIn
   if(stopped||busy)return{skipped:true};
   busy=true;
   active=(async()=>{
-   const results=await Promise.all(workers.map(worker=>worker.runCycle({leaseSeconds,heartbeatIntervalMs,onEvent:event=>onLog({kind:"event",...event})})));
-   for(let i=0;i<results.length;i++)if(results[i]?.claimed)onLog({kind:"cycle",result:results[i]});
+   const settled=await Promise.allSettled(workers.map(worker=>worker.runCycle({leaseSeconds,heartbeatIntervalMs,onEvent:event=>onLog({kind:"event",...event})})));
+   const results=settled.map((item,index)=>{
+    if(item.status==="rejected"){onError(item.reason);return null;}
+    if(item.value?.claimed)onLog({kind:"cycle",result:item.value,workerIndex:index});
+    return item.value;
+   });
    return results;
   })();
-  try{return await active;}catch(error){onError(error);return null;}finally{active=null;busy=false;}
+  try{return await active;}finally{active=null;busy=false;}
  }
  async function recover(){
   if(stopped)return;
@@ -72,11 +76,12 @@ export function createCloudWorkerSupervisor({workers,leaseSeconds=90,heartbeatIn
 export async function startCloudWorkerProcess(env=process.env){
  const config=readCloudWorkerConfig(env);
  if((config.media||config.timeline)&&(!executableAvailable("ffmpeg")||!executableAvailable("ffprobe")))throw new Error("Cloud media workers require FFmpeg and FFprobe on PATH.");
- const readiness=createCloudTimelineApi({maxUploadBytes:config.maxBytes});
+ const cloudCredentials={url:env.SUPABASE_URL,serviceRoleKey:env.SUPABASE_SERVICE_ROLE_KEY};
+ const readiness=createCloudTimelineApi({...cloudCredentials,maxUploadBytes:config.maxBytes});
  await readiness.checkReadiness();
  const workers=[];
- if(config.media)workers.push(createCloudMediaWorker({workerId:"media-"+randomUUID(),tempRoot:config.tempRoot,maxBytes:config.maxBytes}));
- if(config.timeline)workers.push(createCloudTimelineWorker({workerId:"timeline-"+randomUUID(),tempRoot:config.tempRoot,maxBytes:config.maxBytes,maxOutputBytes:config.maxBytes}));
+ if(config.media)workers.push(createCloudMediaWorker({workerId:"media-"+randomUUID(),...cloudCredentials,tempRoot:config.tempRoot,maxBytes:config.maxBytes}));
+ if(config.timeline)workers.push(createCloudTimelineWorker({workerId:"timeline-"+randomUUID(),...cloudCredentials,tempRoot:config.tempRoot,maxBytes:config.maxBytes,maxOutputBytes:config.maxBytes}));
  const supervisor=createCloudWorkerSupervisor({
   workers,leaseSeconds:config.leaseSeconds,heartbeatIntervalMs:config.heartbeatIntervalMs,pollMs:config.pollMs,
   onLog:event=>process.stdout.write(JSON.stringify(event)+"\n"),
