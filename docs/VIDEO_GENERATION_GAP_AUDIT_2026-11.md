@@ -182,3 +182,8 @@ The cloud upscaler now probes both the source and derivative. In addition to pos
 ### Regression correction and duration-drift test — 2026-11-01
 
 A CI run confirmed the broader server test suite executed but exposed two failures: the cloud probe fixture omitted format duration expected by its assertion, and normalized output dimensions were scoped inside validation but later referenced when constructing processing metadata. Both have been corrected. A new negative test verifies that a duration change beyond the source-relative tolerance blocks publication even when output dimensions and audio are otherwise valid. CI must rerun against the corrected head before this slice is considered green.
+
+
+### Cloud upscale codec and pixel-format gate — 2026-11-01
+
+The cloud publication check now also requires the expected H.264 video codec and yuv420p pixel format produced by the current enhancement pipeline. Codec and pixel-format details are retained in output-video provenance. The regression fixtures now include these fields and assert the published metadata. This makes the cloud worker's accepted output contract explicit rather than assuming successful FFmpeg exit guarantees a compatible derivative.
