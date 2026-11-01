@@ -43,7 +43,8 @@ assert.equal(resetEpisode.scenes.reduce((n,scene)=>n+scene.durationSeconds,0),pl
 assert.equal(resolveEpisodeDirection(resetPlan,resetEpisode).aspectRatio,plan.defaults.aspectRatio);
 console.log("Episode override reset verification passed: series defaults restored and scene durations rebalanced.");
 
-const shotPack=buildEpisodeShotPackage(overridden,updated);
+const explicitlyBound=structuredClone(overridden);for(const scene of explicitlyBound.seasons[0].episodes[0].scenes)scene.storyBibleEntryIds=[withBible.storyBible.entries[0].id];
+const shotPack=buildEpisodeShotPackage(explicitlyBound,explicitlyBound.seasons[0].episodes[0]);
 assert.equal(shotPack.runtimeSeconds,240);assert.equal(shotPack.totalShotSeconds,240);assert.equal(shotPack.shotCount,updated.scenes.reduce((n,scene)=>n+scene.shots.length,0));
 assert.equal(shotPack.shots[0].aspectRatio,"9:16");assert.equal(shotPack.shots[0].visualStyle,"Noir documentary");
 assert.ok(shotPack.shots.every(shot=>shot.prompt.includes("Future Makers")&&shot.prompt.includes("Noir documentary")));
