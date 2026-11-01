@@ -105,3 +105,23 @@ export function setEpisodeDirectionOverrides(series:SeriesProductionPlan,episode
  const episode=next.seasons.flatMap(season=>season.episodes).find(item=>item.id===episodeId)!;resolveEpisodeDirection(next,episode);
  return next;
 }
+
+
+export type EpisodeShotPackageItem={shotId:string;sceneId:string;sceneTitle:string;sequence:number;durationSeconds:number;prompt:string;negativePrompt:string;aspectRatio:string;frameRate:number;resolution:string;visualStyle:string;cameraLanguage:string;shotComposition:string;pacing:string;colorGrade:string;language:string;voiceMode:string;captions:string;music:string;referenceAssetIds:string[];continuityContext:string[]};
+export type EpisodeShotPackage={schemaVersion:1;seriesId:string;seriesTitle:string;seasonNumber:number;episodeId:string;episodeNumber:number;episodeTitle:string;runtimeSeconds:number;settings:SeriesDefaults;storyBibleVersion:number;shotCount:number;totalShotSeconds:number;shots:EpisodeShotPackageItem[];createdAt:string};
+/** Compile an episode into a deterministic, engine-neutral handoff. No provider is invoked. */
+export function buildEpisodeShotPackage(series:SeriesProductionPlan,episode:SeriesEpisode):EpisodeShotPackage{
+ const direction=resolveEpisodeDirection(series,episode),season=series.seasons.find(item=>item.episodes.some(ep=>ep.id===episode.id));
+ if(!season)throw new Error("Episode does not belong to this series.");
+ const bible=series.storyBible?.entries||[],allReferences=[...new Set(bible.flatMap(entry=>entry.referenceAssetIds))],globalRules=[series.continuityNotes,series.storyBible?.globalRules].filter(Boolean);
+ let sequence=0;
+ const shots=episode.scenes.flatMap(scene=>scene.shots.map(shot=>{
+  sequence++;
+  const promptParts=[series.premise,"Series: "+series.title,"Episode: "+episode.title,"Scene: "+scene.title,"Scene purpose: "+scene.purpose,"Shot "+sequence+" action and direction: "+shot.prompt,"Visual style: "+direction.visualStyle,"Camera language: "+direction.cameraLanguage,"Composition: "+direction.shotComposition,"Pacing: "+direction.pacing,"Colour grade: "+direction.colorGrade,"Aspect ratio: "+direction.aspectRatio,"Frame rate: "+direction.frameRate+" fps","Language: "+direction.language,"Voice: "+direction.voiceMode,"Captions: "+direction.captions,"Music: "+direction.music,...globalRules];
+  const continuityContext=[...globalRules,...bible.map(entry=>entry.kind.toUpperCase()+" — "+entry.name+": "+entry.description+(entry.visualRules?" Visual rules: "+entry.visualRules:""))];
+  return{shotId:shot.id,sceneId:scene.id,sceneTitle:scene.title,sequence,durationSeconds:shot.durationSeconds,prompt:promptParts.filter(Boolean).join("\n"),negativePrompt:"Do not change established character identity, wardrobe, location geography, props, screen direction, lighting continuity or visual style. Avoid unintended text, logos, watermarks, flicker, warped anatomy and abrupt camera or exposure changes.",aspectRatio:direction.aspectRatio,frameRate:direction.frameRate,resolution:direction.resolution,visualStyle:direction.visualStyle,cameraLanguage:direction.cameraLanguage,shotComposition:direction.shotComposition,pacing:direction.pacing,colorGrade:direction.colorGrade,language:direction.language,voiceMode:direction.voiceMode,captions:direction.captions,music:direction.music,referenceAssetIds:allReferences,continuityContext};
+ }));
+ const totalShotSeconds=shots.reduce((sum,shot)=>sum+shot.durationSeconds,0);
+ if(totalShotSeconds!==direction.episodeRuntimeSeconds)throw new Error("Shot package duration does not equal the effective episode runtime.");
+ return{schemaVersion:1,seriesId:series.id,seriesTitle:series.title,seasonNumber:season.number,episodeId:episode.id,episodeNumber:episode.number,episodeTitle:episode.title,runtimeSeconds:direction.episodeRuntimeSeconds,settings:direction,storyBibleVersion:series.storyBible?.version||1,shotCount:shots.length,totalShotSeconds,shots,createdAt:new Date().toISOString()};
+}
