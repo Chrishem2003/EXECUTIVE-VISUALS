@@ -95,3 +95,25 @@ The following are starting points for implementation research. Provider features
 ## First concrete milestone
 
 Implement and test the normalized video-generation contract, mock adapter, adapter capability registry, and job-to-private-asset lifecycle first. Then connect one real provider behind explicit opt-in. This creates a reusable foundation for adding additional engines without rewriting the UI or workflow engine.
+
+
+## Implementation update — 2026-11-01
+
+The first video-generation integration slice is now committed to the working branch:
+
+- A provider-neutral request contract validates prompt length, aspect ratio, duration, reference-asset IDs, seed and optional frame/motion inputs without silently dropping options.
+- The existing remote video gateway remains behind both the provider registry and explicit server-side remote opt-in; the workflow still requires an upstream completed approval checkpoint.
+- The current gateway declares only the inputs it actually sends: prompt, duration, aspect ratio and an explicitly configured reference-image field. Requests that demand unsupported resolution/audio/reference capabilities fail closed. Resolution is recorded as provider_default unless a future model-specific adapter can prove and implement a concrete output size.
+- Generated MP4s keep the existing private storage path, signature/size validation, SHA-256 and prompt hash; asset metadata now also stores request hash, provider/model identity, adapter version and request ID for traceability.
+- Optional project scope is supported for personal workflows; ownership and private asset access remain enforced by the existing executor and asset store.
+- Contract tests now cover defaults, malformed bounds, unsupported capabilities, mock no-network behavior, optional project scope and provenance stability.
+
+**Verification status:** GitHub Actions quality checks were queued for the latest branch head during this implementation session. No successful result is claimed until that run completes. The local container could not resolve GitHub DNS, so tests could not be run locally in this environment. The pull request remains draft, main remains untouched, and no deployment or paid provider call was performed.
+
+## Next engineering milestones
+
+1. **Provider adapter contract tests:** exercise the existing queue gateway with a local mock HTTP server, including unsafe status/result URLs, timeout, failed state, oversized response, non-MP4 output and a successful bounded MP4 fixture.
+2. **Model capability registry:** add explicit per-model declarations and config validation so each provider/model only exposes parameters it demonstrably supports.
+3. **AI upscaling:** distinguish current FFmpeg Lanczos enlargement from learned super-resolution. Add an optional model-backed adapter only after selecting a license-compatible model/runtime and validating VRAM, throughput, output limits and reproducibility; never label classical scaling as AI upscaling.
+4. **Edit/version workflow:** retain source versions, derivative lineage and before/after quality metadata; add frame/scene quality checks before promoting outputs to the timeline.
+5. **Cloud durability and review:** use private object storage, authenticated review links, expiring access and explicit publishing approval before production release.
