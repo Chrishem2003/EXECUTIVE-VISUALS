@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { addClip, addMarker, addTrack, createTimeline, moveClip, rational, seconds, splitClip, toOpenTimelineIo, trimClip, validateTimeline } from "../src/core/timeline.ts";
+import { analyzeTimelineQuality } from "../src/core/timeline-quality.ts";
 
 let timeline=createTimeline("project-1","timeline-1","Pilot episode",{numerator:24,denominator:1});
 timeline=addTrack(timeline,{id:"v1",name:"Video 1",kind:"video",enabled:true,locked:false,clips:[]});
@@ -39,5 +40,25 @@ assert.equal(validateTimeline(overlap).issues.some(x=>x.code==="overlap"),true);
 assert.throws(()=>toOpenTimelineIo(overlap),/overlap/);
 const locked={...timeline,tracks:timeline.tracks.map(track=>track.id==="v1"?{...track,locked:true}:track)};
 assert.throws(()=>moveClip(locked,"v1","clip-a","v2",600),/locked/);
+
+
+const qualityTimeline=createTimeline("project-1","quality-1","Quality check",{numerator:24,denominator:1});
+let quality=addTrack(qualityTimeline,{id:"quality-video",name:"Picture",kind:"video",enabled:true,locked:false,clips:[]});
+quality=addTrack(quality,{id:"quality-overlay",name:"Graphics",kind:"overlay",enabled:true,locked:false,clips:[]});
+quality=addClip(quality,"quality-video",{id:"quality-clip-1",assetId:"quality-asset",name:"Opening",sourceRange:{start:rational(0,24),duration:rational(48,24)},timelineStart:rational(0,24),duration:rational(48,24),enabled:true});
+quality=addClip(quality,"quality-video",{id:"quality-clip-2",assetId:"quality-asset",name:"Second shot",sourceRange:{start:rational(72,24),duration:rational(48,24)},timelineStart:rational(72,24),duration:rational(48,24),enabled:true});
+quality=addMarker(quality,{id:"quality-marker",name:"Late review",start:rational(240,24)});
+const findings=analyzeTimelineQuality(quality,[{id:"quality-asset",name:"Source",mediaType:"video/mp4",metadata:{probe:{format:{duration:4}}}}]);
+const codes=new Set(findings.map(item=>item.code));
+assert.ok(codes.has("PICTURE_GAP"));
+assert.ok(codes.has("NO_AUDIO"));
+assert.ok(codes.has("NO_CAPTIONS"));
+assert.ok(codes.has("EMPTY_OVERLAY_TRACK"));
+assert.ok(codes.has("MARKER_AFTER_SEQUENCE"));
+assert.ok(codes.has("SEQUENCE_DURATION"));
+const outOfRange=analyzeTimelineQuality(quality,[{id:"quality-asset",metadata:{probe:{format:{duration:2}}}}]);
+assert.ok(outOfRange.some(item=>item.code==="SOURCE_RANGE_EXCEEDS_MEDIA"));
+assert.ok(analyzeTimelineQuality(quality,[]).some(item=>item.code==="ASSET_NOT_IN_LIBRARY"));
+assert.ok(analyzeTimelineQuality(null).some(item=>item.code==="NO_SEQUENCE"));
 
 console.log("Timeline engine checks passed: rational timing, source trims, split, cross-track and same-track moves, overlap protection, markers and editorial interchange export.");
