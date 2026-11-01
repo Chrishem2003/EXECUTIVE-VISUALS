@@ -74,9 +74,9 @@ export function normalizeVideoGenerationRequest(input) {
     throw new VideoGenerationValidationError("audioMode is not supported by the normalized contract");
   }
 
-  const resolution = input.resolution ?? "720p";
-  if (!["480p", "720p", "1080p", "1440p", "2160p"].includes(resolution)) {
-    throw new VideoGenerationValidationError("resolution must be one of 480p, 720p, 1080p, 1440p, 2160p");
+  const resolution = input.resolution ?? "provider_default";
+  if (!["provider_default", "480p", "720p", "1080p", "1440p", "2160p"].includes(resolution)) {
+    throw new VideoGenerationValidationError("resolution must be provider_default, 480p, 720p, 1080p, 1440p, or 2160p");
   }
 
   const request = {
@@ -173,7 +173,7 @@ export function createMockVideoGenerationAdapter({ capabilities = {} } = {}) {
       referenceImages: true,
       audioModes: ["generated", "none", "reference"],
       aspectRatios: [...ALLOWED_ASPECT_RATIOS],
-      resolutions: ["480p", "720p", "1080p"],
+      resolutions: ["provider_default", "480p", "720p", "1080p"],
       minDurationSeconds: 1,
       maxDurationSeconds: 30,
       ...capabilities,
