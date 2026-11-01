@@ -285,3 +285,10 @@ This is a runnable worker entry point, not a deployed worker. Do not set the ena
 - The workflow canvas exposes the typed Reference input. Mock-provider tests verify configured field submission and failure when the field is absent or invalid.
 - No live provider request, paid generation, cloud activation or production database change was made for this feature.
 - The configured model's real reference-input contract still requires review and an approved staging smoke test before enabling remote generation.
+
+
+## Workflow integration fix — asset-to-image reference wiring
+
+- The visual editor's Reference Asset node emits typed `asset` and `media` ports, while image generation consumes a typed `image` reference port. The frontend and backend validators now explicitly allow those asset/media outputs to connect to that image-reference input.
+- Added workflow-engine validation coverage for this exact graph connection, preventing the editor from presenting a reference-image feature that its graph validator would reject.
+- This is a local workflow validation change; it does not enable remote providers or perform paid generation.
