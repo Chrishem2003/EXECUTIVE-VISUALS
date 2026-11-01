@@ -1,4 +1,5 @@
 import {buildMediaOperationArgs} from "./media.mjs";
+import {validateWorkflowGraph} from "./workflow-validation.mjs";
 
 const VIDEO_STEPS=new Set(["media.denoise","media.color","media.resize","media.interpolate","media.upscale"]);
 const AUDIO_STEPS=new Set(["media.audio-clean"]);
@@ -52,5 +53,47 @@ export function planEnhancementRecipe({name="Enhancement recipe",sourceAsset,ste
     steps:planned,
     execution:{mode:"dry-run",requiresApproval:true,estimatedCost:null,estimatedDuration:null},
     warnings:["This plan does not execute media processing.","Video upscaling in this recipe uses deterministic resampling, not neural super-resolution."]
+  };
+}
+
+/**
+ * Compile a validated dry-run recipe into the platform's existing workflow graph.
+ * The graph pauses at a human approval node before any media operation can run.
+ * Compilation never queues or executes work.
+ */
+export function compileEnhancementRecipeToWorkflow(options={}) {
+  const plan=planEnhancementRecipe(options);
+  const nodes=[
+    {id:"recipe-source",kind:"upload",label:"Recipe source",inputs:[],outputs:[{id:"media",type:"media"}],config:{assetId:plan.source.assetId}},
+    {id:"recipe-approval",kind:"approval",label:"Approve enhancement recipe",inputs:[{id:"media",type:"media",required:true}],outputs:[{id:"media",type:"media"}],config:{approvalScope:"enhancement-recipe",recipeName:plan.name}}
+  ];
+  const edges=[
+    {id:"recipe-source-to-approval",sourceNodeId:"recipe-source",sourcePortId:"media",targetNodeId:"recipe-approval",targetPortId:"media"}
+  ];
+  let previousNode="recipe-approval";
+  for(const step of plan.steps) {
+    const nodeId="recipe-step-"+(step.index+1);
+    nodes.push({
+      id:nodeId,kind:step.operation,label:step.operation.replace(/^media\\./,"").replaceAll("-"," "),
+      inputs:[{id:"media",type:"media",required:true}],
+      outputs:[{id:"media",type:"media"}],
+      config:{...step.parameters}
+    });
+    edges.push({
+      id:"recipe-edge-"+(step.index+1),
+      sourceNodeId:previousNode,sourcePortId:"media",
+      targetNodeId:nodeId,targetPortId:"media"
+    });
+    previousNode=nodeId;
+  }
+  const graph={id:"enhancement-recipe",projectId:"",revision:1,nodes,edges};
+  const validation=validateWorkflowGraph(graph);
+  if(!validation.valid)throw Object.assign(new Error("Compiled enhancement recipe failed workflow validation."),{code:"RECIPE_WORKFLOW_INVALID",details:validation.issues});
+  return {
+    schemaVersion:1,
+    plan,
+    graph,
+    validation:{valid:true,executionOrder:validation.executionOrder},
+    execution:{mode:"approval-gated-workflow",queued:false,requiresApproval:true}
   };
 }
