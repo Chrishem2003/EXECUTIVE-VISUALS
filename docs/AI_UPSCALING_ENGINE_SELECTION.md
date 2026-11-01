@@ -83,3 +83,10 @@ Not yet implemented or verified:
 4. Build a separate video pipeline: bounded frame extraction, timestamp manifest, scene-aware batching, optional temporal model interface, audio remux, FFprobe verification and cleanup on cancellation.
 5. Run a curated quality benchmark across portraits, text, animation, low-light and compressed images. Do not use face restoration by default.
 6. Gate hosted execution on worker-specific GPU capability, dependency licensing and explicit operator enablement.
+
+
+### Worker enablement and capability reporting
+
+The adapter now requires an explicit worker-side `AI_UPSCALE_ENABLED=true` setting in addition to a readable executable and the selected model's `.param` and `.bin` files. It defaults to disabled. The authenticated provider catalog probes the configured engine and reports a separate `ai-upscale` capability; the capability is only advertised as ready when both engine files are present and the explicit enable flag is true.
+
+This is a configuration gate, not a hardware certification. A successful readiness result does not yet prove that a Vulkan driver/device can complete a real inference. Before enabling this in a hosted environment, provision the executable and model on an isolated worker, run a controlled self-test against a known sample, verify output dimensions and decoded integrity, and only then enable the flag for that worker. Keep the flag off on generic CPU-only web/API services.
