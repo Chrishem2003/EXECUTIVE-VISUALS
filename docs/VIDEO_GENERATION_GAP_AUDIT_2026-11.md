@@ -192,3 +192,8 @@ The cloud publication check now also requires the expected H.264 video codec and
 ### Codec rejection regression coverage — 2026-11-01
 
 A negative-path cloud-worker test now supplies a correctly sized, duration-aligned output with an incompatible video codec. The worker must reject it before derivative publication, complementing the existing pixel-format, dimensions, duration and audio-presence gates. This protects downstream editor compatibility and makes the output acceptance contract testable. A fresh CI result is still required.
+
+
+### FFmpeg scaler compatibility correction — 2026-11-01
+
+A full GitHub Actions build reached the media-operation integration verifier and exposed that the FFmpeg build on the CI runner does not accept `spline36` as a swscale flag. The public enhancement option remains `spline36`, but the command builder now maps it to FFmpeg's supported `spline` scaler flag. The integration verifier expectation was updated so the actual FFmpeg execution—not only argument construction—covers this compatibility path. This is a compatibility fix, not an AI super-resolution implementation.
