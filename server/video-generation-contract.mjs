@@ -81,11 +81,11 @@ export function normalizeVideoGenerationRequest(input) {
 
   const request = {
     requestId: boundedString(input.requestId, "requestId", 160) ?? randomUUID(),
-    ...(input.projectId != null && String(input.projectId).trim() ? { projectId: boundedString(String(input.projectId), "projectId", 160, { required: true }) } : {}),
+    ...(input.projectId != null && input.projectId !== "" ? { projectId: boundedString(input.projectId, "projectId", 160, { required: true }) } : {}),
     prompt,
     aspectRatio,
     resolution,
-    durationSeconds: finiteNumber(input.durationSeconds ?? 5, "durationSeconds", { min: 1, max: 180, required: true }),
+    durationSeconds: finiteNumber(input.durationSeconds ?? 5, "durationSeconds", { min: 1, max: 180, required: true, integer: true }),
     audioMode,
     referenceAssetIds: assetIds(input.referenceAssetIds, "referenceAssetIds"),
     ...(negativePrompt ? { negativePrompt } : {}),
