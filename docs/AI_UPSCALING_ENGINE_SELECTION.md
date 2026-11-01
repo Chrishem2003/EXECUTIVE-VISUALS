@@ -53,3 +53,33 @@ Use adaptive tiling and a single processing stream on low-memory GPUs. Start wit
 - Cancellation, timeout, retry and cleanup tests pass.
 - Source is never overwritten; only a verified derivative is published.
 - Engine, weights and dependency licences reviewed for hosted/commercial distribution.
+
+
+## Implementation status — 1 November 2026
+
+The first still-image adapter has now been added to the repository as an optional worker operation.
+
+Implemented:
+- A distinct `media.ai-upscale` job type for still-image assets; video inputs are rejected.
+- NCNN/Vulkan executable and allowlisted model-file readiness checks. No model weights are downloaded automatically.
+- Scale, tile, output-format, timeout and output-size validation.
+- Process launch without a shell, cancellation support and source/output path separation.
+- PNG, JPEG and WebP output-signature validation before a derivative can be published.
+- Source-linked derivative provenance including engine, model, scale and tile settings.
+- Local and cloud worker integration, with tests for missing dependencies, invalid settings, output validation, derivative provenance and video rejection.
+
+Not yet implemented or verified:
+- No NCNN/Vulkan executable or model weights are bundled or installed by this change.
+- A Vulkan device/driver and available-memory probe is still required; file presence alone is not proof that GPU execution will succeed.
+- The current adapter verifies the container signature, not decoded image integrity, dimensions or perceptual quality. Those are required before a production-quality release.
+- No temporal video super-resolution path is enabled.
+- Generic hosted workers must not advertise the operation as available unless a compatible runtime is provisioned and its health check passes.
+
+## Next engineering gates
+
+1. Add an explicit engine self-test and Vulkan/device/memory probe; expose its result in the media capability/readiness API.
+2. Decode and validate the output image, dimensions and checksum before publishing; add corrupted/truncated-image tests.
+3. Add an image comparison review surface with original/derivative toggle and clear AI provenance.
+4. Build a separate video pipeline: bounded frame extraction, timestamp manifest, scene-aware batching, optional temporal model interface, audio remux, FFprobe verification and cleanup on cancellation.
+5. Run a curated quality benchmark across portraits, text, animation, low-light and compressed images. Do not use face restoration by default.
+6. Gate hosted execution on worker-specific GPU capability, dependency licensing and explicit operator enablement.
