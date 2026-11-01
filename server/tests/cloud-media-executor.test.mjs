@@ -17,7 +17,7 @@ test("cloud media probe uses the leased owner and cleans up its materialized sou
   const previous = process.env.FFPROBE_PATH;
   const source = join(directory, "source.mp4");
   await writeFile(source, "fixture");
-  const ffprobe = await executable(directory, "ffprobe", String.raw`printf '%s' '{"streams":[{"codec_type":"video","width":640,"height":360}],"format":{"duration":"1.25"}}'`);
+  const ffprobe = await executable(directory, "ffprobe", String.raw`printf '%s' '{"streams":[{"codec_type":"video","codec_name":"h264","pix_fmt":"yuv420p","width":640,"height":360}],"format":{"duration":"1.25"}}'`);
   process.env.FFPROBE_PATH = ffprobe;
   let materializedArgs, cleaned = false;
   try {
@@ -135,7 +135,7 @@ test("cloud upscale verifies requested dimensions before publishing and records 
   await writeFile(source, "source-media");
   const ffmpeg = await executable(directory, "ffmpeg", 'for last do :; done\nprintf "upscaled-media" > "$last"');
   const ffprobe = await executable(directory, "ffprobe", String.raw`for last do :; done
-case "$last" in */source.mp4) printf '%s' '{"streams":[{"codec_type":"video"},{"codec_type":"audio"}],"format":{"duration":"1.25"}}';; *) printf '%s' '{"streams":[{"codec_type":"video","width":642,"height":360},{"codec_type":"audio"}],"format":{"duration":"1.25"}}';; esac`);
+case "$last" in */source.mp4) printf '%s' '{"streams":[{"codec_type":"video"},{"codec_type":"audio"}],"format":{"duration":"1.25"}}';; *) printf '%s' '{"streams":[{"codec_type":"video","codec_name":"h264","pix_fmt":"yuv420p","width":642,"height":360},{"codec_type":"audio"}],"format":{"duration":"1.25"}}';; esac`);
   process.env.FFMPEG_PATH = ffmpeg;
   process.env.FFPROBE_PATH = ffprobe;
   let published;
@@ -181,7 +181,7 @@ test("cloud upscale refuses to publish when FFprobe dimensions differ from the r
   await writeFile(source, "source-media");
   process.env.FFMPEG_PATH = await executable(directory, "ffmpeg", 'for last do :; done\nprintf "bad-size" > "$last"');
   process.env.FFPROBE_PATH = await executable(directory, "ffprobe", String.raw`for last do :; done
-case "$last" in */source.mp4) printf '%s' '{"streams":[{"codec_type":"video"},{"codec_type":"audio"}],"format":{"duration":"1.25"}}';; *) printf '%s' '{"streams":[{"codec_type":"video","width":320,"height":180},{"codec_type":"audio"}],"format":{"duration":"1.25"}}';; esac`);
+case "$last" in */source.mp4) printf '%s' '{"streams":[{"codec_type":"video"},{"codec_type":"audio"}],"format":{"duration":"1.25"}}';; *) printf '%s' '{"streams":[{"codec_type":"video","codec_name":"h264","pix_fmt":"yuv420p","width":320,"height":180},{"codec_type":"audio"}],"format":{"duration":"1.25"}}';; esac`);
   let publishCount = 0;
   try {
     const execute = createCloudMediaExecutor({
@@ -212,7 +212,7 @@ test("cloud upscale refuses to publish when the source audio stream is lost", as
   await writeFile(source, "source-media");
   process.env.FFMPEG_PATH = await executable(directory, "ffmpeg", 'for last do :; done\nprintf "upscaled-media" > "$last"');
   process.env.FFPROBE_PATH = await executable(directory, "ffprobe", String.raw`for last do :; done
-case "$last" in */source.mp4) printf '%s' '{"streams":[{"codec_type":"video"},{"codec_type":"audio"}],"format":{"duration":"1.25"}}';; *) printf '%s' '{"streams":[{"codec_type":"video","width":640,"height":360}],"format":{"duration":"1.25"}}';; esac`);
+case "$last" in */source.mp4) printf '%s' '{"streams":[{"codec_type":"video"},{"codec_type":"audio"}],"format":{"duration":"1.25"}}';; *) printf '%s' '{"streams":[{"codec_type":"video","codec_name":"h264","pix_fmt":"yuv420p","width":640,"height":360}],"format":{"duration":"1.25"}}';; esac`);
   let publishCount = 0;
   try {
     const execute = createCloudMediaExecutor({
@@ -243,7 +243,7 @@ test("cloud upscale refuses to publish when the output duration drifts from sour
   await writeFile(source, "source-media-duration");
   process.env.FFMPEG_PATH = await executable(directory, "ffmpeg", 'for last do :; done\nprintf "upscaled-media" > "$last"');
   process.env.FFPROBE_PATH = await executable(directory, "ffprobe", String.raw`for last do :; done
-case "$last" in */source.mp4) printf '%s' '{"streams":[{"codec_type":"video"},{"codec_type":"audio"}],"format":{"duration":"1.25"}}';; *) printf '%s' '{"streams":[{"codec_type":"video","width":640,"height":360},{"codec_type":"audio"}],"format":{"duration":"2.5"}}';; esac`);
+case "$last" in */source.mp4) printf '%s' '{"streams":[{"codec_type":"video"},{"codec_type":"audio"}],"format":{"duration":"1.25"}}';; *) printf '%s' '{"streams":[{"codec_type":"video","codec_name":"h264","pix_fmt":"yuv420p","width":640,"height":360},{"codec_type":"audio"}],"format":{"duration":"2.5"}}';; esac`);
   let publishCount = 0;
   try {
     const execute = createCloudMediaExecutor({
