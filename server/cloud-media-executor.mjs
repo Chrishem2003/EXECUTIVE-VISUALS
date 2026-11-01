@@ -151,13 +151,19 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
       }
       if (!executableAvailable("ffmpeg")) throw Object.assign(new Error("FFmpeg is not installed on this worker."), { code: "MEDIA_ENGINE_MISSING" });
       let sourceAudioStreamCount = null;
+      let sourceDurationSeconds = null;
       if (job.job_type === "media.upscale") {
         if (!executableAvailable("ffprobe")) throw Object.assign(new Error("FFprobe is required to verify upscaled output."), { code: "MEDIA_ENGINE_MISSING" });
-        const sourceProbe = await runProcess(ffprobe, ["-v", "error", "-show_entries", "stream=codec_type", "-of", "json", sourcePath], { signal, timeoutMs, onProgress });
+        const sourceProbe = await runProcess(ffprobe, ["-v", "error", "-show_entries", "stream=codec_type:format=duration", "-of", "json", sourcePath], { signal, timeoutMs, onProgress });
         let sourceMetadata;
         try { sourceMetadata = JSON.parse(sourceProbe.stdout || "{}"); }
         catch { throw Object.assign(new Error("FFprobe returned invalid source metadata."), { code: "MEDIA_PROBE_INVALID" }); }
         sourceAudioStreamCount = (sourceMetadata.streams || []).filter(stream => stream.codec_type === "audio").length;
+        const parsedSourceDuration = Number(sourceMetadata.format?.duration);
+        if (!Number.isFinite(parsedSourceDuration) || parsedSourceDuration <= 0) {
+          throw Object.assign(new Error("Upscale source has no valid media duration; derivative was not published."), { code: "MEDIA_OUTPUT_VALIDATION_FAILED" });
+        }
+        sourceDurationSeconds = parsedSourceDuration;
       }
       const plan = outputPlan(job.job_type, input, materialized.asset, sourcePath, outputPath);
       await runProcess(ffmpeg, plan.args, { signal, timeoutMs, onProgress });
@@ -178,6 +184,11 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
         const outputDuration = Number(outputProbe.format?.duration);
         if (!Number.isFinite(outputDuration) || outputDuration <= 0) {
           throw Object.assign(new Error("Upscale output has no valid media duration; derivative was not published."), { code: "MEDIA_OUTPUT_VALIDATION_FAILED" });
+        }
+        const durationDeltaSeconds = Math.abs(outputDuration - sourceDurationSeconds);
+        const durationToleranceSeconds = Math.max(0.25, sourceDurationSeconds * 0.02);
+        if (durationDeltaSeconds > durationToleranceSeconds) {
+          throw Object.assign(new Error("Upscale output duration differs materially from the source; derivative was not published."), { code: "MEDIA_OUTPUT_VALIDATION_FAILED" });
         }
         // Match buildMediaOperationArgs exactly: validate bounds, then round to an even pixel count.
         const requestedWidth = Number(input.width ?? 2560);
@@ -200,7 +211,9 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
         sharpness: Number(input.sharpness ?? 0),
         targetWidth: expectedWidth,
         targetHeight: expectedHeight,
+        sourceDurationSeconds,
         outputDurationSeconds: Number(outputProbe?.format?.duration),
+        durationDeltaSeconds: Math.abs(Number(outputProbe?.format?.duration) - sourceDurationSeconds),
         sourceAudioStreamCount,
         outputAudioStreamCount: (outputProbe?.streams || []).filter(stream => stream.codec_type === "audio").length,
         audioPreserved: sourceAudioStreamCount === null ? null : sourceAudioStreamCount === 0 || (outputProbe?.streams || []).some(stream => stream.codec_type === "audio"),
