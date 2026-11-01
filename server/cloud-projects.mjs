@@ -56,7 +56,7 @@ export function createCloudProjectRepository({url=process.env.SUPABASE_URL,servi
    if(!Array.isArray(rows)||rows.length!==1){const e=new Error("Cloud project revision changed.");e.code="CLOUD_PROJECT_REVISION_CONFLICT";throw e;}return map(rows[0]);
   },
   async archive({ownerId,projectId,expectedRevision}={}){
-   const current=await get({ownerId,projectId});if(!current){const e=new Error("Cloud project not found.");e.code="CLOUD_PROJECT_NOT_FOUND";throw e;}await allowed(ownerId,projectId,"write");
+   const current=await get({ownerId,projectId});if(!current){const e=new Error("Cloud project not found.");e.code="CLOUD_PROJECT_NOT_FOUND";throw e;}if(current.ownerId!==ownerId){const e=new Error("Only the project owner can archive this project.");e.code="CLOUD_PROJECT_ACCESS_DENIED";throw e;}await allowed(ownerId,projectId,"write");
    if(expectedRevision!==current.revision){const e=new Error("Cloud project revision changed.");e.code="CLOUD_PROJECT_REVISION_CONFLICT";throw e;}
    const rows=await request("projects?id=eq."+encodeURIComponent(projectId)+"&owner_id=eq."+encodeURIComponent(current.ownerId)+"&revision=eq."+expectedRevision+"&archived_at=is.null",{method:"PATCH",body:{archived_at:new Date().toISOString(),revision:expectedRevision+1,updated_at:new Date().toISOString()}});
    if(!Array.isArray(rows)||rows.length!==1){const e=new Error("Cloud project revision changed.");e.code="CLOUD_PROJECT_REVISION_CONFLICT";throw e;}return{id:projectId,archived:true,revision:Number(rows[0].revision)};
