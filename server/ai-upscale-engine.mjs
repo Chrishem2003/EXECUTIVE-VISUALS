@@ -1,7 +1,10 @@
 import { spawn } from "node:child_process";
 import { access, lstat, stat, open } from "node:fs/promises";
 import { constants } from "node:fs";
-import { dirname, resolve, sep } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
+import { tmpdir } from "node:os";
+import { randomUUID } from "node:crypto";
+import { mkdtemp, rm } from "node:fs/promises";
 
 const MODELS = new Set(["realesrgan-x4plus", "realesrgan-x4plus-anime", "realesr-animevideov3", "realesrgan-x2plus"]);
 const FORMATS = new Set(["png", "jpg", "webp"]);
@@ -82,20 +85,54 @@ export function createRealEsrganAdapter({
   if (!Number.isInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 2 * 60 * 60 * 1000) throw new Error("AI upscale timeout is invalid.");
   if (!Number.isInteger(maxOutputBytes) || maxOutputBytes < 1024 || maxOutputBytes > 2 * 1024 * 1024 * 1024) throw new Error("AI upscale output limit is invalid.");
 
+  const verifiedFingerprints = new Map();
+
+  async function fingerprint(model) {
+    const files = [binaryPath, resolve(modelDirectory || ".", model + ".param"), resolve(modelDirectory || ".", model + ".bin")];
+    try {
+      const metadata = await Promise.all(files.map(path => stat(path)));
+      return metadata.map(item => item.size + ":" + item.mtimeMs).join("|");
+    } catch { return null; }
+  }
+
   async function probe(model) {
     const selected = String(model || "realesrgan-x4plus");
     const binaryReady = await regularFile(binaryPath, "binary");
     const modelReady = MODELS.has(selected) && await regularFile(resolve(modelDirectory || ".", selected + ".param")) &&
       await regularFile(resolve(modelDirectory || ".", selected + ".bin"));
+    const configured = binaryReady && modelReady;
+    const currentFingerprint = configured ? await fingerprint(selected) : null;
+    const inferenceVerified = Boolean(currentFingerprint && verifiedFingerprints.get(selected) === currentFingerprint);
     return {
       engine: "realesrgan-ncnn-vulkan",
-      available: binaryReady && modelReady,
+      available: configured,
+      inferenceVerified,
       executionEnabled: Boolean(enabled),
       binaryReady,
       modelReady,
       model: selected,
-      reason: !binaryReady ? "Configure a readable NCNN/Vulkan executable." : !modelReady ? "The selected allowlisted model files are not installed." : !enabled ? "Engine is installed, but AI_UPSCALE_ENABLED is not enabled on this worker." : "Configured for explicitly approved image jobs; GPU self-test is still required."
+      reason: !binaryReady ? "Configure a readable NCNN/Vulkan executable." : !modelReady ? "The selected allowlisted model files are not installed." : !enabled ? "Engine is installed, but AI_UPSCALE_ENABLED is not enabled on this worker." : "Configured, but a real inference self-test has not passed on this worker."
     };
+  }
+
+  async function selfTest({ inputPath, model = "realesrgan-x4plus", scale = 2, tile = 0, format = "png", signal } = {}) {
+    if (!enabled) throw fail("AI_UPSCALE_ENABLED must be explicitly enabled before a GPU self-test.", "AI_UPSCALE_ENGINE_UNAVAILABLE");
+    if (!(await regularFile(inputPath, "self-test image"))) throw fail("A readable test image is required for the inference self-test.", "AI_UPSCALE_INVALID_INPUT");
+    const selected = String(model || "realesrgan-x4plus");
+    const before = await fingerprint(selected);
+    if (!before) throw fail("The selected engine and model files are not installed.", "AI_UPSCALE_ENGINE_UNAVAILABLE");
+    const directory = await mkdtemp(join(tmpdir(), "ev-ai-upscale-selftest-"));
+    try {
+      const outputPath = join(directory, randomUUID() + "." + format);
+      const result = await execute({ inputPath, outputPath, model: selected, scale, tile, format, signal });
+      const after = await fingerprint(selected);
+      if (!after || before !== after) throw fail("Engine or model files changed during the self-test.", "AI_UPSCALE_SELF_TEST_FAILED");
+      verifiedFingerprints.set(selected, after);
+      return { passed: true, inferenceVerified: true, engine: result.engine, model: result.model, scale: result.scale, outputBytes: result.byteSize };
+    } catch (error) {
+      verifiedFingerprints.delete(selected);
+      throw error;
+    } finally { await rm(directory, { recursive: true, force: true }).catch(() => {}); }
   }
 
   function plan({ inputPath, outputPath, model = "realesrgan-x4plus", scale = 4, tile = 0, format = "png" } = {}) {
@@ -129,5 +166,5 @@ export function createRealEsrganAdapter({
     return { path: output, byteSize: info.size, model: prepared.model, scale: prepared.scale, tile: prepared.tile, format: prepared.format, engine: "realesrgan-ncnn-vulkan", method: "ai-super-resolution" };
   }
 
-  return Object.freeze({ probe, plan, execute });
+  return Object.freeze({ probe, plan, execute, selfTest });
 }
