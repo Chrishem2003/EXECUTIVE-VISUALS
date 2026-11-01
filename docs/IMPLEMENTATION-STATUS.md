@@ -317,3 +317,11 @@ This is a runnable worker entry point, not a deployed worker. Do not set the ena
 - Added a regression to `scripts/verify-queue-leases.mjs` covering the blocked workflow, terminal queue state, cleared schedule, error code and event history.
 - GitHub Actions run 1421 passed dependency installation, TypeScript typecheck and the full verification/build pipeline on commit `b6d864407f88347f577ea5c580a3d001da3785ac`.
 - This is a local queue reliability change; it does not enable remote providers, cloud services, deployment or production database changes.
+
+
+## Character and scene continuity records — 1 November 2026
+
+- Project creative-workspace documents now preserve structured character continuity fields: appearance, wardrobe, voice profile, continuity notes and reference asset IDs, alongside existing consent scope/evidence/expiry.
+- Shot records now preserve character links, location, time of day, visual prompt, continuity-in/out notes, reference asset IDs and aspect ratio, alongside camera/lens/movement/lighting/duration.
+- Lists are deduplicated and bounded; strings are length-limited by the server-side workspace sanitizer. Existing project revision conflict protection and owner/editor write authorization remain in force.
+- API regression coverage verifies that these fields survive persistence and reload. These records establish a durable continuity foundation; automatic reference-frame selection and model-specific conditioning still require the corresponding generation adapters and explicit model field configuration.
