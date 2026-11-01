@@ -58,7 +58,7 @@ test("provider catalog is authenticated, safe and read-only",async()=>{
   assert.equal(response.status,200);
   const catalog=await response.json();
   assert.equal(catalog.version,1);
-  assert.equal(catalog.providers.length,6);
+  assert.equal(catalog.providers.length,7);
   assert.equal(catalog.policy.requestsSubmitted,false);
   assert.equal(catalog.policy.credentialsExposed,false);
   assert.equal(catalog.policy.pricesEstimated,false);
