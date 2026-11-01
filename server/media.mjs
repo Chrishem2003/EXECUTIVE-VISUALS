@@ -278,8 +278,8 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
     const result=await renderTimelineJob({db,job,mediaRoot,activeProcesses,onProgress});
     return result;
   }
-  if (!executableAvailable("ffmpeg") && job.job_type !== "media.probe") throw Object.assign(new Error("FFmpeg is not installed on this worker."), { code:"MEDIA_ENGINE_MISSING" });
-  if (!executableAvailable("ffprobe")) throw Object.assign(new Error("FFprobe is not installed on this worker."), { code:"MEDIA_ENGINE_MISSING" });
+  if (!executableAvailable("ffmpeg") && job.job_type !== "media.probe" && job.job_type !== "media.ai-upscale") throw Object.assign(new Error("FFmpeg is not installed on this worker."), { code:"MEDIA_ENGINE_MISSING" });
+  if (!executableAvailable("ffprobe") && job.job_type !== "media.ai-upscale") throw Object.assign(new Error("FFprobe is not installed on this worker."), { code:"MEDIA_ENGINE_MISSING" });
   const input = parseJson(job.input_json);
   const source = getAccessibleAsset(db, job.owner_id, input.sourceAssetId, true);
   if (!source) throw Object.assign(new Error("Source asset does not exist or is not accessible."), { code:"SOURCE_ASSET_NOT_FOUND" });
