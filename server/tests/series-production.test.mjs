@@ -53,3 +53,25 @@ assert.deepEqual(shotPack.shots[0].referenceAssetIds,[]);
 assert.equal(shotPack.schemaVersion,1);
 assert.throws(()=>buildEpisodeShotPackage(plan,{...episode,id:"foreign-episode"}),/does not belong/);
 console.log("Shot package verification passed: deterministic shot prompts, continuity bible, direction inheritance, exact runtime and safe provider-neutral handoff.");
+
+
+const bindingBase=withBible.storyBible.entries[0];
+const bindingScene=withBible.seasons[0].episodes[0].scenes[0];
+const bindingShot=bindingScene.shots[0];
+const boundPlan=structuredClone(withBible);
+boundPlan.seasons[0].episodes[0].scenes[0].storyBibleEntryIds=[bindingBase.id];
+const boundPackage=buildEpisodeShotPackage(boundPlan,boundPlan.seasons[0].episodes[0]);
+assert.ok(boundPackage.shots[0].continuityContext.some(rule=>rule.includes("Host One")));
+assert.ok(boundPackage.shots[0].prompt.includes("Future Makers"));
+assert.deepEqual(boundPackage.shots[0].referenceAssetIds,[]);
+const unboundSceneShot=boundPackage.shots.find(item=>item.sceneId!==bindingScene.id);
+assert.ok(unboundSceneShot);
+assert.ok(!unboundSceneShot.continuityContext.some(rule=>rule.includes("Host One")));
+const invalidBinding=structuredClone(boundPlan);
+invalidBinding.seasons[0].episodes[0].scenes[0].shots[0].storyBibleEntryIds=["missing-entry"];
+assert.throws(()=>buildEpisodeShotPackage(invalidBinding,invalidBinding.seasons[0].episodes[0]),/unknown story bible entry/);
+assert.equal(validateSeriesProductionPlan(invalidBinding).valid,true);
+const duplicateBinding=structuredClone(boundPlan);
+duplicateBinding.seasons[0].episodes[0].scenes[0].storyBibleEntryIds=[bindingBase.id,bindingBase.id];
+assert.equal(validateSeriesProductionPlan(duplicateBinding).valid,false);
+console.log("Shot-level continuity binding verification passed: scoped entity context, inherited scene bindings, deduplicated references and unknown-ID rejection.");
