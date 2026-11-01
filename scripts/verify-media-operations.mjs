@@ -3,8 +3,16 @@ import {execFileSync} from "node:child_process";
 import {mkdtemp,stat,rm} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
-import {buildMediaOperationArgs,buildMediaProcessingProvenance} from "../server/media.mjs";
+import {buildMediaOperationArgs,buildMediaProcessingProvenance,validateMediaOutputProbe} from "../server/media.mjs";
 const base={sourcePath:"/private/source.mp4",outputPath:"/private/output.mp4"};
+
+assert.deepEqual(validateMediaOutputProbe({streams:[{codec_type:"video"},{codec_type:"audio"}],format:{duration:"1.25"}},"video/mp4"),{streamCount:2,durationSeconds:1.25,validatedStreamType:"video"});
+assert.deepEqual(validateMediaOutputProbe({streams:[{codec_type:"audio"}],format:{duration:"2.5"}},"audio/wav"),{streamCount:1,durationSeconds:2.5,validatedStreamType:"audio"});
+assert.deepEqual(validateMediaOutputProbe({streams:[{codec_type:"video"}],format:{duration:"0.5"}},"image/jpeg").validatedStreamType,"video");
+assert.throws(()=>validateMediaOutputProbe({streams:[{codec_type:"audio"}],format:{duration:"1"}},"video/mp4"),e=>e.code==="MEDIA_OUTPUT_VALIDATION_FAILED");
+assert.throws(()=>validateMediaOutputProbe({streams:[{codec_type:"video"}],format:{duration:"0"}},"video/mp4"),e=>e.code==="MEDIA_OUTPUT_VALIDATION_FAILED");
+assert.throws(()=>validateMediaOutputProbe({streams:[]},"audio/wav"),e=>e.code==="MEDIA_OUTPUT_VALIDATION_FAILED");
+
 
 const classical=buildMediaProcessingProvenance({jobType:"media.upscale",input:{width:1920,height:1080,algorithm:"lanczos",sharpness:0.4,secret:"must-not-be-copied"},sourceAsset:{id:"source-1",sha256:"a".repeat(64)}});
 assert.equal(classical.engine,"ffmpeg");
