@@ -384,7 +384,7 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
     }
     if(streams.some(stream=>stream.codec_type==="audio")){
       const analysis=await run("ffmpeg",["-hide_banner","-i",sourcePath,"-map","0:a:0","-af","silencedetect=n=-50dB:d=0.5","-vn","-f","null","-"],10*60*1000,job.id,activeProcesses,cancelled);
-      signalAnalysis.silence=parseSilenceEvents(analysis.stderr);signalAnalysis.performed.push("silence");
+      signalAnalysis.silence=parseSilenceEvents(analysis.stderr,Number(metadata.format?.duration)||0);signalAnalysis.performed.push("silence");
     }
     metadata.signalAnalysis=signalAnalysis;
     return { metadata, outputAsset:null };
