@@ -342,7 +342,7 @@ export function createAppServer() {
           if(![2,3,4].includes(scale)){fail(res,400,"AI_UPSCALE_INVALID_OPTIONS","Self-test scale must be 2, 3 or 4.");return;}
           const result=await aiUpscaleAdapter.selfTest({inputPath,model,scale,format:"png"});
           audit(db,user.id,"ai_upscale.inference_self_test_passed","asset",asset.id,{engine:result.engine,model:result.model,scale:result.scale,outputBytes:result.outputBytes});
-          send(res,200,{selfTest:{passed:true,inferenceVerified:true,engine:result.engine,model:result.model,scale:result.scale,outputBytes:result.outputBytes}},cors);return;
+          send(res,200,{selfTest:{passed:true,executionVerified:result.executionVerified===true,inferenceVerified:result.inferenceVerified===true,qualityBenchmarkRequired:true,engine:result.engine,model:result.model,scale:result.scale,outputBytes:result.outputBytes}},cors);return;
         }catch(error){
           audit(db,user.id,"ai_upscale.inference_self_test_failed","asset",asset.id,{code:error.code||"AI_UPSCALE_SELF_TEST_FAILED"});
           fail(res,422,error.code||"AI_UPSCALE_SELF_TEST_FAILED",String(error.message||"Worker inference self-test failed.").slice(0,500));return;
