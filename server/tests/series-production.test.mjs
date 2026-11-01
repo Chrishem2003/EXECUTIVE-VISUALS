@@ -119,3 +119,12 @@ const unknownReport=assessEpisodeShotReadiness(readinessPackage,{provider:"unver
 assert.equal(unknownReport.status,"unverified");
 assert.equal(unknownReport.unverifiedShots,readinessPackage.shotCount);
 console.log("Shot capability preflight verification passed: explicit support, blocked mismatches, unknown declarations and no provider submission.");
+
+import { getFalVideoCapabilities } from "../fal-video-gateway.mjs";
+const falCapabilities=getFalVideoCapabilities({imageInputField:"image_url"});
+const falReport=assessEpisodeShotReadiness(readinessPackage,{provider:"fal",model:"configured-fal-model",capabilities:{aspectRatios:[...falCapabilities.aspectRatios],resolutions:[...falCapabilities.resolutions],minDurationSeconds:falCapabilities.minDurationSeconds,maxDurationSeconds:falCapabilities.maxDurationSeconds,negativePrompt:falCapabilities.negativePrompt,referenceImages:falCapabilities.referenceImages}});
+assert.equal(falReport.status,"blocked");
+assert.ok(falReport.shots[0].unsupported.includes("negativePrompt"));
+assert.ok(falReport.shots[0].unverified.some(value=>value.startsWith("frameRate:")));
+assert.ok(falReport.shots[0].supported.some(value=>value.startsWith("aspectRatio:")));
+console.log("Configured video adapter readiness integration passed.");
