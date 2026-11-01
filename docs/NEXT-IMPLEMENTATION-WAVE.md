@@ -47,8 +47,8 @@ For every adapter, run mock-server tests for valid requests, authentication fail
 Add reference image, image edit, first/last frame, video continuation, masks and audio conditioning as distinct typed ports rather than ambiguous prompt JSON. Preserve source assets and record conditioning inputs and consent/right basis in provenance. Never silently drop an input an adapter cannot honor.
 
 ## Wave C — upscale and post-production truthfulness
-- Keep Real-ESRGAN fail-closed until a real inference self-test succeeds; fake binaries/mock output test contracts, not model quality.
-- Add verified engine/model readiness, input/output dimensions and format checks, resource/time/output ceilings, cancellation and derivative lineage.
+- Keep Real-ESRGAN fail-closed until the configured executable and model files pass an execution self-test. Report execution verification separately from inference-quality verification: a successful process and plausible file header do not prove neural inference or perceptual quality. Mock binaries test contracts only.
+- Add verified engine/model readiness, input/output dimensions and format checks, resource/time/output ceilings, cancellation and derivative lineage. Do not report `inferenceVerified` from file metadata or process exit alone; require independent fixture-based checks before asserting model inference/quality.
 - Add optional deterministic FFmpeg recipes for transcode, proxy, audio extraction, loudness normalization and scaling, labeled as deterministic processing rather than neural enhancement.
 - Do not label denoise, face restoration, inpainting, frame interpolation or stabilization as AI-powered unless a corresponding tested engine actually runs.
 - Add enhancement recipes with ordered steps, parameter validation, dry-run plan, approval, batch budget and resumable per-asset status.
