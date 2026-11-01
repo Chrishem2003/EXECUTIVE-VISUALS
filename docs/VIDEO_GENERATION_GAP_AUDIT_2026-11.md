@@ -157,3 +157,8 @@ The FFmpeg/FFprobe enhancement verifier now checks more than file existence: eac
 ### Cloud upscale publication gate — 2026-11-01
 
 The cloud media executor now treats upscaling as a verified derivative operation: after FFmpeg finishes, FFprobe must confirm a video stream with the exact requested even-pixel dimensions before the asset can be published. A mismatch fails closed and leaves the derivative unpublished. Published asset metadata and the job result record the explicit classical-resampling method, selected interpolation algorithm, sharpening amount, target dimensions and probed output stream. This is an integrity/traceability gate, not a learned super-resolution model. Dedicated cloud-executor tests cover successful metadata capture and rejection without publication when dimensions are wrong. CI execution is still required before this change is considered verified.
+
+
+### Cloud upscale fixture correction — 2026-11-01
+
+The first CI run after adding the cloud-upscale publication tests exposed a JavaScript syntax error in the test fixture's nested shell/JSON quoting (the application typecheck succeeded; the cloud media test file could not be parsed). The fixture now uses a raw template literal for the shell command, keeping its JSON payload valid without over-escaping. The correction is committed as `58e0186032ba9cb13e4b93f9ea7baf33f074b2bc`; a new CI run for this head is still awaited. The earlier run had 100 passing tests and one test-file parse failure; this is not a clean suite result.
