@@ -93,6 +93,15 @@ export function createCloudTimelineRepository({url=process.env.SUPABASE_URL,serv
       if(!Array.isArray(rows)||rows.length!==1||rows[0].owner_id!==ownerId)throw new Error("Cloud timeline creation returned an invalid record.");
       return map(rows[0]);
     },
+    async list({ownerId,projectId=null,limit=50,offset=0}={}){
+      ownerId=validOwner(ownerId);
+      if(projectId!==null&&projectId!==undefined&&projectId!==""){if(typeof projectId!=="string"||!UUID.test(projectId))throw new Error("Project ID must be a UUID.");}else projectId=null;
+      limit=Math.max(1,Math.min(100,Number.isInteger(limit)?limit:50));offset=Math.max(0,Math.min(100000,Number.isInteger(offset)?offset:0));
+      await allowed(ownerId,projectId,"read");
+      const scope=projectId?"project_id=eq."+encodeURIComponent(projectId):"owner_id=eq."+encodeURIComponent(ownerId)+"&project_id=is.null";
+      const rows=await request("timelines?select=id,owner_id,project_id,name,revision,timeline,otio,created_at,updated_at&"+scope+"&archived_at=is.null&order=updated_at.desc&limit="+limit+"&offset="+offset);
+      return(Array.isArray(rows)?rows:[]).map(map);
+    },
     get:getTimeline,
     async update({ownerId,timelineId,expectedRevision,timeline,otio}={}){
       ownerId=validOwner(ownerId);if(typeof timelineId!=="string"||!UUID.test(timelineId))throw new Error("Timeline ID must be a UUID.");
