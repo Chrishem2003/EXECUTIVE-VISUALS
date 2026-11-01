@@ -78,3 +78,15 @@ test("provider readiness never advertises unimplemented reference or image-to-vi
  assert.equal(findProviderForCapability(catalog,"image.variation",{allowRemote:true}),null);
  assert.equal(findProviderForCapability(catalog,"video.image_to_video",{allowRemote:true}),null);
 });
+
+test("video provider catalog exposes the configured adapter's actual model capability declaration",()=>{
+ const unconfigured=getProviderCatalog({VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",FAL_KEY:"secret",FAL_VIDEO_MODEL:"fal-ai/model"});
+ const video=unconfigured.providers.find(item=>item.id==="video");
+ assert.deepEqual(video.modelCapabilities.aspectRatios,["16:9","9:16","1:1"]);
+ assert.deepEqual(video.modelCapabilities.resolutions,["provider_default"]);
+ assert.equal(video.modelCapabilities.negativePrompt,false);
+ assert.equal(video.modelCapabilities.referenceImages,false);
+ const configuredReference=getProviderCatalog({FAL_VIDEO_IMAGE_INPUT_FIELD:"image_url"});
+ assert.equal(configuredReference.providers.find(item=>item.id==="video").modelCapabilities.referenceImages,true);
+ assert.equal(JSON.stringify(unconfigured).includes("secret"),false);
+});
