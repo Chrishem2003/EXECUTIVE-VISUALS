@@ -113,7 +113,7 @@ export type EpisodeShotPackage={schemaVersion:1;seriesId:string;seriesTitle:stri
 export function buildEpisodeShotPackage(series:SeriesProductionPlan,episode:SeriesEpisode):EpisodeShotPackage{
  const direction=resolveEpisodeDirection(series,episode),season=series.seasons.find(item=>item.episodes.some(ep=>ep.id===episode.id));
  if(!season)throw new Error("Episode does not belong to this series.");
- const bible=series.storyBible?.entries||[],allReferences=[...new Set(bible.flatMap(entry=>entry.referenceAssetIds))],globalRules=[series.continuityNotes,series.storyBible?.globalRules].filter(Boolean);
+ const bible=series.storyBible?.entries||[],allReferences=[...new Set(bible.flatMap(entry=>entry.referenceAssetIds))],globalRules=[series.continuityNotes,series.storyBible?.globalRules].filter((rule):rule is string=>Boolean(rule));
  let sequence=0;
  const shots=episode.scenes.flatMap(scene=>scene.shots.map(shot=>{
   sequence++;
