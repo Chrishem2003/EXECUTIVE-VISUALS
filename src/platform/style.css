@@ -190,3 +190,15 @@
 #knowledge-source-form input,#knowledge-source-form select,#knowledge-source-form textarea,#knowledge-record-form input,#knowledge-record-form select,#knowledge-record-form textarea{width:100%;min-width:0;background:#0d131d;border:1px solid var(--line);border-radius:6px;padding:10px;color:var(--text);font-size:10px}
 #knowledge-source-form textarea,#knowledge-record-form textarea{resize:vertical;line-height:1.6}
 @media(max-width:700px){.knowledge-item{gap:8px}.knowledge-item button{font-size:8px;padding:7px}.knowledge-item .knowledge-content{max-height:180px}}
+
+/* Series Producer: explicit scene and shot continuity assignment */
+.scene-binding{display:grid;gap:8px;margin:10px 0;padding:10px;border:1px solid var(--line);border-radius:7px;background:#0e1520}
+.scene-binding>span{font-size:10px;font-weight:700;color:#e0c99f}
+.scene-binding form{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:end}
+.scene-binding label{display:grid;gap:5px;font-size:9px;color:var(--muted)}
+.scene-binding select{width:100%;min-width:0;min-height:56px;background:#0b1018;color:var(--text);border:1px solid var(--line);border-radius:5px;padding:6px;font-size:9px}
+.scene-binding button{white-space:nowrap}
+.shot-binding{margin:6px 0 6px 12px!important;padding:8px;border-left:2px solid #746047;background:#111a27}
+.shot-binding small{font-size:8px;letter-spacing:.7px;color:#d3b77e}
+.shot-binding label{font-size:9px}
+@media(max-width:600px){.scene-binding form{grid-template-columns:1fr}.scene-binding button{width:100%}}
