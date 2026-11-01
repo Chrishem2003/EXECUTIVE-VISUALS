@@ -415,6 +415,52 @@ test("cloud AI upscale publishes a separate image derivative with engine provena
   }
 });
 
+
+test("cloud AI upscale blocks publication when output dimensions do not match", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "ev-cloud-ai-upscale-mismatch-"));
+  const previousBinary = process.env.REALESRGAN_NCNN_PATH;
+  const previousModels = process.env.REALESRGAN_MODEL_DIR;
+  const previousEnabled = process.env.AI_UPSCALE_ENABLED;
+  const previousFfprobe = process.env.FFPROBE_PATH;
+  const source = join(directory, "source.png");
+  const model = "realesrgan-x4plus";
+  const binary = await executable(directory, "realesrgan-ncnn-vulkan", String.raw`while [ "$1" != "" ]; do if [ "$1" = "-o" ]; then shift; printf '\211PNG\r\n\032\n\000\000\000\015IHDR\000\000\000\001\000\000\000\001' > "$1"; fi; shift; done`);
+  await writeFile(source, Buffer.from([137,80,78,71,13,10,26,10]));
+  await writeFile(join(directory, model + ".param"), "model");
+  await writeFile(join(directory, model + ".bin"), "weights");
+  process.env.REALESRGAN_NCNN_PATH = binary;
+  process.env.REALESRGAN_MODEL_DIR = directory;
+  process.env.AI_UPSCALE_ENABLED = "true";
+  process.env.FFPROBE_PATH = await executable(directory, "ffprobe", "case \"$last\" in *source.png) echo '{\"streams\":[{\"width\":10,\"height\":10}]}' ;; *) echo '{\"streams\":[{\"width\":40,\"height\":40}]}' ;; esac");
+  let published;
+  try {
+    const execute = createCloudMediaExecutor({
+      tempRoot: directory,
+      mediaIO: {
+        async materialize() {
+          return { path: source, asset: { id: "image-source", name: "portrait.png", mediaType: "image/png", sha256: "d".repeat(64) }, async cleanup() {} };
+        },
+        async publish(args) {
+          published = args;
+          return { id: "image-ai-output", name: args.filename, mediaType: args.mediaType };
+        }
+      }
+    });
+    await assert.rejects(execute({
+      job: { id: "job-ai-up-mismatch", owner_id: "owner-ai", project_id: "project-ai", job_type: "media.ai-upscale",
+        input: { sourceAssetId: "image-source", model, scale: 4, tile: 128, format: "png" } },
+      onProgress() {}
+    }), error => error.code === "MEDIA_OUTPUT_VALIDATION_FAILED");
+    assert.equal(published, undefined, "dimension-mismatched derivative must never be published");
+  } finally {
+    if (previousBinary === undefined) delete process.env.REALESRGAN_NCNN_PATH; else process.env.REALESRGAN_NCNN_PATH = previousBinary;
+    if (previousModels === undefined) delete process.env.REALESRGAN_MODEL_DIR; else process.env.REALESRGAN_MODEL_DIR = previousModels;
+    if (previousEnabled === undefined) delete process.env.AI_UPSCALE_ENABLED; else process.env.AI_UPSCALE_ENABLED = previousEnabled;
+    if (previousFfprobe === undefined) delete process.env.FFPROBE_PATH; else process.env.FFPROBE_PATH = previousFfprobe;
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("cloud AI upscale rejects video instead of treating frame-by-frame resampling as AI video enhancement", async () => {
   const directory = await mkdtemp(join(tmpdir(), "ev-cloud-ai-video-reject-"));
   const source = join(directory, "source.mp4");
