@@ -28,7 +28,7 @@ export function planEnhancementRecipe({name="Enhancement recipe",sourceAsset,ste
       buildMediaOperationArgs({jobType:operation,input:parameters,sourcePath:"/recipe/source.mp4",outputPath:"/recipe/output.mp4"});
     } else if(AUDIO_STEPS.has(operation)) {
       if(!currentType.startsWith("audio/"))throw Object.assign(new Error(operation+" requires an audio source."),{code:"RECIPE_MEDIA_TYPE_MISMATCH",step:index});
-      buildMediaOperationArgs({jobType:operation,input:step.parameters||{},sourcePath:"/recipe/source.wav",outputPath:"/recipe/output.wav"});
+      buildMediaOperationArgs({jobType:operation,input:parameters,sourcePath:"/recipe/source.wav",outputPath:"/recipe/output.wav"});
       currentType="audio/wav";
     } else {
       throw Object.assign(new Error("Unsupported recipe operation: "+operation),{code:"RECIPE_OPERATION_UNSUPPORTED",step:index});
