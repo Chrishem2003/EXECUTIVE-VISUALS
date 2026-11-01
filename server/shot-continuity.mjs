@@ -55,3 +55,26 @@ export function getShotContinuityReferenceIds({document,shotId}={}){
  }
  return [...new Set(ids.map(value=>clean(value,80)).filter(Boolean))].slice(0,40);
 }
+
+const CONTINUITY_FIELDS=["identity","wardrobe","location","props","lighting","colorGrade"];
+export function buildShotContinuityReport(shots=[]){
+ if(!Array.isArray(shots))throw new TypeError("shots must be an array");
+ if(shots.length>500)throw new RangeError("continuity analysis is limited to 500 shots per report");
+ const groups=new Map(),findings=[];
+ for(const [index,shot] of shots.entries()){
+  if(!shot||typeof shot!=="object"||Array.isArray(shot))throw new TypeError("each shot must be an object");
+  const id=clean(shot.id,80)||"shot-"+(index+1),group=clean(shot.continuityGroup,80)||"default",values={};
+  for(const field of CONTINUITY_FIELDS)values[field]=clean(shot.continuity?.[field],240);
+  if(!groups.has(group))groups.set(group,{baseline:{id,values},shots:[]});
+  groups.get(group).shots.push({id,values});
+ }
+ for(const [group,data] of groups){
+  const baseline=data.baseline;
+  for(const field of CONTINUITY_FIELDS)if(!baseline.values[field])findings.push({code:"CONTINUITY_REFERENCE_MISSING",severity:"info",group,shotId:baseline.id,field});
+  for(const shot of data.shots.slice(1))for(const field of CONTINUITY_FIELDS){
+   const expected=baseline.values[field],actual=shot.values[field];
+   if(expected&&actual&&expected.toLocaleLowerCase()!==actual.toLocaleLowerCase())findings.push({code:"CONTINUITY_VARIATION",severity:"warning",group,referenceShotId:baseline.id,shotId:shot.id,field,expected,actual});
+  }
+ }
+ return {schemaVersion:1,method:"declared-shot-metadata-comparison",shotCount:shots.length,groupCount:groups.size,status:findings.some(item=>item.severity==="warning")?"review":"informational",findings,limitations:["Metadata comparison only; no image pixels are inspected and no visual identity, wardrobe or prop recognition is claimed.","Camera framing and movement are intentionally allowed to vary.","Human creative review decides whether a variation is intentional."]};
+}
