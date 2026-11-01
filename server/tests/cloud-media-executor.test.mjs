@@ -17,7 +17,7 @@ test("cloud media probe uses the leased owner and cleans up its materialized sou
   const previous = process.env.FFPROBE_PATH;
   const source = join(directory, "source.mp4");
   await writeFile(source, "fixture");
-  const ffprobe = await executable(directory, "ffprobe", String.raw`printf '%s' '{"streams":[{"codec_type":"video","width":640,"height":360}]}'`);
+  const ffprobe = await executable(directory, "ffprobe", String.raw`printf '%s' '{"streams":[{"codec_type":"video","width":640,"height":360}],"format":{"duration":"1.25"}}'`);
   process.env.FFPROBE_PATH = ffprobe;
   let materializedArgs, cleaned = false;
   try {
