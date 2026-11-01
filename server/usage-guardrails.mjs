@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 const DEFAULT_REMOTE_DAILY_LIMIT = 50;
 const MAX_REMOTE_DAILY_LIMIT = 10000;
 
@@ -25,9 +27,10 @@ function readLimit(raw = process.env.REMOTE_AI_DAILY_REQUEST_LIMIT) {
  */
 export function reserveRemoteRequest(db, {
   ownerId, projectId = null, jobId = null, provider, capability,
-  limit = readLimit()
+  limit
 }) {
   if (!provider?.remote) return { reserved: false, reason: "local_provider" };
+  if (limit === undefined) limit = readLimit();
   if (!ownerId || !provider.provider || !capability) {
     throw Object.assign(new Error("Remote usage reservation requires owner, provider and capability."), {
       code: "REMOTE_USAGE_RESERVATION_INVALID"
@@ -56,7 +59,7 @@ export function reserveRemoteRequest(db, {
       code: "REMOTE_USAGE_LIMIT_REACHED", limit, window: "rolling_24_hours"
     });
   }
-  const id = crypto.randomUUID();
+  const id = randomUUID();
   const result = db.prepare(`
     INSERT INTO remote_usage_reservations(id,owner_id,project_id,job_id,provider,capability)
     SELECT ?,?,?,?,?,?
