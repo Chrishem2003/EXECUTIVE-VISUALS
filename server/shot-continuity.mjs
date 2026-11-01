@@ -1,6 +1,6 @@
 const clean=(value,max=2000)=>String(value??"").trim().slice(0,max);
 const line=(label,value,max)=>{const text=clean(value,max);return text?label+": "+text:"";};
-export function buildShotContinuityPrompt({document,shotId,prompt}={}){
+export function buildShotContinuityPrompt({document,shotId,prompt,authorizeCharacter}={}){
  const id=clean(shotId,80);
  if(!id)throw Object.assign(new Error("A shot ID is required to build continuity context."),{code:"SHOT_CONTEXT_REQUIRED"});
  const shots=Array.isArray(document?.shots)?document.shots:[];
@@ -13,6 +13,7 @@ export function buildShotContinuityPrompt({document,shotId,prompt}={}){
  for(const characterId of linkedIds){
   const found=characters.filter(item=>clean(item?.id,80)===characterId);
   if(found.length!==1)throw Object.assign(new Error("A linked shot character is missing or ambiguous in this project workspace."),{code:"SHOT_CHARACTER_NOT_FOUND"});
+  if(typeof authorizeCharacter==="function")authorizeCharacter(found[0]);
   selected.push(found[0]);
  }
  const sections=[];
