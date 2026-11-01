@@ -2,9 +2,13 @@ export type SeriesFormat="documentary"|"docuseries"|"education"|"fiction"|"inter
 export type SeriesDefaults={episodeRuntimeSeconds:number;shotLengthSeconds:number;aspectRatio:string;frameRate:number;resolution:string;visualStyle:string;language:string;voiceMode:string;captions:string;music:string;cameraLanguage:string;shotComposition:string;pacing:string;colorGrade:string};
 export type EpisodeShot={id:string;durationSeconds:number;prompt:string;status:"planned"};
 export type EpisodeScene={id:string;title:string;purpose:string;durationSeconds:number;shots:EpisodeShot[]};
-export type SeriesEpisode={id:string;number:number;title:string;runtimeSeconds:number;status:"planned";scenes:EpisodeScene[]};
+export type EpisodeDirectionOverrides=Partial<Pick<SeriesDefaults,"episodeRuntimeSeconds"|"aspectRatio"|"frameRate"|"resolution"|"visualStyle"|"cameraLanguage"|"shotComposition"|"pacing"|"colorGrade"|"language"|"voiceMode"|"captions"|"music">>;
+export type StoryBibleKind="character"|"location"|"prop"|"wardrobe"|"voice"|"brand-rule";
+export type StoryBibleEntry={id:string;kind:StoryBibleKind;name:string;description:string;visualRules:string;referenceAssetIds:string[];tags:string[];createdAt:string;updatedAt:string};
+export type SeriesStoryBible={version:1;entries:StoryBibleEntry[];globalRules:string;updatedAt:string};
+export type SeriesEpisode={id:string;number:number;title:string;runtimeSeconds:number;status:"planned";logline?:string;recap?:string;nextHook?:string;overrides?:EpisodeDirectionOverrides;scenes:EpisodeScene[]};
 export type SeriesSeason={id:string;number:number;title:string;episodes:SeriesEpisode[]};
-export type SeriesProductionPlan={id:string;schemaVersion:1;title:string;premise:string;format:SeriesFormat;genre:string;continuityNotes:string;defaults:SeriesDefaults;seasons:SeriesSeason[];createdAt:string;updatedAt:string};
+export type SeriesProductionPlan={id:string;schemaVersion:1;title:string;premise:string;format:SeriesFormat;genre:string;continuityNotes:string;defaults:SeriesDefaults;seasons:SeriesSeason[];storyBible?:SeriesStoryBible;seasonArcs?:Record<string,string>;createdAt:string;updatedAt:string};
 export type SeriesProductionInput={title:string;premise:string;format:string;genre?:string;seasonCount:number;episodesPerSeason:number;episodeRuntimeSeconds:number;shotLengthSeconds:number;aspectRatio:string;frameRate:number;resolution:string;visualStyle:string;language:string;voiceMode:string;captions:string;music:string;cameraLanguage:string;shotComposition:string;pacing:string;colorGrade:string;continuityNotes?:string};
 export const MAX_EPISODE_SECONDS=300,MAX_GENERATED_CLIP_SECONDS=30;
 export const EPISODE_RUNTIME_CHOICES=Object.freeze([30,60,90,120,180,240,300]);
@@ -67,4 +71,37 @@ export function buildEpisodeTimelineDocument(series:SeriesProductionPlan,episode
   {id:episode.id+"-graphics",name:"Titles / overlays",kind:"overlay",enabled:true,locked:false,clips:[]}
  ];
  return{id:"episode-"+episode.id,projectId,name:series.title+" · "+episode.title,revision:1,frameRate:{numerator:fps,denominator:1},width:size.width,height:size.height,pixelAspectRatio:1,tracks,markers,createdAt:now,updatedAt:now};
+}
+
+const BIBLE_KINDS=new Set<StoryBibleKind>(["character","location","prop","wardrobe","voice","brand-rule"]);
+const OVERRIDE_TEXT_LIMITS:Partial<Record<keyof SeriesDefaults,number>>={aspectRatio:8,resolution:20,visualStyle:80,cameraLanguage:100,shotComposition:100,pacing:100,colorGrade:100,language:40,voiceMode:80,captions:80,music:100};
+/** Merge episode-specific direction over series defaults without mutating either record. */
+export function resolveEpisodeDirection(series:SeriesProductionPlan,episode:SeriesEpisode):SeriesDefaults{
+ if(!series.seasons.some(season=>season.episodes.some(item=>item.id===episode.id)))throw new Error("Episode does not belong to this series.");
+ const merged={...series.defaults,...(episode.overrides||{})};
+ if(!Number.isInteger(merged.episodeRuntimeSeconds)||merged.episodeRuntimeSeconds<15||merged.episodeRuntimeSeconds>MAX_EPISODE_SECONDS)throw new Error("Episode runtime override must be 15–300 seconds.");
+ if(!EPISODE_RUNTIME_CHOICES.includes(merged.episodeRuntimeSeconds))throw new Error("Episode runtime override must use a supported runtime preset.");
+ if(!RATIOS.has(merged.aspectRatio))throw new Error("Episode aspect ratio override is unsupported.");
+ if(!Number.isInteger(merged.frameRate)||merged.frameRate<1||merged.frameRate>120)throw new Error("Episode frame-rate override is invalid.");
+ return merged;
+}
+/** Add or replace a story-world record. Reference assets are IDs, never embedded binaries. */
+export function upsertStoryBibleEntry(series:SeriesProductionPlan,input:Omit<StoryBibleEntry,"id"|"createdAt"|"updatedAt"> & {id?:string}):SeriesProductionPlan{
+ if(!BIBLE_KINDS.has(input.kind))throw new Error("Unsupported story bible record type.");
+ const name=text(input.name,120,"Story bible name"),description=text(input.description,2000,"Story bible description");
+ const visualRules=String(input.visualRules||"").trim().slice(0,2000),referenceAssetIds=[...new Set((input.referenceAssetIds||[]).filter(id=>typeof id==="string"&&/^[0-9a-f-]{36}$/i.test(id)))].slice(0,20),tags=[...new Set((input.tags||[]).map(tag=>String(tag).trim().slice(0,40)).filter(Boolean))].slice(0,20);
+ const previous=series.storyBible?.entries.find(entry=>entry.id===input.id),now=new Date().toISOString(),entry:StoryBibleEntry={id:previous?.id||globalThis.crypto?.randomUUID?.()||"bible-"+Date.now(),kind:input.kind,name,description,visualRules,referenceAssetIds,tags,createdAt:previous?.createdAt||now,updatedAt:now};
+ const entries=[...(series.storyBible?.entries||[]).filter(item=>item.id!==entry.id),entry];
+ if(entries.length>500)throw new Error("A series story bible may contain at most 500 records.");
+ return{...series,storyBible:{version:1,entries,globalRules:series.storyBible?.globalRules||"",updatedAt:now},updatedAt:now};
+}
+export function setEpisodeDirectionOverrides(series:SeriesProductionPlan,episodeId:string,overrides:EpisodeDirectionOverrides):SeriesProductionPlan{
+ let found=false;
+ const allowed=new Set<keyof SeriesDefaults>(["episodeRuntimeSeconds","aspectRatio","frameRate","resolution","visualStyle","cameraLanguage","shotComposition","pacing","colorGrade","language","voiceMode","captions","music"]);
+ const clean:EpisodeDirectionOverrides={};
+ for(const [rawKey,value] of Object.entries(overrides)){const key=rawKey as keyof SeriesDefaults;if(!allowed.has(key))throw new Error("Unsupported episode override.");if(key==="episodeRuntimeSeconds"){if(!Number.isInteger(value)||Number(value)<15||Number(value)>MAX_EPISODE_SECONDS||!EPISODE_RUNTIME_CHOICES.includes(Number(value)))throw new Error("Episode runtime override must be a supported value up to five minutes.");(clean as Record<string,unknown>)[key]=value;}else if(key==="frameRate"){if(!Number.isInteger(value)||Number(value)<1||Number(value)>120)throw new Error("Frame-rate override must be 1–120.");(clean as Record<string,unknown>)[key]=value;}else{const limit=OVERRIDE_TEXT_LIMITS[key]||100;if(typeof value!=="string"||!value.trim()||value.length>limit)throw new Error("Invalid "+key+" override.");(clean as Record<string,unknown>)[key]=value.trim();}}
+ const next={...series,seasons:series.seasons.map(season=>({...season,episodes:season.episodes.map(episode=>{if(episode.id!==episodeId)return episode;found=true;const updated={...episode,overrides:Object.keys(clean).length?clean:undefined};return updated;})})),updatedAt:new Date().toISOString()};
+ if(!found)throw new Error("Episode does not belong to this series.");
+ const episode=next.seasons.flatMap(season=>season.episodes).find(item=>item.id===episodeId)!;resolveEpisodeDirection(next,episode);
+ return next;
 }
