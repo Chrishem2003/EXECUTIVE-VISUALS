@@ -13,6 +13,7 @@
     "typecheck": "tsc --noEmit",
     "verify:capabilities": "node scripts/verify-capability-atlas.mjs",
     "verify:media-operations": "node scripts/verify-media-operations.mjs",
+    "verify:recipes": "node --test server/tests/enhancement-recipes.test.mjs",
     "verify:workflow": "node --experimental-strip-types scripts/verify-workflow-engine.mjs",
     "verify:server": "node --experimental-strip-types --test server/tests/*.test.mjs",
     "verify:timeline": "node --experimental-strip-types scripts/verify-timeline.mjs",
