@@ -1,5 +1,5 @@
 const mediaTypes=new Set(["image","video","audio","mask","asset","media","identity-reference","style-reference","product-reference","start-frame","end-frame","keyframe","motion-reference","proxy","3d-scene","mesh","timeline-package"]);
-function compatible(source,target){return source===target||source==="any"||target==="any"||(target==="media"&&mediaTypes.has(source))||(target==="asset"&&mediaTypes.has(source));}
+function compatible(source,target){return source===target||source==="any"||target==="any"||(target==="media"&&mediaTypes.has(source))||(target==="asset"&&mediaTypes.has(source))||(target==="start-frame"&&(source==="image"||source==="asset"||source==="media"));}
 export function validateWorkflowGraph(graph){
  const issues=[];
  if(!graph||!Array.isArray(graph.nodes)||!Array.isArray(graph.edges))return {valid:false,issues:[{code:"invalid_graph",message:"Workflow requires node and edge arrays."}],executionOrder:[]};
