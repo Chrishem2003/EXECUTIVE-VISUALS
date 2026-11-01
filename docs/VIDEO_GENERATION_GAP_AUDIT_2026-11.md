@@ -202,3 +202,8 @@ A full GitHub Actions build reached the media-operation integration verifier and
 ### Output codec and pixel-format negative coverage — 2026-11-01
 
 The cloud upscale test suite now explicitly rejects an output encoded with an unexpected video codec and an output using an incompatible pixel format. Both tests assert that the invalid derivative is not published. This complements the existing success, dimensions, audio-preservation and source-relative duration checks. The preceding CI baseline (run #1493) completed successfully after the FFmpeg scaler compatibility correction; these newest negative tests require their own CI result.
+
+
+### Video model capability contract hardening — 2026-11-01
+
+The configured video adapter now exports its own capability declaration, and workflow execution consumes that declaration rather than duplicating supported settings inline. The declaration reflects the actual adapter contract: 1–30 whole seconds, 16:9/9:16/1:1, provider-selected resolution, no selectable audio modes, and reference-image support only when a supported model input field is explicitly configured. The payload builder now rejects invalid durations, unsupported aspect ratios, blank prompts and prompts beyond the normalized 12,000-character limit rather than silently rounding, clamping or changing them. Regression tests cover the declaration and strict payload behavior. External execution remains disabled unless existing server-side enablement, remote opt-in, usage guardrails and approval requirements are all satisfied.
