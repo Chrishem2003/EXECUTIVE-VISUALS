@@ -263,3 +263,12 @@ The Series Producer now supports explicit shot-level as well as scene-level stor
 Added `src/core/shot-readiness.ts` with a provider-neutral, no-network readiness assessment for every compiled shot. It compares aspect ratio, resolution, frame rate, duration, negative-prompt support and reference-image limits against explicit model declarations. Each feature is classified as supported, unsupported or unverified; unsupported requirements block readiness, while missing declarations remain unverified rather than being guessed. Reports include per-shot reasons and aggregate counts. The report explicitly records that no provider was submitted and no prices were estimated. The check is included in the production build verification sequence.
 
 This is a preflight contract, not a live provider capability feed. The next integration must populate declarations from a verified adapter/catalog and pass approved requests through the existing authenticated workflow and usage guardrails.
+
+
+## Implementation update — real provider capability visibility
+
+The provider catalog now exposes the actual configured video adapter capability declaration separately from the generic video.generate capability. This includes supported aspect ratios, provider-default resolution, duration limits, audio modes, negative-prompt support and whether the configured model input field accepts a reference image. The shot-readiness evaluator now understands explicit boolean reference-image support. Tests compare shot requirements with the real adapter declaration, rather than a fabricated generic profile.
+
+## AI upscaling research and selection
+
+Added docs/AI_UPSCALING_ENGINE_SELECTION.md. The initial low-cost candidate is Real-ESRGAN NCNN/Vulkan because its upstream documentation describes portable Intel/AMD/NVIDIA GPU executables without requiring CUDA or PyTorch. It is not enabled or claimed as installed. Video2X is not selected as the hosted dependency because of its AGPL-3.0 licence. The design requires runtime/device probing, adaptive tiling, frame/audio/timebase preservation, temporal-flicker review, derivative-only publishing and explicit licence checks. The existing FFmpeg scaler remains the verified fallback.
