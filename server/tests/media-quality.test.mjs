@@ -64,3 +64,12 @@ test("marks unavailable signal checks as unknown review warnings",()=>{
  assert.ok(report.findings.some(item=>item.code==="SIGNAL_ANALYSIS_UNAVAILABLE"&&item.reason==="MEDIA_PROCESS_FAILED"));
  assert.equal(report.signalAnalysis.unavailable.length,1);
 });
+
+test("includes freeze warnings and scene-change timestamps in QA evidence",()=>{
+ const report=buildMediaQualityReport({format:{duration:"12"},streams:[{codec_type:"video",width:1920,height:1080,avg_frame_rate:"24/1"}],signalAnalysis:{
+  freezes:[{startSeconds:2,endSeconds:5,durationSeconds:3}],sceneChanges:[1.2,4.8],performed:["freeze-detect","scene-change"]
+ }},{requireVideo:true});
+ assert.equal(report.status,"review");
+ assert.ok(report.findings.some(item=>item.code==="FROZEN_VIDEO_INTERVAL"));
+ assert.deepEqual(report.signalAnalysis.sceneChangeTimes,[1.2,4.8]);
+});
