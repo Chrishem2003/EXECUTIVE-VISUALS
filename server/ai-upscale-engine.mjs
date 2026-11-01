@@ -25,7 +25,7 @@ async function regularFile(path, label) {
   } catch { return false; }
 }
 
-function run(binary, args, timeoutMs) {
+function run(binary, args, timeoutMs, signal) {
   return new Promise((resolvePromise, reject) => {
     const child = spawn(binary, args, { shell: false, windowsHide: true, stdio: ["ignore", "ignore", "pipe"] });
     let stderr = "", settled = false;
@@ -33,8 +33,17 @@ function run(binary, args, timeoutMs) {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      signal?.removeEventListener("abort", abort);
       if (error) reject(error); else resolvePromise({ stderr });
     };
+    const abort = () => {
+      child.kill("SIGTERM");
+      const killTimer = setTimeout(() => child.kill("SIGKILL"), 2000);
+      killTimer.unref?.();
+      finish(fail("AI upscaling job was cancelled.", "JOB_CANCELLED"));
+    };
+    if (signal?.aborted) { abort(); return; }
+    signal?.addEventListener("abort", abort, { once: true });
     const timer = setTimeout(() => {
       child.kill("SIGKILL");
       finish(fail("AI upscaling process exceeded its time limit.", "AI_UPSCALE_TIMEOUT"));
@@ -97,7 +106,7 @@ export function createRealEsrganAdapter({
     try { await lstat(output); throw fail("AI upscale output already exists; source files are never overwritten.", "AI_UPSCALE_OUTPUT_EXISTS"); }
     catch (error) { if (error.code !== "ENOENT") throw error; }
     if (dirname(output) === input || output.startsWith(input + sep)) throw fail("AI upscale output path is invalid.", "AI_UPSCALE_INVALID_PATH");
-    await run(prepared.binary, prepared.args, timeoutMs);
+    await run(prepared.binary, prepared.args, timeoutMs, options.signal);
     const info = await stat(output).catch(() => null);
     if (!info?.isFile() || info.size < 8 || info.size > maxOutputBytes) throw fail("AI upscale output is missing, empty or exceeds the configured size limit.", "AI_UPSCALE_OUTPUT_INVALID");
     return { path: output, byteSize: info.size, model: prepared.model, scale: prepared.scale, engine: "realesrgan-ncnn-vulkan", method: "ai-super-resolution" };
