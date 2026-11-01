@@ -300,3 +300,10 @@ This is a runnable worker entry point, not a deployed worker. Do not set the ena
 - Reservations are recorded atomically in the local SQLite database so overlapping jobs cannot both consume the final slot. Failed provider calls remain counted for the window, a conservative choice that prevents retries from bypassing the guardrail.
 - The limit is a request-count safety cap, not a money estimate: providers may price requests differently, and the existing usage ledger still does not estimate provider costs. Review provider pricing before enabling remote endpoints.
 - Added unit tests for the cap, local-provider exemption, disabled remote execution and invalid configuration. This does not enable remote calls, make live provider requests, activate cloud services, apply migrations or change production.
+
+### Usage guardrail visibility — 1 November 2026
+
+- The authenticated `/api/usage` response now includes the account's rolling 24-hour remote request count, configured limit, remaining allowance, configuration validity and whether a zero limit disables remote execution.
+- Usage counts are based on pre-dispatch reservation records, so a failed remote call remains visible and counted until it ages out of the window. Optional project usage is reported separately without changing the account-wide cap.
+- The existing runtime console now displays the allowance alongside project, asset and job operations. Invalid limit configuration is surfaced as blocked rather than silently shown as zero remaining.
+- Added an API regression test covering authentication, configured limit reporting, empty-account allowance and secret-safe output. Monetary costs remain explicitly unestimated.
