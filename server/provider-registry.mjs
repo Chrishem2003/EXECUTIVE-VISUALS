@@ -11,7 +11,7 @@ function gatewayState({enabled,configured,url,allowRemote,model,provider,capabil
  }
  return {id:provider,provider,enabled:Boolean(enabled),configured:Boolean(configured&&validUrl),remote:validUrl&&!local,model:model||null,status,reason,capabilities};
 }
-export function getProviderCatalog(env=process.env,media={ffmpeg:false,ffprobe:false}){
+export function getProviderCatalog(env=process.env,media={ffmpeg:false,ffprobe:false,aiUpscale:null}){
  const text=gatewayState({enabled:env.AI_GATEWAY_ENABLED==="true",configured:Boolean(env.AI_GATEWAY_URL&&env.AI_GATEWAY_MODEL),url:env.AI_GATEWAY_URL,allowRemote:env.AI_GATEWAY_ALLOW_REMOTE==="true",model:env.AI_GATEWAY_MODEL,provider:"text",capabilities:["text.generate","text.rewrite","text.translate","text.summarize"]});
  const imageProvider=String(env.IMAGE_GATEWAY_PROVIDER||"openai-compatible").toLowerCase();
  const imageFal=imageProvider==="fal";
@@ -22,7 +22,9 @@ export function getProviderCatalog(env=process.env,media={ffmpeg:false,ffprobe:f
  const voice=gatewayState({enabled:env.VOICE_GATEWAY_ENABLED==="true",configured:Boolean(env.VOICE_GATEWAY_URL&&env.VOICE_GATEWAY_MODEL),url:env.VOICE_GATEWAY_URL,allowRemote:env.VOICE_GATEWAY_ALLOW_REMOTE==="true",model:env.VOICE_GATEWAY_MODEL,provider:"voice",capabilities:["voice.generate"]});
  const transcription=gatewayState({enabled:env.VOICE_GATEWAY_ENABLED==="true"&&env.VOICE_TRANSCRIPTION_ENABLED==="true",configured:Boolean(env.VOICE_GATEWAY_URL&&(env.VOICE_TRANSCRIPTION_MODEL||env.VOICE_GATEWAY_MODEL)),url:env.VOICE_GATEWAY_URL,allowRemote:env.VOICE_GATEWAY_ALLOW_REMOTE==="true",model:env.VOICE_TRANSCRIPTION_MODEL||env.VOICE_GATEWAY_MODEL,provider:"transcription",capabilities:["voice.transcribe"]});
  const localMedia={id:"local-media",provider:"local",enabled:Boolean(media.ffmpeg&&media.ffprobe),configured:Boolean(media.ffmpeg&&media.ffprobe),remote:false,model:"FFmpeg / FFprobe",status:media.ffmpeg&&media.ffprobe?"ready":"unavailable",reason:media.ffmpeg&&media.ffprobe?"Local media tools are available.":"Install FFmpeg and FFprobe on the worker host.",capabilities:["media.probe","media.thumbnail","media.transcode","media.proxy","media.audio_extract","media.audio-clean","media.denoise","media.color","media.resize","media.interpolate","media.upscale","timeline.render"]};
- const providers=[text,image,video,voice,transcription,localMedia];
+ const ai=media.aiUpscale||{available:false,executionEnabled:false,reason:"Configure an NCNN/Vulkan engine and allowlisted model files."};
+ const aiUpscale={id:"ai-upscale",provider:"local",enabled:Boolean(ai.executionEnabled),configured:Boolean(ai.available),remote:false,model:ai.model||"Real-ESRGAN NCNN/Vulkan",status:ai.available&&ai.executionEnabled?"ready":ai.available?"disabled":"unavailable",reason:ai.reason,capabilities:ai.available&&ai.executionEnabled?["media.ai-upscale"]:[]};
+ const providers=[text,image,video,voice,transcription,localMedia,aiUpscale];
  const counts=providers.reduce((out,item)=>{out[item.status]=(out[item.status]||0)+1;return out;},{});
  return {version:1,providers,summary:{total:providers.length,ready:providers.filter(x=>x.status==="ready").length,disabled:counts.disabled||0,needsConfiguration:counts.needs_configuration||0,remoteOptInRequired:counts.remote_opt_in_required||0,unavailable:counts.unavailable||0},policy:{remoteCallsRequireExplicitOptIn:true,credentialsExposed:false,pricesEstimated:false,requestsSubmitted:false}};
 }
