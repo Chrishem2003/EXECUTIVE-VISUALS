@@ -61,6 +61,10 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     const assets=await service.assets.list({ownerId,projectId:query.projectId||null,limit:Number(query.limit)||50,offset:Number(query.offset)||0});
     return response(200,{assets});
    }
+   if(path==="/api/cloud/timelines"&&method==="GET"){
+    const timelines=await service.timelines.list({ownerId,projectId:query.projectId||null,limit:Number(query.limit)||50,offset:Number(query.offset)||0});
+    return response(200,{timelines});
+   }
    if(path==="/api/cloud/timelines"&&method==="POST"){
     const timeline=await service.timelines.create({ownerId,projectId:body.projectId||null,name:body.name||"Untitled timeline",timeline:body.timeline,otio:body.otio??null});
     return response(201,{timeline});
