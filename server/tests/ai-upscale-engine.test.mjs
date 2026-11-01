@@ -102,7 +102,9 @@ test("AI upscaler does not overwrite a symbolic-link output target", async () =>
   const output = join(directory, "linked-output.png");
   await writeFile(input, Buffer.from([137,80,78,71,13,10,26,10]));
   await writeFile(protectedFile, "preserve-this-file");
-  await writeFile(binary, "#!/bin/sh\\nexit 0\\n");
+  await writeFile(binary, String.raw`#!/bin/sh
+exit 0
+`);
   await chmod(binary, 0o755);
   await writeFile(join(directory, model + ".param"), "model");
   await writeFile(join(directory, model + ".bin"), "weights");
