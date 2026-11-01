@@ -5,7 +5,7 @@ import { validateWorkflowGraph } from "./workflow-validation.mjs";
 import { searchProjectKnowledge, formatKnowledgeForWorkflow } from "./knowledge-search.mjs";
 import { generateText } from "./ai-gateway.mjs";
 import { generateImage } from "./image-gateway.mjs";
-import { generateFalVideo } from "./fal-video-gateway.mjs";
+import { generateFalVideo, getFalVideoCapabilities } from "./fal-video-gateway.mjs";
 import { storeGeneratedImage, storeGeneratedVideo, storeGeneratedAudio } from "./generated-assets.mjs";
 import { assertIdentityUseAllowed } from "./identity-consent.mjs";
 import { generateVoice, transcribeVoice } from "./voice-gateway.mjs";
@@ -289,14 +289,7 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
      audioMode:String(config.audioMode??"provider_default"),
      referenceAssetIds:referenceId?[referenceId]:[],
     });
-    assertVideoCapabilities(generationRequest,{
-     referenceImages:Boolean(process.env.FAL_VIDEO_IMAGE_INPUT_FIELD),
-     aspectRatios:["16:9","9:16","1:1"],
-     resolutions:["provider_default"],
-     audioModes:[],
-     minDurationSeconds:1,
-     maxDurationSeconds:30,
-    });
+    assertVideoCapabilities(generationRequest,getFalVideoCapabilities());
     const usageStarted=Date.now();
     const provider=requireExecutionProvider("video.generate","VIDEO_GATEWAY_ALLOW_REMOTE");
     reserveRemoteRequest(db,{ownerId:job.owner_id,projectId:job.project_id||null,jobId:job.id,provider,capability:"video.generate"});
