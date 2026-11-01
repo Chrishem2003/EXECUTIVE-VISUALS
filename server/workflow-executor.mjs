@@ -15,6 +15,7 @@ import { createHash } from "node:crypto";
 import { reserveRemoteRequest } from "./usage-guardrails.mjs";
 import { resolve, relative, sep } from "node:path";
 import { buildShotContinuityPrompt, getShotContinuityReferenceIds } from "./shot-continuity.mjs";
+import { normalizeVideoGenerationRequest, assertVideoCapabilities } from "./video-generation-contract.mjs";
 
 const now=()=>new Date().toISOString();
 function requireExecutionProvider(capability,remoteOptInVariable){
@@ -279,6 +280,19 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
      if(!validSignature)throw Object.assign(new Error("Video reference must be a valid JPEG, PNG or WebP image."),{code:"VIDEO_GATEWAY_INVALID_INPUT"});
      referenceImageDataUrl="data:"+mime+";base64,"+buffer.toString("base64");
     }
+    const generationRequest=normalizeVideoGenerationRequest({
+     projectId:String(job.project_id||run.project_id||""),
+     prompt,
+     durationSeconds:Number(config.duration??5),
+     aspectRatio:String(config.aspectRatio??"16:9"),
+     referenceAssetIds:referenceId?[referenceId]:[],
+    });
+    assertVideoCapabilities(generationRequest,{
+     referenceImages:Boolean(process.env.FAL_VIDEO_IMAGE_INPUT_FIELD),
+     aspectRatios:["16:9","9:16","1:1"],
+     minDurationSeconds:1,
+     maxDurationSeconds:30,
+    });
     const usageStarted=Date.now();
     const provider=requireExecutionProvider("video.generate","VIDEO_GATEWAY_ALLOW_REMOTE");
     reserveRemoteRequest(db,{ownerId:job.owner_id,projectId:job.project_id||null,jobId:job.id,provider,capability:"video.generate"});
