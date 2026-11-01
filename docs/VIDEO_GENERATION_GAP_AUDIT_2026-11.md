@@ -167,3 +167,8 @@ The first CI run after adding the cloud-upscale publication tests exposed a Java
 ### Cloud upscale duration validation — 2026-11-01
 
 The cloud upscale publication gate now validates both output dimensions and a finite, positive container duration from FFprobe before publishing. The duration is persisted in derivative processing metadata and returned with the job result for downstream review and provenance. Tests now assert the duration metadata alongside normalized dimensions. This remains a structural media-integrity check; it does not assess perceptual sharpness or claim learned super-resolution. A fresh CI run is still required.
+
+
+### Cloud upscale audio-integrity gate — 2026-11-01
+
+Cloud upscaling now probes the source before processing and records whether an audio stream exists. If the source contains audio, the output must also contain an audio stream or publication is blocked. The derivative metadata records source/output audio stream counts and an explicit preservation result; silent sources remain valid without synthetic audio. Regression tests cover successful audio retention and rejection of an output that drops source audio. This is a stream-presence guarantee, not a claim of bit-perfect audio fidelity.
