@@ -106,13 +106,13 @@ export function executableAvailable(name) {
   const result = spawnSync(executable, ["-version"], { stdio: "ignore", timeout: 3000, windowsHide: true });
   return !result.error && result.status === 0;
 }
-export function run(bin, args, timeoutMs = 30 * 60 * 1000, jobId = null, activeProcesses = null, shouldCancel = null) {
+export function run(bin, args, timeoutMs = 30 * 60 * 1000, jobId = null, activeProcesses = null, shouldCancel = null, maxCaptureBytes = 16000) {
   return new Promise((resolve, reject) => {
     const executable=bin==="ffmpeg"?(process.env.FFMPEG_PATH||bin):bin==="ffprobe"?(process.env.FFPROBE_PATH||bin):bin;
     const child = spawn(executable, args, { stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
     if(jobId&&activeProcesses)activeProcesses.set(jobId,child);
     let stdout = "", stderr = "", timer, cancellationTimer;
-    const append = (current, chunk) => (current + chunk.toString()).slice(-16000);
+    const append = (current, chunk) => (current + chunk.toString()).slice(-maxCaptureBytes);
     child.stdout.on("data", chunk => { stdout = append(stdout, chunk); });
     child.stderr.on("data", chunk => { stderr = append(stderr, chunk); });
     timer = setTimeout(() => { child.kill("SIGKILL"); reject(Object.assign(new Error("Media operation timed out."), { code:"MEDIA_TIMEOUT" })); }, timeoutMs);
@@ -379,11 +379,11 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
     const streams=Array.isArray(metadata.streams)?metadata.streams:[];
     const signalAnalysis={method:"ffmpeg-blackdetect-silencedetect",blackFrames:[],silence:[],performed:[],limitations:["Black-frame and silence detection are heuristic signal checks. They cannot determine whether an intentional pause, fade, or black transition is creatively correct.","Audio clipping, loudness compliance, lip-sync and perceptual quality are not assessed."]};
     if(streams.some(stream=>stream.codec_type==="video")){
-      const analysis=await run("ffmpeg",["-hide_banner","-i",sourcePath,"-map","0:v:0","-vf","blackdetect=d=0.1:pix_th=0.10","-an","-f","null","-"],10*60*1000,job.id,activeProcesses,cancelled);
+      const analysis=await run("ffmpeg",["-hide_banner","-i",sourcePath,"-map","0:v:0","-vf","blackdetect=d=0.1:pix_th=0.10","-an","-f","null","-"],10*60*1000,job.id,activeProcesses,cancelled,2_000_000);
       signalAnalysis.blackFrames=parseBlackFrameEvents(analysis.stderr);signalAnalysis.performed.push("black-frame");
     }
     if(streams.some(stream=>stream.codec_type==="audio")){
-      const analysis=await run("ffmpeg",["-hide_banner","-i",sourcePath,"-map","0:a:0","-af","silencedetect=n=-50dB:d=0.5","-vn","-f","null","-"],10*60*1000,job.id,activeProcesses,cancelled);
+      const analysis=await run("ffmpeg",["-hide_banner","-i",sourcePath,"-map","0:a:0","-af","silencedetect=n=-50dB:d=0.5","-vn","-f","null","-"],10*60*1000,job.id,activeProcesses,cancelled,2_000_000);
       signalAnalysis.silence=parseSilenceEvents(analysis.stderr,Number(metadata.format?.duration)||0);signalAnalysis.performed.push("silence");
     }
     metadata.signalAnalysis=signalAnalysis;
