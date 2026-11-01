@@ -1,4 +1,4 @@
-import { buildMediaSignalFindings } from "./media-signal-analysis.mjs";
+import { buildMediaSignalFindings, buildAudioMetricFindings } from "./media-signal-analysis.mjs";
 export function buildMediaQualityReport(metadata={},options={}) {
   const streams=Array.isArray(metadata.streams)?metadata.streams:[];
   const video=streams.filter(stream=>stream.codec_type==="video");
@@ -20,7 +20,7 @@ export function buildMediaQualityReport(metadata={},options={}) {
   if(!video.length&&!audio.length)findings.push({code:"UNSUPPORTED_STREAM_LAYOUT",severity:"error",message:"No supported audio or video stream was found."});
   const signal=metadata.signalAnalysis||{};
   const signalFindings=buildMediaSignalFindings({blackFrames:signal.blackFrames||[],silence:signal.silence||[],durationSeconds:Number.isFinite(duration)?duration:0});
-  findings.push(...signalFindings);
+  findings.push(...signalFindings,...buildAudioMetricFindings(signal.audioMetrics||{}));
   const errors=findings.filter(item=>item.severity==="error").length;
   const warnings=findings.filter(item=>item.severity==="warning").length;
   return {
@@ -28,8 +28,8 @@ export function buildMediaQualityReport(metadata={},options={}) {
     streams:{total:streams.length,video:video.length,audio:audio.length},
     video:video.map(stream=>({codec:stream.codec_name||null,width:Number(stream.width)||null,height:Number(stream.height)||null,frameRate:stream.avg_frame_rate||stream.r_frame_rate||null})),
     audio:audio.map(stream=>({codec:stream.codec_name||null,sampleRate:Number(stream.sample_rate)||null,channels:Number(stream.channels)||null})),
-    signalAnalysis:{method:signal.method||"not-run",performed:signal.performed||[],blackFrameEvents:signal.blackFrames||[],silenceEvents:signal.silence||[]},
+    signalAnalysis:{method:signal.method||"not-run",performed:signal.performed||[],blackFrameEvents:signal.blackFrames||[],silenceEvents:signal.silence||[],audioMetrics:signal.audioMetrics||null},
     status:errors?"needs-attention":warnings?"review":"passed",counts:{errors,warnings},findings,
-    limitations:[...(signal.limitations||[]),"Signal detection is heuristic; intentional black frames and silence may need human review.","Audio clipping, loudness compliance, synchronization, colour accuracy and perceptual quality are not assessed."]
+    limitations:[...(signal.limitations||[]),"Signal detection is heuristic; intentional black frames and silence may need human review.","Audio clipping and peak warnings use FFmpeg astats metrics; integrated loudness is reported when available but no universal delivery target is assumed.","True-peak compliance, synchronization, colour accuracy and perceptual quality are not assessed."]
   };
 }
