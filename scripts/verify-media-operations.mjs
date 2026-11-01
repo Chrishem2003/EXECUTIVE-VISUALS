@@ -50,5 +50,5 @@ try{
   const metadata=JSON.parse(execFileSync(ffprobe,["-v","error","-show_entries","stream=codec_type,width,height","-of","json",output],{encoding:"utf8",stdio:["ignore","pipe","pipe"]}));
   assert.ok(metadata.streams.some(stream=>stream.codec_type==="video"),kind+" output must contain a video stream");
  }
- console.log("Verified 6 video enhancement operations and audio cleanup through FFmpeg/FFprobe, plus invalid-input rejections.");
+ console.log("Verified video enhancement cases and audio cleanup through FFmpeg/FFprobe, plus invalid-input rejections.");
 }finally{await rm(root,{recursive:true,force:true})}
