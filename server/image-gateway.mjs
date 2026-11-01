@@ -1,9 +1,10 @@
 import { generateFalImage } from "./fal-image-gateway.mjs";
 const loopbacks=new Set(["localhost","127.0.0.1","::1","[::1]"]);
-export async function generateImage({prompt,size="1024x1024",quality="medium"}={}){
+export async function generateImage({prompt,size="1024x1024",quality="medium",referenceImageDataUrl=""}={}){
  const provider=String(process.env.IMAGE_GATEWAY_PROVIDER||"openai-compatible").trim().toLowerCase();
- if(provider==="fal")return generateFalImage({prompt,size,quality});
+ if(provider==="fal")return generateFalImage({prompt,size,quality,referenceImageDataUrl});
  if(provider!=="openai-compatible")throw Object.assign(new Error("The configured image provider is not supported."),{code:"IMAGE_GATEWAY_CONFIG_INVALID"});
+ if(referenceImageDataUrl)throw Object.assign(new Error("Reference-conditioned image generation requires a configured model-specific reference input field."),{code:"IMAGE_GATEWAY_UNSUPPORTED_INPUT"});
  if(process.env.IMAGE_GATEWAY_ENABLED!=="true")throw Object.assign(new Error("Image generation is disabled by server configuration."),{code:"IMAGE_GATEWAY_DISABLED"});
  const rawUrl=String(process.env.IMAGE_GATEWAY_URL||"").trim(),model=String(process.env.IMAGE_GATEWAY_MODEL||"").trim();
  if(!rawUrl||!model)throw Object.assign(new Error("Configure the server-side image gateway URL and model before running this node."),{code:"IMAGE_GATEWAY_CONFIG_INVALID"});
