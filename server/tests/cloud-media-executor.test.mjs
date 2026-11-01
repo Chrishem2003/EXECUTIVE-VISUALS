@@ -126,3 +126,69 @@ test("cloud media executor rejects source IDs missing from the leased job input"
     error => error.code === "SOURCE_ASSET_NOT_FOUND"
   );
 });
+
+test("cloud upscale verifies requested dimensions before publishing and records its classical method", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "ev-cloud-upscale-test-"));
+  const previousFfmpeg = process.env.FFMPEG_PATH;
+  const previousFfprobe = process.env.FFPROBE_PATH;
+  const source = join(directory, "source.mp4");
+  await writeFile(source, "source-media");
+  const ffmpeg = await executable(directory, "ffmpeg", 'for last do :; done\nprintf "upscaled-media" > "$last"');
+  const ffprobe = await executable(directory, "ffprobe", "printf '%s' '{\\"streams\\":[{\\"codec_type\\":\\"video\\",\\"width\\":640,\\"height\\":360}]}'");
+  process.env.FFMPEG_PATH = ffmpeg;
+  process.env.FFPROBE_PATH = ffprobe;
+  let published;
+  try {
+    const execute = createCloudMediaExecutor({
+      tempRoot: directory,
+      mediaIO: {
+        async materialize() {
+          return { path: source, asset: { id: "asset-up", name: "scene.mp4", mediaType: "video/mp4", sha256: "c".repeat(64) }, async cleanup() {} };
+        },
+        async publish(args) { published = args; return { id: "asset-upscaled", name: args.filename }; }
+      }
+    });
+    const result = await execute({
+      job: { id: "job-up", owner_id: "owner-up", job_type: "media.upscale", input: { sourceAssetId: "asset-up", width: 640, height: 360, algorithm: "spline36", sharpness: 0.5 } },
+      onProgress() {}
+    });
+    assert.equal(result.processing.method, "classical-resampling");
+    assert.equal(result.processing.algorithm, "spline36");
+    assert.equal(result.processing.targetWidth, 640);
+    assert.equal(result.processing.outputVideo.height, 360);
+    assert.equal(published.metadata.processing.sharpness, 0.5);
+  } finally {
+    if (previousFfmpeg === undefined) delete process.env.FFMPEG_PATH; else process.env.FFMPEG_PATH = previousFfmpeg;
+    if (previousFfprobe === undefined) delete process.env.FFPROBE_PATH; else process.env.FFPROBE_PATH = previousFfprobe;
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("cloud upscale refuses to publish when FFprobe dimensions differ from the request", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "ev-cloud-upscale-reject-test-"));
+  const previousFfmpeg = process.env.FFMPEG_PATH;
+  const previousFfprobe = process.env.FFPROBE_PATH;
+  const source = join(directory, "source.mp4");
+  await writeFile(source, "source-media");
+  process.env.FFMPEG_PATH = await executable(directory, "ffmpeg", 'for last do :; done\nprintf "bad-size" > "$last"');
+  process.env.FFPROBE_PATH = await executable(directory, "ffprobe", "printf '%s' '{\\"streams\\":[{\\"codec_type\\":\\"video\\",\\"width\\":320,\\"height\\":180}]}'");
+  let publishCount = 0;
+  try {
+    const execute = createCloudMediaExecutor({
+      tempRoot: directory,
+      mediaIO: {
+        async materialize() { return { path: source, asset: { id: "asset-reject", name: "scene.mp4", mediaType: "video/mp4", sha256: "d".repeat(64) }, async cleanup() {} }; },
+        async publish() { publishCount++; }
+      }
+    });
+    await assert.rejects(
+      execute({ job: { id: "job-reject", owner_id: "owner", job_type: "media.upscale", input: { sourceAssetId: "asset-reject", width: 640, height: 360 } }, onProgress() {} }),
+      error => error.code === "MEDIA_OUTPUT_VALIDATION_FAILED"
+    );
+    assert.equal(publishCount, 0, "invalid derivative must never be published");
+  } finally {
+    if (previousFfmpeg === undefined) delete process.env.FFMPEG_PATH; else process.env.FFMPEG_PATH = previousFfmpeg;
+    if (previousFfprobe === undefined) delete process.env.FFPROBE_PATH; else process.env.FFPROBE_PATH = previousFfprobe;
+    await rm(directory, { recursive: true, force: true });
+  }
+});
