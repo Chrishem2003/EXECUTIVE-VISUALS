@@ -5,7 +5,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createCloudMediaExecutor } from "../cloud-media-executor.mjs";
 
-async function executable(directory,name,body){const path=join(directory,name);await writeFile(path,"#!/bin/sh\n"+body+"\n","utf8");await chmod(path,0o755);return path;}
+async function executable(directory,name,body){
+  const path=join(directory,name);
+  await writeFile(path,"#!/bin/sh\nif [ \"$1\" = \"-version\" ]; then exit 0; fi\n"+body+"\n","utf8");
+  await chmod(path,0o755);
+  return path;
+}
 
 test("cloud media executor blocks publication when a derivative lacks its expected stream", async () => {
   const directory = await mkdtemp(join(tmpdir(), "ev-cloud-output-validation-test-"));
@@ -13,8 +18,8 @@ test("cloud media executor blocks publication when a derivative lacks its expect
   const previousFfprobe = process.env.FFPROBE_PATH;
   const source = join(directory, "source.mp4");
   await writeFile(source, "source");
-  process.env.FFMPEG_PATH = await executable(directory, "ffmpeg", 'for last do :; done\\nprintf "output" > "$last"');
-  process.env.FFPROBE_PATH = await executable(directory, "ffprobe", "printf \"%s\" '{\\\"streams\\\":[{\\\"codec_type\\\":\\\"audio\\\"}],\\\"format\\\":{\\\"duration\\\":\\\"1.0\\\"}}'");
+  process.env.FFMPEG_PATH = await executable(directory, "ffmpeg", 'for last do :; done\nprintf "output" > "$last"');
+  process.env.FFPROBE_PATH = await executable(directory, "ffprobe", "printf '{}'");
   let publishCount = 0;
   try {
     const execute = createCloudMediaExecutor({
