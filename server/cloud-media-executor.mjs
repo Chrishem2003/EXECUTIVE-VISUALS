@@ -162,8 +162,15 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
         try { outputProbe = JSON.parse(probe.stdout || "{}"); }
         catch { throw Object.assign(new Error("FFprobe returned invalid upscaling metadata."), { code: "MEDIA_PROBE_INVALID" }); }
         const video = (outputProbe.streams || []).find(stream => stream.codec_type === "video");
-        const expectedWidth = Math.round(Number(input.width ?? 2560) / 2) * 2;
-        const expectedHeight = Math.round(Number(input.height ?? 1440) / 2) * 2;
+        // Match buildMediaOperationArgs exactly: validate bounds, then round to an even pixel count.
+        const requestedWidth = Number(input.width ?? 2560);
+        const requestedHeight = Number(input.height ?? 1440);
+        if (!Number.isFinite(requestedWidth) || requestedWidth < 256 || requestedWidth > 4320 ||
+            !Number.isFinite(requestedHeight) || requestedHeight < 144 || requestedHeight > 4320) {
+          throw Object.assign(new Error("Upscale dimensions are outside the supported range."), { code: "INVALID_MEDIA_OPTIONS" });
+        }
+        const expectedWidth = Math.round(Math.round(requestedWidth) / 2) * 2;
+        const expectedHeight = Math.round(Math.round(requestedHeight) / 2) * 2;
         if (!video || Number(video.width) !== expectedWidth || Number(video.height) !== expectedHeight) {
           throw Object.assign(new Error("Upscale output dimensions do not match the requested dimensions; derivative was not published."), { code: "MEDIA_OUTPUT_VALIDATION_FAILED" });
         }
@@ -174,8 +181,8 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
         method: "classical-resampling",
         algorithm: ["lanczos", "bicubic", "spline36"].includes(input.algorithm) ? input.algorithm : "lanczos",
         sharpness: Number(input.sharpness ?? 0),
-        targetWidth: Number(input.width ?? 2560),
-        targetHeight: Number(input.height ?? 1440),
+        targetWidth: expectedWidth,
+        targetHeight: expectedHeight,
         outputVideo: outputProbe?.streams?.find(stream => stream.codec_type === "video") || null
       } : null;
       const asset = await mediaIO.publish({
