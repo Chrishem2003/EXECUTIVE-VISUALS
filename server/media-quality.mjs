@@ -1,3 +1,4 @@
+import { buildMediaSignalFindings } from "./media-signal-analysis.mjs";
 export function buildMediaQualityReport(metadata={},options={}) {
   const streams=Array.isArray(metadata.streams)?metadata.streams:[];
   const video=streams.filter(stream=>stream.codec_type==="video");
@@ -17,14 +18,18 @@ export function buildMediaQualityReport(metadata={},options={}) {
     if(!Number.isFinite(rate)||rate<=0)findings.push({code:"INVALID_FRAME_RATE",severity:"warning",stream:index,message:"Video frame rate is missing or invalid."});
   }
   if(!video.length&&!audio.length)findings.push({code:"UNSUPPORTED_STREAM_LAYOUT",severity:"error",message:"No supported audio or video stream was found."});
+  const signal=metadata.signalAnalysis||{};
+  const signalFindings=buildMediaSignalFindings({blackFrames:signal.blackFrames||[],silence:signal.silence||[],durationSeconds:Number.isFinite(duration)?duration:0});
+  findings.push(...signalFindings);
   const errors=findings.filter(item=>item.severity==="error").length;
   const warnings=findings.filter(item=>item.severity==="warning").length;
   return {
-    schemaVersion:1,method:"ffprobe-structural-analysis",durationSeconds:Number.isFinite(duration)&&duration>0?duration:null,
+    schemaVersion:2,method:"ffprobe-and-ffmpeg-signal-analysis",durationSeconds:Number.isFinite(duration)&&duration>0?duration:null,
     streams:{total:streams.length,video:video.length,audio:audio.length},
     video:video.map(stream=>({codec:stream.codec_name||null,width:Number(stream.width)||null,height:Number(stream.height)||null,frameRate:stream.avg_frame_rate||stream.r_frame_rate||null})),
     audio:audio.map(stream=>({codec:stream.codec_name||null,sampleRate:Number(stream.sample_rate)||null,channels:Number(stream.channels)||null})),
+    signalAnalysis:{method:signal.method||"not-run",performed:signal.performed||[],blackFrameEvents:signal.blackFrames||[],silenceEvents:signal.silence||[]},
     status:errors?"needs-attention":warnings?"review":"passed",counts:{errors,warnings},findings,
-    limitations:["Structural metadata checks only; this report does not assess visual quality, black frames, silence, clipping, synchronization or perceptual quality."]
+    limitations:[...(signal.limitations||[]),"Signal detection is heuristic; intentional black frames and silence may need human review.","Audio clipping, loudness compliance, synchronization, colour accuracy and perceptual quality are not assessed."]
   };
 }
