@@ -12,7 +12,7 @@ const dataDir=await mkdtemp(join(tmpdir(),"ev-api-test-"));
 const webDir=join(dataDir,"web");await mkdir(webDir,{recursive:true});await writeFile(join(webDir,"index.html"),"<!doctype html><html><body>test</body></html>");
 const child=spawn(process.execPath,["server/index.mjs"],{
   cwd:process.cwd(),
-  env:{...process.env,NODE_ENV:"development",AUTH_MODE:"local",AUTH_RATE_LIMIT:"1000",API_HOST:"127.0.0.1",API_PORT:String(port),DATA_DIR:dataDir,MEDIA_ROOT:join(dataDir,"media"),WEB_ROOT:webDir,DISABLE_WORKER:"true"},
+  env:{...process.env,NODE_ENV:"development",AUTH_MODE:"local",AUTH_RATE_LIMIT:"1000",REMOTE_AI_DAILY_REQUEST_LIMIT:"7",API_HOST:"127.0.0.1",API_PORT:String(port),DATA_DIR:dataDir,MEDIA_ROOT:join(dataDir,"media"),WEB_ROOT:webDir,DISABLE_WORKER:"true"},
   stdio:["ignore","pipe","pipe"]
 });
 let stdout="",stderr="";
@@ -64,6 +64,19 @@ test("provider catalog is authenticated, safe and read-only",async()=>{
   assert.equal(catalog.policy.pricesEstimated,false);
   assert.equal(JSON.stringify(catalog).includes("API_KEY"),false);
   assert.equal(JSON.stringify(catalog).includes("Bearer "),false);
+});
+
+test("usage API reports account request allowance without exposing secrets",async()=>{
+  assert.equal((await fetch(base+"/api/usage")).status,401);
+  const cookie=await register("usage-owner@example.test");
+  const response=await request("/api/usage",{},cookie);
+  assert.equal(response.status,200);
+  const body=await response.json();
+  assert.deepEqual(body.remoteUsage,{
+    window:"rolling_24_hours",configurationValid:true,limit:7,used:0,remaining:7,projectUsed:null,remoteDisabled:false
+  });
+  assert.equal(body.costs,"not_estimated");
+  assert.equal(JSON.stringify(body).includes("REMOTE_AI_DAILY_REQUEST_LIMIT"),false);
 });
 
 test("static application shell applies a restrictive content security policy",async()=>{
