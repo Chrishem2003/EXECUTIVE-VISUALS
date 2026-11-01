@@ -3,8 +3,10 @@ import assert from "node:assert/strict";
 import { buildFalVideoPayload } from "../fal-video-gateway.mjs";
 import { validateWorkflowGraph } from "../workflow-validation.mjs";
 
-test("video payload clamps duration and accepts only supported aspect ratios",()=>{
- const payload=buildFalVideoPayload({prompt:"  A quiet cinematic river  ",duration:90,aspectRatio:"4:3"});
+test("video payload rejects duration or aspect ratio that the selected model cannot honor",()=>{
+ assert.throws(()=>buildFalVideoPayload({prompt:"A quiet cinematic river",duration:90,aspectRatio:"16:9"}),error=>error.code==="VIDEO_GATEWAY_INVALID_INPUT");
+ assert.throws(()=>buildFalVideoPayload({prompt:"A quiet cinematic river",duration:5,aspectRatio:"4:3"}),error=>error.code==="VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
+ const payload=buildFalVideoPayload({prompt:"  A quiet cinematic river  ",duration:30,aspectRatio:"16:9"});
  assert.equal(payload.prompt,"A quiet cinematic river");
  assert.equal(payload.duration,30);
  assert.equal(payload.aspect_ratio,"16:9");
