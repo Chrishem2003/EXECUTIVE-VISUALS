@@ -292,3 +292,11 @@ This is a runnable worker entry point, not a deployed worker. Do not set the ena
 - The visual editor's Reference Asset node emits typed `asset` and `media` ports, while image generation consumes a typed `image` reference port. The frontend and backend validators now explicitly allow those asset/media outputs to connect to that image-reference input.
 - Added workflow-engine validation coverage for this exact graph connection, preventing the editor from presenting a reference-image feature that its graph validator would reject.
 - This is a local workflow validation change; it does not enable remote providers or perform paid generation.
+
+## Remote AI usage guardrail — 1 November 2026
+
+- Remote text, image, video, speech-synthesis and transcription workflow nodes reserve an account-level request slot **before** dispatching to the provider. Local providers do not consume this remote allowance.
+- The default limit is 50 remote requests per account in a rolling 24-hour window. Configure `REMOTE_AI_DAILY_REQUEST_LIMIT` from 0 to 10,000; setting it to 0 blocks remote AI execution. Invalid values fail closed for remote requests.
+- Reservations are recorded atomically in the local SQLite database so overlapping jobs cannot both consume the final slot. Failed provider calls remain counted for the window, a conservative choice that prevents retries from bypassing the guardrail.
+- The limit is a request-count safety cap, not a money estimate: providers may price requests differently, and the existing usage ledger still does not estimate provider costs. Review provider pricing before enabling remote endpoints.
+- Added unit tests for the cap, local-provider exemption, disabled remote execution and invalid configuration. This does not enable remote calls, make live provider requests, activate cloud services, apply migrations or change production.
