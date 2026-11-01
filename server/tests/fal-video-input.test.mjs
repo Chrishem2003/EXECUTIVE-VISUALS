@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { buildFalVideoPayload } from "../fal-video-gateway.mjs";
+import { validateWorkflowGraph } from "../workflow-validation.mjs";
 
 test("video payload clamps duration and accepts only supported aspect ratios",()=>{
  const payload=buildFalVideoPayload({prompt:"  A quiet cinematic river  ",duration:90,aspectRatio:"4:3"});
@@ -31,4 +32,20 @@ test("reference input field is restricted to documented adapter choices",()=>{
   const payload=buildFalVideoPayload({prompt:"A scene",referenceImageDataUrl:"data:image/webp;base64,UklGRg==",imageInputField:field});
   assert.equal(payload[field],"data:image/webp;base64,UklGRg==");
  }
+});
+
+test("workflow validation allows an uploaded media asset to connect to the video start-frame input",()=>{
+ const graph={
+  nodes:[
+   {id:"reference",kind:"reference",label:"Reference asset",inputs:[],outputs:[{id:"media",type:"media"}],config:{}},
+   {id:"video",kind:"video.generate",label:"Video generation",inputs:[
+    {id:"prompt",type:"text",required:true},
+    {id:"start-frame",type:"start-frame"},
+    {id:"reference",type:"video",multiple:true}
+   ],outputs:[{id:"video",type:"video"}],config:{prompt:"Animate the approved reference frame"}}
+  ],
+  edges:[{id:"reference-to-start-frame",sourceNodeId:"reference",sourcePortId:"media",targetNodeId:"video",targetPortId:"start-frame"}]
+ };
+ const result=validateWorkflowGraph(graph);
+ assert.equal(result.valid,true,JSON.stringify(result.issues));
 });
