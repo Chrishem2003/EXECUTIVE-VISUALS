@@ -8,8 +8,9 @@ import { createHash } from "node:crypto";
 import { stat } from "node:fs/promises";
 import { Transform } from "node:stream";
 import { addJobEvent, getAccessibleAsset, json, parseJson } from "./db.mjs";
+import { createRealEsrganAdapter } from "./ai-upscale-engine.mjs";
 
-const ALLOWED_JOBS = new Set(["media.probe", "media.thumbnail", "media.transcode", "media.audio_extract", "media.proxy", "media.denoise", "media.color", "media.resize", "media.interpolate", "media.upscale", "media.audio-clean", "timeline.render"]);
+const ALLOWED_JOBS = new Set(["media.probe", "media.thumbnail", "media.transcode", "media.audio_extract", "media.proxy", "media.denoise", "media.color", "media.resize", "media.interpolate", "media.upscale", "media.audio-clean", "media.ai-upscale", "timeline.render"]);
 const CONTAINERS = new Set(["mp4", "webm", "mov", "mkv", "mp3", "wav"]);
 const VIDEO_CODECS = new Set(["libx264", "libx265", "libvpx-vp9", "copy"]);
 const AUDIO_CODECS = new Set(["aac", "libmp3lame", "libopus", "copy"]);
@@ -289,6 +290,33 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
   const cancelled = () => db.prepare("SELECT status FROM jobs WHERE id=?").get(job.id)?.status === "cancelled";
   const emit = (type, data) => addJobEvent(db, job.id, job.owner_id, type, data);
   emit("media.started", { operation:job.job_type, sourceAssetId:source.id });
+  if (job.job_type === "media.ai-upscale") {
+    if (!source.media_type.startsWith("image/")) throw Object.assign(new Error("AI super-resolution currently accepts still images only."), { code:"UNSUPPORTED_MEDIA_TYPE" });
+    const format = String(input.format || "png");
+    if (!["png","jpg","webp"].includes(format)) throw Object.assign(new Error("Unsupported AI upscale output format."), { code:"INVALID_MEDIA_OPTIONS" });
+    const outputPath = join(outputDir,id+"."+format);
+    const controller = new AbortController();
+    const poll = setInterval(() => { if (cancelled()) controller.abort(); }, 500);
+    poll.unref?.();
+    try {
+      const adapter = createRealEsrganAdapter({ timeoutMs:30*60*1000, maxOutputBytes:250*1024*1024 });
+      const result = await adapter.execute({
+        inputPath:sourcePath, outputPath, model:input.model||"realesrgan-x4plus",
+        scale:input.scale??4, tile:input.tile??0, format, signal:controller.signal
+      });
+      if (controller.signal.aborted || cancelled()) throw Object.assign(new Error("Job cancelled."), { code:"JOB_CANCELLED" });
+      const fileStat = await stat(outputPath);
+      const hash = createHash("sha256");
+      await pipeline(createReadStream(outputPath),new Transform({transform(chunk,enc,cb){hash.update(chunk);cb(null,chunk);}}),new Transform({transform(chunk,enc,cb){cb();}}));
+      const mime = format==="jpg"?"image/jpeg":"image/"+format;
+      const baseName = source.original_name.split(".").slice(0,-1).join(".") || source.original_name;
+      const processing = {engine:result.engine,method:result.method,model:result.model,scale:result.scale,tile:result.tile};
+      const outputAsset = addAsset(db,job,"derived/"+id+"."+format,baseName+"-ai-upscaled."+format,mime,fileStat.size,hash.digest("hex"),source.id,{operation:job.job_type,processing});
+      emit("media.output_created",{assetId:outputAsset.id,sha256:outputAsset.sha256});
+      onProgress(100);
+      return {outputAsset,processing};
+    } finally { clearInterval(poll); }
+  }
 
   if (job.job_type === "media.probe") {
     const result = await run("ffprobe", ["-v","error","-show_format","-show_streams","-of","json",sourcePath],30*60*1000,job.id,activeProcesses,cancelled);
