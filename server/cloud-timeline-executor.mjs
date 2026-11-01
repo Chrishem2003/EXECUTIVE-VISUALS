@@ -41,6 +41,7 @@ export function createCloudTimelineExecutor({timelines,mediaIO,renderTimeline,te
     if(!timelineId)throw Object.assign(new Error("Timeline render requires a timeline ID."),{code:"CLOUD_TIMELINE_NOT_FOUND"});
     const record=await timelines.get({ownerId:job.owner_id,timelineId});
     if(!record)throw Object.assign(new Error("Timeline not found."),{code:"CLOUD_TIMELINE_NOT_FOUND"});
+    if(!Number.isInteger(Number(input.timelineRevision))||Number(input.timelineRevision)<1||Number(input.timelineRevision)!==record.revision)throw Object.assign(new Error("Saved timeline revision changed after this render was queued. Submit a new render from the latest revision."),{code:"CLOUD_TIMELINE_REVISION_CHANGED"});
     if((job.project_id||null)!==(record.projectId||null))throw Object.assign(new Error("Timeline does not belong to the claimed job project."),{code:"CLOUD_TIMELINE_PROJECT_MISMATCH"});
     const assetIds=referencedAssets(record.timeline);
     if(!assetIds.length)throw Object.assign(new Error("Timeline has no enabled source assets."),{code:"CLOUD_TIMELINE_EMPTY"});
