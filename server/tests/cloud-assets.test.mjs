@@ -110,3 +110,17 @@ test("project collaborators can read and delete shared assets when the role call
  const deleted=await f.repo.softDelete({ownerId:collaboratorId,assetId});
  assert.equal(deleted.deleted,true);
 });
+
+test("lists only active assets within the authorized project and bounded page",async()=>{
+ let authorized=null;const f=fixture({authorize:async value=>{authorized=value;return true;}});
+ const result=await f.repo.list({ownerId,projectId,limit:500,offset:10});
+ assert.equal(result.length,1);assert.equal(result[0].id,assetId);
+ assert.equal(authorized.action,"read");assert.equal(authorized.projectId,projectId);
+ assert.ok(f.calls[0].url.includes("project_id=eq."+projectId));
+ assert.ok(f.calls[0].url.includes("limit=100"));assert.ok(f.calls[0].url.includes("offset=10"));
+});
+test("does not list project assets without read authorization",async()=>{
+ const f=fixture({authorize:async()=>false});
+ await assert.rejects(()=>f.repo.list({ownerId,projectId}),e=>e.code==="CLOUD_ASSET_ACCESS_DENIED");
+ assert.equal(f.calls.length,0);
+});
