@@ -42,3 +42,25 @@ while [ "$1" != "" ]; do if [ "$1" = "-o" ]; then shift; printf '\211PNG\r\n\032
     await assert.rejects(adapter.execute({ inputPath: input, outputPath: output, model }), error => error.code === "AI_UPSCALE_OUTPUT_EXISTS");
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
+
+
+test("AI upscaler remains unverified until a real inference self-test succeeds", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "ev-ai-selftest-"));
+  const binary = join(directory, "engine");
+  const model = "realesrgan-x4plus";
+  const input = join(directory, "fixture.png");
+  await writeFile(input, Buffer.from([137,80,78,71,13,10,26,10]));
+  await writeFile(binary, String.raw`#!/bin/sh
+while [ "$1" != "" ]; do if [ "$1" = "-o" ]; then shift; printf '\\211PNG\\r\\n\\032\\n\\000\\000\\000\\015IHDR\\000\\000\\000\\001\\000\\000\\000\\001' > "$1"; fi; shift; done
+`);
+  await chmod(binary, 0o755);
+  await writeFile(join(directory, model + ".param"), "model");
+  await writeFile(join(directory, model + ".bin"), "weights");
+  try {
+    const adapter = createRealEsrganAdapter({ binaryPath: binary, modelDirectory: directory, timeoutMs: 5000, enabled: true });
+    assert.equal((await adapter.probe(model)).inferenceVerified, false);
+    const result = await adapter.selfTest({ inputPath: input, model, scale: 2 });
+    assert.equal(result.passed, true);
+    assert.equal((await adapter.probe(model)).inferenceVerified, true);
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
