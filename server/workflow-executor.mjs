@@ -16,6 +16,7 @@ import { reserveRemoteRequest } from "./usage-guardrails.mjs";
 import { resolve, relative, sep } from "node:path";
 import { buildShotContinuityPrompt, getShotContinuityReferenceIds } from "./shot-continuity.mjs";
 import { normalizeVideoGenerationRequest, assertVideoCapabilities, createVideoRequestProvenance } from "./video-generation-contract.mjs";
+import { buildMediaQualityReport } from "./media-quality.mjs";
 
 const now=()=>new Date().toISOString();
 function requireExecutionProvider(capability,remoteOptInVariable){
@@ -355,7 +356,7 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
       if(mediaType==="media.audio_extract"||mediaType==="media.audio-clean")output.audio=assetId;
       if(mediaType==="media.transcode"||mediaType==="timeline.render")output.video=assetId;
     }else if(result.metadata){
-      output=nodeOutput(node,result.metadata);output.report=result.metadata;
+      output=nodeOutput(node,result.metadata);output.report=node.kind==="quality-check"?buildMediaQualityReport(result.metadata,{requireVideo:config.requireVideo!==false,requireAudio:config.requireAudio===true}):result.metadata;
     }else output=nodeOutput(node,result);
    }
    outputs.set(nodeId,output);
