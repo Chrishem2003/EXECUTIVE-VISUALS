@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import {buildSeriesProductionPlan,validateSeriesProductionPlan,buildEpisodeTimelineDocument,upsertStoryBibleEntry,setEpisodeDirectionOverrides,resolveEpisodeDirection,MAX_EPISODE_SECONDS,MAX_GENERATED_CLIP_SECONDS} from "../../src/core/series-production.ts";
+import {buildSeriesProductionPlan,validateSeriesProductionPlan,buildEpisodeTimelineDocument,upsertStoryBibleEntry,setEpisodeDirectionOverrides,resolveEpisodeDirection,buildEpisodeShotPackage,MAX_EPISODE_SECONDS,MAX_GENERATED_CLIP_SECONDS} from "../../src/core/series-production.ts";
 const input={title:"Future Makers",premise:"A series exploring practical ideas shaping tomorrow.",format:"education",genre:"Science",seasonCount:2,episodesPerSeason:6,episodeRuntimeSeconds:300,shotLengthSeconds:8,aspectRatio:"16:9",frameRate:30,resolution:"2160p",visualStyle:"Cinematic realism",language:"English",voiceMode:"Natural narration",captions:"Both",music:"Adaptive cinematic score",cameraLanguage:"Mixed cinematic coverage",shotComposition:"Mixed shot scale",pacing:"Cinematic dramatic",colorGrade:"Natural / true-to-life",continuityNotes:"Keep presenter wardrobe consistent."};
 const plan=buildSeriesProductionPlan(input);assert.equal(plan.seasons.length,2);assert.equal(plan.seasons[0].episodes.length,6);
 for(const season of plan.seasons)for(const ep of season.episodes){assert.equal(ep.runtimeSeconds,MAX_EPISODE_SECONDS);assert.equal(ep.scenes.reduce((n,s)=>n+s.shots.reduce((x,k)=>x+k.durationSeconds,0),0),300);for(const scene of ep.scenes)for(const shot of scene.shots)assert.ok(shot.durationSeconds<=MAX_GENERATED_CLIP_SECONDS);}
@@ -42,3 +42,14 @@ assert.equal(resetEpisode.runtimeSeconds,plan.defaults.episodeRuntimeSeconds);
 assert.equal(resetEpisode.scenes.reduce((n,scene)=>n+scene.durationSeconds,0),plan.defaults.episodeRuntimeSeconds);
 assert.equal(resolveEpisodeDirection(resetPlan,resetEpisode).aspectRatio,plan.defaults.aspectRatio);
 console.log("Episode override reset verification passed: series defaults restored and scene durations rebalanced.");
+
+const shotPack=buildEpisodeShotPackage(overridden,updated);
+assert.equal(shotPack.runtimeSeconds,240);assert.equal(shotPack.totalShotSeconds,240);assert.equal(shotPack.shotCount,updated.scenes.reduce((n,scene)=>n+scene.shots.length,0));
+assert.equal(shotPack.shots[0].aspectRatio,"9:16");assert.equal(shotPack.shots[0].visualStyle,"Noir documentary");
+assert.ok(shotPack.shots.every(shot=>shot.prompt.includes("Future Makers")&&shot.prompt.includes("Noir documentary")));
+assert.ok(shotPack.shots.every(shot=>shot.negativePrompt.includes("character identity")));
+assert.ok(shotPack.shots.every(shot=>shot.continuityContext.some(rule=>rule.includes("Host One"))));
+assert.deepEqual(shotPack.shots[0].referenceAssetIds,[]);
+assert.equal(shotPack.schemaVersion,1);
+assert.throws(()=>buildEpisodeShotPackage(plan,{...episode,id:"foreign-episode"}),/does not belong/);
+console.log("Shot package verification passed: deterministic shot prompts, continuity bible, direction inheritance, exact runtime and safe provider-neutral handoff.");
