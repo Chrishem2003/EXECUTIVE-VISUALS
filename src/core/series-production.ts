@@ -107,6 +107,24 @@ export function setEpisodeDirectionOverrides(series:SeriesProductionPlan,episode
 }
 
 
+/** Bind story-world records to one scene or one specific shot. */
+export function setEpisodeStoryBibleBindings(series:SeriesProductionPlan,episodeId:string,sceneId:string,shotId:string|null,entryIds:string[]):SeriesProductionPlan{
+ const entries=series.storyBible?.entries||[],known=new Set(entries.map(entry=>entry.id));
+ const clean=[...new Set(entryIds)];
+ if(clean.length>50||clean.some(id=>typeof id!=="string"||!known.has(id)))throw new Error("Bindings must reference up to 50 existing story bible records.");
+ let episodeFound=false,sceneFound=false,shotFound=false;
+ const seasons=series.seasons.map(season=>({...season,episodes:season.episodes.map(episode=>{
+  if(episode.id!==episodeId)return episode;episodeFound=true;
+  return{...episode,scenes:episode.scenes.map(scene=>{
+   if(scene.id!==sceneId)return scene;sceneFound=true;
+   if(shotId===null)return{...scene,storyBibleEntryIds:clean};
+   return{...scene,shots:scene.shots.map(shot=>{if(shot.id!==shotId)return shot;shotFound=true;return{...shot,storyBibleEntryIds:clean};})};
+  })};
+ })}));
+ if(!episodeFound||!sceneFound||(shotId!==null&&!shotFound))throw new Error("The selected episode, scene or shot does not belong to this series.");
+ return{...series,seasons,updatedAt:new Date().toISOString()};
+}
+
 export type EpisodeShotPackageItem={shotId:string;sceneId:string;sceneTitle:string;sequence:number;durationSeconds:number;prompt:string;negativePrompt:string;aspectRatio:string;frameRate:number;resolution:string;visualStyle:string;cameraLanguage:string;shotComposition:string;pacing:string;colorGrade:string;language:string;voiceMode:string;captions:string;music:string;referenceAssetIds:string[];continuityContext:string[]};
 export type EpisodeShotPackage={schemaVersion:1;seriesId:string;seriesTitle:string;seasonNumber:number;episodeId:string;episodeNumber:number;episodeTitle:string;runtimeSeconds:number;settings:SeriesDefaults;storyBibleVersion:number;shotCount:number;totalShotSeconds:number;shots:EpisodeShotPackageItem[];createdAt:string};
 /** Compile an episode into a deterministic, engine-neutral handoff. No provider is invoked. */
