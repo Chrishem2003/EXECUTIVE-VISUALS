@@ -359,3 +359,68 @@ case "$last" in */source.mp4) printf '%s' '{"streams":[{"codec_type":"video"},{"
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+
+test("cloud AI upscale publishes a separate image derivative with engine provenance", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "ev-cloud-ai-upscale-test-"));
+  const previousBinary = process.env.REALESRGAN_NCNN_PATH;
+  const previousModels = process.env.REALESRGAN_MODEL_DIR;
+  const source = join(directory, "source.png");
+  const model = "realesrgan-x4plus";
+  const binary = await executable(directory, "realesrgan-ncnn-vulkan", 'while [ "$1" != "" ]; do if [ "$1" = "-o" ]; then shift; printf "PNGDATA!!" > "$1"; fi; shift; done');
+  await writeFile(source, Buffer.from([137,80,78,71,13,10,26,10]));
+  await writeFile(join(directory, model + ".param"), "model");
+  await writeFile(join(directory, model + ".bin"), "weights");
+  process.env.REALESRGAN_NCNN_PATH = binary;
+  process.env.REALESRGAN_MODEL_DIR = directory;
+  let published;
+  try {
+    const execute = createCloudMediaExecutor({
+      tempRoot: directory,
+      mediaIO: {
+        async materialize() {
+          return { path: source, asset: { id: "image-source", name: "portrait.png", mediaType: "image/png", sha256: "d".repeat(64) }, async cleanup() {} };
+        },
+        async publish(args) {
+          published = args;
+          return { id: "image-ai-output", name: args.filename, mediaType: args.mediaType };
+        }
+      }
+    });
+    const result = await execute({
+      job: { id: "job-ai-up", owner_id: "owner-ai", project_id: "project-ai", job_type: "media.ai-upscale",
+        input: { sourceAssetId: "image-source", model, scale: 4, tile: 128, format: "png" } },
+      onProgress() {}
+    });
+    assert.equal(result.processing.method, "ai-super-resolution");
+    assert.equal(result.processing.engine, "realesrgan-ncnn-vulkan");
+    assert.equal(result.processing.model, model);
+    assert.equal(result.processing.scale, 4);
+    assert.equal(published.derivativeOf, "image-source");
+    assert.equal(published.mediaType, "image/png");
+    assert.equal(published.metadata.processing.method, "ai-super-resolution");
+  } finally {
+    if (previousBinary === undefined) delete process.env.REALESRGAN_NCNN_PATH; else process.env.REALESRGAN_NCNN_PATH = previousBinary;
+    if (previousModels === undefined) delete process.env.REALESRGAN_MODEL_DIR; else process.env.REALESRGAN_MODEL_DIR = previousModels;
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("cloud AI upscale rejects video instead of treating frame-by-frame resampling as AI video enhancement", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "ev-cloud-ai-video-reject-"));
+  const source = join(directory, "source.mp4");
+  await writeFile(source, "video-source");
+  try {
+    const execute = createCloudMediaExecutor({
+      tempRoot: directory,
+      mediaIO: {
+        async materialize() { return { path: source, asset: { id: "video-source", name: "clip.mp4", mediaType: "video/mp4", sha256: "e".repeat(64) }, async cleanup() {} }; },
+        async publish() { throw new Error("Unsupported video must not publish."); }
+      }
+    });
+    await assert.rejects(execute({
+      job: { id: "job-ai-video", owner_id: "owner", job_type: "media.ai-upscale", input: { sourceAssetId: "video-source" } },
+      onProgress() {}
+    }), error => error.code === "UNSUPPORTED_MEDIA_TYPE");
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
