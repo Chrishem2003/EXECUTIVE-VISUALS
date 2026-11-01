@@ -27,7 +27,11 @@ services:
       - key: WEB_ROOT
         value: ./dist
       - key: AUTH_MODE
-        value: local
+        value: supabase
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_PUBLISHABLE_KEY
+        sync: false
       - key: REQUIRE_PERSISTENT_DATA_DIR
         value: "true"
       - key: MAX_UPLOAD_BYTES
