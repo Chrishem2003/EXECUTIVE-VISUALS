@@ -74,7 +74,7 @@ export function compileEnhancementRecipeToWorkflow(options={}) {
   for(const step of plan.steps) {
     const nodeId="recipe-step-"+(step.index+1);
     nodes.push({
-      id:nodeId,kind:step.operation,label:step.operation.replace(/^media\\./,"").replaceAll("-"," "),
+      id:nodeId,kind:step.operation,label:step.operation.replace(/^media\./,"").replaceAll("-"," "),
       inputs:[{id:"media",type:"media",required:true}],
       outputs:[{id:"media",type:"media"}],
       config:{...step.parameters}
