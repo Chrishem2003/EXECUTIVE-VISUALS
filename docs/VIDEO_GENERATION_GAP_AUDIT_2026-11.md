@@ -197,3 +197,8 @@ A negative-path cloud-worker test now supplies a correctly sized, duration-align
 ### FFmpeg scaler compatibility correction — 2026-11-01
 
 A full GitHub Actions build reached the media-operation integration verifier and exposed that the FFmpeg build on the CI runner does not accept `spline36` as a swscale flag. The public enhancement option remains `spline36`, but the command builder now maps it to FFmpeg's supported `spline` scaler flag. The integration verifier expectation was updated so the actual FFmpeg execution—not only argument construction—covers this compatibility path. This is a compatibility fix, not an AI super-resolution implementation.
+
+
+### Output codec and pixel-format negative coverage — 2026-11-01
+
+The cloud upscale test suite now explicitly rejects an output encoded with an unexpected video codec and an output using an incompatible pixel format. Both tests assert that the invalid derivative is not published. This complements the existing success, dimensions, audio-preservation and source-relative duration checks. The preceding CI baseline (run #1493) completed successfully after the FFmpeg scaler compatibility correction; these newest negative tests require their own CI result.
