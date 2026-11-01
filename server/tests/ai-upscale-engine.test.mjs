@@ -27,7 +27,9 @@ test("AI upscaler launches without a shell and publishes only a new bounded outp
   const input = join(directory, "source.png");
   const output = join(directory, "enhanced.png");
   await writeFile(input, Buffer.from([137,80,78,71,13,10,26,10]));
-  await writeFile(binary, String.raw`#!/bin/sh\nwhile [ "$1" != "" ]; do if [ "$1" = "-o" ]; then shift; printf '\\211PNG\\r\\n\\032\\n\\000\\000\\000\\015IHDR\\000\\000\\000\\001\\000\\000\\000\\001' > "$1"; fi; shift; done\n`);
+  await writeFile(binary, String.raw`#!/bin/sh
+while [ "$1" != "" ]; do if [ "$1" = "-o" ]; then shift; printf '\211PNG\r\n\032\n\000\000\000\015IHDR\000\000\000\001\000\000\000\001' > "$1"; fi; shift; done
+`);
   await chmod(binary, 0o755);
   await writeFile(join(directory, model + ".param"), "model");
   await writeFile(join(directory, model + ".bin"), "weights");
