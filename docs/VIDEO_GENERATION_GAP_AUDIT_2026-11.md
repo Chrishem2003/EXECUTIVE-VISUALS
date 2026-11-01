@@ -147,3 +147,8 @@ This is still classical interpolation/sharpening, not learned detail reconstruct
 ### Enhancement UI integration
 
 The asset library now exposes QHD Lanczos, QHD spline36 with controlled sharpening, and 4K Lanczos as explicit derivative-job presets. These are selectable from existing video asset actions and submit through the existing authenticated queue. The 4K preset remains bounded by the media operation's 4,320-pixel dimension limits and output validation. These presets perform classical scaling only; they do not claim AI-generated detail.
+
+
+### Output-quality verification hardening — 2026-11-01
+
+The FFmpeg/FFprobe enhancement verifier now checks more than file existence: each generated derivative must expose an H.264 video stream, the expected output dimensions (including the explicit 640×360 upscale fixture), a preserved audio stream, and a duration close to the one-second source. This strengthens the local acceptance gate for scaling, denoise, color, and frame interpolation. The change is committed, but execution still depends on a CI/worker environment with FFmpeg and FFprobe; it is not marked passed until that environment reports a successful run.
