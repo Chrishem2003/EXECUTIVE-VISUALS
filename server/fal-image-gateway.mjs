@@ -27,13 +27,13 @@ async function fetchJson(url, options, timeoutMs) {
     try { return JSON.parse(raw); } catch { throw Object.assign(new Error("Image provider returned invalid JSON."), { code: "IMAGE_GATEWAY_INVALID_RESPONSE" }); }
   } finally { clearTimeout(timer); }
 }
-export async function generateFalImage({ prompt, size = "1024x1024", quality = "medium" } = {}) {
+export async function generateFalImage({ prompt, size = "1024x1024", quality = "medium", referenceImageDataUrl = "" } = {}) {
   const referenceField = String(process.env.FAL_IMAGE_REFERENCE_FIELD || "").trim();
   const allowedReferenceFields = new Set(["image_url", "image_urls", "reference_image_url", "reference_image_urls"]);
   if (referenceField && !allowedReferenceFields.has(referenceField)) {
     throw Object.assign(new Error("FAL_IMAGE_REFERENCE_FIELD must be a documented reference-image field supported by the selected model."), { code: "IMAGE_GATEWAY_CONFIG_INVALID" });
   }
-  const reference = String(arguments[0]?.referenceImageDataUrl || "");
+  const reference = String(referenceImageDataUrl || "");
   if (reference && (!allowedReferenceFields.has(referenceField) || !/^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(reference) || reference.length > 14 * 1024 * 1024)) {
     throw Object.assign(new Error("Reference image input requires an explicitly configured supported model field and a valid image data URL under 10 MiB."), { code: "IMAGE_GATEWAY_UNSUPPORTED_INPUT" });
   }
