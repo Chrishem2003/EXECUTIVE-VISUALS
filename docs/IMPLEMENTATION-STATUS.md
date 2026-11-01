@@ -275,3 +275,13 @@ This is a runnable worker entry point, not a deployed worker. Do not set the ena
 - The inspector explains the model-specific configuration. Added payload validation, mock-provider submission tests, and workflow port-compatibility coverage.
 - GitHub Actions run 1393 passed dependency installation, TypeScript typecheck and the full build/verification suite on 1 November 2026. No live provider request or paid generation was made.
 - Remaining boundary: the provider model's actual input field must be configured correctly, and live model execution still requires a separate approved staging test. This change does not claim cloud-worker or production deployment readiness.
+
+
+## Latest continuation — reference-conditioned image workflow
+
+- The image-generation node now accepts one optional private image reference, so a source frame or visual guide can inform both image and video workflows in the same graph.
+- Before provider dispatch, the executor checks asset ownership, path confinement within the media root, the 10 MiB limit, recorded byte size, SHA-256 and JPEG/PNG/WebP file signatures.
+- The image adapter sends the reference only when `FAL_IMAGE_REFERENCE_FIELD` explicitly selects a supported field documented by the exact configured model. Missing or invalid configuration fails closed; unsupported providers do not silently ignore the reference.
+- The workflow canvas exposes the typed Reference input. Mock-provider tests verify configured field submission and failure when the field is absent or invalid.
+- No live provider request, paid generation, cloud activation or production database change was made for this feature.
+- The configured model's real reference-input contract still requires review and an approved staging smoke test before enabling remote generation.
