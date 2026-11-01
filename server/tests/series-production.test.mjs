@@ -104,3 +104,18 @@ assert.equal(directedPackage.shots[0].negativePrompt,"No jump cuts or identity d
 assert.throws(()=>updateEpisodeShotDirection(withBible,withBible.seasons[0].episodes[0].id,bindingScene.id,bindingShot.id,{prompt:"x".repeat(2001)}),/2000 characters/);
 assert.throws(()=>updateEpisodeShotDirection(withBible,withBible.seasons[0].episodes[0].id,bindingScene.id,"missing-shot",{camera:"dolly"}),/does not belong/);
 console.log("Shot direction verification passed: isolated edits, prompt compilation, negative prompt and bounds.");
+
+import { assessEpisodeShotReadiness } from "../../src/core/shot-readiness.ts";
+const readinessPackage=buildEpisodeShotPackage(directedPlan,directedPlan.seasons[0].episodes[0]);
+const readyCapabilities={aspectRatios:[readinessPackage.shots[0].aspectRatio],resolutions:["1080p"],frameRates:[readinessPackage.shots[0].frameRate],minDurationSeconds:1,maxDurationSeconds:30,negativePrompt:true};
+const readyReport=assessEpisodeShotReadiness(readinessPackage,{provider:"declared-provider",model:"declared-model",capabilities:readyCapabilities});
+assert.equal(readyReport.status,"ready");
+assert.equal(readyReport.readyShots,readinessPackage.shotCount);
+assert.equal(readyReport.policy.providerSubmitted,false);
+const unsupportedReport=assessEpisodeShotReadiness(readinessPackage,{provider:"declared-provider",model:"restricted-model",capabilities:{...readyCapabilities,aspectRatios:["1:1"],maxDurationSeconds:2}});
+assert.equal(unsupportedReport.status,"blocked");
+assert.ok(unsupportedReport.shots[0].unsupported.some(value=>value.startsWith("aspectRatio:")));
+const unknownReport=assessEpisodeShotReadiness(readinessPackage,{provider:"unverified-provider",model:"unknown-model"});
+assert.equal(unknownReport.status,"unverified");
+assert.equal(unknownReport.unverifiedShots,readinessPackage.shotCount);
+console.log("Shot capability preflight verification passed: explicit support, blocked mismatches, unknown declarations and no provider submission.");
