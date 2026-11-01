@@ -52,7 +52,7 @@ export function createCloudProjectRepository({url=process.env.SUPABASE_URL,servi
    if(name!==undefined){if(typeof name!=="string"||!name.trim()||name.trim().length>160)throw new Error("Project name must contain 1–160 characters.");patch.name=name.trim();}
    if(description!==undefined){if(typeof description!=="string"||description.length>4000)throw new Error("Project description is too long.");patch.description=description;}
    if(settings!==undefined){if(!settings||typeof settings!=="object"||Array.isArray(settings))throw new Error("Project settings must be an object.");patch.settings=settings;}
-   const rows=await request("projects?id=eq."+encodeURIComponent(projectId)+"&owner_id=eq."+encodeURIComponent(current.ownerId)+"&revision=eq."+expectedRevision+"&archived_at=is.null",{method:"PATCH",body:patch});
+   const rows=await request("projects?id=eq."+encodeURIComponent(projectId)+"&revision=eq."+expectedRevision+"&archived_at=is.null",{method:"PATCH",body:patch});
    if(!Array.isArray(rows)||rows.length!==1){const e=new Error("Cloud project revision changed.");e.code="CLOUD_PROJECT_REVISION_CONFLICT";throw e;}return map(rows[0]);
   },
   async archive({ownerId,projectId,expectedRevision}={}){
