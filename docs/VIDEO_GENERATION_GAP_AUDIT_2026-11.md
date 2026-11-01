@@ -207,3 +207,8 @@ The cloud upscale test suite now explicitly rejects an output encoded with an un
 ### Video model capability contract hardening — 2026-11-01
 
 The configured video adapter now exports its own capability declaration, and workflow execution consumes that declaration rather than duplicating supported settings inline. The declaration reflects the actual adapter contract: 1–30 whole seconds, 16:9/9:16/1:1, provider-selected resolution, no selectable audio modes, and reference-image support only when a supported model input field is explicitly configured. The payload builder now rejects invalid durations, unsupported aspect ratios, blank prompts and prompts beyond the normalized 12,000-character limit rather than silently rounding, clamping or changing them. Regression tests cover the declaration and strict payload behavior. External execution remains disabled unless existing server-side enablement, remote opt-in, usage guardrails and approval requirements are all satisfied.
+
+
+### Local media capability catalog alignment — 2026-11-01
+
+The provider readiness catalog now lists the concrete local media operations actually implemented by the worker, including proxy creation, audio cleanup, denoise, color, resize, interpolation and upscaling. Previously these were compressed into a generic enhancement label, which made capability discovery less precise. Registry tests now assert the operation list when FFmpeg/FFprobe are available and confirm that upscaling is represented even when the local worker is currently unavailable. This is capability discovery only; it does not trigger media execution.
