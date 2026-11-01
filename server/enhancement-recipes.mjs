@@ -3,6 +3,12 @@ import {buildMediaOperationArgs} from "./media.mjs";
 const VIDEO_STEPS=new Set(["media.denoise","media.color","media.resize","media.interpolate","media.upscale"]);
 const AUDIO_STEPS=new Set(["media.audio-clean"]);
 const MAX_STEPS=12;
+const PARAMETER_KEYS={
+  "media.denoise":["luma","chroma"],"media.color":["brightness","contrast","saturation"],
+  "media.resize":["width","height","fit"],"media.interpolate":["fps"],
+  "media.upscale":["width","height","fit","algorithm","sharpness"],
+  "media.audio-clean":["noiseFloor","targetLufs"]
+};
 
 export function planEnhancementRecipe({name="Enhancement recipe",sourceAsset,steps=[]}={}) {
   if(!sourceAsset||typeof sourceAsset.id!=="string"||typeof sourceAsset.media_type!=="string")
