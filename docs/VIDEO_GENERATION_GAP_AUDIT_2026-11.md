@@ -152,3 +152,8 @@ The asset library now exposes QHD Lanczos, QHD spline36 with controlled sharpeni
 ### Output-quality verification hardening — 2026-11-01
 
 The FFmpeg/FFprobe enhancement verifier now checks more than file existence: each generated derivative must expose an H.264 video stream, the expected output dimensions (including the explicit 640×360 upscale fixture), a preserved audio stream, and a duration close to the one-second source. This strengthens the local acceptance gate for scaling, denoise, color, and frame interpolation. The change is committed, but execution still depends on a CI/worker environment with FFmpeg and FFprobe; it is not marked passed until that environment reports a successful run.
+
+
+### Cloud upscale publication gate — 2026-11-01
+
+The cloud media executor now treats upscaling as a verified derivative operation: after FFmpeg finishes, FFprobe must confirm a video stream with the exact requested even-pixel dimensions before the asset can be published. A mismatch fails closed and leaves the derivative unpublished. Published asset metadata and the job result record the explicit classical-resampling method, selected interpolation algorithm, sharpening amount, target dimensions and probed output stream. This is an integrity/traceability gate, not a learned super-resolution model. Dedicated cloud-executor tests cover successful metadata capture and rejection without publication when dimensions are wrong. CI execution is still required before this change is considered verified.
