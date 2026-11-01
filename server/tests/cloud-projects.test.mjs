@@ -47,3 +47,9 @@ test("archives without deleting project records",async()=>{
  const f=fixture();const result=await f.repository.archive({ownerId:owner,projectId:project,expectedRevision:3});
  assert.equal(result.archived,true);assert.equal(result.revision,4);
 });
+
+test("prevents project editors from archiving the owner's project",async()=>{
+ const f=fixture({actor:editor});
+ await assert.rejects(()=>f.repository.archive({ownerId:editor,projectId:project,expectedRevision:3}),e=>e.code==="CLOUD_PROJECT_ACCESS_DENIED");
+ assert.equal(f.calls.filter(x=>x.options.method==="PATCH").length,0);
+});
