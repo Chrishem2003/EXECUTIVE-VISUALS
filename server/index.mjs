@@ -7,6 +7,7 @@ import { pipeline } from "node:stream/promises";
 import { Transform } from "node:stream";
 import { openDatabase, audit, addJobEvent, getOwnedProject, getOwnedAsset, getProjectAccess, canWriteProject, getAccessibleAsset, json, parseJson } from "./db.mjs";
 import { executeMediaJob, executableAvailable } from "./media.mjs";
+import { createRealEsrganAdapter } from "./ai-upscale-engine.mjs";
 import { validateWorkflowGraph, planWorkflowTarget } from "./workflow-validation.mjs";
 import { validateTimelineDocument } from "./timeline-validation.mjs";
 import { executeWorkflowRun } from "./workflow-executor.mjs";
@@ -316,7 +317,8 @@ export function createAppServer() {
         if(cloudResult){send(res,cloudResult.status,cloudResult.body,cors);return;}
       }
       if(path==="/api/providers"&&req.method==="GET"){
-        const catalog=getProviderCatalog(process.env,{ffmpeg:executableAvailable("ffmpeg"),ffprobe:executableAvailable("ffprobe")});
+        const aiUpscale=await createRealEsrganAdapter().probe();
+        const catalog=getProviderCatalog(process.env,{ffmpeg:executableAvailable("ffmpeg"),ffprobe:executableAvailable("ffprobe"),aiUpscale});
         send(res,200,catalog,cors);return;
       }
       if(path==="/api/usage"&&req.method==="GET"){
