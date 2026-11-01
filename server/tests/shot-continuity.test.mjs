@@ -18,3 +18,11 @@ test("fails closed when a shot or linked character is missing or ambiguous",()=>
 test("requires a non-empty user prompt",()=>{
  assert.throws(()=>buildShotContinuityPrompt({document,shotId:"shot-1",prompt:"  "}),error=>error.code==="PROMPT_REQUIRED");
 });
+
+test("authorizes every linked character before exposing continuity details",()=>{
+ const authorized=[];
+ const result=buildShotContinuityPrompt({document,shotId:"shot-1",prompt:"Create a frame",authorizeCharacter:profile=>authorized.push(profile.id)});
+ assert.deepEqual(authorized,["char-1"]);
+ assert.ok(result.includes("Amina"));
+ assert.throws(()=>buildShotContinuityPrompt({document,shotId:"shot-1",prompt:"Create a frame",authorizeCharacter:()=>{throw Object.assign(new Error("No consent"),{code:"IDENTITY_PERMISSION_REQUIRED"});}}),error=>error.code==="IDENTITY_PERMISSION_REQUIRED");
+});
