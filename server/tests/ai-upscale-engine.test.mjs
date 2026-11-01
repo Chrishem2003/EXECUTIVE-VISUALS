@@ -44,7 +44,7 @@ while [ "$1" != "" ]; do if [ "$1" = "-o" ]; then shift; printf '\211PNG\r\n\032
 });
 
 
-test("AI upscaler remains unverified until a real inference self-test succeeds", async () => {
+test("AI upscaler reports execution checks separately from unverified inference quality", async () => {
   const directory = await mkdtemp(join(tmpdir(), "ev-ai-selftest-"));
   const binary = join(directory, "engine");
   const model = "realesrgan-x4plus";
@@ -58,10 +58,16 @@ while [ "$1" != "" ]; do if [ "$1" = "-o" ]; then shift; printf '\211PNG\r\n\032
   await writeFile(join(directory, model + ".bin"), "weights");
   try {
     const adapter = createRealEsrganAdapter({ binaryPath: binary, modelDirectory: directory, timeoutMs: 5000, enabled: true });
-    assert.equal((await adapter.probe(model)).inferenceVerified, false);
+    const before = await adapter.probe(model);
+    assert.equal(before.executionVerified, false);
+    assert.equal(before.inferenceVerified, false);
     const result = await adapter.selfTest({ inputPath: input, model, scale: 2 });
     assert.equal(result.passed, true);
-    assert.equal((await adapter.probe(model)).inferenceVerified, true);
+    assert.equal(result.executionVerified, true);
+    assert.equal(result.inferenceVerified, false);
+    const after = await adapter.probe(model);
+    assert.equal(after.executionVerified, true);
+    assert.equal(after.inferenceVerified, false);
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
 
