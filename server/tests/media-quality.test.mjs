@@ -57,3 +57,10 @@ test("reports audio clipping and near-full-scale peak findings",()=>{
  assert.ok(report.findings.some(item=>item.code==="AUDIO_PEAK_NEAR_FULL_SCALE"));
  assert.equal(report.signalAnalysis.audioMetrics.integratedLufs,-16.5);
 });
+
+test("marks unavailable signal checks as unknown review warnings",()=>{
+ const report=buildMediaQualityReport({format:{duration:"12"},streams:[{codec_type:"video",width:1920,height:1080,avg_frame_rate:"24/1"}],signalAnalysis:{performed:[],unavailable:[{check:"black-frame",reason:"MEDIA_PROCESS_FAILED"}]}},{requireVideo:true});
+ assert.equal(report.status,"review");
+ assert.ok(report.findings.some(item=>item.code==="SIGNAL_ANALYSIS_UNAVAILABLE"&&item.reason==="MEDIA_PROCESS_FAILED"));
+ assert.equal(report.signalAnalysis.unavailable.length,1);
+});
