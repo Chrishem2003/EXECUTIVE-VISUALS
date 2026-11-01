@@ -130,6 +130,21 @@ function safeExtension(name, fallback) {
   const ext = extname(name || "").replace(".","").toLowerCase();
   return CONTAINERS.has(ext) || ["jpg","jpeg","png","webp"].includes(ext) ? ext : fallback;
 }
+export function validateMediaOutputProbe(metadata, mediaType) {
+  const streams=Array.isArray(metadata?.streams)?metadata.streams:[];
+  const expected=String(mediaType||"").startsWith("video/")?"video":
+    String(mediaType||"").startsWith("audio/")?"audio":
+    String(mediaType||"").startsWith("image/")?"video":null;
+  if(!expected||!streams.some(stream=>stream?.codec_type===expected))
+    throw Object.assign(new Error("Media output failed stream validation."),{code:"MEDIA_OUTPUT_VALIDATION_FAILED"});
+  const duration=Number(metadata?.format?.duration);
+  if(Number.isFinite(duration)&&duration<=0)
+    throw Object.assign(new Error("Media output has an invalid duration."),{code:"MEDIA_OUTPUT_VALIDATION_FAILED"});
+  if(!Number.isFinite(duration)&&!streams.some(stream=>Number(stream?.duration)>0))
+    throw Object.assign(new Error("Media output has no verifiable duration."),{code:"MEDIA_OUTPUT_VALIDATION_FAILED"});
+  return {streamCount:streams.length,durationSeconds:Number.isFinite(duration)?duration:null,validatedStreamType:expected};
+}
+
 export function buildMediaProcessingProvenance({jobType,input={},sourceAsset={}}={}) {
   const allowed = {
     "media.denoise":["luma","chroma"],
@@ -409,11 +424,17 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
   onProgress(85);
   if (cancelled()) { await unlink(outputPath).catch(()=>{}); throw Object.assign(new Error("Job cancelled."), { code:"JOB_CANCELLED" }); }
   
+  const probeResult=await run("ffprobe",["-v","error","-show_format","-show_streams","-of","json",outputPath],60000,job.id,activeProcesses,cancelled);
+  let outputMetadata;
+  try { outputMetadata=JSON.parse(probeResult.stdout||"{}"); }
+  catch { throw Object.assign(new Error("Media output metadata could not be parsed."),{code:"MEDIA_OUTPUT_VALIDATION_FAILED"}); }
+  const validation=validateMediaOutputProbe(outputMetadata,mime);
   const fileStat = await stat(outputPath);
+  if(fileStat.size<=0)throw Object.assign(new Error("Media output is empty."),{code:"MEDIA_OUTPUT_VALIDATION_FAILED"});
   const hash = createHash("sha256");
   await pipeline(createReadStream(outputPath), new Transform({ transform(chunk, enc, cb) { hash.update(chunk); cb(null, chunk); } }), new Transform({ transform(chunk, enc, cb) { cb(); } }));
   const provenance=buildMediaProcessingProvenance({jobType:job.job_type,input,sourceAsset:source});
   const outputAsset = addAsset(db, job, "derived/"+id+"."+ext, outputName, mime, fileStat.size, hash.digest("hex"), source.id, { operation:job.job_type, ...(provenance?{processing:provenance}:{}) });
   emit("media.output_created", { assetId:outputAsset.id, sha256:outputAsset.sha256 });
-  return { outputAsset };
+  return { outputAsset, validation };
 }
