@@ -264,3 +264,14 @@ This is a runnable worker entry point, not a deployed worker. Do not set the ena
 - Added cloud project repository tests, cloud asset listing tests and API integration tests. Cloud verification includes the new project repository test suite.
 - Added a Cloud Projects workspace in the browser app: create/select projects, upload source media, browse the private project asset register, and create/list project timelines. The workspace uses the existing authenticated API client and remains unavailable until the opt-in Supabase cloud API is correctly configured.
 - These endpoints and UI are code-complete but remain opt-in. The isolated Supabase migration and private bucket must be applied and verified before use; no migration, cloud environment, worker or production service was activated as part of this change.
+
+## Latest continuation — reference-conditioned video workflow
+
+- The video-generation workflow now accepts an accessible image asset on its typed `Start Frame` input.
+- Before any provider request, the executor verifies the asset is owner-accessible, remains within the media root, is no larger than 10 MiB, matches its recorded byte size and SHA-256 checksum, and has a valid JPEG, PNG or WebP signature.
+- The image is converted to a data URL for the configured server-side video model. No public asset URL or browser-visible credential is required.
+- The adapter sends a reference image only when `FAL_VIDEO_IMAGE_INPUT_FIELD` explicitly selects an allowed model input field. The selected field must match the configured model's documented contract; unsupported/missing configuration fails closed.
+- Workflow validation now permits image/media assets to connect to the `Start Frame` port in both the browser planner and server validator.
+- The inspector explains the model-specific configuration. Added payload validation, mock-provider submission tests, and workflow port-compatibility coverage.
+- GitHub Actions run 1393 passed dependency installation, TypeScript typecheck and the full build/verification suite on 1 November 2026. No live provider request or paid generation was made.
+- Remaining boundary: the provider model's actual input field must be configured correctly, and live model execution still requires a separate approved staging test. This change does not claim cloud-worker or production deployment readiness.
