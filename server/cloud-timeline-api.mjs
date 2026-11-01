@@ -123,7 +123,7 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
    const result=await fetchImpl(base+"/storage/v1/bucket/executive-visuals-media",{headers:{apikey:serviceRoleKey,authorization:"Bearer "+serviceRoleKey,accept:"application/json"},signal:controller.signal});
    if(!result.ok)throw new Error("Cloud timeline API private storage bucket is unavailable (HTTP "+result.status+").");
    const bucket=await result.json();
-   if(bucket.public===true)throw new Error("Cloud timeline API refuses a public media bucket.");
+   if(bucket.public!==false)throw new Error("Cloud timeline API refuses a media bucket that is not confirmed private.");
   }catch(error){if(error?.name==="AbortError")throw new Error("Cloud timeline API storage readiness check timed out.");throw error;}
   finally{clearTimeout(timer);}
   return{ready:true,storage:"private",schema:"executive_visuals"};
