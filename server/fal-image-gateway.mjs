@@ -28,6 +28,15 @@ async function fetchJson(url, options, timeoutMs) {
   } finally { clearTimeout(timer); }
 }
 export async function generateFalImage({ prompt, size = "1024x1024", quality = "medium" } = {}) {
+  const referenceField = String(process.env.FAL_IMAGE_REFERENCE_FIELD || "").trim();
+  const allowedReferenceFields = new Set(["image_url", "image_urls", "reference_image_url", "reference_image_urls"]);
+  if (referenceField && !allowedReferenceFields.has(referenceField)) {
+    throw Object.assign(new Error("FAL_IMAGE_REFERENCE_FIELD must be a documented reference-image field supported by the selected model."), { code: "IMAGE_GATEWAY_CONFIG_INVALID" });
+  }
+  const reference = String(arguments[0]?.referenceImageDataUrl || "");
+  if (reference && (!allowedReferenceFields.has(referenceField) || !/^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(reference) || reference.length > 14 * 1024 * 1024)) {
+    throw Object.assign(new Error("Reference image input requires an explicitly configured supported model field and a valid image data URL under 10 MiB."), { code: "IMAGE_GATEWAY_UNSUPPORTED_INPUT" });
+  }
   if (process.env.IMAGE_GATEWAY_ENABLED !== "true") throw Object.assign(new Error("Image generation is disabled by server configuration."), { code: "IMAGE_GATEWAY_DISABLED" });
   if (process.env.IMAGE_GATEWAY_ALLOW_REMOTE !== "true") throw Object.assign(new Error("Remote image providers are disabled. Verify pricing and explicitly enable remote access on the server."), { code: "IMAGE_GATEWAY_REMOTE_DISABLED" });
   const key = String(process.env.FAL_KEY || "").trim();
@@ -41,7 +50,9 @@ export async function generateFalImage({ prompt, size = "1024x1024", quality = "
   const base = "https://queue.fal.run/" + model.split("/").map(encodeURIComponent).join("/");
   const headers = { authorization: "Key " + key, "content-type": "application/json" };
   const sizes = { "512x512": "square", "1024x1024": "square_hd", "1536x1024": "landscape_4_3", "1024x1536": "portrait_4_3" };
-  const submitted = await fetchJson(base, { method: "POST", headers, body: JSON.stringify({ prompt: text, image_size: sizes[size] || "square_hd", num_images: 1 }) }, Math.min(timeoutMs, 30000));
+  const requestPayload = { prompt: text, image_size: sizes[size] || "square_hd", num_images: 1 };
+  if (reference) requestPayload[referenceField] = reference;
+  const submitted = await fetchJson(base, { method: "POST", headers, body: JSON.stringify(requestPayload) }, Math.min(timeoutMs, 30000));
   const requestId = String(submitted.request_id || "");
   if (!/^[a-zA-Z0-9_-]{1,200}$/.test(requestId)) throw Object.assign(new Error("Image provider did not return a valid request identifier."), { code: "IMAGE_GATEWAY_INVALID_RESPONSE" });
   const statusUrl = allowedQueueUrl(submitted.status_url || ("https://queue.fal.run/" + model + "/requests/" + requestId + "/status"));
