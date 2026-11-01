@@ -19,3 +19,8 @@ test("only flags intervals above configured thresholds",()=>{
  assert.equal(findings.filter(item=>item.code==="SUSTAINED_SILENCE").length,1);
  assert.ok(findings.some(item=>item.code==="BLACK_AT_END"));
 });
+
+test("closes trailing silence against the known media duration",()=>{
+ const events=parseSilenceEvents("[silencedetect @ 0x1] silence_start:8.000",12);
+ assert.deepEqual(events,[{startSeconds:8,endSeconds:12,durationSeconds:4,trailing:true}]);
+});
