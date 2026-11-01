@@ -222,3 +222,13 @@ This closes the renderer-adapter gap in the cloud timeline execution contract. I
 - Tests cover disabled configuration, missing credentials/families, configuration bounds, recovery, family cycles and shutdown.
 
 This is a runnable worker entry point, not a deployed worker. Do not set the enable flags until the isolated database migration, private bucket policies, API schema exposure and service credentials have been reviewed. No worker service was created or launched.
+
+
+## Cloud workspace consolidation — 1 November 2026
+
+- Added a server-side cloud project repository with owner/member-aware listing, project creation, role-authorized reads and writes, optimistic revision checks, and soft archival.
+- Added paginated cloud asset listing for personal and project scopes. Asset listing reuses the same authorization boundary as private uploads, signed reads, timeline materialization and deletion.
+- Exposed authenticated API routes for cloud project create/list/read/update/archive and cloud asset list/read/upload/delete. Ownership is always taken from the verified auth middleware; clients cannot assign project or asset ownership.
+- Added cloud project repository tests, cloud asset listing tests and API integration tests. Cloud verification includes the new project repository test suite.
+- Added a Cloud Projects workspace in the browser app: create/select projects, upload source media, and browse the private project asset register. The workspace uses the existing authenticated API client and remains unavailable until the opt-in Supabase cloud API is correctly configured.
+- These endpoints and UI are code-complete but remain opt-in. The isolated Supabase migration and private bucket must be applied and verified before use; no migration, cloud environment, worker or production service was activated as part of this change.
