@@ -66,7 +66,7 @@ async function createEpisodeTimeline(episodeId:string){
  if(!await publishSeriesToCloud())return;
  try{
   const timeline=buildEpisodeTimelineDocument(series,episode,state.cloudProjectId);
-  const result=await apiRequest<{timeline:{id:string;name:string;revision:number}}>("/api/cloud/timelines",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({projectId:state.cloudProjectId,name:timeline.name,timeline})});
+  await apiRequest<{timeline:{id:string;name:string;revision:number}}>("/api/cloud/timelines",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({projectId:state.cloudProjectId,name:timeline.name,timeline})});
   state.cloudMessage="Editing timeline created for "+episode.title+". "+timeline.markers.length+" scene and shot markers are ready; add approved media assets to populate tracks.";
   state.tab="cloud";await loadCloudWorkspace();
  }catch(error){state.cloudMessage=error instanceof Error?error.message:"Could not create the episode timeline.";state.tab="cloud";render();}
