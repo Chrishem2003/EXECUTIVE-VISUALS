@@ -149,6 +149,8 @@ Every capability must report state/evidence date, supported inputs/outputs, loca
 - Each FFmpeg analysis command has a bounded timeout and uses the existing job cancellation mechanism. Live media fixture/worker verification and CI remain pending.
 
 ### E4. Audio signal metrics — implemented, awaiting CI
+- Optional signal checks now fail soft: when a worker lacks a specific FFmpeg filter or the analysis command fails, the media probe still returns valid FFprobe metadata and marks that check unavailable. The quality report emits a review warning ("unknown", never "passed") for unavailable checks. Cancellation still propagates and is not swallowed. Regression tests cover both paths.
+
 - Audio probes now run FFmpeg silence detection, `astats` and `ebur128` in one bounded analysis pass.
 - Reports include clipped-sample count, sample peak, RMS level and integrated loudness (LUFS) when the installed FFmpeg build emits those metrics.
 - Clipping and peaks within 1 dB of full scale produce review warnings. Integrated loudness is reported without imposing a universal target; delivery standards differ by platform and programme type.
