@@ -55,6 +55,8 @@ Add reference image, image edit, first/last frame, video continuation, masks and
 ## Wave C — upscale and post-production truthfulness
 ### C3. Recipe input boundary hardening — implemented, awaiting CI
 ### C4. Recipe-to-workflow compilation — implemented, awaiting CI
+- Recipe execution now preserves the selected scaling algorithm and sharpening amount when workflow nodes hand settings to the local media executor. This closes a parameter-loss gap between the validated recipe plan and actual deterministic FFmpeg execution; it does not change the separate unverified neural-upscale gate.
+
 - Validated video/audio enhancement recipes can now compile into the platform's existing typed workflow graph.
 - The generated graph starts with an accessible source-asset node, pauses at a dedicated human approval node, then runs the requested operations in order.
 - The compiler validates the resulting graph with the same workflow graph validator used by workflow execution.
