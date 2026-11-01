@@ -132,3 +132,10 @@ Every capability must report state/evidence date, supported inputs/outputs, loca
 - Do not apply migrations to connected shared or production databases.
 - Do not expose credentials, bypass provider access controls, scrape private endpoints or copy proprietary source/weights/prompts.
 - Do not claim cloud durability, live generation, model quality or provider parity without reproducible tests.
+
+### C5. Workflow media quality reports — implemented, awaiting CI
+- Existing `quality-check` workflow nodes now turn FFprobe metadata into a structured quality report.
+- Reports include duration, stream counts, video codec/dimensions/frame rate, audio codec/sample rate/channels, and actionable missing-stream/invalid-metadata/below-HD findings.
+- Severity is explicit: structural errors need attention; warnings request review.
+- A test suite covers valid HD A/V, missing audio, invalid duration/frame rate, below-HD dimensions and audio-only files.
+- This is structural QA only. It does not claim black-frame, silence, clipping, sync, colour, face, motion or perceptual-quality detection; those require separate signal-analysis and human-review stages.
