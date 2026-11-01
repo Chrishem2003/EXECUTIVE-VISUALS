@@ -90,3 +90,10 @@ Not yet implemented or verified:
 The adapter now requires an explicit worker-side `AI_UPSCALE_ENABLED=true` setting in addition to a readable executable and the selected model's `.param` and `.bin` files. It defaults to disabled. The authenticated provider catalog probes the configured engine and reports a separate `ai-upscale` capability; the capability is only advertised as ready when both engine files are present and the explicit enable flag is true.
 
 This is a configuration gate, not a hardware certification. A successful readiness result does not yet prove that a Vulkan driver/device can complete a real inference. Before enabling this in a hosted environment, provision the executable and model on an isolated worker, run a controlled self-test against a known sample, verify output dimensions and decoded integrity, and only then enable the flag for that worker. Keep the flag off on generic CPU-only web/API services.
+
+
+### Output-dimension verification
+
+The cloud still-image path now requires FFprobe on the worker and probes both the original and enhanced image. It checks that output width and height equal the source dimensions multiplied by the requested scale before publishing the derivative. The verified source/output dimensions are retained in processing provenance. If FFprobe is missing, cannot decode either image, or reports unexpected dimensions, publication is blocked.
+
+This remains a structural validation gate, not a perceptual-quality score or a Vulkan inference self-test. The engine must still be tested on the target worker with representative images before production enablement.
