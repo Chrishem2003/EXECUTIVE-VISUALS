@@ -72,13 +72,13 @@ test("fails closed when the cloud API rejects a timeline operation",async()=>{
 
 test("lists active cloud timelines for an authorized project with bounded pagination",async()=>{
  const f=setup();await f.repo.create({ownerId:owner,projectId:project,name:"Episode master",timeline:document});
- const result=await f.repo.list({ownerId,projectId:project,limit:500,offset:5});
+ const result=await f.repo.list({ownerId:owner,projectId:project,limit:500,offset:5});
  assert.equal(result.length,1);assert.equal(result[0].projectId,project);
  const listCall=f.calls.find(x=>x.url.includes("timelines?")&&x.options.method==="GET");
  assert.ok(listCall.url.includes("project_id=eq."+project));assert.ok(listCall.url.includes("limit=100"));assert.ok(listCall.url.includes("offset=5"));
 });
 test("does not list cloud timelines when project read permission is denied",async()=>{
  const f=setup({authorize:async()=>false});
- await assert.rejects(()=>f.repo.list({ownerId,projectId:project}),error=>error.code==="CLOUD_TIMELINE_ACCESS_DENIED");
+ await assert.rejects(()=>f.repo.list({ownerId:owner,projectId:project}),error=>error.code==="CLOUD_TIMELINE_ACCESS_DENIED");
  assert.equal(f.calls.length,0);
 });
