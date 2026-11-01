@@ -122,3 +122,23 @@ The first video-generation integration slice is now committed to the working bra
 ### CI follow-up — 2026-11-01
 
 The first quality-check run after the integration edits failed at TypeScript typecheck because the application shell imported renderTimelineWorkspace while the timeline module had not exported it. The missing export has now been added on the same feature branch. Contract validation was tightened in the same follow-up: durations must be whole seconds to match the current adapter, non-string project IDs are rejected, and the gateway's model-selected resolution is represented as provider_default rather than falsely claiming a fixed output size. Additional commits are on the PR head; the GitHub connector has not yet reported a new workflow run for that latest head, so the fix and test suite remain pending CI confirmation.
+
+
+## Media enhancement follow-up — 2026-11-01
+
+The local `media.upscale` operation has been improved without misrepresenting it as AI super-resolution:
+
+- Explicit scaler algorithms: Lanczos (default), bicubic, and spline36.
+- Optional bounded unsharp-mask sharpening (0–1.5) for controlled edge enhancement.
+- Invalid algorithms and out-of-range sharpening are rejected before FFmpeg executes.
+- The existing source-preserving derivative workflow, output checksums, queue, and FFmpeg/FFprobe validation remain in place.
+- The media verification script now includes a spline36 + sharpening output case and invalid-option checks.
+
+This is still classical interpolation/sharpening, not learned detail reconstruction. A true AI super-resolution adapter remains a separate milestone and must be tied to an installed, license-reviewed model/runtime with explicit capability checks; until then the UI and job metadata must not label this operation as AI.
+
+### Immediate next steps
+
+1. Obtain a clean CI run for the current feature-branch head; the GitHub connector has not returned a fresh run for the latest commits yet.
+2. Confirm the media-operation verification script and all server tests on a worker with FFmpeg/FFprobe installed.
+3. Add explicit output probe assertions (dimensions, codec, duration, audio preservation) for every scaler mode.
+4. Implement learned super-resolution as a separate adapter after validating runtime compatibility and deployment cost, keeping the current zero-cost FFmpeg fallback.
