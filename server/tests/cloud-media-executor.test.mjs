@@ -53,10 +53,13 @@ test("cloud media probe uses the leased owner and cleans up its materialized sou
 test("cloud media enhancement publishes a checksummed derivative using the claimed job identity", async () => {
   const directory = await mkdtemp(join(tmpdir(), "ev-cloud-executor-test-"));
   const previous = process.env.FFMPEG_PATH;
+  const previousProbe = process.env.FFPROBE_PATH;
   const source = join(directory, "source.mp4");
   await writeFile(source, "source-media");
   const ffmpeg = await executable(directory, "ffmpeg", 'for last do :; done\nprintf "rendered-media" > "$last"');
+  const ffprobe = await executable(directory, "ffprobe", String.raw\`printf '%s' '{"streams":[{"codec_type":"video","width":640,"height":360}],"format":{"duration":"1.0"}}'\`);
   process.env.FFMPEG_PATH = ffmpeg;
+  process.env.FFPROBE_PATH = ffprobe;
   let published, publishedContent, cleaned = false;
   try {
     const execute = createCloudMediaExecutor({
@@ -98,6 +101,8 @@ test("cloud media enhancement publishes a checksummed derivative using the claim
   } finally {
     if (previous === undefined) delete process.env.FFMPEG_PATH;
     else process.env.FFMPEG_PATH = previous;
+    if (previousProbe === undefined) delete process.env.FFPROBE_PATH;
+    else process.env.FFPROBE_PATH = previousProbe;
     await rm(directory, { recursive: true, force: true });
   }
 });
