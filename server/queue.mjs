@@ -4,17 +4,23 @@ const iso = value => value instanceof Date ? value.toISOString() : new Date(valu
 
 export function recoverExpiredJobs(db, timestamp = new Date().toISOString()) {
   const expired = db.prepare(
-    "SELECT id,owner_id,attempt_count,max_attempts FROM jobs WHERE status='running' AND (lease_expires_at IS NULL OR lease_expires_at<=?)"
+    "SELECT id,owner_id,job_type,attempt_count,max_attempts FROM jobs WHERE status='running' AND (lease_expires_at IS NULL OR lease_expires_at<=?)"
   ).all(timestamp);
   let recovered = 0;
   for (const job of expired) {
-    const retryable = job.attempt_count < job.max_attempts;
-    const status = retryable ? "queued" : "failed";
+    const workflowRun = job.job_type === "workflow.execute"
+      ? db.prepare("SELECT status FROM workflow_runs WHERE job_id=?").get(job.id)
+      : null;
+    const workflowBlocked = workflowRun?.status === "blocked";
+    const retryable = !workflowBlocked && job.attempt_count < job.max_attempts;
+    const status = workflowBlocked ? "blocked" : retryable ? "queued" : "failed";
     const retryDelayMs = retryable ? Math.min(60000, 1000 * Math.pow(2, Math.max(0, job.attempt_count - 1))) : 0;
     const availableAt = retryable ? iso(Date.parse(timestamp) + retryDelayMs) : null;
     const details = {
-      code: "WORKER_LEASE_EXPIRED",
-      message: "The worker stopped renewing its execution lease before the job finished.",
+      code: workflowBlocked ? "WORKFLOW_BLOCKED" : "WORKER_LEASE_EXPIRED",
+      message: workflowBlocked
+        ? "The workflow run is blocked and must not be requeued by worker recovery."
+        : "The worker stopped renewing its execution lease before the job finished.",
       retryable,
       retryDelayMs
     };
@@ -22,7 +28,7 @@ export function recoverExpiredJobs(db, timestamp = new Date().toISOString()) {
       "UPDATE jobs SET status=?,error_json=?,updated_at=?,completed_at=?,available_at=?,lease_owner=NULL,lease_expires_at=NULL,lease_heartbeat_at=NULL WHERE id=? AND status='running' AND (lease_expires_at IS NULL OR lease_expires_at<=?)"
     ).run(status, json(details), timestamp, retryable ? null : timestamp, availableAt, job.id, timestamp);
     if (changed.changes !== 1) continue;
-    addJobEvent(db, job.id, job.owner_id, retryable ? "job.lease_expired_retry" : "job.lease_expired_failed", details);
+    addJobEvent(db, job.id, job.owner_id, workflowBlocked ? "job.blocked" : retryable ? "job.lease_expired_retry" : "job.lease_expired_failed", details);
     recovered++;
   }
   return recovered;
