@@ -224,6 +224,15 @@ This closes the renderer-adapter gap in the cloud timeline execution contract. I
 This is a runnable worker entry point, not a deployed worker. Do not set the enable flags until the isolated database migration, private bucket policies, API schema exposure and service credentials have been reviewed. No worker service was created or launched.
 
 
+## Persistent creative-production linkage — 1 November 2026
+
+- The local AI Director project now retains a stable mapping to its cloud project ID and last confirmed revision in the existing local planning state.
+- Saving the same creative production updates its existing cloud project with optimistic revision checks instead of creating a duplicate project on every save.
+- Existing project settings are merged before the creative-production record is updated, preserving unrelated project metadata owned by other production modules.
+- The handoff includes the brief, audience, style, duration, planning blueprint, shots, character profiles and variants. The project identity remains shared with its cloud media register and timeline editor.
+- If another editor has updated the cloud project, the revision check prevents a silent overwrite. Refresh the cloud workspace before retrying.
+- This is a client-to-cloud project handoff, not yet a complete review/approval/delivery lifecycle. Current CI verification is pending.
+
 ## Creative brief to cloud production handoff — 1 November 2026
 
 - The AI Director now offers an explicit action to create a private cloud project from the active creative brief.
