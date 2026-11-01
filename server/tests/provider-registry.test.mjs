@@ -8,6 +8,7 @@ test("provider catalog is safe by default and never exposes credentials or submi
  assert.equal(catalog.summary.ready,0);
  assert.equal(catalog.summary.disabled,5);
  assert.equal(catalog.providers.find(x=>x.id==="local-media").status,"unavailable");
+ assert.equal(catalog.providers.find(x=>x.id==="local-media").capabilities.includes("media.upscale"),true);
  assert.deepEqual(catalog.policy,{remoteCallsRequireExplicitOptIn:true,credentialsExposed:false,pricesEstimated:false,requestsSubmitted:false});
  assert.equal(JSON.stringify(catalog).includes("API_KEY"),false);
 });
@@ -22,6 +23,7 @@ test("local gateways become ready without remote opt-in and secrets remain hidde
  assert.equal(catalog.providers.find(x=>x.id==="voice").status,"ready");
  assert.equal(catalog.providers.find(x=>x.id==="transcription").status,"ready");
  assert.equal(catalog.providers.find(x=>x.id==="local-media").status,"ready");
+ assert.deepEqual(catalog.providers.find(x=>x.id==="local-media").capabilities.filter(value=>value.startsWith("media.")),["media.probe","media.thumbnail","media.transcode","media.proxy","media.audio_extract","media.audio-clean","media.denoise","media.color","media.resize","media.interpolate","media.upscale"]);
  assert.equal(JSON.stringify(catalog).includes("do-not-return"),false);
  assert.equal(findProviderForCapability(catalog,"text.generate").provider,"text");
 });
