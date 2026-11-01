@@ -47,8 +47,14 @@ try{
   const args=buildMediaOperationArgs({jobType:kind,input,sourcePath:source,outputPath:output});
   execFileSync(ffmpeg,args,{stdio:"pipe",timeout:120000});
   assert.ok((await stat(output)).size>1000,kind+" must produce a non-empty MP4");
-  const metadata=JSON.parse(execFileSync(ffprobe,["-v","error","-show_entries","stream=codec_type,width,height","-of","json",output],{encoding:"utf8",stdio:["ignore","pipe","pipe"]}));
-  assert.ok(metadata.streams.some(stream=>stream.codec_type==="video"),kind+" output must contain a video stream");
+  const metadata=JSON.parse(execFileSync(ffprobe,["-v","error","-show_entries","format=duration:stream=codec_type,codec_name,width,height,sample_rate","-of","json",output],{encoding:"utf8",stdio:["ignore","pipe","pipe"]}));
+  const video=metadata.streams.find(stream=>stream.codec_type==="video");
+  assert.ok(video,kind+" output must contain a video stream");
+  assert.equal(video.codec_name,"h264",kind+" output must use the expected H.264 delivery codec");
+  const expectedSize=kind==="media.upscale"?[640,360]:[320,180];
+  assert.deepEqual([video.width,video.height],expectedSize,kind+" output dimensions must match the requested enhancement");
+  assert.ok(metadata.streams.some(stream=>stream.codec_type==="audio"),kind+" must preserve the source audio stream");
+  assert.ok(Number(metadata.format?.duration)>=0.85&&Number(metadata.format?.duration)<=1.25,kind+" output duration must remain close to the one-second source");
  }
  console.log("Verified video enhancement cases and audio cleanup through FFmpeg/FFprobe, plus invalid-input rejections.");
 }finally{await rm(root,{recursive:true,force:true})}
