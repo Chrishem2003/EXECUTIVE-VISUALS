@@ -51,7 +51,7 @@ test("AI upscaler remains unverified until a real inference self-test succeeds",
   const input = join(directory, "fixture.png");
   await writeFile(input, Buffer.from([137,80,78,71,13,10,26,10]));
   await writeFile(binary, String.raw`#!/bin/sh
-while [ "$1" != "" ]; do if [ "$1" = "-o" ]; then shift; printf '\\211PNG\\r\\n\\032\\n\\000\\000\\000\\015IHDR\\000\\000\\000\\001\\000\\000\\000\\001' > "$1"; fi; shift; done
+while [ "$1" != "" ]; do if [ "$1" = "-o" ]; then shift; printf '\211PNG\r\n\032\n\000\000\000\015IHDR\000\000\000\001\000\000\000\001' > "$1"; fi; shift; done
 `);
   await chmod(binary, 0o755);
   await writeFile(join(directory, model + ".param"), "model");
