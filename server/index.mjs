@@ -223,15 +223,19 @@ async function processNextJob() {
   } catch(error) {
     const latest=db.prepare("SELECT status,attempt_count,max_attempts,lease_owner,lease_expires_at FROM jobs WHERE id=?").get(job.id);
     if(latest?.status==="cancelled"||leaseLost||latest?.lease_owner!==WORKER_ID||!latest?.lease_expires_at||Date.parse(latest.lease_expires_at)<=Date.now())return;
+    const workflowRun=current.job_type==="workflow.execute"
+      ?db.prepare("SELECT status FROM workflow_runs WHERE job_id=?").get(job.id)
+      :null;
+    const workflowBlocked=workflowRun?.status==="blocked";
     const retryable=["MEDIA_TIMEOUT","MEDIA_PROCESS_FAILED"].includes(error.code);
-    const retry=retryable&&latest.attempt_count<latest.max_attempts;
-    const status=retry?"queued":"failed";
+    const retry=retryable&&!workflowBlocked&&latest.attempt_count<latest.max_attempts;
+    const status=workflowBlocked?"blocked":retry?"queued":"failed";
     const delayMs=retry?Math.min(60000,1000*Math.pow(2,Math.max(0,latest.attempt_count-1))):0;
     const availableAt=retry?new Date(Date.now()+delayMs).toISOString():null;
     const details={code:error.code||"MEDIA_JOB_FAILED",message:String(error.message||"Media job failed.").slice(0,1000),retryable,retryDelayMs:delayMs};
     const changed=db.prepare("UPDATE jobs SET status=?,error_json=?,updated_at=?,completed_at=?,available_at=?,lease_owner=NULL,lease_expires_at=NULL,lease_heartbeat_at=NULL WHERE id=? AND status='running' AND lease_owner=? AND lease_expires_at>?")
       .run(status,json(details),now(),retry?null:now(),availableAt,job.id,WORKER_ID,now());
-    if(changed.changes===1)addJobEvent(db,job.id,job.owner_id,retry?"job.retry_scheduled":"job.failed",details);
+    if(changed.changes===1)addJobEvent(db,job.id,job.owner_id,workflowBlocked?"job.blocked":retry?"job.retry_scheduled":"job.failed",details);
   } finally {
     clearInterval(heartbeat);
   }
