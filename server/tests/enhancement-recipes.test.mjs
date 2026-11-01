@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {planEnhancementRecipe} from "../enhancement-recipes.mjs";
+import {planEnhancementRecipe,compileEnhancementRecipeToWorkflow} from "../enhancement-recipes.mjs";
 
 test("plans an ordered, approval-gated video enhancement recipe without executing it",()=>{
  const plan=planEnhancementRecipe({
@@ -37,4 +37,29 @@ test("plans audio cleanup only for audio assets",()=>{
  const plan=planEnhancementRecipe({sourceAsset:{id:"audio",media_type:"audio/wav"},steps:[{operation:"media.audio-clean",parameters:{noiseFloor:-30,targetLufs:-18,privateToken:"must-not-leak"}}]});
  assert.equal(plan.steps[0].method,"classical-audio-filtering");
  assert.deepEqual(plan.steps[0].parameters,{noiseFloor:-30,targetLufs:-18});
+});
+
+test("compiles a recipe into a validated workflow paused behind human approval",()=>{
+ const compiled=compileEnhancementRecipeToWorkflow({
+  sourceAsset:{id:"asset-workflow",media_type:"video/mp4"},
+  steps:[
+   {operation:"media.denoise",parameters:{luma:4,chroma:2}},
+   {operation:"media.color",parameters:{brightness:0.02,contrast:1.05,saturation:1.1}},
+   {operation:"media.upscale",parameters:{width:3840,height:2160,algorithm:"lanczos"}}
+  ]
+ });
+ assert.equal(compiled.validation.valid,true);
+ assert.equal(compiled.execution.queued,false);
+ assert.equal(compiled.execution.requiresApproval,true);
+ assert.deepEqual(compiled.validation.executionOrder,["recipe-source","recipe-approval","recipe-step-1","recipe-step-2","recipe-step-3"]);
+ assert.equal(compiled.graph.nodes[1].kind,"approval");
+ assert.equal(compiled.graph.nodes[1].config.approvalScope,"enhancement-recipe");
+ assert.equal(compiled.graph.edges.at(-1).targetNodeId,"recipe-step-3");
+});
+
+test("does not compile invalid recipe input into an executable workflow",()=>{
+ assert.throws(()=>compileEnhancementRecipeToWorkflow({
+  sourceAsset:{id:"asset-workflow",media_type:"video/mp4"},
+  steps:[{operation:"media.ai-upscale"}]
+ }),error=>error.code==="RECIPE_OPERATION_UNSUPPORTED");
 });
