@@ -202,7 +202,7 @@ This closes the renderer-adapter gap in the cloud timeline execution contract. I
 
 - Added server routes for cloud timeline creation, read and optimistic-revision update, using the verified account ID supplied by the existing Supabase authentication middleware. Request bodies cannot assign or override the record owner.
 - Added durable render-job submission against the isolated schema. The server reads the saved timeline and its current revision, checks project editor permission, derives the project ID from the saved record, and stores only the timeline ID/revision in the job input.
-- Render submissions accept an idempotency key. A replay returns the original job only when it matches the same timeline and saved revision; conflicting reuse returns HTTP 409.
+- Render submissions accept an idempotency key. A replay returns the original job only when it matches the same timeline and saved revision; conflicting reuse returns HTTP 409. The worker also verifies that the saved timeline revision still matches the queued revision before materializing assets, preventing a queued job from silently rendering later edits.
 - Added role-checked job status and event-history reads. Project members with read permission can inspect shared project jobs; unrelated users cannot inspect personal jobs.
 - Server-role credentials remain server-side. Database requests are bounded by a timeout and API payloads are capped at 5 MiB. Cloud API routes are disabled unless CLOUD_TIMELINE_API_ENABLED=true; startup also requires AUTH_MODE=supabase.
 - Added mock-backed tests for verified ownership, revision conflicts, render enqueue, role enforcement, idempotency, job visibility and event history.
