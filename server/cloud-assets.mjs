@@ -128,6 +128,16 @@ export function createCloudAssetRepository({
         throw error;
       }
     },
+    async list({ownerId,projectId=null,limit=50,offset=0}={}) {
+      ownerId=validUuid(ownerId,"owner ID");
+      if(projectId!==null&&projectId!==undefined&&projectId!=="")projectId=validUuid(projectId,"project ID");else projectId=null;
+      limit=Math.max(1,Math.min(100,Number.isInteger(limit)?limit:50));
+      offset=Math.max(0,Math.min(100000,Number.isInteger(offset)?offset:0));
+      await allowed(ownerId,projectId,"read");
+      const scope=projectId?"project_id=eq."+encodeURIComponent(projectId):"owner_id=eq."+encodeURIComponent(ownerId)+"&project_id=is.null";
+      const rows=await request("assets?select=id,owner_id,project_id,original_name,media_type,byte_size,sha256,storage_bucket,object_path,derivative_of,metadata,created_at,deleted_at&"+scope+"&deleted_at=is.null&order=created_at.desc&limit="+limit+"&offset="+offset);
+      return (Array.isArray(rows)?rows:[]).map(publicAsset);
+    },
     async get({ownerId,assetId}) {
       ownerId=validUuid(ownerId,"owner ID");assetId=validUuid(assetId,"asset ID");
       const rows=await request("assets?select=id,owner_id,project_id,original_name,media_type,byte_size,sha256,storage_bucket,object_path,derivative_of,metadata,created_at,deleted_at&id=eq."+encodeURIComponent(assetId)+"&deleted_at=is.null&limit=1");
