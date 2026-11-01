@@ -142,3 +142,8 @@ This is still classical interpolation/sharpening, not learned detail reconstruct
 2. Confirm the media-operation verification script and all server tests on a worker with FFmpeg/FFprobe installed.
 3. Add explicit output probe assertions (dimensions, codec, duration, audio preservation) for every scaler mode.
 4. Implement learned super-resolution as a separate adapter after validating runtime compatibility and deployment cost, keeping the current zero-cost FFmpeg fallback.
+
+
+### Enhancement UI integration
+
+The asset library now exposes QHD Lanczos, QHD spline36 with controlled sharpening, and 4K Lanczos as explicit derivative-job presets. These are selectable from existing video asset actions and submit through the existing authenticated queue. The 4K preset remains bounded by the media operation's 4,320-pixel dimension limits and output validation. These presets perform classical scaling only; they do not claim AI-generated detail.
