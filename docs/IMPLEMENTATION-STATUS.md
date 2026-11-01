@@ -92,6 +92,14 @@ Video operations are available to workflow graphs as `media.denoise`, `media.col
 The build now includes real FFmpeg/FFprobe fixture checks for each video operation and speech cleanup, plus invalid-parameter rejection tests. The Enhancement Lab and asset library submit these operations to the persistent job queue, and the output is returned as a private derivative. These are local media operations; they do not imply remote model-based restoration, face retouching, generative object removal, advanced stabilization, or paid enhancement services are available.
 
 
+## Neural image upscaling — verification boundary
+
+The Real-ESRGAN NCNN/Vulkan adapter is an optional, disabled-by-default worker capability. Its self-test verifies that the configured executable can run with an allowlisted model, that the model files remain unchanged during execution, and that a bounded output file is produced with the requested image container signature. This is **execution verification**, not proof that the output is perceptually better than the source.
+
+The administrator self-test API now returns separate `executionVerified` and `inferenceVerified` fields from the engine, plus `qualityBenchmarkRequired: true`. It no longer promotes a successful process invocation to a claim of verified neural quality. No model is enabled by this change, and no remote inference or paid GPU service is activated.
+
+Before enabling neural upscaling for general users, the release gate is a reproducible benchmark set containing licensed test images across portraits, fine textures, text, animation and low-light/noisy sources; source/output dimensions and integrity checks; 2×/3×/4× runs for each supported model; reference-based metrics where ground truth exists (PSNR/SSIM/LPIPS where available); no-reference artifact review; runtime and peak-memory measurements; and human side-by-side review. Results must be stored with model/binary hashes, hardware/runtime details and exact settings. If reference images or metric tooling are unavailable, report that limitation rather than inventing scores. Original assets must remain immutable and every result must retain derivative lineage.
+
 ## Presenter identity authorization update — scoped permissions
 
 Presenter and character profiles now persist a structured identity-permission record rather than relying on a boolean confirmation:
