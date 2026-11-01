@@ -187,3 +187,8 @@ A CI run confirmed the broader server test suite executed but exposed two failur
 ### Cloud upscale codec and pixel-format gate — 2026-11-01
 
 The cloud publication check now also requires the expected H.264 video codec and yuv420p pixel format produced by the current enhancement pipeline. Codec and pixel-format details are retained in output-video provenance. The regression fixtures now include these fields and assert the published metadata. This makes the cloud worker's accepted output contract explicit rather than assuming successful FFmpeg exit guarantees a compatible derivative.
+
+
+### Codec rejection regression coverage — 2026-11-01
+
+A negative-path cloud-worker test now supplies a correctly sized, duration-aligned output with an incompatible video codec. The worker must reject it before derivative publication, complementing the existing pixel-format, dimensions, duration and audio-presence gates. This protects downstream editor compatibility and makes the output acceptance contract testable. A fresh CI result is still required.
