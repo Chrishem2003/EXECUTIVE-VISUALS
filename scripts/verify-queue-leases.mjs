@@ -47,5 +47,16 @@ try{
  const legacy=db.prepare("INSERT INTO jobs(id,owner_id,job_type,status,input_json,attempt_count,max_attempts) VALUES('legacy','u1','media.probe','running','{}',1,2)").run();
  assert.equal(recoverExpiredJobs(db,now),1,"legacy running rows without leases must be recovered");
  assert.equal(db.prepare("SELECT status FROM jobs WHERE id='legacy'").get().status,"queued");
- console.log("Queue lease checks passed: exclusive claims, owner-only heartbeats, stale-worker recovery, bounded retries and delayed scheduling.");
+
+ db.prepare("INSERT INTO workflows(id,owner_id,name,graph_json,graph_hash) VALUES('wf-blocked','u1','Blocked workflow','{}','hash')").run();
+ db.prepare("INSERT INTO jobs(id,owner_id,job_type,status,input_json,attempt_count,max_attempts,lease_expires_at) VALUES('workflow-blocked','u1','workflow.execute','running','{}',1,2,'2026-10-31T11:59:00.000Z')").run();
+ db.prepare("INSERT INTO workflow_runs(id,workflow_id,owner_id,workflow_revision,snapshot_hash,snapshot_json,status,job_id) VALUES('run-blocked','wf-blocked','u1',1,'hash','{}','blocked','workflow-blocked')").run();
+ assert.equal(recoverExpiredJobs(db,now),1,"a blocked workflow's expired worker lease must be reconciled without retrying the workflow");
+ const blockedJob=db.prepare("SELECT status,error_json,completed_at,available_at FROM jobs WHERE id='workflow-blocked'").get();
+ assert.equal(blockedJob.status,"blocked","workflow-run block state must survive stale-worker recovery");
+ assert.equal(blockedJob.available_at,null,"blocked workflow jobs must not be scheduled for retry");
+ assert.equal(blockedJob.completed_at,now,"blocked queue jobs must become terminal");
+ assert.equal(JSON.parse(blockedJob.error_json).code,"WORKFLOW_BLOCKED");
+ assert.equal(db.prepare("SELECT event_type FROM job_events WHERE job_id='workflow-blocked' ORDER BY id DESC LIMIT 1").get().event_type,"job.blocked");
+ console.log("Queue lease checks passed: exclusive claims, owner-only heartbeats, stale-worker recovery, bounded retries, delayed scheduling and blocked-workflow reconciliation.");
 }finally{db.close();await rm(root,{recursive:true,force:true});}
