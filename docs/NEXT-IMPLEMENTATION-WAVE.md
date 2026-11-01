@@ -53,6 +53,14 @@ Add reference image, image edit, first/last frame, video continuation, masks and
 - The media-operation verification script checks provenance, lineage, method labels and parameter allowlisting. CI/local execution still needs confirmation.
 
 ## Wave C — upscale and post-production truthfulness
+### C3. Recipe input boundary hardening — implemented, awaiting CI
+- Recipe steps now reject null, array and non-object step payloads.
+- Parameters must be plain object-shaped input; only operation-specific allowlisted keys are retained before the media argument validator runs.
+- Unknown fields are discarded so credentials, arbitrary metadata and unrelated caller values cannot flow into the dry-run plan.
+- Tests cover unknown-field removal, malformed parameter payloads and invalid step entries.
+- This remains a dry-run planner: it does not queue or execute a recipe, and no AI inference is claimed.
+
+
 - Keep Real-ESRGAN fail-closed until the configured executable and model files pass an execution self-test. Report execution verification separately from inference-quality verification: a successful process and plausible file header do not prove neural inference or perceptual quality. Mock binaries test contracts only.
 - Add verified engine/model readiness, input/output dimensions and format checks, resource/time/output ceilings, cancellation and derivative lineage. Do not report `inferenceVerified` from file metadata or process exit alone; require independent fixture-based checks before asserting model inference/quality.
 - Add optional deterministic FFmpeg recipes for transcode, proxy, audio extraction, loudness normalization and scaling, labeled as deterministic processing rather than neural enhancement.
