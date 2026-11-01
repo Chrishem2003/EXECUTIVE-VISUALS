@@ -39,3 +39,19 @@ export function buildShotContinuityPrompt({document,shotId,prompt,authorizeChara
  const context=sections.join("\n\n").slice(0,12000);
  return context?source+"\n\nUse the following saved project continuity as visual production context. Preserve the selected character identities, wardrobe and shot details.\n"+context:source;
 }
+
+export function getShotContinuityReferenceIds({document,shotId}={}){
+ const id=clean(shotId,80);
+ if(!id)throw Object.assign(new Error("A shot ID is required to resolve continuity references."),{code:"SHOT_CONTEXT_REQUIRED"});
+ const shots=Array.isArray(document?.shots)?document.shots:[];
+ const matches=shots.filter(item=>clean(item?.id,80)===id);
+ if(matches.length!==1)throw Object.assign(new Error("The selected shot is missing or ambiguous in this project workspace."),{code:"SHOT_CONTEXT_NOT_FOUND"});
+ const shot=matches[0],characters=Array.isArray(document?.characters)?document.characters:[];
+ const ids=[...(Array.isArray(shot.referenceAssetIds)?shot.referenceAssetIds:[])];
+ for(const characterId of [...new Set((Array.isArray(shot.characterIds)?shot.characterIds:[]).map(value=>clean(value,80)).filter(Boolean))]){
+  const found=characters.filter(item=>clean(item?.id,80)===characterId);
+  if(found.length!==1)throw Object.assign(new Error("A linked shot character is missing or ambiguous in this project workspace."),{code:"SHOT_CHARACTER_NOT_FOUND"});
+  if(Array.isArray(found[0].referenceAssetIds))ids.push(...found[0].referenceAssetIds);
+ }
+ return [...new Set(ids.map(value=>clean(value,80)).filter(Boolean))].slice(0,40);
+}
