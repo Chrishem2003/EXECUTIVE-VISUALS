@@ -149,12 +149,14 @@ test("cloud upscale verifies requested dimensions before publishing and records 
       }
     });
     const result = await execute({
-      job: { id: "job-up", owner_id: "owner-up", job_type: "media.upscale", input: { sourceAssetId: "asset-up", width: 640, height: 360, algorithm: "spline36", sharpness: 0.5 } },
+      job: { id: "job-up", owner_id: "owner-up", job_type: "media.upscale", input: { sourceAssetId: "asset-up", width: 641, height: 359, algorithm: "spline36", sharpness: 0.5 } },
       onProgress() {}
     });
     assert.equal(result.processing.method, "classical-resampling");
     assert.equal(result.processing.algorithm, "spline36");
-    assert.equal(result.processing.targetWidth, 640);
+    assert.equal(result.processing.targetWidth, 642);
+    assert.equal(result.processing.targetHeight, 360);
+    assert.equal(result.processing.outputVideo.width, 642);
     assert.equal(result.processing.outputVideo.height, 360);
     assert.equal(published.metadata.processing.sharpness, 0.5);
   } finally {
