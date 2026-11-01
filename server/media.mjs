@@ -9,7 +9,7 @@ import { stat } from "node:fs/promises";
 import { Transform } from "node:stream";
 import { addJobEvent, getAccessibleAsset, json, parseJson } from "./db.mjs";
 import { createRealEsrganAdapter } from "./ai-upscale-engine.mjs";
-import { parseBlackFrameEvents, parseSilenceEvents, parseAudioMetrics } from "./media-signal-analysis.mjs";
+import { parseBlackFrameEvents, parseSilenceEvents, parseAudioMetrics, runOptionalSignalCheck } from "./media-signal-analysis.mjs";
 
 const ALLOWED_JOBS = new Set(["media.probe", "media.thumbnail", "media.transcode", "media.audio_extract", "media.proxy", "media.denoise", "media.color", "media.resize", "media.interpolate", "media.upscale", "media.audio-clean", "media.ai-upscale", "timeline.render"]);
 const CONTAINERS = new Set(["mp4", "webm", "mov", "mkv", "mp3", "wav"]);
@@ -377,15 +377,18 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
     const result = await run("ffprobe", ["-v","error","-show_format","-show_streams","-of","json",sourcePath],30*60*1000,job.id,activeProcesses,cancelled);
     const metadata = JSON.parse(result.stdout || "{}");
     const streams=Array.isArray(metadata.streams)?metadata.streams:[];
-    const signalAnalysis={method:"ffmpeg-blackdetect-silencedetect",blackFrames:[],silence:[],performed:[],limitations:["Black-frame and silence detection are heuristic signal checks. They cannot determine whether an intentional pause, fade, or black transition is creatively correct.","Audio clipping, loudness compliance, lip-sync and perceptual quality are not assessed."]};
+    const signalAnalysis={schemaVersion:2,method:"ffmpeg-best-effort-signal-analysis",blackFrames:[],silence:[],audioMetrics:null,performed:[],unavailable:[],limitations:["Black-frame and silence detection are heuristic signal checks. They cannot determine whether an intentional pause, fade, or black transition is creatively correct.","Audio clipping and loudness metrics depend on installed FFmpeg filters and are not a substitute for mastering or perceptual review."]};
     if(streams.some(stream=>stream.codec_type==="video")){
-      const analysis=await run("ffmpeg",["-hide_banner","-i",sourcePath,"-map","0:v:0","-vf","blackdetect=d=0.1:pix_th=0.10","-an","-f","null","-"],10*60*1000,job.id,activeProcesses,cancelled,2_000_000);
-      signalAnalysis.blackFrames=parseBlackFrameEvents(analysis.stderr);signalAnalysis.performed.push("black-frame");
+      const check=await runOptionalSignalCheck(()=>run("ffmpeg",["-hide_banner","-i",sourcePath,"-map","0:v:0","-vf","blackdetect=d=0.1:pix_th=0.10","-an","-f","null","-"],10*60*1000,job.id,activeProcesses,cancelled,2_000_000),{isCancelled:cancelled});
+      if(check.status==="completed"){signalAnalysis.blackFrames=parseBlackFrameEvents(check.result.stderr);signalAnalysis.performed.push("black-frame");}
+      else signalAnalysis.unavailable.push({check:"black-frame",reason:check.reason});
     }
     if(streams.some(stream=>stream.codec_type==="audio")){
-      const analysis=await run("ffmpeg",["-hide_banner","-i",sourcePath,"-map","0:a:0","-af","silencedetect=n=-50dB:d=0.5,astats=metadata=0:reset=0,ebur128=peak=true","-vn","-f","null","-"],10*60*1000,job.id,activeProcesses,cancelled,2_000_000);
-      signalAnalysis.silence=parseSilenceEvents(analysis.stderr,Number(metadata.format?.duration)||0);
-      signalAnalysis.audioMetrics=parseAudioMetrics(analysis.stderr);signalAnalysis.performed.push("silence","audio-metrics");
+      const check=await runOptionalSignalCheck(()=>run("ffmpeg",["-hide_banner","-i",sourcePath,"-map","0:a:0","-af","silencedetect=n=-50dB:d=0.5,astats=metadata=0:reset=0,ebur128=peak=true","-vn","-f","null","-"],10*60*1000,job.id,activeProcesses,cancelled,2_000_000),{isCancelled:cancelled});
+      if(check.status==="completed"){
+        signalAnalysis.silence=parseSilenceEvents(check.result.stderr,Number(metadata.format?.duration)||0);
+        signalAnalysis.audioMetrics=parseAudioMetrics(check.result.stderr);signalAnalysis.performed.push("silence","audio-metrics");
+      } else signalAnalysis.unavailable.push({check:"audio-signal-and-metrics",reason:check.reason});
     }
     metadata.signalAnalysis=signalAnalysis;
     return { metadata, outputAsset:null };
