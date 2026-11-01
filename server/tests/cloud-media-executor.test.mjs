@@ -366,6 +366,7 @@ test("cloud AI upscale publishes a separate image derivative with engine provena
   const previousBinary = process.env.REALESRGAN_NCNN_PATH;
   const previousModels = process.env.REALESRGAN_MODEL_DIR;
   const previousEnabled = process.env.AI_UPSCALE_ENABLED;
+  const previousFfprobe = process.env.FFPROBE_PATH;
   const source = join(directory, "source.png");
   const model = "realesrgan-x4plus";
   const binary = await executable(directory, "realesrgan-ncnn-vulkan", String.raw`while [ "$1" != "" ]; do if [ "$1" = "-o" ]; then shift; printf '\211PNG\r\n\032\n\000\000\000\015IHDR\000\000\000\001\000\000\000\001' > "$1"; fi; shift; done`);
@@ -375,6 +376,7 @@ test("cloud AI upscale publishes a separate image derivative with engine provena
   process.env.REALESRGAN_NCNN_PATH = binary;
   process.env.REALESRGAN_MODEL_DIR = directory;
   process.env.AI_UPSCALE_ENABLED = "true";
+  process.env.FFPROBE_PATH = await executable(directory, "ffprobe", "case \"$last\" in *source.png) echo '{\"streams\":[{\"width\":10,\"height\":10}]}' ;; *) echo '{\"streams\":[{\"width\":40,\"height\":40}]}' ;; esac");
   let published;
   try {
     const execute = createCloudMediaExecutor({
@@ -398,6 +400,9 @@ test("cloud AI upscale publishes a separate image derivative with engine provena
     assert.equal(result.processing.engine, "realesrgan-ncnn-vulkan");
     assert.equal(result.processing.model, model);
     assert.equal(result.processing.scale, 4);
+    assert.equal(result.processing.dimensionsVerified, true);
+    assert.equal(result.processing.outputWidth, 40);
+    assert.equal(result.processing.outputHeight, 40);
     assert.equal(published.derivativeOf, "image-source");
     assert.equal(published.mediaType, "image/png");
     assert.equal(published.metadata.processing.method, "ai-super-resolution");
@@ -405,6 +410,7 @@ test("cloud AI upscale publishes a separate image derivative with engine provena
     if (previousBinary === undefined) delete process.env.REALESRGAN_NCNN_PATH; else process.env.REALESRGAN_NCNN_PATH = previousBinary;
     if (previousModels === undefined) delete process.env.REALESRGAN_MODEL_DIR; else process.env.REALESRGAN_MODEL_DIR = previousModels;
     if (previousEnabled === undefined) delete process.env.AI_UPSCALE_ENABLED; else process.env.AI_UPSCALE_ENABLED = previousEnabled;
+    if (previousFfprobe === undefined) delete process.env.FFPROBE_PATH; else process.env.FFPROBE_PATH = previousFfprobe;
     await rm(directory, { recursive: true, force: true });
   }
 });
