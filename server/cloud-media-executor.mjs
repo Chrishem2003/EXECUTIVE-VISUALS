@@ -210,11 +210,29 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
         sourceDurationSeconds = parsedSourceDuration;
       }
       const plan = outputPlan(job.job_type, input, materialized.asset, sourcePath, outputPath);
+      if (!executableAvailable("ffprobe")) throw Object.assign(new Error("FFprobe is required to validate cloud media derivatives before publication."), { code: "MEDIA_ENGINE_MISSING" });
       await runProcess(ffmpeg, plan.args, { signal, timeoutMs, onProgress });
       if (signal?.aborted) throw Object.assign(new Error("Media job was cancelled."), { code: "JOB_CANCELLED" });
       const info = await stat(outputPath);
       if (!info.isFile() || info.size < 1) throw Object.assign(new Error("Media engine produced an empty output."), { code: "MEDIA_OUTPUT_EMPTY" });
       let outputProbe = null;
+      const structuralProbe = await runProcess(ffprobe, ["-v","error","-show_format","-show_streams","-of","json",outputPath], { signal, timeoutMs, onProgress });
+      let structuralMetadata;
+      try { structuralMetadata = JSON.parse(structuralProbe.stdout || "{}"); }
+      catch { throw Object.assign(new Error("FFprobe returned malformed derivative metadata; derivative was not published."), { code: "MEDIA_PROBE_INVALID" }); }
+      const structuralStreams = Array.isArray(structuralMetadata.streams) ? structuralMetadata.streams : [];
+      const expectedStream = plan.mediaType.startsWith("audio/") ? "audio" : "video";
+      const matchingStream = structuralStreams.find(stream => stream?.codec_type === expectedStream);
+      if (!matchingStream) throw Object.assign(new Error("Derivative is missing its expected "+expectedStream+" stream; it was not published."), { code: "MEDIA_OUTPUT_VALIDATION_FAILED" });
+      if (plan.mediaType.startsWith("image/") && (!Number.isInteger(Number(matchingStream.width)) || Number(matchingStream.width)<1 || !Number.isInteger(Number(matchingStream.height)) || Number(matchingStream.height)<1))
+        throw Object.assign(new Error("Image derivative dimensions could not be verified; it was not published."), { code: "MEDIA_OUTPUT_VALIDATION_FAILED" });
+      if (!plan.mediaType.startsWith("image/")) {
+        const duration=Number(structuralMetadata.format?.duration);
+        const streamDuration=Number(matchingStream.duration);
+        if (!(Number.isFinite(duration)&&duration>0) && !(Number.isFinite(streamDuration)&&streamDuration>0))
+          throw Object.assign(new Error("Derivative has no valid, verifiable duration; it was not published."), { code: "MEDIA_OUTPUT_VALIDATION_FAILED" });
+      }
+      outputProbe = structuralMetadata;
       if (job.job_type === "media.upscale") {
         if (!executableAvailable("ffprobe")) throw Object.assign(new Error("FFprobe is required to verify upscaled output."), { code: "MEDIA_ENGINE_MISSING" });
         const probe = await runProcess(ffprobe, ["-v", "error", "-show_entries", "stream=codec_type,width,height,codec_name,pix_fmt:format=duration", "-of", "json", outputPath], { signal, timeoutMs, onProgress });
