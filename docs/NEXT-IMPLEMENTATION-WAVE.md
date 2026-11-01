@@ -53,6 +53,13 @@ Add reference image, image edit, first/last frame, video continuation, masks and
 - Do not label denoise, face restoration, inpainting, frame interpolation or stabilization as AI-powered unless a corresponding tested engine actually runs.
 - Add enhancement recipes with ordered steps, parameter validation, dry-run plan, approval, batch budget and resumable per-asset status.
 
+### C1. Readiness catalog hardening — implemented, awaiting CI
+- The provider catalog now distinguishes engine availability, execution verification and independent fixture-based quality evidence.
+- A caller-supplied `inferenceVerified` flag or successful execution check alone cannot advertise the AI-upscale capability as ready.
+- Quality readiness requires a recorded fixture identifier and parseable evidence timestamp; the current Real-ESRGAN adapter does not yet emit that evidence, so the capability remains unverified by design.
+- Tests cover disabled, execution-only, claimed-inference-only and evidence-backed states.
+- CI is pending; do not treat this slice as verified until the workflow completes successfully.
+
 ## Wave D — presenter, dubbing and continuity
 - Keep narration TTS, transcription, translation, avatar rendering, voice cloning and lip-sync as separate capabilities with separate readiness and permissions.
 - Add timestamped transcript alignment and optional diarization only through tested adapters.
