@@ -58,7 +58,7 @@ Actual image/video generation, speech/dubbing, timeline preview playback, transi
 
 ## Staging deployment
 
-A Docker-based Render Blueprint is provided in `render.yaml`. It uses a private 1 GB persistent disk mounted at `/var/data`; the API refuses to start when the required mount is absent, preventing accidental use of an ephemeral filesystem. The staging blueprint uses local account authentication and one worker process; its lease-based queue supports multiple processes only when they share the same SQLite database and media volume. Do not deploy this blueprint on the free ephemeral plan for user data. Review the monthly compute and disk charge before creating the service.
+A Docker-based Render Blueprint is provided in `render.yaml`. It uses a private 1 GB persistent disk mounted at `/var/data`; the API refuses to start when the required mount is absent, preventing accidental use of an ephemeral filesystem. The staging blueprint requires Supabase authentication (SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY must be configured as Render secrets) and one worker process. The runtime currently accepts a Supabase access token in its sign-in gate; a polished email/password and refresh-session flow remains a release blocker. Its lease-based queue supports multiple processes only when they share the same SQLite database and media volume. Do not deploy this blueprint on the free ephemeral plan for user data. Review the monthly compute and disk charge before creating the service.
 
 
 ## Research and implementation records
