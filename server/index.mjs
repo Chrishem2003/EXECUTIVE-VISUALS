@@ -302,10 +302,10 @@ export function createAppServer() {
         send(res,uploadResult.status,uploadResult.body,cors);return;
       }
       if(cloudTimelineApi && (path.startsWith("/api/cloud/timelines")||path.startsWith("/api/cloud/jobs")||path.startsWith("/api/cloud/assets"))){
-        const isTimelineMutation=path.startsWith("/api/cloud/timelines")&&(req.method==="POST"||req.method==="PUT");
-        const body=isTimelineMutation?await readJson(req,5*1024*1024):{};
+        const isCloudMutation=(path.startsWith("/api/cloud/timelines")&&(req.method==="POST"||req.method==="PUT"))||(path==="/api/cloud/projects"&&req.method==="POST")||(path.startsWith("/api/cloud/projects/")&&(req.method==="PATCH"||req.method==="DELETE"));
+        const body=isCloudMutation?await readJson(req,5*1024*1024):{};
         const cloudResult=await cloudTimelineApi.handle({
-          method:req.method,path,ownerId:user.id,body,
+          method:req.method,path,ownerId:user.id,body,query:Object.fromEntries(url.searchParams.entries()),
           idempotencyKey:String(req.headers["idempotency-key"]||"")
         });
         if(cloudResult){send(res,cloudResult.status,cloudResult.body,cors);return;}
