@@ -116,7 +116,8 @@ async function publishBriefToCloud(){
  state.cloudMessage="Saving the production brief and creative bible…";render();
  try{
   const duration=state.plan.match(/DURATION:\s*([^\n]+)/)?.[1]||"Not specified";
-  const existingSettings=state.cloudProjects.find(item=>item.id===state.cloudProjectLinks[project.id]?.id)?.settings||{};\n  const settings={...existingSettings,schemaVersion:1,creativeProduction:{version:1,project:{id:project.id,name:project.name,brief:project.brief,audience:project.audience,style:project.style,duration,created:project.created},blueprint:state.plan,shots:state.shots,characters:state.characters,variants:state.variants}};
+  const existingSettings=state.cloudProjects.find(item=>item.id===state.cloudProjectLinks[project.id]?.id)?.settings||{};
+  const settings={...existingSettings,schemaVersion:1,creativeProduction:{version:1,project:{id:project.id,name:project.name,brief:project.brief,audience:project.audience,style:project.style,duration,created:project.created},blueprint:state.plan,shots:state.shots,characters:state.characters,variants:state.variants}};
   const link=state.cloudProjectLinks[project.id];
   let saved:{id:string;name:string;revision:number};
   if(link){
