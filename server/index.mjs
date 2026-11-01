@@ -301,7 +301,7 @@ export function createAppServer() {
         });
         send(res,uploadResult.status,uploadResult.body,cors);return;
       }
-      if(cloudTimelineApi && (path.startsWith("/api/cloud/timelines")||path.startsWith("/api/cloud/jobs")||path.startsWith("/api/cloud/assets"))){
+      if(cloudTimelineApi && (path.startsWith("/api/cloud/timelines")||path.startsWith("/api/cloud/jobs")||path.startsWith("/api/cloud/assets")||path.startsWith("/api/cloud/projects"))){
         const isCloudMutation=(path.startsWith("/api/cloud/timelines")&&(req.method==="POST"||req.method==="PUT"))||(path==="/api/cloud/projects"&&req.method==="POST")||(path.startsWith("/api/cloud/projects/")&&(req.method==="PATCH"||req.method==="DELETE"));
         const body=isCloudMutation?await readJson(req,5*1024*1024):{};
         const cloudResult=await cloudTimelineApi.handle({
