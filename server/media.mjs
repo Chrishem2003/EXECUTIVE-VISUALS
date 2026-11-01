@@ -9,7 +9,7 @@ import { stat } from "node:fs/promises";
 import { Transform } from "node:stream";
 import { addJobEvent, getAccessibleAsset, json, parseJson } from "./db.mjs";
 import { createRealEsrganAdapter } from "./ai-upscale-engine.mjs";
-import { parseBlackFrameEvents, parseSilenceEvents } from "./media-signal-analysis.mjs";
+import { parseBlackFrameEvents, parseSilenceEvents, parseAudioMetrics } from "./media-signal-analysis.mjs";
 
 const ALLOWED_JOBS = new Set(["media.probe", "media.thumbnail", "media.transcode", "media.audio_extract", "media.proxy", "media.denoise", "media.color", "media.resize", "media.interpolate", "media.upscale", "media.audio-clean", "media.ai-upscale", "timeline.render"]);
 const CONTAINERS = new Set(["mp4", "webm", "mov", "mkv", "mp3", "wav"]);
@@ -383,8 +383,9 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
       signalAnalysis.blackFrames=parseBlackFrameEvents(analysis.stderr);signalAnalysis.performed.push("black-frame");
     }
     if(streams.some(stream=>stream.codec_type==="audio")){
-      const analysis=await run("ffmpeg",["-hide_banner","-i",sourcePath,"-map","0:a:0","-af","silencedetect=n=-50dB:d=0.5","-vn","-f","null","-"],10*60*1000,job.id,activeProcesses,cancelled,2_000_000);
-      signalAnalysis.silence=parseSilenceEvents(analysis.stderr,Number(metadata.format?.duration)||0);signalAnalysis.performed.push("silence");
+      const analysis=await run("ffmpeg",["-hide_banner","-i",sourcePath,"-map","0:a:0","-af","silencedetect=n=-50dB:d=0.5,astats=metadata=0:reset=0,ebur128=peak=true","-vn","-f","null","-"],10*60*1000,job.id,activeProcesses,cancelled,2_000_000);
+      signalAnalysis.silence=parseSilenceEvents(analysis.stderr,Number(metadata.format?.duration)||0);
+      signalAnalysis.audioMetrics=parseAudioMetrics(analysis.stderr);signalAnalysis.performed.push("silence","audio-metrics");
     }
     metadata.signalAnalysis=signalAnalysis;
     return { metadata, outputAsset:null };
