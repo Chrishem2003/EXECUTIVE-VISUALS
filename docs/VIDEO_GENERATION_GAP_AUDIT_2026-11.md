@@ -177,3 +177,8 @@ Cloud upscaling now probes the source before processing and records whether an a
 ### Cloud upscale source/output integrity comparison — 2026-11-01
 
 The cloud upscaler now probes both the source and derivative. In addition to positive duration validation, it rejects a derivative whose duration drifts from the source by more than the larger of 250 ms or 2% of source duration. Audio presence is also compared: if the source has audio, the derivative must retain at least one audio stream. Processing metadata records source/output duration, duration delta, and audio stream counts. These gates catch truncation, unexpected timing changes, and silent derivatives before publication; they do not replace perceptual video/audio quality review.
+
+
+### Regression correction and duration-drift test — 2026-11-01
+
+A CI run confirmed the broader server test suite executed but exposed two failures: the cloud probe fixture omitted format duration expected by its assertion, and normalized output dimensions were scoped inside validation but later referenced when constructing processing metadata. Both have been corrected. A new negative test verifies that a duration change beyond the source-relative tolerance blocks publication even when output dimensions and audio are otherwise valid. CI must rerun against the corrected head before this slice is considered green.
