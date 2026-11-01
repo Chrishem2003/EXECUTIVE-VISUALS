@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {parseBlackFrameEvents,parseSilenceEvents,buildMediaSignalFindings,parseAudioMetrics,buildAudioMetricFindings} from "../media-signal-analysis.mjs";
+import {parseBlackFrameEvents,parseSilenceEvents,buildMediaSignalFindings,parseAudioMetrics,buildAudioMetricFindings,runOptionalSignalCheck} from "../media-signal-analysis.mjs";
 
 test("parses FFmpeg blackdetect intervals",()=>{
  const events=parseBlackFrameEvents("[blackdetect @ 0x1] black_start:0.500 black_end:2.000 black_duration:1.500");
@@ -34,4 +34,13 @@ test("flags clipped samples and near-full-scale peaks without imposing a loudnes
  assert.ok(findings.some(item=>item.code==="AUDIO_CLIPPING"));
  assert.ok(findings.some(item=>item.code==="AUDIO_PEAK_NEAR_FULL_SCALE"));
  assert.equal(findings.length,2);
+});
+
+test("records unsupported optional filters without disguising them as clean results",async()=>{
+ const result=await runOptionalSignalCheck(async()=>{throw Object.assign(new Error("missing filter"),{code:"MEDIA_PROCESS_FAILED"});});
+ assert.deepEqual(result,{status:"unavailable",reason:"MEDIA_PROCESS_FAILED"});
+});
+test("does not swallow cancellation during optional signal analysis",async()=>{
+ const cancelled=Object.assign(new Error("cancelled"),{code:"MEDIA_CANCELLED"});
+ await assert.rejects(()=>runOptionalSignalCheck(async()=>{throw cancelled;},{isCancelled:()=>true}),error=>error===cancelled);
 });
