@@ -97,3 +97,8 @@ This is a configuration gate, not a hardware certification. A successful readine
 The cloud still-image path now requires FFprobe on the worker and probes both the original and enhanced image. It checks that output width and height equal the source dimensions multiplied by the requested scale before publishing the derivative. The verified source/output dimensions are retained in processing provenance. If FFprobe is missing, cannot decode either image, or reports unexpected dimensions, publication is blocked.
 
 This remains a structural validation gate, not a perceptual-quality score or a Vulkan inference self-test. The engine must still be tested on the target worker with representative images before production enablement.
+
+
+### Full image decode gate
+
+Cloud still-image AI upscaling now requires both FFprobe and FFmpeg. After checking that the output dimensions match the requested scale, the worker decodes the entire enhanced image through FFmpeg to a null sink. A decoder error or timeout prevents derivative publication. This catches truncated or structurally corrupt files that pass a short file-signature check or metadata probe. It does not measure perceptual quality, detect hallucinated detail, or certify Vulkan/GPU readiness; those remain separate review and worker qualification gates.
