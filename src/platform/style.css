@@ -202,3 +202,11 @@
 .shot-binding small{font-size:8px;letter-spacing:.7px;color:#d3b77e}
 .shot-binding label{font-size:9px}
 @media(max-width:600px){.scene-binding form{grid-template-columns:1fr}.scene-binding button{width:100%}}
+
+.shot-direction{display:grid;gap:8px;margin:8px 0 8px 12px!important;padding:10px;border:1px solid #3b4b60;border-radius:6px;background:#101a28}
+.shot-direction small{font-size:8px;letter-spacing:.8px;color:#dfbd80}
+.shot-direction label{display:grid;gap:4px;font-size:9px;color:var(--muted)}
+.shot-direction input,.shot-direction textarea{width:100%;min-width:0;background:#0b1018;color:var(--text);border:1px solid var(--line);border-radius:5px;padding:7px;font-size:9px;line-height:1.5}
+.shot-direction textarea{resize:vertical}
+.shot-direction .form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}
+@media(max-width:600px){.shot-direction .form-grid{grid-template-columns:1fr}}
