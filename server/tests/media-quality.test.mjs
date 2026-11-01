@@ -32,3 +32,18 @@ test("does not classify audio-only media as missing video unless requested",()=>
  assert.equal(report.status,"passed");
  assert.equal(report.streams.audio,1);
 });
+
+test("includes detected black frames and silence as review findings",()=>{
+ const report=buildMediaQualityReport({format:{duration:"12"},streams:[
+  {codec_type:"video",width:1920,height:1080,avg_frame_rate:"25/1"},
+  {codec_type:"audio",sample_rate:"48000",channels:2}
+ ],signalAnalysis:{
+  method:"ffmpeg-blackdetect-silencedetect",performed:["black-frame","silence"],
+  blackFrames:[{startSeconds:0,endSeconds:1.5,durationSeconds:1.5}],
+  silence:[{startSeconds:4,endSeconds:7,durationSeconds:3}]
+ }},{requireVideo:true,requireAudio:true});
+ assert.equal(report.status,"review");
+ assert.ok(report.findings.some(item=>item.code==="SUSTAINED_BLACK_FRAME"));
+ assert.ok(report.findings.some(item=>item.code==="SUSTAINED_SILENCE"));
+ assert.deepEqual(report.signalAnalysis.performed,["black-frame","silence"]);
+});
