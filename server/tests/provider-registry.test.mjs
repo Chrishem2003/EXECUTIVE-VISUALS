@@ -4,7 +4,7 @@ import { getProviderCatalog, findProviderForCapability, requireProviderForCapabi
 
 test("provider catalog is safe by default and never exposes credentials or submits work",()=>{
  const catalog=getProviderCatalog({});
- assert.equal(catalog.summary.total,6);
+ assert.equal(catalog.summary.total,7);
  assert.equal(catalog.summary.ready,0);
  assert.equal(catalog.summary.disabled,5);
  assert.equal(catalog.providers.find(x=>x.id==="local-media").status,"unavailable");
