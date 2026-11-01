@@ -14,7 +14,7 @@ const palette:Record<string,{kind:WorkflowNodeKind;label:string;inputs:WorkflowP
  upload:{kind:"upload",label:"Use Uploaded Asset",inputs:[],outputs:[port("asset","asset"),port("media","media")]},
  reference:{kind:"reference",label:"Reference Asset",inputs:[],outputs:[port("asset","asset"),port("media","media")]},
  llm:{kind:"llm.prompt",label:"AI Text Processor",inputs:[port("prompt","text",true)],outputs:[port("text","text")]},
- image:{kind:"image.generate",label:"Image Generation",inputs:[port("prompt","text",true)],outputs:[port("image","image")]},
+ image:{kind:"image.generate",label:"Image Generation",inputs:[port("prompt","text",true),port("reference","image")],outputs:[port("image","image")]},
  video:{kind:"video.generate",label:"Video Generation",inputs:[port("prompt","text",true),port("start-frame","start-frame"),port("reference","video",false,true)],outputs:[port("video","video")]},
  voice:{kind:"voice.generate",label:"Voice Generation",inputs:[port("script","text",true)],outputs:[port("audio","audio")]},
  transcribe:{kind:"voice.transcribe",label:"Audio Transcription",inputs:[port("audio","audio",true),port("approval","any")],outputs:[port("transcript","transcript"),port("text","text"),port("segments","structured-data"),port("sourceAudio","audio"),port("language","text")]},
