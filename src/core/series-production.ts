@@ -39,3 +39,32 @@ export function validateSeriesProductionPlan(plan:SeriesProductionPlan){
  if(total!==episode.runtimeSeconds)issues.push("Scene and shot durations must add up to episode runtime.");}}
  return{valid:issues.length===0,issues};
 }
+
+
+export interface EpisodeTimelineMarker {id:string;name:string;start:{value:number;rate:number};duration:{value:number;rate:number};color:string;note:string}
+export interface EpisodeTimelineDocument {id:string;projectId:string;name:string;revision:number;frameRate:{numerator:number;denominator:number};width:number;height:number;pixelAspectRatio:number;tracks:Array<{id:string;name:string;kind:"video"|"audio"|"caption"|"overlay";enabled:boolean;locked:boolean;clips:never[]}>;markers:EpisodeTimelineMarker[];createdAt:string;updatedAt:string}
+const RATIO_SIZE:Record<string,{width:number;height:number}>={"16:9":{width:1920,height:1080},"9:16":{width:1080,height:1920},"1:1":{width:1080,height:1080},"4:3":{width:1440,height:1080},"3:4":{width:1080,height:1440},"21:9":{width:2560,height:1080}};
+/** Build an editable, asset-free editorial sequence from a planned episode.
+ * Scene and shot markers preserve the story structure; no fake media clips are inserted.
+ */
+export function buildEpisodeTimelineDocument(series:SeriesProductionPlan,episode:SeriesEpisode,projectId:string):EpisodeTimelineDocument{
+ if(!projectId.trim())throw new Error("A cloud project is required to create an episode timeline.");
+ if(!validateSeriesProductionPlan(series).valid)throw new Error("Cannot create a timeline from an invalid series plan.");
+ if(!series.seasons.some(season=>season.episodes.some(item=>item.id===episode.id)))throw new Error("Episode does not belong to this series.");
+ const size=RATIO_SIZE[series.defaults.aspectRatio]||RATIO_SIZE["16:9"],fps=series.defaults.frameRate,now=new Date().toISOString(),markers:EpisodeTimelineMarker[]=[];
+ let cursor=0;
+ for(const scene of episode.scenes){
+  markers.push({id:scene.id,name:scene.title,start:{value:cursor,rate:1},duration:{value:scene.durationSeconds,rate:1},color:"#6c8cff",note:scene.purpose});
+  let shotCursor=cursor;
+  for(const shot of scene.shots){markers.push({id:shot.id,name:scene.title+" · "+shot.id.split("-").slice(-1)[0],start:{value:shotCursor,rate:1},duration:{value:shot.durationSeconds,rate:1},color:"#29a38b",note:shot.prompt});shotCursor+=shot.durationSeconds;}
+  cursor+=scene.durationSeconds;
+ }
+ if(cursor!==episode.runtimeSeconds)throw new Error("Episode timeline markers do not match the planned runtime.");
+ const tracks:EpisodeTimelineDocument["tracks"]=[
+  {id:episode.id+"-video",name:"Picture · planned shots",kind:"video",enabled:true,locked:false,clips:[]},
+  {id:episode.id+"-audio",name:"Dialogue / music / effects",kind:"audio",enabled:true,locked:false,clips:[]},
+  {id:episode.id+"-captions",name:"Captions & subtitles",kind:"caption",enabled:true,locked:false,clips:[]},
+  {id:episode.id+"-graphics",name:"Titles / overlays",kind:"overlay",enabled:true,locked:false,clips:[]}
+ ];
+ return{id:"episode-"+episode.id,projectId,name:series.title+" · "+episode.title,revision:1,frameRate:{numerator:fps,denominator:1},width:size.width,height:size.height,pixelAspectRatio:1,tracks,markers,createdAt:now,updatedAt:now};
+}
