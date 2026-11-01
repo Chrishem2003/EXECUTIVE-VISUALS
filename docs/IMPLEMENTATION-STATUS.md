@@ -325,3 +325,12 @@ This is a runnable worker entry point, not a deployed worker. Do not set the ena
 - Shot records now preserve character links, location, time of day, visual prompt, continuity-in/out notes, reference asset IDs and aspect ratio, alongside camera/lens/movement/lighting/duration.
 - Lists are deduplicated and bounded; strings are length-limited by the server-side workspace sanitizer. Existing project revision conflict protection and owner/editor write authorization remain in force.
 - API regression coverage verifies that these fields survive persistence and reload. These records establish a durable continuity foundation; automatic reference-frame selection and model-specific conditioning still require the corresponding generation adapters and explicit model field configuration.
+
+
+## Shot continuity applied to generation — 1 November 2026
+
+- Image and video workflow nodes can select a saved project shot by setting `shotId` in node configuration. The workflow inspector documents this option.
+- The executor loads the saved project workspace on the server and combines the original prompt with the selected shot's scene, action, location, time of day, visual direction, camera, lens, movement, lighting, aspect ratio and continuity notes.
+- Only explicitly linked characters are included. Missing or duplicate shot or character IDs fail closed. Every linked character must pass the existing authorization check for image likeness or video face-animation use before continuity details are sent to a provider.
+- Reference asset IDs are not automatically attached. The existing path still requires a separately connected, owner-accessible, checksum-verified single image and a model-specific input field explicitly configured on the server.
+- Prompt-builder tests cover context construction, missing and ambiguous links, empty prompts and per-character authorization. This feature does not make provider calls by itself, bypass approval gates, enable remote generation or change production data.
