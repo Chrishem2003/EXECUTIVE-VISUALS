@@ -155,8 +155,29 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
       if (signal?.aborted) throw Object.assign(new Error("Media job was cancelled."), { code: "JOB_CANCELLED" });
       const info = await stat(outputPath);
       if (!info.isFile() || info.size < 1) throw Object.assign(new Error("Media engine produced an empty output."), { code: "MEDIA_OUTPUT_EMPTY" });
+      let outputProbe = null;
+      if (job.job_type === "media.upscale") {
+        if (!executableAvailable("ffprobe")) throw Object.assign(new Error("FFprobe is required to verify upscaled output."), { code: "MEDIA_ENGINE_MISSING" });
+        const probe = await runProcess(ffprobe, ["-v", "error", "-show_entries", "stream=codec_type,width,height", "-of", "json", outputPath], { signal, timeoutMs, onProgress });
+        try { outputProbe = JSON.parse(probe.stdout || "{}"); }
+        catch { throw Object.assign(new Error("FFprobe returned invalid upscaling metadata."), { code: "MEDIA_PROBE_INVALID" }); }
+        const video = (outputProbe.streams || []).find(stream => stream.codec_type === "video");
+        const expectedWidth = Math.round(Number(input.width ?? 2560) / 2) * 2;
+        const expectedHeight = Math.round(Number(input.height ?? 1440) / 2) * 2;
+        if (!video || Number(video.width) !== expectedWidth || Number(video.height) !== expectedHeight) {
+          throw Object.assign(new Error("Upscale output dimensions do not match the requested dimensions; derivative was not published."), { code: "MEDIA_OUTPUT_VALIDATION_FAILED" });
+        }
+      }
       onProgress(85);
       const digest = await checksum(outputPath);
+      const processing = job.job_type === "media.upscale" ? {
+        method: "classical-resampling",
+        algorithm: ["lanczos", "bicubic", "spline36"].includes(input.algorithm) ? input.algorithm : "lanczos",
+        sharpness: Number(input.sharpness ?? 0),
+        targetWidth: Number(input.width ?? 2560),
+        targetHeight: Number(input.height ?? 1440),
+        outputVideo: outputProbe?.streams?.find(stream => stream.codec_type === "video") || null
+      } : null;
       const asset = await mediaIO.publish({
         ownerId: job.owner_id,
         projectId: job.project_id || null,
@@ -164,10 +185,10 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
         mediaType: plan.mediaType,
         path: outputPath,
         derivativeOf: sourceId,
-        metadata: { operation: job.job_type, sourceSha256: materialized.asset.sha256, sha256: digest }
+        metadata: { operation: job.job_type, sourceSha256: materialized.asset.sha256, sha256: digest, ...(processing ? { processing } : {}) }
       });
       onProgress(100);
-      return { sourceAssetId: sourceId, outputAsset: asset, sha256: digest, byteSize: info.size, operation: job.job_type };
+      return { sourceAssetId: sourceId, outputAsset: asset, sha256: digest, byteSize: info.size, operation: job.job_type, ...(processing ? { processing } : {}) };
     } finally {
       await materialized.cleanup?.().catch(() => {});
       await rm(workDir, { recursive: true, force: true }).catch(() => {});
