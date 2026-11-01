@@ -221,3 +221,5 @@
 .asset-comparison-grid img{display:block;width:100%;height:180px;object-fit:contain}
 .asset-comparison p{margin:2px 0;font-size:10px;color:var(--text)}
 @media(max-width:600px){.asset-comparison-grid img{height:120px}}
+
+.review-target{padding:8px 10px;border:1px solid var(--line);border-radius:6px;color:var(--muted);font-size:10px;background:#0e1520}
