@@ -24,3 +24,18 @@ export function buildMediaSignalFindings({blackFrames=[],silence=[],durationSeco
  if(lastBlack)findings.push({code:"BLACK_AT_END",severity:"warning",startSeconds:lastBlack.startSeconds,endSeconds:lastBlack.endSeconds,durationSeconds:lastBlack.durationSeconds,message:"The video ends in a sustained black interval."});
  return findings;
 }
+
+export function parseAudioMetrics(stderr=""){
+ const text=String(stderr||"");
+ const clipped=[...text.matchAll(/Number of samples clipped:\s*([0-9]+)/g)].map(match=>Number(match[1])).filter(Number.isFinite);
+ const peaks=[...text.matchAll(/Peak level dB:\s*(-?(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)|-inf)/gi)].map(match=>match[1].toLowerCase()==="-inf"?null:Number(match[1]));
+ const rms=[...text.matchAll(/RMS level dB:\s*(-?(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)|-inf)/gi)].map(match=>match[1].toLowerCase()==="-inf"?null:Number(match[1]));
+ const integrated=[...text.matchAll(/^\\s*I:\s*(-?(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+))\s*LUFS/gm)].map(match=>Number(match[1])).filter(Number.isFinite);
+ return {clippedSamples:clipped.length?Math.max(...clipped):null,peakDbfs:peaks.length?peaks.at(-1):null,rmsDbfs:rms.length?rms.at(-1):null,integratedLufs:integrated.length?integrated.at(-1):null};
+}
+export function buildAudioMetricFindings(metrics={}){
+ const findings=[];
+ if(Number(metrics.clippedSamples)>0)findings.push({code:"AUDIO_CLIPPING",severity:"warning",clippedSamples:Number(metrics.clippedSamples),message:"Clipped audio samples were reported by the signal analyzer."});
+ if(Number.isFinite(metrics.peakDbfs)&&metrics.peakDbfs>=-1)findings.push({code:"AUDIO_PEAK_NEAR_FULL_SCALE",severity:"warning",peakDbfs:metrics.peakDbfs,message:"Audio peaks are within 1 dB of full scale; review true-peak and delivery headroom."});
+ return findings;
+}
