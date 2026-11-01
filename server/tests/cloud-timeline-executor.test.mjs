@@ -21,7 +21,7 @@ test("cloud timeline executor materializes all unique sources and publishes a re
   },
   async renderTimeline(args){assert.equal(args.timeline,timeline);assert.equal(args.assets.size,2);const path=join(args.workDir,"master.mp4");await writeFile(path,"final-master");return{path,filename:"episode-master.mp4",mediaType:"video/mp4",render:{durationSeconds:12}};}
  });
- const result=await executor({job:{id:"job-1",owner_id:owner,project_id:project,job_type:"timeline.render",input:{timelineId}},onProgress(){}});
+ const result=await executor({job:{id:"job-1",owner_id:owner,project_id:project,job_type:"timeline.render",input:{timelineId,timelineRevision:7}},onProgress(){}});
  assert.equal(materialized.length,2);assert.deepEqual(materialized.map(x=>x.assetId).sort(),["asset-a","asset-b"]);
  assert.deepEqual(cleanups.sort(),["asset-a","asset-b"]);
  assert.equal(published[0].ownerId,owner);assert.equal(published[0].projectId,project);
@@ -37,7 +37,7 @@ test("cloud timeline executor rejects project mismatch before materializing medi
   mediaIO:{async materialize(){materialized=true;},async publish(){}},
   async renderTimeline(){}
  });
- await assert.rejects(()=>executor({job:{id:"job-2",owner_id:owner,project_id:project,job_type:"timeline.render",input:{timelineId}}}),error=>error.code==="CLOUD_TIMELINE_PROJECT_MISMATCH");
+ await assert.rejects(()=>executor({job:{id:"job-2",owner_id:owner,project_id:project,job_type:"timeline.render",input:{timelineId,timelineRevision:1}}}),error=>error.code==="CLOUD_TIMELINE_PROJECT_MISMATCH");
  assert.equal(materialized,false);
 });
 
@@ -49,11 +49,22 @@ test("cloud timeline executor cleans every materialized source if rendering fail
   mediaIO:{async materialize({assetId}){const path=join(root,assetId);await writeFile(path,"source");return{path,asset:{id:assetId},async cleanup(){cleaned.push(assetId);}};},async publish(){throw new Error("not reached");}},
   async renderTimeline(){throw new Error("render failure");}
  });
- await assert.rejects(()=>executor({job:{id:"job-3",owner_id:owner,project_id:null,job_type:"timeline.render",input:{timelineId}}}),/render failure/);
+ await assert.rejects(()=>executor({job:{id:"job-3",owner_id:owner,project_id:null,job_type:"timeline.render",input:{timelineId,timelineRevision:1}}}),/render failure/);
  assert.deepEqual(cleaned.sort(),["asset-a","asset-b"]);
  await rm(root,{recursive:true,force:true});
 });
 
 test("cloud timeline executor requires an explicit cloud render engine",()=>{
  assert.throws(()=>createCloudTimelineExecutor({timelines:{get(){}},mediaIO:{materialize(){},publish(){}}}),/render engine/);
+});
+
+test("cloud timeline executor refuses to render a stale revision after the job was queued",async()=>{
+ let materialized=false;
+ const executor=createCloudTimelineExecutor({
+  timelines:{async get(){return{id:timelineId,projectId:null,revision:3,timeline};}},
+  mediaIO:{async materialize(){materialized=true;},async publish(){}},
+  async renderTimeline(){}
+ });
+ await assert.rejects(()=>executor({job:{id:"job-stale",owner_id:owner,project_id:null,job_type:"timeline.render",input:{timelineId,timelineRevision:2}}}),error=>error.code==="CLOUD_TIMELINE_REVISION_CHANGED");
+ assert.equal(materialized,false);
 });
