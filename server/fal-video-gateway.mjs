@@ -18,10 +18,22 @@ async function jsonRequest(url,options,timeoutMs){
  }finally{clearTimeout(timer)}
 }
 const IMAGE_INPUT_FIELDS=new Set(["image_url","start_image_url","first_frame_image_url"]);
+const FAL_VIDEO_ASPECT_RATIOS=Object.freeze(["16:9","9:16","1:1"]);
+export function getFalVideoCapabilities({imageInputField=process.env.FAL_VIDEO_IMAGE_INPUT_FIELD||""}={}){
+ return Object.freeze({
+  negativePrompt:false,seed:false,startFrame:false,endFrame:false,motionReference:false,
+  referenceImages:IMAGE_INPUT_FIELDS.has(String(imageInputField||"").trim()),
+  audioModes:Object.freeze([]),aspectRatios:FAL_VIDEO_ASPECT_RATIOS,
+  resolutions:Object.freeze(["provider_default"]),minDurationSeconds:1,maxDurationSeconds:30
+ });
+}
 export function buildFalVideoPayload({prompt,duration=5,aspectRatio="16:9",referenceImageDataUrl="",imageInputField=process.env.FAL_VIDEO_IMAGE_INPUT_FIELD||""}={}){
- const seconds=Math.max(1,Math.min(30,Math.round(Number(duration)||5)));
- const ratios=new Set(["16:9","9:16","1:1"]);const ratio=ratios.has(aspectRatio)?aspectRatio:"16:9";
- const payload={prompt:String(prompt||"").trim().slice(0,20000),duration:seconds,aspect_ratio:ratio};
+ const text=typeof prompt==="string"?prompt.trim():"";
+ if(!text||text.length>12000)throw fail("Video prompt must contain 1 to 12000 characters.","VIDEO_GATEWAY_INVALID_INPUT");
+ if(!Number.isInteger(duration)||duration<1||duration>30)throw fail("Video duration must be a whole number from 1 to 30 seconds.","VIDEO_GATEWAY_INVALID_INPUT");
+ if(!FAL_VIDEO_ASPECT_RATIOS.includes(aspectRatio))throw fail("The selected video model does not support this aspect ratio.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
+ const seconds=duration;
+ const payload={prompt:text,duration:seconds,aspect_ratio:aspectRatio};
  if(referenceImageDataUrl){
   const field=String(imageInputField||"").trim();
   if(!IMAGE_INPUT_FIELDS.has(field))throw fail("Configure FAL_VIDEO_IMAGE_INPUT_FIELD to a field supported by the selected image-to-video model before passing a reference image.","VIDEO_GATEWAY_IMAGE_INPUT_UNCONFIGURED");
