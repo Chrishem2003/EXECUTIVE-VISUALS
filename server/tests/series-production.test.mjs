@@ -35,3 +35,10 @@ assert.equal(verticalTimeline.markers.filter(marker=>marker.color==="#29a38b").r
 assert.throws(()=>setEpisodeDirectionOverrides(plan,target.id,{episodeRuntimeSeconds:301}),/up to five minutes/);
 assert.throws(()=>upsertStoryBibleEntry(plan,{kind:"unknown",name:"X",description:"Y",visualRules:"",tags:[],referenceAssetIds:[]}),/record type/);
 console.log("Story bible and episode override verification passed: registry, inheritance, runtime rebalance, vertical timeline and five-minute cap.");
+
+const resetPlan=setEpisodeDirectionOverrides(overridden,updated.id,{});
+const resetEpisode=resetPlan.seasons[0].episodes[0];
+assert.equal(resetEpisode.runtimeSeconds,plan.defaults.episodeRuntimeSeconds);
+assert.equal(resetEpisode.scenes.reduce((n,scene)=>n+scene.durationSeconds,0),plan.defaults.episodeRuntimeSeconds);
+assert.equal(resolveEpisodeDirection(resetPlan,resetEpisode).aspectRatio,plan.defaults.aspectRatio);
+console.log("Episode override reset verification passed: series defaults restored and scene durations rebalanced.");
