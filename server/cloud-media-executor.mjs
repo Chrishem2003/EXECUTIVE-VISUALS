@@ -151,17 +151,29 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
         const adapter = createRealEsrganAdapter({ timeoutMs, maxOutputBytes: 250 * 1024 * 1024 });
         const format = String(input.format || "png");
         if (!["png", "jpg", "webp"].includes(format)) throw Object.assign(new Error("AI upscale output format is unsupported."), { code: "INVALID_MEDIA_OPTIONS" });
+        if (!executableAvailable("ffprobe")) throw Object.assign(new Error("FFprobe is required to verify AI-upscaled image dimensions."), { code: "MEDIA_ENGINE_MISSING" });
+        const sourceProbe = await runProcess(ffprobe, ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height", "-of", "json", sourcePath], { signal, timeoutMs, onProgress });
+        let sourceImage;
+        try { sourceImage = JSON.parse(sourceProbe.stdout || "{}").streams?.[0]; } catch {}
+        const sourceWidth = Number(sourceImage?.width), sourceHeight = Number(sourceImage?.height);
+        if (!Number.isInteger(sourceWidth) || !Number.isInteger(sourceHeight) || sourceWidth < 1 || sourceHeight < 1) throw Object.assign(new Error("FFprobe could not verify the source image dimensions."), { code: "MEDIA_PROBE_INVALID" });
         const result = await adapter.execute({
           inputPath: sourcePath, outputPath, model: input.model || "realesrgan-x4plus",
           scale: input.scale ?? 4, tile: input.tile ?? 0, format
         });
+        if (signal?.aborted) throw Object.assign(new Error("Media job was cancelled."), { code: "JOB_CANCELLED" });
+        const outputProbe = await runProcess(ffprobe, ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height", "-of", "json", outputPath], { signal, timeoutMs, onProgress });
+        let outputImage;
+        try { outputImage = JSON.parse(outputProbe.stdout || "{}").streams?.[0]; } catch {}
+        const expectedWidth = sourceWidth * result.scale, expectedHeight = sourceHeight * result.scale;
+        if (Number(outputImage?.width) !== expectedWidth || Number(outputImage?.height) !== expectedHeight) throw Object.assign(new Error("AI-upscaled image dimensions do not match the requested scale; derivative was not published."), { code: "MEDIA_OUTPUT_VALIDATION_FAILED" });
         if (signal?.aborted) throw Object.assign(new Error("Media job was cancelled."), { code: "JOB_CANCELLED" });
         const info = await stat(outputPath);
         const digest = await checksum(outputPath);
         const mediaType = format === "jpg" ? "image/jpeg" : "image/" + format;
         const sourceName = String(materialized.asset.name || "image");
         const plan = { name: sourceName.replace(/\.[^.]+$/, "").slice(0, 140) + "-ai-upscaled." + format, mediaType };
-        const processing = { engine: result.engine, method: result.method, model: result.model, scale: result.scale, tile: Number(input.tile ?? 0) };
+        const processing = { engine: result.engine, method: result.method, model: result.model, scale: result.scale, tile: Number(input.tile ?? 0), sourceWidth, sourceHeight, outputWidth: expectedWidth, outputHeight: expectedHeight, dimensionsVerified: true };
         const asset = await mediaIO.publish({
           ownerId: job.owner_id, projectId: job.project_id || null, filename: plan.name,
           mediaType, path: outputPath, derivativeOf: sourceId,
