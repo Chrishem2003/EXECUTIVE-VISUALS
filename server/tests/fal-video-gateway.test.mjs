@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {generateFalVideo} from "../fal-video-gateway.mjs";
+import {generateFalVideo, buildFalVideoPayload, getFalVideoCapabilities} from "../fal-video-gateway.mjs";
 const names=["VIDEO_GATEWAY_ENABLED","VIDEO_GATEWAY_ALLOW_REMOTE","VIDEO_GATEWAY_TIMEOUT_MS","FAL_KEY","FAL_VIDEO_MODEL","FAL_VIDEO_IMAGE_INPUT_FIELD"];
 const saved=Object.fromEntries(names.map(name=>[name,process.env[name]]));
 const restore=()=>{for(const name of names)saved[name]===undefined?delete process.env[name]:process.env[name]=saved[name]};
@@ -53,4 +53,32 @@ test("video adapter requires explicit remote opt-in and rejects unsafe output ho
   globalThis.fetch=async(url,options={})=>{const parsed=new URL(url);if(options.method==="POST")return json(200,{request_id:"x",status_url:"https://queue.fal.run/status",response_url:"https://queue.fal.run/result"});if(parsed.pathname==="/status")return json(200,{status:"COMPLETED"});return json(200,{video:{url:"https://attacker.example/video.mp4"}})};
   await assert.rejects(()=>generateFalVideo({prompt:"test"}),e=>e.code==="VIDEO_GATEWAY_INVALID_RESPONSE");
  }finally{globalThis.fetch=original;restore()}
+});
+
+
+test("video capability declaration matches the configured model input contract",()=>{
+ const withoutReference=getFalVideoCapabilities({imageInputField:""});
+ assert.equal(withoutReference.referenceImages,false);
+ assert.deepEqual(withoutReference.aspectRatios,["16:9","9:16","1:1"]);
+ assert.deepEqual(withoutReference.resolutions,["provider_default"]);
+ assert.deepEqual(withoutReference.audioModes,[]);
+ assert.equal(withoutReference.maxDurationSeconds,30);
+ const withReference=getFalVideoCapabilities({imageInputField:"image_url"});
+ assert.equal(withReference.referenceImages,true);
+ assert.equal(getFalVideoCapabilities({imageInputField:"unsupported_field"}).referenceImages,false);
+});
+
+test("video payload rejects invalid durations, unsupported aspect ratios and empty prompts",()=>{
+ for(const duration of [0,0.5,31,NaN,Infinity]){
+  assert.throws(()=>buildFalVideoPayload({prompt:"A valid prompt",duration}),error=>error.code==="VIDEO_GATEWAY_INVALID_INPUT");
+ }
+ assert.throws(()=>buildFalVideoPayload({prompt:"A valid prompt",aspectRatio:"4:3"}),error=>error.code==="VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
+ assert.throws(()=>buildFalVideoPayload({prompt:"   "}),error=>error.code==="VIDEO_GATEWAY_INVALID_INPUT");
+ assert.throws(()=>buildFalVideoPayload({prompt:"x".repeat(12001)}),error=>error.code==="VIDEO_GATEWAY_INVALID_INPUT");
+});
+
+test("video payload preserves valid requested duration and aspect ratio without coercion",()=>{
+ assert.deepEqual(buildFalVideoPayload({prompt:"Keep the framing",duration:12,aspectRatio:"9:16"}),{
+  prompt:"Keep the framing",duration:12,aspect_ratio:"9:16"
+ });
 });
