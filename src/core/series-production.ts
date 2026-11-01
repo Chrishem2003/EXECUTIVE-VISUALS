@@ -55,7 +55,7 @@ export function buildEpisodeTimelineDocument(series:SeriesProductionPlan,episode
  if(!projectId.trim())throw new Error("A cloud project is required to create an episode timeline.");
  if(!validateSeriesProductionPlan(series).valid)throw new Error("Cannot create a timeline from an invalid series plan.");
  if(!series.seasons.some(season=>season.episodes.some(item=>item.id===episode.id)))throw new Error("Episode does not belong to this series.");
- const size=RATIO_SIZE[series.defaults.aspectRatio]||RATIO_SIZE["16:9"],fps=series.defaults.frameRate,now=new Date().toISOString(),markers:EpisodeTimelineMarker[]=[];
+ const direction=resolveEpisodeDirection(series,episode),size=RATIO_SIZE[direction.aspectRatio]||RATIO_SIZE["16:9"],fps=direction.frameRate,now=new Date().toISOString(),markers:EpisodeTimelineMarker[]=[];
  let cursor=0;
  for(const scene of episode.scenes){
   markers.push({id:scene.id,name:scene.title,start:{value:cursor,rate:1},duration:{value:scene.durationSeconds,rate:1},color:"#6c8cff",note:scene.purpose});
