@@ -210,3 +210,14 @@
 .shot-direction textarea{resize:vertical}
 .shot-direction .form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}
 @media(max-width:600px){.shot-direction .form-grid{grid-template-columns:1fr}}
+
+
+/* Media derivative review: compare source and enhanced output without replacing originals */
+.asset-comparison{display:grid;gap:8px;margin:10px 0;padding:10px;border:1px solid var(--line);border-radius:8px;background:#0e1520}
+.asset-comparison-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.asset-comparison-grid>div{display:grid;gap:6px;min-width:0}
+.asset-comparison-grid small,.asset-comparison>small{font-size:9px;color:var(--muted);overflow-wrap:anywhere}
+.asset-comparison-grid a{display:block;overflow:hidden;border:1px solid var(--line);border-radius:6px;background:#090d13}
+.asset-comparison-grid img{display:block;width:100%;height:180px;object-fit:contain}
+.asset-comparison p{margin:2px 0;font-size:10px;color:var(--text)}
+@media(max-width:600px){.asset-comparison-grid img{height:120px}}
