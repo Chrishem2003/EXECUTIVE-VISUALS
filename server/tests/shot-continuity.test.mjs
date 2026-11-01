@@ -1,0 +1,20 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { buildShotContinuityPrompt } from "../shot-continuity.mjs";
+const document={
+ shots:[{id:"shot-1",scene:"Arrival",action:"Walks into frame",characterIds:["char-1","char-1"],location:"Kampala studio",timeOfDay:"Golden hour",visualPrompt:"Warm cinematic close-up",continuityIn:"Jacket buttoned",continuityOut:"Turns left",camera:"Medium close-up",lens:"50mm",movement:"Slow dolly",lighting:"Soft key",aspectRatio:"16:9"}],
+ characters:[{id:"char-1",name:"Amina",description:"Presenter",appearance:"Short natural hair",wardrobe:"Blue jacket",voiceProfile:"Warm and measured",continuityNotes:"Keep jacket buttoned"}]
+};
+test("builds deterministic shot and selected-character context without exposing asset IDs",()=>{
+ const result=buildShotContinuityPrompt({document,shotId:"shot-1",prompt:"Create the opening frame."});
+ for(const value of ["Create the opening frame.","SHOT CONTINUITY","Kampala studio","Golden hour","CHARACTER 1","Amina","Short natural hair","Blue jacket","Warm and measured","Keep jacket buttoned","Slow dolly"])assert.ok(result.includes(value),value);
+ assert.equal((result.match(/CHARACTER 1/g)||[]).length,1);
+});
+test("fails closed when a shot or linked character is missing or ambiguous",()=>{
+ assert.throws(()=>buildShotContinuityPrompt({document,shotId:"missing",prompt:"Make a frame"}),error=>error.code==="SHOT_CONTEXT_NOT_FOUND");
+ assert.throws(()=>buildShotContinuityPrompt({document:{...document,characters:[]},shotId:"shot-1",prompt:"Make a frame"}),error=>error.code==="SHOT_CHARACTER_NOT_FOUND");
+ assert.throws(()=>buildShotContinuityPrompt({document:{...document,shots:[...document.shots,document.shots[0]]},shotId:"shot-1",prompt:"Make a frame"}),error=>error.code==="SHOT_CONTEXT_NOT_FOUND");
+});
+test("requires a non-empty user prompt",()=>{
+ assert.throws(()=>buildShotContinuityPrompt({document,shotId:"shot-1",prompt:"  "}),error=>error.code==="PROMPT_REQUIRED");
+});
