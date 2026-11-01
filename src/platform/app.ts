@@ -115,7 +115,7 @@ async function publishBriefToCloud(){
  if(!project){state.cloudMessage="Create or select a creative brief first.";state.tab="director";render();return;}
  state.cloudMessage="Saving the creative brief and production blueprint to a private cloud project…";
  try{
-  const duration=state.plan.match(/DURATION:\\s*([^\\n]+)/)?.[1]||"Not specified";
+  const duration=state.plan.match(/DURATION:\s*([^\n]+)/)?.[1]||"Not specified";
   const settings={schemaVersion:1,creativeProduction:{version:1,project:{id:project.id,name:project.name,brief:project.brief,audience:project.audience,style:project.style,duration,created:project.created},blueprint:state.plan,shots:state.shots,characters:state.characters,variants:state.variants}};
   const result=await apiRequest<{project:{id:string;name:string;revision:number}}>("/api/cloud/projects",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({name:project.name,description:project.brief,settings})});
   state.cloudProjectId=result.project.id;state.cloudMessage="Creative brief, blueprint, shot plan and character profiles saved to the private cloud project.";
