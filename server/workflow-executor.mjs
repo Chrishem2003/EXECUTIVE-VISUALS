@@ -14,7 +14,7 @@ import { readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { reserveRemoteRequest } from "./usage-guardrails.mjs";
 import { resolve, relative, sep } from "node:path";
-import { buildShotContinuityPrompt } from "./shot-continuity.mjs";
+import { buildShotContinuityPrompt, getShotContinuityReferenceIds } from "./shot-continuity.mjs";
 
 const now=()=>new Date().toISOString();
 function requireExecutionProvider(capability,remoteOptInVariable){
@@ -36,14 +36,21 @@ export function hasApprovedAncestor(graph,nodeId,outputs){
 }
 
 const inputAsset=(values,config)=>String(values.asset||values.media||values.video||values.image||values.audio||values.input||config.assetId||config.sourceAssetId||"");
-function applyShotContinuity(db,job,run,config,values,prompt,scope){
+function applyShotContinuity(db,job,run,config,values,prompt,scope,explicitReferenceId=""){
  const shotId=String(config.shotId||values.shotId||"").trim();
- if(!shotId)return prompt;
+ if(!shotId)return {prompt,referenceAssetId:""};
  const projectId=String(job.project_id||run.project_id||"").trim();
  if(!projectId)throw Object.assign(new Error("Shot continuity can only be loaded from a saved project workspace."),{code:"SHOT_CONTEXT_NOT_FOUND"});
  const row=db.prepare("SELECT document_json FROM project_workspace_documents WHERE project_id=?").get(projectId);
  const document=parseJson(row?.document_json,{});
- return buildShotContinuityPrompt({document,shotId,prompt,authorizeCharacter:profile=>assertIdentityUseAllowed(profile,scope)});
+ const contextualPrompt=buildShotContinuityPrompt({document,shotId,prompt,authorizeCharacter:profile=>assertIdentityUseAllowed(profile,scope)});
+ if(explicitReferenceId)return {prompt:contextualPrompt,referenceAssetId:""};
+ const candidates=getShotContinuityReferenceIds({document,shotId});
+ if(candidates.length>1)throw Object.assign(new Error("This shot has multiple saved reference images. Connect one explicit reference asset to the workflow node to choose the intended image."),{code:"SHOT_REFERENCE_AMBIGUOUS"});
+ if(!candidates.length)return {prompt:contextualPrompt,referenceAssetId:""};
+ const asset=getAccessibleAsset(db,job.owner_id,candidates[0],false);
+ if(!asset||!String(asset.media_type||"").startsWith("image/"))throw Object.assign(new Error("The saved shot reference is missing, inaccessible or not an image asset."),{code:"SHOT_REFERENCE_NOT_ACCESSIBLE"});
+ return {prompt:contextualPrompt,referenceAssetId:candidates[0]};
 }
 function enforceIdentityPermission(db,job,config,values,scope){
  const profileId=String(config.identityProfileId||values.identityProfileId||"").trim();
@@ -213,9 +220,11 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
     enforceIdentityPermission(db,job,config,values,"likeness");
     if(!hasApprovedAncestor(graph,nodeId,outputs))throw Object.assign(new Error("A completed upstream human-approval node is required before image generation."),{code:"APPROVAL_REQUIRED"});
     let prompt=String(values.prompt??values.text??values.input??config.prompt??"");
-    prompt=applyShotContinuity(db,job,run,config,values,prompt,"likeness");
     if(values.brand)throw Object.assign(new Error("Brand bundles are not supported by the configured image adapter."),{code:"IMAGE_GATEWAY_UNSUPPORTED_INPUT"});
-    const rawReference=values.reference??values.image??values.referenceImage??config.referenceAssetId??"";
+    const explicitReference=String(values.reference??values.image??values.referenceImage??config.referenceAssetId??"").trim();
+    const continuity=applyShotContinuity(db,job,run,config,values,prompt,"likeness",explicitReference);
+    prompt=continuity.prompt;
+    const rawReference=explicitReference||continuity.referenceAssetId;
     if(Array.isArray(rawReference)||Array.isArray(values.references))throw Object.assign(new Error("Image generation accepts at most one reference image."),{code:"IMAGE_GATEWAY_UNSUPPORTED_INPUT"});
     const referenceId=String(rawReference||"").trim();
     let referenceImageDataUrl="";
@@ -247,10 +256,12 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
     enforceIdentityPermission(db,job,config,values,"face-animation");
     if(!hasApprovedAncestor(graph,nodeId,outputs))throw Object.assign(new Error("A completed upstream human-approval node is required before video generation."),{code:"APPROVAL_REQUIRED"});
     let prompt=String(values.prompt??values.text??values.input??config.prompt??"");
-    prompt=applyShotContinuity(db,job,run,config,values,prompt,"face-animation");
     if(values.references||values.brand)throw Object.assign(new Error("Multiple reference images and brand bundles are not supported by the configured video adapter."),{code:"VIDEO_GATEWAY_UNSUPPORTED_INPUT"});
+    const explicitReference=String(values["start-frame"]??values.image??values.referenceImage??values.reference??config.referenceAssetId??"").trim();
+    const continuity=applyShotContinuity(db,job,run,config,values,prompt,"face-animation",explicitReference);
+    prompt=continuity.prompt;
     if(!prompt.trim())throw Object.assign(new Error("Video-generation node requires a non-empty prompt input."),{code:"PROMPT_REQUIRED"});
-    const referenceId=String(values["start-frame"]??values.image??values.referenceImage??values.reference??config.referenceAssetId??"").trim();
+    const referenceId=explicitReference||continuity.referenceAssetId;
     let referenceImageDataUrl="";
     if(referenceId){
      const source=getAccessibleAsset(db,job.owner_id,referenceId,false);
