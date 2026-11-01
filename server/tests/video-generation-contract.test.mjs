@@ -14,7 +14,7 @@ test("normalizes defaults and generates a request ID", () => {
   const request = normalizeVideoGenerationRequest(base);
   assert.equal(request.projectId, "project-1");
   assert.equal(request.aspectRatio, "16:9");
-  assert.equal(request.resolution, "720p");
+  assert.equal(request.resolution, "provider_default");
   assert.equal(request.durationSeconds, 5);
   assert.equal(request.audioMode, "provider_default");
   assert.ok(request.requestId);
@@ -105,7 +105,7 @@ test("allows owner-scoped generation without a project workspace", () => {
 
 test("rejects resolution or audio settings the configured adapter cannot honor", () => {
   const highResolution = normalizeVideoGenerationRequest({ ...base, resolution: "1080p" });
-  assert.throws(() => assertVideoCapabilities(highResolution, { resolutions: ["720p"] }),
+  assert.throws(() => assertVideoCapabilities(highResolution, { resolutions: ["provider_default"] }),
     (error) => error.code === "VIDEO_GENERATION_UNSUPPORTED_CAPABILITY");
   const noAudio = normalizeVideoGenerationRequest({ ...base, audioMode: "none" });
   assert.throws(() => assertVideoCapabilities(noAudio, { audioModes: [] }),
