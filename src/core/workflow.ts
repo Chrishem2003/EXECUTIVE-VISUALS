@@ -160,7 +160,8 @@ const compatible = (source: MediaPortType, target: MediaPortType): boolean =>
   source === target || source === "any" || target === "any" ||
   (target === "media" && mediaTypes.has(source)) ||
   (target === "asset" && mediaTypes.has(source)) ||
-  (target === "start-frame" && (source === "image" || source === "asset" || source === "media")) ||\n  (target === "image" && (source === "asset" || source === "media"));
+  (target === "start-frame" && (source === "image" || source === "asset" || source === "media")) ||
+  (target === "image" && (source === "asset" || source === "media"));
 
 export function validateWorkflow(graph: WorkflowGraph): WorkflowValidation {
   const issues: WorkflowIssue[] = [];
