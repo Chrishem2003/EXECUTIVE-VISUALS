@@ -5,7 +5,7 @@ import { mkdtemp, mkdir, readFile, copyFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openDatabase, json } from "../db.mjs";
-import { executeMediaJob, executableAvailable } from "../media.mjs";
+import { executeMediaJob, executableAvailable, upscaleFilter } from "../media.mjs";
 import { atempoChain, buildFinishingArgs, parseFacts, FINISHING_OPERATIONS } from "../finishing.mjs";
 import { executeWorkflowRun } from "../workflow-executor.mjs";
 
@@ -191,4 +191,34 @@ test("a workflow adds narration to a video and brands the result", real, async (
   const facts = probe(join(h.mediaRoot, finalAsset.storage_path));
   assert.equal(facts.hasAudio, true);
   assert.equal(facts.width, 320);
+});
+
+test("factor upscale enlarges video and stills, keeps even sizes, and honours the 8K cap", real, async () => {
+  const h = await harness();
+  await h.register("v1", "clip.mp4", "video/mp4", VIDEO_WITH_AUDIO);
+  await h.register("i1", "photo.png", "image/png", ["-f", "lavfi", "-i", "testsrc=s=321x181", "-frames:v", "1"]);
+  const video = await h.run("media.upscale", { sourceAssetId: "v1", scale: 2, sharpen: 40, cleanFirst: true });
+  const vf = probe(video.path);
+  assert.equal(vf.width, 640);
+  assert.equal(vf.height, 480);
+  assert.equal(vf.hasAudio, true, "audio survives the upscale");
+  const still = await h.run("media.upscale", { sourceAssetId: "i1", scale: 3 });
+  assert.equal(still.outputAsset.mediaType, "image/png");
+  const sf = probe(still.path);
+  assert.equal(sf.width % 2, 0);
+  assert.equal(sf.height % 2, 0);
+  assert.ok(sf.width >= 960 && sf.width <= 964, `width ${sf.width}`);
+  await assert.rejects(() => h.run("media.upscale", { sourceAssetId: "i1", scale: 9 }), { code: "INVALID_MEDIA_OPTIONS" });
+});
+
+test("upscale rejects sizes beyond 8K before FFmpeg runs, and legacy width/height still works", real, async () => {
+  const h = await harness();
+  assert.throws(() => upscaleFilter({ scale: 4 }, { width: 3840, height: 2160 }), { code: "INVALID_MEDIA_OPTIONS" });
+  assert.match(upscaleFilter({ scale: 2, sharpen: 50 }, { width: 100, height: 100 }), /unsharp=5:5:0\.75/);
+  assert.doesNotMatch(upscaleFilter({ scale: 2 }, null), /unsharp|hqdn3d/);
+  await h.register("v1", "clip.mp4", "video/mp4", VIDEO_SILENT);
+  const legacy = await h.run("media.upscale", { sourceAssetId: "v1", width: 640, height: 480 });
+  assert.equal(probe(legacy.path).width, 640);
+  await h.register("i1", "photo.png", "image/png", ["-f", "lavfi", "-i", "testsrc=s=64x64", "-frames:v", "1"]);
+  await assert.rejects(() => h.run("media.upscale", { sourceAssetId: "i1", width: 640, height: 480 }), { code: "UNSUPPORTED_MEDIA_TYPE" });
 });

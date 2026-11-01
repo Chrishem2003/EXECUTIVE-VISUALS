@@ -1,5 +1,6 @@
 import { apiRequest } from "../core/api";
-import { createEmptyWorkflow, planWorkflowExecution, validateWorkflow, type MediaPortType, type WorkflowEdge, type WorkflowGraph, type WorkflowNode, type WorkflowNodeKind, type WorkflowPort } from "../core/workflow";
+import { createEmptyWorkflow, planWorkflowExecution, validateWorkflow, type WorkflowEdge, type WorkflowGraph, type WorkflowNode } from "../core/workflow";
+import { palette, templates, instantiateTemplate } from "../core/workflow-palette";
 
 type SavedWorkflow={id:string;projectId?:string|null;name:string;revision:number;graph?:WorkflowGraph;graphHash?:string};
 type WorkflowRunNode={node_id:string;status:string;error?:{code?:string;message?:string}|null};
@@ -7,43 +8,14 @@ const state:{graph:WorkflowGraph|null;workflows:SavedWorkflow[];serverRevision:n
  graph:null,workflows:[],serverRevision:0,status:"loading",message:"Loading workflow canvas…",selectedNode:"",plan:"",latestRunId:"",runStatus:"",runNodes:[]
 };
 const esc=(v:unknown)=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]||c));
-const port=(id:string,type:MediaPortType,required=false,multiple=false):WorkflowPort=>({id,label:id,type,required,multiple});
-const palette:Record<string,{kind:WorkflowNodeKind;label:string;inputs:WorkflowPort[];outputs:WorkflowPort[]}>={
- knowledge:{kind:"knowledge.search",label:"Search Project Knowledge",inputs:[port("query","text",true)],outputs:[port("document","document"),port("records","structured-data"),port("sources","document",false,true),port("text","text")]},
- text:{kind:"text",label:"Text / Prompt",inputs:[],outputs:[port("text","text")]},
- upload:{kind:"upload",label:"Use Uploaded Asset",inputs:[],outputs:[port("asset","asset"),port("media","media")]},
- reference:{kind:"reference",label:"Reference Asset",inputs:[],outputs:[port("asset","asset"),port("media","media")]},
- llm:{kind:"llm.prompt",label:"AI Text Processor",inputs:[port("prompt","text",true)],outputs:[port("text","text")]},
- image:{kind:"image.generate",label:"Image Generation",inputs:[port("prompt","text",true),port("reference","image")],outputs:[port("image","image")]},
- video:{kind:"video.generate",label:"Video Generation",inputs:[port("prompt","text",true),port("start-frame","start-frame"),port("reference","video",false,true)],outputs:[port("video","video")]},
- voice:{kind:"voice.generate",label:"Voice Generation",inputs:[port("script","text",true)],outputs:[port("audio","audio")]},
- transcribe:{kind:"voice.transcribe",label:"Audio Transcription",inputs:[port("audio","audio",true),port("approval","any")],outputs:[port("transcript","transcript"),port("text","text"),port("segments","structured-data"),port("sourceAudio","audio"),port("language","text")]},
- translate:{kind:"voice.translate",label:"Translate Captions",inputs:[port("segments","structured-data",true),port("approval","any"),port("language","text")],outputs:[port("segments","structured-data"),port("language","text")]},
- captions:{kind:"voice.caption",label:"Create Timed Captions",inputs:[port("segments","structured-data",true),port("sourceAudio","audio"),port("language","text")],outputs:[port("subtitle","subtitle-file"),port("asset","asset")]},
- frame:{kind:"utility.frame-extract",label:"Extract Video Frame",inputs:[port("media","media",true)],outputs:[port("image","image")]},
- audio:{kind:"video.extract-audio",label:"Extract Audio",inputs:[port("media","media",true)],outputs:[port("audio","audio")]},
- transcode:{kind:"utility.convert",label:"Convert / Compress",inputs:[port("asset","asset",true)],outputs:[port("asset","asset")]},
- timeline:{kind:"timeline",label:"Render Saved Timeline",inputs:[],outputs:[port("video","video")]},
- upscale:{kind:"media.upscale",label:"Image Upscale",inputs:[port("image","image",true)],outputs:[port("image","image")]},
- speed:{kind:"media.speed",label:"Speed Change",inputs:[port("media","media",true)],outputs:[port("video","video")]},
- fade:{kind:"media.fade",label:"Fade In / Out",inputs:[port("media","media",true)],outputs:[port("video","video")]},
- motion:{kind:"media.motion",label:"Still to Camera Move",inputs:[port("image","image",true)],outputs:[port("video","video")]},
- silence:{kind:"media.silence-trim",label:"Trim Silence",inputs:[port("audio","media",true)],outputs:[port("audio","audio")]},
- mux:{kind:"media.mux",label:"Add / Replace Audio",inputs:[port("video","media",true),port("audio","media",true)],outputs:[port("video","video")]},
- brand:{kind:"media.brand",label:"Logo Overlay",inputs:[port("video","media",true),port("logo","image",true)],outputs:[port("video","video")]},
- stabilize:{kind:"media.stabilize",label:"Stabilize (gateway)",inputs:[port("media","media",true),port("approval","any")],outputs:[port("video","video")]},
- cutout:{kind:"image.remove-background",label:"Remove Background (gateway)",inputs:[port("image","image",true),port("approval","any")],outputs:[port("image","image")]},
- extend:{kind:"video.extend",label:"Extend Clip (gateway)",inputs:[port("media","media",true),port("prompt","text"),port("approval","any")],outputs:[port("video","video")]},
- restyle:{kind:"video.restyle",label:"Restyle Footage (gateway)",inputs:[port("media","media",true),port("prompt","text",true),port("approval","any")],outputs:[port("video","video")]},
- eraser:{kind:"media.remove-object",label:"Remove Object (gateway)",inputs:[port("media","media",true),port("prompt","text",true),port("approval","any")],outputs:[port("video","video")]},
- presenter:{kind:"avatar.generate",label:"Presenter Video (consent-gated)",inputs:[port("script","text",true),port("approval","any")],outputs:[port("video","video")]},
- lipsync:{kind:"voice.lipsync",label:"Lip-Sync (consent-gated)",inputs:[port("video","media",true),port("audio","media",true),port("approval","any")],outputs:[port("video","video")]},
- approval:{kind:"approval",label:"Human Approval",inputs:[port("input","any",true)],outputs:[port("result","any"),port("approved","structured-data")]},
- quality:{kind:"quality-check",label:"Quality Gate",inputs:[port("media","media",true)],outputs:[port("report","structured-data")]},
- export:{kind:"export",label:"Export Deliverable",inputs:[port("media","media",true)],outputs:[port("deliverable","asset")]},
- merge:{kind:"merge",label:"Merge Branches",inputs:[port("items","any",true,true)],outputs:[port("result","any")]},
- batch:{kind:"batch",label:"Batch Inputs",inputs:[port("items","asset",true,true)],outputs:[port("results","asset",false,true)]}
-};
+function addTemplate(key:string){
+ if(!state.graph)return;
+ const lowest=state.graph.nodes.reduce((max,node)=>Math.max(max,node.position?.y??0),-210);
+ const built=instantiateTemplate(key,state.graph.nodes.length?lowest+230:30);
+ state.graph={...state.graph,revision:state.graph.revision+1,nodes:[...state.graph.nodes,...built.nodes],edges:[...state.graph.edges,...built.edges]};
+ state.selectedNode=built.nodes[0]?.id||"";state.plan="";state.message="Added the "+templates[key]?.label+" template. Choose the assets for its upload nodes, then run.";
+ void persist().then(paint).catch(error=>{state.message=error.message;paint();});
+}
 function nodePosition(index:number){return {x:30+(index%3)*300,y:30+Math.floor(index/3)*210};}
 function addNode(definition:keyof typeof palette){
  if(!state.graph)return;
@@ -83,7 +55,7 @@ export function renderWorkflowWorkspace(){
  const selected=nodes.find(n=>n.id===state.selectedNode)||nodes[0];
  return '<div id="workflow-workspace"><div class="wf-toolbar"><span class="runtime-status '+state.status+'"><i></i>'+esc(state.status==="ready"?"WORKFLOW SAVED":state.status==="auth"?"SIGN IN REQUIRED":state.status==="offline"?"API OFFLINE":"LOADING")+'</span><select id="wf-select">'+options(state.workflows.map(w=>({id:w.id,label:w.name+" · r"+w.revision})),state.graph?.id||"")+'</select><button class="secondary" data-wf-action="new">＋ New workflow</button><button class="secondary" data-wf-action="validate">Validate</button><button class="secondary" data-wf-action="plan">Preview run</button><button class="primary" data-wf-action="run">Run local workflow</button><button class="primary" data-wf-action="save">Save version</button></div>'+
  (state.message?'<div class="notice">'+esc(state.message)+'</div>':'')+
- '<div class="wf-layout"><aside class="panel wf-palette"><div class="eyebrow">NODE PALETTE</div><h3>Build a workflow</h3><p>Drag nodes into the canvas, position them, then connect typed ports.</p>'+Object.entries(palette).map(([key,value])=>'<button data-wf-add="'+key+'">＋ '+esc(value.label)+'</button>').join("")+'</aside>'+
+ '<div class="wf-layout"><aside class="panel wf-palette"><div class="eyebrow">NODE PALETTE</div><h3>Build a workflow</h3><p>Drag nodes into the canvas, position them, then connect typed ports.</p>'+Object.entries(palette).map(([key,value])=>'<button data-wf-add="'+key+'">＋ '+esc(value.label)+'</button>').join("")+'<div class="eyebrow" style="margin-top:14px">STARTER TEMPLATES</div>'+Object.entries(templates).map(([key,value])=>'<button data-wf-template="'+key+'" title="'+esc(value.description)+'">▦ '+esc(value.label)+'</button>').join("")+'</aside>'+
  '<section class="panel wf-main"><div class="wf-canvas-heading"><div><div class="eyebrow">VISUAL NODE GRAPH</div><h3>'+(state.graph?esc(state.graph.name||"Untitled workflow"):"Workflow")+'</h3></div><span>'+nodes.length+' nodes · '+(state.graph?.edges.length||0)+' connections</span></div>'+renderCanvas()+
  '<div class="wf-connection"><div class="eyebrow">CONNECT NODES</div><form id="wf-connect-form"><label>Source node</label><select name="sourceNode">'+options(nodes.map(n=>({id:n.id,label:n.label+" · "+n.id.slice(0,6)})))+'</select><label>Output port</label><select name="sourcePort">'+portOptions(nodes[0],"outputs")+'</select><label>Target node</label><select name="targetNode">'+options(nodes.map(n=>({id:n.id,label:n.label+" · "+n.id.slice(0,6)})))+'</select><label>Input port</label><select name="targetPort">'+portOptions(nodes[0],"inputs")+'</select><button class="secondary">＋ Connect ports</button></form><div class="wf-edge-list">'+renderEdges()+'</div></div></section>'+
  '<aside class="panel wf-inspector"><div class="eyebrow">NODE INSPECTOR</div><h3>Configuration</h3>'+(selected?'<form id="wf-config-form"><input type="hidden" name="nodeId" value="'+esc(selected.id)+'"><label>Node label</label><input name="label" value="'+esc(selected.label)+'" maxlength="120">'+(selected.kind==="voice.translate"?'<label>Target language</label><input name="targetLanguage" maxlength="48" value="'+esc(selected.config.targetLanguage||"")+'" placeholder="e.g. Lango, English, Swahili" required>':"")+'<label>Node configuration (JSON)</label><textarea name="config" rows="9">'+esc(JSON.stringify(selected.config,null,2))+'</textarea>'+(selected.kind==="video.generate"?'<p>Image-to-video: connect a JPEG, PNG or WebP asset to the Start Frame port. The server must set FAL_VIDEO_IMAGE_INPUT_FIELD to the exact input field documented by the selected model.</p>':selected.kind==="image.generate"?'<p>Reference-conditioned image generation: optionally connect one private JPEG, PNG or WebP asset to Reference. Set FAL_IMAGE_REFERENCE_FIELD only to the exact field documented by the configured model.</p>':"")+'<button class="secondary">Apply configuration</button></form>':'<div class="empty">Select a node to configure it.</div>')+
@@ -146,6 +118,7 @@ async function action(actionName:string){
 document.addEventListener("click",event=>{
  const target=event.target as HTMLElement;
  const actionButton=target.closest<HTMLElement>("[data-wf-action]");if(actionButton){void action(actionButton.dataset.wfAction||"");return;}
+ const tpl=target.closest<HTMLElement>("[data-wf-template]");if(tpl){addTemplate(tpl.dataset.wfTemplate||"");return;}
  const add=target.closest<HTMLElement>("[data-wf-add]");if(add){addNode(add.dataset.wfAdd as keyof typeof palette);return;}
  const removeNode=target.closest<HTMLElement>("[data-wf-remove-node]");
  if(removeNode&&state.graph){const id=removeNode.dataset.wfRemoveNode||"";state.graph={...state.graph,revision:state.graph.revision+1,nodes:state.graph.nodes.filter(n=>n.id!==id),edges:state.graph.edges.filter(e=>e.sourceNodeId!==id&&e.targetNodeId!==id)};state.selectedNode="";state.plan="";void persist().then(paint).catch(error=>{state.message=error.message;paint();});return;}

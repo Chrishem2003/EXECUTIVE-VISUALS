@@ -65,7 +65,16 @@ export function captionStyle(metadata={}){
  const primary=colour(metadata.primaryColour)||"&H00FFFFFF",outlineColour=colour(metadata.outlineColour)||"&H00000000";
  return ["FontName="+fontName,"FontSize="+fontSize,"PrimaryColour="+primary,"OutlineColour="+outlineColour,"Outline="+outline,"Shadow="+shadow,"Alignment="+alignment,"MarginV="+marginV].join(",");
 }
-export function buildMediaOperationArgs({jobType,input={},sourcePath,outputPath}){
+/** Factor-based upscale filter: optional pre-clean, Lanczos scale to even dimensions, optional sharpening. */
+export function upscaleFilter(input={},facts=null){
+ const fail=message=>{throw Object.assign(new Error(message),{code:"INVALID_MEDIA_OPTIONS"})};
+ const number=(value,fallback,min,max)=>{const parsed=Number(value??fallback);if(!Number.isFinite(parsed)||parsed<min||parsed>max)fail("Media operation parameter is outside the supported range.");return parsed};
+ const factor=number(input.scale,2,1.25,4),sharpen=number(input.sharpen,0,0,100);
+ if(facts?.width&&(facts.width*factor>7680||facts.height*factor>4320))fail("The scaled size would exceed 8K. Choose a smaller factor.");
+ const clean=input.cleanFirst===true||input.cleanFirst==="true";
+ return (clean?"hqdn3d=2.00:1.50:3.00:2.25,":"")+`scale=trunc(iw*${factor}/2)*2:trunc(ih*${factor}/2)*2:flags=lanczos`+(sharpen>0?`,unsharp=5:5:${(sharpen/100*1.5).toFixed(2)}:5:5:0.00`:"")+",setsar=1";
+}
+export function buildMediaOperationArgs({jobType,input={},sourcePath,outputPath,facts=null}){
  const fail=message=>{throw Object.assign(new Error(message),{code:"INVALID_MEDIA_OPTIONS"})};
  const number=(value,fallback,min,max)=>{const parsed=Number(value??fallback);if(!Number.isFinite(parsed)||parsed<min||parsed>max)fail("Media operation parameter is outside the supported range.");return parsed};
  const base=["-hide_banner","-y","-i",sourcePath],video=["-c:v","libx264","-preset","veryfast","-crf","19","-pix_fmt","yuv420p","-c:a","aac","-b:a","192k","-movflags","+faststart",outputPath];
@@ -81,6 +90,7 @@ export function buildMediaOperationArgs({jobType,input={},sourcePath,outputPath}
   const brightness=number(input.brightness,0,-1,1),contrast=number(input.contrast,1,0,2),saturation=number(input.saturation,1,0,3);
   filter=`eq=brightness=${brightness.toFixed(3)}:contrast=${contrast.toFixed(3)}:saturation=${saturation.toFixed(3)}`;
  }else if(jobType==="media.resize"||jobType==="media.upscale"){
+  if(jobType==="media.upscale"&&input.scale!==undefined){return [...base,"-vf",upscaleFilter(input,facts),...video];}
   const width=Math.round(number(input.width,jobType==="media.upscale"?2560:1920,256,4320)/2)*2;
   const height=Math.round(number(input.height,jobType==="media.upscale"?1440:1080,144,4320)/2)*2;
   const mode=String(input.fit||"contain");
@@ -317,9 +327,22 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
     ext=plan.ext;mime=plan.mime;outputName=finishingOutputName(source.original_name,plan.suffix,plan.ext);
     args=plan.args;
   } else if(["media.denoise","media.color","media.resize","media.interpolate","media.upscale"].includes(job.job_type)){
-    if(!source.media_type.startsWith("video/"))throw Object.assign(new Error("This enhancement operation currently requires a video source."),{code:"UNSUPPORTED_MEDIA_TYPE"});
-    ext="mp4";mime="video/mp4";outputName=(source.original_name.includes(".")?source.original_name.slice(0,source.original_name.lastIndexOf(".")):source.original_name)+"-"+job.job_type.split(".")[1]+".mp4";
-    args=buildMediaOperationArgs({jobType:job.job_type,input,sourcePath,outputPath:join(outputDir,id+"."+ext)});
+    const byFactor=job.job_type==="media.upscale"&&input.scale!==undefined;
+    const stem=source.original_name.includes(".")?source.original_name.slice(0,source.original_name.lastIndexOf(".")):source.original_name;
+    let facts=null;
+    if(byFactor){
+      const probed=await run("ffprobe",["-v","error","-show_format","-show_streams","-of","json",sourcePath],60*1000,job.id,activeProcesses,cancelled);
+      facts=parseFacts(JSON.parse(probed.stdout||"{}"));
+    }
+    if(byFactor&&source.media_type.startsWith("image/")){
+      // Stills are written as lossless PNG so repeated upscales do not stack JPEG artefacts.
+      ext="png";mime="image/png";outputName=stem+"-upscale.png";
+      args=["-hide_banner","-y","-i",sourcePath,"-vf",upscaleFilter(input,facts),"-frames:v","1",join(outputDir,id+"."+ext)];
+    }else{
+      if(!source.media_type.startsWith("video/"))throw Object.assign(new Error("This enhancement operation currently requires a video source."),{code:"UNSUPPORTED_MEDIA_TYPE"});
+      ext="mp4";mime="video/mp4";outputName=stem+"-"+job.job_type.split(".")[1]+".mp4";
+      args=buildMediaOperationArgs({jobType:job.job_type,input,sourcePath,outputPath:join(outputDir,id+"."+ext),facts});
+    }
   } else {
     const container = String(input.container || (job.job_type === "media.proxy" ? "mp4" : "mp4")).toLowerCase();
     if (!CONTAINERS.has(container) || ["mp3","wav"].includes(container) && job.job_type !== "media.transcode") {

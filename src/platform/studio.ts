@@ -16,6 +16,12 @@ interface EnhanceOp { id: string; label: string; description: string; media: str
 type Engine = "enhance" | "avatar" | "transform" | "lipsync";
 interface Catalog { engines: Record<Engine, EngineState>; enhance: EnhanceOp[]; transform: EnhanceOp[]; finishing: EnhanceOp[]; avatar: { params: Spec[] }; lipsync: { params: Spec[] } }
 type Group = "enhance" | "transform" | "local";
+const SOCIAL_FORMATS = [
+  { id: "16:9", label: "Landscape 16:9", width: 1920, height: 1080 },
+  { id: "9:16", label: "Vertical 9:16", width: 1080, height: 1920 },
+  { id: "1:1", label: "Square 1:1", width: 1080, height: 1080 },
+  { id: "4:5", label: "Portrait 4:5", width: 1080, height: 1350 }
+];
 const GROUP_TITLE: Record<Group, string> = { enhance: "Restore and repair (your gateway)", transform: "Transform footage (your gateway)", local: "Finish locally (no provider)" };
 interface StudioAsset { id: string; name: string; mediaType: string }
 interface StudioJob { id: string; jobType: string; status: string; progress: number; input: Record<string, unknown>; output: { outputAsset?: { id: string; name: string; mediaType: string } } | null; error: { code?: string; message?: string } | null; createdAt: string }
@@ -36,9 +42,9 @@ let pollTimer: number | undefined;
 
 const esc = (value: unknown) => String(value ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] || c));
 const ACTIVE = new Set(["queued", "running", "reviewing"]);
-const JOB_LABEL: Record<string, string> = { "studio.enhance": "Neural enhancement", "studio.transform": "Video transform", "studio.avatar": "Presenter video", "studio.lipsync": "Lip-sync" };
+const JOB_LABEL: Record<string, string> = { "media.resize": "Reframe", "studio.enhance": "Neural enhancement", "studio.transform": "Video transform", "studio.avatar": "Presenter video", "studio.lipsync": "Lip-sync" };
 const finishingIds = () => new Set((state.catalog?.finishing || []).map(op => op.id));
-const isStudioJobType = (type: string) => type.startsWith("studio.") || finishingIds().has(type);
+const isStudioJobType = (type: string) => type.startsWith("studio.") || type === "media.resize" || finishingIds().has(type);
 const kindOfJob = (type: string): StudioKind => (type === "studio.avatar" || type === "studio.lipsync" ? "avatar" : "enhance");
 const jobLabel = (type: string) => JOB_LABEL[type] || state.catalog?.finishing.find(op => op.id === type)?.label || type;
 
@@ -154,7 +160,8 @@ function consentCovers(character: Character, scope: string) {
 
 function summaryOf(job: StudioJob) {
   const params = (job.input.params || {}) as Record<string, unknown>;
-  return String(params.script || params.prompt || params.object || job.input.operation || "").slice(0, 140);
+  const size = job.input.width && job.input.height ? `${job.input.width}×${job.input.height}` : "";
+  return String(params.script || params.prompt || params.object || job.input.operation || size).slice(0, 140);
 }
 
 function preview(asset: { id: string; name: string; mediaType: string }) {
@@ -213,7 +220,11 @@ function enhanceView() {
   const groups = (["enhance", "transform", "local"] as Group[]).map(name => `<h3 class="st-group">${esc(GROUP_TITLE[name])}</h3><div class="st-ops" role="tablist" aria-label="${esc(GROUP_TITLE[name])}">${all.filter(item => item.group === name).map(({ op: item }) => { const key = `${name}:${item.id}`; const active = key === `${group}:${op.id}`; return `<button type="button" role="tab" aria-selected="${active}" class="st-op${active ? " active" : ""}" data-st-op="${esc(key)}"><b>${esc(item.label)}</b><small>${esc(item.description)}</small></button>`; }).join("")}</div>`).join("");
   const status = group === "local" ? LOCAL_BANNER : banner(group);
   const second = op.secondary ? assetSelect("e_second", op.secondary.label, op.secondary.accepts.map(kind => `${kind}/`), false) : "";
-  return `<div class="section-title"><div class="eyebrow">ENHANCEMENT, TRANSFORMS AND FINISHING</div><h2>Restore, transform and finish</h2></div>${groups}${status}<div class="st-grid"><section class="panel"><div class="eyebrow">${esc(op.label.toUpperCase())}</div><h2>${esc(op.label)}</h2><form id="st-enhance" class="st-form" data-group="${group}" data-op="${esc(op.id)}">${assetSelect("e_source", "Source media", prefixes, false)}${second}<div class="form-grid">${op.params.map(spec => field(spec, "e_")).join("")}</div>${op.requiresRights ? '<div class="st-check st-rights"><label><input type="checkbox" name="e_rights"> I own this media or hold the rights to modify it.</label></div>' : ""}<p class="st-note">The original is never changed. The result is saved as a new asset linked to its source.</p><button class="primary wide"${disabledAttr()}>Process →</button></form></section><section class="panel"><h3>Results</h3><div id="st-results" aria-live="polite">${resultsHtml("enhance")}</div></section></div>`;
+  return `<div class="section-title"><div class="eyebrow">ENHANCEMENT, TRANSFORMS AND FINISHING</div><h2>Restore, transform and finish</h2></div>${groups}${status}<div class="st-grid"><section class="panel"><div class="eyebrow">${esc(op.label.toUpperCase())}</div><h2>${esc(op.label)}</h2><form id="st-enhance" class="st-form" data-group="${group}" data-op="${esc(op.id)}">${assetSelect("e_source", "Source media", prefixes, false)}${second}<div class="form-grid">${op.params.map(spec => field(spec, "e_")).join("")}</div>${op.requiresRights ? '<div class="st-check st-rights"><label><input type="checkbox" name="e_rights"> I own this media or hold the rights to modify it.</label></div>' : ""}<p class="st-note">The original is never changed. The result is saved as a new asset linked to its source.</p><button class="primary wide"${disabledAttr()}>Process →</button></form></section><section class="panel"><h3>Results</h3><div id="st-results" aria-live="polite">${resultsHtml("enhance")}</div></section></div>${formatsPanel()}`;
+}
+
+function formatsPanel() {
+  return `<section class="panel st-formats"><div class="eyebrow">ONE SOURCE, EVERY CHANNEL</div><h2>Export in several formats</h2><form id="st-formats" class="st-form">${assetSelect("f_source", "Source video", ["video/"], false)}<div class="st-check-row">${SOCIAL_FORMATS.map(format => `<label><input type="checkbox" name="f_${format.id}"${format.id === "16:9" || format.id === "9:16" ? " checked" : ""}> ${esc(format.label)} <small>${format.width}×${format.height}</small></label>`).join("")}</div><p class="st-note">Each format fills the frame (centre crop), so nothing is letterboxed. One job is queued per format and the originals are untouched.</p><button class="primary wide"${disabledAttr()}>Export selected formats →</button></form></section>`;
 }
 
 function characterSelect(id: string, usable: Character[], scopeText: string) {
@@ -299,6 +310,13 @@ function onSubmit(event: Event) {
     const body: Record<string, unknown> = { jobType: group === "enhance" ? "studio.enhance" : "studio.transform", operation: op.id, sourceAssetId: value(form, "e_source"), params };
     if (op.requiresRights) body.rightsAttested = value(form, "e_rights") === "on";
     void submitRun(body, button);
+  } else if (form.id === "st-formats") {
+    const source = value(form, "f_source");
+    const chosen = SOCIAL_FORMATS.filter(format => value(form, `f_${format.id}`) === "on");
+    if (!chosen.length) { alert("Choose at least one format."); return; }
+    void (async () => {
+      for (const [index, format] of chosen.entries()) await submitRun({ jobType: "media.resize", sourceAssetId: source, width: format.width, height: format.height, fit: "cover" }, index === 0 ? button : null, "/api/jobs");
+    })();
   } else if (form.id === "st-lipsync") {
     void submitRun({ jobType: "studio.lipsync", identityProfileId: value(form, "l_character"), sourceAssetId: value(form, "l_video"), audioAssetId: value(form, "l_audio"), params: collectParams(form, catalog.lipsync.params, "l_") }, button);
   } else if (form.id === "st-avatar") {

@@ -36,3 +36,5 @@ Enhancement, transform: multipart `POST {url}/enhance` or `{url}/transform` (fie
 ## Verification
 
 `node --test server/tests/studio.test.mjs` runs against local mock gateways only. No live provider has been called.
+
+For going live, read [DEPLOYMENT.md](DEPLOYMENT.md).

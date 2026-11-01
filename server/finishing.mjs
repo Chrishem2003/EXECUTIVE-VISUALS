@@ -74,8 +74,21 @@ export const FINISHING_JOBS = new Set(Object.keys(FINISHING_OPERATIONS));
 export const isFinishingJob = type => FINISHING_JOBS.has(type);
 export const secondaryField = type => FINISHING_OPERATIONS[type]?.secondary || null;
 
+/** The factor-based upscale reuses the existing media.upscale job; it is listed here so the browser builds its form from the server. */
+const LOCAL_UPSCALE = {
+  id: "media.upscale",
+  label: "Upscale (local, by factor)",
+  description: "Enlarge video or stills with Lanczos scaling. Optional clean-up first and gentle sharpening. Not a neural upscale; use your gateway for that.",
+  media: ["video", "image"],
+  params: [
+    { key: "scale", label: "Enlarge by", type: "select", options: [2, 3, 4], default: 2 },
+    { key: "sharpen", label: "Sharpen", type: "range", min: 0, max: 100, integer: true, default: 25 },
+    { key: "cleanFirst", label: "Reduce compression noise first", type: "boolean", default: false }
+  ]
+};
+
 export function finishingCatalog() {
-  return Object.entries(FINISHING_OPERATIONS).map(([id, op]) => ({ id, ...op }));
+  return [...Object.entries(FINISHING_OPERATIONS).map(([id, op]) => ({ id, ...op })), LOCAL_UPSCALE];
 }
 
 /** Pull the facts the builders need out of ffprobe JSON. */
