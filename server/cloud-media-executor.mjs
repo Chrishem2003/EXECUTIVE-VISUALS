@@ -152,6 +152,7 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
         const format = String(input.format || "png");
         if (!["png", "jpg", "webp"].includes(format)) throw Object.assign(new Error("AI upscale output format is unsupported."), { code: "INVALID_MEDIA_OPTIONS" });
         if (!executableAvailable("ffprobe")) throw Object.assign(new Error("FFprobe is required to verify AI-upscaled image dimensions."), { code: "MEDIA_ENGINE_MISSING" });
+        if (!executableAvailable("ffmpeg")) throw Object.assign(new Error("FFmpeg is required to fully decode and validate AI-upscaled images."), { code: "MEDIA_ENGINE_MISSING" });
         const sourceProbe = await runProcess(ffprobe, ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height", "-of", "json", sourcePath], { signal, timeoutMs, onProgress });
         let sourceImage;
         try { sourceImage = JSON.parse(sourceProbe.stdout || "{}").streams?.[0]; } catch {}
@@ -167,6 +168,7 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
         try { outputImage = JSON.parse(outputProbe.stdout || "{}").streams?.[0]; } catch {}
         const expectedWidth = sourceWidth * result.scale, expectedHeight = sourceHeight * result.scale;
         if (Number(outputImage?.width) !== expectedWidth || Number(outputImage?.height) !== expectedHeight) throw Object.assign(new Error("AI-upscaled image dimensions do not match the requested scale; derivative was not published."), { code: "MEDIA_OUTPUT_VALIDATION_FAILED" });
+        await runProcess(ffmpeg, ["-v", "error", "-i", outputPath, "-f", "null", "-"], { signal, timeoutMs: Math.min(timeoutMs, 120000), onProgress });
         if (signal?.aborted) throw Object.assign(new Error("Media job was cancelled."), { code: "JOB_CANCELLED" });
         const info = await stat(outputPath);
         const digest = await checksum(outputPath);
