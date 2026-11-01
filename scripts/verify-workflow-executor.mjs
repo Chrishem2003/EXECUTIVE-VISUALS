@@ -94,5 +94,27 @@ try{
  await assert.rejects(()=>executeWorkflowRun({db,job:providerJob,mediaRoot,activeProcesses:new Map(),onProgress:()=>{}}),error=>error.code==="PROVIDER_NOT_READY");
  assert.equal(db.prepare("SELECT status FROM workflow_runs WHERE id=?").get("run-provider").status,"blocked");
  assert.equal(db.prepare("SELECT status FROM workflow_node_runs WHERE run_id=? AND node_id='image'").get("run-provider").status,"blocked");
- console.log("Workflow executor checks passed: DAG data propagation, local node execution, human approval pause/resume and explicit blocking of disabled provider nodes.");
+
+ const referenceBytes=Buffer.from([137,80,78,71,13,10,26,10,1,2,3]);
+ await writeFile(join(mediaRoot,"uploads","reference.png"),referenceBytes);
+ db.prepare("INSERT INTO assets(id,owner_id,original_name,media_type,byte_size,sha256,storage_path,metadata_json) VALUES(?,?,?,?,?,?,?,?)")
+  .run("reference-image","user-1","reference.png","image/png",referenceBytes.length,"0".repeat(64),"uploads/reference.png","{}");
+ const referenceGraph={
+  id:"reference-integrity",projectId:"",revision:1,nodes:[
+   {id:"text",kind:"text",label:"Prompt",inputs:[],outputs:[{id:"text",type:"text"}],config:{text:"Create a variation"}},
+   {id:"gate",kind:"approval",label:"Approval",inputs:[],outputs:[{id:"approved",type:"any"}],config:{}},
+   {id:"reference",kind:"upload",label:"Reference image",inputs:[],outputs:[{id:"image",type:"image"}],config:{assetId:"reference-image"}},
+   {id:"image",kind:"image.generate",label:"Image generation",inputs:[{id:"prompt",type:"text",required:true},{id:"reference",type:"image"},{id:"approval",type:"any"}],outputs:[{id:"image",type:"image"}],config:{}}
+  ],edges:[
+   {id:"prompt",sourceNodeId:"text",sourcePortId:"text",targetNodeId:"image",targetPortId:"prompt"},
+   {id:"gate",sourceNodeId:"gate",sourcePortId:"approved",targetNodeId:"image",targetPortId:"approval"},
+   {id:"ref",sourceNodeId:"reference",sourcePortId:"image",targetNodeId:"image",targetPortId:"reference"}
+  ]
+ };
+ const referenceJob=seedRun("run-reference-integrity",referenceGraph);
+ db.prepare("UPDATE workflow_node_runs SET status='completed',output_json=?,completed_at=? WHERE run_id=? AND node_id='gate'")
+  .run(json({approved:true}),now,"run-reference-integrity");
+ await assert.rejects(()=>executeWorkflowRun({db,job:referenceJob,mediaRoot,activeProcesses:new Map(),onProgress:()=>{}}),error=>error.code==="ASSET_CHECKSUM_MISMATCH");
+ assert.equal(db.prepare("SELECT status FROM workflow_node_runs WHERE run_id=? AND node_id='image'").get("run-reference-integrity").status,"failed");
+ console.log("Workflow executor checks passed: DAG propagation, approval pause/resume, provider blocking and reference-image integrity validation.");
 }finally{db.close();await rm(root,{recursive:true,force:true});}
