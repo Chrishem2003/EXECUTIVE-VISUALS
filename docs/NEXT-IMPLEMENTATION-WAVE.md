@@ -139,3 +139,11 @@ Every capability must report state/evidence date, supported inputs/outputs, loca
 - Severity is explicit: structural errors need attention; warnings request review.
 - A test suite covers valid HD A/V, missing audio, invalid duration/frame rate, below-HD dimensions and audio-only files.
 - This is structural QA only. It does not claim black-frame, silence, clipping, sync, colour, face, motion or perceptual-quality detection; those require separate signal-analysis and human-review stages.
+
+### E3. FFmpeg signal-level media QA — implemented, awaiting CI
+- Workflow quality-check jobs now run bounded FFmpeg analysis on available video/audio streams after FFprobe metadata inspection.
+- Video analysis uses FFmpeg `blackdetect`; audio analysis uses `silencedetect`. Completed intervals and trailing silence are normalized into timestamped findings.
+- The report distinguishes errors from review warnings and records which analyses actually ran.
+- Tests cover diagnostic parsing, threshold filtering, sustained black intervals, sustained silence and trailing silence at end-of-file.
+- These are heuristic signal checks. Intentional black transitions and pauses may be valid creative choices; this does not assess clipping, loudness standards, lip-sync, colour, faces, motion or perceptual quality.
+- Each FFmpeg analysis command has a bounded timeout and uses the existing job cancellation mechanism. Live media fixture/worker verification and CI remain pending.
