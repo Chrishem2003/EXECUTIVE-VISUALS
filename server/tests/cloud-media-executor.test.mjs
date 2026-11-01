@@ -367,6 +367,7 @@ test("cloud AI upscale publishes a separate image derivative with engine provena
   const previousModels = process.env.REALESRGAN_MODEL_DIR;
   const previousEnabled = process.env.AI_UPSCALE_ENABLED;
   const previousFfprobe = process.env.FFPROBE_PATH;
+  const previousFfmpeg = process.env.FFMPEG_PATH;
   const source = join(directory, "source.png");
   const model = "realesrgan-x4plus";
   const binary = await executable(directory, "realesrgan-ncnn-vulkan", String.raw`while [ "$1" != "" ]; do if [ "$1" = "-o" ]; then shift; printf '\211PNG\r\n\032\n\000\000\000\015IHDR\000\000\000\001\000\000\000\001' > "$1"; fi; shift; done`);
@@ -376,6 +377,7 @@ test("cloud AI upscale publishes a separate image derivative with engine provena
   process.env.REALESRGAN_NCNN_PATH = binary;
   process.env.REALESRGAN_MODEL_DIR = directory;
   process.env.AI_UPSCALE_ENABLED = "true";
+  process.env.FFMPEG_PATH = await executable(directory, "ffmpeg", "exit 0");
   process.env.FFPROBE_PATH = await executable(directory, "ffprobe", "for last do :; done\ncase \"$last\" in *source.png) echo '{\"streams\":[{\"width\":10,\"height\":10}]}' ;; *) echo '{\"streams\":[{\"width\":40,\"height\":40}]}' ;; esac");
   let published;
   try {
@@ -411,6 +413,7 @@ test("cloud AI upscale publishes a separate image derivative with engine provena
     if (previousModels === undefined) delete process.env.REALESRGAN_MODEL_DIR; else process.env.REALESRGAN_MODEL_DIR = previousModels;
     if (previousEnabled === undefined) delete process.env.AI_UPSCALE_ENABLED; else process.env.AI_UPSCALE_ENABLED = previousEnabled;
     if (previousFfprobe === undefined) delete process.env.FFPROBE_PATH; else process.env.FFPROBE_PATH = previousFfprobe;
+    if (previousFfmpeg === undefined) delete process.env.FFMPEG_PATH; else process.env.FFMPEG_PATH = previousFfmpeg;
     await rm(directory, { recursive: true, force: true });
   }
 });
@@ -422,6 +425,7 @@ test("cloud AI upscale blocks publication when output dimensions do not match", 
   const previousModels = process.env.REALESRGAN_MODEL_DIR;
   const previousEnabled = process.env.AI_UPSCALE_ENABLED;
   const previousFfprobe = process.env.FFPROBE_PATH;
+  const previousFfmpeg = process.env.FFMPEG_PATH;
   const source = join(directory, "source.png");
   const model = "realesrgan-x4plus";
   const binary = await executable(directory, "realesrgan-ncnn-vulkan", String.raw`while [ "$1" != "" ]; do if [ "$1" = "-o" ]; then shift; printf '\211PNG\r\n\032\n\000\000\000\015IHDR\000\000\000\001\000\000\000\001' > "$1"; fi; shift; done`);
@@ -431,6 +435,7 @@ test("cloud AI upscale blocks publication when output dimensions do not match", 
   process.env.REALESRGAN_NCNN_PATH = binary;
   process.env.REALESRGAN_MODEL_DIR = directory;
   process.env.AI_UPSCALE_ENABLED = "true";
+  process.env.FFMPEG_PATH = await executable(directory, "ffmpeg", "exit 0");
   process.env.FFPROBE_PATH = await executable(directory, "ffprobe", "case \"$last\" in *source.png) echo '{\"streams\":[{\"width\":10,\"height\":10}]}' ;; *) echo '{\"streams\":[{\"width\":40,\"height\":40}]}' ;; esac");
   let published;
   try {
@@ -457,6 +462,7 @@ test("cloud AI upscale blocks publication when output dimensions do not match", 
     if (previousModels === undefined) delete process.env.REALESRGAN_MODEL_DIR; else process.env.REALESRGAN_MODEL_DIR = previousModels;
     if (previousEnabled === undefined) delete process.env.AI_UPSCALE_ENABLED; else process.env.AI_UPSCALE_ENABLED = previousEnabled;
     if (previousFfprobe === undefined) delete process.env.FFPROBE_PATH; else process.env.FFPROBE_PATH = previousFfprobe;
+    if (previousFfmpeg === undefined) delete process.env.FFMPEG_PATH; else process.env.FFMPEG_PATH = previousFfmpeg;
     await rm(directory, { recursive: true, force: true });
   }
 });
