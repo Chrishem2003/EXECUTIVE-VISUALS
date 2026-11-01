@@ -12,6 +12,7 @@ function setup({canWrite=true,projectId=project,existing=[]}={}){
  const timelines={
   async create(input){created.push(input);return{...timeline,...input,revision:1};},
   async get(input){calls.push(["get",input]);return input.ownerId===owner?timeline:null;},
+  async list(input){calls.push(["timeline-list",input]);return[{...timeline}];},
   async update(input){calls.push(["update",input]);return{...timeline,revision:input.expectedRevision+1,timeline:input.timeline};}
  };
  const fetchImpl=async(url,options)=>{calls.push(["fetch",url,options]);if(url.includes("/jobs")&&options.method==="POST")return{ok:true,status:201,async text(){return JSON.stringify([{id:JSON.parse(options.body).id,owner_id:owner,project_id:projectId,job_type:"timeline.render",status:"queued",input:JSON.parse(options.body).input}])}};if(url.includes("/jobs?"))return{ok:true,status:200,async text(){return JSON.stringify(existing)}};return{ok:true,status:201,async text(){return""}};};
@@ -109,4 +110,11 @@ test("cloud asset collection returns only assets authorized for requested projec
  const result=await f.api.handle({method:"GET",path:"/api/cloud/assets",ownerId:owner,query:{projectId:project,limit:"25"}});
  assert.equal(result.status,200);assert.equal(result.body.assets.length,1);
  assert.equal(f.calls.find(x=>x[0]==="asset-list")[1].projectId,project);
+});
+
+test("cloud timeline collection lists only the selected authorized project",async()=>{
+ const f=setup();
+ const result=await f.api.handle({method:"GET",path:"/api/cloud/timelines",ownerId:owner,query:{projectId:project,limit:"15"}});
+ assert.equal(result.status,200);assert.equal(result.body.timelines[0].id,timelineId);
+ assert.equal(f.calls.find(x=>x[0]==="timeline-list")[1].projectId,project);
 });
