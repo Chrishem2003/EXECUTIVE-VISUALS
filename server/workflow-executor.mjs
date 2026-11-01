@@ -211,11 +211,29 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
     enforceIdentityPermission(db,job,config,values,"face-animation");
     if(!hasApprovedAncestor(graph,nodeId,outputs))throw Object.assign(new Error("A completed upstream human-approval node is required before video generation."),{code:"APPROVAL_REQUIRED"});
     const prompt=String(values.prompt??values.text??values.input??config.prompt??"");
-    if(values.reference||values.references||values.image||values.brand)throw Object.assign(new Error("The configured video adapter currently supports prompt-only generation; reference-image and brand inputs are not supported."),{code:"VIDEO_GATEWAY_UNSUPPORTED_INPUT"});
+    if(values.references||values.brand)throw Object.assign(new Error("Multiple reference images and brand bundles are not supported by the configured video adapter."),{code:"VIDEO_GATEWAY_UNSUPPORTED_INPUT"});
     if(!prompt.trim())throw Object.assign(new Error("Video-generation node requires a non-empty prompt input."),{code:"PROMPT_REQUIRED"});
+    const referenceId=String(values.image??values.referenceImage??values.reference??config.referenceAssetId??"").trim();
+    let referenceImageDataUrl="";
+    if(referenceId){
+     const source=getAccessibleAsset(db,job.owner_id,referenceId,false);
+     if(!source||!String(source.media_type||"").startsWith("image/"))throw Object.assign(new Error("Video reference must be an accessible image asset."),{code:"VIDEO_GATEWAY_INVALID_INPUT"});
+     const root=resolve(mediaRoot),absolute=resolve(root,source.storage_path),storedRelative=relative(root,absolute);
+     if(!storedRelative||storedRelative===".."||storedRelative.startsWith(".."+sep)||absolute===root)throw Object.assign(new Error("Video reference asset path failed validation."),{code:"ASSET_PATH_INVALID"});
+     const buffer=await readFile(absolute);
+     if(!buffer.length||buffer.length>10*1024*1024||buffer.length!==source.byte_size)throw Object.assign(new Error("Video reference image is empty, oversized or changed since ingest."),{code:"VIDEO_GATEWAY_INVALID_INPUT"});
+     const checksum=createHash("sha256").update(buffer).digest("hex");
+     if(checksum!==source.sha256)throw Object.assign(new Error("Video reference image checksum verification failed."),{code:"ASSET_CHECKSUM_MISMATCH"});
+     const mime=String(source.media_type).toLowerCase();
+     const validSignature=mime==="image/jpeg"?buffer.length>=3&&buffer[0]===0xff&&buffer[1]===0xd8&&buffer[2]===0xff
+      :mime==="image/png"?buffer.length>=8&&buffer.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10]))
+      :mime==="image/webp"?buffer.length>=12&&buffer.toString("ascii",0,4)==="RIFF"&&buffer.toString("ascii",8,12)==="WEBP":false;
+     if(!validSignature)throw Object.assign(new Error("Video reference must be a valid JPEG, PNG or WebP image."),{code:"VIDEO_GATEWAY_INVALID_INPUT"});
+     referenceImageDataUrl="data:"+mime+";base64,"+buffer.toString("base64");
+    }
     const usageStarted=Date.now();
     const provider=requireExecutionProvider("video.generate","VIDEO_GATEWAY_ALLOW_REMOTE");
-    const result=await generateFalVideo({prompt,duration:Number(config.duration||5),aspectRatio:String(config.aspectRatio||"16:9")});
+    const result=await generateFalVideo({prompt,duration:Number(config.duration||5),aspectRatio:String(config.aspectRatio||"16:9"),referenceImageDataUrl});
     recordModelUsage(db,{ownerId:job.owner_id,projectId:job.project_id||null,jobId:job.id,workflowRunId:runId,nodeId,provider:provider.provider,capability:"video.generate",model:result.model,usage:result.usage,durationMs:Date.now()-usageStarted});
     const asset=await storeGeneratedVideo({db,mediaRoot,ownerId:job.owner_id,projectId:job.project_id||null,jobId:job.id,prompt,model:result.model,buffer:result.buffer});
     output=nodeOutput(node,asset.id);output.asset=asset.id;output.assetId=asset.id;output.mimeType=asset.mediaType;output.sha256=asset.sha256;output.usage=result.usage;
