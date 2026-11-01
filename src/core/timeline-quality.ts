@@ -4,6 +4,7 @@ export type TimelineQualitySeverity="error"|"warning"|"info";
 export interface TimelineQualityFinding {code:string;severity:TimelineQualitySeverity;title:string;detail:string;trackId?:string;clipId?:string}
 export interface TimelineQualityAsset {id:string;name?:string;mediaType?:string;metadata?:Record<string,unknown>}
 const toSeconds=(time:{value:number;rate:number}|undefined)=>time&&Number.isFinite(time.value)&&Number.isFinite(time.rate)&&time.rate>0?time.value/time.rate:NaN;
+
 export function analyzeTimelineQuality(timeline:EditorialTimeline|null,assets:TimelineQualityAsset[]=[]):TimelineQualityFinding[]{
  if(!timeline)return [{code:"NO_SEQUENCE",severity:"info",title:"No sequence loaded",detail:"Create or open a sequence to run production checks."}];
  const findings:TimelineQualityFinding[]=[];
@@ -15,15 +16,25 @@ export function analyzeTimelineQuality(timeline:EditorialTimeline|null,assets:Ti
  const primary=video[0];
  const rate=timeline.frameRate.numerator/timeline.frameRate.denominator;
  const tolerance=Number.isFinite(rate)&&rate>0?0.5/rate:0;
- const durationOf=(track:typeof tracks[number])=>track.clips.reduce((end,clip)=>Math.max(end,toSeconds(clip.timelineStart)+toSeconds(clip.duration)),0);
  const sequenceEnd=Math.max(0,...tracks.flatMap(track=>track.clips.map(clip=>toSeconds(clip.timelineStart)+toSeconds(clip.duration)).filter(Number.isFinite)));
  if(!primary||!primary.clips.length)findings.push({code:"NO_PRIMARY_VIDEO",severity:"error",title:"No primary picture",detail:"Add at least one clip to an enabled video track before rendering."});
  if(primary?.clips.length){
   const clips=[...primary.clips].sort((a,b)=>toSeconds(a.timelineStart)-toSeconds(b.timelineStart));
   let cursor=0;
   for(const clip of clips){
-   const metadata=asset?.metadata||{};
-   const probe=metadata.probe as {format?:{duration?:string|number};streams?:Array<{duration?:string|number}>}|undefined;
+   const start=toSeconds(clip.timelineStart),end=start+toSeconds(clip.duration);
+   if(Number.isFinite(start)&&start>cursor+tolerance)findings.push({code:"PICTURE_GAP",severity:"warning",title:"Gap in primary picture",detail:"There is approximately "+(start-cursor).toFixed(2)+" seconds without picture before “"+clip.name+"”.",trackId:primary.id,clipId:clip.id});
+   if(Number.isFinite(end))cursor=Math.max(cursor,end);
+  }
+ }
+ if(!audio.length||!audio.some(track=>track.clips.length))findings.push({code:"NO_AUDIO",severity:"warning",title:"No audio bed",detail:"No enabled audio clips are present. Confirm that silence is intentional or add dialogue, music or effects."});
+ if(!captions.length||!captions.some(track=>track.clips.length))findings.push({code:"NO_CAPTIONS",severity:"info",title:"No captions",detail:"No caption clips are present. Add subtitles if this delivery needs accessibility or localization."});
+ if(overlays.some(track=>!track.clips.length))findings.push({code:"EMPTY_OVERLAY_TRACK",severity:"info",title:"Empty overlay track",detail:"An enabled overlay track has no clips; remove it or add the intended graphic."});
+ for(const track of tracks){
+  for(const clip of track.clips){
+   const asset=assets.find(item=>item.id===clip.assetId);
+   if(!asset)findings.push({code:"ASSET_NOT_IN_LIBRARY",severity:"error",title:"Source asset not in current library",detail:"The source for “"+clip.name+"” is not present in the currently loaded asset list.",trackId:track.id,clipId:clip.id});
+   const probe=asset?.metadata?.probe as {format?:{duration?:string|number};streams?:Array<{duration?:string|number}>}|undefined;
    const knownDuration=Number(probe?.format?.duration??probe?.streams?.find(stream=>Number(stream.duration)>0)?.duration);
    const sourceEnd=toSeconds(clip.sourceRange.start)+toSeconds(clip.sourceRange.duration);
    if(Number.isFinite(knownDuration)&&knownDuration>0&&Number.isFinite(sourceEnd)&&sourceEnd>knownDuration+Math.max(0.05,tolerance))
