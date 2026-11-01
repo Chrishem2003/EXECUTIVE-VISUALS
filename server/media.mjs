@@ -9,6 +9,7 @@ import { stat } from "node:fs/promises";
 import { Transform } from "node:stream";
 import { addJobEvent, getAccessibleAsset, json, parseJson } from "./db.mjs";
 import { createRealEsrganAdapter } from "./ai-upscale-engine.mjs";
+import { parseBlackFrameEvents, parseSilenceEvents } from "./media-signal-analysis.mjs";
 
 const ALLOWED_JOBS = new Set(["media.probe", "media.thumbnail", "media.transcode", "media.audio_extract", "media.proxy", "media.denoise", "media.color", "media.resize", "media.interpolate", "media.upscale", "media.audio-clean", "media.ai-upscale", "timeline.render"]);
 const CONTAINERS = new Set(["mp4", "webm", "mov", "mkv", "mp3", "wav"]);
@@ -375,6 +376,17 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
   if (job.job_type === "media.probe") {
     const result = await run("ffprobe", ["-v","error","-show_format","-show_streams","-of","json",sourcePath],30*60*1000,job.id,activeProcesses,cancelled);
     const metadata = JSON.parse(result.stdout || "{}");
+    const streams=Array.isArray(metadata.streams)?metadata.streams:[];
+    const signalAnalysis={method:"ffmpeg-blackdetect-silencedetect",blackFrames:[],silence:[],performed:[],limitations:["Black-frame and silence detection are heuristic signal checks. They cannot determine whether an intentional pause, fade, or black transition is creatively correct.","Audio clipping, loudness compliance, lip-sync and perceptual quality are not assessed."]};
+    if(streams.some(stream=>stream.codec_type==="video")){
+      const analysis=await run("ffmpeg",["-hide_banner","-i",sourcePath,"-map","0:v:0","-vf","blackdetect=d=0.1:pix_th=0.10","-an","-f","null","-"],10*60*1000,job.id,activeProcesses,cancelled);
+      signalAnalysis.blackFrames=parseBlackFrameEvents(analysis.stderr);signalAnalysis.performed.push("black-frame");
+    }
+    if(streams.some(stream=>stream.codec_type==="audio")){
+      const analysis=await run("ffmpeg",["-hide_banner","-i",sourcePath,"-map","0:a:0","-af","silencedetect=n=-50dB:d=0.5","-vn","-f","null","-"],10*60*1000,job.id,activeProcesses,cancelled);
+      signalAnalysis.silence=parseSilenceEvents(analysis.stderr);signalAnalysis.performed.push("silence");
+    }
+    metadata.signalAnalysis=signalAnalysis;
     return { metadata, outputAsset:null };
   }
 
