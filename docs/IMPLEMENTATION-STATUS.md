@@ -307,3 +307,13 @@ This is a runnable worker entry point, not a deployed worker. Do not set the ena
 - Usage counts are based on pre-dispatch reservation records, so a failed remote call remains visible and counted until it ages out of the window. Optional project usage is reported separately without changing the account-wide cap.
 - The existing runtime console now displays the allowance alongside project, asset and job operations. Invalid limit configuration is surfaced as blocked rather than silently shown as zero remaining.
 - Added an API regression test covering authentication, configured limit reporting, empty-account allowance and secret-safe output. Monetary costs remain explicitly unestimated.
+
+
+## Blocked-workflow lease recovery — 1 November 2026
+
+- Queue recovery now reads the associated workflow-run state before rescheduling a job whose worker lease expired.
+- If the workflow run is already `blocked`, recovery preserves that decision: the queue job becomes terminal `blocked`, its lease and retry schedule are cleared, and a `job.blocked` event is recorded.
+- Other expired jobs retain the existing bounded retry and terminal-failure behavior.
+- Added a regression to `scripts/verify-queue-leases.mjs` covering the blocked workflow, terminal queue state, cleared schedule, error code and event history.
+- GitHub Actions run 1421 passed dependency installation, TypeScript typecheck and the full verification/build pipeline on commit `b6d864407f88347f577ea5c580a3d001da3785ac`.
+- This is a local queue reliability change; it does not enable remote providers, cloud services, deployment or production database changes.
