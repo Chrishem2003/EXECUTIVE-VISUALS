@@ -8,8 +8,9 @@ import { createHash } from "node:crypto";
 import { stat } from "node:fs/promises";
 import { Transform } from "node:stream";
 import { addJobEvent, getAccessibleAsset, json, parseJson } from "./db.mjs";
+import { FINISHING_JOBS, buildFinishingArgs, finishingOutputName, parseFacts, secondaryField } from "./finishing.mjs";
 
-const ALLOWED_JOBS = new Set(["media.probe", "media.thumbnail", "media.transcode", "media.audio_extract", "media.proxy", "media.denoise", "media.color", "media.resize", "media.interpolate", "media.upscale", "media.audio-clean", "timeline.render"]);
+const ALLOWED_JOBS = new Set([...FINISHING_JOBS, "media.probe", "media.thumbnail", "media.transcode", "media.audio_extract", "media.proxy", "media.denoise", "media.color", "media.resize", "media.interpolate", "media.upscale", "media.audio-clean", "timeline.render"]);
 const CONTAINERS = new Set(["mp4", "webm", "mov", "mkv", "mp3", "wav"]);
 const VIDEO_CODECS = new Set(["libx264", "libx265", "libvpx-vp9", "copy"]);
 const AUDIO_CODECS = new Set(["aac", "libmp3lame", "libopus", "copy"]);
@@ -301,6 +302,20 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
     if(!source.media_type.startsWith("audio/"))throw Object.assign(new Error("Audio cleanup requires an audio source."),{code:"UNSUPPORTED_MEDIA_TYPE"});
     ext="wav";mime="audio/wav";outputName=(source.original_name.includes(".")?source.original_name.slice(0,source.original_name.lastIndexOf(".")):source.original_name)+"-cleaned.wav";
     args=buildMediaOperationArgs({jobType:job.job_type,input,sourcePath,outputPath:join(outputDir,id+"."+ext)});
+  } else if(FINISHING_JOBS.has(job.job_type)){
+    const kind=source.media_type.split("/")[0];
+    const second=secondaryField(job.job_type);
+    let secondaryPath=null;
+    if(second){
+      const extra=getAccessibleAsset(db,job.owner_id,String(input[second.field]||""),false);
+      if(!extra)throw Object.assign(new Error(second.label+" was not found or you do not have access to it."),{code:"SOURCE_ASSET_NOT_FOUND"});
+      if(!second.accepts.some(prefix=>extra.media_type.startsWith(prefix+"/")))throw Object.assign(new Error(second.label+" must be "+second.accepts.join(" or ")+" media."),{code:"UNSUPPORTED_MEDIA_TYPE"});
+      secondaryPath=join(mediaRoot,extra.storage_path);
+    }
+    const probed=await run("ffprobe",["-v","error","-show_format","-show_streams","-of","json",sourcePath],60*1000,job.id,activeProcesses,cancelled);
+    const plan=buildFinishingArgs({jobType:job.job_type,input,sourcePath,secondaryPath,outputBase:join(outputDir,id),kind,facts:parseFacts(JSON.parse(probed.stdout||"{}"))});
+    ext=plan.ext;mime=plan.mime;outputName=finishingOutputName(source.original_name,plan.suffix,plan.ext);
+    args=plan.args;
   } else if(["media.denoise","media.color","media.resize","media.interpolate","media.upscale"].includes(job.job_type)){
     if(!source.media_type.startsWith("video/"))throw Object.assign(new Error("This enhancement operation currently requires a video source."),{code:"UNSUPPORTED_MEDIA_TYPE"});
     ext="mp4";mime="video/mp4";outputName=(source.original_name.includes(".")?source.original_name.slice(0,source.original_name.lastIndexOf(".")):source.original_name)+"-"+job.job_type.split(".")[1]+".mp4";

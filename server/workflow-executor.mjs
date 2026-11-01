@@ -17,9 +17,10 @@ import { resolve, relative, sep } from "node:path";
 import { executeStudioJob, prepareStudioJob } from "./studio.mjs";
 import { isGatewayBlockedCode } from "./gateway-core.mjs";
 
-/** Nodes served by the studio engines (neural enhancement and presenter video). */
+/** Nodes served by the studio engines (enhancement, transforms, presenter video and lip-sync). */
 const STUDIO_ENHANCE_KINDS={"media.stabilize":"stabilize","image.remove-background":"remove-background"};
-const isStudioNode=kind=>kind==="avatar.generate"||Object.hasOwn(STUDIO_ENHANCE_KINDS,kind);
+const STUDIO_TRANSFORM_KINDS={"video.extend":"extend","video.restyle":"restyle","media.remove-object":"remove-object"};
+const isStudioNode=kind=>kind==="avatar.generate"||kind==="voice.lipsync"||Object.hasOwn(STUDIO_ENHANCE_KINDS,kind)||Object.hasOwn(STUDIO_TRANSFORM_KINDS,kind);
 function studioRequest(node,values,config,sourceAssetId){
  const params={...(config.params&&typeof config.params==="object"?config.params:{})};
  if(node.kind==="avatar.generate"){
@@ -27,6 +28,15 @@ function studioRequest(node,values,config,sourceAssetId){
   if(script)params.script=script;
   const audio=values.audio??config.audioAssetId;
   return {jobType:"studio.avatar",identityProfileId:String(config.identityProfileId||values.identityProfileId||""),params,...(audio?{audioAssetId:String(audio)}:{})};
+ }
+ if(node.kind==="voice.lipsync"){
+  return {jobType:"studio.lipsync",sourceAssetId:String(values.video||values.media||config.sourceAssetId||""),audioAssetId:String(values.audio||config.audioAssetId||""),identityProfileId:String(config.identityProfileId||values.identityProfileId||""),params};
+ }
+ if(Object.hasOwn(STUDIO_TRANSFORM_KINDS,node.kind)){
+  const operation=STUDIO_TRANSFORM_KINDS[node.kind],text=values.prompt??values.text;
+  if(text&&operation==="remove-object"&&!params.object)params.object=String(text);
+  else if(text&&!params.prompt)params.prompt=String(text);
+  return {jobType:"studio.transform",operation,sourceAssetId,params};
  }
  return {jobType:"studio.enhance",operation:STUDIO_ENHANCE_KINDS[node.kind],sourceAssetId,params};
 }
@@ -317,6 +327,11 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
       mediaType="media.transcode";mediaInput={sourceAssetId,outputFormat:String(config.outputFormat||"mp4"),preset:String(config.preset||"medium")};
     }else if(node.kind==="media.audio-clean"){
       mediaType="media.audio-clean";mediaInput={sourceAssetId,noiseFloor:Number(config.noiseFloor??-25),targetLufs:Number(config.targetLufs??-16)};
+    }else if(["video.add-audio","utility.audio-add","media.mux"].includes(node.kind)){
+      mediaType="media.mux";mediaInput={sourceAssetId,audioAssetId:String(values.audio||config.audioAssetId||""),mode:String(config.mode||"replace"),gainDb:Number(config.gainDb??0),loopAudio:config.loopAudio===true||config.loopAudio==="true"};
+    }else if(["media.speed","media.fade","media.motion","media.silence-trim","media.brand"].includes(node.kind)){
+      mediaType=node.kind;mediaInput={...config,sourceAssetId};
+      if(node.kind==="media.brand")mediaInput.logoAssetId=String(values.logo||config.logoAssetId||"");
     }else if(["media.denoise","media.color","media.resize","media.interpolate","media.upscale","video.resize"].includes(node.kind)){
       mediaType=node.kind==="video.resize"?"media.resize":node.kind;
       mediaInput={sourceAssetId,width:Number(config.width||(node.kind==="media.upscale"?2560:1920)),height:Number(config.height||(node.kind==="media.upscale"?1440:1080)),fit:String(config.fit||"contain"),luma:Number(config.luma??4),chroma:Number(config.chroma??3),brightness:Number(config.brightness??0),contrast:Number(config.contrast??1),saturation:Number(config.saturation??1),fps:Number(config.fps||30)};
@@ -337,7 +352,8 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
       const assetId=result.outputAsset.id;
       output=nodeOutput(node,assetId);output.asset=assetId;
       if(mediaType==="media.thumbnail")output.image=assetId;
-      if(mediaType==="media.audio_extract"||mediaType==="media.audio-clean")output.audio=assetId;
+      if(mediaType==="media.audio_extract"||mediaType==="media.audio-clean"||result.outputAsset.mediaType?.startsWith("audio/"))output.audio=assetId;
+      if(["media.mux","media.speed","media.fade","media.motion","media.brand"].includes(mediaType)&&result.outputAsset.mediaType?.startsWith("video/"))output.video=assetId;
       if(mediaType==="media.transcode"||mediaType==="timeline.render")output.video=assetId;
     }else if(result.metadata){
       output=nodeOutput(node,result.metadata);output.report=result.metadata;

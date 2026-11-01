@@ -13,3 +13,4 @@ data/
 *.sqlite-shm
 *.sqlite-wal
 *.tsbuildinfo
+/-version

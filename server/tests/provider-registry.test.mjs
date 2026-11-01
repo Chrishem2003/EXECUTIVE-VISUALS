@@ -4,9 +4,9 @@ import { getProviderCatalog, findProviderForCapability, requireProviderForCapabi
 
 test("provider catalog is safe by default and never exposes credentials or submits work",()=>{
  const catalog=getProviderCatalog({});
- assert.equal(catalog.summary.total,8);
+ assert.equal(catalog.summary.total,10);
  assert.equal(catalog.summary.ready,0);
- assert.equal(catalog.summary.disabled,7);
+ assert.equal(catalog.summary.disabled,9);
  assert.equal(catalog.providers.find(x=>x.id==="local-media").status,"unavailable");
  assert.deepEqual(catalog.policy,{remoteCallsRequireExplicitOptIn:true,credentialsExposed:false,pricesEstimated:false,requestsSubmitted:false});
  assert.equal(JSON.stringify(catalog).includes("API_KEY"),false);

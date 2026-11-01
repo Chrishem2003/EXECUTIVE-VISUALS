@@ -15,6 +15,7 @@ import { sanitizeCreativeWorkspaceDocument } from "./workspace-documents.mjs";
 import { importResearchUrl } from "./research-import.mjs";
 import { getProviderCatalog } from "./provider-registry.mjs";
 import { executeStudioJob, isStudioJob, prepareStudioJob, studioCatalog } from "./studio.mjs";
+import { FINISHING_JOBS, secondaryField } from "./finishing.mjs";
 import { isGatewayRetryableCode } from "./gateway-core.mjs";
 import { ensureRemoteUsageTable, getRemoteUsagePolicy } from "./usage-guardrails.mjs";
 import { createCloudTimelineApi } from "./cloud-timeline-api.mjs";
@@ -45,7 +46,7 @@ const EXTENSIONS = {
   "audio/mpeg":"mp3","audio/wav":"wav","audio/x-wav":"wav","audio/mp4":"m4a","audio/ogg":"ogg",
   "application/pdf":"pdf","text/plain":"txt","text/vtt":"vtt","application/json":"json"
 };
-const MEDIA_JOBS = new Set(["media.probe","media.thumbnail","media.transcode","media.audio_extract","media.audio-clean","media.proxy","media.denoise","media.color","media.resize","media.interpolate","media.upscale","timeline.render"]);
+const MEDIA_JOBS = new Set(["media.probe","media.thumbnail","media.transcode","media.audio_extract","media.audio-clean","media.proxy","media.denoise","media.color","media.resize","media.interpolate","media.upscale","timeline.render",...FINISHING_JOBS]);
 const db = openDatabase(DB_FILE);
 const cloudTimelineApiEnabled = process.env.CLOUD_TIMELINE_API_ENABLED === "true";
 if (cloudTimelineApiEnabled && AUTH_MODE !== "supabase") throw new Error("Cloud timeline API requires verified Supabase authentication.");
@@ -638,6 +639,8 @@ export function createAppServer() {
         }else{
           if(projectId&&!canWriteProject(db,user.id,projectId)){fail(res,404,"PROJECT_NOT_FOUND","Project not found or editor access required.");return;}
           if(!body.sourceAssetId||!getAccessibleAsset(db,user.id,String(body.sourceAssetId),true)){fail(res,404,"SOURCE_ASSET_NOT_FOUND","Choose a source asset you own or can edit.");return;}
+          const second=secondaryField(type);
+          if(second&&!getAccessibleAsset(db,user.id,String(body[second.field]||""),false)){fail(res,404,"SOURCE_ASSET_NOT_FOUND",second.label+" was not found or you do not have access to it.");return;}
         }
         const key=String(req.headers["idempotency-key"]||body.idempotencyKey||"").slice(0,180);
         const input={...body};delete input.idempotencyKey;

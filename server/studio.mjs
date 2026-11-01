@@ -6,17 +6,20 @@ import { assertIdentityUseAllowed } from "./identity-consent.mjs";
 import { storeGeneratedMedia } from "./media-store.mjs";
 import { invalid, normalizeParams } from "./studio-schema.mjs";
 import { reserveRemoteRequest } from "./usage-guardrails.mjs";
+import { finishingCatalog } from "./finishing.mjs";
 import { ENHANCE_OPERATIONS, PREFIX as ENHANCE, runEnhance } from "./engines/enhance.mjs";
 import { AVATAR_PARAMS, PREFIX as AVATAR, runAvatar } from "./engines/avatar.mjs";
+import { TRANSFORM_OPERATIONS, PREFIX as TRANSFORM, runTransform } from "./engines/transform.mjs";
+import { LIPSYNC_PARAMS, PREFIX as LIPSYNC, runLipsync } from "./engines/lipsync.mjs";
 
 /**
- * Studio engines that fill the gaps in the provider registry: neural enhancement
- * and presenter video. Speech, transcription, image and video generation keep
+ * Studio engines that fill the gaps in the provider registry: neural enhancement,
+ * video transforms, presenter video and lip-sync. Speech, transcription, image and video generation keep
  * their own adapters. Spending is limited by the shared remote-usage reservation,
  * and identity use is governed by the shared consent model.
  */
 
-export const STUDIO_JOBS = new Set(["studio.enhance", "studio.avatar"]);
+export const STUDIO_JOBS = new Set(["studio.enhance", "studio.avatar", "studio.transform", "studio.lipsync"]);
 export const isStudioJob = type => STUDIO_JOBS.has(type);
 
 const MAX_SOURCE_BYTES = 200 * 1024 * 1024;
@@ -34,9 +37,12 @@ const engineView = (prefix, label) => ({ id: prefix.toLowerCase(), label, ...gat
 /** Catalog the browser renders its forms from, so client and server cannot drift. */
 export function studioCatalog() {
   return {
-    engines: { enhance: engineView(ENHANCE, "Enhancement"), avatar: engineView(AVATAR, "Presenter video") },
+    engines: { enhance: engineView(ENHANCE, "Enhancement"), avatar: engineView(AVATAR, "Presenter video"), transform: engineView(TRANSFORM, "Video transform"), lipsync: engineView(LIPSYNC, "Lip-sync") },
     enhance: Object.entries(ENHANCE_OPERATIONS).map(([id, op]) => ({ id, ...op })),
-    avatar: { params: AVATAR_FORM }
+    transform: Object.entries(TRANSFORM_OPERATIONS).map(([id, op]) => ({ id, ...op })),
+    avatar: { params: AVATAR_FORM },
+    lipsync: { params: LIPSYNC_PARAMS },
+    finishing: finishingCatalog()
   };
 }
 
@@ -56,15 +62,18 @@ function findCharacter(db, projectId, characterId) {
 }
 
 /** Throws unless the character's recorded consent covers every scope in use. */
-export function assertAvatarIdentity(db, projectId, characterId, voiceRef) {
+export function assertIdentity(db, projectId, characterId, scopes) {
   const character = findCharacter(db, projectId, characterId);
-  const scopes = voiceRef ? ["face-animation", "voice"] : ["face-animation"];
   try {
     for (const scope of scopes) assertIdentityUseAllowed(character, scope);
   } catch (error) {
     throw Object.assign(error, { status: 422 });
   }
   return character;
+}
+
+export function assertAvatarIdentity(db, projectId, characterId, voiceRef) {
+  return assertIdentity(db, projectId, characterId, voiceRef ? ["face-animation", "voice"] : ["face-animation"]);
 }
 
 /** Validate a request and return the normalized payload. Nothing leaves the server here. */
@@ -74,15 +83,21 @@ export function prepareStudioJob(db, user, body) {
   const projectId = body.projectId ? String(body.projectId) : null;
   if (projectId && !canWriteProject(db, user.id, projectId)) throw invalid("Project not found or editor access required.", "PROJECT_NOT_FOUND", 404);
   let input;
-  if (jobType === "studio.enhance") {
+  if (jobType === "studio.enhance" || jobType === "studio.transform") {
     const operation = String(body.operation || "");
-    const spec = ENHANCE_OPERATIONS[operation];
+    const spec = (jobType === "studio.enhance" ? ENHANCE_OPERATIONS : TRANSFORM_OPERATIONS)[operation];
     if (!spec) throw invalid("Choose a supported enhancement operation.");
     const source = requireAsset(db, user.id, body.sourceAssetId, spec.media, "Source media");
     if (spec.requiresRights && body.rightsAttested !== true) {
       throw invalid("Confirm that you own this media or hold the rights to modify it before removing a watermark.", "RIGHTS_ATTESTATION_REQUIRED", 422);
     }
     input = { sourceAssetId: source.id, operation, params: normalizeParams(spec.params, body.params), rightsAttested: Boolean(spec.requiresRights) };
+  } else if (jobType === "studio.lipsync") {
+    const video = requireAsset(db, user.id, body.sourceAssetId, ["video"], "Source video");
+    const audio = requireAsset(db, user.id, body.audioAssetId, ["audio"], "Replacement audio");
+    const params = normalizeParams(LIPSYNC_PARAMS, body.params);
+    assertIdentity(db, projectId, body.identityProfileId, ["lip-sync"]);
+    input = { sourceAssetId: video.id, audioAssetId: audio.id, identityProfileId: String(body.identityProfileId), params };
   } else {
     const params = normalizeParams(AVATAR_FORM, body.params);
     assertAvatarIdentity(db, projectId, body.identityProfileId, params.voiceRef);
@@ -127,12 +142,22 @@ export async function executeStudioJob({ db, job, mediaRoot, onProgress = () => 
     onProgress(5);
     let stored;
     let model;
-    if (job.job_type === "studio.enhance") {
+    if (job.job_type === "studio.enhance" || job.job_type === "studio.transform") {
+      const engine = job.job_type.slice(7);
       const { asset, buffer } = await readAssetBytes(db, mediaRoot, owner, input.sourceAssetId, MAX_SOURCE_BYTES, "Source media");
       if (input.rightsAttested) audit(db, owner, "studio.rights_attested", "asset", asset.id, { operation: input.operation }, job.project_id);
-      const result = await runEnhance({ operation: input.operation, params: input.params, blob: new Blob([buffer], { type: asset.media_type }), name: asset.original_name, signal, onReady: reserve("enhance", `enhance.${input.operation}`), onProgress: p => onProgress(10 + p * 0.8) });
+      const result = await (engine === "enhance" ? runEnhance : runTransform)({ operation: input.operation, params: input.params, blob: new Blob([buffer], { type: asset.media_type }), name: asset.original_name, signal, onReady: reserve(engine, `${engine}.${input.operation}`), onProgress: p => onProgress(10 + p * 0.8) });
       model = result.model;
-      stored = await store({ kind: asset.media_type.startsWith("video/") ? "video" : "image", buffer: result.buffer, model, engine: "enhance", prompt: input.operation, derivativeOf: asset.id, extra: { operation: input.operation, params: input.params } });
+      stored = await store({ kind: asset.media_type.startsWith("video/") ? "video" : "image", buffer: result.buffer, model, engine, prompt: input.operation, derivativeOf: asset.id, extra: { operation: input.operation, params: input.params } });
+    } else if (job.job_type === "studio.lipsync") {
+      // Consent is checked again here, so revoking or expiring it stops queued work.
+      const character = assertIdentity(db, job.project_id, input.identityProfileId, ["lip-sync"]);
+      audit(db, owner, "studio.identity_used", "character", String(character.id), { jobId: job.id, scopes: ["lip-sync"] }, job.project_id);
+      const v = await readAssetBytes(db, mediaRoot, owner, input.sourceAssetId, MAX_SOURCE_BYTES, "Source video");
+      const a = await readAssetBytes(db, mediaRoot, owner, input.audioAssetId, MAX_NARRATION_BYTES, "Replacement audio");
+      const result = await runLipsync({ params: input.params, video: { blob: new Blob([v.buffer], { type: v.asset.media_type }), name: v.asset.original_name }, audio: { blob: new Blob([a.buffer], { type: a.asset.media_type }), name: a.asset.original_name }, signal, onReady: reserve("lipsync", "lipsync.generate"), onProgress: p => onProgress(10 + p * 0.8) });
+      model = result.model;
+      stored = await store({ kind: "video", buffer: result.buffer, model, engine: "lipsync", prompt: "lip-sync", derivativeOf: v.asset.id, extra: { identityProfileId: String(character.id), audioAssetId: a.asset.id } });
     } else if (job.job_type === "studio.avatar") {
       // Consent is checked again here, so revoking or expiring it stops queued work.
       const character = assertAvatarIdentity(db, job.project_id, input.identityProfileId, input.params.voiceRef);
@@ -149,7 +174,7 @@ export async function executeStudioJob({ db, job, mediaRoot, onProgress = () => 
       throw Object.assign(new Error("No studio adapter for this job type."), { code: "ENGINE_UNAVAILABLE" });
     }
     if (guard.isCancelled()) throw Object.assign(new Error("Job cancelled."), { code: "JOB_CANCELLED" });
-    recordModelUsage(db, { ownerId: owner, projectId: job.project_id || null, jobId: job.id, workflowRunId, nodeId, provider: job.job_type.slice(7), capability: job.job_type.slice(7) === "avatar" ? "avatar.generate" : `enhance.${input.operation}`, model, durationMs: Date.now() - started });
+    recordModelUsage(db, { ownerId: owner, projectId: job.project_id || null, jobId: job.id, workflowRunId, nodeId, provider: job.job_type.slice(7), capability: job.job_type === "studio.avatar" ? "avatar.generate" : job.job_type === "studio.lipsync" ? "lipsync.generate" : `${job.job_type.slice(7)}.${input.operation}`, model, durationMs: Date.now() - started });
     emit("studio.output_created", { assetId: stored.id, sha256: stored.sha256, model });
     audit(db, owner, "studio.output_created", "asset", stored.id, { jobType: job.job_type, model }, job.project_id);
     return { outputAsset: summary(stored) };

@@ -11,7 +11,8 @@ import { executeWorkflowRun } from "../workflow-executor.mjs";
 const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
 const MP4 = Buffer.concat([Buffer.from([0, 0, 0, 24]), Buffer.from("ftypisom"), Buffer.alloc(32)]);
 const MP3 = Buffer.concat([Buffer.from("ID3"), Buffer.alloc(64)]);
-const ENV = ["ENHANCE", "AVATAR"].flatMap(p => ["ENABLED", "URL", "MODEL", "OUTPUT_HOSTS", "POLL_MS", "ALLOW_REMOTE", "API_KEY"].map(s => `${p}_GATEWAY_${s}`)).concat(["REMOTE_AI_DAILY_REQUEST_LIMIT"]);
+const ENGINES = ["ENHANCE", "AVATAR", "TRANSFORM", "LIPSYNC"];
+const ENV = ENGINES.flatMap(p => ["ENABLED", "URL", "MODEL", "OUTPUT_HOSTS", "POLL_MS", "ALLOW_REMOTE", "API_KEY"].map(s => `${p}_GATEWAY_${s}`)).concat(["REMOTE_AI_DAILY_REQUEST_LIMIT"]);
 const future = () => new Date(Date.now() + 90 * 86400000).toISOString().slice(0, 10);
 
 async function harness(handler) {
@@ -25,7 +26,7 @@ async function harness(handler) {
   });
   await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
   const url = `http://127.0.0.1:${server.address().port}/v1`;
-  for (const prefix of ["ENHANCE", "AVATAR"]) {
+  for (const prefix of ENGINES) {
     process.env[`${prefix}_GATEWAY_ENABLED`] = "true";
     process.env[`${prefix}_GATEWAY_URL`] = url;
     process.env[`${prefix}_GATEWAY_MODEL`] = "test-model";
@@ -229,6 +230,88 @@ test("an unapproved presenter node is blocked and sends nothing", async () => {
     const job = seedRun(h.db, "run-2", graph);
     await assert.rejects(() => executeWorkflowRun({ db: h.db, job, mediaRoot: h.mediaRoot }), { code: "APPROVAL_REQUIRED" });
     assert.equal(h.db.prepare("SELECT status FROM workflow_node_runs WHERE run_id='run-2' AND node_id='presenter'").get().status, "blocked");
+    assert.equal(h.requests.length, 0);
+  } finally { await h.close(); }
+});
+
+test("a transform sends the operation, stores a derivative and records usage", async () => {
+  const h = await harness((req, res) => { res.writeHead(200, { "content-type": "video/mp4" }); res.end(MP4); });
+  try {
+    await h.asset("v1", "shot.mp4", "video/mp4", MP4);
+    const result = await h.run({ jobType: "studio.transform", operation: "extend", sourceAssetId: "v1", params: { seconds: 6, prompt: "the camera keeps rolling" } });
+    assert.equal(result.outputAsset.mediaType, "video/mp4");
+    assert.equal(h.db.prepare("SELECT derivative_of FROM assets WHERE id=?").get(result.outputAsset.id).derivative_of, "v1");
+    const body = h.requests[0].body.toString("latin1");
+    assert.match(h.requests[0].url, /\/transform$/);
+    assert.match(body, /name="operation"\r\n\r\nextend/);
+    assert.match(body, /"seconds":6/);
+    assert.equal(h.db.prepare("SELECT capability FROM model_usage_events").get().capability, "transform.extend");
+  } finally { await h.close(); }
+});
+
+test("transform requests are validated before anything is sent", async () => {
+  const h = await harness((req, res) => { res.writeHead(200, { "content-type": "video/mp4" }); res.end(MP4); });
+  try {
+    await h.asset("v1", "shot.mp4", "video/mp4", MP4);
+    await h.asset("i1", "photo.png", "image/png", PNG);
+    assert.throws(() => prepareStudioJob(h.db, h.user, { projectId: "p1", jobType: "studio.transform", operation: "restyle", sourceAssetId: "v1", params: {} }), { code: "INVALID_STUDIO_INPUT" });
+    assert.throws(() => prepareStudioJob(h.db, h.user, { projectId: "p1", jobType: "studio.transform", operation: "restyle", sourceAssetId: "i1", params: { prompt: "watercolour" } }), { code: "UNSUPPORTED_ASSET" });
+    assert.throws(() => prepareStudioJob(h.db, h.user, { projectId: "p1", jobType: "studio.transform", operation: "no-such-op", sourceAssetId: "v1" }), { code: "INVALID_STUDIO_INPUT" });
+    assert.equal(h.requests.length, 0);
+  } finally { await h.close(); }
+});
+
+const lipBody = { jobType: "studio.lipsync", sourceAssetId: "v1", audioAssetId: "n1", identityProfileId: "c1", params: {} };
+
+test("lip-sync needs recorded consent for lip-sync and sends both files", async () => {
+  const h = await harness((req, res) => { res.writeHead(200, { "content-type": "video/mp4" }); res.end(MP4); });
+  try {
+    await h.asset("v1", "shot.mp4", "video/mp4", MP4);
+    await h.asset("n1", "line.mp3", "audio/mpeg", MP3);
+    h.setCharacters([authorized({ scopes: ["face-animation"] })]);
+    assert.throws(() => prepareStudioJob(h.db, h.user, { ...lipBody, projectId: "p1" }), { code: "IDENTITY_PERMISSION_REQUIRED", status: 422 });
+    h.setCharacters([authorized({ scopes: ["lip-sync"] })]);
+    const result = await h.run(lipBody);
+    assert.equal(result.outputAsset.mediaType, "video/mp4");
+    const body = h.requests[0].body.toString("latin1");
+    assert.match(h.requests[0].url, /\/lipsync$/);
+    assert.match(body, /name="video"; filename="shot.mp4"/);
+    assert.match(body, /name="audio"; filename="line.mp3"/);
+    assert.equal(h.db.prepare("SELECT derivative_of FROM assets WHERE id=?").get(result.outputAsset.id).derivative_of, "v1");
+    assert.equal(h.db.prepare("SELECT COUNT(*) n FROM audit_events WHERE event_type='studio.identity_used'").get().n, 1);
+    assert.equal(h.db.prepare("SELECT capability FROM model_usage_events").get().capability, "lipsync.generate");
+  } finally { await h.close(); }
+});
+
+test("lip-sync rejects the wrong media types and honours withdrawn consent", async () => {
+  const h = await harness((req, res) => { res.writeHead(200, { "content-type": "video/mp4" }); res.end(MP4); });
+  try {
+    await h.asset("v1", "shot.mp4", "video/mp4", MP4);
+    await h.asset("n1", "line.mp3", "audio/mpeg", MP3);
+    h.setCharacters([authorized({ scopes: ["lip-sync"] })]);
+    assert.throws(() => prepareStudioJob(h.db, h.user, { ...lipBody, projectId: "p1", sourceAssetId: "n1" }), { code: "UNSUPPORTED_ASSET" });
+    assert.throws(() => prepareStudioJob(h.db, h.user, { ...lipBody, projectId: "p1", audioAssetId: "v1" }), { code: "UNSUPPORTED_ASSET" });
+    const job = h.insertJob(prepareStudioJob(h.db, h.user, { ...lipBody, projectId: "p1" }), "job-lip");
+    h.setCharacters([{ id: "c1", name: "Host", consent: { kind: "not-granted", scopes: [], evidenceReference: "", expiresAt: "" } }]);
+    await assert.rejects(() => executeStudioJob({ db: h.db, job, mediaRoot: h.mediaRoot }), { code: "IDENTITY_PERMISSION_REQUIRED" });
+    assert.equal(h.requests.length, 0, "nothing is sent after consent is withdrawn");
+  } finally { await h.close(); }
+});
+
+test("a lip-sync workflow node is blocked without upstream approval", async () => {
+  const h = await harness((req, res) => { res.writeHead(200, { "content-type": "video/mp4" }); res.end(MP4); });
+  try {
+    await h.asset("v1", "shot.mp4", "video/mp4", MP4);
+    await h.asset("n1", "line.mp3", "audio/mpeg", MP3);
+    h.setCharacters([authorized({ scopes: ["lip-sync"] })]);
+    const ref = (id, assetId) => ({ id, kind: "reference", label: id, inputs: [], outputs: [{ id: "asset", type: "asset" }], config: { assetId } });
+    const sync = { id: "sync", kind: "voice.lipsync", label: "Lip-sync", inputs: [{ id: "video", type: "media", required: true }, { id: "audio", type: "media", required: true }], outputs: [{ id: "video", type: "video" }], config: { identityProfileId: "c1" } };
+    const edges = [
+      { id: "e1", sourceNodeId: "rv", sourcePortId: "asset", targetNodeId: "sync", targetPortId: "video" },
+      { id: "e2", sourceNodeId: "rn", sourcePortId: "asset", targetNodeId: "sync", targetPortId: "audio" }
+    ];
+    const blocked = seedRun(h.db, "run-l1", { id: "g", projectId: "p1", revision: 1, nodes: [ref("rv", "v1"), ref("rn", "n1"), sync], edges });
+    await assert.rejects(() => executeWorkflowRun({ db: h.db, job: blocked, mediaRoot: h.mediaRoot }), { code: "APPROVAL_REQUIRED" });
     assert.equal(h.requests.length, 0);
   } finally { await h.close(); }
 });
