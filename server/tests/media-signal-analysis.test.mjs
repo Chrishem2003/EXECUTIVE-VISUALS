@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {parseBlackFrameEvents,parseSilenceEvents,buildMediaSignalFindings,parseAudioMetrics,buildAudioMetricFindings,runOptionalSignalCheck} from "../media-signal-analysis.mjs";
+import {parseBlackFrameEvents,parseSilenceEvents,buildMediaSignalFindings,parseAudioMetrics,buildAudioMetricFindings,parseFreezeEvents,parseSceneChangeTimes,runOptionalSignalCheck} from "../media-signal-analysis.mjs";
 
 test("parses FFmpeg blackdetect intervals",()=>{
  const events=parseBlackFrameEvents("[blackdetect @ 0x1] black_start:0.500 black_end:2.000 black_duration:1.500");
@@ -43,4 +43,14 @@ test("records unsupported optional filters without disguising them as clean resu
 test("does not swallow cancellation during optional signal analysis",async()=>{
  const cancelled=Object.assign(new Error("cancelled"),{code:"MEDIA_CANCELLED"});
  await assert.rejects(()=>runOptionalSignalCheck(async()=>{throw cancelled;},{isCancelled:()=>true}),error=>error===cancelled);
+});
+
+test("parses freeze intervals and scene-change timestamps from FFmpeg diagnostics",()=>{
+ const stderr="[freezedetect] freeze_start: 1.000\n[freezedetect] freeze_end: 4.500 | freeze_duration: 3.500\n[Parsed_showinfo] n: 1 pts: 90000 pts_time: 1.000\n[Parsed_showinfo] n: 2 pts: 270000 pts_time: 3.000";
+ assert.deepEqual(parseFreezeEvents(stderr),[{startSeconds:1,endSeconds:4.5,durationSeconds:3.5}]);
+ assert.deepEqual(parseSceneChangeTimes(stderr),[1,3]);
+});
+test("flags sustained freeze intervals for human review",()=>{
+ const findings=buildMediaSignalFindings({freezes:[{startSeconds:2,endSeconds:5,durationSeconds:3}]});
+ assert.ok(findings.some(item=>item.code==="FROZEN_VIDEO_INTERVAL"&&item.severity==="warning"));
 });
