@@ -43,7 +43,7 @@ function director(){return header("CREATIVE INTELLIGENCE","AI Director","Turn a 
 async function loadCloudWorkspace(){
  state.cloudLoading=true;state.cloudMessage="Loading private cloud workspace…";render();
  try{
-  const result=await apiRequest<{projects:Array<{id:string;name:string;description?:string;revision:number;settings?:Record<string,unknown>&{creativeProduction?:{project?:{audience?:string;style?:string;duration?:string}}}}>("/api/cloud/projects");
+  const result=await apiRequest<{projects:Array<{id:string;name:string;description?:string;revision:number;settings?:Record<string,unknown>&{creativeProduction?:{project?:{audience?:string;style?:string;duration?:string}}}}}>("/api/cloud/projects");
   state.cloudProjects=result.projects||[];
   if(!state.cloudProjectId||!state.cloudProjects.some(p=>p.id===state.cloudProjectId))state.cloudProjectId=state.cloudProjects[0]?.id||"";
   const query=state.cloudProjectId?"?projectId="+encodeURIComponent(state.cloudProjectId):"";
