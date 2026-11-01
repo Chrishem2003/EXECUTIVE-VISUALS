@@ -78,6 +78,13 @@ Add reference image, image edit, first/last frame, video continuation, masks and
 - Each planned step carries a truthful engine/method label and explicit approval requirement; plans report no fabricated duration or cost estimate.
 - Added focused tests and included them in the main build verification command. Planner does not yet enqueue or execute batch jobs; that requires the next approval-aware workflow integration.
 
+### E2. Cloud derivative validation before publication — implemented, awaiting CI
+- Cloud FFmpeg derivatives now require FFprobe and must contain the expected audio/video stream before the asset repository can publish them.
+- Audio/video derivatives require a positive, verifiable duration; image thumbnails require verified image dimensions.
+- Malformed metadata, missing streams, unverifiable duration, or invalid image dimensions fail closed before publication.
+- Existing stricter video-upscale checks remain in place for codec, pixel format, requested dimensions, audio preservation and duration drift.
+- Added a cloud executor regression test proving a structurally invalid derivative is never published. Structural checks do not establish visual quality or correct creative content.
+
 ## Wave D — presenter, dubbing and continuity
 - Keep narration TTS, transcription, translation, avatar rendering, voice cloning and lip-sync as separate capabilities with separate readiness and permissions.
 - Add timestamped transcript alignment and optional diarization only through tested adapters.
