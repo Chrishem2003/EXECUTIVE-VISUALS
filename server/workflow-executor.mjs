@@ -288,6 +288,11 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
      resolution:String(config.resolution??"provider_default"),
      audioMode:String(config.audioMode??"provider_default"),
      referenceAssetIds:referenceId?[referenceId]:[],
+     negativePrompt:config.negativePrompt??values.negativePrompt,
+     seed:config.seed??values.seed,
+     startFrameAssetId:config.startFrameAssetId??values.startFrameAssetId,
+     endFrameAssetId:config.endFrameAssetId??values.endFrameAssetId,
+     motionReferenceAssetId:config.motionReferenceAssetId??values.motionReferenceAssetId,
     });
     assertVideoCapabilities(generationRequest,getFalVideoCapabilities());
     const usageStarted=Date.now();
