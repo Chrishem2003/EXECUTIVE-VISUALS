@@ -53,19 +53,22 @@ if (!checkpointSql.includes("alter table executive_visuals.video_pipeline_checkp
 if (!checkpointSql.includes("revoke all on executive_visuals.video_pipeline_checkpoints from public, anon, authenticated;")) issues.push("Cloud checkpoints must be unavailable to untrusted roles.");
 if (!checkpointSql.includes("grant all privileges on executive_visuals.video_pipeline_checkpoints to service_role;")) issues.push("Trusted cloud worker role needs checkpoint access.");
 if (!checkpointSql.includes("ev_video_pipeline_checkpoints_validate_scope")) issues.push("Cloud checkpoint writes must validate owner, project and source asset scope.");
-const checkpointFunctionDefinitions = checkpointSql.match(/create or replace function executive_visuals\\.validate_video_pipeline_checkpoint_scope\\(/gi) || [];
-const checkpointTriggers = checkpointSql.match(/create trigger ev_video_pipeline_checkpoints_validate_scope/gi) || [];
-const checkpointFunction = checkpointSql.match(/create or replace function executive_visuals\\.validate_video_pipeline_checkpoint_scope\\([\\s\\S]*?as \\$\\$([\\s\\S]*?)\\$\\$;/i);
-if (checkpointFunctionDefinitions.length !== 1 || checkpointTriggers.length !== 1 || !checkpointFunction) {
+const checkpointFunctionSignature = "create or replace function executive_visuals.validate_video_pipeline_checkpoint_scope(";
+const checkpointFunctionStart = checkpointSql.indexOf(checkpointFunctionSignature);
+const checkpointFunctionCount = checkpointSql.split(checkpointFunctionSignature).length - 1;
+const checkpointTriggerCount = checkpointSql.split("create trigger ev_video_pipeline_checkpoints_validate_scope").length - 1;
+const checkpointBodyStart = checkpointSql.indexOf("as $", checkpointFunctionStart);
+const checkpointBodyEnd = checkpointSql.indexOf("$;", checkpointBodyStart);
+if (checkpointFunctionCount !== 1 || checkpointTriggerCount !== 1 || checkpointFunctionStart < 0 || checkpointBodyStart < 0 || checkpointBodyEnd < 0) {
   issues.push("Checkpoint migration must contain exactly one complete validation function and one trigger.");
 } else {
-  const body = checkpointFunction[1];
-  if (!/^\\s*begin\\b/i.test(body) || !/\\bend;\\s*$/i.test(body)) issues.push("Checkpoint validation function body is incomplete.");
+  const body = checkpointSql.slice(checkpointBodyStart + 5, checkpointBodyEnd).trim();
+  if (!body.startsWith("begin") || !body.endsWith("end;")) issues.push("Checkpoint validation function body is incomplete.");
   if (!body.includes("a.sha256 = lower(new.input_sha256)")) issues.push("Checkpoint source hash must match the persisted source asset.");
   if (!body.includes("output_asset.sha256 = lower(new.output_json ->> 'sha256')")) issues.push("Checkpoint output hash must match the persisted derivative asset.");
   if (!body.includes("!~*") || !body.includes("new.output_json ->> 'id'")) issues.push("Checkpoint output asset ID must be validated before casting.");
 }
-if ((checkpointSql.match(/\\$\\$/g) || []).length !== 2) issues.push("Checkpoint migration must use one balanced PL/pgSQL dollar-quoted function body.");
+if ((checkpointSql.split("$").length - 1) !== 2) issues.push("Checkpoint migration must use one balanced PL/pgSQL dollar-quoted function body.");
 
 if (!checkpointSql.includes("octet_length(output_json::text) <= 32000")) issues.push("Cloud checkpoint output must be size-bounded.");
 if (!checkpointSql.includes("output_asset.derivative_of = new.input_asset_id")) issues.push("Cloud checkpoint outputs must be verified as derivatives of their recorded inputs.");
