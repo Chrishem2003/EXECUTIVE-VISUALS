@@ -44,3 +44,11 @@ test("rejects malformed checkpoint receipts and never updates a completed checkp
   assert.equal(JSON.parse(row.output_json).id,"derived-1");
  }finally{await f.close();}
 });
+
+test("refuses to create a checkpoint store for a project the owner cannot access",async()=>{
+ const f=await fixture();try{
+  assert.throws(()=>createSqliteVideoPipelineCheckpointStore({db:f.db,ownerId:f.ownerA,projectId:f.projectB}),e=>e.code==="VIDEO_PIPELINE_PROJECT_ACCESS_DENIED");
+  const editorStore=createSqliteVideoPipelineCheckpointStore({db:f.db,ownerId:f.ownerA,projectId:f.projectB,authorizeProject:({ownerId,projectId})=>ownerId===f.ownerA&&projectId===f.projectB});
+  assert.equal(await editorStore.get("pipe-1","edit"),null);
+ }finally{await f.close();}
+});
