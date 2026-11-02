@@ -4,6 +4,7 @@ import {createCloudTimelineApi} from "../cloud-timeline-api.mjs";
 
 const owner="123e4567-e89b-42d3-a456-426614174000";
 const reviewer="223e4567-e89b-42d3-a456-426614174000";
+const reviewerTwo="323e4567-e89b-42d3-a456-426614174000";
 const project="423e4567-e89b-42d3-a456-426614174000";
 const sourceId="523e4567-e89b-42d3-a456-426614174000";
 const outputId="623e4567-e89b-42d3-a456-426614174000";
@@ -88,4 +89,19 @@ test("cloud AI upscale rejects missing rights confirmation, unsupported models a
  assert.equal(invalidTile.status,400);assert.equal(invalidTile.body.error.code,"UPSCALE_OPTIONS_INVALID");
  const readOnly=await f.api.handle({method:"POST",path:"/api/cloud/upscale",ownerId:reviewer,body:{...base,model:"realesrgan-x4plus",rightsConfirmed:true},idempotencyKey:"upscale-readonly-user"});
  assert.equal(readOnly.status,404);assert.equal(readOnly.body.error.code,"PROJECT_NOT_FOUND");
+});
+
+
+test("concurrent independent reviewers cannot overwrite the first immutable benchmark decision",async()=>{
+ const f=setup();
+ const fixture=await f.api.handle({method:"POST",path:"/api/cloud/upscale-benchmarks/fixtures",ownerId:owner,query:{projectId:project},body:{sourceAssetId:sourceId,category:"portrait"}});
+ const run=await f.api.handle({method:"POST",path:"/api/cloud/upscale-benchmarks/runs",ownerId:owner,query:{projectId:project},body:{assetId:outputId,fixtureId:fixture.body.fixture.id}});
+ const decisions=await Promise.all([
+  f.api.handle({method:"POST",path:"/api/cloud/upscale-benchmarks/runs/"+run.body.run.id+"/review",ownerId:reviewer,query:{projectId:project},body:{decision:"reviewed_pass",note:"Reviewer one checked the result."}}),
+  f.api.handle({method:"POST",path:"/api/cloud/upscale-benchmarks/runs/"+run.body.run.id+"/review",ownerId:reviewerTwo,query:{projectId:project},body:{decision:"reviewed_fail",note:"Reviewer two checked the result."}})
+ ]);
+ assert.deepEqual(decisions.map(result=>result.status).sort(),[200,409]);
+ assert.ok([reviewer,reviewerTwo].includes(f.rows.run.reviewer_id));
+ assert.ok(["reviewed_pass","reviewed_fail"].includes(f.rows.run.review_decision));
+ assert.equal(f.calls.filter(call=>call.path.startsWith("audit_events")&&call.method==="POST"&&call.body?.event_type==="upscale_benchmark.quality_reviewed").length,1);
 });
