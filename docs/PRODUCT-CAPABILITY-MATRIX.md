@@ -122,6 +122,12 @@ Executive Visuals should provide tenant-scoped brand spaces, role-based access, 
 
 ---
 
+## Cross-platform transformation workflow
+
+Public capability evidence supports a video-to-video transformation family: targeted vehicle/product/object replacement, wardrobe changes, character/person replacement, background/scene replacement, removal, relighting and broader restyling. The original product interpretation is an approval-gated Transformation Studio with source video, target description, optional reference assets, preservation constraints, provider capability checks, side-by-side review and immutable source-to-output lineage.
+
+Do not assume every model supports every operation or preservation promise. Read operation, duration, reference count, audio, motion and output limits from the selected adapter's versioned declaration. Require explicit rights confirmation; person replacement additionally requires subject consent. Remote execution remains disabled until an adapter and private media lifecycle pass release tests.
+
 ## 3. Platform C
 
 ### Public workspace structure
