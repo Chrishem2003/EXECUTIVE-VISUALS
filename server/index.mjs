@@ -54,7 +54,7 @@ const aiUpscaleAdapter = createRealEsrganAdapter();
 const cloudTimelineApiEnabled = process.env.CLOUD_TIMELINE_API_ENABLED === "true";
 if (cloudTimelineApiEnabled && AUTH_MODE !== "supabase") throw new Error("Cloud timeline API requires verified Supabase authentication.");
 const cloudTimelineApi = cloudTimelineApiEnabled ? createCloudTimelineApi({maxUploadBytes:Number(process.env.CLOUD_MEDIA_MAX_UPLOAD_BYTES || MAX_UPLOAD_BYTES)}) : null;
-if (cloudTimelineApi) await cloudTimelineApi.checkReadiness();
+const cloudTimelineReadiness = cloudTimelineApi ? await cloudTimelineApi.checkReadiness() : {ready:false,storage:"disabled"};
 const activeProcesses = new Map();
 const WORKER_ID = randomUUID();
 const rateBuckets = new Map();
@@ -284,6 +284,8 @@ export function createAppServer() {
           databaseWithinDataDir:isWithinDataDir(DB_FILE),
           mediaWithinDataDir:isWithinDataDir(MEDIA_ROOT),
           cloudTimelineApiEnabled,
+          cloudTimelineStorageReady:cloudTimelineReadiness.ready===true && cloudTimelineReadiness.storage==="private",
+          serverManagedSessionsReady:false,
           supabaseUrl:process.env.SUPABASE_URL||"",
           supabasePublishableKey:process.env.SUPABASE_PUBLISHABLE_KEY||"",
           supabaseServiceRoleKey:process.env.SUPABASE_SERVICE_ROLE_KEY||"",
