@@ -6,9 +6,9 @@ import { createCloudTimelineApi } from "../cloud-timeline-api.mjs";
 
 const owner="123e4567-e89b-42d3-a456-426614174000",editor="223e4567-e89b-42d3-a456-426614174000",project="423e4567-e89b-42d3-a456-426614174000",timelineId="523e4567-e89b-42d3-a456-426614174000";
 const timelineDoc={width:1280,height:720,frameRate:{numerator:24,denominator:1},tracks:[],markers:[]};
-function setup({canWrite=true,projectId=project,existing=[]}={}){
+function setup({canWrite=true,projectId=project,existing=[],timelineDocOverride=timelineDoc,assetOverride=null}={}){
  const calls=[],created=[];
- const timeline={id:timelineId,ownerId:owner,projectId,name:"Test timeline",revision:2,timeline:timelineDoc,otio:null};
+ const timeline={id:timelineId,ownerId:owner,projectId,name:"Test timeline",revision:2,timeline:timelineDocOverride,otio:null};
  const timelines={
   async create(input){created.push(input);return{...timeline,...input,revision:1};},
   async get(input){calls.push(["get",input]);return input.ownerId===owner?timeline:null;},
@@ -16,7 +16,7 @@ function setup({canWrite=true,projectId=project,existing=[]}={}){
   async update(input){calls.push(["update",input]);return{...timeline,revision:input.expectedRevision+1,timeline:input.timeline};}
  };
  const fetchImpl=async(url,options)=>{calls.push(["fetch",url,options]);if(url.includes("/jobs")&&options.method==="POST")return{ok:true,status:201,async text(){return JSON.stringify([{id:JSON.parse(options.body).id,owner_id:owner,project_id:projectId,job_type:"timeline.render",status:"queued",input:JSON.parse(options.body).input}])}};if(url.includes("/jobs?"))return{ok:true,status:200,async text(){return JSON.stringify(existing)}};return{ok:true,status:201,async text(){return""}};};
- const api=createCloudTimelineApi({url:"https://example.supabase.co",serviceRoleKey:"service-secret",fetchImpl,timelineService:{timelines,assets:{async list(input){calls.push(["asset-list",input]);return[{id:"asset-1",projectId:input.projectId}];}},projects:{async create(input){calls.push(["project-create",input]);return{id:"project-1",...input};},async list(input){calls.push(["project-list",input]);return[{id:project}];},async get(input){calls.push(["project-get",input]);return{id:project,...input};},async update(input){calls.push(["project-update",input]);return{id:project,...input};},async archive(input){calls.push(["project-archive",input]);return{id:project,archived:true};}}},authorize:async({ownerId,projectId:pid,action})=>ownerId===owner&&(!pid||pid===project)&&(action==="read"||canWrite)});
+ const api=createCloudTimelineApi({url:"https://example.supabase.co",serviceRoleKey:"service-secret",fetchImpl,timelineService:{timelines,assets:{async list(input){calls.push(["asset-list",input]);return[{id:"asset-1",projectId:input.projectId}];},async get(input){calls.push(["asset-get",input]);return assetOverride||{id:"723e4567-e89b-42d3-a456-426614174000",ownerId:owner,projectId:project,name:"generated.mp4",mediaType:"video/mp4",sha256:"a".repeat(64),metadata:{generated:true,jobId:"823e4567-e89b-42d3-a456-426614174000",mediaVerification:{status:"passed",readable:true,sha256:"a".repeat(64)},probe:{format:{duration:"2.51"},streams:[{codec_type:"video"}]}}};}},projects:{async create(input){calls.push(["project-create",input]);return{id:"project-1",...input};},async list(input){calls.push(["project-list",input]);return[{id:project}];},async get(input){calls.push(["project-get",input]);return{id:project,...input};},async update(input){calls.push(["project-update",input]);return{id:project,...input};},async archive(input){calls.push(["project-archive",input]);return{id:project,archived:true};}}},authorize:async({ownerId,projectId:pid,action})=>ownerId===owner&&(!pid||pid===project)&&(action==="read"||canWrite)});
  return{api,calls,created};
 }
 test("cloud timeline create binds ownership to verified identity, not request body",async()=>{const f=setup();const result=await f.api.handle({method:"POST",path:"/api/cloud/timelines",ownerId:owner,body:{ownerId:editor,projectId:project,name:"Test",timeline:timelineDoc}});assert.equal(result.status,201);assert.equal(f.created[0].ownerId,owner);assert.equal(f.created[0].projectId,project);});
@@ -126,4 +126,37 @@ test("cloud caption uploads persist SRT validation evidence for readiness checks
  const req=Readable.from([bytes]);req.headers={"content-length":String(bytes.length)};
  const result=await api.uploadAsset({req,ownerId:owner,projectId:project,originalName:"captions.srt",mediaType:"text/plain"});
  assert.equal(result.status,201);assert.equal(stored.metadata.captionValidation.format,"srt");assert.equal(stored.metadata.captionValidation.status,"passed");
+});
+
+test("generated media handoff resolves verified project asset and saves with revision fencing",async()=>{
+ const track={id:"track-video",name:"Video 1",kind:"video",enabled:true,locked:false,clips:[]};
+ const f=setup({timelineDocOverride:{...timelineDoc,tracks:[track]}});
+ const result=await f.api.handle({method:"POST",path:"/api/cloud/timelines/"+timelineId+"/handoff",ownerId:owner,body:{assetId:"723e4567-e89b-42d3-a456-426614174000",jobId:"823e4567-e89b-42d3-a456-426614174000",trackId:"track-video",clipId:"clip-generated-1",playheadSeconds:1.25,expectedRevision:2}});
+ assert.equal(result.status,200);
+ const update=f.calls.find(c=>c[0]==="update")[1];
+ assert.equal(update.expectedRevision,2);
+ const clip=update.timeline.tracks[0].clips[0];
+ assert.equal(clip.assetId,"723e4567-e89b-42d3-a456-426614174000");
+ assert.equal(clip.metadata.generationJobId,"823e4567-e89b-42d3-a456-426614174000");
+ assert.equal(clip.duration.value/clip.duration.rate,2.51);
+});
+test("generated media handoff fails closed for stale revision, unverified assets and locked tracks",async()=>{
+ const track={id:"track-video",name:"Video 1",kind:"video",enabled:true,locked:true,clips:[]};
+ const f=setup({timelineDocOverride:{...timelineDoc,tracks:[track]}});
+ const body={assetId:"723e4567-e89b-42d3-a456-426614174000",jobId:"823e4567-e89b-42d3-a456-426614174000",trackId:"track-video",clipId:"clip-generated-1",playheadSeconds:0,expectedRevision:1};
+ assert.equal((await f.api.handle({method:"POST",path:"/api/cloud/timelines/"+timelineId+"/handoff",ownerId:owner,body})).status,409);
+ const locked=await f.api.handle({method:"POST",path:"/api/cloud/timelines/"+timelineId+"/handoff",ownerId:owner,body:{...body,expectedRevision:2}});
+ assert.equal(locked.status,422);
+ const badAsset={id:"723e4567-e89b-42d3-a456-426614174000",ownerId:owner,projectId:project,name:"generated.mp4",mediaType:"video/mp4",sha256:"a".repeat(64),metadata:{generated:true,jobId:"823e4567-e89b-42d3-a456-426614174000",probe:{format:{duration:"2.5"}}}};
+ const unverified=setup({timelineDocOverride:{...timelineDoc,tracks:[{...track,locked:false}]},assetOverride:badAsset});
+ const rejected=await unverified.api.handle({method:"POST",path:"/api/cloud/timelines/"+timelineId+"/handoff",ownerId:owner,body:{...body,expectedRevision:2}});
+ assert.equal(rejected.status,422);
+});
+test("generated media handoff rejects overlap and never overwrites a clip",async()=>{
+ const assetId="723e4567-e89b-42d3-a456-426614174000";
+ const track={id:"track-video",name:"Video 1",kind:"video",enabled:true,locked:false,clips:[{id:"existing",assetId:"other",name:"Existing",timelineStart:{value:0,rate:24},duration:{value:3,rate:1},sourceRange:{start:{value:0,rate:1},duration:{value:3,rate:1}},enabled:true}]};
+ const f=setup({timelineDocOverride:{...timelineDoc,tracks:[track]}});
+ const result=await f.api.handle({method:"POST",path:"/api/cloud/timelines/"+timelineId+"/handoff",ownerId:owner,body:{assetId,jobId:"823e4567-e89b-42d3-a456-426614174000",trackId:"track-video",clipId:"new-clip",playheadSeconds:1,expectedRevision:2}});
+ assert.equal(result.status,409);
+ assert.equal(f.calls.some(c=>c[0]==="update"),false);
 });
