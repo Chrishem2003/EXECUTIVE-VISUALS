@@ -10,6 +10,7 @@ import { analyzeCreativeTraceability, readCreativeTrace } from "../core/creative
 import { appendCreativeDecision, readCreativeDecisionHistory } from "../core/creative-decision-ledger";
 import { compareTimelineVariants, createTimelineVariant, type TimelineVariantComparison } from "../core/timeline-variants";
 import { addClip, addMarker, addTrack, createTimeline, moveClip, rational, splitClip, toOpenTimelineIo, trimClip, type EditorialTimeline, type TimelineTrack } from "../core/timeline";
+import { clampPreviewSeconds, stepPreviewSeconds } from "../core/timeline-preview";
 
 type Asset={id:string;name:string;mediaType:string;size:number;metadata?:Record<string,unknown>};
 type SavedTimeline={id:string;projectId?:string|null;name:string;revision:number;document?:EditorialTimeline};
@@ -35,6 +36,30 @@ function timelineCanvas(){
  const total=maxEnd();
  return '<div class="timeline-ruler"><span>00:00</span><span>'+Math.round(total/2/fps())+'s</span><span>'+Math.round(total/fps())+'s</span></div>'+
  state.timeline.tracks.map(track=>'<div class="editor-track"><div class="editor-track-label"><b>'+esc(track.name)+'</b><small>'+esc(track.kind)+(track.locked?' · locked':'')+'</small></div><div class="editor-track-lane">'+track.clips.map(clip=>'<article class="editor-clip '+(state.selectedClipId===clip.id?'selected':'')+'" data-tl-select="true" data-track="'+esc(track.id)+'" data-clip="'+esc(clip.id)+'" style="left:'+Math.max(0,clip.timelineStart.value/total*100)+'%;width:'+Math.max(4,clip.duration.value/total*100)+'%"><b>'+esc(clip.name)+'</b><small>'+esc(clip.assetId.slice(0,8))+' · '+Math.round(clip.duration.value)+'f</small><div class="editor-clip-actions"><button data-tl-action="split" data-track="'+esc(track.id)+'" data-clip="'+esc(clip.id)+'">Split</button><button data-tl-action="trim" data-track="'+esc(track.id)+'" data-clip="'+esc(clip.id)+'">Trim 12f</button><button data-tl-action="move" data-track="'+esc(track.id)+'" data-clip="'+esc(clip.id)+'">Next track</button></div></article>').join("")+'</div></div>').join("");
+}
+function timelinePreviewPanel(){
+ if(!state.timeline)return '<section class="timeline-preview panel"><div class="eyebrow">SOURCE PREVIEW</div><p class="muted">Load a sequence to preview a source clip.</p></section>';
+ const track=state.timeline.tracks.find(item=>item.clips.some(clip=>clip.id===state.selectedClipId));
+ const clip=track?.clips.find(item=>item.id===state.selectedClipId);
+ const asset=clip?state.assets.find(item=>item.id===clip.assetId):undefined;
+ const heading='<div class="timeline-panel-heading"><div><div class="eyebrow">SOURCE PREVIEW MONITOR</div><h3>'+(clip?esc(clip.name):'Select a timeline clip')+'</h3></div><small>'+(clip?'Source-range preview':'No clip selected')+'</small></div>';
+ if(state.mode==="cloud")return '<section class="timeline-preview panel">'+heading+'<div class="preview-empty">Cloud asset playback is not enabled here yet. An authenticated private-media playback URL is required.</div></section>';
+ if(!clip||!asset)return '<section class="timeline-preview panel">'+heading+'<div class="preview-empty">Select a video, audio or image clip on the timeline.</div></section>';
+ const start=clip.sourceRange.start.value/clip.sourceRange.start.rate,end=start+clip.sourceRange.duration.value/clip.sourceRange.duration.rate;
+ const mediaUrl='/api/assets/'+encodeURIComponent(asset.id)+'/file';
+ const previewRate=track.kind==="audio"?100:sourceRate(asset,track.kind),isVideoPreview=asset.mediaType.startsWith("video/");
+ const media=asset.mediaType.startsWith("video/")?'<video id="tl-preview-media" class="preview-media" controls playsinline preload="metadata" src="'+mediaUrl+'" data-source-in="'+start+'" data-source-out="'+end+'" data-source-fps="'+previewRate+'"></video>':asset.mediaType.startsWith("audio/")?'<audio id="tl-preview-media" class="preview-audio" controls preload="metadata" src="'+mediaUrl+'" data-source-in="'+start+'" data-source-out="'+end+'" data-source-fps="'+previewRate+'"></audio>':asset.mediaType.startsWith("image/")?'<img class="preview-still" src="'+mediaUrl+'" alt="'+esc(asset.name)+'">':'<div class="preview-empty">This media type cannot be previewed.</div>';
+ const frameButtons=isVideoPreview?'<button class="secondary" data-tl-action="preview-step-back">−1 frame</button><button class="secondary" data-tl-action="preview-step-forward">+1 frame</button>':'';
+ const controls=asset.mediaType.startsWith("video/")||asset.mediaType.startsWith("audio/")?'<div class="preview-transport"><button class="secondary" data-tl-action="preview-in">Go to source in</button>'+frameButtons+'<button class="secondary" data-tl-action="preview-out">Go to source out</button><input id="tl-preview-scrub" aria-label="'+(isVideoPreview?"Seek by source frame":"Seek by 10 milliseconds")+'" type="range" min="0" max="' + Math.max(1,Math.ceil((end-start)*previewRate)) + '" value="0" step="1"><output id="tl-preview-time">Loading media…</output></div>':'';
+ return '<section class="timeline-preview panel">'+heading+'<div class="preview-stage">'+media+'</div>'+controls+'<small class="muted">Preview is limited to this clip’s saved source range. Video frame stepping uses the probed source frame rate; audio scrubbing uses 10 ms increments. A verified master render is still required for delivery.</small></section>';
+}
+function seekPreview(action:string){
+ const media=document.querySelector<HTMLMediaElement>("#tl-preview-media");if(!media)return;
+ const start=Number(media.dataset.sourceIn),end=Number(media.dataset.sourceOut),rate=Number(media.dataset.sourceFps);
+ if(!Number.isFinite(start)||!Number.isFinite(end)||!Number.isFinite(rate)||rate<=0)return;
+ const target=action==="preview-in"?start:action==="preview-out"?end:stepPreviewSeconds(media.currentTime,action==="preview-step-back"?-1:1,rate,start,end);
+ media.currentTime=clampPreviewSeconds(target,start,end);
+ const output=document.querySelector<HTMLOutputElement>("#tl-preview-time");if(output)output.value=media.currentTime.toFixed(3)+" s";const scrub=document.querySelector<HTMLInputElement>("#tl-preview-scrub");if(scrub){const start=Number(media.dataset.sourceIn),rate=Number(media.dataset.sourceFps);scrub.value=String(Math.max(0,Math.round((media.currentTime-start)*rate)));}
 }
 function clipInspector(){
  if(!state.timeline||!state.selectedClipId)return '<div class="timeline-clip-inspector"><div class="eyebrow">CLIP INSPECTOR</div><p class="muted">Select a clip on the timeline to edit its timing, gain or visual properties.</p></div>';
@@ -130,10 +155,10 @@ export function renderTimelineWorkspace(){
  '<div class="eyebrow" style="margin-top:18px">ADD SOURCE CLIP</div><form id="tl-add-clip"><label>Source asset</label><select id="tl-asset-select" name="assetId" required>'+assetOptions()+'</select><label>Destination track</label><select name="trackId">'+(state.timeline?.tracks.map(t=>'<option value="'+esc(t.id)+'">'+esc(t.name)+'</option>').join("")||"")+'</select><div class="form-grid"><div><label>Timeline start (frames)</label><input name="start" type="number" min="0" value="'+maxEnd()+'"></div><div><label>Source in (source frames)</label><input name="sourceIn" type="number" min="0" value="0"></div><div><label>Duration (timeline frames)</label><input name="duration" type="number" min="1" value="'+(fps()*5)+'"></div></div><button class="primary wide">＋ Place clip on timeline</button></form>'+
  '<form id="tl-add-marker"><div class="eyebrow" style="margin-top:18px">REVIEW MARKER</div><label>Marker title</label><input name="name" required placeholder="Hook / transition / review note"><label>Position (frames)</label><input name="frame" type="number" min="0" value="0"><button class="secondary">＋ Add marker</button></form></section>'+
  '<section class="panel"><div class="timeline-panel-heading"><div><div class="eyebrow">MULTI-TRACK EDITOR</div><h3>Sequence timeline</h3></div><small>'+(state.timeline?.frameRate.numerator+"/"+state.timeline?.frameRate.denominator+" fps")+'</small></div>'+
- (state.timeline?timelineCanvas():'<div class="empty">Sign in and create a sequence to begin.</div>')+
+ timelinePreviewPanel()+(state.timeline?timelineCanvas():'<div class="empty">Sign in and create a sequence to begin.</div>')+
  clipInspector()+variantComparisonPanel()+creativeTraceabilityPanel()+timelineQualityPanel()+
   '<div class="timeline-marker-list">'+(state.timeline?.markers.map(m=>'<span>◆ '+esc(m.name)+' · '+Math.round(m.start.value)+'f</span>').join("")||"No review markers yet.")+'</div></section></div>'+
- '<div class="notice">Master rendering now supports synchronized audio mixing, image overlays and burned-in SRT/VTT captions. Frame preview/playback, transitions, effects, animated overlays and video-on-video compositing remain future milestones.</div></div>';
+ '<div class="notice">Master rendering supports synchronized audio, image overlays and captions. The preview monitor plays selected local source clips within saved source trims; cloud preview awaits authenticated private-media playback support. Transitions and effects remain future milestones.</div></div>';
 }
 async function refresh(){
  if(state.mode==="cloud"){
@@ -193,7 +218,15 @@ export async function initTimelineWorkspace(){
  try{await refresh();}catch(error){state.status=error instanceof Error&&error.message.includes("Sign in")?"auth":"offline";state.message=error instanceof Error?error.message:"Timeline service unavailable.";}
  paint();
 }
-function paint(){const root=document.querySelector<HTMLElement>("#timeline-workspace");if(root)root.outerHTML=renderTimelineWorkspace();}
+function paint(){
+ const root=document.querySelector<HTMLElement>("#timeline-workspace");if(root)root.outerHTML=renderTimelineWorkspace();
+ const media=document.querySelector<HTMLMediaElement>("#tl-preview-media");
+ if(media){
+  const setIn=()=>{const start=Number(media.dataset.sourceIn),duration=media.duration,end=Number(media.dataset.sourceOut);if(Number.isFinite(start)){const safeStart=Math.min(start,Number.isFinite(duration)?duration:start);media.currentTime=safeStart;}if(Number.isFinite(end)&&Number.isFinite(duration)&&end>duration)media.dataset.sourceOut=String(duration);};
+  if(media.readyState>=1)setIn();else media.addEventListener("loadedmetadata",setIn,{once:true});
+  media.addEventListener("timeupdate",()=>{const output=document.querySelector<HTMLOutputElement>("#tl-preview-time");if(output)output.value=media.currentTime.toFixed(3)+" s";const start=Number(media.dataset.sourceIn),end=Math.min(Number(media.dataset.sourceOut),Number.isFinite(media.duration)?media.duration:Number(media.dataset.sourceOut)),rate=Number(media.dataset.sourceFps),scrub=document.querySelector<HTMLInputElement>("#tl-preview-scrub");if(scrub&&Number.isFinite(rate)&&rate>0)scrub.value=String(Math.max(0,Math.round((media.currentTime-start)*rate)));if(Number.isFinite(end)&&media.currentTime>=end){media.pause();media.currentTime=end;}});
+ }
+}
 async function runAction(action:HTMLElement){
  const type=action.dataset.tlAction||"";
  if(type==="refresh"){await refresh();paint();return;}
@@ -208,6 +241,7 @@ async function runAction(action:HTMLElement){
   }catch(error){state.message=error instanceof Error?error.message:"Render could not be queued.";}
   paint();return;
  }
+ if(type.startsWith("preview-")){seekPreview(type);return;}
  if(type==="duplicate-variant"){try{await duplicateTimelineVariant();}catch(error){state.message=error instanceof Error?error.message:"Could not create timeline variant.";}paint();return;}
  if(!state.timeline)return;
  const trackId=action.dataset.track||"",clipId=action.dataset.clip||"";
@@ -295,6 +329,7 @@ document.addEventListener("change",event=>{
   if(input&&Number.isFinite(duration))input.value=String(Math.max(1,Math.floor(duration*fps())));
  }
 });
+document.addEventListener("input",event=>{const target=event.target as HTMLInputElement;if(target.id!=="tl-preview-scrub")return;const media=document.querySelector<HTMLMediaElement>("#tl-preview-media");if(!media)return;const start=Number(media.dataset.sourceIn),end=Number(media.dataset.sourceOut),rate=Number(media.dataset.sourceFps);if(!Number.isFinite(start)||!Number.isFinite(end)||!Number.isFinite(rate)||rate<=0)return;media.currentTime=clampPreviewSeconds(start+Number(target.value)/rate,start,end);});
 document.addEventListener("click",event=>{
  const create=(event.target as HTMLElement).closest<HTMLElement>("[data-tl-create-cloud]");if(create){void createCloudTimeline().catch(error=>{state.message=error instanceof Error?error.message:"Cloud timeline creation failed.";paint();});return;}
  const target=event.target as HTMLElement,select=target.closest<HTMLElement>("[data-tl-select]");
