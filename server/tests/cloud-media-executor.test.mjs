@@ -432,7 +432,7 @@ test("cloud AI upscale publishes a separate image derivative with engine provena
       fixtureId:"portrait-fixture",fixtureCategory:"portrait"
     });
     assert.equal(validateUpscaleBenchmarkRecord(benchmarkRecord).valid,true);
-    assert.equal(benchmarkRecord.inputSha256,"d".repeat(64));
+    assert.equal(benchmarkRecord.inputSha256,sourceSha256);
     assert.equal(benchmarkRecord.outputSha256,published.metadata.sha256);
   } finally {
     if (previousBinary === undefined) delete process.env.REALESRGAN_NCNN_PATH; else process.env.REALESRGAN_NCNN_PATH = previousBinary;
