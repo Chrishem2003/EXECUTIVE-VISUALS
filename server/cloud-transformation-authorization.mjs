@@ -8,10 +8,15 @@ const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]
 export function createCloudTransformationAuthorization({url=process.env.SUPABASE_URL,serviceRoleKey=process.env.SUPABASE_SERVICE_ROLE_KEY,fetchImpl=globalThis.fetch,ownerId,projectId,timeoutMs=10000}={}){
  if(!url||!serviceRoleKey||typeof fetchImpl!=="function")throw new Error("Cloud transformation authorization requires server-side database access.");
  if(!UUID.test(ownerId||"")||!UUID.test(projectId||""))throw new Error("Cloud transformation authorization requires verified owner and project IDs.");
- const base=new URL(url).origin;
+ if(!Number.isInteger(timeoutMs)||timeoutMs<1000||timeoutMs>30000)throw new Error("Cloud transformation authorization timeout is invalid.");
+ let parsedUrl;
+ try{parsedUrl=new URL(url);}catch{throw new Error("Cloud transformation authorization URL is invalid.");}
+ const local=["localhost","127.0.0.1","::1","[::1]"].includes(parsedUrl.hostname.toLowerCase());
+ if((parsedUrl.protocol!=="https:"&&!(local&&parsedUrl.protocol==="http:"))||parsedUrl.username||parsedUrl.password||parsedUrl.search||parsedUrl.hash)throw new Error("Cloud transformation authorization requires a secure server URL.");
+ const base=parsedUrl.origin;
  return async function authorizeExecution({approvalId,pipelineId,stepId,adapterId,capability,requiredBudgetMicros,signal}={}){
   if(signal?.aborted)return{approved:false,reason:"cancelled"};
-  if(!UUID.test(approvalId||"")||!Number.isSafeInteger(requiredBudgetMicros)||requiredBudgetMicros<0)return{approved:false,reason:"invalid_request"};
+  if(!UUID.test(approvalId||"")||typeof pipelineId!=="string"||!pipelineId.trim()||typeof stepId!=="string"||!stepId.trim()||typeof adapterId!=="string"||!adapterId.trim()||typeof capability!=="string"||!capability.trim()||!Number.isSafeInteger(requiredBudgetMicros)||requiredBudgetMicros<0)return{approved:false,reason:"invalid_request"};
   const controller=new AbortController();
   const abort=()=>controller.abort();
   signal?.addEventListener("abort",abort,{once:true});
@@ -28,7 +33,7 @@ export function createCloudTransformationAuthorization({url=process.env.SUPABASE
    const row=rows.find(item=>item?.estimated_cost?.approvalId===approvalId);
    if(!row||row.owner_id!==ownerId||row.project_id!==projectId||row.job_type!=="video.transform.plan"||row.status!=="awaiting_approval"||!row.approved_at||!UUID.test(row.approved_by||""))return{approved:false,reason:"approval_not_active"};
    const record=row.estimated_cost;
-   if(record.adapterId!==adapterId||record.capability!==capability||!Number.isSafeInteger(record.approvedBudgetMicros)||record.approvedBudgetMicros<requiredBudgetMicros)return{approved:false,reason:"approval_scope_or_budget_mismatch"};
+   if(record.adapterId!==adapterId||record.capability!==capability||!Number.isSafeInteger(record.estimatedCostMicros)||record.estimatedCostMicros<0||!Number.isSafeInteger(record.approvedBudgetMicros)||record.approvedBudgetMicros<record.estimatedCostMicros||record.approvedBudgetMicros<requiredBudgetMicros)return{approved:false,reason:"approval_scope_or_budget_mismatch"};
    return{approved:true,approvalId,adapterId,capability,approvedBudgetMicros:record.approvedBudgetMicros};
   }catch(error){
    if(error?.name==="AbortError")return{approved:false,reason:"authorization_timeout_or_cancelled"};
