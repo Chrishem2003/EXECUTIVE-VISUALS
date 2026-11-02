@@ -70,3 +70,20 @@ test("worker validates inputs and output before finishing",async()=>{
  });
  assert.equal(invalid.status,"failed");
 });
+
+test("worker drains an in-flight heartbeat before attempting terminal completion",async()=>{
+ const calls=[];
+ const queue={
+  async claim(){return{id:"job-race"};},
+  async renew(){calls.push("renew-start");await new Promise(resolve=>setTimeout(resolve,80));calls.push("renew-end");return false;},
+  async finish(){calls.push("finish");return true;}
+ };
+ const result=await runCloudWorkerCycle({
+  queue,workerId:"worker-race",leaseSeconds:15,heartbeatIntervalMs:1000,
+  execute:async()=>{await new Promise(resolve=>setTimeout(resolve,1050));return{assetId:"asset-late"};}
+ });
+ assert.equal(result.finished,false);
+ assert.equal(result.reason,"lease_lost");
+ assert.deepEqual(calls,["renew-start","renew-end"]);
+ assert.equal(calls.includes("finish"),false);
+});
