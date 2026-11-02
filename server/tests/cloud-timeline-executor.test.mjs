@@ -140,7 +140,7 @@ test("cloud timeline executor propagates cancellation during temporal analysis a
   async probeOutput(){return{format:{duration:"8"},streams:[{codec_type:"video",codec_name:"h264",width:1920,height:1080,avg_frame_rate:"24/1"}]};},
   async analyzeVideo(){controller.abort();throw Object.assign(new Error("cancelled"),{code:"MEDIA_PROCESS_FAILED"});}
  });
- await assert.rejects(()=>executor({job:{id:"temporal-cancel",owner_id:owner,project_id:null,job_type:"timeline.render",input:{timelineId,timelineRevision:1}},signal:controller.signal}),error=>error.code==="MEDIA_PROCESS_FAILED");
+ await assert.rejects(()=>executor({job:{id:"temporal-cancel",owner_id:owner,project_id:null,job_type:"timeline.render",input:{timelineId,timelineRevision:1}},signal:controller.signal}),error=>error.code==="JOB_CANCELLED");
  assert.equal(published.length,0);
  await rm(root,{recursive:true,force:true});
 });
