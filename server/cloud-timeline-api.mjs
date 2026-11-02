@@ -162,6 +162,20 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
      return response(409,{error:{code:"TRANSFORMATION_ADAPTER_UNAVAILABLE",message:"No verified video-transformation adapter is enabled. No provider request or charge was made."}});
     }
    }
+   const cancelMatch=path.match(/^\/api\/cloud\/jobs\/([0-9a-f-]+)\/cancel$/i);
+   if(cancelMatch&&safeId(cancelMatch[1])&&method==="POST"){
+    const rows=await request("jobs?select=id,owner_id,project_id,status&id=eq."+encodeURIComponent(cancelMatch[1])+"&limit=1");
+    const job=Array.isArray(rows)?rows[0]:null;
+    if(!job)return response(404,{error:{code:"JOB_NOT_FOUND",message:"Job not found."}});
+    if(job.project_id){
+     if(await allow({ownerId,projectId:job.project_id,action:"write"})!==true)return response(404,{error:{code:"JOB_NOT_FOUND",message:"Job not found."}});
+    }else if(job.owner_id!==ownerId)return response(404,{error:{code:"JOB_NOT_FOUND",message:"Job not found."}});
+    const result=await request("rpc/request_job_cancellation",{method:"POST",body:{p_job_id:job.id,p_owner_id:ownerId}});
+    if(!["cancelled","requested","not_found","not_cancellable"].includes(result))throw new Error("Cloud job cancellation returned an invalid result.");
+    if(result==="not_found")return response(404,{error:{code:"JOB_NOT_FOUND",message:"Job not found."}});
+    if(result==="not_cancellable")return response(409,{error:{code:"JOB_NOT_CANCELLABLE",message:"This job is already in a terminal state."}});
+    return response(result==="cancelled"?200:202,{cancellation:{jobId:job.id,status:result}});
+   }
    const jobMatch=path.match(/^\/api\/cloud\/jobs\/([0-9a-f-]+)(?:\/(events))?$/i);
    if(jobMatch&&safeId(jobMatch[1])&&method==="GET"){
     const jobRows=await request("jobs?select=id,owner_id,project_id,job_type,status,progress,input,output,error,attempt_count,created_at,updated_at,completed_at&id=eq."+encodeURIComponent(jobMatch[1])+"&limit=1");
