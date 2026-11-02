@@ -11,7 +11,7 @@ const fixtureId="723e4567-e89b-42d3-a456-426614174000";
 const hash=char=>char.repeat(64);
 
 function setup(){
- const calls=[],rows={fixture:null,run:null};
+ const calls=[],rows={fixture:null,run:null,jobs:[]};
  const assets={
   async get({assetId}){if(assetId===sourceId)return{id:sourceId,ownerId:owner,projectId:project,name:"portrait.png",mediaType:"image/png",sha256:hash("c"),metadata:{},derivativeOf:null};
    if(assetId===outputId)return{id:outputId,ownerId:owner,projectId:project,name:"portrait-upscaled.png",mediaType:"image/png",sha256:hash("d"),derivativeOf:sourceId,createdAt:"2026-11-02T12:00:00.000Z",metadata:{processing:{schemaVersion:1,sourceAssetId:sourceId,inputSha256:hash("c"),outputSha256:hash("d"),model:"realesrgan-x4plus",modelVersion:hash("a")+":"+hash("b"),binarySha256:hash("a"),modelFilesSha256:hash("b"),sourceWidth:320,sourceHeight:240,width:1280,height:960,scale:4,durationMs:1250,dimensionsVerified:true,decoderVerified:true,qualityReview:"not_reviewed"}}};
@@ -25,6 +25,9 @@ function setup(){
   else if(path.startsWith("upscale_benchmark_runs")&&method==="POST"){const b=JSON.parse(options.body);rows.run={...b,reviewer_id:null,review_decision:null,created_at:"2026-11-02T12:02:00.000Z"};result=[{id:b.id,created_at:rows.run.created_at}];}
   else if(path.startsWith("upscale_benchmark_runs")&&method==="GET"){result=rows.run?[{id:rows.run.id,owner_id:rows.run.owner_id,record:rows.run.record,reviewer_id:rows.run.reviewer_id}]:[];}
   else if(path.startsWith("upscale_benchmark_runs")&&method==="PATCH"){const b=JSON.parse(options.body);if(rows.run&&!rows.run.reviewer_id){Object.assign(rows.run,b);result=[rows.run];}}
+  else if(path==="jobs"&&method==="POST"){const b=JSON.parse(options.body);const row={...b,output:null,error:null,created_at:"2026-11-02T12:03:00.000Z",updated_at:"2026-11-02T12:03:00.000Z"};rows.jobs.push(row);result=[row];}
+  else if(path==="jobs"&&method==="GET"){result=rows.jobs;}
+  else if(path==="job_events"&&method==="POST")result=[];
   else if(path==="projects")result=[{owner_id:owner}];
   else if(path==="project_members")result=[{role:"reviewer"}];
   else if(path.startsWith("audit_events"))result=[];
@@ -55,4 +58,20 @@ test("cloud benchmark API requires independent assigned review and stores immuta
  assert.equal(reviewed.status,200);assert.equal(reviewed.body.run.record.qualityReview,"reviewed_pass");
  const duplicate=await f.api.handle({method:"POST",path:"/api/cloud/upscale-benchmarks/runs/"+run.body.run.id+"/review",ownerId:reviewer,query:{projectId:project},body:{decision:"reviewed_fail"}});
  assert.equal(duplicate.status,409);assert.equal(duplicate.body.error.code,"UPSCALE_BENCHMARK_ALREADY_REVIEWED");
+});
+
+
+test("cloud AI upscale queues a rights-confirmed idempotent job and lists durable worker status",async()=>{
+ const f=setup();
+ const body={projectId:project,sourceAssetId:sourceId,model:"realesrgan-x4plus",scale:4,tile:0,format:"png",rightsConfirmed:true};
+ const queued=await f.api.handle({method:"POST",path:"/api/cloud/upscale",ownerId:owner,body,idempotencyKey:"upscale-test-key-01"});
+ assert.equal(queued.status,202);assert.equal(queued.body.job.job_type,"media.ai-upscale");assert.equal(queued.body.job.status,"queued");
+ assert.equal(queued.body.job.input.sourceAssetId,sourceId);
+ assert.ok(f.calls.some(call=>call.path==="job_events"&&call.method==="POST"));
+ const replay=await f.api.handle({method:"POST",path:"/api/cloud/upscale",ownerId:owner,body,idempotencyKey:"upscale-test-key-01"});
+ assert.equal(replay.status,200);assert.equal(replay.body.idempotentReplay,true);assert.equal(replay.body.job.id,queued.body.job.id);
+ const conflict=await f.api.handle({method:"POST",path:"/api/cloud/upscale",ownerId:owner,body:{...body,scale:2},idempotencyKey:"upscale-test-key-01"});
+ assert.equal(conflict.status,409);assert.equal(conflict.body.error.code,"IDEMPOTENCY_CONFLICT");
+ const list=await f.api.handle({method:"GET",path:"/api/cloud/upscale-jobs",ownerId:owner,query:{projectId:project}});
+ assert.equal(list.status,200);assert.equal(list.body.jobs.length,1);assert.equal(list.body.jobs[0].status,"queued");
 });
