@@ -73,7 +73,6 @@ export function createCloudTimelineExecutor({timelines,mediaIO,renderTimeline,pr
       const deliveryReport=deliveryProfileId?evaluateDeliveryOutput(probed,deliveryProfileId):null;
       if(deliveryReport?.status==="needs-attention")throw Object.assign(new Error("Rendered output failed its selected delivery profile checks; the output was not published."),{code:"DELIVERY_PROFILE_VALIDATION_FAILED",deliveryReport});
       const sha256=await digest(output.path);
-      const deliveryManifest=createDeliveryManifest({timelineId:record.id,timelineRevision:record.revision,outputAsset:"pending-publication",sha256,byteSize:info.size,mediaType:output.mediaType,profileId:deliveryProfileId,deliveryReport,renderManifest:output.renderManifest});
       onProgress(90);
       const outputAsset=await mediaIO.publish({
         ownerId:job.owner_id,projectId:record.projectId,filename:output.filename,mediaType:output.mediaType,
