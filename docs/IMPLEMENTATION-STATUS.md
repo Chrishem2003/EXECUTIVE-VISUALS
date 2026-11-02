@@ -414,3 +414,11 @@ This is a runnable worker entry point, not a deployed worker. Do not set the ena
 - Successful steps are checkpointed with deterministic idempotency keys bound to pipeline ID, step ID, input asset checksum and settings. A resumed pipeline reuses successful matching checkpoints; stale or conflicting checkpoints fail closed.
 - Added tests for approval and budget preflight, unknown costs, adapter readiness, output lineage, deterministic resume and checkpoint conflict. Added the tests to the standard build and registered the finishing pipeline in the typed capability atlas and JSON catalogue.
 - **Still outstanding:** durable database-backed checkpoint implementation, adapter-specific video-to-video execution, secure provider upload/download, real cost quotes, worker wiring, UI progress/review and actual visual-quality validation. The orchestrator itself makes no provider calls and spends no credits.
+
+
+## Transformation Studio draft workspace — 2 November 2026
+
+- Added an Enhancement Lab draft form backed by private cloud project assets. Users can choose a video source, one of eight transformation families, a target description, detailed prompt, clip duration, up to four image reference assets and per-shot preservation constraints.
+- The draft form verifies references against image assets already loaded from the selected private cloud project. It requires source/reference rights confirmation and additionally requires explicit subject consent for person replacement.
+- Drafts are stored in browser planning state, included in the project JSON export and visibly labelled as not submitted. No API job submission, provider request or credit spend is wired to this form.
+- The next UI milestone is to replace browser-only drafts with durable, permission-checked server records and connect them to the approved asynchronous pipeline.
