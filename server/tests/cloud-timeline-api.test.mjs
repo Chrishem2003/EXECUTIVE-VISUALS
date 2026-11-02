@@ -26,7 +26,7 @@ const reviewJobId="623e4567-e89b-42d3-a456-426614174000";
 function deliveryReviewFixture({jobOwner=owner,receiptValid=true,deliveryStatus="passed"}={}){
  const renderManifest=createRenderManifest({timeline:{tracks:[]},assets:new Map(),timelineRevision:2,output:{width:1920,height:1080,codec:"h264"}});
  const receipt=createDeliveryManifest({timelineId,timelineRevision:2,outputAsset:"published-asset",sha256:"a".repeat(64),byteSize:2048,mediaType:"video/mp4",profileId:"youtube-1080p",deliveryReport:{status:deliveryStatus,findings:[]},renderManifest,createdAt:"2026-11-02T09:00:00.000Z"});
- const job={id:reviewJobId,owner_id:jobOwner,project_id:project,job_type:"timeline.render",status:"succeeded",input:{timelineId,timelineRevision:2},output:{deliveryManifest:receipt,outputAsset:{id:"published-asset"},sha256:"a".repeat(64),deliveryReport:{status:deliveryStatus}}};
+ const job={id:reviewJobId,owner_id:jobOwner,project_id:project,job_type:"timeline.render",status:"succeeded",input:{timelineId,timelineRevision:2},output:{deliveryManifest:receipt,outputAsset:{id:"published-asset"},sha256:"a".repeat(64),deliveryReport:{status:deliveryStatus},qualityReport:{schemaVersion:2,status:"review",counts:{errors:0,warnings:1},findings:[{code:"TEMPORAL_LUMA_FLICKER",severity:"warning",message:"Possible luminance flicker",startSeconds:1,endSeconds:2}],limitations:["Bounded scan"]}}};
  if(!receiptValid)job.output.deliveryManifest={...receipt,fingerprint:"0".repeat(64)};
  return{job,receipt};
 }
@@ -36,6 +36,7 @@ test("delivery package verifies receipt and published asset before issuing a pri
  const result=await f.api.handle({method:"GET",path:"/api/cloud/jobs/"+reviewJobId+"/delivery-package",ownerId:editor});
  assert.equal(result.status,200);
  assert.equal(result.body.deliveryPackage.deliveryReceipt.fingerprint,receipt.fingerprint);
+ assert.equal(result.body.deliveryPackage.qualityReport.findings[0].code,"TEMPORAL_LUMA_FLICKER");
  assert.equal(verifyDeliveryPackage(JSON.parse(JSON.stringify(result.body.deliveryPackage))),true);
  assert.equal(result.body.deliveryPackage.master.sha256,receipt.sha256);
  assert.equal(result.body.deliveryPackage.master.downloadUrlExpiresInSeconds,300);
