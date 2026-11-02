@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { extname, join } from "node:path";
 import { mkdir, readFile, writeFile, unlink } from "node:fs/promises";
 import { captionStyle, buildSrt, escapeFilterPath, run } from "./media.mjs";
+import { createRenderManifest } from "./render-manifest.mjs";
 
 const fail=(message,code)=>{throw Object.assign(new Error(message),{code});};
 const seconds=(time)=>{const value=Number(time?.value),rate=Number(time?.rate);if(!Number.isFinite(value)||!Number.isFinite(rate)||rate<=0)return 0;return Math.max(0,Math.min(86400,value/rate));};
@@ -14,7 +15,7 @@ const safeName=(value)=>String(value||"sequence").normalize("NFKC").replace(/[^a
  * It shares the local renderer's caption and process primitives but has no
  * SQLite, local asset repository, or local media-root dependency.
  */
-export async function renderCloudTimeline({timeline,assets,workDir,signal,onProgress=()=>{},activeProcesses=new Map(),jobId=null}={}){
+export async function renderCloudTimeline({timeline,assets,workDir,signal,onProgress=()=>{},activeProcesses=new Map(),jobId=null,timelineRevision=null}={}){
  if(!timeline||!Array.isArray(timeline.tracks)||!(assets instanceof Map)||typeof workDir!=="string")throw new Error("Cloud timeline renderer received invalid inputs.");
  if(signal?.aborted)fail("Timeline render was cancelled.","JOB_CANCELLED");
  const tracks=timeline.tracks.filter(track=>track.enabled!==false&&(track.clips||[]).some(enabled));
@@ -27,6 +28,7 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
  const height=Math.max(144,Math.min(4320,Math.floor(Number(timeline.height)||1080)));
  const fpsNum=Math.max(1,Math.min(120,Math.floor(Number(timeline.frameRate?.numerator)||24)));
  const fpsDen=Math.max(1,Math.min(1001,Math.floor(Number(timeline.frameRate?.denominator)||1)));
+ const renderManifest=timelineRevision===null?null:createRenderManifest({timeline,assets,timelineRevision,output:{format:"video/mp4",codec:"libx264",width,height,frameRate:{numerator:fpsNum,denominator:fpsDen},pixelFormat:"yuv420p",preset:"veryfast",crf:20}});
  const outputId=randomUUID(),outputPath=join(workDir,outputId+".mp4");
  await mkdir(workDir,{recursive:true});
  const args=["-hide_banner","-y"],segments=[],audioFilters=[],videoEffects=[],captionTempPaths=[],overlayInputs=[];
@@ -112,7 +114,7 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
   if(signal?.aborted)fail("Timeline render was cancelled.","JOB_CANCELLED");
   onProgress(90);
   const name=safeName(timeline.name);
-  return{path:outputPath,filename:name+"-master.mp4",mediaType:"video/mp4",render:{width,height,frameRate:{numerator:fpsNum,denominator:fpsDen},videoClips:clips.length,audioClips:audioClips.length,overlayClips:overlayClips.length,captionClips:captionClips.length,durationSeconds:cursor}};
+  return{path:outputPath,filename:name+"-master.mp4",mediaType:"video/mp4",render:{width,height,frameRate:{numerator:fpsNum,denominator:fpsDen},videoClips:clips.length,audioClips:audioClips.length,overlayClips:overlayClips.length,captionClips:captionClips.length,durationSeconds:cursor},...(renderManifest?{renderManifest}:{})};
  }catch(error){
   await unlink(outputPath).catch(()=>{});
   if(signal?.aborted)throw Object.assign(new Error("Timeline render was cancelled."),{code:"JOB_CANCELLED"});
