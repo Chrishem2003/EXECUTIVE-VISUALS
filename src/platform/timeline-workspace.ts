@@ -18,8 +18,8 @@ type Asset={id:string;name:string;mediaType:string;size:number;metadata?:Record<
 type SavedTimeline={id:string;projectId?:string|null;name:string;revision:number;document?:EditorialTimeline};
 type CloudProject={id:string;name:string};
 type CloudSavedTimeline={id:string;projectId?:string|null;name:string;revision:number;timeline:EditorialTimeline;updatedAt:string};
-const state:{timeline:EditorialTimeline|null;serverRevision:number;timelines:SavedTimeline[];cloudTimelines:CloudSavedTimeline[];cloudProjects:CloudProject[];cloudProjectId:string;mode:"local"|"cloud";cloudRenderJobId:string;cloudRenderJobStatus:string;variantBase:EditorialTimeline|null;variantReport:TimelineVariantComparison|null;variantBaseName:string;assets:Asset[];status:"loading"|"ready"|"offline"|"auth";message:string;selectedTrack:string;selectedClipId:string;ffmpeg:boolean;history:TimelineHistory}={
- timeline:null,serverRevision:0,timelines:[],cloudTimelines:[],cloudProjects:[],cloudProjectId:"",mode:"local",cloudRenderJobId:"",cloudRenderJobStatus:"",variantBase:null,variantReport:null,variantBaseName:"",assets:[],status:"loading",message:"Loading editorial workspace…",selectedTrack:"",selectedClipId:"",ffmpeg:false,history:createTimelineHistory(50)
+const state:{timeline:EditorialTimeline|null;serverRevision:number;timelines:SavedTimeline[];cloudTimelines:CloudSavedTimeline[];cloudProjects:CloudProject[];cloudProjectId:string;mode:"local"|"cloud";cloudRenderJobId:string;cloudRenderJobStatus:string;variantBase:EditorialTimeline|null;variantReport:TimelineVariantComparison|null;variantBaseName:string;assets:Asset[];status:"loading"|"ready"|"offline"|"auth";message:string;selectedTrack:string;selectedClipId:string;ffmpeg:boolean;historyBusy:boolean;history:TimelineHistory}={
+ timeline:null,serverRevision:0,timelines:[],cloudTimelines:[],cloudProjects:[],cloudProjectId:"",mode:"local",cloudRenderJobId:"",cloudRenderJobStatus:"",variantBase:null,variantReport:null,variantBaseName:"",assets:[],status:"loading",message:"Loading editorial workspace…",selectedTrack:"",selectedClipId:"",ffmpeg:false,historyBusy:false,history:createTimelineHistory(50)
 };
 function recordEdit(){if(state.timeline)state.history=recordTimelineHistory(state.history,state.timeline);}
 const esc=(v:unknown)=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]||c));
@@ -151,7 +151,7 @@ export function timelineQualityPanel(){
  '<small class="muted">Sequence structure and source-media checks use the current timeline and saved FFprobe metadata. A source passes only when its probe contains readable streams, the required track stream exists and every used source range stays within probed duration. Full decode integrity, shot-engine compatibility, continuity, delivery conformance requires a current-revision master with a successful output probe; the gate compares container, codec, resolution, frame rate, duration and required audio against the sequence or explicit delivery profile. Caption readiness requires saved cue-level WebVTT validation for timing, overlaps, reading speed, line length and media-duration bounds. Audio readiness requires saved probe and FFmpeg signal-analysis evidence; clipping and near-full-scale peaks require review. Rights status is based only on explicit asset metadata attestations and supporting references; this is not independent legal verification. This report does not grant approval, submit a provider request or render media.</small></section>';
 }
 export function renderTimelineWorkspace(){
- return '<div id="timeline-workspace"><div class="timeline-toolbar"><label>Workspace <select id="tl-mode"><option value="local" '+(state.mode==="local"?"selected":"")+' >Local</option><option value="cloud" '+(state.mode==="cloud"?"selected":"")+' >Cloud project</option></select></label><label>Cloud project <select id="tl-cloud-project"><option value="">Select project</option>'+state.cloudProjects.map(p=>'<option value="'+esc(p.id)+'" '+(p.id===state.cloudProjectId?'selected':'')+'>'+esc(p.name)+'</option>').join("")+'</select></label><label>Saved sequence <select id="tl-saved-sequence"><option value="">Current sequence</option>'+(state.mode==="cloud"?state.cloudTimelines.map(t=>'<option value="'+esc(t.id)+'" '+(state.timeline?.id===t.id?'selected':'')+'>'+esc(t.name)+' · r'+t.revision+'</option>').join(""):state.timelines.map(t=>'<option value="'+esc(t.id)+'" '+(state.timeline?.id===t.id?'selected':'')+'>'+esc(t.name)+' · r'+t.revision+'</option>').join(""))+'</select></label><button class="secondary" data-tl-create-cloud>＋ New cloud timeline</button><button class="secondary" data-tl-action="undo" '+(state.history.undo.length?"":"disabled")+ '>↶ Undo</button><button class="secondary" data-tl-action="redo" '+(state.history.redo.length?"":"disabled")+ '>↷ Redo</button><button class="secondary" data-tl-action="duplicate-variant">Duplicate as variant</button><span class="runtime-status '+state.status+'"><i></i>'+esc(state.status==="ready"?"TIMELINE SAVED":state.status==="auth"?"SIGN IN REQUIRED":state.status==="offline"?"API OFFLINE":"LOADING")+'</span><button class="secondary" data-tl-action="refresh">↻ Refresh</button><button class="secondary" data-tl-action="export">Export OTIO JSON</button>'+(state.mode==="cloud"&&state.cloudRenderJobId?'<button class="secondary" data-tl-action="cloud-job">Check cloud render · '+esc(state.cloudRenderJobStatus||"queued")+'</button>':'')+''+(state.ffmpeg?'<button class="primary" data-tl-action="render">Render master MP4</button>':'<span class="muted">FFmpeg required for master render</span>')+'</div>'+
+ return '<div id="timeline-workspace"><div class="timeline-toolbar"><label>Workspace <select id="tl-mode"><option value="local" '+(state.mode==="local"?"selected":"")+' >Local</option><option value="cloud" '+(state.mode==="cloud"?"selected":"")+' >Cloud project</option></select></label><label>Cloud project <select id="tl-cloud-project"><option value="">Select project</option>'+state.cloudProjects.map(p=>'<option value="'+esc(p.id)+'" '+(p.id===state.cloudProjectId?'selected':'')+'>'+esc(p.name)+'</option>').join("")+'</select></label><label>Saved sequence <select id="tl-saved-sequence"><option value="">Current sequence</option>'+(state.mode==="cloud"?state.cloudTimelines.map(t=>'<option value="'+esc(t.id)+'" '+(state.timeline?.id===t.id?'selected':'')+'>'+esc(t.name)+' · r'+t.revision+'</option>').join(""):state.timelines.map(t=>'<option value="'+esc(t.id)+'" '+(state.timeline?.id===t.id?'selected':'')+'>'+esc(t.name)+' · r'+t.revision+'</option>').join(""))+'</select></label><button class="secondary" data-tl-create-cloud>＋ New cloud timeline</button><button class="secondary" data-tl-action="undo" '+(state.history.undo.length&&!state.historyBusy?"":"disabled")+ '>↶ Undo</button><button class="secondary" data-tl-action="redo" '+(state.history.redo.length&&!state.historyBusy?"":"disabled")+ '>↷ Redo</button><button class="secondary" data-tl-action="duplicate-variant">Duplicate as variant</button><span class="runtime-status '+state.status+'"><i></i>'+esc(state.status==="ready"?"TIMELINE SAVED":state.status==="auth"?"SIGN IN REQUIRED":state.status==="offline"?"API OFFLINE":"LOADING")+'</span><button class="secondary" data-tl-action="refresh">↻ Refresh</button><button class="secondary" data-tl-action="export">Export OTIO JSON</button>'+(state.mode==="cloud"&&state.cloudRenderJobId?'<button class="secondary" data-tl-action="cloud-job">Check cloud render · '+esc(state.cloudRenderJobStatus||"queued")+'</button>':'')+''+(state.ffmpeg?'<button class="primary" data-tl-action="render">Render master MP4</button>':'<span class="muted">FFmpeg required for master render</span>')+'</div>'+
  (state.message?'<div class="notice">'+esc(state.message)+'</div>':'')+
  '<div class="timeline-editor-grid"><section class="panel"><div class="eyebrow">SEQUENCE SETTINGS</div><h3>'+(state.timeline?esc(state.timeline.name):"No sequence loaded")+'</h3>'+
  '<form id="tl-add-track"><label>Track name</label><input name="name" required placeholder="Video 2 / Music / Captions"><label>Track type</label><select name="kind"><option value="video">Video</option><option value="audio">Audio</option><option value="overlay">Overlay</option><option value="caption">Captions</option></select><button class="secondary">＋ Add track</button></form>'+
@@ -234,13 +234,14 @@ async function runAction(action:HTMLElement){
  const type=action.dataset.tlAction||"";
  if(type==="refresh"){await refresh();paint();return;}
  if(type==="undo"||type==="redo"){
-  if(!state.timeline)return;
+  if(!state.timeline||state.historyBusy)return;
   const result=type==="undo"?undoTimeline(state.history,state.timeline):redoTimeline(state.history,state.timeline);
   if(!result.timeline){state.message=type==="undo"?"Nothing to undo.":"Nothing to redo.";paint();return;}
   const previousTimeline=state.timeline,previousHistory=state.history;
-  state.history=result.history;state.timeline=result.timeline;
+  state.historyBusy=true;state.history=result.history;state.timeline=result.timeline;
   state.message=type==="undo"?"Undoing last edit…":"Restoring next edit…";paint();
-  try{await persist();}catch(error){state.timeline=previousTimeline;state.history=previousHistory;state.message=error instanceof Error?error.message:"History change could not be saved.";state.status="offline";}paint();return;
+  try{await persist();}catch(error){state.timeline=previousTimeline;state.history=previousHistory;state.message=error instanceof Error?error.message:"History change could not be saved.";state.status="offline";}
+  finally{state.historyBusy=false;}paint();return;
  }
  if(type==="cloud-job"&&state.cloudRenderJobId){try{const result=await apiRequest<{job:{id:string;status:string;progress?:number;output?:{outputAsset?:{id:string;name?:string}}}}>("/api/cloud/jobs/"+state.cloudRenderJobId);state.cloudRenderJobStatus=result.job.status;state.message="Cloud render "+result.job.status+" · "+Number(result.job.progress||0)+"%"+(result.job.output?.outputAsset?.id?" · output asset "+result.job.output.outputAsset.id:"");if(result.job.status==="succeeded")await refresh();}catch(error){state.message=error instanceof Error?error.message:"Could not refresh cloud render status.";}paint();return;}
  if(type==="render"){
@@ -260,14 +261,14 @@ async function runAction(action:HTMLElement){
  if(type==="split"){
   const track=state.timeline.tracks.find(t=>t.id===trackId),clip=track?.clips.find(c=>c.id===clipId);if(!track||!clip)return;
   const splitAt=Math.round(clip.timelineStart.value+clip.duration.value/2);
-  recordEdit();state.timeline=splitClip(state.timeline,trackId,clipId,splitAt,crypto.randomUUID());
- }else if(type==="trim"){recordEdit();state.timeline=trimClip(state.timeline,trackId,clipId,12,12);}
+  const nextTimeline=splitClip(state.timeline,trackId,clipId,splitAt,crypto.randomUUID());recordEdit();state.timeline=nextTimeline;
+ }else if(type==="trim"){const nextTimeline=trimClip(state.timeline,trackId,clipId,12,12);recordEdit();state.timeline=nextTimeline;}
  else if(type==="move"){
   const from=state.timeline.tracks.findIndex(t=>t.id===trackId);const target=state.timeline.tracks[(from+1)%state.timeline.tracks.length];if(!target)return;
   const clip=state.timeline.tracks[from].clips.find(c=>c.id===clipId);if(!clip)return;
-  const start=maxEnd()+12;recordEdit();state.timeline=moveClip(state.timeline,trackId,clipId,target.id,start);
+  const start=maxEnd()+12,nextTimeline=moveClip(state.timeline,trackId,clipId,target.id,start);recordEdit();state.timeline=nextTimeline;
  }else if(type==="ripple-delete"){
-  recordEdit();state.timeline=removeClip(state.timeline,trackId,clipId,true);
+  const nextTimeline=removeClip(state.timeline,trackId,clipId,true);recordEdit();state.timeline=nextTimeline;
   if(state.selectedClipId===clipId)state.selectedClipId="";
  }else if(type==="export"){
   const content=JSON.stringify(toOpenTimelineIo(state.timeline),null,2);
@@ -291,7 +292,7 @@ document.addEventListener("submit",event=>{
  if(form.id==="tl-add-track"){
   event.preventDefault();const data=new FormData(form),name=String(data.get("name")||"").trim(),kind=String(data.get("kind")||"video") as TimelineTrack["kind"];
   if(!name)return;
-  recordEdit();state.timeline=addTrack(state.timeline,{id:crypto.randomUUID(),name,kind,enabled:true,locked:false,clips:[]});
+  const nextTimeline=addTrack(state.timeline,{id:crypto.randomUUID(),name,kind,enabled:true,locked:false,clips:[]});recordEdit();state.timeline=nextTimeline;
   void persist().then(paint).catch(error=>{state.message=error.message;paint();});
  }
  if(form.id==="tl-add-clip"){
@@ -305,7 +306,7 @@ document.addEventListener("submit",event=>{
   if(destination?.kind==="caption"&&(!["text/plain","text/vtt"].includes(asset.mediaType)||!["srt","vtt"].includes(asset.name.toLowerCase().split(".").pop()||""))){alert("Caption tracks require an SRT or VTT text file.");return;}
   const sourceFps=sourceRate(asset,destination?.kind||"video");
   const sourceDuration=duration/fps()*sourceFps;
-  try{recordEdit();state.timeline=addClip(state.timeline,trackId,{id:crypto.randomUUID(),assetId,name:asset.name,sourceRange:{start:rational(sourceIn,sourceFps),duration:rational(sourceDuration,sourceFps)},timelineStart:rational(start,fps()),duration:rational(duration,fps()),enabled:true});}
+  try{const nextTimeline=addClip(state.timeline,trackId,{id:crypto.randomUUID(),assetId,name:asset.name,sourceRange:{start:rational(sourceIn,sourceFps),duration:rational(sourceDuration,sourceFps)},timelineStart:rational(start,fps()),duration:rational(duration,fps()),enabled:true});recordEdit();state.timeline=nextTimeline;}
   catch(error){alert(error instanceof Error?error.message:String(error));return;}
   void persist().then(paint).catch(error=>{state.message=error.message;paint();});
  }
@@ -330,7 +331,7 @@ document.addEventListener("submit",event=>{
  }
  if(form.id==="tl-add-marker"){
   event.preventDefault();const data=new FormData(form);
-  recordEdit();state.timeline=addMarker(state.timeline,{id:crypto.randomUUID(),name:String(data.get("name")),start:rational(Math.max(0,Number(data.get("frame"))||0),fps()),color:"YELLOW"});
+  const nextTimeline=addMarker(state.timeline,{id:crypto.randomUUID(),name:String(data.get("name")),start:rational(Math.max(0,Number(data.get("frame"))||0),fps()),color:"YELLOW"});recordEdit();state.timeline=nextTimeline;
   void persist().then(paint).catch(error=>{state.message=error.message;paint();});
  }
 });
