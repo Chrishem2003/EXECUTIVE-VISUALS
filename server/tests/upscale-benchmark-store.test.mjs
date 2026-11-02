@@ -67,3 +67,23 @@ test("requires an independent reviewer and stores an immutable decision with an 
   assert.equal(getUpscaleBenchmarkReport(f.db,project).runCount,1);
  }finally{await f.close();}
 });
+
+
+test("rejects a derivative with the right parent ID but a different source fingerprint",async()=>{
+ const f=await fixture();try{
+  const fixtureRecord=createUpscaleBenchmarkFixture(f.db,{ownerId:owner,projectId:project,sourceAssetId:sourceId,category:"portrait"});
+  const asset=f.db.prepare("SELECT metadata_json FROM assets WHERE id=?").get(outputId);
+  const metadata=JSON.parse(asset.metadata_json);
+  metadata.processing.inputSha256=digest("e");
+  f.db.prepare("UPDATE assets SET metadata_json=? WHERE id=?").run(json(metadata),outputId);
+  assert.throws(()=>registerUpscaleBenchmarkRun(f.db,{ownerId:owner,projectId:project,assetId:outputId,fixtureId:fixtureRecord.id}),error=>error.code==="UPSCALE_BENCHMARK_FIXTURE_MISMATCH");
+ }finally{await f.close();}
+});
+
+test("rejects unsupported categories and duplicate fixture source registration",async()=>{
+ const f=await fixture();try{
+  assert.throws(()=>createUpscaleBenchmarkFixture(f.db,{ownerId:owner,projectId:project,sourceAssetId:sourceId,category:"landscape"}),error=>error.code==="UPSCALE_FIXTURE_INVALID");
+  createUpscaleBenchmarkFixture(f.db,{ownerId:owner,projectId:project,sourceAssetId:sourceId,category:"portrait"});
+  assert.throws(()=>createUpscaleBenchmarkFixture(f.db,{ownerId:owner,projectId:project,sourceAssetId:sourceId,category:"portrait"}),error=>error.code==="UPSCALE_FIXTURE_EXISTS");
+ }finally{await f.close();}
+});
