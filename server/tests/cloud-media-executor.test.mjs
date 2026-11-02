@@ -5,6 +5,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createCloudMediaExecutor } from "../cloud-media-executor.mjs";
 
+function pngHeader(width, height) {
+  const bytes = Buffer.alloc(24);
+  bytes.set([137,80,78,71,13,10,26,10]);
+  bytes.writeUInt32BE(13, 8);
+  bytes.write("IHDR", 12, "ascii");
+  bytes.writeUInt32BE(width, 16);
+  bytes.writeUInt32BE(height, 20);
+  return bytes;
+}
+
 async function executable(directory, name, body) {
   const path = join(directory, name);
   await writeFile(path, "#!/bin/sh\n" + body + "\n", "utf8");
@@ -375,8 +385,8 @@ test("cloud AI upscale publishes a separate image derivative with engine provena
   const previousFfmpeg = process.env.FFMPEG_PATH;
   const source = join(directory, "source.png");
   const model = "realesrgan-x4plus";
-  const binary = await executable(directory, "realesrgan-ncnn-vulkan", String.raw`while [ "$1" != "" ]; do if [ "$1" = "-o" ]; then shift; printf '\211PNG\r\n\032\n\000\000\000\015IHDR\000\000\000\001\000\000\000\001' > "$1"; fi; shift; done`);
-  await writeFile(source, Buffer.from([137,80,78,71,13,10,26,10]));
+  const binary = await executable(directory, "realesrgan-ncnn-vulkan", String.raw`while [ "$1" != "" ]; do if [ "$1" = "-o" ]; then shift; printf '\211PNG\r\n\032\n\000\000\000\015IHDR\000\000\000\050\000\000\000\050' > "$1"; fi; shift; done`);
+  await writeFile(source, pngHeader(10, 10));
   await writeFile(join(directory, model + ".param"), "model");
   await writeFile(join(directory, model + ".bin"), "weights");
   process.env.REALESRGAN_NCNN_PATH = binary;
@@ -434,7 +444,7 @@ test("cloud AI upscale blocks publication when output dimensions do not match", 
   const source = join(directory, "source.png");
   const model = "realesrgan-x4plus";
   const binary = await executable(directory, "realesrgan-ncnn-vulkan", String.raw`while [ "$1" != "" ]; do if [ "$1" = "-o" ]; then shift; printf '\211PNG\r\n\032\n\000\000\000\015IHDR\000\000\000\001\000\000\000\001' > "$1"; fi; shift; done`);
-  await writeFile(source, Buffer.from([137,80,78,71,13,10,26,10]));
+  await writeFile(source, pngHeader(10, 10));
   await writeFile(join(directory, model + ".param"), "model");
   await writeFile(join(directory, model + ".bin"), "weights");
   process.env.REALESRGAN_NCNN_PATH = binary;
