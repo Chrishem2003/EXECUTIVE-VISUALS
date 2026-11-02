@@ -39,30 +39,8 @@ create index if not exists ev_upscale_run_owner on executive_visuals.upscale_ben
 alter table executive_visuals.upscale_benchmark_fixtures enable row level security;
 alter table executive_visuals.upscale_benchmark_runs enable row level security;
 revoke all on executive_visuals.upscale_benchmark_fixtures, executive_visuals.upscale_benchmark_runs from public, anon;
-grant select,insert,update,delete on executive_visuals.upscale_benchmark_fixtures, executive_visuals.upscale_benchmark_runs to authenticated;
+-- All writes go through the authenticated server API using service_role.
+-- No direct client grants or client RLS policies: clients cannot forge hashes,
+-- reviewer identity, or immutable review decisions.
+revoke all on executive_visuals.upscale_benchmark_fixtures, executive_visuals.upscale_benchmark_runs from authenticated;
 grant all on executive_visuals.upscale_benchmark_fixtures, executive_visuals.upscale_benchmark_runs to service_role;
-
-drop policy if exists ev_upscale_fixture_read on executive_visuals.upscale_benchmark_fixtures;
-create policy ev_upscale_fixture_read on executive_visuals.upscale_benchmark_fixtures for select to authenticated
-using (owner_id=(select auth.uid()) or exists(select 1 from executive_visuals.projects p where p.id=project_id and p.owner_id=(select auth.uid())) or exists(select 1 from executive_visuals.project_members m where m.project_id=project_id and m.member_id=(select auth.uid())));
-drop policy if exists ev_upscale_fixture_insert on executive_visuals.upscale_benchmark_fixtures;
-create policy ev_upscale_fixture_insert on executive_visuals.upscale_benchmark_fixtures for insert to authenticated
-with check (owner_id=(select auth.uid()) and (exists(select 1 from executive_visuals.projects p where p.id=project_id and p.owner_id=(select auth.uid())) or exists(select 1 from executive_visuals.project_members m where m.project_id=project_id and m.member_id=(select auth.uid()) and m.role='editor')));
-drop policy if exists ev_upscale_fixture_update on executive_visuals.upscale_benchmark_fixtures;
-create policy ev_upscale_fixture_update on executive_visuals.upscale_benchmark_fixtures for update to authenticated
-using (owner_id=(select auth.uid()) or exists(select 1 from executive_visuals.projects p where p.id=project_id and p.owner_id=(select auth.uid())))
-with check (owner_id=(select auth.uid()) or exists(select 1 from executive_visuals.projects p where p.id=project_id and p.owner_id=(select auth.uid())));
-drop policy if exists ev_upscale_fixture_delete on executive_visuals.upscale_benchmark_fixtures;
-create policy ev_upscale_fixture_delete on executive_visuals.upscale_benchmark_fixtures for delete to authenticated
-using (owner_id=(select auth.uid()) or exists(select 1 from executive_visuals.projects p where p.id=project_id and p.owner_id=(select auth.uid())));
-
-drop policy if exists ev_upscale_run_read on executive_visuals.upscale_benchmark_runs;
-create policy ev_upscale_run_read on executive_visuals.upscale_benchmark_runs for select to authenticated
-using (owner_id=(select auth.uid()) or exists(select 1 from executive_visuals.projects p where p.id=project_id and p.owner_id=(select auth.uid())) or exists(select 1 from executive_visuals.project_members m where m.project_id=project_id and m.member_id=(select auth.uid())));
-drop policy if exists ev_upscale_run_insert on executive_visuals.upscale_benchmark_runs;
-create policy ev_upscale_run_insert on executive_visuals.upscale_benchmark_runs for insert to authenticated
-with check (owner_id=(select auth.uid()) and (exists(select 1 from executive_visuals.projects p where p.id=project_id and p.owner_id=(select auth.uid())) or exists(select 1 from executive_visuals.project_members m where m.project_id=project_id and m.member_id=(select auth.uid()) and m.role='editor')));
-drop policy if exists ev_upscale_run_review on executive_visuals.upscale_benchmark_runs;
-create policy ev_upscale_run_review on executive_visuals.upscale_benchmark_runs for update to authenticated
-using (exists(select 1 from executive_visuals.projects p where p.id=project_id and p.owner_id=(select auth.uid())) or exists(select 1 from executive_visuals.project_members m where m.project_id=project_id and m.member_id=(select auth.uid()) and m.role='reviewer'))
-with check (exists(select 1 from executive_visuals.projects p where p.id=project_id and p.owner_id=(select auth.uid())) or exists(select 1 from executive_visuals.project_members m where m.project_id=project_id and m.member_id=(select auth.uid()) and m.role='reviewer'));
