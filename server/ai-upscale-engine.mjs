@@ -231,7 +231,7 @@ export function createRealEsrganAdapter({
     const outputDimensions = await readImageDimensions(output, prepared.format);
     const expectedWidth = inputDimensions.width * prepared.scale, expectedHeight = inputDimensions.height * prepared.scale;
     if (outputDimensions.width !== expectedWidth || outputDimensions.height !== expectedHeight) throw fail("AI upscale output dimensions do not match the requested scale factor.", "AI_UPSCALE_OUTPUT_DIMENSIONS_MISMATCH");
-    return { path: output, byteSize: info.size, model: prepared.model, scale: prepared.scale, tile: prepared.tile, format: prepared.format, width: outputDimensions.width, height: outputDimensions.height, sourceWidth: inputDimensions.width, sourceHeight: inputDimensions.height, engine: "realesrgan-ncnn-vulkan", method: "ai-super-resolution" };
+    return { path: output, byteSize: info.size, model: prepared.model, scale: prepared.scale, tile: prepared.tile, format: prepared.format, width: outputDimensions.width, height: outputDimensions.height, sourceWidth: inputDimensions.width, sourceHeight: inputDimensions.height, binarySha256: readiness.binarySha256, modelFilesSha256: readiness.modelFilesSha256, engine: "realesrgan-ncnn-vulkan", method: "ai-super-resolution" };
   }
 
   return Object.freeze({ probe, plan, execute, selfTest });
