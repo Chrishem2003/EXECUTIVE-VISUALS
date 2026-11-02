@@ -17,10 +17,8 @@ export function createCloudTransformationAuthorization({url=process.env.SUPABASE
   signal?.addEventListener("abort",abort,{once:true});
   const timer=setTimeout(()=>controller.abort(),timeoutMs);
   try{
-   const query=new URLSearchParams({select:"id,owner_id,project_id,job_type,status,estimated_cost,approved_by,approved_at",id:"eq."+approvalId,owner_id:"eq."+ownerId,project_id:"eq."+projectId,job_type:"eq.video.transform.plan",limit:"1"});
-   // Approval IDs are stored inside estimated_cost, not as job IDs. Query the
-   // bounded project set and compare the approval identifier in trusted data.
-   query.delete("id");
+   const query=new URLSearchParams({select:"id,owner_id,project_id,job_type,status,estimated_cost,approved_by,approved_at",owner_id:"eq."+ownerId,project_id:"eq."+projectId,job_type:"eq.video.transform.plan",limit:"1"});
+   query.set("estimated_cost->>approvalId","eq."+approvalId);
    const response=await fetchImpl(base+"/rest/v1/jobs?"+query.toString(),{
     method:"GET",headers:{apikey:serviceRoleKey,authorization:"Bearer "+serviceRoleKey,accept:"application/json","accept-profile":"executive_visuals"},signal:controller.signal
    });
@@ -28,7 +26,7 @@ export function createCloudTransformationAuthorization({url=process.env.SUPABASE
    const rows=await response.json();
    if(!Array.isArray(rows))return{approved:false,reason:"approval_lookup_invalid"};
    const row=rows.find(item=>item?.estimated_cost?.approvalId===approvalId);
-   if(!row||row.owner_id!==ownerId||row.project_id!==projectId||row.job_type!=="video.transform.plan"||row.status!=="awaiting_approval"||!row.approved_at||row.approved_by!==ownerId)return{approved:false,reason:"approval_not_active"};
+   if(!row||row.owner_id!==ownerId||row.project_id!==projectId||row.job_type!=="video.transform.plan"||row.status!=="awaiting_approval"||!row.approved_at||!UUID.test(row.approved_by||""))return{approved:false,reason:"approval_not_active"};
    const record=row.estimated_cost;
    if(record.adapterId!==adapterId||record.capability!==capability||!Number.isSafeInteger(record.approvedBudgetMicros)||record.approvedBudgetMicros<requiredBudgetMicros)return{approved:false,reason:"approval_scope_or_budget_mismatch"};
    return{approved:true,approvalId,adapterId,capability,approvedBudgetMicros:record.approvedBudgetMicros};
