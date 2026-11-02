@@ -195,3 +195,33 @@ test("AI upscale provenance binds the exact source, output and pinned model buil
     durationMs:1450,dimensions:{width:1280,height:960}
   }),error=>error.code==="MEDIA_PROVENANCE_INVALID");
 });
+
+
+test("AI upscaler refuses publication when pinned model weights change during inference", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "ev-ai-engine-race-"));
+  const binary = join(directory, "engine");
+  const model = "realesrgan-x4plus";
+  const input = join(directory, "source.png");
+  const output = join(directory, "enhanced.png");
+  const weights = join(directory, model + ".bin");
+  await writeFile(input, Buffer.from([137,80,78,71,13,10,26,10,0,0,0,13,73,72,68,82,0,0,0,1,0,0,0,1]));
+  await writeFile(weights, "weights-v1");
+  await writeFile(binary, `#!/bin/sh
+printf 'weights-v2' > '${weights}'
+while [ "$1" != "" ]; do
+  if [ "$1" = "-o" ]; then shift; printf '\\211PNG\\r\\n\\032\\n\\000\\000\\000\\015IHDR\\000\\000\\000\\004\\000\\000\\000\\004' > "$1"; fi
+  shift
+done
+`);
+  await chmod(binary, 0o755);
+  await writeFile(join(directory, model + ".param"), "model");
+  try {
+    const adapter = createRealEsrganAdapter({ binaryPath: binary, modelDirectory: directory, timeoutMs: 5000, enabled: true });
+    await assert.rejects(
+      adapter.execute({ inputPath: input, outputPath: output, model, scale: 4, format: "png" }),
+      error => error.code === "AI_UPSCALE_ENGINE_CHANGED"
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
