@@ -73,6 +73,10 @@ const unverifiedDerivative={...derivativeBase,metadata:{...derivativeBase.metada
 const unverifiedFindings=analyzeTimelineQuality(derivativeTimeline,[unverifiedDerivative]);
 assert.ok(unverifiedFindings.some(item=>item.code==="DERIVATIVE_DIMENSIONS_UNVERIFIED"));
 assert.ok(unverifiedFindings.some(item=>item.code==="DERIVATIVE_DECODER_UNVERIFIED"));
+const wrongParentDerivative={...derivativeBase,metadata:{...derivativeBase.metadata,processing:{...derivativeBase.metadata.processing,sourceAssetId:"different-source"}}};
+assert.ok(analyzeTimelineQuality(derivativeTimeline,[wrongParentDerivative]).some(item=>item.code==="DERIVATIVE_PARENT_MISMATCH"&&item.severity==="error"));
+const missingPersistedHash={...derivativeBase,sha256:undefined};
+assert.ok(analyzeTimelineQuality(derivativeTimeline,[missingPersistedHash]).some(item=>item.code==="DERIVATIVE_OUTPUT_HASH_UNVERIFIED"));
 const noEvidenceDerivative={id:"quality-asset",name:"Legacy derivative",mediaType:"image/png",sha256:"b".repeat(64),derivativeOf:"source-asset",metadata:{}};
 assert.ok(analyzeTimelineQuality(derivativeTimeline,[noEvidenceDerivative]).some(item=>item.code==="DERIVATIVE_PROVENANCE_MISSING"));
 assert.ok(analyzeTimelineQuality(null).some(item=>item.code==="NO_SEQUENCE"));
