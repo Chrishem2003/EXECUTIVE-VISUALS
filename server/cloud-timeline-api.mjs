@@ -116,9 +116,13 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
      return response(201,{fixture:{id,projectId,sourceAssetId:source.id,sourceSha256:source.sha256,category,label,createdAt:rows[0].created_at}});
     }
     if(path==="/api/cloud/upscale-benchmarks/runs"&&method==="GET"){
-     const rows=await request("upscale_benchmark_runs?select=id,asset_id,fixture_id,fixture_category,model,model_version,record,reviewer_id,review_decision,review_note,reviewed_at,created_at&project_id=eq."+encodeURIComponent(projectId)+"&order=created_at.desc&limit=200");
-     const runs=(rows||[]).map(row=>({id:row.id,assetId:row.asset_id,fixtureId:row.fixture_id,record:row.record,review:{reviewerId:row.reviewer_id,decision:row.review_decision,note:row.review_note,reviewedAt:row.reviewed_at},createdAt:row.created_at}));
-     return response(200,{runs,report:compareUpscaleBenchmarkCandidates(runs.map(run=>run.record))});
+     // Fetch one extra row to detect truncation. Never recommend a build from a partial evidence set.
+     const rows=await request("upscale_benchmark_runs?select=id,asset_id,fixture_id,fixture_category,model,model_version,record,reviewer_id,review_decision,review_note,reviewed_at,created_at&project_id=eq."+encodeURIComponent(projectId)+"&order=created_at.desc&limit=201");
+     const truncated=(rows||[]).length>200;
+     const visibleRows=(rows||[]).slice(0,200);
+     const runs=visibleRows.map(row=>({id:row.id,assetId:row.asset_id,fixtureId:row.fixture_id,record:row.record,review:{reviewerId:row.reviewer_id,decision:row.review_decision,note:row.review_note,reviewedAt:row.reviewed_at},createdAt:row.created_at}));
+     const report=compareUpscaleBenchmarkCandidates(runs.map(run=>run.record));
+     return response(200,{runs,report:{...report,recommended:truncated?null:report.recommended,evidenceTruncated:truncated,evidenceLimit:200}});
     }
     if(path==="/api/cloud/upscale-benchmarks/runs"&&method==="POST"){
      const assetId=String(body.assetId||""),fixtureId=String(body.fixtureId||"");
