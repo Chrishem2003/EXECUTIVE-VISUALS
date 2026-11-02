@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { Transform } from "node:stream";
+import { verifyRenderManifest } from "./render-manifest.mjs";
 
 function parseInput(value){
   if(value&&typeof value==="object"&&!Array.isArray(value))return value;
@@ -56,7 +57,8 @@ export function createCloudTimelineExecutor({timelines,mediaIO,renderTimeline,pr
         materialized.set(assetIds[i],asset);
         onProgress(Math.min(25,5+Math.round((i+1)/assetIds.length*20)));
       }
-      const output=await renderTimeline({timeline:record.timeline,assets:materialized,workDir,signal,onProgress});
+      const output=await renderTimeline({timeline:record.timeline,assets:materialized,workDir,signal,onProgress,timelineRevision:record.revision});
+      if(!output?.renderManifest||!verifyRenderManifest(output.renderManifest)||output.renderManifest.timelineRevision!==String(record.revision))throw Object.assign(new Error("Timeline renderer did not return a valid manifest for the claimed revision."),{code:"CLOUD_TIMELINE_RENDER_MANIFEST_INVALID"});
       if(signal?.aborted)throw Object.assign(new Error("Timeline render was cancelled."),{code:"JOB_CANCELLED"});
       if(!output||typeof output.path!=="string"||typeof output.filename!=="string"||typeof output.mediaType!=="string")throw new Error("Cloud timeline renderer returned invalid output metadata.");
       const info=await stat(output.path);
@@ -68,7 +70,7 @@ export function createCloudTimelineExecutor({timelines,mediaIO,renderTimeline,pr
       onProgress(90);
       const outputAsset=await mediaIO.publish({
         ownerId:job.owner_id,projectId:record.projectId,filename:output.filename,mediaType:output.mediaType,
-        path:output.path,metadata:{...(output.metadata||{}),operation:"timeline.render",timelineId:record.id,timelineRevision:record.revision,sha256,probe:probed,probeValidation,render:output.render||{}}
+        path:output.path,metadata:{...(output.metadata||{}),operation:"timeline.render",timelineId:record.id,timelineRevision:record.revision,renderManifest:output.renderManifest,sha256,probe:probed,probeValidation,render:output.render||{}}
       });
       onProgress(100);
       return{timelineId:record.id,timelineRevision:record.revision,outputAsset,sha256,byteSize:info.size,probeValidation,render:output.render||{}};
