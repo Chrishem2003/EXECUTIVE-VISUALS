@@ -116,13 +116,22 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
      return response(201,{fixture:{id,projectId,sourceAssetId:source.id,sourceSha256:source.sha256,category,label,createdAt:rows[0].created_at}});
     }
     if(path==="/api/cloud/upscale-benchmarks/runs"&&method==="GET"){
-     // Fetch one extra row to detect truncation. Never recommend a build from a partial evidence set.
-     const rows=await request("upscale_benchmark_runs?select=id,asset_id,fixture_id,fixture_category,model,model_version,record,reviewer_id,review_decision,review_note,reviewed_at,created_at&project_id=eq."+encodeURIComponent(projectId)+"&order=created_at.desc&limit=201");
-     const truncated=(rows||[]).length>200;
-     const visibleRows=(rows||[]).slice(0,200);
+     const pageSize=Math.min(100,Math.max(1,Number.parseInt(url.searchParams.get("limit")||"50",10)||50));
+     const offset=Math.max(0,Number.parseInt(url.searchParams.get("offset")||"0",10)||0);
+     const select="select=id,asset_id,fixture_id,fixture_category,model,model_version,record,reviewer_id,review_decision,review_note,reviewed_at,created_at";
+     const pageRows=await request("upscale_benchmark_runs?"+select+"&project_id=eq."+encodeURIComponent(projectId)+"&order=created_at.desc,id.desc&limit="+(pageSize+1)+"&offset="+offset);
+     const hasMore=(pageRows||[]).length>pageSize,visibleRows=(pageRows||[]).slice(0,pageSize);
      const runs=visibleRows.map(row=>({id:row.id,assetId:row.asset_id,fixtureId:row.fixture_id,record:row.record,review:{reviewerId:row.reviewer_id,decision:row.review_decision,note:row.review_note,reviewedAt:row.reviewed_at},createdAt:row.created_at}));
-     const report=compareUpscaleBenchmarkCandidates(runs.map(run=>run.record));
-     return response(200,{runs,report:{...report,recommended:truncated?null:report.recommended,evidenceTruncated:truncated,evidenceLimit:200}});
+     const allRecords=[],batchSize=1000,safetyLimit=50000;let reportOffset=0,evidenceTruncated=false;
+     while(reportOffset<safetyLimit){
+      const batch=await request("upscale_benchmark_runs?select=record&project_id=eq."+encodeURIComponent(projectId)+"&order=created_at.desc,id.desc&limit="+batchSize+"&offset="+reportOffset);
+      allRecords.push(...(batch||[]).map(row=>row.record));
+      if((batch||[]).length<batchSize)break;
+      reportOffset+=batchSize;
+     }
+     if(reportOffset>=safetyLimit)evidenceTruncated=true;
+     const report=compareUpscaleBenchmarkCandidates(allRecords);
+     return response(200,{runs,report:{...report,recommended:evidenceTruncated?null:report.recommended,evidenceTruncated,evidenceLimit:safetyLimit},page:{offset,limit:pageSize,hasMore,nextOffset:offset+runs.length}});
     }
     if(path==="/api/cloud/upscale-benchmarks/runs"&&method==="POST"){
      const assetId=String(body.assetId||""),fixtureId=String(body.fixtureId||"");
