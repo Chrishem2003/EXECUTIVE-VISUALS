@@ -118,3 +118,12 @@ test("cloud timeline collection lists only the selected authorized project",asyn
  assert.equal(result.status,200);assert.equal(result.body.timelines[0].id,timelineId);
  assert.equal(f.calls.find(x=>x[0]==="timeline-list")[1].projectId,project);
 });
+
+test("cloud caption uploads persist SRT validation evidence for readiness checks",async()=>{
+ const bytes=Buffer.from("1\\n00:00:00,000 --> 00:00:02,000\\nOpening line\\n");
+ let stored=null;
+ const api=createCloudTimelineApi({url:"https://example.supabase.co",serviceRoleKey:"service-secret",timelineService:{timelines:{},assets:{async createFromFile(input){stored={...input,bytes:await readFile(input.filePath)};return{id:"823e4567-e89b-42d3-a456-426614174000",ownerId:input.ownerId,projectId:input.projectId,name:input.originalName,mediaType:input.mediaType,size:bytes.length,metadata:input.metadata};}}},authorize:async()=>true});
+ const req=Readable.from([bytes]);req.headers={"content-length":String(bytes.length)};
+ const result=await api.uploadAsset({req,ownerId:owner,projectId:project,originalName:"captions.srt",mediaType:"text/plain"});
+ assert.equal(result.status,201);assert.equal(stored.metadata.captionValidation.format,"srt");assert.equal(stored.metadata.captionValidation.status,"passed");
+});
