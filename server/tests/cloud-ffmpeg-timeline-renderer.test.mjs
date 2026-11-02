@@ -69,3 +69,25 @@ test("cloud renderer refuses revision-pinned renders when source checksums are a
  const assets=new Map([["v",{path:"/not-used.mp4",asset:{id:"v",mediaType:"video/mp4"}}]]);
  await assert.rejects(()=>renderCloudTimeline({timeline,assets,workDir:tmpdir(),timelineRevision:1}),e=>e.code==="RENDER_MANIFEST_SOURCE_UNVERIFIED");
 });
+
+
+test("cloud renderer applies a selected vertical delivery profile to the actual encode", {skip:!hasFfmpeg||!hasFfprobe}, async()=>{
+ const root=await mkdtemp(join(tmpdir(),"ev-cloud-profile-test-"));
+ try{
+  const video=join(root,"source.mp4"),audio=join(root,"voice.wav");
+  execFileSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-loglevel","error","-y","-f","lavfi","-i","color=c=purple:s=320x240:r=24:d=1","-c:v","libx264","-pix_fmt","yuv420p",video]);
+  execFileSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-loglevel","error","-y","-f","lavfi","-i","sine=frequency=440:duration=1","-c:a","pcm_s16le",audio]);
+  const timeline={name:"Vertical delivery",deliveryProfileId:"social-vertical",tracks:[
+   {kind:"video",clips:[{assetId:"v",timelineStart:time(0),duration:time(1),sourceRange:{start:time(0),duration:time(1)}}]},
+   {kind:"audio",clips:[{assetId:"a",timelineStart:time(0),duration:time(1),sourceRange:{start:time(0),duration:time(1)}}]}
+  ]};
+  const assets=new Map([["v",{path:video,asset:{id:"v",mediaType:"video/mp4",originalName:"source.mp4"}}],["a",{path:audio,asset:{id:"a",mediaType:"audio/wav",originalName:"voice.wav"}}]]);
+  const result=await renderCloudTimeline({timeline,assets,workDir:root});
+  const probe=JSON.parse(execFileSync(process.env.FFPROBE_PATH||"ffprobe",["-v","error","-show_streams","-of","json",result.path],{encoding:"utf8"}));
+  const videoStream=probe.streams.find(stream=>stream.codec_type==="video");
+  assert.equal(videoStream.width,1080);assert.equal(videoStream.height,1920);
+  assert.equal(videoStream.codec_name,"h264");
+  assert.equal(result.render.deliveryProfileId,"social-vertical");
+  assert.match(result.filename,/social-vertical\.mp4$/);
+ }finally{await rm(root,{recursive:true,force:true});}
+});
