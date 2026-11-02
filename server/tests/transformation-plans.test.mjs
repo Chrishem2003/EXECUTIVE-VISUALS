@@ -42,3 +42,28 @@ test("rejects malformed requests and unsupported preservation or parameter field
  assert.throws(()=>createTransformationPlan(f.db,{ownerId:f.owner,body:{...f.body,preservation:["camera_motion","invented_constraint"]},idempotencyKey:"transform-key-010"}),e=>e.code==="TRANSFORMATION_PRESERVATION_INVALID");
  assert.throws(()=>createTransformationPlan(f.db,{ownerId:f.owner,body:{...f.body,referenceAssetIds:"not-an-array"},idempotencyKey:"transform-key-011"}),e=>e.code==="REFERENCE_ASSET_INVALID");
 }finally{await f.close();}});
+
+
+test("local transformation drafts reject values that cloud validation rejects",async()=>{const f=await fixture();try{
+ const invalid=[
+  [{...f.body,referenceAssetIds:[f.body.referenceAssetIds[0],f.body.referenceAssetIds[0]]},"REFERENCE_ASSET_INVALID"],
+  [{...f.body,referenceAssetIds:["",f.body.referenceAssetIds[0]]},"REFERENCE_ASSET_INVALID"],
+  [{...f.body,preservation:["camera_motion","camera_motion"]},"TRANSFORMATION_PRESERVATION_INVALID"],
+  [{...f.body,prompt:"x".repeat(8001)},"TRANSFORMATION_PROMPT_INVALID"],
+  [{...f.body,projectId:42},"TRANSFORMATION_INPUT_INVALID"],
+  [{...f.body,sourceAssetId:42},"TRANSFORMATION_INPUT_INVALID"],
+  [{...f.body,operation:42},"TRANSFORMATION_OPERATION_INVALID"]
+ ];
+ for(let i=0;i<invalid.length;i++){
+  const [body,code]=invalid[i];
+  assert.throws(()=>createTransformationPlan(f.db,{ownerId:f.owner,body,idempotencyKey:"strict-local-"+String(i).padStart(3,"0")}),e=>e.code===code);
+ }
+ assert.equal(listTransformationPlans(f.db,f.owner,f.project).length,0,"invalid drafts must not be persisted");
+}finally{await f.close();}});
+
+test("local transformation drafts preserve valid reference and preservation values in order",async()=>{const f=await fixture();try{
+ const body={...f.body,preservation:["camera_motion","composition"]};
+ const {plan}=createTransformationPlan(f.db,{ownerId:f.owner,body,idempotencyKey:"strict-local-valid-001"});
+ assert.deepEqual(plan.referenceAssetIds,f.body.referenceAssetIds);
+ assert.deepEqual(plan.preservation,["camera_motion","composition"]);
+}finally{await f.close();}});
