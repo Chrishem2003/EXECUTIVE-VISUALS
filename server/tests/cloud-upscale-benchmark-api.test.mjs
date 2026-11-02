@@ -117,3 +117,17 @@ test("cloud benchmark review rejects project members without the reviewer role",
  assert.equal(f.rows.run.reviewer_id,null);
  assert.equal(f.calls.filter(call=>call.path.startsWith("audit_events")&&call.body?.event_type==="upscale_benchmark.quality_reviewed").length,0);
 });
+
+
+test("cloud benchmark rejection requires a quality issue note and leaves the run pending otherwise",async()=>{
+ const f=setup();
+ const fixture=await f.api.handle({method:"POST",path:"/api/cloud/upscale-benchmarks/fixtures",ownerId:owner,query:{projectId:project},body:{sourceAssetId:sourceId,category:"portrait"}});
+ const run=await f.api.handle({method:"POST",path:"/api/cloud/upscale-benchmarks/runs",ownerId:owner,query:{projectId:project},body:{assetId:outputId,fixtureId:fixture.body.fixture.id}});
+ const missing=await f.api.handle({method:"POST",path:"/api/cloud/upscale-benchmarks/runs/"+run.body.run.id+"/review",ownerId:reviewer,query:{projectId:project},body:{decision:"reviewed_fail",note:"   "}});
+ assert.equal(missing.status,400);
+ assert.equal(missing.body.error.code,"UPSCALE_BENCHMARK_REVIEW_NOTE_REQUIRED");
+ assert.equal(f.rows.run.reviewer_id,null);
+ const rejected=await f.api.handle({method:"POST",path:"/api/cloud/upscale-benchmarks/runs/"+run.body.run.id+"/review",ownerId:reviewer,query:{projectId:project},body:{decision:"reviewed_fail",note:"Visible ringing and loss of fine texture."}});
+ assert.equal(rejected.status,200);
+ assert.equal(rejected.body.run.review.note,"Visible ringing and loss of fine texture.");
+});
