@@ -25,7 +25,8 @@ test("live authorization rejects revoked or mismatched approval records",async()
   {...row,status:"cancelled"},
   {...row,estimated_cost:{...row.estimated_cost,adapterId:"other"}},
   {...row,estimated_cost:{...row.estimated_cost,capability:"other"}},
-  {...row,estimated_cost:{...row.estimated_cost,approvedBudgetMicros:100}},\n  {...row,estimated_cost:{...row.estimated_cost,estimatedCostMicros:3000000}},
+  {...row,estimated_cost:{...row.estimated_cost,approvedBudgetMicros:100}},
+  {...row,estimated_cost:{...row.estimated_cost,estimatedCostMicros:3000000}},
   {...row,approved_at:null}
  ]){
   const authorize=make(async()=>({ok:true,json:async()=>[changed]}));
