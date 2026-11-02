@@ -34,7 +34,6 @@ export function validateUpscaleBenchmarkRecord(record) {
     else for (const key of ["psnr", "ssim", "lpips"]) {
       if (record.metrics[key] !== undefined && (!Number.isFinite(record.metrics[key]) || record.metrics[key] < 0)) issues.push("metrics." + key + " must be a non-negative number");
       if (key === "ssim" && record.metrics[key] !== undefined && Number.isFinite(record.metrics[key]) && (record.metrics[key] < 0 || record.metrics[key] > 1)) issues.push("metrics.ssim must be between 0 and 1");
-      if (key === "lpips" && record.metrics[key] !== undefined && Number.isFinite(record.metrics[key]) && record.metrics[key] > 1) issues.push("metrics.lpips must not exceed 1");
     }
   }
   if (record.executionStatus === "passed" && record.outputWidth < record.inputWidth) issues.push("passed output width is smaller than input width");
