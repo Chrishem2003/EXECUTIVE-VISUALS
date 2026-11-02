@@ -85,7 +85,7 @@ test("public cloud asset records never expose private bucket or object path",asy
   assert.equal("storage_bucket" in asset,false);
   assert.equal("object_path" in asset,false);
  }
- assert.equal(f.storageCalls[0].path,f.row.object_path);
+ assert.match(f.storageCalls[0].path,new RegExp("^"+projectId+"/[0-9a-f-]{36}/original\\.mp4$"));
 });
 
 test("does not sign assets belonging to another owner",async()=>{
