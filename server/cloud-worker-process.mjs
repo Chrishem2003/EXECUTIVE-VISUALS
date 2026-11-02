@@ -31,7 +31,7 @@ export function createCloudWorkerSupervisor({workers,leaseSeconds=90,heartbeatIn
  if(!Array.isArray(workers)||workers.length<1||workers.some(worker=>typeof worker?.runCycle!=="function"||typeof worker?.recoverExpired!=="function"))throw new Error("Cloud worker supervisor requires one or more compatible worker families.");
  if(!Number.isInteger(pollMs)||pollMs<500||pollMs>10000)throw new Error("Cloud worker poll interval is invalid.");
  if(!Number.isInteger(recoveryIntervalMs)||recoveryIntervalMs<10000||recoveryIntervalMs>300000)throw new Error("Cloud worker recovery interval is invalid.");
- let stopped=true,timer=null,recoveryTimer=null,active=null,busy=false;
+ let stopped=true,timer=null,recoveryTimer=null,active=null,busy=false,recoveryActive=null,recoveryBusy=false;
  async function cycle(){
   if(stopped||busy)return{skipped:true};
   busy=true;
@@ -47,19 +47,25 @@ export function createCloudWorkerSupervisor({workers,leaseSeconds=90,heartbeatIn
   try{return await active;}finally{active=null;busy=false;}
  }
  async function recover(){
-  if(stopped)return;
-  const settled=await Promise.allSettled(workers.map(worker=>worker.recoverExpired(100)));
-  settled.forEach((item,index)=>{
-   if(item.status==="rejected"){onError(item.reason);return;}
-   if(Number.isInteger(item.value)&&item.value>0)onLog({kind:"recovery",count:item.value,workerIndex:index});
-  });
+  if(stopped||recoveryBusy)return{skipped:true};
+  recoveryBusy=true;
+  recoveryActive=(async()=>{
+   const settled=await Promise.allSettled(workers.map(worker=>worker.recoverExpired(100)));
+   settled.forEach((item,index)=>{
+    if(item.status==="rejected"){onError(item.reason);return;}
+    if(Number.isInteger(item.value)&&item.value>0)onLog({kind:"recovery",count:item.value,workerIndex:index});
+   });
+  })();
+  try{return await recoveryActive;}finally{recoveryActive=null;recoveryBusy=false;}
  }
  return Object.freeze({
   async start(){
    if(!stopped)throw new Error("Cloud worker supervisor is already running.");
    stopped=false;
    await recover();
+   if(stopped)return;
    await cycle();
+   if(stopped)return;
    timer=setInterval(()=>{void cycle();},pollMs);timer.unref?.();
    recoveryTimer=setInterval(()=>{void recover();},recoveryIntervalMs);recoveryTimer.unref?.();
    onLog({kind:"started",workerFamilies:workers.length,pollMs,leaseSeconds});
@@ -70,6 +76,7 @@ export function createCloudWorkerSupervisor({workers,leaseSeconds=90,heartbeatIn
    if(timer)clearInterval(timer);if(recoveryTimer)clearInterval(recoveryTimer);
    timer=null;recoveryTimer=null;
    if(active)await active.catch(()=>{});
+   if(recoveryActive)await recoveryActive.catch(()=>{});
    onLog({kind:"stopped"});
   },
   async runOnce(){return cycle();}
