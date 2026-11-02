@@ -57,14 +57,21 @@ export function escapeFilterPath(value){
 }
 export function captionStyle(metadata={}){
  const fontName=String(metadata.fontName||"DejaVu Sans").replace(/[^A-Za-z0-9 _-]/g,"").slice(0,48)||"DejaVu Sans";
- const fontSize=Math.max(12,Math.min(72,Math.round(Number(metadata.fontSize)||28)));
+ const fontSize=Math.max(12,Math.min(96,Math.round(Number(metadata.fontSize)||32)));
  const alignment=Math.max(1,Math.min(9,Math.round(Number(metadata.alignment)||2)));
  const marginV=Math.max(0,Math.min(240,Math.round(Number(metadata.marginV)||42)));
  const outline=Math.max(0,Math.min(8,Number(metadata.outline??2)));
  const shadow=Math.max(0,Math.min(8,Number(metadata.shadow??1)));
  const colour=value=>/^&H[0-9A-Fa-f]{8}$/.test(String(value||""))?String(value):null;
- const primary=colour(metadata.primaryColour)||"&H00FFFFFF",outlineColour=colour(metadata.outlineColour)||"&H00000000";
- return ["FontName="+fontName,"FontSize="+fontSize,"PrimaryColour="+primary,"OutlineColour="+outlineColour,"Outline="+outline,"Shadow="+shadow,"Alignment="+alignment,"MarginV="+marginV].join(",");
+ const hex=value=>{const match=String(value||"").match(/^#([0-9A-Fa-f]{6})$/);if(!match)return null;const rgb=match[1];return "&H00"+rgb.slice(4,6)+rgb.slice(2,4)+rgb.slice(0,2);};
+ const primary=colour(metadata.primaryColour)||hex(metadata.primaryColor)||"&H00FFFFFF";
+ const outlineColour=colour(metadata.outlineColour)||"&H00000000";
+ const backgroundHex=String(metadata.backgroundColor||"#000000").match(/^#([0-9A-Fa-f]{6})$/)?.[1]||"000000";
+ const opacity=Math.max(0,Math.min(1,Number(metadata.backgroundOpacity??0.68)));
+ const alpha=Math.round((1-opacity)*255).toString(16).padStart(2,"0").toUpperCase();
+ const backColour="&H"+alpha+backgroundHex.slice(4,6)+backgroundHex.slice(2,4)+backgroundHex.slice(0,2);
+ const box=metadata.backgroundMode!=="none";
+ return ["FontName="+fontName,"FontSize="+fontSize,"PrimaryColour="+primary,"OutlineColour="+outlineColour,"BackColour="+backColour,"BorderStyle="+(box?3:1),"Outline="+outline,"Shadow="+shadow,"Alignment="+alignment,"MarginV="+marginV].join(",");
 }
 export function buildMediaOperationArgs({jobType,input={},sourcePath,outputPath}){
  const fail=message=>{throw Object.assign(new Error(message),{code:"INVALID_MEDIA_OPTIONS"})};
