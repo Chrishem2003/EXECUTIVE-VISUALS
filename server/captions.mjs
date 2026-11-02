@@ -1,3 +1,4 @@
+import { validateWebVtt } from "./caption-validation.mjs";
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, writeFile, unlink } from "node:fs/promises";
 import { join, relative, sep, resolve } from "node:path";
@@ -29,6 +30,9 @@ export async function storeCaptionAsset({db,mediaRoot,ownerId,projectId=null,job
  const text=String(content??buildWebVtt(segments));
  const buffer=Buffer.from(text,"utf8");
  if(!text.startsWith("WEBVTT\n")||buffer.length>2*1024*1024)throw Object.assign(new Error("Generated WebVTT is invalid or exceeds the 2 MiB limit."),{code:"CAPTION_ASSET_INVALID"});
+ const durationSeconds=Array.isArray(segments)?Math.max(0,...segments.map(segment=>Number(segment?.end)||0)):null;
+ const captionValidation=validateWebVtt(text,{durationSeconds});
+ if(captionValidation.status==="blocked")throw Object.assign(new Error("Generated WebVTT failed caption validation."),{code:"CAPTION_VALIDATION_FAILED",validation:captionValidation});
  const id=randomUUID(),directory=join(mediaRoot,safeSegment(ownerId),safeSegment(projectId||"personal"));
  const root=resolve(mediaRoot),absolute=resolve(directory,id+".vtt"),storagePath=relative(root,absolute).split(sep).join("/");
  if(storagePath.startsWith("..")||resolve(root,storagePath)!==absolute)throw Object.assign(new Error("Caption asset path failed validation."),{code:"ASSET_PATH_INVALID"});
@@ -36,7 +40,7 @@ export async function storeCaptionAsset({db,mediaRoot,ownerId,projectId=null,job
  try{
   await writeFile(absolute,buffer,{flag:"wx"});
   const sha256=createHash("sha256").update(buffer).digest("hex");
-  const metadata={generated:true,kind:"webvtt-captions",sourceAssetId:String(sourceAssetId||""),language:String(language||"").slice(0,32),segmentCount:Array.isArray(segments)?segments.length:0,durationSeconds:Array.isArray(segments)?Math.max(0,...segments.map(segment=>Number(segment?.end)||0)):0,jobId,createdAt:new Date().toISOString()};
+  const metadata={generated:true,kind:"webvtt-captions",sourceAssetId:String(sourceAssetId||""),language:String(language||"").slice(0,32),segmentCount:Array.isArray(segments)?segments.length:0,durationSeconds:durationSeconds||0,captionValidation,jobId,createdAt:new Date().toISOString()};
   const name="captions-"+id+".vtt";
   db.prepare("INSERT INTO assets(id,owner_id,project_id,original_name,media_type,byte_size,sha256,storage_path,metadata_json) VALUES(?,?,?,?,?,?,?,?,?)")
    .run(id,ownerId,projectId,name,"text/vtt",buffer.length,sha256,storagePath,json(metadata));
