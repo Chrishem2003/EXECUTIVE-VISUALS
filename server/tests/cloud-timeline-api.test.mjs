@@ -17,7 +17,7 @@ function setup({canWrite=true,projectId=project,existing=[],timelineDocOverride=
   async list(input){calls.push(["timeline-list",input]);return[{...timeline}];},
   async update(input){calls.push(["update",input]);return{...timeline,revision:input.expectedRevision+1,timeline:input.timeline};}
  };
- const fetchImpl=async(url,options)=>{calls.push(["fetch",url,options]);if(url.includes("/job_events")&&options.method==="POST"&&duplicateReview)return{ok:false,status:409,async text(){return JSON.stringify({code:"23505",message:"duplicate key"})}};if(url.includes("/jobs")&&options.method==="POST")return{ok:true,status:201,async text(){return JSON.stringify([{id:JSON.parse(options.body).id,owner_id:owner,project_id:projectId,job_type:"timeline.render",status:"queued",input:JSON.parse(options.body).input}])}};if(url.includes("/jobs?"))return{ok:true,status:200,async text(){return JSON.stringify(existing)}};return{ok:true,status:201,async text(){return""}};};
+ const fetchImpl=async(url,options)=>{calls.push(["fetch",url,options]);if(url.includes("/job_events")&&options.method==="POST"&&duplicateReview)return{ok:false,status:409,async text(){return JSON.stringify({code:"23505",message:"duplicate key"})}};if(url.includes("/jobs")&&options.method==="POST")return{ok:true,status:201,async text(){return JSON.stringify([{id:JSON.parse(options.body).id,owner_id:owner,project_id:projectId,job_type:"timeline.render",status:"queued",input:JSON.parse(options.body).input}])}};if(url.includes("/jobs?")&&options.method==="PATCH"){const row=existing.find(item=>url.includes("id=eq."+item.id));if(!row)return{ok:true,status:200,async text(){return"[]"}};Object.assign(row,JSON.parse(options.body));return{ok:true,status:200,async text(){return JSON.stringify([row])}};}if(url.includes("/jobs?"))return{ok:true,status:200,async text(){return JSON.stringify(existing)}};return{ok:true,status:201,async text(){return""}};};
  const api=createCloudTimelineApi({url:"https://example.supabase.co",serviceRoleKey:"service-secret",fetchImpl,timelineService:{timelines,assets:{async list(input){calls.push(["asset-list",input]);return[{id:"asset-1",projectId:input.projectId}];},async get(input){calls.push(["asset-get",input]);if(input.assetId==="published-asset")return assetOverride||{id:"published-asset",ownerId:owner,projectId:project,name:"master.mp4",mediaType:"video/mp4",size:2048,sha256:"a".repeat(64),metadata:{}};return assetOverride||{id:"723e4567-e89b-42d3-a456-426614174000",ownerId:owner,projectId:project,name:"generated.mp4",mediaType:"video/mp4",sha256:"a".repeat(64),metadata:{generated:true,jobId:"823e4567-e89b-42d3-a456-426614174000",mediaVerification:{status:"passed",readable:true,sha256:"a".repeat(64)},probe:{format:{duration:"2.51"},streams:[{codec_type:"video"}]}}};},async createSignedUrl(input){calls.push(["signed-url",input]);return{asset:signedAssetOverride||{id:input.assetId,projectId:project,size:2048,sha256:"a".repeat(64)},url:"https://storage.example.test/private/master?token=short-lived"};}},projects:{async create(input){calls.push(["project-create",input]);return{id:"project-1",...input};},async list(input){calls.push(["project-list",input]);return[{id:project}];},async get(input){calls.push(["project-get",input]);return{id:project,...input};},async update(input){calls.push(["project-update",input]);return{id:project,...input};},async archive(input){calls.push(["project-archive",input]);return{id:project,archived:true};}}},authorize:authorizeOverride|| (async({ownerId,projectId:pid,action})=>ownerId===owner&&(!pid||pid===project)&&(action==="read"||canWrite))});
  return{api,calls,created};
 }
@@ -298,4 +298,21 @@ test("blocking media-quality errors prevent independent delivery approval",async
  const result=await f.api.handle({method:"POST",path:"/api/cloud/jobs/"+reviewJobId+"/delivery-approval",ownerId:editor,body:{decision:"approved",note:"I reviewed this."}});
  assert.equal(result.status,409);
  assert.equal(result.body.error.code,"MEDIA_QUALITY_BLOCKED");
+});
+
+
+test("transformation approval binds to the exact immutable plan and blocks changed input before dispatch",async()=>{
+ const job={id:"923e4567-e89b-42d3-a456-426614174000",owner_id:owner,project_id:project,job_type:"video.transform.plan",status:"draft",input:{projectId:project,sourceAssetId:"723e4567-e89b-42d3-a456-426614174000",operation:"vehicle_replace",prompt:"Replace the vehicle with a blue electric coupe.",durationSeconds:8,referenceAssetIds:[],preservation:["camera_motion"],rightsConfirmed:true,subjectConsentConfirmed:false},estimated_cost:null,approved_by:null,approved_at:null};
+ const f=setup({existing:[job]});
+ const approved=await f.api.handle({method:"POST",path:"/api/cloud/transformations/"+job.id+"/approve",ownerId:owner,body:{estimatedCostMicros:1200,approvedBudgetMicros:1500,currency:"USD",adapterId:"adapter-review-only",capability:"video.transform.vehicle_replace"}});
+ assert.equal(approved.status,200);
+ assert.match(approved.body.plan.approval.planHash,/^[a-f0-9]{64}$/);
+ assert.equal(approved.body.plan.approval.planHash,job.estimated_cost.planHash);
+ const blockedAdapter=await f.api.handle({method:"POST",path:"/api/cloud/transformations/"+job.id+"/submit",ownerId:owner,body:{}});
+ assert.equal(blockedAdapter.status,409);
+ assert.equal(blockedAdapter.body.error.code,"TRANSFORMATION_ADAPTER_UNAVAILABLE");
+ job.input={...job.input,prompt:"Replace the vehicle with a yellow electric coupe."};
+ const changed=await f.api.handle({method:"POST",path:"/api/cloud/transformations/"+job.id+"/submit",ownerId:owner,body:{}});
+ assert.equal(changed.status,409);
+ assert.equal(changed.body.error.code,"TRANSFORMATION_PLAN_CHANGED");
 });
