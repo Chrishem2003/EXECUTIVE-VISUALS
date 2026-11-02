@@ -111,10 +111,13 @@ export function createCloudAssetRepository({
       if(typeof storage.uploadFile!=="function")throw new Error("Cloud storage adapter does not support streaming file uploads.");
       await allowed(ownerId,projectId,"write");
       const id=randomUUID(),name=safeName(originalName),objectPath=buildCloudAssetObjectPath({ownerId,projectId,assetId:id,filename:"original."+EXTENSIONS.get(mediaType)});
-      const uploaded=await storage.uploadFile(objectPath,filePath,mediaType);
+      let uploaded;
+      try{uploaded=await storage.uploadFile(objectPath,filePath,mediaType);}
+      catch(error){try{await storage.remove(objectPath);}catch{error.cleanupPending=true;}throw error;}
       if(uploaded?.bucket!=="executive-visuals-media"||uploaded?.path!==objectPath||!Number.isSafeInteger(uploaded?.size)||uploaded.size<1||typeof uploaded?.sha256!=="string"||!/^[a-f0-9]{64}$/i.test(uploaded.sha256)){
-        try{await storage.remove(objectPath);}catch{}
-        throw new Error("Cloud storage returned an unexpected streaming upload receipt.");
+        const error=new Error("Cloud storage returned an unexpected streaming upload receipt.");
+        try{await storage.remove(objectPath);}catch{error.cleanupPending=true;}
+        throw error;
       }
       try{
         const rows=await request("assets?select=id,owner_id,project_id,original_name,media_type,byte_size,sha256,storage_bucket,object_path,derivative_of,metadata,created_at",{
