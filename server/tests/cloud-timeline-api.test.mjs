@@ -278,3 +278,24 @@ test("timeline preview tickets fail closed for users without project read access
  const result=await api.handle({method:"GET",path:"/api/cloud/timelines/"+timelineId+"/preview/"+assetId,ownerId:owner});
  assert.equal(result.status,404);
 });
+
+
+test("media-quality warnings require an explicit acknowledgement note before approval",async()=>{
+ const {job}=deliveryReviewFixture({jobOwner:owner});
+ job.output.qualityReport={status:"review",counts:{errors:0,warnings:1},findings:[{code:"TEMPORAL_LUMA_FLICKER",severity:"warning",message:"Possible flicker"}]};
+ const f=setup({existing:[job],authorizeOverride:async()=>true});
+ const missing=await f.api.handle({method:"POST",path:"/api/cloud/jobs/"+reviewJobId+"/delivery-approval",ownerId:editor,body:{decision:"approved"}});
+ assert.equal(missing.status,400);
+ assert.equal(missing.body.error.code,"QUALITY_ACKNOWLEDGEMENT_REQUIRED");
+ const acknowledged=await f.api.handle({method:"POST",path:"/api/cloud/jobs/"+reviewJobId+"/delivery-approval",ownerId:editor,body:{decision:"approved",note:"Reviewed the flagged luminance interval; acceptable for this intended creative use."}});
+ assert.equal(acknowledged.status,201);
+});
+
+test("blocking media-quality errors prevent independent delivery approval",async()=>{
+ const {job}=deliveryReviewFixture({jobOwner:owner});
+ job.output.qualityReport={status:"needs-attention",counts:{errors:1,warnings:0},findings:[{code:"INVALID_DURATION",severity:"error",message:"Invalid duration"}]};
+ const f=setup({existing:[job],authorizeOverride:async()=>true});
+ const result=await f.api.handle({method:"POST",path:"/api/cloud/jobs/"+reviewJobId+"/delivery-approval",ownerId:editor,body:{decision:"approved",note:"I reviewed this."}});
+ assert.equal(result.status,409);
+ assert.equal(result.body.error.code,"MEDIA_QUALITY_BLOCKED");
+});
