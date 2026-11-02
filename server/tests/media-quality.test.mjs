@@ -103,11 +103,11 @@ test("includes decoded-frame temporal luminance findings in the QA report",()=>{
 
 
 test("exposes bounded temporal-analysis coverage without claiming a complete scan",()=>{
- const report=buildMediaQualityReport({format:{duration:"900"},streams:[{codec_type:"video",width:1920,height:1080,avg_frame_rate:"24/1"}],signalAnalysis:{
-  method:"ffmpeg-sampled-frame-luma",performed:["temporal-luma"],lumaSamples:[{timeSeconds:0,meanLuma:40}],coverageSeconds:600,truncated:true,
+ const report=buildMediaQualityReport({format:{duration:"300"},streams:[{codec_type:"video",width:1920,height:1080,avg_frame_rate:"24/1"}],signalAnalysis:{
+  method:"ffmpeg-sampled-frame-luma",performed:["temporal-luma"],lumaSamples:[{timeSeconds:0,meanLuma:40}],coverageSeconds:120,truncated:true,
   unavailable:[{check:"temporal-luma-coverage",reason:"ANALYSIS_DURATION_LIMIT"}]
  }},{requireVideo:true});
- assert.equal(report.signalAnalysis.lumaCoverageSeconds,600);
+ assert.equal(report.signalAnalysis.lumaCoverageSeconds,120);
  assert.equal(report.signalAnalysis.lumaAnalysisTruncated,true);
  assert.equal(report.status,"review");
  assert.ok(report.findings.some(item=>item.code==="SIGNAL_ANALYSIS_UNAVAILABLE"&&item.reason==="ANALYSIS_DURATION_LIMIT"));
