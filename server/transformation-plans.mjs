@@ -1,16 +1,18 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { canWriteProject, getAccessibleAsset, getProjectAccess, json, parseJson } from "./db.mjs";
 
 const OPERATIONS=new Set(["vehicle_replace","wardrobe_replace","wardrobe_transform","object_replace","background_replace","person_replace","style_transfer","visual_restyle","object_remove","relight"]);
 const PRESERVATION=new Set(["camera_movement","camera_motion","timing","composition","source_audio","subject_identity","pose_movement","pose","lighting","background"]);
 const fail=(message,code,status=400)=>Object.assign(new Error(message),{code,status});
 const cleanText=(value,max)=>typeof value==="string"?value.trim().slice(0,max):"";
+const stableJson=value=>Array.isArray(value)?"["+value.map(stableJson).join(",")+"]":value&&typeof value==="object"?"{"+Object.keys(value).sort().map(key=>JSON.stringify(key)+":"+stableJson(value[key])).join(",")+"}":JSON.stringify(value);
+const fingerprint=row=>createHash("sha256").update(stableJson({projectId:row.project_id,sourceAssetId:row.source_asset_id,operation:row.operation,prompt:row.prompt,durationSeconds:row.duration_seconds,referenceAssetIds:parseJson(row.reference_asset_ids_json,[]),preservation:parseJson(row.preservation_json,[]),rightsConfirmed:!!row.rights_confirmed,subjectConsentConfirmed:!!row.subject_consent_confirmed})).digest("hex");
 const record=row=>row?({
  id:row.id,projectId:row.project_id,sourceAssetId:row.source_asset_id,operation:row.operation,
  prompt:row.prompt,durationSeconds:row.duration_seconds,referenceAssetIds:parseJson(row.reference_asset_ids_json,[]),
  preservation:parseJson(row.preservation_json,[]),status:row.status,
  rightsConfirmed:!!row.rights_confirmed,subjectConsentConfirmed:!!row.subject_consent_confirmed,
- approval:row.approval_id?{id:row.approval_id,estimatedCostMicros:row.estimated_cost_micros,approvedBudgetMicros:row.approved_budget_micros,currency:row.currency,adapterId:row.adapter_id,capability:row.capability,approvedAt:row.approved_at}:null,
+ approval:row.approval_id?{id:row.approval_id,estimatedCostMicros:row.estimated_cost_micros,approvedBudgetMicros:row.approved_budget_micros,currency:row.currency,adapterId:row.adapter_id,capability:row.capability,planHash:row.approval_plan_hash||null,approvedAt:row.approved_at}:null,
  createdAt:row.created_at,updatedAt:row.updated_at
 }):null;
 
@@ -43,6 +45,8 @@ export function ensureTransformationPlanSchema(db){
  );
  CREATE INDEX IF NOT EXISTS transformation_plans_project_idx ON transformation_plans(project_id,created_at DESC);
  `);
+ const columns=db.prepare("PRAGMA table_info(transformation_plans)").all().map(column=>column.name);
+ if(!columns.includes("approval_plan_hash"))db.exec("ALTER TABLE transformation_plans ADD COLUMN approval_plan_hash TEXT");
 }
 
 export function createTransformationPlan(db,{ownerId,body,idempotencyKey}={}){
@@ -94,9 +98,10 @@ export function approveTransformationPlan(db,{ownerId,planId,body}={}){
  const adapterId=cleanText(body?.adapterId,80),capability=cleanText(body?.capability,120);
  if(!Number.isSafeInteger(estimate)||estimate<0||!Number.isSafeInteger(budget)||budget<estimate||! /^[A-Z]{3}$/.test(currency))throw fail("Provide a known non-negative cost estimate, a covering approved budget, and a three-letter currency code.","TRANSFORMATION_BUDGET_INVALID");
  if(!adapterId||!capability)throw fail("Select a declared adapter and capability before approval.","TRANSFORMATION_ADAPTER_REQUIRED");
+ const planHash=fingerprint(plan);
  const approvalId=randomUUID(),at=new Date().toISOString();
- const changed=db.prepare("UPDATE transformation_plans SET status='approved',approval_id=?,estimated_cost_micros=?,approved_budget_micros=?,currency=?,adapter_id=?,capability=?,approved_at=?,updated_at=? WHERE id=? AND status='draft'")
-  .run(approvalId,estimate,budget,currency,adapterId,capability,at,at,plan.id);
+ const changed=db.prepare("UPDATE transformation_plans SET status='approved',approval_id=?,estimated_cost_micros=?,approved_budget_micros=?,currency=?,adapter_id=?,capability=?,approval_plan_hash=?,approved_at=?,updated_at=? WHERE id=? AND status='draft'")
+  .run(approvalId,estimate,budget,currency,adapterId,capability,planHash,at,at,plan.id);
  if(changed.changes!==1)throw fail("Transformation plan changed while approval was being recorded.","TRANSFORMATION_STATE_CONFLICT",409);
  return record(db.prepare("SELECT * FROM transformation_plans WHERE id=?").get(plan.id));
 }
@@ -110,4 +115,11 @@ export function getTransformationPlan(db,ownerId,planId){
  const row=db.prepare("SELECT * FROM transformation_plans WHERE id=?").get(planId);
  if(!row||!getProjectAccess(db,ownerId,row.project_id))throw fail("Transformation plan not found.","TRANSFORMATION_NOT_FOUND",404);
  return record(row);
+}
+
+export function verifyTransformationApproval(db,ownerId,planId){
+ const row=db.prepare("SELECT * FROM transformation_plans WHERE id=?").get(planId);
+ if(!row||!getProjectAccess(db,ownerId,row.project_id))throw fail("Transformation plan not found.","TRANSFORMATION_NOT_FOUND",404);
+ const stored=row.approval_plan_hash;
+ return {valid:row.status==="approved"&&typeof stored==="string"&&/^[a-f0-9]{64}$/.test(stored)&&stored===fingerprint(row),planHash:typeof stored==="string"?stored:null};
 }
