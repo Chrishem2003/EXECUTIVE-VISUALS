@@ -55,6 +55,7 @@ test("rejects tampered package fields and evidence from another receipt", () => 
   const deliveryPackage = createDeliveryPackage({ jobId: "job-1", projectId: "project-1", timelineId: receipt.timelineId, timelineRevision: receipt.timelineRevision, master, deliveryReceipt: receipt, renderManifest: receipt.renderManifest, deliveryReport: receipt.deliveryReport, generatedAt: "2026-11-02T09:00:00.000Z" });
   assert.equal(verifyDeliveryPackage({ ...deliveryPackage, master: { ...master, sha256: "b".repeat(64) } }), false);
   assert.equal(verifyDeliveryPackage({ ...deliveryPackage, packageFingerprint: "0".repeat(64) }), false);
+  assert.equal(verifyDeliveryPackage({ ...deliveryPackage, qualityReport: { ...deliveryPackage.qualityReport, findings: [] } }), false);
   assert.throws(() => createDeliveryPackage({ jobId: "job-1", projectId: "project-1", timelineId: receipt.timelineId, timelineRevision: receipt.timelineRevision, master: { ...master, downloadUrl: "http://insecure.example/master" }, deliveryReceipt: receipt, renderManifest: receipt.renderManifest, deliveryReport: receipt.deliveryReport }));
 });
 
