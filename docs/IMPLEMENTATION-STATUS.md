@@ -488,3 +488,14 @@ This is a runnable worker entry point, not a deployed worker. Do not set the ena
 - Presets are style configuration only; they do not generate word-level karaoke timing, animated text, or a playback preview.
 - No migrations, provider activation, paid execution, or deployment changes.
 - Verification is pending in GitHub Actions.
+
+
+## Editorial sequence templates — 2 November 2026
+
+- Added five reusable sequence templates: Vertical short (9:16), Cinematic 4K, Podcast / interview, Product demo and Square social (1:1).
+- Each template creates a real editable timeline with explicit dimensions, frame rate, named picture/audio/graphics/caption tracks and versioned template metadata. Editors can still add, rename or remove tracks through the existing workspace.
+- Template creation is wired to both the authenticated cloud-project timeline API and the existing local timeline API. Cloud sequences remain scoped to the selected project; local sequences remain local.
+- Added build-time contract checks for unique template IDs, frame geometry, frame rate, track structure, safe empty defaults, timeline validity and unknown-template rejection.
+- Templates are starting structures only. They do not create media, invent content, trigger generation, or imply that cloud drafts are saved to a shared account unless the authenticated cloud workspace is selected.
+- Frame preview/playback, transitions and effects remain separate future milestones; no unsupported editor controls were added.
+- No migrations, provider activation, paid execution, production changes or deployment.
