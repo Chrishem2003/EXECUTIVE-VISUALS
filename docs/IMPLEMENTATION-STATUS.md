@@ -465,3 +465,11 @@ This is a runnable worker entry point, not a deployed worker. Do not set the ena
 - Queued/running/succeeded/cancelled plans cannot be cancelled through this endpoint. This is deliberate: active-job interruption must be integrated with worker leases and cancellation polling before it can safely claim to stop execution.
 - Added regression tests for cancellation state transitions, permission isolation, invalid input rejection, and preservation of accepted values. GitHub Actions passed dependency installation, TypeScript typecheck and the production build/verification suite on commit `aaa69aa0a665840056e5d6b9ec5557a5556a5ee4`.
 - This does not enable provider execution, spend credits, merge the draft PR, migrate the database, or deploy production. Durable cloud worker integration and evidence-backed consent remain release blockers.
+
+## Live authorization before remote finishing steps — 2 November 2026
+
+- The provider-neutral video finishing pipeline now requires a server-supplied live authorization callback before every remote step dispatch.
+- The callback must confirm the same approval ID, exact adapter and capability, active approval, and an approved budget covering the full pipeline estimate. A missing callback, revoked approval, mismatched adapter/capability or insufficient budget fails closed before that provider call.
+- Authorization is rechecked separately for each remote step, so revocation or budget changes between steps prevent subsequent provider dispatch. Local finishing steps remain independent of remote approval.
+- Added regression coverage for missing live authorization and mid-pipeline approval denial. Tests use mock adapters only.
+- The production authorization callback still needs wiring to the authoritative cloud approval/budget ledger and worker execution path. No live provider calls, paid usage, database migration or deployment were performed.
