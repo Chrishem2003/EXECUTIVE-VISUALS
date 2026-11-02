@@ -66,7 +66,7 @@ test("cloud AI upscale queues a rights-confirmed idempotent job and lists durabl
  const body={projectId:project,sourceAssetId:sourceId,model:"realesrgan-x4plus",scale:4,tile:0,format:"png",rightsConfirmed:true};
  const queued=await f.api.handle({method:"POST",path:"/api/cloud/upscale",ownerId:owner,body,idempotencyKey:"upscale-test-key-01"});
  assert.equal(queued.status,202);assert.equal(queued.body.job.job_type,"media.ai-upscale");assert.equal(queued.body.job.status,"queued");
- assert.equal(queued.body.job.input.sourceAssetId,sourceId);
+ assert.equal(queued.body.job.input.sourceAssetId,sourceId);assert.equal(queued.body.job.input.sourceSha256,hash("c"));
  assert.ok(f.calls.some(call=>call.path==="job_events"&&call.method==="POST"));
  const replay=await f.api.handle({method:"POST",path:"/api/cloud/upscale",ownerId:owner,body,idempotencyKey:"upscale-test-key-01"});
  assert.equal(replay.status,200);assert.equal(replay.body.idempotentReplay,true);assert.equal(replay.body.job.id,queued.body.job.id);
