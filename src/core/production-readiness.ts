@@ -49,7 +49,7 @@ export function buildProductionReadinessReport(input: ProductionReadinessInput =
     return {
       id, label, required: true,
       status: evidence?.status ?? "not_run",
-      summary: evidence?.summary?.trim() || (evidence ? "Evidence supplied without a summary." : "Not run — evidence is not available."),
+      summary: evidence?.summary?.trim() || (evidence?.status === "not_run" || !evidence ? "Not run — evidence is not available." : "Evidence supplied without a summary."),
       findings: Array.isArray(evidence?.findings) ? evidence.findings.map(item => ({
         code: String(item.code).slice(0, 80),
         detail: String(item.detail).slice(0, 1000),
