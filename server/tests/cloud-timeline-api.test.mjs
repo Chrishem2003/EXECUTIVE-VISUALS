@@ -160,3 +160,33 @@ test("generated media handoff rejects overlap and never overwrites a clip",async
  assert.equal(result.status,409);
  assert.equal(f.calls.some(c=>c[0]==="update"),false);
 });
+
+
+test("timeline preview tickets are revision-aware and limited to enabled timeline assets",async()=>{
+ const assetId="723e4567-e89b-42d3-a456-426614174000",calls=[];
+ const timeline={id:timelineId,ownerId:owner,projectId:project,name:"Preview",revision:9,timeline:{tracks:[{id:"v1",enabled:true,clips:[{id:"clip-1",assetId,enabled:true}]}]},otio:null};
+ const api=createCloudTimelineApi({url:"https://example.supabase.co",serviceRoleKey:"service-secret",
+  timelineService:{timelines:{async get(input){calls.push(["timeline",input]);return input.ownerId===owner?timeline:null;}},assets:{
+   async get(input){calls.push(["asset",input]);return{id:assetId,ownerId:owner,projectId:project,mediaType:"video/mp4"};},
+   async createSignedUrl(input){calls.push(["sign",input]);return{asset:{id:assetId,mediaType:"video/mp4"},url:"https://signed.example/private-video",expiresIn:300};}
+  }},
+  authorize:async({ownerId:who,projectId:pid,action})=>who===owner&&pid===project&&action==="read"
+ });
+ const path="/api/cloud/timelines/"+timelineId+"/preview/"+assetId;
+ const result=await api.handle({method:"GET",path,ownerId:owner,query:{revision:"9"}});
+ assert.equal(result.status,200);assert.equal(result.body.preview.timelineRevision,9);assert.equal(result.body.preview.expiresIn,300);
+ assert.deepEqual(calls.filter(x=>x[0]==="sign")[0][1],{ownerId:owner,assetId,expiresIn:300});
+ const stale=await api.handle({method:"GET",path,ownerId:owner,query:{revision:"8"}});
+ assert.equal(stale.status,409);
+ const unrelated=await api.handle({method:"GET",path:"/api/cloud/timelines/"+timelineId+"/preview/823e4567-e89b-42d3-a456-426614174000",ownerId:owner});
+ assert.equal(unrelated.status,404);
+});
+test("timeline preview tickets fail closed for users without project read access",async()=>{
+ const assetId="723e4567-e89b-42d3-a456-426614174000";
+ const api=createCloudTimelineApi({url:"https://example.supabase.co",serviceRoleKey:"service-secret",
+  timelineService:{timelines:{async get(){return{id:timelineId,ownerId:owner,projectId:project,revision:1,timeline:{tracks:[{clips:[{assetId}]}]}};}},assets:{async get(){throw new Error("must not be reached");}}},
+  authorize:async()=>false
+ });
+ const result=await api.handle({method:"GET",path:"/api/cloud/timelines/"+timelineId+"/preview/"+assetId,ownerId:owner});
+ assert.equal(result.status,404);
+});
