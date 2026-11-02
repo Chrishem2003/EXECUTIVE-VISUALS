@@ -77,7 +77,7 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     if(source.projectId!==projectId||!["image/png","image/jpeg","image/webp"].includes(source.mediaType))return response(422,{error:{code:"UPSCALE_SOURCE_INVALID",message:"AI upscaling accepts project PNG, JPEG or WebP still images only."}});
     if(body.rightsConfirmed!==true)return response(403,{error:{code:"MEDIA_RIGHTS_REQUIRED",message:"Confirm that you have the rights to process this source image."}});
     const model=String(body.model||"realesrgan-x4plus"),scale=Number(body.scale??4),tile=Number(body.tile??0),format=String(body.format||"png");
-    if(!["realesrgan-x4plus","realesrgan-x4plus-anime","realesr-animevideov3","realesrgan-x2plus"].includes(model)||!Number.isInteger(scale)||scale<2||scale>4||!Number.isInteger(tile)||tile<0||tile>1024||!["png","jpg","webp"].includes(format))return response(400,{error:{code:"UPSCALE_OPTIONS_INVALID",message:"Choose an allowlisted model, scale 2–4, tile 0–1024 and PNG/JPEG/WebP output."}});
+    if(!["realesrgan-x4plus","realesrgan-x4plus-anime","realesr-animevideov3","realesrgan-x2plus"].includes(model)||!Number.isInteger(scale)||scale<2||scale>4||!Number.isInteger(tile)||tile<0||tile>512||(tile!==0&&tile<32)||!["png","jpg","webp"].includes(format))return response(400,{error:{code:"UPSCALE_OPTIONS_INVALID",message:"Choose an allowlisted model, scale 2–4, tile 0 or 32–512 and PNG/JPEG/WebP output."}});
     const key=String(idempotencyKey||"").trim().slice(0,180);
     if(key.length<8)return response(400,{error:{code:"IDEMPOTENCY_KEY_REQUIRED",message:"An idempotency key is required for cloud AI upscaling."}});
     const input={sourceAssetId,model,scale,tile,format,rightsConfirmed:true};
