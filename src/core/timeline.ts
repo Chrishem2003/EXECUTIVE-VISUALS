@@ -17,7 +17,7 @@ export interface TimelineMarker {
 export interface EditorialTimeline {
   id:string; projectId:string; name:string; revision:number;
   frameRate:{numerator:number;denominator:number};
-  width:number;height:number;pixelAspectRatio:number;
+  width:number;height:number;pixelAspectRatio:number;deliveryProfileId?:string;
   tracks:TimelineTrack[];markers:TimelineMarker[];
   createdAt:string;updatedAt:string;metadata?:Record<string,unknown>;
 }
