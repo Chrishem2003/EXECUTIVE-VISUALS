@@ -369,3 +369,11 @@ This is a runnable worker entry point, not a deployed worker. Do not set the ena
 - Added automated tests for invalid hashes, unsupported scales, malformed records, failed execution, pending review and rejected visual review.
 - Added the benchmark contract tests to the normal build verification pipeline. These tests require no GPU, large model download, external provider or paid service.
 - This is the auditable report contract and gate, not a claim that an image benchmark has already been run. A real fixture corpus and actual model outputs still need to be collected and reviewed before quality can be verified.
+
+
+## Upscaling benchmark coverage gate — 2 November 2026
+
+- Benchmark records now require a controlled fixture category: portrait, fine texture, text, animation, or low-light/noisy footage.
+- The summary reports category coverage and missing categories. It will not set `qualityVerified` unless every required category has at least one successful, human-reviewed passing fixture, all submitted records are valid, and no record failed execution or review.
+- This is a stricter evidence gate, not evidence that any real model has passed. The actual licensed fixture corpus, pinned model/binary runs, reference metrics and human side-by-side review are still outstanding. Empty or incomplete evidence remains unverified.
+- No model was downloaded or activated; no remote GPU/provider, paid service, production database, storage bucket, Render service or deployment was changed.
