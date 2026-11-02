@@ -5,6 +5,13 @@ const SHA256=/^[a-f0-9]{64}$/i;
 const plain=value=>value!==null&&typeof value==="object"&&!Array.isArray(value);
 const stable=value=>Array.isArray(value)?"["+value.map(stable).join(",")+"]":plain(value)?"{"+Object.keys(value).sort().map(key=>JSON.stringify(key)+":"+stable(value[key])).join(",")+"}":JSON.stringify(value);
 const hash=value=>createHash("sha256").update(value).digest("hex");
+function deepFreeze(value){
+ if(value&&typeof value==="object"&&!Object.isFrozen(value)){
+  Object.freeze(value);
+  for(const child of Object.values(value))deepFreeze(child);
+ }
+ return value;
+}
 const fail=(message,code)=>Object.assign(new Error(message),{code});
 
 function validatePlan(plan,approval){
@@ -21,11 +28,13 @@ function validatePlan(plan,approval){
   if(!STEP_KINDS.has(step.kind)||typeof step.adapter!=="string"||!step.adapter.trim()||typeof step.capability!=="string"||!step.capability.trim())throw fail("Pipeline step kind, adapter and capability are required.","VIDEO_PIPELINE_INVALID_STEP");
   if(step.estimatedCostMicros==null||!Number.isSafeInteger(step.estimatedCostMicros)||step.estimatedCostMicros<0)throw fail("Every pipeline step must have a known non-negative cost estimate before execution.","VIDEO_PIPELINE_COST_UNKNOWN");
   if(!plain(step.config??{}))throw fail("Pipeline step config must be an object.","VIDEO_PIPELINE_INVALID_STEP");
-  if(JSON.stringify(step.config??{}).length>16000)throw fail("Pipeline step config exceeds 16 KB.","VIDEO_PIPELINE_INVALID_STEP");
+  let config;
+  try{config=JSON.parse(JSON.stringify(step.config??{}));}catch{throw fail("Pipeline step config must contain only JSON-safe values.","VIDEO_PIPELINE_INVALID_STEP");}
+  if(JSON.stringify(config).length>16000)throw fail("Pipeline step config exceeds 16 KB.","VIDEO_PIPELINE_INVALID_STEP");
   if(typeof step.remote!=="boolean")throw fail("Pipeline step must declare whether its adapter is remote.","VIDEO_PIPELINE_INVALID_STEP");
   remote ||= step.remote;total+=step.estimatedCostMicros;
   if(!Number.isSafeInteger(total))throw fail("Pipeline cost total exceeds the supported range.","VIDEO_PIPELINE_COST_INVALID");
-  return Object.freeze({...step,config:Object.freeze({...step.config})});
+  return Object.freeze({...step,config:deepFreeze(config)});
  });
  if(remote){
   if(approval?.remoteExecutionApproved!==true||typeof approval.approvalId!=="string"||!approval.approvalId.trim())throw fail("Explicit remote-execution approval is required before any pipeline step runs.","VIDEO_PIPELINE_APPROVAL_REQUIRED");
