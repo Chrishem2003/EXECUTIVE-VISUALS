@@ -1,0 +1,28 @@
+name: Quality checks
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+concurrency:
+  group: quality-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Ensure media test tools are available
+        run: |
+          if ! command -v ffmpeg >/dev/null 2>&1 || ! fc-match "DejaVu Sans" >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y ffmpeg fonts-dejavu-core
+          fi
+          ffmpeg -version
+          fc-match "DejaVu Sans"
+      - run: npm install
+      - run: npm run typecheck
+      - run: npm run build

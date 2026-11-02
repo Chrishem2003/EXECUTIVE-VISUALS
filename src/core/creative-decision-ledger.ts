@@ -35,7 +35,7 @@ function summary(before:CreativeTrace|null,after:CreativeTrace|null){
 export function readCreativeDecisionHistory(clip:TimelineClip):CreativeDecisionRecord[]{
  const raw=clip.metadata?.creativeTraceHistory;
  if(!Array.isArray(raw))return [];
- return raw.slice(-100).flatMap((item):CreativeDecisionRecord[]=>{
+ return raw.flatMap((item):CreativeDecisionRecord[]=>{
   if(!item||typeof item!=="object"||Array.isArray(item))return [];
   const value=item as Record<string,unknown>;
   const id=clean(value.id,120),recordedAt=clean(value.recordedAt,40),sequence=Number(value.sequence);
@@ -44,7 +44,7 @@ export function readCreativeDecisionHistory(clip:TimelineClip):CreativeDecisionR
    id,sequence,recordedAt,summary:clean(value.summary,300)||"Creative decision recorded",
    before:normalize(value.before),after:normalize(value.after),
   }];
- });
+ }).slice(-100);
 }
 /** Append-only by contract: existing entries are copied, never edited; history is bounded to 100 entries. */
 export function appendCreativeDecision(

@@ -1,0 +1,662 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-11-02",
+  "status": "specification-only",
+  "policy": "Capabilities are product targets. No provider is marked supported until a versioned adapter contract and conformance test prove it.",
+  "domains": [
+    "agent",
+    "assets",
+    "audio",
+    "campaign",
+    "capture",
+    "cinema",
+    "collaboration",
+    "design",
+    "direction",
+    "editing",
+    "enhancement",
+    "identity",
+    "image",
+    "integration",
+    "localization",
+    "motion",
+    "operations",
+    "preproduction",
+    "production",
+    "quality",
+    "spatial",
+    "video",
+    "workflow"
+  ],
+  "capabilities": [
+    [
+      "direction.brief-analyze",
+      "direction",
+      "Analyze creative brief"
+    ],
+    [
+      "direction.plan",
+      "direction",
+      "Build creative production plan"
+    ],
+    [
+      "direction.critique",
+      "direction",
+      "Creative critique and continuity review"
+    ],
+    [
+      "story.research",
+      "preproduction",
+      "Research story topic"
+    ],
+    [
+      "story.script",
+      "preproduction",
+      "Write and revise script"
+    ],
+    [
+      "story.storyboard",
+      "preproduction",
+      "Create storyboard"
+    ],
+    [
+      "story.shot-plan",
+      "preproduction",
+      "Create shot plan"
+    ],
+    [
+      "identity.profile",
+      "identity",
+      "Create reusable identity profile"
+    ],
+    [
+      "identity.train",
+      "identity",
+      "Train provider-scoped identity"
+    ],
+    [
+      "image.generate",
+      "image",
+      "Generate image"
+    ],
+    [
+      "image.edit",
+      "image",
+      "Edit image with instruction and mask"
+    ],
+    [
+      "image.composite",
+      "image",
+      "Composite product into generated scene"
+    ],
+    [
+      "image.restore",
+      "image",
+      "Restore and repair image"
+    ],
+    [
+      "image.upscale",
+      "image",
+      "Upscale image"
+    ],
+    [
+      "video.generate",
+      "video",
+      "Generate video from prompt"
+    ],
+    [
+      "video.image-to-video",
+      "video",
+      "Animate image"
+    ],
+    [
+      "video.extend",
+      "video",
+      "Extend video"
+    ],
+    [
+      "video.regional-edit",
+      "video",
+      "Edit selected video region"
+    ],
+    [
+      "cinema.shot-direct",
+      "cinema",
+      "Direct a cinematic shot"
+    ],
+    [
+      "editing.timeline-assemble",
+      "editing",
+      "Assemble multitrack timeline"
+    ],
+    [
+      "editing.motion-graphics",
+      "editing",
+      "Create motion graphics"
+    ],
+    [
+      "audio.transcribe",
+      "audio",
+      "Transcribe audio with timing"
+    ],
+    [
+      "audio.diarize",
+      "audio",
+      "Separate and identify speakers"
+    ],
+    [
+      "audio.speech",
+      "audio",
+      "Generate speech"
+    ],
+    [
+      "audio.clone",
+      "audio",
+      "Create authorized voice profile"
+    ],
+    [
+      "audio.sound-design",
+      "audio",
+      "Generate music and sound effects"
+    ],
+    [
+      "audio.lipsync",
+      "audio",
+      "Synchronize speech to presenter"
+    ],
+    [
+      "localization.translate",
+      "localization",
+      "Translate and localize content"
+    ],
+    [
+      "localization.dub",
+      "localization",
+      "Dub and synchronize language version"
+    ],
+    [
+      "enhance.upscale",
+      "enhancement",
+      "Upscale media"
+    ],
+    [
+      "enhance.denoise",
+      "enhancement",
+      "Denoise media"
+    ],
+    [
+      "enhance.interpolate",
+      "enhancement",
+      "Interpolate frames"
+    ],
+    [
+      "enhance.stabilize",
+      "enhancement",
+      "Stabilize video"
+    ],
+    [
+      "enhance.remove-object",
+      "enhancement",
+      "Remove object with tracked mask"
+    ],
+    [
+      "workflow.validate",
+      "workflow",
+      "Validate workflow graph"
+    ],
+    [
+      "workflow.simulate",
+      "workflow",
+      "Simulate workflow without paid execution"
+    ],
+    [
+      "workflow.execute",
+      "workflow",
+      "Execute approved workflow snapshot"
+    ],
+    [
+      "agent.plan",
+      "agent",
+      "Plan multi-step creative task"
+    ],
+    [
+      "agent.checkpoint",
+      "agent",
+      "Persist and resume task checkpoint"
+    ],
+    [
+      "campaign.product-ingest",
+      "campaign",
+      "Ingest product facts and media"
+    ],
+    [
+      "campaign.variants",
+      "campaign",
+      "Generate campaign variant matrix"
+    ],
+    [
+      "design.autofill",
+      "design",
+      "Populate brand template from data"
+    ],
+    [
+      "assets.ingest",
+      "assets",
+      "Ingest and fingerprint asset"
+    ],
+    [
+      "assets.package",
+      "assets",
+      "Package project for delivery"
+    ],
+    [
+      "collaboration.review",
+      "collaboration",
+      "Collect timecoded review"
+    ],
+    [
+      "integration.webhook",
+      "integration",
+      "Receive verified provider event"
+    ],
+    [
+      "operations.cost-estimate",
+      "operations",
+      "Estimate execution cost"
+    ],
+    [
+      "spatial.scene",
+      "spatial",
+      "Manage 3D scene and assets"
+    ],
+    [
+      "spatial.procedural",
+      "spatial",
+      "Build procedural geometry and materials"
+    ],
+    [
+      "spatial.animation",
+      "spatial",
+      "Rig and animate character"
+    ],
+    [
+      "spatial.render",
+      "spatial",
+      "Render 3D scene"
+    ],
+    [
+      "production.track",
+      "production",
+      "Track production work"
+    ],
+    [
+      "production.review",
+      "production",
+      "Review and approve versioned media"
+    ],
+    [
+      "production.compare",
+      "production",
+      "Compare media versions"
+    ],
+    [
+      "capture.record",
+      "capture",
+      "Capture synchronized media sources"
+    ],
+    [
+      "capture.live",
+      "capture",
+      "Operate live capture session"
+    ],
+    [
+      "media.ingest",
+      "capture",
+      "Ingest and verify source media"
+    ],
+    [
+      "media.proxy",
+      "capture",
+      "Create and link proxies"
+    ],
+    [
+      "timeline.interchange",
+      "capture",
+      "Import or export timeline interchange"
+    ],
+    [
+      "quality.preflight",
+      "quality",
+      "Validate media delivery requirements"
+    ],
+    [
+      "timeline.sequence",
+      "editing",
+      "Create and version an editorial sequence"
+    ],
+    [
+      "timeline.track",
+      "editing",
+      "Manage ordered media tracks"
+    ],
+    [
+      "timeline.clip",
+      "editing",
+      "Trim, split and place timeline clips"
+    ],
+    [
+      "timeline.relink",
+      "editing",
+      "Relink missing source media"
+    ],
+    [
+      "timeline.export",
+      "editing",
+      "Export editorial interchange package"
+    ],
+    [
+      "collaboration.lock",
+      "collaboration",
+      "Acquire project or sequence edit lock"
+    ],
+    [
+      "collaboration.publish",
+      "collaboration",
+      "Publish a reviewed revision to collaborators"
+    ],
+    [
+      "collaboration.annotation",
+      "collaboration",
+      "Attach frame-accurate review annotation"
+    ],
+    [
+      "collaboration.presence",
+      "collaboration",
+      "Track collaborator presence and activity"
+    ],
+    [
+      "workflow.subgraph",
+      "workflow",
+      "Create reusable workflow subgraph"
+    ],
+    [
+      "workflow.batch",
+      "workflow",
+      "Run workflow across a batch of inputs"
+    ],
+    [
+      "workflow.partial-run",
+      "workflow",
+      "Execute selected outputs and dependencies only"
+    ],
+    [
+      "assets.proxy-cache",
+      "assets",
+      "Generate and invalidate preview proxies and caches"
+    ],
+    [
+      "assets.verify-integrity",
+      "assets",
+      "Verify checksum and asset lineage"
+    ],
+    [
+      "capture.resumable-ingest",
+      "capture",
+      "Resume interrupted media ingest"
+    ],
+    [
+      "speech.diarize",
+      "audio",
+      "Separate speakers and align transcript"
+    ],
+    [
+      "speech.remove-filler",
+      "audio",
+      "Remove filler words and long silences"
+    ],
+    [
+      "speech.glossary-apply",
+      "localization",
+      "Apply pronunciation and translation glossary"
+    ],
+    [
+      "runtime.discover-models",
+      "operations",
+      "Discover installed model and node capabilities"
+    ],
+    [
+      "runtime.preflight",
+      "operations",
+      "Preflight execution against runtime resources"
+    ],
+    [
+      "runtime.schedule",
+      "operations",
+      "Schedule jobs across eligible workers"
+    ],
+    [
+      "review.share-link",
+      "collaboration",
+      "Create controlled review link"
+    ],
+    [
+      "review.approval",
+      "collaboration",
+      "Record approval or requested changes"
+    ],
+    [
+      "timeline.render-master",
+      "editing",
+      "Render a timeline to a video master"
+    ],
+    [
+      "video.keyframe-control",
+      "video",
+      "Generate video between pinned keyframes"
+    ],
+    [
+      "video.reference-directing",
+      "video",
+      "Direct video with subject, style and audio references"
+    ],
+    [
+      "video.extend-scene",
+      "video",
+      "Continue or extend an existing video scene"
+    ],
+    [
+      "video.conversational-edit",
+      "video",
+      "Iteratively edit video through a stateful session"
+    ],
+    [
+      "video.native-audio",
+      "video",
+      "Generate synchronized video with native audio"
+    ],
+    [
+      "speech.stream-tts",
+      "audio",
+      "Stream speech from incremental text"
+    ],
+    [
+      "speech.stream-transcription",
+      "audio",
+      "Transcribe audio with partial streaming events"
+    ],
+    [
+      "speech.word-alignment",
+      "audio",
+      "Align transcript words to audio timestamps"
+    ],
+    [
+      "speech.voice-isolation",
+      "audio",
+      "Isolate speech and suppress background noise"
+    ],
+    [
+      "speech.live-translation",
+      "localization",
+      "Translate incoming speech in real time"
+    ],
+    [
+      "agent.text-generate",
+      "agent",
+      "Generate and transform text"
+    ],
+    [
+      "integration.discover-model-capabilities",
+      "integration",
+      "Discover model-specific inputs, limits and costs"
+    ],
+    [
+      "assets.retention-verify",
+      "assets",
+      "Verify output availability and retention policy"
+    ],
+    [
+      "operations.model-benchmark",
+      "operations",
+      "Benchmark candidate models against a shared evaluation set"
+    ],
+    [
+      "operations.model-route",
+      "operations",
+      "Route a task to the best eligible model"
+    ],
+    [
+      "design.template-autofill",
+      "design",
+      "Populate reusable designs from structured data"
+    ],
+    [
+      "design.brand-glossary",
+      "design",
+      "Manage brand terminology and localization rules"
+    ],
+    [
+      "collaboration.live-presence",
+      "collaboration",
+      "Coordinate presence and editing locks in shared sessions"
+    ],
+    [
+      "editing.proxy-review",
+      "editing",
+      "Review low-bandwidth proxies with source-linked annotations"
+    ],
+    [
+      "capture.remote-recording",
+      "capture",
+      "Record remote participants as synchronized isolated tracks"
+    ],
+    [
+      "production.analytics-feedback",
+      "production",
+      "Turn campaign performance into creative recommendations"
+    ],
+    [
+      "motion.template-render",
+      "motion",
+      "Render parameterized motion-graphics templates"
+    ],
+    [
+      "video.continuity-check",
+      "video",
+      "Evaluate visual and narrative continuity across shots"
+    ],
+    [
+      "assets.semantic-search",
+      "assets",
+      "Find media by meaning, content and production context"
+    ],
+    [
+      "workflow.version-diff",
+      "workflow",
+      "Compare two workflow revisions"
+    ],
+    [
+      "workflow.batch-execution",
+      "workflow",
+      "Execute a workflow against a batch of inputs"
+    ],
+    [
+      "video.transform-vehicle",
+      "video",
+      "Transform or replace a vehicle in existing footage"
+    ],
+    [
+      "video.transform-wardrobe",
+      "video",
+      "Transform wardrobe in existing footage"
+    ],
+    [
+      "video.transform-object",
+      "video",
+      "Replace or remove selected objects in existing footage"
+    ],
+    [
+      "video.transform-scene",
+      "video",
+      "Transform the background or visual style of existing footage"
+    ],
+    [
+      "video.transform-person",
+      "video",
+      "Replace a person in existing footage with consent"
+    ],
+    [
+      "video.finish-pipeline",
+      "video",
+      "Run a checkpointed video transformation and finishing pipeline"
+    ]
+  ],
+  "requiredCapabilityFields": [
+    "stableId",
+    "version",
+    "inputSchema",
+    "outputSchema",
+    "semanticMediaRoles",
+    "providerModelPlanConstraints",
+    "fileAndDurationLimits",
+    "executionMode",
+    "costModel",
+    "consentAndRights",
+    "retryAndIdempotency",
+    "cancellation",
+    "webhookBehavior",
+    "dataResidency",
+    "retention",
+    "readiness",
+    "evidence",
+    "lastVerifiedAt"
+  ],
+  "jobStates": [
+    "draft",
+    "validated",
+    "needs_input",
+    "blocked",
+    "awaiting_approval",
+    "queued",
+    "submitted",
+    "processing",
+    "reviewing",
+    "completed",
+    "partial",
+    "failed",
+    "cancelled",
+    "expired"
+  ],
+  "invariants": [
+    "Planning and validation are free of paid side effects.",
+    "Paid execution requires an approved immutable run snapshot.",
+    "Successful outputs are immutable and preserve lineage.",
+    "A failed node cannot erase successful sibling outputs.",
+    "Unknown constraints are never guessed.",
+    "Consent and rights are scoped, auditable and revocable.",
+    "Provider outputs are persisted before remote URLs expire.",
+    "Secrets never enter client bundles, prompts or logs."
+  ],
+  "sourceOfTruth": "src/core/capability-atlas.ts",
+  "capabilityCount": 116,
+  "domainCount": 23
+}

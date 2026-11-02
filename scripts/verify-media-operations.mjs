@@ -1,0 +1,79 @@
+import assert from "node:assert/strict";
+import {execFileSync} from "node:child_process";
+import {mkdtemp,stat,rm} from "node:fs/promises";
+import {tmpdir} from "node:os";
+import {join} from "node:path";
+import {buildMediaOperationArgs,buildMediaProcessingProvenance,validateMediaOutputProbe} from "../server/media.mjs";
+const base={sourcePath:"/private/source.mp4",outputPath:"/private/output.mp4"};
+
+assert.deepEqual(validateMediaOutputProbe({streams:[{codec_type:"video"},{codec_type:"audio"}],format:{duration:"1.25"}},"video/mp4"),{streamCount:2,durationSeconds:1.25,validatedStreamType:"video"});
+assert.deepEqual(validateMediaOutputProbe({streams:[{codec_type:"audio"}],format:{duration:"2.5"}},"audio/wav"),{streamCount:1,durationSeconds:2.5,validatedStreamType:"audio"});
+assert.deepEqual(validateMediaOutputProbe({streams:[{codec_type:"video"}],format:{duration:"0.5"}},"image/jpeg").validatedStreamType,"video");
+assert.throws(()=>validateMediaOutputProbe({streams:[{codec_type:"audio"}],format:{duration:"1"}},"video/mp4"),e=>e.code==="MEDIA_OUTPUT_VALIDATION_FAILED");
+assert.throws(()=>validateMediaOutputProbe({streams:[{codec_type:"video"}],format:{duration:"0"}},"video/mp4"),e=>e.code==="MEDIA_OUTPUT_VALIDATION_FAILED");
+assert.throws(()=>validateMediaOutputProbe({streams:[]},"audio/wav"),e=>e.code==="MEDIA_OUTPUT_VALIDATION_FAILED");
+
+
+const classical=buildMediaProcessingProvenance({jobType:"media.upscale",input:{width:1920,height:1080,algorithm:"lanczos",sharpness:0.4,secret:"must-not-be-copied"},sourceAsset:{id:"source-1",sha256:"a".repeat(64)}});
+assert.equal(classical.engine,"ffmpeg");
+assert.equal(classical.method,"deterministic-resampling");
+assert.equal(classical.aiInferencePerformed,false);
+assert.equal(classical.sourceAssetId,"source-1");
+assert.equal(classical.sourceSha256,"a".repeat(64));
+assert.deepEqual(classical.parameters,{width:1920,height:1080,algorithm:"lanczos",sharpness:0.4});
+assert.equal(buildMediaProcessingProvenance({jobType:"media.ai-upscale",input:{model:"realesrgan-x4plus"}}),null,"AI upscale uses its separate engine-specific provenance");
+assert.equal(buildMediaProcessingProvenance({jobType:"media.color",input:{brightness:0.1,contrast:1,saturation:1},sourceAsset:{id:"source-2"}}).method,"deterministic-color-adjustment");
+
+const cases=[
+ ["media.denoise",{luma:5,chroma:2},"hqdn3d=5.00:2.00:3.75:1.50"],
+ ["media.color",{brightness:0.1,contrast:1.2,saturation:1.4},"eq=brightness=0.100:contrast=1.200:saturation=1.400"],
+ ["media.resize",{width:320,height:180,fit:"contain"},"scale=320:180:force_original_aspect_ratio=decrease:flags=lanczos,pad=320:180:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1"],
+ ["media.resize",{width:320,height:180,fit:"cover"},"scale=320:180:force_original_aspect_ratio=increase:flags=lanczos,crop=320:180,setsar=1"],
+ ["media.interpolate",{fps:30},"minterpolate=fps=30.000:mi_mode=mci:mc_mode=aobmc:me_mode=bidir:vsbmc=1"],
+ ["media.upscale",{width:640,height:360},"scale=640:360:force_original_aspect_ratio=decrease:flags=lanczos,pad=640:360:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1"],
+ ["media.upscale",{width:640,height:360,algorithm:"spline36",sharpness:0.5},"scale=640:360:force_original_aspect_ratio=decrease:flags=spline,pad=640:360:(ow-iw)/2:(oh-ih)/2:color=black,unsharp=5:5:0.50:5:5:0.0,setsar=1"]
+];
+for(const [kind,input,expected] of cases){
+ const args=buildMediaOperationArgs({jobType:kind,input,...base});
+ assert.equal(args[args.indexOf("-vf")+1],expected,kind+" filter must be deterministic");
+ assert.equal(args.at(-1),base.outputPath);
+ assert.ok(args.includes("libx264"));
+}
+assert.throws(()=>buildMediaOperationArgs({jobType:"media.denoise",input:{luma:99},...base}),e=>e.code==="INVALID_MEDIA_OPTIONS");
+assert.throws(()=>buildMediaOperationArgs({jobType:"media.color",input:{brightness:2},...base}),e=>e.code==="INVALID_MEDIA_OPTIONS");
+assert.throws(()=>buildMediaOperationArgs({jobType:"media.resize",input:{width:1280,height:720,fit:"stretch"},...base}),e=>e.code==="INVALID_MEDIA_OPTIONS");
+assert.throws(()=>buildMediaOperationArgs({jobType:"media.interpolate",input:{fps:120},...base}),e=>e.code==="INVALID_MEDIA_OPTIONS");
+assert.throws(()=>buildMediaOperationArgs({jobType:"media.upscale",input:{width:640,height:360,algorithm:"made-up"},...base}),e=>e.code==="INVALID_MEDIA_OPTIONS");
+assert.throws(()=>buildMediaOperationArgs({jobType:"media.upscale",input:{width:640,height:360,sharpness:5},...base}),e=>e.code==="INVALID_MEDIA_OPTIONS");
+assert.throws(()=>buildMediaOperationArgs({jobType:"media.execute-shell",input:{},...base}),e=>e.code==="INVALID_MEDIA_OPTIONS");
+const audioArgs=buildMediaOperationArgs({jobType:"media.audio-clean",input:{noiseFloor:-30,targetLufs:-18},sourcePath:base.sourcePath,outputPath:"/private/cleaned.wav"});
+assert.equal(audioArgs[audioArgs.indexOf("-af")+1],"afftdn=nf=-30.0:tn=1,loudnorm=I=-18.0:TP=-1.5:LRA=11");
+assert.ok(audioArgs.includes("pcm_s16le"));
+assert.throws(()=>buildMediaOperationArgs({jobType:"media.audio-clean",input:{noiseFloor:-90},sourcePath:base.sourcePath,outputPath:base.outputPath}),e=>e.code==="INVALID_MEDIA_OPTIONS");
+const root=await mkdtemp(join(tmpdir(),"executive-visuals-enhancement-"));
+try{
+ const ffmpeg=process.env.FFMPEG_PATH||"ffmpeg",ffprobe=process.env.FFPROBE_PATH||"ffprobe",source=join(root,"source.mp4");
+ execFileSync(ffmpeg,["-hide_banner","-loglevel","error","-y","-f","lavfi","-i","testsrc=size=320x180:rate=24","-f","lavfi","-i","sine=frequency=440:sample_rate=48000","-t","1","-c:v","libx264","-pix_fmt","yuv420p","-c:a","aac",source],{stdio:"pipe",timeout:60000});
+ const audioSource=join(root,"source.wav"),cleaned=join(root,"cleaned.wav");
+ execFileSync(ffmpeg,["-hide_banner","-loglevel","error","-y","-f","lavfi","-i","sine=frequency=440:sample_rate=48000","-t","1","-c:a","pcm_s16le",audioSource],{stdio:"pipe",timeout:60000});
+ const cleanArgs=buildMediaOperationArgs({jobType:"media.audio-clean",input:{noiseFloor:-25,targetLufs:-16},sourcePath:audioSource,outputPath:cleaned});
+ execFileSync(ffmpeg,cleanArgs,{stdio:"pipe",timeout:120000});
+ assert.ok((await stat(cleaned)).size>1000,"audio cleanup must produce a non-empty WAV");
+ const audioMetadata=JSON.parse(execFileSync(ffprobe,["-v","error","-show_entries","stream=codec_type,sample_rate","-of","json",cleaned],{encoding:"utf8",stdio:["ignore","pipe","pipe"]}));
+ assert.ok(audioMetadata.streams.some(stream=>stream.codec_type==="audio"),"cleaned output must contain an audio stream");
+ for(let index=0;index<cases.length;index++){
+  const [kind,input]=cases[index],output=join(root,"result-"+index+".mp4");
+  const args=buildMediaOperationArgs({jobType:kind,input,sourcePath:source,outputPath:output});
+  execFileSync(ffmpeg,args,{stdio:"pipe",timeout:120000});
+  assert.ok((await stat(output)).size>1000,kind+" must produce a non-empty MP4");
+  const metadata=JSON.parse(execFileSync(ffprobe,["-v","error","-show_entries","format=duration:stream=codec_type,codec_name,width,height,sample_rate","-of","json",output],{encoding:"utf8",stdio:["ignore","pipe","pipe"]}));
+  const video=metadata.streams.find(stream=>stream.codec_type==="video");
+  assert.ok(video,kind+" output must contain a video stream");
+  assert.equal(video.codec_name,"h264",kind+" output must use the expected H.264 delivery codec");
+  const expectedSize=kind==="media.upscale"?[640,360]:[320,180];
+  assert.deepEqual([video.width,video.height],expectedSize,kind+" output dimensions must match the requested enhancement");
+  assert.ok(metadata.streams.some(stream=>stream.codec_type==="audio"),kind+" must preserve the source audio stream");
+  assert.ok(Number(metadata.format?.duration)>=0.85&&Number(metadata.format?.duration)<=1.25,kind+" output duration must remain close to the one-second source");
+ }
+ console.log("Verified video enhancement cases and audio cleanup through FFmpeg/FFprobe, plus invalid-input rejections.");
+}finally{await rm(root,{recursive:true,force:true})}

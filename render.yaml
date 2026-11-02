@@ -1,0 +1,38 @@
+services:
+  - type: web
+    name: executive-visuals-staging
+    runtime: docker
+    plan: starter
+    region: frankfurt
+    branch: feat/executive-visuals-unified-platform
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    autoDeploy: true
+    healthCheckPath: /api/health
+    disk:
+      name: executive-visuals-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: API_HOST
+        value: 0.0.0.0
+      - key: DATA_DIR
+        value: /var/data
+      - key: DB_FILE
+        value: /var/data/executive-visuals.sqlite
+      - key: MEDIA_ROOT
+        value: /var/data/media
+      - key: WEB_ROOT
+        value: ./dist
+      - key: AUTH_MODE
+        value: supabase
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_PUBLISHABLE_KEY
+        sync: false
+      - key: REQUIRE_PERSISTENT_DATA_DIR
+        value: "true"
+      - key: MAX_UPLOAD_BYTES
+        value: "262144000"
