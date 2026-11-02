@@ -72,7 +72,7 @@ function timelinePreviewPanel(){
  if(!track||!clip||!asset)return '<section class="timeline-preview panel">'+heading+'<div class="preview-empty">Select a video, audio or image clip on the timeline.</div></section>';
  const start=clip.sourceRange.start.value/clip.sourceRange.start.rate,end=start+clip.sourceRange.duration.value/clip.sourceRange.duration.rate;
  const mediaUrl=state.mode==="cloud"?state.previewUrl:'/api/assets/'+encodeURIComponent(asset.id)+'/file';
- if(state.mode==="cloud"&&!mediaUrl)return '<section class="timeline-preview panel">'+heading+'<div class="preview-empty">'+(state.previewError?esc(state.previewError):"Preparing a short-lived private media preview…")+'</div></section>';
+ if(state.mode==="cloud"&&!mediaUrl)return '<section class="timeline-preview panel">'+heading+'<div class="preview-empty">'+(state.previewError?esc(state.previewError)+' <button class="secondary" data-tl-action="preview-refresh">Retry private preview</button>':"Preparing a short-lived private media preview…")+'</div></section>';
  const previewRate=track.kind==="audio"?100:sourceRate(asset,track.kind),isVideoPreview=asset.mediaType.startsWith("video/");
  const media=asset.mediaType.startsWith("video/")?'<video id="tl-preview-media" class="preview-media" controls playsinline preload="metadata" src="'+esc(mediaUrl)+'" data-source-in="'+start+'" data-source-out="'+end+'" data-source-fps="'+previewRate+'"></video>':asset.mediaType.startsWith("audio/")?'<audio id="tl-preview-media" class="preview-audio" controls preload="metadata" src="'+esc(mediaUrl)+'" data-source-in="'+start+'" data-source-out="'+end+'" data-source-fps="'+previewRate+'"></audio>':asset.mediaType.startsWith("image/")?'<img class="preview-still" src="'+esc(mediaUrl)+'" alt="'+esc(asset.name)+'">':'<div class="preview-empty">This media type cannot be previewed.</div>';
  const frameButtons=isVideoPreview?'<button class="secondary" data-tl-action="preview-step-back">−1 frame</button><button class="secondary" data-tl-action="preview-step-forward">+1 frame</button>':'';
@@ -278,6 +278,7 @@ async function runAction(action:HTMLElement){
   }catch(error){state.message=error instanceof Error?error.message:"Render could not be queued.";}
   paint();return;
  }
+ if(type==="preview-refresh"){state.previewKey="";state.previewUrl="";state.previewExpiresAt=0;state.previewError="";state.previewLoading=false;paint();return;}
  if(type.startsWith("preview-")){seekPreview(type);return;}
  if(type==="duplicate-variant"){try{await duplicateTimelineVariant();}catch(error){state.message=error instanceof Error?error.message:"Could not create timeline variant.";}paint();return;}
  if(!state.timeline)return;
