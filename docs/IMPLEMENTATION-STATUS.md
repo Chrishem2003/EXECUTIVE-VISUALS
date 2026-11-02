@@ -390,7 +390,7 @@ This is a runnable worker entry point, not a deployed worker. Do not set the ena
 ## Benchmark schema hardening — 2 November 2026
 
 - Input/output pixel dimensions must be positive integers, not fractional values.
-- SSIM is constrained to [0, 1]; LPIPS is constrained to [0, 1]. PSNR remains a non-negative metric.
+- SSIM is constrained to [0, 1]. PSNR and LPIPS must be finite, non-negative values; no universal upper bound is assumed for LPIPS.
 - Malformed summary input now fails closed as an empty, unverified report rather than throwing.
 - Added tests for fractional dimensions, metric bounds, optional metrics and malformed summary inputs.
 - These are schema and safety checks only. They do not indicate that the required fixture set has been run or that any upscaling model has passed perceptual review.
