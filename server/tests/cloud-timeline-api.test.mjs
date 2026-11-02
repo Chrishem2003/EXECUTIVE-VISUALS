@@ -348,3 +348,23 @@ test("cloud asset cleanup retry is scoped to the verified user identity",async()
  assert.equal(result.body.asset.cleanupPending,false);
  assert.deepEqual(f.calls.find(call=>call[0]==="asset-cleanup-retry")[1],{ownerId:editor,assetId:"723e4567-e89b-42d3-a456-426614174000"});
 });
+
+
+test("cloud asset lineage endpoint returns only the authorized asset ancestry and descendants",async()=>{
+ const original={id:"723e4567-e89b-42d3-a456-426614174000",ownerId:owner,projectId:project,name:"original.png",mediaType:"image/png",size:100,sha256:"a".repeat(64),derivativeOf:null,metadata:{}};
+ const enhanced={id:"823e4567-e89b-42d3-a456-426614174000",ownerId:owner,projectId:project,name:"enhanced.png",mediaType:"image/png",size:200,sha256:"b".repeat(64),derivativeOf:original.id,metadata:{operation:"media.ai-upscale"}};
+ const api=createCloudTimelineApi({url:"https://example.supabase.co",serviceRoleKey:"service-secret",timelineService:{timelines:{},assets:{
+  async get(input){assert.equal(input.ownerId,owner);assert.equal(input.assetId,enhanced.id);return enhanced;},
+  async list(input){assert.equal(input.ownerId,owner);assert.equal(input.projectId,project);assert.equal(input.limit,100);return[original,enhanced];}
+ }},authorize:async()=>true});
+ const result=await api.handle({method:"GET",path:"/api/cloud/assets/"+enhanced.id+"/lineage",ownerId:owner});
+ assert.equal(result.status,200);assert.equal(result.body.lineage.asset.id,enhanced.id);
+ assert.deepEqual(result.body.lineage.ancestors.map(item=>item.id),[original.id]);
+ assert.deepEqual(result.body.lineage.descendants,[]);
+});
+test("cloud asset lineage endpoint requires a verified account identity",async()=>{
+ let called=false;
+ const api=createCloudTimelineApi({url:"https://example.supabase.co",serviceRoleKey:"service-secret",timelineService:{timelines:{},assets:{async get(){called=true;},async list(){called=true;}}},authorize:async()=>true});
+ const result=await api.handle({method:"GET",path:"/api/cloud/assets/"+timelineId+"/lineage"});
+ assert.equal(result.status,401);assert.equal(called,false);
+});
