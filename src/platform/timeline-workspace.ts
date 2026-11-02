@@ -287,7 +287,7 @@ document.addEventListener("keydown",event=>{
  if(!action||("disabled" in action&&(action as HTMLButtonElement).disabled))return;
  event.preventDefault();void runAction(action);
 });
-document.addEventListener("submit",event=>{
+document.addEventListener("submit",async event=>{
  const form=event.target as HTMLFormElement;if(!state.timeline)return;
  if(form.id==="tl-add-track"){
   event.preventDefault();const data=new FormData(form),name=String(data.get("name")||"").trim(),kind=String(data.get("kind")||"video") as TimelineTrack["kind"];
