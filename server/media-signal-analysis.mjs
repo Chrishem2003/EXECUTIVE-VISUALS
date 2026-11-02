@@ -45,7 +45,7 @@ export function parseAudioMetrics(stderr=""){
  const peaks=[...text.matchAll(/Peak level dB:\s*(-?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)|-inf)/gi)].map(match=>match[1].toLowerCase()==="-inf"?null:Number(match[1]));
  const rms=[...text.matchAll(/RMS level dB:\s*(-?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)|-inf)/gi)].map(match=>match[1].toLowerCase()==="-inf"?null:Number(match[1]));
  const integrated=[...text.matchAll(/^\s*I:\s*(-?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+))\s*LUFS/gm)].map(match=>Number(match[1])).filter(Number.isFinite);
- const truePeaks=[...text.matchAll(/True peak:\\s*(-?(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+))\\s*dBFS/gi)].map(match=>Number(match[1])).filter(Number.isFinite);
+ const truePeaks=[...text.matchAll(/True peak:\s*(-?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+))\s*dBFS/gi)].map(match=>Number(match[1])).filter(Number.isFinite);
  return {clippedSamples:clipped.length?Math.max(...clipped):null,peakDbfs:peaks.length?peaks.at(-1):null,truePeakDbtp:truePeaks.length?truePeaks.at(-1):null,rmsDbfs:rms.length?rms.at(-1):null,integratedLufs:integrated.length?integrated.at(-1):null};
 }
 export function buildAudioMetricFindings(metrics={}){
@@ -55,7 +55,6 @@ export function buildAudioMetricFindings(metrics={}){
  if(Number.isFinite(metrics.truePeakDbtp)&&metrics.truePeakDbtp>=-1)findings.push({code:"AUDIO_TRUE_PEAK_NEAR_LIMIT",severity:"warning",truePeakDbtp:metrics.truePeakDbtp,message:"Measured true peak is above -1 dBTP; review the delivery headroom requirement."});
  return findings;
 }
-
 export async function runOptionalSignalCheck(check,{isCancelled=()=>false}={}) {
  try {
   return {status:"completed",result:await check()};
