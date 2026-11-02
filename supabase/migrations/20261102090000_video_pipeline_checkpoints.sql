@@ -44,9 +44,41 @@ begin
   ) then
     raise exception 'VIDEO_PIPELINE_CHECKPOINT_SOURCE_SCOPE_INVALID';
   end if;
+  if coalesce(new.output_json ->> 'id', '') !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}
+
+create trigger ev_video_pipeline_checkpoints_validate_scope
+before insert on executive_visuals.video_pipeline_checkpoints
+for each row execute function executive_visuals.validate_video_pipeline_checkpoint_scope();
+
+revoke all on function executive_visuals.validate_video_pipeline_checkpoint_scope() from public, anon, authenticated;
+
+     or coalesce(new.output_json ->> 'derivativeOf', '') <> new.input_asset_id::text
+     or coalesce(new.output_json ->> 'mediaType', '') not like 'video/%'
+     or coalesce(new.output_json ->> 'sha256', '') !~* '^[a-f0-9]{64}
+
+create trigger ev_video_pipeline_checkpoints_validate_scope
+before insert on executive_visuals.video_pipeline_checkpoints
+for each row execute function executive_visuals.validate_video_pipeline_checkpoint_scope();
+
+revoke all on function executive_visuals.validate_video_pipeline_checkpoint_scope() from public, anon, authenticated;
+ then
+    raise exception 'VIDEO_PIPELINE_CHECKPOINT_OUTPUT_INVALID';
+  end if;
+  if not exists (
+    select 1 from executive_visuals.assets output_asset
+    where output_asset.id = (new.output_json ->> 'id')::uuid
+      and output_asset.owner_id = new.owner_id
+      and output_asset.project_id = new.project_id
+      and output_asset.derivative_of = new.input_asset_id
+      and output_asset.media_type = new.output_json ->> 'mediaType'
+      and output_asset.sha256 = lower(new.output_json ->> 'sha256')
+      and output_asset.deleted_at is null
+  ) then
+    raise exception 'VIDEO_PIPELINE_CHECKPOINT_OUTPUT_SCOPE_INVALID';
+  end if;
   return new;
 end;
-$$;
+$;
 
 create trigger ev_video_pipeline_checkpoints_validate_scope
 before insert on executive_visuals.video_pipeline_checkpoints
