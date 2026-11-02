@@ -1,4 +1,4 @@
-import { seconds, validateTimeline, type EditorialTimeline } from "./timeline";
+import { seconds, validateTimeline, type EditorialTimeline } from "./timeline.ts";
 
 export interface TimelineVariantChange {
   kind: "added" | "removed" | "changed";
