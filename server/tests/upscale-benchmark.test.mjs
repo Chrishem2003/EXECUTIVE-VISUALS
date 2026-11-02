@@ -5,6 +5,7 @@ import { validateUpscaleBenchmarkRecord, summarizeUpscaleBenchmarks, sha256Hex }
 const digest = char => char.repeat(64);
 const validRecord = overrides => ({
   fixtureId: "portrait-detail-01",
+  fixtureCategory: "portrait",
   model: "realesrgan-x4plus",
   modelVersion: "pinned-local-build",
   binarySha256: digest("a"),
@@ -29,12 +30,13 @@ test("validates pinned inputs, outputs, dimensions and execution metadata", () =
 });
 
 test("rejects missing hashes, malformed digests and unsupported scales", () => {
-  const record = validRecord({ inputSha256: "not-a-hash", outputSha256: "", scale: 8 });
+  const record = validRecord({ inputSha256: "not-a-hash", outputSha256: "", scale: 8, fixtureCategory: "unknown" });
   const result = validateUpscaleBenchmarkRecord(record);
   assert.equal(result.valid, false);
   assert.ok(result.issues.some(issue => issue.includes("inputSha256")));
   assert.ok(result.issues.some(issue => issue.includes("outputSha256")));
   assert.ok(result.issues.some(issue => issue.includes("scale")));
+  assert.ok(result.issues.some(issue => issue.includes("fixtureCategory")));
 });
 
 test("does not equate successful model execution with verified visual quality", () => {
@@ -44,12 +46,16 @@ test("does not equate successful model execution with verified visual quality", 
   assert.equal(summary.qualityVerified, false);
 });
 
-test("quality verification requires every valid record to pass human review", () => {
-  const approved = validRecord({ qualityReview: "reviewed_pass" });
-  const summary = summarizeUpscaleBenchmarks([approved]);
+test("quality verification requires human review and all representative fixture categories", () => {
+  const categories = ["portrait", "fine_texture", "text", "animation", "low_light_noisy"];
+  const approved = categories.map((fixtureCategory, index) => validRecord({ fixtureId: `fixture-${index + 1}`, fixtureCategory, qualityReview: "reviewed_pass" }));
+  const summary = summarizeUpscaleBenchmarks(approved);
   assert.equal(summary.qualityVerified, true);
-  assert.equal(summarizeUpscaleBenchmarks([approved, validRecord({ fixtureId: "text-detail-02", qualityReview: "not_reviewed" })]).qualityVerified, false);
-  assert.equal(summarizeUpscaleBenchmarks([approved, validRecord({ fixtureId: "noisy-detail-03", qualityReview: "reviewed_fail" })]).qualityVerified, false);
+  assert.deepEqual(summary.categoryCoverage.missing, []);
+  assert.equal(summarizeUpscaleBenchmarks([approved[0]]).qualityVerified, false);
+  assert.deepEqual(summarizeUpscaleBenchmarks([approved[0]]).categoryCoverage.missing, categories.slice(1));
+  assert.equal(summarizeUpscaleBenchmarks([...approved, validRecord({ fixtureId: "unreviewed", fixtureCategory: "text", qualityReview: "not_reviewed" })]).qualityVerified, false);
+  assert.equal(summarizeUpscaleBenchmarks([...approved, validRecord({ fixtureId: "rejected", fixtureCategory: "low_light_noisy", qualityReview: "reviewed_fail" })]).qualityVerified, false);
 });
 
 test("invalid records are excluded and prevent a clean quality-verification result", () => {
