@@ -18,8 +18,7 @@ function harness() {
   const fetchImpl = async (url, options = {}) => {
     requests.push({ url, options });
     const parsed = new URL(url);
-    const key = parsed.searchParams.get("owner_id") + ":" + parsed.searchParams.get("project_id") + ":" +
-      parsed.searchParams.get("pipeline_id") + ":" + parsed.searchParams.get("step_id");
+    const key = ["owner_id", "project_id", "pipeline_id", "step_id"].map(name => (parsed.searchParams.get(name) || "").replace(/^eq\\./, "")).join(":");
     if (options.method === "POST") {
       const body = JSON.parse(options.body);
       const rowKey = body.owner_id + ":" + body.project_id + ":" + body.pipeline_id + ":" + body.step_id;
