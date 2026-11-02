@@ -97,3 +97,24 @@ test("rejects SSIM values outside their valid upper bound", () => {
   assert.equal(result.valid, false);
   assert.ok(result.issues.some(issue => issue.includes("ssim must not exceed 1")));
 });
+
+
+test("rejects fractional pixel dimensions", () => {
+  const result = validateUpscaleBenchmarkRecord(validRecord({ inputWidth: 320.5 }));
+  assert.equal(result.valid, false);
+  assert.ok(result.issues.some(issue => issue.includes("integer pixel dimension")));
+});
+
+test("enforces normalized metric ranges and accepts absent optional metrics", () => {
+  assert.equal(validateUpscaleBenchmarkRecord(validRecord({ metrics: { psnr: 0, ssim: 0, lpips: 1 } })).valid, true);
+  assert.equal(validateUpscaleBenchmarkRecord(validRecord({ metrics: { ssim: -0.1 } })).valid, false);
+  assert.equal(validateUpscaleBenchmarkRecord(validRecord({ metrics: { lpips: 1.01 } })).valid, false);
+  assert.equal(validateUpscaleBenchmarkRecord(validRecord({ metrics: {} })).valid, true);
+});
+
+test("summary fails closed for a non-array input", () => {
+  const summary = summarizeUpscaleBenchmarks(null);
+  assert.equal(summary.recordCount, 0);
+  assert.equal(summary.qualityVerified, false);
+  assert.equal(summary.validRecordCount, 0);
+});
