@@ -68,3 +68,10 @@ To enable the cloud workflow, review and explicitly apply the new migration to t
 
 
 The cloud AI-upscale worker now emits the same benchmark-compatible provenance schema as the local worker: versioned source asset identity, source and output SHA-256, pinned model build identity, source/output dimensions, execution duration, decoder verification, and an explicit `not_reviewed` quality state. The cloud benchmark fixture/run API therefore consumes actual cloud worker derivatives rather than accepting manually fabricated records.
+
+
+## Cloud AI-upscale job submission
+
+The Enhancement Lab can now queue a cloud `media.ai-upscale` job from a private project PNG, JPEG or WebP source. `POST /api/cloud/upscale` requires project editor access, explicit media-rights confirmation, an allowlisted Real-ESRGAN model, bounded scale/tile settings, a supported output format, and an idempotency key. The server writes a durable queued job and a `job.queued` event; it does not invoke the model or provider in the request handler.
+
+`GET /api/cloud/upscale-jobs?projectId=...` lists the project's durable worker status and output receipts. When the separately configured cloud media worker is enabled and has its executable/model files installed, it claims the job, validates the image, publishes a separate derivative, and records the benchmark-compatible provenance. The UI offers private source/result previews and refreshable job history. A queued job is not proof that a worker is enabled or that inference completed.
