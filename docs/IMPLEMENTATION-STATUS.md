@@ -360,3 +360,12 @@ This is a runnable worker entry point, not a deployed worker. Do not set the ena
 - Findings are severity-labelled as errors, warnings or information. The panel gives editors concrete issue descriptions before master export.
 - These checks are advisory except for missing picture, missing source assets and source ranges exceeding known media duration. The existing server-side timeline validator and render path remain authoritative; the client panel cannot authorize or bypass rendering.
 - This adds no provider calls, paid services, production migrations or deployment.
+
+
+## Upscaling benchmark evidence contract — 2 November 2026
+
+- Added `server/upscale-benchmark.mjs` to validate reproducible benchmark records: fixture/model identity, executable/model/input/output SHA-256 digests, input/output dimensions, scale, elapsed time, execution status, review state and optional non-negative PSNR/SSIM/LPIPS values.
+- Added a summary that reports execution results separately from quality review. A successful process is not quality-verified; quality verification remains false until every included record is valid, successfully executed and human-reviewed as passing.
+- Added automated tests for invalid hashes, unsupported scales, malformed records, failed execution, pending review and rejected visual review.
+- Added the benchmark contract tests to the normal build verification pipeline. These tests require no GPU, large model download, external provider or paid service.
+- This is the auditable report contract and gate, not a claim that an image benchmark has already been run. A real fixture corpus and actual model outputs still need to be collected and reviewed before quality can be verified.
