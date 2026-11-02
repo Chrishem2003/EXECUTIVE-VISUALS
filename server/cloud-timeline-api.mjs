@@ -10,6 +10,7 @@ import { createCloudTimelineService } from "./cloud-timeline-service.mjs";
 
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const safeId=(value)=>typeof value==="string"&&UUID.test(value);
+const stableJson=value=>Array.isArray(value)?"["+value.map(stableJson).join(",")+"]":value&&typeof value==="object"?"{"+Object.keys(value).sort().map(key=>JSON.stringify(key)+":"+stableJson(value[key])).join(",")+"}":JSON.stringify(value);
 
 /**
  * Authenticated cloud timeline API. The caller must pass the user ID returned
@@ -115,7 +116,7 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     const existing=await request("jobs?select=id,owner_id,project_id,job_type,status,input,estimated_cost,approved_by,approved_at,created_at,updated_at&owner_id=eq."+encodeURIComponent(ownerId)+"&idempotency_key=eq."+encodeURIComponent(key)+"&limit=1");
     if(Array.isArray(existing)&&existing[0]){
      const row=existing[0];
-     if(row.job_type!=="video.transform.plan"||JSON.stringify(row.input)!==JSON.stringify(input))return response(409,{error:{code:"IDEMPOTENCY_CONFLICT",message:"This idempotency key was used for a different transformation."}});
+     if(row.job_type!=="video.transform.plan"||stableJson(row.input)!==stableJson(input))return response(409,{error:{code:"IDEMPOTENCY_CONFLICT",message:"This idempotency key was used for a different transformation."}});
      return response(200,{plan:mapTransformation(row),idempotentReplay:true});
     }
     const id=randomUUID(),rows=await request("jobs?select=id,owner_id,project_id,job_type,status,input,estimated_cost,approved_by,approved_at,created_at,updated_at",{method:"POST",body:{id,owner_id:ownerId,project_id:projectId,job_type:"video.transform.plan",status:"draft",progress:0,input,idempotency_key:key}});
