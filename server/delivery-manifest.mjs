@@ -75,8 +75,8 @@ export function createDeliveryPackage({
   try { downloadUrl = new URL(master.downloadUrl); if (downloadUrl.protocol !== "https:" || downloadUrl.username || downloadUrl.password || downloadUrl.hash) fail("The master download URL is unsafe."); }
   catch { fail("The master download URL is invalid."); }
   if (master.downloadUrlExpiresInSeconds !== 300) fail("The master download URL must have the five-minute expiry contract.");
-  if (renderManifest !== deliveryReceipt.renderManifest || !verifyRenderManifest(renderManifest)) fail("The render manifest must be the verified manifest bound into the receipt.");
-  if (deliveryReport !== deliveryReceipt.deliveryReport) fail("The delivery report must match the receipt.");
+  if (canonical(renderManifest) !== canonical(deliveryReceipt.renderManifest) || !verifyRenderManifest(renderManifest)) fail("The render manifest must be the verified manifest bound into the receipt.");
+  if (canonical(deliveryReport) !== canonical(deliveryReceipt.deliveryReport)) fail("The delivery report must match the receipt.");
   if (!Array.isArray(reviewHistory) || reviewHistory.length > 1000 || reviewHistory.some(item => !plain(item) || item.fingerprint !== deliveryReceipt.fingerprint)) fail("Review history must contain only decisions for this delivery fingerprint.");
   if (typeof generatedAt !== "string" || !Number.isFinite(Date.parse(generatedAt)) || new Date(generatedAt).toISOString() !== generatedAt) fail("A valid package timestamp is required.");
   const evidence = {
