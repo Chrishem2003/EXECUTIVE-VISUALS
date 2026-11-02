@@ -130,9 +130,11 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
     const input = parseInput(job.input ?? job.input_json);
     const sourceId = String(input.sourceAssetId || "");
     if (!sourceId) throw Object.assign(new Error("Cloud media job requires a source asset."), { code: "SOURCE_ASSET_NOT_FOUND" });
-    const materialized = await mediaIO.materialize({ ownerId: job.owner_id, assetId: sourceId });
-    const directory = tempRoot || undefined;
-    const workDir = await mkdtemp(join(tempRoot || tmpdir(), "ev-cloud-job-"));
+    const materialized = await mediaIO.materialize({ ownerId: job.owner_id, assetId: sourceId, ...(signal ? { signal } : {}) });
+    let workDir = null;
+    try {
+    if (signal?.aborted) throw Object.assign(new Error("Media job was cancelled."), { code: "JOB_CANCELLED" });
+    workDir = await mkdtemp(join(tempRoot || tmpdir(), "ev-cloud-job-"));
     const extension = extname(materialized.asset.name || "").slice(0, 12);
     const sourcePath = join(workDir, "source" + extension);
     const outputExtension = job.job_type === "media.ai-upscale" ? String(input.format || "png")
@@ -142,7 +144,6 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
       : ["media.denoise", "media.color", "media.resize", "media.interpolate", "media.upscale", "media.proxy"].includes(job.job_type) ? "mp4"
       : String(input.container || "mp4").toLowerCase();
     const outputPath = join(workDir, randomUUID() + "." + outputExtension);
-    try {
       if (job.job_type === "media.ai-upscale" && input.sourceSha256) {
         if (input.sourceSha256 !== materialized.asset.sha256) {
           throw Object.assign(new Error("The stored source fingerprint changed after the AI-upscale job was queued."), { code: "AI_UPSCALE_SOURCE_CHANGED" });
@@ -211,6 +212,7 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
           decoderVerified: true,
           qualityReview: "not_reviewed"
         };
+        if (signal?.aborted) throw Object.assign(new Error("Media job was cancelled."), { code: "JOB_CANCELLED" });
         const asset = await mediaIO.publish({
           ownerId: job.owner_id, projectId: job.project_id || null, filename: plan.name,
           mediaType, path: outputPath, derivativeOf: sourceId,
@@ -319,6 +321,7 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
         audioPreserved: sourceAudioStreamCount === null ? null : sourceAudioStreamCount === 0 || (outputProbe?.streams || []).some(stream => stream.codec_type === "audio"),
         outputVideo: outputProbe?.streams?.find(stream => stream.codec_type === "video") || null
       } : null;
+      if (signal?.aborted) throw Object.assign(new Error("Media job was cancelled."), { code: "JOB_CANCELLED" });
       const asset = await mediaIO.publish({
         ownerId: job.owner_id,
         projectId: job.project_id || null,
@@ -332,7 +335,7 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
       return { sourceAssetId: sourceId, outputAsset: asset, sha256: digest, byteSize: info.size, operation: job.job_type, ...(processing ? { processing } : {}) };
     } finally {
       await materialized.cleanup?.().catch(() => {});
-      await rm(workDir, { recursive: true, force: true }).catch(() => {});
+      if (workDir) await rm(workDir, { recursive: true, force: true }).catch(() => {});
     }
   };
 }
