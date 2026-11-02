@@ -67,6 +67,25 @@ export function trimClip(timeline:EditorialTimeline,trackId:string,clipId:string
   const changed={...clip,sourceRange:{start:rational(clip.sourceRange.start.value+sourceLeft,clip.sourceRange.start.rate),duration:rational(sourceRemaining,clip.sourceRange.duration.rate)},timelineStart:rational(clip.timelineStart.value+removeLeft,clip.timelineStart.rate),duration:rational(remaining,fps)};
   return {...timeline,revision:timeline.revision+1,updatedAt:new Date().toISOString(),tracks:timeline.tracks.map(item=>item.id===trackId?{...item,clips:item.clips.map(c=>c.id===clipId?changed:c)}:item)};
 }
+/** Remove a clip; ripple mode closes the gap on this track only. */
+export function removeClip(timeline:EditorialTimeline,trackId:string,clipId:string,ripple=false):EditorialTimeline{
+  const track=timeline.tracks.find(item=>item.id===trackId);
+  if(!track)throw new Error("Track not found.");
+  if(track.locked)throw new Error("Track is locked.");
+  const clip=track.clips.find(item=>item.id===clipId);
+  if(!clip)throw new Error("Clip not found.");
+  const removedStart=seconds(clip.timelineStart),removedDuration=seconds(clip.duration),removedEnd=removedStart+removedDuration;
+  const fps=timeline.frameRate.numerator/timeline.frameRate.denominator;
+  const clips=track.clips.filter(item=>item.id!==clipId).map(item=>{
+    if(!ripple||seconds(item.timelineStart)<removedEnd-0.000001)return item;
+    const shifted=Math.max(0,Math.round((seconds(item.timelineStart)-removedDuration)*fps));
+    return {...item,timelineStart:rational(shifted,fps)};
+  }).sort((a,b)=>seconds(a.timelineStart)-seconds(b.timelineStart));
+  const updated={...timeline,revision:timeline.revision+1,updatedAt:new Date().toISOString(),tracks:timeline.tracks.map(item=>item.id===trackId?{...item,clips}:item)};
+  const validation=validateTimeline(updated);
+  if(!validation.valid)throw new Error(validation.issues[0].message);
+  return updated;
+}
 export function splitClip(timeline:EditorialTimeline,trackId:string,clipId:string,atFrame:number,newClipId:string):EditorialTimeline{
   const track=timeline.tracks.find(item=>item.id===trackId);if(!track)throw new Error("Track not found.");
   if(track.locked)throw new Error("Track is locked.");
