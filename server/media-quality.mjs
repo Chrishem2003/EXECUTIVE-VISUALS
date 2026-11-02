@@ -34,3 +34,8 @@ export function buildMediaQualityReport(metadata={},options={}) {
     limitations:[...(signal.limitations||[]),"Signal detection is heuristic; intentional black frames and silence may need human review.","Audio clipping and peak warnings use FFmpeg astats metrics; integrated loudness is reported when available but no universal delivery target is assumed.","True-peak compliance, synchronization, colour accuracy and perceptual quality are not assessed.","Scene-change timestamps are heuristic edit markers, not a semantic scene understanding or edit recommendation."]
   };
 }
+
+
+export function attachMediaQualityReport(metadata={},options={}) {
+  return {...metadata,qualityReport:buildMediaQualityReport(metadata,options)};
+}
