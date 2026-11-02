@@ -149,7 +149,7 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
      const approval={schemaVersion:1,approvalId:randomUUID(),planHash,estimatedCostMicros:estimate,approvedBudgetMicros:budget,currency,adapterId,capability};
      const updated=await request("jobs?id=eq."+encodeURIComponent(row.id)+"&status=eq.draft&approved_at=is.null",{method:"PATCH",body:{status:"awaiting_approval",estimated_cost:approval,approved_by:ownerId,approved_at:new Date().toISOString(),updated_at:new Date().toISOString()}});
      if(!Array.isArray(updated)||updated.length!==1)return response(409,{error:{code:"TRANSFORMATION_STATE_CONFLICT",message:"Transformation plan changed while approval was recorded."}});
-     await request("job_events",{method:"POST",body:{job_id:row.id,owner_id:row.owner_id,event_type:"transformation.approved",event_data:{approvalId:approval.approvalId,estimatedCostMicros:estimate,currency}}});
+     await request("job_events",{method:"POST",body:{job_id:row.id,owner_id:row.owner_id,event_type:"transformation.approved",event_data:{approvalId:approval.approvalId,planHash,estimatedCostMicros:estimate,currency}}});
      return response(200,{plan:mapTransformation(updated[0])});
     }
     if(cloudTransformationMatch[2]==="submit"&&method==="POST"){
