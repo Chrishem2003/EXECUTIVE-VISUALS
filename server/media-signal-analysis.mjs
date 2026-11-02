@@ -50,7 +50,7 @@ export function parseAudioMetrics(stderr=""){
 export function buildAudioMetricFindings(metrics={}){
  const findings=[];
  if(Number(metrics.clippedSamples)>0)findings.push({code:"AUDIO_CLIPPING",severity:"warning",clippedSamples:Number(metrics.clippedSamples),message:"Clipped audio samples were reported by the signal analyzer."});
- if(Number.isFinite(metrics.peakDbfs)&&metrics.peakDbfs>=-1)findings.push({code:"AUDIO_PEAK_NEAR_FULL_SCALE",severity:"warning",peakDbfs:metrics.peakDbfs,message:"Audio peaks are within 1 dB of full scale; review true-peak and delivery headroom."});
+ if(Number.isFinite(metrics.peakDbfs)&&metrics.peakDbfs>=-1)findings.push({code:"AUDIO_PEAK_NEAR_FULL_SCALE",severity:"warning",peakDbfs:metrics.peakDbfs,message:"Sample peaks are within 1 dB of full scale; review true-peak and delivery headroom."});\n if(Number.isFinite(metrics.truePeakDbtp)&&metrics.truePeakDbtp>=-1)findings.push({code:"AUDIO_TRUE_PEAK_NEAR_LIMIT",severity:"warning",truePeakDbtp:metrics.truePeakDbtp,message:"Measured true peak is above -1 dBTP; review the delivery headroom requirement."});
  return findings;
 }
 
