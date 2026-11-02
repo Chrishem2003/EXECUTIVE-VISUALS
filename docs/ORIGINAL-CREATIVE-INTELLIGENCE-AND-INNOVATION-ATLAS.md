@@ -75,7 +75,7 @@ Even a conservative subset of these dimensions yields thousands of possible crea
 35. **Silence as an editorial tool** — find moments where removing sound increases impact.
 
 ### 5. Editorial and adaptive storytelling
-36. **Intent-aware timeline** — connect every clip to the beat or promise it serves.
+36. **Intent-aware timeline** — IMPLEMENTED FOUNDATION: timeline clip inspector records story beat, audience promise, shot purpose, proof/source reference and creative decision note; coverage analysis identifies missing anchors. This is explicit editorial annotation, not inferred scene understanding.
 37. **Branching edit versions** — explore alternative openings or endings without overwriting the master.
 38. **Semantic edit search** — find moments by spoken phrase, visual subject, action, emotion or timecode.
 39. **Change-impact map** — show which scenes, captions, dubs and exports become stale after an edit.
