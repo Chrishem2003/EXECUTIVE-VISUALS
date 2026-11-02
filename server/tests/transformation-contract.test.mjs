@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { assertTransformationCapabilities, normalizeVideoTransformationRequest, VideoTransformationValidationError } from "../transformation-contract.mjs";
+import { assertTransformationCapabilities, createTransformationProvenance, normalizeVideoTransformationRequest, VideoTransformationValidationError } from "../transformation-contract.mjs";
 const sourceAsset={id:"source-video-1",media_type:"video/mp4",sha256:"a".repeat(64)};
 const consent={rightsConfirmed:true,subjectConsentConfirmed:true};
 const base={sourceAsset,operation:"vehicle_replace",targetDescription:"Replace the blue hatchback with a metallic graphite electric SUV",prompt:"Replace only the vehicle. Match perspective, reflections, lighting and road contact.",consent};
@@ -38,4 +38,14 @@ test("accepts only capabilities explicitly declared by the selected adapter",()=
 test("requires explicit subject consent for person replacement even with technical capability",()=>{
  const request=normalizeVideoTransformationRequest({...base,operation:"person_replace",consent:{rightsConfirmed:true,subjectConsentConfirmed:true}});
  assert.equal(assertTransformationCapabilities(request,{operations:["person_replace"],maxDurationSeconds:10,maxReferenceImages:4,preserves:["camera_motion","timing","composition","source_audio"]}),true);
+});
+
+test("records source lineage and a stable hash from a normalized draft",()=>{
+ const request=normalizeVideoTransformationRequest({...base,requestId:"transform-1"});
+ const provenance=createTransformationProvenance(request,{provider:"unselected",model:"unselected"});
+ assert.equal(provenance.requestId,"transform-1");
+ assert.equal(provenance.sourceAssetId,sourceAsset.id);
+ assert.equal(provenance.sourceSha256,sourceAsset.sha256);
+ assert.equal(provenance.executionSubmitted,false);
+ assert.match(provenance.requestHash,/^[a-f0-9]{64}$/);
 });
