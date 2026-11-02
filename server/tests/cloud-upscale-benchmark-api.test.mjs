@@ -25,8 +25,11 @@ function setup({memberRole="reviewer",runCount=1}={}){
   else if(path.startsWith("upscale_benchmark_fixtures")&&method==="GET"){result=rows.fixture?[{id:rows.fixture.id,source_asset_id:rows.fixture.source_asset_id,source_sha256:rows.fixture.source_sha256,fixture_category:rows.fixture.fixture_category}]:[];}
   else if(path.startsWith("upscale_benchmark_runs")&&method==="POST"){const b=JSON.parse(options.body);rows.run={...b,reviewer_id:null,review_decision:null,created_at:"2026-11-02T12:02:00.000Z"};result=[{id:b.id,created_at:rows.run.created_at}];}
   else if(path.startsWith("upscale_benchmark_runs")&&method==="GET"){
-   if(rows.run&&url.searchParams.get("limit")==="1000"&&runCount>1)result=Array.from({length:runCount},(_,index)=>({...rows.run,id:"823e4567-e89b-42d3-a456-"+String(index+1).padStart(12,"0"),record:{...rows.run.record,fixtureId:"923e4567-e89b-42d3-a456-"+String(index+1).padStart(12,"0")}}));
-   else result=rows.run?[{id:rows.run.id,owner_id:rows.run.owner_id,record:rows.run.record,reviewer_id:rows.run.reviewer_id,asset_id:rows.run.asset_id,fixture_id:rows.run.fixture_id,review_decision:rows.run.review_decision,review_note:rows.run.review_note,reviewed_at:rows.run.reviewed_at,created_at:rows.run.created_at}]:[];
+   if(rows.run&&runCount>1){
+    const all=Array.from({length:runCount},(_,index)=>({...rows.run,id:"823e4567-e89b-42d3-a456-"+String(index+1).padStart(12,"0"),record:{...rows.run.record,fixtureId:"923e4567-e89b-42d3-a456-"+String(index+1).padStart(12,"0")}}));
+    const offset=Number(url.searchParams.get("offset")||0),limit=Number(url.searchParams.get("limit")||all.length);
+    result=all.slice(offset,offset+limit);
+   }else result=rows.run?[{id:rows.run.id,owner_id:rows.run.owner_id,record:rows.run.record,reviewer_id:rows.run.reviewer_id,asset_id:rows.run.asset_id,fixture_id:rows.run.fixture_id,review_decision:rows.run.review_decision,review_note:rows.run.review_note,reviewed_at:rows.run.reviewed_at,created_at:rows.run.created_at}]:[];
   }
   else if(path.startsWith("upscale_benchmark_runs")&&method==="PATCH"){const b=JSON.parse(options.body);if(rows.run&&!rows.run.reviewer_id){Object.assign(rows.run,b);result=[rows.run];}}
   else if(path==="jobs"&&method==="POST"){const b=JSON.parse(options.body);const row={...b,output:null,error:null,created_at:"2026-11-02T12:03:00.000Z",updated_at:"2026-11-02T12:03:00.000Z"};rows.jobs.push(row);result=[row];}
