@@ -30,7 +30,8 @@ try{
  assert.equal(asset.mediaType,"text/vtt");
  assert.equal(asset.metadata.segmentCount,2);
  assert.equal(asset.metadata.durationSeconds,2.4);
- assert.equal(asset.metadata.captionValidation.status,"passed");
+ assert.equal(asset.metadata.captionValidation.status,"review");
+ assert.ok(asset.metadata.captionValidation.findings.some(item=>item.code==="CAPTION_READING_SPEED_HIGH"));
  assert.equal(asset.metadata.captionValidation.cueCount,2);
  const row=db.prepare("SELECT * FROM assets WHERE id=?").get(asset.id);
  assert.equal(row.media_type,"text/vtt");
