@@ -31,7 +31,7 @@ test("cloud timeline executor materializes all unique sources and publishes a re
  assert.deepEqual(cleanups.sort(),["asset-a","asset-b"]);
  assert.equal(published[0].ownerId,owner);assert.equal(published[0].projectId,project);
  assert.equal(published[0].metadata.timelineRevision,7);assert.equal(published[0].metadata.renderManifest.timelineRevision,"7");assert.equal(published[0].metadata.probe.streams[0].codec_name,"h264");assert.equal(published[0].metadata.render.durationSeconds,12);assert.equal(published[0].content,"final-master");
- assert.equal(result.outputAsset.id,"master-asset");assert.equal(result.byteSize,12);assert.equal(result.timelineRevision,7);assert.equal(result.renderManifest.timelineRevision,"7");assert.equal(result.probeValidation.validatedStreamType,"video");assert.equal(result.deliveryManifest.output.assetId,"master-asset");assert.equal(result.deliveryManifest.output.sha256,result.sha256);assert.equal(verifyDeliveryManifest(result.deliveryManifest),true);
+ assert.equal(result.outputAsset.id,"master-asset");assert.equal(result.byteSize,12);assert.equal(result.timelineRevision,7);assert.equal(result.renderManifest.timelineRevision,"7");assert.equal(result.probeValidation.validatedStreamType,"video");assert.equal(result.deliveryManifest.outputAsset,"master-asset");assert.equal(result.deliveryManifest.sha256,result.sha256);assert.equal(result.deliveryManifest.byteSize,result.byteSize);assert.equal(verifyDeliveryManifest(result.deliveryManifest),true);
  await rm(root,{recursive:true,force:true});
 });
 
