@@ -223,3 +223,5 @@
 @media(max-width:600px){.asset-comparison-grid img{height:120px}}
 
 .review-target{padding:8px 10px;border:1px solid var(--line);border-radius:6px;color:var(--muted);font-size:10px;background:#0e1520}
+
+.episode-shot-details{margin:10px 0 6px 10px;border:1px solid #302a45;border-radius:7px;background:#100c1d;overflow:hidden}.episode-shot-details>summary{cursor:pointer;list-style:none;padding:10px 12px;color:#c4b5fd;font-size:9px;font-weight:700;letter-spacing:.35px}.episode-shot-details>summary::-webkit-details-marker{display:none}.episode-shot-details>summary:before{content:'＋';display:inline-block;margin-right:8px;color:#a78bfa}.episode-shot-details[open]>summary:before{content:'−'}.episode-shot-details[open]>summary{border-bottom:1px solid #302a45}.episode-shot-details .shot-direction{margin-left:8px!important}
