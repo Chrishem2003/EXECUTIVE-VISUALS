@@ -99,7 +99,10 @@ a dedicated checkpoint table in the isolated `executive_visuals` schema. It is
 server-role-only, RLS-enabled, immutable to client roles, size-bounded, and unique
 per owner/project/pipeline/step and owner/idempotency key. A database trigger verifies
 that the active project and source video belong to the same owner and project before
-a checkpoint can be inserted.
+a checkpoint can be inserted. It also verifies that the output receipt resolves to an
+active derivative asset in the same owner/project scope, with the exact parent asset,
+media type and SHA-256 recorded in the receipt; a JSON claim alone cannot establish
+that a cloud render was actually persisted.
 
 The server repository in `server/cloud-video-pipeline-checkpoints.mjs` writes with
 duplicate-ignore semantics and reads back the durable receipt. It rejects mismatched
