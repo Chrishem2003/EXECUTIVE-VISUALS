@@ -159,7 +159,7 @@ async function loadCloudWorkspace(){
   const savedSeries=savedProduction?.seriesPlans;
   if(Array.isArray(savedSeries)){state.seriesPlans=savedSeries;state.activeSeriesId=selectedCloudProject?.settings?.creativeProduction?.activeSeriesId||savedSeries[0]?.id||"";}
   const query=state.cloudProjectId?"?projectId="+encodeURIComponent(state.cloudProjectId):"";
-  const assets=await apiRequest<{assets:Array<{id:string;name:string;mediaType:string;size:number;sha256:string;createdAt:string;derivativeOf?:string|null;metadata?:{processing?:{schemaVersion?:number;model?:string}}}>}>("/api/cloud/assets"+query);
+  const assets=await apiRequest<{assets:Array<{id:string;name:string;mediaType:string;size:number;sha256:string;createdAt:string;derivativeOf?:string|null;metadata?:{processing?:CloudProcessingEvidence&{schemaVersion?:number}}}>}>("/api/cloud/assets"+query);
   state.cloudAssets=assets.assets||[];
   await loadTransformationPlans(state.cloudProjectId);
   await loadTransformationReadiness(state.cloudProjectId);
