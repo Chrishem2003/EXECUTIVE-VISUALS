@@ -4,6 +4,7 @@ export type SourceMediaStatus = "passed" | "review" | "blocked" | "not_run";
 export interface SourceMediaAsset {
   id: string;
   name?: string;
+  mediaType?: string;
   size?: number;
   metadata?: Record<string, unknown>;
 }
