@@ -174,6 +174,25 @@ export function openDatabase(filename) {
       created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
     );
     CREATE INDEX IF NOT EXISTS audit_owner_idx ON audit_events(owner_id, id DESC);
+    CREATE TABLE IF NOT EXISTS upscale_benchmark_runs (
+      id TEXT PRIMARY KEY,
+      owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      project_id TEXT REFERENCES projects(id) ON DELETE CASCADE,
+      asset_id TEXT NOT NULL REFERENCES assets(id),
+      fixture_id TEXT NOT NULL,
+      fixture_category TEXT NOT NULL,
+      model TEXT NOT NULL,
+      model_version TEXT NOT NULL,
+      record_json TEXT NOT NULL,
+      reviewer_id TEXT REFERENCES users(id),
+      review_decision TEXT CHECK(review_decision IN ('reviewed_pass','reviewed_fail')),
+      review_note TEXT NOT NULL DEFAULT '',
+      reviewed_at TEXT,
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      UNIQUE(asset_id,fixture_id)
+    );
+    CREATE INDEX IF NOT EXISTS upscale_benchmark_owner_idx ON upscale_benchmark_runs(owner_id,created_at DESC);
+    CREATE INDEX IF NOT EXISTS upscale_benchmark_project_idx ON upscale_benchmark_runs(project_id,created_at DESC);
     CREATE TABLE IF NOT EXISTS timelines (
       id TEXT PRIMARY KEY,
       owner_id TEXT NOT NULL REFERENCES users(id),
