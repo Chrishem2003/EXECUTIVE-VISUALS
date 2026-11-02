@@ -34,15 +34,27 @@ export function validateUpscaleBenchmarkRecord(record) {
   }
   if (record.executionStatus === "passed" && record.outputWidth < record.inputWidth) issues.push("passed output width is smaller than input width");
   if (record.executionStatus === "passed" && record.outputHeight < record.inputHeight) issues.push("passed output height is smaller than input height");
+  if (record.executionStatus === "passed" && Number.isFinite(record.inputWidth) && Number.isFinite(record.inputHeight) &&
+      Number.isInteger(record.scale) && [2, 3, 4].includes(record.scale) &&
+      (record.outputWidth !== record.inputWidth * record.scale || record.outputHeight !== record.inputHeight * record.scale)) {
+    issues.push("passed output dimensions must exactly match the declared scale");
+  }
+  if (record.metrics && typeof record.metrics === "object" && Number.isFinite(record.metrics.ssim) && record.metrics.ssim > 1) {
+    issues.push("metrics.ssim must not exceed 1");
+  }
   return { valid: issues.length === 0, issues };
 }
 
 export function summarizeUpscaleBenchmarks(records) {
   const validRecords = [];
   const invalidRecords = [];
+  const seenFixtureIds = new Set();
   for (const record of records) {
     const validation = validateUpscaleBenchmarkRecord(record);
-    if (validation.valid) validRecords.push(record);
+    const duplicate = typeof record?.fixtureId === "string" && seenFixtureIds.has(record.fixtureId);
+    if (typeof record?.fixtureId === "string") seenFixtureIds.add(record.fixtureId);
+    if (duplicate) validation.issues.push("fixtureId must be unique within a benchmark summary");
+    if (validation.valid && !duplicate) validRecords.push(record);
     else invalidRecords.push({ fixtureId: record?.fixtureId || null, issues: validation.issues });
   }
   const executionPassed = validRecords.filter(record => record.executionStatus === "passed").length;
