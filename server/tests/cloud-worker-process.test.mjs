@@ -50,3 +50,22 @@ test("cloud worker supervisor recovers every pool independently when one recover
  assert.ok(events.some(event=>event.kind==="recovery"&&event.workerIndex===1&&event.count===4));
  assert.ok(events.some(event=>event.kind==="started"));
 });
+
+test("cloud worker supervisor shutdown waits for startup recovery and does not restart timers",async()=>{
+ let releaseRecovery,stopFinished=false,cycles=0;
+ const recoveryGate=new Promise(resolve=>{releaseRecovery=resolve;});
+ const workers=[{
+  async recoverExpired(){await recoveryGate;return 0;},
+  async runCycle(){cycles++;return{claimed:false};}
+ }];
+ const supervisor=createCloudWorkerSupervisor({workers,leaseSeconds:60,heartbeatIntervalMs:10000,pollMs:1000});
+ const starting=supervisor.start();
+ await Promise.resolve();
+ const stopping=supervisor.stop().then(()=>{stopFinished=true;});
+ await Promise.resolve();
+ assert.equal(stopFinished,false);
+ releaseRecovery();
+ await Promise.all([starting,stopping]);
+ assert.equal(stopFinished,true);
+ assert.equal(cycles,0);
+});
