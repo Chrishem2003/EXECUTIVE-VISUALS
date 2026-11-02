@@ -465,3 +465,14 @@ This is a runnable worker entry point, not a deployed worker. Do not set the ena
 - The checklist disappears when all three milestones are complete. It does not create fake projects, upload files, call providers or change cloud/production state.
 - The feature is additive and local-first. Existing project and asset persistence behavior is unchanged.
 - Verification is pending for this continuation; the feature branch will be tested by GitHub Actions before review.
+
+
+## Latest continuation — resumable production dashboard
+
+- Added a command-centre section for continuing recent creative briefs and series plans.
+- Brief cards show their saved style, audience, brief coverage score and a short brief excerpt; series cards show episode and season counts and target runtime.
+- Selecting a brief restores its existing brief and compiled Creative DNA into the AI Director. Selecting a series restores its active series context in the Series Producer.
+- The existing project list in the AI Director now has the same resume action.
+- This dashboard reads the existing browser planning state; it does not claim that these local planning drafts are cloud-persisted. Cloud projects, assets, timelines and jobs remain in their separately authenticated runtime workspace.
+- No provider is invoked, no database migration is applied, and no deployment or production configuration is changed.
+- Verification is pending in GitHub Actions.
