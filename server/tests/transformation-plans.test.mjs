@@ -34,3 +34,11 @@ test("rejects null and array request bodies with a client error",async()=>{const
  assert.throws(()=>createTransformationPlan(f.db,{ownerId:f.owner,body:null,idempotencyKey:"transform-key-008"}),e=>e.code==="TRANSFORMATION_BODY_INVALID");
  assert.throws(()=>createTransformationPlan(f.db,{ownerId:f.owner,body:[],idempotencyKey:"transform-key-009"}),e=>e.code==="TRANSFORMATION_BODY_INVALID");
 }finally{await f.close();}});
+
+
+test("rejects malformed requests and unsupported preservation or parameter fields",async()=>{const f=await fixture();try{
+ assert.throws(()=>createTransformationPlan(f.db,{ownerId:f.owner,body:null,idempotencyKey:"transform-key-008"}),e=>e.code==="TRANSFORMATION_BODY_INVALID");
+ assert.throws(()=>createTransformationPlan(f.db,{ownerId:f.owner,body:{...f.body,unexpectedProviderParameter:"secret"},idempotencyKey:"transform-key-009"}),e=>e.code==="TRANSFORMATION_FIELD_UNSUPPORTED");
+ assert.throws(()=>createTransformationPlan(f.db,{ownerId:f.owner,body:{...f.body,preservation:["camera_motion","invented_constraint"]},idempotencyKey:"transform-key-010"}),e=>e.code==="TRANSFORMATION_PRESERVATION_INVALID");
+ assert.throws(()=>createTransformationPlan(f.db,{ownerId:f.owner,body:{...f.body,referenceAssetIds:"not-an-array"},idempotencyKey:"transform-key-011"}),e=>e.code==="REFERENCE_ASSET_INVALID");
+}finally{await f.close();}});
