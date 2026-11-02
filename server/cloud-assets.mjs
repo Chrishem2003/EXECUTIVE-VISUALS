@@ -173,7 +173,7 @@ export function createCloudAssetRepository({
           validUuid(row.id,"asset ID");
           if(row.project_id) validUuid(row.project_id,"project ID");
           const prefix=(row.project_id||row.owner_id)+"/"+row.id+"/";
-          if(row.storage_bucket!=="executive-visuals-media"||typeof row.object_path!=="string"||!row.object_path.startsWith(prefix)||row.deleted_at==null||Date.parse(row.deleted_at)>=cutoff) {
+          if(row.storage_bucket!=="executive-visuals-media"||typeof row.object_path!=="string"||!row.object_path.startsWith(prefix)||row.deleted_at==null||!Number.isFinite(Date.parse(row.deleted_at))||Date.parse(row.deleted_at)>=cutoff) {
             result.skippedInvalid++;
             continue;
           }
