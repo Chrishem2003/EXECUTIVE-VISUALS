@@ -49,6 +49,14 @@ export function analyzeTimelineQuality(timeline:EditorialTimeline|null,assets:Ti
       finding("DERIVATIVE_SOURCE_HASH_CONFLICT","error","Derivative source checksums conflict","The processing input checksum and asset-level source checksum for “"+clip.name+"” disagree.");
      if(typeof sourceHash!=="string"||! /^[a-f0-9]{64}$/i.test(sourceHash))
       finding("DERIVATIVE_SOURCE_HASH_MISSING","warning","Derivative source checksum is missing","The processing record for “"+clip.name+"” does not contain a valid SHA-256 checksum for its source.");
+     const parentAsset=assets.find(item=>item.id===asset.derivativeOf);
+     if(!parentAsset){
+      finding("DERIVATIVE_PARENT_ASSET_UNAVAILABLE","warning","Derivative parent is not in the loaded project library","The recorded parent for “"+clip.name+"” is not available in the current asset list, so its input checksum cannot be independently cross-checked.");
+     }else if(typeof parentAsset.sha256!=="string"||! /^[a-f0-9]{64}$/i.test(parentAsset.sha256)){
+      finding("DERIVATIVE_PARENT_HASH_UNAVAILABLE","warning","Derivative parent checksum is unavailable","The parent asset for “"+clip.name+"” has no valid persisted SHA-256 checksum for source verification.");
+     }else if(typeof sourceHash==="string"&&/^[a-f0-9]{64}$/i.test(sourceHash)&&sourceHash.toLowerCase()!==parentAsset.sha256.toLowerCase()){
+      finding("DERIVATIVE_SOURCE_PARENT_HASH_MISMATCH","error","Derivative input checksum does not match its parent","The processing input checksum for “"+clip.name+"” differs from the persisted SHA-256 checksum of its recorded parent. Do not use this derivative until its lineage is reconciled.");
+     }
      if(typeof outputHash!=="string"||! /^[a-f0-9]{64}$/i.test(outputHash)||typeof asset.sha256!=="string"||outputHash.toLowerCase()!==asset.sha256.toLowerCase())
       finding("DERIVATIVE_OUTPUT_HASH_UNVERIFIED","warning","Derivative output checksum is unverified","The recorded output checksum for “"+clip.name+"” is missing, malformed or does not match the asset library checksum.");
      if(processing.model||processing.engine||processing.method==="ai-super-resolution"){
