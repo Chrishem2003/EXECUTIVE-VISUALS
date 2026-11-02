@@ -377,3 +377,11 @@ This is a runnable worker entry point, not a deployed worker. Do not set the ena
 - The summary reports category coverage and missing categories. It will not set `qualityVerified` unless every required category has at least one successful, human-reviewed passing fixture, all submitted records are valid, and no record failed execution or review.
 - This is a stricter evidence gate, not evidence that any real model has passed. The actual licensed fixture corpus, pinned model/binary runs, reference metrics and human side-by-side review are still outstanding. Empty or incomplete evidence remains unverified.
 - No model was downloaded or activated; no remote GPU/provider, paid service, production database, storage bucket, Render service or deployment was changed.
+
+
+## Upscale benchmark integrity checks — 2 November 2026
+
+- Successful benchmark records must have output dimensions exactly equal to input dimensions multiplied by the declared 2×, 3×, or 4× factor.
+- Fixture IDs must be unique in a summary so duplicated evidence cannot inflate category coverage.
+- SSIM values above 1 are rejected as invalid evidence.
+- Automated tests cover dimension mismatch, duplicate fixture IDs, and invalid SSIM. These checks validate evidence structure only; they do not replace actual inference, reference-based metrics, or human review.
