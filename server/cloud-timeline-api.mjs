@@ -80,7 +80,8 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     if(!["realesrgan-x4plus","realesrgan-x4plus-anime","realesr-animevideov3","realesrgan-x2plus"].includes(model)||!Number.isInteger(scale)||scale<2||scale>4||!Number.isInteger(tile)||tile<0||tile>512||(tile!==0&&tile<32)||!["png","jpg","webp"].includes(format))return response(400,{error:{code:"UPSCALE_OPTIONS_INVALID",message:"Choose an allowlisted model, scale 2–4, tile 0 or 32–512 and PNG/JPEG/WebP output."}});
     const key=String(idempotencyKey||"").trim().slice(0,180);
     if(key.length<8)return response(400,{error:{code:"IDEMPOTENCY_KEY_REQUIRED",message:"An idempotency key is required for cloud AI upscaling."}});
-    const input={sourceAssetId,model,scale,tile,format,rightsConfirmed:true};
+    if(!/^[a-f0-9]{64}$/i.test(String(source.sha256||"")))return response(422,{error:{code:"UPSCALE_SOURCE_HASH_UNAVAILABLE",message:"The source image has no verified SHA-256 fingerprint."}});
+    const input={sourceAssetId,sourceSha256:source.sha256,model,scale,tile,format,rightsConfirmed:true};
     const existing=await request("jobs?select=id,owner_id,project_id,job_type,status,progress,input,output,error,created_at,updated_at&owner_id=eq."+encodeURIComponent(ownerId)+"&idempotency_key=eq."+encodeURIComponent(key)+"&limit=1");
     if(Array.isArray(existing)&&existing[0]){
      const row=existing[0];
