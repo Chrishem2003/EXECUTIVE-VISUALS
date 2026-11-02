@@ -31,6 +31,12 @@ The provider-neutral contract provides request normalization, supported operatio
 The contract is intentionally non-executing. It does not upload files, accept arbitrary provider URLs, call a remote model, spend credits or claim a generated result. Adapters must declare both supported operations and preservation behavior. Unsupported constraints fail closed.
 
 
+## Workspace draft experience
+
+The Enhancement Lab now includes a Transformation Studio draft form. It loads private cloud-project assets, allows a creator to choose a source video, transformation family, target description, detailed instruction, duration up to 30 seconds, optional private image references and preservation constraints. Source/reference rights are confirmed before a draft can be saved; person replacement also requires explicit subject-consent confirmation.
+
+Drafts are saved in browser planning state and included in the project JSON export. They are visibly labelled **draft / not submitted**. This is a planning interface only: there is no API submission endpoint wired to it, and no provider call or credit spend occurs.
+
 ## Checkpointed finishing pipeline
 
 `server/video-finishing-pipeline.mjs` now orchestrates a provider-neutral sequence of transformation, upscale, frame-rate, HDR, audio finishing and transcode steps. It requires a known estimate for every step, explicit approval and an adequate budget before any remote step can run, exact adapter capability declarations, and a valid derivative receipt whose parent is the immediately preceding asset.
