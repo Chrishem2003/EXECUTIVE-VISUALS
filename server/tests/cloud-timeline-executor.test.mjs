@@ -115,7 +115,7 @@ test("cloud timeline executor publishes a review warning when optional frame ana
  const executor=createCloudTimelineExecutor({
   tempRoot:root,
   timelines:{async get(){return{id:timelineId,projectId:null,revision:1,timeline};}},
-  mediaIO:{async materialize({assetId}){const path=join(root,assetId);await writeFile(path,"source");return{path,asset:{id:assetId},async cleanup(){}};},async publish(args){published.push(args);return{id:"master-unanalysed"};}},
+  mediaIO:{async materialize({assetId}){const path=join(root,assetId);await writeFile(path,"source");return{path,asset:{id:assetId,sha256:"a".repeat(64)},async cleanup(){}};},async publish(args){published.push(args);return{id:"master-unanalysed"};}},
   async renderTimeline({workDir,assets}){const path=join(workDir,"master.mp4");await writeFile(path,"rendered");return{path,filename:"master.mp4",mediaType:"video/mp4",renderManifest:createRenderManifest({timeline,assets,timelineRevision:1})};},
   async probeOutput(){return{format:{duration:"8"},streams:[{codec_type:"video",codec_name:"h264",width:1920,height:1080,avg_frame_rate:"24/1"}]};},
   async analyzeVideo(){throw Object.assign(new Error("sample pass failed"),{code:"MEDIA_PROCESS_FAILED"});}
@@ -135,7 +135,7 @@ test("cloud timeline executor propagates cancellation during temporal analysis a
  const executor=createCloudTimelineExecutor({
   tempRoot:root,
   timelines:{async get(){return{id:timelineId,projectId:null,revision:1,timeline};}},
-  mediaIO:{async materialize({assetId}){const path=join(root,assetId);await writeFile(path,"source");return{path,asset:{id:assetId},async cleanup(){}};},async publish(args){published.push(args);return{id:"must-not-publish"};}},
+  mediaIO:{async materialize({assetId}){const path=join(root,assetId);await writeFile(path,"source");return{path,asset:{id:assetId,sha256:"a".repeat(64)},async cleanup(){}};},async publish(args){published.push(args);return{id:"must-not-publish"};}},
   async renderTimeline({workDir,assets}){const path=join(workDir,"master.mp4");await writeFile(path,"rendered");return{path,filename:"master.mp4",mediaType:"video/mp4",renderManifest:createRenderManifest({timeline,assets,timelineRevision:1})};},
   async probeOutput(){return{format:{duration:"8"},streams:[{codec_type:"video",codec_name:"h264",width:1920,height:1080,avg_frame_rate:"24/1"}]};},
   async analyzeVideo(){controller.abort();throw Object.assign(new Error("cancelled"),{code:"MEDIA_PROCESS_FAILED"});}
