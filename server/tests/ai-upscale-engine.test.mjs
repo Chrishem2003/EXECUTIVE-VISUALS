@@ -4,7 +4,7 @@ import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createRealEsrganAdapter } from "../ai-upscale-engine.mjs";
-import { validateAiUpscaleProbeDimensions } from "../media.mjs";
+import { validateAiUpscaleProbeDimensions, buildAiUpscaleProvenance } from "../media.mjs";
 
 test("AI upscaler is fail-closed when binary and model weights are absent", async () => {
   const adapter = createRealEsrganAdapter({ binaryPath: "/missing/realesrgan", modelDirectory: "/missing/models" });
@@ -167,4 +167,29 @@ test("local AI upscale FFprobe validation requires exact positive integer dimens
     JSON.stringify({streams:[{width:768,height:512.5}]}),
     JSON.stringify({streams:[{width:767,height:512}]})
   ]) assert.throws(()=>validateAiUpscaleProbeDimensions(output,{width:768,height:512}),error=>error.code==="MEDIA_OUTPUT_VALIDATION_FAILED");
+});
+
+
+test("AI upscale provenance binds the exact source, output and pinned model build", () => {
+  const digest = char => char.repeat(64);
+  const result = {
+    engine:"realesrgan-ncnn-vulkan",method:"ai-super-resolution",model:"realesrgan-x4plus",
+    modelVersion:digest("a")+":"+digest("b"),scale:4,tile:128,sourceWidth:320,sourceHeight:240,
+    binarySha256:digest("a"),modelFilesSha256:digest("b"),durationMs:1450
+  };
+  const provenance = buildAiUpscaleProvenance({
+    result,sourceAsset:{id:"source-asset",sha256:digest("c")},outputSha256:digest("d"),
+    durationMs:result.durationMs,dimensions:{width:1280,height:960}
+  });
+  assert.equal(provenance.sourceAssetId,"source-asset");
+  assert.equal(provenance.inputSha256,digest("c"));
+  assert.equal(provenance.outputSha256,digest("d"));
+  assert.equal(provenance.modelVersion,result.modelVersion);
+  assert.equal(provenance.durationMs,1450);
+  assert.equal(provenance.qualityReview,"not_reviewed");
+  assert.equal(provenance.dimensionsVerified,true);
+  assert.throws(()=>buildAiUpscaleProvenance({
+    result,sourceAsset:{id:"source-asset",sha256:"missing"},outputSha256:digest("d"),
+    durationMs:1450,dimensions:{width:1280,height:960}
+  }),error=>error.code==="MEDIA_PROVENANCE_INVALID");
 });
