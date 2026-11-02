@@ -362,3 +362,15 @@
 @media(max-width:500px){.auth-story-copy h1{font-size:36px}.auth-feature-list{grid-template-columns:1fr}.auth-feature-list>div{gap:10px}.auth-panel-wrap{padding:25px 20px}}
 
 @media(max-width:760px){.nav-collapse{display:none}.sidebar-brand-row .brand{flex:1}.mobile-nav-open{flex:0 0 34px}}
+
+
+.timeline-preview{margin:14px 0;background:#0d131d}
+.preview-stage{min-height:180px;max-height:440px;display:grid;place-items:center;background:#070a10;border:1px solid var(--line);border-radius:8px;overflow:hidden;margin:12px 0}
+.preview-media{display:block;width:100%;max-height:420px;object-fit:contain;background:#05070a}
+.preview-audio{width:min(680px,94%);margin:36px auto}
+.preview-still{display:block;max-width:100%;max-height:420px;object-fit:contain}
+.preview-empty{padding:28px 16px;border:1px dashed #465064;border-radius:8px;color:var(--muted);font-size:10px;line-height:1.7;text-align:center;margin:12px 0}
+.preview-transport{display:flex;flex-wrap:wrap;align-items:center;gap:7px;margin:10px 0}
+.preview-transport button{font-size:9px;padding:8px 10px}
+.preview-transport output{margin-left:auto;color:#d8c39a;font:10px ui-monospace,monospace}
+@media(max-width:650px){.preview-stage{min-height:140px}.preview-transport output{width:100%;margin:4px 0 0}}
