@@ -34,7 +34,7 @@
     "verify:ai-upscale": "node --test server/tests/ai-upscale-engine.test.mjs",
     "verify:shot-continuity": "node --test server/tests/shot-continuity.test.mjs",
     "verify:upscale-benchmark": "node --test server/tests/upscale-benchmark.test.mjs",
-    "verify:transformations": "node --test server/tests/transformation-contract.test.mjs server/tests/transformation-plans.test.mjs",
+    "verify:transformations": "node --test server/tests/transformation-contract.test.mjs server/tests/transformation-plans.test.mjs server/tests/transformation-readiness.test.mjs",
     "verify:video-pipeline": "node --test server/tests/video-finishing-pipeline.test.mjs server/tests/sqlite-video-pipeline-checkpoints.test.mjs"
   },
   "devDependencies": {
