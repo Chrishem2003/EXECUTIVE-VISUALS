@@ -26,14 +26,14 @@ test("closes trailing silence against the known media duration",()=>{
 });
 
 test("parses audio clipping, peak, RMS and integrated loudness",()=>{
- const metrics=parseAudioMetrics("Peak level dB: -0.4\nRMS level dB: -18.2\nNumber of samples clipped: 12\n I: -16.7 LUFS\\n True peak: -0.6 dBFS");
+ const metrics=parseAudioMetrics("Peak level dB: -0.4\nRMS level dB: -18.2\nNumber of samples clipped: 12\n I: -16.7 LUFS\n True peak: -0.6 dBFS");
  assert.deepEqual(metrics,{clippedSamples:12,peakDbfs:-0.4,truePeakDbtp:-0.6,rmsDbfs:-18.2,integratedLufs:-16.7});
 });
 test("flags clipped samples and near-full-scale peaks without imposing a loudness target",()=>{
  const findings=buildAudioMetricFindings({clippedSamples:4,peakDbfs:-0.5,truePeakDbtp:-0.4,rmsDbfs:-18,integratedLufs:-16});
  assert.ok(findings.some(item=>item.code==="AUDIO_CLIPPING"));
  assert.ok(findings.some(item=>item.code==="AUDIO_PEAK_NEAR_FULL_SCALE"));
- assert.ok(findings.some(item=>item.code==="AUDIO_TRUE_PEAK_NEAR_LIMIT"));\n assert.equal(findings.length,3);
+ assert.ok(findings.some(item=>item.code==="AUDIO_TRUE_PEAK_NEAR_LIMIT"));
 });
 
 test("records unsupported optional filters without disguising them as clean results",async()=>{
