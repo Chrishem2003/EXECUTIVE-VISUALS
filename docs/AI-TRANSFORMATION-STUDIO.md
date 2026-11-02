@@ -43,7 +43,7 @@ Drafts are saved in browser planning state and included in the project JSON expo
 
 Each successful step is saved as a checkpoint with a deterministic idempotency key derived from the pipeline, step, input asset checksum and normalized settings. A resumed run reuses matching successful checkpoints and refuses stale or conflicting checkpoints. Original media is never passed as an output target; adapters must publish a new derivative through the existing private asset boundary.
 
-The orchestrator is deliberately adapter-injected. It does not submit remote requests, choose providers, download arbitrary URLs or spend credits by itself. Durable checkpoint storage and production adapter wiring remain integration work.
+The orchestrator is deliberately adapter-injected. It does not submit remote requests, choose providers, download arbitrary URLs or spend credits by itself. A local SQLite checkpoint store is now available with owner/project scoping, idempotent writes and conflict detection. The API/worker must still construct it only after the authenticated user’s project write permission has been checked. Cloud-database checkpoint migration and production adapter wiring remain integration work.
 
 ## Quality and review gates
 - Compare original and transformed frames at the start, middle, end and points of fast motion.
