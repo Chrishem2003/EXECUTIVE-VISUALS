@@ -394,3 +394,13 @@ This is a runnable worker entry point, not a deployed worker. Do not set the ena
 - Malformed summary input now fails closed as an empty, unverified report rather than throwing.
 - Added tests for fractional dimensions, metric bounds, optional metrics and malformed summary inputs.
 - These are schema and safety checks only. They do not indicate that the required fixture set has been run or that any upscaling model has passed perceptual review.
+
+
+## AI Transformation Studio foundation — 2 November 2026
+
+- Added a provider-neutral transformation request contract for vehicle, wardrobe, object, background/scene, person, style, object-removal and relighting edits to existing video.
+- Added validation for video source identity/type, optional SHA-256, 1–30 second draft clips, up to four unique reference asset IDs, allowed preservation constraints, source/reference rights confirmation and explicit subject consent for person replacement.
+- Added fail-closed adapter capability checks for supported operations, duration, reference count and requested preservation behavior. Added immutable request provenance hashing.
+- Registered five transformation capabilities in the typed capability atlas and machine-readable catalog; all are marked adapter-required, not provider-ready.
+- Added focused regression tests and a dedicated Transformation Studio design/release document. Corrected the existing audio-recipe test so it no longer expects unsupported parameters to be silently ignored.
+- **Not yet implemented:** provider execution, UI submission, private-media ingestion for remote adapters, asynchronous transform jobs, cost estimation, result download/ingestion, visual QA and production deployment. No paid provider was activated and no media was submitted.
