@@ -45,10 +45,10 @@ function timelinePreviewPanel(){
  const heading='<div class="timeline-panel-heading"><div><div class="eyebrow">SOURCE PREVIEW MONITOR</div><h3>'+(clip?esc(clip.name):'Select a timeline clip')+'</h3></div><small>'+(clip?'Source-range preview':'No clip selected')+'</small></div>';
  if(state.mode==="cloud")return '<section class="timeline-preview panel">'+heading+'<div class="preview-empty">Cloud asset playback is not enabled here yet. An authenticated private-media playback URL is required.</div></section>';
  if(!clip||!asset)return '<section class="timeline-preview panel">'+heading+'<div class="preview-empty">Select a video, audio or image clip on the timeline.</div></section>';
- const start=clip.sourceRange.start.value/clip.sourceRange.start.rate,duration=clip.sourceRange.duration.value/clip.sourceRange.duration.rate,end=start+duration;
+ const start=clip.sourceRange.start.value/clip.sourceRange.start.rate,end=start+clip.sourceRange.duration.value/clip.sourceRange.duration.rate;
  const mediaUrl='/api/assets/'+encodeURIComponent(asset.id)+'/file';
  const media=asset.mediaType.startsWith("video/")?'<video id="tl-preview-media" class="preview-media" controls playsinline preload="metadata" src="'+mediaUrl+'" data-source-in="'+start+'" data-source-out="'+end+'" data-source-fps="'+sourceRate(asset,track.kind)+'"></video>':asset.mediaType.startsWith("audio/")?'<audio id="tl-preview-media" class="preview-audio" controls preload="metadata" src="'+mediaUrl+'" data-source-in="'+start+'" data-source-out="'+end+'" data-source-fps="'+sourceRate(asset,track.kind)+'"></audio>':asset.mediaType.startsWith("image/")?'<img class="preview-still" src="'+mediaUrl+'" alt="'+esc(asset.name)+'">':'<div class="preview-empty">This media type cannot be previewed.</div>';
- const controls=asset.mediaType.startsWith("video/")||asset.mediaType.startsWith("audio/")?'<div class="preview-transport"><button class="secondary" data-tl-action="preview-in">Go to source in</button><button class="secondary" data-tl-action="preview-step-back">−1 frame</button><button class="secondary" data-tl-action="preview-step-forward">+1 frame</button><button class="secondary" data-tl-action="preview-out">Go to source out</button><output id="tl-preview-time">Loading media…</output></div>':'';
+ const controls=asset.mediaType.startsWith("video/")||asset.mediaType.startsWith("audio/")?'<div class="preview-transport"><button class="secondary" data-tl-action="preview-in">Go to source in</button><button class="secondary" data-tl-action="preview-step-back">−1 frame</button><button class="secondary" data-tl-action="preview-step-forward">+1 frame</button><button class="secondary" data-tl-action="preview-out">Go to source out</button><input id="tl-preview-scrub" aria-label="Seek by source frame" type="range" min="0" max="' + Math.max(1,Math.ceil((end-start)*sourceRate(asset,track.kind))) + '" value="0" step="1"><output id="tl-preview-time">Loading media…</output></div>':'';
  return '<section class="timeline-preview panel">'+heading+'<div class="preview-stage">'+media+'</div>'+controls+'<small class="muted">Preview is limited to this clip’s saved source range. Frame stepping uses the probed source frame rate. A verified master render is still required for delivery.</small></section>';
 }
 function seekPreview(action:string){
@@ -57,7 +57,7 @@ function seekPreview(action:string){
  if(!Number.isFinite(start)||!Number.isFinite(end)||!Number.isFinite(rate)||rate<=0)return;
  const target=action==="preview-in"?start:action==="preview-out"?end:stepPreviewSeconds(media.currentTime,action==="preview-step-back"?-1:1,rate,start,end);
  media.currentTime=clampPreviewSeconds(target,start,end);
- const output=document.querySelector<HTMLOutputElement>("#tl-preview-time");if(output)output.value=media.currentTime.toFixed(3)+" s";
+ const output=document.querySelector<HTMLOutputElement>("#tl-preview-time");if(output)output.value=media.currentTime.toFixed(3)+" s";const scrub=document.querySelector<HTMLInputElement>("#tl-preview-scrub");if(scrub){const start=Number(media.dataset.sourceIn),rate=Number(media.dataset.sourceFps);scrub.value=String(Math.max(0,Math.round((media.currentTime-start)*rate)));}
 }
 function clipInspector(){
  if(!state.timeline||!state.selectedClipId)return '<div class="timeline-clip-inspector"><div class="eyebrow">CLIP INSPECTOR</div><p class="muted">Select a clip on the timeline to edit its timing, gain or visual properties.</p></div>';
@@ -327,6 +327,7 @@ document.addEventListener("change",event=>{
   if(input&&Number.isFinite(duration))input.value=String(Math.max(1,Math.floor(duration*fps())));
  }
 });
+document.addEventListener("input",event=>{const target=event.target as HTMLInputElement;if(target.id!=="tl-preview-scrub")return;const media=document.querySelector<HTMLMediaElement>("#tl-preview-media");if(!media)return;const start=Number(media.dataset.sourceIn),end=Number(media.dataset.sourceOut),rate=Number(media.dataset.sourceFps);if(!Number.isFinite(start)||!Number.isFinite(end)||!Number.isFinite(rate)||rate<=0)return;media.currentTime=clampPreviewSeconds(start+Number(target.value)/rate,start,end);});
 document.addEventListener("click",event=>{
  const create=(event.target as HTMLElement).closest<HTMLElement>("[data-tl-create-cloud]");if(create){void createCloudTimeline().catch(error=>{state.message=error instanceof Error?error.message:"Cloud timeline creation failed.";paint();});return;}
  const target=event.target as HTMLElement,select=target.closest<HTMLElement>("[data-tl-select]");
