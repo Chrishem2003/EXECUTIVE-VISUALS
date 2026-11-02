@@ -155,7 +155,7 @@ export function renderTimelineWorkspace(){
  (state.message?'<div class="notice">'+esc(state.message)+'</div>':'')+
  '<div class="timeline-editor-grid"><section class="panel"><div class="eyebrow">SEQUENCE SETTINGS</div><h3>'+(state.timeline?esc(state.timeline.name):"No sequence loaded")+'</h3>'+
  '<form id="tl-add-track"><label>Track name</label><input name="name" required placeholder="Video 2 / Music / Captions"><label>Track type</label><select name="kind"><option value="video">Video</option><option value="audio">Audio</option><option value="overlay">Overlay</option><option value="caption">Captions</option></select><button class="secondary">＋ Add track</button></form>'+
- '<div class="eyebrow" style="margin-top:18px">ADD SOURCE CLIP</div><form id="tl-add-clip"><label>Source asset</label><select id="tl-asset-select" name="assetId" required>'+assetOptions()+'</select><label>Destination track</label><select name="trackId">'+(state.timeline?.tracks.map(t=>'<option value="'+esc(t.id)+'">'+esc(t.name)+'</option>').join("")||"")+'</select><div class="form-grid"><div><label>Timeline start (frames)</label><input name="start" type="number" min="0" value="'+maxEnd()+'"></div><div><label>Source in (source frames)</label><input name="sourceIn" type="number" min="0" value="0"></div><div><label>Duration (timeline frames)</label><input name="duration" type="number" min="1" value="'+(fps()*5)+'"></div></div><button class="primary wide">＋ Place clip on timeline</button></form>'+
+ '<div class="eyebrow" style="margin-top:18px">ADD SOURCE CLIP</div><form id="tl-add-clip"><label>Source asset</label><select id="tl-asset-select" name="assetId" required>'+assetOptions()+'</select><label>Destination track</label><select name="trackId">'+(state.timeline?.tracks.map(t=>'<option value="'+esc(t.id)+'">'+esc(t.name)+'</option>').join("")||"")+'</select><div class="form-grid"><div><label>Timeline start (frames)</label><input name="start" type="number" min="0" value="'+maxEnd()+'"></div><div><label>Source in (source frames)</label><input name="sourceIn" type="number" min="0" value="0"></div><div><label>Duration (timeline frames)</label><input name="duration" type="number" min="1" value="'+(fps()*5)+'"></div></div><button class="primary wide">＋ Place clip on timeline</button><button class="secondary wide" type="submit" name="generatedHandoff" value="1" '+(state.mode==="cloud"?"":"disabled title=\"Choose Cloud project mode to use verified generated-media handoff\"")+'>Send verified generated media to timeline</button><small class="muted">Generated-media handoff requires server-verified media metadata and a completed generation job. Ordinary imports continue through the standard clip workflow.</small></form>'+
  '<form id="tl-add-marker"><div class="eyebrow" style="margin-top:18px">REVIEW MARKER</div><label>Marker title</label><input name="name" required placeholder="Hook / transition / review note"><label>Position (frames)</label><input name="frame" type="number" min="0" value="0"><button class="secondary">＋ Add marker</button></form></section>'+
  '<section class="panel"><div class="timeline-panel-heading"><div><div class="eyebrow">MULTI-TRACK EDITOR</div><h3>Sequence timeline</h3></div><small>'+(state.timeline?.frameRate.numerator+"/"+state.timeline?.frameRate.denominator+" fps")+'</small></div>'+
  timelinePreviewPanel()+(state.timeline?timelineCanvas():'<div class="empty">Sign in and create a sequence to begin.</div>')+
@@ -297,6 +297,20 @@ document.addEventListener("submit",event=>{
  }
  if(form.id==="tl-add-clip"){
   event.preventDefault();const data=new FormData(form),assetId=String(data.get("assetId")||""),trackId=String(data.get("trackId")||"");
+  const submitter=(event as SubmitEvent).submitter as HTMLButtonElement|null;
+  if(submitter?.name==="generatedHandoff"){
+   if(state.mode!=="cloud"||!state.timeline){state.message="Choose a saved cloud timeline before sending generated media.";paint();return;}
+   const asset=state.assets.find(item=>item.id===assetId),track=state.timeline.tracks.find(item=>item.id===trackId);
+   const jobId=String(asset?.metadata?.jobId||"");
+   if(!asset||asset.metadata?.generated!==true||!jobId||!track){state.message="Select a generated asset with its server-recorded generation job and a destination track.";paint();return;}
+   const startFrames=Math.max(0,Number(data.get("start"))||0);
+   const requestBody={assetId:asset.id,jobId,trackId,clipId:crypto.randomUUID(),clipName:asset.name,playheadSeconds:startFrames/fps(),expectedRevision:state.serverRevision};
+   try{
+    const result=await apiRequest<{timeline:CloudSavedTimeline;idempotentReplay?:boolean}>("/api/cloud/timelines/"+state.timeline.id+"/handoff",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(requestBody)});
+    recordEdit();state.timeline=result.timeline.timeline;state.serverRevision=result.timeline.revision;state.selectedClipId=requestBody.clipId;state.selectedTrack=trackId;state.status="ready";state.message=result.idempotentReplay?"Generated media was already on the timeline.":"Verified generated media added and saved at revision "+result.timeline.revision+".";await refresh();paint();
+   }catch(error){state.message=error instanceof Error?error.message:"Generated-media handoff failed.";state.status="ready";paint();}
+   return;
+  }
   const start=Math.max(0,Number(data.get("start"))||0),sourceIn=Math.max(0,Number(data.get("sourceIn"))||0),duration=Math.max(1,Number(data.get("duration"))||1);
   const asset=state.assets.find(a=>a.id===assetId);if(!asset)return;
   const destination=state.timeline.tracks.find(t=>t.id===trackId);
