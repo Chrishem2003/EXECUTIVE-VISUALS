@@ -45,7 +45,7 @@ test("worker failure is persisted as a bounded failed-job result",async()=>{
  assert.equal(result.status,"failed");
  const finish=queue.calls.find(call=>call[0]==="finish");
  assert.equal(finish[3],"failed");
- assert.deepEqual(finish[5],{code:"RENDER_FAILED",message:"render failed"});
+ assert.deepEqual(finish[5],{code:"RENDER_FAILED",message:"render failed",retryable:false});
 });
 
 test("worker stops and does not finish when lease renewal is lost",async()=>{
