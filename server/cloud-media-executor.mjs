@@ -158,10 +158,18 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
         try { sourceImage = JSON.parse(sourceProbe.stdout || "{}").streams?.[0]; } catch {}
         const sourceWidth = Number(sourceImage?.width), sourceHeight = Number(sourceImage?.height);
         if (!Number.isInteger(sourceWidth) || !Number.isInteger(sourceHeight) || sourceWidth < 1 || sourceHeight < 1) throw Object.assign(new Error("FFprobe could not verify the source image dimensions."), { code: "MEDIA_PROBE_INVALID" });
-        const result = await adapter.execute({
-          inputPath: sourcePath, outputPath, model: input.model || "realesrgan-x4plus",
-          scale: input.scale ?? 4, tile: input.tile ?? 0, format
-        });
+        let result;
+        try {
+          result = await adapter.execute({
+            inputPath: sourcePath, outputPath, model: input.model || "realesrgan-x4plus",
+            scale: input.scale ?? 4, tile: input.tile ?? 0, format
+          });
+        } catch (error) {
+          if (["AI_UPSCALE_OUTPUT_INVALID", "AI_UPSCALE_DIMENSIONS_MISMATCH"].includes(error?.code)) {
+            throw Object.assign(new Error("AI-upscaled image failed output format or dimension validation; derivative was not published."), { code: "MEDIA_OUTPUT_VALIDATION_FAILED" });
+          }
+          throw error;
+        }
         if (signal?.aborted) throw Object.assign(new Error("Media job was cancelled."), { code: "JOB_CANCELLED" });
         const outputProbe = await runProcess(ffprobe, ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height", "-of", "json", outputPath], { signal, timeoutMs, onProgress });
         let outputImage;
