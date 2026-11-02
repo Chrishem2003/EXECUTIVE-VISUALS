@@ -115,6 +115,11 @@ test("permanent media validation errors remain terminal and are never retried",a
 test("retry classification is explicit and does not retry arbitrary HTTP failures",()=>{
  assert.equal(isRetryableCloudJobError({code:"CLOUD_QUEUE_TIMEOUT"}),true);
  assert.equal(isRetryableCloudJobError({code:"CLOUD_STORAGE_HTTP_503"}),true);
+ assert.equal(isRetryableCloudJobError({code:"VIDEO_GATEWAY_TIMEOUT"}),true);
+ assert.equal(isRetryableCloudJobError({code:"VIDEO_GATEWAY_RATE_LIMITED"}),true);
+ assert.equal(isRetryableCloudJobError({code:"VIDEO_GATEWAY_SERVER_ERROR"}),true);
+ assert.equal(isRetryableCloudJobError({code:"IMAGE_GATEWAY_UNAVAILABLE"}),true);
+ assert.equal(isRetryableCloudJobError({code:"IMAGE_GATEWAY_RATE_LIMITED"}),true);
  assert.equal(isRetryableCloudJobError({status:429}),true);
  assert.equal(isRetryableCloudJobError({code:"CLOUD_STORAGE_HTTP_403",status:403}),false);
  assert.equal(isRetryableCloudJobError({code:"UNSUPPORTED_MEDIA_TYPE"}),false);
