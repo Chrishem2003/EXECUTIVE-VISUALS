@@ -87,6 +87,7 @@ test("enabled gateways must be configured before readiness passes", () => {
 test("a fully configured cloud timeline can pass its configuration checks in development", () => {
   const result = evaluateReadiness({
     nodeEnv: "development", authMode: "supabase", cloudTimelineApiEnabled: true,
+    cloudTimelineStorageReady: true,
     supabaseUrl: "https://project.example.test", supabasePublishableKey: "public-key",
     supabaseServiceRoleKey: "server-only-key"
   });
