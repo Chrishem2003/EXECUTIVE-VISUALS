@@ -48,12 +48,12 @@ test("cloud benchmark API pins fixture source, registers verified derivative and
 
 test("cloud benchmark API requires independent assigned review and stores immutable decision",async()=>{
  const f=setup();
- await f.api.handle({method:"POST",path:"/api/cloud/upscale-benchmarks/fixtures",ownerId:owner,query:{projectId:project},body:{sourceAssetId:sourceId,category:"portrait"}});
- await f.api.handle({method:"POST",path:"/api/cloud/upscale-benchmarks/runs",ownerId:owner,query:{projectId:project},body:{assetId:outputId,fixtureId:fixture.body.fixture.id}});
+ const fixture=await f.api.handle({method:"POST",path:"/api/cloud/upscale-benchmarks/fixtures",ownerId:owner,query:{projectId:project},body:{sourceAssetId:sourceId,category:"portrait"}});
+ const run=await f.api.handle({method:"POST",path:"/api/cloud/upscale-benchmarks/runs",ownerId:owner,query:{projectId:project},body:{assetId:outputId,fixtureId:fixture.body.fixture.id}});
  const self=await f.api.handle({method:"POST",path:"/api/cloud/upscale-benchmarks/runs/"+run.body.run.id+"/review",ownerId:owner,query:{projectId:project},body:{decision:"reviewed_pass"}});
  assert.equal(self.status,403);assert.equal(self.body.error.code,"UPSCALE_BENCHMARK_INDEPENDENT_REVIEW_REQUIRED");
  const reviewed=await f.api.handle({method:"POST",path:"/api/cloud/upscale-benchmarks/runs/"+run.body.run.id+"/review",ownerId:reviewer,query:{projectId:project},body:{decision:"reviewed_pass",note:"Visual check passed."}});
  assert.equal(reviewed.status,200);assert.equal(reviewed.body.run.record.qualityReview,"reviewed_pass");
- const duplicate=await f.api.handle({method:"POST",path:"/api/cloud/upscale-benchmarks/runs/"+runId+"/review",ownerId:reviewer,query:{projectId:project},body:{decision:"reviewed_fail"}});
+ const duplicate=await f.api.handle({method:"POST",path:"/api/cloud/upscale-benchmarks/runs/"+run.body.run.id+"/review",ownerId:reviewer,query:{projectId:project},body:{decision:"reviewed_fail"}});
  assert.equal(duplicate.status,409);assert.equal(duplicate.body.error.code,"UPSCALE_BENCHMARK_ALREADY_REVIEWED");
 });
