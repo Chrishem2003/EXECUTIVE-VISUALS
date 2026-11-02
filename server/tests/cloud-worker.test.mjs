@@ -120,3 +120,20 @@ test("retry classification is explicit and does not retry arbitrary HTTP failure
  assert.equal(isRetryableCloudJobError({code:"UNSUPPORTED_MEDIA_TYPE"}),false);
  assert.equal(isRetryableCloudJobError({code:"MEDIA_PROCESS_FAILED"}),false);
 });
+
+test("retryable failure becomes terminal when the configured attempt limit is exhausted",async()=>{
+ const queue=queueFor({retry:{accepted:true,status:"failed",retryable:false,delaySeconds:0,attempt:2,maxAttempts:2}});
+ const events=[];
+ const result=await runCloudWorkerCycle({queue,workerId:"worker-1",heartbeatIntervalMs:60000,execute:async()=>{throw Object.assign(new Error("provider timed out"),{code:"CLOUD_QUEUE_TIMEOUT"});},onEvent:event=>events.push(event)});
+ assert.equal(result.status,"failed");
+ assert.equal(result.error.retryExhausted,true);
+ assert.ok(events.some(event=>event.type==="job.failed"&&event.error.retryExhausted===true));
+ assert.equal(queue.calls.some(call=>call[0]==="finish"),false);
+});
+test("retry scheduling is fenced when the database reports a lost lease",async()=>{
+ const queue=queueFor({retry:{accepted:false,status:"lease_lost",retryable:false,delaySeconds:0,attempt:0,maxAttempts:1}});
+ const result=await runCloudWorkerCycle({queue,workerId:"worker-1",heartbeatIntervalMs:60000,execute:async()=>{throw Object.assign(new Error("temporary outage"),{code:"CLOUD_STORAGE_TIMEOUT"});}});
+ assert.equal(result.finished,false);
+ assert.equal(result.reason,"lease_lost");
+ assert.equal(queue.calls.some(call=>call[0]==="finish"),false);
+});
