@@ -7,7 +7,7 @@ const project="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const source="33333333-3333-4333-8333-333333333333";
 const reference="44444444-4444-4444-8444-444444444444";
 
-function fixture({canWrite=true}={}){
+function fixture({canWrite=true,readiness={}}={}){
  const state={jobs:[],events:[]};
  const assets=new Map([
   [source,{id:source,ownerId:owner,projectId:project,mediaType:"video/mp4"}],
@@ -36,7 +36,7 @@ function fixture({canWrite=true}={}){
   }else if(table==="job_events"&&method==="POST"){state.events.push(JSON.parse(options.body));result=[];}
   return new Response(JSON.stringify(result),{status:200,headers:{"content-type":"application/json"}});
  };
- const api=createCloudTimelineApi({url:"https://cloud.example.test",serviceRoleKey:"server-only-test-secret",fetchImpl,timelineService:service,authorize:async({action})=>action==="read"||canWrite});
+ const api=createCloudTimelineApi({url:"https://cloud.example.test",serviceRoleKey:"server-only-test-secret",fetchImpl,timelineService:service,authorize:async({action})=>action==="read"||canWrite,transformationReadiness:async()=>readiness});
  const body={projectId:project,sourceAssetId:source,operation:"vehicle_replace",prompt:"Replace the vehicle with a graphite electric SUV.",durationSeconds:8,referenceAssetIds:[reference],preservation:["camera_motion","composition"],rightsConfirmed:true,subjectConsentConfirmed:false};
  return{api,state,body,assets};
 }
@@ -76,4 +76,24 @@ test("cloud approval records budget metadata but submit remains blocked without 
  const submit=await f.api.handle({method:"POST",path:"/api/cloud/transformations/"+id+"/submit",ownerId:owner,body:{}});
  assert.equal(submit.status,409);assert.equal(submit.body.error.code,"TRANSFORMATION_ADAPTER_UNAVAILABLE");
  assert.equal(f.state.jobs[0].status,"awaiting_approval");assert.equal(f.state.events.length,2);
+});
+
+test("transformation readiness endpoint is project-scoped and fails closed by default",async()=>{
+ const f=fixture();
+ const result=await f.api.handle({method:"GET",path:"/api/cloud/transformations/readiness",ownerId:owner,query:{projectId:project}});
+ assert.equal(result.status,200);
+ assert.equal(result.body.readiness.status,"blocked");
+ assert.equal(result.body.readiness.canSubmit,false);
+ assert.equal(result.body.readiness.missing.length,8);
+ const invalid=await f.api.handle({method:"GET",path:"/api/cloud/transformations/readiness",ownerId:owner,query:{projectId:"not-a-project"}});
+ assert.equal(invalid.status,400);
+});
+
+test("transformation readiness endpoint reports ready only when all release evidence is true",async()=>{
+ const readiness={adapterVerified:true,workerAvailable:true,privateStorageVerified:true,durableCheckpointsAvailable:true,costPolicyVerified:true,consentVerifierAvailable:true,visualQaAvailable:true,cloudSchemaApplied:true};
+ const f=fixture({readiness});
+ const result=await f.api.handle({method:"GET",path:"/api/cloud/transformations/readiness",ownerId:owner,query:{projectId:project}});
+ assert.equal(result.status,200);
+ assert.equal(result.body.readiness.status,"ready");
+ assert.equal(result.body.readiness.canSubmit,true);
 });
