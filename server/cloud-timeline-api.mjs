@@ -144,13 +144,13 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
      if(projectOwner!==ownerId&&role!=="reviewer")return response(403,{error:{code:"BENCHMARK_REVIEWER_REQUIRED",message:"Only the project owner or an assigned reviewer can review benchmark quality."}});
      const decision=String(body.decision||"");
      if(!["reviewed_pass","reviewed_fail"].includes(decision))return response(400,{error:{code:"UPSCALE_BENCHMARK_REVIEW_INVALID",message:"Decision must be reviewed_pass or reviewed_fail."}});
-     const note=String(body.note||"").trim().slice(0,2000);
-     if(decision==="reviewed_fail"&&!note)return response(400,{error:{code:"UPSCALE_BENCHMARK_REVIEW_NOTE_REQUIRED",message:"A rejection requires a short note describing the quality issue."}});
      const existingRows=await request("upscale_benchmark_runs?select=id,owner_id,record,reviewer_id&project_id=eq."+encodeURIComponent(projectId)+"&id=eq."+encodeURIComponent(runId)+"&limit=1");
      const existing=Array.isArray(existingRows)?existingRows[0]:null;
      if(!existing)return response(404,{error:{code:"UPSCALE_BENCHMARK_RUN_NOT_FOUND",message:"Benchmark run not found."}});
      if(existing.reviewer_id)return response(409,{error:{code:"UPSCALE_BENCHMARK_ALREADY_REVIEWED",message:"Benchmark review is immutable once recorded."}});
      if(existing.owner_id===ownerId)return response(403,{error:{code:"UPSCALE_BENCHMARK_INDEPENDENT_REVIEW_REQUIRED",message:"The person who registered this run cannot review their own evidence."}});
+     const note=String(body.note||"").trim().slice(0,2000);
+     if(decision==="reviewed_fail"&&!note)return response(400,{error:{code:"UPSCALE_BENCHMARK_REVIEW_NOTE_REQUIRED",message:"A rejection requires a short note describing the quality issue."}});
      const reviewedAt=new Date().toISOString(),record={...existing.record,qualityReview:decision};
      const updated=await request("upscale_benchmark_runs?id=eq."+encodeURIComponent(runId)+"&project_id=eq."+encodeURIComponent(projectId)+"&reviewer_id=is.null",{method:"PATCH",body:{record,reviewer_id:ownerId,review_decision:decision,review_note:note,reviewed_at:reviewedAt},prefer:"return=representation"});
      if(!Array.isArray(updated)||updated.length!==1)return response(409,{error:{code:"UPSCALE_BENCHMARK_ALREADY_REVIEWED",message:"Benchmark evidence was reviewed by another user."}});
