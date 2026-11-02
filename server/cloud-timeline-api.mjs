@@ -215,6 +215,20 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     const saved=await service.timelines.update({ownerId,timelineId,expectedRevision:timeline.revision,timeline:updatedDocument,otio});
     return response(200,{timeline:saved,idempotentReplay:false});
    }
+   const previewMatch=path.match(/^\/api\/cloud\/timelines\/([0-9a-f-]+)\/preview\/([0-9a-f-]+)$/i);
+   if(previewMatch&&safeId(previewMatch[1])&&safeId(previewMatch[2])&&method==="GET"){
+    const timelineId=previewMatch[1],assetId=previewMatch[2];
+    const timeline=await service.timelines.get({ownerId,timelineId});
+    if(!timeline)return response(404,{error:{code:"TIMELINE_NOT_FOUND",message:"Timeline not found."}});
+    if(await allow({ownerId,projectId:timeline.projectId,action:"read"})!==true)return response(404,{error:{code:"TIMELINE_NOT_FOUND",message:"Timeline not found."}});
+    if(query.revision!==undefined&&String(query.revision)!==String(timeline.revision))return response(409,{error:{code:"REVISION_CONFLICT",message:"Timeline changed since this preview was requested. Refresh the timeline."}});
+    const referenced=(timeline.timeline?.tracks||[]).some(track=>track?.enabled!==false&&(track?.clips||[]).some(clip=>clip?.enabled!==false&&clip?.assetId===assetId));
+    if(!referenced)return response(404,{error:{code:"PREVIEW_ASSET_NOT_FOUND",message:"This asset is not part of the requested timeline."}});
+    const asset=await service.assets.get({ownerId,assetId});
+    if(!asset||asset.projectId!==(timeline.projectId||null))return response(404,{error:{code:"PREVIEW_ASSET_NOT_FOUND",message:"Preview asset not found in this project."}});
+    const signed=await service.assets.createSignedUrl({ownerId,assetId,expiresIn:300});
+    return response(200,{preview:{timelineId, timelineRevision:timeline.revision,asset:signed.asset,url:signed.url,expiresIn:300,cacheControl:"no-store"}});
+   }
    const match=path.match(/^\/api\/cloud\/timelines\/([0-9a-f-]+)(?:\/(render))?$/i);
    if(!match||!safeId(match[1]))return null;
    const timelineId=match[1];
