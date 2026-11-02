@@ -73,3 +73,20 @@ The submit route deliberately returns `TRANSFORMATION_ADAPTER_UNAVAILABLE` even 
 ### Consent evidence boundary
 
 The person-replacement checkbox records a user attestation, not independent proof of consent. Person-replacement execution must remain blocked until the platform verifies a current, project-scoped consent record and its permitted scope/expiry. The current submit endpoint blocks every transformation operation because no verified adapter is enabled.
+
+
+## Release-readiness visibility
+
+The authenticated cloud API exposes a read-only, project-scoped readiness report at
+`GET /api/cloud/transformations/readiness?projectId=...`. The Enhancement Lab displays
+each release gate and the server-reported status. A gate passes only when the server
+supplies the boolean value `true`; missing values, strings and inferred readiness fail
+closed.
+
+The eight gates are: verified transformation adapter, asynchronous worker, private
+media storage, durable owner/project-scoped checkpoints, cost/budget enforcement,
+independent rights and consent verification, frame-level plus human visual QA, and
+an applied/verified isolated cloud schema. The default configuration passes none of
+these gates. This report does not approve, queue or execute work and does not claim
+that a provider is connected. The submit endpoint remains blocked until the actual
+execution integration is implemented and verified.
