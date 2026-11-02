@@ -97,7 +97,13 @@ export function createDeliveryPackage({
     if (reviewers.has(item.reviewerId)) fail("Review history cannot contain duplicate decisions from one reviewer.");
     reviewers.add(item.reviewerId);
   }
-  if (qualityReport !== null && (!plain(qualityReport) || !["passed","review","needs-attention"].includes(qualityReport.status) || !plain(qualityReport.counts) || !Number.isSafeInteger(qualityReport.counts.errors) || qualityReport.counts.errors < 0 || !Number.isSafeInteger(qualityReport.counts.warnings) || qualityReport.counts.warnings < 0 || !Array.isArray(qualityReport.findings) || qualityReport.findings.length > 1000 || qualityReport.findings.some(item => !plain(item) || typeof item.code !== "string" || item.code.length > 100 || !["error","warning"].includes(item.severity) || typeof item.message !== "string" || item.message.length > 2000) || !Array.isArray(qualityReport.limitations) || qualityReport.limitations.length > 100 || qualityReport.limitations.some(item => typeof item !== "string" || item.length > 1000))) fail("The media quality report is invalid or exceeds package limits.");
+  if (qualityReport !== null) {
+    if (!plain(qualityReport) || !["passed","review","needs-attention"].includes(qualityReport.status) || !plain(qualityReport.counts) || !Number.isSafeInteger(qualityReport.counts.errors) || qualityReport.counts.errors < 0 || !Number.isSafeInteger(qualityReport.counts.warnings) || qualityReport.counts.warnings < 0 || !Array.isArray(qualityReport.findings) || qualityReport.findings.length > 1000 || qualityReport.findings.some(item => !plain(item) || typeof item.code !== "string" || item.code.length > 100 || !["error","warning"].includes(item.severity) || typeof item.message !== "string" || item.message.length > 2000) || !Array.isArray(qualityReport.limitations) || qualityReport.limitations.length > 100 || qualityReport.limitations.some(item => typeof item !== "string" || item.length > 1000)) fail("The media quality report is invalid or exceeds package limits.");
+    const errors = qualityReport.findings.filter(item => item.severity === "error").length;
+    const warnings = qualityReport.findings.filter(item => item.severity === "warning").length;
+    const expectedStatus = errors ? "needs-attention" : warnings ? "review" : "passed";
+    if (qualityReport.counts.errors !== errors || qualityReport.counts.warnings !== warnings || qualityReport.status !== expectedStatus) fail("The media quality report status and counts must agree with its findings.");
+  }
   if (typeof generatedAt !== "string" || !Number.isFinite(Date.parse(generatedAt)) || new Date(generatedAt).toISOString() !== generatedAt) fail("A valid package timestamp is required.");
   const evidence = {
     schemaVersion: 1, packageType: "executive-visuals-delivery", generatedAt,
