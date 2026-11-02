@@ -9,6 +9,7 @@ import { createCloudAssetAuthorizer } from "./cloud-asset-auth.mjs";
 import { createCloudTimelineService } from "./cloud-timeline-service.mjs";
 import { buildTransformationReadinessReport } from "./transformation-readiness.mjs";
 import { validateSrt, validateWebVtt } from "./caption-validation.mjs";
+import { verifyDeliveryManifest } from "./delivery-manifest.mjs";
 
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const safeId=(value)=>typeof value==="string"&&UUID.test(value);
@@ -155,6 +156,31 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
      if(!row.approved_at||!row.approved_by)return response(409,{error:{code:"TRANSFORMATION_APPROVAL_REQUIRED",message:"Approve the plan and budget before submission."}});
      return response(409,{error:{code:"TRANSFORMATION_ADAPTER_UNAVAILABLE",message:"No verified video-transformation adapter is enabled. No provider request or charge was made."}});
     }
+   }
+   const deliveryApprovalMatch=path.match(/^\/api\/cloud\/jobs\/([0-9a-f-]+)\/delivery-approval$/i);
+   if(deliveryApprovalMatch&&safeId(deliveryApprovalMatch[1])&&(method==="GET"||method==="POST")){
+    const jobRows=await request("jobs?select=id,owner_id,project_id,job_type,status,input,output&id=eq."+encodeURIComponent(deliveryApprovalMatch[1])+"&limit=1");
+    const job=Array.isArray(jobRows)?jobRows[0]:null;
+    if(!job||job.job_type!=="timeline.render"||!job.project_id)return response(404,{error:{code:"DELIVERY_JOB_NOT_FOUND",message:"A completed project timeline render was not found."}});
+    if(await allow({ownerId,projectId:job.project_id,action:method==="POST"?"write":"read"})!==true)return response(404,{error:{code:"DELIVERY_JOB_NOT_FOUND",message:"Delivery review access was not found."}});
+    const output=job.output&&typeof job.output==="object"?job.output:{};
+    const receipt=output.deliveryManifest;
+    const timelineInput=job.input&&typeof job.input==="object"?job.input:{};
+    if(job.status!=="succeeded"||!receipt||!verifyDeliveryManifest(receipt)||receipt.timelineId!==timelineInput.timelineId||receipt.timelineRevision!==Number(timelineInput.timelineRevision)||receipt.outputAsset!==(output.outputAsset?.id||output.outputAssetId)||receipt.sha256!==output.sha256)
+     return response(409,{error:{code:"DELIVERY_EVIDENCE_UNVERIFIED",message:"This render has no valid, revision-matched delivery receipt. Approval is blocked."}});
+    const events=await request("job_events?select=id,event_type,event_data,created_at&job_id=eq."+encodeURIComponent(job.id)+"&order=id.asc");
+    const approvals=(Array.isArray(events)?events:[]).filter(event=>event.event_type==="delivery.approved"&&event.event_data?.fingerprint===receipt.fingerprint);
+    if(method==="GET")return response(200,{receipt,approval:approvals.length?{...approvals.at(-1).event_data,createdAt:approvals.at(-1).created_at}:null,approvalHistory:approvals.map(event=>({id:event.id,...event.event_data,createdAt:event.created_at}))});
+    if(job.owner_id===ownerId)return response(403,{error:{code:"INDEPENDENT_REVIEW_REQUIRED",message:"The render creator cannot approve their own delivery. A different authorized project reviewer is required."}});
+    if(approvals.some(event=>event.event_data?.reviewerId===ownerId))return response(409,{error:{code:"DELIVERY_ALREADY_REVIEWED",message:"This reviewer has already recorded a decision for this exact delivery fingerprint."}});
+    const decision=String(body.decision||"");
+    if(!["approved","rejected","changes_requested"].includes(decision))return response(400,{error:{code:"DELIVERY_DECISION_INVALID",message:"Choose approved, rejected or changes_requested."}});
+    const note=typeof body.note==="string"?body.note.trim():"";
+    if(note.length>2000)return response(400,{error:{code:"DELIVERY_NOTE_TOO_LONG",message:"Review notes must be 2,000 characters or fewer."}});
+    if(decision==="approved"&&output.deliveryReport?.status==="needs-attention")return response(409,{error:{code:"DELIVERY_VALIDATION_BLOCKED",message:"A delivery with blocking validation errors cannot be approved."}});
+    const eventData={schemaVersion:1,decision,fingerprint:receipt.fingerprint,timelineId:receipt.timelineId,timelineRevision:receipt.timelineRevision,outputAsset:receipt.outputAsset,reviewerId:ownerId,note,reviewedAt:new Date().toISOString()};
+    await request("job_events",{method:"POST",body:{job_id:job.id,owner_id:ownerId,event_type:"delivery.approved",event_data:eventData}});
+    return response(201,{approval:eventData});
    }
    const jobMatch=path.match(/^\/api\/cloud\/jobs\/([0-9a-f-]+)(?:\/(events))?$/i);
    if(jobMatch&&safeId(jobMatch[1])&&method==="GET"){
