@@ -59,7 +59,8 @@ export function summarizeUpscaleBenchmarks(records) {
     invalidRecords,
     execution: { passed: executionPassed, failed: executionFailed },
     quality: { reviewedPass: qualityReviewed, reviewedFail: qualityRejected, pendingReview: validRecords.filter(record => record.qualityReview === "not_reviewed").length },
-    qualityVerified: validRecords.length > 0 && invalidRecords.length === 0 && qualityReviewed > 0 && qualityRejected === 0 &&
+    categoryCoverage: { required: [...REQUIRED_UPSCALE_FIXTURE_CATEGORIES], reviewedPass: [...reviewedPassCategories].sort(), missing: missingCategories },
+    qualityVerified: validRecords.length > 0 && invalidRecords.length === 0 && qualityReviewed > 0 && qualityRejected === 0 && missingCategories.length === 0 &&
       validRecords.every(record => record.executionStatus === "passed" && record.qualityReview === "reviewed_pass"),
     records: validRecords
   };
