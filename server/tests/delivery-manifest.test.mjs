@@ -48,6 +48,7 @@ test("creates a verifiable delivery package bound to the master and review histo
   assert.equal(deliveryPackage.packageFingerprint.length, 64);
   assert.equal(deliveryPackage.master.assetId, receipt.outputAsset);
   assert.equal(deliveryPackage.qualityReport.findings[0].code, "TEMPORAL_LUMA_FLICKER");
+  assert.equal(verifyDeliveryPackage({ ...deliveryPackage, qualityReport: { ...deliveryPackage.qualityReport, findings: [] } }), false);
 });
 test("rejects tampered package fields and evidence from another receipt", () => {
   const receipt = createDeliveryManifest(input);
