@@ -246,7 +246,7 @@ export async function initTimelineWorkspace(){
 }
 function paint(){
  const root=document.querySelector<HTMLElement>("#timeline-workspace");if(root)root.outerHTML=renderTimelineWorkspace();
- if(state.mode==="cloud"&&state.timeline&&selectedPreview()&&!state.previewUrl&&!state.previewLoading&&!state.previewError)void ensureCloudPreviewTicket();
+ if(state.mode==="cloud"&&state.timeline&&selectedPreview()&&(!state.previewUrl||state.previewExpiresAt<=Date.now()+15000)&&!state.previewLoading&&!state.previewError)void ensureCloudPreviewTicket();
  const media=document.querySelector<HTMLMediaElement>("#tl-preview-media");
  if(media){
   const setIn=()=>{const start=Number(media.dataset.sourceIn),duration=media.duration,end=Number(media.dataset.sourceOut);if(Number.isFinite(start)){const safeStart=Math.min(start,Number.isFinite(duration)?duration:start);media.currentTime=safeStart;}if(Number.isFinite(end)&&Number.isFinite(duration)&&end>duration)media.dataset.sourceOut=String(duration);};
