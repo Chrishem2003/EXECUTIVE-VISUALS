@@ -66,3 +66,12 @@ Replacing a clip changes only its `assetId`. The original asset remains in the l
 ## Side-by-side source and derivative review in the timeline
 
 The selected clip inspector can request a read-only side-by-side comparison for any derivative whose `derivativeOf` points to the clip's current source. It obtains short-lived private links for both assets through the existing authenticated cloud asset-link endpoint, validates HTTPS, and discards the result if the editor changes selection or leaves cloud mode while the requests are in flight. Image, video and audio previews are shown in parallel; other media types use deliberate private-link opening. The comparison itself does not modify asset bytes, timeline references, or approval state. The existing replacement control remains separately gated by complete provenance and `reviewed_pass`. Links are short-lived (approximately five minutes); users should refresh the comparison if a link expires. This remains subject to browser-level staging checks for private-link expiry, access denial, project switching and mixed media types.
+
+
+## Portable enhancement evidence report
+
+The Cloud Projects asset lineage panel can export a URL-free JSON evidence snapshot for the selected asset. The versioned report includes the asset identity and persisted checksum, a bounded allowlist of processing/build fields, source/output checksum and decoder/dimension checks, independent review state, and the authorized lineage graph already loaded by the panel. It deliberately excludes signed preview URLs and storage paths.
+
+The report labels itself technical evidence only. It does not calculate or claim perceptual quality, infer missing provenance, convert a successful decoder check into a quality pass, or replace independent human review. Missing or conflicting evidence remains explicit. Export is client-side and read-only; it does not create a server record, change the asset, or update approval state.
+
+Staging acceptance: export a fully evidenced derivative, a legacy derivative with missing processing data, a mismatched output checksum, and a lineage graph with missing/cyclic/truncated nodes. Confirm the JSON contains no signed URLs, storage paths, credentials, or cross-project records, and that the export does not mutate asset metadata or review history.
