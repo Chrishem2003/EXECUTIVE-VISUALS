@@ -3,6 +3,7 @@ import { extname, join } from "node:path";
 import { mkdir, readFile, writeFile, unlink } from "node:fs/promises";
 import { captionStyle, buildSrt, escapeFilterPath, run } from "./media.mjs";
 import { createRenderManifest } from "./render-manifest.mjs";
+import { getDeliveryProfile } from "./delivery-profiles.mjs";
 
 const fail=(message,code)=>{throw Object.assign(new Error(message),{code});};
 const seconds=(time)=>{const value=Number(time?.value),rate=Number(time?.rate);if(!Number.isFinite(value)||!Number.isFinite(rate)||rate<=0)return 0;return Math.max(0,Math.min(86400,value/rate));};
@@ -24,11 +25,12 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
  if(videos.length!==1||unsupported.length)fail("The master renderer requires exactly one primary video track and supported audio, overlay and caption tracks.","UNSUPPORTED_TIMELINE_FEATURE");
  const clips=ordered(videos),audioClips=audios.flatMap(track=>ordered([track])),overlayClips=overlays.flatMap(track=>ordered([track])),captionClips=captions.flatMap(track=>ordered([track]));
  if(!clips.length)fail("Add at least one enabled clip to the primary video track.","EMPTY_TIMELINE");
- const width=Math.max(256,Math.min(7680,Math.floor(Number(timeline.width)||1920)));
- const height=Math.max(144,Math.min(4320,Math.floor(Number(timeline.height)||1080)));
- const fpsNum=Math.max(1,Math.min(120,Math.floor(Number(timeline.frameRate?.numerator)||24)));
- const fpsDen=Math.max(1,Math.min(1001,Math.floor(Number(timeline.frameRate?.denominator)||1)));
- const renderManifest=timelineRevision===null?null:createRenderManifest({timeline,assets,timelineRevision,output:{format:"video/mp4",codec:"libx264",width,height,frameRate:{numerator:fpsNum,denominator:fpsDen},pixelFormat:"yuv420p",preset:"veryfast",crf:20}});
+ const deliveryProfile=timeline.deliveryProfileId?getDeliveryProfile(timeline.deliveryProfileId):null;
+ const width=deliveryProfile?.width??Math.max(256,Math.min(7680,Math.floor(Number(timeline.width)||1920)));
+ const height=deliveryProfile?.height??Math.max(144,Math.min(4320,Math.floor(Number(timeline.height)||1080)));
+ const fpsNum=deliveryProfile?.fps.numerator??Math.max(1,Math.min(120,Math.floor(Number(timeline.frameRate?.numerator)||24)));
+ const fpsDen=deliveryProfile?.fps.denominator??Math.max(1,Math.min(1001,Math.floor(Number(timeline.frameRate?.denominator)||1)));
+ const renderManifest=timelineRevision===null?null:createRenderManifest({timeline,assets,timelineRevision,output:{format:"video/mp4",codec:deliveryProfile?.videoCodec||"libx264",width,height,frameRate:{numerator:fpsNum,denominator:fpsDen},pixelFormat:deliveryProfile?.pixelFormat||"yuv420p",preset:deliveryProfile?.preset||"veryfast",crf:deliveryProfile?.crf??20,...(deliveryProfile?{deliveryProfileId:deliveryProfile.id}:{})}});
  const outputId=randomUUID(),outputPath=join(workDir,outputId+".mp4");
  await mkdir(workDir,{recursive:true});
  const args=["-hide_banner","-y"],segments=[],audioFilters=[],videoEffects=[],captionTempPaths=[],overlayInputs=[];
@@ -108,13 +110,13 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
   }
   const filters=[videoGraph,...videoEffects,audioFilters.length?audioFilters.join(";")+";"+audioFilters.map((_,i)=>`[a${i}]`).join("")+`amix=inputs=${audioFilters.length}:duration=longest:dropout_transition=0,alimiter=limit=0.95[aout]`:""].filter(Boolean).join(";");
   args.push("-filter_complex_threads","1","-filter_complex",filters,"-map",currentVideo);
-  if(audioFilters.length)args.push("-map","[aout]","-c:a","aac","-b:a","192k");else args.push("-an");
-  args.push("-c:v","libx264","-preset","veryfast","-crf","20","-pix_fmt","yuv420p","-movflags","+faststart","-r",`${fpsNum}/${fpsDen}`,outputPath);
+  if(audioFilters.length)args.push("-map","[aout]","-c:a",deliveryProfile?.audioCodec||"aac","-b:a",deliveryProfile?.audioBitrate||"192k","-ar",String(deliveryProfile?.sampleRate||48000));else if(deliveryProfile?.requireAudio)fail("The selected delivery profile requires an audio track.","DELIVERY_AUDIO_REQUIRED");else args.push("-an");
+  args.push("-c:v",deliveryProfile?.videoCodec==="h264"||!deliveryProfile?"libx264":deliveryProfile.videoCodec,"-preset",deliveryProfile?.preset||"veryfast","-crf",String(deliveryProfile?.crf??20),"-pix_fmt",deliveryProfile?.pixelFormat||"yuv420p","-movflags","+faststart","-r",`${fpsNum}/${fpsDen}`,outputPath);
   await run("ffmpeg",args,60*60*1000,jobId,activeProcesses,()=>Boolean(signal?.aborted));
   if(signal?.aborted)fail("Timeline render was cancelled.","JOB_CANCELLED");
   onProgress(90);
   const name=safeName(timeline.name);
-  return{path:outputPath,filename:name+"-master.mp4",mediaType:"video/mp4",render:{width,height,frameRate:{numerator:fpsNum,denominator:fpsDen},videoClips:clips.length,audioClips:audioClips.length,overlayClips:overlayClips.length,captionClips:captionClips.length,durationSeconds:cursor},...(renderManifest?{renderManifest}:{})};
+  return{path:outputPath,filename:name+"-"+(deliveryProfile?.id||"master")+".mp4",mediaType:"video/mp4",render:{width,height,frameRate:{numerator:fpsNum,denominator:fpsDen},videoClips:clips.length,audioClips:audioClips.length,overlayClips:overlayClips.length,captionClips:captionClips.length,durationSeconds:cursor,...(deliveryProfile?{deliveryProfileId:deliveryProfile.id,deliveryProfileLabel:deliveryProfile.label}:{})},...(renderManifest?{renderManifest}:{})};
  }catch(error){
   await unlink(outputPath).catch(()=>{});
   if(signal?.aborted)throw Object.assign(new Error("Timeline render was cancelled."),{code:"JOB_CANCELLED"});
