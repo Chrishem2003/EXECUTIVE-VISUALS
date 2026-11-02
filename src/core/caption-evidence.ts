@@ -14,10 +14,10 @@ export function assessCaptionEvidence(timeline:EditorialTimeline|null,assets:Sou
   const extension=String(asset.name||"").toLowerCase().split(".").pop();
   const isVtt=asset.mediaType==="text/vtt"||extension==="vtt";
   const isSrt=(asset.mediaType==="text/plain"||asset.mediaType==="application/x-subrip")&&extension==="srt";
-  if(isSrt){notRun++;findings.push({code:"CAPTION_SRT_VALIDATION_NOT_RUN",detail:"SRT can be rendered, but cue-level automated validation is not yet implemented for this format.",assetId:asset.id,clipId:clip.id});continue;}
-  if(!isVtt){blocked++;findings.push({code:"CAPTION_FORMAT_UNSUPPORTED",detail:"Caption clip source must be an SRT or WebVTT text asset.",assetId:asset.id,clipId:clip.id});continue;}
+  
+  if(!isVtt&&!isSrt){blocked++;findings.push({code:"CAPTION_FORMAT_UNSUPPORTED",detail:"Caption clip source must be an SRT or WebVTT text asset.",assetId:asset.id,clipId:clip.id});continue;}
   const validation=asset.metadata?.captionValidation;
-  if(!object(validation)||!["passed","review","blocked"].includes(String(validation.status))){notRun++;findings.push({code:"CAPTION_VALIDATION_NOT_RUN",detail:"The WebVTT asset has no saved cue-level validation report.",assetId:asset.id,clipId:clip.id});continue;}
+  if(!object(validation)||!["passed","review","blocked"].includes(String(validation.status))){notRun++;findings.push({code:isSrt?"CAPTION_SRT_VALIDATION_NOT_RUN":"CAPTION_VALIDATION_NOT_RUN",detail:"The caption asset has no saved cue-level validation report.",assetId:asset.id,clipId:clip.id});continue;}
   if(validation.status==="blocked"){blocked++;findings.push({code:"CAPTION_VALIDATION_BLOCKED",detail:"Saved WebVTT validation contains blocking format, timing or duration errors.",assetId:asset.id,clipId:clip.id});continue;}
   validated++;
   if(validation.status==="review"){
@@ -28,6 +28,6 @@ export function assessCaptionEvidence(timeline:EditorialTimeline|null,assets:Sou
  }
  const pending=notRun;
  const status:CaptionEvidenceStatus=blocked?"blocked":pending?"not_run":review?"review":"passed";
- const summary=blocked?blocked+" caption clip(s) are missing or failed validation.":pending?validated+" of "+clips.length+" caption clip(s) have validation evidence; "+pending+" need validation.":review?validated+" caption clip(s) passed structural checks, but "+review+" contain readability warnings.":"All "+clips.length+" caption clip(s) have validated WebVTT timing and readability evidence.";
+ const summary=blocked?blocked+" caption clip(s) are missing or failed validation.":pending?validated+" of "+clips.length+" caption clip(s) have validation evidence; "+pending+" need validation.":review?validated+" caption clip(s) passed structural checks, but "+review+" contain readability warnings.":"All "+clips.length+" caption clip(s) have validated timing and readability evidence.";
  return{status,summary,evidenceRef:"captions:webvtt:"+clips.map(c=>c.assetId).sort().join(",").slice(0,160),findings,counts:{captionClips:clips.length,validated,review,blocked,notRun}};
 }
