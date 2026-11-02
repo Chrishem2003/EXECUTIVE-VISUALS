@@ -87,6 +87,41 @@ export function summarizeUpscaleBenchmarks(records) {
   };
 }
 
+/**
+ * Convert a completed AI-upscale derivative into benchmark evidence. Fixture
+ * identity/category are supplied by the controlled fixture registry; hashes,
+ * model build and measurements are taken from the persisted asset provenance.
+ */
+export function buildUpscaleBenchmarkRecordFromAsset({outputAsset,fixtureId,fixtureCategory,timestamp,qualityReview,metrics}={}) {
+  const processing=outputAsset?.metadata?.processing;
+  const record={
+    fixtureId,
+    fixtureCategory,
+    model:processing?.model,
+    modelVersion:processing?.modelVersion,
+    binarySha256:processing?.binarySha256,
+    modelFilesSha256:processing?.modelFilesSha256,
+    inputSha256:processing?.inputSha256,
+    outputSha256:outputAsset?.sha256,
+    inputWidth:processing?.sourceWidth,
+    inputHeight:processing?.sourceHeight,
+    outputWidth:processing?.width,
+    outputHeight:processing?.height,
+    scale:processing?.scale,
+    durationMs:processing?.durationMs,
+    executionStatus:processing?.dimensionsVerified===true&&processing?.decoderVerified===true?"passed":"failed",
+    qualityReview:qualityReview||processing?.qualityReview||"not_reviewed",
+    timestamp:timestamp||outputAsset?.createdAt||new Date().toISOString(),
+    ...(metrics?{metrics}:{})
+  };
+  const validation=validateUpscaleBenchmarkRecord(record);
+  if(outputAsset?.mediaType&&!String(outputAsset.mediaType).startsWith("image/")) validation.issues.push("output asset must be an image");
+  if(outputAsset?.derivativeOf!==undefined&&outputAsset.derivativeOf!==null&&processing?.sourceAssetId!==outputAsset.derivativeOf) validation.issues.push("processing source asset does not match derivative parent");
+  if(outputAsset?.sha256!==processing?.outputSha256) validation.issues.push("processing output hash does not match persisted asset hash");
+  if(validation.issues.length) throw Object.assign(new Error("Upscale asset cannot be registered as benchmark evidence: "+validation.issues.join("; ")),{code:"UPSCALE_BENCHMARK_EVIDENCE_INVALID",issues:validation.issues});
+  return record;
+}
+
 export function sha256Hex(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
 }
