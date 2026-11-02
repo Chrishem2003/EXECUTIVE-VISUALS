@@ -3,7 +3,8 @@ import { access, lstat, stat, open } from "node:fs/promises";
 import { constants } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
 import { tmpdir } from "node:os";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { createReadStream } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 
 const MODELS = new Set(["realesrgan-x4plus", "realesrgan-x4plus-anime", "realesr-animevideov3", "realesrgan-x2plus"]);
@@ -26,6 +27,12 @@ async function regularFile(path, label) {
     await access(path, constants.R_OK);
     return true;
   } catch { return false; }
+}
+
+async function sha256File(path) {
+  const hash = createHash("sha256");
+  for await (const chunk of createReadStream(path)) hash.update(chunk);
+  return hash.digest("hex");
 }
 
 function run(binary, args, timeoutMs, signal) {
@@ -90,8 +97,15 @@ export function createRealEsrganAdapter({
   async function fingerprint(model) {
     const files = [binaryPath, resolve(modelDirectory || ".", model + ".param"), resolve(modelDirectory || ".", model + ".bin")];
     try {
-      const metadata = await Promise.all(files.map(path => stat(path)));
-      return metadata.map(item => item.size + ":" + item.mtimeMs).join("|");
+      const digests = await Promise.all(files.map(async path => {
+        const info = await stat(path);
+        if (!info.isFile()) throw new Error("Engine component is not a regular file.");
+        return sha256File(path);
+      }));
+      const binarySha256 = digests[0];
+      const modelFilesSha256 = createHash("sha256").update(digests.slice(1).join(":")).digest("hex");
+      const fingerprint = createHash("sha256").update(digests.join(":")).digest("hex");
+      return { fingerprint, binarySha256, modelFilesSha256 };
     } catch { return null; }
   }
 
@@ -102,7 +116,7 @@ export function createRealEsrganAdapter({
       await regularFile(resolve(modelDirectory || ".", selected + ".bin"));
     const configured = binaryReady && modelReady;
     const currentFingerprint = configured ? await fingerprint(selected) : null;
-    const executionVerified = Boolean(currentFingerprint && executionFingerprints.get(selected) === currentFingerprint);
+    const executionVerified = Boolean(currentFingerprint && executionFingerprints.get(selected) === currentFingerprint.fingerprint);
     return {
       engine: "realesrgan-ncnn-vulkan",
       available: configured,
@@ -112,6 +126,8 @@ export function createRealEsrganAdapter({
       binaryReady,
       modelReady,
       model: selected,
+      binarySha256: currentFingerprint?.binarySha256 || null,
+      modelFilesSha256: currentFingerprint?.modelFilesSha256 || null,
       reason: !binaryReady ? "Configure a readable NCNN/Vulkan executable." : !modelReady ? "The selected allowlisted model files are not installed." : !enabled ? "Engine is installed, but AI_UPSCALE_ENABLED is not enabled on this worker." : executionVerified ? "Execution self-test passed; neural inference quality has not been independently verified." : "Configured, but an execution self-test has not passed on this worker."
     };
   }
@@ -128,9 +144,9 @@ export function createRealEsrganAdapter({
       const outputPath = join(directory, randomUUID() + "." + format);
       const result = await execute({ inputPath, outputPath, model: selected, scale, tile, format, signal });
       const after = await fingerprint(selected);
-      if (!after || before !== after) throw fail("Engine or model files changed during the self-test.", "AI_UPSCALE_SELF_TEST_FAILED");
-      executionFingerprints.set(selected, after);
-      return { passed: true, executionVerified: true, inferenceVerified: false, engine: result.engine, model: result.model, scale: result.scale, outputBytes: result.byteSize };
+      if (!after || before.fingerprint !== after.fingerprint) throw fail("Engine or model files changed during the self-test.", "AI_UPSCALE_SELF_TEST_FAILED");
+      executionFingerprints.set(selected, after.fingerprint);
+      return { passed: true, executionVerified: true, inferenceVerified: false, engine: result.engine, model: result.model, scale: result.scale, outputBytes: result.byteSize, binarySha256: after.binarySha256, modelFilesSha256: after.modelFilesSha256 };
     } catch (error) {
       executionFingerprints.delete(selected);
       throw error;
