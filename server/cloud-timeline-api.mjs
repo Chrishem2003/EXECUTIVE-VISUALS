@@ -189,7 +189,7 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     const track=timeline.timeline.tracks.find(item=>item.id===trackId);
     if(!track)return response(422,{error:{code:"HANDOFF_TRACK_NOT_FOUND",message:"Choose an existing track."}});
     if(track.locked)return response(422,{error:{code:"HANDOFF_TRACK_LOCKED",message:"The target track is locked."}});
-    if((kind==="audio"&&track.kind!=="audio")||(kind==="video"&&track.kind!=="video"&&track.kind!=="overlay")||(kind==="image"&&track.kind!=="video"&&track.kind!=="overlay"))
+    if((kind==="audio"&&track.kind!=="audio")||(kind==="video"&&track.kind!=="video")||(kind==="image"&&track.kind!=="video"&&track.kind!=="overlay"))
      return response(422,{error:{code:"HANDOFF_TRACK_INCOMPATIBLE",message:"The target track cannot contain this media type."}});
     const duration=kind==="image"?Number(body.durationSeconds):Number(format.duration);
     if(!Number.isFinite(duration)||duration<=0||duration>3600)return response(422,{error:{code:"HANDOFF_DURATION_UNVERIFIED",message:"A valid source duration is required; for still images, specify an explicit clip duration."}});
