@@ -8,6 +8,7 @@ import { pipeline } from "node:stream/promises";
 import { Transform } from "node:stream";
 import { verifyRenderManifest } from "./render-manifest.mjs";
 import { evaluateDeliveryOutput, getDeliveryProfile } from "./delivery-profiles.mjs";
+import { createDeliveryManifest } from "./delivery-manifest.mjs";
 
 function parseInput(value){
   if(value&&typeof value==="object"&&!Array.isArray(value))return value;
@@ -72,13 +73,16 @@ export function createCloudTimelineExecutor({timelines,mediaIO,renderTimeline,pr
       const deliveryReport=deliveryProfileId?evaluateDeliveryOutput(probed,deliveryProfileId):null;
       if(deliveryReport?.status==="needs-attention")throw Object.assign(new Error("Rendered output failed its selected delivery profile checks; the output was not published."),{code:"DELIVERY_PROFILE_VALIDATION_FAILED",deliveryReport});
       const sha256=await digest(output.path);
+      const deliveryManifest=createDeliveryManifest({timelineId:record.id,timelineRevision:record.revision,outputAsset:"pending-publication",sha256,byteSize:info.size,mediaType:output.mediaType,profileId:deliveryProfileId,deliveryReport,renderManifest:output.renderManifest});
       onProgress(90);
       const outputAsset=await mediaIO.publish({
         ownerId:job.owner_id,projectId:record.projectId,filename:output.filename,mediaType:output.mediaType,
-        path:output.path,metadata:{...(output.metadata||{}),operation:"timeline.render",timelineId:record.id,timelineRevision:record.revision,renderManifest:output.renderManifest,sha256,probe:probed,probeValidation,...(deliveryReport?{deliveryReport}:{}),render:output.render||{}}
+        path:output.path,metadata:{...(output.metadata||{}),operation:"timeline.render",timelineId:record.id,timelineRevision:record.revision,renderManifest:output.renderManifest,deliveryManifest,sha256,probe:probed,probeValidation,...(deliveryReport?{deliveryReport}:{}),render:output.render||{}}
       });
+      const publishedDeliveryManifest=createDeliveryManifest({timelineId:record.id,timelineRevision:record.revision,outputAsset:outputAsset.id,sha256,byteSize:info.size,mediaType:output.mediaType,profileId:deliveryProfileId,deliveryReport,renderManifest:output.renderManifest});
+      // Publish metadata is immutable at this boundary; return the asset-bound manifest as the authoritative receipt.
       onProgress(100);
-      return{timelineId:record.id,timelineRevision:record.revision,outputAsset,sha256,byteSize:info.size,probeValidation,...(deliveryReport?{deliveryReport}:{}),render:output.render||{},renderManifest:output.renderManifest};
+      return{timelineId:record.id,timelineRevision:record.revision,outputAsset,sha256,byteSize:info.size,probeValidation,...(deliveryReport?{deliveryReport}:{}),deliveryManifest:publishedDeliveryManifest,render:output.render||{},renderManifest:output.renderManifest};
     }finally{
       await Promise.all([...materialized.values()].map(asset=>asset.cleanup?.().catch(()=>{})));
       await rm(workDir,{recursive:true,force:true}).catch(()=>{});
