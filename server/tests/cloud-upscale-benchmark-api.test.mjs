@@ -11,7 +11,7 @@ const outputId="623e4567-e89b-42d3-a456-426614174000";
 const fixtureId="723e4567-e89b-42d3-a456-426614174000";
 const hash=char=>char.repeat(64);
 
-function setup({memberRole="reviewer"}={}){
+function setup({memberRole="reviewer",runCount=1}={}){
  const calls=[],rows={fixture:null,run:null,jobs:[]};
  const assets={
   async get({assetId}){if(assetId===sourceId)return{id:sourceId,ownerId:owner,projectId:project,name:"portrait.png",mediaType:"image/png",sha256:hash("c"),metadata:{},derivativeOf:null};
@@ -24,7 +24,10 @@ function setup({memberRole="reviewer"}={}){
   if(path.startsWith("upscale_benchmark_fixtures")&&method==="POST"){const b=JSON.parse(options.body);rows.fixture={...b,created_at:"2026-11-02T12:01:00.000Z"};result=[{id:b.id,created_at:rows.fixture.created_at}];}
   else if(path.startsWith("upscale_benchmark_fixtures")&&method==="GET"){result=rows.fixture?[{id:rows.fixture.id,source_asset_id:rows.fixture.source_asset_id,source_sha256:rows.fixture.source_sha256,fixture_category:rows.fixture.fixture_category}]:[];}
   else if(path.startsWith("upscale_benchmark_runs")&&method==="POST"){const b=JSON.parse(options.body);rows.run={...b,reviewer_id:null,review_decision:null,created_at:"2026-11-02T12:02:00.000Z"};result=[{id:b.id,created_at:rows.run.created_at}];}
-  else if(path.startsWith("upscale_benchmark_runs")&&method==="GET"){result=rows.run?[{id:rows.run.id,owner_id:rows.run.owner_id,record:rows.run.record,reviewer_id:rows.run.reviewer_id}]:[];}
+  else if(path.startsWith("upscale_benchmark_runs")&&method==="GET"){
+   if(rows.run&&url.searchParams.get("limit")==="201"&&runCount>1)result=Array.from({length:runCount},(_,index)=>({...rows.run,id:"823e4567-e89b-42d3-a456-"+String(index+1).padStart(12,"0"),record:{...rows.run.record,fixtureId:"923e4567-e89b-42d3-a456-"+String(index+1).padStart(12,"0")}}));
+   else result=rows.run?[{id:rows.run.id,owner_id:rows.run.owner_id,record:rows.run.record,reviewer_id:rows.run.reviewer_id,asset_id:rows.run.asset_id,fixture_id:rows.run.fixture_id,review_decision:rows.run.review_decision,review_note:rows.run.review_note,reviewed_at:rows.run.reviewed_at,created_at:rows.run.created_at}]:[];
+  }
   else if(path.startsWith("upscale_benchmark_runs")&&method==="PATCH"){const b=JSON.parse(options.body);if(rows.run&&!rows.run.reviewer_id){Object.assign(rows.run,b);result=[rows.run];}}
   else if(path==="jobs"&&method==="POST"){const b=JSON.parse(options.body);const row={...b,output:null,error:null,created_at:"2026-11-02T12:03:00.000Z",updated_at:"2026-11-02T12:03:00.000Z"};rows.jobs.push(row);result=[row];}
   else if(path==="jobs"&&method==="GET"){result=rows.jobs;}
@@ -47,6 +50,19 @@ test("cloud benchmark API pins fixture source, registers verified derivative and
  const list=await f.api.handle({method:"GET",path:"/api/cloud/upscale-benchmarks/runs",ownerId:owner,query:{projectId:project}});
  assert.equal(list.status,200);assert.equal(list.body.report.candidateCount,1);
  assert.ok(f.calls.some(call=>call.path.startsWith("audit_events")&&call.method==="POST"));
+});
+
+test("cloud benchmark report withholds recommendations when more than 200 evidence records exist",async()=>{
+ const f=setup({runCount:201});
+ const fixture=await f.api.handle({method:"POST",path:"/api/cloud/upscale-benchmarks/fixtures",ownerId:owner,query:{projectId:project},body:{sourceAssetId:sourceId,category:"portrait"}});
+ const run=await f.api.handle({method:"POST",path:"/api/cloud/upscale-benchmarks/runs",ownerId:owner,query:{projectId:project},body:{assetId:outputId,fixtureId:fixture.body.fixture.id}});
+ assert.equal(run.status,201);
+ const list=await f.api.handle({method:"GET",path:"/api/cloud/upscale-benchmarks/runs",ownerId:owner,query:{projectId:project}});
+ assert.equal(list.status,200);
+ assert.equal(list.body.runs.length,200);
+ assert.equal(list.body.report.evidenceTruncated,true);
+ assert.equal(list.body.report.evidenceLimit,200);
+ assert.equal(list.body.report.recommended,null);
 });
 
 test("cloud benchmark API requires independent assigned review and stores immutable decision",async()=>{
