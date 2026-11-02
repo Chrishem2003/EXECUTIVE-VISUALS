@@ -54,6 +54,12 @@ test("health reports local storage and media-engine availability without secrets
   assert.equal(response.headers.get("referrer-policy"),"strict-origin-when-cross-origin");
 });
 
+test("CORS preflight explicitly permits the CSRF proof header",async()=>{
+  const response=await fetch(base+"/api/auth/logout",{method:"OPTIONS",headers:{origin:base,"access-control-request-method":"POST","access-control-request-headers":"content-type,x-csrf-token"}});
+  assert.equal(response.status,204);
+  assert.match(response.headers.get("access-control-allow-headers")||"",/x-csrf-token/);
+});
+
 test("local registration issues a separate HttpOnly session cookie and readable strict CSRF cookie",async()=>{
   const response=await fetch(base+"/api/auth/register",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({email:"csrf-cookie@example.test",password:"local-test-password-123"})});
   assert.equal(response.status,201);
