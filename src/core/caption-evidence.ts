@@ -11,7 +11,7 @@ export function assessCaptionEvidence(timeline:EditorialTimeline|null,assets:Sou
  for(const clip of clips){
   const asset=library.get(clip.assetId);
   if(!asset){blocked++;findings.push({code:"CAPTION_ASSET_MISSING",detail:"Caption clip source is not present in the current asset library.",assetId:clip.assetId,clipId:clip.id});continue;}
-  if(asset.mediaType!=="text/vtt"&&!asset.name.toLowerCase().endsWith(".vtt")){blocked++;findings.push({code:"CAPTION_FORMAT_UNSUPPORTED",detail:"Automated caption evidence currently supports validated WebVTT assets; this source is not identified as WebVTT.",assetId:asset.id,clipId:clip.id});continue;}
+  if(asset.mediaType!=="text/vtt"&&!String(asset.name||"").toLowerCase().endsWith(".vtt")){blocked++;findings.push({code:"CAPTION_FORMAT_UNSUPPORTED",detail:"Automated caption evidence currently supports validated WebVTT assets; this source is not identified as WebVTT.",assetId:asset.id,clipId:clip.id});continue;}
   const validation=asset.metadata?.captionValidation;
   if(!object(validation)||!["passed","review","blocked"].includes(String(validation.status))){notRun++;findings.push({code:"CAPTION_VALIDATION_NOT_RUN",detail:"The WebVTT asset has no saved cue-level validation report.",assetId:asset.id,clipId:clip.id});continue;}
   if(validation.status==="blocked"){blocked++;findings.push({code:"CAPTION_VALIDATION_BLOCKED",detail:"Saved WebVTT validation contains blocking format, timing or duration errors.",assetId:asset.id,clipId:clip.id});continue;}
