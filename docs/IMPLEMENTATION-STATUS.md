@@ -456,3 +456,12 @@ This is a runnable worker entry point, not a deployed worker. Do not set the ena
 - Connected the Enhancement Lab to cloud draft create/list routes. Prompts and reference IDs are excluded from browser local storage; legacy local transformation drafts are purged on startup.
 - Added separate owner/editor budget approval metadata (estimate, covering budget, currency, adapter/capability declaration) and audit/job events. The local SQLite plan API remains available for development.
 - Submission remains intentionally blocked with an explicit adapter-unavailable response. The checkbox is not independent proof of person consent; evidence-backed consent verification is still required before person replacement can execute. No provider generation, credit spend, cloud migration or deployment has occurred.
+
+## Latest continuation — first-run onboarding
+
+- Added a responsive, actionable first-production checklist to the command centre.
+- The three steps link directly to the existing creative brief compiler, series producer and asset library; the dashboard derives completion from real local workspace records rather than a manually toggled progress value.
+- Progress is exposed with accessible progress semantics and a visible completion meter; completed steps are clearly identified.
+- The checklist disappears when all three milestones are complete. It does not create fake projects, upload files, call providers or change cloud/production state.
+- The feature is additive and local-first. Existing project and asset persistence behavior is unchanged.
+- Verification is pending for this continuation; the feature branch will be tested by GitHub Actions before review.
