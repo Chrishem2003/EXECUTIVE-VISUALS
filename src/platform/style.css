@@ -384,3 +384,7 @@
 .delivery-approval .button-row{display:flex;flex-wrap:wrap;gap:8px}
 .delivery-approval .button-row button{min-height:36px}
 .delivery-approval .timeline-quality-list{max-height:240px;overflow:auto}
+
+
+.delivery-package-actions{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:12px 0;padding:12px;border:1px solid var(--border,#303846);border-radius:10px}
+.delivery-package-actions small{flex:1 1 220px}
