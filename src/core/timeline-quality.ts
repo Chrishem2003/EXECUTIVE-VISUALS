@@ -85,3 +85,17 @@ export function analyzeTimelineQuality(timeline:EditorialTimeline|null,assets:Ti
  if(sequenceEnd>0)findings.push({code:"SEQUENCE_DURATION",severity:"info",title:"Sequence duration",detail:"Current edit length is "+Math.floor(sequenceEnd/60)+":"+String(Math.floor(sequenceEnd%60)).padStart(2,"0")+"."});
  return findings;
 }
+
+export interface TimelineRenderPreflight {
+ ready:boolean;
+ blockers:TimelineQualityFinding[];
+ warnings:TimelineQualityFinding[];
+}
+
+/** Hard render blockers are deterministic integrity errors; warnings remain visible for human review. */
+export function assessTimelineRenderPreflight(timeline:EditorialTimeline|null,assets:TimelineQualityAsset[]=[]):TimelineRenderPreflight{
+ const findings=analyzeTimelineQuality(timeline,assets);
+ const blockers=findings.filter(item=>item.severity==="error");
+ const warnings=findings.filter(item=>item.severity==="warning");
+ return {ready:blockers.length===0,blockers,warnings};
+}
