@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { validateUpscaleBenchmarkRecord, summarizeUpscaleBenchmarks, compareUpscaleBenchmarkCandidates, sha256Hex } from "../upscale-benchmark.mjs";
+import { validateUpscaleBenchmarkRecord, summarizeUpscaleBenchmarks, compareUpscaleBenchmarkCandidates, sha256Hex, buildUpscaleBenchmarkRecordFromAsset } from "../upscale-benchmark.mjs";
 
 const digest = char => char.repeat(64);
 const validRecord = overrides => ({
@@ -166,4 +166,44 @@ test("candidate comparison rejects duplicate fixture evidence for the same pinne
   assert.equal(report.invalidRecords.length, 1);
   assert.equal(report.candidates[0].qualityVerified, false);
   assert.equal(report.recommended, null);
+});
+
+
+test("creates benchmark evidence from a persisted AI-upscale derivative and its provenance", () => {
+  const sourceHash=digest("c"),outputHash=digest("d");
+  const asset={
+    id:"derived-asset",mediaType:"image/png",sha256:outputHash,derivativeOf:"source-asset",
+    createdAt:"2026-11-02T12:00:00.000Z",
+    metadata:{processing:{
+      schemaVersion:1,sourceAssetId:"source-asset",inputSha256:sourceHash,outputSha256:outputHash,
+      model:"realesrgan-x4plus",modelVersion:digest("a")+":"+digest("b"),
+      binarySha256:digest("a"),modelFilesSha256:digest("b"),
+      sourceWidth:320,sourceHeight:240,width:1280,height:960,scale:4,durationMs:1250,
+      dimensionsVerified:true,decoderVerified:true,qualityReview:"not_reviewed"
+    }}
+  };
+  const record=buildUpscaleBenchmarkRecordFromAsset({
+    outputAsset:asset,fixtureId:"portrait-01",fixtureCategory:"portrait"
+  });
+  assert.equal(validateUpscaleBenchmarkRecord(record).valid,true);
+  assert.equal(record.inputSha256,sourceHash);
+  assert.equal(record.outputSha256,outputHash);
+  assert.equal(record.executionStatus,"passed");
+  assert.equal(record.qualityReview,"not_reviewed");
+  assert.equal(record.timestamp,asset.createdAt);
+});
+
+test("refuses benchmark evidence if the stored derivative hash or parent lineage disagrees", () => {
+  const asset={
+    mediaType:"image/png",sha256:digest("e"),derivativeOf:"different-source",
+    metadata:{processing:{
+      sourceAssetId:"source-asset",inputSha256:digest("c"),outputSha256:digest("d"),
+      model:"realesrgan-x4plus",modelVersion:"build",binarySha256:digest("a"),modelFilesSha256:digest("b"),
+      sourceWidth:320,sourceHeight:240,width:1280,height:960,scale:4,durationMs:1250,
+      dimensionsVerified:true,decoderVerified:true,qualityReview:"not_reviewed"
+    }}
+  };
+  assert.throws(()=>buildUpscaleBenchmarkRecordFromAsset({
+    outputAsset:asset,fixtureId:"portrait-02",fixtureCategory:"portrait"
+  }),error=>error.code==="UPSCALE_BENCHMARK_EVIDENCE_INVALID"&&error.issues.length>=2);
 });
