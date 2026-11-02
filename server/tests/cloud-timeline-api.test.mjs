@@ -3,10 +3,12 @@ import assert from "node:assert/strict";
 import { Readable } from "node:stream";
 import { readFile } from "node:fs/promises";
 import { createCloudTimelineApi } from "../cloud-timeline-api.mjs";
+import { createDeliveryManifest } from "../delivery-manifest.mjs";
+import { createRenderManifest } from "../render-manifest.mjs";
 
 const owner="123e4567-e89b-42d3-a456-426614174000",editor="223e4567-e89b-42d3-a456-426614174000",project="423e4567-e89b-42d3-a456-426614174000",timelineId="523e4567-e89b-42d3-a456-426614174000";
 const timelineDoc={width:1280,height:720,frameRate:{numerator:24,denominator:1},tracks:[],markers:[]};
-function setup({canWrite=true,projectId=project,existing=[],timelineDocOverride=timelineDoc,assetOverride=null}={}){
+function setup({canWrite=true,projectId=project,existing=[],timelineDocOverride=timelineDoc,assetOverride=null,authorizeOverride=null}={}){
  const calls=[],created=[];
  const timeline={id:timelineId,ownerId:owner,projectId,name:"Test timeline",revision:2,timeline:timelineDocOverride,otio:null};
  const timelines={
@@ -16,9 +18,51 @@ function setup({canWrite=true,projectId=project,existing=[],timelineDocOverride=
   async update(input){calls.push(["update",input]);return{...timeline,revision:input.expectedRevision+1,timeline:input.timeline};}
  };
  const fetchImpl=async(url,options)=>{calls.push(["fetch",url,options]);if(url.includes("/jobs")&&options.method==="POST")return{ok:true,status:201,async text(){return JSON.stringify([{id:JSON.parse(options.body).id,owner_id:owner,project_id:projectId,job_type:"timeline.render",status:"queued",input:JSON.parse(options.body).input}])}};if(url.includes("/jobs?"))return{ok:true,status:200,async text(){return JSON.stringify(existing)}};return{ok:true,status:201,async text(){return""}};};
- const api=createCloudTimelineApi({url:"https://example.supabase.co",serviceRoleKey:"service-secret",fetchImpl,timelineService:{timelines,assets:{async list(input){calls.push(["asset-list",input]);return[{id:"asset-1",projectId:input.projectId}];},async get(input){calls.push(["asset-get",input]);return assetOverride||{id:"723e4567-e89b-42d3-a456-426614174000",ownerId:owner,projectId:project,name:"generated.mp4",mediaType:"video/mp4",sha256:"a".repeat(64),metadata:{generated:true,jobId:"823e4567-e89b-42d3-a456-426614174000",mediaVerification:{status:"passed",readable:true,sha256:"a".repeat(64)},probe:{format:{duration:"2.51"},streams:[{codec_type:"video"}]}}};}},projects:{async create(input){calls.push(["project-create",input]);return{id:"project-1",...input};},async list(input){calls.push(["project-list",input]);return[{id:project}];},async get(input){calls.push(["project-get",input]);return{id:project,...input};},async update(input){calls.push(["project-update",input]);return{id:project,...input};},async archive(input){calls.push(["project-archive",input]);return{id:project,archived:true};}}},authorize:async({ownerId,projectId:pid,action})=>ownerId===owner&&(!pid||pid===project)&&(action==="read"||canWrite)});
+ const api=createCloudTimelineApi({url:"https://example.supabase.co",serviceRoleKey:"service-secret",fetchImpl,timelineService:{timelines,assets:{async list(input){calls.push(["asset-list",input]);return[{id:"asset-1",projectId:input.projectId}];},async get(input){calls.push(["asset-get",input]);return assetOverride||{id:"723e4567-e89b-42d3-a456-426614174000",ownerId:owner,projectId:project,name:"generated.mp4",mediaType:"video/mp4",sha256:"a".repeat(64),metadata:{generated:true,jobId:"823e4567-e89b-42d3-a456-426614174000",mediaVerification:{status:"passed",readable:true,sha256:"a".repeat(64)},probe:{format:{duration:"2.51"},streams:[{codec_type:"video"}]}}};}},projects:{async create(input){calls.push(["project-create",input]);return{id:"project-1",...input};},async list(input){calls.push(["project-list",input]);return[{id:project}];},async get(input){calls.push(["project-get",input]);return{id:project,...input};},async update(input){calls.push(["project-update",input]);return{id:project,...input};},async archive(input){calls.push(["project-archive",input]);return{id:project,archived:true};}}},authorize:authorizeOverride|| (async({ownerId,projectId:pid,action})=>ownerId===owner&&(!pid||pid===project)&&(action==="read"||canWrite))});
  return{api,calls,created};
 }
+
+const reviewJobId="623e4567-e89b-42d3-a456-426614174000";
+function deliveryReviewFixture({jobOwner=owner,receiptValid=true,deliveryStatus="passed"}={}){
+ const renderManifest=createRenderManifest({timeline:{tracks:[]},assets:new Map(),timelineRevision:2,output:{width:1920,height:1080,codec:"h264"}});
+ const receipt=createDeliveryManifest({timelineId,timelineRevision:2,outputAsset:"published-asset",sha256:"a".repeat(64),byteSize:2048,mediaType:"video/mp4",profileId:"youtube-1080p",deliveryReport:{status:deliveryStatus,findings:[]},renderManifest,createdAt:"2026-11-02T09:00:00.000Z"});
+ const job={id:reviewJobId,owner_id:jobOwner,project_id:project,job_type:"timeline.render",status:"succeeded",input:{timelineId,timelineRevision:2},output:{deliveryManifest:receipt,outputAsset:{id:"published-asset"},sha256:"a".repeat(64),deliveryReport:{status:deliveryStatus}}};
+ if(!receiptValid)job.output.deliveryManifest={...receipt,fingerprint:"0".repeat(64)};
+ return{job,receipt};
+}
+test("delivery approval requires independent project reviewer and records fingerprint-bound decision",async()=>{
+ const {job,receipt}=deliveryReviewFixture({jobOwner:owner});
+ const f=setup({existing:[job],authorizeOverride:async({ownerId,projectId:pid,action})=>ownerId===editor&&pid===project&&action==="write"});
+ const result=await f.api.handle({method:"POST",path:"/api/cloud/jobs/"+reviewJobId+"/delivery-approval",ownerId:editor,body:{decision:"approved",note:"Visual review passed."}});
+ assert.equal(result.status,201);
+ assert.equal(result.body.approval.fingerprint,receipt.fingerprint);
+ assert.equal(result.body.approval.reviewerId,editor);
+ const inserted=f.calls.find(call=>call[0]==="fetch"&&call[1].includes("/job_events")&&call[2].method==="POST");
+ assert.equal(JSON.parse(inserted[2].body).event_type,"delivery.approved");
+ assert.equal(JSON.parse(inserted[2].body).event_data.outputAsset,"published-asset");
+});
+test("delivery creator cannot approve own output",async()=>{
+ const {job}=deliveryReviewFixture({jobOwner:owner});
+ const f=setup({existing:[job]});
+ const result=await f.api.handle({method:"POST",path:"/api/cloud/jobs/"+reviewJobId+"/delivery-approval",ownerId:owner,body:{decision:"approved"}});
+ assert.equal(result.status,403);
+});
+test("delivery approval fails closed for modified receipt fingerprints",async()=>{
+ const {job}=deliveryReviewFixture({jobOwner:owner,receiptValid:false});
+ const f=setup({existing:[job],authorizeOverride:async()=>true});
+ const result=await f.api.handle({method:"POST",path:"/api/cloud/jobs/"+reviewJobId+"/delivery-approval",ownerId:editor,body:{decision:"approved"}});
+ assert.equal(result.status,409);
+ assert.equal(result.body.error.code,"DELIVERY_EVIDENCE_UNVERIFIED");
+});
+test("delivery approval blocks validation failures and invalid decisions",async()=>{
+ const {job}=deliveryReviewFixture({jobOwner:owner,deliveryStatus:"needs-attention"});
+ const f=setup({existing:[job],authorizeOverride:async()=>true});
+ const blocked=await f.api.handle({method:"POST",path:"/api/cloud/jobs/"+reviewJobId+"/delivery-approval",ownerId:editor,body:{decision:"approved"}});
+ assert.equal(blocked.status,409);
+ const invalid=await f.api.handle({method:"POST",path:"/api/cloud/jobs/"+reviewJobId+"/delivery-approval",ownerId:editor,body:{decision:"ship-it"}});
+ assert.equal(invalid.status,400);
+});
+
 test("cloud timeline create binds ownership to verified identity, not request body",async()=>{const f=setup();const result=await f.api.handle({method:"POST",path:"/api/cloud/timelines",ownerId:owner,body:{ownerId:editor,projectId:project,name:"Test",timeline:timelineDoc}});assert.equal(result.status,201);assert.equal(f.created[0].ownerId,owner);assert.equal(f.created[0].projectId,project);});
 test("cloud timeline get and update use verified owner and optimistic revision",async()=>{const f=setup();const got=await f.api.handle({method:"GET",path:"/api/cloud/timelines/"+timelineId,ownerId:owner});assert.equal(got.status,200);const updated=await f.api.handle({method:"PUT",path:"/api/cloud/timelines/"+timelineId,ownerId:owner,body:{expectedRevision:2,timeline:timelineDoc}});assert.equal(updated.status,200);assert.equal(f.calls.find(c=>c[0]==="update")[1].expectedRevision,2);});
 test("cloud render submission queues a durable job using current saved timeline revision",async()=>{const f=setup();const result=await f.api.handle({method:"POST",path:"/api/cloud/timelines/"+timelineId+"/render",ownerId:owner,body:{ownerId:editor,timelineId:"bad"},idempotencyKey:"render-1"});assert.equal(result.status,202);const inserted=f.calls.find(c=>c[0]==="fetch"&&c[1].includes("/jobs")&&c[2].method==="POST");const body=JSON.parse(inserted[2].body);assert.equal(body.owner_id,owner);assert.equal(body.input.timelineId,timelineId);assert.equal(body.input.timelineRevision,2);assert.equal(body.job_type,"timeline.render");});
