@@ -37,6 +37,6 @@ export function createCloudTimelineWorker({
       onProgress:options.onProgress??(()=>{}),
       onEvent:options.onEvent??(()=>{})
     });},
-    recoverExpired(limit=100){return cloudQueue.recover(limit);}
+    recoverExpired(limit=100){return cloudQueue.recover(limit,TIMELINE_JOB_TYPES);}
   });
 }
