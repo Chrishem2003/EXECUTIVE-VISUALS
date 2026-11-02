@@ -419,7 +419,7 @@ test("cloud AI upscale publishes a separate image derivative with engine provena
     assert.equal(published.metadata.processing.method, "ai-super-resolution");
     assert.equal(result.processing.schemaVersion, 1);
     assert.equal(result.processing.sourceAssetId, "image-source");
-    assert.equal(result.processing.inputSha256, "d".repeat(64));
+    assert.equal(result.processing.inputSha256, sourceSha256);
     assert.equal(result.processing.outputSha256, published.metadata.sha256);
     assert.match(result.processing.modelVersion, /^[a-f0-9]{64}:[a-f0-9]{64}$/);
     assert.ok(Number.isInteger(result.processing.durationMs) && result.processing.durationMs > 0);
