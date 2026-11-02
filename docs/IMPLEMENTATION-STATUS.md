@@ -466,3 +466,13 @@ This is a runnable worker entry point, not a deployed worker. Do not set the ena
 - Added `verify:timeline-preview` to the standard build pipeline.
 - Cloud preview remains intentionally unavailable until the cloud asset API provides a verified, authenticated private-media playback URL. No guessed cloud URLs or public storage paths are used.
 - **Verification status:** implementation and test files are committed on the working branch. The remote CI build has not yet been observed; no claim of passing build or end-to-end browser playback is made.
+
+
+## Timeline preview and editing follow-up — 2 November 2026
+
+- Fixed the preview monitor's strict TypeScript narrowing: the selected track is now checked before its kind is read.
+- Added a non-destructive `removeClip` core operation with optional ripple mode. Ripple mode removes the selected clip and shifts only later clips on the same unlocked track; other tracks and the original immutable timeline value remain unchanged.
+- Added a visible Ripple delete action to each timeline clip and included focused tests for ripple, ordinary delete, cross-track isolation, locked tracks and missing clips.
+- Added `verify:timeline-editing` to the production build verification.
+- **CI correction:** the first preview PR run failed during `tsc --noEmit` on the possibly-undefined track access. This was a real build failure, not an environment issue. The fix and ripple editing changes are now committed; a fresh Actions run is required before claiming the branch passes.
+- Speed changes and transitions are not exposed as finished controls because the current render engine explicitly rejects time remapping. They require coordinated local/cloud renderer support and render fixtures before activation.
