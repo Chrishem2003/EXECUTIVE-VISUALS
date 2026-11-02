@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { addClip, addMarker, addTrack, createTimeline, moveClip, rational, seconds, splitClip, toOpenTimelineIo, trimClip, validateTimeline } from "../src/core/timeline.ts";
-import { analyzeTimelineQuality } from "../src/core/timeline-quality.ts";
+import { analyzeTimelineQuality, assessTimelineRenderPreflight } from "../src/core/timeline-quality.ts";
 import { assessDerivativeEligibility, replaceTimelineClipAsset } from "../src/core/timeline-derivatives.ts";
 import { buildEnhancementEvidenceReport } from "../src/core/enhancement-evidence-report.ts";
 import { buildProductionReadinessReport } from "../src/core/production-readiness.ts";
@@ -105,6 +105,13 @@ const mismatchedParentHashDerivative={...derivativeBase,metadata:{...derivativeB
 assert.ok(analyzeTimelineQuality(derivativeTimeline,[mismatchedParentHashDerivative,derivativeSource]).some(item=>item.code==="DERIVATIVE_SOURCE_PARENT_HASH_MISMATCH"&&item.severity==="error"));
 const unavailableParentFindings=analyzeTimelineQuality(derivativeTimeline,[derivativeBase]);
 assert.ok(unavailableParentFindings.some(item=>item.code==="DERIVATIVE_PARENT_ASSET_UNAVAILABLE"&&item.severity==="warning"));
+const blockedRenderPreflight=assessTimelineRenderPreflight(derivativeTimeline,[mismatchedParentHashDerivative,derivativeSource]);
+assert.equal(blockedRenderPreflight.ready,false,"a derivative source/parent checksum mismatch must block rendering");
+assert.ok(blockedRenderPreflight.blockers.some(item=>item.code==="DERIVATIVE_SOURCE_PARENT_HASH_MISMATCH"));
+const warningOnlyRenderPreflight=assessTimelineRenderPreflight(derivativeTimeline,[derivativeBase]);
+assert.equal(warningOnlyRenderPreflight.ready,true,"warnings should remain reviewable without being silently promoted to hard blockers");
+assert.ok(warningOnlyRenderPreflight.warnings.some(item=>item.code==="DERIVATIVE_PARENT_ASSET_UNAVAILABLE"));
+
 assert.ok(analyzeTimelineQuality(null).some(item=>item.code==="NO_SEQUENCE"));
 const derivativeBlockedGate=buildProductionReadinessReport({checks:{derivative_integrity:{status:"blocked",summary:"Derivative source checksum mismatch.",findings:[{code:"DERIVATIVE_SOURCE_PARENT_HASH_MISMATCH",detail:"Input checksum does not match the parent."}]}}});
 assert.equal(derivativeBlockedGate.decision,"blocked","a derivative integrity error must block production readiness");
