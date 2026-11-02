@@ -75,3 +75,15 @@ test("cloud AI upscale queues a rights-confirmed idempotent job and lists durabl
  const list=await f.api.handle({method:"GET",path:"/api/cloud/upscale-jobs",ownerId:owner,query:{projectId:project}});
  assert.equal(list.status,200);assert.equal(list.body.jobs.length,1);assert.equal(list.body.jobs[0].status,"queued");
 });
+
+
+test("cloud AI upscale rejects missing rights confirmation, unsupported models and read-only members",async()=>{
+ const f=setup();
+ const base={projectId:project,sourceAssetId:sourceId,scale:4,tile:0,format:"png"};
+ const noRights=await f.api.handle({method:"POST",path:"/api/cloud/upscale",ownerId:owner,body:{...base,model:"realesrgan-x4plus",rightsConfirmed:false},idempotencyKey:"upscale-no-rights"});
+ assert.equal(noRights.status,403);assert.equal(noRights.body.error.code,"MEDIA_RIGHTS_REQUIRED");
+ const invalidModel=await f.api.handle({method:"POST",path:"/api/cloud/upscale",ownerId:owner,body:{...base,model:"../untrusted-model",rightsConfirmed:true},idempotencyKey:"upscale-invalid-model"});
+ assert.equal(invalidModel.status,400);assert.equal(invalidModel.body.error.code,"UPSCALE_OPTIONS_INVALID");
+ const readOnly=await f.api.handle({method:"POST",path:"/api/cloud/upscale",ownerId:reviewer,body:{...base,model:"realesrgan-x4plus",rightsConfirmed:true},idempotencyKey:"upscale-readonly-user"});
+ assert.equal(readOnly.status,404);assert.equal(readOnly.body.error.code,"PROJECT_NOT_FOUND");
+});
