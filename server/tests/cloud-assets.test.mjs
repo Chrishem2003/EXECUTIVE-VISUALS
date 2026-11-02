@@ -26,6 +26,10 @@ function fixture({authorize=async()=>true,insertResponse=null,removeError=false}
   calls.push({url,options});
   if(options.method==="POST"){const payload=JSON.parse(options.body);return response(insertResponse===null?[{...row,...payload,created_at:row.created_at}]:insertResponse);}
   if(options.method==="PATCH"){row.deleted_at=JSON.parse(options.body).deleted_at;return response([row]);}
+  if(options.method==="GET"&&url.includes("deleted_at=lt.")){
+   const cutoff=decodeURIComponent(url.match(/deleted_at=lt\\.([^&]+)/)?.[1]||"");
+   return response(row.deleted_at&&Date.parse(row.deleted_at)<Date.parse(cutoff)?[row]:[]);
+  }
   return response([row]);
  };
  return {repo:createCloudAssetRepository({...config,storage,authorize,fetchImpl}),calls,storageCalls,row,setRemoveError(value){removeFails=value;}};
