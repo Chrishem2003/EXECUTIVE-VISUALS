@@ -5,6 +5,35 @@ const plain=value=>value!==null&&typeof value==="object"&&!Array.isArray(value);
 const fail=(message,code)=>{throw Object.assign(new Error(message),{code});};
 const stable=value=>Array.isArray(value)?"["+value.map(stable).join(",")+"]":plain(value)?"{"+Object.keys(value).sort().map(key=>JSON.stringify(key)+":"+stable(value[key])).join(",")+"}":JSON.stringify(value);
 const hash=value=>createHash("sha256").update(stable(value)).digest("hex");
+const lineageEvidence=processing=>{
+ if(!plain(processing))return null;
+ const allowed=["schemaVersion","engine","method","model","modelVersion","scale","tile","inputSha256","outputSha256","sourceSha256","sourceAssetId","durationMs","sourceWidth","sourceHeight","width","height","dimensionsVerified","decoderVerified","binarySha256","modelFilesSha256","qualityReview","aiInferencePerformed","parameters"];
+ const bounded={};
+ for(const key of allowed){
+  const value=processing[key];
+  if(typeof value==="string"){
+   if(value.length>256)fail("Derivative processing evidence exceeds the supported field length.","RENDER_MANIFEST_LINEAGE_INVALID");
+   bounded[key]=value;
+  }else if(typeof value==="number"){
+   if(!Number.isFinite(value)||Math.abs(value)>1e9)fail("Derivative processing evidence contains an invalid numeric value.","RENDER_MANIFEST_LINEAGE_INVALID");
+   bounded[key]=value;
+  }else if(typeof value==="boolean"||value===null)bounded[key]=value;
+  else if(key==="parameters"&&plain(value)){
+   const entries=Object.entries(value);
+   if(entries.length>32)fail("Derivative processing evidence contains too many parameters.","RENDER_MANIFEST_LINEAGE_INVALID");
+   const parameters={};
+   for(const [name,item] of entries){
+    if(name.length>64||!((typeof item==="string"&&item.length<=128)||(typeof item==="number"&&Number.isFinite(item))||typeof item==="boolean"))fail("Derivative processing parameters are invalid.","RENDER_MANIFEST_LINEAGE_INVALID");
+    parameters[name]=item;
+   }
+   bounded.parameters=parameters;
+  }
+ }
+ for(const key of ["inputSha256","sourceSha256","outputSha256","binarySha256","modelFilesSha256"]){
+  if(bounded[key]&&!SHA256.test(bounded[key]))fail("Derivative processing evidence contains an invalid checksum.","RENDER_MANIFEST_LINEAGE_INVALID");
+ }
+ return bounded;
+};
 const seconds=time=>{const value=Number(time?.value),rate=Number(time?.rate);if(!Number.isFinite(value)||!Number.isFinite(rate)||rate<=0)fail("Timeline contains an invalid time value.","RENDER_MANIFEST_INVALID_TIMELINE");return Math.max(0,Math.min(86400,value/rate));};
 
 /**
@@ -33,19 +62,23 @@ export function createRenderManifest({timeline,assets,timelineRevision,output={}
    if(!existing){
     const derivativeOf=typeof asset.derivativeOf==="string"?asset.derivativeOf:typeof asset.derivative_of==="string"?asset.derivative_of:null;
     const metadata=plain(asset.metadata)?asset.metadata:plain(asset.metadata_json)?asset.metadata_json:{};
-    const processing=plain(metadata.processing)?metadata.processing:null;
-    if(processing?.sourceAssetId&&derivativeOf&&processing.sourceAssetId!==derivativeOf)fail("Derivative provenance does not match the recorded parent asset.","RENDER_MANIFEST_LINEAGE_INVALID");
+    const rawProcessing=plain(metadata.processing)?metadata.processing:null;
+    if(rawProcessing?.sourceAssetId&&derivativeOf&&rawProcessing.sourceAssetId!==derivativeOf)fail("Derivative provenance does not match the recorded parent asset.","RENDER_MANIFEST_LINEAGE_INVALID");
+    const processing=lineageEvidence(rawProcessing);
     const inputSha256=processing?.inputSha256||processing?.sourceSha256||null;
-    if(inputSha256!==null&&!SHA256.test(String(inputSha256)))fail("Derivative provenance contains an invalid source checksum.","RENDER_MANIFEST_LINEAGE_INVALID");
     const lineage=derivativeOf?{
      parentAssetId:derivativeOf,
      operation:typeof metadata.operation==="string"?metadata.operation.slice(0,100):null,
      sourceSha256:inputSha256?String(inputSha256).toLowerCase():null,
      processingFingerprint:processing?hash(processing):null,
-     engine:typeof processing?.engine==="string"?processing.engine.slice(0,100):null,
-     model:typeof processing?.model==="string"?processing.model.slice(0,160):null,
-     modelVersion:typeof processing?.modelVersion==="string"?processing.modelVersion.slice(0,200):null,
-     qualityReview:typeof processing?.qualityReview==="string"?processing.qualityReview.slice(0,40):null,
+     engine:typeof processing?.engine==="string"?processing.engine:null,
+     method:typeof processing?.method==="string"?processing.method:null,
+     model:typeof processing?.model==="string"?processing.model:null,
+     modelVersion:typeof processing?.modelVersion==="string"?processing.modelVersion:null,
+     scale:typeof processing?.scale==="number"?processing.scale:null,
+     dimensionsVerified:processing?.dimensionsVerified===true,
+     decoderVerified:processing?.decoderVerified===true,
+     qualityReview:typeof processing?.qualityReview==="string"?processing.qualityReview:null,
      aiInferencePerformed:processing?.aiInferencePerformed===true||metadata.operation==="media.ai-upscale"
     }:null;
     referenced.set(assetId,{assetId,sha256,mediaType:String(asset.mediaType||asset.media_type||""),size:Number.isSafeInteger(asset.size)?asset.size:null,...(lineage?{lineage}:{})});
