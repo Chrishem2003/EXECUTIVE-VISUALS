@@ -404,3 +404,13 @@ This is a runnable worker entry point, not a deployed worker. Do not set the ena
 - Registered five transformation capabilities in the typed capability atlas and machine-readable catalog; all are marked adapter-required, not provider-ready.
 - Added focused regression tests and a dedicated Transformation Studio design/release document. Corrected the existing audio-recipe test so it no longer expects unsupported parameters to be silently ignored.
 - **Not yet implemented:** provider execution, UI submission, private-media ingestion for remote adapters, asynchronous transform jobs, cost estimation, result download/ingestion, visual QA and production deployment. No paid provider was activated and no media was submitted.
+
+
+## Resumable video transformation and finishing pipeline — 2 November 2026
+
+- Added `server/video-finishing-pipeline.mjs`, a provider-neutral orchestrator for ordered transformation, upscale, frame-rate, HDR, audio finishing and transcode steps.
+- The full plan is validated before execution: every step must declare a unique ID, kind, adapter, exact capability, remote/local status and known non-negative cost estimate. Remote execution requires a durable approval ID and a budget covering the entire plan.
+- Each step must resolve to an enabled adapter that declares the exact requested capability and matching remote/local mode. Outputs must be new video derivatives with valid SHA-256 receipts and immediate-parent lineage.
+- Successful steps are checkpointed with deterministic idempotency keys bound to pipeline ID, step ID, input asset checksum and settings. A resumed pipeline reuses successful matching checkpoints; stale or conflicting checkpoints fail closed.
+- Added tests for approval and budget preflight, unknown costs, adapter readiness, output lineage, deterministic resume and checkpoint conflict. Added the tests to the standard build and registered the finishing pipeline in the typed capability atlas and JSON catalogue.
+- **Still outstanding:** durable database-backed checkpoint implementation, adapter-specific video-to-video execution, secure provider upload/download, real cost quotes, worker wiring, UI progress/review and actual visual-quality validation. The orchestrator itself makes no provider calls and spends no credits.
