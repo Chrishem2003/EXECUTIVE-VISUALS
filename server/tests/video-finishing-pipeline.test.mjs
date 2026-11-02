@@ -71,3 +71,41 @@ test("rejects conflicting checkpoints when the source hash or settings change",a
  const changed={...plan,steps:plan.steps.map((step,i)=>i?step:{...step,config:{prompt:"A different transformation"}})};
  await assert.rejects(()=>pipeline.run(changed,approval),e=>e.code==="VIDEO_PIPELINE_CHECKPOINT_CONFLICT");
 });
+
+
+test("remote pipeline refuses dispatch without live authorization callback",async()=>{
+ const {pipeline,calls}=harness();
+ const unguarded=createVideoFinishingPipeline({
+  resolveAdapter:async()=>({status:"ready",remote:true,capabilities:["video.transform"]}),
+  checkpoints:{get:async()=>null,save:async()=>{}},
+  executeStep:async()=>{calls.push("provider-dispatch");return{};}
+ });
+ await assert.rejects(()=>unguarded.run({...plan,steps:[plan.steps[0]]},approval),e=>e.code==="VIDEO_PIPELINE_LIVE_AUTHORIZATION_REQUIRED");
+ assert.equal(calls.length,0);
+});
+
+test("remote pipeline rechecks approval and budget before each remote provider call",async()=>{
+ const calls=[];
+ let authorizationCount=0;
+ const twoRemote={...plan,steps:[
+  {...plan.steps[0],id:"remote-one"},
+  {...plan.steps[0],id:"remote-two",config:{prompt:"Second operation"}}
+ ]};
+ const pipeline=createVideoFinishingPipeline({
+  resolveAdapter:async()=>({status:"ready",remote:true,capabilities:["video.transform"]}),
+  checkpoints:{get:async()=>null,save:async()=>{}},
+  authorizeExecution:async({approvalId,adapterId,capability,requiredBudgetMicros})=>{
+   authorizationCount++;
+   return authorizationCount===1
+    ?{approved:true,approvalId,adapterId,capability,approvedBudgetMicros:requiredBudgetMicros}
+    :{approved:false,approvalId,adapterId,capability,approvedBudgetMicros:requiredBudgetMicros};
+  },
+  executeStep:async({step,sourceAsset})=>{
+   calls.push(step.id);
+   return{id:step.id+"-output",mediaType:"video/mp4",sha256:String(calls.length).padStart(64,"0"),derivativeOf:sourceAsset.id};
+  }
+ });
+ await assert.rejects(()=>pipeline.run(twoRemote,approval),e=>e.code==="VIDEO_PIPELINE_LIVE_AUTHORIZATION_DENIED");
+ assert.deepEqual(calls,["remote-one"]);
+ assert.equal(authorizationCount,2);
+});
