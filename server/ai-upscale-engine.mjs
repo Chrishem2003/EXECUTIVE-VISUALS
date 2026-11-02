@@ -174,6 +174,7 @@ export function createRealEsrganAdapter({
       model: selected,
       binarySha256: currentFingerprint?.binarySha256 || null,
       modelFilesSha256: currentFingerprint?.modelFilesSha256 || null,
+      engineFingerprint: currentFingerprint?.fingerprint || null,
       reason: !binaryReady ? "Configure a readable NCNN/Vulkan executable." : !modelReady ? "The selected allowlisted model files are not installed." : !enabled ? "Engine is installed, but AI_UPSCALE_ENABLED is not enabled on this worker." : executionVerified ? "Execution self-test passed; neural inference quality has not been independently verified." : "Configured, but an execution self-test has not passed on this worker."
     };
   }
@@ -226,11 +227,7 @@ export function createRealEsrganAdapter({
     if (dirname(output) === input || output.startsWith(input + sep)) throw fail("AI upscale output path is invalid.", "AI_UPSCALE_INVALID_PATH");
     const executionStartedAt = Date.now();
     const engineBefore = await fingerprint(prepared.model);
-    const expectedFingerprint = createHash("sha256").update([
-      readiness.binarySha256,
-      readiness.modelFilesSha256
-    ].join(":")).digest("hex");
-    if (!engineBefore || engineBefore.fingerprint !== expectedFingerprint) throw fail("AI upscale engine changed after readiness verification.", "AI_UPSCALE_ENGINE_CHANGED");
+    if (!engineBefore || engineBefore.fingerprint !== readiness.engineFingerprint) throw fail("AI upscale engine changed after readiness verification.", "AI_UPSCALE_ENGINE_CHANGED");
     await run(prepared.binary, prepared.args, timeoutMs, options.signal);
     const engineAfter = await fingerprint(prepared.model);
     if (!engineAfter || engineAfter.fingerprint !== engineBefore.fingerprint) throw fail("AI upscale executable or model weights changed during inference; output cannot be published.", "AI_UPSCALE_ENGINE_CHANGED");
