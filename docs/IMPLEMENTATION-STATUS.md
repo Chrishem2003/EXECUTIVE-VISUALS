@@ -485,3 +485,13 @@ This is a runnable worker entry point, not a deployed worker. Do not set the ena
 - Timeline switches reset history so edits from one sequence cannot be applied to another.
 - Added automated coverage for undo, redo, redo invalidation after a new edit, history bounds and empty stacks.
 - The history feature is draft-branch code pending its new CI run. Browser interaction and multi-user conflict behavior still require manual acceptance testing.
+
+## Latest verified delivery-integrity increment — 2 November 2026
+
+- Delivery-package construction now validates each review-history record against the exact delivery receipt: schema version, decision enum, timeline ID/revision, published output asset, receipt fingerprint, reviewer identity, bounded note, and canonical review/creation timestamps.
+- A package cannot contain duplicate decisions from the same reviewer for one receipt. This matches the API's one-decision-per-reviewer-per-receipt rule and the separate database uniqueness migration (which remains unapplied).
+- Regression coverage includes malformed decisions, mismatched output assets, invalid timestamps and duplicate reviewers.
+- GitHub Actions full workflow passed for feature head `2ca834900d7b6d6e4c4b6b90fc420ff6ad87d473` (run [41508815429](https://github.com/Chrishem2003/EXECUTIVE-VISUALS/actions/runs/41508815429)).
+- The previous implementation-only run was cancelled when the newer commit superseded it; this does not invalidate the successful combined run.
+- Release status is unchanged: PR #8 remains draft and GitHub reports it as non-mergeable; staging end-to-end acceptance, safe base-branch reconciliation, and isolated database review remain outstanding. No migration, merge, deployment, or production service change has occurred.
+
