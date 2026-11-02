@@ -407,3 +407,9 @@
 .caption-preset-control label{display:block;margin:0 0 7px!important;color:#e5dcff!important;font-weight:700}
 .caption-preset-control small{display:block;margin-top:7px;color:var(--muted);font-size:9px;line-height:1.6}
 @media(max-width:600px){.caption-preset-control{grid-column:1/-1}}
+
+
+.timeline-template-form{display:grid;gap:8px;padding:13px;margin:14px 0;border:1px solid var(--border);border-radius:10px;background:var(--surface-2,rgba(255,255,255,.025))}
+.timeline-template-form label{font-size:11px;font-weight:700}
+.timeline-template-form select{width:100%;min-width:0}
+.timeline-template-form small{font-size:10px;line-height:1.55;color:var(--muted)}
