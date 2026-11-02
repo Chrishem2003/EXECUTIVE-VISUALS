@@ -43,7 +43,7 @@ test("rejects incomplete or unsafe output evidence", () => {
 test("creates a verifiable delivery package bound to the master and review history", () => {
   const receipt = createDeliveryManifest(input);
   const master = { assetId: receipt.outputAsset, filename: "master.mp4", mediaType: receipt.mediaType, byteSize: receipt.byteSize, sha256: receipt.sha256, downloadUrl: "https://storage.example.test/master?token=short", downloadUrlExpiresInSeconds: 300 };
-  const deliveryPackage = createDeliveryPackage({ jobId: "job-1", projectId: "project-1", timelineId: receipt.timelineId, timelineRevision: receipt.timelineRevision, master, deliveryReceipt: receipt, renderManifest: receipt.renderManifest, deliveryReport: receipt.deliveryReport, qualityReport: { status: "review", counts: { errors: 0, warnings: 1 }, findings: [{ code: "TEMPORAL_LUMA_FLICKER", severity: "warning", message: "Possible luminance flicker", startSeconds: 1, endSeconds: 2 }], limitations: ["Bounded temporal sample"] }, reviewHistory: [{ decision: "approved", reviewerId: "reviewer-1", fingerprint: receipt.fingerprint }], generatedAt: "2026-11-02T09:00:00.000Z" });
+  const deliveryPackage = createDeliveryPackage({ jobId: "job-1", projectId: "project-1", timelineId: receipt.timelineId, timelineRevision: receipt.timelineRevision, master, deliveryReceipt: receipt, renderManifest: receipt.renderManifest, deliveryReport: receipt.deliveryReport, qualityReport: { status: "review", counts: { errors: 0, warnings: 1 }, findings: [{ code: "TEMPORAL_LUMA_FLICKER", severity: "warning", message: "Possible luminance flicker", startSeconds: 1, endSeconds: 2 }], limitations: ["Bounded temporal sample"] }, reviewHistory: [{ id: 1, schemaVersion: 1, decision: "approved", fingerprint: receipt.fingerprint, timelineId: receipt.timelineId, timelineRevision: receipt.timelineRevision, outputAsset: receipt.outputAsset, reviewerId: "reviewer-1", note: "Reviewed master output.", reviewedAt: "2026-11-02T08:59:00.000Z", createdAt: "2026-11-02T08:59:01.000Z" }], generatedAt: "2026-11-02T09:00:00.000Z" });
   assert.equal(verifyDeliveryPackage(deliveryPackage), true);
   assert.equal(verifyDeliveryPackage(JSON.parse(JSON.stringify(deliveryPackage))), true);
   assert.equal(deliveryPackage.packageFingerprint.length, 64);
@@ -85,4 +85,17 @@ test("rejects a re-fingerprinted receipt with an invalid render manifest", () =>
   const { fingerprint: ignored, ...evidence } = forged;
   forged.fingerprint = createHash("sha256").update(canonical(evidence)).digest("hex");
   assert.equal(verifyDeliveryManifest(forged), false);
+});
+
+
+test("delivery packages reject incomplete, mismatched or duplicate reviewer decisions", () => {
+  const receipt = createDeliveryManifest(input);
+  const master = { assetId: receipt.outputAsset, filename: "master.mp4", mediaType: receipt.mediaType, byteSize: receipt.byteSize, sha256: receipt.sha256, downloadUrl: "https://storage.example.test/master?token=short", downloadUrlExpiresInSeconds: 300 };
+  const valid = { id: 1, schemaVersion: 1, decision: "approved", fingerprint: receipt.fingerprint, timelineId: receipt.timelineId, timelineRevision: receipt.timelineRevision, outputAsset: receipt.outputAsset, reviewerId: "reviewer-1", note: "Reviewed master output.", reviewedAt: "2026-11-02T08:59:00.000Z", createdAt: "2026-11-02T08:59:01.000Z" };
+  const build = reviewHistory => createDeliveryPackage({ jobId: "job-1", projectId: "project-1", timelineId: receipt.timelineId, timelineRevision: receipt.timelineRevision, master, deliveryReceipt: receipt, renderManifest: receipt.renderManifest, deliveryReport: receipt.deliveryReport, reviewHistory, generatedAt: "2026-11-02T09:00:00.000Z" });
+  assert.equal(verifyDeliveryPackage(build([valid])), true);
+  assert.throws(() => build([{ ...valid, decision: "ship-it" }]));
+  assert.throws(() => build([{ ...valid, outputAsset: "other-asset" }]));
+  assert.throws(() => build([{ ...valid, reviewedAt: "not-a-date" }]));
+  assert.throws(() => build([valid, { ...valid, id: 2 }]));
 });
