@@ -87,3 +87,22 @@ test("cloud timeline executor refuses to publish a master when its output probe 
  assert.equal(published.length,0);assert.deepEqual(cleaned.sort(),["asset-a","asset-b"]);
  await rm(root,{recursive:true,force:true});
 });
+
+
+test("cloud timeline executor refuses to publish output that fails the selected delivery profile",async()=>{
+ const root=await mkdtemp(join(tmpdir(),"ev-cloud-delivery-gate-"));const published=[];
+ const selectedTimeline={...timeline,deliveryProfileId:"youtube-1080p"};
+ const executor=createCloudTimelineExecutor({
+  tempRoot:root,
+  timelines:{async get(){return{id:timelineId,projectId:null,revision:1,timeline:selectedTimeline};}},
+  mediaIO:{
+   async materialize({assetId}){const path=join(root,assetId);await writeFile(path,"source");return{path,asset:{id:assetId,mediaType:assetId==="asset-a"?"video/mp4":"audio/wav",sha256:sha},async cleanup(){}};},
+   async publish(args){published.push(args);return{id:"should-not-publish"};}
+  },
+  async renderTimeline({workDir,assets,timeline:renderTimeline}){const path=join(workDir,"profile-failed.mp4");await writeFile(path,"rendered");return{path,filename:"failed.mp4",mediaType:"video/mp4",renderManifest:createRenderManifest({timeline:renderTimeline,assets,timelineRevision:1,output:{codec:"h264"}})};},
+  async probeOutput(){return{format:{duration:"10"},streams:[{codec_type:"video",codec_name:"h264",width:1280,height:720,pix_fmt:"yuv420p",avg_frame_rate:"30/1"},{codec_type:"audio",codec_name:"aac",sample_rate:"48000"}]};}
+ });
+ await assert.rejects(()=>executor({job:{id:"delivery-gate",owner_id:owner,project_id:null,job_type:"timeline.render",input:{timelineId,timelineRevision:1}}}),error=>error.code==="DELIVERY_PROFILE_VALIDATION_FAILED"&&error.deliveryReport.status==="needs-attention");
+ assert.equal(published.length,0);
+ await rm(root,{recursive:true,force:true});
+});
