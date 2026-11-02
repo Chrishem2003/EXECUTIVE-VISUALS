@@ -31,9 +31,16 @@ export function validateUpscaleBenchmarkRecord(record) {
   if (!record.timestamp || !Number.isFinite(Date.parse(record.timestamp))) issues.push("timestamp must be a valid date");
   if (record.metrics !== undefined) {
     if (!record.metrics || typeof record.metrics !== "object" || Array.isArray(record.metrics)) issues.push("metrics must be an object");
-    else for (const key of ["psnr", "ssim", "lpips"]) {
-      if (record.metrics[key] !== undefined && (!Number.isFinite(record.metrics[key]) || record.metrics[key] < 0)) issues.push("metrics." + key + " must be a non-negative number");
-      if (key === "ssim" && record.metrics[key] !== undefined && Number.isFinite(record.metrics[key]) && (record.metrics[key] < 0 || record.metrics[key] > 1)) issues.push("metrics.ssim must be between 0 and 1");
+    else {
+      for (const key of ["psnr", "ssim", "lpips"]) {
+        const value = record.metrics[key];
+        if (value !== undefined && (!Number.isFinite(value) || value < 0)) {
+          issues.push("metrics." + key + " must be a non-negative number");
+        }
+      }
+      if (record.metrics.ssim !== undefined && Number.isFinite(record.metrics.ssim) && record.metrics.ssim > 1) {
+        issues.push("metrics.ssim must not exceed 1");
+      }
     }
   }
   if (record.executionStatus === "passed" && record.outputWidth < record.inputWidth) issues.push("passed output width is smaller than input width");
@@ -43,7 +50,7 @@ export function validateUpscaleBenchmarkRecord(record) {
       (record.outputWidth !== record.inputWidth * record.scale || record.outputHeight !== record.inputHeight * record.scale)) {
     issues.push("passed output dimensions must exactly match the declared scale");
   }
-    return { valid: issues.length === 0, issues };
+  return { valid: issues.length === 0, issues };
 }
 
 export function summarizeUpscaleBenchmarks(records) {
