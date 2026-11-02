@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 
 const sql = await readFile(resolve(process.cwd(), "supabase/migrations/20261031210000_executive_visuals_core.sql"), "utf8");
 const checkpointSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261102090000_video_pipeline_checkpoints.sql"), "utf8");
+const upscaleBenchmarkSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261102150000_upscale_benchmark_governance.sql"), "utf8");
 const issues = [];
 const tables = ["projects","project_members","project_workspace_documents","workflows","workflow_runs","workflow_node_runs","timelines","assets","jobs","job_events","consents","reviews","audit_events"];
 for (const table of tables) {
@@ -58,6 +59,17 @@ if (!checkpointSql.includes("output_asset.derivative_of = new.input_asset_id")) 
 if (!checkpointSql.includes("output_asset.owner_id = new.owner_id") || !checkpointSql.includes("output_asset.project_id = new.project_id")) issues.push("Cloud checkpoint output assets must match the checkpoint owner and project.");
 if (!checkpointSql.includes("output_asset.sha256 = lower(new.output_json ->> 'sha256')")) issues.push("Cloud checkpoint output checksums must match persisted asset metadata.");
 if (/\\b(drop\\s+table|truncate|delete\\s+from)\\b/i.test(checkpointSql)) issues.push("Checkpoint migration must not contain destructive DDL/DML.");
+for (const table of ["upscale_benchmark_fixtures","upscale_benchmark_runs"]) {
+  if (!upscaleBenchmarkSql.includes(`create table if not exists executive_visuals.${table}`)) issues.push(`Cloud benchmark table is missing: ${table}.`);
+  if (!upscaleBenchmarkSql.includes(`alter table executive_visuals.${table} enable row level security;`)) issues.push(`Cloud benchmark RLS is missing: ${table}.`);
+}
+if (!upscaleBenchmarkSql.includes("revoke all on executive_visuals.upscale_benchmark_fixtures, executive_visuals.upscale_benchmark_runs from authenticated;")) issues.push("Cloud benchmark tables must be server-write-only.");
+if (!upscaleBenchmarkSql.includes("grant all on executive_visuals.upscale_benchmark_fixtures, executive_visuals.upscale_benchmark_runs to service_role;")) issues.push("Cloud benchmark service role grants are missing.");
+if (!upscaleBenchmarkSql.includes("unique(asset_id,fixture_id)") || !upscaleBenchmarkSql.includes("foreign key(fixture_id,project_id)")) issues.push("Cloud benchmark runs must be unique and bound to a fixture in the same project.");
+if (!upscaleBenchmarkSql.includes("reviewer_id is null and review_decision is null and reviewed_at is null")) issues.push("Cloud benchmark review state must be all-null before review.");
+if (!upscaleBenchmarkSql.includes("reviewer_id is not null and review_decision is not null and reviewed_at is not null")) issues.push("Cloud benchmark review state must be complete after review.");
+if (/\\b(drop\\s+table|truncate|delete\\s+from)\\b/i.test(upscaleBenchmarkSql)) issues.push("Upscale benchmark migration must not contain destructive DDL/DML.");
+if (/grant [^;]+ to authenticated/i.test(upscaleBenchmarkSql)) issues.push("Cloud benchmark tables must not grant direct client access.");
 
 
 
