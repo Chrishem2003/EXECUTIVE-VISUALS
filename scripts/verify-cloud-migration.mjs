@@ -59,7 +59,7 @@ if (!checkpointSql.includes("octet_length(output_json::text) <= 32000")) issues.
 if (!checkpointSql.includes("output_asset.derivative_of = new.input_asset_id")) issues.push("Cloud checkpoint outputs must be verified as derivatives of their recorded inputs.");
 if (!checkpointSql.includes("output_asset.owner_id = new.owner_id") || !checkpointSql.includes("output_asset.project_id = new.project_id")) issues.push("Cloud checkpoint output assets must match the checkpoint owner and project.");
 if (!checkpointSql.includes("output_asset.sha256 = lower(new.output_json ->> 'sha256')")) issues.push("Cloud checkpoint output checksums must match persisted asset metadata.");
-if (/\\b(drop\\s+table|truncate|delete\\s+from)\\b/i.test(checkpointSql)) issues.push("Checkpoint migration must not contain destructive DDL/DML.");
+if (/\b(drop\s+table|truncate|delete\s+from)\b/i.test(checkpointSql)) issues.push("Checkpoint migration must not contain destructive DDL/DML.");
 for (const table of ["upscale_benchmark_fixtures","upscale_benchmark_runs"]) {
   if (!upscaleBenchmarkSql.includes(`create table if not exists executive_visuals.${table}`)) issues.push(`Cloud benchmark table is missing: ${table}.`);
   if (!upscaleBenchmarkSql.includes(`alter table executive_visuals.${table} enable row level security;`)) issues.push(`Cloud benchmark RLS is missing: ${table}.`);
@@ -73,12 +73,12 @@ if (!upscaleBenchmarkSql.includes("create trigger ev_upscale_benchmark_review_im
 if (!upscaleBenchmarkSql.includes("new.reviewer_id = new.owner_id")) issues.push("Cloud benchmark reviews must be independent from the submitting user.");
 if (!upscaleBenchmarkSql.includes("new.review_decision is null")) issues.push("Cloud benchmark review decisions must be non-null.");
 if (!upscaleBenchmarkSql.includes("new.record->>'qualityReview' is distinct from new.review_decision")) issues.push("Cloud benchmark review state must match its immutable decision.");
-if (/\\b(drop\\s+table|truncate|delete\\s+from)\\b/i.test(upscaleBenchmarkSql)) issues.push("Upscale benchmark migration must not contain destructive DDL/DML.");
+if (/\b(drop\s+table|truncate|delete\s+from)\b/i.test(upscaleBenchmarkSql)) issues.push("Upscale benchmark migration must not contain destructive DDL/DML.");
 if (!deliveryReviewSql.includes("create unique index ev_delivery_review_reviewer_fingerprint_unique")) issues.push("Delivery reviews must prevent duplicate reviewer decisions.");
 if (!deliveryReviewSql.includes("(event_data ->> 'reviewerId')") || !deliveryReviewSql.includes("(event_data ->> 'fingerprint')")) issues.push("Delivery review uniqueness must include reviewer identity and immutable receipt fingerprint.");
 if (!deliveryReviewSql.includes("event_type = 'delivery.reviewed'")) issues.push("Delivery review uniqueness must be scoped only to delivery review events.");
 if (!deliveryReviewSql.includes("^[0-9a-f-]{36}$") || !deliveryReviewSql.includes("^[a-f0-9]{64}$")) issues.push("Delivery review index must validate reviewer IDs and SHA-256 receipt fingerprints.");
-if (/\\b(drop\\s+table|truncate|delete\\s+from)\\b/i.test(deliveryReviewSql)) issues.push("Delivery review migration must not contain destructive DDL/DML.");
+if (/\b(drop\s+table|truncate|delete\s+from)\b/i.test(deliveryReviewSql)) issues.push("Delivery review migration must not contain destructive DDL/DML.");
 
 if (/grant [^;]+ to authenticated/i.test(upscaleBenchmarkSql)) issues.push("Cloud benchmark tables must not grant direct client access.");
 
