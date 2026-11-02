@@ -65,3 +65,6 @@ Cloud fixture registration reads the source through the private asset repository
 Cloud review requires a project owner or assigned reviewer, rejects self-review, stores a single immutable decision, and writes a project audit event. The Enhancement Lab now includes fixture registration, derivative registration, pinned-build candidate summaries, and a review queue. The UI never invokes an upscaling provider from benchmark actions.
 
 To enable the cloud workflow, review and explicitly apply the new migration to the intended dedicated development/staging Supabase project, then deploy the API version containing the matching routes. Neither action has been performed here.
+
+
+The cloud AI-upscale worker now emits the same benchmark-compatible provenance schema as the local worker: versioned source asset identity, source and output SHA-256, pinned model build identity, source/output dimensions, execution duration, decoder verification, and an explicit `not_reviewed` quality state. The cloud benchmark fixture/run API therefore consumes actual cloud worker derivatives rather than accepting manually fabricated records.
