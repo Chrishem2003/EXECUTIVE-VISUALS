@@ -378,6 +378,8 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
    }
    return null;
   }catch(error){
+   if(error.code==="CLOUD_TIMELINE_API_DATABASE_ERROR"&&error.status===409&&error.databaseCode==="23505"&&path==="/api/cloud/upscale-benchmarks/fixtures")return response(409,{error:{code:"UPSCALE_FIXTURE_EXISTS",message:"This source asset is already registered as a fixture in this project."}});
+   if(error.code==="CLOUD_TIMELINE_API_DATABASE_ERROR"&&error.status===409&&error.databaseCode==="23505"&&path==="/api/cloud/upscale-benchmarks/runs")return response(409,{error:{code:"UPSCALE_BENCHMARK_ALREADY_REGISTERED",message:"This derivative is already registered for the selected fixture."}});
    if(error.code==="CLOUD_TIMELINE_API_DATABASE_ERROR"&&error.status===409&&error.databaseCode==="23505")return response(409,{error:{code:"DELIVERY_ALREADY_REVIEWED",message:"A review decision already exists for this reviewer and delivery fingerprint."}});
    if(error.code==="CLOUD_PROJECT_NOT_FOUND"||error.code==="CLOUD_PROJECT_ACCESS_DENIED")return response(404,{error:{code:"PROJECT_NOT_FOUND",message:"Project not found."}});
    if(error.code==="CLOUD_PROJECT_REVISION_CONFLICT")return response(409,{error:{code:"REVISION_CONFLICT",message:"Project changed since it was loaded. Refresh and retry."}});
