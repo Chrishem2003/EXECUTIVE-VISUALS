@@ -5,6 +5,33 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createRealEsrganAdapter } from "../ai-upscale-engine.mjs";
 
+function pngHeader(width, height) {
+  const bytes = Buffer.alloc(24);
+  bytes.set([137,80,78,71,13,10,26,10]);
+  bytes.writeUInt32BE(13, 8);
+  bytes.write("IHDR", 12, "ascii");
+  bytes.writeUInt32BE(width, 16);
+  bytes.writeUInt32BE(height, 20);
+  return bytes;
+}
+
+function scalingEngine() {
+  return [
+    "#!/usr/bin/env node",
+    "const fs = require('node:fs');",
+    "const args = process.argv.slice(2);",
+    "const scale = Number(args[args.indexOf('-s') + 1] || 4);",
+    "const output = args[args.indexOf('-o') + 1];",
+    "const bytes = Buffer.alloc(24);",
+    "bytes.set([137,80,78,71,13,10,26,10]);",
+    "bytes.writeUInt32BE(13, 8);",
+    "bytes.write('IHDR', 12, 'ascii');",
+    "bytes.writeUInt32BE(scale, 16);",
+    "bytes.writeUInt32BE(scale, 20);",
+    "fs.writeFileSync(output, bytes);"
+  ].join(String.fromCharCode(10));
+}
+
 test("AI upscaler is fail-closed when binary and model weights are absent", async () => {
   const adapter = createRealEsrganAdapter({ binaryPath: "/missing/realesrgan", modelDirectory: "/missing/models" });
   const status = await adapter.probe();
@@ -26,10 +53,8 @@ test("AI upscaler launches without a shell and publishes only a new bounded outp
   const model = "realesrgan-x4plus";
   const input = join(directory, "source.png");
   const output = join(directory, "enhanced.png");
-  await writeFile(input, Buffer.from([137,80,78,71,13,10,26,10]));
-  await writeFile(binary, String.raw`#!/bin/sh
-while [ "$1" != "" ]; do if [ "$1" = "-o" ]; then shift; printf '\211PNG\r\n\032\n\000\000\000\015IHDR\000\000\000\001\000\000\000\001' > "$1"; fi; shift; done
-`);
+  await writeFile(input, pngHeader(1, 1));
+  await writeFile(binary, scalingEngine());
   await chmod(binary, 0o755);
   await writeFile(join(directory, model + ".param"), "model");
   await writeFile(join(directory, model + ".bin"), "weights");
@@ -50,9 +75,7 @@ test("AI upscaler reports execution checks separately from unverified inference 
   const model = "realesrgan-x4plus";
   const input = join(directory, "fixture.png");
   await writeFile(input, Buffer.from([137,80,78,71,13,10,26,10]));
-  await writeFile(binary, String.raw`#!/bin/sh
-while [ "$1" != "" ]; do if [ "$1" = "-o" ]; then shift; printf '\211PNG\r\n\032\n\000\000\000\015IHDR\000\000\000\001\000\000\000\001' > "$1"; fi; shift; done
-`);
+  await writeFile(binary, scalingEngine());
   await chmod(binary, 0o755);
   await writeFile(join(directory, model + ".param"), "model");
   await writeFile(join(directory, model + ".bin"), "weights");
@@ -71,6 +94,26 @@ while [ "$1" != "" ]; do if [ "$1" = "-o" ]; then shift; printf '\211PNG\r\n\032
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
 
+
+test("AI upscaler rejects an output whose dimensions do not match the requested scale", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "ev-ai-upscale-dimensions-"));
+  const binary = join(directory, "engine");
+  const model = "realesrgan-x4plus";
+  const input = join(directory, "source.png");
+  const output = join(directory, "wrong-size.png");
+  await writeFile(input, pngHeader(2, 2));
+  await writeFile(binary, scalingEngine());
+  await chmod(binary, 0o755);
+  await writeFile(join(directory, model + ".param"), "model");
+  await writeFile(join(directory, model + ".bin"), "weights");
+  try {
+    const adapter = createRealEsrganAdapter({ binaryPath: binary, modelDirectory: directory, timeoutMs: 5000, enabled: true });
+    await assert.rejects(
+      adapter.execute({ inputPath: input, outputPath: output, model, scale: 2, format: "png" }),
+      error => error.code === "AI_UPSCALE_DIMENSIONS_MISMATCH"
+    );
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
 
 test("AI upscaler rejects an executable that exits successfully but emits a corrupt image", async () => {
   const directory = await mkdtemp(join(tmpdir(), "ev-ai-upscale-corrupt-"));
