@@ -7,10 +7,11 @@ export function isRetryableCloudJobError(error) {
   const code = typeof error?.code === "string" ? error.code : "";
   if (["CLOUD_QUEUE_TIMEOUT", "CLOUD_STORAGE_TIMEOUT", "CLOUD_MEDIA_TIMEOUT", "MEDIA_TIMEOUT"].includes(code)) return true;
   if (TRANSIENT_SYSTEM_CODES.has(code)) return true;
-  const status = Number(error?.status);
-  if ([408, 425, 429, 500, 502, 503, 504].includes(status)) return true;
-  const http = code.match(/^CLOUD_(?:QUEUE|STORAGE)_HTTP_(\\d{3})$/);
-  return Boolean(http && [408, 425, 429, 500, 502, 503, 504].includes(Number(http[1])));
+  const retryableStatuses = [408, 425, 429, 500, 502, 503, 504];
+  if (retryableStatuses.includes(Number(error?.status))) return true;
+  const knownHttpFamily = code.startsWith("CLOUD_QUEUE_HTTP_") || code.startsWith("CLOUD_STORAGE_HTTP_");
+  const codeStatus = Number(code.slice(code.lastIndexOf("_") + 1));
+  return knownHttpFamily && retryableStatuses.includes(codeStatus);
 }
 
 export async function runCloudWorkerCycle({
