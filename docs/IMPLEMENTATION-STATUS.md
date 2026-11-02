@@ -488,3 +488,12 @@ This is a runnable worker entry point, not a deployed worker. Do not set the ena
 - The approval's own cost estimate must be a valid non-negative safe integer and the recorded approved budget must cover both that estimate and the complete pipeline estimate.
 - Added regression tests for insecure database URLs, invalid timeout configuration, missing execution scope and inconsistent estimate/budget records.
 - This remains a reusable server-side authorization boundary, not yet a transformation worker. The existing cloud worker families do not claim transformation plans, and no provider adapter is enabled. The readiness gate remains blocked until the dedicated worker, verified adapter, durable checkpoints, private storage, rights/consent verification and visual QA are integrated.
+
+## Durable cooperative job cancellation — 2 November 2026
+
+- Added a migration for an explicit cancellation-request timestamp on cloud jobs, plus server-only RPCs to request cancellation and let the current lease owner poll it.
+- Queued and pre-execution jobs can be cancelled immediately. Processing jobs receive a durable request; the worker observes it on its heartbeat, aborts the executor signal, and records a cancelled terminal state under its existing lease.
+- The queue claim function excludes cancellation-requested jobs. The terminal database function also enforces cancellation if a request races with normal completion.
+- Added an authenticated job cancellation endpoint and project-write permission checks. Project owners/editors can request cancellation; unrelated users receive a not-found response.
+- Added queue, worker and API regression tests for cancellation contracts, pre-execution cancellation, in-flight cancellation and permission denial.
+- The migration is committed but has **not** been applied to any database. The new endpoint and worker polling require that migration to be applied to staging before use. Production remains untouched.
