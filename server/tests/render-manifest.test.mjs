@@ -54,3 +54,17 @@ test("rejects derivative provenance whose parent conflicts with the asset relati
  derived.asset.metadata={operation:"media.ai-upscale",processing:{sourceAssetId:"different-parent",inputSha256:"a".repeat(64)}};
  assert.throws(()=>createRenderManifest({timeline,assets:new Map([["asset-1",derived]]),timelineRevision:1}),e=>e.code==="RENDER_MANIFEST_LINEAGE_INVALID");
 });
+
+
+test("bounds and validates the processing evidence included in a derivative fingerprint",()=>{
+ const base=asset("b".repeat(64));
+ base.asset.derivativeOf="asset-original";
+ base.asset.metadata={operation:"media.ai-upscale",processing:{sourceAssetId:"asset-original",inputSha256:"a".repeat(64),model:"safe-model",qualityReview:"not_reviewed",untrustedLargeField:"x".repeat(100000)}};
+ const result=createRenderManifest({timeline,assets:new Map([["asset-1",base]]),timelineRevision:1});
+ assert.equal(result.sources[0].lineage.model,"safe-model");
+ assert.equal(Object.hasOwn(result.sources[0].lineage,"untrustedLargeField"),false);
+ const invalid=asset("b".repeat(64));
+ invalid.asset.derivativeOf="asset-original";
+ invalid.asset.metadata={operation:"media.ai-upscale",processing:{sourceAssetId:"asset-original",inputSha256:"invalid"}};
+ assert.throws(()=>createRenderManifest({timeline,assets:new Map([["asset-1",invalid]]),timelineRevision:1}),e=>e.code==="RENDER_MANIFEST_LINEAGE_INVALID");
+});
