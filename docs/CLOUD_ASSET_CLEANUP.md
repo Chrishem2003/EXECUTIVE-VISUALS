@@ -7,7 +7,7 @@ Cloud asset deletion is a two-stage operation:
 
 ## Retry contract
 
-`createCloudAssetRepository().cleanupDeleted({ olderThan, limit })` is an internal maintenance operation. It is deliberately not exposed as an end-user HTTP route.
+`createCloudAssetRepository().cleanupDeleted({ olderThan, limit })` is an internal maintenance operation. The composed media worker exposes it as `worker.cleanupDeletedAssets({ olderThan, limit })` for a trusted maintenance runner. It is deliberately not exposed as an end-user HTTP route.
 
 - `olderThan` is a required, explicit ISO-8601 UTC cutoff. Only rows with `deleted_at` older than this cutoff are candidates.
 - `limit` is required by the API contract to be an integer from 1 to 100 (default 25).
