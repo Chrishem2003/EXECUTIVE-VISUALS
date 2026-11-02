@@ -17,11 +17,15 @@ export function createCloudMediaAssetIO({assets,fetchImpl=globalThis.fetch,tempR
  if(!Number.isInteger(maxBytes)||maxBytes<1||maxBytes>1024*1024*1024)throw new Error("Cloud media IO byte limit is invalid.");
  if(!Number.isInteger(timeoutMs)||timeoutMs<1000||timeoutMs>120000)throw new Error("Cloud media IO timeout is invalid.");
 
- async function download(url,destination){
+ async function download(url,destination,signal){
+  if(signal?.aborted)throw Object.assign(new Error("Media job was cancelled."),{code:"JOB_CANCELLED"});
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs);
+  const abort=()=>controller.abort();
+  signal?.addEventListener("abort",abort,{once:true});
   let received=0;const hash=createHash("sha256");
   try{
    const response=await fetchImpl(url,{method:"GET",redirect:"error",signal:controller.signal});
+   if(signal?.aborted)throw Object.assign(new Error("Media job was cancelled."),{code:"JOB_CANCELLED"});
    if(!response.ok)throw Object.assign(new Error("Cloud media download failed."),{code:"CLOUD_MEDIA_DOWNLOAD_FAILED",status:response.status});
    const declared=Number(response.headers?.get?.("content-length")||0);
    if(declared>maxBytes)throw Object.assign(new Error("Cloud media exceeds the worker download limit."),{code:"CLOUD_MEDIA_TOO_LARGE"});
@@ -30,13 +34,18 @@ export function createCloudMediaAssetIO({assets,fetchImpl=globalThis.fetch,tempR
    await pipeline(response.body,meter,createWriteStream(destination,{flags:"wx"}),{signal:controller.signal});
    if(received<1)throw new Error("Cloud media download was empty.");
    return{size:received,sha256:hash.digest("hex")};
-  }catch(error){if(error?.name==="AbortError")throw Object.assign(new Error("Cloud media download timed out."),{code:"CLOUD_MEDIA_TIMEOUT"});throw error;}
-  finally{clearTimeout(timer);}
+  }catch(error){
+   if(signal?.aborted)throw Object.assign(new Error("Media job was cancelled."),{code:"JOB_CANCELLED"});
+   if(error?.name==="AbortError")throw Object.assign(new Error("Cloud media download timed out."),{code:"CLOUD_MEDIA_TIMEOUT"});
+   throw error;
+  }finally{clearTimeout(timer);signal?.removeEventListener("abort",abort);}
  }
 
  return Object.freeze({
-  async materialize({ownerId,assetId}){
+  async materialize({ownerId,assetId,signal}){
+   if(signal?.aborted)throw Object.assign(new Error("Media job was cancelled."),{code:"JOB_CANCELLED"});
    const signed=await assets.createSignedUrl({ownerId,assetId,expiresIn:300});
+   if(signal?.aborted)throw Object.assign(new Error("Media job was cancelled."),{code:"JOB_CANCELLED"});
    if(!signed||typeof signed.url!=="string"||!signed.asset||!Number.isSafeInteger(Number(signed.asset.size))||Number(signed.asset.size)<1||typeof signed.asset.sha256!=="string"||!/^[a-f0-9]{64}$/i.test(signed.asset.sha256))throw new Error("Cloud asset repository returned invalid download metadata.");
    let signedUrl;
    try{signedUrl=new URL(signed.url);if(signedUrl.protocol!=="https:"||signedUrl.username||signedUrl.password||signedUrl.hash)throw new Error();}catch{throw new Error("Cloud asset repository returned an unsafe signed URL.");}
@@ -44,7 +53,7 @@ export function createCloudMediaAssetIO({assets,fetchImpl=globalThis.fetch,tempR
    const directory=await mkdtemp(join(tempRoot,"ev-media-"));
    const path=join(directory,"source-"+randomUUID());
    try{
-    const downloaded=await download(signedUrl.href,path);
+    const downloaded=await download(signedUrl.href,path,signal);
     if(downloaded.size!==Number(signed.asset.size)||downloaded.sha256!==signed.asset.sha256)throw Object.assign(new Error("Cloud media integrity check failed."),{code:"CLOUD_MEDIA_INTEGRITY_MISMATCH"});
     let cleaned=false;
     return{asset:signed.asset,path,size:downloaded.size,sha256:downloaded.sha256,async cleanup(){if(cleaned)return;cleaned=true;await rm(directory,{recursive:true,force:true});}};
