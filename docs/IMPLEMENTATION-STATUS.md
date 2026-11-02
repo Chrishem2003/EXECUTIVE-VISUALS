@@ -480,7 +480,7 @@ This is a runnable worker entry point, not a deployed worker. Do not set the ena
 
 ## Latest continuation — render-backed caption style presets
 
-- Added five reusable caption styles: Social bold, Cinematic, Broadcast safe, Minimal and Top placement.
+- Added five reusable caption styles: Social high-contrast, Cinematic, Broadcast safe, Minimal and Top placement.
 - Presets populate the timeline caption clip inspector's existing font, size, color, alignment, panel, outline, shadow and safe-margin controls.
 - Preset choice is stored in clip metadata alongside the individual style values. Editing an individual style field changes the selector to Custom.
 - Presets deliberately use only properties already consumed by the local and cloud FFmpeg subtitle renderers; this avoids offering visual controls that the actual master renderer ignores.
