@@ -55,7 +55,11 @@ export function createDeliveryManifest({
 export function verifyDeliveryManifest(manifest) {
   if (!plain(manifest) || manifest.schemaVersion !== 1 || typeof manifest.fingerprint !== "string" || !SHA256.test(manifest.fingerprint)) return false;
   const { fingerprint: supplied, ...evidence } = manifest;
-  try { return fingerprint(evidence) === supplied; } catch { return false; }
+  try {
+    // A matching hash proves byte-level consistency, not that the evidence is valid.
+    // Re-run the full receipt contract so a caller cannot re-hash a forged render manifest.
+    return createDeliveryManifest(evidence).fingerprint === supplied;
+  } catch { return false; }
 }
 
 
