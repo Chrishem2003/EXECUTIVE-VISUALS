@@ -23,3 +23,33 @@ create index if not exists ev_video_pipeline_checkpoints_project_created
 alter table executive_visuals.video_pipeline_checkpoints enable row level security;
 revoke all on executive_visuals.video_pipeline_checkpoints from public, anon, authenticated;
 grant all privileges on executive_visuals.video_pipeline_checkpoints to service_role;
+
+create or replace function executive_visuals.validate_video_pipeline_checkpoint_scope()
+returns trigger
+language plpgsql
+set search_path = pg_catalog, executive_visuals
+as $$
+begin
+  if not exists (
+    select 1 from executive_visuals.projects p
+    where p.id = new.project_id and p.owner_id = new.owner_id and p.archived_at is null
+  ) then
+    raise exception 'VIDEO_PIPELINE_CHECKPOINT_PROJECT_SCOPE_INVALID';
+  end if;
+  if not exists (
+    select 1 from executive_visuals.assets a
+    where a.id = new.input_asset_id and a.owner_id = new.owner_id
+      and a.project_id = new.project_id and a.deleted_at is null
+      and a.media_type like 'video/%'
+  ) then
+    raise exception 'VIDEO_PIPELINE_CHECKPOINT_SOURCE_SCOPE_INVALID';
+  end if;
+  return new;
+end;
+$$;
+
+create trigger ev_video_pipeline_checkpoints_validate_scope
+before insert on executive_visuals.video_pipeline_checkpoints
+for each row execute function executive_visuals.validate_video_pipeline_checkpoint_scope();
+
+revoke all on function executive_visuals.validate_video_pipeline_checkpoint_scope() from public, anon, authenticated;
