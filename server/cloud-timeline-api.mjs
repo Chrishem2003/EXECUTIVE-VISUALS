@@ -169,6 +169,52 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     }
     return response(200,{job});
    }
+   const handoffMatch=path.match(/^\/api\/cloud\/timelines\/([0-9a-f-]+)\/handoff$/i);
+   if(handoffMatch&&safeId(handoffMatch[1])&&method==="POST"){
+    const timelineId=handoffMatch[1],assetId=String(body.assetId||""),jobId=String(body.jobId||""),trackId=String(body.trackId||""),clipId=String(body.clipId||"");
+    if(!safeId(assetId)||!safeId(jobId)||!trackId||trackId.length>180||!clipId||clipId.length>180)return response(400,{error:{code:"HANDOFF_INPUT_INVALID",message:"Provide valid asset, job, track and clip identifiers."}});
+    const timeline=await service.timelines.get({ownerId,timelineId});
+    if(!timeline)return response(404,{error:{code:"TIMELINE_NOT_FOUND",message:"Timeline not found."}});
+    if(await allow({ownerId,projectId:timeline.projectId,action:"write"})!==true)return response(404,{error:{code:"TIMELINE_NOT_FOUND",message:"Timeline not found or editor access required."}});
+    if(!Number.isInteger(body.expectedRevision)||body.expectedRevision<1)return response(400,{error:{code:"HANDOFF_REVISION_REQUIRED",message:"Provide the timeline revision you reviewed."}});
+    if(body.expectedRevision!==timeline.revision)return response(409,{error:{code:"REVISION_CONFLICT",message:"Timeline changed since it was loaded. Refresh and retry."}});
+    const asset=await service.assets.get({ownerId,assetId});
+    if(!asset||asset.projectId!==timeline.projectId)return response(404,{error:{code:"HANDOFF_ASSET_NOT_FOUND",message:"Generated asset not found in this project."}});
+    const metadata=asset.metadata||{},verification=metadata.mediaVerification||{},probe=metadata.probe||{},format=probe.format||{};
+    if(metadata.generated!==true||metadata.jobId!==jobId||verification.status!=="passed"||verification.readable!==true||verification.sha256!==asset.sha256)
+     return response(422,{error:{code:"HANDOFF_ASSET_UNVERIFIED",message:"Asset must have a matching generation job and server-recorded readability/checksum verification before handoff."}});
+    const mediaPrefix=String(asset.mediaType||"").split("/")[0].toLowerCase();
+    const kind=mediaPrefix==="video"?"video":mediaPrefix==="audio"?"audio":mediaPrefix==="image"?"image":null;
+    if(!kind)return response(422,{error:{code:"HANDOFF_MEDIA_UNSUPPORTED",message:"This media type cannot be placed on the timeline."}});
+    const track=timeline.timeline.tracks.find(item=>item.id===trackId);
+    if(!track)return response(422,{error:{code:"HANDOFF_TRACK_NOT_FOUND",message:"Choose an existing track."}});
+    if(track.locked)return response(422,{error:{code:"HANDOFF_TRACK_LOCKED",message:"The target track is locked."}});
+    if((kind==="audio"&&track.kind!=="audio")||(kind==="video"&&track.kind!=="video"&&track.kind!=="overlay")||(kind==="image"&&track.kind!=="video"&&track.kind!=="overlay"))
+     return response(422,{error:{code:"HANDOFF_TRACK_INCOMPATIBLE",message:"The target track cannot contain this media type."}});
+    const duration=kind==="image"?Number(body.durationSeconds):Number(format.duration);
+    if(!Number.isFinite(duration)||duration<=0||duration>3600)return response(422,{error:{code:"HANDOFF_DURATION_UNVERIFIED",message:"A valid source duration is required; for still images, specify an explicit clip duration."}});
+    const fps=timeline.timeline.frameRate.numerator/timeline.timeline.frameRate.denominator;
+    if(!Number.isFinite(fps)||fps<=0)return response(422,{error:{code:"HANDOFF_TIMELINE_RATE_INVALID",message:"Timeline frame rate is invalid."}});
+    const startSeconds=Number(body.playheadSeconds);
+    if(!Number.isFinite(startSeconds)||startSeconds<0||startSeconds>86400)return response(400,{error:{code:"HANDOFF_PLAYHEAD_INVALID",message:"Playhead must be a finite time between 0 and 24 hours."}});
+    const existing=track.clips.find(item=>item.id===clipId);
+    if(existing){
+     if(existing.assetId===assetId&&existing.metadata?.generationJobId===jobId)return response(200,{timeline,idempotentReplay:true});
+     return response(409,{error:{code:"HANDOFF_CLIP_CONFLICT",message:"Clip ID already exists for a different edit."}});
+    }
+    const sourceTimebase=1000,sourceDurationTicks=Math.round(duration*sourceTimebase),startFrame=Math.round(startSeconds*fps);
+    if(sourceDurationTicks<=0)return response(422,{error:{code:"HANDOFF_DURATION_INVALID",message:"Media duration is too short for the supported timebase."}});
+    const start=startFrame/fps,end=start+sourceDurationTicks/sourceTimebase;
+    for(const clip of track.clips){
+     const clipStart=clip.timelineStart.value/clip.timelineStart.rate,clipEnd=clipStart+clip.duration.value/clip.duration.rate;
+     if(start<clipEnd-1e-6&&end>clipStart+1e-6)return response(409,{error:{code:"HANDOFF_OVERLAP",message:"Choose an empty position or another track; existing clips will not be replaced."}});
+    }
+    const clip={id:clipId,assetId,name:String(body.clipName||asset.name||("Generated "+kind)).slice(0,180),sourceRange:{start:{value:0,rate:sourceTimebase},duration:{value:sourceDurationTicks,rate:sourceTimebase}},timelineStart:{value:startFrame,rate:fps},duration:{value:sourceDurationTicks,rate:sourceTimebase},enabled:true,metadata:{origin:"generated-media-handoff",generationJobId:jobId,verifiedSha256:asset.sha256,sourceProjectId:timeline.projectId}};
+    const updatedDocument={...timeline.timeline,tracks:timeline.timeline.tracks.map(item=>item.id===trackId?{...item,clips:[...item.clips,clip].sort((a,b)=>a.timelineStart.value/a.timelineStart.rate-b.timelineStart.value/b.timelineStart.rate)}:item)};
+    const otio=body.otio??timeline.otio??null;
+    const saved=await service.timelines.update({ownerId,timelineId,expectedRevision:timeline.revision,timeline:updatedDocument,otio});
+    return response(200,{timeline:saved,idempotentReplay:false});
+   }
    const match=path.match(/^\/api\/cloud\/timelines\/([0-9a-f-]+)(?:\/(render))?$/i);
    if(!match||!safeId(match[1]))return null;
    const timelineId=match[1];
