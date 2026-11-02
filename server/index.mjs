@@ -17,7 +17,7 @@ import { importResearchUrl } from "./research-import.mjs";
 import { getProviderCatalog } from "./provider-registry.mjs";
 import { ensureRemoteUsageTable, getRemoteUsagePolicy } from "./usage-guardrails.mjs";
 import { createCloudTimelineApi } from "./cloud-timeline-api.mjs";
-import { ensureTransformationPlanSchema, createTransformationPlan, approveTransformationPlan, listTransformationPlans } from "./transformation-plans.mjs";
+import { ensureTransformationPlanSchema, createTransformationPlan, approveTransformationPlan, listTransformationPlans, getTransformationPlan } from "./transformation-plans.mjs";
 
 const PORT = Number(process.env.API_PORT || process.env.PORT || 4179);
 const HOST = process.env.API_HOST || "127.0.0.1";
@@ -360,11 +360,11 @@ export function createAppServer() {
         audit(db,user.id,"transformation.draft_created","transformation",result.plan.id,{operation:result.plan.operation},result.plan.projectId);
         send(res,result.idempotentReplay?200:201,result,cors);return;
       }
-      const transformationMatch=path.match(/^\\/api\\/transformations\\/([0-9a-f-]+)(?:\\/(approve|submit))?$/i);
+      const transformationMatch=path.match(/^\/api\/transformations\/([0-9a-f-]+)(?:\/(approve|submit))?$/i);
       if(transformationMatch){
         const plan=db.prepare("SELECT * FROM transformation_plans WHERE id=?").get(transformationMatch[1]);
         if(!plan||!getProjectAccess(db,user.id,plan.project_id)){fail(res,404,"TRANSFORMATION_NOT_FOUND","Transformation plan not found.");return;}
-        if(!transformationMatch[2]&&req.method==="GET"){send(res,200,{plan:plan},cors);return;}
+        if(!transformationMatch[2]&&req.method==="GET"){send(res,200,{plan:getTransformationPlan(db,user.id,plan.id)},cors);return;}
         if(transformationMatch[2]==="approve"&&req.method==="POST"){
           const body=await readJson(req,16*1024);
           const approved=approveTransformationPlan(db,{ownerId:user.id,planId:plan.id,body});
