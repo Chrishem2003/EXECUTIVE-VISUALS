@@ -43,6 +43,16 @@ test("renew, recovery and finish map to the committed RPC contracts",async()=>{
   assert.deepEqual(requests[2].body,{p_job_id:"job-1",p_worker_id:"worker-1",p_status:"succeeded",p_output:{assetId:"asset-1"},p_error:null});
 });
 
+test("expired job recovery can be scoped to an explicit worker pool",async()=>{
+ const requests=[];
+ const queue=createCloudQueue({...base,fetchImpl:async(url,options)=>{requests.push({url,body:JSON.parse(options.body)});return response(2);}});
+ assert.equal(await queue.recover(20,["timeline.render"]),2);
+ assert.equal(requests[0].url,"https://example.supabase.co/rest/v1/rpc/recover_expired_jobs_by_type");
+ assert.deepEqual(requests[0].body,{p_limit:20,p_job_types:["timeline.render"]});
+ await assert.rejects(()=>queue.recover(20,[]),/Recovery job type filters/);
+ await assert.rejects(()=>queue.recover(20,["timeline.render","timeline.render"]),/Recovery job type filters/);
+});
+ 
 test("configuration, arguments and HTTP errors fail closed",async()=>{
   assert.throws(()=>createCloudQueue({url:"http://remote.example",serviceRoleKey:"secret"}),/HTTPS/);
   assert.throws(()=>createCloudQueue({url:base.url}),/SUPABASE_SERVICE_ROLE_KEY/);
