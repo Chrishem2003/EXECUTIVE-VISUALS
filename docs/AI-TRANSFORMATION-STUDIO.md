@@ -33,7 +33,7 @@ The contract is intentionally non-executing. It does not upload files, accept ar
 
 ## Workspace draft experience
 
-The Enhancement Lab now includes a Transformation Studio draft form. It loads private cloud-project assets, allows a creator to choose a source video, transformation family, target description, detailed instruction, duration up to 30 seconds, optional private image references and preservation constraints. Source/reference rights are confirmed before a draft can be saved; person replacement also requires explicit subject-consent confirmation.
+The Enhancement Lab now includes a Transformation Studio draft form. It loads private cloud-project assets, allows a creator to choose a source video, transformation family, target description, detailed instruction, duration up to 30 seconds, optional private image references and preservation constraints. Source/reference rights are confirmed before a draft can be saved; person replacement also requires explicit subject-consent confirmation. That checkbox is an attestation, not independent proof: person-replacement execution stays blocked until current, evidence-backed consent can be verified against a project-scoped record.
 
 The browser form now writes transformation plans through the authenticated project API (`POST /api/transformations`) and reloads the project-scoped register (`GET /api/transformations?projectId=...`). Plans survive browser reloads in the local API database, are idempotent on creation, and are listed with their current server-side state. The UI still labels them as not submitted; provider execution remains disabled. Transformation prompts and reference IDs are excluded from browser local storage; legacy locally cached transformation drafts are purged on application startup.
 
