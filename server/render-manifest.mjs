@@ -30,7 +30,26 @@ export function createRenderManifest({timeline,assets,timelineRevision,output={}
    const sourceRange=clip.sourceRange?{start:seconds(clip.sourceRange.start),duration:clip.sourceRange.duration?seconds(clip.sourceRange.duration):null}:null;
    const existing=referenced.get(assetId);
    if(existing&&existing.sha256!==sha256)fail("A source asset resolved to conflicting checksums.","RENDER_MANIFEST_SOURCE_CONFLICT");
-   if(!existing)referenced.set(assetId,{assetId,sha256,mediaType:String(asset.mediaType||asset.media_type||""),size:Number.isSafeInteger(asset.size)?asset.size:null});
+   if(!existing){
+    const derivativeOf=typeof asset.derivativeOf==="string"?asset.derivativeOf:typeof asset.derivative_of==="string"?asset.derivative_of:null;
+    const metadata=plain(asset.metadata)?asset.metadata:plain(asset.metadata_json)?asset.metadata_json:{};
+    const processing=plain(metadata.processing)?metadata.processing:null;
+    if(processing?.sourceAssetId&&derivativeOf&&processing.sourceAssetId!==derivativeOf)fail("Derivative provenance does not match the recorded parent asset.","RENDER_MANIFEST_LINEAGE_INVALID");
+    const inputSha256=processing?.inputSha256||processing?.sourceSha256||null;
+    if(inputSha256!==null&&!SHA256.test(String(inputSha256)))fail("Derivative provenance contains an invalid source checksum.","RENDER_MANIFEST_LINEAGE_INVALID");
+    const lineage=derivativeOf?{
+     parentAssetId:derivativeOf,
+     operation:typeof metadata.operation==="string"?metadata.operation.slice(0,100):null,
+     sourceSha256:inputSha256?String(inputSha256).toLowerCase():null,
+     processingFingerprint:processing?hash(processing):null,
+     engine:typeof processing?.engine==="string"?processing.engine.slice(0,100):null,
+     model:typeof processing?.model==="string"?processing.model.slice(0,160):null,
+     modelVersion:typeof processing?.modelVersion==="string"?processing.modelVersion.slice(0,200):null,
+     qualityReview:typeof processing?.qualityReview==="string"?processing.qualityReview.slice(0,40):null,
+     aiInferencePerformed:processing?.aiInferencePerformed===true||metadata.operation==="media.ai-upscale"
+    }:null;
+    referenced.set(assetId,{assetId,sha256,mediaType:String(asset.mediaType||asset.media_type||""),size:Number.isSafeInteger(asset.size)?asset.size:null,...(lineage?{lineage}:{})});
+   }
   }
  }
  const sources=[...referenced.values()].sort((a,b)=>a.assetId.localeCompare(b.assetId));
