@@ -155,6 +155,21 @@ test("cloud asset upload streams a signature-checked file to the private reposit
  const result=await api.uploadAsset({req,ownerId:owner,projectId:project,originalName:"my image.png",mediaType:"image/png"});
  assert.equal(result.status,201);assert.equal(stored.ownerId,owner);assert.equal(stored.projectId,project);assert.equal(stored.mediaType,"image/png");assert.deepEqual(stored.bytes,bytes);
 });
+test("authenticated cloud timeline API exposes streaming asset upload through handle",async()=>{
+ const bytes=Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]),Buffer.from("api-route-png")]);
+ let stored=null;
+ const api=createCloudTimelineApi({url:"https://example.supabase.co",serviceRoleKey:"service-secret",timelineService:{timelines:{},assets:{async createFromFile(input){stored={...input,bytes:await readFile(input.filePath)};return{id:"723e4567-e89b-42d3-a456-426614174000",ownerId:input.ownerId,projectId:input.projectId,name:input.originalName,mediaType:input.mediaType,size:bytes.length};}}},authorize:async()=>true});
+ const req=Readable.from([bytes]);req.headers={"content-length":String(bytes.length),"x-project-id":project,"x-file-name":"timeline source.png","content-type":"image/png"};
+ const result=await api.handle({method:"POST",path:"/api/cloud/assets",ownerId:owner,req});
+ assert.equal(result.status,201);assert.equal(stored.ownerId,owner);assert.equal(stored.projectId,project);assert.equal(stored.originalName,"timeline source.png");assert.equal(stored.mediaType,"image/png");assert.deepEqual(stored.bytes,bytes);
+});
+test("authenticated cloud timeline upload route rejects missing verified identity",async()=>{
+ let called=false;
+ const api=createCloudTimelineApi({url:"https://example.supabase.co",serviceRoleKey:"service-secret",timelineService:{timelines:{},assets:{async createFromFile(){called=true;}}},authorize:async()=>true});
+ const req=Readable.from([Buffer.from([137,80,78,71,13,10,26,10])]);req.headers={"content-length":"8","content-type":"image/png"};
+ const result=await api.handle({method:"POST",path:"/api/cloud/assets",req});
+ assert.equal(result.status,401);assert.equal(result.body.error.code,"AUTH_REQUIRED");assert.equal(called,false);
+});
 test("cloud asset upload rejects mismatched file signatures and cleans temporary data",async()=>{
  let called=false;
  const api=createCloudTimelineApi({url:"https://example.supabase.co",serviceRoleKey:"service-secret",timelineService:{timelines:{},assets:{async createFromFile(){called=true;}}},authorize:async()=>true});
