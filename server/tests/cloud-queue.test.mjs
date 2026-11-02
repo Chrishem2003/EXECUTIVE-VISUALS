@@ -56,3 +56,13 @@ test("configuration, arguments and HTTP errors fail closed",async()=>{
   await assert.rejects(()=>queue.finish("job-1","worker-1","processing"),/terminal job status/);
   await assert.rejects(()=>queue.finish("job-1","worker-1","failed",[]),/must be an object/);
 });
+
+test("queue exposes durable cancellation request and lease-owner polling",async()=>{
+ const calls=[],results=[true,"requested"];
+ const queue=createCloudQueue({...base,fetchImpl:async(url,options)=>{calls.push({url,body:JSON.parse(options.body)});return response(results.shift());}});
+ assert.equal(await queue.cancellationRequested("job-1","worker-1"),true);
+ assert.equal(await queue.requestCancellation("job-1","owner-1"),"requested");
+ assert.deepEqual(calls.map(x=>x.url.split("/").pop()),["job_cancellation_requested","request_job_cancellation"]);
+ assert.deepEqual(calls[0].body,{p_job_id:"job-1",p_worker_id:"worker-1"});
+ assert.deepEqual(calls[1].body,{p_job_id:"job-1",p_owner_id:"owner-1"});
+});
