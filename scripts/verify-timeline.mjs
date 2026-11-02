@@ -12,6 +12,7 @@ assert.equal(validateTimeline(timeline).valid,true);
 const sourceHash="a".repeat(64),outputHash="b".repeat(64);
 const approvedDerivative={id:"asset-a-upscaled",derivativeOf:"asset-a",sha256:outputHash,metadata:{sourceSha256:sourceHash,processing:{sourceAssetId:"asset-a",inputSha256:sourceHash,outputSha256:outputHash,dimensionsVerified:true,decoderVerified:true,qualityReview:"reviewed_pass"}}};
 assert.equal(assessDerivativeEligibility(approvedDerivative,"asset-a").eligible,true);
+assert.equal(assessDerivativeEligibility({...approvedDerivative,mediaType:"video/mp4"},"asset-a","image/png").eligible,false,"derivative media family must match source");
 assert.equal(assessDerivativeEligibility({...approvedDerivative,derivativeOf:"other-source"},"asset-a").eligible,false);
 assert.equal(assessDerivativeEligibility({...approvedDerivative,metadata:{...approvedDerivative.metadata,processing:{...approvedDerivative.metadata.processing,qualityReview:"not_reviewed"}}},"asset-a").eligible,false);
 assert.equal(assessDerivativeEligibility({...approvedDerivative,metadata:{...approvedDerivative.metadata,processing:{...approvedDerivative.metadata.processing,decoderVerified:false}}},"asset-a").eligible,false);
