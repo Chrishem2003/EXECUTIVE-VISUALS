@@ -21,6 +21,7 @@ export async function runCloudWorkerCycle({
   if (!job) return { claimed: false };
   const controller = new AbortController();
   let leaseLost = false;
+  let cancellationRequested = job.cancel_requested_at != null;
   let heartbeatPending = false;
   let heartbeatTask = null;
   let heartbeatError = null;
@@ -31,6 +32,14 @@ export async function runCloudWorkerCycle({
     heartbeatPending = true;
     heartbeatTask = (async () => {
       try {
+        if (!cancellationRequested && typeof queue.cancellationRequested === "function") {
+          cancellationRequested = await queue.cancellationRequested(job.id, workerId);
+          if (cancellationRequested) {
+            controller.abort(new Error("Job cancellation was requested by its owner."));
+            onEvent({ type: "job.cancellation_observed", jobId: job.id, workerId });
+            return;
+          }
+        }
         const renewed = await queue.renew(job.id, workerId, leaseSeconds);
         if (!renewed) {
           leaseLost = true;
@@ -64,6 +73,10 @@ export async function runCloudWorkerCycle({
     // incorrectly abort an execution that has already completed.
     clearInterval(heartbeat);
     if (heartbeatTask) await heartbeatTask;
+    if (cancellationRequested) {
+      const finished = await queue.finish(job.id, workerId, "cancelled", null, { code: "JOB_CANCELLED", message: "Job was cooperatively cancelled by its owner." });
+      return { claimed: true, finished, status: finished ? "cancelled" : null, reason: finished ? "cancelled" : "lease_lost", jobId: job.id };
+    }
     if (leaseLost || controller.signal.aborted) {
       return { claimed: true, finished: false, reason: "lease_lost", jobId: job.id };
     }
@@ -81,6 +94,10 @@ export async function runCloudWorkerCycle({
   } catch (error) {
     clearInterval(heartbeat);
     if (heartbeatTask) await heartbeatTask;
+    if (cancellationRequested) {
+      const finished = await queue.finish(job.id, workerId, "cancelled", null, { code: "JOB_CANCELLED", message: "Job was cooperatively cancelled by its owner." });
+      return { claimed: true, finished, status: finished ? "cancelled" : null, reason: finished ? "cancelled" : "lease_lost", jobId: job.id };
+    }
     if (leaseLost || controller.signal.aborted) {
       return { claimed: true, finished: false, reason: "lease_lost", jobId: job.id };
     }
