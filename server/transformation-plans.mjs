@@ -48,6 +48,8 @@ export function ensureTransformationPlanSchema(db){
 export function createTransformationPlan(db,{ownerId,body,idempotencyKey}={}){
  if(!ownerId)throw fail("Authentication is required.","AUTH_REQUIRED",401);
  if(!body||typeof body!=="object"||Array.isArray(body))throw fail("Transformation request must be a JSON object.","TRANSFORMATION_BODY_INVALID");
+ const allowedFields=new Set(["projectId","sourceAssetId","operation","prompt","durationSeconds","referenceAssetIds","preservation","rightsConfirmed","subjectConsentConfirmed","idempotencyKey"]);
+ if(Object.keys(body).some(key=>!allowedFields.has(key)))throw fail("Transformation request contains an unsupported field.","TRANSFORMATION_FIELD_UNSUPPORTED");
  const projectId=cleanText(body?.projectId,80),sourceAssetId=cleanText(body?.sourceAssetId,80);
  if(!projectId||!canWriteProject(db,ownerId,projectId))throw fail("Project not found or editor access required.","PROJECT_NOT_FOUND",404);
  const source=getAccessibleAsset(db,ownerId,sourceAssetId,true);
@@ -60,13 +62,15 @@ export function createTransformationPlan(db,{ownerId,body,idempotencyKey}={}){
  if(!Number.isInteger(duration)||duration<1||duration>30)throw fail("Transformation duration must be between 1 and 30 seconds.","TRANSFORMATION_DURATION_INVALID");
  if(body.rightsConfirmed!==true)throw fail("Confirm that you have the rights to use the source and reference media.","MEDIA_RIGHTS_REQUIRED",403);
  if(operation==="person_replace"&&body.subjectConsentConfirmed!==true)throw fail("Explicit subject consent is required for person replacement.","SUBJECT_CONSENT_REQUIRED",403);
+ if(body.referenceAssetIds!==undefined&&!Array.isArray(body.referenceAssetIds))throw fail("Reference asset IDs must be an array.","REFERENCE_ASSET_INVALID");
  const refs=Array.isArray(body.referenceAssetIds)?[...new Set(body.referenceAssetIds.map(value=>cleanText(value,80)).filter(Boolean))]:[];
  if(refs.length>4)throw fail("Use no more than four reference images.","REFERENCE_LIMIT_EXCEEDED");
  for(const id of refs){
   const asset=getAccessibleAsset(db,ownerId,id,true);
   if(!asset||!asset.media_type?.startsWith("image/")||asset.project_id!==projectId)throw fail("Every reference must be an editable image asset in the same project.","REFERENCE_ASSET_INVALID",422);
  }
- const preservation=Array.isArray(body.preservation)?[...new Set(body.preservation.filter(value=>PRESERVATION.has(value)))]:[];
+ if(body.preservation!==undefined&&(!Array.isArray(body.preservation)||body.preservation.length>10||body.preservation.some(value=>typeof value!=="string"||!PRESERVATION.has(value))))throw fail("One or more preservation constraints are unsupported.","TRANSFORMATION_PRESERVATION_INVALID");
+ const preservation=Array.isArray(body.preservation)?[...new Set(body.preservation)]:[];
  const key=cleanText(idempotencyKey,180);
  if(key.length<8)throw fail("An idempotency key of at least 8 characters is required.","IDEMPOTENCY_KEY_REQUIRED");
  const existing=db.prepare("SELECT * FROM transformation_plans WHERE owner_id=? AND idempotency_key=?").get(ownerId,key);
