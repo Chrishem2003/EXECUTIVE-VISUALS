@@ -162,3 +162,34 @@ test("does not list project assets without read authorization",async()=>{
  await assert.rejects(()=>f.repo.list({ownerId,projectId}),e=>e.code==="CLOUD_ASSET_ACCESS_DENIED");
  assert.equal(f.calls.length,0);
 });
+
+test("cleanup retries only old tombstoned assets and reports storage failures",async()=>{
+ const f=fixture({removeError:true});
+ f.row.deleted_at="2026-10-30T00:00:00.000Z";
+ const result=await f.repo.cleanupDeleted({olderThan:"2026-11-01T00:00:00.000Z",limit:10});
+ assert.deepEqual(result,{scanned:1,removed:0,pending:1,skippedInvalid:0});
+ assert.equal(f.storageCalls.filter(call=>call.op==="remove").length,1);
+ assert.match(f.calls[0].url,/deleted_at=lt\./);
+ assert.match(f.calls[0].url,/limit=10/);
+});
+
+test("cleanup skips malformed storage references and never touches active assets",async()=>{
+ const f=fixture();
+ f.row.deleted_at="2026-10-30T00:00:00.000Z";
+ f.row.object_path="another-project/"+assetId+"/original.mp4";
+ const result=await f.repo.cleanupDeleted({olderThan:"2026-11-01T00:00:00.000Z",limit:5});
+ assert.deepEqual(result,{scanned:1,removed:0,pending:0,skippedInvalid:1});
+ assert.equal(f.storageCalls.length,0);
+ f.row.deleted_at=null;
+ const active=await f.repo.cleanupDeleted({olderThan:"2026-11-01T00:00:00.000Z",limit:5});
+ assert.deepEqual(active,{scanned:1,removed:0,pending:0,skippedInvalid:1});
+ assert.equal(f.storageCalls.length,0);
+});
+
+test("cleanup requires an explicit age cutoff and a bounded batch",async()=>{
+ const f=fixture();
+ await assert.rejects(()=>f.repo.cleanupDeleted(),/explicit ISO-8601/);
+ await assert.rejects(()=>f.repo.cleanupDeleted({olderThan:"not-a-date"}),/explicit ISO-8601/);
+ await assert.rejects(()=>f.repo.cleanupDeleted({olderThan:"2026-11-01T00:00:00.000Z",limit:101}),/between 1 and 100/);
+ assert.equal(f.calls.length,0);
+});
