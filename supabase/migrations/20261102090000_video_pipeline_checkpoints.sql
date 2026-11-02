@@ -70,7 +70,7 @@ revoke all on function executive_visuals.validate_video_pipeline_checkpoint_scop
       and output_asset.owner_id = new.owner_id
       and output_asset.project_id = new.project_id
       and output_asset.derivative_of = new.input_asset_id
-      and output_asset.media_type = new.output_json ->> 'mediaType'
+      and output_asset.media_type = (new.output_json ->> 'mediaType')
       and output_asset.sha256 = lower(new.output_json ->> 'sha256')
       and output_asset.deleted_at is null
   ) then
