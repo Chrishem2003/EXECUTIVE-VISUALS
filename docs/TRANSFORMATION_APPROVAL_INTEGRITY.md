@@ -21,3 +21,9 @@ The API exposes the fingerprint in the returned approval summary so the UI and a
 ## Verification
 
 The cloud timeline API regression test approves a plan, checks that the returned and persisted fingerprints match, confirms that a matching plan remains blocked only by the unavailable-adapter gate, then mutates the stored request and verifies submission is rejected before dispatch.
+
+## Local plan-store parity
+
+The local SQLite transformation-plan store now applies the same approval-binding principle. Its schema initializer adds the nullable `approval_plan_hash` column to existing databases without rebuilding or deleting plan records. New approvals fingerprint the canonical persisted request and expose the digest in the approval summary.
+
+`verifyTransformationApproval(db, ownerId, planId)` re-reads the owner-accessible plan and returns a positive result only when the plan is still approved and its stored SHA-256 digest matches the current canonical request. Legacy approvals without a digest and modified plans fail verification. This helper is a verification primitive; any execution path must call it immediately before queueing or dispatching work. It does not itself authorize or execute a provider request.
