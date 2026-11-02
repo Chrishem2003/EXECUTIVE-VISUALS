@@ -17,7 +17,7 @@ export function buildEnhancementEvidenceReport(asset:EnhancementReportAsset,line
  if(typeof generatedAt!=="string"||!Number.isFinite(Date.parse(generatedAt)))throw new TypeError("A valid report timestamp is required.");
  const p=(asset.metadata?.processing||{}) as Record<string,unknown>;
  const hasProcessing=Object.keys(p).length>0;
- const sourceHash=p.inputSha256??p.sourceSha256??asset.metadata?.processing?.sourceSha256;
+ const sourceHash=p.inputSha256??p.sourceSha256;
  const outputHash=p.outputSha256;
  const parent=asset.derivativeOf?lineage?.ancestors.find(node=>node.id===asset.derivativeOf):undefined;
  const parentHash=parent&&!parent.missing&&!parent.cycle?parent.sha256:undefined;
