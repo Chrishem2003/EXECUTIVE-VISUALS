@@ -85,5 +85,9 @@ test("rejects unsupported categories and duplicate fixture source registration",
   assert.throws(()=>createUpscaleBenchmarkFixture(f.db,{ownerId:owner,projectId:project,sourceAssetId:sourceId,category:"landscape"}),error=>error.code==="UPSCALE_FIXTURE_INVALID");
   createUpscaleBenchmarkFixture(f.db,{ownerId:owner,projectId:project,sourceAssetId:sourceId,category:"portrait"});
   assert.throws(()=>createUpscaleBenchmarkFixture(f.db,{ownerId:owner,projectId:project,sourceAssetId:sourceId,category:"portrait"}),error=>error.code==="UPSCALE_FIXTURE_EXISTS");
+  const gifId="93333333-3333-4333-8333-333333333333";
+  f.db.prepare("INSERT INTO assets(id,owner_id,project_id,original_name,media_type,byte_size,sha256,storage_path) VALUES(?,?,?,?,?,?,?,?)")
+   .run(gifId,owner,project,"animated.gif","image/gif",100,digest("f"),"uploads/animated.gif");
+  assert.throws(()=>createUpscaleBenchmarkFixture(f.db,{ownerId:owner,projectId:project,sourceAssetId:gifId,category:"portrait"}),error=>error.code==="UPSCALE_FIXTURE_SOURCE_INVALID");
  }finally{await f.close();}
 });
