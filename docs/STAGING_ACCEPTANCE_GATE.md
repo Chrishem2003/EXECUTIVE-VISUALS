@@ -16,7 +16,7 @@ This checklist is the release gate for the current feature branch. Passing unit 
 
 Use a dedicated staging project and non-production media only.
 
-1. Upload a source image/video and confirm its stored checksum and probe metadata.
+1. Upload a source image/video through `POST /api/cloud/assets` routed by the authenticated cloud timeline API; verify streaming transfer, file-signature rejection, byte limits, project write authorization, stored SHA-256, and exact-object cleanup when upload or metadata registration fails.
 2. Create a timeline, add the source as a clip, preview it, scrub/step frames where supported, and save an edit.
 3. Attempt a stale-revision save and confirm the server rejects it without overwriting the latest timeline.
 4. Render using each supported delivery profile that the staging environment can support.
