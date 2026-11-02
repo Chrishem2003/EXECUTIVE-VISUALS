@@ -7,7 +7,7 @@ test("plans an ordered, approval-gated video enhancement recipe without executin
   name:"Documentary master",
   sourceAsset:{id:"asset-1",media_type:"video/mp4",sha256:"a".repeat(64)},
   steps:[
-   {operation:"media.denoise",parameters:{luma:4,chroma:2,secret:"must-not-leak"}},
+   {operation:"media.denoise",parameters:{luma:4,chroma:2}},
    {operation:"media.color",parameters:{brightness:0.05,contrast:1.1,saturation:1.2}},
    {operation:"media.upscale",parameters:{width:3840,height:2160,algorithm:"lanczos",sharpness:0.2}}
   ]
@@ -28,6 +28,8 @@ test("rejects recipes with unsupported operations, invalid options and incompati
  assert.throws(()=>planEnhancementRecipe({sourceAsset:video,steps:[{operation:"media.upscale",parameters:{width:9000}}]}),e=>e.code==="INVALID_MEDIA_OPTIONS");
  assert.throws(()=>planEnhancementRecipe({sourceAsset:{id:"audio",media_type:"audio/wav"},steps:[{operation:"media.color"}]}),e=>e.code==="RECIPE_MEDIA_TYPE_MISMATCH");
  assert.throws(()=>planEnhancementRecipe({sourceAsset:video,steps:[{operation:"media.color",parameters:[]}]}),e=>e.code==="RECIPE_PARAMETERS_INVALID");
+ assert.throws(()=>planEnhancementRecipe({sourceAsset:video,steps:[{operation:"media.denoise",parameters:{luma:4,unrecognizedOption:1}}]}),e=>e.code==="RECIPE_PARAMETER_UNSUPPORTED");
+ assert.throws(()=>planEnhancementRecipe({sourceAsset:video,steps:[{operation:"media.denoise",parameters:{apiKey:"sensitive"}}]}),e=>e.code==="RECIPE_PARAMETER_UNSUPPORTED");
  assert.throws(()=>planEnhancementRecipe({sourceAsset:video,steps:[null]}),e=>e.code==="RECIPE_STEP_INVALID");
  assert.throws(()=>planEnhancementRecipe({sourceAsset:video,steps:[]}),e=>e.code==="RECIPE_STEP_LIMIT");
  assert.throws(()=>planEnhancementRecipe({sourceAsset:video,steps:Array.from({length:13},()=>({operation:"media.color"}))}),e=>e.code==="RECIPE_STEP_LIMIT");
