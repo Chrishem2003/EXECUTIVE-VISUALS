@@ -6,7 +6,7 @@ const ownerId="11111111-1111-4111-8111-111111111111";
 const projectId="22222222-2222-4222-8222-222222222222";
 const approvalId="33333333-3333-4333-8333-333333333333";
 const approverId="44444444-4444-4444-8444-444444444444";
-const row={id:"55555555-5555-4555-8555-555555555555",owner_id:ownerId,project_id:projectId,job_type:"video.transform.plan",status:"awaiting_approval",approved_by:approverId,approved_at:"2026-11-02T10:00:00Z",estimated_cost:{approvalId,adapterId:"adapter-a",capability:"video.transform",approvedBudgetMicros:2500000}};
+const row={id:"55555555-5555-4555-8555-555555555555",owner_id:ownerId,project_id:projectId,job_type:"video.transform.plan",status:"awaiting_approval",approved_by:approverId,approved_at:"2026-11-02T10:00:00Z",estimated_cost:{approvalId,adapterId:"adapter-a",capability:"video.transform",estimatedCostMicros:2000000,approvedBudgetMicros:2500000}};
 
 function make(fetchImpl){
  return createCloudTransformationAuthorization({url:"https://example.supabase.co",serviceRoleKey:"server-only-test-key",fetchImpl,ownerId,projectId});
@@ -25,7 +25,7 @@ test("live authorization rejects revoked or mismatched approval records",async()
   {...row,status:"cancelled"},
   {...row,estimated_cost:{...row.estimated_cost,adapterId:"other"}},
   {...row,estimated_cost:{...row.estimated_cost,capability:"other"}},
-  {...row,estimated_cost:{...row.estimated_cost,approvedBudgetMicros:100}},
+  {...row,estimated_cost:{...row.estimated_cost,approvedBudgetMicros:100}},\n  {...row,estimated_cost:{...row.estimated_cost,estimatedCostMicros:3000000}},
   {...row,approved_at:null}
  ]){
   const authorize=make(async()=>({ok:true,json:async()=>[changed]}));
@@ -46,4 +46,12 @@ test("live authorization refuses malformed IDs and respects cancellation",async(
  const controller=new AbortController();controller.abort();
  assert.equal((await authorize({...request,signal:controller.signal})).approved,false);
  assert.equal(calls,0);
+});
+
+test("live authorization validates pipeline scope and secure database URL",async()=>{
+ const authorize=make(async()=>({ok:true,json:async()=>[row]}));
+ assert.equal((await authorize({...request,pipelineId:""})).approved,false);
+ assert.equal((await authorize({...request,stepId:""})).approved,false);
+ assert.throws(()=>createCloudTransformationAuthorization({url:"http://example.supabase.co",serviceRoleKey:"secret",fetchImpl:async()=>({}),ownerId,projectId}),/secure server URL/);
+ assert.throws(()=>createCloudTransformationAuthorization({url:"https://example.supabase.co",serviceRoleKey:"secret",fetchImpl:async()=>({}),ownerId,projectId,timeoutMs:100}),/timeout/);
 });
