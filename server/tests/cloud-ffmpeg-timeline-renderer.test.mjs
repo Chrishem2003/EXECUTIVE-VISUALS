@@ -47,3 +47,25 @@ test("cloud FFmpeg renderer honours an already-aborted signal",async()=>{
  const controller=new AbortController();controller.abort();
  await assert.rejects(()=>renderCloudTimeline({timeline:{tracks:[]},assets:new Map(),workDir:tmpdir(),signal:controller.signal}),error=>error.code==="JOB_CANCELLED");
 });
+
+
+test("cloud renderer attaches a revision-pinned manifest when verified source checksums are supplied", {skip:!hasFfmpeg||!hasFfprobe}, async()=>{
+ const root=await mkdtemp(join(tmpdir(),"ev-cloud-manifest-test-"));
+ try{
+  const video=join(root,"source.mp4");
+  execFileSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-loglevel","error","-y","-f","lavfi","-i","color=c=green:s=320x240:r=24:d=1","-c:v","libx264","-pix_fmt","yuv420p",video]);
+  const timeline={name:"Manifest test",width:320,height:240,frameRate:{numerator:24,denominator:1},tracks:[{id:"v",kind:"video",clips:[{id:"v1",assetId:"asset-video",timelineStart:time(0),duration:time(1),sourceRange:{start:time(0),duration:time(1)}}]}]};
+  const assets=new Map([["asset-video",{path:video,asset:{id:"asset-video",mediaType:"video/mp4",originalName:"source.mp4",size:100,sha256:"a".repeat(64)}}]]);
+  const result=await renderCloudTimeline({timeline,assets,workDir:root,timelineRevision:12});
+  assert.equal(result.renderManifest.timelineRevision,"12");
+  assert.equal(result.renderManifest.sources[0].sha256,"a".repeat(64));
+  const {verifyRenderManifest}=await import("../render-manifest.mjs");
+  assert.equal(verifyRenderManifest(result.renderManifest),true);
+ }finally{await rm(root,{recursive:true,force:true});}
+});
+
+test("cloud renderer refuses revision-pinned renders when source checksums are absent",async()=>{
+ const timeline={tracks:[{kind:"video",clips:[{assetId:"v",timelineStart:time(0),duration:time(1)}]}]};
+ const assets=new Map([["v",{path:"/not-used.mp4",asset:{id:"v",mediaType:"video/mp4"}}]]);
+ await assert.rejects(()=>renderCloudTimeline({timeline,assets,workDir:tmpdir(),timelineRevision:1}),e=>e.code==="RENDER_MANIFEST_SOURCE_UNVERIFIED");
+});
