@@ -2,6 +2,19 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createCloudTimelineWorker } from "../cloud-timeline-worker.mjs";
 
+test("timeline worker recovery is scoped to timeline render jobs",async()=>{
+ let recoveryArgs=null;
+ const queue={async claim(){return null;},async renew(){return true;},async finish(){return true;},async recover(...args){recoveryArgs=args;return 1;}};
+ const worker=createCloudTimelineWorker({
+  workerId:"timeline-worker-recovery",queue,
+  timelineService:{timelines:{get(){}},assets:{}},
+  mediaIO:{materialize(){},publish(){}},
+  async renderTimeline(){}
+ });
+ assert.equal(await worker.recoverExpired(12),1);
+ assert.deepEqual(recoveryArgs,[12,["timeline.render"]]);
+});
+
 test("cloud timeline worker only claims timeline render jobs",async()=>{
  let filters=null;
  const queue={async claim(id,leaseSeconds,jobTypes){filters=jobTypes;return null;},async renew(){return true;},async finish(){return true;},async recover(){return 0;}};
