@@ -68,15 +68,17 @@ export function createCloudVideoPipelineCheckpointStore({
     "&pipeline_id=eq." + encodeURIComponent(pipelineId) +
     "&step_id=eq." + encodeURIComponent(stepId);
 
+  async function getCheckpoint({ ownerId, projectId, pipelineId, stepId }) {
+    validateScope(ownerId, projectId);
+    if (typeof pipelineId !== "string" || !pipelineId.trim() || pipelineId.length > 160 || typeof stepId !== "string" || !stepId.trim() || stepId.length > 120) throw fail("Pipeline and step IDs are invalid.", "CLOUD_CHECKPOINT_INVALID");
+    const rows = await request("video_pipeline_checkpoints?select=owner_id,project_id,pipeline_id,step_id,status,input_asset_id,input_sha256,idempotency_key,output_json,approval_id,created_at&" + filters({ ownerId, projectId, pipelineId, stepId }) + "&limit=2");
+    if (!Array.isArray(rows) || rows.length > 1) throw fail("Cloud checkpoint lookup returned an invalid result.", "CLOUD_CHECKPOINT_INVALID_RESPONSE");
+    if (!rows.length || rows[0].owner_id !== ownerId || rows[0].project_id !== projectId) return null;
+    return map(rows[0]);
+  }
+
   return Object.freeze({
-    async get({ ownerId, projectId, pipelineId, stepId }) {
-      validateScope(ownerId, projectId);
-      if (typeof pipelineId !== "string" || !pipelineId.trim() || pipelineId.length > 160 || typeof stepId !== "string" || !stepId.trim() || stepId.length > 120) throw fail("Pipeline and step IDs are invalid.", "CLOUD_CHECKPOINT_INVALID");
-      const rows = await request("video_pipeline_checkpoints?select=owner_id,project_id,pipeline_id,step_id,status,input_asset_id,input_sha256,idempotency_key,output_json,approval_id,created_at&" + filters({ ownerId, projectId, pipelineId, stepId }) + "&limit=2");
-      if (!Array.isArray(rows) || rows.length > 1) throw fail("Cloud checkpoint lookup returned an invalid result.", "CLOUD_CHECKPOINT_INVALID_RESPONSE");
-      if (!rows.length || rows[0].owner_id !== ownerId || rows[0].project_id !== projectId) return null;
-      return map(rows[0]);
-    },
+    get: getCheckpoint,
     async save({ ownerId, projectId, record }) {
       validateScope(ownerId, projectId);
       if (!plain(record) || typeof record.pipelineId !== "string" || !record.pipelineId.trim() || record.pipelineId.length > 160 ||
@@ -99,7 +101,7 @@ export function createCloudVideoPipelineCheckpointStore({
           output_json: record.outputAsset, approval_id: record.approvalId || null
         }
       });
-      const stored = await this.get({ ownerId, projectId, pipelineId: record.pipelineId, stepId: record.stepId });
+      const stored = await getCheckpoint({ ownerId, projectId, pipelineId: record.pipelineId, stepId: record.stepId });
       if (!stored || stored.idempotencyKey !== record.idempotencyKey.toLowerCase() ||
           stored.inputAssetId !== record.inputAssetId || stored.inputSha256 !== record.inputSha256.toLowerCase() ||
           stable(stored.outputAsset) !== stable(record.outputAsset) || stored.approvalId !== (record.approvalId || null)) {
