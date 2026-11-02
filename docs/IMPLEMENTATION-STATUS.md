@@ -464,7 +464,7 @@ This is a runnable worker entry point, not a deployed worker. Do not set the ena
 - Progress is exposed with accessible progress semantics and a visible completion meter; completed steps are clearly identified.
 - The checklist disappears when all three milestones are complete. It does not create fake projects, upload files, call providers or change cloud/production state.
 - The feature is additive and local-first. Existing project and asset persistence behavior is unchanged.
-- Verification is pending for this continuation; the feature branch will be tested by GitHub Actions before review.
+- GitHub Actions dependency installation, TypeScript checks and the full production build passed on commit `629fddcc0983d4a2df04ce258c487f49173e658c`.
 
 
 ## Latest continuation — resumable production dashboard
@@ -475,7 +475,7 @@ This is a runnable worker entry point, not a deployed worker. Do not set the ena
 - The existing project list in the AI Director now has the same resume action.
 - This dashboard reads the existing browser planning state; it does not claim that these local planning drafts are cloud-persisted. Cloud projects, assets, timelines and jobs remain in their separately authenticated runtime workspace.
 - No provider is invoked, no database migration is applied, and no deployment or production configuration is changed.
-- Verification is pending in GitHub Actions.
+- GitHub Actions dependency installation, TypeScript checks and the full production build passed on commit `629fddcc0983d4a2df04ce258c487f49173e658c`.
 
 
 ## Latest continuation — render-backed caption style presets
@@ -487,7 +487,7 @@ This is a runnable worker entry point, not a deployed worker. Do not set the ena
 - Added contract checks for unique preset IDs, supported value ranges, immutable application and unknown-preset rejection. The checks are part of the production build.
 - Presets are style configuration only; they do not generate word-level karaoke timing, animated text, or a playback preview.
 - No migrations, provider activation, paid execution, or deployment changes.
-- Verification is pending in GitHub Actions.
+- GitHub Actions dependency installation, TypeScript checks and the full production build passed on commit `629fddcc0983d4a2df04ce258c487f49173e658c`.
 
 
 ## Editorial sequence templates — 2 November 2026
