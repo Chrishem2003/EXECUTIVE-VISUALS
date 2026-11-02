@@ -87,6 +87,19 @@ export function parseVideoLumaSamples(stderr=""){
  * Conservative temporal luminance anomaly detector. Scene-cut-adjacent
  * changes are excluded; findings are review prompts, never quality scores.
  */
+export function parseSceneCutTimes(stderr="",minimumScore=10){
+ const cuts=[];
+ const blocks=String(stderr||"").split(/(?=^frame:\s*\d+)/m);
+ for(const block of blocks){
+  const time=block.match(/(?:^|\n)pts_time:\s*(-?(?:\d+(?:\.\d*)?|\.\d+))/);
+  const score=block.match(/(?:^|\n)lavfi\.scd\.score=([0-9]+(?:\.[0-9]+)?)/);
+  if(!time||!score)continue;
+  const timeSeconds=Number(time[1]),value=Number(score[1]);
+  if(Number.isFinite(timeSeconds)&&timeSeconds>=0&&Number.isFinite(value)&&value>=minimumScore)cuts.push(timeSeconds);
+ }
+ return [...new Set(cuts)].sort((a,b)=>a-b);
+}
+
 export function buildTemporalLumaFindings({lumaSamples=[],sceneChanges=[],minimumDelta=30,sceneGuardSeconds=0.18,alternatingWindow=4,alternatingMinimumDelta=18}={}){
  const samples=Array.isArray(lumaSamples)?lumaSamples.filter(item=>Number.isFinite(item?.timeSeconds)&&item.timeSeconds>=0&&Number.isFinite(item?.meanLuma)&&item.meanLuma>=0&&item.meanLuma<=255).sort((a,b)=>a.timeSeconds-b.timeSeconds):[];
  const cuts=Array.isArray(sceneChanges)?sceneChanges.filter(Number.isFinite):[];
