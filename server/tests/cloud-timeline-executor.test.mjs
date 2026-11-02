@@ -70,3 +70,17 @@ test("cloud timeline executor refuses to render a stale revision after the job w
  await assert.rejects(()=>executor({job:{id:"job-stale",owner_id:owner,project_id:null,job_type:"timeline.render",input:{timelineId,timelineRevision:2}}}),error=>error.code==="CLOUD_TIMELINE_REVISION_CHANGED");
  assert.equal(materialized,false);
 });
+
+test("cloud timeline executor refuses to publish a master when its output probe fails",async()=>{
+ const root=await mkdtemp(join(tmpdir(),"ev-cloud-timeline-probe-test-"));const cleaned=[],published=[];
+ const executor=createCloudTimelineExecutor({
+  tempRoot:root,
+  timelines:{async get(){return{id:timelineId,projectId:null,revision:1,timeline};}},
+  mediaIO:{async materialize({assetId}){const path=join(root,assetId);await writeFile(path,"source");return{path,asset:{id:assetId},async cleanup(){cleaned.push(assetId);}};},async publish(args){published.push(args);}},
+  async renderTimeline({workDir}){const path=join(workDir,"master.mp4");await writeFile(path,"rendered");return{path,filename:"master.mp4",mediaType:"video/mp4"};},
+  async probeOutput(){throw new Error("ffprobe failed");}
+ });
+ await assert.rejects(()=>executor({job:{id:"job-probe-fail",owner_id:owner,project_id:null,job_type:"timeline.render",input:{timelineId,timelineRevision:1}}}),/ffprobe failed/);
+ assert.equal(published.length,0);assert.deepEqual(cleaned.sort(),["asset-a","asset-b"]);
+ await rm(root,{recursive:true,force:true});
+});
