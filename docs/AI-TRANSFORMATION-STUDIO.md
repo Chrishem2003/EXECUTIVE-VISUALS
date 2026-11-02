@@ -35,7 +35,7 @@ The contract is intentionally non-executing. It does not upload files, accept ar
 
 The Enhancement Lab now includes a Transformation Studio draft form. It loads private cloud-project assets, allows a creator to choose a source video, transformation family, target description, detailed instruction, duration up to 30 seconds, optional private image references and preservation constraints. Source/reference rights are confirmed before a draft can be saved; person replacement also requires explicit subject-consent confirmation.
 
-Drafts are saved in browser planning state and included in the project JSON export. They are visibly labelled **draft / not submitted**. This is a planning interface only: there is no API submission endpoint wired to it, and no provider call or credit spend occurs.
+Drafts in the current browser form are saved in browser planning state and included in the project JSON export. They are visibly labelled **draft / not submitted**. Separately, authenticated API endpoints now support project-scoped durable transformation drafts (`POST/GET /api/transformations`), idempotent creation, listing and explicit budget/adapter approval (`POST /api/transformations/:id/approve`). The current browser form is not yet wired to these API endpoints, so its drafts remain browser-local.
 
 ## Checkpointed finishing pipeline
 
@@ -62,3 +62,9 @@ The orchestrator is deliberately adapter-injected. It does not submit remote req
 - Side-by-side visual QA fixtures and human review evidence.
 
 No competitor names, logos, proprietary prompts, private endpoints or copied assets are part of this product feature.
+
+## Authenticated plan API milestone
+
+The SQLite API now persists transformation plan metadata with owner/project foreign keys, source asset ID, operation, prompt, duration, reference IDs, preservation constraints, rights and consent flags, status, idempotency key and approval metadata. Creation requires owner/editor access to the project, an editable video asset in that same project, and editable image references from the same project. Person replacement requires the additional consent confirmation. Read access is project-scoped; approval is owner/editor-only and requires a known non-negative estimate, an approved budget at least as large as the estimate, a currency code, and a declared adapter/capability identifier.
+
+The submit route deliberately returns `TRANSFORMATION_ADAPTER_UNAVAILABLE` even for an approved plan until an adapter is configured and verified. It does not enqueue a job or call a provider. The API has not yet been connected to the browser draft form, checkpointed finishing pipeline, cloud object storage or a transformation worker. The cloud SQL migration has not been applied.
