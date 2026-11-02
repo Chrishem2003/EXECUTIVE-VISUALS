@@ -42,11 +42,12 @@ test("rejects incomplete or unsafe output evidence", () => {
 test("creates a verifiable delivery package bound to the master and review history", () => {
   const receipt = createDeliveryManifest(input);
   const master = { assetId: receipt.outputAsset, filename: "master.mp4", mediaType: receipt.mediaType, byteSize: receipt.byteSize, sha256: receipt.sha256, downloadUrl: "https://storage.example.test/master?token=short", downloadUrlExpiresInSeconds: 300 };
-  const deliveryPackage = createDeliveryPackage({ jobId: "job-1", projectId: "project-1", timelineId: receipt.timelineId, timelineRevision: receipt.timelineRevision, master, deliveryReceipt: receipt, renderManifest: receipt.renderManifest, deliveryReport: receipt.deliveryReport, reviewHistory: [{ decision: "approved", reviewerId: "reviewer-1", fingerprint: receipt.fingerprint }], generatedAt: "2026-11-02T09:00:00.000Z" });
+  const deliveryPackage = createDeliveryPackage({ jobId: "job-1", projectId: "project-1", timelineId: receipt.timelineId, timelineRevision: receipt.timelineRevision, master, deliveryReceipt: receipt, renderManifest: receipt.renderManifest, deliveryReport: receipt.deliveryReport, qualityReport: { status: "review", counts: { errors: 0, warnings: 1 }, findings: [{ code: "TEMPORAL_LUMA_FLICKER", severity: "warning", message: "Possible luminance flicker", startSeconds: 1, endSeconds: 2 }], limitations: ["Bounded temporal sample"] }, reviewHistory: [{ decision: "approved", reviewerId: "reviewer-1", fingerprint: receipt.fingerprint }], generatedAt: "2026-11-02T09:00:00.000Z" });
   assert.equal(verifyDeliveryPackage(deliveryPackage), true);
   assert.equal(verifyDeliveryPackage(JSON.parse(JSON.stringify(deliveryPackage))), true);
   assert.equal(deliveryPackage.packageFingerprint.length, 64);
   assert.equal(deliveryPackage.master.assetId, receipt.outputAsset);
+  assert.equal(deliveryPackage.qualityReport.findings[0].code, "TEMPORAL_LUMA_FLICKER");
 });
 test("rejects tampered package fields and evidence from another receipt", () => {
   const receipt = createDeliveryManifest(input);
@@ -60,4 +61,11 @@ test("rejects tampered package fields and evidence from another receipt", () => 
 test("rejects a modified fingerprint", () => {
   const manifest = createDeliveryManifest(input);
   assert.equal(verifyDeliveryManifest({ ...manifest, fingerprint: "0".repeat(64) }), false);
+});
+
+
+test("rejects malformed or oversized media quality evidence in delivery packages", () => {
+  const receipt = createDeliveryManifest(input);
+  const master = { assetId: receipt.outputAsset, filename: "master.mp4", mediaType: receipt.mediaType, byteSize: receipt.byteSize, sha256: receipt.sha256, downloadUrl: "https://storage.example.test/master?token=short", downloadUrlExpiresInSeconds: 300 };
+  assert.throws(() => createDeliveryPackage({ jobId: "job-1", projectId: "project-1", timelineId: receipt.timelineId, timelineRevision: receipt.timelineRevision, master, deliveryReceipt: receipt, renderManifest: receipt.renderManifest, deliveryReport: receipt.deliveryReport, qualityReport: { status: "passed", counts: { errors: 0, warnings: 0 }, findings: [], limitations: [] , extra: "not validated" }, generatedAt: "2026-11-02T09:00:00.000Z" }) === undefined);
 });
