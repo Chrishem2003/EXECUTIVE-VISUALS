@@ -57,7 +57,7 @@ async function ensureCloudPreviewTicket(){
   const result=await apiRequest<{preview:{url:string;expiresIn:number;timelineRevision:number}}>("/api/cloud/timelines/"+encodeURIComponent(state.timeline.id)+"/preview/"+encodeURIComponent(selected.asset.id)+"?revision="+encodeURIComponent(String(state.serverRevision)));
   const parsed=new URL(result.preview.url);
   if(parsed.protocol!=="https:"||result.preview.timelineRevision!==state.serverRevision)throw new Error("The private preview ticket was invalid or belongs to a stale timeline revision.");
-  if(state.mode!=="cloud"||!state.timeline||state.timeline.id+":"+state.serverRevision+":"+selected.asset.id!==key)return;
+  if(state.mode!=="cloud"||!state.timeline||state.previewKey!==key||state.timeline.id+":"+state.serverRevision+":"+selectedPreview()?.asset.id!==key)return;
   state.previewUrl=result.preview.url;state.previewExpiresAt=Date.now()+Math.max(30,Math.min(300,result.preview.expiresIn||300))*1000;
  }catch(error){
   if(state.previewKey===key)state.previewError=error instanceof Error?error.message:"Private media preview could not be opened.";
