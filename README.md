@@ -1,8 +1,8 @@
-# Executive Visuals
+# CHRISHEM EXCLUSIVE VISUALS
 
 **One integrated visual-production system — from creative brief to reviewed deliverable.**
 
-A provider-neutral platform for creative planning, media ingest, graph workflows, local processing, editing, enhancement, localization, review and campaign production. The implementation is original and based on publicly observable product behavior and public developer documentation.
+CHRISHEM EXCLUSIVE VISUALS is a provider-neutral platform for creative planning, media ingest, graph workflows, local processing, editing, enhancement, localization, review and campaign production. The implementation is original and based on publicly observable product behavior and public developer documentation.
 
 ## Workspaces
 - Creative direction, research, briefs, scripts and storyboards.
