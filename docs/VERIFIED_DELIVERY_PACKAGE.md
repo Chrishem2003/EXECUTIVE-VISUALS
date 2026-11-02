@@ -45,6 +45,7 @@ The timeline delivery-review panel offers **Build verified delivery package**. T
 - This is a JSON evidence handoff plus private master download, not a ZIP archive.
 - The link expires after five minutes; request a fresh package to obtain a new one.
 - Human review remains a separate, append-only action.
+- Approval is blocked when the media quality report contains errors. If the report contains warnings, an approving reviewer must record a non-empty acknowledgement note; rejection and change requests remain available without that acknowledgement.
 - Technical profile conformance is not a subjective quality certification.
 - The Supabase uniqueness migration is not applied by this implementation.
 - No production deployment or paid-provider execution is implied.
