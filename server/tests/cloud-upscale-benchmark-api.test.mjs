@@ -39,7 +39,7 @@ test("cloud benchmark API pins fixture source, registers verified derivative and
  const f=setup();
  const fixture=await f.api.handle({method:"POST",path:"/api/cloud/upscale-benchmarks/fixtures",ownerId:owner,query:{projectId:project},body:{sourceAssetId:sourceId,category:"portrait"}});
  assert.equal(fixture.status,201);assert.equal(fixture.body.fixture.sourceSha256,hash("c"));
- const run=await f.api.handle({method:"POST",path:"/api/cloud/upscale-benchmarks/runs",ownerId:owner,query:{projectId:project},body:{assetId:outputId,fixtureId}});
+ const run=await f.api.handle({method:"POST",path:"/api/cloud/upscale-benchmarks/runs",ownerId:owner,query:{projectId:project},body:{assetId:outputId,fixtureId:fixture.body.fixture.id}});
  assert.equal(run.status,201);assert.equal(run.body.run.record.outputSha256,hash("d"));
  const list=await f.api.handle({method:"GET",path:"/api/cloud/upscale-benchmarks/runs",ownerId:owner,query:{projectId:project}});
  assert.equal(list.status,200);assert.equal(list.body.report.candidateCount,1);
@@ -50,7 +50,7 @@ test("cloud benchmark API requires independent assigned review and stores immuta
  const f=setup();
  await f.api.handle({method:"POST",path:"/api/cloud/upscale-benchmarks/fixtures",ownerId:owner,query:{projectId:project},body:{sourceAssetId:sourceId,category:"portrait"}});
  await f.api.handle({method:"POST",path:"/api/cloud/upscale-benchmarks/runs",ownerId:owner,query:{projectId:project},body:{assetId:outputId,fixtureId}});
- const self=await f.api.handle({method:"POST",path:"/api/cloud/upscale-benchmarks/runs/"+runId+"/review",ownerId:owner,query:{projectId:project},body:{decision:"reviewed_pass"}});
+ const self=await f.api.handle({method:"POST",path:"/api/cloud/upscale-benchmarks/runs/"+run.body.run.id+"/review",ownerId:owner,query:{projectId:project},body:{decision:"reviewed_pass"}});
  assert.equal(self.status,403);assert.equal(self.body.error.code,"UPSCALE_BENCHMARK_INDEPENDENT_REVIEW_REQUIRED");
  const reviewed=await f.api.handle({method:"POST",path:"/api/cloud/upscale-benchmarks/runs/"+runId+"/review",ownerId:reviewer,query:{projectId:project},body:{decision:"reviewed_pass",note:"Visual check passed."}});
  assert.equal(reviewed.status,200);assert.equal(reviewed.body.run.record.qualityReview,"reviewed_pass");
