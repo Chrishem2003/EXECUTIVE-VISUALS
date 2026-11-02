@@ -73,3 +73,7 @@ test("includes freeze warnings and scene-change timestamps in QA evidence",()=>{
  assert.ok(report.findings.some(item=>item.code==="FROZEN_VIDEO_INTERVAL"));
  assert.deepEqual(report.signalAnalysis.sceneChangeTimes,[1.2,4.8]);
 });
+
+import { captionStyle } from "../media.mjs";
+test("caption styles render readable background panels and configurable typography",()=>{const style=captionStyle({fontSize:38,primaryColor:"#F2E8D5",backgroundColor:"#101820",backgroundOpacity:0.7,backgroundMode:"box",outline:2,shadow:1,alignment:2,marginV:54});assert.match(style,/FontSize=38/);assert.match(style,/BorderStyle=3/);assert.match(style,/BackColour=&H4D201810/i);assert.match(style,/Alignment=2/);});
+test("caption panels can be disabled without losing text styling",()=>{const style=captionStyle({backgroundMode:"none",fontSize:30});assert.match(style,/BorderStyle=1/);assert.match(style,/FontSize=30/);});
