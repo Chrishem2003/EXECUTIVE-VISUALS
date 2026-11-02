@@ -74,3 +74,26 @@ test("reports execution failures separately from quality review", () => {
 test("computes SHA-256 digests for benchmark artifact bytes", () => {
   assert.equal(sha256Hex(Buffer.from("executive-visuals")), "6d7f71b4525dd39653fa7aa39b7bd5a13c2c4cece8b15b499bb6429906ffea8c");
 });
+
+
+test("rejects successful outputs that do not match the declared upscale factor", () => {
+  const result = validateUpscaleBenchmarkRecord(validRecord({ outputWidth: 1279 }));
+  assert.equal(result.valid, false);
+  assert.ok(result.issues.some(issue => issue.includes("exactly match the declared scale")));
+});
+
+test("duplicate fixture IDs invalidate the benchmark summary", () => {
+  const first = validRecord({ qualityReview: "reviewed_pass" });
+  const duplicate = validRecord({ qualityReview: "reviewed_pass" });
+  const summary = summarizeUpscaleBenchmarks([first, duplicate]);
+  assert.equal(summary.validRecordCount, 1);
+  assert.equal(summary.invalidRecords.length, 1);
+  assert.ok(summary.invalidRecords[0].issues.some(issue => issue.includes("must be unique")));
+  assert.equal(summary.qualityVerified, false);
+});
+
+test("rejects SSIM values outside their valid upper bound", () => {
+  const result = validateUpscaleBenchmarkRecord(validRecord({ metrics: { ssim: 1.01 } }));
+  assert.equal(result.valid, false);
+  assert.ok(result.issues.some(issue => issue.includes("ssim must not exceed 1")));
+});
