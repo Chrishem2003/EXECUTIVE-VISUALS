@@ -105,20 +105,26 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
    }
    if(path==="/api/cloud/transformations"&&method==="POST"){
     if(!body||typeof body!=="object"||Array.isArray(body))return response(400,{error:{code:"TRANSFORMATION_BODY_INVALID",message:"Transformation request must be a JSON object."}});
-    const projectId=String(body.projectId||""),sourceAssetId=String(body.sourceAssetId||""),operation=String(body.operation||"");
+    const allowedFields=new Set(["projectId","sourceAssetId","operation","prompt","durationSeconds","referenceAssetIds","preservation","rightsConfirmed","subjectConsentConfirmed"]);
+    if(Object.keys(body).some(field=>!allowedFields.has(field)))return response(400,{error:{code:"TRANSFORMATION_FIELD_UNSUPPORTED",message:"Transformation request contains an unsupported field."}});
+    const projectId=typeof body.projectId==="string"?body.projectId.trim():"",sourceAssetId=typeof body.sourceAssetId==="string"?body.sourceAssetId.trim():"",operation=typeof body.operation==="string"?body.operation.trim():"";
     if(!safeId(projectId)||await allow({ownerId,projectId,action:"write"})!==true)return response(404,{error:{code:"PROJECT_NOT_FOUND",message:"Project not found or editor access required."}});
     if(!transformationOps.has(operation))return response(400,{error:{code:"TRANSFORMATION_OPERATION_INVALID",message:"Choose a supported transformation."}});
-    const prompt=typeof body.prompt==="string"?body.prompt.trim().slice(0,12000):"";
+    const prompt=typeof body.prompt==="string"?body.prompt.trim():"";
     const duration=Number(body.durationSeconds);
-    if(prompt.length<8||!Number.isInteger(duration)||duration<1||duration>30)return response(400,{error:{code:"TRANSFORMATION_INPUT_INVALID",message:"Provide an edit prompt and a duration from 1 to 30 seconds."}});
+    if(prompt.length<8||prompt.length>8000||!Number.isInteger(duration)||duration<1||duration>30)return response(400,{error:{code:"TRANSFORMATION_INPUT_INVALID",message:"Provide an edit prompt of 8–8000 characters and a duration from 1 to 30 seconds."}});
     if(body.rightsConfirmed!==true)return response(403,{error:{code:"MEDIA_RIGHTS_REQUIRED",message:"Confirm rights to use the source and reference media."}});
     if(operation==="person_replace"&&body.subjectConsentConfirmed!==true)return response(403,{error:{code:"SUBJECT_CONSENT_REQUIRED",message:"Explicit subject consent is required for person replacement."}});
+    if(body.referenceAssetIds!==undefined&&(!Array.isArray(body.referenceAssetIds)||body.referenceAssetIds.some(id=>typeof id!=="string"||!id.trim())))return response(400,{error:{code:"REFERENCE_ASSET_INVALID",message:"Reference asset IDs must be a list of non-empty strings."}});
+    const refs=body.referenceAssetIds===undefined?[]:body.referenceAssetIds.map(id=>id.trim());
+    if(refs.length>4)return response(400,{error:{code:"REFERENCE_LIMIT_EXCEEDED",message:"Use no more than four reference images."}});
+    if(new Set(refs).size!==refs.length)return response(400,{error:{code:"REFERENCE_ASSET_INVALID",message:"Reference asset IDs cannot contain duplicates."}});
+    if(body.preservation!==undefined&&(!Array.isArray(body.preservation)||body.preservation.length>10||body.preservation.some(value=>typeof value!=="string"||!preservationOptions.has(value))))return response(400,{error:{code:"TRANSFORMATION_PRESERVATION_INVALID",message:"Preservation options contain an unsupported or invalid value."}});
+    const preservation=body.preservation===undefined?[]:[...body.preservation];
+    if(new Set(preservation).size!==preservation.length)return response(400,{error:{code:"TRANSFORMATION_PRESERVATION_INVALID",message:"Preservation options cannot contain duplicates."}});
     const source=await service.assets.get({ownerId,assetId:sourceAssetId});
     if(source.projectId!==projectId||!source.mediaType.startsWith("video/"))return response(422,{error:{code:"SOURCE_VIDEO_INVALID",message:"Source video must be an asset in this project."}});
-    const refs=Array.isArray(body.referenceAssetIds)?[...new Set(body.referenceAssetIds.map(String))]:[];
-    if(refs.length>4)return response(400,{error:{code:"REFERENCE_LIMIT_EXCEEDED",message:"Use no more than four reference images."}});
     for(const id of refs){const asset=await service.assets.get({ownerId,assetId:id});if(asset.projectId!==projectId||!asset.mediaType.startsWith("image/"))return response(422,{error:{code:"REFERENCE_ASSET_INVALID",message:"Every reference must be a project image asset."}});}
-    const preservation=Array.isArray(body.preservation)?[...new Set(body.preservation.filter(value=>preservationOptions.has(value)))]:[];
     const key=String(idempotencyKey||"").trim().slice(0,180);
     if(key.length<8)return response(400,{error:{code:"IDEMPOTENCY_KEY_REQUIRED",message:"An idempotency key is required."}});
     const input={projectId,sourceAssetId,operation,prompt,durationSeconds:duration,referenceAssetIds:refs,preservation,rightsConfirmed:true,subjectConsentConfirmed:body.subjectConsentConfirmed===true};
