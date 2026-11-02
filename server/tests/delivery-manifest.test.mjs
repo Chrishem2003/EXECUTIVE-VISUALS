@@ -44,6 +44,7 @@ test("creates a verifiable delivery package bound to the master and review histo
   const master = { assetId: receipt.outputAsset, filename: "master.mp4", mediaType: receipt.mediaType, byteSize: receipt.byteSize, sha256: receipt.sha256, downloadUrl: "https://storage.example.test/master?token=short", downloadUrlExpiresInSeconds: 300 };
   const deliveryPackage = createDeliveryPackage({ jobId: "job-1", projectId: "project-1", timelineId: receipt.timelineId, timelineRevision: receipt.timelineRevision, master, deliveryReceipt: receipt, renderManifest: receipt.renderManifest, deliveryReport: receipt.deliveryReport, reviewHistory: [{ decision: "approved", reviewerId: "reviewer-1", fingerprint: receipt.fingerprint }], generatedAt: "2026-11-02T09:00:00.000Z" });
   assert.equal(verifyDeliveryPackage(deliveryPackage), true);
+  assert.equal(verifyDeliveryPackage(JSON.parse(JSON.stringify(deliveryPackage))), true);
   assert.equal(deliveryPackage.packageFingerprint.length, 64);
   assert.equal(deliveryPackage.master.assetId, receipt.outputAsset);
 });
