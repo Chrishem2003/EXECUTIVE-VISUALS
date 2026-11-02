@@ -29,9 +29,10 @@ async function analyzeTemporalVideo({path,durationSeconds,jobId,activeProcesses,
   const timeoutMs=Math.min(15*60*1000,Math.max(30000,coverageSeconds*2500));
   const result=await run("ffmpeg",["-hide_banner","-nostats","-i",path,"-t",String(coverageSeconds),"-vf","fps=2,signalstats,scdet=threshold=10,metadata=print","-an","-sn","-dn","-f","null","-"],timeoutMs,jobId,activeProcesses,()=>Boolean(signal?.aborted),512000);
   if(signal?.aborted)throw Object.assign(new Error("Timeline render was cancelled."),{code:"JOB_CANCELLED"});
-  const lumaSamples=parseVideoLumaSamples(result.stderr);
+  const metadataOutput=[result.stderr,result.stdout].join("\n");
+  const lumaSamples=parseVideoLumaSamples(metadataOutput);
   if(!lumaSamples.length)throw Object.assign(new Error("FFmpeg did not return usable frame-luminance samples."),{code:"ANALYSIS_NO_FRAME_SAMPLES"});
-  return {lumaSamples,sceneChanges:parseSceneCutTimes(result.stderr),coverageSeconds,truncated:durationSeconds>coverageSeconds};
+  return {lumaSamples,sceneChanges:parseSceneCutTimes(metadataOutput),coverageSeconds,truncated:durationSeconds>coverageSeconds};
 }
 
 function referencedAssets(timeline){
