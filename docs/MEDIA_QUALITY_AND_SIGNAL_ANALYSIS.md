@@ -75,3 +75,6 @@ The Cloud Projects asset lineage panel can export a URL-free JSON evidence snaps
 The report labels itself technical evidence only. It does not calculate or claim perceptual quality, infer missing provenance, convert a successful decoder check into a quality pass, or replace independent human review. Missing or conflicting evidence remains explicit. Export is client-side and read-only; it does not create a server record, change the asset, or update approval state.
 
 Staging acceptance: export a fully evidenced derivative, a legacy derivative with missing processing data, a mismatched output checksum, and a lineage graph with missing/cyclic/truncated nodes. Confirm the JSON contains no signed URLs, storage paths, credentials, or cross-project records, and that the export does not mutate asset metadata or review history.
+
+
+The export also cross-checks a derivative's recorded source checksum against the checksum of its immediate parent in the authorized lineage graph. A missing parent, cycle, unavailable parent checksum, or mismatch is reported explicitly rather than treated as verified. Ancestor and descendant arrays are capped at 500 entries in the portable report, with truncation and reported counts preserved.
