@@ -17,6 +17,7 @@ import { importResearchUrl } from "./research-import.mjs";
 import { getProviderCatalog } from "./provider-registry.mjs";
 import { ensureRemoteUsageTable, getRemoteUsagePolicy } from "./usage-guardrails.mjs";
 import { createCloudTimelineApi } from "./cloud-timeline-api.mjs";
+import { createCsrfToken, isValidCsrfRequest, requiresCsrf } from "./csrf.mjs";
 import { validateSrt, validateWebVtt } from "./caption-validation.mjs";
 import { ensureTransformationPlanSchema, createTransformationPlan, approveTransformationPlan, listTransformationPlans, getTransformationPlan } from "./transformation-plans.mjs";
 
@@ -91,6 +92,10 @@ const cookieValue = (req,name) => {
 const setCookie = (res,token,maxAge) => {
   const secure=process.env.COOKIE_SECURE==="true"||process.env.NODE_ENV==="production" ? "; Secure" : "";
   res.setHeader("set-cookie",`ev_session=${encodeURIComponent(token)}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${maxAge}${secure}`);
+};
+const setCsrfCookie = (res,token,maxAge) => {
+  const secure=process.env.COOKIE_SECURE==="true"||process.env.NODE_ENV==="production" ? "; Secure" : "";
+  res.appendHeader("set-cookie",`ev_csrf=${encodeURIComponent(token)}; SameSite=Strict; Path=/; Max-Age=${maxAge}${secure}`);
 };
 function createLocalSession(userId) {
   const token=randomBytes(32).toString("base64url");
@@ -284,7 +289,7 @@ export function createAppServer() {
         const id=randomUUID(),salt=randomBytes(16).toString("hex"),passwordHash=scryptSync(password,salt,64).toString("hex");
         try{db.prepare("INSERT INTO users(id,email,password_hash,password_salt) VALUES(?,?,?,?)").run(id,email,passwordHash,salt);}
         catch{fail(res,409,"ACCOUNT_EXISTS","An account with this email already exists.");return;}
-        const token=createLocalSession(id);setCookie(res,token,SESSION_DAYS*86400);audit(db,id,"account.created","user",id,{authMode:"local"});
+        const token=createLocalSession(id);setCookie(res,token,SESSION_DAYS*86400);setCsrfCookie(res,createCsrfToken(),SESSION_DAYS*86400);audit(db,id,"account.created","user",id,{authMode:"local"});
         send(res,201,{user:{id,email},authMode:"local"},cors);return;
       }
       if(path==="/api/auth/login"&&req.method==="POST"){
@@ -295,15 +300,17 @@ export function createAppServer() {
         const candidate=user?scryptSync(password,user.password_salt,64).toString("hex"):"";
         const valid=!!user&&candidate.length===user.password_hash.length&&timingSafeEqual(Buffer.from(candidate,"hex"),Buffer.from(user.password_hash,"hex"));
         if(!valid){fail(res,401,"INVALID_CREDENTIALS","Email or password is incorrect.");return;}
-        const token=createLocalSession(user.id);setCookie(res,token,SESSION_DAYS*86400);
+        const token=createLocalSession(user.id);setCookie(res,token,SESSION_DAYS*86400);setCsrfCookie(res,createCsrfToken(),SESSION_DAYS*86400);
         send(res,200,{user:{id:user.id,email:user.email},authMode:"local"},cors);return;
       }
       if(path==="/api/auth/logout"&&req.method==="POST"){
+        if(!isValidCsrfRequest({method:req.method,cookieHeader:req.headers.cookie,headerToken:req.headers["x-csrf-token"]})){fail(res,403,"CSRF_VALIDATION_FAILED","A valid CSRF token is required for this request.");return;}
         const token=cookieValue(req,"ev_session");if(token)db.prepare("DELETE FROM sessions WHERE token_hash=?").run(hash(token));
-        setCookie(res,"",0);send(res,200,{ok:true},cors);return;
+        setCookie(res,"",0);setCsrfCookie(res,"",0);send(res,200,{ok:true},cors);return;
       }
       const user=await authenticate(req);
       if(!user){fail(res,401,"AUTH_REQUIRED","Sign in to access this workspace.");return;}
+      if(AUTH_MODE==="local"&&requiresCsrf(req.method)&&!isValidCsrfRequest({method:req.method,cookieHeader:req.headers.cookie,headerToken:req.headers["x-csrf-token"]})){fail(res,403,"CSRF_VALIDATION_FAILED","A valid CSRF token is required for this request.");return;}
       if(path==="/api/me"&&req.method==="GET"){send(res,200,{user,authMode:AUTH_MODE},cors);return;}
       if(cloudTimelineApi && path==="/api/cloud/assets" && req.method==="POST"){
         const uploadResult=await cloudTimelineApi.uploadAsset({
