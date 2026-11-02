@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { addClip, addTrack, createTimeline, rational } from "../../src/core/timeline.ts";
+import { addClip, addTrack, createTimeline, rational, toOpenTimelineIo } from "../../src/core/timeline.ts";
 import { compareTimelineVariants, createTimelineVariant } from "../../src/core/timeline-variants.ts";
 
 function fixture() {
@@ -21,6 +21,8 @@ test("variant is a deep, independent copy with explicit lineage and a fresh revi
   assert.equal(variant.revision, 1);
   assert.equal(variant.metadata?.variantOf, "base");
   assert.equal(variant.metadata?.variantParentId, "base");
+  const interchange = toOpenTimelineIo(variant);
+  assert.equal(interchange.metadata.executiveVisuals.timelineMetadata.variantOf, "base");
   variant.tracks[0].clips[0].metadata.creativeTrace.purpose = "A different purpose";
   assert.equal(original.tracks[0].clips[0].metadata.creativeTrace.purpose, "Establish the question");
 });
