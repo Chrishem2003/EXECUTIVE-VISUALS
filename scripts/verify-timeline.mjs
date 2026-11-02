@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { addClip, addMarker, addTrack, createTimeline, moveClip, rational, seconds, splitClip, toOpenTimelineIo, trimClip, validateTimeline } from "../src/core/timeline.ts";
 import { analyzeTimelineQuality } from "../src/core/timeline-quality.ts";
+import { assessDerivativeEligibility, replaceTimelineClipAsset } from "../src/core/timeline-derivatives.ts";
 
 let timeline=createTimeline("project-1","timeline-1","Pilot episode",{numerator:24,denominator:1});
 timeline=addTrack(timeline,{id:"v1",name:"Video 1",kind:"video",enabled:true,locked:false,clips:[]});
@@ -8,6 +9,23 @@ timeline=addTrack(timeline,{id:"v2",name:"Overlays",kind:"overlay",enabled:true,
 timeline=addClip(timeline,"v1",{id:"clip-a",assetId:"asset-a",name:"Opening",sourceRange:{start:rational(0,24),duration:rational(240,24)},timelineStart:rational(0,24),duration:rational(240,24),enabled:true});
 timeline=addClip(timeline,"v1",{id:"clip-b",assetId:"asset-b",name:"Second scene",sourceRange:{start:rational(0,24),duration:rational(120,24)},timelineStart:rational(300,24),duration:rational(120,24),enabled:true});
 assert.equal(validateTimeline(timeline).valid,true);
+const sourceHash="a".repeat(64),outputHash="b".repeat(64);
+const approvedDerivative={id:"asset-a-upscaled",derivativeOf:"asset-a",sha256:outputHash,metadata:{sourceSha256:sourceHash,processing:{sourceAssetId:"asset-a",inputSha256:sourceHash,outputSha256:outputHash,dimensionsVerified:true,decoderVerified:true,qualityReview:"reviewed_pass"}}};
+assert.equal(assessDerivativeEligibility(approvedDerivative,"asset-a").eligible,true);
+assert.equal(assessDerivativeEligibility({...approvedDerivative,derivativeOf:"other-source"},"asset-a").eligible,false);
+assert.equal(assessDerivativeEligibility({...approvedDerivative,metadata:{...approvedDerivative.metadata,processing:{...approvedDerivative.metadata.processing,qualityReview:"not_reviewed"}}},"asset-a").eligible,false);
+assert.equal(assessDerivativeEligibility({...approvedDerivative,metadata:{...approvedDerivative.metadata,processing:{...approvedDerivative.metadata.processing,decoderVerified:false}}},"asset-a").eligible,false);
+const beforeReplacement=timeline.tracks[0].clips.find(item=>item.id==="clip-a");
+const replacedTimeline=replaceTimelineClipAsset(timeline,"v1","clip-a",approvedDerivative.id);
+const afterReplacement=replacedTimeline.tracks[0].clips.find(item=>item.id==="clip-a");
+assert.equal(afterReplacement.assetId,approvedDerivative.id);
+assert.equal(afterReplacement.id,beforeReplacement.id);
+assert.equal(afterReplacement.name,beforeReplacement.name);
+assert.deepEqual(afterReplacement.sourceRange,beforeReplacement.sourceRange);
+assert.deepEqual(afterReplacement.timelineStart,beforeReplacement.timelineStart);
+assert.deepEqual(afterReplacement.duration,beforeReplacement.duration);
+assert.equal(timeline.tracks[0].clips.find(item=>item.id==="clip-a").assetId,"asset-a","source timeline must remain immutable");
+assert.throws(()=>replaceTimelineClipAsset({...timeline,tracks:timeline.tracks.map(track=>track.id==="v1"?{...track,locked:true}:track)},"v1","clip-a",approvedDerivative.id),/locked/);
 timeline=trimClip(timeline,"v1","clip-a",24,24);
 const trimmed=timeline.tracks[0].clips.find(x=>x.id==="clip-a");
 assert.equal(trimmed.sourceRange.start.value,24);
