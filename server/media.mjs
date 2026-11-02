@@ -9,7 +9,7 @@ import { stat } from "node:fs/promises";
 import { Transform } from "node:stream";
 import { addJobEvent, getAccessibleAsset, json, parseJson } from "./db.mjs";
 import { createRealEsrganAdapter } from "./ai-upscale-engine.mjs";
-import { buildMediaQualityReport } from "./media-quality.mjs";
+import { attachMediaQualityReport } from "./media-quality.mjs";
 import { parseBlackFrameEvents, parseSilenceEvents, parseAudioMetrics, parseFreezeEvents, parseSceneChangeTimes, runOptionalSignalCheck } from "./media-signal-analysis.mjs";
 
 const ALLOWED_JOBS = new Set(["media.probe", "media.thumbnail", "media.transcode", "media.audio_extract", "media.proxy", "media.denoise", "media.color", "media.resize", "media.interpolate", "media.upscale", "media.audio-clean", "media.ai-upscale", "timeline.render"]);
@@ -427,7 +427,7 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
       } else signalAnalysis.unavailable.push({check:"audio-signal-and-metrics",reason:check.reason});
     }
     metadata.signalAnalysis=signalAnalysis;
-    metadata.qualityReport=buildMediaQualityReport(metadata,{requireVideo:false,requireAudio:false});
+    Object.assign(metadata,attachMediaQualityReport(metadata,{requireVideo:false,requireAudio:false}));
     return { metadata, outputAsset:null };
   }
 
