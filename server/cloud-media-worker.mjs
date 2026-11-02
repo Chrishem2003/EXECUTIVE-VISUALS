@@ -74,7 +74,7 @@ export function createCloudMediaWorker({
       });
     },
     recoverExpired(limit = 100) {
-      return cloudQueue.recover(limit);
+      return cloudQueue.recover(limit, MEDIA_JOB_TYPES);
     }
   });
 }
