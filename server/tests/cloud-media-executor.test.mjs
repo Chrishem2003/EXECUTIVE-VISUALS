@@ -109,6 +109,37 @@ test("cloud media enhancement publishes a checksummed derivative using the claim
   }
 });
 
+test("cloud media executor forwards the lease cancellation signal and cleans materialized assets if workspace creation fails", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "ev-cloud-cancel-test-"));
+  const invalidTempRoot = join(directory, "missing-parent", "worker");
+  let forwardedSignal = null, cleaned = false;
+  const controller = new AbortController();
+  const execute = createCloudMediaExecutor({
+    tempRoot: invalidTempRoot,
+    mediaIO: {
+      async materialize(args) {
+        forwardedSignal = args.signal;
+        return {
+          path: join(directory, "unused.mp4"),
+          asset: { id: "asset-cancel", name: "clip.mp4", mediaType: "video/mp4" },
+          async cleanup() { cleaned = true; }
+        };
+      },
+      async publish() { throw new Error("No output should be published."); }
+    }
+  });
+  try {
+    await assert.rejects(
+      execute({ job: { id: "job-cancel", owner_id: "owner", job_type: "media.probe", input: { sourceAssetId: "asset-cancel" } }, signal: controller.signal }),
+      error => error.code === "ENOENT"
+    );
+    assert.equal(forwardedSignal, controller.signal);
+    assert.equal(cleaned, true);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("cloud media executor rejects timeline jobs until timeline persistence is cloud-backed", async () => {
   let materialized = false;
   const execute = createCloudMediaExecutor({
