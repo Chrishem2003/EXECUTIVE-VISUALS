@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {buildMediaQualityReport} from "../media-quality.mjs";
+import {buildMediaQualityReport,attachMediaQualityReport} from "../media-quality.mjs";
 
 test("reports valid HD audio-video media as structurally passed",()=>{
  const report=buildMediaQualityReport({format:{duration:"42.5"},streams:[
@@ -77,3 +77,14 @@ test("includes freeze warnings and scene-change timestamps in QA evidence",()=>{
 import { captionStyle } from "../media.mjs";
 test("caption styles render readable background panels and configurable typography",()=>{const style=captionStyle({fontSize:38,primaryColor:"#F2E8D5",backgroundColor:"#101820",backgroundOpacity:0.7,backgroundMode:"box",outline:2,shadow:1,alignment:2,marginV:54});assert.match(style,/FontSize=38/);assert.match(style,/BorderStyle=3/);assert.match(style,/BackColour=&H4D201810/i);assert.match(style,/Alignment=2/);});
 test("caption panels can be disabled without losing text styling",()=>{const style=captionStyle({backgroundMode:"none",fontSize:30});assert.match(style,/BorderStyle=1/);assert.match(style,/FontSize=30/);});
+
+
+test("attaches structured quality findings to media probe metadata without losing source fields",()=>{
+ const metadata={format:{duration:"8"},streams:[{codec_type:"video",width:640,height:360,avg_frame_rate:"24/1"}],signalAnalysis:{performed:["black-frame"],blackFrames:[]}};
+ const enriched=attachMediaQualityReport(metadata,{requireVideo:true});
+ assert.equal(enriched.format,metadata.format);
+ assert.equal(enriched.signalAnalysis,metadata.signalAnalysis);
+ assert.equal(enriched.qualityReport.status,"review");
+ assert.ok(enriched.qualityReport.findings.some(item=>item.code==="BELOW_HD"));
+ assert.equal(metadata.qualityReport,undefined);
+});
