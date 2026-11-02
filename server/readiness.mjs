@@ -21,10 +21,11 @@ export function evaluateReadiness(config = {}) {
   if (production) {
     add("external-auth-mode", config.authMode === "supabase",
       "Production must use the configured external identity provider.");
-    add("server-managed-session", false,
-      "Hosted server-managed cookie sessions, refresh rotation and CSRF enforcement are not implemented yet.");
-    add("private-media-lifecycle", false,
-      "The active general media API still uses local-disk storage; private cloud asset lifecycle integration is incomplete.");
+    add("server-managed-session", config.serverManagedSessionsReady === true,
+      "Hosted server-managed sessions, refresh rotation and CSRF enforcement must be verified before production.");
+    add("private-media-lifecycle",
+      config.cloudTimelineApiEnabled === true && config.cloudTimelineStorageReady === true && config.authMode === "supabase",
+      "The authenticated private cloud-media API, private bucket and asset lifecycle must all pass startup verification.");
     add("persistent-volume",
       config.requirePersistentDataDir === true &&
       config.dataDirExists === true &&
@@ -41,6 +42,8 @@ export function evaluateReadiness(config = {}) {
       typeof config.supabasePublishableKey === "string" && config.supabasePublishableKey.length > 0 &&
       typeof config.supabaseServiceRoleKey === "string" && config.supabaseServiceRoleKey.length > 0,
       "Cloud timeline authentication and storage credentials are incomplete or invalid.");
+    add("cloud-timeline-private-storage", config.cloudTimelineStorageReady === true,
+      "The cloud schema and private media bucket have not passed startup verification.");
   }
 
   if (config.imageGatewayEnabled === true) {
