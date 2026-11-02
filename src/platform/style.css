@@ -376,3 +376,11 @@
 @media(max-width:650px){.preview-stage{min-height:140px}.preview-transport output{width:100%;margin:4px 0 0}}
 
 .preview-transport input[type="range"]{flex:1 1 180px;min-width:120px;accent-color:#c9a76e}
+
+
+/* Independent delivery review */
+.delivery-approval{display:grid;gap:10px;margin-top:16px;padding:14px;border:1px solid var(--border,#303846);border-radius:12px;background:var(--surface-raised,#151b24)}
+.delivery-approval textarea{width:100%;min-height:64px;resize:vertical}
+.delivery-approval .button-row{display:flex;flex-wrap:wrap;gap:8px}
+.delivery-approval .button-row button{min-height:36px}
+.delivery-approval .timeline-quality-list{max-height:240px;overflow:auto}
