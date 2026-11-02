@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { Transform } from "node:stream";
 import { verifyRenderManifest } from "./render-manifest.mjs";
-import { evaluateDeliveryOutput } from "./delivery-profiles.mjs";
+import { evaluateDeliveryOutput, getDeliveryProfile } from "./delivery-profiles.mjs";
 
 function parseInput(value){
   if(value&&typeof value==="object"&&!Array.isArray(value))return value;
@@ -46,6 +46,8 @@ export function createCloudTimelineExecutor({timelines,mediaIO,renderTimeline,pr
     if(!record)throw Object.assign(new Error("Timeline not found."),{code:"CLOUD_TIMELINE_NOT_FOUND"});
     if(!Number.isInteger(Number(input.timelineRevision))||Number(input.timelineRevision)<1||Number(input.timelineRevision)!==record.revision)throw Object.assign(new Error("Saved timeline revision changed after this render was queued. Submit a new render from the latest revision."),{code:"CLOUD_TIMELINE_REVISION_CHANGED"});
     if((job.project_id||null)!==(record.projectId||null))throw Object.assign(new Error("Timeline does not belong to the claimed job project."),{code:"CLOUD_TIMELINE_PROJECT_MISMATCH"});
+    const deliveryProfileId=record.timeline.deliveryProfileId||null;
+    if(deliveryProfileId)getDeliveryProfile(deliveryProfileId);
     const assetIds=referencedAssets(record.timeline);
     if(!assetIds.length)throw Object.assign(new Error("Timeline has no enabled source assets."),{code:"CLOUD_TIMELINE_EMPTY"});
     if(assetIds.length>maxAssets)throw Object.assign(new Error("Timeline references too many source assets."),{code:"CLOUD_TIMELINE_TOO_MANY_ASSETS"});
@@ -67,7 +69,6 @@ export function createCloudTimelineExecutor({timelines,mediaIO,renderTimeline,pr
       if(info.size>maxOutputBytes)throw Object.assign(new Error("Timeline output exceeds the configured limit."),{code:"CLOUD_TIMELINE_OUTPUT_TOO_LARGE"});
       const probed=await probeOutput(output.path);
       const probeValidation=validateMediaOutputProbe(probed,output.mediaType);
-      const deliveryProfileId=record.timeline.deliveryProfileId||null;
       const deliveryReport=deliveryProfileId?evaluateDeliveryOutput(probed,deliveryProfileId):null;
       if(deliveryReport?.status==="needs-attention")throw Object.assign(new Error("Rendered output failed its selected delivery profile checks; the output was not published."),{code:"DELIVERY_PROFILE_VALIDATION_FAILED",deliveryReport});
       const sha256=await digest(output.path);
