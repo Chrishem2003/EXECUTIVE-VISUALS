@@ -74,8 +74,8 @@ export function parseVideoLumaSamples(stderr=""){
  const blocks=String(stderr||"").split(/(?=^frame:\s*\d+)/m);
  for(const block of blocks){
   const frame=block.match(/^frame:\s*(\d+)/m);
-  const time=block.match(/(?:^|\n)pts_time:\s*(-?(?:\d+(?:\.\d*)?|\.\d+))/);
-  const luma=block.match(/(?:^|\n)lavfi\.signalstats\.YAVG=([0-9]+(?:\.[0-9]+)?)/);
+  const time=block.match(/pts_time:\s*(-?(?:\d+(?:\.\d*)?|\.\d+))/);
+  const luma=block.match(/lavfi\.signalstats\.YAVG=([0-9]+(?:\.[0-9]+)?)/);
   if(!frame||!time||!luma)continue;
   const sample={frame:Number(frame[1]),timeSeconds:Number(time[1]),meanLuma:Number(luma[1])};
   if(Number.isSafeInteger(sample.frame)&&Number.isFinite(sample.timeSeconds)&&sample.timeSeconds>=0&&Number.isFinite(sample.meanLuma)&&sample.meanLuma>=0&&sample.meanLuma<=255)samples.push(sample);
@@ -91,8 +91,8 @@ export function parseSceneCutTimes(stderr="",minimumScore=10){
  const cuts=[];
  const blocks=String(stderr||"").split(/(?=^frame:\s*\d+)/m);
  for(const block of blocks){
-  const time=block.match(/(?:^|\n)pts_time:\s*(-?(?:\d+(?:\.\d*)?|\.\d+))/);
-  const score=block.match(/(?:^|\n)lavfi\.scd\.score=([0-9]+(?:\.[0-9]+)?)/);
+  const time=block.match(/pts_time:\s*(-?(?:\d+(?:\.\d*)?|\.\d+))/);
+  const score=block.match(/lavfi\.scd\.score=([0-9]+(?:\.[0-9]+)?)/);
   if(!time||!score)continue;
   const timeSeconds=Number(time[1]),value=Number(score[1]);
   if(Number.isFinite(timeSeconds)&&timeSeconds>=0&&Number.isFinite(value)&&value>=minimumScore)cuts.push(timeSeconds);
