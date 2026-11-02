@@ -191,7 +191,7 @@ export function openDatabase(filename) {
       owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       project_id TEXT REFERENCES projects(id) ON DELETE CASCADE,
       asset_id TEXT NOT NULL REFERENCES assets(id),
-      fixture_id TEXT NOT NULL,
+      fixture_id TEXT NOT NULL REFERENCES upscale_benchmark_fixtures(id) ON DELETE CASCADE,
       fixture_category TEXT NOT NULL,
       model TEXT NOT NULL,
       model_version TEXT NOT NULL,
