@@ -43,9 +43,13 @@ export function analyzeTimelineQuality(timeline:EditorialTimeline|null,assets:Ti
     }else{
      const sourceHash=processing.inputSha256??processing.sourceSha256??asset.metadata?.sourceSha256;
      const outputHash=processing.outputSha256??asset.metadata?.sha256;
+     if(typeof processing.sourceAssetId==="string"&&processing.sourceAssetId!==asset.derivativeOf)
+      finding("DERIVATIVE_PARENT_MISMATCH","error","Derivative source relationship does not match its processing record","The recorded source asset ID for “"+clip.name+"” does not match the asset library's derivative parent. Do not use this derivative until its lineage is reconciled.");
+     if(typeof processing.inputSha256==="string"&&typeof asset.metadata?.sourceSha256==="string"&&processing.inputSha256.toLowerCase()!==asset.metadata.sourceSha256.toLowerCase())
+      finding("DERIVATIVE_SOURCE_HASH_CONFLICT","error","Derivative source checksums conflict","The processing input checksum and asset-level source checksum for “"+clip.name+"” disagree.");
      if(typeof sourceHash!=="string"||! /^[a-f0-9]{64}$/i.test(sourceHash))
       finding("DERIVATIVE_SOURCE_HASH_MISSING","warning","Derivative source checksum is missing","The processing record for “"+clip.name+"” does not contain a valid SHA-256 checksum for its source.");
-     if(typeof outputHash!=="string"||! /^[a-f0-9]{64}$/i.test(outputHash)||typeof asset.sha256==="string"&&outputHash.toLowerCase()!==asset.sha256.toLowerCase())
+     if(typeof outputHash!=="string"||! /^[a-f0-9]{64}$/i.test(outputHash)||typeof asset.sha256!=="string"||outputHash.toLowerCase()!==asset.sha256.toLowerCase())
       finding("DERIVATIVE_OUTPUT_HASH_UNVERIFIED","warning","Derivative output checksum is unverified","The recorded output checksum for “"+clip.name+"” is missing, malformed or does not match the asset library checksum.");
      if(processing.model||processing.engine||processing.method==="ai-super-resolution"){
       if(processing.dimensionsVerified!==true)
