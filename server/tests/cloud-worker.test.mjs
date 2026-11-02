@@ -1,14 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { runCloudWorkerCycle } from "../cloud-worker.mjs";
+import { isRetryableCloudJobError, runCloudWorkerCycle } from "../cloud-worker.mjs";
 
-function queueFor({job={id:"job-1"},renew=true,finish=true,failFinish=false}={}) {
+function queueFor({job={id:"job-1"},renew=true,finish=true,failFinish=false,retry={accepted:true,status:"queued",retryable:true,delaySeconds:2,attempt:1,maxAttempts:3}}={}) {
  const calls=[];
  return {
   calls,
   async claim(workerId,seconds){calls.push(["claim",workerId,seconds]);return job;},
   async renew(id,workerId,seconds){calls.push(["renew",id,workerId,seconds]);return typeof renew==="function"?renew():renew;},
-  async finish(id,workerId,status,output,error){calls.push(["finish",id,workerId,status,output,error]);if(failFinish)throw new Error("finish unavailable");return finish;}
+  async retry(id,workerId,error){calls.push(["retry",id,workerId,error]);return retry;},\n  async finish(id,workerId,status,output,error){calls.push(["finish",id,workerId,status,output,error]);if(failFinish)throw new Error("finish unavailable");return finish;}
  };
 }
 
@@ -91,4 +91,31 @@ test("worker validates inputs and output before finishing",async()=>{
   execute:async()=>[]
  });
  assert.equal(invalid.status,"failed");
+});
+
+test("transient infrastructure errors schedule bounded retries instead of terminal failure",async()=>{
+ const queue=queueFor();
+ const events=[];
+ const result=await runCloudWorkerCycle({queue,workerId:"worker-1",heartbeatIntervalMs:60000,execute:async()=>{throw Object.assign(new Error("storage temporarily unavailable"),{code:"CLOUD_STORAGE_TIMEOUT"});},onEvent:event=>events.push(event)});
+ assert.equal(result.status,"queued");
+ assert.equal(result.retryScheduled,true);
+ assert.equal(result.retryAfterSeconds,2);
+ assert.equal(queue.calls.some(call=>call[0]==="finish"),false);
+ assert.ok(queue.calls.some(call=>call[0]==="retry"&&call[3].retryable===true));
+ assert.ok(events.some(event=>event.type==="job.retry_scheduled"));
+});
+test("permanent media validation errors remain terminal and are never retried",async()=>{
+ const queue=queueFor();
+ const result=await runCloudWorkerCycle({queue,workerId:"worker-1",heartbeatIntervalMs:60000,execute:async()=>{throw Object.assign(new Error("unsupported media type"),{code:"UNSUPPORTED_MEDIA_TYPE"});}});
+ assert.equal(result.status,"failed");
+ assert.equal(queue.calls.some(call=>call[0]==="retry"),false);
+ assert.ok(queue.calls.some(call=>call[0]==="finish"&&call[3]==="failed"));
+});
+test("retry classification is explicit and does not retry arbitrary HTTP failures",()=>{
+ assert.equal(isRetryableCloudJobError({code:"CLOUD_QUEUE_TIMEOUT"}),true);
+ assert.equal(isRetryableCloudJobError({code:"CLOUD_STORAGE_HTTP_503"}),true);
+ assert.equal(isRetryableCloudJobError({status:429}),true);
+ assert.equal(isRetryableCloudJobError({code:"CLOUD_STORAGE_HTTP_403",status:403}),false);
+ assert.equal(isRetryableCloudJobError({code:"UNSUPPORTED_MEDIA_TYPE"}),false);
+ assert.equal(isRetryableCloudJobError({code:"MEDIA_PROCESS_FAILED"}),false);
 });
