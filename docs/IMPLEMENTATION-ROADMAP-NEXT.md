@@ -72,7 +72,8 @@ This roadmap is an engineering sequence, not a claim that the listed work is alr
 - Reject unsupported operations, clip lengths, reference counts and preservation constraints before dispatch.
 - Keep the request contract provider-neutral; do not enable remote execution until one adapter, private asset ingestion, cost preflight, asynchronous jobs and visual QA pass their release gates.
 - Use the checkpointed finishing orchestrator for transformation, upscale, frame-rate, HDR, audio finishing and transcode steps; persist idempotent step receipts in the owner/project-scoped SQLite checkpoint store and resume only from checksum-matching successful checkpoints.
-- Wire authenticated API and worker routes to the checkpoint store only after project write authorization; add the isolated cloud schema migration separately, without touching existing shared/NEMA databases.
+- **Progress:** authenticated SQLite draft/list/detail/approval API is now implemented with owner/editor checks, source/reference asset validation, idempotency, rights/consent gates and explicit cost/budget metadata. The browser draft form is not yet wired to these endpoints. Submission remains fail-closed because no verified transformation adapter is connected.
+- Next: wire the browser form to durable plans, bind approval to immutable plan revisions, integrate the existing checkpoint store with an authorized worker, and add the isolated cloud schema migration separately, without touching existing shared/NEMA databases.
 - Require a known cost estimate for each remote step, an explicit approval ID and a budget covering the entire pipeline before dispatch. Never rerun a completed paid step just because a later finishing step failed.
 
 ## P2 — Provider and collaboration integrations
