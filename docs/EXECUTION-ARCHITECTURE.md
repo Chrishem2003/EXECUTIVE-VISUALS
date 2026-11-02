@@ -36,3 +36,7 @@ This is multi-process coordination on one shared SQLite database and media volum
 ## Worker lease finalization ordering
 
 The shared cloud worker stops scheduling heartbeats and awaits any in-flight lease renewal before attempting a terminal `succeeded` or `failed` transition. This prevents a renewal RPC that began during execution from racing the finish RPC and producing a misleading lease-lost event after a successful completion. If renewal fails or the lease is no longer owned, the worker does not finalize the job; normal expired-lease recovery remains responsible for reclaiming it. Regression coverage holds a renewal request open while execution returns and verifies that the terminal transition waits for renewal settlement.
+
+## Worker-pool-scoped expired-job recovery
+
+Cloud worker pools must recover only the job types they own. The timeline worker now passes its explicit `timeline.render` allowlist to a dedicated `recover_expired_jobs_by_type` RPC. The original all-job `recover_expired_jobs` RPC remains unchanged for general queue administration and existing callers. The scoped RPC preserves the same bounded attempt count, exponential retry delay, terminal failure and append-only job event behavior while selecting only expired rows whose `job_type` is in the requested allowlist. Its execution is revoked from public/anonymous/authenticated roles and granted only to `service_role`. The migration is staged in source control and has not been applied to any database.
