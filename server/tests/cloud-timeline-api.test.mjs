@@ -38,7 +38,7 @@ test("delivery approval requires independent project reviewer and records finger
  assert.equal(result.body.approval.fingerprint,receipt.fingerprint);
  assert.equal(result.body.approval.reviewerId,editor);
  const inserted=f.calls.find(call=>call[0]==="fetch"&&call[1].includes("/job_events")&&call[2].method==="POST");
- assert.equal(JSON.parse(inserted[2].body).event_type,"delivery.approved");
+ assert.equal(JSON.parse(inserted[2].body).event_type,"delivery.reviewed");
  assert.equal(JSON.parse(inserted[2].body).event_data.outputAsset,"published-asset");
 });
 test("delivery creator cannot approve own output",async()=>{
