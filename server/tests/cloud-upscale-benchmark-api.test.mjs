@@ -84,6 +84,8 @@ test("cloud AI upscale rejects missing rights confirmation, unsupported models a
  assert.equal(noRights.status,403);assert.equal(noRights.body.error.code,"MEDIA_RIGHTS_REQUIRED");
  const invalidModel=await f.api.handle({method:"POST",path:"/api/cloud/upscale",ownerId:owner,body:{...base,model:"../untrusted-model",rightsConfirmed:true},idempotencyKey:"upscale-invalid-model"});
  assert.equal(invalidModel.status,400);assert.equal(invalidModel.body.error.code,"UPSCALE_OPTIONS_INVALID");
+ const invalidTile=await f.api.handle({method:"POST",path:"/api/cloud/upscale",ownerId:owner,body:{...base,model:"realesrgan-x4plus",tile:16,rightsConfirmed:true},idempotencyKey:"upscale-invalid-tile"});
+ assert.equal(invalidTile.status,400);assert.equal(invalidTile.body.error.code,"UPSCALE_OPTIONS_INVALID");
  const readOnly=await f.api.handle({method:"POST",path:"/api/cloud/upscale",ownerId:reviewer,body:{...base,model:"realesrgan-x4plus",rightsConfirmed:true},idempotencyKey:"upscale-readonly-user"});
  assert.equal(readOnly.status,404);assert.equal(readOnly.body.error.code,"PROJECT_NOT_FOUND");
 });
