@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { validateUpscaleBenchmarkRecord, summarizeUpscaleBenchmarks, sha256Hex } from "../upscale-benchmark.mjs";
+import { validateUpscaleBenchmarkRecord, summarizeUpscaleBenchmarks, compareUpscaleBenchmarkCandidates, sha256Hex } from "../upscale-benchmark.mjs";
 
 const digest = char => char.repeat(64);
 const validRecord = overrides => ({
@@ -116,4 +116,42 @@ test("summary fails closed for a non-array input", () => {
   assert.equal(summary.recordCount, 0);
   assert.equal(summary.qualityVerified, false);
   assert.equal(summary.validRecordCount, 0);
+});
+
+
+test("compares pinned model builds but recommends only fully human-reviewed quality candidates", () => {
+  const categories = ["portrait", "fine_texture", "text", "animation", "low_light_noisy"];
+  const approved = categories.map((fixtureCategory, index) => validRecord({
+    fixtureId: "approved-" + index, fixtureCategory, qualityReview: "reviewed_pass",
+    durationMs: 1800 - index * 100, metrics: { psnr: 30 + index, ssim: 0.9 + index * 0.01 }
+  }));
+  const unreviewed = categories.map((fixtureCategory, index) => validRecord({
+    fixtureId: "unreviewed-" + index, fixtureCategory, model: "candidate-b",
+    qualityReview: "not_reviewed", durationMs: 400
+  }));
+  const report = compareUpscaleBenchmarkCandidates([...approved, ...unreviewed]);
+  assert.equal(report.candidateCount, 2);
+  assert.equal(report.recommended.model, "realesrgan-x4plus");
+  const waiting = report.candidates.find(candidate => candidate.model === "candidate-b");
+  assert.equal(waiting.qualityVerified, false);
+  assert.deepEqual(waiting.missingCategories, categories);
+  assert.equal(report.recommended.metrics.ssimMedian, 0.92);
+});
+
+test("does not recommend a model when all candidates have incomplete or rejected quality review", () => {
+  const report = compareUpscaleBenchmarkCandidates([
+    validRecord({ qualityReview: "reviewed_fail" }),
+    validRecord({ fixtureId: "pending", fixtureCategory: "text", qualityReview: "not_reviewed" })
+  ]);
+  assert.equal(report.recommended, null);
+});
+
+test("candidate comparison excludes malformed benchmark records", () => {
+  const report = compareUpscaleBenchmarkCandidates([
+    validRecord({ qualityReview: "reviewed_pass" }),
+    validRecord({ fixtureId: "bad", inputSha256: "invalid" })
+  ]);
+  assert.equal(report.invalidRecords.length, 1);
+  assert.equal(report.candidateCount, 1);
+  assert.equal(report.recommended, null);
 });
