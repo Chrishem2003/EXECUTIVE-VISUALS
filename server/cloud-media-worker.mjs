@@ -75,7 +75,7 @@ export function createCloudMediaWorker({
     },
     recoverExpired(limit = 100) {
       return cloudQueue.recover(limit);
-    }
+    },
     cleanupDeletedAssets(options = {}) {
       if (typeof cloudAssets.assets?.cleanupDeleted !== "function") {
         throw new Error("Cloud media worker asset service does not support tombstone cleanup.");
