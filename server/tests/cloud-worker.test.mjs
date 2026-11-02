@@ -60,6 +60,28 @@ test("worker stops and does not finish when lease renewal is lost",async()=>{
  assert.equal(queue.calls.some(call=>call[0]==="finish"),false);
 });
 
+test("worker waits for an in-flight lease renewal before terminal success",async()=>{
+ let releaseRenewal;
+ let renewalStarted=false;
+ const calls=[];
+ const queue={
+  async claim(){return{id:"job-race"};},
+  async renew(){renewalStarted=true;return new Promise(resolve=>{releaseRenewal=resolve;});},
+  async finish(id,worker,status){calls.push(status);return true;}
+ };
+ const cycle=runCloudWorkerCycle({
+  queue,workerId:"worker-race",leaseSeconds:15,heartbeatIntervalMs:1000,
+  execute:async()=>{await new Promise(resolve=>setTimeout(resolve,1100));return{assetId:"asset-race"};}
+ });
+ while(!renewalStarted)await new Promise(resolve=>setTimeout(resolve,10));
+ await new Promise(resolve=>setTimeout(resolve,50));
+ assert.deepEqual(calls,[],"job must not finish while lease renewal is unresolved");
+ releaseRenewal(true);
+ const result=await cycle;
+ assert.equal(result.status,"succeeded");
+ assert.deepEqual(calls,["succeeded"]);
+});
+ 
 test("worker validates inputs and output before finishing",async()=>{
  const queue=queueFor();
  await assert.rejects(()=>runCloudWorkerCycle({queue,workerId:"",execute:async()=>({})}),/worker ID/i);
