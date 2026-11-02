@@ -71,6 +71,8 @@ This roadmap is an engineering sequence, not a claim that the listed work is alr
 - Require source/reference rights confirmation and explicit subject consent for person replacement.
 - Reject unsupported operations, clip lengths, reference counts and preservation constraints before dispatch.
 - Keep the request contract provider-neutral; do not enable remote execution until one adapter, private asset ingestion, cost preflight, asynchronous jobs and visual QA pass their release gates.
+- Use the checkpointed finishing orchestrator for transformation, upscale, frame-rate, HDR, audio finishing and transcode steps; persist idempotent step receipts and resume only from checksum-matching successful checkpoints.
+- Require a known cost estimate for each remote step, an explicit approval ID and a budget covering the entire pipeline before dispatch. Never rerun a completed paid step just because a later finishing step failed.
 
 ## P2 — Provider and collaboration integrations
 
