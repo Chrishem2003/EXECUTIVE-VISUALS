@@ -77,7 +77,7 @@ export function createCloudTimelineExecutor({timelines,mediaIO,renderTimeline,pr
       onProgress(90);
       const outputAsset=await mediaIO.publish({
         ownerId:job.owner_id,projectId:record.projectId,filename:output.filename,mediaType:output.mediaType,
-        path:output.path,metadata:{...(output.metadata||{}),operation:"timeline.render",timelineId:record.id,timelineRevision:record.revision,renderManifest:output.renderManifest,deliveryManifest,sha256,probe:probed,probeValidation,...(deliveryReport?{deliveryReport}:{}),render:output.render||{}}
+        path:output.path,metadata:{...(output.metadata||{}),operation:"timeline.render",timelineId:record.id,timelineRevision:record.revision,renderManifest:output.renderManifest,sha256,probe:probed,probeValidation,...(deliveryReport?{deliveryReport}:{}),render:output.render||{}}
       });
       const publishedDeliveryManifest=createDeliveryManifest({timelineId:record.id,timelineRevision:record.revision,outputAsset:outputAsset.id,sha256,byteSize:info.size,mediaType:output.mediaType,profileId:deliveryProfileId,deliveryReport,renderManifest:output.renderManifest});
       // Publish metadata is immutable at this boundary; return the asset-bound manifest as the authoritative receipt.
