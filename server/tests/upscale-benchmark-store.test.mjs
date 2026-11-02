@@ -60,6 +60,7 @@ test("requires an independent reviewer and stores an immutable decision with an 
   const fixtureRecord=createUpscaleBenchmarkFixture(f.db,{ownerId:owner,projectId:project,sourceAssetId:sourceId,category:"portrait"});
   const run=registerUpscaleBenchmarkRun(f.db,{ownerId:owner,projectId:project,assetId:outputId,fixtureId:fixtureRecord.id});
   assert.throws(()=>reviewUpscaleBenchmarkRun(f.db,{runId:run.id,projectId:project,reviewerId:owner,decision:"reviewed_pass"}),error=>error.code==="UPSCALE_BENCHMARK_INDEPENDENT_REVIEW_REQUIRED");
+  assert.throws(()=>reviewUpscaleBenchmarkRun(f.db,{runId:run.id,projectId:project,reviewerId:reviewer,decision:"reviewed_fail"}),error=>error.code==="UPSCALE_BENCHMARK_REVIEW_NOTE_REQUIRED");
   const reviewed=reviewUpscaleBenchmarkRun(f.db,{runId:run.id,projectId:project,reviewerId:reviewer,decision:"reviewed_pass",note:"Source and output detail checked."});
   assert.equal(reviewed.record.qualityReview,"reviewed_pass");
   assert.equal(reviewed.review.reviewerId,reviewer);
