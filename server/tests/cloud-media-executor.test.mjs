@@ -413,6 +413,16 @@ test("cloud AI upscale publishes a separate image derivative with engine provena
     assert.equal(published.derivativeOf, "image-source");
     assert.equal(published.mediaType, "image/png");
     assert.equal(published.metadata.processing.method, "ai-super-resolution");
+    assert.equal(result.processing.schemaVersion, 1);
+    assert.equal(result.processing.sourceAssetId, "image-source");
+    assert.equal(result.processing.inputSha256, "d".repeat(64));
+    assert.equal(result.processing.outputSha256, published.metadata.sha256);
+    assert.match(result.processing.modelVersion, /^[a-f0-9]{64}:[a-f0-9]{64}$/);
+    assert.ok(Number.isInteger(result.processing.durationMs) && result.processing.durationMs > 0);
+    assert.equal(result.processing.width, 40);
+    assert.equal(result.processing.height, 40);
+    assert.equal(result.processing.decoderVerified, true);
+    assert.equal(result.processing.qualityReview, "not_reviewed");
   } finally {
     if (previousBinary === undefined) delete process.env.REALESRGAN_NCNN_PATH; else process.env.REALESRGAN_NCNN_PATH = previousBinary;
     if (previousModels === undefined) delete process.env.REALESRGAN_MODEL_DIR; else process.env.REALESRGAN_MODEL_DIR = previousModels;
