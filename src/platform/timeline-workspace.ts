@@ -330,11 +330,11 @@ async function runAction(action:HTMLElement){
   if(!state.timeline||!state.ffmpeg){state.message="FFmpeg is required to render a master file.";paint();return;}
   const preflight=assessTimelineRenderPreflight(state.timeline,state.assets);
   if(!preflight.ready){state.message="Render blocked by "+preflight.blockers.length+" timeline integrity error(s): "+preflight.blockers.slice(0,3).map(item=>item.title).join("; ")+". Resolve these errors before rendering.";paint();return;}
-  if(preflight.warnings.length)state.message="Render preflight passed with "+preflight.warnings.length+" warning(s). Review the Production readiness panel before delivery.";
+  const preflightWarningNote=preflight.warnings.length?" Preflight recorded "+preflight.warnings.length+" warning(s); review the Production readiness panel before delivery.":"";
   try{
    await persist();
    if(state.mode==="cloud"){const queued=await apiRequest<{job:{id:string;status:string}}>("/api/cloud/timelines/"+state.timeline.id+"/render",{method:"POST",headers:{"content-type":"application/json","idempotency-key":crypto.randomUUID()},body:JSON.stringify({})});state.cloudRenderJobId=queued.job.id;state.cloudRenderJobStatus=queued.job.status;state.deliveryReview=null;state.mediaQualityReport=null;state.deliveryApproval=null;state.deliveryApprovalHistory=[];state.deliveryPackageLink=null;}else await apiRequest("/api/jobs",{method:"POST",headers:{"content-type":"application/json","idempotency-key":crypto.randomUUID()},body:JSON.stringify({jobType:"timeline.render",timelineId:state.timeline.id,projectId:state.timeline.projectId||undefined})});
-   state.message=state.mode==="cloud"?"Cloud master render queued. Check Cloud Projects for durable job status.":"Master render queued. Check Production Operations for progress and the finished MP4.";
+   state.message=(state.mode==="cloud"?"Cloud master render queued. Check Cloud Projects for durable job status.":"Master render queued. Check Production Operations for progress and the finished MP4.")+preflightWarningNote;
    window.dispatchEvent(new Event("ev:jobs-updated"));
   }catch(error){state.message=error instanceof Error?error.message:"Render could not be queued.";}
   paint();return;
