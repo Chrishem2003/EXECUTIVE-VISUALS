@@ -66,5 +66,5 @@ test("reports execution failures separately from quality review", () => {
 });
 
 test("computes SHA-256 digests for benchmark artifact bytes", () => {
-  assert.equal(sha256Hex(Buffer.from("executive-visuals")), "f7b3e44b21c63b2f5f7c4f6e39d2d8f0f09c8ec1c9d9c2d4");
+  assert.equal(sha256Hex(Buffer.from("executive-visuals")), "6d7f71b4525dd39653fa7aa39b7bd5a13c2c4cece8b15b499bb6429906ffea8c");
 });
