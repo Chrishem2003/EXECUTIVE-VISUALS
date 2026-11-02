@@ -18,8 +18,8 @@ type Asset={id:string;name:string;mediaType:string;size:number;metadata?:Record<
 type SavedTimeline={id:string;projectId?:string|null;name:string;revision:number;document?:EditorialTimeline};
 type CloudProject={id:string;name:string};
 type CloudSavedTimeline={id:string;projectId?:string|null;name:string;revision:number;timeline:EditorialTimeline;updatedAt:string};
-const state:{timeline:EditorialTimeline|null;serverRevision:number;timelines:SavedTimeline[];cloudTimelines:CloudSavedTimeline[];cloudProjects:CloudProject[];cloudProjectId:string;mode:"local"|"cloud";cloudRenderJobId:string;cloudRenderJobStatus:string;previewKey:string;previewUrl:string;previewExpiresAt:number;previewLoading:boolean;previewError:string;variantBase:EditorialTimeline|null;variantReport:TimelineVariantComparison|null;variantBaseName:string;assets:Asset[];status:"loading"|"ready"|"offline"|"auth";message:string;selectedTrack:string;selectedClipId:string;ffmpeg:boolean;historyBusy:boolean;history:TimelineHistory}={
- timeline:null,serverRevision:0,timelines:[],cloudTimelines:[],cloudProjects:[],cloudProjectId:"",mode:"local",cloudRenderJobId:"",cloudRenderJobStatus:"",previewKey:"",previewUrl:"",previewExpiresAt:0,previewLoading:false,previewError:"",variantBase:null,variantReport:null,variantBaseName:"",assets:[],status:"loading",message:"Loading editorial workspace…",selectedTrack:"",selectedClipId:"",ffmpeg:false,historyBusy:false,history:createTimelineHistory(50)
+const state:{timeline:EditorialTimeline|null;serverRevision:number;timelines:SavedTimeline[];cloudTimelines:CloudSavedTimeline[];cloudProjects:CloudProject[];cloudProjectId:string;mode:"local"|"cloud";cloudRenderJobId:string;cloudRenderJobStatus:string;deliveryReview:{profileLabel?:string;status:string;counts?:{errors:number;warnings:number};findings?:Array<{code:string;severity:string;message:string}>;outputAsset?:{id:string;name?:string};sha256?:string;byteSize?:number}|null;previewKey:string;previewUrl:string;previewExpiresAt:number;previewLoading:boolean;previewError:string;variantBase:EditorialTimeline|null;variantReport:TimelineVariantComparison|null;variantBaseName:string;assets:Asset[];status:"loading"|"ready"|"offline"|"auth";message:string;selectedTrack:string;selectedClipId:string;ffmpeg:boolean;historyBusy:boolean;history:TimelineHistory}={
+ timeline:null,serverRevision:0,timelines:[],cloudTimelines:[],cloudProjects:[],cloudProjectId:"",mode:"local",cloudRenderJobId:"",cloudRenderJobStatus:"",deliveryReview:null,previewKey:"",previewUrl:"",previewExpiresAt:0,previewLoading:false,previewError:"",variantBase:null,variantReport:null,variantBaseName:"",assets:[],status:"loading",message:"Loading editorial workspace…",selectedTrack:"",selectedClipId:"",ffmpeg:false,historyBusy:false,history:createTimelineHistory(50)
 };
 function recordEdit(){if(state.timeline)state.history=recordTimelineHistory(state.history,state.timeline);}
 const esc=(v:unknown)=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]||c));
@@ -139,6 +139,19 @@ async function duplicateTimelineVariant(){
  await refresh();await loadVariantComparison();
  state.message="Created an independent variant. The original sequence was not changed.";state.status="ready";
 }
+function deliveryReviewPanel(){
+ const review=state.deliveryReview;
+ if(!review)return '<section class="panel timeline-quality"><div class="eyebrow">DELIVERY REVIEW</div><h3>Export validation</h3><p class="muted">Render a cloud master with a delivery profile to see its validation report and output evidence here.</p></section>';
+ const status=review.status==="passed"?"completed":review.status==="review"?"running":"failed";
+ const findings=review.findings||[];
+ return '<section class="panel timeline-quality"><div class="timeline-panel-heading"><div><div class="eyebrow">DELIVERY REVIEW</div><h3>'+esc(review.profileLabel||"Export validation")+'</h3></div><span class="job-status '+status+'">'+esc(review.status.toUpperCase())+'</span></div>'+
+ '<div class="creative-plan-meta"><span>'+(review.counts?.errors||0)+' errors</span><span>'+(review.counts?.warnings||0)+' warnings</span></div>'+
+ (findings.length?'<div class="timeline-quality-list">'+findings.map(item=>'<article class="timeline-quality-item '+(item.severity==="error"?"warning":"info")+'"><b>'+esc(item.code.replaceAll("_"," ").toLowerCase())+'</b><p>'+esc(item.message)+'</p></article>').join("")+'</div>':'<p class="muted">No profile validation findings were recorded.</p>')+
+ (review.outputAsset?'<p class="muted">Output asset: '+esc(review.outputAsset.name||review.outputAsset.id)+' · '+esc(review.outputAsset.id)+'</p>':'')+
+ (review.sha256?'<p class="muted">SHA-256: <code>'+esc(review.sha256)+'</code></p>':'')+
+ (review.byteSize?'<p class="muted">File size: '+(review.byteSize/1024/1024).toFixed(2)+' MB</p>':'')+
+ '<small class="muted">Metadata/profile validation is not a substitute for human visual review, true-peak certification or recipient acceptance.</small></section>';
+}
 function creativeTraceabilityPanel(){
  const report=analyzeCreativeTraceability(state.timeline);
  const tone=report.readyForDirectorReview?"completed":report.findings.some(item=>item.severity==="review")?"running":"completed";
@@ -182,7 +195,7 @@ export function renderTimelineWorkspace(){
  '<form id="tl-add-marker"><div class="eyebrow" style="margin-top:18px">REVIEW MARKER</div><label>Marker title</label><input name="name" required placeholder="Hook / transition / review note"><label>Position (frames)</label><input name="frame" type="number" min="0" value="0"><button class="secondary">＋ Add marker</button></form></section>'+
  '<section class="panel"><div class="timeline-panel-heading"><div><div class="eyebrow">MULTI-TRACK EDITOR</div><h3>Sequence timeline</h3></div><small>'+(state.timeline?.frameRate.numerator+"/"+state.timeline?.frameRate.denominator+" fps")+'</small></div>'+
  timelinePreviewPanel()+(state.timeline?timelineCanvas():'<div class="empty">Sign in and create a sequence to begin.</div>')+
- clipInspector()+variantComparisonPanel()+creativeTraceabilityPanel()+timelineQualityPanel()+
+ clipInspector()+variantComparisonPanel()+creativeTraceabilityPanel()+deliveryReviewPanel()+timelineQualityPanel()+
   '<div class="timeline-marker-list">'+(state.timeline?.markers.map(m=>'<span>◆ '+esc(m.name)+' · '+Math.round(m.start.value)+'f</span>').join("")||"No review markers yet.")+'</div></section></div>'+
  '<div class="notice">Master rendering supports synchronized audio, image overlays and captions. The preview monitor plays selected local source clips within saved source trims; cloud preview awaits authenticated private-media playback support. Transitions and effects remain future milestones.</div></div>';
 }
@@ -267,7 +280,7 @@ async function runAction(action:HTMLElement){
   try{await persist();}catch(error){state.timeline=previousTimeline;state.history=previousHistory;state.message=error instanceof Error?error.message:"History change could not be saved.";state.status="offline";}
   finally{state.historyBusy=false;}paint();return;
  }
- if(type==="cloud-job"&&state.cloudRenderJobId){try{const result=await apiRequest<{job:{id:string;status:string;progress?:number;output?:{outputAsset?:{id:string;name?:string}}}}>("/api/cloud/jobs/"+state.cloudRenderJobId);state.cloudRenderJobStatus=result.job.status;state.message="Cloud render "+result.job.status+" · "+Number(result.job.progress||0)+"%"+(result.job.output?.outputAsset?.id?" · output asset "+result.job.output.outputAsset.id:"");if(result.job.status==="succeeded")await refresh();}catch(error){state.message=error instanceof Error?error.message:"Could not refresh cloud render status.";}paint();return;}
+ if(type==="cloud-job"&&state.cloudRenderJobId){try{const result=await apiRequest<{job:{id:string;status:string;progress?:number;output?:{outputAsset?:{id:string;name?:string};deliveryReport?:{profileLabel?:string;status:string;counts?:{errors:number;warnings:number};findings?:Array<{code:string;severity:string;message:string}>};sha256?:string;byteSize?:number}}}>("/api/cloud/jobs/"+state.cloudRenderJobId);state.cloudRenderJobStatus=result.job.status;if(result.job.output?.deliveryReport)state.deliveryReview={...result.job.output.deliveryReport,outputAsset:result.job.output.outputAsset,sha256:result.job.output.sha256,byteSize:result.job.output.byteSize};state.message="Cloud render "+result.job.status+" · "+Number(result.job.progress||0)+"%"+(result.job.output?.outputAsset?.id?" · output asset "+result.job.output.outputAsset.id:"");if(result.job.status==="succeeded")await refresh();}catch(error){state.message=error instanceof Error?error.message:"Could not refresh cloud render status.";}paint();return;}
  if(type==="render"){
   if(!state.timeline||!state.ffmpeg){state.message="FFmpeg is required to render a master file.";paint();return;}
   try{
