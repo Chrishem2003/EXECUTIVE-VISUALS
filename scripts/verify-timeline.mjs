@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { addClip, addMarker, addTrack, createTimeline, moveClip, rational, seconds, splitClip, toOpenTimelineIo, trimClip, validateTimeline } from "../src/core/timeline.ts";
 import { analyzeTimelineQuality } from "../src/core/timeline-quality.ts";
 import { assessDerivativeEligibility, replaceTimelineClipAsset } from "../src/core/timeline-derivatives.ts";
+import { buildEnhancementEvidenceReport } from "../src/core/enhancement-evidence-report.ts";
 
 let timeline=createTimeline("project-1","timeline-1","Pilot episode",{numerator:24,denominator:1});
 timeline=addTrack(timeline,{id:"v1",name:"Video 1",kind:"video",enabled:true,locked:false,clips:[]});
@@ -99,5 +100,22 @@ assert.ok(analyzeTimelineQuality(derivativeTimeline,[missingPersistedHash]).some
 const noEvidenceDerivative={id:"quality-asset",name:"Legacy derivative",mediaType:"image/png",sha256:"b".repeat(64),derivativeOf:"source-asset",metadata:{}};
 assert.ok(analyzeTimelineQuality(derivativeTimeline,[noEvidenceDerivative]).some(item=>item.code==="DERIVATIVE_PROVENANCE_MISSING"));
 assert.ok(analyzeTimelineQuality(null).some(item=>item.code==="NO_SEQUENCE"));
+
+
+const evidenceReport=buildEnhancementEvidenceReport({
+ id:"derivative-1",name:"Enhanced still",mediaType:"image/png",size:4096,sha256:outputHash,derivativeOf:"asset-a",
+ metadata:{processing:{engine:"test-engine",method:"ai-super-resolution",model:"test-model",modelVersion:"build-1",scale:4,durationMs:1200,sourceWidth:640,sourceHeight:360,width:2560,height:1440,inputSha256:sourceHash,outputSha256:outputHash,dimensionsVerified:true,decoderVerified:true,qualityReview:"reviewed_pass",binarySha256:"c".repeat(64)}}
+},{ancestors:[{id:"asset-a",name:"Original",sha256:sourceHash}],descendants:[],truncated:false,nodeCount:2},"2026-11-02T12:00:00.000Z");
+assert.equal(evidenceReport.schema,"executive-visuals.enhancement-evidence.v1");
+assert.equal(evidenceReport.checks.find(item=>item.key==="output_checksum").status,"verified");
+assert.equal(evidenceReport.checks.find(item=>item.key==="independent_review").status,"reviewed_pass");
+assert.equal(evidenceReport.lineage.ancestors[0].id,"asset-a");
+assert.equal(evidenceReport.interpretation.perceptualQualityAssessed,false);
+assert.equal(evidenceReport.interpretation.privatePreviewUrlsIncluded,false);
+assert.equal(JSON.stringify(evidenceReport).includes("https://"),false,"evidence report must not include private signed URLs");
+const incompleteEvidence=buildEnhancementEvidenceReport({id:"legacy",sha256:outputHash,derivativeOf:"old-source",metadata:{}},null,"2026-11-02T12:00:00.000Z");
+assert.equal(incompleteEvidence.checks.find(item=>item.key==="processing_record").status,"missing");
+assert.equal(incompleteEvidence.checks.find(item=>item.key==="independent_review").status,"pending_or_missing");
+assert.throws(()=>buildEnhancementEvidenceReport({id:"bad"},null,"not-a-date"),/timestamp/);
 
 console.log("Timeline engine checks passed: rational timing, source trims, split, cross-track and same-track moves, overlap protection, markers and editorial interchange export.");
