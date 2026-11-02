@@ -59,9 +59,8 @@ function continuePanel(){
 }
 function home(){return header("CHRISHEM EXCLUSIVE VISUALS · CREATIVE OPERATING SYSTEM","From idea to final frame.","One production environment for directing, generating, editing, enhancing and distributing visual content.",'<button class="primary" data-tab="director">＋ Start a production</button>')+
 onboardingPanel()+
-renderRuntimeOverview()+continuePanel()+
 '<div class="hero"><div><span class="eyebrow">ONE CREATIVE PIPELINE</span><h2>Think it. Direct it.<br><em>Make it real.</em></h2><p>Build a brief, map scenes, keep characters consistent, connect engines and refine every deliverable in one place.</p><button class="light" data-tab="canvas">Open workflow canvas →</button></div><div class="hero-art"><div class="orbit"></div><div class="orbit orbit2"></div><div class="orbit-card"><small>CHRISHEM</small><b>EXCLUSIVE</b><i>CREATIVE PRODUCTION SYSTEM</i></div></div></div>'+
-renderRuntimeOverview()+
+renderRuntimeOverview()+continuePanel()+
 '<div class="section-title"><div class="eyebrow">THE FULL TOOLSET</div><h2>One connected studio</h2></div><div class="module-grid">'+tabs.filter(t=>!["home","settings"].includes(t.id)).map(t=>'<button class="module" data-tab="'+t.id+'"><i>'+t.icon+'</i><b>'+t.label+'</b><small>'+moduleDesc(t.id)+'</small><span>Open workspace ↗</span></button>').join("")+'</div><div class="section-title"><div class="eyebrow">LOCAL PLANNING</div><h2>Planning drafts</h2></div>'+list(state.tasks.slice(0,5));}
 function series(){
  const active=state.seriesPlans.find(item=>item.id===state.activeSeriesId);
