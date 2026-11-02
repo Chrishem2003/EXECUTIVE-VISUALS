@@ -7,6 +7,7 @@ import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { createCloudAssetAuthorizer } from "./cloud-asset-auth.mjs";
 import { createCloudTimelineService } from "./cloud-timeline-service.mjs";
+import { buildTransformationReadinessReport } from "./transformation-readiness.mjs";
 
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const safeId=(value)=>typeof value==="string"&&UUID.test(value);
@@ -17,7 +18,7 @@ const stableJson=value=>Array.isArray(value)?"["+value.map(stableJson).join(",")
  * by the app's verified authentication middleware; request bodies never set
  * owner_id. Service-role credentials remain inside this server-only module.
  */
-export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRoleKey=process.env.SUPABASE_SERVICE_ROLE_KEY,fetchImpl=globalThis.fetch,timelineService,authorize,maxJobBytes=5*1024*1024,timeoutMs=15000,maxUploadBytes=250*1024*1024,tempRoot=tmpdir()}={}){
+export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRoleKey=process.env.SUPABASE_SERVICE_ROLE_KEY,fetchImpl=globalThis.fetch,timelineService,authorize,maxJobBytes=5*1024*1024,timeoutMs=15000,maxUploadBytes=250*1024*1024,tempRoot=tmpdir(),transformationReadiness=()=>({})}={}){
  if(!url||!serviceRoleKey)throw new Error("Cloud timeline API requires server-side Supabase credentials.");
  if(typeof fetchImpl!=="function")throw new Error("Cloud timeline API requires fetch.");
  if(!Number.isInteger(maxJobBytes)||maxJobBytes<1024||maxJobBytes>10*1024*1024)throw new Error("Cloud timeline API payload limit is invalid.");
@@ -80,6 +81,13 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
      const result=await service.assets.softDelete({ownerId,assetId:assetMatch[1]});
      return response(200,{asset:result});
     }
+   }
+   if(path==="/api/cloud/transformations/readiness"&&method==="GET"){
+    const projectId=String(query.projectId||"");
+    if(!safeId(projectId))return response(400,{error:{code:"INVALID_PROJECT_ID",message:"Choose a valid project."}});
+    if(await allow({ownerId,projectId,action:"read"})!==true)return response(404,{error:{code:"PROJECT_NOT_FOUND",message:"Project not found."}});
+    const evidence=await transformationReadiness({ownerId,projectId});
+    return response(200,{readiness:buildTransformationReadinessReport(evidence)});
    }
    const transformationOps=new Set(["vehicle_replace","wardrobe_replace","object_replace","background_replace","person_replace","style_transfer","object_remove","relight"]);
    const preservationOptions=new Set(["camera_motion","timing","composition","source_audio","subject_identity","pose","lighting","background"]);
