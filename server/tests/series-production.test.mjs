@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import {buildSeriesProductionPlan,validateSeriesProductionPlan,buildEpisodeTimelineDocument,upsertStoryBibleEntry,setEpisodeDirectionOverrides,resolveEpisodeDirection,buildEpisodeShotPackage,setEpisodeStoryBibleBindings,updateEpisodeShotDirection,MAX_EPISODE_SECONDS,MAX_GENERATED_CLIP_SECONDS} from "../../src/core/series-production.ts";
+import {buildSeriesProductionPlan,validateSeriesProductionPlan,buildEpisodeTimelineDocument,upsertStoryBibleEntry,setEpisodeDirectionOverrides,resolveEpisodeDirection,buildEpisodeShotPackage,setEpisodeStoryBibleBindings,updateEpisodeShotDirection,MAX_EPISODE_SECONDS,MAX_GENERATED_CLIP_SECONDS,EPISODE_RUNTIME_CHOICES} from "../../src/core/series-production.ts";
 const input={title:"Future Makers",premise:"A series exploring practical ideas shaping tomorrow.",format:"education",genre:"Science",seasonCount:2,episodesPerSeason:6,episodeRuntimeSeconds:300,shotLengthSeconds:8,aspectRatio:"16:9",frameRate:30,resolution:"2160p",visualStyle:"Cinematic realism",language:"English",voiceMode:"Natural narration",captions:"Both",music:"Adaptive cinematic score",cameraLanguage:"Mixed cinematic coverage",shotComposition:"Mixed shot scale",pacing:"Cinematic dramatic",colorGrade:"Natural / true-to-life",continuityNotes:"Keep presenter wardrobe consistent."};
 const plan=buildSeriesProductionPlan(input);assert.equal(plan.seasons.length,2);assert.equal(plan.seasons[0].episodes.length,6);
 for(const season of plan.seasons)for(const ep of season.episodes){assert.equal(ep.runtimeSeconds,MAX_EPISODE_SECONDS);assert.equal(ep.scenes.reduce((n,s)=>n+s.shots.reduce((x,k)=>x+k.durationSeconds,0),0),300);for(const scene of ep.scenes)for(const shot of scene.shots)assert.ok(shot.durationSeconds<=MAX_GENERATED_CLIP_SECONDS);}
@@ -128,3 +128,26 @@ assert.ok(falReport.shots[0].unsupported.includes("negativePrompt"));
 assert.ok(falReport.shots[0].unverified.some(value=>value.startsWith("frameRate:")));
 assert.ok(falReport.shots[0].supported.some(value=>value.startsWith("aspectRatio:")));
 console.log("Configured video adapter readiness integration passed.");
+
+// Long-form episodic support: episode runtime may span 30 minutes while every generated shot remains <=30 seconds.
+assert.equal(MAX_EPISODE_SECONDS,1800);
+assert.ok(EPISODE_RUNTIME_CHOICES.includes(600));
+assert.ok(EPISODE_RUNTIME_CHOICES.includes(900));
+assert.ok(EPISODE_RUNTIME_CHOICES.includes(1200));
+assert.ok(EPISODE_RUNTIME_CHOICES.includes(1800));
+const longForm=buildSeriesProductionPlan({...input,seasonCount:1,episodesPerSeason:1,episodeRuntimeSeconds:900,shotLengthSeconds:30});
+const longEpisode=longForm.seasons[0].episodes[0];
+assert.equal(longEpisode.runtimeSeconds,900);
+assert.equal(longEpisode.scenes.reduce((n,scene)=>n+scene.shots.reduce((m,shot)=>m+shot.durationSeconds,0),0),900);
+assert.ok(longEpisode.scenes.every(scene=>scene.shots.every(shot=>shot.durationSeconds<=30)));
+assert.equal(validateSeriesProductionPlan(longForm).valid,true);
+const longOverride=setEpisodeDirectionOverrides(longForm,longEpisode.id,{episodeRuntimeSeconds:1800});
+const extendedEpisode=longOverride.seasons[0].episodes[0];
+assert.equal(extendedEpisode.runtimeSeconds,1800);
+assert.equal(extendedEpisode.scenes.reduce((n,scene)=>n+scene.durationSeconds,0),1800);
+assert.ok(extendedEpisode.scenes.every(scene=>scene.shots.every(shot=>shot.durationSeconds<=30)));
+const longTimeline=buildEpisodeTimelineDocument(longOverride,extendedEpisode,"project-123");
+assert.equal(longTimeline.markers.filter(marker=>marker.color==="#29a38b").reduce((n,marker)=>n+marker.duration.value,0),1800);
+assert.throws(()=>buildSeriesProductionPlan({...input,episodeRuntimeSeconds:1801}),/1800/);
+assert.throws(()=>setEpisodeDirectionOverrides(longForm,longEpisode.id,{episodeRuntimeSeconds:1801}),/30 minutes/);
+console.log("Long-form series verification passed: 15-minute plans, 30-minute overrides, exact scene/shot timing, 30-second clip cap and timeline marker integrity.");
