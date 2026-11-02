@@ -9,7 +9,7 @@ import { assessDeliveryEvidence } from "../core/delivery-evidence";
 import { analyzeCreativeTraceability, readCreativeTrace } from "../core/creative-traceability";
 import { appendCreativeDecision, readCreativeDecisionHistory } from "../core/creative-decision-ledger";
 import { compareTimelineVariants, createTimelineVariant, type TimelineVariantComparison } from "../core/timeline-variants";
-import { addClip, addMarker, addTrack, createTimeline, moveClip, rational, splitClip, toOpenTimelineIo, trimClip, type EditorialTimeline, type TimelineTrack } from "../core/timeline";
+import { addClip, addMarker, addTrack, createTimeline, moveClip, rational, removeClip, splitClip, toOpenTimelineIo, trimClip, type EditorialTimeline, type TimelineTrack } from "../core/timeline";
 import { clampPreviewSeconds, stepPreviewSeconds } from "../core/timeline-preview";
 
 type Asset={id:string;name:string;mediaType:string;size:number;metadata?:Record<string,unknown>};
@@ -35,7 +35,7 @@ function timelineCanvas(){
  if(!state.timeline)return '<div class="empty">'+esc(state.message)+'</div>';
  const total=maxEnd();
  return '<div class="timeline-ruler"><span>00:00</span><span>'+Math.round(total/2/fps())+'s</span><span>'+Math.round(total/fps())+'s</span></div>'+
- state.timeline.tracks.map(track=>'<div class="editor-track"><div class="editor-track-label"><b>'+esc(track.name)+'</b><small>'+esc(track.kind)+(track.locked?' · locked':'')+'</small></div><div class="editor-track-lane">'+track.clips.map(clip=>'<article class="editor-clip '+(state.selectedClipId===clip.id?'selected':'')+'" data-tl-select="true" data-track="'+esc(track.id)+'" data-clip="'+esc(clip.id)+'" style="left:'+Math.max(0,clip.timelineStart.value/total*100)+'%;width:'+Math.max(4,clip.duration.value/total*100)+'%"><b>'+esc(clip.name)+'</b><small>'+esc(clip.assetId.slice(0,8))+' · '+Math.round(clip.duration.value)+'f</small><div class="editor-clip-actions"><button data-tl-action="split" data-track="'+esc(track.id)+'" data-clip="'+esc(clip.id)+'">Split</button><button data-tl-action="trim" data-track="'+esc(track.id)+'" data-clip="'+esc(clip.id)+'">Trim 12f</button><button data-tl-action="move" data-track="'+esc(track.id)+'" data-clip="'+esc(clip.id)+'">Next track</button></div></article>').join("")+'</div></div>').join("");
+ state.timeline.tracks.map(track=>'<div class="editor-track"><div class="editor-track-label"><b>'+esc(track.name)+'</b><small>'+esc(track.kind)+(track.locked?' · locked':'')+'</small></div><div class="editor-track-lane">'+track.clips.map(clip=>'<article class="editor-clip '+(state.selectedClipId===clip.id?'selected':'')+'" data-tl-select="true" data-track="'+esc(track.id)+'" data-clip="'+esc(clip.id)+'" style="left:'+Math.max(0,clip.timelineStart.value/total*100)+'%;width:'+Math.max(4,clip.duration.value/total*100)+'%"><b>'+esc(clip.name)+'</b><small>'+esc(clip.assetId.slice(0,8))+' · '+Math.round(clip.duration.value)+'f</small><div class="editor-clip-actions"><button data-tl-action="split" data-track="'+esc(track.id)+'" data-clip="'+esc(clip.id)+'">Split</button><button data-tl-action="trim" data-track="'+esc(track.id)+'" data-clip="'+esc(clip.id)+'">Trim 12f</button><button data-tl-action="move" data-track="'+esc(track.id)+'" data-clip="'+esc(clip.id)+'">Next track</button><button data-tl-action="ripple-delete" data-track="'+esc(track.id)+'" data-clip="'+esc(clip.id)+'" title="Remove this clip and close the gap on this track">Ripple delete</button></div></article>').join("")+'</div></div>').join("");
 }
 function timelinePreviewPanel(){
  if(!state.timeline)return '<section class="timeline-preview panel"><div class="eyebrow">SOURCE PREVIEW</div><p class="muted">Load a sequence to preview a source clip.</p></section>';
@@ -44,7 +44,7 @@ function timelinePreviewPanel(){
  const asset=clip?state.assets.find(item=>item.id===clip.assetId):undefined;
  const heading='<div class="timeline-panel-heading"><div><div class="eyebrow">SOURCE PREVIEW MONITOR</div><h3>'+(clip?esc(clip.name):'Select a timeline clip')+'</h3></div><small>'+(clip?'Source-range preview':'No clip selected')+'</small></div>';
  if(state.mode==="cloud")return '<section class="timeline-preview panel">'+heading+'<div class="preview-empty">Cloud asset playback is not enabled here yet. An authenticated private-media playback URL is required.</div></section>';
- if(!clip||!asset)return '<section class="timeline-preview panel">'+heading+'<div class="preview-empty">Select a video, audio or image clip on the timeline.</div></section>';
+ if(!track||!clip||!asset)return '<section class="timeline-preview panel">'+heading+'<div class="preview-empty">Select a video, audio or image clip on the timeline.</div></section>';
  const start=clip.sourceRange.start.value/clip.sourceRange.start.rate,end=start+clip.sourceRange.duration.value/clip.sourceRange.duration.rate;
  const mediaUrl='/api/assets/'+encodeURIComponent(asset.id)+'/file';
  const previewRate=track.kind==="audio"?100:sourceRate(asset,track.kind),isVideoPreview=asset.mediaType.startsWith("video/");
@@ -254,6 +254,9 @@ async function runAction(action:HTMLElement){
   const from=state.timeline.tracks.findIndex(t=>t.id===trackId);const target=state.timeline.tracks[(from+1)%state.timeline.tracks.length];if(!target)return;
   const clip=state.timeline.tracks[from].clips.find(c=>c.id===clipId);if(!clip)return;
   const start=maxEnd()+12;state.timeline=moveClip(state.timeline,trackId,clipId,target.id,start);
+ }else if(type==="ripple-delete"){
+  state.timeline=removeClip(state.timeline,trackId,clipId,true);
+  if(state.selectedClipId===clipId)state.selectedClipId="";
  }else if(type==="export"){
   const content=JSON.stringify(toOpenTimelineIo(state.timeline),null,2);
   const blob=new Blob([content],{type:"application/json"}),url=URL.createObjectURL(blob),a=document.createElement("a");
