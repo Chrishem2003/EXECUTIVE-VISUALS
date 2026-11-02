@@ -57,3 +57,41 @@ export function verifyDeliveryManifest(manifest) {
   const { fingerprint: supplied, ...evidence } = manifest;
   try { return fingerprint(evidence) === supplied; } catch { return false; }
 }
+
+
+export function createDeliveryPackage({
+  jobId, projectId, timelineId, timelineRevision, master,
+  deliveryReceipt, renderManifest, deliveryReport = null, reviewHistory = [],
+  generatedAt = new Date().toISOString()
+} = {}) {
+  if (typeof jobId !== "string" || !jobId.trim() || jobId.length > 256) fail("A delivery job ID is required.");
+  if (typeof projectId !== "string" || !projectId.trim() || projectId.length > 256) fail("A project ID is required.");
+  if (!verifyDeliveryManifest(deliveryReceipt)) fail("A verified delivery receipt is required.");
+  if (deliveryReceipt.timelineId !== timelineId || deliveryReceipt.timelineRevision !== Number(timelineRevision)) fail("Delivery package timeline evidence does not match its receipt.");
+  if (!plain(master) || master.assetId !== deliveryReceipt.outputAsset || master.sha256 !== deliveryReceipt.sha256 || master.byteSize !== deliveryReceipt.byteSize || master.mediaType !== deliveryReceipt.mediaType) fail("Delivery package master metadata does not match its receipt.");
+  if (typeof master.filename !== "string" || !master.filename.trim() || master.filename.length > 256) fail("A valid master filename is required.");
+  if (typeof master.downloadUrl !== "string") fail("A private master download URL is required.");
+  let downloadUrl;
+  try { downloadUrl = new URL(master.downloadUrl); if (downloadUrl.protocol !== "https:" || downloadUrl.username || downloadUrl.password || downloadUrl.hash) fail("The master download URL is unsafe."); }
+  catch { fail("The master download URL is invalid."); }
+  if (master.downloadUrlExpiresInSeconds !== 300) fail("The master download URL must have the five-minute expiry contract.");
+  if (renderManifest !== deliveryReceipt.renderManifest || !verifyRenderManifest(renderManifest)) fail("The render manifest must be the verified manifest bound into the receipt.");
+  if (deliveryReport !== deliveryReceipt.deliveryReport) fail("The delivery report must match the receipt.");
+  if (!Array.isArray(reviewHistory) || reviewHistory.length > 1000 || reviewHistory.some(item => !plain(item) || item.fingerprint !== deliveryReceipt.fingerprint)) fail("Review history must contain only decisions for this delivery fingerprint.");
+  if (typeof generatedAt !== "string" || !Number.isFinite(Date.parse(generatedAt)) || new Date(generatedAt).toISOString() !== generatedAt) fail("A valid package timestamp is required.");
+  const evidence = {
+    schemaVersion: 1, packageType: "executive-visuals-delivery", generatedAt,
+    jobId, projectId, timelineId, timelineRevision: Number(timelineRevision),
+    master, deliveryReceipt, renderManifest, deliveryReport, reviewHistory
+  };
+  return Object.freeze({ ...evidence, packageFingerprint: fingerprint(evidence) });
+}
+
+export function verifyDeliveryPackage(value) {
+  if (!plain(value) || value.schemaVersion !== 1 || value.packageType !== "executive-visuals-delivery" || typeof value.packageFingerprint !== "string" || !SHA256.test(value.packageFingerprint)) return false;
+  const { packageFingerprint: supplied, ...evidence } = value;
+  try {
+    const recreated = createDeliveryPackage(evidence);
+    return fingerprint({ ...recreated, packageFingerprint: undefined }) === supplied;
+  } catch { return false; }
+}
