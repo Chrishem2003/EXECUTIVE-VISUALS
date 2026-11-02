@@ -105,8 +105,15 @@ export function compareUpscaleBenchmarkCandidates(records) {
     else invalid.push({ index, fixtureId: record?.fixtureId || null, issues: result.issues });
   }
   const groups = new Map();
+  const seenFixtures = new Map();
   for (const record of valid) {
-    const key = [record.model, record.modelVersion, record.binarySha256, record.modelFilesSha256].join(":");
+    const key = JSON.stringify([record.model, record.modelVersion, record.binarySha256, record.modelFilesSha256]);
+    const fixtureKey = key + ":" + record.fixtureId;
+    if (seenFixtures.has(fixtureKey)) {
+      invalid.push({ fixtureId: record.fixtureId, issues: ["fixtureId must be unique within a pinned model build"] });
+      continue;
+    }
+    seenFixtures.set(fixtureKey, true);
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(record);
   }
