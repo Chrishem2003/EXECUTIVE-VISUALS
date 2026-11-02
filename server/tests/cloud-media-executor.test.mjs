@@ -4,6 +4,7 @@ import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createCloudMediaExecutor } from "../cloud-media-executor.mjs";
+import { buildUpscaleBenchmarkRecordFromAsset, validateUpscaleBenchmarkRecord } from "../upscale-benchmark.mjs";
 
 async function executable(directory, name, body) {
   const path = join(directory, name);
@@ -423,6 +424,13 @@ test("cloud AI upscale publishes a separate image derivative with engine provena
     assert.equal(result.processing.height, 40);
     assert.equal(result.processing.decoderVerified, true);
     assert.equal(result.processing.qualityReview, "not_reviewed");
+    const benchmarkRecord=buildUpscaleBenchmarkRecordFromAsset({
+      outputAsset:{id:"image-ai-output",mediaType:published.mediaType,sha256:published.metadata.sha256,derivativeOf:published.derivativeOf,createdAt:"2026-11-02T12:00:00.000Z",metadata:published.metadata},
+      fixtureId:"portrait-fixture",fixtureCategory:"portrait"
+    });
+    assert.equal(validateUpscaleBenchmarkRecord(benchmarkRecord).valid,true);
+    assert.equal(benchmarkRecord.inputSha256,"d".repeat(64));
+    assert.equal(benchmarkRecord.outputSha256,published.metadata.sha256);
   } finally {
     if (previousBinary === undefined) delete process.env.REALESRGAN_NCNN_PATH; else process.env.REALESRGAN_NCNN_PATH = previousBinary;
     if (previousModels === undefined) delete process.env.REALESRGAN_MODEL_DIR; else process.env.REALESRGAN_MODEL_DIR = previousModels;
