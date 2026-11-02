@@ -199,6 +199,7 @@ async function runAction(action:HTMLElement){
   }catch(error){state.message=error instanceof Error?error.message:"Render could not be queued.";}
   paint();return;
  }
+ if(type==="duplicate-variant"){try{await duplicateTimelineVariant();}catch(error){state.message=error instanceof Error?error.message:"Could not create timeline variant.";}paint();return;}
  if(!state.timeline)return;
  const trackId=action.dataset.track||"",clipId=action.dataset.clip||"";
  if(type==="split"){
