@@ -304,7 +304,7 @@ export function createAppServer() {
         send(res,200,{user:{id:user.id,email:user.email},authMode:"local"},cors);return;
       }
       if(path==="/api/auth/logout"&&req.method==="POST"){
-        if(!isValidCsrfRequest({method:req.method,cookieHeader:req.headers.cookie,headerToken:req.headers["x-csrf-token"]})){fail(res,403,"CSRF_VALIDATION_FAILED","A valid CSRF token is required for this request.");return;}
+        if(AUTH_MODE==="local"&&!isValidCsrfRequest({method:req.method,cookieHeader:req.headers.cookie,headerToken:req.headers["x-csrf-token"]})){fail(res,403,"CSRF_VALIDATION_FAILED","A valid CSRF token is required for this request.");return;}
         const token=cookieValue(req,"ev_session");if(token)db.prepare("DELETE FROM sessions WHERE token_hash=?").run(hash(token));
         setCookie(res,"",0);setCsrfCookie(res,"",0);send(res,200,{ok:true},cors);return;
       }
