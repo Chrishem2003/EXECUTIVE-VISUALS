@@ -19,14 +19,15 @@ test("cloud timeline executor materializes all unique sources and publishes a re
    async materialize(args){materialized.push(args);const path=join(root,args.assetId+".bin");await writeFile(path,args.assetId);return{path,asset:{id:args.assetId},async cleanup(){cleanups.push(args.assetId);}};},
    async publish(args){published.push({...args,content:await readFile(args.path,"utf8")});return{id:"master-asset",name:args.filename};}
   },
+  async probeOutput(){return{format:{duration:"12",format_name:"mov,mp4,m4a,3gp,3g2,mj2"},streams:[{codec_type:"video",codec_name:"h264",width:1920,height:1080,avg_frame_rate:"24/1"}]};},
   async renderTimeline(args){assert.equal(args.timeline,timeline);assert.equal(args.assets.size,2);const path=join(args.workDir,"master.mp4");await writeFile(path,"final-master");return{path,filename:"episode-master.mp4",mediaType:"video/mp4",render:{durationSeconds:12}};}
  });
  const result=await executor({job:{id:"job-1",owner_id:owner,project_id:project,job_type:"timeline.render",input:{timelineId,timelineRevision:7}},onProgress(){}});
  assert.equal(materialized.length,2);assert.deepEqual(materialized.map(x=>x.assetId).sort(),["asset-a","asset-b"]);
  assert.deepEqual(cleanups.sort(),["asset-a","asset-b"]);
  assert.equal(published[0].ownerId,owner);assert.equal(published[0].projectId,project);
- assert.equal(published[0].metadata.timelineRevision,7);assert.equal(published[0].content,"final-master");
- assert.equal(result.outputAsset.id,"master-asset");assert.equal(result.byteSize,12);assert.equal(result.timelineRevision,7);
+ assert.equal(published[0].metadata.timelineRevision,7);assert.equal(published[0].metadata.probe.streams[0].codec_name,"h264");assert.equal(published[0].metadata.render.durationSeconds,12);assert.equal(published[0].content,"final-master");
+ assert.equal(result.outputAsset.id,"master-asset");assert.equal(result.byteSize,12);assert.equal(result.timelineRevision,7);assert.equal(result.probeValidation.validatedStreamType,"video");
  await rm(root,{recursive:true,force:true});
 });
 
@@ -47,6 +48,7 @@ test("cloud timeline executor cleans every materialized source if rendering fail
   tempRoot:root,
   timelines:{async get(){return{id:timelineId,projectId:null,revision:1,timeline};}},
   mediaIO:{async materialize({assetId}){const path=join(root,assetId);await writeFile(path,"source");return{path,asset:{id:assetId},async cleanup(){cleaned.push(assetId);}};},async publish(){throw new Error("not reached");}},
+  async probeOutput(){throw new Error("probe failure");},
   async renderTimeline(){throw new Error("render failure");}
  });
  await assert.rejects(()=>executor({job:{id:"job-3",owner_id:owner,project_id:null,job_type:"timeline.render",input:{timelineId,timelineRevision:1}}}),/render failure/);
