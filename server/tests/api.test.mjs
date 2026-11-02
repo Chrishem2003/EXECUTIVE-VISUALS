@@ -38,7 +38,7 @@ async function register(email){
 async function request(path,options={},cookie){
   const headers={...(options.headers||{}),...(cookie?{cookie}: {})};
   const method=(options.method||"GET").toUpperCase();
-  const csrf=cookie?.match(/(?:^|;\\s*)ev_csrf=([^;]+)/)?.[1];
+  const csrf=cookie?.match(/(?:^|;\s*)ev_csrf=([^;]+)/)?.[1];
   if(csrf&&!["GET","HEAD","OPTIONS"].includes(method))headers["x-csrf-token"]=csrf;
   return fetch(base+path,{...options,headers});
 }
