@@ -60,6 +60,9 @@ function run(binary, args, timeoutMs, signal) {
   });
 }
 
+// Inspect bounded container metadata before derivative publication. This verifies
+// format and dimensions; it deliberately does not claim a full pixel decode or
+// perceptual-quality assessment, which remain separate release gates.
 async function inspectImage(path) {
   const handle = await open(path, "r");
   try {
