@@ -179,7 +179,7 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     if(note.length>2000)return response(400,{error:{code:"DELIVERY_NOTE_TOO_LONG",message:"Review notes must be 2,000 characters or fewer."}});
     if(decision==="approved"&&output.deliveryReport?.status==="needs-attention")return response(409,{error:{code:"DELIVERY_VALIDATION_BLOCKED",message:"A delivery with blocking validation errors cannot be approved."}});
     const eventData={schemaVersion:1,decision,fingerprint:receipt.fingerprint,timelineId:receipt.timelineId,timelineRevision:receipt.timelineRevision,outputAsset:receipt.outputAsset,reviewerId:ownerId,note,reviewedAt:new Date().toISOString()};
-    await request("job_events",{method:"POST",body:{job_id:job.id,owner_id:ownerId,event_type:"delivery.approved",event_data:eventData}});
+    await request("job_events",{method:"POST",body:{job_id:job.id,owner_id:ownerId,event_type:"delivery.reviewed",event_data:eventData}});
     return response(201,{approval:eventData});
    }
    const jobMatch=path.match(/^\/api\/cloud\/jobs\/([0-9a-f-]+)(?:\/(events))?$/i);
