@@ -5,7 +5,7 @@
 CHRISHEM EXCLUSIVE VISUALS is a provider-neutral platform for creative planning, media ingest, graph workflows, local processing, editing, enhancement, localization, review and campaign production. The implementation is original and based on publicly observable product behavior and public developer documentation.
 
 ## Workspaces
-- Creative direction, research, briefs, scripts and storyboards.
+- Creative direction, research, briefs, scripts and storyboards. The AI Director now includes a deterministic Creative DNA compiler for audience promise, emotional journey, hook angles, visual grammar, sound identity, proof checks and platform cut planning.
 - Workflow canvas, typed media ports, server-side validation and targeted run planning.
 - Multi-track editorial timeline with frame-based trims, splits, clip movement, review markers, interchange export and local MP4 master rendering (H.264 video, synchronized AAC audio, still-image overlays and burned-in SRT/VTT captions).
 - Character, voice, identity, wardrobe and consent records.
@@ -70,3 +70,4 @@ A Docker-based Render Blueprint is provided in `render.yaml`. It uses a private 
 - [Expanded capability atlas](docs/EXPANDED-CAPABILITY-ATLAS.md)
 - [Additional workflow research](docs/ADDITIONAL-WORKFLOW-RESEARCH.md)
 - [Adapter contract](docs/ADAPTER-CONTRACT.md)
+- [Original creative intelligence and innovation atlas](docs/ORIGINAL-CREATIVE-INTELLIGENCE-AND-INNOVATION-ATLAS.md)
