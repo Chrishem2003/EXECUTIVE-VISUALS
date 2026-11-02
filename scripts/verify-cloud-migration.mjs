@@ -76,6 +76,7 @@ if (!upscaleBenchmarkSql.includes("new.record->>'qualityReview' is distinct from
 if (/\b(drop\s+table|truncate|delete\s+from)\b/i.test(upscaleBenchmarkSql)) issues.push("Upscale benchmark migration must not contain destructive DDL/DML.");
 if (!deliveryReviewSql.includes("create unique index ev_delivery_review_reviewer_fingerprint_unique")) issues.push("Delivery reviews must prevent duplicate reviewer decisions.");
 if (!deliveryReviewSql.includes("(event_data ->> 'reviewerId')") || !deliveryReviewSql.includes("(event_data ->> 'fingerprint')")) issues.push("Delivery review uniqueness must include reviewer identity and immutable receipt fingerprint.");
+if (!deliveryReviewSql.includes("    job_id,") || !deliveryReviewSql.includes("    owner_id,")) issues.push("Delivery review uniqueness must be scoped to the render job and owning project user.");
 if (!deliveryReviewSql.includes("event_type = 'delivery.reviewed'")) issues.push("Delivery review uniqueness must be scoped only to delivery review events.");
 if (!deliveryReviewSql.includes("^[0-9a-f-]{36}$") || !deliveryReviewSql.includes("^[a-f0-9]{64}$")) issues.push("Delivery review index must validate reviewer IDs and SHA-256 receipt fingerprints.");
 if (/\b(drop\s+table|truncate|delete\s+from)\b/i.test(deliveryReviewSql)) issues.push("Delivery review migration must not contain destructive DDL/DML.");
