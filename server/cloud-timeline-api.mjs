@@ -178,6 +178,8 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     const note=typeof body.note==="string"?body.note.trim():"";
     if(note.length>2000)return response(400,{error:{code:"DELIVERY_NOTE_TOO_LONG",message:"Review notes must be 2,000 characters or fewer."}});
     if(decision==="approved"&&output.deliveryReport?.status==="needs-attention")return response(409,{error:{code:"DELIVERY_VALIDATION_BLOCKED",message:"A delivery with blocking validation errors cannot be approved."}});
+    if(decision==="approved"&&output.qualityReport?.status==="needs-attention")return response(409,{error:{code:"MEDIA_QUALITY_BLOCKED",message:"A render with blocking media-quality errors cannot be approved."}});
+    if(decision==="approved"&&output.qualityReport?.status==="review"&&Number(output.qualityReport.counts?.warnings)>0&&!note)return response(400,{error:{code:"QUALITY_ACKNOWLEDGEMENT_REQUIRED",message:"Record a review note acknowledging the media-quality warnings before approving this delivery."}});
     const eventData={schemaVersion:1,decision,fingerprint:receipt.fingerprint,timelineId:receipt.timelineId,timelineRevision:receipt.timelineRevision,outputAsset:receipt.outputAsset,reviewerId:ownerId,note,reviewedAt:new Date().toISOString()};
     await request("job_events",{method:"POST",body:{job_id:job.id,owner_id:ownerId,event_type:"delivery.reviewed",event_data:eventData}});
     return response(201,{approval:eventData});
