@@ -27,3 +27,10 @@ The cloud timeline API regression test approves a plan, checks that the returned
 The local SQLite transformation-plan store now applies the same approval-binding principle. Its schema initializer adds the nullable `approval_plan_hash` column to existing databases without rebuilding or deleting plan records. New approvals fingerprint the canonical persisted request and expose the digest in the approval summary.
 
 `verifyTransformationApproval(db, ownerId, planId)` re-reads the owner-accessible plan and returns a positive result only when the plan is still approved and its stored SHA-256 digest matches the current canonical request. Legacy approvals without a digest and modified plans fail verification. The local `/api/transformations/:id/submit` route now invokes this check after project-write authorization and approval-state validation, immediately before the adapter availability gate. A mismatch returns `TRANSFORMATION_PLAN_CHANGED`; it cannot proceed to queueing or dispatch. The helper does not itself authorize or execute a provider request.
+
+
+## AI upscale asset lineage
+
+Successful local AI upscale jobs now attach a versioned processing-provenance record to the derived asset. It binds the source asset ID and SHA-256, output SHA-256, exact executable and model-weight fingerprints, model/build identity, scale, dimensions, and measured execution duration. The output hash stored in the asset record is the same hash recorded in its processing provenance.
+
+The record starts with `qualityReview: "not_reviewed"`. A successful engine invocation, valid image header, matching dimensions, and successful decoder check are execution-integrity evidence only; they do not establish perceptual quality. Benchmark promotion still requires representative fixtures and explicit quality review. Invalid or incomplete lineage fails closed before the derived asset is registered.
