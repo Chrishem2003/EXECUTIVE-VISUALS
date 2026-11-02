@@ -154,6 +154,38 @@ export function validateMediaOutputProbe(metadata, mediaType) {
   return {streamCount:streams.length,durationSeconds:Number.isFinite(duration)?duration:null,validatedStreamType:expected};
 }
 
+export function buildAiUpscaleProvenance({result,sourceAsset,outputSha256,durationMs,dimensions}={}) {
+  const digest=/^[a-f0-9]{64}$/i;
+  if(!result||!sourceAsset||!digest.test(String(sourceAsset.sha256||""))||!digest.test(String(outputSha256||""))||
+    !digest.test(String(result.binarySha256||""))||!digest.test(String(result.modelFilesSha256||""))||
+    !Number.isFinite(durationMs)||durationMs<1||!Number.isInteger(dimensions?.width)||!Number.isInteger(dimensions?.height)||
+    dimensions.width<1||dimensions.height<1) {
+    throw Object.assign(new Error("AI upscale provenance is incomplete or invalid."),{code:"MEDIA_PROVENANCE_INVALID"});
+  }
+  return {
+    schemaVersion:1,
+    engine:result.engine,
+    method:result.method,
+    model:result.model,
+    modelVersion:result.modelVersion||result.binarySha256+":"+result.modelFilesSha256,
+    scale:result.scale,
+    tile:result.tile,
+    sourceAssetId:sourceAsset.id,
+    inputSha256:sourceAsset.sha256,
+    outputSha256,
+    durationMs:Math.max(1,Math.round(durationMs)),
+    sourceWidth:result.sourceWidth,
+    sourceHeight:result.sourceHeight,
+    width:dimensions.width,
+    height:dimensions.height,
+    dimensionsVerified:true,
+    decoderVerified:true,
+    binarySha256:result.binarySha256,
+    modelFilesSha256:result.modelFilesSha256,
+    qualityReview:"not_reviewed"
+  };
+}
+
 export function validateAiUpscaleProbeDimensions(probeOutput, expected={}) {
   let metadata;
   try { metadata=typeof probeOutput==="string"?JSON.parse(probeOutput):probeOutput; }
@@ -379,6 +411,7 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
       const inputFormat = source.media_type==="image/jpeg"?"jpg":source.media_type==="image/png"?"png":source.media_type==="image/webp"?"webp":null;
       if (!inputFormat) throw Object.assign(new Error("AI super-resolution accepts JPEG, PNG and WebP source images."), { code:"UNSUPPORTED_MEDIA_TYPE" });
       if (!executableAvailable("ffprobe") || !executableAvailable("ffmpeg")) throw Object.assign(new Error("FFprobe and FFmpeg are required to verify and decode AI-upscaled output."), { code:"MEDIA_ENGINE_MISSING" });
+      const upscaleStartedAt=Date.now();
       const result = await adapter.execute({
         inputPath:sourcePath, outputPath, model:input.model||"realesrgan-x4plus",
         scale:input.scale??4, tile:input.tile??0, format, inputFormat, signal:controller.signal
@@ -394,8 +427,9 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
       await pipeline(createReadStream(outputPath),new Transform({transform(chunk,enc,cb){hash.update(chunk);cb(null,chunk);}}),new Transform({transform(chunk,enc,cb){cb();}}));
       const mime = format==="jpg"?"image/jpeg":"image/"+format;
       const baseName = source.original_name.split(".").slice(0,-1).join(".") || source.original_name;
-      const processing = {engine:result.engine,method:result.method,model:result.model,scale:result.scale,tile:result.tile,sourceWidth:result.sourceWidth,sourceHeight:result.sourceHeight,width:dimensions.width,height:dimensions.height,dimensionsVerified:true,decoderVerified:true,binarySha256:result.binarySha256,modelFilesSha256:result.modelFilesSha256};
-      const outputAsset = addAsset(db,job,"derived/"+id+"."+format,baseName+"-ai-upscaled."+format,mime,fileStat.size,hash.digest("hex"),source.id,{operation:job.job_type,processing});
+      const outputSha256=hash.digest("hex");
+      const processing=buildAiUpscaleProvenance({result,sourceAsset:source,outputSha256,durationMs:result.durationMs||Date.now()-upscaleStartedAt,dimensions});
+      const outputAsset = addAsset(db,job,"derived/"+id+"."+format,baseName+"-ai-upscaled."+format,mime,fileStat.size,outputSha256,source.id,{operation:job.job_type,processing});
       outputRegistered=true;
       emit("media.output_created",{assetId:outputAsset.id,sha256:outputAsset.sha256});
       onProgress(100);
