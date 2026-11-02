@@ -44,3 +44,36 @@ revoke all on executive_visuals.upscale_benchmark_fixtures, executive_visuals.up
 -- reviewer identity, or immutable review decisions.
 revoke all on executive_visuals.upscale_benchmark_fixtures, executive_visuals.upscale_benchmark_runs from authenticated;
 grant all on executive_visuals.upscale_benchmark_fixtures, executive_visuals.upscale_benchmark_runs to service_role;
+
+create or replace function executive_visuals.guard_upscale_benchmark_review()
+returns trigger language plpgsql as $$
+begin
+  if old.reviewer_id is not null then
+    raise exception 'upscale benchmark review is immutable';
+  end if;
+  if new.id is distinct from old.id
+     or new.owner_id is distinct from old.owner_id
+     or new.project_id is distinct from old.project_id
+     or new.asset_id is distinct from old.asset_id
+     or new.fixture_id is distinct from old.fixture_id
+     or new.fixture_category is distinct from old.fixture_category
+     or new.model is distinct from old.model
+     or new.model_version is distinct from old.model_version
+     or new.created_at is distinct from old.created_at
+     or (new.record - 'qualityReview') is distinct from (old.record - 'qualityReview') then
+    raise exception 'upscale benchmark evidence is immutable';
+  end if;
+  if new.reviewer_id is null
+     or new.reviewer_id = new.owner_id
+     or new.review_decision not in ('reviewed_pass','reviewed_fail')
+     or new.reviewed_at is null
+     or new.record->>'qualityReview' is distinct from new.review_decision then
+    raise exception 'invalid independent upscale benchmark review transition';
+  end if;
+  return new;
+end;
+$$;
+drop trigger if exists ev_upscale_benchmark_review_immutable on executive_visuals.upscale_benchmark_runs;
+create trigger ev_upscale_benchmark_review_immutable
+before update on executive_visuals.upscale_benchmark_runs
+for each row execute function executive_visuals.guard_upscale_benchmark_review();
