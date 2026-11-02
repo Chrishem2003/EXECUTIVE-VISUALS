@@ -295,6 +295,15 @@ test("timeline preview tickets fail closed for users without project read access
 });
 
 
+test("delivery approval rejects internally inconsistent media-quality evidence",async()=>{
+ const {job}=deliveryReviewFixture({jobOwner:owner});
+ job.output.qualityReport={status:"passed",counts:{errors:0,warnings:0},findings:[{code:"BELOW_HD",severity:"warning",message:"Output is below HD."}],limitations:[]};
+ const f=setup({existing:[job],authorizeOverride:async()=>true});
+ const result=await f.api.handle({method:"POST",path:"/api/cloud/jobs/"+reviewJobId+"/delivery-approval",ownerId:editor,body:{decision:"approved",note:"Reviewed output."}});
+ assert.equal(result.status,409);
+ assert.equal(result.body.error.code,"MEDIA_QUALITY_EVIDENCE_INVALID");
+ assert.equal(f.calls.some(call=>call[0]==="fetch"&&call[1].includes("/job_events")&&call[2].method==="POST"),false);
+});
 test("media-quality warnings require an explicit acknowledgement note before approval",async()=>{
  const {job}=deliveryReviewFixture({jobOwner:owner});
  job.output.qualityReport={status:"review",counts:{errors:0,warnings:1},findings:[{code:"TEMPORAL_LUMA_FLICKER",severity:"warning",message:"Possible flicker"}]};
