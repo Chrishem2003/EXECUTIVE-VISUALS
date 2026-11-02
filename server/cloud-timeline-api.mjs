@@ -8,7 +8,69 @@ import { pipeline } from "node:stream/promises";
 import { createCloudAssetAuthorizer } from "./cloud-asset-auth.mjs";
 import { createCloudTimelineService } from "./cloud-timeline-service.mjs";
 import { buildTransformationReadinessReport } from "./transformation-readiness.mjs";
+   const benchmarkPath=path.match(/^\/api\/cloud\/upscale-benchmarks(?:\/(fixtures|runs)(?:\/([0-9a-f-]+)\/review)?)?$/i);
+   if(benchmarkPath){
+    const section=benchmarkPath[1]||"",runId=benchmarkPath[2]||"",projectId=String(query.projectId||"");
+    if(!safeId(projectId))return response(400,{error:{code:"INVALID_PROJECT_ID",message:"Choose a valid project."}});
+    if(await allow({ownerId,projectId,action:method==="GET"?"read":"write"})!==true)return response(404,{error:{code:"PROJECT_NOT_FOUND",message:"Benchmark project not found or access denied."}});
+    if(path==="/api/cloud/upscale-benchmarks/fixtures"&&method==="GET"){
+     const fixtures=await request("upscale_benchmark_fixtures?select=id,project_id,source_asset_id,source_sha256,fixture_category,label,created_at&project_id=eq."+encodeURIComponent(projectId)+"&order=created_at.desc&limit=100");
+     return response(200,{fixtures:(fixtures||[]).map(row=>({id:row.id,projectId:row.project_id,sourceAssetId:row.source_asset_id,sourceSha256:row.source_sha256,category:row.fixture_category,label:row.label,createdAt:row.created_at}))});
+    }
+    if(path==="/api/cloud/upscale-benchmarks/fixtures"&&method==="POST"){
+     const sourceAssetId=String(body.sourceAssetId||""),category=String(body.category||"");
+     if(!safeId(sourceAssetId)||!REQUIRED_UPSCALE_FIXTURE_CATEGORIES.includes(category))return response(400,{error:{code:"UPSCALE_FIXTURE_INVALID",message:"A valid source image and one of the five supported categories are required."}});
+     const source=await service.assets.get({ownerId,assetId:sourceAssetId});
+     if(source.projectId!==projectId||!source.mediaType.startsWith("image/"))return response(422,{error:{code:"UPSCALE_FIXTURE_SOURCE_INVALID",message:"Fixture source must be a still image in this project."}});
+     const id=randomUUID(),label=String(body.label||source.name||category).trim().slice(0,120);
+     const rows=await request("upscale_benchmark_fixtures?select=id,project_id,source_asset_id,source_sha256,fixture_category,label,created_at",{method:"POST",body:{id,owner_id:ownerId,project_id:projectId,source_asset_id:source.id,source_sha256:source.sha256,fixture_category:category,label},prefer:"return=representation"});
+     if(!Array.isArray(rows)||rows.length!==1||rows[0].id!==id)throw new Error("Cloud benchmark fixture insert did not return the expected record.");
+     await request("audit_events",{method:"POST",body:{owner_id:ownerId,project_id:projectId,event_type:"upscale_benchmark.fixture_registered",subject_type:"upscale_benchmark_fixture",subject_id:id,details:{category,sourceAssetId:source.id}},prefer:"return=minimal"});
+     return response(201,{fixture:{id,projectId,sourceAssetId:source.id,sourceSha256:source.sha256,category,label,createdAt:rows[0].created_at}});
+    }
+    if(path==="/api/cloud/upscale-benchmarks/runs"&&method==="GET"){
+     const rows=await request("upscale_benchmark_runs?select=id,asset_id,fixture_id,fixture_category,model,model_version,record,reviewer_id,review_decision,review_note,reviewed_at,created_at&project_id=eq."+encodeURIComponent(projectId)+"&order=created_at.desc&limit=200");
+     const runs=(rows||[]).map(row=>({id:row.id,assetId:row.asset_id,fixtureId:row.fixture_id,record:row.record,review:{reviewerId:row.reviewer_id,decision:row.review_decision,note:row.review_note,reviewedAt:row.reviewed_at},createdAt:row.created_at}));
+     return response(200,{runs,report:compareUpscaleBenchmarkCandidates(runs.map(run=>run.record))});
+    }
+    if(path==="/api/cloud/upscale-benchmarks/runs"&&method==="POST"){
+     const assetId=String(body.assetId||""),fixtureId=String(body.fixtureId||"");
+     if(!safeId(assetId)||!safeId(fixtureId))return response(400,{error:{code:"UPSCALE_BENCHMARK_INPUT_INVALID",message:"A valid derivative asset and registered fixture are required."}});
+     const fixtures=await request("upscale_benchmark_fixtures?select=id,source_asset_id,source_sha256,fixture_category&project_id=eq."+encodeURIComponent(projectId)+"&id=eq."+encodeURIComponent(fixtureId)+"&limit=1");
+     const fixture=Array.isArray(fixtures)?fixtures[0]:null;
+     if(!fixture)return response(404,{error:{code:"UPSCALE_FIXTURE_NOT_FOUND",message:"Benchmark fixture not found."}});
+     const asset=await service.assets.get({ownerId,assetId});
+     if(asset.projectId!==projectId)return response(404,{error:{code:"UPSCALE_BENCHMARK_ASSET_NOT_FOUND",message:"Derivative asset not found in this project."}});
+     const record=buildUpscaleBenchmarkRecordFromAsset({outputAsset:{id:asset.id,mediaType:asset.mediaType,sha256:asset.sha256,derivativeOf:asset.derivativeOf,createdAt:asset.createdAt,metadata:asset.metadata},fixtureId:fixture.id,fixtureCategory:fixture.fixture_category});
+     if(record.inputSha256!==fixture.source_sha256||asset.derivativeOf!==fixture.source_asset_id)return response(409,{error:{code:"UPSCALE_BENCHMARK_FIXTURE_MISMATCH",message:"Derivative does not originate from the exact registered fixture source."}});
+     const id=randomUUID();
+     const inserted=await request("upscale_benchmark_runs?select=id,created_at",{method:"POST",body:{id,owner_id:ownerId,project_id:projectId,asset_id:asset.id,fixture_id:fixture.id,fixture_category:fixture.fixture_category,model:record.model,model_version:record.modelVersion,record},prefer:"return=representation"});
+     if(!Array.isArray(inserted)||inserted.length!==1||inserted[0].id!==id)throw new Error("Cloud benchmark run insert did not return the expected record.");
+     await request("audit_events",{method:"POST",body:{owner_id:ownerId,project_id:projectId,event_type:"upscale_benchmark.run_registered",subject_type:"upscale_benchmark_run",subject_id:id,details:{assetId:asset.id,fixtureId:fixture.id,model:record.model,modelVersion:record.modelVersion}},prefer:"return=minimal"});
+     return response(201,{run:{id,assetId:asset.id,fixtureId:fixture.id,record,review:{decision:null,reviewerId:null,reviewedAt:null},createdAt:inserted[0].created_at}});
+    }
+    if(runId&&path.endsWith("/review")&&method==="POST"){
+     const projects=await request("projects?select=owner_id&id=eq."+encodeURIComponent(projectId)+"&limit=1");
+     const projectOwner=Array.isArray(projects)?projects[0]?.owner_id:null;
+     const members=await request("project_members?select=role&project_id=eq."+encodeURIComponent(projectId)+"&member_id=eq."+encodeURIComponent(ownerId)+"&limit=1");
+     const role=Array.isArray(members)?members[0]?.role:null;
+     if(projectOwner!==ownerId&&role!=="reviewer")return response(403,{error:{code:"BENCHMARK_REVIEWER_REQUIRED",message:"Only the project owner or an assigned reviewer can review benchmark quality."}});
+     const decision=String(body.decision||"");
+     if(!["reviewed_pass","reviewed_fail"].includes(decision))return response(400,{error:{code:"UPSCALE_BENCHMARK_REVIEW_INVALID",message:"Decision must be reviewed_pass or reviewed_fail."}});
+     const existingRows=await request("upscale_benchmark_runs?select=id,owner_id,record,reviewer_id&project_id=eq."+encodeURIComponent(projectId)+"&id=eq."+encodeURIComponent(runId)+"&limit=1");
+     const existing=Array.isArray(existingRows)?existingRows[0]:null;
+     if(!existing)return response(404,{error:{code:"UPSCALE_BENCHMARK_RUN_NOT_FOUND",message:"Benchmark run not found."}});
+     if(existing.reviewer_id)return response(409,{error:{code:"UPSCALE_BENCHMARK_ALREADY_REVIEWED",message:"Benchmark review is immutable once recorded."}});
+     if(existing.owner_id===ownerId)return response(403,{error:{code:"UPSCALE_BENCHMARK_INDEPENDENT_REVIEW_REQUIRED",message:"The person who registered this run cannot review their own evidence."}});
+     const reviewedAt=new Date().toISOString(),note=String(body.note||"").trim().slice(0,2000),record={...existing.record,qualityReview:decision};
+     const updated=await request("upscale_benchmark_runs?id=eq."+encodeURIComponent(runId)+"&project_id=eq."+encodeURIComponent(projectId)+"&reviewer_id=is.null",{method:"PATCH",body:{record,reviewer_id:ownerId,review_decision:decision,review_note:note,reviewed_at:reviewedAt},prefer:"return=representation"});
+     if(!Array.isArray(updated)||updated.length!==1)return response(409,{error:{code:"UPSCALE_BENCHMARK_ALREADY_REVIEWED",message:"Benchmark evidence was reviewed by another user."}});
+     await request("audit_events",{method:"POST",body:{owner_id:ownerId,project_id:projectId,event_type:"upscale_benchmark.quality_reviewed",subject_type:"upscale_benchmark_run",subject_id:runId,details:{decision,noteLength:note.length}},prefer:"return=minimal"});
+     return response(200,{run:{id:runId,record,review:{decision,reviewerId:ownerId,reviewedAt,note}}});
+    }
+   }
 import { validateSrt, validateWebVtt } from "./caption-validation.mjs";
+import { REQUIRED_UPSCALE_FIXTURE_CATEGORIES, buildUpscaleBenchmarkRecordFromAsset, compareUpscaleBenchmarkCandidates } from "./upscale-benchmark.mjs";
 import { createDeliveryPackage, verifyDeliveryManifest } from "./delivery-manifest.mjs";
 
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
