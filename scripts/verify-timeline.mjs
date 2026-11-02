@@ -80,25 +80,30 @@ const outOfRange=analyzeTimelineQuality(quality,[{id:"quality-asset",metadata:{p
 assert.ok(outOfRange.some(item=>item.code==="SOURCE_RANGE_EXCEEDS_MEDIA"));
 assert.ok(analyzeTimelineQuality(quality,[]).some(item=>item.code==="ASSET_NOT_IN_LIBRARY"));
 const derivativeBase={id:"quality-asset",name:"AI derivative",mediaType:"image/png",sha256:"b".repeat(64),derivativeOf:"source-asset",metadata:{sha256:"b".repeat(64),processing:{schemaVersion:1,engine:"realesrgan-ncnn-vulkan",method:"ai-super-resolution",model:"realesrgan-x4plus",modelVersion:"build-fingerprint",inputSha256:"a".repeat(64),outputSha256:"b".repeat(64),dimensionsVerified:true,decoderVerified:true,qualityReview:"reviewed_pass"}}};
+const derivativeSource={id:"source-asset",name:"Original source",mediaType:"image/png",sha256:"a".repeat(64),metadata:{}};
 const derivativeTimeline={...quality,tracks:quality.tracks.map(track=>track.id==="quality-video"?{...track,clips:track.clips.slice(0,1)}:track)};
-const verifiedDerivativeFindings=analyzeTimelineQuality(derivativeTimeline,[derivativeBase]);
+const verifiedDerivativeFindings=analyzeTimelineQuality(derivativeTimeline,[derivativeBase,derivativeSource]);
 assert.equal(verifiedDerivativeFindings.some(item=>item.code.startsWith("DERIVATIVE_")),false,"fully evidenced and independently approved derivative should not add provenance warnings");
 const pendingDerivative={...derivativeBase,metadata:{...derivativeBase.metadata,processing:{...derivativeBase.metadata.processing,qualityReview:"not_reviewed"}}};
-assert.ok(analyzeTimelineQuality(derivativeTimeline,[pendingDerivative]).some(item=>item.code==="DERIVATIVE_QUALITY_REVIEW_PENDING"&&item.severity==="warning"));
+assert.ok(analyzeTimelineQuality(derivativeTimeline,[pendingDerivative,derivativeSource]).some(item=>item.code==="DERIVATIVE_QUALITY_REVIEW_PENDING"&&item.severity==="warning"));
 const rejectedDerivative={...derivativeBase,metadata:{...derivativeBase.metadata,processing:{...derivativeBase.metadata.processing,qualityReview:"reviewed_fail"}}};
-assert.ok(analyzeTimelineQuality(derivativeTimeline,[rejectedDerivative]).some(item=>item.code==="DERIVATIVE_QUALITY_REJECTED"&&item.severity==="error"));
+assert.ok(analyzeTimelineQuality(derivativeTimeline,[rejectedDerivative,derivativeSource]).some(item=>item.code==="DERIVATIVE_QUALITY_REJECTED"&&item.severity==="error"));
 const mismatchedDerivative={...derivativeBase,metadata:{...derivativeBase.metadata,processing:{...derivativeBase.metadata.processing,outputSha256:"c".repeat(64)}}};
-assert.ok(analyzeTimelineQuality(derivativeTimeline,[mismatchedDerivative]).some(item=>item.code==="DERIVATIVE_OUTPUT_HASH_UNVERIFIED"));
+assert.ok(analyzeTimelineQuality(derivativeTimeline,[mismatchedDerivative,derivativeSource]).some(item=>item.code==="DERIVATIVE_OUTPUT_HASH_UNVERIFIED"));
 const unverifiedDerivative={...derivativeBase,metadata:{...derivativeBase.metadata,processing:{...derivativeBase.metadata.processing,dimensionsVerified:false,decoderVerified:false}}};
-const unverifiedFindings=analyzeTimelineQuality(derivativeTimeline,[unverifiedDerivative]);
+const unverifiedFindings=analyzeTimelineQuality(derivativeTimeline,[unverifiedDerivative,derivativeSource]);
 assert.ok(unverifiedFindings.some(item=>item.code==="DERIVATIVE_DIMENSIONS_UNVERIFIED"));
 assert.ok(unverifiedFindings.some(item=>item.code==="DERIVATIVE_DECODER_UNVERIFIED"));
 const wrongParentDerivative={...derivativeBase,metadata:{...derivativeBase.metadata,processing:{...derivativeBase.metadata.processing,sourceAssetId:"different-source"}}};
-assert.ok(analyzeTimelineQuality(derivativeTimeline,[wrongParentDerivative]).some(item=>item.code==="DERIVATIVE_PARENT_MISMATCH"&&item.severity==="error"));
+assert.ok(analyzeTimelineQuality(derivativeTimeline,[wrongParentDerivative,derivativeSource]).some(item=>item.code==="DERIVATIVE_PARENT_MISMATCH"&&item.severity==="error"));
 const missingPersistedHash={...derivativeBase,sha256:undefined};
-assert.ok(analyzeTimelineQuality(derivativeTimeline,[missingPersistedHash]).some(item=>item.code==="DERIVATIVE_OUTPUT_HASH_UNVERIFIED"));
+assert.ok(analyzeTimelineQuality(derivativeTimeline,[missingPersistedHash,derivativeSource]).some(item=>item.code==="DERIVATIVE_OUTPUT_HASH_UNVERIFIED"));
 const noEvidenceDerivative={id:"quality-asset",name:"Legacy derivative",mediaType:"image/png",sha256:"b".repeat(64),derivativeOf:"source-asset",metadata:{}};
-assert.ok(analyzeTimelineQuality(derivativeTimeline,[noEvidenceDerivative]).some(item=>item.code==="DERIVATIVE_PROVENANCE_MISSING"));
+assert.ok(analyzeTimelineQuality(derivativeTimeline,[noEvidenceDerivative,derivativeSource]).some(item=>item.code==="DERIVATIVE_PROVENANCE_MISSING"));
+const mismatchedParentHashDerivative={...derivativeBase,metadata:{...derivativeBase.metadata,processing:{...derivativeBase.metadata.processing,inputSha256:"d".repeat(64)}}};
+assert.ok(analyzeTimelineQuality(derivativeTimeline,[mismatchedParentHashDerivative,derivativeSource]).some(item=>item.code==="DERIVATIVE_SOURCE_PARENT_HASH_MISMATCH"&&item.severity==="error"));
+const unavailableParentFindings=analyzeTimelineQuality(derivativeTimeline,[derivativeBase]);
+assert.ok(unavailableParentFindings.some(item=>item.code==="DERIVATIVE_PARENT_ASSET_UNAVAILABLE"&&item.severity==="warning"));
 assert.ok(analyzeTimelineQuality(null).some(item=>item.code==="NO_SEQUENCE"));
 
 
