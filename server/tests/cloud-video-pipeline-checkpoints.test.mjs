@@ -46,7 +46,7 @@ test("writes and reads durable project-scoped checkpoints through the private sc
   assert.equal(saved.approvalId, "approval-42");
   assert.equal(requests[0].options.headers["content-profile"], "executive_visuals");
   assert.equal(requests[0].options.headers.authorization, "Bearer server-secret");
-  assert.match(requests[0].options.prefer, /resolution=ignore-duplicates/);
+  assert.match(requests[0].options.headers.prefer, /resolution=ignore-duplicates/);
   assert.equal((await store.get({ ownerId: owner, projectId: project, pipelineId: baseRecord.pipelineId, stepId: baseRecord.stepId })).idempotencyKey, baseRecord.idempotencyKey);
 });
 
