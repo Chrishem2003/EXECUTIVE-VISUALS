@@ -224,6 +224,7 @@ export function createRealEsrganAdapter({
     try { await lstat(output); throw fail("AI upscale output already exists; source files are never overwritten.", "AI_UPSCALE_OUTPUT_EXISTS"); }
     catch (error) { if (error.code !== "ENOENT") throw error; }
     if (dirname(output) === input || output.startsWith(input + sep)) throw fail("AI upscale output path is invalid.", "AI_UPSCALE_INVALID_PATH");
+    const executionStartedAt = Date.now();
     await run(prepared.binary, prepared.args, timeoutMs, options.signal);
     const info = await stat(output).catch(() => null);
     if (!info?.isFile() || info.size < 24 || info.size > maxOutputBytes) throw fail("AI upscale output is missing, empty or exceeds the configured size limit.", "AI_UPSCALE_OUTPUT_INVALID");
@@ -231,7 +232,7 @@ export function createRealEsrganAdapter({
     const outputDimensions = await readImageDimensions(output, prepared.format);
     const expectedWidth = inputDimensions.width * prepared.scale, expectedHeight = inputDimensions.height * prepared.scale;
     if (outputDimensions.width !== expectedWidth || outputDimensions.height !== expectedHeight) throw fail("AI upscale output dimensions do not match the requested scale factor.", "AI_UPSCALE_OUTPUT_DIMENSIONS_MISMATCH");
-    return { path: output, byteSize: info.size, model: prepared.model, scale: prepared.scale, tile: prepared.tile, format: prepared.format, width: outputDimensions.width, height: outputDimensions.height, sourceWidth: inputDimensions.width, sourceHeight: inputDimensions.height, binarySha256: readiness.binarySha256, modelFilesSha256: readiness.modelFilesSha256, engine: "realesrgan-ncnn-vulkan", method: "ai-super-resolution" };
+    return { path: output, byteSize: info.size, model: prepared.model, modelVersion: readiness.binarySha256 + ":" + readiness.modelFilesSha256, scale: prepared.scale, tile: prepared.tile, format: prepared.format, width: outputDimensions.width, height: outputDimensions.height, sourceWidth: inputDimensions.width, sourceHeight: inputDimensions.height, durationMs: Math.max(1, Date.now() - executionStartedAt), binarySha256: readiness.binarySha256, modelFilesSha256: readiness.modelFilesSha256, engine: "realesrgan-ncnn-vulkan", method: "ai-super-resolution" };
   }
 
   return Object.freeze({ probe, plan, execute, selfTest });
