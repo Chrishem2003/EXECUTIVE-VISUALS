@@ -306,7 +306,7 @@ test("delivery approval rejects internally inconsistent media-quality evidence",
 });
 test("media-quality warnings require an explicit acknowledgement note before approval",async()=>{
  const {job}=deliveryReviewFixture({jobOwner:owner});
- job.output.qualityReport={status:"review",counts:{errors:0,warnings:1},findings:[{code:"TEMPORAL_LUMA_FLICKER",severity:"warning",message:"Possible flicker"}]};
+ job.output.qualityReport={status:"review",counts:{errors:0,warnings:1},findings:[{code:"TEMPORAL_LUMA_FLICKER",severity:"warning",message:"Possible flicker"}],limitations:[]};
  const f=setup({existing:[job],authorizeOverride:async()=>true});
  const missing=await f.api.handle({method:"POST",path:"/api/cloud/jobs/"+reviewJobId+"/delivery-approval",ownerId:editor,body:{decision:"approved"}});
  assert.equal(missing.status,400);
@@ -317,7 +317,7 @@ test("media-quality warnings require an explicit acknowledgement note before app
 
 test("blocking media-quality errors prevent independent delivery approval",async()=>{
  const {job}=deliveryReviewFixture({jobOwner:owner});
- job.output.qualityReport={status:"needs-attention",counts:{errors:1,warnings:0},findings:[{code:"INVALID_DURATION",severity:"error",message:"Invalid duration"}]};
+ job.output.qualityReport={status:"needs-attention",counts:{errors:1,warnings:0},findings:[{code:"INVALID_DURATION",severity:"error",message:"Invalid duration"}],limitations:[]};
  const f=setup({existing:[job],authorizeOverride:async()=>true});
  const result=await f.api.handle({method:"POST",path:"/api/cloud/jobs/"+reviewJobId+"/delivery-approval",ownerId:editor,body:{decision:"approved",note:"I reviewed this."}});
  assert.equal(result.status,409);
