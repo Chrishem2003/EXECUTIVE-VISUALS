@@ -53,3 +53,8 @@ Cloud worker errors are classified using an explicit transient allowlist: queue/
 The queue adapter also validates retry RPC state invariants: queued outcomes must be accepted, retryable and below the attempt limit; failed outcomes must be terminal; lease-lost outcomes must be rejected with no retry delay. Contradictory or out-of-range database responses fail closed instead of being treated as a successful reschedule.
 
 Image and video gateway timeouts, connectivity failures, rate limits and temporary provider server errors are also explicitly retryable; invalid provider responses, rejected requests, disabled remote execution and terminal provider job failures remain non-retryable.
+
+
+## Cloud media cancellation and temporary-file cleanup
+
+Cloud media executors pass the worker lease's abort signal into asset materialization. A lost lease aborts an in-flight signed-URL download, and cancellation is reported as `JOB_CANCELLED` rather than being misclassified as a transient storage timeout. Materialization checks cancellation before and after requesting a signed URL and removes its temporary directory on every failed download. The executor also owns cleanup immediately after materialization succeeds, including failures while creating its own isolated work directory, and checks the signal again immediately before publishing a derivative. This prevents avoidable background downloads and reduces the chance of publishing work after lease ownership has been lost. The asset repository's signed-URL creation call itself is not cancellable by this interface; the executor checks the signal as soon as that call returns.
