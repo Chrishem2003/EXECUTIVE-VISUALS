@@ -15,7 +15,7 @@ function setup({canWrite=true,projectId=project,existing=[]}={}){
   async list(input){calls.push(["timeline-list",input]);return[{...timeline}];},
   async update(input){calls.push(["update",input]);return{...timeline,revision:input.expectedRevision+1,timeline:input.timeline};}
  };
- const fetchImpl=async(url,options)=>{calls.push(["fetch",url,options]);if(url.includes("/jobs")&&options.method==="POST")return{ok:true,status:201,async text(){return JSON.stringify([{id:JSON.parse(options.body).id,owner_id:owner,project_id:projectId,job_type:"timeline.render",status:"queued",input:JSON.parse(options.body).input}])}};if(url.includes("/jobs?"))return{ok:true,status:200,async text(){return JSON.stringify(existing)}};return{ok:true,status:201,async text(){return""}};};
+ const fetchImpl=async(url,options)=>{calls.push(["fetch",url,options]);if(url.includes("/rpc/request_job_cancellation"))return{ok:true,status:200,async text(){return JSON.stringify("requested");}};if(url.includes("/jobs")&&options.method==="POST")return{ok:true,status:201,async text(){return JSON.stringify([{id:JSON.parse(options.body).id,owner_id:owner,project_id:projectId,job_type:"timeline.render",status:"queued",input:JSON.parse(options.body).input}])}};if(url.includes("/jobs?"))return{ok:true,status:200,async text(){return JSON.stringify(existing)}};return{ok:true,status:201,async text(){return""}};};
  const api=createCloudTimelineApi({url:"https://example.supabase.co",serviceRoleKey:"service-secret",fetchImpl,timelineService:{timelines,assets:{async list(input){calls.push(["asset-list",input]);return[{id:"asset-1",projectId:input.projectId}];}},projects:{async create(input){calls.push(["project-create",input]);return{id:"project-1",...input};},async list(input){calls.push(["project-list",input]);return[{id:project}];},async get(input){calls.push(["project-get",input]);return{id:project,...input};},async update(input){calls.push(["project-update",input]);return{id:project,...input};},async archive(input){calls.push(["project-archive",input]);return{id:project,archived:true};}}},authorize:async({ownerId,projectId:pid,action})=>ownerId===owner&&(!pid||pid===project)&&(action==="read"||canWrite)});
  return{api,calls,created};
 }
@@ -126,4 +126,22 @@ test("cloud caption uploads persist SRT validation evidence for readiness checks
  const req=Readable.from([bytes]);req.headers={"content-length":String(bytes.length)};
  const result=await api.uploadAsset({req,ownerId:owner,projectId:project,originalName:"captions.srt",mediaType:"text/plain"});
  assert.equal(result.status,201);assert.equal(stored.metadata.captionValidation.format,"srt");assert.equal(stored.metadata.captionValidation.status,"passed");
+});
+
+test("cloud job cancellation requires project write access and requests worker cooperation",async()=>{
+ const job={id:"623e4567-e89b-42d3-a456-426614174000",owner_id:editor,project_id:project,status:"processing"};
+ const f=setup({existing:[job]});
+ const result=await f.api.handle({method:"POST",path:"/api/cloud/jobs/"+job.id+"/cancel",ownerId:owner});
+ assert.equal(result.status,202);
+ assert.deepEqual(result.body.cancellation,{jobId:job.id,status:"requested"});
+ const rpc=f.calls.find(call=>call[0]==="fetch"&&call[1].includes("/rpc/request_job_cancellation"));
+ assert.deepEqual(JSON.parse(rpc[2].body),{p_job_id:job.id,p_owner_id:owner});
+});
+
+test("cloud job cancellation hides jobs from users without project write access",async()=>{
+ const job={id:"623e4567-e89b-42d3-a456-426614174000",owner_id:editor,project_id:project,status:"processing"};
+ const f=setup({canWrite:false,existing:[job]});
+ const result=await f.api.handle({method:"POST",path:"/api/cloud/jobs/"+job.id+"/cancel",ownerId:owner});
+ assert.equal(result.status,404);
+ assert.equal(f.calls.some(call=>call[0]==="fetch"&&call[1].includes("/rpc/request_job_cancellation")),false);
 });
