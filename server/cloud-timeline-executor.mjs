@@ -9,6 +9,8 @@ import { Transform } from "node:stream";
 import { verifyRenderManifest } from "./render-manifest.mjs";
 import { evaluateDeliveryOutput, getDeliveryProfile } from "./delivery-profiles.mjs";
 import { createDeliveryManifest } from "./delivery-manifest.mjs";
+import { parseVideoLumaSamples, parseSceneCutTimes, runOptionalSignalCheck } from "./media-signal-analysis.mjs";
+import { buildMediaQualityReport } from "./media-quality.mjs";
 
 function parseInput(value){
   if(value&&typeof value==="object"&&!Array.isArray(value))return value;
@@ -20,6 +22,18 @@ async function digest(path){
   await pipeline(createReadStream(path),new Transform({transform(chunk,encoding,callback){hash.update(chunk);callback(null,chunk);}}),new Transform({transform(chunk,encoding,callback){callback();}}));
   return hash.digest("hex");
 }
+async function analyzeTemporalVideo({path,durationSeconds,jobId,activeProcesses,signal}={}){
+  if(signal?.aborted)throw Object.assign(new Error("Timeline render was cancelled."),{code:"JOB_CANCELLED"});
+  if(!Number.isFinite(durationSeconds)||durationSeconds<=0)throw Object.assign(new Error("Output duration is unavailable for bounded temporal analysis."),{code:"ANALYSIS_DURATION_UNKNOWN"});
+  const coverageSeconds=Math.min(durationSeconds,600);
+  const timeoutMs=Math.min(15*60*1000,Math.max(30000,coverageSeconds*2500));
+  const result=await run("ffmpeg",["-hide_banner","-nostats","-i",path,"-t",String(coverageSeconds),"-vf","fps=2,signalstats,scdet=threshold=10,metadata=print","-an","-sn","-dn","-f","null","-"],timeoutMs,jobId,activeProcesses,()=>Boolean(signal?.aborted),512000);
+  if(signal?.aborted)throw Object.assign(new Error("Timeline render was cancelled."),{code:"JOB_CANCELLED"});
+  const lumaSamples=parseVideoLumaSamples(result.stderr);
+  if(!lumaSamples.length)throw Object.assign(new Error("FFmpeg did not return usable frame-luminance samples."),{code:"ANALYSIS_NO_FRAME_SAMPLES"});
+  return {lumaSamples,sceneChanges:parseSceneCutTimes(result.stderr),coverageSeconds,truncated:durationSeconds>coverageSeconds};
+}
+
 function referencedAssets(timeline){
   const ids=new Set();
   for(const track of timeline.tracks||[])if(track.enabled!==false)for(const clip of track.clips||[])if(clip.enabled!==false&&clip.assetId)ids.add(clip.assetId);
@@ -31,7 +45,7 @@ function referencedAssets(timeline){
  * assembly and receives only verified materialized asset paths; the local
  * SQLite renderer is never passed cloud records or storage references.
  */
-export function createCloudTimelineExecutor({timelines,mediaIO,renderTimeline,probeOutput=async path=>{const result=await run("ffprobe",["-v","error","-show_format","-show_streams","-of","json",path],60000);return JSON.parse(result.stdout||"{}");},tempRoot,maxAssets=5000,maxOutputBytes=1024*1024*1024}={}){
+export function createCloudTimelineExecutor({timelines,mediaIO,renderTimeline,probeOutput=async path=>{const result=await run("ffprobe",["-v","error","-show_format","-show_streams","-of","json",path],60000);return JSON.parse(result.stdout||"{}");},tempRoot,maxAssets=5000,maxOutputBytes=1024*1024*1024,analyzeVideo=analyzeTemporalVideo,activeProcesses=new Map()}={}){
   if(!timelines||typeof timelines.get!=="function")throw new Error("Cloud timeline executor requires the cloud timeline repository.");
   if(!mediaIO||typeof mediaIO.materialize!=="function"||typeof mediaIO.publish!=="function")throw new Error("Cloud timeline executor requires cloud media IO.");
   if(typeof renderTimeline!=="function")throw new Error("Cloud timeline executor requires an explicit render engine.");
@@ -70,18 +84,30 @@ export function createCloudTimelineExecutor({timelines,mediaIO,renderTimeline,pr
       if(info.size>maxOutputBytes)throw Object.assign(new Error("Timeline output exceeds the configured limit."),{code:"CLOUD_TIMELINE_OUTPUT_TOO_LARGE"});
       const probed=await probeOutput(output.path);
       const probeValidation=validateMediaOutputProbe(probed,output.mediaType);
+      const durationSeconds=Number(probed?.format?.duration);
+      const temporalCheck=await runOptionalSignalCheck(()=>analyzeVideo({path:output.path,durationSeconds,jobId:job.id,activeProcesses,signal}),{isCancelled:()=>Boolean(signal?.aborted)});
+      const signalAnalysis={method:"ffmpeg-sampled-frame-luma",performed:[],unavailable:[],lumaSamples:[],sceneChanges:[],coverageSeconds:0,truncated:false};
+      if(temporalCheck.status==="completed"){
+        signalAnalysis.performed.push("temporal-luma");
+        signalAnalysis.lumaSamples=temporalCheck.result.lumaSamples;
+        signalAnalysis.sceneChanges=temporalCheck.result.sceneChanges;
+        signalAnalysis.coverageSeconds=temporalCheck.result.coverageSeconds;
+        signalAnalysis.truncated=temporalCheck.result.truncated;
+        if(signalAnalysis.truncated)signalAnalysis.unavailable.push({check:"temporal-luma-coverage",reason:"ANALYSIS_DURATION_LIMIT"});
+      }else signalAnalysis.unavailable.push({check:"temporal-luma",reason:temporalCheck.reason});
+      const qualityReport=buildMediaQualityReport({...probed,signalAnalysis},{requireVideo:true});
       const deliveryReport=deliveryProfileId?evaluateDeliveryOutput(probed,deliveryProfileId):null;
       if(deliveryReport?.status==="needs-attention")throw Object.assign(new Error("Rendered output failed its selected delivery profile checks; the output was not published."),{code:"DELIVERY_PROFILE_VALIDATION_FAILED",deliveryReport});
       const sha256=await digest(output.path);
       onProgress(90);
       const outputAsset=await mediaIO.publish({
         ownerId:job.owner_id,projectId:record.projectId,filename:output.filename,mediaType:output.mediaType,
-        path:output.path,metadata:{...(output.metadata||{}),operation:"timeline.render",timelineId:record.id,timelineRevision:record.revision,renderManifest:output.renderManifest,sha256,probe:probed,probeValidation,...(deliveryReport?{deliveryReport}:{}),render:output.render||{}}
+        path:output.path,metadata:{...(output.metadata||{}),operation:"timeline.render",timelineId:record.id,timelineRevision:record.revision,renderManifest:output.renderManifest,sha256,probe:probed,probeValidation,signalAnalysis:{...signalAnalysis,lumaSamples:undefined},qualityReport,...(deliveryReport?{deliveryReport}:{}),render:output.render||{}}
       });
       const publishedDeliveryManifest=createDeliveryManifest({timelineId:record.id,timelineRevision:record.revision,outputAsset:outputAsset.id,sha256,byteSize:info.size,mediaType:output.mediaType,profileId:deliveryProfileId,deliveryReport,renderManifest:output.renderManifest});
       // Publish metadata is immutable at this boundary; return the asset-bound manifest as the authoritative receipt.
       onProgress(100);
-      return{timelineId:record.id,timelineRevision:record.revision,outputAsset,sha256,byteSize:info.size,probeValidation,...(deliveryReport?{deliveryReport}:{}),deliveryManifest:publishedDeliveryManifest,render:output.render||{},renderManifest:output.renderManifest};
+      return{timelineId:record.id,timelineRevision:record.revision,outputAsset,sha256,byteSize:info.size,probeValidation,qualityReport,...(deliveryReport?{deliveryReport}:{}),deliveryManifest:publishedDeliveryManifest,render:output.render||{},renderManifest:output.renderManifest};
     }finally{
       await Promise.all([...materialized.values()].map(asset=>asset.cleanup?.().catch(()=>{})));
       await rm(workDir,{recursive:true,force:true}).catch(()=>{});
