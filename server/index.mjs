@@ -19,6 +19,7 @@ import { ensureRemoteUsageTable, getRemoteUsagePolicy } from "./usage-guardrails
 import { createCloudTimelineApi } from "./cloud-timeline-api.mjs";
 import { validateSrt, validateWebVtt } from "./caption-validation.mjs";
 import { ensureTransformationPlanSchema, createTransformationPlan, approveTransformationPlan, listTransformationPlans, getTransformationPlan } from "./transformation-plans.mjs";
+import { evaluateReadiness } from "./readiness.mjs";
 
 const PORT = Number(process.env.API_PORT || process.env.PORT || 4179);
 const HOST = process.env.API_HOST || "127.0.0.1";
@@ -273,6 +274,25 @@ export function createAppServer() {
           res.writeHead(200,{"content-type":types[ext]||"application/octet-stream","cache-control":ext===".html"?"no-cache":"public, max-age=31536000, immutable",...SECURITY_HEADERS,...(ext===".html"?{"content-security-policy":HTML_CSP}:{}),...cors});
           createReadStream(file).pipe(res);return;
         }
+      }
+      if(path==="/api/ready"&&req.method==="GET"){
+        const readiness=evaluateReadiness({
+          nodeEnv:process.env.NODE_ENV||"development",
+          authMode:AUTH_MODE,
+          requirePersistentDataDir:REQUIRE_PERSISTENT_DATA_DIR,
+          dataDirExists:existsSync(DATA_DIR),
+          databaseWithinDataDir:isWithinDataDir(DB_FILE),
+          mediaWithinDataDir:isWithinDataDir(MEDIA_ROOT),
+          cloudTimelineApiEnabled,
+          supabaseUrl:process.env.SUPABASE_URL||"",
+          supabasePublishableKey:process.env.SUPABASE_PUBLISHABLE_KEY||"",
+          supabaseServiceRoleKey:process.env.SUPABASE_SERVICE_ROLE_KEY||"",
+          imageGatewayEnabled:process.env.IMAGE_GATEWAY_ENABLED==="true",
+          imageGatewayConfigured:Boolean(process.env.IMAGE_GATEWAY_URL&&process.env.IMAGE_GATEWAY_MODEL),
+          textGatewayEnabled:process.env.AI_GATEWAY_ENABLED==="true",
+          textGatewayConfigured:Boolean(process.env.AI_GATEWAY_URL&&process.env.AI_GATEWAY_MODEL)
+        });
+        send(res,readiness.ready?200:503,readiness,cors);return;
       }
       if(path==="/api/health"&&req.method==="GET"){
         send(res,200,{status:"ok",storage:"local-disk",database:"sqlite",media:{ffmpeg:executableAvailable("ffmpeg"),ffprobe:executableAvailable("ffprobe")},imageGateway:{enabled:process.env.IMAGE_GATEWAY_ENABLED==="true",configured:(()=>{try{const url=new URL(process.env.IMAGE_GATEWAY_URL||"");const local=["localhost","127.0.0.1","::1","[::1]"].includes(url.hostname.toLowerCase());return Boolean(process.env.IMAGE_GATEWAY_MODEL&&(local||process.env.IMAGE_GATEWAY_ALLOW_REMOTE==="true"));}catch{return false;}})()},textGateway:{enabled:process.env.AI_GATEWAY_ENABLED==="true",configured:(()=>{try{const url=new URL(process.env.AI_GATEWAY_URL||"");const local=["localhost","127.0.0.1","::1"].includes(url.hostname.toLowerCase());return Boolean(process.env.AI_GATEWAY_MODEL&&(local||process.env.AI_GATEWAY_ALLOW_REMOTE==="true"));}catch{return false;}})()},authMode:AUTH_MODE,version:"0.1.0"},cors);return;
