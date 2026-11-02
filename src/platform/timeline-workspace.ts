@@ -220,9 +220,9 @@ function paint(){
  const root=document.querySelector<HTMLElement>("#timeline-workspace");if(root)root.outerHTML=renderTimelineWorkspace();
  const media=document.querySelector<HTMLMediaElement>("#tl-preview-media");
  if(media){
-  const setIn=()=>{const start=Number(media.dataset.sourceIn);if(Number.isFinite(start))media.currentTime=start;};
+  const setIn=()=>{const start=Number(media.dataset.sourceIn),duration=media.duration,end=Number(media.dataset.sourceOut);if(Number.isFinite(start)){const safeStart=Math.min(start,Number.isFinite(duration)?duration:start);media.currentTime=safeStart;}if(Number.isFinite(end)&&Number.isFinite(duration)&&end>duration)media.dataset.sourceOut=String(duration);};
   if(media.readyState>=1)setIn();else media.addEventListener("loadedmetadata",setIn,{once:true});
-  media.addEventListener("timeupdate",()=>{const output=document.querySelector<HTMLOutputElement>("#tl-preview-time");if(output)output.value=media.currentTime.toFixed(3)+" s";const end=Number(media.dataset.sourceOut);if(Number.isFinite(end)&&media.currentTime>=end){media.pause();media.currentTime=end;}});
+  media.addEventListener("timeupdate",()=>{const output=document.querySelector<HTMLOutputElement>("#tl-preview-time");if(output)output.value=media.currentTime.toFixed(3)+" s";const start=Number(media.dataset.sourceIn),end=Math.min(Number(media.dataset.sourceOut),Number.isFinite(media.duration)?media.duration:Number(media.dataset.sourceOut)),rate=Number(media.dataset.sourceFps),scrub=document.querySelector<HTMLInputElement>("#tl-preview-scrub");if(scrub&&Number.isFinite(rate)&&rate>0)scrub.value=String(Math.max(0,Math.round((media.currentTime-start)*rate)));if(Number.isFinite(end)&&media.currentTime>=end){media.pause();media.currentTime=end;}});
  }
 }
 async function runAction(action:HTMLElement){
