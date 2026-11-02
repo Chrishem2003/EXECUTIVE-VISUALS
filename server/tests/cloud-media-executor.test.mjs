@@ -401,7 +401,7 @@ test("cloud AI upscale publishes a separate image derivative with engine provena
     });
     const result = await execute({
       job: { id: "job-ai-up", owner_id: "owner-ai", project_id: "project-ai", job_type: "media.ai-upscale",
-        input: { sourceAssetId: "image-source", model, scale: 4, tile: 128, format: "png" } },
+        input: { sourceAssetId: "image-source", sourceSha256: "d".repeat(64), model, scale: 4, tile: 128, format: "png" } },
       onProgress() {}
     });
     assert.equal(result.processing.method, "ai-super-resolution");
@@ -507,4 +507,18 @@ test("cloud AI upscale rejects video instead of treating frame-by-frame resampli
       onProgress() {}
     }), error => error.code === "UNSUPPORTED_MEDIA_TYPE");
   } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+
+test("refuses cloud AI-upscale inference when the queued source fingerprint changed",async()=>{
+ const directory=await mkdtemp(join(tmpdir(),"cloud-ai-upscale-source-"));
+ let cleaned=false;
+ try{
+  const execute=createCloudMediaExecutor({tempRoot:directory,mediaIO:{
+   async materialize(){return{path:join(directory,"unused.png"),asset:{id:"image-source",name:"portrait.png",mediaType:"image/png",sha256:"d".repeat(64)},async cleanup(){cleaned=true;}};},
+   async publish(){throw new Error("publish must not be reached");}
+  }});
+  await assert.rejects(()=>execute({job:{id:"job-source-change",owner_id:"owner",project_id:"project",job_type:"media.ai-upscale",input:{sourceAssetId:"image-source",sourceSha256:"e".repeat(64),model:"realesrgan-x4plus",scale:4,tile:0,format:"png"}},onProgress(){}}),error=>error.code==="AI_UPSCALE_SOURCE_CHANGED");
+  assert.equal(cleaned,true);
+ }finally{await rm(directory,{recursive:true,force:true});}
 });
