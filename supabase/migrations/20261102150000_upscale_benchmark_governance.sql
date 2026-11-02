@@ -68,6 +68,7 @@ begin
      or new.review_decision is null
      or new.review_decision not in ('reviewed_pass','reviewed_fail')
      or new.reviewed_at is null
+     or (new.review_decision = 'reviewed_fail' and btrim(new.review_note) = '')
      or new.record->>'qualityReview' is distinct from new.review_decision then
     raise exception 'invalid independent upscale benchmark review transition';
   end if;
