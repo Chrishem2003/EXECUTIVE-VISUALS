@@ -78,3 +78,8 @@ Staging acceptance: export a fully evidenced derivative, a legacy derivative wit
 
 
 The export also cross-checks a derivative's recorded source checksum against the checksum of its immediate parent in the authorized lineage graph. A missing parent, cycle, unavailable parent checksum, or mismatch is reported explicitly rather than treated as verified. Ancestor and descendant arrays are capped at 500 entries in the portable report, with truncation and reported counts preserved.
+
+
+## Unified cloud asset provenance and review-readiness panel
+
+The Cloud Projects asset card now derives its displayed processing checks from the same versioned enhancement-evidence report used for JSON export. It shows processing-record presence, source checksum validity, output checksum agreement, dimensions, decoder verification, and independent review status. Once the authorized lineage graph is loaded, it also shows parent existence and source-to-parent checksum agreement. Until lineage is loaded, parent checks are omitted rather than incorrectly reported as missing. Status labels distinguish evidence that is verified, pending, unavailable, mismatched or not applicable. The panel is informational: technical evidence does not establish perceptual quality and cannot substitute for independent visual review.
