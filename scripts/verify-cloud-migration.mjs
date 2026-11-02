@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 const sql = await readFile(resolve(process.cwd(), "supabase/migrations/20261031210000_executive_visuals_core.sql"), "utf8");
 const checkpointSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261102090000_video_pipeline_checkpoints.sql"), "utf8");
 const upscaleBenchmarkSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261102150000_upscale_benchmark_governance.sql"), "utf8");
+const deliveryReviewSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261102120000_delivery_review_uniqueness.sql"), "utf8");
 const issues = [];
 const tables = ["projects","project_members","project_workspace_documents","workflows","workflow_runs","workflow_node_runs","timelines","assets","jobs","job_events","consents","reviews","audit_events"];
 for (const table of tables) {
@@ -73,6 +74,12 @@ if (!upscaleBenchmarkSql.includes("new.reviewer_id = new.owner_id")) issues.push
 if (!upscaleBenchmarkSql.includes("new.review_decision is null")) issues.push("Cloud benchmark review decisions must be non-null.");
 if (!upscaleBenchmarkSql.includes("new.record->>'qualityReview' is distinct from new.review_decision")) issues.push("Cloud benchmark review state must match its immutable decision.");
 if (/\\b(drop\\s+table|truncate|delete\\s+from)\\b/i.test(upscaleBenchmarkSql)) issues.push("Upscale benchmark migration must not contain destructive DDL/DML.");
+if (!deliveryReviewSql.includes("create unique index ev_delivery_review_reviewer_fingerprint_unique")) issues.push("Delivery reviews must prevent duplicate reviewer decisions.");
+if (!deliveryReviewSql.includes("(event_data ->> 'reviewerId')") || !deliveryReviewSql.includes("(event_data ->> 'fingerprint')")) issues.push("Delivery review uniqueness must include reviewer identity and immutable receipt fingerprint.");
+if (!deliveryReviewSql.includes("event_type = 'delivery.reviewed'")) issues.push("Delivery review uniqueness must be scoped only to delivery review events.");
+if (!deliveryReviewSql.includes("^[0-9a-f-]{36}$") || !deliveryReviewSql.includes("^[a-f0-9]{64}$")) issues.push("Delivery review index must validate reviewer IDs and SHA-256 receipt fingerprints.");
+if (/\\b(drop\\s+table|truncate|delete\\s+from)\\b/i.test(deliveryReviewSql)) issues.push("Delivery review migration must not contain destructive DDL/DML.");
+
 if (/grant [^;]+ to authenticated/i.test(upscaleBenchmarkSql)) issues.push("Cloud benchmark tables must not grant direct client access.");
 
 
