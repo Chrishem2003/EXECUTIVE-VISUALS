@@ -1,4 +1,4 @@
-import type { EditorialTimeline, TimelineClip, TimelineTrack, TrackKind } from "./timeline";
+import type { EditorialTimeline, TimelineClip, TrackKind } from "./timeline";
 
 export type GeneratedMediaKind = "video" | "audio" | "image";
 
@@ -97,7 +97,7 @@ export function prepareGeneratedMediaHandoff(input: GeneratedMediaHandoffInput):
   }
 
   const track = timeline.tracks.find((item) => item.id === input.targetTrackId);
-  if (!track) reject("HANDOFF_TRACK_NOT_FOUND", "Choose an existing timeline track.");
+  if (!track) throw new GeneratedMediaHandoffError("HANDOFF_TRACK_NOT_FOUND", "Choose an existing timeline track.");
   if (track.locked) reject("HANDOFF_TRACK_LOCKED", "The target track is locked.");
   if (!compatible(receipt.kind, track.kind)) {
     reject("HANDOFF_TRACK_INCOMPATIBLE", "The target track cannot contain this media type.");
