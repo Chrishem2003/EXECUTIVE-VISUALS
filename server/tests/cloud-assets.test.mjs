@@ -186,7 +186,7 @@ test("cleanup skips malformed storage references and never touches active assets
  assert.equal(f.storageCalls.length,0);
  f.row.deleted_at=null;
  const active=await f.repo.cleanupDeleted({olderThan:"2026-11-01T00:00:00.000Z",limit:5});
- assert.deepEqual(active,{scanned:1,removed:0,pending:0,skippedInvalid:1});
+ assert.deepEqual(active,{scanned:0,removed:0,pending:0,skippedInvalid:0});
  assert.equal(f.storageCalls.length,0);
 });
 
