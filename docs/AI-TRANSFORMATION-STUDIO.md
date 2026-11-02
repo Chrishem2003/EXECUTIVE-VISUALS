@@ -1,6 +1,6 @@
 # AI Transformation Studio
 
-**Status:** capability contract and planning foundation implemented; provider execution is not yet enabled.
+**Status:** transformation contract and resumable finishing orchestrator implemented; provider execution is still adapter-gated.
 
 ## Product intent
 Transform an existing video while retaining the parts of the shot the creator wants to keep. This is a first-class editing workflow, not a new text-to-video screen.
@@ -29,6 +29,15 @@ Transform an existing video while retaining the parts of the shot the creator wa
 The provider-neutral contract provides request normalization, supported operation validation, source-video checks, clip/reference bounds, explicit rights confirmation, subject-consent checks for person replacement, capability checks and transformation provenance.
 
 The contract is intentionally non-executing. It does not upload files, accept arbitrary provider URLs, call a remote model, spend credits or claim a generated result. Adapters must declare both supported operations and preservation behavior. Unsupported constraints fail closed.
+
+
+## Checkpointed finishing pipeline
+
+`server/video-finishing-pipeline.mjs` now orchestrates a provider-neutral sequence of transformation, upscale, frame-rate, HDR, audio finishing and transcode steps. It requires a known estimate for every step, explicit approval and an adequate budget before any remote step can run, exact adapter capability declarations, and a valid derivative receipt whose parent is the immediately preceding asset.
+
+Each successful step is saved as a checkpoint with a deterministic idempotency key derived from the pipeline, step, input asset checksum and normalized settings. A resumed run reuses matching successful checkpoints and refuses stale or conflicting checkpoints. Original media is never passed as an output target; adapters must publish a new derivative through the existing private asset boundary.
+
+The orchestrator is deliberately adapter-injected. It does not submit remote requests, choose providers, download arbitrary URLs or spend credits by itself. Durable checkpoint storage and production adapter wiring remain integration work.
 
 ## Quality and review gates
 - Compare original and transformed frames at the start, middle, end and points of fast motion.
