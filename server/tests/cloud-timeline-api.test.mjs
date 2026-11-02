@@ -87,7 +87,7 @@ test("delivery creator cannot approve own output",async()=>{
 test("delivery approval fails closed for modified receipt fingerprints",async()=>{
  const {job}=deliveryReviewFixture({jobOwner:owner,receiptValid:false});
  const f=setup({existing:[job],authorizeOverride:async()=>true});
- const result=await f.api.handle({method:"POST",path:"/api/cloud/jobs/"+reviewJobId+"/delivery-approval",ownerId:editor,body:{decision:"approved"}});
+ const result=await f.api.handle({method:"POST",path:"/api/cloud/jobs/"+reviewJobId+"/delivery-approval",ownerId:editor,body:{decision:"approved",note:"Reviewed output and acknowledge the flagged quality warning."}});
  assert.equal(result.status,409);
  assert.equal(result.body.error.code,"DELIVERY_EVIDENCE_UNVERIFIED");
 });
