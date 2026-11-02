@@ -92,6 +92,6 @@ export function verifyDeliveryPackage(value) {
   const { packageFingerprint: supplied, ...evidence } = value;
   try {
     const recreated = createDeliveryPackage(evidence);
-    return fingerprint({ ...recreated, packageFingerprint: undefined }) === supplied;
+    return recreated.packageFingerprint === supplied;
   } catch { return false; }
 }
