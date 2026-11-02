@@ -54,7 +54,7 @@ function validateOutput(output,sourceAsset){
  * Provider calls are injected; this module never chooses a vendor, spends money,
  * downloads a URL, or bypasses the asset repository.
  */
-export function createVideoFinishingPipeline({resolveAdapter,executeStep,checkpoints}={}){
+export function createVideoFinishingPipeline({resolveAdapter,executeStep,checkpoints,authorizeExecution}={}){
  if(typeof resolveAdapter!=="function"||typeof executeStep!=="function")throw new Error("Video pipeline requires adapter resolution and execution functions.");
  if(!checkpoints||typeof checkpoints.get!=="function"||typeof checkpoints.save!=="function")throw new Error("Video pipeline requires durable checkpoint storage.");
  return Object.freeze({
@@ -79,6 +79,20 @@ export function createVideoFinishingPipeline({resolveAdapter,executeStep,checkpo
      continue;
     }
     try{
+     if(step.remote){
+      if(typeof authorizeExecution!=="function")throw fail("Remote execution requires a live approval and budget authorization check before every provider call.","VIDEO_PIPELINE_LIVE_AUTHORIZATION_REQUIRED");
+      const authorization=await authorizeExecution({
+       approvalId:normalized.approvalId,pipelineId:normalized.pipelineId,stepId:step.id,
+       adapterId:step.adapter,capability:step.capability,
+       requiredBudgetMicros:normalized.totalEstimatedCostMicros,signal
+      });
+      if(signal?.aborted)throw fail("Video pipeline was cancelled.","VIDEO_PIPELINE_CANCELLED");
+      if(!plain(authorization)||authorization.approved!==true||authorization.approvalId!==normalized.approvalId||
+       authorization.adapterId!==step.adapter||authorization.capability!==step.capability||
+       !Number.isSafeInteger(authorization.approvedBudgetMicros)||authorization.approvedBudgetMicros<normalized.totalEstimatedCostMicros){
+       throw fail("Live approval is revoked, mismatched or no longer covers the pipeline budget.","VIDEO_PIPELINE_LIVE_AUTHORIZATION_DENIED");
+      }
+     }
      const raw=await executeStep({adapter,step,sourceAsset:inputAsset,idempotencyKey,approvalId:normalized.approvalId,signal});
      const output=validateOutput(raw,inputAsset);
      const checkpoint={pipelineId:normalized.pipelineId,stepId:step.id,status:"succeeded",inputAssetId:inputAsset.id,inputSha256:inputAsset.sha256,idempotencyKey,outputAsset:output,approvalId:normalized.approvalId};
