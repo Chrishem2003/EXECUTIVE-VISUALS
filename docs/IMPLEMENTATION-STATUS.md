@@ -476,3 +476,12 @@ This is a runnable worker entry point, not a deployed worker. Do not set the ena
 - Added `verify:timeline-editing` to the production build verification.
 - **CI correction:** the first preview PR run failed during `tsc --noEmit` on the possibly-undefined track access. This was a real build failure, not an environment issue. The fix and ripple editing changes are now committed; a fresh Actions run is required before claiming the branch passes.
 - Speed changes and transitions are not exposed as finished controls because the current render engine explicitly rejects time remapping. They require coordinated local/cloud renderer support and render fixtures before activation.
+
+
+## Timeline editing history — 2 November 2026
+
+- Added bounded (50-edit default) immutable undo/redo snapshots for the active timeline document.
+- Added Undo and Redo toolbar actions. Restoring a history state persists through the same revision-checked local/cloud timeline API; it does not bypass concurrency checks.
+- Timeline switches reset history so edits from one sequence cannot be applied to another.
+- Added automated coverage for undo, redo, redo invalidation after a new edit, history bounds and empty stacks.
+- The history feature is draft-branch code pending its new CI run. Browser interaction and multi-user conflict behavior still require manual acceptance testing.
