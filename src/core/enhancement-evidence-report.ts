@@ -19,9 +19,14 @@ export function buildEnhancementEvidenceReport(asset:EnhancementReportAsset,line
  const hasProcessing=Object.keys(p).length>0;
  const sourceHash=p.inputSha256??p.sourceSha256??asset.metadata?.processing?.sourceSha256;
  const outputHash=p.outputSha256;
+ const parent=asset.derivativeOf?lineage?.ancestors.find(node=>node.id===asset.derivativeOf):undefined;
+ const parentHash=parent&&!parent.missing&&!parent.cycle?parent.sha256:undefined;
+ const sourceMatchesParent=asset.derivativeOf?hash(sourceHash)&&hash(parentHash)?sourceHash.toLowerCase()===parentHash.toLowerCase()?"verified":"mismatch":"parent_checksum_unavailable":"not_applicable";
  const checks=[
   {key:"processing_record",status:hasProcessing?"verified":"missing"},
   {key:"source_checksum",status:hash(sourceHash)?"verified":"missing_or_invalid"},
+  {key:"parent_asset",status:!asset.derivativeOf?"not_applicable":parent&&!parent.missing&&!parent.cycle?"found":parent?.cycle?"cycle_detected":"missing"},
+  {key:"source_checksum_matches_parent",status:sourceMatchesParent},
   {key:"output_checksum",status:hash(outputHash)&&hash(asset.sha256)&&outputHash.toLowerCase()===asset.sha256.toLowerCase()?"verified":"missing_or_mismatched"},
   {key:"dimensions",status:p.dimensionsVerified===true?"verified":"not_verified"},
   {key:"decoder",status:p.decoderVerified===true?"verified":"not_verified"},
@@ -33,7 +38,7 @@ export function buildEnhancementEvidenceReport(asset:EnhancementReportAsset,line
   asset:{id:asset.id,name:text(asset.name),mediaType:text(asset.mediaType,120),size:finite(asset.size),sha256:hash(asset.sha256)?asset.sha256:null,derivativeOf:text(asset.derivativeOf,200)},
   processing:{engine:text(p.engine,120),method:text(p.method,120),model:text(p.model,160),modelVersion:text(p.modelVersion,240),scale:finite(p.scale),tile:finite(p.tile),durationMs:finite(p.durationMs),sourceWidth:finite(p.sourceWidth),sourceHeight:finite(p.sourceHeight),width:finite(p.width),height:finite(p.height),binarySha256:hash(p.binarySha256)?p.binarySha256:null,modelFilesSha256:hash(p.modelFilesSha256)?p.modelFilesSha256:null},
   checks,
-  lineage:lineage?{ancestors:lineage.ancestors.map(lineageNode),descendants:lineage.descendants.map(lineageNode),truncated:lineage.truncated===true,collectionTruncated:lineage.collectionTruncated===true,nodeCount:finite(lineage.nodeCount)}:null,
+  lineage:lineage?{ancestors:lineage.ancestors.slice(0,500).map(lineageNode),descendants:lineage.descendants.slice(0,500).map(lineageNode),truncated:lineage.truncated===true||lineage.ancestors.length>500||lineage.descendants.length>500,collectionTruncated:lineage.collectionTruncated===true,nodeCount:finite(lineage.nodeCount),reportedAncestors:Math.min(lineage.ancestors.length,500),reportedDescendants:Math.min(lineage.descendants.length,500)}:null,
   interpretation:{technicalEvidenceOnly:true,perceptualQualityAssessed:false,humanReviewRequired:true,privatePreviewUrlsIncluded:false}
  };
 }
