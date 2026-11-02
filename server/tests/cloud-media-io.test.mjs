@@ -42,15 +42,16 @@ test("cancels an in-flight cloud media download when the worker lease is lost",a
   async createSignedUrl(){return{url:"https://storage.example/signed",asset:{id:"asset-1",ownerId:"owner-1",size:content.length,sha256:digest,mediaType:"video/mp4"}};},
   async create(){}
  };
- let observedSignal;
+ let observedSignal, markStarted;
+ const started=new Promise(resolve=>{markStarted=resolve;});
  const io=createCloudMediaAssetIO({assets,tempRoot:root,timeoutMs:10000,fetchImpl:async(url,options)=>{
-  observedSignal=options.signal;
+  observedSignal=options.signal;markStarted();
   return await new Promise((resolve,reject)=>{
    options.signal.addEventListener("abort",()=>reject(Object.assign(new Error("aborted"),{name:"AbortError"})),{once:true});
   });
  }});
  const pending=io.materialize({ownerId:"owner-1",assetId:"asset-1",signal:controller.signal});
- await new Promise(resolve=>setImmediate(resolve));
+ await started;
  controller.abort();
  await assert.rejects(()=>pending,error=>error.code==="JOB_CANCELLED");
  assert.equal(observedSignal.aborted,true);
