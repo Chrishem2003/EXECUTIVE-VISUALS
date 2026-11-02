@@ -1,6 +1,6 @@
 export interface EnhancementReportAsset {
   id:string;name?:string;mediaType?:string;size?:number;sha256?:string;derivativeOf?:string|null;
-  metadata?:{processing?:Record<string,unknown>};
+  metadata?:{processing?:object};
 }
 export interface EnhancementReportLineage {
   ancestors:Array<{id:string;name?:string;mediaType?:string;sha256?:string;missing?:boolean;cycle?:boolean}>;
@@ -15,7 +15,7 @@ const finite=(value:unknown)=>typeof value==="number"&&Number.isFinite(value)?va
 export function buildEnhancementEvidenceReport(asset:EnhancementReportAsset,lineage:EnhancementReportLineage|null,generatedAt=new Date().toISOString()){
  if(!asset||typeof asset.id!=="string"||!asset.id)throw new TypeError("A valid asset is required.");
  if(typeof generatedAt!=="string"||!Number.isFinite(Date.parse(generatedAt)))throw new TypeError("A valid report timestamp is required.");
- const p=asset.metadata?.processing||{};
+ const p=(asset.metadata?.processing||{}) as Record<string,unknown>;
  const hasProcessing=Object.keys(p).length>0;
  const sourceHash=p.inputSha256??p.sourceSha256??asset.metadata?.processing?.sourceSha256;
  const outputHash=p.outputSha256;
