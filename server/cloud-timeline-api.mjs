@@ -12,7 +12,8 @@ import { buildTransformationReadinessReport } from "./transformation-readiness.m
    if(benchmarkPath){
     const section=benchmarkPath[1]||"",runId=benchmarkPath[2]||"",projectId=String(query.projectId||"");
     if(!safeId(projectId))return response(400,{error:{code:"INVALID_PROJECT_ID",message:"Choose a valid project."}});
-    if(await allow({ownerId,projectId,action:method==="GET"?"read":"write"})!==true)return response(404,{error:{code:"PROJECT_NOT_FOUND",message:"Benchmark project not found or access denied."}});
+    const reviewRequest=Boolean(runId&&path.endsWith("/review"));
+    if(await allow({ownerId,projectId,action:method==="GET"||reviewRequest?"read":"write"})!==true)return response(404,{error:{code:"PROJECT_NOT_FOUND",message:"Benchmark project not found or access denied."}});
     if(path==="/api/cloud/upscale-benchmarks/fixtures"&&method==="GET"){
      const fixtures=await request("upscale_benchmark_fixtures?select=id,project_id,source_asset_id,source_sha256,fixture_category,label,created_at&project_id=eq."+encodeURIComponent(projectId)+"&order=created_at.desc&limit=100");
      return response(200,{fixtures:(fixtures||[]).map(row=>({id:row.id,projectId:row.project_id,sourceAssetId:row.source_asset_id,sourceSha256:row.source_sha256,category:row.fixture_category,label:row.label,createdAt:row.created_at}))});
