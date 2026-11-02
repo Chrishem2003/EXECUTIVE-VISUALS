@@ -47,6 +47,7 @@ export function ensureTransformationPlanSchema(db){
 
 export function createTransformationPlan(db,{ownerId,body,idempotencyKey}={}){
  if(!ownerId)throw fail("Authentication is required.","AUTH_REQUIRED",401);
+ if(!body||typeof body!=="object"||Array.isArray(body))throw fail("Transformation request must be a JSON object.","TRANSFORMATION_BODY_INVALID");
  const projectId=cleanText(body?.projectId,80),sourceAssetId=cleanText(body?.sourceAssetId,80);
  if(!projectId||!canWriteProject(db,ownerId,projectId))throw fail("Project not found or editor access required.","PROJECT_NOT_FOUND",404);
  const source=getAccessibleAsset(db,ownerId,sourceAssetId,true);
