@@ -51,10 +51,11 @@ test("includes detected black frames and silence as review findings",()=>{
 test("reports audio clipping and near-full-scale peak findings",()=>{
  const report=buildMediaQualityReport({format:{duration:"9"},streams:[
   {codec_type:"audio",sample_rate:"48000",channels:2}
- ],signalAnalysis:{audioMetrics:{clippedSamples:3,peakDbfs:-0.3,rmsDbfs:-18,integratedLufs:-16.5},performed:["audio-metrics"]}});
+ ],signalAnalysis:{audioMetrics:{clippedSamples:3,peakDbfs:-0.3,truePeakDbtp:-0.4,rmsDbfs:-18,integratedLufs:-16.5},performed:["audio-metrics"]}});
  assert.equal(report.status,"review");
  assert.ok(report.findings.some(item=>item.code==="AUDIO_CLIPPING"));
  assert.ok(report.findings.some(item=>item.code==="AUDIO_PEAK_NEAR_FULL_SCALE"));
+ assert.ok(report.findings.some(item=>item.code==="AUDIO_TRUE_PEAK_NEAR_LIMIT"));
  assert.equal(report.signalAnalysis.audioMetrics.integratedLufs,-16.5);
 });
 
