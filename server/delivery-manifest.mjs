@@ -81,7 +81,22 @@ export function createDeliveryPackage({
   if (master.downloadUrlExpiresInSeconds !== 300) fail("The master download URL must have the five-minute expiry contract.");
   if (canonical(renderManifest) !== canonical(deliveryReceipt.renderManifest) || !verifyRenderManifest(renderManifest)) fail("The render manifest must be the verified manifest bound into the receipt.");
   if (canonical(deliveryReport) !== canonical(deliveryReceipt.deliveryReport)) fail("The delivery report must match the receipt.");
-  if (!Array.isArray(reviewHistory) || reviewHistory.length > 1000 || reviewHistory.some(item => !plain(item) || item.fingerprint !== deliveryReceipt.fingerprint)) fail("Review history must contain only decisions for this delivery fingerprint.");
+  if (!Array.isArray(reviewHistory) || reviewHistory.length > 1000) fail("Review history must be a bounded array.");
+  const reviewers = new Set();
+  for (const item of reviewHistory) {
+    if (!plain(item) || !(typeof item.id === "string" && item.id.trim() || Number.isSafeInteger(item.id) && item.id > 0) ||
+        item.schemaVersion !== 1 || !["approved", "rejected", "changes_requested"].includes(item.decision) ||
+        item.fingerprint !== deliveryReceipt.fingerprint || item.timelineId !== deliveryReceipt.timelineId ||
+        item.timelineRevision !== deliveryReceipt.timelineRevision || item.outputAsset !== deliveryReceipt.outputAsset ||
+        typeof item.reviewerId !== "string" || !item.reviewerId.trim() || item.reviewerId.length > 256 ||
+        typeof item.note !== "string" || item.note.length > 2000 ||
+        typeof item.reviewedAt !== "string" || !Number.isFinite(Date.parse(item.reviewedAt)) || new Date(item.reviewedAt).toISOString() !== item.reviewedAt ||
+        typeof item.createdAt !== "string" || !Number.isFinite(Date.parse(item.createdAt)) || new Date(item.createdAt).toISOString() !== item.createdAt) {
+      fail("Review history contains an incomplete or mismatched decision.");
+    }
+    if (reviewers.has(item.reviewerId)) fail("Review history cannot contain duplicate decisions from one reviewer.");
+    reviewers.add(item.reviewerId);
+  }
   if (qualityReport !== null && (!plain(qualityReport) || !["passed","review","needs-attention"].includes(qualityReport.status) || !plain(qualityReport.counts) || !Number.isSafeInteger(qualityReport.counts.errors) || qualityReport.counts.errors < 0 || !Number.isSafeInteger(qualityReport.counts.warnings) || qualityReport.counts.warnings < 0 || !Array.isArray(qualityReport.findings) || qualityReport.findings.length > 1000 || qualityReport.findings.some(item => !plain(item) || typeof item.code !== "string" || item.code.length > 100 || !["error","warning"].includes(item.severity) || typeof item.message !== "string" || item.message.length > 2000) || !Array.isArray(qualityReport.limitations) || qualityReport.limitations.length > 100 || qualityReport.limitations.some(item => typeof item !== "string" || item.length > 1000))) fail("The media quality report is invalid or exceeds package limits.");
   if (typeof generatedAt !== "string" || !Number.isFinite(Date.parse(generatedAt)) || new Date(generatedAt).toISOString() !== generatedAt) fail("A valid package timestamp is required.");
   const evidence = {
