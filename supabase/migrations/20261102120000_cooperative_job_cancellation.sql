@@ -20,9 +20,19 @@ begin
   end if;
   select * into target
   from executive_visuals.jobs
-  where id = p_job_id and owner_id = p_owner_id
+  where id = p_job_id
   for update;
   if not found then return 'not_found'; end if;
+  if target.owner_id <> p_owner_id and (
+    target.project_id is null
+    or not exists (
+      select 1 from executive_visuals.projects p
+      where p.id=target.project_id and p.owner_id=p_owner_id and p.archived_at is null
+    ) and not exists (
+      select 1 from executive_visuals.project_members m
+      where m.project_id=target.project_id and m.member_id=p_owner_id and m.role='editor'
+    )
+  ) then return 'not_found'; end if;
   if target.status in ('draft','validated','awaiting_approval','queued','failed','blocked','needs_input','expired') then
     update executive_visuals.jobs
       set status='cancelled', cancel_requested_at=coalesce(cancel_requested_at,clock_timestamp()),
