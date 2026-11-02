@@ -127,3 +127,20 @@ test("cloud timeline executor publishes a review warning when optional frame ana
  assert.equal(result.qualityReport.signalAnalysis.lumaSampleCount,0);
  await rm(root,{recursive:true,force:true});
 });
+
+
+test("cloud timeline executor propagates cancellation during temporal analysis and does not publish",async()=>{
+ const root=await mkdtemp(join(tmpdir(),"ev-cloud-temporal-cancel-"));const published=[];
+ const controller=new AbortController();
+ const executor=createCloudTimelineExecutor({
+  tempRoot:root,
+  timelines:{async get(){return{id:timelineId,projectId:null,revision:1,timeline};}},
+  mediaIO:{async materialize({assetId}){const path=join(root,assetId);await writeFile(path,"source");return{path,asset:{id:assetId},async cleanup(){}};},async publish(args){published.push(args);return{id:"must-not-publish"};}},
+  async renderTimeline({workDir,assets}){const path=join(workDir,"master.mp4");await writeFile(path,"rendered");return{path,filename:"master.mp4",mediaType:"video/mp4",renderManifest:createRenderManifest({timeline,assets,timelineRevision:1})};},
+  async probeOutput(){return{format:{duration:"8"},streams:[{codec_type:"video",codec_name:"h264",width:1920,height:1080,avg_frame_rate:"24/1"}]};},
+  async analyzeVideo(){controller.abort();throw Object.assign(new Error("cancelled"),{code:"MEDIA_PROCESS_FAILED"});}
+ });
+ await assert.rejects(()=>executor({job:{id:"temporal-cancel",owner_id:owner,project_id:null,job_type:"timeline.render",input:{timelineId,timelineRevision:1}},signal:controller.signal}),error=>error.code==="MEDIA_PROCESS_FAILED");
+ assert.equal(published.length,0);
+ await rm(root,{recursive:true,force:true});
+});
