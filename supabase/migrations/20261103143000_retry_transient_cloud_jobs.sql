@@ -33,7 +33,7 @@ begin
   for update;
 
   if current_job.id is null then
-    return jsonb_build_object('accepted', false, 'status', 'lease_lost', 'retryable', false, 'delaySeconds', 0);
+    return jsonb_build_object('accepted', false, 'status', 'lease_lost', 'retryable', false, 'delaySeconds', 0, 'attempt', 0, 'maxAttempts', 1);
   end if;
 
   retryable := p_error->'retryable' = 'true'::jsonb
