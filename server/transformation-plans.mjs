@@ -100,3 +100,9 @@ export function listTransformationPlans(db,ownerId,projectId){
  if(!getProjectAccess(db,ownerId,projectId))throw fail("Project not found.","PROJECT_NOT_FOUND",404);
  return db.prepare("SELECT * FROM transformation_plans WHERE project_id=? ORDER BY created_at DESC LIMIT 100").all(projectId).map(record);
 }
+
+export function getTransformationPlan(db,ownerId,planId){
+ const row=db.prepare("SELECT * FROM transformation_plans WHERE id=?").get(planId);
+ if(!row||!getProjectAccess(db,ownerId,row.project_id))throw fail("Transformation plan not found.","TRANSFORMATION_NOT_FOUND",404);
+ return record(row);
+}
