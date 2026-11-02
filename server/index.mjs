@@ -18,7 +18,7 @@ import { getProviderCatalog } from "./provider-registry.mjs";
 import { ensureRemoteUsageTable, getRemoteUsagePolicy } from "./usage-guardrails.mjs";
 import { createCloudTimelineApi } from "./cloud-timeline-api.mjs";
 import { validateSrt, validateWebVtt } from "./caption-validation.mjs";
-import { ensureTransformationPlanSchema, createTransformationPlan, approveTransformationPlan, listTransformationPlans, getTransformationPlan } from "./transformation-plans.mjs";
+import { ensureTransformationPlanSchema, createTransformationPlan, approveTransformationPlan, cancelTransformationPlan, listTransformationPlans, getTransformationPlan } from "./transformation-plans.mjs";
 
 const PORT = Number(process.env.API_PORT || process.env.PORT || 4179);
 const HOST = process.env.API_HOST || "127.0.0.1";
@@ -363,7 +363,7 @@ export function createAppServer() {
         if(!result.idempotentReplay)audit(db,user.id,"transformation.draft_created","transformation",result.plan.id,{operation:result.plan.operation},result.plan.projectId);
         send(res,result.idempotentReplay?200:201,result,cors);return;
       }
-      const transformationMatch=path.match(/^\/api\/transformations\/([0-9a-f-]+)(?:\/(approve|submit))?$/i);
+      const transformationMatch=path.match(/^\/api\/transformations\/([0-9a-f-]+)(?:\/(approve|submit|cancel))?$/i);
       if(transformationMatch){
         const plan=db.prepare("SELECT * FROM transformation_plans WHERE id=?").get(transformationMatch[1]);
         if(!plan||!getProjectAccess(db,user.id,plan.project_id)){fail(res,404,"TRANSFORMATION_NOT_FOUND","Transformation plan not found.");return;}
@@ -378,6 +378,11 @@ export function createAppServer() {
           if(!canWriteProject(db,user.id,plan.project_id)){fail(res,403,"EDITOR_REQUIRED","Owner or editor access is required to submit a transformation.");return;}
           if(plan.status!=="approved"){fail(res,409,"TRANSFORMATION_APPROVAL_REQUIRED","Approve the plan and budget before submission.");return;}
           fail(res,409,"TRANSFORMATION_ADAPTER_UNAVAILABLE","No verified video-transformation adapter is enabled. The approved plan remains saved; no provider request or charge was made.");return;
+        }
+        if(transformationMatch[2]==="cancel"&&req.method==="POST"){
+          const cancelled=cancelTransformationPlan(db,{ownerId:user.id,planId:plan.id});
+          audit(db,user.id,"transformation.cancelled","transformation",plan.id,{previousStatus:plan.status},plan.project_id);
+          send(res,200,{plan:cancelled},cors);return;
         }
       }
       if(path==="/api/providers"&&req.method==="GET"){
