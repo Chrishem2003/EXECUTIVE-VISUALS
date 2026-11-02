@@ -64,6 +64,14 @@ This roadmap is an engineering sequence, not a claim that the listed work is alr
 - Keep render jobs bounded by source duration, input bytes, output bytes, concurrency and available disk; expose progress and actionable failures.
 - Preserve source assets, timeline revisions and derivative lineage.
 
+## P1 — AI Transformation Studio
+
+- Add video-to-video workflows for vehicle, wardrobe, object, background, person, style, removal and relighting transformations.
+- Keep source assets immutable; store transformation requests, references, preservation constraints, provider/model declarations, approvals, output hashes and parent-child lineage.
+- Require source/reference rights confirmation and explicit subject consent for person replacement.
+- Reject unsupported operations, clip lengths, reference counts and preservation constraints before dispatch.
+- Keep the request contract provider-neutral; do not enable remote execution until one adapter, private asset ingestion, cost preflight, asynchronous jobs and visual QA pass their release gates.
+
 ## P2 — Provider and collaboration integrations
 
 - Keep the provider registry capability-based and provider-neutral; distinguish documented, configured, tested and production-ready.
