@@ -27,7 +27,7 @@ async function analyzeTemporalVideo({path,durationSeconds,jobId,activeProcesses,
   if(!Number.isFinite(durationSeconds)||durationSeconds<=0)throw Object.assign(new Error("Output duration is unavailable for bounded temporal analysis."),{code:"ANALYSIS_DURATION_UNKNOWN"});
   const coverageSeconds=Math.min(durationSeconds,120);
   const timeoutMs=Math.min(15*60*1000,Math.max(30000,coverageSeconds*2500));
-  const result=await run("ffmpeg",["-hide_banner","-nostats","-i",path,"-t",String(coverageSeconds),"-vf","fps=12,scale=320:-2:flags=area,signalstats,scdet=threshold=10,metadata=print","-an","-sn","-dn","-f","null","-"],timeoutMs,jobId,activeProcesses,()=>Boolean(signal?.aborted),512000);
+  const result=await run("ffmpeg",["-hide_banner","-nostats","-filter_threads","1","-i",path,"-t",String(coverageSeconds),"-vf","fps=12,scale=320:-2:flags=area,signalstats,scdet=threshold=10,metadata=print","-an","-sn","-dn","-f","null","-"],timeoutMs,jobId,activeProcesses,()=>Boolean(signal?.aborted),512000);
   if(signal?.aborted)throw Object.assign(new Error("Timeline render was cancelled."),{code:"JOB_CANCELLED"});
   const metadataOutput=[result.stderr,result.stdout].join("\n");
   const lumaSamples=parseVideoLumaSamples(metadataOutput);
@@ -86,7 +86,7 @@ export function createCloudTimelineExecutor({timelines,mediaIO,renderTimeline,pr
       const probed=await probeOutput(output.path);
       const probeValidation=validateMediaOutputProbe(probed,output.mediaType);
       const durationSeconds=Number(probed?.format?.duration);
-      const temporalCheck=await runOptionalSignalCheck(()=>analyzeVideo({path:output.path,durationSeconds,jobId:job.id,activeProcesses,signal}),{isCancelled:()=>Boolean(signal?.aborted)});
+      onProgress(93);\n      const temporalCheck=await runOptionalSignalCheck(async()=>{\n        const result=await analyzeVideo({path:output.path,durationSeconds,jobId:job.id,activeProcesses,signal});\n        if(!result||!Array.isArray(result.lumaSamples)||result.lumaSamples.length>2000||!Array.isArray(result.sceneChanges)||!Number.isFinite(result.coverageSeconds)||result.coverageSeconds<0||result.coverageSeconds>120||typeof result.truncated!=="boolean")throw Object.assign(new Error("Temporal analyzer returned invalid or unbounded evidence."),{code:"ANALYSIS_RESULT_INVALID"});\n        return result;\n      },{isCancelled:()=>Boolean(signal?.aborted)});\n      onProgress(97);
       const signalAnalysis={method:"ffmpeg-sampled-frame-luma",performed:[],unavailable:[],lumaSamples:[],sceneChanges:[],coverageSeconds:0,truncated:false};
       if(temporalCheck.status==="completed"){
         signalAnalysis.performed.push("temporal-luma");
