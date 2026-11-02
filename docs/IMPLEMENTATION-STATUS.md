@@ -8,7 +8,8 @@
 
 | Area | Implemented behavior | Boundary |
 |---|---|---|
-| Product shell | Unified browser application with creative, planning and management workspaces | Browser app |
+| Product shell and navigation | Unified browser application with a dedicated Explore directory, searchable capability catalogue, persistent grouped navigation, collapsible desktop rail, mobile drawer, active workspace states and Ctrl/Cmd-K command search | Browser app; keyboard and responsive navigation |
+| Sign-in landing | Full-screen branded sign-in / account-creation experience with clear privacy messaging and mode-specific identity flow | Uses existing local development auth or configured external identity token verification; does not add a new OAuth provider or change backend auth policy |
 | Creative DNA compiler | AI Director compiles a brief into an editable creative promise, audience contract, emotional journey, five hook mechanisms, visual grammar, sound identity, story beats, distribution cuts, proof/rights checks and preflight; completeness is a deterministic field-coverage score | Local deterministic planning; not model inference or media generation; cloud project settings include the compiled Creative DNA snapshot; automated tests pass in GitHub Actions |
 | Capability explorer | Search and domain filters; displays stable ID, inputs, outputs, evidence, execution modes and approval gates | Registry browsing |
 | Research & knowledge workspace | Project-scoped source register, manually initiated public HTTPS page extraction, HTML/plain-text parsing, author/date/title capture, tagged findings, source-linked excerpts, server-enforced evidence for verified records and full-text filtering | One URL per user action; HTTPS only, public DNS/IP checks with pinned address, no redirects beyond three, 2 MB response cap, 12,000-character stored excerpt, no paywall bypass or independent fact verification |
