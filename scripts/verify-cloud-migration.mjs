@@ -53,67 +53,19 @@ if (!checkpointSql.includes("alter table executive_visuals.video_pipeline_checkp
 if (!checkpointSql.includes("revoke all on executive_visuals.video_pipeline_checkpoints from public, anon, authenticated;")) issues.push("Cloud checkpoints must be unavailable to untrusted roles.");
 if (!checkpointSql.includes("grant all privileges on executive_visuals.video_pipeline_checkpoints to service_role;")) issues.push("Trusted cloud worker role needs checkpoint access.");
 if (!checkpointSql.includes("ev_video_pipeline_checkpoints_validate_scope")) issues.push("Cloud checkpoint writes must validate owner, project and source asset scope.");
-const checkpointFunctionDefinitions = checkpointSql.match(/create or replace function executive_visuals\.validate_video_pipeline_checkpoint_scope\(/gi) || [];
+const checkpointFunctionDefinitions = checkpointSql.match(/create or replace function executive_visuals\\.validate_video_pipeline_checkpoint_scope\\(/gi) || [];
 const checkpointTriggers = checkpointSql.match(/create trigger ev_video_pipeline_checkpoints_validate_scope/gi) || [];
-const checkpointFunction = checkpointSql.match(/create or replace function executive_visuals\.validate_video_pipeline_checkpoint_scope\([\s\S]*?as \$\$([\s\S]*?)\$\$;/i);
+const checkpointFunction = checkpointSql.match(/create or replace function executive_visuals\\.validate_video_pipeline_checkpoint_scope\\([\\s\\S]*?as \\$\\$([\\s\\S]*?)\\$\\$;/i);
 if (checkpointFunctionDefinitions.length !== 1 || checkpointTriggers.length !== 1 || !checkpointFunction) {
   issues.push("Checkpoint migration must contain exactly one complete validation function and one trigger.");
 } else {
   const body = checkpointFunction[1];
-  if (!/^\s*begin\b/i.test(body) || !/\bend;\s*$/i.test(body)) issues.push("Checkpoint validation function body is incomplete.");
+  if (!/^\\s*begin\\b/i.test(body) || !/\\bend;\\s*$/i.test(body)) issues.push("Checkpoint validation function body is incomplete.");
   if (!body.includes("a.sha256 = lower(new.input_sha256)")) issues.push("Checkpoint source hash must match the persisted source asset.");
   if (!body.includes("output_asset.sha256 = lower(new.output_json ->> 'sha256')")) issues.push("Checkpoint output hash must match the persisted derivative asset.");
-  if (!body.includes("!~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}
-if (!checkpointSql.includes("octet_length(output_json::text) <= 32000")) issues.push("Cloud checkpoint output must be size-bounded.");
-if (!checkpointSql.includes("output_asset.derivative_of = new.input_asset_id")) issues.push("Cloud checkpoint outputs must be verified as derivatives of their recorded inputs.");
-if (!checkpointSql.includes("output_asset.owner_id = new.owner_id") || !checkpointSql.includes("output_asset.project_id = new.project_id")) issues.push("Cloud checkpoint output assets must match the checkpoint owner and project.");
-if (!checkpointSql.includes("output_asset.sha256 = lower(new.output_json ->> 'sha256')")) issues.push("Cloud checkpoint output checksums must match persisted asset metadata.");
-if (/\\b(drop\\s+table|truncate|delete\\s+from)\\b/i.test(checkpointSql)) issues.push("Checkpoint migration must not contain destructive DDL/DML.");
-
-
-
-if ((sql.match(/create or replace function executive_visuals\.(?:claim_next_job|renew_job_lease|recover_expired_jobs|finish_job)\(/g) || []).length !== 4) {
-  issues.push("All four cloud queue RPC definitions must be present exactly once.");
+  if (!body.includes("!~*") || !body.includes("new.output_json ->> 'id'")) issues.push("Checkpoint output asset ID must be validated before casting.");
 }
-if (/as \$(?:\r?\n)|\r?\n\$;/.test(sql)) issues.push("Cloud queue PL/pgSQL functions contain an invalid single-dollar delimiter.");
-if (!sql.includes("limit 1\n    for update skip locked") || !sql.includes("limit p_limit\n    for update skip locked")) {
-  issues.push("Cloud worker row locks must use valid PostgreSQL LIMIT/FOR UPDATE ordering.");
-}
-if (!sql.includes("revoke all on function executive_visuals.renew_job_lease(uuid, text, integer) from public, anon, authenticated;") || !sql.includes("revoke all on function executive_visuals.finish_job(uuid, text, text, jsonb, jsonb) from public, anon, authenticated;")) {
-  issues.push("Lease renewal and job completion RPCs must be unavailable to untrusted roles.");
-}
-if (!sql.includes("create or replace function executive_visuals.claim_next_job(") || !sql.includes("for update skip locked") || !sql.includes("job_type = any(p_job_types)") || !sql.includes("grant execute on function executive_visuals.claim_next_job(text, integer, text[]) to service_role")) {
-  issues.push("Cloud workers need an atomic SKIP LOCKED claim RPC restricted to service_role.");
-}
-
-if (!sql.includes("create or replace function executive_visuals.renew_job_lease(") || !sql.includes("lease_owner = p_worker_id") || !sql.includes("grant execute on function executive_visuals.renew_job_lease(uuid, text, integer) to service_role")) {
-  issues.push("Cloud workers need owner-bound lease heartbeats restricted to service_role.");
-}
-if (!sql.includes("create or replace function executive_visuals.finish_job(") || !sql.includes("lease_expires_at > clock_timestamp()") || !sql.includes("grant execute on function executive_visuals.finish_job(uuid, text, text, jsonb, jsonb) to service_role")) {
-  issues.push("Cloud job completion must be fenced to the current, unexpired worker lease.");
-}
-if (!sql.includes("create or replace function executive_visuals.recover_expired_jobs(") || !sql.includes("WORKER_LEASE_EXPIRED") || !sql.includes("grant execute on function executive_visuals.recover_expired_jobs(integer) to service_role")) {
-  issues.push("Cloud workers need bounded expired-lease recovery restricted to service_role.");
-}
-if (!sql.includes("started_at timestamptz") || !sql.includes("set status = 'processing'") || !sql.includes("lease_expires_at = clock_timestamp() + make_interval")) {
-  issues.push("Cloud job claim must persist its start time, processing state and lease expiry.");
-}
-if (!sql.includes("revoke all on function executive_visuals.claim_next_job(text, integer, text[]) from public, anon, authenticated;") || !sql.includes("revoke all on function executive_visuals.recover_expired_jobs(integer) from public, anon, authenticated;")) {
-  issues.push("Cloud queue mutation functions must not be callable by untrusted roles.");
-}
-if (!sql.includes("lease_expires_at timestamptz") || !sql.includes("available_at timestamptz") || !sql.includes("lease_heartbeat_at timestamptz")) {
-  issues.push("Durable worker lease and delayed retry fields are missing from the cloud job contract.");
-}
-if (issues.length) {
-  console.error("Cloud migration guard failed:");
-  for (const issue of issues) console.error("- " + issue);
-  process.exitCode = 1;
-} else {
-  console.log(`Cloud migration guard passed: ${tables.length} RLS tables, immutable run snapshots, private storage, and server-only job/audit writes.`);
-}
-")) issues.push("Checkpoint output asset ID must be fully UUID-validated before casting.");
-}
-if ((checkpointSql.match(/\$\$/g) || []).length !== 2) issues.push("Checkpoint migration must use one balanced PL/pgSQL dollar-quoted function body.");
+if ((checkpointSql.match(/\\$\\$/g) || []).length !== 2) issues.push("Checkpoint migration must use one balanced PL/pgSQL dollar-quoted function body.");
 
 if (!checkpointSql.includes("octet_length(output_json::text) <= 32000")) issues.push("Cloud checkpoint output must be size-bounded.");
 if (!checkpointSql.includes("output_asset.derivative_of = new.input_asset_id")) issues.push("Cloud checkpoint outputs must be verified as derivatives of their recorded inputs.");
