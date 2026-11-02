@@ -34,7 +34,7 @@ The signed master link expires after 300 seconds. It must be treated as a bearer
 - Review decisions scoped to the exact receipt fingerprint.
 - Canonical SHA-256 package fingerprint.
 
-`createDeliveryPackage` validates the contract and `verifyDeliveryPackage` verifies the package after JSON serialization/transport. The package fingerprint detects changes; it binds the quality report as evidence but does not prove that a human reviewer agrees with its heuristics. It does not replace the receipt's asset checksum or prove human visual quality.
+`createDeliveryPackage` validates the contract and `verifyDeliveryPackage` verifies the package after JSON serialization/transport. Quality-report status and error/warning counts must exactly agree with the supplied findings; a package cannot claim `passed` while embedding warnings or errors. The package fingerprint detects changes; it binds the quality report as evidence but does not prove that a human reviewer agrees with its heuristics. It does not replace the receipt's asset checksum or prove human visual quality.
 
 ## User workflow
 
