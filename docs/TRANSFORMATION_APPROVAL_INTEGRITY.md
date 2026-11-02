@@ -34,3 +34,8 @@ The local SQLite transformation-plan store now applies the same approval-binding
 Successful local AI upscale jobs now attach a versioned processing-provenance record to the derived asset. It binds the source asset ID and SHA-256, output SHA-256, exact executable and model-weight fingerprints, model/build identity, scale, dimensions, and measured execution duration. The output hash stored in the asset record is the same hash recorded in its processing provenance.
 
 The record starts with `qualityReview: "not_reviewed"`. A successful engine invocation, valid image header, matching dimensions, and successful decoder check are execution-integrity evidence only; they do not establish perceptual quality. Benchmark promotion still requires representative fixtures and explicit quality review. Invalid or incomplete lineage fails closed before the derived asset is registered.
+
+
+## Benchmark evidence from real derivatives
+
+The benchmark module now exposes `buildUpscaleBenchmarkRecordFromAsset`. It accepts a completed image derivative plus a fixture ID/category from the controlled fixture registry, then derives hashes, model/build identity, dimensions, scale, execution duration, review state, and timestamp from the persisted asset provenance. It rejects mismatched output hashes, source-parent lineage, non-image outputs, and incomplete provenance. Benchmark registration therefore cannot silently substitute caller-provided hashes or claim visual approval from a successful worker run.
