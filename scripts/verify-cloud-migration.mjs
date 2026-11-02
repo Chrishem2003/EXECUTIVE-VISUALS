@@ -5,6 +5,7 @@ const sql = await readFile(resolve(process.cwd(), "supabase/migrations/202610312
 const checkpointSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261102090000_video_pipeline_checkpoints.sql"), "utf8");
 const upscaleBenchmarkSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261102150000_upscale_benchmark_governance.sql"), "utf8");
 const deliveryReviewSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261102120000_delivery_review_uniqueness.sql"), "utf8");
+const retrySql = await readFile(resolve(process.cwd(), "supabase/migrations/20261103143000_retry_transient_cloud_jobs.sql"), "utf8");
 const issues = [];
 const tables = ["projects","project_members","project_workspace_documents","workflows","workflow_runs","workflow_node_runs","timelines","assets","jobs","job_events","consents","reviews","audit_events"];
 for (const table of tables) {
@@ -118,6 +119,17 @@ if (!sql.includes("revoke all on function executive_visuals.claim_next_job(text,
 if (!sql.includes("lease_expires_at timestamptz") || !sql.includes("available_at timestamptz") || !sql.includes("lease_heartbeat_at timestamptz")) {
   issues.push("Durable worker lease and delayed retry fields are missing from the cloud job contract.");
 }
+if (!retrySql.includes("create or replace function executive_visuals.retry_job(")
+  || !retrySql.includes("current_job.attempt_count < current_job.max_attempts")
+  || !retrySql.includes("lease_owner = p_worker_id")
+  || !retrySql.includes("lease_expires_at > clock_timestamp()")
+  || !retrySql.includes("'job.retry_scheduled'")
+  || !retrySql.includes("grant execute on function executive_visuals.retry_job(uuid, text, jsonb) to service_role")
+  || !retrySql.includes("revoke all on function executive_visuals.retry_job(uuid, text, jsonb) from public, anon, authenticated;")) {
+  issues.push("Transient job retries must be bounded, lease-fenced, auditable and service-role-only.");
+}
+if (/\\b(drop\\s+table|truncate|delete\\s+from)\\b/i.test(retrySql)) issues.push("Retry migration must not contain destructive DDL/DML.");
+
 if (issues.length) {
   console.error("Cloud migration guard failed:");
   for (const issue of issues) console.error("- " + issue);
