@@ -1,0 +1,9 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { validateWebVtt } from "../caption-validation.mjs";
+const vtt=(cues)=>"WEBVTT\n\n"+cues.map(([a,b,t])=>a+" --> "+b+"\n"+t).join("\n\n")+"\n";
+test("valid WebVTT with readable timed cues passes",()=>{const r=validateWebVtt(vtt([["00:00:00.000","00:00:02.000","Opening line"],["00:00:02.000","00:00:04.000","A second line"]]),{durationSeconds:5});assert.equal(r.status,"passed");assert.equal(r.cueCount,2);});
+test("rejects missing header, malformed timing, empty cues and oversized files",()=>{assert.equal(validateWebVtt("not vtt").status,"blocked");assert.equal(validateWebVtt("WEBVTT\n\nnot a cue\n").status,"blocked");assert.equal(validateWebVtt("WEBVTT\n\n00:00:00.000 --> 00:00:01.000\n\n").status,"blocked");assert.equal(validateWebVtt("WEBVTT\n"+"x".repeat(2*1024*1024)).status,"blocked");});
+test("detects overlap, reading speed, long lines and excessive cue duration",()=>{const r=validateWebVtt(vtt([["00:00:00.000","00:00:08.000","x".repeat(50)],["00:00:07.000","00:00:08.000","y".repeat(50)]]));assert.equal(r.status,"review");assert.ok(r.findings.some(x=>x.code==="CAPTION_CUE_OVERLAP"));assert.ok(r.findings.some(x=>x.code==="CAPTION_READING_SPEED_HIGH"));assert.ok(r.findings.some(x=>x.code==="CAPTION_LINE_TOO_LONG"));assert.ok(r.findings.some(x=>x.code==="CAPTION_CUE_TOO_LONG"));});
+test("blocks cues that extend beyond the supplied media duration",()=>{const r=validateWebVtt(vtt([["00:00:03.000","00:00:05.000","Too late"]]),{durationSeconds:4});assert.equal(r.status,"blocked");assert.ok(r.findings.some(x=>x.code==="CAPTION_OUT_OF_RANGE"));});
+test("accepts NOTE blocks and cue identifiers",()=>{const r=validateWebVtt("WEBVTT\n\nNOTE generated file\nignored\n\ncue-1\n00:00:00.000 --> 00:00:02.000\nHello\n");assert.equal(r.status,"passed");assert.equal(r.cueCount,1);});
