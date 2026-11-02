@@ -2,7 +2,7 @@ import type { EditorialTimeline } from "./timeline";
 
 export type TimelineQualitySeverity="error"|"warning"|"info";
 export interface TimelineQualityFinding {code:string;severity:TimelineQualitySeverity;title:string;detail:string;trackId?:string;clipId?:string}
-export interface TimelineQualityAsset {id:string;name?:string;mediaType?:string;metadata?:Record<string,unknown>}
+export interface TimelineQualityAsset {id:string;name?:string;mediaType?:string;sha256?:string;derivativeOf?:string|null;metadata?:Record<string,unknown>}
 const toSeconds=(time:{value:number;rate:number}|undefined)=>time&&Number.isFinite(time.value)&&Number.isFinite(time.rate)&&time.rate>0?time.value/time.rate:NaN;
 
 export function analyzeTimelineQuality(timeline:EditorialTimeline|null,assets:TimelineQualityAsset[]=[]):TimelineQualityFinding[]{
@@ -34,6 +34,31 @@ export function analyzeTimelineQuality(timeline:EditorialTimeline|null,assets:Ti
   for(const clip of track.clips){
    const asset=assets.find(item=>item.id===clip.assetId);
    if(!asset)findings.push({code:"ASSET_NOT_IN_LIBRARY",severity:"error",title:"Source asset not in current library",detail:"The source for “"+clip.name+"” is not present in the currently loaded asset list.",trackId:track.id,clipId:clip.id});
+   if(asset?.derivativeOf){
+    const raw=asset.metadata?.processing;
+    const processing=raw&&typeof raw==="object"&&!Array.isArray(raw)?raw as Record<string,unknown>:null;
+    const finding=(code:string,severity:TimelineQualitySeverity,title:string,detail:string)=>findings.push({code,severity,title,detail,trackId:track.id,clipId:clip.id});
+    if(!processing){
+     finding("DERIVATIVE_PROVENANCE_MISSING","warning","Derivative processing evidence is missing","“"+clip.name+"” uses a derived asset, but no structured processing record is available. Treat its origin and enhancement settings as unverified.");
+    }else{
+     const sourceHash=processing.inputSha256??processing.sourceSha256??asset.metadata?.sourceSha256;
+     const outputHash=processing.outputSha256??asset.metadata?.sha256;
+     if(typeof sourceHash!=="string"||! /^[a-f0-9]{64}$/i.test(sourceHash))
+      finding("DERIVATIVE_SOURCE_HASH_MISSING","warning","Derivative source checksum is missing","The processing record for “"+clip.name+"” does not contain a valid SHA-256 checksum for its source.");
+     if(typeof outputHash!=="string"||! /^[a-f0-9]{64}$/i.test(outputHash)||typeof asset.sha256==="string"&&outputHash.toLowerCase()!==asset.sha256.toLowerCase())
+      finding("DERIVATIVE_OUTPUT_HASH_UNVERIFIED","warning","Derivative output checksum is unverified","The recorded output checksum for “"+clip.name+"” is missing, malformed or does not match the asset library checksum.");
+     if(processing.model||processing.engine||processing.method==="ai-super-resolution"){
+      if(processing.dimensionsVerified!==true)
+       finding("DERIVATIVE_DIMENSIONS_UNVERIFIED","warning","AI derivative dimensions are unverified","The AI-enhanced asset used by “"+clip.name+"” has no successful dimension-verification flag.");
+      if(processing.decoderVerified!==true)
+       finding("DERIVATIVE_DECODER_UNVERIFIED","warning","AI derivative decoding is unverified","The AI-enhanced asset used by “"+clip.name+"” has no successful decoder-verification flag.");
+      if(processing.qualityReview==="reviewed_fail")
+       finding("DERIVATIVE_QUALITY_REJECTED","error","AI derivative failed quality review","The AI-enhanced asset used by “"+clip.name+"” has been rejected in quality review. Replace it or complete a new approved review before delivery.");
+      else if(processing.qualityReview!=="reviewed_pass")
+       finding("DERIVATIVE_QUALITY_REVIEW_PENDING","warning","AI derivative awaits quality review","The AI-enhanced asset used by “"+clip.name+"” has not received a recorded independent passing quality review.");
+     }
+    }
+   }
    const probe=asset?.metadata?.probe as {format?:{duration?:string|number};streams?:Array<{duration?:string|number}>}|undefined;
    const knownDuration=Number(probe?.format?.duration??probe?.streams?.find(stream=>Number(stream.duration)>0)?.duration);
    const sourceEnd=toSeconds(clip.sourceRange.start)+toSeconds(clip.sourceRange.duration);
