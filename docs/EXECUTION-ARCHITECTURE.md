@@ -32,3 +32,7 @@ The local queue uses database-conditional claims so two API processes sharing th
 Cancellation is persisted in the job row. Media workers poll that state while an external process is running, so a cancellation request can stop a process even when the API request reaches a different worker process. The active child is also terminated immediately when the owning worker loses its lease.
 
 This is multi-process coordination on one shared SQLite database and media volume. It is not a multi-host distributed queue: multiple machines require a shared transactional database, shared object storage, and a separately deployed worker service. The cloud SQL migration includes corresponding lease fields but remains unapplied until an isolated staging database is approved.
+
+## Worker lease finalization ordering
+
+The shared cloud worker stops scheduling heartbeats and awaits any in-flight lease renewal before attempting a terminal `succeeded` or `failed` transition. This prevents a renewal RPC that began during execution from racing the finish RPC and producing a misleading lease-lost event after a successful completion. If renewal fails or the lease is no longer owned, the worker does not finalize the job; normal expired-lease recovery remains responsible for reclaiming it. Regression coverage holds a renewal request open while execution returns and verifies that the terminal transition waits for renewal settlement.
