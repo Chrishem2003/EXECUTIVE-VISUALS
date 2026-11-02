@@ -3,6 +3,7 @@ import { addClip, addMarker, addTrack, createTimeline, moveClip, rational, secon
 import { analyzeTimelineQuality } from "../src/core/timeline-quality.ts";
 import { assessDerivativeEligibility, replaceTimelineClipAsset } from "../src/core/timeline-derivatives.ts";
 import { buildEnhancementEvidenceReport } from "../src/core/enhancement-evidence-report.ts";
+import { buildProductionReadinessReport } from "../src/core/production-readiness.ts";
 
 let timeline=createTimeline("project-1","timeline-1","Pilot episode",{numerator:24,denominator:1});
 timeline=addTrack(timeline,{id:"v1",name:"Video 1",kind:"video",enabled:true,locked:false,clips:[]});
@@ -105,6 +106,13 @@ assert.ok(analyzeTimelineQuality(derivativeTimeline,[mismatchedParentHashDerivat
 const unavailableParentFindings=analyzeTimelineQuality(derivativeTimeline,[derivativeBase]);
 assert.ok(unavailableParentFindings.some(item=>item.code==="DERIVATIVE_PARENT_ASSET_UNAVAILABLE"&&item.severity==="warning"));
 assert.ok(analyzeTimelineQuality(null).some(item=>item.code==="NO_SEQUENCE"));
+const derivativeBlockedGate=buildProductionReadinessReport({checks:{derivative_integrity:{status:"blocked",summary:"Derivative source checksum mismatch.",findings:[{code:"DERIVATIVE_SOURCE_PARENT_HASH_MISMATCH",detail:"Input checksum does not match the parent."}]}}});
+assert.equal(derivativeBlockedGate.decision,"blocked","a derivative integrity error must block production readiness");
+assert.equal(derivativeBlockedGate.checks.find(item=>item.id==="derivative_integrity")?.status,"blocked");
+assert.equal(derivativeBlockedGate.policy.humanApprovalGranted,false,"technical readiness must never grant human approval");
+const derivativeReviewGate=buildProductionReadinessReport({checks:{derivative_integrity:{status:"review",summary:"Derivative parent checksum unavailable."}}});
+assert.equal(derivativeReviewGate.decision,"review_required","incomplete derivative evidence must require review");
+
 
 
 const evidenceReport=buildEnhancementEvidenceReport({
