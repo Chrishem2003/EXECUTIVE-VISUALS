@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { Readable } from "node:stream";
 import { readFile } from "node:fs/promises";
 import { createCloudTimelineApi } from "../cloud-timeline-api.mjs";
-import { createDeliveryManifest } from "../delivery-manifest.mjs";
+import { createDeliveryManifest, verifyDeliveryPackage } from "../delivery-manifest.mjs";
 import { createRenderManifest } from "../render-manifest.mjs";
 
 const owner="123e4567-e89b-42d3-a456-426614174000",editor="223e4567-e89b-42d3-a456-426614174000",project="423e4567-e89b-42d3-a456-426614174000",timelineId="523e4567-e89b-42d3-a456-426614174000";
@@ -36,6 +36,7 @@ test("delivery package verifies receipt and published asset before issuing a pri
  const result=await f.api.handle({method:"GET",path:"/api/cloud/jobs/"+reviewJobId+"/delivery-package",ownerId:editor});
  assert.equal(result.status,200);
  assert.equal(result.body.deliveryPackage.deliveryReceipt.fingerprint,receipt.fingerprint);
+ assert.equal(verifyDeliveryPackage(JSON.parse(JSON.stringify(result.body.deliveryPackage))),true);
  assert.equal(result.body.deliveryPackage.master.sha256,receipt.sha256);
  assert.equal(result.body.deliveryPackage.master.downloadUrlExpiresInSeconds,300);
  assert.match(result.body.deliveryPackage.packageFingerprint,/^[a-f0-9]{64}$/);
