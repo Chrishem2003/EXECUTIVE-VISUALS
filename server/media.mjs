@@ -153,6 +153,18 @@ export function validateMediaOutputProbe(metadata, mediaType) {
   return {streamCount:streams.length,durationSeconds:Number.isFinite(duration)?duration:null,validatedStreamType:expected};
 }
 
+export function validateAiUpscaleProbeDimensions(probeOutput, expected={}) {
+  let metadata;
+  try { metadata=typeof probeOutput==="string"?JSON.parse(probeOutput):probeOutput; }
+  catch { throw Object.assign(new Error("AI upscale output dimensions could not be parsed."),{code:"MEDIA_OUTPUT_VALIDATION_FAILED"}); }
+  const stream=metadata?.streams?.[0];
+  const width=Number(stream?.width),height=Number(stream?.height);
+  if(!Number.isSafeInteger(width)||!Number.isSafeInteger(height)||width<=0||height<=0||
+    width!==Number(expected.width)||height!==Number(expected.height))
+    throw Object.assign(new Error("FFprobe output dimensions do not match the verified AI upscale result."),{code:"MEDIA_OUTPUT_VALIDATION_FAILED"});
+  return {width,height};
+}
+
 export function buildMediaProcessingProvenance({jobType,input={},sourceAsset={}}={}) {
   const allowed = {
     "media.denoise":["luma","chroma"],
@@ -360,6 +372,7 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
     const controller = new AbortController();
     const poll = setInterval(() => { if (cancelled()) controller.abort(); }, 500);
     poll.unref?.();
+    let outputRegistered=false;
     try {
       const adapter = createRealEsrganAdapter({ timeoutMs:30*60*1000, maxOutputBytes:250*1024*1024 });
       const inputFormat = source.media_type==="image/jpeg"?"jpg":source.media_type==="image/png"?"png":source.media_type==="image/webp"?"webp":null;
@@ -371,21 +384,24 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
       });
       if (controller.signal.aborted || cancelled()) throw Object.assign(new Error("Job cancelled."), { code:"JOB_CANCELLED" });
       const probe = await run("ffprobe", ["-v","error","-select_streams","v:0","-show_entries","stream=width,height","-of","json",outputPath], 120000, job.id, activeProcesses, cancelled);
-      let decodedDimensions;
-      try { decodedDimensions = JSON.parse(probe.stdout || "{}").streams?.[0]; } catch {}
-      if (Number(decodedDimensions?.width) !== result.width || Number(decodedDimensions?.height) !== result.height) throw Object.assign(new Error("FFprobe output dimensions do not match the verified AI upscale result."), { code:"MEDIA_OUTPUT_VALIDATION_FAILED" });
+      const dimensions=validateAiUpscaleProbeDimensions(probe.stdout||"{}",result);
       await run("ffmpeg", ["-v","error","-i",outputPath,"-f","null","-"], 120000, job.id, activeProcesses, cancelled);
       if (controller.signal.aborted || cancelled()) throw Object.assign(new Error("Job cancelled."), { code:"JOB_CANCELLED" });
       const fileStat = await stat(outputPath);
+      if(fileStat.size<=0)throw Object.assign(new Error("AI upscale output is empty."),{code:"MEDIA_OUTPUT_VALIDATION_FAILED"});
       const hash = createHash("sha256");
       await pipeline(createReadStream(outputPath),new Transform({transform(chunk,enc,cb){hash.update(chunk);cb(null,chunk);}}),new Transform({transform(chunk,enc,cb){cb();}}));
       const mime = format==="jpg"?"image/jpeg":"image/"+format;
       const baseName = source.original_name.split(".").slice(0,-1).join(".") || source.original_name;
-      const processing = {engine:result.engine,method:result.method,model:result.model,scale:result.scale,tile:result.tile,sourceWidth:result.sourceWidth,sourceHeight:result.sourceHeight,width:result.width,height:result.height,dimensionsVerified:true,decoderVerified:true,binarySha256:result.binarySha256,modelFilesSha256:result.modelFilesSha256};
+      const processing = {engine:result.engine,method:result.method,model:result.model,scale:result.scale,tile:result.tile,sourceWidth:result.sourceWidth,sourceHeight:result.sourceHeight,width:dimensions.width,height:dimensions.height,dimensionsVerified:true,decoderVerified:true,binarySha256:result.binarySha256,modelFilesSha256:result.modelFilesSha256};
       const outputAsset = addAsset(db,job,"derived/"+id+"."+format,baseName+"-ai-upscaled."+format,mime,fileStat.size,hash.digest("hex"),source.id,{operation:job.job_type,processing});
+      outputRegistered=true;
       emit("media.output_created",{assetId:outputAsset.id,sha256:outputAsset.sha256});
       onProgress(100);
       return {outputAsset,processing};
+    } catch(error) {
+      if(!outputRegistered) await unlink(outputPath).catch(()=>{});
+      throw error;
     } finally { clearInterval(poll); }
   }
 
