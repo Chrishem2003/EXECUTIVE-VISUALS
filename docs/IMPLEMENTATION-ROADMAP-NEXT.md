@@ -99,3 +99,33 @@ A phase is not complete until:
 - Existing Supabase projects contain unrelated shared/NEMA data and must not be reused.
 - Neural upscaler execution is not evidence of perceptual quality.
 - The Render blueprint is staging-only and has not been deployed.
+
+## P1 — AI ↔ editorial handoff contract (next vertical slice)
+
+The AI generation path and manual editor must share durable project assets, not browser-only previews or provider-specific response objects. Treat this as a contract boundary before adding more generation controls.
+
+- Define a provider-neutral generated-media receipt: project and job IDs, asset ID, media type, duration/frame rate/dimensions when known, checksum when verified, provider/model/version, prompt/reference lineage, moderation/rights state, approval receipt, and creation time.
+- A completed generation is not editor-ready until the server has verified that the asset belongs to the active project, its stored media type and metadata agree, and the output is readable. Unknown metadata stays unknown; do not fabricate duration, codec, dimensions, or quality.
+- Offer a single **Send to timeline** handoff that uses the same authenticated asset and timeline APIs as imported footage. It must not pass raw provider URLs, browser-local blob URLs, credentials, or untrusted storage paths into the editor.
+- Place the asset on a compatible unlocked track at an explicit playhead position. Reject incompatible media/track pairs, missing assets, cross-project assets, invalid duration, and conflicting timeline revisions before mutation. Do not silently replace an existing clip.
+- Keep generated originals immutable. Edits, transcodes, proxies, upscales, captions and audio mixes become derivative assets with parent IDs, operation settings, hashes where available, and durable job receipts.
+- Support the reverse path: select a timeline range or clip and create an AI task draft with the exact source asset, source range, project context, references and preservation constraints. Creating a draft does not dispatch work; explicit approval and capability/cost preflight remain required.
+- Preserve editor state if a save fails. Use optimistic revision checks and surface conflicts instead of overwriting another user's newer edit.
+- Add contract tests for ownership/project isolation, media/track compatibility, invalid duration, stale revision, idempotent handoff, derivative lineage and failed persistence.
+- Acceptance requires a browser-level test of generation → asset verification → timeline insertion → manual edit → render job → output asset lineage. Until then, report the workflow as partially integrated, not end-to-end complete.
+
+## P1 — Timeline and finishing correctness gates
+
+- Do not expose speed remapping, transitions, keyframes, waveform analysis or effects as working controls until the preview model, persisted timeline schema, local renderer and cloud renderer agree on the same semantics.
+- Introduce an explicit capability matrix for each operation: editable, previewable, locally renderable, cloud renderable, and verified by tests. Unsupported combinations must fail preflight with actionable explanations.
+- Before rendering, create a revision-pinned render manifest containing timeline revision/hash, ordered assets and hashes, operation versions, frame rate, dimensions, audio settings, export profile, and required approvals. A changed timeline must create a new manifest rather than mutate a queued render.
+- Make retries idempotent per render step and input manifest. Reuse only checksum-matching successful checkpoints; never rerun a completed paid operation merely because a later finishing step failed.
+- Add cancellation and cleanup semantics for temporary files, bounded disk/CPU/time use, partial-output quarantine, and clear distinction between queued, running, failed, cancelled, completed, and quality-verified.
+- Separate technical QC from creative QC: technical checks validate decodability, dimensions, frame rate, duration, audio presence/peaks, caption timing and checksums; creative review records human decisions about continuity, invented details, flicker, text, faces, color shifts and whether the result meets the brief.
+
+## P1 — Product-grade usability and accessibility
+
+- Add autosave state with explicit saved/saving/offline/conflict states, keyboard focus restoration after timeline rerenders, accessible names for icon-only controls, and non-destructive confirmation for operations that remove or replace content.
+- Keep long-running generation and rendering in a durable job center with progress, retry eligibility, cancellation, logs safe for users, outputs, lineage and clear provider/cost status.
+- Add project-level reusable delivery presets, brand kits, safe-area overlays, caption style presets and version comparison without duplicating source assets.
+- Measure the whole workflow using synthetic fixtures and deterministic API tests; do not report production performance or real-provider quality without measured evidence.
