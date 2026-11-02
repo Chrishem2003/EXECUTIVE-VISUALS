@@ -12,6 +12,7 @@ import { compareTimelineVariants, createTimelineVariant, type TimelineVariantCom
 import { addClip, addMarker, addTrack, createTimeline, moveClip, rational, removeClip, splitClip, toOpenTimelineIo, trimClip, type EditorialTimeline, type TimelineTrack } from "../core/timeline";
 import { clampPreviewSeconds, stepPreviewSeconds } from "../core/timeline-preview";
 import { createTimelineHistory, recordTimelineHistory, undoTimeline, redoTimeline, type TimelineHistory } from "../core/timeline-history";
+import { getTimelineHistoryShortcut } from "../core/timeline-shortcuts";
 
 type Asset={id:string;name:string;mediaType:string;size:number;metadata?:Record<string,unknown>};
 type SavedTimeline={id:string;projectId?:string|null;name:string;revision:number;document?:EditorialTimeline};
@@ -236,9 +237,10 @@ async function runAction(action:HTMLElement){
   if(!state.timeline)return;
   const result=type==="undo"?undoTimeline(state.history,state.timeline):redoTimeline(state.history,state.timeline);
   if(!result.timeline){state.message=type==="undo"?"Nothing to undo.":"Nothing to redo.";paint();return;}
+  const previousTimeline=state.timeline,previousHistory=state.history;
   state.history=result.history;state.timeline=result.timeline;
   state.message=type==="undo"?"Undoing last edit…":"Restoring next edit…";paint();
-  try{await persist();}catch(error){state.message=error instanceof Error?error.message:"History change could not be saved.";state.status="offline";}paint();return;
+  try{await persist();}catch(error){state.timeline=previousTimeline;state.history=previousHistory;state.message=error instanceof Error?error.message:"History change could not be saved.";state.status="offline";}paint();return;
  }
  if(type==="cloud-job"&&state.cloudRenderJobId){try{const result=await apiRequest<{job:{id:string;status:string;progress?:number;output?:{outputAsset?:{id:string;name?:string}}}}>("/api/cloud/jobs/"+state.cloudRenderJobId);state.cloudRenderJobStatus=result.job.status;state.message="Cloud render "+result.job.status+" · "+Number(result.job.progress||0)+"%"+(result.job.output?.outputAsset?.id?" · output asset "+result.job.output.outputAsset.id:"");if(result.job.status==="succeeded")await refresh();}catch(error){state.message=error instanceof Error?error.message:"Could not refresh cloud render status.";}paint();return;}
  if(type==="render"){
@@ -275,6 +277,15 @@ async function runAction(action:HTMLElement){
  state.message="Saving timeline revision…";paint();
  try{await persist();}catch(error){state.message=error instanceof Error?error.message:"Save failed.";state.status="offline";}paint();
 }
+document.addEventListener("keydown",event=>{
+ const target=event.target as HTMLElement|null;
+ const editable=!!target&&(target.isContentEditable||!!target.closest('input,textarea,select,[contenteditable="true"],[data-shortcuts-disabled]'));
+ const shortcut=getTimelineHistoryShortcut({key:event.key,ctrlKey:event.ctrlKey,metaKey:event.metaKey,shiftKey:event.shiftKey,altKey:event.altKey,isComposing:event.isComposing,editableTarget:editable});
+ if(!shortcut||!state.timeline)return;
+ const action=document.querySelector<HTMLElement>('[data-tl-action="'+shortcut+'"]');
+ if(!action||("disabled" in action&&(action as HTMLButtonElement).disabled))return;
+ event.preventDefault();void runAction(action);
+});
 document.addEventListener("submit",event=>{
  const form=event.target as HTMLFormElement;if(!state.timeline)return;
  if(form.id==="tl-add-track"){
