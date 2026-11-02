@@ -24,6 +24,7 @@
     "verify:timeline-history": "node --experimental-strip-types --test server/tests/timeline-history.test.mjs",
     "verify:render": "node scripts/verify-render-worker.mjs",
     "verify:real-render": "node scripts/verify-real-render.mjs",
+    "verify:render-manifest": "node --test server/tests/render-manifest.test.mjs",
     "verify:cloud": "node scripts/verify-cloud-migration.mjs",
     "verify:workflow-executor": "node scripts/verify-workflow-executor.mjs",
     "verify:workflow-run": "node scripts/verify-workflow-run.mjs",
