@@ -155,3 +155,15 @@ test("candidate comparison excludes malformed benchmark records", () => {
   assert.equal(report.candidateCount, 1);
   assert.equal(report.recommended, null);
 });
+
+
+test("candidate comparison rejects duplicate fixture evidence for the same pinned model build", () => {
+  const duplicateFixture = validRecord({ qualityReview: "reviewed_pass" });
+  const report = compareUpscaleBenchmarkCandidates([
+    duplicateFixture,
+    { ...duplicateFixture, durationMs: 900 }
+  ]);
+  assert.equal(report.invalidRecords.length, 1);
+  assert.equal(report.candidates[0].qualityVerified, false);
+  assert.equal(report.recommended, null);
+});
