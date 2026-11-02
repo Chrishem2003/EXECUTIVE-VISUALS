@@ -155,6 +155,41 @@ export function createCloudAssetRepository({
       if(row.storage_bucket!=="executive-visuals-media"||typeof row.object_path!=="string"||!row.object_path.startsWith(expectedPrefix)) throw new Error("Cloud asset storage reference is invalid.");
       return {asset:publicAsset(row),url:await storage.createSignedUrl(row.object_path,expiresIn)};
     },
+    /**
+     * Retry physical deletion for old tombstoned assets after transient storage
+     * failures. This is an internal maintenance operation, not a user API.
+     * Callers must supply an explicit age cutoff; the bounded batch never
+     * touches active assets or metadata rows.
+     */
+    async cleanupDeleted({olderThan,limit=25}={}) {
+      const cutoff=typeof olderThan==="string"?Date.parse(olderThan):NaN;
+      if(!Number.isFinite(cutoff)||new Date(cutoff).toISOString()!==olderThan) throw new Error("Cloud asset cleanup requires an explicit ISO-8601 age cutoff.");
+      if(!Number.isInteger(limit)||limit<1||limit>100) throw new Error("Cloud asset cleanup batch size must be between 1 and 100.");
+      const rows=await request("assets?select=id,owner_id,project_id,object_path,storage_bucket,deleted_at&deleted_at=lt."+encodeURIComponent(new Date(cutoff).toISOString())+"&order=deleted_at.asc&limit="+limit);
+      const result={scanned:Array.isArray(rows)?rows.length:0,removed:0,pending:0,skippedInvalid:0};
+      for(const row of Array.isArray(rows)?rows:[]) {
+        try {
+          validUuid(row.owner_id,"owner ID");
+          validUuid(row.id,"asset ID");
+          if(row.project_id) validUuid(row.project_id,"project ID");
+          const prefix=(row.project_id||row.owner_id)+"/"+row.id+"/";
+          if(row.storage_bucket!=="executive-visuals-media"||typeof row.object_path!=="string"||!row.object_path.startsWith(prefix)||row.deleted_at==null||Date.parse(row.deleted_at)>=cutoff) {
+            result.skippedInvalid++;
+            continue;
+          }
+        } catch {
+          result.skippedInvalid++;
+          continue;
+        }
+        try {
+          await storage.remove(row.object_path);
+          result.removed++;
+        } catch {
+          result.pending++;
+        }
+      }
+      return result;
+    },
     async softDelete({ownerId,assetId}) {
       ownerId=validUuid(ownerId,"owner ID");assetId=validUuid(assetId,"asset ID");
       // Keep deleted rows addressable here so an authorized retry can finish
