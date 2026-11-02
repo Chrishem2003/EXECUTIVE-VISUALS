@@ -15,7 +15,7 @@ Known scene-cut-adjacent transitions are excluded within a configurable guard in
 
 `buildMediaQualityReport` consumes optional `signalAnalysis.lumaSamples` and `signalAnalysis.sceneChanges` evidence and includes the derived findings and sample count. Existing black-frame, silence, freeze, scene-change and audio-metric checks remain separate.
 
-The current integration is an evidence consumer: an upstream FFmpeg analysis step must provide decoded-frame samples. The report does not claim that luma analysis ran when samples were not supplied. A missing sample set is not a clean flicker pass.
+The cloud timeline executor now runs a bounded FFmpeg analysis pass after output probing and before publication. It samples at 2 frames per second, combines `signalstats` and `scdet`, and parses per-frame mean-luma values and scene-cut scores. The pass is capped at 600 seconds and captured metadata is bounded; cancellation is propagated. The report records sample count, coverage seconds and whether the analysis was truncated. A failed or incomplete pass is represented as an unavailable warning, not a clean flicker pass. The analyzer is injectable in tests so success, failure and cancellation behavior can be verified without relying on a particular FFmpeg binary.
 
 ## Limitations and release checks
 
@@ -23,4 +23,4 @@ The current integration is an evidence consumer: an upstream FFmpeg analysis ste
 - Scene-cut timestamps must come from a dedicated scene-change detector, not every decoded frame timestamp.
 - Sparse sampling can miss very short flashes; dense sampling costs more CPU and metadata storage.
 - This check does not assess chroma flicker, rolling-shutter artifacts, motion judder, stabilization, sharpness or perceptual fidelity.
-- Before enabling automatic cloud-render analysis by default, benchmark representative short and long renders, cap analysis duration/output, propagate cancellation, and confirm optional-analysis failures remain visible as unknown rather than passed.
+- Before release, benchmark representative short and long renders, validate filter availability across supported FFmpeg builds, and verify the 600-second cap and 2-fps sampling cost on production-like workers. The current cap intentionally leaves media beyond the first ten minutes unanalysed; that limitation is visible in the report.
