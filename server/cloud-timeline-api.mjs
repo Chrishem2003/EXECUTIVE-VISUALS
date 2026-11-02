@@ -62,6 +62,37 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     if(method==="PATCH"){const project=await service.projects.update({ownerId,projectId,expectedRevision:Number(body.expectedRevision),name:body.name,description:body.description,settings:body.settings});return response(200,{project});}
     if(method==="DELETE"){const archived=await service.projects.archive({ownerId,projectId,expectedRevision:Number(body.expectedRevision)});return response(200,{project:archived});}
    }
+   if(path==="/api/cloud/upscale-jobs"&&method==="GET"){
+    const projectId=String(query.projectId||"");
+    if(!safeId(projectId))return response(400,{error:{code:"INVALID_PROJECT_ID",message:"Choose a valid project."}});
+    if(await allow({ownerId,projectId,action:"read"})!==true)return response(404,{error:{code:"PROJECT_NOT_FOUND",message:"Project not found or access denied."}});
+    const rows=await request("jobs?select=id,owner_id,project_id,job_type,status,progress,input,output,error,created_at,updated_at&project_id=eq."+encodeURIComponent(projectId)+"&job_type=eq.media.ai-upscale&order=created_at.desc&limit=50");
+    return response(200,{jobs:(rows||[]).map(row=>({id:row.id,status:row.status,progress:Number(row.progress||0),input:row.input||{},output:row.output||null,error:row.error||null,createdAt:row.created_at,updatedAt:row.updated_at}))});
+   }
+   if(path==="/api/cloud/upscale"&&method==="POST"){
+    const projectId=String(body.projectId||""),sourceAssetId=String(body.sourceAssetId||"");
+    if(!safeId(projectId)||!safeId(sourceAssetId))return response(400,{error:{code:"UPSCALE_INPUT_INVALID",message:"Choose a valid project and source image."}});
+    if(await allow({ownerId,projectId,action:"write"})!==true)return response(404,{error:{code:"PROJECT_NOT_FOUND",message:"Project not found or editor access required."}});
+    const source=await service.assets.get({ownerId,assetId:sourceAssetId});
+    if(source.projectId!==projectId||!["image/png","image/jpeg","image/webp"].includes(source.mediaType))return response(422,{error:{code:"UPSCALE_SOURCE_INVALID",message:"AI upscaling accepts project PNG, JPEG or WebP still images only."}});
+    if(body.rightsConfirmed!==true)return response(403,{error:{code:"MEDIA_RIGHTS_REQUIRED",message:"Confirm that you have the rights to process this source image."}});
+    const model=String(body.model||"realesrgan-x4plus"),scale=Number(body.scale??4),tile=Number(body.tile??0),format=String(body.format||"png");
+    if(!["realesrgan-x4plus","realesrgan-x4plus-anime","realesr-animevideov3","realesrgan-x2plus"].includes(model)||!Number.isInteger(scale)||scale<2||scale>4||!Number.isInteger(tile)||tile<0||tile>1024||!["png","jpg","webp"].includes(format))return response(400,{error:{code:"UPSCALE_OPTIONS_INVALID",message:"Choose an allowlisted model, scale 2–4, tile 0–1024 and PNG/JPEG/WebP output."}});
+    const key=String(idempotencyKey||"").trim().slice(0,180);
+    if(key.length<8)return response(400,{error:{code:"IDEMPOTENCY_KEY_REQUIRED",message:"An idempotency key is required for cloud AI upscaling."}});
+    const input={sourceAssetId,model,scale,tile,format,rightsConfirmed:true};
+    const existing=await request("jobs?select=id,owner_id,project_id,job_type,status,progress,input,output,error,created_at,updated_at&owner_id=eq."+encodeURIComponent(ownerId)+"&idempotency_key=eq."+encodeURIComponent(key)+"&limit=1");
+    if(Array.isArray(existing)&&existing[0]){
+     const row=existing[0];
+     if(row.job_type!=="media.ai-upscale"||row.project_id!==projectId||stableJson(row.input)!==stableJson(input))return response(409,{error:{code:"IDEMPOTENCY_CONFLICT",message:"This idempotency key was used for a different AI-upscale request."}});
+     return response(200,{job:row,idempotentReplay:true});
+    }
+    const jobId=randomUUID();
+    const rows=await request("jobs?select=id,owner_id,project_id,job_type,status,progress,input,output,error,created_at,updated_at",{method:"POST",body:{id:jobId,owner_id:ownerId,project_id:projectId,job_type:"media.ai-upscale",status:"queued",progress:0,input,idempotency_key:key}});
+    if(!Array.isArray(rows)||rows.length!==1||rows[0].id!==jobId||rows[0].job_type!=="media.ai-upscale"||rows[0].owner_id!==ownerId||rows[0].project_id!==projectId)throw new Error("Cloud AI-upscale job creation returned an invalid record.");
+    await request("job_events",{method:"POST",body:{job_id:jobId,owner_id:ownerId,event_type:"job.queued",event_data:{jobType:"media.ai-upscale",sourceAssetId,model,scale,tile,format}},prefer:"return=minimal"});
+    return response(202,{job:rows[0],idempotentReplay:false});
+   }
    const benchmarkPath=path.match(/^\/api\/cloud\/upscale-benchmarks(?:\/(fixtures|runs)(?:\/([0-9a-f-]+)\/review)?)?$/i);
    if(benchmarkPath){
     const section=benchmarkPath[1]||"",runId=benchmarkPath[2]||"",projectId=String(query.projectId||"");
