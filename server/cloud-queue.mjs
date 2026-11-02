@@ -1,5 +1,5 @@
 const SCHEMA = "executive_visuals";
-const RPC = new Set(["claim_next_job","renew_job_lease","recover_expired_jobs","recover_expired_jobs_by_type","finish_job"]);
+const RPC = new Set(["claim_next_job","renew_job_lease","recover_expired_jobs","recover_expired_jobs_by_type","finish_job","retry_job"]);
 
 function endpoint(value) {
   let url;
@@ -98,6 +98,25 @@ export function createCloudQueue({
         ? await call("recover_expired_jobs", { p_limit: limit })
         : await call("recover_expired_jobs_by_type", { p_limit: limit, p_job_types: jobTypes });
       if (!Number.isInteger(result) || result < 0) throw new Error("Cloud queue recovery returned an invalid count.");
+      return result;
+    },
+    async retry(jobId, workerId, error) {
+      if (typeof jobId !== "string" || !jobId.trim() || typeof workerId !== "string" || !workerId.trim()) {
+        throw new Error("Job ID and worker ID are required to schedule a retry.");
+      }
+      if (!error || typeof error !== "object" || Array.isArray(error)) {
+        throw new Error("Job retry error must be an object.");
+      }
+      const result = await call("retry_job", { p_job_id: jobId, p_worker_id: workerId, p_error: error });
+      if (!result || typeof result !== "object" || Array.isArray(result)
+        || typeof result.accepted !== "boolean"
+        || !["queued", "failed", "lease_lost"].includes(result.status)
+        || typeof result.retryable !== "boolean"
+        || !Number.isInteger(result.delaySeconds) || result.delaySeconds < 0
+        || !Number.isInteger(result.attempt) || result.attempt < 0
+        || !Number.isInteger(result.maxAttempts) || result.maxAttempts < 1) {
+        throw new Error("Cloud queue retry returned an invalid result.");
+      }
       return result;
     },
     async finish(jobId, workerId, status, output = null, error = null) {
