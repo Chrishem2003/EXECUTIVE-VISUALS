@@ -21,6 +21,9 @@ export function validateUpscaleBenchmarkRecord(record) {
   for (const key of ["inputWidth", "inputHeight", "outputWidth", "outputHeight", "scale", "durationMs"]) {
     if (!Number.isFinite(record[key]) || record[key] <= 0) issues.push(key + " must be a positive number");
   }
+  for (const key of ["inputWidth", "inputHeight", "outputWidth", "outputHeight"]) {
+    if (!Number.isInteger(record[key])) issues.push(key + " must be an integer pixel dimension");
+  }
   if (!Number.isInteger(record.scale) || ![2, 3, 4].includes(record.scale)) issues.push("scale must be 2, 3, or 4");
   if (!Number.isInteger(record.durationMs)) issues.push("durationMs must be an integer");
   if (!STATUSES.has(record.executionStatus)) issues.push("executionStatus is invalid");
@@ -30,6 +33,8 @@ export function validateUpscaleBenchmarkRecord(record) {
     if (!record.metrics || typeof record.metrics !== "object" || Array.isArray(record.metrics)) issues.push("metrics must be an object");
     else for (const key of ["psnr", "ssim", "lpips"]) {
       if (record.metrics[key] !== undefined && (!Number.isFinite(record.metrics[key]) || record.metrics[key] < 0)) issues.push("metrics." + key + " must be a non-negative number");
+      if (key === "ssim" && record.metrics[key] !== undefined && Number.isFinite(record.metrics[key]) && (record.metrics[key] < 0 || record.metrics[key] > 1)) issues.push("metrics.ssim must be between 0 and 1");
+      if (key === "lpips" && record.metrics[key] !== undefined && Number.isFinite(record.metrics[key]) && record.metrics[key] > 1) issues.push("metrics.lpips must not exceed 1");
     }
   }
   if (record.executionStatus === "passed" && record.outputWidth < record.inputWidth) issues.push("passed output width is smaller than input width");
@@ -39,13 +44,11 @@ export function validateUpscaleBenchmarkRecord(record) {
       (record.outputWidth !== record.inputWidth * record.scale || record.outputHeight !== record.inputHeight * record.scale)) {
     issues.push("passed output dimensions must exactly match the declared scale");
   }
-  if (record.metrics && typeof record.metrics === "object" && Number.isFinite(record.metrics.ssim) && record.metrics.ssim > 1) {
-    issues.push("metrics.ssim must not exceed 1");
-  }
-  return { valid: issues.length === 0, issues };
+    return { valid: issues.length === 0, issues };
 }
 
 export function summarizeUpscaleBenchmarks(records) {
+  if (!Array.isArray(records)) records = [];
   const validRecords = [];
   const invalidRecords = [];
   const seenFixtureIds = new Set();
