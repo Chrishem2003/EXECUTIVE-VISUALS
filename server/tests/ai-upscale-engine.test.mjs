@@ -40,6 +40,8 @@ while [ "$1" != "" ]; do if [ "$1" = "-o" ]; then shift; printf '\211PNG\r\n\032
     assert.equal(result.method, "ai-super-resolution");
     assert.ok(result.byteSize >= 24);
     assert.equal(result.model, model);
+    assert.match(result.modelVersion,/^[a-f0-9]{64}:[a-f0-9]{64}$/);
+    assert.ok(Number.isInteger(result.durationMs)&&result.durationMs>=1);
     await assert.rejects(adapter.execute({ inputPath: input, outputPath: output, model }), error => error.code === "AI_UPSCALE_OUTPUT_EXISTS");
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
