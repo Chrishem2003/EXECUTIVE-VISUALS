@@ -63,9 +63,7 @@ if (checkpointFunctionDefinitions.length !== 1 || checkpointTriggers.length !== 
   if (!/^\s*begin\b/i.test(body) || !/\bend;\s*$/i.test(body)) issues.push("Checkpoint validation function body is incomplete.");
   if (!body.includes("a.sha256 = lower(new.input_sha256)")) issues.push("Checkpoint source hash must match the persisted source asset.");
   if (!body.includes("output_asset.sha256 = lower(new.output_json ->> 'sha256')")) issues.push("Checkpoint output hash must match the persisted derivative asset.");
-  if (!body.includes("!~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'")) issues.push("Checkpoint output asset ID must be fully UUID-validated before casting.");
-}
-if ((checkpointSql.match(/\$\$/g) || []).length !== 2) issues.push("Checkpoint migration must use one balanced PL/pgSQL dollar-quoted function body.");
+  if (!body.includes("!~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}
 if (!checkpointSql.includes("octet_length(output_json::text) <= 32000")) issues.push("Cloud checkpoint output must be size-bounded.");
 if (!checkpointSql.includes("output_asset.derivative_of = new.input_asset_id")) issues.push("Cloud checkpoint outputs must be verified as derivatives of their recorded inputs.");
 if (!checkpointSql.includes("output_asset.owner_id = new.owner_id") || !checkpointSql.includes("output_asset.project_id = new.project_id")) issues.push("Cloud checkpoint output assets must match the checkpoint owner and project.");
@@ -113,9 +111,9 @@ if (issues.length) {
 } else {
   console.log(`Cloud migration guard passed: ${tables.length} RLS tables, immutable run snapshots, private storage, and server-only job/audit writes.`);
 }
-  if (!body.includes("!~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'")) issues.push("Checkpoint output asset ID must be fully UUID-validated before casting.");
+")) issues.push("Checkpoint output asset ID must be fully UUID-validated before casting.");
 }
-if ((checkpointSql.match(/\\$\\$/g) || []).length !== 2) issues.push("Checkpoint migration must use one balanced PL/pgSQL dollar-quoted function body.");
+if ((checkpointSql.match(/\$\$/g) || []).length !== 2) issues.push("Checkpoint migration must use one balanced PL/pgSQL dollar-quoted function body.");
 
 if (!checkpointSql.includes("octet_length(output_json::text) <= 32000")) issues.push("Cloud checkpoint output must be size-bounded.");
 if (!checkpointSql.includes("output_asset.derivative_of = new.input_asset_id")) issues.push("Cloud checkpoint outputs must be verified as derivatives of their recorded inputs.");
