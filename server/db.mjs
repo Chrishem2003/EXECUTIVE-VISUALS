@@ -174,6 +174,18 @@ export function openDatabase(filename) {
       created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
     );
     CREATE INDEX IF NOT EXISTS audit_owner_idx ON audit_events(owner_id, id DESC);
+    CREATE TABLE IF NOT EXISTS upscale_benchmark_fixtures (
+      id TEXT PRIMARY KEY,
+      owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      source_asset_id TEXT NOT NULL REFERENCES assets(id),
+      source_sha256 TEXT NOT NULL,
+      fixture_category TEXT NOT NULL CHECK(fixture_category IN ('portrait','fine_texture','text','animation','low_light_noisy')),
+      label TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      UNIQUE(project_id,source_asset_id)
+    );
+    CREATE INDEX IF NOT EXISTS upscale_fixture_project_idx ON upscale_benchmark_fixtures(project_id,created_at DESC);
     CREATE TABLE IF NOT EXISTS upscale_benchmark_runs (
       id TEXT PRIMARY KEY,
       owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
