@@ -54,3 +54,14 @@ The API exposes:
 Only project owners/editors can register fixtures and runs. Quality decisions are restricted to project owners and assigned reviewers. The registering user cannot review their own run; a decision is immutable once recorded. Review decisions and fixture/run registration are written to the audit log. Benchmark summaries continue to recommend only pinned model builds with successful execution, all five fixture categories, and independent passing quality reviews. A run with missing evidence, a rejected review, or pending review cannot be promoted.
 
 The `verify:upscale-benchmark` script now runs both the pure benchmark tests and the SQLite-backed governance tests. The workflow is additive: it creates new benchmark tables and does not rewrite existing assets or media jobs.
+
+
+## Cloud Upscale Benchmark Lab
+
+The cloud API now exposes the same governed benchmark workflow under `/api/cloud/upscale-benchmarks`. Its dedicated migration, `20261102150000_upscale_benchmark_governance.sql`, adds project-scoped fixture and run tables in the isolated `executive_visuals` schema. It is additive and is not applied automatically; the existing core migration is explicitly isolated from the shared staging database.
+
+Cloud fixture registration reads the source through the private asset repository and pins its asset ID and SHA-256. Run registration re-reads the private derivative and verifies its processing provenance, output checksum, source parent, and source fingerprint against the fixture. The server API is the only writer: authenticated clients receive no direct table grants, so they cannot forge source hashes, model identities, or reviewer decisions.
+
+Cloud review requires a project owner or assigned reviewer, rejects self-review, stores a single immutable decision, and writes a project audit event. The Enhancement Lab now includes fixture registration, derivative registration, pinned-build candidate summaries, and a review queue. The UI never invokes an upscaling provider from benchmark actions.
+
+To enable the cloud workflow, review and explicitly apply the new migration to the intended dedicated development/staging Supabase project, then deploy the API version containing the matching routes. Neither action has been performed here.
