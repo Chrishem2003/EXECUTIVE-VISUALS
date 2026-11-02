@@ -67,5 +67,5 @@ test("rejects a modified fingerprint", () => {
 test("rejects malformed or oversized media quality evidence in delivery packages", () => {
   const receipt = createDeliveryManifest(input);
   const master = { assetId: receipt.outputAsset, filename: "master.mp4", mediaType: receipt.mediaType, byteSize: receipt.byteSize, sha256: receipt.sha256, downloadUrl: "https://storage.example.test/master?token=short", downloadUrlExpiresInSeconds: 300 };
-  assert.throws(() => createDeliveryPackage({ jobId: "job-1", projectId: "project-1", timelineId: receipt.timelineId, timelineRevision: receipt.timelineRevision, master, deliveryReceipt: receipt, renderManifest: receipt.renderManifest, deliveryReport: receipt.deliveryReport, qualityReport: { status: "passed", counts: { errors: 0, warnings: 0 }, findings: [], limitations: [] , extra: "not validated" }, generatedAt: "2026-11-02T09:00:00.000Z" }) === undefined);
+  assert.throws(() => createDeliveryPackage({ jobId: "job-1", projectId: "project-1", timelineId: receipt.timelineId, timelineRevision: receipt.timelineRevision, master, deliveryReceipt: receipt, renderManifest: receipt.renderManifest, deliveryReport: receipt.deliveryReport, qualityReport: { status: "clean", counts: { errors: 0, warnings: 0 }, findings: [], limitations: [] }, generatedAt: "2026-11-02T09:00:00.000Z" }));
 });
