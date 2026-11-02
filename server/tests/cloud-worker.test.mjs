@@ -8,7 +8,8 @@ function queueFor({job={id:"job-1"},renew=true,finish=true,failFinish=false,retr
   calls,
   async claim(workerId,seconds){calls.push(["claim",workerId,seconds]);return job;},
   async renew(id,workerId,seconds){calls.push(["renew",id,workerId,seconds]);return typeof renew==="function"?renew():renew;},
-  async retry(id,workerId,error){calls.push(["retry",id,workerId,error]);return retry;},\n  async finish(id,workerId,status,output,error){calls.push(["finish",id,workerId,status,output,error]);if(failFinish)throw new Error("finish unavailable");return finish;}
+  async retry(id,workerId,error){calls.push(["retry",id,workerId,error]);return retry;},
+  async finish(id,workerId,status,output,error){calls.push(["finish",id,workerId,status,output,error]);if(failFinish)throw new Error("finish unavailable");return finish;}
  };
 }
 
