@@ -473,3 +473,11 @@ This is a runnable worker entry point, not a deployed worker. Do not set the ena
 - Authorization is rechecked separately for each remote step, so revocation or budget changes between steps prevent subsequent provider dispatch. Local finishing steps remain independent of remote approval.
 - Added regression coverage for missing live authorization and mid-pipeline approval denial. Tests use mock adapters only.
 - The production authorization callback still needs wiring to the authoritative cloud approval/budget ledger and worker execution path. No live provider calls, paid usage, database migration or deployment were performed.
+
+## Authoritative live transformation approval lookup — 2 November 2026
+
+- Added a server-only authorization adapter that looks up the approved transformation record in the existing private jobs table immediately before a remote pipeline step.
+- The lookup is scoped to the verified plan owner and project and matches the stored approval ID. It fails closed unless the plan remains in the approved queue state, retains its approval timestamp and approver identity, and the recorded adapter, capability and budget cover the exact requested step and full pipeline estimate.
+- Database errors, malformed responses, timeouts and cancellation all deny dispatch. Service-role credentials are held only by the server-side adapter.
+- Added tests for valid authorization, revoked/mismatched approvals, insufficient budget, malformed responses, database failure and cancellation.
+- **Not yet wired to the production worker:** the worker still needs a governed plan-to-job dispatch path that resolves the plan owner/project, constructs this authorization adapter server-side and invokes the pipeline with verified adapters. No provider calls, paid usage, schema migration or deployment occurred.
