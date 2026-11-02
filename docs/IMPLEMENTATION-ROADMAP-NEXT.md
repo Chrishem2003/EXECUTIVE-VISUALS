@@ -1,7 +1,8 @@
 # Executive Visuals — next implementation roadmap
 
-**Branch:** `feat/executive-visuals-unified-platform`  
-**Decision:** continue implementation on the feature branch; keep PR #2 draft.  
+**Branch:** `feat/timeline-preview-transport`  
+**Pull request:** [#8](https://github.com/Chrishem2003/EXECUTIVE-VISUALS/pull/8), draft and currently non-mergeable.  
+**Decision:** continue implementation on this feature branch; reconcile the two-commit base divergence deliberately and preserve the more complete feature implementation.  
 **Infrastructure posture:** no deployment, paid provider activation, database provisioning, migration, or changes to existing shared services without separate approval.
 
 This roadmap is an engineering sequence, not a claim that the listed work is already implemented. Each phase must ship as a small, testable slice with an explicit commit and verification result.
@@ -130,3 +131,11 @@ The AI generation path and manual editor must share durable project assets, not 
 - Keep long-running generation and rendering in a durable job center with progress, retry eligibility, cancellation, logs safe for users, outputs, lineage and clear provider/cost status.
 - Add project-level reusable delivery presets, brand kits, safe-area overlays, caption style presets and version comparison without duplicating source assets.
 - Measure the whole workflow using synthetic fixtures and deterministic API tests; do not report production performance or real-provider quality without measured evidence.
+
+
+## Latest release-gate update — 2 November 2026
+
+- Delivery package review-history validation is now strict and regression-tested: decisions must match the receipt fingerprint, timeline revision and output asset; reviewer identity and canonical timestamps are required; duplicate reviewer decisions are rejected.
+- Full GitHub Actions workflow passed on head `2ca834900d7b6d6e4c4b6b90fc420ff6ad87d473` (run [41508815429](https://github.com/Chrishem2003/EXECUTIVE-VISUALS/actions/runs/41508815429)).
+- The next release milestone is not another provider toggle: it is a dedicated staging acceptance run covering upload → edit/preview → revision-pinned render → private master verification → independent delivery review → package verification, plus the cloud asset lifecycle and benchmark review paths.
+- PR #8 remains draft/non-mergeable. The feature branch is not to be force-synchronized; inspect and reconcile the base-only commits first. Do not apply the committed Supabase migrations to any shared or production database.
