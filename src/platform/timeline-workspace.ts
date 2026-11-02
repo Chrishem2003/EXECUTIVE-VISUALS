@@ -304,7 +304,7 @@ document.addEventListener("submit",async event=>{
    const jobId=String(asset?.metadata?.jobId||"");
    if(!asset||asset.metadata?.generated!==true||!jobId||!track){state.message="Select a generated asset with its server-recorded generation job and a destination track.";paint();return;}
    const startFrames=Math.max(0,Number(data.get("start"))||0);
-   const requestBody={assetId:asset.id,jobId,trackId,clipId:crypto.randomUUID(),clipName:asset.name,playheadSeconds:startFrames/fps(),expectedRevision:state.serverRevision};
+   const requestedDurationFrames=Math.max(1,Number(data.get("duration"))||1);const requestBody={assetId:asset.id,jobId,trackId,clipId:crypto.randomUUID(),clipName:asset.name,playheadSeconds:startFrames/fps(),expectedRevision:state.serverRevision,...(asset.mediaType.startsWith("image/")?{durationSeconds:requestedDurationFrames/fps()}:{})};
    try{
     const result=await apiRequest<{timeline:CloudSavedTimeline;idempotentReplay?:boolean}>("/api/cloud/timelines/"+state.timeline.id+"/handoff",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(requestBody)});
     recordEdit();state.timeline=result.timeline.timeline;state.serverRevision=result.timeline.revision;state.selectedClipId=requestBody.clipId;state.selectedTrack=trackId;state.status="ready";state.message=result.idempotentReplay?"Generated media was already on the timeline.":"Verified generated media added and saved at revision "+result.timeline.revision+".";await refresh();paint();
