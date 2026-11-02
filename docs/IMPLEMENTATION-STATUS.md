@@ -481,3 +481,10 @@ This is a runnable worker entry point, not a deployed worker. Do not set the ena
 - Database errors, malformed responses, timeouts and cancellation all deny dispatch. Service-role credentials are held only by the server-side adapter.
 - Added tests for valid authorization, revoked/mismatched approvals, insufficient budget, malformed responses, database failure and cancellation.
 - **Not yet wired to the production worker:** the worker still needs a governed plan-to-job dispatch path that resolves the plan owner/project, constructs this authorization adapter server-side and invokes the pipeline with verified adapters. No provider calls, paid usage, schema migration or deployment occurred.
+
+## Authorization boundary hardening — 2 November 2026
+
+- Tightened the live approval lookup: only HTTPS database URLs are accepted outside loopback development, authorization timeouts are bounded, and pipeline/step/adapter/capability identifiers must be present.
+- The approval's own cost estimate must be a valid non-negative safe integer and the recorded approved budget must cover both that estimate and the complete pipeline estimate.
+- Added regression tests for insecure database URLs, invalid timeout configuration, missing execution scope and inconsistent estimate/budget records.
+- This remains a reusable server-side authorization boundary, not yet a transformation worker. The existing cloud worker families do not claim transformation plans, and no provider adapter is enabled. The readiness gate remains blocked until the dedicated worker, verified adapter, durable checkpoints, private storage, rights/consent verification and visual QA are integrated.
