@@ -107,7 +107,7 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
      const sourceAssetId=String(body.sourceAssetId||""),category=String(body.category||"");
      if(!safeId(sourceAssetId)||!REQUIRED_UPSCALE_FIXTURE_CATEGORIES.includes(category))return response(400,{error:{code:"UPSCALE_FIXTURE_INVALID",message:"A valid source image and one of the five supported categories are required."}});
      const source=await service.assets.get({ownerId,assetId:sourceAssetId});
-     if(source.projectId!==projectId||!source.mediaType.startsWith("image/"))return response(422,{error:{code:"UPSCALE_FIXTURE_SOURCE_INVALID",message:"Fixture source must be a still image in this project."}});
+     if(source.projectId!==projectId||!["image/png","image/jpeg","image/webp"].includes(source.mediaType))return response(422,{error:{code:"UPSCALE_FIXTURE_SOURCE_INVALID",message:"Fixture source must be a PNG, JPEG or WebP image in this project."}});
      const id=randomUUID(),label=String(body.label||source.name||category).trim().slice(0,120);
      const rows=await request("upscale_benchmark_fixtures?select=id,project_id,source_asset_id,source_sha256,fixture_category,label,created_at",{method:"POST",body:{id,owner_id:ownerId,project_id:projectId,source_asset_id:source.id,source_sha256:source.sha256,fixture_category:category,label},prefer:"return=representation"});
      if(!Array.isArray(rows)||rows.length!==1||rows[0].id!==id)throw new Error("Cloud benchmark fixture insert did not return the expected record.");
