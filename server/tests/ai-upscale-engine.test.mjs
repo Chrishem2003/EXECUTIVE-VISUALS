@@ -128,3 +128,30 @@ exit 0
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+
+test("AI upscaler fingerprints executable and model contents, not file size or timestamps", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "ev-ai-fingerprint-"));
+  const binary = join(directory, "engine");
+  const model = "realesrgan-x4plus";
+  const input = join(directory, "fixture.png");
+  const weights = join(directory, model + ".bin");
+  await writeFile(input, Buffer.from([137,80,78,71,13,10,26,10]));
+  await writeFile(binary, String.raw`#!/bin/sh
+while [ "$1" != "" ]; do if [ "$1" = "-o" ]; then shift; printf '\211PNG\r\n\032\n\000\000\000\015IHDR\000\000\000\001\000\000\000\001' > "$1"; fi; shift; done
+`);
+  await chmod(binary, 0o755);
+  await writeFile(join(directory, model + ".param"), "model");
+  await writeFile(weights, "weights-v1");
+  try {
+    const adapter = createRealEsrganAdapter({ binaryPath: binary, modelDirectory: directory, timeoutMs: 5000, enabled: true });
+    const passed = await adapter.selfTest({ inputPath: input, model, scale: 2 });
+    assert.match(passed.binarySha256, /^[a-f0-9]{64}$/);
+    assert.match(passed.modelFilesSha256, /^[a-f0-9]{64}$/);
+    assert.equal((await adapter.probe(model)).executionVerified, true);
+    await writeFile(weights, "weights-v2");
+    const changed = await adapter.probe(model);
+    assert.equal(changed.executionVerified, false, "changed weights must invalidate the worker self-test");
+    assert.notEqual(changed.modelFilesSha256, passed.modelFilesSha256);
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
