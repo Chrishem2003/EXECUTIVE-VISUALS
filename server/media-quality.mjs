@@ -31,7 +31,7 @@ export function buildMediaQualityReport(metadata={},options={}) {
     audio:audio.map(stream=>({codec:stream.codec_name||null,sampleRate:Number(stream.sample_rate)||null,channels:Number(stream.channels)||null})),
     signalAnalysis:{method:signal.method||"not-run",performed:signal.performed||[],unavailable:signal.unavailable||[],blackFrameEvents:signal.blackFrames||[],silenceEvents:signal.silence||[],freezeEvents:signal.freezes||[],sceneChangeTimes:signal.sceneChanges||[],audioMetrics:signal.audioMetrics||null},
     status:errors?"needs-attention":warnings?"review":"passed",counts:{errors,warnings},findings,
-    limitations:[...(signal.limitations||[]),"Signal detection is heuristic; intentional black frames and silence may need human review.","Audio clipping and peak warnings use FFmpeg astats metrics; integrated loudness is reported when available but no universal delivery target is assumed.","True-peak compliance, synchronization, colour accuracy and perceptual quality are not assessed.","Scene-change timestamps are heuristic edit markers, not a semantic scene understanding or edit recommendation."]
+    limitations:[...(signal.limitations||[]),"Signal detection is heuristic; intentional black frames and silence may need human review.","Audio clipping and sample-peak warnings use FFmpeg astats; integrated loudness and true-peak evidence are reported from EBU R128 analysis when available, without assuming a universal delivery target.","True-peak compliance, synchronization, colour accuracy and perceptual quality are not assessed.","Scene-change timestamps are heuristic edit markers, not a semantic scene understanding or edit recommendation."]
   };
 }
 
