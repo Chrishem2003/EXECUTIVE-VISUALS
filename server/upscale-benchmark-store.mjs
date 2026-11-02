@@ -8,7 +8,9 @@ const problem = (code,message,status=400) => Object.assign(new Error(message),{c
 export function createUpscaleBenchmarkFixture(db,{ownerId,projectId,sourceAssetId,category,label}={}) {
   if(!ownerId||!projectId||!sourceAssetId||!CATEGORIES.has(category)) throw problem("UPSCALE_FIXTURE_INVALID","A project, source image and supported fixture category are required.");
   const asset=db.prepare("SELECT * FROM assets WHERE id=? AND project_id=? AND deleted_at IS NULL").get(sourceAssetId,projectId);
-  if(!asset||asset.owner_id!==ownerId&&!db.prepare("SELECT 1 FROM project_members WHERE project_id=? AND member_id=? AND role IN ('editor','owner')").get(projectId,ownerId)) throw problem("UPSCALE_FIXTURE_SOURCE_UNAVAILABLE","The fixture source must be an accessible image in this project.",404);
+  const projectOwner=db.prepare("SELECT owner_id FROM projects WHERE id=? AND archived_at IS NULL").get(projectId)?.owner_id;
+  const member=db.prepare("SELECT 1 FROM project_members WHERE project_id=? AND member_id=? AND role='editor'").get(projectId,ownerId);
+  if(!asset||asset.owner_id!==ownerId&&projectOwner!==ownerId&&!member) throw problem("UPSCALE_FIXTURE_SOURCE_UNAVAILABLE","The fixture source must be an accessible image in this project.",404);
   if(!String(asset.media_type||"").startsWith("image/")) throw problem("UPSCALE_FIXTURE_SOURCE_INVALID","Benchmark fixtures must be still images.");
   const id=randomUUID();
   try {
@@ -35,7 +37,9 @@ export function registerUpscaleBenchmarkRun(db,{ownerId,projectId,assetId,fixtur
   const fixture=db.prepare("SELECT * FROM upscale_benchmark_fixtures WHERE id=? AND project_id=?").get(fixtureId,projectId);
   const asset=db.prepare("SELECT * FROM assets WHERE id=? AND project_id=? AND deleted_at IS NULL").get(assetId,projectId);
   if(!fixture||!asset) throw problem("UPSCALE_BENCHMARK_ASSET_UNAVAILABLE","The fixture or output asset is unavailable in this project.",404);
-  if(asset.owner_id!==ownerId&&!db.prepare("SELECT 1 FROM project_members WHERE project_id=? AND member_id=? AND role IN ('editor','owner')").get(projectId,ownerId)) throw problem("UPSCALE_BENCHMARK_WRITE_DENIED","Editor access is required to register benchmark evidence.",403);
+  const projectOwner=db.prepare("SELECT owner_id FROM projects WHERE id=? AND archived_at IS NULL").get(projectId)?.owner_id;
+  const member=db.prepare("SELECT 1 FROM project_members WHERE project_id=? AND member_id=? AND role='editor'").get(projectId,ownerId);
+  if(asset.owner_id!==ownerId&&projectOwner!==ownerId&&!member) throw problem("UPSCALE_BENCHMARK_WRITE_DENIED","Editor access is required to register benchmark evidence.",403);
   const outputAsset={id:asset.id,mediaType:asset.media_type,sha256:asset.sha256,derivativeOf:asset.derivative_of,createdAt:asset.created_at,metadata:parseJson(asset.metadata_json,{})};
   const record=buildUpscaleBenchmarkRecordFromAsset({outputAsset,fixtureId:fixture.id,fixtureCategory:fixture.fixture_category});
   if(record.inputSha256!==fixture.source_sha256||outputAsset.derivativeOf!==fixture.source_asset_id) throw problem("UPSCALE_BENCHMARK_FIXTURE_MISMATCH","The derivative does not originate from the exact registered fixture source.",409);
