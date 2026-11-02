@@ -42,9 +42,10 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
   }catch(error){if(error?.name==="AbortError"){const timeout=new Error("Cloud timeline API request timed out.");timeout.code="CLOUD_TIMELINE_API_TIMEOUT";throw timeout;}throw error;}finally{clearTimeout(timer);}
  }
  const response=(status,body)=>({status,body});
- async function handle({method,path,ownerId,body={},query={},idempotencyKey=null}={}){
+ async function handle({method,path,ownerId,body={},req=null,query={},idempotencyKey=null}={}){
   if(!["GET","POST","PUT","PATCH","DELETE"].includes(method)||typeof path!=="string")return null;
   if(!safeId(ownerId))return response(401,{error:{code:"AUTH_REQUIRED",message:"A verified account identity is required."}});
+  if(path==="/api/cloud/assets"&&method==="POST")return await uploadAsset({req,ownerId,projectId:String(req?.headers?.["x-project-id"]||query.projectId||""),originalName:String(req?.headers?.["x-file-name"]||"upload"),mediaType:String(req?.headers?.["content-type"]||"application/octet-stream")});
   if(Buffer.byteLength(JSON.stringify(body||{}))>maxJobBytes)return response(413,{error:{code:"PAYLOAD_TOO_LARGE",message:"Cloud timeline request is too large."}});
   try{
    if(path==="/api/cloud/projects"&&method==="POST"){
