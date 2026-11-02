@@ -229,6 +229,22 @@ export function openDatabase(filename) {
       PRIMARY KEY(owner_id,pipeline_id,step_id)
     );
     CREATE INDEX IF NOT EXISTS video_pipeline_project_idx ON video_pipeline_checkpoints(owner_id,project_id,pipeline_id);
+    CREATE TABLE IF NOT EXISTS transformation_plans(
+      id TEXT PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      source_asset_id TEXT NOT NULL REFERENCES assets(id), operation TEXT NOT NULL, prompt TEXT NOT NULL,
+      duration_seconds INTEGER NOT NULL CHECK(duration_seconds BETWEEN 1 AND 30),
+      reference_asset_ids_json TEXT NOT NULL DEFAULT '[]', preservation_json TEXT NOT NULL DEFAULT '[]',
+      rights_confirmed INTEGER NOT NULL CHECK(rights_confirmed IN (0,1)),
+      subject_consent_confirmed INTEGER NOT NULL CHECK(subject_consent_confirmed IN (0,1)),
+      status TEXT NOT NULL CHECK(status IN ('draft','approved','queued','running','succeeded','failed','cancelled')),
+      idempotency_key TEXT NOT NULL, approval_id TEXT, estimated_cost_micros INTEGER, approved_budget_micros INTEGER,
+      currency TEXT, adapter_id TEXT, capability TEXT, approved_at TEXT,
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      UNIQUE(owner_id,idempotency_key)
+    );
+    CREATE INDEX IF NOT EXISTS transformation_plans_project_idx ON transformation_plans(project_id,created_at DESC);
   `);
   const jobColumns = new Set(db.prepare("PRAGMA table_info(jobs)").all().map(column => column.name));
   for (const [name, definition] of [
