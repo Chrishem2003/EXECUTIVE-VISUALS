@@ -89,3 +89,14 @@ test("attaches structured quality findings to media probe metadata without losin
  assert.ok(enriched.qualityReport.findings.some(item=>item.code==="BELOW_HD"));
  assert.equal(metadata.qualityReport,undefined);
 });
+
+
+test("includes decoded-frame temporal luminance findings in the QA report",()=>{
+ const report=buildMediaQualityReport({format:{duration:"8"},streams:[{codec_type:"video",width:1920,height:1080,avg_frame_rate:"25/1"}],signalAnalysis:{
+  performed:["frame-luma"],lumaSamples:[{frame:0,timeSeconds:0,meanLuma:32},{frame:1,timeSeconds:.04,meanLuma:84},{frame:2,timeSeconds:.08,meanLuma:35},{frame:3,timeSeconds:.12,meanLuma:88},{frame:4,timeSeconds:.16,meanLuma:32}],sceneChanges:[]
+ }},{requireVideo:true});
+ assert.equal(report.status,"review");
+ assert.equal(report.signalAnalysis.lumaSampleCount,5);
+ assert.ok(report.findings.some(item=>item.code==="TEMPORAL_LUMA_FLICKER"));
+ assert.ok(report.limitations.some(item=>item.includes("decoded frame mean-luma")));
+});
