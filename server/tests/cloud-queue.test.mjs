@@ -78,6 +78,12 @@ test("transient retry RPC is validated and uses the current worker identity",asy
 test("retry RPC rejects malformed arguments and response contracts",async()=>{
  const invalid=createCloudQueue({...base,fetchImpl:async()=>response({accepted:true,status:"queued",retryable:true,delaySeconds:-1,attempt:1,maxAttempts:2})});
  await assert.rejects(()=>invalid.retry("job-1","worker-1",{retryable:true}),/invalid result/);
+ const contradictory=createCloudQueue({...base,fetchImpl:async()=>response({accepted:true,status:"queued",retryable:false,delaySeconds:0,attempt:1,maxAttempts:3})});
+ await assert.rejects(()=>contradictory.retry("job-1","worker-1",{retryable:true}),/invalid result/);
+ const exhaustedQueued=createCloudQueue({...base,fetchImpl:async()=>response({accepted:true,status:"queued",retryable:true,delaySeconds:1,attempt:3,maxAttempts:3})});
+ await assert.rejects(()=>exhaustedQueued.retry("job-1","worker-1",{retryable:true}),/invalid result/);
+ const lostLease=createCloudQueue({...base,fetchImpl:async()=>response({accepted:false,status:"lease_lost",retryable:false,delaySeconds:0,attempt:0,maxAttempts:1})});
+ assert.deepEqual(await lostLease.retry("job-1","worker-1",{retryable:true}),{accepted:false,status:"lease_lost",retryable:false,delaySeconds:0,attempt:0,maxAttempts:1});
  await assert.rejects(()=>invalid.retry("","worker-1",{retryable:true}),/Job ID and worker ID/);
  await assert.rejects(()=>invalid.retry("job-1","worker-1",[]),/must be an object/);
 });
