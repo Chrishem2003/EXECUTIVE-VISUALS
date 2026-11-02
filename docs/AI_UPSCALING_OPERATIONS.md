@@ -55,3 +55,8 @@ A successful response includes `selfTest.passed=true` and `selfTest.inferenceVer
 - The self-test is synchronous and may take up to the configured engine timeout. Keep test images small and run it during a controlled maintenance window.
 - A passing test does not replace output dimension/decode checks, provenance capture, asset review, or approval gates in the media job pipeline.
 - If the worker is horizontally scaled, each process must pass its own self-test. A readiness result on one process is not proof that another process is ready.
+
+
+## Output format contract
+
+The cloud publisher uses canonical MIME metadata for each supported still-image derivative: PNG is `image/png`, JPG is `image/jpeg`, and WebP is `image/webp`. Unsupported formats are rejected before publication. Keep the filename extension, encoded file signature, and published MIME type aligned; the executor checks the requested format signature, probes dimensions, and fully decodes the derivative before publishing it. A format-mapping unit test protects the MIME contract.
