@@ -14,13 +14,14 @@ type Character={id:string;name:string;description:string;voice:string;consent:{k
 type Asset={id:string;name:string;type:string;size:number};
 type Task={id:string;name:string;category:string;status:"planned"|"needs-engine";created:string;detail:string};
 type Project={id:string;name:string;brief:string;audience:string;style:string;created:string;creativeDNA?:CreativeIntentPlan};
+type CloudCreativeProduction={version?:number;project?:Project&{duration?:string};blueprint?:string;creativeDNA?:CreativeIntentPlan;seriesPlans?:SeriesProductionPlan[];activeSeriesId?:string};
 type TransformationReadiness={status:"ready"|"blocked";canSubmit:boolean;gates:Array<{key:string;label:string;detail:string;ready:boolean}>;missing:Array<{key:string;label:string}>};
 type TransformationDraft={id:string;projectId:string;sourceAssetId:string;sourceName:string;operation:string;targetDescription:string;prompt:string;durationSeconds:number;referenceAssetIds:string[];preserve:string[];rightsConfirmed:true;subjectConsentConfirmed:boolean;createdAt:string;status?:"draft"|"approved"|"queued"|"running"|"succeeded"|"failed"|"cancelled";execution:{mode:"draft";submitted:false;requiresApproval:true}};
 const KEY="executive-visuals:unified:v1";
 const tabs:{id:Tab;label:string;group:string;icon:string}[]=[
 {id:"home",label:"Command centre",group:"Workspace",icon:"⌂"},{id:"cloud",label:"Cloud projects",group:"Workspace",icon:"☁"},{id:"knowledge",label:"Research & knowledge",group:"Workspace",icon:"⌕"},{id:"series",label:"Series producer",group:"Plan & direct",icon:"▦"},{id:"director",label:"AI Director",group:"Plan & direct",icon:"✳"},{id:"canvas",label:"Workflow canvas",group:"Plan & direct",icon:"⌘"},{id:"characters",label:"Characters & voices",group:"Plan & direct",icon:"◉"},{id:"cinema",label:"Cinematic studio",group:"Create",icon:"▣"},{id:"images",label:"Image studio",group:"Create",icon:"▧"},{id:"video",label:"Video editor",group:"Create",icon:"▷"},{id:"voice",label:"Voice & localization",group:"Create",icon:"♫"},{id:"enhance",label:"Enhancement lab",group:"Refine",icon:"✧"},{id:"campaigns",label:"Campaign factory",group:"Refine",icon:"◇"},{id:"library",label:"Asset library",group:"Manage",icon:"▤"},{id:"engines",label:"Creative engines",group:"Manage",icon:"⛭"},{id:"settings",label:"Project settings",group:"Manage",icon:"⚙"},{id:"capabilities",label:"Capability atlas",group:"Manage",icon:"◈"},{id:"runtime",label:"Runtime console",group:"Manage",icon:"◉"}];
 const baseGraph=["Creative brief","Character reference","Image generation","Video generation","Edit & captions","Enhancement","Export"];
-const state={seriesPlans:[] as SeriesProductionPlan[],activeSeriesId:"",projects:[] as Project[],tasks:[] as Task[],shots:[] as Shot[],characters:[] as Character[],assets:[] as Asset[],graph:baseGraph.slice(),tab:"home" as Tab,activeProject:"",prompt:"",plan:"",script:"",variants:[] as string[],workflowPreview:"",apiProjectId:"",cloudProjects:[] as Array<{id:string;name:string;description?:string;revision:number;settings?:Record<string,unknown>&{creativeProduction?:{project?:{audience?:string;style?:string;duration?:string};seriesPlans?:SeriesProductionPlan[];activeSeriesId?:string}}}>,cloudAssets:[] as Array<{id:string;name:string;mediaType:string;size:number;sha256:string;createdAt:string}>,cloudTimelines:[] as Array<{id:string;name:string;revision:number;updatedAt:string}>,cloudProjectId:"",cloudProjectLinks:{} as Record<string,{id:string;revision:number}>,cloudMessage:"",cloudLoading:false,transformationDrafts:[] as TransformationDraft[],transformationReadiness:null as TransformationReadiness|null};
+const state={seriesPlans:[] as SeriesProductionPlan[],activeSeriesId:"",projects:[] as Project[],tasks:[] as Task[],shots:[] as Shot[],characters:[] as Character[],assets:[] as Asset[],graph:baseGraph.slice(),tab:"home" as Tab,activeProject:"",prompt:"",plan:"",script:"",variants:[] as string[],workflowPreview:"",apiProjectId:"",cloudProjects:[] as Array<{id:string;name:string;description?:string;revision:number;settings?:Record<string,unknown>&{creativeProduction?:CloudCreativeProduction}}>,cloudAssets:[] as Array<{id:string;name:string;mediaType:string;size:number;sha256:string;createdAt:string}>,cloudTimelines:[] as Array<{id:string;name:string;revision:number;updatedAt:string}>,cloudProjectId:"",cloudProjectLinks:{} as Record<string,{id:string;revision:number}>,cloudMessage:"",cloudLoading:false,transformationDrafts:[] as TransformationDraft[],transformationReadiness:null as TransformationReadiness|null};
 const urls=new Map<string,string>();const cloudAssetUrls=new Map<string,string>();const uid=()=>crypto.randomUUID();const esc=(v:string)=>v.replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]||c));const $=<T extends HTMLElement>(s:string)=>document.querySelector<T>(s)!;
 function load(){try{const stored=JSON.parse(localStorage.getItem(KEY)||"{}") as Partial<typeof state>;delete stored.transformationDrafts;localStorage.setItem(KEY,JSON.stringify(stored));Object.assign(state,stored);}catch{}state.transformationDrafts=[];state.tab="home";}
 function save(){
@@ -99,11 +100,19 @@ async function loadTransformationReadiness(projectId:string){
 async function loadCloudWorkspace(){
  state.cloudLoading=true;state.cloudMessage="Loading private cloud workspace…";render();
  try{
-  const result=await apiRequest<{projects:Array<{id:string;name:string;description?:string;revision:number;settings?:Record<string,unknown>&{creativeProduction?:{project?:{audience?:string;style?:string;duration?:string}}}}>}>("/api/cloud/projects");
+  const result=await apiRequest<{projects:Array<{id:string;name:string;description?:string;revision:number;settings?:Record<string,unknown>&{creativeProduction?:CloudCreativeProduction}}>}>("/api/cloud/projects");
   state.cloudProjects=result.projects||[];
   if(!state.cloudProjectId||!state.cloudProjects.some(p=>p.id===state.cloudProjectId))state.cloudProjectId=state.cloudProjects[0]?.id||"";
   const selectedCloudProject=state.cloudProjects.find(project=>project.id===state.cloudProjectId);
-  const savedSeries=selectedCloudProject?.settings?.creativeProduction?.seriesPlans;
+  const savedProduction=selectedCloudProject?.settings?.creativeProduction;
+  const savedBrief=savedProduction?.project;
+  if(savedBrief?.id&&savedBrief.name&&savedBrief.brief&&savedProduction?.blueprint){
+   const restoredProject:Project={...savedBrief,creativeDNA:savedProduction.creativeDNA};
+   state.projects=[restoredProject,...state.projects.filter(project=>project.id!==restoredProject.id)];
+   state.activeProject=restoredProject.id;state.prompt=restoredProject.brief;state.plan=savedProduction.blueprint;
+   state.cloudProjectLinks[restoredProject.id]={id:selectedCloudProject!.id,revision:selectedCloudProject!.revision};
+  }
+  const savedSeries=savedProduction?.seriesPlans;
   if(Array.isArray(savedSeries)){state.seriesPlans=savedSeries;state.activeSeriesId=selectedCloudProject?.settings?.creativeProduction?.activeSeriesId||savedSeries[0]?.id||"";}
   const query=state.cloudProjectId?"?projectId="+encodeURIComponent(state.cloudProjectId):"";
   const assets=await apiRequest<{assets:Array<{id:string;name:string;mediaType:string;size:number;sha256:string;createdAt:string}>}>("/api/cloud/assets"+query);
@@ -190,7 +199,7 @@ async function publishBriefToCloud(){
  try{
   const duration=state.plan.match(/DURATION:\s*([^\n]+)/)?.[1]||"Not specified";
   const existingSettings=state.cloudProjects.find(item=>item.id===state.cloudProjectLinks[project.id]?.id)?.settings||{};
-  const settings={...existingSettings,schemaVersion:1,creativeProduction:{version:2,project:{id:project.id,name:project.name,brief:project.brief,audience:project.audience,style:project.style,duration,created:project.created},blueprint:state.plan,creativeDNA:project.creativeDNA||null,shots:state.shots,characters:state.characters,variants:state.variants,seriesPlans:state.seriesPlans}};
+  const settings={...existingSettings,schemaVersion:1,creativeProduction:{version:3,project:{id:project.id,name:project.name,brief:project.brief,audience:project.audience,style:project.style,duration,created:project.created},blueprint:state.plan,creativeDNA:project.creativeDNA||null,shots:state.shots,characters:state.characters,variants:state.variants,seriesPlans:state.seriesPlans}};
   const link=state.cloudProjectLinks[project.id];
   let saved:{id:string;name:string;revision:number};
   if(link){
