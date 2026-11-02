@@ -18,7 +18,7 @@ function setup({canWrite=true,projectId=project,existing=[],timelineDocOverride=
   async update(input){calls.push(["update",input]);return{...timeline,revision:input.expectedRevision+1,timeline:input.timeline};}
  };
  const fetchImpl=async(url,options)=>{calls.push(["fetch",url,options]);if(url.includes("/job_events")&&options.method==="POST"&&duplicateReview)return{ok:false,status:409,async text(){return JSON.stringify({code:"23505",message:"duplicate key"})}};if(url.includes("/jobs")&&options.method==="POST")return{ok:true,status:201,async text(){return JSON.stringify([{id:JSON.parse(options.body).id,owner_id:owner,project_id:projectId,job_type:"timeline.render",status:"queued",input:JSON.parse(options.body).input}])}};if(url.includes("/jobs?"))return{ok:true,status:200,async text(){return JSON.stringify(existing)}};return{ok:true,status:201,async text(){return""}};};
- const api=createCloudTimelineApi({url:"https://example.supabase.co",serviceRoleKey:"service-secret",fetchImpl,timelineService:{timelines,assets:{async list(input){calls.push(["asset-list",input]);return[{id:"asset-1",projectId:input.projectId}];},async get(input){calls.push(["asset-get",input]);return assetOverride||{id:"723e4567-e89b-42d3-a456-426614174000",ownerId:owner,projectId:project,name:"generated.mp4",mediaType:"video/mp4",sha256:"a".repeat(64),metadata:{generated:true,jobId:"823e4567-e89b-42d3-a456-426614174000",mediaVerification:{status:"passed",readable:true,sha256:"a".repeat(64)},probe:{format:{duration:"2.51"},streams:[{codec_type:"video"}]}}};}},projects:{async create(input){calls.push(["project-create",input]);return{id:"project-1",...input};},async list(input){calls.push(["project-list",input]);return[{id:project}];},async get(input){calls.push(["project-get",input]);return{id:project,...input};},async update(input){calls.push(["project-update",input]);return{id:project,...input};},async archive(input){calls.push(["project-archive",input]);return{id:project,archived:true};}}},authorize:authorizeOverride|| (async({ownerId,projectId:pid,action})=>ownerId===owner&&(!pid||pid===project)&&(action==="read"||canWrite))});
+ const api=createCloudTimelineApi({url:"https://example.supabase.co",serviceRoleKey:"service-secret",fetchImpl,timelineService:{timelines,assets:{async list(input){calls.push(["asset-list",input]);return[{id:"asset-1",projectId:input.projectId}];},async get(input){calls.push(["asset-get",input]);if(input.assetId==="published-asset")return assetOverride||{id:"published-asset",ownerId:owner,projectId:project,name:"master.mp4",mediaType:"video/mp4",size:2048,sha256:"a".repeat(64),metadata:{}};return assetOverride||{id:"723e4567-e89b-42d3-a456-426614174000",ownerId:owner,projectId:project,name:"generated.mp4",mediaType:"video/mp4",sha256:"a".repeat(64),metadata:{generated:true,jobId:"823e4567-e89b-42d3-a456-426614174000",mediaVerification:{status:"passed",readable:true,sha256:"a".repeat(64)},probe:{format:{duration:"2.51"},streams:[{codec_type:"video"}]}}};},async createSignedUrl(input){calls.push(["signed-url",input]);return{asset:{id:input.assetId},url:"https://storage.example.test/private/master?token=short-lived"};}},projects:{async create(input){calls.push(["project-create",input]);return{id:"project-1",...input};},async list(input){calls.push(["project-list",input]);return[{id:project}];},async get(input){calls.push(["project-get",input]);return{id:project,...input};},async update(input){calls.push(["project-update",input]);return{id:project,...input};},async archive(input){calls.push(["project-archive",input]);return{id:project,archived:true};}}},authorize:authorizeOverride|| (async({ownerId,projectId:pid,action})=>ownerId===owner&&(!pid||pid===project)&&(action==="read"||canWrite))});
  return{api,calls,created};
 }
 
@@ -30,6 +30,25 @@ function deliveryReviewFixture({jobOwner=owner,receiptValid=true,deliveryStatus=
  if(!receiptValid)job.output.deliveryManifest={...receipt,fingerprint:"0".repeat(64)};
  return{job,receipt};
 }
+test("delivery package verifies receipt and published asset before issuing a private master link",async()=>{
+ const {job,receipt}=deliveryReviewFixture({jobOwner:owner});
+ const f=setup({existing:[job],authorizeOverride:async({ownerId,projectId:pid,action})=>ownerId===editor&&pid===project&&action==="read"});
+ const result=await f.api.handle({method:"GET",path:"/api/cloud/jobs/"+reviewJobId+"/delivery-package",ownerId:editor});
+ assert.equal(result.status,200);
+ assert.equal(result.body.deliveryPackage.deliveryReceipt.fingerprint,receipt.fingerprint);
+ assert.equal(result.body.deliveryPackage.master.sha256,receipt.sha256);
+ assert.equal(result.body.deliveryPackage.master.downloadUrlExpiresInSeconds,300);
+ assert.match(result.body.deliveryPackage.packageFingerprint,/^[a-f0-9]{64}$/);
+ assert.ok(f.calls.some(call=>call[0]==="signed-url"&&call[1].assetId==="published-asset"));
+});
+test("delivery package refuses an asset whose checksum differs from the receipt",async()=>{
+ const {job}=deliveryReviewFixture({jobOwner:owner});
+ const f=setup({existing:[job],assetOverride:{id:"published-asset",ownerId:owner,projectId:project,name:"master.mp4",mediaType:"video/mp4",size:2048,sha256:"b".repeat(64)},authorizeOverride:async()=>true});
+ const result=await f.api.handle({method:"GET",path:"/api/cloud/jobs/"+reviewJobId+"/delivery-package",ownerId:editor});
+ assert.equal(result.status,409);
+ assert.equal(result.body.error.code,"DELIVERY_ASSET_MISMATCH");
+ assert.equal(f.calls.some(call=>call[0]==="signed-url"),false);
+});
 test("delivery approval requires independent project reviewer and records fingerprint-bound decision",async()=>{
  const {job,receipt}=deliveryReviewFixture({jobOwner:owner});
  const f=setup({existing:[job],authorizeOverride:async({ownerId,projectId:pid,action})=>ownerId===editor&&pid===project&&action==="write"});
