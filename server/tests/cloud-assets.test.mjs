@@ -38,7 +38,8 @@ test("creates a cloud asset only after project authorization and verifies metada
  assert.equal(f.storageCalls[0].op,"upload");assert.equal(f.calls[0].options.method,"POST");
  assert.equal(f.calls[0].options.headers["content-profile"],"executive_visuals");
  assert.equal(f.calls[0].options.headers.authorization,"Bearer "+config.serviceRoleKey);
- assert.equal(JSON.parse(f.calls[0].options.body).object_path,asset.objectPath);
+ assert.equal(JSON.parse(f.calls[0].options.body).object_path,f.storageCalls[0].path);
+ assert.equal("objectPath" in asset,false);assert.equal("storageBucket" in asset,false);
 });
 
 test("creates a cloud asset from a file using the streaming storage boundary",async()=>{
@@ -71,6 +72,20 @@ test("signed URL lookup checks record owner and project authorization",async()=>
  assert.equal(result.url,"https://example.supabase.co/storage/signed");
  assert.equal(authorized.action,"read");assert.equal(authorized.projectId,projectId);
  assert.equal(f.storageCalls[0].op,"sign");
+});
+
+test("public cloud asset records never expose private bucket or object path",async()=>{
+ const f=fixture();
+ const created=await f.repo.create({ownerId,projectId,originalName:"final cut.mp4",mediaType:"video/mp4",bytes});
+ const listed=await f.repo.list({ownerId,projectId});
+ const signed=await f.repo.createSignedUrl({ownerId,assetId});
+ for(const asset of [created,listed[0],signed.asset]){
+  assert.equal("storageBucket" in asset,false);
+  assert.equal("objectPath" in asset,false);
+  assert.equal("storage_bucket" in asset,false);
+  assert.equal("object_path" in asset,false);
+ }
+ assert.equal(f.storageCalls[0].path,f.row.object_path);
 });
 
 test("does not sign assets belonging to another owner",async()=>{
