@@ -109,7 +109,6 @@ export function prepareGeneratedMediaHandoff(input: GeneratedMediaHandoffInput):
   const fps = timeline.frameRate.numerator / timeline.frameRate.denominator;
   if (!Number.isFinite(fps) || fps <= 0) reject("HANDOFF_INVALID_TIMELINE_RATE", "The timeline frame rate is invalid.");
   const timelineStartFrame = Math.round(input.playheadSeconds * fps);
-  const durationFrames = Math.max(1, Math.round((receipt.durationSeconds as number) * fps));
   const sourceTimebase = 1000;
   const sourceDurationTicks = Math.round((receipt.durationSeconds as number) * sourceTimebase);
   if (sourceDurationTicks <= 0) reject("HANDOFF_INVALID_DURATION", "The media duration is too short for the supported timebase.");
@@ -123,7 +122,7 @@ export function prepareGeneratedMediaHandoff(input: GeneratedMediaHandoffInput):
       duration: { value: sourceDurationTicks, rate: sourceTimebase },
     },
     timelineStart: { value: timelineStartFrame, rate: fps },
-    duration: { value: durationFrames, rate: fps },
+    duration: { value: sourceDurationTicks, rate: sourceTimebase },
     enabled: true,
     metadata: {
       origin: "generated-media-handoff",
@@ -136,7 +135,7 @@ export function prepareGeneratedMediaHandoff(input: GeneratedMediaHandoffInput):
   // Do not permit silent overlap replacement. Timeline insertion remains an
   // explicit user action and the normal timeline validator is the final gate.
   const start = timelineStartFrame / fps;
-  const end = start + durationFrames / fps;
+  const end = start + sourceDurationTicks / sourceTimebase;
   for (const existing of track.clips) {
     const existingStart = existing.timelineStart.value / existing.timelineStart.rate;
     const existingEnd = existingStart + existing.duration.value / existing.duration.rate;
