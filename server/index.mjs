@@ -17,6 +17,7 @@ import { importResearchUrl } from "./research-import.mjs";
 import { getProviderCatalog } from "./provider-registry.mjs";
 import { ensureRemoteUsageTable, getRemoteUsagePolicy } from "./usage-guardrails.mjs";
 import { createCloudTimelineApi } from "./cloud-timeline-api.mjs";
+import { ensureTransformationPlanSchema, createTransformationPlan, approveTransformationPlan, listTransformationPlans } from "./transformation-plans.mjs";
 
 const PORT = Number(process.env.API_PORT || process.env.PORT || 4179);
 const HOST = process.env.API_HOST || "127.0.0.1";
@@ -46,6 +47,7 @@ const EXTENSIONS = {
 };
 const MEDIA_JOBS = new Set(["media.probe","media.thumbnail","media.transcode","media.audio_extract","media.audio-clean","media.proxy","media.denoise","media.color","media.resize","media.interpolate","media.upscale","media.ai-upscale","timeline.render"]);
 const db = openDatabase(DB_FILE);
+ensureTransformationPlanSchema(db);
 const aiUpscaleAdapter = createRealEsrganAdapter();
 const cloudTimelineApiEnabled = process.env.CLOUD_TIMELINE_API_ENABLED === "true";
 if (cloudTimelineApiEnabled && AUTH_MODE !== "supabase") throw new Error("Cloud timeline API requires verified Supabase authentication.");
@@ -346,6 +348,33 @@ export function createAppServer() {
         }catch(error){
           audit(db,user.id,"ai_upscale.inference_self_test_failed","asset",asset.id,{code:error.code||"AI_UPSCALE_SELF_TEST_FAILED"});
           fail(res,422,error.code||"AI_UPSCALE_SELF_TEST_FAILED",String(error.message||"Worker inference self-test failed.").slice(0,500));return;
+        }
+      }
+      if(path==="/api/transformations"&&req.method==="GET"){
+        const projectId=String(url.searchParams.get("projectId")||"");
+        send(res,200,{plans:listTransformationPlans(db,user.id,projectId)},cors);return;
+      }
+      if(path==="/api/transformations"&&req.method==="POST"){
+        const body=await readJson(req,64*1024);
+        const result=createTransformationPlan(db,{ownerId:user.id,body,idempotencyKey:String(req.headers["idempotency-key"]||body.idempotencyKey||"")});
+        audit(db,user.id,"transformation.draft_created","transformation",result.plan.id,{operation:result.plan.operation},result.plan.projectId);
+        send(res,result.idempotentReplay?200:201,result,cors);return;
+      }
+      const transformationMatch=path.match(/^\\/api\\/transformations\\/([0-9a-f-]+)(?:\\/(approve|submit))?$/i);
+      if(transformationMatch){
+        const plan=db.prepare("SELECT * FROM transformation_plans WHERE id=?").get(transformationMatch[1]);
+        if(!plan||!getProjectAccess(db,user.id,plan.project_id)){fail(res,404,"TRANSFORMATION_NOT_FOUND","Transformation plan not found.");return;}
+        if(!transformationMatch[2]&&req.method==="GET"){send(res,200,{plan:plan},cors);return;}
+        if(transformationMatch[2]==="approve"&&req.method==="POST"){
+          const body=await readJson(req,16*1024);
+          const approved=approveTransformationPlan(db,{ownerId:user.id,planId:plan.id,body});
+          audit(db,user.id,"transformation.approved","transformation",plan.id,{approvalId:approved.approval.id,estimatedCostMicros:approved.approval.estimatedCostMicros,currency:approved.approval.currency},plan.project_id);
+          send(res,200,{plan:approved},cors);return;
+        }
+        if(transformationMatch[2]==="submit"&&req.method==="POST"){
+          if(!canWriteProject(db,user.id,plan.project_id)){fail(res,403,"EDITOR_REQUIRED","Owner or editor access is required to submit a transformation.");return;}
+          if(plan.status!=="approved"){fail(res,409,"TRANSFORMATION_APPROVAL_REQUIRED","Approve the plan and budget before submission.");return;}
+          fail(res,409,"TRANSFORMATION_ADAPTER_UNAVAILABLE","No verified video-transformation adapter is enabled. The approved plan remains saved; no provider request or charge was made.");return;
         }
       }
       if(path==="/api/providers"&&req.method==="GET"){
