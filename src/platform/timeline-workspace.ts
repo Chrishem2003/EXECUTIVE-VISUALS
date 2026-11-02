@@ -213,7 +213,7 @@ document.addEventListener("submit",event=>{
   if(track.kind==="caption")clip.metadata={...clip.metadata,fontName:String(data.get("fontName")||"DejaVu Sans"),fontSize:Math.max(12,Math.min(72,Number(data.get("fontSize"))||28)),alignment:Math.max(1,Math.min(9,Number(data.get("alignment"))||2)),marginV:Math.max(0,Math.min(240,Number(data.get("marginV"))||42))};
   const previousTrace=readCreativeTrace(clip),creativeTrace={storyBeat:String(data.get("storyBeat")||"").trim().slice(0,120),purpose:String(data.get("purpose")||"").trim().slice(0,500),audiencePromise:String(data.get("audiencePromise")||"").trim().slice(0,300),proofReference:String(data.get("proofReference")||"").trim().slice(0,300),decisionNote:String(data.get("decisionNote")||"").trim().slice(0,500)},nextTrace=Object.values(creativeTrace).some(Boolean)?creativeTrace:null;
   const decisionHistory=appendCreativeDecision(readCreativeDecisionHistory(clip),previousTrace,nextTrace,crypto.randomUUID(),new Date().toISOString());
-  const nextMetadata={...clip.metadata,creativeTraceHistory:decisionHistory};
+  const nextMetadata:Record<string,unknown>={...clip.metadata,creativeTraceHistory:decisionHistory};
   if(nextTrace)nextMetadata.creativeTrace=nextTrace;else delete nextMetadata.creativeTrace;
   clip.metadata=nextMetadata;
   state.message="Saving clip properties…";void persist().then(paint).catch(error=>{state.message=error.message;paint();});
