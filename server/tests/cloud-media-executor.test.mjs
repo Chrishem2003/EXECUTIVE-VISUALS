@@ -375,8 +375,8 @@ test("cloud AI upscale publishes a separate image derivative with engine provena
   const previousFfmpeg = process.env.FFMPEG_PATH;
   const source = join(directory, "source.png");
   const model = "realesrgan-x4plus";
-  const binary = await executable(directory, "realesrgan-ncnn-vulkan", String.raw`while [ "$1" != "" ]; do if [ "$1" = "-o" ]; then shift; printf '\211PNG\r\n\032\n\000\000\000\015IHDR\000\000\000\001\000\000\000\001' > "$1"; fi; shift; done`);
-  await writeFile(source, Buffer.from([137,80,78,71,13,10,26,10]));
+  const binary = await executable(directory, "realesrgan-ncnn-vulkan", String.raw`while [ "$1" != "" ]; do if [ "$1" = "-o" ]; then shift; printf '\211PNG\r\n\032\n\000\000\000\015IHDR\000\000\000\050\000\000\000\050' > "$1"; fi; shift; done`);
+  await writeFile(source, Buffer.from([137,80,78,71,13,10,26,10,0,0,0,13,73,72,68,82,0,0,0,10,0,0,0,10]));
   await writeFile(join(directory, model + ".param"), "model");
   await writeFile(join(directory, model + ".bin"), "weights");
   process.env.REALESRGAN_NCNN_PATH = binary;
@@ -434,7 +434,7 @@ test("cloud AI upscale blocks publication when output dimensions do not match", 
   const source = join(directory, "source.png");
   const model = "realesrgan-x4plus";
   const binary = await executable(directory, "realesrgan-ncnn-vulkan", String.raw`while [ "$1" != "" ]; do if [ "$1" = "-o" ]; then shift; printf '\211PNG\r\n\032\n\000\000\000\015IHDR\000\000\000\001\000\000\000\001' > "$1"; fi; shift; done`);
-  await writeFile(source, Buffer.from([137,80,78,71,13,10,26,10]));
+  await writeFile(source, Buffer.from([137,80,78,71,13,10,26,10,0,0,0,13,73,72,68,82,0,0,0,10,0,0,0,10]));
   await writeFile(join(directory, model + ".param"), "model");
   await writeFile(join(directory, model + ".bin"), "weights");
   process.env.REALESRGAN_NCNN_PATH = binary;
@@ -460,7 +460,7 @@ test("cloud AI upscale blocks publication when output dimensions do not match", 
       job: { id: "job-ai-up-mismatch", owner_id: "owner-ai", project_id: "project-ai", job_type: "media.ai-upscale",
         input: { sourceAssetId: "image-source", model, scale: 4, tile: 128, format: "png" } },
       onProgress() {}
-    }), error => error.code === "MEDIA_OUTPUT_VALIDATION_FAILED");
+    }), error => error.code === "AI_UPSCALE_OUTPUT_DIMENSIONS_MISMATCH");
     assert.equal(published, undefined, "dimension-mismatched derivative must never be published");
   } finally {
     if (previousBinary === undefined) delete process.env.REALESRGAN_NCNN_PATH; else process.env.REALESRGAN_NCNN_PATH = previousBinary;
