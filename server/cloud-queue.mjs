@@ -1,5 +1,5 @@
 const SCHEMA = "executive_visuals";
-const RPC = new Set(["claim_next_job","renew_job_lease","recover_expired_jobs","finish_job"]);
+const RPC = new Set(["claim_next_job","renew_job_lease","recover_expired_jobs","finish_job","job_cancellation_requested","request_job_cancellation"]);
 
 function endpoint(value) {
   let url;
@@ -89,7 +89,7 @@ export function createCloudQueue({
       if (!Number.isInteger(leaseSeconds) || leaseSeconds < 15 || leaseSeconds > 900) throw new Error("Lease duration must be between 15 and 900 seconds.");
       return (await call("renew_job_lease", { p_job_id: jobId, p_worker_id: workerId, p_lease_seconds: leaseSeconds })) === true;
     },
-    async recover(limit = 100) {
+    async cancellationRequested(jobId, workerId) {\n      if (!jobId || typeof workerId !== "string" || !workerId.trim()) throw new Error("Job ID and worker ID are required to check cancellation.");\n      return (await call("job_cancellation_requested", { p_job_id: jobId, p_worker_id: workerId })) === true;\n    },\n    async requestCancellation(jobId, ownerId) {\n      if (!jobId || !ownerId) throw new Error("Job ID and verified owner ID are required to request cancellation.");\n      const result = await call("request_job_cancellation", { p_job_id: jobId, p_owner_id: ownerId });\n      if (!["cancelled","requested","not_found","not_cancellable"].includes(result)) throw new Error("Cloud queue returned an invalid cancellation result.");\n      return result;\n    },\n    async recover(limit = 100) {
       if (!Number.isInteger(limit) || limit < 1 || limit > 1000) throw new Error("Recovery limit must be between 1 and 1000.");
       const result = await call("recover_expired_jobs", { p_limit: limit });
       if (!Number.isInteger(result) || result < 0) throw new Error("Cloud queue recovery returned an invalid count.");
