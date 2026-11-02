@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { Transform } from "node:stream";
 import { verifyRenderManifest } from "./render-manifest.mjs";
+import { evaluateDeliveryOutput } from "./delivery-profiles.mjs";
 
 function parseInput(value){
   if(value&&typeof value==="object"&&!Array.isArray(value))return value;
@@ -66,14 +67,17 @@ export function createCloudTimelineExecutor({timelines,mediaIO,renderTimeline,pr
       if(info.size>maxOutputBytes)throw Object.assign(new Error("Timeline output exceeds the configured limit."),{code:"CLOUD_TIMELINE_OUTPUT_TOO_LARGE"});
       const probed=await probeOutput(output.path);
       const probeValidation=validateMediaOutputProbe(probed,output.mediaType);
+      const deliveryProfileId=record.timeline.deliveryProfileId||null;
+      const deliveryReport=deliveryProfileId?evaluateDeliveryOutput(probed,deliveryProfileId):null;
+      if(deliveryReport?.status==="needs-attention")throw Object.assign(new Error("Rendered output failed its selected delivery profile checks; the output was not published."),{code:"DELIVERY_PROFILE_VALIDATION_FAILED",deliveryReport});
       const sha256=await digest(output.path);
       onProgress(90);
       const outputAsset=await mediaIO.publish({
         ownerId:job.owner_id,projectId:record.projectId,filename:output.filename,mediaType:output.mediaType,
-        path:output.path,metadata:{...(output.metadata||{}),operation:"timeline.render",timelineId:record.id,timelineRevision:record.revision,renderManifest:output.renderManifest,sha256,probe:probed,probeValidation,render:output.render||{}}
+        path:output.path,metadata:{...(output.metadata||{}),operation:"timeline.render",timelineId:record.id,timelineRevision:record.revision,renderManifest:output.renderManifest,sha256,probe:probed,probeValidation,...(deliveryReport?{deliveryReport}:{}),render:output.render||{}}
       });
       onProgress(100);
-      return{timelineId:record.id,timelineRevision:record.revision,outputAsset,sha256,byteSize:info.size,probeValidation,render:output.render||{},renderManifest:output.renderManifest};
+      return{timelineId:record.id,timelineRevision:record.revision,outputAsset,sha256,byteSize:info.size,probeValidation,...(deliveryReport?{deliveryReport}:{}),render:output.render||{},renderManifest:output.renderManifest};
     }finally{
       await Promise.all([...materialized.values()].map(asset=>asset.cleanup?.().catch(()=>{})));
       await rm(workDir,{recursive:true,force:true}).catch(()=>{});
