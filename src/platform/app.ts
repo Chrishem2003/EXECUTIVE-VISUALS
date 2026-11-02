@@ -22,7 +22,7 @@ const state={seriesPlans:[] as SeriesProductionPlan[],activeSeriesId:"",projects
 const urls=new Map<string,string>();const cloudAssetUrls=new Map<string,string>();const uid=()=>crypto.randomUUID();const esc=(v:string)=>v.replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]||c));const $=<T extends HTMLElement>(s:string)=>document.querySelector<T>(s)!;
 function load(){try{const stored=JSON.parse(localStorage.getItem(KEY)||"{}") as Partial<typeof state>;delete stored.transformationDrafts;localStorage.setItem(KEY,JSON.stringify(stored));Object.assign(state,stored);}catch{}state.transformationDrafts=[];state.tab="home";}
 function save(){
- const persistedState={...state};delete persistedState.transformationDrafts;
+ const persistedState={...state,transformationDrafts:undefined};
  localStorage.setItem(KEY,JSON.stringify({...persistedState,tab:"home"}));
  window.dispatchEvent(new CustomEvent("ev:save-creative-draft",{detail:{
   creativeProjects:state.projects,tasks:state.tasks,shots:state.shots,characters:state.characters,
