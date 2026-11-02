@@ -9,7 +9,7 @@ import { createCloudAssetAuthorizer } from "./cloud-asset-auth.mjs";
 import { createCloudTimelineService } from "./cloud-timeline-service.mjs";
 import { buildTransformationReadinessReport } from "./transformation-readiness.mjs";
 import { validateSrt, validateWebVtt } from "./caption-validation.mjs";
-import { verifyDeliveryManifest } from "./delivery-manifest.mjs";
+import { createDeliveryPackage, verifyDeliveryManifest } from "./delivery-manifest.mjs";
 
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const safeId=(value)=>typeof value==="string"&&UUID.test(value);
@@ -200,9 +200,8 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     let downloadUrl;try{downloadUrl=new URL(signed.url);if(downloadUrl.protocol!=="https:"||downloadUrl.username||downloadUrl.password||downloadUrl.hash)throw new Error();}catch{return response(502,{error:{code:"DELIVERY_DOWNLOAD_URL_INVALID",message:"The private storage service returned an unsafe download URL."}});}
     const events=await request("job_events?select=id,event_type,event_data,created_at&job_id=eq."+encodeURIComponent(job.id)+"&order=id.asc");
     const approvals=(Array.isArray(events)?events:[]).filter(event=>event.event_type==="delivery.reviewed"&&event.event_data?.fingerprint===receipt.fingerprint).map(event=>({id:event.id,...event.event_data,createdAt:event.created_at}));
-    const packageBody={schemaVersion:1,packageType:"executive-visuals-delivery",generatedAt:new Date().toISOString(),jobId:job.id,projectId:job.project_id,timelineId:receipt.timelineId,timelineRevision:receipt.timelineRevision,master:{assetId:asset.id,filename:asset.name,mediaType:asset.mediaType,byteSize:asset.size,sha256:asset.sha256,downloadUrl:downloadUrl.href,downloadUrlExpiresInSeconds:300},deliveryReceipt:receipt,renderManifest:receipt.renderManifest,deliveryReport:receipt.deliveryReport,reviewHistory:approvals};
-    const packageFingerprint=createHash("sha256").update(stableJson(packageBody)).digest("hex");
-    return response(200,{deliveryPackage:{...packageBody,packageFingerprint}});
+    const deliveryPackage=createDeliveryPackage({jobId:job.id,projectId:job.project_id,timelineId:receipt.timelineId,timelineRevision:receipt.timelineRevision,master:{assetId:asset.id,filename:asset.name,mediaType:asset.mediaType,byteSize:asset.size,sha256:asset.sha256,downloadUrl:downloadUrl.href,downloadUrlExpiresInSeconds:300},deliveryReceipt:receipt,renderManifest:receipt.renderManifest,deliveryReport:receipt.deliveryReport,reviewHistory:approvals});
+    return response(200,{deliveryPackage});
    }
    const jobMatch=path.match(/^\/api\/cloud\/jobs\/([0-9a-f-]+)(?:\/(events))?$/i);
    if(jobMatch&&safeId(jobMatch[1])&&method==="GET"){
