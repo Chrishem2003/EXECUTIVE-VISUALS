@@ -522,3 +522,20 @@ test("refuses cloud AI-upscale inference when the queued source fingerprint chan
   assert.equal(cleaned,true);
  }finally{await rm(directory,{recursive:true,force:true});}
 });
+
+
+test("cloud AI upscale hashes materialized bytes instead of trusting unchanged asset metadata",async()=>{
+ const directory=await mkdtemp(join(tmpdir(),"cloud-ai-upscale-byte-hash-"));
+ const source=join(directory,"source.png");
+ let cleaned=false,published=false;
+ try{
+  await writeFile(source,"tampered image bytes");
+  const execute=createCloudMediaExecutor({tempRoot:directory,mediaIO:{
+   async materialize(){return{path:source,asset:{id:"image-source",name:"portrait.png",mediaType:"image/png",sha256:"d".repeat(64)},async cleanup(){cleaned=true;}};},
+   async publish(){published=true;throw new Error("publish must not be reached");}
+  }});
+  await assert.rejects(()=>execute({job:{id:"job-source-byte-change",owner_id:"owner",project_id:"project",job_type:"media.ai-upscale",input:{sourceAssetId:"image-source",sourceSha256:"d".repeat(64),model:"realesrgan-x4plus",scale:4,tile:0,format:"png"}},onProgress(){}}),error=>error.code==="AI_UPSCALE_SOURCE_CHANGED");
+  assert.equal(cleaned,true);
+  assert.equal(published,false);
+ }finally{await rm(directory,{recursive:true,force:true});}
+});
