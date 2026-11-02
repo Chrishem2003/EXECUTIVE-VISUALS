@@ -60,19 +60,76 @@ function run(binary, args, timeoutMs, signal) {
   });
 }
 
-async function validateImageOutput(path, format) {
+async function inspectImage(path) {
   const handle = await open(path, "r");
   try {
-    const header = Buffer.alloc(32);
-    const { bytesRead } = await handle.read(header, 0, header.length, 0);
-    const bytes = header.subarray(0, bytesRead);
-    const valid = format === "png"
-      ? bytes.length >= 24 && bytes.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10])) && bytes.toString("ascii",12,16) === "IHDR"
-      : format === "jpg"
-        ? bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff
-        : bytes.length >= 12 && bytes.toString("ascii",0,4) === "RIFF" && bytes.toString("ascii",8,12) === "WEBP";
-    if (!valid) throw fail("AI upscaling output does not match the requested image format.", "AI_UPSCALE_OUTPUT_INVALID");
+    const info = await handle.stat();
+    if (!info.isFile() || info.size < 24) throw fail("Image output is missing or truncated.", "AI_UPSCALE_OUTPUT_INVALID");
+    const head = Buffer.alloc(Math.min(64, info.size));
+    const { bytesRead } = await handle.read(head, 0, head.length, 0);
+    const bytes = head.subarray(0, bytesRead);
+    if (bytes.length >= 24 && bytes.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10])) && bytes.toString("ascii", 12, 16) === "IHDR") {
+      const width = bytes.readUInt32BE(16), height = bytes.readUInt32BE(20);
+      if (!width || !height || width > 32768 || height > 32768) throw fail("Image dimensions are invalid or exceed the supported limit.", "AI_UPSCALE_OUTPUT_INVALID");
+      return { format: "png", width, height, byteSize: info.size };
+    }
+    if (bytes.length >= 4 && bytes[0] === 0xff && bytes[1] === 0xd8) {
+      // JPEG dimensions are stored in a Start Of Frame segment. Bound the
+      // metadata scan so malformed files cannot force unbounded reads.
+      const scanSize = Math.min(info.size, 1024 * 1024);
+      const scan = Buffer.alloc(scanSize);
+      const result = await handle.read(scan, 0, scanSize, 0);
+      let offset = 2;
+      while (offset + 4 <= result.bytesRead) {
+        if (scan[offset] !== 0xff) { offset++; continue; }
+        while (offset < result.bytesRead && scan[offset] === 0xff) offset++;
+        const marker = scan[offset++];
+        if (marker === 0xd9 || marker === 0xda) break;
+        if ([0xd8,0x01,0xd0,0xd1,0xd2,0xd3,0xd4,0xd5,0xd6,0xd7].includes(marker)) continue;
+        if (offset + 2 > result.bytesRead) break;
+        const length = scan.readUInt16BE(offset);
+        if (length < 2 || offset + length > result.bytesRead) break;
+        if ([0xc0,0xc1,0xc2,0xc3,0xc5,0xc6,0xc7,0xc9,0xca,0xcb,0xcd,0xce,0xcf].includes(marker)) {
+          if (length < 7) break;
+          const height = scan.readUInt16BE(offset + 3), width = scan.readUInt16BE(offset + 5);
+          if (!width || !height || width > 32768 || height > 32768) break;
+          const tail = Buffer.alloc(2);
+          await handle.read(tail, 0, 2, info.size - 2);
+          if (tail[0] !== 0xff || tail[1] !== 0xd9) throw fail("JPEG output is incomplete.", "AI_UPSCALE_OUTPUT_INVALID");
+          return { format: "jpg", width, height, byteSize: info.size };
+        }
+        offset += length;
+      }
+      throw fail("JPEG output has no valid image dimensions.", "AI_UPSCALE_OUTPUT_INVALID");
+    }
+    if (bytes.length >= 30 && bytes.toString("ascii", 0, 4) === "RIFF" && bytes.toString("ascii", 8, 12) === "WEBP") {
+      const chunk = bytes.toString("ascii", 12, 16);
+      let width = 0, height = 0;
+      if (chunk === "VP8X") {
+        width = 1 + bytes.readUIntLE(24, 3);
+        height = 1 + bytes.readUIntLE(27, 3);
+      } else if (chunk === "VP8L" && bytes[20] === 0x2f) {
+        width = 1 + bytes[21] + ((bytes[22] & 0x3f) << 8);
+        height = 1 + ((bytes[22] & 0xc0) >> 6) + (bytes[23] << 2) + ((bytes[24] & 0x0f) << 10);
+      } else if (chunk === "VP8 " && bytes[23] === 0x9d && bytes[24] === 0x01 && bytes[25] === 0x2a) {
+        width = bytes.readUInt16LE(26) & 0x3fff;
+        height = bytes.readUInt16LE(28) & 0x3fff;
+      }
+      if (width && height && width <= 32768 && height <= 32768) return { format: "webp", width, height, byteSize: info.size };
+    }
+    throw fail("Image output does not contain a supported image header and dimensions.", "AI_UPSCALE_OUTPUT_INVALID");
   } finally { await handle.close(); }
+}
+
+async function validateImageOutput(path, format, sourceDimensions, scale) {
+  const image = await inspectImage(path);
+  if (image.format !== format) throw fail("AI upscaling output does not match the requested image format.", "AI_UPSCALE_OUTPUT_INVALID");
+  const expectedWidth = sourceDimensions.width * scale;
+  const expectedHeight = sourceDimensions.height * scale;
+  if (image.width !== expectedWidth || image.height !== expectedHeight) {
+    throw fail("AI upscaling output dimensions do not match the requested scale.", "AI_UPSCALE_DIMENSIONS_MISMATCH");
+  }
+  return image;
 }
 
 export function createRealEsrganAdapter({
@@ -158,14 +215,15 @@ export function createRealEsrganAdapter({
     if (!readiness.available || !readiness.executionEnabled) throw fail(readiness.reason, "AI_UPSCALE_ENGINE_UNAVAILABLE");
     const input = resolve(options.inputPath), output = resolve(options.outputPath);
     if (!(await regularFile(input))) throw fail("AI upscale input must be an existing regular file.", "AI_UPSCALE_INVALID_INPUT");
+    const sourceImage = await inspectImage(input);
     try { await lstat(output); throw fail("AI upscale output already exists; source files are never overwritten.", "AI_UPSCALE_OUTPUT_EXISTS"); }
     catch (error) { if (error.code !== "ENOENT") throw error; }
     if (dirname(output) === input || output.startsWith(input + sep)) throw fail("AI upscale output path is invalid.", "AI_UPSCALE_INVALID_PATH");
     await run(prepared.binary, prepared.args, timeoutMs, options.signal);
     const info = await stat(output).catch(() => null);
     if (!info?.isFile() || info.size < 24 || info.size > maxOutputBytes) throw fail("AI upscale output is missing, empty or exceeds the configured size limit.", "AI_UPSCALE_OUTPUT_INVALID");
-    await validateImageOutput(output, prepared.format);
-    return { path: output, byteSize: info.size, model: prepared.model, scale: prepared.scale, tile: prepared.tile, format: prepared.format, engine: "realesrgan-ncnn-vulkan", method: "ai-super-resolution" };
+    const outputImage = await validateImageOutput(output, prepared.format, sourceImage, prepared.scale);
+    return { path: output, byteSize: info.size, width: outputImage.width, height: outputImage.height, sourceWidth: sourceImage.width, sourceHeight: sourceImage.height, model: prepared.model, scale: prepared.scale, tile: prepared.tile, format: prepared.format, engine: "realesrgan-ncnn-vulkan", method: "ai-super-resolution" };
   }
 
   return Object.freeze({ probe, plan, execute, selfTest });
