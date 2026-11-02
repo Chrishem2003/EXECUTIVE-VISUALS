@@ -11,6 +11,7 @@ import { analyzeCreativeTraceability, readCreativeTrace } from "../core/creative
 import { appendCreativeDecision, readCreativeDecisionHistory } from "../core/creative-decision-ledger";
 import { compareTimelineVariants, createTimelineVariant, type TimelineVariantComparison } from "../core/timeline-variants";
 import { addClip, addMarker, addTrack, createTimeline, moveClip, rational, splitClip, toOpenTimelineIo, trimClip, type EditorialTimeline, type TimelineTrack } from "../core/timeline";
+import { createTimelineFromTemplate, TIMELINE_TEMPLATES } from "../core/timeline-templates";
 
 type Asset={id:string;name:string;mediaType:string;size:number;metadata?:Record<string,unknown>};
 type SavedTimeline={id:string;projectId?:string|null;name:string;revision:number;document?:EditorialTimeline};
@@ -127,7 +128,7 @@ export function renderTimelineWorkspace(){
  return '<div id="timeline-workspace"><div class="timeline-toolbar"><label>Workspace <select id="tl-mode"><option value="local" '+(state.mode==="local"?"selected":"")+' >Local</option><option value="cloud" '+(state.mode==="cloud"?"selected":"")+' >Cloud project</option></select></label><label>Cloud project <select id="tl-cloud-project"><option value="">Select project</option>'+state.cloudProjects.map(p=>'<option value="'+esc(p.id)+'" '+(p.id===state.cloudProjectId?'selected':'')+'>'+esc(p.name)+'</option>').join("")+'</select></label><label>Saved sequence <select id="tl-saved-sequence"><option value="">Current sequence</option>'+(state.mode==="cloud"?state.cloudTimelines.map(t=>'<option value="'+esc(t.id)+'" '+(state.timeline?.id===t.id?'selected':'')+'>'+esc(t.name)+' · r'+t.revision+'</option>').join(""):state.timelines.map(t=>'<option value="'+esc(t.id)+'" '+(state.timeline?.id===t.id?'selected':'')+'>'+esc(t.name)+' · r'+t.revision+'</option>').join(""))+'</select></label><button class="secondary" data-tl-create-cloud>＋ New cloud timeline</button><button class="secondary" data-tl-action="duplicate-variant">Duplicate as variant</button><span class="runtime-status '+state.status+'"><i></i>'+esc(state.status==="ready"?"TIMELINE SAVED":state.status==="auth"?"SIGN IN REQUIRED":state.status==="offline"?"API OFFLINE":"LOADING")+'</span><button class="secondary" data-tl-action="refresh">↻ Refresh</button><button class="secondary" data-tl-action="export">Export OTIO JSON</button>'+(state.mode==="cloud"&&state.cloudRenderJobId?'<button class="secondary" data-tl-action="cloud-job">Check cloud render · '+esc(state.cloudRenderJobStatus||"queued")+'</button>':'')+''+(state.ffmpeg?'<button class="primary" data-tl-action="render">Render master MP4</button>':'<span class="muted">FFmpeg required for master render</span>')+'</div>'+
  (state.message?'<div class="notice">'+esc(state.message)+'</div>':'')+
  '<div class="timeline-editor-grid"><section class="panel"><div class="eyebrow">SEQUENCE SETTINGS</div><h3>'+(state.timeline?esc(state.timeline.name):"No sequence loaded")+'</h3>'+
- '<form id="tl-add-track"><label>Track name</label><input name="name" required placeholder="Video 2 / Music / Captions"><label>Track type</label><select name="kind"><option value="video">Video</option><option value="audio">Audio</option><option value="overlay">Overlay</option><option value="caption">Captions</option></select><button class="secondary">＋ Add track</button></form>'+
+ '<form id="tl-create-template" class="timeline-template-form"><label>Start a sequence from a template</label><select name="templateId">${TIMELINE_TEMPLATES.map(template=>'<option value="'+esc(template.id)+'">'+esc(template.name)+' · '+template.width+'×'+template.height+' · '+template.frameRate+' fps</option>').join("")}</select><small>Creates an editable sequence with a suitable frame size, frame rate and track layout. No media or provider jobs are created.</small><button class="secondary wide">＋ Create from template</button></form><div class="eyebrow" style="margin-top:18px">CUSTOM TRACKS</div><form id="tl-add-track"><label>Track name</label><input name="name" required placeholder="Video 2 / Music / Captions"><label>Track type</label><select name="kind"><option value="video">Video</option><option value="audio">Audio</option><option value="overlay">Overlay</option><option value="caption">Captions</option></select><button class="secondary">＋ Add track</button></form>'+
  '<div class="eyebrow" style="margin-top:18px">ADD SOURCE CLIP</div><form id="tl-add-clip"><label>Source asset</label><select id="tl-asset-select" name="assetId" required>'+assetOptions()+'</select><label>Destination track</label><select name="trackId">'+(state.timeline?.tracks.map(t=>'<option value="'+esc(t.id)+'">'+esc(t.name)+'</option>').join("")||"")+'</select><div class="form-grid"><div><label>Timeline start (frames)</label><input name="start" type="number" min="0" value="'+maxEnd()+'"></div><div><label>Source in (source frames)</label><input name="sourceIn" type="number" min="0" value="0"></div><div><label>Duration (timeline frames)</label><input name="duration" type="number" min="1" value="'+(fps()*5)+'"></div></div><button class="primary wide">＋ Place clip on timeline</button></form>'+
  '<form id="tl-add-marker"><div class="eyebrow" style="margin-top:18px">REVIEW MARKER</div><label>Marker title</label><input name="name" required placeholder="Hook / transition / review note"><label>Position (frames)</label><input name="frame" type="number" min="0" value="0"><button class="secondary">＋ Add marker</button></form></section>'+
  '<section class="panel"><div class="timeline-panel-heading"><div><div class="eyebrow">MULTI-TRACK EDITOR</div><h3>Sequence timeline</h3></div><small>'+(state.timeline?.frameRate.numerator+"/"+state.timeline?.frameRate.denominator+" fps")+'</small></div>'+
@@ -182,6 +183,24 @@ async function persist(){
  const result=await apiRequest<{revision:number}>("/api/timelines/"+state.timeline.id,{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({revision:state.serverRevision,name:state.timeline.name,timeline:state.timeline,otio})});
  state.serverRevision=result.revision;state.timeline={...state.timeline,revision:result.revision};state.status="ready";state.message="Saved revision "+result.revision+".";
 }
+async function createFromTemplate(templateId:string){
+ const template=TIMELINE_TEMPLATES.find(item=>item.id===templateId);
+ if(!template)throw new Error("Choose a valid sequence template.");
+ if(state.mode==="cloud"){
+  if(!state.cloudProjectId)throw new Error("Select a cloud project before creating a sequence.");
+  const timeline=createTimelineFromTemplate(templateId,state.cloudProjectId,crypto.randomUUID());
+  const result=await apiRequest<{timeline:CloudSavedTimeline}>("/api/cloud/timelines",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({projectId:state.cloudProjectId,name:timeline.name,timeline,otio:toOpenTimelineIo(timeline)})});
+  state.timeline=result.timeline.timeline;state.serverRevision=result.timeline.revision;
+ }else{
+  const timeline=createTimelineFromTemplate(templateId,"local-sequence",crypto.randomUUID());
+  const result=await apiRequest<{timeline:SavedTimeline}>("/api/timelines",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({name:timeline.name,timeline})});
+  state.timeline=result.timeline.document||timeline;state.serverRevision=result.timeline.revision;
+ }
+ state.selectedClipId="";state.selectedTrack=state.timeline.tracks[0]?.id||"";
+ await refresh();
+ state.message=template.name+" sequence created with "+template.tracks.length+" ready-to-use tracks. Add your source media to begin.";
+ state.status="ready";paint();
+}
 async function createCloudTimeline(){
  if(state.mode!=="cloud"||!state.cloudProjectId)throw new Error("Select a cloud project before creating a timeline.");
  let timeline=createTimeline(state.cloudProjectId,crypto.randomUUID(),"Untitled cloud sequence",{numerator:24,denominator:1});
@@ -230,7 +249,9 @@ async function runAction(action:HTMLElement){
  try{await persist();}catch(error){state.message=error instanceof Error?error.message:"Save failed.";state.status="offline";}paint();
 }
 document.addEventListener("submit",event=>{
- const form=event.target as HTMLFormElement;if(!state.timeline)return;
+ const form=event.target as HTMLFormElement;
+ if(form.id==="tl-create-template"){event.preventDefault();const data=new FormData(form);void createFromTemplate(String(data.get("templateId")||"")).catch(error=>{state.message=error instanceof Error?error.message:"Template sequence creation failed.";paint();});return;}
+ if(!state.timeline)return;
  if(form.id==="tl-add-track"){
   event.preventDefault();const data=new FormData(form),name=String(data.get("name")||"").trim(),kind=String(data.get("kind")||"video") as TimelineTrack["kind"];
   if(!name)return;
