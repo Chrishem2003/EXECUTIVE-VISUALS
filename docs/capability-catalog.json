@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-10-31",
+  "generatedAt": "2026-11-02",
   "status": "specification-only",
   "policy": "Capabilities are product targets. No provider is marked supported until a versioned adapter contract and conformance test prove it.",
   "domains": [
@@ -578,6 +578,31 @@
       "workflow.batch-execution",
       "workflow",
       "Execute a workflow against a batch of inputs"
+    ],
+    [
+      "video.transform-vehicle",
+      "video",
+      "Transform or replace a vehicle in existing footage"
+    ],
+    [
+      "video.transform-wardrobe",
+      "video",
+      "Transform wardrobe in existing footage"
+    ],
+    [
+      "video.transform-object",
+      "video",
+      "Replace or remove selected objects in existing footage"
+    ],
+    [
+      "video.transform-scene",
+      "video",
+      "Transform the background or visual style of existing footage"
+    ],
+    [
+      "video.transform-person",
+      "video",
+      "Replace a person in existing footage with consent"
     ]
   ],
   "requiredCapabilityFields": [
@@ -627,6 +652,6 @@
     "Secrets never enter client bundles, prompts or logs."
   ],
   "sourceOfTruth": "src/core/capability-atlas.ts",
-  "capabilityCount": 110,
+  "capabilityCount": 115,
   "domainCount": 23
 }
