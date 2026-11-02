@@ -183,7 +183,7 @@ test("creates benchmark evidence from a persisted AI-upscale derivative and its 
     }}
   };
   const record=buildUpscaleBenchmarkRecordFromAsset({
-    outputAsset:asset,fixtureId:"portrait-01",fixtureCategory:"portrait"
+    outputAsset:asset,fixtureId:"portrait-01",fixtureCategory:"portrait",qualityReview:"reviewed_pass"
   });
   assert.equal(validateUpscaleBenchmarkRecord(record).valid,true);
   assert.equal(record.inputSha256,sourceHash);
