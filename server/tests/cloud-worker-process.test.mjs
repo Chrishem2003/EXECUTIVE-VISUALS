@@ -37,3 +37,16 @@ test("cloud worker supervisor waits for all families and reports individual fail
  await supervisor.start();await supervisor.stop();
  assert.deepEqual(calls,["failed","completed"]);assert.deepEqual(errors,["queue unavailable"]);
 });
+
+test("cloud worker supervisor recovers every pool independently when one recovery fails",async()=>{
+ const errors=[],events=[];
+ const workers=[
+  {async recoverExpired(){throw new Error("media recovery unavailable");},async runCycle(){return{claimed:false};}},
+  {async recoverExpired(){return 4;},async runCycle(){return{claimed:false};}}
+ ];
+ const supervisor=createCloudWorkerSupervisor({workers,leaseSeconds:60,heartbeatIntervalMs:10000,pollMs:1000,onLog:event=>events.push(event),onError:error=>errors.push(error.message)});
+ await supervisor.start();await supervisor.stop();
+ assert.deepEqual(errors,["media recovery unavailable"]);
+ assert.ok(events.some(event=>event.kind==="recovery"&&event.workerIndex===1&&event.count===4));
+ assert.ok(events.some(event=>event.kind==="started"));
+});
