@@ -3,15 +3,18 @@ import { createHash } from "node:crypto";
 const SHA256 = /^[a-f0-9]{64}$/i;
 const STATUSES = new Set(["passed", "failed", "skipped"]);
 const QUALITY_STATES = new Set(["not_reviewed", "reviewed_pass", "reviewed_fail"]);
+export const REQUIRED_UPSCALE_FIXTURE_CATEGORIES = Object.freeze(["portrait", "fine_texture", "text", "animation", "low_light_noisy"]);
+const FIXTURE_CATEGORIES = new Set(REQUIRED_UPSCALE_FIXTURE_CATEGORIES);
 
 export function validateUpscaleBenchmarkRecord(record) {
   const issues = [];
   if (!record || typeof record !== "object" || Array.isArray(record)) {
     return { valid: false, issues: ["record must be an object"] };
   }
-  for (const key of ["fixtureId", "model", "modelVersion", "binarySha256", "modelFilesSha256", "inputSha256", "outputSha256"]) {
+  for (const key of ["fixtureId", "fixtureCategory", "model", "modelVersion", "binarySha256", "modelFilesSha256", "inputSha256", "outputSha256"]) {
     if (typeof record[key] !== "string" || !record[key].trim()) issues.push(key + " is required");
   }
+  if (typeof record.fixtureCategory === "string" && !FIXTURE_CATEGORIES.has(record.fixtureCategory)) issues.push("fixtureCategory is unsupported");
   for (const key of ["binarySha256", "modelFilesSha256", "inputSha256", "outputSha256"]) {
     if (typeof record[key] === "string" && !SHA256.test(record[key])) issues.push(key + " must be a SHA-256 hex digest");
   }
@@ -46,6 +49,8 @@ export function summarizeUpscaleBenchmarks(records) {
   const executionFailed = validRecords.filter(record => record.executionStatus === "failed").length;
   const qualityReviewed = validRecords.filter(record => record.qualityReview === "reviewed_pass").length;
   const qualityRejected = validRecords.filter(record => record.qualityReview === "reviewed_fail").length;
+  const reviewedPassCategories = new Set(validRecords.filter(record => record.executionStatus === "passed" && record.qualityReview === "reviewed_pass").map(record => record.fixtureCategory));
+  const missingCategories = REQUIRED_UPSCALE_FIXTURE_CATEGORIES.filter(category => !reviewedPassCategories.has(category));
   return {
     schemaVersion: 1,
     generatedAt: new Date().toISOString(),
