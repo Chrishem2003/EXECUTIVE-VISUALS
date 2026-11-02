@@ -46,3 +46,22 @@ export function validateWebVtt(content,{durationSeconds=null,maxCues=MAX_CUES}={
  const errors=findings.filter(item=>item.severity==="error").length,warnings=findings.filter(item=>item.severity==="warning").length;
  return{status:errors?"blocked":warnings?"review":"passed",format:"webvtt",cueCount:cues.length,findings,metrics:{overlaps,longLines,highReadingSpeed,durationSeconds:Number.isFinite(durationSeconds)?durationSeconds:null}};
 }
+
+export function validateSrt(content,{durationSeconds=null,maxCues=MAX_CUES}={}){
+ const text=String(content??"");
+ if(Buffer.byteLength(text,"utf8")>MAX_BYTES)return{status:"blocked",format:"srt",cueCount:0,findings:[{code:"CAPTION_FILE_TOO_LARGE",severity:"error",detail:"Caption file exceeds the 2 MiB limit."}],metrics:{overlaps:0,longLines:0,highReadingSpeed:0}};
+ const blocks=text.replace(/^\\uFEFF/,"").replace(/\\r\\n?/g,"\\n").trim().split(/\\n\\s*\\n/).filter(Boolean);
+ const converted=[];let invalid=0;
+ for(const block of blocks){
+  const lines=block.split("\\n"),timingIndex=lines.findIndex(line=>line.includes("-->"));
+  if(timingIndex<0){invalid++;converted.push("INVALID SRT CUE\\n"+block);continue;}
+  const timing=lines[timingIndex].match(/^\\s*(\\d{2,}:[0-5]\\d:[0-5]\\d)[,.](\\d{3})\\s+-->\\s+(\\d{2,}:[0-5]\\d:[0-5]\\d)[,.](\\d{3})(?:\\s+.*)?$/);
+  if(!timing){invalid++;converted.push("INVALID SRT CUE\\n"+block);continue;}
+  converted.push(timing[1]+"."+timing[2]+" --> "+timing[3]+"."+timing[4]+"\\n"+lines.slice(timingIndex+1).join("\\n"));
+ }
+ const report=validateWebVtt("WEBVTT\\n\\n"+converted.join("\\n\\n"),{durationSeconds,maxCues});
+ const findings=[...report.findings];
+ if(invalid)findings.push({code:"CAPTION_SRT_BLOCK_INVALID",severity:"error",detail:invalid+" SRT block(s) have missing or malformed timing lines."});
+ const errors=findings.some(item=>item.severity==="error"),warnings=findings.some(item=>item.severity==="warning");
+ return{...report,format:"srt",findings,status:errors?"blocked":warnings?"review":"passed"};
+}
