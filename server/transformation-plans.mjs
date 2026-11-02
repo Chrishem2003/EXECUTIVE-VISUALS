@@ -106,6 +106,24 @@ export function approveTransformationPlan(db,{ownerId,planId,body}={}){
  return record(db.prepare("SELECT * FROM transformation_plans WHERE id=?").get(plan.id));
 }
 
+
+/**
+ * Cancel only plans that have not entered execution. This is a state transition,
+ * not a worker interrupt; queued/running plans require lease-aware cancellation.
+ */
+export function cancelTransformationPlan(db,{ownerId,planId}={}) {
+ const plan=db.prepare("SELECT * FROM transformation_plans WHERE id=?").get(planId);
+ if(!plan||!getProjectAccess(db,ownerId,plan.project_id)||!canWriteProject(db,ownerId,plan.project_id))
+  throw fail("Transformation plan not found or editor access required.","TRANSFORMATION_NOT_FOUND",404);
+ if(!["draft","approved","failed"].includes(plan.status))
+  throw fail("Only drafts, approved plans, or failed plans can be cancelled without a worker interrupt.","TRANSFORMATION_STATE_CONFLICT",409);
+ const at=new Date().toISOString();
+ const changed=db.prepare("UPDATE transformation_plans SET status='cancelled',updated_at=? WHERE id=? AND status=?")
+  .run(at,plan.id,plan.status);
+ if(changed.changes!==1)throw fail("Transformation plan changed while cancellation was being recorded.","TRANSFORMATION_STATE_CONFLICT",409);
+ return record(db.prepare("SELECT * FROM transformation_plans WHERE id=?").get(plan.id));
+}
+
 export function listTransformationPlans(db,ownerId,projectId){
  if(!getProjectAccess(db,ownerId,projectId))throw fail("Project not found.","PROJECT_NOT_FOUND",404);
  return db.prepare("SELECT * FROM transformation_plans WHERE project_id=? ORDER BY created_at DESC LIMIT 100").all(projectId).map(record);
