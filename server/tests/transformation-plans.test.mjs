@@ -29,3 +29,8 @@ test("accepts the exact wardrobe/restyle controls used by the studio and rejects
  const restyle=createTransformationPlan(f.db,{ownerId:f.owner,body:{...f.body,operation:"style_transfer"},idempotencyKey:"transform-key-007"});
  assert.equal(restyle.plan.operation,"style_transfer");
 }finally{await f.close();}});
+
+test("rejects null and array request bodies with a client error",async()=>{const f=await fixture();try{
+ assert.throws(()=>createTransformationPlan(f.db,{ownerId:f.owner,body:null,idempotencyKey:"transform-key-008"}),e=>e.code==="TRANSFORMATION_BODY_INVALID");
+ assert.throws(()=>createTransformationPlan(f.db,{ownerId:f.owner,body:[],idempotencyKey:"transform-key-009"}),e=>e.code==="TRANSFORMATION_BODY_INVALID");
+}finally{await f.close();}});
