@@ -50,7 +50,7 @@ test("registers a controlled fixture and derives benchmark evidence from its exa
 test("rejects a derivative whose input hash or parent does not match the registered fixture",async()=>{
  const f=await fixture();try{
   const fixtureRecord=createUpscaleBenchmarkFixture(f.db,{ownerId:owner,projectId:project,sourceAssetId:sourceId,category:"portrait"});
-  f.db.prepare("UPDATE assets SET derivative_of=? WHERE id=?").run("55555555-5555-4555-8555-555555555555",outputId);
+  f.db.prepare("UPDATE assets SET derivative_of=NULL WHERE id=?").run(outputId);
   assert.throws(()=>registerUpscaleBenchmarkRun(f.db,{ownerId:owner,projectId:project,assetId:outputId,fixtureId:fixtureRecord.id}),error=>error.code==="UPSCALE_BENCHMARK_EVIDENCE_INVALID"||error.code==="UPSCALE_BENCHMARK_FIXTURE_MISMATCH");
  }finally{await f.close();}
 });
