@@ -39,3 +39,18 @@ The record starts with `qualityReview: "not_reviewed"`. A successful engine invo
 ## Benchmark evidence from real derivatives
 
 The benchmark module now exposes `buildUpscaleBenchmarkRecordFromAsset`. It accepts a completed image derivative plus a fixture ID/category from the controlled fixture registry, then derives hashes, model/build identity, dimensions, scale, execution duration, review state, and timestamp from the persisted asset provenance. It rejects mismatched output hashes, source-parent lineage, non-image outputs, and incomplete provenance. Benchmark registration therefore cannot silently substitute caller-provided hashes or claim visual approval from a successful worker run.
+
+
+## Governed upscale benchmark workflow
+
+Benchmark evidence is now project-scoped and persisted in SQLite. A project editor registers a fixture against an accessible still-image asset and one of the required categories: portrait, fine texture, text, animation, or low-light/noisy. The registry pins the source asset ID and SHA-256; a run can be registered only when its derived asset's parent ID and input hash match that exact fixture.
+
+The API exposes:
+
+- `GET /api/upscale-benchmarks/fixtures?projectId=...` and `POST /api/upscale-benchmarks/fixtures?projectId=...`
+- `GET /api/upscale-benchmarks/runs?projectId=...` and `POST /api/upscale-benchmarks/runs?projectId=...`
+- `POST /api/upscale-benchmarks/runs/:runId/review?projectId=...`
+
+Only project owners/editors can register fixtures and runs. Quality decisions are restricted to project owners and assigned reviewers. The registering user cannot review their own run; a decision is immutable once recorded. Review decisions and fixture/run registration are written to the audit log. Benchmark summaries continue to recommend only pinned model builds with successful execution, all five fixture categories, and independent passing quality reviews. A run with missing evidence, a rejected review, or pending review cannot be promoted.
+
+The `verify:upscale-benchmark` script now runs both the pure benchmark tests and the SQLite-backed governance tests. The workflow is additive: it creates new benchmark tables and does not rewrite existing assets or media jobs.
