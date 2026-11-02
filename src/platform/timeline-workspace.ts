@@ -14,7 +14,7 @@ import { clampPreviewSeconds, stepPreviewSeconds } from "../core/timeline-previe
 import { createTimelineHistory, recordTimelineHistory, undoTimeline, redoTimeline, type TimelineHistory } from "../core/timeline-history";
 import { getTimelineHistoryShortcut } from "../core/timeline-shortcuts";
 
-type Asset={id:string;name:string;mediaType:string;size:number;metadata?:Record<string,unknown>};
+type Asset={id:string;name:string;mediaType:string;size:number;sha256?:string;derivativeOf?:string|null;metadata?:Record<string,unknown>};
 type SavedTimeline={id:string;projectId?:string|null;name:string;revision:number;document?:EditorialTimeline};
 type CloudProject={id:string;name:string};
 type CloudSavedTimeline={id:string;projectId?:string|null;name:string;revision:number;timeline:EditorialTimeline;updatedAt:string};
