@@ -169,7 +169,7 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     if(job.status!=="succeeded"||!receipt||!verifyDeliveryManifest(receipt)||receipt.timelineId!==timelineInput.timelineId||receipt.timelineRevision!==Number(timelineInput.timelineRevision)||receipt.outputAsset!==(output.outputAsset?.id||output.outputAssetId)||receipt.sha256!==output.sha256)
      return response(409,{error:{code:"DELIVERY_EVIDENCE_UNVERIFIED",message:"This render has no valid, revision-matched delivery receipt. Approval is blocked."}});
     const events=await request("job_events?select=id,event_type,event_data,created_at&job_id=eq."+encodeURIComponent(job.id)+"&order=id.asc");
-    const approvals=(Array.isArray(events)?events:[]).filter(event=>event.event_type==="delivery.approved"&&event.event_data?.fingerprint===receipt.fingerprint);
+    const approvals=(Array.isArray(events)?events:[]).filter(event=>event.event_type==="delivery.reviewed"&&event.event_data?.fingerprint===receipt.fingerprint);
     if(method==="GET")return response(200,{receipt,approval:approvals.length?{...approvals.at(-1).event_data,createdAt:approvals.at(-1).created_at}:null,approvalHistory:approvals.map(event=>({id:event.id,...event.event_data,createdAt:event.created_at}))});
     if(job.owner_id===ownerId)return response(403,{error:{code:"INDEPENDENT_REVIEW_REQUIRED",message:"The render creator cannot approve their own delivery. A different authorized project reviewer is required."}});
     if(approvals.some(event=>event.event_data?.reviewerId===ownerId))return response(409,{error:{code:"DELIVERY_ALREADY_REVIEWED",message:"This reviewer has already recorded a decision for this exact delivery fingerprint."}});
