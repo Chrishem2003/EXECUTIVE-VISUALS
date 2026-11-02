@@ -20,9 +20,10 @@ const tabs:{id:Tab;label:string;group:string;icon:string}[]=[
 const baseGraph=["Creative brief","Character reference","Image generation","Video generation","Edit & captions","Enhancement","Export"];
 const state={seriesPlans:[] as SeriesProductionPlan[],activeSeriesId:"",projects:[] as Project[],tasks:[] as Task[],shots:[] as Shot[],characters:[] as Character[],assets:[] as Asset[],graph:baseGraph.slice(),tab:"home" as Tab,activeProject:"",prompt:"",plan:"",script:"",variants:[] as string[],workflowPreview:"",apiProjectId:"",cloudProjects:[] as Array<{id:string;name:string;description?:string;revision:number;settings?:Record<string,unknown>&{creativeProduction?:{project?:{audience?:string;style?:string;duration?:string};seriesPlans?:SeriesProductionPlan[];activeSeriesId?:string}}}>,cloudAssets:[] as Array<{id:string;name:string;mediaType:string;size:number;sha256:string;createdAt:string}>,cloudTimelines:[] as Array<{id:string;name:string;revision:number;updatedAt:string}>,cloudProjectId:"",cloudProjectLinks:{} as Record<string,{id:string;revision:number}>,cloudMessage:"",cloudLoading:false,transformationDrafts:[] as TransformationDraft[]};
 const urls=new Map<string,string>();const cloudAssetUrls=new Map<string,string>();const uid=()=>crypto.randomUUID();const esc=(v:string)=>v.replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]||c));const $=<T extends HTMLElement>(s:string)=>document.querySelector<T>(s)!;
-function load(){try{Object.assign(state,JSON.parse(localStorage.getItem(KEY)||"{}"));}catch{}state.tab="home";}
+function load(){try{const stored=JSON.parse(localStorage.getItem(KEY)||"{}") as Partial<typeof state>;delete stored.transformationDrafts;Object.assign(state,stored);}catch{}state.transformationDrafts=[];state.tab="home";}
 function save(){
- localStorage.setItem(KEY,JSON.stringify({...state,tab:"home"}));
+ const {transformationDrafts:_privatePlans,...persistedState}=state;
+ localStorage.setItem(KEY,JSON.stringify({...persistedState,tab:"home"}));
  window.dispatchEvent(new CustomEvent("ev:save-creative-draft",{detail:{
   creativeProjects:state.projects,tasks:state.tasks,shots:state.shots,characters:state.characters,
   prompt:state.prompt,plan:state.plan,script:state.script,variants:state.variants,seriesPlans:state.seriesPlans
@@ -101,7 +102,7 @@ async function loadCloudWorkspace(){
   await loadTransformationPlans(state.cloudProjectId);
   const timelines=await apiRequest<{timelines:Array<{id:string;name:string;revision:number;updatedAt:string}>}>("/api/cloud/timelines"+query);
   state.cloudTimelines=timelines.timelines||[];state.cloudMessage="Private cloud workspace connected.";
- }catch(error){state.cloudMessage=error instanceof Error?error.message:"Cloud workspace is unavailable. Check Supabase sign-in and cloud API configuration.";state.cloudAssets=[];}
+ }catch(error){state.cloudMessage=error instanceof Error?error.message:"Cloud workspace is unavailable. Check Supabase sign-in and cloud API configuration.";state.cloudAssets=[];state.transformationDrafts=[];}
  finally{state.cloudLoading=false;render();}
 }
 function cloudWorkspace(){
