@@ -81,7 +81,7 @@ test("delivery approval requires independent project reviewer and records finger
 test("delivery creator cannot approve own output",async()=>{
  const {job}=deliveryReviewFixture({jobOwner:owner});
  const f=setup({existing:[job]});
- const result=await f.api.handle({method:"POST",path:"/api/cloud/jobs/"+reviewJobId+"/delivery-approval",ownerId:owner,body:{decision:"approved"}});
+ const result=await f.api.handle({method:"POST",path:"/api/cloud/jobs/"+reviewJobId+"/delivery-approval",ownerId:owner,body:{decision:"approved",note:"Reviewed output and acknowledge the flagged quality warning."}});
  assert.equal(result.status,403);
 });
 test("delivery approval fails closed for modified receipt fingerprints",async()=>{
