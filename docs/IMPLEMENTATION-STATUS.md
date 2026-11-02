@@ -432,3 +432,11 @@ This is a runnable worker entry point, not a deployed worker. Do not set the ena
 - Store construction checks project ownership by default and supports an explicit server-side authorization callback for authorized project members. The store never accepts a client-supplied storage path.
 - Added tests for durable reload, user/project isolation, editor authorization callback, idempotent retries, conflicting receipts and malformed checksums.
 - **Still outstanding:** authenticated API routes that create and retrieve pipeline plans, worker integration that constructs the checkpoint store after permission checks, cloud DB migration, real adapter execution and UI polling/review. The browser draft form remains planning-only.
+
+
+## AI Transformation Studio — current milestone
+
+- Added authenticated SQLite API persistence for transformation plans, with owner/project isolation, editable source-video and reference-image validation, idempotent draft creation, rights checks and person-replacement consent checks.
+- Added a separate owner/editor approval endpoint that records a known cost estimate, a covering budget, currency and declared adapter/capability.
+- Added safe project-scoped list/detail reads and audit events for draft creation and approval.
+- Submission remains intentionally blocked with an explicit adapter-unavailable response; the browser Transformation Studio still stores its own planning drafts and is not yet wired to the API. No provider generation, credit spend, cloud migration or deployment has occurred.
