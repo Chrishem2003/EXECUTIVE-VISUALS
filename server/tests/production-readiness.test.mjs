@@ -42,8 +42,8 @@ test("trims untrusted evidence strings and does not infer a pass from an empty r
     delivery: { status: "passed", summary: "  Export preset verified  ", findings: [{ code: "x".repeat(100), detail: "d".repeat(1200) }] },
     rights: { status: "not_run", summary: " " },
   }});
-  const delivery = report.checks.find(check => check.id === "delivery")!;
-  const rights = report.checks.find(check => check.id === "rights")!;
+  const delivery = report.checks.find(check => check.id === "delivery");
+  const rights = report.checks.find(check => check.id === "rights");
   assert.equal(delivery.summary, "Export preset verified");
   assert.equal(delivery.findings[0].code.length, 80);
   assert.equal(delivery.findings[0].detail.length, 1000);
