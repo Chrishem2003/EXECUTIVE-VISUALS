@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { createWriteStream } from "node:fs";
 import { mkdtemp, rm, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -145,7 +145,8 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
      if(row.status!=="draft"||row.approved_at)return response(409,{error:{code:"TRANSFORMATION_STATE_CONFLICT",message:"Only an unapproved draft can be approved."}});
      const estimate=body?.estimatedCostMicros,budget=body?.approvedBudgetMicros,currency=String(body?.currency||"").toUpperCase(),adapterId=String(body?.adapterId||"").trim(),capability=String(body?.capability||"").trim();
      if(!Number.isSafeInteger(estimate)||estimate<0||!Number.isSafeInteger(budget)||budget<estimate||! /^[A-Z]{3}$/.test(currency)||!adapterId||!capability)return response(400,{error:{code:"TRANSFORMATION_BUDGET_INVALID",message:"Provide a known estimate, a covering budget, currency, adapter and capability."}});
-     const approval={approvalId:randomUUID(),estimatedCostMicros:estimate,approvedBudgetMicros:budget,currency,adapterId,capability};
+     const planHash=createHash("sha256").update(stableJson(row.input||{})).digest("hex");
+     const approval={schemaVersion:1,approvalId:randomUUID(),planHash,estimatedCostMicros:estimate,approvedBudgetMicros:budget,currency,adapterId,capability};
      const updated=await request("jobs?id=eq."+encodeURIComponent(row.id)+"&status=eq.draft&approved_at=is.null",{method:"PATCH",body:{status:"awaiting_approval",estimated_cost:approval,approved_by:ownerId,approved_at:new Date().toISOString(),updated_at:new Date().toISOString()}});
      if(!Array.isArray(updated)||updated.length!==1)return response(409,{error:{code:"TRANSFORMATION_STATE_CONFLICT",message:"Transformation plan changed while approval was recorded."}});
      await request("job_events",{method:"POST",body:{job_id:row.id,owner_id:row.owner_id,event_type:"transformation.approved",event_data:{approvalId:approval.approvalId,estimatedCostMicros:estimate,currency}}});
@@ -154,6 +155,9 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     if(cloudTransformationMatch[2]==="submit"&&method==="POST"){
      if(await allow({ownerId,projectId:row.project_id,action:"write"})!==true)return response(403,{error:{code:"EDITOR_REQUIRED",message:"Owner or editor access is required."}});
      if(!row.approved_at||!row.approved_by)return response(409,{error:{code:"TRANSFORMATION_APPROVAL_REQUIRED",message:"Approve the plan and budget before submission."}});
+     const approvedPlanHash=row.estimated_cost?.planHash;
+     const currentPlanHash=createHash("sha256").update(stableJson(row.input||{})).digest("hex");
+     if(typeof approvedPlanHash!=="string"||!/^[a-f0-9]{64}$/.test(approvedPlanHash)||approvedPlanHash!==currentPlanHash)return response(409,{error:{code:"TRANSFORMATION_PLAN_CHANGED",message:"The approved transformation no longer matches its immutable plan fingerprint. Create and approve a new plan."}});
      return response(409,{error:{code:"TRANSFORMATION_ADAPTER_UNAVAILABLE",message:"No verified video-transformation adapter is enabled. No provider request or charge was made."}});
     }
    }
