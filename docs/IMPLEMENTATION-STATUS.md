@@ -456,3 +456,13 @@ This is a runnable worker entry point, not a deployed worker. Do not set the ena
 - Connected the Enhancement Lab to cloud draft create/list routes. Prompts and reference IDs are excluded from browser local storage; legacy local transformation drafts are purged on startup.
 - Added separate owner/editor budget approval metadata (estimate, covering budget, currency, adapter/capability declaration) and audit/job events. The local SQLite plan API remains available for development.
 - Submission remains intentionally blocked with an explicit adapter-unavailable response. The checkbox is not independent proof of person consent; evidence-backed consent verification is still required before person replacement can execute. No provider generation, credit spend, cloud migration or deployment has occurred.
+
+
+## Timeline source preview transport — 2 November 2026
+
+- Added a preview monitor to the existing timeline workspace for selected local video, audio and still-image clips. Playback uses the existing authenticated local asset file route and never constructs a filesystem path.
+- Video/audio previews are constrained to the clip's saved source in/out range. The monitor includes native playback controls, source-in/out jumps, one-source-frame stepping, a frame-indexed scrubber and a time readout.
+- Frame conversion and source-time clamping are isolated in `src/core/timeline-preview.ts`; rational frame-rate conversion is covered for fractional frame rates, source trims, playback bounds and invalid input.
+- Added `verify:timeline-preview` to the standard build pipeline.
+- Cloud preview remains intentionally unavailable until the cloud asset API provides a verified, authenticated private-media playback URL. No guessed cloud URLs or public storage paths are used.
+- **Verification status:** implementation and test files are committed on the working branch. The remote CI build has not yet been observed; no claim of passing build or end-to-end browser playback is made.
