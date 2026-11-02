@@ -1,4 +1,5 @@
 import test from "node:test";
+import { createHash } from "node:crypto";
 import assert from "node:assert/strict";
 import { createDeliveryManifest, verifyDeliveryManifest, createDeliveryPackage, verifyDeliveryPackage } from "../delivery-manifest.mjs";
 import { createRenderManifest } from "../render-manifest.mjs";
@@ -70,4 +71,18 @@ test("rejects malformed or oversized media quality evidence in delivery packages
   const receipt = createDeliveryManifest(input);
   const master = { assetId: receipt.outputAsset, filename: "master.mp4", mediaType: receipt.mediaType, byteSize: receipt.byteSize, sha256: receipt.sha256, downloadUrl: "https://storage.example.test/master?token=short", downloadUrlExpiresInSeconds: 300 };
   assert.throws(() => createDeliveryPackage({ jobId: "job-1", projectId: "project-1", timelineId: receipt.timelineId, timelineRevision: receipt.timelineRevision, master, deliveryReceipt: receipt, renderManifest: receipt.renderManifest, deliveryReport: receipt.deliveryReport, qualityReport: { status: "clean", counts: { errors: 0, warnings: 0 }, findings: [], limitations: [] }, generatedAt: "2026-11-02T09:00:00.000Z" }));
+});
+
+
+test("rejects a re-fingerprinted receipt with an invalid render manifest", () => {
+  const receipt = createDeliveryManifest(input);
+  const forged = { ...receipt, renderManifest: { schemaVersion: 1, fingerprint: "f".repeat(64) } };
+  const canonical = value => {
+    if (Array.isArray(value)) return "[" + value.map(canonical).join(",") + "]";
+    if (value && typeof value === "object") return "{" + Object.keys(value).sort().map(key => JSON.stringify(key) + ":" + canonical(value[key])).join(",") + "}";
+    return JSON.stringify(value);
+  };
+  const { fingerprint: ignored, ...evidence } = forged;
+  forged.fingerprint = createHash("sha256").update(canonical(evidence)).digest("hex");
+  assert.equal(verifyDeliveryManifest(forged), false);
 });
