@@ -18,6 +18,7 @@ function harness(){
  };
  const pipeline=createVideoFinishingPipeline({
   resolveAdapter:async id=>adapters[id]||null,checkpoints,
+  authorizeExecution:async({approvalId,adapterId,capability,requiredBudgetMicros})=>({approved:true,approvalId,adapterId,capability,approvedBudgetMicros:requiredBudgetMicros}),
   executeStep:async({step,sourceAsset,idempotencyKey})=>{
    calls.push({step:step.id,source:sourceAsset.id,idempotencyKey});
    return{id:step.id+"-output",mediaType:"video/mp4",sha256:String(calls.length).padStart(64,"0"),derivativeOf:sourceAsset.id};
@@ -105,7 +106,7 @@ test("remote pipeline rechecks approval and budget before each remote provider c
    return{id:step.id+"-output",mediaType:"video/mp4",sha256:String(calls.length).padStart(64,"0"),derivativeOf:sourceAsset.id};
   }
  });
- await assert.rejects(()=>pipeline.run(twoRemote,approval),e=>e.code==="VIDEO_PIPELINE_LIVE_AUTHORIZATION_DENIED");
+ await assert.rejects(()=>pipeline.run(twoRemote,{...approval,approvedBudgetMicros:2400000}),e=>e.code==="VIDEO_PIPELINE_LIVE_AUTHORIZATION_DENIED");
  assert.deepEqual(calls,["remote-one"]);
  assert.equal(authorizationCount,2);
 });
