@@ -11,6 +11,7 @@ import { buildTransformationReadinessReport } from "./transformation-readiness.m
 import { validateSrt, validateWebVtt } from "./caption-validation.mjs";
 import { REQUIRED_UPSCALE_FIXTURE_CATEGORIES, buildUpscaleBenchmarkRecordFromAsset, compareUpscaleBenchmarkCandidates } from "./upscale-benchmark.mjs";
 import { createDeliveryPackage, verifyDeliveryManifest, verifyMediaQualityReport } from "./delivery-manifest.mjs";
+import { buildAssetLineage } from "./asset-lineage.mjs";
 
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const safeId=(value)=>typeof value==="string"&&UUID.test(value);
@@ -175,6 +176,25 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
    if(path==="/api/cloud/assets"&&method==="GET"){
     const assets=await service.assets.list({ownerId,projectId:query.projectId||null,limit:Number(query.limit)||50,offset:Number(query.offset)||0});
     return response(200,{assets});
+   }
+   const lineageMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)\/lineage$/i);
+   if(lineageMatch&&safeId(lineageMatch[1])&&method==="GET"){
+    const assetId=lineageMatch[1];
+    const root=await service.assets.get({ownerId,assetId});
+    if(!root)return response(404,{error:{code:"CLOUD_ASSET_NOT_FOUND",message:"Asset not found."}});
+    if(typeof service.assets.list!=="function")return response(501,{error:{code:"ASSET_LINEAGE_UNAVAILABLE",message:"Asset lineage listing is not configured."}});
+    const assets=[];let offset=0;
+    while(offset<1000){
+     const page=await service.assets.list({ownerId,projectId:root.projectId||null,limit:100,offset});
+     if(!Array.isArray(page))throw new Error("Asset lineage listing returned an invalid response.");
+     assets.push(...page);
+     if(page.length<100)break;
+     offset+=page.length;
+    }
+    if(!assets.some(asset=>asset.id===root.id))assets.push(root);
+    const lineage=buildAssetLineage({assetId,assets,maxNodes:1000,maxDepth:32});
+    if(!lineage)return response(404,{error:{code:"CLOUD_ASSET_NOT_FOUND",message:"Asset not found."}});
+    return response(200,{lineage:{...lineage,collectionTruncated:assets.length>=1000}});
    }
    const assetCleanupMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)\/retry-cleanup$/i);
    if(assetCleanupMatch&&safeId(assetCleanupMatch[1])&&method==="POST"){
