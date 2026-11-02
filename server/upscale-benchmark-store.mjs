@@ -72,6 +72,7 @@ export function reviewUpscaleBenchmarkRun(db,{runId,projectId,reviewerId,decisio
   record.qualityReview=decision;
   const reviewedAt=new Date().toISOString();
   const reviewNote=String(note||"").trim().slice(0,2000);
+  if(decision==="reviewed_fail"&&!reviewNote) throw problem("UPSCALE_BENCHMARK_REVIEW_NOTE_REQUIRED","A rejection requires a short note describing the quality issue.");
   const changed=db.prepare("UPDATE upscale_benchmark_runs SET record_json=?,reviewer_id=?,review_decision=?,review_note=?,reviewed_at=? WHERE id=? AND reviewer_id IS NULL")
     .run(json(record),reviewerId,decision,reviewNote,reviewedAt,row.id);
   if(changed.changes!==1) throw problem("UPSCALE_BENCHMARK_ALREADY_REVIEWED","Benchmark evidence was reviewed by another user.",409);
