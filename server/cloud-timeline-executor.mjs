@@ -73,7 +73,7 @@ export function createCloudTimelineExecutor({timelines,mediaIO,renderTimeline,pr
         path:output.path,metadata:{...(output.metadata||{}),operation:"timeline.render",timelineId:record.id,timelineRevision:record.revision,renderManifest:output.renderManifest,sha256,probe:probed,probeValidation,render:output.render||{}}
       });
       onProgress(100);
-      return{timelineId:record.id,timelineRevision:record.revision,outputAsset,sha256,byteSize:info.size,probeValidation,render:output.render||{}};
+      return{timelineId:record.id,timelineRevision:record.revision,outputAsset,sha256,byteSize:info.size,probeValidation,render:output.render||{},renderManifest:output.renderManifest};
     }finally{
       await Promise.all([...materialized.values()].map(asset=>asset.cleanup?.().catch(()=>{})));
       await rm(workDir,{recursive:true,force:true}).catch(()=>{});
