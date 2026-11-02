@@ -92,7 +92,7 @@ export function summarizeUpscaleBenchmarks(records) {
  * identity/category are supplied by the controlled fixture registry; hashes,
  * model build and measurements are taken from the persisted asset provenance.
  */
-export function buildUpscaleBenchmarkRecordFromAsset({outputAsset,fixtureId,fixtureCategory,timestamp,qualityReview,metrics}={}) {
+export function buildUpscaleBenchmarkRecordFromAsset({outputAsset,fixtureId,fixtureCategory,timestamp,metrics}={}) {
   const processing=outputAsset?.metadata?.processing;
   const record={
     fixtureId,
@@ -110,7 +110,7 @@ export function buildUpscaleBenchmarkRecordFromAsset({outputAsset,fixtureId,fixt
     scale:processing?.scale,
     durationMs:processing?.durationMs,
     executionStatus:processing?.dimensionsVerified===true&&processing?.decoderVerified===true?"passed":"failed",
-    qualityReview:qualityReview||processing?.qualityReview||"not_reviewed",
+    qualityReview:processing?.qualityReview||"not_reviewed",
     timestamp:timestamp||outputAsset?.createdAt||new Date().toISOString(),
     ...(metrics?{metrics}:{})
   };
