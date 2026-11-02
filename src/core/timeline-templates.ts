@@ -1,4 +1,4 @@
-import { addTrack, createTimeline, validateTimeline, type EditorialTimeline, type TimelineTrack } from "./timeline";
+import { addTrack, createTimeline, validateTimeline, type EditorialTimeline, type TimelineTrack } from "./timeline.ts";
 
 export interface TimelineTemplate {
   id: string;
