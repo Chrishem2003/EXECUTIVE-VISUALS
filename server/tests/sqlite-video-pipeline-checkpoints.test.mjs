@@ -24,7 +24,7 @@ test("stores and reloads a durable owner/project-scoped checkpoint",async()=>{
   await store.save(record);
   assert.deepEqual(await store.get("pipe-1","edit"),{...record,createdAt:(await store.get("pipe-1","edit")).createdAt});
   assert.equal(await createSqliteVideoPipelineCheckpointStore({db:f.db,ownerId:f.ownerB,projectId:f.projectB}).get("pipe-1","edit"),null);
-  assert.equal(await createSqliteVideoPipelineCheckpointStore({db:f.db,ownerId:f.ownerA,projectId:f.projectB}).get("pipe-1","edit"),null);
+  assert.equal(await createSqliteVideoPipelineCheckpointStore({db:f.db,ownerId:f.ownerA,projectId:f.projectA}).get("pipe-1","edit"),null);
  }finally{await f.close();}
 });
 test("checkpoint writes are idempotent but conflicting step receipts are rejected",async()=>{
