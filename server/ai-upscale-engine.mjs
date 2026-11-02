@@ -144,8 +144,8 @@ export function createRealEsrganAdapter({
     const files = [binaryPath, resolve(modelDirectory || ".", model + ".param"), resolve(modelDirectory || ".", model + ".bin")];
     try {
       const digests = await Promise.all(files.map(async path => {
-        const info = await stat(path);
-        if (!info.isFile()) throw new Error("Engine component is not a regular file.");
+        const info = await lstat(path);
+        if (!info.isFile() || info.isSymbolicLink()) throw new Error("Engine component is not a regular, non-symlink file.");
         return sha256File(path);
       }));
       const binarySha256 = digests[0];
@@ -225,7 +225,15 @@ export function createRealEsrganAdapter({
     catch (error) { if (error.code !== "ENOENT") throw error; }
     if (dirname(output) === input || output.startsWith(input + sep)) throw fail("AI upscale output path is invalid.", "AI_UPSCALE_INVALID_PATH");
     const executionStartedAt = Date.now();
+    const engineBefore = await fingerprint(prepared.model);
+    const expectedFingerprint = createHash("sha256").update([
+      readiness.binarySha256,
+      readiness.modelFilesSha256
+    ].join(":")).digest("hex");
+    if (!engineBefore || engineBefore.fingerprint !== expectedFingerprint) throw fail("AI upscale engine changed after readiness verification.", "AI_UPSCALE_ENGINE_CHANGED");
     await run(prepared.binary, prepared.args, timeoutMs, options.signal);
+    const engineAfter = await fingerprint(prepared.model);
+    if (!engineAfter || engineAfter.fingerprint !== engineBefore.fingerprint) throw fail("AI upscale executable or model weights changed during inference; output cannot be published.", "AI_UPSCALE_ENGINE_CHANGED");
     const info = await stat(output).catch(() => null);
     if (!info?.isFile() || info.size < 24 || info.size > maxOutputBytes) throw fail("AI upscale output is missing, empty or exceeds the configured size limit.", "AI_UPSCALE_OUTPUT_INVALID");
     await validateImageOutput(output, prepared.format);
