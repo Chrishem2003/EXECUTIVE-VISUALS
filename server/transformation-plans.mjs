@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { canWriteProject, getAccessibleAsset, getProjectAccess, json, parseJson } from "./db.mjs";
 
-const OPERATIONS=new Set(["vehicle_replace","wardrobe_transform","object_replace","background_replace","person_replace","visual_restyle","object_remove","relight"]);
-const PRESERVATION=new Set(["camera_movement","timing","composition","source_audio","subject_identity","pose_movement","lighting","background"]);
+const OPERATIONS=new Set(["vehicle_replace","wardrobe_replace","wardrobe_transform","object_replace","background_replace","person_replace","style_transfer","visual_restyle","object_remove","relight"]);
+const PRESERVATION=new Set(["camera_movement","camera_motion","timing","composition","source_audio","subject_identity","pose_movement","pose","lighting","background"]);
 const fail=(message,code,status=400)=>Object.assign(new Error(message),{code,status});
 const cleanText=(value,max)=>typeof value==="string"?value.trim().slice(0,max):"";
 const record=row=>row?({
