@@ -31,3 +31,26 @@ test("ignores disabled clips and disabled tracks",()=>{
  assert.deepEqual(result.sources,[]);
  assert.equal(verifyRenderManifest(result),true);
 });
+
+
+test("pins derivative parent, processing fingerprint and AI review state into render source evidence",()=>{
+ const processing={schemaVersion:1,engine:"realesrgan",method:"ai-super-resolution",model:"realesrgan-x4plus",modelVersion:"build-42",inputSha256:"a".repeat(64),outputSha256:"b".repeat(64),sourceAssetId:"asset-original",qualityReview:"not_reviewed"};
+ const derived={path:"/private/derived.png",asset:{id:"asset-upscaled",mediaType:"image/png",size:200,sha256:"b".repeat(64),derivativeOf:"asset-original",metadata:{operation:"media.ai-upscale",processing}}};
+ const result=createRenderManifest({timeline,assets:new Map([["asset-1",derived]]),timelineRevision:7});
+ const evidence=result.sources[0].lineage;
+ assert.equal(evidence.parentAssetId,"asset-original");
+ assert.equal(evidence.sourceSha256,"a".repeat(64));
+ assert.equal(evidence.modelVersion,"build-42");
+ assert.equal(evidence.qualityReview,"not_reviewed");
+ assert.equal(evidence.aiInferencePerformed,true);
+ assert.equal(verifyRenderManifest(result),true);
+ const changed=createRenderManifest({timeline,assets:new Map([["asset-1",{...derived,asset:{...derived.asset,metadata:{operation:"media.ai-upscale",processing:{...processing,modelVersion:"build-43"}}}}]]),timelineRevision:7});
+ assert.notEqual(result.manifestSha256,changed.manifestSha256);
+});
+
+test("rejects derivative provenance whose parent conflicts with the asset relationship",()=>{
+ const derived=asset("b".repeat(64));
+ derived.asset.derivativeOf="asset-original";
+ derived.asset.metadata={operation:"media.ai-upscale",processing:{sourceAssetId:"different-parent",inputSha256:"a".repeat(64)}};
+ assert.throws(()=>createRenderManifest({timeline,assets:new Map([["asset-1",derived]]),timelineRevision:1}),e=>e.code==="RENDER_MANIFEST_LINEAGE_INVALID");
+});
