@@ -25,8 +25,8 @@ function setup(){
   else if(path.startsWith("upscale_benchmark_runs")&&method==="POST"){const b=JSON.parse(options.body);rows.run={...b,reviewer_id:null,review_decision:null,created_at:"2026-11-02T12:02:00.000Z"};result=[{id:b.id,created_at:rows.run.created_at}];}
   else if(path.startsWith("upscale_benchmark_runs")&&method==="GET"){result=rows.run?[{id:rows.run.id,owner_id:rows.run.owner_id,record:rows.run.record,reviewer_id:rows.run.reviewer_id}]:[];}
   else if(path.startsWith("upscale_benchmark_runs")&&method==="PATCH"){const b=JSON.parse(options.body);if(rows.run&&!rows.run.reviewer_id){Object.assign(rows.run,b);result=[rows.run];}}
-  else if(path.startsWith("projects?"))result=[{owner_id:owner}];
-  else if(path.startsWith("project_members?"))result=[{role:"reviewer"}];
+  else if(path==="projects")result=[{owner_id:owner}];
+  else if(path==="project_members")result=[{role:"reviewer"}];
   else if(path.startsWith("audit_events"))result=[];
   return{ok:true,status:200,async text(){return JSON.stringify(result);}};
  };
