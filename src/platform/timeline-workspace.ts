@@ -150,7 +150,7 @@ function deliveryReviewPanel(){
  (review.outputAsset?'<p class="muted">Output asset: '+esc(review.outputAsset.name||review.outputAsset.id)+' · '+esc(review.outputAsset.id)+'</p>':'')+
  (review.sha256?'<p class="muted">SHA-256: <code>'+esc(review.sha256)+'</code></p>':'')+
  (review.byteSize?'<p class="muted">File size: '+(review.byteSize/1024/1024).toFixed(2)+' MB</p>':'')+
- (review.deliveryManifest?'<p class="muted">Delivery receipt fingerprint: <code>'+esc(review.deliveryManifest.fingerprint)+'</code></p>':'')+
+ (review.deliveryManifest?'<p class="muted">Delivery receipt fingerprint: <code>'+esc(review.deliveryManifest.fingerprint)+'</code></p>':'')+(state.mode==="cloud"&&state.cloudRenderJobId&&review.deliveryManifest?'<div class="delivery-package-actions"><button data-tl-action="delivery-package" '+(state.deliveryApprovalBusy?'disabled':'')+'>Build verified delivery package</button><small class="muted">Creates a fingerprinted JSON handoff with the render evidence and a five-minute private master download link.</small></div>':'')+
  (state.mode==="cloud"&&state.cloudRenderJobId&&review.deliveryManifest?'<div class="delivery-approval"><div class="eyebrow">INDEPENDENT DELIVERY SIGN-OFF</div>'+(state.deliveryApproval?'<p><b>'+esc(state.deliveryApproval.decision.replaceAll("_"," ").toUpperCase())+'</b> · reviewer '+esc(state.deliveryApproval.reviewerId)+'</p><p class="muted">'+esc(state.deliveryApproval.note||"No review note")+'</p>':'<p class="muted">No independent review decision has been recorded for this exact delivery fingerprint.</p>')+'<label for="tl-delivery-review-note">Review note</label><textarea id="tl-delivery-review-note" maxlength="2000" rows="2" placeholder="Record visual/audio review observations"></textarea><div class="button-row"><button class="secondary" data-tl-action="delivery-review-refresh" '+(state.deliveryApprovalBusy?'disabled':'')+'>Refresh review</button><button class="secondary" data-tl-action="delivery-review-changes" '+(state.deliveryApprovalBusy?'disabled':'')+'>Request changes</button><button class="secondary" data-tl-action="delivery-review-reject" '+(state.deliveryApprovalBusy?'disabled':'')+'>Reject</button><button data-tl-action="delivery-review-approve" '+(state.deliveryApprovalBusy?'disabled':'')+'>Approve delivery</button></div>'+(state.deliveryApprovalHistory.length?'<div class="timeline-quality-list">'+state.deliveryApprovalHistory.map(item=>'<article class="timeline-quality-item info"><b>'+esc(item.decision.toUpperCase())+' · '+esc(item.reviewerId)+'</b><p>'+esc(item.note||"No note")+'</p><small>'+esc(item.reviewedAt)+'</small></article>').join("")+'</div>':'')+'<small class="muted">Approval requires a different authorized project reviewer. Each decision is tied to the immutable delivery fingerprint; it does not certify creative quality or recipient acceptance.</small></div>':'')+
  '<small class="muted">Metadata/profile validation is not a substitute for human visual review, true-peak certification or recipient acceptance.</small></section>';
 }
@@ -292,6 +292,20 @@ async function runAction(action:HTMLElement){
    window.dispatchEvent(new Event("ev:jobs-updated"));
   }catch(error){state.message=error instanceof Error?error.message:"Render could not be queued.";}
   paint();return;
+ }
+ if(type==="delivery-package"&&state.cloudRenderJobId){
+  try{
+   action.setAttribute("disabled","true");state.message="Verifying delivery evidence and preparing package…";paint();
+   const result=await apiRequest<{deliveryPackage:{packageFingerprint:string;jobId:string;master:{filename:string;downloadUrl:string};[key:string]:unknown}}>("/api/cloud/jobs/"+state.cloudRenderJobId+"/delivery-package");
+   const parsed=new URL(result.deliveryPackage.master.downloadUrl);
+   if(parsed.protocol!=="https:"||!result.deliveryPackage.packageFingerprint)throw new Error("The delivery package returned invalid evidence or an unsafe master link.");
+   const blob=new Blob([JSON.stringify(result.deliveryPackage,null,2)],{type:"application/json"});
+   const url=URL.createObjectURL(blob),download=document.createElement("a");download.href=url;download.download="executive-visuals-delivery-"+result.deliveryPackage.jobId+".json";document.body.appendChild(download);download.click();download.remove();URL.revokeObjectURL(url);
+   const master=document.createElement("a");master.href=parsed.href;master.target="_blank";master.rel="noopener noreferrer";master.click();
+   state.message="Verified delivery package downloaded. The private master link expires in five minutes.";
+  }catch(error){state.message=error instanceof Error?error.message:"Could not build the delivery package.";}
+  finally{action.removeAttribute("disabled");paint();}
+  return;
  }
  if(type.startsWith("delivery-review-")&&state.cloudRenderJobId){
   if(type==="delivery-review-refresh"){try{state.deliveryApprovalBusy=true;paint();const result=await apiRequest<{approval:{decision:string;reviewerId:string;note:string;fingerprint:string;reviewedAt:string}|null;approvalHistory:Array<{decision:string;reviewerId:string;note:string;fingerprint:string;reviewedAt:string}>}>("/api/cloud/jobs/"+state.cloudRenderJobId+"/delivery-approval");state.deliveryApproval=result.approval;state.deliveryApprovalHistory=result.approvalHistory||[];state.message="Delivery review history refreshed.";}catch(error){state.message=error instanceof Error?error.message:"Could not load delivery review history.";}finally{state.deliveryApprovalBusy=false;}paint();return;}
