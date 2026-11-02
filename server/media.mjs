@@ -470,22 +470,31 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
     args.push(outputPath);
   }
   const outputPath = join(outputDir,id+"."+ext);
-  onProgress(35);
-  await run("ffmpeg", args,30*60*1000,job.id,activeProcesses,cancelled);
-  onProgress(85);
-  if (cancelled()) { await unlink(outputPath).catch(()=>{}); throw Object.assign(new Error("Job cancelled."), { code:"JOB_CANCELLED" }); }
-  
-  const probeResult=await run("ffprobe",["-v","error","-show_format","-show_streams","-of","json",outputPath],60000,job.id,activeProcesses,cancelled);
-  let outputMetadata;
-  try { outputMetadata=JSON.parse(probeResult.stdout||"{}"); }
-  catch { throw Object.assign(new Error("Media output metadata could not be parsed."),{code:"MEDIA_OUTPUT_VALIDATION_FAILED"}); }
-  const validation=validateMediaOutputProbe(outputMetadata,mime);
-  const fileStat = await stat(outputPath);
-  if(fileStat.size<=0)throw Object.assign(new Error("Media output is empty."),{code:"MEDIA_OUTPUT_VALIDATION_FAILED"});
-  const hash = createHash("sha256");
-  await pipeline(createReadStream(outputPath), new Transform({ transform(chunk, enc, cb) { hash.update(chunk); cb(null, chunk); } }), new Transform({ transform(chunk, enc, cb) { cb(); } }));
-  const provenance=buildMediaProcessingProvenance({jobType:job.job_type,input,sourceAsset:source});
-  const outputAsset = addAsset(db, job, "derived/"+id+"."+ext, outputName, mime, fileStat.size, hash.digest("hex"), source.id, { operation:job.job_type, ...(provenance?{processing:provenance}:{}) });
-  emit("media.output_created", { assetId:outputAsset.id, sha256:outputAsset.sha256 });
-  return { outputAsset, validation };
+  let outputRegistered=false;
+  try {
+    onProgress(35);
+    await run("ffmpeg", args,30*60*1000,job.id,activeProcesses,cancelled);
+    onProgress(85);
+    if (cancelled()) throw Object.assign(new Error("Job cancelled."), { code:"JOB_CANCELLED" });
+
+    const probeResult=await run("ffprobe",["-v","error","-show_format","-show_streams","-of","json",outputPath],60000,job.id,activeProcesses,cancelled);
+    if(cancelled())throw Object.assign(new Error("Job cancelled."),{code:"JOB_CANCELLED"});
+    let outputMetadata;
+    try { outputMetadata=JSON.parse(probeResult.stdout||"{}"); }
+    catch { throw Object.assign(new Error("Media output metadata could not be parsed."),{code:"MEDIA_OUTPUT_VALIDATION_FAILED"}); }
+    const validation=validateMediaOutputProbe(outputMetadata,mime);
+    const fileStat = await stat(outputPath);
+    if(fileStat.size<=0)throw Object.assign(new Error("Media output is empty."),{code:"MEDIA_OUTPUT_VALIDATION_FAILED"});
+    const hash = createHash("sha256");
+    await pipeline(createReadStream(outputPath), new Transform({ transform(chunk, enc, cb) { hash.update(chunk); cb(null, chunk); } }), new Transform({ transform(chunk, enc, cb) { cb(); } }));
+    if(cancelled())throw Object.assign(new Error("Job cancelled."),{code:"JOB_CANCELLED"});
+    const provenance=buildMediaProcessingProvenance({jobType:job.job_type,input,sourceAsset:source});
+    const outputAsset = addAsset(db, job, "derived/"+id+"."+ext, outputName, mime, fileStat.size, hash.digest("hex"), source.id, { operation:job.job_type, ...(provenance?{processing:provenance}:{}) });
+    outputRegistered=true;
+    emit("media.output_created", { assetId:outputAsset.id, sha256:outputAsset.sha256 });
+    return { outputAsset, validation };
+  } catch(error) {
+    if(!outputRegistered) await unlink(outputPath).catch(()=>{});
+    throw error;
+  }
 }
