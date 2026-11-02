@@ -7,7 +7,7 @@ CHRISHEM EXCLUSIVE VISUALS is a provider-neutral platform for creative planning,
 ## Workspaces
 - Creative direction, research, briefs, scripts and storyboards. The AI Director now includes a deterministic Creative DNA compiler for audience promise, emotional journey, hook angles, visual grammar, sound identity, proof checks and platform cut planning.
 - Workflow canvas, typed media ports, server-side validation and targeted run planning.
-- Multi-track editorial timeline with frame-based trims, splits, clip movement, review markers, interchange export and local MP4 master rendering (H.264 video, synchronized AAC audio, still-image overlays and burned-in SRT/VTT captions).
+- Multi-track editorial timeline with frame-based trims, splits, clip movement, review markers, interchange export and local MP4 master rendering (H.264 video, synchronized AAC audio, still-image overlays and burned-in SRT/VTT captions). One-click independent variants preserve the original and provide structural comparisons for clip, timing, source-trim, marker and creative-intent changes.
 - Intent-linked editing: clips can record the story beat, audience promise, purpose and proof reference they serve; a bounded, timestamped decision ledger preserves creative direction changes.
 - Character, voice, identity, wardrobe and consent records.
 - Cinematic shot planning and continuity.
