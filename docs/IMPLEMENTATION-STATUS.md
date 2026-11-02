@@ -476,3 +476,15 @@ This is a runnable worker entry point, not a deployed worker. Do not set the ena
 - This dashboard reads the existing browser planning state; it does not claim that these local planning drafts are cloud-persisted. Cloud projects, assets, timelines and jobs remain in their separately authenticated runtime workspace.
 - No provider is invoked, no database migration is applied, and no deployment or production configuration is changed.
 - Verification is pending in GitHub Actions.
+
+
+## Latest continuation — render-backed caption style presets
+
+- Added five reusable caption styles: Social bold, Cinematic, Broadcast safe, Minimal and Top placement.
+- Presets populate the timeline caption clip inspector's existing font, size, color, alignment, panel, outline, shadow and safe-margin controls.
+- Preset choice is stored in clip metadata alongside the individual style values. Editing an individual style field changes the selector to Custom.
+- Presets deliberately use only properties already consumed by the local and cloud FFmpeg subtitle renderers; this avoids offering visual controls that the actual master renderer ignores.
+- Added contract checks for unique preset IDs, supported value ranges, immutable application and unknown-preset rejection. The checks are part of the production build.
+- Presets are style configuration only; they do not generate word-level karaoke timing, animated text, or a playback preview.
+- No migrations, provider activation, paid execution, or deployment changes.
+- Verification is pending in GitHub Actions.
