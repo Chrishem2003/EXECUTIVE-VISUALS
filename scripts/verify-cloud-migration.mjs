@@ -72,6 +72,7 @@ if (!upscaleBenchmarkSql.includes("reviewer_id is not null and review_decision i
 if (!upscaleBenchmarkSql.includes("create trigger ev_upscale_benchmark_review_immutable")) issues.push("Cloud benchmark review decisions must be database-immutable.");
 if (!upscaleBenchmarkSql.includes("new.reviewer_id = new.owner_id")) issues.push("Cloud benchmark reviews must be independent from the submitting user.");
 if (!upscaleBenchmarkSql.includes("new.review_decision is null")) issues.push("Cloud benchmark review decisions must be non-null.");
+if (!upscaleBenchmarkSql.includes("(new.review_decision = 'reviewed_fail' and btrim(new.review_note) = '')")) issues.push("Cloud benchmark rejection decisions must include a non-empty quality issue note.");
 if (!upscaleBenchmarkSql.includes("new.record->>'qualityReview' is distinct from new.review_decision")) issues.push("Cloud benchmark review state must match its immutable decision.");
 if (/\b(drop\s+table|truncate|delete\s+from)\b/i.test(upscaleBenchmarkSql)) issues.push("Upscale benchmark migration must not contain destructive DDL/DML.");
 if (!deliveryReviewSql.includes("create unique index ev_delivery_review_reviewer_fingerprint_unique")) issues.push("Delivery reviews must prevent duplicate reviewer decisions.");
