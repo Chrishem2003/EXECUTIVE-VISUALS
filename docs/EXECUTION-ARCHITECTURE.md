@@ -45,3 +45,8 @@ Cloud worker pools must recover only the job types they own. The timeline worker
 ## Worker supervisor shutdown and recovery coordination
 
 The cloud worker supervisor prevents overlapping expired-job recovery passes. It tracks the active recovery operation, skips a scheduled pass while one is already running, and waits for in-flight recovery to settle during shutdown. If shutdown is requested while startup recovery is running, startup does not proceed to worker execution or install polling timers after the stop request. Each worker pool still recovers independently, so one pool's recovery failure does not suppress another pool's attempt.
+
+
+## Bounded retries for transient cloud job failures
+
+Cloud worker errors are classified using an explicit transient allowlist: queue/storage/media timeouts, selected connection failures, and retryable HTTP statuses (408, 425, 429, 500, 502, 503 and 504). Invalid media, unsupported operations, integrity mismatches, permission failures and other unclassified errors remain terminal. A service-role-only `retry_job` RPC checks the current unexpired worker lease, schedules an exponential delay capped at 60 seconds, respects each job's `max_attempts`, clears the lease and appends a `job.retry_scheduled` or `job.failed` event. The migration is source-controlled only until an isolated staging database is explicitly approved.
