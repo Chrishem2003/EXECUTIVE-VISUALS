@@ -128,7 +128,8 @@ if (!retrySql.includes("create or replace function executive_visuals.retry_job("
   || !retrySql.includes("revoke all on function executive_visuals.retry_job(uuid, text, jsonb) from public, anon, authenticated;")) {
   issues.push("Transient job retries must be bounded, lease-fenced, auditable and service-role-only.");
 }
-if (/\\b(drop\\s+table|truncate|delete\\s+from)\\b/i.test(retrySql)) issues.push("Retry migration must not contain destructive DDL/DML.");
+const retrySqlLower = retrySql.toLowerCase();
+if (retrySqlLower.includes("drop table") || retrySqlLower.includes("truncate") || retrySqlLower.includes("delete from")) issues.push("Retry migration must not contain destructive DDL/DML.");
 
 if (issues.length) {
   console.error("Cloud migration guard failed:");
