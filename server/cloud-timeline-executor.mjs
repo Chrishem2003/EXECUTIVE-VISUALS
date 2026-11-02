@@ -25,9 +25,9 @@ async function digest(path){
 async function analyzeTemporalVideo({path,durationSeconds,jobId,activeProcesses,signal}={}){
   if(signal?.aborted)throw Object.assign(new Error("Timeline render was cancelled."),{code:"JOB_CANCELLED"});
   if(!Number.isFinite(durationSeconds)||durationSeconds<=0)throw Object.assign(new Error("Output duration is unavailable for bounded temporal analysis."),{code:"ANALYSIS_DURATION_UNKNOWN"});
-  const coverageSeconds=Math.min(durationSeconds,600);
+  const coverageSeconds=Math.min(durationSeconds,120);
   const timeoutMs=Math.min(15*60*1000,Math.max(30000,coverageSeconds*2500));
-  const result=await run("ffmpeg",["-hide_banner","-nostats","-i",path,"-t",String(coverageSeconds),"-vf","fps=2,signalstats,scdet=threshold=10,metadata=print","-an","-sn","-dn","-f","null","-"],timeoutMs,jobId,activeProcesses,()=>Boolean(signal?.aborted),512000);
+  const result=await run("ffmpeg",["-hide_banner","-nostats","-i",path,"-t",String(coverageSeconds),"-vf","fps=12,scale=320:-2:flags=area,signalstats,scdet=threshold=10,metadata=print","-an","-sn","-dn","-f","null","-"],timeoutMs,jobId,activeProcesses,()=>Boolean(signal?.aborted),512000);
   if(signal?.aborted)throw Object.assign(new Error("Timeline render was cancelled."),{code:"JOB_CANCELLED"});
   const metadataOutput=[result.stderr,result.stdout].join("\n");
   const lumaSamples=parseVideoLumaSamples(metadataOutput);
