@@ -603,6 +603,11 @@
       "video.transform-person",
       "video",
       "Replace a person in existing footage with consent"
+    ],
+    [
+      "video.finish-pipeline",
+      "video",
+      "Run a checkpointed video transformation and finishing pipeline"
     ]
   ],
   "requiredCapabilityFields": [
@@ -652,6 +657,6 @@
     "Secrets never enter client bundles, prompts or logs."
   ],
   "sourceOfTruth": "src/core/capability-atlas.ts",
-  "capabilityCount": 115,
+  "capabilityCount": 116,
   "domainCount": 23
 }
