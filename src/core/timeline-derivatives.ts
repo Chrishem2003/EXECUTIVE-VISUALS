@@ -13,10 +13,9 @@ export interface DerivativeEligibility {
 }
 
 /** A derivative is selectable only when its parent and independently verified processing evidence agree. */
-export function assessDerivativeEligibility(asset:DerivativeAsset, sourceAssetId:string):DerivativeEligibility {
+export function assessDerivativeEligibility(asset:DerivativeAsset, sourceAssetId:string, sourceMediaType?:string):DerivativeEligibility {
   if(!asset.id||asset.derivativeOf!==sourceAssetId)return {eligible:false,reason:"Derivative does not identify this clip's current source as its parent."};
-  const source=asset.metadata?.sourceAsset as {mediaType?:string}|undefined;
-  if(source?.mediaType&&asset.mediaType&&source.mediaType.split("/")[0]!==asset.mediaType.split("/")[0])return {eligible:false,reason:"Derivative media family does not match its source."};
+  if(sourceMediaType&&asset.mediaType&&sourceMediaType.split("/")[0]!==asset.mediaType.split("/")[0])return {eligible:false,reason:"Derivative media family does not match its source."};
   const processing=asset.metadata?.processing;
   if(!processing||typeof processing!=="object"||Array.isArray(processing))return {eligible:false,reason:"Processing provenance is missing."};
   const evidence=processing as Record<string,unknown>;
