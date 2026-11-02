@@ -46,7 +46,7 @@ if (!sql.includes("as $$") || !sql.includes("end;\n$$;") || /as \$(?!\$)\s*begin
 if (/\b(drop\s+table|truncate|delete\s+from)\b/i.test(sql)) issues.push("Destructive DDL/DML is not allowed in the initial isolated migration.");
 if (!sql.startsWith("-- Executive Visuals isolated data model.")) issues.push("Migration must identify its isolated deployment boundary.");
 
-if (!checkpointSql.includes("create table if not exists executive_visuals.video_pipeline_checkpoints")) issues.push("Durable cloud video pipeline checkpoint table is missing.");
+if (/\b(drop\s+table|truncate|delete\s+from)\b/i.test(checkpointSql)) issues.push("Checkpoint migration must not contain destructive DDL/DML.");
 if (!checkpointSql.includes("unique(owner_id, project_id, pipeline_id, step_id)")) issues.push("Cloud pipeline steps must have immutable owner/project scoped uniqueness.");
 if (!checkpointSql.includes("unique(owner_id, idempotency_key)")) issues.push("Cloud checkpoint idempotency keys must be unique per owner.");
 if (!checkpointSql.includes("alter table executive_visuals.video_pipeline_checkpoints enable row level security;")) issues.push("Cloud pipeline checkpoints must enable RLS.");
