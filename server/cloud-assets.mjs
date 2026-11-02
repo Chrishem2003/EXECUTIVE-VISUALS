@@ -25,7 +25,6 @@ function publicAsset(row) {
   return {
     id:row.id,ownerId:row.owner_id,projectId:row.project_id||null,name:row.original_name,
     mediaType:row.media_type,size:Number(row.byte_size),sha256:row.sha256,
-    storageBucket:row.storage_bucket,objectPath:row.object_path,
     derivativeOf:row.derivative_of||null,metadata:row.metadata||{},createdAt:row.created_at
   };
 }
