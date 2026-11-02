@@ -19,6 +19,7 @@
     "verify:workflow": "node --experimental-strip-types scripts/verify-workflow-engine.mjs",
     "verify:server": "node --experimental-strip-types --test server/tests/*.test.mjs",
     "verify:timeline": "node --experimental-strip-types scripts/verify-timeline.mjs",
+    "verify:timeline-preview": "node --experimental-strip-types --test server/tests/timeline-preview.test.mjs",
     "verify:render": "node scripts/verify-render-worker.mjs",
     "verify:real-render": "node scripts/verify-real-render.mjs",
     "verify:cloud": "node scripts/verify-cloud-migration.mjs",
