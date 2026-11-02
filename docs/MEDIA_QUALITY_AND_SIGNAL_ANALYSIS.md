@@ -33,3 +33,10 @@ The authenticated cloud asset API exposes `GET /api/cloud/assets/:assetId/lineag
 Lineage traversal is bounded to 1,000 descendant nodes and 32 levels in each direction. Missing parents are reported explicitly, cycles are surfaced rather than followed indefinitely, and the response indicates when the graph or source collection was truncated. Asset metadata remains the existing private asset metadata; this endpoint does not issue public storage URLs.
 
 The pure graph builder is covered for ordered ancestry/descendants, missing parents, cycles, absent assets and traversal limits. The cloud API route is covered for authenticated access and project-scoped repository reads. A staging acceptance test should additionally verify owner/editor/reviewer/viewer permission behavior against the deployed Supabase policies and confirm that cross-project parent IDs are never returned.
+
+
+## Asset version comparison
+
+The Cloud Projects asset register exposes an on-demand lineage panel. For a known ancestor or descendant, a reviewer can request a side-by-side preview of the selected asset and the related version. The UI obtains both URLs from the existing authenticated `GET /api/cloud/assets/:assetId` route, which issues private signed URLs with a 300-second expiry; URLs are not persisted in project state or written to audit metadata. Images and videos render inline, audio uses native playback controls, and other file types open as private links. Comparison is read-only and does not mutate either asset. Changing projects clears the in-memory comparison state.
+
+Staging acceptance should cover: a source image and enhanced image; a source video and derivative video; audio playback; unsupported file-type links; expired signed URLs and retry; cross-project or deleted related assets; and confirming no source bytes, derivative bytes, metadata, or timeline references change during comparison. The UI should never treat an unavailable preview as a successful quality review.
