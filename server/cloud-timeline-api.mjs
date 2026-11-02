@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { randomUUID, createHash } from "node:crypto";
 import { createWriteStream } from "node:fs";
 import { mkdtemp, rm, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -181,6 +181,27 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     const eventData={schemaVersion:1,decision,fingerprint:receipt.fingerprint,timelineId:receipt.timelineId,timelineRevision:receipt.timelineRevision,outputAsset:receipt.outputAsset,reviewerId:ownerId,note,reviewedAt:new Date().toISOString()};
     await request("job_events",{method:"POST",body:{job_id:job.id,owner_id:ownerId,event_type:"delivery.reviewed",event_data:eventData}});
     return response(201,{approval:eventData});
+   }
+   const deliveryPackageMatch=path.match(/^\/api\/cloud\/jobs\/([0-9a-f-]+)\/delivery-package$/i);
+   if(deliveryPackageMatch&&safeId(deliveryPackageMatch[1])&&method==="GET"){
+    const rows=await request("jobs?select=id,owner_id,project_id,job_type,status,input,output&id=eq."+encodeURIComponent(deliveryPackageMatch[1])+"&limit=1");
+    const job=Array.isArray(rows)?rows[0]:null;
+    if(!job||job.job_type!=="timeline.render"||!job.project_id)return response(404,{error:{code:"DELIVERY_JOB_NOT_FOUND",message:"A completed project timeline render was not found."}});
+    if(await allow({ownerId,projectId:job.project_id,action:"read"})!==true)return response(404,{error:{code:"DELIVERY_JOB_NOT_FOUND",message:"Delivery package access was not found."}});
+    const output=job.output&&typeof job.output==="object"?job.output:{},receipt=output.deliveryManifest,input=job.input&&typeof job.input==="object"?job.input:{};
+    if(job.status!=="succeeded"||!receipt||!verifyDeliveryManifest(receipt)||receipt.timelineId!==input.timelineId||receipt.timelineRevision!==Number(input.timelineRevision)||receipt.outputAsset!==(output.outputAsset?.id||output.outputAssetId)||receipt.sha256!==output.sha256)
+     return response(409,{error:{code:"DELIVERY_EVIDENCE_UNVERIFIED",message:"A valid revision-matched delivery receipt is required to package this render."}});
+    if(!service.assets||typeof service.assets.get!=="function"||typeof service.assets.createSignedUrl!=="function")return response(503,{error:{code:"DELIVERY_PACKAGE_UNAVAILABLE",message:"Private asset download is not available."}});
+    const asset=await service.assets.get({ownerId,assetId:receipt.outputAsset});
+    if(!asset||asset.id!==receipt.outputAsset||asset.projectId!==job.project_id||asset.sha256!==receipt.sha256||asset.size!==receipt.byteSize||asset.mediaType!==receipt.mediaType)
+     return response(409,{error:{code:"DELIVERY_ASSET_MISMATCH",message:"The published master asset does not match its delivery receipt."}});
+    const signed=await service.assets.createSignedUrl({ownerId,assetId:receipt.outputAsset,expiresIn:300});
+    let downloadUrl;try{downloadUrl=new URL(signed.url);if(downloadUrl.protocol!=="https:"||downloadUrl.username||downloadUrl.password||downloadUrl.hash)throw new Error();}catch{return response(502,{error:{code:"DELIVERY_DOWNLOAD_URL_INVALID",message:"The private storage service returned an unsafe download URL."}});}
+    const events=await request("job_events?select=id,event_type,event_data,created_at&job_id=eq."+encodeURIComponent(job.id)+"&order=id.asc");
+    const approvals=(Array.isArray(events)?events:[]).filter(event=>event.event_type==="delivery.reviewed"&&event.event_data?.fingerprint===receipt.fingerprint).map(event=>({id:event.id,...event.event_data,createdAt:event.created_at}));
+    const packageBody={schemaVersion:1,packageType:"executive-visuals-delivery",generatedAt:new Date().toISOString(),jobId:job.id,projectId:job.project_id,timelineId:receipt.timelineId,timelineRevision:receipt.timelineRevision,master:{assetId:asset.id,filename:asset.name,mediaType:asset.mediaType,byteSize:asset.size,sha256:asset.sha256,downloadUrl:downloadUrl.href,downloadUrlExpiresInSeconds:300},deliveryReceipt:receipt,renderManifest:receipt.renderManifest,deliveryReport:receipt.deliveryReport,reviewHistory:approvals};
+    const packageFingerprint=createHash("sha256").update(stableJson(packageBody)).digest("hex");
+    return response(200,{deliveryPackage:{...packageBody,packageFingerprint}});
    }
    const jobMatch=path.match(/^\/api\/cloud\/jobs\/([0-9a-f-]+)(?:\/(events))?$/i);
    if(jobMatch&&safeId(jobMatch[1])&&method==="GET"){
