@@ -107,12 +107,21 @@ async function loadUpscaleBenchmarkWorkspace(projectId:string){
  state.upscaleLoading=true;
  try{
   const query="?projectId="+encodeURIComponent(projectId);
-  const [fixtures,runs,jobs]=await Promise.all([
+  const results=await Promise.allSettled([
    apiRequest<{fixtures:UpscaleFixture[]}>("/api/cloud/upscale-benchmarks/fixtures"+query),
    apiRequest<{runs:UpscaleBenchmarkRun[];report:UpscaleBenchmarkReport}>("/api/cloud/upscale-benchmarks/runs"+query),
    apiRequest<{jobs:CloudUpscaleJob[]}>("/api/cloud/upscale-jobs"+query)
   ]);
-  state.upscaleFixtures=fixtures.fixtures||[];state.upscaleRuns=runs.runs||[];state.upscaleJobs=jobs.jobs||[];state.upscaleReport=runs.report||null;state.upscaleMessage="";
+  const [fixtures,runs,jobs]=results;
+  state.upscaleJobs=jobs.status==="fulfilled"?(jobs.value.jobs||[]):[];
+  if(fixtures.status==="fulfilled"&&runs.status==="fulfilled"){
+   state.upscaleFixtures=fixtures.value.fixtures||[];state.upscaleRuns=runs.value.runs||[];state.upscaleReport=runs.value.report||null;state.upscaleMessage="";
+  }else{
+   state.upscaleFixtures=[];state.upscaleRuns=[];state.upscaleReport=null;
+   const error=fixtures.status==="rejected"?fixtures.reason:runs.status==="rejected"?runs.reason:null;
+   state.upscaleMessage=error instanceof Error?error.message:"Benchmark tables are not available; cloud upscale jobs remain accessible.";
+  }
+  if(jobs.status==="rejected"&&!state.upscaleMessage)state.upscaleMessage=jobs.reason instanceof Error?jobs.reason.message:"Cloud upscale job history is unavailable.";
  }catch(error){state.upscaleFixtures=[];state.upscaleJobs=[];state.upscaleRuns=[];state.upscaleReport=null;state.upscaleMessage=error instanceof Error?error.message:"Benchmark workspace is unavailable.";}
  finally{state.upscaleLoading=false;}
 }
