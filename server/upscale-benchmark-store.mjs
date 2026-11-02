@@ -11,7 +11,7 @@ export function createUpscaleBenchmarkFixture(db,{ownerId,projectId,sourceAssetI
   const projectOwner=db.prepare("SELECT owner_id FROM projects WHERE id=? AND archived_at IS NULL").get(projectId)?.owner_id;
   const member=db.prepare("SELECT 1 FROM project_members WHERE project_id=? AND member_id=? AND role='editor'").get(projectId,ownerId);
   if(!asset||asset.owner_id!==ownerId&&projectOwner!==ownerId&&!member) throw problem("UPSCALE_FIXTURE_SOURCE_UNAVAILABLE","The fixture source must be an accessible image in this project.",404);
-  if(!String(asset.media_type||"").startsWith("image/")) throw problem("UPSCALE_FIXTURE_SOURCE_INVALID","Benchmark fixtures must be still images.");
+  if(!["image/png","image/jpeg","image/webp"].includes(String(asset.media_type||""))) throw problem("UPSCALE_FIXTURE_SOURCE_INVALID","Benchmark fixtures must be PNG, JPEG or WebP images.");
   const id=randomUUID();
   try {
     db.prepare("INSERT INTO upscale_benchmark_fixtures(id,owner_id,project_id,source_asset_id,source_sha256,fixture_category,label) VALUES(?,?,?,?,?,?,?)")
