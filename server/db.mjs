@@ -214,6 +214,21 @@ export function openDatabase(filename) {
       revoked_at TEXT,
       created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
     );
+    CREATE TABLE IF NOT EXISTS video_pipeline_checkpoints (
+      owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      project_id TEXT REFERENCES projects(id) ON DELETE CASCADE,
+      pipeline_id TEXT NOT NULL,
+      step_id TEXT NOT NULL,
+      status TEXT NOT NULL CHECK(status IN ('succeeded')),
+      input_asset_id TEXT NOT NULL,
+      input_sha256 TEXT NOT NULL,
+      idempotency_key TEXT NOT NULL,
+      output_json TEXT NOT NULL,
+      approval_id TEXT,
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      PRIMARY KEY(owner_id,pipeline_id,step_id)
+    );
+    CREATE INDEX IF NOT EXISTS video_pipeline_project_idx ON video_pipeline_checkpoints(owner_id,project_id,pipeline_id);
   `);
   const jobColumns = new Set(db.prepare("PRAGMA table_info(jobs)").all().map(column => column.name));
   for (const [name, definition] of [
