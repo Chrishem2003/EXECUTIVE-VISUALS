@@ -25,7 +25,7 @@ function setup({memberRole="reviewer",runCount=1}={}){
   else if(path.startsWith("upscale_benchmark_fixtures")&&method==="GET"){result=rows.fixture?[{id:rows.fixture.id,source_asset_id:rows.fixture.source_asset_id,source_sha256:rows.fixture.source_sha256,fixture_category:rows.fixture.fixture_category}]:[];}
   else if(path.startsWith("upscale_benchmark_runs")&&method==="POST"){const b=JSON.parse(options.body);rows.run={...b,reviewer_id:null,review_decision:null,created_at:"2026-11-02T12:02:00.000Z"};result=[{id:b.id,created_at:rows.run.created_at}];}
   else if(path.startsWith("upscale_benchmark_runs")&&method==="GET"){
-   if(rows.run&&url.searchParams.get("limit")==="201"&&runCount>1)result=Array.from({length:runCount},(_,index)=>({...rows.run,id:"823e4567-e89b-42d3-a456-"+String(index+1).padStart(12,"0"),record:{...rows.run.record,fixtureId:"923e4567-e89b-42d3-a456-"+String(index+1).padStart(12,"0")}}));
+   if(rows.run&&url.searchParams.get("limit")==="1000"&&runCount>1)result=Array.from({length:runCount},(_,index)=>({...rows.run,id:"823e4567-e89b-42d3-a456-"+String(index+1).padStart(12,"0"),record:{...rows.run.record,fixtureId:"923e4567-e89b-42d3-a456-"+String(index+1).padStart(12,"0")}}));
    else result=rows.run?[{id:rows.run.id,owner_id:rows.run.owner_id,record:rows.run.record,reviewer_id:rows.run.reviewer_id,asset_id:rows.run.asset_id,fixture_id:rows.run.fixture_id,review_decision:rows.run.review_decision,review_note:rows.run.review_note,reviewed_at:rows.run.reviewed_at,created_at:rows.run.created_at}]:[];
   }
   else if(path.startsWith("upscale_benchmark_runs")&&method==="PATCH"){const b=JSON.parse(options.body);if(rows.run&&!rows.run.reviewer_id){Object.assign(rows.run,b);result=[rows.run];}}
@@ -52,17 +52,17 @@ test("cloud benchmark API pins fixture source, registers verified derivative and
  assert.ok(f.calls.some(call=>call.path.startsWith("audit_events")&&call.method==="POST"));
 });
 
-test("cloud benchmark report withholds recommendations when more than 200 evidence records exist",async()=>{
- const f=setup({runCount:201});
+test("cloud benchmark API paginates evidence while keeping the report complete",async()=>{
+ const f=setup({runCount:120});
  const fixture=await f.api.handle({method:"POST",path:"/api/cloud/upscale-benchmarks/fixtures",ownerId:owner,query:{projectId:project},body:{sourceAssetId:sourceId,category:"portrait"}});
  const run=await f.api.handle({method:"POST",path:"/api/cloud/upscale-benchmarks/runs",ownerId:owner,query:{projectId:project},body:{assetId:outputId,fixtureId:fixture.body.fixture.id}});
  assert.equal(run.status,201);
- const list=await f.api.handle({method:"GET",path:"/api/cloud/upscale-benchmarks/runs",ownerId:owner,query:{projectId:project}});
- assert.equal(list.status,200);
- assert.equal(list.body.runs.length,200);
- assert.equal(list.body.report.evidenceTruncated,true);
- assert.equal(list.body.report.evidenceLimit,200);
- assert.equal(list.body.report.recommended,null);
+ const first=await f.api.handle({method:"GET",path:"/api/cloud/upscale-benchmarks/runs",ownerId:owner,query:{projectId:project,limit:"50",offset:"0"}});
+ assert.equal(first.status,200);assert.equal(first.body.runs.length,50);assert.equal(first.body.page.hasMore,true);assert.equal(first.body.page.nextOffset,50);assert.equal(first.body.report.evidenceTruncated,false);
+ const second=await f.api.handle({method:"GET",path:"/api/cloud/upscale-benchmarks/runs",ownerId:owner,query:{projectId:project,limit:"50",offset:"50"}});
+ assert.equal(second.body.page.offset,50);assert.equal(second.body.runs.length,50);assert.equal(second.body.page.hasMore,true);
+ const third=await f.api.handle({method:"GET",path:"/api/cloud/upscale-benchmarks/runs",ownerId:owner,query:{projectId:project,limit:"50",offset:"100"}});
+ assert.equal(third.body.runs.length,20);assert.equal(third.body.page.hasMore,false);
 });
 
 test("cloud benchmark API requires independent assigned review and stores immutable decision",async()=>{
