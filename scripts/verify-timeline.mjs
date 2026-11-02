@@ -110,6 +110,14 @@ assert.equal(evidenceReport.schema,"executive-visuals.enhancement-evidence.v1");
 assert.equal(evidenceReport.checks.find(item=>item.key==="output_checksum").status,"verified");
 assert.equal(evidenceReport.checks.find(item=>item.key==="independent_review").status,"reviewed_pass");
 assert.equal(evidenceReport.lineage.ancestors[0].id,"asset-a");
+assert.equal(evidenceReport.checks.find(item=>item.key==="parent_asset").status,"found");
+assert.equal(evidenceReport.checks.find(item=>item.key==="source_checksum_matches_parent").status,"verified");
+const mismatchedParent=buildEnhancementEvidenceReport({id:"derivative-2",sha256:outputHash,derivativeOf:"asset-a",metadata:{processing:{inputSha256:"d".repeat(64),outputSha256:outputHash}}},{ancestors:[{id:"asset-a",sha256:sourceHash}],descendants:[]},"2026-11-02T12:00:00.000Z");
+assert.equal(mismatchedParent.checks.find(item=>item.key==="source_checksum_matches_parent").status,"mismatch");
+const absentParent=buildEnhancementEvidenceReport({id:"derivative-3",sha256:outputHash,derivativeOf:"gone",metadata:{processing:{inputSha256:sourceHash,outputSha256:outputHash}}},{ancestors:[{id:"gone",missing:true}],descendants:[]},"2026-11-02T12:00:00.000Z");
+assert.equal(absentParent.checks.find(item=>item.key==="parent_asset").status,"missing");
+assert.equal(absentParent.checks.find(item=>item.key==="source_checksum_matches_parent").status,"parent_checksum_unavailable");
+
 assert.equal(evidenceReport.interpretation.perceptualQualityAssessed,false);
 assert.equal(evidenceReport.interpretation.privatePreviewUrlsIncluded,false);
 assert.equal(JSON.stringify(evidenceReport).includes("https://"),false,"evidence report must not include private signed URLs");
