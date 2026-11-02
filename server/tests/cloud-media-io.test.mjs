@@ -35,6 +35,28 @@ test("rejects downloads that exceed the configured byte limit",async()=>{
  await assert.rejects(()=>f.io.materialize({ownerId:"owner-1",assetId:"asset-1"}),e=>e.code==="CLOUD_MEDIA_TOO_LARGE");
  assert.deepEqual(await readdir(f.root),[]);await rm(f.root,{recursive:true,force:true});
 });
+test("cancels an in-flight cloud media download when the worker lease is lost",async()=>{
+ const root=await mkdtemp(join(tmpdir(),"ev-media-cancel-test-"));
+ const controller=new AbortController();
+ const assets={
+  async createSignedUrl(){return{url:"https://storage.example/signed",asset:{id:"asset-1",ownerId:"owner-1",size:content.length,sha256:digest,mediaType:"video/mp4"}};},
+  async create(){}
+ };
+ let observedSignal;
+ const io=createCloudMediaAssetIO({assets,tempRoot:root,timeoutMs:10000,fetchImpl:async(url,options)=>{
+  observedSignal=options.signal;
+  return await new Promise((resolve,reject)=>{
+   options.signal.addEventListener("abort",()=>reject(Object.assign(new Error("aborted"),{name:"AbortError"})),{once:true});
+  });
+ }});
+ const pending=io.materialize({ownerId:"owner-1",assetId:"asset-1",signal:controller.signal});
+ await new Promise(resolve=>setImmediate(resolve));
+ controller.abort();
+ await assert.rejects(()=>pending,error=>error.code==="JOB_CANCELLED");
+ assert.equal(observedSignal.aborted,true);
+ assert.deepEqual(await readdir(root),[]);
+ await rm(root,{recursive:true,force:true});
+});
 test("publishes generated media using asset repository metadata and bytes",async()=>{
  const f=await fixture();const path=join(f.root,"render.mp4");await writeFile(path,content);
  const result=await f.io.publish({ownerId:"owner-1",projectId:"project-1",filename:"render.mp4",mediaType:"video/mp4",path,metadata:{operation:"timeline.render"}});
