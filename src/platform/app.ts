@@ -103,7 +103,7 @@ async function loadTransformationReadiness(projectId:string){
  }catch{state.transformationReadiness=null;}
 }
 async function loadUpscaleBenchmarkWorkspace(projectId:string){
- if(!projectId){state.upscaleFixtures=[];state.upscaleRuns=[];state.upscaleReport=null;return;}
+ if(!projectId){state.upscaleFixtures=[];state.upscaleJobs=[];state.upscaleRuns=[];state.upscaleReport=null;return;}
  state.upscaleLoading=true;
  try{
   const query="?projectId="+encodeURIComponent(projectId);
