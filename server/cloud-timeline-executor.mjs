@@ -1,3 +1,4 @@
+import { run, validateMediaOutputProbe } from "./media.mjs";
 import { createHash, randomUUID } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { mkdtemp, rm, stat } from "node:fs/promises";
@@ -27,7 +28,7 @@ function referencedAssets(timeline){
  * assembly and receives only verified materialized asset paths; the local
  * SQLite renderer is never passed cloud records or storage references.
  */
-export function createCloudTimelineExecutor({timelines,mediaIO,renderTimeline,tempRoot,maxAssets=5000,maxOutputBytes=1024*1024*1024}={}){
+export function createCloudTimelineExecutor({timelines,mediaIO,renderTimeline,probeOutput=async path=>{const result=await run("ffprobe",["-v","error","-show_format","-show_streams","-of","json",path],60000);return JSON.parse(result.stdout||"{}");},tempRoot,maxAssets=5000,maxOutputBytes=1024*1024*1024}={}){
   if(!timelines||typeof timelines.get!=="function")throw new Error("Cloud timeline executor requires the cloud timeline repository.");
   if(!mediaIO||typeof mediaIO.materialize!=="function"||typeof mediaIO.publish!=="function")throw new Error("Cloud timeline executor requires cloud media IO.");
   if(typeof renderTimeline!=="function")throw new Error("Cloud timeline executor requires an explicit render engine.");
@@ -61,14 +62,16 @@ export function createCloudTimelineExecutor({timelines,mediaIO,renderTimeline,te
       const info=await stat(output.path);
       if(!info.isFile()||info.size<1)throw Object.assign(new Error("Timeline renderer produced an empty output."),{code:"CLOUD_TIMELINE_OUTPUT_EMPTY"});
       if(info.size>maxOutputBytes)throw Object.assign(new Error("Timeline output exceeds the configured limit."),{code:"CLOUD_TIMELINE_OUTPUT_TOO_LARGE"});
+      const probed=await probeOutput(output.path);
+      const probeValidation=validateMediaOutputProbe(probed,output.mediaType);
       const sha256=await digest(output.path);
       onProgress(90);
       const outputAsset=await mediaIO.publish({
         ownerId:job.owner_id,projectId:record.projectId,filename:output.filename,mediaType:output.mediaType,
-        path:output.path,metadata:{...(output.metadata||{}),operation:"timeline.render",timelineId:record.id,timelineRevision:record.revision,sha256}
+        path:output.path,metadata:{...(output.metadata||{}),operation:"timeline.render",timelineId:record.id,timelineRevision:record.revision,sha256,probe:probed,probeValidation,render:output.render||{}}
       });
       onProgress(100);
-      return{timelineId:record.id,timelineRevision:record.revision,outputAsset,sha256,byteSize:info.size,render:output.render||{}};
+      return{timelineId:record.id,timelineRevision:record.revision,outputAsset,sha256,byteSize:info.size,probeValidation,render:output.render||{}};
     }finally{
       await Promise.all([...materialized.values()].map(asset=>asset.cleanup?.().catch(()=>{})));
       await rm(workDir,{recursive:true,force:true}).catch(()=>{});
