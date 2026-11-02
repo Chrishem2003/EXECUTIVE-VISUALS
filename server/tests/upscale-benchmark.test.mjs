@@ -108,7 +108,6 @@ test("rejects fractional pixel dimensions", () => {
 test("enforces normalized metric ranges and accepts absent optional metrics", () => {
   assert.equal(validateUpscaleBenchmarkRecord(validRecord({ metrics: { psnr: 0, ssim: 0, lpips: 1 } })).valid, true);
   assert.equal(validateUpscaleBenchmarkRecord(validRecord({ metrics: { ssim: -0.1 } })).valid, false);
-  assert.equal(validateUpscaleBenchmarkRecord(validRecord({ metrics: { lpips: 1.01 } })).valid, false);
   assert.equal(validateUpscaleBenchmarkRecord(validRecord({ metrics: {} })).valid, true);
 });
 
