@@ -26,9 +26,9 @@ test("AI upscaler launches without a shell and publishes only a new bounded outp
   const model = "realesrgan-x4plus";
   const input = join(directory, "source.png");
   const output = join(directory, "enhanced.png");
-  await writeFile(input, Buffer.from([137,80,78,71,13,10,26,10]));
+  await writeFile(input, Buffer.from([137,80,78,71,13,10,26,10,0,0,0,13,73,72,68,82,0,0,0,1,0,0,0,1]));
   await writeFile(binary, String.raw`#!/bin/sh
-while [ "$1" != "" ]; do if [ "$1" = "-o" ]; then shift; printf '\211PNG\r\n\032\n\000\000\000\015IHDR\000\000\000\001\000\000\000\001' > "$1"; fi; shift; done
+while [ "$1" != "" ]; do if [ "$1" = "-o" ]; then shift; printf '\211PNG\r\n\032\n\000\000\000\015IHDR\000\000\000\004\000\000\000\004' > "$1"; fi; shift; done
 `);
   await chmod(binary, 0o755);
   await writeFile(join(directory, model + ".param"), "model");
@@ -49,9 +49,9 @@ test("AI upscaler reports execution checks separately from unverified inference 
   const binary = join(directory, "engine");
   const model = "realesrgan-x4plus";
   const input = join(directory, "fixture.png");
-  await writeFile(input, Buffer.from([137,80,78,71,13,10,26,10]));
+  await writeFile(input, Buffer.from([137,80,78,71,13,10,26,10,0,0,0,13,73,72,68,82,0,0,0,1,0,0,0,1]));
   await writeFile(binary, String.raw`#!/bin/sh
-while [ "$1" != "" ]; do if [ "$1" = "-o" ]; then shift; printf '\211PNG\r\n\032\n\000\000\000\015IHDR\000\000\000\001\000\000\000\001' > "$1"; fi; shift; done
+while [ "$1" != "" ]; do if [ "$1" = "-o" ]; then shift; printf '\211PNG\r\n\032\n\000\000\000\015IHDR\000\000\000\004\000\000\000\004' > "$1"; fi; shift; done
 `);
   await chmod(binary, 0o755);
   await writeFile(join(directory, model + ".param"), "model");
@@ -61,7 +61,7 @@ while [ "$1" != "" ]; do if [ "$1" = "-o" ]; then shift; printf '\211PNG\r\n\032
     const before = await adapter.probe(model);
     assert.equal(before.executionVerified, false);
     assert.equal(before.inferenceVerified, false);
-    const result = await adapter.selfTest({ inputPath: input, model, scale: 2 });
+    const result = await adapter.selfTest({ inputPath: input, model, scale: 4 });
     assert.equal(result.passed, true);
     assert.equal(result.executionVerified, true);
     assert.equal(result.inferenceVerified, false);
@@ -78,7 +78,7 @@ test("AI upscaler rejects an executable that exits successfully but emits a corr
   const model = "realesrgan-x4plus";
   const input = join(directory, "source.png");
   const output = join(directory, "corrupt.png");
-  await writeFile(input, Buffer.from([137,80,78,71,13,10,26,10]));
+  await writeFile(input, Buffer.from([137,80,78,71,13,10,26,10,0,0,0,13,73,72,68,82,0,0,0,1,0,0,0,1]));
   await writeFile(binary, String.raw`#!/bin/sh
 while [ "$1" != "" ]; do
   if [ "$1" = "-o" ]; then shift; printf 'not-an-image-output' > "$1"; fi
@@ -106,7 +106,7 @@ test("AI upscaler does not overwrite a symbolic-link output target", async () =>
   const input = join(directory, "source.png");
   const protectedFile = join(directory, "protected.png");
   const output = join(directory, "linked-output.png");
-  await writeFile(input, Buffer.from([137,80,78,71,13,10,26,10]));
+  await writeFile(input, Buffer.from([137,80,78,71,13,10,26,10,0,0,0,13,73,72,68,82,0,0,0,1,0,0,0,1]));
   await writeFile(protectedFile, "preserve-this-file");
   await writeFile(binary, String.raw`#!/bin/sh
 exit 0
@@ -136,16 +136,16 @@ test("AI upscaler fingerprints executable and model contents, not file size or t
   const model = "realesrgan-x4plus";
   const input = join(directory, "fixture.png");
   const weights = join(directory, model + ".bin");
-  await writeFile(input, Buffer.from([137,80,78,71,13,10,26,10]));
+  await writeFile(input, Buffer.from([137,80,78,71,13,10,26,10,0,0,0,13,73,72,68,82,0,0,0,1,0,0,0,1]));
   await writeFile(binary, String.raw`#!/bin/sh
-while [ "$1" != "" ]; do if [ "$1" = "-o" ]; then shift; printf '\211PNG\r\n\032\n\000\000\000\015IHDR\000\000\000\001\000\000\000\001' > "$1"; fi; shift; done
+while [ "$1" != "" ]; do if [ "$1" = "-o" ]; then shift; printf '\211PNG\r\n\032\n\000\000\000\015IHDR\000\000\000\004\000\000\000\004' > "$1"; fi; shift; done
 `);
   await chmod(binary, 0o755);
   await writeFile(join(directory, model + ".param"), "model");
   await writeFile(weights, "weights-v1");
   try {
     const adapter = createRealEsrganAdapter({ binaryPath: binary, modelDirectory: directory, timeoutMs: 5000, enabled: true });
-    const passed = await adapter.selfTest({ inputPath: input, model, scale: 2 });
+    const passed = await adapter.selfTest({ inputPath: input, model, scale: 4 });
     assert.match(passed.binarySha256, /^[a-f0-9]{64}$/);
     assert.match(passed.modelFilesSha256, /^[a-f0-9]{64}$/);
     assert.equal((await adapter.probe(model)).executionVerified, true);
