@@ -8,6 +8,60 @@ import { pipeline } from "node:stream/promises";
 import { createCloudAssetAuthorizer } from "./cloud-asset-auth.mjs";
 import { createCloudTimelineService } from "./cloud-timeline-service.mjs";
 import { buildTransformationReadinessReport } from "./transformation-readiness.mjs";
+import { validateSrt, validateWebVtt } from "./caption-validation.mjs";
+import { REQUIRED_UPSCALE_FIXTURE_CATEGORIES, buildUpscaleBenchmarkRecordFromAsset, compareUpscaleBenchmarkCandidates } from "./upscale-benchmark.mjs";
+import { createDeliveryPackage, verifyDeliveryManifest } from "./delivery-manifest.mjs";
+
+const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const safeId=(value)=>typeof value==="string"&&UUID.test(value);
+const stableJson=value=>Array.isArray(value)?"["+value.map(stableJson).join(",")+"]":value&&typeof value==="object"?"{"+Object.keys(value).sort().map(key=>JSON.stringify(key)+":"+stableJson(value[key])).join(",")+"}":JSON.stringify(value);
+
+/**
+ * Authenticated cloud timeline API. The caller must pass the user ID returned
+ * by the app's verified authentication middleware; request bodies never set
+ * owner_id. Service-role credentials remain inside this server-only module.
+ */
+export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRoleKey=process.env.SUPABASE_SERVICE_ROLE_KEY,fetchImpl=globalThis.fetch,timelineService,authorize,maxJobBytes=5*1024*1024,timeoutMs=15000,maxUploadBytes=250*1024*1024,tempRoot=tmpdir(),transformationReadiness=()=>({})}={}){
+ if(!url||!serviceRoleKey)throw new Error("Cloud timeline API requires server-side Supabase credentials.");
+ if(typeof fetchImpl!=="function")throw new Error("Cloud timeline API requires fetch.");
+ if(!Number.isInteger(maxJobBytes)||maxJobBytes<1024||maxJobBytes>10*1024*1024)throw new Error("Cloud timeline API payload limit is invalid.");
+ if(!Number.isInteger(timeoutMs)||timeoutMs<1000||timeoutMs>60000)throw new Error("Cloud timeline API timeout is invalid.");
+ if(!Number.isInteger(maxUploadBytes)||maxUploadBytes<1||maxUploadBytes>1024*1024*1024)throw new Error("Cloud asset upload limit is invalid.");
+ const service=timelineService||createCloudTimelineService({url,serviceRoleKey,fetchImpl});
+ const allow=authorize||createCloudAssetAuthorizer({url,serviceRoleKey,fetchImpl});
+ const base=new URL(url).origin;
+ async function request(path,{method="GET",body=null,prefer="return=representation"}={}){
+  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs);
+  try{
+  const headers={apikey:serviceRoleKey,authorization:"Bearer "+serviceRoleKey,"accept-profile":"executive_visuals","content-profile":"executive_visuals",accept:"application/json",prefer};
+  if(body!==null)headers["content-type"]="application/json";
+  const response=await fetchImpl(base+"/rest/v1/"+path,{method,headers,...(body===null?{}:{body:JSON.stringify(body)}),signal:controller.signal});
+  const raw=await response.text();let data=null;if(raw){try{data=JSON.parse(raw);}catch{throw new Error("Cloud timeline API received an invalid database response.");}}
+  if(!response.ok){const error=new Error("Cloud timeline API database request failed (HTTP "+response.status+").");error.status=response.status;error.databaseCode=data?.code||null;error.code="CLOUD_TIMELINE_API_DATABASE_ERROR";throw error;}
+  return data;
+  }catch(error){if(error?.name==="AbortError"){const timeout=new Error("Cloud timeline API request timed out.");timeout.code="CLOUD_TIMELINE_API_TIMEOUT";throw timeout;}throw error;}finally{clearTimeout(timer);}
+ }
+ const response=(status,body)=>({status,body});
+ async function handle({method,path,ownerId,body={},query={},idempotencyKey=null}={}){
+  if(!["GET","POST","PUT","PATCH","DELETE"].includes(method)||typeof path!=="string")return null;
+  if(!safeId(ownerId))return response(401,{error:{code:"AUTH_REQUIRED",message:"A verified account identity is required."}});
+  if(Buffer.byteLength(JSON.stringify(body||{}))>maxJobBytes)return response(413,{error:{code:"PAYLOAD_TOO_LARGE",message:"Cloud timeline request is too large."}});
+  try{
+   if(path==="/api/cloud/projects"&&method==="POST"){
+    const project=await service.projects.create({ownerId,name:body.name,description:body.description||"",settings:body.settings||{}});
+    return response(201,{project});
+   }
+   if(path==="/api/cloud/projects"&&method==="GET"){
+    const projects=await service.projects.list({ownerId,limit:Number(query.limit)||50,offset:Number(query.offset)||0});
+    return response(200,{projects});
+   }
+   const projectMatch=path.match(/^\/api\/cloud\/projects\/([0-9a-f-]+)$/i);
+   if(projectMatch&&safeId(projectMatch[1])){
+    const projectId=projectMatch[1];
+    if(method==="GET"){const project=await service.projects.get({ownerId,projectId});return project?response(200,{project}):response(404,{error:{code:"PROJECT_NOT_FOUND",message:"Project not found."}});}
+    if(method==="PATCH"){const project=await service.projects.update({ownerId,projectId,expectedRevision:Number(body.expectedRevision),name:body.name,description:body.description,settings:body.settings});return response(200,{project});}
+    if(method==="DELETE"){const archived=await service.projects.archive({ownerId,projectId,expectedRevision:Number(body.expectedRevision)});return response(200,{project:archived});}
+   }
    const benchmarkPath=path.match(/^\/api\/cloud\/upscale-benchmarks(?:\/(fixtures|runs)(?:\/([0-9a-f-]+)\/review)?)?$/i);
    if(benchmarkPath){
     const section=benchmarkPath[1]||"",runId=benchmarkPath[2]||"",projectId=String(query.projectId||"");
@@ -69,60 +123,6 @@ import { buildTransformationReadinessReport } from "./transformation-readiness.m
      await request("audit_events",{method:"POST",body:{owner_id:ownerId,project_id:projectId,event_type:"upscale_benchmark.quality_reviewed",subject_type:"upscale_benchmark_run",subject_id:runId,details:{decision,noteLength:note.length}},prefer:"return=minimal"});
      return response(200,{run:{id:runId,record,review:{decision,reviewerId:ownerId,reviewedAt,note}}});
     }
-   }
-import { validateSrt, validateWebVtt } from "./caption-validation.mjs";
-import { REQUIRED_UPSCALE_FIXTURE_CATEGORIES, buildUpscaleBenchmarkRecordFromAsset, compareUpscaleBenchmarkCandidates } from "./upscale-benchmark.mjs";
-import { createDeliveryPackage, verifyDeliveryManifest } from "./delivery-manifest.mjs";
-
-const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const safeId=(value)=>typeof value==="string"&&UUID.test(value);
-const stableJson=value=>Array.isArray(value)?"["+value.map(stableJson).join(",")+"]":value&&typeof value==="object"?"{"+Object.keys(value).sort().map(key=>JSON.stringify(key)+":"+stableJson(value[key])).join(",")+"}":JSON.stringify(value);
-
-/**
- * Authenticated cloud timeline API. The caller must pass the user ID returned
- * by the app's verified authentication middleware; request bodies never set
- * owner_id. Service-role credentials remain inside this server-only module.
- */
-export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRoleKey=process.env.SUPABASE_SERVICE_ROLE_KEY,fetchImpl=globalThis.fetch,timelineService,authorize,maxJobBytes=5*1024*1024,timeoutMs=15000,maxUploadBytes=250*1024*1024,tempRoot=tmpdir(),transformationReadiness=()=>({})}={}){
- if(!url||!serviceRoleKey)throw new Error("Cloud timeline API requires server-side Supabase credentials.");
- if(typeof fetchImpl!=="function")throw new Error("Cloud timeline API requires fetch.");
- if(!Number.isInteger(maxJobBytes)||maxJobBytes<1024||maxJobBytes>10*1024*1024)throw new Error("Cloud timeline API payload limit is invalid.");
- if(!Number.isInteger(timeoutMs)||timeoutMs<1000||timeoutMs>60000)throw new Error("Cloud timeline API timeout is invalid.");
- if(!Number.isInteger(maxUploadBytes)||maxUploadBytes<1||maxUploadBytes>1024*1024*1024)throw new Error("Cloud asset upload limit is invalid.");
- const service=timelineService||createCloudTimelineService({url,serviceRoleKey,fetchImpl});
- const allow=authorize||createCloudAssetAuthorizer({url,serviceRoleKey,fetchImpl});
- const base=new URL(url).origin;
- async function request(path,{method="GET",body=null,prefer="return=representation"}={}){
-  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs);
-  try{
-  const headers={apikey:serviceRoleKey,authorization:"Bearer "+serviceRoleKey,"accept-profile":"executive_visuals","content-profile":"executive_visuals",accept:"application/json",prefer};
-  if(body!==null)headers["content-type"]="application/json";
-  const response=await fetchImpl(base+"/rest/v1/"+path,{method,headers,...(body===null?{}:{body:JSON.stringify(body)}),signal:controller.signal});
-  const raw=await response.text();let data=null;if(raw){try{data=JSON.parse(raw);}catch{throw new Error("Cloud timeline API received an invalid database response.");}}
-  if(!response.ok){const error=new Error("Cloud timeline API database request failed (HTTP "+response.status+").");error.status=response.status;error.databaseCode=data?.code||null;error.code="CLOUD_TIMELINE_API_DATABASE_ERROR";throw error;}
-  return data;
-  }catch(error){if(error?.name==="AbortError"){const timeout=new Error("Cloud timeline API request timed out.");timeout.code="CLOUD_TIMELINE_API_TIMEOUT";throw timeout;}throw error;}finally{clearTimeout(timer);}
- }
- const response=(status,body)=>({status,body});
- async function handle({method,path,ownerId,body={},query={},idempotencyKey=null}={}){
-  if(!["GET","POST","PUT","PATCH","DELETE"].includes(method)||typeof path!=="string")return null;
-  if(!safeId(ownerId))return response(401,{error:{code:"AUTH_REQUIRED",message:"A verified account identity is required."}});
-  if(Buffer.byteLength(JSON.stringify(body||{}))>maxJobBytes)return response(413,{error:{code:"PAYLOAD_TOO_LARGE",message:"Cloud timeline request is too large."}});
-  try{
-   if(path==="/api/cloud/projects"&&method==="POST"){
-    const project=await service.projects.create({ownerId,name:body.name,description:body.description||"",settings:body.settings||{}});
-    return response(201,{project});
-   }
-   if(path==="/api/cloud/projects"&&method==="GET"){
-    const projects=await service.projects.list({ownerId,limit:Number(query.limit)||50,offset:Number(query.offset)||0});
-    return response(200,{projects});
-   }
-   const projectMatch=path.match(/^\/api\/cloud\/projects\/([0-9a-f-]+)$/i);
-   if(projectMatch&&safeId(projectMatch[1])){
-    const projectId=projectMatch[1];
-    if(method==="GET"){const project=await service.projects.get({ownerId,projectId});return project?response(200,{project}):response(404,{error:{code:"PROJECT_NOT_FOUND",message:"Project not found."}});}
-    if(method==="PATCH"){const project=await service.projects.update({ownerId,projectId,expectedRevision:Number(body.expectedRevision),name:body.name,description:body.description,settings:body.settings});return response(200,{project});}
-    if(method==="DELETE"){const archived=await service.projects.archive({ownerId,projectId,expectedRevision:Number(body.expectedRevision)});return response(200,{project:archived});}
    }
    if(path==="/api/cloud/assets"&&method==="GET"){
     const assets=await service.assets.list({ownerId,projectId:query.projectId||null,limit:Number(query.limit)||50,offset:Number(query.offset)||0});
