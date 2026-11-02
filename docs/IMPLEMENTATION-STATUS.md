@@ -456,3 +456,12 @@ This is a runnable worker entry point, not a deployed worker. Do not set the ena
 - Connected the Enhancement Lab to cloud draft create/list routes. Prompts and reference IDs are excluded from browser local storage; legacy local transformation drafts are purged on startup.
 - Added separate owner/editor budget approval metadata (estimate, covering budget, currency, adapter/capability declaration) and audit/job events. The local SQLite plan API remains available for development.
 - Submission remains intentionally blocked with an explicit adapter-unavailable response. The checkbox is not independent proof of person consent; evidence-backed consent verification is still required before person replacement can execute. No provider generation, credit spend, cloud migration or deployment has occurred.
+
+
+## Transformation request parity and safe cancellation — 2 November 2026
+
+- The local SQLite transformation-plan API now rejects unknown fields, non-string project/source/operation values, prompts outside 8–8,000 characters, malformed/empty/duplicate reference IDs, and duplicate preservation constraints rather than silently truncating, coercing, filtering, or deduplicating them.
+- Added authenticated `POST /api/transformations/:id/cancel` for draft, approved-but-unexecuted, and failed plans. Project editor access is required and the cancellation is audit logged.
+- Queued/running/succeeded/cancelled plans cannot be cancelled through this endpoint. This is deliberate: active-job interruption must be integrated with worker leases and cancellation polling before it can safely claim to stop execution.
+- Added regression tests for cancellation state transitions, permission isolation, invalid input rejection, and preservation of accepted values. GitHub Actions passed dependency installation, TypeScript typecheck and the production build/verification suite on commit `aaa69aa0a665840056e5d6b9ec5557a5556a5ee4`.
+- This does not enable provider execution, spend credits, merge the draft PR, migrate the database, or deploy production. Durable cloud worker integration and evidence-backed consent remain release blockers.
