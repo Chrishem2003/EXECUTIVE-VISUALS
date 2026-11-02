@@ -1,5 +1,6 @@
 import { apiRequest } from "../core/api";
 import { analyzeTimelineQuality } from "../core/timeline-quality";
+import { buildProductionReadinessReport } from "../core/production-readiness";
 import { addClip, addMarker, addTrack, createTimeline, moveClip, rational, splitClip, toOpenTimelineIo, trimClip, type EditorialTimeline, type TimelineTrack } from "../core/timeline";
 
 type Asset={id:string;name:string;mediaType:string;size:number;metadata?:Record<string,unknown>};
@@ -41,12 +42,28 @@ function clipInspector(){
 }
 export function timelineQualityPanel(){
  const findings=analyzeTimelineQuality(state.timeline,state.assets);
- const errors=findings.filter(item=>item.severity==="error").length;
- const warnings=findings.filter(item=>item.severity==="warning").length;
- const count=findings.length;
- return '<section class="panel timeline-quality"><div class="timeline-panel-heading"><div><div class="eyebrow">PRE-DELIVERY QUALITY GATE</div><h3>Sequence health</h3></div><span class="job-status '+(errors?"failed":warnings?"running":"completed")+'">'+(errors?errors+" blocking":warnings?warnings+" warnings":"No blocking issues")+'</span></div>'+
- (count?'<div class="timeline-quality-list">'+findings.map(item=>'<article class="timeline-quality-item '+item.severity+'"><b>'+esc(item.title)+'</b><p>'+esc(item.detail)+'</p></article>').join("")+'</div>':'<div class="empty">No quality findings. Run a final review before delivery.')+
- '<small class="muted">Checks are advisory except missing picture, missing source assets and source ranges beyond probed media. They do not replace the server render validator.</small></section>';
+ const hasTimeline=!!state.timeline;
+ const hasCaptionTrack=!!state.timeline?.tracks.some(track=>track.kind==="caption"&&track.enabled!==false&&track.clips.length>0);
+ const hasAudioTrack=!!state.timeline?.tracks.some(track=>track.kind==="audio"&&track.enabled!==false&&track.clips.length>0);
+ const missingPrimary=findings.some(item=>item.code==="NO_PRIMARY_VIDEO");
+ const pictureGap=findings.some(item=>item.code==="PICTURE_GAP");
+ const missingSource=findings.some(item=>item.code==="ASSET_NOT_IN_LIBRARY"||item.code==="SOURCE_RANGE_EXCEEDS_MEDIA");
+ const report=buildProductionReadinessReport({checks:{
+  sequence:{status:!hasTimeline?"not_run":missingPrimary?"blocked":pictureGap?"review":"passed",summary:!hasTimeline?"No sequence is loaded.":missingPrimary?"The sequence has no primary picture track.":pictureGap?"Primary picture contains a gap that needs review.":"A primary picture sequence is present with no detected gap."},
+  source_media:{status:missingSource?"blocked":"not_run",summary:missingSource?"A source asset is missing or a selected range exceeds probed media duration.":"Full source integrity and decode checks have not been run for every asset."},
+  captions:{status:!hasTimeline?"not_run":hasCaptionTrack?"passed":"review",summary:!hasTimeline?"No sequence is loaded.":hasCaptionTrack?"An enabled caption track contains clips.":"No caption track is present; confirm whether this delivery requires captions."},
+  audio:{status:!hasTimeline?"not_run":hasAudioTrack?"passed":"review",summary:!hasTimeline?"No sequence is loaded.":hasAudioTrack?"An enabled audio track contains clips.":"No audio track is present; confirm whether silence is intentional."}
+ }});
+ const decisionLabel=report.decision==="blocked"?"Production blocked":report.decision==="ready_for_human_approval"?"Ready for human approval":"Review required";
+ const decisionClass=report.decision==="blocked"?"failed":report.decision==="ready_for_human_approval"?"completed":"running";
+ const checks=report.checks.map(item=>'<article class="timeline-quality-item '+(item.status==="blocked"?"error":item.status==="review"?"warning":item.status==="passed"?"success":"info")+'"><b>'+esc(item.label)+' · '+esc(item.status.replace("_"," "))+'</b><p>'+esc(item.summary)+'</p></article>').join("");
+ const errorCount=findings.filter(item=>item.severity==="error").length;
+ const warningCount=findings.filter(item=>item.severity==="warning").length;
+ return '<section class="panel timeline-quality"><div class="timeline-panel-heading"><div><div class="eyebrow">EVIDENCE-BASED PRODUCTION GATE</div><h3>Production readiness</h3></div><span class="job-status '+decisionClass+'">'+decisionLabel+'</span></div>'+
+ '<div class="creative-plan-meta"><span>'+report.counts.passed+'/'+report.counts.total+' required checks passed</span><span>'+report.counts.blocked+' blocked · '+report.counts.review+' review · '+report.counts.notRun+' not run</span></div>'+
+ '<div class="timeline-quality-list">'+checks+'</div>'+
+ (findings.length?'<div class="eyebrow" style="margin-top:16px">SEQUENCE FINDINGS · '+errorCount+' errors · '+warningCount+' warnings</div><div class="timeline-quality-list">'+findings.map(item=>'<article class="timeline-quality-item '+item.severity+'"><b>'+esc(item.title)+'</b><p>'+esc(item.detail)+'</p></article>').join("")+'</div>':'')+
+ '<small class="muted">Only sequence structure and visible track presence are assessed here. Source-media, shot-engine compatibility, continuity, rights, full caption validation, audio signal analysis and delivery checks remain not run until their evidence adapters are connected. This report does not grant approval, submit a provider request or render media.</small></section>';
 }
 export function renderTimelineWorkspace(){
  return '<div id="timeline-workspace"><div class="timeline-toolbar"><label>Workspace <select id="tl-mode"><option value="local" '+(state.mode==="local"?"selected":"")+' >Local</option><option value="cloud" '+(state.mode==="cloud"?"selected":"")+' >Cloud project</option></select></label><label>Cloud project <select id="tl-cloud-project"><option value="">Select project</option>'+state.cloudProjects.map(p=>'<option value="'+esc(p.id)+'" '+(p.id===state.cloudProjectId?'selected':'')+'>'+esc(p.name)+'</option>').join("")+'</select></label><label>Saved sequence <select id="tl-saved-sequence"><option value="">Current sequence</option>'+(state.mode==="cloud"?state.cloudTimelines.map(t=>'<option value="'+esc(t.id)+'" '+(state.timeline?.id===t.id?'selected':'')+'>'+esc(t.name)+' · r'+t.revision+'</option>').join(""):state.timelines.map(t=>'<option value="'+esc(t.id)+'" '+(state.timeline?.id===t.id?'selected':'')+'>'+esc(t.name)+' · r'+t.revision+'</option>').join(""))+'</select></label><button class="secondary" data-tl-create-cloud>＋ New cloud timeline</button><span class="runtime-status '+state.status+'"><i></i>'+esc(state.status==="ready"?"TIMELINE SAVED":state.status==="auth"?"SIGN IN REQUIRED":state.status==="offline"?"API OFFLINE":"LOADING")+'</span><button class="secondary" data-tl-action="refresh">↻ Refresh</button><button class="secondary" data-tl-action="export">Export OTIO JSON</button>'+(state.mode==="cloud"&&state.cloudRenderJobId?'<button class="secondary" data-tl-action="cloud-job">Check cloud render · '+esc(state.cloudRenderJobStatus||"queued")+'</button>':'')+''+(state.ffmpeg?'<button class="primary" data-tl-action="render">Render master MP4</button>':'<span class="muted">FFmpeg required for master render</span>')+'</div>'+
