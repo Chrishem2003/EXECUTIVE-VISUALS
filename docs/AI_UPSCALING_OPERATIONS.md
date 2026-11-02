@@ -45,7 +45,7 @@ Content-Type: application/json
 
 The ID above is a placeholder; use the ID returned by the upload API. Allowed scales are 2, 3, and 4. The self-test writes its output to a unique temporary directory and removes that directory whether the test passes or fails.
 
-A successful response includes `selfTest.passed=true` and `selfTest.inferenceVerified=true`. A failed run returns a bounded error response and records an audit event. The source asset is never overwritten.
+A successful response includes `selfTest.passed=true` and `selfTest.executionVerified=true`. `selfTest.inferenceVerified` intentionally remains `false`: a successful process run is not evidence of perceptual quality or temporal consistency. A failed run returns a bounded error response and records an audit event. The source asset is never overwritten.
 
 4. Read `GET /api/providers` again. The local AI-upscale provider should become `ready` only after the self-test passes in that same worker process.
 
@@ -53,5 +53,5 @@ A successful response includes `selfTest.passed=true` and `selfTest.inferenceVer
 
 - Do not enable this feature on a production worker until its binary, model provenance, GPU/Vulkan runtime, resource limits, storage capacity, and rollback path have been reviewed.
 - The self-test is synchronous and may take up to the configured engine timeout. Keep test images small and run it during a controlled maintenance window.
-- A passing test does not replace output dimension/decode checks, provenance capture, asset review, or approval gates in the media job pipeline.
+- A passing self-test does not replace the media job's source/output format and exact-dimension checks, FFmpeg decode validation, provenance capture, human asset review, or approval gates. Dimension/header checks alone are not a full image-quality assessment.
 - If the worker is horizontally scaled, each process must pass its own self-test. A readiness result on one process is not proof that another process is ready.
