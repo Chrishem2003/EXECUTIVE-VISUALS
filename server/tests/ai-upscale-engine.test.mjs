@@ -4,6 +4,7 @@ import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createRealEsrganAdapter } from "../ai-upscale-engine.mjs";
+import { validateAiUpscaleProbeDimensions } from "../media.mjs";
 
 test("AI upscaler is fail-closed when binary and model weights are absent", async () => {
   const adapter = createRealEsrganAdapter({ binaryPath: "/missing/realesrgan", modelDirectory: "/missing/models" });
@@ -154,4 +155,16 @@ while [ "$1" != "" ]; do if [ "$1" = "-o" ]; then shift; printf '\211PNG\r\n\032
     assert.equal(changed.executionVerified, false, "changed weights must invalidate the worker self-test");
     assert.notEqual(changed.modelFilesSha256, passed.modelFilesSha256);
   } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+
+test("local AI upscale FFprobe validation requires exact positive integer dimensions", () => {
+  assert.deepEqual(validateAiUpscaleProbeDimensions(JSON.stringify({streams:[{width:768,height:512}]}),{width:768,height:512}),{width:768,height:512});
+  for (const output of [
+    "{",
+    JSON.stringify({streams:[]}),
+    JSON.stringify({streams:[{width:0,height:512}]}),
+    JSON.stringify({streams:[{width:768,height:512.5}]}),
+    JSON.stringify({streams:[{width:767,height:512}]})
+  ]) assert.throws(()=>validateAiUpscaleProbeDimensions(output,{width:768,height:512}),error=>error.code==="MEDIA_OUTPUT_VALIDATION_FAILED");
 });
