@@ -54,12 +54,28 @@ test("health reports local storage and media-engine availability without secrets
   assert.equal(response.headers.get("referrer-policy"),"strict-origin-when-cross-origin");
 });
 
+test("local registration issues a separate HttpOnly session cookie and readable strict CSRF cookie",async()=>{
+  const response=await fetch(base+"/api/auth/register",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({email:"csrf-cookie@example.test",password:"local-test-password-123"})});
+  assert.equal(response.status,201);
+  const cookies=response.headers.getSetCookie();
+  assert.equal(cookies.length,2);
+  const session=cookies.find(value=>value.startsWith("ev_session="));
+  const csrf=cookies.find(value=>value.startsWith("ev_csrf="));
+  assert.ok(session?.includes("HttpOnly"));
+  assert.ok(session?.includes("SameSite=Strict"));
+  assert.ok(csrf?.includes("SameSite=Strict"));
+  assert.equal(csrf?.includes("HttpOnly"),false);
+  assert.match(csrf||"",/ev_csrf=[A-Za-z0-9_-]{43}/);
+});
+
 test("cookie-authenticated mutations and logout require a matching CSRF token",async()=>{
   const cookies=await register("csrf-owner@example.test");
   const sessionCookie=cookies.split("; ").find(value=>value.startsWith("ev_session="));
   const denied=await fetch(base+"/api/auth/logout",{method:"POST",headers:{cookie:sessionCookie}});
   assert.equal(denied.status,403);
   assert.equal((await denied.json()).error.code,"CSRF_VALIDATION_FAILED");
+  const blockedMutation=await fetch(base+"/api/projects",{method:"POST",headers:{cookie:sessionCookie,"content-type":"application/json"},body:"{}"});
+  assert.equal(blockedMutation.status,403);
   const logout=await request("/api/auth/logout",{method:"POST"},cookies);
   assert.equal(logout.status,200);
   const after=await request("/api/me",{},sessionCookie);
