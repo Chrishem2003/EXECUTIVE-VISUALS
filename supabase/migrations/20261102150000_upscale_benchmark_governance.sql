@@ -65,6 +65,7 @@ begin
   end if;
   if new.reviewer_id is null
      or new.reviewer_id = new.owner_id
+     or new.review_decision is null
      or new.review_decision not in ('reviewed_pass','reviewed_fail')
      or new.reviewed_at is null
      or new.record->>'qualityReview' is distinct from new.review_decision then
