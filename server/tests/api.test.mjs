@@ -33,10 +33,14 @@ async function expectStatus(response,status){if(response.status!==status)throw n
 async function register(email){
   const r=await fetch(base+"/api/auth/register",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({email,password:"local-test-password-123"})});
   await expectStatus(r,201);
-  return r.headers.get("set-cookie").split(";")[0];
+  return r.headers.getSetCookie().map(value=>value.split(";")[0]).join("; ");
 }
 async function request(path,options={},cookie){
-  return fetch(base+path,{...options,headers:{...(options.headers||{}),...(cookie?{cookie}: {})}});
+  const headers={...(options.headers||{}),...(cookie?{cookie}: {})};
+  const method=(options.method||"GET").toUpperCase();
+  const csrf=cookie?.match(/(?:^|;\\s*)ev_csrf=([^;]+)/)?.[1];
+  if(csrf&&!["GET","HEAD","OPTIONS"].includes(method))headers["x-csrf-token"]=csrf;
+  return fetch(base+path,{...options,headers});
 }
 
 test("health reports local storage and media-engine availability without secrets",async()=>{
@@ -48,6 +52,18 @@ test("health reports local storage and media-engine availability without secrets
   assert.equal("SUPABASE_SERVICE_ROLE_KEY" in body,false);
   assert.equal(response.headers.get("x-frame-options"),"DENY");
   assert.equal(response.headers.get("referrer-policy"),"strict-origin-when-cross-origin");
+});
+
+test("cookie-authenticated mutations and logout require a matching CSRF token",async()=>{
+  const cookies=await register("csrf-owner@example.test");
+  const sessionCookie=cookies.split("; ").find(value=>value.startsWith("ev_session="));
+  const denied=await fetch(base+"/api/auth/logout",{method:"POST",headers:{cookie:sessionCookie}});
+  assert.equal(denied.status,403);
+  assert.equal((await denied.json()).error.code,"CSRF_VALIDATION_FAILED");
+  const logout=await request("/api/auth/logout",{method:"POST"},cookies);
+  assert.equal(logout.status,200);
+  const after=await request("/api/me",{},sessionCookie);
+  assert.equal(after.status,401);
 });
 
 test("provider catalog is authenticated, safe and read-only",async()=>{
