@@ -112,7 +112,7 @@ export function createDeliveryPackage({
     if (reviewers.has(item.reviewerId)) fail("Review history cannot contain duplicate decisions from one reviewer.");
     reviewers.add(item.reviewerId);
   }
-  if (qualityReport !== null && !verifyMediaQualityReport(qualityReport)) fail("The media quality report is invalid, inconsistent or exceeds package limits.");
+  if (qualityReport !== null && !verifyMediaQualityReport(qualityReport)) fail("The media quality report is invalid: status and counts must agree with findings, and evidence must remain within package limits.");
   if (typeof generatedAt !== "string" || !Number.isFinite(Date.parse(generatedAt)) || new Date(generatedAt).toISOString() !== generatedAt) fail("A valid package timestamp is required.");
   const evidence = {
     schemaVersion: 1, packageType: "executive-visuals-delivery", generatedAt,
