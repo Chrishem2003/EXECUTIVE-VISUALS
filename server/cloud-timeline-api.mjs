@@ -175,7 +175,7 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     const assets=await service.assets.list({ownerId,projectId:query.projectId||null,limit:Number(query.limit)||50,offset:Number(query.offset)||0});
     return response(200,{assets});
    }
-   const assetCleanupMatch=path.match(/^\\/api\\/cloud\\/assets\\/([0-9a-f-]+)\\/retry-cleanup$/i);
+   const assetCleanupMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)\/retry-cleanup$/i);
    if(assetCleanupMatch&&safeId(assetCleanupMatch[1])&&method==="POST"){
     if(typeof service.assets.retryCleanup!=="function")return response(501,{error:{code:"ASSET_CLEANUP_RETRY_UNAVAILABLE",message:"Cloud asset cleanup retry is not configured."}});
     const result=await service.assets.retryCleanup({ownerId,assetId:assetCleanupMatch[1]});
