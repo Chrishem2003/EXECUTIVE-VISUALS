@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { addTrack, createTimeline } from "../../src/core/timeline.ts";
+import { addClip, addTrack, createTimeline, seconds } from "../../src/core/timeline.ts";
 import { GeneratedMediaHandoffError, prepareGeneratedMediaHandoff } from "../../src/core/generated-media-handoff.ts";
 
 function fixture(kind = "video", locked = false) {
@@ -68,4 +68,13 @@ test("allows image and audio receipts only on compatible tracks", () => {
   const imageTimeline = fixture("overlay");
   const imageReceipt = { ...receipt, kind: "image", mediaType: "image/png" };
   assert.equal(prepareGeneratedMediaHandoff(input(imageTimeline, { receipt: imageReceipt })).clip.assetId, "asset-1");
+});
+
+test("keeps non-frame-aligned source duration compatible with the core timeline validator", () => {
+  const timeline = fixture();
+  const prepared = prepareGeneratedMediaHandoff(input(timeline, {
+    receipt: { ...receipt, durationSeconds: 2.51 },
+  }));
+  const inserted = addClip(timeline, prepared.trackId, prepared.clip);
+  assert.equal(seconds(inserted.tracks[0].clips[0].duration), 2.51);
 });
