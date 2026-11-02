@@ -75,3 +75,19 @@ The cloud AI-upscale worker now emits the same benchmark-compatible provenance s
 The Enhancement Lab can now queue a cloud `media.ai-upscale` job from a private project PNG, JPEG or WebP source. `POST /api/cloud/upscale` requires project editor access, explicit media-rights confirmation, an allowlisted Real-ESRGAN model, bounded scale/tile settings, a supported output format, and an idempotency key. The server writes a durable queued job and a `job.queued` event; it does not invoke the model or provider in the request handler.
 
 `GET /api/cloud/upscale-jobs?projectId=...` lists the project's durable worker status and output receipts. When the separately configured cloud media worker is enabled and has its executable/model files installed, it claims the job, validates the image, publishes a separate derivative, and records the benchmark-compatible provenance. The UI offers private source/result previews and refreshable job history. A queued job is not proof that a worker is enabled or that inference completed.
+
+
+### Staging worker activation checklist
+
+The worker process is deliberately opt-in. For a dedicated staging worker, configure the following server-side environment values only after reviewing the isolated database and private asset bucket:
+
+- `CLOUD_WORKER_ENABLED=true`
+- `CLOUD_MEDIA_WORKER_ENABLED=true`
+- `CLOUD_TIMELINE_WORKER_ENABLED=false` unless timeline rendering is separately approved
+- `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` (worker-only secret; never expose to the browser)
+- `AI_UPSCALE_ENABLED=true`
+- `REALESRGAN_NCNN_PATH` pointing to the verified NCNN/Vulkan executable
+- `REALESRGAN_MODEL_DIR` containing the selected model's `.param` and `.bin` files
+- FFmpeg and FFprobe available on the worker's PATH
+
+Start with `npm run start:cloud-worker` in the isolated staging worker service. The process performs cloud readiness checks, requires FFmpeg/FFprobe, and claims only the media job types assigned to the media worker. Keep production worker activation separate and explicitly approved. Worker startup and model execution have not been performed by this change.
