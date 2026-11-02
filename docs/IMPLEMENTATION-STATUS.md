@@ -422,3 +422,13 @@ This is a runnable worker entry point, not a deployed worker. Do not set the ena
 - The draft form verifies references against image assets already loaded from the selected private cloud project. It requires source/reference rights confirmation and additionally requires explicit subject consent for person replacement.
 - Drafts are stored in browser planning state, included in the project JSON export and visibly labelled as not submitted. No API job submission, provider request or credit spend is wired to this form.
 - The next UI milestone is to replace browser-only drafts with durable, permission-checked server records and connect them to the approved asynchronous pipeline.
+
+
+## Durable video pipeline checkpoints — 2 November 2026
+
+- Added a local SQLite checkpoint table and `createSqliteVideoPipelineCheckpointStore` adapter for the finishing orchestrator.
+- Checkpoints are scoped to authenticated owner and project, with unique pipeline/step identity, source asset ID/checksum, deterministic idempotency key, immutable output receipt and approval reference.
+- Writes use insert-once semantics. Identical retries are idempotent; a different receipt for an already completed step is rejected instead of overwriting history.
+- Store construction checks project ownership by default and supports an explicit server-side authorization callback for authorized project members. The store never accepts a client-supplied storage path.
+- Added tests for durable reload, user/project isolation, editor authorization callback, idempotent retries, conflicting receipts and malformed checksums.
+- **Still outstanding:** authenticated API routes that create and retrieve pipeline plans, worker integration that constructs the checkpoint store after permission checks, cloud DB migration, real adapter execution and UI polling/review. The browser draft form remains planning-only.
