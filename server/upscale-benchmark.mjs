@@ -90,3 +90,65 @@ export function summarizeUpscaleBenchmarks(records) {
 export function sha256Hex(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
 }
+
+/**
+ * Compare model builds only on validated benchmark records. Quality approval is
+ * a hard eligibility gate; latency and metric summaries never promote an
+ * unreviewed model to a production recommendation.
+ */
+export function compareUpscaleBenchmarkCandidates(records) {
+  const valid = [];
+  const invalid = [];
+  for (const [index, record] of (Array.isArray(records) ? records : []).entries()) {
+    const result = validateUpscaleBenchmarkRecord(record);
+    if (result.valid) valid.push(record);
+    else invalid.push({ index, fixtureId: record?.fixtureId || null, issues: result.issues });
+  }
+  const groups = new Map();
+  for (const record of valid) {
+    const key = [record.model, record.modelVersion, record.binarySha256, record.modelFilesSha256].join(":");
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(record);
+  }
+  const percentile = (values, fraction) => {
+    if (!values.length) return null;
+    const sorted = [...values].sort((a, b) => a - b);
+    return sorted[Math.min(sorted.length - 1, Math.ceil(sorted.length * fraction) - 1)];
+  };
+  const candidates = [...groups.values()].map(items => {
+    const successful = items.filter(item => item.executionStatus === "passed");
+    const reviewedPass = successful.filter(item => item.qualityReview === "reviewed_pass");
+    const reviewedFail = items.filter(item => item.qualityReview === "reviewed_fail");
+    const categories = [...new Set(reviewedPass.map(item => item.fixtureCategory))].sort();
+    const missingCategories = REQUIRED_UPSCALE_FIXTURE_CATEGORIES.filter(category => !categories.includes(category));
+    const qualityVerified = items.length > 0 && successful.length === items.length &&
+      reviewedPass.length === items.length && reviewedFail.length === 0 && missingCategories.length === 0;
+    const durations = successful.map(item => item.durationMs);
+    const metricMedian = key => {
+      const values = successful.map(item => item.metrics?.[key]).filter(Number.isFinite);
+      return values.length ? percentile(values, 0.5) : null;
+    };
+    const first = items[0];
+    return {
+      model: first.model, modelVersion: first.modelVersion,
+      binarySha256: first.binarySha256, modelFilesSha256: first.modelFilesSha256,
+      records: items.length, executionPassed: successful.length,
+      executionFailed: items.length - successful.length,
+      reviewedPass: reviewedPass.length, reviewedFail: reviewedFail.length,
+      missingCategories, qualityVerified,
+      latencyMs: { median: percentile(durations, 0.5), p95: percentile(durations, 0.95) },
+      metrics: { psnrMedian: metricMedian("psnr"), ssimMedian: metricMedian("ssim"), lpipsMedian: metricMedian("lpips") }
+    };
+  });
+  candidates.sort((a, b) => Number(b.qualityVerified) - Number(a.qualityVerified) ||
+    (a.latencyMs.median ?? Number.POSITIVE_INFINITY) - (b.latencyMs.median ?? Number.POSITIVE_INFINITY) ||
+    a.model.localeCompare(b.model));
+  return {
+    schemaVersion: 1,
+    generatedAt: new Date().toISOString(),
+    candidateCount: candidates.length,
+    invalidRecords: invalid,
+    recommended: candidates.find(candidate => candidate.qualityVerified) || null,
+    candidates
+  };
+}
