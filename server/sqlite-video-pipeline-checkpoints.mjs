@@ -3,10 +3,11 @@ const fail=(message,code)=>Object.assign(new Error(message),{code});
 const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
 
 /** Owner/project-scoped durable checkpoint repository backed by the local SQLite database. */
-export function createSqliteVideoPipelineCheckpointStore({db,ownerId,projectId=null}={}){
+export function createSqliteVideoPipelineCheckpointStore({db,ownerId,projectId=null,authorizeProject=null}={}){
  if(!db||typeof db.prepare!=="function")throw new Error("Video pipeline checkpoint store requires the application database.");
  if(typeof ownerId!=="string"||!ownerId.trim())throw new Error("Video pipeline checkpoint store requires an authenticated owner ID.");
  if(projectId!==null&&(typeof projectId!=="string"||!projectId.trim()))throw new Error("Video pipeline project ID is invalid.");
+ if(projectId!==null){const project=db.prepare("SELECT owner_id FROM projects WHERE id=? AND archived_at IS NULL").get(projectId);const allowed=typeof authorizeProject==="function"?authorizeProject({ownerId,projectId,project})===true:project?.owner_id===ownerId;if(!allowed)throw fail("Video pipeline checkpoint project access denied.","VIDEO_PIPELINE_PROJECT_ACCESS_DENIED");}
  const getStatement=db.prepare("SELECT pipeline_id,step_id,status,input_asset_id,input_sha256,idempotency_key,output_json,approval_id,created_at FROM video_pipeline_checkpoints WHERE owner_id=? AND ((project_id IS NULL AND ? IS NULL) OR project_id=?) AND pipeline_id=? AND step_id=?");
  function read(pipelineId,stepId){
   const row=getStatement.get(ownerId,projectId,projectId,pipelineId,stepId);
