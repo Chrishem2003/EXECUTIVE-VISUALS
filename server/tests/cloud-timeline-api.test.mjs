@@ -103,7 +103,7 @@ test("delivery approval blocks validation failures and invalid decisions",async(
 test("database unique-index race returns a stable duplicate-review conflict",async()=>{
  const {job}=deliveryReviewFixture({jobOwner:owner});
  const f=setup({existing:[job],authorizeOverride:async()=>true,duplicateReview:true});
- const result=await f.api.handle({method:"POST",path:"/api/cloud/jobs/"+reviewJobId+"/delivery-approval",ownerId:editor,body:{decision:"approved"}});
+ const result=await f.api.handle({method:"POST",path:"/api/cloud/jobs/"+reviewJobId+"/delivery-approval",ownerId:editor,body:{decision:"approved",note:"Reviewed output and acknowledge the flagged quality warning."}});
  assert.equal(result.status,409);
  assert.equal(result.body.error.code,"DELIVERY_ALREADY_REVIEWED");
 });
