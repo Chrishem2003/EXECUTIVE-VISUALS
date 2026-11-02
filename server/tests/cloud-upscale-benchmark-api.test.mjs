@@ -11,7 +11,7 @@ const outputId="623e4567-e89b-42d3-a456-426614174000";
 const fixtureId="723e4567-e89b-42d3-a456-426614174000";
 const hash=char=>char.repeat(64);
 
-function setup(){
+function setup({memberRole="reviewer"}={}){
  const calls=[],rows={fixture:null,run:null,jobs:[]};
  const assets={
   async get({assetId}){if(assetId===sourceId)return{id:sourceId,ownerId:owner,projectId:project,name:"portrait.png",mediaType:"image/png",sha256:hash("c"),metadata:{},derivativeOf:null};
@@ -30,7 +30,7 @@ function setup(){
   else if(path==="jobs"&&method==="GET"){result=rows.jobs;}
   else if(path==="job_events"&&method==="POST")result=[];
   else if(path==="projects")result=[{owner_id:owner}];
-  else if(path==="project_members")result=[{role:"reviewer"}];
+  else if(path==="project_members")result=memberRole?[{role:memberRole}]:[];
   else if(path.startsWith("audit_events"))result=[];
   return{ok:true,status:200,async text(){return JSON.stringify(result);}};
  };
@@ -104,4 +104,16 @@ test("concurrent independent reviewers cannot overwrite the first immutable benc
  assert.ok([reviewer,reviewerTwo].includes(f.rows.run.reviewer_id));
  assert.ok(["reviewed_pass","reviewed_fail"].includes(f.rows.run.review_decision));
  assert.equal(f.calls.filter(call=>call.path.startsWith("audit_events")&&call.method==="POST"&&call.body?.event_type==="upscale_benchmark.quality_reviewed").length,1);
+});
+
+
+test("cloud benchmark review rejects project members without the reviewer role",async()=>{
+ const f=setup({memberRole:"viewer"});
+ const fixture=await f.api.handle({method:"POST",path:"/api/cloud/upscale-benchmarks/fixtures",ownerId:owner,query:{projectId:project},body:{sourceAssetId:sourceId,category:"portrait"}});
+ const run=await f.api.handle({method:"POST",path:"/api/cloud/upscale-benchmarks/runs",ownerId:owner,query:{projectId:project},body:{assetId:outputId,fixtureId:fixture.body.fixture.id}});
+ const denied=await f.api.handle({method:"POST",path:"/api/cloud/upscale-benchmarks/runs/"+run.body.run.id+"/review",ownerId:reviewer,query:{projectId:project},body:{decision:"reviewed_pass",note:"Not authorized to review."}});
+ assert.equal(denied.status,403);
+ assert.equal(denied.body.error.code,"BENCHMARK_REVIEWER_REQUIRED");
+ assert.equal(f.rows.run.reviewer_id,null);
+ assert.equal(f.calls.filter(call=>call.path.startsWith("audit_events")&&call.body?.event_type==="upscale_benchmark.quality_reviewed").length,0);
 });
