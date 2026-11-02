@@ -19,6 +19,10 @@ export async function runCloudWorkerCycle({
 
   const job = await queue.claim(workerId, leaseSeconds);
   if (!job) return { claimed: false };
+  if (job.cancel_requested_at != null) {
+    const finished = await queue.finish(job.id, workerId, "cancelled", null, { code: "JOB_CANCELLED", message: "Job was cancelled before execution began." });
+    return { claimed: true, finished, status: finished ? "cancelled" : null, reason: finished ? "cancelled" : "lease_lost", jobId: job.id };
+  }
   const controller = new AbortController();
   let leaseLost = false;
   let cancellationRequested = job.cancel_requested_at != null;
