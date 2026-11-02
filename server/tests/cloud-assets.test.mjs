@@ -124,3 +124,18 @@ test("does not list project assets without read authorization",async()=>{
  await assert.rejects(()=>f.repo.list({ownerId,projectId}),e=>e.code==="CLOUD_ASSET_ACCESS_DENIED");
  assert.equal(f.calls.length,0);
 });
+
+test("retries storage cleanup for a previously soft-deleted asset",async()=>{
+ const f=fixture();
+ const result=await f.repo.retryCleanup({ownerId,assetId});
+ assert.deepEqual(result,{id:assetId,deleted:true,storageRemoved:true,cleanupPending:false});
+ assert.equal(f.calls[0].options.method,"GET");
+ assert.ok(f.calls[0].url.includes("deleted_at=not.is.null"));
+ assert.equal(f.storageCalls[0].op,"remove");
+ assert.equal(f.storageCalls[0].path,f.row.object_path);
+});
+test("does not retry cleanup without project write authorization",async()=>{
+ const f=fixture({authorize:async()=>false});
+ await assert.rejects(()=>f.repo.retryCleanup({ownerId,assetId}),e=>e.code==="CLOUD_ASSET_ACCESS_DENIED");
+ assert.equal(f.storageCalls.length,0);
+});
