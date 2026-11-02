@@ -10,7 +10,7 @@ import { createCloudTimelineService } from "./cloud-timeline-service.mjs";
 import { buildTransformationReadinessReport } from "./transformation-readiness.mjs";
 import { validateSrt, validateWebVtt } from "./caption-validation.mjs";
 import { REQUIRED_UPSCALE_FIXTURE_CATEGORIES, buildUpscaleBenchmarkRecordFromAsset, compareUpscaleBenchmarkCandidates } from "./upscale-benchmark.mjs";
-import { createDeliveryPackage, verifyDeliveryManifest } from "./delivery-manifest.mjs";
+import { createDeliveryPackage, verifyDeliveryManifest, verifyMediaQualityReport } from "./delivery-manifest.mjs";
 
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const safeId=(value)=>typeof value==="string"&&UUID.test(value);
@@ -298,6 +298,7 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     if(!["approved","rejected","changes_requested"].includes(decision))return response(400,{error:{code:"DELIVERY_DECISION_INVALID",message:"Choose approved, rejected or changes_requested."}});
     const note=typeof body.note==="string"?body.note.trim():"";
     if(note.length>2000)return response(400,{error:{code:"DELIVERY_NOTE_TOO_LONG",message:"Review notes must be 2,000 characters or fewer."}});
+    if(output.qualityReport!==undefined&&output.qualityReport!==null&&!verifyMediaQualityReport(output.qualityReport))return response(409,{error:{code:"MEDIA_QUALITY_EVIDENCE_INVALID",message:"The saved media-quality report is inconsistent or incomplete; regenerate quality evidence before approval."}});
     if(decision==="approved"&&output.deliveryReport?.status==="needs-attention")return response(409,{error:{code:"DELIVERY_VALIDATION_BLOCKED",message:"A delivery with blocking validation errors cannot be approved."}});
     if(decision==="approved"&&output.qualityReport?.status==="needs-attention")return response(409,{error:{code:"MEDIA_QUALITY_BLOCKED",message:"A render with blocking media-quality errors cannot be approved."}});
     if(decision==="approved"&&output.qualityReport?.status==="review"&&Number(output.qualityReport.counts?.warnings)>0&&!note)return response(400,{error:{code:"QUALITY_ACKNOWLEDGEMENT_REQUIRED",message:"Record a review note acknowledging the media-quality warnings before approving this delivery."}});
