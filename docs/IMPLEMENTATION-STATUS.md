@@ -1,6 +1,6 @@
 # Executive Visuals — implementation status
 
-**Updated:** 1 November 2026  
+**Updated:** 2 November 2026  
 **Branch:** `feat/executive-visuals-unified-platform`  
 **Delivery posture:** local runtime implemented; external-auth staging blueprint hardened; public release not approved pending account sign-in UX, isolated auth configuration, durable-data recovery tests and deployment verification.
 
@@ -9,6 +9,7 @@
 | Area | Implemented behavior | Boundary |
 |---|---|---|
 | Product shell | Unified browser application with creative, planning and management workspaces | Browser app |
+| Creative DNA compiler | AI Director compiles a brief into an editable creative promise, audience contract, emotional journey, five hook mechanisms, visual grammar, sound identity, story beats, distribution cuts, proof/rights checks and preflight; completeness is a deterministic field-coverage score | Local deterministic planning; not model inference or media generation; cloud project settings include the compiled Creative DNA snapshot; automated tests added and current CI run pending |
 | Capability explorer | Search and domain filters; displays stable ID, inputs, outputs, evidence, execution modes and approval gates | Registry browsing |
 | Research & knowledge workspace | Project-scoped source register, manually initiated public HTTPS page extraction, HTML/plain-text parsing, author/date/title capture, tagged findings, source-linked excerpts, server-enforced evidence for verified records and full-text filtering | One URL per user action; HTTPS only, public DNS/IP checks with pinned address, no redirects beyond three, 2 MB response cap, 12,000-character stored excerpt, no paywall bypass or independent fact verification |
 | Workflow knowledge retrieval | Typed workflow node searches saved project knowledge, ranks title/tag/content matches and returns linked source provenance and explicitly untrusted JSON text for downstream workflow steps | Deterministic keyword retrieval only; no vector index or autonomous crawling |
