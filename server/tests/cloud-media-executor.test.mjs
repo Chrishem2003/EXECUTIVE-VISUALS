@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -377,7 +378,9 @@ test("cloud AI upscale publishes a separate image derivative with engine provena
   const source = join(directory, "source.png");
   const model = "realesrgan-x4plus";
   const binary = await executable(directory, "realesrgan-ncnn-vulkan", String.raw`while [ "$1" != "" ]; do if [ "$1" = "-o" ]; then shift; printf '\211PNG\r\n\032\n\000\000\000\015IHDR\000\000\000\050\000\000\000\050' > "$1"; fi; shift; done`);
-  await writeFile(source, Buffer.from([137,80,78,71,13,10,26,10,0,0,0,13,73,72,68,82,0,0,0,10,0,0,0,10]));
+  const sourceBytes=Buffer.from([137,80,78,71,13,10,26,10,0,0,0,13,73,72,68,82,0,0,0,10,0,0,0,10]);
+  const sourceSha256=createHash("sha256").update(sourceBytes).digest("hex");
+  await writeFile(source, sourceBytes);
   await writeFile(join(directory, model + ".param"), "model");
   await writeFile(join(directory, model + ".bin"), "weights");
   process.env.REALESRGAN_NCNN_PATH = binary;
@@ -391,7 +394,7 @@ test("cloud AI upscale publishes a separate image derivative with engine provena
       tempRoot: directory,
       mediaIO: {
         async materialize() {
-          return { path: source, asset: { id: "image-source", name: "portrait.png", mediaType: "image/png", sha256: "d".repeat(64) }, async cleanup() {} };
+          return { path: source, asset: { id: "image-source", name: "portrait.png", mediaType: "image/png", sha256: sourceSha256 }, async cleanup() {} };
         },
         async publish(args) {
           published = args;
@@ -401,7 +404,7 @@ test("cloud AI upscale publishes a separate image derivative with engine provena
     });
     const result = await execute({
       job: { id: "job-ai-up", owner_id: "owner-ai", project_id: "project-ai", job_type: "media.ai-upscale",
-        input: { sourceAssetId: "image-source", sourceSha256: "d".repeat(64), model, scale: 4, tile: 128, format: "png" } },
+        input: { sourceAssetId: "image-source", sourceSha256, model, scale: 4, tile: 128, format: "png" } },
       onProgress() {}
     });
     assert.equal(result.processing.method, "ai-super-resolution");
