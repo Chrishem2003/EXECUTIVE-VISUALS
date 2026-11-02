@@ -86,7 +86,13 @@ export function createCloudTimelineExecutor({timelines,mediaIO,renderTimeline,pr
       const probed=await probeOutput(output.path);
       const probeValidation=validateMediaOutputProbe(probed,output.mediaType);
       const durationSeconds=Number(probed?.format?.duration);
-      onProgress(93);\n      const temporalCheck=await runOptionalSignalCheck(async()=>{\n        const result=await analyzeVideo({path:output.path,durationSeconds,jobId:job.id,activeProcesses,signal});\n        if(!result||!Array.isArray(result.lumaSamples)||result.lumaSamples.length>2000||!Array.isArray(result.sceneChanges)||!Number.isFinite(result.coverageSeconds)||result.coverageSeconds<0||result.coverageSeconds>120||typeof result.truncated!=="boolean")throw Object.assign(new Error("Temporal analyzer returned invalid or unbounded evidence."),{code:"ANALYSIS_RESULT_INVALID"});\n        return result;\n      },{isCancelled:()=>Boolean(signal?.aborted)});\n      onProgress(97);
+      onProgress(93);
+      const temporalCheck=await runOptionalSignalCheck(async()=>{
+        const result=await analyzeVideo({path:output.path,durationSeconds,jobId:job.id,activeProcesses,signal});
+        if(!result||!Array.isArray(result.lumaSamples)||result.lumaSamples.length>2000||!Array.isArray(result.sceneChanges)||!Number.isFinite(result.coverageSeconds)||result.coverageSeconds<0||result.coverageSeconds>120||typeof result.truncated!=="boolean")throw Object.assign(new Error("Temporal analyzer returned invalid or unbounded evidence."),{code:"ANALYSIS_RESULT_INVALID"});
+        return result;
+      },{isCancelled:()=>Boolean(signal?.aborted)});
+      onProgress(97);
       const signalAnalysis={method:"ffmpeg-sampled-frame-luma",performed:[],unavailable:[],lumaSamples:[],sceneChanges:[],coverageSeconds:0,truncated:false};
       if(temporalCheck.status==="completed"){
         signalAnalysis.performed.push("temporal-luma");
