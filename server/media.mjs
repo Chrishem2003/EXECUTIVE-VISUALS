@@ -362,9 +362,11 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
     poll.unref?.();
     try {
       const adapter = createRealEsrganAdapter({ timeoutMs:30*60*1000, maxOutputBytes:250*1024*1024 });
+      const inputFormat = source.media_type==="image/jpeg"?"jpg":source.media_type==="image/png"?"png":source.media_type==="image/webp"?"webp":null;
+      if (!inputFormat) throw Object.assign(new Error("AI super-resolution accepts JPEG, PNG and WebP source images."), { code:"UNSUPPORTED_MEDIA_TYPE" });
       const result = await adapter.execute({
         inputPath:sourcePath, outputPath, model:input.model||"realesrgan-x4plus",
-        scale:input.scale??4, tile:input.tile??0, format, signal:controller.signal
+        scale:input.scale??4, tile:input.tile??0, format, inputFormat, signal:controller.signal
       });
       if (controller.signal.aborted || cancelled()) throw Object.assign(new Error("Job cancelled."), { code:"JOB_CANCELLED" });
       const fileStat = await stat(outputPath);
@@ -372,7 +374,7 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
       await pipeline(createReadStream(outputPath),new Transform({transform(chunk,enc,cb){hash.update(chunk);cb(null,chunk);}}),new Transform({transform(chunk,enc,cb){cb();}}));
       const mime = format==="jpg"?"image/jpeg":"image/"+format;
       const baseName = source.original_name.split(".").slice(0,-1).join(".") || source.original_name;
-      const processing = {engine:result.engine,method:result.method,model:result.model,scale:result.scale,tile:result.tile};
+      const processing = {engine:result.engine,method:result.method,model:result.model,scale:result.scale,tile:result.tile,sourceWidth:result.sourceWidth,sourceHeight:result.sourceHeight,width:result.width,height:result.height,binarySha256:result.binarySha256,modelFilesSha256:result.modelFilesSha256};
       const outputAsset = addAsset(db,job,"derived/"+id+"."+format,baseName+"-ai-upscaled."+format,mime,fileStat.size,hash.digest("hex"),source.id,{operation:job.job_type,processing});
       emit("media.output_created",{assetId:outputAsset.id,sha256:outputAsset.sha256});
       onProgress(100);
