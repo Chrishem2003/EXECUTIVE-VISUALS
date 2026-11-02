@@ -116,8 +116,8 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
      return response(201,{fixture:{id,projectId,sourceAssetId:source.id,sourceSha256:source.sha256,category,label,createdAt:rows[0].created_at}});
     }
     if(path==="/api/cloud/upscale-benchmarks/runs"&&method==="GET"){
-     const pageSize=Math.min(100,Math.max(1,Number.parseInt(url.searchParams.get("limit")||"50",10)||50));
-     const offset=Math.max(0,Number.parseInt(url.searchParams.get("offset")||"0",10)||0);
+     const pageSize=Math.min(100,Math.max(1,Number.parseInt(String(query.limit||"50"),10)||50));
+     const offset=Math.max(0,Number.parseInt(String(query.offset||"0"),10)||0);
      const select="select=id,asset_id,fixture_id,fixture_category,model,model_version,record,reviewer_id,review_decision,review_note,reviewed_at,created_at";
      const pageRows=await request("upscale_benchmark_runs?"+select+"&project_id=eq."+encodeURIComponent(projectId)+"&order=created_at.desc,id.desc&limit="+(pageSize+1)+"&offset="+offset);
      const hasMore=(pageRows||[]).length>pageSize,visibleRows=(pageRows||[]).slice(0,pageSize);
