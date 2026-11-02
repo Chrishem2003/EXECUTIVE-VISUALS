@@ -1,4 +1,5 @@
 import "./style.css";
+import { initNavigation } from "./navigation";
 import { CAPABILITY_ATLAS, type CapabilityDefinition } from "../core/capability-atlas";
 import { apiRequest } from "../core/api";
 import { planWorkflowExecution, validateWorkflow, type WorkflowGraph } from "../core/workflow";
@@ -272,4 +273,4 @@ window.addEventListener("ev:project-changed",async event=>{
   render();
  }catch(error){console.warn("Creative workspace load failed",error);}
 });
-load();$<HTMLElement>("#app").innerHTML='<div class="shell"><aside class="sidebar"><a class="brand" data-tab="home"><span class="brand-mark">CEV</span><span><b>CHRISHEM</b><small>EXCLUSIVE VISUALS</small></span></a><div class="workspace-label"><i></i><span><b>Creative workspace</b><small id="project-name">Untitled production</small></span></div><nav id="nav"></nav><div class="sidebar-foot"><i class="local-dot"></i><span><b>Production runtime</b><small>Connecting to local API…</small></span></div></aside><main class="main"><header class="topbar"><div><span>WORKSPACE</span><b>/</b><strong id="crumb">Command centre</strong></div><div><span class="local-badge">CONNECTING</span><button class="secondary" data-tab="director">＋ New brief</button></div></header><section id="view" class="content"></section></main></div>';render();void initRuntime();void initTimelineWorkspace();void initWorkflowWorkspace();initKnowledgeWorkspace();
+load();$<HTMLElement>("#app").innerHTML='<div class="shell"><aside class="sidebar"><a class="brand" data-tab="home"><span class="brand-mark">CEV</span><span><b>CHRISHEM</b><small>EXCLUSIVE VISUALS</small></span></a><div class="workspace-label"><i></i><span><b>Creative workspace</b><small id="project-name">Untitled production</small></span></div><nav id="nav"></nav><div class="sidebar-foot"><i class="local-dot"></i><span><b>Production runtime</b><small>Connecting to local API…</small></span></div></aside><main class="main"><header class="topbar"><div><span>WORKSPACE</span><b>/</b><strong id="crumb">Command centre</strong></div><div><span class="local-badge">CONNECTING</span><button class="secondary" data-tab="director">＋ New brief</button></div></header><section id="view" class="content"></section></main></div>';render();initNavigation();void initRuntime();void initTimelineWorkspace();void initWorkflowWorkspace();initKnowledgeWorkspace();
