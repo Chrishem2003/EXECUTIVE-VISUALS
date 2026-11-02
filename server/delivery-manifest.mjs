@@ -61,7 +61,7 @@ export function verifyDeliveryManifest(manifest) {
 
 export function createDeliveryPackage({
   jobId, projectId, timelineId, timelineRevision, master,
-  deliveryReceipt, renderManifest, deliveryReport = null, reviewHistory = [],
+  deliveryReceipt, renderManifest, deliveryReport = null, qualityReport = null, reviewHistory = [],
   generatedAt = new Date().toISOString()
 } = {}) {
   if (typeof jobId !== "string" || !jobId.trim() || jobId.length > 256) fail("A delivery job ID is required.");
@@ -78,11 +78,12 @@ export function createDeliveryPackage({
   if (canonical(renderManifest) !== canonical(deliveryReceipt.renderManifest) || !verifyRenderManifest(renderManifest)) fail("The render manifest must be the verified manifest bound into the receipt.");
   if (canonical(deliveryReport) !== canonical(deliveryReceipt.deliveryReport)) fail("The delivery report must match the receipt.");
   if (!Array.isArray(reviewHistory) || reviewHistory.length > 1000 || reviewHistory.some(item => !plain(item) || item.fingerprint !== deliveryReceipt.fingerprint)) fail("Review history must contain only decisions for this delivery fingerprint.");
+  if (qualityReport !== null && (!plain(qualityReport) || !["passed","review","needs-attention"].includes(qualityReport.status) || !plain(qualityReport.counts) || !Number.isSafeInteger(qualityReport.counts.errors) || qualityReport.counts.errors < 0 || !Number.isSafeInteger(qualityReport.counts.warnings) || qualityReport.counts.warnings < 0 || !Array.isArray(qualityReport.findings) || qualityReport.findings.length > 1000 || qualityReport.findings.some(item => !plain(item) || typeof item.code !== "string" || item.code.length > 100 || !["error","warning"].includes(item.severity) || typeof item.message !== "string" || item.message.length > 2000) || !Array.isArray(qualityReport.limitations) || qualityReport.limitations.length > 100 || qualityReport.limitations.some(item => typeof item !== "string" || item.length > 1000))) fail("The media quality report is invalid or exceeds package limits.");
   if (typeof generatedAt !== "string" || !Number.isFinite(Date.parse(generatedAt)) || new Date(generatedAt).toISOString() !== generatedAt) fail("A valid package timestamp is required.");
   const evidence = {
     schemaVersion: 1, packageType: "executive-visuals-delivery", generatedAt,
     jobId, projectId, timelineId, timelineRevision: Number(timelineRevision),
-    master, deliveryReceipt, renderManifest, deliveryReport, reviewHistory
+    master, deliveryReceipt, renderManifest, deliveryReport, qualityReport, reviewHistory
   };
   return Object.freeze({ ...evidence, packageFingerprint: fingerprint(evidence) });
 }
