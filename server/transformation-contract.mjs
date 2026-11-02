@@ -58,7 +58,8 @@ export function assertTransformationCapabilities(request,capabilities={}){
  return true;
 }
 export function createTransformationProvenance(request,{provider,model,adapterVersion="1"}={}){
- const normalized=normalizeVideoTransformationRequest(request);
+ const {execution: _execution, ...draft}=request||{};
+ const normalized=normalizeVideoTransformationRequest(draft);
  const requestHash=createHash("sha256").update(JSON.stringify(normalized)).digest("hex");
  return Object.freeze({requestId:normalized.requestId,projectId:normalized.projectId,sourceAssetId:normalized.sourceAsset.id,sourceSha256:normalized.sourceAsset.sha256||null,provider:provider||"unselected",model:model||"unselected",adapterVersion,requestHash,createdAt:new Date().toISOString(),executionSubmitted:false});
 }
