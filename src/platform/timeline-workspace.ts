@@ -95,7 +95,6 @@ export function timelineQualityPanel(){
  const findings=analyzeTimelineQuality(state.timeline,state.assets);
  const hasTimeline=!!state.timeline;
  const hasCaptionTrack=!!state.timeline?.tracks.some(track=>track.kind==="caption"&&track.enabled!==false&&track.clips.length>0);
- const hasAudioTrack=!!state.timeline?.tracks.some(track=>track.kind==="audio"&&track.enabled!==false&&track.clips.length>0);
  const missingPrimary=findings.some(item=>item.code==="NO_PRIMARY_VIDEO");
  const pictureGap=findings.some(item=>item.code==="PICTURE_GAP");
  const sourceEvidence=assessSourceMediaEvidence(state.timeline,state.assets);
