@@ -374,3 +374,5 @@
 .preview-transport button{font-size:9px;padding:8px 10px}
 .preview-transport output{margin-left:auto;color:#d8c39a;font:10px ui-monospace,monospace}
 @media(max-width:650px){.preview-stage{min-height:140px}.preview-transport output{width:100%;margin:4px 0 0}}
+
+.preview-transport input[type="range"]{flex:1 1 180px;min-width:120px;accent-color:#c9a76e}
