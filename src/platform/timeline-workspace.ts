@@ -160,7 +160,7 @@ async function refresh(){
  }
  state.selectedTrack=state.timeline?.tracks[0]?.id||"";
  if(!state.timeline?.tracks.some(track=>track.clips.some(clip=>clip.id===state.selectedClipId)))state.selectedClipId="";
- state.status="ready";state.message="";
+ state.status="ready";state.message="";await loadVariantComparison();
 }
 async function persist(){
  if(!state.timeline)return;
