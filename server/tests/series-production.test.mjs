@@ -150,4 +150,25 @@ const longTimeline=buildEpisodeTimelineDocument(longOverride,extendedEpisode,"pr
 assert.equal(longTimeline.markers.filter(marker=>marker.color==="#29a38b").reduce((n,marker)=>n+marker.duration.value,0),1800);
 assert.throws(()=>buildSeriesProductionPlan({...input,episodeRuntimeSeconds:1801}),/1800/);
 assert.throws(()=>setEpisodeDirectionOverrides(longForm,longEpisode.id,{episodeRuntimeSeconds:1801}),/30 minutes/);
+
+// Runtime changes must preserve authored shot direction and story-bible continuity.
+const continuityPlan=setEpisodeStoryBibleBindings(directedPlan,directedPlan.seasons[0].episodes[0].id,bindingScene.id,bindingShot.id,[bindingBase.id]);
+const continuityEpisode=continuityPlan.seasons[0].episodes[0];
+const originalAuthoredShot=continuityEpisode.scenes[0].shots.find(shot=>shot.id===bindingShot.id);
+const expandedContinuity=setEpisodeDirectionOverrides(continuityPlan,continuityEpisode.id,{episodeRuntimeSeconds:1800});
+const expandedEpisode=expandedContinuity.seasons[0].episodes[0];
+const preservedShot=expandedEpisode.scenes[0].shots.find(shot=>shot.id===bindingShot.id);
+assert.ok(preservedShot);
+assert.equal(preservedShot.prompt,originalAuthoredShot.prompt);
+assert.equal(preservedShot.camera,originalAuthoredShot.camera);
+assert.equal(preservedShot.framing,originalAuthoredShot.framing);
+assert.equal(preservedShot.movement,originalAuthoredShot.movement);
+assert.equal(preservedShot.lens,originalAuthoredShot.lens);
+assert.equal(preservedShot.negativePrompt,originalAuthoredShot.negativePrompt);
+assert.deepEqual(preservedShot.storyBibleEntryIds,originalAuthoredShot.storyBibleEntryIds);
+assert.ok(expandedEpisode.scenes[0].shots.length>continuityEpisode.scenes[0].shots.length);
+assert.equal(new Set(expandedEpisode.scenes.flatMap(scene=>scene.shots.map(shot=>shot.id))).size,expandedEpisode.scenes.reduce((n,scene)=>n+scene.shots.length,0));
+assert.ok(expandedEpisode.scenes.every(scene=>scene.shots.every(shot=>shot.durationSeconds>=1&&shot.durationSeconds<=MAX_GENERATED_CLIP_SECONDS)));
+assert.equal(validateSeriesProductionPlan(expandedContinuity).valid,true);
+console.log("Runtime rebalance continuity verification passed: authored shot IDs, camera direction, negative prompts and story-bible bindings survive expansion; new shots receive unique IDs and valid durations.");
 console.log("Long-form series verification passed: 15-minute plans, 30-minute overrides, exact scene/shot timing, 30-second clip cap and timeline marker integrity.");
