@@ -74,7 +74,7 @@ test("AI upscaler reports execution checks separately from unverified inference 
   const binary = join(directory, "engine");
   const model = "realesrgan-x4plus";
   const input = join(directory, "fixture.png");
-  await writeFile(input, Buffer.from([137,80,78,71,13,10,26,10]));
+  await writeFile(input, pngHeader(1, 1));
   await writeFile(binary, scalingEngine());
   await chmod(binary, 0o755);
   await writeFile(join(directory, model + ".param"), "model");
@@ -121,7 +121,7 @@ test("AI upscaler rejects an executable that exits successfully but emits a corr
   const model = "realesrgan-x4plus";
   const input = join(directory, "source.png");
   const output = join(directory, "corrupt.png");
-  await writeFile(input, Buffer.from([137,80,78,71,13,10,26,10]));
+  await writeFile(input, pngHeader(1, 1));
   await writeFile(binary, String.raw`#!/bin/sh
 while [ "$1" != "" ]; do
   if [ "$1" = "-o" ]; then shift; printf 'not-an-image-output' > "$1"; fi
@@ -149,7 +149,7 @@ test("AI upscaler does not overwrite a symbolic-link output target", async () =>
   const input = join(directory, "source.png");
   const protectedFile = join(directory, "protected.png");
   const output = join(directory, "linked-output.png");
-  await writeFile(input, Buffer.from([137,80,78,71,13,10,26,10]));
+  await writeFile(input, pngHeader(1, 1));
   await writeFile(protectedFile, "preserve-this-file");
   await writeFile(binary, String.raw`#!/bin/sh
 exit 0
