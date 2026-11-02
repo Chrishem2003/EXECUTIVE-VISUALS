@@ -90,3 +90,19 @@ an applied/verified isolated cloud schema. The default configuration passes none
 these gates. This report does not approve, queue or execute work and does not claim
 that a provider is connected. The submit endpoint remains blocked until the actual
 execution integration is implemented and verified.
+
+
+## Cloud finishing checkpoint persistence
+
+A second, additive migration `20261102090000_video_pipeline_checkpoints.sql` defines
+a dedicated checkpoint table in the isolated `executive_visuals` schema. It is
+server-role-only, RLS-enabled, immutable to client roles, size-bounded, and unique
+per owner/project/pipeline/step and owner/idempotency key. A database trigger verifies
+that the active project and source video belong to the same owner and project before
+a checkpoint can be inserted.
+
+The server repository in `server/cloud-video-pipeline-checkpoints.mjs` writes with
+duplicate-ignore semantics and reads back the durable receipt. It rejects mismatched
+receipts rather than overwriting a prior successful step. The migration is additive
+and is not applied automatically; the isolated cloud database must be reviewed and
+migrated separately before this storage capability can count as production-ready.
