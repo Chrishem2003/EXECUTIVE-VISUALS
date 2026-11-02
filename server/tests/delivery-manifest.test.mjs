@@ -74,6 +74,24 @@ test("rejects malformed or oversized media quality evidence in delivery packages
 });
 
 
+test("quality report status and counts must match the exact findings", () => {
+  const receipt = createDeliveryManifest(input);
+  const master = { assetId: receipt.outputAsset, filename: "master.mp4", mediaType: receipt.mediaType, byteSize: receipt.byteSize, sha256: receipt.sha256, downloadUrl: "https://storage.example.test/master?token=short", downloadUrlExpiresInSeconds: 300 };
+  const build = qualityReport => createDeliveryPackage({
+    jobId: "job-1", projectId: "project-1", timelineId: receipt.timelineId,
+    timelineRevision: receipt.timelineRevision, master, deliveryReceipt: receipt,
+    renderManifest: receipt.renderManifest, deliveryReport: receipt.deliveryReport,
+    qualityReport, generatedAt: "2026-11-02T09:00:00.000Z"
+  });
+  const warning = { code: "BELOW_HD", severity: "warning", message: "Output is below HD." };
+  const error = { code: "INVALID_DURATION", severity: "error", message: "Duration is invalid." };
+  assert.throws(() => build({ status: "passed", counts: { errors: 0, warnings: 1 }, findings: [warning], limitations: [] }), /status and counts must agree/);
+  assert.throws(() => build({ status: "passed", counts: { errors: 1, warnings: 0 }, findings: [error], limitations: [] }), /status and counts must agree/);
+  assert.throws(() => build({ status: "review", counts: { errors: 0, warnings: 0 }, findings: [warning], limitations: [] }), /status and counts must agree/);
+  assert.throws(() => build({ status: "needs-attention", counts: { errors: 0, warnings: 1 }, findings: [warning], limitations: [] }), /status and counts must agree/);
+  assert.equal(verifyDeliveryPackage(build({ status: "review", counts: { errors: 0, warnings: 1 }, findings: [warning], limitations: [] })), true);
+  assert.equal(verifyDeliveryPackage(build({ status: "needs-attention", counts: { errors: 1, warnings: 0 }, findings: [error], limitations: [] })), true);
+});
 test("rejects a re-fingerprinted receipt with an invalid render manifest", () => {
   const receipt = createDeliveryManifest(input);
   const forged = { ...receipt, renderManifest: { schemaVersion: 1, fingerprint: "f".repeat(64) } };
