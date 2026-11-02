@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { createWriteStream } from "node:fs";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { Transform } from "node:stream";
@@ -8,6 +8,7 @@ import { pipeline } from "node:stream/promises";
 import { createCloudAssetAuthorizer } from "./cloud-asset-auth.mjs";
 import { createCloudTimelineService } from "./cloud-timeline-service.mjs";
 import { buildTransformationReadinessReport } from "./transformation-readiness.mjs";
+import { validateSrt, validateWebVtt } from "./caption-validation.mjs";
 
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const safeId=(value)=>typeof value==="string"&&UUID.test(value);
@@ -233,7 +234,7 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
   if(!safeId(ownerId))return response(401,{error:{code:"AUTH_REQUIRED",message:"A verified account identity is required."}});
   if(projectId!==null&&projectId!==undefined&&projectId!==""&&!safeId(projectId))return response(400,{error:{code:"INVALID_PROJECT_ID",message:"Project ID must be a UUID."}});
   projectId=projectId||null;mediaType=String(mediaType).split(";")[0].trim().toLowerCase();
-  const extensions={"image/jpeg":"jpg","image/png":"png","image/webp":"webp","image/gif":"gif","video/mp4":"mp4","video/webm":"webm","video/quicktime":"mov","video/x-matroska":"mkv","audio/mpeg":"mp3","audio/wav":"wav","audio/x-wav":"wav","audio/mp4":"m4a","audio/ogg":"ogg","application/pdf":"pdf","text/plain":"txt","text/vtt":"vtt","application/json":"json"};
+  const extensions={"image/jpeg":"jpg","image/png":"png","image/webp":"webp","image/gif":"gif","video/mp4":"mp4","video/webm":"webm","video/quicktime":"mov","video/x-matroska":"mkv","audio/mpeg":"mp3","audio/wav":"wav","audio/x-wav":"wav","audio/mp4":"m4a","audio/ogg":"ogg","application/pdf":"pdf","text/plain":"txt","application/x-subrip":"srt","text/vtt":"vtt","application/json":"json"};
   if(!extensions[mediaType])return response(415,{error:{code:"UNSUPPORTED_MEDIA_TYPE",message:"This media type is not accepted."}});
   if(!req||typeof req[Symbol.asyncIterator]!=="function")return response(400,{error:{code:"UPLOAD_STREAM_REQUIRED",message:"A binary upload stream is required."}});
   let name="upload";try{name=decodeURIComponent(String(originalName||"upload"));}catch{return response(400,{error:{code:"INVALID_FILE_NAME",message:"File name header is malformed."}});}
@@ -257,7 +258,10 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     :mediaType==="application/pdf"?header.subarray(0,5).toString()==="%PDF-"
     :!header.includes(0);
    if(!valid)return response(415,{error:{code:"MEDIA_SIGNATURE_MISMATCH",message:"File signature does not match the declared media type."}});
-   const asset=await service.assets.createFromFile({ownerId,projectId,originalName:name,mediaType,filePath,metadata:{ingest:"cloud-api"}});
+   const captionFile=extname(name).toLowerCase();
+   const captionValidation=captionFile===".srt"&&(mediaType==="text/plain"||mediaType==="application/x-subrip")?validateSrt(size>2*1024*1024?"x".repeat(2*1024*1024+1):await readFile(filePath,"utf8")):captionFile===".vtt"&&mediaType==="text/vtt"?validateWebVtt(size>2*1024*1024?"x".repeat(2*1024*1024+1):await readFile(filePath,"utf8")):null;
+   const metadata={ingest:"cloud-api",...(captionValidation?{captionValidation}:{})};
+   const asset=await service.assets.createFromFile({ownerId,projectId,originalName:name,mediaType,filePath,metadata});
    return response(201,{asset});
   }catch(error){
    if(error.code==="UPLOAD_TOO_LARGE")return response(413,{error:{code:error.code,message:error.message}});
