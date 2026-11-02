@@ -115,9 +115,11 @@ export function buildUpscaleBenchmarkRecordFromAsset({outputAsset,fixtureId,fixt
     ...(metrics?{metrics}:{})
   };
   const validation=validateUpscaleBenchmarkRecord(record);
-  if(outputAsset?.mediaType&&!String(outputAsset.mediaType).startsWith("image/")) validation.issues.push("output asset must be an image");
-  if(outputAsset?.derivativeOf!==undefined&&outputAsset.derivativeOf!==null&&processing?.sourceAssetId!==outputAsset.derivativeOf) validation.issues.push("processing source asset does not match derivative parent");
+  if(!String(outputAsset?.mediaType||"").startsWith("image/")) validation.issues.push("output asset must be an image");
+  if(!processing||processing.schemaVersion!==1||typeof processing.sourceAssetId!=="string"||!processing.sourceAssetId) validation.issues.push("versioned source asset provenance is required");
+  if(outputAsset?.derivativeOf!==processing?.sourceAssetId) validation.issues.push("processing source asset does not match derivative parent");
   if(outputAsset?.sha256!==processing?.outputSha256) validation.issues.push("processing output hash does not match persisted asset hash");
+  if(processing?.modelVersion!==processing?.binarySha256+":"+processing?.modelFilesSha256) validation.issues.push("model build identity does not match executable and weights fingerprints");
   if(validation.issues.length) throw Object.assign(new Error("Upscale asset cannot be registered as benchmark evidence: "+validation.issues.join("; ")),{code:"UPSCALE_BENCHMARK_EVIDENCE_INVALID",issues:validation.issues});
   return record;
 }
