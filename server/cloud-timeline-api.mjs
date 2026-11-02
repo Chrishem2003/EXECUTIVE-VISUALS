@@ -196,6 +196,7 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     if(!asset||asset.id!==receipt.outputAsset||asset.projectId!==job.project_id||asset.sha256!==receipt.sha256||asset.size!==receipt.byteSize||asset.mediaType!==receipt.mediaType)
      return response(409,{error:{code:"DELIVERY_ASSET_MISMATCH",message:"The published master asset does not match its delivery receipt."}});
     const signed=await service.assets.createSignedUrl({ownerId,assetId:receipt.outputAsset,expiresIn:300});
+    if(!signed?.asset||signed.asset.id!==asset.id||signed.asset.sha256!==receipt.sha256||Number(signed.asset.size)!==receipt.byteSize||signed.asset.projectId!==job.project_id)return response(409,{error:{code:"DELIVERY_SIGNED_ASSET_MISMATCH",message:"The private download ticket does not reference the verified master asset."}});
     let downloadUrl;try{downloadUrl=new URL(signed.url);if(downloadUrl.protocol!=="https:"||downloadUrl.username||downloadUrl.password||downloadUrl.hash)throw new Error();}catch{return response(502,{error:{code:"DELIVERY_DOWNLOAD_URL_INVALID",message:"The private storage service returned an unsafe download URL."}});}
     const events=await request("job_events?select=id,event_type,event_data,created_at&job_id=eq."+encodeURIComponent(job.id)+"&order=id.asc");
     const approvals=(Array.isArray(events)?events:[]).filter(event=>event.event_type==="delivery.reviewed"&&event.event_data?.fingerprint===receipt.fingerprint).map(event=>({id:event.id,...event.event_data,createdAt:event.created_at}));
