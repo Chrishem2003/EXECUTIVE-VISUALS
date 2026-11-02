@@ -1,3 +1,18 @@
+const TRANSIENT_SYSTEM_CODES = new Set([
+  "ECONNRESET", "ETIMEDOUT", "EAI_AGAIN", "ECONNREFUSED",
+  "ENETUNREACH", "UND_ERR_CONNECT_TIMEOUT", "UND_ERR_SOCKET"
+]);
+
+export function isRetryableCloudJobError(error) {
+  const code = typeof error?.code === "string" ? error.code : "";
+  if (["CLOUD_QUEUE_TIMEOUT", "CLOUD_STORAGE_TIMEOUT", "CLOUD_MEDIA_TIMEOUT", "MEDIA_TIMEOUT"].includes(code)) return true;
+  if (TRANSIENT_SYSTEM_CODES.has(code)) return true;
+  const status = Number(error?.status);
+  if ([408, 425, 429, 500, 502, 503, 504].includes(status)) return true;
+  const http = code.match(/^CLOUD_(?:QUEUE|STORAGE)_HTTP_(\\d{3})$/);
+  return Boolean(http && [408, 425, 429, 500, 502, 503, 504].includes(Number(http[1])));
+}
+
 export async function runCloudWorkerCycle({
   queue,
   workerId,
@@ -83,10 +98,26 @@ export async function runCloudWorkerCycle({
     if (leaseLost || controller.signal.aborted) {
       return { claimed: true, finished: false, reason: "lease_lost", jobId: job.id };
     }
+    const retryable = isRetryableCloudJobError(error);
     const details = {
       code: typeof error?.code === "string" ? error.code.slice(0, 100) : "CLOUD_JOB_FAILED",
-      message: String(error?.message || "Cloud job execution failed.").slice(0, 500)
+      message: String(error?.message || "Cloud job execution failed.").slice(0, 500),
+      retryable
     };
+    if (retryable && typeof queue.retry === "function") {
+      const scheduled = await queue.retry(job.id, workerId, details);
+      if (!scheduled.accepted || scheduled.status === "lease_lost") {
+        leaseLost = true;
+        onEvent({ type: "job.lease_lost", jobId: job.id, workerId });
+        return { claimed: true, finished: false, reason: "lease_lost", jobId: job.id };
+      }
+      if (scheduled.status === "queued") {
+        onEvent({ type: "job.retry_scheduled", jobId: job.id, workerId, delaySeconds: scheduled.delaySeconds, attempt: scheduled.attempt, maxAttempts: scheduled.maxAttempts, error: details });
+        return { claimed: true, finished: true, status: "queued", retryScheduled: true, retryAfterSeconds: scheduled.delaySeconds, jobId: job.id, error: details };
+      }
+      onEvent({ type: "job.failed", jobId: job.id, workerId, error: { ...details, retryable: false, retryExhausted: true } });
+      return { claimed: true, finished: true, status: "failed", jobId: job.id, error: { ...details, retryable: false, retryExhausted: true } };
+    }
     const finished = await queue.finish(job.id, workerId, "failed", null, details);
     if (!finished) {
       leaseLost = true;
