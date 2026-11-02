@@ -23,7 +23,10 @@ export function planEnhancementRecipe({name="Enhancement recipe",sourceAsset,ste
     const operation=String(step.operation||"");
     const rawParameters=step.parameters??{};
     if(!rawParameters||typeof rawParameters!=="object"||Array.isArray(rawParameters))throw Object.assign(new Error("Recipe step parameters must be an object."),{code:"RECIPE_PARAMETERS_INVALID",step:index});
-    const parameters=Object.fromEntries(Object.entries(rawParameters).filter(([key])=>(PARAMETER_KEYS[operation]||[]).includes(key)));
+    const allowedParameters=PARAMETER_KEYS[operation]||[];
+    const unknownParameters=Object.keys(rawParameters).filter(key=>!allowedParameters.includes(key));
+    if(unknownParameters.length)throw Object.assign(new Error("Recipe step contains unsupported parameters; remove them or use a supported option."),{code:"RECIPE_PARAMETER_UNSUPPORTED",step:index});
+    const parameters={...rawParameters};
     if(VIDEO_STEPS.has(operation)) {
       if(!currentType.startsWith("video/"))throw Object.assign(new Error(operation+" requires a video source."),{code:"RECIPE_MEDIA_TYPE_MISMATCH",step:index});
       buildMediaOperationArgs({jobType:operation,input:parameters,sourcePath:"/recipe/source.mp4",outputPath:"/recipe/output.mp4"});
