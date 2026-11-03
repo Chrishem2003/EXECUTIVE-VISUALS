@@ -36,7 +36,7 @@ test("cloud job listing is project-authorized and owner-filtered with bounded pa
   {id:"623e4567-e89b-42d3-a456-426614174002",owner_id:owner,project_id:project,job_type:"media.ai-upscale",status:"processing",progress:0,input:{sourceAssetId:"asset"},output:null,error:null,attempt_count:0,created_at:"2026-11-03T09:00:00Z",updated_at:"2026-11-03T09:00:00Z"}
  ];
  const f=setup({existing:jobs});
- const result=await f.api.handle({method:"GET",path:"/api/cloud/jobs",ownerId:owner,query:{projectId:project,limit:"1",offset:"0",status:"processing"}});
+ const result=await f.api.handle({method:"GET",path:"/api/cloud/jobs",ownerId:owner,query:{projectId:project,limit:"1",offset:"0",status:"running"}});
  assert.equal(result.status,200);
  assert.equal(result.body.jobs.length,1);
  assert.equal(result.body.jobs[0].type,"timeline.render");
@@ -169,7 +169,7 @@ test("cloud render job inspection allows project reviewers and returns durable s
  const job={id:"623e4567-e89b-42d3-a456-426614174000",owner_id:editor,project_id:project,job_type:"timeline.render",status:"processing",progress:45,input:{timelineId,timelineRevision:2},output:null,error:null};
  const f=setup({existing:[job]});
  const result=await f.api.handle({method:"GET",path:"/api/cloud/jobs/"+job.id,ownerId:owner});
- assert.equal(result.status,200);assert.equal(result.body.job.status,"processing");
+ assert.equal(result.status,200);assert.equal(result.body.job.status,"running","persisted processing state is normalized for job detail");
 });
 test("cloud render job inspection hides unrelated personal jobs",async()=>{
  const job={id:"623e4567-e89b-42d3-a456-426614174000",owner_id:editor,project_id:null,job_type:"timeline.render",status:"queued",input:{timelineId,timelineRevision:2}};
