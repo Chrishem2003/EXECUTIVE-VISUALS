@@ -1,7 +1,7 @@
 # Executive Visuals — implementation status
 
-**Updated:** 2 November 2026  
-**Branch:** `feat/executive-visuals-unified-platform`  
+**Updated:** 3 November 2026  
+**Branch:** `feat/timeline-preview-transport`  
 **Delivery posture:** local runtime implemented; external-auth staging blueprint hardened; public release not approved pending account sign-in UX, isolated auth configuration, durable-data recovery tests and deployment verification.
 
 ## Implemented in the current branch
@@ -464,8 +464,8 @@ This is a runnable worker entry point, not a deployed worker. Do not set the ena
 - Video/audio previews are constrained to the clip's saved source in/out range. The monitor includes native playback controls, source-in/out jumps, one-source-frame stepping, a frame-indexed scrubber and a time readout.
 - Frame conversion and source-time clamping are isolated in `src/core/timeline-preview.ts`; rational frame-rate conversion is covered for fractional frame rates, source trims, playback bounds and invalid input.
 - Added `verify:timeline-preview` to the standard build pipeline.
-- Cloud preview remains intentionally unavailable until the cloud asset API provides a verified, authenticated private-media playback URL. No guessed cloud URLs or public storage paths are used.
-- **Verification status:** implementation and test files are committed on the working branch. The remote CI build has not yet been observed; no claim of passing build or end-to-end browser playback is made.
+- Superseded by the cloud timeline preview integration recorded in the later PR #8 continuation below: the editor now requests short-lived, authenticated preview tickets for project-authorized assets and uses the saved timeline revision. Browser-level staging playback and lineage acceptance remain required; no guessed cloud URLs or public storage paths are used.
+- **Verification status at the time of this original milestone:** pending. See the 3 November verification record below for the current branch head.
 
 
 ## Timeline preview and editing follow-up — 2 November 2026
@@ -495,3 +495,34 @@ This is a runnable worker entry point, not a deployed worker. Do not set the ena
 - The previous implementation-only run was cancelled when the newer commit superseded it; this does not invalidate the successful combined run.
 - Release status is unchanged: PR #8 remains draft and GitHub reports it as non-mergeable; staging end-to-end acceptance, safe base-branch reconciliation, and isolated database review remain outstanding. No migration, merge, deployment, or production service change has occurred.
 
+
+
+## 3 November 2026 — current cloud-media and timeline verification checkpoint
+
+This section supersedes older status notes above wherever they describe cloud preview, cloud asset access, delivery review, or CI as still unimplemented/pending. Earlier sections remain useful as a historical capability inventory, but are not a complete description of the current feature branch.
+
+### Verified on the current feature branch
+
+- Current branch: `feat/timeline-preview-transport`.
+- Current verified head at this checkpoint: `c27072716bd5193279af76c10e41090e95ecf0d4`.
+- Hardened derivative integrity checks so SHA-256 hex comparisons are case-insensitive while malformed checksums remain ineligible. The timeline verifier now covers uppercase valid source/output hashes and malformed source/output hashes.
+- GitHub Actions Quality checks completed successfully twice on the exact head commit above (runs `41574707765` and `41574698868`). The build job passed dependency installation, upscale benchmark verification, TypeScript typecheck and the full production build.
+- The existing timeline/cloud-media feature branch also contains the authenticated private cloud asset ingestion and signing/preview flow, timeline handoff, revision-pinned render manifests, delivery profiles and conformance reports, media-quality analysis, delivery receipts/packages, independent review workflow, asset lineage explorer, source/derivative comparison and processing-provenance visibility. These are code capabilities, not proof of a deployed or accepted staging service.
+- The latest derivative-integrity change is committed on the existing PR #8 branch. PR #8 remains a draft and unmerged.
+
+### Related cloud transformation hardening
+
+- Separate draft PR #19, `fix/cloud-transformation-input-contract`, adds strict cloud transformation input validation, authenticated/audit-logged cancellation for work that has not entered active execution, and canonical image MIME/output-format validation for AI-upscale publication.
+- PR #19's recorded head `5b16e9b04748ae0ae1382978441caefd06f8e8ed` has a successful Quality checks run (`41461872662`). It remains a separate draft; this status note does not merge it or imply its migration has been applied.
+- Provider execution remains fail-closed without a verified adapter, explicit approval and budget, and the required release gates. No paid provider call is enabled by this checkpoint.
+
+### Remaining release gates
+
+1. Run browser-level staging acceptance across authenticated upload → private preview → timeline handoff/edit → revision-pinned render → quality report → delivery package → independent review.
+2. Validate with representative real media, including large files, interrupted uploads/downloads, expired preview links, cancellation, retry/recovery, and source/derivative checksum mismatch cases.
+3. Provision and verify an isolated staging environment and database/storage configuration. Review migrations against that staging schema before applying any migration.
+4. Verify multi-user roles, audit identity, cross-project isolation, private URL expiry and concurrent revision/review behavior in staging.
+5. Review output quality with humans; technical decode, dimensions, checksums and metadata checks are not perceptual quality approval.
+6. Reconcile and review the large feature-branch delta against `main`; keep PRs draft until the acceptance evidence and code review are complete.
+
+No production deployment, production database/storage write, migration application, paid provider execution, PR merge or force-push was performed for this checkpoint.
