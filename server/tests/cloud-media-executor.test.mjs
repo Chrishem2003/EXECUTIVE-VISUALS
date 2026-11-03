@@ -659,3 +659,55 @@ test("media process escalates SIGTERM to SIGKILL when a cancelled child ignores 
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+
+test("cloud AI upscale refuses inference when the engine provenance manifest is missing", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "ev-cloud-ai-upscale-no-manifest-"));
+  const previous = {
+    binary: process.env.REALESRGAN_NCNN_PATH,
+    models: process.env.REALESRGAN_MODEL_DIR,
+    enabled: process.env.AI_UPSCALE_ENABLED,
+    manifest: process.env.UPSCALE_ENGINE_MANIFEST,
+    ffprobe: process.env.FFPROBE_PATH,
+    ffmpeg: process.env.FFMPEG_PATH
+  };
+  const source = join(directory, "source.png");
+  const marker = join(directory, "inference-started");
+  const model = "realesrgan-x4plus";
+  const binary = await executable(directory, "realesrgan-ncnn-vulkan", 'printf "started" > "' + marker + '"\nwhile [ "$1" != "" ]; do if [ "$1" = "-o" ]; then shift; printf "fake-output" > "$1"; fi; shift; done');
+  const sourceBytes = Buffer.from([137,80,78,71,13,10,26,10,0,0,0,13,73,72,68,82,0,0,0,10,0,0,0,10]);
+  await writeFile(source, sourceBytes);
+  await writeFile(join(directory, model + ".param"), "model");
+  await writeFile(join(directory, model + ".bin"), "weights");
+  process.env.REALESRGAN_NCNN_PATH = binary;
+  process.env.REALESRGAN_MODEL_DIR = directory;
+  process.env.AI_UPSCALE_ENABLED = "true";
+  delete process.env.UPSCALE_ENGINE_MANIFEST;
+  process.env.FFMPEG_PATH = await executable(directory, "ffmpeg", "exit 0");
+  process.env.FFPROBE_PATH = await executable(directory, "ffprobe", "echo '{\\"streams\\":[{\\"width\\":10,\\"height\\":10}]}'");
+  try {
+    const execute = createCloudMediaExecutor({
+      tempRoot: directory,
+      mediaIO: {
+        async materialize() {
+          return { path: source, asset: { id: "image-source", name: "portrait.png", mediaType: "image/png", sha256: createHash("sha256").update(sourceBytes).digest("hex") }, async cleanup() {} };
+        },
+        async publish() { throw new Error("Missing provenance must prevent publication."); }
+      }
+    });
+    await assert.rejects(execute({
+      job: { id: "job-ai-no-manifest", owner_id: "owner", project_id: "project", job_type: "media.ai-upscale",
+        input: { sourceAssetId: "image-source", model, scale: 4, tile: 0, format: "png" } },
+      onProgress() {}
+    }), error => error.code === "AI_UPSCALE_PROVENANCE_UNVERIFIED");
+    await assert.rejects(readFile(marker), error => error.code === "ENOENT");
+  } finally {
+    if (previous.binary === undefined) delete process.env.REALESRGAN_NCNN_PATH; else process.env.REALESRGAN_NCNN_PATH = previous.binary;
+    if (previous.models === undefined) delete process.env.REALESRGAN_MODEL_DIR; else process.env.REALESRGAN_MODEL_DIR = previous.models;
+    if (previous.enabled === undefined) delete process.env.AI_UPSCALE_ENABLED; else process.env.AI_UPSCALE_ENABLED = previous.enabled;
+    if (previous.manifest === undefined) delete process.env.UPSCALE_ENGINE_MANIFEST; else process.env.UPSCALE_ENGINE_MANIFEST = previous.manifest;
+    if (previous.ffprobe === undefined) delete process.env.FFPROBE_PATH; else process.env.FFPROBE_PATH = previous.ffprobe;
+    if (previous.ffmpeg === undefined) delete process.env.FFMPEG_PATH; else process.env.FFMPEG_PATH = previous.ffmpeg;
+    await rm(directory, { recursive: true, force: true });
+  }
+});
