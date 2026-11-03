@@ -10,7 +10,7 @@ test("blocks dotfiles at root and in nested directories", () => {
 
 test("blocks percent-encoded dotfile and dot-directory paths", () => {
   for (const path of ["/%2eenv", "/%2egit/config", "/assets/%2esecret", "/%252eenv"]) {
-    assert.equal(isBlockedDotPath(path), path === "/%252eenv" ? false : true, path);
+    assert.equal(isBlockedDotPath(path), true, path);
   }
 });
 
