@@ -67,7 +67,7 @@ export function buildShotContinuityReport(shots=[]){
   const id=clean(shot.id,80)||"shot-"+(index+1),group=clean(shot.continuityGroup,80)||"default",values={};
   for(const field of CONTINUITY_FIELDS)values[field]=clean(shot.continuity?.[field],240);
   if(!groups.has(group))groups.set(group,{baseline:{id,values,shot},shots:[]});
-  groups.get(group).shots.push({id,values});
+  groups.get(group).shots.push({id,values,shot});
  }
  for(const [group,data] of groups){
   const baseline=data.baseline;
