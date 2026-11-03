@@ -39,10 +39,11 @@ test("progressive lockout doubles up to a 24-hour maximum", () => {
   recordFailedLogin(db,"user@example.com",now);
   recordFailedLogin(db,"user@example.com",now+1);
   let result=recordFailedLogin(db,"user@example.com",now+2);
-  for(let level=1;level<=12;level++){
-    assert.equal(result.retryAfterMs,Math.min(AUTH_BASE_LOCK_MS*(2**level),AUTH_MAX_LOCK_MS));
+  assert.equal(result.retryAfterMs,AUTH_BASE_LOCK_MS);
+  for(let level=2;level<=12;level++){
     now+=result.retryAfterMs+1;
     result=recordFailedLogin(db,"user@example.com",now);
+    assert.equal(result.retryAfterMs,Math.min(AUTH_BASE_LOCK_MS*(2**(level-1)),AUTH_MAX_LOCK_MS));
   }
   assert.equal(result.retryAfterMs,AUTH_MAX_LOCK_MS);
   db.close();
