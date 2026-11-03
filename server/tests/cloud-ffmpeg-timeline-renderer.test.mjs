@@ -12,16 +12,17 @@ const time=(value)=>({value,rate:1});
 test("cloud FFmpeg renderer produces a playable master from materialized video and audio", {skip:!hasFfmpeg||!hasFfprobe}, async()=>{
  const root=await mkdtemp(join(tmpdir(),"ev-cloud-render-test-"));
  try{
-  const video=join(root,"source.mp4"),audio=join(root,"voice.wav");
+  const video=join(root,"source.mp4"),audio=join(root,"voice.wav"),music=join(root,"music.wav");
   execFileSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-loglevel","error","-y","-f","lavfi","-i","color=c=blue:s=320x240:r=24:d=1","-c:v","libx264","-pix_fmt","yuv420p",video]);
   execFileSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-loglevel","error","-y","-f","lavfi","-i","sine=frequency=440:duration=1","-c:a","pcm_s16le",audio]);
+  execFileSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-loglevel","error","-y","-f","lavfi","-i","sine=frequency=220:duration=1","-c:a","pcm_s16le",music]);
   const timeline={name:"Cloud test",width:320,height:240,frameRate:{numerator:24,denominator:1},tracks:[
    {id:"v",kind:"video",clips:[{id:"v1",assetId:"asset-video",timelineStart:time(0),duration:time(1),sourceRange:{start:time(0),duration:time(1)},metadata:{fadeInSeconds:0.15,fadeOutSeconds:0.2}}]},
    {id:"a",kind:"audio",clips:[{id:"a1",assetId:"asset-audio",timelineStart:time(0),duration:time(1),sourceRange:{start:time(0),duration:time(1)},gainDb:-3,metadata:{fadeInSeconds:0.1,fadeOutSeconds:0.15}}]}
   ]};
   const assets=new Map([
    ["asset-video",{path:video,asset:{id:"asset-video",mediaType:"video/mp4",originalName:"source.mp4"}}],
-   ["asset-audio",{path:audio,asset:{id:"asset-audio",mediaType:"audio/wav",originalName:"voice.wav"}}]
+   ["asset-audio",{path:audio,asset:{id:"asset-audio",mediaType:"audio/wav",originalName:"voice.wav"}}],\n   ["asset-music",{path:music,asset:{id:"asset-music",mediaType:"audio/wav",originalName:"music.wav"}}]
   ]);
   const result=await renderCloudTimeline({timeline,assets,workDir:root,onProgress(){}});
   const probe=JSON.parse(execFileSync(process.env.FFPROBE_PATH||"ffprobe",["-v","error","-show_entries","stream=codec_type","-of","json",result.path],{encoding:"utf8"}));
@@ -30,7 +31,7 @@ test("cloud FFmpeg renderer produces a playable master from materialized video a
   assert.ok(probe.streams.some(stream=>stream.codec_type==="video"));
   assert.ok(probe.streams.some(stream=>stream.codec_type==="audio"));
   assert.equal(result.render.videoClips,1);
-  assert.equal(result.render.audioClips,1);
+  assert.equal(result.render.audioClips,2);\n  assert.equal(result.render.duckedMusicClips,1);
  }finally{await rm(root,{recursive:true,force:true});}
 });
 
