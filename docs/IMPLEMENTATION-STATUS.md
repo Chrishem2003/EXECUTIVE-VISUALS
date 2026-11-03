@@ -610,3 +610,8 @@ The cloud media IO boundary now rejects HTTP redirects for signed object downloa
 - Benchmark record validation checks the profile shape. Candidate grouping now includes the runtime profile in addition to the model, executable and model-weight fingerprints; latency summaries from distinct host profiles are not combined.
 - Regression coverage verifies profile persistence, malformed-profile rejection and separation of identical model builds across different hardware profiles. Full Quality checks passed for branch head `b8f60db94c3ae8a9047e40f98ac8e5162c71f088` (run 2874).
 - These are provenance and comparability safeguards, not a claim of GPU execution, perceptual quality, or a winning model. The real licensed fixture corpus, actual inference runs and independent human reviews remain required before any model can be marked quality-verified.
+
+
+### AI-upscale benchmark hardware transparency
+
+The Enhancement Lab now displays the recorded host profile beside each benchmark candidate and individual run: CPU model, OS/architecture, logical core count, memory and Node.js version. Legacy evidence without a profile is explicitly labelled as unknown hardware and must not be used for cross-host latency comparisons. The Vulkan environment flag remains informational only; it does not establish which GPU executed inference. Runtime provenance is attached to the persisted derivative and included in benchmark grouping and report output.
