@@ -18,7 +18,7 @@ function setup({canWrite=true,projectId=project,existing=[],timelineDocOverride=
   async update(input){calls.push(["update",input]);return{...timeline,revision:input.expectedRevision+1,timeline:input.timeline};}
  };
  const fetchImpl=async(url,options)=>{calls.push(["fetch",url,options]);if(url.includes("/job_events")&&options.method==="POST"&&duplicateReview)return{ok:false,status:409,async text(){return JSON.stringify({code:"23505",message:"duplicate key"})}};if(url.includes("/jobs")&&options.method==="POST")return{ok:true,status:201,async text(){return JSON.stringify([{id:JSON.parse(options.body).id,owner_id:owner,project_id:projectId,job_type:JSON.parse(options.body).job_type,status:"queued",input:JSON.parse(options.body).input}])}};if(url.includes("/jobs?")&&options.method==="PATCH"){const row=existing.find(item=>url.includes("id=eq."+item.id));if(!row)return{ok:true,status:200,async text(){return"[]"}};Object.assign(row,JSON.parse(options.body));return{ok:true,status:200,async text(){return JSON.stringify([row])}};}if(url.includes("/jobs?"))return{ok:true,status:200,async text(){return JSON.stringify(existing)}};return{ok:true,status:201,async text(){return""}};};
- const api=createCloudTimelineApi({url:"https://example.supabase.co",serviceRoleKey:"service-secret",fetchImpl,timelineService:{timelines,assets:{async list(input){calls.push(["asset-list",input]);return[{id:"asset-1",projectId:input.projectId}];},async retryCleanup(input){calls.push(["asset-cleanup-retry",input]);return{id:input.assetId,deleted:true,storageRemoved:true,cleanupPending:false};},async get(input){calls.push(["asset-get",input]);if(input.assetId==="published-asset")return assetOverride||{id:"published-asset",ownerId:owner,projectId:project,name:"master.mp4",mediaType:"video/mp4",size:2048,sha256:"a".repeat(64),metadata:{}};return assetOverride||{id:"723e4567-e89b-42d3-a456-426614174000",ownerId:owner,projectId:project,name:"generated.mp4",mediaType:"video/mp4",sha256:"a".repeat(64),metadata:{generated:true,jobId:"823e4567-e89b-42d3-a456-426614174000",mediaVerification:{status:"passed",readable:true,sha256:"a".repeat(64)},probe:{format:{duration:"2.51"},streams:[{codec_type:"video"}]}}};},async createSignedUrl(input){calls.push(["signed-url",input]);return{asset:signedAssetOverride||{id:input.assetId,projectId:project,size:2048,sha256:"a".repeat(64)},url:"https://storage.example.test/private/master?token=short-lived"};}},projects:{async create(input){calls.push(["project-create",input]);return{id:"project-1",...input};},async list(input){calls.push(["project-list",input]);return[{id:project}];},async get(input){calls.push(["project-get",input]);return{id:project,...input};},async update(input){calls.push(["project-update",input]);return{id:project,...input};},async archive(input){calls.push(["project-archive",input]);return{id:project,archived:true};}}},authorize:authorizeOverride|| (async({ownerId,projectId:pid,action})=>ownerId===owner&&(!pid||pid===project)&&(action==="read"||canWrite))});
+ const api=createCloudTimelineApi({url:"https://example.supabase.co",serviceRoleKey:"service-secret",fetchImpl,timelineService:{timelines,assets:{async list(input){calls.push(["asset-list",input]);return[{id:"asset-1",projectId:input.projectId}];},async retryCleanup(input){calls.push(["asset-cleanup-retry",input]);return{id:input.assetId,deleted:true,storageRemoved:true,cleanupPending:false};},async get(input){calls.push(["asset-get",input]);if(input.assetId==="published-asset")return assetOverride||{id:"published-asset",ownerId:owner,projectId:project,name:"master.mp4",mediaType:"video/mp4",size:2048,sha256:"a".repeat(64),metadata:{}};return assetOverride||{id:"723e4567-e89b-42d3-a456-426614174000",ownerId:owner,projectId:project,name:"generated.mp4",mediaType:"video/mp4",sha256:"a".repeat(64),metadata:{generated:true,jobId:"823e4567-e89b-42d3-a456-426614174000",mediaVerification:{status:"passed",readable:true,sha256:"a".repeat(64)},probe:{format:{duration:"2.51"},streams:[{codec_type:"video"}]}}};},async createSignedUrl(input){calls.push(["signed-url",input]);return{asset:signedAssetOverride||{id:input.assetId,projectId:project,size:2048,sha256:"a".repeat(64)},url:"https://storage.example.test/private/master?token=short-lived"};}async createFromFile(input){calls.push(["asset-create-from-file",input]);return{id:"923e4567-e89b-42d3-a456-426614174000",ownerId:input.ownerId,projectId:input.projectId,name:input.originalName,mediaType:input.mediaType,size:4,sha256:"a".repeat(64)};},async softDelete(input){calls.push(["asset-soft-delete",input]);return{id:input.assetId,deleted:true};}},projects:{async create(input){calls.push(["project-create",input]);return{id:"project-1",...input};},async list(input){calls.push(["project-list",input]);return[{id:project}];},async get(input){calls.push(["project-get",input]);return{id:project,...input};},async update(input){calls.push(["project-update",input]);return{id:project,...input};},async archive(input){calls.push(["project-archive",input]);return{id:project,archived:true};}}},authorize:authorizeOverride|| (async({ownerId,projectId:pid,action})=>ownerId===owner&&(!pid||pid===project)&&(action==="read"||canWrite))});
  return{api,calls,created};
 }
 
@@ -426,4 +426,54 @@ test("audio timeline preview exposes only a same-project waveform derivative wit
  const result=await api.handle({method:"GET",path:"/api/cloud/timelines/"+timelineId+"/preview/"+sourceId,ownerId:owner,query:{revision:"14"}});
  assert.equal(result.status,200);assert.equal(result.body.preview.waveformUrl,"https://signed.example/"+waveformId);
  assert.equal(calls.length,2);assert.equal(calls[0].assetId,sourceId);assert.equal(calls[1].assetId,waveformId);
+});
+
+test("cloud asset listing is scoped to the verified owner and selected project",async()=>{
+ const f=setup();
+ const result=await f.api.handle({method:"GET",path:"/api/cloud/assets",ownerId:owner,query:{projectId:project,limit:"12",offset:"3"}});
+ assert.equal(result.status,200);
+ assert.equal(result.body.assets.length,1);
+ assert.deepEqual(f.calls.find(call=>call[0]==="asset-list")[1],{ownerId:owner,projectId:project,limit:12,offset:3});
+});
+test("cloud asset download returns a short-lived private signed URL",async()=>{
+ const f=setup();
+ const result=await f.api.handle({method:"GET",path:"/api/cloud/assets/723e4567-e89b-42d3-a456-426614174000",ownerId:owner});
+ assert.equal(result.status,200);
+ assert.equal(result.body.expiresIn,300);
+ assert.match(result.body.url,/^https:\/\//);
+ assert.ok(f.calls.some(call=>call[0]==="signed-url"&&call[1].ownerId===owner&&call[1].expiresIn===300));
+});
+test("cloud asset deletion uses the verified owner identity",async()=>{
+ const f=setup();
+ const result=await f.api.handle({method:"DELETE",path:"/api/cloud/assets/723e4567-e89b-42d3-a456-426614174000",ownerId:owner});
+ assert.equal(result.status,200);
+ assert.deepEqual(f.calls.find(call=>call[0]==="asset-soft-delete")[1],{ownerId:owner,assetId:"723e4567-e89b-42d3-a456-426614174000"});
+});
+test("cloud asset upload streams validated PDF bytes and never trusts a body owner ID",async()=>{
+ const f=setup();
+ const bytes=Buffer.from("%PDF-1.7\\nfixture");
+ const req=Object.assign(Readable.from([bytes]),{headers:{"content-length":String(bytes.length),"content-type":"application/pdf","x-file-name":"private-report.pdf","x-project-id":project}});
+ const result=await f.api.handle({method:"POST",path:"/api/cloud/assets",ownerId:owner,body:{ownerId:editor},req});
+ assert.equal(result.status,201);
+ const upload=f.calls.find(call=>call[0]==="asset-create-from-file")[1];
+ assert.equal(upload.ownerId,owner);
+ assert.equal(upload.projectId,project);
+ assert.equal(upload.originalName,"private-report.pdf");
+ assert.equal(upload.mediaType,"application/pdf");
+ assert.equal(upload.metadata.ingest,"cloud-api");
+});
+test("cloud asset upload rejects invalid file signatures before storage",async()=>{
+ const f=setup();
+ const bytes=Buffer.from("not a pdf");
+ const req=Object.assign(Readable.from([bytes]),{headers:{"content-length":String(bytes.length),"content-type":"application/pdf","x-file-name":"fake.pdf"}});
+ const result=await f.api.handle({method:"POST",path:"/api/cloud/assets",ownerId:owner,req});
+ assert.equal(result.status,415);
+ assert.equal(result.body.error.code,"MEDIA_SIGNATURE_MISMATCH");
+ assert.equal(f.calls.some(call=>call[0]==="asset-create-from-file"),false);
+});
+test("cloud asset routes reject missing verified identity",async()=>{
+ const f=setup();
+ const result=await f.api.handle({method:"GET",path:"/api/cloud/assets",ownerId:"not-a-user"});
+ assert.equal(result.status,401);
+ assert.equal(f.calls.length,0);
 });
