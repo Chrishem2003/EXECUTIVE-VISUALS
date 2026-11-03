@@ -472,3 +472,27 @@ test("cloud media job submission rejects unsupported operations and missing idem
  const missingKey=await f.api.handle({method:"POST",path:"/api/cloud/media-jobs",ownerId:owner,body:{projectId:project,sourceAssetId:"723e4567-e89b-42d3-a456-426614174000",jobType:"media.thumbnail"}});
  assert.equal(missingKey.status,400);
 });
+
+
+test("cloud media job options cannot override the authorized source identity or fingerprint",async()=>{
+ const f=setup();
+ const result=await f.api.handle({method:"POST",path:"/api/cloud/media-jobs",ownerId:owner,idempotencyKey:"media-job-locked",body:{projectId:project,sourceAssetId:"723e4567-e89b-42d3-a456-426614174000",jobType:"media.thumbnail",options:{sourceAssetId:"923e4567-e89b-42d3-a456-426614174000",sourceSha256:"0".repeat(64),seconds:5}}});
+ assert.equal(result.status,202);
+ const inserted=f.calls.find(call=>call[0]==="fetch"&&call[1].includes("/jobs?")&&call[2].method==="POST");
+ const input=JSON.parse(inserted[2].body).input;
+ assert.equal(input.sourceAssetId,"723e4567-e89b-42d3-a456-426614174000");
+ assert.equal(input.sourceSha256,"a".repeat(64));
+});
+
+test("cloud media job listing is scoped to the verified project and supported media families",async()=>{
+ const existing=[{id:"823e4567-e89b-42d3-a456-426614174000",job_type:"media.thumbnail",status:"queued",progress:0,input:{sourceAssetId:"723e4567-e89b-42d3-a456-426614174000"}}];
+ const f=setup({existing});
+ const result=await f.api.handle({method:"GET",path:"/api/cloud/media-jobs",ownerId:owner,query:{projectId:project}});
+ assert.equal(result.status,200);
+ assert.equal(result.body.jobs.length,1);
+ assert.equal(result.body.jobs[0].jobType,"media.thumbnail");
+ const query=f.calls.find(call=>call[0]==="fetch"&&call[1].includes("/jobs?"));
+ assert.ok(query[1].includes("owner_id=eq."+owner));
+ assert.ok(query[1].includes("project_id=eq."+project));
+ assert.ok(query[1].includes("job_type=in."));
+});
