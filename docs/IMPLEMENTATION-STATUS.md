@@ -636,3 +636,12 @@ The Enhancement Lab now displays the recorded host profile beside each benchmark
 - Project job listing is authorized at project scope, so collaborators can see jobs owned by the project owner when the project authorizer permits read access.
 - Generic cloud media job submission/cancellation, cloud reviews, membership administration and creative-draft/research endpoints remain gated until their cloud equivalents and acceptance tests exist. This avoids accidentally routing cloud identifiers into SQLite/local endpoints.
 - This is source integration only. Cloud mode remains disabled unless an isolated dedicated Supabase environment is explicitly configured and passes readiness checks. No provisioning or production deployment was performed.
+
+
+## Cloud collaboration role visibility — 4 November 2026
+
+- Cloud project list responses now retain the collaborator's role from `project_members`; project owners remain explicitly identified as owners.
+- The project registry visibly labels each cloud project with its access role so collaborators can distinguish owner/editor/reviewer/viewer access without guessing from available controls.
+- Existing role-aware action gates remain in place: only owners see project rename/archive; cloud asset archive is limited to owner/editor; unsupported cloud processing, review and membership actions remain disabled pending their server-side equivalents.
+- Automated repository tests cover collaborator role mapping and owner-role precedence. The latest complete Quality Checks run passed on commit `98d550214464566633759e28d362bcab7782aad8`; the visual role indicator follow-up is committed and awaits its own CI run.
+- No cloud environment was provisioned, no migration applied, and no production deployment or PR merge performed.
