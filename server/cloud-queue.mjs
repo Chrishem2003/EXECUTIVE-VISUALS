@@ -103,7 +103,7 @@ export function createCloudQueue({
       for(const row of rows){
         if(!row||typeof row!=="object"||Array.isArray(row)
           ||Object.keys(row).some(key=>!fields.has(key))
-          ||typeof row.id!=="string"||typeof row.job_type!=="string"||!row.job_type.trim()
+          ||typeof row.id!=="string"||!row.id.trim()||typeof row.job_type!=="string"||!row.job_type.trim()
           ||!["queued","processing","failed"].includes(row.status)
           ||typeof row.progress!=="number"||!Number.isFinite(row.progress)||row.progress<0||row.progress>100
           ||!Number.isInteger(row.attempt_count)||row.attempt_count<0
