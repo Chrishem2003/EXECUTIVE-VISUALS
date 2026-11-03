@@ -1,5 +1,5 @@
 const SCHEMA = "executive_visuals";
-const RPC = new Set(["claim_next_job","renew_job_lease","recover_expired_jobs","recover_expired_jobs_by_type","finish_job","retry_job"]);
+const RPC = new Set(["claim_next_job","renew_job_lease","recover_expired_jobs","recover_expired_jobs_by_type","finish_job","retry_job","report_job_progress"]);
 
 function endpoint(value) {
   let url;
@@ -121,6 +121,13 @@ export function createCloudQueue({
         || (result.status === "failed" && (!result.accepted || result.retryable || result.delaySeconds !== 0))) {
         throw new Error("Cloud queue retry returned an invalid result.");
       }
+      return result;
+    },
+    async reportProgress(jobId, workerId, progress) {
+      if (typeof jobId !== "string" || !jobId.trim() || typeof workerId !== "string" || !workerId.trim()) throw new Error("Job ID and worker ID are required to report progress.");
+      if (!Number.isFinite(progress) || progress < 0 || progress > 100) throw new Error("Job progress must be between 0 and 100.");
+      const result = await call("report_job_progress", { p_job_id: jobId, p_worker_id: workerId, p_progress: progress });
+      if (typeof result !== "boolean") throw new Error("Cloud queue progress returned an invalid result.");
       return result;
     },
     async finish(jobId, workerId, status, output = null, error = null) {
