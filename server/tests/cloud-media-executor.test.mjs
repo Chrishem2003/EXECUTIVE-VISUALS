@@ -632,9 +632,8 @@ test("media process escalates SIGTERM to SIGKILL when a cancelled child ignores 
     const pid = Number(pidText);
     controller.abort();
     await assert.rejects(pending, error => error.code === "JOB_CANCELLED");
-    await new Promise(resolve => setTimeout(resolve, 75));
     assert.throws(() => process.kill(pid, 0), error => error.code === "ESRCH",
-      "child that ignores SIGTERM must be force-killed");
+      "cancellation must not settle until the child is gone, so workspace cleanup cannot race it");
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
