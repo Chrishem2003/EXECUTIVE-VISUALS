@@ -56,3 +56,8 @@ The cloud worker supervisor emits structured lifecycle and periodic `health` log
 ### Durable worker heartbeats
 
 The worker process persists one heartbeat row per worker identity through the `heartbeat_worker` service-role-only RPC. It records worker family, process instance ID, lifecycle status (`running`, `stopping`, `stopped`, `error`), a bounded allowlist of operational counters, start time, and last-seen time. The table has RLS enabled and no browser-role access; heartbeat writes use the server-only Supabase service-role credential. A stale worker is inferred from `last_seen_at` age by an authorized operations process; absence of a heartbeat is not proof of a worker failure. The heartbeat migration must be applied to the isolated staging database before enabling the cloud worker. No public worker-status endpoint is introduced by this change.
+
+
+### Worker fleet health snapshot
+
+The `list_worker_health` RPC returns a bounded, read-only snapshot of worker identity, family, instance, lifecycle state, last-seen age, and allowlisted operational metrics. It derives `stale` at read time for workers still marked running/stopping whose heartbeat exceeds the requested threshold (30–3600 seconds); stopped/error states remain distinct. Results are capped at 200. The RPC is executable only by `service_role`, and `createCloudQueue().listWorkerHealth()` validates bounds and response shape. This is a server-side operations primitive, not a public API or permission-controlled dashboard. Add a UI only after a real operator authorization model is reviewed.
