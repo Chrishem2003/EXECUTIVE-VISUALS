@@ -36,7 +36,7 @@ begin
   if p_worker_id is null or char_length(btrim(p_worker_id)) not between 1 and 128
     or p_worker_family is null or char_length(btrim(p_worker_family)) not between 1 and 64
     or p_instance_id is null or char_length(btrim(p_instance_id)) not between 1 and 128
-    or p_status not in ('running','stopping','stopped','error')
+    or p_status is null or p_status not in ('running','stopping','stopped','error')
     or p_metrics is null or jsonb_typeof(p_metrics) <> 'object'
     or octet_length(p_metrics::text) > 4000 then
     raise exception 'invalid worker heartbeat';
