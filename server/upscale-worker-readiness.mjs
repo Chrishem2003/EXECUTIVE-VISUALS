@@ -1,4 +1,4 @@
-import { mkdtemp, writeFile, link, lstat, readFile, rm } from "node:fs/promises";
+import { mkdtemp, writeFile, link, lstat, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
