@@ -99,3 +99,23 @@ A phase is not complete until:
 - Existing Supabase projects contain unrelated shared/NEMA data and must not be reused.
 - Neural upscaler execution is not evidence of perceptual quality.
 - The Render blueprint is staging-only and has not been deployed.
+
+
+### P0.1a Account lockout and layered authentication throttling
+
+**Required local-account policy (implemented on this branch; release verification pending):**
+- Three consecutive failed password attempts for a normalized login identifier trigger a 15-minute lock.
+- Attempts made while the lock is active do not shorten or reset it. The API returns HTTP 423 with a `Retry-After` header and a non-enumerating message.
+- If the first attempt after expiry is also wrong, the lock escalates immediately to 30 minutes; subsequent post-expiry failures double the duration (60 minutes, 2 hours, etc.) up to a 24-hour cap.
+- A successful login clears the identifier's failure and escalation history.
+- Lock state survives process restarts in SQLite. Only a SHA-256 digest of the normalized identifier is stored; plaintext passwords are never stored in the lockout table.
+- Unknown identifiers follow the same failure/lock behavior and public response pattern to reduce account enumeration.
+
+**Layered controls and hardening requirements:**
+- The current API also applies a per-source-IP authentication request throttle (default 10 requests per minute, configurable with `AUTH_RATE_LIMIT`). Keep this separate from the account lock counter.
+- Add a production shared limiter (Redis or edge/WAF) before horizontal scaling; the in-process IP bucket is only a single-instance defense and resets on restart.
+- Add bounded request-body and password length checks, strict origin/CSRF checks for cookie mutations, and monitoring for distributed credential stuffing without logging passwords, tokens or raw login identifiers.
+- Recovery must be able to restore access without weakening lockout; add verified email/identity recovery and auditable administrative unlock only after the hosted identity/session design is complete.
+- Test boundary times, concurrent failures, restart persistence, unknown-user behavior, successful reset, per-IP throttling, and multi-instance behavior. Add user-facing countdown only from server-provided retry metadata.
+
+**Abuse trade-off:** account lockout can be abused to deny a victim access. The progressive schedule and IP throttle reduce brute-force risk, but verified recovery and alerting are release requirements before public hosted accounts are enabled.
