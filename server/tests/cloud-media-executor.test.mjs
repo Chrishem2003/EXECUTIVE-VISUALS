@@ -435,7 +435,7 @@ test("cloud AI upscale publishes a separate image derivative with engine provena
   process.env.AI_UPSCALE_ENABLED = "true";
   process.env.UPSCALE_ENGINE_MANIFEST = await writeUpscaleManifest(directory, binary, model);
   process.env.FFMPEG_PATH = await executable(directory, "ffmpeg", "exit 0");
-  process.env.FFPROBE_PATH = await executable(directory, "ffprobe", "for last do :; done\ncase \"$last\" in *source.png) echo '{\"streams\":[{\"width\":10,\"height\":10}]}' ;; *) echo '{\"streams\":[{\"width\":40,\"height\":40}]}' ;; esac");
+  process.env.FFPROBE_PATH = await executable(directory, "ffprobe", "printf '%s' '{\"streams\":[{\"width\":10,\"height\":10}]}'");
   let published;
   try {
     const execute = createCloudMediaExecutor({
