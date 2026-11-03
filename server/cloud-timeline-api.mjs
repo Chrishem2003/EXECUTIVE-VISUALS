@@ -68,7 +68,7 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     const projectId=String(query.projectId||"");
     if(!safeId(projectId))return response(400,{error:{code:"INVALID_PROJECT_ID",message:"Choose a valid project."}});
     if(await allow({ownerId,projectId,action:"read"})!==true)return response(404,{error:{code:"PROJECT_NOT_FOUND",message:"Project not found or access denied."}});
-    const rows=await request("jobs?select=id,job_type,status,progress,input,output,error,created_at,updated_at&owner_id=eq."+encodeURIComponent(ownerId)+"&project_id=eq."+encodeURIComponent(projectId)+"&job_type=eq.media.waveform&order=created_at.desc&limit=50");
+    const rows=await request("jobs?select=id,job_type,status,progress,input,output,error,created_at,updated_at&project_id=eq."+encodeURIComponent(projectId)+"&job_type=eq.media.waveform&order=created_at.desc&limit=50");
     return response(200,{jobs:(rows||[]).map(row=>({id:row.id,status:row.status,progress:Number(row.progress||0),input:row.input||{},output:row.output||null,error:row.error||null,createdAt:row.created_at,updatedAt:row.updated_at}))});
    }
    if(path==="/api/cloud/waveforms"&&method==="POST"){
