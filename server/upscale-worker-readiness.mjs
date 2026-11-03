@@ -47,33 +47,7 @@ export async function inspectUpscaleWorkerReadiness({
       selfTest = { attempted: true, passed: false, reason: error?.code || "ENGINE_SELF_TEST_FAILED" };
     }
   }
-  let provenance = { configured: false, verified: false, reason: "UPSCALE_ENGINE_MANIFEST is not configured." };
-  const manifestPath = String(env.UPSCALE_ENGINE_MANIFEST || "").trim();
-  if (manifestPath) {
-    provenance = { configured: true, verified: false, reason: null };
-    try {
-      const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
-      const requiredText = ["source", "release", "license"];
-      const metadataValid = manifest && manifest.schemaVersion === 1 &&
-        manifest.engine === "realesrgan-ncnn-vulkan" &&
-        manifest.model === selectedModel &&
-        requiredText.every(key => typeof manifest[key] === "string" && manifest[key].trim().length > 0) &&
-        /^[a-f0-9]{64}$/.test(String(manifest.binarySha256 || "")) &&
-        /^[a-f0-9]{64}$/.test(String(manifest.modelFilesSha256 || ""));
-      const hashesMatch = metadataValid && engine.binarySha256 === manifest.binarySha256 &&
-        engine.modelFilesSha256 === manifest.modelFilesSha256;
-      provenance = {
-        configured: true,
-        verified: Boolean(hashesMatch),
-        source: metadataValid ? manifest.source : undefined,
-        release: metadataValid ? manifest.release : undefined,
-        license: metadataValid ? manifest.license : undefined,
-        reason: !metadataValid ? "ENGINE_MANIFEST_INVALID" : !hashesMatch ? "ENGINE_MANIFEST_HASH_MISMATCH" : null
-      };
-    } catch (error) {
-      provenance.reason = error?.code === "ENOENT" ? "ENGINE_MANIFEST_NOT_FOUND" : "ENGINE_MANIFEST_INVALID";
-    }
-  }
+  const provenance = await adapter.verifyProvenance(selectedModel, engine.engineFingerprint);
   const mediaTools = {
     ffmpeg: Boolean(checkExecutable("ffmpeg")),
     ffprobe: Boolean(checkExecutable("ffprobe"))
