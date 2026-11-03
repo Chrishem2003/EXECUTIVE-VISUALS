@@ -409,8 +409,8 @@ export function createAppServer() {
           }catch(error){fail(res,error.status||400,error.code||"UPSCALE_BENCHMARK_REVIEW_FAILED",String(error.message||"Could not review benchmark evidence."));return;}
         }
       }
-      if(cloudTimelineApi && (path.startsWith("/api/cloud/timelines")||path.startsWith("/api/cloud/jobs")||path.startsWith("/api/cloud/assets")||path.startsWith("/api/cloud/projects")||path.startsWith("/api/cloud/transformations")||path.startsWith("/api/cloud/upscale"))){
-        const isCloudMutation=(path.startsWith("/api/cloud/transformations")&&(req.method==="POST"||path.endsWith("/approve")&&req.method==="POST"||path.endsWith("/submit")&&req.method==="POST"))||(path.startsWith("/api/cloud/timelines")&&(req.method==="POST"||req.method==="PUT"))||(path==="/api/cloud/projects"&&req.method==="POST")||(path.startsWith("/api/cloud/projects/")&&(req.method==="PATCH"||req.method==="DELETE"))||((path==="/api/cloud/upscale"||path.startsWith("/api/cloud/upscale-benchmarks"))&&req.method==="POST");
+      if(cloudTimelineApi && (path.startsWith("/api/cloud/timelines")||path.startsWith("/api/cloud/jobs")||path.startsWith("/api/cloud/assets")||path.startsWith("/api/cloud/projects")||path.startsWith("/api/cloud/transformations")||path.startsWith("/api/cloud/upscale")||path.startsWith("/api/cloud/media-jobs"))){
+        const isCloudMutation=(path.startsWith("/api/cloud/transformations")&&(req.method==="POST"||path.endsWith("/approve")&&req.method==="POST"||path.endsWith("/submit")&&req.method==="POST"))||(path.startsWith("/api/cloud/timelines")&&(req.method==="POST"||req.method==="PUT"))||(path==="/api/cloud/projects"&&req.method==="POST")||(path.startsWith("/api/cloud/projects/")&&(req.method==="PATCH"||req.method==="DELETE"))||((path==="/api/cloud/upscale"||path.startsWith("/api/cloud/upscale-benchmarks")||path==="/api/cloud/media-jobs")&&req.method==="POST");
         const body=isCloudMutation?await readJson(req,5*1024*1024):{};
         const cloudResult=await cloudTimelineApi.handle({
           method:req.method,path,ownerId:user.id,body,req,query:Object.fromEntries(url.searchParams.entries()),
