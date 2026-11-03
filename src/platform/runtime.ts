@@ -1,21 +1,24 @@
 import { apiRequest, ApiError, setApiAccessToken, clearApiAccessToken, refreshApiSession } from "../core/api";
 
 type RuntimeUser={id:string;email:string};
-type RuntimeProject={id:string;name:string;description?:string;revision?:number;access_role?:"owner"|"editor"|"reviewer"|"viewer"};
+type RuntimeProject={id:string;ownerId?:string;name:string;description?:string;revision?:number;access_role?:"owner"|"editor"|"reviewer"|"viewer"};
 type RuntimeAsset={id:string;projectId?:string|null;name:string;mediaType:string;size:number;sha256:string;derivativeOf?:string|null;metadata?:Record<string,unknown>;createdAt:string};
 type RuntimeJob={id:string;projectId?:string|null;jobType:string;status:string;progress:number;input:Record<string,unknown>;output?:Record<string,unknown>|null;error?:{code?:string;message?:string}|null;createdAt:string;updatedAt:string};
 type RuntimeReview={id:string;project_id:string;asset_id?:string|null;timecode_seconds?:number|null;decision:string;body:string;status:string;created_at:string};
 type ProviderStatus={id:string;provider:string;enabled:boolean;configured:boolean;remote:boolean;model:string|null;status:"ready"|"disabled"|"needs_configuration"|"remote_opt_in_required"|"unavailable";reason:string;capabilities:string[]};
 type RemoteUsage={window:string;configurationValid:boolean;limit:number|null;used:number;remaining:number|null;projectUsed:number|null;remoteDisabled:boolean};
 let recoveryMode=false;
+let cloudMode=false;
+let assetUrls=new Map<string,string>();
 let workspaceRevisions=new Map<string,number>();
 let workspaceSaveTimers=new Map<string,ReturnType<typeof setTimeout>>();
 let workspaceSaveChain:Promise<void>=Promise.resolve();
-const state:{status:"checking"|"offline"|"auth-required"|"online";authMode:"local"|"supabase";user:RuntimeUser|null;projects:RuntimeProject[];assets:RuntimeAsset[];jobs:RuntimeJob[];audit:Array<Record<string,unknown>>;members:Array<{id:string;email:string;role:string;createdAt:string}>;reviews:RuntimeReview[];projectId:string;message:string;ffmpeg:boolean;ffprobe:boolean;textGatewayEnabled:boolean;textGatewayConfigured:boolean;imageGatewayEnabled:boolean;imageGatewayConfigured:boolean;providers:ProviderStatus[];remoteUsage:RemoteUsage|null;workspaceSaveStatus:"idle"|"saving"|"saved"|"error"}={
- status:"checking",authMode:"local",workspaceSaveStatus:"idle",user:null,projects:[],assets:[],jobs:[],audit:[],members:[],reviews:[],projectId:"",message:"",ffmpeg:false,ffprobe:false,textGatewayEnabled:false,textGatewayConfigured:false,imageGatewayEnabled:false,imageGatewayConfigured:false,providers:[],remoteUsage:null,
+const state:{status:"checking"|"offline"|"auth-required"|"online";authMode:"local"|"supabase";user:RuntimeUser|null;projects:RuntimeProject[];assets:RuntimeAsset[];jobs:RuntimeJob[];audit:Array<Record<string,unknown>>;members:Array<{id:string;email:string;role:string;createdAt:string}>;reviews:RuntimeReview[];projectId:string;cloudProjects:boolean;cloudAssets:boolean;cloudJobs:boolean;message:string;ffmpeg:boolean;ffprobe:boolean;textGatewayEnabled:boolean;textGatewayConfigured:boolean;imageGatewayEnabled:boolean;imageGatewayConfigured:boolean;providers:ProviderStatus[];remoteUsage:RemoteUsage|null;workspaceSaveStatus:"idle"|"saving"|"saved"|"error"}={
+ status:"checking",authMode:"local",workspaceSaveStatus:"idle",user:null,projects:[],assets:[],jobs:[],audit:[],members:[],reviews:[],projectId:"",cloudProjects:false,cloudAssets:false,cloudJobs:false,message:"",ffmpeg:false,ffprobe:false,textGatewayEnabled:false,textGatewayConfigured:false,imageGatewayEnabled:false,imageGatewayConfigured:false,providers:[],remoteUsage:null,
 };
 const esc=(value:unknown)=>String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]||c));
 const fmt=(value:string)=>new Date(value).toLocaleString();
+const assetFile=(id:string)=>cloudMode?(assetUrls.get(id)||""):"/api/assets/"+encodeURIComponent(id)+"/file";
 function statusMarkup(){return '<span class="runtime-status '+state.status+'"><i></i>'+esc(state.status==="online"?"API CONNECTED":state.status==="auth-required"?"SIGN IN REQUIRED":state.status==="offline"?"OFFLINE":"CONNECTING")+'</span>';}
 function updateShell(){
  const saveBadge=document.querySelector<HTMLElement>("#workspace-save-status");
@@ -133,15 +136,21 @@ window.addEventListener("ev:save-creative-draft",event=>{
 
 async function refresh(){
  const previousProjectId=state.projectId;
- const [projects,assets,jobs,audit,providerCatalog,usageResponse]=await Promise.all([
-  apiRequest<{projects:RuntimeProject[]}>("/api/projects"),
-  apiRequest<{assets:RuntimeAsset[]}>("/api/assets"),
-  apiRequest<{jobs:RuntimeJob[]}>("/api/jobs"),
-  apiRequest<{events:Array<Record<string,unknown>>}>("/api/audit"),
+ const projectPath=cloudMode?"/api/cloud/projects":"/api/projects";
+ const assetPath=cloudMode?"/api/cloud/assets"+(state.projectId?"?projectId="+encodeURIComponent(state.projectId):""):"/api/assets";
+ const jobPath=cloudMode?"/api/cloud/jobs?projectId="+encodeURIComponent(state.projectId||""):"/api/jobs";
+ const [projects,assets,jobs,providerCatalog,usageResponse]=await Promise.all([
+  apiRequest<{projects:RuntimeProject[]}>(projectPath),
+  apiRequest<{assets:RuntimeAsset[]}>(assetPath),
+  state.projectId||!cloudMode?apiRequest<{jobs:Array<RuntimeJob&{type?:string}>}>(jobPath):Promise.resolve({jobs:[]}),
   apiRequest<{providers:ProviderStatus[]}>("/api/providers"),
   apiRequest<{remoteUsage:RemoteUsage}>("/api/usage")
  ]);
- state.projects=projects.projects;state.assets=assets.assets;state.jobs=jobs.jobs;state.audit=audit.events;state.providers=providerCatalog.providers;state.remoteUsage=usageResponse.remoteUsage;window.dispatchEvent(new Event("ev:assets-updated"));
+ state.projects=projects.projects.map(project=>({...project,access_role:project.ownerId===state.user?.id?"owner":"viewer"}));
+ state.assets=assets.assets;state.jobs=jobs.jobs.map(job=>({...job,jobType:job.jobType||job.type||"unknown"}));state.audit=[];state.providers=providerCatalog.providers;state.remoteUsage=usageResponse.remoteUsage;
+ assetUrls.clear();
+ if(cloudMode){await Promise.all(state.assets.map(async asset=>{try{const signed=await apiRequest<{url:string}>("/api/cloud/assets/"+encodeURIComponent(asset.id));if(typeof signed.url==="string"&&signed.url.startsWith("https://"))assetUrls.set(asset.id,signed.url);}catch{/* no local fallback */}}));}
+ window.dispatchEvent(new Event("ev:assets-updated"));
  if(state.projectId&&!state.projects.some(p=>p.id===state.projectId))state.projectId="";
  if(!state.projectId&&state.projects.length)state.projectId=state.projects[0].id;
  if(previousProjectId!==state.projectId)window.dispatchEvent(new CustomEvent("ev:project-changed",{detail:{projectId:state.projectId}}));
