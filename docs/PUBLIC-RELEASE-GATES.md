@@ -2,7 +2,7 @@
 
 **Current decision: NOT APPROVED for public users.**  
 **Scope:** staging deployment review for the unified production application.  
-**Last reviewed:** 1 November 2026.
+**Last reviewed:** 3 November 2026.
 
 This checklist separates a successful source build from a safe, usable hosted service. Do not promote the feature branch to the production branch or expose the application to public users until every mandatory gate below has evidence.
 
@@ -12,7 +12,7 @@ This checklist separates a successful source build from a safe, usable hosted se
 |---|---|---|
 | Source build | Passed on the last completed quality workflow | Workflow 1692 completed successfully: dependency install, TypeScript check and full build. |
 | Latest deployment guard | Running | Workflow 1696 includes the new checks that reject development-only authentication in the Render production-mode blueprint. |
-| Production-mode authentication | Blueprint corrected; user flow incomplete | Render blueprint now requires Supabase auth and non-synchronized secret inputs. Browser gate still asks users to paste an access token; implement email/password or passwordless sign-in, refresh, logout and account recovery before beta. |
+| Production-mode authentication | Native flow implemented in isolated feature branch; CI and hosted verification pending | Added email/password sign-in and signup through the Supabase Auth server proxy, HttpOnly refresh-token cookie, access-token renewal, logout, recovery email initiation and recovery-password update. Browser no longer needs a pasted access token. Configure `SUPABASE_AUTH_REDIRECT_URL`; verify email-confirmation and recovery redirects on the dedicated staging project, then run separate-account browser tests. |
 | Isolated identity/database | Blocked | Connected Supabase projects already contain unrelated NEMA and shared platform tables. Do not reuse or migrate either for this application. Provision and review a dedicated project before applying the application schema. |
 | Durable media storage | Blocked | Current active API uses SQLite and a local media directory. Cloud object-storage adapter is not integrated into the main asset API/UI. |
 | Durable application database | Blocked for multi-instance use | Current runtime uses SQLite on one persistent disk. It is a single-instance staging architecture, not a horizontally scalable multi-tenant deployment. |
