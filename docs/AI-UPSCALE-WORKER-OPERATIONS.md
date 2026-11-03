@@ -56,3 +56,8 @@ Keep model and executable provenance in the deployment record. The manifest must
 - The preflight's hard-link result applies only to the filesystem tested on that worker.
 - A passing local development test does not prove the cloud worker image, storage adapter, GPU/Vulkan driver, or model quality.
 - Do not apply migrations, enable production workers, or route customer assets until the isolated end-to-end acceptance gates are complete.
+
+
+## Reproducible execution environment evidence
+
+Each new local AI-upscale execution records a bounded runtime profile alongside the model/binary fingerprints: OS platform and release, CPU architecture/model, logical core count, total memory, Node.js version, and whether Vulkan ICD/driver environment variables are configured. This is descriptive host evidence, not proof that a GPU was selected or that Vulkan inference ran on a particular device. Benchmark candidate comparison now groups by this runtime profile as well as the pinned model, executable and weights hashes; latency medians/p95 from different hardware environments are not combined into one candidate. Older records without runtime metadata remain grouped separately as runtime=null and should not be compared directly with host-profiled results.
