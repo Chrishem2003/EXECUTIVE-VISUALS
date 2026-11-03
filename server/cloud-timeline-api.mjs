@@ -126,6 +126,39 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     await request("job_events",{method:"POST",body:{job_id:jobId,owner_id:ownerId,event_type:"job.queued",event_data:{jobType:"media.ai-upscale",sourceAssetId,model,scale,tile,format}},prefer:"return=minimal"});
     return response(202,{job:rows[0],idempotentReplay:false});
    }
+   const cloudMediaTypes=new Set(["media.probe","media.thumbnail","media.audio_extract","media.audio-clean","media.denoise","media.color","media.resize","media.interpolate","media.upscale","media.ai-upscale","media.transcode","media.proxy","media.waveform"]);
+   if(path==="/api/cloud/media-jobs"&&method==="GET"){
+    const projectId=String(query.projectId||"");
+    if(!safeId(projectId))return response(400,{error:{code:"INVALID_PROJECT_ID",message:"Choose a valid project."}});
+    if(await allow({ownerId,projectId,action:"read"})!==true)return response(404,{error:{code:"PROJECT_NOT_FOUND",message:"Project not found or access denied."}});
+    const rows=await request("jobs?select=id,job_type,status,progress,input,output,error,attempt_count,created_at,updated_at,completed_at&owner_id=eq."+encodeURIComponent(ownerId)+"&project_id=eq."+encodeURIComponent(projectId)+"&job_type=in.("+[...cloudMediaTypes].join(",")+")&order=created_at.desc&limit=100");
+    return response(200,{jobs:(rows||[]).map(row=>({id:row.id,jobType:row.job_type,status:row.status,progress:Number(row.progress||0),input:row.input||{},output:row.output||null,error:row.error||null,attemptCount:Number(row.attempt_count||0),createdAt:row.created_at,updatedAt:row.updated_at,completedAt:row.completed_at||null}))});
+   }
+   if(path==="/api/cloud/media-jobs"&&method==="POST"){
+    const projectId=String(body.projectId||""),sourceAssetId=String(body.sourceAssetId||""),jobType=String(body.jobType||"");
+    if(!safeId(projectId)||!safeId(sourceAssetId)||!cloudMediaTypes.has(jobType))return response(400,{error:{code:"CLOUD_MEDIA_INPUT_INVALID",message:"Choose a supported media operation, project and source asset."}});
+    if(await allow({ownerId,projectId,action:"write"})!==true)return response(404,{error:{code:"PROJECT_NOT_FOUND",message:"Project not found or editor access required."}});
+    const source=await service.assets.get({ownerId,assetId:sourceAssetId});
+    if(!source||source.projectId!==projectId)return response(404,{error:{code:"SOURCE_ASSET_NOT_FOUND",message:"Source asset was not found in this project."}});
+    if(!/^[a-f0-9]{64}$/i.test(String(source.sha256||"")))return response(422,{error:{code:"SOURCE_ASSET_HASH_UNAVAILABLE",message:"The source asset has no verified SHA-256 fingerprint."}});
+    if(jobType==="media.ai-upscale"&&(body.rightsConfirmed!==true||!["image/png","image/jpeg","image/webp"].includes(source.mediaType)))return response(422,{error:{code:"AI_UPSCALE_SOURCE_INVALID",message:"AI upscaling requires a rights-confirmed PNG, JPEG or WebP source image."}});
+    const options=body.options&&typeof body.options==="object"&&!Array.isArray(body.options)?body.options:{};
+    if(Buffer.byteLength(JSON.stringify(options))>12000)return response(413,{error:{code:"MEDIA_OPTIONS_TOO_LARGE",message:"Media options exceed the supported size."}});
+    const input={sourceAssetId,sourceSha256:source.sha256,...options};
+    if(jobType==="media.ai-upscale")input.rightsConfirmed=true;
+    const key=String(idempotencyKey||"").trim().slice(0,180);
+    if(key.length<8)return response(400,{error:{code:"IDEMPOTENCY_KEY_REQUIRED",message:"An idempotency key of at least eight characters is required."}});
+    const existing=await request("jobs?select=id,owner_id,project_id,job_type,status,progress,input,output,error,created_at,updated_at&owner_id=eq."+encodeURIComponent(ownerId)+"&idempotency_key=eq."+encodeURIComponent(key)+"&limit=1");
+    if(Array.isArray(existing)&&existing[0]){
+     const row=existing[0];
+     if(row.job_type!==jobType||row.project_id!==projectId||stableJson(row.input)!==stableJson(input))return response(409,{error:{code:"IDEMPOTENCY_CONFLICT",message:"This idempotency key was already used for a different media request."}});
+     return response(200,{job:row,idempotentReplay:true});
+    }
+    const jobId=randomUUID(),rows=await request("jobs?select=id,owner_id,project_id,job_type,status,progress,input,output,error,created_at,updated_at",{method:"POST",body:{id:jobId,owner_id:ownerId,project_id:projectId,job_type:jobType,status:"queued",progress:0,input,idempotency_key:key}});
+    if(!Array.isArray(rows)||rows.length!==1||rows[0].id!==jobId||rows[0].job_type!==jobType||rows[0].owner_id!==ownerId||rows[0].project_id!==projectId)throw new Error("Cloud media job creation returned an invalid record.");
+    await request("job_events",{method:"POST",body:{job_id:jobId,owner_id:ownerId,event_type:"job.queued",event_data:{jobType,sourceAssetId,sourceSha256:source.sha256}},prefer:"return=minimal"});
+    return response(202,{job:rows[0],idempotentReplay:false});
+   }
    const benchmarkPath=path.match(/^\/api\/cloud\/upscale-benchmarks(?:\/(fixtures|runs)(?:\/([0-9a-f-]+)\/review)?)?$/i);
    if(benchmarkPath){
     const section=benchmarkPath[1]||"",runId=benchmarkPath[2]||"",projectId=String(query.projectId||"");
