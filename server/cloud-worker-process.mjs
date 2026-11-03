@@ -90,15 +90,18 @@ export function createCloudWorkerSupervisor({workers,leaseSeconds=90,heartbeatIn
    if(!stopped)throw new Error("Cloud worker supervisor is already running.");
    stopped=false;metrics.startedAt=new Date().toISOString();
    await publishHeartbeats("running");
-   await recover();
    if(stopped)return;
-   await cycle();
+   // Keep the process heartbeat alive during startup recovery and the first
+   // potentially long-running job; otherwise a healthy worker can look stale.
+   healthTimer=setInterval(()=>onLog({kind:"health",snapshot:snapshot()}),healthIntervalMs);healthTimer.unref?.();
+   heartbeatTimer=setInterval(()=>{void publishHeartbeats("running");},healthIntervalMs);heartbeatTimer.unref?.();
+   await recover();
    if(stopped)return;
    timer=setInterval(()=>{void cycle();},pollMs);timer.unref?.();
    recoveryTimer=setInterval(()=>{void recover();},recoveryIntervalMs);recoveryTimer.unref?.();
-   healthTimer=setInterval(()=>onLog({kind:"health",snapshot:snapshot()}),healthIntervalMs);healthTimer.unref?.();
-   heartbeatTimer=setInterval(()=>{void publishHeartbeats("running");},healthIntervalMs);heartbeatTimer.unref?.();
    onLog({kind:"started",snapshot:snapshot()});
+   await cycle();
+   if(stopped)return;
   },
   async stop(){
    if(stopped)return;
