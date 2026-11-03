@@ -226,3 +226,20 @@ test("supervisor keeps heartbeats alive while startup recovery is waiting",async
   globalThis.clearInterval=originalClearInterval;
  }
 });
+
+
+test("cloud job diagnostics migration is bounded, payload-free and service-role-only",async()=>{
+ const sql=await readFile(new URL("../../supabase/migrations/20261103220000_cloud_job_diagnostics.sql",import.meta.url),"utf8");
+ assert.match(sql,/create or replace function executive_visuals\\.list_job_diagnostics/);
+ assert.match(sql,/status in \\('queued','processing','failed'\\)/);
+ assert.match(sql,/queued_too_long/);
+ assert.match(sql,/lease_expired/);
+ assert.match(sql,/heartbeat_stale/);
+ assert.match(sql,/attempts_exhausted/);
+ assert.doesNotMatch(sql,/select[\\s\\S]{0,500}input[\\s\\S]{0,100}output/);
+ assert.match(sql,/p_limit not between 1 and 200/);
+ assert.match(sql,/p_queue_stale_after_seconds not between 60 and 86400/);
+ assert.match(sql,/p_lease_stale_after_seconds not between 30 and 3600/);
+ assert.match(sql,/revoke all on function executive_visuals\\.list_job_diagnostics\\(integer,integer,integer\\) from public, anon, authenticated/);
+ assert.match(sql,/grant execute on function executive_visuals\\.list_job_diagnostics\\(integer,integer,integer\\) to service_role/);
+});
