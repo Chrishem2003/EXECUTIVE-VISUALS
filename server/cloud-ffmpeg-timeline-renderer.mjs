@@ -25,8 +25,8 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
  const tracks=timeline.tracks.filter(track=>track.enabled!==false&&(track.clips||[]).some(enabled));
  const videos=tracks.filter(track=>track.kind==="video"),audios=tracks.filter(track=>track.kind==="audio"),overlays=tracks.filter(track=>track.kind==="overlay"),captions=tracks.filter(track=>track.kind==="caption");
  const unsupported=tracks.filter(track=>!["video","audio","overlay","caption"].includes(track.kind));
- if(videos.length!==1||unsupported.length)fail("The master renderer requires exactly one primary video track and supported audio, overlay and caption tracks.","UNSUPPORTED_TIMELINE_FEATURE");
- const clips=ordered(videos),audioClips=audios.flatMap(track=>ordered([track])),overlayClips=overlays.flatMap(track=>ordered([track])),captionClips=captions.flatMap(track=>ordered([track]));
+ if(videos.length<1||unsupported.length)fail("The master renderer requires one primary video track and supported additional video, audio, overlay and caption tracks.","UNSUPPORTED_TIMELINE_FEATURE");
+ const clips=ordered([videos[0]]),videoLayerClips=videos.slice(1).flatMap(track=>ordered([track])),audioClips=audios.flatMap(track=>ordered([track])),overlayClips=overlays.flatMap(track=>ordered([track])),captionClips=captions.flatMap(track=>ordered([track]));
  if(!clips.length)fail("Add at least one enabled clip to the primary video track.","EMPTY_TIMELINE");
  const deliveryProfile=timeline.deliveryProfileId?getDeliveryProfile(timeline.deliveryProfileId):null;
  const width=deliveryProfile?.width??Math.max(256,Math.min(7680,Math.floor(Number(timeline.width)||1920)));
@@ -36,7 +36,7 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
  const renderManifest=timelineRevision===null?null:createRenderManifest({timeline,assets,timelineRevision,output:{format:"video/mp4",codec:deliveryProfile?.videoCodec||"libx264",width,height,frameRate:{numerator:fpsNum,denominator:fpsDen},pixelFormat:deliveryProfile?.pixelFormat||"yuv420p",preset:deliveryProfile?.preset||"veryfast",crf:deliveryProfile?.crf??20,...(deliveryProfile?{deliveryProfileId:deliveryProfile.id}:{})}});
  const outputId=randomUUID(),outputPath=join(workDir,outputId+".mp4");
  await mkdir(workDir,{recursive:true});
- const args=["-hide_banner","-y"],segments=[],audioFilters=[],videoEffects=[],captionTempPaths=[],overlayInputs=[];
+ const args=["-hide_banner","-y"],segments=[],audioFilters=[],videoEffects=[],captionTempPaths=[],overlayInputs=[],videoLayerInputs=[];
  let cursor=0,inputIndex=0,segmentIndex=0,captionIndex=0;
  const getAsset=(assetId)=>{
   const entry=assets.get(String(assetId));
@@ -65,6 +65,14 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
    inputIndex++;cursor=start+duration;onProgress(Math.min(65,8+Math.round(segmentIndex/Math.max(clips.length,1)*55)));
   }
   if(!segments.length)fail("No renderable clips were found.","EMPTY_TIMELINE");
+  for(const clip of videoLayerClips){
+   const start=seconds(clip.timelineStart);if(start>=cursor)continue;
+   const duration=Math.min(seconds(clip.duration),cursor-start);if(duration<=0)continue;
+   if(Math.abs(Number(clip.speed??1)-1)>0.000001)fail("Video layer speed changes require the time-remapping renderer milestone.","UNSUPPORTED_TIME_REMAP");
+   const asset=getAsset(clip.assetId);if(!String(asset.mediaType||"").startsWith("video/"))fail("Additional video tracks require video source assets.","UNSUPPORTED_VIDEO_LAYER_SOURCE");
+   args.push("-ss",seconds(clip.sourceRange?.start).toFixed(6),"-t",duration.toFixed(6),"-i",asset.path);
+   videoLayerInputs.push({inputIndex,clip});inputIndex++;
+  }
   let audioIndex=0;
   for(const clip of audioClips){
    const start=seconds(clip.timelineStart);if(start>=cursor)continue;
@@ -87,6 +95,24 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
   const concat=segments.map(item=>`[${item.label}]`).join("")+`concat=n=${segments.length}:v=1:a=0[vbase]`;
   const videoGraph=segments.map(item=>item.filter).join(";")+";"+concat;
   let currentVideo="[vbase]";
+  for(const [index,item] of videoLayerInputs.entries()){
+   const clip=item.clip,start=seconds(clip.timelineStart);
+   if(start>=cursor)continue;
+   const duration=Math.min(seconds(clip.duration),cursor-start);if(duration<=0)continue;
+   const metadata=clip.metadata||{};
+   const layerWidth=Math.max(16,Math.min(width,Math.round(Number(metadata.width)||width))),layerHeight=Math.max(16,Math.min(height,Math.round(Number(metadata.height)||height)));
+   const x=Math.max(0,Math.min(width-layerWidth,Number.isFinite(Number(metadata.x))?Math.round(Number(metadata.x)):0)),y=Math.max(0,Math.min(height-layerHeight,Number.isFinite(Number(metadata.y))?Math.round(Number(metadata.y)):0)),opacity=Math.max(0,Math.min(1,Number(metadata.opacity??1)));
+   const keyframes=normalizeOverlayKeyframes(metadata.motionKeyframes,{durationFrames:Math.max(1,Math.round(duration*fpsNum/fpsDen)),width,height,defaultX:x,defaultY:y});
+   const motionFps=fpsNum/fpsDen;
+   const xExpression=buildMotionExpression(keyframes,"x",{startSeconds:start,fps:motionFps,fallback:x});
+   const yExpression=buildMotionExpression(keyframes,"y",{startSeconds:start,fps:motionFps,fallback:y});
+   const scaleExpression=buildMotionExpression(keyframes,"scale",{startSeconds:start,fps:motionFps,fallback:1});
+   const scaledWidth="trunc("+layerWidth+"*("+scaleExpression+")/2)*2",scaledHeight="trunc("+layerHeight+"*("+scaleExpression+")/2)*2";
+   const imageLabel="video-layer-image-"+index,videoLabel="video-layer-composite-"+index;
+   videoEffects.push(`[${item.inputIndex}:v]trim=duration=${duration.toFixed(6)},setpts=PTS-STARTPTS,scale=w='${scaledWidth}':h='${scaledHeight}':eval=frame:force_original_aspect_ratio=decrease,pad=${layerWidth}:${layerHeight}:(ow-iw)/2:(oh-ih)/2:color=black@0,format=rgba,colorchannelmixer=aa=${opacity.toFixed(3)}[${imageLabel}]`);
+   videoEffects.push(`${currentVideo}[${imageLabel}]overlay=x='${xExpression}':y='${yExpression}':eof_action=pass:eval=frame:enable='between(t,${start.toFixed(6)},${(start+duration).toFixed(6)})'[${videoLabel}]`);
+   currentVideo=`[${videoLabel}]`;
+  }
   for(const [index,item] of overlayInputs.entries()){
    const clip=item.clip,start=seconds(clip.timelineStart);
    if(start>=cursor)continue;
@@ -128,7 +154,7 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
   if(signal?.aborted)fail("Timeline render was cancelled.","JOB_CANCELLED");
   onProgress(90);
   const name=safeName(timeline.name);
-  return{path:outputPath,filename:name+"-"+(deliveryProfile?.id||"master")+".mp4",mediaType:"video/mp4",render:{width,height,frameRate:{numerator:fpsNum,denominator:fpsDen},videoClips:clips.length,audioClips:audioClips.length,duckedMusicClips:ducking.duckedClips,overlayClips:overlayClips.length,animatedOverlayClips:overlayClips.filter(clip=>Array.isArray(clip.metadata?.motionKeyframes)&&clip.metadata.motionKeyframes.length>1).length,captionClips:captionClips.length,durationSeconds:cursor,...(deliveryProfile?{deliveryProfileId:deliveryProfile.id,deliveryProfileLabel:deliveryProfile.label}:{})},...(renderManifest?{renderManifest}:{})};
+  return{path:outputPath,filename:name+"-"+(deliveryProfile?.id||"master")+".mp4",mediaType:"video/mp4",render:{width,height,frameRate:{numerator:fpsNum,denominator:fpsDen},videoClips:clips.length,videoLayerClips:videoLayerClips.length,audioClips:audioClips.length,duckedMusicClips:ducking.duckedClips,overlayClips:overlayClips.length,animatedOverlayClips:overlayClips.filter(clip=>Array.isArray(clip.metadata?.motionKeyframes)&&clip.metadata.motionKeyframes.length>1).length,captionClips:captionClips.length,durationSeconds:cursor,...(deliveryProfile?{deliveryProfileId:deliveryProfile.id,deliveryProfileLabel:deliveryProfile.label}:{})},...(renderManifest?{renderManifest}:{})};
  }catch(error){
   await unlink(outputPath).catch(()=>{});
   if(signal?.aborted)throw Object.assign(new Error("Timeline render was cancelled."),{code:"JOB_CANCELLED"});
