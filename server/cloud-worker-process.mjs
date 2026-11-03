@@ -31,12 +31,14 @@ export function createCloudWorkerSupervisor({workers,leaseSeconds=90,heartbeatIn
  if(!Array.isArray(workers)||workers.length<1||workers.some(worker=>typeof worker?.runCycle!=="function"||typeof worker?.recoverExpired!=="function"))throw new Error("Cloud worker supervisor requires one or more compatible worker families.");
  if(!Number.isInteger(pollMs)||pollMs<500||pollMs>10000)throw new Error("Cloud worker poll interval is invalid.");
  if(!Number.isInteger(recoveryIntervalMs)||recoveryIntervalMs<10000||recoveryIntervalMs>300000)throw new Error("Cloud worker recovery interval is invalid.");
- let stopped=true,timer=null,recoveryTimer=null,active=null,busy=false,recoveryActive=null,recoveryBusy=false;
+ let stopped=true,timer=null,recoveryTimer=null,active=null,busy=false,recoveryActive=null,recoveryBusy=false,cycleController=null;
  async function cycle(){
   if(stopped||busy)return{skipped:true};
   busy=true;
+  cycleController=new AbortController();
+  const shutdownSignal=cycleController.signal;
   active=(async()=>{
-   const settled=await Promise.allSettled(workers.map(worker=>worker.runCycle({leaseSeconds,heartbeatIntervalMs,onEvent:event=>onLog({kind:"event",...event})})));
+   const settled=await Promise.allSettled(workers.map(worker=>worker.runCycle({leaseSeconds,heartbeatIntervalMs,signal:shutdownSignal,onEvent:event=>onLog({kind:"event",...event})})));
    const results=settled.map((item,index)=>{
     if(item.status==="rejected"){onError(item.reason);return null;}
     if(item.value?.claimed)onLog({kind:"cycle",result:item.value,workerIndex:index});
@@ -44,7 +46,7 @@ export function createCloudWorkerSupervisor({workers,leaseSeconds=90,heartbeatIn
    });
    return results;
   })();
-  try{return await active;}finally{active=null;busy=false;}
+  try{return await active;}finally{active=null;busy=false;cycleController=null;}
  }
  async function recover(){
   if(stopped||recoveryBusy)return{skipped:true};
@@ -74,6 +76,7 @@ export function createCloudWorkerSupervisor({workers,leaseSeconds=90,heartbeatIn
    if(stopped)return;
    stopped=true;
    if(timer)clearInterval(timer);if(recoveryTimer)clearInterval(recoveryTimer);
+   cycleController?.abort(new Error("Cloud worker supervisor is stopping."));
    timer=null;recoveryTimer=null;
    if(active)await active.catch(()=>{});
    if(recoveryActive)await recoveryActive.catch(()=>{});
