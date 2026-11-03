@@ -30,6 +30,33 @@ function deliveryReviewFixture({jobOwner=owner,receiptValid=true,deliveryStatus=
  if(!receiptValid)job.output.deliveryManifest={...receipt,fingerprint:"0".repeat(64)};
  return{job,receipt};
 }
+test("cloud job listing is project-authorized and owner-filtered with bounded pagination",async()=>{
+ const jobs=[
+  {id:"623e4567-e89b-42d3-a456-426614174001",owner_id:owner,project_id:project,job_type:"timeline.render",status:"running",progress:42,input:{timelineId},output:null,error:null,attempt_count:1,created_at:"2026-11-03T10:00:00Z",updated_at:"2026-11-03T10:01:00Z"},
+  {id:"623e4567-e89b-42d3-a456-426614174002",owner_id:owner,project_id:project,job_type:"media.ai-upscale",status:"queued",progress:0,input:{sourceAssetId:"asset"},output:null,error:null,attempt_count:0,created_at:"2026-11-03T09:00:00Z",updated_at:"2026-11-03T09:00:00Z"}
+ ];
+ const f=setup({existing:jobs});
+ const result=await f.api.handle({method:"GET",path:"/api/cloud/jobs",ownerId:owner,query:{projectId:project,limit:"1",offset:"0",status:"running"}});
+ assert.equal(result.status,200);
+ assert.equal(result.body.jobs.length,1);
+ assert.equal(result.body.jobs[0].type,"timeline.render");
+ assert.equal(result.body.jobs[0].progress,42);
+ assert.deepEqual(result.body.page,{limit:1,offset:0,hasMore:true,nextOffset:1});
+ const url=f.calls.find(call=>call[0]==="fetch")[1];
+ assert.match(url,/owner_id=eq\\.123e4567-e89b-42d3-a456-426614174000/);
+ assert.match(url,/project_id=eq\\.423e4567-e89b-42d3-a456-426614174000/);
+ assert.match(url,/status=eq\\.running/);
+});
+test("cloud job listing rejects unauthorized projects and malformed filters",async()=>{
+ const denied=setup({authorizeOverride:async()=>false});
+ const hidden=await denied.api.handle({method:"GET",path:"/api/cloud/jobs",ownerId:owner,query:{projectId:project}});
+ assert.equal(hidden.status,404);
+ const f=setup();
+ const invalid=await f.api.handle({method:"GET",path:"/api/cloud/jobs",ownerId:owner,query:{projectId:project,status:"secret"}});
+ assert.equal(invalid.status,400);
+ assert.equal(invalid.body.error.code,"JOB_STATUS_INVALID");
+ assert.equal(f.calls.some(call=>call[0]==="fetch"),false);
+});
 test("delivery package verifies receipt and published asset before issuing a private master link",async()=>{
  const {job,receipt}=deliveryReviewFixture({jobOwner:owner});
  const f=setup({existing:[job],authorizeOverride:async({ownerId,projectId:pid,action})=>ownerId===editor&&pid===project&&action==="read"});
