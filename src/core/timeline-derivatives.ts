@@ -12,6 +12,9 @@ export interface DerivativeEligibility {
   reason:string;
 }
 
+const isSha256=(value:unknown):value is string=>typeof value==="string"&&/^[a-f0-9]{64}$/i.test(value);
+const sameSha256=(left:unknown,right:unknown):boolean=>isSha256(left)&&isSha256(right)&&left.toLowerCase()===right.toLowerCase();
+
 /** A derivative is selectable only when its parent and independently verified processing evidence agree. */
 export function assessDerivativeEligibility(asset:DerivativeAsset, sourceAssetId:string, sourceMediaType?:string):DerivativeEligibility {
   if(!asset.id||asset.derivativeOf!==sourceAssetId)return {eligible:false,reason:"Derivative does not identify this clip's current source as its parent."};
@@ -22,8 +25,8 @@ export function assessDerivativeEligibility(asset:DerivativeAsset, sourceAssetId
   const sourceHash=asset.metadata?.sourceSha256;
   const outputHash=evidence.outputSha256;
   if(evidence.sourceAssetId!==sourceAssetId)return {eligible:false,reason:"Processing source asset does not match the derivative parent."};
-  if(typeof sourceHash!=="string"||!/^[a-f0-9]{64}$/i.test(sourceHash)||evidence.inputSha256!==sourceHash)return {eligible:false,reason:"Source checksum evidence is missing or inconsistent."};
-  if(typeof asset.sha256!=="string"||!/^[a-f0-9]{64}$/i.test(asset.sha256)||outputHash!==asset.sha256)return {eligible:false,reason:"Output checksum does not match the persisted asset checksum."};
+  if(!sameSha256(sourceHash,evidence.inputSha256))return {eligible:false,reason:"Source checksum evidence is missing or inconsistent."};
+  if(!sameSha256(asset.sha256,outputHash))return {eligible:false,reason:"Output checksum does not match the persisted asset checksum."};
   if(evidence.dimensionsVerified!==true)return {eligible:false,reason:"Output dimensions have not been verified."};
   if(evidence.decoderVerified!==true)return {eligible:false,reason:"Output decoder verification has not passed."};
   if(evidence.qualityReview!=="reviewed_pass")return {eligible:false,reason:evidence.qualityReview==="reviewed_fail"?"Derivative was rejected during quality review.":"Independent quality review is still pending."};
