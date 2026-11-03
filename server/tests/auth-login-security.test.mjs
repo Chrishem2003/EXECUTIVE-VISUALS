@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import {
   ensureAuthSecuritySchema, getLoginLockState, recordFailedLogin, clearLoginFailures,
-  AUTH_BASE_LOCK_MS, AUTH_MAX_LOCK_MS, loginIdentifierHash, recordLoginLockoutEvent
+  AUTH_BASE_LOCK_MS, AUTH_MAX_LOCK_MS, loginIdentifierHash, recordLoginLockoutEvent, listAuthSecurityEvents
 } from "../auth-login-security.mjs";
 
 function setup() {
@@ -157,5 +157,21 @@ test("security event retention removes records older than 90 days", () => {
   recordFailedLogin(db,"retention@example.com",old+91*24*60*60*1000);
   const oldest=db.prepare("SELECT MIN(created_at_ms) AS value FROM auth_security_events").get().value;
   assert.equal(oldest,old+91*24*60*60*1000);
+  db.close();
+});
+
+test("security event listing is bounded, newest-first, cursor-paginated and filterable", () => {
+  const db=setup(),t=1_800_000_000_000;
+  for(let n=0;n<8;n++)recordFailedLogin(db,"listing@example.com",t+n);
+  const first=listAuthSecurityEvents(db,{limit:3});
+  assert.equal(first.length,3);
+  assert.deepEqual(first.map(row=>row.id),[8,7,6]);
+  const next=listAuthSecurityEvents(db,{limit:3,beforeId:first.at(-1).id});
+  assert.deepEqual(next.map(row=>row.id),[5,4,3]);
+  const locked=listAuthSecurityEvents(db,{eventType:"account_locked",limit:1000});
+  assert.equal(locked.length,2);
+  assert.throws(()=>listAuthSecurityEvents(db,{eventType:"unknown"}),/Unsupported/);
+  assert.throws(()=>listAuthSecurityEvents(db,{beforeId:"not-a-number"}),/cursor/);
+  assert.ok(first.every(row=>!Object.hasOwn(row,"email")&&!Object.hasOwn(row,"ipAddress")));
   db.close();
 });
