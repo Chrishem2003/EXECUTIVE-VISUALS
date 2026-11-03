@@ -9,13 +9,22 @@ export function buildAudioDuckingGraph(audioItems=[]){
  const music=items.filter(item=>item?.role==="music"&&item?.duckingEnabled===true&&typeof item.label==="string");
  const filters=[],outputLabels=items.filter(item=>typeof item?.label==="string").map(item=>item.label);
  if(!voices.length||!music.length)return{filters,outputLabels,duckedClips:0};
- let sidechainLabel=voices[0].label;
- if(voices.length>1){sidechainLabel="ducking-voice-bus";filters.push(voices.map(item=>"["+item.label+"]").join("")+"amix=inputs="+voices.length+":duration=longest:normalize=0["+sidechainLabel+"]");}
+ const voiceSidechainLabels=[];
+ for(let index=0;index<voices.length;index++){
+  const voice=voices[index],mainLabel="voice-main-"+index,sideLabel="voice-sidechain-"+index;
+  filters.push("["+voice.label+"]asplit=2["+mainLabel+"]["+sideLabel+"]");
+  const outputIndex=outputLabels.indexOf(voice.label);if(outputIndex>=0)outputLabels[outputIndex]=mainLabel;
+  voiceSidechainLabels.push("["+sideLabel+"]");
+ }
+ let sidechainLabel;
+ if(voiceSidechainLabels.length===1)sidechainLabel=voiceSidechainLabels[0].slice(1,-1);
+ else{sidechainLabel="ducking-voice-bus";filters.push(voiceSidechainLabels.join("")+"amix=inputs="+voiceSidechainLabels.length+":duration=longest:normalize=0["+sidechainLabel+"]");}
  let duckedClips=0;
  for(let index=0;index<music.length;index++){
   const item=music[index],settings=normalizeDuckingSettings(item.settings),output="ducked-music-"+index;
   filters.push("["+item.label+"]["+sidechainLabel+"]sidechaincompress=threshold="+Math.pow(10,settings.thresholdDb/20).toFixed(6)+":ratio="+settings.ratio.toFixed(2)+":attack="+settings.attackMs.toFixed(1)+":release="+settings.releaseMs.toFixed(1)+"["+output+"]");
-  const outputIndex=outputLabels.indexOf(item.label);if(outputIndex>=0)outputLabels[outputIndex]=output;duckedClips++;
+  const outputIndex=outputLabels.indexOf(item.label);if(outputIndex>=0)outputLabels[outputIndex]=output;
+  duckedClips++;
  }
  return{filters,outputLabels,duckedClips};
 }
