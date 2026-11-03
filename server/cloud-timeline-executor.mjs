@@ -87,11 +87,10 @@ export function createCloudTimelineExecutor({timelines,mediaIO,renderTimeline,pr
         const asset=await mediaIO.materialize({ownerId:job.owner_id,assetId:assetIds[i],...(signal?{signal}:{})});
         if(!asset||typeof asset.path!=="string"||!asset.asset||asset.asset.id!==assetIds[i]){await cleanupMaterializedAsset(asset);throw new Error("Cloud timeline source materialization returned invalid asset metadata.");}
         materialized.set(assetIds[i],asset);
-        const sourceBytes=Number(asset.asset.size??asset.asset.byteSize);
-        if(Number.isSafeInteger(sourceBytes)&&sourceBytes>=0){
-          totalInputBytes+=sourceBytes;
-          if(totalInputBytes>maxInputBytes)throw Object.assign(new Error("Timeline source assets exceed the configured cloud render input limit."),{code:"CLOUD_TIMELINE_INPUT_TOO_LARGE"});
-        }
+        const sourceInfo=await stat(asset.path);
+        if(!sourceInfo.isFile()||sourceInfo.size<1)throw Object.assign(new Error("Cloud timeline source materialized as an empty or invalid file."),{code:"CLOUD_TIMELINE_SOURCE_INVALID"});
+        totalInputBytes+=sourceInfo.size;
+        if(totalInputBytes>maxInputBytes)throw Object.assign(new Error("Timeline source assets exceed the configured cloud render input limit."),{code:"CLOUD_TIMELINE_INPUT_TOO_LARGE"});
         onProgress(Math.min(25,5+Math.round((i+1)/assetIds.length*20)));
       }
       const output=await renderTimeline({timeline:record.timeline,assets:materialized,workDir,signal,onProgress,timelineRevision:record.revision});
