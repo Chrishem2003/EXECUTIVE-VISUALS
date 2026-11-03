@@ -1,5 +1,5 @@
 const SCHEMA = "executive_visuals";
-const RPC = new Set(["claim_next_job","renew_job_lease","recover_expired_jobs","recover_expired_jobs_by_type","finish_job","retry_job","report_job_progress","check_job_cancellation","heartbeat_worker","list_worker_health","prune_worker_heartbeats","list_job_diagnostics"]);
+const RPC = new Set(["claim_next_job","renew_job_lease","recover_expired_jobs","recover_expired_jobs_by_type","finish_job","retry_job","report_job_progress","check_job_cancellation","heartbeat_worker","list_worker_health","prune_worker_heartbeats","list_job_diagnostics","list_asset_cleanup_diagnostics"]);
 
 function endpoint(value) {
   let url;
@@ -91,6 +91,20 @@ export function createCloudQueue({
         }
       }
       return rows;
+    },
+    async listAssetCleanupDiagnostics() {
+      const result=await call("list_asset_cleanup_diagnostics",{});
+      if(!result||typeof result!=="object"||Array.isArray(result)
+        ||Object.keys(result).sort().join(",")!=="oldest_pending_age_seconds,oldest_pending_at,pending_count,pending_over_24_hours,pending_over_7_days"
+        ||![result.pending_count,result.pending_over_24_hours,result.pending_over_7_days,result.oldest_pending_age_seconds].every(value=>Number.isInteger(value)&&value>=0)
+        ||result.pending_over_24_hours>result.pending_count
+        ||result.pending_over_7_days>result.pending_over_24_hours
+        ||(result.oldest_pending_at!==null&&(typeof result.oldest_pending_at!=="string"||!Number.isFinite(Date.parse(result.oldest_pending_at))))
+        ||(result.pending_count===0&&(result.oldest_pending_at!==null||result.oldest_pending_age_seconds!==0))
+        ||(result.pending_count>0&&result.oldest_pending_at===null)){
+        throw new Error("Cloud asset cleanup diagnostics returned a malformed or unsafe result.");
+      }
+      return result;
     },
     async listJobDiagnostics({limit=100,queueStaleAfterSeconds=900,leaseStaleAfterSeconds=180}={}) {
       if(!Number.isInteger(limit)||limit<1||limit>200)throw new Error("Job diagnostics limit must be between 1 and 200.");
