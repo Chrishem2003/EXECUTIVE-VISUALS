@@ -25,7 +25,7 @@ const provider=createServer(async(req,res)=>{
  if(req.url.startsWith("/rest/v1/assets")&&req.method==="PATCH"){
   assetRow={...assetRow,deleted_at:"2026-11-03T00:01:00.000Z"};res.end(JSON.stringify([assetRow]));return;
  }
- if(req.url.startsWith("/rest/v1/assets")){const query=new URL(req.url,"http://provider").searchParams;const derivative=query.get("derivative_of");const id=query.get("id");const match=assetRow&&!assetRow.deleted_at&&(!derivative||assetRow.derivative_of==="eq."+derivative)&&(!id||assetRow.id==="eq."+id);res.end(JSON.stringify(match?[assetRow]:[]));return;}
+ if(req.url.startsWith("/rest/v1/assets")){const query=new URL(req.url,"http://provider").searchParams;const derivative=query.get("derivative_of")?.replace(/^eq\./,"");const id=query.get("id")?.replace(/^eq\./,"");const match=assetRow&&!assetRow.deleted_at&&(!derivative||assetRow.derivative_of===derivative)&&(!id||assetRow.id===id);res.end(JSON.stringify(match?[assetRow]:[]));return;}
  res.statusCode=404;res.end(JSON.stringify({message:"not found"}));
 });
 const listen=server=>new Promise(resolve=>server.listen(0,"127.0.0.1",()=>resolve(server.address().port)));
