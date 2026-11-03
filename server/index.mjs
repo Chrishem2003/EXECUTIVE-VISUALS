@@ -1,6 +1,7 @@
 import { createServer } from "node:http";
 import { createSupabaseAuth } from "./supabase-auth.mjs";
 import { createAuthRateLimiter } from "./auth-rate-limit.mjs";
+import { isBlockedDotPath } from "./static-path-security.mjs";
 import { ensureAuthSecuritySchema, getLoginLockState, recordFailedLogin, clearLoginFailures } from "./auth-login-security.mjs";
 import { createHash, randomBytes, randomUUID, scryptSync, timingSafeEqual } from "node:crypto";
 import { createReadStream, createWriteStream, existsSync, statSync } from "node:fs";
@@ -268,6 +269,7 @@ export function createAppServer() {
     if(ratePath){const key=(req.socket.remoteAddress||"unknown")+ratePath;const limit=ratePath==="/auth"?AUTH_RATE_LIMIT:ratePath==="/research"?10:ratePath==="/ai-upscale-self-test"?2:30;if(!authRateLimiter.allow(key,limit,60000)){fail(res,429,"RATE_LIMITED","Too many requests. Wait before trying again.");return;}}
     try {
       if(!path.startsWith("/api/")&&req.method==="GET"){
+        if(isBlockedDotPath(path)){fail(res,404,"NOT_FOUND","Resource not found.");return;}
         const decoded=decodeURIComponent(path);
         let file=resolve(WEB_ROOT,"."+decoded);
         const webPrefix=WEB_ROOT.endsWith(sep)?WEB_ROOT:WEB_ROOT+sep;
