@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readCloudWorkerConfig,createCloudWorkerSupervisor } from "../cloud-worker-process.mjs";
+import { EventEmitter } from "node:events";
+import { readCloudWorkerConfig,createCloudWorkerSupervisor,registerCloudWorkerShutdownHandlers } from "../cloud-worker-process.mjs";
 
 const env={CLOUD_WORKER_ENABLED:"true",CLOUD_MEDIA_WORKER_ENABLED:"true",CLOUD_TIMELINE_WORKER_ENABLED:"true",SUPABASE_URL:"https://example.supabase.co",SUPABASE_SERVICE_ROLE_KEY:"server-secret"};
 test("cloud worker config remains disabled unless explicitly enabled",()=>{assert.throws(()=>readCloudWorkerConfig({...env,CLOUD_WORKER_ENABLED:"false"}),/disabled/);});
@@ -90,4 +91,27 @@ test("cloud worker supervisor shutdown waits for startup recovery and does not r
  await Promise.all([starting,stopping]);
  assert.equal(stopFinished,true);
  assert.equal(cycles,0);
+});
+
+
+test("shutdown handlers are installed before worker startup can await recovery",async()=>{
+ const signals=new EventEmitter(),calls=[];
+ let releaseStop;
+ const stopGate=new Promise(resolve=>{releaseStop=resolve;});
+ const supervisor={async stop(){calls.push("stop-started");await stopGate;calls.push("stop-finished");}};
+ const exits=[];
+ const unregister=registerCloudWorkerShutdownHandlers(supervisor,signals,code=>exits.push(code));
+ const handlerCount=signals.listenerCount("SIGTERM");
+ assert.equal(handlerCount,1);
+ signals.emit("SIGTERM");
+ await Promise.resolve();
+ assert.deepEqual(calls,["stop-started"]);
+ assert.deepEqual(exits,[]);
+ releaseStop();
+ await new Promise(resolve=>setImmediate(resolve));
+ assert.deepEqual(calls,["stop-started","stop-finished"]);
+ assert.deepEqual(exits,[0]);
+ unregister();
+ assert.equal(signals.listenerCount("SIGTERM"),0);
+ assert.equal(signals.listenerCount("SIGINT"),0);
 });
