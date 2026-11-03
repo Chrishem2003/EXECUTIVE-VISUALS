@@ -8,7 +8,7 @@ test("uses one atomic Redis script with a hashed namespaced key and expires its 
  let request;
  const limiter=createRedisRestRateLimiter({...config,fetchImpl:async(url,options)=>{request={url:String(url),options};return {ok:true,json:async()=>({result:2})};}});
  assert.equal(await limiter.allow("203.0.113.10/auth",2,60000),true);
- assert.equal(request.url,config.url);
+ assert.equal(request.url,new URL(config.url).toString());
  assert.equal(request.options.method,"POST");
  assert.equal(request.options.headers.authorization,"Bearer "+config.token);
  const command=JSON.parse(request.options.body);
