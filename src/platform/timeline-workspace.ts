@@ -266,15 +266,29 @@ async function refresh(){
  if(!state.timeline?.tracks.some(track=>track.clips.some(clip=>clip.id===state.selectedClipId)))state.selectedClipId="";
  state.status="ready";state.message="";await loadVariantComparison();
 }
+let persistQueue:Promise<void>=Promise.resolve();
 async function persist(){
- if(!state.timeline)return;
- const otio=toOpenTimelineIo(state.timeline);
- if(state.mode==="cloud"){
-  const result=await apiRequest<{timeline:CloudSavedTimeline}>("/api/cloud/timelines/"+state.timeline.id,{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({expectedRevision:state.serverRevision,timeline:state.timeline,otio})});
-  state.serverRevision=result.timeline.revision;state.timeline={...state.timeline,revision:result.timeline.revision};state.status="ready";state.message="Saved cloud revision "+result.timeline.revision+".";return;
- }
- const result=await apiRequest<{revision:number}>("/api/timelines/"+state.timeline.id,{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({revision:state.serverRevision,name:state.timeline.name,timeline:state.timeline,otio})});
- state.serverRevision=result.revision;state.timeline={...state.timeline,revision:result.revision};state.status="ready";state.message="Saved revision "+result.revision+".";
+ const save=async()=>{
+  if(!state.timeline)return;
+  // Capture the document and revision together. A queued save reads the latest
+  // editor state only when its turn starts, so rapid edits cannot race on one
+  // expected revision or accidentally persist an older snapshot last.
+  const snapshot=structuredClone(state.timeline),expectedRevision=state.serverRevision;
+  const otio=toOpenTimelineIo(snapshot);
+  if(state.mode==="cloud"){
+   const result=await apiRequest<{timeline:CloudSavedTimeline}>("/api/cloud/timelines/"+snapshot.id,{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({expectedRevision,timeline:snapshot,otio})});
+   state.serverRevision=result.timeline.revision;
+   if(state.timeline?.id===snapshot.id)state.timeline={...state.timeline,revision:result.timeline.revision};
+   state.status="ready";state.message="Saved cloud revision "+result.timeline.revision+".";return;
+  }
+  const result=await apiRequest<{revision:number}>("/api/timelines/"+snapshot.id,{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({revision:expectedRevision,name:snapshot.name,timeline:snapshot,otio})});
+  state.serverRevision=result.revision;
+  if(state.timeline?.id===snapshot.id)state.timeline={...state.timeline,revision:result.revision};
+  state.status="ready";state.message="Saved revision "+result.revision+".";
+ };
+ const queued=persistQueue.then(save,save);
+ persistQueue=queued.catch(()=>{});
+ return queued;
 }
 async function createCloudTimeline(){
  if(state.mode!=="cloud"||!state.cloudProjectId)throw new Error("Select a cloud project before creating a timeline.");
