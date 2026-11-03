@@ -371,7 +371,7 @@ export function createAppServer() {
       }
       const user=await authenticate(req);
       if(!user){fail(res,401,"AUTH_REQUIRED","Sign in to access this workspace.");return;}
-      if(path==="/api/me"&&req.method==="GET"){send(res,200,{user,authMode:AUTH_MODE},cors);return;}
+      if(path==="/api/me"&&req.method==="GET"){const securityAdmins=String(process.env.AUTH_SECURITY_ADMIN_EMAILS||"").split(",").map(value=>value.trim().toLowerCase()).filter(Boolean);send(res,200,{user,authMode:AUTH_MODE,capabilities:{securityEvents:securityAdmins.includes(String(user.email||"").toLowerCase())}},cors);return;}
       const upscaleBenchmarksMatch=path.match(/^\/api\/upscale-benchmarks(?:\/(fixtures|runs)(?:\/([0-9a-f-]+)\/review)?)?$/i);
       if(upscaleBenchmarksMatch){
         const section=upscaleBenchmarksMatch[1]||"";
