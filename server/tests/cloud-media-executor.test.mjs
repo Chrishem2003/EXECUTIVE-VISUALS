@@ -459,6 +459,10 @@ test("cloud AI upscale publishes a separate image derivative with engine provena
     assert.equal(result.processing.engine, "realesrgan-ncnn-vulkan");
     assert.equal(result.processing.model, model);
     assert.equal(result.processing.scale, 4);
+    assert.ok(result.processing.runtime);
+    assert.equal(result.processing.runtime.platform, process.platform);
+    assert.ok(result.processing.runtime.logicalCores > 0);
+    assert.equal(published.metadata.processing.runtime.cpuModel, result.processing.runtime.cpuModel);
     assert.equal(result.processing.dimensionsVerified, true);
     assert.equal(result.processing.outputWidth, 40);
     assert.equal(result.processing.outputHeight, 40);
