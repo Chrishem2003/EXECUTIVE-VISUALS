@@ -184,3 +184,12 @@ test("worker health snapshot migration computes stale state and restricts access
  assert.match(sql,/grant execute on function executive_visuals\.list_worker_health\(integer,integer\) to service_role/);
  assert.match(sql,/p_stale_after_seconds not between 30 and 3600/);
 });
+
+test("worker heartbeat migration defines bounded retention cleanup for old identities",async()=>{
+ const sql=await readFile(new URL("../../supabase/migrations/20261103210000_cloud_worker_health_snapshot.sql",import.meta.url),"utf8");
+ assert.match(sql,/create or replace function executive_visuals\.prune_worker_heartbeats/);
+ assert.match(sql,/p_retention_days not between 7 and 180/);
+ assert.match(sql,/p_limit not between 1 and 1000/);
+ assert.match(sql,/for update skip locked/);
+ assert.match(sql,/grant execute on function executive_visuals\.prune_worker_heartbeats\(integer,integer\) to service_role/);
+});
