@@ -19,6 +19,7 @@ import { ensureRemoteUsageTable, getRemoteUsagePolicy } from "./usage-guardrails
 import { createCloudTimelineApi } from "./cloud-timeline-api.mjs";
 import { validateSrt, validateWebVtt } from "./caption-validation.mjs";
 import { ensureTransformationPlanSchema, createTransformationPlan, approveTransformationPlan, listTransformationPlans, getTransformationPlan } from "./transformation-plans.mjs";
+import { ensureAuthSecuritySchema, getLoginLockState, recordFailedLogin, clearLoginFailures } from "./auth-login-security.mjs";
 
 const PORT = Number(process.env.API_PORT || process.env.PORT || 4179);
 const HOST = process.env.API_HOST || "127.0.0.1";
@@ -49,6 +50,7 @@ const EXTENSIONS = {
 const MEDIA_JOBS = new Set(["media.probe","media.thumbnail","media.transcode","media.audio_extract","media.audio-clean","media.proxy","media.denoise","media.color","media.resize","media.interpolate","media.upscale","media.ai-upscale","timeline.render"]);
 const db = openDatabase(DB_FILE);
 ensureTransformationPlanSchema(db);
+ensureAuthSecuritySchema(db);
 const aiUpscaleAdapter = createRealEsrganAdapter();
 const cloudTimelineApiEnabled = process.env.CLOUD_TIMELINE_API_ENABLED === "true";
 if (cloudTimelineApiEnabled && AUTH_MODE !== "supabase") throw new Error("Cloud timeline API requires verified Supabase authentication.");
@@ -57,7 +59,7 @@ if (cloudTimelineApi) await cloudTimelineApi.checkReadiness();
 const activeProcesses = new Map();
 const WORKER_ID = randomUUID();
 const rateBuckets = new Map();
-const AUTH_RATE_LIMIT = Math.max(1, Math.min(1000, Number(process.env.AUTH_RATE_LIMIT) || 20));
+const AUTH_RATE_LIMIT = Math.max(1, Math.min(1000, Number(process.env.AUTH_RATE_LIMIT) || 10));
 function rateAllowed(key,limit,windowMs){const time=Date.now();const old=rateBuckets.get(key);if(!old||time-old.start>=windowMs){rateBuckets.set(key,{start:time,count:1});return true;}old.count++;return old.count<=limit;}
 await mkdir(join(MEDIA_ROOT,"uploads"), { recursive:true });
 await mkdir(join(MEDIA_ROOT,"derived"), { recursive:true });
@@ -291,10 +293,17 @@ export function createAppServer() {
         if(AUTH_MODE!=="local"){fail(res,403,"USE_EXTERNAL_AUTH","Sign in through the configured identity provider.");return;}
         const body=await readJson(req);const email=String(body.email||"").trim().toLowerCase();const password=String(body.password||"");
         if(password.length===0||password.length>256){fail(res,401,"INVALID_CREDENTIALS","Email or password is incorrect.");return;}
+        const lockState=getLoginLockState(db,email);
+        if(lockState.locked){const retrySeconds=Math.max(1,Math.ceil(lockState.retryAfterMs/1000));send(res,423,{error:{code:"ACCOUNT_TEMPORARILY_LOCKED",message:"Sign-in is temporarily locked. Try again after the displayed wait."},retryAfterSeconds:retrySeconds},{"retry-after":String(retrySeconds),...cors});return;}
         const user=db.prepare("SELECT * FROM users WHERE email=? COLLATE NOCASE").get(email);
         const candidate=user?scryptSync(password,user.password_salt,64).toString("hex"):"";
         const valid=!!user&&candidate.length===user.password_hash.length&&timingSafeEqual(Buffer.from(candidate,"hex"),Buffer.from(user.password_hash,"hex"));
-        if(!valid){fail(res,401,"INVALID_CREDENTIALS","Email or password is incorrect.");return;}
+        if(!valid){
+          const failure=recordFailedLogin(db,email);
+          if(failure.locked){const retrySeconds=Math.max(1,Math.ceil(failure.retryAfterMs/1000));send(res,423,{error:{code:"ACCOUNT_TEMPORARILY_LOCKED",message:"Sign-in is temporarily locked after repeated failures. Try again after the displayed wait."},retryAfterSeconds:retrySeconds},{"retry-after":String(retrySeconds),...cors});return;}
+          fail(res,401,"INVALID_CREDENTIALS","Email or password is incorrect.");return;
+        }
+        clearLoginFailures(db,email);
         const token=createLocalSession(user.id);setCookie(res,token,SESSION_DAYS*86400);
         send(res,200,{user:{id:user.id,email:user.email},authMode:"local"},cors);return;
       }
