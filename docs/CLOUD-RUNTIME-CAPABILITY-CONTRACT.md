@@ -25,6 +25,6 @@ The server reports cloud capabilities only when `CLOUD_TIMELINE_API_ENABLED=true
 
 ## Integration status
 
-The server-side cloud asset API supports project-scoped listing, streamed upload, private signed downloads, and soft deletion. The current browser workspace still uses the local project and asset APIs. A complete browser migration must switch project CRUD, asset listing/upload/download/delete, job routing, and relevant workspace refreshes together; mixing local project IDs with cloud asset IDs is unsafe and unsupported.
+The server-side cloud asset API supports project-scoped listing, streamed upload, private signed downloads, and soft deletion. When the server advertises both cloud project and asset capabilities, the browser now selects cloud project listing/creation, project-scoped asset listing and streamed upload, short-lived signed asset URLs, soft deletion, and project-scoped job listing. Project archival uses optimistic revisions. The browser never falls back to a local asset URL in cloud mode. Unsupported cloud operations (generic media job submission/cancellation, membership administration, reviews and creative-draft endpoints) remain explicitly gated rather than sending cloud IDs to local APIs. Cloud mode remains off by default.
 
 No cloud project, database, bucket, policy, migration, or hosted service is provisioned by this contract. Use a dedicated Executive Visuals Supabase project before enabling cloud mode; do not reuse shared or unrelated projects.
