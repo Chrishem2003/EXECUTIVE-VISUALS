@@ -1,6 +1,7 @@
 import { createServer } from "node:http";
 import { createSupabaseAuth } from "./supabase-auth.mjs";
 import { createAuthRateLimiter } from "./auth-rate-limit.mjs";
+import { ensureAuthSecuritySchema, getLoginLockState, recordFailedLogin, clearLoginFailures } from "./auth-login-security.mjs";
 import { createHash, randomBytes, randomUUID, scryptSync, timingSafeEqual } from "node:crypto";
 import { createReadStream, createWriteStream, existsSync, statSync } from "node:fs";
 import { mkdir, unlink, open, readFile } from "node:fs/promises";
@@ -54,6 +55,7 @@ const EXTENSIONS = {
 const MEDIA_JOBS = new Set(["media.probe","media.thumbnail","media.transcode","media.audio_extract","media.audio-clean","media.proxy","media.denoise","media.color","media.resize","media.interpolate","media.upscale","media.ai-upscale","timeline.render"]);
 const db = openDatabase(DB_FILE);
 ensureTransformationPlanSchema(db);
+ensureAuthSecuritySchema(db);
 const aiUpscaleAdapter = createRealEsrganAdapter();
 const cloudTimelineApiEnabled = process.env.CLOUD_TIMELINE_API_ENABLED === "true";
 if (cloudTimelineApiEnabled && AUTH_MODE !== "supabase") throw new Error("Cloud timeline API requires verified Supabase authentication.");
@@ -61,7 +63,7 @@ const cloudTimelineApi = cloudTimelineApiEnabled ? createCloudTimelineApi({maxUp
 if (cloudTimelineApi) await cloudTimelineApi.checkReadiness();
 const activeProcesses = new Map();
 const WORKER_ID = randomUUID();
-const AUTH_RATE_LIMIT = Math.max(1, Math.min(1000, Number(process.env.AUTH_RATE_LIMIT) || 20));
+const AUTH_RATE_LIMIT = Math.max(1, Math.min(1000, Number(process.env.AUTH_RATE_LIMIT) || 10));
 const authRateLimiter=createAuthRateLimiter();
 await mkdir(join(MEDIA_ROOT,"uploads"), { recursive:true });
 await mkdir(join(MEDIA_ROOT,"derived"), { recursive:true });
@@ -298,17 +300,32 @@ export function createAppServer() {
         send(res,201,{user:{id,email},authMode:"local"},cors);return;
       }
       if(path==="/api/auth/login"&&req.method==="POST"){
+        const body=await readJson(req);const email=String(body.email||"").trim().toLowerCase();const password=String(body.password||"");
+        const lockState=getLoginLockState(db,email);
+        if(lockState.locked){const retrySeconds=Math.max(1,Math.ceil(lockState.retryAfterMs/1000));send(res,423,{error:{code:"ACCOUNT_TEMPORARILY_LOCKED",message:"Sign-in is temporarily locked. Try again after the displayed wait."},retryAfterSeconds:retrySeconds},{"retry-after":String(retrySeconds),...cors});return;}
         if(AUTH_MODE==="supabase"){
           if(!supabaseAuth){fail(res,503,"AUTH_NOT_CONFIGURED","The external identity provider is not configured.");return;}
-          const body=await readJson(req);if(!authRateLimiter.allowEmail("signIn",body.email)){fail(res,429,"AUTH_EMAIL_RATE_LIMITED","Too many sign-in attempts for this email. Try again later.");return;}try{const result=await supabaseAuth.signInWithPassword({email:body.email,password:String(body.password||"")});setSupabaseRefreshCookie(res,result.refreshToken);send(res,200,{user:result.user,accessToken:result.accessToken,expiresIn:result.expiresIn,authMode:"supabase"},cors);return;}
-          catch(error){fail(res,error.status||502,error.code||"LOGIN_FAILED",String(error.message||"Sign-in failed.").slice(0,300));return;}
+          if(!authRateLimiter.allowEmail("signIn",email)){fail(res,429,"AUTH_EMAIL_RATE_LIMITED","Too many sign-in attempts for this email. Try again later.");return;}
+          try{
+            const result=await supabaseAuth.signInWithPassword({email,password});
+            clearLoginFailures(db,email);
+            setSupabaseRefreshCookie(res,result.refreshToken);
+            send(res,200,{user:result.user,accessToken:result.accessToken,expiresIn:result.expiresIn,authMode:"supabase"},cors);return;
+          }catch(error){
+            if([400,401].includes(Number(error.status))){
+              const failure=recordFailedLogin(db,email);
+              if(failure.locked){const retrySeconds=Math.max(1,Math.ceil(failure.retryAfterMs/1000));send(res,423,{error:{code:"ACCOUNT_TEMPORARILY_LOCKED",message:"Sign-in is temporarily locked after repeated failures. Try again after the displayed wait."},retryAfterSeconds:retrySeconds},{"retry-after":String(retrySeconds),...cors});return;}
+              fail(res,401,"INVALID_CREDENTIALS","Email or password is incorrect.");return;
+            }
+            fail(res,error.status||502,error.code||"LOGIN_FAILED","Sign-in could not be completed. Please try again.");return;
+          }
         }
-        const body=await readJson(req);const email=String(body.email||"").trim().toLowerCase();const password=String(body.password||"");
-        if(password.length===0||password.length>256){fail(res,401,"INVALID_CREDENTIALS","Email or password is incorrect.");return;}
+        if(password.length===0||password.length>256){const failure=recordFailedLogin(db,email);if(failure.locked){const retrySeconds=Math.max(1,Math.ceil(failure.retryAfterMs/1000));send(res,423,{error:{code:"ACCOUNT_TEMPORARILY_LOCKED",message:"Sign-in is temporarily locked after repeated failures. Try again after the displayed wait."},retryAfterSeconds:retrySeconds},{"retry-after":String(retrySeconds),...cors});return;}fail(res,401,"INVALID_CREDENTIALS","Email or password is incorrect.");return;}
         const user=db.prepare("SELECT * FROM users WHERE email=? COLLATE NOCASE").get(email);
         const candidate=user?scryptSync(password,user.password_salt,64).toString("hex"):"";
         const valid=!!user&&candidate.length===user.password_hash.length&&timingSafeEqual(Buffer.from(candidate,"hex"),Buffer.from(user.password_hash,"hex"));
-        if(!valid){fail(res,401,"INVALID_CREDENTIALS","Email or password is incorrect.");return;}
+        if(!valid){const failure=recordFailedLogin(db,email);if(failure.locked){const retrySeconds=Math.max(1,Math.ceil(failure.retryAfterMs/1000));send(res,423,{error:{code:"ACCOUNT_TEMPORARILY_LOCKED",message:"Sign-in is temporarily locked after repeated failures. Try again after the displayed wait."},retryAfterSeconds:retrySeconds},{"retry-after":String(retrySeconds),...cors});return;}fail(res,401,"INVALID_CREDENTIALS","Email or password is incorrect.");return;}
+        clearLoginFailures(db,email);
         const token=createLocalSession(user.id);setCookie(res,token,SESSION_DAYS*86400);
         send(res,200,{user:{id:user.id,email:user.email},authMode:"local"},cors);return;
       }
