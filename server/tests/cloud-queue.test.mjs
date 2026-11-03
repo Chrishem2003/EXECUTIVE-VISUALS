@@ -98,3 +98,17 @@ test("progress reporting uses the lease-fenced RPC and validates its boolean res
  const malformed=createCloudQueue({...base,fetchImpl:async()=>response("yes")});
  await assert.rejects(()=>malformed.reportProgress("job-1","worker-1",20),/invalid result/);
 });
+
+test("worker cancellation polling is lease-aware and validates its RPC response",async()=>{
+ const requests=[];
+ const queue=createCloudQueue({...base,fetchImpl:async(url,options)=>{
+  requests.push({url,body:JSON.parse(options.body)});
+  return response({leaseValid:true,cancelRequested:true});
+ }});
+ assert.deepEqual(await queue.checkCancellation("job-1","worker-1"),{leaseValid:true,cancelRequested:true});
+ assert.equal(requests[0].url,"https://example.supabase.co/rest/v1/rpc/check_job_cancellation");
+ assert.deepEqual(requests[0].body,{p_job_id:"job-1",p_worker_id:"worker-1"});
+ const malformed=createCloudQueue({...base,fetchImpl:async()=>response({leaseValid:false,cancelRequested:true})});
+ await assert.rejects(()=>malformed.checkCancellation("job-1","worker-1"),/invalid result/);
+ await assert.rejects(()=>queue.checkCancellation("","worker-1"),/required/);
+});
