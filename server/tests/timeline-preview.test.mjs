@@ -28,6 +28,10 @@ test("preview seek clamps to source in/out and frame steps use source rate",()=>
 test("invalid frame and playback inputs fail closed",()=>{
  assert.throws(()=>frameToSeconds(-1,rate));
  assert.throws(()=>secondsToFrame(Number.NaN,rate));
+ assert.throws(()=>secondsToFrame(1,{numerator:0,denominator:1}));
+ assert.throws(()=>secondsToFrame(1,{numerator:24.5,denominator:1}));
+ assert.throws(()=>secondsToFrame(1,{numerator:24,denominator:Number.NaN}));
+ assert.throws(()=>secondsToFrame(1,{numerator:24,denominator:0}));
  assert.throws(()=>stepPreviewSeconds(4,1,0,3,8));
  assert.throws(()=>clampPreviewSeconds(2,4,3));
 });
