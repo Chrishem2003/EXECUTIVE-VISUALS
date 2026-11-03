@@ -32,6 +32,12 @@ export function analyzeTimelineQuality(timeline:EditorialTimeline|null,assets:Ti
  if(overlays.some(track=>!track.clips.length))findings.push({code:"EMPTY_OVERLAY_TRACK",severity:"info",title:"Empty overlay track",detail:"An enabled overlay track has no clips; remove it or add the intended graphic."});
  for(const track of tracks){
   for(const clip of track.clips){
+   const speed=clip.speed??1;
+   if(!Number.isFinite(speed)||speed<=0){
+    findings.push({code:"INVALID_CLIP_SPEED",severity:"error",title:"Clip speed is invalid",detail:"“"+clip.name+"” has a non-finite or non-positive playback speed. Correct the speed before rendering.",trackId:track.id,clipId:clip.id});
+   }else if(Math.abs(speed-1)>0.000001){
+    findings.push({code:"UNSUPPORTED_TIME_REMAP",severity:"error",title:"Clip speed change is not supported by the master renderer",detail:"“"+clip.name+"” uses "+speed.toFixed(3)+"× playback speed. The current master renderer cannot yet time-remap this clip; reset speed to 1× before submitting a render.",trackId:track.id,clipId:clip.id});
+   }
    const asset=assets.find(item=>item.id===clip.assetId);
    if(!asset)findings.push({code:"ASSET_NOT_IN_LIBRARY",severity:"error",title:"Source asset not in current library",detail:"The source for “"+clip.name+"” is not present in the currently loaded asset list.",trackId:track.id,clipId:clip.id});
    if(asset?.derivativeOf){
