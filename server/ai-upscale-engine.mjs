@@ -175,10 +175,10 @@ export function createRealEsrganAdapter({
   }
 
   async function verifyProvenance(model, expectedFingerprint = null) {
-    if (!manifestPath) return { verified: false, reason: "ENGINE_PROVENANCE_MANIFEST_REQUIRED" };
+    if (!manifestPath) return { configured: false, verified: false, reason: "ENGINE_PROVENANCE_MANIFEST_REQUIRED" };
     try {
       const manifestInfo = await lstat(manifestPath);
-      if (!manifestInfo.isFile() || manifestInfo.isSymbolicLink() || manifestInfo.size > 16 * 1024) return { verified: false, reason: "ENGINE_MANIFEST_INVALID" };
+      if (!manifestInfo.isFile() || manifestInfo.isSymbolicLink() || manifestInfo.size > 16 * 1024) return { configured: true, verified: false, reason: "ENGINE_MANIFEST_INVALID" };
       const manifestHandle = await open(manifestPath, constants.O_RDONLY | (constants.O_NOFOLLOW || 0));
       let manifest;
       try {
@@ -192,8 +192,8 @@ export function createRealEsrganAdapter({
       const metadataValid = manifest && manifest.schemaVersion === 1 && manifest.engine === "realesrgan-ncnn-vulkan" && manifest.model === String(model) && requiredText.every(key => typeof manifest[key] === "string" && manifest[key].trim().length > 0) && /^[a-f0-9]{64}$/.test(String(manifest.binarySha256 || "")) && /^[a-f0-9]{64}$/.test(String(manifest.modelFilesSha256 || ""));
       const current = await fingerprint(String(model));
       const hashesMatch = metadataValid && current && current.binarySha256 === manifest.binarySha256 && current.modelFilesSha256 === manifest.modelFilesSha256 && (!expectedFingerprint || current.fingerprint === expectedFingerprint);
-      return { verified: Boolean(hashesMatch), source: metadataValid ? manifest.source : undefined, release: metadataValid ? manifest.release : undefined, license: metadataValid ? manifest.license : undefined, reason: !metadataValid ? "ENGINE_MANIFEST_INVALID" : !hashesMatch ? "ENGINE_MANIFEST_HASH_MISMATCH" : null };
-    } catch (error) { return { verified: false, reason: error?.code === "ENOENT" ? "ENGINE_MANIFEST_NOT_FOUND" : "ENGINE_MANIFEST_INVALID" }; }
+      return { configured: true, verified: Boolean(hashesMatch), source: metadataValid ? manifest.source : undefined, release: metadataValid ? manifest.release : undefined, license: metadataValid ? manifest.license : undefined, reason: !metadataValid ? "ENGINE_MANIFEST_INVALID" : !hashesMatch ? "ENGINE_MANIFEST_HASH_MISMATCH" : null };
+    } catch (error) { return { configured: true, verified: false, reason: error?.code === "ENOENT" ? "ENGINE_MANIFEST_NOT_FOUND" : "ENGINE_MANIFEST_INVALID" }; }
   }
 
   async function probe(model) {
