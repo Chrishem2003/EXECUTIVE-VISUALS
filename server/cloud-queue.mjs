@@ -98,31 +98,6 @@ export function createCloudQueue({
       if(!Number.isInteger(leaseStaleAfterSeconds)||leaseStaleAfterSeconds<30||leaseStaleAfterSeconds>3600)throw new Error("Worker lease stale threshold must be between 30 and 3600 seconds.");
       const rows=await call("list_job_diagnostics",{p_limit:limit,p_queue_stale_after_seconds:queueStaleAfterSeconds,p_lease_stale_after_seconds:leaseStaleAfterSeconds});
       if(!Array.isArray(rows)||rows.length>limit)throw new Error("Cloud job diagnostics returned an invalid result.");
-      const statuses=new Set(["queued","processing","failed"]);
-      const fields=["queued_too_long","lease_expired","heartbeat_stale","attempts_exhausted"];
-      for(const row of rows){
-        if(!row||typeof row!=="object"||Array.isArray(row)
-          ||typeof row.id!=="string"||typeof row.job_type!=="string"||!statuses.has(row.status)
-          ||!Number.isFinite(row.progress)||row.progress<0||row.progress>100
-          ||!Number.isInteger(row.attempt_count)||row.attempt_count<0
-          ||!Number.isInteger(row.max_attempts)||row.max_attempts<1||row.attempt_count>row.max_attempts
-          ||typeof row.created_at!=="string"||typeof row.updated_at!=="string"
-          ||!Number.isInteger(row.queue_age_seconds)||row.queue_age_seconds<0
-          ||(row.lease_age_seconds!==null&&(!Number.isInteger(row.lease_age_seconds)||row.lease_age_seconds<0))
-          ||!row.diagnostic_flags||typeof row.diagnostic_flags!=="object"||Array.isArray(row.diagnostic_flags)
-          ||fields.some(field=>typeof row.diagnostic_flags[field]!=="boolean")
-          ||("input" in row)||("output" in row)||("error" in row)||("owner_id" in row)||("project_id" in row)){
-          throw new Error("Cloud job diagnostics returned a malformed or unsafe record.");
-        }
-      }
-      return rows;
-    },
-    async listJobDiagnostics({limit=100,queueStaleAfterSeconds=900,leaseStaleAfterSeconds=180}={}) {
-      if(!Number.isInteger(limit)||limit<1||limit>200)throw new Error("Job diagnostics limit must be between 1 and 200.");
-      if(!Number.isInteger(queueStaleAfterSeconds)||queueStaleAfterSeconds<60||queueStaleAfterSeconds>86400)throw new Error("Queued-job stale threshold must be between 60 and 86400 seconds.");
-      if(!Number.isInteger(leaseStaleAfterSeconds)||leaseStaleAfterSeconds<30||leaseStaleAfterSeconds>3600)throw new Error("Worker lease stale threshold must be between 30 and 3600 seconds.");
-      const rows=await call("list_job_diagnostics",{p_limit:limit,p_queue_stale_after_seconds:queueStaleAfterSeconds,p_lease_stale_after_seconds:leaseStaleAfterSeconds});
-      if(!Array.isArray(rows)||rows.length>limit)throw new Error("Cloud job diagnostics returned an invalid result.");
       const fields=new Set(["id","job_type","status","progress","attempt_count","max_attempts","created_at","updated_at","available_at","started_at","lease_expires_at","lease_heartbeat_at","queue_age_seconds","lease_age_seconds","diagnostic_flags"]);
       const flagNames=["queued_too_long","lease_expired","heartbeat_stale","attempts_exhausted"];
       for(const row of rows){
