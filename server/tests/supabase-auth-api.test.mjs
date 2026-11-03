@@ -49,21 +49,18 @@ test("Supabase mode supports password sign-in, HttpOnly refresh cookie, session 
  assert.ok(providerCalls.some(call=>call.url.startsWith("/auth/v1/token?grant_type=refresh_token")));
  assert.ok(providerCalls.some(call=>call.url.startsWith("/auth/v1/recover")));
  assert.ok(providerCalls.some(call=>call.url==="/auth/v1/logout"));
-});
+ const lockoutEmail="lockout@example.test";
+ for(let attempt=1;attempt<=2;attempt++){
+   const response=await post("/api/auth/login",{email:lockoutEmail,password:"wrong-password"});
+   assert.equal(response.status,401);
+   assert.equal((await response.json()).error.code,"INVALID_CREDENTIALS");
+ }
+ const locked=await post("/api/auth/login",{email:lockoutEmail,password:"wrong-password"});
+ assert.equal(locked.status,423);
+ assert.equal(locked.headers.get("retry-after"),"900");
+ assert.equal((await locked.json()).error.code,"ACCOUNT_TEMPORARILY_LOCKED");
+ const stillLocked=await post("/api/auth/login",{email:lockoutEmail,password:"correct-horse-battery"});
+ assert.equal(stillLocked.status,423);
+ assert.equal(stillLocked.headers.get("retry-after"),"900");
 
-
-test("Supabase sign-in locks after three wrong passwords and returns Retry-After",async()=>{
-  const email="lockout@example.test";
-  for(let attempt=1;attempt<=2;attempt++){
-    const response=await post("/api/auth/login",{email,password:"wrong-password"});
-    assert.equal(response.status,401);
-    assert.equal((await response.json()).error.code,"INVALID_CREDENTIALS");
-  }
-  const locked=await post("/api/auth/login",{email,password:"wrong-password"});
-  assert.equal(locked.status,423);
-  assert.equal(locked.headers.get("retry-after"),"900");
-  assert.equal((await locked.json()).error.code,"ACCOUNT_TEMPORARILY_LOCKED");
-  const stillLocked=await post("/api/auth/login",{email,password:"correct-horse-battery"});
-  assert.equal(stillLocked.status,423);
-  assert.equal(stillLocked.headers.get("retry-after"),"900");
 });
