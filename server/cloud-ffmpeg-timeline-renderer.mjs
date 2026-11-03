@@ -1,3 +1,4 @@
+import { buildMotionExpression, normalizeOverlayKeyframes } from "./timeline-motion-keyframes.mjs";
 import { randomUUID } from "node:crypto";
 import { extname, join } from "node:path";
 import { mkdir, readFile, writeFile, unlink } from "node:fs/promises";
@@ -93,9 +94,15 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
    const asset=getAsset(clip.assetId),metadata=clip.metadata||{};
    const ow=Math.max(16,Math.min(width,Math.round(Number(metadata.width)||width*.24))),oh=Math.max(16,Math.min(height,Math.round(Number(metadata.height)||height*.24)));
    const x=Math.max(0,Math.min(width-ow,Number.isFinite(Number(metadata.x))?Math.round(Number(metadata.x)):width-ow-24)),y=Math.max(0,Math.min(height-oh,Number.isFinite(Number(metadata.y))?Math.round(Number(metadata.y)):24)),opacity=Math.max(0,Math.min(1,Number(metadata.opacity??1)));
+   const keyframes=normalizeOverlayKeyframes(metadata.motionKeyframes,{durationFrames:Math.max(1,Math.round(duration*fpsNum/fpsDen)),width,height,defaultX:x,defaultY:y});
+   const motionFps=fpsNum/fpsDen;
+   const xExpression=buildMotionExpression(keyframes,"x",{startSeconds:start,fps:motionFps,fallback:x});
+   const yExpression=buildMotionExpression(keyframes,"y",{startSeconds:start,fps:motionFps,fallback:y});
+   const scaleExpression=buildMotionExpression(keyframes,"scale",{startSeconds:start,fps:motionFps,fallback:1});
+   const scaledWidth="trunc("+ow+"*("+scaleExpression+")/2)*2",scaledHeight="trunc("+oh+"*("+scaleExpression+")/2)*2";
    const imageLabel="overlay-image-"+index,videoLabel="overlay-video-"+index;
-   videoEffects.push(`[${item.inputIndex}:v]scale=${ow}:${oh}:force_original_aspect_ratio=decrease,format=rgba,colorchannelmixer=aa=${opacity.toFixed(3)}[${imageLabel}]`);
-   videoEffects.push(`${currentVideo}[${imageLabel}]overlay=x=${x}:y=${y}:eof_action=pass:enable='between(t,${start.toFixed(6)},${(start+duration).toFixed(6)})'[${videoLabel}]`);
+   videoEffects.push(`[${item.inputIndex}:v]scale=w='${scaledWidth}':h='${scaledHeight}':eval=frame:force_original_aspect_ratio=decrease,format=rgba,colorchannelmixer=aa=${opacity.toFixed(3)}[${imageLabel}]`);
+   videoEffects.push(`${currentVideo}[${imageLabel}]overlay=x='${xExpression}':y='${yExpression}':eof_action=pass:eval=frame:enable='between(t,${start.toFixed(6)},${(start+duration).toFixed(6)})'[${videoLabel}]`);
    currentVideo=`[${videoLabel}]`;
   }
   for(const clip of captionClips){
@@ -121,7 +128,7 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
   if(signal?.aborted)fail("Timeline render was cancelled.","JOB_CANCELLED");
   onProgress(90);
   const name=safeName(timeline.name);
-  return{path:outputPath,filename:name+"-"+(deliveryProfile?.id||"master")+".mp4",mediaType:"video/mp4",render:{width,height,frameRate:{numerator:fpsNum,denominator:fpsDen},videoClips:clips.length,audioClips:audioClips.length,duckedMusicClips:ducking.duckedClips,overlayClips:overlayClips.length,captionClips:captionClips.length,durationSeconds:cursor,...(deliveryProfile?{deliveryProfileId:deliveryProfile.id,deliveryProfileLabel:deliveryProfile.label}:{})},...(renderManifest?{renderManifest}:{})};
+  return{path:outputPath,filename:name+"-"+(deliveryProfile?.id||"master")+".mp4",mediaType:"video/mp4",render:{width,height,frameRate:{numerator:fpsNum,denominator:fpsDen},videoClips:clips.length,audioClips:audioClips.length,duckedMusicClips:ducking.duckedClips,overlayClips:overlayClips.length,animatedOverlayClips:overlayClips.filter(clip=>Array.isArray(clip.metadata?.motionKeyframes)&&clip.metadata.motionKeyframes.length>1).length,captionClips:captionClips.length,durationSeconds:cursor,...(deliveryProfile?{deliveryProfileId:deliveryProfile.id,deliveryProfileLabel:deliveryProfile.label}:{})},...(renderManifest?{renderManifest}:{})};
  }catch(error){
   await unlink(outputPath).catch(()=>{});
   if(signal?.aborted)throw Object.assign(new Error("Timeline render was cancelled."),{code:"JOB_CANCELLED"});
