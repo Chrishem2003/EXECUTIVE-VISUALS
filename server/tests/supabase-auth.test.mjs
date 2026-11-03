@@ -4,6 +4,13 @@ import {createSupabaseAuth} from "../supabase-auth.mjs";
 function response(status,body){return {ok:status>=200&&status<300,status,text:async()=>JSON.stringify(body)};}
 const config={url:"https://project.supabase.co",publishableKey:"sb_publishable_test_key",redirectUrl:"https://studio.example.com/auth/callback"};
 const session={access_token:"access-token-123456789012345",refresh_token:"refresh-token-123456789012345",expires_in:3600,user:{id:"user-1",email:"owner@example.com"}};
+test("getUser verifies bearer tokens through the bounded Supabase adapter",async()=>{
+ let call;const auth=createSupabaseAuth({...config,fetchImpl:async(url,options)=>{call={url,options};return response(200,{id:"user-1",email:"owner@example.com"});}});
+ assert.deepEqual(await auth.getUser("access-token-123456789012345"),{id:"user-1",email:"owner@example.com"});
+ assert.equal(call.url,"https://project.supabase.co/auth/v1/user");
+ assert.equal(call.options.method,"GET");assert.equal(call.options.headers.authorization,"Bearer access-token-123456789012345");
+ await assert.rejects(auth.getUser("short"),error=>error.status===401);
+});
 test("password sign-in uses the publishable key and returns a normalized session",async()=>{
  let call;const auth=createSupabaseAuth({...config,fetchImpl:async(url,options)=>{call={url,options};return response(200,session);}});
  const result=await auth.signInWithPassword({email:"Owner@Example.com",password:"a-long-password"});
