@@ -112,3 +112,17 @@ test("worker cancellation polling is lease-aware and validates its RPC response"
  await assert.rejects(()=>malformed.checkCancellation("job-1","worker-1"),/invalid result/);
  await assert.rejects(()=>queue.checkCancellation("","worker-1"),/required/);
 });
+
+test("durable worker heartbeat RPC validates identity, status, metrics and response",async()=>{
+ const requests=[];
+ const queue=createCloudQueue({...base,fetchImpl:async(url,options)=>{requests.push({url,body:JSON.parse(options.body)});return response({accepted:true,lastSeenAt:"2026-11-03T12:00:00Z"});}});
+ const result=await queue.heartbeatWorker({workerId:"media-worker-1",workerFamily:"media",instanceId:"instance-1",status:"running",metrics:{jobsClaimed:4,activeCycle:false}});
+ assert.deepEqual(result,{accepted:true,lastSeenAt:"2026-11-03T12:00:00Z"});
+ assert.equal(requests[0].url,"https://example.supabase.co/rest/v1/rpc/heartbeat_worker");
+ assert.deepEqual(requests[0].body,{p_worker_id:"media-worker-1",p_worker_family:"media",p_instance_id:"instance-1",p_status:"running",p_metrics:{jobsClaimed:4,activeCycle:false}});
+ await assert.rejects(()=>queue.heartbeatWorker({workerId:"",workerFamily:"media",instanceId:"i"}),/worker ID/);
+ await assert.rejects(()=>queue.heartbeatWorker({workerId:"w",workerFamily:"media",instanceId:"i",status:"unknown"}),/status/);
+ await assert.rejects(()=>queue.heartbeatWorker({workerId:"w",workerFamily:"media",instanceId:"i",metrics:[]}),/object/);
+ const malformed=createCloudQueue({...base,fetchImpl:async()=>response({accepted:true})});
+ await assert.rejects(()=>malformed.heartbeatWorker({workerId:"w",workerFamily:"media",instanceId:"i"}),/invalid result/);
+});
