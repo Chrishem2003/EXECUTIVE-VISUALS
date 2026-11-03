@@ -23,11 +23,12 @@ In the Supabase Auth URL configuration, set the staging Site URL and add the exa
 4. The browser calls `POST /api/auth/session` to rotate the refresh token after reload or an API 401. Concurrent refreshes in one tab share a single in-flight request.
 5. Logout refreshes the current session if needed, revokes it with Supabase Auth and clears the cookie.
 6. Password recovery sends an email. The recovery screen currently expects Supabase to redirect with `type=recovery` and `access_token` in the URL fragment. It removes the fragment from browser history and keeps the token in memory while the user sets a new password.
+7. Authentication endpoints have per-email attempt budgets (sign-in: 8 per 15 minutes; signup: 5 per hour; recovery: 3 per hour), in addition to the per-source IP budget. Email keys are SHA-256 hashed before entering the in-memory limiter. The limiter prunes expired entries and caps its in-memory bucket count.
 
 ## Known limitations / acceptance blockers
 
 - A Supabase PKCE callback that returns `?code=...` is not yet implemented. Confirm the configured email templates/auth flow returns the supported recovery fragment before enabling recovery in staging; otherwise add a PKCE verifier/exchange implementation first.
-- Signup abuse controls, CAPTCHA/Turnstile and hosted email-delivery verification remain outstanding.
+- CAPTCHA/Turnstile, distributed rate limiting across multiple API instances, and hosted email-delivery verification remain outstanding. The in-process per-email and per-source limiter is a single-instance baseline, not a substitute for edge/WAF controls.
 - Email confirmation, recovery redirect allowlisting, refresh rotation across multiple tabs and logout revocation require browser-level acceptance tests against the dedicated staging project.
 - This integration does not provision a Supabase project, change database schemas, or apply migrations.
 
