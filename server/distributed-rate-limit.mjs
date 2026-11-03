@@ -5,6 +5,7 @@ const POLICIES=Object.freeze({
  register:Object.freeze({limit:5,windowMs:60*60*1000}),
  recover:Object.freeze({limit:3,windowMs:60*60*1000})
 });
+const unavailable=(message)=>Object.assign(new Error(message),{code:"RATE_LIMIT_STORE_UNAVAILABLE",status:503});
 const SCRIPT="local count=redis.call('INCR',KEYS[1]); if count==1 then redis.call('PEXPIRE',KEYS[1],ARGV[1]); end; return count";
 
 export function createRedisRestRateLimiter({url,token,fetchImpl=globalThis.fetch,namespace="executive-visuals",timeoutMs=2500}={}) {
@@ -24,13 +25,13 @@ export function createRedisRestRateLimiter({url,token,fetchImpl=globalThis.fetch
   try {
    response=await fetchImpl(endpoint,{method:"POST",headers:{"authorization":"Bearer "+token,"content-type":"application/json"},body:JSON.stringify(["EVAL",SCRIPT,"1",redisKey,String(windowMs)]),signal:AbortSignal.timeout(timeoutMs)});
   } catch {
-   throw Object.assign(new Error("Distributed rate-limit service is unavailable."),{code:"RATE_LIMIT_STORE_UNAVAILABLE"});
+   throw unavailable("Distributed rate-limit service is unavailable.");
   }
-  if(!response?.ok)throw Object.assign(new Error("Distributed rate-limit service rejected the request."),{code:"RATE_LIMIT_STORE_UNAVAILABLE"});
+  if(!response?.ok)throw unavailable("Distributed rate-limit service rejected the request.");
   let payload;
-  try {payload=await response.json();} catch {throw Object.assign(new Error("Distributed rate-limit service returned an invalid response."),{code:"RATE_LIMIT_STORE_UNAVAILABLE"});}
+  try {payload=await response.json();} catch {throw unavailable("Distributed rate-limit service returned an invalid response.");}
   const count=payload?.result;
-  if(!Number.isSafeInteger(count)||count<1)throw Object.assign(new Error("Distributed rate-limit service returned an invalid counter."),{code:"RATE_LIMIT_STORE_UNAVAILABLE"});
+  if(!Number.isSafeInteger(count)||count<1)throw unavailable("Distributed rate-limit service returned an invalid counter.");
   return count<=limit;
  }
 
