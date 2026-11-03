@@ -530,3 +530,10 @@ No production deployment, production database/storage write, migration applicati
 ## Cloud media transfer hardening — signed downloads and streamed derivatives
 
 The cloud media IO boundary now rejects HTTP redirects for signed object downloads, validates signed URL safety, bounds streamed download and upload sizes, verifies downloaded bytes against repository SHA-256 metadata, and removes isolated temporary files after failed materialization. The streaming derivative-publication path now checks that the output is a non-empty regular file and enforces the configured byte limit before handing the path to the asset repository. Regression coverage includes redirect rejection/cleanup, oversized streamed outputs, non-file outputs, checksum mismatch and cancellation. The Quality Checks workflow passed on commit `b3e731261be623201891f0a3ead37dcd767d6a20`; this is code-level verification and does not replace real isolated-staging storage tests.
+
+## Continuation — race-safe AI upscale publication
+
+- The Real-ESRGAN worker now writes inference output to a unique temporary sibling file, validates its regular-file status, byte limit, image signature and exact requested dimensions, then publishes with exclusive-create copy semantics.
+- This closes a time-of-check/time-of-use gap: a target file or symlink created after the initial destination check cannot be overwritten by the upscaler. Temporary inference outputs are removed on success and failure.
+- Added a regression test that creates a symlink to a protected file while inference is running and verifies publication is rejected, the protected bytes remain unchanged, and the temporary output is cleaned up.
+- Implementation commit: `159c65f85695df5911c46a47d4b052ae078914a8`; regression coverage: `42a85604e3ba1423a25f425118e73f984c5f6203`. This latest change is committed but awaits a new CI run; do not treat it as verified until the PR workflow completes.
