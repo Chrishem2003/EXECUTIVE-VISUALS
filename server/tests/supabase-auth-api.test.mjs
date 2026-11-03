@@ -41,6 +41,9 @@ test("Supabase mode supports password sign-in, HttpOnly refresh cookie, session 
  const passwordUpdate=await post("/api/auth/password",{password:"a-new-long-password"},null,loginBody.accessToken);assert.equal(passwordUpdate.status,200);assert.equal((await passwordUpdate.json()).ok,true);
  const signup=await post("/api/auth/register",{email:"new@example.test",password:"a-long-enough-password"});assert.equal(signup.status,202);assert.equal((await signup.json()).confirmationRequired,true);
  const recovery=await post("/api/auth/recover",{email:"owner@example.test"});assert.equal(recovery.status,202);
+ const recoverySecond=await post("/api/auth/recover",{email:"owner@example.test"});assert.equal(recoverySecond.status,202);
+ const recoveryThird=await post("/api/auth/recover",{email:"owner@example.test"});assert.equal(recoveryThird.status,202);
+ const recoveryLimited=await post("/api/auth/recover",{email:"owner@example.test"});assert.equal(recoveryLimited.status,429);assert.equal((await recoveryLimited.json()).error.code,"AUTH_EMAIL_RATE_LIMITED");
  const logout=await post("/api/auth/logout",{},refresh.headers.get("set-cookie").split(";")[0]);assert.equal(logout.status,200);assert.match(logout.headers.get("set-cookie"),/Max-Age=0/);
  assert.ok(providerCalls.some(call=>call.url.startsWith("/auth/v1/token?grant_type=password")));
  assert.ok(providerCalls.some(call=>call.url.startsWith("/auth/v1/token?grant_type=refresh_token")));
