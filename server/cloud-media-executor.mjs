@@ -11,12 +11,12 @@ import { createRealEsrganAdapter } from "./ai-upscale-engine.mjs";
 import { nativeProcessSpawnOptions, signalNativeProcessTree } from "./process-tree.mjs";
 
 const EXTENSION = Object.freeze({
-  "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "audio/mpeg": "mp3", "audio/wav": "wav", "video/mp4": "mp4"
+  "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "audio/mpeg": "mp3", "audio/wav": "wav", "video/mp4": "mp4", "application/json": "json"
 });
 const SUPPORTED = new Set([
   "media.probe", "media.thumbnail", "media.audio_extract", "media.audio-clean",
   "media.denoise", "media.color", "media.resize", "media.interpolate",
-  "media.upscale", "media.ai-upscale", "media.transcode", "media.proxy"
+  "media.upscale", "media.ai-upscale", "media.transcode", "media.proxy", "media.waveform"
 ]);
 
 function parseInput(value) {
@@ -96,6 +96,14 @@ function outputPlan(jobType, input, source, sourcePath, outputPath) {
     const seconds = Number(input.seconds ?? 1);
     if (!Number.isFinite(seconds) || seconds < 0 || seconds > 3600) throw Object.assign(new Error("Thumbnail time is outside the supported range."), { code: "INVALID_MEDIA_OPTIONS" });
     return { args: ["-hide_banner", "-y", "-ss", String(seconds), "-i", sourcePath, "-frames:v", "1", "-q:v", "2", outputPath], name: baseName + "-thumbnail.jpg", mediaType: "image/jpeg" };
+  }
+  if (jobType === "media.waveform") {
+    if (!String(source.mediaType || "").startsWith("audio/")) throw Object.assign(new Error("Waveform generation requires an audio source."), { code: "UNSUPPORTED_MEDIA_TYPE" });
+    const width = Number(input.width ?? 1200), height = Number(input.height ?? 180);
+    if (!Number.isInteger(width) || width < 256 || width > 2400 || !Number.isInteger(height) || height < 48 || height > 400) throw Object.assign(new Error("Waveform dimensions are outside the supported range."), { code: "INVALID_MEDIA_OPTIONS" });
+    const color = /^#[0-9a-f]{6}$/i.test(String(input.color || "")) ? String(input.color).slice(1) : "66b3ff";
+    const filter = "showwavespic=s=" + width + "x" + height + ":colors=0x" + color + ":scale=sqrt";
+    return { args: ["-hide_banner", "-y", "-i", sourcePath, "-filter_complex", filter, "-frames:v", "1", outputPath], name: baseName + "-waveform.png", mediaType: "image/png" };
   }
   if (jobType === "media.audio_extract") {
     return { args: ["-hide_banner", "-y", "-i", sourcePath, "-vn", "-c:a", "libmp3lame", "-q:a", "2", outputPath], name: baseName + "-audio.mp3", mediaType: "audio/mpeg" };
