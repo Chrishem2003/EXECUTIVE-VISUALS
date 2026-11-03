@@ -20,6 +20,8 @@ import { importResearchUrl } from "./research-import.mjs";
 import { getProviderCatalog } from "./provider-registry.mjs";
 import { ensureRemoteUsageTable, getRemoteUsagePolicy } from "./usage-guardrails.mjs";
 import { createCloudTimelineApi } from "./cloud-timeline-api.mjs";
+import { createCloudQueue } from "./cloud-queue.mjs";
+import { createCloudOperationsApi } from "./cloud-operations-api.mjs";
 import { validateSrt, validateWebVtt } from "./caption-validation.mjs";
 import { ensureTransformationPlanSchema, createTransformationPlan, approveTransformationPlan, listTransformationPlans, getTransformationPlan, verifyTransformationApproval } from "./transformation-plans.mjs";
 import { createUpscaleBenchmarkFixture, listUpscaleBenchmarkFixtures, registerUpscaleBenchmarkRun, listUpscaleBenchmarkRuns, reviewUpscaleBenchmarkRun, getUpscaleBenchmarkReport } from "./upscale-benchmark-store.mjs";
@@ -63,6 +65,12 @@ if (cloudTimelineApi) await cloudTimelineApi.checkReadiness();
 const cloudAssetsEnabled=process.env.CLOUD_ASSETS_ENABLED==="true";
 if(cloudAssetsEnabled&&(AUTH_MODE!=="supabase"||!supabaseAuth))throw new Error("Cloud asset API requires configured Supabase URL, publishable key and verified Supabase authentication.");
 const cloudAssetService=cloudAssetsEnabled?createCloudAssetService({maxBytes:Number(process.env.CLOUD_MEDIA_MAX_UPLOAD_BYTES||MAX_UPLOAD_BYTES)}):null;
+const cloudOperationsEnabled=process.env.CLOUD_OPERATIONS_ENABLED==="true";
+if(cloudOperationsEnabled&&(AUTH_MODE!=="supabase"||!supabaseAuth||!process.env.SUPABASE_SERVICE_ROLE_KEY))throw new Error("Cloud operations requires verified Supabase authentication and server-side service-role credentials.");
+const cloudOperationsApi=cloudOperationsEnabled?createCloudOperationsApi({
+ queue:createCloudQueue(),
+ adminEmails:String(process.env.CLOUD_OPERATIONS_ADMIN_EMAILS||"").split(",").map(value=>value.trim()).filter(Boolean)
+}):null;
 const activeProcesses = new Map();
 const WORKER_ID = randomUUID();
 const AUTH_RATE_LIMIT = Math.max(1, Math.min(1000, Number(process.env.AUTH_RATE_LIMIT) || 20));
@@ -305,7 +313,7 @@ export function createAppServer() {
         }
       }
       if(path==="/api/health"&&req.method==="GET"){
-        send(res,200,{status:"ok",storage:"local-disk",database:"sqlite",media:{ffmpeg:executableAvailable("ffmpeg"),ffprobe:executableAvailable("ffprobe")},imageGateway:{enabled:process.env.IMAGE_GATEWAY_ENABLED==="true",configured:(()=>{try{const url=new URL(process.env.IMAGE_GATEWAY_URL||"");const local=["localhost","127.0.0.1","::1","[::1]"].includes(url.hostname.toLowerCase());return Boolean(process.env.IMAGE_GATEWAY_MODEL&&(local||process.env.IMAGE_GATEWAY_ALLOW_REMOTE==="true"));}catch{return false;}})()},textGateway:{enabled:process.env.AI_GATEWAY_ENABLED==="true",configured:(()=>{try{const url=new URL(process.env.AI_GATEWAY_URL||"");const local=["localhost","127.0.0.1","::1"].includes(url.hostname.toLowerCase());return Boolean(process.env.AI_GATEWAY_MODEL&&(local||process.env.AI_GATEWAY_ALLOW_REMOTE==="true"));}catch{return false;}})()},authMode:AUTH_MODE,cloudAssets:{enabled:cloudAssetsEnabled,configured:!!cloudAssetService},cloudJobs:{enabled:cloudTimelineApiEnabled,configured:!!cloudTimelineApi},version:"0.1.0"},cors);return;
+        send(res,200,{status:"ok",storage:"local-disk",database:"sqlite",media:{ffmpeg:executableAvailable("ffmpeg"),ffprobe:executableAvailable("ffprobe")},imageGateway:{enabled:process.env.IMAGE_GATEWAY_ENABLED==="true",configured:(()=>{try{const url=new URL(process.env.IMAGE_GATEWAY_URL||"");const local=["localhost","127.0.0.1","::1","[::1]"].includes(url.hostname.toLowerCase());return Boolean(process.env.IMAGE_GATEWAY_MODEL&&(local||process.env.IMAGE_GATEWAY_ALLOW_REMOTE==="true"));}catch{return false;}})()},textGateway:{enabled:process.env.AI_GATEWAY_ENABLED==="true",configured:(()=>{try{const url=new URL(process.env.AI_GATEWAY_URL||"");const local=["localhost","127.0.0.1","::1"].includes(url.hostname.toLowerCase());return Boolean(process.env.AI_GATEWAY_MODEL&&(local||process.env.AI_GATEWAY_ALLOW_REMOTE==="true"));}catch{return false;}})()},authMode:AUTH_MODE,cloudAssets:{enabled:cloudAssetsEnabled,configured:!!cloudAssetService},cloudJobs:{enabled:cloudTimelineApiEnabled,configured:!!cloudTimelineApi},cloudOperations:{enabled:cloudOperationsEnabled,configured:!!cloudOperationsApi},version:"0.1.0"},cors);return;
       }
       if(path==="/api/auth/register"&&req.method==="POST"){
         const body=await readJson(req);const email=String(body.email||"").trim().toLowerCase();const password=String(body.password||"");
@@ -366,6 +374,10 @@ export function createAppServer() {
       }
       const user=await authenticate(req);
       if(!user){fail(res,401,"AUTH_REQUIRED","Sign in to access this workspace.");return;}
+      if(cloudOperationsApi&&path==="/api/admin/cloud/operations"&&req.method==="GET"){
+        const result=await cloudOperationsApi.handle({method:req.method,path,user,query:Object.fromEntries(url.searchParams.entries())});
+        if(result){send(res,result.status,result.body,cors);return;}
+      }
       if(path==="/api/me"&&req.method==="GET"){send(res,200,{user,authMode:AUTH_MODE},cors);return;}
       const upscaleBenchmarksMatch=path.match(/^\/api\/upscale-benchmarks(?:\/(fixtures|runs)(?:\/([0-9a-f-]+)\/review)?)?$/i);
       if(upscaleBenchmarksMatch){
