@@ -174,3 +174,13 @@ test("durable heartbeat migration restricts metadata and service-role execution"
  assert.match(sql,/worker heartbeat contains unsupported metrics/);
  assert.match(sql,/last_seen_at=clock_timestamp\(\)/);
 });
+
+test("worker health snapshot migration computes stale state and restricts access",async()=>{
+ const sql=await readFile(new URL("../../supabase/migrations/20261103210000_cloud_worker_health_snapshot.sql",import.meta.url),"utf8");
+ assert.match(sql,/create or replace function executive_visuals\.list_worker_health/);
+ assert.match(sql,/last_seen_at < clock_timestamp\(\) - make_interval\(secs => p_stale_after_seconds\)/);
+ assert.match(sql,/then 'stale'/);
+ assert.match(sql,/revoke all on function executive_visuals\.list_worker_health\(integer,integer\) from public, anon, authenticated/);
+ assert.match(sql,/grant execute on function executive_visuals\.list_worker_health\(integer,integer\) to service_role/);
+ assert.match(sql,/p_stale_after_seconds not between 30 and 3600/);
+});
