@@ -580,3 +580,5 @@ The cloud media IO boundary now rejects HTTP redirects for signed object downloa
 - Cloud timeline renders now apply clip metadata `fadeInSeconds` and `fadeOutSeconds` as bounded FFmpeg video `fade` and audio `afade` filters. Values are clamped to each clip duration; invalid or negative values do not create unsafe filter timestamps.
 - The timeline clip inspector exposes fade-in/fade-out controls for video and audio clips. The real-media cloud-render regression fixture exercises both video and audio fade filters.
 - Delivery profiles now include Instagram square (1080×1080), social landscape (1080p), YouTube 1440p and lightweight web 720p in addition to vertical social, YouTube 1080p/4K and broadcast review. These presets define encode settings and metadata checks; they do not guarantee platform acceptance or perceptual quality.
+
+- Timeline placement now snaps new and repositioned clips to nearby edit boundaries, cross-track clip edges and markers within a six-frame tolerance. Snap calculations are frame-rate aware, exclude the clip being repositioned, and are covered by boundary and invalid-input tests.
