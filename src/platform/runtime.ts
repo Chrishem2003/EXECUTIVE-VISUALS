@@ -56,7 +56,7 @@ function renderAssets(){
 }
 function renderJobs(){
  if(!state.jobs.length)return '<div class="empty">No jobs submitted. Media processing jobs will appear here with progress, events and output assets.</div>';
- return '<div class="runtime-jobs">'+state.jobs.map(j=>'<article class="runtime-job"><div class="runtime-job-heading"><b>'+esc(j.jobType)+'</b><span class="job-status '+esc(j.status)+'">'+esc(j.status)+'</span></div><code>'+esc(j.id)+'</code><div class="progress"><i style="width:'+Math.max(0,Math.min(100,j.progress))+'%"></i></div><small>'+Math.round(j.progress)+'% · '+fmt(j.createdAt)+'</small>'+(j.error?'<p class="job-error">'+esc(j.error.code||"ERROR")+' · '+esc(j.error.message||"")+'</p>':'')+(j.status==="queued"||j.status==="running"?'<button data-ev-cancel="'+esc(j.id)+'">Cancel</button>':'')+((j.output&&typeof j.output==="object"&&"outputAsset" in j.output&&j.output.outputAsset&&typeof j.output.outputAsset==="object"&&"id" in j.output.outputAsset)?'<a class="download-output" href="/api/assets/'+esc((j.output.outputAsset as {id:string}).id)+'/file">Download output · '+esc((j.output.outputAsset as {name?:string}).name||"media file")+'</a>':'')+'</article>').join("")+'</div>';
+ return '<div class="runtime-jobs">'+state.jobs.map(j=>'<article class="runtime-job"><div class="runtime-job-heading"><b>'+esc(j.jobType)+'</b><span class="job-status '+esc(j.status)+'">'+esc(j.status)+'</span><small class="muted">'+(j.backend==="cloud"?"CLOUD WORKER":"LOCAL WORKER")+'</small></div><code>'+esc(j.id)+'</code><div class="progress"><i style="width:'+Math.max(0,Math.min(100,j.progress))+'%"></i></div><small>'+Math.round(j.progress)+'% · '+fmt(j.createdAt)+'</small>'+(j.error?'<p class="job-error">'+esc(j.error.code||"ERROR")+' · '+esc(j.error.message||"")+'</p>':'')+(j.backend!=="cloud"&&(j.status==="queued"||j.status==="running")?'<button data-ev-cancel="'+esc(j.id)+'">Cancel</button>':'')+((j.output&&typeof j.output==="object"&&"outputAsset" in j.output&&j.output.outputAsset&&typeof j.output.outputAsset==="object"&&"id" in j.output.outputAsset)?'<a class="download-output" href="'+assetFileUrl((j.output.outputAsset as {id:string}).id)+'">Download output · '+esc((j.output.outputAsset as {name?:string}).name||"media file")+'</a>':'')+'</article>').join('')+'</div>';
 }
 export function renderRuntimeWorkspace(){
  return '<div id="runtime-workspace" data-runtime-view="runtime"><div class="runtime-toolbar">'+statusMarkup()+'<button class="secondary" data-ev-action="refresh">↻ Refresh</button>'+(state.user?'<button class="secondary" data-ev-action="logout">Sign out · '+esc(state.user.email)+'</button>':'')+'</div>'+
@@ -208,7 +208,20 @@ document.addEventListener("click",event=>{
  if(action?.dataset.evAction==="refresh"){void refresh().then(paint).catch(error=>alert(error.message||error));return;}
  if(action?.dataset.evAction==="logout"){void apiRequest("/api/auth/logout",{method:"POST"}).catch(()=>{});clearApiAccessToken();state.user=null;state.status="auth-required";state.jobs=[];state.assets=[];state.projects=[];paint();return;}
  const job=target.closest<HTMLElement>("[data-ev-job]");
- if(job){const assetId=job.dataset.evAsset||"",jobType=job.dataset.evJob||"",input:Record<string,unknown>={};for(const [key,value] of Object.entries(job.dataset))if(key.startsWith("ev")&&!["evAsset","evJob"].includes(key)){const name=key.slice(2).replace(/^[A-Z]/,letter=>letter.toLowerCase());input[name]=value!==""&&Number.isFinite(Number(value))?Number(value):value;}void apiRequest("/api/jobs",{method:"POST",headers:{"content-type":"application/json","idempotency-key":crypto.randomUUID()},body:JSON.stringify({jobType,sourceAssetId:assetId,projectId:state.projectId||undefined,...input})}).then(async()=>{await refresh();paint();}).catch(error=>alert(error.message||error));return;}
+ if(job){
+  const assetId=job.dataset.evAsset||"",jobType=job.dataset.evJob||"",options:Record<string,unknown>={};
+  for(const [key,value] of Object.entries(job.dataset))if(key.startsWith("ev")&&!["evAsset","evJob"].includes(key)){
+   const name=key.slice(2).replace(/^[A-Z]/,letter=>letter.toLowerCase());
+   options[name]=value!==""&&Number.isFinite(Number(value))?Number(value):value;
+  }
+  const cloud=state.cloudAssetsEnabled;
+  if(cloud&&(!state.cloudJobsEnabled||!state.projectId)){alert(!state.projectId?"Select a project before processing cloud media.":"Cloud media processing is not enabled on this server yet.");return;}
+  if(cloud&&jobType==="media.ai-upscale"&&!window.confirm("Confirm that you own this image or have permission to process it with the configured AI super-resolution provider."))return;
+  const endpoint=cloud?"/api/cloud/media-jobs":"/api/jobs";
+  const payload=cloud?{projectId:state.projectId,sourceAssetId:assetId,jobType,options,rightsConfirmed:jobType==="media.ai-upscale"}:{jobType,sourceAssetId:assetId,projectId:state.projectId||undefined,...options};
+  void apiRequest(endpoint,{method:"POST",headers:{"content-type":"application/json","idempotency-key":crypto.randomUUID()},body:JSON.stringify(payload)}).then(async()=>{await refresh();paint();}).catch(error=>alert(error.message||error));
+  return;
+ }
  const remove=target.closest<HTMLElement>("[data-ev-remove-member]");
  if(remove){void apiRequest("/api/projects/"+state.projectId+"/members/"+remove.dataset.evRemoveMember,{method:"DELETE"}).then(async()=>{await refresh();paint();}).catch(error=>alert(error.message||error));return;}
  const reviewAsset=target.closest<HTMLElement>("[data-ev-review-asset]");
