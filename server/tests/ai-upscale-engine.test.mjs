@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createRealEsrganAdapter } from "../ai-upscale-engine.mjs";
@@ -164,9 +164,7 @@ done
     const { readFile, lstat } = await import("node:fs/promises");
     assert.equal(await readFile(protectedFile, "utf8"), "preserve-this-file");
     assert.equal((await lstat(output)).isSymbolicLink(), true);
-    assert.deepEqual((await import("node:fs/promises")).readdir
-      ? (await (await import("node:fs/promises")).readdir(directory)).filter(name => name.startsWith(".ev-upscale-"))
-      : [], []);
+    assert.deepEqual((await readdir(directory)).filter(name => name.startsWith(".ev-upscale-")), []);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
