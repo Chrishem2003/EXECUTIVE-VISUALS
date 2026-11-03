@@ -586,3 +586,5 @@ The cloud media IO boundary now rejects HTTP redirects for signed object downloa
 - Timeline review markers now support reviewer notes (up to 500 characters) and explicit yellow/review, red/issue, green/approved and blue/reference categories. Notes are rendered in the marker list and saved with the timeline revision.
 
 - Reusable caption presets are now available in the clip inspector: Standard clean, Social bold, Documentary and Top headline. Selecting a preset updates the editable typography, alignment, panel, outline, shadow and safe-area fields; the selected preset is stored with clip metadata. Manual field edits remain available after preset selection.
+
+- Cloud timeline creation now offers four editable starter sequences: Social short, YouTube essay, Interview and Product demo. Each template establishes a suitable aspect ratio/frame rate, picture/audio/graphics/caption tracks and timecoded editorial review markers. Templates add structure only; they do not fabricate clips or assets.
