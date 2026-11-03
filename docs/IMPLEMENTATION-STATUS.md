@@ -582,3 +582,5 @@ The cloud media IO boundary now rejects HTTP redirects for signed object downloa
 - Delivery profiles now include Instagram square (1080×1080), social landscape (1080p), YouTube 1440p and lightweight web 720p in addition to vertical social, YouTube 1080p/4K and broadcast review. These presets define encode settings and metadata checks; they do not guarantee platform acceptance or perceptual quality.
 
 - Timeline placement now snaps new and repositioned clips to nearby edit boundaries, cross-track clip edges and markers within a six-frame tolerance. Snap calculations are frame-rate aware, exclude the clip being repositioned, and are covered by boundary and invalid-input tests.
+
+- Timeline review markers now support reviewer notes (up to 500 characters) and explicit yellow/review, red/issue, green/approved and blue/reference categories. Notes are rendered in the marker list and saved with the timeline revision.
