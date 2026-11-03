@@ -74,8 +74,9 @@ export function recordFailedLogin(db, identifier, now = Date.now()) {
       if(current)db.prepare("UPDATE auth_login_security SET identifier_hash=? WHERE identifier_hash=?").run(key,legacyKey);
     }
     if(current?.locked_until_ms&&current.locked_until_ms>now) {
+      writeAuthSecurityEvent(db,identifier,"login_blocked_by_lockout",{failedAttempts:current.failed_attempts,lockLevel:current.lock_level,lockedUntilMs:current.locked_until_ms},now);
       db.exec("COMMIT");
-      return {locked:true,retryAfterMs:current.locked_until_ms-now,failedAttempts:current.failed_attempts,lockLevel:current.lock_level};
+      return {locked:true,retryAfterMs:current.locked_until_ms-now,failedAttempts:current.failed_attempts,lockLevel:current.lock_level,lockedUntilMs:current.locked_until_ms};
     }
     const attempts=current?.locked_until_ms&&current.locked_until_ms<=now?AUTH_LOCK_THRESHOLD:(current?.failed_attempts||0)+1;
     const level=current?.lock_level||0;
@@ -85,6 +86,7 @@ export function recordFailedLogin(db, identifier, now = Date.now()) {
       VALUES(?,?,?,?,?,?) ON CONFLICT(identifier_hash) DO UPDATE SET failed_attempts=excluded.failed_attempts,
       lock_level=excluded.lock_level,locked_until_ms=excluded.locked_until_ms,window_started_at_ms=excluded.window_started_at_ms,updated_at_ms=excluded.updated_at_ms`)
       .run(key,attempts,nextLevel,lockedUntil,now,now);
+    writeAuthSecurityEvent(db,identifier,lockedUntil?"account_locked":"login_failed",{failedAttempts:attempts,lockLevel:nextLevel,lockedUntilMs:lockedUntil},now);
     db.exec("COMMIT");
     return {locked:!!lockedUntil,retryAfterMs:lockedUntil?lockedUntil-now:0,failedAttempts:attempts,lockLevel:nextLevel};
   } catch(error) {
@@ -94,6 +96,7 @@ export function recordFailedLogin(db, identifier, now = Date.now()) {
 }
 export function clearLoginFailures(db, identifier) {
   const key=loginIdentifierHash(identifier);
+  writeAuthSecurityEvent(db,identifier,"login_succeeded",{},Date.now());
   db.prepare("DELETE FROM auth_login_security WHERE identifier_hash=?").run(key);
   if(process.env.AUTH_IDENTIFIER_HMAC_KEY)db.prepare("DELETE FROM auth_login_security WHERE identifier_hash=?").run(legacyLoginIdentifierHash(identifier));
 }
