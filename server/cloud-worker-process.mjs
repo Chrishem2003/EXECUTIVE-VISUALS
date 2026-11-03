@@ -86,6 +86,18 @@ export function createCloudWorkerSupervisor({workers,leaseSeconds=90,heartbeatIn
  });
 }
 
+export function registerCloudWorkerShutdownHandlers(supervisor,processLike=process,exit=(code)=>processLike.exit(code)){
+ let shutdownPromise=null;
+ const shutdown=()=>{
+  if(shutdownPromise)return shutdownPromise;
+  shutdownPromise=(async()=>{await supervisor.stop();exit(0);})();
+  return shutdownPromise;
+ };
+ processLike.once("SIGINT",shutdown);
+ processLike.once("SIGTERM",shutdown);
+ return ()=>{processLike.removeListener("SIGINT",shutdown);processLike.removeListener("SIGTERM",shutdown);};
+}
+
 export async function startCloudWorkerProcess(env=process.env){
  const config=readCloudWorkerConfig(env);
  if((config.media||config.timeline)&&(!executableAvailable("ffmpeg")||!executableAvailable("ffprobe")))throw new Error("Cloud media workers require FFmpeg and FFprobe on PATH.");
@@ -100,10 +112,16 @@ export async function startCloudWorkerProcess(env=process.env){
   onLog:event=>process.stdout.write(JSON.stringify(event)+"\n"),
   onError:error=>process.stderr.write(JSON.stringify({kind:"worker_error",code:error?.code||"WORKER_ERROR",message:String(error?.message||"Worker cycle failed.").slice(0,500)})+"\n")
  });
- await supervisor.start();
- const shutdown=async()=>{await supervisor.stop();process.exit(0);};
- process.once("SIGINT",shutdown);process.once("SIGTERM",shutdown);
- return supervisor;
+ const unregisterShutdown=registerCloudWorkerShutdownHandlers(supervisor);
+ try {
+  // Install handlers before recovery/first-cycle awaits so an OS signal during
+  // startup still cancels the worker lifecycle instead of orphaning a child.
+  await supervisor.start();
+  return supervisor;
+ } catch(error) {
+  unregisterShutdown();
+  throw error;
+ }
 }
 
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){
