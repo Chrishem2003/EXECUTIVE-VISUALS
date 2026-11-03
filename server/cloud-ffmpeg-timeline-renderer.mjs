@@ -61,7 +61,7 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
    else fail("Only still images and video clips are supported on the primary video track.","UNSUPPORTED_MEDIA_TYPE");
    const label="v"+segmentIndex++;
    const videoFades=buildClipFadeFilters(clip,duration,"video");
-   segments.push({label,filter:`[${inputIndex}:v]trim=duration=${duration.toFixed(6)},setpts=PTS-STARTPTS,scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2,fps=${fpsNum}/${fpsDen},format=yuv420p,setsar=1${videoFades.length?","+videoFades.join(","):""}[${label}]`});
+   segments.push({label,filter:`[${inputIndex}:v]trim=duration=${duration.toFixed(6)},setpts=PTS-STARTPTS,scale=${width}:${height}:force_original_aspect_ratio=decrease,format=rgba,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2,fps=${fpsNum}/${fpsDen},format=yuv420p,setsar=1${videoFades.length?","+videoFades.join(","):""}[${label}]`});
    inputIndex++;cursor=start+duration;onProgress(Math.min(65,8+Math.round(segmentIndex/Math.max(clips.length,1)*55)));
   }
   if(!segments.length)fail("No renderable clips were found.","EMPTY_TIMELINE");
@@ -109,7 +109,7 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
    const scaleExpression=buildMotionExpression(keyframes,"scale",{startSeconds:start,fps:motionFps,fallback:1});
    const scaledWidth="trunc("+layerWidth+"*("+scaleExpression+")/2)*2",scaledHeight="trunc("+layerHeight+"*("+scaleExpression+")/2)*2";
    const imageLabel="video-layer-image-"+index,videoLabel="video-layer-composite-"+index;
-   videoEffects.push(`[${item.inputIndex}:v]trim=duration=${duration.toFixed(6)},setpts=PTS-STARTPTS,scale=w='${scaledWidth}':h='${scaledHeight}':eval=frame:force_original_aspect_ratio=decrease,pad=${layerWidth}:${layerHeight}:(ow-iw)/2:(oh-ih)/2:color=black@0,format=rgba,colorchannelmixer=aa=${opacity.toFixed(3)}[${imageLabel}]`);
+   videoEffects.push(`[${item.inputIndex}:v]trim=duration=${duration.toFixed(6)},setpts=PTS-STARTPTS,scale=w='${scaledWidth}':h='${scaledHeight}':eval=frame:force_original_aspect_ratio=decrease,pad=${layerWidth}:${layerHeight}:(ow-iw)/2:(oh-ih)/2:color=black@0,colorchannelmixer=aa=${opacity.toFixed(3)}[${imageLabel}]`);
    videoEffects.push(`${currentVideo}[${imageLabel}]overlay=x='${xExpression}':y='${yExpression}':eof_action=pass:eval=frame:enable='between(t,${start.toFixed(6)},${(start+duration).toFixed(6)})'[${videoLabel}]`);
    currentVideo=`[${videoLabel}]`;
   }
