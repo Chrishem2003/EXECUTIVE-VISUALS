@@ -615,7 +615,7 @@ export function createAppServer() {
         if(path==="/api/cloud/assets"&&req.method==="POST"){
           try{const asset=await storeCloudUpload(req,user,req.headers["x-project-id"]||null);send(res,201,{asset},cors);return;}catch(error){cloudAssetError(res,error,cors);return;}
         }
-        const cloudAssetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)(?:\/(url|retry-cleanup))?$/i);
+        const cloudAssetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)(?:\/(url|file|retry-cleanup))?$/i);
         if(cloudAssetMatch){
           const assetId=cloudAssetMatch[1],action=cloudAssetMatch[2]||"";
           try{
