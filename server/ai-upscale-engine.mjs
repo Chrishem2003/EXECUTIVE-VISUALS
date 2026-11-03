@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { access, link, lstat, open, rm as removeFile, stat } from "node:fs/promises";
 import { constants } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
-import { tmpdir } from "node:os";
+import { tmpdir, cpus, totalmem, platform, arch, release } from "node:os";
 import { createHash, randomUUID } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -302,7 +302,9 @@ export function createRealEsrganAdapter({
         if (error.code === "EEXIST") throw fail("AI upscale output already exists; source files are never overwritten.", "AI_UPSCALE_OUTPUT_EXISTS");
         throw error;
       }
-      return { path: output, byteSize: info.size, model: prepared.model, modelVersion: readiness.binarySha256 + ":" + readiness.modelFilesSha256, scale: prepared.scale, tile: prepared.tile, format: prepared.format, width: outputDimensions.width, height: outputDimensions.height, sourceWidth: inputDimensions.width, sourceHeight: inputDimensions.height, durationMs: Math.max(1, Date.now() - executionStartedAt), binarySha256: readiness.binarySha256, modelFilesSha256: readiness.modelFilesSha256, engine: "realesrgan-ncnn-vulkan", method: "ai-super-resolution" };
+      const cpuList=cpus();
+      const runtime={platform:platform(),architecture:arch(),osRelease:release(),cpuModel:String(cpuList[0]?.model||"unknown").slice(0,160),logicalCores:cpuList.length,totalMemoryBytes:totalmem(),nodeVersion:process.versions.node,vulkanIcdConfigured:Boolean(process.env.VK_ICD_FILENAMES||process.env.VK_DRIVER_FILES)};
+      return { path: output, byteSize: info.size, model: prepared.model, modelVersion: readiness.binarySha256 + ":" + readiness.modelFilesSha256, scale: prepared.scale, tile: prepared.tile, format: prepared.format, width: outputDimensions.width, height: outputDimensions.height, sourceWidth: inputDimensions.width, sourceHeight: inputDimensions.height, durationMs: Math.max(1, Date.now() - executionStartedAt), binarySha256: readiness.binarySha256, modelFilesSha256: readiness.modelFilesSha256, engine: "realesrgan-ncnn-vulkan", method: "ai-super-resolution", runtime };
     } finally {
       await removeFile(temporaryOutput, { force: true }).catch(() => {});
     }
