@@ -9,7 +9,7 @@ import { assessDeliveryEvidence } from "../core/delivery-evidence";
 import { analyzeCreativeTraceability, readCreativeTrace } from "../core/creative-traceability";
 import { appendCreativeDecision, readCreativeDecisionHistory } from "../core/creative-decision-ledger";
 import { compareTimelineVariants, createTimelineVariant, type TimelineVariantComparison } from "../core/timeline-variants";
-import { addClip, addMarker, addTrack, createTimeline, moveClip, rational, removeClip, splitClip, toOpenTimelineIo, trimClip, type EditorialTimeline, type TimelineTrack } from "../core/timeline";
+import { addClip, addMarker, addTrack, createTimeline, moveClip, rational, removeClip, snapTimelineFrame, splitClip, toOpenTimelineIo, trimClip, type EditorialTimeline, type TimelineTrack } from "../core/timeline";
 import { clampPreviewSeconds, previewSecondsAtScrubFrame, stepPreviewSeconds } from "../core/timeline-preview";
 import { assessDerivativeEligibility, replaceTimelineClipAsset } from "../core/timeline-derivatives";
 import { createTimelineHistory, recordTimelineHistory, undoTimeline, redoTimeline, type TimelineHistory } from "../core/timeline-history";
@@ -432,7 +432,7 @@ document.addEventListener("submit",async event=>{
   if(destination?.kind==="caption"&&(!["text/plain","text/vtt"].includes(asset.mediaType)||!["srt","vtt"].includes(asset.name.toLowerCase().split(".").pop()||""))){alert("Caption tracks require an SRT or VTT text file.");return;}
   const sourceFps=sourceRate(asset,destination?.kind||"video");
   const sourceDuration=duration/fps()*sourceFps;
-  try{const nextTimeline=addClip(state.timeline,trackId,{id:crypto.randomUUID(),assetId,name:asset.name,sourceRange:{start:rational(sourceIn,sourceFps),duration:rational(sourceDuration,sourceFps)},timelineStart:rational(start,fps()),duration:rational(duration,fps()),enabled:true});recordEdit();state.timeline=nextTimeline;}
+  try{const nextTimeline=addClip(state.timeline,trackId,{id:crypto.randomUUID(),assetId,name:asset.name,sourceRange:{start:rational(sourceIn,sourceFps),duration:rational(sourceDuration,sourceFps)},timelineStart:rational(start,fps()),duration:rational(duration,fps()),enabled:true});recordEdit();state.timeline=nextTimeline;if(snapped.snappedTo!==null)state.message="Clip aligned to frame "+snapped.snappedTo+" using timeline snapping.";}
   catch(error){alert(error instanceof Error?error.message:String(error));return;}
   void persist().then(paint).catch(error=>{state.message=error.message;paint();});
  }
@@ -453,7 +453,7 @@ document.addEventListener("submit",async event=>{
    return;
   }
   const asset=state.assets.find(item=>item.id===clip.assetId);if(!asset)return;
-  const start=Math.max(0,Number(data.get("start"))||0),duration=Math.max(1,Number(data.get("duration"))||1),sourceIn=Math.max(0,Number(data.get("sourceIn"))||0),sourceFps=sourceRate(asset,track.kind);
+  const requestedStart=Math.max(0,Number(data.get("start"))||0),snapped=snapTimelineFrame(requestedStart,state.timeline,trackId,6),start=snapped.frame,duration=Math.max(1,Number(data.get("duration"))||1),sourceIn=Math.max(0,Number(data.get("sourceIn"))||0),sourceFps=sourceRate(asset,track.kind);
   recordEdit();
   clip.name=String(data.get("name")||clip.name).trim()||clip.name;
   clip.timelineStart=rational(start,fps());clip.duration=rational(duration,fps());
