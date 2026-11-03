@@ -14,7 +14,7 @@ test("AI upscaler atomically publishes one final inode and removes its private s
   await writeFile(input, Buffer.from([137,80,78,71,13,10,26,10,0,0,0,13,73,72,68,82,0,0,0,1,0,0,0,1]));
   await writeFile(binary, String.raw`#!/bin/sh
 while [ "$1" != "" ]; do
-  if [ "$1" = "-o" ]; then shift; printf '\\211PNG\\r\\n\\032\\n\\000\\000\\000\\015IHDR\\000\\000\\000\\004\\000\\000\\000\\004' > "$1"; fi
+  if [ "$1" = "-o" ]; then shift; printf '\211PNG\r\n\032\n\000\000\000\015IHDR\000\000\000\004\000\000\000\004' > "$1"; fi
   shift
 done
 `);
