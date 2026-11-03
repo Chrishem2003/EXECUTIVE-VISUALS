@@ -25,6 +25,7 @@ All routes require a verified Supabase access token in the Authorization header.
 - `POST /api/cloud/assets` — stream a raw media body; set `Content-Type`, `X-File-Name`, and optional `X-Project-Id` headers.
 - `GET /api/cloud/assets/:id` — retrieve metadata.
 - `GET /api/cloud/assets/:id/url` — create a short-lived signed download URL (5 minutes).
+- `GET /api/cloud/assets/:id/file` — authenticated redirect to a short-lived signed URL, with private/no-store response headers; used by the browser asset preview.
 - `DELETE /api/cloud/assets/:id` — soft-delete metadata, then remove the exact private object; HTTP 202 means cleanup remains pending.
 - `POST /api/cloud/assets/:id/retry-cleanup` — retry removal for a previously deleted asset.
 
@@ -32,4 +33,4 @@ Uploads are streamed to a temporary file, size-checked, signature-checked, check
 
 ## Current boundary
 
-This bridge is an explicit API surface, not yet a migration of the primary `/api/assets` library, local SQLite job queue, or browser asset workspace. Do not enable it for end users until the dedicated database/storage migration is reviewed, hosted authorization and signed-link expiry are tested, and the main asset UI and cloud media workers are connected to the same asset IDs. The health endpoint reports whether the bridge is enabled/configured; that is not proof of hosted project readiness.
+The browser asset workspace can now use this API when the health endpoint reports `cloudAssets.enabled` and `cloudAssets.configured`; upload, listing and previews then use cloud asset IDs and signed file redirects. The local `/api/assets` path remains the fallback when the feature flag is off. The local SQLite job queue and cloud media workers are not yet switched to cloud asset IDs. Do not enable it for end users until the dedicated database/storage migration is reviewed and hosted authorization, upload limits, preview redirects and signed-link expiry are tested. The health endpoint reports whether the bridge is enabled/configured; that is not proof of hosted project readiness.
