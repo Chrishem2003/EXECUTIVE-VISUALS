@@ -33,7 +33,7 @@ function deliveryReviewFixture({jobOwner=owner,receiptValid=true,deliveryStatus=
 test("cloud job listing is project-authorized and owner-filtered with bounded pagination",async()=>{
  const jobs=[
   {id:"623e4567-e89b-42d3-a456-426614174001",owner_id:owner,project_id:project,job_type:"timeline.render",status:"running",progress:42,input:{timelineId},output:null,error:null,attempt_count:1,created_at:"2026-11-03T10:00:00Z",updated_at:"2026-11-03T10:01:00Z"},
-  {id:"623e4567-e89b-42d3-a456-426614174002",owner_id:owner,project_id:project,job_type:"media.ai-upscale",status:"queued",progress:0,input:{sourceAssetId:"asset"},output:null,error:null,attempt_count:0,created_at:"2026-11-03T09:00:00Z",updated_at:"2026-11-03T09:00:00Z"}
+  {id:"623e4567-e89b-42d3-a456-426614174002",owner_id:owner,project_id:project,job_type:"media.ai-upscale",status:"running",progress:0,input:{sourceAssetId:"asset"},output:null,error:null,attempt_count:0,created_at:"2026-11-03T09:00:00Z",updated_at:"2026-11-03T09:00:00Z"}
  ];
  const f=setup({existing:jobs});
  const result=await f.api.handle({method:"GET",path:"/api/cloud/jobs",ownerId:owner,query:{projectId:project,limit:"1",offset:"0",status:"running"}});
