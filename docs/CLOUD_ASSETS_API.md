@@ -61,3 +61,5 @@ The worker process persists one heartbeat row per worker identity through the `h
 ### Worker fleet health snapshot
 
 The `list_worker_health` RPC returns a bounded, read-only snapshot of worker identity, family, instance, lifecycle state, last-seen age, and allowlisted operational metrics. It derives `stale` at read time for workers still marked running/stopping whose heartbeat exceeds the requested threshold (30–3600 seconds); stopped/error states remain distinct. Results are capped at 200. The RPC is executable only by `service_role`, and `createCloudQueue().listWorkerHealth()` validates bounds and response shape. This is a server-side operations primitive, not a public API or permission-controlled dashboard. Add a UI only after a real operator authorization model is reviewed.
+
+The same migration defines `prune_worker_heartbeats`, a service-role-only cleanup RPC that removes at most the requested number of records older than a configurable 7–180 day retention window. The cleanup uses row locks with `SKIP LOCKED`; schedule it only after an operational retention policy is approved. No automatic deletion job is enabled by this change.
