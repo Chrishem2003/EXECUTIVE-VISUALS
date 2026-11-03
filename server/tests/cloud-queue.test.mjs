@@ -87,3 +87,14 @@ test("retry RPC rejects malformed arguments and response contracts",async()=>{
  await assert.rejects(()=>invalid.retry("","worker-1",{retryable:true}),/Job ID and worker ID/);
  await assert.rejects(()=>invalid.retry("job-1","worker-1",[]),/must be an object/);
 });
+
+test("progress reporting uses the lease-fenced RPC and validates its boolean result",async()=>{
+ const requests=[];
+ const queue=createCloudQueue({...base,fetchImpl:async(url,options)=>{requests.push({url,body:JSON.parse(options.body)});return response(true);}});
+ assert.equal(await queue.reportProgress("job-1","worker-1",42.5),true);
+ assert.equal(requests[0].url,"https://example.supabase.co/rest/v1/rpc/report_job_progress");
+ assert.deepEqual(requests[0].body,{p_job_id:"job-1",p_worker_id:"worker-1",p_progress:42.5});
+ await assert.rejects(()=>queue.reportProgress("job-1","worker-1",101),/between 0 and 100/);
+ const malformed=createCloudQueue({...base,fetchImpl:async()=>response("yes")});
+ await assert.rejects(()=>malformed.reportProgress("job-1","worker-1",20),/invalid result/);
+});
