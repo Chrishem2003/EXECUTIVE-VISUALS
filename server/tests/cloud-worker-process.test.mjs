@@ -125,3 +125,30 @@ test("cooperative cancellation migration keeps accepted requests cancelled throu
  assert.match(recovery,/when next_status = 'cancelled' then 'job\.cancelled'/);
  assert.match(recovery,/grant execute on function executive_visuals\.recover_expired_jobs_by_type\(integer, text\[\]\) to service_role/);
 });
+
+test("cloud worker supervisor exposes sanitized health counters for recovery and job cycles",async()=>{
+ const events=[];
+ const workers=[
+  {async recoverExpired(){return 2;},async runCycle(){return{claimed:true,finished:true,jobId:"job-a"};}},
+  {async recoverExpired(){return 3;},async runCycle(){return{claimed:false};}}
+ ];
+ const supervisor=createCloudWorkerSupervisor({workers,leaseSeconds:60,heartbeatIntervalMs:10000,pollMs:1000,onLog:event=>events.push(event)});
+ await supervisor.start();
+ const running=supervisor.snapshot();
+ assert.equal(running.status,"running");
+ assert.equal(running.workerFamilies,2);
+ assert.equal(running.cycles,1);
+ assert.equal(running.jobsClaimed,1);
+ assert.equal(running.recoveredJobs,5);
+ assert.ok(running.startedAt);
+ assert.ok(running.lastCycleAt);
+ assert.ok(running.lastRecoveryAt);
+ assert.equal("serviceRoleKey" in running,false);
+ await supervisor.stop();
+ assert.equal(supervisor.snapshot().status,"stopped");
+ assert.ok(events.some(event=>event.kind==="started"&&event.snapshot?.status==="running"));
+ assert.ok(events.some(event=>event.kind==="stopped"&&event.snapshot?.status==="stopped"));
+});
+test("cloud worker supervisor validates health reporting interval",()=>{
+ assert.throws(()=>createCloudWorkerSupervisor({workers:[{runCycle:async()=>({claimed:false}),recoverExpired:async()=>0}],healthIntervalMs:1000}),/health interval/);
+});
