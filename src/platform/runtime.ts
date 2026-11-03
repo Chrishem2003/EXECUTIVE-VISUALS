@@ -11,6 +11,7 @@ let recoveryMode=false;
 let workspaceRevisions=new Map<string,number>();
 let workspaceSaveTimers=new Map<string,ReturnType<typeof setTimeout>>();
 let workspaceSaveChain:Promise<void>=Promise.resolve();
+let projectSelectionInitialized=false;
 const state:{status:"checking"|"offline"|"auth-required"|"online";authMode:"local"|"supabase";user:RuntimeUser|null;projects:RuntimeProject[];assets:RuntimeAsset[];jobs:RuntimeJob[];audit:Array<Record<string,unknown>>;members:Array<{id:string;email:string;role:string;createdAt:string}>;reviews:RuntimeReview[];projectId:string;message:string;ffmpeg:boolean;ffprobe:boolean;textGatewayEnabled:boolean;textGatewayConfigured:boolean;imageGatewayEnabled:boolean;imageGatewayConfigured:boolean;providers:ProviderStatus[];remoteUsage:RemoteUsage|null;workspaceSaveStatus:"idle"|"saving"|"saved"|"error";cloudAssetsEnabled:boolean}={
  status:"checking",authMode:"local",workspaceSaveStatus:"idle",cloudAssetsEnabled:false,user:null,projects:[],assets:[],jobs:[],audit:[],members:[],reviews:[],projectId:"",message:"",ffmpeg:false,ffprobe:false,textGatewayEnabled:false,textGatewayConfigured:false,imageGatewayEnabled:false,imageGatewayConfigured:false,providers:[],remoteUsage:null,
 };
@@ -143,7 +144,7 @@ async function refresh(){
  ]);
  state.projects=projects.projects;state.jobs=jobs.jobs;state.audit=audit.events;state.providers=providerCatalog.providers;state.remoteUsage=usageResponse.remoteUsage;
  if(state.projectId&&!state.projects.some(project=>project.id===state.projectId))state.projectId="";
- if(!state.projectId&&state.projects.length)state.projectId=state.projects[0].id;
+ if(!projectSelectionInitialized&&state.projects.length){if(!state.projectId)state.projectId=state.projects[0].id;projectSelectionInitialized=true;}
  const assetQuery=state.cloudAssetsEnabled&&state.projectId?"?projectId="+encodeURIComponent(state.projectId):"";
  const assets=await apiRequest<{assets:RuntimeAsset[]}>(state.cloudAssetsEnabled?"/api/cloud/assets"+assetQuery:"/api/assets");
  state.assets=assets.assets;window.dispatchEvent(new Event("ev:assets-updated"));
