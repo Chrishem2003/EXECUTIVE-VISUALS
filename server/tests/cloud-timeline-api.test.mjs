@@ -32,24 +32,32 @@ function deliveryReviewFixture({jobOwner=owner,receiptValid=true,deliveryStatus=
 }
 test("cloud job listing is project-authorized and owner-filtered with bounded pagination",async()=>{
  const jobs=[
-  {id:"623e4567-e89b-42d3-a456-426614174001",owner_id:owner,project_id:project,job_type:"timeline.render",status:"running",progress:42,input:{timelineId},output:null,error:null,attempt_count:1,created_at:"2026-11-03T10:00:00Z",updated_at:"2026-11-03T10:01:00Z"},
-  {id:"623e4567-e89b-42d3-a456-426614174002",owner_id:owner,project_id:project,job_type:"media.ai-upscale",status:"running",progress:0,input:{sourceAssetId:"asset"},output:null,error:null,attempt_count:0,created_at:"2026-11-03T09:00:00Z",updated_at:"2026-11-03T09:00:00Z"}
+  {id:"623e4567-e89b-42d3-a456-426614174001",owner_id:owner,project_id:project,job_type:"timeline.render",status:"processing",progress:42,input:{timelineId},output:null,error:null,attempt_count:1,created_at:"2026-11-03T10:00:00Z",updated_at:"2026-11-03T10:01:00Z"},
+  {id:"623e4567-e89b-42d3-a456-426614174002",owner_id:owner,project_id:project,job_type:"media.ai-upscale",status:"processing",progress:0,input:{sourceAssetId:"asset"},output:null,error:null,attempt_count:0,created_at:"2026-11-03T09:00:00Z",updated_at:"2026-11-03T09:00:00Z"}
  ];
  const f=setup({existing:jobs});
- const result=await f.api.handle({method:"GET",path:"/api/cloud/jobs",ownerId:owner,query:{projectId:project,limit:"1",offset:"0",status:"running"}});
+ const result=await f.api.handle({method:"GET",path:"/api/cloud/jobs",ownerId:owner,query:{projectId:project,limit:"1",offset:"0",status:"processing"}});
  assert.equal(result.status,200);
  assert.equal(result.body.jobs.length,1);
  assert.equal(result.body.jobs[0].type,"timeline.render");
  assert.equal(result.body.jobs[0].progress,42);
+ assert.equal(result.body.jobs[0].status,"running","database processing state is presented as running in the user-facing API");
  assert.deepEqual(result.body.page,{limit:1,offset:0,hasMore:true,nextOffset:1});
  const url=f.calls.find(call=>call[0]==="fetch")[1];
  assert.ok(!url.includes("owner_id=eq."));
  assert.ok(url.includes("project_id=eq."+project));
  assert.ok(url.includes("project_id=eq."+project));
- assert.ok(url.includes("status=eq.running"));
+ assert.ok(url.includes("status=eq.processing"),"running filter must query the persisted processing state");
+});
+test("project job API normalizes processing state to running for collaborators",async()=>{
+ const existing=[{id:"623e4567-e89b-42d3-a456-426614174003",owner_id:owner,project_id:project,job_type:"timeline.render",status:"processing",progress:18,input:{},output:null,error:null,attempt_count:1,created_at:"2026-11-03T10:00:00Z",updated_at:"2026-11-03T10:01:00Z"}];
+ const f=setup({existing});
+ const result=await f.api.handle({method:"GET",path:"/api/cloud/jobs",ownerId:owner,query:{projectId:project}});
+ assert.equal(result.status,200);
+ assert.equal(result.body.jobs[0].status,"running");
 });
 test("authorized collaborators can list jobs created by the project owner",async()=>{
- const existing=[{id:"623e4567-e89b-42d3-a456-426614174001",owner_id:owner,project_id:project,job_type:"timeline.render",status:"running",progress:55,input:{},output:null,error:null,attempt_count:1,created_at:"2026-11-03T10:00:00Z",updated_at:"2026-11-03T10:01:00Z"}];
+ const existing=[{id:"623e4567-e89b-42d3-a456-426614174001",owner_id:owner,project_id:project,job_type:"timeline.render",status:"processing",progress:55,input:{},output:null,error:null,attempt_count:1,created_at:"2026-11-03T10:00:00Z",updated_at:"2026-11-03T10:01:00Z"}];
  const f=setup({existing,authorizeOverride:async({ownerId,projectId:pid,action})=>ownerId===editor&&pid===project&&action==="read"});
  const result=await f.api.handle({method:"GET",path:"/api/cloud/jobs",ownerId:editor,query:{projectId:project}});
  assert.equal(result.status,200);
