@@ -25,7 +25,8 @@ All routes require a verified Supabase access token in the Authorization header.
 - `GET /api/cloud/assets?projectId=<uuid>&limit=50&offset=0` — list authorized private assets.
 - `POST /api/cloud/assets` — stream a raw media body; set `Content-Type`, `X-File-Name`, and optional `X-Project-Id` headers.
 - `POST /api/cloud/media-jobs` — enqueue an allowlisted cloud media operation using `{ projectId, sourceAssetId, jobType, options }`; send an `Idempotency-Key` header (at least 8 characters). The API resolves the source under the verified user and project, pins its SHA-256 in the immutable job input, and derives `owner_id` from the verified session.
-- `GET /api/cloud/media-jobs?projectId=<uuid>` — list the caller's supported cloud media jobs for an authorized project.
+- `GET /api/cloud/media-jobs?projectId=<uuid>` — list supported cloud media jobs visible to authorized project members.
+- `POST /api/cloud/media-jobs/:id/cancel` — cancel a queued cloud media job. Requires project editor access and the `20261103160000_cancel_queued_cloud_media_jobs.sql` migration. The RPC locks the job row and records cancellation atomically; if a worker has already claimed the job, the API returns HTTP 409. Running jobs are not interrupted.
 - `GET /api/cloud/assets/:id` — retrieve metadata.
 - `GET /api/cloud/assets/:id/url` — create a short-lived signed download URL (5 minutes).
 - `GET /api/cloud/assets/:id/file` — authenticated redirect to a short-lived signed URL, with private/no-store response headers; used by the browser asset preview.
