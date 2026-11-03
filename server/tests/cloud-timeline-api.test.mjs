@@ -413,3 +413,17 @@ test("waveform API rejects non-audio assets and invalid dimensions",async()=>{
  const invalid=await audio.api.handle({method:"POST",path:"/api/cloud/waveforms",ownerId:owner,body:{projectId:project,sourceAssetId:video.id,width:20},idempotencyKey:"waveform-request-003"});
  assert.equal(invalid.status,400);assert.equal(invalid.body.error.code,"WAVEFORM_OPTIONS_INVALID");
 });
+
+test("audio timeline preview exposes only a same-project waveform derivative with matching source checksum",async()=>{
+ const sourceId="723e4567-e89b-42d3-a456-426614174000",waveformId="823e4567-e89b-42d3-a456-426614174003",sourceHash="a".repeat(64),calls=[];
+ const source={id:sourceId,ownerId:owner,projectId:project,mediaType:"audio/wav",sha256:sourceHash};
+ const waveform={id:waveformId,ownerId:owner,projectId:project,mediaType:"image/png",sha256:"b".repeat(64),derivativeOf:sourceId,metadata:{operation:"media.waveform",sourceSha256:sourceHash}};
+ const timeline={id:timelineId,ownerId:owner,projectId:project,revision:14,timeline:{tracks:[{clips:[{assetId:sourceId}]}]}};
+ const api=createCloudTimelineApi({url:"https://example.supabase.co",serviceRoleKey:"service-secret",timelineService:{
+  timelines:{async get(){return timeline;}},
+  assets:{async get(){return source;},async list(){return[waveform];},async createSignedUrl(input){calls.push(input);return{asset:{id:input.assetId},url:"https://signed.example/"+input.assetId,expiresIn:300};}}
+ },authorize:async()=>true});
+ const result=await api.handle({method:"GET",path:"/api/cloud/timelines/"+timelineId+"/preview/"+sourceId,ownerId:owner,query:{revision:"14"}});
+ assert.equal(result.status,200);assert.equal(result.body.preview.waveformUrl,"https://signed.example/"+waveformId);
+ assert.equal(calls.length,2);assert.equal(calls[0].assetId,sourceId);assert.equal(calls[1].assetId,waveformId);
+});
