@@ -427,3 +427,48 @@ test("audio timeline preview exposes only a same-project waveform derivative wit
  assert.equal(result.status,200);assert.equal(result.body.preview.waveformUrl,"https://signed.example/"+waveformId);
  assert.equal(calls.length,2);assert.equal(calls[0].assetId,sourceId);assert.equal(calls[1].assetId,waveformId);
 });
+
+
+test("cloud media jobs bind the verified owner, project and source checksum before enqueue",async()=>{
+ const f=setup();
+ const result=await f.api.handle({method:"POST",path:"/api/cloud/media-jobs",ownerId:owner,idempotencyKey:"media-job-0001",body:{ownerId:editor,projectId:project,sourceAssetId:"723e4567-e89b-42d3-a456-426614174000",jobType:"media.thumbnail",options:{seconds:3}}});
+ assert.equal(result.status,202);
+ assert.equal(result.body.job.owner_id,owner);
+ assert.equal(result.body.job.project_id,project);
+ const inserted=f.calls.find(call=>call[0]==="fetch"&&call[1].includes("/jobs?")&&call[2].method==="POST");
+ const row=JSON.parse(inserted[2].body);
+ assert.equal(row.owner_id,owner);
+ assert.equal(row.job_type,"media.thumbnail");
+ assert.equal(row.input.sourceAssetId,"723e4567-e89b-42d3-a456-426614174000");
+ assert.equal(row.input.sourceSha256,"a".repeat(64));
+ assert.equal(row.input.seconds,3);
+ assert.ok(f.calls.some(call=>call[0]==="fetch"&&call[1].includes("/job_events")&&JSON.parse(call[2].body).event_type==="job.queued"));
+});
+
+test("cloud media job submission requires project write access and verified source membership",async()=>{
+ const denied=setup({canWrite:false});
+ const result=await denied.api.handle({method:"POST",path:"/api/cloud/media-jobs",ownerId:owner,idempotencyKey:"media-job-0002",body:{projectId:project,sourceAssetId:"723e4567-e89b-42d3-a456-426614174000",jobType:"media.thumbnail"}});
+ assert.equal(result.status,404);
+ const wrongSource=setup({assetOverride:{id:"723e4567-e89b-42d3-a456-426614174000",ownerId:owner,projectId:"923e4567-e89b-42d3-a456-426614174000",sha256:"a".repeat(64),mediaType:"video/mp4"}});
+ const mismatch=await wrongSource.api.handle({method:"POST",path:"/api/cloud/media-jobs",ownerId:owner,idempotencyKey:"media-job-0003",body:{projectId:project,sourceAssetId:"723e4567-e89b-42d3-a456-426614174000",jobType:"media.thumbnail"}});
+ assert.equal(mismatch.status,404);
+});
+
+test("cloud media job submission is idempotent and rejects key reuse for changed inputs",async()=>{
+ const prior={id:"823e4567-e89b-42d3-a456-426614174000",owner_id:owner,project_id:project,job_type:"media.thumbnail",status:"queued",input:{sourceAssetId:"723e4567-e89b-42d3-a456-426614174000",sourceSha256:"a".repeat(64),seconds:2}};
+ const replay=setup({existing:[prior]});
+ const replayed=await replay.api.handle({method:"POST",path:"/api/cloud/media-jobs",ownerId:owner,idempotencyKey:"media-job-0004",body:{projectId:project,sourceAssetId:"723e4567-e89b-42d3-a456-426614174000",jobType:"media.thumbnail",options:{seconds:2}}});
+ assert.equal(replayed.status,200);
+ assert.equal(replayed.body.idempotentReplay,true);
+ const conflict=setup({existing:[prior]});
+ const conflicted=await conflict.api.handle({method:"POST",path:"/api/cloud/media-jobs",ownerId:owner,idempotencyKey:"media-job-0004",body:{projectId:project,sourceAssetId:"723e4567-e89b-42d3-a456-426614174000",jobType:"media.thumbnail",options:{seconds:4}}});
+ assert.equal(conflicted.status,409);
+});
+
+test("cloud media job submission rejects unsupported operations and missing idempotency keys",async()=>{
+ const f=setup();
+ const unsupported=await f.api.handle({method:"POST",path:"/api/cloud/media-jobs",ownerId:owner,idempotencyKey:"media-job-0005",body:{projectId:project,sourceAssetId:"723e4567-e89b-42d3-a456-426614174000",jobType:"workflow.execute"}});
+ assert.equal(unsupported.status,400);
+ const missingKey=await f.api.handle({method:"POST",path:"/api/cloud/media-jobs",ownerId:owner,body:{projectId:project,sourceAssetId:"723e4567-e89b-42d3-a456-426614174000",jobType:"media.thumbnail"}});
+ assert.equal(missingKey.status,400);
+});
