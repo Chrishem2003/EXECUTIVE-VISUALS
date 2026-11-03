@@ -152,3 +152,15 @@ test("cloud worker supervisor exposes sanitized health counters for recovery and
 test("cloud worker supervisor validates health reporting interval",()=>{
  assert.throws(()=>createCloudWorkerSupervisor({workers:[{runCycle:async()=>({claimed:false}),recoverExpired:async()=>0}],healthIntervalMs:1000}),/health interval/);
 });
+
+test("supervisor persists running, stopping and stopped heartbeats for each worker family",async()=>{
+ const heartbeats=[];
+ const worker={workerId:"media-worker-1",workerFamily:"media",async reportHeartbeat(value){heartbeats.push(value);return{accepted:true,lastSeenAt:"2026-11-03T12:00:00Z"};},async recoverExpired(){return 0;},async runCycle(){return{claimed:false};}};
+ const supervisor=createCloudWorkerSupervisor({workers:[worker],instanceId:"instance-test",pollMs:1000,healthIntervalMs:60000});
+ await supervisor.start();
+ assert.equal(heartbeats[0].status,"running");
+ assert.equal(heartbeats[0].instanceId,"instance-test");
+ await supervisor.stop();
+ assert.deepEqual(heartbeats.map(item=>item.status),["running","stopping","stopped"]);
+ assert.equal(supervisor.snapshot().lastHeartbeatAt,"2026-11-03T12:00:00Z");
+});
