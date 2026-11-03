@@ -43,9 +43,9 @@ test("cloud job listing is project-authorized and owner-filtered with bounded pa
  assert.equal(result.body.jobs[0].progress,42);
  assert.deepEqual(result.body.page,{limit:1,offset:0,hasMore:true,nextOffset:1});
  const url=f.calls.find(call=>call[0]==="fetch")[1];
- assert.match(url,/owner_id=eq\\.123e4567-e89b-42d3-a456-426614174000/);
- assert.match(url,/project_id=eq\\.423e4567-e89b-42d3-a456-426614174000/);
- assert.match(url,/status=eq\\.running/);
+ assert.ok(url.includes("owner_id=eq."+owner));
+ assert.ok(url.includes("project_id=eq."+project));
+ assert.ok(url.includes("status=eq.running"));
 });
 test("cloud job listing rejects unauthorized projects and malformed filters",async()=>{
  const denied=setup({authorizeOverride:async()=>false});
