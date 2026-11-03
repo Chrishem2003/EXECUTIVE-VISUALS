@@ -18,7 +18,7 @@ This checklist separates a successful source build from a safe, usable hosted se
 | Durable application database | Blocked for multi-instance use | Current runtime uses SQLite on one persistent disk. It is a single-instance staging architecture, not a horizontally scalable multi-tenant deployment. |
 | Worker recovery | Partial | Local queue leases/retries exist. Cloud worker process is not deployed or connected to the active application queue. |
 | Media generation | Explicitly limited | Local FFmpeg editing/enhancement is implemented. Actual image/video generation and verified neural super-resolution are not generally available; provider adapters remain gated. |
-| Security review | Partial | API tests and headers exist. Complete Supabase RLS/storage policy review, auth abuse controls, upload isolation and dependency/security review are required on the dedicated project. |
+| Security review | Partial; static dotfile guard added | Static server denies root/nested dotfiles and hidden directories, including multiply encoded paths, before SPA fallback. Complete Supabase RLS/storage policy review, distributed auth abuse controls, upload isolation, reverse-proxy dot-path denial and dependency/security review are still required on the dedicated project. |
 | Recovery / backups | Blocked | No tested backup-and-restore procedure for the application's SQLite database and media files is recorded. |
 | Operational monitoring | Blocked | No application-specific alerting, retention policy, capacity limits or tested incident/rollback procedure. |
 | User acceptance | Not run | No hosted end-to-end tests with separate owner/editor/reviewer/viewer accounts and real media files. |
