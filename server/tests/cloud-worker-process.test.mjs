@@ -211,10 +211,12 @@ test("supervisor keeps heartbeats alive while startup recovery is waiting",async
   };
   const supervisor=createCloudWorkerSupervisor({workers:[worker],pollMs:1000,healthIntervalMs:10000});
   const starting=supervisor.start();
-  while(heartbeatCount<1)await Promise.resolve();
+  while(intervals.length<2)await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(heartbeatCount,1,"initial heartbeat completes before startup recovery");
   const heartbeatTimer=intervals[1];
   assert.ok(heartbeatTimer,"periodic heartbeat timer is installed before recovery completes");
-  await heartbeatTimer.callback();
+  heartbeatTimer.callback();
+  while(heartbeatCount<2)await new Promise(resolve=>setImmediate(resolve));
   assert.equal(heartbeatCount,2);
   releaseRecovery();
   await starting;
