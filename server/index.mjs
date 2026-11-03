@@ -1,5 +1,6 @@
 import { createServer } from "node:http";
 import { createSupabaseAuth } from "./supabase-auth.mjs";
+import { createCloudAssetService } from "./cloud-asset-service.mjs";
 import { createAuthRateLimiter } from "./auth-rate-limit.mjs";
 import { createHash, randomBytes, randomUUID, scryptSync, timingSafeEqual } from "node:crypto";
 import { createReadStream, createWriteStream, existsSync, statSync } from "node:fs";
@@ -59,6 +60,9 @@ const cloudTimelineApiEnabled = process.env.CLOUD_TIMELINE_API_ENABLED === "true
 if (cloudTimelineApiEnabled && AUTH_MODE !== "supabase") throw new Error("Cloud timeline API requires verified Supabase authentication.");
 const cloudTimelineApi = cloudTimelineApiEnabled ? createCloudTimelineApi({maxUploadBytes:Number(process.env.CLOUD_MEDIA_MAX_UPLOAD_BYTES || MAX_UPLOAD_BYTES)}) : null;
 if (cloudTimelineApi) await cloudTimelineApi.checkReadiness();
+const cloudAssetsEnabled=process.env.CLOUD_ASSETS_ENABLED==="true";
+if(cloudAssetsEnabled&&AUTH_MODE!=="supabase")throw new Error("Cloud asset API requires verified Supabase authentication.");
+const cloudAssetService=cloudAssetsEnabled?createCloudAssetService({maxBytes:Number(process.env.CLOUD_MEDIA_MAX_UPLOAD_BYTES||MAX_UPLOAD_BYTES)}):null;
 const activeProcesses = new Map();
 const WORKER_ID = randomUUID();
 const AUTH_RATE_LIMIT = Math.max(1, Math.min(1000, Number(process.env.AUTH_RATE_LIMIT) || 20));
@@ -81,6 +85,7 @@ const SECURITY_HEADERS = {
 const HTML_CSP = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'";
 const send = (res,status,body,headers={}) => { res.writeHead(status,{"content-type":"application/json; charset=utf-8","cache-control":"no-store",...SECURITY_HEADERS,...headers});res.end(JSON.stringify(body)); };
 const fail = (res,status,code,message) => send(res,status,{error:{code,message}});
+const cloudAssetError=(res,error,cors)=>{const code=error?.code||"CLOUD_ASSET_FAILED";const status=error?.status|| (code==="CLOUD_ASSET_ACCESS_DENIED"?403:code==="CLOUD_ASSET_NOT_FOUND"?404:code==="CLOUD_STORAGE_TOO_LARGE"?413:code==="UNSUPPORTED_MEDIA_TYPE"?415:502);send(res,status,{error:{code,message:String(error?.message||"Cloud asset request failed.").slice(0,300),...(error?.cleanupPending?{cleanupPending:true}:{})}},cors);};
 const readJson = async (req,limit=1024*1024) => {
   const chunks=[];let size=0;
   for await (const chunk of req) { size+=chunk.length;if(size>limit)throw Object.assign(new Error("Request body too large."),{status:413,code:"BODY_TOO_LARGE"});chunks.push(chunk); }
@@ -197,6 +202,27 @@ async function storeUpload(req,user,projectId) {
   audit(db,user.id,"asset.uploaded","asset",id,{name:originalName,mediaType,size,sha256},projectId||null);
   return {id,projectId:projectId||null,name:originalName,mediaType,size,sha256,createdAt:now()};
 }
+async function storeCloudUpload(req,user,projectId) {
+  const mediaType=String(req.headers["content-type"]||"application/octet-stream").split(";")[0].toLowerCase();
+  if(!ALLOWED_MEDIA.has(mediaType))throw Object.assign(new Error("Unsupported media type."),{status:415,code:"UNSUPPORTED_MEDIA_TYPE"});
+  const declaredSize=Number(req.headers["content-length"]||0);
+  const cloudLimit=Number(process.env.CLOUD_MEDIA_MAX_UPLOAD_BYTES||MAX_UPLOAD_BYTES);
+  if(declaredSize>cloudLimit)throw Object.assign(new Error("Upload exceeds the cloud media size limit."),{status:413,code:"CLOUD_STORAGE_TOO_LARGE"});
+  let decodedName="upload";try{decodedName=decodeURIComponent(String(req.headers["x-file-name"]||"upload"));}catch{throw Object.assign(new Error("File name header is malformed."),{status:400,code:"INVALID_FILE_NAME"});}
+  const originalName=safeName(decodedName),id=randomUUID(),absolute=join(MEDIA_ROOT,"uploads","cloud-"+id+"."+ (EXTENSIONS[mediaType]||"bin"));
+  const digest=createHash("sha256");let size=0;
+  const meter=new Transform({transform(chunk,encoding,callback){size+=chunk.length;if(size>cloudLimit){callback(Object.assign(new Error("Upload exceeds the cloud media size limit."),{status:413,code:"CLOUD_STORAGE_TOO_LARGE"}));return;}digest.update(chunk);callback(null,chunk);}});
+  try{
+    await pipeline(req,meter,createWriteStream(absolute,{flags:"wx"}));
+    if(size===0)throw Object.assign(new Error("Empty uploads are not accepted."),{status:400,code:"EMPTY_UPLOAD"});
+    const handle=await open(absolute,"r"),header=Buffer.alloc(32);let read;
+    try{read=await handle.read(header,0,32,0);}finally{await handle.close();}
+    if(!validFileSignature(mediaType,header.subarray(0,read.bytesRead)))throw Object.assign(new Error("File signature does not match the declared media type."),{status:415,code:"MEDIA_SIGNATURE_MISMATCH"});
+    const extension=extname(originalName).toLowerCase();
+    const metadata=(extension===".srt"&&mediaType==="text/plain")?{captionValidation:validateSrt(await readFile(absolute,"utf8"))}:extension===".vtt"&&mediaType==="text/vtt"?{captionValidation:validateWebVtt(await readFile(absolute,"utf8"))}:{};
+    return await cloudAssetService.assets.createFromFile({ownerId:user.id,projectId:projectId||null,originalName,mediaType,filePath:absolute,metadata});
+  }finally{await unlink(absolute).catch(()=>{});}
+}
 async function processNextJob() {
   recoverExpiredJobs(db);
   const current=claimNextJob(db,WORKER_ID);
@@ -279,7 +305,7 @@ export function createAppServer() {
         }
       }
       if(path==="/api/health"&&req.method==="GET"){
-        send(res,200,{status:"ok",storage:"local-disk",database:"sqlite",media:{ffmpeg:executableAvailable("ffmpeg"),ffprobe:executableAvailable("ffprobe")},imageGateway:{enabled:process.env.IMAGE_GATEWAY_ENABLED==="true",configured:(()=>{try{const url=new URL(process.env.IMAGE_GATEWAY_URL||"");const local=["localhost","127.0.0.1","::1","[::1]"].includes(url.hostname.toLowerCase());return Boolean(process.env.IMAGE_GATEWAY_MODEL&&(local||process.env.IMAGE_GATEWAY_ALLOW_REMOTE==="true"));}catch{return false;}})()},textGateway:{enabled:process.env.AI_GATEWAY_ENABLED==="true",configured:(()=>{try{const url=new URL(process.env.AI_GATEWAY_URL||"");const local=["localhost","127.0.0.1","::1"].includes(url.hostname.toLowerCase());return Boolean(process.env.AI_GATEWAY_MODEL&&(local||process.env.AI_GATEWAY_ALLOW_REMOTE==="true"));}catch{return false;}})()},authMode:AUTH_MODE,version:"0.1.0"},cors);return;
+        send(res,200,{status:"ok",storage:"local-disk",database:"sqlite",media:{ffmpeg:executableAvailable("ffmpeg"),ffprobe:executableAvailable("ffprobe")},imageGateway:{enabled:process.env.IMAGE_GATEWAY_ENABLED==="true",configured:(()=>{try{const url=new URL(process.env.IMAGE_GATEWAY_URL||"");const local=["localhost","127.0.0.1","::1","[::1]"].includes(url.hostname.toLowerCase());return Boolean(process.env.IMAGE_GATEWAY_MODEL&&(local||process.env.IMAGE_GATEWAY_ALLOW_REMOTE==="true"));}catch{return false;}})()},textGateway:{enabled:process.env.AI_GATEWAY_ENABLED==="true",configured:(()=>{try{const url=new URL(process.env.AI_GATEWAY_URL||"");const local=["localhost","127.0.0.1","::1"].includes(url.hostname.toLowerCase());return Boolean(process.env.AI_GATEWAY_MODEL&&(local||process.env.AI_GATEWAY_ALLOW_REMOTE==="true"));}catch{return false;}})()},authMode:AUTH_MODE,cloudAssets:{enabled:cloudAssetsEnabled,configured:!!cloudAssetService},version:"0.1.0"},cors);return;
       }
       if(path==="/api/auth/register"&&req.method==="POST"){
         const body=await readJson(req);const email=String(body.email||"").trim().toLowerCase();const password=String(body.password||"");
