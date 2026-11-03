@@ -110,7 +110,7 @@ export function createCloudQueue({
       const result = await call("retry_job", { p_job_id: jobId, p_worker_id: workerId, p_error: error });
       if (!result || typeof result !== "object" || Array.isArray(result)
         || typeof result.accepted !== "boolean"
-        || !["queued", "failed", "lease_lost"].includes(result.status)
+        || !["queued", "failed", "lease_lost", "cancelled"].includes(result.status)
         || typeof result.retryable !== "boolean"
         || !Number.isInteger(result.delaySeconds) || result.delaySeconds < 0
         || !Number.isInteger(result.attempt) || result.attempt < 0
@@ -118,7 +118,7 @@ export function createCloudQueue({
         || result.attempt > result.maxAttempts
         || (result.status === "lease_lost" && (result.accepted || result.retryable || result.delaySeconds !== 0))
         || (result.status === "queued" && (!result.accepted || !result.retryable || result.attempt >= result.maxAttempts))
-        || (result.status === "failed" && (!result.accepted || result.retryable || result.delaySeconds !== 0))) {
+        || (result.status === "failed" && (!result.accepted || result.retryable || result.delaySeconds !== 0))\n        || (result.status === "cancelled" && (!result.accepted || result.retryable || result.delaySeconds !== 0))) {
         throw new Error("Cloud queue retry returned an invalid result.");
       }
       return result;
