@@ -68,7 +68,7 @@ test("audio mute and solo state creates immutable revisions",()=>{
  assert.throws(()=>setAudioTrackState(solo,"v1",{muted:true}),/audio tracks/);
  assert.throws(()=>setAudioTrackState(solo,"missing",{solo:true}),/not found/);
  assert.throws(()=>setAudioTrackState(solo,"a1",{muted:"yes"}),/boolean/);
- assert.throws(()=>setAudioTrackState(solo,"a1",{gain:1}),/unsupported/);
+ assert.throws(()=>setAudioTrackState(solo,"a1",{gain:1}),/unsupported/i);
 });
 test("review markers retain bounded notes and review color metadata",()=>{
  const timeline=fixture();
