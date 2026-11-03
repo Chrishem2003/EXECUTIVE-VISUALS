@@ -136,27 +136,29 @@ window.addEventListener("ev:save-creative-draft",event=>{
 
 async function refresh(){
  const previousProjectId=state.projectId;
- const projectPath=cloudMode?"/api/cloud/projects":"/api/projects";
+ const projectResponse=await apiRequest<{projects:RuntimeProject[]}>(cloudMode?"/api/cloud/projects":"/api/projects");
+ state.projects=projectResponse.projects.map(project=>({...project,access_role:project.ownerId===state.user?.id?"owner":project.access_role||"viewer"}));
+ if(state.projectId&&!state.projects.some(project=>project.id===state.projectId))state.projectId="";
+ if(!state.projectId&&state.projects.length)state.projectId=state.projects[0].id;
  const assetPath=cloudMode?"/api/cloud/assets"+(state.projectId?"?projectId="+encodeURIComponent(state.projectId):""):"/api/assets";
- const jobPath=cloudMode?"/api/cloud/jobs?projectId="+encodeURIComponent(state.projectId||""):"/api/jobs";
- const [projects,assets,jobs,providerCatalog,usageResponse]=await Promise.all([
-  apiRequest<{projects:RuntimeProject[]}>(projectPath),
+ const jobPath=cloudMode?"/api/cloud/jobs?projectId="+encodeURIComponent(state.projectId):"/api/jobs";
+ const [assets,jobs,audit,providerCatalog,usageResponse]=await Promise.all([
   apiRequest<{assets:RuntimeAsset[]}>(assetPath),
-  state.projectId||!cloudMode?apiRequest<{jobs:Array<RuntimeJob&{type?:string}>}>(jobPath):Promise.resolve({jobs:[]}),
+  cloudMode&&!state.projectId?Promise.resolve({jobs:[] as RuntimeJob[]}):apiRequest<{jobs:Array<RuntimeJob&{type?:string}>}>(jobPath),
+  cloudMode?Promise.resolve({events:[] as Array<Record<string,unknown>>}):apiRequest<{events:Array<Record<string,unknown>>}>("/api/audit"),
   apiRequest<{providers:ProviderStatus[]}>("/api/providers"),
   apiRequest<{remoteUsage:RemoteUsage}>("/api/usage")
  ]);
- state.projects=projects.projects.map(project=>({...project,access_role:project.ownerId===state.user?.id?"owner":"viewer"}));
- state.assets=assets.assets;state.jobs=jobs.jobs.map(job=>({...job,jobType:job.jobType||job.type||"unknown"}));state.audit=[];state.providers=providerCatalog.providers;state.remoteUsage=usageResponse.remoteUsage;
+ state.assets=assets.assets;
+ state.jobs=jobs.jobs.map(job=>({...job,jobType:job.jobType||job.type||"unknown"}));
+ state.audit=audit.events;state.providers=providerCatalog.providers;state.remoteUsage=usageResponse.remoteUsage;
  assetUrls.clear();
- if(cloudMode){await Promise.all(state.assets.map(async asset=>{try{const signed=await apiRequest<{url:string}>("/api/cloud/assets/"+encodeURIComponent(asset.id));if(typeof signed.url==="string"&&signed.url.startsWith("https://"))assetUrls.set(asset.id,signed.url);}catch{/* no local fallback */}}));}
+ if(cloudMode){await Promise.all(state.assets.map(async asset=>{try{const signed=await apiRequest<{url:string}>("/api/cloud/assets/"+encodeURIComponent(asset.id));if(typeof signed.url==="string"&&signed.url.startsWith("https://"))assetUrls.set(asset.id,signed.url);}catch{/* Never fall back to local asset IDs in cloud mode. */}}));}
  window.dispatchEvent(new Event("ev:assets-updated"));
- if(state.projectId&&!state.projects.some(p=>p.id===state.projectId))state.projectId="";
- if(!state.projectId&&state.projects.length)state.projectId=state.projects[0].id;
  if(previousProjectId!==state.projectId)window.dispatchEvent(new CustomEvent("ev:project-changed",{detail:{projectId:state.projectId}}));
  if(state.projectId&&!cloudMode){try{const response=await apiRequest<{members:Array<{id:string;email:string;role:string;createdAt:string}>}>("/api/projects/"+state.projectId+"/members");state.members=response.members;}catch{state.members=[];}
   try{const response=await apiRequest<{reviews:RuntimeReview[]}>("/api/reviews?projectId="+encodeURIComponent(state.projectId));state.reviews=response.reviews;}catch{state.reviews=[];}
- } else {state.members=[];state.reviews=[];}
+ }else{state.members=[];state.reviews=[];}
 }
 function paint(){updateShell();renderGate();const root=document.querySelector<HTMLElement>("#runtime-workspace");if(root){const view=root.dataset.runtimeView;root.outerHTML=view==="library"?renderAssetLibrary():view==="engines"?renderEngineStatus():view==="overview"?renderRuntimeOverview():renderRuntimeWorkspace();}}
 export async function initRuntime(){
