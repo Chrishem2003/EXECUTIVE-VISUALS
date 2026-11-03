@@ -377,6 +377,23 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     const deliveryPackage=createDeliveryPackage({jobId:job.id,projectId:job.project_id,timelineId:receipt.timelineId,timelineRevision:receipt.timelineRevision,master:{assetId:asset.id,filename:asset.name,mediaType:asset.mediaType,byteSize:asset.size,sha256:asset.sha256,downloadUrl:downloadUrl.href,downloadUrlExpiresInSeconds:300},deliveryReceipt:receipt,renderManifest:receipt.renderManifest,deliveryReport:receipt.deliveryReport,qualityReport:output.qualityReport||null,reviewHistory:approvals});
     return response(200,{deliveryPackage});
    }
+   if(path==="/api/cloud/jobs"&&method==="GET"){
+    const projectId=String(query.projectId||"");
+    if(!safeId(projectId))return response(400,{error:{code:"INVALID_PROJECT_ID",message:"Choose a valid project to list its jobs."}});
+    if(await allow({ownerId,projectId,action:"read"})!==true)return response(404,{error:{code:"PROJECT_NOT_FOUND",message:"Project not found or access denied."}});
+    const limitRaw=String(query.limit??"50"),offsetRaw=String(query.offset??"0");
+    if(!/^\\d{1,3}$/.test(limitRaw)||!/^\\d{1,9}$/.test(offsetRaw))return response(400,{error:{code:"JOB_PAGE_INVALID",message:"Job pagination values must be non-negative integers."}});
+    const limit=Math.min(100,Math.max(1,Number(limitRaw)||50)),offset=Number(offsetRaw);
+    const jobType=String(query.jobType||"").trim(),status=String(query.status||"").trim();
+    if(jobType&&!/^[a-z0-9][a-z0-9._-]{0,79}$/i.test(jobType))return response(400,{error:{code:"JOB_TYPE_INVALID",message:"Job type filter is invalid."}});
+    if(status&&!["queued","running","succeeded","failed","cancelled"].includes(status))return response(400,{error:{code:"JOB_STATUS_INVALID",message:"Job status filter is invalid."}});
+    let queryPath="jobs?select=id,owner_id,project_id,job_type,status,progress,input,output,error,attempt_count,created_at,updated_at,completed_at&owner_id=eq."+encodeURIComponent(ownerId)+"&project_id=eq."+encodeURIComponent(projectId);
+    if(jobType)queryPath+="&job_type=eq."+encodeURIComponent(jobType);
+    if(status)queryPath+="&status=eq."+encodeURIComponent(status);
+    queryPath+="&order=created_at.desc,id.desc&limit="+(limit+1)+"&offset="+offset;
+    const rows=await request(queryPath),visible=(Array.isArray(rows)?rows:[]).slice(0,limit);
+    return response(200,{jobs:visible.map(row=>({id:row.id,projectId:row.project_id,type:row.job_type,status:row.status,progress:Number(row.progress||0),input:row.input||{},output:row.output||null,error:row.error||null,attemptCount:Number(row.attempt_count||0),createdAt:row.created_at,updatedAt:row.updated_at,completedAt:row.completed_at||null})),page:{limit,offset,hasMore:(Array.isArray(rows)?rows.length:0)>limit,nextOffset:(Array.isArray(rows)?rows.length:0)>limit?offset+limit:null}});
+   }
    const jobMatch=path.match(/^\/api\/cloud\/jobs\/([0-9a-f-]+)(?:\/(events))?$/i);
    if(jobMatch&&safeId(jobMatch[1])&&method==="GET"){
     const jobRows=await request("jobs?select=id,owner_id,project_id,job_type,status,progress,input,output,error,attempt_count,created_at,updated_at,completed_at&id=eq."+encodeURIComponent(jobMatch[1])+"&limit=1");
