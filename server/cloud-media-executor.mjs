@@ -334,7 +334,9 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
       onProgress(100);
       return { sourceAssetId: sourceId, outputAsset: asset, sha256: digest, byteSize: info.size, operation: job.job_type, ...(processing ? { processing } : {}) };
     } finally {
-      await materialized.cleanup?.().catch(() => {});
+      // Cleanup hooks are best-effort, but a synchronous throw or non-Promise
+      // implementation must never prevent removal of the worker workspace.
+      try { await materialized.cleanup?.(); } catch {}
       if (workDir) await rm(workDir, { recursive: true, force: true }).catch(() => {});
     }
   };
