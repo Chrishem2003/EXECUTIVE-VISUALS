@@ -133,6 +133,45 @@ exit 0
 });
 
 
+test("AI upscaler does not overwrite a target created while inference is running", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "ev-ai-upscale-race-"));
+  const binary = join(directory, "engine");
+  const model = "realesrgan-x4plus";
+  const input = join(directory, "source.png");
+  const protectedFile = join(directory, "protected.png");
+  const output = join(directory, "late-linked-output.png");
+  await writeFile(input, Buffer.from([137,80,78,71,13,10,26,10,0,0,0,13,73,72,68,82,0,0,0,1,0,0,0,1]));
+  await writeFile(protectedFile, "preserve-this-file");
+  await writeFile(binary, String.raw`#!/bin/sh
+while [ "$1" != "" ]; do
+  if [ "$1" = "-o" ]; then
+    shift
+    ln -s '${protectedFile}' '${output}'
+    printf '\\211PNG\\r\\n\\032\\n\\000\\000\\000\\015IHDR\\000\\000\\000\\004\\000\\000\\000\\004' > "$1"
+  fi
+  shift
+done
+`);
+  await chmod(binary, 0o755);
+  await writeFile(join(directory, model + ".param"), "model");
+  await writeFile(join(directory, model + ".bin"), "weights");
+  try {
+    const adapter = createRealEsrganAdapter({ binaryPath: binary, modelDirectory: directory, timeoutMs: 5000, enabled: true });
+    await assert.rejects(
+      adapter.execute({ inputPath: input, outputPath: output, model, scale: 4, format: "png" }),
+      error => error.code === "AI_UPSCALE_OUTPUT_EXISTS"
+    );
+    const { readFile, lstat } = await import("node:fs/promises");
+    assert.equal(await readFile(protectedFile, "utf8"), "preserve-this-file");
+    assert.equal((await lstat(output)).isSymbolicLink(), true);
+    assert.deepEqual((await import("node:fs/promises")).readdir
+      ? (await (await import("node:fs/promises")).readdir(directory)).filter(name => name.startsWith(".ev-upscale-"))
+      : [], []);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("AI upscaler fingerprints executable and model contents, not file size or timestamps", async () => {
   const directory = await mkdtemp(join(tmpdir(), "ev-ai-fingerprint-"));
   const binary = join(directory, "engine");
