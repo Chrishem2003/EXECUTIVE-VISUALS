@@ -161,3 +161,33 @@ test("retry scheduling is fenced when the database reports a lost lease",async()
  assert.equal(result.reason,"lease_lost");
  assert.equal(queue.calls.some(call=>call[0]==="finish"),false);
 });
+
+test("worker persists monotonic progress under its lease before terminal success",async()=>{
+ const queue=queueFor();
+ const reports=[];
+ queue.reportProgress=async(id,workerId,progress)=>{reports.push([id,workerId,progress]);return true;};
+ const result=await runCloudWorkerCycle({queue,workerId:"worker-progress",heartbeatIntervalMs:60000,execute:async({onProgress})=>{onProgress(40);onProgress(20);onProgress(75);return{ok:true};}});
+ assert.equal(result.status,"succeeded");
+ assert.deepEqual(reports,[["job-1","worker-progress",40],["job-1","worker-progress",75]]);
+ assert.ok(queue.calls.some(call=>call[0]==="finish"));
+});
+
+test("worker never finishes after progress reporting loses the lease",async()=>{
+ const queue=queueFor();
+ queue.reportProgress=async()=>false;
+ const result=await runCloudWorkerCycle({queue,workerId:"worker-progress",heartbeatIntervalMs:60000,execute:async({onProgress,signal})=>{onProgress(35);await new Promise(resolve=>setTimeout(resolve,0));assert.equal(signal.aborted,true);return{lateOutput:true};}});
+ assert.equal(result.finished,false);
+ assert.equal(result.reason,"lease_lost");
+ assert.equal(queue.calls.some(call=>call[0]==="finish"),false);
+});
+
+test("worker aborts conservatively when durable progress cannot be written",async()=>{
+ const queue=queueFor();
+ queue.reportProgress=async()=>{throw Object.assign(new Error("progress RPC unavailable"),{code:"CLOUD_QUEUE_HTTP_503"});};
+ const events=[];
+ const result=await runCloudWorkerCycle({queue,workerId:"worker-progress",heartbeatIntervalMs:60000,execute:async({onProgress,signal})=>{onProgress(50);await new Promise(resolve=>setTimeout(resolve,0));assert.equal(signal.aborted,true);return{lateOutput:true};},onEvent:event=>events.push(event)});
+ assert.equal(result.finished,false);
+ assert.equal(result.reason,"lease_lost");
+ assert.ok(events.some(event=>event.type==="job.progress_error"));
+ assert.equal(queue.calls.some(call=>call[0]==="finish"),false);
+});
