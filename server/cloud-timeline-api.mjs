@@ -140,6 +140,9 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     if(await allow({ownerId,projectId,action:"write"})!==true)return response(404,{error:{code:"PROJECT_NOT_FOUND",message:"Project not found or editor access required."}});
     const source=await service.assets.get({ownerId,assetId:sourceAssetId});
     if(!source||source.projectId!==projectId)return response(404,{error:{code:"SOURCE_ASSET_NOT_FOUND",message:"Source asset was not found in this project."}});
+    const sourceType=String(source.mediaType||"").toLowerCase(),isVideo=sourceType.startsWith("video/"),isAudio=sourceType.startsWith("audio/"),isImage=sourceType.startsWith("image/");
+    const videoOperations=new Set(["media.thumbnail","media.audio_extract","media.denoise","media.color","media.resize","media.interpolate","media.upscale","media.proxy"]);
+    if((videoOperations.has(jobType)&&!isVideo)||(["media.audio-clean","media.waveform"].includes(jobType)&&!isAudio)||(jobType==="media.transcode"&&!isVideo&&!isAudio)||(jobType==="media.ai-upscale"&&!isImage))return response(422,{error:{code:"MEDIA_SOURCE_TYPE_UNSUPPORTED",message:"The selected media operation does not support this source file type."}});
     if(!/^[a-f0-9]{64}$/i.test(String(source.sha256||"")))return response(422,{error:{code:"SOURCE_ASSET_HASH_UNAVAILABLE",message:"The source asset has no verified SHA-256 fingerprint."}});
     if(jobType==="media.ai-upscale"&&(body.rightsConfirmed!==true||!["image/png","image/jpeg","image/webp"].includes(source.mediaType)))return response(422,{error:{code:"AI_UPSCALE_SOURCE_INVALID",message:"AI upscaling requires a rights-confirmed PNG, JPEG or WebP source image."}});
     const options=body.options&&typeof body.options==="object"&&!Array.isArray(body.options)?body.options:{};
