@@ -20,11 +20,11 @@ function fixture({authorize=async()=>true,insertResponse=null,removeError=false,
   async createSignedUrl(path,expiry){storageCalls.push({op:"sign",path,expiry});return"https://example.supabase.co/storage/signed";},
   async remove(path){storageCalls.push({op:"remove",path});if(removeError)throw new Error("storage cleanup unavailable");return true;}
  };
- const row={id:assetId,owner_id:ownerId,project_id:projectId,original_name:"final cut.mp4",media_type:"video/mp4",byte_size:4,sha256:createHash("sha256").update(bytes).digest("hex"),storage_bucket:"executive-visuals-media",object_path:projectId+"/"+assetId+"/original.mp4",derivative_of:null,metadata:{role:"master"},created_at:"2026-11-01T00:00:00Z"};
+ const row={id:assetId,owner_id:ownerId,project_id:projectId,original_name:"final cut.mp4",media_type:"video/mp4",byte_size:4,sha256:createHash("sha256").update(bytes).digest("hex"),storage_bucket:"executive-visuals-media",object_path:projectId+"/"+assetId+"/original.mp4",derivative_of:null,metadata:{role:"master"},created_at:"2026-11-01T00:00:00Z",storage_cleanup_status:"pending"};
  const fetchImpl=async(url,options)=>{
   calls.push({url,options});
   if(options.method==="POST"){const payload=JSON.parse(options.body);return response(insertResponse===null?[{...row,...payload,created_at:row.created_at}]:insertResponse);}
-  if(options.method==="PATCH")return response([row]);
+  if(options.method==="PATCH")return response([{...row,...JSON.parse(options.body)}]);
   return response([row]);
  };
  return {repo:createCloudAssetRepository({...config,storage,authorize,fetchImpl}),calls,storageCalls,row};
@@ -94,19 +94,24 @@ test("does not sign assets belonging to another owner",async()=>{
  assert.equal(f.storageCalls.length,0);
 });
 
-test("soft-deletes metadata before removing the exact object and reports cleanup state",async()=>{
+test("soft-deletes metadata, persists pending cleanup, and confirms object removal",async()=>{
  const f=fixture();
  const result=await f.repo.softDelete({ownerId,assetId});
- assert.equal(result.deleted,true);assert.equal(result.storageRemoved,true);
+ assert.equal(result.deleted,true);assert.equal(result.storageRemoved,true);assert.equal(result.cleanupPending,false);
  assert.equal(f.calls[1].options.method,"PATCH");
+ assert.deepEqual(JSON.parse(f.calls[1].options.body),{deleted_at:JSON.parse(f.calls[1].options.body).deleted_at,storage_cleanup_status:"pending"});
+ assert.equal(f.calls[2].options.method,"PATCH");
+ assert.deepEqual(JSON.parse(f.calls[2].options.body),{storage_cleanup_status:"complete"});
  assert.deepEqual(f.storageCalls.map(x=>x.op),["remove"]);
  assert.equal(f.storageCalls[0].path,f.row.object_path);
 });
 
-test("soft deletion remains private and exposes cleanup pending if object removal fails",async()=>{
+test("soft deletion leaves durable pending cleanup state if object removal fails",async()=>{
  const f=fixture({removeError:true});
  const result=await f.repo.softDelete({ownerId,assetId});
- assert.equal(result.deleted,true);assert.equal(result.cleanupPending,true);
+ assert.equal(result.deleted,true);assert.equal(result.storageRemoved,false);assert.equal(result.cleanupPending,true);
+ assert.equal(JSON.parse(f.calls[1].options.body).storage_cleanup_status,"pending");
+ assert.equal(f.calls.length,2);
 });
 
 test("rejects malformed identifiers, unsupported media and non-object metadata",async()=>{
@@ -140,17 +145,71 @@ test("does not list project assets without read authorization",async()=>{
  assert.equal(f.calls.length,0);
 });
 
-test("retries storage cleanup for a previously soft-deleted asset",async()=>{
+test("retries only pending storage cleanup and marks it complete after removal",async()=>{
  const f=fixture();
  const result=await f.repo.retryCleanup({ownerId,assetId});
  assert.deepEqual(result,{id:assetId,deleted:true,storageRemoved:true,cleanupPending:false});
  assert.equal(f.calls[0].options.method,"GET");
  assert.ok(f.calls[0].url.includes("deleted_at=not.is.null"));
+ assert.ok(f.calls[0].url.includes("storage_cleanup_status=eq.pending"));
  assert.equal(f.storageCalls[0].op,"remove");
  assert.equal(f.storageCalls[0].path,f.row.object_path);
+ assert.equal(f.calls[1].options.method,"PATCH");
+ assert.deepEqual(JSON.parse(f.calls[1].options.body),{storage_cleanup_status:"complete"});
 });
 test("does not retry cleanup without project write authorization",async()=>{
  const f=fixture({authorize:async()=>false});
  await assert.rejects(()=>f.repo.retryCleanup({ownerId,assetId}),e=>e.code==="CLOUD_ASSET_ACCESS_DENIED");
  assert.equal(f.storageCalls.length,0);
+});
+
+test("returns project-scoped derivative ancestry and direct children with a bounded lineage",async()=>{
+ const parentId="423e4567-e89b-42d3-a456-426614174000";
+ const childId="523e4567-e89b-42d3-a456-426614174000";
+ const rows={
+  [assetId]:{...fixture().row,derivative_of:parentId},
+  [parentId]:{...fixture().row,id:parentId,original_name:"source.mp4",derivative_of:null},
+  [childId]:{...fixture().row,id:childId,original_name:"preview.mp4",derivative_of:assetId}
+ };
+ const calls=[];
+ const storage={async upload(){},async remove(){},async createSignedUrl(){return"https://example.supabase.co/signed";}};
+ const fetchImpl=async url=>{
+  calls.push(url);
+  const query=new URL(url).searchParams;
+  const id=query.get("id")?.replace("eq.","");
+  const derivative=query.get("derivative_of")?.replace("eq.","");
+  if(id)return response(rows[id]?[rows[id]]:[]);
+  if(derivative===assetId)return response([rows[childId]]);
+  return response([]);
+ };
+ const repo=createCloudAssetRepository({...config,storage,authorize:async()=>true,fetchImpl});
+ const lineage=await repo.getLineage({ownerId,assetId});
+ assert.deepEqual(lineage.ancestors.map(item=>item.id),[assetId,parentId]);
+ assert.deepEqual(lineage.derivatives.map(item=>item.id),[childId]);
+ assert.equal(lineage.depth,1);
+ assert.equal(lineage.hasMoreAncestors,false);
+ assert.ok(calls.some(url=>url.includes("derivative_of=eq."+assetId)));
+});
+test("does not disclose derivative lineage outside the asset project scope",async()=>{
+ const parentId="423e4567-e89b-42d3-a456-426614174000";
+ const root={...fixture().row,derivative_of:parentId};
+ const foreign={...fixture().row,id:parentId,project_id:"623e4567-e89b-42d3-a456-426614174000"};
+ const storage={async upload(){},async remove(){},async createSignedUrl(){return"https://example.supabase.co/signed";}};
+ const fetchImpl=async url=>{const id=new URL(url).searchParams.get("id")?.replace("eq.","");return response(id===assetId?[root]:id===parentId?[foreign]:[]);};
+ const repo=createCloudAssetRepository({...config,storage,authorize:async()=>true,fetchImpl});
+ const lineage=await repo.getLineage({ownerId,assetId});
+ assert.deepEqual(lineage.ancestors.map(item=>item.id),[assetId]);
+ assert.equal(lineage.hasMoreAncestors,true);
+});
+test("requires project read authorization before resolving derivative lineage",async()=>{
+ const f=fixture({authorize:async({action})=>action!=="read"});
+ await assert.rejects(()=>f.repo.getLineage({ownerId,assetId}),error=>error.code==="CLOUD_ASSET_ACCESS_DENIED");
+});
+
+test("cloud asset cleanup migration backfills soft-deleted rows and indexes pending work",async()=>{
+ const sql=await readFile(new URL("../../supabase/migrations/20261103230000_cloud_asset_cleanup_state.sql",import.meta.url),"utf8");
+ assert.match(sql,/add column if not exists storage_cleanup_status text not null default 'not_required'/);
+ assert.match(sql,/set storage_cleanup_status='pending'[\s\S]*where deleted_at is not null/);
+ assert.match(sql,/ev_assets_pending_storage_cleanup/);
+ assert.match(sql,/storage_cleanup_status='pending'/);
 });

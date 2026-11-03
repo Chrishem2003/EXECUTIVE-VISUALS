@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
@@ -114,4 +115,147 @@ test("shutdown handlers are installed before worker startup can await recovery",
  unregister();
  assert.equal(signals.listenerCount("SIGTERM"),0);
  assert.equal(signals.listenerCount("SIGINT"),0);
+});
+
+test("cooperative cancellation migration keeps accepted requests cancelled through lease recovery",async()=>{
+ const sql=await readFile(new URL("../../supabase/migrations/20261103190000_cooperative_cloud_media_cancellation.sql",import.meta.url),"utf8");
+ const recovery=sql.slice(sql.lastIndexOf("create or replace function executive_visuals.recover_expired_jobs_by_type"));
+ assert.match(recovery,/expired\.cancel_requested_at is not null/);
+ assert.match(recovery,/next_status := 'cancelled'/);
+ assert.match(recovery,/when next_status = 'cancelled' then 'job\.cancelled'/);
+ assert.match(recovery,/grant execute on function executive_visuals\.recover_expired_jobs_by_type\(integer, text\[\]\) to service_role/);
+});
+
+test("cloud worker supervisor exposes sanitized health counters for recovery and job cycles",async()=>{
+ const events=[];
+ const workers=[
+  {async recoverExpired(){return 2;},async runCycle(){return{claimed:true,finished:true,jobId:"job-a"};}},
+  {async recoverExpired(){return 3;},async runCycle(){return{claimed:false};}}
+ ];
+ const supervisor=createCloudWorkerSupervisor({workers,leaseSeconds:60,heartbeatIntervalMs:10000,pollMs:1000,onLog:event=>events.push(event)});
+ await supervisor.start();
+ const running=supervisor.snapshot();
+ assert.equal(running.status,"running");
+ assert.equal(running.workerFamilies,2);
+ assert.equal(running.cycles,1);
+ assert.equal(running.jobsClaimed,1);
+ assert.equal(running.recoveredJobs,5);
+ assert.ok(running.startedAt);
+ assert.ok(running.lastCycleAt);
+ assert.ok(running.lastRecoveryAt);
+ assert.equal("serviceRoleKey" in running,false);
+ await supervisor.stop();
+ assert.equal(supervisor.snapshot().status,"stopped");
+ assert.ok(events.some(event=>event.kind==="started"&&event.snapshot?.status==="running"));
+ assert.ok(events.some(event=>event.kind==="stopped"&&event.snapshot?.status==="stopped"));
+});
+test("cloud worker supervisor validates health reporting interval",()=>{
+ assert.throws(()=>createCloudWorkerSupervisor({workers:[{runCycle:async()=>({claimed:false}),recoverExpired:async()=>0}],healthIntervalMs:1000}),/health interval/);
+});
+
+test("supervisor persists running, stopping and stopped heartbeats for each worker family",async()=>{
+ const heartbeats=[];
+ const worker={workerId:"media-worker-1",workerFamily:"media",async reportHeartbeat(value){heartbeats.push(value);return{accepted:true,lastSeenAt:"2026-11-03T12:00:00Z"};},async recoverExpired(){return 0;},async runCycle(){return{claimed:false};}};
+ const supervisor=createCloudWorkerSupervisor({workers:[worker],instanceId:"instance-test",pollMs:1000,healthIntervalMs:60000});
+ await supervisor.start();
+ assert.equal(heartbeats[0].status,"running");
+ assert.equal(heartbeats[0].instanceId,"instance-test");
+ await supervisor.stop();
+ assert.deepEqual(heartbeats.map(item=>item.status),["running","stopping","stopped"]);
+ assert.equal(supervisor.snapshot().lastHeartbeatAt,"2026-11-03T12:00:00Z");
+});
+
+test("durable heartbeat migration restricts metadata and service-role execution",async()=>{
+ const sql=await readFile(new URL("../../supabase/migrations/20261103200000_durable_cloud_worker_heartbeats.sql",import.meta.url),"utf8");
+ assert.match(sql,/create table if not exists executive_visuals\.worker_heartbeats/);
+ assert.match(sql,/enable row level security/);
+ assert.match(sql,/revoke all on table executive_visuals\.worker_heartbeats from public, anon, authenticated/);
+ assert.match(sql,/grant execute on function executive_visuals\.heartbeat_worker\(text,text,text,text,jsonb\) to service_role/);
+ assert.match(sql,/worker heartbeat contains unsupported metrics/);
+ assert.match(sql,/last_seen_at=clock_timestamp\(\)/);
+});
+
+test("worker health snapshot migration computes stale state and restricts access",async()=>{
+ const sql=await readFile(new URL("../../supabase/migrations/20261103210000_cloud_worker_health_snapshot.sql",import.meta.url),"utf8");
+ assert.match(sql,/create or replace function executive_visuals\.list_worker_health/);
+ assert.match(sql,/last_seen_at < clock_timestamp\(\) - make_interval\(secs => p_stale_after_seconds\)/);
+ assert.match(sql,/then 'stale'/);
+ assert.match(sql,/revoke all on function executive_visuals\.list_worker_health\(integer,integer\) from public, anon, authenticated/);
+ assert.match(sql,/grant execute on function executive_visuals\.list_worker_health\(integer,integer\) to service_role/);
+ assert.match(sql,/p_stale_after_seconds not between 30 and 3600/);
+});
+
+test("worker heartbeat migration defines bounded retention cleanup for old identities",async()=>{
+ const sql=await readFile(new URL("../../supabase/migrations/20261103210000_cloud_worker_health_snapshot.sql",import.meta.url),"utf8");
+ assert.match(sql,/create or replace function executive_visuals\.prune_worker_heartbeats/);
+ assert.match(sql,/p_retention_days not between 7 and 180/);
+ assert.match(sql,/p_limit not between 1 and 1000/);
+ assert.match(sql,/for update skip locked/);
+ assert.match(sql,/grant execute on function executive_visuals\.prune_worker_heartbeats\(integer,integer\) to service_role/);
+});
+
+test("supervisor keeps heartbeats alive while startup recovery is waiting",async()=>{
+ const originalSetInterval=globalThis.setInterval;
+ const originalClearInterval=globalThis.clearInterval;
+ const intervals=[];
+ globalThis.setInterval=(callback)=>{const handle={callback,unref(){}};intervals.push(handle);return handle;};
+ globalThis.clearInterval=()=>{};
+ let releaseRecovery;
+ let heartbeatCount=0;
+ try{
+  const recoveryGate=new Promise(resolve=>{releaseRecovery=resolve;});
+  const worker={
+   async reportHeartbeat(){heartbeatCount++;return{accepted:true,lastSeenAt:"2026-11-03T12:00:00Z"};},
+   async recoverExpired(){await recoveryGate;return 0;},
+   async runCycle(){return{claimed:false};}
+  };
+  const supervisor=createCloudWorkerSupervisor({workers:[worker],pollMs:1000,healthIntervalMs:10000});
+  const starting=supervisor.start();
+  while(intervals.length<2)await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(heartbeatCount,1,"initial heartbeat completes before startup recovery");
+  const heartbeatTimer=intervals[1];
+  assert.ok(heartbeatTimer,"periodic heartbeat timer is installed before recovery completes");
+  heartbeatTimer.callback();
+  while(heartbeatCount<2)await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(heartbeatCount,2);
+  releaseRecovery();
+  await starting;
+  await supervisor.stop();
+ }finally{
+  globalThis.setInterval=originalSetInterval;
+  globalThis.clearInterval=originalClearInterval;
+ }
+});
+
+
+test("cloud job diagnostics migration is bounded, payload-free and service-role-only",async()=>{
+ const sql=await readFile(new URL("../../supabase/migrations/20261103220000_cloud_job_diagnostics.sql",import.meta.url),"utf8");
+ assert.match(sql,/create or replace function executive_visuals\.list_job_diagnostics/);
+ assert.match(sql,/status in \('queued','processing','failed'\)/);
+ assert.match(sql,/queued_too_long/);
+ assert.match(sql,/lease_expired/);
+ assert.match(sql,/heartbeat_stale/);
+ assert.match(sql,/attempts_exhausted/);
+ assert.match(sql,/ev_jobs_diagnostics_recent/);
+ assert.match(sql,/ev_jobs_diagnostics_queued_age/);
+ assert.match(sql,/ev_jobs_diagnostics_processing_lease/);
+ assert.doesNotMatch(sql,/select[\s\S]{0,500}input[\s\S]{0,100}output/);
+ assert.match(sql,/p_limit not between 1 and 200/);
+ assert.match(sql,/p_queue_stale_after_seconds not between 60 and 86400/);
+ assert.match(sql,/p_lease_stale_after_seconds not between 30 and 3600/);
+ assert.match(sql,/revoke all on function executive_visuals\.list_job_diagnostics\(integer,integer,integer\) from public, anon, authenticated/);
+ assert.match(sql,/grant execute on function executive_visuals\.list_job_diagnostics\(integer,integer,integer\) to service_role/);
+});
+
+test("asset cleanup diagnostics migration returns aggregate-only service-role data",async()=>{
+ const sql=await readFile(new URL("../../supabase/migrations/20261103240000_cloud_asset_cleanup_diagnostics.sql",import.meta.url),"utf8");
+ assert.match(sql,/create or replace function executive_visuals\.list_asset_cleanup_diagnostics\(\)/);
+ assert.match(sql,/storage_cleanup_status='pending'/);
+ assert.match(sql,/pending_over_24_hours/);
+ assert.match(sql,/pending_over_7_days/);
+ assert.match(sql,/oldest_pending_age_seconds/);
+ const executableSql=sql.replace(/--[^\r\n]*/g,"");
+ assert.doesNotMatch(executableSql,/owner_id|project_id|object_path|original_name|metadata/);
+ assert.match(sql,/revoke all on function executive_visuals\.list_asset_cleanup_diagnostics\(\) from public, anon, authenticated/);
+ assert.match(sql,/grant execute on function executive_visuals\.list_asset_cleanup_diagnostics\(\) to service_role/);
 });

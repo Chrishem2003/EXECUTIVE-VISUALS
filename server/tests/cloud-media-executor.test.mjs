@@ -739,3 +739,19 @@ test("cloud waveform job creates a verified PNG derivative of the leased audio s
   await rm(directory,{recursive:true,force:true});
  }
 });
+
+
+test("cloud media executor verifies the queued source checksum before any operation",async()=>{
+ const directory=await mkdtemp(join(tmpdir(),"ev-cloud-source-integrity-"));
+ const source=join(directory,"source.mp4"),bytes=Buffer.from("stable source bytes");
+ await writeFile(source,bytes);
+ const actual=createHash("sha256").update(bytes).digest("hex");
+ try{
+  const execute=createCloudMediaExecutor({tempRoot:directory,mediaIO:{
+   async materialize(){return{path:source,asset:{id:"source-asset",name:"source.mp4",mediaType:"video/mp4",sha256:actual},async cleanup(){}};},
+   async publish(){throw new Error("A source integrity failure must stop before publication.");}
+  }});
+  await assert.rejects(execute({job:{id:"job-tampered-source",owner_id:"owner",project_id:"project",job_type:"media.probe",input:{sourceAssetId:"source-asset",sourceSha256:"0".repeat(64)}},onProgress(){}}),error=>error.code==="SOURCE_ASSET_CHANGED");
+  await assert.rejects(execute({job:{id:"job-malformed-source-hash",owner_id:"owner",project_id:"project",job_type:"media.thumbnail",input:{sourceAssetId:"source-asset",sourceSha256:"not-a-sha256"}},onProgress(){}}),error=>error.code==="SOURCE_ASSET_CHANGED");
+ }finally{await rm(directory,{recursive:true,force:true});}
+});

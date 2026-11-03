@@ -172,13 +172,14 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
       : ["media.denoise", "media.color", "media.resize", "media.interpolate", "media.upscale", "media.proxy"].includes(job.job_type) ? "mp4"
       : String(input.container || "mp4").toLowerCase();
     const outputPath = join(workDir, randomUUID() + "." + outputExtension);
-      if (["media.ai-upscale", "media.waveform"].includes(job.job_type) && input.sourceSha256) {
-        if (input.sourceSha256 !== materialized.asset.sha256) {
-          throw Object.assign(new Error("The stored source fingerprint changed after the AI-upscale job was queued."), { code: "AI_UPSCALE_SOURCE_CHANGED" });
+      if (input.sourceSha256 !== undefined) {
+        const integrityCode = job.job_type === "media.ai-upscale" ? "AI_UPSCALE_SOURCE_CHANGED" : "SOURCE_ASSET_CHANGED";
+        if (typeof input.sourceSha256 !== "string" || !/^[a-f0-9]{64}$/i.test(input.sourceSha256) || input.sourceSha256 !== materialized.asset.sha256) {
+          throw Object.assign(new Error("The stored source fingerprint changed after the media job was queued."), { code: integrityCode });
         }
         const actualSourceSha256 = await checksum(materialized.path);
         if (input.sourceSha256 !== actualSourceSha256) {
-          throw Object.assign(new Error("The materialized source bytes changed after the AI-upscale job was queued."), { code: "AI_UPSCALE_SOURCE_CHANGED" });
+          throw Object.assign(new Error("The materialized source bytes changed after the media job was queued."), { code: integrityCode });
         }
       }
       await copyFile(materialized.path, sourcePath);

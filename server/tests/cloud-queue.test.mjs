@@ -87,3 +87,116 @@ test("retry RPC rejects malformed arguments and response contracts",async()=>{
  await assert.rejects(()=>invalid.retry("","worker-1",{retryable:true}),/Job ID and worker ID/);
  await assert.rejects(()=>invalid.retry("job-1","worker-1",[]),/must be an object/);
 });
+
+test("progress reporting uses the lease-fenced RPC and validates its boolean result",async()=>{
+ const requests=[];
+ const queue=createCloudQueue({...base,fetchImpl:async(url,options)=>{requests.push({url,body:JSON.parse(options.body)});return response(true);}});
+ assert.equal(await queue.reportProgress("job-1","worker-1",42.5),true);
+ assert.equal(requests[0].url,"https://example.supabase.co/rest/v1/rpc/report_job_progress");
+ assert.deepEqual(requests[0].body,{p_job_id:"job-1",p_worker_id:"worker-1",p_progress:42.5});
+ await assert.rejects(()=>queue.reportProgress("job-1","worker-1",101),/between 0 and 100/);
+ const malformed=createCloudQueue({...base,fetchImpl:async()=>response("yes")});
+ await assert.rejects(()=>malformed.reportProgress("job-1","worker-1",20),/invalid result/);
+});
+
+test("worker cancellation polling is lease-aware and validates its RPC response",async()=>{
+ const requests=[];
+ const queue=createCloudQueue({...base,fetchImpl:async(url,options)=>{
+  requests.push({url,body:JSON.parse(options.body)});
+  return response({leaseValid:true,cancelRequested:true});
+ }});
+ assert.deepEqual(await queue.checkCancellation("job-1","worker-1"),{leaseValid:true,cancelRequested:true});
+ assert.equal(requests[0].url,"https://example.supabase.co/rest/v1/rpc/check_job_cancellation");
+ assert.deepEqual(requests[0].body,{p_job_id:"job-1",p_worker_id:"worker-1"});
+ const malformed=createCloudQueue({...base,fetchImpl:async()=>response({leaseValid:false,cancelRequested:true})});
+ await assert.rejects(()=>malformed.checkCancellation("job-1","worker-1"),/invalid result/);
+ await assert.rejects(()=>queue.checkCancellation("","worker-1"),/required/);
+});
+
+test("durable worker heartbeat RPC validates identity, status, metrics and response",async()=>{
+ const requests=[];
+ const queue=createCloudQueue({...base,fetchImpl:async(url,options)=>{requests.push({url,body:JSON.parse(options.body)});return response({accepted:true,lastSeenAt:"2026-11-03T12:00:00Z"});}});
+ const result=await queue.heartbeatWorker({workerId:"media-worker-1",workerFamily:"media",instanceId:"instance-1",status:"running",metrics:{jobsClaimed:4,activeCycle:false}});
+ assert.deepEqual(result,{accepted:true,lastSeenAt:"2026-11-03T12:00:00Z"});
+ assert.equal(requests[0].url,"https://example.supabase.co/rest/v1/rpc/heartbeat_worker");
+ assert.deepEqual(requests[0].body,{p_worker_id:"media-worker-1",p_worker_family:"media",p_instance_id:"instance-1",p_status:"running",p_metrics:{jobsClaimed:4,activeCycle:false}});
+ await assert.rejects(()=>queue.heartbeatWorker({workerId:"",workerFamily:"media",instanceId:"i"}),/worker ID/);
+ await assert.rejects(()=>queue.heartbeatWorker({workerId:"w",workerFamily:"media",instanceId:"i",status:"unknown"}),/status/);
+ await assert.rejects(()=>queue.heartbeatWorker({workerId:"w",workerFamily:"media",instanceId:"i",metrics:[]}),/object/);
+ const malformed=createCloudQueue({...base,fetchImpl:async()=>response({accepted:true})});
+ await assert.rejects(()=>malformed.heartbeatWorker({workerId:"w",workerFamily:"media",instanceId:"i"}),/invalid result/);
+});
+
+test("worker fleet health snapshot is bounded, read-only and validates sanitized rows",async()=>{
+ const requests=[];
+ const rows=[{worker_id:"media-1",worker_family:"media",instance_id:"instance-a",status:"stale",metrics:{jobsClaimed:3},started_at:"2026-11-03T10:00:00Z",last_seen_at:"2026-11-03T10:01:00Z",stopped_at:null,age_seconds:240}];
+ const queue=createCloudQueue({...base,fetchImpl:async(url,options)=>{requests.push({url,body:JSON.parse(options.body)});return response(rows);}});
+ assert.deepEqual(await queue.listWorkerHealth({staleAfterSeconds:180,limit:20}),rows);
+ assert.equal(requests[0].url,"https://example.supabase.co/rest/v1/rpc/list_worker_health");
+ assert.deepEqual(requests[0].body,{p_stale_after_seconds:180,p_limit:20});
+ await assert.rejects(()=>queue.listWorkerHealth({staleAfterSeconds:10}),/stale threshold/);
+ await assert.rejects(()=>queue.listWorkerHealth({limit:201}),/result limit/);
+ const malformed=createCloudQueue({...base,fetchImpl:async()=>response([{...rows[0],status:"unknown"}])});
+ await assert.rejects(()=>malformed.listWorkerHealth(),/malformed worker record/);
+ const oversized=createCloudQueue({...base,fetchImpl:async()=>response(Array(2).fill(rows[0]))});
+ await assert.rejects(()=>oversized.listWorkerHealth({limit:1}),/invalid result/);
+});
+
+test("worker heartbeat retention cleanup is bounded and validates returned count",async()=>{
+ const requests=[];
+ const queue=createCloudQueue({...base,fetchImpl:async(url,options)=>{requests.push({url,body:JSON.parse(options.body)});return response(12);}});
+ assert.equal(await queue.pruneWorkerHeartbeats({retentionDays:45,limit:50}),12);
+ assert.equal(requests[0].url,"https://example.supabase.co/rest/v1/rpc/prune_worker_heartbeats");
+ assert.deepEqual(requests[0].body,{p_retention_days:45,p_limit:50});
+ await assert.rejects(()=>queue.pruneWorkerHeartbeats({retentionDays:1}),/retention/);
+ await assert.rejects(()=>queue.pruneWorkerHeartbeats({limit:1001}),/cleanup limit/);
+ const malformed=createCloudQueue({...base,fetchImpl:async()=>response(8)});
+ await assert.rejects(()=>malformed.pruneWorkerHeartbeats({limit:5}),/invalid count/);
+});
+
+
+test("cloud job diagnostics are bounded, payload-free and validated",async()=>{
+ const requests=[];
+ const rows=[{
+  id:"job-1",job_type:"media.upscale",status:"processing",progress:42,
+  attempt_count:1,max_attempts:3,created_at:"2026-11-03T10:00:00Z",
+  updated_at:"2026-11-03T11:00:00Z",available_at:null,started_at:"2026-11-03T10:30:00Z",
+  lease_expires_at:"2026-11-03T11:01:00Z",lease_heartbeat_at:"2026-11-03T11:00:00Z",
+  queue_age_seconds:3600,lease_age_seconds:60,
+  diagnostic_flags:{queued_too_long:false,lease_expired:false,heartbeat_stale:false,attempts_exhausted:false}
+ }];
+ const queue=createCloudQueue({...base,fetchImpl:async(url,options)=>{requests.push({url,body:JSON.parse(options.body)});return response(rows);}});
+ assert.deepEqual(await queue.listJobDiagnostics({limit:25,queueStaleAfterSeconds:600,leaseStaleAfterSeconds:120}),rows);
+ assert.equal(requests[0].url,"https://example.supabase.co/rest/v1/rpc/list_job_diagnostics");
+ assert.deepEqual(requests[0].body,{p_limit:25,p_queue_stale_after_seconds:600,p_lease_stale_after_seconds:120});
+ await assert.rejects(()=>queue.listJobDiagnostics({limit:201}),/diagnostics limit/);
+ await assert.rejects(()=>queue.listJobDiagnostics({queueStaleAfterSeconds:30}),/Queued-job stale threshold/);
+ await assert.rejects(()=>queue.listJobDiagnostics({leaseStaleAfterSeconds:10}),/Worker lease stale threshold/);
+ const unsafe=createCloudQueue({...base,fetchImpl:async()=>response([{...rows[0],input:{private:"payload"}}])});
+ await assert.rejects(()=>unsafe.listJobDiagnostics(),/malformed or unsafe/);
+ const malformed=createCloudQueue({...base,fetchImpl:async()=>response([{...rows[0],diagnostic_flags:{}}])});
+ await assert.rejects(()=>malformed.listJobDiagnostics(),/malformed or unsafe/);
+ const oversized=createCloudQueue({...base,fetchImpl:async()=>response([rows[0],rows[0]])});
+ await assert.rejects(()=>oversized.listJobDiagnostics({limit:1}),/invalid result/);
+ const extraField=createCloudQueue({...base,fetchImpl:async()=>response([{...rows[0],owner_email:"private@example.test"}])});
+ await assert.rejects(()=>extraField.listJobDiagnostics(),/malformed or unsafe/);
+ const invalidTimestamp=createCloudQueue({...base,fetchImpl:async()=>response([{...rows[0],created_at:"not-a-date"}])});
+ await assert.rejects(()=>invalidTimestamp.listJobDiagnostics(),/malformed or unsafe/);
+ const blankIdentity=createCloudQueue({...base,fetchImpl:async()=>response([{...rows[0],job_type:" "}])});
+ await assert.rejects(()=>blankIdentity.listJobDiagnostics(),/malformed or unsafe/);
+});
+
+test("asset cleanup diagnostics use an aggregate-only service-role RPC and validate privacy",async()=>{
+ const requests=[];
+ const snapshot={pending_count:4,pending_over_24_hours:2,pending_over_7_days:1,oldest_pending_at:"2026-11-01T10:00:00Z",oldest_pending_age_seconds:172800};
+ const queue=createCloudQueue({...base,fetchImpl:async(url,options)=>{requests.push({url,body:JSON.parse(options.body)});return response(snapshot);}});
+ assert.deepEqual(await queue.listAssetCleanupDiagnostics(),snapshot);
+ assert.equal(requests[0].url,"https://example.supabase.co/rest/v1/rpc/list_asset_cleanup_diagnostics");
+ assert.deepEqual(requests[0].body,{});
+ const malformed=createCloudQueue({...base,fetchImpl:async()=>response({...snapshot,owner_id:"private"})});
+ await assert.rejects(()=>malformed.listAssetCleanupDiagnostics(),/malformed or unsafe/);
+ const contradictory=createCloudQueue({...base,fetchImpl:async()=>response({...snapshot,pending_over_7_days:3})});
+ await assert.rejects(()=>contradictory.listAssetCleanupDiagnostics(),/malformed or unsafe/);
+ const empty=createCloudQueue({...base,fetchImpl:async()=>response({pending_count:0,pending_over_24_hours:0,pending_over_7_days:0,oldest_pending_at:null,oldest_pending_age_seconds:0})});
+ assert.equal((await empty.listAssetCleanupDiagnostics()).pending_count,0);
+});

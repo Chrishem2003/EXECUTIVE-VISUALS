@@ -57,11 +57,16 @@ export function createCloudMediaWorker({
     claim: (id, leaseSeconds) => cloudQueue.claim(id, leaseSeconds, MEDIA_JOB_TYPES),
     renew: (...args) => cloudQueue.renew(...args),
     finish: (...args) => cloudQueue.finish(...args),
+    retry: (...args) => cloudQueue.retry(...args),
+    reportProgress: (...args) => cloudQueue.reportProgress(...args),
+    ...(typeof cloudQueue.checkCancellation === "function" ? { checkCancellation: (...args) => cloudQueue.checkCancellation(...args) } : {}),
     recover: (...args) => cloudQueue.recover(...args)
   });
 
   return Object.freeze({
     workerId,
+    workerFamily:"media",
+    reportHeartbeat:({instanceId,status,metrics})=>cloudQueue.heartbeatWorker({workerId,workerFamily:"media",instanceId,status,metrics}),
     async runCycle(options = {}) {
       return runCloudWorkerCycle({
         queue: mediaQueue,

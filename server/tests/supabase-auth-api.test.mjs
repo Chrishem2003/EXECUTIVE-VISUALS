@@ -11,19 +11,25 @@ const provider=createServer(async(req,res)=>{
  let raw="";for await(const chunk of req)raw+=chunk;
  providerCalls.push({url:req.url,authorization:req.headers.authorization,body:raw?JSON.parse(raw):null});
  res.setHeader("content-type","application/json");
- if(req.url.startsWith("/auth/v1/token?grant_type=password")){res.end(JSON.stringify({access_token:"provider-access-token-123456789",refresh_token:"provider-refresh-token-123456789",expires_in:3600,user:{id:"supabase-user-1",email:"owner@example.test"}}));return;}
- if(req.url.startsWith("/auth/v1/token?grant_type=refresh_token")){res.end(JSON.stringify({access_token:"provider-access-token-refreshed",refresh_token:"provider-refresh-token-refreshed",expires_in:3600,user:{id:"supabase-user-1",email:"owner@example.test"}}));return;}
+ if(req.url.startsWith("/auth/v1/token?grant_type=password")){res.end(JSON.stringify({access_token:"provider-access-token-123456789",refresh_token:"provider-refresh-token-123456789",expires_in:3600,user:{id:"supabase-user-1",email:"owner@example.test",email_confirmed_at:"2026-11-01T00:00:00Z"}}));return;}
+ if(req.url.startsWith("/auth/v1/token?grant_type=refresh_token")){res.end(JSON.stringify({access_token:"provider-access-token-refreshed",refresh_token:"provider-refresh-token-refreshed",expires_in:3600,user:{id:"supabase-user-1",email:"owner@example.test",email_confirmed_at:"2026-11-01T00:00:00Z"}}));return;}
  if(req.url.startsWith("/auth/v1/signup")){res.end(JSON.stringify({user:{id:"supabase-user-2",email:"new@example.test"}}));return;}
  if(req.url.startsWith("/auth/v1/recover")){res.end(JSON.stringify({message:"accepted"}));return;}
  if(req.url==="/auth/v1/logout"){res.end(JSON.stringify({}));return;}
- if(req.url==="/auth/v1/user"&&req.method==="PUT"){res.end(JSON.stringify({id:"supabase-user-1",email:"owner@example.test"}));return;}
- if(req.url==="/auth/v1/user"){res.end(JSON.stringify({id:"supabase-user-1",email:"owner@example.test"}));return;}
+ if(req.url==="/auth/v1/user"&&req.method==="PUT"){res.end(JSON.stringify({id:"supabase-user-1",email:"owner@example.test",email_confirmed_at:"2026-11-01T00:00:00Z"}));return;}
+ if(req.url==="/auth/v1/user"){const verified=req.headers.authorization!=="Bearer unverified-access-token-123456789";res.end(JSON.stringify({id:"supabase-user-1",email:"owner@example.test",email_confirmed_at:verified?"2026-11-01T00:00:00Z":null}));return;}
+ if(req.url.startsWith("/rest/v1/rpc/")){
+  const rpc=req.url.split("/").pop();
+  const values={list_job_diagnostics:[],list_worker_health:[],list_asset_cleanup_diagnostics:{pending_count:0,pending_over_24_hours:0,pending_over_7_days:0,oldest_pending_at:null,oldest_pending_age_seconds:0}};
+  if(!(rpc in values)){res.statusCode=404;res.end(JSON.stringify({message:"unknown rpc"}));return;}
+  res.end(JSON.stringify(values[rpc]));return;
+ }
  res.statusCode=404;res.end(JSON.stringify({message:"not found"}));
 });
 const providerPort=await listen(provider);
 const portServer=createServer();const apiPort=await listen(portServer);await new Promise(resolve=>portServer.close(resolve));
 const dataDir=await mkdtemp(join(tmpdir(),"ev-supabase-auth-api-"));const webDir=join(dataDir,"web");await mkdir(webDir,{recursive:true});await writeFile(join(webDir,"index.html"),"<!doctype html><html><body>test</body></html>");
-const child=spawn(process.execPath,["server/index.mjs"],{cwd:process.cwd(),env:{...process.env,NODE_ENV:"development",AUTH_MODE:"supabase",SUPABASE_URL:"http://127.0.0.1:"+providerPort,SUPABASE_PUBLISHABLE_KEY:"sb_publishable_test",SUPABASE_AUTH_REDIRECT_URL:"https://studio.example.test/auth/callback",API_HOST:"127.0.0.1",API_PORT:String(apiPort),DATA_DIR:dataDir,MEDIA_ROOT:join(dataDir,"media"),WEB_ROOT:webDir,DISABLE_WORKER:"true"},stdio:["ignore","pipe","pipe"]});
+const child=spawn(process.execPath,["server/index.mjs"],{cwd:process.cwd(),env:{...process.env,NODE_ENV:"development",AUTH_MODE:"supabase",SUPABASE_URL:"http://127.0.0.1:"+providerPort,SUPABASE_PUBLISHABLE_KEY:"sb_publishable_test",SUPABASE_AUTH_REDIRECT_URL:"https://studio.example.test/auth/callback",API_HOST:"127.0.0.1",API_PORT:String(apiPort),DATA_DIR:dataDir,MEDIA_ROOT:join(dataDir,"media"),WEB_ROOT:webDir,DISABLE_WORKER:"true",CLOUD_OPERATIONS_ENABLED:"true",SUPABASE_SERVICE_ROLE_KEY:"service-role-test-secret",CLOUD_OPERATIONS_ADMIN_EMAILS:"owner@example.test"},stdio:["ignore","pipe","pipe"]});
 let stderr="";child.stderr.on("data",chunk=>stderr+=chunk.toString());
 const base="http://127.0.0.1:"+apiPort;
 async function wait(){for(let i=0;i<80;i++){if(child.exitCode!==null)throw new Error("API exited: "+stderr);try{if((await fetch(base+"/api/health")).ok)return;}catch{}await new Promise(resolve=>setTimeout(resolve,100));}throw new Error("API did not start: "+stderr);}
@@ -32,9 +38,15 @@ async function post(path,body,cookie,accessToken){return fetch(base+path,{method
 test("Supabase mode supports password sign-in, HttpOnly refresh cookie, session rotation, recovery and logout",async t=>{
  t.after(async()=>{child.kill("SIGTERM");provider.close();await rm(dataDir,{recursive:true,force:true});});
  const login=await post("/api/auth/login",{email:"owner@example.test",password:"correct-horse-battery"});assert.equal(login.status,200);
- const loginBody=await login.json();assert.equal(loginBody.user.id,"supabase-user-1");assert.equal(loginBody.accessToken,"provider-access-token-123456789");
+ const loginBody=await login.json();assert.equal(loginBody.user.id,"supabase-user-1");assert.equal(loginBody.user.emailVerified,true);assert.equal(loginBody.accessToken,"provider-access-token-123456789");
  const cookie=login.headers.get("set-cookie");assert.match(cookie,/ev_supabase_refresh=/);assert.match(cookie,/HttpOnly/);assert.match(cookie,/SameSite=Strict/);assert.match(cookie,/Path=\/api\/auth/);
- const me=await fetch(base+"/api/me",{headers:{authorization:"Bearer "+loginBody.accessToken}});assert.equal(me.status,200);assert.equal((await me.json()).user.email,"owner@example.test");
+ const me=await fetch(base+"/api/me",{headers:{authorization:"Bearer "+loginBody.accessToken}});assert.equal(me.status,200);const meBody=await me.json();assert.equal(meBody.user.email,"owner@example.test");assert.equal(meBody.user.emailVerified,true);
+ const operations=await fetch(base+"/api/admin/cloud/operations",{headers:{authorization:"Bearer "+loginBody.accessToken}});assert.equal(operations.status,200);
+ const operationsBody=await operations.json();assert.deepEqual(operationsBody.jobs,[]);assert.deepEqual(operationsBody.workers,[]);
+ assert.deepEqual(operationsBody.assetCleanup,{pending_count:0,pending_over_24_hours:0,pending_over_7_days:0,oldest_pending_at:null,oldest_pending_age_seconds:0});
+ assert.ok(providerCalls.some(call=>call.url==="/rest/v1/rpc/list_job_diagnostics"&&call.authorization==="Bearer service-role-test-secret"));
+ const unverifiedOperations=await fetch(base+"/api/admin/cloud/operations",{headers:{authorization:"Bearer unverified-access-token-123456789"}});
+ assert.equal(unverifiedOperations.status,403);assert.equal((await unverifiedOperations.json()).error.code,"CLOUD_OPERATIONS_VERIFIED_EMAIL_REQUIRED");
  const cookiePair=cookie.split(";")[0];
  const refresh=await post("/api/auth/session",{},cookiePair);assert.equal(refresh.status,200);const refreshed=await refresh.json();assert.equal(refreshed.accessToken,"provider-access-token-refreshed");
  assert.match(refresh.headers.get("set-cookie"),/provider-refresh-token-refreshed/);

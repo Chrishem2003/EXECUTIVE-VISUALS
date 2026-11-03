@@ -68,7 +68,7 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     const projectId=String(query.projectId||"");
     if(!safeId(projectId))return response(400,{error:{code:"INVALID_PROJECT_ID",message:"Choose a valid project."}});
     if(await allow({ownerId,projectId,action:"read"})!==true)return response(404,{error:{code:"PROJECT_NOT_FOUND",message:"Project not found or access denied."}});
-    const rows=await request("jobs?select=id,job_type,status,progress,input,output,error,created_at,updated_at&owner_id=eq."+encodeURIComponent(ownerId)+"&project_id=eq."+encodeURIComponent(projectId)+"&job_type=eq.media.waveform&order=created_at.desc&limit=50");
+    const rows=await request("jobs?select=id,job_type,status,progress,input,output,error,created_at,updated_at&project_id=eq."+encodeURIComponent(projectId)+"&job_type=eq.media.waveform&order=created_at.desc&limit=50");
     return response(200,{jobs:(rows||[]).map(row=>({id:row.id,status:row.status,progress:Number(row.progress||0),input:row.input||{},output:row.output||null,error:row.error||null,createdAt:row.created_at,updatedAt:row.updated_at}))});
    }
    if(path==="/api/cloud/waveforms"&&method==="POST"){
@@ -124,6 +124,82 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     const rows=await request("jobs?select=id,owner_id,project_id,job_type,status,progress,input,output,error,created_at,updated_at",{method:"POST",body:{id:jobId,owner_id:ownerId,project_id:projectId,job_type:"media.ai-upscale",status:"queued",progress:0,input,idempotency_key:key}});
     if(!Array.isArray(rows)||rows.length!==1||rows[0].id!==jobId||rows[0].job_type!=="media.ai-upscale"||rows[0].owner_id!==ownerId||rows[0].project_id!==projectId)throw new Error("Cloud AI-upscale job creation returned an invalid record.");
     await request("job_events",{method:"POST",body:{job_id:jobId,owner_id:ownerId,event_type:"job.queued",event_data:{jobType:"media.ai-upscale",sourceAssetId,model,scale,tile,format}},prefer:"return=minimal"});
+    return response(202,{job:rows[0],idempotentReplay:false});
+   }
+   const cloudMediaTypes=new Set(["media.probe","media.thumbnail","media.audio_extract","media.audio-clean","media.denoise","media.color","media.resize","media.interpolate","media.upscale","media.ai-upscale","media.transcode","media.proxy","media.waveform"]);
+   if(path==="/api/cloud/media-jobs"&&method==="GET"){
+    const projectId=String(query.projectId||"");
+    if(!safeId(projectId))return response(400,{error:{code:"INVALID_PROJECT_ID",message:"Choose a valid project."}});
+    if(await allow({ownerId,projectId,action:"read"})!==true)return response(404,{error:{code:"PROJECT_NOT_FOUND",message:"Project not found or access denied."}});
+    const rows=await request("jobs?select=id,project_id,job_type,status,progress,input,output,error,attempt_count,cancel_requested_at,created_at,updated_at,completed_at&project_id=eq."+encodeURIComponent(projectId)+"&job_type=in.("+[...cloudMediaTypes].join(",")+")&order=created_at.desc&limit=100");
+    return response(200,{jobs:(rows||[]).map(row=>({id:row.id,projectId:row.project_id,jobType:row.job_type,status:row.status,progress:Number(row.progress||0),input:row.input||{},output:row.output||null,error:row.error||null,attemptCount:Number(row.attempt_count||0),cancellationRequested:Boolean(row.cancel_requested_at),createdAt:row.created_at,updatedAt:row.updated_at,completedAt:row.completed_at||null}))});
+   }
+   const mediaEventsMatch=path.match(/^\/api\/cloud\/media-jobs\/([0-9a-f-]+)\/events$/i);
+   if(mediaEventsMatch&&method==="GET"){
+    const jobId=mediaEventsMatch[1],projectId=String(query.projectId||"");
+    if(!safeId(jobId)||!safeId(projectId))return response(400,{error:{code:"CLOUD_MEDIA_EVENTS_INPUT_INVALID",message:"Choose a valid media job and project."}});
+    if(await allow({ownerId,projectId,action:"read"})!==true)return response(404,{error:{code:"PROJECT_NOT_FOUND",message:"Project not found or access denied."}});
+    const jobs=await request("jobs?select=id,project_id,job_type&id=eq."+encodeURIComponent(jobId)+"&project_id=eq."+encodeURIComponent(projectId)+"&limit=1");
+    const job=Array.isArray(jobs)?jobs.find(row=>row.id===jobId&&row.project_id===projectId&&cloudMediaTypes.has(row.job_type)):null;
+    if(!job)return response(404,{error:{code:"CLOUD_MEDIA_JOB_NOT_FOUND",message:"Cloud media job was not found in this project."}});
+    const requestedLimit=Number(query.limit||50),limit=Number.isInteger(requestedLimit)?Math.max(1,Math.min(100,requestedLimit)):50;
+    const rows=await request("job_events?select=id,event_type,event_data,created_at&job_id=eq."+encodeURIComponent(jobId)+"&order=created_at.desc&limit="+limit);
+    const safeKeys=new Set(["progress","status","reason","code","message","attempt","maxAttempts","delaySeconds","jobType","sourceAssetId","model","scale","tile","format"]);
+    const events=(rows||[]).slice().reverse().filter(row=>typeof row.event_type==="string"&&/^job\.[a-z_]+$/.test(row.event_type)).map(row=>{
+     const source=row.event_data&&typeof row.event_data==="object"&&!Array.isArray(row.event_data)?row.event_data:{};
+     const data={};for(const key of safeKeys){const value=source[key];if(["string","number","boolean"].includes(typeof value))data[key]=typeof value==="string"?value.slice(0,240):value;}
+     return{id:String(row.id),type:row.event_type,createdAt:row.created_at,data};
+    });
+    return response(200,{jobId,events});
+   }
+   const cancelPrefix="/api/cloud/media-jobs/",cancelSuffix="/cancel";
+   if(path.startsWith(cancelPrefix)&&path.endsWith(cancelSuffix)&&method==="POST"){
+    const jobId=path.slice(cancelPrefix.length,-cancelSuffix.length),projectId=String(body.projectId||"");
+    if(!safeId(jobId)||!safeId(projectId))return response(400,{error:{code:"CLOUD_MEDIA_CANCEL_INPUT_INVALID",message:"Choose a valid media job and project."}});
+    if(await allow({ownerId,projectId,action:"write"})!==true)return response(404,{error:{code:"PROJECT_NOT_FOUND",message:"Project not found or editor access required."}});
+    const rows=await request("jobs?select=id,owner_id,project_id,job_type,status,progress,updated_at&id=eq."+encodeURIComponent(jobId)+"&project_id=eq."+encodeURIComponent(projectId));
+    const job=Array.isArray(rows)?rows.find(row=>row.id===jobId&&row.project_id===projectId&&cloudMediaTypes.has(row.job_type)):null;
+    if(!job)return response(404,{error:{code:"CLOUD_MEDIA_JOB_NOT_FOUND",message:"Cloud media job was not found in this project."}});
+    if(job.status==="queued"){
+     const cancelled=await request("rpc/cancel_queued_media_job",{method:"POST",body:{p_job_id:jobId,p_project_id:projectId,p_cancelled_by:ownerId}});
+     if(cancelled?.status==="not_found")return response(404,{error:{code:"CLOUD_MEDIA_JOB_NOT_FOUND",message:"Cloud media job was not found in this project."}});
+     if(cancelled?.status!=="cancelled")return response(409,{error:{code:"CLOUD_MEDIA_JOB_NOT_CANCELLABLE",message:"The job was claimed by a worker before cancellation completed."},jobStatus:cancelled?.jobStatus||"processing"});
+     return response(200,{job:{id:jobId,projectId,jobType:job.job_type,status:"cancelled",progress:Number(job.progress||0),updatedAt:new Date().toISOString()}});
+    }
+    if(job.status==="processing"){
+     const requested=await request("rpc/request_media_job_cancellation",{method:"POST",body:{p_job_id:jobId,p_project_id:projectId,p_requested_by:ownerId}});
+     if(requested?.status==="not_found")return response(404,{error:{code:"CLOUD_MEDIA_JOB_NOT_FOUND",message:"Cloud media job was not found in this project."}});
+     if(requested?.status==="requested"||requested?.status==="already_requested")return response(202,{job:{id:jobId,projectId,jobType:job.job_type,status:"cancellation_requested",progress:Number(job.progress||0)}});
+     return response(409,{error:{code:"CLOUD_MEDIA_JOB_NOT_CANCELLABLE",message:"The worker lease is no longer active or the job has already completed."},jobStatus:requested?.jobStatus||"processing"});
+    }
+    return response(409,{error:{code:"CLOUD_MEDIA_JOB_NOT_CANCELLABLE",message:"This cloud media job has already completed or cannot be cancelled."},jobStatus:job.status});
+   }
+   if(path==="/api/cloud/media-jobs"&&method==="POST"){
+    const projectId=String(body.projectId||""),sourceAssetId=String(body.sourceAssetId||""),jobType=String(body.jobType||"");
+    if(!safeId(projectId)||!safeId(sourceAssetId)||!cloudMediaTypes.has(jobType))return response(400,{error:{code:"CLOUD_MEDIA_INPUT_INVALID",message:"Choose a supported media operation, project and source asset."}});
+    if(await allow({ownerId,projectId,action:"write"})!==true)return response(404,{error:{code:"PROJECT_NOT_FOUND",message:"Project not found or editor access required."}});
+    const source=await service.assets.get({ownerId,assetId:sourceAssetId});
+    if(!source||source.projectId!==projectId)return response(404,{error:{code:"SOURCE_ASSET_NOT_FOUND",message:"Source asset was not found in this project."}});
+    const sourceType=String(source.mediaType||"").toLowerCase(),isVideo=sourceType.startsWith("video/"),isAudio=sourceType.startsWith("audio/"),isImage=sourceType.startsWith("image/");
+    const videoOperations=new Set(["media.thumbnail","media.audio_extract","media.denoise","media.color","media.resize","media.interpolate","media.upscale","media.proxy"]);
+    if((videoOperations.has(jobType)&&!isVideo)||(["media.audio-clean","media.waveform"].includes(jobType)&&!isAudio)||(jobType==="media.transcode"&&!isVideo&&!isAudio)||(jobType==="media.ai-upscale"&&!isImage))return response(422,{error:{code:"MEDIA_SOURCE_TYPE_UNSUPPORTED",message:"The selected media operation does not support this source file type."}});
+    if(!/^[a-f0-9]{64}$/i.test(String(source.sha256||"")))return response(422,{error:{code:"SOURCE_ASSET_HASH_UNAVAILABLE",message:"The source asset has no verified SHA-256 fingerprint."}});
+    if(jobType==="media.ai-upscale"&&(body.rightsConfirmed!==true||!["image/png","image/jpeg","image/webp"].includes(source.mediaType)))return response(422,{error:{code:"AI_UPSCALE_SOURCE_INVALID",message:"AI upscaling requires a rights-confirmed PNG, JPEG or WebP source image."}});
+    const options=body.options&&typeof body.options==="object"&&!Array.isArray(body.options)?body.options:{};
+    if(Buffer.byteLength(JSON.stringify(options))>12000)return response(413,{error:{code:"MEDIA_OPTIONS_TOO_LARGE",message:"Media options exceed the supported size."}});
+    const input={...options,sourceAssetId,sourceSha256:source.sha256};
+    if(jobType==="media.ai-upscale")input.rightsConfirmed=true;
+    const key=String(idempotencyKey||"").trim().slice(0,180);
+    if(key.length<8)return response(400,{error:{code:"IDEMPOTENCY_KEY_REQUIRED",message:"An idempotency key of at least eight characters is required."}});
+    const existing=await request("jobs?select=id,owner_id,project_id,job_type,status,progress,input,output,error,created_at,updated_at&owner_id=eq."+encodeURIComponent(ownerId)+"&idempotency_key=eq."+encodeURIComponent(key)+"&limit=1");
+    if(Array.isArray(existing)&&existing[0]){
+     const row=existing[0];
+     if(row.job_type!==jobType||row.project_id!==projectId||stableJson(row.input)!==stableJson(input))return response(409,{error:{code:"IDEMPOTENCY_CONFLICT",message:"This idempotency key was already used for a different media request."}});
+     return response(200,{job:row,idempotentReplay:true});
+    }
+    const jobId=randomUUID(),rows=await request("jobs?select=id,owner_id,project_id,job_type,status,progress,input,output,error,created_at,updated_at",{method:"POST",body:{id:jobId,owner_id:ownerId,project_id:projectId,job_type:jobType,status:"queued",progress:0,input,idempotency_key:key}});
+    if(!Array.isArray(rows)||rows.length!==1||rows[0].id!==jobId||rows[0].job_type!==jobType||rows[0].owner_id!==ownerId||rows[0].project_id!==projectId)throw new Error("Cloud media job creation returned an invalid record.");
+    await request("job_events",{method:"POST",body:{job_id:jobId,owner_id:ownerId,event_type:"job.queued",event_data:{jobType,sourceAssetId,sourceSha256:source.sha256}},prefer:"return=minimal"});
     return response(202,{job:rows[0],idempotentReplay:false});
    }
    const benchmarkPath=path.match(/^\/api\/cloud\/upscale-benchmarks(?:\/(fixtures|runs)(?:\/([0-9a-f-]+)\/review)?)?$/i);

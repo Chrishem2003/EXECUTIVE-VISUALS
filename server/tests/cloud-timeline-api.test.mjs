@@ -8,7 +8,7 @@ import { createRenderManifest } from "../render-manifest.mjs";
 
 const owner="123e4567-e89b-42d3-a456-426614174000",editor="223e4567-e89b-42d3-a456-426614174000",project="423e4567-e89b-42d3-a456-426614174000",timelineId="523e4567-e89b-42d3-a456-426614174000";
 const timelineDoc={width:1280,height:720,frameRate:{numerator:24,denominator:1},tracks:[],markers:[]};
-function setup({canWrite=true,projectId=project,existing=[],timelineDocOverride=timelineDoc,assetOverride=null,signedAssetOverride=null,authorizeOverride=null,duplicateReview=false}={}){
+function setup({canWrite=true,projectId=project,existing=[],timelineDocOverride=timelineDoc,assetOverride=null,signedAssetOverride=null,authorizeOverride=null,duplicateReview=false,cancelRpcResult={status:"cancelled"},runningCancelRpcResult={status:"requested"},events=[]}={}){
  const calls=[],created=[];
  const timeline={id:timelineId,ownerId:owner,projectId,name:"Test timeline",revision:2,timeline:timelineDocOverride,otio:null};
  const timelines={
@@ -17,7 +17,7 @@ function setup({canWrite=true,projectId=project,existing=[],timelineDocOverride=
   async list(input){calls.push(["timeline-list",input]);return[{...timeline}];},
   async update(input){calls.push(["update",input]);return{...timeline,revision:input.expectedRevision+1,timeline:input.timeline};}
  };
- const fetchImpl=async(url,options)=>{calls.push(["fetch",url,options]);if(url.includes("/job_events")&&options.method==="POST"&&duplicateReview)return{ok:false,status:409,async text(){return JSON.stringify({code:"23505",message:"duplicate key"})}};if(url.includes("/jobs")&&options.method==="POST")return{ok:true,status:201,async text(){return JSON.stringify([{id:JSON.parse(options.body).id,owner_id:owner,project_id:projectId,job_type:JSON.parse(options.body).job_type,status:"queued",input:JSON.parse(options.body).input}])}};if(url.includes("/jobs?")&&options.method==="PATCH"){const row=existing.find(item=>url.includes("id=eq."+item.id));if(!row)return{ok:true,status:200,async text(){return"[]"}};Object.assign(row,JSON.parse(options.body));return{ok:true,status:200,async text(){return JSON.stringify([row])}};}if(url.includes("/jobs?"))return{ok:true,status:200,async text(){return JSON.stringify(existing)}};return{ok:true,status:201,async text(){return""}};};
+ const fetchImpl=async(url,options)=>{calls.push(["fetch",url,options]);if(url.includes("/job_events?")&&options.method==="GET")return{ok:true,status:200,async text(){return JSON.stringify(url.includes("order=created_at.desc")?events.slice().reverse():events);}};if(url.includes("/rpc/cancel_queued_media_job"))return{ok:true,status:200,async text(){return JSON.stringify(cancelRpcResult);}};if(url.includes("/rpc/request_media_job_cancellation"))return{ok:true,status:200,async text(){return JSON.stringify(runningCancelRpcResult);}};if(url.includes("/job_events")&&options.method==="POST"&&duplicateReview)return{ok:false,status:409,async text(){return JSON.stringify({code:"23505",message:"duplicate key"})}};if(url.includes("/jobs")&&options.method==="POST")return{ok:true,status:201,async text(){return JSON.stringify([{id:JSON.parse(options.body).id,owner_id:owner,project_id:projectId,job_type:JSON.parse(options.body).job_type,status:"queued",input:JSON.parse(options.body).input}])}};if(url.includes("/jobs?")&&options.method==="PATCH"){const row=existing.find(item=>url.includes("id=eq."+item.id));if(!row)return{ok:true,status:200,async text(){return"[]"}};Object.assign(row,JSON.parse(options.body));return{ok:true,status:200,async text(){return JSON.stringify([row])}};}if(url.includes("/jobs?"))return{ok:true,status:200,async text(){return JSON.stringify(existing)}};return{ok:true,status:201,async text(){return""}};};
  const api=createCloudTimelineApi({url:"https://example.supabase.co",serviceRoleKey:"service-secret",fetchImpl,timelineService:{timelines,assets:{async list(input){calls.push(["asset-list",input]);return[{id:"asset-1",projectId:input.projectId}];},async retryCleanup(input){calls.push(["asset-cleanup-retry",input]);return{id:input.assetId,deleted:true,storageRemoved:true,cleanupPending:false};},async get(input){calls.push(["asset-get",input]);if(input.assetId==="published-asset")return assetOverride||{id:"published-asset",ownerId:owner,projectId:project,name:"master.mp4",mediaType:"video/mp4",size:2048,sha256:"a".repeat(64),metadata:{}};return assetOverride||{id:"723e4567-e89b-42d3-a456-426614174000",ownerId:owner,projectId:project,name:"generated.mp4",mediaType:"video/mp4",sha256:"a".repeat(64),metadata:{generated:true,jobId:"823e4567-e89b-42d3-a456-426614174000",mediaVerification:{status:"passed",readable:true,sha256:"a".repeat(64)},probe:{format:{duration:"2.51"},streams:[{codec_type:"video"}]}}};},async createSignedUrl(input){calls.push(["signed-url",input]);return{asset:signedAssetOverride||{id:input.assetId,projectId:project,size:2048,sha256:"a".repeat(64)},url:"https://storage.example.test/private/master?token=short-lived"};}},projects:{async create(input){calls.push(["project-create",input]);return{id:"project-1",...input};},async list(input){calls.push(["project-list",input]);return[{id:project}];},async get(input){calls.push(["project-get",input]);return{id:project,...input};},async update(input){calls.push(["project-update",input]);return{id:project,...input};},async archive(input){calls.push(["project-archive",input]);return{id:project,archived:true};}}},authorize:authorizeOverride|| (async({ownerId,projectId:pid,action})=>ownerId===owner&&(!pid||pid===project)&&(action==="read"||canWrite))});
  return{api,calls,created};
 }
@@ -426,4 +426,169 @@ test("audio timeline preview exposes only a same-project waveform derivative wit
  const result=await api.handle({method:"GET",path:"/api/cloud/timelines/"+timelineId+"/preview/"+sourceId,ownerId:owner,query:{revision:"14"}});
  assert.equal(result.status,200);assert.equal(result.body.preview.waveformUrl,"https://signed.example/"+waveformId);
  assert.equal(calls.length,2);assert.equal(calls[0].assetId,sourceId);assert.equal(calls[1].assetId,waveformId);
+});
+
+
+test("cloud media jobs bind the verified owner, project and source checksum before enqueue",async()=>{
+ const f=setup();
+ const result=await f.api.handle({method:"POST",path:"/api/cloud/media-jobs",ownerId:owner,idempotencyKey:"media-job-0001",body:{ownerId:editor,projectId:project,sourceAssetId:"723e4567-e89b-42d3-a456-426614174000",jobType:"media.thumbnail",options:{seconds:3}}});
+ assert.equal(result.status,202);
+ assert.equal(result.body.job.owner_id,owner);
+ assert.equal(result.body.job.project_id,project);
+ const inserted=f.calls.find(call=>call[0]==="fetch"&&call[1].includes("/jobs?")&&call[2].method==="POST");
+ const row=JSON.parse(inserted[2].body);
+ assert.equal(row.owner_id,owner);
+ assert.equal(row.job_type,"media.thumbnail");
+ assert.equal(row.input.sourceAssetId,"723e4567-e89b-42d3-a456-426614174000");
+ assert.equal(row.input.sourceSha256,"a".repeat(64));
+ assert.equal(row.input.seconds,3);
+ assert.ok(f.calls.some(call=>call[0]==="fetch"&&call[1].includes("/job_events")&&JSON.parse(call[2].body).event_type==="job.queued"));
+});
+
+test("cloud media job submission requires project write access and verified source membership",async()=>{
+ const denied=setup({canWrite:false});
+ const result=await denied.api.handle({method:"POST",path:"/api/cloud/media-jobs",ownerId:owner,idempotencyKey:"media-job-0002",body:{projectId:project,sourceAssetId:"723e4567-e89b-42d3-a456-426614174000",jobType:"media.thumbnail"}});
+ assert.equal(result.status,404);
+ const wrongSource=setup({assetOverride:{id:"723e4567-e89b-42d3-a456-426614174000",ownerId:owner,projectId:"923e4567-e89b-42d3-a456-426614174000",sha256:"a".repeat(64),mediaType:"video/mp4"}});
+ const mismatch=await wrongSource.api.handle({method:"POST",path:"/api/cloud/media-jobs",ownerId:owner,idempotencyKey:"media-job-0003",body:{projectId:project,sourceAssetId:"723e4567-e89b-42d3-a456-426614174000",jobType:"media.thumbnail"}});
+ assert.equal(mismatch.status,404);
+});
+
+test("cloud media job submission is idempotent and rejects key reuse for changed inputs",async()=>{
+ const prior={id:"823e4567-e89b-42d3-a456-426614174000",owner_id:owner,project_id:project,job_type:"media.thumbnail",status:"queued",input:{sourceAssetId:"723e4567-e89b-42d3-a456-426614174000",sourceSha256:"a".repeat(64),seconds:2}};
+ const replay=setup({existing:[prior]});
+ const replayed=await replay.api.handle({method:"POST",path:"/api/cloud/media-jobs",ownerId:owner,idempotencyKey:"media-job-0004",body:{projectId:project,sourceAssetId:"723e4567-e89b-42d3-a456-426614174000",jobType:"media.thumbnail",options:{seconds:2}}});
+ assert.equal(replayed.status,200);
+ assert.equal(replayed.body.idempotentReplay,true);
+ const conflict=setup({existing:[prior]});
+ const conflicted=await conflict.api.handle({method:"POST",path:"/api/cloud/media-jobs",ownerId:owner,idempotencyKey:"media-job-0004",body:{projectId:project,sourceAssetId:"723e4567-e89b-42d3-a456-426614174000",jobType:"media.thumbnail",options:{seconds:4}}});
+ assert.equal(conflicted.status,409);
+});
+
+test("cloud media job submission rejects unsupported operations and missing idempotency keys",async()=>{
+ const f=setup();
+ const unsupported=await f.api.handle({method:"POST",path:"/api/cloud/media-jobs",ownerId:owner,idempotencyKey:"media-job-0005",body:{projectId:project,sourceAssetId:"723e4567-e89b-42d3-a456-426614174000",jobType:"workflow.execute"}});
+ assert.equal(unsupported.status,400);
+ const missingKey=await f.api.handle({method:"POST",path:"/api/cloud/media-jobs",ownerId:owner,body:{projectId:project,sourceAssetId:"723e4567-e89b-42d3-a456-426614174000",jobType:"media.thumbnail"}});
+ assert.equal(missingKey.status,400);
+});
+
+
+test("cloud media job options cannot override the authorized source identity or fingerprint",async()=>{
+ const f=setup();
+ const result=await f.api.handle({method:"POST",path:"/api/cloud/media-jobs",ownerId:owner,idempotencyKey:"media-job-locked",body:{projectId:project,sourceAssetId:"723e4567-e89b-42d3-a456-426614174000",jobType:"media.thumbnail",options:{sourceAssetId:"923e4567-e89b-42d3-a456-426614174000",sourceSha256:"0".repeat(64),seconds:5}}});
+ assert.equal(result.status,202);
+ const inserted=f.calls.find(call=>call[0]==="fetch"&&call[1].includes("/jobs?")&&call[2].method==="POST");
+ const input=JSON.parse(inserted[2].body).input;
+ assert.equal(input.sourceAssetId,"723e4567-e89b-42d3-a456-426614174000");
+ assert.equal(input.sourceSha256,"a".repeat(64));
+});
+
+test("cloud media job listing is scoped to the verified project and supported media families",async()=>{
+ const existing=[{id:"823e4567-e89b-42d3-a456-426614174000",owner_id:editor,project_id:project,job_type:"media.thumbnail",status:"processing",progress:62,cancel_requested_at:"2026-11-03T10:20:00.000Z",input:{sourceAssetId:"723e4567-e89b-42d3-a456-426614174000"}}];
+ const f=setup({existing});
+ const result=await f.api.handle({method:"GET",path:"/api/cloud/media-jobs",ownerId:owner,query:{projectId:project}});
+ assert.equal(result.status,200);
+ assert.equal(result.body.jobs.length,1);
+ assert.equal(result.body.jobs[0].jobType,"media.thumbnail");
+ assert.equal(result.body.jobs[0].projectId,project);
+ assert.equal(result.body.jobs[0].cancellationRequested,true);
+ const query=f.calls.find(call=>call[0]==="fetch"&&call[1].includes("/jobs?"));
+ assert.ok(!query[1].includes("owner_id=eq."));
+ assert.ok(query[1].includes("project_id=eq."+project));
+ assert.ok(query[1].includes("job_type=in."));
+});
+
+
+test("cloud media job rejects operation and source media-type mismatches before enqueue",async()=>{
+ const audio=setup({assetOverride:{id:"723e4567-e89b-42d3-a456-426614174000",ownerId:owner,projectId:project,sha256:"a".repeat(64),mediaType:"audio/wav"}});
+ const thumbnail=await audio.api.handle({method:"POST",path:"/api/cloud/media-jobs",ownerId:owner,idempotencyKey:"media-type-0001",body:{projectId:project,sourceAssetId:"723e4567-e89b-42d3-a456-426614174000",jobType:"media.thumbnail"}});
+ assert.equal(thumbnail.status,422);
+ assert.equal(thumbnail.body.error.code,"MEDIA_SOURCE_TYPE_UNSUPPORTED");
+ assert.equal(audio.calls.some(call=>call[0]==="fetch"&&call[1].includes("/jobs?")&&call[2].method==="POST"),false);
+ const video=setup();
+ const cleanAudio=await video.api.handle({method:"POST",path:"/api/cloud/media-jobs",ownerId:owner,idempotencyKey:"media-type-0002",body:{projectId:project,sourceAssetId:"723e4567-e89b-42d3-a456-426614174000",jobType:"media.audio-clean"}});
+ assert.equal(cleanAudio.status,422);
+});
+
+
+test("cloud media cancellation atomically cancels a queued job for an authorized project editor",async()=>{
+ const job={id:"823e4567-e89b-42d3-a456-426614174000",owner_id:owner,project_id:project,job_type:"media.thumbnail",status:"queued",progress:0};
+ const f=setup({existing:[job],authorizeOverride:async({ownerId,projectId:pid,action})=>ownerId===editor&&pid===project&&action==="write"});
+ const result=await f.api.handle({method:"POST",path:"/api/cloud/media-jobs/"+job.id+"/cancel",ownerId:editor,body:{projectId:project}});
+ assert.equal(result.status,200);
+ assert.equal(result.body.job.status,"cancelled");
+ const rpc=f.calls.find(call=>call[0]==="fetch"&&call[1].includes("/rpc/cancel_queued_media_job"));
+ assert.deepEqual(JSON.parse(rpc[2].body),{p_job_id:job.id,p_project_id:project,p_cancelled_by:editor});
+});
+
+test("cloud media cancellation requests cooperative stop for running jobs and refuses completed jobs",async()=>{
+ const job={id:"823e4567-e89b-42d3-a456-426614174000",owner_id:owner,project_id:project,job_type:"media.thumbnail",status:"processing",progress:35};
+ const f=setup({existing:[job]});
+ const result=await f.api.handle({method:"POST",path:"/api/cloud/media-jobs/"+job.id+"/cancel",ownerId:owner,body:{projectId:project}});
+ assert.equal(result.status,202);
+ assert.equal(result.body.job.status,"cancellation_requested");
+ assert.equal(f.calls.some(call=>call[0]==="fetch"&&call[1].includes("/rpc/request_media_job_cancellation")),true);
+ assert.equal(f.calls.some(call=>call[0]==="fetch"&&call[1].includes("/rpc/cancel_queued_media_job")),false);
+ const completed=setup({existing:[{...job,status:"succeeded"}]});
+ const refused=await completed.api.handle({method:"POST",path:"/api/cloud/media-jobs/"+job.id+"/cancel",ownerId:owner,body:{projectId:project}});
+ assert.equal(refused.status,409);
+});
+
+test("cloud media cancellation handles the claim-versus-cancel race without cancelling a leased job",async()=>{
+ const job={id:"823e4567-e89b-42d3-a456-426614174000",owner_id:owner,project_id:project,job_type:"media.thumbnail",status:"queued",progress:0};
+ const f=setup({existing:[job],cancelRpcResult:{status:"not_cancellable",jobStatus:"processing"}});
+ const result=await f.api.handle({method:"POST",path:"/api/cloud/media-jobs/"+job.id+"/cancel",ownerId:owner,body:{projectId:project}});
+ assert.equal(result.status,409);
+ assert.equal(result.body.jobStatus,"processing");
+});
+
+test("cloud media cancellation requires project editor permission and hides jobs from unauthorized users",async()=>{
+ const job={id:"823e4567-e89b-42d3-a456-426614174000",owner_id:owner,project_id:project,job_type:"media.thumbnail",status:"queued",progress:0};
+ const f=setup({existing:[job],canWrite:false});
+ const result=await f.api.handle({method:"POST",path:"/api/cloud/media-jobs/"+job.id+"/cancel",ownerId:owner,body:{projectId:project}});
+ assert.equal(result.status,404);
+ assert.equal(f.calls.some(call=>call[0]==="fetch"&&call[1].includes("/jobs?")),false);
+});
+
+test("cloud media job event history is project-authorized, bounded and sanitized",async()=>{
+ const job={id:reviewJobId,owner_id:owner,project_id:project,job_type:"media.upscale",status:"processing"};
+ const f=setup({existing:[job],authorizeOverride:async({ownerId,projectId:pid,action})=>ownerId===editor&&pid===project&&action==="read",events:[
+  {id:"event-1",event_type:"job.queued",created_at:"2026-11-03T10:00:00.000Z",event_data:{jobType:"media.upscale",secret:"never expose"}},
+  {id:"event-2",event_type:"job.progress",created_at:"2026-11-03T10:01:00.000Z",event_data:{progress:45,workerId:"private-worker-id"}},
+  {id:"event-3",event_type:"delivery.reviewed",created_at:"2026-11-03T10:02:00.000Z",event_data:{decision:"approved"}}
+ ]});
+ const denied=setup({existing:[job],authorizeOverride:async()=>false});
+ assert.equal((await denied.api.handle({method:"GET",path:"/api/cloud/media-jobs/"+job.id+"/events",ownerId:editor,query:{projectId:project}})).status,404);
+ const result=await f.api.handle({method:"GET",path:"/api/cloud/media-jobs/"+job.id+"/events",ownerId:editor,query:{projectId:project,limit:"500"}});
+ assert.equal(result.status,200);
+ assert.equal(result.body.events.length,2);
+ assert.equal(result.body.events[0].type,"job.queued");
+ assert.equal(result.body.events[1].data.progress,45);
+ assert.equal("workerId" in result.body.events[1].data,false);
+ assert.equal("secret" in result.body.events[0].data,false);
+ const eventQuery=f.calls.find(call=>call[0]==="fetch"&&call[1].includes("/job_events?"));
+ assert.match(eventQuery[1],/order=created_at.desc&limit=100$/);
+});
+test("cloud media job event history rejects unknown jobs and invalid project IDs",async()=>{
+ const f=setup();
+ assert.equal((await f.api.handle({method:"GET",path:"/api/cloud/media-jobs/"+reviewJobId+"/events",ownerId:owner,query:{projectId:"bad"}})).status,400);
+ assert.equal((await f.api.handle({method:"GET",path:"/api/cloud/media-jobs/"+reviewJobId+"/events",ownerId:owner,query:{projectId:project}})).status,404);
+});
+
+test("authorized project editors can request cooperative cancellation of a running cloud media job",async()=>{
+ const job={id:reviewJobId,owner_id:owner,project_id:project,job_type:"media.upscale",status:"processing",progress:62};
+ const f=setup({existing:[job],authorizeOverride:async({ownerId,projectId:pid,action})=>ownerId===editor&&pid===project&&action==="write"});
+ const result=await f.api.handle({method:"POST",path:"/api/cloud/media-jobs/"+job.id+"/cancel",ownerId:editor,body:{projectId:project}});
+ assert.equal(result.status,202);
+ assert.equal(result.body.job.status,"cancellation_requested");
+ const rpc=f.calls.find(call=>call[0]==="fetch"&&call[1].includes("/rpc/request_media_job_cancellation"));
+ assert.deepEqual(JSON.parse(rpc[2].body),{p_job_id:job.id,p_project_id:project,p_requested_by:editor});
+});
+test("running media cancellation fails closed without project editor permission",async()=>{
+ const job={id:reviewJobId,owner_id:owner,project_id:project,job_type:"media.thumbnail",status:"processing"};
+ const f=setup({existing:[job],authorizeOverride:async()=>false});
+ const result=await f.api.handle({method:"POST",path:"/api/cloud/media-jobs/"+job.id+"/cancel",ownerId:editor,body:{projectId:project}});
+ assert.equal(result.status,404);
+ assert.equal(f.calls.some(call=>call[0]==="fetch"&&call[1].includes("/rpc/request_media_job_cancellation")),false);
 });

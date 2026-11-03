@@ -161,3 +161,90 @@ test("retry scheduling is fenced when the database reports a lost lease",async()
  assert.equal(result.reason,"lease_lost");
  assert.equal(queue.calls.some(call=>call[0]==="finish"),false);
 });
+
+test("worker persists monotonic progress under its lease before terminal success",async()=>{
+ const queue=queueFor();
+ const reports=[];
+ queue.reportProgress=async(id,workerId,progress)=>{reports.push([id,workerId,progress]);return true;};
+ const result=await runCloudWorkerCycle({queue,workerId:"worker-progress",heartbeatIntervalMs:60000,execute:async({onProgress})=>{onProgress(40);onProgress(20);onProgress(75);return{ok:true};}});
+ assert.equal(result.status,"succeeded");
+ assert.deepEqual(reports,[["job-1","worker-progress",40],["job-1","worker-progress",75]]);
+ assert.ok(queue.calls.some(call=>call[0]==="finish"));
+});
+
+test("worker never finishes after progress reporting loses the lease",async()=>{
+ const queue=queueFor();
+ queue.reportProgress=async()=>false;
+ const result=await runCloudWorkerCycle({queue,workerId:"worker-progress",heartbeatIntervalMs:60000,execute:async({onProgress,signal})=>{onProgress(35);await new Promise(resolve=>setTimeout(resolve,0));assert.equal(signal.aborted,true);return{lateOutput:true};}});
+ assert.equal(result.finished,false);
+ assert.equal(result.reason,"lease_lost");
+ assert.equal(queue.calls.some(call=>call[0]==="finish"),false);
+});
+
+test("worker aborts conservatively when durable progress cannot be written",async()=>{
+ const queue=queueFor();
+ queue.reportProgress=async()=>{throw Object.assign(new Error("progress RPC unavailable"),{code:"CLOUD_QUEUE_HTTP_503"});};
+ const events=[];
+ const result=await runCloudWorkerCycle({queue,workerId:"worker-progress",heartbeatIntervalMs:60000,execute:async({onProgress,signal})=>{onProgress(50);await new Promise(resolve=>setTimeout(resolve,0));assert.equal(signal.aborted,true);return{lateOutput:true};},onEvent:event=>events.push(event)});
+ assert.equal(result.finished,false);
+ assert.equal(result.reason,"lease_lost");
+ assert.ok(events.some(event=>event.type==="job.progress_error"));
+ assert.equal(queue.calls.some(call=>call[0]==="finish"),false);
+});
+
+test("worker aborts media execution and finishes cancelled when a leased cancellation is requested",async()=>{
+ const queue=queueFor();
+ queue.checkCancellation=async()=>({leaseValid:true,cancelRequested:true});
+ const events=[];
+ const keepAlive=setInterval(()=>{},100);
+ let result;
+ try {
+  result=await runCloudWorkerCycle({
+   queue,workerId:"worker-cancel",leaseSeconds:15,heartbeatIntervalMs:1000,
+   execute:async({signal})=>new Promise((resolve,reject)=>{
+    signal.addEventListener("abort",()=>reject(signal.reason),{once:true});
+   }),
+   onEvent:event=>events.push(event)
+  });
+ } finally { clearInterval(keepAlive); }
+ assert.equal(result.finished,true);
+ assert.equal(result.status,"cancelled");
+ assert.ok(queue.calls.some(call=>call[0]==="finish"&&call[3]==="cancelled"));
+ assert.ok(events.some(event=>event.type==="job.cancel_requested"));
+ assert.ok(events.some(event=>event.type==="job.cancelled"));
+});
+test("accepted cancellation wins a race with worker success",async()=>{
+ const queue=queueFor();
+ queue.checkCancellation=async()=>({leaseValid:true,cancelRequested:true});
+ const result=await runCloudWorkerCycle({
+  queue,workerId:"worker-cancel-race",leaseSeconds:15,heartbeatIntervalMs:1000,
+  execute:async()=>{await new Promise(resolve=>setTimeout(resolve,1150));return{lateOutput:true};}
+ });
+ assert.equal(result.status,"cancelled");
+ const finish=queue.calls.find(call=>call[0]==="finish");
+ assert.equal(finish[3],"cancelled");
+});
+test("accepted cancellation wins a race with transient retry scheduling",async()=>{
+ const queue=queueFor({retry:{accepted:true,status:"cancelled",retryable:false,delaySeconds:0,attempt:1,maxAttempts:3}});
+ const events=[];
+ const result=await runCloudWorkerCycle({
+  queue,workerId:"worker-cancel-retry",heartbeatIntervalMs:60000,
+  execute:async()=>{throw Object.assign(new Error("temporary outage"),{code:"CLOUD_STORAGE_TIMEOUT"});},
+  onEvent:event=>events.push(event)
+ });
+ assert.equal(result.status,"cancelled");
+ assert.ok(events.some(event=>event.type==="job.cancelled"));
+});
+
+test("accepted cancellation takes precedence over a racing permanent failure",async()=>{
+ const queue=queueFor();
+ let finishCalls=0;
+ queue.finish=async(id,worker,status)=>{finishCalls++;queue.calls.push(["finish",id,worker,status]);return finishCalls>1;};
+ queue.checkCancellation=async()=>({leaseValid:true,cancelRequested:true});
+ const result=await runCloudWorkerCycle({
+  queue,workerId:"worker-cancel-failure",heartbeatIntervalMs:60000,
+  execute:async()=>{throw Object.assign(new Error("invalid media"),{code:"UNSUPPORTED_MEDIA_TYPE"});}
+ });
+ assert.equal(result.status,"cancelled");
+ assert.deepEqual(queue.calls.filter(call=>call[0]==="finish").map(call=>call[3]),["failed","cancelled"]);
+});

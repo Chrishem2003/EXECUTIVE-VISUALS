@@ -49,8 +49,12 @@ export async function runCloudWorkerCycle({
     return { claimed: true, finished: false, reason: "worker_stopping", jobId: job.id };
   }
   let leaseLost = false;
+  let userCancelled = false;
   let heartbeatPending = false;
   let heartbeatError = null;
+  let progressError = null;
+  let progressTask = Promise.resolve();
+  let lastReportedProgress = 0;
   let heartbeatTask = Promise.resolve();
   onEvent({ type: "job.started", jobId: job.id, workerId });
 
@@ -64,6 +68,17 @@ export async function runCloudWorkerCycle({
           leaseLost = true;
           controller.abort(new Error("Worker lease is no longer valid."));
           onEvent({ type: "job.lease_lost", jobId: job.id, workerId });
+        } else if (typeof queue.checkCancellation === "function") {
+          const cancellation = await queue.checkCancellation(job.id, workerId);
+          if (!cancellation.leaseValid) {
+            leaseLost = true;
+            controller.abort(new Error("Worker lease is no longer valid."));
+            onEvent({ type: "job.lease_lost", jobId: job.id, workerId });
+          } else if (cancellation.cancelRequested) {
+            userCancelled = true;
+            controller.abort(Object.assign(new Error("The project requested cancellation."), { code: "JOB_CANCELLED_BY_USER" }));
+            onEvent({ type: "job.cancel_requested", jobId: job.id, workerId });
+          }
         }
       } catch (error) {
         heartbeatError = error;
@@ -77,6 +92,18 @@ export async function runCloudWorkerCycle({
   }, heartbeatIntervalMs);
   heartbeat.unref?.();
 
+  async function finishCancellation() {
+    const details = { code: "JOB_CANCELLED_BY_USER", message: "The job was cancelled by an authorized project editor.", retryable: false };
+    const finished = await queue.finish(job.id, workerId, "cancelled", null, details);
+    if (!finished) {
+      leaseLost = true;
+      onEvent({ type: "job.lease_lost", jobId: job.id, workerId });
+      return { claimed: true, finished: false, reason: "lease_lost", jobId: job.id };
+    }
+    onEvent({ type: "job.cancelled", jobId: job.id, workerId });
+    return { claimed: true, finished: true, status: "cancelled", jobId: job.id, error: details };
+  }
+
   try {
     const output = await execute({
       job,
@@ -84,13 +111,33 @@ export async function runCloudWorkerCycle({
       onProgress(value) {
         if (leaseLost || controller.signal.aborted) return;
         if (!Number.isFinite(value) || value < 0 || value > 100) throw new Error("Worker progress must be between 0 and 100.");
-        onProgress({ jobId: job.id, workerId, progress: value });
+        const progress = Math.max(lastReportedProgress, value);
+        if (progress === lastReportedProgress) return;
+        lastReportedProgress = progress;
+        onProgress({ jobId: job.id, workerId, progress });
+        if (typeof queue.reportProgress === "function") {
+          progressTask = progressTask.then(async () => {
+            if (controller.signal.aborted || leaseLost) return;
+            const accepted = await queue.reportProgress(job.id, workerId, progress);
+            if (!accepted) {
+              leaseLost = true;
+              controller.abort(new Error("Worker lease is no longer valid for progress reporting."));
+              onEvent({ type: "job.lease_lost", jobId: job.id, workerId });
+            }
+          }).catch(error => {
+            progressError = error;
+            leaseLost = true;
+            controller.abort(new Error("Worker could not persist job progress."));
+            onEvent({ type: "job.progress_error", jobId: job.id, workerId });
+          });
+        }
       }
     });
     // Stop scheduling heartbeats and settle any in-flight renewal before the
     // terminal transition. Otherwise a late renewal can race a successful finish.
     clearInterval(heartbeat);
-    await heartbeatTask;
+    await Promise.all([heartbeatTask, progressTask]);
+    if (userCancelled) return await finishCancellation();
     if (leaseLost || controller.signal.aborted) {
       return { claimed: true, finished: false, reason: shutdownSignal?.aborted ? "worker_stopping" : "lease_lost", jobId: job.id };
     }
@@ -99,6 +146,13 @@ export async function runCloudWorkerCycle({
     }
     const finished = await queue.finish(job.id, workerId, "succeeded", output ?? {}, null);
     if (!finished) {
+      if (typeof queue.checkCancellation === "function") {
+        const cancellation = await queue.checkCancellation(job.id, workerId);
+        if (cancellation.leaseValid && cancellation.cancelRequested) {
+          userCancelled = true;
+          return await finishCancellation();
+        }
+      }
       leaseLost = true;
       onEvent({ type: "job.lease_lost", jobId: job.id, workerId });
       return { claimed: true, finished: false, reason: "lease_lost", jobId: job.id };
@@ -108,6 +162,7 @@ export async function runCloudWorkerCycle({
   } catch (error) {
     clearInterval(heartbeat);
     await heartbeatTask;
+    if (userCancelled) return await finishCancellation();
     if (leaseLost || controller.signal.aborted) {
       return { claimed: true, finished: false, reason: shutdownSignal?.aborted ? "worker_stopping" : "lease_lost", jobId: job.id };
     }
@@ -128,11 +183,23 @@ export async function runCloudWorkerCycle({
         onEvent({ type: "job.retry_scheduled", jobId: job.id, workerId, delaySeconds: scheduled.delaySeconds, attempt: scheduled.attempt, maxAttempts: scheduled.maxAttempts, error: details });
         return { claimed: true, finished: true, status: "queued", retryScheduled: true, retryAfterSeconds: scheduled.delaySeconds, jobId: job.id, error: details };
       }
+      if (scheduled.status === "cancelled") {
+        const cancellation = { code: "JOB_CANCELLED_BY_USER", message: "The job was cancelled by an authorized project editor.", retryable: false };
+        onEvent({ type: "job.cancelled", jobId: job.id, workerId });
+        return { claimed: true, finished: true, status: "cancelled", jobId: job.id, error: cancellation };
+      }
       onEvent({ type: "job.failed", jobId: job.id, workerId, error: { ...details, retryable: false, retryExhausted: true } });
       return { claimed: true, finished: true, status: "failed", jobId: job.id, error: { ...details, retryable: false, retryExhausted: true } };
     }
     const finished = await queue.finish(job.id, workerId, "failed", null, details);
     if (!finished) {
+      if (typeof queue.checkCancellation === "function") {
+        const cancellation = await queue.checkCancellation(job.id, workerId);
+        if (cancellation.leaseValid && cancellation.cancelRequested) {
+          userCancelled = true;
+          return await finishCancellation();
+        }
+      }
       leaseLost = true;
       onEvent({ type: "job.lease_lost", jobId: job.id, workerId });
       return { claimed: true, finished: false, reason: "lease_lost", jobId: job.id };
@@ -143,5 +210,6 @@ export async function runCloudWorkerCycle({
     clearInterval(heartbeat);
     shutdownSignal?.removeEventListener("abort", abortForShutdown);
     if (heartbeatError) onEvent({ type: "job.heartbeat_error", jobId: job.id, workerId });
+    if (progressError) onEvent({ type: "job.progress_error", jobId: job.id, workerId });
   }
 }
