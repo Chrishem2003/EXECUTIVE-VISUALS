@@ -4,7 +4,7 @@ import { createAuthRateLimiter } from "./auth-rate-limit.mjs";
 import { createRedisRestRateLimiter } from "./distributed-rate-limit.mjs";
 import { createClientIpResolver } from "./client-ip.mjs";
 import { isBlockedDotPath } from "./static-path-security.mjs";
-import { ensureAuthSecuritySchema, getLoginLockState, recordFailedLogin, clearLoginFailures, recordLoginLockoutEvent, listAuthSecurityEvents } from "./auth-login-security.mjs";
+import { ensureAuthSecuritySchema, getLoginLockState, recordFailedLogin, clearLoginFailures, recordLoginLockoutEvent, listAuthSecurityEvents, getAuthSecuritySummary } from "./auth-login-security.mjs";
 import { createHash, randomBytes, randomUUID, scryptSync, timingSafeEqual } from "node:crypto";
 import { createReadStream, createWriteStream, existsSync, statSync } from "node:fs";
 import { mkdir, unlink, open, readFile } from "node:fs/promises";
@@ -889,6 +889,13 @@ export function createAppServer() {
         }
       }
 
+      if(path==="/api/admin/security-summary"&&req.method==="GET"){
+        const allowedAdmins=String(process.env.AUTH_SECURITY_ADMIN_EMAILS||"").split(",").map(value=>value.trim().toLowerCase()).filter(Boolean);
+        if(!allowedAdmins.length||!allowedAdmins.includes(String(user.email||"").toLowerCase())){
+          fail(res,403,"AUTH_SECURITY_ADMIN_REQUIRED","An explicitly allowlisted security administrator is required.");return;
+        }
+        send(res,200,getAuthSecuritySummary(db),cors);return;
+      }
       if(path==="/api/admin/security-events"&&req.method==="GET"){
         const allowedAdmins=String(process.env.AUTH_SECURITY_ADMIN_EMAILS||"").split(",").map(value=>value.trim().toLowerCase()).filter(Boolean);
         if(!allowedAdmins.length||!allowedAdmins.includes(String(user.email||"").toLowerCase())){
