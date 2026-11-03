@@ -29,7 +29,28 @@ export function ensureAuthSecuritySchema(db) {
       updated_at_ms INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS auth_login_security_lock_idx ON auth_login_security(locked_until_ms);
+    CREATE TABLE IF NOT EXISTS auth_security_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      identifier_hash TEXT NOT NULL,
+      event_type TEXT NOT NULL CHECK(event_type IN ('login_failed','account_locked','login_blocked_by_lockout','login_succeeded')),
+      failed_attempts INTEGER NOT NULL DEFAULT 0 CHECK(failed_attempts >= 0),
+      lock_level INTEGER NOT NULL DEFAULT 0 CHECK(lock_level >= 0),
+      locked_until_ms INTEGER,
+      created_at_ms INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS auth_security_events_created_idx ON auth_security_events(created_at_ms DESC);
+    CREATE INDEX IF NOT EXISTS auth_security_events_identifier_idx ON auth_security_events(identifier_hash,created_at_ms DESC);
   `);
+}
+function writeAuthSecurityEvent(db, identifier, eventType, state = {}, now = Date.now()) {
+  const identifierHash=loginIdentifierHash(identifier);
+  db.prepare("INSERT INTO auth_security_events(identifier_hash,event_type,failed_attempts,lock_level,locked_until_ms,created_at_ms) VALUES(?,?,?,?,?,?)")
+    .run(identifierHash,eventType,Math.max(0,Number(state.failedAttempts)||0),Math.max(0,Number(state.lockLevel)||0),state.lockedUntilMs||null,now);
+  db.prepare("DELETE FROM auth_security_events WHERE created_at_ms < ?").run(now-90*24*60*60*1000);
+  db.prepare("DELETE FROM auth_security_events WHERE id NOT IN (SELECT id FROM auth_security_events ORDER BY id DESC LIMIT 50000)").run();
+}
+export function recordLoginLockoutEvent(db, identifier, state, now = Date.now()) {
+  writeAuthSecurityEvent(db,identifier,"login_blocked_by_lockout",state,now);
 }
 export function getLoginLockState(db, identifier, now = Date.now()) {
   const key=loginIdentifierHash(identifier);
