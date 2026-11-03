@@ -96,9 +96,16 @@ export function recordFailedLogin(db, identifier, now = Date.now()) {
 }
 export function clearLoginFailures(db, identifier) {
   const key=loginIdentifierHash(identifier);
-  writeAuthSecurityEvent(db,identifier,"login_succeeded",{},Date.now());
-  db.prepare("DELETE FROM auth_login_security WHERE identifier_hash=?").run(key);
-  if(process.env.AUTH_IDENTIFIER_HMAC_KEY)db.prepare("DELETE FROM auth_login_security WHERE identifier_hash=?").run(legacyLoginIdentifierHash(identifier));
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    writeAuthSecurityEvent(db,identifier,"login_succeeded",{},Date.now());
+    db.prepare("DELETE FROM auth_login_security WHERE identifier_hash=?").run(key);
+    if(process.env.AUTH_IDENTIFIER_HMAC_KEY)db.prepare("DELETE FROM auth_login_security WHERE identifier_hash=?").run(legacyLoginIdentifierHash(identifier));
+    db.exec("COMMIT");
+  } catch(error) {
+    try { db.exec("ROLLBACK"); } catch {}
+    throw error;
+  }
 }
 
 export function listAuthSecurityEvents(db, { limit = 50, beforeId = null, eventType = null } = {}) {
