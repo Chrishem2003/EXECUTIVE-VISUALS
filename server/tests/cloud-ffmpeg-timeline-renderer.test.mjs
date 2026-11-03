@@ -95,3 +95,22 @@ test("cloud renderer applies a selected vertical delivery profile to the actual 
   assert.match(result.filename,/social-vertical\.mp4$/);
  }finally{await rm(root,{recursive:true,force:true});}
 });
+
+test("cloud renderer animates overlay position and scale using saved motion keyframes", {skip:!hasFfmpeg||!hasFfprobe}, async()=>{
+ const root=await mkdtemp(join(tmpdir(),"ev-cloud-motion-test-"));
+ try{
+  const video=join(root,"source.mp4"),overlay=join(root,"logo.png");
+  execFileSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-loglevel","error","-y","-f","lavfi","-i","color=c=blue:s=320x240:r=24:d=1","-c:v","libx264","-pix_fmt","yuv420p",video]);
+  execFileSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-loglevel","error","-y","-f","lavfi","-i","color=c=white@1.0:s=80x40","-frames:v","1",overlay]);
+  const timeline={name:"Motion keyframes",width:320,height:240,frameRate:{numerator:24,denominator:1},tracks:[
+   {id:"v",kind:"video",clips:[{id:"v1",assetId:"video",timelineStart:time(0),duration:time(1),sourceRange:{start:time(0),duration:time(1)}}]},
+   {id:"o",kind:"overlay",clips:[{id:"o1",assetId:"logo",timelineStart:time(0),duration:time(1),sourceRange:{start:time(0),duration:time(1)},metadata:{x:0,y:0,width:80,height:40,opacity:1,motionKeyframes:[{frame:0,x:0,y:0,scale:0.5},{frame:24,x:200,y:160,scale:1.5}]}}]}
+  ]};
+  const assets=new Map([["video",{path:video,asset:{id:"video",mediaType:"video/mp4",originalName:"source.mp4"}}],["logo",{path:overlay,asset:{id:"logo",mediaType:"image/png",originalName:"logo.png"}}]]);
+  const result=await renderCloudTimeline({timeline,assets,workDir:root});
+  const probe=JSON.parse(execFileSync(process.env.FFPROBE_PATH||"ffprobe",["-v","error","-show_entries","stream=codec_type,width,height","-of","json",result.path],{encoding:"utf8"}));
+  assert.equal(result.render.animatedOverlayClips,1);
+  assert.equal(probe.streams.find(stream=>stream.codec_type==="video").width,320);
+  assert.ok(probe.streams.some(stream=>stream.codec_type==="video"));
+ }finally{await rm(root,{recursive:true,force:true});}
+});
