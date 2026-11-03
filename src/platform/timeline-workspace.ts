@@ -10,7 +10,7 @@ import { analyzeCreativeTraceability, readCreativeTrace } from "../core/creative
 import { appendCreativeDecision, readCreativeDecisionHistory } from "../core/creative-decision-ledger";
 import { compareTimelineVariants, createTimelineVariant, type TimelineVariantComparison } from "../core/timeline-variants";
 import { addClip, addMarker, addTrack, createTimeline, moveClip, rational, removeClip, splitClip, toOpenTimelineIo, trimClip, type EditorialTimeline, type TimelineTrack } from "../core/timeline";
-import { clampPreviewSeconds, stepPreviewSeconds } from "../core/timeline-preview";
+import { clampPreviewSeconds, previewSecondsAtScrubFrame, stepPreviewSeconds } from "../core/timeline-preview";
 import { assessDerivativeEligibility, replaceTimelineClipAsset } from "../core/timeline-derivatives";
 import { createTimelineHistory, recordTimelineHistory, undoTimeline, redoTimeline, type TimelineHistory } from "../core/timeline-history";
 import { getTimelineHistoryShortcut } from "../core/timeline-shortcuts";
@@ -500,6 +500,14 @@ document.addEventListener("click",event=>{
  if(select&&state.timeline){state.selectedTrack=select.dataset.track||"";state.selectedClipId=select.dataset.clip||"";state.previewKey="";state.previewUrl="";state.previewExpiresAt=0;state.previewError="";state.previewLoading=false;paint();}
  const action=target.closest<HTMLElement>("[data-tl-action]");
  if(action)void runAction(action);
+});
+document.addEventListener("input",event=>{
+ const target=event.target as HTMLInputElement|null;
+ if(!target||target.id!=="tl-preview-scrub")return;
+ const media=document.querySelector<HTMLMediaElement>("#tl-preview-media");if(!media)return;
+ const start=Number(media.dataset.sourceIn),end=Number(media.dataset.sourceOut),rate=Number(media.dataset.sourceFps),frame=Number(target.value);
+ try{media.currentTime=previewSecondsAtScrubFrame(frame,start,rate,end);const output=document.querySelector<HTMLOutputElement>("#tl-preview-time");if(output)output.value=media.currentTime.toFixed(3)+" s";}
+ catch{target.value="0";}
 });
 window.addEventListener("ev:authenticated",()=>void initTimelineWorkspace());
 window.addEventListener("ev:assets-updated",()=>void refresh().then(paint).catch(error=>{state.message=error.message;paint();}));
