@@ -185,3 +185,18 @@ test("cloud job diagnostics are bounded, payload-free and validated",async()=>{
  const blankIdentity=createCloudQueue({...base,fetchImpl:async()=>response([{...rows[0],job_type:" "}])});
  await assert.rejects(()=>blankIdentity.listJobDiagnostics(),/malformed or unsafe/);
 });
+
+test("asset cleanup diagnostics use an aggregate-only service-role RPC and validate privacy",async()=>{
+ const requests=[];
+ const snapshot={pending_count:4,pending_over_24_hours:2,pending_over_7_days:1,oldest_pending_at:"2026-11-01T10:00:00Z",oldest_pending_age_seconds:172800};
+ const queue=createCloudQueue({...base,fetchImpl:async(url,options)=>{requests.push({url,body:JSON.parse(options.body)});return response(snapshot);}});
+ assert.deepEqual(await queue.listAssetCleanupDiagnostics(),snapshot);
+ assert.equal(requests[0].url,"https://example.supabase.co/rest/v1/rpc/list_asset_cleanup_diagnostics");
+ assert.deepEqual(requests[0].body,{});
+ const malformed=createCloudQueue({...base,fetchImpl:async()=>response({...snapshot,owner_id:"private"})});
+ await assert.rejects(()=>malformed.listAssetCleanupDiagnostics(),/malformed or unsafe/);
+ const contradictory=createCloudQueue({...base,fetchImpl:async()=>response({...snapshot,pending_over_7_days:3})});
+ await assert.rejects(()=>contradictory.listAssetCleanupDiagnostics(),/malformed or unsafe/);
+ const empty=createCloudQueue({...base,fetchImpl:async()=>response({pending_count:0,pending_over_24_hours:0,pending_over_7_days:0,oldest_pending_at:null,oldest_pending_age_seconds:0})});
+ assert.equal((await empty.listAssetCleanupDiagnostics()).pending_count,0);
+});
