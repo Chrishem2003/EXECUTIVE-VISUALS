@@ -16,7 +16,7 @@ const provider=createServer(async(req,res)=>{
  if(req.url.startsWith("/auth/v1/token?grant_type=password")){res.end(JSON.stringify({access_token:"cloud-api-access-token-123456789",refresh_token:"cloud-api-refresh-token-123456789",expires_in:3600,user:{id:ownerId,email:"owner@example.test"}}));return;}
  if(req.url==="/auth/v1/user"){res.end(JSON.stringify({id:ownerId,email:"owner@example.test"}));return;}
  if(req.url.startsWith("/storage/v1/object/sign/")){res.end(JSON.stringify({signedURL:"/object/sign/executive-visuals-media/"+ownerId+"/"+assetId+"/original.png?token=short-lived"}));return;}
- if(req.url==="/storage/v1/object/executive-visuals-media"&&req.method==="DELETE"){res.end(JSON.stringify({});return;}
+ if(req.url==="/storage/v1/object/executive-visuals-media"&&req.method==="DELETE"){res.end(JSON.stringify({}));return;}
  if(req.url.startsWith("/storage/v1/object/executive-visuals-media/")&&req.method==="POST"){res.end(JSON.stringify({Key:req.url}));return;}
  if(req.url.startsWith("/rest/v1/assets")&&req.method==="POST"){
   const payload=JSON.parse(raw.toString("utf8"));assetRow={...payload,created_at:"2026-11-03T00:00:00.000Z",deleted_at:null};
