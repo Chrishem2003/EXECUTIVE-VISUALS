@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { access, copyFile, lstat, open, rm as removeFile, stat } from "node:fs/promises";
+import { access, link, lstat, open, rm as removeFile, stat } from "node:fs/promises";
 import { constants } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
 import { tmpdir } from "node:os";
@@ -248,7 +248,11 @@ export function createRealEsrganAdapter({
       const expectedWidth = inputDimensions.width * prepared.scale, expectedHeight = inputDimensions.height * prepared.scale;
       if (outputDimensions.width !== expectedWidth || outputDimensions.height !== expectedHeight) throw fail("AI upscale output dimensions do not match the requested scale factor.", "AI_UPSCALE_OUTPUT_DIMENSIONS_MISMATCH");
       try {
-        await copyFile(temporaryOutput, output, constants.COPYFILE_EXCL);
+        // A same-directory hard link publishes the fully validated inode in
+        // one atomic namespace operation. Unlike a streamed/copy publication,
+        // a failed transfer cannot leave a truncated destination behind.
+        // link() also fails atomically when any file or symlink already exists.
+        await link(temporaryOutput, output);
       } catch (error) {
         if (error.code === "EEXIST") throw fail("AI upscale output already exists; source files are never overwritten.", "AI_UPSCALE_OUTPUT_EXISTS");
         throw error;
