@@ -127,7 +127,7 @@ async function authenticate(req) {
     let user;try{user=await supabaseAuth.getUser(token);}catch{return null;}
     db.prepare("INSERT INTO users(id,email,auth_source) VALUES(?,?, 'supabase') ON CONFLICT(id) DO UPDATE SET email=excluded.email")
       .run(user.id,user.email||user.id+"@supabase.invalid");
-    return {id:user.id,email:user.email||""};
+    return {id:user.id,email:user.email||"",emailVerified:user.emailVerified===true};
   }
   const token=cookieValue(req,"ev_session");
   if(!token)return null;
