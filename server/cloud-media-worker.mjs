@@ -65,6 +65,8 @@ export function createCloudMediaWorker({
 
   return Object.freeze({
     workerId,
+    workerFamily:"media",
+    reportHeartbeat:({instanceId,status,metrics})=>cloudQueue.heartbeatWorker({workerId,workerFamily:"media",instanceId,status,metrics}),
     async runCycle(options = {}) {
       return runCloudWorkerCycle({
         queue: mediaQueue,
