@@ -56,6 +56,13 @@ test("project job API normalizes processing state to running for collaborators",
  assert.equal(result.status,200);
  assert.equal(result.body.jobs[0].status,"running");
 });
+test("single cloud job detail normalizes processing to running",async()=>{
+ const existing=[{id:"623e4567-e89b-42d3-a456-426614174004",owner_id:owner,project_id:project,job_type:"timeline.render",status:"processing",progress:31,input:{},output:null,error:null,attempt_count:1,created_at:"2026-11-03T10:00:00Z",updated_at:"2026-11-03T10:01:00Z"}];
+ const f=setup({existing});
+ const result=await f.api.handle({method:"GET",path:"/api/cloud/jobs/"+existing[0].id,ownerId:owner});
+ assert.equal(result.status,200);
+ assert.equal(result.body.job.status,"running");
+});
 test("authorized collaborators can list jobs created by the project owner",async()=>{
  const existing=[{id:"623e4567-e89b-42d3-a456-426614174001",owner_id:owner,project_id:project,job_type:"timeline.render",status:"processing",progress:55,input:{},output:null,error:null,attempt_count:1,created_at:"2026-11-03T10:00:00Z",updated_at:"2026-11-03T10:01:00Z"}];
  const f=setup({existing,authorizeOverride:async({ownerId,projectId:pid,action})=>ownerId===editor&&pid===project&&action==="read"});
