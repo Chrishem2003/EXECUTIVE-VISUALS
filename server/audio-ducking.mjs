@@ -1,7 +1,7 @@
 const clamp=(value,min,max,fallback)=>Number.isFinite(Number(value))?Math.max(min,Math.min(max,Number(value))):fallback;
 export function normalizeDuckingSettings(metadata={}){
  const input=metadata&&typeof metadata==="object"?metadata:{};
- return {thresholdDb:clamp(input.duckingThresholdDb,-60,-6,-24),ratio:clamp(input.duckingRatio,1,20,8),attackMs:clamp(input.duckingAttackMs,1,200,20),releaseMs:clamp(input.duckingReleaseMs,20,2000,300)};
+ return {thresholdDb:clamp(input.duckingThresholdDb??input.thresholdDb,-60,-6,-24),ratio:clamp(input.duckingRatio??input.ratio,1,20,8),attackMs:clamp(input.duckingAttackMs??input.attackMs,1,200,20),releaseMs:clamp(input.duckingReleaseMs??input.releaseMs,20,2000,300)};
 }
 export function buildAudioDuckingGraph(audioItems=[]){
  const items=Array.isArray(audioItems)?audioItems:[];
