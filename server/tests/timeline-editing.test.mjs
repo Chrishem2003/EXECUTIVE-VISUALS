@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { addClip, addTrack, createTimeline, rational, removeClip, seconds } from "../../src/core/timeline.ts";
+import { addClip, addTrack, createTimeline, rational, removeClip, seconds, snapTimelineFrame } from "../../src/core/timeline.ts";
 
 function fixture(locked=false){
  let timeline=createTimeline("project","sequence","Edit test",{numerator:24,denominator:1});
@@ -38,4 +38,19 @@ test("ripple delete never shifts clips on another track",()=>{
 test("ripple delete rejects locked tracks and unknown clips",()=>{
  assert.throws(()=>removeClip(fixture(true),"v1","b",true),/locked/i);
  assert.throws(()=>removeClip(fixture(),"v1","missing",true),/not found/i);
+});
+
+test("snaps clip placement to nearby edit boundaries but not distant ones",()=>{
+ const timeline=fixture();
+ assert.deepEqual(snapTimelineFrame(31,timeline,"v1",6),{frame:24,snappedTo:24});
+ assert.deepEqual(snapTimelineFrame(42,timeline,"v1",6),{frame:48,snappedTo:48});
+ assert.deepEqual(snapTimelineFrame(55,timeline,"v1",4),{frame:55,snappedTo:null});
+});
+test("snaps across tracks and ignores the clip being repositioned",()=>{
+ const timeline=fixture();
+ assert.deepEqual(snapTimelineFrame(31,timeline,"a1",6,"a"),{frame:24,snappedTo:24});
+});
+test("rejects invalid snap parameters",()=>{
+ assert.throws(()=>snapTimelineFrame(-1,fixture(),"v1"),/non-negative/);
+ assert.throws(()=>snapTimelineFrame(10,fixture(),"v1",-1),/non-negative/);
 });
