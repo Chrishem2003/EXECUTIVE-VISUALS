@@ -154,3 +154,41 @@ test("does not retry cleanup without project write authorization",async()=>{
  await assert.rejects(()=>f.repo.retryCleanup({ownerId,assetId}),e=>e.code==="CLOUD_ASSET_ACCESS_DENIED");
  assert.equal(f.storageCalls.length,0);
 });
+
+test("returns project-scoped derivative ancestry and direct children with a bounded lineage",async()=>{
+ const parentId="423e4567-e89b-42d3-a456-426614174000";
+ const childId="523e4567-e89b-42d3-a456-426614174000";
+ const rows={
+  [assetId]:{...fixture().row,derivative_of:parentId},
+  [parentId]:{...fixture().row,id:parentId,original_name:"source.mp4",derivative_of:null},
+  [childId]:{...fixture().row,id:childId,original_name:"preview.mp4",derivative_of:assetId}
+ };
+ const calls=[];
+ const storage={async upload(){},async remove(){},async createSignedUrl(){return"https://example.supabase.co/signed";}};
+ const fetchImpl=async url=>{
+  calls.push(url);
+  const query=new URL(url).searchParams;
+  const id=query.get("id")?.replace("eq.","");
+  const derivative=query.get("derivative_of")?.replace("eq.","");
+  if(id)return response(rows[id]?[rows[id]]:[]);
+  if(derivative===assetId)return response([rows[childId]]);
+  return response([]);
+ };
+ const repo=createCloudAssetRepository({...config,storage,authorize:async()=>true,fetchImpl});
+ const lineage=await repo.getLineage({ownerId,assetId});
+ assert.deepEqual(lineage.ancestors.map(item=>item.id),[assetId,parentId]);
+ assert.deepEqual(lineage.derivatives.map(item=>item.id),[childId]);
+ assert.equal(lineage.depth,1);
+ assert.equal(lineage.hasMoreAncestors,false);
+ assert.ok(calls.some(url=>url.includes("derivative_of=eq."+assetId)));
+});
+test("does not disclose derivative lineage outside the asset project scope",async()=>{
+ const foreign={...fixture().row,project_id:"623e4567-e89b-42d3-a456-426614174000"};
+ const storage={async upload(){},async remove(){},async createSignedUrl(){return"https://example.supabase.co/signed";}};
+ const repo=createCloudAssetRepository({...config,storage,authorize:async()=>true,fetchImpl:async()=>response([foreign])});
+ await assert.rejects(()=>repo.getLineage({ownerId,assetId}),/not found/);
+});
+test("requires project read authorization before resolving derivative lineage",async()=>{
+ const f=fixture({authorize:async({action})=>action!=="read"});
+ await assert.rejects(()=>f.repo.getLineage({ownerId,assetId}),error=>error.code==="CLOUD_ASSET_ACCESS_DENIED");
+});
