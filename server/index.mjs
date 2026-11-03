@@ -607,6 +607,26 @@ export function createAppServer() {
         }
       }
 
+      if(path==="/api/cloud/assets"||path.startsWith("/api/cloud/assets/")){
+        if(!cloudAssetService){fail(res,503,"CLOUD_ASSETS_DISABLED","Private cloud asset storage is not enabled on this service.");return;}
+        if(path==="/api/cloud/assets"&&req.method==="GET"){
+          try{const projectId=url.searchParams.get("projectId")||null,limit=Number.parseInt(url.searchParams.get("limit")||"50",10),offset=Number.parseInt(url.searchParams.get("offset")||"0",10);const assets=await cloudAssetService.assets.list({ownerId:user.id,projectId,limit:Number.isFinite(limit)?limit:50,offset:Number.isFinite(offset)?offset:0});send(res,200,{assets},cors);return;}catch(error){cloudAssetError(res,error,cors);return;}
+        }
+        if(path==="/api/cloud/assets"&&req.method==="POST"){
+          try{const asset=await storeCloudUpload(req,user,req.headers["x-project-id"]||null);send(res,201,{asset},cors);return;}catch(error){cloudAssetError(res,error,cors);return;}
+        }
+        const cloudAssetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)(?:\/(url|retry-cleanup))?$/i);
+        if(cloudAssetMatch){
+          const assetId=cloudAssetMatch[1],action=cloudAssetMatch[2]||"";
+          try{
+            if(!action&&req.method==="GET"){const asset=await cloudAssetService.assets.get({ownerId:user.id,assetId});send(res,200,{asset},cors);return;}
+            if(action==="url"&&req.method==="GET"){const signed=await cloudAssetService.assets.createSignedUrl({ownerId:user.id,assetId,expiresIn:300});send(res,200,signed,cors);return;}
+            if(!action&&req.method==="DELETE"){const result=await cloudAssetService.assets.softDelete({ownerId:user.id,assetId});send(res,result.cleanupPending?202:200,result,cors);return;}
+            if(action==="retry-cleanup"&&req.method==="POST"){const result=await cloudAssetService.assets.retryCleanup({ownerId:user.id,assetId});send(res,200,result,cors);return;}
+          }catch(error){cloudAssetError(res,error,cors);return;}
+        }
+        fail(res,404,"CLOUD_ASSET_ROUTE_NOT_FOUND","Cloud asset route not found.");return;
+      }
       if(path==="/api/assets"&&req.method==="GET"){
         const projectId=url.searchParams.get("projectId");
         const rows=projectId&&!getProjectAccess(db,user.id,projectId)?[]:db.prepare("SELECT id,project_id,original_name,media_type,byte_size,sha256,derivative_of,metadata_json,created_at FROM assets WHERE deleted_at IS NULL AND ((project_id IS NULL AND owner_id=?) OR project_id IN (SELECT id FROM projects WHERE owner_id=?) OR project_id IN (SELECT project_id FROM project_members WHERE member_id=?)) AND (? IS NULL OR project_id=?) ORDER BY created_at DESC").all(user.id,user.id,user.id,projectId,projectId);
