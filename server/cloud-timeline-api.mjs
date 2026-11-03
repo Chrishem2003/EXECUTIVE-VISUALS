@@ -405,7 +405,7 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
      const events=await request("job_events?select=id,event_type,event_data,created_at&job_id=eq."+encodeURIComponent(job.id)+"&order=id.asc");
      return response(200,{events:Array.isArray(events)?events.map(event=>({id:event.id,type:event.event_type,data:event.event_data,createdAt:event.created_at})):[]});
     }
-    return response(200,{job});
+    return response(200,{job:{...job,status:job.status==="processing"?"running":job.status}});
    }
    const handoffMatch=path.match(/^\/api\/cloud\/timelines\/([0-9a-f-]+)\/handoff$/i);
    if(handoffMatch&&safeId(handoffMatch[1])&&method==="POST"){
