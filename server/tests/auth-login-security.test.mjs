@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import {
   ensureAuthSecuritySchema, getLoginLockState, recordFailedLogin, clearLoginFailures,
@@ -93,7 +94,7 @@ test("HMAC identifier mode migrates legacy SHA-256 lockout rows without resettin
   const db=setup(),t=1_800_000_000_000,previous=process.env.AUTH_IDENTIFIER_HMAC_KEY;
   process.env.AUTH_IDENTIFIER_HMAC_KEY="test-only-secret-key-with-at-least-32-bytes";
   try {
-    const legacy=loginIdentifierHash("hmac@example.com",undefined);
+    const legacy=createHash("sha256").update("hmac@example.com").digest("hex");
     // Seed the pre-HMAC row using the legacy digest.
     db.prepare("INSERT INTO auth_login_security(identifier_hash,failed_attempts,lock_level,locked_until_ms,window_started_at_ms,updated_at_ms) VALUES(?,?,?,?,?,?)")
       .run(legacy,2,0,null,t,t);
