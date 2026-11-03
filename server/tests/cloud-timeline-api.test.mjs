@@ -357,6 +357,14 @@ test("timeline preview tickets fail closed for users without project read access
 });
 
 
+test("delivery decisions use the independent reviewer permission and still reject the render creator",async()=>{
+ const {job}=deliveryReviewFixture({jobOwner:owner});let permissionAction=null;
+ const f=setup({existing:[job],authorizeOverride:async({ownerId,projectId:pid,action})=>{permissionAction=action;return ownerId===editor&&pid===project;}});
+ const result=await f.api.handle({method:"POST",path:"/api/cloud/jobs/"+reviewJobId+"/delivery-approval",ownerId:editor,body:{decision:"changes_requested",note:"Please correct the flagged interval."}});
+ assert.equal(permissionAction,"review");assert.equal(result.status,201);assert.equal(result.body.approval.reviewerId,editor);
+ const creator=await f.api.handle({method:"POST",path:"/api/cloud/jobs/"+reviewJobId+"/delivery-approval",ownerId:owner,body:{decision:"approved",note:"I approve my own render."}});
+ assert.equal(creator.status,403);assert.equal(creator.body.error.code,"INDEPENDENT_REVIEW_REQUIRED");
+});
 test("delivery approval rejects internally inconsistent media-quality evidence",async()=>{
  const {job}=deliveryReviewFixture({jobOwner:owner});
  job.output.qualityReport={status:"passed",counts:{errors:0,warnings:0},findings:[{code:"BELOW_HD",severity:"warning",message:"Output is below HD."}],limitations:[]};
