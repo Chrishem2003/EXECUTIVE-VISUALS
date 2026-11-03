@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { addClip, addTrack, createTimeline, rational, removeClip, seconds, snapTimelineFrame } from "../../src/core/timeline.ts";
+import { addClip, addMarker, addTrack, createTimeline, rational, removeClip, seconds, snapTimelineFrame } from "../../src/core/timeline.ts";
 
 function fixture(locked=false){
  let timeline=createTimeline("project","sequence","Edit test",{numerator:24,denominator:1});
@@ -53,4 +53,13 @@ test("snaps across tracks and ignores the clip being repositioned",()=>{
 test("rejects invalid snap parameters",()=>{
  assert.throws(()=>snapTimelineFrame(-1,fixture(),"v1"),/non-negative/);
  assert.throws(()=>snapTimelineFrame(10,fixture(),"v1",-1),/non-negative/);
+});
+
+test("review markers retain bounded notes and review color metadata",()=>{
+ const timeline=fixture();
+ const marked=addMarker(timeline,{id:"review-1",name:"Check opening hook",start:rational(12,24),color:"RED",note:"Verify the first claim and opening shot."});
+ assert.equal(marked.markers[0].name,"Check opening hook");
+ assert.equal(marked.markers[0].color,"RED");
+ assert.equal(marked.markers[0].note,"Verify the first claim and opening shot.");
+ assert.equal(timeline.markers.length,0);
 });
