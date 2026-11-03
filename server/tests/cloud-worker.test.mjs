@@ -196,13 +196,17 @@ test("worker aborts media execution and finishes cancelled when a leased cancell
  const queue=queueFor();
  queue.checkCancellation=async()=>({leaseValid:true,cancelRequested:true});
  const events=[];
- const result=await runCloudWorkerCycle({
-  queue,workerId:"worker-cancel",leaseSeconds:15,heartbeatIntervalMs:1000,
-  execute:async({signal})=>new Promise((resolve,reject)=>{
-   signal.addEventListener("abort",()=>reject(signal.reason),{once:true});
-  }),
-  onEvent:event=>events.push(event)
- });
+ const keepAlive=setInterval(()=>{},100);
+ let result;
+ try {
+  result=await runCloudWorkerCycle({
+   queue,workerId:"worker-cancel",leaseSeconds:15,heartbeatIntervalMs:1000,
+   execute:async({signal})=>new Promise((resolve,reject)=>{
+    signal.addEventListener("abort",()=>reject(signal.reason),{once:true});
+   }),
+   onEvent:event=>events.push(event)
+  });
+ } finally { clearInterval(keepAlive); }
  assert.equal(result.finished,true);
  assert.equal(result.status,"cancelled");
  assert.ok(queue.calls.some(call=>call[0]==="finish"&&call[3]==="cancelled"));
