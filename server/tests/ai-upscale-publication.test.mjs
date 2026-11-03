@@ -29,7 +29,13 @@ done
     assert.equal((await stat(output)).size, result.byteSize, "published output size must match validated inference output");
     assert.deepEqual(await readFile(output), Buffer.from([137,80,78,71,13,10,26,10,0,0,0,13,73,72,68,82,0,0,0,4,0,0,0,4]), "published bytes must be identical to the validated inference output");
     assert.deepEqual((await readdir(directory)).filter(name => name.startsWith(".ev-upscale-")), []);
-    await assert.rejects(createLink(output, join(directory, "unexpected-link.png")), /EEXIST/);
+    const publishedBytes = await readFile(output);
+    await assert.rejects(
+      adapter.execute({ inputPath: input, outputPath: output, model, scale: 4, format: "png" }),
+      error => error.code === "AI_UPSCALE_OUTPUT_EXISTS"
+    );
+    assert.deepEqual(await readFile(output), publishedBytes, "a repeated publication must preserve the first validated output");
+    assert.deepEqual((await readdir(directory)).filter(name => name.startsWith(".ev-upscale-")), []);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
