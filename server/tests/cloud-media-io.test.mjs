@@ -74,6 +74,24 @@ test("publishes worker output through the streaming repository method when avail
  assert.equal(result.id,"streamed-asset");assert.equal(call.filePath,path);assert.equal(call.ownerId,"owner-1");
  await rm(root,{recursive:true,force:true});
 });
+test("rejects oversized streamed output before calling the file repository method",async()=>{
+ const root=await mkdtemp(join(tmpdir(),"ev-media-stream-limit-test-")),path=join(root,"large.mp4");
+ await writeFile(path,Buffer.alloc(101));let called=false;
+ const assets={async createSignedUrl(){},async createFromFile(){called=true;return{id:"unexpected"}}};
+ const io=createCloudMediaAssetIO({assets,tempRoot:root,maxBytes:100});
+ await assert.rejects(()=>io.publish({ownerId:"owner-1",filename:"large.mp4",mediaType:"video/mp4",path}),error=>error.code==="CLOUD_MEDIA_TOO_LARGE");
+ assert.equal(called,false,"oversized files must be rejected before the repository streams them");
+ await rm(root,{recursive:true,force:true});
+});
+test("rejects non-file streamed output before calling the file repository method",async()=>{
+ const root=await mkdtemp(join(tmpdir(),"ev-media-stream-type-test-")),path=join(root,"directory");
+ await import("node:fs/promises").then(({mkdir})=>mkdir(path));let called=false;
+ const assets={async createSignedUrl(){},async createFromFile(){called=true;return{id:"unexpected"}}};
+ const io=createCloudMediaAssetIO({assets,tempRoot:root,maxBytes:100});
+ await assert.rejects(()=>io.publish({ownerId:"owner-1",filename:"directory",mediaType:"video/mp4",path}),/regular file/);
+ assert.equal(called,false,"directories must never be passed to the streaming repository method");
+ await rm(root,{recursive:true,force:true});
+});
 test("rejects oversized output before reading it into memory or calling the repository",async()=>{
  const f=await fixture({maxBytes:5});const path=join(f.root,"large.mp4");await writeFile(path,Buffer.alloc(6));
  await assert.rejects(()=>f.io.publish({ownerId:"owner-1",filename:"large.mp4",mediaType:"video/mp4",path}),e=>e.code==="CLOUD_MEDIA_TOO_LARGE");
