@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { access, link, lstat, open, rm as removeFile, stat } from "node:fs/promises";
+import { access, link, lstat, open, readFile, rm as removeFile, stat } from "node:fs/promises";
 import { constants } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
 import { tmpdir } from "node:os";
@@ -150,7 +150,9 @@ export function createRealEsrganAdapter({
   modelDirectory = process.env.REALESRGAN_MODEL_DIR || "",
   timeoutMs = 30 * 60 * 1000,
   maxOutputBytes = 250 * 1024 * 1024,
-  enabled = process.env.AI_UPSCALE_ENABLED === "true"
+  enabled = process.env.AI_UPSCALE_ENABLED === "true",
+  requireProvenance = false,
+  manifestPath = process.env.UPSCALE_ENGINE_MANIFEST || ""
 } = {}) {
   if (!Number.isInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 2 * 60 * 60 * 1000) throw new Error("AI upscale timeout is invalid.");
   if (!Number.isInteger(maxOutputBytes) || maxOutputBytes < 1024 || maxOutputBytes > 2 * 1024 * 1024 * 1024) throw new Error("AI upscale output limit is invalid.");
@@ -170,6 +172,20 @@ export function createRealEsrganAdapter({
       const fingerprint = createHash("sha256").update(digests.join(":")).digest("hex");
       return { fingerprint, binarySha256, modelFilesSha256 };
     } catch { return null; }
+  }
+
+  async function verifyProvenance(model, expectedFingerprint = null) {
+    if (!manifestPath) return { verified: false, reason: "ENGINE_PROVENANCE_MANIFEST_REQUIRED" };
+    try {
+      const manifestInfo = await lstat(manifestPath);
+      if (!manifestInfo.isFile() || manifestInfo.isSymbolicLink() || manifestInfo.size > 16 * 1024) return { verified: false, reason: "ENGINE_MANIFEST_INVALID" };
+      const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+      const requiredText = ["source", "release", "license"];
+      const metadataValid = manifest && manifest.schemaVersion === 1 && manifest.engine === "realesrgan-ncnn-vulkan" && manifest.model === String(model) && requiredText.every(key => typeof manifest[key] === "string" && manifest[key].trim().length > 0) && /^[a-f0-9]{64}$/.test(String(manifest.binarySha256 || "")) && /^[a-f0-9]{64}$/.test(String(manifest.modelFilesSha256 || ""));
+      const current = await fingerprint(String(model));
+      const hashesMatch = metadataValid && current && current.binarySha256 === manifest.binarySha256 && current.modelFilesSha256 === manifest.modelFilesSha256 && (!expectedFingerprint || current.fingerprint === expectedFingerprint);
+      return { verified: Boolean(hashesMatch), source: metadataValid ? manifest.source : undefined, release: metadataValid ? manifest.release : undefined, license: metadataValid ? manifest.license : undefined, reason: !metadataValid ? "ENGINE_MANIFEST_INVALID" : !hashesMatch ? "ENGINE_MANIFEST_HASH_MISMATCH" : null };
+    } catch (error) { return { verified: false, reason: error?.code === "ENOENT" ? "ENGINE_MANIFEST_NOT_FOUND" : "ENGINE_MANIFEST_INVALID" }; }
   }
 
   async function probe(model) {
@@ -245,6 +261,10 @@ export function createRealEsrganAdapter({
     const executionStartedAt = Date.now();
     const engineBefore = await fingerprint(prepared.model);
     if (!engineBefore || engineBefore.fingerprint !== readiness.engineFingerprint) throw fail("AI upscale engine changed after readiness verification.", "AI_UPSCALE_ENGINE_CHANGED");
+    if (requireProvenance) {
+      const provenance = await verifyProvenance(prepared.model, engineBefore.fingerprint);
+      if (!provenance.verified) throw fail("AI upscale engine provenance is not verified: " + provenance.reason, "AI_UPSCALE_PROVENANCE_UNVERIFIED");
+    }
     // The native process writes only to a unique sibling path in the destination
     // directory. After validation, link() publishes that complete inode atomically;
     // an existing target (including a symlink) is never overwritten.
@@ -280,5 +300,5 @@ export function createRealEsrganAdapter({
     }
   }
 
-  return Object.freeze({ probe, plan, execute, selfTest });
+  return Object.freeze({ probe, plan, execute, selfTest, verifyProvenance });
 }
