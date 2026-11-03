@@ -1,5 +1,5 @@
 const SCHEMA = "executive_visuals";
-const RPC = new Set(["claim_next_job","renew_job_lease","recover_expired_jobs","recover_expired_jobs_by_type","finish_job","retry_job","report_job_progress","check_job_cancellation","heartbeat_worker","list_worker_health"]);
+const RPC = new Set(["claim_next_job","renew_job_lease","recover_expired_jobs","recover_expired_jobs_by_type","finish_job","retry_job","report_job_progress","check_job_cancellation","heartbeat_worker","list_worker_health","prune_worker_heartbeats"]);
 
 function endpoint(value) {
   let url;
@@ -67,6 +67,13 @@ export function createCloudQueue({
   }
 
   return Object.freeze({
+    async pruneWorkerHeartbeats({retentionDays=30,limit=500}={}) {
+      if(!Number.isInteger(retentionDays)||retentionDays<7||retentionDays>180)throw new Error("Worker heartbeat retention must be between 7 and 180 days.");
+      if(!Number.isInteger(limit)||limit<1||limit>1000)throw new Error("Worker heartbeat cleanup limit must be between 1 and 1000.");
+      const result=await call("prune_worker_heartbeats",{p_retention_days:retentionDays,p_limit:limit});
+      if(!Number.isInteger(result)||result<0||result>limit)throw new Error("Worker heartbeat cleanup returned an invalid count.");
+      return result;
+    },
     async listWorkerHealth({staleAfterSeconds=180,limit=100}={}) {
       if(!Number.isInteger(staleAfterSeconds)||staleAfterSeconds<30||staleAfterSeconds>3600)throw new Error("Worker stale threshold must be between 30 and 3600 seconds.");
       if(!Number.isInteger(limit)||limit<1||limit>200)throw new Error("Worker health result limit must be between 1 and 200.");
