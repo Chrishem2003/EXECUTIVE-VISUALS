@@ -16,6 +16,10 @@ This policy is enforced by the API for both local development passwords and Supa
 
 The lockout state is stored in the application SQLite database and therefore survives a process restart on the same persistent disk. Failed-login counter updates use `BEGIN IMMEDIATE` so concurrent requests serialize the read/modify/write sequence instead of overwriting one another's increments. SQLite is configured with WAL and a 5-second busy timeout. This protects concurrent requests sharing the same SQLite database file; it does not turn per-instance SQLite into a distributed lock service. The table stores a normalized identifier digest, not the plaintext password or raw email. The lockout does not disclose whether an account exists: unknown identifiers receive the same generic failures and lock response.
 
+## Privacy-preserving authentication security events
+
+The API stores a separate `auth_security_events` trail for failed sign-ins, newly applied lockouts, attempts blocked by an active lockout, and successful sign-ins. Each event stores only the normalized identifier digest (HMAC-SHA-256 when `AUTH_IDENTIFIER_HMAC_KEY` is configured), event type, failure/lock level, lock expiry and timestamp. It does not store raw email addresses, passwords, tokens or client IP addresses. Events are retained for at most 90 days and capped at 50,000 rows per application database; old records are pruned when new events are written. These records are currently an internal operational trail, not a user-facing dashboard or alerting integration.
+
 ## Independent request-rate budgets
 
 - Source-IP authentication budget: default 10 requests per minute across authentication endpoints, configurable using `AUTH_RATE_LIMIT`.
@@ -39,4 +43,4 @@ The lockout state is stored in the application SQLite database and therefore sur
 
 ## Verification
 
-Unit tests cover the three-failure threshold, 15-minute initial duration, immediate 30-minute extension after an expired lock, exponential progression and 24-hour cap, successful reset, identifier hashing and legacy-to-HMAC migration. Client-IP tests cover untrusted spoofed headers, trusted proxy chains, malformed headers and invalid configuration. Redis REST limiter tests cover atomic command construction, hashed keys, normalized email budgets, denial at the threshold, invalid responses and fail-closed outage behavior. The API integration test covers the Supabase sign-in route, HTTP 423, and the `Retry-After: 900` header. CI must pass on the exact latest commit before this policy is considered verified.
+Unit tests cover the privacy-preserving event trail, bounded retention, blocked-attempt/success events, the three-failure threshold, 15-minute initial duration, immediate 30-minute extension after an expired lock, exponential progression and 24-hour cap, successful reset, identifier hashing and legacy-to-HMAC migration. Client-IP tests cover untrusted spoofed headers, trusted proxy chains, malformed headers and invalid configuration. Redis REST limiter tests cover atomic command construction, hashed keys, normalized email budgets, denial at the threshold, invalid responses and fail-closed outage behavior. The API integration test covers the Supabase sign-in route, HTTP 423, and the `Retry-After: 900` header. CI must pass on the exact latest commit before this policy is considered verified.
