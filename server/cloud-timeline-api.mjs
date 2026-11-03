@@ -382,12 +382,12 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     if(!safeId(projectId))return response(400,{error:{code:"INVALID_PROJECT_ID",message:"Choose a valid project to list its jobs."}});
     if(await allow({ownerId,projectId,action:"read"})!==true)return response(404,{error:{code:"PROJECT_NOT_FOUND",message:"Project not found or access denied."}});
     const limitRaw=String(query.limit??"50"),offsetRaw=String(query.offset??"0");
-    if(!/^\\d{1,3}$/.test(limitRaw)||!/^\\d{1,9}$/.test(offsetRaw))return response(400,{error:{code:"JOB_PAGE_INVALID",message:"Job pagination values must be non-negative integers."}});
+    if(!/^\d{1,3}$/.test(limitRaw)||! /^\d{1,9}$/.test(offsetRaw))return response(400,{error:{code:"JOB_PAGE_INVALID",message:"Job pagination values must be non-negative integers."}});
     const limit=Math.min(100,Math.max(1,Number(limitRaw)||50)),offset=Number(offsetRaw);
     const jobType=String(query.jobType||"").trim(),status=String(query.status||"").trim();
     if(jobType&&!/^[a-z0-9][a-z0-9._-]{0,79}$/i.test(jobType))return response(400,{error:{code:"JOB_TYPE_INVALID",message:"Job type filter is invalid."}});
     if(status&&!["queued","running","succeeded","failed","cancelled"].includes(status))return response(400,{error:{code:"JOB_STATUS_INVALID",message:"Job status filter is invalid."}});
-    let queryPath="jobs?select=id,owner_id,project_id,job_type,status,progress,input,output,error,attempt_count,created_at,updated_at,completed_at&owner_id=eq."+encodeURIComponent(ownerId)+"&project_id=eq."+encodeURIComponent(projectId);
+    let queryPath="jobs?select=id,owner_id,project_id,job_type,status,progress,input,output,error,attempt_count,created_at,updated_at,completed_at&project_id=eq."+encodeURIComponent(projectId);
     if(jobType)queryPath+="&job_type=eq."+encodeURIComponent(jobType);
     if(status)queryPath+="&status=eq."+encodeURIComponent(status);
     queryPath+="&order=created_at.desc,id.desc&limit="+(limit+1)+"&offset="+offset;
