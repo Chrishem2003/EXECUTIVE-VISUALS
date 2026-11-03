@@ -146,6 +146,13 @@ export async function runCloudWorkerCycle({
     }
     const finished = await queue.finish(job.id, workerId, "succeeded", output ?? {}, null);
     if (!finished) {
+      if (typeof queue.checkCancellation === "function") {
+        const cancellation = await queue.checkCancellation(job.id, workerId);
+        if (cancellation.leaseValid && cancellation.cancelRequested) {
+          userCancelled = true;
+          return await finishCancellation();
+        }
+      }
       leaseLost = true;
       onEvent({ type: "job.lease_lost", jobId: job.id, workerId });
       return { claimed: true, finished: false, reason: "lease_lost", jobId: job.id };
@@ -175,6 +182,11 @@ export async function runCloudWorkerCycle({
       if (scheduled.status === "queued") {
         onEvent({ type: "job.retry_scheduled", jobId: job.id, workerId, delaySeconds: scheduled.delaySeconds, attempt: scheduled.attempt, maxAttempts: scheduled.maxAttempts, error: details });
         return { claimed: true, finished: true, status: "queued", retryScheduled: true, retryAfterSeconds: scheduled.delaySeconds, jobId: job.id, error: details };
+      }
+      if (scheduled.status === "cancelled") {
+        const cancellation = { code: "JOB_CANCELLED_BY_USER", message: "The job was cancelled by an authorized project editor.", retryable: false };
+        onEvent({ type: "job.cancelled", jobId: job.id, workerId });
+        return { claimed: true, finished: true, status: "cancelled", jobId: job.id, error: cancellation };
       }
       onEvent({ type: "job.failed", jobId: job.id, workerId, error: { ...details, retryable: false, retryExhausted: true } });
       return { claimed: true, finished: true, status: "failed", jobId: job.id, error: { ...details, retryable: false, retryExhausted: true } };
