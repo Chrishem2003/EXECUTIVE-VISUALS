@@ -333,7 +333,7 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     const jobRows=await request("jobs?select=id,owner_id,project_id,job_type,status,input,output&id=eq."+encodeURIComponent(deliveryApprovalMatch[1])+"&limit=1");
     const job=Array.isArray(jobRows)?jobRows[0]:null;
     if(!job||job.job_type!=="timeline.render"||!job.project_id)return response(404,{error:{code:"DELIVERY_JOB_NOT_FOUND",message:"A completed project timeline render was not found."}});
-    if(await allow({ownerId,projectId:job.project_id,action:method==="POST"?"write":"read"})!==true)return response(404,{error:{code:"DELIVERY_JOB_NOT_FOUND",message:"Delivery review access was not found."}});
+    if(await allow({ownerId,projectId:job.project_id,action:method==="POST"?"review":"read"})!==true)return response(404,{error:{code:"DELIVERY_JOB_NOT_FOUND",message:"Delivery review access was not found."}});
     const output=job.output&&typeof job.output==="object"?job.output:{};
     const receipt=output.deliveryManifest;
     const timelineInput=job.input&&typeof job.input==="object"?job.input:{};
