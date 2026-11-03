@@ -29,7 +29,7 @@ The lockout state is stored in the application SQLite database and therefore sur
 
 1. The SQLite account lockout is durable for a single application instance using its persistent disk. It is not a shared multi-instance lock service.
 2. The per-IP and per-email request budgets are in-memory. They reset on restart and are not shared across instances.
-3. Before horizontal scaling or public launch, put a distributed limiter (Redis or trusted edge/WAF) in front of the API. Trust forwarded client-IP headers only when supplied by a configured trusted proxy; otherwise use the socket peer address.
+3. Before horizontal scaling or public launch, put a distributed limiter (Redis or trusted edge/WAF) in front of the API. The API ignores `X-Forwarded-For` unless the socket peer exactly matches an IP in the server-only `TRUSTED_PROXY_IPS` comma-separated allowlist. For an allowlisted peer, it accepts only a fully valid IP chain and uses the rightmost forwarded address; missing or malformed headers fall back to the peer address. Configure the edge proxy to append the address it observed as the rightmost entry and prevent clients from controlling that value. The allowlist currently supports exact IP addresses, not CIDR ranges; do not enable forwarded-header trust for dynamic proxy ranges without extending and testing the matcher.
 4. Add CAPTCHA/Turnstile or equivalent risk-based challenge for suspicious sign-in/signup/recovery traffic.
 5. Add verified account recovery and security notifications. Recovery must not silently bypass identity verification; an administrative unlock must be allowlisted, audited and time-bounded.
 6. Account lockout can be abused to deny a victim access. Keep public errors non-enumerating, monitor repeated lockouts, provide verified recovery, and review the progressive policy before public beta.
@@ -38,4 +38,4 @@ The lockout state is stored in the application SQLite database and therefore sur
 
 ## Verification
 
-Unit tests cover the three-failure threshold, 15-minute initial duration, immediate 30-minute extension after an expired lock, exponential progression and 24-hour cap, successful reset, and identifier hashing. The API integration test covers the Supabase sign-in route, HTTP 423, and the `Retry-After: 900` header. CI must pass on the exact latest commit before this policy is considered verified.
+Unit tests cover the three-failure threshold, 15-minute initial duration, immediate 30-minute extension after an expired lock, exponential progression and 24-hour cap, successful reset, identifier hashing and legacy-to-HMAC migration. Client-IP tests cover untrusted spoofed headers, trusted proxy chains, malformed headers and invalid configuration. The API integration test covers the Supabase sign-in route, HTTP 423, and the `Retry-After: 900` header. CI must pass on the exact latest commit before this policy is considered verified.
