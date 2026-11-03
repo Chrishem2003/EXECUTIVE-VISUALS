@@ -134,17 +134,19 @@ window.addEventListener("ev:save-creative-draft",event=>{
 
 async function refresh(){
  const previousProjectId=state.projectId;
- const [projects,assets,jobs,audit,providerCatalog,usageResponse]=await Promise.all([
+ const [projects,jobs,audit,providerCatalog,usageResponse]=await Promise.all([
   apiRequest<{projects:RuntimeProject[]}>("/api/projects"),
-  apiRequest<{assets:RuntimeAsset[]}>(state.cloudAssetsEnabled?"/api/cloud/assets?limit=100":"/api/assets"),
   apiRequest<{jobs:RuntimeJob[]}>("/api/jobs"),
   apiRequest<{events:Array<Record<string,unknown>>}>("/api/audit"),
   apiRequest<{providers:ProviderStatus[]}>("/api/providers"),
   apiRequest<{remoteUsage:RemoteUsage}>("/api/usage")
  ]);
- state.projects=projects.projects;state.assets=assets.assets;state.jobs=jobs.jobs;state.audit=audit.events;state.providers=providerCatalog.providers;state.remoteUsage=usageResponse.remoteUsage;window.dispatchEvent(new Event("ev:assets-updated"));
- if(state.projectId&&!state.projects.some(p=>p.id===state.projectId))state.projectId="";
+ state.projects=projects.projects;state.jobs=jobs.jobs;state.audit=audit.events;state.providers=providerCatalog.providers;state.remoteUsage=usageResponse.remoteUsage;
+ if(state.projectId&&!state.projects.some(project=>project.id===state.projectId))state.projectId="";
  if(!state.projectId&&state.projects.length)state.projectId=state.projects[0].id;
+ const assetQuery=state.cloudAssetsEnabled&&state.projectId?"?projectId="+encodeURIComponent(state.projectId):"";
+ const assets=await apiRequest<{assets:RuntimeAsset[]}>(state.cloudAssetsEnabled?"/api/cloud/assets"+assetQuery:"/api/assets");
+ state.assets=assets.assets;window.dispatchEvent(new Event("ev:assets-updated"));
  if(previousProjectId!==state.projectId)window.dispatchEvent(new CustomEvent("ev:project-changed",{detail:{projectId:state.projectId}}));
  if(state.projectId){try{const response=await apiRequest<{members:Array<{id:string;email:string;role:string;createdAt:string}>}>("/api/projects/"+state.projectId+"/members");state.members=response.members;}catch{state.members=[];}
   try{const response=await apiRequest<{reviews:RuntimeReview[]}>("/api/reviews?projectId="+encodeURIComponent(state.projectId));state.reviews=response.reviews;}catch{state.reviews=[];}
