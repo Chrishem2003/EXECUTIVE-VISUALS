@@ -193,6 +193,13 @@ export async function runCloudWorkerCycle({
     }
     const finished = await queue.finish(job.id, workerId, "failed", null, details);
     if (!finished) {
+      if (typeof queue.checkCancellation === "function") {
+        const cancellation = await queue.checkCancellation(job.id, workerId);
+        if (cancellation.leaseValid && cancellation.cancelRequested) {
+          userCancelled = true;
+          return await finishCancellation();
+        }
+      }
       leaseLost = true;
       onEvent({ type: "job.lease_lost", jobId: job.id, workerId });
       return { claimed: true, finished: false, reason: "lease_lost", jobId: job.id };
