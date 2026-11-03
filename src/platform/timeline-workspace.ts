@@ -39,7 +39,7 @@ function timelineCanvas(){
  if(!state.timeline)return '<div class="empty">'+esc(state.message)+'</div>';
  const total=maxEnd();
  return '<div class="timeline-ruler"><span>00:00</span><span>'+Math.round(total/2/fps())+'s</span><span>'+Math.round(total/fps())+'s</span></div>'+
- state.timeline.tracks.map(track=>'<div class="editor-track"><div class="editor-track-label"><b>'+esc(track.name)+'</b><small>'+esc(track.kind)+(track.locked?' · locked':'')+'</small></div><div class="editor-track-lane">'+track.clips.map(clip=>'<article class="editor-clip '+(state.selectedClipId===clip.id?'selected':'')+'" data-tl-select="true" data-track="'+esc(track.id)+'" data-clip="'+esc(clip.id)+'" style="left:'+Math.max(0,clip.timelineStart.value/total*100)+'%;width:'+Math.max(4,clip.duration.value/total*100)+'%"><b>'+esc(clip.name)+'</b><small>'+esc(clip.assetId.slice(0,8))+' · '+Math.round(clip.duration.value)+'f</small><div class="editor-clip-actions"><button data-tl-action="split" data-track="'+esc(track.id)+'" data-clip="'+esc(clip.id)+'">Split</button><button data-tl-action="trim" data-track="'+esc(track.id)+'" data-clip="'+esc(clip.id)+'">Trim 12f</button><button data-tl-action="move" data-track="'+esc(track.id)+'" data-clip="'+esc(clip.id)+'">Next track</button><button data-tl-action="ripple-delete" data-track="'+esc(track.id)+'" data-clip="'+esc(clip.id)+'" title="Remove this clip and close the gap on this track">Ripple delete</button></div></article>').join("")+'</div></div>').join("");
+ state.timeline.tracks.map(track=>'<div class="editor-track"><div class="editor-track-label"><b>'+esc(track.name)+'</b><small>'+esc(track.kind)+(track.locked?' · locked':'')+'</small><button class="secondary" type="button" data-tl-action="track-toggle" data-track="'+esc(track.id)+'" aria-pressed="'+String(track.enabled!==false)+'" title="'+(track.enabled!==false?"Mute":"Enable")+(track.kind==="audio"?" audio track":" track")+'">'+(track.enabled!==false?"Mute":"Enable")+'</button></div><div class="editor-track-lane">'+track.clips.map(clip=>'<article class="editor-clip '+(state.selectedClipId===clip.id?'selected':'')+'" data-tl-select="true" data-track="'+esc(track.id)+'" data-clip="'+esc(clip.id)+'" style="left:'+Math.max(0,clip.timelineStart.value/total*100)+'%;width:'+Math.max(4,clip.duration.value/total*100)+'%"><b>'+esc(clip.name)+'</b><small>'+esc(clip.assetId.slice(0,8))+' · '+Math.round(clip.duration.value)+'f</small><div class="editor-clip-actions"><button data-tl-action="split" data-track="'+esc(track.id)+'" data-clip="'+esc(clip.id)+'">Split</button><button data-tl-action="trim" data-track="'+esc(track.id)+'" data-clip="'+esc(clip.id)+'">Trim 12f</button><button data-tl-action="move" data-track="'+esc(track.id)+'" data-clip="'+esc(clip.id)+'">Next track</button><button data-tl-action="ripple-delete" data-track="'+esc(track.id)+'" data-clip="'+esc(clip.id)+'" title="Remove this clip and close the gap on this track">Ripple delete</button></div></article>').join("")+'</div></div>').join("");
 }
 function selectedPreview(){
  if(!state.timeline)return null;
@@ -362,6 +362,12 @@ async function runAction(action:HTMLElement){
  if(type.startsWith("preview-")){seekPreview(type);return;}
  if(type==="duplicate-variant"){try{await duplicateTimelineVariant();}catch(error){state.message=error instanceof Error?error.message:"Could not create timeline variant.";}paint();return;}
  if(!state.timeline)return;
+ if(type==="track-toggle"){
+  const trackId=action.dataset.track||"",track=state.timeline.tracks.find(item=>item.id===trackId);if(!track||track.locked)return;
+  recordEdit();state.timeline={...state.timeline,revision:state.timeline.revision+1,updatedAt:new Date().toISOString(),tracks:state.timeline.tracks.map(item=>item.id===trackId?{...item,enabled:item.enabled===false}:item)};
+  state.message=(track.enabled===false?"Enabled ":"Muted ")+track.name+".";paint();
+  try{await persist();}catch(error){state.message=error instanceof Error?error.message:"Track state could not be saved.";state.status="offline";}paint();return;
+ }
  const trackId=action.dataset.track||"",clipId=action.dataset.clip||"";
  if(type==="split"){
   const track=state.timeline.tracks.find(t=>t.id===trackId),clip=track?.clips.find(c=>c.id===clipId);if(!track||!clip)return;
