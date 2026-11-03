@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { chmod, link as createLink, mkdtemp, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, link as createLink, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createRealEsrganAdapter } from "../ai-upscale-engine.mjs";
@@ -26,6 +26,8 @@ done
     const result = await adapter.execute({ inputPath: input, outputPath: output, model, scale: 4, format: "png" });
     assert.equal(result.method, "ai-super-resolution");
     assert.equal((await stat(output)).nlink, 1, "temporary hard-link name must be removed after publication");
+    assert.equal((await stat(output)).size, result.byteSize, "published output size must match validated inference output");
+    assert.deepEqual(await readFile(output), Buffer.from([137,80,78,71,13,10,26,10,0,0,0,13,73,72,68,82,0,0,0,4,0,0,0,4]), "published bytes must be identical to the validated inference output");
     assert.deepEqual((await readdir(directory)).filter(name => name.startsWith(".ev-upscale-")), []);
     await assert.rejects(createLink(output, join(directory, "unexpected-link.png")), /EEXIST/);
   } finally {
