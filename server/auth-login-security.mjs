@@ -121,3 +121,41 @@ export function listAuthSecurityEvents(db, { limit = 50, beforeId = null, eventT
     FROM auth_security_events ${where.length?"WHERE "+where.join(" AND "):""} ORDER BY id DESC LIMIT ?`).all(...params,safeLimit);
   return rows.map(row=>({id:row.id,identifierHash:row.identifier_hash,eventType:row.event_type,failedAttempts:row.failed_attempts,lockLevel:row.lock_level,lockedUntilMs:row.locked_until_ms,createdAtMs:row.created_at_ms}));
 }
+
+export function getAuthSecuritySummary(db, now = Date.now()) {
+  const dayAgo=now-24*60*60*1000;
+  const recentAgo=now-15*60*1000;
+  const totals=db.prepare(`SELECT
+    COUNT(*) AS totalEvents,
+    SUM(CASE WHEN event_type IN ('login_failed','account_locked','login_blocked_by_lockout') THEN 1 ELSE 0 END) AS failedSignIns,
+    SUM(CASE WHEN event_type='account_locked' THEN 1 ELSE 0 END) AS newLockouts,
+    SUM(CASE WHEN event_type='login_blocked_by_lockout' THEN 1 ELSE 0 END) AS blockedByLockout,
+    SUM(CASE WHEN event_type='login_succeeded' THEN 1 ELSE 0 END) AS successfulSignIns
+    FROM auth_security_events WHERE created_at_ms>=?`).get(dayAgo);
+  const suspicious=db.prepare(`SELECT identifier_hash,
+    SUM(CASE WHEN created_at_ms>=? AND event_type IN ('login_failed','account_locked','login_blocked_by_lockout') THEN 1 ELSE 0 END) AS attempts15m,
+    SUM(CASE WHEN event_type IN ('account_locked','login_blocked_by_lockout') THEN 1 ELSE 0 END) AS lockoutEvents24h,
+    MAX(created_at_ms) AS lastEventAtMs
+    FROM auth_security_events WHERE created_at_ms>=?
+    GROUP BY identifier_hash
+    HAVING attempts15m>=5 OR lockoutEvents24h>=3
+    ORDER BY attempts15m DESC,lockoutEvents24h DESC,lastEventAtMs DESC LIMIT 10`).all(recentAgo,dayAgo);
+  return {
+    window:"rolling_24_hours",
+    totals:{
+      totalEvents:Number(totals.totalEvents)||0,
+      failedSignIns:Number(totals.failedSignIns)||0,
+      newLockouts:Number(totals.newLockouts)||0,
+      blockedByLockout:Number(totals.blockedByLockout)||0,
+      successfulSignIns:Number(totals.successfulSignIns)||0
+    },
+    suspiciousIdentifiers:suspicious.map(row=>({
+      identifierHash:row.identifier_hash,
+      attempts15m:Number(row.attempts15m)||0,
+      lockoutEvents24h:Number(row.lockoutEvents24h)||0,
+      lastEventAtMs:Number(row.lastEventAtMs)||0
+    })),
+    detectionPolicy:{attemptThreshold:5,attemptWindowMinutes:15,lockoutThreshold:3,lockoutWindowHours:24},
+    generatedAtMs:now
+  };
+}
