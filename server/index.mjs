@@ -1,4 +1,5 @@
 import { createServer } from "node:http";
+import { createSupabaseAuth } from "./supabase-auth.mjs";
 import { createHash, randomBytes, randomUUID, scryptSync, timingSafeEqual } from "node:crypto";
 import { createReadStream, createWriteStream, existsSync, statSync } from "node:fs";
 import { mkdir, unlink, open, readFile } from "node:fs/promises";
@@ -24,6 +25,8 @@ import { createUpscaleBenchmarkFixture, listUpscaleBenchmarkFixtures, registerUp
 const PORT = Number(process.env.API_PORT || process.env.PORT || 4179);
 const HOST = process.env.API_HOST || "127.0.0.1";
 const AUTH_MODE = process.env.AUTH_MODE || "local";
+const supabaseAuth = AUTH_MODE === "supabase" && process.env.SUPABASE_URL && process.env.SUPABASE_PUBLISHABLE_KEY ? createSupabaseAuth() : null;
+const SUPABASE_REFRESH_COOKIE = "ev_supabase_refresh";
 const DATA_DIR = resolve(process.env.DATA_DIR || "./data");
 const MEDIA_ROOT = resolve(process.env.MEDIA_ROOT || join(DATA_DIR, "media"));
 const WEB_ROOT = resolve(process.env.WEB_ROOT || "./dist");
@@ -93,6 +96,11 @@ const setCookie = (res,token,maxAge) => {
   const secure=process.env.COOKIE_SECURE==="true"||process.env.NODE_ENV==="production" ? "; Secure" : "";
   res.setHeader("set-cookie",`ev_session=${encodeURIComponent(token)}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${maxAge}${secure}`);
 };
+function setSupabaseRefreshCookie(res,token,maxAge=60*60*24*30) {
+  const secure=process.env.COOKIE_SECURE==="true"||process.env.NODE_ENV==="production" ? "; Secure" : "";
+  res.setHeader("set-cookie",`${SUPABASE_REFRESH_COOKIE}=${encodeURIComponent(token)}; HttpOnly; SameSite=Strict; Path=/api/auth; Max-Age=${maxAge}${secure}`);
+}
+function clearSupabaseRefreshCookie(res) { setSupabaseRefreshCookie(res,"",0); }
 function createLocalSession(userId) {
   const token=randomBytes(32).toString("base64url");
   db.prepare("INSERT INTO sessions(token_hash,user_id,expires_at) VALUES(?,?,?)")
@@ -279,8 +287,13 @@ export function createAppServer() {
         send(res,200,{status:"ok",storage:"local-disk",database:"sqlite",media:{ffmpeg:executableAvailable("ffmpeg"),ffprobe:executableAvailable("ffprobe")},imageGateway:{enabled:process.env.IMAGE_GATEWAY_ENABLED==="true",configured:(()=>{try{const url=new URL(process.env.IMAGE_GATEWAY_URL||"");const local=["localhost","127.0.0.1","::1","[::1]"].includes(url.hostname.toLowerCase());return Boolean(process.env.IMAGE_GATEWAY_MODEL&&(local||process.env.IMAGE_GATEWAY_ALLOW_REMOTE==="true"));}catch{return false;}})()},textGateway:{enabled:process.env.AI_GATEWAY_ENABLED==="true",configured:(()=>{try{const url=new URL(process.env.AI_GATEWAY_URL||"");const local=["localhost","127.0.0.1","::1"].includes(url.hostname.toLowerCase());return Boolean(process.env.AI_GATEWAY_MODEL&&(local||process.env.AI_GATEWAY_ALLOW_REMOTE==="true"));}catch{return false;}})()},authMode:AUTH_MODE,version:"0.1.0"},cors);return;
       }
       if(path==="/api/auth/register"&&req.method==="POST"){
-        if(AUTH_MODE!=="local"||process.env.NODE_ENV==="production"){fail(res,403,"REGISTRATION_DISABLED","Local account registration is disabled in this environment.");return;}
         const body=await readJson(req);const email=String(body.email||"").trim().toLowerCase();const password=String(body.password||"");
+        if(AUTH_MODE==="supabase"){
+          if(!supabaseAuth){fail(res,503,"AUTH_NOT_CONFIGURED","The external identity provider is not configured.");return;}
+          try{const result=await supabaseAuth.signUp({email,password});if(result.confirmationRequired){send(res,202,{confirmationRequired:true,user:result.user,authMode:"supabase"},cors);return;}setSupabaseRefreshCookie(res,result.refreshToken);send(res,201,{user:result.user,accessToken:result.accessToken,expiresIn:result.expiresIn,authMode:"supabase"},cors);return;}
+          catch(error){fail(res,error.status||502,error.code||"SIGNUP_FAILED",String(error.message||"Account registration failed.").slice(0,300));return;}
+        }
+        if(process.env.NODE_ENV==="production"){fail(res,403,"REGISTRATION_DISABLED","Local account registration is disabled in this environment.");return;}
         if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||password.length<12){fail(res,400,"INVALID_CREDENTIALS","Enter a valid email and a password of at least 12 characters.");return;}
         const id=randomUUID(),salt=randomBytes(16).toString("hex"),passwordHash=scryptSync(password,salt,64).toString("hex");
         try{db.prepare("INSERT INTO users(id,email,password_hash,password_salt) VALUES(?,?,?,?)").run(id,email,passwordHash,salt);}
@@ -289,7 +302,11 @@ export function createAppServer() {
         send(res,201,{user:{id,email},authMode:"local"},cors);return;
       }
       if(path==="/api/auth/login"&&req.method==="POST"){
-        if(AUTH_MODE!=="local"){fail(res,403,"USE_EXTERNAL_AUTH","Sign in through the configured identity provider.");return;}
+        if(AUTH_MODE==="supabase"){
+          if(!supabaseAuth){fail(res,503,"AUTH_NOT_CONFIGURED","The external identity provider is not configured.");return;}
+          const body=await readJson(req);try{const result=await supabaseAuth.signInWithPassword({email:body.email,password:String(body.password||"")});setSupabaseRefreshCookie(res,result.refreshToken);send(res,200,{user:result.user,accessToken:result.accessToken,expiresIn:result.expiresIn,authMode:"supabase"},cors);return;}
+          catch(error){fail(res,error.status||502,error.code||"LOGIN_FAILED",String(error.message||"Sign-in failed.").slice(0,300));return;}
+        }
         const body=await readJson(req);const email=String(body.email||"").trim().toLowerCase();const password=String(body.password||"");
         if(password.length===0||password.length>256){fail(res,401,"INVALID_CREDENTIALS","Email or password is incorrect.");return;}
         const user=db.prepare("SELECT * FROM users WHERE email=? COLLATE NOCASE").get(email);
@@ -299,7 +316,23 @@ export function createAppServer() {
         const token=createLocalSession(user.id);setCookie(res,token,SESSION_DAYS*86400);
         send(res,200,{user:{id:user.id,email:user.email},authMode:"local"},cors);return;
       }
+      if(path==="/api/auth/session"&&req.method==="POST"){
+        if(AUTH_MODE!=="supabase"||!supabaseAuth){fail(res,404,"SESSION_REFRESH_UNAVAILABLE","External session refresh is unavailable.");return;}
+        const refreshToken=cookieValue(req,SUPABASE_REFRESH_COOKIE);if(!refreshToken){fail(res,401,"SESSION_EXPIRED","Sign in to continue.");return;}
+        try{const result=await supabaseAuth.refreshSession(refreshToken);setSupabaseRefreshCookie(res,result.refreshToken);send(res,200,{user:result.user,accessToken:result.accessToken,expiresIn:result.expiresIn,authMode:"supabase"},cors);return;}
+        catch(error){clearSupabaseRefreshCookie(res);fail(res,error.status===400||error.status===401?401:error.status||502,error.code||"SESSION_EXPIRED","Your sign-in session expired. Please sign in again.");return;}
+      }
+      if(path==="/api/auth/recover"&&req.method==="POST"){
+        if(AUTH_MODE!=="supabase"||!supabaseAuth){fail(res,404,"PASSWORD_RECOVERY_UNAVAILABLE","Password recovery is unavailable.");return;}
+        const body=await readJson(req);try{await supabaseAuth.recover({email:body.email});send(res,202,{accepted:true},cors);return;}
+        catch(error){fail(res,error.status||502,error.code||"RECOVERY_FAILED",String(error.message||"Password recovery could not be started.").slice(0,300));return;}
+      }
       if(path==="/api/auth/logout"&&req.method==="POST"){
+        if(AUTH_MODE==="supabase"){
+          const refreshToken=cookieValue(req,SUPABASE_REFRESH_COOKIE);
+          if(refreshToken&&supabaseAuth){try{const session=await supabaseAuth.refreshSession(refreshToken);await supabaseAuth.signOut(session.accessToken);}catch{}}
+          clearSupabaseRefreshCookie(res);send(res,200,{ok:true},cors);return;
+        }
         const token=cookieValue(req,"ev_session");if(token)db.prepare("DELETE FROM sessions WHERE token_hash=?").run(hash(token));
         setCookie(res,"",0);send(res,200,{ok:true},cors);return;
       }
