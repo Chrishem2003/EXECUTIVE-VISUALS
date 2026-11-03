@@ -41,10 +41,13 @@ export async function runCloudWorkerCycle({
   const job = await queue.claim(workerId, leaseSeconds);
   if (!job) return { claimed: false };
   const controller = new AbortController();
-  if (shutdownSignal?.aborted) controller.abort(shutdownSignal.reason);
   const abortForShutdown = () => controller.abort(shutdownSignal.reason);
   shutdownSignal?.addEventListener("abort", abortForShutdown, { once: true });
-  if (controller.signal.aborted) return { claimed: true, finished: false, reason: "worker_stopping", jobId: job.id };
+  if (shutdownSignal?.aborted) abortForShutdown();
+  if (controller.signal.aborted) {
+    shutdownSignal?.removeEventListener("abort", abortForShutdown);
+    return { claimed: true, finished: false, reason: "worker_stopping", jobId: job.id };
+  }
   let leaseLost = false;
   let heartbeatPending = false;
   let heartbeatError = null;
