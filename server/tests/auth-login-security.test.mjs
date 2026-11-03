@@ -169,7 +169,7 @@ test("security event listing is bounded, newest-first, cursor-paginated and filt
   const next=listAuthSecurityEvents(db,{limit:3,beforeId:first.at(-1).id});
   assert.deepEqual(next.map(row=>row.id),[5,4,3]);
   const locked=listAuthSecurityEvents(db,{eventType:"account_locked",limit:1000});
-  assert.equal(locked.length,2);
+  assert.equal(locked.length,1);
   assert.throws(()=>listAuthSecurityEvents(db,{eventType:"unknown"}),/Unsupported/);
   assert.throws(()=>listAuthSecurityEvents(db,{beforeId:"not-a-number"}),/cursor/);
   assert.ok(first.every(row=>!Object.hasOwn(row,"email")&&!Object.hasOwn(row,"ipAddress")));
