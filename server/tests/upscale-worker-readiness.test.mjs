@@ -30,6 +30,7 @@ test("upscale worker preflight reports tools, model files, writable temp and ato
     assert.equal(report.engine.enabled, true);
     assert.equal(report.engine.executionVerified, false);
     assert.equal(report.engine.inferenceQualityVerified, false);
+    assert.deepEqual(report.selfTest, { attempted: false, passed: false, reason: "UPSCALE_SELF_TEST_IMAGE is not configured." });
     assert.equal(report.filesystem.tempWritable, true);
     assert.equal(report.filesystem.hardLinks.supported, true);
     assert.equal(report.readyForQueuedUpscale, false);
@@ -54,6 +55,7 @@ test("upscale worker preflight fails closed when the engine and model are absent
     assert.ok(report.blockers.includes("REALESRGAN_EXECUTABLE_MISSING"));
     assert.ok(report.blockers.includes("REALESRGAN_MODEL_MISSING"));
     assert.ok(report.blockers.includes("AI_UPSCALE_DISABLED"));
+    assert.equal(report.selfTest.attempted, false);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
