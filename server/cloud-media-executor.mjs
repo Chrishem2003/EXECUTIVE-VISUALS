@@ -8,6 +8,7 @@ import { pipeline } from "node:stream/promises";
 import { Transform } from "node:stream";
 import { buildMediaOperationArgs, executableAvailable } from "./media.mjs";
 import { createRealEsrganAdapter } from "./ai-upscale-engine.mjs";
+import { nativeProcessSpawnOptions, signalNativeProcessTree } from "./process-tree.mjs";
 
 const EXTENSION = Object.freeze({
   "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "audio/mpeg": "mp3", "audio/wav": "wav", "video/mp4": "mp4"
@@ -32,7 +33,7 @@ function parseInput(value) {
 export function runMediaProcess(binary, args, { signal, timeoutMs = 30 * 60 * 1000, killGraceMs = 3000, onProgress = () => {} } = {}) {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) return reject(Object.assign(new Error("Media job was cancelled."), { code: "JOB_CANCELLED" }));
-    const child = spawn(binary, args, { stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
+    const child = spawn(binary, args, nativeProcessSpawnOptions({ stdio: ["ignore", "pipe", "pipe"], windowsHide: true }));
     let stdout = "", stderr = "", settled = false, childClosed = false;
     let pendingFailure = null, killTimer = null, timer = null;
     const finish = (error, result) => {
@@ -46,12 +47,12 @@ export function runMediaProcess(binary, args, { signal, timeoutMs = 30 * 60 * 10
     const stopChild = (error, firstSignal) => {
       if (settled || childClosed || pendingFailure) return;
       pendingFailure = error;
-      child.kill(firstSignal);
+      try { signalNativeProcessTree(child, firstSignal); } catch {}
       if (firstSignal === "SIGTERM") {
         killTimer = setTimeout(() => {
           // Do not settle until close: the caller may remove the job workspace
           // as soon as this promise rejects, so the process must be gone first.
-          if (!childClosed) child.kill("SIGKILL");
+          if (!childClosed) { try { signalNativeProcessTree(child, "SIGKILL"); } catch {} }
         }, killGraceMs);
         killTimer.unref?.();
       }
