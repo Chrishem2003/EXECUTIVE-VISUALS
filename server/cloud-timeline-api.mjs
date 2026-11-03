@@ -134,6 +134,24 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     const rows=await request("jobs?select=id,project_id,job_type,status,progress,input,output,error,attempt_count,created_at,updated_at,completed_at&project_id=eq."+encodeURIComponent(projectId)+"&job_type=in.("+[...cloudMediaTypes].join(",")+")&order=created_at.desc&limit=100");
     return response(200,{jobs:(rows||[]).map(row=>({id:row.id,projectId:row.project_id,jobType:row.job_type,status:row.status,progress:Number(row.progress||0),input:row.input||{},output:row.output||null,error:row.error||null,attemptCount:Number(row.attempt_count||0),createdAt:row.created_at,updatedAt:row.updated_at,completedAt:row.completed_at||null}))});
    }
+   const mediaEventsMatch=path.match(/^\/api\/cloud\/media-jobs\/([0-9a-f-]+)\/events$/i);
+   if(mediaEventsMatch&&method==="GET"){
+    const jobId=mediaEventsMatch[1],projectId=String(query.projectId||"");
+    if(!safeId(jobId)||!safeId(projectId))return response(400,{error:{code:"CLOUD_MEDIA_EVENTS_INPUT_INVALID",message:"Choose a valid media job and project."}});
+    if(await allow({ownerId,projectId,action:"read"})!==true)return response(404,{error:{code:"PROJECT_NOT_FOUND",message:"Project not found or access denied."}});
+    const jobs=await request("jobs?select=id,project_id,job_type&id=eq."+encodeURIComponent(jobId)+"&project_id=eq."+encodeURIComponent(projectId)+"&limit=1");
+    const job=Array.isArray(jobs)?jobs.find(row=>row.id===jobId&&row.project_id===projectId&&cloudMediaTypes.has(row.job_type)):null;
+    if(!job)return response(404,{error:{code:"CLOUD_MEDIA_JOB_NOT_FOUND",message:"Cloud media job was not found in this project."}});
+    const requestedLimit=Number(query.limit||50),limit=Number.isInteger(requestedLimit)?Math.max(1,Math.min(100,requestedLimit)):50;
+    const rows=await request("job_events?select=id,event_type,event_data,created_at&job_id=eq."+encodeURIComponent(jobId)+"&order=created_at.asc&limit="+limit);
+    const safeKeys=new Set(["progress","status","reason","code","message","attempt","maxAttempts","delaySeconds","jobType","sourceAssetId","model","scale","tile","format"]);
+    const events=(rows||[]).filter(row=>typeof row.event_type==="string"&&/^job\.[a-z_]+$/.test(row.event_type)).map(row=>{
+     const source=row.event_data&&typeof row.event_data==="object"&&!Array.isArray(row.event_data)?row.event_data:{};
+     const data={};for(const key of safeKeys){const value=source[key];if(["string","number","boolean"].includes(typeof value))data[key]=typeof value==="string"?value.slice(0,240):value;}
+     return{id:String(row.id),type:row.event_type,createdAt:row.created_at,data};
+    });
+    return response(200,{jobId,events});
+   }
    const cancelPrefix="/api/cloud/media-jobs/",cancelSuffix="/cancel";
    if(path.startsWith(cancelPrefix)&&path.endsWith(cancelSuffix)&&method==="POST"){
     const jobId=path.slice(cancelPrefix.length,-cancelSuffix.length),projectId=String(body.projectId||"");
