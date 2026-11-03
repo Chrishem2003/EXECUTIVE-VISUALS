@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import {
   ensureAuthSecuritySchema, getLoginLockState, recordFailedLogin, clearLoginFailures,
-  AUTH_BASE_LOCK_MS, AUTH_MAX_LOCK_MS, loginIdentifierHash, recordLoginLockoutEvent, listAuthSecurityEvents
+  AUTH_BASE_LOCK_MS, AUTH_MAX_LOCK_MS, loginIdentifierHash, recordLoginLockoutEvent, listAuthSecurityEvents, getAuthSecuritySummary
 } from "../auth-login-security.mjs";
 
 function setup() {
@@ -173,5 +173,33 @@ test("security event listing is bounded, newest-first, cursor-paginated and filt
   assert.throws(()=>listAuthSecurityEvents(db,{eventType:"unknown"}),/Unsupported/);
   assert.throws(()=>listAuthSecurityEvents(db,{beforeId:"not-a-number"}),/cursor/);
   assert.ok(first.every(row=>!Object.hasOwn(row,"email")&&!Object.hasOwn(row,"ipAddress")));
+  db.close();
+});
+
+test("security summary detects repeated failures while keeping identifiers pseudonymous", () => {
+  const db=setup(),now=1_800_000_000_000;
+  for(let i=0;i<5;i++)recordFailedLogin(db,"suspicious@example.com",now+i*1000);
+  for(let i=0;i<4;i++)recordFailedLogin(db,"ordinary@example.com",now+i*1000);
+  const summary=getAuthSecuritySummary(db,now+10_000);
+  assert.equal(summary.window,"rolling_24_hours");
+  assert.equal(summary.totals.totalEvents,9);
+  assert.equal(summary.totals.failedSignIns,9);
+  assert.equal(summary.totals.newLockouts,2);
+  assert.equal(summary.suspiciousIdentifiers.length,1);
+  assert.equal(summary.suspiciousIdentifiers[0].identifierHash,loginIdentifierHash("suspicious@example.com"));
+  assert.equal(summary.suspiciousIdentifiers[0].attempts15m,5);
+  assert.equal(summary.detectionPolicy.attemptThreshold,5);
+  assert.ok(!JSON.stringify(summary).includes("suspicious@example.com"));
+  db.close();
+});
+
+test("security summary excludes events outside the rolling 24-hour window", () => {
+  const db=setup(),now=1_800_000_000_000;
+  recordFailedLogin(db,"old@example.com",now-25*60*60*1000);
+  recordFailedLogin(db,"recent@example.com",now-60*1000);
+  const summary=getAuthSecuritySummary(db,now);
+  assert.equal(summary.totals.totalEvents,1);
+  assert.equal(summary.totals.failedSignIns,1);
+  assert.equal(summary.suspiciousIdentifiers.length,0);
   db.close();
 });
