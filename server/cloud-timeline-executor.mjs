@@ -35,7 +35,7 @@ async function analyzeTemporalVideo({path,durationSeconds,jobId,activeProcesses,
   return {lumaSamples,sceneChanges:parseSceneCutTimes(metadataOutput),coverageSeconds,truncated:durationSeconds>coverageSeconds};
 }
 
-function referencedAssets(timeline){
+async function cleanupMaterializedAsset(asset){\n  try { await asset?.cleanup?.(); } catch {}\n}\n\nfunction referencedAssets(timeline){
   const ids=new Set();
   for(const track of timeline.tracks||[])if(track.enabled!==false)for(const clip of track.clips||[])if(clip.enabled!==false&&clip.assetId)ids.add(clip.assetId);
   return [...ids];
@@ -71,8 +71,8 @@ export function createCloudTimelineExecutor({timelines,mediaIO,renderTimeline,pr
     try{
       for(let i=0;i<assetIds.length;i++){
         if(signal?.aborted)throw Object.assign(new Error("Timeline render was cancelled."),{code:"JOB_CANCELLED"});
-        const asset=await mediaIO.materialize({ownerId:job.owner_id,assetId:assetIds[i]});
-        if(!asset||typeof asset.path!=="string"||!asset.asset||asset.asset.id!==assetIds[i]){await asset?.cleanup?.().catch(()=>{});throw new Error("Cloud timeline source materialization returned invalid asset metadata.");}
+        const asset=await mediaIO.materialize({ownerId:job.owner_id,assetId:assetIds[i],...(signal?{signal}:{})});
+        if(!asset||typeof asset.path!=="string"||!asset.asset||asset.asset.id!==assetIds[i]){await cleanupMaterializedAsset(asset);throw new Error("Cloud timeline source materialization returned invalid asset metadata.");}
         materialized.set(assetIds[i],asset);
         onProgress(Math.min(25,5+Math.round((i+1)/assetIds.length*20)));
       }
@@ -122,7 +122,7 @@ export function createCloudTimelineExecutor({timelines,mediaIO,renderTimeline,pr
       onProgress(100);
       return{timelineId:record.id,timelineRevision:record.revision,outputAsset,sha256,byteSize:info.size,probeValidation,qualityReport,...(deliveryReport?{deliveryReport}:{}),deliveryManifest:publishedDeliveryManifest,render:output.render||{},renderManifest:output.renderManifest};
     }finally{
-      await Promise.all([...materialized.values()].map(asset=>asset.cleanup?.().catch(()=>{})));
+      await Promise.all([...materialized.values()].map(cleanupMaterializedAsset));
       await rm(workDir,{recursive:true,force:true}).catch(()=>{});
     }
   };
