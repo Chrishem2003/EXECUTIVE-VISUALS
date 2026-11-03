@@ -46,6 +46,15 @@ test("compares declared continuity metadata across shots without constraining ca
  assert.deepEqual(report.findings.filter(item=>item.code==="CONTINUITY_VARIATION").map(item=>({shotId:item.shotId,field:item.field})),[{shotId:"b",field:"wardrobe"}]);
  assert.ok(report.limitations.some(item=>item.includes("Camera framing")));
 });
+test("surfaces camera framing and movement changes as non-blocking advisories",()=>{
+ const report=buildShotContinuityReport([
+  {id:"wide",continuityGroup:"scene-camera",continuity:{identity:"Host A",wardrobe:"Blue jacket"},camera:"Wide",shotSize:"Wide",angle:"Eye level",lens:"24mm",movement:"Locked"},
+  {id:"close",continuityGroup:"scene-camera",continuity:{identity:"Host A",wardrobe:"Blue jacket"},camera:"Close-up",shotSize:"Close-up",angle:"Low angle",lens:"85mm",movement:"Slow dolly"}
+ ]);
+ assert.equal(report.status,"informational");
+ assert.deepEqual(report.findings.filter(item=>item.code==="CAMERA_VARIATION_ADVISORY").map(item=>item.field),["camera","shotSize","angle","lens","movement"]);
+ assert.ok(report.findings.every(item=>item.severity==="info"));
+});
 test("bounds and validates continuity report inputs",()=>{
  assert.throws(()=>buildShotContinuityReport({}),TypeError);assert.throws(()=>buildShotContinuityReport([null]),TypeError);
  assert.throws(()=>buildShotContinuityReport(Array(501).fill({id:"x"})),RangeError);
