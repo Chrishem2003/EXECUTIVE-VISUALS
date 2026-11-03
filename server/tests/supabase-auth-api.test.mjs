@@ -23,6 +23,11 @@ const provider=createServer(async(req,res)=>{
 const providerPort=await listen(provider);
 const portServer=createServer();const apiPort=await listen(portServer);await new Promise(resolve=>portServer.close(resolve));
 const dataDir=await mkdtemp(join(tmpdir(),"ev-supabase-auth-api-"));const webDir=join(dataDir,"web");await mkdir(webDir,{recursive:true});await writeFile(join(webDir,"index.html"),"<!doctype html><html><body>test</body></html>");
+await mkdir(join(webDir,".git"),{recursive:true});
+await mkdir(join(webDir,"assets"),{recursive:true});
+await writeFile(join(webDir,".env"),"SECRET=must-never-be-served");
+await writeFile(join(webDir,".git","config"),"[remote]\nurl=https://example.invalid/private.git");
+await writeFile(join(webDir,"assets",".secret"),"private nested file");
 const child=spawn(process.execPath,["server/index.mjs"],{cwd:process.cwd(),env:{...process.env,NODE_ENV:"development",AUTH_MODE:"supabase",SUPABASE_URL:"http://127.0.0.1:"+providerPort,SUPABASE_PUBLISHABLE_KEY:"sb_publishable_test",SUPABASE_AUTH_REDIRECT_URL:"https://studio.example.test/auth/callback",API_HOST:"127.0.0.1",API_PORT:String(apiPort),DATA_DIR:dataDir,MEDIA_ROOT:join(dataDir,"media"),WEB_ROOT:webDir,DISABLE_WORKER:"true",AUTH_RATE_LIMIT:"100"},stdio:["ignore","pipe","pipe"]});
 let stderr="";child.stderr.on("data",chunk=>stderr+=chunk.toString());
 const base="http://127.0.0.1:"+apiPort;
@@ -62,5 +67,15 @@ test("Supabase mode supports password sign-in, HttpOnly refresh cookie, session 
  const stillLocked=await post("/api/auth/login",{email:lockoutEmail,password:"correct-horse-battery"});
  assert.equal(stillLocked.status,423);
  assert.equal(stillLocked.headers.get("retry-after"),"900");
+ assert.equal((await stillLocked.json()).error.code,"ACCOUNT_TEMPORARILY_LOCKED");
+ const blockedPaths=["/.env","/.git/config","/assets/.secret","/%2eenv","/%252eenv","/.git%2fconfig"];
+ for(const path of blockedPaths){
+   const response=await fetch(base+path);
+   assert.equal(response.status,404,`dot path must not be served: ${path}`);
+   assert.equal((await response.json()).error.code,"NOT_FOUND");
+ }
+ const appShell=await fetch(base+"/index.html");
+ assert.equal(appShell.status,200);
+ assert.match(await appShell.text(),/test/);
 
 });
