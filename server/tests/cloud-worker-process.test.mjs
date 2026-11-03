@@ -164,3 +164,13 @@ test("supervisor persists running, stopping and stopped heartbeats for each work
  assert.deepEqual(heartbeats.map(item=>item.status),["running","stopping","stopped"]);
  assert.equal(supervisor.snapshot().lastHeartbeatAt,"2026-11-03T12:00:00Z");
 });
+
+test("durable heartbeat migration restricts metadata and service-role execution",async()=>{
+ const sql=await readFile(new URL("../../supabase/migrations/20261103200000_durable_cloud_worker_heartbeats.sql",import.meta.url),"utf8");
+ assert.match(sql,/create table if not exists executive_visuals\.worker_heartbeats/);
+ assert.match(sql,/enable row level security/);
+ assert.match(sql,/revoke all on table executive_visuals\.worker_heartbeats from public, anon, authenticated/);
+ assert.match(sql,/grant execute on function executive_visuals\.heartbeat_worker\(text,text,text,text,jsonb\) to service_role/);
+ assert.match(sql,/worker heartbeat contains unsupported metrics/);
+ assert.match(sql,/last_seen_at=clock_timestamp\(\)/);
+});
