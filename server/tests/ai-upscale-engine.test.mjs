@@ -291,7 +291,7 @@ test("AI upscale cancellation waits for the native process to exit before removi
       try { pidText = await readFile(pidFile, "utf8"); } catch {}
       if (!pidText) await new Promise(resolve => setTimeout(resolve, 10));
     }
-    assert.match(pidText, /^\\d+$/, "native engine should start before cancellation");
+    assert.match(pidText, /^\d+$/, "native engine should start before cancellation");
     const pid = Number(pidText);
     controller.abort();
     await assert.rejects(pending, error => error.code === "JOB_CANCELLED");
