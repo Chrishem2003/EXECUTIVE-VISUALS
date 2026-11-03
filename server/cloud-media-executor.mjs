@@ -168,6 +168,7 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
       : job.job_type === "media.thumbnail" ? "jpg"
       : job.job_type === "media.audio_extract" ? "mp3"
       : job.job_type === "media.audio-clean" ? "wav"
+      : job.job_type === "media.waveform" ? "png"
       : ["media.denoise", "media.color", "media.resize", "media.interpolate", "media.upscale", "media.proxy"].includes(job.job_type) ? "mp4"
       : String(input.container || "mp4").toLowerCase();
     const outputPath = join(workDir, randomUUID() + "." + outputExtension);
