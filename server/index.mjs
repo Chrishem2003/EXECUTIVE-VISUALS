@@ -112,13 +112,8 @@ function createLocalSession(userId) {
 async function authenticate(req) {
   if (AUTH_MODE === "supabase") {
     const token=(req.headers.authorization||"").replace(/^Bearer\s+/i,"");
-    if(!token||!process.env.SUPABASE_URL||!process.env.SUPABASE_PUBLISHABLE_KEY)return null;
-    const response=await fetch(process.env.SUPABASE_URL.replace(/\/$/,"")+"/auth/v1/user",{
-      headers:{apikey:process.env.SUPABASE_PUBLISHABLE_KEY,authorization:"Bearer "+token}
-    });
-    if(!response.ok)return null;
-    const user=await response.json();
-    if(!user?.id)return null;
+    if(!token||!supabaseAuth)return null;
+    let user;try{user=await supabaseAuth.getUser(token);}catch{return null;}
     db.prepare("INSERT INTO users(id,email,auth_source) VALUES(?,?, 'supabase') ON CONFLICT(id) DO UPDATE SET email=excluded.email")
       .run(user.id,user.email||user.id+"@supabase.invalid");
     return {id:user.id,email:user.email||""};
