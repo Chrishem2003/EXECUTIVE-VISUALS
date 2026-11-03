@@ -205,3 +205,11 @@ test("requires project read authorization before resolving derivative lineage",a
  const f=fixture({authorize:async({action})=>action!=="read"});
  await assert.rejects(()=>f.repo.getLineage({ownerId,assetId}),error=>error.code==="CLOUD_ASSET_ACCESS_DENIED");
 });
+
+test("cloud asset cleanup migration backfills soft-deleted rows and indexes pending work",async()=>{
+ const sql=await readFile(new URL("../../supabase/migrations/20261103230000_cloud_asset_cleanup_state.sql",import.meta.url),"utf8");
+ assert.match(sql,/add column if not exists storage_cleanup_status text not null default 'not_required'/);
+ assert.match(sql,/set storage_cleanup_status='pending'[\s\S]*where deleted_at is not null/);
+ assert.match(sql,/ev_assets_pending_storage_cleanup/);
+ assert.match(sql,/storage_cleanup_status='pending'/);
+});
