@@ -365,6 +365,18 @@ async function runAction(action:HTMLElement){
   const decision=type==="delivery-review-approve"?"approved":type==="delivery-review-reject"?"rejected":"changes_requested";
   try{state.deliveryApprovalBusy=true;paint();const note=(document.querySelector<HTMLTextAreaElement>("#tl-delivery-review-note")?.value||"").trim();const result=await apiRequest<{approval:{decision:string;reviewerId:string;note:string;fingerprint:string;reviewedAt:string}}>("/api/cloud/jobs/"+state.cloudRenderJobId+"/delivery-approval",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({decision,note})});state.deliveryApproval=result.approval;state.deliveryApprovalHistory=[...state.deliveryApprovalHistory,result.approval];state.message="Delivery review recorded: "+decision.replaceAll("_"," ")+ ".";}catch(error){state.message=error instanceof Error?error.message:"Delivery review could not be recorded.";}finally{state.deliveryApprovalBusy=false;}paint();return;
  }
+ if(type==="generate-waveform"){
+  const selected=selectedPreview();
+  if(state.mode!=="cloud"||!state.cloudProjectId||!selected||selected.track.kind!=="audio"){state.message="Select an audio clip in a cloud project to generate its waveform.";paint();return;}
+  try{
+   action.setAttribute("disabled","true");state.message="Queueing private audio waveform generation…";paint();
+   const result=await apiRequest<{job:{id:string;status:string}}>("/api/cloud/waveforms",{method:"POST",headers:{"content-type":"application/json","idempotency-key":crypto.randomUUID()},body:JSON.stringify({projectId:state.cloudProjectId,sourceAssetId:selected.asset.id,width:1200,height:180})});
+   state.message="Waveform job "+result.job.status+". Refresh the timeline after the worker completes to display the waveform.";
+   window.dispatchEvent(new Event("ev:jobs-updated"));
+  }catch(error){state.message=error instanceof Error?error.message:"Waveform generation could not be queued.";}
+  finally{action.removeAttribute("disabled");paint();}
+  return;
+ }
  if(type==="preview-refresh"){state.previewKey="";state.previewUrl="";state.previewWaveformUrl="";state.previewExpiresAt=0;state.previewError="";state.previewLoading=false;state.derivativeComparison=null;state.derivativeComparisonError="";paint();return;}
  if(type.startsWith("preview-")){seekPreview(type);return;}
  if(type==="duplicate-variant"){try{await duplicateTimelineVariant();}catch(error){state.message=error instanceof Error?error.message:"Could not create timeline variant.";}paint();return;}
