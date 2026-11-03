@@ -64,7 +64,7 @@ function paint(){
 }
 export function initSecurityWorkspace(){
  const filterNode=document.querySelector<HTMLSelectElement>("#security-event-filter");
- if(filterNode&&!filterNode.dataset.bound){filterNode.dataset.bound="true";filterNode.addEventListener("change",()=>{filter=filterNode.value;events=[];cursor=null;void loadEvents();});}
+ if(filterNode&&!filterNode.dataset.bound){filterNode.dataset.bound="true";filterNode.addEventListener("change",()=>{filter=filterNode.value;events=[];cursor=null;void loadEvents();void loadSummary();});}
  const refresh=document.querySelector<HTMLButtonElement>("#security-refresh");
  if(refresh&&!refresh.dataset.bound){refresh.dataset.bound="true";refresh.addEventListener("click",()=>{events=[];cursor=null;void loadEvents();});}
  const more=document.querySelector<HTMLButtonElement>("#security-load-more");
