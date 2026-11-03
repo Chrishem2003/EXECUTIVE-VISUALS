@@ -85,6 +85,23 @@ test("rejects unsafe signed download URLs before making a request",async()=>{
  await assert.rejects(()=>io.materialize({ownerId:"owner-1",assetId:"asset-1"}),/unsafe signed URL/);
  assert.equal(calls.length,0);await rm(root,{recursive:true,force:true});
 });
+test("forbids redirects when fetching signed cloud media and cleans temporary files",async()=>{
+ const root=await mkdtemp(join(tmpdir(),"ev-media-redirect-test-")),calls=[];
+ const io=createCloudMediaAssetIO({
+  tempRoot:root,
+  assets:{async createSignedUrl(){return{url:"https://storage.example/signed",asset:{id:"asset-1",ownerId:"owner-1",size:content.length,sha256:digest,mediaType:"video/mp4"}}},async create(){}},
+  fetchImpl:async(url,options)=>{
+   calls.push({url,options});
+   assert.equal(options.redirect,"error","signed media downloads must not follow redirects");
+   throw new TypeError("redirect mode rejected the redirect");
+  }
+ });
+ await assert.rejects(()=>io.materialize({ownerId:"owner-1",assetId:"asset-1"}),/redirect mode rejected the redirect/);
+ assert.equal(calls.length,1);
+ assert.deepEqual(await readdir(root),[],"failed redirect attempts must leave no temporary media behind");
+ await rm(root,{recursive:true,force:true});
+});
+
 test("requires explicit repository methods and valid limits",()=>{
  assert.throws(()=>createCloudMediaAssetIO({}),/asset repository/);
  assert.throws(()=>createCloudMediaAssetIO({assets:{createSignedUrl(){},create(){}},maxBytes:0}),/byte limit/);
