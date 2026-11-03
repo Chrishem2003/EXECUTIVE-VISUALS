@@ -1,5 +1,5 @@
 -- Aggregate-only cleanup visibility for the explicitly allowlisted operations plane.
--- Do not return asset IDs, owners, projects, storage paths or media metadata.
+-- The response contains counts and timestamps only.
 create or replace function executive_visuals.list_asset_cleanup_diagnostics()
 returns jsonb
 language sql
