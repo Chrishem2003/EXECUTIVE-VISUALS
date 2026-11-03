@@ -22,7 +22,7 @@ The lockout state is stored in the application SQLite database and therefore sur
 - Per-email sign-in budget: 8 attempts per 15 minutes.
 - Per-email signup budget: 5 attempts per hour.
 - Per-email password-recovery budget: 3 attempts per hour.
-- Email keys are normalized and hashed before they enter the in-memory limiter; the limiter's process-local storage and restart behavior remain unchanged.
+- Email keys are normalized and hashed before they enter the limiter. The default `memory` backend is process-local; the optional `redis-rest` backend uses an atomic Redis Lua `INCR`/`PEXPIRE` operation so IP and email budgets are shared across API instances using the same Redis database and namespace.
 - These request budgets are separate from the 3-failure account lockout. A 429 request throttle does not consume an account password failure.
 
 ## Security boundaries and rollout
@@ -38,4 +38,4 @@ The lockout state is stored in the application SQLite database and therefore sur
 
 ## Verification
 
-Unit tests cover the three-failure threshold, 15-minute initial duration, immediate 30-minute extension after an expired lock, exponential progression and 24-hour cap, successful reset, identifier hashing and legacy-to-HMAC migration. Client-IP tests cover untrusted spoofed headers, trusted proxy chains, malformed headers and invalid configuration. The API integration test covers the Supabase sign-in route, HTTP 423, and the `Retry-After: 900` header. CI must pass on the exact latest commit before this policy is considered verified.
+Unit tests cover the three-failure threshold, 15-minute initial duration, immediate 30-minute extension after an expired lock, exponential progression and 24-hour cap, successful reset, identifier hashing and legacy-to-HMAC migration. Client-IP tests cover untrusted spoofed headers, trusted proxy chains, malformed headers and invalid configuration. Redis REST limiter tests cover atomic command construction, hashed keys, normalized email budgets, denial at the threshold, invalid responses and fail-closed outage behavior. The API integration test covers the Supabase sign-in route, HTTP 423, and the `Retry-After: 900` header. CI must pass on the exact latest commit before this policy is considered verified.
