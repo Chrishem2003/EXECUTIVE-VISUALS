@@ -60,7 +60,7 @@
     "verify:generated-media-handoff": "node --experimental-strip-types --test server/tests/generated-media-handoff.test.mjs",
     "verify:delivery-profiles": "node --test server/tests/delivery-profiles.test.mjs",
     "verify:delivery-manifest": "node --test server/tests/delivery-manifest.test.mjs",
-    "verify:server-syntax": "node --check server/index.mjs && node --check server/cloud-timeline-api.mjs && node --check server/cloud-media-executor.mjs && node --check server/upscale-benchmark-store.mjs"
+    "verify:server-syntax": "node --check server/index.mjs && node --check server/cloud-timeline-api.mjs && node --check server/cloud-media-executor.mjs && node --check server/upscale-benchmark-store.mjs && node --check server/cloud-operations-api.mjs"
   },
   "devDependencies": {
     "typescript": "^5.8.3",
