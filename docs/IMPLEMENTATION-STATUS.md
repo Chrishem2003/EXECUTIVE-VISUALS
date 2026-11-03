@@ -584,3 +584,5 @@ The cloud media IO boundary now rejects HTTP redirects for signed object downloa
 - Timeline placement now snaps new and repositioned clips to nearby edit boundaries, cross-track clip edges and markers within a six-frame tolerance. Snap calculations are frame-rate aware, exclude the clip being repositioned, and are covered by boundary and invalid-input tests.
 
 - Timeline review markers now support reviewer notes (up to 500 characters) and explicit yellow/review, red/issue, green/approved and blue/reference categories. Notes are rendered in the marker list and saved with the timeline revision.
+
+- Reusable caption presets are now available in the clip inspector: Standard clean, Social bold, Documentary and Top headline. Selecting a preset updates the editable typography, alignment, panel, outline, shadow and safe-area fields; the selected preset is stored with clip metadata. Manual field edits remain available after preset selection.
