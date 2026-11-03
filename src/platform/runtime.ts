@@ -10,13 +10,15 @@ type RemoteUsage={window:string;configurationValid:boolean;limit:number|null;use
 let workspaceRevisions=new Map<string,number>();
 let workspaceSaveTimers=new Map<string,ReturnType<typeof setTimeout>>();
 let workspaceSaveChain:Promise<void>=Promise.resolve();
-const state:{status:"checking"|"offline"|"auth-required"|"online";authMode:"local"|"supabase";user:RuntimeUser|null;projects:RuntimeProject[];assets:RuntimeAsset[];jobs:RuntimeJob[];audit:Array<Record<string,unknown>>;members:Array<{id:string;email:string;role:string;createdAt:string}>;reviews:RuntimeReview[];projectId:string;message:string;ffmpeg:boolean;ffprobe:boolean;textGatewayEnabled:boolean;textGatewayConfigured:boolean;imageGatewayEnabled:boolean;imageGatewayConfigured:boolean;providers:ProviderStatus[];remoteUsage:RemoteUsage|null}={
- status:"checking",authMode:"local",user:null,projects:[],assets:[],jobs:[],audit:[],members:[],reviews:[],projectId:"",message:"",ffmpeg:false,ffprobe:false,textGatewayEnabled:false,textGatewayConfigured:false,imageGatewayEnabled:false,imageGatewayConfigured:false,providers:[],remoteUsage:null,
+const state:{status:"checking"|"offline"|"auth-required"|"online";authMode:"local"|"supabase";user:RuntimeUser|null;projects:RuntimeProject[];assets:RuntimeAsset[];jobs:RuntimeJob[];audit:Array<Record<string,unknown>>;members:Array<{id:string;email:string;role:string;createdAt:string}>;reviews:RuntimeReview[];projectId:string;message:string;ffmpeg:boolean;ffprobe:boolean;textGatewayEnabled:boolean;textGatewayConfigured:boolean;imageGatewayEnabled:boolean;imageGatewayConfigured:boolean;providers:ProviderStatus[];remoteUsage:RemoteUsage|null;workspaceSaveStatus:"idle"|"saving"|"saved"|"error"}={
+ status:"checking",authMode:"local",workspaceSaveStatus:"idle",user:null,projects:[],assets:[],jobs:[],audit:[],members:[],reviews:[],projectId:"",message:"",ffmpeg:false,ffprobe:false,textGatewayEnabled:false,textGatewayConfigured:false,imageGatewayEnabled:false,imageGatewayConfigured:false,providers:[],remoteUsage:null,
 };
 const esc=(value:unknown)=>String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]||c));
 const fmt=(value:string)=>new Date(value).toLocaleString();
 function statusMarkup(){return '<span class="runtime-status '+state.status+'"><i></i>'+esc(state.status==="online"?"API CONNECTED":state.status==="auth-required"?"SIGN IN REQUIRED":state.status==="offline"?"OFFLINE":"CONNECTING")+'</span>';}
 function updateShell(){
+ const saveBadge=document.querySelector<HTMLElement>("#workspace-save-status");
+ if(saveBadge){const labels={idle:"NO PENDING CHANGES",saving:"SAVING WORKSPACE…",saved:"ALL CHANGES SAVED",error:"SAVE FAILED — RETRY REQUIRED"};saveBadge.textContent=labels[state.workspaceSaveStatus];saveBadge.dataset.state=state.workspaceSaveStatus;saveBadge.setAttribute("aria-label",labels[state.workspaceSaveStatus]);}
  const projectLabel=document.querySelector<HTMLElement>("#project-name");
  if(projectLabel)projectLabel.textContent=state.projects.find(project=>project.id===state.projectId)?.name||"No project selected";
  const foot=document.querySelector<HTMLElement>(".sidebar-foot small");
@@ -108,6 +110,7 @@ function queueCreativeDraft(document:Record<string,unknown>){
  const projectId=state.projectId;
  const project=state.projects.find(item=>item.id===projectId);
  if(!projectId||state.status!=="online"||!project||!["owner","editor"].includes(project.access_role||""))return;
+ state.workspaceSaveStatus="saving";updateShell();
  const old=workspaceSaveTimers.get(projectId);if(old)clearTimeout(old);
  const timer=setTimeout(()=>{
   workspaceSaveTimers.delete(projectId);
@@ -117,7 +120,8 @@ function queueCreativeDraft(document:Record<string,unknown>){
    const revision=workspaceRevisions.get(projectId)||0;
    const result=await apiRequest<{revision:number}>("/api/projects/"+projectId+"/workspace",{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({revision,document})});
    workspaceRevisions.set(projectId,result.revision);
-  }).catch(error=>{state.message=error instanceof Error?"Creative draft save failed: "+error.message:"Creative draft save failed.";paint();});
+   state.workspaceSaveStatus="saved";updateShell();
+  }).catch(error=>{state.workspaceSaveStatus="error";state.message=error instanceof Error?"Creative draft save failed: "+error.message:"Creative draft save failed.";updateShell();paint();});
  },600);
  workspaceSaveTimers.set(projectId,timer);
 }
