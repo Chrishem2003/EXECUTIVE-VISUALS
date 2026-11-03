@@ -9,6 +9,7 @@ export function createCloudOperationsApi({queue,adminEmails=[]}={}){
   async handle({method,path,user,query={}}={}){
    if(path!=="/api/admin/cloud/operations"||method!=="GET")return null;
    if(!user||typeof user.id!=="string"||!user.id)return {status:401,body:{error:{code:"AUTH_REQUIRED",message:"A verified account identity is required."}}};
+   if(user.emailVerified!==true)return {status:403,body:{error:{code:"CLOUD_OPERATIONS_VERIFIED_EMAIL_REQUIRED",message:"A verified email address is required for cloud operations."}}};
    const email=String(user.email||"").trim().toLowerCase();
    if(!admins.has(email))return {status:403,body:{error:{code:"CLOUD_OPERATIONS_ADMIN_REQUIRED",message:"An explicitly allowlisted cloud operations administrator is required."}}};
    const limit=query.limit===undefined?100:Number(query.limit);
