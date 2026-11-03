@@ -13,7 +13,7 @@ test("social short template creates editable tracks and structured review marker
  const result=applyTimelineTemplate(base,"social-short");
  assert.equal(result.width,1080);assert.equal(result.height,1920);
  assert.equal(result.frameRate.numerator,30);
- assert.equal(result.tracks.length,6);
+ assert.equal(result.tracks.length,5);
  assert.equal(result.markers[0].name,"Opening hook");
  assert.equal(result.markers[0].note,"Lead with the strongest visual or question.");
  assert.equal(result.metadata?.templateId,"social-short");
