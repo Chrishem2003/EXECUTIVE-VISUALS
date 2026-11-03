@@ -27,19 +27,36 @@ export function readCloudWorkerConfig(env=process.env){
  });
 }
 
-export function createCloudWorkerSupervisor({workers,leaseSeconds=90,heartbeatIntervalMs=15000,pollMs=1000,recoveryIntervalMs=60000,healthIntervalMs=60000,onLog=()=>{},onError=()=>{}}={}){
+export function createCloudWorkerSupervisor({workers,leaseSeconds=90,heartbeatIntervalMs=15000,pollMs=1000,recoveryIntervalMs=60000,healthIntervalMs=60000,instanceId=randomUUID(),onLog=()=>{},onError=()=>{}}={}){
  if(!Array.isArray(workers)||workers.length<1||workers.some(worker=>typeof worker?.runCycle!=="function"||typeof worker?.recoverExpired!=="function"))throw new Error("Cloud worker supervisor requires one or more compatible worker families.");
  if(!Number.isInteger(pollMs)||pollMs<500||pollMs>10000)throw new Error("Cloud worker poll interval is invalid.");
  if(!Number.isInteger(recoveryIntervalMs)||recoveryIntervalMs<10000||recoveryIntervalMs>300000)throw new Error("Cloud worker recovery interval is invalid.");
  if(!Number.isInteger(healthIntervalMs)||healthIntervalMs<10000||healthIntervalMs>300000)throw new Error("Cloud worker health interval is invalid.");
- let stopped=true,timer=null,recoveryTimer=null,healthTimer=null,active=null,busy=false,recoveryActive=null,recoveryBusy=false,cycleController=null;
- const metrics={startedAt:null,lastCycleAt:null,lastRecoveryAt:null,cycles:0,jobsClaimed:0,recoveredJobs:0,cycleErrors:0,recoveryErrors:0,lastErrorAt:null,lastErrorCode:null};
+ if(typeof instanceId!=="string"||!instanceId.trim()||instanceId.length>128)throw new Error("Cloud worker instance ID is invalid.");
+ let stopped=true,timer=null,recoveryTimer=null,healthTimer=null,heartbeatTimer=null,active=null,busy=false,recoveryActive=null,recoveryBusy=false,cycleController=null;
+ const metrics={startedAt:null,lastCycleAt:null,lastRecoveryAt:null,cycles:0,jobsClaimed:0,recoveredJobs:0,cycleErrors:0,recoveryErrors:0,heartbeatErrors:0,lastHeartbeatAt:null,lastErrorAt:null,lastErrorCode:null};
  function snapshot(){return Object.freeze({status:stopped?"stopped":"running",workerFamilies:workers.length,pollMs,leaseSeconds,heartbeatIntervalMs,...metrics,activeCycle:busy,recoveryInProgress:recoveryBusy});}
  function recordError(error,kind){
   metrics.lastErrorAt=new Date().toISOString();
   metrics.lastErrorCode=typeof error?.code==="string"?error.code.slice(0,100):kind.toUpperCase()+"_ERROR";
-  if(kind==="cycle")metrics.cycleErrors++;else metrics.recoveryErrors++;
+  if(kind==="cycle")metrics.cycleErrors++;else if(kind==="heartbeat")metrics.heartbeatErrors++;else metrics.recoveryErrors++;
   onError(error);
+ }
+ async function publishHeartbeats(status="running"){
+  const current=snapshot();
+  const heartbeatMetrics={
+   cycles:current.cycles,jobsClaimed:current.jobsClaimed,recoveredJobs:current.recoveredJobs,
+   cycleErrors:current.cycleErrors,recoveryErrors:current.recoveryErrors,
+   lastCycleAt:current.lastCycleAt,lastRecoveryAt:current.lastRecoveryAt,
+   lastErrorAt:current.lastErrorAt,lastErrorCode:current.lastErrorCode,
+   activeCycle:current.activeCycle,recoveryInProgress:current.recoveryInProgress,
+   workerFamilies:current.workerFamilies
+  };
+  const settled=await Promise.allSettled(workers.filter(worker=>typeof worker.reportHeartbeat==="function").map(worker=>worker.reportHeartbeat({instanceId,status,metrics:heartbeatMetrics})));
+  settled.forEach(item=>{
+   if(item.status==="rejected"){recordError(item.reason,"heartbeat");return;}
+   if(item.value?.accepted){metrics.lastHeartbeatAt=item.value.lastSeenAt;}
+  });
  }
  async function cycle(){
   if(stopped||busy)return{skipped:true};
@@ -72,6 +89,7 @@ export function createCloudWorkerSupervisor({workers,leaseSeconds=90,heartbeatIn
   async start(){
    if(!stopped)throw new Error("Cloud worker supervisor is already running.");
    stopped=false;metrics.startedAt=new Date().toISOString();
+   await publishHeartbeats("running");
    await recover();
    if(stopped)return;
    await cycle();
@@ -79,16 +97,19 @@ export function createCloudWorkerSupervisor({workers,leaseSeconds=90,heartbeatIn
    timer=setInterval(()=>{void cycle();},pollMs);timer.unref?.();
    recoveryTimer=setInterval(()=>{void recover();},recoveryIntervalMs);recoveryTimer.unref?.();
    healthTimer=setInterval(()=>onLog({kind:"health",snapshot:snapshot()}),healthIntervalMs);healthTimer.unref?.();
+   heartbeatTimer=setInterval(()=>{void publishHeartbeats("running");},healthIntervalMs);heartbeatTimer.unref?.();
    onLog({kind:"started",snapshot:snapshot()});
   },
   async stop(){
    if(stopped)return;
    stopped=true;
-   if(timer)clearInterval(timer);if(recoveryTimer)clearInterval(recoveryTimer);if(healthTimer)clearInterval(healthTimer);
+   await publishHeartbeats("stopping");
+   if(timer)clearInterval(timer);if(recoveryTimer)clearInterval(recoveryTimer);if(healthTimer)clearInterval(healthTimer);if(heartbeatTimer)clearInterval(heartbeatTimer);
    cycleController?.abort(new Error("Cloud worker supervisor is stopping."));
-   timer=null;recoveryTimer=null;healthTimer=null;
+   timer=null;recoveryTimer=null;healthTimer=null;heartbeatTimer=null;
    if(active)await active.catch(()=>{});
    if(recoveryActive)await recoveryActive.catch(()=>{});
+   await publishHeartbeats("stopped");
    onLog({kind:"stopped",snapshot:snapshot()});
   },
   async runOnce(){return cycle();},
