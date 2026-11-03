@@ -61,7 +61,7 @@ if (cloudTimelineApiEnabled && AUTH_MODE !== "supabase") throw new Error("Cloud 
 const cloudTimelineApi = cloudTimelineApiEnabled ? createCloudTimelineApi({maxUploadBytes:Number(process.env.CLOUD_MEDIA_MAX_UPLOAD_BYTES || MAX_UPLOAD_BYTES)}) : null;
 if (cloudTimelineApi) await cloudTimelineApi.checkReadiness();
 const cloudAssetsEnabled=process.env.CLOUD_ASSETS_ENABLED==="true";
-if(cloudAssetsEnabled&&AUTH_MODE!=="supabase")throw new Error("Cloud asset API requires verified Supabase authentication.");
+if(cloudAssetsEnabled&&(AUTH_MODE!=="supabase"||!supabaseAuth))throw new Error("Cloud asset API requires configured Supabase URL, publishable key and verified Supabase authentication.");
 const cloudAssetService=cloudAssetsEnabled?createCloudAssetService({maxBytes:Number(process.env.CLOUD_MEDIA_MAX_UPLOAD_BYTES||MAX_UPLOAD_BYTES)}):null;
 const activeProcesses = new Map();
 const WORKER_ID = randomUUID();
