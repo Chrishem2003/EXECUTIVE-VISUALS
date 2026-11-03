@@ -415,7 +415,7 @@ document.addEventListener("submit",async event=>{
    const asset=state.assets.find(item=>item.id===assetId),track=state.timeline.tracks.find(item=>item.id===trackId);
    const jobId=String(asset?.metadata?.jobId||"");
    if(!asset||asset.metadata?.generated!==true||!jobId||!track){state.message="Select a generated asset with its server-recorded generation job and a destination track.";paint();return;}
-   const startFrames=Math.max(0,Number(data.get("start"))||0);
+   const requestedStartFrames=Math.max(0,Number(data.get("start"))||0),handoffSnap=snapTimelineFrame(requestedStartFrames,state.timeline,trackId,6),startFrames=handoffSnap.frame;
    const requestedDurationFrames=Math.max(1,Number(data.get("duration"))||1);const requestBody={assetId:asset.id,jobId,trackId,clipId:crypto.randomUUID(),clipName:asset.name,playheadSeconds:startFrames/fps(),expectedRevision:state.serverRevision,...(asset.mediaType.startsWith("image/")?{durationSeconds:requestedDurationFrames/fps()}:{})};
    try{
     const result=await apiRequest<{timeline:CloudSavedTimeline;idempotentReplay?:boolean}>("/api/cloud/timelines/"+state.timeline.id+"/handoff",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(requestBody)});
@@ -423,7 +423,7 @@ document.addEventListener("submit",async event=>{
    }catch(error){state.message=error instanceof Error?error.message:"Generated-media handoff failed.";state.status="ready";paint();}
    return;
   }
-  const start=Math.max(0,Number(data.get("start"))||0),sourceIn=Math.max(0,Number(data.get("sourceIn"))||0),duration=Math.max(1,Number(data.get("duration"))||1);
+  const requestedStart=Math.max(0,Number(data.get("start"))||0),snapped=snapTimelineFrame(requestedStart,state.timeline,trackId,6),start=snapped.frame,sourceIn=Math.max(0,Number(data.get("sourceIn"))||0),duration=Math.max(1,Number(data.get("duration"))||1);
   const asset=state.assets.find(a=>a.id===assetId);if(!asset)return;
   const destination=state.timeline.tracks.find(t=>t.id===trackId);
   if(destination?.kind==="audio"&&!asset.mediaType.startsWith("audio/")){alert("Audio tracks require audio assets.");return;}
