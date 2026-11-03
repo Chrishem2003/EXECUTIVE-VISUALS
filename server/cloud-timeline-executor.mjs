@@ -50,12 +50,14 @@ function referencedAssets(timeline){
  * assembly and receives only verified materialized asset paths; the local
  * SQLite renderer is never passed cloud records or storage references.
  */
-export function createCloudTimelineExecutor({timelines,mediaIO,renderTimeline,probeOutput=async path=>{const result=await run("ffprobe",["-v","error","-show_format","-show_streams","-of","json",path],60000);return JSON.parse(result.stdout||"{}");},tempRoot,maxAssets=5000,maxOutputBytes=1024*1024*1024,analyzeVideo=analyzeTemporalVideo,activeProcesses=new Map()}={}){
+export function createCloudTimelineExecutor({timelines,mediaIO,renderTimeline,probeOutput=async path=>{const result=await run("ffprobe",["-v","error","-show_format","-show_streams","-of","json",path],60000);return JSON.parse(result.stdout||"{}");},tempRoot,maxAssets=5000,maxOutputBytes=1024*1024*1024,maxInputBytes=2*1024*1024*1024,maxDurationSeconds=4*60*60,analyzeVideo=analyzeTemporalVideo,activeProcesses=new Map()}={}){
   if(!timelines||typeof timelines.get!=="function")throw new Error("Cloud timeline executor requires the cloud timeline repository.");
   if(!mediaIO||typeof mediaIO.materialize!=="function"||typeof mediaIO.publish!=="function")throw new Error("Cloud timeline executor requires cloud media IO.");
   if(typeof renderTimeline!=="function")throw new Error("Cloud timeline executor requires an explicit render engine.");
   if(!Number.isInteger(maxAssets)||maxAssets<1||maxAssets>5000)throw new Error("Cloud timeline asset limit is invalid.");
   if(!Number.isSafeInteger(maxOutputBytes)||maxOutputBytes<1||maxOutputBytes>5*1024*1024*1024)throw new Error("Cloud timeline output limit is invalid.");
+  if(!Number.isSafeInteger(maxInputBytes)||maxInputBytes<1||maxInputBytes>20*1024*1024*1024)throw new Error("Cloud timeline input byte limit is invalid.");
+  if(!Number.isFinite(maxDurationSeconds)||maxDurationSeconds<=0||maxDurationSeconds>24*60*60)throw new Error("Cloud timeline duration limit is invalid.");
 
   return async function execute({job,signal,onProgress=()=>{}}={}){
     if(!job||typeof job.id!=="string"||typeof job.owner_id!=="string"||job.job_type!=="timeline.render")throw Object.assign(new Error("Cloud timeline worker received an unsupported job."),{code:"CLOUD_TIMELINE_JOB_UNSUPPORTED"});
@@ -70,14 +72,26 @@ export function createCloudTimelineExecutor({timelines,mediaIO,renderTimeline,pr
     if(deliveryProfileId)getDeliveryProfile(deliveryProfileId);
     const assetIds=referencedAssets(record.timeline);
     if(!assetIds.length)throw Object.assign(new Error("Timeline has no enabled source assets."),{code:"CLOUD_TIMELINE_EMPTY"});
+    const durationSeconds=Math.max(0,...(record.timeline.tracks||[]).filter(track=>track.enabled!==false).flatMap(track=>(track.clips||[]).filter(clip=>clip.enabled!==false).map(clip=>{
+      const start=Number(clip.timelineStart?.value)/Number(clip.timelineStart?.rate),duration=Number(clip.duration?.value)/Number(clip.duration?.rate);
+      return Number.isFinite(start)&&Number.isFinite(duration)&&start>=0&&duration>0?start+duration:0;
+    })));
+    if(!Number.isFinite(durationSeconds)||durationSeconds<=0)throw Object.assign(new Error("Timeline duration is invalid."),{code:"CLOUD_TIMELINE_DURATION_INVALID"});
+    if(durationSeconds>maxDurationSeconds)throw Object.assign(new Error("Timeline duration exceeds the configured cloud render limit of "+maxDurationSeconds+" seconds."),{code:"CLOUD_TIMELINE_DURATION_TOO_LARGE"});
     if(assetIds.length>maxAssets)throw Object.assign(new Error("Timeline references too many source assets."),{code:"CLOUD_TIMELINE_TOO_MANY_ASSETS"});
     const workDir=await mkdtemp(join(tempRoot||tmpdir(),"ev-cloud-timeline-")),materialized=new Map();
+    let totalInputBytes=0;
     try{
       for(let i=0;i<assetIds.length;i++){
         if(signal?.aborted)throw Object.assign(new Error("Timeline render was cancelled."),{code:"JOB_CANCELLED"});
         const asset=await mediaIO.materialize({ownerId:job.owner_id,assetId:assetIds[i],...(signal?{signal}:{})});
         if(!asset||typeof asset.path!=="string"||!asset.asset||asset.asset.id!==assetIds[i]){await cleanupMaterializedAsset(asset);throw new Error("Cloud timeline source materialization returned invalid asset metadata.");}
         materialized.set(assetIds[i],asset);
+        const sourceBytes=Number(asset.asset.size??asset.asset.byteSize);
+        if(Number.isSafeInteger(sourceBytes)&&sourceBytes>=0){
+          totalInputBytes+=sourceBytes;
+          if(totalInputBytes>maxInputBytes)throw Object.assign(new Error("Timeline source assets exceed the configured cloud render input limit."),{code:"CLOUD_TIMELINE_INPUT_TOO_LARGE"});
+        }
         onProgress(Math.min(25,5+Math.round((i+1)/assetIds.length*20)));
       }
       const output=await renderTimeline({timeline:record.timeline,assets:materialized,workDir,signal,onProgress,timelineRevision:record.revision});
