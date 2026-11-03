@@ -126,3 +126,18 @@ test("durable worker heartbeat RPC validates identity, status, metrics and respo
  const malformed=createCloudQueue({...base,fetchImpl:async()=>response({accepted:true})});
  await assert.rejects(()=>malformed.heartbeatWorker({workerId:"w",workerFamily:"media",instanceId:"i"}),/invalid result/);
 });
+
+test("worker fleet health snapshot is bounded, read-only and validates sanitized rows",async()=>{
+ const requests=[];
+ const rows=[{worker_id:"media-1",worker_family:"media",instance_id:"instance-a",status:"stale",metrics:{jobsClaimed:3},started_at:"2026-11-03T10:00:00Z",last_seen_at:"2026-11-03T10:01:00Z",stopped_at:null,age_seconds:240}];
+ const queue=createCloudQueue({...base,fetchImpl:async(url,options)=>{requests.push({url,body:JSON.parse(options.body)});return response(rows);}});
+ assert.deepEqual(await queue.listWorkerHealth({staleAfterSeconds:180,limit:20}),rows);
+ assert.equal(requests[0].url,"https://example.supabase.co/rest/v1/rpc/list_worker_health");
+ assert.deepEqual(requests[0].body,{p_stale_after_seconds:180,p_limit:20});
+ await assert.rejects(()=>queue.listWorkerHealth({staleAfterSeconds:10}),/stale threshold/);
+ await assert.rejects(()=>queue.listWorkerHealth({limit:201}),/result limit/);
+ const malformed=createCloudQueue({...base,fetchImpl:async()=>response([{...rows[0],status:"unknown"}])});
+ await assert.rejects(()=>malformed.listWorkerHealth(),/malformed worker record/);
+ const oversized=createCloudQueue({...base,fetchImpl:async()=>response(Array(2).fill(rows[0]))});
+ await assert.rejects(()=>oversized.listWorkerHealth({limit:1}),/invalid result/);
+});
