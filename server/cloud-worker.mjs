@@ -51,6 +51,9 @@ export async function runCloudWorkerCycle({
   let leaseLost = false;
   let heartbeatPending = false;
   let heartbeatError = null;
+  let progressError = null;
+  let progressTask = Promise.resolve();
+  let lastReportedProgress = 0;
   let heartbeatTask = Promise.resolve();
   onEvent({ type: "job.started", jobId: job.id, workerId });
 
@@ -84,13 +87,32 @@ export async function runCloudWorkerCycle({
       onProgress(value) {
         if (leaseLost || controller.signal.aborted) return;
         if (!Number.isFinite(value) || value < 0 || value > 100) throw new Error("Worker progress must be between 0 and 100.");
-        onProgress({ jobId: job.id, workerId, progress: value });
+        const progress = Math.max(lastReportedProgress, value);
+        if (progress === lastReportedProgress) return;
+        lastReportedProgress = progress;
+        onProgress({ jobId: job.id, workerId, progress });
+        if (typeof queue.reportProgress === "function") {
+          progressTask = progressTask.then(async () => {
+            if (controller.signal.aborted || leaseLost) return;
+            const accepted = await queue.reportProgress(job.id, workerId, progress);
+            if (!accepted) {
+              leaseLost = true;
+              controller.abort(new Error("Worker lease is no longer valid for progress reporting."));
+              onEvent({ type: "job.lease_lost", jobId: job.id, workerId });
+            }
+          }).catch(error => {
+            progressError = error;
+            leaseLost = true;
+            controller.abort(new Error("Worker could not persist job progress."));
+            onEvent({ type: "job.progress_error", jobId: job.id, workerId });
+          });
+        }
       }
     });
     // Stop scheduling heartbeats and settle any in-flight renewal before the
     // terminal transition. Otherwise a late renewal can race a successful finish.
     clearInterval(heartbeat);
-    await heartbeatTask;
+    await Promise.all([heartbeatTask, progressTask]);
     if (leaseLost || controller.signal.aborted) {
       return { claimed: true, finished: false, reason: shutdownSignal?.aborted ? "worker_stopping" : "lease_lost", jobId: job.id };
     }
@@ -143,5 +165,6 @@ export async function runCloudWorkerCycle({
     clearInterval(heartbeat);
     shutdownSignal?.removeEventListener("abort", abortForShutdown);
     if (heartbeatError) onEvent({ type: "job.heartbeat_error", jobId: job.id, workerId });
+    if (progressError) onEvent({ type: "job.progress_error", jobId: job.id, workerId });
   }
 }
