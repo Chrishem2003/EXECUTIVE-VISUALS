@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createCloudMediaExecutor } from "../cloud-media-executor.mjs";
@@ -600,7 +600,7 @@ test("cloud media executor removes its workspace even when materialized cleanup 
       onProgress() {}
     });
     assert.equal(result.sourceAssetId, "asset-cleanup");
-    assert.deepEqual((await import("node:fs/promises")).readdir(directory).then(names => names.filter(name => name.startsWith("ev-cloud-job-"))), Promise.resolve([]));
+    assert.deepEqual((await readdir(directory)).filter(name => name.startsWith("ev-cloud-job-")), []);
   } finally {
     if (previous === undefined) delete process.env.FFPROBE_PATH; else process.env.FFPROBE_PATH = previous;
     await rm(directory, { recursive: true, force: true });
