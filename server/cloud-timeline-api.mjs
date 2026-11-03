@@ -143,9 +143,9 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     const job=Array.isArray(jobs)?jobs.find(row=>row.id===jobId&&row.project_id===projectId&&cloudMediaTypes.has(row.job_type)):null;
     if(!job)return response(404,{error:{code:"CLOUD_MEDIA_JOB_NOT_FOUND",message:"Cloud media job was not found in this project."}});
     const requestedLimit=Number(query.limit||50),limit=Number.isInteger(requestedLimit)?Math.max(1,Math.min(100,requestedLimit)):50;
-    const rows=await request("job_events?select=id,event_type,event_data,created_at&job_id=eq."+encodeURIComponent(jobId)+"&order=created_at.asc&limit="+limit);
+    const rows=await request("job_events?select=id,event_type,event_data,created_at&job_id=eq."+encodeURIComponent(jobId)+"&order=created_at.desc&limit="+limit);
     const safeKeys=new Set(["progress","status","reason","code","message","attempt","maxAttempts","delaySeconds","jobType","sourceAssetId","model","scale","tile","format"]);
-    const events=(rows||[]).filter(row=>typeof row.event_type==="string"&&/^job\.[a-z_]+$/.test(row.event_type)).map(row=>{
+    const events=(rows||[]).slice().reverse().filter(row=>typeof row.event_type==="string"&&/^job\.[a-z_]+$/.test(row.event_type)).map(row=>{
      const source=row.event_data&&typeof row.event_data==="object"&&!Array.isArray(row.event_data)?row.event_data:{};
      const data={};for(const key of safeKeys){const value=source[key];if(["string","number","boolean"].includes(typeof value))data[key]=typeof value==="string"?value.slice(0,240):value;}
      return{id:String(row.id),type:row.event_type,createdAt:row.created_at,data};
