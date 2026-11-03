@@ -8,6 +8,8 @@ export interface TimelineClip {
 }
 export interface TimelineTrack {
   id:string; name:string; kind:TrackKind; enabled:boolean; locked:boolean;
+  /** Audio mix controls; omitted means unmuted and not soloed. */
+  muted?:boolean; solo?:boolean;
   clips:TimelineClip[];
 }
 export interface TimelineMarker {
@@ -121,6 +123,17 @@ export function moveClip(timeline:EditorialTimeline,fromTrackId:string,clipId:st
   const updated={...timeline,revision:timeline.revision+1,updatedAt:new Date().toISOString(),tracks};
   const validation=validateTimeline(updated);if(!validation.valid)throw new Error(validation.issues[0].message);
   return updated;
+}
+/** Set audio mute/solo state as an immutable timeline revision. */
+export function setAudioTrackState(timeline:EditorialTimeline,trackId:string,state:{muted?:boolean;solo?:boolean}):EditorialTimeline{
+  const track=timeline.tracks.find(item=>item.id===trackId);
+  if(!track)throw new Error("Track not found.");
+  if(track.kind!=="audio")throw new Error("Mute and solo controls are only available on audio tracks.");
+  if(!state||typeof state!=="object"||Array.isArray(state)||Object.keys(state).length===0)throw new Error("Provide at least one audio track state change.");
+  for(const key of Object.keys(state))if(key!=="muted"&&key!=="solo")throw new Error("Unsupported audio track state field.");
+  if(state.muted!==undefined&&typeof state.muted!=="boolean")throw new Error("Muted state must be boolean.");
+  if(state.solo!==undefined&&typeof state.solo!=="boolean")throw new Error("Solo state must be boolean.");
+  return {...timeline,revision:timeline.revision+1,updatedAt:new Date().toISOString(),tracks:timeline.tracks.map(item=>item.id===trackId?{...item,...state}:item)};
 }
 export function addMarker(timeline:EditorialTimeline,marker:TimelineMarker):EditorialTimeline{
   if(timeline.markers.some(item=>item.id===marker.id))throw new Error("Marker ID already exists.");
