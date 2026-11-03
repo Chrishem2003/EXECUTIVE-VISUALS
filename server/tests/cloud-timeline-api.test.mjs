@@ -48,6 +48,14 @@ test("cloud job listing is project-authorized and owner-filtered with bounded pa
  assert.ok(url.includes("project_id=eq."+project));
  assert.ok(url.includes("status=eq.running"));
 });
+test("authorized collaborators can list jobs created by the project owner",async()=>{
+ const existing=[{id:"623e4567-e89b-42d3-a456-426614174001",owner_id:owner,project_id:project,job_type:"timeline.render",status:"running",progress:55,input:{},output:null,error:null,attempt_count:1,created_at:"2026-11-03T10:00:00Z",updated_at:"2026-11-03T10:01:00Z"}];
+ const f=setup({existing,authorizeOverride:async({ownerId,projectId:pid,action})=>ownerId===editor&&pid===project&&action==="read"});
+ const result=await f.api.handle({method:"GET",path:"/api/cloud/jobs",ownerId:editor,query:{projectId:project}});
+ assert.equal(result.status,200);
+ assert.equal(result.body.jobs.length,1);
+ assert.equal(result.body.jobs[0].id,existing[0].id);
+});
 test("cloud job listing rejects unauthorized projects and malformed filters",async()=>{
  const denied=setup({authorizeOverride:async()=>false});
  const hidden=await denied.api.handle({method:"GET",path:"/api/cloud/jobs",ownerId:owner,query:{projectId:project}});
