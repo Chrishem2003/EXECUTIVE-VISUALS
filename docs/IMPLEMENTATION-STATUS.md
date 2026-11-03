@@ -556,3 +556,11 @@ The cloud media IO boundary now rejects HTTP redirects for signed object downloa
 - GitHub Actions has not yet returned a pull-request workflow run or status check for the latest head. Treat the new test as committed but **not CI-verified** until the checks execute. The connected workflow-run query currently returns no PR-triggered runs for this head.
 - Hard-link support must be confirmed on the actual cloud worker filesystem before enabling neural inference there. Unsupported filesystems fail closed; no fallback that writes a partially published destination is introduced.
 - No real model inference, production deployment, migration, paid provider activation or PR merge was performed.
+
+
+### Follow-up — publication byte-integrity assertions
+
+- Tightened the atomic-publication regression to compare the exact bytes at the final output path with the expected validated inference fixture, and to compare the published file size with the adapter's reported byte count.
+- Corrected the implementation comment so it describes the current same-directory hard-link operation rather than the superseded exclusive-copy approach.
+- Commits: implementation comment `8d39775cba5074391ddd6fc4f7d75db0c94cd0b0`; byte-integrity assertions `8e1124bd0e4432d1bf992563bc0eeed1f3f415bd`.
+- These changes are committed but still await an observed CI run. They do not constitute a real GPU quality test or cloud-worker filesystem acceptance.
