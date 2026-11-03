@@ -531,7 +531,7 @@ document.addEventListener("input",event=>{const target=event.target as HTMLInput
 document.addEventListener("click",event=>{
  const create=(event.target as HTMLElement).closest<HTMLElement>("[data-tl-create-cloud]");if(create){void createCloudTimeline().catch(error=>{state.message=error instanceof Error?error.message:"Cloud timeline creation failed.";paint();});return;}
  const target=event.target as HTMLElement,select=target.closest<HTMLElement>("[data-tl-select]");
- if(select&&state.timeline){state.selectedTrack=select.dataset.track||"";state.selectedClipId=select.dataset.clip||"";state.previewKey="";state.previewUrl="";state.previewExpiresAt=0;state.previewError="";state.previewLoading=false;paint();}
+ if(select&&state.timeline){state.selectedTrack=select.dataset.track||"";state.selectedClipId=select.dataset.clip||"";state.previewKey="";state.previewUrl="";state.previewWaveformUrl="";state.previewExpiresAt=0;state.previewError="";state.previewLoading=false;paint();}
  const action=target.closest<HTMLElement>("[data-tl-action]");
  if(action)void runAction(action);
 });
