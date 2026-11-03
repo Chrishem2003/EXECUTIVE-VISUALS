@@ -496,3 +496,15 @@ test("cloud media job listing is scoped to the verified project and supported me
  assert.ok(query[1].includes("project_id=eq."+project));
  assert.ok(query[1].includes("job_type=in."));
 });
+
+
+test("cloud media job rejects operation and source media-type mismatches before enqueue",async()=>{
+ const audio=setup({assetOverride:{id:"723e4567-e89b-42d3-a456-426614174000",ownerId:owner,projectId:project,sha256:"a".repeat(64),mediaType:"audio/wav"}});
+ const thumbnail=await audio.api.handle({method:"POST",path:"/api/cloud/media-jobs",ownerId:owner,idempotencyKey:"media-type-0001",body:{projectId:project,sourceAssetId:"723e4567-e89b-42d3-a456-426614174000",jobType:"media.thumbnail"}});
+ assert.equal(thumbnail.status,422);
+ assert.equal(thumbnail.body.error.code,"MEDIA_SOURCE_TYPE_UNSUPPORTED");
+ assert.equal(audio.calls.some(call=>call[0]==="fetch"&&call[1].includes("/jobs?")&&call[2].method==="POST"),false);
+ const video=setup();
+ const cleanAudio=await video.api.handle({method:"POST",path:"/api/cloud/media-jobs",ownerId:owner,idempotencyKey:"media-type-0002",body:{projectId:project,sourceAssetId:"723e4567-e89b-42d3-a456-426614174000",jobType:"media.audio-clean"}});
+ assert.equal(cleanAudio.status,422);
+});
