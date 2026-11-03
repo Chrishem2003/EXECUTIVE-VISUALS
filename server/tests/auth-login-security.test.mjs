@@ -117,3 +117,45 @@ test("HMAC identifier mode migrates legacy SHA-256 lockout rows without resettin
 test("HMAC identifier keys reject short secrets", () => {
   assert.throws(()=>loginIdentifierHash("user@example.com","short"),/at least 32 bytes/);
 });
+
+test("security events capture failed attempts and lockouts without storing raw identifiers", () => {
+  const db=setup(),t=1_800_000_000_000;
+  recordFailedLogin(db,"private@example.com",t);
+  recordFailedLogin(db,"private@example.com",t+1);
+  const locked=recordFailedLogin(db,"private@example.com",t+2);
+  assert.equal(locked.locked,true);
+  const events=db.prepare("SELECT identifier_hash,event_type,failed_attempts,lock_level,locked_until_ms FROM auth_security_events ORDER BY id").all();
+  assert.deepEqual(events.map(event=>event.event_type),["login_failed","login_failed","account_locked"]);
+  assert.ok(events.every(event=>event.identifier_hash===loginIdentifierHash("private@example.com")));
+  assert.ok(events.every(event=>!JSON.stringify(event).includes("private@example.com")));
+  assert.equal(events[2].locked_until_ms,t+2+AUTH_BASE_LOCK_MS);
+  db.close();
+});
+
+test("blocked attempts and successful sign-in are recorded as bounded security events", () => {
+  const db=setup(),t=1_800_000_000_000;
+  recordFailedLogin(db,"events@example.com",t);
+  recordFailedLogin(db,"events@example.com",t+1);
+  recordFailedLogin(db,"events@example.com",t+2);
+  const state=getLoginLockState(db,"events@example.com",t+3);
+  assert.equal(state.locked,true);
+  assert.equal(state.lockedUntilMs,t+2+AUTH_BASE_LOCK_MS);
+  const {recordLoginLockoutEvent}=await import("../auth-login-security.mjs");
+  recordLoginLockoutEvent(db,"events@example.com",state,t+3);
+  clearLoginFailures(db,"events@example.com");
+  const types=db.prepare("SELECT event_type FROM auth_security_events ORDER BY id").all().map(row=>row.event_type);
+  assert.deepEqual(types,["login_failed","login_failed","account_locked","login_blocked_by_lockout","login_succeeded"]);
+  db.close();
+});
+
+test("security event retention removes records older than 90 days", () => {
+  const db=setup(),old=1_800_000_000_000;
+  recordFailedLogin(db,"retention@example.com",old);
+  recordFailedLogin(db,"retention@example.com",old+1);
+  recordFailedLogin(db,"retention@example.com",old+2);
+  clearLoginFailures(db,"retention@example.com");
+  recordFailedLogin(db,"retention@example.com",old+91*24*60*60*1000);
+  const oldest=db.prepare("SELECT MIN(created_at_ms) AS value FROM auth_security_events").get().value;
+  assert.equal(oldest,old+91*24*60*60*1000);
+  db.close();
+});
