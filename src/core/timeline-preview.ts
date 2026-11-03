@@ -39,3 +39,11 @@ export function stepPreviewSeconds(current:number,direction:-1|1,sourceFrameRate
   if(!Number.isFinite(sourceFrameRate)||sourceFrameRate<=0)throw new Error("Source frame rate must be positive.");
   return clampPreviewSeconds(current+direction/sourceFrameRate,start,end);
 }
+
+/** Convert a scrubber frame offset into a clamped source timestamp. */
+export function previewSecondsAtScrubFrame(frame:number,sourceStart:number,sourceFrameRate:number,sourceEnd:number):number {
+  if(!Number.isSafeInteger(frame)||frame<0||!Number.isFinite(sourceStart)||sourceStart<0||!Number.isFinite(sourceEnd)||sourceEnd<sourceStart||!Number.isFinite(sourceFrameRate)||sourceFrameRate<=0) {
+    throw new Error("Scrub frame and source bounds must be valid and the source frame rate must be positive.");
+  }
+  return clampPreviewSeconds(sourceStart+frame/sourceFrameRate,sourceStart,sourceEnd);
+}
