@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const validId=(value,label)=>{if(typeof value!=="string"||!UUID.test(value))throw new Error(label+" must be a UUID.");return value;};
-const map=row=>({id:row.id,ownerId:row.owner_id,name:row.name,description:row.description||"",settings:row.settings||{},revision:Number(row.revision),createdAt:row.created_at,updatedAt:row.updated_at,archivedAt:row.archived_at||null});
+const map=row=>({id:row.id,ownerId:row.owner_id,name:row.name,description:row.description||"",settings:row.settings||{},revision:Number(row.revision),access_role:row.access_role||"viewer",createdAt:row.created_at,updatedAt:row.updated_at,archivedAt:row.archived_at||null});
 
 export function createCloudProjectRepository({url=process.env.SUPABASE_URL,serviceRoleKey=process.env.SUPABASE_SERVICE_ROLE_KEY,fetchImpl=globalThis.fetch,authorize,timeoutMs=12000}={}){
  if(!url||!serviceRoleKey||typeof fetchImpl!=="function"||typeof authorize!=="function")throw new Error("Cloud project repository requires credentials, fetch and authorization.");
@@ -34,13 +34,17 @@ export function createCloudProjectRepository({url=process.env.SUPABASE_URL,servi
    validId(ownerId,"Owner ID");limit=Math.max(1,Math.min(100,Number.isInteger(limit)?limit:50));offset=Math.max(0,Math.min(100000,Number.isInteger(offset)?offset:0));
    const [owned,memberships]=await Promise.all([
     request("projects?select=id,owner_id,name,description,settings,revision,created_at,updated_at,archived_at&owner_id=eq."+encodeURIComponent(ownerId)+"&archived_at=is.null&order=updated_at.desc&limit="+limit+"&offset="+offset),
-    request("project_members?select=project_id&member_id=eq."+encodeURIComponent(ownerId)+"&order=created_at.desc&limit="+limit+"&offset="+offset)
+    request("project_members?select=project_id,role&member_id=eq."+encodeURIComponent(ownerId)+"&order=created_at.desc&limit="+limit+"&offset="+offset)
    ]);
-   const ids=[...new Set((Array.isArray(memberships)?memberships:[]).map(x=>x.project_id).filter(x=>UUID.test(x)))];
+   const membershipRows=Array.isArray(memberships)?memberships:[];
+   const roleByProject=new Map(membershipRows.filter(item=>UUID.test(item.project_id)).map(item=>[item.project_id,["editor","reviewer","viewer"].includes(item.role)?item.role:"viewer"]));
+   const ids=[...roleByProject.keys()];
    let shared=[];
    if(ids.length)shared=await request("projects?select=id,owner_id,name,description,settings,revision,created_at,updated_at,archived_at&id=in.("+ids.map(encodeURIComponent).join(",")+")&archived_at=is.null");
-   const rows=[...(Array.isArray(owned)?owned:[]),...(Array.isArray(shared)?shared:[])];
-   const unique=[...new Map(rows.map(row=>[row.id,row])).values()].sort((a,b)=>String(b.updated_at).localeCompare(String(a.updated_at))).slice(0,limit);
+   const uniqueById=new Map();
+   for(const row of Array.isArray(owned)?owned:[])uniqueById.set(row.id,{...row,access_role:"owner"});
+   for(const row of Array.isArray(shared)?shared:[])if(!uniqueById.has(row.id))uniqueById.set(row.id,{...row,access_role:roleByProject.get(row.id)||"viewer"});
+   const unique=[...uniqueById.values()].sort((a,b)=>String(b.updated_at).localeCompare(String(a.updated_at))).slice(0,limit);
    const authorized=[];for(const row of unique){if(await authorize({ownerId,projectId:row.id,action:"read"})===true)authorized.push(map(row));}
    return authorized;
   },
