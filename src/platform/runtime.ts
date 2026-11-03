@@ -1,4 +1,4 @@
-import { apiRequest, ApiError, setApiAccessToken, clearApiAccessToken } from "../core/api";
+import { apiRequest, ApiError, setApiAccessToken, clearApiAccessToken, refreshApiSession } from "../core/api";
 
 type RuntimeUser={id:string;email:string};
 type RuntimeProject={id:string;name:string;description?:string;revision?:number;access_role?:"owner"|"editor"|"reviewer"|"viewer"};
@@ -32,9 +32,8 @@ function renderGate(){
  document.querySelector("#ev-auth-gate")?.remove();
  if(state.status!=="auth-required")return;
  const external=state.authMode==="supabase";
- document.body.insertAdjacentHTML("beforeend",'<main id="ev-auth-gate" class="auth-landing"><section class="auth-story"><a class="auth-brand" href="#" aria-label="Executive Visuals home"><span class="brand-mark">CEV</span><span><b>CHRISHEM</b><small>EXCLUSIVE VISUALS</small></span></a><div class="auth-story-copy"><div class="eyebrow">THE CREATIVE PRODUCTION WORKSPACE</div><h1>From first idea<br>to <em>final frame.</em></h1><p>Plan, direct, edit, enhance and prepare your visual productions in one connected studio.</p><div class="auth-feature-list"><div><i>✳</i><span><b>Direct with intention</b><small>Creative briefs, series plans and storyboards.</small></span></div><div><i>▤</i><span><b>Keep every asset connected</b><small>Projects, source media, timelines and versions.</small></span></div><div><i>◈</i><span><b>Deliver with confidence</b><small>Caption, rights, quality and master checks.</small></span></div></div></div><div class="auth-story-footer">A focused workspace for serious visual storytelling.</div></section><section class="auth-panel-wrap"><div class="auth-card auth-card-modern"><div class="eyebrow">YOUR PRIVATE STUDIO</div><h2>'+(external?"Verify your workspace":"Welcome back")+'</h2><p>'+(external?"Connect your authenticated session to access private projects and media.":"Sign in to continue, or create a local development account to explore the workspace.")+'</p>'+
- (external?'<form id="ev-auth-token"><label>Access token</label><textarea name="token" rows="3" required autocomplete="off" placeholder="Paste a short-lived access token"></textarea><button class="primary wide">Verify secure session</button></form>':
- '<div class="auth-switch" role="group" aria-label="Account action"><button type="button" class="active" data-auth-mode="login">Sign in</button><button type="button" data-auth-mode="register">Create account</button></div><form id="ev-auth"><input type="hidden" name="mode" value="login"><label>Email address</label><input name="email" type="email" required autocomplete="username" placeholder="you@example.com"><label>Password</label><input name="password" type="password" minlength="12" required autocomplete="current-password" placeholder="At least 12 characters"><button class="primary wide">Continue securely</button></form>')+
+ document.body.insertAdjacentHTML("beforeend",'<main id="ev-auth-gate" class="auth-landing"><section class="auth-story"><a class="auth-brand" href="#" aria-label="Executive Visuals home"><span class="brand-mark">CEV</span><span><b>CHRISHEM</b><small>EXCLUSIVE VISUALS</small></span></a><div class="auth-story-copy"><div class="eyebrow">THE CREATIVE PRODUCTION WORKSPACE</div><h1>From first idea<br>to <em>final frame.</em></h1><p>Plan, direct, edit, enhance and prepare your visual productions in one connected studio.</p><div class="auth-feature-list"><div><i>✳</i><span><b>Direct with intention</b><small>Creative briefs, series plans and storyboards.</small></span></div><div><i>▤</i><span><b>Keep every asset connected</b><small>Projects, source media, timelines and versions.</small></span></div><div><i>◈</i><span><b>Deliver with confidence</b><small>Caption, rights, quality and master checks.</small></span></div></div></div><div class="auth-story-footer">A focused workspace for serious visual storytelling.</div></section><section class="auth-panel-wrap"><div class="auth-card auth-card-modern"><div class="eyebrow">YOUR PRIVATE STUDIO</div><h2>'+(external?"Verify your workspace":"Welcome back")+'</h2><p>'+(external?"Sign in securely with your workspace email and password. Your session will refresh automatically.":"Sign in to continue, or create a local development account to explore the workspace.")+'</p>'+
+ '<div class="auth-switch" role="group" aria-label="Account action"><button type="button" class="active" data-auth-mode="login">Sign in</button><button type="button" data-auth-mode="register">Create account</button></div><form id="ev-auth"><input type="hidden" name="mode" value="login"><label>Email address</label><input name="email" type="email" required autocomplete="username" placeholder="you@example.com"><label>Password</label><input name="password" type="password" minlength="12" required autocomplete="current-password" placeholder="At least 12 characters"><button class="primary wide">Continue securely</button></form>'+(external?'<button type="button" class="auth-recover" data-auth-recover>Forgot password?</button>':'')+
  '<div class="auth-security"><span>⌑</span><div><b>Private by design</b><small>Your projects and media remain account-scoped. Authentication is handled by the configured service.</small></div></div><p class="auth-error">'+esc(state.message)+'</p><small class="auth-footnote">'+(external?"This environment uses its configured external identity provider.":"Local password accounts are for development only. Production sign-in requires the configured external identity service.")+'</small></div></section></main>');
 }
 function projectOptions(){return '<option value="">Personal library</option>'+state.projects.map(p=>'<option value="'+esc(p.id)+'" '+(state.projectId===p.id?"selected":"")+'>'+esc(p.name)+'</option>').join("");}
@@ -154,7 +153,8 @@ export async function initRuntime(){
  try{
   const health=await apiRequest<{authMode:"local"|"supabase";media:{ffmpeg:boolean;ffprobe:boolean};textGateway:{enabled:boolean;configured:boolean};imageGateway:{enabled:boolean;configured:boolean}}>("/api/health");
   state.authMode=health.authMode;state.ffmpeg=health.media.ffmpeg;state.ffprobe=health.media.ffprobe;state.textGatewayEnabled=health.textGateway.enabled;state.textGatewayConfigured=health.textGateway.configured;state.imageGatewayEnabled=health.imageGateway.enabled;state.imageGatewayConfigured=health.imageGateway.configured;
-  try{const me=await apiRequest<{user:RuntimeUser}>("/api/me");state.user=me.user;state.status="online";await refresh();window.dispatchEvent(new Event("ev:authenticated"));}
+  if(state.authMode==="supabase"&&!await refreshApiSession()){state.status="auth-required";}
+  else try{const me=await apiRequest<{user:RuntimeUser}>("/api/me");state.user=me.user;state.status="online";await refresh();window.dispatchEvent(new Event("ev:authenticated"));}
   catch(error){if(error instanceof ApiError&&error.status===401)state.status="auth-required";else throw error;}
  }catch(error){state.status="offline";state.message=error instanceof Error?error.message:"API unavailable";}
  paint();
@@ -162,12 +162,11 @@ export async function initRuntime(){
 async function authenticate(form:HTMLFormElement){
  const data=new FormData(form);
  try{
-  if(form.id==="ev-auth-token"){setApiAccessToken(String(data.get("token")||""));}
-  else{
-   const mode=String(data.get("mode")||"login");
-   const response=await apiRequest<{user:RuntimeUser}>("/api/auth/"+(mode==="register"?"register":"login"),{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({email:String(data.get("email")),password:String(data.get("password"))})});
-   state.user=response.user;
-  }
+  const mode=String(data.get("mode")||"login");
+  const response=await apiRequest<{user:RuntimeUser;accessToken?:string;confirmationRequired?:boolean}>("/api/auth/"+(mode==="register"?"register":"login"),{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({email:String(data.get("email")),password:String(data.get("password"))})});
+  if(response.confirmationRequired){clearApiAccessToken();state.status="auth-required";state.message="Account created. Check your email to confirm your address, then sign in.";paint();return;}
+  if(response.accessToken)setApiAccessToken(response.accessToken);
+  state.user=response.user;
   const me=await apiRequest<{user:RuntimeUser}>("/api/me");state.user=me.user;state.status="online";state.message="";await refresh();window.dispatchEvent(new Event("ev:authenticated"));paint();
  }catch(error){clearApiAccessToken();state.status="auth-required";state.message=error instanceof Error?error.message:"Authentication failed.";paint();}
 }
@@ -185,6 +184,8 @@ document.addEventListener("change",event=>{
 });
 document.addEventListener("click",event=>{
  const target=event.target as HTMLElement;
+ const recover=target.closest<HTMLElement>("[data-auth-recover]");
+ if(recover){const email=document.querySelector<HTMLInputElement>('#ev-auth input[name="email"]')?.value.trim()||"";if(!email){state.message="Enter your email address first, then choose password recovery.";paint();return;}recover.setAttribute("disabled","true");void apiRequest("/api/auth/recover",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({email})}).then(()=>{state.message="If that account exists, a password recovery email has been sent.";}).catch(error=>{state.message=error instanceof Error?error.message:"Password recovery could not be started.";}).finally(()=>{paint();});return;}
  const authMode=target.closest<HTMLElement>("[data-auth-mode]");if(authMode){const form=document.querySelector<HTMLFormElement>("#ev-auth");const mode=form?.elements.namedItem("mode") as HTMLInputElement|null;if(mode)mode.value=authMode.dataset.authMode||"login";document.querySelectorAll("[data-auth-mode]").forEach(button=>button.classList.toggle("active",button===authMode));return;}
  const action=target.closest<HTMLElement>("[data-ev-action]");
  if(action?.dataset.evAction==="refresh"){void refresh().then(paint).catch(error=>alert(error.message||error));return;}
