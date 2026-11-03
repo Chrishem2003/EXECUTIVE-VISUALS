@@ -545,3 +545,14 @@ The cloud media IO boundary now rejects HTTP redirects for signed object downloa
 - The final output name is now created in one atomic filesystem operation. Existing files and symlinks still fail with `AI_UPSCALE_OUTPUT_EXISTS`; a failed copy/stream can no longer leave a partially written destination because no copy into the final path occurs.
 - The private inference output is removed in the existing `finally` cleanup path after publication or failure.
 - Commit `048bfdd08faa763ec6e1099dcac135ad4708cde3` is committed on `feat/timeline-preview-transport`. Automated CI for this follow-up is pending; verify hard-link support on the worker filesystem before enabling the neural path there. No GPU execution, provider activation, database migration, merge or deployment was performed.
+
+
+## Continuation — atomic upscale publication regression coverage
+
+- Added `server/tests/ai-upscale-publication.test.mjs` to exercise the same-directory hard-link publication path with a deterministic test executable.
+- The test verifies that the final output is published, the temporary `.ev-upscale-*` sibling is removed (the final file has one link), and an existing destination cannot be linked over.
+- Added the regression file to `npm run verify:ai-upscale`, which is also part of the production build verification chain.
+- Test and script commits: `283c0ea0febf8bfda467b30699990f0d491d67b8`, `7086aa95cc43ff868df21445f517810a87297cd6`, and fixture correction `c5c190d65ec1c6796f7dbc72e33f72e078745be7`.
+- GitHub Actions has not yet returned a pull-request workflow run or status check for the latest head. Treat the new test as committed but **not CI-verified** until the checks execute. The connected workflow-run query currently returns no PR-triggered runs for this head.
+- Hard-link support must be confirmed on the actual cloud worker filesystem before enabling neural inference there. Unsupported filesystems fail closed; no fallback that writes a partially published destination is introduced.
+- No real model inference, production deployment, migration, paid provider activation or PR merge was performed.
