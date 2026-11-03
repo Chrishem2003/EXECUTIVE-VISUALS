@@ -134,9 +134,9 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     const rows=await request("jobs?select=id,job_type,status,progress,input,output,error,attempt_count,created_at,updated_at,completed_at&project_id=eq."+encodeURIComponent(projectId)+"&job_type=in.("+[...cloudMediaTypes].join(",")+")&order=created_at.desc&limit=100");
     return response(200,{jobs:(rows||[]).map(row=>({id:row.id,projectId:row.project_id,jobType:row.job_type,status:row.status,progress:Number(row.progress||0),input:row.input||{},output:row.output||null,error:row.error||null,attemptCount:Number(row.attempt_count||0),createdAt:row.created_at,updatedAt:row.updated_at,completedAt:row.completed_at||null}))});
    }
-   const cancelMediaMatch=path.match(/^\\/api\\/cloud\\/media-jobs\\/([0-9a-f-]+)\\/cancel$/i);
-   if(cancelMediaMatch&&method==="POST"){
-    const jobId=cancelMediaMatch[1],projectId=String(body.projectId||"");
+   const cancelPrefix="/api/cloud/media-jobs/",cancelSuffix="/cancel";
+   if(path.startsWith(cancelPrefix)&&path.endsWith(cancelSuffix)&&method==="POST"){
+    const jobId=path.slice(cancelPrefix.length,-cancelSuffix.length),projectId=String(body.projectId||"");
     if(!safeId(jobId)||!safeId(projectId))return response(400,{error:{code:"CLOUD_MEDIA_CANCEL_INPUT_INVALID",message:"Choose a valid media job and project."}});
     if(await allow({ownerId,projectId,action:"write"})!==true)return response(404,{error:{code:"PROJECT_NOT_FOUND",message:"Project not found or editor access required."}});
     const rows=await request("jobs?select=id,owner_id,project_id,job_type,status,progress,updated_at&id=eq."+encodeURIComponent(jobId)+"&project_id=eq."+encodeURIComponent(projectId));
