@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 
 export const AUTH_LOCK_THRESHOLD = 3;
 export const AUTH_BASE_LOCK_MS = 15 * 60 * 1000;
@@ -7,7 +7,15 @@ export const AUTH_MAX_LOCK_MS = 24 * 60 * 60 * 1000;
 export function normalizeLoginIdentifier(value) {
   return String(value || "").trim().toLowerCase().slice(0, 320);
 }
-export function loginIdentifierHash(value) {
+export function loginIdentifierHash(value, secret = process.env.AUTH_IDENTIFIER_HMAC_KEY) {
+  const normalized=normalizeLoginIdentifier(value);
+  if(secret) {
+    if(typeof secret!=="string"||Buffer.byteLength(secret)<32)throw new Error("AUTH_IDENTIFIER_HMAC_KEY must contain at least 32 bytes.");
+    return createHmac("sha256",secret).update(normalized).digest("hex");
+  }
+  return createHash("sha256").update(normalized).digest("hex");
+}
+function legacyLoginIdentifierHash(value) {
   return createHash("sha256").update(normalizeLoginIdentifier(value)).digest("hex");
 }
 export function ensureAuthSecuritySchema(db) {
@@ -24,7 +32,10 @@ export function ensureAuthSecuritySchema(db) {
   `);
 }
 export function getLoginLockState(db, identifier, now = Date.now()) {
-  const row = db.prepare("SELECT failed_attempts,lock_level,locked_until_ms FROM auth_login_security WHERE identifier_hash=?").get(loginIdentifierHash(identifier));
+  const key=loginIdentifierHash(identifier);
+  const legacyKey=process.env.AUTH_IDENTIFIER_HMAC_KEY?legacyLoginIdentifierHash(identifier):key;
+  const row = db.prepare("SELECT failed_attempts,lock_level,locked_until_ms FROM auth_login_security WHERE identifier_hash=?").get(key)
+    || (legacyKey!==key?db.prepare("SELECT failed_attempts,lock_level,locked_until_ms FROM auth_login_security WHERE identifier_hash=?").get(legacyKey):null);
   if (!row || !row.locked_until_ms || row.locked_until_ms <= now) return { locked:false,retryAfterMs:0,failedAttempts:row?.failed_attempts||0,lockLevel:row?.lock_level||0 };
   return { locked:true,retryAfterMs:row.locked_until_ms-now,failedAttempts:row.failed_attempts,lockLevel:row.lock_level };
 }
@@ -35,7 +46,12 @@ export function recordFailedLogin(db, identifier, now = Date.now()) {
   // can both observe the same counter and lose an increment.
   db.exec("BEGIN IMMEDIATE");
   try {
-    const current=db.prepare("SELECT failed_attempts,lock_level,locked_until_ms FROM auth_login_security WHERE identifier_hash=?").get(key);
+    let current=db.prepare("SELECT failed_attempts,lock_level,locked_until_ms FROM auth_login_security WHERE identifier_hash=?").get(key);
+    if(!current&&process.env.AUTH_IDENTIFIER_HMAC_KEY) {
+      const legacyKey=legacyLoginIdentifierHash(identifier);
+      current=db.prepare("SELECT failed_attempts,lock_level,locked_until_ms FROM auth_login_security WHERE identifier_hash=?").get(legacyKey);
+      if(current)db.prepare("UPDATE auth_login_security SET identifier_hash=? WHERE identifier_hash=?").run(key,legacyKey);
+    }
     if(current?.locked_until_ms&&current.locked_until_ms>now) {
       db.exec("COMMIT");
       return {locked:true,retryAfterMs:current.locked_until_ms-now,failedAttempts:current.failed_attempts,lockLevel:current.lock_level};
@@ -56,5 +72,7 @@ export function recordFailedLogin(db, identifier, now = Date.now()) {
   }
 }
 export function clearLoginFailures(db, identifier) {
-  db.prepare("DELETE FROM auth_login_security WHERE identifier_hash=?").run(loginIdentifierHash(identifier));
+  const key=loginIdentifierHash(identifier);
+  db.prepare("DELETE FROM auth_login_security WHERE identifier_hash=?").run(key);
+  if(process.env.AUTH_IDENTIFIER_HMAC_KEY)db.prepare("DELETE FROM auth_login_security WHERE identifier_hash=?").run(legacyLoginIdentifierHash(identifier));
 }
