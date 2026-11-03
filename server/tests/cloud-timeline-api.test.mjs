@@ -513,3 +513,17 @@ test("cloud asset routes reject missing verified identity",async()=>{
  assert.equal(result.status,401);
  assert.equal(f.calls.length,0);
 });
+
+test("cloud job event history is authorization-checked before event records are queried",async()=>{
+ const job={id:"623e4567-e89b-42d3-a456-426614174009",owner_id:owner,project_id:project,job_type:"timeline.render",status:"succeeded",input:{timelineId}};
+ const denied=setup({existing:[job],authorizeOverride:async()=>false});
+ const hidden=await denied.api.handle({method:"GET",path:"/api/cloud/jobs/"+job.id+"/events",ownerId:editor});
+ assert.equal(hidden.status,404);
+ assert.equal(denied.calls.some(call=>call[0]==="fetch"&&call[1].includes("/job_events")),false);
+
+ const allowed=setup({existing:[job],authorizeOverride:async({ownerId:actor,projectId:pid,action})=>actor===editor&&pid===project&&action==="read"});
+ const visible=await allowed.api.handle({method:"GET",path:"/api/cloud/jobs/"+job.id+"/events",ownerId:editor});
+ assert.equal(visible.status,200);
+ assert.deepEqual(visible.body.events,[]);
+ assert.ok(allowed.calls.some(call=>call[0]==="fetch"&&call[1].includes("/job_events")));
+});
