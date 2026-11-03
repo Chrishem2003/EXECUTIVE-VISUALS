@@ -1,6 +1,6 @@
 import { apiRequest, ApiError } from "../core/api";
 
-type SecurityEvent={id:number;identifierHash:string;eventType:string;failureCount:number;lockLevel:number;lockedUntil:string|null;createdAt:string};
+type SecurityEvent={id:number;identifierHash:string;eventType:string;failedAttempts:number;lockLevel:number;lockedUntilMs:number|null;createdAtMs:number};
 type EventPage={events:SecurityEvent[];nextBeforeId:number|null;retentionDays:number};
 let events:SecurityEvent[]=[];
 let cursor:number|null=null;
@@ -10,10 +10,10 @@ let filter="all";
 let initialized=false;
 const escapeHtml=(value:unknown)=>String(value??"").replace(/[&<>"']/g,char=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[char]||char));
 const label=(value:string)=>value.replaceAll("_"," ").replace(/\b\w/g,char=>char.toUpperCase());
-function date(value:string){const parsed=new Date(value);return Number.isNaN(parsed.getTime())?"Unknown":parsed.toLocaleString();}
+function date(value:number){const parsed=new Date(value);return Number.isNaN(parsed.getTime())?"Unknown":parsed.toLocaleString();}
 function eventMarkup(event:SecurityEvent){
  const locked=event.eventType==="account_locked"||event.eventType==="login_blocked_by_lockout";
- return '<article class="security-event"><div class="security-event-main"><span class="security-event-type">'+escapeHtml(label(event.eventType))+'</span><code>'+escapeHtml(event.identifierHash.slice(0,18))+'…</code><small>'+escapeHtml(date(event.createdAt))+'</small></div><div class="security-event-meta"><span>Failures <b>'+event.failureCount+'</b></span><span>Lock level <b>'+event.lockLevel+'</b></span><span>Lock expiry <b>'+escapeHtml(event.lockedUntil?date(event.lockedUntil):"—")+'</b></span></div><span class="security-event-status '+(locked?"is-warning":"")+'">'+(locked?"Lockout-related":"Recorded")+'</span></article>';
+ return '<article class="security-event"><div class="security-event-main"><span class="security-event-type">'+escapeHtml(label(event.eventType))+'</span><code>'+escapeHtml(event.identifierHash.slice(0,18))+'…</code><small>'+escapeHtml(date(event.createdAtMs))+'</small></div><div class="security-event-meta"><span>Failures <b>'+event.failedAttempts+'</b></span><span>Lock level <b>'+event.lockLevel+'</b></span><span>Lock expiry <b>'+escapeHtml(event.lockedUntilMs?date(event.lockedUntilMs):"—")+'</b></span></div><span class="security-event-status '+(locked?"is-warning":"")+'">'+(locked?"Lockout-related":"Recorded")+'</span></article>';
 }
 export function renderSecurityWorkspace(){
  return '<div class="page-head"><div><div class="eyebrow">TRUST & ACCESS · ADMIN ONLY</div><h1>Security operations</h1><p>Review privacy-preserving authentication events and account lockout activity. Raw emails, passwords, tokens and IP addresses are never displayed.</p></div><button class="secondary" id="security-refresh">↻ Refresh events</button></div><section class="panel security-panel"><div class="security-toolbar"><label>Event type<select id="security-event-filter"><option value="all">All events</option><option value="login_failed">Failed sign-in</option><option value="account_locked">Account locked</option><option value="login_blocked_by_lockout">Blocked by lockout</option><option value="login_succeeded">Successful sign-in</option></select></label><span id="security-event-count">Events are retained for up to 90 days.</span></div><p id="security-message" class="security-message" role="status">'+escapeHtml(message||"Loading security events…")+'</p><div id="security-events" class="security-events">'+(events.length?events.map(eventMarkup).join(""):'<div class="empty">No events loaded.</div>')+'</div><div class="security-footer"><small>Identifiers are pseudonymous digests. Access is enforced by the server-side AUTH_SECURITY_ADMIN_EMAILS allowlist.</small><button class="secondary" id="security-load-more" '+(!cursor||loading?"disabled":"")+'>Load older events</button></div></section>';
