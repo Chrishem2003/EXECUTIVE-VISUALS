@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { createHash, randomUUID } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
+import { nativeProcessSpawnOptions, signalNativeProcessTree } from "./process-tree.mjs";
 
 const MODELS = new Set(["realesrgan-x4plus", "realesrgan-x4plus-anime", "realesr-animevideov3", "realesrgan-x2plus"]);
 const FORMATS = new Set(["png", "jpg", "webp"]);
@@ -38,7 +39,7 @@ async function sha256File(path) {
 function run(binary, args, timeoutMs, signal) {
   return new Promise((resolvePromise, reject) => {
     if (signal?.aborted) return reject(fail("AI upscaling job was cancelled.", "JOB_CANCELLED"));
-    const child = spawn(binary, args, { shell: false, windowsHide: true, stdio: ["ignore", "ignore", "pipe"] });
+    const child = spawn(binary, args, nativeProcessSpawnOptions({ shell: false, windowsHide: true, stdio: ["ignore", "ignore", "pipe"] }));
     let stderr = "", settled = false, childClosed = false, pendingFailure = null;
     let timer = null, killTimer = null;
     const finish = (error) => {
@@ -52,13 +53,13 @@ function run(binary, args, timeoutMs, signal) {
     const stopChild = (error, firstSignal) => {
       if (settled || childClosed || pendingFailure) return;
       pendingFailure = error;
-      child.kill(firstSignal);
+      try { signalNativeProcessTree(child, firstSignal); } catch {}
       if (firstSignal === "SIGTERM") {
         killTimer = setTimeout(() => {
           // Keep the caller waiting until close: execute() removes its private
           // temporary output in finally, so rejecting early would race the
           // still-running native process.
-          if (!childClosed) child.kill("SIGKILL");
+          if (!childClosed) { try { signalNativeProcessTree(child, "SIGKILL"); } catch {} }
         }, 2000);
         killTimer.unref?.();
       }
