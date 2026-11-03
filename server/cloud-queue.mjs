@@ -1,5 +1,5 @@
 const SCHEMA = "executive_visuals";
-const RPC = new Set(["claim_next_job","renew_job_lease","recover_expired_jobs","recover_expired_jobs_by_type","finish_job","retry_job","report_job_progress","check_job_cancellation"]);
+const RPC = new Set(["claim_next_job","renew_job_lease","recover_expired_jobs","recover_expired_jobs_by_type","finish_job","retry_job","report_job_progress","check_job_cancellation","heartbeat_worker"]);
 
 function endpoint(value) {
   let url;
@@ -67,6 +67,16 @@ export function createCloudQueue({
   }
 
   return Object.freeze({
+    async heartbeatWorker({workerId,workerFamily,instanceId,status="running",metrics={}}={}) {
+      for(const [label,value,max] of [["worker ID",workerId,128],["worker family",workerFamily,64],["instance ID",instanceId,128]])if(typeof value!=="string"||!value.trim()||value.length>max)throw new Error("Worker heartbeat "+label+" is invalid.");
+      if(!["running","stopping","stopped","error"].includes(status))throw new Error("Worker heartbeat status is invalid.");
+      if(!metrics||typeof metrics!=="object"||Array.isArray(metrics))throw new Error("Worker heartbeat metrics must be an object.");
+      const encoded=JSON.stringify(metrics);
+      if(encoded.length>4000)throw new Error("Worker heartbeat metrics exceed the supported size.");
+      const result=await call("heartbeat_worker",{p_worker_id:workerId,p_worker_family:workerFamily,p_instance_id:instanceId,p_status:status,p_metrics:metrics});
+      if(!result||typeof result!=="object"||Array.isArray(result)||typeof result.accepted!=="boolean"||typeof result.lastSeenAt!=="string")throw new Error("Cloud worker heartbeat returned an invalid result.");
+      return {accepted:result.accepted,lastSeenAt:result.lastSeenAt};
+    },
     async claim(workerId, leaseSeconds = 90, jobTypes = null) {
       if (typeof workerId !== "string" || workerId.trim().length < 1 || workerId.length > 128) throw new Error("Worker ID must contain between 1 and 128 characters.");
       if (!Number.isInteger(leaseSeconds) || leaseSeconds < 15 || leaseSeconds > 900) throw new Error("Lease duration must be between 15 and 900 seconds.");
