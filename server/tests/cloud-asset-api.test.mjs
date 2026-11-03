@@ -47,6 +47,7 @@ test("private cloud asset API streams upload, lists metadata, issues short-lived
  const assetId=uploaded.asset.id;
  const list=await fetch(base+"/api/cloud/assets",{headers:auth});assert.equal(list.status,200);assert.equal((await list.json()).assets.length,1);
  const signed=await fetch(base+"/api/cloud/assets/"+assetId+"/url",{headers:auth});assert.equal(signed.status,200);assert.match((await signed.json()).url,/token=short-lived/);
+ const file=await fetch(base+"/api/cloud/assets/"+assetId+"/file",{headers:auth,redirect:"manual"});assert.equal(file.status,302);assert.match(file.headers.get("location")||"",/token=short-lived/);assert.equal(file.headers.get("cache-control"),"private, no-store");
  const deleted=await fetch(base+"/api/cloud/assets/"+assetId,{method:"DELETE",headers:auth});assert.equal(deleted.status,200);assert.equal((await deleted.json()).storageRemoved,true);
  assert.ok(providerCalls.some(call=>call.url.startsWith("/storage/v1/object/executive-visuals-media/")&&call.method==="POST"));
  assert.ok(providerCalls.some(call=>call.url.startsWith("/storage/v1/object/sign/")));
