@@ -1,4 +1,4 @@
-import { mkdtemp, writeFile, link, lstat, rm } from "node:fs/promises";
+import { mkdtemp, writeFile, link, lstat, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -47,6 +47,33 @@ export async function inspectUpscaleWorkerReadiness({
       selfTest = { attempted: true, passed: false, reason: error?.code || "ENGINE_SELF_TEST_FAILED" };
     }
   }
+  let provenance = { configured: false, verified: false, reason: "UPSCALE_ENGINE_MANIFEST is not configured." };
+  const manifestPath = String(env.UPSCALE_ENGINE_MANIFEST || "").trim();
+  if (manifestPath) {
+    provenance = { configured: true, verified: false, reason: null };
+    try {
+      const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+      const requiredText = ["source", "release", "license"];
+      const metadataValid = manifest && manifest.schemaVersion === 1 &&
+        manifest.engine === "realesrgan-ncnn-vulkan" &&
+        manifest.model === selectedModel &&
+        requiredText.every(key => typeof manifest[key] === "string" && manifest[key].trim().length > 0) &&
+        /^[a-f0-9]{64}$/.test(String(manifest.binarySha256 || "")) &&
+        /^[a-f0-9]{64}$/.test(String(manifest.modelFilesSha256 || ""));
+      const hashesMatch = metadataValid && engine.binarySha256 === manifest.binarySha256 &&
+        engine.modelFilesSha256 === manifest.modelFilesSha256;
+      provenance = {
+        configured: true,
+        verified: Boolean(hashesMatch),
+        source: metadataValid ? manifest.source : undefined,
+        release: metadataValid ? manifest.release : undefined,
+        license: metadataValid ? manifest.license : undefined,
+        reason: !metadataValid ? "ENGINE_MANIFEST_INVALID" : !hashesMatch ? "ENGINE_MANIFEST_HASH_MISMATCH" : null
+      };
+    } catch (error) {
+      provenance.reason = error?.code === "ENOENT" ? "ENGINE_MANIFEST_NOT_FOUND" : "ENGINE_MANIFEST_INVALID";
+    }
+  }
   const mediaTools = {
     ffmpeg: Boolean(checkExecutable("ffmpeg")),
     ffprobe: Boolean(checkExecutable("ffprobe"))
@@ -68,7 +95,7 @@ export async function inspectUpscaleWorkerReadiness({
   if (!engine.binaryReady) blockers.push("REALESRGAN_EXECUTABLE_MISSING");
   if (!engine.modelReady) blockers.push("REALESRGAN_MODEL_MISSING");
   if (!engine.executionEnabled) blockers.push("AI_UPSCALE_DISABLED");
-  if (!engine.executionVerified) blockers.push(selfTest.attempted ? "ENGINE_SELF_TEST_FAILED" : "ENGINE_SELF_TEST_REQUIRED");
+  if (!engine.executionVerified) blockers.push(selfTest.attempted ? "ENGINE_SELF_TEST_FAILED" : "ENGINE_SELF_TEST_REQUIRED");\n  if (!provenance.verified) blockers.push(provenance.configured ? "ENGINE_PROVENANCE_UNVERIFIED" : "ENGINE_PROVENANCE_MANIFEST_REQUIRED");
   if (!tempWritable) blockers.push("WORKER_TEMP_DIRECTORY_NOT_WRITABLE");
   if (!hardLinks.supported) blockers.push("ATOMIC_HARDLINK_PUBLICATION_UNAVAILABLE");
   return {
