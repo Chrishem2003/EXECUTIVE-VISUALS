@@ -389,10 +389,10 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     if(status&&!["queued","running","succeeded","failed","cancelled"].includes(status))return response(400,{error:{code:"JOB_STATUS_INVALID",message:"Job status filter is invalid."}});
     let queryPath="jobs?select=id,owner_id,project_id,job_type,status,progress,input,output,error,attempt_count,created_at,updated_at,completed_at&project_id=eq."+encodeURIComponent(projectId);
     if(jobType)queryPath+="&job_type=eq."+encodeURIComponent(jobType);
-    if(status)queryPath+="&status=eq."+encodeURIComponent(status);
+    if(status)queryPath+="&status=eq."+encodeURIComponent(status==="running"?"processing":status);
     queryPath+="&order=created_at.desc,id.desc&limit="+(limit+1)+"&offset="+offset;
     const rows=await request(queryPath),visible=(Array.isArray(rows)?rows:[]).slice(0,limit);
-    return response(200,{jobs:visible.map(row=>({id:row.id,projectId:row.project_id,type:row.job_type,status:row.status,progress:Number(row.progress||0),input:row.input||{},output:row.output||null,error:row.error||null,attemptCount:Number(row.attempt_count||0),createdAt:row.created_at,updatedAt:row.updated_at,completedAt:row.completed_at||null})),page:{limit,offset,hasMore:(Array.isArray(rows)?rows.length:0)>limit,nextOffset:(Array.isArray(rows)?rows.length:0)>limit?offset+limit:null}});
+    return response(200,{jobs:visible.map(row=>({id:row.id,projectId:row.project_id,type:row.job_type,status:row.status==="processing"?"running":row.status,progress:Number(row.progress||0),input:row.input||{},output:row.output||null,error:row.error||null,attemptCount:Number(row.attempt_count||0),createdAt:row.created_at,updatedAt:row.updated_at,completedAt:row.completed_at||null})),page:{limit,offset,hasMore:(Array.isArray(rows)?rows.length:0)>limit,nextOffset:(Array.isArray(rows)?rows.length:0)>limit?offset+limit:null}});
    }
    const jobMatch=path.match(/^\/api\/cloud\/jobs\/([0-9a-f-]+)(?:\/(events))?$/i);
    if(jobMatch&&safeId(jobMatch[1])&&method==="GET"){
