@@ -117,6 +117,34 @@ export function createCloudQueue({
       }
       return rows;
     },
+    async listJobDiagnostics({limit=100,queueStaleAfterSeconds=900,leaseStaleAfterSeconds=180}={}) {
+      if(!Number.isInteger(limit)||limit<1||limit>200)throw new Error("Job diagnostics limit must be between 1 and 200.");
+      if(!Number.isInteger(queueStaleAfterSeconds)||queueStaleAfterSeconds<60||queueStaleAfterSeconds>86400)throw new Error("Queued-job stale threshold must be between 60 and 86400 seconds.");
+      if(!Number.isInteger(leaseStaleAfterSeconds)||leaseStaleAfterSeconds<30||leaseStaleAfterSeconds>3600)throw new Error("Worker lease stale threshold must be between 30 and 3600 seconds.");
+      const rows=await call("list_job_diagnostics",{p_limit:limit,p_queue_stale_after_seconds:queueStaleAfterSeconds,p_lease_stale_after_seconds:leaseStaleAfterSeconds});
+      if(!Array.isArray(rows)||rows.length>limit)throw new Error("Cloud job diagnostics returned an invalid result.");
+      const fields=new Set(["id","job_type","status","progress","attempt_count","max_attempts","created_at","updated_at","available_at","started_at","lease_expires_at","lease_heartbeat_at","queue_age_seconds","lease_age_seconds","diagnostic_flags"]);
+      const flagNames=["queued_too_long","lease_expired","heartbeat_stale","attempts_exhausted"];
+      for(const row of rows){
+        if(!row||typeof row!=="object"||Array.isArray(row)
+          ||Object.keys(row).some(key=>!fields.has(key))
+          ||typeof row.id!=="string"||typeof row.job_type!=="string"||!row.job_type.trim()
+          ||!["queued","processing","failed"].includes(row.status)
+          ||typeof row.progress!=="number"||!Number.isFinite(row.progress)||row.progress<0||row.progress>100
+          ||!Number.isInteger(row.attempt_count)||row.attempt_count<0
+          ||!Number.isInteger(row.max_attempts)||row.max_attempts<1||row.attempt_count>row.max_attempts
+          ||!Number.isInteger(row.queue_age_seconds)||row.queue_age_seconds<0
+          ||(row.lease_age_seconds!==null&&(!Number.isInteger(row.lease_age_seconds)||row.lease_age_seconds<0))
+          ||![row.created_at,row.updated_at].every(value=>typeof value==="string"&&Number.isFinite(Date.parse(value)))
+          ||![row.available_at,row.started_at,row.lease_expires_at,row.lease_heartbeat_at].every(value=>value===null||(typeof value==="string"&&Number.isFinite(Date.parse(value))))
+          ||!row.diagnostic_flags||typeof row.diagnostic_flags!=="object"||Array.isArray(row.diagnostic_flags)
+          ||Object.keys(row.diagnostic_flags).length!==flagNames.length
+          ||flagNames.some(name=>typeof row.diagnostic_flags[name]!=="boolean")){
+          throw new Error("Cloud job diagnostics returned a malformed or unsafe record.");
+        }
+      }
+      return rows;
+    },
     async heartbeatWorker({workerId,workerFamily,instanceId,status="running",metrics={}}={}) {
       for(const [label,value,max] of [["worker ID",workerId,128],["worker family",workerFamily,64],["instance ID",instanceId,128]])if(typeof value!=="string"||!value.trim()||value.length>max)throw new Error("Worker heartbeat "+label+" is invalid.");
       if(!["running","stopping","stopped","error"].includes(status))throw new Error("Worker heartbeat status is invalid.");
