@@ -573,3 +573,36 @@ test("cloud AI upscale hashes materialized bytes instead of trusting unchanged a
   assert.equal(published,false);
  }finally{await rm(directory,{recursive:true,force:true});}
 });
+
+
+test("cloud media executor removes its workspace even when materialized cleanup throws synchronously", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "ev-cloud-cleanup-throw-test-"));
+  const source = join(directory, "source.mp4");
+  await writeFile(source, "fixture");
+  const previous = process.env.FFPROBE_PATH;
+  process.env.FFPROBE_PATH = await executable(directory, "ffprobe", String.raw`printf '%s' '{"streams":[{"codec_type":"video"}],"format":{"duration":"1.0"}}'`);
+  const execute = createCloudMediaExecutor({
+    tempRoot: directory,
+    mediaIO: {
+      async materialize() {
+        return {
+          path: source,
+          asset: { id: "asset-cleanup", name: "clip.mp4", mediaType: "video/mp4" },
+          cleanup() { throw new Error("cleanup adapter failed"); }
+        };
+      },
+      async publish() { throw new Error("Probe jobs must not publish."); }
+    }
+  });
+  try {
+    const result = await execute({
+      job: { id: "job-cleanup", owner_id: "owner", job_type: "media.probe", input: { sourceAssetId: "asset-cleanup" } },
+      onProgress() {}
+    });
+    assert.equal(result.sourceAssetId, "asset-cleanup");
+    assert.deepEqual((await import("node:fs/promises")).readdir(directory).then(names => names.filter(name => name.startsWith("ev-cloud-job-"))), Promise.resolve([]));
+  } finally {
+    if (previous === undefined) delete process.env.FFPROBE_PATH; else process.env.FFPROBE_PATH = previous;
+    await rm(directory, { recursive: true, force: true });
+  }
+});
