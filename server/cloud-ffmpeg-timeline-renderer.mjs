@@ -7,6 +7,7 @@ import { createRenderManifest } from "./render-manifest.mjs";
 import { getDeliveryProfile } from "./delivery-profiles.mjs";
 import { buildClipFadeFilters } from "./timeline-transitions.mjs";
 import { buildAudioDuckingGraph, normalizeDuckingSettings } from "./audio-ducking.mjs";
+import { selectAudibleAudioTracks } from "./timeline-audio-routing.mjs";
 
 const fail=(message,code)=>{throw Object.assign(new Error(message),{code});};
 const seconds=(time)=>{const value=Number(time?.value),rate=Number(time?.rate);if(!Number.isFinite(value)||!Number.isFinite(rate)||rate<=0)return 0;return Math.max(0,Math.min(86400,value/rate));};
@@ -23,7 +24,7 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
  if(!timeline||!Array.isArray(timeline.tracks)||!(assets instanceof Map)||typeof workDir!=="string")throw new Error("Cloud timeline renderer received invalid inputs.");
  if(signal?.aborted)fail("Timeline render was cancelled.","JOB_CANCELLED");
  const tracks=timeline.tracks.filter(track=>track.enabled!==false&&(track.clips||[]).some(enabled));
- const videos=tracks.filter(track=>track.kind==="video"),audios=tracks.filter(track=>track.kind==="audio"),overlays=tracks.filter(track=>track.kind==="overlay"),captions=tracks.filter(track=>track.kind==="caption");
+ const videos=tracks.filter(track=>track.kind==="video"),audios=selectAudibleAudioTracks(tracks),overlays=tracks.filter(track=>track.kind==="overlay"),captions=tracks.filter(track=>track.kind==="caption");
  const unsupported=tracks.filter(track=>!["video","audio","overlay","caption"].includes(track.kind));
  if(videos.length<1||unsupported.length)fail("The master renderer requires one primary video track and supported additional video, audio, overlay and caption tracks.","UNSUPPORTED_TIMELINE_FEATURE");
  const clips=ordered([videos[0]]),videoLayerClips=videos.slice(1).flatMap(track=>ordered([track])),audioClips=audios.flatMap(track=>ordered([track])),overlayClips=overlays.flatMap(track=>ordered([track])),captionClips=captions.flatMap(track=>ordered([track]));
