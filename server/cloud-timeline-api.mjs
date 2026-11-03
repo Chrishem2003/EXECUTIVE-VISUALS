@@ -160,11 +160,19 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     const rows=await request("jobs?select=id,owner_id,project_id,job_type,status,progress,updated_at&id=eq."+encodeURIComponent(jobId)+"&project_id=eq."+encodeURIComponent(projectId));
     const job=Array.isArray(rows)?rows.find(row=>row.id===jobId&&row.project_id===projectId&&cloudMediaTypes.has(row.job_type)):null;
     if(!job)return response(404,{error:{code:"CLOUD_MEDIA_JOB_NOT_FOUND",message:"Cloud media job was not found in this project."}});
-    if(job.status!=="queued")return response(409,{error:{code:"CLOUD_MEDIA_JOB_NOT_CANCELLABLE",message:"Only queued cloud media jobs can be cancelled. A claimed or completed job cannot be interrupted."},jobStatus:job.status});
-    const cancelled=await request("rpc/cancel_queued_media_job",{method:"POST",body:{p_job_id:jobId,p_project_id:projectId,p_cancelled_by:ownerId}});
-    if(cancelled?.status==="not_found")return response(404,{error:{code:"CLOUD_MEDIA_JOB_NOT_FOUND",message:"Cloud media job was not found in this project."}});
-    if(cancelled?.status!=="cancelled")return response(409,{error:{code:"CLOUD_MEDIA_JOB_NOT_CANCELLABLE",message:"The job was claimed by a worker before cancellation completed. Running jobs are not interrupted."},jobStatus:cancelled?.jobStatus||"processing"});
-    return response(200,{job:{id:jobId,projectId,jobType:job.job_type,status:"cancelled",progress:Number(job.progress||0),updatedAt:new Date().toISOString()}});
+    if(job.status==="queued"){
+     const cancelled=await request("rpc/cancel_queued_media_job",{method:"POST",body:{p_job_id:jobId,p_project_id:projectId,p_cancelled_by:ownerId}});
+     if(cancelled?.status==="not_found")return response(404,{error:{code:"CLOUD_MEDIA_JOB_NOT_FOUND",message:"Cloud media job was not found in this project."}});
+     if(cancelled?.status!=="cancelled")return response(409,{error:{code:"CLOUD_MEDIA_JOB_NOT_CANCELLABLE",message:"The job was claimed by a worker before cancellation completed."},jobStatus:cancelled?.jobStatus||"processing"});
+     return response(200,{job:{id:jobId,projectId,jobType:job.job_type,status:"cancelled",progress:Number(job.progress||0),updatedAt:new Date().toISOString()}});
+    }
+    if(job.status==="processing"){
+     const requested=await request("rpc/request_media_job_cancellation",{method:"POST",body:{p_job_id:jobId,p_project_id:projectId,p_requested_by:ownerId}});
+     if(requested?.status==="not_found")return response(404,{error:{code:"CLOUD_MEDIA_JOB_NOT_FOUND",message:"Cloud media job was not found in this project."}});
+     if(requested?.status==="requested"||requested?.status==="already_requested")return response(202,{job:{id:jobId,projectId,jobType:job.job_type,status:"cancellation_requested",progress:Number(job.progress||0)}});
+     return response(409,{error:{code:"CLOUD_MEDIA_JOB_NOT_CANCELLABLE",message:"The worker lease is no longer active or the job has already completed."},jobStatus:requested?.jobStatus||"processing"});
+    }
+    return response(409,{error:{code:"CLOUD_MEDIA_JOB_NOT_CANCELLABLE",message:"This cloud media job has already completed or cannot be cancelled."},jobStatus:job.status});
    }
    if(path==="/api/cloud/media-jobs"&&method==="POST"){
     const projectId=String(body.projectId||""),sourceAssetId=String(body.sourceAssetId||""),jobType=String(body.jobType||"");
