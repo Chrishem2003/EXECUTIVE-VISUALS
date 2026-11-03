@@ -37,33 +37,49 @@ async function sha256File(path) {
 
 function run(binary, args, timeoutMs, signal) {
   return new Promise((resolvePromise, reject) => {
+    if (signal?.aborted) return reject(fail("AI upscaling job was cancelled.", "JOB_CANCELLED"));
     const child = spawn(binary, args, { shell: false, windowsHide: true, stdio: ["ignore", "ignore", "pipe"] });
-    let stderr = "", settled = false;
+    let stderr = "", settled = false, childClosed = false, pendingFailure = null;
+    let timer = null, killTimer = null;
     const finish = (error) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      clearTimeout(killTimer);
       signal?.removeEventListener("abort", abort);
       if (error) reject(error); else resolvePromise({ stderr });
     };
-    const abort = () => {
-      child.kill("SIGTERM");
-      const killTimer = setTimeout(() => child.kill("SIGKILL"), 2000);
-      killTimer.unref?.();
-      finish(fail("AI upscaling job was cancelled.", "JOB_CANCELLED"));
+    const stopChild = (error, firstSignal) => {
+      if (settled || childClosed || pendingFailure) return;
+      pendingFailure = error;
+      child.kill(firstSignal);
+      if (firstSignal === "SIGTERM") {
+        killTimer = setTimeout(() => {
+          // Keep the caller waiting until close: execute() removes its private
+          // temporary output in finally, so rejecting early would race the
+          // still-running native process.
+          if (!childClosed) child.kill("SIGKILL");
+        }, 2000);
+        killTimer.unref?.();
+      }
     };
-    const timer = setTimeout(() => {
-      child.kill("SIGKILL");
-      finish(fail("AI upscaling process exceeded its time limit.", "AI_UPSCALE_TIMEOUT"));
-    }, timeoutMs);
+    const abort = () => stopChild(fail("AI upscaling job was cancelled.", "JOB_CANCELLED"), "SIGTERM");
+    timer = setTimeout(() => stopChild(
+      fail("AI upscaling process exceeded its time limit.", "AI_UPSCALE_TIMEOUT"),
+      "SIGKILL"
+    ), timeoutMs);
     timer.unref?.();
-    if (signal?.aborted) abort();
-    else signal?.addEventListener("abort", abort, { once: true });
+    signal?.addEventListener("abort", abort, { once: true });
     child.stderr.on("data", chunk => { stderr = (stderr + chunk.toString()).slice(-4000); });
     child.once("error", () => finish(fail("AI upscaling executable could not start.", "AI_UPSCALE_ENGINE_UNAVAILABLE")));
-    child.once("close", code => code === 0
-      ? finish()
-      : finish(fail("AI upscaling process failed: " + stderr.slice(-1200), "AI_UPSCALE_PROCESS_FAILED")));
+    child.once("close", code => {
+      childClosed = true;
+      if (pendingFailure) return finish(pendingFailure);
+      code === 0
+        ? finish()
+        : finish(fail("AI upscaling process failed: " + stderr.slice(-1200), "AI_UPSCALE_PROCESS_FAILED"));
+    });
+    if (signal?.aborted) abort();
   });
 }
 
