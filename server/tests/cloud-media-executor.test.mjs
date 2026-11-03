@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import { chmod, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createCloudMediaExecutor } from "../cloud-media-executor.mjs";
+import { createCloudMediaExecutor, runMediaProcess } from "../cloud-media-executor.mjs";
 import { buildUpscaleBenchmarkRecordFromAsset, validateUpscaleBenchmarkRecord } from "../upscale-benchmark.mjs";
 
 async function executable(directory, name, body) {
@@ -603,6 +603,39 @@ test("cloud media executor removes its workspace even when materialized cleanup 
     assert.deepEqual((await readdir(directory)).filter(name => name.startsWith("ev-cloud-job-")), []);
   } finally {
     if (previous === undefined) delete process.env.FFPROBE_PATH; else process.env.FFPROBE_PATH = previous;
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+
+test("media process escalates SIGTERM to SIGKILL when a cancelled child ignores termination", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "ev-media-process-kill-test-"));
+  const pidPath = join(directory, "child.pid");
+  const controller = new AbortController();
+  const script = [
+    'require("node:fs").writeFileSync(' + JSON.stringify(pidPath) + ', String(process.pid));',
+    'process.on("SIGTERM", () => {});',
+    'setInterval(() => {}, 1000);'
+  ].join("");
+  try {
+    const pending = runMediaProcess(process.execPath, ["-e", script], {
+      signal: controller.signal,
+      killGraceMs: 25,
+      timeoutMs: 5000
+    });
+    let pidText = "";
+    for (let attempt = 0; attempt < 100 && !pidText; attempt++) {
+      try { pidText = await readFile(pidPath, "utf8"); } catch {}
+      if (!pidText) await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    assert.match(pidText, /^\\d+$/, "child process should start before cancellation");
+    const pid = Number(pidText);
+    controller.abort();
+    await assert.rejects(pending, error => error.code === "JOB_CANCELLED");
+    await new Promise(resolve => setTimeout(resolve, 75));
+    assert.throws(() => process.kill(pid, 0), error => error.code === "ESRCH",
+      "child that ignores SIGTERM must be force-killed");
+  } finally {
     await rm(directory, { recursive: true, force: true });
   }
 });
