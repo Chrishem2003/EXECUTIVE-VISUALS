@@ -35,7 +35,11 @@ async function analyzeTemporalVideo({path,durationSeconds,jobId,activeProcesses,
   return {lumaSamples,sceneChanges:parseSceneCutTimes(metadataOutput),coverageSeconds,truncated:durationSeconds>coverageSeconds};
 }
 
-async function cleanupMaterializedAsset(asset){\n  try { await asset?.cleanup?.(); } catch {}\n}\n\nfunction referencedAssets(timeline){
+async function cleanupMaterializedAsset(asset){
+  try { await asset?.cleanup?.(); } catch {}
+}
+
+function referencedAssets(timeline){
   const ids=new Set();
   for(const track of timeline.tracks||[])if(track.enabled!==false)for(const clip of track.clips||[])if(clip.enabled!==false&&clip.assetId)ids.add(clip.assetId);
   return [...ids];
