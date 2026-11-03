@@ -171,3 +171,23 @@ export function toOpenTimelineIo(timeline:EditorialTimeline):OtioObject{
   });
   return {OTIO_SCHEMA:"Timeline.1",name:timeline.name,global_start_time:otioTime(rational(0,timeline.frameRate.numerator/timeline.frameRate.denominator)),tracks:{OTIO_SCHEMA:"Stack.1",name:"Tracks",children:tracks},markers:timeline.markers.map(marker=>({OTIO_SCHEMA:"Marker.2",name:marker.name,marked_range:otioRange({start:marker.start,duration:marker.duration||rational(0,marker.start.rate)}),color:marker.color||"GREEN",metadata:{executiveVisuals:{id:marker.id,note:marker.note||""}}})),metadata:{executiveVisuals:{id:timeline.id,projectId:timeline.projectId,revision:timeline.revision,frameRate:timeline.frameRate,width:timeline.width,height:timeline.height,pixelAspectRatio:timeline.pixelAspectRatio,timelineMetadata:timeline.metadata||{}}}};
 }
+
+/** Snap a requested frame to the nearest useful edit boundary within tolerance. */
+export function snapTimelineFrame(frame:number,timeline:EditorialTimeline,trackId:string,thresholdFrames=6,excludeClipId=""):{frame:number;snappedTo:number|null}{
+ if(!Number.isFinite(frame)||frame<0||!Number.isFinite(thresholdFrames)||thresholdFrames<0)throw new Error("Snap frame and threshold must be non-negative finite numbers.");
+ const rate=timeline.frameRate.numerator/timeline.frameRate.denominator,candidates:number[]=[];
+ for(const track of timeline.tracks){
+  for(const clip of track.clips){
+   if(clip.id===excludeClipId)continue;
+   const start=frames(clip.timelineStart,rate),end=start+frames(clip.duration,rate);
+   if(track.id!==trackId)candidates.push(start,end);
+   else candidates.push(end);
+  }
+ }
+ for(const marker of timeline.markers)candidates.push(frames(marker.start,rate));
+ const nearest=candidates.reduce<number|null>((best,candidate)=>{
+  if(Math.abs(candidate-frame)>thresholdFrames)return best;
+  return best===null||Math.abs(candidate-frame)<Math.abs(best-frame)?candidate:best;
+ },null);
+ return nearest===null?{frame:Math.round(frame),snappedTo:null}:{frame:nearest,snappedTo:nearest};
+}
