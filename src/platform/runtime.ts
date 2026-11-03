@@ -57,7 +57,7 @@ function renderAssets(){
 }
 function renderJobs(){
  if(!state.jobs.length)return '<div class="empty">No jobs submitted. Media processing jobs will appear here with progress, events and output assets.</div>';
- return '<div class="runtime-jobs">'+state.jobs.map(j=>'<article class="runtime-job"><div class="runtime-job-heading"><b>'+esc(j.jobType)+'</b><span class="job-status '+esc(j.status)+'">'+esc(j.status)+'</span><small class="muted">'+(j.backend==="cloud"?"CLOUD WORKER":"LOCAL WORKER")+'</small></div><code>'+esc(j.id)+'</code><div class="progress"><i style="width:'+Math.max(0,Math.min(100,j.progress))+'%"></i></div><small>'+Math.round(j.progress)+'% · '+fmt(j.createdAt)+'</small>'+(j.error?'<p class="job-error">'+esc(j.error.code||"ERROR")+' · '+esc(j.error.message||"")+'</p>':'')+(j.backend==="cloud"&&j.status==="queued"?'<button data-ev-cloud-cancel="'+esc(j.id)+'">Cancel queued job</button>':j.backend!=="cloud"&&(j.status==="queued"||j.status==="running")?'<button data-ev-cancel="'+esc(j.id)+'">Cancel</button>':'')+((j.output&&typeof j.output==="object"&&"outputAsset" in j.output&&j.output.outputAsset&&typeof j.output.outputAsset==="object"&&"id" in j.output.outputAsset)?'<a class="download-output" href="'+assetFileUrl((j.output.outputAsset as {id:string}).id)+'">Download output · '+esc((j.output.outputAsset as {name?:string}).name||"media file")+'</a>':'')+'</article>').join('')+'</div>';
+ return '<div class="runtime-jobs">'+state.jobs.map(j=>'<article class="runtime-job"><div class="runtime-job-heading"><b>'+esc(j.jobType)+'</b><span class="job-status '+esc(j.status)+'">'+esc(j.status)+'</span><small class="muted">'+(j.backend==="cloud"?"CLOUD WORKER":"LOCAL WORKER")+'</small></div><code>'+esc(j.id)+'</code><div class="progress"><i style="width:'+Math.max(0,Math.min(100,j.progress))+'%"></i></div><small>'+Math.round(j.progress)+'% · '+fmt(j.createdAt)+'</small>'+(j.error?'<p class="job-error">'+esc(j.error.code||"ERROR")+' · '+esc(j.error.message||"")+'</p>':'')+(j.backend==="cloud"&&j.status==="queued"?'<button data-ev-cloud-cancel="'+esc(j.id)+'">Cancel queued job</button>':j.backend!=="cloud"&&(j.status==="queued"||j.status==="running")?'<button data-ev-cancel="'+esc(j.id)+'">Cancel</button>':'')+(j.backend==="cloud"&&state.cloudJobsEnabled?'<button data-ev-cloud-events="'+esc(j.id)+'">View event history</button>':'')+((j.output&&typeof j.output==="object"&&"outputAsset" in j.output&&j.output.outputAsset&&typeof j.output.outputAsset==="object"&&"id" in j.output.outputAsset)?'<a class="download-output" href="'+assetFileUrl((j.output.outputAsset as {id:string}).id)+'">Download output · '+esc((j.output.outputAsset as {name?:string}).name||"media file")+'</a>':'')+'</article>').join('')+'</div>';
 }
 export function renderRuntimeWorkspace(){
  return '<div id="runtime-workspace" data-runtime-view="runtime"><div class="runtime-toolbar">'+statusMarkup()+'<button class="secondary" data-ev-action="refresh">↻ Refresh</button>'+(state.user?'<button class="secondary" data-ev-action="logout">Sign out · '+esc(state.user.email)+'</button>':'')+'</div>'+
@@ -236,6 +236,30 @@ document.addEventListener("click",event=>{
  if(reviewAsset){const form=document.querySelector<HTMLFormElement>("#ev-review-form");if(form){const field=form.elements.namedItem("assetId") as HTMLInputElement|null;if(field)field.value=reviewAsset.dataset.evReviewAsset||"";const asset=state.assets.find(item=>item.id===field?.value);const label=document.querySelector<HTMLElement>("#ev-review-target");if(label)label.textContent="Review attached to: "+(asset?.name||"selected media");form.scrollIntoView({behavior:"smooth",block:"center"});(form.elements.namedItem("body") as HTMLTextAreaElement|null)?.focus();}return;}
  const review=target.closest<HTMLElement>("[data-ev-review-status]");
  if(review){void apiRequest("/api/reviews/"+review.dataset.evReviewId,{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({status:review.dataset.evReviewStatus})}).then(async()=>{await refresh();paint();}).catch(error=>alert(error.message||error));return;}
+ const cloudEvents=target.closest<HTMLElement>("[data-ev-cloud-events]");
+ if(cloudEvents){
+  const article=cloudEvents.closest<HTMLElement>(".runtime-job");
+  const existing=article?.querySelector<HTMLElement>(".cloud-job-events");
+  if(existing){existing.hidden=!existing.hidden;cloudEvents.textContent=existing.hidden?"View event history":"Hide event history";return;}
+  if(!state.projectId){alert("Select the project containing this job to inspect its history.");return;}
+  cloudEvents.setAttribute("disabled","true");cloudEvents.textContent="Loading events…";
+  void apiRequest<{events:Array<{id:string;type:string;createdAt:string;data:Record<string,string|number|boolean>}>}>("/api/cloud/media-jobs/"+cloudEvents.dataset.evCloudEvents+"/events?projectId="+encodeURIComponent(state.projectId))
+   .then(result=>{
+    const panel=document.createElement("section");panel.className="cloud-job-events";
+    const heading=document.createElement("b");heading.textContent="Recorded job events";panel.append(heading);
+    if(!result.events.length){const empty=document.createElement("p");empty.textContent="No recorded events are available.";panel.append(empty);}
+    for(const item of result.events){
+     const line=document.createElement("p");const label=document.createElement("strong");label.textContent=item.type;line.append(label);
+     const time=document.createElement("small");time.textContent=" · "+fmt(item.createdAt);line.append(time);
+     const details=Object.entries(item.data||{}).filter(([key])=>key!=="sourceAssetId").map(([key,value])=>key+": "+String(value)).join(" · ");
+     if(details){const detail=document.createElement("span");detail.textContent=" — "+details;line.append(detail);}
+     panel.append(line);
+    }
+    article?.append(panel);cloudEvents.textContent="Hide event history";
+   }).catch(error=>{cloudEvents.textContent="View event history";alert(error.message||error);})
+   .finally(()=>cloudEvents.removeAttribute("disabled"));
+  return;
+ }
  const cloudCancel=target.closest<HTMLElement>("[data-ev-cloud-cancel]");
  if(cloudCancel){
   if(!state.projectId){alert("Select the project containing this job before cancelling it.");return;}
