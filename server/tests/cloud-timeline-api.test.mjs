@@ -548,7 +548,7 @@ test("cloud media cancellation requires project editor permission and hides jobs
 
 test("cloud media job event history is project-authorized, bounded and sanitized",async()=>{
  const job={id:reviewJobId,owner_id:owner,project_id:project,job_type:"media.upscale",status:"processing"};
- const f=setup({existing:[job],events:[
+ const f=setup({existing:[job],authorizeOverride:async({ownerId,projectId:pid,action})=>ownerId===editor&&pid===project&&action==="read",events:[
   {id:"event-1",event_type:"job.queued",created_at:"2026-11-03T10:00:00.000Z",event_data:{jobType:"media.upscale",secret:"never expose"}},
   {id:"event-2",event_type:"job.progress",created_at:"2026-11-03T10:01:00.000Z",event_data:{progress:45,workerId:"private-worker-id"}},
   {id:"event-3",event_type:"delivery.reviewed",created_at:"2026-11-03T10:02:00.000Z",event_data:{decision:"approved"}}
