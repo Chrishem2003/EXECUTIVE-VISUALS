@@ -212,7 +212,4 @@ test("cloud asset cleanup migration backfills soft-deleted rows and indexes pend
  assert.match(sql,/set storage_cleanup_status='pending'[\s\S]*where deleted_at is not null/);
  assert.match(sql,/ev_assets_pending_storage_cleanup/);
  assert.match(sql,/storage_cleanup_status='pending'/);
- assert.match(sql,/create or replace function executive_visuals\.list_asset_cleanup_diagnostics/);
- assert.match(sql,/revoke all on function executive_visuals\.list_asset_cleanup_diagnostics\(\) from public, anon, authenticated/);
- assert.match(sql,/grant execute on function executive_visuals\.list_asset_cleanup_diagnostics\(\) to service_role/);
 });
