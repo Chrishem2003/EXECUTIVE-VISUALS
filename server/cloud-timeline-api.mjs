@@ -144,7 +144,7 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     if(jobType==="media.ai-upscale"&&(body.rightsConfirmed!==true||!["image/png","image/jpeg","image/webp"].includes(source.mediaType)))return response(422,{error:{code:"AI_UPSCALE_SOURCE_INVALID",message:"AI upscaling requires a rights-confirmed PNG, JPEG or WebP source image."}});
     const options=body.options&&typeof body.options==="object"&&!Array.isArray(body.options)?body.options:{};
     if(Buffer.byteLength(JSON.stringify(options))>12000)return response(413,{error:{code:"MEDIA_OPTIONS_TOO_LARGE",message:"Media options exceed the supported size."}});
-    const input={sourceAssetId,sourceSha256:source.sha256,...options};
+    const input={...options,sourceAssetId,sourceSha256:source.sha256};
     if(jobType==="media.ai-upscale")input.rightsConfirmed=true;
     const key=String(idempotencyKey||"").trim().slice(0,180);
     if(key.length<8)return response(400,{error:{code:"IDEMPOTENCY_KEY_REQUIRED",message:"An idempotency key of at least eight characters is required."}});
