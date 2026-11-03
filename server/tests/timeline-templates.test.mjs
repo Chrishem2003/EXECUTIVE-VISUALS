@@ -23,3 +23,13 @@ test("rejects unknown template IDs",()=>{
  const base=createTimeline("project","sequence");
  assert.throws(()=>applyTimelineTemplate(base,"unknown"),/Unknown timeline template/);
 });
+
+test("all starter templates remain compatible with the single-primary-video cloud renderer",()=>{
+ const base=createTimeline("project","sequence");
+ for(const template of listTimelineTemplates()){
+  const result=applyTimelineTemplate(base,template.id);
+  assert.equal(result.tracks.filter(track=>track.kind==="video").length,1,template.id+" must have one primary video track");
+  assert.ok(result.tracks.some(track=>track.kind==="audio"),template.id+" must include audio");
+  assert.ok(result.tracks.some(track=>track.kind==="caption"),template.id+" must include captions");
+ }
+});
