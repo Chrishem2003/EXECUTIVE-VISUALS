@@ -463,7 +463,18 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
      if(proxy){previewAsset=proxy;usingProxy=true;}
     }
     const signed=await service.assets.createSignedUrl({ownerId,assetId:previewAsset.id,expiresIn:300});
-    return response(200,{preview:{timelineId,timelineRevision:timeline.revision,sourceAssetId:assetId,asset:signed.asset,url:signed.url,usingProxy,expiresIn:300,cacheControl:"no-store"}});
+    let waveformUrl=null;
+    if(String(sourceAsset.mediaType||"").startsWith("audio/")&&typeof service.assets.list==="function"){
+     const candidates=await service.assets.list({ownerId,projectId:timeline.projectId||null,limit:100,offset:0});
+     const sourceHash=String(sourceAsset.sha256||"");
+     const waveform=(Array.isArray(candidates)?candidates:[]).find(candidate=>
+      candidate?.derivativeOf===assetId&&candidate?.projectId===(timeline.projectId||null)&&candidate?.mediaType==="image/png"&&
+      candidate?.metadata?.operation==="media.waveform"&&/^[a-f0-9]{64}$/i.test(sourceHash)&&candidate?.metadata?.sourceSha256===sourceHash&&
+      /^[a-f0-9]{64}$/i.test(String(candidate?.sha256||""))
+     );
+     if(waveform){const waveformTicket=await service.assets.createSignedUrl({ownerId,assetId:waveform.id,expiresIn:300});waveformUrl=waveformTicket.url;}
+    }
+    return response(200,{preview:{timelineId,timelineRevision:timeline.revision,sourceAssetId:assetId,asset:signed.asset,url:signed.url,usingProxy,waveformUrl,expiresIn:300,cacheControl:"no-store"}});
    }
    const match=path.match(/^\/api\/cloud\/timelines\/([0-9a-f-]+)(?:\/(render))?$/i);
    if(!match||!safeId(match[1]))return null;
