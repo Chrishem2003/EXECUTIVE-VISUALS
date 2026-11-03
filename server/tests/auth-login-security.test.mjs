@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import {
   ensureAuthSecuritySchema, getLoginLockState, recordFailedLogin, clearLoginFailures,
-  AUTH_BASE_LOCK_MS, AUTH_MAX_LOCK_MS, loginIdentifierHash
+  AUTH_BASE_LOCK_MS, AUTH_MAX_LOCK_MS, loginIdentifierHash, recordLoginLockoutEvent
 } from "../auth-login-security.mjs";
 
 function setup() {
