@@ -171,7 +171,7 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
       : ["media.denoise", "media.color", "media.resize", "media.interpolate", "media.upscale", "media.proxy"].includes(job.job_type) ? "mp4"
       : String(input.container || "mp4").toLowerCase();
     const outputPath = join(workDir, randomUUID() + "." + outputExtension);
-      if (job.job_type === "media.ai-upscale" && input.sourceSha256) {
+      if (["media.ai-upscale", "media.waveform"].includes(job.job_type) && input.sourceSha256) {
         if (input.sourceSha256 !== materialized.asset.sha256) {
           throw Object.assign(new Error("The stored source fingerprint changed after the AI-upscale job was queued."), { code: "AI_UPSCALE_SOURCE_CHANGED" });
         }
