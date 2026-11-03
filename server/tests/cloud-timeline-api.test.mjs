@@ -522,13 +522,17 @@ test("cloud media cancellation atomically cancels a queued job for an authorized
  assert.deepEqual(JSON.parse(rpc[2].body),{p_job_id:job.id,p_project_id:project,p_cancelled_by:editor});
 });
 
-test("cloud media cancellation refuses running or completed jobs without touching the worker lease",async()=>{
+test("cloud media cancellation requests cooperative stop for running jobs and refuses completed jobs",async()=>{
  const job={id:"823e4567-e89b-42d3-a456-426614174000",owner_id:owner,project_id:project,job_type:"media.thumbnail",status:"processing",progress:35};
  const f=setup({existing:[job]});
  const result=await f.api.handle({method:"POST",path:"/api/cloud/media-jobs/"+job.id+"/cancel",ownerId:owner,body:{projectId:project}});
- assert.equal(result.status,409);
- assert.equal(result.body.error.code,"CLOUD_MEDIA_JOB_NOT_CANCELLABLE");
+ assert.equal(result.status,202);
+ assert.equal(result.body.job.status,"cancellation_requested");
+ assert.equal(f.calls.some(call=>call[0]==="fetch"&&call[1].includes("/rpc/request_media_job_cancellation")),true);
  assert.equal(f.calls.some(call=>call[0]==="fetch"&&call[1].includes("/rpc/cancel_queued_media_job")),false);
+ const completed=setup({existing:[{...job,status:"succeeded"}]});
+ const refused=await completed.api.handle({method:"POST",path:"/api/cloud/media-jobs/"+job.id+"/cancel",ownerId:owner,body:{projectId:project}});
+ assert.equal(refused.status,409);
 });
 
 test("cloud media cancellation handles the claim-versus-cancel race without cancelling a leased job",async()=>{
