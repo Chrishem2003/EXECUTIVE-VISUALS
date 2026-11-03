@@ -32,6 +32,15 @@ test("password recovery does not expose provider response details",async()=>{
  let body;const auth=createSupabaseAuth({...config,fetchImpl:async(url,options)=>{body=JSON.parse(options.body);return response(200,{message:"sent"});}});
  assert.deepEqual(await auth.recover({email:"owner@example.com"}),{accepted:true});assert.deepEqual(body,{email:"owner@example.com"});
 });
+test("password recovery completion updates only with a verified bearer session",async()=>{
+ let call;const auth=createSupabaseAuth({...config,fetchImpl:async(url,options)=>{call={url,options};return response(200,{id:"user-1",email:"owner@example.com"});}});
+ const result=await auth.updatePassword("verified-access-token-123456789","a-new-long-password");
+ assert.deepEqual(result,{user:{id:"user-1",email:"owner@example.com"}});
+ assert.equal(call.url,"https://project.supabase.co/auth/v1/user");
+ assert.equal(call.options.method,"PUT");assert.equal(call.options.headers.authorization,"Bearer verified-access-token-123456789");
+ assert.deepEqual(JSON.parse(call.options.body),{password:"a-new-long-password"});
+ await assert.rejects(auth.updatePassword("short","short"),/valid recovery session/);
+});
 test("invalid URLs, credentials, passwords and refresh tokens fail closed",async()=>{
  assert.throws(()=>createSupabaseAuth({...config,url:"http://remote.example.com"}),/HTTPS/);
  assert.throws(()=>createSupabaseAuth({...config,redirectUrl:"javascript:alert(1)"}),/HTTPS/);
