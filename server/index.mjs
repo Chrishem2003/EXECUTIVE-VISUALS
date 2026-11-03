@@ -615,12 +615,13 @@ export function createAppServer() {
         if(path==="/api/cloud/assets"&&req.method==="POST"){
           try{const asset=await storeCloudUpload(req,user,req.headers["x-project-id"]||null);send(res,201,{asset},cors);return;}catch(error){cloudAssetError(res,error,cors);return;}
         }
-        const cloudAssetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)(?:\/(url|file|retry-cleanup))?$/i);
+        const cloudAssetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)(?:\/(url|file|lineage|retry-cleanup))?$/i);
         if(cloudAssetMatch){
           const assetId=cloudAssetMatch[1],action=cloudAssetMatch[2]||"";
           try{
             if(!action&&req.method==="GET"){const asset=await cloudAssetService.assets.get({ownerId:user.id,assetId});send(res,200,{asset},cors);return;}
             if(action==="url"&&req.method==="GET"){const signed=await cloudAssetService.assets.createSignedUrl({ownerId:user.id,assetId,expiresIn:300});send(res,200,signed,cors);return;}
+            if(action==="lineage"&&req.method==="GET"){const lineage=await cloudAssetService.assets.getLineage({ownerId:user.id,assetId});send(res,200,{lineage},cors);return;}
             if(action==="file"&&req.method==="GET"){const signed=await cloudAssetService.assets.createSignedUrl({ownerId:user.id,assetId,expiresIn:300});res.writeHead(302,{location:signed.url,"cache-control":"private, no-store","referrer-policy":"no-referrer"});res.end();return;}
             if(!action&&req.method==="DELETE"){const result=await cloudAssetService.assets.softDelete({ownerId:user.id,assetId});send(res,result.cleanupPending?202:200,result,cors);return;}
             if(action==="retry-cleanup"&&req.method==="POST"){const result=await cloudAssetService.assets.retryCleanup({ownerId:user.id,assetId});send(res,200,result,cors);return;}
