@@ -29,11 +29,11 @@ function parseInput(value) {
   }
 }
 
-function runProcess(binary, args, { signal, timeoutMs = 30 * 60 * 1000, onProgress = () => {} } = {}) {
+export function runMediaProcess(binary, args, { signal, timeoutMs = 30 * 60 * 1000, killGraceMs = 3000, onProgress = () => {} } = {}) {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) return reject(Object.assign(new Error("Media job was cancelled."), { code: "JOB_CANCELLED" }));
     const child = spawn(binary, args, { stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
-    let stdout = "", stderr = "", settled = false;
+    let stdout = "", stderr = "", settled = false, childClosed = false;
     const finish = (error, result) => {
       if (settled) return;
       settled = true;
@@ -42,13 +42,16 @@ function runProcess(binary, args, { signal, timeoutMs = 30 * 60 * 1000, onProgre
       if (error) reject(error); else resolve(result);
     };
     const abort = () => {
-      if (!child.killed) child.kill("SIGTERM");
-      const killTimer = setTimeout(() => { if (!child.killed) child.kill("SIGKILL"); }, 3000);
+      if (!childClosed) child.kill("SIGTERM");
+      const killTimer = setTimeout(() => {
+        // ChildProcess.killed means a signal was sent, not that it exited.
+        if (!childClosed) child.kill("SIGKILL");
+      }, killGraceMs);
       killTimer.unref?.();
       finish(Object.assign(new Error("Media job was cancelled."), { code: "JOB_CANCELLED" }));
     };
     const timer = setTimeout(() => {
-      if (!child.killed) child.kill("SIGKILL");
+      if (!childClosed) child.kill("SIGKILL");
       finish(Object.assign(new Error("Media operation timed out."), { code: "MEDIA_TIMEOUT" }));
     }, timeoutMs);
     timer.unref?.();
@@ -56,9 +59,12 @@ function runProcess(binary, args, { signal, timeoutMs = 30 * 60 * 1000, onProgre
     child.stdout.on("data", chunk => { stdout = (stdout + chunk.toString()).slice(-16000); });
     child.stderr.on("data", chunk => { stderr = (stderr + chunk.toString()).slice(-16000); });
     child.on("error", error => finish(Object.assign(new Error("Media engine could not start."), { code: "MEDIA_ENGINE_MISSING", cause: error })));
-    child.on("close", code => code === 0
-      ? finish(null, { stdout, stderr })
-      : finish(Object.assign(new Error((stderr || "Media operation failed.").slice(-3000)), { code: "MEDIA_PROCESS_FAILED" })));
+    child.on("close", code => {
+      childClosed = true;
+      code === 0
+        ? finish(null, { stdout, stderr })
+        : finish(Object.assign(new Error((stderr || "Media operation failed.").slice(-3000)), { code: "MEDIA_PROCESS_FAILED" }));
+    });
     onProgress(10);
   });
 }
@@ -163,7 +169,7 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
         if (!["png", "jpg", "webp"].includes(format)) throw Object.assign(new Error("AI upscale output format is unsupported."), { code: "INVALID_MEDIA_OPTIONS" });
         if (!executableAvailable("ffprobe")) throw Object.assign(new Error("FFprobe is required to verify AI-upscaled image dimensions."), { code: "MEDIA_ENGINE_MISSING" });
         if (!executableAvailable("ffmpeg")) throw Object.assign(new Error("FFmpeg is required to fully decode and validate AI-upscaled images."), { code: "MEDIA_ENGINE_MISSING" });
-        const sourceProbe = await runProcess(ffprobe, ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height", "-of", "json", sourcePath], { signal, timeoutMs, onProgress });
+        const sourceProbe = await runMediaProcess(ffprobe, ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height", "-of", "json", sourcePath], { signal, timeoutMs, onProgress });
         let sourceImage;
         try { sourceImage = JSON.parse(sourceProbe.stdout || "{}").streams?.[0]; } catch {}
         const sourceWidth = Number(sourceImage?.width), sourceHeight = Number(sourceImage?.height);
@@ -176,12 +182,12 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
           scale: input.scale ?? 4, tile: input.tile ?? 0, format, inputFormat, signal
         });
         if (signal?.aborted) throw Object.assign(new Error("Media job was cancelled."), { code: "JOB_CANCELLED" });
-        const outputProbe = await runProcess(ffprobe, ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height", "-of", "json", outputPath], { signal, timeoutMs, onProgress });
+        const outputProbe = await runMediaProcess(ffprobe, ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height", "-of", "json", outputPath], { signal, timeoutMs, onProgress });
         let outputImage;
         try { outputImage = JSON.parse(outputProbe.stdout || "{}").streams?.[0]; } catch {}
         const expectedWidth = sourceWidth * result.scale, expectedHeight = sourceHeight * result.scale;
         if (Number(outputImage?.width) !== expectedWidth || Number(outputImage?.height) !== expectedHeight) throw Object.assign(new Error("AI-upscaled image dimensions do not match the requested scale; derivative was not published."), { code: "MEDIA_OUTPUT_VALIDATION_FAILED" });
-        await runProcess(ffmpeg, ["-v", "error", "-i", outputPath, "-f", "null", "-"], { signal, timeoutMs: Math.min(timeoutMs, 120000), onProgress });
+        await runMediaProcess(ffmpeg, ["-v", "error", "-i", outputPath, "-f", "null", "-"], { signal, timeoutMs: Math.min(timeoutMs, 120000), onProgress });
         if (signal?.aborted) throw Object.assign(new Error("Media job was cancelled."), { code: "JOB_CANCELLED" });
         const info = await stat(outputPath);
         const digest = await checksum(outputPath);
@@ -223,7 +229,7 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
       }
       if (job.job_type === "media.probe") {
         if (!executableAvailable("ffprobe")) throw Object.assign(new Error("FFprobe is not installed on this worker."), { code: "MEDIA_ENGINE_MISSING" });
-        const result = await runProcess(ffprobe, ["-v", "error", "-show_format", "-show_streams", "-of", "json", sourcePath], { signal, timeoutMs, onProgress });
+        const result = await runMediaProcess(ffprobe, ["-v", "error", "-show_format", "-show_streams", "-of", "json", sourcePath], { signal, timeoutMs, onProgress });
         let metadata;
         try { metadata = JSON.parse(result.stdout || "{}"); } catch { throw Object.assign(new Error("FFprobe returned invalid metadata."), { code: "MEDIA_PROBE_INVALID" }); }
         return { sourceAssetId: sourceId, metadata };
@@ -235,7 +241,7 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
       let expectedHeight = null;
       if (job.job_type === "media.upscale") {
         if (!executableAvailable("ffprobe")) throw Object.assign(new Error("FFprobe is required to verify upscaled output."), { code: "MEDIA_ENGINE_MISSING" });
-        const sourceProbe = await runProcess(ffprobe, ["-v", "error", "-show_entries", "stream=codec_type:format=duration", "-of", "json", sourcePath], { signal, timeoutMs, onProgress });
+        const sourceProbe = await runMediaProcess(ffprobe, ["-v", "error", "-show_entries", "stream=codec_type:format=duration", "-of", "json", sourcePath], { signal, timeoutMs, onProgress });
         let sourceMetadata;
         try { sourceMetadata = JSON.parse(sourceProbe.stdout || "{}"); }
         catch { throw Object.assign(new Error("FFprobe returned invalid source metadata."), { code: "MEDIA_PROBE_INVALID" }); }
@@ -248,12 +254,12 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
       }
       const plan = outputPlan(job.job_type, input, materialized.asset, sourcePath, outputPath);
       if (!executableAvailable("ffprobe")) throw Object.assign(new Error("FFprobe is required to validate cloud media derivatives before publication."), { code: "MEDIA_ENGINE_MISSING" });
-      await runProcess(ffmpeg, plan.args, { signal, timeoutMs, onProgress });
+      await runMediaProcess(ffmpeg, plan.args, { signal, timeoutMs, onProgress });
       if (signal?.aborted) throw Object.assign(new Error("Media job was cancelled."), { code: "JOB_CANCELLED" });
       const info = await stat(outputPath);
       if (!info.isFile() || info.size < 1) throw Object.assign(new Error("Media engine produced an empty output."), { code: "MEDIA_OUTPUT_EMPTY" });
       let outputProbe = null;
-      const structuralProbe = await runProcess(ffprobe, ["-v","error","-show_format","-show_streams","-of","json",outputPath], { signal, timeoutMs, onProgress });
+      const structuralProbe = await runMediaProcess(ffprobe, ["-v","error","-show_format","-show_streams","-of","json",outputPath], { signal, timeoutMs, onProgress });
       let structuralMetadata;
       try { structuralMetadata = JSON.parse(structuralProbe.stdout || "{}"); }
       catch { throw Object.assign(new Error("FFprobe returned malformed derivative metadata; derivative was not published."), { code: "MEDIA_PROBE_INVALID" }); }
@@ -272,7 +278,7 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
       outputProbe = structuralMetadata;
       if (job.job_type === "media.upscale") {
         if (!executableAvailable("ffprobe")) throw Object.assign(new Error("FFprobe is required to verify upscaled output."), { code: "MEDIA_ENGINE_MISSING" });
-        const probe = await runProcess(ffprobe, ["-v", "error", "-show_entries", "stream=codec_type,width,height,codec_name,pix_fmt:format=duration", "-of", "json", outputPath], { signal, timeoutMs, onProgress });
+        const probe = await runMediaProcess(ffprobe, ["-v", "error", "-show_entries", "stream=codec_type,width,height,codec_name,pix_fmt:format=duration", "-of", "json", outputPath], { signal, timeoutMs, onProgress });
         try { outputProbe = JSON.parse(probe.stdout || "{}"); }
         catch { throw Object.assign(new Error("FFprobe returned invalid upscaling metadata."), { code: "MEDIA_PROBE_INVALID" }); }
         const video = (outputProbe.streams || []).find(stream => stream.codec_type === "video");
