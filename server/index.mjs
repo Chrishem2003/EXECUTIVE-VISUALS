@@ -62,7 +62,9 @@ const activeProcesses = new Map();
 const WORKER_ID = randomUUID();
 const rateBuckets = new Map();
 const AUTH_RATE_LIMIT = Math.max(1, Math.min(1000, Number(process.env.AUTH_RATE_LIMIT) || 20));
-function rateAllowed(key,limit,windowMs){const time=Date.now();const old=rateBuckets.get(key);if(!old||time-old.start>=windowMs){rateBuckets.set(key,{start:time,count:1});return true;}old.count++;return old.count<=limit;}
+let rateSweepCounter=0;
+function rateAllowed(key,limit,windowMs){const time=Date.now();const old=rateBuckets.get(key);if(!old||time-old.start>=windowMs){rateBuckets.set(key,{start:time,count:1});}else{old.count++;if(old.count>limit)return false;}if(++rateSweepCounter%256===0||rateBuckets.size>20000){for(const [bucket,value] of rateBuckets){if(time-value.start>=Math.max(windowMs,60*60*1000))rateBuckets.delete(bucket);}while(rateBuckets.size>20000)rateBuckets.delete(rateBuckets.keys().next().value);}return true;}
+function authEmailAllowed(purpose,email){const normalized=String(email||"").trim().toLowerCase();if(!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(normalized))return true;const policy=purpose==="register"?{limit:5,window:60*60*1000}:purpose==="recover"?{limit:3,window:60*60*1000}:{limit:8,window:15*60*1000};return rateAllowed("auth-email:"+purpose+":"+hash(normalized),policy.limit,policy.window);}
 await mkdir(join(MEDIA_ROOT,"uploads"), { recursive:true });
 await mkdir(join(MEDIA_ROOT,"derived"), { recursive:true });
 
@@ -288,6 +290,7 @@ export function createAppServer() {
       }
       if(path==="/api/auth/register"&&req.method==="POST"){
         const body=await readJson(req);const email=String(body.email||"").trim().toLowerCase();const password=String(body.password||"");
+        if(!authEmailAllowed("register",email)){fail(res,429,"AUTH_EMAIL_RATE_LIMITED","Too many account creation attempts for this email. Try again later.");return;}
         if(AUTH_MODE==="supabase"){
           if(!supabaseAuth){fail(res,503,"AUTH_NOT_CONFIGURED","The external identity provider is not configured.");return;}
           try{const result=await supabaseAuth.signUp({email,password});if(result.confirmationRequired){send(res,202,{confirmationRequired:true,user:result.user,authMode:"supabase"},cors);return;}setSupabaseRefreshCookie(res,result.refreshToken);send(res,201,{user:result.user,accessToken:result.accessToken,expiresIn:result.expiresIn,authMode:"supabase"},cors);return;}
@@ -304,7 +307,7 @@ export function createAppServer() {
       if(path==="/api/auth/login"&&req.method==="POST"){
         if(AUTH_MODE==="supabase"){
           if(!supabaseAuth){fail(res,503,"AUTH_NOT_CONFIGURED","The external identity provider is not configured.");return;}
-          const body=await readJson(req);try{const result=await supabaseAuth.signInWithPassword({email:body.email,password:String(body.password||"")});setSupabaseRefreshCookie(res,result.refreshToken);send(res,200,{user:result.user,accessToken:result.accessToken,expiresIn:result.expiresIn,authMode:"supabase"},cors);return;}
+          const body=await readJson(req);if(!authEmailAllowed("login",body.email)){fail(res,429,"AUTH_EMAIL_RATE_LIMITED","Too many sign-in attempts for this email. Try again later.");return;}try{const result=await supabaseAuth.signInWithPassword({email:body.email,password:String(body.password||"")});setSupabaseRefreshCookie(res,result.refreshToken);send(res,200,{user:result.user,accessToken:result.accessToken,expiresIn:result.expiresIn,authMode:"supabase"},cors);return;}
           catch(error){fail(res,error.status||502,error.code||"LOGIN_FAILED",String(error.message||"Sign-in failed.").slice(0,300));return;}
         }
         const body=await readJson(req);const email=String(body.email||"").trim().toLowerCase();const password=String(body.password||"");
@@ -324,7 +327,7 @@ export function createAppServer() {
       }
       if(path==="/api/auth/recover"&&req.method==="POST"){
         if(AUTH_MODE!=="supabase"||!supabaseAuth){fail(res,404,"PASSWORD_RECOVERY_UNAVAILABLE","Password recovery is unavailable.");return;}
-        const body=await readJson(req);try{await supabaseAuth.recover({email:body.email});send(res,202,{accepted:true},cors);return;}
+        const body=await readJson(req);if(!authEmailAllowed("recover",body.email)){fail(res,429,"AUTH_EMAIL_RATE_LIMITED","Too many recovery requests for this email. Try again later.");return;}try{await supabaseAuth.recover({email:body.email});send(res,202,{accepted:true},cors);return;}
         catch(error){fail(res,error.status||502,error.code||"RECOVERY_FAILED",String(error.message||"Password recovery could not be started.").slice(0,300));return;}
       }
       if(path==="/api/auth/password"&&req.method==="POST"){
