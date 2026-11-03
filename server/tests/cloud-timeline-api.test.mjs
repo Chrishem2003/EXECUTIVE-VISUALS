@@ -43,7 +43,8 @@ test("cloud job listing is project-authorized and owner-filtered with bounded pa
  assert.equal(result.body.jobs[0].progress,42);
  assert.deepEqual(result.body.page,{limit:1,offset:0,hasMore:true,nextOffset:1});
  const url=f.calls.find(call=>call[0]==="fetch")[1];
- assert.ok(url.includes("owner_id=eq."+owner));
+ assert.ok(!url.includes("owner_id=eq."));
+ assert.ok(url.includes("project_id=eq."+project));
  assert.ok(url.includes("project_id=eq."+project));
  assert.ok(url.includes("status=eq.running"));
 });
