@@ -177,7 +177,7 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
         if (!String(materialized.asset.mediaType || "").startsWith("image/")) {
           throw Object.assign(new Error("AI super-resolution currently accepts still images only; video frame processing is not enabled."), { code: "UNSUPPORTED_MEDIA_TYPE" });
         }
-        const adapter = createRealEsrganAdapter({ timeoutMs, maxOutputBytes: 250 * 1024 * 1024 });
+        const adapter = createRealEsrganAdapter({ timeoutMs, maxOutputBytes: 250 * 1024 * 1024, requireProvenance: true });
         const format = String(input.format || "png");
         if (!["png", "jpg", "webp"].includes(format)) throw Object.assign(new Error("AI upscale output format is unsupported."), { code: "INVALID_MEDIA_OPTIONS" });
         if (!executableAvailable("ffprobe")) throw Object.assign(new Error("FFprobe is required to verify AI-upscaled image dimensions."), { code: "MEDIA_ENGINE_MISSING" });
