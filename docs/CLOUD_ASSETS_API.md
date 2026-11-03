@@ -15,7 +15,7 @@ Required server-side environment:
 
 The service role key is used only by the server-side cloud asset adapter. Never expose it in frontend configuration, API responses, logs, or source control.
 
-Before enabling the flag, apply the reviewed Executive Visuals core migration to a dedicated Supabase project. Confirm the `executive_visuals` schema, the `assets`, `projects`, and `project_members` tables, and the private `executive-visuals-media` bucket exist. The migration is not automatically applied by the API.
+Before enabling the flag, apply the reviewed Executive Visuals core migration to a dedicated Supabase project. Confirm the `executive_visuals` schema, the `assets`, `projects`, and `project_members` tables, and the private `executive-visuals-media` bucket exist. Add `executive_visuals` to the Supabase Data API exposed schemas and confirm the service role has schema/table privileges. The migration is not automatically applied by the API.
 
 ## Routes
 
