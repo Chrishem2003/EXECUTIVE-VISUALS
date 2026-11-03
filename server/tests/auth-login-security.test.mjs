@@ -28,7 +28,7 @@ test("a wrong attempt immediately after expiry escalates the lock to 30 minutes"
   recordFailedLogin(db,"user@example.com",t);
   recordFailedLogin(db,"user@example.com",t+1);
   recordFailedLogin(db,"user@example.com",t+2);
-  const result=recordFailedLogin(db,"user@example.com",t+AUTH_BASE_LOCK_MS+1);
+  const result=recordFailedLogin(db,"user@example.com",t+AUTH_BASE_LOCK_MS+3);
   assert.equal(result.locked,true);
   assert.equal(result.retryAfterMs,2*AUTH_BASE_LOCK_MS);
   db.close();
