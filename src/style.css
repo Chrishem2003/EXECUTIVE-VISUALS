@@ -5,3 +5,10 @@
 
 /* Cloud collaboration clarity */
 .runtime-project-row{display:flex;align-items:center;gap:9px;flex-wrap:wrap;padding:9px 0;border-bottom:1px solid var(--line)}.runtime-project-row>b{min-width:120px;flex:1}.runtime-project-row .project-access-role{display:inline-flex;align-items:center;border:1px solid #4b5362;border-radius:999px;padding:3px 8px;color:#c7ceda;font-size:9px;letter-spacing:.04em;text-transform:uppercase}.runtime-project-row>small:not(.project-access-role){font-size:9px;color:var(--muted);overflow-wrap:anywhere}.runtime-project-row>button{font-size:9px;padding:5px 8px}
+
+
+.runtime-job-events{display:grid;gap:8px;margin:12px 0;padding:12px;border:1px solid var(--line,#d8dde5);border-radius:10px;background:var(--surface-muted,rgba(127,127,127,.06))}
+.runtime-job-event{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 12px;padding:8px 0;border-bottom:1px solid var(--line,#d8dde5)}
+.runtime-job-event:last-child{border-bottom:0}
+.runtime-job-event small{color:var(--muted,#667085);text-align:right}
+.runtime-job-event code{grid-column:1/-1;overflow-wrap:anywhere;white-space:pre-wrap;color:var(--muted,#667085);font-size:.78rem}
