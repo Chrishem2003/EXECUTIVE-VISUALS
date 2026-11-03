@@ -1,6 +1,7 @@
 import { createServer } from "node:http";
 import { createSupabaseAuth } from "./supabase-auth.mjs";
 import { createAuthRateLimiter } from "./auth-rate-limit.mjs";
+import { createRedisRestRateLimiter } from "./distributed-rate-limit.mjs";
 import { createClientIpResolver } from "./client-ip.mjs";
 import { isBlockedDotPath } from "./static-path-security.mjs";
 import { ensureAuthSecuritySchema, getLoginLockState, recordFailedLogin, clearLoginFailures } from "./auth-login-security.mjs";
@@ -66,7 +67,13 @@ if (cloudTimelineApi) await cloudTimelineApi.checkReadiness();
 const activeProcesses = new Map();
 const WORKER_ID = randomUUID();
 const AUTH_RATE_LIMIT = Math.max(1, Math.min(1000, Number(process.env.AUTH_RATE_LIMIT) || 10));
-const authRateLimiter=createAuthRateLimiter();
+const rateLimitBackend=process.env.AUTH_RATE_LIMIT_BACKEND||"memory";
+const redisRateLimitConfigured=Boolean(process.env.RATE_LIMIT_REDIS_REST_URL&&process.env.RATE_LIMIT_REDIS_REST_TOKEN);
+if((process.env.RATE_LIMIT_REDIS_REST_URL||process.env.RATE_LIMIT_REDIS_REST_TOKEN)&&!redisRateLimitConfigured)throw new Error("Both Redis REST rate-limit URL and token must be configured together.");
+if(!["memory","redis-rest"].includes(rateLimitBackend))throw new Error("AUTH_RATE_LIMIT_BACKEND must be memory or redis-rest.");
+if(rateLimitBackend==="redis-rest"&&!redisRateLimitConfigured)throw new Error("Redis REST rate limiting requires RATE_LIMIT_REDIS_REST_URL and RATE_LIMIT_REDIS_REST_TOKEN.");
+if(process.env.NODE_ENV==="production"&&AUTH_MODE==="supabase"&&rateLimitBackend!=="redis-rest")throw new Error("Production Supabase authentication requires distributed Redis REST rate limiting.");
+const authRateLimiter=rateLimitBackend==="redis-rest"?createRedisRestRateLimiter({url:process.env.RATE_LIMIT_REDIS_REST_URL,token:process.env.RATE_LIMIT_REDIS_REST_TOKEN,namespace:process.env.RATE_LIMIT_REDIS_NAMESPACE||"executive-visuals"}):createAuthRateLimiter();
 const trustedProxyIps=(process.env.TRUSTED_PROXY_IPS||"").split(",").map(value=>value.trim()).filter(Boolean);
 const resolveClientIp=createClientIpResolver({trustedProxyIps});
 await mkdir(join(MEDIA_ROOT,"uploads"), { recursive:true });
@@ -269,8 +276,8 @@ export function createAppServer() {
     const url=new URL(req.url||"/","http://localhost");
     const path=url.pathname;
     const ratePath=path.startsWith("/api/auth/")?"/auth":(path==="/api/assets"||path==="/api/cloud/assets")&&req.method==="POST"?"/upload":path.endsWith("/research/import")&&req.method==="POST"?"/research":path==="/api/admin/ai-upscale/self-test"&&req.method==="POST"?"/ai-upscale-self-test":"";
-    if(ratePath){const key=resolveClientIp(req)+ratePath;const limit=ratePath==="/auth"?AUTH_RATE_LIMIT:ratePath==="/research"?10:ratePath==="/ai-upscale-self-test"?2:30;if(!authRateLimiter.allow(key,limit,60000)){fail(res,429,"RATE_LIMITED","Too many requests. Wait before trying again.");return;}}
     try {
+      if(ratePath){const key=resolveClientIp(req)+ratePath;const limit=ratePath==="/auth"?AUTH_RATE_LIMIT:ratePath==="/research"?10:ratePath==="/ai-upscale-self-test"?2:30;if(!await authRateLimiter.allow(key,limit,60000)){fail(res,429,"RATE_LIMITED","Too many requests. Wait before trying again.");return;}}
       if(!path.startsWith("/api/")&&req.method==="GET"){
         if(isBlockedDotPath(path)){fail(res,404,"NOT_FOUND","Resource not found.");return;}
         const decoded=decodeURIComponent(path);
@@ -290,7 +297,7 @@ export function createAppServer() {
       }
       if(path==="/api/auth/register"&&req.method==="POST"){
         const body=await readJson(req);const email=String(body.email||"").trim().toLowerCase();const password=String(body.password||"");
-        if(!authRateLimiter.allowEmail("register",email)){fail(res,429,"AUTH_EMAIL_RATE_LIMITED","Too many account creation attempts for this email. Try again later.");return;}
+        if(!await authRateLimiter.allowEmail("register",email)){fail(res,429,"AUTH_EMAIL_RATE_LIMITED","Too many account creation attempts for this email. Try again later.");return;}
         if(AUTH_MODE==="supabase"){
           if(!supabaseAuth){fail(res,503,"AUTH_NOT_CONFIGURED","The external identity provider is not configured.");return;}
           try{const result=await supabaseAuth.signUp({email,password});if(result.confirmationRequired){send(res,202,{confirmationRequired:true,user:result.user,authMode:"supabase"},cors);return;}setSupabaseRefreshCookie(res,result.refreshToken);send(res,201,{user:result.user,accessToken:result.accessToken,expiresIn:result.expiresIn,authMode:"supabase"},cors);return;}
@@ -310,7 +317,7 @@ export function createAppServer() {
         if(lockState.locked){const retrySeconds=Math.max(1,Math.ceil(lockState.retryAfterMs/1000));send(res,423,{error:{code:"ACCOUNT_TEMPORARILY_LOCKED",message:"Sign-in is temporarily locked. Try again after the displayed wait."},retryAfterSeconds:retrySeconds},{"retry-after":String(retrySeconds),...cors});return;}
         if(AUTH_MODE==="supabase"){
           if(!supabaseAuth){fail(res,503,"AUTH_NOT_CONFIGURED","The external identity provider is not configured.");return;}
-          if(!authRateLimiter.allowEmail("signIn",email)){fail(res,429,"AUTH_EMAIL_RATE_LIMITED","Too many sign-in attempts for this email. Try again later.");return;}
+          if(!await authRateLimiter.allowEmail("signIn",email)){fail(res,429,"AUTH_EMAIL_RATE_LIMITED","Too many sign-in attempts for this email. Try again later.");return;}
           try{
             const result=await supabaseAuth.signInWithPassword({email,password});
             clearLoginFailures(db,email);
@@ -342,7 +349,7 @@ export function createAppServer() {
       }
       if(path==="/api/auth/recover"&&req.method==="POST"){
         if(AUTH_MODE!=="supabase"||!supabaseAuth){fail(res,404,"PASSWORD_RECOVERY_UNAVAILABLE","Password recovery is unavailable.");return;}
-        const body=await readJson(req);if(!authRateLimiter.allowEmail("recover",body.email)){fail(res,429,"AUTH_EMAIL_RATE_LIMITED","Too many recovery requests for this email. Try again later.");return;}try{await supabaseAuth.recover({email:body.email});send(res,202,{accepted:true},cors);return;}
+        const body=await readJson(req);if(!await authRateLimiter.allowEmail("recover",body.email)){fail(res,429,"AUTH_EMAIL_RATE_LIMITED","Too many recovery requests for this email. Try again later.");return;}try{await supabaseAuth.recover({email:body.email});send(res,202,{accepted:true},cors);return;}
         catch(error){fail(res,error.status||502,error.code||"RECOVERY_FAILED",String(error.message||"Password recovery could not be started.").slice(0,300));return;}
       }
       if(path==="/api/auth/password"&&req.method==="POST"){
