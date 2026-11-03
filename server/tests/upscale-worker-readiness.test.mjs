@@ -2,7 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";\nimport { createHash } from "node:crypto";
+import { join } from "node:path";
+import { createHash } from "node:crypto";
 import { inspectUpscaleWorkerReadiness } from "../upscale-worker-readiness.mjs";
 
 test("upscale worker preflight reports tools, model files, writable temp and atomic publication support without claiming quality", async () => {
