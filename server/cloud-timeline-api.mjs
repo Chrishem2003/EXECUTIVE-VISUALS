@@ -64,6 +64,36 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     if(method==="PATCH"){const project=await service.projects.update({ownerId,projectId,expectedRevision:Number(body.expectedRevision),name:body.name,description:body.description,settings:body.settings});return response(200,{project});}
     if(method==="DELETE"){const archived=await service.projects.archive({ownerId,projectId,expectedRevision:Number(body.expectedRevision)});return response(200,{project:archived});}
    }
+   if(path==="/api/cloud/waveform-jobs"&&method==="GET"){
+    const projectId=String(query.projectId||"");
+    if(!safeId(projectId))return response(400,{error:{code:"INVALID_PROJECT_ID",message:"Choose a valid project."}});
+    if(await allow({ownerId,projectId,action:"read"})!==true)return response(404,{error:{code:"PROJECT_NOT_FOUND",message:"Project not found or access denied."}});
+    const rows=await request("jobs?select=id,job_type,status,progress,input,output,error,created_at,updated_at&owner_id=eq."+encodeURIComponent(ownerId)+"&project_id=eq."+encodeURIComponent(projectId)+"&job_type=eq.media.waveform&order=created_at.desc&limit=50");
+    return response(200,{jobs:(rows||[]).map(row=>({id:row.id,status:row.status,progress:Number(row.progress||0),input:row.input||{},output:row.output||null,error:row.error||null,createdAt:row.created_at,updatedAt:row.updated_at}))});
+   }
+   if(path==="/api/cloud/waveforms"&&method==="POST"){
+    const projectId=String(body.projectId||""),sourceAssetId=String(body.sourceAssetId||"");
+    if(!safeId(projectId)||!safeId(sourceAssetId))return response(400,{error:{code:"WAVEFORM_INPUT_INVALID",message:"Choose a valid project and audio source."}});
+    if(await allow({ownerId,projectId,action:"write"})!==true)return response(404,{error:{code:"PROJECT_NOT_FOUND",message:"Project not found or editor access required."}});
+    const source=await service.assets.get({ownerId,assetId:sourceAssetId});
+    if(!source||source.projectId!==projectId||!String(source.mediaType||"").startsWith("audio/"))return response(422,{error:{code:"WAVEFORM_SOURCE_INVALID",message:"Waveform generation requires an audio asset in this project."}});
+    if(!/^[a-f0-9]{64}$/i.test(String(source.sha256||"")))return response(422,{error:{code:"WAVEFORM_SOURCE_HASH_UNAVAILABLE",message:"The source audio has no verified SHA-256 fingerprint."}});
+    const width=Number(body.width??1200),height=Number(body.height??180),color=/^#[a-f0-9]{6}$/i.test(String(body.color||""))?String(body.color):"#66b3ff";
+    if(!Number.isInteger(width)||width<256||width>2400||!Number.isInteger(height)||height<48||height>400)return response(400,{error:{code:"WAVEFORM_OPTIONS_INVALID",message:"Waveform width must be 256–2400 and height 48–400."}});
+    const input={sourceAssetId,sourceSha256:source.sha256,width,height,color};
+    const key=String(idempotencyKey||"").trim().slice(0,180);
+    if(key.length<8)return response(400,{error:{code:"IDEMPOTENCY_KEY_REQUIRED",message:"An idempotency key is required for waveform generation."}});
+    const existing=await request("jobs?select=id,owner_id,project_id,job_type,status,progress,input,output,error,created_at,updated_at&owner_id=eq."+encodeURIComponent(ownerId)+"&idempotency_key=eq."+encodeURIComponent(key)+"&limit=1");
+    if(Array.isArray(existing)&&existing[0]){
+     const row=existing[0];
+     if(row.job_type!=="media.waveform"||row.project_id!==projectId||stableJson(row.input)!==stableJson(input))return response(409,{error:{code:"IDEMPOTENCY_CONFLICT",message:"This idempotency key belongs to a different waveform request."}});
+     return response(200,{job:row,idempotentReplay:true});
+    }
+    const jobId=randomUUID(),rows=await request("jobs?select=id,owner_id,project_id,job_type,status,progress,input,output,error,created_at,updated_at",{method:"POST",body:{id:jobId,owner_id:ownerId,project_id:projectId,job_type:"media.waveform",status:"queued",progress:0,input,idempotency_key:key}});
+    if(!Array.isArray(rows)||rows.length!==1||rows[0].id!==jobId||rows[0].job_type!=="media.waveform"||rows[0].owner_id!==ownerId||rows[0].project_id!==projectId)throw new Error("Cloud waveform job creation returned an invalid record.");
+    await request("job_events",{method:"POST",body:{job_id:jobId,owner_id:ownerId,event_type:"job.queued",event_data:{jobType:"media.waveform",sourceAssetId,width,height}},prefer:"return=minimal"});
+    return response(202,{job:rows[0],idempotentReplay:false});
+   }
    if(path==="/api/cloud/upscale-jobs"&&method==="GET"){
     const projectId=String(query.projectId||"");
     if(!safeId(projectId))return response(400,{error:{code:"INVALID_PROJECT_ID",message:"Choose a valid project."}});
