@@ -16,6 +16,7 @@ const provider=createServer(async(req,res)=>{
  if(req.url.startsWith("/auth/v1/signup")){res.end(JSON.stringify({user:{id:"supabase-user-2",email:"new@example.test"}}));return;}
  if(req.url.startsWith("/auth/v1/recover")){res.end(JSON.stringify({message:"accepted"}));return;}
  if(req.url==="/auth/v1/logout"){res.end(JSON.stringify({}));return;}
+ if(req.url==="/auth/v1/user"&&req.method==="PUT"){res.end(JSON.stringify({id:"supabase-user-1",email:"owner@example.test"}));return;}
  if(req.url==="/auth/v1/user"){res.end(JSON.stringify({id:"supabase-user-1",email:"owner@example.test"}));return;}
  res.statusCode=404;res.end(JSON.stringify({message:"not found"}));
 });
@@ -27,7 +28,7 @@ let stderr="";child.stderr.on("data",chunk=>stderr+=chunk.toString());
 const base="http://127.0.0.1:"+apiPort;
 async function wait(){for(let i=0;i<80;i++){if(child.exitCode!==null)throw new Error("API exited: "+stderr);try{if((await fetch(base+"/api/health")).ok)return;}catch{}await new Promise(resolve=>setTimeout(resolve,100));}throw new Error("API did not start: "+stderr);}
 await wait();
-async function post(path,body,cookie){return fetch(base+path,{method:"POST",headers:{"content-type":"application/json",...(cookie?{cookie}:{})},body:JSON.stringify(body||{})});}
+async function post(path,body,cookie,accessToken){return fetch(base+path,{method:"POST",headers:{"content-type":"application/json",...(cookie?{cookie}:{}),...(accessToken?{authorization:"Bearer "+accessToken}:{})},body:JSON.stringify(body||{})});}
 test("Supabase mode supports password sign-in, HttpOnly refresh cookie, session rotation, recovery and logout",async t=>{
  t.after(async()=>{child.kill("SIGTERM");provider.close();await rm(dataDir,{recursive:true,force:true});});
  const login=await post("/api/auth/login",{email:"owner@example.test",password:"correct-horse-battery"});assert.equal(login.status,200);
@@ -37,6 +38,7 @@ test("Supabase mode supports password sign-in, HttpOnly refresh cookie, session 
  const cookiePair=cookie.split(";")[0];
  const refresh=await post("/api/auth/session",{},cookiePair);assert.equal(refresh.status,200);const refreshed=await refresh.json();assert.equal(refreshed.accessToken,"provider-access-token-refreshed");
  assert.match(refresh.headers.get("set-cookie"),/provider-refresh-token-refreshed/);
+ const passwordUpdate=await post("/api/auth/password",{password:"a-new-long-password"},null,loginBody.accessToken);assert.equal(passwordUpdate.status,200);assert.equal((await passwordUpdate.json()).ok,true);
  const signup=await post("/api/auth/register",{email:"new@example.test",password:"a-long-enough-password"});assert.equal(signup.status,202);assert.equal((await signup.json()).confirmationRequired,true);
  const recovery=await post("/api/auth/recover",{email:"owner@example.test"});assert.equal(recovery.status,202);
  const logout=await post("/api/auth/logout",{},refresh.headers.get("set-cookie").split(";")[0]);assert.equal(logout.status,200);assert.match(logout.headers.get("set-cookie"),/Max-Age=0/);
