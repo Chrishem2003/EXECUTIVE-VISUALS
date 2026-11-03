@@ -42,7 +42,7 @@ export function recordFailedLogin(db, identifier, now = Date.now()) {
   if (current?.locked_until_ms && current.locked_until_ms > now) {
     return { locked: true, retryAfterMs: current.locked_until_ms - now, failedAttempts: current.failed_attempts, lockLevel: current.lock_level };
   }
-  const attempts = current?.locked_until_ms && current.locked_until_ms <= now ? 1 : (current?.failed_attempts || 0) + 1;
+  const attempts = current?.locked_until_ms && current.locked_until_ms <= now ? AUTH_LOCK_THRESHOLD : (current?.failed_attempts || 0) + 1;
   let level = current?.lock_level || 0;
   let lockedUntil = null;
   if (attempts >= AUTH_LOCK_THRESHOLD) {
