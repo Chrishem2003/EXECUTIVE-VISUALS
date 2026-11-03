@@ -466,3 +466,15 @@ This is a runnable worker entry point, not a deployed worker. Do not set the ena
 - Added `verify:timeline-preview` to the standard build pipeline.
 - Cloud preview remains intentionally unavailable until the cloud asset API provides a verified, authenticated private-media playback URL. No guessed cloud URLs or public storage paths are used.
 - **Verification status:** implementation and test files are committed on the working branch. The remote CI build has not yet been observed; no claim of passing build or end-to-end browser playback is made.
+
+
+## Account lockout and authentication throttling — 3 November 2026
+
+- Added persistent local-account lockout state in `server/auth-login-security.mjs`, initialized by the API at startup.
+- Three consecutive failed password attempts lock the normalized login identifier for 15 minutes.
+- A failed attempt after expiry immediately escalates the lock to 30 minutes; later post-expiry failures double the duration to a 24-hour maximum.
+- Attempts during an active lock do not extend or reset its expiry. The endpoint responds with HTTP 423 and `Retry-After`; successful authentication clears the failure history.
+- The lockout table stores a SHA-256 digest of the normalized identifier, not the raw email or password. Unknown identifiers receive the same generic failure/lock behavior.
+- The existing per-IP auth throttle now defaults to 10 requests per minute (configurable via `AUTH_RATE_LIMIT`); this is an in-process single-instance limiter, not a distributed production control.
+- Added focused tests for the three-failure threshold, lock duration, immediate post-expiry escalation, 24-hour cap, successful reset and identifier hashing. The full server test glob includes this test file.
+- **Not yet release-ready:** automated CI has not been confirmed for these commits; hosted Supabase sign-in is not covered by this local password lockout; verified recovery, alerting and a shared edge/Redis limiter remain required before public multi-instance launch. Account lockout can itself be abused to deny a victim access, so recovery is a release gate.
