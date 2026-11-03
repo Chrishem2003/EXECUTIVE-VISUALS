@@ -14,7 +14,7 @@ This policy is enforced by the API for both local development passwords and Supa
 | Next wrong attempt after each expired lock | Lock duration doubles: 1h, 2h, 4h, 8h, 16h, then capped at 24h |
 | Correct password | Successful sign-in; failure and escalation history cleared |
 
-The lockout state is stored in the application SQLite database and therefore survives a process restart on the same persistent disk. The table stores a normalized identifier digest, not the plaintext password or raw email. The lockout does not disclose whether an account exists: unknown identifiers receive the same generic failures and lock response.
+The lockout state is stored in the application SQLite database and therefore survives a process restart on the same persistent disk. Failed-login counter updates use `BEGIN IMMEDIATE` so concurrent requests serialize the read/modify/write sequence instead of overwriting one another's increments. SQLite is configured with WAL and a 5-second busy timeout. This protects concurrent requests sharing the same SQLite database file; it does not turn per-instance SQLite into a distributed lock service. The table stores a normalized identifier digest, not the plaintext password or raw email. The lockout does not disclose whether an account exists: unknown identifiers receive the same generic failures and lock response.
 
 ## Independent request-rate budgets
 
