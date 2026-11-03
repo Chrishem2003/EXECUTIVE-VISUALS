@@ -107,6 +107,7 @@ export async function inspectUpscaleWorkerReadiness({
     supportedModels: REQUIRED_MODELS,
     mediaTools,
     selfTest,
+    provenance,
     engine: {
       available: engine.available,
       enabled: engine.executionEnabled,
