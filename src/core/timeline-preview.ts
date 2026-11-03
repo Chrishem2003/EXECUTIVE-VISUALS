@@ -9,7 +9,7 @@ export function frameToSeconds(frame:number, frameRate:{numerator:number;denomin
 }
 
 export function secondsToFrame(seconds:number, frameRate:{numerator:number;denominator:number}):number {
-  if(!Number.isFinite(seconds)||seconds<0||frameRate.numerator<=0||frameRate.denominator<=0) {
+  if(!Number.isFinite(seconds)||seconds<0||!Number.isSafeInteger(frameRate.numerator)||!Number.isSafeInteger(frameRate.denominator)||frameRate.numerator<=0||frameRate.denominator<=0) {
     throw new Error("Time and frame rate must be finite and non-negative.");
   }
   return Math.max(0,Math.round(seconds*frameRate.numerator/frameRate.denominator));
