@@ -2,7 +2,10 @@ import { apiRequest, ApiError } from "../core/api";
 
 type SecurityEvent={id:number;identifierHash:string;eventType:string;failedAttempts:number;lockLevel:number;lockedUntilMs:number|null;createdAtMs:number};
 type EventPage={events:SecurityEvent[];nextBeforeId:number|null;retentionDays:number};
+type SecuritySummary={window:string;totals:{totalEvents:number;failedSignIns:number;newLockouts:number;blockedByLockout:number;successfulSignIns:number};suspiciousIdentifiers:{identifierHash:string;attempts15m:number;lockoutEvents24h:number;lastEventAtMs:number}[];detectionPolicy:{attemptThreshold:number;attemptWindowMinutes:number;lockoutThreshold:number;lockoutWindowHours:number};generatedAtMs:number};
 let events:SecurityEvent[]=[];
+let summary:SecuritySummary|null=null;
+let summaryMessage="Security monitoring summary is loading…";
 let cursor:number|null=null;
 let loading=false;
 let message="";
@@ -15,8 +18,21 @@ function eventMarkup(event:SecurityEvent){
  const locked=event.eventType==="account_locked"||event.eventType==="login_blocked_by_lockout";
  return '<article class="security-event"><div class="security-event-main"><span class="security-event-type">'+escapeHtml(label(event.eventType))+'</span><code>'+escapeHtml(event.identifierHash.slice(0,18))+'…</code><small>'+escapeHtml(date(event.createdAtMs))+'</small></div><div class="security-event-meta"><span>Failures <b>'+event.failedAttempts+'</b></span><span>Lock level <b>'+event.lockLevel+'</b></span><span>Lock expiry <b>'+escapeHtml(event.lockedUntilMs?date(event.lockedUntilMs):"—")+'</b></span></div><span class="security-event-status '+(locked?"is-warning":"")+'">'+(locked?"Lockout-related":"Recorded")+'</span></article>';
 }
+function summaryMarkup(){
+ if(!summary)return '<p class="security-message">'+escapeHtml(summaryMessage)+'</p>';
+ const t=summary.totals;
+ const metrics=[["Events · 24h",t.totalEvents],["Failed sign-ins",t.failedSignIns],["New lockouts",t.newLockouts],["Blocked by lockout",t.blockedByLockout],["Successful sign-ins",t.successfulSignIns]];
+ const cards=metrics.map(([label,value])=>'<article><small>'+label+'</small><b>'+value+'</b></article>').join("");
+ const alerts=summary.suspiciousIdentifiers.length?summary.suspiciousIdentifiers.map(item=>'<article><code>'+escapeHtml(item.identifierHash.slice(0,18))+'…</code><span>'+item.attempts15m+' attempts / 15 min</span><span>'+item.lockoutEvents24h+' lockout events / 24 h</span><small>Last event '+escapeHtml(date(item.lastEventAtMs))+'</small></article>').join(""):'<p class="security-message">No identifiers crossed the current detection thresholds in the rolling 24-hour window.</p>';
+ return '<section class="security-metrics">'+cards+'</section><section class="panel security-alerts"><div><h2>Suspicious activity</h2><p>Rule-based indicators, not proof of account compromise.</p></div>'+alerts+'</section>';
+}
+async function loadSummary(){
+ try{summary=await apiRequest<SecuritySummary>("/api/admin/security-summary");summaryMessage="Security summary loaded.";}
+ catch(error){summary=null;summaryMessage=error instanceof ApiError&&error.status===403?"Security summary access denied.":error instanceof ApiError&&error.status===401?"Session expired. Sign in again.":"Security summary could not be loaded.";}
+ const host=document.querySelector<HTMLElement>("#security-summary");if(host)host.innerHTML=summaryMarkup();
+}
 export function renderSecurityWorkspace(){
- return '<div class="page-head"><div><div class="eyebrow">TRUST & ACCESS · ADMIN ONLY</div><h1>Security operations</h1><p>Review privacy-preserving authentication events and account lockout activity. Raw emails, passwords, tokens and IP addresses are never displayed.</p></div><button class="secondary" id="security-refresh">↻ Refresh events</button></div><section class="panel security-panel"><div class="security-toolbar"><label>Event type<select id="security-event-filter"><option value="all">All events</option><option value="login_failed">Failed sign-in</option><option value="account_locked">Account locked</option><option value="login_blocked_by_lockout">Blocked by lockout</option><option value="login_succeeded">Successful sign-in</option></select></label><span id="security-event-count">Events are retained for up to 90 days.</span></div><p id="security-message" class="security-message" role="status">'+escapeHtml(message||"Loading security events…")+'</p><div id="security-events" class="security-events">'+(events.length?events.map(eventMarkup).join(""):'<div class="empty">No events loaded.</div>')+'</div><div class="security-footer"><small>Identifiers are pseudonymous digests. Access is enforced by the server-side AUTH_SECURITY_ADMIN_EMAILS allowlist.</small><button class="secondary" id="security-load-more" '+(!cursor||loading?"disabled":"")+'>Load older events</button></div></section>';
+ return '<div class="page-head"><div><div class="eyebrow">TRUST & ACCESS · ADMIN ONLY</div><h1>Security operations</h1><p>Review privacy-preserving authentication events and account lockout activity. Raw emails, passwords, tokens and IP addresses are never displayed.</p></div><button class="secondary" id="security-refresh">↻ Refresh events</button></div><div id="security-summary">'+summaryMarkup()+'</div><section class="panel security-panel"><div class="security-toolbar"><label>Event type<select id="security-event-filter"><option value="all">All events</option><option value="login_failed">Failed sign-in</option><option value="account_locked">Account locked</option><option value="login_blocked_by_lockout">Blocked by lockout</option><option value="login_succeeded">Successful sign-in</option></select></label><span id="security-event-count">Events are retained for up to 90 days.</span></div><p id="security-message" class="security-message" role="status">'+escapeHtml(message||"Loading security events…")+'</p><div id="security-events" class="security-events">'+(events.length?events.map(eventMarkup).join(""):'<div class="empty">No events loaded.</div>')+'</div><div class="security-footer"><small>Identifiers are pseudonymous digests. Access is enforced by the server-side AUTH_SECURITY_ADMIN_EMAILS allowlist.</small><button class="secondary" id="security-load-more" '+(!cursor||loading?"disabled":"")+'>Load older events</button></div></section>';
 }
 async function loadEvents(append=false){
  if(loading)return;
@@ -55,4 +71,5 @@ export function initSecurityWorkspace(){
  if(more&&!more.dataset.bound){more.dataset.bound="true";more.addEventListener("click",()=>void loadEvents(true));}
  if(!initialized)void loadEvents();
  else paint();
+ void loadSummary();
 }
