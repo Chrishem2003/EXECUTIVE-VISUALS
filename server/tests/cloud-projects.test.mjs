@@ -6,13 +6,14 @@ const owner="123e4567-e89b-42d3-a456-426614174000";
 const editor="223e4567-e89b-42d3-a456-426614174000";
 const project="423e4567-e89b-42d3-a456-426614174000";
 const row={id:project,owner_id:owner,name:"Production",description:"Film project",settings:{},revision:3,created_at:"2026-10-01T00:00:00Z",updated_at:"2026-10-02T00:00:00Z",archived_at:null};
-function fixture({allowed=true,actor=owner,rows=[row]}={}){
+function fixture({allowed=true,actor=owner,rows=[row],role="editor"}={}){
  const calls=[];
  const fetchImpl=async(url,options)=>{
   calls.push({url,options});
-  if(url.includes("project_members?"))return{ok:true,status:200,async text(){return JSON.stringify([{project_id:project}]);}};
+  if(url.includes("project_members?"))return{ok:true,status:200,async text(){return JSON.stringify([{project_id:project,role}]);}};
   if(options.method==="POST")return{ok:true,status:201,async text(){return JSON.stringify([{...JSON.parse(options.body),created_at:row.created_at,updated_at:row.updated_at,revision:1,archived_at:null}]);}};
   if(options.method==="PATCH")return{ok:true,status:200,async text(){return JSON.stringify([{...row,...JSON.parse(options.body)}]);}};
+  if(url.includes("owner_id=eq."))return{ok:true,status:200,async text(){return JSON.stringify(actor===owner?rows:[])}};
   return{ok:true,status:200,async text(){return JSON.stringify(rows)}};
  };
  const repository=createCloudProjectRepository({url:"https://example.supabase.co",serviceRoleKey:"secret",fetchImpl,authorize:async({ownerId,projectId,action})=>allowed&&ownerId===actor&&(!projectId||projectId===project)&&(action==="read"||action==="write")});
@@ -27,6 +28,15 @@ test("lists owned and shared projects without duplicates and checks membership a
  const f=fixture();const result=await f.repository.list({ownerId:owner});
  assert.equal(result.length,1);assert.equal(result[0].id,project);
  assert.equal(f.calls.filter(x=>x.url.includes("projects?")).length,2);
+});
+test("lists shared projects with the collaborator role from project_members",async()=>{
+ const f=fixture({actor:editor,role:"reviewer"});const result=await f.repository.list({ownerId:editor});
+ assert.equal(result.length,1);assert.equal(result[0].access_role,"reviewer");
+ assert.ok(f.calls.some(call=>call.url.includes("project_members?select=project_id,role")));
+});
+test("keeps project owner role authoritative over any membership row",async()=>{
+ const f=fixture({role:"viewer"});const result=await f.repository.list({ownerId:owner});
+ assert.equal(result[0].access_role,"owner");
 });
 test("reads shared projects through the authorizer",async()=>{
  const f=fixture({actor:editor});const result=await f.repository.get({ownerId:editor,projectId:project});
