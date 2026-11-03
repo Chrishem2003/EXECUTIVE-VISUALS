@@ -17,3 +17,10 @@ test("multiple voice clips share one sidechain bus for music ducking",()=>{
 test("ducking settings use safe defaults for malformed metadata",()=>{
  assert.deepEqual(normalizeDuckingSettings({duckingThresholdDb:"bad"}),{thresholdDb:-24,ratio:8,attackMs:20,releaseMs:300});
 });
+
+test("normalized ducking settings survive the renderer-to-filter boundary",()=>{
+ const settings=normalizeDuckingSettings({duckingThresholdDb:-30,duckingRatio:10,duckingAttackMs:12,duckingReleaseMs:450});
+ assert.deepEqual(normalizeDuckingSettings(settings),{thresholdDb:-30,ratio:10,attackMs:12,releaseMs:450});
+ const graph=buildAudioDuckingGraph([{label:"voice",role:"voice"},{label:"music",role:"music",duckingEnabled:true,settings}]);
+ assert.match(graph.filters[1],/threshold=0\\.031623:ratio=10\\.00:attack=12\\.0:release=450\\.0/);
+});
