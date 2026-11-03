@@ -423,10 +423,12 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     let previewAsset=sourceAsset,usingProxy=false;
     if(String(sourceAsset.mediaType||"").startsWith("video/")&&typeof service.assets.list==="function"){
      const candidates=await service.assets.list({ownerId,projectId:timeline.projectId||null,limit:100,offset:0});
+     const sourceHash=String(sourceAsset.sha256||"");
      const proxy=(Array.isArray(candidates)?candidates:[]).find(candidate=>
       candidate?.derivativeOf===assetId&&candidate?.projectId===(timeline.projectId||null)&&
       String(candidate?.mediaType||"").startsWith("video/")&&candidate?.metadata?.operation==="media.proxy"&&
-      candidate?.metadata?.sourceSha256===sourceAsset.sha256&&candidate?.sha256&&candidate.sha256!==sourceAsset.sha256
+      /^[a-f0-9]{64}$/i.test(sourceHash)&&candidate?.metadata?.sourceSha256===sourceHash&&
+      /^[a-f0-9]{64}$/i.test(String(candidate?.sha256||""))&&candidate.sha256!==sourceHash
      );
      if(proxy){previewAsset=proxy;usingProxy=true;}
     }
