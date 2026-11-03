@@ -615,3 +615,14 @@ The cloud media IO boundary now rejects HTTP redirects for signed object downloa
 ### AI-upscale benchmark hardware transparency
 
 The Enhancement Lab now displays the recorded host profile beside each benchmark candidate and individual run: CPU model, OS/architecture, logical core count, memory and Node.js version. Legacy evidence without a profile is explicitly labelled as unknown hardware and must not be used for cross-host latency comparisons. The Vulkan environment flag remains informational only; it does not establish which GPU executed inference. Runtime provenance is attached to the persisted derivative and included in benchmark grouping and report output.
+
+
+## Progressive account lockout — 3 November 2026
+
+- The active native Supabase-auth branch now enforces a persistent account-identifier lockout for both Supabase password sign-in and local development password login.
+- Three consecutive wrong passwords produce HTTP 423 and a 15-minute lock. Requests during the lock do not reset or extend it. A wrong password on the first attempt after expiry immediately escalates to 30 minutes; each subsequent expired-lock failure doubles the duration to a 24-hour cap.
+- Successful sign-in clears the failure/escalation history. The response includes `Retry-After` and `retryAfterSeconds`; unknown identifiers receive the same generic error behavior.
+- State is persisted in the application SQLite database. A dedicated unit suite covers threshold, expiry escalation, cap, reset and identifier hashing; the Supabase API integration test exercises the 423 response and 900-second retry header.
+- Source-IP throttle default is tightened to 10 requests/minute; existing per-email budgets remain 8 sign-ins/15 minutes, 5 signups/hour and 3 recovery requests/hour.
+- **Release blockers:** the per-IP/per-email limiter is still in-memory and single-instance; deploy a trusted edge/WAF or Redis limiter before scaling. Add CAPTCHA/risk challenge, verified recovery/lockout alerts and a stable server-only HMAC key for identifier pseudonymization. A plain SHA-256 email digest is vulnerable to offline guessing and must not be treated as anonymization.
+- CI has not yet reported a result for the latest lockout commit. No merge, deployment, database provisioning or live identity-provider mutation was performed.
