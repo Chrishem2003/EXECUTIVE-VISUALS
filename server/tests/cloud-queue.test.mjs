@@ -141,3 +141,15 @@ test("worker fleet health snapshot is bounded, read-only and validates sanitized
  const oversized=createCloudQueue({...base,fetchImpl:async()=>response(Array(2).fill(rows[0]))});
  await assert.rejects(()=>oversized.listWorkerHealth({limit:1}),/invalid result/);
 });
+
+test("worker heartbeat retention cleanup is bounded and validates returned count",async()=>{
+ const requests=[];
+ const queue=createCloudQueue({...base,fetchImpl:async(url,options)=>{requests.push({url,body:JSON.parse(options.body)});return response(12);}});
+ assert.equal(await queue.pruneWorkerHeartbeats({retentionDays:45,limit:50}),12);
+ assert.equal(requests[0].url,"https://example.supabase.co/rest/v1/rpc/prune_worker_heartbeats");
+ assert.deepEqual(requests[0].body,{p_retention_days:45,p_limit:50});
+ await assert.rejects(()=>queue.pruneWorkerHeartbeats({retentionDays:1}),/retention/);
+ await assert.rejects(()=>queue.pruneWorkerHeartbeats({limit:1001}),/cleanup limit/);
+ const malformed=createCloudQueue({...base,fetchImpl:async()=>response(8)});
+ await assert.rejects(()=>malformed.pruneWorkerHeartbeats({limit:5}),/invalid count/);
+});
