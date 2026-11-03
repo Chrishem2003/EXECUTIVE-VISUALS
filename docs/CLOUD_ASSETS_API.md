@@ -51,3 +51,8 @@ Derivative lineage is read from the `derivative_of` relationship. The API verifi
 ### Worker process observability
 
 The cloud worker supervisor emits structured lifecycle and periodic `health` log records. Snapshots include process status, enabled worker-family count, start time, last cycle/recovery timestamps, cycle count, claimed-job count, recovered-job count, active-cycle/recovery flags, and bounded error counters/codes. Snapshots deliberately exclude worker credentials, environment values, asset contents, user identifiers, and raw error messages. Treat this as process-level telemetry, not proof that the database, storage, or a particular queued job is healthy; correlate it with the hosting platform's process health and the durable project-scoped job/event APIs. The in-memory counters reset on process restart.
+
+
+### Durable worker heartbeats
+
+The worker process persists one heartbeat row per worker identity through the `heartbeat_worker` service-role-only RPC. It records worker family, process instance ID, lifecycle status (`running`, `stopping`, `stopped`, `error`), a bounded allowlist of operational counters, start time, and last-seen time. The table has RLS enabled and no browser-role access; heartbeat writes use the server-only Supabase service-role credential. A stale worker is inferred from `last_seen_at` age by an authorized operations process; absence of a heartbeat is not proof of a worker failure. The heartbeat migration must be applied to the isolated staging database before enabling the cloud worker. No public worker-status endpoint is introduced by this change.
