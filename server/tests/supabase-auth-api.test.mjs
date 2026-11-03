@@ -15,7 +15,7 @@ const provider=createServer(async(req,res)=>{
  if(req.url.startsWith("/auth/v1/token?grant_type=refresh_token")){res.end(JSON.stringify({access_token:"provider-access-token-refreshed",refresh_token:"provider-refresh-token-refreshed",expires_in:3600,user:{id:"supabase-user-1",email:"owner@example.test"}}));return;}
  if(req.url.startsWith("/auth/v1/signup")){res.end(JSON.stringify({user:{id:"supabase-user-2",email:"new@example.test"}}));return;}
  if(req.url.startsWith("/auth/v1/recover")){res.end(JSON.stringify({message:"accepted"}));return;}
- if(req.url==="/auth/v1/logout"){res.end(JSON.stringify({});return;}
+ if(req.url==="/auth/v1/logout"){res.end(JSON.stringify({}));return;}
  if(req.url==="/auth/v1/user"){res.end(JSON.stringify({id:"supabase-user-1",email:"owner@example.test"}));return;}
  res.statusCode=404;res.end(JSON.stringify({message:"not found"}));
 });
