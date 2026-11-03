@@ -118,7 +118,8 @@ export function createCloudQueue({
         || result.attempt > result.maxAttempts
         || (result.status === "lease_lost" && (result.accepted || result.retryable || result.delaySeconds !== 0))
         || (result.status === "queued" && (!result.accepted || !result.retryable || result.attempt >= result.maxAttempts))
-        || (result.status === "failed" && (!result.accepted || result.retryable || result.delaySeconds !== 0))\n        || (result.status === "cancelled" && (!result.accepted || result.retryable || result.delaySeconds !== 0))) {
+        || (result.status === "failed" && (!result.accepted || result.retryable || result.delaySeconds !== 0))
+        || (result.status === "cancelled" && (!result.accepted || result.retryable || result.delaySeconds !== 0))) {
         throw new Error("Cloud queue retry returned an invalid result.");
       }
       return result;
