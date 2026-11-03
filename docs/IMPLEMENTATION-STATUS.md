@@ -601,3 +601,12 @@ The cloud media IO boundary now rejects HTTP redirects for signed object downloa
 - Overlay motion keyframes are stored non-destructively in clip metadata as up to 50 unique frame-relative `{frame,x,y,scale}` points. The inspector validates frame bounds, canvas positions and scale (0.1–4); the cloud FFmpeg renderer interpolates position and scale per frame and reports animated overlay count. Static overlays remain backward-compatible when no keyframes are present. Additional video tracks are composited above the primary picture with timeline activation, bounded opacity, fit-to-canvas placement and the same motion-keyframe interpolation.
 
 - The cloud FFmpeg renderer now composites additional video tracks above the first enabled video track instead of treating every video track as a sequential primary edit. Layer clips are source-trimmed, time-bounded to the primary sequence, fit within the output canvas with transparent padding, composited in track order, and support opacity plus the shared position/scale keyframes. The render report distinguishes primary clips from video-layer clips. Audio from video-layer source files is intentionally not auto-mixed; add audio separately on an audio track.
+
+
+## AI upscaling runtime provenance — 3 November 2026
+
+- The local Real-ESRGAN adapter records a bounded host profile with each successful derivative: OS platform/release, architecture, CPU model, logical cores, total memory, Node.js version and whether Vulkan ICD/driver environment variables are configured.
+- The cloud media executor persists that profile inside the derivative asset's processing metadata, so benchmark registration can retain the execution context rather than losing it at the worker boundary.
+- Benchmark record validation checks the profile shape. Candidate grouping now includes the runtime profile in addition to the model, executable and model-weight fingerprints; latency summaries from distinct host profiles are not combined.
+- Regression coverage verifies profile persistence, malformed-profile rejection and separation of identical model builds across different hardware profiles. Full Quality checks passed for branch head `b8f60db94c3ae8a9047e40f98ac8e5162c71f088` (run 2874).
+- These are provenance and comparability safeguards, not a claim of GPU execution, perceptual quality, or a winning model. The real licensed fixture corpus, actual inference runs and independent human reviews remain required before any model can be marked quality-verified.
