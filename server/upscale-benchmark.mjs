@@ -43,6 +43,16 @@ export function validateUpscaleBenchmarkRecord(record) {
       }
     }
   }
+  if(record.runtime!==undefined){
+    const runtime=record.runtime;
+    if(!runtime||typeof runtime!=="object"||Array.isArray(runtime))issues.push("runtime must be an object");
+    else{
+      for(const key of ["platform","architecture","cpuModel","nodeVersion"])if(typeof runtime[key]!=="string"||!runtime[key].trim()||runtime[key].length>160)issues.push("runtime."+key+" must be a bounded non-empty string");
+      for(const key of ["logicalCores","totalMemoryBytes"])if(!Number.isSafeInteger(runtime[key])||runtime[key]<=0)issues.push("runtime."+key+" must be a positive safe integer");
+      if(runtime.osRelease!==undefined&&(typeof runtime.osRelease!=="string"||runtime.osRelease.length>160))issues.push("runtime.osRelease must be a bounded string");
+      if(runtime.vulkanIcdConfigured!==undefined&&typeof runtime.vulkanIcdConfigured!=="boolean")issues.push("runtime.vulkanIcdConfigured must be boolean");
+    }
+  }
   if (record.executionStatus === "passed" && record.outputWidth < record.inputWidth) issues.push("passed output width is smaller than input width");
   if (record.executionStatus === "passed" && record.outputHeight < record.inputHeight) issues.push("passed output height is smaller than input height");
   if (record.executionStatus === "passed" && Number.isFinite(record.inputWidth) && Number.isFinite(record.inputHeight) &&
@@ -109,6 +119,7 @@ export function buildUpscaleBenchmarkRecordFromAsset({outputAsset,fixtureId,fixt
     outputHeight:processing?.height,
     scale:processing?.scale,
     durationMs:processing?.durationMs,
+    ...(processing?.runtime?{runtime:processing.runtime}:{}),
     executionStatus:processing?.dimensionsVerified===true&&processing?.decoderVerified===true?"passed":"failed",
     qualityReview:processing?.qualityReview||"not_reviewed",
     timestamp:timestamp||outputAsset?.createdAt||new Date().toISOString(),
@@ -144,7 +155,7 @@ export function compareUpscaleBenchmarkCandidates(records) {
   const groups = new Map();
   const seenFixtures = new Map();
   for (const record of valid) {
-    const key = JSON.stringify([record.model, record.modelVersion, record.binarySha256, record.modelFilesSha256]);
+    const key = JSON.stringify([record.model, record.modelVersion, record.binarySha256, record.modelFilesSha256, record.runtime||null]);
     const fixtureKey = key + ":" + record.fixtureId;
     if (seenFixtures.has(fixtureKey)) {
       invalid.push({ fixtureId: record.fixtureId, issues: ["fixtureId must be unique within a pinned model build"] });
@@ -176,6 +187,7 @@ export function compareUpscaleBenchmarkCandidates(records) {
     return {
       model: first.model, modelVersion: first.modelVersion,
       binarySha256: first.binarySha256, modelFilesSha256: first.modelFilesSha256,
+      runtime:first.runtime||null,
       records: items.length, executionPassed: successful.length,
       executionFailed: items.length - successful.length,
       reviewedPass: reviewedPass.length, reviewedFail: reviewedFail.length,
