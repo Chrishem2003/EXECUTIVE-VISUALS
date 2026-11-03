@@ -236,6 +236,7 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
           durationMs: Math.max(1, Number(result.durationMs) || Date.now() - executionStartedAt),
           binarySha256: result.binarySha256,
           modelFilesSha256: result.modelFilesSha256,
+          ...(result.runtime?{runtime:result.runtime}:{}),
           dimensionsVerified: true,
           decoderVerified: true,
           qualityReview: "not_reviewed"
