@@ -4,7 +4,7 @@ import { createAuthRateLimiter } from "./auth-rate-limit.mjs";
 import { createRedisRestRateLimiter } from "./distributed-rate-limit.mjs";
 import { createClientIpResolver } from "./client-ip.mjs";
 import { isBlockedDotPath } from "./static-path-security.mjs";
-import { ensureAuthSecuritySchema, getLoginLockState, recordFailedLogin, clearLoginFailures } from "./auth-login-security.mjs";
+import { ensureAuthSecuritySchema, getLoginLockState, recordFailedLogin, clearLoginFailures, recordLoginLockoutEvent } from "./auth-login-security.mjs";
 import { createHash, randomBytes, randomUUID, scryptSync, timingSafeEqual } from "node:crypto";
 import { createReadStream, createWriteStream, existsSync, statSync } from "node:fs";
 import { mkdir, unlink, open, readFile } from "node:fs/promises";
@@ -316,7 +316,7 @@ export function createAppServer() {
       if(path==="/api/auth/login"&&req.method==="POST"){
         const body=await readJson(req);const email=String(body.email||"").trim().toLowerCase();const password=String(body.password||"");
         const lockState=getLoginLockState(db,email);
-        if(lockState.locked){const retrySeconds=Math.max(1,Math.ceil(lockState.retryAfterMs/1000));send(res,423,{error:{code:"ACCOUNT_TEMPORARILY_LOCKED",message:"Sign-in is temporarily locked. Try again after the displayed wait."},retryAfterSeconds:retrySeconds},{"retry-after":String(retrySeconds),...cors});return;}
+        if(lockState.locked){recordLoginLockoutEvent(db,email,lockState);const retrySeconds=Math.max(1,Math.ceil(lockState.retryAfterMs/1000));send(res,423,{error:{code:"ACCOUNT_TEMPORARILY_LOCKED",message:"Sign-in is temporarily locked. Try again after the displayed wait."},retryAfterSeconds:retrySeconds},{"retry-after":String(retrySeconds),...cors});return;}
         if(AUTH_MODE==="supabase"){
           if(!supabaseAuth){fail(res,503,"AUTH_NOT_CONFIGURED","The external identity provider is not configured.");return;}
           if(!await authRateLimiter.allowEmail("signIn",email)){fail(res,429,"AUTH_EMAIL_RATE_LIMITED","Too many sign-in attempts for this email. Try again later.");return;}
