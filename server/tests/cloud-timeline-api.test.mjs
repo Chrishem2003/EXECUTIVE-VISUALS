@@ -485,14 +485,14 @@ test("cloud media job options cannot override the authorized source identity or 
 });
 
 test("cloud media job listing is scoped to the verified project and supported media families",async()=>{
- const existing=[{id:"823e4567-e89b-42d3-a456-426614174000",job_type:"media.thumbnail",status:"queued",progress:0,input:{sourceAssetId:"723e4567-e89b-42d3-a456-426614174000"}}];
+ const existing=[{id:"823e4567-e89b-42d3-a456-426614174000",owner_id:editor,project_id:project,job_type:"media.thumbnail",status:"queued",progress:0,input:{sourceAssetId:"723e4567-e89b-42d3-a456-426614174000"}}];
  const f=setup({existing});
  const result=await f.api.handle({method:"GET",path:"/api/cloud/media-jobs",ownerId:owner,query:{projectId:project}});
  assert.equal(result.status,200);
  assert.equal(result.body.jobs.length,1);
  assert.equal(result.body.jobs[0].jobType,"media.thumbnail");
  const query=f.calls.find(call=>call[0]==="fetch"&&call[1].includes("/jobs?"));
- assert.ok(query[1].includes("owner_id=eq."+owner));
+ assert.ok(!query[1].includes("owner_id=eq."));
  assert.ok(query[1].includes("project_id=eq."+project));
  assert.ok(query[1].includes("job_type=in."));
 });
