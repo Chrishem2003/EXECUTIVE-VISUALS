@@ -17,6 +17,7 @@ The command prints a JSON report and exits with status 2 when a required gate is
 - The selected allowlisted model has both `.param` and `.bin` files.
 - `AI_UPSCALE_ENABLED=true` is explicitly configured.
 - The engine executable and model hashes match an operator-maintained provenance manifest (`UPSCALE_ENGINE_MANIFEST`).
+- Queued cloud AI-upscale execution independently rechecks the manifest and exact engine fingerprint immediately before native inference; a missing, unsafe, invalid or mismatched manifest blocks inference.
 - The engine has passed its worker-local execution self-test.
 - The configured worker temporary directory is writable and supports same-directory hard-link publication.
 
@@ -36,7 +37,7 @@ Configure these values only on the isolated media worker service:
 | `UPSCALE_SELF_TEST_SCALE` | Optional self-test scale, default 2 |
 | `UPSCALE_SELF_TEST_TILE` | Optional self-test tile size, default 0 |
 
-Keep model and executable provenance in the deployment record. Pin trusted release artifacts and verify their checksums before installing. Do not put service-role credentials or provider keys in this runbook, build logs, or the web frontend.
+Keep model and executable provenance in the deployment record. The manifest must be a regular non-symlink file no larger than 16 KiB. Runtime inference validates its schema, selected model, binary hash and combined model-file hash; changing the engine after the check also blocks publication. Pin trusted release artifacts and verify their checksums before installing. Do not put service-role credentials or provider keys in this runbook, build logs, or the web frontend.
 
 ## Acceptance sequence
 
