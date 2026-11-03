@@ -246,3 +246,15 @@ test("cloud job diagnostics migration is bounded, payload-free and service-role-
  assert.match(sql,/revoke all on function executive_visuals\.list_job_diagnostics\(integer,integer,integer\) from public, anon, authenticated/);
  assert.match(sql,/grant execute on function executive_visuals\.list_job_diagnostics\(integer,integer,integer\) to service_role/);
 });
+
+test("asset cleanup diagnostics migration returns aggregate-only service-role data",async()=>{
+ const sql=await readFile(new URL("../../supabase/migrations/20261103240000_cloud_asset_cleanup_diagnostics.sql",import.meta.url),"utf8");
+ assert.match(sql,/create or replace function executive_visuals\.list_asset_cleanup_diagnostics\(\)/);
+ assert.match(sql,/storage_cleanup_status='pending'/);
+ assert.match(sql,/pending_over_24_hours/);
+ assert.match(sql,/pending_over_7_days/);
+ assert.match(sql,/oldest_pending_age_seconds/);
+ assert.doesNotMatch(sql,/owner_id|project_id|object_path|original_name|metadata/);
+ assert.match(sql,/revoke all on function executive_visuals\.list_asset_cleanup_diagnostics\(\) from public, anon, authenticated/);
+ assert.match(sql,/grant execute on function executive_visuals\.list_asset_cleanup_diagnostics\(\) to service_role/);
+});
