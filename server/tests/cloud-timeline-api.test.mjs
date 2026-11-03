@@ -491,6 +491,7 @@ test("cloud media job listing is scoped to the verified project and supported me
  assert.equal(result.status,200);
  assert.equal(result.body.jobs.length,1);
  assert.equal(result.body.jobs[0].jobType,"media.thumbnail");
+ assert.equal(result.body.jobs[0].projectId,project);
  const query=f.calls.find(call=>call[0]==="fetch"&&call[1].includes("/jobs?"));
  assert.ok(!query[1].includes("owner_id=eq."));
  assert.ok(query[1].includes("project_id=eq."+project));
