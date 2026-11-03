@@ -32,7 +32,8 @@ export async function inspectUpscaleWorkerReadiness({
   const adapter = createRealEsrganAdapter({
     binaryPath: env.REALESRGAN_NCNN_PATH || "",
     modelDirectory: env.REALESRGAN_MODEL_DIR || "",
-    enabled: env.AI_UPSCALE_ENABLED === "true"
+    enabled: env.AI_UPSCALE_ENABLED === "true",
+    manifestPath: env.UPSCALE_ENGINE_MANIFEST || ""
   });
   let engine = await adapter.probe(selectedModel);
   let selfTest = { attempted: false, passed: false, reason: "UPSCALE_SELF_TEST_IMAGE is not configured." };
