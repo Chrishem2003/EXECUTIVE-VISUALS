@@ -526,3 +526,7 @@ This section supersedes older status notes above wherever they describe cloud pr
 6. Reconcile and review the large feature-branch delta against `main`; keep PRs draft until the acceptance evidence and code review are complete.
 
 No production deployment, production database/storage write, migration application, paid provider execution, PR merge or force-push was performed for this checkpoint.
+
+## Cloud media transfer hardening — signed downloads and streamed derivatives
+
+The cloud media IO boundary now rejects HTTP redirects for signed object downloads, validates signed URL safety, bounds streamed download and upload sizes, verifies downloaded bytes against repository SHA-256 metadata, and removes isolated temporary files after failed materialization. The streaming derivative-publication path now checks that the output is a non-empty regular file and enforces the configured byte limit before handing the path to the asset repository. Regression coverage includes redirect rejection/cleanup, oversized streamed outputs, non-file outputs, checksum mismatch and cancellation. The Quality Checks workflow passed on commit `b3e731261be623201891f0a3ead37dcd767d6a20`; this is code-level verification and does not replace real isolated-staging storage tests.
