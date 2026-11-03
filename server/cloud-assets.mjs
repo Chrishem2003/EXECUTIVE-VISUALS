@@ -149,6 +149,28 @@ export function createCloudAssetRepository({
       await allowed(ownerId,row.project_id||null,"read");
       return publicAsset(row);
     },
+    async getLineage({ownerId,assetId,maxDepth=8,limit=100}) {
+      ownerId=validUuid(ownerId,"owner ID");assetId=validUuid(assetId,"asset ID");
+      maxDepth=Math.max(1,Math.min(12,Number.isInteger(maxDepth)?maxDepth:8));
+      limit=Math.max(1,Math.min(100,Number.isInteger(limit)?limit:100));
+      const rows=await request("assets?select=id,owner_id,project_id,original_name,media_type,byte_size,sha256,storage_bucket,object_path,derivative_of,metadata,created_at,deleted_at&id=eq."+encodeURIComponent(assetId)+"&deleted_at=is.null&limit=1");
+      const root=Array.isArray(rows)?rows[0]:null;
+      if(!root||(!root.project_id&&root.owner_id!==ownerId)){const error=new Error("Cloud asset not found.");error.code="CLOUD_ASSET_NOT_FOUND";throw error;}
+      await allowed(ownerId,root.project_id||null,"read");
+      const sameScope=(row)=>row&&row.owner_id===root.owner_id&&(row.project_id||null)===(root.project_id||null)&&row.deleted_at==null;
+      const ancestors=[publicAsset(root)];
+      let current=root;
+      for(let depth=0;depth<maxDepth&&current.derivative_of;depth++){
+        const parentRows=await request("assets?select=id,owner_id,project_id,original_name,media_type,byte_size,sha256,storage_bucket,object_path,derivative_of,metadata,created_at,deleted_at&id=eq."+encodeURIComponent(current.derivative_of)+"&deleted_at=is.null&limit=1");
+        const parent=Array.isArray(parentRows)?parentRows[0]:null;
+        if(!sameScope(parent))break;
+        if(ancestors.some(item=>item.id===parent.id))throw new Error("Cloud asset derivative lineage contains a cycle.");
+        ancestors.push(publicAsset(parent));current=parent;
+      }
+      const childRows=await request("assets?select=id,owner_id,project_id,original_name,media_type,byte_size,sha256,storage_bucket,object_path,derivative_of,metadata,created_at,deleted_at&derivative_of=eq."+encodeURIComponent(assetId)+"&deleted_at=is.null&"+(root.project_id?"project_id=eq."+encodeURIComponent(root.project_id):"owner_id=eq."+encodeURIComponent(root.owner_id)+"&project_id=is.null")+"&order=created_at.desc&limit="+limit);
+      const derivatives=(Array.isArray(childRows)?childRows:[]).filter(sameScope).map(publicAsset);
+      return {assetId,ancestors,derivatives,depth:ancestors.length-1,hasMoreAncestors:Boolean(current.derivative_of),derivativesTruncated:Array.isArray(childRows)&&childRows.length>=limit};
+    },
     async createSignedUrl({ownerId,assetId,expiresIn=300}) {
       ownerId=validUuid(ownerId,"owner ID");assetId=validUuid(assetId,"asset ID");
       const rows=await request("assets?select=id,owner_id,project_id,original_name,media_type,byte_size,sha256,storage_bucket,object_path,derivative_of,metadata,created_at,deleted_at&id=eq."+encodeURIComponent(assetId)+"&deleted_at=is.null&limit=1");
