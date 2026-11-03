@@ -558,11 +558,12 @@ test("cloud media job event history is project-authorized, bounded and sanitized
  const result=await f.api.handle({method:"GET",path:"/api/cloud/media-jobs/"+job.id+"/events",ownerId:editor,query:{projectId:project,limit:"500"}});
  assert.equal(result.status,200);
  assert.equal(result.body.events.length,2);
+ assert.equal(result.body.events[0].type,"job.queued");
  assert.equal(result.body.events[1].data.progress,45);
  assert.equal("workerId" in result.body.events[1].data,false);
  assert.equal("secret" in result.body.events[0].data,false);
  const eventQuery=f.calls.find(call=>call[0]==="fetch"&&call[1].includes("/job_events?"));
- assert.match(eventQuery[1],/limit=100$/);
+ assert.match(eventQuery[1],/order=created_at.desc&limit=100$/);
 });
 test("cloud media job event history rejects unknown jobs and invalid project IDs",async()=>{
  const f=setup();
