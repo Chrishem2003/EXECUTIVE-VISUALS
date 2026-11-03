@@ -621,6 +621,7 @@ export function createAppServer() {
           try{
             if(!action&&req.method==="GET"){const asset=await cloudAssetService.assets.get({ownerId:user.id,assetId});send(res,200,{asset},cors);return;}
             if(action==="url"&&req.method==="GET"){const signed=await cloudAssetService.assets.createSignedUrl({ownerId:user.id,assetId,expiresIn:300});send(res,200,signed,cors);return;}
+            if(action==="file"&&req.method==="GET"){const signed=await cloudAssetService.assets.createSignedUrl({ownerId:user.id,assetId,expiresIn:300});res.writeHead(302,{location:signed.url,"cache-control":"private, no-store","referrer-policy":"no-referrer"});res.end();return;}
             if(!action&&req.method==="DELETE"){const result=await cloudAssetService.assets.softDelete({ownerId:user.id,assetId});send(res,result.cleanupPending?202:200,result,cors);return;}
             if(action==="retry-cleanup"&&req.method==="POST"){const result=await cloudAssetService.assets.retryCleanup({ownerId:user.id,assetId});send(res,200,result,cors);return;}
           }catch(error){cloudAssetError(res,error,cors);return;}
