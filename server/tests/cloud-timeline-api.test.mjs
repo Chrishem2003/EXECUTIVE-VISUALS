@@ -8,7 +8,7 @@ import { createRenderManifest } from "../render-manifest.mjs";
 
 const owner="123e4567-e89b-42d3-a456-426614174000",editor="223e4567-e89b-42d3-a456-426614174000",project="423e4567-e89b-42d3-a456-426614174000",timelineId="523e4567-e89b-42d3-a456-426614174000";
 const timelineDoc={width:1280,height:720,frameRate:{numerator:24,denominator:1},tracks:[],markers:[]};
-function setup({canWrite=true,projectId=project,existing=[],timelineDocOverride=timelineDoc,assetOverride=null,signedAssetOverride=null,authorizeOverride=null,duplicateReview=false}={}){
+function setup({canWrite=true,projectId=project,existing=[],timelineDocOverride=timelineDoc,assetOverride=null,signedAssetOverride=null,authorizeOverride=null,duplicateReview=false,cancelRpcResult={status:"cancelled"}}={}){
  const calls=[],created=[];
  const timeline={id:timelineId,ownerId:owner,projectId,name:"Test timeline",revision:2,timeline:timelineDocOverride,otio:null};
  const timelines={
@@ -17,7 +17,7 @@ function setup({canWrite=true,projectId=project,existing=[],timelineDocOverride=
   async list(input){calls.push(["timeline-list",input]);return[{...timeline}];},
   async update(input){calls.push(["update",input]);return{...timeline,revision:input.expectedRevision+1,timeline:input.timeline};}
  };
- const fetchImpl=async(url,options)=>{calls.push(["fetch",url,options]);if(url.includes("/job_events")&&options.method==="POST"&&duplicateReview)return{ok:false,status:409,async text(){return JSON.stringify({code:"23505",message:"duplicate key"})}};if(url.includes("/jobs")&&options.method==="POST")return{ok:true,status:201,async text(){return JSON.stringify([{id:JSON.parse(options.body).id,owner_id:owner,project_id:projectId,job_type:JSON.parse(options.body).job_type,status:"queued",input:JSON.parse(options.body).input}])}};if(url.includes("/jobs?")&&options.method==="PATCH"){const row=existing.find(item=>url.includes("id=eq."+item.id));if(!row)return{ok:true,status:200,async text(){return"[]"}};Object.assign(row,JSON.parse(options.body));return{ok:true,status:200,async text(){return JSON.stringify([row])}};}if(url.includes("/jobs?"))return{ok:true,status:200,async text(){return JSON.stringify(existing)}};return{ok:true,status:201,async text(){return""}};};
+ const fetchImpl=async(url,options)=>{calls.push(["fetch",url,options]);if(url.includes("/rpc/cancel_queued_media_job"))return{ok:true,status:200,async text(){return JSON.stringify(cancelRpcResult);}};if(url.includes("/job_events")&&options.method==="POST"&&duplicateReview)return{ok:false,status:409,async text(){return JSON.stringify({code:"23505",message:"duplicate key"})}};if(url.includes("/jobs")&&options.method==="POST")return{ok:true,status:201,async text(){return JSON.stringify([{id:JSON.parse(options.body).id,owner_id:owner,project_id:projectId,job_type:JSON.parse(options.body).job_type,status:"queued",input:JSON.parse(options.body).input}])}};if(url.includes("/jobs?")&&options.method==="PATCH"){const row=existing.find(item=>url.includes("id=eq."+item.id));if(!row)return{ok:true,status:200,async text(){return"[]"}};Object.assign(row,JSON.parse(options.body));return{ok:true,status:200,async text(){return JSON.stringify([row])}};}if(url.includes("/jobs?"))return{ok:true,status:200,async text(){return JSON.stringify(existing)}};return{ok:true,status:201,async text(){return""}};};
  const api=createCloudTimelineApi({url:"https://example.supabase.co",serviceRoleKey:"service-secret",fetchImpl,timelineService:{timelines,assets:{async list(input){calls.push(["asset-list",input]);return[{id:"asset-1",projectId:input.projectId}];},async retryCleanup(input){calls.push(["asset-cleanup-retry",input]);return{id:input.assetId,deleted:true,storageRemoved:true,cleanupPending:false};},async get(input){calls.push(["asset-get",input]);if(input.assetId==="published-asset")return assetOverride||{id:"published-asset",ownerId:owner,projectId:project,name:"master.mp4",mediaType:"video/mp4",size:2048,sha256:"a".repeat(64),metadata:{}};return assetOverride||{id:"723e4567-e89b-42d3-a456-426614174000",ownerId:owner,projectId:project,name:"generated.mp4",mediaType:"video/mp4",sha256:"a".repeat(64),metadata:{generated:true,jobId:"823e4567-e89b-42d3-a456-426614174000",mediaVerification:{status:"passed",readable:true,sha256:"a".repeat(64)},probe:{format:{duration:"2.51"},streams:[{codec_type:"video"}]}}};},async createSignedUrl(input){calls.push(["signed-url",input]);return{asset:signedAssetOverride||{id:input.assetId,projectId:project,size:2048,sha256:"a".repeat(64)},url:"https://storage.example.test/private/master?token=short-lived"};}},projects:{async create(input){calls.push(["project-create",input]);return{id:"project-1",...input};},async list(input){calls.push(["project-list",input]);return[{id:project}];},async get(input){calls.push(["project-get",input]);return{id:project,...input};},async update(input){calls.push(["project-update",input]);return{id:project,...input};},async archive(input){calls.push(["project-archive",input]);return{id:project,archived:true};}}},authorize:authorizeOverride|| (async({ownerId,projectId:pid,action})=>ownerId===owner&&(!pid||pid===project)&&(action==="read"||canWrite))});
  return{api,calls,created};
 }
@@ -507,4 +507,40 @@ test("cloud media job rejects operation and source media-type mismatches before 
  const video=setup();
  const cleanAudio=await video.api.handle({method:"POST",path:"/api/cloud/media-jobs",ownerId:owner,idempotencyKey:"media-type-0002",body:{projectId:project,sourceAssetId:"723e4567-e89b-42d3-a456-426614174000",jobType:"media.audio-clean"}});
  assert.equal(cleanAudio.status,422);
+});
+
+
+test("cloud media cancellation atomically cancels a queued job for an authorized project editor",async()=>{
+ const job={id:"823e4567-e89b-42d3-a456-426614174000",owner_id:owner,project_id:project,job_type:"media.thumbnail",status:"queued",progress:0};
+ const f=setup({existing:[job],authorizeOverride:async({ownerId,projectId:pid,action})=>ownerId===editor&&pid===project&&action==="write"});
+ const result=await f.api.handle({method:"POST",path:"/api/cloud/media-jobs/"+job.id+"/cancel",ownerId:editor,body:{projectId:project}});
+ assert.equal(result.status,200);
+ assert.equal(result.body.job.status,"cancelled");
+ const rpc=f.calls.find(call=>call[0]==="fetch"&&call[1].includes("/rpc/cancel_queued_media_job"));
+ assert.deepEqual(JSON.parse(rpc[2].body),{p_job_id:job.id,p_project_id:project,p_cancelled_by:editor});
+});
+
+test("cloud media cancellation refuses running or completed jobs without touching the worker lease",async()=>{
+ const job={id:"823e4567-e89b-42d3-a456-426614174000",owner_id:owner,project_id:project,job_type:"media.thumbnail",status:"processing",progress:35};
+ const f=setup({existing:[job]});
+ const result=await f.api.handle({method:"POST",path:"/api/cloud/media-jobs/"+job.id+"/cancel",ownerId:owner,body:{projectId:project}});
+ assert.equal(result.status,409);
+ assert.equal(result.body.error.code,"CLOUD_MEDIA_JOB_NOT_CANCELLABLE");
+ assert.equal(f.calls.some(call=>call[0]==="fetch"&&call[1].includes("/rpc/cancel_queued_media_job")),false);
+});
+
+test("cloud media cancellation handles the claim-versus-cancel race without cancelling a leased job",async()=>{
+ const job={id:"823e4567-e89b-42d3-a456-426614174000",owner_id:owner,project_id:project,job_type:"media.thumbnail",status:"queued",progress:0};
+ const f=setup({existing:[job],cancelRpcResult:{status:"not_cancellable",jobStatus:"processing"}});
+ const result=await f.api.handle({method:"POST",path:"/api/cloud/media-jobs/"+job.id+"/cancel",ownerId:owner,body:{projectId:project}});
+ assert.equal(result.status,409);
+ assert.equal(result.body.jobStatus,"processing");
+});
+
+test("cloud media cancellation requires project editor permission and hides jobs from unauthorized users",async()=>{
+ const job={id:"823e4567-e89b-42d3-a456-426614174000",owner_id:owner,project_id:project,job_type:"media.thumbnail",status:"queued",progress:0};
+ const f=setup({existing:[job],canWrite:false});
+ const result=await f.api.handle({method:"POST",path:"/api/cloud/media-jobs/"+job.id+"/cancel",ownerId:owner,body:{projectId:project}});
+ assert.equal(result.status,404);
+ assert.equal(f.calls.some(call=>call[0]==="fetch"&&call[1].includes("/jobs?")),false);
 });
