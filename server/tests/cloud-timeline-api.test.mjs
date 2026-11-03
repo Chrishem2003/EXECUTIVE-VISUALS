@@ -17,7 +17,7 @@ function setup({canWrite=true,projectId=project,existing=[],timelineDocOverride=
   async list(input){calls.push(["timeline-list",input]);return[{...timeline}];},
   async update(input){calls.push(["update",input]);return{...timeline,revision:input.expectedRevision+1,timeline:input.timeline};}
  };
- const fetchImpl=async(url,options)=>{calls.push(["fetch",url,options]);if(url.includes("/job_events")&&options.method==="POST"&&duplicateReview)return{ok:false,status:409,async text(){return JSON.stringify({code:"23505",message:"duplicate key"})}};if(url.includes("/jobs")&&options.method==="POST")return{ok:true,status:201,async text(){return JSON.stringify([{id:JSON.parse(options.body).id,owner_id:owner,project_id:projectId,job_type:"timeline.render",status:"queued",input:JSON.parse(options.body).input}])}};if(url.includes("/jobs?")&&options.method==="PATCH"){const row=existing.find(item=>url.includes("id=eq."+item.id));if(!row)return{ok:true,status:200,async text(){return"[]"}};Object.assign(row,JSON.parse(options.body));return{ok:true,status:200,async text(){return JSON.stringify([row])}};}if(url.includes("/jobs?"))return{ok:true,status:200,async text(){return JSON.stringify(existing)}};return{ok:true,status:201,async text(){return""}};};
+ const fetchImpl=async(url,options)=>{calls.push(["fetch",url,options]);if(url.includes("/job_events")&&options.method==="POST"&&duplicateReview)return{ok:false,status:409,async text(){return JSON.stringify({code:"23505",message:"duplicate key"})}};if(url.includes("/jobs")&&options.method==="POST")return{ok:true,status:201,async text(){return JSON.stringify([{id:JSON.parse(options.body).id,owner_id:owner,project_id:projectId,job_type:JSON.parse(options.body).job_type,status:"queued",input:JSON.parse(options.body).input}])}};if(url.includes("/jobs?")&&options.method==="PATCH"){const row=existing.find(item=>url.includes("id=eq."+item.id));if(!row)return{ok:true,status:200,async text(){return"[]"}};Object.assign(row,JSON.parse(options.body));return{ok:true,status:200,async text(){return JSON.stringify([row])}};}if(url.includes("/jobs?"))return{ok:true,status:200,async text(){return JSON.stringify(existing)}};return{ok:true,status:201,async text(){return""}};};
  const api=createCloudTimelineApi({url:"https://example.supabase.co",serviceRoleKey:"service-secret",fetchImpl,timelineService:{timelines,assets:{async list(input){calls.push(["asset-list",input]);return[{id:"asset-1",projectId:input.projectId}];},async retryCleanup(input){calls.push(["asset-cleanup-retry",input]);return{id:input.assetId,deleted:true,storageRemoved:true,cleanupPending:false};},async get(input){calls.push(["asset-get",input]);if(input.assetId==="published-asset")return assetOverride||{id:"published-asset",ownerId:owner,projectId:project,name:"master.mp4",mediaType:"video/mp4",size:2048,sha256:"a".repeat(64),metadata:{}};return assetOverride||{id:"723e4567-e89b-42d3-a456-426614174000",ownerId:owner,projectId:project,name:"generated.mp4",mediaType:"video/mp4",sha256:"a".repeat(64),metadata:{generated:true,jobId:"823e4567-e89b-42d3-a456-426614174000",mediaVerification:{status:"passed",readable:true,sha256:"a".repeat(64)},probe:{format:{duration:"2.51"},streams:[{codec_type:"video"}]}}};},async createSignedUrl(input){calls.push(["signed-url",input]);return{asset:signedAssetOverride||{id:input.assetId,projectId:project,size:2048,sha256:"a".repeat(64)},url:"https://storage.example.test/private/master?token=short-lived"};}},projects:{async create(input){calls.push(["project-create",input]);return{id:"project-1",...input};},async list(input){calls.push(["project-list",input]);return[{id:project}];},async get(input){calls.push(["project-get",input]);return{id:project,...input};},async update(input){calls.push(["project-update",input]);return{id:project,...input};},async archive(input){calls.push(["project-archive",input]);return{id:project,archived:true};}}},authorize:authorizeOverride|| (async({ownerId,projectId:pid,action})=>ownerId===owner&&(!pid||pid===project)&&(action==="read"||canWrite))});
  return{api,calls,created};
 }
@@ -393,4 +393,23 @@ test("cloud asset lineage endpoint requires a verified account identity",async()
  const api=createCloudTimelineApi({url:"https://example.supabase.co",serviceRoleKey:"service-secret",timelineService:{timelines:{},assets:{async get(){called=true;},async list(){called=true;}}},authorize:async()=>true});
  const result=await api.handle({method:"GET",path:"/api/cloud/assets/"+timelineId+"/lineage"});
  assert.equal(result.status,401);assert.equal(called,false);
+});
+
+test("waveform API queues an idempotent project-scoped job for verified audio only",async()=>{
+ const audio={id:"723e4567-e89b-42d3-a456-426614174000",ownerId:owner,projectId:project,name:"dialogue.wav",mediaType:"audio/wav",sha256:"d".repeat(64)};
+ const f=setup({assetOverride:audio});
+ const result=await f.api.handle({method:"POST",path:"/api/cloud/waveforms",ownerId:owner,body:{projectId:project,sourceAssetId:audio.id,width:1200,height:180},idempotencyKey:"waveform-request-001"});
+ assert.equal(result.status,202);assert.equal(result.body.job.job_type,"media.waveform");
+ const queued=JSON.parse(f.calls.find(call=>call[0]==="fetch"&&call[1].includes("/jobs?")&&call[2].method==="POST")[2].body);
+ assert.equal(queued.job_type,"media.waveform");assert.equal(queued.input.sourceSha256,audio.sha256);assert.equal(queued.input.width,1200);assert.equal(queued.input.height,180);
+ assert.ok(f.calls.some(call=>call[0]==="fetch"&&call[1].includes("/job_events")));
+});
+test("waveform API rejects non-audio assets and invalid dimensions",async()=>{
+ const video={id:"723e4567-e89b-42d3-a456-426614174000",ownerId:owner,projectId:project,name:"clip.mp4",mediaType:"video/mp4",sha256:"d".repeat(64)};
+ const f=setup({assetOverride:video});
+ const result=await f.api.handle({method:"POST",path:"/api/cloud/waveforms",ownerId:owner,body:{projectId:project,sourceAssetId:video.id},idempotencyKey:"waveform-request-002"});
+ assert.equal(result.status,422);assert.equal(result.body.error.code,"WAVEFORM_SOURCE_INVALID");
+ const audio=setup({assetOverride:{...video,mediaType:"audio/wav"}});
+ const invalid=await audio.api.handle({method:"POST",path:"/api/cloud/waveforms",ownerId:owner,body:{projectId:project,sourceAssetId:video.id,width:20},idempotencyKey:"waveform-request-003"});
+ assert.equal(invalid.status,400);assert.equal(invalid.body.error.code,"WAVEFORM_OPTIONS_INVALID");
 });
