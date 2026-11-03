@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { access, lstat, stat, open } from "node:fs/promises";
+import { access, copyFile, lstat, open, rm as removeFile, stat } from "node:fs/promises";
 import { constants } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
 import { tmpdir } from "node:os";
@@ -228,16 +228,35 @@ export function createRealEsrganAdapter({
     const executionStartedAt = Date.now();
     const engineBefore = await fingerprint(prepared.model);
     if (!engineBefore || engineBefore.fingerprint !== readiness.engineFingerprint) throw fail("AI upscale engine changed after readiness verification.", "AI_UPSCALE_ENGINE_CHANGED");
-    await run(prepared.binary, prepared.args, timeoutMs, options.signal);
-    const engineAfter = await fingerprint(prepared.model);
-    if (!engineAfter || engineAfter.fingerprint !== engineBefore.fingerprint) throw fail("AI upscale executable or model weights changed during inference; output cannot be published.", "AI_UPSCALE_ENGINE_CHANGED");
-    const info = await stat(output).catch(() => null);
-    if (!info?.isFile() || info.size < 24 || info.size > maxOutputBytes) throw fail("AI upscale output is missing, empty or exceeds the configured size limit.", "AI_UPSCALE_OUTPUT_INVALID");
-    await validateImageOutput(output, prepared.format);
-    const outputDimensions = await readImageDimensions(output, prepared.format);
-    const expectedWidth = inputDimensions.width * prepared.scale, expectedHeight = inputDimensions.height * prepared.scale;
-    if (outputDimensions.width !== expectedWidth || outputDimensions.height !== expectedHeight) throw fail("AI upscale output dimensions do not match the requested scale factor.", "AI_UPSCALE_OUTPUT_DIMENSIONS_MISMATCH");
-    return { path: output, byteSize: info.size, model: prepared.model, modelVersion: readiness.binarySha256 + ":" + readiness.modelFilesSha256, scale: prepared.scale, tile: prepared.tile, format: prepared.format, width: outputDimensions.width, height: outputDimensions.height, sourceWidth: inputDimensions.width, sourceHeight: inputDimensions.height, durationMs: Math.max(1, Date.now() - executionStartedAt), binarySha256: readiness.binarySha256, modelFilesSha256: readiness.modelFilesSha256, engine: "realesrgan-ncnn-vulkan", method: "ai-super-resolution" };
+    // The native process writes only to a private, unique sibling path. Publish
+    // with COPYFILE_EXCL so a target created after the initial check (including
+    // a symlink) can never be overwritten by a time-of-check/time-of-use race.
+    const temporaryOutput = join(dirname(output), ".ev-upscale-" + randomUUID() + "." + prepared.format);
+    const args = [...prepared.args];
+    const outputFlag = args.indexOf("-o");
+    if (outputFlag < 0 || !args[outputFlag + 1]) throw fail("AI upscale output argument is invalid.", "AI_UPSCALE_INVALID_PATH");
+    args[outputFlag + 1] = temporaryOutput;
+    try {
+      await run(prepared.binary, args, timeoutMs, options.signal);
+      const engineAfter = await fingerprint(prepared.model);
+      if (!engineAfter || engineAfter.fingerprint !== engineBefore.fingerprint) throw fail("AI upscale executable or model weights changed during inference; output cannot be published.", "AI_UPSCALE_ENGINE_CHANGED");
+      if (!(await regularFile(temporaryOutput))) throw fail("AI upscale output is missing or is not a regular file.", "AI_UPSCALE_OUTPUT_INVALID");
+      const info = await stat(temporaryOutput);
+      if (info.size < 24 || info.size > maxOutputBytes) throw fail("AI upscale output is missing, empty or exceeds the configured size limit.", "AI_UPSCALE_OUTPUT_INVALID");
+      await validateImageOutput(temporaryOutput, prepared.format);
+      const outputDimensions = await readImageDimensions(temporaryOutput, prepared.format);
+      const expectedWidth = inputDimensions.width * prepared.scale, expectedHeight = inputDimensions.height * prepared.scale;
+      if (outputDimensions.width !== expectedWidth || outputDimensions.height !== expectedHeight) throw fail("AI upscale output dimensions do not match the requested scale factor.", "AI_UPSCALE_OUTPUT_DIMENSIONS_MISMATCH");
+      try {
+        await copyFile(temporaryOutput, output, constants.COPYFILE_EXCL);
+      } catch (error) {
+        if (error.code === "EEXIST") throw fail("AI upscale output already exists; source files are never overwritten.", "AI_UPSCALE_OUTPUT_EXISTS");
+        throw error;
+      }
+      return { path: output, byteSize: info.size, model: prepared.model, modelVersion: readiness.binarySha256 + ":" + readiness.modelFilesSha256, scale: prepared.scale, tile: prepared.tile, format: prepared.format, width: outputDimensions.width, height: outputDimensions.height, sourceWidth: inputDimensions.width, sourceHeight: inputDimensions.height, durationMs: Math.max(1, Date.now() - executionStartedAt), binarySha256: readiness.binarySha256, modelFilesSha256: readiness.modelFilesSha256, engine: "realesrgan-ncnn-vulkan", method: "ai-super-resolution" };
+    } finally {
+      await removeFile(temporaryOutput, { force: true }).catch(() => {});
+    }
   }
 
   return Object.freeze({ probe, plan, execute, selfTest });
