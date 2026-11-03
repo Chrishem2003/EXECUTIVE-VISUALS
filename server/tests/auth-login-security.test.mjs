@@ -88,3 +88,31 @@ test("lockout updates commit atomically and release the write lock on active-loc
   db.exec("ROLLBACK");
   db.close();
 });
+
+test("HMAC identifier mode migrates legacy SHA-256 lockout rows without resetting failures", () => {
+  const db=setup(),t=1_800_000_000_000,previous=process.env.AUTH_IDENTIFIER_HMAC_KEY;
+  process.env.AUTH_IDENTIFIER_HMAC_KEY="test-only-secret-key-with-at-least-32-bytes";
+  try {
+    const legacy=loginIdentifierHash("hmac@example.com",undefined);
+    // Seed the pre-HMAC row using the legacy digest.
+    db.prepare("INSERT INTO auth_login_security(identifier_hash,failed_attempts,lock_level,locked_until_ms,window_started_at_ms,updated_at_ms) VALUES(?,?,?,?,?,?)")
+      .run(legacy,2,0,null,t,t);
+    const hmac=loginIdentifierHash("hmac@example.com");
+    assert.notEqual(hmac,legacy);
+    const result=recordFailedLogin(db,"hmac@example.com",t+1);
+    assert.equal(result.locked,true);
+    assert.equal(result.failedAttempts,3);
+    const rows=db.prepare("SELECT identifier_hash FROM auth_login_security").all();
+    assert.deepEqual(rows,[{identifier_hash:hmac}]);
+    clearLoginFailures(db,"hmac@example.com");
+    assert.equal(getLoginLockState(db,"hmac@example.com",t+2).failedAttempts,0);
+  } finally {
+    if(previous===undefined)delete process.env.AUTH_IDENTIFIER_HMAC_KEY;
+    else process.env.AUTH_IDENTIFIER_HMAC_KEY=previous;
+    db.close();
+  }
+});
+
+test("HMAC identifier keys reject short secrets", () => {
+  assert.throws(()=>loginIdentifierHash("user@example.com","short"),/at least 32 bytes/);
+});
