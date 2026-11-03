@@ -329,7 +329,7 @@ export function createAppServer() {
       }
       if(path==="/api/auth/password"&&req.method==="POST"){
         if(AUTH_MODE!=="supabase"||!supabaseAuth){fail(res,404,"PASSWORD_UPDATE_UNAVAILABLE","Password update is unavailable.");return;}
-        const accessToken=String(req.headers.authorization||"").replace(/^Bearer\\s+/i,"");if(!accessToken){fail(res,401,"RECOVERY_SESSION_REQUIRED","Open the password recovery link before choosing a new password.");return;}
+        const accessToken=String(req.headers.authorization||"").replace(/^Bearer\s+/i,"");if(!accessToken){fail(res,401,"RECOVERY_SESSION_REQUIRED","Open the password recovery link before choosing a new password.");return;}
         const body=await readJson(req,16*1024);try{const result=await supabaseAuth.updatePassword(accessToken,String(body.password||""));try{await supabaseAuth.signOut(accessToken);}catch{}clearSupabaseRefreshCookie(res);send(res,200,{ok:true,user:result.user},cors);return;}
         catch(error){fail(res,error.status||502,error.code||"PASSWORD_UPDATE_FAILED",String(error.message||"Password could not be updated.").slice(0,300));return;}
       }
