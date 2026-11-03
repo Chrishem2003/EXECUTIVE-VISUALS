@@ -236,6 +236,9 @@ test("cloud job diagnostics migration is bounded, payload-free and service-role-
  assert.match(sql,/lease_expired/);
  assert.match(sql,/heartbeat_stale/);
  assert.match(sql,/attempts_exhausted/);
+ assert.match(sql,/ev_jobs_diagnostics_recent/);
+ assert.match(sql,/ev_jobs_diagnostics_queued_age/);
+ assert.match(sql,/ev_jobs_diagnostics_processing_lease/);
  assert.doesNotMatch(sql,/select[\s\S]{0,500}input[\s\S]{0,100}output/);
  assert.match(sql,/p_limit not between 1 and 200/);
  assert.match(sql,/p_queue_stale_after_seconds not between 60 and 86400/);
