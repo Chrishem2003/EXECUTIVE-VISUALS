@@ -711,3 +711,27 @@ test("cloud AI upscale refuses inference when the engine provenance manifest is 
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test("cloud waveform job creates a verified PNG derivative of the leased audio source",async()=>{
+ const directory=await mkdtemp(join(tmpdir(),"ev-waveform-test-"));
+ const previous=process.env.FFMPEG_PATH,previousProbe=process.env.FFPROBE_PATH;
+ const source=join(directory,"voice.wav"),sourceBytes=Buffer.from("licensed-audio-fixture");
+ await writeFile(source,sourceBytes);
+ const sourceSha256=createHash("sha256").update(sourceBytes).digest("hex");
+ const ffmpeg=await executable(directory,"ffmpeg",'for last do :; done\nprintf "PNG-waveform" > "$last"');
+ const ffprobe=await executable(directory,"ffprobe",String.raw`printf '%s' '{"streams":[{"codec_type":"video","codec_name":"png","width":1200,"height":180}],"format":{}}'`);
+ process.env.FFMPEG_PATH=ffmpeg;process.env.FFPROBE_PATH=ffprobe;
+ let published=null,publishedBytes=null;
+ try{
+  const execute=createCloudMediaExecutor({tempRoot:directory,mediaIO:{
+   async materialize({ownerId,assetId}){assert.equal(ownerId,"verified-owner");assert.equal(assetId,"audio-source");return{path:source,asset:{id:assetId,name:"voice.wav",mediaType:"audio/wav",sha256:sourceSha256},async cleanup(){}};},
+   async publish(args){published=args;publishedBytes=await readFile(args.path);return{id:"waveform-asset",name:args.filename,mediaType:args.mediaType,metadata:args.metadata};}
+  }});
+  const result=await execute({job:{id:"waveform-job",owner_id:"verified-owner",project_id:"project-1",job_type:"media.waveform",input:{sourceAssetId:"audio-source",sourceSha256,width:1200,height:180,color:"#66b3ff"}},onProgress(){}});
+  assert.equal(published.mediaType,"image/png");assert.equal(published.derivativeOf,"audio-source");assert.equal(published.metadata.operation,"media.waveform");assert.equal(published.metadata.sourceSha256,sourceSha256);assert.equal(publishedBytes.toString(),"PNG-waveform");assert.equal(result.outputAsset.id,"waveform-asset");assert.equal(result.operation,"media.waveform");
+ }finally{
+  if(previous===undefined)delete process.env.FFMPEG_PATH;else process.env.FFMPEG_PATH=previous;
+  if(previousProbe===undefined)delete process.env.FFPROBE_PATH;else process.env.FFPROBE_PATH=previousProbe;
+  await rm(directory,{recursive:true,force:true});
+ }
+});
