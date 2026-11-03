@@ -10,7 +10,7 @@ const TEMPLATES:Template[]=[
 export function listTimelineTemplates(){return TEMPLATES.map(template=>({id:template.id,label:template.label,width:template.width,height:template.height,fps:template.fps}));}
 export function applyTimelineTemplate(timeline:EditorialTimeline,templateId:string):EditorialTimeline{
  const template=TEMPLATES.find(item=>item.id===templateId);if(!template)throw new Error("Unknown timeline template.");
- let next={...timeline,width:template.width,height:template.height,frameRate:{numerator:template.fps,denominator:1},metadata:{...timeline.metadata,templateId:template.id}};
+ let next:EditorialTimeline={...timeline,width:template.width,height:template.height,frameRate:{numerator:template.fps,denominator:1},metadata:{...timeline.metadata,templateId:template.id}};
  for(const [index,track] of template.tracks.entries())next=addTrack(next,{id:timeline.id+"-template-track-"+(index+1),name:track.name,kind:track.kind,enabled:true,locked:false,clips:[]});
  for(const [index,marker] of template.markers.entries())next=addMarker(next,{id:timeline.id+"-template-marker-"+(index+1),name:marker.name,start:rational(marker.seconds*template.fps,template.fps),color:marker.color,note:marker.note});
  return next;
