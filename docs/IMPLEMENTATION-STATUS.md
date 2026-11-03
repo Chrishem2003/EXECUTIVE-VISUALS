@@ -590,3 +590,5 @@ The cloud media IO boundary now rejects HTTP redirects for signed object downloa
 - Cloud timeline creation now offers four editable starter sequences: Social short, YouTube essay, Interview and Product demo. Each template establishes a suitable aspect ratio/frame rate, picture/audio/graphics/caption tracks and timecoded editorial review markers. Templates add structure only; they do not fabricate clips or assets.
 
 - Cloud timeline audio now supports opt-in voice-led music ducking. Editors can tag audio clips as voice/dialogue, background music or other, then enable ducking on music clips and tune threshold/ratio. The cloud FFmpeg renderer builds a shared voice sidechain for multiple voice clips and applies bounded sidechain compression to opted-in music clips; ordinary audio remains unchanged. Automated graph tests and a real FFmpeg render fixture cover the path.
+
+- Voice-led music ducking uses FFmpeg audio splitting so the voice remains audible in the final mix while a separate sidechain copy controls ducked music; this avoids consuming the same filter output twice.
