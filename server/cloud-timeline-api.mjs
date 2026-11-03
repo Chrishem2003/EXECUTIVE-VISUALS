@@ -415,10 +415,23 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     if(query.revision!==undefined&&String(query.revision)!==String(timeline.revision))return response(409,{error:{code:"REVISION_CONFLICT",message:"Timeline changed since this preview was requested. Refresh the timeline."}});
     const referenced=(timeline.timeline?.tracks||[]).some(track=>track?.enabled!==false&&(track?.clips||[]).some(clip=>clip?.enabled!==false&&clip?.assetId===assetId));
     if(!referenced)return response(404,{error:{code:"PREVIEW_ASSET_NOT_FOUND",message:"This asset is not part of the requested timeline."}});
-    const asset=await service.assets.get({ownerId,assetId});
-    if(!asset||asset.projectId!==(timeline.projectId||null))return response(404,{error:{code:"PREVIEW_ASSET_NOT_FOUND",message:"Preview asset not found in this project."}});
-    const signed=await service.assets.createSignedUrl({ownerId,assetId,expiresIn:300});
-    return response(200,{preview:{timelineId, timelineRevision:timeline.revision,asset:signed.asset,url:signed.url,expiresIn:300,cacheControl:"no-store"}});
+    const sourceAsset=await service.assets.get({ownerId,assetId});
+    if(!sourceAsset||sourceAsset.projectId!==(timeline.projectId||null))return response(404,{error:{code:"PREVIEW_ASSET_NOT_FOUND",message:"Preview asset not found in this project."}});
+    // Prefer a structurally validated, same-project proxy for video preview.
+    // The timeline continues to reference the original asset; proxy selection
+    // is a read-only transport optimization and never changes edit provenance.
+    let previewAsset=sourceAsset,usingProxy=false;
+    if(String(sourceAsset.mediaType||"").startsWith("video/")&&typeof service.assets.list==="function"){
+     const candidates=await service.assets.list({ownerId,projectId:timeline.projectId||null,limit:100,offset:0});
+     const proxy=(Array.isArray(candidates)?candidates:[]).find(candidate=>
+      candidate?.derivativeOf===assetId&&candidate?.projectId===(timeline.projectId||null)&&
+      String(candidate?.mediaType||"").startsWith("video/")&&candidate?.metadata?.operation==="media.proxy"&&
+      candidate?.metadata?.sourceSha256===sourceAsset.sha256&&candidate?.sha256&&candidate.sha256!==sourceAsset.sha256
+     );
+     if(proxy){previewAsset=proxy;usingProxy=true;}
+    }
+    const signed=await service.assets.createSignedUrl({ownerId,assetId:previewAsset.id,expiresIn:300});
+    return response(200,{preview:{timelineId,timelineRevision:timeline.revision,sourceAssetId:assetId,asset:signed.asset,url:signed.url,usingProxy,expiresIn:300,cacheControl:"no-store"}});
    }
    const match=path.match(/^\/api\/cloud\/timelines\/([0-9a-f-]+)(?:\/(render))?$/i);
    if(!match||!safeId(match[1]))return null;
