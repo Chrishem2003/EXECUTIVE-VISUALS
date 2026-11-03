@@ -18,7 +18,7 @@ test("cloud FFmpeg renderer produces a playable master from materialized video a
   execFileSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-loglevel","error","-y","-f","lavfi","-i","sine=frequency=220:duration=1","-c:a","pcm_s16le",music]);
   const timeline={name:"Cloud test",width:320,height:240,frameRate:{numerator:24,denominator:1},tracks:[
    {id:"v",kind:"video",clips:[{id:"v1",assetId:"asset-video",timelineStart:time(0),duration:time(1),sourceRange:{start:time(0),duration:time(1)},metadata:{fadeInSeconds:0.15,fadeOutSeconds:0.2}}]},
-   {id:"a",kind:"audio",clips:[{id:"a1",assetId:"asset-audio",timelineStart:time(0),duration:time(1),sourceRange:{start:time(0),duration:time(1)},gainDb:-3,metadata:{fadeInSeconds:0.1,fadeOutSeconds:0.15}}]}
+   {id:"a",kind:"audio",clips:[{id:"a1",assetId:"asset-audio",timelineStart:time(0),duration:time(1),sourceRange:{start:time(0),duration:time(1)},gainDb:-3,metadata:{fadeInSeconds:0.1,fadeOutSeconds:0.15,audioRole:"voice"}}]},\n   {id:"m",kind:"audio",clips:[{id:"m1",assetId:"asset-music",timelineStart:time(0),duration:time(1),sourceRange:{start:time(0),duration:time(1)},gainDb:-12,metadata:{audioRole:"music",duckingEnabled:true,duckingThresholdDb:-30,duckingRatio:10}}]}
   ]};
   const assets=new Map([
    ["asset-video",{path:video,asset:{id:"asset-video",mediaType:"video/mp4",originalName:"source.mp4"}}],
