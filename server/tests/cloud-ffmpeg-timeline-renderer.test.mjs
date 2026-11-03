@@ -34,7 +34,7 @@ test("cloud FFmpeg renderer produces a playable master from materialized video a
   assert.ok(probe.streams.some(stream=>stream.codec_type==="audio"));
   assert.equal(result.render.videoClips,1);
   assert.equal(result.render.audioClips,1,"solo routing excludes the non-solo voice track");
-  assert.equal(result.render.duckedMusicClips,1);
+  assert.equal(result.render.duckedMusicClips,0,"solo routing removes the voice sidechain, so music ducking is correctly inactive");
  }finally{await rm(root,{recursive:true,force:true});}
 });
 
