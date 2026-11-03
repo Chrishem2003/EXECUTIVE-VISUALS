@@ -27,6 +27,7 @@ async function fixture(){
   model:"realesrgan-x4plus",modelVersion:digest("a")+":"+digest("b"),
   binarySha256:digest("a"),modelFilesSha256:digest("b"),
   sourceWidth:320,sourceHeight:240,width:1280,height:960,scale:4,durationMs:1250,
+  runtime:{platform:"linux",architecture:"x64",osRelease:"6.8",cpuModel:"Benchmark CPU",logicalCores:8,totalMemoryBytes:16000000000,nodeVersion:"24.0.0",vulkanIcdConfigured:true},
   dimensionsVerified:true,decoderVerified:true,qualityReview:"not_reviewed"
  }};
  db.prepare("INSERT INTO assets(id,owner_id,project_id,original_name,media_type,byte_size,sha256,storage_path,derivative_of,metadata_json) VALUES(?,?,?,?,?,?,?,?,?,?)")
@@ -43,6 +44,9 @@ test("registers a controlled fixture and derives benchmark evidence from its exa
   assert.equal(run.record.inputSha256,digest("c"));
   assert.equal(run.record.outputSha256,digest("d"));
   assert.equal(run.record.qualityReview,"not_reviewed");
+  assert.equal(run.record.runtime.cpuModel,"Benchmark CPU");
+  assert.equal(listUpscaleBenchmarkRuns(f.db,project)[0].record.runtime.logicalCores,8);
+  assert.equal(getUpscaleBenchmarkReport(f.db,project).report.candidates[0].runtime.platform,"linux");
   assert.equal(listUpscaleBenchmarkRuns(f.db,project).length,1);
  }finally{await f.close();}
 });
