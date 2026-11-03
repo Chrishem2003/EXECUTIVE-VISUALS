@@ -30,17 +30,30 @@ export function getLoginLockState(db, identifier, now = Date.now()) {
 }
 export function recordFailedLogin(db, identifier, now = Date.now()) {
   const key=loginIdentifierHash(identifier);
-  const current=db.prepare("SELECT failed_attempts,lock_level,locked_until_ms FROM auth_login_security WHERE identifier_hash=?").get(key);
-  if(current?.locked_until_ms&&current.locked_until_ms>now) return {locked:true,retryAfterMs:current.locked_until_ms-now,failedAttempts:current.failed_attempts,lockLevel:current.lock_level};
-  const attempts=current?.locked_until_ms&&current.locked_until_ms<=now?AUTH_LOCK_THRESHOLD:(current?.failed_attempts||0)+1;
-  const level=current?.lock_level||0;
-  const nextLevel=attempts>=AUTH_LOCK_THRESHOLD?level+1:level;
-  const lockedUntil=attempts>=AUTH_LOCK_THRESHOLD?now+Math.min(AUTH_BASE_LOCK_MS*(2**(nextLevel-1)),AUTH_MAX_LOCK_MS):null;
-  db.prepare(`INSERT INTO auth_login_security(identifier_hash,failed_attempts,lock_level,locked_until_ms,window_started_at_ms,updated_at_ms)
-    VALUES(?,?,?,?,?,?) ON CONFLICT(identifier_hash) DO UPDATE SET failed_attempts=excluded.failed_attempts,
-    lock_level=excluded.lock_level,locked_until_ms=excluded.locked_until_ms,window_started_at_ms=excluded.window_started_at_ms,updated_at_ms=excluded.updated_at_ms`)
-    .run(key,attempts,nextLevel,lockedUntil,now,now);
-  return {locked:!!lockedUntil,retryAfterMs:lockedUntil?lockedUntil-now:0,failedAttempts:attempts,lockLevel:nextLevel};
+  // Serialize the read/modify/write sequence across concurrent requests and
+  // SQLite connections. Without an immediate write lock, parallel failures
+  // can both observe the same counter and lose an increment.
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    const current=db.prepare("SELECT failed_attempts,lock_level,locked_until_ms FROM auth_login_security WHERE identifier_hash=?").get(key);
+    if(current?.locked_until_ms&&current.locked_until_ms>now) {
+      db.exec("COMMIT");
+      return {locked:true,retryAfterMs:current.locked_until_ms-now,failedAttempts:current.failed_attempts,lockLevel:current.lock_level};
+    }
+    const attempts=current?.locked_until_ms&&current.locked_until_ms<=now?AUTH_LOCK_THRESHOLD:(current?.failed_attempts||0)+1;
+    const level=current?.lock_level||0;
+    const nextLevel=attempts>=AUTH_LOCK_THRESHOLD?level+1:level;
+    const lockedUntil=attempts>=AUTH_LOCK_THRESHOLD?now+Math.min(AUTH_BASE_LOCK_MS*(2**(nextLevel-1)),AUTH_MAX_LOCK_MS):null;
+    db.prepare(`INSERT INTO auth_login_security(identifier_hash,failed_attempts,lock_level,locked_until_ms,window_started_at_ms,updated_at_ms)
+      VALUES(?,?,?,?,?,?) ON CONFLICT(identifier_hash) DO UPDATE SET failed_attempts=excluded.failed_attempts,
+      lock_level=excluded.lock_level,locked_until_ms=excluded.locked_until_ms,window_started_at_ms=excluded.window_started_at_ms,updated_at_ms=excluded.updated_at_ms`)
+      .run(key,attempts,nextLevel,lockedUntil,now,now);
+    db.exec("COMMIT");
+    return {locked:!!lockedUntil,retryAfterMs:lockedUntil?lockedUntil-now:0,failedAttempts:attempts,lockLevel:nextLevel};
+  } catch(error) {
+    try { db.exec("ROLLBACK"); } catch {}
+    throw error;
+  }
 }
 export function clearLoginFailures(db, identifier) {
   db.prepare("DELETE FROM auth_login_security WHERE identifier_hash=?").run(loginIdentifierHash(identifier));
