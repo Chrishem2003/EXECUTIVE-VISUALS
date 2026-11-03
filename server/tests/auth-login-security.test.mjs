@@ -73,3 +73,18 @@ test("lockout persistence stores a one-way normalized identifier digest", () => 
   assert.notEqual(row.identifier_hash,"user@example.com");
   db.close();
 });
+
+test("lockout updates commit atomically and release the write lock on active-lock checks", () => {
+  const db=setup(),t=1_800_000_000_000;
+  recordFailedLogin(db,"atomic@example.com",t);
+  recordFailedLogin(db,"atomic@example.com",t+1);
+  const locked=recordFailedLogin(db,"atomic@example.com",t+2);
+  assert.equal(locked.locked,true);
+  const repeated=recordFailedLogin(db,"atomic@example.com",t+3);
+  assert.equal(repeated.locked,true);
+  assert.equal(repeated.failedAttempts,3);
+  // A new immediate transaction proves every return path released its lock.
+  db.exec("BEGIN IMMEDIATE");
+  db.exec("ROLLBACK");
+  db.close();
+});
