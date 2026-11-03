@@ -3,7 +3,7 @@ import { apiRequest, ApiError, setApiAccessToken, clearApiAccessToken, refreshAp
 type RuntimeUser={id:string;email:string};
 type RuntimeProject={id:string;name:string;description?:string;revision?:number;access_role?:"owner"|"editor"|"reviewer"|"viewer"};
 type RuntimeAsset={id:string;projectId?:string|null;name:string;mediaType:string;size:number;sha256:string;derivativeOf?:string|null;metadata?:Record<string,unknown>;createdAt:string};
-type RuntimeJob={id:string;projectId?:string|null;jobType:string;status:string;progress:number;input:Record<string,unknown>;output?:Record<string,unknown>|null;error?:{code?:string;message?:string}|null;createdAt:string;updatedAt:string};
+type RuntimeJob={id:string;projectId?:string|null;jobType:string;status:string;progress:number;input:Record<string,unknown>;output?:Record<string,unknown>|null;error?:{code?:string;message?:string}|null;createdAt:string;updatedAt:string;backend?:"local"|"cloud"};
 type RuntimeReview={id:string;project_id:string;asset_id?:string|null;timecode_seconds?:number|null;decision:string;body:string;status:string;created_at:string};
 type ProviderStatus={id:string;provider:string;enabled:boolean;configured:boolean;remote:boolean;model:string|null;status:"ready"|"disabled"|"needs_configuration"|"remote_opt_in_required"|"unavailable";reason:string;capabilities:string[]};
 type RemoteUsage={window:string;configurationValid:boolean;limit:number|null;used:number;remaining:number|null;projectUsed:number|null;remoteDisabled:boolean};
@@ -12,8 +12,8 @@ let workspaceRevisions=new Map<string,number>();
 let workspaceSaveTimers=new Map<string,ReturnType<typeof setTimeout>>();
 let workspaceSaveChain:Promise<void>=Promise.resolve();
 let projectSelectionInitialized=false;
-const state:{status:"checking"|"offline"|"auth-required"|"online";authMode:"local"|"supabase";user:RuntimeUser|null;projects:RuntimeProject[];assets:RuntimeAsset[];jobs:RuntimeJob[];audit:Array<Record<string,unknown>>;members:Array<{id:string;email:string;role:string;createdAt:string}>;reviews:RuntimeReview[];projectId:string;message:string;ffmpeg:boolean;ffprobe:boolean;textGatewayEnabled:boolean;textGatewayConfigured:boolean;imageGatewayEnabled:boolean;imageGatewayConfigured:boolean;providers:ProviderStatus[];remoteUsage:RemoteUsage|null;workspaceSaveStatus:"idle"|"saving"|"saved"|"error";cloudAssetsEnabled:boolean}={
- status:"checking",authMode:"local",workspaceSaveStatus:"idle",cloudAssetsEnabled:false,user:null,projects:[],assets:[],jobs:[],audit:[],members:[],reviews:[],projectId:"",message:"",ffmpeg:false,ffprobe:false,textGatewayEnabled:false,textGatewayConfigured:false,imageGatewayEnabled:false,imageGatewayConfigured:false,providers:[],remoteUsage:null,
+const state:{status:"checking"|"offline"|"auth-required"|"online";authMode:"local"|"supabase";user:RuntimeUser|null;projects:RuntimeProject[];assets:RuntimeAsset[];jobs:RuntimeJob[];audit:Array<Record<string,unknown>>;members:Array<{id:string;email:string;role:string;createdAt:string}>;reviews:RuntimeReview[];projectId:string;message:string;ffmpeg:boolean;ffprobe:boolean;textGatewayEnabled:boolean;textGatewayConfigured:boolean;imageGatewayEnabled:boolean;imageGatewayConfigured:boolean;providers:ProviderStatus[];remoteUsage:RemoteUsage|null;workspaceSaveStatus:"idle"|"saving"|"saved"|"error";cloudAssetsEnabled:boolean;cloudJobsEnabled:boolean}={
+ status:"checking",authMode:"local",workspaceSaveStatus:"idle",cloudAssetsEnabled:false,cloudJobsEnabled:false,user:null,projects:[],assets:[],jobs:[],audit:[],members:[],reviews:[],projectId:"",message:"",ffmpeg:false,ffprobe:false,textGatewayEnabled:false,textGatewayConfigured:false,imageGatewayEnabled:false,imageGatewayConfigured:false,providers:[],remoteUsage:null,
 };
 const esc=(value:unknown)=>String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]||c));
 const fmt=(value:string)=>new Date(value).toLocaleString();
@@ -142,12 +142,19 @@ async function refresh(){
   apiRequest<{providers:ProviderStatus[]}>("/api/providers"),
   apiRequest<{remoteUsage:RemoteUsage}>("/api/usage")
  ]);
- state.projects=projects.projects;state.jobs=jobs.jobs;state.audit=audit.events;state.providers=providerCatalog.providers;state.remoteUsage=usageResponse.remoteUsage;
+ state.projects=projects.projects;state.audit=audit.events;state.providers=providerCatalog.providers;state.remoteUsage=usageResponse.remoteUsage;
+ const localJobs=jobs.jobs.map(job=>({...job,backend:"local" as const}));
  if(state.projectId&&!state.projects.some(project=>project.id===state.projectId))state.projectId="";
  if(!projectSelectionInitialized&&state.projects.length){if(!state.projectId)state.projectId=state.projects[0].id;projectSelectionInitialized=true;}
  const assetQuery=state.cloudAssetsEnabled&&state.projectId?"?projectId="+encodeURIComponent(state.projectId):"";
- const assets=await apiRequest<{assets:RuntimeAsset[]}>(state.cloudAssetsEnabled?"/api/cloud/assets"+assetQuery:"/api/assets");
- state.assets=assets.assets;window.dispatchEvent(new Event("ev:assets-updated"));
+ const [assets,cloudJobs]=await Promise.all([
+  apiRequest<{assets:RuntimeAsset[]}>(state.cloudAssetsEnabled?"/api/cloud/assets"+assetQuery:"/api/assets"),
+  state.cloudAssetsEnabled&&state.cloudJobsEnabled&&state.projectId
+   ?apiRequest<{jobs:RuntimeJob[]}>("/api/cloud/media-jobs?projectId="+encodeURIComponent(state.projectId)).catch(()=>({jobs:[] as RuntimeJob[]}))
+   :Promise.resolve({jobs:[] as RuntimeJob[]})
+ ]);
+ state.assets=assets.assets;state.jobs=[...cloudJobs.jobs.map(job=>({...job,backend:"cloud" as const})),...localJobs].sort((a,b)=>Date.parse(b.createdAt)-Date.parse(a.createdAt)).slice(0,100);
+ window.dispatchEvent(new Event("ev:assets-updated"));
  if(previousProjectId!==state.projectId)window.dispatchEvent(new CustomEvent("ev:project-changed",{detail:{projectId:state.projectId}}));
  if(state.projectId){try{const response=await apiRequest<{members:Array<{id:string;email:string;role:string;createdAt:string}>}>("/api/projects/"+state.projectId+"/members");state.members=response.members;}catch{state.members=[];}
   try{const response=await apiRequest<{reviews:RuntimeReview[]}>("/api/reviews?projectId="+encodeURIComponent(state.projectId));state.reviews=response.reviews;}catch{state.reviews=[];}
@@ -159,8 +166,8 @@ export async function initRuntime(){
  const recoveryParams=new URLSearchParams(window.location.hash.replace(/^#/,""));
  if(recoveryParams.get("type")==="recovery"&&recoveryParams.get("access_token")){recoveryMode=true;setApiAccessToken(recoveryParams.get("access_token")||"");window.history.replaceState({},document.title,window.location.pathname+window.location.search);}
  try{
-  const health=await apiRequest<{authMode:"local"|"supabase";media:{ffmpeg:boolean;ffprobe:boolean};textGateway:{enabled:boolean;configured:boolean};imageGateway:{enabled:boolean;configured:boolean};cloudAssets?:{enabled:boolean;configured:boolean}}>("/api/health");
-  state.authMode=health.authMode;state.ffmpeg=health.media.ffmpeg;state.ffprobe=health.media.ffprobe;state.textGatewayEnabled=health.textGateway.enabled;state.textGatewayConfigured=health.textGateway.configured;state.imageGatewayEnabled=health.imageGateway.enabled;state.imageGatewayConfigured=health.imageGateway.configured;state.cloudAssetsEnabled=health.cloudAssets?.enabled===true&&health.cloudAssets.configured===true;
+  const health=await apiRequest<{authMode:"local"|"supabase";media:{ffmpeg:boolean;ffprobe:boolean};textGateway:{enabled:boolean;configured:boolean};imageGateway:{enabled:boolean;configured:boolean};cloudAssets?:{enabled:boolean;configured:boolean};cloudJobs?:{enabled:boolean;configured:boolean}}>("/api/health");
+  state.authMode=health.authMode;state.ffmpeg=health.media.ffmpeg;state.ffprobe=health.media.ffprobe;state.textGatewayEnabled=health.textGateway.enabled;state.textGatewayConfigured=health.textGateway.configured;state.imageGatewayEnabled=health.imageGateway.enabled;state.imageGatewayConfigured=health.imageGateway.configured;state.cloudAssetsEnabled=health.cloudAssets?.enabled===true&&health.cloudAssets.configured===true;state.cloudJobsEnabled=health.cloudJobs?.enabled===true&&health.cloudJobs.configured===true;
   if(recoveryMode){state.status="auth-required";}
   else if(state.authMode==="supabase"&&!await refreshApiSession()){state.status="auth-required";}
   else try{const me=await apiRequest<{user:RuntimeUser}>("/api/me");state.user=me.user;state.status="online";await refresh();window.dispatchEvent(new Event("ev:authenticated"));}
