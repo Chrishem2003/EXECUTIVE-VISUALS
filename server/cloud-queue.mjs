@@ -1,5 +1,5 @@
 const SCHEMA = "executive_visuals";
-const RPC = new Set(["claim_next_job","renew_job_lease","recover_expired_jobs","recover_expired_jobs_by_type","finish_job","retry_job","report_job_progress","check_job_cancellation","heartbeat_worker"]);
+const RPC = new Set(["claim_next_job","renew_job_lease","recover_expired_jobs","recover_expired_jobs_by_type","finish_job","retry_job","report_job_progress","check_job_cancellation","heartbeat_worker","list_worker_health"]);
 
 function endpoint(value) {
   let url;
@@ -67,6 +67,24 @@ export function createCloudQueue({
   }
 
   return Object.freeze({
+    async listWorkerHealth({staleAfterSeconds=180,limit=100}={}) {
+      if(!Number.isInteger(staleAfterSeconds)||staleAfterSeconds<30||staleAfterSeconds>3600)throw new Error("Worker stale threshold must be between 30 and 3600 seconds.");
+      if(!Number.isInteger(limit)||limit<1||limit>200)throw new Error("Worker health result limit must be between 1 and 200.");
+      const rows=await call("list_worker_health",{p_stale_after_seconds:staleAfterSeconds,p_limit:limit});
+      if(!Array.isArray(rows)||rows.length>limit)throw new Error("Cloud worker health returned an invalid result.");
+      const allowedStatuses=new Set(["running","stopping","stopped","error","stale"]);
+      for(const row of rows){
+        if(!row||typeof row!=="object"||Array.isArray(row)
+          ||typeof row.worker_id!=="string"||typeof row.worker_family!=="string"
+          ||typeof row.instance_id!=="string"||!allowedStatuses.has(row.status)
+          ||!row.metrics||typeof row.metrics!=="object"||Array.isArray(row.metrics)
+          ||!Number.isInteger(row.age_seconds)||row.age_seconds<0
+          ||typeof row.last_seen_at!=="string"||typeof row.started_at!=="string"){
+          throw new Error("Cloud worker health returned a malformed worker record.");
+        }
+      }
+      return rows;
+    },
     async heartbeatWorker({workerId,workerFamily,instanceId,status="running",metrics={}}={}) {
       for(const [label,value,max] of [["worker ID",workerId,128],["worker family",workerFamily,64],["instance ID",instanceId,128]])if(typeof value!=="string"||!value.trim()||value.length>max)throw new Error("Worker heartbeat "+label+" is invalid.");
       if(!["running","stopping","stopped","error"].includes(status))throw new Error("Worker heartbeat status is invalid.");
