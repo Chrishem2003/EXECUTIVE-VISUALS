@@ -30,6 +30,7 @@ All routes require a verified Supabase access token in the Authorization header.
 - `POST /api/cloud/media-jobs/:id/cancel` — cancel queued jobs or request cooperative cancellation of running jobs. Requires project editor access and the queued/cooperative cancellation migrations. Running workers poll under their active lease, abort supported media processes, and finish as cancelled; database transitions make accepted requests win races with success or retry.
 - `GET /api/cloud/assets/:id` — retrieve metadata.
 - `GET /api/cloud/assets/:id/url` — create a short-lived signed download URL (5 minutes).
+- `GET /api/cloud/assets/:id/lineage` — authorized source ancestry (bounded to 12 levels) and up to 100 direct derivatives, constrained to the same owner/project scope.
 - `GET /api/cloud/assets/:id/file` — authenticated redirect to a short-lived signed URL, with private/no-store response headers; used by the browser asset preview.
 - `DELETE /api/cloud/assets/:id` — soft-delete metadata, then remove the exact private object; HTTP 202 means cleanup remains pending.
 - `POST /api/cloud/assets/:id/retry-cleanup` — retry removal for a previously deleted asset.
@@ -42,3 +43,6 @@ The browser asset workspace uses this API when the health endpoint reports `clou
 
 
 Running cancellation uses `cancel_requested_at` and `cancel_requested_by` on the job record. The `request_media_job_cancellation` RPC records an auditable event; `check_job_cancellation` only returns a request to the current unexpired lease owner. Worker completion and retry RPCs enforce cancellation precedence. Apply the cooperative-cancellation migration only in an isolated staging project after schema review; it has not been applied to any hosted database.
+
+
+Derivative lineage is read from the `derivative_of` relationship. The API verifies the requested asset and read permission first, walks source ancestry with a hard depth cap, and lists only active direct derivatives in the same project (or personal-library scope). Missing/deleted/cross-scope parents are not disclosed; cycles fail closed. This endpoint is metadata-only and does not create signed media URLs.
