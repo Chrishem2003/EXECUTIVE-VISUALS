@@ -59,7 +59,7 @@ export function createCloudMediaWorker({
     finish: (...args) => cloudQueue.finish(...args),
     retry: (...args) => cloudQueue.retry(...args),
     reportProgress: (...args) => cloudQueue.reportProgress(...args),
-    checkCancellation: (...args) => cloudQueue.checkCancellation(...args),
+    ...(typeof cloudQueue.checkCancellation === "function" ? { checkCancellation: (...args) => cloudQueue.checkCancellation(...args) } : {}),
     recover: (...args) => cloudQueue.recover(...args)
   });
 
