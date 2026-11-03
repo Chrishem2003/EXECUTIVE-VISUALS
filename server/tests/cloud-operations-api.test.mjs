@@ -24,8 +24,6 @@ test("cloud operations is read-only and requires verified allowlisted user ident
  assert.deepEqual(await api.handle({method:"GET",path:"/api/admin/cloud/operations",user:null}),{status:401,body:{error:{code:"AUTH_REQUIRED",message:"A verified account identity is required."}}});
  const unverified=await api.handle({method:"GET",path:"/api/admin/cloud/operations",user:{id:"user-1",email:"ops@example.com",emailVerified:false}});
  assert.equal(unverified.status,403);assert.equal(unverified.body.error.code,"CLOUD_OPERATIONS_VERIFIED_EMAIL_REQUIRED");
- const unverified=await api.handle({method:"GET",path:"/api/admin/cloud/operations",user:{id:"user-3",email:"ops@example.com",emailVerified:false}});
- assert.equal(unverified.status,403);
  const denied=await api.handle({method:"GET",path:"/api/admin/cloud/operations",user:{id:"user-2",email:"other@example.com",emailVerified:true}});
  assert.equal(denied.status,403);
  assert.equal(queue.calls.length,0);
