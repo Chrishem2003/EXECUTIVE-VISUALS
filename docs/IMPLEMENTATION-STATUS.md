@@ -217,6 +217,7 @@ The cloud timeline worker now defaults to a real FFmpeg renderer that consumes t
 - Renders a primary video track with still-image or video sources, black gap-fill, synchronized audio tracks, gain control, still-image overlays with bounded placement/opacity, and burned-in SRT/VTT caption clips.
 - Enforces a single primary video track, non-overlapping clips, supported media types, bounded output dimensions/frame rate, no unimplemented speed changes, and a 2 MiB caption-source limit.
 - Uses the cloud worker's abort signal for process cancellation, writes only inside the isolated job work directory, and returns a private MP4 master for checksum publication by the cloud timeline executor.
+- Forwards the lease abort signal into every cloud source-asset materialization so storage downloads can stop promptly; cleanup hooks are isolated so synchronous or asynchronous cleanup failures do not mask the render result or primary failure.
 - CI includes a real FFmpeg/FFprobe integration test that verifies the rendered output contains both video and audio streams, plus overlap and cancellation checks.
 
 This closes the renderer-adapter gap in the cloud timeline execution contract. It does **not** mean the cloud path is deployed or live: the isolated database migration is still unapplied, the custom schema/API exposure and credentials are not configured, and the cloud worker is not connected to the HTTP API or a running service. SQLite/local-disk rendering remains the active application path.
