@@ -7,7 +7,8 @@ function fakeQueue(){
  return {
   calls,
   async listJobDiagnostics(args){calls.push(["jobs",args]);return [{id:"job-1",status:"queued",diagnostic_flags:{queued_too_long:false}}];},
-  async listWorkerHealth(args){calls.push(["workers",args]);return [{worker_id:"worker-1",status:"running",age_seconds:12}];}
+  async listWorkerHealth(args){calls.push(["workers",args]);return [{worker_id:"worker-1",status:"running",age_seconds:12}];},
+  async listAssetCleanupDiagnostics(){calls.push(["assetCleanup"]);return {pending_count:2,pending_over_24_hours:1,pending_over_7_days:0,oldest_pending_at:"2026-11-02T10:00:00Z",oldest_pending_age_seconds:90000};}
  };
 }
 
@@ -36,7 +37,8 @@ test("cloud operations validates bounds and returns sanitized queue and fleet di
  assert.equal(Number.isFinite(Date.parse(result.body.generatedAt)),true);
  assert.deepEqual(result.body.jobs,[{id:"job-1",status:"queued",diagnostic_flags:{queued_too_long:false}}]);
  assert.deepEqual(result.body.workers,[{worker_id:"worker-1",status:"running",age_seconds:12}]);
- assert.deepEqual(queue.calls,[["jobs",{limit:25,queueStaleAfterSeconds:600,leaseStaleAfterSeconds:120}],["workers",{limit:25,staleAfterSeconds:90}]]);
+ assert.deepEqual(result.body.assetCleanup,{pending_count:2,pending_over_24_hours:1,pending_over_7_days:0,oldest_pending_at:"2026-11-02T10:00:00Z",oldest_pending_age_seconds:90000});
+ assert.deepEqual(queue.calls,[["jobs",{limit:25,queueStaleAfterSeconds:600,leaseStaleAfterSeconds:120}],["workers",{limit:25,staleAfterSeconds:90}],["assetCleanup"]]);
 });
 
 test("cloud operations fails closed when either trusted diagnostics source fails",async()=>{
