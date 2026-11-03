@@ -65,6 +65,15 @@ test("security operations endpoint is allowlisted, read-only and exposes no raw 
   const admin=await register("security-admin@example.test");
   const adminMe=await request("/api/me",{},admin);
   assert.equal((await adminMe.json()).capabilities.securityEvents,true);
+  const summaryDenied=await request("/api/admin/security-summary",{},ordinary);
+  assert.equal(summaryDenied.status,403);
+  const summaryResponse=await request("/api/admin/security-summary",{},admin);
+  assert.equal(summaryResponse.status,200);
+  const summary=await summaryResponse.json();
+  assert.equal(summary.window,"rolling_24_hours");
+  assert.equal(summary.totals.totalEvents,0);
+  assert.deepEqual(summary.suspiciousIdentifiers,[]);
+  assert.equal(summary.detectionPolicy.attemptThreshold,5);
   const response=await request("/api/admin/security-events?limit=20",{},admin);
   assert.equal(response.status,200);
   const body=await response.json();
