@@ -1,6 +1,7 @@
 import { createServer } from "node:http";
 import { createSupabaseAuth } from "./supabase-auth.mjs";
 import { createAuthRateLimiter } from "./auth-rate-limit.mjs";
+import { createClientIpResolver } from "./client-ip.mjs";
 import { isBlockedDotPath } from "./static-path-security.mjs";
 import { ensureAuthSecuritySchema, getLoginLockState, recordFailedLogin, clearLoginFailures } from "./auth-login-security.mjs";
 import { createHash, randomBytes, randomUUID, scryptSync, timingSafeEqual } from "node:crypto";
@@ -66,6 +67,8 @@ const activeProcesses = new Map();
 const WORKER_ID = randomUUID();
 const AUTH_RATE_LIMIT = Math.max(1, Math.min(1000, Number(process.env.AUTH_RATE_LIMIT) || 10));
 const authRateLimiter=createAuthRateLimiter();
+const trustedProxyIps=(process.env.TRUSTED_PROXY_IPS||"").split(",").map(value=>value.trim()).filter(Boolean);
+const resolveClientIp=createClientIpResolver({trustedProxyIps});
 await mkdir(join(MEDIA_ROOT,"uploads"), { recursive:true });
 await mkdir(join(MEDIA_ROOT,"derived"), { recursive:true });
 
@@ -266,7 +269,7 @@ export function createAppServer() {
     const url=new URL(req.url||"/","http://localhost");
     const path=url.pathname;
     const ratePath=path.startsWith("/api/auth/")?"/auth":(path==="/api/assets"||path==="/api/cloud/assets")&&req.method==="POST"?"/upload":path.endsWith("/research/import")&&req.method==="POST"?"/research":path==="/api/admin/ai-upscale/self-test"&&req.method==="POST"?"/ai-upscale-self-test":"";
-    if(ratePath){const key=(req.socket.remoteAddress||"unknown")+ratePath;const limit=ratePath==="/auth"?AUTH_RATE_LIMIT:ratePath==="/research"?10:ratePath==="/ai-upscale-self-test"?2:30;if(!authRateLimiter.allow(key,limit,60000)){fail(res,429,"RATE_LIMITED","Too many requests. Wait before trying again.");return;}}
+    if(ratePath){const key=resolveClientIp(req)+ratePath;const limit=ratePath==="/auth"?AUTH_RATE_LIMIT:ratePath==="/research"?10:ratePath==="/ai-upscale-self-test"?2:30;if(!authRateLimiter.allow(key,limit,60000)){fail(res,429,"RATE_LIMITED","Too many requests. Wait before trying again.");return;}}
     try {
       if(!path.startsWith("/api/")&&req.method==="GET"){
         if(isBlockedDotPath(path)){fail(res,404,"NOT_FOUND","Resource not found.");return;}
