@@ -183,13 +183,15 @@ export function createCloudAssetRepository({
     },
     async retryCleanup({ownerId,assetId}) {
       ownerId=validUuid(ownerId,"owner ID");assetId=validUuid(assetId,"asset ID");
-      const rows=await request("assets?select=id,owner_id,project_id,object_path,storage_bucket,deleted_at&id=eq."+encodeURIComponent(assetId)+"&deleted_at=not.is.null&limit=1");
+      const rows=await request("assets?select=id,owner_id,project_id,object_path,storage_bucket,deleted_at,storage_cleanup_status&id=eq."+encodeURIComponent(assetId)+"&deleted_at=not.is.null&storage_cleanup_status=eq.pending&limit=1");
       const row=Array.isArray(rows)?rows[0]:null;
-      if(!row||(!row.project_id&&row.owner_id!==ownerId)){const error=new Error("Deleted cloud asset not found.");error.code="CLOUD_ASSET_NOT_FOUND";throw error;}
+      if(!row||(!row.project_id&&row.owner_id!==ownerId)){const error=new Error("Pending cloud asset cleanup not found.");error.code="CLOUD_ASSET_NOT_FOUND";throw error;}
       await allowed(ownerId,row.project_id||null,"write");
       const expectedPrefix=(row.project_id||row.owner_id)+"/"+row.id+"/";
       if(row.storage_bucket!=="executive-visuals-media"||typeof row.object_path!=="string"||!row.object_path.startsWith(expectedPrefix))throw new Error("Cloud asset storage reference is invalid.");
       await storage.remove(row.object_path);
+      const changed=await request("assets?id=eq."+encodeURIComponent(assetId)+"&deleted_at=not.is.null&storage_cleanup_status=eq.pending",{method:"PATCH",prefer:"return=representation",body:{storage_cleanup_status:"complete"}});
+      if(!Array.isArray(changed)||changed.length!==1)throw new Error("Cloud asset storage cleanup state could not be confirmed.");
       return {id:assetId,deleted:true,storageRemoved:true,cleanupPending:false};
     },
     async softDelete({ownerId,assetId}) {
@@ -200,12 +202,18 @@ export function createCloudAssetRepository({
       await allowed(ownerId,row.project_id||null,"write");
       const expectedPrefix=(row.project_id||row.owner_id)+"/"+row.id+"/";
       if(row.storage_bucket!=="executive-visuals-media"||typeof row.object_path!=="string"||!row.object_path.startsWith(expectedPrefix)) throw new Error("Cloud asset storage reference is invalid.");
-      const changed=await request("assets?id=eq."+encodeURIComponent(assetId)+"&deleted_at=is.null",{method:"PATCH",prefer:"return=representation",body:{deleted_at:new Date().toISOString()}});
+      const changed=await request("assets?id=eq."+encodeURIComponent(assetId)+"&deleted_at=is.null",{method:"PATCH",prefer:"return=representation",body:{deleted_at:new Date().toISOString(),storage_cleanup_status:"pending"}});
       if(!Array.isArray(changed)||changed.length!==1) throw new Error("Cloud asset could not be safely marked deleted.");
-      let storageRemoved=false;
-      try { if(row.storage_bucket!=="executive-visuals-media") throw new Error("Unexpected cloud asset bucket."); await storage.remove(row.object_path); storageRemoved=true; }
-      catch { storageRemoved=false; }
-      return {id:assetId,deleted:true,storageRemoved,cleanupPending:!storageRemoved};
+      let storageRemoved=false,cleanupPending=true;
+      try {
+        if(row.storage_bucket!=="executive-visuals-media") throw new Error("Unexpected cloud asset bucket.");
+        await storage.remove(row.object_path);
+        storageRemoved=true;
+        const completed=await request("assets?id=eq."+encodeURIComponent(assetId)+"&deleted_at=not.is.null&storage_cleanup_status=eq.pending",{method:"PATCH",prefer:"return=representation",body:{storage_cleanup_status:"complete"}});
+        if(!Array.isArray(completed)||completed.length!==1)throw new Error("Cloud asset cleanup state could not be confirmed.");
+        cleanupPending=false;
+      } catch { cleanupPending=true; }
+      return {id:assetId,deleted:true,storageRemoved,cleanupPending};
     }
   });
 }
