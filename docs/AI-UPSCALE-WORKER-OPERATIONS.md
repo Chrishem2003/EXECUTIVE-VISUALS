@@ -16,7 +16,8 @@ The command prints a JSON report and exits with status 2 when a required gate is
 - The configured Real-ESRGAN NCNN/Vulkan executable is a regular file.
 - The selected allowlisted model has both `.param` and `.bin` files.
 - `AI_UPSCALE_ENABLED=true` is explicitly configured.
-- The engine executable and model hashes match an operator-maintained provenance manifest (`UPSCALE_ENGINE_MANIFEST`).\n- The engine has passed its worker-local execution self-test.
+- The engine executable and model hashes match an operator-maintained provenance manifest (`UPSCALE_ENGINE_MANIFEST`).
+- The engine has passed its worker-local execution self-test.
 - The configured worker temporary directory is writable and supports same-directory hard-link publication.
 
 ## Worker configuration
@@ -29,7 +30,11 @@ Configure these values only on the isolated media worker service:
 | `REALESRGAN_MODEL_DIR` | Directory containing approved model `.param` and `.bin` files |
 | `REALESRGAN_DEFAULT_MODEL` | Optional allowlisted model selection; defaults to `realesrgan-x4plus` |
 | `AI_UPSCALE_ENABLED` | Explicit opt-in; leave false until the worker host is validated |
-| `CLOUD_WORKER_TEMP_ROOT` | Existing writable worker-local temporary directory |\n| `UPSCALE_ENGINE_MANIFEST` | Required path to an operator-maintained JSON manifest pinning engine/model SHA-256 hashes and recording source, release and license |\n| `UPSCALE_SELF_TEST_IMAGE` | Optional path to a licensed PNG fixture for actual worker-local inference self-test |\n| `UPSCALE_SELF_TEST_SCALE` | Optional self-test scale, default 2 |\n| `UPSCALE_SELF_TEST_TILE` | Optional self-test tile size, default 0 |
+| `CLOUD_WORKER_TEMP_ROOT` | Existing writable worker-local temporary directory |
+| `UPSCALE_ENGINE_MANIFEST` | Required path to an operator-maintained JSON manifest pinning engine/model SHA-256 hashes and recording source, release and license |
+| `UPSCALE_SELF_TEST_IMAGE` | Optional path to a licensed PNG fixture for actual worker-local inference self-test |
+| `UPSCALE_SELF_TEST_SCALE` | Optional self-test scale, default 2 |
+| `UPSCALE_SELF_TEST_TILE` | Optional self-test tile size, default 0 |
 
 Keep model and executable provenance in the deployment record. Pin trusted release artifacts and verify their checksums before installing. Do not put service-role credentials or provider keys in this runbook, build logs, or the web frontend.
 
@@ -39,7 +44,8 @@ Keep model and executable provenance in the deployment record. Pin trusted relea
 2. Run the read-only preflight. Resolve every blocker on that same host.
 3. Enable the worker's AI upscale flag only after the host and private storage are approved.
 4. Set `UPSCALE_SELF_TEST_IMAGE` to a licensed, non-sensitive fixture and run the preflight. The self-test verifies actual execution and output structure; it does not certify perceptual quality.
-5. Keep the manifest beside the worker deployment record and update it only after independently verifying the exact release source, license and installed hashes. A hash mismatch blocks readiness.\n6. Register outputs from the required benchmark fixture categories: portrait, fine texture, text, animation, and low-light/noisy.
+5. Keep the manifest beside the worker deployment record and update it only after independently verifying the exact release source, license and installed hashes. A hash mismatch blocks readiness.
+6. Register outputs from the required benchmark fixture categories: portrait, fine texture, text, animation, and low-light/noisy.
 7. Require an independent reviewer to approve benchmark evidence. Keep model and binary hashes attached to every record.
 8. Only then treat that pinned model build as quality-verified for the product capability catalogue.
 
