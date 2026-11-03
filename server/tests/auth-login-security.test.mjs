@@ -104,7 +104,7 @@ test("HMAC identifier mode migrates legacy SHA-256 lockout rows without resettin
     assert.equal(result.locked,true);
     assert.equal(result.failedAttempts,3);
     const rows=db.prepare("SELECT identifier_hash FROM auth_login_security").all();
-    assert.deepEqual(rows,[{identifier_hash:hmac}]);
+    assert.deepEqual(rows.map(row=>row.identifier_hash),[hmac]);
     clearLoginFailures(db,"hmac@example.com");
     assert.equal(getLoginLockState(db,"hmac@example.com",t+2).failedAttempts,0);
   } finally {
