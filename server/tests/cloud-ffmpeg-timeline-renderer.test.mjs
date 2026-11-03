@@ -23,7 +23,8 @@ test("cloud FFmpeg renderer produces a playable master from materialized video a
   ]};
   const assets=new Map([
    ["asset-video",{path:video,asset:{id:"asset-video",mediaType:"video/mp4",originalName:"source.mp4"}}],
-   ["asset-audio",{path:audio,asset:{id:"asset-audio",mediaType:"audio/wav",originalName:"voice.wav"}}],\n   ["asset-music",{path:music,asset:{id:"asset-music",mediaType:"audio/wav",originalName:"music.wav"}}]
+   ["asset-audio",{path:audio,asset:{id:"asset-audio",mediaType:"audio/wav",originalName:"voice.wav"}}],
+   ["asset-music",{path:music,asset:{id:"asset-music",mediaType:"audio/wav",originalName:"music.wav"}}]
   ]);
   const result=await renderCloudTimeline({timeline,assets,workDir:root,onProgress(){}});
   const probe=JSON.parse(execFileSync(process.env.FFPROBE_PATH||"ffprobe",["-v","error","-show_entries","stream=codec_type","-of","json",result.path],{encoding:"utf8"}));
