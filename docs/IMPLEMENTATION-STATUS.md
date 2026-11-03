@@ -537,3 +537,11 @@ The cloud media IO boundary now rejects HTTP redirects for signed object downloa
 - This closes a time-of-check/time-of-use gap: a target file or symlink created after the initial destination check cannot be overwritten by the upscaler. Temporary inference outputs are removed on success and failure.
 - Added a regression test that creates a symlink to a protected file while inference is running and verifies publication is rejected, the protected bytes remain unchanged, and the temporary output is cleaned up.
 - Implementation commit: `159c65f85695df5911c46a47d4b052ae078914a8`; regression coverage: `42a85604e3ba1423a25f425118e73f984c5f6203`. This latest change is committed but awaits a new CI run; do not treat it as verified until the PR workflow completes.
+
+
+## Continuation — atomic AI upscale publication
+
+- Replaced exclusive-copy publication with a same-directory hard-link publication after inference output has passed engine-fingerprint, regular-file, byte-size, image-signature and exact-dimension checks.
+- The final output name is now created in one atomic filesystem operation. Existing files and symlinks still fail with `AI_UPSCALE_OUTPUT_EXISTS`; a failed copy/stream can no longer leave a partially written destination because no copy into the final path occurs.
+- The private inference output is removed in the existing `finally` cleanup path after publication or failure.
+- Commit `048bfdd08faa763ec6e1099dcac135ad4708cde3` is committed on `feat/timeline-preview-transport`. Automated CI for this follow-up is pending; verify hard-link support on the worker filesystem before enabling the neural path there. No GPU execution, provider activation, database migration, merge or deployment was performed.
