@@ -1,3 +1,14 @@
+-- Keep the bounded diagnostic snapshot efficient as the queue grows.
+create index if not exists ev_jobs_diagnostics_recent
+  on executive_visuals.jobs(updated_at desc)
+  where status in ('queued','processing','failed');
+create index if not exists ev_jobs_diagnostics_queued_age
+  on executive_visuals.jobs(available_at,created_at)
+  where status='queued';
+create index if not exists ev_jobs_diagnostics_processing_lease
+  on executive_visuals.jobs(lease_expires_at,lease_heartbeat_at)
+  where status='processing';
+
 -- Bounded, payload-free diagnostics for the trusted cloud operations plane.
 -- This RPC deliberately excludes owner IDs, project IDs, inputs, outputs and errors.
 create or replace function executive_visuals.list_job_diagnostics(
