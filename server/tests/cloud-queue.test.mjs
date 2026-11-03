@@ -153,3 +153,29 @@ test("worker heartbeat retention cleanup is bounded and validates returned count
  const malformed=createCloudQueue({...base,fetchImpl:async()=>response(8)});
  await assert.rejects(()=>malformed.pruneWorkerHeartbeats({limit:5}),/invalid count/);
 });
+
+
+test("cloud job diagnostics are bounded, payload-free and validated",async()=>{
+ const requests=[];
+ const rows=[{
+  id:"job-1",job_type:"media.upscale",status:"processing",progress:42,
+  attempt_count:1,max_attempts:3,created_at:"2026-11-03T10:00:00Z",
+  updated_at:"2026-11-03T11:00:00Z",available_at:null,started_at:"2026-11-03T10:30:00Z",
+  lease_expires_at:"2026-11-03T11:01:00Z",lease_heartbeat_at:"2026-11-03T11:00:00Z",
+  queue_age_seconds:3600,lease_age_seconds:60,
+  diagnostic_flags:{queued_too_long:false,lease_expired:false,heartbeat_stale:false,attempts_exhausted:false}
+ }];
+ const queue=createCloudQueue({...base,fetchImpl:async(url,options)=>{requests.push({url,body:JSON.parse(options.body)});return response(rows);}});
+ assert.deepEqual(await queue.listJobDiagnostics({limit:25,queueStaleAfterSeconds:600,leaseStaleAfterSeconds:120}),rows);
+ assert.equal(requests[0].url,"https://example.supabase.co/rest/v1/rpc/list_job_diagnostics");
+ assert.deepEqual(requests[0].body,{p_limit:25,p_queue_stale_after_seconds:600,p_lease_stale_after_seconds:120});
+ await assert.rejects(()=>queue.listJobDiagnostics({limit:201}),/diagnostics limit/);
+ await assert.rejects(()=>queue.listJobDiagnostics({queueStaleAfterSeconds:30}),/Queued-job stale threshold/);
+ await assert.rejects(()=>queue.listJobDiagnostics({leaseStaleAfterSeconds:10}),/Worker lease stale threshold/);
+ const unsafe=createCloudQueue({...base,fetchImpl:async()=>response([{...rows[0],input:{private:"payload"}}])});
+ await assert.rejects(()=>unsafe.listJobDiagnostics(),/malformed or unsafe/);
+ const malformed=createCloudQueue({...base,fetchImpl:async()=>response([{...rows[0],diagnostic_flags:{}}])});
+ await assert.rejects(()=>malformed.listJobDiagnostics(),/malformed or unsafe/);
+ const oversized=createCloudQueue({...base,fetchImpl:async()=>response([rows[0],rows[0]])});
+ await assert.rejects(()=>oversized.listJobDiagnostics({limit:1}),/invalid result/);
+});
