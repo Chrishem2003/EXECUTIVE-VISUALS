@@ -105,7 +105,7 @@ test("delivery package hides private render evidence from unauthorized project m
 
 test("delivery approval requires independent project reviewer and records fingerprint-bound decision",async()=>{
  const {job,receipt}=deliveryReviewFixture({jobOwner:owner});
- const f=setup({existing:[job],authorizeOverride:async({ownerId,projectId:pid,action})=>ownerId===editor&&pid===project&&action==="write"});
+ const f=setup({existing:[job],authorizeOverride:async({ownerId,projectId:pid,action})=>ownerId===editor&&pid===project&&action==="review"});
  const result=await f.api.handle({method:"POST",path:"/api/cloud/jobs/"+reviewJobId+"/delivery-approval",ownerId:editor,body:{decision:"approved",note:"Visual review passed."}});
  assert.equal(result.status,201);
  assert.equal(result.body.approval.fingerprint,receipt.fingerprint);
