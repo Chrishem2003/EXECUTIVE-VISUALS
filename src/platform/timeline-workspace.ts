@@ -395,7 +395,7 @@ async function runAction(action:HTMLElement){
  if(type==="track-toggle"){
   const trackId=action.dataset.track||"",track=state.timeline.tracks.find(item=>item.id===trackId);if(!track||track.locked)return;
   recordEdit();state.timeline={...state.timeline,revision:state.timeline.revision+1,updatedAt:new Date().toISOString(),tracks:state.timeline.tracks.map(item=>item.id===trackId?{...item,enabled:item.enabled===false}:item)};
-  state.message=(track.enabled===false?"Enabled ":"Muted ")+track.name+".";paint();
+  state.message=(track.enabled===false?"Enabled ":"Disabled ")+track.name+".";paint();
   try{await persist();}catch(error){state.message=error instanceof Error?error.message:"Track state could not be saved.";state.status="offline";}paint();return;
  }
  const trackId=action.dataset.track||"",clipId=action.dataset.clip||"";
