@@ -1,4 +1,4 @@
-import {addMarker,addTrack,createTimeline,rational,type EditorialTimeline} from "./timeline";
+import {addMarker,addTrack,rational,type EditorialTimeline} from "./timeline";
 export type TimelineTemplateId="social-short"|"youtube-essay"|"interview"|"product-demo";
 type Template={id:TimelineTemplateId;label:string;width:number;height:number;fps:number;tracks:Array<{name:string;kind:"video"|"audio"|"overlay"|"caption"}>;markers:Array<{name:string;seconds:number;note:string;color:string}>};
 const TEMPLATES:Template[]=[
