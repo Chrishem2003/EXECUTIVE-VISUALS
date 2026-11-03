@@ -34,26 +34,36 @@ export function runMediaProcess(binary, args, { signal, timeoutMs = 30 * 60 * 10
     if (signal?.aborted) return reject(Object.assign(new Error("Media job was cancelled."), { code: "JOB_CANCELLED" }));
     const child = spawn(binary, args, { stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
     let stdout = "", stderr = "", settled = false, childClosed = false;
+    let pendingFailure = null, killTimer = null, timer = null;
     const finish = (error, result) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      clearTimeout(killTimer);
       signal?.removeEventListener("abort", abort);
       if (error) reject(error); else resolve(result);
     };
-    const abort = () => {
-      if (!childClosed) child.kill("SIGTERM");
-      const killTimer = setTimeout(() => {
-        // ChildProcess.killed means a signal was sent, not that it exited.
-        if (!childClosed) child.kill("SIGKILL");
-      }, killGraceMs);
-      killTimer.unref?.();
-      finish(Object.assign(new Error("Media job was cancelled."), { code: "JOB_CANCELLED" }));
+    const stopChild = (error, firstSignal) => {
+      if (settled || childClosed || pendingFailure) return;
+      pendingFailure = error;
+      child.kill(firstSignal);
+      if (firstSignal === "SIGTERM") {
+        killTimer = setTimeout(() => {
+          // Do not settle until close: the caller may remove the job workspace
+          // as soon as this promise rejects, so the process must be gone first.
+          if (!childClosed) child.kill("SIGKILL");
+        }, killGraceMs);
+        killTimer.unref?.();
+      }
     };
-    const timer = setTimeout(() => {
-      if (!childClosed) child.kill("SIGKILL");
-      finish(Object.assign(new Error("Media operation timed out."), { code: "MEDIA_TIMEOUT" }));
-    }, timeoutMs);
+    const abort = () => stopChild(
+      Object.assign(new Error("Media job was cancelled."), { code: "JOB_CANCELLED" }),
+      "SIGTERM"
+    );
+    timer = setTimeout(() => stopChild(
+      Object.assign(new Error("Media operation timed out."), { code: "MEDIA_TIMEOUT" }),
+      "SIGKILL"
+    ), timeoutMs);
     timer.unref?.();
     signal?.addEventListener("abort", abort, { once: true });
     child.stdout.on("data", chunk => { stdout = (stdout + chunk.toString()).slice(-16000); });
@@ -61,10 +71,12 @@ export function runMediaProcess(binary, args, { signal, timeoutMs = 30 * 60 * 10
     child.on("error", error => finish(Object.assign(new Error("Media engine could not start."), { code: "MEDIA_ENGINE_MISSING", cause: error })));
     child.on("close", code => {
       childClosed = true;
+      if (pendingFailure) return finish(pendingFailure);
       code === 0
         ? finish(null, { stdout, stderr })
         : finish(Object.assign(new Error((stderr || "Media operation failed.").slice(-3000)), { code: "MEDIA_PROCESS_FAILED" }));
     });
+    if (signal?.aborted) abort();
     onProgress(10);
   });
 }
