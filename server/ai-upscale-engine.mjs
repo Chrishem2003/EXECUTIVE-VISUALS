@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { access, link, lstat, open, readFile, rm as removeFile, stat } from "node:fs/promises";
+import { access, link, lstat, open, rm as removeFile, stat } from "node:fs/promises";
 import { constants } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
 import { tmpdir } from "node:os";
@@ -179,7 +179,15 @@ export function createRealEsrganAdapter({
     try {
       const manifestInfo = await lstat(manifestPath);
       if (!manifestInfo.isFile() || manifestInfo.isSymbolicLink() || manifestInfo.size > 16 * 1024) return { verified: false, reason: "ENGINE_MANIFEST_INVALID" };
-      const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+      const manifestHandle = await open(manifestPath, constants.O_RDONLY | (constants.O_NOFOLLOW || 0));
+      let manifest;
+      try {
+        const openedInfo = await manifestHandle.stat();
+        if (!openedInfo.isFile() || openedInfo.size > 16 * 1024) return { verified: false, reason: "ENGINE_MANIFEST_INVALID" };
+        manifest = JSON.parse(await manifestHandle.readFile("utf8"));
+      } finally {
+        await manifestHandle.close();
+      }
       const requiredText = ["source", "release", "license"];
       const metadataValid = manifest && manifest.schemaVersion === 1 && manifest.engine === "realesrgan-ncnn-vulkan" && manifest.model === String(model) && requiredText.every(key => typeof manifest[key] === "string" && manifest[key].trim().length > 0) && /^[a-f0-9]{64}$/.test(String(manifest.binarySha256 || "")) && /^[a-f0-9]{64}$/.test(String(manifest.modelFilesSha256 || ""));
       const current = await fingerprint(String(model));
