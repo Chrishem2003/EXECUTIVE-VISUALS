@@ -1,7 +1,7 @@
 # Executive Visuals — implementation status
 
 **Updated:** 3 November 2026  
-**Branch:** `feat/timeline-preview-transport`  
+**Branch:** `feat/supabase-native-auth-flow` (draft PR #20)  
 **Delivery posture:** local runtime implemented; external-auth staging blueprint hardened; public release not approved pending account sign-in UX, isolated auth configuration, durable-data recovery tests and deployment verification.
 
 ## Implemented in the current branch
@@ -23,8 +23,8 @@
 | Output locking | Locked nodes with saved output IDs are reused; targeted reruns can stop at locked ancestors | Local planner behavior tested |
 | Local API | HTTP API, development accounts, hashed passwords, HttpOnly sessions, owner-scoped resources, restrictive HTML CSP, anti-framing and referrer/security headers | Local password auth is development-only |
 | Projects | Persistent project creation, listing, optimistic revision updates, archive and project-scoped creative workspace documents with revision conflict protection | SQLite local database; owner/editor writes and viewer reads |
-| Media ingest | Binary uploads to local disk, MIME allowlist, upload-size limit and SHA-256 checksum | Local disk; cloud object storage not connected |
-| Asset library | Owner isolation, metadata, original/derivative relationship, private file reads, image/video/audio/document previews and processing history | Local media volume; cloud storage upload/signing adapter is contract-tested but not connected to asset API |
+| Media ingest | Binary uploads to local disk, MIME allowlist, upload-size limit and SHA-256 checksum; separate cloud API accepts streamed uploads, validates MIME signatures and size, computes SHA-256 and writes to private object storage | Local mode remains the default; cloud routes require `AUTH_MODE=supabase` and explicit `CLOUD_TIMELINE_API_ENABLED=true`; cloud mode is not configured for this application yet |
+| Asset library | Local owner isolation, metadata, original/derivative relationship, private file reads, previews and processing history; gated cloud API supports owner/project-scoped listing, private signed downloads (5-minute tickets), soft deletion, metadata persistence and compensating object cleanup | Cloud service-role credentials remain server-only; cloud routes are not yet selected by the main browser asset UI; dedicated Supabase project, private bucket/policies, RLS verification, end-to-end UI wiring and hosted tests remain blocked |
 | Job queue | Persistent queue, idempotency keys, normalized states, progress events, renewable worker leases, stale-worker recovery, bounded retries with exponential backoff, cross-process cancellation polling and audit trail | Multi-process lease coordination on a shared SQLite database; multi-host workers still require a shared Postgres queue |
 | Local media engine | Probe, thumbnail, transcode, audio extraction, proxy generation, video denoise, color correction, resize/reframe, frame interpolation, FFmpeg scaling, audio denoise/loudness normalization and timeline MP4 master rendering | Requires FFmpeg/FFprobe; neural restoration, advanced stabilization, animated/video overlays, transitions and advanced effects remain pending |
 | Runtime console | Sign-in, project creation, persistent asset library, live engine readiness, uploads, media job submission, job inspection and audit view | Browser UI uses the local API; creative briefs, shot lists, characters, research sources and linked knowledge records sync to project workspace documents |
