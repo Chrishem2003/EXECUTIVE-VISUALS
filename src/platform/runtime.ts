@@ -116,7 +116,7 @@ function queueCreativeDraft(document:Record<string,unknown>){
   workspaceSaveTimers.delete(projectId);
   workspaceSaveChain=workspaceSaveChain.then(async()=>{
    const current=state.projects.find(item=>item.id===projectId);
-   if(state.status!=="online"||!current||!["owner","editor"].includes(current.access_role||""))return;
+   if(state.status!=="online"||!current||!["owner","editor"].includes(current.access_role||"")){state.workspaceSaveStatus="error";updateShell();return;}
    const revision=workspaceRevisions.get(projectId)||0;
    const result=await apiRequest<{revision:number}>("/api/projects/"+projectId+"/workspace",{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({revision,document})});
    workspaceRevisions.set(projectId,result.revision);
