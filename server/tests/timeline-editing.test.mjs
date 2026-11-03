@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { addClip, addMarker, addTrack, createTimeline, rational, removeClip, seconds, snapTimelineFrame } from "../../src/core/timeline.ts";
+import { addClip, addMarker, addTrack, createTimeline, rational, removeClip, seconds, snapTimelineFrame, setAudioTrackState } from "../../src/core/timeline.ts";
 
 function fixture(locked=false){
  let timeline=createTimeline("project","sequence","Edit test",{numerator:24,denominator:1});
@@ -55,6 +55,21 @@ test("rejects invalid snap parameters",()=>{
  assert.throws(()=>snapTimelineFrame(10,fixture(),"v1",-1),/non-negative/);
 });
 
+test("audio mute and solo state creates immutable revisions",()=>{
+ let timeline=fixture();
+ timeline=addTrack(timeline,{id:"a1",name:"Audio",kind:"audio",enabled:true,locked:false,clips:[]});
+ const muted=setAudioTrackState(timeline,"a1",{muted:true});
+ assert.equal(muted.tracks[1].muted,true);
+ assert.equal(muted.revision,timeline.revision+1);
+ assert.equal(timeline.tracks[1].muted,undefined);
+ const solo=setAudioTrackState(muted,"a1",{solo:true});
+ assert.equal(solo.tracks[1].solo,true);
+ assert.equal(solo.tracks[1].muted,true);
+ assert.throws(()=>setAudioTrackState(solo,"v1",{muted:true}),/audio tracks/);
+ assert.throws(()=>setAudioTrackState(solo,"missing",{solo:true}),/not found/);
+ assert.throws(()=>setAudioTrackState(solo,"a1",{muted:"yes"}),/boolean/);
+ assert.throws(()=>setAudioTrackState(solo,"a1",{gain:1}),/unsupported/);
+});
 test("review markers retain bounded notes and review color metadata",()=>{
  const timeline=fixture();
  const marked=addMarker(timeline,{id:"review-1",name:"Check opening hook",start:rational(12,24),color:"RED",note:"Verify the first claim and opening shot."});
