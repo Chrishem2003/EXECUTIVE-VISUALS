@@ -191,3 +191,43 @@ test("worker aborts conservatively when durable progress cannot be written",asyn
  assert.ok(events.some(event=>event.type==="job.progress_error"));
  assert.equal(queue.calls.some(call=>call[0]==="finish"),false);
 });
+
+test("worker aborts media execution and finishes cancelled when a leased cancellation is requested",async()=>{
+ const queue=queueFor();
+ queue.checkCancellation=async()=>({leaseValid:true,cancelRequested:true});
+ const events=[];
+ const result=await runCloudWorkerCycle({
+  queue,workerId:"worker-cancel",leaseSeconds:15,heartbeatIntervalMs:1000,
+  execute:async({signal})=>new Promise((resolve,reject)=>{
+   signal.addEventListener("abort",()=>reject(signal.reason),{once:true});
+  }),
+  onEvent:event=>events.push(event)
+ });
+ assert.equal(result.finished,true);
+ assert.equal(result.status,"cancelled");
+ assert.ok(queue.calls.some(call=>call[0]==="finish"&&call[3]==="cancelled"));
+ assert.ok(events.some(event=>event.type==="job.cancel_requested"));
+ assert.ok(events.some(event=>event.type==="job.cancelled"));
+});
+test("accepted cancellation wins a race with worker success",async()=>{
+ const queue=queueFor();
+ queue.checkCancellation=async()=>({leaseValid:true,cancelRequested:true});
+ const result=await runCloudWorkerCycle({
+  queue,workerId:"worker-cancel-race",leaseSeconds:15,heartbeatIntervalMs:1000,
+  execute:async()=>{await new Promise(resolve=>setTimeout(resolve,1150));return{lateOutput:true};}
+ });
+ assert.equal(result.status,"cancelled");
+ const finish=queue.calls.find(call=>call[0]==="finish");
+ assert.equal(finish[3],"cancelled");
+});
+test("accepted cancellation wins a race with transient retry scheduling",async()=>{
+ const queue=queueFor({retry:{accepted:true,status:"cancelled",retryable:false,delaySeconds:0,attempt:1,maxAttempts:3}});
+ const events=[];
+ const result=await runCloudWorkerCycle({
+  queue,workerId:"worker-cancel-retry",heartbeatIntervalMs:60000,
+  execute:async()=>{throw Object.assign(new Error("temporary outage"),{code:"CLOUD_STORAGE_TIMEOUT"});},
+  onEvent:event=>events.push(event)
+ });
+ assert.equal(result.status,"cancelled");
+ assert.ok(events.some(event=>event.type==="job.cancelled"));
+});
