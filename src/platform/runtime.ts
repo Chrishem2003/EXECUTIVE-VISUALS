@@ -10,6 +10,7 @@ type RemoteUsage={window:string;configurationValid:boolean;limit:number|null;use
 let recoveryMode=false;
 let workspaceRevisions=new Map<string,number>();
 let workspaceSaveTimers=new Map<string,ReturnType<typeof setTimeout>>();
+let cloudJobRefreshTimer:ReturnType<typeof setInterval>|null=null;
 let workspaceSaveChain:Promise<void>=Promise.resolve();
 let projectSelectionInitialized=false;
 const state:{status:"checking"|"offline"|"auth-required"|"online";authMode:"local"|"supabase";user:RuntimeUser|null;projects:RuntimeProject[];assets:RuntimeAsset[];jobs:RuntimeJob[];audit:Array<Record<string,unknown>>;members:Array<{id:string;email:string;role:string;createdAt:string}>;reviews:RuntimeReview[];projectId:string;message:string;ffmpeg:boolean;ffprobe:boolean;textGatewayEnabled:boolean;textGatewayConfigured:boolean;imageGatewayEnabled:boolean;imageGatewayConfigured:boolean;providers:ProviderStatus[];remoteUsage:RemoteUsage|null;workspaceSaveStatus:"idle"|"saving"|"saved"|"error";cloudAssetsEnabled:boolean;cloudJobsEnabled:boolean}={
@@ -163,6 +164,13 @@ async function refresh(){
 }
 function paint(){updateShell();renderGate();const root=document.querySelector<HTMLElement>("#runtime-workspace");if(root){const view=root.dataset.runtimeView;root.outerHTML=view==="library"?renderAssetLibrary():view==="engines"?renderEngineStatus():view==="overview"?renderRuntimeOverview():renderRuntimeWorkspace();}}
 export async function initRuntime(){
+ if(cloudJobRefreshTimer===null){
+  cloudJobRefreshTimer=setInterval(()=>{
+   if(document.visibilityState!=="visible"||state.status!=="online"||!state.cloudAssetsEnabled||!state.cloudJobsEnabled||!state.projectId)return;
+   if(!state.jobs.some(job=>job.backend==="cloud"&&["queued","processing","running"].includes(job.status)))return;
+   void refresh().then(paint).catch(()=>{});
+  },5000);
+ }
  const recoveryParams=new URLSearchParams(window.location.hash.replace(/^#/,""));
  if(recoveryParams.get("type")==="recovery"&&recoveryParams.get("access_token")){recoveryMode=true;setApiAccessToken(recoveryParams.get("access_token")||"");window.history.replaceState({},document.title,window.location.pathname+window.location.search);}
  try{
