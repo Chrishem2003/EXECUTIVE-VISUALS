@@ -139,7 +139,7 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     const jobId=cancelMediaMatch[1],projectId=String(body.projectId||"");
     if(!safeId(jobId)||!safeId(projectId))return response(400,{error:{code:"CLOUD_MEDIA_CANCEL_INPUT_INVALID",message:"Choose a valid media job and project."}});
     if(await allow({ownerId,projectId,action:"write"})!==true)return response(404,{error:{code:"PROJECT_NOT_FOUND",message:"Project not found or editor access required."}});
-    const rows=await request("jobs?select=id,owner_id,project_id,job_type,status,progress,updated_at& id=eq."+encodeURIComponent(jobId)+"&project_id=eq."+encodeURIComponent(projectId));
+    const rows=await request("jobs?select=id,owner_id,project_id,job_type,status,progress,updated_at&id=eq."+encodeURIComponent(jobId)+"&project_id=eq."+encodeURIComponent(projectId));
     const job=Array.isArray(rows)?rows.find(row=>row.id===jobId&&row.project_id===projectId&&cloudMediaTypes.has(row.job_type)):null;
     if(!job)return response(404,{error:{code:"CLOUD_MEDIA_JOB_NOT_FOUND",message:"Cloud media job was not found in this project."}});
     if(job.status!=="queued")return response(409,{error:{code:"CLOUD_MEDIA_JOB_NOT_CANCELLABLE",message:"Only queued cloud media jobs can be cancelled. A claimed or completed job cannot be interrupted."},jobStatus:job.status});
