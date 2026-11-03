@@ -132,7 +132,7 @@ test("security events capture failed attempts and lockouts without storing raw i
   db.close();
 });
 
-test("blocked attempts and successful sign-in are recorded as bounded security events", () => {
+test("blocked attempts and successful sign-in are recorded as bounded security events", async () => {
   const db=setup(),t=1_800_000_000_000;
   recordFailedLogin(db,"events@example.com",t);
   recordFailedLogin(db,"events@example.com",t+1);
