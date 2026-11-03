@@ -42,13 +42,13 @@ test("ripple delete rejects locked tracks and unknown clips",()=>{
 
 test("snaps clip placement to nearby edit boundaries but not distant ones",()=>{
  const timeline=fixture();
- assert.deepEqual(snapTimelineFrame(31,timeline,"v1",6),{frame:24,snappedTo:24});
- assert.deepEqual(snapTimelineFrame(42,timeline,"v1",6),{frame:48,snappedTo:48});
+ assert.deepEqual(snapTimelineFrame(29,timeline,"v1",6),{frame:24,snappedTo:24});
+ assert.deepEqual(snapTimelineFrame(55,timeline,"v1",6),{frame:60,snappedTo:60});
  assert.deepEqual(snapTimelineFrame(55,timeline,"v1",4),{frame:55,snappedTo:null});
 });
 test("snaps across tracks and ignores the clip being repositioned",()=>{
  const timeline=fixture();
- assert.deepEqual(snapTimelineFrame(31,timeline,"a1",6,"a"),{frame:24,snappedTo:24});
+ assert.deepEqual(snapTimelineFrame(31,timeline,"a1",6,"a"),{frame:36,snappedTo:36});
 });
 test("rejects invalid snap parameters",()=>{
  assert.throws(()=>snapTimelineFrame(-1,fixture(),"v1"),/non-negative/);
