@@ -25,7 +25,7 @@ const provider=createServer(async(req,res)=>{
  if(req.url.startsWith("/rest/v1/assets")&&req.method==="PATCH"){
   assetRow={...assetRow,deleted_at:"2026-11-03T00:01:00.000Z"};res.end(JSON.stringify([assetRow]));return;
  }
- if(req.url.startsWith("/rest/v1/assets")){res.end(JSON.stringify(assetRow&&!assetRow.deleted_at?[assetRow]:[]));return;}
+ if(req.url.startsWith("/rest/v1/assets")){const query=new URL(req.url,"http://provider").searchParams;const derivative=query.get("derivative_of");const id=query.get("id");const match=assetRow&&!assetRow.deleted_at&&(!derivative||assetRow.derivative_of==="eq."+derivative)&&(!id||assetRow.id==="eq."+id);res.end(JSON.stringify(match?[assetRow]:[]));return;}
  res.statusCode=404;res.end(JSON.stringify({message:"not found"}));
 });
 const listen=server=>new Promise(resolve=>server.listen(0,"127.0.0.1",()=>resolve(server.address().port)));
@@ -46,6 +46,7 @@ test("private cloud asset API streams upload, lists metadata, issues short-lived
  assert.ok(!JSON.stringify(uploaded).includes("server-only-test-key"));
  const assetId=uploaded.asset.id;
  const list=await fetch(base+"/api/cloud/assets",{headers:auth});assert.equal(list.status,200);assert.equal((await list.json()).assets.length,1);
+ const lineage=await fetch(base+"/api/cloud/assets/"+assetId+"/lineage",{headers:auth});assert.equal(lineage.status,200);const lineageBody=await lineage.json();assert.deepEqual(lineageBody.lineage.ancestors.map(item=>item.id),[assetId]);assert.deepEqual(lineageBody.lineage.derivatives,[]);
  const signed=await fetch(base+"/api/cloud/assets/"+assetId+"/url",{headers:auth});assert.equal(signed.status,200);assert.match((await signed.json()).url,/token=short-lived/);
  const file=await fetch(base+"/api/cloud/assets/"+assetId+"/file",{headers:auth,redirect:"manual"});assert.equal(file.status,302);assert.match(file.headers.get("location")||"",/token=short-lived/);assert.equal(file.headers.get("cache-control"),"private, no-store");
  const deleted=await fetch(base+"/api/cloud/assets/"+assetId,{method:"DELETE",headers:auth});assert.equal(deleted.status,200);assert.equal((await deleted.json()).storageRemoved,true);
