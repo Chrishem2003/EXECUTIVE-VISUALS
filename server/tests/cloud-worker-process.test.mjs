@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
@@ -114,4 +115,13 @@ test("shutdown handlers are installed before worker startup can await recovery",
  unregister();
  assert.equal(signals.listenerCount("SIGTERM"),0);
  assert.equal(signals.listenerCount("SIGINT"),0);
+});
+
+test("cooperative cancellation migration keeps accepted requests cancelled through lease recovery",async()=>{
+ const sql=await readFile(new URL("../../supabase/migrations/20261103190000_cooperative_cloud_media_cancellation.sql",import.meta.url),"utf8");
+ const recovery=sql.slice(sql.lastIndexOf("create or replace function executive_visuals.recover_expired_jobs_by_type"));
+ assert.match(recovery,/expired\.cancel_requested_at is not null/);
+ assert.match(recovery,/next_status := 'cancelled'/);
+ assert.match(recovery,/when next_status = 'cancelled' then 'job\.cancelled'/);
+ assert.match(recovery,/grant execute on function executive_visuals\.recover_expired_jobs_by_type\(integer, text\[\]\) to service_role/);
 });
