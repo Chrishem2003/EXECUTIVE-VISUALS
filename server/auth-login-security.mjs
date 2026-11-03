@@ -57,8 +57,8 @@ export function getLoginLockState(db, identifier, now = Date.now()) {
   const legacyKey=process.env.AUTH_IDENTIFIER_HMAC_KEY?legacyLoginIdentifierHash(identifier):key;
   const row = db.prepare("SELECT failed_attempts,lock_level,locked_until_ms FROM auth_login_security WHERE identifier_hash=?").get(key)
     || (legacyKey!==key?db.prepare("SELECT failed_attempts,lock_level,locked_until_ms FROM auth_login_security WHERE identifier_hash=?").get(legacyKey):null);
-  if (!row || !row.locked_until_ms || row.locked_until_ms <= now) return { locked:false,retryAfterMs:0,failedAttempts:row?.failed_attempts||0,lockLevel:row?.lock_level||0 };
-  return { locked:true,retryAfterMs:row.locked_until_ms-now,failedAttempts:row.failed_attempts,lockLevel:row.lock_level };
+  if (!row || !row.locked_until_ms || row.locked_until_ms <= now) return { locked:false,retryAfterMs:0,failedAttempts:row?.failed_attempts||0,lockLevel:row?.lock_level||0,lockedUntilMs:null };
+  return { locked:true,retryAfterMs:row.locked_until_ms-now,failedAttempts:row.failed_attempts,lockLevel:row.lock_level,lockedUntilMs:row.locked_until_ms };
 }
 export function recordFailedLogin(db, identifier, now = Date.now()) {
   const key=loginIdentifierHash(identifier);
