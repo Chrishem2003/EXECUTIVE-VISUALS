@@ -684,7 +684,7 @@ test("cloud AI upscale refuses inference when the engine provenance manifest is 
   process.env.AI_UPSCALE_ENABLED = "true";
   delete process.env.UPSCALE_ENGINE_MANIFEST;
   process.env.FFMPEG_PATH = await executable(directory, "ffmpeg", "exit 0");
-  process.env.FFPROBE_PATH = await executable(directory, "ffprobe", "echo '{\\"streams\\":[{\\"width\\":10,\\"height\\":10}]}'");
+  process.env.FFPROBE_PATH = await executable(directory, "ffprobe", "printf '%s' '{\"streams\":[{\"width\":10,\"height\":10}]}'");
   try {
     const execute = createCloudMediaExecutor({
       tempRoot: directory,
