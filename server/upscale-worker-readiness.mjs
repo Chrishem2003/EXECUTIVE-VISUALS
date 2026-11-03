@@ -34,7 +34,19 @@ export async function inspectUpscaleWorkerReadiness({
     modelDirectory: env.REALESRGAN_MODEL_DIR || "",
     enabled: env.AI_UPSCALE_ENABLED === "true"
   });
-  const engine = await adapter.probe(selectedModel);
+  let engine = await adapter.probe(selectedModel);
+  let selfTest = { attempted: false, passed: false, reason: "UPSCALE_SELF_TEST_IMAGE is not configured." };
+  const selfTestImage = String(env.UPSCALE_SELF_TEST_IMAGE || "").trim();
+  if (selfTestImage && engine.available && engine.executionEnabled) {
+    selfTest = { attempted: true, passed: false, reason: null };
+    try {
+      const result = await adapter.selfTest({ inputPath: selfTestImage, model: selectedModel, scale: Number(env.UPSCALE_SELF_TEST_SCALE || 2), tile: Number(env.UPSCALE_SELF_TEST_TILE || 0), format: "png" });
+      selfTest = { attempted: true, passed: true, outputBytes: result.outputBytes, binarySha256: result.binarySha256, modelFilesSha256: result.modelFilesSha256 };
+      engine = await adapter.probe(selectedModel);
+    } catch (error) {
+      selfTest = { attempted: true, passed: false, reason: error?.code || "ENGINE_SELF_TEST_FAILED" };
+    }
+  }
   const mediaTools = {
     ffmpeg: Boolean(checkExecutable("ffmpeg")),
     ffprobe: Boolean(checkExecutable("ffprobe"))
@@ -56,7 +68,7 @@ export async function inspectUpscaleWorkerReadiness({
   if (!engine.binaryReady) blockers.push("REALESRGAN_EXECUTABLE_MISSING");
   if (!engine.modelReady) blockers.push("REALESRGAN_MODEL_MISSING");
   if (!engine.executionEnabled) blockers.push("AI_UPSCALE_DISABLED");
-  if (!engine.executionVerified) blockers.push("ENGINE_SELF_TEST_REQUIRED");
+  if (!engine.executionVerified) blockers.push(selfTest.attempted ? "ENGINE_SELF_TEST_FAILED" : "ENGINE_SELF_TEST_REQUIRED");
   if (!tempWritable) blockers.push("WORKER_TEMP_DIRECTORY_NOT_WRITABLE");
   if (!hardLinks.supported) blockers.push("ATOMIC_HARDLINK_PUBLICATION_UNAVAILABLE");
   return {
@@ -66,6 +78,7 @@ export async function inspectUpscaleWorkerReadiness({
     selectedModel,
     supportedModels: REQUIRED_MODELS,
     mediaTools,
+    selfTest,
     engine: {
       available: engine.available,
       enabled: engine.executionEnabled,
