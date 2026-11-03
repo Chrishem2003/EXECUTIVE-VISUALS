@@ -1,7 +1,7 @@
 const EMAIL=/^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export function createCloudOperationsApi({queue,adminEmails=[]}={}){
- if(!queue||typeof queue.listJobDiagnostics!=="function"||typeof queue.listWorkerHealth!=="function")throw new Error("Cloud operations requires the trusted cloud queue diagnostics adapter.");
+ if(!queue||typeof queue.listJobDiagnostics!=="function"||typeof queue.listWorkerHealth!=="function"||typeof queue.listAssetCleanupDiagnostics!=="function")throw new Error("Cloud operations requires the trusted cloud queue diagnostics adapter.");
  if(!Array.isArray(adminEmails))throw new Error("Cloud operations administrator allowlist must be an array.");
  const admins=new Set(adminEmails.map(value=>String(value||"").trim().toLowerCase()).filter(value=>EMAIL.test(value)));
  if(admins.size===0)throw new Error("Cloud operations requires at least one valid CLOUD_OPERATIONS_ADMIN_EMAILS entry.");
@@ -22,11 +22,12 @@ export function createCloudOperationsApi({queue,adminEmails=[]}={}){
     return {status:400,body:{error:{code:"CLOUD_OPERATIONS_INVALID_QUERY",message:"Cloud operations query bounds are invalid."}}};
    }
    try{
-    const [jobs,workers]=await Promise.all([
+    const [jobs,workers,assetCleanup]=await Promise.all([
      queue.listJobDiagnostics({limit,queueStaleAfterSeconds,leaseStaleAfterSeconds}),
-     queue.listWorkerHealth({limit,staleAfterSeconds:workerStaleAfterSeconds})
+     queue.listWorkerHealth({limit,staleAfterSeconds:workerStaleAfterSeconds}),
+     queue.listAssetCleanupDiagnostics()
     ]);
-    return {status:200,body:{generatedAt:new Date().toISOString(),jobs,workers}};
+    return {status:200,body:{generatedAt:new Date().toISOString(),jobs,workers,assetCleanup}};
    }catch(error){
     return {status:503,body:{error:{code:"CLOUD_OPERATIONS_UNAVAILABLE",message:"Cloud operations diagnostics are temporarily unavailable."}}};
    }
