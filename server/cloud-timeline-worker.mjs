@@ -30,6 +30,8 @@ export function createCloudTimelineWorker({
   });
   return Object.freeze({
     workerId,
+    workerFamily:"timeline",
+    reportHeartbeat:({instanceId,status,metrics})=>cloudQueue.heartbeatWorker({workerId,workerFamily:"timeline",instanceId,status,metrics}),
     runCycle(options={}){return runCloudWorkerCycle({
       queue:timelineQueue,workerId,execute,
       leaseSeconds:options.leaseSeconds??90,
