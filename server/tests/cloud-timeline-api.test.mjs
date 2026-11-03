@@ -8,7 +8,7 @@ import { createRenderManifest } from "../render-manifest.mjs";
 
 const owner="123e4567-e89b-42d3-a456-426614174000",editor="223e4567-e89b-42d3-a456-426614174000",project="423e4567-e89b-42d3-a456-426614174000",timelineId="523e4567-e89b-42d3-a456-426614174000";
 const timelineDoc={width:1280,height:720,frameRate:{numerator:24,denominator:1},tracks:[],markers:[]};
-function setup({canWrite=true,projectId=project,existing=[],timelineDocOverride=timelineDoc,assetOverride=null,signedAssetOverride=null,authorizeOverride=null,duplicateReview=false,cancelRpcResult={status:"cancelled"}}={}){
+function setup({canWrite=true,projectId=project,existing=[],timelineDocOverride=timelineDoc,assetOverride=null,signedAssetOverride=null,authorizeOverride=null,duplicateReview=false,cancelRpcResult={status:"cancelled"},events=[]}={}){
  const calls=[],created=[];
  const timeline={id:timelineId,ownerId:owner,projectId,name:"Test timeline",revision:2,timeline:timelineDocOverride,otio:null};
  const timelines={
@@ -17,7 +17,7 @@ function setup({canWrite=true,projectId=project,existing=[],timelineDocOverride=
   async list(input){calls.push(["timeline-list",input]);return[{...timeline}];},
   async update(input){calls.push(["update",input]);return{...timeline,revision:input.expectedRevision+1,timeline:input.timeline};}
  };
- const fetchImpl=async(url,options)=>{calls.push(["fetch",url,options]);if(url.includes("/rpc/cancel_queued_media_job"))return{ok:true,status:200,async text(){return JSON.stringify(cancelRpcResult);}};if(url.includes("/job_events")&&options.method==="POST"&&duplicateReview)return{ok:false,status:409,async text(){return JSON.stringify({code:"23505",message:"duplicate key"})}};if(url.includes("/jobs")&&options.method==="POST")return{ok:true,status:201,async text(){return JSON.stringify([{id:JSON.parse(options.body).id,owner_id:owner,project_id:projectId,job_type:JSON.parse(options.body).job_type,status:"queued",input:JSON.parse(options.body).input}])}};if(url.includes("/jobs?")&&options.method==="PATCH"){const row=existing.find(item=>url.includes("id=eq."+item.id));if(!row)return{ok:true,status:200,async text(){return"[]"}};Object.assign(row,JSON.parse(options.body));return{ok:true,status:200,async text(){return JSON.stringify([row])}};}if(url.includes("/jobs?"))return{ok:true,status:200,async text(){return JSON.stringify(existing)}};return{ok:true,status:201,async text(){return""}};};
+ const fetchImpl=async(url,options)=>{calls.push(["fetch",url,options]);if(url.includes("/job_events?")&&options.method==="GET")return{ok:true,status:200,async text(){return JSON.stringify(events);}};if(url.includes("/rpc/cancel_queued_media_job"))return{ok:true,status:200,async text(){return JSON.stringify(cancelRpcResult);}};if(url.includes("/job_events")&&options.method==="POST"&&duplicateReview)return{ok:false,status:409,async text(){return JSON.stringify({code:"23505",message:"duplicate key"})}};if(url.includes("/jobs")&&options.method==="POST")return{ok:true,status:201,async text(){return JSON.stringify([{id:JSON.parse(options.body).id,owner_id:owner,project_id:projectId,job_type:JSON.parse(options.body).job_type,status:"queued",input:JSON.parse(options.body).input}])}};if(url.includes("/jobs?")&&options.method==="PATCH"){const row=existing.find(item=>url.includes("id=eq."+item.id));if(!row)return{ok:true,status:200,async text(){return"[]"}};Object.assign(row,JSON.parse(options.body));return{ok:true,status:200,async text(){return JSON.stringify([row])}};}if(url.includes("/jobs?"))return{ok:true,status:200,async text(){return JSON.stringify(existing)}};return{ok:true,status:201,async text(){return""}};};
  const api=createCloudTimelineApi({url:"https://example.supabase.co",serviceRoleKey:"service-secret",fetchImpl,timelineService:{timelines,assets:{async list(input){calls.push(["asset-list",input]);return[{id:"asset-1",projectId:input.projectId}];},async retryCleanup(input){calls.push(["asset-cleanup-retry",input]);return{id:input.assetId,deleted:true,storageRemoved:true,cleanupPending:false};},async get(input){calls.push(["asset-get",input]);if(input.assetId==="published-asset")return assetOverride||{id:"published-asset",ownerId:owner,projectId:project,name:"master.mp4",mediaType:"video/mp4",size:2048,sha256:"a".repeat(64),metadata:{}};return assetOverride||{id:"723e4567-e89b-42d3-a456-426614174000",ownerId:owner,projectId:project,name:"generated.mp4",mediaType:"video/mp4",sha256:"a".repeat(64),metadata:{generated:true,jobId:"823e4567-e89b-42d3-a456-426614174000",mediaVerification:{status:"passed",readable:true,sha256:"a".repeat(64)},probe:{format:{duration:"2.51"},streams:[{codec_type:"video"}]}}};},async createSignedUrl(input){calls.push(["signed-url",input]);return{asset:signedAssetOverride||{id:input.assetId,projectId:project,size:2048,sha256:"a".repeat(64)},url:"https://storage.example.test/private/master?token=short-lived"};}},projects:{async create(input){calls.push(["project-create",input]);return{id:"project-1",...input};},async list(input){calls.push(["project-list",input]);return[{id:project}];},async get(input){calls.push(["project-get",input]);return{id:project,...input};},async update(input){calls.push(["project-update",input]);return{id:project,...input};},async archive(input){calls.push(["project-archive",input]);return{id:project,archived:true};}}},authorize:authorizeOverride|| (async({ownerId,projectId:pid,action})=>ownerId===owner&&(!pid||pid===project)&&(action==="read"||canWrite))});
  return{api,calls,created};
 }
@@ -544,4 +544,28 @@ test("cloud media cancellation requires project editor permission and hides jobs
  const result=await f.api.handle({method:"POST",path:"/api/cloud/media-jobs/"+job.id+"/cancel",ownerId:owner,body:{projectId:project}});
  assert.equal(result.status,404);
  assert.equal(f.calls.some(call=>call[0]==="fetch"&&call[1].includes("/jobs?")),false);
+});
+
+test("cloud media job event history is project-authorized, bounded and sanitized",async()=>{
+ const job={id:reviewJobId,owner_id:owner,project_id:project,job_type:"media.upscale",status:"processing"};
+ const f=setup({existing:[job],events:[
+  {id:"event-1",event_type:"job.queued",created_at:"2026-11-03T10:00:00.000Z",event_data:{jobType:"media.upscale",secret:"never expose"}},
+  {id:"event-2",event_type:"job.progress",created_at:"2026-11-03T10:01:00.000Z",event_data:{progress:45,workerId:"private-worker-id"}},
+  {id:"event-3",event_type:"delivery.reviewed",created_at:"2026-11-03T10:02:00.000Z",event_data:{decision:"approved"}}
+ ]});
+ const denied=setup({existing:[job],authorizeOverride:async()=>false});
+ assert.equal((await denied.api.handle({method:"GET",path:"/api/cloud/media-jobs/"+job.id+"/events",ownerId:editor,query:{projectId:project}})).status,404);
+ const result=await f.api.handle({method:"GET",path:"/api/cloud/media-jobs/"+job.id+"/events",ownerId:editor,query:{projectId:project,limit:"500"}});
+ assert.equal(result.status,200);
+ assert.equal(result.body.events.length,2);
+ assert.equal(result.body.events[1].data.progress,45);
+ assert.equal("workerId" in result.body.events[1].data,false);
+ assert.equal("secret" in result.body.events[0].data,false);
+ const eventQuery=f.calls.find(call=>call[0]==="fetch"&&call[1].includes("/job_events?"));
+ assert.match(eventQuery[1],/limit=100$/);
+});
+test("cloud media job event history rejects unknown jobs and invalid project IDs",async()=>{
+ const f=setup();
+ assert.equal((await f.api.handle({method:"GET",path:"/api/cloud/media-jobs/"+reviewJobId+"/events",ownerId:owner,query:{projectId:"bad"}})).status,400);
+ assert.equal((await f.api.handle({method:"GET",path:"/api/cloud/media-jobs/"+reviewJobId+"/events",ownerId:owner,query:{projectId:project}})).status,404);
 });
