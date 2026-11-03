@@ -25,7 +25,8 @@ export async function runCloudWorkerCycle({
   leaseSeconds = 90,
   heartbeatIntervalMs = 15000,
   onProgress = () => {},
-  onEvent = () => {}
+  onEvent = () => {},
+  signal: shutdownSignal
 }) {
   if (!queue || typeof queue.claim !== "function" || typeof queue.renew !== "function" || typeof queue.finish !== "function") {
     throw new Error("Cloud worker requires a compatible queue adapter.");
@@ -40,6 +41,10 @@ export async function runCloudWorkerCycle({
   const job = await queue.claim(workerId, leaseSeconds);
   if (!job) return { claimed: false };
   const controller = new AbortController();
+  if (shutdownSignal?.aborted) controller.abort(shutdownSignal.reason);
+  const abortForShutdown = () => controller.abort(shutdownSignal.reason);
+  shutdownSignal?.addEventListener("abort", abortForShutdown, { once: true });
+  if (controller.signal.aborted) return { claimed: true, finished: false, reason: "worker_stopping", jobId: job.id };
   let leaseLost = false;
   let heartbeatPending = false;
   let heartbeatError = null;
@@ -84,7 +89,7 @@ export async function runCloudWorkerCycle({
     clearInterval(heartbeat);
     await heartbeatTask;
     if (leaseLost || controller.signal.aborted) {
-      return { claimed: true, finished: false, reason: "lease_lost", jobId: job.id };
+      return { claimed: true, finished: false, reason: shutdownSignal?.aborted ? "worker_stopping" : "lease_lost", jobId: job.id };
     }
     if (output !== null && (typeof output !== "object" || Array.isArray(output))) {
       throw new Error("Cloud worker output must be an object or null.");
@@ -101,7 +106,7 @@ export async function runCloudWorkerCycle({
     clearInterval(heartbeat);
     await heartbeatTask;
     if (leaseLost || controller.signal.aborted) {
-      return { claimed: true, finished: false, reason: "lease_lost", jobId: job.id };
+      return { claimed: true, finished: false, reason: shutdownSignal?.aborted ? "worker_stopping" : "lease_lost", jobId: job.id };
     }
     const retryable = isRetryableCloudJobError(error);
     const details = {
@@ -133,6 +138,7 @@ export async function runCloudWorkerCycle({
     return { claimed: true, finished: true, status: "failed", jobId: job.id, error: details };
   } finally {
     clearInterval(heartbeat);
+    shutdownSignal?.removeEventListener("abort", abortForShutdown);
     if (heartbeatError) onEvent({ type: "job.heartbeat_error", jobId: job.id, workerId });
   }
 }
