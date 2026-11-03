@@ -1,5 +1,5 @@
 const SCHEMA = "executive_visuals";
-const RPC = new Set(["claim_next_job","renew_job_lease","recover_expired_jobs","recover_expired_jobs_by_type","finish_job","retry_job","report_job_progress"]);
+const RPC = new Set(["claim_next_job","renew_job_lease","recover_expired_jobs","recover_expired_jobs_by_type","finish_job","retry_job","report_job_progress","check_job_cancellation"]);
 
 function endpoint(value) {
   let url;
@@ -122,6 +122,16 @@ export function createCloudQueue({
         throw new Error("Cloud queue retry returned an invalid result.");
       }
       return result;
+    },
+    async checkCancellation(jobId, workerId) {
+      if (typeof jobId !== "string" || !jobId.trim() || typeof workerId !== "string" || !workerId.trim()) throw new Error("Job ID and worker ID are required to check cancellation.");
+      const result = await call("check_job_cancellation", { p_job_id: jobId, p_worker_id: workerId });
+      if (!result || typeof result !== "object" || Array.isArray(result)
+        || typeof result.leaseValid !== "boolean" || typeof result.cancelRequested !== "boolean"
+        || (!result.leaseValid && result.cancelRequested)) {
+        throw new Error("Cloud queue cancellation check returned an invalid result.");
+      }
+      return { leaseValid: result.leaseValid, cancelRequested: result.cancelRequested };
     },
     async reportProgress(jobId, workerId, progress) {
       if (typeof jobId !== "string" || !jobId.trim() || typeof workerId !== "string" || !workerId.trim()) throw new Error("Job ID and worker ID are required to report progress.");
