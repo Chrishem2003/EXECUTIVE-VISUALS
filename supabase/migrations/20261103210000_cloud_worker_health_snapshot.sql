@@ -46,3 +46,45 @@ $$;
 
 revoke all on function executive_visuals.list_worker_health(integer,integer) from public, anon, authenticated;
 grant execute on function executive_visuals.list_worker_health(integer,integer) to service_role;
+
+
+-- Bounded retention cleanup for historical worker identities. Stale rows are
+-- retained for investigation before they become eligible for deletion.
+create or replace function executive_visuals.prune_worker_heartbeats(
+  p_retention_days integer default 30,
+  p_limit integer default 500
+)
+returns integer
+language plpgsql
+security definer
+set search_path = pg_catalog, executive_visuals
+as $$
+declare
+  removed integer;
+begin
+  if p_retention_days is null or p_retention_days not between 7 and 180
+    or p_limit is null or p_limit not between 1 and 1000 then
+    raise exception 'invalid worker heartbeat retention bounds';
+  end if;
+
+  with candidates as (
+    select worker_id
+    from executive_visuals.worker_heartbeats
+    where last_seen_at < clock_timestamp() - make_interval(days => p_retention_days)
+    order by last_seen_at asc
+    limit p_limit
+    for update skip locked
+  ), deleted as (
+    delete from executive_visuals.worker_heartbeats heartbeat
+    using candidates
+    where heartbeat.worker_id = candidates.worker_id
+    returning heartbeat.worker_id
+  )
+  select count(*)::integer into removed from deleted;
+
+  return removed;
+end;
+$$;
+
+revoke all on function executive_visuals.prune_worker_heartbeats(integer,integer) from public, anon, authenticated;
+grant execute on function executive_visuals.prune_worker_heartbeats(integer,integer) to service_role;
