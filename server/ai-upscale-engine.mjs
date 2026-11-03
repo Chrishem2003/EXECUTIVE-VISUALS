@@ -228,9 +228,9 @@ export function createRealEsrganAdapter({
     const executionStartedAt = Date.now();
     const engineBefore = await fingerprint(prepared.model);
     if (!engineBefore || engineBefore.fingerprint !== readiness.engineFingerprint) throw fail("AI upscale engine changed after readiness verification.", "AI_UPSCALE_ENGINE_CHANGED");
-    // The native process writes only to a private, unique sibling path. Publish
-    // with COPYFILE_EXCL so a target created after the initial check (including
-    // a symlink) can never be overwritten by a time-of-check/time-of-use race.
+    // The native process writes only to a unique sibling path in the destination
+    // directory. After validation, link() publishes that complete inode atomically;
+    // an existing target (including a symlink) is never overwritten.
     const temporaryOutput = join(dirname(output), ".ev-upscale-" + randomUUID() + "." + prepared.format);
     const args = [...prepared.args];
     const outputFlag = args.indexOf("-o");
