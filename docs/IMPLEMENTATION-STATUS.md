@@ -645,3 +645,13 @@ The Enhancement Lab now displays the recorded host profile beside each benchmark
 - Existing role-aware action gates remain in place: only owners see project rename/archive; cloud asset archive is limited to owner/editor; unsupported cloud processing, review and membership actions remain disabled pending their server-side equivalents.
 - Automated repository tests cover collaborator role mapping and owner-role precedence. The latest complete Quality Checks run passed on commit `98d550214464566633759e28d362bcab7782aad8`; the visual role indicator follow-up is committed and awaits its own CI run.
 - No cloud environment was provisioned, no migration applied, and no production deployment or PR merge performed.
+
+
+## Cloud render delivery package UI — 4 November 2026
+
+- The cloud job queue now exposes a read-only delivery-package action for completed `timeline.render` jobs. It calls the authenticated server-side package verifier; the browser does not construct a storage URL or infer that an output is approved.
+- The server verifies the successful render state, signed delivery receipt, exact timeline ID/revision, output asset identity, checksum, byte size, media type, project authorization and HTTPS signed-download URL before returning the package.
+- The UI presents the delivery profile/revision, master filename and checksum prefix, quality status and error/warning counts, up to five quality findings, independent review history and package fingerprint. The master link is short-lived (five minutes) and can be refreshed by requesting the package again.
+- This is a read/download surface only. It does not record reviewer decisions, change job state, enable manual retry/cancellation or bypass approval gates. Missing or mismatched evidence remains a server error and no download link is shown.
+- The first feature commit passed TypeScript checking while its production build was still running; subsequent UI polish and evidence-display commits superseded/cancelled earlier workflow runs. Verify a complete CI run on the exact current head before treating this checkpoint as verified.
+- No staging credentials, storage configuration, migrations, cloud resources, production services, paid providers, merge or deployment were changed.
