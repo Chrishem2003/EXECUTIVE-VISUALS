@@ -114,3 +114,21 @@ test("cloud renderer animates overlay position and scale using saved motion keyf
   assert.ok(probe.streams.some(stream=>stream.codec_type==="video"));
  }finally{await rm(root,{recursive:true,force:true});}
 });
+
+test("cloud renderer composites a second video track over the primary picture", {skip:!hasFfmpeg||!hasFfprobe}, async()=>{
+ const root=await mkdtemp(join(tmpdir(),"ev-cloud-video-layers-test-"));
+ try{
+  const primary=join(root,"primary.mp4"),layer=join(root,"layer.mp4");
+  execFileSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-loglevel","error","-y","-f","lavfi","-i","color=c=blue:s=320x240:r=24:d=1","-c:v","libx264","-pix_fmt","yuv420p",primary]);
+  execFileSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-loglevel","error","-y","-f","lavfi","-i","color=c=red:s=160x120:r=24:d=0.5","-c:v","libx264","-pix_fmt","yuv420p",layer]);
+  const timeline={name:"Video layers",width:320,height:240,frameRate:{numerator:24,denominator:1},tracks:[
+   {id:"v1",kind:"video",clips:[{id:"base",assetId:"primary",timelineStart:time(0),duration:time(1),sourceRange:{start:time(0),duration:time(1)}}]},
+   {id:"v2",kind:"video",clips:[{id:"layer",assetId:"layer",timelineStart:time(0.25),duration:time(0.5),sourceRange:{start:time(0),duration:time(0.5)},metadata:{x:80,y:60,width:160,height:120,opacity:0.9}}]}
+  ]};
+  const assets=new Map([["primary",{path:primary,asset:{id:"primary",mediaType:"video/mp4",originalName:"primary.mp4"}}],["layer",{path:layer,asset:{id:"layer",mediaType:"video/mp4",originalName:"layer.mp4"}}]]);
+  const result=await renderCloudTimeline({timeline,assets,workDir:root});
+  const probe=JSON.parse(execFileSync(process.env.FFPROBE_PATH||"ffprobe",["-v","error","-show_entries","stream=codec_type,width,height","-of","json",result.path],{encoding:"utf8"}));
+  assert.equal(result.render.videoClips,1);assert.equal(result.render.videoLayerClips,1);
+  const outputVideo=probe.streams.find(stream=>stream.codec_type==="video");assert.equal(outputVideo.width,320);assert.equal(outputVideo.height,240);
+ }finally{await rm(root,{recursive:true,force:true});}
+});
