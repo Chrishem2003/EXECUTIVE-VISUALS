@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { createWriteStream } from "node:fs";
-import { mkdtemp, open, rm } from "node:fs/promises";
+import { lstat, mkdtemp, open, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pipeline } from "node:stream/promises";
@@ -60,7 +60,13 @@ export function createCloudMediaAssetIO({assets,fetchImpl=globalThis.fetch,tempR
    }catch(error){await rm(directory,{recursive:true,force:true}).catch(()=>{});throw error;}
   },
   async publish({ownerId,projectId=null,filename,mediaType,path,derivativeOf=null,metadata={}}){
-   if(typeof assets.createFromFile==="function")return assets.createFromFile({ownerId,projectId,originalName:filename,mediaType,filePath:path,derivativeOf,metadata});
+   if(typeof assets.createFromFile==="function"){
+    const output=await lstat(path);
+    if(!output.isFile())throw new Error("Cloud media output must be a regular file.");
+    if(output.size<1)throw new Error("Cloud media output must be a non-empty regular file.");
+    if(output.size>maxBytes)throw Object.assign(new Error("Cloud media output exceeds the worker upload limit."),{code:"CLOUD_MEDIA_TOO_LARGE"});
+    return assets.createFromFile({ownerId,projectId,originalName:filename,mediaType,filePath:path,derivativeOf,metadata});
+   }
    const handle=await open(path,"r");
    let bytes;
    try{
