@@ -57,6 +57,8 @@ export function createCloudMediaWorker({
     claim: (id, leaseSeconds) => cloudQueue.claim(id, leaseSeconds, MEDIA_JOB_TYPES),
     renew: (...args) => cloudQueue.renew(...args),
     finish: (...args) => cloudQueue.finish(...args),
+    retry: (...args) => cloudQueue.retry(...args),
+    reportProgress: (...args) => cloudQueue.reportProgress(...args),
     recover: (...args) => cloudQueue.recover(...args)
   });
 
