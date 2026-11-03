@@ -25,6 +25,28 @@ test("cloud worker supervisor recovers, runs enabled families and stops cleanly"
  assert.ok(events.some(event=>event.kind==="recovery"&&event.workerIndex===1&&event.count===3));
  assert.ok(events.some(event=>event.kind==="started"));assert.ok(events.some(event=>event.kind==="stopped"));
 });
+test("cloud worker supervisor aborts active worker cycles before waiting for shutdown",async()=>{
+ let calls=0,signalSeen=null,announceActive;
+ const active=new Promise(resolve=>{announceActive=resolve;});
+ const worker={
+  async recoverExpired(){return 0;},
+  async runCycle({signal}){
+   calls++;
+   if(calls===1)return{claimed:false};
+   signalSeen=signal;announceActive();
+   return new Promise(resolve=>signal.addEventListener("abort",()=>resolve({claimed:true,finished:false,reason:"worker_stopping"}),{once:true}));
+  }
+ };
+ const supervisor=createCloudWorkerSupervisor({workers:[worker],leaseSeconds:60,heartbeatIntervalMs:10000,pollMs:1000});
+ await supervisor.start();
+ const running=supervisor.runOnce();
+ await active;
+ const stopping=supervisor.stop();
+ const [cycle]=await Promise.all([running,stopping]);
+ assert.equal(signalSeen.aborted,true);
+ assert.equal(cycle[0].reason,"worker_stopping");
+ assert.equal(calls,2);
+});
 test("cloud worker supervisor rejects missing worker families",()=>{assert.throws(()=>createCloudWorkerSupervisor({workers:[]}),/one or more/);});
 
 test("cloud worker supervisor waits for all families and reports individual failures",async()=>{
