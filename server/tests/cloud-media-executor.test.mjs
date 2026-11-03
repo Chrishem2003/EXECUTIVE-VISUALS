@@ -628,7 +628,7 @@ test("media process escalates SIGTERM to SIGKILL when a cancelled child ignores 
       try { pidText = await readFile(pidPath, "utf8"); } catch {}
       if (!pidText) await new Promise(resolve => setTimeout(resolve, 10));
     }
-    assert.match(pidText, /^\\d+$/, "child process should start before cancellation");
+    assert.match(pidText, /^\d+$/, "child process should start before cancellation");
     const pid = Number(pidText);
     controller.abort();
     await assert.rejects(pending, error => error.code === "JOB_CANCELLED");
