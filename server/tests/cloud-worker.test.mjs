@@ -61,6 +61,25 @@ test("worker stops and does not finish when lease renewal is lost",async()=>{
  assert.equal(queue.calls.some(call=>call[0]==="finish"),false);
 });
 
+test("worker shutdown aborts execution and leaves the lease recoverable",async()=>{
+ const queue=queueFor();
+ const shutdown=new AbortController();
+ let executionStarted;
+ const started=new Promise(resolve=>{executionStarted=resolve;});
+ const cycle=runCloudWorkerCycle({
+  queue,workerId:"worker-shutdown",heartbeatIntervalMs:60000,signal:shutdown.signal,
+  execute:async({signal})=>new Promise(resolve=>{
+   executionStarted();
+   signal.addEventListener("abort",()=>resolve({lateOutput:true}),{once:true});
+  })
+ });
+ await started;
+ shutdown.abort(new Error("supervisor stopping"));
+ const result=await cycle;
+ assert.equal(result.finished,false);
+ assert.equal(result.reason,"worker_stopping");
+ assert.equal(queue.calls.some(call=>call[0]==="finish"),false);
+});
 test("worker waits for an in-flight lease renewal before terminal success",async()=>{
  let releaseRenewal;
  let renewalStarted=false;
