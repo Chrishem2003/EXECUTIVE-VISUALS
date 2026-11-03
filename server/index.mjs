@@ -64,7 +64,7 @@ const rateBuckets = new Map();
 const AUTH_RATE_LIMIT = Math.max(1, Math.min(1000, Number(process.env.AUTH_RATE_LIMIT) || 20));
 let rateSweepCounter=0;
 function rateAllowed(key,limit,windowMs){const time=Date.now();const old=rateBuckets.get(key);if(!old||time-old.start>=windowMs){rateBuckets.set(key,{start:time,count:1});}else{old.count++;if(old.count>limit)return false;}if(++rateSweepCounter%256===0||rateBuckets.size>20000){for(const [bucket,value] of rateBuckets){if(time-value.start>=Math.max(windowMs,60*60*1000))rateBuckets.delete(bucket);}while(rateBuckets.size>20000)rateBuckets.delete(rateBuckets.keys().next().value);}return true;}
-function authEmailAllowed(purpose,email){const normalized=String(email||"").trim().toLowerCase();if(!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(normalized))return true;const policy=purpose==="register"?{limit:5,window:60*60*1000}:purpose==="recover"?{limit:3,window:60*60*1000}:{limit:8,window:15*60*1000};return rateAllowed("auth-email:"+purpose+":"+hash(normalized),policy.limit,policy.window);}
+function authEmailAllowed(purpose,email){const normalized=String(email||"").trim().toLowerCase();if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized))return true;const policy=purpose==="register"?{limit:5,window:60*60*1000}:purpose==="recover"?{limit:3,window:60*60*1000}:{limit:8,window:15*60*1000};return rateAllowed("auth-email:"+purpose+":"+hash(normalized),policy.limit,policy.window);}
 await mkdir(join(MEDIA_ROOT,"uploads"), { recursive:true });
 await mkdir(join(MEDIA_ROOT,"derived"), { recursive:true });
 
