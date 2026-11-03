@@ -193,3 +193,34 @@ test("worker heartbeat migration defines bounded retention cleanup for old ident
  assert.match(sql,/for update skip locked/);
  assert.match(sql,/grant execute on function executive_visuals\.prune_worker_heartbeats\(integer,integer\) to service_role/);
 });
+
+test("supervisor keeps heartbeats alive while startup recovery is waiting",async()=>{
+ const originalSetInterval=globalThis.setInterval;
+ const originalClearInterval=globalThis.clearInterval;
+ const intervals=[];
+ globalThis.setInterval=(callback)=>{const handle={callback,unref(){}};intervals.push(handle);return handle;};
+ globalThis.clearInterval=()=>{};
+ let releaseRecovery;
+ let heartbeatCount=0;
+ try{
+  const recoveryGate=new Promise(resolve=>{releaseRecovery=resolve;});
+  const worker={
+   async reportHeartbeat(){heartbeatCount++;return{accepted:true,lastSeenAt:"2026-11-03T12:00:00Z"};},
+   async recoverExpired(){await recoveryGate;return 0;},
+   async runCycle(){return{claimed:false};}
+  };
+  const supervisor=createCloudWorkerSupervisor({workers:[worker],pollMs:1000,healthIntervalMs:10000});
+  const starting=supervisor.start();
+  while(heartbeatCount<1)await Promise.resolve();
+  const heartbeatTimer=intervals[1];
+  assert.ok(heartbeatTimer,"periodic heartbeat timer is installed before recovery completes");
+  await heartbeatTimer.callback();
+  assert.equal(heartbeatCount,2);
+  releaseRecovery();
+  await starting;
+  await supervisor.stop();
+ }finally{
+  globalThis.setInterval=originalSetInterval;
+  globalThis.clearInterval=originalClearInterval;
+ }
+});
