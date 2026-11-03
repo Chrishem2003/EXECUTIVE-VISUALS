@@ -144,3 +144,34 @@ test("cloud timeline executor propagates cancellation during temporal analysis a
  assert.equal(published.length,0);
  await rm(root,{recursive:true,force:true});
 });
+
+
+test("cloud timeline executor forwards the lease abort signal into source materialization",async()=>{
+ const controller=new AbortController();let receivedSignal;
+ const executor=createCloudTimelineExecutor({
+  timelines:{async get(){return{id:timelineId,projectId:null,revision:1,timeline};}},
+  mediaIO:{
+   async materialize(args){receivedSignal=args.signal;controller.abort();throw Object.assign(new Error("download cancelled"),{code:"JOB_CANCELLED"});},
+   async publish(){throw new Error("cancelled materialization must not publish");}
+  },
+  async renderTimeline(){throw new Error("cancelled materialization must not render");}
+ });
+ await assert.rejects(()=>executor({job:{id:"job-materialize-cancel",owner_id:owner,project_id:null,job_type:"timeline.render",input:{timelineId,timelineRevision:1}},signal:controller.signal}),error=>error.code==="JOB_CANCELLED");
+ assert.equal(receivedSignal,controller.signal);
+});
+
+test("cloud timeline executor preserves the render failure when a materialized cleanup hook throws synchronously",async()=>{
+ const root=await mkdtemp(join(tmpdir(),"ev-cloud-timeline-cleanup-"));
+ const executor=createCloudTimelineExecutor({
+  tempRoot:root,
+  timelines:{async get(){return{id:timelineId,projectId:null,revision:1,timeline};}},
+  mediaIO:{
+   async materialize({assetId}){const path=join(root,assetId);await writeFile(path,"source");return{path,asset:{id:assetId},cleanup(){throw new Error("cleanup failed");}};},
+   async publish(){throw new Error("render failure must prevent publication");}
+  },
+  async renderTimeline(){throw new Error("original render failure");}
+ });
+ try{
+  await assert.rejects(()=>executor({job:{id:"job-cleanup-throws",owner_id:owner,project_id:null,job_type:"timeline.render",input:{timelineId,timelineRevision:1}}}),/original render failure/);
+ }finally{await rm(root,{recursive:true,force:true});}
+});
