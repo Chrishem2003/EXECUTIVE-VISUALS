@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { chmod, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createRealEsrganAdapter } from "../ai-upscale-engine.mjs";
@@ -258,6 +258,47 @@ done
       adapter.execute({ inputPath: input, outputPath: output, model, scale: 4, format: "png" }),
       error => error.code === "AI_UPSCALE_ENGINE_CHANGED"
     );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+
+test("AI upscale cancellation waits for the native process to exit before removing its temporary output", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "ev-ai-upscale-cancel-"));
+  const binary = join(directory, "engine");
+  const model = "realesrgan-x4plus";
+  const input = join(directory, "source.png");
+  const output = join(directory, "result.png");
+  const pidFile = join(directory, "engine.pid");
+  const controller = new AbortController();
+  const script = [
+    "#!/usr/bin/env node",
+    'require("node:fs").writeFileSync(' + JSON.stringify(pidFile) + ', String(process.pid));',
+    'process.on("SIGTERM", () => {});',
+    'setInterval(() => {}, 1000);'
+  ].join("\\n") + "\\n";
+  await writeFile(input, Buffer.from([137,80,78,71,13,10,26,10,0,0,0,13,73,72,68,82,0,0,0,1,0,0,0,1]));
+  await writeFile(binary, script);
+  await chmod(binary, 0o755);
+  await writeFile(join(directory, model + ".param"), "model");
+  await writeFile(join(directory, model + ".bin"), "weights");
+  try {
+    const adapter = createRealEsrganAdapter({ binaryPath: binary, modelDirectory: directory, timeoutMs: 10000, enabled: true });
+    const pending = adapter.execute({ inputPath: input, outputPath: output, model, scale: 4, signal: controller.signal });
+    let pidText = "";
+    for (let attempt = 0; attempt < 100 && !pidText; attempt++) {
+      try { pidText = await readFile(pidFile, "utf8"); } catch {}
+      if (!pidText) await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    assert.match(pidText, /^\\d+$/, "native engine should start before cancellation");
+    const pid = Number(pidText);
+    controller.abort();
+    await assert.rejects(pending, error => error.code === "JOB_CANCELLED");
+    assert.throws(() => process.kill(pid, 0), error => error.code === "ESRCH",
+      "cancellation must wait until the native engine has exited");
+    assert.deepEqual((await readdir(directory)).filter(name => name.startsWith(".ev-upscale-")), [],
+      "the temporary output must be cleaned after the engine exits");
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
