@@ -297,6 +297,19 @@ test("timeline preview prefers a same-project validated proxy while retaining th
  assert.equal(result.status,200);assert.equal(result.body.preview.sourceAssetId,sourceId);assert.equal(result.body.preview.usingProxy,true);assert.equal(result.body.preview.asset.id,proxyId);
  assert.deepEqual(calls.find(x=>x[0]==="sign")[1],{ownerId:owner,assetId:proxyId,expiresIn:300});
 });
+test("timeline preview ignores proxy derivatives without matching SHA-256 provenance",async()=>{
+ const sourceId="723e4567-e89b-42d3-a456-426614174000",proxyId="823e4567-e89b-42d3-a456-426614174002",signed=[];
+ const source={id:sourceId,ownerId:owner,projectId:project,mediaType:"video/mp4",sha256:"a".repeat(64)};
+ const proxy={id:proxyId,ownerId:owner,projectId:project,mediaType:"video/mp4",sha256:"b".repeat(64),derivativeOf:sourceId,metadata:{operation:"media.proxy",sourceSha256:"c".repeat(64)}};
+ const timeline={id:timelineId,ownerId:owner,projectId:project,revision:13,timeline:{tracks:[{clips:[{assetId:sourceId}]}]}};
+ const api=createCloudTimelineApi({url:"https://example.supabase.co",serviceRoleKey:"service-secret",timelineService:{
+  timelines:{async get(){return timeline;}},
+  assets:{async get(){return source;},async list(){return[proxy];},async createSignedUrl(input){signed.push(input);return{asset:{id:input.assetId},url:"https://signed.example/original",expiresIn:300};}}
+ },authorize:async()=>true});
+ const result=await api.handle({method:"GET",path:"/api/cloud/timelines/"+timelineId+"/preview/"+sourceId,ownerId:owner,query:{revision:"13"}});
+ assert.equal(result.status,200);assert.equal(result.body.preview.usingProxy,false);assert.equal(result.body.preview.asset.id,sourceId);
+ assert.deepEqual(signed[0],{ownerId:owner,assetId:sourceId,expiresIn:300});
+});
 test("timeline preview tickets fail closed for users without project read access",async()=>{
  const assetId="723e4567-e89b-42d3-a456-426614174000";
  const api=createCloudTimelineApi({url:"https://example.supabase.co",serviceRoleKey:"service-secret",
