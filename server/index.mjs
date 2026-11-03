@@ -4,7 +4,7 @@ import { createAuthRateLimiter } from "./auth-rate-limit.mjs";
 import { createRedisRestRateLimiter } from "./distributed-rate-limit.mjs";
 import { createClientIpResolver } from "./client-ip.mjs";
 import { isBlockedDotPath } from "./static-path-security.mjs";
-import { ensureAuthSecuritySchema, getLoginLockState, recordFailedLogin, clearLoginFailures, recordLoginLockoutEvent } from "./auth-login-security.mjs";
+import { ensureAuthSecuritySchema, getLoginLockState, recordFailedLogin, clearLoginFailures, recordLoginLockoutEvent, listAuthSecurityEvents } from "./auth-login-security.mjs";
 import { createHash, randomBytes, randomUUID, scryptSync, timingSafeEqual } from "node:crypto";
 import { createReadStream, createWriteStream, existsSync, statSync } from "node:fs";
 import { mkdir, unlink, open, readFile } from "node:fs/promises";
@@ -887,6 +887,22 @@ export function createAppServer() {
           audit(db,user.id,"review.status_changed","review",review.id,{status},review.project_id);
           send(res,200,{ok:true,status},cors);return;
         }
+      }
+
+      if(path==="/api/admin/security-events"&&req.method==="GET"){
+        const allowedAdmins=String(process.env.AUTH_SECURITY_ADMIN_EMAILS||"").split(",").map(value=>value.trim().toLowerCase()).filter(Boolean);
+        if(!allowedAdmins.length||!allowedAdmins.includes(String(user.email||"").toLowerCase())){
+          fail(res,403,"AUTH_SECURITY_ADMIN_REQUIRED","An explicitly allowlisted security administrator is required.");return;
+        }
+        const rawLimit=url.searchParams.get("limit");
+        const limit=rawLimit===null?50:Number(rawLimit);
+        const beforeId=url.searchParams.get("beforeId");
+        const eventType=url.searchParams.get("eventType");
+        if(!Number.isInteger(limit)||limit<1||limit>100){fail(res,400,"INVALID_SECURITY_EVENT_QUERY","Limit must be an integer from 1 to 100.");return;}
+        try{
+          const events=listAuthSecurityEvents(db,{limit,beforeId,eventType});
+          send(res,200,{events,nextBeforeId:events.length===limit?events[events.length-1].id:null,retentionDays:90},cors);return;
+        }catch(error){fail(res,400,"INVALID_SECURITY_EVENT_QUERY",error.message);return;}
       }
       if(path==="/api/audit"&&req.method==="GET"){
         const rows=db.prepare("SELECT id,project_id,event_type,subject_type,subject_id,details_json,created_at FROM audit_events WHERE (project_id IS NULL AND owner_id=?) OR project_id IN (SELECT id FROM projects WHERE owner_id=?) OR project_id IN (SELECT project_id FROM project_members WHERE member_id=?) ORDER BY id DESC LIMIT 200").all(user.id,user.id,user.id);
