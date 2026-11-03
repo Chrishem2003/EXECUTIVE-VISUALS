@@ -31,3 +31,11 @@ test("broadcast review profile treats unavailable loudness as review, not a fals
 test("rejects unknown delivery profiles",()=>{
  assert.throws(()=>getDeliveryProfile("made-up"),error=>error.code==="DELIVERY_PROFILE_UNKNOWN");
 });
+
+test("includes square, landscape, 1440p and lightweight web delivery targets",()=>{
+ const profiles=listDeliveryProfiles();
+ for(const id of ["instagram-square","social-landscape","youtube-1440p","web-720p"])assert.ok(profiles.some(profile=>profile.id===id));
+ assert.deepEqual([getDeliveryProfile("instagram-square").width,getDeliveryProfile("instagram-square").height],[1080,1080]);
+ assert.deepEqual([getDeliveryProfile("youtube-1440p").width,getDeliveryProfile("youtube-1440p").height],[2560,1440]);
+ assert.deepEqual([getDeliveryProfile("web-720p").width,getDeliveryProfile("web-720p").height],[1280,720]);
+});
