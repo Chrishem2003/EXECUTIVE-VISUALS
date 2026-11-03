@@ -95,7 +95,8 @@ export async function inspectUpscaleWorkerReadiness({
   if (!engine.binaryReady) blockers.push("REALESRGAN_EXECUTABLE_MISSING");
   if (!engine.modelReady) blockers.push("REALESRGAN_MODEL_MISSING");
   if (!engine.executionEnabled) blockers.push("AI_UPSCALE_DISABLED");
-  if (!engine.executionVerified) blockers.push(selfTest.attempted ? "ENGINE_SELF_TEST_FAILED" : "ENGINE_SELF_TEST_REQUIRED");\n  if (!provenance.verified) blockers.push(provenance.configured ? "ENGINE_PROVENANCE_UNVERIFIED" : "ENGINE_PROVENANCE_MANIFEST_REQUIRED");
+  if (!engine.executionVerified) blockers.push(selfTest.attempted ? "ENGINE_SELF_TEST_FAILED" : "ENGINE_SELF_TEST_REQUIRED");
+  if (!provenance.verified) blockers.push(provenance.configured ? "ENGINE_PROVENANCE_UNVERIFIED" : "ENGINE_PROVENANCE_MANIFEST_REQUIRED");
   if (!tempWritable) blockers.push("WORKER_TEMP_DIRECTORY_NOT_WRITABLE");
   if (!hardLinks.supported) blockers.push("ATOMIC_HARDLINK_PUBLICATION_UNAVAILABLE");
   return {
