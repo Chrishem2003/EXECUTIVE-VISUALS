@@ -207,3 +207,21 @@ test("refuses benchmark evidence if the stored derivative hash or parent lineage
     outputAsset:asset,fixtureId:"portrait-02",fixtureCategory:"portrait"
   }),error=>error.code==="UPSCALE_BENCHMARK_EVIDENCE_INVALID"&&error.issues.length>=2);
 });
+
+
+test("candidate comparisons keep identical model builds separate across hardware runtimes",()=>{
+ const categories=["portrait","fine_texture","text","animation","low_light_noisy"];
+ const runtimeA={platform:"linux",architecture:"x64",osRelease:"6.8",cpuModel:"CPU A",logicalCores:8,totalMemoryBytes:16000000000,nodeVersion:"24.0.0",vulkanIcdConfigured:true};
+ const runtimeB={...runtimeA,cpuModel:"CPU B",logicalCores:16,totalMemoryBytes:32000000000};
+ const records=[...categories.map((fixtureCategory,index)=>validRecord({fixtureId:"host-a-"+index,fixtureCategory,qualityReview:"reviewed_pass",runtime:runtimeA,durationMs:900})),...categories.map((fixtureCategory,index)=>validRecord({fixtureId:"host-b-"+index,fixtureCategory,qualityReview:"reviewed_pass",runtime:runtimeB,durationMs:300}))];
+ const report=compareUpscaleBenchmarkCandidates(records);
+ assert.equal(report.candidateCount,2);
+ assert.notDeepEqual(report.candidates[0].runtime,report.candidates[1].runtime);
+ assert.deepEqual(new Set(report.candidates.map(candidate=>candidate.runtime.cpuModel)),new Set(["CPU A","CPU B"]));
+});
+
+test("benchmark evidence rejects malformed runtime hardware metadata",()=>{
+ const result=validateUpscaleBenchmarkRecord(validRecord({runtime:{platform:"linux",architecture:"x64",cpuModel:"CPU",logicalCores:0,totalMemoryBytes:1024,nodeVersion:"24"}}));
+ assert.equal(result.valid,false);
+ assert.ok(result.issues.some(issue=>issue.includes("runtime.logicalCores")));
+});
