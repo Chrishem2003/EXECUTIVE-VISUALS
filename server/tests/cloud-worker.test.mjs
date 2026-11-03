@@ -231,3 +231,16 @@ test("accepted cancellation wins a race with transient retry scheduling",async()
  assert.equal(result.status,"cancelled");
  assert.ok(events.some(event=>event.type==="job.cancelled"));
 });
+
+test("accepted cancellation takes precedence over a racing permanent failure",async()=>{
+ const queue=queueFor();
+ let finishCalls=0;
+ queue.finish=async(id,worker,status)=>{finishCalls++;queue.calls.push(["finish",id,worker,status]);return finishCalls>1;};
+ queue.checkCancellation=async()=>({leaseValid:true,cancelRequested:true});
+ const result=await runCloudWorkerCycle({
+  queue,workerId:"worker-cancel-failure",heartbeatIntervalMs:60000,
+  execute:async()=>{throw Object.assign(new Error("invalid media"),{code:"UNSUPPORTED_MEDIA_TYPE"});}
+ });
+ assert.equal(result.status,"cancelled");
+ assert.deepEqual(queue.calls.filter(call=>call[0]==="finish").map(call=>call[3]),["failed","cancelled"]);
+});
