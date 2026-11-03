@@ -175,3 +175,19 @@ test("cloud timeline executor preserves the render failure when a materialized c
   await assert.rejects(()=>executor({job:{id:"job-cleanup-throws",owner_id:owner,project_id:null,job_type:"timeline.render",input:{timelineId,timelineRevision:1}}}),/original render failure/);
  }finally{await rm(root,{recursive:true,force:true});}
 });
+
+test("cloud timeline executor rejects excessive timeline duration before materializing sources",async()=>{
+ let materialized=false;
+ const longTimeline={tracks:[{kind:"video",enabled:true,clips:[{assetId:"asset-a",enabled:true,timelineStart:time(0),duration:time(61)}]}]};
+ const executor=createCloudTimelineExecutor({maxDurationSeconds:60,timelines:{async get(){return{id:timelineId,projectId:null,revision:1,timeline:longTimeline};}},mediaIO:{async materialize(){materialized=true;},async publish(){}},async renderTimeline(){}});
+ await assert.rejects(()=>executor({job:{id:"job-long",owner_id:owner,project_id:null,job_type:"timeline.render",input:{timelineId,timelineRevision:1}}}),error=>error.code==="CLOUD_TIMELINE_DURATION_TOO_LARGE");
+ assert.equal(materialized,false);
+});
+
+test("cloud timeline executor enforces aggregate source byte limits and cleans materialized assets",async()=>{
+ const root=await mkdtemp(join(tmpdir(),"ev-cloud-timeline-bytes-")),cleaned=[];
+ const executor=createCloudTimelineExecutor({tempRoot:root,maxInputBytes:10,timelines:{async get(){return{id:timelineId,projectId:null,revision:1,timeline};}},mediaIO:{async materialize({assetId}){const path=join(root,assetId);await writeFile(path,"source");return{path,asset:{id:assetId,size:8},async cleanup(){cleaned.push(assetId);}};},async publish(){}},async renderTimeline(){}});
+ await assert.rejects(()=>executor({job:{id:"job-bytes",owner_id:owner,project_id:null,job_type:"timeline.render",input:{timelineId,timelineRevision:1}}}),error=>error.code==="CLOUD_TIMELINE_INPUT_TOO_LARGE");
+ assert.deepEqual(cleaned.sort(),["asset-a","asset-b"]);
+ await rm(root,{recursive:true,force:true});
+});
