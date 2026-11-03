@@ -176,6 +176,12 @@ test("cloud job diagnostics are bounded, payload-free and validated",async()=>{
  await assert.rejects(()=>unsafe.listJobDiagnostics(),/malformed or unsafe/);
  const malformed=createCloudQueue({...base,fetchImpl:async()=>response([{...rows[0],diagnostic_flags:{}}])});
  await assert.rejects(()=>malformed.listJobDiagnostics(),/malformed or unsafe/);
- const oversized=createCloudQueue({...base,fetchImpl:async()=>response([rows[0],rows[0]])});
+ const oversized=createCloudQueue({...base,fetchImpl:async()=>response([rows[0],rows[0]]) const extraField=createCloudQueue({...base,fetchImpl:async()=>response([{...rows[0],owner_email:"private@example.test"}])});
+ await assert.rejects(()=>extraField.listJobDiagnostics(),/malformed or unsafe/);
+ const invalidTimestamp=createCloudQueue({...base,fetchImpl:async()=>response([{...rows[0],created_at:"not-a-date"}])});
+ await assert.rejects(()=>invalidTimestamp.listJobDiagnostics(),/malformed or unsafe/);
+ const blankIdentity=createCloudQueue({...base,fetchImpl:async()=>response([{...rows[0],job_type:" "}])});
+ await assert.rejects(()=>blankIdentity.listJobDiagnostics(),/malformed or unsafe/);
+});
  await assert.rejects(()=>oversized.listJobDiagnostics({limit:1}),/invalid result/);
 });
