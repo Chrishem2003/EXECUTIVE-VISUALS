@@ -254,7 +254,8 @@ test("asset cleanup diagnostics migration returns aggregate-only service-role da
  assert.match(sql,/pending_over_24_hours/);
  assert.match(sql,/pending_over_7_days/);
  assert.match(sql,/oldest_pending_age_seconds/);
- assert.doesNotMatch(sql,/owner_id|project_id|object_path|original_name|metadata/);
+ const executableSql=sql.replace(/--[^\\n]*/g,"");
+ assert.doesNotMatch(executableSql,/owner_id|project_id|object_path|original_name|metadata/);
  assert.match(sql,/revoke all on function executive_visuals\.list_asset_cleanup_diagnostics\(\) from public, anon, authenticated/);
  assert.match(sql,/grant execute on function executive_visuals\.list_asset_cleanup_diagnostics\(\) to service_role/);
 });
