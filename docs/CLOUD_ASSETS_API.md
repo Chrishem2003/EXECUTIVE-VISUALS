@@ -10,7 +10,8 @@ Required server-side environment:
 - `SUPABASE_URL`
 - `SUPABASE_PUBLISHABLE_KEY` for user authentication
 - `SUPABASE_SERVICE_ROLE_KEY` for server-side private storage and metadata access
-- `CLOUD_ASSETS_ENABLED=true`
+- `CLOUD_ASSETS_ENABLED=true` for the dedicated cloud asset API routes.
+- `CLOUD_TIMELINE_API_ENABLED=true` for cloud projects, timelines and cloud media-job submission/listing. This flag performs a startup schema/readiness check.
 - `CLOUD_MEDIA_MAX_UPLOAD_BYTES` (bounded by the storage adapter to at most 1 GiB)
 
 The service role key is used only by the server-side cloud asset adapter. Never expose it in frontend configuration, API responses, logs, or source control.
@@ -35,4 +36,4 @@ Uploads are streamed to a temporary file, size-checked, signature-checked, check
 
 ## Current boundary
 
-The browser asset workspace can now use this API when the health endpoint reports `cloudAssets.enabled` and `cloudAssets.configured`; upload, listing and previews then use cloud asset IDs and signed file redirects. The local `/api/assets` path remains the fallback when the feature flag is off. The authenticated cloud media-job API now enqueues supported operations into the same Postgres `jobs` queue consumed by the separately deployed cloud media worker. The local SQLite queue remains independent; the UI still needs an explicit cloud-job routing/selection flow before cloud mode can replace local execution. Do not enable it for end users until the dedicated database/storage migration is reviewed and hosted authorization, upload limits, preview redirects, signed-link expiry, queue insertion and worker execution are tested. The health endpoint reports whether the bridge is enabled/configured; that is not proof of hosted project readiness.
+The browser asset workspace can now use this API when the health endpoint reports `cloudAssets.enabled` and `cloudAssets.configured`; cloud media-job routing additionally requires `cloudJobs.enabled` and `cloudJobs.configured`; upload, listing and previews then use cloud asset IDs and signed file redirects. The local `/api/assets` path remains the fallback when the feature flag is off. The authenticated cloud media-job API now enqueues supported operations into the same Postgres `jobs` queue consumed by the separately deployed cloud media worker. The local SQLite queue remains independent; the UI still needs an explicit cloud-job routing/selection flow before cloud mode can replace local execution. Do not enable it for end users until the dedicated database/storage migration is reviewed and hosted authorization, upload limits, preview redirects, signed-link expiry, queue insertion and worker execution are tested. The health endpoint reports whether the bridge is enabled/configured; that is not proof of hosted project readiness.
