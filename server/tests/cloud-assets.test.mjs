@@ -183,10 +183,15 @@ test("returns project-scoped derivative ancestry and direct children with a boun
  assert.ok(calls.some(url=>url.includes("derivative_of=eq."+assetId)));
 });
 test("does not disclose derivative lineage outside the asset project scope",async()=>{
- const foreign={...fixture().row,project_id:"623e4567-e89b-42d3-a456-426614174000"};
+ const parentId="423e4567-e89b-42d3-a456-426614174000";
+ const root={...fixture().row,derivative_of:parentId};
+ const foreign={...fixture().row,id:parentId,project_id:"623e4567-e89b-42d3-a456-426614174000"};
  const storage={async upload(){},async remove(){},async createSignedUrl(){return"https://example.supabase.co/signed";}};
- const repo=createCloudAssetRepository({...config,storage,authorize:async()=>true,fetchImpl:async()=>response([foreign])});
- await assert.rejects(()=>repo.getLineage({ownerId,assetId}),/not found/);
+ const fetchImpl=async url=>{const id=new URL(url).searchParams.get("id")?.replace("eq.","");return response(id===assetId?[root]:id===parentId?[foreign]:[]);};
+ const repo=createCloudAssetRepository({...config,storage,authorize:async()=>true,fetchImpl});
+ const lineage=await repo.getLineage({ownerId,assetId});
+ assert.deepEqual(lineage.ancestors.map(item=>item.id),[assetId]);
+ assert.equal(lineage.hasMoreAncestors,true);
 });
 test("requires project read authorization before resolving derivative lineage",async()=>{
  const f=fixture({authorize:async({action})=>action!=="read"});
