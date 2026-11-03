@@ -564,3 +564,12 @@ The cloud media IO boundary now rejects HTTP redirects for signed object downloa
 - Corrected the implementation comment so it describes the current same-directory hard-link operation rather than the superseded exclusive-copy approach.
 - Commits: implementation comment `8d39775cba5074391ddd6fc4f7d75db0c94cd0b0`; byte-integrity assertions `8e1124bd0e4432d1bf992563bc0eeed1f3f415bd`.
 - These changes are committed but still await an observed CI run. They do not constitute a real GPU quality test or cloud-worker filesystem acceptance.
+
+
+### Follow-up — cloud worker child-process cancellation
+
+- Fixed cancellation escalation in the cloud media executor. Node's `ChildProcess.killed` flag indicates that a signal was sent, not that the process exited; using it to decide whether to send `SIGKILL` could leave an unresponsive FFmpeg/media child alive after lease cancellation.
+- The worker now tracks the actual `close` event and sends `SIGKILL` after the grace period whenever the child has not exited. Timeout handling also checks the observed exit state.
+- Exported the process runner for focused regression coverage and added a test with a child that deliberately ignores `SIGTERM`, asserting that it is force-killed.
+- Commits: worker fix `64e37edfdf3f9fbd139db10dc4b1163830582cd1`; regression test `e1290305b87a1086858728b842f0124a640e8bd5`.
+- The regression is committed but awaits CI execution. This does not replace staging tests for worker shutdown, lease expiry, retry/recovery or process-tree cleanup.
