@@ -100,3 +100,17 @@ export function clearLoginFailures(db, identifier) {
   db.prepare("DELETE FROM auth_login_security WHERE identifier_hash=?").run(key);
   if(process.env.AUTH_IDENTIFIER_HMAC_KEY)db.prepare("DELETE FROM auth_login_security WHERE identifier_hash=?").run(legacyLoginIdentifierHash(identifier));
 }
+
+export function listAuthSecurityEvents(db, { limit = 50, beforeId = null, eventType = null } = {}) {
+  const safeLimit=Math.max(1,Math.min(100,Math.trunc(Number(limit)||50)));
+  const validTypes=new Set(["login_failed","account_locked","login_blocked_by_lockout","login_succeeded"]);
+  if(eventType&&!validTypes.has(eventType))throw new Error("Unsupported authentication security event type.");
+  const cursor=beforeId===null||beforeId===""?null:Number(beforeId);
+  if(cursor!==null&&(!Number.isSafeInteger(cursor)||cursor<1))throw new Error("Invalid authentication security event cursor.");
+  const where=[],params=[];
+  if(cursor!==null){where.push("id < ?");params.push(cursor);}
+  if(eventType){where.push("event_type = ?");params.push(eventType);}
+  const rows=db.prepare(`SELECT id,identifier_hash,event_type,failed_attempts,lock_level,locked_until_ms,created_at_ms
+    FROM auth_security_events ${where.length?"WHERE "+where.join(" AND "):""} ORDER BY id DESC LIMIT ?`).all(...params,safeLimit);
+  return rows.map(row=>({id:row.id,identifierHash:row.identifier_hash,eventType:row.event_type,failedAttempts:row.failed_attempts,lockLevel:row.lock_level,lockedUntilMs:row.locked_until_ms,createdAtMs:row.created_at_ms}));
+}
