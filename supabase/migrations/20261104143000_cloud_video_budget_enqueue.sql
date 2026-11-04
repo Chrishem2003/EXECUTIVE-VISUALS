@@ -113,6 +113,26 @@ create trigger ev_video_budget_approval_validate
   before insert on executive_visuals.video_generation_budget_approvals
   for each row execute function executive_visuals.validate_video_budget_approval();
 
+create or replace function executive_visuals.validate_video_budget_policy_scope()
+returns trigger
+language plpgsql
+set search_path = pg_catalog, executive_visuals
+as $video_policy_scope$
+begin
+  if (new.provider is distinct from old.provider
+      or new.model is distinct from old.model
+      or new.currency is distinct from old.currency)
+     and (old.reserved_amount > 0 or old.spent_amount > 0) then
+    raise exception 'VIDEO_BUDGET_POLICY_SCOPE_LOCKED_AFTER_USE';
+  end if;
+  return new;
+end;
+$video_policy_scope$;
+
+create trigger ev_video_budget_policy_scope_immutable
+  before update of provider, model, currency on executive_visuals.video_generation_budget_policies
+  for each row execute function executive_visuals.validate_video_budget_policy_scope();
+
 create trigger ev_video_budget_policy_owner_immutable
   before update of owner_id on executive_visuals.video_generation_budget_policies
   for each row execute function executive_visuals.prevent_owner_reassignment();
