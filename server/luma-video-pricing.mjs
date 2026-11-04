@@ -1,4 +1,6 @@
 const SOURCE = "https://docs.agents.lumalabs.ai/guides/pricing/";
+const USAGE_SOURCE = "https://docs.agents.lumalabs.ai/guides/usage/";
+const DEFAULT_LIST_USD_PER_CREDIT = 0.003;
 const fail = (message, code = "LUMA_PRICE_INVALID_INPUT") => Object.assign(new Error(message), { code });
 const TABLES = Object.freeze({
   video: Object.freeze({
@@ -53,11 +55,17 @@ export function estimateLumaRay32Cost({ operation = "video", resolution, duratio
     billedDurationSeconds = durationSeconds;
     formula = operation + " " + tier + " " + resolution + " " + durationSeconds + "s fixed published rate";
   }
+  const credits = Math.round(amount / DEFAULT_LIST_USD_PER_CREDIT);
+  const listRateAmount = Number((credits * DEFAULT_LIST_USD_PER_CREDIT).toFixed(6));
   return Object.freeze({
     provider: "luma", model: "ray-3.2", operation, resolution,
-    billedDurationSeconds, currency: "USD", amount,
-    basis: "published_pay_as_you_go_list_price",
-    pricingSource: SOURCE, pricingDate, pricingStatus: "subject_to_change_before_general_availability",
-    pricingFormula: formula, billable: false, settlementEligible: false
+    billedDurationSeconds, credits, currency: "USD", amount: listRateAmount,
+    basis: "default_list_rate_usd_per_credit",
+    creditToUsdRate: DEFAULT_LIST_USD_PER_CREDIT,
+    monetaryEstimateScope: "default_list_rate_only_account_plan_or_contract_rate_may_differ",
+    pricingSource: SOURCE, usageSource: USAGE_SOURCE, pricingDate,
+    pricingStatus: "subject_to_change_before_general_availability",
+    pricingFormula: formula + "; " + credits + " credits × $" + DEFAULT_LIST_USD_PER_CREDIT.toFixed(3) + "/credit",
+    billable: false, settlementEligible: false
   });
 }
