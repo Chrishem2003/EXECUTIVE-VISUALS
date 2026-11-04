@@ -342,7 +342,7 @@ export function createAppServer() {
       if(path==="/api/auth/logout"&&req.method==="POST"){
         if(AUTH_MODE==="supabase"){
           if(supabaseAuth)await supabaseAuth.signOut(cookieValue(req,SUPABASE_SESSION_COOKIE));
-          setSupabaseCookie(res,"",0);setCookie(res,"",0);send(res,200,{ok:true},cors);return;
+          setSupabaseCookie(res,"",0);send(res,200,{ok:true},cors);return;
         }
         const token=cookieValue(req,"ev_session");if(token)db.prepare("DELETE FROM sessions WHERE token_hash=?").run(hash(token));
         setCookie(res,"",0);send(res,200,{ok:true},cors);return;
