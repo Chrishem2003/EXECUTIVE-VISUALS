@@ -31,7 +31,7 @@ grant all privileges on executive_visuals.video_generation_submissions to servic
 create or replace function executive_visuals.prepare_video_generation_submission(
   p_job_id uuid, p_owner_id uuid, p_provider text, p_model text, p_request_hash text
 ) returns setof executive_visuals.video_generation_submissions
-language plpgsql security definer
+language plpgsql security invoker
 set search_path = pg_catalog, executive_visuals
 as $$
 declare
@@ -67,7 +67,7 @@ $$;
 create or replace function executive_visuals.begin_video_generation_submission(
   p_job_id uuid, p_worker_id text
 ) returns boolean
-language plpgsql security definer
+language plpgsql security invoker
 set search_path = pg_catalog, executive_visuals
 as $$
 declare changed integer;
@@ -89,7 +89,7 @@ $$;
 create or replace function executive_visuals.record_video_generation_submission(
   p_job_id uuid, p_worker_id text, p_provider_task_id text, p_metadata jsonb default '{}'::jsonb
 ) returns boolean
-language plpgsql security definer
+language plpgsql security invoker
 set search_path = pg_catalog, executive_visuals
 as $$
 declare changed integer; current_task text; current_state text;
@@ -121,7 +121,7 @@ $$;
 create or replace function executive_visuals.mark_video_generation_submission_unknown(
   p_job_id uuid, p_worker_id text, p_error_code text
 ) returns boolean
-language plpgsql security definer
+language plpgsql security invoker
 set search_path = pg_catalog, executive_visuals
 as $$
 declare changed integer;
@@ -140,7 +140,7 @@ $$;
 
 create or replace function executive_visuals.get_video_generation_submission(p_job_id uuid)
 returns setof executive_visuals.video_generation_submissions
-language sql security definer
+language sql security invoker
 set search_path = pg_catalog, executive_visuals
 as $$
   select s.* from executive_visuals.video_generation_submissions s
@@ -164,7 +164,7 @@ grant execute on function executive_visuals.get_video_generation_submission(uuid
 create or replace function executive_visuals.reconcile_unknown_video_generation_submission(
   p_job_id uuid, p_provider_task_id text, p_evidence_reference text, p_metadata jsonb default '{}'::jsonb
 ) returns boolean
-language plpgsql security definer
+language plpgsql security invoker
 set search_path = pg_catalog, executive_visuals
 as $$
 declare changed integer; current_task text; current_state text;
@@ -193,7 +193,7 @@ $$;
 create or replace function executive_visuals.finish_video_generation_submission(
   p_job_id uuid, p_worker_id text, p_state text, p_metadata jsonb default '{}'::jsonb
 ) returns boolean
-language plpgsql security definer
+language plpgsql security invoker
 set search_path = pg_catalog, executive_visuals
 as $$
 declare changed integer;
