@@ -268,8 +268,7 @@ test("Google Omni enqueue rejects under-reservation, unsupported resolution, inv
   await assert.rejects(()=>client.enqueue(googleArgs({input:{...googleInput,negativePrompt:"no blur"}})),error=>
     error.code==="VIDEO_GENERATION_UNSUPPORTED_CAPABILITY");
   await assert.rejects(()=>client.enqueue(googleArgs({input:{...googleInput,operation:"extend"}})),/require a previous interaction or source video/);
-  await assert.rejects(()=>client.enqueue(googleArgs({input:{...googleInput,firstFrameAssetId:"33333333-3333-4333-8333-333333333333",lastFrameAssetId:"44444444-4444-4444-8444-444444444444"}})),error=>
-    error.code==="VIDEO_GENERATION_UNSUPPORTED_CAPABILITY" || error.message.includes("endFrame"));
+  await assert.rejects(()=>client.enqueue(googleArgs({input:{...googleInput,lastFrameAssetId:"44444444-4444-4444-8444-444444444444"}})),/requires a first frame/);
   assert.equal(calls,0);
 });
 
