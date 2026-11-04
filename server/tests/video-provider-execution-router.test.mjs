@@ -72,9 +72,11 @@ test("shared cloud executor routes a leased job to its exact adapter before subm
 });
 
 test("does not submit when no exact adapter is registered for the leased job", async () => {
-  const runway = adapter({ provider: "runway", model: "gen4.5" });
-  const router = createVideoProviderExecutionRouter({ adapters: [runway] });
   let submissions = 0;
+  const runway = adapter({ provider: "runway", model: "gen4.5",
+    async submit() { submissions++; return { taskId: "runway-task", status: "running" }; }
+  });
+  const router = createVideoProviderExecutionRouter({ adapters: [runway] });
   await assert.rejects(() => executeCloudVideoGenerationJob({
     job, workerId: "shared-worker-1", ledger: ledger(), resolveAdapter: router.resolveAdapter,
     ingestOutputs: async () => ({ assetIds: ["private-asset-1"] }),
