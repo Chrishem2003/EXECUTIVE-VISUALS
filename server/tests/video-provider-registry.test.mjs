@@ -26,6 +26,7 @@ test("Runway catalog exposes implemented Gen-4.5 text-to-video and image-to-vide
   assert.equal(model.availability, "disabled");
   assert.equal(model.capabilities.textToVideo, true);
   assert.equal(model.capabilities.imageToVideo, true);
+  assert.equal(model.capabilities.startFrame, true);
   assert.equal(model.capabilities.seed, true);
   assert.deepEqual(model.capabilities.aspectRatios, ["16:9", "9:16"]);
   assert.equal(model.capabilities.minDurationSeconds, 2);
