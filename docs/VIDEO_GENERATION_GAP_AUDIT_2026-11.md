@@ -279,3 +279,10 @@ Added docs/AI_UPSCALING_ENGINE_SELECTION.md. The initial low-cost candidate is R
 The first provider-aware executor polled repeatedly inside a single worker lease (up to 120 checks with sleeps). This could occupy workers unnecessarily and risk missing provider result retention windows. The executor now performs exactly one provider status check per lease. Queued/running tasks and transient status failures return VIDEO_PROVIDER_POLL_DEFERRED; the worker atomically defers the job and the next lease resumes from the persisted submission ledger without another provider POST. Successful tasks proceed immediately to cost reconciliation and private output ingestion.
 
 This is particularly important for FAL: its documented result retention is one hour by default, or six minutes for result payloads at least 10 KB unless payload storage is enabled. The worker should retrieve and privately ingest a completed result as soon as it observes completion.
+
+
+### Multi-provider worker composition — 2026-11-05
+
+Added `createProviderAwareCloudVideoWorker`, a side-effect-free composition factory that binds the existing durable queue, Postgres submission ledger and lease-aware worker to an immutable exact-match provider/model router. Every registered adapter must provide its own private output ingestion and authoritative actual-cost resolver; a provider cannot silently inherit another adapter's accounting or storage gates. The factory exposes the existing `runCycle` and expired-job recovery operations plus a read-only supported-model list. Construction does not call a provider or database.
+
+This is the composition seam for registering the separately implemented FAL and Runway adapters once their draft changes are reviewed together. It does not activate remote providers, configure credentials, perform migrations, or change the production worker process. The new composition contract tests are included in the cloud-queue verification suite.
