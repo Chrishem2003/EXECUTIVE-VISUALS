@@ -133,14 +133,6 @@ test("Kling mixed-reference and duration limits are represented without enabling
   assert.equal(model.constraints.billingBasis, "input_and_output_duration");
 });
 
-test("Gemini conversational lineage and output encoding are explicit", () => {
-  const model = getVideoProviderModel("google", "gemini-omni-1.1-flash");
-  assert.equal(model.constraints.supportsConversationalEdits, true);
-  assert.equal(model.constraints.lineageField, "previous_interaction_id");
-  assert.equal(model.constraints.outputEncoding, "base64_in_interaction_steps");
-  assert.equal(model.constraints.paidTierOnly, true);
-});
-
 test("retired Sora API is unavailable and cannot be selected", () => {
   const model = getVideoProviderModel("openai", "sora-2");
   assert.equal(model.availability, "unavailable");
@@ -252,6 +244,10 @@ test("Google Gemini Omni Flash catalog matches the current Interactions API cont
   assert.equal(model.capabilities.videoExtend, true);
   assert.equal(model.capabilities.nativeAudio, true);
   assert.equal(model.capabilities.negativePrompt, false);
+  assert.equal(model.constraints.supportsConversationalEdits, true);
+  assert.equal(model.constraints.lineageField, "previous_interaction_id");
+  assert.equal(model.constraints.outputEncoding, "base64_in_interaction_steps");
+  assert.equal(model.constraints.paidTierOnly, true);
   assert.deepEqual(model.capabilities.aspectRatios, ["16:9", "9:16"]);
   assert.deepEqual(model.capabilities.resolutions, ["360p", "720p", "1080p", "4k"]);
   assert.equal(model.constraints.maxReferenceVideoClips, 3);
