@@ -1,3 +1,4 @@
+import { assertTimelineDescriptorsSupported } from "./timeline-descriptors.mjs";
 import { randomUUID } from "node:crypto";
 import { extname, join } from "node:path";
 import { mkdir, readFile, writeFile, unlink } from "node:fs/promises";
@@ -17,6 +18,7 @@ const safeName=(value)=>String(value||"sequence").normalize("NFKC").replace(/[^a
 export async function renderCloudTimeline({timeline,assets,workDir,signal,onProgress=()=>{},activeProcesses=new Map(),jobId=null}={}){
  if(!timeline||!Array.isArray(timeline.tracks)||!(assets instanceof Map)||typeof workDir!=="string")throw new Error("Cloud timeline renderer received invalid inputs.");
  if(signal?.aborted)fail("Timeline render was cancelled.","JOB_CANCELLED");
+ assertTimelineDescriptorsSupported(timeline);
  const tracks=timeline.tracks.filter(track=>track.enabled!==false&&(track.clips||[]).some(enabled));
  const videos=tracks.filter(track=>track.kind==="video"),audios=tracks.filter(track=>track.kind==="audio"),overlays=tracks.filter(track=>track.kind==="overlay"),captions=tracks.filter(track=>track.kind==="caption");
  const unsupported=tracks.filter(track=>!["video","audio","overlay","caption"].includes(track.kind));
