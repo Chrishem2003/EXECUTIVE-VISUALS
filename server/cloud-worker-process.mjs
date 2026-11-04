@@ -12,14 +12,14 @@ const integer=(value,fallback,min,max,label)=>{const parsed=value===undefined||v
 
 export function readCloudWorkerConfig(env=process.env){
  if(!truth(env.CLOUD_WORKER_ENABLED))throw new Error("Cloud worker process is disabled. Set CLOUD_WORKER_ENABLED=true only after the isolated database and private storage are ready.");
- const media=truth(env.CLOUD_MEDIA_WORKER_ENABLED),timeline=truth(env.CLOUD_TIMELINE_WORKER_ENABLED);
- if(!media&&!timeline)throw new Error("Enable at least one supported cloud worker family.");
+ const media=truth(env.CLOUD_MEDIA_WORKER_ENABLED),timeline=truth(env.CLOUD_TIMELINE_WORKER_ENABLED),video=truth(env.CLOUD_VIDEO_WORKER_ENABLED);
+ if(!media&&!timeline&&!video)throw new Error("Enable at least one supported cloud worker family.");
  if(!env.SUPABASE_URL||!env.SUPABASE_SERVICE_ROLE_KEY)throw new Error("Cloud workers require server-side Supabase credentials.");
  const leaseSeconds=integer(env.CLOUD_WORKER_LEASE_SECONDS,90,30,900,"Cloud worker lease duration");
  const heartbeatIntervalMs=integer(env.CLOUD_WORKER_HEARTBEAT_MS,15000,1000,30000,"Cloud worker heartbeat");
  if(heartbeatIntervalMs>=leaseSeconds*1000)throw new Error("Cloud worker heartbeat must be shorter than the lease duration.");
  return Object.freeze({
-  media,timeline,
+  media,timeline,video,
   pollMs:integer(env.CLOUD_WORKER_POLL_MS,1000,500,10000,"Cloud worker poll interval"),
   leaseSeconds,heartbeatIntervalMs,
   maxBytes:integer(env.CLOUD_WORKER_MAX_BYTES,250*1024*1024,1024,1024*1024*1024,"Cloud worker media limit"),
@@ -78,15 +78,29 @@ export function createCloudWorkerSupervisor({workers,leaseSeconds=90,heartbeatIn
  });
 }
 
-export async function startCloudWorkerProcess(env=process.env){
+export function buildCloudWorkerFamilies({config,mediaWorker,timelineWorker,videoWorker}={}){
+ if(!config||typeof config!=="object")throw new Error("Cloud worker configuration is required.");
+ const selected=[];
+ for(const [enabled,worker,label] of [[config.media,mediaWorker,"media"],[config.timeline,timelineWorker,"timeline"],[config.video,videoWorker,"video"]]){
+  if(!enabled)continue;
+  if(!worker||typeof worker.runCycle!=="function"||typeof worker.recoverExpired!=="function")throw new Error("Enabled cloud "+label+" worker is not fully configured.");
+  selected.push(worker);
+ }
+ if(selected.length===0)throw new Error("No cloud worker families are configured.");
+ return Object.freeze(selected);
+}
+
+export async function startCloudWorkerProcess(env=process.env,{createVideoWorker}={}){
  const config=readCloudWorkerConfig(env);
  if((config.media||config.timeline)&&(!executableAvailable("ffmpeg")||!executableAvailable("ffprobe")))throw new Error("Cloud media workers require FFmpeg and FFprobe on PATH.");
  const cloudCredentials={url:env.SUPABASE_URL,serviceRoleKey:env.SUPABASE_SERVICE_ROLE_KEY};
  const readiness=createCloudTimelineApi({...cloudCredentials,maxUploadBytes:config.maxBytes});
  await readiness.checkReadiness();
- const workers=[];
- if(config.media)workers.push(createCloudMediaWorker({workerId:"media-"+randomUUID(),...cloudCredentials,tempRoot:config.tempRoot,maxBytes:config.maxBytes}));
- if(config.timeline)workers.push(createCloudTimelineWorker({workerId:"timeline-"+randomUUID(),...cloudCredentials,tempRoot:config.tempRoot,maxBytes:config.maxBytes,maxOutputBytes:config.maxBytes}));
+ const mediaWorker=config.media?createCloudMediaWorker({workerId:"media-"+randomUUID(),...cloudCredentials,tempRoot:config.tempRoot,maxBytes:config.maxBytes}):null;
+ const timelineWorker=config.timeline?createCloudTimelineWorker({workerId:"timeline-"+randomUUID(),...cloudCredentials,tempRoot:config.tempRoot,maxBytes:config.maxBytes,maxOutputBytes:config.maxBytes}):null;
+ if(config.video&&typeof createVideoWorker!=="function")throw new Error("Cloud video worker is not composed. Supply the approved server-side video dependency factory; no video worker was started.");
+ const videoWorker=config.video?await createVideoWorker({workerId:"video-"+randomUUID(),...cloudCredentials,config}):null;
+ const workers=buildCloudWorkerFamilies({config,mediaWorker,timelineWorker,videoWorker});
  const supervisor=createCloudWorkerSupervisor({
   workers,leaseSeconds:config.leaseSeconds,heartbeatIntervalMs:config.heartbeatIntervalMs,pollMs:config.pollMs,
   onLog:event=>process.stdout.write(JSON.stringify(event)+"\n"),
