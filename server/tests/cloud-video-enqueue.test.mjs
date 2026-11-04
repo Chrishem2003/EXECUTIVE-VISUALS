@@ -87,7 +87,7 @@ test("cloud video deferral, quarantine and evidence-reconciled resume use dedica
     ...base,
     fetchImpl: async (url, options) => {
       calls.push({ url, body: JSON.parse(options.body) });
-      return response(true);
+      return response(url.endsWith("/recover_expired_video_generation_jobs") ? 2 : true);
     }
   });
   assert.equal(await client.defer({
@@ -99,9 +99,10 @@ test("cloud video deferral, quarantine and evidence-reconciled resume use dedica
   assert.equal(await client.resumeReconciled({
     jobId: resultRow.job_id, ownerId, evidenceReference: "review-ticket:OPS-17"
   }), true);
+  assert.equal(await client.recoverExpiredVideo(25), 2);
   assert.deepEqual(calls.map(call => call.url.split("/").pop()), [
     "defer_video_generation_job", "quarantine_video_generation_job",
-    "resume_reconciled_video_generation_job"
+    "resume_reconciled_video_generation_job", "recover_expired_video_generation_jobs"
   ]);
   assert.deepEqual(calls[0].body, {
     p_job_id: resultRow.job_id, p_worker_id: "video-worker-1",
@@ -115,6 +116,7 @@ test("cloud video deferral, quarantine and evidence-reconciled resume use dedica
     p_job_id: resultRow.job_id, p_owner_id: ownerId,
     p_evidence_reference: "review-ticket:OPS-17"
   });
+  assert.deepEqual(calls[3].body, { p_limit: 25 });
 });
 
 test("cloud video deferral and quarantine reject invalid controls before network access", async () => {
