@@ -10,7 +10,7 @@ import { analyzeCreativeTraceability, readCreativeTrace } from "../core/creative
 import { appendCreativeDecision, readCreativeDecisionHistory } from "../core/creative-decision-ledger";
 import { compareTimelineVariants, createTimelineVariant, type TimelineVariantComparison } from "../core/timeline-variants";
 import { addClip, addMarker, addTrack, createTimeline, moveClip, rational, splitClip, toOpenTimelineIo, trimClip, type EditorialTimeline, type TimelineTrack } from "../core/timeline";
-import { clampPreviewSeconds, decibelsToLinearGain, frameToSeconds, getTimelineDurationFrames, resolveTimelineFrame, secondsToFrame, stepPreviewSeconds } from "../core/timeline-preview";
+import { clampPreviewSeconds, decibelsToLinearGain, frameToSeconds, getTimelineDurationFrames, isPreviewTrackAudible, resolveTimelineFrame, secondsToFrame, stepPreviewSeconds } from "../core/timeline-preview";
 
 type Asset={id:string;name:string;mediaType:string;size:number;metadata?:Record<string,unknown>};
 type SavedTimeline={id:string;projectId?:string|null;name:string;revision:number;document?:EditorialTimeline};
@@ -20,8 +20,10 @@ const state:{timeline:EditorialTimeline|null;serverRevision:number;timelines:Sav
  timeline:null,serverRevision:0,timelines:[],cloudTimelines:[],cloudProjects:[],cloudProjectId:"",mode:"local",cloudRenderJobId:"",cloudRenderJobStatus:"",variantBase:null,variantReport:null,variantBaseName:"",assets:[],status:"loading",message:"Loading editorial workspace…",selectedTrack:"",selectedClipId:"",ffmpeg:false
 };
 let sequencePlaying=false,sequenceFrame=0,sequenceStartFrame=0,sequenceStartAt=0,sequenceRaf:number|null=null;
-type PreviewAudioNode={element:HTMLAudioElement;gain:GainNode;active:boolean};
+type PreviewAudioNode={element:HTMLAudioElement;gain:GainNode;active:boolean;trackId:string};
 const sequenceAudioNodes=new Map<string,PreviewAudioNode>();
+const sequenceMutedTrackIds=new Set<string>();
+let sequenceSoloTrackId:string|null=null;
 let sequenceAudioContext:AudioContext|null=null;
 function clearSequenceAudio(){
  for(const node of sequenceAudioNodes.values()){node.element.pause();node.element.removeAttribute("src");node.element.load();node.gain.disconnect();}
@@ -45,13 +47,14 @@ function syncSequenceAudio(frame:number,forceSeek=false){
    const context=ensureSequenceAudioContext(),element=document.createElement("audio");
    element.preload="auto";element.src="/api/assets/"+encodeURIComponent(asset.id)+"/file";
    const source=context.createMediaElementSource(element),gain=context.createGain();source.connect(gain);gain.connect(context.destination);
-   node={element,gain,active:false};sequenceAudioNodes.set(id,node);
+   node={element,gain,active:false,trackId:item.track.id};sequenceAudioNodes.set(id,node);
   }
   const expected=Math.max(item.sourceInSeconds,Math.min(item.sourceOutSeconds,item.sourceSeconds));
   if(forceSeek||!node.active||Math.abs(node.element.currentTime-expected)>0.22){
    try{node.element.currentTime=expected;}catch{}
   }
-  node.gain.gain.setTargetAtTime(decibelsToLinearGain(item.clip.gainDb??0),sequenceAudioContext!.currentTime,0.015);
+  const audible=isPreviewTrackAudible(item.track.id,sequenceMutedTrackIds,sequenceSoloTrackId);
+  node.gain.gain.setTargetAtTime(audible?decibelsToLinearGain(item.clip.gainDb??0):0,sequenceAudioContext!.currentTime,0.015);
   node.element.playbackRate=Math.max(0.25,Math.min(4,item.clip.speed??1));
   node.active=true;
   if(sequencePlaying&&node.element.paused)void node.element.play().catch(()=>{});
@@ -74,7 +77,7 @@ function timelineCanvas(){
  if(!state.timeline)return '<div class="empty">'+esc(state.message)+'</div>';
  const total=maxEnd();
  return '<div class="timeline-ruler"><span>00:00</span><span>'+Math.round(total/2/fps())+'s</span><span>'+Math.round(total/fps())+'s</span></div>'+
- state.timeline.tracks.map(track=>'<div class="editor-track"><div class="editor-track-label"><b>'+esc(track.name)+'</b><small>'+esc(track.kind)+(track.locked?' · locked':'')+'</small></div><div class="editor-track-lane">'+track.clips.map(clip=>'<article class="editor-clip '+(state.selectedClipId===clip.id?'selected':'')+'" data-tl-select="true" data-track="'+esc(track.id)+'" data-clip="'+esc(clip.id)+'" style="left:'+Math.max(0,clip.timelineStart.value/total*100)+'%;width:'+Math.max(4,clip.duration.value/total*100)+'%"><b>'+esc(clip.name)+'</b><small>'+esc(clip.assetId.slice(0,8))+' · '+Math.round(clip.duration.value)+'f</small><div class="editor-clip-actions"><button data-tl-action="split" data-track="'+esc(track.id)+'" data-clip="'+esc(clip.id)+'">Split</button><button data-tl-action="trim" data-track="'+esc(track.id)+'" data-clip="'+esc(clip.id)+'">Trim 12f</button><button data-tl-action="move" data-track="'+esc(track.id)+'" data-clip="'+esc(clip.id)+'">Next track</button></div></article>').join("")+'</div></div>').join("");
+ state.timeline.tracks.map(track=>'<div class="editor-track"><div class="editor-track-label"><b>'+esc(track.name)+'</b><small>'+esc(track.kind)+(track.locked?' · locked':'')+'</small>'+(track.kind==="audio"?'<div class="track-audio-controls"><button class="secondary" data-tl-action="audio-mute" data-track="'+esc(track.id)+'">'+(sequenceMutedTrackIds.has(track.id)?'Unmute':'Mute')+'</button><button class="secondary" data-tl-action="audio-solo" data-track="'+esc(track.id)+'">'+(sequenceSoloTrackId===track.id?'Unsolo':'Solo')+'</button></div>':'')+'</div><div class="editor-track-lane">'+track.clips.map(clip=>'<article class="editor-clip '+(state.selectedClipId===clip.id?'selected':'')+'" data-tl-select="true" data-track="'+esc(track.id)+'" data-clip="'+esc(clip.id)+'" style="left:'+Math.max(0,clip.timelineStart.value/total*100)+'%;width:'+Math.max(4,clip.duration.value/total*100)+'%"><b>'+esc(clip.name)+'</b><small>'+esc(clip.assetId.slice(0,8))+' · '+Math.round(clip.duration.value)+'f</small><div class="editor-clip-actions"><button data-tl-action="split" data-track="'+esc(track.id)+'" data-clip="'+esc(clip.id)+'">Split</button><button data-tl-action="trim" data-track="'+esc(track.id)+'" data-clip="'+esc(clip.id)+'">Trim 12f</button><button data-tl-action="move" data-track="'+esc(track.id)+'" data-clip="'+esc(clip.id)+'">Next track</button></div></article>').join("")+'</div></div>').join("");
 }
 function sequencePreviewPanel(){
  if(!state.timeline)return '<section class="timeline-preview panel"><div class="eyebrow">SEQUENCE PREVIEW</div><p class="muted">Load a saved sequence to preview its edited picture track.</p></section>';
@@ -335,6 +338,16 @@ async function runAction(action:HTMLElement){
  if(type==="sequence-play"){startSequencePlayback();return;}
  if(type==="sequence-pause"){stopSequencePlayback();return;}
  if(type==="sequence-step-back"||type==="sequence-step-forward"){stopSequencePlayback();renderSequenceFrame(sequenceFrame+(type==="sequence-step-back"?-1:1),true);return;}
+ if(type==="audio-mute"||type==="audio-solo"){
+  const trackId=action.dataset.track||"";
+  if(type==="audio-mute"){if(sequenceMutedTrackIds.has(trackId))sequenceMutedTrackIds.delete(trackId);else sequenceMutedTrackIds.add(trackId);}
+  else sequenceSoloTrackId=sequenceSoloTrackId===trackId?null:trackId;
+  syncSequenceAudio(sequenceFrame,true);
+  document.querySelectorAll<HTMLElement>('[data-tl-action="audio-mute"]').forEach(button=>{const id=button.dataset.track||"";button.textContent=sequenceMutedTrackIds.has(id)?"Unmute":"Mute";});
+  document.querySelectorAll<HTMLElement>('[data-tl-action="audio-solo"]').forEach(button=>{const id=button.dataset.track||"";button.textContent=sequenceSoloTrackId===id?"Unsolo":"Solo";});
+  state.message=type==="audio-mute"?"Audio track preview mute updated.":"Audio track preview solo updated.";
+  return;
+ }
  if(type==="duplicate-variant"){try{await duplicateTimelineVariant();}catch(error){state.message=error instanceof Error?error.message:"Could not create timeline variant.";}paint();return;}
  if(!state.timeline)return;
  const trackId=action.dataset.track||"",clipId=action.dataset.clip||"";
