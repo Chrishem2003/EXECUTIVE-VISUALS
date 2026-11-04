@@ -9,7 +9,7 @@ sql="set role service_role; select job_id from executive_visuals.enqueue_video_g
   'pg-concurrent-video-001','runway','gen4.5',repeat('b',64),
   jsonb_build_object('projectId','323e4567-e89b-42d3-a456-426614174000',
     'provider','runway','model','gen4.5','requestHash',repeat('b',64),'prompt','concurrent test','durationSeconds',2),
-  '823e4567-e89b-42d3-a456-426614174000',0.5,'USD'
+  '823e4567-e89b-42d3-a456-426614174000',0.75,'USD'
 );"
 psql "$DATABASE_URL" -X -qAt -v ON_ERROR_STOP=1 -c "$sql" > "$tmp_dir/first" &
 first_pid=$!
