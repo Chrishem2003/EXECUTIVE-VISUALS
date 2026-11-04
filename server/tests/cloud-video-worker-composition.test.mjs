@@ -51,6 +51,6 @@ test("composed worker claims only video jobs and does not contact Runway when th
   const result = await worker.runCycle({ leaseSeconds: 90, heartbeatIntervalMs: 15000 });
   assert.deepEqual(result, { claimed: false });
   assert.equal(calls.length, 1);
-  assert.match(calls[0].url, /rpc\\/claim_next_job$/);
+  assert.ok(calls[0].url.endsWith("/rpc/claim_next_job"));
   assert.deepEqual(calls[0].body.p_job_types, ["video.generate"]);
 });
