@@ -337,3 +337,16 @@ The current Luma Agents Create/Get API schema declares generation IDs as UUIDs. 
 Added `createLumaActualCostResolver`. It converts the generation-specific `usage.credits_charged` value returned by Luma's GET generation endpoint into USD using an explicit `LUMA_USD_PER_CREDIT` account/contract rate. The resolver rejects missing, null, non-integer or unsettled usage and never substitutes the published $0.003 list rate. A confirmed zero charge remains a valid settled zero.
 
 This uses the documented task-level charge rather than aggregate usage. The rate must be configured from the account's actual plan/contract or the documented default list rate when appropriate; it is not inferred by the application.
+
+
+### Runway Model Router non-billable preflight — 2026-11-05
+
+Added `server/runway-router-dry-run.mjs`, a server-side client that calls only `POST /v1/generate/video` with `dryRun: true`. It validates saved config slugs, prompt and generation constraints, model-router decisions, and the documented reference image/video/audio roles and count limits. It rejects any response containing a task ID because a dry-run response must not create a generation.
+
+Private reference assets are resolved only after an authenticated owner/project access check. Resolved URLs must be credential-free HTTPS (or valid Runway upload/data URIs); fragments, userinfo, non-standard ports and mismatched data MIME families are rejected. The client is disabled unless `RUNWAY_ROUTER_PREFLIGHT_ENABLED=true`, `RUNWAY_VIDEO_ALLOW_REMOTE=true` and a server-side Runway key are present.
+
+The preflight returns the provider/model selected by Runway and its estimated credit count. It does not convert estimates to actual cost, reserve budget, create a task, or enable a provider adapter. A separately reviewed execution integration must compare estimates against the approved reservation and still reconcile authoritative settled cost.
+
+Official contract: https://docs.dev.runwayml.com/api/ — `POST /v1/generate/video`, pinned API version `2024-11-06`, with `dryRun: true` returning a routing decision without task creation or billing.
+
+The offline contract tests are included in `verify:video-routing`. No provider API calls, paid generation, credentials, migrations, production registration or deployment were performed.
