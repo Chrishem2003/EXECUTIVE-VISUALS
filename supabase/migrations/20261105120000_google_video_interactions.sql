@@ -14,7 +14,7 @@ create table if not exists executive_visuals.google_video_interactions (
     parent_interaction_id is null or parent_interaction_id ~ '^v1_[A-Za-z0-9_-]{6,200}$'
   ),
   state text not null check (state in (
-    'running', 'waiting', 'succeeded', 'failed', 'canceled', 'incomplete', 'unknown', 'deleted'
+    'running', 'waiting', 'succeeded', 'failed', 'canceled', 'incomplete', 'unknown', 'deleting', 'deleted'
   )),
   output_file_name text,
   submitted_at timestamptz not null default now(),
