@@ -325,3 +325,8 @@ Added `createConfiguredVideoProviderAdapters` to register FAL, Runway Gen-4.5 an
 Luma reference frames/keyframes require an owner/project-scoped preparation callback. Its completed-task usage is passed to the injected settlement resolver; a missing or unsettled `credits_charged` value must keep the reservation unresolved rather than converting list prices into actual cost. The composition factory exposes explicit `providerDependencies` for these trusted server-side callbacks.
 
 No provider is enabled by default. The runtime still requires all global opt-in flags, explicit provider-specific flags, private-output host allowlisting and a host-controlled worker invocation. No API key, live provider call, generation, migration or production registration was added.
+
+
+### Luma task-ID contract correction — 2026-11-05
+
+The current Luma Agents Create/Get API schema declares generation IDs as UUIDs. The adapter previously accepted arbitrary 8–128 character identifiers, which was broader than the documented contract. Tightened both persisted task-ID and response matching to UUIDv4 syntax and updated fixtures to use UUID-shaped generation IDs. This is a fail-closed validation correction; it does not change API calls or provider enablement.
