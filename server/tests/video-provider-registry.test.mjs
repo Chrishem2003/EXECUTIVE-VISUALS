@@ -29,7 +29,7 @@ test("Runway catalog exposes implemented Gen-4.5 text-to-video and image-to-vide
   assert.equal(model.capabilities.startFrame, true);
   assert.equal(model.capabilities.seed, true);
   assert.deepEqual(model.capabilities.aspectRatios, ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"]);
-  assert.deepEqual(model.capabilities.resolutions, ["720p"]);
+  assert.deepEqual(model.capabilities.resolutions, ["provider_default", "720p"]);
   assert.equal(model.capabilities.minDurationSeconds, 2);
   assert.equal(model.capabilities.maxDurationSeconds, 10);
   assert.deepEqual(model.constraints.textToVideoAspectRatios, ["16:9", "9:16"]);
