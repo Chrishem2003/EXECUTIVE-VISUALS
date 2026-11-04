@@ -28,10 +28,10 @@ const successTask = { taskId: "123e4567-e89b-42d3-a456-426614174001", status: "s
 
 test("submits once, ingests private assets, and persists a terminal result", async () => {
   const f = await fixture();
-  let submits = 0, ingests = 0;
+  let submits = 0, ingests = 0, adapterContext = null;
   const adapter = {
     provider: "runway", model: "gen4.5", minimumPollIntervalMs: 5000,
-    async submit() { submits++; return { taskId: successTask.taskId, status: "queued" }; },
+    async submit(_input, context) { submits++; adapterContext = context; return { taskId: successTask.taskId, status: "queued" }; },
     async getStatus() { return successTask; }
   };
   try {
@@ -43,6 +43,8 @@ test("submits once, ingests private assets, and persists a terminal result", asy
     assert.deepEqual(result.assetIds, ["private-asset-1"]);
     assert.equal(submits, 1);
     assert.equal(ingests, 1);
+    assert.equal(adapterContext.job.id, jobId);
+    assert.equal(adapterContext.job.owner_id, ownerId);
     assert.equal(f.db.prepare("SELECT state FROM video_generation_submissions WHERE job_id=?").get(jobId).state, "succeeded");
   } finally { f.db.close(); await rm(f.root, { recursive: true, force: true }); }
 });
