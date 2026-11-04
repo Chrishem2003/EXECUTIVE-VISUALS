@@ -289,3 +289,16 @@ Safety properties:
 - Six offline tests cover submission, separate status/result operations, URL validation, ambiguous submission, opt-in gates and provider failure states.
 
 **Integration status:** adapter module and offline tests are added on an isolated feature branch. The existing `workflow-executor.mjs` still calls the legacy blocking `generateFalVideo` path; this change does not claim that production workflow execution has been migrated. The next slice must persist the returned provider task descriptor into the existing job/checkpoint model, schedule status checks through a worker, then ingest the verified MP4 into private storage. No provider request, database migration, production deployment or paid generation was performed.
+
+
+### Durable worker adapter follow-up
+
+Added `server/fal-cloud-video-adapter.mjs`, which implements the provider-aware cloud worker's exact adapter contract:
+- Provider/model identity is fixed and checked before submission.
+- Only the short FAL request ID is persisted as the ledger task ID; the known model and request ID reconstruct the three task URLs.
+- `IN_QUEUE` and `IN_PROGRESS` map to nonterminal worker states; completion retrieves bounded output URLs without sleeping or blocking inside the adapter.
+- Authenticated private-reference preparation, private output ingestion, and authoritative actual-cost resolution are mandatory injected handlers where applicable. The adapter will not invent a cost or store provider URLs as final assets.
+- The existing remote-enable and remote-opt-in flags are checked even when a client is injected.
+- Output URLs are restricted to HTTPS FAL media hosts before they are handed to the private-ingestion handler.
+
+The adapter contract tests cover the durable task-ID handoff, status mapping, private reference resolution requirements, handler injection, exact model matching, output URL validation and remote opt-in. This adapter is designed to be registered with the exact-match provider router from the separate provider-aware worker branch; it is not yet registered in the production worker composition. The cloud-worker chain and its migrations remain separate draft work and must be reviewed together before any deployment.
