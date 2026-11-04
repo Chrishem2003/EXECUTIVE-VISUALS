@@ -27,6 +27,7 @@ const sequenceAudioNodes=new Map<string,PreviewAudioNode>();
 const sequenceCaptionCache=new Map<string,Promise<CaptionCue[]>>();
 const sequenceMediaUrlCache=new Map<string,{url?:string;expiresAt:number;pending?:Promise<string>}>();
 let sequenceMediaProjectId="";
+let sequenceMediaGeneration=0;
 const sequenceMutedTrackIds=new Set<string>();
 let sequenceSoloTrackId:string|null=null;
 let sequenceAudioContext:AudioContext|null=null;
@@ -35,12 +36,13 @@ async function assetMediaUrl(asset:Asset):Promise<string>{
  const cached=sequenceMediaUrlCache.get(asset.id),now=Date.now();
  if(cached?.url&&cached.expiresAt>now)return cached.url;
  if(cached?.pending)return cached.pending;
- const entry=cached||{expiresAt:0};
+ const entry=cached||{expiresAt:0},generation=sequenceMediaGeneration;
  const pending=apiRequest<{url:string;expiresIn:number}>("/api/cloud/assets/"+encodeURIComponent(asset.id)).then(result=>{
+  if(generation!==sequenceMediaGeneration)throw new Error("Cloud media session changed; request a fresh preview URL.");
   const validated=validatePrivateMediaUrl(result.url,window.location.href,result.expiresIn);
   entry.url=validated.url;entry.expiresAt=validated.expiresAt;entry.pending=undefined;
   sequenceMediaUrlCache.set(asset.id,entry);return entry.url;
- }).catch(error=>{entry.pending=undefined;entry.url=undefined;sequenceMediaUrlCache.delete(asset.id);throw error;});
+ }).catch(error=>{entry.pending=undefined;entry.url=undefined;if(sequenceMediaUrlCache.get(asset.id)===entry)sequenceMediaUrlCache.delete(asset.id);throw error;});
  entry.pending=pending;sequenceMediaUrlCache.set(asset.id,entry);return pending;
 }
 function clearSequenceAudio(){
@@ -48,7 +50,7 @@ function clearSequenceAudio(){
  sequenceAudioNodes.clear();void sequenceAudioContext?.close();sequenceAudioContext=null;
 }
 function resetSequenceMediaCache(){
- stopSequencePlayback();clearSequenceAudio();sequenceMediaUrlCache.clear();sequenceCaptionCache.clear();
+ sequenceMediaGeneration++;stopSequencePlayback();clearSequenceAudio();sequenceMediaUrlCache.clear();sequenceCaptionCache.clear();
 }
 function ensureSequenceAudioContext(){
  if(!sequenceAudioContext)sequenceAudioContext=new AudioContext();
