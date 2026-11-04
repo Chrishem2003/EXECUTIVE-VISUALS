@@ -38,6 +38,8 @@ test("builds a URI-delivery text-to-video request with the documented model and 
   });
   assert.equal(result.endpoint, "https://generativelanguage.googleapis.com/v1beta/interactions");
   assert.equal(result.method, "POST");
+  assert.deepEqual(result.auth, { headerName: "x-goog-api-key", credentialSource: "server-only" });
+  assert.equal(Object.hasOwn(result, "headers"), false);
   assert.equal(result.payload.model, "gemini-omni-1.1-flash");
   assert.equal(result.payload.input, "A cinematic product reveal at sunrise");
   assert.deepEqual(result.payload.response_format, {
