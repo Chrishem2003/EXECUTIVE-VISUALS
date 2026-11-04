@@ -130,6 +130,11 @@ if (!videoBudgetSql.includes("grant insert (owner_id, project_id, provider, mode
 if (!videoBudgetSql.includes("grant update (provider, model, currency, spend_limit_amount, max_per_job_amount, rolling_24h_request_limit, enabled, updated_at)")) {
   issues.push("Budget policy updates must not allow clients to alter owner scope or accounting totals.");
 }
+if (!videoBudgetSql.includes("VIDEO_BUDGET_POLICY_SCOPE_LOCKED_AFTER_USE") ||
+    !videoBudgetSql.includes("ev_video_budget_policy_scope_immutable")) {
+  issues.push("Budget currency/provider/model scope must be immutable after reservations or spend exist.");
+}
+
 if (!videoBudgetSql.includes("new.consumed_at := null") || !videoBudgetSql.includes("interval '15 minutes'")) {
   issues.push("Explicit budget approvals must be fresh, short-lived and single-use.");
 }
