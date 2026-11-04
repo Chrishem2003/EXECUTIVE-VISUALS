@@ -57,6 +57,94 @@ export const VIDEO_PROVIDER_CATALOG = freeze([
         }
       },
       {
+        id: "seedance2_5",
+        name: "Seedance 2.5",
+        availability: "disabled",
+        executionAdapter: "not_implemented",
+        gateway: "runway",
+        capabilities: {
+          textToVideo: true, imageToVideo: true, videoToVideo: true,
+          videoEdit: true, videoExtend: true, videoReframe: false,
+          nativeAudio: true, negativePrompt: false, seed: true,
+          startFrame: true, endFrame: true, motionReference: false,
+          referenceImages: true, referenceVideos: true, referenceAudio: true,
+          audioModes: ["generated", "none", "reference"],
+          aspectRatios: ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"],
+          resolutions: ["480p", "720p", "1080p"],
+          minDurationSeconds: 4, maxDurationSeconds: 30
+        },
+        constraints: {
+          maxPromptCharacters: 15000, durationAuto: true, durationAutoBilledSeconds: 30,
+          minimumCredits: 80, maxReferenceImages: 30, maxReferenceVideos: 10,
+          maxReferenceAudio: 10, maxVideoToVideoReferenceVideos: 9,
+          referenceImagesAndAudioCharged: false,
+          inputVideoCreditsPerSecondByResolution: { "480p": 10, "720p": 15, "1080p": 34 },
+          outputCreditsPerSecondByResolution: { "480p": 20, "720p": 30, "1080p": 68 },
+          draftPreviewCreditsPerSecond: 20, draftEnhancedCreditsPerSecond: 68,
+          draftEnhancementEndpoint: "text_to_video",
+          videoEditRequiresAutoDuration: true,
+          pricingSnapshotDate: "2026-11-04", creditUsdValue: 0.01,
+          asynchronousTaskPolling: true, outputUrlTemporary: true,
+          source: "https://dev.runwayml.com/learn/seedance-2-5-api"
+        }
+      },
+      {
+        id: "veo3.1",
+        name: "Veo 3.1",
+        availability: "disabled",
+        executionAdapter: "not_implemented",
+        gateway: "runway",
+        capabilities: {
+          textToVideo: true, imageToVideo: true, videoToVideo: false,
+          videoEdit: false, videoExtend: false, videoReframe: false,
+          nativeAudio: true, negativePrompt: true, seed: true,
+          startFrame: true, endFrame: true, motionReference: false,
+          referenceImages: true, referenceVideos: false, referenceAudio: false,
+          audioModes: ["generated", "none"],
+          aspectRatios: ["16:9", "9:16"],
+          resolutions: ["720p", "1080p"],
+          minDurationSeconds: 4, maxDurationSeconds: 8
+        },
+        constraints: {
+          maxPromptCharacters: 1000, supportedDurationsSeconds: [4, 6, 8],
+          maxKeyframes: 2, lastFrameRequiresFirstFrame: true,
+          ratioValues: ["1280:720", "720:1280", "1080:1920", "1920:1080"],
+          outputCreditsPerSecond: { audio: 40, noAudio: 20 },
+          eightSecondsOnlyAt1080p: true,
+          pricingSnapshotDate: "2026-11-04", creditUsdValue: 0.01,
+          asynchronousTaskPolling: true, outputUrlTemporary: true,
+          source: "https://dev.runwayml.com/learn/veo-3-1-api"
+        }
+      },
+      {
+        id: "veo3.1_fast",
+        name: "Veo 3.1 Fast",
+        availability: "disabled",
+        executionAdapter: "not_implemented",
+        gateway: "runway",
+        capabilities: {
+          textToVideo: true, imageToVideo: true, videoToVideo: false,
+          videoEdit: false, videoExtend: false, videoReframe: false,
+          nativeAudio: true, negativePrompt: true, seed: true,
+          startFrame: true, endFrame: true, motionReference: false,
+          referenceImages: true, referenceVideos: false, referenceAudio: false,
+          audioModes: ["generated", "none"],
+          aspectRatios: ["16:9", "9:16"],
+          resolutions: ["720p", "1080p"],
+          minDurationSeconds: 4, maxDurationSeconds: 8
+        },
+        constraints: {
+          maxPromptCharacters: 1000, supportedDurationsSeconds: [4, 6, 8],
+          maxKeyframes: 2, lastFrameRequiresFirstFrame: true,
+          ratioValues: ["1280:720", "720:1280", "1080:1920", "1920:1080"],
+          outputCreditsPerSecond: { audio: 15, noAudio: 10 },
+          eightSecondsOnlyAt1080p: true,
+          pricingSnapshotDate: "2026-11-04", creditUsdValue: 0.01,
+          asynchronousTaskPolling: true, outputUrlTemporary: true,
+          source: "https://dev.runwayml.com/learn/veo-3-1-api"
+        }
+      },
+      {
         id: "seedance2",
         name: "Seedance 2.0",
         availability: "disabled",
