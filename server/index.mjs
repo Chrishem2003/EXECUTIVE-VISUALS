@@ -21,6 +21,8 @@ import { validateSrt, validateWebVtt } from "./caption-validation.mjs";
 import { ensureTransformationPlanSchema, createTransformationPlan, approveTransformationPlan, listTransformationPlans, getTransformationPlan } from "./transformation-plans.mjs";
 import { ensureAuthSecuritySchema, getLoginLockState, recordFailedLogin, clearLoginFailures } from "./auth-login-security.mjs";
 import { createSupabaseAuth, SUPABASE_SESSION_COOKIE, SUPABASE_SESSION_MAX_AGE_SECONDS } from "./supabase-auth.mjs";
+import { createGoogleDriveOAuth } from "./google-drive-oauth.mjs";
+import { createGoogleDriveConnectionStore, createGoogleDriveOAuthStateStore } from "./google-drive-connection-store.mjs";
 
 const PORT = Number(process.env.API_PORT || process.env.PORT || 4179);
 const HOST = process.env.API_HOST || "127.0.0.1";
@@ -28,6 +30,16 @@ const AUTH_MODE = process.env.AUTH_MODE || "local";
 const supabaseAuth = AUTH_MODE === "supabase" && process.env.SUPABASE_URL && process.env.SUPABASE_PUBLISHABLE_KEY && process.env.SUPABASE_SESSION_SECRET
   ? createSupabaseAuth({ url: process.env.SUPABASE_URL, publishableKey: process.env.SUPABASE_PUBLISHABLE_KEY, sessionSecret: process.env.SUPABASE_SESSION_SECRET })
   : null;
+const googleDriveOAuthEnabled = process.env.GOOGLE_DRIVE_OAUTH_ENABLED === "true";
+if (googleDriveOAuthEnabled && AUTH_MODE !== "supabase") {
+  throw new Error("Google Drive OAuth requires verified Supabase authentication.");
+}
+const googleDriveConnectionStore = googleDriveOAuthEnabled ? createGoogleDriveConnectionStore() : null;
+const googleDriveOAuthStateStore = googleDriveOAuthEnabled ? createGoogleDriveOAuthStateStore() : null;
+const googleDriveOAuth = googleDriveOAuthEnabled ? createGoogleDriveOAuth({
+  stateStore: googleDriveOAuthStateStore,
+  connections: googleDriveConnectionStore
+}) : null;
 const DATA_DIR = resolve(process.env.DATA_DIR || "./data");
 const MEDIA_ROOT = resolve(process.env.MEDIA_ROOT || join(DATA_DIR, "media"));
 const WEB_ROOT = resolve(process.env.WEB_ROOT || "./dist");
@@ -282,7 +294,7 @@ export function createAppServer() {
         }
       }
       if(path==="/api/health"&&req.method==="GET"){
-        send(res,200,{status:"ok",storage:"local-disk",database:"sqlite",authMode:AUTH_MODE,authReady:AUTH_MODE==="local"||Boolean(supabaseAuth),media:{ffmpeg:executableAvailable("ffmpeg"),ffprobe:executableAvailable("ffprobe")},imageGateway:{enabled:process.env.IMAGE_GATEWAY_ENABLED==="true",configured:(()=>{try{const url=new URL(process.env.IMAGE_GATEWAY_URL||"");const local=["localhost","127.0.0.1","::1","[::1]"].includes(url.hostname.toLowerCase());return Boolean(process.env.IMAGE_GATEWAY_MODEL&&(local||process.env.IMAGE_GATEWAY_ALLOW_REMOTE==="true"));}catch{return false;}})()},textGateway:{enabled:process.env.AI_GATEWAY_ENABLED==="true",configured:(()=>{try{const url=new URL(process.env.AI_GATEWAY_URL||"");const local=["localhost","127.0.0.1","::1"].includes(url.hostname.toLowerCase());return Boolean(process.env.AI_GATEWAY_MODEL&&(local||process.env.AI_GATEWAY_ALLOW_REMOTE==="true"));}catch{return false;}})()},authMode:AUTH_MODE,version:"0.1.0"},cors);return;
+        send(res,200,{status:"ok",storage:"local-disk",database:"sqlite",authMode:AUTH_MODE,authReady:AUTH_MODE==="local"||Boolean(supabaseAuth),media:{ffmpeg:executableAvailable("ffmpeg"),ffprobe:executableAvailable("ffprobe")},imageGateway:{enabled:process.env.IMAGE_GATEWAY_ENABLED==="true",configured:(()=>{try{const url=new URL(process.env.IMAGE_GATEWAY_URL||"");const local=["localhost","127.0.0.1","::1","[::1]"].includes(url.hostname.toLowerCase());return Boolean(process.env.IMAGE_GATEWAY_MODEL&&(local||process.env.IMAGE_GATEWAY_ALLOW_REMOTE==="true"));}catch{return false;}})()},textGateway:{enabled:process.env.AI_GATEWAY_ENABLED==="true",configured:(()=>{try{const url=new URL(process.env.AI_GATEWAY_URL||"");const local=["localhost","127.0.0.1","::1"].includes(url.hostname.toLowerCase());return Boolean(process.env.AI_GATEWAY_MODEL&&(local||process.env.AI_GATEWAY_ALLOW_REMOTE==="true"));}catch{return false;}})()},authMode:AUTH_MODE,googleDriveOAuth:{enabled:googleDriveOAuthEnabled,configured:Boolean(googleDriveOAuth)},version:"0.1.0"},cors);return;
       }
       if(AUTH_MODE==="supabase"&&path==="/api/auth/recovery/session"&&req.method==="POST"){
         if(!supabaseAuth){fail(res,503,"SUPABASE_AUTH_NOT_CONFIGURED","The secure identity service is not fully configured.");return;}
@@ -371,8 +383,42 @@ export function createAppServer() {
         const token=cookieValue(req,"ev_session");if(token)db.prepare("DELETE FROM sessions WHERE token_hash=?").run(hash(token));
         setCookie(res,"",0);send(res,200,{ok:true},cors);return;
       }
+      if(path==="/api/integrations/google-drive/callback"&&req.method==="GET"){
+        if(!googleDriveOAuth){fail(res,503,"GOOGLE_DRIVE_OAUTH_NOT_CONFIGURED","Google Drive connection is not enabled.");return;}
+        if(url.searchParams.has("error")){
+          res.writeHead(303,{"location":"/?googleDrive=error","cache-control":"no-store",...SECURITY_HEADERS});res.end();return;
+        }
+        try{
+          await googleDriveOAuth.complete({state:url.searchParams.get("state"),code:url.searchParams.get("code")});
+          res.writeHead(303,{"location":"/?googleDrive=connected","cache-control":"no-store",...SECURITY_HEADERS});res.end();return;
+        }catch(error){
+          const status=error.code==="GOOGLE_OAUTH_UNAVAILABLE"||error.code==="GOOGLE_OAUTH_TIMEOUT"||error.code==="GOOGLE_OAUTH_IDENTITY_UNAVAILABLE"?503:400;
+          process.stderr.write("Google Drive OAuth callback failed: "+String(error.code||"GOOGLE_OAUTH_CALLBACK_FAILED")+"\\n");
+          res.writeHead(303,{"location":"/?googleDrive=error","cache-control":"no-store",...SECURITY_HEADERS});res.end();return;
+        }
+      }
       const user=await authenticate(req,res);
       if(!user){fail(res,401,"AUTH_REQUIRED","Sign in to access this workspace.");return;}
+      if(path==="/api/integrations/google-drive/status"&&req.method==="GET"){
+        if(!googleDriveOAuth||!googleDriveConnectionStore){fail(res,503,"GOOGLE_DRIVE_OAUTH_NOT_CONFIGURED","Google Drive connection is not enabled.");return;}
+        try{
+          const connection=await googleDriveConnectionStore.get(user.id);
+          send(res,200,{connected:Boolean(connection),email:connection?.email||null,grantedScopes:connection?.grantedScopes||[]},cors);return;
+        }catch(error){fail(res,503,error.code||"GOOGLE_CONNECTION_STORE_UNAVAILABLE","Google Drive connection status is temporarily unavailable.");return;}
+      }
+      if(path==="/api/integrations/google-drive/connect"&&req.method==="POST"){
+        if(!googleDriveOAuth){fail(res,503,"GOOGLE_DRIVE_OAUTH_NOT_CONFIGURED","Google Drive connection is not enabled.");return;}
+        try{send(res,200,await googleDriveOAuth.begin({ownerId:user.id}),cors);return;}
+        catch(error){fail(res,503,error.code||"GOOGLE_OAUTH_UNAVAILABLE","Google Drive authorization could not be started.");return;}
+      }
+      if(path==="/api/integrations/google-drive/disconnect"&&req.method==="POST"){
+        if(!googleDriveOAuth){fail(res,503,"GOOGLE_DRIVE_OAUTH_NOT_CONFIGURED","Google Drive connection is not enabled.");return;}
+        try{
+          const result=await googleDriveOAuth.disconnect({ownerId:user.id});
+          audit(db,user.id,"integration.google_drive.disconnected","integration","google-drive",{revoked:result.revoked});
+          send(res,200,result,cors);return;
+        }catch(error){fail(res,503,error.code||"GOOGLE_OAUTH_DISCONNECT_FAILED","Google Drive could not be disconnected cleanly.");return;}
+      }
       if(path==="/api/me"&&req.method==="GET"){send(res,200,{user,authMode:AUTH_MODE},cors);return;}
       if(cloudTimelineApi && path==="/api/cloud/assets" && req.method==="POST"){
         const uploadResult=await cloudTimelineApi.uploadAsset({
