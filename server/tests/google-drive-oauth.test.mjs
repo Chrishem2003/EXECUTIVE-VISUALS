@@ -152,3 +152,18 @@ test("cryptographically verifies Google's RS256 ID-token signature, audience, ex
   await h.service.complete({ ownerId, state: url.searchParams.get("state"), code: "signed-code" });
   assert.equal(h.records.get(ownerId).email, "user@example.com");
 });
+
+test("coalesces concurrent token refreshes for the same owner", async () => {
+  const h = harness();
+  const start = await h.service.begin({ ownerId });
+  await h.service.complete({ ownerId, state: new URL(start.authorizationUrl).searchParams.get("state"), code: "code" });
+  h.setNow(4700000);
+  const before = h.calls.filter(call => call.url.includes("/token")).length;
+  const tokens = await Promise.all([
+    h.service.getAccessToken({ ownerId }),
+    h.service.getAccessToken({ ownerId }),
+    h.service.getAccessToken({ ownerId })
+  ]);
+  assert.deepEqual(tokens, ["refreshed-access-token-123456", "refreshed-access-token-123456", "refreshed-access-token-123456"]);
+  assert.equal(h.calls.filter(call => call.url.includes("/token")).length - before, 1);
+});
