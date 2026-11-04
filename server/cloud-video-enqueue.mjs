@@ -4,7 +4,8 @@ const RPC = Object.freeze({
   finish: "finish_video_generation_job",
   defer: "defer_video_generation_job",
   quarantine: "quarantine_video_generation_job",
-  resume: "resume_reconciled_video_generation_job"
+  resume: "resume_reconciled_video_generation_job",
+  recover: "recover_expired_video_generation_jobs"
 });
 
 function endpoint(value) {
@@ -134,6 +135,12 @@ export function createCloudVideoEnqueue({
         p_job_id: jobId, p_worker_id: workerId, p_reason_code: reasonCode
       });
       if (typeof result !== "boolean") throw new Error("Cloud video quarantine returned an invalid result.");
+      return result;
+    },
+    async recoverExpiredVideo(limit = 100) {
+      if (!Number.isInteger(limit) || limit < 1 || limit > 1000) throw new Error("Video recovery limit must be between 1 and 1000.");
+      const result = await call(RPC.recover, { p_limit: limit });
+      if (!Number.isInteger(result) || result < 0) throw new Error("Cloud video recovery returned an invalid count.");
       return result;
     },
     async resumeReconciled({ jobId, ownerId, evidenceReference } = {}) {
