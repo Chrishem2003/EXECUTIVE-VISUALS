@@ -140,7 +140,9 @@ export function createGeminiOmniFlashClient({
             "GEMINI_OMNI_SUBMISSION_OUTCOME_UNKNOWN");
         }
         const code = response.status === 429 ? "GEMINI_OMNI_RATE_LIMITED" : "GEMINI_OMNI_REQUEST_REJECTED";
-        throw fail("Gemini Interactions rejected the request (HTTP " + response.status + ").", code);
+        const error = fail("Gemini Interactions rejected the request (HTTP " + response.status + ").", code);
+        error.status = response.status;
+        throw error;
       }
       return data;
     } finally {
