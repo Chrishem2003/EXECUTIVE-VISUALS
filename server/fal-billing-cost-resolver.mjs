@@ -7,7 +7,7 @@ const fail = (message, code) => Object.assign(new Error(message), { code });
  * duration. Missing or ambiguous billing evidence fails closed.
  */
 export function createFalBillingCostResolver({
-  apiKey = process.env.FAL_KEY,
+  apiKey = process.env.FAL_BILLING_KEY || process.env.FAL_KEY,
   fetchImpl = globalThis.fetch,
   timeoutMs = 12000
 } = {}) {
