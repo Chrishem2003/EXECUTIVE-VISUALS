@@ -86,5 +86,7 @@ export function validateTimelineDescriptors(clip:TimelineClip,frameRate:{numerat
       issues.push({code:"invalid_transition",clipId:clip.id,message:"Transitions must be version-1 linear fade-to-black descriptors on the matching edge, lasting 1–240 frames and no longer than the clip."});
     }
   }
+  const combinedFadeFrames=(clip.transitionIn?.durationFrames||0)+(clip.transitionOut?.durationFrames||0);
+  if(combinedFadeFrames>durationSeconds*fps+1e-6)issues.push({code:"overlapping_fades",clipId:clip.id,message:"Fade-in and fade-out durations cannot overlap within a clip."});
   return issues;
 }
