@@ -100,7 +100,7 @@ export async function buildGeminiOmniFlashInteractionRequest({
     }
   }
 
-  async function resolve(assetId, mediaType) {
+  async function resolve(assetId, mediaType, role = mediaType) {
     let asset;
     try {
       asset = await resolveGoogleFileAsset({
@@ -115,11 +115,11 @@ export async function buildGeminiOmniFlashInteractionRequest({
     if (asset.mediaType !== mediaType) {
       throw fail("The resolved asset media type does not match its requested role.", "GEMINI_OMNI_ASSET_INVALID");
     }
-    if (mediaType === "video" && asset.durationSeconds !== undefined &&
+    if (role === "video" && asset.durationSeconds !== undefined &&
         (typeof asset.durationSeconds !== "number" || !Number.isFinite(asset.durationSeconds) || asset.durationSeconds <= 0 || asset.durationSeconds > 10)) {
       throw fail("Uploaded source videos must be ten seconds or shorter.");
     }
-    if (mediaType === "reference_video" && (
+    if (role === "reference_video" && (
       typeof asset.durationSeconds !== "number" || !Number.isFinite(asset.durationSeconds) ||
       asset.durationSeconds <= 0 || asset.durationSeconds > 3
     )) {
@@ -142,7 +142,7 @@ export async function buildGeminiOmniFlashInteractionRequest({
     input.push({ type: "image", uri: await resolve(id, "image") });
   }
   for (const id of referenceVideoAssetIds) {
-    input.push({ type: "video", uri: await resolve(id, "reference_video") });
+    input.push({ type: "video", uri: await resolve(id, "video", "reference_video") });
   }
   input.push({ type: "text", text });
 
