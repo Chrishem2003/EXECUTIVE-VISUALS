@@ -2,9 +2,10 @@ import {assertVideoCapabilities,normalizeVideoGenerationRequest} from "./video-g
 const API_BASE="https://api.dev.runwayml.com/v1";
 const API_VERSION="2024-11-06";
 const MODEL="gen4.5";
-const RATIOS=new Set(["1280:720","720:1280"]);
-const ASPECT_TO_RATIO=Object.freeze({"16:9":"1280:720","9:16":"720:1280"});
-const CAPABILITIES=Object.freeze({negativePrompt:false,seed:true,startFrame:false,endFrame:false,motionReference:false,referenceImages:false,audioModes:Object.freeze([]),aspectRatios:Object.freeze(["16:9","9:16"]),resolutions:Object.freeze(["provider_default"]),minDurationSeconds:2,maxDurationSeconds:10});
+const TEXT_RATIOS=new Set(["1280:720","720:1280"]);
+const ASPECT_TO_RATIO=Object.freeze({"16:9":"1280:720","9:16":"720:1280","4:3":"1104:832","1:1":"960:960","3:4":"832:1104","21:9":"1584:672"});
+const IMAGE_ASPECT_RATIOS=Object.freeze(["16:9","9:16","4:3","1:1","3:4","21:9"]);
+const CAPABILITIES=Object.freeze({negativePrompt:false,seed:true,startFrame:true,endFrame:false,motionReference:false,referenceImages:false,audioModes:Object.freeze([]),aspectRatios:IMAGE_ASPECT_RATIOS,resolutions:Object.freeze(["provider_default"]),minDurationSeconds:2,maxDurationSeconds:10});
 const TERMINAL=new Set(["SUCCEEDED","FAILED","CANCELED"]);
 export const RUNWAY_MIN_POLL_INTERVAL_MS=5000;
 const fail=(message,code)=>Object.assign(new Error(message),{code});
@@ -42,7 +43,20 @@ export function buildRunwayTextVideoPayload({prompt,duration=5,ratio="1280:720",
  if(seed!==undefined){if(!Number.isInteger(seed)||seed<0||seed>4294967295)throw fail("Runway seed must be an unsigned 32-bit integer.","RUNWAY_INVALID_INPUT");payload.seed=seed;}
  return Object.freeze(payload);
 }
-export function createRunwayVideoAdapter({env=process.env,fetchImpl=globalThis.fetch,timeoutMs=30000}={}){
+export function buildRunwayImageVideoPayload({prompt,promptImage,duration=5,ratio="1280:720",seed}={}){
+ if(typeof prompt!=="string"||!prompt.trim()||prompt.trim().length>1000)throw fail("Runway video prompt must contain 1 to 1000 characters.","RUNWAY_INVALID_INPUT");
+ if(typeof promptImage!=="string"||promptImage.length<13||promptImage.length>5000)throw fail("Runway image input URI is invalid.","RUNWAY_INVALID_INPUT");
+ if(!/^runway:\/\/[A-Za-z0-9._~:/-]+$/.test(promptImage)){
+  let url;try{url=new URL(promptImage)}catch{throw fail("Runway image input URI is invalid.","RUNWAY_INVALID_INPUT")}
+  if(url.protocol!=="https:"||url.username||url.password||url.hash||url.search)throw fail("Runway image input must be an HTTPS asset URI without credentials or query data.","RUNWAY_INVALID_INPUT");
+ }
+ if(!Object.values(ASPECT_TO_RATIO).includes(ratio))throw fail("Runway Gen-4.5 image-to-video ratio is unsupported.","RUNWAY_UNSUPPORTED_CAPABILITY");
+ if(!Number.isInteger(duration)||duration<2||duration>10)throw fail("Runway Gen-4.5 duration must be a whole number from 2 to 10 seconds.","RUNWAY_UNSUPPORTED_CAPABILITY");
+ const payload={model:MODEL,promptImage,promptText:prompt.trim(),position:"first",ratio,duration};
+ if(seed!==undefined){if(!Number.isInteger(seed)||seed<0||seed>4294967295)throw fail("Runway seed must be an unsigned 32-bit integer.","RUNWAY_INVALID_INPUT");payload.seed=seed;}
+ return Object.freeze(payload);
+}
+export function createRunwayVideoAdapter({env=process.env,fetchImpl=globalThis.fetch,timeoutMs=30000,resolveAssetUri}={}){
  if(typeof fetchImpl!=="function")throw new TypeError("A fetch implementation is required.");
  function configuration(){
   if(env.RUNWAY_VIDEO_ENABLED!=="true")throw fail("Runway video generation is disabled by server configuration.","RUNWAY_DISABLED");
@@ -71,15 +85,29 @@ export function createRunwayVideoAdapter({env=process.env,fetchImpl=globalThis.f
  }
  return Object.freeze({
   provider:"runway",model:MODEL,minimumPollIntervalMs:RUNWAY_MIN_POLL_INTERVAL_MS,
-  async submit(input){
+  async submit(input,context={}){
    const normalized=normalizeVideoGenerationRequest(input);
    assertVideoCapabilities(normalized,CAPABILITIES);
    if(normalized.provider&&normalized.provider!=="runway")throw fail("The request selects a different video provider.","RUNWAY_INVALID_INPUT");
    if(normalized.model&&normalized.model!==MODEL)throw fail("The initial Runway adapter supports gen4.5 only.","RUNWAY_UNSUPPORTED_CAPABILITY");
    const ratio=ASPECT_TO_RATIO[normalized.aspectRatio];
-   if(!ratio)throw fail("Runway Gen-4.5 text-to-video supports only 16:9 and 9:16.","RUNWAY_UNSUPPORTED_CAPABILITY");
-   const payload=buildRunwayTextVideoPayload({prompt:normalized.prompt,duration:normalized.durationSeconds,ratio,seed:normalized.seed});
-   const result=await request("/text_to_video",{method:"POST",body:payload});
+   if(!ratio)throw fail("Runway Gen-4.5 does not support the requested aspect ratio.","RUNWAY_UNSUPPORTED_CAPABILITY");
+   let endpoint,payload;
+   if(normalized.startFrameAssetId){
+    if(typeof resolveAssetUri!=="function")throw fail("Runway image-to-video requires a server-side private asset resolver.","RUNWAY_IMAGE_ASSET_RESOLVER_REQUIRED");
+    const ownerId=context?.job?.owner_id,projectId=context?.job?.project_id||null;
+    if(typeof ownerId!=="string"||!ownerId.trim())throw fail("Runway image-to-video requires an owned job context.","RUNWAY_IMAGE_ASSET_SCOPE_INVALID");
+    let promptImage;
+    try{promptImage=await resolveAssetUri({assetId:normalized.startFrameAssetId,ownerId,projectId});}
+    catch{throw fail("The selected first-frame asset could not be resolved in the authorized project.","RUNWAY_IMAGE_ASSET_RESOLUTION_FAILED");}
+    payload=buildRunwayImageVideoPayload({prompt:normalized.prompt,promptImage,duration:normalized.durationSeconds,ratio,seed:normalized.seed});
+    endpoint="/image_to_video";
+   }else{
+    if(!TEXT_RATIOS.has(ratio))throw fail("Runway Gen-4.5 text-to-video supports only 16:9 and 9:16.","RUNWAY_UNSUPPORTED_CAPABILITY");
+    payload=buildRunwayTextVideoPayload({prompt:normalized.prompt,duration:normalized.durationSeconds,ratio,seed:normalized.seed});
+    endpoint="/text_to_video";
+   }
+   const result=await request(endpoint,{method:"POST",body:payload});
    return Object.freeze({...normalizeTask(result),platformRequestId:normalized.requestId});
   },
   async getStatus(id){return normalizeTask(await request("/tasks/"+encodeURIComponent(taskId(id))));},
