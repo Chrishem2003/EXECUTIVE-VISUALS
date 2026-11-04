@@ -47,6 +47,17 @@ test("comparison reports clip position, duration, source, and creative-intent ch
   assert.deepEqual(report.changes[0].fields, ["timeline position", "duration", "source trim", "creative intent"]);
 });
 
+test("variant comparison detects effect, keyframe and transition changes",()=>{
+  const base=fixture();
+  const candidate=createTimelineVariant(base,"variant-a","Alternate","2026-11-02T10:00:00.000Z");
+  const clip=candidate.tracks[0].clips[0];
+  clip.effects=[{schemaVersion:1,id:"color-1",type:"color",enabled:true,parameters:{brightness:0.1,contrast:1,saturation:1}}];
+  clip.keyframes=[{schemaVersion:1,id:"opacity-1",property:"opacity",frame:0,value:1,interpolation:"linear"}];
+  clip.transitionIn={schemaVersion:1,id:"fade-1",type:"fade-to-black",edge:"in",durationFrames:12,curve:"linear"};
+  const report=compareTimelineVariants(base,candidate);
+  assert.deepEqual(report.changes[0].fields,["effects","keyframes","transitions"]);
+});
+
 test("comparison detects added and removed clips and markers", () => {
   const base = fixture();
   const candidate = createTimelineVariant(base, "variant-a", "Alternate", "2026-11-02T10:00:00.000Z");
