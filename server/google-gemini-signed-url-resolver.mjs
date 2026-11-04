@@ -46,13 +46,17 @@ export function createGoogleGeminiSignedUrlResolver({
     throw new Error("Google external URL media limit cannot exceed 100 MB.");
   }
   const origin = safeOrigin(url);
-  const cloudAssets = assets || createCloudAssetService({
-    url, serviceRoleKey, fetchImpl,
-    storageTimeoutMs: 15000,
-    metadataTimeoutMs: 15000,
-    authorizationTimeoutMs: 8000,
-    maxBytes
-  });
+  // Accept either the full Cloud Asset Service or its scoped assets repository.
+  // The latter is useful for dependency-injected tests and narrow service composition.
+  const cloudAssets = assets
+    ? (assets.assets ? assets : { assets })
+    : createCloudAssetService({
+      url, serviceRoleKey, fetchImpl,
+      storageTimeoutMs: 15000,
+      metadataTimeoutMs: 15000,
+      authorizationTimeoutMs: 8000,
+      maxBytes
+    });
 
   return Object.freeze({
     async resolveAsset({ assetId, ownerId, projectId = null, mediaType } = {}) {
