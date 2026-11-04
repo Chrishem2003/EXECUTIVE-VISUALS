@@ -1,4 +1,5 @@
 import { lookup as dnsLookup } from "node:dns/promises";
+import { execFile } from "node:child_process";
 import { request as httpsRequest } from "node:https";
 import { isIP } from "node:net";
 import { createWriteStream } from "node:fs";
@@ -13,6 +14,88 @@ const VIDEO_TYPES = new Set(["video/mp4", "video/webm", "video/quicktime"]);
 const RESPONSE_TYPES = new Set([...VIDEO_TYPES, "application/octet-stream"]);
 
 function fail(message, code) { return Object.assign(new Error(message), { code }); }
+
+/**
+ * FFprobe-backed container/stream validator. Uses execFile with an argument
+ * array (never a shell) and treats missing tools, malformed output and
+ * unsupported stream layouts as validation failures.
+ */
+export function createFfprobeVideoOutputValidator({
+  ffprobePath = process.env.FFPROBE_PATH || "ffprobe",
+  execFileImpl = execFile,
+  timeoutMs = 15000,
+  maxDurationSeconds = 1800,
+  maxWidth = 8192,
+  maxHeight = 8192
+} = {}) {
+  if (typeof ffprobePath !== "string" || !ffprobePath.trim() || typeof execFileImpl !== "function" ||
+      !Number.isInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 120000 ||
+      !Number.isFinite(maxDurationSeconds) || maxDurationSeconds <= 0 || maxDurationSeconds > 86400 ||
+      !Number.isInteger(maxWidth) || maxWidth < 16 || maxWidth > 16384 ||
+      !Number.isInteger(maxHeight) || maxHeight < 16 || maxHeight > 16384) {
+    throw new Error("FFprobe video validator configuration is invalid.");
+  }
+  return async function validateMedia({ path, contentType, size } = {}) {
+    if (typeof path !== "string" || !path || !Number.isSafeInteger(size) || size < 1 || !RESPONSE_TYPES.has(contentType)) {
+      return { valid: false, reason: "INPUT_INVALID" };
+    }
+    const args = [
+      "-v", "error", "-show_entries",
+      "format=duration,format_name:stream=codec_type,codec_name,width,height,duration",
+      "-of", "json", path
+    ];
+    let stdout;
+    try {
+      stdout = await new Promise((resolve, reject) => {
+        execFileImpl(ffprobePath, args, { timeout: timeoutMs, maxBuffer: 1024 * 1024, windowsHide: true }, (error, output) => {
+          if (error) reject(error);
+          else resolve(output);
+        });
+      });
+    } catch {
+      return { valid: false, reason: "FFPROBE_FAILED" };
+    }
+    let probe;
+    try { probe = JSON.parse(String(stdout)); } catch { return { valid: false, reason: "FFPROBE_INVALID_JSON" }; }
+    const streams = Array.isArray(probe?.streams) ? probe.streams : [];
+    const videos = streams.filter(stream => stream?.codec_type === "video");
+    const audios = streams.filter(stream => stream?.codec_type === "audio");
+    const duration = Number(probe?.format?.duration);
+    const formatNames = String(probe?.format?.format_name || "").toLowerCase().split(",");
+    if (videos.length < 1 || videos.length > 4 || audios.length > 8 ||
+        !Number.isFinite(duration) || duration <= 0 || duration > maxDurationSeconds) {
+      return { valid: false, reason: "STREAM_LAYOUT_OR_DURATION_INVALID" };
+    }
+    const video = videos[0];
+    const width = Number(video.width), height = Number(video.height);
+    if (!Number.isInteger(width) || !Number.isInteger(height) || width < 16 || height < 16 ||
+        width > maxWidth || height > maxHeight || width * height > maxWidth * maxHeight) {
+      return { valid: false, reason: "VIDEO_DIMENSIONS_INVALID" };
+    }
+    let mediaType;
+    if (formatNames.some(name => ["webm", "matroska"].includes(name))) mediaType = "video/webm";
+    else if (formatNames.some(name => ["mov", "mp4", "m4v", "3gp"].includes(name))) mediaType = contentType === "video/quicktime" ? "video/quicktime" : "video/mp4";
+    else return { valid: false, reason: "CONTAINER_UNSUPPORTED" };
+    if (contentType !== "application/octet-stream" &&
+        (contentType === "video/webm" && mediaType !== "video/webm" ||
+         contentType === "video/mp4" && mediaType !== "video/mp4" ||
+         contentType === "video/quicktime" && mediaType !== "video/quicktime")) {
+      return { valid: false, reason: "MIME_CONTAINER_MISMATCH" };
+    }
+    return {
+      valid: true,
+      mediaType,
+      metadata: {
+        durationSeconds: duration,
+        width,
+        height,
+        videoCodec: String(video.codec_name || "").slice(0, 40),
+        audioStreamCount: audios.length,
+        container: formatNames.slice(0, 4)
+      }
+    };
+  };
+}
 
 function ipv4Public(address) {
   const octets = address.split(".").map(Number);
