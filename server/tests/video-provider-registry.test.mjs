@@ -138,7 +138,9 @@ test("Gemini conversational lineage and output encoding are explicit", () => {
   assert.equal(model.constraints.supportsConversationalEdits, true);
   assert.equal(model.constraints.lineageField, "previous_interaction_id");
   assert.equal(model.constraints.outputEncoding, "base64_in_interaction_steps");
-  assert.equal(model.constraints.paidTierOnly, true);
+  assert.equal(model.constraints.outputUriDeliverySupported, true);
+  assert.equal(model.constraints.uriDeliveryRecommendedAboveBytes, 4 * 1024 * 1024);
+  assert.equal(model.constraints.paidTierOnly, undefined);
 });
 
 test("retired Sora API is unavailable and cannot be selected", () => {
