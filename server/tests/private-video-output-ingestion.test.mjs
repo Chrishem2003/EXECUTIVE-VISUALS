@@ -11,7 +11,7 @@ const config = {
   download: async (_url, _path, options) => ({ size: 1024, contentType: "video/mp4", pinnedAddress: options.address?.address }),
   validateMedia: async () => ({ valid: true, mediaType: "video/mp4", metadata: { durationSeconds: 5 } })
 };
-function assetRepo({ failOn = -1, cleanupFails = false } = {}) {
+function assetRepo({ failOn = -1, cleanupFails = false, cleanupPending = false } = {}) {
   const created = [], removed = [];
   return {
     created, removed,
@@ -27,7 +27,7 @@ function assetRepo({ failOn = -1, cleanupFails = false } = {}) {
     async softDelete(value) {
       removed.push(value);
       if (cleanupFails) throw new Error("cleanup failed");
-      return { deleted: true };
+      return { deleted: true, storageRemoved: !cleanupPending, cleanupPending };
     }
   };
 }
@@ -141,6 +141,18 @@ test("rolls back previously registered private assets if a later output fails", 
 
 test("reports cleanup pending if rollback cannot remove a previously registered private asset", async () => {
   const assets = assetRepo({ failOn: 1, cleanupFails: true });
+  const ingest = createPrivateVideoOutputIngestor({
+    ...config, assets,
+    download: async () => ({ size: 1024, contentType: "video/mp4" })
+  });
+  await assert.rejects(ingest.ingest({
+    job: { owner_id: ownerId, project_id: projectId },
+    task: { ...task, outputUrls: [task.outputUrls[0], task.outputUrls[0]] }, input: {}
+  }), error => error.cleanupPending === true);
+});
+
+test("propagates a soft-delete receipt when private object removal remains pending", async () => {
+  const assets = assetRepo({ failOn: 1, cleanupPending: true });
   const ingest = createPrivateVideoOutputIngestor({
     ...config, assets,
     download: async () => ({ size: 1024, contentType: "video/mp4" })
