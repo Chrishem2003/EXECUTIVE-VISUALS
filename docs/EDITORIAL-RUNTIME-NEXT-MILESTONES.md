@@ -2,8 +2,8 @@
 
 **Date:** 2 November 2026  
 **Repository:** CHRISHEM EXCLUSIVE VISUALS  
-**Working branch:** `feat/sequence-preview-engine`  
-**Status:** E1 local primary-picture playback and frame resolver implemented; CI passed. Browser-level playback coverage, audio/compositing and cloud streaming remain in progress. See [Sequence preview engine](SEQUENCE-PREVIEW-ENGINE.md).
+**Working branch:** `feat/sequence-audio-overlay-preview`  
+**Status:** E1 local primary-picture playback, synchronized multi-track audio, still-image overlays and SRT/VTT caption preview implemented. Browser-level playback coverage, proxy-first selection and authenticated cloud streaming remain in progress. See [Sequence preview engine](SEQUENCE-PREVIEW-ENGINE.md).
 
 ## Objective
 
@@ -18,8 +18,8 @@ Complete the existing editorial runtime around the current timeline, media adapt
 - Proxy-first playback with an explicit original-media fallback when a proxy is absent.
 - Frame seeking based on rational frame-rate/timebase values; do not accumulate floating-point frame drift.
 - Play/pause, step one frame backward/forward, jump to clip in/out, timecode display, zoom-to-fit and safe source-range clamping.
-- Track mute/solo and audio monitoring where the browser media pipeline supports them.
-- Clear loading, unsupported-codec, missing-media, stale-revision and decode-error states.
+- Track mute/solo and audio monitoring where the browser media pipeline supports them. (Mute/solo controls remain outstanding; current local preview synchronizes enabled tracks and per-clip gain.)
+- Clear loading, unsupported-codec, missing-media, stale-revision and decode-error states. (Primary-source decode and missing-asset feedback are implemented; stale-revision and cloud-stream states remain outstanding.)
 - Abortable media loading and release of object URLs/media resources on source changes and unmount.
 
 **Required verification**
