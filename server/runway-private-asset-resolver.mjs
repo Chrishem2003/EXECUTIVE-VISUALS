@@ -88,8 +88,9 @@ export function createRunwayPrivateAssetResolver({
     let asset;
     try { asset = await loadPrivateAsset({ assetId, ownerId, projectId }); }
     catch { throw fail("Private image asset could not be read.", "RUNWAY_IMAGE_ASSET_READ_FAILED"); }
-    if (!asset || asset.id !== assetId || asset.ownerId !== ownerId || asset.isPrivate !== true ||
-        (asset.projectId != null && asset.projectId !== projectId)) {
+    const ownerScoped = asset?.ownerId === ownerId && asset?.projectId == null;
+    const projectScoped = projectId !== null && asset?.projectId === projectId;
+    if (!asset || asset.id !== assetId || (!ownerScoped && !projectScoped) || asset.isPrivate !== true) {
       throw fail("Image asset does not belong to the authorized owner/project or is not private.", "RUNWAY_IMAGE_ASSET_SCOPE_INVALID");
     }
     if (!Object.hasOwn(IMAGE_TYPES, asset.contentType)) {
