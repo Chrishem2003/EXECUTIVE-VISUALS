@@ -107,7 +107,7 @@ function syncSequenceOverlays(active:ReturnType<typeof resolveTimelineFrame>){
   const url=assetContentUrl(asset.id);if(image.dataset.assetId!==asset.id){image.dataset.assetId=asset.id;image.src=url;}
   const meta=item.clip.metadata||{},width=Math.max(16,Math.min(state.timeline.width,Number(meta.width)||state.timeline.width*.24)),height=Math.max(16,Math.min(state.timeline.height,Number(meta.height)||state.timeline.height*.24));
   const rawX=Number(meta.x),rawY=Number(meta.y),x=Math.max(0,Math.min(state.timeline.width-width,Number.isFinite(rawX)?rawX:state.timeline.width-width-24)),y=Math.max(0,Math.min(state.timeline.height-height,Number.isFinite(rawY)?rawY:24)),opacity=Math.max(0,Math.min(1,Number(meta.opacity??1)));
-  image.style.left=(x/state.timeline.width*100)+"%";image.style.top=(y/state.timeline.height*100)+"%";image.style.width=(width/state.timeline.width*100)+"%";image.style.height=(height/state.timeline.height*100)+"%";const previewStyle=getTimelineClipPreviewStyle(item.clip,item.timelineSeconds,state.timeline.frameRate);image.style.filter=previewStyle.filter;image.style.opacity=String(opacity*previewStyle.opacity);
+  image.style.left=(x/state.timeline.width*100)+"%";image.style.top=(y/state.timeline.height*100)+"%";image.style.width=(width/state.timeline.width*100)+"%";image.style.height=(height/state.timeline.height*100)+"%";image.style.opacity=String(opacity);
  }
  for(const image of Array.from(container.querySelectorAll<HTMLImageElement>("img[data-clip-id]")))if(!live.has(image.dataset.clipId||""))image.remove();
  const captions=active.filter(item=>item.track.kind==="caption");caption.textContent="";
