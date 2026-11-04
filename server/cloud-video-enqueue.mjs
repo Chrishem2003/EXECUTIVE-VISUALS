@@ -100,7 +100,12 @@ export function createCloudVideoEnqueue({
         throw new Error("Reserved amount must be a positive bounded number.");
       }
       if (typeof currency !== "string" || !/^[A-Z]{3}$/.test(currency)) throw new Error("Currency must be a three-letter uppercase code.");
-      if (provider === "runway" && model !== "gen4.5") {
+      if (provider !== "runway") {
+        const unsupported = new Error("The selected provider has a verified price estimate but no enabled execution adapter.");
+        unsupported.code = "VIDEO_GENERATION_UNSUPPORTED_CAPABILITY";
+        throw unsupported;
+      }
+      if (model !== "gen4.5") {
         const unsupported = new Error("The selected Runway model has pricing metadata but no enabled execution adapter.");
         unsupported.code = "VIDEO_GENERATION_UNSUPPORTED_CAPABILITY";
         throw unsupported;
