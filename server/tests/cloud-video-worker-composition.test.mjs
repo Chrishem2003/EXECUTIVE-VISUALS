@@ -26,10 +26,23 @@ test("cloud video composition is disabled unless explicitly opted in", () => {
   );
 });
 
-test("cloud video composition requires private storage, output ingestion and cost evidence dependencies", () => {
-  assert.throws(() => createCloudVideoWorkerComposition({ ...base, loadPrivateAsset: undefined }), /private asset reader/);
-  assert.throws(() => createCloudVideoWorkerComposition({ ...base, ingestOutputs: undefined }), /private output ingestion/);
+test("cloud video composition requires authoritative task-level cost evidence", () => {
   assert.throws(() => createCloudVideoWorkerComposition({ ...base, resolveActualCost: undefined }), /task-level cost evidence/);
+});
+
+test("built-in private output ingestion requires an explicit exact-host allowlist",()=>{
+  assert.throws(()=>createCloudVideoWorkerComposition({
+    ...base,loadPrivateAsset:undefined,ingestOutputs:undefined,env:{...env}
+  }),/RUNWAY_VIDEO_OUTPUT_HOSTS exact-host allowlist/);
+});
+
+test("built-in cloud asset adapters compose without network I/O when explicitly configured",()=>{
+  const worker=createCloudVideoWorkerComposition({
+    ...base,loadPrivateAsset:undefined,ingestOutputs:undefined,
+    env:{...env,RUNWAY_VIDEO_OUTPUT_HOSTS:"outputs.example.test"}
+  });
+  assert.equal(typeof worker.runCycle,"function");
+  assert.equal(typeof worker.recoverExpired,"function");
 });
 
 test("cloud video composition wires queue, Postgres ledger, Runway and injected private services without network I/O", () => {
