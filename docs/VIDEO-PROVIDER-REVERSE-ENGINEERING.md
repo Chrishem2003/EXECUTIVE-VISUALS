@@ -259,3 +259,34 @@ Official sources:
 - https://dev.runwayml.com/learn/seedance-2-5-api
 - https://dev.runwayml.com/learn/veo-3-1-api
 - https://docs.dev.runwayml.com/guides/pricing/
+
+
+## Runway Dev model-directory expansion — November 4, 2026
+
+The current official Runway Dev model directory lists 60 total models and exposes the following additional video families beyond the initial Executive Visuals registry snapshot. The registry now includes these Runway Dev model IDs as catalogue-only entries, with dated price metadata and `executionAdapter: "not_implemented"`. They remain disabled.
+
+| Model ID | Verified advertised capability | Runway Dev rate |
+|---|---|---|
+| `grok_imagine_1_5` | Native audio; prompt-addressable image references; audio-driven performance | 10 / 16 / 29 credits/s at 480p / 720p / 1080p; 1 credit per image/audio reference |
+| `grok_imagine_1_5_lite` | Text or start-frame video; 480p / 720p / 1080p | 2 / 3 / 14 credits/s; 1 credit for start frame |
+| `wan3` | Native audio; 2–30 seconds; image, video and audio references | 5 / 10 / 20 credits/s at 480p / 720p / 1080p |
+| `wan3_prime` | Native audio; 2–30 seconds; image, video and audio references | 6.8 / 14 / 28 credits/s at 480p / 720p / 1080p |
+| `h3_max` | Text/image-to-video; first and last frames; native audio | 5 credits/s at 480p; 8 at 768p |
+| `happyhorse_1_0` | Native audio; 3–15 seconds; ten output aspect ratios | 15 / 30 credits/s at 720p / 1080p |
+| `gemini_omni_flash_1.1` | Multimodal video; native audio; 360p through 4K | 3.4 / 10 / 15 / 30 credits/s at 360p / 720p / 1080p / 4K; reference-image and input-video charges apply |
+
+The shared Runway pricing estimator already contains formulas for these model IDs; this registry expansion makes the models discoverable to capability-aware planning without making them executable. Grok reference billing has explicit count constraints in the pricing estimator. WAN reference input capability is recorded conservatively; exact endpoint payload validation still belongs in a future model-specific adapter.
+
+### Veo 3.1 endpoint separation
+
+There are two different API surfaces and they must not be conflated:
+
+- **Google Gemini API:** the Veo 3.1 Preview model IDs `veo-3.1-generate-preview`, `veo-3.1-fast-generate-preview`, and `veo-3.1-lite-generate-preview` were shut down on October 22, 2026. Google directs developers to Gemini Omni Flash or the GA Veo models available through Gemini Enterprise Agent Platform.
+- **Runway Dev:** the current Runway model directory independently lists `veo3.1` and `veo3.1_fast`, with separate Runway Dev model IDs and credit pricing. Those remain catalogue-only in Executive Visuals until the Runway-specific adapter is implemented and tested.
+
+The Google provider entry for `gemini-omni-1.1-flash` and the Runway provider entry for `gemini_omni_flash_1.1` are separate endpoints, even though their names describe the same model family.
+
+Official sources:
+- Runway Dev model directory: https://docs.dev.runwayml.com/guides/models/
+- Runway Dev pricing: https://docs.dev.runwayml.com/guides/pricing/
+- Google Gemini API video migration notice: https://ai.google.dev/gemini-api/docs/video
