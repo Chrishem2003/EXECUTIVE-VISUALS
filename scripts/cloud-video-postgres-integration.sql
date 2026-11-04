@@ -57,6 +57,28 @@ begin
 end
 $owner_guard$;
 
+-- A different authenticated user cannot issue an approval against another owner's project.
+select set_config('request.jwt.claim.sub','223e4567-e89b-42d3-a456-426614174000',false);
+do $project_approval_guard$
+begin
+ begin
+  insert into executive_visuals.video_generation_budget_approvals(
+   id,owner_id,project_id,provider,model,request_hash,currency,approved_max_amount,expires_at
+  ) values (
+   'a23e4567-e89b-42d3-a456-426614174000',
+   '223e4567-e89b-42d3-a456-426614174000',
+   '323e4567-e89b-42d3-a456-426614174000',
+   'runway','gen4.5',repeat('d',64),'USD',1,clock_timestamp()+interval '10 minutes'
+  );
+  raise exception 'non-owner project approval unexpectedly succeeded';
+ exception when others then
+  if sqlerrm = 'non-owner project approval unexpectedly succeeded' then raise; end if;
+  if sqlstate <> '42501' then raise; end if;
+ end;
+end
+$project_approval_guard$;
+select set_config('request.jwt.claim.sub','123e4567-e89b-42d3-a456-426614174000',false);
+
 reset role;
 set role service_role;
 
