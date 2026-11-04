@@ -212,7 +212,7 @@ export function createPrivateVideoOutputIngestor({
           const path = join(directory, "provider-output-" + index + ".bin");
           const receipt = await download(url, path, { resolver, maxBytes: maxBytesPerOutput, timeoutMs });
           if (!receipt || !Number.isSafeInteger(receipt.size) || receipt.size < 1 ||
-              receipt.size > maxBytesPerOutput || !VIDEO_TYPES.has(receipt.contentType)) {
+              receipt.size > maxBytesPerOutput || !RESPONSE_TYPES.has(receipt.contentType)) {
             throw fail("Provider output download receipt is invalid.", "VIDEO_OUTPUT_DOWNLOAD_INVALID");
           }
           totalBytes += receipt.size;
