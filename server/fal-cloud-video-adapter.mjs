@@ -67,7 +67,11 @@ export function createFalCloudVideoAdapter({
   const queueClient = client || createFalAsyncVideoClient({
     apiKey, model: selectedModel, enabled, allowRemote, fetchImpl
   });
-  const assertRemoteEnabled = () => {\n    if (enabled !== true) throw fail("Video generation is disabled by server configuration.", "VIDEO_GATEWAY_DISABLED");\n    if (allowRemote !== true) throw fail("Remote video providers are disabled.", "VIDEO_GATEWAY_REMOTE_DISABLED");\n  };\n  if (!queueClient || typeof queueClient.submit !== "function" ||
+  const assertRemoteEnabled = () => {
+    if (enabled !== true) throw fail("Video generation is disabled by server configuration.", "VIDEO_GATEWAY_DISABLED");
+    if (allowRemote !== true) throw fail("Remote video providers are disabled.", "VIDEO_GATEWAY_REMOTE_DISABLED");
+  };
+  if (!queueClient || typeof queueClient.submit !== "function" ||
       typeof queueClient.status !== "function" || typeof queueClient.result !== "function") {
     throw new Error("FAL cloud adapter requires submit, status and result operations.");
   }
