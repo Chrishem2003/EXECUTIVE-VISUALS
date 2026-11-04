@@ -19,7 +19,7 @@ type CloudSavedTimeline={id:string;projectId?:string|null;name:string;revision:n
 const state:{timeline:EditorialTimeline|null;serverRevision:number;timelines:SavedTimeline[];cloudTimelines:CloudSavedTimeline[];cloudProjects:CloudProject[];cloudProjectId:string;mode:"local"|"cloud";cloudRenderJobId:string;cloudRenderJobStatus:string;variantBase:EditorialTimeline|null;variantReport:TimelineVariantComparison|null;variantBaseName:string;assets:Asset[];status:"loading"|"ready"|"offline"|"auth";message:string;selectedTrack:string;selectedClipId:string;ffmpeg:boolean}={
  timeline:null,serverRevision:0,timelines:[],cloudTimelines:[],cloudProjects:[],cloudProjectId:"",mode:"local",cloudRenderJobId:"",cloudRenderJobStatus:"",variantBase:null,variantReport:null,variantBaseName:"",assets:[],status:"loading",message:"Loading editorial workspace…",selectedTrack:"",selectedClipId:"",ffmpeg:false
 };
-let sequencePlaying=false,sequenceFrame=0,sequenceStartFrame=0,sequenceStartAt=0,sequenceRaf:number|null=null,sequenceActiveClipId="";
+let sequencePlaying=false,sequenceFrame=0,sequenceStartFrame=0,sequenceStartAt=0,sequenceRaf:number|null=null;
 const esc=(v:unknown)=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]||c));
 const fps=()=>state.timeline?state.timeline.frameRate.numerator/state.timeline.frameRate.denominator:24;
 const maxEnd=()=>Math.max(1,...(state.timeline?.tracks.flatMap(t=>t.clips.map(c=>c.timelineStart.value+c.duration.value))||[240]));
@@ -60,21 +60,21 @@ function renderSequenceFrame(frame:number,forceSeek=false){
  const active=resolveTimelineFrame(state.timeline,sequenceFrame).filter(item=>item.track.kind==="video");
  const current=active[active.length-1],video=document.querySelector<HTMLVideoElement>("#tl-sequence-video"),image=document.querySelector<HTMLImageElement>("#tl-sequence-image"),empty=document.querySelector<HTMLElement>("#tl-sequence-empty");
  if(!video||!image||!empty)return;
- if(!current){video.pause();video.hidden=true;image.hidden=true;empty.hidden=false;empty.textContent="No active picture clip at this timeline position.";sequenceActiveClipId="";return;}
+ if(!current){video.pause();video.hidden=true;image.hidden=true;empty.hidden=false;empty.textContent="No active picture clip at this timeline position.";return;}
  const asset=state.assets.find(item=>item.id===current.clip.assetId);
- if(!asset){video.pause();video.hidden=true;image.hidden=true;empty.hidden=false;empty.textContent="The active source asset is unavailable in this workspace.";sequenceActiveClipId="";return;}
+ if(!asset){video.pause();video.hidden=true;image.hidden=true;empty.hidden=false;empty.textContent="The active source asset is unavailable in this workspace.";return;}
  const mediaUrl="/api/assets/"+encodeURIComponent(asset.id)+"/file";empty.hidden=true;
  if(asset.mediaType.startsWith("image/")){
-  video.pause();video.hidden=true;image.hidden=false;if(image.dataset.activeClip!==current.clip.id){image.src=mediaUrl;image.dataset.activeClip=current.clip.id;}sequenceActiveClipId=current.clip.id;return;
+  video.pause();video.hidden=true;image.hidden=false;if(image.dataset.activeClip!==current.clip.id){image.src=mediaUrl;image.dataset.activeClip=current.clip.id;}return;
  }
- if(!asset.mediaType.startsWith("video/")){video.pause();video.hidden=true;image.hidden=true;empty.hidden=false;empty.textContent="The active picture source is not a browser-playable video or image.";sequenceActiveClipId="";return;}
+ if(!asset.mediaType.startsWith("video/")){video.pause();video.hidden=true;image.hidden=true;empty.hidden=false;empty.textContent="The active picture source is not a browser-playable video or image.";return;}
  image.hidden=true;video.hidden=false;
  const changed=video.dataset.activeClip!==current.clip.id;
  if(changed){video.dataset.activeClip=current.clip.id;video.dataset.sourceIn=String(current.sourceInSeconds);video.dataset.sourceOut=String(current.sourceOutSeconds);video.onloadedmetadata=()=>{if(video.dataset.activeClip!==current.clip.id)return;video.currentTime=Math.min(current.sourceSeconds,Number.isFinite(video.duration)?video.duration:current.sourceSeconds);if(sequencePlaying)void video.play().catch(()=>{if(empty){empty.hidden=false;empty.textContent="Playback was blocked by the browser. Press Play to resume.";}});};video.onerror=()=>{if(empty){empty.hidden=false;empty.textContent="This source could not be decoded by the browser. Try a compatible proxy or render a master.";}};if(video.src!==new URL(mediaUrl,window.location.href).href){video.src=mediaUrl;video.load();}else if(video.readyState>=1){video.currentTime=current.sourceSeconds;if(sequencePlaying)void video.play().catch(()=>{});}}
  else if(forceSeek&&video.readyState>=1){video.currentTime=Math.min(current.sourceSeconds,Number.isFinite(video.duration)?video.duration:current.sourceSeconds);}
  try{video.playbackRate=current.clip.speed??1;}catch{}
  if(sequencePlaying&&video.paused&&video.readyState>=2)void video.play().catch(()=>{});
- sequenceActiveClipId=current.clip.id;
+ 
 }
 function sequencePlaybackTick(){
  if(!sequencePlaying||!state.timeline)return;
@@ -268,7 +268,7 @@ export async function initTimelineWorkspace(){
  paint();
 }
 function paint(){
- stopSequencePlayback();sequenceActiveClipId="";
+ stopSequencePlayback();
  const root=document.querySelector<HTMLElement>("#timeline-workspace");if(root)root.outerHTML=renderTimelineWorkspace();
  const media=document.querySelector<HTMLMediaElement>("#tl-preview-media");
  if(media){
