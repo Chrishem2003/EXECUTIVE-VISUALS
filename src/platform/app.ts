@@ -60,8 +60,9 @@ async function openGoogleDrivePicker(){
   const picker=new google.picker.PickerBuilder()
    .setAppId(config.appId).setDeveloperKey(config.developerKey).setOAuthToken(config.accessToken)
    .setOrigin(window.location.protocol+"//"+window.location.host)
-   .setTitle("Select a private media file")
+   .setTitle("Select a private media file or upload from this device")
    .addView(view)
+   .addView(new google.picker.DocsUploadView())
    .setCallback(async(data:any)=>{
     if(data.action===google.picker.Action.CANCEL){googleDriveStatusMessage="File selection cancelled.";render();return;}
     if(data.action!==google.picker.Action.PICKED)return;
@@ -76,7 +77,7 @@ async function openGoogleDrivePicker(){
     render();
    }).build();
   picker.setVisible(true);
-  googleDriveStatusMessage="Choose a file in the Google Drive picker.";render();
+  googleDriveStatusMessage="Choose an existing Drive file, or upload a file from this device. Selected files are imported into private project storage.";render();
  }catch(error){googleDriveStatusError=error instanceof Error?error.message:"Google Drive picker could not be opened.";googleDriveStatusMessage="";render();}
 }
 async function exportCloudAssetToDrive(assetId:string,parentFolderId:string|null=null){
@@ -268,7 +269,7 @@ function googleDriveSettings(){
  const connected=googleDriveConnection?.connected===true;
  const status=googleDriveStatusLoading||!googleDriveStatusLoaded?"Checking connection…":googleDriveStatusError?"Not configured or unavailable":connected?"Connected · "+esc(googleDriveConnection?.email||"Google account"):"Not connected";
  const button=connected?'<button class="danger" data-google-drive-action="disconnect">Disconnect Google Drive</button>':'<button class="primary" data-google-drive-action="connect">Connect Google Drive →</button>';
- const pickerButton=connected?'<button class="secondary" data-google-drive-action="browse">Choose files from Drive</button>':'';
+ const pickerButton=connected?'<button class="secondary" data-google-drive-action="browse">Choose or upload files</button>':'';
  return panel("Google Drive · Private workspace",
   '<div class="integration-status"><div><b>'+status+'</b><p>Connect a Google account to enable private Drive file workflows. Access is limited to files you explicitly select with Google Picker using the drive.file permission.</p></div><span class="status">'+(connected?"Connected":"Private · user-controlled")+'</span></div>'+
   '<div class="action-row">'+button+pickerButton+'<button class="secondary" data-google-drive-action="refresh">Refresh status</button></div>'+
