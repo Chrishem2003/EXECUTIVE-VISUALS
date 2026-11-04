@@ -58,7 +58,9 @@ export function createVideoGenerationJobService({
       if (!provider || provider.availability !== "enabled") throw fail("The selected video provider/model is not enabled for user-facing execution.", "VIDEO_JOB_PROVIDER_DISABLED");
       assertVideoCapabilities(request, provider.capabilities || {});
       const requestJson = stableJson({ ...request, projectId: projectId || null });
-      const canonicalRequest = { ...request };\n      delete canonicalRequest.requestId;\n      const requestHash = createHash("sha256").update(stableJson({ ...canonicalRequest, projectId: projectId || null })).digest("hex");
+      const canonicalRequest = { ...request };
+      delete canonicalRequest.requestId;
+      const requestHash = createHash("sha256").update(stableJson({ ...canonicalRequest, projectId: projectId || null })).digest("hex");
 
       const run = db.transaction(() => {
         if (key) {
@@ -72,7 +74,9 @@ export function createVideoGenerationJobService({
           }
         }
 
-        const budget = reserveBudget({ ownerId, projectId: projectId || null, provider: providerId, model: modelId, capability: "video.generate", requestHash });\n        if (budget && typeof budget.then === "function") throw fail("Budget reservation must be synchronous and participate in the database transaction.", "VIDEO_JOB_BUDGET_ADAPTER_INVALID");
+        const budget = reserveBudget({ ownerId, projectId: projectId || null, provider: providerId, model: modelId, capability: "video.generate", requestHash });
+        if (budget && typeof budget.then === "function") throw fail("Budget reservation must be synchronous and participate in the database transaction.", "VIDEO_JOB_BUDGET_ADAPTER_INVALID");
+        if (budget && typeof budget.then === "function") throw fail("Budget reservation must be synchronous and participate in the database transaction.", "VIDEO_JOB_BUDGET_ADAPTER_INVALID");
         if (!budget || budget.approved !== true || typeof budget.reservationId !== "string" || !budget.reservationId.trim()) {
           throw fail("A confirmed budget reservation is required before remote video generation can be queued.", "VIDEO_JOB_BUDGET_NOT_APPROVED");
         }
