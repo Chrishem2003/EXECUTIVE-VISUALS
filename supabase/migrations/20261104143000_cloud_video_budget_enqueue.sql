@@ -193,7 +193,7 @@ returns table(job_id uuid, job_status text, idempotent_replay boolean, budget_re
 language plpgsql
 security invoker
 set search_path = pg_catalog, executive_visuals
-as $$
+as $video_enqueue$
 declare
   existing executive_visuals.jobs;
   policy executive_visuals.video_generation_budget_policies;
@@ -341,7 +341,7 @@ begin
 
   return query select inserted_job.id, inserted_job.status, false, reservation_id;
 end;
-$$;
+$video_enqueue$;
 
 revoke all on function executive_visuals.enqueue_video_generation_job(uuid, uuid, text, text, text, text, jsonb, uuid, numeric, text)
   from public, anon, authenticated;
