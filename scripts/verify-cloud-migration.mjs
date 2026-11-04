@@ -111,6 +111,7 @@ if (!videoSubmissionSql.includes("s.state='submitting' and s.provider_task_id is
 if (!videoSubmissionSql.includes("state='unknown' and provider_task_id is null")) issues.push("Explicit reconciliation must be required for ambiguous provider submissions.");
 if (!videoSubmissionSql.includes("unique" ) || !videoSubmissionSql.includes("provider_task_id text unique")) issues.push("Provider task IDs must be globally unique in the ledger.");
 if (!videoSubmissionSql.includes("queued.input ->> 'requestHash'")) issues.push("Cloud ledger preparation must verify the queued request hash.");
+if ((videoSubmissionSql.match(/security invoker/gi) || []).length !== 7 || /security definer/i.test(videoSubmissionSql)) issues.push("Cloud video ledger RPCs must use invoker rights and avoid privileged definer execution.");
 
 if (issues.length) {
   console.error("Cloud migration guard failed:");
