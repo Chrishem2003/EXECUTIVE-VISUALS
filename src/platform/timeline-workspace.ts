@@ -249,12 +249,11 @@ function timelinePreviewPanel(){
  const clip=track?.clips.find(item=>item.id===state.selectedClipId);
  const asset=clip?state.assets.find(item=>item.id===clip.assetId):undefined;
  const heading='<div class="timeline-panel-heading"><div><div class="eyebrow">SOURCE PREVIEW MONITOR</div><h3>'+(clip?esc(clip.name):'Select a timeline clip')+'</h3></div><small>'+(clip?'Source-range preview':'No clip selected')+'</small></div>';
- if(state.mode==="cloud")return '<section class="timeline-preview panel">'+heading+'<div class="preview-empty">Cloud asset playback is not enabled here yet. An authenticated private-media playback URL is required.</div></section>';
- if(!track||!clip||!asset)return '<section class="timeline-preview panel">'+heading+'<div class="preview-empty">Select a video, audio or image clip on the timeline.</div></section>';
+  if(!track||!clip||!asset)return '<section class="timeline-preview panel">'+heading+'<div class="preview-empty">Select a video, audio or image clip on the timeline.</div></section>';
  const start=clip.sourceRange.start.value/clip.sourceRange.start.rate,end=start+clip.sourceRange.duration.value/clip.sourceRange.duration.rate;
- const mediaUrl='/api/assets/'+encodeURIComponent(asset.id)+'/file';
+ const mediaUrl=state.mode==="cloud"?"":'/api/assets/'+encodeURIComponent(asset.id)+'/file',sourceAttr=mediaUrl?' src="'+mediaUrl+'"':'';
  const previewRate=track.kind==="audio"?100:sourceRate(asset,track.kind),isVideoPreview=asset.mediaType.startsWith("video/");
- const media=asset.mediaType.startsWith("video/")?'<video id="tl-preview-media" class="preview-media" controls playsinline preload="metadata" src="'+mediaUrl+'" data-source-in="'+start+'" data-source-out="'+end+'" data-source-fps="'+previewRate+'"></video>':asset.mediaType.startsWith("audio/")?'<audio id="tl-preview-media" class="preview-audio" controls preload="metadata" src="'+mediaUrl+'" data-source-in="'+start+'" data-source-out="'+end+'" data-source-fps="'+previewRate+'"></audio>':asset.mediaType.startsWith("image/")?'<img class="preview-still" src="'+mediaUrl+'" alt="'+esc(asset.name)+'">':'<div class="preview-empty">This media type cannot be previewed.</div>';
+ const media=asset.mediaType.startsWith("video/")?'<video id="tl-preview-media" class="preview-media" controls playsinline preload="metadata"'+sourceAttr+' data-asset-id="'+esc(asset.id)+'" data-source-in="'+start+'" data-source-out="'+end+'" data-source-fps="'+previewRate+'"></video>':asset.mediaType.startsWith("audio/")?'<audio id="tl-preview-media" class="preview-audio" controls preload="metadata"'+sourceAttr+' data-asset-id="'+esc(asset.id)+'" data-source-in="'+start+'" data-source-out="'+end+'" data-source-fps="'+previewRate+'"></audio>':asset.mediaType.startsWith("image/")?'<img id="tl-preview-image" class="preview-still"'+sourceAttr+' data-asset-id="'+esc(asset.id)+'" alt="'+esc(asset.name)+'">':'<div class="preview-empty">This media type cannot be previewed.</div>';
  const frameButtons=isVideoPreview?'<button class="secondary" data-tl-action="preview-step-back">−1 frame</button><button class="secondary" data-tl-action="preview-step-forward">+1 frame</button>':'';
  const controls=asset.mediaType.startsWith("video/")||asset.mediaType.startsWith("audio/")?'<div class="preview-transport"><button class="secondary" data-tl-action="preview-in">Go to source in</button>'+frameButtons+'<button class="secondary" data-tl-action="preview-out">Go to source out</button><input id="tl-preview-scrub" aria-label="'+(isVideoPreview?"Seek by source frame":"Seek by 10 milliseconds")+'" type="range" min="0" max="' + Math.max(1,Math.ceil((end-start)*previewRate)) + '" value="0" step="1"><output id="tl-preview-time">Loading media…</output></div>':'';
  return '<section class="timeline-preview panel">'+heading+'<div class="preview-stage">'+media+'</div>'+controls+'<small class="muted">Preview is limited to this clip’s saved source range. Video frame stepping uses the probed source frame rate; audio scrubbing uses 10 ms increments. A verified master render is still required for delivery.</small></section>';
@@ -431,9 +430,18 @@ function paint(){
  const root=document.querySelector<HTMLElement>("#timeline-workspace");if(root)root.outerHTML=renderTimelineWorkspace();
  const media=document.querySelector<HTMLMediaElement>("#tl-preview-media");
  if(media){
+  if(state.mode==="cloud"){
+   const asset=state.assets.find(item=>item.id===media.dataset.assetId);
+   if(asset)void assetMediaUrl(asset).then(url=>{if(media.isConnected&&media.dataset.mediaUrl!==url){media.dataset.mediaUrl=url;media.src=url;media.load();}}).catch(error=>{const root=media.parentElement;if(root){const notice=document.createElement("p");notice.className="preview-empty";notice.textContent=error instanceof Error?error.message:"Private cloud media could not be loaded.";root.appendChild(notice);}});
+  }
   const setIn=()=>{const start=Number(media.dataset.sourceIn),duration=media.duration,end=Number(media.dataset.sourceOut);if(Number.isFinite(start)){const safeStart=Math.min(start,Number.isFinite(duration)?duration:start);media.currentTime=safeStart;}if(Number.isFinite(end)&&Number.isFinite(duration)&&end>duration)media.dataset.sourceOut=String(duration);};
   if(media.readyState>=1)setIn();else media.addEventListener("loadedmetadata",setIn,{once:true});
   media.addEventListener("timeupdate",()=>{const output=document.querySelector<HTMLOutputElement>("#tl-preview-time");if(output)output.value=media.currentTime.toFixed(3)+" s";const start=Number(media.dataset.sourceIn),end=Math.min(Number(media.dataset.sourceOut),Number.isFinite(media.duration)?media.duration:Number(media.dataset.sourceOut)),rate=Number(media.dataset.sourceFps),scrub=document.querySelector<HTMLInputElement>("#tl-preview-scrub");if(scrub&&Number.isFinite(rate)&&rate>0)scrub.value=String(Math.max(0,Math.round((media.currentTime-start)*rate)));if(Number.isFinite(end)&&media.currentTime>=end){media.pause();media.currentTime=end;}});
+ }
+ const image=document.querySelector<HTMLImageElement>("#tl-preview-image");
+ if(image&&state.mode==="cloud"){
+  const asset=state.assets.find(item=>item.id===image.dataset.assetId);
+  if(asset)void assetMediaUrl(asset).then(url=>{if(image.isConnected&&image.dataset.mediaUrl!==url){image.dataset.mediaUrl=url;image.src=url;}}).catch(error=>{const root=image.parentElement;if(root){const notice=document.createElement("p");notice.className="preview-empty";notice.textContent=error instanceof Error?error.message:"Private cloud image could not be loaded.";root.appendChild(notice);}});
  }
 }
 async function runAction(action:HTMLElement){
