@@ -38,6 +38,7 @@ function sourceRate(asset:Asset,kind:string){
  if(raw){const [n,d]=raw.split("/").map(Number);if(n>0&&d>0)return n/d;}
  return fps();
 }
+const assetContentUrl=(assetId:string)=>state.mode==="cloud"?"/api/cloud/assets/"+encodeURIComponent(assetId)+"/content":"/api/assets/"+encodeURIComponent(assetId)+"/file";
 const assetOptions=()=>state.assets.map(a=>{const probe=a.metadata?.probe as {format?:{duration?:string}}|undefined;const duration=Number(probe?.format?.duration);return '<option value="'+esc(a.id)+'">'+esc(a.name)+' · '+esc(a.mediaType)+(Number.isFinite(duration)?' · '+duration.toFixed(1)+'s':' · inspect for duration')+'</option>';}).join("");
 function timelineCanvas(){
  if(!state.timeline)return '<div class="empty">'+esc(state.message)+'</div>';
@@ -49,11 +50,10 @@ function sequencePreviewPanel(){
  if(!state.timeline)return '<section class="timeline-preview panel"><div class="eyebrow">SEQUENCE PREVIEW</div><p class="muted">Load a saved sequence to preview its edited picture track.</p></section>';
  const duration=getTimelineDurationFrames(state.timeline),rate=state.timeline.frameRate;
  const hasPicture=state.timeline.tracks.some(track=>track.enabled&&track.kind==="video"&&track.clips.some(clip=>clip.enabled));
- if(state.mode==="cloud")return '<section class="timeline-preview panel"><div class="eyebrow">SEQUENCE PREVIEW</div><h3>Cloud preview is not connected yet</h3><p class="muted">Cloud playback stays blocked until the authenticated private-media streaming endpoint is integrated. No public or guessed asset URLs are used.</p></section>';
  return '<section class="timeline-preview panel"><div class="timeline-panel-heading"><div><div class="eyebrow">SEQUENCE PREVIEW · E1</div><h3>'+esc(state.timeline.name)+'</h3></div><small>'+duration+' frames · '+(rate.numerator/rate.denominator).toFixed(3)+' fps</small></div>'+
  '<div class="preview-stage sequence-preview-stage"><video id="tl-sequence-video" class="preview-media" playsinline preload="metadata" hidden></video><img id="tl-sequence-image" class="preview-still" alt="Sequence preview frame" hidden><div id="tl-sequence-empty" class="preview-empty">'+(hasPicture?'Press Play to preview the edited picture sequence.':'Add an enabled clip to a video track to preview the sequence.')+'</div><div id="tl-sequence-overlays" class="sequence-overlay-layer"></div><div id="tl-sequence-caption" class="sequence-caption-layer" aria-live="off"></div><div id="tl-sequence-audio" hidden></div></div>'+
  '<div class="preview-transport sequence-transport"><button class="secondary" data-tl-action="sequence-play" '+(!hasPicture||duration===0?'disabled':'')+'>▶ Play</button><button class="secondary" data-tl-action="sequence-pause">Ⅱ Pause</button><button class="secondary" data-tl-action="sequence-step-back">−1 frame</button><button class="secondary" data-tl-action="sequence-step-forward">+1 frame</button><input id="tl-sequence-scrub" aria-label="Seek sequence by frame" type="range" min="0" max="'+Math.max(0,duration-1)+'" value="'+Math.min(sequenceFrame,Math.max(0,duration-1))+'" step="1" '+(duration===0?'disabled':'')+'><output id="tl-sequence-time">'+frameToSeconds(Math.min(sequenceFrame,Math.max(0,duration-1)),rate).toFixed(3)+' s</output></div>'+
- '<small class="muted">Local preview now synchronizes enabled audio clips with per-clip gain, displays still-image overlays and renders SRT/VTT caption cues. Cloud streaming and full FFmpeg parity remain outstanding. Use the verified master render for final delivery.</small></section>';
+ '<small class="muted">Preview synchronizes enabled audio clips with per-clip gain, displays still-image overlays and renders SRT/VTT caption cues. Cloud assets stream through the authenticated same-origin route; full FFmpeg parity remains outstanding. Use the verified master render for final delivery.</small></section>';
 }
 function stopSequencePlayback(){
  sequencePlaying=false;if(sequenceRaf!==null)cancelAnimationFrame(sequenceRaf);sequenceRaf=null;
@@ -67,7 +67,7 @@ function parseCaptionTime(value:string):number{
 }
 function loadCaptionCues(asset:Asset):Promise<Array<{start:number;end:number;text:string}>>{
  const cached=captionSources.get(asset.id);if(cached)return cached;
- const request=fetch("/api/assets/"+encodeURIComponent(asset.id)+"/file",{credentials:"same-origin"}).then(async response=>{
+ const request=fetch(assetContentUrl(asset.id),{credentials:"same-origin"}).then(async response=>{
   if(!response.ok)throw new Error("Caption asset could not be loaded.");
   const body=await response.text();if(body.length>2*1024*1024)throw new Error("Caption asset exceeds the preview size limit.");
   return body.replace(/^\uFEFF/,"").replace(/\r/g,"").split(/\n\s*\n/).flatMap(block=>{
@@ -87,7 +87,7 @@ function syncSequenceAudio(active:ReturnType<typeof resolveTimelineAudioFrame>){
   const asset=state.assets.find(candidate=>candidate.id===item.assetId);if(!asset?.mediaType.startsWith("audio/"))continue;
   const key=item.clipId;live.add(key);let audio=sequenceAudio.get(key);
   if(!audio){audio=new Audio();audio.preload="auto";audio.dataset.clipId=key;container.appendChild(audio);sequenceAudio.set(key,audio);}
-  const url="/api/assets/"+encodeURIComponent(asset.id)+"/file";
+  const url=assetContentUrl(asset.id);
   if(audio.dataset.assetId!==asset.id){audio.pause();audio.dataset.assetId=asset.id;audio.src=url;audio.load();audio.onloadedmetadata=()=>{if(!audio||sequenceAudio.get(key)!==audio||audio.dataset.clipId!==key)return;audio.currentTime=Math.max(0,item.sourceSeconds);if(sequencePlaying)void audio.play().catch(()=>{});};}
   const expected=item.sourceSeconds;if(audio.readyState>=1&&Math.abs(audio.currentTime-expected)>0.3)audio.currentTime=expected;
   audio.playbackRate=item.playbackRate;audio.volume=item.gainLinear;
@@ -142,7 +142,7 @@ function renderSequenceFrame(frame:number,forceSeek=false){
  if(!current){video.pause();video.hidden=true;image.hidden=true;empty.hidden=false;empty.textContent="No active picture clip at this timeline position.";return;}
  const asset=state.assets.find(item=>item.id===current.clip.assetId);
  if(!asset){video.pause();video.hidden=true;image.hidden=true;empty.hidden=false;empty.textContent="The active source asset is unavailable in this workspace.";return;}
- const mediaUrl="/api/assets/"+encodeURIComponent(asset.id)+"/file";empty.hidden=true;
+ const mediaUrl=assetContentUrl(asset.id);empty.hidden=true;
  if(asset.mediaType.startsWith("image/")){
   video.pause();video.hidden=true;image.hidden=false;if(image.dataset.activeClip!==current.clip.id){image.src=mediaUrl;image.dataset.activeClip=current.clip.id;}return;
  }
