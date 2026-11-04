@@ -53,7 +53,7 @@ test("uses the dated Kling 4 promotion and automatically reverts to list pricing
 });
 
 test("refuses unsupported models and malformed or missing price inputs",()=>{
-  assert.throws(()=>estimateRunwayVideoCredits({model:"ruby",durationSeconds:5,pricingDate:date}),e=>e.code==="RUNWAY_PRICE_INPUT_REQUIRED");
+  assert.throws(()=>estimateRunwayVideoCredits({model:"ruby",sourceDynamicRange:"sdr",durationSeconds:5,pricingDate:date}),e=>e.code==="RUNWAY_PRICE_INPUT_REQUIRED");
   assert.throws(()=>estimateRunwayVideoCredits({model:"gen4.5",durationSeconds:5}),e=>e.code==="RUNWAY_PRICE_INPUT_REQUIRED");
   assert.throws(()=>estimateRunwayVideoCredits({model:"gen4.5",durationSeconds:-1,pricingDate:date}));
   assert.throws(()=>estimateRunwayVideoCredits({model:"gen4.5",durationSeconds:31,pricingDate:date}));
@@ -73,12 +73,13 @@ test("prices frame-rate enhancement and Ruby HDR from input duration and source 
   assert.throws(()=>estimateRunwayVideoCredits({model:"enhance_frame_rate",durationSeconds:301,targetFramerate:60,pricingDate:date}),e=>e.code==="RUNWAY_PRICE_INVALID_INPUT");
   assert.throws(()=>estimateRunwayVideoCredits({model:"enhance_frame_rate",durationSeconds:10,pricingDate:date}),e=>e.code==="RUNWAY_PRICE_INPUT_REQUIRED");
   assert.throws(()=>estimateRunwayVideoCredits({model:"enhance_frame_rate",durationSeconds:10,targetFramerate:15,pricingDate:date}),e=>e.code==="RUNWAY_PRICE_INPUT_REQUIRED");
-  assert.equal(estimateRunwayVideoCredits({model:"ruby",durationSeconds:10,sourceWidth:1920,sourceHeight:1080,pricingDate:date}).estimatedCredits,200);
-  assert.equal(estimateRunwayVideoCredits({model:"ruby",durationSeconds:10,sourceWidth:3840,sourceHeight:2160,pricingDate:date}).estimatedCredits,400);
-  assert.equal(estimateRunwayVideoCredits({model:"ruby",durationSeconds:10,sourceWidth:2000,sourceHeight:2000,pricingDate:date}).estimatedCredits,200);
-  assert.equal(estimateRunwayVideoCredits({model:"ruby",durationSeconds:10,sourceWidth:2001,sourceHeight:2000,pricingDate:date}).estimatedCredits,400);
-  assert.throws(()=>estimateRunwayVideoCredits({model:"ruby",durationSeconds:10,pricingDate:date}),e=>e.code==="RUNWAY_PRICE_INPUT_REQUIRED");
+  assert.equal(estimateRunwayVideoCredits({model:"ruby",sourceDynamicRange:"sdr",durationSeconds:10,sourceWidth:1920,sourceHeight:1080,pricingDate:date}).estimatedCredits,200);
+  assert.equal(estimateRunwayVideoCredits({model:"ruby",sourceDynamicRange:"sdr",durationSeconds:10,sourceWidth:3840,sourceHeight:2160,pricingDate:date}).estimatedCredits,400);
+  assert.equal(estimateRunwayVideoCredits({model:"ruby",sourceDynamicRange:"sdr",durationSeconds:10,sourceWidth:2000,sourceHeight:2000,pricingDate:date}).estimatedCredits,200);
+  assert.equal(estimateRunwayVideoCredits({model:"ruby",sourceDynamicRange:"sdr",durationSeconds:10,sourceWidth:2001,sourceHeight:2000,pricingDate:date}).estimatedCredits,400);
+  assert.throws(()=>estimateRunwayVideoCredits({model:"ruby",sourceDynamicRange:"sdr",durationSeconds:10,pricingDate:date}),e=>e.code==="RUNWAY_PRICE_INPUT_REQUIRED");
   assert.throws(()=>estimateRunwayVideoCredits({model:"gen4.5",durationSeconds:5,pricingDate:date,outputFormat:"unverified_format"}),e=>e.code==="RUNWAY_PRICE_UNSUPPORTED_OPTION");
+  assert.throws(()=>estimateRunwayVideoCredits({model:"ruby",durationSeconds:5,sourceWidth:1920,sourceHeight:1080,pricingDate:date}),e=>e.code==="RUNWAY_PRICE_INPUT_REQUIRED");
 });
 
 test("includes Aleph 2 minimum charge and Gemini Omni Flash 1.1 4K tier",()=>{
@@ -113,7 +114,7 @@ test("prices 10-bit SDR and Gen-4.5 HDR output by output megapixels",()=>{
 });
 
 test("prices Ruby HDR delivery profiles at the base HDR rate without a second surcharge",()=>{
-  const source={model:"ruby",durationSeconds:10,sourceWidth:1920,sourceHeight:1080,pricingDate:date};
+  const source={model:"ruby",sourceDynamicRange:"sdr",durationSeconds:10,sourceWidth:1920,sourceHeight:1080,pricingDate:date};
   for(const outputFormat of ["hdr10","hlg","hdr_prores","hdr_exr_sequence","hdr_exr_acescg_sequence_1_3","hdr_exr_acescg_sequence_2_0"]) {
     assert.equal(estimateRunwayVideoCredits({...source,outputFormat}).estimatedCredits,200);
   }
