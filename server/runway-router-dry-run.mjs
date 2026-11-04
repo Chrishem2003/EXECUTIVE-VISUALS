@@ -247,7 +247,9 @@ function normalizeDecision(payload, expectedConfigId) {
 export function createRunwayRouterDryRunClient({
   env = process.env,
   fetchImpl = globalThis.fetch,
-  timeoutMs = 30000
+  timeoutMs = 30000,
+  resolvePrivateAsset,
+  getAuthorizedAssetContext
 } = {}) {
   if (typeof fetchImpl !== "function") throw new TypeError("A fetch implementation is required.");
 
@@ -261,7 +263,8 @@ export function createRunwayRouterDryRunClient({
     const key = String(env.RUNWAY_API_KEY || "").trim();
     if (!key) throw fail("Configure the Runway API key on the server.", "RUNWAY_CONFIG_INVALID");
 
-    const resolvedInput = await resolvePrivateReferences(input, resolvePrivateAsset, getAuthorizedAssetContext);\n    const payload = buildRunwayRouterDryRunPayload(resolvedInput);
+    const resolvedInput = await resolvePrivateReferences(input, resolvePrivateAsset, getAuthorizedAssetContext);
+    const payload = buildRunwayRouterDryRunPayload(resolvedInput);
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), Math.max(1000, Math.min(120000, timeoutMs)));
     try {
