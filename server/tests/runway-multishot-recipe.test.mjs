@@ -79,7 +79,7 @@ test("first-frame media resolves through authenticated private project scope", a
     getAuthorizedAssetContext: async args => ({ ownerId, projectId: args.projectId }),
     resolvePrivateAsset: async args => {
       calls.push(args);
-      return { uri: "https://private.example.com/first-frame.png" };
+      return { uri: "https://private.example.com/first-frame.png", mediaType: "image" };
     }
   });
   assert.deepEqual(result.payload.firstFrame, { uri: "https://private.example.com/first-frame.png" });
@@ -101,6 +101,6 @@ test("first-frame media fails closed without project authorization or valid priv
     mode: "auto", prompt: "A cinematic reveal", firstFrameAssetId: assetId,
     projectId,
     getAuthorizedAssetContext: async () => ({ ownerId, projectId }),
-    resolvePrivateAsset: async () => ({ uri: "https://private.example.com/video.mp4" })
+    resolvePrivateAsset: async () => ({ uri: "https://private.example.com/video.mp4", mediaType: "video/mp4" })
   }), error => error.code === "RUNWAY_RECIPE_ASSET_INVALID");
 });
