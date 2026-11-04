@@ -302,3 +302,10 @@ Added `server/fal-cloud-video-adapter.mjs`, which implements the provider-aware 
 - Output URLs are restricted to HTTPS FAL media hosts before they are handed to the private-ingestion handler.
 
 The adapter contract tests cover the durable task-ID handoff, status mapping, private reference resolution requirements, handler injection, exact model matching, output URL validation and remote opt-in. This adapter is designed to be registered with the exact-match provider router from the separate provider-aware worker branch; it is not yet registered in the production worker composition. The cloud-worker chain and its migrations remain separate draft work and must be reviewed together before any deployment.
+
+
+### Request-level billing reconciliation
+
+Added `server/fal-billing-cost-resolver.mjs`. It queries FAL's documented `GET /v1/models/billing-events` endpoint using both the exact request ID and exact model endpoint, requires one matching billed event, and derives USD cost from the precision-preserving `cost_estimate_nano_usd` field. It cross-checks the value against `cost_total` and records a request/timestamp evidence reference.
+
+No model list-price estimate or generated-duration heuristic is treated as actual cost. Missing billing events return a retryable not-ready code; duplicate or inconsistent events fail closed. The resolver requires a FAL API key with the documented billing permissions (`billing:usage:read`, `auth:keys:read`, `account:users:read`; BILLING or FULL preset). The FAL adapter still requires the resolver to be explicitly injected, so no production billing credential or permission is assumed.
