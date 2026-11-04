@@ -47,15 +47,15 @@ function harness({ fileState = "PROCESSING", record = async () => {}, find, load
         sizeBytes: String(bytes.byteLength), state: fileState
       }});
     }
+    if (String(url) === "https://generativelanguage.googleapis.com/v1beta/files/" + fileId && options.method === "DELETE") {
+      return response(204, null);
+    }
     if (String(url) === "https://generativelanguage.googleapis.com/v1beta/files/" + fileId) {
       gets++;
       return response(200, { file: {
         name: fileName, uri: fileUri, mimeType: "image/png",
         sizeBytes: String(bytes.byteLength), state: "ACTIVE"
       }});
-    }
-    if (String(url) === "https://generativelanguage.googleapis.com/v1beta/files/" + fileId && options.method === "DELETE") {
-      return response(204, null);
     }
     throw new Error("Unexpected URL: " + url);
   };
@@ -102,7 +102,7 @@ test("reuses an unexpired provider-file mapping only for the exact owner, projec
   assert.equal(h.records.length, 0);
 });
 
-test("rejects provider-file cache records with mismatched scope or untrusted URI", async () => {
+test("ignores mismatched or untrusted cache records and reuploads from the private source", async () => {
   const h = harness({
     find: async () => ({
       ownerId: "99999999-9999-4999-8999-999999999999", projectId, assetId,
@@ -110,10 +110,10 @@ test("rejects provider-file cache records with mismatched scope or untrusted URI
       uri: "https://attacker.example/file", expiresAt: "2026-11-06T12:00:00.000Z"
     })
   });
-  await assert.rejects(
-    () => h.gateway.resolveAsset({ assetId, ownerId, projectId, mediaType: "image/png" }),
-    error => error.code === "GEMINI_FILE_RESPONSE_INVALID"
-  );
+  const result = await h.gateway.resolveAsset({ assetId, ownerId, projectId, mediaType: "image/png" });
+  assert.equal(result.uri, fileUri);
+  assert.equal(h.calls.length, 3);
+  assert.equal(h.records.length, 1);
 });
 
 test("fails closed for absent credentials, unsupported MIME and mismatched private asset scope", async () => {
