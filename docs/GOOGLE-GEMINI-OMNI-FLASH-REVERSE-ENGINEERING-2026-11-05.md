@@ -193,3 +193,9 @@ Drive picker upload follow-up:
 - The authenticated Drive picker now includes both a filtered existing-file view and Google's device-upload view. A user can upload a local file into their own Drive from the picker and then import the selected file into the app's private project asset store.
 - OAuth remains limited to the per-file `drive.file` scope (plus OpenID identity scopes); no full-Drive access is requested.
 - This is separate from the Gemini Files API gateway, which uploads private app assets to Google's temporary Files service for model execution. Both upload paths remain disabled until staging credentials and explicit feature flags are configured.
+
+Budgeted enqueue hardening:
+- The shared cloud-video enqueue boundary now recognizes the exact Google provider/model pair only when `GEMINI_OMNI_ENABLED`, `GEMINI_OMNI_ALLOW_REMOTE`, `GEMINI_OMNI_PAID_TIER_CONFIRMED` and `GEMINI_OMNI_WORKER_ENABLED` are all explicitly `true`.
+- The direct Gemini API preflight remains restricted to 720p/provider-default until the API pricing contract for other output resolutions is verified. The reservation is USD 2.586464, covering a full 1,048,576-token input context plus a 10-second 720p output at 5,792 tokens/second. This is a conservative maximum, not an invoice.
+- The Postgres enqueue function independently enforces the Google model, 3–10 second duration, 720p-only budget tier and minimum reservation. The existing budget policy, approval consumption, idempotency and service-role-only RPC boundaries remain in force.
+- PostgreSQL integration tests now create a Google budget policy and verify successful queueing, under-reservation rejection and unsupported-resolution rejection. They do not call Google's generation API.
