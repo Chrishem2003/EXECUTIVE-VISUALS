@@ -112,3 +112,125 @@ test("provider errors are sanitized and do not disclose response bodies", async 
   await assert.rejects(() => rateLimited.preflight({ configId: "creative_low_cost", prompt: "test" }),
     error => error.code === "RUNWAY_RATE_LIMITED" && !error.message.includes("secret body"));
 });
+
+
+test("payload supports documented reference media, negative prompts and moderation", () => {
+  const payload = buildRunwayRouterDryRunPayload({
+    configId: "creative_low_cost",
+    prompt: "Animate this product",
+    negativePrompt: "No text or logos",
+    referenceImages: [
+      { uri: "https://assets.example.com/first-frame.png", role: "first" },
+      { uri: "runway://uploads/reference-image", role: "reference" }
+    ],
+    referenceVideos: [
+      { uri: "https://assets.example.com/source.mp4", role: "source" }
+    ],
+    referenceAudio: [
+      { uri: "https://assets.example.com/guide.mp3" }
+    ],
+    contentModeration: { publicFigureThreshold: "auto" }
+  });
+  assert.deepEqual(payload.input.referenceImages, [
+    { uri: "https://assets.example.com/first-frame.png", role: "first" },
+    { uri: "runway://uploads/reference-image", role: "reference" }
+  ]);
+  assert.deepEqual(payload.input.referenceVideos, [
+    { uri: "https://assets.example.com/source.mp4", role: "source" }
+  ]);
+  assert.deepEqual(payload.input.referenceAudio, [
+    { uri: "https://assets.example.com/guide.mp3" }
+  ]);
+  assert.equal(payload.input.negativePrompt, "No text or logos");
+  assert.deepEqual(payload.input.contentModeration, { publicFigureThreshold: "auto" });
+  assert.equal(payload.dryRun, true);
+});
+
+test("reference media counts, roles, schemes and MIME families are validated", () => {
+  const base = { configId: "router", prompt: "test" };
+  assert.throws(() => buildRunwayRouterDryRunPayload({
+    ...base, referenceImages: Array.from({ length: 5 }, () => ({
+      uri: "https://assets.example.com/image.png", role: "reference"
+    }))
+  }));
+  assert.throws(() => buildRunwayRouterDryRunPayload({
+    ...base, referenceImages: [
+      { uri: "https://assets.example.com/one.png", role: "first" },
+      { uri: "https://assets.example.com/two.png", role: "first" }
+    ]
+  }));
+  assert.throws(() => buildRunwayRouterDryRunPayload({
+    ...base, referenceVideos: [
+      { uri: "https://assets.example.com/one.mp4", role: "source" },
+      { uri: "https://assets.example.com/two.mp4", role: "source" }
+    ]
+  }));
+  assert.throws(() => buildRunwayRouterDryRunPayload({
+    ...base, referenceAudio: [
+      { uri: "https://assets.example.com/one.mp3" },
+      { uri: "https://assets.example.com/two.mp3" }
+    ]
+  }));
+  assert.throws(() => buildRunwayRouterDryRunPayload({
+    ...base, referenceImages: [{ uri: "https://assets.example.com/image.png", role: "source" }]
+  }));
+  assert.throws(() => buildRunwayRouterDryRunPayload({
+    ...base, referenceVideos: [{ uri: "https://assets.example.com/video.mp4", role: "first" }]
+  }));
+  assert.throws(() => buildRunwayRouterDryRunPayload({
+    ...base, referenceImages: [{ uri: "https://assets.example.com/audio.mp3", role: "reference" }]
+  }));
+  assert.throws(() => buildRunwayRouterDryRunPayload({
+    ...base, negativePrompt: "x".repeat(1001)
+  }));
+  assert.throws(() => buildRunwayRouterDryRunPayload({
+    ...base, contentModeration: { publicFigureThreshold: "disabled" }
+  }));
+});
+
+test("client resolves reference assets only within the active owner and project", async () => {
+  const calls = [];
+  const client = createRunwayRouterDryRunClient({
+    env,
+    resolvePrivateAsset: async args => {
+      calls.push(args);
+      return { uri: "https://private-assets.example.com/" + args.assetId + "." + args.mediaType };
+    },
+    fetchImpl: async (_url, options) => {
+      const sent = JSON.parse(options.body);
+      assert.deepEqual(sent.input.referenceImages, [
+        { uri: "https://private-assets.example.com/asset_123.image", role: "first" }
+      ]);
+      assert.deepEqual(sent.input.referenceAudio, [
+        { uri: "https://private-assets.example.com/audio_456.audio" }
+      ]);
+      return response(200, decision);
+    }
+  });
+  await client.preflight({
+    configId: "creative_low_cost", prompt: "Use supplied media",
+    ownerId: "owner_1", projectId: "project_1",
+    referenceImages: [{ assetId: "asset_123", ownerId: "owner_1", projectId: "project_1", role: "first" }],
+    referenceAudio: [{ assetId: "audio_456", ownerId: "owner_1", projectId: "project_1" }]
+  });
+  assert.equal(calls.length, 2);
+  assert.deepEqual(calls.map(x => [x.ownerId, x.projectId, x.mediaType]), [
+    ["owner_1", "project_1", "image"], ["owner_1", "project_1", "audio"]
+  ]);
+});
+
+test("client rejects cross-project assets and refuses references without a private resolver", async () => {
+  const client = createRunwayRouterDryRunClient({
+    env, fetchImpl: async () => response(200, decision)
+  });
+  await assert.rejects(() => client.preflight({
+    configId: "creative_low_cost", prompt: "test",
+    ownerId: "owner_1", projectId: "project_1",
+    referenceImages: [{ assetId: "asset_1", ownerId: "owner_1", projectId: "other_project", role: "first" }]
+  }), error => error.code === "RUNWAY_ROUTER_ASSET_FORBIDDEN");
+  await assert.rejects(() => client.preflight({
+    configId: "creative_low_cost", prompt: "test",
+    ownerId: "owner_1", projectId: "project_1",
+    referenceImages: [{ assetId: "asset_1", ownerId: "owner_1", projectId: "project_1", role: "first" }]
+  }), error => error.code === "RUNWAY_ROUTER_ASSET_RESOLVER_REQUIRED");
+});
