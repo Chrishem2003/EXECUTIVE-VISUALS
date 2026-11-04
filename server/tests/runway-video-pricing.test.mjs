@@ -116,6 +116,7 @@ test("prices Ruby HDR delivery profiles at the base HDR rate without a second su
   assert.equal(estimateRunwayVideoCredits({...source,sourceWidth:3840,sourceHeight:2160,outputFormat:"hdr10"}).estimatedCredits,400);
   assert.throws(()=>estimateRunwayVideoCredits({...source,outputFormat:"hdr_pq_12bit_master"}),e=>e.code==="RUNWAY_PRICE_UNSUPPORTED_OPTION");
   assert.throws(()=>estimateRunwayVideoCredits({...source,outputFormat:"hdr_png_sequence"}),e=>e.code==="RUNWAY_PRICE_UNSUPPORTED_OPTION");
+  assert.throws(()=>estimateRunwayVideoCredits({...source,sourceWidth:4096}),e=>e.code==="RUNWAY_PRICE_INPUT_REQUIRED");
 });
 
 test("Gen-4.5 HDR formats add the documented professional surcharge",()=>{
