@@ -34,6 +34,10 @@ Google shut down the Gemini API Veo 3.1 Preview endpoints on October 22, 2026. G
 
 ## Implementation
 
+- `server/google-video-interaction-repository.mjs` persists interaction ID, owner/project/job scope, request hash, lineage, state and application expiry without storing media bytes.
+- `server/google-omni-cloud-video-adapter.mjs` bridges the existing lease-aware cloud-video executor, durable submission ledger and private output ingestor. It is implemented but remains disabled at provider selection and enqueue.
+- `server/google-interaction-retention-worker.mjs` deletes expired stored interactions with a retryable deleting state and idempotent handling of provider 404 responses.
+- `supabase/migrations/20261105120000_google_video_interactions.sql` adds a service-role-only, forced-RLS interaction ownership ledger tied to cloud jobs, users and projects.
 - `server/google-omni-flash-interaction.mjs`
   - Builds a pure request plan for the Interactions API.
   - Uses only private asset IDs, authenticated owner/project context, and a server-side Google Files URI resolver.
@@ -61,5 +65,7 @@ This provider should plug into the shared video generation contract and durable 
 5. Private ingestion of Google-hosted output before user delivery.
 6. Output validation, actual-cost reconciliation, audit evidence and retention/cleanup.
 7. Region-aware gating for uploaded-video editing/extension.
+8. Verified Google billing evidence and model pricing before enqueue accepts the Google provider.
+9. A configured retention policy consistent with the project's Gemini API tier and AI Studio log-retention setting.
 
 Google API credentials must remain server-side. The planner returns only the authentication header name and a server-only credential-source marker; it never handles or returns a credential.
