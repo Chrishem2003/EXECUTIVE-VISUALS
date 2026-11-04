@@ -44,7 +44,7 @@ test("Seedance 2.0 tiers expose distinct verified capabilities and dated credit 
   const mini = getVideoProviderModel("runway", "seedance2_mini");
   for (const model of [full, fast, mini]) {
     assert.equal(model.availability, "disabled");
-    assert.equal(model.executionAdapter, "google-omni-cloud-video-adapter");
+    assert.equal(model.executionAdapter, "not_implemented");
     assert.equal(model.gateway, "runway");
     assert.equal(model.capabilities.textToVideo, true);
     assert.equal(model.capabilities.imageToVideo, true);
