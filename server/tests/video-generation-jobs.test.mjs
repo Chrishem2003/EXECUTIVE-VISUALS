@@ -51,8 +51,8 @@ test("queues only after explicit budget approval and remote usage reservation", 
 test("idempotent replay returns the original durable job without reserving budget twice", async () => {
   const f = await fixture();
   try {
-    const first = f.service.enqueue({ ownerId, idempotencyKey: "video-002", input: baseInput });
-    const replay = f.service.enqueue({ ownerId, idempotencyKey: "video-002", input: baseInput });
+    const first = f.service.enqueue({ ownerId, projectId, idempotencyKey: "video-002", input: baseInput });
+    const replay = f.service.enqueue({ ownerId, projectId, idempotencyKey: "video-002", input: baseInput });
     assert.equal(replay.job.id, first.job.id);
     assert.equal(replay.idempotentReplay, true);
     assert.equal(f.budgetCalls.length, 1);
@@ -113,5 +113,14 @@ test("requires explicit provider/model, safe idempotency keys and budget adapter
   try {
     assert.throws(() => f.service.enqueue({ ownerId, input: { prompt: "No provider" } }), e => e.code === "VIDEO_JOB_PROVIDER_REQUIRED");
     assert.throws(() => f.service.enqueue({ ownerId, idempotencyKey: "bad key", input: baseInput }), e => e.code === "VIDEO_JOB_IDEMPOTENCY_INVALID");
+  } finally { f.db.close(); await rm(f.root, { recursive: true, force: true }); }
+});
+
+test("project IDs embedded in input cannot bypass authorization or disagree with the route scope", async () => {
+  const f = await fixture();
+  try {
+    assert.throws(() => f.service.enqueue({ ownerId, input: { ...baseInput, projectId: "323e4567-e89b-42d3-a456-426614174000" } }), e => e.code === "VIDEO_JOB_PROJECT_FORBIDDEN");
+    assert.throws(() => f.service.enqueue({ ownerId, projectId, input: { ...baseInput, projectId: "323e4567-e89b-42d3-a456-426614174000" } }), e => e.code === "VIDEO_JOB_PROJECT_MISMATCH");
+    assert.equal(f.db.prepare("SELECT COUNT(*) AS n FROM jobs WHERE job_type='video.generate'").get().n, 0);
   } finally { f.db.close(); await rm(f.root, { recursive: true, force: true }); }
 });
