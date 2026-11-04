@@ -85,6 +85,21 @@ export function createRunwayVideoAdapter({env=process.env,fetchImpl=globalThis.f
  }
  return Object.freeze({
   provider:"runway",model:MODEL,minimumPollIntervalMs:RUNWAY_MIN_POLL_INTERVAL_MS,
+  async function prepareInput(input,context={}){
+   const normalized=normalizeVideoGenerationRequest(input);
+   assertVideoCapabilities(normalized,CAPABILITIES);
+   if(!normalized.startFrameAssetId)return input;
+   if(typeof resolveAssetUri!=="function")throw fail("Runway image-to-video requires a server-side private asset resolver.","RUNWAY_IMAGE_ASSET_RESOLVER_REQUIRED");
+   const ownerId=context?.job?.owner_id,projectId=context?.job?.project_id||null;
+   if(typeof ownerId!=="string"||!ownerId.trim())throw fail("Runway image-to-video requires an owned job context.","RUNWAY_IMAGE_ASSET_SCOPE_INVALID");
+   let promptImage;
+   try{promptImage=await resolveAssetUri({assetId:normalized.startFrameAssetId,ownerId,projectId});}
+   catch{throw fail("The selected first-frame asset could not be resolved before provider submission.","RUNWAY_IMAGE_ASSET_RESOLUTION_FAILED");}
+   const ratio=ASPECT_TO_RATIO[normalized.aspectRatio];
+   if(!ratio)throw fail("Runway Gen-4.5 does not support the requested aspect ratio.","RUNWAY_UNSUPPORTED_CAPABILITY");
+   buildRunwayImageVideoPayload({prompt:normalized.prompt,promptImage,duration:normalized.durationSeconds,ratio,seed:normalized.seed});
+   return Object.freeze({...input,runwayPromptImage:promptImage});
+  }
   async submit(input,context={}){
    const normalized=normalizeVideoGenerationRequest(input);
    assertVideoCapabilities(normalized,CAPABILITIES);
@@ -94,12 +109,8 @@ export function createRunwayVideoAdapter({env=process.env,fetchImpl=globalThis.f
    if(!ratio)throw fail("Runway Gen-4.5 does not support the requested aspect ratio.","RUNWAY_UNSUPPORTED_CAPABILITY");
    let endpoint,payload;
    if(normalized.startFrameAssetId){
-    if(typeof resolveAssetUri!=="function")throw fail("Runway image-to-video requires a server-side private asset resolver.","RUNWAY_IMAGE_ASSET_RESOLVER_REQUIRED");
-    const ownerId=context?.job?.owner_id,projectId=context?.job?.project_id||null;
-    if(typeof ownerId!=="string"||!ownerId.trim())throw fail("Runway image-to-video requires an owned job context.","RUNWAY_IMAGE_ASSET_SCOPE_INVALID");
-    let promptImage;
-    try{promptImage=await resolveAssetUri({assetId:normalized.startFrameAssetId,ownerId,projectId});}
-    catch{throw fail("The selected first-frame asset could not be resolved in the authorized project.","RUNWAY_IMAGE_ASSET_RESOLUTION_FAILED");}
+    const promptImage=input?.runwayPromptImage;
+    if(typeof promptImage!=="string")throw fail("Runway image input was not prepared before provider submission.","RUNWAY_IMAGE_ASSET_NOT_PREPARED");
     payload=buildRunwayImageVideoPayload({prompt:normalized.prompt,promptImage,duration:normalized.durationSeconds,ratio,seed:normalized.seed});
     endpoint="/image_to_video";
    }else{
