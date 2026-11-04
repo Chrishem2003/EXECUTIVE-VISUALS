@@ -124,6 +124,10 @@ for (const table of ["video_generation_budget_policies","video_generation_budget
   if (!videoBudgetSql.includes(`create table if not exists executive_visuals.${table}`)) issues.push(`Cloud video budget table is missing: ${table}.`);
   if (!videoBudgetSql.includes(`alter table executive_visuals.${table} enable row level security;`)) issues.push(`Cloud video budget RLS is missing: ${table}.`);
 }
+if (!videoBudgetSql.includes("revoke all on executive_visuals.video_generation_budget_policies from public, anon, authenticated;") ||
+    !videoBudgetSql.includes("revoke all on executive_visuals.video_generation_budget_approvals from public, anon, authenticated;")) {
+  issues.push("Budget policy and approval tables must revoke inherited table privileges before granting the minimum client operations.");
+}
 if (!videoBudgetSql.includes("grant insert (owner_id, project_id, provider, model, currency, spend_limit_amount, max_per_job_amount, rolling_24h_request_limit, enabled)")) {
   issues.push("Budget policy inserts must not allow clients to seed server-maintained counters.");
 }
