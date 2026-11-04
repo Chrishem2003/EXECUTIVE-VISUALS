@@ -122,3 +122,19 @@ test("finishing plan plugs into the durable pipeline approval and full-budget ga
   assert.equal(result.steps.length, 2);
   assert.equal(executions, 2);
 });
+
+test("accepts canonical pricing dates and rejects impossible or non-canonical dates", () => {
+  const base = {
+    pipelineId: "pricing-date-check",
+    sourceAsset,
+    sourceMetadata,
+    operations: [{ kind: "upscale", resolution: "2k" }]
+  };
+  assert.equal(createRunwayVideoFinishingPlan({ ...base, pricingDate: "2026-11-04" }).pricingDate, "2026-11-04");
+  for (const pricingDate of ["2026-02-31", "2026-2-03", "26-11-04", "2026/11/04", null]) {
+    assert.throws(
+      () => createRunwayVideoFinishingPlan({ ...base, pricingDate }),
+      error => error.code === "RUNWAY_FINISHING_PLAN_INVALID"
+    );
+  }
+});
