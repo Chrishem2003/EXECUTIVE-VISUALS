@@ -34,7 +34,7 @@ export const VIDEO_PROVIDER_CATALOG = freeze([
           nativeAudio: false,
           negativePrompt: false,
           seed: true,
-          startFrame: false,
+          startFrame: true,
           endFrame: false,
           motionReference: false,
           referenceImages: false,
