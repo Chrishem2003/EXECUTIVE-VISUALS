@@ -169,9 +169,10 @@ const approvalInsertPolicy = videoBudgetSql.split("create policy ev_video_budget
 if (!approvalInsertPolicy.includes("p.owner_id = (select auth.uid())") || approvalInsertPolicy.includes("project_members")) {
   issues.push("Per-request budget approvals for project generation must be restricted to the project owner.");
 }
-if (!videoBudgetSql.includes("as $") ||
-    !videoBudgetSql.includes("end;\\n$;") ||
-    /as \\$(?:\\r?\\n)|\\r?\\n\\$;/.test(videoBudgetSql)) {
+if (!videoBudgetSql.includes("as $$") ||
+    !videoBudgetSql.includes("end;\n$$;") ||
+    /as \$(?!\$)\s*begin/.test(videoBudgetSql) ||
+    /\n\$(?!\$);/.test(videoBudgetSql)) {
   issues.push("Cloud video budget trigger functions must use valid, complete dollar quoting.");
 }
 for (const fn of ["defer_video_generation_job","quarantine_video_generation_job","resume_reconciled_video_generation_job"]) {
