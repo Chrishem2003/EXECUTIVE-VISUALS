@@ -113,6 +113,8 @@ test("prices 10-bit SDR and Gen-4.5 HDR output by output megapixels",()=>{
   assert.equal(estimateRunwayVideoCredits({...base,outputFormat:"hdr10"}).estimatedCredits,160);
   assert.equal(estimateRunwayVideoCredits({...base,outputFormat:"hdr_prores"}).estimatedCredits,160);
   assert.equal(estimateRunwayVideoCredits({...base,outputWidth:3840,outputHeight:2160,outputFormat:"hdr10"}).estimatedCredits,260);
+  assert.equal(estimateRunwayVideoCredits({...base,outputWidth:2000,outputHeight:2000,outputFormat:"hdr10"}).estimatedCredits,160);
+  assert.equal(estimateRunwayVideoCredits({...base,outputWidth:2001,outputHeight:2000,outputFormat:"hdr10"}).estimatedCredits,260);
   assert.throws(()=>estimateRunwayVideoCredits({model:"aleph2",durationSeconds:5,outputWidth:1920,outputHeight:1080,outputFormat:"hdr10",pricingDate:date}),e=>e.code==="RUNWAY_PRICE_UNSUPPORTED_OPTION");
   assert.throws(()=>estimateRunwayVideoCredits({model:"gen4.5",durationSeconds:5,outputFormat:"hdr10",pricingDate:date}),e=>e.code==="RUNWAY_PRICE_INPUT_REQUIRED");
 });
