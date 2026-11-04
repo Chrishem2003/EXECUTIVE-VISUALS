@@ -46,8 +46,10 @@ export function createRunwayVideoFinishingPlan({
   if (!Array.isArray(operations) || operations.length < 1 || operations.length > 3) {
     throw fail("Choose between one and three supported finishing operations.");
   }
-  if (typeof pricingDate !== "string" || !/^20\\d{2}-\\d{2}-\\d{2}$/.test(pricingDate) ||
-      Number.isNaN(Date.parse(pricingDate + "T00:00:00Z"))) {
+  const parsedPricingDate = typeof pricingDate === "string" && /^20\\d{2}-\\d{2}-\\d{2}$/.test(pricingDate)
+    ? new Date(pricingDate + "T00:00:00Z") : null;
+  if (!parsedPricingDate || Number.isNaN(parsedPricingDate.getTime()) ||
+      parsedPricingDate.toISOString().slice(0, 10) !== pricingDate) {
     throw fail("An explicit valid YYYY-MM-DD pricingDate is required.");
   }
 
@@ -87,6 +89,10 @@ export function createRunwayVideoFinishingPlan({
     } else {
       if (durationSeconds > 30) throw fail("Ruby HDR accepts source clips up to 30 seconds.");
       if (sourceMetadata.dynamicRange !== "sdr") throw fail("Ruby HDR requires a verified SDR source.");
+      if (seen.has("upscale") &&
+          (operation.expectedInputWidth == null || operation.expectedInputHeight == null)) {
+        throw fail("Expected post-upscale HDR input dimensions are required for an accurate Ruby estimate.");
+      }
       const sourceWidth = dimension(operation.expectedInputWidth ?? width, "HDR source width");
       const sourceHeight = dimension(operation.expectedInputHeight ?? height, "HDR source height");
       const outputFormat = operation.outputFormat ?? "hdr10";
