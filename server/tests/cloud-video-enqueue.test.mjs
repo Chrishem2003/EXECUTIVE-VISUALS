@@ -262,7 +262,7 @@ test("Google Omni enqueue rejects under-reservation, unsupported resolution, inv
   await assert.rejects(()=>client.enqueue(googleArgs({reservedAmount:2.586463})),error=>
     error.code==="VIDEO_BUDGET_BELOW_PROVIDER_ESTIMATE"&&error.estimate.amount===2.586464);
   await assert.rejects(()=>client.enqueue(googleArgs({input:{...googleInput,resolution:"1080p"}})),error=>
-    error.code==="VIDEO_GENERATION_UNSUPPORTED_CAPABILITY");
+    error.code==="VIDEO_PRICE_UNSUPPORTED_RESOLUTION");
   await assert.rejects(()=>client.enqueue(googleArgs({input:{...googleInput,durationSeconds:2}})),error=>
     error.code==="VIDEO_PRICE_DURATION_INVALID");
   await assert.rejects(()=>client.enqueue(googleArgs({input:{...googleInput,negativePrompt:"no blur"}})),error=>
