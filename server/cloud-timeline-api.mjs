@@ -568,7 +568,8 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
   if(!req||typeof req[Symbol.asyncIterator]!=="function")return response(400,{error:{code:"UPLOAD_STREAM_REQUIRED",message:"A binary upload stream is required."}});
   let name="upload";try{name=decodeURIComponent(String(originalName||"upload"));}catch{return response(400,{error:{code:"INVALID_FILE_NAME",message:"File name header is malformed."}});}
   name=basename(name.replace(/[\\/\u0000-\u001f\u007f]/g,"_")).normalize("NFKC").replace(/[^\p{L}\p{N}._() -]/gu,"_").slice(0,180)||"upload";
-  const declared=Number(req.headers?.["content-length"]||0);if(declared>maxUploadBytes)return response(413,{error:{code:"UPLOAD_TOO_LARGE",message:"Upload exceeds the configured size limit."}});
+  const declaredHeader=req.headers?.["content-length"];let declared=null;
+  if(declaredHeader!==undefined){const raw=String(declaredHeader).trim();if(!/^(0|[1-9]\d*)$/.test(raw)||!Number.isSafeInteger(Number(raw)))return response(400,{error:{code:"INVALID_CONTENT_LENGTH",message:"Content-Length must be a valid non-negative integer."}});declared=Number(raw);if(declared>maxUploadBytes)return response(413,{error:{code:"UPLOAD_TOO_LARGE",message:"Upload exceeds the configured size limit."}});}
   if(activeUploads>=maxConcurrentUploads)return response(429,{error:{code:"UPLOAD_CAPACITY_EXCEEDED",message:"The cloud upload service is at capacity. Retry shortly."}});
   activeUploads++;
   let directory=null;
@@ -579,6 +580,7 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
    directory=await mkdtemp(join(tempRoot,"ev-cloud-upload-"));
    const filePath=filePathFor(directory);
    await pipeline(req,meter,createWriteStream(filePath,{flags:"wx"}));
+   if(declared!==null&&size!==declared)return response(400,{error:{code:"CONTENT_LENGTH_MISMATCH",message:"The streamed upload size does not match Content-Length."}});
    if(size<1)return response(400,{error:{code:"EMPTY_UPLOAD",message:"Empty uploads are not accepted."}});
    const valid=mediaType==="image/png"?header.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10]))
     :mediaType==="image/jpeg"?header[0]===255&&header[1]===216&&header[2]===255
