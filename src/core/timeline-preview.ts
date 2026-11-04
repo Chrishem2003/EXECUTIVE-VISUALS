@@ -98,3 +98,9 @@ export function decibelsToLinearGain(decibels:number):number {
  const bounded=Math.max(-60,Math.min(24,decibels));
  return Math.pow(10,bounded/20);
 }
+
+/** Resolve temporary preview mute/solo state without mutating the saved timeline. */
+export function isPreviewTrackAudible(trackId:string,mutedTrackIds:ReadonlySet<string>,soloTrackId:string|null):boolean {
+ if(mutedTrackIds.has(trackId))return false;
+ return !soloTrackId||soloTrackId===trackId;
+}
