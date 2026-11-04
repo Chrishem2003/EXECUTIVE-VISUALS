@@ -65,6 +65,9 @@ export async function executeVideoGenerationJob({
   }
 
   if (submission.state === "prepared") {
+    const providerInput = typeof adapter.prepareInput === "function"
+      ? await adapter.prepareInput(input, { job })
+      : input;
     const begun = ledger.beginSubmission(job.id);
     if (!begun.started) {
       throw fail("Another worker already began this provider submission.", "VIDEO_SUBMISSION_IN_PROGRESS");
@@ -72,7 +75,7 @@ export async function executeVideoGenerationJob({
     onEvent({ type: "video.provider_submission_started", jobId: job.id, provider: input.provider, model: input.model });
     let task;
     try {
-      task = await adapter.submit(input, { job });
+      task = await adapter.submit(providerInput, { job });
     } catch (error) {
       // A transport error can occur after provider acceptance. Never retry
       // the POST automatically, even for a nominally transient failure.
