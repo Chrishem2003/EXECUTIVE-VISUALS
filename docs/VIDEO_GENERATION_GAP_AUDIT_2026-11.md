@@ -330,3 +330,10 @@ No provider is enabled by default. The runtime still requires all global opt-in 
 ### Luma task-ID contract correction — 2026-11-05
 
 The current Luma Agents Create/Get API schema declares generation IDs as UUIDs. The adapter previously accepted arbitrary 8–128 character identifiers, which was broader than the documented contract. Tightened both persisted task-ID and response matching to UUIDv4 syntax and updated fixtures to use UUID-shaped generation IDs. This is a fail-closed validation correction; it does not change API calls or provider enablement.
+
+
+### Luma settled-credit cost resolver — 2026-11-05
+
+Added `createLumaActualCostResolver`. It converts the generation-specific `usage.credits_charged` value returned by Luma's GET generation endpoint into USD using an explicit `LUMA_USD_PER_CREDIT` account/contract rate. The resolver rejects missing, null, non-integer or unsettled usage and never substitutes the published $0.003 list rate. A confirmed zero charge remains a valid settled zero.
+
+This uses the documented task-level charge rather than aggregate usage. The rate must be configured from the account's actual plan/contract or the documented default list rate when appropriate; it is not inferred by the application.
