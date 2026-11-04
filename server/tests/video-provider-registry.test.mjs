@@ -54,6 +54,10 @@ test("Luma Ray 3.2 declares supported anchor frames, keyframes, edit, reframe an
   assert.deepEqual(model.constraints.supportedDurationsSeconds, [5, 10]);
   assert.equal(model.constraints.maxKeyframes, 64);
   assert.equal(model.constraints.hdrOutput, true);
+  assert.deepEqual(model.constraints.hdrGenerationDurationsSeconds, [5]);
+  assert.deepEqual(model.constraints.hdrGenerationResolutions, ["720p", "1080p"]);
+  assert.deepEqual(model.constraints.hdrVideoEditDurationsSeconds, [5, 10]);
+  assert.equal(model.constraints.reframeDynamicRange, "sdr_only");
   assert.equal(model.constraints.exrExportRequiresHdr, true);
   assert.equal(model.constraints.outputUrlExpirySeconds, 3600);
   assert.equal(model.availability, "disabled");
