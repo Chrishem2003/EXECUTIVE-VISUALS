@@ -93,7 +93,7 @@ export async function buildGeminiOmniFlashInteractionRequest({
     typeof projectId !== "string" || !UUID.test(projectId) ||
     typeof getAuthorizedAssetContext !== "function"
   )) {
-    throw fail("Private media requires authenticated project scope and a Google Files resolver.", "GEMINI_OMNI_ASSET_GATES_MISSING");
+    throw fail("Private media and stateful interaction references require authenticated project scope.", "GEMINI_OMNI_ASSET_GATES_MISSING");
   }
 
   let scope;
