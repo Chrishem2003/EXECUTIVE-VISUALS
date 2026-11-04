@@ -87,10 +87,10 @@ async function syncSequenceCaptions(frame:number){
   cue.style.gridColumn=String(style.column);cue.style.gridRow=String(style.row);
   cue.style.fontFamily=style.fontName+", sans-serif";cue.style.fontSize=style.fontSize+"px";cue.style.color=style.primaryColor;
   cue.style.margin=style.marginV+"px 16px";
-  cue.style.background=style.backgroundMode==="none"?"transparent":style.backgroundColor;
-  cue.style.setProperty("--caption-bg-opacity",String(style.opacity));
+  const rgb=style.backgroundColor.match(/^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i);
+  cue.style.background=style.backgroundMode==="none"||!rgb?"transparent":"rgba("+parseInt(rgb[1],16)+","+parseInt(rgb[2],16)+","+parseInt(rgb[3],16)+","+style.opacity+")";
   cue.style.textShadow=style.shadow>0?"0 2px "+style.shadow+"px #000, 0 0 "+(style.outline+1)+"px #000":"none";
-  cue.style.webkitTextStroke=style.outline>0?Math.min(2,style.outline/2)+"px #000":"0";
+  cue.style.setProperty("-webkit-text-stroke",style.outline>0?Math.min(2,style.outline/2)+"px #000":"0");
   layer.appendChild(cue);
  }
  if(errors.length&&!rendered.length){const message=document.createElement("div");message.className="sequence-caption-error";message.textContent=errors[0];layer.appendChild(message);}
