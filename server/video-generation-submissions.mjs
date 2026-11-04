@@ -150,6 +150,29 @@ export function createVideoSubmissionLedger({ db } = {}) {
     },
 
     get,
+    quarantineStaleSubmissions({ olderThan, limit = 100 } = {}) {
+      const cutoff = typeof olderThan === "string" ? olderThan : "";
+      if (!cutoff || !Number.isFinite(Date.parse(cutoff))) {
+        throw fail("A valid stale-submission cutoff timestamp is required.", "VIDEO_SUBMISSION_CUTOFF_INVALID");
+      }
+      if (!Number.isInteger(limit) || limit < 1 || limit > 1000) {
+        throw fail("Stale-submission limit is invalid.", "VIDEO_SUBMISSION_LIMIT_INVALID");
+      }
+      const stale = db.prepare(`SELECT job_id FROM video_generation_submissions
+        WHERE state='submitting' AND updated_at<=? ORDER BY updated_at ASC LIMIT ?`)
+        .all(cutoff, limit);
+      const now = new Date().toISOString();
+      let quarantined = 0;
+      for (const row of stale) {
+        const result = db.prepare(`UPDATE video_generation_submissions
+          SET state='unknown',last_error_code='STALE_SUBMISSION_REQUIRES_RECONCILIATION',updated_at=?
+          WHERE job_id=? AND state='submitting' AND updated_at<=?`)
+          .run(now, row.job_id, cutoff);
+        quarantined += result.changes;
+      }
+      return Object.freeze({ quarantined, jobIds: Object.freeze(stale.map(row => row.job_id)) });
+    },
+
     listAmbiguous(limit = 100) {
       if (!Number.isInteger(limit) || limit < 1 || limit > 1000) throw fail("Ambiguous submission limit is invalid.", "VIDEO_SUBMISSION_LIMIT_INVALID");
       return db.prepare(`SELECT * FROM video_generation_submissions
