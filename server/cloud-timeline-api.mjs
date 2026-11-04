@@ -569,7 +569,7 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
   let name="upload";try{name=decodeURIComponent(String(originalName||"upload"));}catch{return response(400,{error:{code:"INVALID_FILE_NAME",message:"File name header is malformed."}});}
   name=basename(name.replace(/[\\/\u0000-\u001f\u007f]/g,"_")).normalize("NFKC").replace(/[^\p{L}\p{N}._() -]/gu,"_").slice(0,180)||"upload";
   const declaredHeader=req.headers?.["content-length"];let declared=null;
-  if(declaredHeader!==undefined){const raw=String(declaredHeader).trim();if(!/^(0|[1-9]\\d*)$/.test(raw)||!Number.isSafeInteger(Number(raw)))return response(400,{error:{code:"INVALID_CONTENT_LENGTH",message:"Content-Length must be a valid non-negative integer."}});declared=Number(raw);if(declared>maxUploadBytes)return response(413,{error:{code:"UPLOAD_TOO_LARGE",message:"Upload exceeds the configured size limit."}});}
+  if(declaredHeader!==undefined){const raw=String(declaredHeader).trim();if(!/^(0|[1-9]\d*)$/.test(raw)||!Number.isSafeInteger(Number(raw)))return response(400,{error:{code:"INVALID_CONTENT_LENGTH",message:"Content-Length must be a valid non-negative integer."}});declared=Number(raw);if(declared>maxUploadBytes)return response(413,{error:{code:"UPLOAD_TOO_LARGE",message:"Upload exceeds the configured size limit."}});}
   if(activeUploads>=maxConcurrentUploads)return response(429,{error:{code:"UPLOAD_CAPACITY_EXCEEDED",message:"The cloud upload service is at capacity. Retry shortly."}});
   activeUploads++;
   let directory=null;
