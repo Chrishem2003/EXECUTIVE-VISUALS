@@ -183,6 +183,16 @@ export function createSupabaseAuth({
       throw fail("Supabase session verification is temporarily unavailable.", "SUPABASE_AUTH_UNAVAILABLE");
     },
 
+    async requestPasswordRecovery(email) {
+      const normalizedEmail = String(email || "").trim().toLowerCase();
+      if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(normalizedEmail)) {
+        throw fail("Enter a valid email address.", "INVALID_CREDENTIALS");
+      }
+      const result = await request("/auth/v1/recover", { email: normalizedEmail });
+      if (!result.ok) throw fail("Password recovery is temporarily unavailable. Try again shortly.", "SUPABASE_AUTH_UNAVAILABLE");
+      return true;
+    },
+
     async signOut(cookie) {
       const session = open(cookie);
       if (session) {
