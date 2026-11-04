@@ -16,6 +16,8 @@ const candidate = (providerId, modelId, amount, overrides = {}) => ({
   },
   constraints: { minDurationSeconds: 4, maxDurationSeconds: 15 },
   estimate: estimate(amount), observedLatencyMs: 5000, qualityScore: 0.8,
+  latencyEvidence: { sampleCount: 12, measuredAt: "2026-11-04T12:00:00Z", evidenceReference: "benchmark:latency:run-12" },
+  qualityEvidence: { sampleCount: 8, measuredAt: "2026-11-04T12:00:00Z", evidenceReference: "benchmark:quality:run-8" },
   ...overrides
 });
 
@@ -43,6 +45,8 @@ test("supports quality and measured-latency optimization with deterministic tie 
   ];
   assert.equal(routeVideoModel({ candidates, optimizeFor: "quality" }).selected.modelKey, "runway:seedance2");
   assert.equal(routeVideoModel({ candidates, optimizeFor: "latency" }).selected.modelKey, "luma:ray-3.2");
+  assert.equal(routeVideoModel({ candidates: [candidate("runway", "unmeasured", 0.5, { latencyEvidence: null })], optimizeFor: "latency" }).status, "no_eligible_model");
+  assert.equal(routeVideoModel({ candidates: [candidate("runway", "unmeasured", 0.5, { qualityEvidence: null })], optimizeFor: "quality" }).status, "no_eligible_model");
 });
 
 test("does not route to disabled models, unready adapters or unverified prices", () => {
