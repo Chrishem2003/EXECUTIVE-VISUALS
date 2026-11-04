@@ -1,7 +1,7 @@
 const fail=(message,code)=>Object.assign(new Error(message),{code});
 const ROUTER_SLUG=/^[a-z][a-z0-9_-]{0,63}$/;
 const MODEL_ID=/^[a-z][a-zA-Z0-9._-]{0,95}$/;
-const RESOLUTIONS=new Set(["720p","1080p"]);
+const RESOLUTIONS=new Set(["480p","720p","1080p","4k"]);
 const ASPECT_RATIOS=new Set(["16:9","9:16","1:1","4:3","3:4","21:9"]);
 const RUNWAY_ASSET_URI=/^runway:\/\/[A-Za-z0-9._~:/-]{1,4980}$/;
 
@@ -59,11 +59,11 @@ export function buildRunwayVideoRouterDryRun({configId,input}={}) {
     normalized.aspectRatio=input.aspectRatio;
   }
   if(input.resolution!==undefined) {
-    if(!RESOLUTIONS.has(input.resolution)) throw fail("Router resolution must be 720p or 1080p.","RUNWAY_ROUTER_INVALID_INPUT");
+    if(!RESOLUTIONS.has(input.resolution)) throw fail("Router resolution must be 480p, 720p, 1080p or 4k.","RUNWAY_ROUTER_INVALID_INPUT");
     normalized.resolution=input.resolution;
   }
   if(input.duration!==undefined) {
-    if(!Number.isInteger(input.duration)||input.duration<4||input.duration>15) throw fail("Router duration must be a whole number from 4 to 15 seconds.","RUNWAY_ROUTER_INVALID_INPUT");
+    if(!Number.isInteger(input.duration)||input.duration<2||input.duration>30) throw fail("Router duration must be a whole number from 2 to 30 seconds.","RUNWAY_ROUTER_INVALID_INPUT");
     normalized.duration=input.duration;
   }
   if(input.audio!==undefined) {
@@ -74,26 +74,33 @@ export function buildRunwayVideoRouterDryRun({configId,input}={}) {
     if(!Array.isArray(input.referenceImages)||input.referenceImages.length<1||input.referenceImages.length>4) {
       throw fail("Router referenceImages must contain between 1 and 4 server-uploaded images.","RUNWAY_ROUTER_INVALID_INPUT");
     }
+    let firstCount=0,lastCount=0;
     normalized.referenceImages=input.referenceImages.map((reference,index)=>{
       if(!reference||typeof reference!=="object"||Array.isArray(reference)||
-         typeof reference.uri!=="string"||!RUNWAY_ASSET_URI.test(reference.uri)) {
-        throw fail("Router reference image "+index+" must use a server-resolved Runway upload URI.","RUNWAY_ROUTER_INVALID_INPUT");
+         typeof reference.uri!=="string"||!RUNWAY_ASSET_URI.test(reference.uri)||
+         !["first","last","reference"].includes(reference.role)) {
+        throw fail("Router reference image "+index+" must use a server-resolved Runway URI and a documented first, last or reference role.","RUNWAY_ROUTER_INVALID_INPUT");
       }
-      const item={uri:reference.uri};
-      if(reference.role!==undefined) {
-        if(reference.role!=="first") throw fail("Only the documented first-frame reference role is supported by this contract.","RUNWAY_ROUTER_INVALID_INPUT");
-        item.role="first";
-      }
-      if(reference.view!==undefined) {
-        if(!["front","side","back"].includes(reference.view)) throw fail("Router reference image view is unsupported.","RUNWAY_ROUTER_INVALID_INPUT");
-        item.view=reference.view;
-      }
-      const unknown=Object.keys(reference).filter(key=>!["uri","role","view"].includes(key));
+      if(reference.role==="first"&&++firstCount>1)throw fail("At most one first-frame reference image is allowed.","RUNWAY_ROUTER_INVALID_INPUT");
+      if(reference.role==="last"&&++lastCount>1)throw fail("At most one last-frame reference image is allowed.","RUNWAY_ROUTER_INVALID_INPUT");
+      const unknown=Object.keys(reference).filter(key=>!["uri","role"].includes(key));
       if(unknown.length) throw fail("Unsupported reference image fields: "+unknown.join(", "),"RUNWAY_ROUTER_INVALID_INPUT");
-      return Object.freeze(item);
+      return Object.freeze({uri:reference.uri,role:reference.role});
     });
   }
-  const allowed=new Set(["promptText","negativePrompt","aspectRatio","resolution","duration","audio","referenceImages"]);
+  if(input.seed!==undefined) {
+    if(!Number.isSafeInteger(input.seed)||input.seed<0||input.seed>4294967295)throw fail("Router seed must be an unsigned 32-bit integer.","RUNWAY_ROUTER_INVALID_INPUT");
+    normalized.seed=input.seed;
+  }
+  if(input.contentModeration!==undefined) {
+    const moderation=input.contentModeration;
+    if(!moderation||typeof moderation!=="object"||Array.isArray(moderation))throw fail("Router contentModeration must be an object.","RUNWAY_ROUTER_INVALID_INPUT");
+    const unknownModeration=Object.keys(moderation).filter(key=>key!=="publicFigureThreshold");
+    if(unknownModeration.length)throw fail("Unsupported contentModeration fields: "+unknownModeration.join(", "),"RUNWAY_ROUTER_INVALID_INPUT");
+    if(moderation.publicFigureThreshold!==undefined&&!["auto","low"].includes(moderation.publicFigureThreshold))throw fail("publicFigureThreshold must be auto or low.","RUNWAY_ROUTER_INVALID_INPUT");
+    normalized.contentModeration=Object.freeze({...moderation});
+  }
+  const allowed=new Set(["promptText","negativePrompt","aspectRatio","resolution","duration","audio","referenceImages","seed","contentModeration"]);
   const unknown=Object.keys(input).filter(key=>!allowed.has(key));
   if(unknown.length) throw fail("Unsupported router input fields: "+unknown.join(", "),"RUNWAY_ROUTER_INVALID_INPUT");
   if(input.referenceImages!==undefined) Object.freeze(normalized.referenceImages);
