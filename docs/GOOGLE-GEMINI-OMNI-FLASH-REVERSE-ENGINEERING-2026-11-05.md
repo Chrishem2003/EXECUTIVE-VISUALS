@@ -173,3 +173,8 @@ Remaining integration work:
 - Add scheduled cleanup for expired OAuth state rows.
 
 This is server-side OAuth infrastructure, not yet the complete user-facing Drive file picker. Do not enable it or apply migrations until the staging configuration, Google Cloud consent screen, callback URI and secret storage have been reviewed.
+
+- The OAuth coordinator is now composed with the private Drive bridge in `server/index.mjs`. When explicitly enabled, the server also composes the existing private Cloud Asset Service and downloads export candidates only through short-lived Supabase signed URLs; the downloaded bytes are size- and SHA-256-verified before Drive upload.
+- Additional authenticated endpoints: `POST /api/integrations/google-drive/import` accepts a Picker-selected `fileId` and optional `projectId`; `POST /api/integrations/google-drive/export` accepts a private `assetId`, optional `projectId` and optional destination `parentFolderId`.
+- Import and export endpoints use the authenticated application user as the owner, never accept an owner ID from the request, and are rate-limited. Import is bounded by the configured cloud media upload limit.
+- The Settings screen now has Google Drive connection status, connect and disconnect controls. The Picker itself remains the next frontend milestone; the import endpoint is ready for the Picker's selected file ID.
