@@ -87,12 +87,13 @@ test("Runway image-to-video resolves a private first-frame asset using owner and
   resolveAssetUri:async scope=>{resolved.push(scope);return "runway://uploads/private-image-1";},
   fetchImpl:async(url,options)=>{calls.push({url,options});return json(200,{id,status:"PENDING",estimatedCost:{credits:60}});}
  });
- const result=await adapter.submit({
+ const input={
   prompt:"Animate this scene gently",startFrameAssetId:"private-asset-1",
   durationSeconds:5,aspectRatio:"4:3",requestId:"image-request-1"
- },{
-  job:{owner_id:"owner-1",project_id:"project-1"}
- });
+ };
+ const context={job:{owner_id:"owner-1",project_id:"project-1"}};
+ const prepared=await adapter.prepareInput(input,context);
+ const result=await adapter.submit(prepared,context);
  assert.equal(result.taskId,id);
  assert.deepEqual(resolved,[{assetId:"private-asset-1",ownerId:"owner-1",projectId:"project-1"}]);
  assert.equal(calls[0].url,"https://api.dev.runwayml.com/v1/image_to_video");
@@ -107,9 +108,9 @@ test("Runway image-to-video fails closed without a scoped asset resolver or owne
  let calls=0;
  const fetchImpl=async()=>{calls++;return json(200,{id,status:"PENDING"});};
  const noResolver=createRunwayVideoAdapter({env:enabled,fetchImpl});
- await assert.rejects(()=>noResolver.submit({prompt:"animate",startFrameAssetId:"asset-1"}),e=>e.code==="RUNWAY_IMAGE_ASSET_RESOLVER_REQUIRED");
+ await assert.rejects(()=>noResolver.prepareInput({prompt:"animate",startFrameAssetId:"asset-1"},{job:{owner_id:"owner-1"}}),e=>e.code==="RUNWAY_IMAGE_ASSET_RESOLVER_REQUIRED");
  const withResolver=createRunwayVideoAdapter({env:enabled,fetchImpl,resolveAssetUri:async()=> "runway://uploads/a"});
- await assert.rejects(()=>withResolver.submit({prompt:"animate",startFrameAssetId:"asset-1"},{}),e=>e.code==="RUNWAY_IMAGE_ASSET_SCOPE_INVALID");
+ await assert.rejects(()=>withResolver.prepareInput({prompt:"animate",startFrameAssetId:"asset-1"},{}),e=>e.code==="RUNWAY_IMAGE_ASSET_SCOPE_INVALID");
  assert.equal(calls,0);
 });
 
