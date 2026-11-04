@@ -15,6 +15,7 @@
 - Uses bounded request timeouts, bounded response bodies, redirect rejection, and normalized errors that do not echo provider response bodies or credentials.
 - Image-to-video requires an injected server-side asset resolver. The adapter passes owner ID, project ID and private asset ID to that resolver, and accepts only an HTTPS asset URI or Runway upload URI; browser-supplied arbitrary URLs are never used as first-frame assets.
 - `server/runway-private-asset-resolver.mjs` implements that resolver contract: it loads an owner/project-scoped private asset, checks visibility, image MIME, filename, size and PNG/JPEG/WebP file signature, then creates a Runway ephemeral upload and returns the `runway://` URI. Uploads are prepared before the provider-submission ledger enters its one-shot submitting state, so a failed upload cannot be mistaken for an ambiguous generation POST.
+- `server/cloud-runway-asset-resolver.mjs` composes the existing Cloud Asset Repository: it reads metadata through its owner-authorized methods, downloads the asset only through a short-lived signed URL on the configured Supabase origin, checks the exact content type and byte count, then hands bytes to the Runway uploader. This is a tested composition point, not yet wired into a running worker process.
 - Mock-based tests cover payload validation, disabled-by-default behavior, both endpoint request bodies, owner/project-scoped asset resolution, task lifecycle, output URL validation, cancellation, and provider error handling.
 
 ## Safety boundary
