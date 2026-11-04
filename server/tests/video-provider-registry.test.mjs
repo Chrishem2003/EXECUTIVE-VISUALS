@@ -151,3 +151,39 @@ test("catalog is immutable and unavailable providers can be filtered", () => {
   assert.equal(listVideoProviders({ includeUnavailable: false }).some(item => item.id === "openai"), false);
   assert.equal(getVideoProviderModel("missing", "missing"), null);
 });
+
+test("Seedance 2.5 catalogue captures official 30-second references, draft and edit constraints without enabling execution", () => {
+  const model = getVideoProviderModel("runway", "seedance2_5");
+  assert.equal(model.availability, "disabled");
+  assert.equal(model.executionAdapter, "not_implemented");
+  assert.equal(model.capabilities.videoEdit, true);
+  assert.equal(model.capabilities.videoExtend, true);
+  assert.equal(model.capabilities.maxDurationSeconds, 30);
+  assert.deepEqual(model.capabilities.resolutions, ["480p", "720p", "1080p"]);
+  assert.equal(model.constraints.maxPromptCharacters, 15000);
+  assert.equal(model.constraints.durationAutoBilledSeconds, 30);
+  assert.equal(model.constraints.maxReferenceImages, 30);
+  assert.equal(model.constraints.maxReferenceVideos, 10);
+  assert.equal(model.constraints.maxReferenceAudio, 10);
+  assert.deepEqual(model.constraints.outputCreditsPerSecondByResolution, { "480p": 20, "720p": 30, "1080p": 68 });
+  assert.equal(model.constraints.minimumCredits, 80);
+  assert.equal(model.constraints.videoEditRequiresAutoDuration, true);
+  assert.equal(listSelectableVideoProviderModels().length, 0);
+});
+
+test("Veo 3.1 and Fast catalogue enforce duration, resolution, audio and tier-specific pricing boundaries", () => {
+  const standard = getVideoProviderModel("runway", "veo3.1");
+  const fast = getVideoProviderModel("runway", "veo3.1_fast");
+  for (const model of [standard, fast]) {
+    assert.equal(model.availability, "disabled");
+    assert.equal(model.executionAdapter, "not_implemented");
+    assert.equal(model.capabilities.nativeAudio, true);
+    assert.deepEqual(model.constraints.supportedDurationsSeconds, [4, 6, 8]);
+    assert.equal(model.constraints.eightSecondsOnlyAt1080p, true);
+    assert.equal(model.constraints.maxKeyframes, 2);
+    assert.equal(model.constraints.lastFrameRequiresFirstFrame, true);
+  }
+  assert.deepEqual(standard.constraints.outputCreditsPerSecond, { audio: 40, noAudio: 20 });
+  assert.deepEqual(fast.constraints.outputCreditsPerSecond, { audio: 15, noAudio: 10 });
+  assert.equal(listSelectableVideoProviderModels().length, 0);
+});
