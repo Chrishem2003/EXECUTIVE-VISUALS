@@ -384,6 +384,9 @@
 .sequence-preview-stage .preview-empty{position:absolute;inset:50% auto auto 50%;transform:translate(-50%,-50%);width:min(90%,520px);margin:0;z-index:3}
 .sequence-overlay-layer{position:absolute;inset:0;overflow:hidden;pointer-events:none;z-index:2}
 .sequence-overlay-layer img{position:absolute;display:block;max-width:none;max-height:none;object-fit:fill;pointer-events:none}
+.sequence-caption-layer{position:absolute;inset:0;z-index:3;display:grid;grid-template-columns:1fr 1fr 1fr;grid-template-rows:1fr 1fr 1fr;pointer-events:none;overflow:hidden}
+.sequence-caption-cue{align-self:stretch;justify-self:stretch;display:flex;align-items:center;justify-content:center;padding:8px 12px;white-space:pre-line;line-height:1.2;text-align:center;font-weight:700;overflow-wrap:anywhere;background:color-mix(in srgb,var(--caption-bg-color,transparent) calc(var(--caption-bg-opacity,0)*100%),transparent);border-radius:3px}
+.sequence-caption-error{grid-column:1/4;grid-row:1/4;align-self:end;justify-self:center;margin:12px;padding:8px 12px;background:#401f24;color:#ffd5d8;border-radius:6px;font-size:11px}
 .sequence-transport button:disabled{opacity:.45;cursor:not-allowed}
 
 /* Sequence audio track controls */
