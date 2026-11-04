@@ -146,21 +146,19 @@ select executive_visuals.finish_video_generation_job(
 );
 
 select 1 / case when
-  policy_row.reserved_amount = 0 and policy_row.spent_amount = 0.75
-  and reservation_row.state = 'settled' and reservation_row.actual_amount = 0.75
-  and job_row.status = 'succeeded' and job_row.lease_owner is null
-  and submission_row.state = 'succeeded'
-  and submission_row.provider_task_id = 'runway-task-pg-test'
-  and (select count(*) from executive_visuals.video_generation_usage_reservations) = 1
-then 1 else 0 end as final_state_assertion
-from executive_visuals.video_generation_budget_policies policy_row
-cross join executive_visuals.video_generation_budget_reservations reservation_row
-cross join executive_visuals.jobs job_row
-cross join executive_visuals.video_generation_submissions submission_row
-where policy_row.id='423e4567-e89b-42d3-a456-426614174000'
-  and reservation_row.job_id=:'job_id'::uuid
-  and job_row.id=:'job_id'::uuid
-  and submission_row.job_id=:'job_id'::uuid;
+  (select reserved_amount = 0 and spent_amount = 0.75
+   from executive_visuals.video_generation_budget_policies
+   where id='423e4567-e89b-42d3-a456-426614174000')
+  and (select state = 'settled' and actual_amount = 0.75
+       from executive_visuals.video_generation_budget_reservations
+       where job_id=(select job_id from test_context))
+  and (select status = 'succeeded' and lease_owner is null
+       from executive_visuals.jobs where id=(select job_id from test_context))
+  and (select state = 'succeeded' and provider_task_id = 'runway-task-pg-test'
+       from executive_visuals.video_generation_submissions
+       where job_id=(select job_id from test_context))
+  and (select count(*) = 1 from executive_visuals.video_generation_usage_reservations)
+then 1 else 0 end as final_state_assertion;
 
 reset role;
 select set_config('request.jwt.claim.sub','123e4567-e89b-42d3-a456-426614174000',false);
