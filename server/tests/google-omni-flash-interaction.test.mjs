@@ -81,8 +81,27 @@ test("resolves image and video references only through authenticated project sco
     { type: "image", uri: googleUri(imageId) },
     { type: "text", text: "A person walks into the scene" }
   ]);
+  assert.deepEqual(result.payload.generation_config, { video_config: { task: "edit" } });
   assert.equal(harness.calls.length, 2);
   assert.ok(harness.calls.every(call => call.ownerId === ownerId && call.projectId === projectId));
+});
+
+test("adds documented image_to_video and reference_to_video task hints only when needed", async () => {
+  const harness = assetHarness();
+  const image = await buildGeminiOmniFlashInteractionRequest({
+    prompt: "Animate this frame with a slow camera push",
+    projectId, firstFrameAssetId: firstId,
+    getAuthorizedAssetContext: harness.getAuthorizedAssetContext,
+    resolveGoogleFileAsset: harness.resolveGoogleFileAsset
+  });
+  assert.deepEqual(image.payload.generation_config, { video_config: { task: "image_to_video" } });
+  const refs = await buildGeminiOmniFlashInteractionRequest({
+    prompt: "Create a video featuring this subject",
+    projectId, referenceImageAssetIds: [imageId],
+    getAuthorizedAssetContext: harness.getAuthorizedAssetContext,
+    resolveGoogleFileAsset: harness.resolveGoogleFileAsset
+  });
+  assert.deepEqual(refs.payload.generation_config, { video_config: { task: "reference_to_video" } });
 });
 
 test("supports first/last frame interpolation and bounded short reference videos", async () => {
@@ -97,6 +116,7 @@ test("supports first/last frame interpolation and bounded short reference videos
     resolveGoogleFileAsset: harness.resolveGoogleFileAsset
   });
   assert.deepEqual(result.payload.input.map(item => item.type), ["image", "image", "video", "text"]);
+  assert.equal(Object.hasOwn(result.payload, "generation_config"), false);
   assert.equal(harness.calls.find(call => call.assetId === refVideoId).mediaType, "video");
 });
 
@@ -172,12 +192,12 @@ test("normalizes Google Files URI output and maps asynchronous statuses", () => 
     status: "in_progress",
     steps: [{
       type: "model_output",
-      content: [{ type: "video", mime_type: "video/mp4", uri: googleUri("abc123") }]
+      content: [{ type: "video", mime_type: "video/mp4", uri: googleUri("abc123") + ":download?alt=media" }]
     }]
   });
   assert.equal(result.status, "running");
   assert.deepEqual(result.video, {
-    mimeType: "video/mp4", delivery: "uri", uri: googleUri("abc123")
+    mimeType: "video/mp4", delivery: "uri", uri: googleUri("abc123") + ":download?alt=media"
   });
 });
 
