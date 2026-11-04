@@ -106,3 +106,90 @@ Google's file-input documentation now supports external HTTPS and signed URLs fo
 - Larger files continue to use the Gemini Files API resumable upload gateway or the separate GCS registration path; the GCS path still requires operator-managed bucket IAM.
 
 This is an optimization path, not a change to provider availability. Google Omni remains disabled and remote execution remains approval-gated.
+
+## Google Drive private file bridge
+
+A separate Google Drive bridge supports private file import and export using per-user OAuth. It requests only the non-sensitive `drive.file` scope, which is designed for files a user explicitly selects or shares with the application (normally through Google Picker). It does not request broad access to the user's entire Drive.
+
+Implementation:
+- `server/google-drive-private-file-bridge.mjs` imports a user-selected Drive file into the existing owner/project-scoped private Cloud Asset Service.
+- Imports verify Drive file ID, trash/download capability, supported MIME type, declared size, downloaded byte count and returned content type before writing to private storage.
+- Exports first load and re-authorize the private asset, verify owner/project, bucket, MIME type, size and SHA-256, then use Drive's resumable upload protocol.
+- OAuth access tokens are injected by a host-side per-user connection store, fetched on demand, and never persisted by this module.
+- Destination folder IDs are accepted only as opaque Drive IDs; Drive remains responsible for enforcing the connected user's actual folder permissions.
+- Google-native Docs/Sheets/Slides exports are not silently converted. The current bridge handles binary media/document types already supported by the private asset service.
+- Upload-session URLs are restricted to Google's HTTPS Drive upload hosts and paths. Redirects are disabled; ambiguous uploads are not blindly retried.
+
+The bridge is a server-side adapter, not yet a complete user-facing Google OAuth + Picker integration. Before enabling it, the hosted application must add OAuth consent/callback and encrypted refresh-token storage, Google Picker file selection, connection ownership checks, and per-user token refresh/revocation. No Drive token or live Drive API call was used in these tests.
+
+Official Google references:
+- https://developers.google.com/workspace/drive/api/guides/api-specific-auth
+- https://developers.google.com/workspace/drive/api/guides/manage-uploads
+- https://developers.google.com/identity/protocols/oauth2/scopes
+
+
+## Google Drive OAuth and private connection foundation
+
+The follow-on implementation adds a server-side Google account connection flow. It is deliberately disabled unless `GOOGLE_DRIVE_OAUTH_ENABLED=true` and requires `AUTH_MODE=supabase`.
+
+New server modules:
+- `server/google-drive-oauth.mjs`: state-bound authorization-code + PKCE flow, OIDC nonce validation, Google RS256 identity-token signature verification using Google's published JWK set, encrypted refresh-token envelopes (AES-256-GCM), refresh-token rotation, access-token caching and disconnect/revocation.
+- `server/google-drive-connection-store.mjs`: service-role-only Supabase persistence for encrypted refresh-token metadata and atomic one-time OAuth state consumption. State values are SHA-256 hashed; PKCE verifier and OIDC nonce are encrypted at rest.
+- `server/index.mjs`: authenticated connect, status and disconnect endpoints plus a state-bound callback that does not depend on a cross-site SameSite=Strict session cookie.
+
+New endpoints:
+- `POST /api/integrations/google-drive/connect` — returns a Google authorization URL for the authenticated user.
+- `GET /api/integrations/google-drive/callback` — consumes one-time state, validates the callback and redirects to the application.
+- `GET /api/integrations/google-drive/status` — returns connected state, account email and granted scopes (never tokens).
+- `POST /api/integrations/google-drive/disconnect` — attempts Google token revocation and always removes the local connection record.
+
+Required server configuration (only when intentionally enabling this feature):
+- `AUTH_MODE=supabase`
+- `GOOGLE_DRIVE_OAUTH_ENABLED=true`
+- `GOOGLE_OAUTH_CLIENT_ID`
+- `GOOGLE_OAUTH_CLIENT_SECRET`
+- `GOOGLE_OAUTH_REDIRECT_URI` (must exactly match the Google Cloud OAuth client; callback path is `/api/integrations/google-drive/callback`)
+- `GOOGLE_DRIVE_TOKEN_ENCRYPTION_KEY` (at least 32 characters; keep outside source control)
+- `GOOGLE_PICKER_API_KEY` (restricted to the staging web origin and Google Picker APIs)
+- `GOOGLE_CLOUD_PROJECT_NUMBER` (numeric Google Cloud project number used by Picker)
+- Existing `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`
+
+Two source-controlled migrations add:
+- `google_drive_connections`: per-user encrypted refresh token, verified Google subject/email and granted scopes.
+- `google_drive_oauth_states`: hashed one-time state, encrypted PKCE verifier/nonce and short expiry.
+
+Both tables force RLS and revoke access from public, anon and authenticated roles; only the server service role is granted access. These migrations have **not** been applied to any Supabase environment. The OAuth feature remains disabled by default.
+
+Security details:
+- The OAuth callback resolves its owner exclusively from the one-time server-side state record created after an authenticated connect request; the callback does not trust a user ID from query parameters.
+- The callback validates state ownership/expiry, PKCE verifier, OIDC nonce, token scopes, ID-token issuer/audience/expiry/email verification and RS256 signature.
+- Refresh tokens are AES-256-GCM encrypted before persistence; the raw token is never returned by the API or stored in the connection table.
+- OAuth state is consumed with one atomic database DELETE, preventing callback replay across application instances.
+- Google Drive permission remains limited to `drive.file` plus OpenID/email identity scopes.
+
+Remaining integration work:
+- Google Picker frontend and API-key/app-ID configuration.
+- UI connection status, connect/disconnect actions and import/export progress.
+- Wire the OAuth access-token provider into the private Drive bridge and expose authenticated import/export endpoints.
+- Validate the full flow against a dedicated staging Google OAuth client after environment variables and migrations are reviewed.
+- Add scheduled cleanup for expired OAuth state rows.
+
+This is server-side OAuth infrastructure, not yet the complete user-facing Drive file picker. Do not enable it or apply migrations until the staging configuration, Google Cloud consent screen, callback URI and secret storage have been reviewed.
+
+- The OAuth coordinator is now composed with the private Drive bridge in `server/index.mjs`. When explicitly enabled, the server also composes the existing private Cloud Asset Service and downloads export candidates only through short-lived Supabase signed URLs; the downloaded bytes are size- and SHA-256-verified before Drive upload.
+- Additional authenticated endpoints: `POST /api/integrations/google-drive/import` accepts a Picker-selected `fileId` and optional `projectId`; `POST /api/integrations/google-drive/export` accepts a private `assetId`, optional `projectId` and optional destination `parentFolderId`.
+- Import and export endpoints use the authenticated application user as the owner, never accept an owner ID from the request, and are rate-limited. Import is bounded by the configured cloud media upload limit.
+- The Settings screen now has Google Drive connection status, connect and disconnect controls. The Picker itself remains the next frontend milestone; the import endpoint is ready for the Picker's selected file ID.
+
+Google Picker frontend follow-up:
+- The Settings screen now exposes a "Choose files from Drive" action when a connection exists.
+- The client obtains a short-lived access token from the authenticated `POST /api/integrations/google-drive/picker-token` endpoint. The token is scoped to the user's selected-file `drive.file` access and is not persisted in localStorage.
+- Picker selection sends only the selected file ID to the authenticated import endpoint; the server independently verifies access and file metadata before ingesting bytes.
+- The server Content Security Policy now explicitly allows the Google API loader, Picker frames and required Google API connections. Review the staging web origin and API key referrer restrictions before enabling.
+
+- The Cloud project asset register now exposes two Drive export destinations: save directly to the user's Drive root, or use Google Picker's folder view to choose a destination folder. The server still validates the selected folder ID and relies on Drive to enforce the connected user's permissions.
+
+Drive picker upload follow-up:
+- The authenticated Drive picker now includes both a filtered existing-file view and Google's device-upload view. A user can upload a local file into their own Drive from the picker and then import the selected file into the app's private project asset store.
+- OAuth remains limited to the per-file `drive.file` scope (plus OpenID identity scopes); no full-Drive access is requested.
+- This is separate from the Gemini Files API gateway, which uploads private app assets to Google's temporary Files service for model execution. Both upload paths remain disabled until staging credentials and explicit feature flags are configured.
