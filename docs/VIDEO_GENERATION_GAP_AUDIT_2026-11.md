@@ -309,3 +309,14 @@ Seven adapter contract tests cover the durable task-ID handoff, status mapping, 
 Added `server/fal-billing-cost-resolver.mjs`. It queries FAL's documented `GET /v1/models/billing-events` endpoint using both the exact request ID and exact model endpoint, requires one matching billed event, and derives USD cost from the precision-preserving `cost_estimate_nano_usd` field. It cross-checks the value against `cost_total` and records a request/timestamp evidence reference.
 
 No model list-price estimate or generated-duration heuristic is treated as actual cost. Missing billing events return a retryable not-ready code; duplicate or inconsistent events fail closed. The resolver requires a FAL API key with the documented billing permissions (`billing:usage:read`, `auth:keys:read`, `account:users:read`; BILLING or FULL preset). The FAL adapter still requires the resolver to be explicitly injected, so no production billing credential or permission is assumed.
+
+
+### CI corrections and FAL queue URL semantics — 2026-11-05
+
+The first full CI run on PR #56 exposed two failures: the injected-client adapter path was not actually invoking the remote opt-in guard, and the delivery-manifest validator accepted negative numeric timeline revisions. Both implementation paths have been corrected, with explicit test fixtures for enabled/remote-opted-in adapter operations and a non-negative revision rule.
+
+A further documentation review found that FAL's queue URL path is based on the endpoint **owner/app**, while multi-segment endpoint paths are used only for submission. The queue status/result/cancel URLs must not append every segment of the model endpoint. Both the async queue client and durable adapter now reconstruct task URLs from the first two endpoint segments and retain the full model path for submission. The queue tests now assert the distinction using `fal-ai/wan/v2.7/text-to-video`.
+
+Operational retention constraint: FAL documents that completed results are retained for one hour, but only six minutes when the result payload is at least 10 KB (unless payload storage is enabled). The durable worker must therefore fetch the result promptly after observing `COMPLETED` and ingest it into private storage immediately; it must not assume that a durable task ID alone makes provider results indefinitely retrievable.
+
+The official FAL billing-events API supports exact `request_id` and `endpoint_id` filters, returns `cost_estimate_nano_usd` and `cost_total`, is paginated, and caps each date range at 90 days. The resolver remains an opt-in injected dependency; missing or ambiguous evidence must leave the budget reservation open for reconciliation.
