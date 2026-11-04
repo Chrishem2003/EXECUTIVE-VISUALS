@@ -46,7 +46,7 @@ export function createRunwayVideoFinishingPlan({
   if (!Array.isArray(operations) || operations.length < 1 || operations.length > 3) {
     throw fail("Choose between one and three supported finishing operations.");
   }
-  const parsedPricingDate = typeof pricingDate === "string" && /^20\\d{2}-\\d{2}-\\d{2}$/.test(pricingDate)
+  const parsedPricingDate = typeof pricingDate === "string" && /^20[0-9]{2}-[0-9]{2}-[0-9]{2}$/.test(pricingDate)
     ? new Date(pricingDate + "T00:00:00Z") : null;
   if (!parsedPricingDate || Number.isNaN(parsedPricingDate.getTime()) ||
       parsedPricingDate.toISOString().slice(0, 10) !== pricingDate) {
