@@ -22,6 +22,8 @@ const state:{timeline:EditorialTimeline|null;serverRevision:number;timelines:Sav
 let sequencePlaying=false,sequenceFrame=0,sequenceStartFrame=0,sequenceStartAt=0,sequenceRaf:number|null=null;
 const sequenceAudio=new Map<string,HTMLAudioElement>();
 const captionSources=new Map<string,Promise<Array<{start:number;end:number;text:string}>>>();
+const captionResolved=new Map<string,Array<{start:number;end:number;text:string}>>();
+const captionPending=new Set<string>();
 const esc=(v:unknown)=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]||c));
 const fps=()=>state.timeline?state.timeline.frameRate.numerator/state.timeline.frameRate.denominator:24;
 const maxEnd=()=>Math.max(1,...(state.timeline?.tracks.flatMap(t=>t.clips.map(c=>c.timelineStart.value+c.duration.value))||[240]));
@@ -99,22 +101,29 @@ function syncSequenceOverlays(active:ReturnType<typeof resolveTimelineFrame>){
   if(!image){image=document.createElement("img");image.dataset.clipId=item.clip.id;image.alt=item.clip.name;image.className="sequence-overlay-image";container.appendChild(image);}
   const url="/api/assets/"+encodeURIComponent(asset.id)+"/file";if(image.dataset.assetId!==asset.id){image.dataset.assetId=asset.id;image.src=url;}
   const meta=item.clip.metadata||{},width=Math.max(16,Math.min(state.timeline.width,Number(meta.width)||state.timeline.width*.24)),height=Math.max(16,Math.min(state.timeline.height,Number(meta.height)||state.timeline.height*.24));
-  const x=Math.max(0,Math.min(state.timeline.width-width,Number(meta.x)||state.timeline.width-width-24)),y=Math.max(0,Math.min(state.timeline.height-height,Number(meta.y)||24)),opacity=Math.max(0,Math.min(1,Number(meta.opacity??1)));
+  const rawX=Number(meta.x),rawY=Number(meta.y),x=Math.max(0,Math.min(state.timeline.width-width,Number.isFinite(rawX)?rawX:state.timeline.width-width-24)),y=Math.max(0,Math.min(state.timeline.height-height,Number.isFinite(rawY)?rawY:24)),opacity=Math.max(0,Math.min(1,Number(meta.opacity??1)));
   image.style.left=(x/state.timeline.width*100)+"%";image.style.top=(y/state.timeline.height*100)+"%";image.style.width=(width/state.timeline.width*100)+"%";image.style.height=(height/state.timeline.height*100)+"%";image.style.opacity=String(opacity);
  }
  for(const image of Array.from(container.querySelectorAll<HTMLImageElement>("img[data-clip-id]")))if(!live.has(image.dataset.clipId||""))image.remove();
  const captions=active.filter(item=>item.track.kind==="caption");caption.textContent="";
  for(const item of captions){
   const asset=state.assets.find(candidate=>candidate.id===item.clip.assetId);if(!asset||!(asset.mediaType==="text/vtt"||asset.mediaType==="text/plain"))continue;
-  void loadCaptionCues(asset).then(cues=>{
-   if(!state.timeline||!document.body.contains(caption))return;
-   const current=resolveTimelineFrame(state.timeline,sequenceFrame).find(entry=>entry.clip.id===item.clip.id);if(!current)return;
-   const cue=cues.find(value=>current.sourceSeconds>=value.start&&current.sourceSeconds<value.end);if(!cue)return;
-   const meta=item.clip.metadata||{},style=caption.style;caption.textContent=cue.text;
-   style.fontFamily=String(meta.fontName||"Arial, sans-serif").slice(0,80);style.fontSize=Math.max(12,Math.min(96,Number(meta.fontSize)||32))+"px";
-   style.color=String(meta.primaryColor||"#FFFFFF");style.background=meta.backgroundMode==="none"?"transparent":String(meta.backgroundColor||"#000000");style.opacity=String(Math.max(0,Math.min(1,Number(meta.backgroundOpacity??0.68))));
-   style.textAlign="center";style.padding="8px 14px";style.bottom=Math.max(0,Math.min(240,Number(meta.marginV)||42))+"px";
-  }).catch(()=>{caption.textContent="";});
+  let cues=captionResolved.get(asset.id);
+  if(!cues){
+   if(!captionPending.has(asset.id)){captionPending.add(asset.id);void loadCaptionCues(asset).then(loaded=>{
+    captionResolved.set(asset.id,loaded);captionPending.delete(asset.id);
+    if(state.timeline&&document.body.contains(caption))renderSequenceFrame(sequenceFrame,true);
+   }).catch(()=>captionPending.delete(asset.id));}
+   continue;
+  }
+  const current=resolveTimelineFrame(state.timeline,sequenceFrame).find(entry=>entry.clip.id===item.clip.id);if(!current)continue;
+  const cue=cues.find(value=>current.sourceSeconds>=value.start&&current.sourceSeconds<value.end);if(!cue)continue;
+  const meta=item.clip.metadata||{},style=caption.style;caption.textContent=cue.text;
+  style.fontFamily=String(meta.fontName||"Arial, sans-serif").slice(0,80);style.fontSize=Math.max(12,Math.min(96,Number(meta.fontSize)||32))+"px";
+  style.color=String(meta.primaryColor||"#FFFFFF");
+  const bg=String(meta.backgroundColor||"#000000"),opacity=Math.max(0,Math.min(1,Number(meta.backgroundOpacity??0.68))),match=bg.match(/^#([0-9a-f]{6})$/i);
+  style.background=meta.backgroundMode==="none"?"transparent":match?"rgba("+parseInt(match[1].slice(0,2),16)+","+parseInt(match[1].slice(2,4),16)+","+parseInt(match[1].slice(4,6),16)+","+opacity+")":bg;
+  style.opacity="1";style.textAlign="center";style.padding="8px 14px";style.bottom=Math.max(0,Math.min(240,Number(meta.marginV)||42))+"px";
  }
 }
 function renderSequenceFrame(frame:number,forceSeek=false){
