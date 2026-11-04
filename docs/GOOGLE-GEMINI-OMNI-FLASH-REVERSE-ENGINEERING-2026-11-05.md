@@ -35,6 +35,7 @@ Google shut down the Gemini API Veo 3.1 Preview endpoints on October 22, 2026. G
 ## Implementation
 
 - `server/google-gemini-files-gateway.mjs` uploads already-authorized private assets using Google's resumable Files API; the original remains in Executive Visuals storage.
+- `server/google-gemini-signed-url-resolver.mjs` creates short-lived, owner/project-authorized Supabase Storage signed URLs for Gemini Interactions. For supported images and videos up to 100 MB, Gemini fetches the original private object directly; the application server does not download or re-upload the media bytes. The signed URL is request-scoped and is not stored in provider-file mappings.
 - `server/google-gemini-files-repository.mjs` stores private provider-file mappings and their source provenance.
 - `server/google-gemini-gcs-registrar.mjs` registers allowlisted `gs://` objects with `files:register` without downloading or copying source bytes; it uses injected OAuth credentials and expires its local cache after 29 days.
 - `server/google-video-interaction-repository.mjs` persists interaction ID, owner/project/job scope, request hash, lineage, state and application expiry without storing media bytes.
@@ -92,3 +93,16 @@ The registrar requires:
 - A durable mapping repository. The registration cache expires after 29 days, below Google's maximum 30-day access window.
 
 Current Executive Visuals Supabase Storage assets are not silently treated as GCS objects. A GCS-backed asset adapter and explicit bucket IAM provisioning are required before this path can be used.
+
+## Private Supabase Storage signed-URL input
+
+Google's file-input documentation now supports external HTTPS and signed URLs for Interactions, including private cloud storage objects, with a 100 MB request limit. The implementation uses this path for supported image/video media only:
+
+- Asset lookup and signed URL creation run through the existing Cloud Asset Service, which checks owner/project read access.
+- The resolver requires the exact configured Supabase origin and the `executive-visuals-media` signed-object path.
+- It rejects unsupported MIME types, missing/incorrect asset metadata, URLs with extra query parameters, and files over 100 MB.
+- Signed URLs expire after 10 minutes by default (configurable from 60 to 3600 seconds) and are never written to logs or durable provider-file mappings.
+- The planner rejects signed URLs with less than 30 seconds remaining at submission time.
+- Larger files continue to use the Gemini Files API resumable upload gateway or the separate GCS registration path; the GCS path still requires operator-managed bucket IAM.
+
+This is an optimization path, not a change to provider availability. Google Omni remains disabled and remote execution remains approval-gated.
