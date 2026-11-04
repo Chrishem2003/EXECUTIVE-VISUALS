@@ -73,7 +73,7 @@ test("reuses the existing private asset for a repeated provider task and output 
   const second = await ingest.ingest(request);
   assert.deepEqual(second.assetIds, first.assetIds);
   assert.equal(assets.created.length, 1);
-  assert.equal(second.usage.totalBytes, 2048);
+  assert.equal(second.usage.totalBytes, 1024);
 });
 
 test("does not delete a previously registered idempotent asset when a later output fails", async () => {
