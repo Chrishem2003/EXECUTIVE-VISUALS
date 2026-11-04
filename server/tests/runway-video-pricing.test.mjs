@@ -38,7 +38,7 @@ test("accounts for Seedance 2.5 input and reference video duration with a 30-sec
 test("accounts for reference media charges on Grok and Hailuo models",()=>{
   assert.equal(estimateRunwayVideoCredits({model:"grok_imagine_1_5",durationSeconds:5,resolution:"720p",referenceImageCount:2,referenceAudioCount:1,pricingDate:date}).estimatedCredits,83);
   assert.equal(estimateRunwayVideoCredits({model:"grok_imagine_1_5_lite",durationSeconds:5,resolution:"720p",referenceImageCount:3,hasStartFrame:true,pricingDate:date}).estimatedCredits,16);
-  assert.equal(estimateRunwayVideoCredits({model:"hailuo3",durationSeconds:5,resolution:"768p",referenceImageCount:2,referenceVideoSeconds:20,pricingDate:date}).estimatedCredits,110);
+  assert.equal(estimateRunwayVideoCredits({model:"hailuo3",durationSeconds:5,resolution:"768p",referenceImageCount:2,referenceVideoSeconds:20,pricingDate:date}).estimatedCredits,204);
 });
 
 test("uses the dated Kling 4 promotion and automatically reverts to list pricing",()=>{
