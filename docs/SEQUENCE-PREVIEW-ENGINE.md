@@ -2,7 +2,7 @@
 
 **Branch:** `feat/sequence-preview-engine`  
 **Milestone:** E1 — browser preview and frame-accurate transport  
-**Status:** sequence-time resolver implemented; browser playback UI and hosted private-media playback remain in progress.
+**Status:** local primary-picture sequence playback implemented; CI passed on the current code milestone. Browser-level playback tests, audio mixing, overlay/caption compositing and hosted private-media playback remain outstanding.
 
 ## Implemented foundation
 
@@ -10,22 +10,23 @@ The timeline preview core now provides:
 
 - Rational frame-to-time and time-to-frame conversion.
 - Active-clip resolution for an exact timeline frame.
+- A local browser transport with play, pause, frame stepping and timeline scrubbing across cuts on the primary picture track.
+- Video and still-image playback with clip-speed playback-rate mapping and explicit decode/missing-source feedback.
 - Track-order preservation so the UI can composite active layers deterministically.
 - Source-time mapping that respects source in points, source duration and clip speed.
 - Exclusive clip out-points and disabled track/clip filtering.
 - Sequence duration calculation in timeline frames, including fractional final-frame rounding.
 
-The resolver is deliberately independent of browser media elements. This keeps time mapping deterministic and testable before the browser transport is connected.
+The resolver is deliberately independent of browser media elements. This keeps time mapping deterministic and testable while the browser transport remains a thin playback adapter.
 
 ## Required next work
 
-1. Connect a playhead and transport to `resolveTimelineFrame`.
-2. Switch source media only when the active clip changes; seek using the returned source time.
-3. Render still images, captions and overlay layers in track order.
-4. Synchronize enabled audio tracks and expose mute/solo.
-5. Add proxy-first source selection and abortable authenticated cloud media playback.
-6. Add browser-level tests for play, pause, seeking, clip boundaries, source changes, decode errors and stale revisions.
-7. Compare preview behavior with the FFmpeg master renderer. Any unsupported effect or composition behavior must be visibly marked as a preview limitation.
+1. Add browser-level tests for play, pause, seek, frame stepping, source changes and decode failures.
+2. Add multi-track audio mixing, mute/solo and synchronized clip boundary handling.
+3. Composite still images, captions and overlay layers in track order.
+4. Connect proxy-first source selection and abortable authenticated cloud media playback.
+5. Validate browser preview against FFmpeg fixtures, including speed, source trims and gaps.
+6. Add stale-revision protection and cleanup for media resources when sources change or the workspace unmounts.
 
 ## Safety and fidelity
 
