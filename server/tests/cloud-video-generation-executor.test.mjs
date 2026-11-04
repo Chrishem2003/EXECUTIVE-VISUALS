@@ -16,11 +16,17 @@ function fixture({ state = "prepared", submitError = null, recordResult = true, 
   cost = { amount: 0.75, currency: "USD", evidenceReference: "provider-invoice:line-9" },
   costError = null, ingestError = null } = {}) {
   const calls = [];
+  let currentState = state;
+  let currentTaskId = state === "submitted" ? taskId : null;
   const ledger = {
-    async prepare(value) { calls.push(["prepare", value]); return { job_id: jobId, owner_id: ownerId, state, provider_task_id: state === "submitted" ? taskId : null }; },
+    async prepare(value) { calls.push(["prepare", value]); return { job_id: jobId, owner_id: ownerId, state: currentState, provider_task_id: currentTaskId }; },
     async begin(id, worker) { calls.push(["begin", id, worker]); return true; },
-    async record(id, worker, idValue, metadata) { calls.push(["record", id, worker, idValue, metadata]); return recordResult; },
-    async markUnknown(id, worker, code) { calls.push(["unknown", id, worker, code]); return true; }
+    async record(id, worker, idValue, metadata) {
+      calls.push(["record", id, worker, idValue, metadata]);
+      if (recordResult) { currentState = "submitted"; currentTaskId = idValue; }
+      return recordResult;
+    },
+    async markUnknown(id, worker, code) { calls.push(["unknown", id, worker, code]); currentState = "unknown"; return true; }
   };
   const adapter = {
     provider: "runway", model: "gen4.5", minimumPollIntervalMs: 5000,
