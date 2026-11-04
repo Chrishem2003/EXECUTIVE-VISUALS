@@ -102,3 +102,13 @@ test("the actual provider catalogue cannot route while every provider remains di
   assert.ok(result.excludedCandidates.length > 0);
   assert.ok(result.excludedCandidates.every(item => item.reason === "model_disabled"));
 });
+
+test("rejects impossible pricing dates and credential-bearing pricing evidence URLs", () => {
+  const base = candidate("runway", "bad-evidence", 0.5);
+  assert.equal(routeVideoModel({
+    candidates: [{ ...base, estimate: { ...base.estimate, pricingDate: "2026-02-31" } }]
+  }).status, "no_eligible_model");
+  assert.equal(routeVideoModel({
+    candidates: [{ ...base, estimate: { ...base.estimate, pricingSource: "https://user:secret@example.com/pricing" } }]
+  }).status, "no_eligible_model");
+});
