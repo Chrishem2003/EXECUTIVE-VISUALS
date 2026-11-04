@@ -25,7 +25,8 @@ export function createCloudVideoEnqueue({
   url = process.env.SUPABASE_URL,
   serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY,
   fetchImpl = globalThis.fetch,
-  timeoutMs = 15000
+  timeoutMs = 15000,
+  env = process.env
 } = {}) {
   if (!url || !serviceRoleKey) throw new Error("Cloud video enqueue requires server-side SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.");
   if (typeof fetchImpl !== "function") throw new Error("Cloud video enqueue requires a fetch implementation.");
@@ -100,15 +101,22 @@ export function createCloudVideoEnqueue({
         throw new Error("Reserved amount must be a positive bounded number.");
       }
       if (typeof currency !== "string" || !/^[A-Z]{3}$/.test(currency)) throw new Error("Currency must be a three-letter uppercase code.");
-      if (provider !== "runway") {
-        const unsupported = new Error("The selected provider has a verified price estimate but no enabled execution adapter.");
+      const runwayEnabled = provider === "runway" && model === "gen4.5";
+      const googleEnabled = provider === "google" && model === "gemini-omni-1.1-flash";
+      if (!runwayEnabled && !googleEnabled) {
+        const unsupported = new Error("The selected provider/model does not have an enabled, verified cloud execution adapter.");
         unsupported.code = "VIDEO_GENERATION_UNSUPPORTED_CAPABILITY";
         throw unsupported;
       }
-      if (model !== "gen4.5") {
-        const unsupported = new Error("The selected Runway model has pricing metadata but no enabled execution adapter.");
-        unsupported.code = "VIDEO_GENERATION_UNSUPPORTED_CAPABILITY";
-        throw unsupported;
+      if (googleEnabled && (
+        env.GEMINI_OMNI_ENABLED !== "true" ||
+        env.GEMINI_OMNI_ALLOW_REMOTE !== "true" ||
+        env.GEMINI_OMNI_PAID_TIER_CONFIRMED !== "true" ||
+        env.GEMINI_OMNI_WORKER_ENABLED !== "true"
+      )) {
+        const disabled = new Error("Gemini Omni enqueue requires explicit remote, paid-tier and hosted-worker enablement.");
+        disabled.code = "GEMINI_OMNI_REMOTE_DISABLED";
+        throw disabled;
       }
       const estimate = estimateVideoGenerationCost({
         provider, model, durationSeconds: input.durationSeconds,
@@ -122,25 +130,68 @@ export function createCloudVideoEnqueue({
       });
 
       if ((input.outputFormat || "mp4") !== "mp4") {
-        const unsupported = new Error("The current Gen-4.5 worker supports MP4 output only.");
+        const unsupported = new Error("The selected hosted video adapter currently supports MP4 output only.");
         unsupported.code = "VIDEO_PRICE_OUTPUT_FORMAT_UNSUPPORTED";
         throw unsupported;
       }
-      // Model capability and worker implementation are separate contracts.
-      // Gen-4.5 accepts 720p at provider level, but this worker currently only
-      // supports provider_default and must reject explicit resolution requests.
-      if (input.resolution !== undefined && input.resolution !== "provider_default") {
-        const unsupported = new Error("The current Gen-4.5 worker only supports provider-default resolution.");
-        unsupported.code = "VIDEO_GENERATION_UNSUPPORTED_CAPABILITY";
-        throw unsupported;
-      }
-      const unpricedExecutionFields = ["audio","inputVideoSeconds","referenceVideoSeconds","referenceImageCount",
-        "referenceAudioCount","hasStartFrame","outputFrames","sourceWidth","sourceHeight","sourceDynamicRange",
-        "outputWidth","outputHeight","targetFramerate","inputType"];
-      if (unpricedExecutionFields.some(field => input[field] !== undefined)) {
-        const unsupported = new Error("The current Gen-4.5 worker does not yet accept these finishing or reference-media options.");
-        unsupported.code = "VIDEO_GENERATION_UNSUPPORTED_CAPABILITY";
-        throw unsupported;
+      if (runwayEnabled) {
+        // Model capability and worker implementation are separate contracts.
+        // Gen-4.5 accepts 720p at provider level, but this worker currently only
+        // supports provider_default and must reject explicit resolution requests.
+        if (input.resolution !== undefined && input.resolution !== "provider_default") {
+          const unsupported = new Error("The current Gen-4.5 worker only supports provider-default resolution.");
+          unsupported.code = "VIDEO_GENERATION_UNSUPPORTED_CAPABILITY";
+          throw unsupported;
+        }
+        const unpricedExecutionFields = ["audio","inputVideoSeconds","referenceVideoSeconds","referenceImageCount",
+          "referenceAudioCount","hasStartFrame","outputFrames","sourceWidth","sourceHeight","sourceDynamicRange",
+          "outputWidth","outputHeight","targetFramerate","inputType"];
+        if (unpricedExecutionFields.some(field => input[field] !== undefined)) {
+          const unsupported = new Error("The current Gen-4.5 worker does not yet accept these finishing or reference-media options.");
+          unsupported.code = "VIDEO_GENERATION_UNSUPPORTED_CAPABILITY";
+          throw unsupported;
+        }
+      } else {
+        if (input.resolution !== undefined && !["provider_default","720p"].includes(input.resolution)) {
+          const unsupported = new Error("Gemini Omni budget reservation currently supports 720p only.");
+          unsupported.code = "VIDEO_GENERATION_UNSUPPORTED_CAPABILITY";
+          throw unsupported;
+        }
+        if (input.durationSeconds < 3 || input.durationSeconds > 10) {
+          const invalid = new Error("Gemini Omni duration must be between 3 and 10 seconds.");
+          invalid.code = "VIDEO_PRICE_DURATION_INVALID";
+          throw invalid;
+        }
+        if (input.operation !== undefined && !["generate","edit","extend"].includes(input.operation)) {
+          throw new Error("Gemini Omni operation must be generate, edit or extend.");
+        }
+        if (input.lastFrameAssetId && !input.firstFrameAssetId) {
+          throw new Error("A Gemini Omni last frame requires a first frame.");
+        }
+        if (input.referenceImageAssetIds !== undefined &&
+            (!Array.isArray(input.referenceImageAssetIds) || input.referenceImageAssetIds.length > 5)) {
+          throw new Error("Gemini Omni accepts at most five reference images.");
+        }
+        if (input.referenceVideoAssetIds !== undefined &&
+            (!Array.isArray(input.referenceVideoAssetIds) || input.referenceVideoAssetIds.length > 3)) {
+          throw new Error("Gemini Omni accepts at most three reference videos.");
+        }
+        if (input.previousInteractionId && !input.projectId) {
+          throw new Error("Gemini Omni conversational edits require project scope.");
+        }
+        if (input.operation === "generate" && (input.previousInteractionId || input.sourceVideoAssetId)) {
+          throw new Error("Gemini Omni generate mode cannot include a previous interaction or source video.");
+        }
+        if (["edit","extend"].includes(input.operation) && !input.previousInteractionId && !input.sourceVideoAssetId) {
+          throw new Error("Gemini Omni edit and extend modes require a previous interaction or source video.");
+        }
+        const unsupportedGoogleFields = ["negativePrompt","seed","motionReferenceAssetId","referenceAudioAssetIds",
+          "referenceAudioCount","inputVideoSeconds","referenceVideoSeconds","audio","targetFramerate"];
+        if (unsupportedGoogleFields.some(field => input[field] !== undefined)) {
+          const unsupported = new Error("Gemini Omni does not support one or more requested finishing, audio-reference or motion controls.");
+          unsupported.code = "VIDEO_GENERATION_UNSUPPORTED_CAPABILITY";
+          throw unsupported;
+        }
       }
       const modelRecord = getVideoProviderModel(provider, model);
       if (!modelRecord) {
@@ -148,7 +199,13 @@ export function createCloudVideoEnqueue({
         unsupported.code = "VIDEO_GENERATION_UNSUPPORTED_CAPABILITY";
         throw unsupported;
       }
-      const normalizedRequest = normalizeVideoGenerationRequest(input);
+      const capabilityInput = googleEnabled ? {
+        ...input,
+        startFrameAssetId: input.firstFrameAssetId ?? input.startFrameAssetId,
+        endFrameAssetId: input.lastFrameAssetId ?? input.endFrameAssetId,
+        referenceAssetIds: input.referenceImageAssetIds ?? input.referenceAssetIds
+      } : input;
+      const normalizedRequest = normalizeVideoGenerationRequest(capabilityInput);
       assertVideoCapabilities(normalizedRequest, modelRecord.capabilities);
       if (currency !== estimate.currency) throw new Error("Budget approval currency must match the verified provider price.");
       if (reservedAmount < estimate.amount) {
