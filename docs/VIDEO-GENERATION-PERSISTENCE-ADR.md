@@ -187,3 +187,6 @@ The resolver is tested with mocked transport and remains unconfigured: no privat
 
 
 Runway documents that ephemeral uploads require the API project to have purchased credits, even though this preparation step is distinct from starting a generation task. The adapter therefore checks both explicit remote-execution flags before it even reads the private asset or calls the upload endpoint. No upload or generation has been made in this implementation session. See https://docs.dev.runwayml.com/assets/uploads/.
+
+
+`server/cloud-runway-asset-resolver.mjs` now composes the existing authorized Cloud Asset Repository with that uploader. It calls the repository's owner-authorized metadata and signed-URL methods, accepts only signed URLs on the configured Supabase origin, downloads the bytes server-side with timeout/size/content-type checks, then hands the verified private bytes to the Runway ephemeral uploader. This composition has mocked tests and is not yet instantiated by the cloud worker process; the application must inject its already-authorized Cloud Asset Repository instance at runtime.
