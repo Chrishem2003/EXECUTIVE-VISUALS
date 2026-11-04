@@ -84,8 +84,8 @@ export function estimateRunwayVideoCredits(options={}) {
        (PROFESSIONAL_HDR_FORMATS.has(outputFormat)&&model!=="gen4.5")) {
       throw fail("The selected professional output format is not supported by this model.","RUNWAY_PRICE_UNSUPPORTED_OPTION");
     }
-    if(!Number.isSafeInteger(outputWidth)||outputWidth<16||outputWidth>16384||
-       !Number.isSafeInteger(outputHeight)||outputHeight<16||outputHeight>16384) {
+    if(!Number.isSafeInteger(outputWidth)||outputWidth<16||outputWidth>4096||
+       !Number.isSafeInteger(outputHeight)||outputHeight<16||outputHeight>4096) {
       throw fail("outputWidth and outputHeight are required for 10-bit/HDR output pricing.","RUNWAY_PRICE_INPUT_REQUIRED");
     }
     const outputMegapixels=outputWidth*outputHeight/1000000;
