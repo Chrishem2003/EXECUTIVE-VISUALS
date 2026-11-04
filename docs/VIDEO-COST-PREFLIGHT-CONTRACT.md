@@ -39,3 +39,19 @@ The estimate-only `createRunwayVideoFinishingPlan` helper turns verified source 
 ## Verification
 
 The shared estimator test suite covers the existing Runway estimate path, Luma Ray 3.2 generation/edit/extend/reframe calculations, unsupported combinations, unknown models and non-billable result invariants. The test is included in the cloud-queue verification command and the full server test suite.
+
+
+## Cross-provider model routing contract
+
+`server/video-model-router.mjs` implements deterministic, side-effect-free model selection across providers. It consumes candidate records produced by the application after registry lookup and shared cost estimation.
+
+The router applies hard eligibility filters before optimization:
+- Provider and model must both be explicitly enabled.
+- The provider adapter must be in `ready` state.
+- The requested operation, duration, resolution, aspect ratio, audio and seed requirements must be supported.
+- A dated USD estimate with a pricing source is mandatory; estimates must remain non-billable and ineligible for settlement.
+- Optional hard spend caps, allowlists and denylists are applied before ranking.
+
+Optimization supports cost, measured latency or a validated quality score. Latency and quality are never fabricated: candidates missing the requested metric are excluded. Ties resolve deterministically by estimated cost, measured latency and stable provider/model ID.
+
+The router returns a decision and exclusion reasons only. It does not call provider APIs, reserve funds, create jobs, activate models or bypass the durable queue and approval gates. The current catalogue has no enabled adapters, so a catalogue-derived production request correctly returns `no_eligible_model` until the adapters and release gates are implemented.
