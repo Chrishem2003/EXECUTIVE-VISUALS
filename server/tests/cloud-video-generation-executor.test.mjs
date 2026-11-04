@@ -98,3 +98,29 @@ test("cloud executor refuses ambiguous ledger states and missing execution gates
   await assert.rejects(executeCloudVideoGenerationJob({ job, workerId: "worker-1", ...noGate, resolveActualCost: null }), error => error.code === "VIDEO_EXECUTION_GATES_MISSING");
   assert.equal(unknown.calls.some(call => call[0] === "submit"), false);
 });
+
+test("cloud executor prepares private image inputs before beginning the one-shot provider transition",async()=>{
+ const f=fixture();
+ f.adapter.prepareInput=async(input,context)=>{
+  f.calls.push(["prepareInput",context.job.id,context.job.owner_id]);
+  return {...input,runwayPromptImage:"runway://uploads/private-frame"};
+ };
+ await executeCloudVideoGenerationJob({job,workerId:"worker-1",...f});
+ assert.deepEqual(f.calls.map(call=>call[0]),["prepare","prepareInput","begin","submit","record","poll","cost","ingest"]);
+ const prepared=f.calls.find(call=>call[0]==="prepareInput");
+ assert.equal(prepared[1],job.id);
+ assert.equal(prepared[2],ownerId);
+});
+
+test("cloud executor does not enter submitting state when private input preparation fails",async()=>{
+ const f=fixture();
+ f.adapter.prepareInput=async()=>{f.calls.push(["prepareInput"]);throw Object.assign(new Error("asset unavailable"),{code:"RUNWAY_IMAGE_ASSET_RESOLUTION_FAILED"});};
+ await assert.rejects(
+  executeCloudVideoGenerationJob({job,workerId:"worker-1",...f}),
+  error=>error.code==="RUNWAY_IMAGE_ASSET_RESOLUTION_FAILED"
+ );
+ assert.deepEqual(f.calls.map(call=>call[0]),["prepare","prepareInput"]);
+ assert.equal(f.calls.some(call=>call[0]==="begin"),false);
+ assert.equal(f.calls.some(call=>call[0]==="submit"),false);
+ assert.equal(f.calls.some(call=>call[0]==="unknown"),false);
+});
