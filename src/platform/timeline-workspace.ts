@@ -56,17 +56,18 @@ function stopSequencePlayback(){
  for(const audio of sequenceAudio.values())audio.pause();
 }
 function parseCaptionTime(value:string):number{
- const parts=value.trim().replace(",",".").split(":");if(parts.length!==3)return Number.NaN;
- const [hours,minutes,seconds]=parts.map(Number);return hours*3600+minutes*60+seconds;
+ const parts=value.trim().replace(",",".").split(":");if(parts.length!==2&&parts.length!==3)return Number.NaN;
+ const values=parts.map(Number);if(values.some(part=>!Number.isFinite(part)))return Number.NaN;
+ const [hours,minutes,seconds]=parts.length===3?values:[0,values[0],values[1]];return hours*3600+minutes*60+seconds;
 }
 function loadCaptionCues(asset:Asset):Promise<Array<{start:number;end:number;text:string}>>{
  const cached=captionSources.get(asset.id);if(cached)return cached;
  const request=fetch("/api/assets/"+encodeURIComponent(asset.id)+"/file",{credentials:"same-origin"}).then(async response=>{
   if(!response.ok)throw new Error("Caption asset could not be loaded.");
   const body=await response.text();if(body.length>2*1024*1024)throw new Error("Caption asset exceeds the preview size limit.");
-  return body.replace(/^\\uFEFF/,"").replace(/\\r/g,"").split(/\\n\\s*\\n/).flatMap(block=>{
-   const lines=block.split("\\n"),index=lines.findIndex(line=>line.includes("-->"));if(index<0)return [];
-   const timing=lines[index].split("-->"),start=parseCaptionTime(timing[0].trim().split(/\\s+/)[0]),end=parseCaptionTime(timing[1].trim().split(/\\s+/)[0]);
+  return body.replace(/^\uFEFF/,"").replace(/\r/g,"").split(/\n\s*\n/).flatMap(block=>{
+   const lines=block.split("\n"),index=lines.findIndex(line=>line.includes("-->"));if(index<0)return [];
+   const timing=lines[index].split("-->"),start=parseCaptionTime(timing[0].trim().split(/\s+/)[0]),end=parseCaptionTime(timing[1].trim().split(/\\s+/)[0]);
    const text=lines.slice(index+1).join(" ").replace(/<[^>]*>/g,"").replace(/&lt;/g,"<").replace(/&gt;/g,">").replace(/&amp;/g,"&").trim().slice(0,1000);
    return Number.isFinite(start)&&Number.isFinite(end)&&end>start&&text?[{start,end,text}]:[];
   }).slice(0,5000);
@@ -107,10 +108,8 @@ function syncSequenceOverlays(active:ReturnType<typeof resolveTimelineFrame>){
   const asset=state.assets.find(candidate=>candidate.id===item.clip.assetId);if(!asset||!(asset.mediaType==="text/vtt"||asset.mediaType==="text/plain"))continue;
   void loadCaptionCues(asset).then(cues=>{
    if(!state.timeline||!document.body.contains(caption))return;
-   const timelineSeconds=sequenceFrame/(state.timeline.frameRate.numerator/state.timeline.frameRate.denominator);
-   const start=item.clip.timelineStart.value/item.clip.timelineStart.rate,sourceStart=item.clip.sourceRange.start.value/item.clip.sourceRange.start.rate;
-   const sourceTime=sourceStart+Math.max(0,timelineSeconds-start)*(item.clip.speed??1);
-   const cue=cues.find(value=>sourceTime>=value.start&&sourceTime<value.end);if(!cue)return;
+   const current=resolveTimelineFrame(state.timeline,sequenceFrame).find(entry=>entry.clip.id===item.clip.id);if(!current)return;
+   const cue=cues.find(value=>current.sourceSeconds>=value.start&&current.sourceSeconds<value.end);if(!cue)return;
    const meta=item.clip.metadata||{},style=caption.style;caption.textContent=cue.text;
    style.fontFamily=String(meta.fontName||"Arial, sans-serif").slice(0,80);style.fontSize=Math.max(12,Math.min(96,Number(meta.fontSize)||32))+"px";
    style.color=String(meta.primaryColor||"#FFFFFF");style.background=meta.backgroundMode==="none"?"transparent":String(meta.backgroundColor||"#000000");style.opacity=String(Math.max(0,Math.min(1,Number(meta.backgroundOpacity??0.68))));
