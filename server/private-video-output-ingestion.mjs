@@ -299,6 +299,11 @@ export function createPrivateVideoOutputIngestor({
                 (existing.projectId || null) !== (job.project_id || null) || !String(existing.mediaType || "").startsWith("video/")) {
               throw fail("Existing provider output asset does not match the job scope.", "VIDEO_OUTPUT_ASSET_REGISTRATION_INVALID");
             }
+            if (!Number.isSafeInteger(existing.size) || existing.size < 1 || existing.size > maxBytesPerOutput) {
+              throw fail("Existing provider output asset size is invalid.", "VIDEO_OUTPUT_ASSET_REGISTRATION_INVALID");
+            }
+            totalBytes += existing.size;
+            if (totalBytes > maxTotalBytes) throw fail("Provider output collection exceeds its total size limit.", "VIDEO_OUTPUT_TOTAL_TOO_LARGE");
             assetIds.push(existing.id);
             continue;
           }
