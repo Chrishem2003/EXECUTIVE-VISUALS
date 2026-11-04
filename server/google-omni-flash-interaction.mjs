@@ -225,7 +225,9 @@ export function normalizeGeminiOmniFlashInteractionResponse(response, {
   }
   const statusMap = new Map([
     ["completed", "succeeded"], ["in_progress", "running"],
-    ["requires_action", "waiting"], ["failed", "failed"]
+    ["requires_action", "waiting"], ["failed", "failed"],
+    ["cancelled", "canceled"], ["incomplete", "incomplete"],
+    ["budget_exceeded", "failed"]
   ]);
   const status = statusMap.get(response.status) ?? "unknown";
   let video = null;
