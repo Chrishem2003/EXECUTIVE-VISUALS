@@ -11,7 +11,7 @@ The request uses `nodeOutputs`, keyed by published node ID and output key:
 - Primitive input: `{ type: "primitive", value: ... }`
 - Media input: `{ type: "image" | "video" | "audio", uri: ... }`
 
-Input node IDs and exposed keys are available from the published workflow graph. The API may silently ignore mismatched node IDs/keys and fall back to saved values, so this planner rejects unknown and non-exposed inputs locally.
+Input node IDs and exposed keys are available from the published workflow graph. Graph primitive types are exposed as `string`, `number`, or `boolean`, while the invocation API wraps these values as `{ type: "primitive", value: ... }`. The API may silently ignore mismatched node IDs/keys and fall back to saved values, so this planner normalizes graph primitive types and rejects unknown and non-exposed inputs locally.
 
 Invocation statuses are `PENDING`, `THROTTLED`, `RUNNING`, `SUCCEEDED`, and `FAILED`. Poll no more often than once every five seconds. `SUCCEEDED` does not mean every node succeeded: inspect `nodeErrors` and verify every expected output exists. Final `cost.credits` may be absent until the invocation finishes. Output URLs expire within 24–48 hours and must be copied to private application storage rather than exposed directly.
 
