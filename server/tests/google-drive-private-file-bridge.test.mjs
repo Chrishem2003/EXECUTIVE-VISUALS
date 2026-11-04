@@ -149,7 +149,8 @@ test("rejects deceptive resumable upload session paths and hosts before sending 
   for (const uploadLocation of [
     "https://www.googleapis.com/upload/drive/v3/files-evil?upload_id=x",
     "https://attacker.example/upload/drive/v3/files?upload_id=x",
-    "http://www.googleapis.com/upload/drive/v3/files?upload_id=x"
+    "http://www.googleapis.com/upload/drive/v3/files?upload_id=x",
+    "https://www.googleapis.com:444/upload/drive/v3/files?upload_id=x"
   ]) {
     const h = harness({ uploadLocation });
     await assert.rejects(() => h.bridge.uploadPrivateAsset({ ownerId, projectId, assetId }),
