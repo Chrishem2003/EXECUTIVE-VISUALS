@@ -37,6 +37,29 @@ export interface ActiveTimelineClip {
   sourceOutSeconds:number;
 }
 
+export interface ActiveTimelineOverlay extends ActiveTimelineClip {
+  x:number;
+  y:number;
+  width:number;
+  height:number;
+  opacity:number;
+}
+
+/** Resolve active still-image overlay geometry in timeline-canvas coordinates. */
+export function resolveTimelineOverlays(timeline:EditorialTimeline,frame:number):ActiveTimelineOverlay[] {
+  return resolveTimelineFrame(timeline,frame).filter(item=>item.track.kind==="overlay").map(item=>{
+    const metadata=item.clip.metadata||{};
+    const canvasWidth=Math.max(16,Number.isFinite(timeline.width)?timeline.width:1920);
+    const canvasHeight=Math.max(16,Number.isFinite(timeline.height)?timeline.height:1080);
+    const width=Math.max(16,Math.min(canvasWidth,Number.isFinite(Number(metadata.width))?Number(metadata.width):canvasWidth*0.24));
+    const height=Math.max(16,Math.min(canvasHeight,Number.isFinite(Number(metadata.height))?Number(metadata.height):canvasHeight*0.24));
+    const x=Math.max(0,Math.min(canvasWidth-width,Number.isFinite(Number(metadata.x))?Number(metadata.x):canvasWidth-width-24));
+    const y=Math.max(0,Math.min(canvasHeight-height,Number.isFinite(Number(metadata.y))?Number(metadata.y):24));
+    const opacity=Math.max(0,Math.min(1,Number.isFinite(Number(metadata.opacity))?Number(metadata.opacity):1));
+    return {...item,x,y,width,height,opacity};
+  });
+}
+
 /** Resolve every enabled clip covering a timeline frame, preserving track order for compositing. */
 export function resolveTimelineFrame(timeline:EditorialTimeline,frame:number):ActiveTimelineClip[] {
   const timelineSeconds=frameToSeconds(frame,timeline.frameRate);
