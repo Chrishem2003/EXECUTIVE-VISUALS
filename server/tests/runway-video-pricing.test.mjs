@@ -25,6 +25,7 @@ test("uses resolution-specific rates and rejects unsupported resolutions",()=>{
 
 test("applies minimum credit charges for Seedance tiers",()=>{
   assert.equal(estimateRunwayVideoCredits({model:"seedance2",durationSeconds:2,resolution:"480p",pricingDate:date}).estimatedCredits,56);
+  assert.equal(estimateRunwayVideoCredits({model:"seedance2",durationSeconds:4,resolution:"2160p",pricingDate:date}).estimatedCredits,600);
   assert.equal(estimateRunwayVideoCredits({model:"seedance2_fast",durationSeconds:2,resolution:"720p",pricingDate:date}).estimatedCredits,48);
   assert.equal(estimateRunwayVideoCredits({model:"seedance2_mini",durationSeconds:2,resolution:"480p",pricingDate:date}).estimatedCredits,28);
 });
