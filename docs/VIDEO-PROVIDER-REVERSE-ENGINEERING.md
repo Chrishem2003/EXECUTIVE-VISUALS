@@ -165,3 +165,16 @@ Provider-specific behavior must remain explicit:
 - [ ] Add UI cost preview, per-project hard budget, approval checkpoints, job progress, output lineage and retry controls.
 
 **Release gate:** no provider adapter may be enabled for end users until contract tests pass, credential storage is verified, cost ceilings are enforced, output ingestion is private and durable, and hosted acceptance is explicitly approved.
+
+
+## Luma Ray 3.2 adapter implementation update
+
+The official current Luma Agents API uses `POST https://agents.lumalabs.ai/v1/generations` with `model: "ray-3.2"`, `type: "video"`, a prompt, aspect ratio, and nested `video` options. The generation returns a provider generation ID and queued state; poll `GET /v1/generations/{id}` until completed/failed. Completed MP4 URLs are presigned and expire after one hour; `usage.credits_charged` is provider-reported usage when available.
+
+Executive Visuals now contains:
+- `server/luma-ray32-video-adapter.mjs`: server-only Bearer credential, one-shot submit, bounded polling, generation status normalization, prompt/resolution/duration validation, HTTPS input-reference validation, first/last-frame and up-to-64-keyframe mapping, and temporary output URL validation.
+- `server/tests/luma-ray32-video-adapter.test.mjs`: mocked API tests; no real API calls or credentials.
+- The cloud executor now accepts explicitly model-bound adapters rather than hard-coding Runway, while preserving the same Postgres submission ledger, one-shot POST, ambiguous-outcome quarantine, actual-cost evidence, and private-output-ingestion gates.
+- The Luma registry marks the adapter as `implemented_disabled`; only text-to-video and image-to-video are implemented by this adapter. Video edit, extend and reframe remain provider capabilities but are not claimed as implemented execution operations.
+
+This is still not live-enabled. A real deployment needs a server-side `LUMA_AGENTS_API_KEY`, provider cost/usage reconciliation, safe asset upload/reference preparation, private output ingestion, per-project budget and explicit approval. No provider request was made by these changes.
