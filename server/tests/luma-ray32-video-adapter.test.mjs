@@ -74,3 +74,16 @@ test("Luma adapter requires server credentials and bounds generation identifiers
   const adapter = createLumaRay32Adapter({ apiKey: "test-secret", fetchImpl: async () => response({}) });
   await assert.rejects(adapter.getStatus("../secret"), error => error.code === "LUMA_VIDEO_TASK_ID_INVALID");
 });
+
+test("Luma adapter rejects malformed boolean controls, untrusted API origins and mismatched task records", async () => {
+  assert.throws(() => createLumaRay32Adapter({
+    apiKey: "test-secret", baseUrl: "https://attacker.example/v1",
+    fetchImpl: async () => response({})
+  }), error => error.code === "LUMA_VIDEO_ADAPTER_ERROR");
+  const adapter = createLumaRay32Adapter({
+    apiKey: "test-secret",
+    fetchImpl: async () => response({ id: "gen_other123", state: "queued" })
+  });
+  await assert.rejects(adapter.prepareInput({ prompt: "invalid control", hdr: "true" }), error => error.code === "LUMA_VIDEO_INPUT_INVALID");
+  await assert.rejects(adapter.getStatus("gen_12345678"), error => error.code === "LUMA_VIDEO_RESPONSE_MISMATCH");
+});
