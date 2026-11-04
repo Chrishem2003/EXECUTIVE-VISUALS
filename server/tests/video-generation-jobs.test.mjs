@@ -71,13 +71,18 @@ test("idempotency conflicts reject different requests without extra reservations
 });
 
 test("disabled providers and unsupported model options fail before budget or usage reservation", async () => {
-  const f = await fixture();
+  const f = await fixture({ provider: () => ({ ...model, availability: "disabled" }) });
   try {
     assert.throws(() => f.service.enqueue({ ownerId, input: baseInput }), e => e.code === "VIDEO_JOB_PROVIDER_DISABLED");
-    assert.throws(() => f.service.enqueue({ ownerId, input: { ...baseInput, negativePrompt: "blur" } }), e => e.code === "VIDEO_JOB_PROVIDER_DISABLED");
     assert.equal(f.budgetCalls.length, 0);
     assert.equal(f.db.prepare("SELECT COUNT(*) AS n FROM remote_usage_reservations").get().n, 0);
   } finally { f.db.close(); await rm(f.root, { recursive: true, force: true }); }
+
+  const unsupported = await fixture();
+  try {
+    assert.throws(() => unsupported.service.enqueue({ ownerId, input: { ...baseInput, negativePrompt: "blur" } }), e => e.code === "VIDEO_GENERATION_UNSUPPORTED_CAPABILITY");
+    assert.equal(unsupported.budgetCalls.length, 0);
+  } finally { unsupported.db.close(); await rm(unsupported.root, { recursive: true, force: true }); }
 });
 
 test("project authorization, budget approval and usage limits fail closed", async () => {
