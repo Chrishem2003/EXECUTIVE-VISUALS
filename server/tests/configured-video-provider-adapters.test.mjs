@@ -37,9 +37,7 @@ test("registers Luma only with explicit global/provider gates and authoritative 
   const task = await adapter.getStatus(submitted.taskId);
   assert.equal(task.status, "succeeded");
   assert.equal((await adapter.resolveActualCost({ task, providerTaskId: submitted.taskId })).amount, 0.3);
-  assert.deepEqual(await adapter.ingestOutputs({ task }), {
-    assetIds: ["asset-1"], provider: "luma", model: "ray-3.2"
-  });
+  assert.deepEqual(await adapter.ingestOutputs({ task }), { assetIds: ["asset-1"] });
 });
 
 test("does not register Luma when both provider-specific opt-ins are absent", () => {
