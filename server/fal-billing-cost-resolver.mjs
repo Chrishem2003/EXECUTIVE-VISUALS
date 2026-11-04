@@ -16,7 +16,7 @@ export function createFalBillingCostResolver({
   if (typeof fetchImpl !== "function") throw new Error("FAL billing resolver requires fetch.");
   if (!Number.isInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 60000) throw new Error("FAL billing resolver timeout is invalid.");
 
-  return async function resolveFalActualCost({ providerTaskId, model } = {}) {
+  return async function resolveFalActualCost({ providerTaskId, model, submittedAt, job } = {}) {
     const requestId = String(providerTaskId || "");
     const endpointId = String(model || "");
     if (!/^[a-zA-Z0-9_-]{1,200}$/.test(requestId) ||
@@ -30,6 +30,17 @@ export function createFalBillingCostResolver({
     const url = new URL("/v1/models/billing-events", API_ORIGIN);
     url.searchParams.set("request_id", requestId);
     url.searchParams.set("endpoint_id", endpointId);
+    const submittedTime = submittedAt || job?.created_at || job?.createdAt;
+    const lookbackStart = Date.now() - 89 * 24 * 60 * 60 * 1000;
+    let startTime = lookbackStart;
+    if (submittedTime !== undefined) {
+      const parsedStart = Date.parse(submittedTime);
+      if (!Number.isFinite(parsedStart)) throw fail("FAL billing lookup requires a valid submission timestamp.", "VIDEO_BILLING_INPUT_INVALID");
+      if (parsedStart < lookbackStart) throw fail("FAL billing events can only be queried within the provider 90-day date-range limit.", "VIDEO_BILLING_LOOKBACK_EXCEEDED");
+      if (parsedStart > Date.now()) throw fail("FAL submission timestamp cannot be in the future.", "VIDEO_BILLING_INPUT_INVALID");
+      startTime = parsedStart;
+    }
+    url.searchParams.set("start", new Date(startTime).toISOString());
     url.searchParams.set("limit", "10");
 
     const controller = new AbortController();
