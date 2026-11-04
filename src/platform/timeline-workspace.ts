@@ -25,6 +25,7 @@ type PreviewAudioNode={element:HTMLAudioElement;gain:GainNode;active:boolean;tra
 const sequenceAudioNodes=new Map<string,PreviewAudioNode>();
 const sequenceCaptionCache=new Map<string,Promise<CaptionCue[]>>();
 const sequenceMediaUrlCache=new Map<string,{url?:string;expiresAt:number;pending?:Promise<string>}>();
+let sequenceMediaProjectId="";
 const sequenceMutedTrackIds=new Set<string>();
 let sequenceSoloTrackId:string|null=null;
 let sequenceAudioContext:AudioContext|null=null;
@@ -46,6 +47,9 @@ async function assetMediaUrl(asset:Asset):Promise<string>{
 function clearSequenceAudio(){
  for(const node of sequenceAudioNodes.values()){node.element.pause();node.element.removeAttribute("src");node.element.load();node.gain.disconnect();}
  sequenceAudioNodes.clear();void sequenceAudioContext?.close();sequenceAudioContext=null;
+}
+function resetSequenceMediaCache(){
+ stopSequencePlayback();clearSequenceAudio();sequenceMediaUrlCache.clear();sequenceCaptionCache.clear();
 }
 function ensureSequenceAudioContext(){
  if(!sequenceAudioContext)sequenceAudioContext=new AudioContext();
@@ -366,7 +370,8 @@ async function refresh(){
   const projects=await apiRequest<{projects:CloudProject[]}>("/api/cloud/projects");
   state.cloudProjects=projects.projects||[];
   if(!state.cloudProjectId||!state.cloudProjects.some(p=>p.id===state.cloudProjectId))state.cloudProjectId=state.cloudProjects[0]?.id||"";
-  if(!state.cloudProjectId){state.assets=[];state.cloudTimelines=[];state.timeline=null;state.message="Create a cloud project first, then select it here.";state.status="ready";return;}
+  if(!state.cloudProjectId){if(sequenceMediaProjectId){resetSequenceMediaCache();sequenceMediaProjectId="";}state.assets=[];state.cloudTimelines=[];state.timeline=null;state.message="Create a cloud project first, then select it here.";state.status="ready";return;}
+  if(sequenceMediaProjectId!==state.cloudProjectId){resetSequenceMediaCache();sequenceMediaProjectId=state.cloudProjectId;}
   const query="?projectId="+encodeURIComponent(state.cloudProjectId);
   const [assets,timelines]=await Promise.all([
    apiRequest<{assets:Asset[]}>("/api/cloud/assets"+query),
@@ -379,6 +384,7 @@ async function refresh(){
   else state.timeline=null;
   state.ffmpeg=true;state.status="ready";state.message=state.timeline?"Cloud timeline loaded. Changes save to the selected private project.":"No saved cloud timeline yet. Create one to begin.";await loadVariantComparison();return;
  }
+ if(sequenceMediaProjectId){resetSequenceMediaCache();sequenceMediaProjectId="";}
  const health=await apiRequest<{media:{ffmpeg:boolean}}>("/api/health");state.ffmpeg=health.media.ffmpeg;
  const [assetResponse,timelineResponse]=await Promise.all([apiRequest<{assets:Asset[]}>("/api/assets"),apiRequest<{timelines:SavedTimeline[]}>("/api/timelines")]);
  state.assets=assetResponse.assets;state.timelines=timelineResponse.timelines;
@@ -552,5 +558,6 @@ document.addEventListener("click",event=>{
  const action=target.closest<HTMLElement>("[data-tl-action]");
  if(action)void runAction(action);
 });
-window.addEventListener("ev:authenticated",()=>void initTimelineWorkspace());
+window.addEventListener("ev:authenticated",()=>{resetSequenceMediaCache();sequenceMediaProjectId="";void initTimelineWorkspace();});
+window.addEventListener("ev:unauthenticated",()=>{resetSequenceMediaCache();sequenceMediaProjectId="";});
 window.addEventListener("ev:assets-updated",()=>void refresh().then(paint).catch(error=>{state.message=error.message;paint();}));
