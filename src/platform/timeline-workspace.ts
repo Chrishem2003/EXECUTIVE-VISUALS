@@ -10,7 +10,7 @@ import { analyzeCreativeTraceability, readCreativeTrace } from "../core/creative
 import { appendCreativeDecision, readCreativeDecisionHistory } from "../core/creative-decision-ledger";
 import { compareTimelineVariants, createTimelineVariant, type TimelineVariantComparison } from "../core/timeline-variants";
 import { addClip, addMarker, addTrack, createTimeline, moveClip, rational, splitClip, toOpenTimelineIo, trimClip, type EditorialTimeline, type TimelineTrack } from "../core/timeline";
-import { clampPreviewSeconds, decibelsToLinearGain, frameToSeconds, getTimelineDurationFrames, isPreviewTrackAudible, resolveTimelineFrame, secondsToFrame, stepPreviewSeconds } from "../core/timeline-preview";
+import { clampPreviewSeconds, decibelsToLinearGain, frameToSeconds, getTimelineDurationFrames, isPreviewTrackAudible, resolveTimelineFrame, resolveTimelineOverlays, secondsToFrame, stepPreviewSeconds } from "../core/timeline-preview";
 
 type Asset={id:string;name:string;mediaType:string;size:number;metadata?:Record<string,unknown>};
 type SavedTimeline={id:string;projectId?:string|null;name:string;revision:number;document?:EditorialTimeline};
@@ -85,9 +85,9 @@ function sequencePreviewPanel(){
  const hasPicture=state.timeline.tracks.some(track=>track.enabled&&track.kind==="video"&&track.clips.some(clip=>clip.enabled));
  if(state.mode==="cloud")return '<section class="timeline-preview panel"><div class="eyebrow">SEQUENCE PREVIEW</div><h3>Cloud preview is not connected yet</h3><p class="muted">Cloud playback stays blocked until the authenticated private-media streaming endpoint is integrated. No public or guessed asset URLs are used.</p></section>';
  return '<section class="timeline-preview panel"><div class="timeline-panel-heading"><div><div class="eyebrow">SEQUENCE PREVIEW · E1</div><h3>'+esc(state.timeline.name)+'</h3></div><small>'+duration+' frames · '+(rate.numerator/rate.denominator).toFixed(3)+' fps</small></div>'+
- '<div class="preview-stage sequence-preview-stage"><video id="tl-sequence-video" class="preview-media" playsinline preload="metadata" hidden></video><img id="tl-sequence-image" class="preview-still" alt="Sequence preview frame" hidden><div id="tl-sequence-empty" class="preview-empty">'+(hasPicture?'Press Play to preview the edited picture sequence.':'Add an enabled clip to a video track to preview the sequence.')+'</div></div>'+
+ '<div class="preview-stage sequence-preview-stage" style="aspect-ratio:'+Math.max(16,state.timeline.width||1920)+' / '+Math.max(16,state.timeline.height||1080)+'"><video id="tl-sequence-video" class="preview-media" playsinline preload="metadata" hidden></video><img id="tl-sequence-image" class="preview-still" alt="Sequence preview frame" hidden><div id="tl-sequence-overlay-layer" class="sequence-overlay-layer" aria-hidden="true"></div><div id="tl-sequence-empty" class="preview-empty">'+(hasPicture?'Press Play to preview the edited picture sequence.':'Add an enabled clip to a video track to preview the sequence.')+'</div></div>'+
  '<div class="preview-transport sequence-transport"><button class="secondary" data-tl-action="sequence-play" '+(!hasPicture||duration===0?'disabled':'')+'>▶ Play</button><button class="secondary" data-tl-action="sequence-pause">Ⅱ Pause</button><button class="secondary" data-tl-action="sequence-step-back">−1 frame</button><button class="secondary" data-tl-action="sequence-step-forward">+1 frame</button><input id="tl-sequence-scrub" aria-label="Seek sequence by frame" type="range" min="0" max="'+Math.max(0,duration-1)+'" value="'+Math.min(sequenceFrame,Math.max(0,duration-1))+'" step="1" '+(duration===0?'disabled':'')+'><output id="tl-sequence-time">'+frameToSeconds(Math.min(sequenceFrame,Math.max(0,duration-1)),rate).toFixed(3)+' s</output></div>'+
- '<small class="muted">Local preview now mixes enabled audio-track clips in sync with the sequence. Clip gain is applied in dB. Overlay compositing, caption burn-in and authenticated cloud streaming remain outstanding; use the verified FFmpeg master render for final delivery.</small></section>';
+ '<small class="muted">Local preview mixes synchronized audio and active still-image overlay tracks in timeline order. Caption burn-in and authenticated cloud streaming remain outstanding; use the FFmpeg master render for final delivery.</small></section>';
 }
 function stopSequencePlayback(){
  sequencePlaying=false;if(sequenceRaf!==null)cancelAnimationFrame(sequenceRaf);sequenceRaf=null;
@@ -100,10 +100,32 @@ function renderSequenceFrame(frame:number,forceSeek=false){
  const slider=document.querySelector<HTMLInputElement>("#tl-sequence-scrub");if(slider)slider.value=String(sequenceFrame);
  const output=document.querySelector<HTMLOutputElement>("#tl-sequence-time");if(output)output.value=frameToSeconds(sequenceFrame,state.timeline.frameRate).toFixed(3)+" s";
  syncSequenceAudio(sequenceFrame,forceSeek);
- const active=resolveTimelineFrame(state.timeline,sequenceFrame).filter(item=>item.track.kind==="video");
+ const resolved=resolveTimelineFrame(state.timeline,sequenceFrame);
+ const overlayLayer=document.querySelector<HTMLElement>("#tl-sequence-overlay-layer");
+ if(overlayLayer){
+  const overlays=resolveTimelineOverlays(state.timeline,sequenceFrame);
+  const activeOverlayIds=new Set(overlays.map(item=>item.clip.id));
+  for(const child of Array.from(overlayLayer.children)){
+   if(!activeOverlayIds.has((child as HTMLElement).dataset.clipId||""))child.remove();
+  }
+  for(const item of overlays){
+   const asset=state.assets.find(value=>value.id===item.clip.assetId);
+   if(!asset?.mediaType.startsWith("image/"))continue;
+   let overlay=Array.from(overlayLayer.children).find(child=>(child as HTMLElement).dataset.clipId===item.clip.id) as HTMLImageElement|undefined;
+   if(!overlay){overlay=document.createElement("img");overlay.alt="";overlay.dataset.clipId=item.clip.id;overlay.dataset.assetId=asset.id;overlay.draggable=false;overlay.src="/api/assets/"+encodeURIComponent(asset.id)+"/file";overlayLayer.appendChild(overlay);}
+   else if(overlay.dataset.assetId!==asset.id){overlay.dataset.assetId=asset.id;overlay.src="/api/assets/"+encodeURIComponent(asset.id)+"/file";}
+   overlay.style.left=(item.x/Math.max(16,state.timeline.width)*100)+"%";
+   overlay.style.top=(item.y/Math.max(16,state.timeline.height)*100)+"%";
+   overlay.style.width=(item.width/Math.max(16,state.timeline.width)*100)+"%";
+   overlay.style.height=(item.height/Math.max(16,state.timeline.height)*100)+"%";
+   overlay.style.opacity=String(item.opacity);
+   overlayLayer.appendChild(overlay);
+  }
+ }
+ const active=resolved.filter(item=>item.track.kind==="video");
  const current=active[active.length-1],video=document.querySelector<HTMLVideoElement>("#tl-sequence-video"),image=document.querySelector<HTMLImageElement>("#tl-sequence-image"),empty=document.querySelector<HTMLElement>("#tl-sequence-empty");
  if(!video||!image||!empty)return;
- if(!current){video.pause();video.hidden=true;image.hidden=true;empty.hidden=false;empty.textContent="No active picture clip at this timeline position.";return;}
+ if(!current){video.pause();video.hidden=true;image.hidden=true;if(overlayLayer)overlayLayer.replaceChildren();empty.hidden=false;empty.textContent="No active picture clip at this timeline position.";return;}
  const asset=state.assets.find(item=>item.id===current.clip.assetId);
  if(!asset){video.pause();video.hidden=true;image.hidden=true;empty.hidden=false;empty.textContent="The active source asset is unavailable in this workspace.";return;}
  const mediaUrl="/api/assets/"+encodeURIComponent(asset.id)+"/file";empty.hidden=true;

@@ -1,8 +1,8 @@
 # Sequence preview engine
 
-**Branch:** `feat/sequence-preview-engine`  
+**Branch:** `feat/sequence-overlay-caption-preview`  
 **Milestone:** E1 — browser preview and frame-accurate transport  
-**Status:** local primary-picture playback and synchronized multi-track audio preview implemented; latest CI verification pending. Overlay/caption compositing, browser-level playback tests and hosted private-media playback remain outstanding.
+**Status:** local primary-picture playback, synchronized multi-track audio and still-image overlay preview implemented. Caption composition, browser-level playback tests and hosted private-media playback remain outstanding.
 
 ## Implemented foundation
 
@@ -13,6 +13,7 @@ The timeline preview core now provides:
 - A local browser transport with play, pause, frame stepping and timeline scrubbing across cuts on the primary picture track.
 - Video and still-image playback with clip-speed playback-rate mapping and explicit decode/missing-source feedback.
 - Synchronized playback of enabled audio clips across multiple tracks, with per-clip dB gain and speed controls, plus temporary track mute/solo routing. Preview gain is converted to linear amplitude through a bounded helper. Mute/solo state is intentionally not persisted into the timeline.
+- Local still-image overlay composition in timeline track order, with clip-timed visibility and bounded canvas-relative position, dimensions and opacity. Only image assets are rendered as overlays in this browser preview; the FFmpeg master renderer remains authoritative.
 - Track-order preservation so the UI can composite active layers deterministically.
 - Source-time mapping that respects source in points, source duration and clip speed.
 - Exclusive clip out-points and disabled track/clip filtering.
@@ -24,7 +25,7 @@ The resolver is deliberately independent of browser media elements. This keeps t
 
 1. Add browser-level tests for play, pause, seek, frame stepping, source changes and decode failures.
 2. Add audio waveform/level inspection, meters, automation and synchronized clip boundary handling.
-3. Composite still images, captions and overlay layers in track order.
+3. Add caption cue preview and validate visual overlay placement against FFmpeg output.
 4. Connect proxy-first source selection and abortable authenticated cloud media playback.
 5. Validate browser preview against FFmpeg fixtures, including speed, source trims and gaps.
 6. Add stale-revision protection and cleanup for media resources when sources change or the workspace unmounts.

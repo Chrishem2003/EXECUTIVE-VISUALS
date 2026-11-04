@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { rational } from "../../src/core/timeline.ts";
-import { clipSourceSecondsAtTimelineFrame, clampPreviewSeconds, decibelsToLinearGain, isPreviewTrackAudible, frameToSeconds, getTimelineDurationFrames, resolveTimelineFrame, secondsToFrame, stepPreviewSeconds } from "../../src/core/timeline-preview.ts";
+import { clipSourceSecondsAtTimelineFrame, clampPreviewSeconds, decibelsToLinearGain, isPreviewTrackAudible, frameToSeconds, getTimelineDurationFrames, resolveTimelineFrame, resolveTimelineOverlays, secondsToFrame, stepPreviewSeconds } from "../../src/core/timeline-preview.ts";
 
 const rate={numerator:30000,denominator:1001};
 const clip={id:"c",assetId:"a",name:"clip",sourceRange:{start:rational(90,30),duration:rational(150,30)},timelineStart:rational(30,24),duration:rational(120,24),enabled:true};
@@ -97,4 +97,19 @@ test("preview mute and solo routing is temporary and does not alter timeline tra
  assert.equal(isPreviewTrackAudible("music",new Set(),"voice"),false);
  assert.equal(isPreviewTrackAudible("voice",new Set(),"voice"),true);
  assert.equal(isPreviewTrackAudible("voice",new Set(),null),true);
+});
+
+test("overlay resolver preserves track order and clamps geometry to the sequence canvas",()=>{
+ const first=makeClip("logo","ov1",0,48),second={...makeClip("bug","ov2",0,48),metadata:{x:5000,y:-5,width:3000,height:10,opacity:2}};
+ const timeline=makeTimeline([
+  {id:"base",name:"Picture",kind:"video",enabled:true,locked:false,clips:[makeClip("base-shot","base",0,48)]},
+  {id:"ov1",name:"Logo",kind:"overlay",enabled:true,locked:false,clips:[{...first,metadata:{x:24,y:36,width:240,height:120,opacity:0.75}}]},
+  {id:"ov2",name:"Bug",kind:"overlay",enabled:true,locked:false,clips:[second]},
+  {id:"off",name:"Disabled overlay",kind:"overlay",enabled:false,locked:false,clips:[makeClip("hidden","off",0,48)]}
+ ]);
+ const overlays=resolveTimelineOverlays(timeline,12);
+ assert.deepEqual(overlays.map(item=>item.clip.id),["logo","bug"]);
+ assert.deepEqual([overlays[0].x,overlays[0].y,overlays[0].width,overlays[0].height,overlays[0].opacity],[24,36,240,120,0.75]);
+ assert.deepEqual([overlays[1].x,overlays[1].y,overlays[1].width,overlays[1].height,overlays[1].opacity],[0,0,1920,16,1]);
+ assert.equal(resolveTimelineOverlays(timeline,48).length,0);
 });
