@@ -155,6 +155,13 @@ if (!videoBudgetSql.includes("approval.consumed_at is not null") || !videoBudget
 if (!videoBudgetSql.includes("policy.reserved_amount + policy.spent_amount + p_reserved_amount > policy.spend_limit_amount")) {
   issues.push("Cloud enqueue must enforce the approved cumulative spend ceiling.");
 }
+if (!videoBudgetSql.includes("VIDEO_ENQUEUE_PROVIDER_NOT_ENABLED") ||
+    !videoBudgetSql.includes("VIDEO_PRICE_DURATION_INVALID") ||
+    !videoBudgetSql.includes("VIDEO_PRICE_OUTPUT_FORMAT_UNSUPPORTED") ||
+    !videoBudgetSql.includes("p_reserved_amount < ((p_input ->> 'durationSeconds')::numeric * 0.12)")) {
+  issues.push("Postgres enqueue must fail closed on unpriced models and enforce the verified Gen-4.5 USD price floor.");
+}
+
 if (!videoBudgetSql.includes("create or replace function executive_visuals.enqueue_video_generation_job(") ||
     !videoBudgetSql.includes("grant execute on function executive_visuals.enqueue_video_generation_job(") ||
     !videoBudgetSql.includes("revoke all on function executive_visuals.enqueue_video_generation_job(")) {
