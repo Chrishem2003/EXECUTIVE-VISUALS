@@ -119,6 +119,46 @@ begin
 end
 $idempotency$;
 
+do $price_floor$
+begin
+ begin
+  perform * from executive_visuals.enqueue_video_generation_job(
+   '123e4567-e89b-42d3-a456-426614174000',
+   '323e4567-e89b-42d3-a456-426614174000',
+   'pg-integration-video-underpriced','runway','gen4.5',repeat('d',64),
+   jsonb_build_object('projectId','323e4567-e89b-42d3-a456-426614174000',
+     'provider','runway','model','gen4.5','requestHash',repeat('d',64),
+     'durationSeconds',5,'outputFormat','mp4'),
+   '523e4567-e89b-42d3-a456-426614174000',0.5,'USD'
+  );
+  raise exception 'underpriced generation unexpectedly enqueued';
+ exception when others then
+  if sqlerrm = 'underpriced generation unexpectedly enqueued' then raise; end if;
+  if sqlerrm <> 'VIDEO_BUDGET_BELOW_PROVIDER_ESTIMATE' then raise; end if;
+ end;
+end
+$price_floor$;
+
+do $unpriced_provider$
+begin
+ begin
+  perform * from executive_visuals.enqueue_video_generation_job(
+   '123e4567-e89b-42d3-a456-426614174000',
+   '323e4567-e89b-42d3-a456-426614174000',
+   'pg-integration-video-unpriced','luma','ray-3.2',repeat('e',64),
+   jsonb_build_object('projectId','323e4567-e89b-42d3-a456-426614174000',
+     'provider','luma','model','ray-3.2','requestHash',repeat('e',64),
+     'durationSeconds',5,'outputFormat','mp4'),
+   '523e4567-e89b-42d3-a456-426614174000',1,'USD'
+  );
+  raise exception 'unpriced provider unexpectedly enqueued';
+ exception when others then
+  if sqlerrm = 'unpriced provider unexpectedly enqueued' then raise; end if;
+  if sqlerrm <> 'VIDEO_ENQUEUE_PROVIDER_NOT_ENABLED' then raise; end if;
+ end;
+end
+$unpriced_provider$;
+
 do $approval_replay$
 begin
  begin
