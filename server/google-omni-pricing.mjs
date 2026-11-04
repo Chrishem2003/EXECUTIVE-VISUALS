@@ -10,7 +10,11 @@ function fail(message, code = "GOOGLE_OMNI_PRICE_INPUT_INVALID") {
   return Object.assign(new Error(message), { code });
 }
 function money(value) {
-  return Math.ceil(value * 1_000_000) / 1_000_000;
+  return Math.round(value * 1_000_000) / 1_000_000;
+}
+function usageMoney(inputTokens, outputTokens) {
+  const microsNumerator = BigInt(inputTokens) * 3n + BigInt(outputTokens) * 35n;
+  return Number((microsNumerator + 1n) / 2n) / 1_000_000;
 }
 
 /**
@@ -35,7 +39,7 @@ export function estimateGoogleOmniVideoCost({
   const maxInputCost = MAX_CONTEXT_TOKENS * INPUT_USD_PER_MILLION / 1_000_000;
   const maxOutputTokens = VIDEO_OUTPUT_TOKENS_PER_SECOND_720P * MAX_OUTPUT_SECONDS;
   const maxOutputCost = maxOutputTokens * VIDEO_OUTPUT_USD_PER_MILLION / 1_000_000;
-  const amount = money(maxInputCost + maxOutputCost);
+  const amount = usageMoney(MAX_CONTEXT_TOKENS, maxOutputTokens);
   return Object.freeze({
     provider: "google",
     model: MODEL,
@@ -74,7 +78,7 @@ export function resolveGoogleOmniActualCost({ task, providerTaskId } = {}) {
   // This conservative rate also avoids under-settling if the response includes
   // auxiliary text/thought tokens alongside the video payload.
   const outputCost = outputTokens * VIDEO_OUTPUT_USD_PER_MILLION / 1_000_000;
-  const amount = money(inputCost + outputCost);
+  const amount = usageMoney(inputTokens, outputTokens);
   return Object.freeze({
     amount,
     currency: "USD",
