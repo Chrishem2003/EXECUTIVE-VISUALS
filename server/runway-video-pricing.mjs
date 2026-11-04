@@ -68,9 +68,22 @@ export function estimateRunwayVideoCredits(options={}) {
     case "kling2.5_turbo_pro": perSecond(12); break;
     case "kling3.0_standard": perSecond(audio(hasAudio)?13:9); break;
     case "kling3.0_pro": perSecond(audio(hasAudio)?17:12); break;
-    case "kling3.0_4k": case "klingO3_4k": perSecond(43); break;
-    case "klingO3_standard": perSecond(13); break;
-    case "klingO3_pro": perSecond(17); break;
+    case "kling3.0_4k": perSecond(43); break;
+    case "klingO3_standard":
+      if(inputType==="video"&&inputVideo<=0)throw fail("inputVideoSeconds is required for Kling O3 video-to-video pricing.","RUNWAY_PRICE_INPUT_REQUIRED");
+      credits=(inputType==="video"?inputVideo:duration)*13;
+      formula=(inputType==="video"?inputVideo+"s input video":duration+"s output")+" × 13 credits/s";
+      break;
+    case "klingO3_pro":
+      if(inputType==="video"&&inputVideo<=0)throw fail("inputVideoSeconds is required for Kling O3 video-to-video pricing.","RUNWAY_PRICE_INPUT_REQUIRED");
+      credits=(inputType==="video"?inputVideo:duration)*17;
+      formula=(inputType==="video"?inputVideo+"s input video":duration+"s output")+" × 17 credits/s";
+      break;
+    case "klingO3_4k":
+      if(inputType==="video"&&inputVideo<=0)throw fail("inputVideoSeconds is required for Kling O3 video-to-video pricing.","RUNWAY_PRICE_INPUT_REQUIRED");
+      credits=(inputType==="video"?inputVideo:duration)*43;
+      formula=(inputType==="video"?inputVideo+"s input video":duration+"s output")+" × 43 credits/s";
+      break;
     case "wan3": perSecond(resolutionRate({"480p":5,"720p":10,"1080p":20})); break;
     case "wan3_prime": perSecond(resolutionRate({"480p":6.8,"720p":14,"1080p":28})); break;
     case "seedance2":
