@@ -91,9 +91,6 @@ function stopSequencePlayback(){
  const video=document.querySelector<HTMLVideoElement>("#tl-sequence-video");video?.pause();
  for(const node of sequenceAudioNodes.values()){node.active=false;node.element.pause();}
 }
- sequencePlaying=false;if(sequenceRaf!==null)cancelAnimationFrame(sequenceRaf);sequenceRaf=null;
- const video=document.querySelector<HTMLVideoElement>("#tl-sequence-video");video?.pause();
-}
 function renderSequenceFrame(frame:number,forceSeek=false){
  if(!state.timeline)return;
  const duration=getTimelineDurationFrames(state.timeline);sequenceFrame=Math.max(0,Math.min(Math.max(0,duration-1),Math.round(frame)));
