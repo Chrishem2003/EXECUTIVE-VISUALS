@@ -125,3 +125,57 @@ export function readRunwayVideoRouterDryRun(payload,{configId,maxApprovedCredits
     billable:false,settlementEligible:false
   });
 }
+
+const TASK_UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+/**
+ * Parse the documented Model Router request-history page. History currently
+ * exposes estimatedCredits and task correlation, not a settlement receipt.
+ */
+export function readRunwayRouterRequestHistoryPage(payload) {
+  if(!payload||typeof payload!=="object"||Array.isArray(payload)||!Array.isArray(payload.data)||
+     typeof payload.hasMore!=="boolean"||
+     (payload.nextCursor!==undefined&&payload.nextCursor!==null&&typeof payload.nextCursor!=="string")) {
+    throw fail("Runway router request history page is invalid.","RUNWAY_ROUTER_INVALID_RESPONSE");
+  }
+  const data=payload.data.map((row,index)=>{
+    if(!row||typeof row!=="object"||Array.isArray(row)||
+       typeof row.requestId!=="string"||!row.requestId.trim()||
+       typeof row.status!=="string"||!row.status||
+       typeof row.model!=="string"||!row.model||
+       typeof row.provider!=="string"||!row.provider||
+       !Number.isFinite(row.estimatedCredits)||row.estimatedCredits<0||
+       typeof row.createdAt!=="string"||!Number.isFinite(Date.parse(row.createdAt))||
+       (row.taskId!==undefined&&row.taskId!==null&&(typeof row.taskId!=="string"||!TASK_UUID.test(row.taskId)))) {
+      throw fail("Runway router request history row "+index+" is invalid.","RUNWAY_ROUTER_INVALID_RESPONSE");
+    }
+    return Object.freeze({
+      requestId:row.requestId,status:row.status,model:row.model,provider:row.provider,
+      estimatedCredits:row.estimatedCredits,taskId:row.taskId||null,createdAt:row.createdAt,
+      evidenceType:"router_request_history",
+      billable:false,settlementEligible:false
+    });
+  });
+  return Object.freeze({data:Object.freeze(data),hasMore:payload.hasMore,nextCursor:payload.nextCursor||null});
+}
+
+/**
+ * Correlate an app job to a provider task through the router's history. This
+ * is lineage evidence only; the history endpoint reports estimatedCredits.
+ */
+export function matchRunwayRouterRequestToTask(page,{taskId,requestId}={}) {
+  if(!page||!Array.isArray(page.data)||typeof taskId!=="string"||!TASK_UUID.test(taskId)) {
+    throw fail("Router task correlation input is invalid.","RUNWAY_ROUTER_INVALID_INPUT");
+  }
+  const matches=page.data.filter(row=>row.taskId===taskId&&(!requestId||row.requestId===requestId));
+  if(matches.length!==1) {
+    throw fail(matches.length?"Router history returned ambiguous task matches.":"Router history has no matching task record.",
+      matches.length?"RUNWAY_ROUTER_HISTORY_AMBIGUOUS":"RUNWAY_ROUTER_HISTORY_NOT_FOUND");
+  }
+  const row=matches[0];
+  return Object.freeze({
+    requestId:row.requestId,taskId:row.taskId,model:row.model,provider:row.provider,
+    estimatedCredits:row.estimatedCredits,evidenceType:"router_request_history",
+    billable:false,settlementEligible:false
+  });
+}
