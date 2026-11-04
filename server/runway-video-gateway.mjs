@@ -100,7 +100,7 @@ export function createRunwayVideoAdapter({env=process.env,fetchImpl=globalThis.f
    if(!ratio)throw fail("Runway Gen-4.5 does not support the requested aspect ratio.","RUNWAY_UNSUPPORTED_CAPABILITY");
    buildRunwayImageVideoPayload({prompt:normalized.prompt,promptImage,duration:normalized.durationSeconds,ratio,seed:normalized.seed});
    return Object.freeze({...input,runwayPromptImage:promptImage});
-  }
+  },
   async submit(input,context={}){
    const normalized=normalizeVideoGenerationRequest(input);
    assertVideoCapabilities(normalized,CAPABILITIES);
