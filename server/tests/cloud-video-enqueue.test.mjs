@@ -147,6 +147,7 @@ test("enqueue rejects mismatched request scope and invalid budget inputs before 
     provider: "luma", model: "ray-3.2",
     input: { ...input, provider: "luma", model: "ray-3.2" }
   })), error => error.code === "VIDEO_PRICE_UNVERIFIED");
+  await assert.rejects(()=>client.enqueue(args({model:"kling_4",input:{...input,model:"kling_4",resolution:"720p"}})),error=>error.code==="VIDEO_GENERATION_UNSUPPORTED_CAPABILITY");
   await assert.rejects(() => client.enqueue(args({ currency: "usd" })), /three-letter/);
   await assert.rejects(() => client.enqueue(args({ idempotencyKey: "bad key" })), /invalid format/);
   await assert.rejects(() => client.enqueue(args({ input: [] })), /must be an object/);
@@ -190,4 +191,15 @@ test("Runway budget estimate uses the shared dated pricing engine and is not set
   assert.throws(()=>estimateVideoGenerationCost({provider:"runway",model:"gen4.5",durationSeconds:1}),error=>error.code==="VIDEO_PRICE_DURATION_INVALID");
   assert.throws(()=>estimateVideoGenerationCost({provider:"runway",model:"ruby",durationSeconds:10}),error=>error.code==="VIDEO_PRICE_INPUT_REQUIRED");
   assert.throws(()=>estimateVideoGenerationCost({provider:"luma",model:"ray-3.2",durationSeconds:5}),error=>error.code==="VIDEO_PRICE_UNVERIFIED");
+});
+
+test("Gen-4.5 enqueue accepts its private first-frame path but rejects unsupported execution options",async()=>{
+  let calls=0;
+  const client=createCloudVideoEnqueue({...base,fetchImpl:async()=>{calls++;return response([resultRow]);}});
+  const queued=await client.enqueue(args({input:{...input,startFrameAssetId:"823e4567-e89b-42d3-a456-426614174000"}}));
+  assert.equal(queued.status,"queued");
+  await assert.rejects(()=>client.enqueue(args({input:{...input,referenceAssetIds:["923e4567-e89b-42d3-a456-426614174000"]}})),error=>error.code==="VIDEO_GENERATION_UNSUPPORTED_CAPABILITY");
+  await assert.rejects(()=>client.enqueue(args({input:{...input,resolution:"720p"}})),error=>error.code==="VIDEO_GENERATION_UNSUPPORTED_CAPABILITY");
+  await assert.rejects(()=>client.enqueue(args({input:{...input,audioMode:"generated"}})),error=>error.code==="VIDEO_GENERATION_UNSUPPORTED_CAPABILITY");
+  assert.equal(calls,1);
 });
