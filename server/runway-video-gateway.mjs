@@ -38,7 +38,7 @@ function normalizeTask(payload){
 export function buildRunwayTextVideoPayload({prompt,duration=5,ratio="1280:720",seed}={}){
  if(typeof prompt!=="string"||!prompt.trim()||prompt.trim().length>1000)throw fail("Runway video prompt must contain 1 to 1000 characters.","RUNWAY_INVALID_INPUT");
  if(!Number.isInteger(duration)||duration<2||duration>10)throw fail("Runway Gen-4.5 duration must be a whole number from 2 to 10 seconds.","RUNWAY_UNSUPPORTED_CAPABILITY");
- if(!RATIOS.has(ratio))throw fail("Runway Gen-4.5 supports 1280:720 or 720:1280 output ratios.","RUNWAY_UNSUPPORTED_CAPABILITY");
+ if(!TEXT_RATIOS.has(ratio))throw fail("Runway Gen-4.5 supports 1280:720 or 720:1280 output ratios.","RUNWAY_UNSUPPORTED_CAPABILITY");
  const payload={model:MODEL,promptText:prompt.trim(),ratio,duration};
  if(seed!==undefined){if(!Number.isInteger(seed)||seed<0||seed>4294967295)throw fail("Runway seed must be an unsigned 32-bit integer.","RUNWAY_INVALID_INPUT");payload.seed=seed;}
  return Object.freeze(payload);
