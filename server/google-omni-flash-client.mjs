@@ -225,7 +225,11 @@ export function createGeminiOmniFlashClient({
     async deleteInteraction(id, context = {}) {
       const safeId = interactionId(id);
       await authorize(safeId, context, "delete");
-      await request(BASE + "/interactions/" + encodeURIComponent(safeId), { method: "DELETE" });
+      try {
+        await request(BASE + "/interactions/" + encodeURIComponent(safeId), { method: "DELETE" });
+      } catch (error) {
+        if (error?.status !== 404) throw error;
+      }
       return Object.freeze({ interactionId: safeId, deleted: true });
     }
   });
