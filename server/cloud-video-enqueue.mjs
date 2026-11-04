@@ -1,4 +1,6 @@
 import { estimateVideoGenerationCost } from "./video-generation-cost-estimator.mjs";
+import { getVideoProviderModel } from "./video-provider-registry.mjs";
+import { assertVideoCapabilities, normalizeVideoGenerationRequest } from "./video-generation-contract.mjs";
 const SCHEMA = "executive_visuals";
 const RPC = Object.freeze({
   enqueue: "enqueue_video_generation_job",
@@ -100,8 +102,40 @@ export function createCloudVideoEnqueue({
       if (typeof currency !== "string" || !/^[A-Z]{3}$/.test(currency)) throw new Error("Currency must be a three-letter uppercase code.");
       const estimate = estimateVideoGenerationCost({
         provider, model, durationSeconds: input.durationSeconds,
-        outputFormat: input.outputFormat || "mp4"
+        outputFormat: input.outputFormat, resolution: input.resolution, audio: input.audio,
+        inputVideoSeconds: input.inputVideoSeconds, referenceVideoSeconds: input.referenceVideoSeconds,
+        referenceImageCount: input.referenceImageCount, referenceAudioCount: input.referenceAudioCount,
+        hasStartFrame: input.hasStartFrame, outputFrames: input.outputFrames,
+        sourceWidth: input.sourceWidth, sourceHeight: input.sourceHeight,
+        sourceDynamicRange: input.sourceDynamicRange, outputWidth: input.outputWidth,
+        outputHeight: input.outputHeight, targetFramerate: input.targetFramerate, inputType: input.inputType
       });
+      if (provider !== "runway" || model !== "gen4.5") {
+        const unsupported = new Error("The selected provider/model has pricing metadata but no enabled execution adapter.");
+        unsupported.code = "VIDEO_GENERATION_UNSUPPORTED_CAPABILITY";
+        throw unsupported;
+      }
+      if ((input.outputFormat || "mp4") !== "mp4") {
+        const unsupported = new Error("The current Gen-4.5 worker supports MP4 output only.");
+        unsupported.code = "VIDEO_PRICE_OUTPUT_FORMAT_UNSUPPORTED";
+        throw unsupported;
+      }
+      const unpricedExecutionFields = ["audio","inputVideoSeconds","referenceVideoSeconds","referenceImageCount",
+        "referenceAudioCount","hasStartFrame","outputFrames","sourceWidth","sourceHeight","sourceDynamicRange",
+        "outputWidth","outputHeight","targetFramerate","inputType"];
+      if (unpricedExecutionFields.some(field => input[field] !== undefined)) {
+        const unsupported = new Error("The current Gen-4.5 worker does not yet accept these finishing or reference-media options.");
+        unsupported.code = "VIDEO_GENERATION_UNSUPPORTED_CAPABILITY";
+        throw unsupported;
+      }
+      const modelRecord = getVideoProviderModel(provider, model);
+      if (!modelRecord) {
+        const unsupported = new Error("The selected provider/model is not present in the verified capability registry.");
+        unsupported.code = "VIDEO_GENERATION_UNSUPPORTED_CAPABILITY";
+        throw unsupported;
+      }
+      const normalizedRequest = normalizeVideoGenerationRequest(input);
+      assertVideoCapabilities(normalizedRequest, modelRecord.capabilities);
       if (currency !== estimate.currency) throw new Error("Budget approval currency must match the verified provider price.");
       if (reservedAmount < estimate.amount) {
         const error = new Error("Budget reservation is below the verified provider/model price estimate.");
