@@ -42,8 +42,9 @@ export function createCloudRunwayPrivateAssetResolver({
     let asset;
     try { asset = await assets.get({ ownerId, assetId }); }
     catch { throw fail("Private cloud image asset was not found or is not authorized.", "RUNWAY_IMAGE_ASSET_SCOPE_INVALID"); }
-    if (!asset || asset.id !== assetId || asset.ownerId !== ownerId ||
-        (asset.projectId != null && asset.projectId !== projectId) ||
+    const ownerScoped = asset?.ownerId === ownerId && asset?.projectId == null;
+    const projectScoped = projectId !== null && asset?.projectId === projectId;
+    if (!asset || asset.id !== assetId || (!ownerScoped && !projectScoped) ||
         asset.storageBucket !== "executive-visuals-media" ||
         !["image/png", "image/jpeg", "image/webp"].includes(asset.mediaType) ||
         !Number.isSafeInteger(asset.size) || asset.size < 512 || asset.size > maxBytes ||
@@ -54,8 +55,9 @@ export function createCloudRunwayPrivateAssetResolver({
     let signed;
     try { signed = await assets.createSignedUrl({ ownerId, assetId, expiresIn: 300 }); }
     catch { throw fail("Cloud image asset could not be opened for private server-side reading.", "RUNWAY_IMAGE_ASSET_READ_FAILED"); }
-    if (signed?.asset?.id !== assetId || signed.asset.ownerId !== ownerId ||
-        (signed.asset.projectId != null && signed.asset.projectId !== projectId) ||
+    const signedOwnerScoped = signed?.asset?.ownerId === ownerId && signed?.asset?.projectId == null;
+    const signedProjectScoped = projectId !== null && signed?.asset?.projectId === projectId;
+    if (signed?.asset?.id !== assetId || (!signedOwnerScoped && !signedProjectScoped) ||
         typeof signed.url !== "string") {
       throw fail("Cloud signed asset receipt does not match the authorized asset.", "RUNWAY_IMAGE_ASSET_SCOPE_INVALID");
     }
