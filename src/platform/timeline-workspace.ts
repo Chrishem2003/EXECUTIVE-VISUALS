@@ -10,7 +10,7 @@ import { analyzeCreativeTraceability, readCreativeTrace } from "../core/creative
 import { appendCreativeDecision, readCreativeDecisionHistory } from "../core/creative-decision-ledger";
 import { compareTimelineVariants, createTimelineVariant, type TimelineVariantComparison } from "../core/timeline-variants";
 import { addClip, addMarker, addTrack, createTimeline, moveClip, rational, splitClip, toOpenTimelineIo, trimClip, type EditorialTimeline, type TimelineTrack } from "../core/timeline";
-import { clampPreviewSeconds, frameToSeconds, getTimelineDurationFrames, resolveTimelineFrame, secondsToFrame, stepPreviewSeconds } from "../core/timeline-preview";
+import { clampPreviewSeconds, decibelsToLinearGain, frameToSeconds, getTimelineDurationFrames, resolveTimelineFrame, secondsToFrame, stepPreviewSeconds } from "../core/timeline-preview";
 
 type Asset={id:string;name:string;mediaType:string;size:number;metadata?:Record<string,unknown>};
 type SavedTimeline={id:string;projectId?:string|null;name:string;revision:number;document?:EditorialTimeline};
@@ -51,8 +51,7 @@ function syncSequenceAudio(frame:number,forceSeek=false){
   if(forceSeek||!node.active||Math.abs(node.element.currentTime-expected)>0.22){
    try{node.element.currentTime=expected;}catch{}
   }
-  const db=Math.max(-60,Math.min(24,item.clip.gainDb??0));
-  node.gain.gain.setTargetAtTime(Math.pow(10,db/20),sequenceAudioContext!.currentTime,0.015);
+  node.gain.gain.setTargetAtTime(decibelsToLinearGain(item.clip.gainDb??0),sequenceAudioContext!.currentTime,0.015);
   node.element.playbackRate=Math.max(0.25,Math.min(4,item.clip.speed??1));
   node.active=true;
   if(sequencePlaying&&node.element.paused)void node.element.play().catch(()=>{});
