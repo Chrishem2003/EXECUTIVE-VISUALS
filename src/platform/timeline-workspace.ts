@@ -11,6 +11,7 @@ import { appendCreativeDecision, readCreativeDecisionHistory } from "../core/cre
 import { compareTimelineVariants, createTimelineVariant, type TimelineVariantComparison } from "../core/timeline-variants";
 import { addClip, addMarker, addTrack, createTimeline, moveClip, rational, splitClip, toOpenTimelineIo, trimClip, type EditorialTimeline, type TimelineTrack } from "../core/timeline";
 import { clampPreviewSeconds, decibelsToLinearGain, frameToSeconds, getTimelineDurationFrames, isPreviewTrackAudible, resolveTimelineFrame, resolveTimelineOverlays, secondsToFrame, stepPreviewSeconds } from "../core/timeline-preview";
+import { activeCaptionCues, parseCaptionCues, type CaptionCue } from "../core/caption-preview";
 
 type Asset={id:string;name:string;mediaType:string;size:number;metadata?:Record<string,unknown>};
 type SavedTimeline={id:string;projectId?:string|null;name:string;revision:number;document?:EditorialTimeline};
@@ -22,6 +23,7 @@ const state:{timeline:EditorialTimeline|null;serverRevision:number;timelines:Sav
 let sequencePlaying=false,sequenceFrame=0,sequenceStartFrame=0,sequenceStartAt=0,sequenceRaf:number|null=null;
 type PreviewAudioNode={element:HTMLAudioElement;gain:GainNode;active:boolean;trackId:string};
 const sequenceAudioNodes=new Map<string,PreviewAudioNode>();
+const sequenceCaptionCache=new Map<string,Promise<CaptionCue[]>>();
 const sequenceMutedTrackIds=new Set<string>();
 let sequenceSoloTrackId:string|null=null;
 let sequenceAudioContext:AudioContext|null=null;
@@ -33,6 +35,65 @@ function ensureSequenceAudioContext(){
  if(!sequenceAudioContext)sequenceAudioContext=new AudioContext();
  if(sequenceAudioContext.state==="suspended")void sequenceAudioContext.resume();
  return sequenceAudioContext;
+}
+function loadSequenceCaptionCues(asset:Asset):Promise<CaptionCue[]>{
+ let pending=sequenceCaptionCache.get(asset.id);
+ if(!pending){
+  pending=(async()=>{
+   const response=await fetch("/api/assets/"+encodeURIComponent(asset.id)+"/file",{credentials:"same-origin"});
+   if(!response.ok)throw new Error("Caption source could not be loaded ("+response.status+").");
+   const declared=Number(response.headers.get("content-length")||0);
+   if(declared>2*1024*1024)throw new Error("Caption source exceeds the 2 MB preview limit.");
+   return parseCaptionCues(await response.text());
+  })();
+  sequenceCaptionCache.set(asset.id,pending);
+  void pending.catch(()=>{if(sequenceCaptionCache.get(asset.id)===pending)sequenceCaptionCache.delete(asset.id);});
+ }
+ return pending;
+}
+function captionStyle(metadata:Record<string,unknown>,alignment:number){
+ const fontName=String(metadata.fontName||"DejaVu Sans").replace(/[^A-Za-z0-9 _-]/g,"").slice(0,48)||"DejaVu Sans";
+ const fontSize=Math.max(12,Math.min(96,Number(metadata.fontSize)||32));
+ const primaryColor=/^#[0-9a-f]{6}$/i.test(String(metadata.primaryColor||""))?String(metadata.primaryColor):"#FFFFFF";
+ const backgroundColor=/^#[0-9a-f]{6}$/i.test(String(metadata.backgroundColor||""))?String(metadata.backgroundColor):"#000000";
+ const opacity=Math.max(0,Math.min(1,Number(metadata.backgroundOpacity??0.68)));
+ const outline=Math.max(0,Math.min(8,Number(metadata.outline??2)));
+ const shadow=Math.max(0,Math.min(8,Number(metadata.shadow??1)));
+ const marginV=Math.max(0,Math.min(240,Number(metadata.marginV??42)));
+ const row=3-Math.floor((alignment-1)/3),column=((alignment-1)%3)+1;
+ return {fontName,fontSize,primaryColor,backgroundColor,opacity,outline,shadow,marginV,row,column,backgroundMode:metadata.backgroundMode==="none"?"none":"box"};
+}
+async function syncSequenceCaptions(frame:number){
+ const layer=document.querySelector<HTMLElement>("#tl-sequence-caption-layer");
+ if(!layer||!state.timeline)return;
+ const timeline=state.timeline,active=resolveTimelineFrame(timeline,frame).filter(item=>item.track.kind==="caption");
+ const rendered:Array<{id:string;text:string;style:ReturnType<typeof captionStyle>}>=[],errors:string[]=[];
+ await Promise.all(active.map(async item=>{
+  const asset=state.assets.find(value=>value.id===item.clip.assetId);
+  if(!asset||!["text/plain","text/vtt","application/x-subrip"].includes(asset.mediaType)){return;}
+  try{
+   const cues=await loadSequenceCaptionCues(asset);
+   for(const cue of activeCaptionCues(cues,item.sourceSeconds)){
+    const metadata=item.clip.metadata||{},alignment=Math.max(1,Math.min(9,Math.round(Number(metadata.alignment)||2)));
+    rendered.push({id:item.clip.id+":"+cue.startSeconds,text:cue.text,style:captionStyle(metadata,alignment)});
+   }
+  }catch(error){errors.push(error instanceof Error?error.message:"Caption preview could not be loaded.");}
+ }));
+ if(state.timeline!==timeline||sequenceFrame!==frame||!layer.isConnected)return;
+ layer.replaceChildren();
+ for(const item of rendered){
+  const cue=document.createElement("div");cue.className="sequence-caption-cue";cue.textContent=item.text;
+  const style=item.style;
+  cue.style.gridColumn=String(style.column);cue.style.gridRow=String(style.row);
+  cue.style.fontFamily=style.fontName+", sans-serif";cue.style.fontSize=style.fontSize+"px";cue.style.color=style.primaryColor;
+  cue.style.margin=style.marginV+"px 16px";
+  cue.style.background=style.backgroundMode==="none"?"transparent":style.backgroundColor;
+  cue.style.setProperty("--caption-bg-opacity",String(style.opacity));
+  cue.style.textShadow=style.shadow>0?"0 2px "+style.shadow+"px #000, 0 0 "+(style.outline+1)+"px #000":"none";
+  cue.style.webkitTextStroke=style.outline>0?Math.min(2,style.outline/2)+"px #000":"0";
+  layer.appendChild(cue);
+ }
+ if(errors.length&&!rendered.length){const message=document.createElement("div");message.className="sequence-caption-error";message.textContent=errors[0];layer.appendChild(message);}
 }
 function syncSequenceAudio(frame:number,forceSeek=false){
  if(!state.timeline)return;
@@ -85,9 +146,9 @@ function sequencePreviewPanel(){
  const hasPicture=state.timeline.tracks.some(track=>track.enabled&&track.kind==="video"&&track.clips.some(clip=>clip.enabled));
  if(state.mode==="cloud")return '<section class="timeline-preview panel"><div class="eyebrow">SEQUENCE PREVIEW</div><h3>Cloud preview is not connected yet</h3><p class="muted">Cloud playback stays blocked until the authenticated private-media streaming endpoint is integrated. No public or guessed asset URLs are used.</p></section>';
  return '<section class="timeline-preview panel"><div class="timeline-panel-heading"><div><div class="eyebrow">SEQUENCE PREVIEW · E1</div><h3>'+esc(state.timeline.name)+'</h3></div><small>'+duration+' frames · '+(rate.numerator/rate.denominator).toFixed(3)+' fps</small></div>'+
- '<div class="preview-stage sequence-preview-stage" style="aspect-ratio:'+Math.max(16,state.timeline.width||1920)+' / '+Math.max(16,state.timeline.height||1080)+'"><video id="tl-sequence-video" class="preview-media" playsinline preload="metadata" hidden></video><img id="tl-sequence-image" class="preview-still" alt="Sequence preview frame" hidden><div id="tl-sequence-overlay-layer" class="sequence-overlay-layer" aria-hidden="true"></div><div id="tl-sequence-empty" class="preview-empty">'+(hasPicture?'Press Play to preview the edited picture sequence.':'Add an enabled clip to a video track to preview the sequence.')+'</div></div>'+
+ '<div class="preview-stage sequence-preview-stage" style="aspect-ratio:'+Math.max(16,state.timeline.width||1920)+' / '+Math.max(16,state.timeline.height||1080)+'"><video id="tl-sequence-video" class="preview-media" playsinline preload="metadata" hidden></video><img id="tl-sequence-image" class="preview-still" alt="Sequence preview frame" hidden><div id="tl-sequence-overlay-layer" class="sequence-overlay-layer" aria-hidden="true"></div><div id="tl-sequence-caption-layer" class="sequence-caption-layer" aria-live="off"></div><div id="tl-sequence-empty" class="preview-empty">'+(hasPicture?'Press Play to preview the edited picture sequence.':'Add an enabled clip to a video track to preview the sequence.')+'</div></div>'+
  '<div class="preview-transport sequence-transport"><button class="secondary" data-tl-action="sequence-play" '+(!hasPicture||duration===0?'disabled':'')+'>▶ Play</button><button class="secondary" data-tl-action="sequence-pause">Ⅱ Pause</button><button class="secondary" data-tl-action="sequence-step-back">−1 frame</button><button class="secondary" data-tl-action="sequence-step-forward">+1 frame</button><input id="tl-sequence-scrub" aria-label="Seek sequence by frame" type="range" min="0" max="'+Math.max(0,duration-1)+'" value="'+Math.min(sequenceFrame,Math.max(0,duration-1))+'" step="1" '+(duration===0?'disabled':'')+'><output id="tl-sequence-time">'+frameToSeconds(Math.min(sequenceFrame,Math.max(0,duration-1)),rate).toFixed(3)+' s</output></div>'+
- '<small class="muted">Local preview mixes synchronized audio and active still-image overlay tracks in timeline order. Caption burn-in and authenticated cloud streaming remain outstanding; use the FFmpeg master render for final delivery.</small></section>';
+ '<small class="muted">Local preview composes synchronized audio, timed still-image overlays and validated SRT/WebVTT captions. Authenticated cloud streaming remains outstanding; use the FFmpeg master render for final delivery.</small></section>';
 }
 function stopSequencePlayback(){
  sequencePlaying=false;if(sequenceRaf!==null)cancelAnimationFrame(sequenceRaf);sequenceRaf=null;
@@ -100,6 +161,7 @@ function renderSequenceFrame(frame:number,forceSeek=false){
  const slider=document.querySelector<HTMLInputElement>("#tl-sequence-scrub");if(slider)slider.value=String(sequenceFrame);
  const output=document.querySelector<HTMLOutputElement>("#tl-sequence-time");if(output)output.value=frameToSeconds(sequenceFrame,state.timeline.frameRate).toFixed(3)+" s";
  syncSequenceAudio(sequenceFrame,forceSeek);
+ void syncSequenceCaptions(sequenceFrame);
  const resolved=resolveTimelineFrame(state.timeline,sequenceFrame);
  const overlayLayer=document.querySelector<HTMLElement>("#tl-sequence-overlay-layer");
  if(overlayLayer){
