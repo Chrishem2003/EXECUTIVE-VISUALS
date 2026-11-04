@@ -1,7 +1,7 @@
 const ranges={opacity:[0,1],x:[-100000,100000],y:[-100000,100000],scale:[0.01,20],rotation:[-3600,3600],gainDb:[-60,24],brightness:[-1,1],contrast:[0,2],saturation:[0,3]};
 const object=value=>Boolean(value)&&typeof value==="object"&&!Array.isArray(value);
 export function validateTimelineClipDescriptors(clip,frameRate){
- const issues=[],ids=new Set(),slots=new Set(),fps=Number(frameRate?.numerator)/Number(frameRate?.denominator);
+ const issues=[],ids=new Set([clip?.id]),slots=new Set(),fps=Number(frameRate?.numerator)/Number(frameRate?.denominator);
  const seconds=Number(clip?.duration?.value)/Number(clip?.duration?.rate),maxFrames=Number.isFinite(seconds*fps)?Math.max(0,Math.ceil(seconds*fps)):0;
  const add=(id,label)=>{if(typeof id!=="string"||!id.trim()||id.length>128||ids.has(id)){issues.push(label+" IDs must be unique non-empty strings of at most 128 characters.");return;}ids.add(id);};
  if(clip?.effects!==undefined){
