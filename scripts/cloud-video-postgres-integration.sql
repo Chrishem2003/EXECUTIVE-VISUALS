@@ -203,6 +203,25 @@ select 1 / case when exists (
     and (select count(*) from executive_visuals.video_generation_usage_reservations)=1
 ) then 1 else 0 end as final_state_assertion;
 
+do $provider_gate$
+begin
+ begin
+  perform * from executive_visuals.enqueue_video_generation_job(
+   '123e4567-e89b-42d3-a456-426614174000',
+   '323e4567-e89b-42d3-a456-426614174000',
+   'pg-integration-unpriced-provider','luma','ray-3.2',repeat('d',64),
+   jsonb_build_object('projectId','323e4567-e89b-42d3-a456-426614174000',
+     'provider','luma','model','ray-3.2','requestHash',repeat('d',64)),
+   '523e4567-e89b-42d3-a456-426614174000',0.5,'USD'
+  );
+  raise exception 'provider without verified pricing was accepted';
+ exception when others then
+  if sqlerrm = 'provider without verified pricing was accepted' then raise; end if;
+  if sqlerrm <> 'VIDEO_ENQUEUE_PROVIDER_NOT_ENABLED' then raise; end if;
+ end;
+end
+$provider_gate$;
+
 reset role;
 select set_config('request.jwt.claim.sub','123e4567-e89b-42d3-a456-426614174000',false);
 set role authenticated;
