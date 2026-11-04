@@ -91,3 +91,10 @@ export function stepPreviewSeconds(current:number,direction:-1|1,sourceFrameRate
   if(!Number.isFinite(sourceFrameRate)||sourceFrameRate<=0)throw new Error("Source frame rate must be positive.");
   return clampPreviewSeconds(current+direction/sourceFrameRate,start,end);
 }
+
+/** Convert a clip's decibel gain to a linear amplitude multiplier. */
+export function decibelsToLinearGain(decibels:number):number {
+ if(!Number.isFinite(decibels))throw new Error("Clip gain must be finite.");
+ const bounded=Math.max(-60,Math.min(24,decibels));
+ return Math.pow(10,bounded/20);
+}
