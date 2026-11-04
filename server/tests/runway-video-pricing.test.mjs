@@ -69,6 +69,7 @@ test("prices frame-rate enhancement and Ruby HDR from input duration and source 
   assert.equal(estimateRunwayVideoCredits({model:"ruby",durationSeconds:10,sourceWidth:1920,sourceHeight:1080,pricingDate:date}).estimatedCredits,200);
   assert.equal(estimateRunwayVideoCredits({model:"ruby",durationSeconds:10,sourceWidth:3840,sourceHeight:2160,pricingDate:date}).estimatedCredits,400);
   assert.throws(()=>estimateRunwayVideoCredits({model:"ruby",durationSeconds:10,pricingDate:date}),e=>e.code==="RUNWAY_PRICE_INPUT_REQUIRED");
+  assert.throws(()=>estimateRunwayVideoCredits({model:"gen4.5",durationSeconds:5,pricingDate:date,outputFormat:"prores"}),e=>e.code==="RUNWAY_PRICE_UNSUPPORTED_OPTION");
 });
 
 test("includes Aleph 2 minimum charge and Gemini Omni Flash 1.1 4K tier",()=>{
