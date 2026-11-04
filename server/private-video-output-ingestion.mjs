@@ -248,8 +248,9 @@ export function createPrivateVideoOutputIngestor({
   timeoutMs = 30000,
   download = downloadPinned
 } = {}) {
-  if (!assets || typeof assets.createFromFile !== "function" || typeof assets.softDelete !== "function") {
-    throw new Error("Private video ingestion requires cloud asset createFromFile and softDelete operations.");
+  if (!assets || typeof assets.createFromFile !== "function" || typeof assets.softDelete !== "function" ||
+      typeof assets.findVideoGenerationOutput !== "function") {
+    throw new Error("Private video ingestion requires idempotent cloud asset lookup, createFromFile and softDelete operations.");
   }
   if (!Array.isArray(allowedHosts) || allowedHosts.length < 1 || allowedHosts.length > 100 ||
       allowedHosts.some(host => typeof host !== "string" || !/^(?:\*\.)?[a-z0-9.-]{1,253}$/i.test(host))) {
@@ -276,6 +277,7 @@ export function createPrivateVideoOutputIngestor({
       }
       const directory = await mkdtemp(join(tempRoot, "ev-video-output-"));
       const created = [];
+      const assetIds = [];
       let totalBytes = 0;
       try {
         for (let index = 0; index < task.outputUrls.length; index++) {
@@ -287,6 +289,18 @@ export function createPrivateVideoOutputIngestor({
                 url.port && url.port !== "443" || url.href.length > 8192 || !allowedHost(url.hostname, allowedHosts)) throw new Error();
           } catch {
             throw fail("Provider output URL is not on the approved HTTPS host allowlist.", "VIDEO_OUTPUT_URL_REJECTED");
+          }
+          const existing = await assets.findVideoGenerationOutput({
+            ownerId: job.owner_id, projectId: job.project_id || null,
+            providerTaskId: task.taskId, outputIndex: index
+          });
+          if (existing) {
+            if (!UUID.test(String(existing.id || "")) || existing.ownerId !== job.owner_id ||
+                (existing.projectId || null) !== (job.project_id || null) || !String(existing.mediaType || "").startsWith("video/")) {
+              throw fail("Existing provider output asset does not match the job scope.", "VIDEO_OUTPUT_ASSET_REGISTRATION_INVALID");
+            }
+            assetIds.push(existing.id);
+            continue;
           }
           const address = await resolvePinnedAddress(url.hostname, resolver);
           const path = join(directory, "provider-output-" + index + ".bin");
@@ -312,12 +326,16 @@ export function createPrivateVideoOutputIngestor({
               provider: String(input?.provider || "").slice(0, 100),
               model: String(input?.model || "").slice(0, 160),
               providerTaskId: task.taskId.slice(0, 256),
+              outputIndex: index,
               validated: true,
               validation: validation.metadata && typeof validation.metadata === "object" && !Array.isArray(validation.metadata) &&
                 JSON.stringify(validation.metadata).length <= 8000 ? validation.metadata : {}
             }
           });
-          if (asset && typeof asset.id === "string" && UUID.test(asset.id)) created.push(asset);
+          if (asset && typeof asset.id === "string" && UUID.test(asset.id)) {
+            created.push(asset);
+            assetIds.push(asset.id);
+          }
           if (!asset || typeof asset.id !== "string" || !UUID.test(asset.id) || asset.ownerId !== job.owner_id ||
               (asset.projectId || null) !== (job.project_id || null)) {
             if (!asset || typeof asset.id !== "string" || !UUID.test(asset.id)) {
@@ -329,7 +347,7 @@ export function createPrivateVideoOutputIngestor({
           }
         }
         return Object.freeze({
-          assetIds: Object.freeze(created.map(asset => asset.id)),
+          assetIds: Object.freeze([...assetIds]),
           usage: Object.freeze({ outputCount: created.length, totalBytes })
         });
       } catch (error) {
