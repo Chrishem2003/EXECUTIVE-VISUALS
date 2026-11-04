@@ -11,6 +11,7 @@ import { appendCreativeDecision, readCreativeDecisionHistory } from "../core/cre
 import { compareTimelineVariants, createTimelineVariant, type TimelineVariantComparison } from "../core/timeline-variants";
 import { addClip, addMarker, addTrack, createTimeline, moveClip, rational, splitClip, toOpenTimelineIo, trimClip, type EditorialTimeline, type TimelineTrack } from "../core/timeline";
 import { clampPreviewSeconds, frameToSeconds, getTimelineDurationFrames, resolveTimelineFrame, secondsToFrame, stepPreviewSeconds } from "../core/timeline-preview";
+import { resolveTimelineAudioFrame } from "../core/timeline-audio-preview";
 
 type Asset={id:string;name:string;mediaType:string;size:number;metadata?:Record<string,unknown>};
 type SavedTimeline={id:string;projectId?:string|null;name:string;revision:number;document?:EditorialTimeline};
@@ -79,15 +80,14 @@ function loadCaptionCues(asset:Asset):Promise<Array<{start:number;end:number;tex
 function syncSequenceAudio(active:ReturnType<typeof resolveTimelineFrame>){
  const container=document.querySelector<HTMLElement>("#tl-sequence-audio");if(!container)return;
  const live=new Set<string>();
- for(const item of active.filter(entry=>entry.track.kind==="audio")){
-  const asset=state.assets.find(candidate=>candidate.id===item.clip.assetId);if(!asset?.mediaType.startsWith("audio/"))continue;
-  const key=item.clip.id;live.add(key);let audio=sequenceAudio.get(key);
+ for(const item of active){
+  const asset=state.assets.find(candidate=>candidate.id===item.assetId);if(!asset?.mediaType.startsWith("audio/"))continue;
+  const key=item.clipId;live.add(key);let audio=sequenceAudio.get(key);
   if(!audio){audio=new Audio();audio.preload="auto";audio.dataset.clipId=key;container.appendChild(audio);sequenceAudio.set(key,audio);}
   const url="/api/assets/"+encodeURIComponent(asset.id)+"/file";
   if(audio.dataset.assetId!==asset.id){audio.pause();audio.dataset.assetId=asset.id;audio.src=url;audio.load();audio.onloadedmetadata=()=>{if(audio?.dataset.clipId!==key)return;audio.currentTime=Math.max(0,item.sourceSeconds);if(sequencePlaying)void audio.play().catch(()=>{});};}
   const expected=item.sourceSeconds;if(audio.readyState>=1&&Math.abs(audio.currentTime-expected)>0.3)audio.currentTime=expected;
-  const speed=item.clip.speed??1;if(Number.isFinite(speed)&&speed>0)audio.playbackRate=Math.max(0.25,Math.min(4,speed));
-  const gain=Math.max(-60,Math.min(24,Number(item.clip.gainDb)||0));audio.volume=Math.max(0,Math.min(1,Math.pow(10,gain/20)));
+  audio.playbackRate=item.playbackRate;audio.volume=item.gainLinear;
   if(sequencePlaying&&audio.readyState>=2&&audio.paused)void audio.play().catch(()=>{});
  }
  for(const [key,audio] of sequenceAudio){if(live.has(key))continue;audio.pause();audio.removeAttribute("src");audio.load();audio.remove();sequenceAudio.delete(key);}
@@ -132,7 +132,7 @@ function renderSequenceFrame(frame:number,forceSeek=false){
  const slider=document.querySelector<HTMLInputElement>("#tl-sequence-scrub");if(slider)slider.value=String(sequenceFrame);
  const output=document.querySelector<HTMLOutputElement>("#tl-sequence-time");if(output)output.value=frameToSeconds(sequenceFrame,state.timeline.frameRate).toFixed(3)+" s";
  const active=resolveTimelineFrame(state.timeline,sequenceFrame);
- syncSequenceAudio(active);syncSequenceOverlays(active);
+ syncSequenceAudio(resolveTimelineAudioFrame(state.timeline,sequenceFrame));syncSequenceOverlays(active);
  const picture=active.filter(item=>item.track.kind==="video");
  const current=picture[picture.length-1],video=document.querySelector<HTMLVideoElement>("#tl-sequence-video"),image=document.querySelector<HTMLImageElement>("#tl-sequence-image"),empty=document.querySelector<HTMLElement>("#tl-sequence-empty");
  if(!video||!image||!empty)return;
