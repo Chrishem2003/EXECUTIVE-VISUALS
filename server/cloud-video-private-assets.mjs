@@ -15,7 +15,9 @@ export function createCloudVideoPrivateAssetReader({ mediaIO, readFileImpl = rea
     const materialized = await mediaIO.materialize({ ownerId, assetId });
     if (!materialized || !materialized.asset || typeof materialized.path !== "string" ||
         typeof materialized.cleanup !== "function") {
-      await materialized?.cleanup?.().catch?.(() => {});
+      if (typeof materialized?.cleanup === "function") {
+        try { await materialized.cleanup(); } catch {}
+      }
       throw new Error("Cloud media IO returned invalid materialization metadata.");
     }
     try {
