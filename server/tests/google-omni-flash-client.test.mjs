@@ -168,3 +168,18 @@ test("requires paid-tier confirmation independently of general remote feature fl
     error.code === "GEMINI_OMNI_PAID_TIER_REQUIRED");
   assert.equal(h.calls.length, 0);
 });
+
+test("allows authorized retention cleanup after generation has been disabled", async () => {
+  const h = harness({
+    overrides: {
+      GEMINI_OMNI_ENABLED: "false",
+      GEMINI_OMNI_ALLOW_REMOTE: "false",
+      GEMINI_OMNI_PAID_TIER_CONFIRMED: "false",
+      GEMINI_OMNI_CLEANUP_ENABLED: "true"
+    },
+    fetchImpl: async () => response(204, null)
+  });
+  const result = await h.client.deleteInteraction(id, { ownerId: "owner-1", projectId: "project-1" });
+  assert.equal(result.deleted, true);
+  assert.equal(h.calls.length, 1);
+});
