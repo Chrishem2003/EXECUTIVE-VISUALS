@@ -101,3 +101,22 @@ test("fails closed when Runway credentials are missing or upload creation fails"
     error.code === "RUNWAY_ASSET_UPLOAD_REJECTED" && !error.message.includes("private detail"));
   assert.equal(calls, 1);
 });
+
+test("allows a private asset owned by another member of the same authorized project",async()=>{
+ const shared={...asset,ownerId:"423e4567-e89b-42d3-a456-426614174000"};
+ const calls=[];
+ const resolve=createRunwayPrivateAssetResolver({
+  env:{RUNWAY_API_KEY:"server-test-key"},
+  loadPrivateAsset:async()=>shared,
+  fetchImpl:async(url,options)=>{
+   calls.push({url,options});
+   if(url==="https://api.dev.runwayml.com/v1/uploads")return jsonResponse(200,{
+    uploadUrl:"https://upload.runway.example.test/shared",fields:{key:"shared"},
+    runwayUri:"runway://uploads/shared"
+   });
+   return {status:204,ok:true,text:async()=>""};
+  }
+ });
+ assert.equal(await resolve({assetId,ownerId,projectId}),"runway://uploads/shared");
+ assert.equal(calls.length,2);
+});
