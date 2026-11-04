@@ -49,7 +49,7 @@ function safeUploadSession(value) {
   if (url.protocol !== "https:" ||
       !["www.googleapis.com", "upload.googleapis.com"].includes(url.hostname) ||
       url.username || url.password || url.hash ||
-      !url.pathname.startsWith("/upload/drive/v3/files") ||
+      url.pathname !== "/upload/drive/v3/files" ||
       !url.searchParams.has("upload_id")) {
     throw fail("Google Drive returned an upload session outside the approved API origin.", "GOOGLE_DRIVE_UPLOAD_SESSION_INVALID");
   }
