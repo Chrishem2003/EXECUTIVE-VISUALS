@@ -110,11 +110,8 @@ export const VIDEO_PROVIDER_CATALOG = freeze([
           videoEdit: false,
           videoExtend: false,
           videoReframe: false,
-          nativeAudio: true,
           negativePrompt: false,
           seed: false,
-          startFrame: true,
-          endFrame: true,
           motionReference: false,
           referenceImages: true
         },
@@ -143,7 +140,7 @@ export const VIDEO_PROVIDER_CATALOG = freeze([
         capabilities: {
           textToVideo: true,
           imageToVideo: true,
-          videoToVideo: true,
+          videoToVideo: false,
           videoEdit: true,
           videoExtend: true,
           videoReframe: false,
