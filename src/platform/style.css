@@ -382,3 +382,7 @@
 .sequence-preview-stage{min-height:220px;aspect-ratio:16/9;max-height:520px}
 .sequence-preview-stage .preview-media,.sequence-preview-stage .preview-still{width:100%;height:100%;max-height:520px;object-fit:contain;margin:0}
 .sequence-transport button:disabled{opacity:.45;cursor:not-allowed}
+
+/* Sequence audio track controls */
+.track-audio-controls{display:flex;gap:5px;margin-top:6px}
+.track-audio-controls button{font-size:11px;padding:4px 8px;min-height:26px}
