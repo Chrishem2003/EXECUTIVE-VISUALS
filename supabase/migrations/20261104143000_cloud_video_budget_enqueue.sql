@@ -226,7 +226,12 @@ begin
   if coalesce(p_input ->> 'outputFormat','mp4') <> 'mp4' then
     raise exception 'VIDEO_PRICE_OUTPUT_FORMAT_UNSUPPORTED';
   end if;
-  if coalesce(p_input ->> 'durationSeconds','') !~ '^[0-9]{1,2}  -- Serialize idempotency retries and per-owner rolling usage accounting.
+  if coalesce(p_input ->> 'durationSeconds','') not in ('2','3','4','5','6','7','8','9','10') then
+    raise exception 'VIDEO_PRICE_DURATION_INVALID';
+  end if;
+  if p_reserved_amount < ((p_input ->> 'durationSeconds')::numeric * 0.12) then
+    raise exception 'VIDEO_BUDGET_BELOW_PROVIDER_ESTIMATE';
+  end if;
   perform pg_advisory_xact_lock(hashtextextended(p_owner_id::text || ':' || p_idempotency_key, 0));
   perform pg_advisory_xact_lock(hashtextextended(p_owner_id::text || ':video.generate', 0));
 
