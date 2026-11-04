@@ -21,7 +21,8 @@ function fixture({ execute = async () => ({
   const enqueue = {
     async finish(value) { calls.push(["finish", value]); return true; },
     async defer(value) { calls.push(["defer", value]); return true; },
-    async quarantine(value) { calls.push(["quarantine", value]); return true; }
+    async quarantine(value) { calls.push(["quarantine", value]); return true; },
+    async recoverExpiredVideo(limit) { calls.push(["recoverExpiredVideo", limit]); return 0; }
   };
   return { calls, queue, enqueue, execute };
 }
