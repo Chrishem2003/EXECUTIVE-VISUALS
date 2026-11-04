@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { createGoogleGeminiFilesGateway } from "../google-gemini-files-gateway.mjs";
 
 const ownerId = "11111111-1111-4111-8111-111111111111";
@@ -10,7 +11,7 @@ const fileName = "files/" + fileId;
 const fileUri = "https://generativelanguage.googleapis.com/v1beta/files/" + fileId;
 const uploadUrl = "https://generativelanguage.googleapis.com/upload/v1beta/files?upload_id=test-session";
 const bytes = Buffer.from("private-test-image-bytes");
-const sha256 = "a".repeat(64);
+const sha256 = createHash("sha256").update(bytes).digest("hex");
 const env = { GEMINI_API_KEY: "server-test-key" };
 
 function response(status, body, headers = {}) {
@@ -74,7 +75,7 @@ test("uploads only an owner/project-authorized private asset through resumable G
   const result = await h.gateway.resolveAsset({ assetId, ownerId, projectId, mediaType: "image/png" });
   assert.deepEqual(result, {
     uri: fileUri, mediaType: "image/png", providerFileName: fileName,
-    expiresAt: "2026-11-07T00:00:00.000Z"
+    expiresAt: "2026-11-06T23:50:00.000Z"
   });
   assert.equal(h.calls.length, 3);
   assert.equal(h.calls[0].options.method, "POST");
@@ -86,7 +87,7 @@ test("uploads only an owner/project-authorized private asset through resumable G
   assert.equal(h.records[0].projectId, projectId);
   assert.equal(h.records[0].assetId, assetId);
   assert.equal(h.records[0].state, "ACTIVE");
-  assert.equal(h.records[0].expiresAt, "2026-11-07T00:00:00.000Z");
+  assert.equal(h.records[0].expiresAt, "2026-11-06T23:50:00.000Z");
 });
 
 test("reuses an unexpired provider-file mapping only for the exact owner, project and asset", async () => {
@@ -160,6 +161,44 @@ test("does not expose API keys or resumable upload URLs in public results", asyn
   const result = await h.gateway.resolveAsset({ assetId, ownerId, projectId, mediaType: "image/png" });
   assert.equal(JSON.stringify(result).includes("server-test-key"), false);
   assert.equal(JSON.stringify(result).includes("upload_id"), false);
+});
+
+ 
+test("allows a project collaborator to upload a project asset owned by another member", async () => {
+  const collaboratorAsset = {
+    asset: {
+      id: assetId, ownerId: "99999999-9999-4999-8999-999999999999", projectId,
+      mediaType: "image/png", size: bytes.byteLength, sha256,
+      storageBucket: "executive-visuals-media"
+    },
+    bytes, size: bytes.byteLength, sha256, cleanup: async () => {}
+  };
+  const h = harness({ loader: async () => collaboratorAsset });
+  const result = await h.gateway.resolveAsset({ assetId, ownerId, projectId, mediaType: "image/png" });
+  assert.equal(result.uri, fileUri);
+  assert.equal(h.records[0].ownerId, ownerId);
+  assert.equal(h.records[0].projectId, projectId);
+});
+
+test("rejects personal assets belonging to another user and rejects tampered byte hashes", async () => {
+  const personal = harness({
+    loader: async () => ({
+      ...privateAsset({ projectId: null, ownerId: "99999999-9999-4999-8999-999999999999" }),
+      asset: { ...privateAsset({ projectId: null, ownerId: "99999999-9999-4999-8999-999999999999" }).asset }
+    })
+  });
+  await assert.rejects(
+    () => personal.gateway.resolveAsset({ assetId, ownerId, projectId: null, mediaType: "image/png" }),
+    error => error.code === "GEMINI_FILE_ASSET_SCOPE_INVALID"
+  );
+
+  const tampered = harness({
+    loader: async () => ({ ...privateAsset(), bytes: Buffer.from("tampered bytes") })
+  });
+  await assert.rejects(
+    () => tampered.gateway.resolveAsset({ assetId, ownerId, projectId, mediaType: "image/png" }),
+    error => error.code === "GEMINI_FILE_ASSET_HASH_MISMATCH"
+  );
 });
 
 test("rejects invalid polling configuration and missing durable mapping callback", () => {
