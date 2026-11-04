@@ -175,3 +175,12 @@ The server-only Runway gateway now supports both Gen-4.5 text-to-video and image
 The image-to-video request uses the documented `POST /v1/image_to_video` contract, sets the image as the first frame, and supports the documented Gen-4.5 image ratios. Text-to-video retains its narrower 16:9/9:16 contract. The shared capability validator now advertises the first-frame input but continues to reject end frames, extra reference images, audio overrides, negative prompts and unsupported resolutions.
 
 This expands adapter capability only. It does not enable the provider, add a public route, configure asset URL resolution, or start the cloud worker. A real private-storage resolver and an isolated Supabase/storage acceptance test remain mandatory before activation.
+
+
+### Private first-frame upload preflight
+
+`server/runway-private-asset-resolver.mjs` now provides the Runway-specific implementation of the injected first-frame resolver. It reads bytes only through an injected private asset repository, requires exact owner scope and compatible project scope, requires private visibility, bounds uploads to Runway's documented 512-byte–200-MB ephemeral-upload limits, checks PNG/JPEG/WebP MIME, extension and file signature, then creates an ephemeral Runway upload. The signed upload URL is used only for the multipart file transfer; the returned `runway://` URI is passed to the image-to-video request.
+
+Both local and cloud executors now call the adapter's optional `prepareInput` phase before transitioning the submission ledger to `submitting`. Thus private asset lookup or ephemeral upload failure occurs before the one-shot generation POST and does not create a false ambiguous-submission record. The resolver uploads again on a later attempt because Runway ephemeral URIs expire after 24 hours; it does not persist temporary provider URLs.
+
+The resolver is tested with mocked transport and remains unconfigured: no private asset repository, Runway API key, live upload or provider generation is connected. Official upload contract: https://docs.dev.runwayml.com/assets/uploads/.
