@@ -161,3 +161,10 @@ test("treats an already-deleted Google interaction as an idempotent success", as
   assert.equal(result.interactionId, id);
   assert.equal(h.calls.length, 1);
 });
+
+test("requires paid-tier confirmation independently of general remote feature flags", async () => {
+  const h = harness({ overrides: { GEMINI_OMNI_PAID_TIER_CONFIRMED: "false" } });
+  await assert.rejects(async () => h.client.createInteraction(await plan()), error =>
+    error.code === "GEMINI_OMNI_PAID_TIER_REQUIRED");
+  assert.equal(h.calls.length, 0);
+});
