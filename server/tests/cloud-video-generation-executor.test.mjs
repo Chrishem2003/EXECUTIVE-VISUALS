@@ -124,3 +124,21 @@ test("cloud executor does not enter submitting state when private input preparat
  assert.equal(f.calls.some(call=>call[0]==="submit"),false);
  assert.equal(f.calls.some(call=>call[0]==="unknown"),false);
 });
+
+test("cloud executor accepts an explicitly model-bound Luma adapter without changing its ledger gates", async () => {
+  const f = fixture();
+  f.adapter.provider = "luma";
+  f.adapter.model = "ray-3.2";
+  f.adapter.prepareInput = async input => ({ model: "ray-3.2", type: "video", prompt: input.prompt });
+  const lumaJob = {
+    ...job,
+    input: { ...job.input, provider: "luma", model: "ray-3.2" }
+  };
+  const result = await executeCloudVideoGenerationJob({
+    job: lumaJob, workerId: "worker-luma", ...f
+  });
+  assert.equal(result.provider, "luma");
+  assert.equal(result.model, "ray-3.2");
+  assert.equal(result.providerTaskId, taskId);
+  assert.deepEqual(f.calls.map(call => call[0]), ["prepare", "prepareInput", "begin", "submit", "record", "poll", "cost", "ingest"]);
+});
