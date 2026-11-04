@@ -6,7 +6,7 @@ const model = "fal-ai/wan/v2.7/text-to-video";
 const requestId = "019a1b2c-3d4e-7f80-9a1b-2c3d4e5f6a7b";
 const event = {
   request_id: requestId, endpoint_id: model,
-  timestamp: "2026-11-05T10:00:00.000Z",
+  timestamp: "2026-11-04T10:00:00.000Z",
   cost_total: 0.225, cost_estimate_nano_usd: 225000000
 };
 
