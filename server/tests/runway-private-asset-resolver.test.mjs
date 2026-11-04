@@ -51,7 +51,7 @@ test("loads only the scoped private image, creates a Runway ephemeral upload and
 
 test("rejects cross-owner, cross-project and non-private assets before contacting Runway", async () => {
   for (const returned of [
-    { ...asset, ownerId: "other-owner" },
+    { ...asset, ownerId: "other-owner", projectId: null },
     { ...asset, projectId: "other-project" },
     { ...asset, isPrivate: false }
   ]) {
