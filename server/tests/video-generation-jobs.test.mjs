@@ -27,7 +27,7 @@ async function fixture(options = {}) {
   const service = createVideoGenerationJobService({
     db,
     authorizeProject: (owner, project) => owner === ownerId && project === projectId,
-    providerResolver: () => model,
+    providerResolver: options.provider || (() => model),
     usageLimit: 3,
     reserveBudget: args => { budgetCalls.push(args); return options.budget || { approved: true, reservationId: "budget-reservation-1" }; }
   });
