@@ -2,8 +2,8 @@
 
 **Date:** 2 November 2026  
 **Repository:** CHRISHEM EXCLUSIVE VISUALS  
-**Working branch:** `feat/executive-visuals-unified-platform`  
-**Status:** implementation specification; not a claim that the features below are shipped.
+**Working branch:** `feat/sequence-preview-engine`  
+**Status:** E1 sequence-frame resolver implemented and under CI; browser transport, compositing and cloud playback remain in progress. See [Sequence preview engine](SEQUENCE-PREVIEW-ENGINE.md).
 
 ## Objective
 
