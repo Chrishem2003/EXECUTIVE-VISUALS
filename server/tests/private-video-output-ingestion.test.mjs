@@ -15,6 +15,12 @@ function assetRepo({ failOn = -1, cleanupFails = false, cleanupPending = false }
   const created = [], removed = [];
   return {
     created, removed,
+    async findVideoGenerationOutput({ ownerId: lookupOwner, projectId: lookupProject, providerTaskId, outputIndex }) {
+      return created.find(asset => !removed.some(item => item.assetId === asset.id) &&
+        asset.ownerId === lookupOwner && (asset.projectId || null) === (lookupProject || null) &&
+        asset.value.metadata?.providerTaskId === providerTaskId &&
+        asset.value.metadata?.outputIndex === outputIndex) || null;
+    },
     async createFromFile(value) {
       if (created.length === failOn) throw new Error("storage registration failed");
       const asset = {
@@ -51,8 +57,23 @@ test("downloads only from allowlisted HTTPS hosts, validates, and registers priv
   assert.equal(assets.created[0].value.ownerId, ownerId);
   assert.equal(assets.created[0].value.projectId, projectId);
   assert.equal(assets.created[0].value.metadata.validated, true);
+  assert.equal(assets.created[0].value.metadata.outputIndex, 0);
   assert.equal(calls.length, 1);
   assert.equal(calls[0].address.address, "93.184.216.34");
+});
+
+test("reuses the existing private asset for a repeated provider task and output index", async () => {
+  const assets = assetRepo();
+  const ingest = createPrivateVideoOutputIngestor({ ...config, assets });
+  const request = {
+    job: { owner_id: ownerId, project_id: projectId },
+    task, input: { provider: "runway", model: "gen4.5" }
+  };
+  const first = await ingest.ingest(request);
+  const second = await ingest.ingest(request);
+  assert.deepEqual(second.assetIds, first.assetIds);
+  assert.equal(assets.created.length, 1);
+  assert.equal(second.usage.totalBytes, 2048);
 });
 
 test("rejects non-allowlisted, non-HTTPS, credentialed, and nonstandard-port URLs before DNS or download", async () => {
@@ -167,7 +188,7 @@ test("requires explicit allowlist, media validator, and private asset cleanup su
   assert.throws(() => createPrivateVideoOutputIngestor({ assets: assetRepo(), validateMedia: async () => ({ valid: true }) }), /allowlist/);
   assert.throws(() => createPrivateVideoOutputIngestor({ assets: assetRepo(), allowedHosts: ["cdn.example.test"] }), /media validation/);
   assert.throws(() => createPrivateVideoOutputIngestor({
-    assets: { createFromFile: async () => ({}) }, allowedHosts: ["cdn.example.test"], validateMedia: async () => ({ valid: true })
+    assets: { createFromFile: async () => ({}), findVideoGenerationOutput: async () => null, softDelete: async () => ({}) }, allowedHosts: ["cdn.example.test"], validateMedia: async () => ({ valid: true })
   }), /softDelete/);
 });
 
