@@ -16,9 +16,9 @@ const base = {
     return { amount: 0.3, currency: "USD", evidenceReference: "luma:settled-usage:test" };
   },
   fetchImpl: async (url, init) => {
-    if (init.method === "POST") return new Response(JSON.stringify({ id: "gen_12345678", state: "queued" }), { status: 201 });
+    if (init.method === "POST") return new Response(JSON.stringify({ id: "182bd5e5-6e1a-4fe4-a799-aa6d9a6ab26e", state: "queued" }), { status: 201 });
     return new Response(JSON.stringify({
-      id: "gen_12345678", state: "completed",
+      id: "182bd5e5-6e1a-4fe4-a799-aa6d9a6ab26e", state: "completed",
       output: [{ type: "video", url: "https://cdn.example.test/out.mp4?sig=temporary" }],
       usage: { credits_charged: 100 }
     }), { status: 200 });
