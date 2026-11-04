@@ -3,7 +3,6 @@ const API_VERSION="2024-11-06";
 const MODEL="gen4.5";
 const RATIOS=new Set(["1280:720","720:1280"]);
 const TERMINAL=new Set(["SUCCEEDED","FAILED","CANCELED"]);
-const CANCELLABLE=new Set(["PENDING","THROTTLED","RUNNING"]);
 export const RUNWAY_MIN_POLL_INTERVAL_MS=5000;
 const fail=(message,code)=>Object.assign(new Error(message),{code});
 function taskId(value){
