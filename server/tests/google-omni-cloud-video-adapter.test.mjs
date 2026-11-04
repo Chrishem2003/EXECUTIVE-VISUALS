@@ -168,3 +168,13 @@ test("exposes authoritative provider token usage as the cloud executor cost reso
   assert.equal(result.currency, "USD");
   assert.match(result.evidenceReference, new RegExp(interactionId));
 });
+
+test("refuses polling while retention cleanup owns the interaction record", async () => {
+  const h = harness();
+  const prepared = await h.adapter.prepareInput(job.input, { job });
+  await h.adapter.submit(prepared, { job });
+  h.records.get(interactionId).state = "deleting";
+  await assert.rejects(() => h.adapter.getStatus(interactionId, { job }), error =>
+    error.code === "GEMINI_OMNI_INTERACTION_FORBIDDEN");
+  assert.equal(h.calls.some(call => call[0] === "get"), false);
+});
