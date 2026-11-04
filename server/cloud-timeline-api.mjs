@@ -219,7 +219,7 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
   if(!safeId(assetId))return{status:404,headers:{"content-type":"application/json","cache-control":"no-store"},body:Buffer.from(JSON.stringify({error:{code:"ASSET_NOT_FOUND",message:"Asset not found."}}))};
   if(!["GET","HEAD"].includes(method))return{status:405,headers:{allow:"GET, HEAD","cache-control":"no-store"},body:null};
   const requestedRange=String(range||"").trim();
-  if(requestedRange&&!/^bytes=(?:\\d+-\\d*|-\\d+)$/.test(requestedRange))return{status:400,headers:{"content-type":"application/json","cache-control":"private, no-store"},body:Buffer.from(JSON.stringify({error:{code:"INVALID_RANGE",message:"Only a single valid byte range is supported."}}))};
+  if(requestedRange&&!/^bytes=(?:\d+-\d*|-\d+)$/.test(requestedRange))return{status:400,headers:{"content-type":"application/json","cache-control":"private, no-store"},body:Buffer.from(JSON.stringify({error:{code:"INVALID_RANGE",message:"Only a single valid byte range is supported."}}))};
   const signed=await service.assets.createSignedUrl({ownerId,assetId,expiresIn:300});
   if(!signed?.asset||typeof signed.url!=="string"||!Number.isSafeInteger(Number(signed.asset.size))||Number(signed.asset.size)<1)throw new Error("Cloud asset repository returned invalid streaming metadata.");
   let target;try{target=new URL(signed.url);if(target.protocol!=="https:"||target.origin!==base||target.username||target.password||target.hash)throw new Error();}catch{throw new Error("Cloud asset repository returned an unsafe private-media URL.");}
@@ -232,15 +232,15 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
    if(requestedRange&&upstream.status!==206)throw Object.assign(new Error("Private media storage did not honor the requested byte range."),{code:"CLOUD_MEDIA_RANGE_UNSUPPORTED",status:502});
    const responseHeaders={"content-type":String(signed.asset.mediaType||"application/octet-stream"),"cache-control":"private, no-store","accept-ranges":"bytes","x-content-type-options":"nosniff"};
    const contentLength=upstream.headers?.get?.("content-length");
-   if(contentLength&&/^\\d+$/.test(contentLength))responseHeaders["content-length"]=contentLength;
+   if(contentLength&&/^\d+$/.test(contentLength))responseHeaders["content-length"]=contentLength;
    else if(upstream.status===200)responseHeaders["content-length"]=String(signed.asset.size);
    if(upstream.status===206){
     const contentRange=upstream.headers?.get?.("content-range")||"";
-    const match=contentRange.match(/^bytes (\\d+)-(\\d+)\\/(\\d+)$/);
+    const match=contentRange.match(/^bytes (\d+)-(\d+)\/(\d+)$/);
     if(!match||Number(match[1])>Number(match[2])||Number(match[2])>=Number(signed.asset.size)||Number(match[3])!==Number(signed.asset.size))throw Object.assign(new Error("Private media storage returned an invalid byte-range response."),{code:"CLOUD_MEDIA_INVALID_RANGE",status:502});
     responseHeaders["content-range"]=contentRange;
    }
-   const dispositionName=String(signed.asset.name||"media").replace(/[\\r\\n"\\\\]/g,"_").slice(0,160)||"media";
+   const dispositionName=String(signed.asset.name||"media").replace(/[\r\n"\\]/g,"_").slice(0,160)||"media";
    responseHeaders["content-disposition"]='inline; filename="'+dispositionName+'"';
    return{status:upstream.status,headers:responseHeaders,body:method==="HEAD"?null:upstream.body};
   }catch(error){
