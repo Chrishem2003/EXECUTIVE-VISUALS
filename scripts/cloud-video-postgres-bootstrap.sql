@@ -26,6 +26,10 @@ create table executive_visuals.projects (
   id uuid primary key,
   owner_id uuid not null references auth.users(id) on delete cascade
 );
+alter table executive_visuals.projects enable row level security;
+grant select on executive_visuals.projects to authenticated;
+create policy test_project_owner_read on executive_visuals.projects
+  for select to authenticated using (owner_id = (select auth.uid()));
 create table executive_visuals.jobs (
   id uuid primary key default gen_random_uuid(),
   owner_id uuid not null references auth.users(id) on delete cascade,
