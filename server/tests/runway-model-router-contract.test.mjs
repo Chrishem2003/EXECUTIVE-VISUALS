@@ -31,10 +31,10 @@ test("router policy rejects open-ended, malformed or unbudgeted configurations",
 
 test("video dry-run emits documented model-agnostic fields",()=>{
   const payload=buildRunwayVideoRouterDryRun({configId:"executive-visuals-preview",input:{
-    promptText:"A cinematic sunrise",ratio:"1280:720",duration:5,resolution:"720p",audio:false
+    promptText:"A cinematic sunrise",aspectRatio:"16:9",duration:5,resolution:"720p",audio:false
   }});
   assert.deepEqual(payload,{configId:"executive-visuals-preview",dryRun:true,input:{
-    promptText:"A cinematic sunrise",ratio:"1280:720",duration:5,resolution:"720p",audio:false
+    promptText:"A cinematic sunrise",aspectRatio:"16:9",duration:5,resolution:"720p",audio:false
   }});
 });
 
@@ -111,4 +111,11 @@ test("router history rejects malformed rows and ambiguous or missing task correl
     error=>error.code==="RUNWAY_ROUTER_HISTORY_AMBIGUOUS");
   assert.throws(()=>matchRunwayRouterRequestToTask(page,{taskId:"27f20503-6c24-4c16-946b-35dbbce2af2f"}),
     error=>error.code==="RUNWAY_ROUTER_HISTORY_NOT_FOUND");
+});
+
+test("router rejects direct-model pixel ratio field and accepts model-agnostic aspect ratio",()=>{
+  assert.throws(()=>buildRunwayVideoRouterDryRun({configId:"preview",input:{promptText:"test",ratio:"1280:720"}}),
+    error=>error.code==="RUNWAY_ROUTER_INVALID_INPUT");
+  assert.deepEqual(buildRunwayVideoRouterDryRun({configId:"preview",input:{promptText:"test",aspectRatio:"9:16"}}).input,
+    {promptText:"test",aspectRatio:"9:16"});
 });
