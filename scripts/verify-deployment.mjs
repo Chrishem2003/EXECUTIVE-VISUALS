@@ -17,6 +17,8 @@ assert.match(render,/REQUIRE_PERSISTENT_DATA_DIR[\s\S]*?value: "true"/);
 assert.match(render,/AUTH_MODE[\s\S]*?value: supabase/);
 assert.match(render,/SUPABASE_URL[\s\S]*?sync: false/);
 assert.match(render,/SUPABASE_PUBLISHABLE_KEY[\s\S]*?sync: false/);
+assert.match(render,/SUPABASE_SESSION_SECRET[\s\S]*?sync: false/);
+assert.match(server,/SUPABASE_SESSION_SECRET/);
 assert.doesNotMatch(render,/AUTH_MODE[\s\S]*?value: local/);
 assert.match(docker,/FROM node:22-bookworm-slim AS build/);
 assert.match(docker,/apt-get install[^\n]*ffmpeg/);
