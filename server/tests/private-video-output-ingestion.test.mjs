@@ -188,7 +188,7 @@ test("requires explicit allowlist, media validator, and private asset cleanup su
   assert.throws(() => createPrivateVideoOutputIngestor({ assets: assetRepo(), validateMedia: async () => ({ valid: true }) }), /allowlist/);
   assert.throws(() => createPrivateVideoOutputIngestor({ assets: assetRepo(), allowedHosts: ["cdn.example.test"] }), /media validation/);
   assert.throws(() => createPrivateVideoOutputIngestor({
-    assets: { createFromFile: async () => ({}), findVideoGenerationOutput: async () => null, softDelete: async () => ({}) }, allowedHosts: ["cdn.example.test"], validateMedia: async () => ({ valid: true })
+    assets: { createFromFile: async () => ({}), findVideoGenerationOutput: async () => null }, allowedHosts: ["cdn.example.test"], validateMedia: async () => ({ valid: true })
   }), /softDelete/);
 });
 
