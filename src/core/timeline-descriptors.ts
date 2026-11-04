@@ -44,7 +44,7 @@ export function validateTimelineDescriptors(clip:TimelineClip,frameRate:{numerat
     ids.add(id);return true;
   };
   if(clip.effects!==undefined){
-    if(Array.isArray(clip.effects)&&clip.effects.length&&trackKind&&trackKind!=="video"&&trackKind!=="overlay")issues.push({code:"invalid_effect_track",clipId:clip.id,message:"Color effects are supported only on video and overlay tracks."});
+    if(Array.isArray(clip.effects)&&clip.effects.length&&trackKind&&trackKind!=="video")issues.push({code:"invalid_effect_track",clipId:clip.id,message:"Color effects are supported only on the primary video track."});
     if(!Array.isArray(clip.effects)||clip.effects.length>16)issues.push({code:"invalid_effects",clipId:clip.id,message:"A clip may contain no more than 16 effect descriptors."});
     else for(const effect of clip.effects){
       addId(effect?.id,"Effect");
