@@ -217,6 +217,9 @@ begin
      or p_currency is null or p_currency !~ '^[A-Z]{3}$' then
     raise exception 'VIDEO_ENQUEUE_ARGUMENTS_INVALID';
   end if;
+  if p_provider <> 'runway' or p_model <> 'gen4.5' then
+    raise exception 'VIDEO_ENQUEUE_PROVIDER_NOT_ENABLED';
+  end if;
 
   -- Serialize idempotency retries and per-owner rolling usage accounting.
   perform pg_advisory_xact_lock(hashtextextended(p_owner_id::text || ':' || p_idempotency_key, 0));
