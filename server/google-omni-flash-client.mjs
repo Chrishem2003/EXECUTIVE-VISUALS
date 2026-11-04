@@ -91,6 +91,9 @@ export function createGeminiOmniFlashClient({
     if (env.GEMINI_OMNI_ENABLED !== "true" || env.GEMINI_OMNI_ALLOW_REMOTE !== "true") {
       throw fail("Gemini Omni remote execution is disabled by server policy.", "GEMINI_OMNI_REMOTE_DISABLED");
     }
+    if (env.GEMINI_OMNI_PAID_TIER_CONFIRMED !== "true") {
+      throw fail("Gemini Omni video generation requires an explicitly verified paid-tier project.", "GEMINI_OMNI_PAID_TIER_REQUIRED");
+    }
     const key = String(env.GEMINI_API_KEY || env.GOOGLE_GEMINI_API_KEY || "").trim();
     if (!key) throw fail("Configure the Gemini API key on the server.", "GEMINI_OMNI_CONFIG_MISSING");
     return key;
