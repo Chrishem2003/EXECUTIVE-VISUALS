@@ -610,12 +610,13 @@ export const VIDEO_PROVIDER_CATALOG = freeze([
     models: [
       {
         id: "gemini-omni-1.1-flash",
-        name: "Gemini Omni Flash",
+        name: "Gemini Omni Flash 1.1",
         availability: "disabled",
+        executionAdapter: "not_implemented",
         capabilities: {
           textToVideo: true,
           imageToVideo: true,
-          videoToVideo: false,
+          videoToVideo: true,
           videoEdit: true,
           videoExtend: true,
           videoReframe: false,
@@ -626,6 +627,11 @@ export const VIDEO_PROVIDER_CATALOG = freeze([
           endFrame: true,
           motionReference: false,
           referenceImages: true,
+          referenceVideos: true,
+          referenceAudio: false,
+          audioModes: [],
+          aspectRatios: ["16:9", "9:16"],
+          resolutions: ["360p", "720p", "1080p", "4k"],
           minDurationSeconds: 3,
           maxDurationSeconds: 10
         },
@@ -633,8 +639,20 @@ export const VIDEO_PROVIDER_CATALOG = freeze([
           frameRate: 24,
           supportsConversationalEdits: true,
           lineageField: "previous_interaction_id",
+          extensionSecondsPerTurn: 10,
+          maxExtendedVideoSeconds: 40,
+          uploadedVideoMaxSeconds: 10,
+          maxReferenceVideoClips: 3,
+          maxReferenceVideoSecondsEach: 3,
+          referenceVideoAudioUsed: false,
+          audioReferenceUploads: false,
+          negativePromptSupported: false,
           outputEncoding: "base64_in_interaction_steps",
-          paidTierOnly: true
+          outputUriDeliverySupported: true,
+          uriDeliveryRecommendedAboveBytes: 4194304,
+          outputIncludesSynthIdWatermark: true,
+          source: "https://ai.google.dev/gemini-api/docs/omni",
+          apiEndpoint: "https://generativelanguage.googleapis.com/v1beta/interactions"
         }
       }
     ]
