@@ -604,7 +604,7 @@ export const VIDEO_PROVIDER_CATALOG = freeze([
   {
     id: "google",
     name: "Google",
-    adapterState: "research_only",
+    adapterState: "implemented_disabled",
     availability: "disabled",
     remote: true,
     models: [
@@ -612,7 +612,7 @@ export const VIDEO_PROVIDER_CATALOG = freeze([
         id: "gemini-omni-1.1-flash",
         name: "Gemini Omni Flash 1.1",
         availability: "disabled",
-        executionAdapter: "not_implemented",
+        executionAdapter: "google-omni-cloud-video-adapter",
         capabilities: {
           textToVideo: true,
           imageToVideo: true,
