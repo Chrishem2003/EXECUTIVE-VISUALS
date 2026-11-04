@@ -9,7 +9,7 @@ Google shut down the Gemini API Veo 3.1 Preview endpoints on October 22, 2026. G
 ## Current API shape
 
 - Endpoint: `POST https://generativelanguage.googleapis.com/v1beta/interactions`
-- Authentication: server-side Google API key via `x-goog-api-key`
+- Authentication: server-side Google API key via `x-goog-api-key` (injected only by the live server adapter)
 - Model: `gemini-omni-1.1-flash`
 - Input: text or multimodal content parts (image/video URI plus text)
 - Output: `response_format: { type: "video", aspect_ratio, resolution, delivery }`
@@ -61,4 +61,4 @@ This provider should plug into the shared video generation contract and durable 
 6. Output validation, actual-cost reconciliation, audit evidence and retention/cleanup.
 7. Region-aware gating for uploaded-video editing/extension.
 
-Google API credentials must remain server-side. The planner's placeholder header is documentation only and must never be sent as a real credential.
+Google API credentials must remain server-side. The planner returns only the authentication header name and a server-only credential-source marker; it never handles or returns a credential.
