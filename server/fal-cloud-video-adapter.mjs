@@ -130,7 +130,7 @@ export function createFalCloudVideoAdapter({
         if (error?.code === "VIDEO_GATEWAY_RESULT_NOT_READY") return { status: "running" };
         throw error;
       }
-      return { status: "succeeded", outputUrls: outputUrls(result), provider: "fal", model: selectedModel };
+      return { status: "succeeded", taskId: providerTaskId, outputUrls: outputUrls(result), provider: "fal", model: selectedModel };
     },
 
     async ingestOutputs({ job, input, task, providerTaskId }) {
