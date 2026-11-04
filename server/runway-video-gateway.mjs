@@ -48,7 +48,7 @@ export function buildRunwayImageVideoPayload({prompt,promptImage,duration=5,rati
  if(typeof promptImage!=="string"||promptImage.length<13||promptImage.length>5000)throw fail("Runway image input URI is invalid.","RUNWAY_INVALID_INPUT");
  if(!/^runway:\/\/[A-Za-z0-9._~:/-]+$/.test(promptImage)){
   let url;try{url=new URL(promptImage)}catch{throw fail("Runway image input URI is invalid.","RUNWAY_INVALID_INPUT")}
-  if(url.protocol!=="https:"||url.username||url.password||url.hash||url.search)throw fail("Runway image input must be an HTTPS asset URI without credentials or query data.","RUNWAY_INVALID_INPUT");
+  if(url.protocol!=="https:"||url.username||url.password||url.hash)throw fail("Runway image input must be an HTTPS asset URI without credentials or fragments.","RUNWAY_INVALID_INPUT");
  }
  if(!Object.values(ASPECT_TO_RATIO).includes(ratio))throw fail("Runway Gen-4.5 image-to-video ratio is unsupported.","RUNWAY_UNSUPPORTED_CAPABILITY");
  if(!Number.isInteger(duration)||duration<2||duration>10)throw fail("Runway Gen-4.5 duration must be a whole number from 2 to 10 seconds.","RUNWAY_UNSUPPORTED_CAPABILITY");
