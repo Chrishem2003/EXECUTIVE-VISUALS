@@ -136,10 +136,13 @@ export function createCloudVideoEnqueue({
       if (typeof result !== "boolean") throw new Error("Cloud video quarantine returned an invalid result.");
       return result;
     },
-    async resumeReconciled({ jobId, ownerId } = {}) {
+    async resumeReconciled({ jobId, ownerId, evidenceReference } = {}) {
       required(jobId, "Job ID");
       required(ownerId, "Owner ID");
-      const result = await call(RPC.resume, { p_job_id: jobId, p_owner_id: ownerId });
+      required(evidenceReference, "Evidence reference", 1000);
+      const result = await call(RPC.resume, {
+        p_job_id: jobId, p_owner_id: ownerId, p_evidence_reference: evidenceReference
+      });
       if (typeof result !== "boolean") throw new Error("Cloud video resume returned an invalid result.");
       return result;
     },
