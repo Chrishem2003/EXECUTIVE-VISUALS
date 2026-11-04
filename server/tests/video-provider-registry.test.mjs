@@ -21,11 +21,11 @@ test("provider catalog is evidence-backed metadata and all remote providers rema
   assert.equal(listSelectableVideoProviderModels().length, 0);
 });
 
-test("Runway catalog exposes only the implemented Gen-4.5 text-to-video contract", () => {
+test("Runway catalog exposes implemented Gen-4.5 text-to-video and image-to-video contracts", () => {
   const model = getVideoProviderModel("runway", "gen4.5");
   assert.equal(model.availability, "disabled");
   assert.equal(model.capabilities.textToVideo, true);
-  assert.equal(model.capabilities.imageToVideo, false);
+  assert.equal(model.capabilities.imageToVideo, true);
   assert.equal(model.capabilities.seed, true);
   assert.deepEqual(model.capabilities.aspectRatios, ["16:9", "9:16"]);
   assert.equal(model.capabilities.minDurationSeconds, 2);
