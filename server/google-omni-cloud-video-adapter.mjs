@@ -122,7 +122,7 @@ export function createGoogleOmniCloudVideoIntegration({
       }
       const state = result.status === "succeeded" ? "succeeded"
         : result.status === "failed" || result.status === "canceled" || result.status === "incomplete"
-          ? result.status
+          ? "failed"
           : result.status === "waiting" ? "waiting" : "running";
       await interactions.updateInteraction({ ...scope, state });
       return Object.freeze({
