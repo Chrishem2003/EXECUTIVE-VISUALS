@@ -158,8 +158,10 @@ if (!videoBudgetSql.includes("policy.reserved_amount + policy.spent_amount + p_r
 if (!videoBudgetSql.includes("VIDEO_ENQUEUE_PROVIDER_NOT_ENABLED") ||
     !videoBudgetSql.includes("VIDEO_PRICE_DURATION_INVALID") ||
     !videoBudgetSql.includes("VIDEO_PRICE_OUTPUT_FORMAT_UNSUPPORTED") ||
-    !videoBudgetSql.includes("p_reserved_amount < ((p_input ->> 'durationSeconds')::numeric * 0.12)")) {
-  issues.push("Postgres enqueue must fail closed on unpriced models and enforce the verified Gen-4.5 USD price floor.");
+    !videoBudgetSql.includes("p_reserved_amount < ((p_input ->> 'durationSeconds')::numeric * 0.12)") ||
+    !videoBudgetSql.includes("p_reserved_amount < 2.586464") ||
+    !videoBudgetSql.includes("(p_provider = 'google' and p_model = 'gemini-omni-1.1-flash')")) {
+  issues.push("Postgres enqueue must enforce the verified Runway and Gemini Omni price floors and exact provider/model allowlist.");
 }
 
 if (!videoBudgetSql.includes("create or replace function executive_visuals.enqueue_video_generation_job(") ||
@@ -168,8 +170,9 @@ if (!videoBudgetSql.includes("create or replace function executive_visuals.enque
   issues.push("Atomic cloud video enqueue must be service-role-only.");
 }
 if (!videoBudgetSql.includes("VIDEO_ENQUEUE_PROVIDER_NOT_ENABLED") ||
-    !videoBudgetSql.includes("p_provider <> 'runway' or p_model <> 'gen4.5'")) {
-  issues.push("Cloud video enqueue must reject provider/model combinations without a verified adapter and price contract.");
+    !videoBudgetSql.includes("(p_provider = 'runway' and p_model = 'gen4.5')") ||
+    !videoBudgetSql.includes("(p_provider = 'google' and p_model = 'gemini-omni-1.1-flash')")) {
+  issues.push("Cloud video enqueue must reject every provider/model combination outside the explicit verified adapter allowlist.");
 }
 if (!videoBudgetSql.includes("create or replace function executive_visuals.finish_video_generation_job(") ||
     !videoBudgetSql.includes("lease_expires_at <= clock_timestamp()") ||
