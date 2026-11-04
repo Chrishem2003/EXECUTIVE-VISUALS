@@ -67,6 +67,21 @@ test("ambiguous provider outcomes are quarantined until explicitly reconciled", 
   } finally { f.db.close(); await rm(f.root, { recursive: true, force: true }); }
 });
 
+test("stale in-flight submissions are quarantined and never silently requeued", async () => {
+  const f = await fixture();
+  try {
+    f.ledger.prepare({ jobId, ownerId, provider: "runway", model: "gen4.5", requestHash });
+    f.ledger.beginSubmission(jobId);
+    const staleCutoff = new Date(Date.now() + 1000).toISOString();
+    const recovered = f.ledger.quarantineStaleSubmissions({ olderThan: staleCutoff, limit: 10 });
+    assert.equal(recovered.quarantined, 1);
+    assert.deepEqual(recovered.jobIds, [jobId]);
+    assert.equal(f.ledger.get(jobId).state, "unknown");
+    assert.equal(f.ledger.beginSubmission(jobId).started, false);
+    assert.throws(() => f.ledger.quarantineStaleSubmissions({ olderThan: "not-a-date" }), error => error.code === "VIDEO_SUBMISSION_CUTOFF_INVALID");
+  } finally { f.db.close(); await rm(f.root, { recursive: true, force: true }); }
+});
+
 test("provider task acknowledgement and terminal state transitions are idempotent", async () => {
   const f = await fixture();
   try {
