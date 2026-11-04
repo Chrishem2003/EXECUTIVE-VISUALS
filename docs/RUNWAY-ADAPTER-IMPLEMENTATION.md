@@ -9,7 +9,7 @@
 
 - Server-only adapter in `server/runway-video-gateway.mjs`.
 - Uses the documented `POST /v1/text_to_video` endpoint and API version header `X-Runway-Version: 2024-11-06`.
-- Validates prompt length, Gen-4.5 duration (2–10 seconds), output ratio (1280:720 or 720:1280), and unsigned 32-bit seed.
+- Accepts the shared provider-neutral video-generation contract, then maps only declared Runway Gen-4.5 capabilities: prompt length, 2–10 second duration, 16:9/9:16 aspect ratio, and unsigned 32-bit seed. Unsupported options fail before any network request.
 - Normalizes asynchronous task states and output metadata.
 - Exposes explicit task retrieval and guarded cancellation. It checks task state before DELETE so completed tasks are not accidentally deleted.
 - Uses bounded request timeouts, bounded response bodies, redirect rejection, and normalized errors that do not echo provider response bodies or credentials.
@@ -39,6 +39,6 @@ Do not advertise this adapter as a user-facing working generation feature until 
 
 ## Initial request contract
 
-The first adapter intentionally targets only Runway Gen-4.5 text-to-video: prompt length 1–1,000 characters, integer duration 2–10 seconds, and output ratio `1280:720` or `720:1280`. Seed is optional and bounded to an unsigned 32-bit integer. Image-to-video, video-to-video, model routing, and additional models are deliberately not advertised by this adapter yet. The API request schema and task lifecycle were checked against the current official API reference on 2026-11-04.
+The first adapter intentionally targets only Runway Gen-4.5 text-to-video through the shared `normalizeVideoGenerationRequest` / `assertVideoCapabilities` contract: prompt length 1–1,000 characters, integer duration 2–10 seconds, aspect ratio 16:9 or 9:16 (mapped to `1280:720` or `720:1280`), and optional unsigned 32-bit seed. Negative prompts, audio-mode overrides, reference assets, start/end frames, non-default resolution, image/video editing, model routing, and additional models fail closed until their exact model contracts are implemented. The API request schema and task lifecycle were checked against the current official API reference on 2026-11-04.
 
 Cancellation is intentionally conservative: the adapter retrieves task state first and sends DELETE only for queued or running tasks. It never DELETEs a task already reported as succeeded, failed or canceled. Runway documents cancellation as best-effort; task execution can advance concurrently and a cancellation response does not guarantee a refund or stopped generation.
