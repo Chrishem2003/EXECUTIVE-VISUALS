@@ -88,8 +88,8 @@ export function routeVideoModel({
     if (!plain(estimate) || estimate.currency !== "USD" ||
         typeof estimate.amount !== "number" || !Number.isFinite(estimate.amount) || estimate.amount < 0 ||
         estimate.billable !== false || estimate.settlementEligible !== false ||
-        typeof estimate.pricingDate !== "string" || !/^20\\d{2}-\\d{2}-\\d{2}$/.test(estimate.pricingDate) ||
-        typeof estimate.pricingSource !== "string" || !/^https:\\/\\//.test(estimate.pricingSource)) {
+        typeof estimate.pricingDate !== "string" || !/^20[0-9]{2}-[0-9]{2}-[0-9]{2}$/.test(estimate.pricingDate) ||
+        typeof estimate.pricingSource !== "string" || !estimate.pricingSource.startsWith("https://")) {
       exclude("pricing_unverified"); continue;
     }
     if (maxCostUsd !== undefined && estimate.amount > maxCostUsd) { exclude("over_budget"); continue; }
