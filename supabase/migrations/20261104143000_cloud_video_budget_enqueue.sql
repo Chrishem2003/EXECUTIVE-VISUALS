@@ -642,3 +642,115 @@ revoke all on function executive_visuals.resume_reconciled_video_generation_job(
   from public, anon, authenticated;
 grant execute on function executive_visuals.resume_reconciled_video_generation_job(uuid,uuid,text)
   to service_role;
+
+
+create or replace function executive_visuals.recover_expired_video_generation_jobs(p_limit integer default 100)
+returns integer
+language plpgsql
+security invoker
+set search_path = pg_catalog, executive_visuals
+as $video_recover$
+declare
+  expired executive_visuals.jobs;
+  submission executive_visuals.video_generation_submissions;
+  reservation executive_visuals.video_generation_budget_reservations;
+  policy executive_visuals.video_generation_budget_policies;
+  retryable boolean;
+  delay_seconds integer;
+  recovered integer := 0;
+  recovery_code text;
+begin
+  if p_limit is null or p_limit not between 1 and 1000 then
+    raise exception 'VIDEO_RECOVERY_LIMIT_INVALID';
+  end if;
+
+  for expired in
+    select * from executive_visuals.jobs
+    where job_type='video.generate' and status='processing'
+      and (lease_expires_at is null or lease_expires_at <= clock_timestamp())
+    order by lease_expires_at nulls first, created_at
+    limit p_limit
+    for update skip locked
+  loop
+    select * into submission from executive_visuals.video_generation_submissions
+    where job_id=expired.id for update;
+
+    if submission.id is not null and submission.state <> 'prepared' then
+      recovery_code := 'VIDEO_WORKER_LEASE_EXPIRED_REVIEW';
+      update executive_visuals.jobs
+      set status='needs_input',
+          error=jsonb_build_object('code',recovery_code,
+            'message','Video task state requires operator review before another worker attempt.'),
+          updated_at=clock_timestamp(), completed_at=null,
+          lease_owner=null, lease_expires_at=null, lease_heartbeat_at=null
+      where id=expired.id;
+      insert into executive_visuals.job_events(job_id,owner_id,event_type,event_data)
+      values(expired.id,expired.owner_id,'job.needs_input',
+        jsonb_build_object('reasonCode',recovery_code,'submissionState',submission.state));
+      insert into executive_visuals.audit_events(owner_id,project_id,event_type,subject_type,subject_id,details)
+      values(expired.owner_id,expired.project_id,'job.needs_input','job',expired.id::text,
+        jsonb_build_object('reasonCode',recovery_code,'submissionState',submission.state));
+    else
+      retryable := expired.attempt_count < expired.max_attempts;
+      delay_seconds := case when retryable
+        then least(300, 5 * (2 ^ greatest(0, expired.attempt_count - 1)))
+        else 0 end;
+
+      if retryable then
+        update executive_visuals.jobs
+        set status='queued', error=jsonb_build_object('code','VIDEO_WORKER_LEASE_EXPIRED',
+            'message','No provider POST had started; the video job is safe to retry.'),
+            updated_at=clock_timestamp(), completed_at=null,
+            available_at=clock_timestamp()+make_interval(secs=>delay_seconds),
+            lease_owner=null, lease_expires_at=null, lease_heartbeat_at=null
+        where id=expired.id;
+        insert into executive_visuals.job_events(job_id,owner_id,event_type,event_data)
+        values(expired.id,expired.owner_id,'job.lease_expired_retry',
+          jsonb_build_object('retryDelaySeconds',delay_seconds,'submissionState',coalesce(submission.state,'absent')));
+      else
+        select * into reservation from executive_visuals.video_generation_budget_reservations
+        where job_id=expired.id for update;
+        if reservation.id is not null and reservation.state='reserved' then
+          select * into policy from executive_visuals.video_generation_budget_policies
+          where id=reservation.policy_id for update;
+          if policy.id is null or policy.reserved_amount < reservation.reserved_amount then
+            raise exception 'VIDEO_BUDGET_LEDGER_INVARIANT_FAILED';
+          end if;
+          update executive_visuals.video_generation_budget_policies
+          set reserved_amount=reserved_amount-reservation.reserved_amount, updated_at=clock_timestamp()
+          where id=policy.id;
+          update executive_visuals.video_generation_budget_reservations
+          set state='released', actual_amount=null, updated_at=clock_timestamp()
+          where id=reservation.id;
+        end if;
+        if submission.id is not null and submission.state='prepared' then
+          update executive_visuals.video_generation_submissions
+          set state='failed', updated_at=clock_timestamp(),
+              last_error_code='VIDEO_WORKER_LEASE_EXPIRED'
+          where id=submission.id;
+        end if;
+        update executive_visuals.jobs
+        set status='failed',
+            error=jsonb_build_object('code','VIDEO_WORKER_LEASE_EXPIRED',
+              'message','The video job exhausted its safe pre-submission attempts.'),
+            updated_at=clock_timestamp(), completed_at=clock_timestamp(),
+            available_at=null, lease_owner=null, lease_expires_at=null, lease_heartbeat_at=null
+        where id=expired.id;
+        insert into executive_visuals.job_events(job_id,owner_id,event_type,event_data)
+        values(expired.id,expired.owner_id,'job.lease_expired_failed',
+          jsonb_build_object('submissionState',coalesce(submission.state,'absent'),'budgetReleased',reservation.id is not null));
+        insert into executive_visuals.audit_events(owner_id,project_id,event_type,subject_type,subject_id,details)
+        values(expired.owner_id,expired.project_id,'job.lease_expired_failed','job',expired.id::text,
+          jsonb_build_object('submissionState',coalesce(submission.state,'absent'),'budgetReservationId',reservation.id));
+      end if;
+    end if;
+    recovered := recovered + 1;
+  end loop;
+  return recovered;
+end;
+$video_recover$;
+
+revoke all on function executive_visuals.recover_expired_video_generation_jobs(integer)
+  from public, anon, authenticated;
+grant execute on function executive_visuals.recover_expired_video_generation_jobs(integer)
+  to service_role;
