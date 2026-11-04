@@ -7,6 +7,7 @@ import {
   createPrivateVideoOutputIngestor
 } from "./private-video-output-ingestion.mjs";
 import { createProviderAwareCloudVideoWorker } from "./cloud-video-provider-worker.mjs";
+import { createFalVideoProviderAdapter } from "./fal-video-provider-registration.mjs";
 
 /**
  * Build the provider-aware worker against the existing Supabase queue,
@@ -44,9 +45,6 @@ export function createProviderAwareCloudVideoWorkerComposition({
   if (!url || !serviceRoleKey || typeof fetchImpl !== "function") {
     throw new Error("Provider-aware cloud video worker requires server-side Supabase credentials and fetch.");
   }
-  if (typeof createAdapters !== "function") {
-    throw new Error("Provider-aware cloud video worker requires an explicit provider adapter factory.");
-  }
   if (!Array.isArray(allowedOutputHosts) || allowedOutputHosts.length < 1 || allowedOutputHosts.length > 100 ||
       allowedOutputHosts.some(host => typeof host !== "string" || !/^(?:\*\.)?[a-z0-9.-]{1,253}$/i.test(host))) {
     throw new Error("Provider-aware output ingestion requires an explicit bounded hostname allowlist.");
@@ -79,7 +77,10 @@ export function createProviderAwareCloudVideoWorkerComposition({
     maxTotalBytes
   });
   const ingestOutputs = args => outputIngestor.ingest(args);
-  const adapters = createAdapters({
+  const adapterFactory = createAdapters || (({ env: providerEnv, fetchImpl: providerFetch, ingestOutputs: ingest }) => [
+    createFalVideoProviderAdapter({ env: providerEnv, fetchImpl: providerFetch, ingestOutputs: ingest })
+  ]);
+  const adapters = adapterFactory({
     env,
     fetchImpl,
     assets: privateAssets.assets,
