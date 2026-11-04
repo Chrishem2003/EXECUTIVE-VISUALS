@@ -84,6 +84,9 @@ test("rejects private, loopback, link-local, and mixed public/private DNS answer
     [{ address: "::1", family: 6 }],
     [{ address: "fc00::1", family: 6 }],
     [{ address: "fe80::1", family: 6 }],
+    [{ address: "::ffff:7f00:1", family: 6 }],
+    [{ address: "2001:db8::1", family: 6 }],
+    [{ address: "2002:5db8:d822::1", family: 6 }],
     [{ address: "93.184.216.34", family: 4 }, { address: "192.168.1.2", family: 4 }]
   ]) {
     const ingest = createPrivateVideoOutputIngestor({
