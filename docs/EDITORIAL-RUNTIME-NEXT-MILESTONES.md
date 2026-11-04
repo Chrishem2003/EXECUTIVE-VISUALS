@@ -3,7 +3,7 @@
 **Date:** 2 November 2026  
 **Repository:** CHRISHEM EXCLUSIVE VISUALS  
 **Working branch:** `feat/sequence-preview-engine`  
-**Status:** E1 sequence-frame resolver implemented and under CI; browser transport, compositing and cloud playback remain in progress. See [Sequence preview engine](SEQUENCE-PREVIEW-ENGINE.md).
+**Status:** E1 local primary-picture playback and frame resolver implemented; CI passed. Browser-level playback coverage, audio/compositing and cloud streaming remain in progress. See [Sequence preview engine](SEQUENCE-PREVIEW-ENGINE.md).
 
 ## Objective
 
