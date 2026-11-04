@@ -97,7 +97,7 @@ test("cloud video deferral, quarantine and evidence-reconciled resume use dedica
     jobId: resultRow.job_id, workerId: "video-worker-1"
   }), true);
   assert.equal(await client.resumeReconciled({
-    jobId: resultRow.job_id, ownerId
+    jobId: resultRow.job_id, ownerId, evidenceReference: "review-ticket:OPS-17"
   }), true);
   assert.deepEqual(calls.map(call => call.url.split("/").pop()), [
     "defer_video_generation_job", "quarantine_video_generation_job",
@@ -111,7 +111,10 @@ test("cloud video deferral, quarantine and evidence-reconciled resume use dedica
     p_job_id: resultRow.job_id, p_worker_id: "video-worker-1",
     p_reason_code: "VIDEO_SUBMISSION_REQUIRES_RECONCILIATION"
   });
-  assert.deepEqual(calls[2].body, { p_job_id: resultRow.job_id, p_owner_id: ownerId });
+  assert.deepEqual(calls[2].body, {
+    p_job_id: resultRow.job_id, p_owner_id: ownerId,
+    p_evidence_reference: "review-ticket:OPS-17"
+  });
 });
 
 test("cloud video deferral and quarantine reject invalid controls before network access", async () => {
@@ -119,7 +122,7 @@ test("cloud video deferral and quarantine reject invalid controls before network
   const client = createCloudVideoEnqueue({ ...base, fetchImpl: async () => { calls++; return response(true); } });
   await assert.rejects(() => client.defer({ jobId: resultRow.job_id, workerId: "worker", delaySeconds: 1 }), /between 5 and 900/);
   await assert.rejects(() => client.quarantine({ jobId: resultRow.job_id, workerId: "worker", reasonCode: "not safe" }), /reason code/);
-  await assert.rejects(() => client.resumeReconciled({ jobId: resultRow.job_id }), /Owner ID/);
+  await assert.rejects(() => client.resumeReconciled({ jobId: resultRow.job_id, ownerId }), /Evidence reference/);
   assert.equal(calls, 0);
 });
 
