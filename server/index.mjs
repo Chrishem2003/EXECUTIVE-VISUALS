@@ -134,7 +134,7 @@ const SECURITY_HEADERS = {
   "cross-origin-resource-policy":"same-origin",
   "permissions-policy":"camera=(), microphone=(), geolocation=()"
 };
-const HTML_CSP = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'";
+const HTML_CSP = "default-src 'self'; script-src 'self' https://apis.google.com; frame-src 'self' https://drive.google.com https://docs.google.com; connect-src 'self' https://www.googleapis.com https://oauth2.googleapis.com; img-src 'self' data: blob: https://drive.google.com https://lh3.googleusercontent.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'";
 const send = (res,status,body,headers={}) => { res.writeHead(status,{"content-type":"application/json; charset=utf-8","cache-control":"no-store",...SECURITY_HEADERS,...headers});res.end(JSON.stringify(body)); };
 const fail = (res,status,code,message) => send(res,status,{error:{code,message}});
 const readJson = async (req,limit=1024*1024) => {
@@ -452,6 +452,16 @@ export function createAppServer() {
         if(!googleDriveOAuth){fail(res,503,"GOOGLE_DRIVE_OAUTH_NOT_CONFIGURED","Google Drive connection is not enabled.");return;}
         try{send(res,200,await googleDriveOAuth.begin({ownerId:user.id}),cors);return;}
         catch(error){fail(res,503,error.code||"GOOGLE_OAUTH_UNAVAILABLE","Google Drive authorization could not be started.");return;}
+      }
+      if(path==="/api/integrations/google-drive/picker-token"&&req.method==="POST"){
+        if(!googleDriveOAuth){fail(res,503,"GOOGLE_DRIVE_OAUTH_NOT_CONFIGURED","Google Drive connection is not enabled.");return;}
+        const developerKey=String(process.env.GOOGLE_PICKER_API_KEY||"").trim();
+        const appId=String(process.env.GOOGLE_CLOUD_PROJECT_NUMBER||"").trim();
+        if(!developerKey||developerKey.length>512||!/^\\d{6,24}$/.test(appId)){fail(res,503,"GOOGLE_PICKER_NOT_CONFIGURED","Google Picker API key and numeric Cloud project number are not configured.");return;}
+        try{
+          const accessToken=await googleDriveOAuth.getAccessToken({ownerId:user.id});
+          send(res,200,{accessToken,developerKey,appId,expiresInSeconds:300},cors);return;
+        }catch(error){fail(res,401,error.code||"GOOGLE_OAUTH_NOT_CONNECTED","Connect Google Drive before opening the file picker.");return;}
       }
       if(path==="/api/integrations/google-drive/disconnect"&&req.method==="POST"){
         if(!googleDriveOAuth){fail(res,503,"GOOGLE_DRIVE_OAUTH_NOT_CONFIGURED","Google Drive connection is not enabled.");return;}
