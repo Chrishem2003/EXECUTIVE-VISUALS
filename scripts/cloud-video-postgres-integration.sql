@@ -180,7 +180,7 @@ select 1 / case when exists (
     on job_row.id=(select job_id from test_context)
   join executive_visuals.video_generation_submissions submission_row
     on submission_row.job_id=(select job_id from test_context)
-  where policy_row.id='423e4567-e89b-42d3-a456-426614174000'
+  where policy_row.id=current_setting('test.video_policy_id')::uuid
     and policy_row.reserved_amount=0 and policy_row.spent_amount=0.75
     and reservation_row.state='settled' and reservation_row.actual_amount=0.75
     and job_row.status='succeeded' and job_row.lease_owner is null
@@ -252,7 +252,7 @@ declare policy_row executive_visuals.video_generation_budget_policies;
 begin
  select job_id into target_job from overrun_context;
  select * into policy_row from executive_visuals.video_generation_budget_policies
- where id='423e4567-e89b-42d3-a456-426614174000';
+ where id=current_setting('test.video_policy_id')::uuid;
  select * into reservation_row from executive_visuals.video_generation_budget_reservations where job_id=target_job;
  select * into job_row from executive_visuals.jobs where id=target_job;
  if policy_row.reserved_amount <> 0.5 or policy_row.spent_amount <> 0.75 then
