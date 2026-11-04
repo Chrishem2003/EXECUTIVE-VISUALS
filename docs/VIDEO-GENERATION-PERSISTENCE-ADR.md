@@ -118,3 +118,15 @@ Three additional service-role-only RPCs preserve this invariant:
 - `resume_reconciled_video_generation_job`: resumes a quarantined job only after the submission ledger has been evidence-reconciled to `submitted` with a provider task ID and the reservation remains active.
 
 The server client and migration guard cover these RPCs. This closes the dangerous automatic-release path, but the worker must still be integrated so it routes poll deferrals to the defer RPC and ambiguous POST outcomes to quarantine—not to the generic job failure finalizer.
+
+
+## Postgres-backed worker implementation checkpoint (2026-11-04)
+
+The hosted execution path now has separate modules, still not enabled by the process supervisor:
+
+- `server/cloud-video-generation-executor.mjs` uses the Postgres submission ledger rather than the local SQLite ledger. It submits once, resumes a known task ID, defers transient status failures, requires a cost resolver with evidence and enforces the approved amount/currency before private output ingestion.
+- `server/cloud-video-worker.mjs` claims only `video.generate` jobs, renews the lease, and routes outcomes to the correct transactional boundary: successful generation to the atomic finalizer, active polling to the defer RPC, ambiguous submissions/cost or ingestion uncertainty to quarantine, and confirmed provider failures to the failure finalizer.
+- Quarantined jobs require an evidence reference before operator resume. Cleanup-pending output ingestion is separately surfaced for review.
+- The atomic success finalizer now verifies that every output asset ID exists, is active, belongs to the job owner/project, is stored in the private Executive Visuals media bucket, and matches the recorded provider task ID before it marks the job successful or settles the budget.
+
+This is a code foundation, not a live worker activation. The existing cloud process supervisor does not instantiate this worker, and no Runway key, provider allowlist, budget policy, approval, or provider request has been configured. Before connecting it to the supervisor, the new PostgreSQL migration/RPCs must pass isolated database integration tests and the worker must be tested with mock adapters, real FFprobe, private test storage and fault-injection for lease loss and ambiguous RPC responses.
