@@ -37,6 +37,7 @@ Google shut down the Gemini API Veo 3.1 Preview endpoints on October 22, 2026. G
 - `server/google-omni-flash-interaction.mjs`
   - Builds a pure request plan for the Interactions API.
   - Uses only private asset IDs, authenticated owner/project context, and a server-side Google Files URI resolver.
+  - Requires stateful `previous_interaction_id` references to resolve to a stored interaction owned by the same user and project, and pinned to the same model.
   - Rejects arbitrary URLs and malformed Google Files URIs.
   - Enforces source/reference video duration limits.
   - Supports first/last frame interpolation and previous-interaction lineage.
@@ -53,7 +54,7 @@ Google shut down the Gemini API Veo 3.1 Preview endpoints on October 22, 2026. G
 
 This provider should plug into the shared video generation contract and durable cloud worker lifecycle. A live adapter must not be enabled until the app can guarantee:
 
-1. Authenticated owner/project authorization for every input asset.
+1. Authenticated owner/project authorization for every input asset and every `previous_interaction_id` lineage reference.
 2. Explicit user approval and a durable budget reservation before POST.
 3. One-shot idempotent submission (never retry a POST after an ambiguous timeout without reconciliation).
 4. Durable interaction ID and state tracking.
