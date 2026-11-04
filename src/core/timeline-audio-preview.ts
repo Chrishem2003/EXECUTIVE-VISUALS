@@ -1,5 +1,5 @@
 import type { EditorialTimeline } from "./timeline";
-import { resolveTimelineFrame } from "./timeline-preview";
+import { resolveTimelineFrame } from "./timeline-preview.ts";
 
 export interface AudioPreviewClip {
   trackId:string;
