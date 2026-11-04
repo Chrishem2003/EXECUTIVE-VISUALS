@@ -26,7 +26,7 @@ function safeExternalMediaUri(value, supabaseUrl) {
   let objectPath;
   try { objectPath = decodeURIComponent(uri.pathname.slice(prefix.length)); } catch { return false; }
   const segments = objectPath.split("/");
-  if (segments.length < 3 || segments.some(part => !part || part === "." || part === ".." || part.includes("\\\\"))) return false;
+  if (segments.length < 3 || segments.some(part => !part || part === "." || part === ".." || part.includes("\\"))) return false;
   const params = [...uri.searchParams.entries()];
   return params.length === 1 && params[0][0] === "token" && Boolean(params[0][1]);
 }
