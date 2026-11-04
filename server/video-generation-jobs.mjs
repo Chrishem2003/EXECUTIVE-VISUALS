@@ -36,13 +36,18 @@ export function createVideoGenerationJobService({
   return Object.freeze({
     enqueue({ ownerId, projectId = null, idempotencyKey, input } = {}) {
       if (typeof ownerId !== "string" || !ownerId.trim()) throw fail("Authenticated owner is required.", "VIDEO_JOB_OWNER_REQUIRED");
-      if (projectId !== null && projectId !== undefined && projectId !== "" && !authorizeProject(ownerId, projectId)) {
+      const inputProjectId = input && typeof input === "object" ? input.projectId || null : null;
+      if (projectId && inputProjectId && projectId !== inputProjectId) {
+        throw fail("Request project does not match the authorized project.", "VIDEO_JOB_PROJECT_MISMATCH");
+      }
+      const effectiveProjectId = projectId || inputProjectId || null;
+      if (effectiveProjectId && !authorizeProject(ownerId, effectiveProjectId)) {
         throw fail("Project is not accessible for editing.", "VIDEO_JOB_PROJECT_FORBIDDEN");
       }
       const key = idempotencyKey == null || idempotencyKey === "" ? null : String(idempotencyKey);
       if (key !== null && !IDEMPOTENCY_KEY.test(key)) throw fail("Idempotency key is invalid.", "VIDEO_JOB_IDEMPOTENCY_INVALID");
 
-      const request = normalizeVideoGenerationRequest({ ...(input || {}), ...(projectId ? { projectId } : {}) });
+      const request = normalizeVideoGenerationRequest({ ...(input || {}), ...(effectiveProjectId ? { projectId: effectiveProjectId } : {}) });
       const providerId = request.provider;
       const modelId = request.model;
       if (!providerId || !modelId) throw fail("An explicit provider and model are required.", "VIDEO_JOB_PROVIDER_REQUIRED");
@@ -53,7 +58,7 @@ export function createVideoGenerationJobService({
       const canonicalRequest = { ...request };
       delete canonicalRequest.requestId;
       const requestHash = createHash("sha256")
-        .update(stableJson({ ...canonicalRequest, projectId: projectId || null }))
+        .update(stableJson({ ...canonicalRequest, projectId: effectiveProjectId || null }))
         .digest("hex");
 
       const transaction = db.transaction(() => {
@@ -69,7 +74,7 @@ export function createVideoGenerationJobService({
               .update(stableJson({ ...prior, projectId: projectId || null }))
               .digest("hex");
             const same = existing.job_type === JOB_TYPE &&
-              existing.project_id === (projectId || null) &&
+              existing.project_id === (effectiveProjectId || null) &&
               priorHash === requestHash;
             if (!same) throw fail("This idempotency key was already used for a different video request.", "VIDEO_JOB_IDEMPOTENCY_CONFLICT");
             return { job: existing, idempotentReplay: true };
@@ -104,7 +109,7 @@ export function createVideoGenerationJobService({
           remoteUsageReservationId: usage.reservationId
         };
         db.prepare("INSERT INTO jobs(id,owner_id,project_id,job_type,status,input_json,idempotency_key) VALUES(?,?,?,?,'queued',?,?)")
-          .run(id, ownerId, projectId || null, JOB_TYPE, stableJson(storedInput), key);
+          .run(id, ownerId, effectiveProjectId || null, JOB_TYPE, stableJson(storedInput), key);
         return { job: db.prepare("SELECT * FROM jobs WHERE id=?").get(id), idempotentReplay: false };
       });
 
