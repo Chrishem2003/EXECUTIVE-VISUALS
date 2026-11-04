@@ -262,13 +262,15 @@ export const VIDEO_PROVIDER_CATALOG = freeze([
   {
     id: "luma",
     name: "Luma",
-    adapterState: "research_only",
+    adapterState: "implemented_disabled",
     availability: "disabled",
     remote: true,
     models: [
       {
         id: "ray-3.2",
         name: "Ray 3.2",
+        executionAdapter: "luma-ray32-video-adapter",
+        executionCapabilities: ["textToVideo", "imageToVideo"],
         availability: "disabled",
         capabilities: {
           textToVideo: true,
@@ -298,6 +300,8 @@ export const VIDEO_PROVIDER_CATALOG = freeze([
         constraints: {
           supportedDurationsSeconds: [5, 10],
           maxKeyframes: 64,
+          adapterImplementedOperations: ["video", "text_to_video", "image_to_video"],
+          adapterPendingOperations: ["video_edit", "video_extend", "video_reframe"],
           maxImageToVideoDurationFrames: 240,
           maxVideoEditSourceSeconds: 18,
           maxVideoReframeSourceSeconds: 10,
