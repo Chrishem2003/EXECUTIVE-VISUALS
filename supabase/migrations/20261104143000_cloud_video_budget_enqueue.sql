@@ -338,7 +338,7 @@ declare
   target_budget_state text;
 begin
   if p_worker_id is null or char_length(btrim(p_worker_id)) not between 1 and 128
-     or p_status not in ('succeeded','partial','failed','cancelled')
+     or p_status is null or p_status not in ('succeeded','partial','failed','cancelled')
      or (p_output is not null and jsonb_typeof(p_output) <> 'object')
      or (p_error is not null and jsonb_typeof(p_error) <> 'object')
      or octet_length(coalesce(p_output,'{}'::jsonb)::text) > 32000
@@ -353,6 +353,7 @@ begin
   for update;
   if current_job.id is null or current_job.status <> 'processing'
      or current_job.lease_owner <> p_worker_id
+     or current_job.lease_expires_at is null
      or current_job.lease_expires_at <= clock_timestamp() then
     return false;
   end if;
