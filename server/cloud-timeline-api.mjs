@@ -219,7 +219,7 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
   if(!safeId(assetId))return{status:404,headers:{"content-type":"application/json","cache-control":"no-store"},body:Buffer.from(JSON.stringify({error:{code:"ASSET_NOT_FOUND",message:"Asset not found."}}))};
   if(!["GET","HEAD"].includes(method))return{status:405,headers:{allow:"GET, HEAD","cache-control":"no-store"},body:null};
   const requestedRange=String(range||"").trim();
-  if(requestedRange&&!/^bytes=(?:\\d+-\\d*|-\\d+)$/.test(requestedRange))return{status:416,headers:{"accept-ranges":"bytes","content-range":"bytes */*","cache-control":"private, no-store"},body:null};
+  if(requestedRange&&!/^bytes=(?:\\d+-\\d*|-\\d+)$/.test(requestedRange))return{status:400,headers:{"content-type":"application/json","cache-control":"private, no-store"},body:Buffer.from(JSON.stringify({error:{code:"INVALID_RANGE",message:"Only a single valid byte range is supported."}}))};
   const signed=await service.assets.createSignedUrl({ownerId,assetId,expiresIn:300});
   if(!signed?.asset||typeof signed.url!=="string"||!Number.isSafeInteger(Number(signed.asset.size))||Number(signed.asset.size)<1)throw new Error("Cloud asset repository returned invalid streaming metadata.");
   let target;try{target=new URL(signed.url);if(target.protocol!=="https:"||target.origin!==base||target.username||target.password||target.hash)throw new Error();}catch{throw new Error("Cloud asset repository returned an unsafe private-media URL.");}
