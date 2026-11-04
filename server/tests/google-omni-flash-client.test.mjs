@@ -135,6 +135,19 @@ test("rejects inline output plans and malformed provider response payloads", asy
   });
   await assert.rejects(() => h.client.createInteraction(inline), error =>
     error.code === "GEMINI_OMNI_PLAN_INVALID");
+  const valid = await plan();
+  const forged = {
+    ...valid,
+    payload: {
+      ...valid.payload,
+      input: [
+        { type: "image", uri: "https://attacker.example/private-media" },
+        { type: "text", text: "Describe this image" }
+      ]
+    }
+  };
+  await assert.rejects(() => h.client.createInteraction(forged), error =>
+    error.code === "GEMINI_OMNI_PLAN_INVALID");
   const bad = harness({ fetchImpl: async () => response(200, { id, model: "wrong", status: "completed", steps: [] }) });
   await assert.rejects(async () => bad.client.createInteraction(await plan()), error =>
     error.code === "GEMINI_OMNI_INVALID_RESPONSE");
