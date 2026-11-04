@@ -106,3 +106,15 @@ This remains source-controlled infrastructure only. No budget policy is created,
 Downloads are written to isolated temporary directories with an overall timeout and streaming byte limit. A mandatory media-validation callback (intended to be FFprobe-backed and to inspect actual streams/duration/container) must approve the file before it is passed to the existing cloud asset repository's `createFromFile`, which writes to the private media bucket and registers owner/project-scoped asset metadata. Multi-output ingestion attempts compensating soft-deletion of earlier registered assets if a later output fails and flags `cleanupPending` when compensation cannot complete.
 
 The module is not yet wired to the Runway worker. Deployment must explicitly configure the exact output CDN hostnames observed from the provider contract; do not use broad wildcards without reviewing the provider's redirect/CDN behavior. The production validator must be an actual FFprobe-backed implementation, not a permissive stub. DNS pinning, redirect denial and content validation are defense in depth, not a reason to accept arbitrary user-supplied URLs.
+
+
+## Cloud video recovery and ambiguous-cost safeguards (2026-11-04)
+
+A finalizer review identified a critical edge case: a provider POST can be accepted even when the client loses the response. Such a job must not be marked failed and have its reserved budget released merely because the worker cannot see a provider task ID. The atomic finalizer now rejects failure/cancellation while the submission ledger is `submitting` or `unknown`, and successful completion requires a known `submitted` task ID.
+
+Three additional service-role-only RPCs preserve this invariant:
+- `defer_video_generation_job`: requeues a still-running provider task after a bounded delay, only when a durable provider task ID exists and the budget reservation remains reserved.
+- `quarantine_video_generation_job`: moves an ambiguous submission to `needs_input`, clears the worker lease, and preserves the budget reservation for manual reconciliation.
+- `resume_reconciled_video_generation_job`: resumes a quarantined job only after the submission ledger has been evidence-reconciled to `submitted` with a provider task ID and the reservation remains active.
+
+The server client and migration guard cover these RPCs. This closes the dangerous automatic-release path, but the worker must still be integrated so it routes poll deferrals to the defer RPC and ambiguous POST outcomes to quarantine—not to the generic job failure finalizer.
