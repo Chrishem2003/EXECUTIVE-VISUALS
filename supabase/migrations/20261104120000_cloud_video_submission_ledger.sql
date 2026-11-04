@@ -161,3 +161,61 @@ grant execute on function executive_visuals.get_video_generation_submission(uuid
 
 -- The ledger is intentionally not auto-retried by queue recovery. A worker must
 -- inspect this row before any provider call; only 'prepared' may transition to submitting.
+create or replace function executive_visuals.reconcile_unknown_video_generation_submission(
+  p_job_id uuid, p_provider_task_id text, p_evidence_reference text, p_metadata jsonb default '{}'::jsonb
+) returns boolean
+language plpgsql security definer
+set search_path = pg_catalog, executive_visuals
+as $$
+declare changed integer; current_task text; current_state text;
+begin
+  if p_provider_task_id is null or char_length(btrim(p_provider_task_id)) not between 1 and 256
+     or p_evidence_reference is null or char_length(btrim(p_evidence_reference)) not between 1 and 1000
+     or jsonb_typeof(coalesce(p_metadata,'{}'::jsonb)) <> 'object'
+     or octet_length(coalesce(p_metadata,'{}'::jsonb)::text) > 8000 then
+    raise exception 'VIDEO_SUBMISSION_RECONCILIATION_INVALID';
+  end if;
+  update executive_visuals.video_generation_submissions
+  set state='submitted', provider_task_id=p_provider_task_id, submitted_at=clock_timestamp(),
+      updated_at=clock_timestamp(), last_error_code=null,
+      metadata=coalesce(p_metadata,'{}'::jsonb) || jsonb_build_object('reconciled',true,'evidenceReference',p_evidence_reference)
+  where job_id=p_job_id and state='unknown' and provider_task_id is null;
+  get diagnostics changed = row_count;
+  if changed=1 then return true; end if;
+  select provider_task_id,state into current_task,current_state
+  from executive_visuals.video_generation_submissions where job_id=p_job_id;
+  if current_state='submitted' and current_task=p_provider_task_id then return true; end if;
+  if current_task is not null and current_task <> p_provider_task_id then raise exception 'VIDEO_SUBMISSION_TASK_CONFLICT'; end if;
+  return false;
+end;
+$$;
+
+create or replace function executive_visuals.finish_video_generation_submission(
+  p_job_id uuid, p_worker_id text, p_state text, p_metadata jsonb default '{}'::jsonb
+) returns boolean
+language plpgsql security definer
+set search_path = pg_catalog, executive_visuals
+as $$
+declare changed integer;
+begin
+  if p_state not in ('succeeded','failed','cancelled')
+     or jsonb_typeof(coalesce(p_metadata,'{}'::jsonb)) <> 'object'
+     or octet_length(coalesce(p_metadata,'{}'::jsonb)::text) > 8000 then
+    raise exception 'VIDEO_SUBMISSION_TERMINAL_STATE_INVALID';
+  end if;
+  update executive_visuals.video_generation_submissions s
+  set state=p_state, updated_at=clock_timestamp(), metadata=coalesce(p_metadata,'{}'::jsonb)
+  from executive_visuals.jobs j
+  where s.job_id=p_job_id and j.id=s.job_id and j.status='processing'
+    and j.lease_owner=p_worker_id and j.lease_expires_at > clock_timestamp()
+    and s.state in ('submitted','unknown')
+    and (p_state <> 'succeeded' or s.provider_task_id is not null);
+  get diagnostics changed = row_count;
+  return changed=1;
+end;
+$$;
+
+revoke all on function executive_visuals.reconcile_unknown_video_generation_submission(uuid,text,text,jsonb) from public, anon, authenticated;
+revoke all on function executive_visuals.finish_video_generation_submission(uuid,text,text,jsonb) from public, anon, authenticated;
+grant execute on function executive_visuals.reconcile_unknown_video_generation_submission(uuid,text,text,jsonb) to service_role;
+grant execute on function executive_visuals.finish_video_generation_submission(uuid,text,text,jsonb) to service_role;
