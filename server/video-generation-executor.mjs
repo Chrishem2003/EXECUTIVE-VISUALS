@@ -40,14 +40,14 @@ export async function executeVideoGenerationJob({
   if (!adapter || adapter.provider !== "runway" || typeof adapter.submit !== "function" || typeof adapter.getStatus !== "function") {
     throw fail("A supported video provider adapter is required.", "VIDEO_ADAPTER_UNAVAILABLE");
   }
-  if (typeof ingestOutputs !== "function") {
-    throw fail("Secure private output ingestion is not configured; video execution remains unavailable.", "VIDEO_OUTPUT_INGESTION_UNAVAILABLE");
-  }
   if (!Number.isInteger(maxPolls) || maxPolls < 1 || maxPolls > 1000) throw new Error("Video polling limit is invalid.");
 
   const input = parseJobInput(job);
   const requestHash = input.requestHash;
   const ledger = createVideoSubmissionLedger({ db });
+  if (typeof ingestOutputs !== "function") {
+    throw fail("Secure private output ingestion is not configured; video execution remains unavailable.", "VIDEO_OUTPUT_INGESTION_UNAVAILABLE");
+  }
   const prepared = ledger.prepare({
     jobId: job.id,
     ownerId: job.owner_id,
@@ -83,7 +83,7 @@ export async function executeVideoGenerationJob({
       ledger.markUnknown(job.id, "PROVIDER_TASK_ID_MISSING");
       throw fail("Provider did not return a task ID; submission is quarantined.", "VIDEO_SUBMISSION_REQUIRES_RECONCILIATION");
     }
-    submission = ledger.recordSubmitted(job.id, task.taskId, { acceptedStatus: task.status });
+    submission = ledger.recordSubmitted(job.id, task.taskId, { acceptedStatus: task.status }).submission;
   }
 
   if (submission.state !== "submitted" || !submission.providerTaskId) {
