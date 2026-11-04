@@ -540,7 +540,7 @@ begin
   end if;
   select * into submission from executive_visuals.video_generation_submissions
   where job_id=p_job_id for update;
-  if submission.id is null or submission.state not in ('submitting','unknown') then
+  if submission.id is null or submission.state not in ('submitting','unknown','submitted') then
     raise exception 'VIDEO_JOB_QUARANTINE_REQUIRES_AMBIGUOUS_SUBMISSION';
   end if;
   if not exists (
