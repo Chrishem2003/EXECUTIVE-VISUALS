@@ -20,6 +20,8 @@ const state:{timeline:EditorialTimeline|null;serverRevision:number;timelines:Sav
  timeline:null,serverRevision:0,timelines:[],cloudTimelines:[],cloudProjects:[],cloudProjectId:"",mode:"local",cloudRenderJobId:"",cloudRenderJobStatus:"",variantBase:null,variantReport:null,variantBaseName:"",assets:[],status:"loading",message:"Loading editorial workspace…",selectedTrack:"",selectedClipId:"",ffmpeg:false
 };
 let sequencePlaying=false,sequenceFrame=0,sequenceStartFrame=0,sequenceStartAt=0,sequenceRaf:number|null=null;
+const sequenceAudio=new Map<string,HTMLAudioElement>();
+const captionSources=new Map<string,Promise<Array<{start:number;end:number;text:string}>>>();
 const esc=(v:unknown)=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]||c));
 const fps=()=>state.timeline?state.timeline.frameRate.numerator/state.timeline.frameRate.denominator:24;
 const maxEnd=()=>Math.max(1,...(state.timeline?.tracks.flatMap(t=>t.clips.map(c=>c.timelineStart.value+c.duration.value))||[240]));
@@ -44,21 +46,87 @@ function sequencePreviewPanel(){
  const hasPicture=state.timeline.tracks.some(track=>track.enabled&&track.kind==="video"&&track.clips.some(clip=>clip.enabled));
  if(state.mode==="cloud")return '<section class="timeline-preview panel"><div class="eyebrow">SEQUENCE PREVIEW</div><h3>Cloud preview is not connected yet</h3><p class="muted">Cloud playback stays blocked until the authenticated private-media streaming endpoint is integrated. No public or guessed asset URLs are used.</p></section>';
  return '<section class="timeline-preview panel"><div class="timeline-panel-heading"><div><div class="eyebrow">SEQUENCE PREVIEW · E1</div><h3>'+esc(state.timeline.name)+'</h3></div><small>'+duration+' frames · '+(rate.numerator/rate.denominator).toFixed(3)+' fps</small></div>'+
- '<div class="preview-stage sequence-preview-stage"><video id="tl-sequence-video" class="preview-media" playsinline preload="metadata" hidden></video><img id="tl-sequence-image" class="preview-still" alt="Sequence preview frame" hidden><div id="tl-sequence-empty" class="preview-empty">'+(hasPicture?'Press Play to preview the edited picture sequence.':'Add an enabled clip to a video track to preview the sequence.')+'</div></div>'+
+ '<div class="preview-stage sequence-preview-stage"><video id="tl-sequence-video" class="preview-media" playsinline preload="metadata" hidden></video><img id="tl-sequence-image" class="preview-still" alt="Sequence preview frame" hidden><div id="tl-sequence-empty" class="preview-empty">'+(hasPicture?'Press Play to preview the edited picture sequence.':'Add an enabled clip to a video track to preview the sequence.')+'</div><div id="tl-sequence-overlays" class="sequence-overlay-layer"></div><div id="tl-sequence-caption" class="sequence-caption-layer" aria-live="off"></div><div id="tl-sequence-audio" hidden></div></div>'+
  '<div class="preview-transport sequence-transport"><button class="secondary" data-tl-action="sequence-play" '+(!hasPicture||duration===0?'disabled':'')+'>▶ Play</button><button class="secondary" data-tl-action="sequence-pause">Ⅱ Pause</button><button class="secondary" data-tl-action="sequence-step-back">−1 frame</button><button class="secondary" data-tl-action="sequence-step-forward">+1 frame</button><input id="tl-sequence-scrub" aria-label="Seek sequence by frame" type="range" min="0" max="'+Math.max(0,duration-1)+'" value="'+Math.min(sequenceFrame,Math.max(0,duration-1))+'" step="1" '+(duration===0?'disabled':'')+'><output id="tl-sequence-time">'+frameToSeconds(Math.min(sequenceFrame,Math.max(0,duration-1)),rate).toFixed(3)+' s</output></div>'+
- '<small class="muted">E1 preview currently plays the active primary picture clip across sequence cuts. Audio mixing, overlay compositing, caption burn-in and cloud streaming are not yet part of this browser preview. Use the verified FFmpeg master render for final delivery.</small></section>';
+ '<small class="muted">Local preview now synchronizes enabled audio clips with per-clip gain, displays still-image overlays and renders SRT/VTT caption cues. Cloud streaming and full FFmpeg parity remain outstanding. Use the verified master render for final delivery.</small></section>';
 }
 function stopSequencePlayback(){
  sequencePlaying=false;if(sequenceRaf!==null)cancelAnimationFrame(sequenceRaf);sequenceRaf=null;
  const video=document.querySelector<HTMLVideoElement>("#tl-sequence-video");video?.pause();
+ for(const audio of sequenceAudio.values())audio.pause();
+}
+function parseCaptionTime(value:string):number{
+ const parts=value.trim().replace(",",".").split(":");if(parts.length!==3)return Number.NaN;
+ const [hours,minutes,seconds]=parts.map(Number);return hours*3600+minutes*60+seconds;
+}
+function loadCaptionCues(asset:Asset):Promise<Array<{start:number;end:number;text:string}>>{
+ const cached=captionSources.get(asset.id);if(cached)return cached;
+ const request=fetch("/api/assets/"+encodeURIComponent(asset.id)+"/file",{credentials:"same-origin"}).then(async response=>{
+  if(!response.ok)throw new Error("Caption asset could not be loaded.");
+  const body=await response.text();if(body.length>2*1024*1024)throw new Error("Caption asset exceeds the preview size limit.");
+  return body.replace(/^\\uFEFF/,"").replace(/\\r/g,"").split(/\\n\\s*\\n/).flatMap(block=>{
+   const lines=block.split("\\n"),index=lines.findIndex(line=>line.includes("-->"));if(index<0)return [];
+   const timing=lines[index].split("-->"),start=parseCaptionTime(timing[0].trim().split(/\\s+/)[0]),end=parseCaptionTime(timing[1].trim().split(/\\s+/)[0]);
+   const text=lines.slice(index+1).join(" ").replace(/<[^>]*>/g,"").replace(/&lt;/g,"<").replace(/&gt;/g,">").replace(/&amp;/g,"&").trim().slice(0,1000);
+   return Number.isFinite(start)&&Number.isFinite(end)&&end>start&&text?[{start,end,text}]:[];
+  }).slice(0,5000);
+ }).catch(error=>{captionSources.delete(asset.id);throw error;});
+ captionSources.set(asset.id,request);return request;
+}
+function syncSequenceAudio(active:ReturnType<typeof resolveTimelineFrame>){
+ const container=document.querySelector<HTMLElement>("#tl-sequence-audio");if(!container)return;
+ const live=new Set<string>();
+ for(const item of active.filter(entry=>entry.track.kind==="audio")){
+  const asset=state.assets.find(candidate=>candidate.id===item.clip.assetId);if(!asset?.mediaType.startsWith("audio/"))continue;
+  const key=item.clip.id;live.add(key);let audio=sequenceAudio.get(key);
+  if(!audio){audio=new Audio();audio.preload="auto";audio.dataset.clipId=key;container.appendChild(audio);sequenceAudio.set(key,audio);}
+  const url="/api/assets/"+encodeURIComponent(asset.id)+"/file";
+  if(audio.dataset.assetId!==asset.id){audio.pause();audio.dataset.assetId=asset.id;audio.src=url;audio.load();audio.onloadedmetadata=()=>{if(audio?.dataset.clipId!==key)return;audio.currentTime=Math.max(0,item.sourceSeconds);if(sequencePlaying)void audio.play().catch(()=>{});};}
+  const expected=item.sourceSeconds;if(audio.readyState>=1&&Math.abs(audio.currentTime-expected)>0.3)audio.currentTime=expected;
+  const speed=item.clip.speed??1;if(Number.isFinite(speed)&&speed>0)audio.playbackRate=Math.max(0.25,Math.min(4,speed));
+  const gain=Math.max(-60,Math.min(24,Number(item.clip.gainDb)||0));audio.volume=Math.max(0,Math.min(1,Math.pow(10,gain/20)));
+  if(sequencePlaying&&audio.readyState>=2&&audio.paused)void audio.play().catch(()=>{});
+ }
+ for(const [key,audio] of sequenceAudio){if(live.has(key))continue;audio.pause();audio.removeAttribute("src");audio.load();audio.remove();sequenceAudio.delete(key);}
+}
+function syncSequenceOverlays(active:ReturnType<typeof resolveTimelineFrame>){
+ const container=document.querySelector<HTMLElement>("#tl-sequence-overlays"),caption=document.querySelector<HTMLElement>("#tl-sequence-caption");if(!container||!caption||!state.timeline)return;
+ const overlays=active.filter(item=>item.track.kind==="overlay"),live=new Set<string>();
+ for(const item of overlays){
+  const asset=state.assets.find(candidate=>candidate.id===item.clip.assetId);if(!asset?.mediaType.startsWith("image/"))continue;
+  live.add(item.clip.id);let image=container.querySelector<HTMLImageElement>('img[data-clip-id="'+CSS.escape(item.clip.id)+'"]');
+  if(!image){image=document.createElement("img");image.dataset.clipId=item.clip.id;image.alt=item.clip.name;image.className="sequence-overlay-image";container.appendChild(image);}
+  const url="/api/assets/"+encodeURIComponent(asset.id)+"/file";if(image.dataset.assetId!==asset.id){image.dataset.assetId=asset.id;image.src=url;}
+  const meta=item.clip.metadata||{},width=Math.max(16,Math.min(state.timeline.width,Number(meta.width)||state.timeline.width*.24)),height=Math.max(16,Math.min(state.timeline.height,Number(meta.height)||state.timeline.height*.24));
+  const x=Math.max(0,Math.min(state.timeline.width-width,Number(meta.x)||state.timeline.width-width-24)),y=Math.max(0,Math.min(state.timeline.height-height,Number(meta.y)||24)),opacity=Math.max(0,Math.min(1,Number(meta.opacity??1)));
+  image.style.left=(x/state.timeline.width*100)+"%";image.style.top=(y/state.timeline.height*100)+"%";image.style.width=(width/state.timeline.width*100)+"%";image.style.height=(height/state.timeline.height*100)+"%";image.style.opacity=String(opacity);
+ }
+ for(const image of Array.from(container.querySelectorAll<HTMLImageElement>("img[data-clip-id]")))if(!live.has(image.dataset.clipId||""))image.remove();
+ const captions=active.filter(item=>item.track.kind==="caption");caption.textContent="";
+ for(const item of captions){
+  const asset=state.assets.find(candidate=>candidate.id===item.clip.assetId);if(!asset||!(asset.mediaType==="text/vtt"||asset.mediaType==="text/plain"))continue;
+  void loadCaptionCues(asset).then(cues=>{
+   if(!state.timeline||!document.body.contains(caption))return;
+   const timelineSeconds=sequenceFrame/(state.timeline.frameRate.numerator/state.timeline.frameRate.denominator);
+   const start=item.clip.timelineStart.value/item.clip.timelineStart.rate,sourceStart=item.clip.sourceRange.start.value/item.clip.sourceRange.start.rate;
+   const sourceTime=sourceStart+Math.max(0,timelineSeconds-start)*(item.clip.speed??1);
+   const cue=cues.find(value=>sourceTime>=value.start&&sourceTime<value.end);if(!cue)return;
+   const meta=item.clip.metadata||{},style=caption.style;caption.textContent=cue.text;
+   style.fontFamily=String(meta.fontName||"Arial, sans-serif").slice(0,80);style.fontSize=Math.max(12,Math.min(96,Number(meta.fontSize)||32))+"px";
+   style.color=String(meta.primaryColor||"#FFFFFF");style.background=meta.backgroundMode==="none"?"transparent":String(meta.backgroundColor||"#000000");style.opacity=String(Math.max(0,Math.min(1,Number(meta.backgroundOpacity??0.68))));
+   style.textAlign="center";style.padding="8px 14px";style.bottom=Math.max(0,Math.min(240,Number(meta.marginV)||42))+"px";
+  }).catch(()=>{caption.textContent="";});
+ }
 }
 function renderSequenceFrame(frame:number,forceSeek=false){
  if(!state.timeline)return;
  const duration=getTimelineDurationFrames(state.timeline);sequenceFrame=Math.max(0,Math.min(Math.max(0,duration-1),Math.round(frame)));
  const slider=document.querySelector<HTMLInputElement>("#tl-sequence-scrub");if(slider)slider.value=String(sequenceFrame);
  const output=document.querySelector<HTMLOutputElement>("#tl-sequence-time");if(output)output.value=frameToSeconds(sequenceFrame,state.timeline.frameRate).toFixed(3)+" s";
- const active=resolveTimelineFrame(state.timeline,sequenceFrame).filter(item=>item.track.kind==="video");
- const current=active[active.length-1],video=document.querySelector<HTMLVideoElement>("#tl-sequence-video"),image=document.querySelector<HTMLImageElement>("#tl-sequence-image"),empty=document.querySelector<HTMLElement>("#tl-sequence-empty");
+ const active=resolveTimelineFrame(state.timeline,sequenceFrame);
+ syncSequenceAudio(active);syncSequenceOverlays(active);
+ const picture=active.filter(item=>item.track.kind==="video");
+ const current=picture[picture.length-1],video=document.querySelector<HTMLVideoElement>("#tl-sequence-video"),image=document.querySelector<HTMLImageElement>("#tl-sequence-image"),empty=document.querySelector<HTMLElement>("#tl-sequence-empty");
  if(!video||!image||!empty)return;
  if(!current){video.pause();video.hidden=true;image.hidden=true;empty.hidden=false;empty.textContent="No active picture clip at this timeline position.";return;}
  const asset=state.assets.find(item=>item.id===current.clip.assetId);
