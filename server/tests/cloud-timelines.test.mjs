@@ -82,3 +82,20 @@ test("does not list cloud timelines when project read permission is denied",asyn
  await assert.rejects(()=>f.repo.list({ownerId:owner,projectId:project}),error=>error.code==="CLOUD_TIMELINE_ACCESS_DENIED");
  assert.equal(f.calls.length,0);
 });
+
+test("concurrent cloud timeline saves with the same revision allow exactly one writer",async()=>{
+ const f=setup();
+ const created=await f.repo.create({ownerId:owner,name:"Concurrent master",timeline:document});
+ const first={...document,markers:[{id:"marker-first",start:{value:30,rate:30}}]};
+ const second={...document,markers:[{id:"marker-second",start:{value:60,rate:30}}]};
+ const outcomes=await Promise.allSettled([
+  f.repo.update({ownerId:owner,timelineId:created.id,expectedRevision:1,timeline:first}),
+  f.repo.update({ownerId:owner,timelineId:created.id,expectedRevision:1,timeline:second})
+ ]);
+ const successes=outcomes.filter(item=>item.status==="fulfilled");
+ const conflicts=outcomes.filter(item=>item.status==="rejected"&&item.reason?.code==="CLOUD_TIMELINE_REVISION_CONFLICT");
+ assert.equal(successes.length,1,"only one editor may advance revision 1");
+ assert.equal(conflicts.length,1,"the stale concurrent editor must receive a conflict");
+ assert.equal(f.row.revision,2,"the persisted revision must advance exactly once");
+ assert.ok(["marker-first","marker-second"].includes(f.row.timeline.markers[0].id));
+});

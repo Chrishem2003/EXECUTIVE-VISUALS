@@ -1,4 +1,10 @@
 import { createServer } from "node:http";
+import { createSupabaseAuth } from "./supabase-auth.mjs";
+import { createAuthRateLimiter } from "./auth-rate-limit.mjs";
+import { createRedisRestRateLimiter } from "./distributed-rate-limit.mjs";
+import { createClientIpResolver } from "./client-ip.mjs";
+import { isBlockedDotPath } from "./static-path-security.mjs";
+import { ensureAuthSecuritySchema, getLoginLockState, recordFailedLogin, clearLoginFailures, recordLoginLockoutEvent, listAuthSecurityEvents, getAuthSecuritySummary } from "./auth-login-security.mjs";
 import { createHash, randomBytes, randomUUID, scryptSync, timingSafeEqual } from "node:crypto";
 import { createReadStream, createWriteStream, existsSync, statSync } from "node:fs";
 import { mkdir, unlink, open, readFile } from "node:fs/promises";
@@ -24,6 +30,8 @@ import { createUpscaleBenchmarkFixture, listUpscaleBenchmarkFixtures, registerUp
 const PORT = Number(process.env.API_PORT || process.env.PORT || 4179);
 const HOST = process.env.API_HOST || "127.0.0.1";
 const AUTH_MODE = process.env.AUTH_MODE || "local";
+const supabaseAuth = AUTH_MODE === "supabase" && process.env.SUPABASE_URL && process.env.SUPABASE_PUBLISHABLE_KEY ? createSupabaseAuth() : null;
+const SUPABASE_REFRESH_COOKIE = "ev_supabase_refresh";
 const DATA_DIR = resolve(process.env.DATA_DIR || "./data");
 const MEDIA_ROOT = resolve(process.env.MEDIA_ROOT || join(DATA_DIR, "media"));
 const WEB_ROOT = resolve(process.env.WEB_ROOT || "./dist");
@@ -50,16 +58,26 @@ const EXTENSIONS = {
 const MEDIA_JOBS = new Set(["media.probe","media.thumbnail","media.transcode","media.audio_extract","media.audio-clean","media.proxy","media.denoise","media.color","media.resize","media.interpolate","media.upscale","media.ai-upscale","timeline.render"]);
 const db = openDatabase(DB_FILE);
 ensureTransformationPlanSchema(db);
+ensureAuthSecuritySchema(db);
 const aiUpscaleAdapter = createRealEsrganAdapter();
 const cloudTimelineApiEnabled = process.env.CLOUD_TIMELINE_API_ENABLED === "true";
 if (cloudTimelineApiEnabled && AUTH_MODE !== "supabase") throw new Error("Cloud timeline API requires verified Supabase authentication.");
-const cloudTimelineApi = cloudTimelineApiEnabled ? createCloudTimelineApi({maxUploadBytes:Number(process.env.CLOUD_MEDIA_MAX_UPLOAD_BYTES || MAX_UPLOAD_BYTES)}) : null;
+const cloudTimelineApi = cloudTimelineApiEnabled ? createCloudTimelineApi({maxUploadBytes:Number(process.env.CLOUD_MEDIA_MAX_UPLOAD_BYTES || MAX_UPLOAD_BYTES),maxConcurrentUploads:Number(process.env.CLOUD_MEDIA_MAX_CONCURRENT_UPLOADS || 3)}) : null;
 if (cloudTimelineApi) await cloudTimelineApi.checkReadiness();
 const activeProcesses = new Map();
 const WORKER_ID = randomUUID();
-const rateBuckets = new Map();
-const AUTH_RATE_LIMIT = Math.max(1, Math.min(1000, Number(process.env.AUTH_RATE_LIMIT) || 20));
-function rateAllowed(key,limit,windowMs){const time=Date.now();const old=rateBuckets.get(key);if(!old||time-old.start>=windowMs){rateBuckets.set(key,{start:time,count:1});return true;}old.count++;return old.count<=limit;}
+const AUTH_RATE_LIMIT = Math.max(1, Math.min(1000, Number(process.env.AUTH_RATE_LIMIT) || 10));
+const rateLimitBackend=process.env.AUTH_RATE_LIMIT_BACKEND||"memory";
+const redisRateLimitConfigured=Boolean(process.env.RATE_LIMIT_REDIS_REST_URL&&process.env.RATE_LIMIT_REDIS_REST_TOKEN);
+if((process.env.RATE_LIMIT_REDIS_REST_URL||process.env.RATE_LIMIT_REDIS_REST_TOKEN)&&!redisRateLimitConfigured)throw new Error("Both Redis REST rate-limit URL and token must be configured together.");
+if(!["memory","redis-rest"].includes(rateLimitBackend))throw new Error("AUTH_RATE_LIMIT_BACKEND must be memory or redis-rest.");
+if(rateLimitBackend==="redis-rest"&&!redisRateLimitConfigured)throw new Error("Redis REST rate limiting requires RATE_LIMIT_REDIS_REST_URL and RATE_LIMIT_REDIS_REST_TOKEN.");
+const requireDistributedAuthRateLimit=process.env.REQUIRE_DISTRIBUTED_AUTH_RATE_LIMIT==="true";
+if(process.env.REQUIRE_DISTRIBUTED_AUTH_RATE_LIMIT&&!["true","false"].includes(process.env.REQUIRE_DISTRIBUTED_AUTH_RATE_LIMIT))throw new Error("REQUIRE_DISTRIBUTED_AUTH_RATE_LIMIT must be true or false.");
+if(requireDistributedAuthRateLimit&&rateLimitBackend!=="redis-rest")throw new Error("This deployment requires distributed Redis REST rate limiting.");
+const authRateLimiter=rateLimitBackend==="redis-rest"?createRedisRestRateLimiter({url:process.env.RATE_LIMIT_REDIS_REST_URL,token:process.env.RATE_LIMIT_REDIS_REST_TOKEN,namespace:process.env.RATE_LIMIT_REDIS_NAMESPACE||"executive-visuals"}):createAuthRateLimiter();
+const trustedProxyIps=(process.env.TRUSTED_PROXY_IPS||"").split(",").map(value=>value.trim()).filter(Boolean);
+const resolveClientIp=createClientIpResolver({trustedProxyIps});
 await mkdir(join(MEDIA_ROOT,"uploads"), { recursive:true });
 await mkdir(join(MEDIA_ROOT,"derived"), { recursive:true });
 
@@ -93,6 +111,11 @@ const setCookie = (res,token,maxAge) => {
   const secure=process.env.COOKIE_SECURE==="true"||process.env.NODE_ENV==="production" ? "; Secure" : "";
   res.setHeader("set-cookie",`ev_session=${encodeURIComponent(token)}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${maxAge}${secure}`);
 };
+function setSupabaseRefreshCookie(res,token,maxAge=60*60*24*30) {
+  const secure=process.env.COOKIE_SECURE==="true"||process.env.NODE_ENV==="production" ? "; Secure" : "";
+  res.setHeader("set-cookie",`${SUPABASE_REFRESH_COOKIE}=${encodeURIComponent(token)}; HttpOnly; SameSite=Strict; Path=/api/auth; Max-Age=${maxAge}${secure}`);
+}
+function clearSupabaseRefreshCookie(res) { setSupabaseRefreshCookie(res,"",0); }
 function createLocalSession(userId) {
   const token=randomBytes(32).toString("base64url");
   db.prepare("INSERT INTO sessions(token_hash,user_id,expires_at) VALUES(?,?,?)")
@@ -102,13 +125,8 @@ function createLocalSession(userId) {
 async function authenticate(req) {
   if (AUTH_MODE === "supabase") {
     const token=(req.headers.authorization||"").replace(/^Bearer\s+/i,"");
-    if(!token||!process.env.SUPABASE_URL||!process.env.SUPABASE_PUBLISHABLE_KEY)return null;
-    const response=await fetch(process.env.SUPABASE_URL.replace(/\/$/,"")+"/auth/v1/user",{
-      headers:{apikey:process.env.SUPABASE_PUBLISHABLE_KEY,authorization:"Bearer "+token}
-    });
-    if(!response.ok)return null;
-    const user=await response.json();
-    if(!user?.id)return null;
+    if(!token||!supabaseAuth)return null;
+    let user;try{user=await supabaseAuth.getUser(token);}catch{return null;}
     db.prepare("INSERT INTO users(id,email,auth_source) VALUES(?,?, 'supabase') ON CONFLICT(id) DO UPDATE SET email=excluded.email")
       .run(user.id,user.email||user.id+"@supabase.invalid");
     return {id:user.id,email:user.email||""};
@@ -260,9 +278,10 @@ export function createAppServer() {
     const url=new URL(req.url||"/","http://localhost");
     const path=url.pathname;
     const ratePath=path.startsWith("/api/auth/")?"/auth":(path==="/api/assets"||path==="/api/cloud/assets")&&req.method==="POST"?"/upload":path.endsWith("/research/import")&&req.method==="POST"?"/research":path==="/api/admin/ai-upscale/self-test"&&req.method==="POST"?"/ai-upscale-self-test":"";
-    if(ratePath){const key=(req.socket.remoteAddress||"unknown")+ratePath;const limit=ratePath==="/auth"?AUTH_RATE_LIMIT:ratePath==="/research"?10:ratePath==="/ai-upscale-self-test"?2:30;if(!rateAllowed(key,limit,60000)){fail(res,429,"RATE_LIMITED","Too many requests. Wait before trying again.");return;}}
     try {
+      if(ratePath){const key=resolveClientIp(req)+ratePath;const limit=ratePath==="/auth"?AUTH_RATE_LIMIT:ratePath==="/research"?10:ratePath==="/ai-upscale-self-test"?2:30;if(!await authRateLimiter.allow(key,limit,60000)){fail(res,429,"RATE_LIMITED","Too many requests. Wait before trying again.");return;}}
       if(!path.startsWith("/api/")&&req.method==="GET"){
+        if(isBlockedDotPath(path)){fail(res,404,"NOT_FOUND","Resource not found.");return;}
         const decoded=decodeURIComponent(path);
         let file=resolve(WEB_ROOT,"."+decoded);
         const webPrefix=WEB_ROOT.endsWith(sep)?WEB_ROOT:WEB_ROOT+sep;
@@ -276,11 +295,17 @@ export function createAppServer() {
         }
       }
       if(path==="/api/health"&&req.method==="GET"){
-        send(res,200,{status:"ok",storage:"local-disk",database:"sqlite",media:{ffmpeg:executableAvailable("ffmpeg"),ffprobe:executableAvailable("ffprobe")},imageGateway:{enabled:process.env.IMAGE_GATEWAY_ENABLED==="true",configured:(()=>{try{const url=new URL(process.env.IMAGE_GATEWAY_URL||"");const local=["localhost","127.0.0.1","::1","[::1]"].includes(url.hostname.toLowerCase());return Boolean(process.env.IMAGE_GATEWAY_MODEL&&(local||process.env.IMAGE_GATEWAY_ALLOW_REMOTE==="true"));}catch{return false;}})()},textGateway:{enabled:process.env.AI_GATEWAY_ENABLED==="true",configured:(()=>{try{const url=new URL(process.env.AI_GATEWAY_URL||"");const local=["localhost","127.0.0.1","::1"].includes(url.hostname.toLowerCase());return Boolean(process.env.AI_GATEWAY_MODEL&&(local||process.env.AI_GATEWAY_ALLOW_REMOTE==="true"));}catch{return false;}})()},authMode:AUTH_MODE,version:"0.1.0"},cors);return;
+        send(res,200,{status:"ok",storage:cloudTimelineApi?"supabase-private":"local-disk",database:cloudTimelineApi?"supabase-postgres":"sqlite",capabilities:{cloudAssets:!!cloudTimelineApi,cloudProjects:!!cloudTimelineApi,privateSignedDownloads:!!cloudTimelineApi,cloudModeRequiresSupabaseAuth:!!cloudTimelineApi},media:{ffmpeg:executableAvailable("ffmpeg"),ffprobe:executableAvailable("ffprobe")},imageGateway:{enabled:process.env.IMAGE_GATEWAY_ENABLED==="true",configured:(()=>{try{const url=new URL(process.env.IMAGE_GATEWAY_URL||"");const local=["localhost","127.0.0.1","::1","[::1]"].includes(url.hostname.toLowerCase());return Boolean(process.env.IMAGE_GATEWAY_MODEL&&(local||process.env.IMAGE_GATEWAY_ALLOW_REMOTE==="true"));}catch{return false;}})()},textGateway:{enabled:process.env.AI_GATEWAY_ENABLED==="true",configured:(()=>{try{const url=new URL(process.env.AI_GATEWAY_URL||"");const local=["localhost","127.0.0.1","::1"].includes(url.hostname.toLowerCase());return Boolean(process.env.AI_GATEWAY_MODEL&&(local||process.env.AI_GATEWAY_ALLOW_REMOTE==="true"));}catch{return false;}})()},authMode:AUTH_MODE,rateLimitBackend,distributedRateLimitRequired:requireDistributedAuthRateLimit,version:"0.1.0"},cors);return;
       }
       if(path==="/api/auth/register"&&req.method==="POST"){
-        if(AUTH_MODE!=="local"||process.env.NODE_ENV==="production"){fail(res,403,"REGISTRATION_DISABLED","Local account registration is disabled in this environment.");return;}
         const body=await readJson(req);const email=String(body.email||"").trim().toLowerCase();const password=String(body.password||"");
+        if(!await authRateLimiter.allowEmail("register",email)){fail(res,429,"AUTH_EMAIL_RATE_LIMITED","Too many account creation attempts for this email. Try again later.");return;}
+        if(AUTH_MODE==="supabase"){
+          if(!supabaseAuth){fail(res,503,"AUTH_NOT_CONFIGURED","The external identity provider is not configured.");return;}
+          try{const result=await supabaseAuth.signUp({email,password});if(result.confirmationRequired){send(res,202,{confirmationRequired:true,user:result.user,authMode:"supabase"},cors);return;}setSupabaseRefreshCookie(res,result.refreshToken);send(res,201,{user:result.user,accessToken:result.accessToken,expiresIn:result.expiresIn,authMode:"supabase"},cors);return;}
+          catch(error){fail(res,error.status||502,error.code||"SIGNUP_FAILED",String(error.message||"Account registration failed.").slice(0,300));return;}
+        }
+        if(process.env.NODE_ENV==="production"){fail(res,403,"REGISTRATION_DISABLED","Local account registration is disabled in this environment.");return;}
         if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||password.length<12){fail(res,400,"INVALID_CREDENTIALS","Enter a valid email and a password of at least 12 characters.");return;}
         const id=randomUUID(),salt=randomBytes(16).toString("hex"),passwordHash=scryptSync(password,salt,64).toString("hex");
         try{db.prepare("INSERT INTO users(id,email,password_hash,password_salt) VALUES(?,?,?,?)").run(id,email,passwordHash,salt);}
@@ -289,23 +314,64 @@ export function createAppServer() {
         send(res,201,{user:{id,email},authMode:"local"},cors);return;
       }
       if(path==="/api/auth/login"&&req.method==="POST"){
-        if(AUTH_MODE!=="local"){fail(res,403,"USE_EXTERNAL_AUTH","Sign in through the configured identity provider.");return;}
         const body=await readJson(req);const email=String(body.email||"").trim().toLowerCase();const password=String(body.password||"");
-        if(password.length===0||password.length>256){fail(res,401,"INVALID_CREDENTIALS","Email or password is incorrect.");return;}
+        const lockState=getLoginLockState(db,email);
+        if(lockState.locked){recordLoginLockoutEvent(db,email,lockState);const retrySeconds=Math.max(1,Math.ceil(lockState.retryAfterMs/1000));send(res,423,{error:{code:"ACCOUNT_TEMPORARILY_LOCKED",message:"Sign-in is temporarily locked. Try again after the displayed wait."},retryAfterSeconds:retrySeconds},{"retry-after":String(retrySeconds),...cors});return;}
+        if(AUTH_MODE==="supabase"){
+          if(!supabaseAuth){fail(res,503,"AUTH_NOT_CONFIGURED","The external identity provider is not configured.");return;}
+          if(!await authRateLimiter.allowEmail("signIn",email)){fail(res,429,"AUTH_EMAIL_RATE_LIMITED","Too many sign-in attempts for this email. Try again later.");return;}
+          try{
+            const result=await supabaseAuth.signInWithPassword({email,password});
+            clearLoginFailures(db,email);
+            setSupabaseRefreshCookie(res,result.refreshToken);
+            send(res,200,{user:result.user,accessToken:result.accessToken,expiresIn:result.expiresIn,authMode:"supabase"},cors);return;
+          }catch(error){
+            if([400,401].includes(Number(error.status))){
+              const failure=recordFailedLogin(db,email);
+              if(failure.locked){const retrySeconds=Math.max(1,Math.ceil(failure.retryAfterMs/1000));send(res,423,{error:{code:"ACCOUNT_TEMPORARILY_LOCKED",message:"Sign-in is temporarily locked after repeated failures. Try again after the displayed wait."},retryAfterSeconds:retrySeconds},{"retry-after":String(retrySeconds),...cors});return;}
+              fail(res,401,"INVALID_CREDENTIALS","Email or password is incorrect.");return;
+            }
+            fail(res,error.status||502,error.code||"LOGIN_FAILED","Sign-in could not be completed. Please try again.");return;
+          }
+        }
+        if(password.length===0||password.length>256){const failure=recordFailedLogin(db,email);if(failure.locked){const retrySeconds=Math.max(1,Math.ceil(failure.retryAfterMs/1000));send(res,423,{error:{code:"ACCOUNT_TEMPORARILY_LOCKED",message:"Sign-in is temporarily locked after repeated failures. Try again after the displayed wait."},retryAfterSeconds:retrySeconds},{"retry-after":String(retrySeconds),...cors});return;}fail(res,401,"INVALID_CREDENTIALS","Email or password is incorrect.");return;}
         const user=db.prepare("SELECT * FROM users WHERE email=? COLLATE NOCASE").get(email);
         const candidate=user?scryptSync(password,user.password_salt,64).toString("hex"):"";
         const valid=!!user&&candidate.length===user.password_hash.length&&timingSafeEqual(Buffer.from(candidate,"hex"),Buffer.from(user.password_hash,"hex"));
-        if(!valid){fail(res,401,"INVALID_CREDENTIALS","Email or password is incorrect.");return;}
+        if(!valid){const failure=recordFailedLogin(db,email);if(failure.locked){const retrySeconds=Math.max(1,Math.ceil(failure.retryAfterMs/1000));send(res,423,{error:{code:"ACCOUNT_TEMPORARILY_LOCKED",message:"Sign-in is temporarily locked after repeated failures. Try again after the displayed wait."},retryAfterSeconds:retrySeconds},{"retry-after":String(retrySeconds),...cors});return;}fail(res,401,"INVALID_CREDENTIALS","Email or password is incorrect.");return;}
+        clearLoginFailures(db,email);
         const token=createLocalSession(user.id);setCookie(res,token,SESSION_DAYS*86400);
         send(res,200,{user:{id:user.id,email:user.email},authMode:"local"},cors);return;
       }
+      if(path==="/api/auth/session"&&req.method==="POST"){
+        if(AUTH_MODE!=="supabase"||!supabaseAuth){fail(res,404,"SESSION_REFRESH_UNAVAILABLE","External session refresh is unavailable.");return;}
+        const refreshToken=cookieValue(req,SUPABASE_REFRESH_COOKIE);if(!refreshToken){fail(res,401,"SESSION_EXPIRED","Sign in to continue.");return;}
+        try{const result=await supabaseAuth.refreshSession(refreshToken);setSupabaseRefreshCookie(res,result.refreshToken);send(res,200,{user:result.user,accessToken:result.accessToken,expiresIn:result.expiresIn,authMode:"supabase"},cors);return;}
+        catch(error){clearSupabaseRefreshCookie(res);fail(res,error.status===400||error.status===401?401:error.status||502,error.code||"SESSION_EXPIRED","Your sign-in session expired. Please sign in again.");return;}
+      }
+      if(path==="/api/auth/recover"&&req.method==="POST"){
+        if(AUTH_MODE!=="supabase"||!supabaseAuth){fail(res,404,"PASSWORD_RECOVERY_UNAVAILABLE","Password recovery is unavailable.");return;}
+        const body=await readJson(req);if(!await authRateLimiter.allowEmail("recover",body.email)){fail(res,429,"AUTH_EMAIL_RATE_LIMITED","Too many recovery requests for this email. Try again later.");return;}try{await supabaseAuth.recover({email:body.email});send(res,202,{accepted:true},cors);return;}
+        catch(error){fail(res,error.status||502,error.code||"RECOVERY_FAILED",String(error.message||"Password recovery could not be started.").slice(0,300));return;}
+      }
+      if(path==="/api/auth/password"&&req.method==="POST"){
+        if(AUTH_MODE!=="supabase"||!supabaseAuth){fail(res,404,"PASSWORD_UPDATE_UNAVAILABLE","Password update is unavailable.");return;}
+        const accessToken=String(req.headers.authorization||"").replace(/^Bearer\s+/i,"");if(!accessToken){fail(res,401,"RECOVERY_SESSION_REQUIRED","Open the password recovery link before choosing a new password.");return;}
+        const body=await readJson(req,16*1024);try{const result=await supabaseAuth.updatePassword(accessToken,String(body.password||""));try{await supabaseAuth.signOut(accessToken);}catch{}clearSupabaseRefreshCookie(res);send(res,200,{ok:true,user:result.user},cors);return;}
+        catch(error){fail(res,error.status||502,error.code||"PASSWORD_UPDATE_FAILED",String(error.message||"Password could not be updated.").slice(0,300));return;}
+      }
       if(path==="/api/auth/logout"&&req.method==="POST"){
+        if(AUTH_MODE==="supabase"){
+          const refreshToken=cookieValue(req,SUPABASE_REFRESH_COOKIE);
+          if(refreshToken&&supabaseAuth){try{const session=await supabaseAuth.refreshSession(refreshToken);await supabaseAuth.signOut(session.accessToken);}catch{}}
+          clearSupabaseRefreshCookie(res);send(res,200,{ok:true},cors);return;
+        }
         const token=cookieValue(req,"ev_session");if(token)db.prepare("DELETE FROM sessions WHERE token_hash=?").run(hash(token));
         setCookie(res,"",0);send(res,200,{ok:true},cors);return;
       }
       const user=await authenticate(req);
       if(!user){fail(res,401,"AUTH_REQUIRED","Sign in to access this workspace.");return;}
-      if(path==="/api/me"&&req.method==="GET"){send(res,200,{user,authMode:AUTH_MODE},cors);return;}
+      if(path==="/api/me"&&req.method==="GET"){const securityAdmins=String(process.env.AUTH_SECURITY_ADMIN_EMAILS||"").split(",").map(value=>value.trim().toLowerCase()).filter(Boolean);send(res,200,{user,authMode:AUTH_MODE,capabilities:{securityEvents:securityAdmins.includes(String(user.email||"").toLowerCase())}},cors);return;}
       const upscaleBenchmarksMatch=path.match(/^\/api\/upscale-benchmarks(?:\/(fixtures|runs)(?:\/([0-9a-f-]+)\/review)?)?$/i);
       if(upscaleBenchmarksMatch){
         const section=upscaleBenchmarksMatch[1]||"";
@@ -821,6 +887,29 @@ export function createAppServer() {
           audit(db,user.id,"review.status_changed","review",review.id,{status},review.project_id);
           send(res,200,{ok:true,status},cors);return;
         }
+      }
+
+      if(path==="/api/admin/security-summary"&&req.method==="GET"){
+        const allowedAdmins=String(process.env.AUTH_SECURITY_ADMIN_EMAILS||"").split(",").map(value=>value.trim().toLowerCase()).filter(Boolean);
+        if(!allowedAdmins.length||!allowedAdmins.includes(String(user.email||"").toLowerCase())){
+          fail(res,403,"AUTH_SECURITY_ADMIN_REQUIRED","An explicitly allowlisted security administrator is required.");return;
+        }
+        send(res,200,getAuthSecuritySummary(db),cors);return;
+      }
+      if(path==="/api/admin/security-events"&&req.method==="GET"){
+        const allowedAdmins=String(process.env.AUTH_SECURITY_ADMIN_EMAILS||"").split(",").map(value=>value.trim().toLowerCase()).filter(Boolean);
+        if(!allowedAdmins.length||!allowedAdmins.includes(String(user.email||"").toLowerCase())){
+          fail(res,403,"AUTH_SECURITY_ADMIN_REQUIRED","An explicitly allowlisted security administrator is required.");return;
+        }
+        const rawLimit=url.searchParams.get("limit");
+        const limit=rawLimit===null?50:Number(rawLimit);
+        const beforeId=url.searchParams.get("beforeId");
+        const eventType=url.searchParams.get("eventType");
+        if(!Number.isInteger(limit)||limit<1||limit>100){fail(res,400,"INVALID_SECURITY_EVENT_QUERY","Limit must be an integer from 1 to 100.");return;}
+        try{
+          const events=listAuthSecurityEvents(db,{limit,beforeId,eventType});
+          send(res,200,{events,nextBeforeId:events.length===limit?events[events.length-1].id:null,retentionDays:90},cors);return;
+        }catch(error){fail(res,400,"INVALID_SECURITY_EVENT_QUERY",error.message);return;}
       }
       if(path==="/api/audit"&&req.method==="GET"){
         const rows=db.prepare("SELECT id,project_id,event_type,subject_type,subject_id,details_json,created_at FROM audit_events WHERE (project_id IS NULL AND owner_id=?) OR project_id IN (SELECT id FROM projects WHERE owner_id=?) OR project_id IN (SELECT project_id FROM project_members WHERE member_id=?) ORDER BY id DESC LIMIT 200").all(user.id,user.id,user.id);

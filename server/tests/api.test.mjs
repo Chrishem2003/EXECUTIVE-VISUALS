@@ -12,7 +12,7 @@ const dataDir=await mkdtemp(join(tmpdir(),"ev-api-test-"));
 const webDir=join(dataDir,"web");await mkdir(webDir,{recursive:true});await writeFile(join(webDir,"index.html"),"<!doctype html><html><body>test</body></html>");
 const child=spawn(process.execPath,["server/index.mjs"],{
   cwd:process.cwd(),
-  env:{...process.env,NODE_ENV:"development",AUTH_MODE:"local",AUTH_RATE_LIMIT:"1000",REMOTE_AI_DAILY_REQUEST_LIMIT:"7",API_HOST:"127.0.0.1",API_PORT:String(port),DATA_DIR:dataDir,MEDIA_ROOT:join(dataDir,"media"),WEB_ROOT:webDir,DISABLE_WORKER:"true"},
+  env:{...process.env,NODE_ENV:"development",AUTH_MODE:"local",AUTH_RATE_LIMIT:"1000",AUTH_SECURITY_ADMIN_EMAILS:"security-admin@example.test",REMOTE_AI_DAILY_REQUEST_LIMIT:"7",API_HOST:"127.0.0.1",API_PORT:String(port),DATA_DIR:dataDir,MEDIA_ROOT:join(dataDir,"media"),WEB_ROOT:webDir,DISABLE_WORKER:"true"},
   stdio:["ignore","pipe","pipe"]
 });
 let stdout="",stderr="";
@@ -45,9 +45,45 @@ test("health reports local storage and media-engine availability without secrets
   const body=await response.json();
   assert.equal(body.status,"ok");
   assert.equal(body.storage,"local-disk");
+  assert.equal(body.database,"sqlite");
+  assert.deepEqual(body.capabilities,{cloudAssets:false,cloudProjects:false,privateSignedDownloads:false,cloudModeRequiresSupabaseAuth:false});
   assert.equal("SUPABASE_SERVICE_ROLE_KEY" in body,false);
   assert.equal(response.headers.get("x-frame-options"),"DENY");
   assert.equal(response.headers.get("referrer-policy"),"strict-origin-when-cross-origin");
+});
+
+test("security operations endpoint is allowlisted, read-only and exposes no raw identity",async()=>{
+  assert.equal((await fetch(base+"/api/admin/security-events")).status,401);
+  const ordinary=await register("ordinary-user@example.test");
+  const ordinaryMe=await request("/api/me",{},ordinary);
+  assert.equal(ordinaryMe.status,200);
+  assert.equal((await ordinaryMe.json()).capabilities.securityEvents,false);
+  const denied=await request("/api/admin/security-events",{},ordinary);
+  assert.equal(denied.status,403);
+  assert.equal((await denied.json()).error.code,"AUTH_SECURITY_ADMIN_REQUIRED");
+
+  const admin=await register("security-admin@example.test");
+  const adminMe=await request("/api/me",{},admin);
+  assert.equal((await adminMe.json()).capabilities.securityEvents,true);
+  const summaryDenied=await request("/api/admin/security-summary",{},ordinary);
+  assert.equal(summaryDenied.status,403);
+  const summaryResponse=await request("/api/admin/security-summary",{},admin);
+  assert.equal(summaryResponse.status,200);
+  const summary=await summaryResponse.json();
+  assert.equal(summary.window,"rolling_24_hours");
+  assert.equal(summary.totals.totalEvents,0);
+  assert.deepEqual(summary.suspiciousIdentifiers,[]);
+  assert.equal(summary.detectionPolicy.attemptThreshold,5);
+  const response=await request("/api/admin/security-events?limit=20",{},admin);
+  assert.equal(response.status,200);
+  const body=await response.json();
+  assert.deepEqual(body.events,[]);
+  assert.equal(body.nextBeforeId,null);
+  assert.equal(body.retentionDays,90);
+  const invalid=await request("/api/admin/security-events?eventType=unknown",{},admin);
+  assert.equal(invalid.status,400);
+  assert.equal((await invalid.json()).error.code,"INVALID_SECURITY_EVENT_QUERY");
+  assert.equal(JSON.stringify(body).includes("security-admin@example.test"),false);
 });
 
 test("provider catalog is authenticated, safe and read-only",async()=>{

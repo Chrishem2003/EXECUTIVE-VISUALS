@@ -22,12 +22,14 @@ const stableJson=value=>Array.isArray(value)?"["+value.map(stableJson).join(",")
  * by the app's verified authentication middleware; request bodies never set
  * owner_id. Service-role credentials remain inside this server-only module.
  */
-export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRoleKey=process.env.SUPABASE_SERVICE_ROLE_KEY,fetchImpl=globalThis.fetch,timelineService,authorize,maxJobBytes=5*1024*1024,timeoutMs=15000,maxUploadBytes=250*1024*1024,tempRoot=tmpdir(),transformationReadiness=()=>({})}={}){
+export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRoleKey=process.env.SUPABASE_SERVICE_ROLE_KEY,fetchImpl=globalThis.fetch,timelineService,authorize,maxJobBytes=5*1024*1024,timeoutMs=15000,maxUploadBytes=250*1024*1024,maxConcurrentUploads=3,tempRoot=tmpdir(),transformationReadiness=()=>({})}={}){
  if(!url||!serviceRoleKey)throw new Error("Cloud timeline API requires server-side Supabase credentials.");
  if(typeof fetchImpl!=="function")throw new Error("Cloud timeline API requires fetch.");
  if(!Number.isInteger(maxJobBytes)||maxJobBytes<1024||maxJobBytes>10*1024*1024)throw new Error("Cloud timeline API payload limit is invalid.");
  if(!Number.isInteger(timeoutMs)||timeoutMs<1000||timeoutMs>60000)throw new Error("Cloud timeline API timeout is invalid.");
  if(!Number.isInteger(maxUploadBytes)||maxUploadBytes<1||maxUploadBytes>1024*1024*1024)throw new Error("Cloud asset upload limit is invalid.");
+ if(!Number.isInteger(maxConcurrentUploads)||maxConcurrentUploads<1||maxConcurrentUploads>32)throw new Error("Cloud asset concurrent upload limit is invalid.");
+ let activeUploads=0;
  const service=timelineService||createCloudTimelineService({url,serviceRoleKey,fetchImpl});
  const allow=authorize||createCloudAssetAuthorizer({url,serviceRoleKey,fetchImpl});
  const base=new URL(url).origin;
@@ -68,7 +70,7 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     const projectId=String(query.projectId||"");
     if(!safeId(projectId))return response(400,{error:{code:"INVALID_PROJECT_ID",message:"Choose a valid project."}});
     if(await allow({ownerId,projectId,action:"read"})!==true)return response(404,{error:{code:"PROJECT_NOT_FOUND",message:"Project not found or access denied."}});
-    const rows=await request("jobs?select=id,job_type,status,progress,input,output,error,created_at,updated_at&owner_id=eq."+encodeURIComponent(ownerId)+"&project_id=eq."+encodeURIComponent(projectId)+"&job_type=eq.media.waveform&order=created_at.desc&limit=50");
+    const rows=await request("jobs?select=id,job_type,status,progress,input,output,error,created_at,updated_at&project_id=eq."+encodeURIComponent(projectId)+"&job_type=eq.media.waveform&order=created_at.desc&limit=50");
     return response(200,{jobs:(rows||[]).map(row=>({id:row.id,status:row.status,progress:Number(row.progress||0),input:row.input||{},output:row.output||null,error:row.error||null,createdAt:row.created_at,updatedAt:row.updated_at}))});
    }
    if(path==="/api/cloud/waveforms"&&method==="POST"){
@@ -333,7 +335,7 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     const jobRows=await request("jobs?select=id,owner_id,project_id,job_type,status,input,output&id=eq."+encodeURIComponent(deliveryApprovalMatch[1])+"&limit=1");
     const job=Array.isArray(jobRows)?jobRows[0]:null;
     if(!job||job.job_type!=="timeline.render"||!job.project_id)return response(404,{error:{code:"DELIVERY_JOB_NOT_FOUND",message:"A completed project timeline render was not found."}});
-    if(await allow({ownerId,projectId:job.project_id,action:method==="POST"?"write":"read"})!==true)return response(404,{error:{code:"DELIVERY_JOB_NOT_FOUND",message:"Delivery review access was not found."}});
+    if(await allow({ownerId,projectId:job.project_id,action:method==="POST"?"review":"read"})!==true)return response(404,{error:{code:"DELIVERY_JOB_NOT_FOUND",message:"Delivery review access was not found."}});
     const output=job.output&&typeof job.output==="object"?job.output:{};
     const receipt=output.deliveryManifest;
     const timelineInput=job.input&&typeof job.input==="object"?job.input:{};
@@ -377,6 +379,23 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     const deliveryPackage=createDeliveryPackage({jobId:job.id,projectId:job.project_id,timelineId:receipt.timelineId,timelineRevision:receipt.timelineRevision,master:{assetId:asset.id,filename:asset.name,mediaType:asset.mediaType,byteSize:asset.size,sha256:asset.sha256,downloadUrl:downloadUrl.href,downloadUrlExpiresInSeconds:300},deliveryReceipt:receipt,renderManifest:receipt.renderManifest,deliveryReport:receipt.deliveryReport,qualityReport:output.qualityReport||null,reviewHistory:approvals});
     return response(200,{deliveryPackage});
    }
+   if(path==="/api/cloud/jobs"&&method==="GET"){
+    const projectId=String(query.projectId||"");
+    if(!safeId(projectId))return response(400,{error:{code:"INVALID_PROJECT_ID",message:"Choose a valid project to list its jobs."}});
+    if(await allow({ownerId,projectId,action:"read"})!==true)return response(404,{error:{code:"PROJECT_NOT_FOUND",message:"Project not found or access denied."}});
+    const limitRaw=String(query.limit??"50"),offsetRaw=String(query.offset??"0");
+    if(!/^\d{1,3}$/.test(limitRaw)||! /^\d{1,9}$/.test(offsetRaw))return response(400,{error:{code:"JOB_PAGE_INVALID",message:"Job pagination values must be non-negative integers."}});
+    const limit=Math.min(100,Math.max(1,Number(limitRaw)||50)),offset=Number(offsetRaw);
+    const jobType=String(query.jobType||"").trim(),status=String(query.status||"").trim();
+    if(jobType&&!/^[a-z0-9][a-z0-9._-]{0,79}$/i.test(jobType))return response(400,{error:{code:"JOB_TYPE_INVALID",message:"Job type filter is invalid."}});
+    if(status&&!["queued","running","succeeded","failed","cancelled"].includes(status))return response(400,{error:{code:"JOB_STATUS_INVALID",message:"Job status filter is invalid."}});
+    let queryPath="jobs?select=id,owner_id,project_id,job_type,status,progress,input,output,error,attempt_count,created_at,updated_at,completed_at&project_id=eq."+encodeURIComponent(projectId);
+    if(jobType)queryPath+="&job_type=eq."+encodeURIComponent(jobType);
+    if(status)queryPath+="&status=eq."+encodeURIComponent(status==="running"?"processing":status);
+    queryPath+="&order=created_at.desc,id.desc&limit="+(limit+1)+"&offset="+offset;
+    const rows=await request(queryPath),visible=(Array.isArray(rows)?rows:[]).slice(0,limit);
+    return response(200,{jobs:visible.map(row=>({id:row.id,projectId:row.project_id,type:row.job_type,status:row.status==="processing"?"running":row.status,progress:Number(row.progress||0),input:row.input||{},output:row.output||null,error:row.error||null,attemptCount:Number(row.attempt_count||0),createdAt:row.created_at,updatedAt:row.updated_at,completedAt:row.completed_at||null})),page:{limit,offset,hasMore:(Array.isArray(rows)?rows.length:0)>limit,nextOffset:(Array.isArray(rows)?rows.length:0)>limit?offset+limit:null}});
+   }
    const jobMatch=path.match(/^\/api\/cloud\/jobs\/([0-9a-f-]+)(?:\/(events))?$/i);
    if(jobMatch&&safeId(jobMatch[1])&&method==="GET"){
     const jobRows=await request("jobs?select=id,owner_id,project_id,job_type,status,progress,input,output,error,attempt_count,created_at,updated_at,completed_at&id=eq."+encodeURIComponent(jobMatch[1])+"&limit=1");
@@ -388,7 +407,7 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
      const events=await request("job_events?select=id,event_type,event_data,created_at&job_id=eq."+encodeURIComponent(job.id)+"&order=id.asc");
      return response(200,{events:Array.isArray(events)?events.map(event=>({id:event.id,type:event.event_type,data:event.event_data,createdAt:event.created_at})):[]});
     }
-    return response(200,{job});
+    return response(200,{job:{...job,status:job.status==="processing"?"running":job.status}});
    }
    const handoffMatch=path.match(/^\/api\/cloud\/timelines\/([0-9a-f-]+)\/handoff$/i);
    if(handoffMatch&&safeId(handoffMatch[1])&&method==="POST"){
@@ -550,10 +569,15 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
   let name="upload";try{name=decodeURIComponent(String(originalName||"upload"));}catch{return response(400,{error:{code:"INVALID_FILE_NAME",message:"File name header is malformed."}});}
   name=basename(name.replace(/[\\/\u0000-\u001f\u007f]/g,"_")).normalize("NFKC").replace(/[^\p{L}\p{N}._() -]/gu,"_").slice(0,180)||"upload";
   const declared=Number(req.headers?.["content-length"]||0);if(declared>maxUploadBytes)return response(413,{error:{code:"UPLOAD_TOO_LARGE",message:"Upload exceeds the configured size limit."}});
-  const directory=await mkdtemp(join(tempRoot,"ev-cloud-upload-")),filePath=join(directory,randomUUID()+"."+extensions[mediaType]);
+  if(activeUploads>=maxConcurrentUploads)return response(429,{error:{code:"UPLOAD_CAPACITY_EXCEEDED",message:"The cloud upload service is at capacity. Retry shortly."}});
+  activeUploads++;
+  let directory=null;
+  const filePathFor=(dir)=>join(dir,randomUUID()+"."+extensions[mediaType]);
   let size=0,header=Buffer.alloc(0);
   const meter=new Transform({transform(chunk,encoding,callback){size+=chunk.length;if(size>maxUploadBytes){callback(Object.assign(new Error("Upload exceeds the configured size limit."),{code:"UPLOAD_TOO_LARGE"}));return;}if(header.length<32)header=Buffer.concat([header,chunk.subarray(0,32-header.length)]);callback(null,chunk);}});
   try{
+   directory=await mkdtemp(join(tempRoot,"ev-cloud-upload-"));
+   const filePath=filePathFor(directory);
    await pipeline(req,meter,createWriteStream(filePath,{flags:"wx"}));
    if(size<1)return response(400,{error:{code:"EMPTY_UPLOAD",message:"Empty uploads are not accepted."}});
    const valid=mediaType==="image/png"?header.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10]))
@@ -577,7 +601,7 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
    if(error.code==="UPLOAD_TOO_LARGE")return response(413,{error:{code:error.code,message:error.message}});
    if(error.code==="CLOUD_ASSET_ACCESS_DENIED"||error.code==="CLOUD_ASSET_NOT_FOUND")return response(404,{error:{code:"ASSET_NOT_FOUND",message:"Asset not found."}});
    throw error;
-  }finally{await rm(directory,{recursive:true,force:true}).catch(()=>{});}
+  }finally{if(directory)await rm(directory,{recursive:true,force:true}).catch(()=>{});activeUploads--;}
  }
  return Object.freeze({handle,uploadAsset,checkReadiness});
 }

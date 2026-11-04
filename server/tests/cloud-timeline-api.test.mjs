@@ -18,7 +18,7 @@ function setup({canWrite=true,projectId=project,existing=[],timelineDocOverride=
   async update(input){calls.push(["update",input]);return{...timeline,revision:input.expectedRevision+1,timeline:input.timeline};}
  };
  const fetchImpl=async(url,options)=>{calls.push(["fetch",url,options]);if(url.includes("/job_events")&&options.method==="POST"&&duplicateReview)return{ok:false,status:409,async text(){return JSON.stringify({code:"23505",message:"duplicate key"})}};if(url.includes("/jobs")&&options.method==="POST")return{ok:true,status:201,async text(){return JSON.stringify([{id:JSON.parse(options.body).id,owner_id:owner,project_id:projectId,job_type:JSON.parse(options.body).job_type,status:"queued",input:JSON.parse(options.body).input}])}};if(url.includes("/jobs?")&&options.method==="PATCH"){const row=existing.find(item=>url.includes("id=eq."+item.id));if(!row)return{ok:true,status:200,async text(){return"[]"}};Object.assign(row,JSON.parse(options.body));return{ok:true,status:200,async text(){return JSON.stringify([row])}};}if(url.includes("/jobs?"))return{ok:true,status:200,async text(){return JSON.stringify(existing)}};return{ok:true,status:201,async text(){return""}};};
- const api=createCloudTimelineApi({url:"https://example.supabase.co",serviceRoleKey:"service-secret",fetchImpl,timelineService:{timelines,assets:{async list(input){calls.push(["asset-list",input]);return[{id:"asset-1",projectId:input.projectId}];},async retryCleanup(input){calls.push(["asset-cleanup-retry",input]);return{id:input.assetId,deleted:true,storageRemoved:true,cleanupPending:false};},async get(input){calls.push(["asset-get",input]);if(input.assetId==="published-asset")return assetOverride||{id:"published-asset",ownerId:owner,projectId:project,name:"master.mp4",mediaType:"video/mp4",size:2048,sha256:"a".repeat(64),metadata:{}};return assetOverride||{id:"723e4567-e89b-42d3-a456-426614174000",ownerId:owner,projectId:project,name:"generated.mp4",mediaType:"video/mp4",sha256:"a".repeat(64),metadata:{generated:true,jobId:"823e4567-e89b-42d3-a456-426614174000",mediaVerification:{status:"passed",readable:true,sha256:"a".repeat(64)},probe:{format:{duration:"2.51"},streams:[{codec_type:"video"}]}}};},async createSignedUrl(input){calls.push(["signed-url",input]);return{asset:signedAssetOverride||{id:input.assetId,projectId:project,size:2048,sha256:"a".repeat(64)},url:"https://storage.example.test/private/master?token=short-lived"};}},projects:{async create(input){calls.push(["project-create",input]);return{id:"project-1",...input};},async list(input){calls.push(["project-list",input]);return[{id:project}];},async get(input){calls.push(["project-get",input]);return{id:project,...input};},async update(input){calls.push(["project-update",input]);return{id:project,...input};},async archive(input){calls.push(["project-archive",input]);return{id:project,archived:true};}}},authorize:authorizeOverride|| (async({ownerId,projectId:pid,action})=>ownerId===owner&&(!pid||pid===project)&&(action==="read"||canWrite))});
+ const api=createCloudTimelineApi({url:"https://example.supabase.co",serviceRoleKey:"service-secret",fetchImpl,timelineService:{timelines,assets:{async list(input){calls.push(["asset-list",input]);return[{id:"asset-1",projectId:input.projectId}];},async retryCleanup(input){calls.push(["asset-cleanup-retry",input]);return{id:input.assetId,deleted:true,storageRemoved:true,cleanupPending:false};},async get(input){calls.push(["asset-get",input]);if(input.assetId==="published-asset")return assetOverride||{id:"published-asset",ownerId:owner,projectId:project,name:"master.mp4",mediaType:"video/mp4",size:2048,sha256:"a".repeat(64),metadata:{}};return assetOverride||{id:"723e4567-e89b-42d3-a456-426614174000",ownerId:owner,projectId:project,name:"generated.mp4",mediaType:"video/mp4",sha256:"a".repeat(64),metadata:{generated:true,jobId:"823e4567-e89b-42d3-a456-426614174000",mediaVerification:{status:"passed",readable:true,sha256:"a".repeat(64)},probe:{format:{duration:"2.51"},streams:[{codec_type:"video"}]}}};},async createSignedUrl(input){calls.push(["signed-url",input]);return{asset:signedAssetOverride||{id:input.assetId,projectId:project,size:2048,sha256:"a".repeat(64)},url:"https://storage.example.test/private/master?token=short-lived"};},async createFromFile(input){calls.push(["asset-create-from-file",input]);return{id:"923e4567-e89b-42d3-a456-426614174000",ownerId:input.ownerId,projectId:input.projectId,name:input.originalName,mediaType:input.mediaType,size:4,sha256:"a".repeat(64)};},async softDelete(input){calls.push(["asset-soft-delete",input]);return{id:input.assetId,deleted:true};}},projects:{async create(input){calls.push(["project-create",input]);return{id:"project-1",...input};},async list(input){calls.push(["project-list",input]);return[{id:project}];},async get(input){calls.push(["project-get",input]);return{id:project,...input};},async update(input){calls.push(["project-update",input]);return{id:project,...input};},async archive(input){calls.push(["project-archive",input]);return{id:project,archived:true};}}},authorize:authorizeOverride|| (async({ownerId,projectId:pid,action})=>ownerId===owner&&(!pid||pid===project)&&(action==="read"||canWrite))});
  return{api,calls,created};
 }
 
@@ -30,6 +30,57 @@ function deliveryReviewFixture({jobOwner=owner,receiptValid=true,deliveryStatus=
  if(!receiptValid)job.output.deliveryManifest={...receipt,fingerprint:"0".repeat(64)};
  return{job,receipt};
 }
+test("cloud job listing is project-authorized and owner-filtered with bounded pagination",async()=>{
+ const jobs=[
+  {id:"623e4567-e89b-42d3-a456-426614174001",owner_id:owner,project_id:project,job_type:"timeline.render",status:"processing",progress:42,input:{timelineId},output:null,error:null,attempt_count:1,created_at:"2026-11-03T10:00:00Z",updated_at:"2026-11-03T10:01:00Z"},
+  {id:"623e4567-e89b-42d3-a456-426614174002",owner_id:owner,project_id:project,job_type:"media.ai-upscale",status:"processing",progress:0,input:{sourceAssetId:"asset"},output:null,error:null,attempt_count:0,created_at:"2026-11-03T09:00:00Z",updated_at:"2026-11-03T09:00:00Z"}
+ ];
+ const f=setup({existing:jobs});
+ const result=await f.api.handle({method:"GET",path:"/api/cloud/jobs",ownerId:owner,query:{projectId:project,limit:"1",offset:"0",status:"running"}});
+ assert.equal(result.status,200);
+ assert.equal(result.body.jobs.length,1);
+ assert.equal(result.body.jobs[0].type,"timeline.render");
+ assert.equal(result.body.jobs[0].progress,42);
+ assert.equal(result.body.jobs[0].status,"running","database processing state is presented as running in the user-facing API");
+ assert.deepEqual(result.body.page,{limit:1,offset:0,hasMore:true,nextOffset:1});
+ const url=f.calls.find(call=>call[0]==="fetch")[1];
+ assert.ok(!url.includes("owner_id=eq."));
+ assert.ok(url.includes("project_id=eq."+project));
+ assert.ok(url.includes("project_id=eq."+project));
+ assert.ok(url.includes("status=eq.processing"),"running filter must query the persisted processing state");
+});
+test("project job API normalizes processing state to running for collaborators",async()=>{
+ const existing=[{id:"623e4567-e89b-42d3-a456-426614174003",owner_id:owner,project_id:project,job_type:"timeline.render",status:"processing",progress:18,input:{},output:null,error:null,attempt_count:1,created_at:"2026-11-03T10:00:00Z",updated_at:"2026-11-03T10:01:00Z"}];
+ const f=setup({existing});
+ const result=await f.api.handle({method:"GET",path:"/api/cloud/jobs",ownerId:owner,query:{projectId:project}});
+ assert.equal(result.status,200);
+ assert.equal(result.body.jobs[0].status,"running");
+});
+test("single cloud job detail normalizes processing to running",async()=>{
+ const existing=[{id:"623e4567-e89b-42d3-a456-426614174004",owner_id:owner,project_id:project,job_type:"timeline.render",status:"processing",progress:31,input:{},output:null,error:null,attempt_count:1,created_at:"2026-11-03T10:00:00Z",updated_at:"2026-11-03T10:01:00Z"}];
+ const f=setup({existing});
+ const result=await f.api.handle({method:"GET",path:"/api/cloud/jobs/"+existing[0].id,ownerId:owner});
+ assert.equal(result.status,200);
+ assert.equal(result.body.job.status,"running");
+});
+test("authorized collaborators can list jobs created by the project owner",async()=>{
+ const existing=[{id:"623e4567-e89b-42d3-a456-426614174001",owner_id:owner,project_id:project,job_type:"timeline.render",status:"processing",progress:55,input:{},output:null,error:null,attempt_count:1,created_at:"2026-11-03T10:00:00Z",updated_at:"2026-11-03T10:01:00Z"}];
+ const f=setup({existing,authorizeOverride:async({ownerId,projectId:pid,action})=>ownerId===editor&&pid===project&&action==="read"});
+ const result=await f.api.handle({method:"GET",path:"/api/cloud/jobs",ownerId:editor,query:{projectId:project}});
+ assert.equal(result.status,200);
+ assert.equal(result.body.jobs.length,1);
+ assert.equal(result.body.jobs[0].id,existing[0].id);
+});
+test("cloud job listing rejects unauthorized projects and malformed filters",async()=>{
+ const denied=setup({authorizeOverride:async()=>false});
+ const hidden=await denied.api.handle({method:"GET",path:"/api/cloud/jobs",ownerId:owner,query:{projectId:project}});
+ assert.equal(hidden.status,404);
+ const f=setup();
+ const invalid=await f.api.handle({method:"GET",path:"/api/cloud/jobs",ownerId:owner,query:{projectId:project,status:"secret"}});
+ assert.equal(invalid.status,400);
+ assert.equal(invalid.body.error.code,"JOB_STATUS_INVALID");
+ assert.equal(f.calls.some(call=>call[0]==="fetch"),false);
+});
 test("delivery package verifies receipt and published asset before issuing a private master link",async()=>{
  const {job,receipt}=deliveryReviewFixture({jobOwner:owner});
  const f=setup({existing:[job],authorizeOverride:async({ownerId,projectId:pid,action})=>ownerId===editor&&pid===project&&action==="read"});
@@ -69,7 +120,7 @@ test("delivery package hides private render evidence from unauthorized project m
 
 test("delivery approval requires independent project reviewer and records fingerprint-bound decision",async()=>{
  const {job,receipt}=deliveryReviewFixture({jobOwner:owner});
- const f=setup({existing:[job],authorizeOverride:async({ownerId,projectId:pid,action})=>ownerId===editor&&pid===project&&action==="write"});
+ const f=setup({existing:[job],authorizeOverride:async({ownerId,projectId:pid,action})=>ownerId===editor&&pid===project&&action==="review"});
  const result=await f.api.handle({method:"POST",path:"/api/cloud/jobs/"+reviewJobId+"/delivery-approval",ownerId:editor,body:{decision:"approved",note:"Visual review passed."}});
  assert.equal(result.status,201);
  assert.equal(result.body.approval.fingerprint,receipt.fingerprint);
@@ -118,7 +169,7 @@ test("cloud render job inspection allows project reviewers and returns durable s
  const job={id:"623e4567-e89b-42d3-a456-426614174000",owner_id:editor,project_id:project,job_type:"timeline.render",status:"processing",progress:45,input:{timelineId,timelineRevision:2},output:null,error:null};
  const f=setup({existing:[job]});
  const result=await f.api.handle({method:"GET",path:"/api/cloud/jobs/"+job.id,ownerId:owner});
- assert.equal(result.status,200);assert.equal(result.body.job.status,"processing");
+ assert.equal(result.status,200);assert.equal(result.body.job.status,"running","persisted processing state is normalized for job detail");
 });
 test("cloud render job inspection hides unrelated personal jobs",async()=>{
  const job={id:"623e4567-e89b-42d3-a456-426614174000",owner_id:editor,project_id:null,job_type:"timeline.render",status:"queued",input:{timelineId,timelineRevision:2}};
@@ -183,6 +234,25 @@ test("cloud asset upload enforces the configured streaming byte limit",async()=>
  const req=Readable.from([Buffer.from([137,80,78,71,13,10,26,10,1])]);req.headers={"content-length":"9"};
  const result=await api.uploadAsset({req,ownerId:owner,originalName:"large.png",mediaType:"image/png"});
  assert.equal(result.status,413);assert.equal(called,false);
+});
+test("cloud asset uploads enforce a bounded concurrent upload limit",async()=>{
+ let release;
+ const gate=new Promise(resolve=>{release=resolve;});
+ const blocked=Readable.from((async function*(){await gate;yield Buffer.from("%PDF-1.7\\nfixture");})());
+ blocked.headers={"content-length":"15"};
+ const api=createCloudTimelineApi({url:"https://example.supabase.co",serviceRoleKey:"service-secret",maxConcurrentUploads:1,timelineService:{timelines:{},assets:{async createFromFile(){return{id:"723e4567-e89b-42d3-a456-426614174000"};}}},authorize:async()=>true});
+ const first=api.uploadAsset({req:blocked,ownerId:owner,originalName:"first.pdf",mediaType:"application/pdf"});
+ await new Promise(resolve=>setImmediate(resolve));
+ const secondReq=Readable.from([Buffer.from("%PDF-1.7\\nsecond")]);secondReq.headers={"content-length":"15"};
+ const second=await api.uploadAsset({req:secondReq,ownerId:owner,originalName:"second.pdf",mediaType:"application/pdf"});
+ assert.equal(second.status,429);
+ assert.equal(second.body.error.code,"UPLOAD_CAPACITY_EXCEEDED");
+ release();
+ const completed=await first;
+ assert.equal(completed.status,201);
+});
+test("cloud asset concurrent upload limit rejects invalid configuration",()=>{
+ assert.throws(()=>createCloudTimelineApi({url:"https://example.supabase.co",serviceRoleKey:"service-secret",maxConcurrentUploads:0}),/concurrent upload limit/);
 });
 test("cloud asset signed read and delete delegate to the owner-aware private repository",async()=>{
  const calls=[];
@@ -321,6 +391,14 @@ test("timeline preview tickets fail closed for users without project read access
 });
 
 
+test("delivery decisions use the independent reviewer permission and still reject the render creator",async()=>{
+ const {job}=deliveryReviewFixture({jobOwner:owner});let permissionAction=null;
+ const f=setup({existing:[job],authorizeOverride:async({ownerId,projectId:pid,action})=>{permissionAction=action;return [owner,editor].includes(ownerId)&&pid===project&&action==="review";}});
+ const result=await f.api.handle({method:"POST",path:"/api/cloud/jobs/"+reviewJobId+"/delivery-approval",ownerId:editor,body:{decision:"changes_requested",note:"Please correct the flagged interval."}});
+ assert.equal(permissionAction,"review");assert.equal(result.status,201);assert.equal(result.body.approval.reviewerId,editor);
+ const creator=await f.api.handle({method:"POST",path:"/api/cloud/jobs/"+reviewJobId+"/delivery-approval",ownerId:owner,body:{decision:"approved",note:"I approve my own render."}});
+ assert.equal(creator.status,403);assert.equal(creator.body.error.code,"INDEPENDENT_REVIEW_REQUIRED");
+});
 test("delivery approval rejects internally inconsistent media-quality evidence",async()=>{
  const {job}=deliveryReviewFixture({jobOwner:owner});
  job.output.qualityReport={status:"passed",counts:{errors:0,warnings:0},findings:[{code:"BELOW_HD",severity:"warning",message:"Output is below HD."}],limitations:[]};
@@ -426,4 +504,68 @@ test("audio timeline preview exposes only a same-project waveform derivative wit
  const result=await api.handle({method:"GET",path:"/api/cloud/timelines/"+timelineId+"/preview/"+sourceId,ownerId:owner,query:{revision:"14"}});
  assert.equal(result.status,200);assert.equal(result.body.preview.waveformUrl,"https://signed.example/"+waveformId);
  assert.equal(calls.length,2);assert.equal(calls[0].assetId,sourceId);assert.equal(calls[1].assetId,waveformId);
+});
+
+test("cloud asset listing is scoped to the verified owner and selected project",async()=>{
+ const f=setup();
+ const result=await f.api.handle({method:"GET",path:"/api/cloud/assets",ownerId:owner,query:{projectId:project,limit:"12",offset:"3"}});
+ assert.equal(result.status,200);
+ assert.equal(result.body.assets.length,1);
+ assert.deepEqual(f.calls.find(call=>call[0]==="asset-list")[1],{ownerId:owner,projectId:project,limit:12,offset:3});
+});
+test("cloud asset download returns a short-lived private signed URL",async()=>{
+ const f=setup();
+ const result=await f.api.handle({method:"GET",path:"/api/cloud/assets/723e4567-e89b-42d3-a456-426614174000",ownerId:owner});
+ assert.equal(result.status,200);
+ assert.equal(result.body.expiresIn,300);
+ assert.match(result.body.url,/^https:\/\//);
+ assert.ok(f.calls.some(call=>call[0]==="signed-url"&&call[1].ownerId===owner&&call[1].expiresIn===300));
+});
+test("cloud asset deletion uses the verified owner identity",async()=>{
+ const f=setup();
+ const result=await f.api.handle({method:"DELETE",path:"/api/cloud/assets/723e4567-e89b-42d3-a456-426614174000",ownerId:owner});
+ assert.equal(result.status,200);
+ assert.deepEqual(f.calls.find(call=>call[0]==="asset-soft-delete")[1],{ownerId:owner,assetId:"723e4567-e89b-42d3-a456-426614174000"});
+});
+test("cloud asset upload streams validated PDF bytes and never trusts a body owner ID",async()=>{
+ const f=setup();
+ const bytes=Buffer.from("%PDF-1.7\\nfixture");
+ const req=Object.assign(Readable.from([bytes]),{headers:{"content-length":String(bytes.length),"content-type":"application/pdf","x-file-name":"private-report.pdf","x-project-id":project}});
+ const result=await f.api.handle({method:"POST",path:"/api/cloud/assets",ownerId:owner,body:{ownerId:editor},req});
+ assert.equal(result.status,201);
+ const upload=f.calls.find(call=>call[0]==="asset-create-from-file")[1];
+ assert.equal(upload.ownerId,owner);
+ assert.equal(upload.projectId,project);
+ assert.equal(upload.originalName,"private-report.pdf");
+ assert.equal(upload.mediaType,"application/pdf");
+ assert.equal(upload.metadata.ingest,"cloud-api");
+});
+test("cloud asset upload rejects invalid file signatures before storage",async()=>{
+ const f=setup();
+ const bytes=Buffer.from("not a pdf");
+ const req=Object.assign(Readable.from([bytes]),{headers:{"content-length":String(bytes.length),"content-type":"application/pdf","x-file-name":"fake.pdf"}});
+ const result=await f.api.handle({method:"POST",path:"/api/cloud/assets",ownerId:owner,req});
+ assert.equal(result.status,415);
+ assert.equal(result.body.error.code,"MEDIA_SIGNATURE_MISMATCH");
+ assert.equal(f.calls.some(call=>call[0]==="asset-create-from-file"),false);
+});
+test("cloud asset routes reject missing verified identity",async()=>{
+ const f=setup();
+ const result=await f.api.handle({method:"GET",path:"/api/cloud/assets",ownerId:"not-a-user"});
+ assert.equal(result.status,401);
+ assert.equal(f.calls.length,0);
+});
+
+test("cloud job event history is authorization-checked before event records are queried",async()=>{
+ const job={id:"623e4567-e89b-42d3-a456-426614174009",owner_id:owner,project_id:project,job_type:"timeline.render",status:"succeeded",input:{timelineId}};
+ const denied=setup({existing:[job],authorizeOverride:async()=>false});
+ const hidden=await denied.api.handle({method:"GET",path:"/api/cloud/jobs/"+job.id+"/events",ownerId:editor});
+ assert.equal(hidden.status,404);
+ assert.equal(denied.calls.some(call=>call[0]==="fetch"&&call[1].includes("/job_events")),false);
+
+ const allowed=setup({existing:[job],authorizeOverride:async({ownerId:actor,projectId:pid,action})=>actor===editor&&pid===project&&action==="read"});
+ const visible=await allowed.api.handle({method:"GET",path:"/api/cloud/jobs/"+job.id+"/events",ownerId:editor});
+ assert.equal(visible.status,200);
+ assert.deepEqual(visible.body.events,[]);
+ assert.ok(allowed.calls.some(call=>call[0]==="fetch"&&call[1].includes("/job_events")));
 });

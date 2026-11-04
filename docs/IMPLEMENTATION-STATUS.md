@@ -1,7 +1,7 @@
 # Executive Visuals — implementation status
 
-**Updated:** 3 November 2026  
-**Branch:** `feat/timeline-preview-transport`  
+**Updated:** 4 November 2026  
+**Branch:** `feat/supabase-native-auth-flow` (draft PR #20)  
 **Delivery posture:** local runtime implemented; external-auth staging blueprint hardened; public release not approved pending account sign-in UX, isolated auth configuration, durable-data recovery tests and deployment verification.
 
 ## Implemented in the current branch
@@ -23,11 +23,11 @@
 | Output locking | Locked nodes with saved output IDs are reused; targeted reruns can stop at locked ancestors | Local planner behavior tested |
 | Local API | HTTP API, development accounts, hashed passwords, HttpOnly sessions, owner-scoped resources, restrictive HTML CSP, anti-framing and referrer/security headers | Local password auth is development-only |
 | Projects | Persistent project creation, listing, optimistic revision updates, archive and project-scoped creative workspace documents with revision conflict protection | SQLite local database; owner/editor writes and viewer reads |
-| Media ingest | Binary uploads to local disk, MIME allowlist, upload-size limit and SHA-256 checksum | Local disk; cloud object storage not connected |
-| Asset library | Owner isolation, metadata, original/derivative relationship, private file reads, image/video/audio/document previews and processing history | Local media volume; cloud storage upload/signing adapter is contract-tested but not connected to asset API |
+| Media ingest | Binary uploads to local disk, MIME allowlist, upload-size limit and SHA-256 checksum; separate cloud API accepts streamed uploads, validates MIME signatures and size, computes SHA-256 and writes to private object storage | Local mode remains the default; cloud routes require `AUTH_MODE=supabase` and explicit `CLOUD_TIMELINE_API_ENABLED=true`; cloud mode is not configured for this application yet |
+| Asset library | Local owner isolation, metadata, original/derivative relationship, private file reads, previews and processing history; gated cloud API supports owner/project-scoped listing, private signed downloads (5-minute tickets), soft deletion, metadata persistence and compensating object cleanup | Cloud service-role credentials remain server-only; cloud routes are not yet selected by the main browser asset UI; dedicated Supabase project, private bucket/policies, RLS verification, end-to-end UI wiring and hosted tests remain blocked |
 | Job queue | Persistent queue, idempotency keys, normalized states, progress events, renewable worker leases, stale-worker recovery, bounded retries with exponential backoff, cross-process cancellation polling and audit trail | Multi-process lease coordination on a shared SQLite database; multi-host workers still require a shared Postgres queue |
 | Local media engine | Probe, thumbnail, transcode, audio extraction, proxy generation, video denoise, color correction, resize/reframe, frame interpolation, FFmpeg scaling, audio denoise/loudness normalization and timeline MP4 master rendering | Requires FFmpeg/FFprobe; neural restoration, advanced stabilization, animated/video overlays, transitions and advanced effects remain pending |
-| Runtime console | Sign-in, project creation, persistent asset library, live engine readiness, uploads, media job submission, job inspection and audit view | Browser UI uses the local API; creative briefs, shot lists, characters, research sources and linked knowledge records sync to project workspace documents |
+| Cloud job activity | Runtime job cards can expand authenticated cloud job event history, with loading/empty states and escaped event data; unauthorized project access is covered by a regression test | Read-only inspection; cloud job cancellation and manual retry remain disabled until server-authoritative lifecycle endpoints are implemented |\n| Runtime console | Sign-in, project registry, private media library, cloud-aware project/asset/job reads, signed previews, archival controls, live engine readiness and local media processing | Browser selects cloud projects/assets/jobs only when the authenticated server health contract advertises cloud capabilities. Unsupported cloud operations are fail-closed; local workspace/review/job-write APIs are not mixed with cloud IDs |
 | Project collaboration | Owner-managed invitations with editor, reviewer and viewer roles; access revocation enforced across project records | Existing local accounts only; invitation email delivery not connected |
 | Review and approvals | Timecoded comments, approve/request-changes decisions and status updates | Local API persistence; external review links and visual drawing annotations not implemented |
 | Timeline render preflight | Detects invalid and unsupported non-1× clip speed as clip-specific hard blockers before render submission | Master renderer remains fail-closed for time remapping; preflight prevents avoidable queued jobs and gives correction guidance |
@@ -615,3 +615,43 @@ The cloud media IO boundary now rejects HTTP redirects for signed object downloa
 ### AI-upscale benchmark hardware transparency
 
 The Enhancement Lab now displays the recorded host profile beside each benchmark candidate and individual run: CPU model, OS/architecture, logical core count, memory and Node.js version. Legacy evidence without a profile is explicitly labelled as unknown hardware and must not be used for cross-host latency comparisons. The Vulkan environment flag remains informational only; it does not establish which GPU executed inference. Runtime provenance is attached to the persisted derivative and included in benchmark grouping and report output.
+
+
+## Progressive account lockout — 3 November 2026
+
+- The active native Supabase-auth branch now enforces a persistent account-identifier lockout for both Supabase password sign-in and local development password login.
+- Three consecutive wrong passwords produce HTTP 423 and a 15-minute lock. Requests during the lock do not reset or extend it. A wrong password on the first attempt after expiry immediately escalates to 30 minutes; each subsequent expired-lock failure doubles the duration to a 24-hour cap.
+- Successful sign-in clears the failure/escalation history. The response includes `Retry-After` and `retryAfterSeconds`; unknown identifiers receive the same generic error behavior.
+- State is persisted in the application SQLite database. A dedicated unit suite covers threshold, expiry escalation, cap, reset and identifier hashing; the Supabase API integration test exercises the 423 response and 900-second retry header.
+- Source-IP throttle default is tightened to 10 requests/minute; existing per-email budgets remain 8 sign-ins/15 minutes, 5 signups/hour and 3 recovery requests/hour.
+- **Release blockers:** the per-IP/per-email limiter is still in-memory and single-instance; deploy a trusted edge/WAF or Redis limiter before scaling. Add CAPTCHA/risk challenge, verified recovery/lockout alerts and a stable server-only HMAC key for identifier pseudonymization. A plain SHA-256 email digest is vulnerable to offline guessing and must not be treated as anonymization.
+- CI has not yet reported a result for the latest lockout commit. No merge, deployment, database provisioning or live identity-provider mutation was performed.
+
+
+## Cloud browser integration — 3 November 2026
+
+- The browser reads the server's non-secret cloud capability flags and switches project listing/creation, asset listing/upload, signed media previews, asset soft-delete, project archive and job listing to the cloud API as one selected mode.
+- Project selection is resolved before scoped assets and jobs are fetched. Cloud asset previews use short-lived signed URLs returned after authenticated asset lookup; no local-disk URL fallback is permitted in cloud mode.
+- Project archival is owner-only in the browser and uses the current optimistic revision; server authorization remains authoritative. Asset deletion is soft-delete-first with object cleanup status retained by the server.
+- Project job listing is authorized at project scope, so collaborators can see jobs owned by the project owner when the project authorizer permits read access.
+- Generic cloud media job submission/cancellation, cloud reviews, membership administration and creative-draft/research endpoints remain gated until their cloud equivalents and acceptance tests exist. This avoids accidentally routing cloud identifiers into SQLite/local endpoints.
+- This is source integration only. Cloud mode remains disabled unless an isolated dedicated Supabase environment is explicitly configured and passes readiness checks. No provisioning or production deployment was performed.
+
+
+## Cloud collaboration role visibility — 4 November 2026
+
+- Cloud project list responses now retain the collaborator's role from `project_members`; project owners remain explicitly identified as owners.
+- The project registry visibly labels each cloud project with its access role so collaborators can distinguish owner/editor/reviewer/viewer access without guessing from available controls.
+- Existing role-aware action gates remain in place: only owners see project rename/archive; cloud asset archive is limited to owner/editor; unsupported cloud processing, review and membership actions remain disabled pending their server-side equivalents.
+- Automated repository tests cover collaborator role mapping and owner-role precedence. The latest complete Quality Checks run passed on commit `98d550214464566633759e28d362bcab7782aad8`; the visual role indicator follow-up is committed and awaits its own CI run.
+- No cloud environment was provisioned, no migration applied, and no production deployment or PR merge performed.
+
+
+## Cloud render delivery package UI — 4 November 2026
+
+- The cloud job queue now exposes a read-only delivery-package action for completed `timeline.render` jobs. It calls the authenticated server-side package verifier; the browser does not construct a storage URL or infer that an output is approved.
+- The server verifies the successful render state, signed delivery receipt, exact timeline ID/revision, output asset identity, checksum, byte size, media type, project authorization and HTTPS signed-download URL before returning the package.
+- The UI presents the delivery profile/revision, master filename and checksum prefix, quality status and error/warning counts, up to five quality findings, independent review history and package fingerprint. The master link is short-lived (five minutes) and can be refreshed by requesting the package again.
+- This is a read/download surface only. It does not record reviewer decisions, change job state, enable manual retry/cancellation or bypass approval gates. Missing or mismatched evidence remains a server error and no download link is shown.
+- The first feature commit passed TypeScript checking while its production build was still running; subsequent UI polish and evidence-display commits superseded/cancelled earlier workflow runs. Verify a complete CI run on the exact current head before treating this checkpoint as verified.
+- No staging credentials, storage configuration, migrations, cloud resources, production services, paid providers, merge or deployment were changed.
