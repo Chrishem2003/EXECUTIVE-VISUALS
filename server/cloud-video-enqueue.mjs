@@ -1,7 +1,7 @@
 const SCHEMA = "executive_visuals";
 const RPC = Object.freeze({
   enqueue: "enqueue_video_generation_job",
-  settle: "settle_video_generation_budget_reservation"
+  finish: "finish_video_generation_job"
 });
 
 function endpoint(value) {
@@ -112,17 +112,26 @@ export function createCloudVideoEnqueue({
         budgetReservationId: rows[0].budget_reservation_id
       });
     },
-    async settle({ jobId, workerId, actualAmount = null } = {}) {
+    async finish({ jobId, workerId, status, output = null, error = null, actualAmount = null } = {}) {
       required(jobId, "Job ID");
       required(workerId, "Worker ID", 128);
-      if (actualAmount !== null && (typeof actualAmount !== "number" || !Number.isFinite(actualAmount) || actualAmount < 0 || actualAmount > 100000000)) {
-        throw new Error("Actual amount must be null or a non-negative bounded number.");
+      if (!["succeeded", "partial", "failed", "cancelled"].includes(status)) throw new Error("Video job status must be terminal.");
+      for (const [label, value] of [["output", output], ["error", error]]) {
+        if (value !== null && (!value || typeof value !== "object" || Array.isArray(value))) throw new Error("Job " + label + " must be an object or null.");
+        if (value !== null && Buffer.byteLength(JSON.stringify(value), "utf8") > (label === "output" ? 32000 : 8000)) throw new Error("Job " + label + " exceeds its size limit.");
       }
-      const result = await call(RPC.settle, {
-        p_job_id: jobId, p_worker_id: workerId, p_actual_amount: actualAmount
+      if (["succeeded", "partial"].includes(status)) {
+        if (typeof actualAmount !== "number" || !Number.isFinite(actualAmount) || actualAmount < 0 || actualAmount > 100000000) {
+          throw new Error("Successful video jobs require a non-negative bounded actual amount.");
+        }
+      } else if (actualAmount !== null) {
+        throw new Error("Failed or cancelled video jobs must release their reservation without an actual amount.");
+      }
+      const result = await call(RPC.finish, {
+        p_job_id: jobId, p_worker_id: workerId, p_status: status,
+        p_output: output, p_error: error, p_actual_amount: actualAmount
       });
-      if (typeof result !== "boolean") throw new Error("Cloud video budget settlement returned an invalid result.");
+      if (typeof result !== "boolean") throw new Error("Cloud video job finalization returned an invalid result.");
       return result;
-    }
-  });
+    }  });
 }
