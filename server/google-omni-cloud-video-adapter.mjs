@@ -114,7 +114,7 @@ export function createGoogleOmniCloudVideoIntegration({
       const stored = await interactions.findInteraction(scope);
       if (!stored || stored.provider !== PROVIDER || stored.model !== MODEL ||
           stored.ownerId !== job.owner_id || (stored.projectId || null) !== (job.project_id || null) ||
-          stored.requestHash !== job.input?.requestHash || stored.state === "deleted") {
+          stored.requestHash !== job.input?.requestHash || ["deleting", "deleted"].includes(stored.state)) {
         throw fail("Google interaction is not durably owned by this job, user and project.", "GEMINI_OMNI_INTERACTION_FORBIDDEN");
       }
       const rawInteraction = await client.getInteractionForIngestion(providerTaskId, {
