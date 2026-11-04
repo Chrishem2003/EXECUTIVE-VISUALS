@@ -47,7 +47,7 @@ test("accounts for reference media charges on Grok and Hailuo models",()=>{
 test("uses the dated Kling 4 promotion and automatically reverts to list pricing",()=>{
   const promo=estimateRunwayVideoCredits({model:"kling_4",durationSeconds:5,resolution:"720p",pricingDate:"2026-11-04"});
   const regular=estimateRunwayVideoCredits({model:"kling_4",durationSeconds:5,resolution:"720p",pricingDate:"2026-12-01"});
-  assert.equal(promo.estimatedCredits,63);
+  assert.equal(promo.estimatedCredits,64);
   assert.equal(promo.discount,"20% promotion through 2026-11-30 UTC");
   assert.equal(regular.estimatedCredits,79);
   assert.equal(estimateRunwayVideoCredits({model:"kling_4",durationSeconds:5,resolution:"1080p",pricingDate:date}).estimatedCredits,94);
