@@ -128,14 +128,24 @@ export function createSupabaseAuth({
     } finally { clearTimeout(timer); }
   }
 
+  const refreshInFlight = new Map();
+
   async function refreshSession(session) {
-    const result = await request("/auth/v1/token?grant_type=refresh_token", { refresh_token: session.refreshToken });
-    if (!result.ok) {
-      if (result.status === 400 || result.status === 401) return null;
-      throw fail("Supabase could not refresh the session. Try again shortly.", "SUPABASE_AUTH_UNAVAILABLE");
-    }
-    const next = readTokenResponse(result.data);
-    return { user: next.user, cookie: seal(next), maxAge: SESSION_MAX_AGE_SECONDS };
+    const refreshKey = createHash("sha256").update(session.refreshToken, "utf8").digest("hex");
+    const existing = refreshInFlight.get(refreshKey);
+    if (existing) return existing;
+    const pending = (async () => {
+      const result = await request("/auth/v1/token?grant_type=refresh_token", { refresh_token: session.refreshToken });
+      if (!result.ok) {
+        if (result.status === 400 || result.status === 401) return null;
+        throw fail("Supabase could not refresh the session. Try again shortly.", "SUPABASE_AUTH_UNAVAILABLE");
+      }
+      const nextSession = readTokenResponse(result.data);
+      return { user: nextSession.user, cookie: seal(nextSession), maxAge: SESSION_MAX_AGE_SECONDS };
+    })();
+    refreshInFlight.set(refreshKey, pending);
+    try { return await pending; }
+    finally { refreshInFlight.delete(refreshKey); }
   }
 
   return Object.freeze({
