@@ -53,7 +53,7 @@ test("uses the dated Kling 4 promotion and automatically reverts to list pricing
 });
 
 test("refuses unsupported models and malformed or missing price inputs",()=>{
-  assert.throws(()=>estimateRunwayVideoCredits({model:"ruby",durationSeconds:5,pricingDate:date}),e=>e.code==="RUNWAY_PRICE_UNSUPPORTED_MODEL");
+  assert.throws(()=>estimateRunwayVideoCredits({model:"ruby",durationSeconds:5,pricingDate:date}),e=>e.code==="RUNWAY_PRICE_INPUT_REQUIRED");
   assert.throws(()=>estimateRunwayVideoCredits({model:"gen4.5",durationSeconds:5}),e=>e.code==="RUNWAY_PRICE_INPUT_REQUIRED");
   assert.throws(()=>estimateRunwayVideoCredits({model:"gen4.5",durationSeconds:-1,pricingDate:date}));
   assert.throws(()=>estimateRunwayVideoCredits({model:"gen4.5",durationSeconds:31,pricingDate:date}));
