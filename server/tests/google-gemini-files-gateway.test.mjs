@@ -183,11 +183,13 @@ test("allows a project collaborator to upload a project asset owned by another m
 });
 
 test("rejects personal assets belonging to another user and rejects tampered byte hashes", async () => {
+  const personalAsset = privateAsset({ projectId: null, ownerId: "99999999-9999-4999-8999-999999999999" }).asset;
   const personal = harness({
     loader: async () => ({
       ...privateAsset({ projectId: null, ownerId: "99999999-9999-4999-8999-999999999999" }),
-      asset: { ...privateAsset({ projectId: null, ownerId: "99999999-9999-4999-8999-999999999999" }).asset }
-    })
+      asset: personalAsset
+    }),
+    authorize: async () => personalAsset
   });
   await assert.rejects(
     () => personal.gateway.resolveAsset({ assetId, ownerId, projectId: null, mediaType: "image/png" }),
