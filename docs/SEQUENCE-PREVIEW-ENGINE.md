@@ -2,7 +2,7 @@
 
 **Branch:** `feat/sequence-audio-overlay-preview`  
 **Milestone:** E1 — browser preview and frame-accurate transport  
-**Status:** local primary-picture sequence playback, synchronized multi-track audio, still-image overlays and SRT/VTT caption preview implemented; CI verification in progress. Browser-level playback tests, cloud private-media streaming and FFmpeg parity remain outstanding.
+**Status:** local primary-picture sequence playback, synchronized multi-track audio, mute/solo monitoring, still-image overlays and SRT/VTT caption preview implemented; CI verification in progress. Browser-level playback tests, cloud private-media streaming and FFmpeg parity remain outstanding.
 
 ## Implemented foundation
 
@@ -13,6 +13,7 @@ The timeline preview core now provides:
 - A local browser transport with play, pause, frame stepping and timeline scrubbing across cuts on the primary picture track.
 - Video and still-image playback with clip-speed playback-rate mapping and explicit decode/missing-source feedback.
 - Synchronized local audio playback for overlapping enabled audio clips, with per-clip gain and speed mapping.
+- Preview-only audio track mute and solo controls.
 - Still-image overlay layers positioned and opacity-adjusted from the clip metadata.
 - SRT/VTT caption cue preview with source-range clipping, cue caching and text-only DOM insertion.
 - Track-order preservation so the UI can composite active layers deterministically.
