@@ -77,14 +77,11 @@ export function createRunwayVideoAdapter({env=process.env,fetchImpl=globalThis.f
   async getStatus(id){return normalizeTask(await request("/tasks/"+encodeURIComponent(taskId(id))));},
   async cancel(id){
    const current=await this.getStatus(id);
-   if(!CANCELLABLE.has(current.status==="queued"?(awaitStatus(current)):current.status)){
+   if(current.status!=="queued"&&current.status!=="running"){
     return Object.freeze({taskId:current.taskId,status:current.status,cancelRequested:false,reason:"Task is already terminal; it was not deleted."});
    }
    await request("/tasks/"+encodeURIComponent(taskId(id)),{method:"DELETE"});
    return Object.freeze({taskId:current.taskId,status:"cancel_requested",cancelRequested:true,warning:"Cancellation is best-effort; execution or billing may already have advanced."});
   }
  });
-}
-function awaitStatus(task){
- return task==="queued"?"PENDING":task==="running"?"RUNNING":task==="succeeded"?"SUCCEEDED":task==="failed"?"FAILED":"CANCELED";
 }
