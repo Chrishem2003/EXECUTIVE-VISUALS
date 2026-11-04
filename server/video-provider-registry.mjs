@@ -39,8 +39,9 @@ export const VIDEO_PROVIDER_CATALOG = freeze([
           motionReference: false,
           referenceImages: false,
           audioModes: [],
-          aspectRatios: ["16:9", "9:16"],
-          resolutions: ["provider_default"],
+          // Image-to-video accepts six ratios; text-to-video is limited to landscape/portrait.
+          aspectRatios: ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"],
+          resolutions: ["720p"],
           minDurationSeconds: 2,
           maxDurationSeconds: 10
         },
@@ -114,19 +115,36 @@ export const VIDEO_PROVIDER_CATALOG = freeze([
           nativeAudio: false,
           negativePrompt: false,
           seed: false,
-          startFrame: false,
-          endFrame: false,
+          startFrame: true,
+          endFrame: true,
+          multiKeyframe: true,
+          videoSource: true,
+          editConditioning: true,
+          hdr: true,
+          exrExport: true,
           motionReference: false,
           referenceImages: true,
           audioModes: [],
+          aspectRatios: ["9:16", "3:4", "1:1", "4:3", "16:9", "21:9"],
+          resolutions: ["540p", "720p", "1080p"],
           minDurationSeconds: 5,
           maxDurationSeconds: 10
         },
         constraints: {
           supportedDurationsSeconds: [5, 10],
           maxKeyframes: 64,
+          maxImageToVideoDurationFrames: 240,
+          maxVideoEditSourceSeconds: 18,
+          maxVideoReframeSourceSeconds: 10,
+          maxVideoExtendSourceSeconds: 30,
+          maxSourceVideoBytes: 209715200,
           outputUrlExpirySeconds: 3600,
-          cancellation: "unsupported"
+          cancellation: "unsupported",
+          videoEditStrengths: ["adhere_1", "adhere_2", "adhere_3", "flex_1", "flex_2", "flex_3", "reimagine_1", "reimagine_2", "reimagine_3"],
+          reframePreservesSourceFrames: true,
+          exrRequiresHdr: true,
+          hdrUnavailableForReframe: true,
+          source: "https://docs.agents.lumalabs.ai/guides/videos/"
         }
       }
     ]
