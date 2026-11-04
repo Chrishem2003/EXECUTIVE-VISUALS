@@ -42,13 +42,34 @@ export function validateTimelineClipDescriptors(clip,frameRate,trackKind){
  return issues;
 }
 
-/** Prevent renderers from silently dropping edit descriptors they cannot yet render. */
+/** Validate descriptors and refuse keyframes until the renderers support animation evaluation. */
 export function assertTimelineDescriptorsSupported(timeline){
  for(const track of timeline?.tracks||[])for(const clip of track?.clips||[]){
-  const hasEffects=clip?.effects!==undefined&&(!Array.isArray(clip.effects)||clip.effects.length>0);
-  const hasKeyframes=clip?.keyframes!==undefined&&(!Array.isArray(clip.keyframes)||clip.keyframes.length>0);
-  if(hasEffects||hasKeyframes||clip?.transitionIn||clip?.transitionOut){
-   throw Object.assign(new Error("This timeline contains versioned effects, keyframes or transitions that the current master renderer cannot yet reproduce. Remove or disable those descriptors before rendering."),{code:"UNSUPPORTED_TIMELINE_FEATURE"});
-  }
+  const issues=validateTimelineClipDescriptors(clip,timeline.frameRate,track.kind);
+  if(issues.length)throw Object.assign(new Error("Timeline edit descriptors are invalid: "+issues[0]),{code:"UNSUPPORTED_TIMELINE_FEATURE"});
+  if(Array.isArray(clip.keyframes)&&clip.keyframes.length)throw Object.assign(new Error("Keyframed properties are not yet supported by the browser preview and master renderer."),{code:"UNSUPPORTED_TIMELINE_FEATURE"});
  }
+}
+
+/** Build FFmpeg filters for the currently supported non-destructive color and fade descriptors. */
+export function buildTimelineVideoFilters(clip,durationSeconds,frameRate){
+ const filters=[];
+ for(const effect of clip.effects||[]){
+  if(effect.enabled===false)continue;
+  if(effect.type!=="color")throw Object.assign(new Error("The selected timeline effect is not supported by the master renderer."),{code:"UNSUPPORTED_TIMELINE_FEATURE"});
+  const p=effect.parameters;
+  const brightness=Number(p.brightness).toFixed(6),contrast=Number(p.contrast).toFixed(6),saturation=Number(p.saturation).toFixed(6);
+  filters.push("lutrgb=r='clip(val*"+brightness+",0,255)':g='clip(val*"+brightness+",0,255)':b='clip(val*"+brightness+",0,255)'");
+  filters.push("eq=contrast="+contrast+":saturation="+saturation);
+ }
+ const fps=Number(frameRate),duration=Number(durationSeconds);
+ for(const [edge,transition] of [["in",clip.transitionIn],["out",clip.transitionOut]]){
+  if(!transition)continue;
+  if(transition.type!=="fade-to-black"||transition.edge!==edge||transition.curve!=="linear")throw Object.assign(new Error("The selected transition is not supported by the master renderer."),{code:"UNSUPPORTED_TIMELINE_FEATURE"});
+  const fadeDuration=transition.durationFrames/fps;
+  if(!Number.isFinite(fadeDuration)||fadeDuration<=0||fadeDuration>duration)throw Object.assign(new Error("Transition duration exceeds the clip duration."),{code:"INVALID_TIMELINE_TRANSITION"});
+  const start=edge==="in"?0:Math.max(0,duration-fadeDuration);
+  filters.push("fade=t="+(edge==="in"?"in":"out")+":st="+start.toFixed(6)+":d="+fadeDuration.toFixed(6)+":color=black");
+ }
+ return filters;
 }
