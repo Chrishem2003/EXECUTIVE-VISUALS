@@ -392,3 +392,5 @@
 .track-monitor-controls{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap}
 .track-monitor-controls button{font-size:11px;padding:4px 8px;min-height:26px}
 .track-monitor-controls button.active{border-color:var(--accent,#c9a76e);color:var(--accent,#c9a76e)}
+
+.sequence-preview-stage{background:#000}
