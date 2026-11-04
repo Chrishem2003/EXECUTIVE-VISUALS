@@ -274,7 +274,14 @@ export function createGoogleGeminiFilesGateway({
           (assetProjectId ? true : asset.ownerId === ownerId);
         if (asset.id !== assetId || !authorizedScopeMatches ||
             asset.storageBucket !== "executive-visuals-media" || asset.mediaType !== mimeType ||
-            (authorizedAsset && (asset.sha256 !== authorizedAsset.sha256 || Number(asset.size) !== Number(authorizedAsset.size)))) {
+            (authorizedAsset && (
+              asset.ownerId !== authorizedAsset.ownerId ||
+              (asset.projectId || null) !== (authorizedAsset.projectId || null) ||
+              asset.storageBucket !== authorizedAsset.storageBucket ||
+              asset.mediaType !== authorizedAsset.mediaType ||
+              asset.sha256 !== authorizedAsset.sha256 ||
+              Number(asset.size) !== Number(authorizedAsset.size)
+            ))) {
           throw fail("Private asset ownership, project, bucket or MIME type did not match.", "GEMINI_FILE_ASSET_SCOPE_INVALID");
         }
         const sizeBytes = Number(loaded.size ?? asset.size);
