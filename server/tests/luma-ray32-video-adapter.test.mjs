@@ -45,10 +45,10 @@ test("Luma adapter supports first/last anchors and up to 64 indexed keyframes", 
   assert.deepEqual(anchored.video.start_frame, { url: "https://assets.example.test/first.png" });
   assert.deepEqual(anchored.video.end_frame, { file_id: "file_123" });
   const keyframes = Array.from({ length: 64 }, (_, i) => ({ file_id: "frame_" + i }));
-  const indexes = Array.from({ length: 64 }, (_, i) => i * 2);
+  const indexes = Array.from({ length: 64 }, (_, i) => i);
   const multi = await adapter.prepareInput({ prompt: "Keyframed sequence", durationSeconds: 5, keyframes, keyframeIndexes: indexes });
   assert.equal(multi.video.keyframes.length, 64);
-  assert.equal(multi.video.keyframe_indexes[63], 126);
+  assert.equal(multi.video.keyframe_indexes[63], 63);
 });
 
 test("Luma adapter rejects unsupported duration, anchor conflicts and unsafe media URLs before POST", async () => {
