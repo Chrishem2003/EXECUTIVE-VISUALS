@@ -14,6 +14,14 @@ function safeRunwayUri(value) {
     /^runway:\/\/[A-Za-z0-9._~:/-]+$/.test(value);
 }
 
+function safeFilename(value) {
+  return String(value || "")
+    .normalize("NFKC")
+    .replace(/[\\/\u0000-\u001f\u007f]/g, "_")
+    .replace(/[^A-Za-z0-9._-]/g, "_")
+    .slice(0, 250);
+}
+
 function validImageSignature(bytes, contentType) {
   if (contentType === "image/png") return bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
   if (contentType === "image/jpeg") return bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
@@ -108,9 +116,9 @@ export function createRunwayPrivateAssetResolver({
     if (bytes.byteLength < 512 || bytes.byteLength > MAX_UPLOAD_BYTES) {
       throw fail("Private image asset must be between 512 bytes and 200 MB.", "RUNWAY_IMAGE_ASSET_SIZE_INVALID");
     }
-    if (typeof asset.filename !== "string" ||
-        !/^[A-Za-z0-9][A-Za-z0-9._-]{1,250}$/.test(asset.filename) ||
-        !IMAGE_TYPES[asset.contentType].some(extension => asset.filename.toLowerCase().endsWith(extension))) {
+    const filename = safeFilename(asset.filename);
+    if (!/^[A-Za-z0-9][A-Za-z0-9._-]{1,249}$/.test(filename) ||
+        !IMAGE_TYPES[asset.contentType].some(extension => filename.toLowerCase().endsWith(extension))) {
       throw fail("Private image asset filename does not match its media type.", "RUNWAY_IMAGE_ASSET_INVALID");
     }
     if (!validImageSignature(bytes, asset.contentType)) {
@@ -128,7 +136,7 @@ export function createRunwayPrivateAssetResolver({
         "content-type": "application/json",
         accept: "application/json"
       },
-      body: JSON.stringify({ filename: asset.filename, type: "ephemeral" })
+      body: JSON.stringify({ filename, type: "ephemeral" })
     }, "Runway could not create an ephemeral upload.", "RUNWAY_ASSET_UPLOAD_UNAVAILABLE");
 
     if (!created.ok) {
@@ -148,7 +156,7 @@ export function createRunwayPrivateAssetResolver({
     }
     const form = new FormData();
     for (const [key, value] of upload.fields) form.append(key, value);
-    form.append("file", new Blob([bytes], { type: asset.contentType }), asset.filename);
+    form.append("file", new Blob([bytes], { type: asset.contentType }), filename);
 
     const uploaded = await request(upload.uploadUrl, {
       method: "POST",
