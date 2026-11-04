@@ -78,12 +78,24 @@ revoke all on executive_visuals.video_generation_budget_policies from public, an
 revoke all on executive_visuals.video_generation_budget_approvals from public, anon;
 revoke all on executive_visuals.video_generation_budget_reservations from public, anon, authenticated;
 revoke all on executive_visuals.video_generation_usage_reservations from public, anon, authenticated;
-grant select, insert, update, delete on executive_visuals.video_generation_budget_policies to authenticated;
+grant select on executive_visuals.video_generation_budget_policies to authenticated;
+-- Clients may configure limits but cannot forge the server-maintained accounting totals or scope.
+grant insert (owner_id, project_id, provider, model, currency, spend_limit_amount, max_per_job_amount, rolling_24h_request_limit, enabled)
+  on executive_visuals.video_generation_budget_policies to authenticated;
+grant update (provider, model, currency, spend_limit_amount, max_per_job_amount, rolling_24h_request_limit, enabled, updated_at)
+  on executive_visuals.video_generation_budget_policies to authenticated;
 grant select, insert on executive_visuals.video_generation_budget_approvals to authenticated;
 grant all privileges on executive_visuals.video_generation_budget_policies to service_role;
 grant all privileges on executive_visuals.video_generation_budget_approvals to service_role;
 grant all privileges on executive_visuals.video_generation_budget_reservations to service_role;
 grant all privileges on executive_visuals.video_generation_usage_reservations to service_role;
+
+create trigger ev_video_budget_policy_owner_immutable
+  before update of owner_id on executive_visuals.video_generation_budget_policies
+  for each row execute function executive_visuals.prevent_owner_reassignment();
+create trigger ev_video_budget_approval_owner_immutable
+  before update of owner_id on executive_visuals.video_generation_budget_approvals
+  for each row execute function executive_visuals.prevent_owner_reassignment();
 
 create policy ev_video_budget_policy_owner_all
   on executive_visuals.video_generation_budget_policies for all to authenticated
@@ -186,12 +198,7 @@ begin
 
   if p_project_id is not null and not exists (
     select 1 from executive_visuals.projects p
-    where p.id = p_project_id and (
-      p.owner_id = p_owner_id or exists (
-        select 1 from executive_visuals.project_members m
-        where m.project_id = p.id and m.member_id = p_owner_id and m.role = 'editor'
-      )
-    )
+    where p.id = p_project_id and p.owner_id = p_owner_id
   ) then
     raise exception 'VIDEO_JOB_PROJECT_FORBIDDEN';
   end if;
@@ -284,4 +291,84 @@ revoke all on function executive_visuals.enqueue_video_generation_job(uuid, uuid
 grant execute on function executive_visuals.enqueue_video_generation_job(uuid, uuid, text, text, text, text, jsonb, uuid, numeric, text)
   to service_role;
 
--- Budget release/settlement and provider dispatch remain separate release gates.
+
+create or replace function executive_visuals.settle_video_generation_budget_reservation(
+  p_job_id uuid,
+  p_worker_id text,
+  p_actual_amount numeric default null
+)
+returns boolean
+language plpgsql
+security invoker
+set search_path = pg_catalog, executive_visuals
+as $
+declare
+  reservation executive_visuals.video_generation_budget_reservations;
+  policy executive_visuals.video_generation_budget_policies;
+  target_state text;
+begin
+  if p_worker_id is null or char_length(btrim(p_worker_id)) not between 1 and 128
+     or (p_actual_amount is not null and p_actual_amount < 0) then
+    raise exception 'VIDEO_BUDGET_SETTLEMENT_ARGUMENTS_INVALID';
+  end if;
+
+  -- Settlement is lease-fenced and must happen before the worker finishes the job.
+  if not exists (
+    select 1 from executive_visuals.jobs j
+    where j.id = p_job_id and j.job_type = 'video.generate'
+      and j.status = 'processing' and j.lease_owner = p_worker_id
+      and j.lease_expires_at > clock_timestamp()
+  ) then
+    return false;
+  end if;
+
+  select * into reservation
+  from executive_visuals.video_generation_budget_reservations r
+  where r.job_id = p_job_id
+  for update;
+  if reservation.id is null then raise exception 'VIDEO_BUDGET_RESERVATION_NOT_FOUND'; end if;
+
+  target_state := case when p_actual_amount is null then 'released' else 'settled' end;
+  if reservation.state <> 'reserved' then
+    return reservation.state = target_state
+      and reservation.actual_amount is not distinct from p_actual_amount;
+  end if;
+  if p_actual_amount is not null and p_actual_amount > reservation.reserved_amount then
+    raise exception 'VIDEO_BUDGET_ACTUAL_EXCEEDS_RESERVATION';
+  end if;
+
+  select * into policy
+  from executive_visuals.video_generation_budget_policies b
+  where b.id = reservation.policy_id
+  for update;
+  if policy.id is null or policy.reserved_amount < reservation.reserved_amount then
+    raise exception 'VIDEO_BUDGET_LEDGER_INVARIANT_FAILED';
+  end if;
+
+  update executive_visuals.video_generation_budget_policies
+  set reserved_amount = reserved_amount - reservation.reserved_amount,
+      spent_amount = spent_amount + coalesce(p_actual_amount, 0),
+      updated_at = clock_timestamp()
+  where id = policy.id;
+
+  update executive_visuals.video_generation_budget_reservations
+  set state = target_state, actual_amount = p_actual_amount, updated_at = clock_timestamp()
+  where id = reservation.id;
+
+  insert into executive_visuals.audit_events(owner_id, project_id, event_type, subject_type, subject_id, details)
+  values (
+    reservation.owner_id, reservation.project_id, 'video.budget.' || target_state,
+    'video_budget_reservation', reservation.id::text,
+    jsonb_build_object('jobId', p_job_id, 'reservedAmount', reservation.reserved_amount,
+      'actualAmount', p_actual_amount, 'currency', reservation.currency)
+  );
+  return true;
+end;
+$;
+
+revoke all on function executive_visuals.settle_video_generation_budget_reservation(uuid, text, numeric)
+  from public, anon, authenticated;
+grant execute on function executive_visuals.settle_video_generation_budget_reservation(uuid, text, numeric)
+  to service_role;
+
+-- Provider dispatch remains a separate release gate.
