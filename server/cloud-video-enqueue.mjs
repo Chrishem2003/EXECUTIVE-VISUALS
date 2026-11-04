@@ -98,18 +98,16 @@ export function createCloudVideoEnqueue({
         throw new Error("Reserved amount must be a positive bounded number.");
       }
       if (typeof currency !== "string" || !/^[A-Z]{3}$/.test(currency)) throw new Error("Currency must be a three-letter uppercase code.");
-      if (provider === "runway" && model === "gen4.5") {
-        const estimate = estimateVideoGenerationCost({
-          provider, model, durationSeconds: input.durationSeconds,
-          outputFormat: input.outputFormat || "mp4"
-        });
-        if (currency !== estimate.currency) throw new Error("Runway Gen-4.5 budget approvals must use USD.");
-        if (reservedAmount < estimate.amount) {
-          const error = new Error("Budget reservation is below the verified Runway Gen-4.5 price estimate.");
-          error.code = "VIDEO_BUDGET_BELOW_PROVIDER_ESTIMATE";
-          error.estimate = estimate;
-          throw error;
-        }
+      const estimate = estimateVideoGenerationCost({
+        provider, model, durationSeconds: input.durationSeconds,
+        outputFormat: input.outputFormat || "mp4"
+      });
+      if (currency !== estimate.currency) throw new Error("Runway Gen-4.5 budget approvals must use USD.");
+      if (reservedAmount < estimate.amount) {
+        const error = new Error("Budget reservation is below the verified Runway Gen-4.5 price estimate.");
+        error.code = "VIDEO_BUDGET_BELOW_PROVIDER_ESTIMATE";
+        error.estimate = estimate;
+        throw error;
       }
       const rows = await call(RPC.enqueue, {
         p_owner_id: ownerId, p_project_id: projectId, p_idempotency_key: idempotencyKey,
