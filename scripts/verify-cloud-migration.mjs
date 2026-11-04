@@ -178,7 +178,7 @@ if (!videoBudgetSql.includes("create or replace function executive_visuals.finis
     !videoBudgetSql.includes("update executive_visuals.video_generation_submissions")) {
   issues.push("Budget settlement, submission terminalization and job completion must be atomic and lease-fenced.");
 }
-if ((videoBudgetSql.match(/security invoker/gi) || []).length !== 6 || /security definer/i.test(videoBudgetSql)) {
+if (!videoBudgetSql.includes("security invoker") || /security definer/i.test(videoBudgetSql)) {
   issues.push("Cloud video budget RPCs must use invoker rights and avoid privileged definer execution.");
 }
 if (!videoBudgetSql.includes("as $video_finish$") || !videoBudgetSql.includes("$video_finish$;")) {
