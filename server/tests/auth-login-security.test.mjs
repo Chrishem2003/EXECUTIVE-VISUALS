@@ -30,7 +30,7 @@ test("first failed attempt after a 15-minute lock expires immediately extends lo
   recordFailedLogin(db, "user@example.com", t);
   recordFailedLogin(db, "user@example.com", t + 1);
   recordFailedLogin(db, "user@example.com", t + 2);
-  const expiredAt = t + AUTH_BASE_LOCK_MS + 1;
+  const expiredAt = t + 2 + AUTH_BASE_LOCK_MS + 1;
   const result = recordFailedLogin(db, "user@example.com", expiredAt);
   assert.equal(result.locked, true);
   assert.equal(result.retryAfterMs, AUTH_BASE_LOCK_MS * 2);
@@ -45,7 +45,7 @@ test("progressive lock duration is capped at 24 hours", () => {
   let result = recordFailedLogin(db, "user@example.com", now + 2);
   assert.equal(result.retryAfterMs, AUTH_BASE_LOCK_MS);
   for (let level = 2; level <= 12; level += 1) {
-    now += result.retryAfterMs + 1;
+    now += result.retryAfterMs + 2;
     result = recordFailedLogin(db, "user@example.com", now);
     assert.equal(result.locked, true);
     assert.equal(result.retryAfterMs, Math.min(AUTH_BASE_LOCK_MS * (2 ** (level - 1)), AUTH_MAX_LOCK_MS));

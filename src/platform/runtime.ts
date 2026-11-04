@@ -1,4 +1,4 @@
-import { apiRequest, ApiError, setApiAccessToken, clearApiAccessToken } from "../core/api";
+import { apiRequest, ApiError, clearApiAccessToken } from "../core/api";
 
 type RuntimeUser={id:string;email:string};
 type RuntimeProject={id:string;name:string;description?:string;revision?:number;access_role?:"owner"|"editor"|"reviewer"|"viewer"};
@@ -10,8 +10,8 @@ type RemoteUsage={window:string;configurationValid:boolean;limit:number|null;use
 let workspaceRevisions=new Map<string,number>();
 let workspaceSaveTimers=new Map<string,ReturnType<typeof setTimeout>>();
 let workspaceSaveChain:Promise<void>=Promise.resolve();
-const state:{status:"checking"|"offline"|"auth-required"|"online";authMode:"local"|"supabase";user:RuntimeUser|null;projects:RuntimeProject[];assets:RuntimeAsset[];jobs:RuntimeJob[];audit:Array<Record<string,unknown>>;members:Array<{id:string;email:string;role:string;createdAt:string}>;reviews:RuntimeReview[];projectId:string;message:string;ffmpeg:boolean;ffprobe:boolean;textGatewayEnabled:boolean;textGatewayConfigured:boolean;imageGatewayEnabled:boolean;imageGatewayConfigured:boolean;providers:ProviderStatus[];remoteUsage:RemoteUsage|null}={
- status:"checking",authMode:"local",user:null,projects:[],assets:[],jobs:[],audit:[],members:[],reviews:[],projectId:"",message:"",ffmpeg:false,ffprobe:false,textGatewayEnabled:false,textGatewayConfigured:false,imageGatewayEnabled:false,imageGatewayConfigured:false,providers:[],remoteUsage:null
+const state:{status:"checking"|"offline"|"auth-required"|"online";authMode:"local"|"supabase";user:RuntimeUser|null;projects:RuntimeProject[];assets:RuntimeAsset[];jobs:RuntimeJob[];audit:Array<Record<string,unknown>>;members:Array<{id:string;email:string;role:string;createdAt:string}>;reviews:RuntimeReview[];projectId:string;message:string;recoveryMode:boolean;ffmpeg:boolean;ffprobe:boolean;textGatewayEnabled:boolean;textGatewayConfigured:boolean;imageGatewayEnabled:boolean;imageGatewayConfigured:boolean;providers:ProviderStatus[];remoteUsage:RemoteUsage|null}={
+ status:"checking",authMode:"local",user:null,projects:[],assets:[],jobs:[],audit:[],members:[],reviews:[],projectId:"",message:"",recoveryMode:false,ffmpeg:false,ffprobe:false,textGatewayEnabled:false,textGatewayConfigured:false,imageGatewayEnabled:false,imageGatewayConfigured:false,providers:[],remoteUsage:null
 };
 const esc=(value:unknown)=>String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]||c));
 const fmt=(value:string)=>new Date(value).toLocaleString();
@@ -30,10 +30,8 @@ function renderGate(){
  document.querySelector("#ev-auth-gate")?.remove();
  if(state.status!=="auth-required")return;
  const external=state.authMode==="supabase";
- document.body.insertAdjacentHTML("beforeend",'<main id="ev-auth-gate" class="auth-landing"><section class="auth-story"><a class="auth-brand" href="#" aria-label="Executive Visuals home"><span class="brand-mark">CEV</span><span><b>CHRISHEM</b><small>EXCLUSIVE VISUALS</small></span></a><div class="auth-story-copy"><div class="eyebrow">THE CREATIVE PRODUCTION WORKSPACE</div><h1>From first idea<br>to <em>final frame.</em></h1><p>Plan, direct, edit, enhance and prepare your visual productions in one connected studio.</p><div class="auth-feature-list"><div><i>✳</i><span><b>Direct with intention</b><small>Creative briefs, series plans and storyboards.</small></span></div><div><i>▤</i><span><b>Keep every asset connected</b><small>Projects, source media, timelines and versions.</small></span></div><div><i>◈</i><span><b>Deliver with confidence</b><small>Caption, rights, quality and master checks.</small></span></div></div></div><div class="auth-story-footer">A focused workspace for serious visual storytelling.</div></section><section class="auth-panel-wrap"><div class="auth-card auth-card-modern"><div class="eyebrow">YOUR PRIVATE STUDIO</div><h2>'+(external?"Verify your workspace":"Welcome back")+'</h2><p>'+(external?"Connect your authenticated session to access private projects and media.":"Sign in to continue, or create a local development account to explore the workspace.")+'</p>'+
- (external?'<form id="ev-auth-token"><label>Access token</label><textarea name="token" rows="3" required autocomplete="off" placeholder="Paste a short-lived access token"></textarea><button class="primary wide">Verify secure session</button></form>':
- '<div class="auth-switch" role="group" aria-label="Account action"><button type="button" class="active" data-auth-mode="login">Sign in</button><button type="button" data-auth-mode="register">Create account</button></div><form id="ev-auth"><input type="hidden" name="mode" value="login"><label>Email address</label><input name="email" type="email" required autocomplete="username" placeholder="you@example.com"><label>Password</label><input name="password" type="password" minlength="12" required autocomplete="current-password" placeholder="At least 12 characters"><button class="primary wide">Continue securely</button></form>')+
- '<div class="auth-security"><span>⌑</span><div><b>Private by design</b><small>Your projects and media remain account-scoped. Authentication is handled by the configured service.</small></div></div><p class="auth-error">'+esc(state.message)+'</p><small class="auth-footnote">'+(external?"This environment uses its configured external identity provider.":"Local password accounts are for development only. Production sign-in requires the configured external identity service.")+'</small></div></section></main>');
+ document.body.insertAdjacentHTML("beforeend",'<main id="ev-auth-gate" class="auth-landing"><section class="auth-story"><a class="auth-brand" href="#" aria-label="Executive Visuals home"><span class="brand-mark">CEV</span><span><b>CHRISHEM</b><small>EXCLUSIVE VISUALS</small></span></a><div class="auth-story-copy"><div class="eyebrow">THE CREATIVE PRODUCTION WORKSPACE</div><h1>From first idea<br>to <em>final frame.</em></h1><p>Plan, direct, edit, enhance and prepare your visual productions in one connected studio.</p><div class="auth-feature-list"><div><i>✳</i><span><b>Direct with intention</b><small>Creative briefs, series plans and storyboards.</small></span></div><div><i>▤</i><span><b>Keep every asset connected</b><small>Projects, source media, timelines and versions.</small></span></div><div><i>◈</i><span><b>Deliver with confidence</b><small>Caption, rights, quality and master checks.</small></span></div></div></div><div class="auth-story-footer">A focused workspace for serious visual storytelling.</div></section><section class="auth-panel-wrap"><div class="auth-card auth-card-modern"><div class="eyebrow">YOUR PRIVATE STUDIO</div><h2>Welcome to your studio</h2><p>'+(external?"Sign in or create your account using your email and password. Your session is protected by the identity service.":"Sign in to continue, or create a local development account to explore the workspace.")+'</p><div class="auth-switch" role="group" aria-label="Account action"><button type="button" class="active" data-auth-mode="login">Sign in</button><button type="button" data-auth-mode="register">Create account</button></div><form id="ev-auth"><input type="hidden" name="mode" value="login"><label>Email address</label><input name="email" type="email" required autocomplete="username" placeholder="you@example.com"><label>Password</label><input name="password" type="password" minlength="12" required autocomplete="current-password" placeholder="At least 12 characters"><button class="primary wide">Continue securely</button></form>'+(external?'<button type="button" class="quiet auth-recover-link" data-auth-recover-open>Forgot password?</button><form id="ev-auth-recover" style="display:none"><label>Email address</label><input name="email" type="email" required autocomplete="email" placeholder="you@example.com"><button class="primary wide">Send password reset link</button><button type="button" class="quiet" data-auth-recover-cancel>Back to sign in</button></form><form id="ev-auth-reset" style="display:none"><label>New password</label><input name="password" type="password" minlength="12" required autocomplete="new-password" placeholder="At least 12 characters"><label>Confirm new password</label><input name="confirmPassword" type="password" minlength="12" required autocomplete="new-password" placeholder="Re-enter your password"><button class="primary wide">Update password securely</button></form>':'')+'<div class="auth-security"><span>⌑</span><div><b>Private by design</b><small>Your projects and media remain account-scoped. Authentication is handled by the configured service.</small></div></div><p class="auth-error">'+esc(state.message)+'</p><small class="auth-footnote">'+(external?"Email confirmation may be required for new accounts. Your session is stored in a protected, encrypted cookie.":"Local password accounts are for development only. Production sign-in uses the configured external identity service.")+'</small></div></section></main>');
+ if(state.recoveryMode){const authForm=document.querySelector<HTMLElement>("#ev-auth"),switcher=document.querySelector<HTMLElement>(".auth-switch"),recoverLink=document.querySelector<HTMLElement>("[data-auth-recover-open]"),recoverForm=document.querySelector<HTMLElement>("#ev-auth-recover"),resetForm=document.querySelector<HTMLElement>("#ev-auth-reset");if(authForm)authForm.style.display="none";if(switcher)switcher.style.display="none";if(recoverLink)recoverLink.style.display="none";if(recoverForm)recoverForm.style.display="none";if(resetForm)resetForm.style.display="";}
 }
 function projectOptions(){return '<option value="">Personal library</option>'+state.projects.map(p=>'<option value="'+esc(p.id)+'" '+(state.projectId===p.id?"selected":"")+'>'+esc(p.name)+'</option>').join("");}
 function renderAssets(){
@@ -150,6 +148,20 @@ export async function initRuntime(){
  try{
   const health=await apiRequest<{authMode:"local"|"supabase";media:{ffmpeg:boolean;ffprobe:boolean};textGateway:{enabled:boolean;configured:boolean};imageGateway:{enabled:boolean;configured:boolean}}>("/api/health");
   state.authMode=health.authMode;state.ffmpeg=health.media.ffmpeg;state.ffprobe=health.media.ffprobe;state.textGatewayEnabled=health.textGateway.enabled;state.textGatewayConfigured=health.textGateway.configured;state.imageGatewayEnabled=health.imageGateway.enabled;state.imageGatewayConfigured=health.imageGateway.configured;
+  const recoveryParams=new URLSearchParams(window.location.hash.replace(/^#/,""));
+  if(state.authMode==="supabase"&&recoveryParams.get("type")==="recovery"){
+   const accessToken=recoveryParams.get("access_token")||"",refreshToken=recoveryParams.get("refresh_token")||"";
+   if(accessToken&&refreshToken){
+    try{
+     const recovery=await apiRequest<{user:RuntimeUser}>("/api/auth/recovery/session",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({accessToken,refreshToken})});
+     window.history.replaceState(null,"",window.location.pathname+window.location.search);
+     state.user=recovery.user;state.recoveryMode=true;state.status="auth-required";state.message="Verify your new password below to complete account recovery.";paint();return;
+    }catch(error){
+     window.history.replaceState(null,"",window.location.pathname+window.location.search);
+     state.status="auth-required";state.message=error instanceof Error?error.message:"The recovery link could not be verified.";paint();return;
+    }
+   }
+  }
   try{const me=await apiRequest<{user:RuntimeUser}>("/api/me");state.user=me.user;state.status="online";await refresh();window.dispatchEvent(new Event("ev:authenticated"));}
   catch(error){if(error instanceof ApiError&&error.status===401)state.status="auth-required";else throw error;}
  }catch(error){state.status="offline";state.message=error instanceof Error?error.message:"API unavailable";}
@@ -158,18 +170,24 @@ export async function initRuntime(){
 async function authenticate(form:HTMLFormElement){
  const data=new FormData(form);
  try{
-  if(form.id==="ev-auth-token"){setApiAccessToken(String(data.get("token")||""));}
-  else{
-   const mode=String(data.get("mode")||"login");
-   const response=await apiRequest<{user:RuntimeUser}>("/api/auth/"+(mode==="register"?"register":"login"),{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({email:String(data.get("email")),password:String(data.get("password"))})});
-   state.user=response.user;
+  const mode=String(data.get("mode")||"login");
+  const response=await apiRequest<{user:RuntimeUser;confirmationRequired?:boolean}>("/api/auth/"+(mode==="register"?"register":"login"),{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({email:String(data.get("email")),password:String(data.get("password"))})});
+  if(response.confirmationRequired){
+   state.status="auth-required";state.message="Account created. Check your email for the confirmation link, then return here to sign in.";paint();return;
   }
+  state.user=response.user;
   const me=await apiRequest<{user:RuntimeUser}>("/api/me");state.user=me.user;state.status="online";state.message="";await refresh();window.dispatchEvent(new Event("ev:authenticated"));paint();
  }catch(error){clearApiAccessToken();state.status="auth-required";state.message=error instanceof Error?error.message:"Authentication failed.";paint();}
 }
 document.addEventListener("submit",event=>{
  const form=event.target as HTMLFormElement;
- if(form.id==="ev-auth"||form.id==="ev-auth-token"){event.preventDefault();void authenticate(form);}
+ if(form.id==="ev-auth-reset"){
+  event.preventDefault();const data=new FormData(form),password=String(data.get("password")||""),confirmPassword=String(data.get("confirmPassword")||"");
+  if(password!==confirmPassword){state.message="The passwords do not match. Please try again.";paint();return;}
+  void apiRequest<{user:RuntimeUser}>("/api/auth/password",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({password})}).then(async result=>{state.user=result.user;state.recoveryMode=false;state.status="online";state.message="";await refresh();window.dispatchEvent(new Event("ev:authenticated"));paint();}).catch(error=>{state.message=error instanceof Error?error.message:"The password could not be updated.";paint();});
+ }
+ if(form.id==="ev-auth"){event.preventDefault();void authenticate(form);}
+ if(form.id==="ev-auth-recover"){event.preventDefault();const email=String(new FormData(form).get("email")||"");void apiRequest("/api/auth/recover",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({email})}).then(()=>{state.message="If an account exists for that email, a password reset link has been sent. Check your inbox.";paint();}).catch(error=>{state.message=error instanceof Error?error.message:"Password recovery could not be completed.";paint();});}
  if(form.id==="ev-project-form"){event.preventDefault();const name=String(new FormData(form).get("name")||"").trim();if(!name)return;void apiRequest<{project:RuntimeProject}>("/api/projects",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({name})}).then(async result=>{state.projectId=result.project.id;await refresh();window.dispatchEvent(new CustomEvent("ev:project-changed",{detail:{projectId:state.projectId}}));paint();}).catch(error=>alert(error.message||error));}
  if(form.id==="ev-member-form"){event.preventDefault();const data=new FormData(form);void apiRequest("/api/projects/"+state.projectId+"/members",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({email:String(data.get("email")),role:String(data.get("role"))})}).then(async()=>{await refresh();paint();}).catch(error=>alert(error.message||error));}
  if(form.id==="ev-review-form"){event.preventDefault();const data=new FormData(form),timecode=String(data.get("timecode")||"");void apiRequest("/api/reviews",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({projectId:state.projectId,decision:String(data.get("decision")),body:String(data.get("body")),assetId:String(data.get("assetId")||"")||null,timecodeSeconds:timecode?Number(timecode):null})}).then(async()=>{await refresh();paint();}).catch(error=>alert(error.message||error));}
@@ -181,6 +199,10 @@ document.addEventListener("change",event=>{
 });
 document.addEventListener("click",event=>{
  const target=event.target as HTMLElement;
+ const recoverOpen=target.closest<HTMLElement>("[data-auth-recover-open]");
+ if(recoverOpen){const authForm=document.querySelector<HTMLElement>("#ev-auth"),switcher=document.querySelector<HTMLElement>(".auth-switch"),recoverForm=document.querySelector<HTMLElement>("#ev-auth-recover");if(authForm)authForm.style.display="none";if(switcher)switcher.style.display="none";recoverOpen.style.display="none";if(recoverForm)recoverForm.style.display="";return;}
+ const recoverCancel=target.closest<HTMLElement>("[data-auth-recover-cancel]");
+ if(recoverCancel){const authForm=document.querySelector<HTMLElement>("#ev-auth"),switcher=document.querySelector<HTMLElement>(".auth-switch"),recoverForm=document.querySelector<HTMLElement>("#ev-auth-recover"),recoverLink=document.querySelector<HTMLElement>("[data-auth-recover-open]");if(authForm)authForm.style.display="";if(switcher)switcher.style.display="";if(recoverForm)recoverForm.style.display="none";if(recoverLink)recoverLink.style.display="";return;}
  const authMode=target.closest<HTMLElement>("[data-auth-mode]");if(authMode){const form=document.querySelector<HTMLFormElement>("#ev-auth");const mode=form?.elements.namedItem("mode") as HTMLInputElement|null;if(mode)mode.value=authMode.dataset.authMode||"login";document.querySelectorAll("[data-auth-mode]").forEach(button=>button.classList.toggle("active",button===authMode));return;}
  const action=target.closest<HTMLElement>("[data-ev-action]");
  if(action?.dataset.evAction==="refresh"){void refresh().then(paint).catch(error=>alert(error.message||error));return;}
