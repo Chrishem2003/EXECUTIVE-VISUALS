@@ -23,6 +23,8 @@ const hasMetricEvidence = value => plain(value) &&
   typeof value.measuredAt === "string" && Number.isFinite(Date.parse(value.measuredAt)) &&
   typeof value.evidenceReference === "string" && value.evidenceReference.trim().length > 0 &&
   value.evidenceReference.length <= 1000;
+const hasLatencyEvidence = candidate => Number.isFinite(candidate?.observedLatencyMs) &&
+  candidate.observedLatencyMs > 0 && hasMetricEvidence(candidate.latencyEvidence);
 
 /**
  * Deterministic, side-effect-free model selection.
@@ -117,8 +119,8 @@ export function routeVideoModel({
     if (optimizeFor === "latency" && a.candidate.observedLatencyMs !== b.candidate.observedLatencyMs) return a.candidate.observedLatencyMs - b.candidate.observedLatencyMs;
     if (optimizeFor === "quality" && a.candidate.qualityScore !== b.candidate.qualityScore) return b.candidate.qualityScore - a.candidate.qualityScore;
     if (a.estimate.amount !== b.estimate.amount) return a.estimate.amount - b.estimate.amount;
-    const latencyA = hasMetricEvidence(a.candidate.latencyEvidence) ? a.candidate.observedLatencyMs : Number.MAX_SAFE_INTEGER;
-    const latencyB = hasMetricEvidence(b.candidate.latencyEvidence) ? b.candidate.observedLatencyMs : Number.MAX_SAFE_INTEGER;
+    const latencyA = hasLatencyEvidence(a.candidate) ? a.candidate.observedLatencyMs : Number.MAX_SAFE_INTEGER;
+    const latencyB = hasLatencyEvidence(b.candidate) ? b.candidate.observedLatencyMs : Number.MAX_SAFE_INTEGER;
     if (latencyA !== latencyB) return latencyA - latencyB;
     return a.id.localeCompare(b.id);
   };
@@ -134,7 +136,7 @@ export function routeVideoModel({
       estimatedCostUsd: winner.estimate.amount,
       pricingDate: winner.estimate.pricingDate,
       pricingSource: winner.estimate.pricingSource,
-      observedLatencyMs: hasMetricEvidence(winner.candidate.latencyEvidence) ? winner.candidate.observedLatencyMs : null,
+      observedLatencyMs: hasLatencyEvidence(winner.candidate) ? winner.candidate.observedLatencyMs : null,
       qualityScore: hasMetricEvidence(winner.candidate.qualityEvidence) ? winner.candidate.qualityScore : null
     } : null,
     eligibleModelCount: eligible.length,
