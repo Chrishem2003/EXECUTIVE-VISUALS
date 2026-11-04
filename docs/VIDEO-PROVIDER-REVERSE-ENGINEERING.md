@@ -178,3 +178,31 @@ Executive Visuals now contains:
 - The Luma registry marks the adapter as `implemented_disabled`; only text-to-video and image-to-video are implemented by this adapter. Video edit, extend and reframe remain provider capabilities but are not claimed as implemented execution operations.
 
 This is still not live-enabled. A real deployment needs a server-side `LUMA_AGENTS_API_KEY`, provider cost/usage reconciliation, safe asset upload/reference preparation, private output ingestion, per-project budget and explicit approval. No provider request was made by these changes.
+
+
+## Runway Model Router: native routing vs platform-wide routing
+
+The current Runway API reference exposes a native Model Router in addition to direct model-specific task endpoints.
+
+- Create/update/list/delete router configurations with `/v1/routers`.
+- Route video generation through `POST /v1/generate/video` using a saved `configId` and a model-agnostic `input` object.
+- Route image and audio through their respective modality endpoints.
+- Set `optimizeFor` to `cost`, `latency`, or `quality`.
+- Apply a hard per-generation credit ceiling per modality.
+- Restrict the eligible model pool with allowlist-only or deny-except modes.
+- Set capacity fallback behavior.
+- Run the same payload with `dryRun: true` to receive the selected model, estimated cost and resolved settings without generating or billing.
+- Inspect routing request history for live requests; dry runs are not recorded in that history.
+
+Official references:
+- https://docs.dev.runwayml.com/model-routers/configuration/
+- https://docs.dev.runwayml.com/model-routers/generating/
+- https://docs.dev.runwayml.com/api/
+
+Architecture decision: keep Executive Visuals' cross-provider router as the policy authority for Runway, Luma and future providers. Add an optional Runway-native router adapter beneath it when a Runway account config is available. Do not treat Runway's router as a substitute for platform-wide permissions, project budgets, asset rights, audit history, or cross-provider comparisons. A Runway dry-run is a provider preflight signal; it does not replace our own reservation and approval checks.
+
+## Current API model identifiers discovered in Runway reference
+
+The live API reference lists additional model identifiers beyond the initial registry snapshot, including `seedance2_5`, `kling_4`, `happyhorse_1_0`, `wan3`, `wan3_prime`, `h3_max`, `grok_imagine_1_5`, and `grok_imagine_1_5_lite`, alongside `seedance2`, `seedance2_fast`, `seedance2_mini`, `veo3.1`, and other models.
+
+These identifiers are discovery evidence only. Do not add them as selectable models or estimate costs until each model's endpoint compatibility, parameters, constraints, pricing, output lifecycle, moderation behavior and actual adapter tests are verified independently.
