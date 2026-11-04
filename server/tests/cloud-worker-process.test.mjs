@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readCloudWorkerConfig,createCloudWorkerSupervisor } from "../cloud-worker-process.mjs";
+import { readCloudWorkerConfig,createCloudWorkerSupervisor,buildCloudWorkerFamilies } from "../cloud-worker-process.mjs";
 
 const env={CLOUD_WORKER_ENABLED:"true",CLOUD_MEDIA_WORKER_ENABLED:"true",CLOUD_TIMELINE_WORKER_ENABLED:"true",SUPABASE_URL:"https://example.supabase.co",SUPABASE_SERVICE_ROLE_KEY:"server-secret"};
 test("cloud worker config remains disabled unless explicitly enabled",()=>{assert.throws(()=>readCloudWorkerConfig({...env,CLOUD_WORKER_ENABLED:"false"}),/disabled/);});
@@ -34,4 +34,24 @@ test("cloud worker supervisor waits for all families and reports individual fail
  const supervisor=createCloudWorkerSupervisor({workers,leaseSeconds:60,heartbeatIntervalMs:10000,pollMs:1000,onError:error=>errors.push(error.message)});
  await supervisor.start();await supervisor.stop();
  assert.deepEqual(calls,["failed","completed"]);assert.deepEqual(errors,["queue unavailable"]);
+});
+
+
+test("video worker remains opt-in and requires an explicitly composed factory",()=>{
+ const config=readCloudWorkerConfig(env);
+ assert.equal(config.video,false);
+ const videoConfig=readCloudWorkerConfig({...env,CLOUD_MEDIA_WORKER_ENABLED:"false",CLOUD_TIMELINE_WORKER_ENABLED:"false",CLOUD_VIDEO_WORKER_ENABLED:"true"});
+ assert.equal(videoConfig.video,true);
+ assert.equal(videoConfig.media,false);
+ assert.equal(videoConfig.timeline,false);
+});
+
+test("cloud worker family composition includes only explicitly enabled, complete workers",()=>{
+ const media={async runCycle(){},async recoverExpired(){}};
+ const timeline={async runCycle(){},async recoverExpired(){}};
+ const video={async runCycle(){},async recoverExpired(){}};
+ assert.deepEqual(buildCloudWorkerFamilies({config:{media:true,timeline:false,video:false},mediaWorker:media}),[media]);
+ assert.deepEqual(buildCloudWorkerFamilies({config:{media:true,timeline:true,video:true},mediaWorker:media,timelineWorker:timeline,videoWorker:video}),[media,timeline,video]);
+ assert.throws(()=>buildCloudWorkerFamilies({config:{media:false,timeline:false,video:true}}),/video worker is not fully configured/);
+ assert.throws(()=>buildCloudWorkerFamilies({config:{media:false,timeline:false,video:false}}),/No cloud worker families/);
 });
