@@ -8,7 +8,8 @@ const fileUri = "https://generativelanguage.googleapis.com/v1beta/files/generate
 const env = {
   GEMINI_API_KEY: "server-google-key",
   GEMINI_OMNI_ENABLED: "true",
-  GEMINI_OMNI_ALLOW_REMOTE: "true"
+  GEMINI_OMNI_ALLOW_REMOTE: "true",
+  GEMINI_OMNI_PAID_TIER_CONFIRMED: "true"
 };
 
 async function plan() {
