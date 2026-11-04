@@ -92,13 +92,13 @@ export function buildCloudWorkerFamilies({config,mediaWorker,timelineWorker,vide
 
 export async function startCloudWorkerProcess(env=process.env,{createVideoWorker}={}){
  const config=readCloudWorkerConfig(env);
- if((config.media||config.timeline)&&(!executableAvailable("ffmpeg")||!executableAvailable("ffprobe")))throw new Error("Cloud media workers require FFmpeg and FFprobe on PATH.");
+ if((config.media||config.timeline||config.video)&&(!executableAvailable("ffmpeg")||!executableAvailable("ffprobe")))throw new Error("Cloud media and video workers require FFmpeg and FFprobe on PATH.");
+ if(config.video&&typeof createVideoWorker!=="function")throw new Error("Cloud video worker is not composed. Supply the approved server-side video dependency factory; no video worker was started.");
  const cloudCredentials={url:env.SUPABASE_URL,serviceRoleKey:env.SUPABASE_SERVICE_ROLE_KEY};
  const readiness=createCloudTimelineApi({...cloudCredentials,maxUploadBytes:config.maxBytes});
  await readiness.checkReadiness();
  const mediaWorker=config.media?createCloudMediaWorker({workerId:"media-"+randomUUID(),...cloudCredentials,tempRoot:config.tempRoot,maxBytes:config.maxBytes}):null;
  const timelineWorker=config.timeline?createCloudTimelineWorker({workerId:"timeline-"+randomUUID(),...cloudCredentials,tempRoot:config.tempRoot,maxBytes:config.maxBytes,maxOutputBytes:config.maxBytes}):null;
- if(config.video&&typeof createVideoWorker!=="function")throw new Error("Cloud video worker is not composed. Supply the approved server-side video dependency factory; no video worker was started.");
  const videoWorker=config.video?await createVideoWorker({workerId:"video-"+randomUUID(),...cloudCredentials,config}):null;
  const workers=buildCloudWorkerFamilies({config,mediaWorker,timelineWorker,videoWorker});
  const supervisor=createCloudWorkerSupervisor({
