@@ -165,6 +165,10 @@ if ((videoBudgetSql.match(/security invoker/gi) || []).length !== 6 || /security
 if (!videoBudgetSql.includes("as $video_finish$") || !videoBudgetSql.includes("$video_finish$;")) {
   issues.push("Cloud video finalizer must use a complete, unambiguous SQL function delimiter.");
 }
+const approvalInsertPolicy = videoBudgetSql.split("create policy ev_video_budget_approval_owner_insert")[1]?.split(");")[0] || "";
+if (!approvalInsertPolicy.includes("p.owner_id = (select auth.uid())") || approvalInsertPolicy.includes("project_members")) {
+  issues.push("Per-request budget approvals for project generation must be restricted to the project owner.");
+}
 if (!videoBudgetSql.includes("as $") ||
     !videoBudgetSql.includes("end;\\n$;") ||
     /as \\$(?:\\r?\\n)|\\r?\\n\\$;/.test(videoBudgetSql)) {
