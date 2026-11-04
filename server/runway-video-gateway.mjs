@@ -86,6 +86,7 @@ export function createRunwayVideoAdapter({env=process.env,fetchImpl=globalThis.f
  return Object.freeze({
   provider:"runway",model:MODEL,minimumPollIntervalMs:RUNWAY_MIN_POLL_INTERVAL_MS,
   async function prepareInput(input,context={}){
+   configuration();
    const normalized=normalizeVideoGenerationRequest(input);
    assertVideoCapabilities(normalized,CAPABILITIES);
    if(!normalized.startFrameAssetId)return input;
