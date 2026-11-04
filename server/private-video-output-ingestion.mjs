@@ -121,7 +121,7 @@ function ipv4Public(address) {
 function ipv6Public(address) {
   let value = address.toLowerCase().split("%")[0];
   if (value.includes(".")) {
-    const match = value.match(/^(.*:)(\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3})$/);
+    const match = value.match(/^(.*:)(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/);
     if (!match || !ipv4Public(match[2])) return false;
     const octets = match[2].split(".").map(Number);
     const high = ((octets[0] << 8) | octets[1]).toString(16);
@@ -170,8 +170,8 @@ async function resolvePinnedAddress(hostname, resolver) {
   return records[0];
 }
 
-async function downloadPinned(url, destination, { resolver, maxBytes, timeoutMs }) {
-  const record = await resolvePinnedAddress(url.hostname, resolver);
+async function downloadPinned(url, destination, { address, maxBytes, timeoutMs }) {
+  const record = address;
   return new Promise((resolve, reject) => {
     let received = 0;
     let settled = false;
@@ -288,8 +288,9 @@ export function createPrivateVideoOutputIngestor({
           } catch {
             throw fail("Provider output URL is not on the approved HTTPS host allowlist.", "VIDEO_OUTPUT_URL_REJECTED");
           }
+          const address = await resolvePinnedAddress(url.hostname, resolver);
           const path = join(directory, "provider-output-" + index + ".bin");
-          const receipt = await download(url, path, { resolver, maxBytes: maxBytesPerOutput, timeoutMs });
+          const receipt = await download(url, path, { address, maxBytes: maxBytesPerOutput, timeoutMs });
           if (!receipt || !Number.isSafeInteger(receipt.size) || receipt.size < 1 ||
               receipt.size > maxBytesPerOutput || !RESPONSE_TYPES.has(receipt.contentType)) {
             throw fail("Provider output download receipt is invalid.", "VIDEO_OUTPUT_DOWNLOAD_INVALID");
