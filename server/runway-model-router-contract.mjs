@@ -2,7 +2,7 @@ const fail=(message,code)=>Object.assign(new Error(message),{code});
 const ROUTER_SLUG=/^[a-z][a-z0-9_-]{0,63}$/;
 const MODEL_ID=/^[a-z][a-zA-Z0-9._-]{0,95}$/;
 const RESOLUTIONS=new Set(["720p","1080p"]);
-const RATIOS=new Set(["16:9","9:16","1:1","4:3","3:4","21:9"]);
+const RATIOS=new Set(["1280:720","720:1280","960:960","834:1112","1920:1080","1080:1920","1440:1440","1248:1664"]);
 const RUNWAY_ASSET_URI=/^runway:\/\/[A-Za-z0-9._~:/-]{1,4980}$/;
 
 function positiveInteger(value,label,{allowZero=false}={}) {
@@ -54,9 +54,9 @@ export function buildRunwayVideoRouterDryRun({configId,input}={}) {
     if(typeof input.negativePrompt!=="string"||input.negativePrompt.length>1000) throw fail("Router negativePrompt cannot exceed 1000 characters.","RUNWAY_ROUTER_INVALID_INPUT");
     normalized.negativePrompt=input.negativePrompt;
   }
-  if(input.aspectRatio!==undefined) {
-    if(!RATIOS.has(input.aspectRatio)) throw fail("Router aspectRatio is unsupported.","RUNWAY_ROUTER_INVALID_INPUT");
-    normalized.aspectRatio=input.aspectRatio;
+  if(input.ratio!==undefined) {
+    if(!RATIOS.has(input.ratio)) throw fail("Router ratio is unsupported.","RUNWAY_ROUTER_INVALID_INPUT");
+    normalized.ratio=input.ratio;
   }
   if(input.resolution!==undefined) {
     if(!RESOLUTIONS.has(input.resolution)) throw fail("Router resolution must be 720p or 1080p.","RUNWAY_ROUTER_INVALID_INPUT");
@@ -93,7 +93,7 @@ export function buildRunwayVideoRouterDryRun({configId,input}={}) {
       return Object.freeze(item);
     });
   }
-  const allowed=new Set(["promptText","negativePrompt","aspectRatio","resolution","duration","audio","referenceImages"]);
+  const allowed=new Set(["promptText","negativePrompt","ratio","resolution","duration","audio","referenceImages"]);
   const unknown=Object.keys(input).filter(key=>!allowed.has(key));
   if(unknown.length) throw fail("Unsupported router input fields: "+unknown.join(", "),"RUNWAY_ROUTER_INVALID_INPUT");
   if(input.referenceImages!==undefined) Object.freeze(normalized.referenceImages);
