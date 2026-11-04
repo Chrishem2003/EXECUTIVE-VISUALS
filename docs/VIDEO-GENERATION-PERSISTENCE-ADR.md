@@ -156,3 +156,13 @@ This is explicitly a provider list-price estimate used to set a minimum reservat
 ### Provider-price preflight
 
 The cloud enqueue client now checks the Runway Gen-4.5 request against the published Runway Dev price before contacting Postgres: 12 credits per second, USD 0.01 per credit, 2–10 seconds, MP4 only in the current estimate. A reservation below that deterministic estimate is rejected locally. This is only a preflight ceiling check; the worker still requires a separate actual-cost resolver with a trustworthy provider billing evidence reference before settling the budget. No live credits are purchased or consumed by this check.
+
+
+### Runway usage evidence boundary (2026-11-04)
+
+A second pass over the current official API reference confirms two different usage surfaces:
+
+- `POST /v1/organization/usage` reports API-project usage aggregated by date, model and API key. It does not return a documented per-task charge that can be joined reliably to one Executive Visuals job.
+- `GET /v1/organization/webapp/usage` can return one row per generation for linked Runway web-app workspaces, but that is a separate web-app credit pool and is not evidence of charges made by this API project.
+
+The task retrieval response documents `estimatedCost.credits`, not a definitive settled invoice. Therefore, do not use either an aggregate daily delta or web-app workspace usage to infer the actual cost of an individual API task. A future resolver must require task-correlated, authoritative API billing evidence or an explicit operator-reviewed billing export; absent that, keep the job quarantined and the reservation held. Sources: https://docs.dev.runwayml.com/api/ and https://docs.dev.runwayml.com/guides/pricing/.
