@@ -87,20 +87,25 @@ export function createGeminiOmniFlashClient({
     throw new Error("Gemini Interactions client limits are invalid.");
   }
 
-  function configuration() {
-    if (env.GEMINI_OMNI_ENABLED !== "true" || env.GEMINI_OMNI_ALLOW_REMOTE !== "true") {
-      throw fail("Gemini Omni remote execution is disabled by server policy.", "GEMINI_OMNI_REMOTE_DISABLED");
-    }
-    if (env.GEMINI_OMNI_PAID_TIER_CONFIRMED !== "true") {
-      throw fail("Gemini Omni video generation requires an explicitly verified paid-tier project.", "GEMINI_OMNI_PAID_TIER_REQUIRED");
+  function configuration(purpose = "lifecycle") {
+    const generationEnabled = env.GEMINI_OMNI_ENABLED === "true" && env.GEMINI_OMNI_ALLOW_REMOTE === "true";
+    if (purpose === "create") {
+      if (!generationEnabled) {
+        throw fail("Gemini Omni remote execution is disabled by server policy.", "GEMINI_OMNI_REMOTE_DISABLED");
+      }
+      if (env.GEMINI_OMNI_PAID_TIER_CONFIRMED !== "true") {
+        throw fail("Gemini Omni video generation requires an explicitly verified paid-tier project.", "GEMINI_OMNI_PAID_TIER_REQUIRED");
+      }
+    } else if (!generationEnabled && env.GEMINI_OMNI_CLEANUP_ENABLED !== "true") {
+      throw fail("Gemini Omni lifecycle access is disabled by server policy.", "GEMINI_OMNI_REMOTE_DISABLED");
     }
     const key = String(env.GEMINI_API_KEY || env.GOOGLE_GEMINI_API_KEY || "").trim();
     if (!key) throw fail("Configure the Gemini API key on the server.", "GEMINI_OMNI_CONFIG_MISSING");
     return key;
   }
 
-  async function request(url, { method = "GET", body, ambiguousPost = false } = {}) {
-    const key = configuration();
+  async function request(url, { method = "GET", body, ambiguousPost = false, purpose = "lifecycle" } = {}) {
+    const key = configuration(purpose);
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
@@ -186,7 +191,7 @@ export function createGeminiOmniFlashClient({
         "GEMINI_OMNI_APPROVAL_REQUIRED");
       const requestPayload = { ...payload, background: true, store: true };
       const data = await request(BASE + "/interactions", {
-        method: "POST", body: requestPayload, ambiguousPost: true
+        method: "POST", body: requestPayload, ambiguousPost: true, purpose: "create"
       });
       const result = normalized(data);
       return Object.freeze({
