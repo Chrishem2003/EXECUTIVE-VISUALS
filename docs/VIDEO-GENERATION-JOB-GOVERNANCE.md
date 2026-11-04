@@ -17,11 +17,19 @@
 8. Supports stable idempotent replay; replays return the original job without making a second budget or usage reservation.
 9. Rejects conflicting reuse of an idempotency key.
 
-The budget callback must be synchronous and must write its reservation in the same SQLite transaction/database. An asynchronous or externally side-effecting callback is rejected because it cannot be rolled back atomically with the job.\n\n`server/video-generation-submissions.mjs` adds a durable per-job provider-submission ledger. It enforces one transition from `prepared` to `submitting`, records provider task IDs, and moves timeouts or interrupted submissions to an `unknown` quarantine state. An ambiguous submission cannot be automatically started again; stale in-flight attempts can be moved to `unknown` by the recovery method, after which an operator must verify the provider task and explicitly reconcile it. This is a duplicate-cost safety boundary, not a claim of exactly-once provider execution.
+The budget callback must be synchronous and must write its reservation in the same SQLite transaction/database. An asynchronous or externally side-effecting callback is rejected because it cannot be rolled back atomically with the job.
+
+`server/video-generation-submissions.mjs` adds a durable per-job provider-submission ledger. It enforces one transition from `prepared` to `submitting`, records provider task IDs, and moves timeouts or interrupted submissions to an `unknown` quarantine state. An ambiguous submission cannot be automatically started again; stale in-flight attempts can be moved to `unknown` by the recovery method, after which an operator must verify the provider task and explicitly reconcile it. This is a duplicate-cost safety boundary, not a claim of exactly-once provider execution.
 
 ## Deliberate non-claims
 
-`server/video-generation-executor.mjs` now provides an isolated leased-job execution boundary. It starts a provider submission once, persists the task ID, resumes polling on later leased attempts, quarantines ambiguous POST outcomes, and delegates output ingestion to a required injected callback. It does not itself download media or create assets. The callback must be idempotent by job/task ID and must enforce provider-host allowlisting, HTTPS-only downloads with redirects disabled, private-address/DNS protections, byte/time limits, media probing, checksums, private storage and asset registration.\n\nThe executor is not wired into the local worker dispatch or cloud worker supervisor, and no authenticated route queues video jobs. The current provider catalog keeps Runway, Luma, Kling and Gemini disabled, so the production resolver rejects every remote provider by default.
+`server/video-generation-executor.mjs` now provides an isolated leased-job execution boundary. It starts a provider submission once, persists the task ID, resumes polling on later leased attempts, quarantines ambiguous POST outcomes, and delegates output ingestion to a required injected callback. It does not itself download media or create assets. The callback must be idempotent by job/task ID and must enforce provider-host allowlisting, HTTPS-only downloads with redirects disabled, private-address/DNS protections, byte/time limits, media probing, checksums, private storage and asset registration.
+
+The executor is not wired into the local worker dispatch or cloud worker supervisor, and no authenticated route queues video jobs. The current provider catalog keeps Runway, Luma, Kling and Gemini disabled, so the production resolver rejects every remote provider by default.
+
+
+
+The local SQLite worker now claims only its explicitly supported job types (workflow.execute plus the existing media-job allowlist). A queued video.generate job is therefore left queued rather than being misrouted to the media executor. This is an isolation safeguard, not video-worker integration.
 
 ## Remaining integration gates
 
