@@ -33,7 +33,7 @@ export function estimateRunwayVideoCredits(options={}) {
   const allowed=new Set([
     "model","durationSeconds","resolution","audio","inputVideoSeconds","referenceVideoSeconds",
     "referenceImageCount","referenceAudioCount","hasStartFrame","outputFrames","sourceWidth",
-    "sourceHeight","inputType","pricingDate"
+    "sourceHeight","outputWidth","outputHeight","outputFormat","inputType","pricingDate"
   ]);
   const unknown=Object.keys(options).filter(key=>!allowed.has(key));
   if(unknown.length) {
@@ -42,7 +42,7 @@ export function estimateRunwayVideoCredits(options={}) {
   const {
     model,durationSeconds,resolution:outputResolution,audio:hasAudio,
     inputVideoSeconds=0,referenceVideoSeconds=0,referenceImageCount=0,referenceAudioCount=0,
-    hasStartFrame=false,outputFrames,sourceWidth,sourceHeight,inputType="text",pricingDate
+    hasStartFrame=false,outputFrames,sourceWidth,sourceHeight,outputWidth,outputHeight,outputFormat="mp4",inputType="text",pricingDate
   }=options;
   const duration=finiteDuration(durationSeconds,"durationSeconds",{max:30});
   const inputVideo=finiteDuration(inputVideoSeconds,"inputVideoSeconds",{allowZero:true,max:30});
@@ -60,6 +60,35 @@ export function estimateRunwayVideoCredits(options={}) {
   const perSecond=(rate)=>{credits=duration*rate;formula=duration+"s × "+rate+" credits/s";};
   const minimum=(rate,min)=>{credits=Math.max(min,duration*rate);formula="max("+min+" credit minimum, "+duration+"s × "+rate+" credits/s)";};
   const resolutionRate=(rates)=>rates[resolution(outputResolution,Object.keys(rates))];
+  const PROFESSIONAL_HDR_FORMATS=new Set([
+    "hdr10","hlg","hdr_pq_12bit_master","hdr_prores","hdr_png_sequence",
+    "hdr_exr_sequence","hdr_exr_acescg_sequence_1_3","hdr_exr_acescg_sequence_2_0"
+  ]);
+  const PROFESSIONAL_SDR_FORMATS=new Set(["sdr_rec709_10bit"]);
+  const EDITORIAL_FORMATS=new Set(["prores","png_sequence"]);
+  if(typeof outputFormat!=="string")throw fail("outputFormat must be a string.","RUNWAY_PRICE_INVALID_INPUT");
+  if(outputFormat!=="mp4"&&outputFormat!=="mov"&&!EDITORIAL_FORMATS.has(outputFormat)&&
+     !PROFESSIONAL_HDR_FORMATS.has(outputFormat)&&!PROFESSIONAL_SDR_FORMATS.has(outputFormat)) {
+    throw fail("No verified pricing formula exists for outputFormat "+outputFormat+".","RUNWAY_PRICE_UNSUPPORTED_OPTION");
+  }
+  let outputSurcharge=0;
+  if(EDITORIAL_FORMATS.has(outputFormat)) {
+    if(!["gen4.5","aleph2"].includes(model))throw fail("ProRes and PNG sequence outputs are supported only for Gen-4.5 and Aleph 2.0.","RUNWAY_PRICE_UNSUPPORTED_OPTION");
+    outputSurcharge=5*duration;
+  } else if(PROFESSIONAL_SDR_FORMATS.has(outputFormat)||PROFESSIONAL_HDR_FORMATS.has(outputFormat)) {
+    if(!["gen4.5","aleph2"].includes(model)||
+       (PROFESSIONAL_HDR_FORMATS.has(outputFormat)&&model!=="gen4.5")) {
+      throw fail("The selected professional output format is not supported by this model.","RUNWAY_PRICE_UNSUPPORTED_OPTION");
+    }
+    if(!Number.isSafeInteger(outputWidth)||outputWidth<16||outputWidth>16384||
+       !Number.isSafeInteger(outputHeight)||outputHeight<16||outputHeight>16384) {
+      throw fail("outputWidth and outputHeight are required for 10-bit/HDR output pricing.","RUNWAY_PRICE_INPUT_REQUIRED");
+    }
+    const outputMegapixels=outputWidth*outputHeight/1000000;
+    outputSurcharge=(outputMegapixels>4?40:20)*duration;
+  } else if(outputFormat==="mov"&&model!=="seedance2_5") {
+    throw fail("MOV output without a professional surcharge is supported only for Seedance 2.5.","RUNWAY_PRICE_UNSUPPORTED_OPTION");
+  }
 
   switch(model) {
     case "gen4.5": perSecond(12); break;
@@ -183,7 +212,8 @@ export function estimateRunwayVideoCredits(options={}) {
       throw fail("No verified pricing formula is available for "+String(model)+".","RUNWAY_PRICE_UNSUPPORTED_MODEL");
   }
   if(!Number.isFinite(credits)||credits<0)throw fail("Pricing calculation produced an invalid result.","RUNWAY_PRICE_INVALID_RESULT");
-  credits=Math.round(credits*100)/100;
+  credits=Math.round((credits+outputSurcharge)*100)/100;
+  if(outputSurcharge>0)formula+=" + "+outputSurcharge+" professional output surcharge credits ("+outputFormat+")";
   return Object.freeze({
     provider:"runway",model:pricingModel,pricingDate,source:SOURCE,
     estimatedCredits:credits,estimatedUsd:Math.round(credits*0.01*10000)/10000,
