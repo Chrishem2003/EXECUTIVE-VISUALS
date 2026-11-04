@@ -32,6 +32,7 @@ export function createGoogleGeminiFilesComposition({
   }
 
   let privateAssetLoader = loadPrivateAsset;
+  let authorizePrivateAsset;
   if (!privateAssetLoader) {
     const cloudAssets = createCloudAssetService({
       url, serviceRoleKey, fetchImpl,
@@ -40,6 +41,14 @@ export function createGoogleGeminiFilesComposition({
       authorizationTimeoutMs: Math.min(timeoutMs, 8000),
       maxBytes: Math.min(maxBytes, 250 * 1024 * 1024)
     });
+    authorizePrivateAsset = async ({ assetId, ownerId, projectId = null }) => {
+      const signed = await cloudAssets.assets.createSignedUrl({ ownerId, assetId, expiresIn: 60 });
+      if (!signed?.asset || (signed.asset.projectId || null) !== (projectId || null) ||
+          signed.asset.storageBucket !== "executive-visuals-media") {
+        throw new Error("Private cloud asset authorization returned an invalid project scope.");
+      }
+      return signed.asset;
+    };
     const mediaIO = createCloudMediaAssetIO({
       assets: cloudAssets.assets,
       fetchImpl,
@@ -74,7 +83,7 @@ export function createGoogleGeminiFilesComposition({
   }
 
   return createGoogleGeminiFilesGateway({
-    env, fetchImpl, loadPrivateAsset: privateAssetLoader,
+    env, fetchImpl, loadPrivateAsset: privateAssetLoader, authorizePrivateAsset,
     findProviderFile: args => mappings.findProviderFile(args),
     recordProviderFile: record => mappings.recordProviderFile(record),
     deleteProviderFileRecord: args => mappings.deleteProviderFileRecord(args),
