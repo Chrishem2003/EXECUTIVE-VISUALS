@@ -76,6 +76,22 @@ test("reuses the existing private asset for a repeated provider task and output 
   assert.equal(second.usage.totalBytes, 2048);
 });
 
+test("does not delete a previously registered idempotent asset when a later output fails", async () => {
+  const assets = assetRepo({ failOn: 1 });
+  const ingest = createPrivateVideoOutputIngestor({ ...config, assets });
+  const firstRequest = {
+    job: { owner_id: ownerId, project_id: projectId },
+    task, input: { provider: "runway", model: "gen4.5" }
+  };
+  const first = await ingest.ingest(firstRequest);
+  await assert.rejects(ingest.ingest({
+    ...firstRequest,
+    task: { ...task, outputUrls: [task.outputUrls[0], task.outputUrls[0]] }
+  }), /storage registration failed/);
+  assert.equal(assets.removed.length, 0);
+  assert.equal(assets.created[0].id, first.assetIds[0]);
+});
+
 test("rejects non-allowlisted, non-HTTPS, credentialed, and nonstandard-port URLs before DNS or download", async () => {
   let resolves = 0, downloads = 0;
   const ingest = createPrivateVideoOutputIngestor({
