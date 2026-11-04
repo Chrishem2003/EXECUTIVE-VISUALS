@@ -4,7 +4,7 @@ import { createReadStream, createWriteStream, existsSync, statSync } from "node:
 import { mkdir, unlink, open, readFile } from "node:fs/promises";
 import { dirname, extname, join, resolve, basename, sep } from "node:path";
 import { pipeline } from "node:stream/promises";
-import { Transform } from "node:stream";
+import { Transform, Readable } from "node:stream";
 import { openDatabase, audit, addJobEvent, getOwnedProject, getOwnedAsset, getProjectAccess, canWriteProject, getAccessibleAsset, json, parseJson } from "./db.mjs";
 import { executeMediaJob, executableAvailable } from "./media.mjs";
 import { createRealEsrganAdapter } from "./ai-upscale-engine.mjs";
@@ -374,6 +374,18 @@ export function createAppServer() {
       const user=await authenticate(req,res);
       if(!user){fail(res,401,"AUTH_REQUIRED","Sign in to access this workspace.");return;}
       if(path==="/api/me"&&req.method==="GET"){send(res,200,{user,authMode:AUTH_MODE},cors);return;}
+      const cloudMediaMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)\/content$/i);
+      if(cloudTimelineApi&&cloudMediaMatch&&(req.method==="GET"||req.method==="HEAD")){
+        const streamed=await cloudTimelineApi.streamAsset({ownerId:user.id,assetId:cloudMediaMatch[1],range:String(req.headers.range||""),method:req.method});
+        res.writeHead(streamed.status,{...SECURITY_HEADERS,...streamed.headers,...cors});
+        if(req.method==="HEAD"||!streamed.body){res.end();return;}
+        try{
+          if(Buffer.isBuffer(streamed.body)){res.end(streamed.body);return;}
+          await pipeline(Readable.fromWeb(streamed.body),res);
+        }catch(error){if(!res.destroyed)res.destroy(error);}
+        finally{streamed.cleanup?.();}
+        return;
+      }
       if(cloudTimelineApi && path==="/api/cloud/assets" && req.method==="POST"){
         const uploadResult=await cloudTimelineApi.uploadAsset({
           req,ownerId:user.id,projectId:String(req.headers["x-project-id"]||""),

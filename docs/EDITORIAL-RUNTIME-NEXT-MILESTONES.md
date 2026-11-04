@@ -2,8 +2,8 @@
 
 **Date:** 2 November 2026  
 **Repository:** CHRISHEM EXCLUSIVE VISUALS  
-**Working branch:** `feat/sequence-audio-overlay-preview`  
-**Status:** E1 local primary-picture playback, synchronized multi-track audio, still-image overlays and SRT/VTT caption preview implemented. Browser-level playback coverage, proxy-first selection and authenticated cloud streaming remain in progress. See [Sequence preview engine](SEQUENCE-PREVIEW-ENGINE.md).
+**Working branch:** `feat/private-cloud-media-streaming`  
+**Status:** E1 local/cloud primary-picture playback, verified proxy-first selection, synchronized multi-track audio, mute/solo, still-image overlays and SRT/VTT caption preview implemented. Browser-level hosted playback coverage and FFmpeg parity remain in progress. See [Sequence preview engine](SEQUENCE-PREVIEW-ENGINE.md) and [Private cloud media streaming](PRIVATE-CLOUD-MEDIA-STREAMING.md).
 
 ## Objective
 
@@ -14,8 +14,8 @@ Complete the existing editorial runtime around the current timeline, media adapt
 ### E1 — Browser preview and frame-accurate transport
 
 **Build**
-- A preview monitor bound to the selected saved timeline revision and its authorized source assets.
-- Proxy-first playback with an explicit original-media fallback when a proxy is absent.
+- A preview monitor bound to the selected saved timeline revision and its authorized source assets. Local and cloud assets use the same editor source boundary; cloud media is streamed through an authenticated same-origin endpoint.
+- Proxy-first playback with an explicit original-media fallback when a proxy is absent. The selector accepts only a smaller, SHA-256-verified `media.proxy` derivative linked to the exact source.
 - Frame seeking based on rational frame-rate/timebase values; do not accumulate floating-point frame drift.
 - Play/pause, step one frame backward/forward, jump to clip in/out, timecode display, zoom-to-fit and safe source-range clamping.
 - Track mute/solo and audio monitoring where the browser media pipeline supports them. (Mute/solo controls remain outstanding; current local preview synchronizes enabled tracks and per-clip gain.)

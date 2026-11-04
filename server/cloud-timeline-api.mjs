@@ -214,6 +214,47 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
    throw error;
   }
  }
+ async function streamAsset({ownerId,assetId,range="",method="GET"}={}){
+  const errorResponse=(status,code,message)=>({status,headers:{"content-type":"application/json","cache-control":"private, no-store"},body:Buffer.from(JSON.stringify({error:{code,message}}))});
+  if(!safeId(ownerId))return errorResponse(401,"AUTH_REQUIRED","A verified account identity is required.");
+  if(!safeId(assetId))return errorResponse(404,"ASSET_NOT_FOUND","Asset not found.");
+  if(!["GET","HEAD"].includes(method))return{status:405,headers:{allow:"GET, HEAD","cache-control":"no-store"},body:null};
+  const requestedRange=String(range||"").trim();
+  if(requestedRange&&!/^bytes=(?:\d+-\d*|-\d+)$/.test(requestedRange))return errorResponse(400,"INVALID_RANGE","Only a single valid byte range is supported.");
+  let signed;
+  try{signed=await service.assets.createSignedUrl({ownerId,assetId,expiresIn:300});}
+  catch(error){if(error?.code==="CLOUD_ASSET_NOT_FOUND"||error?.code==="CLOUD_ASSET_ACCESS_DENIED")return errorResponse(404,"ASSET_NOT_FOUND","Asset not found.");throw error;}
+  if(!signed?.asset||typeof signed.url!=="string"||!Number.isSafeInteger(Number(signed.asset.size))||Number(signed.asset.size)<1)throw new Error("Cloud asset repository returned invalid streaming metadata.");
+  let target;try{target=new URL(signed.url);if(target.protocol!=="https:"||target.origin!==base||target.username||target.password||target.hash)throw new Error();}catch{throw new Error("Cloud asset repository returned an unsafe private-media URL.");}
+  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs);
+  const cleanup=()=>{clearTimeout(timer);if(!controller.signal.aborted)controller.abort();};
+  try{
+   const headers={};if(requestedRange)headers.range=requestedRange;
+   const upstream=await fetchImpl(target.href,{method,headers,signal:controller.signal,redirect:"error"});
+   if(upstream.status===416){cleanup();return{status:416,headers:{"accept-ranges":"bytes","content-range":upstream.headers?.get?.("content-range")||("bytes */"+signed.asset.size),"cache-control":"private, no-store"},body:null};}
+   if(!upstream.ok&&upstream.status!==206)throw Object.assign(new Error("Private media storage could not serve this asset."),{code:"CLOUD_MEDIA_STREAM_FAILED",status:502});
+   if(requestedRange&&upstream.status!==206)throw Object.assign(new Error("Private media storage did not honor the requested byte range."),{code:"CLOUD_MEDIA_RANGE_UNSUPPORTED",status:502});
+   const responseHeaders={"content-type":String(signed.asset.mediaType||"application/octet-stream"),"cache-control":"private, no-store","accept-ranges":"bytes","x-content-type-options":"nosniff"};
+   const contentLength=upstream.headers?.get?.("content-length");
+   if(contentLength&&/^\d+$/.test(contentLength))responseHeaders["content-length"]=contentLength;
+   else if(upstream.status===200)responseHeaders["content-length"]=String(signed.asset.size);
+   if(upstream.status===206){
+    const contentRange=upstream.headers?.get?.("content-range")||"";
+    const match=contentRange.match(/^bytes (\d+)-(\d+)\/(\d+)$/);
+    if(!match||Number(match[1])>Number(match[2])||Number(match[2])>=Number(signed.asset.size)||Number(match[3])!==Number(signed.asset.size))throw Object.assign(new Error("Private media storage returned an invalid byte-range response."),{code:"CLOUD_MEDIA_INVALID_RANGE",status:502});
+    responseHeaders["content-range"]=contentRange;
+   }
+   const dispositionName=String(signed.asset.name||"media").replace(/[\r\n"\\]/g,"_").slice(0,160)||"media";
+   responseHeaders["content-disposition"]='inline; filename="'+dispositionName+'"';
+   if(method==="HEAD"){cleanup();return{status:upstream.status,headers:responseHeaders,body:null};}
+   if(!upstream.body)throw Object.assign(new Error("Private media storage returned an empty stream."),{code:"CLOUD_MEDIA_EMPTY_STREAM",status:502});
+   return{status:upstream.status,headers:responseHeaders,body:upstream.body,cleanup};
+  }catch(error){
+   cleanup();
+   if(error?.name==="AbortError")throw Object.assign(new Error("Private media stream timed out."),{code:"CLOUD_MEDIA_STREAM_TIMEOUT",status:504});
+   throw error;
+  }
+ }
  async function checkReadiness(){
   const required=["projects","project_members","assets","timelines","jobs","job_events"];
   for(const table of required){
@@ -269,5 +310,5 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
    throw error;
   }finally{await rm(directory,{recursive:true,force:true}).catch(()=>{});}
  }
- return Object.freeze({handle,uploadAsset,checkReadiness});
+ return Object.freeze({handle,uploadAsset,streamAsset,checkReadiness});
 }
