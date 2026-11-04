@@ -68,6 +68,14 @@ test("Seedance 2.0 tiers expose distinct verified capabilities and dated credit 
   assert.deepEqual(full.constraints.creditsPerSecondByResolution, {"480p":14,"720p":30,"1080p":40,"2160p":150});
   assert.deepEqual(fast.constraints.creditsPerSecondByResolution, {"480p":11,"720p":24});
   assert.deepEqual(mini.constraints.creditsPerSecondByResolution, {"480p":7,"720p":15});
+  assert.deepEqual(full.constraints.supportedRatioValues, undefined);
+  assert.equal(full.constraints.minimumCreditsByResolution["480p"], 56);
+  assert.equal(full.constraints.textToVideoMaxReferenceImages, 9);
+  assert.equal(full.constraints.videoToVideoMaxReferenceImages, 9);
+  assert.equal(fast.constraints.minimumCreditsByResolution["480p"], 44);
+  assert.equal(mini.constraints.minimumCreditsByResolution["480p"], 28);
+  assert.equal(fast.constraints.supportedRatioValues.length, 12);
+  assert.deepEqual(fast.constraints.supportedRatioValues, mini.constraints.supportedRatioValues);
   assert.equal(full.constraints.inputReferencesCharged, false);
   assert.equal(listSelectableVideoProviderModels().length, 0);
 });
