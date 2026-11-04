@@ -134,6 +134,9 @@ test("enqueue rejects mismatched request scope and invalid budget inputs before 
   const client = createCloudVideoEnqueue({ ...base, fetchImpl: async () => { calls++; return response([resultRow]); } });
   await assert.rejects(() => client.enqueue(args({ input: { ...input, requestHash: "b".repeat(64) } })), /does not match/);
   await assert.rejects(() => client.enqueue(args({ reservedAmount: 0 })), /positive bounded/);
+  await assert.rejects(() => client.enqueue(args({ reservedAmount: 0.5 })), error =>
+    error.code === "VIDEO_BUDGET_BELOW_PROVIDER_ESTIMATE"
+  );
   await assert.rejects(() => client.enqueue(args({ reservedAmount: 0.59 })), error =>
     error.code === "VIDEO_BUDGET_BELOW_PROVIDER_ESTIMATE" && error.estimate.amount === 0.6
   );
