@@ -124,13 +124,12 @@ test("fails closed when no connection exists or the refresh token is revoked", a
   await assert.rejects(() => h.service.getAccessToken({ ownerId }), error => error.code === "GOOGLE_OAUTH_NOT_CONNECTED");
 });
 
-test("rejects unsafe redirect URI and missing cryptographic identity verifier", () => {
+test("rejects unsafe redirect URI and accepts the built-in cryptographic identity verifier", () => {
   const common = { clientId: "client", clientSecret: "secret", encryptionKey: "a".repeat(40),
     stateStore: { put() {}, consume() {} }, connections: { get() {}, upsert() {}, delete() {} } };
   assert.throws(() => createGoogleDriveOAuth({ ...common, redirectUri: "https://user:pass@example.com/callback", verifyIdentity: identity }),
     error => error.code === "GOOGLE_OAUTH_CONFIG_INVALID");
-  assert.throws(() => createGoogleDriveOAuth({ ...common, redirectUri: "https://example.com/callback" }),
-    error => error.code === "GOOGLE_OAUTH_CONFIG_INVALID");
+  assert.doesNotThrow(() => createGoogleDriveOAuth({ ...common, redirectUri: "https://example.com/callback" }));
 });
 
 test("cryptographically verifies Google's RS256 ID-token signature, audience, expiry and nonce by default", async () => {
