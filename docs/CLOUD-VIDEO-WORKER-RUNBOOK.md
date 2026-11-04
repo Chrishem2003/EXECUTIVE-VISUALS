@@ -39,9 +39,9 @@ Do not set these values in production as part of this change. Configure them onl
 
 ## Financial release gate
 
-`resolveActualCost` remains a required injected dependency. The pricing estimator is a reservation estimate, not an invoice or settlement receipt. Model Router documentation says successful responses include the realized cost, but the published API response schema does not currently expose a stable, documented field path for the realized-cost value. Router request history exposes `estimatedCredits`; organization usage is aggregated and cannot safely allocate a task-level charge.
+`resolveActualCost` remains a required injected dependency. The pricing estimator and Model Router dry-run are reservation estimates, not settlement receipts. The current Model Router guide states that successful routed generations include the realized cost in response metadata; dry runs return an estimated cost and are not billed. The exact response field path and task correlation still require a redacted, verified response fixture and contract tests before settlement code is connected.
 
-Do not settle reservations from `estimatedCredits`, a pricing formula, or aggregate daily usage. Add the resolver only after a task-correlated provider receipt is verified with a redacted real response fixture and contract tests.
+Do not settle reservations from `estimatedCredits`, a pricing formula, dry-run metadata, or aggregate daily usage. For the current direct Gen-4.5 adapter, task-level realized-cost evidence remains unverified. A future routed adapter may settle only from the successful response metadata after its exact schema, task ID correlation, currency/unit and idempotency behavior are contract-tested.
 
 ## Acceptance gates
 
