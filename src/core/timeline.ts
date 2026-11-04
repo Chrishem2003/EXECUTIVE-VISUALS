@@ -149,7 +149,7 @@ export function toOpenTimelineIo(timeline:EditorialTimeline):OtioObject{
         OTIO_SCHEMA:"Clip.2",name:clip.name,
         media_reference:{OTIO_SCHEMA:"ExternalReference.1",target_url:"asset://"+clip.assetId,available_range:otioRange(clip.sourceRange)},
         source_range:otioRange(clip.sourceRange),
-        metadata:{executiveVisuals:{clipId:clip.id,assetId:clip.assetId,enabled:clip.enabled,gainDb:clip.gainDb??0,speed:clip.speed??1,custom:clip.metadata??{},effects:clip.effects??[],keyframes:clip.keyframes??[],transitionIn:clip.transitionIn??null,transitionOut:clip.transitionOut??null}}}
+        metadata:{executiveVisuals:{clipId:clip.id,assetId:clip.assetId,enabled:clip.enabled,gainDb:clip.gainDb??0,speed:clip.speed??1,custom:clip.metadata??{},effects:clip.effects??[],keyframes:clip.keyframes??[],transitionIn:clip.transitionIn??null,transitionOut:clip.transitionOut??null}}
       });
       cursor=start+duration;
     }
