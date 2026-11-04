@@ -1,3 +1,4 @@
+import { resolveGoogleOmniActualCost } from "./google-omni-pricing.mjs";
 import { normalizeGeminiOmniFlashInteractionResponse } from "./google-omni-flash-interaction.mjs";
 
 const PROVIDER = "google";
@@ -163,5 +164,9 @@ export function createGoogleOmniCloudVideoIntegration({
     };
   }
 
-  return Object.freeze({ adapter, ingestOutputs });
+  async function resolveActualCost({ task, providerTaskId } = {}) {
+    return resolveGoogleOmniActualCost({ task, providerTaskId });
+  }
+
+  return Object.freeze({ adapter, ingestOutputs, resolveActualCost });
 }
