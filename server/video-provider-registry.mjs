@@ -88,9 +88,12 @@ export const VIDEO_PROVIDER_CATALOG = freeze([
         constraints: {
           supportedDurationsSeconds: [5, 10],
           maxKeyframes: 64,
-          supportedDurationsSeconds: [5, 10],
           hdrOutput: true,
+          hdrGenerationDurationsSeconds: [5],
+          hdrGenerationResolutions: ["720p", "1080p"],
+          hdrVideoEditDurationsSeconds: [5, 10],
           exrExportRequiresHdr: true,
+          reframeDynamicRange: "sdr_only",
           outputUrlExpirySeconds: 3600,
           cancellation: "unsupported",
           source: "https://docs.agents.lumalabs.ai/guides/model/"
