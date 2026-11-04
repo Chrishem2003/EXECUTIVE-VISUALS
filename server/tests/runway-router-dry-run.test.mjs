@@ -178,7 +178,7 @@ test("reference media counts, roles, schemes and MIME families are validated", (
     ...base, referenceVideos: [{ uri: "https://assets.example.com/video.mp4", role: "first" }]
   }));
   assert.throws(() => buildRunwayRouterDryRunPayload({
-    ...base, referenceImages: [{ uri: "https://assets.example.com/audio.mp3", role: "reference" }]
+    ...base, referenceImages: [{ uri: "data:audio/mpeg;base64,AAAA", role: "reference" }]
   }));
   assert.throws(() => buildRunwayRouterDryRunPayload({
     ...base, negativePrompt: "x".repeat(1001)
