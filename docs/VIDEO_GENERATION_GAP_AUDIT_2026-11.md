@@ -286,7 +286,7 @@ Safety properties:
 - Does not poll, sleep, download, or hold a worker lease while waiting.
 - Treats transport timeout, connection failure or provider 5xx during submission as an ambiguous outcome (`VIDEO_GATEWAY_SUBMISSION_UNKNOWN`) and never automatically resubmits. The caller must reconcile the task before any retry.
 - Status and result retrieval are separate calls; output ingestion and private asset persistence remain the responsibility of the durable worker.
-- Six offline tests cover submission, separate status/result operations, URL validation, ambiguous submission, opt-in gates and provider failure states.
+- Seven offline tests cover submission, separate status/result operations, URL validation, ambiguous submission, opt-in gates, early-result retryability and provider failure states.
 
 **Integration status:** adapter module and offline tests are added on an isolated feature branch. The existing `workflow-executor.mjs` still calls the legacy blocking `generateFalVideo` path; this change does not claim that production workflow execution has been migrated. The next slice must persist the returned provider task descriptor into the existing job/checkpoint model, schedule status checks through a worker, then ingest the verified MP4 into private storage. No provider request, database migration, production deployment or paid generation was performed.
 
@@ -301,7 +301,7 @@ Added `server/fal-cloud-video-adapter.mjs`, which implements the provider-aware 
 - The existing remote-enable and remote-opt-in flags are checked even when a client is injected.
 - Output URLs are restricted to HTTPS FAL media hosts before they are handed to the private-ingestion handler.
 
-The adapter contract tests cover the durable task-ID handoff, status mapping, private reference resolution requirements, handler injection, exact model matching, output URL validation and remote opt-in. This adapter is designed to be registered with the exact-match provider router from the separate provider-aware worker branch; it is not yet registered in the production worker composition. The cloud-worker chain and its migrations remain separate draft work and must be reviewed together before any deployment.
+Seven adapter contract tests cover the durable task-ID handoff, status mapping, private reference resolution requirements, handler injection, exact model matching, output URL validation and remote opt-in. Four billing-resolver tests cover exact request/model matching, missing/duplicate events, nano-USD consistency and permission failures. This adapter is designed to be registered with the exact-match provider router from the separate provider-aware worker branch; it is not yet registered in the production worker composition. The cloud-worker chain and its migrations remain separate draft work and must be reviewed together before any deployment.
 
 
 ### Request-level billing reconciliation
