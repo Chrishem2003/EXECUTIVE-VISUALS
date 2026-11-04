@@ -1,7 +1,10 @@
 const SCHEMA = "executive_visuals";
 const RPC = Object.freeze({
   enqueue: "enqueue_video_generation_job",
-  finish: "finish_video_generation_job"
+  finish: "finish_video_generation_job",
+  defer: "defer_video_generation_job",
+  quarantine: "quarantine_video_generation_job",
+  resume: "resume_reconciled_video_generation_job"
 });
 
 function endpoint(value) {
@@ -111,6 +114,34 @@ export function createCloudVideoEnqueue({
         idempotentReplay: rows[0].idempotent_replay,
         budgetReservationId: rows[0].budget_reservation_id
       });
+    },
+    async defer({ jobId, workerId, delaySeconds = 30, reasonCode = "VIDEO_PROVIDER_POLL_DEFERRED" } = {}) {
+      required(jobId, "Job ID");
+      required(workerId, "Worker ID", 128);
+      if (!Number.isInteger(delaySeconds) || delaySeconds < 5 || delaySeconds > 900) throw new Error("Defer delay must be between 5 and 900 seconds.");
+      if (typeof reasonCode !== "string" || !/^[A-Z0-9_]{1,100}$/.test(reasonCode)) throw new Error("Defer reason code is invalid.");
+      const result = await call(RPC.defer, {
+        p_job_id: jobId, p_worker_id: workerId, p_delay_seconds: delaySeconds, p_reason_code: reasonCode
+      });
+      if (typeof result !== "boolean") throw new Error("Cloud video defer returned an invalid result.");
+      return result;
+    },
+    async quarantine({ jobId, workerId, reasonCode = "VIDEO_SUBMISSION_REQUIRES_RECONCILIATION" } = {}) {
+      required(jobId, "Job ID");
+      required(workerId, "Worker ID", 128);
+      if (typeof reasonCode !== "string" || !/^[A-Z0-9_]{1,100}$/.test(reasonCode)) throw new Error("Quarantine reason code is invalid.");
+      const result = await call(RPC.quarantine, {
+        p_job_id: jobId, p_worker_id: workerId, p_reason_code: reasonCode
+      });
+      if (typeof result !== "boolean") throw new Error("Cloud video quarantine returned an invalid result.");
+      return result;
+    },
+    async resumeReconciled({ jobId, ownerId } = {}) {
+      required(jobId, "Job ID");
+      required(ownerId, "Owner ID");
+      const result = await call(RPC.resume, { p_job_id: jobId, p_owner_id: ownerId });
+      if (typeof result !== "boolean") throw new Error("Cloud video resume returned an invalid result.");
+      return result;
     },
     async finish({ jobId, workerId, status, output = null, error = null, actualAmount = null } = {}) {
       required(jobId, "Job ID");
