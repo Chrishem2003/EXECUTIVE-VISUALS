@@ -10,7 +10,7 @@ const base = {
   timeoutMs: 3000
 };
 const requestId = "019a1b2c-3d4e-7f80-9a1b-2c3d4e5f6a7b";
-const root = "https://queue.fal.run/fal-ai/wan/v2.7/text-to-video/requests/" + requestId;
+const root = "https://queue.fal.run/fal-ai/wan/requests/" + requestId;
 const taskBody = {
   request_id: requestId,
   status_url: root + "/status",
@@ -34,6 +34,7 @@ test("submits once and returns a provider task descriptor without waiting for ge
   assert.equal(task.statusUrl, root + "/status");
   assert.equal(calls.length, 1);
   assert.equal(calls[0].options.method, "POST");
+  assert.equal(calls[0].url, "https://queue.fal.run/fal-ai/wan/v2.7/text-to-video");
   assert.equal(calls[0].options.headers.authorization, "Key test-only-key");
   assert.equal(calls[0].options.headers["X-Fal-No-Retry"], "true");
   assert.equal(JSON.parse(calls[0].options.body).prompt, "A cinematic sunrise");
