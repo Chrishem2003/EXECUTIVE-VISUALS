@@ -49,13 +49,11 @@ test("Luma adapter supports first/last anchors and up to 64 indexed keyframes", 
   const multi = await adapter.prepareInput({ prompt: "Keyframed sequence", durationSeconds: 5, keyframes, keyframeIndexes: indexes });
   assert.equal(multi.video.keyframes.length, 64);
   assert.equal(multi.video.keyframe_indexes[63], 63);
-  const hdrTenSecond = await adapter.prepareInput({
+  await assert.rejects(adapter.prepareInput({
     prompt: "Ten second HDR multi-keyframe sequence", durationSeconds: 10,
     resolution: "1080p", hdr: true, keyframes: [{ file_id: "hdr-frame-1" }],
     keyframeIndexes: [0]
-  });
-  assert.equal(hdrTenSecond.video.duration, "10s");
-  assert.equal(hdrTenSecond.video.hdr, true);
+  }), error => error.code === "LUMA_VIDEO_INPUT_INVALID");
 });
 
 test("Luma adapter rejects unsupported duration, anchor conflicts and unsafe media URLs before POST", async () => {
