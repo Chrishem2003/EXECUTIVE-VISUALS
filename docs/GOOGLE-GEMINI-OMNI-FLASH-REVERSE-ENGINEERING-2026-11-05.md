@@ -106,3 +106,23 @@ Google's file-input documentation now supports external HTTPS and signed URLs fo
 - Larger files continue to use the Gemini Files API resumable upload gateway or the separate GCS registration path; the GCS path still requires operator-managed bucket IAM.
 
 This is an optimization path, not a change to provider availability. Google Omni remains disabled and remote execution remains approval-gated.
+
+## Google Drive private file bridge
+
+A separate Google Drive bridge supports private file import and export using per-user OAuth. It requests only the non-sensitive `drive.file` scope, which is designed for files a user explicitly selects or shares with the application (normally through Google Picker). It does not request broad access to the user's entire Drive.
+
+Implementation:
+- `server/google-drive-private-file-bridge.mjs` imports a user-selected Drive file into the existing owner/project-scoped private Cloud Asset Service.
+- Imports verify Drive file ID, trash/download capability, supported MIME type, declared size, downloaded byte count and returned content type before writing to private storage.
+- Exports first load and re-authorize the private asset, verify owner/project, bucket, MIME type, size and SHA-256, then use Drive's resumable upload protocol.
+- OAuth access tokens are injected by a host-side per-user connection store, fetched on demand, and never persisted by this module.
+- Destination folder IDs are accepted only as opaque Drive IDs; Drive remains responsible for enforcing the connected user's actual folder permissions.
+- Google-native Docs/Sheets/Slides exports are not silently converted. The current bridge handles binary media/document types already supported by the private asset service.
+- Upload-session URLs are restricted to Google's HTTPS Drive upload hosts and paths. Redirects are disabled; ambiguous uploads are not blindly retried.
+
+The bridge is a server-side adapter, not yet a complete user-facing Google OAuth + Picker integration. Before enabling it, the hosted application must add OAuth consent/callback and encrypted refresh-token storage, Google Picker file selection, connection ownership checks, and per-user token refresh/revocation. No Drive token or live Drive API call was used in these tests.
+
+Official Google references:
+- https://developers.google.com/workspace/drive/api/guides/api-specific-auth
+- https://developers.google.com/workspace/drive/api/guides/manage-uploads
+- https://developers.google.com/identity/protocols/oauth2/scopes
