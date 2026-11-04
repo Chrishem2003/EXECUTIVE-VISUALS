@@ -596,7 +596,7 @@ grant execute on function executive_visuals.quarantine_video_generation_job(uuid
 
 
 create or replace function executive_visuals.resume_reconciled_video_generation_job(
-  p_job_id uuid, p_owner_id uuid
+  p_job_id uuid, p_owner_id uuid, p_evidence_reference text
 ) returns boolean
 language plpgsql
 security invoker
@@ -606,6 +606,9 @@ declare
   current_job executive_visuals.jobs;
   submission executive_visuals.video_generation_submissions;
 begin
+  if p_evidence_reference is null or char_length(btrim(p_evidence_reference)) not between 1 and 1000 then
+    raise exception 'VIDEO_JOB_RESUME_EVIDENCE_REQUIRED';
+  end if;
   select * into current_job from executive_visuals.jobs
   where id=p_job_id and owner_id=p_owner_id and job_type='video.generate'
   for update;
@@ -627,15 +630,15 @@ begin
   where id=p_job_id;
   insert into executive_visuals.job_events(job_id,owner_id,event_type,event_data)
   values(p_job_id,p_owner_id,'job.reconciled_resumed',
-    jsonb_build_object('providerTaskId',submission.provider_task_id));
+    jsonb_build_object('providerTaskId',submission.provider_task_id,'evidenceReference',p_evidence_reference));
   insert into executive_visuals.audit_events(owner_id,project_id,event_type,subject_type,subject_id,details)
   values(p_owner_id,current_job.project_id,'job.reconciled_resumed','job',p_job_id::text,
-    jsonb_build_object('providerTaskId',submission.provider_task_id));
+    jsonb_build_object('providerTaskId',submission.provider_task_id,'evidenceReference',p_evidence_reference));
   return true;
 end;
 $video_resume$;
 
-revoke all on function executive_visuals.resume_reconciled_video_generation_job(uuid,uuid)
+revoke all on function executive_visuals.resume_reconciled_video_generation_job(uuid,uuid,text)
   from public, anon, authenticated;
-grant execute on function executive_visuals.resume_reconciled_video_generation_job(uuid,uuid)
+grant execute on function executive_visuals.resume_reconciled_video_generation_job(uuid,uuid,text)
   to service_role;
