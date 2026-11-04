@@ -284,6 +284,24 @@ export function createAppServer() {
       if(path==="/api/health"&&req.method==="GET"){
         send(res,200,{status:"ok",storage:"local-disk",database:"sqlite",authMode:AUTH_MODE,authReady:AUTH_MODE==="local"||Boolean(supabaseAuth),media:{ffmpeg:executableAvailable("ffmpeg"),ffprobe:executableAvailable("ffprobe")},imageGateway:{enabled:process.env.IMAGE_GATEWAY_ENABLED==="true",configured:(()=>{try{const url=new URL(process.env.IMAGE_GATEWAY_URL||"");const local=["localhost","127.0.0.1","::1","[::1]"].includes(url.hostname.toLowerCase());return Boolean(process.env.IMAGE_GATEWAY_MODEL&&(local||process.env.IMAGE_GATEWAY_ALLOW_REMOTE==="true"));}catch{return false;}})()},textGateway:{enabled:process.env.AI_GATEWAY_ENABLED==="true",configured:(()=>{try{const url=new URL(process.env.AI_GATEWAY_URL||"");const local=["localhost","127.0.0.1","::1"].includes(url.hostname.toLowerCase());return Boolean(process.env.AI_GATEWAY_MODEL&&(local||process.env.AI_GATEWAY_ALLOW_REMOTE==="true"));}catch{return false;}})()},authMode:AUTH_MODE,version:"0.1.0"},cors);return;
       }
+      if(AUTH_MODE==="supabase"&&path==="/api/auth/recovery/session"&&req.method==="POST"){
+        if(!supabaseAuth){fail(res,503,"SUPABASE_AUTH_NOT_CONFIGURED","The secure identity service is not fully configured.");return;}
+        const body=await readJson(req);
+        try{
+          const session=await supabaseAuth.adoptRecoverySession(body.accessToken,body.refreshToken);
+          setSupabaseCookie(res,session.cookie,session.maxAge);
+          send(res,200,{user:session.user,recovery:true},cors);return;
+        }catch(error){fail(res,400,error.code||"SUPABASE_RECOVERY_INVALID",error.message||"The recovery link could not be verified.");return;}
+      }
+      if(AUTH_MODE==="supabase"&&path==="/api/auth/password"&&req.method==="POST"){
+        if(!supabaseAuth){fail(res,503,"SUPABASE_AUTH_NOT_CONFIGURED","The secure identity service is not fully configured.");return;}
+        const body=await readJson(req);
+        try{
+          const session=await supabaseAuth.updatePassword(cookieValue(req,SUPABASE_SESSION_COOKIE),body.password);
+          setSupabaseCookie(res,session.cookie,session.maxAge);
+          send(res,200,{user:session.user,authMode:"supabase"},cors);return;
+        }catch(error){fail(res,error.code==="INVALID_PASSWORD"?400:401,error.code||"SUPABASE_PASSWORD_UPDATE_FAILED",error.message||"The password could not be updated.");return;}
+      }
       if(AUTH_MODE==="supabase"&&path==="/api/auth/recover"&&req.method==="POST"){
         if(!supabaseAuth){fail(res,503,"SUPABASE_AUTH_NOT_CONFIGURED","The secure identity service is not fully configured.");return;}
         const body=await readJson(req);
