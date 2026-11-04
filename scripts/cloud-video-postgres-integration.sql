@@ -164,5 +164,66 @@ begin
 end
 $final_state$;
 
+-- Verify an actual provider cost above the reservation rolls back all settlement writes.
+reset role;
+select set_config('request.jwt.claim.sub','123e4567-e89b-42d3-a456-426614174000',false);
+set role authenticated;
+insert into executive_visuals.video_generation_budget_approvals(
+ id,owner_id,project_id,provider,model,request_hash,currency,approved_max_amount,approval_note,expires_at
+) values (
+ '923e4567-e89b-42d3-a456-426614174000',
+ '123e4567-e89b-42d3-a456-426614174000',
+ '323e4567-e89b-42d3-a456-426614174000',
+ 'runway','gen4.5',repeat('c',64),'USD',1,'overrun test',clock_timestamp()+interval '10 minutes'
+);
+reset role;
+set role service_role;
+create temporary table overrun_context as
+select job_id, budget_reservation_id as reservation_id
+from executive_visuals.enqueue_video_generation_job(
+ '123e4567-e89b-42d3-a456-426614174000',
+ '323e4567-e89b-42d3-a456-426614174000',
+ 'pg-integration-video-overrun','runway','gen4.5',repeat('c',64),
+ jsonb_build_object('projectId','323e4567-e89b-42d3-a456-426614174000',
+   'provider','runway','model','gen4.5','requestHash',repeat('c',64)),
+ '923e4567-e89b-42d3-a456-426614174000',0.5,'USD'
+);
+update executive_visuals.jobs
+set status='processing',lease_owner='video-worker-overrun',
+    lease_expires_at=clock_timestamp()+interval '5 minutes'
+where id=(select job_id from overrun_context);
+do $overrun_guard$
+begin
+ begin
+  perform executive_visuals.finish_video_generation_job(
+   (select job_id from overrun_context),'video-worker-overrun','succeeded','{}'::jsonb,null,0.75
+  );
+  raise exception 'over-reservation actual cost unexpectedly settled';
+ exception when others then
+  if sqlerrm = 'over-reservation actual cost unexpectedly settled' then raise; end if;
+  if sqlerrm <> 'VIDEO_BUDGET_ACTUAL_EXCEEDS_RESERVATION' then raise; end if;
+ end;
+end
+$overrun_guard$;
+do $overrun_state$
+declare policy_row executive_visuals.video_generation_budget_policies;
+       reservation_row executive_visuals.video_generation_budget_reservations;
+       target_job uuid;
+       job_row executive_visuals.jobs;
+begin
+ select job_id into target_job from overrun_context;
+ select * into policy_row from executive_visuals.video_generation_budget_policies
+ where id='423e4567-e89b-42d3-a456-426614174000';
+ select * into reservation_row from executive_visuals.video_generation_budget_reservations where job_id=target_job;
+ select * into job_row from executive_visuals.jobs where id=target_job;
+ if policy_row.reserved_amount <> 0.5 or policy_row.spent_amount <> 0.75 then
+  raise exception 'failed overrun settlement changed budget counters';
+ end if;
+ if reservation_row.state <> 'reserved' or job_row.status <> 'processing' then
+  raise exception 'failed overrun settlement partially changed job or reservation state';
+ end if;
+end
+$overrun_state$;
+
 reset role;
 select 'cloud video PostgreSQL integration checks passed' as result;
