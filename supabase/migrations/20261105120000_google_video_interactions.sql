@@ -6,7 +6,7 @@ create table if not exists executive_visuals.google_video_interactions (
   provider text not null check (provider = 'google'),
   model text not null check (model = 'gemini-omni-1.1-flash'),
   interaction_id text not null unique check (interaction_id ~ '^v1_[A-Za-z0-9_-]{6,200}$'),
-  job_id uuid not null,
+  job_id uuid not null references executive_visuals.jobs(id) on delete cascade,
   owner_id uuid not null references auth.users(id) on delete cascade,
   project_id uuid references executive_visuals.projects(id) on delete cascade,
   request_hash text not null check (request_hash ~ '^[a-f0-9]{64}$'),
