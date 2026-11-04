@@ -6,6 +6,7 @@ const ownerId = "123e4567-e89b-42d3-a456-426614174000";
 const projectId = "223e4567-e89b-42d3-a456-426614174000";
 const assetId = "323e4567-e89b-42d3-a456-426614174000";
 const bytes = Buffer.alloc(512, 7);
+Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]).copy(bytes);
 const asset = {
   id: assetId, ownerId, projectId, isPrivate: true,
   filename: "first-frame.png", contentType: "image/png", bytes
@@ -69,7 +70,8 @@ test("rejects unsupported image formats, undersized files and invalid filenames"
   const cases = [
     { ...asset, contentType: "image/gif", filename: "first-frame.gif" },
     { ...asset, bytes: Buffer.alloc(511) },
-    { ...asset, filename: "../first-frame.png" }
+    { ...asset, filename: "../first-frame.png" },
+    { ...asset, bytes: Buffer.alloc(512, 7) }
   ];
   for (const returned of cases) {
     const resolve = createRunwayPrivateAssetResolver({
