@@ -4,7 +4,9 @@ const RPC = Object.freeze({
   begin: "begin_video_generation_submission",
   record: "record_video_generation_submission",
   unknown: "mark_video_generation_submission_unknown",
-  get: "get_video_generation_submission"
+  get: "get_video_generation_submission",
+  reconcile: "reconcile_unknown_video_generation_submission",
+  finish: "finish_video_generation_submission"
 });
 
 function endpoint(value) {
@@ -102,6 +104,19 @@ export function createCloudVideoSubmissionLedger({
     async markUnknown(jobId, workerId, errorCode = "VIDEO_SUBMISSION_AMBIGUOUS") {
       required(jobId, "Job ID"); required(workerId, "Worker ID", 128); required(errorCode, "Error code", 100);
       return booleanResult(await call(RPC.unknown, { p_job_id: jobId, p_worker_id: workerId, p_error_code: errorCode }), "mark unknown");
+    },
+    async reconcileUnknown(jobId, providerTaskId, evidenceReference, metadata = {}) {
+      required(jobId, "Job ID"); required(providerTaskId, "Provider task ID"); required(evidenceReference, "Evidence reference", 1000);
+      if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) throw new Error("Submission metadata must be an object.");
+      if (Buffer.byteLength(JSON.stringify(metadata), "utf8") > 8000) throw new Error("Submission metadata exceeds the 8000-byte limit.");
+      return booleanResult(await call(RPC.reconcile, { p_job_id: jobId, p_provider_task_id: providerTaskId, p_evidence_reference: evidenceReference, p_metadata: metadata }), "reconcile");
+    },
+    async finish(jobId, workerId, state, metadata = {}) {
+      required(jobId, "Job ID"); required(workerId, "Worker ID", 128);
+      if (!["succeeded", "failed", "cancelled"].includes(state)) throw new Error("Submission terminal state must be succeeded, failed or cancelled.");
+      if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) throw new Error("Submission metadata must be an object.");
+      if (Buffer.byteLength(JSON.stringify(metadata), "utf8") > 8000) throw new Error("Submission metadata exceeds the 8000-byte limit.");
+      return booleanResult(await call(RPC.finish, { p_job_id: jobId, p_worker_id: workerId, p_state: state, p_metadata: metadata }), "finish");
     },
     async get(jobId) {
       required(jobId, "Job ID");
