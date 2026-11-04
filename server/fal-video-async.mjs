@@ -182,7 +182,7 @@ export function createFalAsyncVideoClient({
     async cancel(task) {
       assertEnabled();
       const descriptor = validateTask(task);
-      return request(descriptor.cancelUrl, { method: "POST" });
+      return request(descriptor.cancelUrl, { method: "PUT" });
     }
   });
 }
