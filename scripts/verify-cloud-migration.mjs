@@ -142,6 +142,10 @@ if (!videoBudgetSql.includes("VIDEO_BUDGET_POLICY_SCOPE_LOCKED_AFTER_USE") ||
 if (!videoBudgetSql.includes("new.consumed_at := null") || !videoBudgetSql.includes("interval '15 minutes'")) {
   issues.push("Explicit budget approvals must be fresh, short-lived and single-use.");
 }
+if (!videoBudgetSql.includes("VIDEO_BUDGET_LIMIT_BELOW_COMMITTED_SPEND") ||
+    !videoBudgetSql.includes("before update of provider, model, currency, spend_limit_amount")) {
+  issues.push("Budget policy updates must not lower the spend ceiling below existing reservations and spend.");
+}
 if (!videoBudgetSql.includes("pg_advisory_xact_lock") || !videoBudgetSql.includes("for update")) {
   issues.push("Cloud enqueue must serialize idempotency, usage and budget reservation decisions.");
 }
