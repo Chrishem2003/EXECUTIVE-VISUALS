@@ -90,3 +90,20 @@ test("Kling O3 video-to-video bills against input duration rather than output du
   assert.throws(()=>estimateRunwayVideoCredits({model:"gen4.5",durationSeconds:5,inputType:"audio",pricingDate:date}),
     error=>error.code==="RUNWAY_PRICE_INVALID_INPUT");
 });
+
+test("prices Gen-4.5 and Aleph professional editorial containers",()=>{
+  assert.equal(estimateRunwayVideoCredits({model:"gen4.5",durationSeconds:5,outputFormat:"prores",pricingDate:date}).estimatedCredits,85);
+  assert.equal(estimateRunwayVideoCredits({model:"aleph2",durationSeconds:2,outputFormat:"png_sequence",pricingDate:date}).estimatedCredits,66);
+  assert.equal(estimateRunwayVideoCredits({model:"seedance2_5",durationSeconds:5,resolution:"720p",outputFormat:"mov",pricingDate:date}).estimatedCredits,150);
+  assert.throws(()=>estimateRunwayVideoCredits({model:"wan3",durationSeconds:5,resolution:"720p",outputFormat:"prores",pricingDate:date}),e=>e.code==="RUNWAY_PRICE_UNSUPPORTED_OPTION");
+});
+
+test("prices 10-bit SDR and Gen-4.5 HDR output by output megapixels",()=>{
+  const base={model:"gen4.5",durationSeconds:5,pricingDate:date,outputWidth:1920,outputHeight:1080};
+  assert.equal(estimateRunwayVideoCredits({...base,outputFormat:"sdr_rec709_10bit"}).estimatedCredits,160);
+  assert.equal(estimateRunwayVideoCredits({...base,outputFormat:"hdr10"}).estimatedCredits,160);
+  assert.equal(estimateRunwayVideoCredits({...base,outputFormat:"hdr_prores"}).estimatedCredits,160);
+  assert.equal(estimateRunwayVideoCredits({...base,outputWidth:3840,outputHeight:2160,outputFormat:"hdr10"}).estimatedCredits,260);
+  assert.throws(()=>estimateRunwayVideoCredits({model:"aleph2",durationSeconds:5,outputWidth:1920,outputHeight:1080,outputFormat:"hdr10",pricingDate:date}),e=>e.code==="RUNWAY_PRICE_UNSUPPORTED_OPTION");
+  assert.throws(()=>estimateRunwayVideoCredits({model:"gen4.5",durationSeconds:5,outputFormat:"hdr10",pricingDate:date}),e=>e.code==="RUNWAY_PRICE_INPUT_REQUIRED");
+});
