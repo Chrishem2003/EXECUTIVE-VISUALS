@@ -20,9 +20,9 @@ export function createVideoProviderExecutionRouter({ adapters = [] } = {}) {
   const registry = new Map();
   for (const adapter of adapters) {
     if (!adapter || typeof adapter !== "object" || Array.isArray(adapter) ||
-        typeof adapter.prepareInput !== "function" || typeof adapter.submit !== "function" ||
-        typeof adapter.getStatus !== "function") {
-      throw fail("Every provider adapter must implement prepareInput, submit and getStatus.");
+        typeof adapter.submit !== "function" || typeof adapter.getStatus !== "function" ||
+        (adapter.prepareInput !== undefined && typeof adapter.prepareInput !== "function")) {
+      throw fail("Every provider adapter must implement submit and getStatus; prepareInput is optional.");
     }
     const key = adapterKey(adapter.provider, adapter.model);
     if (registry.has(key)) throw fail("Duplicate provider/model adapter registration: " + key);
