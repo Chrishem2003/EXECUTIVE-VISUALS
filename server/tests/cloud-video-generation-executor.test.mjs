@@ -30,7 +30,7 @@ function fixture({ state = "prepared", submitError = null, recordResult = true, 
   };
   const adapter = {
     provider: "runway", model: "gen4.5", minimumPollIntervalMs: 5000,
-    async submit(input) { calls.push(["submit", input.requestHash]); if (submitError) throw submitError; return { taskId, status: "queued" }; },
+    async submit(input, context) { calls.push(["submit", input.requestHash, context?.job?.id, context?.job?.owner_id]); if (submitError) throw submitError; return { taskId, status: "queued" }; },
     async getStatus(id) { calls.push(["poll", id]); if (status instanceof Error) throw status; return status; }
   };
   return {
@@ -48,6 +48,9 @@ test("cloud executor submits once, records task, verifies cost and ingests priva
   assert.equal(result.currency, "USD");
   assert.deepEqual(result.assetIds, ["423e4567-e89b-42d3-a456-426614174000"]);
   assert.deepEqual(f.calls.map(call => call[0]), ["prepare", "begin", "submit", "record", "poll", "cost", "ingest"]);
+  const submission = f.calls.find(call => call[0] === "submit");
+  assert.equal(submission[2], job.id);
+  assert.equal(submission[3], ownerId);
 });
 
 test("cloud executor resumes submitted task without a second provider POST", async () => {
