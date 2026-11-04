@@ -15,7 +15,13 @@ function response({ status = 200, json = null, data = bytes, headers = {} } = {}
     ok: status >= 200 && status < 300, status,
     headers: { get(name) { return headers[name.toLowerCase()] ?? null; } },
     async text() { return json === null ? "" : JSON.stringify(json); },
-    async arrayBuffer() { return data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength); }
+    async arrayBuffer() { return data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength); },
+    body: new ReadableStream({
+      start(controller) {
+        if (data.byteLength) controller.enqueue(data);
+        controller.close();
+      }
+    })
   };
 }
 function harness({ metadata = sourceFile, download = bytes, load = null, denied = false } = {}) {
