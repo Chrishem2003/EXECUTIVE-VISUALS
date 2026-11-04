@@ -95,3 +95,25 @@ test("rejects downloaded bytes whose media type or size differs from private ass
   });
   await assert.rejects(wrongSize({ assetId, ownerId, projectId }), error => error.code === "RUNWAY_IMAGE_ASSET_SIZE_INVALID" || error.code === "RUNWAY_IMAGE_ASSET_INVALID");
 });
+
+test("accepts a project asset owned by another authorized project member",async()=>{
+ const shared={...asset,ownerId:"423e4567-e89b-42d3-a456-426614174000"};
+ const scopes=[];
+ const assets={
+  async get(scope){scopes.push(["get",scope]);return shared;},
+  async createSignedUrl(scope){scopes.push(["sign",scope]);return{asset:shared,url:"https://supabase.example.test/signed/shared"};}
+ };
+ const fetchImpl=async url=>{
+  if(url==="https://supabase.example.test/signed/shared")return new Response(bytes,{status:200,headers:{"content-type":"image/png","content-length":"512"}});
+  if(url==="https://api.dev.runwayml.com/v1/uploads")return new Response(JSON.stringify({
+   uploadUrl:"https://upload.runway.example.test/shared",fields:{key:"shared"},runwayUri:"runway://uploads/shared-project-frame"
+  }),{status:200});
+  return new Response(null,{status:204});
+ };
+ const resolve=createCloudRunwayPrivateAssetResolver({
+  assets,supabaseUrl:"https://supabase.example.test",fetchImpl,
+  runwayEnv:{RUNWAY_API_KEY:"key"}
+ });
+ assert.equal(await resolve({assetId,ownerId,projectId}),"runway://uploads/shared-project-frame");
+ assert.equal(scopes.length,2);
+});
