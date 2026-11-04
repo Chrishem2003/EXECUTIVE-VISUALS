@@ -37,8 +37,10 @@ test("accounts for Seedance 2.5 input and reference video duration with a 30-sec
 
 test("accounts for reference media charges on Grok and Hailuo models",()=>{
   assert.equal(estimateRunwayVideoCredits({model:"grok_imagine_1_5",durationSeconds:5,resolution:"720p",referenceImageCount:2,referenceAudioCount:1,pricingDate:date}).estimatedCredits,83);
-  assert.equal(estimateRunwayVideoCredits({model:"grok_imagine_1_5_lite",durationSeconds:5,resolution:"720p",referenceImageCount:3,hasStartFrame:true,pricingDate:date}).estimatedCredits,16);
+  assert.equal(estimateRunwayVideoCredits({model:"grok_imagine_1_5",durationSeconds:5,resolution:"720p",hasStartFrame:true,referenceImageCount:2,pricingDate:date}).estimatedCredits,83);
+  assert.equal(estimateRunwayVideoCredits({model:"grok_imagine_1_5_lite",durationSeconds:5,resolution:"720p",hasStartFrame:true,pricingDate:date}).estimatedCredits,16);
   assert.equal(estimateRunwayVideoCredits({model:"hailuo3",durationSeconds:5,resolution:"768p",referenceImageCount:2,referenceVideoSeconds:20,pricingDate:date}).estimatedCredits,204);
+  assert.equal(estimateRunwayVideoCredits({model:"hailuo3",durationSeconds:5,resolution:"768p",hasStartFrame:true,referenceImageCount:2,pricingDate:date}).estimatedCredits,54);
   assert.equal(estimateRunwayVideoCredits({model:"hailuo3",durationSeconds:5,resolution:"768p",referenceImageCount:2,inputVideoSeconds:5,pricingDate:date}).estimatedCredits,104);
 });
 
