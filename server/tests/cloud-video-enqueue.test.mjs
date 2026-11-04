@@ -183,7 +183,7 @@ test("Runway budget estimate uses the shared dated pricing engine and is not set
   assert.equal(estimate.amount,0.6);
   assert.equal(estimate.basis,"provider_list_price_estimate");
   assert.equal(estimate.pricingSource,"https://docs.dev.runwayml.com/guides/pricing/");
-  assert.match(estimate.pricingDate,/^\\d{4}-\\d{2}-\\d{2}$/);
+  assert.match(estimate.pricingDate,/^\d{4}-\d{2}-\d{2}$/);
   assert.equal(estimate.pricingFormula,"5s × 12 credits/s");
   assert.equal(estimate.settlementEligible,false);
   assert.equal(estimate.billable,false);
