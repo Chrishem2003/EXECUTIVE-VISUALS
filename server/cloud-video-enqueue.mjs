@@ -100,6 +100,11 @@ export function createCloudVideoEnqueue({
         throw new Error("Reserved amount must be a positive bounded number.");
       }
       if (typeof currency !== "string" || !/^[A-Z]{3}$/.test(currency)) throw new Error("Currency must be a three-letter uppercase code.");
+      if (provider === "runway" && model !== "gen4.5") {
+        const unsupported = new Error("The selected Runway model has pricing metadata but no enabled execution adapter.");
+        unsupported.code = "VIDEO_GENERATION_UNSUPPORTED_CAPABILITY";
+        throw unsupported;
+      }
       const estimate = estimateVideoGenerationCost({
         provider, model, durationSeconds: input.durationSeconds,
         outputFormat: input.outputFormat, resolution: input.resolution, audio: input.audio,
@@ -110,11 +115,7 @@ export function createCloudVideoEnqueue({
         sourceDynamicRange: input.sourceDynamicRange, outputWidth: input.outputWidth,
         outputHeight: input.outputHeight, targetFramerate: input.targetFramerate, inputType: input.inputType
       });
-      if (provider !== "runway" || model !== "gen4.5") {
-        const unsupported = new Error("The selected provider/model has pricing metadata but no enabled execution adapter.");
-        unsupported.code = "VIDEO_GENERATION_UNSUPPORTED_CAPABILITY";
-        throw unsupported;
-      }
+
       if ((input.outputFormat || "mp4") !== "mp4") {
         const unsupported = new Error("The current Gen-4.5 worker supports MP4 output only.");
         unsupported.code = "VIDEO_PRICE_OUTPUT_FORMAT_UNSUPPORTED";
