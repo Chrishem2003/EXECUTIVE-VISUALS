@@ -102,6 +102,7 @@ export function createFalCloudVideoAdapter({
     },
 
     async submit(input) {
+      assertRemoteEnabled();
       if (!input || input.provider !== "fal" || input.model !== selectedModel) {
         throw fail("FAL job identity does not match the selected adapter.", "VIDEO_JOB_INPUT_MISMATCH");
       }
@@ -115,6 +116,7 @@ export function createFalCloudVideoAdapter({
     },
 
     async getStatus(providerTaskId, context) {
+      assertRemoteEnabled();
       const task = taskFor(selectedModel, providerTaskId);
       const status = await queueClient.status(task);
       if (status.status === "IN_QUEUE") return { status: "queued", queuePosition: status.queuePosition };
