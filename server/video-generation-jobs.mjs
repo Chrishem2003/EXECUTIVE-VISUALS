@@ -2,6 +2,7 @@ import { randomUUID, createHash } from "node:crypto";
 import { normalizeVideoGenerationRequest, assertVideoCapabilities } from "./video-generation-contract.mjs";
 import { getVideoProviderModel } from "./video-provider-registry.mjs";
 import { reserveRemoteRequest } from "./usage-guardrails.mjs";
+import { addJobEvent, audit } from "./db.mjs";
 
 const JOB_TYPE = "video.generate";
 const IDEMPOTENCY_KEY = /^[A-Za-z0-9._:-]{1,180}$/;
@@ -79,6 +80,7 @@ export function createVideoGenerationJobService({
               existing.project_id === (effectiveProjectId || null) &&
               priorHash === requestHash;
             if (!same) throw fail("This idempotency key was already used for a different video request.", "VIDEO_JOB_IDEMPOTENCY_CONFLICT");
+            db.exec("COMMIT");
             return { job: existing, idempotentReplay: true };
           }
         }
@@ -112,6 +114,8 @@ export function createVideoGenerationJobService({
         };
         db.prepare("INSERT INTO jobs(id,owner_id,project_id,job_type,status,input_json,idempotency_key) VALUES(?,?,?,?,'queued',?,?)")
           .run(id, ownerId, effectiveProjectId || null, JOB_TYPE, stableJson(storedInput), key);
+        addJobEvent(db, id, ownerId, "job.queued", { jobType: JOB_TYPE, provider: providerId, model: modelId, requestHash });
+        audit(db, ownerId, "job.queued", "job", id, { jobType: JOB_TYPE, provider: providerId, model: modelId, requestHash }, effectiveProjectId || null);
         const job = db.prepare("SELECT * FROM jobs WHERE id=?").get(id);
         db.exec("COMMIT");
         return { job, idempotentReplay: false };
