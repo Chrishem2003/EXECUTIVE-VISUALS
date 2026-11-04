@@ -48,6 +48,8 @@ export const VIDEO_PROVIDER_CATALOG = freeze([
         constraints: {
           promptMaxCharacters: 1000,
           durationStepSeconds: 1,
+          textToVideoAspectRatios: ["16:9", "9:16"],
+          imageToVideoAspectRatios: ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"],
           outputUrlTemporary: true,
           minimumPollIntervalMs: 5000,
           cancellation: "best_effort"
@@ -108,7 +110,7 @@ export const VIDEO_PROVIDER_CATALOG = freeze([
         capabilities: {
           textToVideo: true,
           imageToVideo: true,
-          videoToVideo: false,
+          videoToVideo: true,
           videoEdit: true,
           videoExtend: true,
           videoReframe: true,
@@ -123,7 +125,7 @@ export const VIDEO_PROVIDER_CATALOG = freeze([
           hdr: true,
           exrExport: true,
           motionReference: false,
-          referenceImages: true,
+          referenceImages: false,
           audioModes: [],
           aspectRatios: ["9:16", "3:4", "1:1", "4:3", "16:9", "21:9"],
           resolutions: ["540p", "720p", "1080p"],
