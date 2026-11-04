@@ -11,6 +11,7 @@ import { appendCreativeDecision, readCreativeDecisionHistory } from "../core/cre
 import { compareTimelineVariants, createTimelineVariant, type TimelineVariantComparison } from "../core/timeline-variants";
 import { addClip, addMarker, addTrack, createTimeline, moveClip, rational, splitClip, toOpenTimelineIo, trimClip, type EditorialTimeline, type TimelineTrack } from "../core/timeline";
 import { clampPreviewSeconds, frameToSeconds, getTimelineDurationFrames, resolveTimelineFrame, secondsToFrame, stepPreviewSeconds } from "../core/timeline-preview";
+import { resolveTimelineAudioFrame } from "../core/timeline-audio-preview";
 
 type Asset={id:string;name:string;mediaType:string;size:number;metadata?:Record<string,unknown>};
 type SavedTimeline={id:string;projectId?:string|null;name:string;revision:number;document?:EditorialTimeline};
@@ -20,6 +21,12 @@ const state:{timeline:EditorialTimeline|null;serverRevision:number;timelines:Sav
  timeline:null,serverRevision:0,timelines:[],cloudTimelines:[],cloudProjects:[],cloudProjectId:"",mode:"local",cloudRenderJobId:"",cloudRenderJobStatus:"",variantBase:null,variantReport:null,variantBaseName:"",assets:[],status:"loading",message:"Loading editorial workspace…",selectedTrack:"",selectedClipId:"",ffmpeg:false
 };
 let sequencePlaying=false,sequenceFrame=0,sequenceStartFrame=0,sequenceStartAt=0,sequenceRaf:number|null=null;
+const sequenceAudio=new Map<string,HTMLAudioElement>();
+const sequenceMutedTracks=new Set<string>();
+const sequenceSoloTracks=new Set<string>();
+const captionSources=new Map<string,Promise<Array<{start:number;end:number;text:string}>>>();
+const captionResolved=new Map<string,Array<{start:number;end:number;text:string}>>();
+const captionPending=new Set<string>();
 const esc=(v:unknown)=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]||c));
 const fps=()=>state.timeline?state.timeline.frameRate.numerator/state.timeline.frameRate.denominator:24;
 const maxEnd=()=>Math.max(1,...(state.timeline?.tracks.flatMap(t=>t.clips.map(c=>c.timelineStart.value+c.duration.value))||[240]));
@@ -36,7 +43,7 @@ function timelineCanvas(){
  if(!state.timeline)return '<div class="empty">'+esc(state.message)+'</div>';
  const total=maxEnd();
  return '<div class="timeline-ruler"><span>00:00</span><span>'+Math.round(total/2/fps())+'s</span><span>'+Math.round(total/fps())+'s</span></div>'+
- state.timeline.tracks.map(track=>'<div class="editor-track"><div class="editor-track-label"><b>'+esc(track.name)+'</b><small>'+esc(track.kind)+(track.locked?' · locked':'')+'</small></div><div class="editor-track-lane">'+track.clips.map(clip=>'<article class="editor-clip '+(state.selectedClipId===clip.id?'selected':'')+'" data-tl-select="true" data-track="'+esc(track.id)+'" data-clip="'+esc(clip.id)+'" style="left:'+Math.max(0,clip.timelineStart.value/total*100)+'%;width:'+Math.max(4,clip.duration.value/total*100)+'%"><b>'+esc(clip.name)+'</b><small>'+esc(clip.assetId.slice(0,8))+' · '+Math.round(clip.duration.value)+'f</small><div class="editor-clip-actions"><button data-tl-action="split" data-track="'+esc(track.id)+'" data-clip="'+esc(clip.id)+'">Split</button><button data-tl-action="trim" data-track="'+esc(track.id)+'" data-clip="'+esc(clip.id)+'">Trim 12f</button><button data-tl-action="move" data-track="'+esc(track.id)+'" data-clip="'+esc(clip.id)+'">Next track</button></div></article>').join("")+'</div></div>').join("");
+ state.timeline.tracks.map(track=>'<div class="editor-track"><div class="editor-track-label"><b>'+esc(track.name)+'</b><small>'+esc(track.kind)+(track.locked?' · locked':'')+'</small>'+(track.kind==="audio"?'<div class="track-monitor-controls"><button class="secondary '+(sequenceMutedTracks.has(track.id)?'active':'')+'" data-tl-action="sequence-mute-track" data-track="'+esc(track.id)+'">'+(sequenceMutedTracks.has(track.id)?'Unmute':'Mute')+'</button><button class="secondary '+(sequenceSoloTracks.has(track.id)?'active':'')+'" data-tl-action="sequence-solo-track" data-track="'+esc(track.id)+'">'+(sequenceSoloTracks.has(track.id)?'Unsolo':'Solo')+'</button></div>':'')+'</div><div class="editor-track-lane">'+track.clips.map(clip=>'<article class="editor-clip '+(state.selectedClipId===clip.id?'selected':'')+'" data-tl-select="true" data-track="'+esc(track.id)+'" data-clip="'+esc(clip.id)+'" style="left:'+Math.max(0,clip.timelineStart.value/total*100)+'%;width:'+Math.max(4,clip.duration.value/total*100)+'%"><b>'+esc(clip.name)+'</b><small>'+esc(clip.assetId.slice(0,8))+' · '+Math.round(clip.duration.value)+'f</small><div class="editor-clip-actions"><button data-tl-action="split" data-track="'+esc(track.id)+'" data-clip="'+esc(clip.id)+'">Split</button><button data-tl-action="trim" data-track="'+esc(track.id)+'" data-clip="'+esc(clip.id)+'">Trim 12f</button><button data-tl-action="move" data-track="'+esc(track.id)+'" data-clip="'+esc(clip.id)+'">Next track</button></div></article>').join("")+'</div></div>').join("");
 }
 function sequencePreviewPanel(){
  if(!state.timeline)return '<section class="timeline-preview panel"><div class="eyebrow">SEQUENCE PREVIEW</div><p class="muted">Load a saved sequence to preview its edited picture track.</p></section>';
@@ -44,21 +51,93 @@ function sequencePreviewPanel(){
  const hasPicture=state.timeline.tracks.some(track=>track.enabled&&track.kind==="video"&&track.clips.some(clip=>clip.enabled));
  if(state.mode==="cloud")return '<section class="timeline-preview panel"><div class="eyebrow">SEQUENCE PREVIEW</div><h3>Cloud preview is not connected yet</h3><p class="muted">Cloud playback stays blocked until the authenticated private-media streaming endpoint is integrated. No public or guessed asset URLs are used.</p></section>';
  return '<section class="timeline-preview panel"><div class="timeline-panel-heading"><div><div class="eyebrow">SEQUENCE PREVIEW · E1</div><h3>'+esc(state.timeline.name)+'</h3></div><small>'+duration+' frames · '+(rate.numerator/rate.denominator).toFixed(3)+' fps</small></div>'+
- '<div class="preview-stage sequence-preview-stage"><video id="tl-sequence-video" class="preview-media" playsinline preload="metadata" hidden></video><img id="tl-sequence-image" class="preview-still" alt="Sequence preview frame" hidden><div id="tl-sequence-empty" class="preview-empty">'+(hasPicture?'Press Play to preview the edited picture sequence.':'Add an enabled clip to a video track to preview the sequence.')+'</div></div>'+
+ '<div class="preview-stage sequence-preview-stage"><video id="tl-sequence-video" class="preview-media" playsinline preload="metadata" hidden></video><img id="tl-sequence-image" class="preview-still" alt="Sequence preview frame" hidden><div id="tl-sequence-empty" class="preview-empty">'+(hasPicture?'Press Play to preview the edited picture sequence.':'Add an enabled clip to a video track to preview the sequence.')+'</div><div id="tl-sequence-overlays" class="sequence-overlay-layer"></div><div id="tl-sequence-caption" class="sequence-caption-layer" aria-live="off"></div><div id="tl-sequence-audio" hidden></div></div>'+
  '<div class="preview-transport sequence-transport"><button class="secondary" data-tl-action="sequence-play" '+(!hasPicture||duration===0?'disabled':'')+'>▶ Play</button><button class="secondary" data-tl-action="sequence-pause">Ⅱ Pause</button><button class="secondary" data-tl-action="sequence-step-back">−1 frame</button><button class="secondary" data-tl-action="sequence-step-forward">+1 frame</button><input id="tl-sequence-scrub" aria-label="Seek sequence by frame" type="range" min="0" max="'+Math.max(0,duration-1)+'" value="'+Math.min(sequenceFrame,Math.max(0,duration-1))+'" step="1" '+(duration===0?'disabled':'')+'><output id="tl-sequence-time">'+frameToSeconds(Math.min(sequenceFrame,Math.max(0,duration-1)),rate).toFixed(3)+' s</output></div>'+
- '<small class="muted">E1 preview currently plays the active primary picture clip across sequence cuts. Audio mixing, overlay compositing, caption burn-in and cloud streaming are not yet part of this browser preview. Use the verified FFmpeg master render for final delivery.</small></section>';
+ '<small class="muted">Local preview now synchronizes enabled audio clips with per-clip gain, displays still-image overlays and renders SRT/VTT caption cues. Cloud streaming and full FFmpeg parity remain outstanding. Use the verified master render for final delivery.</small></section>';
 }
 function stopSequencePlayback(){
  sequencePlaying=false;if(sequenceRaf!==null)cancelAnimationFrame(sequenceRaf);sequenceRaf=null;
  const video=document.querySelector<HTMLVideoElement>("#tl-sequence-video");video?.pause();
+ for(const audio of sequenceAudio.values())audio.pause();
+}
+function parseCaptionTime(value:string):number{
+ const parts=value.trim().replace(",",".").split(":");if(parts.length!==2&&parts.length!==3)return Number.NaN;
+ const values=parts.map(Number);if(values.some(part=>!Number.isFinite(part)))return Number.NaN;
+ const [hours,minutes,seconds]=parts.length===3?values:[0,values[0],values[1]];return hours*3600+minutes*60+seconds;
+}
+function loadCaptionCues(asset:Asset):Promise<Array<{start:number;end:number;text:string}>>{
+ const cached=captionSources.get(asset.id);if(cached)return cached;
+ const request=fetch("/api/assets/"+encodeURIComponent(asset.id)+"/file",{credentials:"same-origin"}).then(async response=>{
+  if(!response.ok)throw new Error("Caption asset could not be loaded.");
+  const body=await response.text();if(body.length>2*1024*1024)throw new Error("Caption asset exceeds the preview size limit.");
+  return body.replace(/^\uFEFF/,"").replace(/\r/g,"").split(/\n\s*\n/).flatMap(block=>{
+   const lines=block.split("\n"),index=lines.findIndex(line=>line.includes("-->"));if(index<0)return [];
+   const timing=lines[index].split("-->"),start=parseCaptionTime(timing[0].trim().split(/\s+/)[0]),end=parseCaptionTime(timing[1].trim().split(/\s+/)[0]);
+   const text=lines.slice(index+1).join(" ").replace(/<[^>]*>/g,"").replace(/&lt;/g,"<").replace(/&gt;/g,">").replace(/&amp;/g,"&").trim().slice(0,1000);
+   return Number.isFinite(start)&&Number.isFinite(end)&&end>start&&text?[{start,end,text}]:[];
+  }).slice(0,5000);
+ }).catch(error=>{captionSources.delete(asset.id);throw error;});
+ captionSources.set(asset.id,request);return request;
+}
+function syncSequenceAudio(active:ReturnType<typeof resolveTimelineAudioFrame>){
+ const container=document.querySelector<HTMLElement>("#tl-sequence-audio");if(!container)return;
+ const live=new Set<string>();
+ for(const item of active){
+  if(sequenceMutedTracks.has(item.trackId)||(sequenceSoloTracks.size>0&&!sequenceSoloTracks.has(item.trackId)))continue;
+  const asset=state.assets.find(candidate=>candidate.id===item.assetId);if(!asset?.mediaType.startsWith("audio/"))continue;
+  const key=item.clipId;live.add(key);let audio=sequenceAudio.get(key);
+  if(!audio){audio=new Audio();audio.preload="auto";audio.dataset.clipId=key;container.appendChild(audio);sequenceAudio.set(key,audio);}
+  const url="/api/assets/"+encodeURIComponent(asset.id)+"/file";
+  if(audio.dataset.assetId!==asset.id){audio.pause();audio.dataset.assetId=asset.id;audio.src=url;audio.load();audio.onloadedmetadata=()=>{if(!audio||sequenceAudio.get(key)!==audio||audio.dataset.clipId!==key)return;audio.currentTime=Math.max(0,item.sourceSeconds);if(sequencePlaying)void audio.play().catch(()=>{});};}
+  const expected=item.sourceSeconds;if(audio.readyState>=1&&Math.abs(audio.currentTime-expected)>0.3)audio.currentTime=expected;
+  audio.playbackRate=item.playbackRate;audio.volume=item.gainLinear;
+  if(sequencePlaying&&audio.readyState>=2&&audio.paused)void audio.play().catch(()=>{});
+ }
+ for(const [key,audio] of sequenceAudio){if(live.has(key))continue;audio.pause();audio.removeAttribute("src");audio.load();audio.remove();sequenceAudio.delete(key);}
+}
+function syncSequenceOverlays(active:ReturnType<typeof resolveTimelineFrame>){
+ const container=document.querySelector<HTMLElement>("#tl-sequence-overlays"),caption=document.querySelector<HTMLElement>("#tl-sequence-caption");if(!container||!caption||!state.timeline)return;
+ const overlays=active.filter(item=>item.track.kind==="overlay"),live=new Set<string>();
+ for(const item of overlays){
+  const asset=state.assets.find(candidate=>candidate.id===item.clip.assetId);if(!asset?.mediaType.startsWith("image/"))continue;
+  live.add(item.clip.id);let image=container.querySelector<HTMLImageElement>('img[data-clip-id="'+CSS.escape(item.clip.id)+'"]');
+  if(!image){image=document.createElement("img");image.dataset.clipId=item.clip.id;image.alt=item.clip.name;image.className="sequence-overlay-image";container.appendChild(image);}
+  const url="/api/assets/"+encodeURIComponent(asset.id)+"/file";if(image.dataset.assetId!==asset.id){image.dataset.assetId=asset.id;image.src=url;}
+  const meta=item.clip.metadata||{},width=Math.max(16,Math.min(state.timeline.width,Number(meta.width)||state.timeline.width*.24)),height=Math.max(16,Math.min(state.timeline.height,Number(meta.height)||state.timeline.height*.24));
+  const rawX=Number(meta.x),rawY=Number(meta.y),x=Math.max(0,Math.min(state.timeline.width-width,Number.isFinite(rawX)?rawX:state.timeline.width-width-24)),y=Math.max(0,Math.min(state.timeline.height-height,Number.isFinite(rawY)?rawY:24)),opacity=Math.max(0,Math.min(1,Number(meta.opacity??1)));
+  image.style.left=(x/state.timeline.width*100)+"%";image.style.top=(y/state.timeline.height*100)+"%";image.style.width=(width/state.timeline.width*100)+"%";image.style.height=(height/state.timeline.height*100)+"%";image.style.opacity=String(opacity);
+ }
+ for(const image of Array.from(container.querySelectorAll<HTMLImageElement>("img[data-clip-id]")))if(!live.has(image.dataset.clipId||""))image.remove();
+ const captions=active.filter(item=>item.track.kind==="caption");caption.textContent="";
+ for(const item of captions){
+  const asset=state.assets.find(candidate=>candidate.id===item.clip.assetId);if(!asset||!(asset.mediaType==="text/vtt"||asset.mediaType==="text/plain"))continue;
+  let cues=captionResolved.get(asset.id);
+  if(!cues){
+   if(!captionPending.has(asset.id)){captionPending.add(asset.id);void loadCaptionCues(asset).then(loaded=>{
+    captionResolved.set(asset.id,loaded);captionPending.delete(asset.id);
+    if(state.timeline&&document.body.contains(caption))renderSequenceFrame(sequenceFrame,true);
+   }).catch(()=>captionPending.delete(asset.id));}
+   continue;
+  }
+  const current=resolveTimelineFrame(state.timeline,sequenceFrame).find(entry=>entry.clip.id===item.clip.id);if(!current)continue;
+  const cue=cues.find(value=>current.sourceSeconds>=value.start&&current.sourceSeconds<value.end);if(!cue)continue;
+  const meta=item.clip.metadata||{},style=caption.style;caption.textContent=cue.text;
+  style.fontFamily=String(meta.fontName||"Arial, sans-serif").slice(0,80);style.fontSize=Math.max(12,Math.min(96,Number(meta.fontSize)||32))+"px";
+  style.color=String(meta.primaryColor||"#FFFFFF");
+  const bg=String(meta.backgroundColor||"#000000"),opacity=Math.max(0,Math.min(1,Number(meta.backgroundOpacity??0.68))),match=bg.match(/^#([0-9a-f]{6})$/i);
+  style.background=meta.backgroundMode==="none"?"transparent":match?"rgba("+parseInt(match[1].slice(0,2),16)+","+parseInt(match[1].slice(2,4),16)+","+parseInt(match[1].slice(4,6),16)+","+opacity+")":bg;
+  style.opacity="1";style.textAlign="center";style.padding="8px 14px";style.bottom=Math.max(0,Math.min(240,Number(meta.marginV)||42))+"px";
+ }
 }
 function renderSequenceFrame(frame:number,forceSeek=false){
  if(!state.timeline)return;
  const duration=getTimelineDurationFrames(state.timeline);sequenceFrame=Math.max(0,Math.min(Math.max(0,duration-1),Math.round(frame)));
  const slider=document.querySelector<HTMLInputElement>("#tl-sequence-scrub");if(slider)slider.value=String(sequenceFrame);
  const output=document.querySelector<HTMLOutputElement>("#tl-sequence-time");if(output)output.value=frameToSeconds(sequenceFrame,state.timeline.frameRate).toFixed(3)+" s";
- const active=resolveTimelineFrame(state.timeline,sequenceFrame).filter(item=>item.track.kind==="video");
- const current=active[active.length-1],video=document.querySelector<HTMLVideoElement>("#tl-sequence-video"),image=document.querySelector<HTMLImageElement>("#tl-sequence-image"),empty=document.querySelector<HTMLElement>("#tl-sequence-empty");
+ const active=resolveTimelineFrame(state.timeline,sequenceFrame);
+ syncSequenceAudio(resolveTimelineAudioFrame(state.timeline,sequenceFrame));syncSequenceOverlays(active);
+ const picture=active.filter(item=>item.track.kind==="video");
+ const current=picture[picture.length-1],video=document.querySelector<HTMLVideoElement>("#tl-sequence-video"),image=document.querySelector<HTMLImageElement>("#tl-sequence-image"),empty=document.querySelector<HTMLElement>("#tl-sequence-empty");
  if(!video||!image||!empty)return;
  if(!current){video.pause();video.hidden=true;image.hidden=true;empty.hidden=false;empty.textContent="No active picture clip at this timeline position.";return;}
  const asset=state.assets.find(item=>item.id===current.clip.assetId);
@@ -269,6 +348,8 @@ export async function initTimelineWorkspace(){
 }
 function paint(){
  stopSequencePlayback();
+ for(const audio of sequenceAudio.values()){audio.pause();audio.removeAttribute("src");audio.load();}
+ sequenceAudio.clear();
  const root=document.querySelector<HTMLElement>("#timeline-workspace");if(root)root.outerHTML=renderTimelineWorkspace();
  const media=document.querySelector<HTMLMediaElement>("#tl-preview-media");
  if(media){
@@ -292,6 +373,8 @@ async function runAction(action:HTMLElement){
   paint();return;
  }
  if(type.startsWith("preview-")){seekPreview(type);return;}
+ if(type==="sequence-mute-track"){const id=action.dataset.track||"";if(sequenceMutedTracks.has(id))sequenceMutedTracks.delete(id);else sequenceMutedTracks.add(id);paint();return;}
+ if(type==="sequence-solo-track"){const id=action.dataset.track||"";if(sequenceSoloTracks.has(id))sequenceSoloTracks.delete(id);else sequenceSoloTracks.add(id);paint();return;}
  if(type==="sequence-play"){startSequencePlayback();return;}
  if(type==="sequence-pause"){stopSequencePlayback();return;}
  if(type==="sequence-step-back"||type==="sequence-step-forward"){stopSequencePlayback();renderSequenceFrame(sequenceFrame+(type==="sequence-step-back"?-1:1),true);return;}

@@ -382,3 +382,13 @@
 .sequence-preview-stage{min-height:220px;aspect-ratio:16/9;max-height:520px}
 .sequence-preview-stage .preview-media,.sequence-preview-stage .preview-still{width:100%;height:100%;max-height:520px;object-fit:contain;margin:0}
 .sequence-transport button:disabled{opacity:.45;cursor:not-allowed}
+
+/* E1 synchronized local sequence layers */
+.sequence-preview-stage{position:relative;overflow:hidden}
+.sequence-overlay-layer{position:absolute;inset:0;pointer-events:none;overflow:hidden}
+.sequence-overlay-image{position:absolute;object-fit:contain;max-width:none;max-height:none}
+.sequence-caption-layer{position:absolute;left:5%;right:5%;z-index:3;pointer-events:none;white-space:pre-wrap;line-height:1.25;text-shadow:0 1px 3px #000;max-height:35%;overflow:hidden}
+
+.track-monitor-controls{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap}
+.track-monitor-controls button{font-size:11px;padding:4px 8px;min-height:26px}
+.track-monitor-controls button.active{border-color:var(--accent,#c9a76e);color:var(--accent,#c9a76e)}
