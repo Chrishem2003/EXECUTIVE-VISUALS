@@ -47,6 +47,7 @@ export function estimateRunwayVideoCredits(options={}) {
   const duration=finiteDuration(durationSeconds,"durationSeconds",{max:30});
   const inputVideo=finiteDuration(inputVideoSeconds,"inputVideoSeconds",{allowZero:true,max:30});
   const referenceVideo=finiteDuration(referenceVideoSeconds,"referenceVideoSeconds",{allowZero:true,max:30});
+  if(!["text","image","video"].includes(inputType))throw fail("inputType must be text, image or video.","RUNWAY_PRICE_INVALID_INPUT");
   const imageCount=count(referenceImageCount,"referenceImageCount");
   const audioCount=count(referenceAudioCount,"referenceAudioCount");
   if(typeof hasStartFrame!=="boolean")throw fail("hasStartFrame must be a boolean.","RUNWAY_PRICE_INVALID_INPUT");
@@ -134,7 +135,7 @@ export function estimateRunwayVideoCredits(options={}) {
         ? duration*listInputRate+Math.max(billableInputVideo,duration)*listInputRate
         : duration*listRate);
       credits=promo?Math.ceil(listCharge*0.8):listCharge;
-      formula=inputVideo>0
+      formula=billableInputVideo>0
         ? "ceil(list price: "+duration+"s output + max("+billableInputVideo+"s combined input/reference video, "+duration+"s output), each × "+listInputRate+"); then "+(promo?"ceil(80% of list charge)":"list charge")
         : "ceil("+duration+"s × "+listRate+" list credits/s)"+(promo?"; then ceil(80% of list charge)":"");
       if(promo)discount="20% promotion through 2026-11-30 UTC";
