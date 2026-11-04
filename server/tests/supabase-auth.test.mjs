@@ -105,6 +105,45 @@ test("rejects weak credentials, insecure remote URLs and short session secrets",
   await assert.rejects(auth.signIn("creator@example.test", "short"), { code: "INVALID_CREDENTIALS" });
 });
 
+test("recovery callback tokens are verified server-side and converted into an encrypted cookie", async () => {
+  const calls = [];
+  const payload = Buffer.from(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600 })).toString("base64url");
+  const access = "header." + payload + ".signature";
+  const auth = createSupabaseAuth({
+    ...config,
+    fetchImpl: async (url, options) => {
+      calls.push({ url: String(url), options });
+      return response({ id: "user-123", email: "creator@example.test" });
+    }
+  });
+  const result = await auth.adoptRecoverySession(access, "refresh-from-recovery");
+  assert.deepEqual(result.user, { id: "user-123", email: "creator@example.test" });
+  assert.ok(result.cookie.startsWith("v1."));
+  assert.equal(result.cookie.includes(access), false);
+  assert.equal(calls[0].url, "https://project.example.test/auth/v1/user");
+  assert.equal(calls[0].options.method, "GET");
+  await assert.rejects(auth.adoptRecoverySession("bad", "refresh"), { code: "SUPABASE_RECOVERY_INVALID" });
+});
+
+test("password update uses the verified server-side recovery session", async () => {
+  const calls = [];
+  const auth = createSupabaseAuth({
+    ...config,
+    fetchImpl: async (url, options) => {
+      calls.push({ url: String(url), options });
+      if (String(url).includes("/token?")) return response(tokenPayload());
+      return response({ id: "user-123", email: "creator@example.test" });
+    }
+  });
+  const session = await auth.signIn("creator@example.test", "a-long-password-value");
+  const updated = await auth.updatePassword(session.cookie, "a-new-secure-password");
+  assert.deepEqual(updated.user, { id: "user-123", email: "creator@example.test" });
+  assert.equal(calls[1].url, "https://project.example.test/auth/v1/user");
+  assert.equal(calls[1].options.method, "PUT");
+  assert.deepEqual(JSON.parse(calls[1].options.body), { password: "a-new-secure-password" });
+  await assert.rejects(auth.updatePassword(session.cookie, "short"), { code: "INVALID_PASSWORD" });
+});
+
 test("password recovery uses the configured Supabase Auth endpoint without revealing account existence", async () => {
   let call;
   const auth = createSupabaseAuth({
