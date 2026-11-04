@@ -9,7 +9,6 @@ insert into executive_visuals.projects(id,owner_id) values
 select set_config('request.jwt.claim.sub','123e4567-e89b-42d3-a456-426614174000',false);
 set role authenticated;
 
--- Owner can configure limits, but cannot write accounting counters.
 insert into executive_visuals.video_generation_budget_policies(
  id,owner_id,project_id,provider,model,currency,spend_limit_amount,max_per_job_amount,
  rolling_24h_request_limit,enabled
@@ -31,7 +30,6 @@ begin
 end
 $column_guard$;
 
--- Only the project owner can create an approval; it is short-lived and single-use.
 insert into executive_visuals.video_generation_budget_approvals(
  id,owner_id,project_id,provider,model,request_hash,currency,approved_max_amount,approval_note,expires_at
 ) values (
@@ -62,8 +60,8 @@ $owner_guard$;
 reset role;
 set role service_role;
 
--- Atomic enqueue creates the job, budget reservation, usage reservation and events.
-select job_id as job_id, budget_reservation_id as reservation_id
+create temporary table test_context as
+select job_id, budget_reservation_id as reservation_id
 from executive_visuals.enqueue_video_generation_job(
  '123e4567-e89b-42d3-a456-426614174000',
  '323e4567-e89b-42d3-a456-426614174000',
@@ -71,10 +69,10 @@ from executive_visuals.enqueue_video_generation_job(
  jsonb_build_object('projectId','323e4567-e89b-42d3-a456-426614174000',
    'provider','runway','model','gen4.5','requestHash',repeat('a',64),'prompt','test scene'),
  '523e4567-e89b-42d3-a456-426614174000',1.25,'USD'
-) \gset
+);
 
--- Replaying the same key returns the same job and reservation, even after approval consumption.
-select job_id as replay_job_id, budget_reservation_id as replay_reservation_id, idempotent_replay as replay
+create temporary table replay_context as
+select job_id, budget_reservation_id as reservation_id, idempotent_replay
 from executive_visuals.enqueue_video_generation_job(
  '123e4567-e89b-42d3-a456-426614174000',
  '323e4567-e89b-42d3-a456-426614174000',
@@ -82,16 +80,19 @@ from executive_visuals.enqueue_video_generation_job(
  jsonb_build_object('projectId','323e4567-e89b-42d3-a456-426614174000',
    'provider','runway','model','gen4.5','requestHash',repeat('a',64),'prompt','test scene'),
  '523e4567-e89b-42d3-a456-426614174000',1.25,'USD'
-) \gset
+);
 do $idempotency$
+declare first_row test_context; replay_row replay_context;
 begin
- if :'replay' <> 't' or :'job_id' <> :'replay_job_id' or :'reservation_id' <> :'replay_reservation_id' then
+ select * into first_row from test_context;
+ select * into replay_row from replay_context;
+ if not replay_row.idempotent_replay or first_row.job_id <> replay_row.job_id
+    or first_row.reservation_id <> replay_row.reservation_id then
    raise exception 'idempotent enqueue did not return the same job and reservation';
  end if;
 end
 $idempotency$;
 
--- A consumed approval cannot authorize a different idempotency key.
 do $approval_replay$
 begin
  begin
@@ -111,19 +112,19 @@ begin
 end
 $approval_replay$;
 
--- Simulate the queue lease and durable provider submission lifecycle.
 update executive_visuals.jobs
 set status='processing',lease_owner='video-worker-pg-test',
     lease_expires_at=clock_timestamp()+interval '5 minutes',
     lease_heartbeat_at=clock_timestamp(),attempt_count=1
-where id=:'job_id'::uuid;
+where id=(select job_id from test_context);
 
 select * from executive_visuals.prepare_video_generation_submission(
- :'job_id'::uuid,'123e4567-e89b-42d3-a456-426614174000','runway','gen4.5',repeat('a',64)
+ (select job_id from test_context),
+ '123e4567-e89b-42d3-a456-426614174000','runway','gen4.5',repeat('a',64)
 );
-select executive_visuals.begin_video_generation_submission(:'job_id'::uuid,'video-worker-pg-test');
+select executive_visuals.begin_video_generation_submission((select job_id from test_context),'video-worker-pg-test');
 select executive_visuals.record_video_generation_submission(
- :'job_id'::uuid,'video-worker-pg-test','runway-task-pg-test','{"acceptedStatus":"queued"}'::jsonb
+ (select job_id from test_context),'video-worker-pg-test','runway-task-pg-test','{"acceptedStatus":"queued"}'::jsonb
 );
 
 insert into executive_visuals.assets(id,owner_id,project_id,storage_bucket,media_type)
@@ -135,7 +136,7 @@ values (
 );
 
 select executive_visuals.finish_video_generation_job(
- :'job_id'::uuid,'video-worker-pg-test','succeeded',
+ (select job_id from test_context),'video-worker-pg-test','succeeded',
  jsonb_build_object('providerTaskId','runway-task-pg-test',
    'assetIds',jsonb_build_array('723e4567-e89b-42d3-a456-426614174000')),
  null,0.75
@@ -147,12 +148,14 @@ declare
  reservation_row executive_visuals.video_generation_budget_reservations;
  job_row executive_visuals.jobs;
  submission_row executive_visuals.video_generation_submissions;
+ target_job uuid;
 begin
+ select job_id into target_job from test_context;
  select * into policy_row from executive_visuals.video_generation_budget_policies
  where id='423e4567-e89b-42d3-a456-426614174000';
- select * into reservation_row from executive_visuals.video_generation_budget_reservations where job_id=:'job_id'::uuid;
- select * into job_row from executive_visuals.jobs where id=:'job_id'::uuid;
- select * into submission_row from executive_visuals.video_generation_submissions where job_id=:'job_id'::uuid;
+ select * into reservation_row from executive_visuals.video_generation_budget_reservations where job_id=target_job;
+ select * into job_row from executive_visuals.jobs where id=target_job;
+ select * into submission_row from executive_visuals.video_generation_submissions where job_id=target_job;
  if policy_row.reserved_amount <> 0 or policy_row.spent_amount <> 0.75 then raise exception 'budget counters did not settle atomically'; end if;
  if reservation_row.state <> 'settled' or reservation_row.actual_amount <> 0.75 then raise exception 'reservation did not settle'; end if;
  if job_row.status <> 'succeeded' or job_row.lease_owner is not null then raise exception 'job did not finish and release its lease'; end if;
