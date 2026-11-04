@@ -316,3 +316,12 @@ Official references:
 - API reference and task lifecycle: https://docs.dev.runwayml.com/api/
 - API getting started: https://docs.dev.runwayml.com/guides/using-the-api/
 - Output URL retention: https://docs.dev.runwayml.com/assets/outputs/
+
+
+### Explicit multi-provider registration — 2026-11-05
+
+Added `createConfiguredVideoProviderAdapters` to register FAL, Runway Gen-4.5 and Luma Ray 3.2 as exact-match adapters behind the shared worker. FAL retains its request-ID billing-event resolver. Runway and Luma require provider-specific enablement plus global gateway gates and injected authoritative settlement resolvers. Runway/Luma published pricing estimates are never treated as billed cost evidence.
+
+Luma reference frames/keyframes require an owner/project-scoped preparation callback. Its completed-task usage is passed to the injected settlement resolver; a missing or unsettled `credits_charged` value must keep the reservation unresolved rather than converting list prices into actual cost. The composition factory exposes explicit `providerDependencies` for these trusted server-side callbacks.
+
+No provider is enabled by default. The runtime still requires all global opt-in flags, explicit provider-specific flags, private-output host allowlisting and a host-controlled worker invocation. No API key, live provider call, generation, migration or production registration was added.
