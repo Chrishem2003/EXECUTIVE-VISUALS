@@ -57,7 +57,7 @@ test("creates one stored background interaction only after durable approval", as
 
 test("refuses missing approval before any provider request", async () => {
   const h = harness({ approve: async () => false });
-  await assert.rejects(() => h.client.createInteraction(await plan()), error =>
+  await assert.rejects(async () => h.client.createInteraction(await plan()), error =>
     error.code === "GEMINI_OMNI_APPROVAL_REQUIRED");
   assert.equal(h.calls.length, 0);
 });
@@ -76,14 +76,14 @@ test("does not retry an ambiguous interaction POST", async () => {
   const h = harness({
     fetchImpl: async () => { attempts++; throw new TypeError("connection reset"); }
   });
-  await assert.rejects(() => h.client.createInteraction(await plan()), error =>
+  await assert.rejects(async () => h.client.createInteraction(await plan()), error =>
     error.code === "GEMINI_OMNI_SUBMISSION_OUTCOME_UNKNOWN");
   assert.equal(attempts, 1);
 });
 
 test("treats provider 5xx on submission as an unknown outcome", async () => {
   const h = harness({ fetchImpl: async () => response(503, { error: "temporarily unavailable" }) });
-  await assert.rejects(() => h.client.createInteraction(await plan()), error =>
+  await assert.rejects(async () => h.client.createInteraction(await plan()), error =>
     error.code === "GEMINI_OMNI_SUBMISSION_OUTCOME_UNKNOWN");
   assert.equal(h.calls.length, 1);
 });
@@ -136,6 +136,6 @@ test("rejects inline output plans and malformed provider response payloads", asy
   await assert.rejects(() => h.client.createInteraction(inline), error =>
     error.code === "GEMINI_OMNI_PLAN_INVALID");
   const bad = harness({ fetchImpl: async () => response(200, { id, model: "wrong", status: "completed", steps: [] }) });
-  await assert.rejects(() => bad.client.createInteraction(await plan()), error =>
+  await assert.rejects(async () => bad.client.createInteraction(await plan()), error =>
     error.code === "GEMINI_OMNI_INVALID_RESPONSE");
 });
