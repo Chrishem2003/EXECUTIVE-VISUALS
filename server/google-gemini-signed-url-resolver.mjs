@@ -35,7 +35,8 @@ export function createGoogleGeminiSignedUrlResolver({
   maxBytes = MAX_EXTERNAL_BYTES,
   now = () => Date.now()
 } = {}) {
-  if (!assets && (!url || !serviceRoleKey || typeof fetchImpl !== "function")) {
+  if (!url) throw new Error("Google signed-URL resolver requires the exact Supabase origin.");
+  if (!assets && (!serviceRoleKey || typeof fetchImpl !== "function")) {
     throw new Error("Google signed-URL resolver requires the private Cloud Asset Service.");
   }
   if (!Number.isInteger(expiresIn) || expiresIn < 60 || expiresIn > 3600) {
@@ -44,7 +45,7 @@ export function createGoogleGeminiSignedUrlResolver({
   if (!Number.isSafeInteger(maxBytes) || maxBytes < 1 || maxBytes > MAX_EXTERNAL_BYTES) {
     throw new Error("Google external URL media limit cannot exceed 100 MB.");
   }
-  const origin = safeOrigin(url || "https://supabase.invalid");
+  const origin = safeOrigin(url);
   const cloudAssets = assets || createCloudAssetService({
     url, serviceRoleKey, fetchImpl,
     storageTimeoutMs: 15000,
@@ -57,7 +58,8 @@ export function createGoogleGeminiSignedUrlResolver({
     async resolveAsset({ assetId, ownerId, projectId = null, mediaType } = {}) {
       if (typeof assetId !== "string" || !UUID.test(assetId) ||
           typeof ownerId !== "string" || !UUID.test(ownerId) ||
-          (projectId !== null && (!UUID.test(projectId) || typeof projectId !== "string")) ||
+          (projectId !== null && projectId !== undefined && projectId !== "" &&
+            (typeof projectId !== "string" || !UUID.test(projectId))) ||
           typeof mediaType !== "string" || !MIME_TYPES.has(mediaType)) {
         throw fail("Google signed-URL asset scope or MIME type is invalid.", "GEMINI_SIGNED_URL_ASSET_INVALID");
       }
