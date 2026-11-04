@@ -19,8 +19,8 @@ test("Runway adapter is disabled and remote opt-in is mandatory by default",asyn
 test("Runway adapter submits text-to-video with required version and authorization headers",async()=>{
  const calls=[];
  const adapter=createRunwayVideoAdapter({env:enabled,fetchImpl:async(url,options)=>{calls.push({url,options});return json(200,{id,status:"PENDING",estimatedCost:{credits:42}});}});
- const result=await adapter.submit({prompt:"A calm ocean at dawn",duration:5,ratio:"1280:720"});
- assert.equal(result.taskId,id);assert.equal(result.status,"queued");assert.equal(result.estimatedCostCredits,42);
+ const result=await adapter.submit({prompt:"A calm ocean at dawn",durationSeconds:5,aspectRatio:"16:9",requestId:"request-123"});
+ assert.equal(result.taskId,id);assert.equal(result.status,"queued");assert.equal(result.estimatedCostCredits,42);assert.equal(result.platformRequestId,"request-123");
  assert.equal(calls[0].url,"https://api.dev.runwayml.com/v1/text_to_video");
  assert.equal(calls[0].options.headers["X-Runway-Version"],"2024-11-06");
  assert.equal(calls[0].options.headers.authorization,"Bearer test-key");
@@ -46,4 +46,20 @@ test("Runway task IDs and HTTP failures fail closed without leaking provider bod
  const adapter=createRunwayVideoAdapter({env:enabled,fetchImpl:async()=>({status:429,ok:false,text:async()=>"private provider details"})});
  await assert.rejects(()=>adapter.getStatus("not-a-uuid"),e=>e.code==="RUNWAY_INVALID_TASK_ID");
  await assert.rejects(()=>adapter.getStatus(id),e=>e.code==="RUNWAY_RATE_LIMITED"&&!e.message.includes("private provider details"));
+});
+
+test("Runway adapter rejects normalized options outside its declared model capabilities before network access",async()=>{
+ let calls=0;const adapter=createRunwayVideoAdapter({env:enabled,fetchImpl:async()=>{calls++;return json(200,{id,status:"PENDING"});}});
+ for(const input of [
+  {prompt:"text",durationSeconds:1},
+  {prompt:"text",durationSeconds:11},
+  {prompt:"text",aspectRatio:"1:1"},
+  {prompt:"text",resolution:"1080p"},
+  {prompt:"text",negativePrompt:"avoid blur"},
+  {prompt:"text",audioMode:"none"},
+  {prompt:"text",startFrameAssetId:"asset-frame"},
+  {prompt:"text",provider:"fal"},
+  {prompt:"text",model:"kling_4"}
+ ])await assert.rejects(()=>adapter.submit(input));
+ assert.equal(calls,0);
 });
