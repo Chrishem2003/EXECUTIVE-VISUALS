@@ -8,7 +8,7 @@ const task = { taskId: "runway-task-1", outputUrls: ["https://cdn.example.test/v
 const config = {
   allowedHosts: ["cdn.example.test"],
   resolver: async () => [{ address: "93.184.216.34", family: 4 }],
-  download: async (_url, _path, options) => ({ size: 1024, contentType: "video/mp4", pinned: options.resolver !== undefined }),
+  download: async (_url, _path, options) => ({ size: 1024, contentType: "video/mp4", pinnedAddress: options.address?.address }),
   validateMedia: async () => ({ valid: true, mediaType: "video/mp4", metadata: { durationSeconds: 5 } })
 };
 function assetRepo({ failOn = -1, cleanupFails = false } = {}) {
@@ -38,7 +38,7 @@ test("downloads only from allowlisted HTTPS hosts, validates, and registers priv
   const ingest = createPrivateVideoOutputIngestor({
     ...config, assets,
     download: async (url, path, options) => {
-      calls.push({ url: url.href, path, resolver: options.resolver });
+      calls.push({ url: url.href, path, address: options.address });
       return { size: 1024, contentType: "video/mp4" };
     }
   });
@@ -52,6 +52,7 @@ test("downloads only from allowlisted HTTPS hosts, validates, and registers priv
   assert.equal(assets.created[0].value.projectId, projectId);
   assert.equal(assets.created[0].value.metadata.validated, true);
   assert.equal(calls.length, 1);
+  assert.equal(calls[0].address.address, "93.184.216.34");
 });
 
 test("rejects non-allowlisted, non-HTTPS, credentialed, and nonstandard-port URLs before DNS or download", async () => {
