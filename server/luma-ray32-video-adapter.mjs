@@ -91,7 +91,7 @@ export function createLumaRay32Adapter({
   if (typeof fetchImpl !== "function") throw fail("A fetch implementation is required.");
   let base;
   try { base = new URL(baseUrl); } catch { throw fail("Luma base URL is invalid."); }
-  if (base.protocol !== "https:" || base.hostname !== "agents.lumalabs.ai" || base.port || base.username || base.password || base.search || base.hash || base.pathname !== "/") {
+  if (base.protocol !== "https:" || base.hostname !== "agents.lumalabs.ai" || base.port || base.username || base.password || base.search || base.hash || base.pathname !== "/v1") {
     throw fail("Luma base URL must be credential-free HTTPS.");
   }
   if (!Number.isInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 120000) throw fail("Luma timeout must be between 1 and 120 seconds.");
@@ -100,7 +100,7 @@ export function createLumaRay32Adapter({
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      const response = await fetchImpl(new URL(path, base.origin).toString(), {
+      const response = await fetchImpl(new URL(base.pathname.replace(/\\/$/, "") + path, base.origin).toString(), {
         ...init,
         headers: {
           authorization: "Bearer " + apiKey,
