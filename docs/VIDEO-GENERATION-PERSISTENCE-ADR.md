@@ -97,3 +97,12 @@ The source-only migration `20261104143000_cloud_video_budget_enqueue.sql` adds o
 The server-only client is `server/cloud-video-enqueue.mjs`; mock transport tests are in `server/tests/cloud-video-enqueue.test.mjs`. The cloud migration guard now checks the budget tables, RLS, column-level accounting protections, short-lived approval, serialization, lease fencing and atomic finalization.
 
 This remains source-controlled infrastructure only. No budget policy is created, no approval is issued, no migration is applied, and no worker/API path calls these RPCs. Before worker integration, test this migration against disposable/local PostgreSQL (including concurrent identical enqueues, approval reuse, budget exhaustion, project isolation, worker lease expiry and crash recovery). Provider dispatch and private output ingestion remain disabled release gates.
+
+
+## Private provider-output ingestion checkpoint (2026-11-04)
+
+`server/private-video-output-ingestion.mjs` adds a reusable ingestion boundary for remote video provider outputs. It requires a deployment-supplied hostname allowlist (there is no permissive default), HTTPS URLs on port 443, bounded URL/output counts and byte budgets, DNS resolution with all returned addresses checked, and a pinned public IP for the TLS request. Private, loopback, link-local, unique-local, multicast, reserved, and mixed public/private DNS answers are rejected. Redirects are not followed; the request carries no provider or Supabase credentials.
+
+Downloads are written to isolated temporary directories with an overall timeout and streaming byte limit. A mandatory media-validation callback (intended to be FFprobe-backed and to inspect actual streams/duration/container) must approve the file before it is passed to the existing cloud asset repository's `createFromFile`, which writes to the private media bucket and registers owner/project-scoped asset metadata. Multi-output ingestion attempts compensating soft-deletion of earlier registered assets if a later output fails and flags `cleanupPending` when compensation cannot complete.
+
+The module is not yet wired to the Runway worker. Deployment must explicitly configure the exact output CDN hostnames observed from the provider contract; do not use broad wildcards without reviewing the provider's redirect/CDN behavior. The production validator must be an actual FFprobe-backed implementation, not a permissive stub. DNS pinning, redirect denial and content validation are defense in depth, not a reason to accept arbitrary user-supplied URLs.
