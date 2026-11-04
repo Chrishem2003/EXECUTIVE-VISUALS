@@ -50,26 +50,33 @@ test("cloud enqueue uses service-role credentials and the private schema", async
   });
 });
 
-test("enqueue preserves idempotent replay information and settles only through its RPC", async () => {
+test("enqueue preserves active-job idempotent replay and atomically finalizes budget with job", async () => {
   const calls = [];
   const replay = { ...resultRow, job_status: "processing", idempotent_replay: true };
   const client = createCloudVideoEnqueue({
     ...base,
     fetchImpl: async (url, options) => {
       calls.push({ url, body: JSON.parse(options.body) });
-      return response(url.endsWith("/settle_video_generation_budget_reservation") ? true : [replay]);
+      return response(url.endsWith("/finish_video_generation_job") ? true : [replay]);
     }
   });
   const queued = await client.enqueue(args());
   assert.equal(queued.idempotentReplay, true);
-  assert.equal(await client.settle({ jobId: resultRow.job_id, workerId: "video-worker-1", actualAmount: 0.8 }), true);
-  assert.equal(await client.settle({ jobId: resultRow.job_id, workerId: "video-worker-1" }), true);
+  assert.equal(queued.status, "processing");
+  assert.equal(await client.finish({
+    jobId: resultRow.job_id, workerId: "video-worker-1", status: "succeeded",
+    output: { assetIds: ["asset-1"] }, actualAmount: 0.8
+  }), true);
+  assert.equal(await client.finish({
+    jobId: resultRow.job_id, workerId: "video-worker-1", status: "failed",
+    error: { code: "PROVIDER_FAILED" }
+  }), true);
   assert.deepEqual(calls.map(call => call.url.split("/").pop()), [
-    "enqueue_video_generation_job", "settle_video_generation_budget_reservation",
-    "settle_video_generation_budget_reservation"
+    "enqueue_video_generation_job", "finish_video_generation_job", "finish_video_generation_job"
   ]);
   assert.deepEqual(calls[1].body, {
-    p_job_id: resultRow.job_id, p_worker_id: "video-worker-1", p_actual_amount: 0.8
+    p_job_id: resultRow.job_id, p_worker_id: "video-worker-1", p_status: "succeeded",
+    p_output: { assetIds: ["asset-1"] }, p_error: null, p_actual_amount: 0.8
   });
   assert.equal(calls[2].body.p_actual_amount, null);
 });
@@ -82,7 +89,8 @@ test("enqueue rejects mismatched request scope and invalid budget inputs before 
   await assert.rejects(() => client.enqueue(args({ currency: "usd" })), /three-letter/);
   await assert.rejects(() => client.enqueue(args({ idempotencyKey: "bad key" })), /invalid format/);
   await assert.rejects(() => client.enqueue(args({ input: [] })), /must be an object/);
-  await assert.rejects(() => client.settle({ jobId: resultRow.job_id, workerId: "worker", actualAmount: -1 }), /non-negative/);
+  await assert.rejects(() => client.finish({ jobId: resultRow.job_id, workerId: "worker", status: "succeeded" }), /require a non-negative/);
+  await assert.rejects(() => client.finish({ jobId: resultRow.job_id, workerId: "worker", status: "failed", actualAmount: 1 }), /must release their reservation/);
   assert.equal(calls, 0);
 });
 
