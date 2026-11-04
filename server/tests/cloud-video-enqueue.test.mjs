@@ -81,6 +81,48 @@ test("enqueue preserves active-job idempotent replay and atomically finalizes bu
   assert.equal(calls[2].body.p_actual_amount, null);
 });
 
+test("cloud video deferral, quarantine and evidence-reconciled resume use dedicated RPCs", async () => {
+  const calls = [];
+  const client = createCloudVideoEnqueue({
+    ...base,
+    fetchImpl: async (url, options) => {
+      calls.push({ url, body: JSON.parse(options.body) });
+      return response(true);
+    }
+  });
+  assert.equal(await client.defer({
+    jobId: resultRow.job_id, workerId: "video-worker-1", delaySeconds: 45
+  }), true);
+  assert.equal(await client.quarantine({
+    jobId: resultRow.job_id, workerId: "video-worker-1"
+  }), true);
+  assert.equal(await client.resumeReconciled({
+    jobId: resultRow.job_id, ownerId
+  }), true);
+  assert.deepEqual(calls.map(call => call.url.split("/").pop()), [
+    "defer_video_generation_job", "quarantine_video_generation_job",
+    "resume_reconciled_video_generation_job"
+  ]);
+  assert.deepEqual(calls[0].body, {
+    p_job_id: resultRow.job_id, p_worker_id: "video-worker-1",
+    p_delay_seconds: 45, p_reason_code: "VIDEO_PROVIDER_POLL_DEFERRED"
+  });
+  assert.deepEqual(calls[1].body, {
+    p_job_id: resultRow.job_id, p_worker_id: "video-worker-1",
+    p_reason_code: "VIDEO_SUBMISSION_REQUIRES_RECONCILIATION"
+  });
+  assert.deepEqual(calls[2].body, { p_job_id: resultRow.job_id, p_owner_id: ownerId });
+});
+
+test("cloud video deferral and quarantine reject invalid controls before network access", async () => {
+  let calls = 0;
+  const client = createCloudVideoEnqueue({ ...base, fetchImpl: async () => { calls++; return response(true); } });
+  await assert.rejects(() => client.defer({ jobId: resultRow.job_id, workerId: "worker", delaySeconds: 1 }), /between 5 and 900/);
+  await assert.rejects(() => client.quarantine({ jobId: resultRow.job_id, workerId: "worker", reasonCode: "not safe" }), /reason code/);
+  await assert.rejects(() => client.resumeReconciled({ jobId: resultRow.job_id }), /Owner ID/);
+  assert.equal(calls, 0);
+});
+
 test("enqueue rejects mismatched request scope and invalid budget inputs before network access", async () => {
   let calls = 0;
   const client = createCloudVideoEnqueue({ ...base, fetchImpl: async () => { calls++; return response([resultRow]); } });
