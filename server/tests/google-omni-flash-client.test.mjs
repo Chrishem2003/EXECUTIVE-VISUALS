@@ -101,7 +101,7 @@ test("retrieves completed interactions and returns only validated Google output 
 });
 
 test("enforces owner/project authorization before retrieval, cancellation and deletion", async () => {
-  const h = harness({ authorize: async ({ action }) => action !== "delete" });
+  const h = harness({ authorize: async () => false });
   await assert.rejects(() => h.client.getInteraction(id), error =>
     error.code === "GEMINI_OMNI_INTERACTION_FORBIDDEN");
   await assert.rejects(() => h.client.cancelInteraction(id), error =>
