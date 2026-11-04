@@ -2,6 +2,12 @@ const ORIGIN = "https://generativelanguage.googleapis.com";
 const FILE_URI = /^https:\/\/generativelanguage\.googleapis\.com\/v1beta\/files\/[A-Za-z0-9_-]+$/;
 const FILE_NAME = /^files\/[A-Za-z0-9_-]+$/;
 const MAX_FILE_BYTES = 2 * 1024 * 1024 * 1024;
+const ALLOWED_MIME_TYPES = new Set([
+  "image/jpeg", "image/png", "image/webp", "image/gif",
+  "video/mp4", "video/webm", "video/quicktime",
+  "audio/mpeg", "audio/wav", "audio/x-wav", "audio/mp4", "audio/ogg",
+  "application/pdf", "text/plain", "text/vtt", "application/json"
+]);
 const SCOPES = Object.freeze([
   "https://www.googleapis.com/auth/devstorage.read_only",
   "https://www.googleapis.com/auth/cloud-platform"
@@ -14,8 +20,10 @@ function safeGcsUri(value, allowedBuckets) {
       /%2f|%5c|%2e/i.test(value)) {
     throw fail("Private GCS object URI is invalid.", "GEMINI_GCS_URI_INVALID");
   }
-  const match = /^gs:\/\/([a-z0-9][a-z0-9.-]{1,220})\/(.+)$/.exec(value);
-  if (!match || match[2].split("/").some(part => !part || part === "." || part === "..") ||
+  const match = /^gs:\/\/([a-z0-9][a-z0-9.-]{1,61}[a-z0-9])\/(.+)$/.exec(value);
+  if (!match || match[1].length < 3 || match[1].length > 63 ||
+      match[1].includes("..") || match[1].includes(".-") || match[1].includes("-.") ||
+      match[2].split("/").some(part => !part || part === "." || part === "..") ||
       /[\u0000-\u0020]/.test(match[2])) {
     throw fail("Private GCS object URI is malformed.", "GEMINI_GCS_URI_INVALID");
   }
@@ -28,7 +36,7 @@ function safeGcsUri(value, allowedBuckets) {
 function validAsset(asset, { assetId, ownerId, projectId, mediaType, maxBytes }) {
   if (!asset || asset.id !== assetId || asset.ownerId !== ownerId ||
       (asset.projectId || null) !== (projectId || null) ||
-      asset.mediaType !== mediaType ||
+      asset.mediaType !== mediaType || !ALLOWED_MIME_TYPES.has(mediaType) ||
       !Number.isSafeInteger(asset.sizeBytes) || asset.sizeBytes < 1 || asset.sizeBytes > maxBytes ||
       typeof asset.sha256 !== "string" || !/^[a-f0-9]{64}$/.test(asset.sha256)) {
     throw fail("Authorized GCS asset metadata did not match the requested private asset scope.", "GEMINI_GCS_ASSET_SCOPE_INVALID");
@@ -132,7 +140,9 @@ export function createGoogleGeminiGcsFilesRegistrar({
         const code = response.status === 403 ? "GEMINI_GCS_IAM_ACCESS_DENIED"
           : response.status === 429 ? "GEMINI_GCS_RATE_LIMITED"
             : response.status >= 500 ? "GEMINI_GCS_PROVIDER_ERROR" : "GEMINI_GCS_REQUEST_REJECTED";
-        throw fail("Google GCS registration was rejected (HTTP " + response.status + ").", code);
+        const error = fail("Google GCS registration was rejected (HTTP " + response.status + ").", code);
+        error.status = response.status;
+        throw error;
       }
       return data;
     } finally { clearTimeout(timer); }
@@ -144,7 +154,7 @@ export function createGoogleGeminiGcsFilesRegistrar({
     try {
       await request(ORIGIN + "/v1beta/" + name, accessToken, { method: "DELETE" });
     } catch (error) {
-      if (error?.code !== "GEMINI_GCS_REQUEST_FAILED") throw error;
+      if (error?.status !== 404) throw error;
     }
     return true;
   }
