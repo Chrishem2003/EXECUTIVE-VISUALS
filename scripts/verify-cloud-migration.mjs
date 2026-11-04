@@ -160,6 +160,11 @@ if ((videoBudgetSql.match(/security invoker/gi) || []).length !== 6 || /security
 if (!videoBudgetSql.includes("as $video_finish$") || !videoBudgetSql.includes("$video_finish$;")) {
   issues.push("Cloud video finalizer must use a complete, unambiguous SQL function delimiter.");
 }
+if (!videoBudgetSql.includes("as $") ||
+    !videoBudgetSql.includes("end;\\n$;") ||
+    /as \\$(?:\\r?\\n)|\\r?\\n\\$;/.test(videoBudgetSql)) {
+  issues.push("Cloud video budget trigger functions must use valid, complete dollar quoting.");
+}
 for (const fn of ["defer_video_generation_job","quarantine_video_generation_job","resume_reconciled_video_generation_job"]) {
   if (!videoBudgetSql.includes(`create or replace function executive_visuals.${fn}(`) ||
       !videoBudgetSql.includes(`grant execute on function executive_visuals.${fn}(`) ||
