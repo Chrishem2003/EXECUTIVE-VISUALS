@@ -30,7 +30,7 @@ function privateAsset(overrides = {}) {
     cleanup: async () => {}
   };
 }
-function harness({ fileState = "PROCESSING", record = async () => {}, find, loader } = {}) {
+function harness({ fileState = "PROCESSING", record = async () => {}, find, loader, authorize } = {}) {
   const calls = [];
   const records = [];
   let gets = 0;
@@ -62,6 +62,7 @@ function harness({ fileState = "PROCESSING", record = async () => {}, find, load
   };
   const gateway = createGoogleGeminiFilesGateway({
     env, fetchImpl, loadPrivateAsset: loader || (async () => privateAsset()),
+    authorizePrivateAsset: authorize || (async () => privateAsset().asset),
     findProviderFile: find,
     recordProviderFile: async value => { records.push(value); await record(value); },
     timeoutMs: 3000, chunkSize: 256 * 1024, processingPollIntervalMs: 1000,
@@ -94,7 +95,8 @@ test("reuses an unexpired provider-file mapping only for the exact owner, projec
   const h = harness({
     find: async () => ({
       ownerId, projectId, assetId, mimeType: "image/png", name: fileName,
-      uri: fileUri, expiresAt: "2026-11-06T12:00:00.000Z"
+      uri: fileUri, state: "ACTIVE", sizeBytes: bytes.byteLength, sha256,
+      expiresAt: "2026-11-06T12:00:00.000Z"
     })
   });
   const result = await h.gateway.resolveAsset({ assetId, ownerId, projectId, mediaType: "image/png" });
@@ -173,7 +175,7 @@ test("allows a project collaborator to upload a project asset owned by another m
     },
     bytes, size: bytes.byteLength, sha256, cleanup: async () => {}
   };
-  const h = harness({ loader: async () => collaboratorAsset });
+  const h = harness({ loader: async () => collaboratorAsset, authorize: async () => collaboratorAsset.asset });
   const result = await h.gateway.resolveAsset({ assetId, ownerId, projectId, mediaType: "image/png" });
   assert.equal(result.uri, fileUri);
   assert.equal(h.records[0].ownerId, ownerId);
