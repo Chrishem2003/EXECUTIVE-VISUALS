@@ -334,8 +334,10 @@ export function createPrivateVideoOutputIngestor({
         });
       } catch (error) {
         for (const asset of created.reverse()) {
-          try { await assets.softDelete({ ownerId: job.owner_id, assetId: asset.id }); }
-          catch { error.cleanupPending = true; }
+          try {
+            const cleanup = await assets.softDelete({ ownerId: job.owner_id, assetId: asset.id });
+            if (cleanup?.cleanupPending === true || cleanup?.storageRemoved === false) error.cleanupPending = true;
+          } catch { error.cleanupPending = true; }
         }
         throw error;
       } finally {
