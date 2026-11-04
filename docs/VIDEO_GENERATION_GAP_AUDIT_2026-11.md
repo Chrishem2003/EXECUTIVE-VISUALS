@@ -286,3 +286,10 @@ This is particularly important for FAL: its documented result retention is one h
 Added `createProviderAwareCloudVideoWorker`, a side-effect-free composition factory that binds the existing durable queue, Postgres submission ledger and lease-aware worker to an immutable exact-match provider/model router. Every registered adapter must provide its own private output ingestion and authoritative actual-cost resolver; a provider cannot silently inherit another adapter's accounting or storage gates. The factory exposes the existing `runCycle` and expired-job recovery operations plus a read-only supported-model list. Construction does not call a provider or database.
 
 This is the composition seam for registering the separately implemented FAL and Runway adapters once their draft changes are reviewed together. It does not activate remote providers, configure credentials, perform migrations, or change the production worker process. The new composition contract tests are included in the cloud-queue verification suite.
+
+
+### Provider-aware runtime composition — 2026-11-05
+
+Added `createProviderAwareCloudVideoWorkerComposition` as the concrete bridge from the exact-match multi-provider worker to the existing Supabase queue, Postgres submission ledger, private cloud asset repository, FFprobe media validation and private output ingestor. Provider adapters are supplied by an explicit factory, allowing each provider to bind its own task-level billing resolver while sharing the hardened storage boundary.
+
+The runtime composition requires `CLOUD_VIDEO_WORKER_ENABLED=true`, `VIDEO_GATEWAY_ENABLED=true`, and `VIDEO_GATEWAY_ALLOW_REMOTE=true`, plus an explicit bounded output-host allowlist. It is side-effect free during construction; provider and database network calls occur only when a host invokes the worker cycle. It is not registered in `cloud-worker-process.mjs` and therefore does not change the running production worker.
