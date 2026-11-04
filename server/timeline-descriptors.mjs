@@ -42,7 +42,9 @@ export function validateTimelineClipDescriptors(clip,frameRate){
 /** Prevent renderers from silently dropping edit descriptors they cannot yet render. */
 export function assertTimelineDescriptorsSupported(timeline){
  for(const track of timeline?.tracks||[])for(const clip of track?.clips||[]){
-  if((Array.isArray(clip.effects)&&clip.effects.length)||(Array.isArray(clip.keyframes)&&clip.keyframes.length)||clip.transitionIn||clip.transitionOut){
+  const hasEffects=clip?.effects!==undefined&&(!Array.isArray(clip.effects)||clip.effects.length>0);
+  const hasKeyframes=clip?.keyframes!==undefined&&(!Array.isArray(clip.keyframes)||clip.keyframes.length>0);
+  if(hasEffects||hasKeyframes||clip?.transitionIn||clip?.transitionOut){
    throw Object.assign(new Error("This timeline contains versioned effects, keyframes or transitions that the current master renderer cannot yet reproduce. Remove or disable those descriptors before rendering."),{code:"UNSUPPORTED_TIMELINE_FEATURE"});
   }
  }
