@@ -100,6 +100,7 @@ export async function executeCloudVideoGenerationJob({
     } catch {
       throw fail("Provider status is temporarily unavailable; polling will resume later.", "VIDEO_PROVIDER_POLL_DEFERRED");
     }
+    if (signal?.aborted) throw fail("Cloud video worker lease was lost.", "VIDEO_WORKER_LEASE_LOST");
     if (task.status === "failed" || task.status === "canceled") {
       throw fail(task.failure || "Video provider task did not complete.", task.failureCode || "VIDEO_PROVIDER_FAILED");
     }
@@ -110,6 +111,7 @@ export async function executeCloudVideoGenerationJob({
       let cost;
       try { cost = await resolveActualCost({ job, input, task, providerTaskId }); }
       catch { throw fail("Actual provider cost could not be verified; budget remains reserved for review.", "VIDEO_BUDGET_COST_UNRESOLVED"); }
+      if (signal?.aborted) throw fail("Cloud video worker lease was lost.", "VIDEO_WORKER_LEASE_LOST");
       const approved = job.estimated_cost;
       const reservedAmount = Number(approved?.amount);
       if (!cost || typeof cost.amount !== "number" || !Number.isFinite(cost.amount) || cost.amount < 0 ||
@@ -131,6 +133,7 @@ export async function executeCloudVideoGenerationJob({
         if (cleanupPending) held.cleanupPending = true;
         throw held;
       }
+      if (signal?.aborted) throw fail("Cloud video worker lease was lost.", "VIDEO_WORKER_LEASE_LOST");
       if (!ingested || !Array.isArray(ingested.assetIds) || ingested.assetIds.length !== task.outputUrls.length ||
           ingested.assetIds.some(id => typeof id !== "string" || !id.trim())) {
         throw fail("Private output ingestion did not register every output asset.", "VIDEO_OUTPUT_INGESTION_REQUIRES_REVIEW");
