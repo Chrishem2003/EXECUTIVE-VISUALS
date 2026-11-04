@@ -135,3 +135,12 @@ This is a code foundation, not a live worker activation. The existing cloud proc
 ### Idempotent output asset registration
 
 The private asset repository now exposes an owner/project/task/output-index scoped lookup for active generated-video assets. The output ingestor checks this before downloading or registering each provider output, stores the output index in asset metadata, and reuses a matching active asset on retry. Only assets created during the current ingestion attempt are eligible for compensating deletion; previously registered assets are not deleted if a later output fails. This reduces duplicate assets when a worker loses its lease after registration but before the job finalizer commits.
+
+
+### PostgreSQL migration verification harness (2026-11-04)
+
+A disposable PostgreSQL 16 integration workflow now applies the cloud submission-ledger and budget/enqueue migrations against a minimal Supabase-compatible schema. It verifies the actual SQL parser accepts both migrations, owner-bound approval/RLS behavior, column-level protection of budget counters, atomic enqueue, idempotent replay, one-time approval consumption, submission lifecycle, private-asset ownership checks, atomic job/budget/submission finalization, and rollback when actual cost exceeds the reservation. A separate two-connection test races identical enqueue requests and asserts one job, one budget reservation and one usage reservation are created.
+
+The harness lives in `scripts/cloud-video-postgres-bootstrap.sql`, `scripts/cloud-video-postgres-integration.sql`, `scripts/cloud-video-postgres-concurrency-approval.sql` and `scripts/cloud-video-postgres-concurrency.sh`; workflow: `.github/workflows/cloud-video-postgres.yml`. It uses an ephemeral GitHub Actions PostgreSQL service and does not connect to any Supabase account. It is not a substitute for a later isolated Supabase branch test, but it catches PostgreSQL syntax, privilege, transaction and concurrency defects before any remote migration is considered.
+
+During this review, the static guard was found to have missed malformed dollar quoting in the budget approval trigger. The trigger was corrected, and the guard now explicitly rejects untagged single-dollar PL/pgSQL delimiters. Project-scoped budget approvals are now owner-only; project editors cannot approve provider spend.
