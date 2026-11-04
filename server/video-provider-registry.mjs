@@ -635,6 +635,16 @@ export const VIDEO_PROVIDER_CATALOG = freeze([
           minDurationSeconds: 3,
           maxDurationSeconds: 10
         },
+        pricing: {
+          currency: "USD",
+          inputUsdPerMillionTokens: 1.50,
+          videoOutputUsdPerMillionTokens: 17.50,
+          videoOutputTokensPerSecondAt720p: 5792,
+          paidTierOnly: true,
+          source: "https://ai.google.dev/gemini-api/docs/pricing",
+          snapshotDate: "2026-11-05",
+          preflightReservation: "maximum_1m_context_plus_10_seconds_720p_output"
+        },
         constraints: {
           frameRate: 24,
           supportsConversationalEdits: true,
