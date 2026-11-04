@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { rational } from "../../src/core/timeline.ts";
-import { clipSourceSecondsAtTimelineFrame, clampPreviewSeconds, frameToSeconds, getTimelineDurationFrames, resolveTimelineFrame, secondsToFrame, stepPreviewSeconds } from "../../src/core/timeline-preview.ts";
+import { clipSourceSecondsAtTimelineFrame, clampPreviewSeconds, decibelsToLinearGain, frameToSeconds, getTimelineDurationFrames, resolveTimelineFrame, secondsToFrame, stepPreviewSeconds } from "../../src/core/timeline-preview.ts";
 
 const rate={numerator:30000,denominator:1001};
 const clip={id:"c",assetId:"a",name:"clip",sourceRange:{start:rational(90,30),duration:rational(150,30)},timelineStart:rational(30,24),duration:rational(120,24),enabled:true};
@@ -70,4 +70,22 @@ test("invalid frame and playback inputs fail closed",()=>{
  assert.throws(()=>secondsToFrame(Number.NaN,rate));
  assert.throws(()=>stepPreviewSeconds(4,1,0,3,8));
  assert.throws(()=>clampPreviewSeconds(2,4,3));
+});
+
+test("decibel gain maps to linear amplitude and clamps to the supported preview range",()=>{
+ assert.equal(decibelsToLinearGain(0),1);
+ assert.ok(Math.abs(decibelsToLinearGain(-6.020599913)-0.5)<1e-8);
+ assert.equal(decibelsToLinearGain(-100),0.001);
+ assert.ok(Math.abs(decibelsToLinearGain(24)-15.8489319246)<1e-8);
+ assert.throws(()=>decibelsToLinearGain(Number.NaN));
+});
+test("sequence resolver keeps simultaneous audio clips on separate tracks",()=>{
+ const timeline=makeTimeline([
+  {id:"music",name:"Music",kind:"audio",enabled:true,locked:false,clips:[makeClip("music-bed","music",0,96,0,1)]},
+  {id:"voice",name:"Voice",kind:"audio",enabled:true,locked:false,clips:[makeClip("voiceover","voice",24,48,2,1.25)]}
+ ]);
+ const active=resolveTimelineFrame(timeline,48);
+ assert.deepEqual(active.map(item=>item.clip.id),["music-bed","voiceover"]);
+ assert.deepEqual(active.map(item=>item.track.kind),["audio","audio"]);
+ assert.equal(active[1].sourceSeconds,3);
 });
