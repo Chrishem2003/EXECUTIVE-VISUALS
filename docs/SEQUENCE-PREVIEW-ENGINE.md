@@ -13,6 +13,7 @@ The timeline preview core now provides:
 - A local browser transport with play, pause, frame stepping and timeline scrubbing across cuts on the primary picture track.
 - Video and still-image playback with clip-speed playback-rate mapping and explicit decode/missing-source feedback.
 - Authenticated same-origin private cloud media streaming with byte-range forwarding, upstream timeout and disconnect cleanup; signed storage URLs stay server-side.
+- Proxy-first primary-video playback using only smaller, SHA-256-verified derivatives linked to the exact source; original media is the explicit fallback.
 - Synchronized local audio playback for overlapping enabled audio clips, with per-clip gain and speed mapping.
 - Preview-only audio track mute and solo controls.
 - Still-image overlay layers positioned and opacity-adjusted from the clip metadata.
@@ -29,7 +30,7 @@ The resolver is deliberately independent of browser media elements. This keeps t
 1. Add browser-level tests for play, pause, seek, frame stepping, source changes and decode failures.
 2. Add mute/solo controls and an audio bus limiter so browser mix headroom matches the master renderer.
 3. Add browser-level tests for source switching, gaps, overlapping audio, overlays, captions and media decode errors.
-4. Add proxy-first source selection and browser-level hosted tests for authenticated cloud playback.
+4. Add browser-level hosted tests for proxy/original switching and authenticated cloud playback.
 5. Validate browser preview against FFmpeg fixtures, including speed, source trims and gaps.
 6. Add stale-revision protection and cleanup for media resources when sources change or the workspace unmounts.
 
