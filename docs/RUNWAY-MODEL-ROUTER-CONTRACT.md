@@ -14,12 +14,12 @@ Use `POST /v1/generate/video` with the exact same `configId` and model-agnostic
 
 The local builder:
 - Restricts router IDs to lowercase URL-safe slugs.
-- Accepts documented video prompt, negative prompt, pixel `ratio`, resolution,
+- Accepts documented video prompt, negative prompt, model-agnostic `aspectRatio`, resolution,
   duration, audio and reference image inputs.
 - Requires image references to be pre-uploaded `runway://` URIs. It rejects
   browser-provided HTTPS URLs and data URIs so the caller must resolve private
   project assets and upload them on the server first.
-- Uses the currently documented routed-video duration range of 4–15 seconds and pixel-ratio values `1280:720`, `720:1280`, `960:960`, `834:1112`, `1920:1080`, `1080:1920`, `1440:1440`, and `1248:1664`.
+- Uses the currently documented routed-video duration range of 4–15 seconds and aspect-ratio values `16:9`, `9:16`, `1:1`, `4:3`, `3:4`, and `21:9`. Direct-model `ratio` values such as `1280:720` are not valid router fields.
 - Rejects undocumented fields rather than forwarding them speculatively.
 
 The dry-run response contains `routing.model`, `routing.provider`,
