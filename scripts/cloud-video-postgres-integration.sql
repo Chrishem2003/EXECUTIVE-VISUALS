@@ -171,6 +171,20 @@ select executive_visuals.finish_video_generation_job(
  null,0.75
 );
 
+select policy_row.id,policy_row.reserved_amount,policy_row.spent_amount,
+       reservation_row.state,reservation_row.actual_amount,
+       job_row.status,job_row.lease_owner,submission_row.state,
+       submission_row.provider_task_id,
+       (select count(*) from executive_visuals.video_generation_usage_reservations) as usage_count
+from executive_visuals.video_generation_budget_policies policy_row
+cross join executive_visuals.video_generation_budget_reservations reservation_row
+cross join executive_visuals.jobs job_row
+cross join executive_visuals.video_generation_submissions submission_row
+where policy_row.id=current_setting('test.video_policy_id')::uuid
+  and reservation_row.job_id=(select job_id from test_context)
+  and job_row.id=(select job_id from test_context)
+  and submission_row.job_id=(select job_id from test_context);
+
 select 1 / case when exists (
   select 1
   from executive_visuals.video_generation_budget_policies policy_row
