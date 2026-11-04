@@ -17,7 +17,7 @@
 8. Supports stable idempotent replay; replays return the original job without making a second budget or usage reservation.
 9. Rejects conflicting reuse of an idempotency key.
 
-The budget callback must be synchronous and must write its reservation in the same SQLite transaction/database. An asynchronous or externally side-effecting callback is rejected because it cannot be rolled back atomically with the job.\n\n`server/video-generation-submissions.mjs` adds a durable per-job provider-submission ledger. It enforces one transition from `prepared` to `submitting`, records provider task IDs, and moves timeouts or interrupted submissions to an `unknown` quarantine state. An ambiguous submission cannot be automatically started again; an operator must verify the provider task and explicitly reconcile it. This is a duplicate-cost safety boundary, not a claim of exactly-once provider execution.
+The budget callback must be synchronous and must write its reservation in the same SQLite transaction/database. An asynchronous or externally side-effecting callback is rejected because it cannot be rolled back atomically with the job.\n\n`server/video-generation-submissions.mjs` adds a durable per-job provider-submission ledger. It enforces one transition from `prepared` to `submitting`, records provider task IDs, and moves timeouts or interrupted submissions to an `unknown` quarantine state. An ambiguous submission cannot be automatically started again; stale in-flight attempts can be moved to `unknown` by the recovery method, after which an operator must verify the provider task and explicitly reconcile it. This is a duplicate-cost safety boundary, not a claim of exactly-once provider execution.
 
 ## Deliberate non-claims
 
@@ -31,6 +31,6 @@ This module does not submit to Runway, poll a provider, download output, create 
 - Poll according to provider rate limits; handle provider cancellation and terminal states.
 - Download only validated HTTPS provider outputs, enforce byte/time limits, inspect the container with FFprobe, compute SHA-256 and upload to private project storage.
 - Create the platform asset record and durable usage/cost ledger event before marking the job succeeded.
-- Add acceptance tests for worker crash/recovery, provider timeout, duplicate dispatch, budget exhaustion, output expiry, malformed media and project isolation. The ledger currently has isolated tests for one-time submission, ambiguous-outcome quarantine, task-ID reconciliation and terminal transitions; worker-level recovery is still outstanding.
+- Add acceptance tests for worker crash/recovery, provider timeout, duplicate dispatch, budget exhaustion, output expiry, malformed media and project isolation. The ledger currently has isolated tests for one-time submission, stale-attempt quarantine, ambiguous-outcome reconciliation, task-ID persistence and terminal transitions; integration with the cloud worker supervisor and leased queue is still outstanding.
 
 No provider is enabled by this change. No production data, credentials, deployments or provider billing are touched.
