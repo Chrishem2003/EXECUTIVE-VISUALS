@@ -183,6 +183,51 @@ export function createSupabaseAuth({
       throw fail("Supabase session verification is temporarily unavailable.", "SUPABASE_AUTH_UNAVAILABLE");
     },
 
+    async adoptRecoverySession(accessToken, refreshToken) {
+      const access = String(accessToken || "");
+      const refresh = String(refreshToken || "");
+      if (!access || access.length > 8192 || !refresh || refresh.length > 8192) {
+        throw fail("The password recovery link is invalid or incomplete.", "SUPABASE_RECOVERY_INVALID");
+      }
+      let expiresAt = 0;
+      try {
+        const parts = access.split(".");
+        if (parts.length !== 3) throw new Error("Invalid token");
+        const payload = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
+        expiresAt = Number(payload.exp) * 1000;
+      } catch { throw fail("The password recovery link is invalid or expired.", "SUPABASE_RECOVERY_INVALID"); }
+      if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
+        throw fail("The password recovery link is invalid or expired.", "SUPABASE_RECOVERY_INVALID");
+      }
+      const verified = await request("/auth/v1/user", {}, access, "GET");
+      if (!verified.ok) throw fail("The password recovery link could not be verified.", "SUPABASE_RECOVERY_INVALID");
+      const session = { accessToken: access, refreshToken: refresh, expiresAt, user: safeUser(verified.data) };
+      return { user: session.user, cookie: seal(session), maxAge: SESSION_MAX_AGE_SECONDS };
+    },
+
+    async updatePassword(cookie, password) {
+      const pass = String(password || "");
+      if (pass.length < 12 || pass.length > 256) {
+        throw fail("Choose a password of at least 12 characters.", "INVALID_PASSWORD");
+      }
+      let session = open(cookie);
+      if (!session) throw fail("The password recovery session has expired. Request a new link.", "SUPABASE_RECOVERY_INVALID");
+      if (session.expiresAt <= Date.now() + 60000) {
+        const refreshed = await refreshSession(session);
+        if (!refreshed) throw fail("The password recovery session has expired. Request a new link.", "SUPABASE_RECOVERY_INVALID");
+        session = open(refreshed.cookie);
+      }
+      let result = await request("/auth/v1/user", { password: pass }, session.accessToken, "PUT");
+      if (result.status === 401) {
+        const refreshed = await refreshSession(session);
+        if (!refreshed) throw fail("The password recovery session has expired. Request a new link.", "SUPABASE_RECOVERY_INVALID");
+        session = open(refreshed.cookie);
+        result = await request("/auth/v1/user", { password: pass }, session.accessToken, "PUT");
+      }
+      if (!result.ok) throw fail("The password could not be updated. Request a new recovery link and try again.", "SUPABASE_PASSWORD_UPDATE_FAILED");
+      return { user: safeUser(result.data), cookie: seal(session), maxAge: SESSION_MAX_AGE_SECONDS };
+    },
+
     async requestPasswordRecovery(email) {
       const normalizedEmail = String(email || "").trim().toLowerCase();
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
