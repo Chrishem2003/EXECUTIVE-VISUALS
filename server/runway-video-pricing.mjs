@@ -28,13 +28,15 @@ function audio(value) {
  */
 export function estimateRunwayVideoCredits({
   model,durationSeconds,resolution:outputResolution,audio:hasAudio,
-  inputVideoSeconds=0,referenceVideoSeconds=0,referenceImageCount=0,
-  inputType="text",pricingDate
+  inputVideoSeconds=0,referenceVideoSeconds=0,referenceImageCount=0,referenceAudioCount=0,
+  hasStartFrame=false,outputFrames,sourceWidth,sourceHeight,inputType="text",pricingDate
 }={}) {
   const duration=finiteDuration(durationSeconds,"durationSeconds",{max:30});
   const inputVideo=finiteDuration(inputVideoSeconds,"inputVideoSeconds",{allowZero:true,max:30});
   const referenceVideo=finiteDuration(referenceVideoSeconds,"referenceVideoSeconds",{allowZero:true,max:30});
   const imageCount=count(referenceImageCount,"referenceImageCount");
+  const audioCount=count(referenceAudioCount,"referenceAudioCount");
+  if(typeof hasStartFrame!=="boolean")throw fail("hasStartFrame must be a boolean.","RUNWAY_PRICE_INVALID_INPUT");
   const dateShape=typeof pricingDate==="string"&&/^20[0-9]{2}-(0[1-9]|1[0-2])-([0-2][0-9]|3[01])$/.test(pricingDate);
   const parsedDate=dateShape?new Date(pricingDate+"T00:00:00Z"):null;
   if(!parsedDate||Number.isNaN(parsedDate.getTime())||parsedDate.toISOString().slice(0,10)!==pricingDate) {
@@ -47,6 +49,7 @@ export function estimateRunwayVideoCredits({
 
   switch(model) {
     case "gen4.5": perSecond(12); break;
+    case "aleph2": minimum(28,56); break;
     case "gen4_turbo": case "act_two": perSecond(5); break;
     case "kling2.5_turbo_pro": perSecond(12); break;
     case "kling3.0_standard": perSecond(audio(hasAudio)?13:9); break;
@@ -73,12 +76,12 @@ export function estimateRunwayVideoCredits({
       break;
     }
     case "grok_imagine_1_5":
-      credits=duration*resolutionRate({"480p":10,"720p":16,"1080p":29})+imageCount;
-      formula=duration+"s × resolution rate + "+imageCount+" image/audio references";
+      credits=duration*resolutionRate({"480p":10,"720p":16,"1080p":29})+imageCount+audioCount;
+      formula=duration+"s × resolution rate + "+(imageCount+audioCount)+" image/audio references";
       break;
     case "grok_imagine_1_5_lite":
-      credits=duration*resolutionRate({"480p":2,"720p":3,"1080p":14})+imageCount;
-      formula=duration+"s × resolution rate + "+imageCount+" image-to-video start/reference images";
+      credits=duration*resolutionRate({"480p":2,"720p":3,"1080p":14})+(hasStartFrame?1:0);
+      formula=duration+"s × resolution rate + "+(hasStartFrame?1:0)+" image-to-video start frame";
       break;
     case "h3_max": perSecond(resolutionRate({"480p":5,"768p":8})); break;
     case "hailuo3": {
@@ -103,24 +106,49 @@ export function estimateRunwayVideoCredits({
       break;
     }
     case "gemini_omni_flash_1.1": {
-      const rate=resolutionRate({"360p":3.4,"720p":10,"1080p":15});
+      const rate=resolutionRate({"360p":3.4,"720p":10,"1080p":15,"4k":30});
       credits=duration*rate+imageCount+inputVideo;
       formula=duration+"s × "+rate+" + "+imageCount+" reference images + "+inputVideo+"s input video";
       break;
     }
     case "kling_4": {
-      const rates=resolution(outputResolution,["720p","1080p"]);
+      const tier=resolution(outputResolution,["720p","1080p"]);
       const promo=pricingDate<="2026-11-30";
-      const rate=rates==="720p"?(promo?12.56:15.7):(promo?18.8:23.5);
-      if(inputVideo>0) {
-        const inputRate=rates==="720p"?(promo?7.52:9.4):(promo?11.28:14.1);
-        credits=duration*inputRate+Math.max(inputVideo,duration)*inputRate;
-        formula=duration+"s output + max("+inputVideo+"s input, "+duration+"s output), each × "+inputRate;
-      } else {
-        credits=duration*rate;
-        formula=duration+"s × "+rate+" credits/s";
-      }
+      const listRate=tier==="720p"?15.7:23.5;
+      const listInputRate=tier==="720p"?9.4:14.1;
+      const listCharge=Math.ceil(inputVideo>0
+        ? duration*listInputRate+Math.max(inputVideo,duration)*listInputRate
+        : duration*listRate);
+      credits=promo?Math.ceil(listCharge*0.8):listCharge;
+      formula=inputVideo>0
+        ? "ceil(list price: "+duration+"s output + max("+inputVideo+"s input, "+duration+"s output), each × "+listInputRate+"); then "+(promo?"ceil(80% of list charge)":"list charge")
+        : "ceil("+duration+"s × "+listRate+" list credits/s)"+(promo?"; then ceil(80% of list charge)":"");
       if(promo)discount="20% promotion through 2026-11-30 UTC";
+      break;
+    }
+    case "magnific_video_upscaler_creative": {
+      if(!Number.isSafeInteger(outputFrames)||outputFrames<1||outputFrames>1000000) {
+        throw fail("outputFrames must be an explicit positive frame count for video upscaling.","RUNWAY_PRICE_INPUT_REQUIRED");
+      }
+      const tier=resolution(outputResolution,["720p","1k","2k","4k"]);
+      const rate=tier==="720p"||tier==="1k"?0.007:tier==="2k"?0.009:0.012;
+      credits=Math.max(1,Math.ceil(outputFrames*rate/0.01));
+      formula="ceil("+outputFrames+" output frames × $"+rate.toFixed(3)+" per frame ÷ $0.01 per credit)";
+      break;
+    }
+    case "enhance_frame_rate":
+      if(inputVideo<=0)throw fail("inputVideoSeconds is required for frame-rate pricing.","RUNWAY_PRICE_INPUT_REQUIRED");
+      credits=Math.ceil(inputVideo/2);
+      formula="ceil("+inputVideo+" input seconds ÷ 2) credits";
+      break;
+    case "ruby": {
+      if(!Number.isSafeInteger(sourceWidth)||sourceWidth<16||!Number.isSafeInteger(sourceHeight)||sourceHeight<16) {
+        throw fail("sourceWidth and sourceHeight are required to determine the Ruby HDR rate tier.","RUNWAY_PRICE_INPUT_REQUIRED");
+      }
+      const megapixels=sourceWidth*sourceHeight/1000000;
+      const rate=megapixels>4?40:20;
+      perSecond(rate);
+      formula=duration+"s × "+rate+" credits/s ("+megapixels.toFixed(2)+" MP source)";
       break;
     }
     default:
