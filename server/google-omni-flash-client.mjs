@@ -159,6 +159,14 @@ export function createGeminiOmniFlashClient({
     return normalizeGeminiOmniFlashInteractionResponse(data);
   }
 
+  async function fetchAuthorizedInteraction(id, context) {
+    const safeId = interactionId(id);
+    await authorize(safeId, context, "read");
+    const data = await request(BASE + "/interactions/" + encodeURIComponent(safeId));
+    normalized(data);
+    return data;
+  }
+
   return Object.freeze({
     provider: "google",
     model: MODEL,
@@ -187,15 +195,11 @@ export function createGeminiOmniFlashClient({
     },
 
     async getInteractionForIngestion(id, context = {}) {
-      const safeId = interactionId(id);
-      await authorize(safeId, context, "read");
-      const data = await request(BASE + "/interactions/" + encodeURIComponent(safeId));
-      normalized(data);
-      return data;
+      return fetchAuthorizedInteraction(id, context);
     },
 
     async getInteraction(id, context = {}) {
-      const data = await this.getInteractionForIngestion(id, context);
+      const data = await fetchAuthorizedInteraction(id, context);
       const result = normalized(data);
       return Object.freeze({
         taskId: result.interactionId,
