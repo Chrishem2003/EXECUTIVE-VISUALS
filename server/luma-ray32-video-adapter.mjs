@@ -42,8 +42,8 @@ function validateInput(input) {
   if (input.exrExport === true) video.exr_export = true;
   if (input.loop === true) video.loop = true;
   if (input.exrExport === true && input.hdr !== true) throw fail("EXR export requires HDR.", "LUMA_VIDEO_INPUT_INVALID");
-  if (input.hdr === true && ((!["720p", "1080p"].includes(resolution)) || input.loop === true)) {
-    throw fail("Ray 3.2 HDR requires 720p or 1080p and cannot loop.", "LUMA_VIDEO_INPUT_INVALID");
+  if (input.hdr === true && (durationSeconds !== 5 || !["720p", "1080p"].includes(resolution) || input.loop === true)) {
+    throw fail("Ray 3.2 generation HDR is priced only for 5-second 720p or 1080p output and cannot loop.", "LUMA_VIDEO_INPUT_INVALID");
   }
   if (input.loop === true && durationSeconds !== 5) throw fail("Ray 3.2 looping supports only 5-second output.", "LUMA_VIDEO_INPUT_INVALID");
 
@@ -52,9 +52,6 @@ function validateInput(input) {
   const hasKeyframes = input.keyframes !== undefined || input.keyframeIndexes !== undefined;
   if (durationSeconds === 10 && (hasStart || hasEnd)) {
     throw fail("Ray 3.2 10-second generation cannot use startFrame or endFrame; use multi-keyframe mode.", "LUMA_VIDEO_INPUT_INVALID");
-  }
-  if (input.hdr === true && durationSeconds === 10 && !hasKeyframes) {
-    throw fail("Ray 3.2 10-second HDR requires multi-keyframe mode.", "LUMA_VIDEO_INPUT_INVALID");
   }
   if (hasKeyframes) {
     if (hasStart || hasEnd || input.loop === true) throw fail("Ray 3.2 keyframes are mutually exclusive with start/end frames and looping.", "LUMA_VIDEO_INPUT_INVALID");
