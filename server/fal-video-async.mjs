@@ -6,7 +6,7 @@ const fail = (message, code) => Object.assign(new Error(message), { code });
 
 function normalizeModel(value) {
   const model = String(value || "").trim();
-  if (!model || model.length > 240 || !/^[a-zA-Z0-9_./:-]+$/.test(model) || model.startsWith("/") || model.includes("..")) {
+  if (!model || model.length > 240 || !/^[a-zA-Z0-9_./:-]+$/.test(model) || model.startsWith("/") || model.includes("..") || model.split("/").some(part => !part || part === ".")) {
     throw fail("Configure a valid FAL video model identifier.", "VIDEO_GATEWAY_CONFIG_INVALID");
   }
   return model;
@@ -127,7 +127,7 @@ export function createFalAsyncVideoClient({
         }
         throw error;
       }
-      const requestId = String(submitted.request_id || "");
+      if (!submitted || typeof submitted !== "object" || Array.isArray(submitted)) {\n        throw fail("FAL returned an invalid submission response.", "VIDEO_GATEWAY_INVALID_RESPONSE");\n      }\n      const requestId = String(submitted.request_id || "");
       if (!/^[a-zA-Z0-9_-]{1,200}$/.test(requestId)) {
         throw fail("FAL did not return a valid request identifier.", "VIDEO_GATEWAY_INVALID_RESPONSE");
       }
@@ -146,7 +146,7 @@ export function createFalAsyncVideoClient({
       assertEnabled();
       const descriptor = validateTask(task);
       const data = await request(descriptor.statusUrl);
-      if (!["IN_QUEUE", "IN_PROGRESS", "COMPLETED"].includes(data.status)) {
+      if (!data || typeof data !== "object" || Array.isArray(data) || !["IN_QUEUE", "IN_PROGRESS", "COMPLETED"].includes(data.status)) {
         throw fail("FAL returned an unknown task state.", "VIDEO_GATEWAY_INVALID_RESPONSE");
       }
       return Object.freeze({
