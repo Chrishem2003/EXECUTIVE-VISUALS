@@ -26,7 +26,7 @@ export const VIDEO_PROVIDER_CATALOG = freeze([
         availability: "disabled",
         capabilities: {
           textToVideo: true,
-          imageToVideo: false,
+          imageToVideo: true,
           videoToVideo: false,
           videoEdit: false,
           videoExtend: false,
