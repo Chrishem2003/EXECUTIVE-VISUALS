@@ -80,3 +80,9 @@ test("fails closed when storage authorization fails and bounds URL expiry config
     url: origin, assets: { createSignedUrl: async () => ({}) }, maxBytes: 101 * 1024 * 1024
   }));
 });
+
+test("requires the configured storage origin even when a repository is injected", () => {
+  assert.throws(() => createGoogleGeminiSignedUrlResolver({
+    assets: { createSignedUrl: async () => ({}) }
+  }), /exact Supabase origin/);
+});
