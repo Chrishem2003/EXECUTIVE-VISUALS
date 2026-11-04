@@ -90,9 +90,11 @@ export function createGoogleDriveOAuth({
   function decryptRefreshToken(envelope) {
     if (typeof envelope !== "string" || envelope.length > 12000) throw fail("Stored Google connection is invalid.", "GOOGLE_OAUTH_STORED_TOKEN_INVALID");
     const parts = envelope.split(":");
-    if (parts.length !== 5 || parts[0] !== "gdrive" || parts[1] !== "v1") throw fail("Stored Google connection has an unsupported encryption envelope.", "GOOGLE_OAUTH_STORED_TOKEN_INVALID");
+    if (parts.length !== 3 || parts[0] !== "gdrive" || parts[1] !== "v1") throw fail("Stored Google connection has an unsupported encryption envelope.", "GOOGLE_OAUTH_STORED_TOKEN_INVALID");
     try {
-      const iv = Buffer.from(parts[2], "base64url"), tag = Buffer.from(parts[3], "base64url"), data = Buffer.from(parts[4], "base64url");
+      const fields = parts[2].split(".");
+      if (fields.length !== 3) throw new Error("invalid envelope");
+      const iv = Buffer.from(fields[0], "base64url"), tag = Buffer.from(fields[1], "base64url"), data = Buffer.from(fields[2], "base64url");
       if (iv.length !== 12 || tag.length !== 16 || data.length < 1 || data.length > 8192) throw new Error("invalid envelope");
       const decipher = createDecipheriv("aes-256-gcm", key, iv); decipher.setAuthTag(tag);
       return Buffer.concat([decipher.update(data), decipher.final()]).toString("utf8");
