@@ -10,10 +10,10 @@ Source: https://docs.dev.runwayml.com/guides/pricing/
 
 | Model | Published formula used |
 |---|---|
-| Gen-4.5 | 12 credits/second |
+| Gen-4.5 | 12 credits/second; ProRes/PNG sequence +5 credits/second; 10-bit SDR +20 credits/second or +40 above 4MP; native HDR only on Gen-4.5, +20 or +40 above 4MP |
 | Gen-4 Turbo | 5 credits/second |
 | Act-Two | 5 credits/second |
-| Aleph 2.0 | 28 credits/second; 56-credit minimum |
+| Aleph 2.0 | 28 credits/second; 56-credit minimum; ProRes/PNG sequence +5 credits/second; 10-bit SDR +20 or +40 above 4MP |
 | Kling 2.5 Turbo Pro | 12 credits/second |
 | Kling 3.0 Standard | 9 credits/second without audio; 13 with audio |
 | Kling 3.0 Pro | 12 credits/second without audio; 17 with audio |
