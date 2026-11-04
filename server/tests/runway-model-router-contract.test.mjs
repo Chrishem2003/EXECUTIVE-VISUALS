@@ -31,10 +31,10 @@ test("router policy rejects open-ended, malformed or unbudgeted configurations",
 
 test("video dry-run emits documented model-agnostic fields",()=>{
   const payload=buildRunwayVideoRouterDryRun({configId:"executive-visuals-preview",input:{
-    promptText:"A cinematic sunrise",aspectRatio:"16:9",duration:5,resolution:"720p",audio:false
+    promptText:"A cinematic sunrise",ratio:"1280:720",duration:5,resolution:"720p",audio:false
   }});
   assert.deepEqual(payload,{configId:"executive-visuals-preview",dryRun:true,input:{
-    promptText:"A cinematic sunrise",aspectRatio:"16:9",duration:5,resolution:"720p",audio:false
+    promptText:"A cinematic sunrise",ratio:"1280:720",duration:5,resolution:"720p",audio:false
   }});
 });
 
