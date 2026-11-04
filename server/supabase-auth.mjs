@@ -185,7 +185,7 @@ export function createSupabaseAuth({
 
     async requestPasswordRecovery(email) {
       const normalizedEmail = String(email || "").trim().toLowerCase();
-      if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(normalizedEmail)) {
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
         throw fail("Enter a valid email address.", "INVALID_CREDENTIALS");
       }
       const result = await request("/auth/v1/recover", { email: normalizedEmail });
