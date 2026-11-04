@@ -6,7 +6,7 @@ const fail = (message, code) => Object.assign(new Error(message), { code });
 function modelName(value) {
   const model = String(value || "").trim();
   if (!model || model.length > 240 || !/^[a-zA-Z0-9_./:-]+$/.test(model) ||
-      model.startsWith("/") || model.includes("..") || model.split("/").some(part => !part || part === ".")) {
+      model.startsWith("/") || model.includes("..") || model.split("/").length < 2 || model.split("/").some(part => !part || part === ".")) {
     throw fail("A valid exact FAL model identifier is required.", "VIDEO_ADAPTER_CONFIGURATION_INVALID");
   }
   return model;
@@ -16,7 +16,7 @@ function taskFor(model, requestId) {
   if (typeof requestId !== "string" || !/^[a-zA-Z0-9_-]{1,200}$/.test(requestId)) {
     throw fail("The persisted FAL request ID is invalid.", "VIDEO_PROVIDER_TASK_INVALID");
   }
-  const root = QUEUE_ORIGIN + "/" + model + "/requests/" + requestId;
+  const root = QUEUE_ORIGIN + "/" + model.split("/").slice(0, 2).join("/") + "/requests/" + requestId;
   return {
     provider: "fal", model, requestId,
     statusUrl: root + "/status",
