@@ -125,12 +125,15 @@ begin
      and (old.reserved_amount > 0 or old.spent_amount > 0) then
     raise exception 'VIDEO_BUDGET_POLICY_SCOPE_LOCKED_AFTER_USE';
   end if;
+  if new.spend_limit_amount < old.reserved_amount + old.spent_amount then
+    raise exception 'VIDEO_BUDGET_LIMIT_BELOW_COMMITTED_SPEND';
+  end if;
   return new;
 end;
 $video_policy_scope$;
 
 create trigger ev_video_budget_policy_scope_immutable
-  before update of provider, model, currency on executive_visuals.video_generation_budget_policies
+  before update of provider, model, currency, spend_limit_amount on executive_visuals.video_generation_budget_policies
   for each row execute function executive_visuals.validate_video_budget_policy_scope();
 
 create trigger ev_video_budget_policy_owner_immutable
