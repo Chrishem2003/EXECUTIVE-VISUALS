@@ -35,8 +35,12 @@ export async function buildGeminiOmniFlashInteractionRequest({
   sourceVideoAssetId,
   referenceVideoAssetIds = [],
   getAuthorizedAssetContext,
-  resolveGoogleFileAsset
+  resolveGoogleFileAsset,
+  ...unsupportedOptions
 } = {}) {
+  if (Object.keys(unsupportedOptions).length) {
+    throw fail("Unsupported Gemini Omni options: " + Object.keys(unsupportedOptions).join(", "), "GEMINI_OMNI_UNSUPPORTED_OPTION");
+  }
   const text = requiredString(prompt, "prompt");
   if (!["generate", "edit", "extend"].includes(operation)) throw fail("operation must be generate, edit or extend.");
   if (!RATIOS.has(aspectRatio)) throw fail("Gemini Omni supports only 16:9 and 9:16 output ratios.");
