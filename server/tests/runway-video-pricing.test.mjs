@@ -69,6 +69,8 @@ test("prices Magnific video upscaling by output frame count and resolution",()=>
 
 test("prices frame-rate enhancement and Ruby HDR from input duration and source dimensions",()=>{
   assert.equal(estimateRunwayVideoCredits({model:"enhance_frame_rate",durationSeconds:5,inputVideoSeconds:5,pricingDate:date}).estimatedCredits,3);
+  assert.equal(estimateRunwayVideoCredits({model:"enhance_frame_rate",durationSeconds:300,pricingDate:date}).estimatedCredits,150);
+  assert.throws(()=>estimateRunwayVideoCredits({model:"enhance_frame_rate",durationSeconds:301,pricingDate:date}),e=>e.code==="RUNWAY_PRICE_INVALID_INPUT");
   assert.equal(estimateRunwayVideoCredits({model:"ruby",durationSeconds:10,sourceWidth:1920,sourceHeight:1080,pricingDate:date}).estimatedCredits,200);
   assert.equal(estimateRunwayVideoCredits({model:"ruby",durationSeconds:10,sourceWidth:3840,sourceHeight:2160,pricingDate:date}).estimatedCredits,400);
   assert.equal(estimateRunwayVideoCredits({model:"ruby",durationSeconds:10,sourceWidth:2000,sourceHeight:2000,pricingDate:date}).estimatedCredits,200);
