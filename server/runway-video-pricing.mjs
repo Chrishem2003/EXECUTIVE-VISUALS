@@ -62,6 +62,7 @@ export function estimateRunwayVideoCredits(options={}) {
   const imageCount=count(referenceImageCount,"referenceImageCount");
   const audioCount=count(referenceAudioCount,"referenceAudioCount");
   if(typeof hasStartFrame!=="boolean")throw fail("hasStartFrame must be a boolean.","RUNWAY_PRICE_INVALID_INPUT");
+  const billableImageReferences=imageCount+(hasStartFrame?1:0);
   const dateShape=typeof pricingDate==="string"&&/^20[0-9]{2}-(0[1-9]|1[0-2])-([0-2][0-9]|3[01])$/.test(pricingDate);
   const parsedDate=dateShape?new Date(pricingDate+"T00:00:00Z"):null;
   if(!parsedDate||Number.isNaN(parsedDate.getTime())||parsedDate.toISOString().slice(0,10)!==pricingDate) {
@@ -146,8 +147,8 @@ export function estimateRunwayVideoCredits(options={}) {
       break;
     }
     case "grok_imagine_1_5":
-      credits=duration*resolutionRate({"480p":10,"720p":16,"1080p":29})+imageCount+audioCount;
-      formula=duration+"s × resolution rate + "+(imageCount+audioCount)+" image/audio references";
+      credits=duration*resolutionRate({"480p":10,"720p":16,"1080p":29})+billableImageReferences+audioCount;
+      formula=duration+"s × resolution rate + "+billableImageReferences+" image references (including start frame) + "+audioCount+" audio references";
       break;
     case "grok_imagine_1_5_lite":
       credits=duration*resolutionRate({"480p":2,"720p":3,"1080p":14})+(hasStartFrame?1:0);
@@ -157,8 +158,8 @@ export function estimateRunwayVideoCredits(options={}) {
     case "hailuo3": {
       const rate=resolutionRate({"768p":10,"2k":15});
       const billableReferenceVideo=Math.min(15,inputVideo+referenceVideo);
-      credits=duration*rate+imageCount*2+billableReferenceVideo*rate;
-      formula=duration+"s × "+rate+" + "+imageCount+" reference images/keyframes × 2 + min(15s, input/reference video combined) × "+rate;
+      credits=duration*rate+billableImageReferences*2+billableReferenceVideo*rate;
+      formula=duration+"s × "+rate+" + "+billableImageReferences+" reference images/keyframes (including start frame) × 2 + min(15s, input/reference video combined) × "+rate;
       break;
     }
     case "veo3.1": perSecond(audio(hasAudio)?40:20); break;
@@ -167,8 +168,8 @@ export function estimateRunwayVideoCredits(options={}) {
     case "gemini_omni_flash": {
       if(!["text","image","video"].includes(inputType))throw fail("inputType must be text, image or video.","RUNWAY_PRICE_INVALID_INPUT");
       if(inputType==="video") {
-        credits=Math.min(10,inputVideo)*11+imageCount;
-        formula="min(10s, input video) × 11 + "+imageCount+" reference images";
+        credits=Math.min(10,inputVideo)*11+billableImageReferences;
+        formula="min(10s, input video) × 11 + "+billableImageReferences+" reference images";
       } else {
         credits=duration*10+(inputType==="image"?1:0);
         formula=duration+"s × 10"+(inputType==="image"?" + 1 first-frame image":"");
@@ -177,8 +178,8 @@ export function estimateRunwayVideoCredits(options={}) {
     }
     case "gemini_omni_flash_1.1": {
       const rate=resolutionRate({"360p":3.4,"720p":10,"1080p":15,"4k":30});
-      credits=duration*rate+imageCount+inputVideo;
-      formula=duration+"s × "+rate+" + "+imageCount+" reference images + "+inputVideo+"s input video";
+      credits=duration*rate+billableImageReferences+inputVideo;
+      formula=duration+"s × "+rate+" + "+billableImageReferences+" reference images (including start frame) + "+inputVideo+"s input video";
       break;
     }
     case "kling_4": {
