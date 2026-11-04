@@ -150,6 +150,8 @@ Required server configuration (only when intentionally enabling this feature):
 - `GOOGLE_OAUTH_CLIENT_SECRET`
 - `GOOGLE_OAUTH_REDIRECT_URI` (must exactly match the Google Cloud OAuth client; callback path is `/api/integrations/google-drive/callback`)
 - `GOOGLE_DRIVE_TOKEN_ENCRYPTION_KEY` (at least 32 characters; keep outside source control)
+- `GOOGLE_PICKER_API_KEY` (restricted to the staging web origin and Google Picker APIs)
+- `GOOGLE_CLOUD_PROJECT_NUMBER` (numeric Google Cloud project number used by Picker)
 - Existing `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`
 
 Two source-controlled migrations add:
@@ -178,3 +180,9 @@ This is server-side OAuth infrastructure, not yet the complete user-facing Drive
 - Additional authenticated endpoints: `POST /api/integrations/google-drive/import` accepts a Picker-selected `fileId` and optional `projectId`; `POST /api/integrations/google-drive/export` accepts a private `assetId`, optional `projectId` and optional destination `parentFolderId`.
 - Import and export endpoints use the authenticated application user as the owner, never accept an owner ID from the request, and are rate-limited. Import is bounded by the configured cloud media upload limit.
 - The Settings screen now has Google Drive connection status, connect and disconnect controls. The Picker itself remains the next frontend milestone; the import endpoint is ready for the Picker's selected file ID.
+
+Google Picker frontend follow-up:
+- The Settings screen now exposes a "Choose files from Drive" action when a connection exists.
+- The client obtains a short-lived access token from the authenticated `POST /api/integrations/google-drive/picker-token` endpoint. The token is scoped to the user's selected-file `drive.file` access and is not persisted in localStorage.
+- Picker selection sends only the selected file ID to the authenticated import endpoint; the server independently verifies access and file metadata before ingesting bytes.
+- The server Content Security Policy now explicitly allows the Google API loader, Picker frames and required Google API connections. Review the staging web origin and API key referrer restrictions before enabling.
