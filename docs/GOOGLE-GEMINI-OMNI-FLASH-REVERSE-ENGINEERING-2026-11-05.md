@@ -126,3 +126,50 @@ Official Google references:
 - https://developers.google.com/workspace/drive/api/guides/api-specific-auth
 - https://developers.google.com/workspace/drive/api/guides/manage-uploads
 - https://developers.google.com/identity/protocols/oauth2/scopes
+
+
+## Google Drive OAuth and private connection foundation
+
+The follow-on implementation adds a server-side Google account connection flow. It is deliberately disabled unless `GOOGLE_DRIVE_OAUTH_ENABLED=true` and requires `AUTH_MODE=supabase`.
+
+New server modules:
+- `server/google-drive-oauth.mjs`: state-bound authorization-code + PKCE flow, OIDC nonce validation, Google RS256 identity-token signature verification using Google's published JWK set, encrypted refresh-token envelopes (AES-256-GCM), refresh-token rotation, access-token caching and disconnect/revocation.
+- `server/google-drive-connection-store.mjs`: service-role-only Supabase persistence for encrypted refresh-token metadata and atomic one-time OAuth state consumption. State values are SHA-256 hashed; PKCE verifier and OIDC nonce are encrypted at rest.
+- `server/index.mjs`: authenticated connect, status and disconnect endpoints plus a state-bound callback that does not depend on a cross-site SameSite=Strict session cookie.
+
+New endpoints:
+- `POST /api/integrations/google-drive/connect` — returns a Google authorization URL for the authenticated user.
+- `GET /api/integrations/google-drive/callback` — consumes one-time state, validates the callback and redirects to the application.
+- `GET /api/integrations/google-drive/status` — returns connected state, account email and granted scopes (never tokens).
+- `POST /api/integrations/google-drive/disconnect` — attempts Google token revocation and always removes the local connection record.
+
+Required server configuration (only when intentionally enabling this feature):
+- `AUTH_MODE=supabase`
+- `GOOGLE_DRIVE_OAUTH_ENABLED=true`
+- `GOOGLE_OAUTH_CLIENT_ID`
+- `GOOGLE_OAUTH_CLIENT_SECRET`
+- `GOOGLE_OAUTH_REDIRECT_URI` (must exactly match the Google Cloud OAuth client; callback path is `/api/integrations/google-drive/callback`)
+- `GOOGLE_DRIVE_TOKEN_ENCRYPTION_KEY` (at least 32 characters; keep outside source control)
+- Existing `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`
+
+Two source-controlled migrations add:
+- `google_drive_connections`: per-user encrypted refresh token, verified Google subject/email and granted scopes.
+- `google_drive_oauth_states`: hashed one-time state, encrypted PKCE verifier/nonce and short expiry.
+
+Both tables force RLS and revoke access from public, anon and authenticated roles; only the server service role is granted access. These migrations have **not** been applied to any Supabase environment. The OAuth feature remains disabled by default.
+
+Security details:
+- The OAuth callback resolves its owner exclusively from the one-time server-side state record created after an authenticated connect request; the callback does not trust a user ID from query parameters.
+- The callback validates state ownership/expiry, PKCE verifier, OIDC nonce, token scopes, ID-token issuer/audience/expiry/email verification and RS256 signature.
+- Refresh tokens are AES-256-GCM encrypted before persistence; the raw token is never returned by the API or stored in the connection table.
+- OAuth state is consumed with one atomic database DELETE, preventing callback replay across application instances.
+- Google Drive permission remains limited to `drive.file` plus OpenID/email identity scopes.
+
+Remaining integration work:
+- Google Picker frontend and API-key/app-ID configuration.
+- UI connection status, connect/disconnect actions and import/export progress.
+- Wire the OAuth access-token provider into the private Drive bridge and expose authenticated import/export endpoints.
+- Validate the full flow against a dedicated staging Google OAuth client after environment variables and migrations are reviewed.
+- Add scheduled cleanup for expired OAuth state rows.
+
+This is server-side OAuth infrastructure, not yet the complete user-facing Drive file picker. Do not enable it or apply migrations until the staging configuration, Google Cloud consent screen, callback URI and secret storage have been reviewed.
