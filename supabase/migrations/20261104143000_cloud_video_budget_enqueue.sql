@@ -316,46 +316,60 @@ grant execute on function executive_visuals.enqueue_video_generation_job(uuid, u
   to service_role;
 
 
-create or replace function executive_visuals.settle_video_generation_budget_reservation(
+create or replace function executive_visuals.finish_video_generation_job(
   p_job_id uuid,
   p_worker_id text,
+  p_status text,
+  p_output jsonb default null,
+  p_error jsonb default null,
   p_actual_amount numeric default null
 )
 returns boolean
 language plpgsql
 security invoker
 set search_path = pg_catalog, executive_visuals
-as $
+as $video_finish$
 declare
+  current_job executive_visuals.jobs;
   reservation executive_visuals.video_generation_budget_reservations;
   policy executive_visuals.video_generation_budget_policies;
-  target_state text;
+  submission executive_visuals.video_generation_submissions;
+  target_submission_state text;
+  target_budget_state text;
 begin
   if p_worker_id is null or char_length(btrim(p_worker_id)) not between 1 and 128
+     or p_status not in ('succeeded','partial','failed','cancelled')
+     or (p_output is not null and jsonb_typeof(p_output) <> 'object')
+     or (p_error is not null and jsonb_typeof(p_error) <> 'object')
+     or octet_length(coalesce(p_output,'{}'::jsonb)::text) > 32000
+     or octet_length(coalesce(p_error,'{}'::jsonb)::text) > 8000
      or (p_actual_amount is not null and p_actual_amount < 0) then
-    raise exception 'VIDEO_BUDGET_SETTLEMENT_ARGUMENTS_INVALID';
+    raise exception 'VIDEO_JOB_FINISH_ARGUMENTS_INVALID';
   end if;
 
-  -- Settlement is lease-fenced and must happen before the worker finishes the job.
-  if not exists (
-    select 1 from executive_visuals.jobs j
-    where j.id = p_job_id and j.job_type = 'video.generate'
-      and j.status = 'processing' and j.lease_owner = p_worker_id
-      and j.lease_expires_at > clock_timestamp()
-  ) then
+  select * into current_job
+  from executive_visuals.jobs j
+  where j.id = p_job_id and j.job_type = 'video.generate'
+  for update;
+  if current_job.id is null or current_job.status <> 'processing'
+     or current_job.lease_owner <> p_worker_id
+     or current_job.lease_expires_at <= clock_timestamp() then
     return false;
+  end if;
+
+  if p_status in ('succeeded','partial') and p_actual_amount is null then
+    raise exception 'VIDEO_BUDGET_ACTUAL_COST_REQUIRED';
+  end if;
+  if p_status in ('failed','cancelled') and p_actual_amount is not null then
+    raise exception 'VIDEO_BUDGET_FAILURE_MUST_RELEASE_RESERVATION';
   end if;
 
   select * into reservation
   from executive_visuals.video_generation_budget_reservations r
   where r.job_id = p_job_id
   for update;
-  if reservation.id is null then raise exception 'VIDEO_BUDGET_RESERVATION_NOT_FOUND'; end if;
-
-  target_state := case when p_actual_amount is null then 'released' else 'settled' end;
-  if reservation.state <> 'reserved' then
-    return reservation.state = target_state
-      and reservation.actual_amount is not distinct from p_actual_amount;
+  if reservation.id is null or reservation.state <> 'reserved' then
+    raise exception 'VIDEO_BUDGET_RESERVATION_NOT_SETTLEABLE';
   end if;
   if p_actual_amount is not null and p_actual_amount > reservation.reserved_amount then
     raise exception 'VIDEO_BUDGET_ACTUAL_EXCEEDS_RESERVATION';
@@ -369,6 +383,7 @@ begin
     raise exception 'VIDEO_BUDGET_LEDGER_INVARIANT_FAILED';
   end if;
 
+  target_budget_state := case when p_actual_amount is null then 'released' else 'settled' end;
   update executive_visuals.video_generation_budget_policies
   set reserved_amount = reserved_amount - reservation.reserved_amount,
       spent_amount = spent_amount + coalesce(p_actual_amount, 0),
@@ -376,23 +391,63 @@ begin
   where id = policy.id;
 
   update executive_visuals.video_generation_budget_reservations
-  set state = target_state, actual_amount = p_actual_amount, updated_at = clock_timestamp()
+  set state = target_budget_state, actual_amount = p_actual_amount, updated_at = clock_timestamp()
   where id = reservation.id;
+
+  target_submission_state := case when p_status in ('succeeded','partial') then 'succeeded' else p_status end;
+  select * into submission
+  from executive_visuals.video_generation_submissions s
+  where s.job_id = p_job_id
+  for update;
+  if submission.id is not null then
+    if target_submission_state = 'succeeded' and submission.provider_task_id is null then
+      raise exception 'VIDEO_SUBMISSION_TASK_ID_REQUIRED';
+    end if;
+    if submission.state not in ('prepared','submitting','submitted','unknown') then
+      raise exception 'VIDEO_SUBMISSION_NOT_SETTLEABLE';
+    end if;
+    update executive_visuals.video_generation_submissions
+    set state = target_submission_state, updated_at = clock_timestamp(),
+        metadata = metadata || jsonb_build_object('jobStatus',p_status,'budgetState',target_budget_state)
+    where id = submission.id;
+  elsif p_status in ('succeeded','partial') then
+    raise exception 'VIDEO_SUBMISSION_LEDGER_REQUIRED';
+  end if;
+
+  update executive_visuals.jobs
+  set status = p_status,
+      progress = case when p_status in ('succeeded','partial') then 100 else progress end,
+      output = p_output,
+      error = p_error,
+      completed_at = clock_timestamp(),
+      updated_at = clock_timestamp(),
+      lease_owner = null,
+      lease_expires_at = null,
+      lease_heartbeat_at = null
+  where id = p_job_id and status = 'processing' and lease_owner = p_worker_id;
+
+  insert into executive_visuals.job_events(job_id, owner_id, event_type, event_data)
+  values (
+    p_job_id, current_job.owner_id, 'job.' || p_status,
+    jsonb_build_object('status',p_status,'budgetReservationId',reservation.id,
+      'reservedAmount',reservation.reserved_amount,'actualAmount',p_actual_amount,
+      'currency',reservation.currency)
+  );
 
   insert into executive_visuals.audit_events(owner_id, project_id, event_type, subject_type, subject_id, details)
   values (
-    reservation.owner_id, reservation.project_id, 'video.budget.' || target_state,
+    current_job.owner_id, current_job.project_id, 'video.budget.' || target_budget_state,
     'video_budget_reservation', reservation.id::text,
-    jsonb_build_object('jobId', p_job_id, 'reservedAmount', reservation.reserved_amount,
-      'actualAmount', p_actual_amount, 'currency', reservation.currency)
+    jsonb_build_object('jobId',p_job_id,'reservedAmount',reservation.reserved_amount,
+      'actualAmount',p_actual_amount,'currency',reservation.currency,'jobStatus',p_status)
   );
   return true;
 end;
-$;
+$video_finish$;
 
-revoke all on function executive_visuals.settle_video_generation_budget_reservation(uuid, text, numeric)
+revoke all on function executive_visuals.finish_video_generation_job(uuid, text, text, jsonb, jsonb, numeric)
   from public, anon, authenticated;
-grant execute on function executive_visuals.settle_video_generation_budget_reservation(uuid, text, numeric)
+grant execute on function executive_visuals.finish_video_generation_job(uuid, text, text, jsonb, jsonb, numeric)
   to service_role;
 
--- Provider dispatch remains a separate release gate.
+-- Job completion, submission terminalization and budget settlement commit atomically.
