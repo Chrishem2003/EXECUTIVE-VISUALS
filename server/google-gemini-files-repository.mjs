@@ -72,7 +72,7 @@ export function createGoogleGeminiFilesRepository({
   return Object.freeze({
     async findProviderFile({ assetId, ownerId, projectId = null, mimeType }) {
       const params = new URLSearchParams({
-        select: "id,provider,asset_id,owner_id,project_id,google_file_name,google_file_uri,mime_type,byte_size,sha256,state,uploaded_at,expires_at",
+        select: "id,provider,asset_id,owner_id,project_id,google_file_name,google_file_uri,mime_type,byte_size,sha256,state,uploaded_at,expires_at,source_type,source_uri",
         provider: "eq." + PROVIDER,
         asset_id: "eq." + assetId,
         owner_id: "eq." + ownerId,
@@ -96,7 +96,9 @@ export function createGoogleGeminiFilesRepository({
         sha256: row.sha256,
         state: row.state,
         uploadedAt: row.uploaded_at,
-        expiresAt: row.expires_at
+        expiresAt: row.expires_at,
+        sourceType: row.source_type || "upload",
+        sourceUri: row.source_uri || null
       };
     },
     async recordProviderFile(record) {
@@ -113,7 +115,9 @@ export function createGoogleGeminiFilesRepository({
         sha256: record.sha256,
         state: record.state,
         uploaded_at: record.uploadedAt,
-        expires_at: record.expiresAt
+        expires_at: record.expiresAt,
+        source_type: record.sourceType || "upload",
+        source_uri: record.sourceUri || null
       };
       const params = new URLSearchParams({ on_conflict: "provider,asset_id,owner_id", select: "id" });
       const rows = await request("?" + params.toString(), {
