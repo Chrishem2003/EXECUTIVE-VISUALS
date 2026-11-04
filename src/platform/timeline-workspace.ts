@@ -70,7 +70,7 @@ function loadCaptionCues(asset:Asset):Promise<Array<{start:number;end:number;tex
   const body=await response.text();if(body.length>2*1024*1024)throw new Error("Caption asset exceeds the preview size limit.");
   return body.replace(/^\uFEFF/,"").replace(/\r/g,"").split(/\n\s*\n/).flatMap(block=>{
    const lines=block.split("\n"),index=lines.findIndex(line=>line.includes("-->"));if(index<0)return [];
-   const timing=lines[index].split("-->"),start=parseCaptionTime(timing[0].trim().split(/\s+/)[0]),end=parseCaptionTime(timing[1].trim().split(/\\s+/)[0]);
+   const timing=lines[index].split("-->"),start=parseCaptionTime(timing[0].trim().split(/\s+/)[0]),end=parseCaptionTime(timing[1].trim().split(/\s+/)[0]);
    const text=lines.slice(index+1).join(" ").replace(/<[^>]*>/g,"").replace(/&lt;/g,"<").replace(/&gt;/g,">").replace(/&amp;/g,"&").trim().slice(0,1000);
    return Number.isFinite(start)&&Number.isFinite(end)&&end>start&&text?[{start,end,text}]:[];
   }).slice(0,5000);
@@ -345,6 +345,8 @@ export async function initTimelineWorkspace(){
 }
 function paint(){
  stopSequencePlayback();
+ for(const audio of sequenceAudio.values()){audio.pause();audio.removeAttribute("src");audio.load();}
+ sequenceAudio.clear();
  const root=document.querySelector<HTMLElement>("#timeline-workspace");if(root)root.outerHTML=renderTimelineWorkspace();
  const media=document.querySelector<HTMLMediaElement>("#tl-preview-media");
  if(media){
