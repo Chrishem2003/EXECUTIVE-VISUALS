@@ -77,6 +77,27 @@ test("lists active cloud timelines for an authorized project with bounded pagina
  const listCall=f.calls.find(x=>x.url.includes("timelines?")&&x.options.method==="GET");
  assert.ok(listCall.url.includes("project_id=eq."+project));assert.ok(listCall.url.includes("limit=100"));assert.ok(listCall.url.includes("offset=5"));
 });
+test("cloud timeline repository persists valid versioned edit descriptors",async()=>{
+ const f=setup();
+ const clip={...document.tracks[0].clips[0],effects:[{schemaVersion:1,id:"color-1",type:"color",enabled:true,parameters:{brightness:0,contrast:1,saturation:1}}],keyframes:[{schemaVersion:1,id:"opacity-1",property:"opacity",frame:0,value:1,interpolation:"linear"}],transitionIn:{schemaVersion:1,id:"fade-1",type:"fade-to-black",edge:"in",durationFrames:10,curve:"linear"}};
+ const saved=await f.repo.create({ownerId:owner,projectId:project,name:"Descriptor timeline",timeline:{...document,tracks:[{...document.tracks[0],clips:[clip]}]}});
+ assert.equal(saved.timeline.tracks[0].clips[0].effects[0].type,"color");
+ assert.equal(saved.timeline.tracks[0].clips[0].keyframes[0].property,"opacity");
+ assert.equal(saved.timeline.tracks[0].clips[0].transitionIn.durationFrames,10);
+});
+
+test("cloud timeline repository rejects malformed effect, keyframe and transition descriptors",async()=>{
+ const f=setup();
+ const baseClip=document.tracks[0].clips[0];
+ const invalids=[
+  {...baseClip,effects:[{schemaVersion:1,id:"bad-color",type:"color",enabled:true,parameters:{brightness:2,contrast:1,saturation:1}}]},
+  {...baseClip,keyframes:[{schemaVersion:1,id:"bad-key",property:"opacity",frame:31,value:1,interpolation:"linear"}]},
+  {...baseClip,transitionIn:{schemaVersion:1,id:"bad-fade",type:"fade-to-black",edge:"out",durationFrames:10,curve:"linear"}}
+ ];
+ for(const clip of invalids)await assert.rejects(()=>f.repo.create({ownerId:owner,timeline:{...document,tracks:[{...document.tracks[0],clips:[clip]}]}}),error=>error.code==="CLOUD_TIMELINE_INVALID");
+ assert.equal(f.calls.length,0);
+});
+
 test("does not list cloud timelines when project read permission is denied",async()=>{
  const f=setup({authorize:async()=>false});
  await assert.rejects(()=>f.repo.list({ownerId:owner,projectId:project}),error=>error.code==="CLOUD_TIMELINE_ACCESS_DENIED");

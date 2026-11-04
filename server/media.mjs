@@ -1,3 +1,4 @@
+import { assertTimelineDescriptorsSupported } from "./timeline-descriptors.mjs";
 import { spawn, spawnSync } from "node:child_process";
 import { createReadStream } from "node:fs";
 import { mkdir, unlink, readFile, writeFile } from "node:fs/promises";
@@ -208,6 +209,7 @@ async function renderTimelineJob({db,job,mediaRoot,activeProcesses,onProgress}){
     if(!access||access.owner_id!==job.owner_id&&!["editor","owner"].includes(access.role))throw Object.assign(new Error("Timeline is not accessible for rendering."),{code:"TIMELINE_ACCESS_DENIED"});
   }else if(record.owner_id!==job.owner_id)throw Object.assign(new Error("Timeline is not accessible for rendering."),{code:"TIMELINE_ACCESS_DENIED"});
   const timeline=parseJson(record.timeline_json);
+  assertTimelineDescriptorsSupported(timeline);
   const activeTracks=(timeline.tracks||[]).filter(track=>track.enabled!==false&&(track.clips||[]).some(clip=>clip.enabled!==false));
   const videoTracks=activeTracks.filter(track=>track.kind==="video");
   const audioTracks=activeTracks.filter(track=>track.kind==="audio");
