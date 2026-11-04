@@ -115,7 +115,7 @@ export function createGoogleGeminiFilesRepository({
         uploaded_at: record.uploadedAt,
         expires_at: record.expiresAt
       };
-      const params = new URLSearchParams({ on_conflict: "provider,asset_id", select: "id" });
+      const params = new URLSearchParams({ on_conflict: "provider,asset_id,owner_id", select: "id" });
       const rows = await request("?" + params.toString(), {
         method: "POST",
         body,
