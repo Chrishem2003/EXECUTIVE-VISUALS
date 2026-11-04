@@ -192,6 +192,7 @@ test("client resolves reference assets only within the active owner and project"
   const calls = [];
   const client = createRunwayRouterDryRunClient({
     env,
+    getAuthorizedAssetContext: async ({ projectId }) => ({ ownerId: "owner_1", projectId }),
     resolvePrivateAsset: async args => {
       calls.push(args);
       return { uri: "https://private-assets.example.com/" + args.assetId + "." + args.mediaType };
@@ -209,9 +210,9 @@ test("client resolves reference assets only within the active owner and project"
   });
   await client.preflight({
     configId: "creative_low_cost", prompt: "Use supplied media",
-    ownerId: "owner_1", projectId: "project_1",
-    referenceImages: [{ assetId: "asset_123", ownerId: "owner_1", projectId: "project_1", role: "first" }],
-    referenceAudio: [{ assetId: "audio_456", ownerId: "owner_1", projectId: "project_1" }]
+    projectId: "project_1",
+    referenceImages: [{ assetId: "asset_123", role: "first" }],
+    referenceAudio: [{ assetId: "audio_456" }]
   });
   assert.equal(calls.length, 2);
   assert.deepEqual(calls.map(x => [x.ownerId, x.projectId, x.mediaType]), [
@@ -220,17 +221,31 @@ test("client resolves reference assets only within the active owner and project"
 });
 
 test("client rejects cross-project assets and refuses references without a private resolver", async () => {
-  const client = createRunwayRouterDryRunClient({
-    env, fetchImpl: async () => response(200, decision)
+  const denied = createRunwayRouterDryRunClient({
+    env,
+    getAuthorizedAssetContext: async () => { throw new Error("forbidden"); },
+    resolvePrivateAsset: async () => ({ uri: "https://private-assets.example.com/image.png" }),
+    fetchImpl: async () => response(200, decision)
   });
-  await assert.rejects(() => client.preflight({
-    configId: "creative_low_cost", prompt: "test",
-    ownerId: "owner_1", projectId: "project_1",
-    referenceImages: [{ assetId: "asset_1", ownerId: "owner_1", projectId: "other_project", role: "first" }]
+  await assert.rejects(() => denied.preflight({
+    configId: "creative_low_cost", prompt: "test", projectId: "project_1",
+    referenceImages: [{ assetId: "asset_1", role: "first" }]
   }), error => error.code === "RUNWAY_ROUTER_ASSET_FORBIDDEN");
-  await assert.rejects(() => client.preflight({
-    configId: "creative_low_cost", prompt: "test",
-    ownerId: "owner_1", projectId: "project_1",
-    referenceImages: [{ assetId: "asset_1", ownerId: "owner_1", projectId: "project_1", role: "first" }]
+  const noResolver = createRunwayRouterDryRunClient({
+    env,
+    getAuthorizedAssetContext: async ({ projectId }) => ({ ownerId: "owner_1", projectId }),
+    fetchImpl: async () => response(200, decision)
+  });
+  await assert.rejects(() => noResolver.preflight({
+    configId: "creative_low_cost", prompt: "test", projectId: "project_1",
+    referenceImages: [{ assetId: "asset_1", role: "first" }]
   }), error => error.code === "RUNWAY_ROUTER_ASSET_RESOLVER_REQUIRED");
+  const noAuthContext = createRunwayRouterDryRunClient({
+    env, resolvePrivateAsset: async () => ({ uri: "https://private-assets.example.com/image.png" }),
+    fetchImpl: async () => response(200, decision)
+  });
+  await assert.rejects(() => noAuthContext.preflight({
+    configId: "creative_low_cost", prompt: "test", projectId: "project_1",
+    referenceImages: [{ assetId: "asset_1", role: "first" }]
+  }), error => error.code === "RUNWAY_ROUTER_ASSET_AUTH_REQUIRED");
 });
