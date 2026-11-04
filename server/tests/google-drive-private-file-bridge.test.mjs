@@ -24,7 +24,7 @@ function response({ status = 200, json = null, data = bytes, headers = {} } = {}
     })
   };
 }
-function harness({ metadata = sourceFile, download = bytes, load = null, denied = false } = {}) {
+function harness({ metadata = sourceFile, download = bytes, load = null, denied = false, uploadLocation = "https://www.googleapis.com/upload/drive/v3/files?upload_id=private-session" } = {}) {
   const calls = [], scopes = [];
   const assets = { async create(args) {
     calls.push({ kind: "asset-create", args });
@@ -44,7 +44,7 @@ function harness({ metadata = sourceFile, download = bytes, load = null, denied 
       }
       if (url.includes("/drive/v3/files/")) return response({ json: metadata });
       if (url.includes("uploadType=resumable")) return response({ headers: {
-        location: "https://www.googleapis.com/upload/drive/v3/files?upload_id=private-session"
+        location: uploadLocation
       }});
       if (options.method === "PUT") return response({ json: {
         id: "driveFile_987654321", name: "master.mp4", mimeType: "video/mp4",
@@ -143,4 +143,17 @@ test("rejects a Drive media response whose content type conflicts with file meta
   await assert.rejects(() => bridge.importFile({ ownerId, projectId, fileId: sourceFile.id }),
     error => error.code === "GOOGLE_DRIVE_MIME_MISMATCH");
   assert.equal(calls.length, 2);
+});
+
+test("rejects deceptive resumable upload session paths and hosts before sending media bytes", async () => {
+  for (const uploadLocation of [
+    "https://www.googleapis.com/upload/drive/v3/files-evil?upload_id=x",
+    "https://attacker.example/upload/drive/v3/files?upload_id=x",
+    "http://www.googleapis.com/upload/drive/v3/files?upload_id=x"
+  ]) {
+    const h = harness({ uploadLocation });
+    await assert.rejects(() => h.bridge.uploadPrivateAsset({ ownerId, projectId, assetId }),
+      error => error.code === "GOOGLE_DRIVE_UPLOAD_SESSION_INVALID");
+    assert.equal(h.calls.some(x => x.options?.method === "PUT"), false);
+  }
 });
