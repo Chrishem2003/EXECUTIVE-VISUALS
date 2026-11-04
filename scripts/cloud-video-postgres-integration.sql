@@ -167,7 +167,8 @@ begin
    '323e4567-e89b-42d3-a456-426614174000',
    'pg-integration-video-approval-replay','runway','gen4.5',repeat('a',64),
    jsonb_build_object('projectId','323e4567-e89b-42d3-a456-426614174000',
-     'provider','runway','model','gen4.5','requestHash',repeat('a',64)),
+     'provider','runway','model','gen4.5','requestHash',repeat('a',64),
+     'durationSeconds',5,'outputFormat','mp4'),
    '523e4567-e89b-42d3-a456-426614174000',1.25,'USD'
   );
   raise exception 'consumed approval unexpectedly authorized another job';
