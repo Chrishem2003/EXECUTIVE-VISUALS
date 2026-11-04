@@ -13,6 +13,7 @@ import { addClip, addMarker, addTrack, createTimeline, moveClip, rational, split
 import { clampPreviewSeconds, frameToSeconds, getTimelineDurationFrames, resolveTimelineFrame, secondsToFrame, stepPreviewSeconds } from "../core/timeline-preview";
 import { resolveTimelineAudioFrame } from "../core/timeline-audio-preview";
 import { selectPreviewAsset } from "../core/timeline-preview-assets";
+import { getTimelineClipPreviewStyle } from "../core/timeline-preview-effects";
 
 type Asset={id:string;name:string;mediaType:string;size:number;sha256?:string;derivativeOf?:string|null;metadata?:Record<string,unknown>};
 type SavedTimeline={id:string;projectId?:string|null;name:string;revision:number;document?:EditorialTimeline};
@@ -106,7 +107,7 @@ function syncSequenceOverlays(active:ReturnType<typeof resolveTimelineFrame>){
   const url=assetContentUrl(asset.id);if(image.dataset.assetId!==asset.id){image.dataset.assetId=asset.id;image.src=url;}
   const meta=item.clip.metadata||{},width=Math.max(16,Math.min(state.timeline.width,Number(meta.width)||state.timeline.width*.24)),height=Math.max(16,Math.min(state.timeline.height,Number(meta.height)||state.timeline.height*.24));
   const rawX=Number(meta.x),rawY=Number(meta.y),x=Math.max(0,Math.min(state.timeline.width-width,Number.isFinite(rawX)?rawX:state.timeline.width-width-24)),y=Math.max(0,Math.min(state.timeline.height-height,Number.isFinite(rawY)?rawY:24)),opacity=Math.max(0,Math.min(1,Number(meta.opacity??1)));
-  image.style.left=(x/state.timeline.width*100)+"%";image.style.top=(y/state.timeline.height*100)+"%";image.style.width=(width/state.timeline.width*100)+"%";image.style.height=(height/state.timeline.height*100)+"%";image.style.opacity=String(opacity);
+  image.style.left=(x/state.timeline.width*100)+"%";image.style.top=(y/state.timeline.height*100)+"%";image.style.width=(width/state.timeline.width*100)+"%";image.style.height=(height/state.timeline.height*100)+"%";const previewStyle=getTimelineClipPreviewStyle(item.clip,item.timelineSeconds,state.timeline.frameRate);image.style.filter=previewStyle.filter;image.style.opacity=String(opacity*previewStyle.opacity);
  }
  for(const image of Array.from(container.querySelectorAll<HTMLImageElement>("img[data-clip-id]")))if(!live.has(image.dataset.clipId||""))image.remove();
  const captions=active.filter(item=>item.track.kind==="caption");caption.textContent="";
@@ -144,6 +145,7 @@ function renderSequenceFrame(frame:number,forceSeek=false){
  const sourceAsset=state.assets.find(item=>item.id===current.clip.assetId);
  if(!sourceAsset){video.pause();video.hidden=true;image.hidden=true;empty.hidden=false;empty.textContent="The active source asset is unavailable in this workspace.";return;}
  const selection=selectPreviewAsset(sourceAsset,state.assets),asset=selection.asset;
+ const previewStyle=getTimelineClipPreviewStyle(current.clip,current.timelineSeconds,state.timeline.frameRate);video.style.filter=previewStyle.filter;video.style.opacity=String(previewStyle.opacity);image.style.filter=previewStyle.filter;image.style.opacity=String(previewStyle.opacity);
  const sourceMode=document.querySelector<HTMLElement>("#tl-sequence-source-mode");if(sourceMode)sourceMode.textContent=selection.mode==="proxy"?"Verified proxy":"Original source";
  const mediaUrl=assetContentUrl(asset.id);empty.hidden=true;
  if(asset.mediaType.startsWith("image/")){
