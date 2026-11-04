@@ -196,15 +196,14 @@ export function estimateRunwayVideoCredits(options={}) {
       const promo=pricingDate<="2026-11-30";
       const listRate=tier==="720p"?15.7:23.5;
       const listInputRate=tier==="720p"?9.4:14.1;
-      const billedRate=promo?listRate*0.8:listRate;
-      const billedInputRate=promo?listInputRate*0.8:listInputRate;
       const billableInputVideo=Math.min(30,inputVideo+referenceVideo);
-      credits=Math.ceil(billableInputVideo>0
-        ? duration*billedInputRate+Math.max(billableInputVideo,duration)*billedInputRate
-        : duration*billedRate);
+      const listCharge=Math.ceil(billableInputVideo>0
+        ? duration*listInputRate+Math.max(billableInputVideo,duration)*listInputRate
+        : duration*listRate);
+      credits=promo?Math.ceil(listCharge*0.8):listCharge;
       formula=billableInputVideo>0
-        ? "ceil("+duration+"s output + max("+billableInputVideo+"s combined input/reference video, "+duration+"s output), each × "+billedInputRate+" "+(promo?"promotional":"list")+" credits/s)"
-        : "ceil("+duration+"s × "+billedRate+" "+(promo?"promotional":"list")+" credits/s)";
+        ? "ceil(list price: "+duration+"s output + max("+billableInputVideo+"s combined input/reference video, "+duration+"s output), each × "+listInputRate+"); then "+(promo?"ceil(80% of list charge)":"list charge")
+        : "ceil("+duration+"s × "+listRate+" list credits/s)"+(promo?"; then ceil(80% of list charge)":"");
       if(promo)discount="20% promotion through 2026-11-30 UTC";
       break;
     }
