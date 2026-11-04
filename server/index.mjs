@@ -202,7 +202,7 @@ async function storeUpload(req,user,projectId) {
 }
 async function processNextJob() {
   recoverExpiredJobs(db);
-  const current=claimNextJob(db,WORKER_ID);
+  const current=claimNextJob(db,WORKER_ID,90000,now(),["workflow.execute",...MEDIA_JOBS]);
   if(!current)return;
   const job=current;
   addJobEvent(db,job.id,job.owner_id,"job.started",{attempt:current.attempt_count,workerLease:true});
