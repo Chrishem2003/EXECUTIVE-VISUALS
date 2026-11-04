@@ -170,10 +170,7 @@ create policy ev_video_budget_approval_owner_insert
     and (project_id is null or exists (
       select 1 from executive_visuals.projects p
       where p.id = video_generation_budget_approvals.project_id
-        and (p.owner_id = (select auth.uid()) or exists (
-          select 1 from executive_visuals.project_members m
-          where m.project_id = p.id and m.member_id = (select auth.uid()) and m.role = 'editor'
-        ))
+        and p.owner_id = (select auth.uid())
     ))
   );
 
