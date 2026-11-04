@@ -240,7 +240,7 @@ export function createGoogleDriveOAuth({
           body: new URLSearchParams({ token: refreshToken }).toString()
         });
         revoked = result.ok;
-      } finally {
+      } catch { revoked = false; } finally {
         await connections.delete(ownerId);
         accessCache.delete(ownerId);
       }
