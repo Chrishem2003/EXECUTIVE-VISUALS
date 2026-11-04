@@ -89,7 +89,7 @@ test("refreshes expired access tokens and persists rotated refresh tokens", asyn
   const start = await h.service.begin({ ownerId });
   const state = new URL(start.authorizationUrl).searchParams.get("state");
   await h.service.complete({ ownerId, state, code: "code" });
-  h.setNow(4000000);
+  h.setNow(4700000);
   assert.equal(await h.service.getAccessToken({ ownerId }), "refreshed-access-token-123456");
   assert.match(h.records.get(ownerId).encryptedRefreshToken, /^gdrive:v1:/);
   assert.equal(h.records.get(ownerId).encryptedRefreshToken.includes("rotated-refresh-token-123456"), false);
