@@ -28,7 +28,8 @@ test("Runway catalog exposes implemented Gen-4.5 text-to-video and image-to-vide
   assert.equal(model.capabilities.imageToVideo, true);
   assert.equal(model.capabilities.startFrame, true);
   assert.equal(model.capabilities.seed, true);
-  assert.deepEqual(model.capabilities.aspectRatios, ["16:9", "9:16"]);
+  assert.deepEqual(model.capabilities.aspectRatios, ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"]);
+  assert.deepEqual(model.capabilities.resolutions, ["720p"]);
   assert.equal(model.capabilities.minDurationSeconds, 2);
   assert.equal(model.capabilities.maxDurationSeconds, 10);
   assert.equal(model.constraints.minimumPollIntervalMs, 5000);
@@ -51,8 +52,24 @@ test("Kling 4.0 is catalogued as a Runway-routed model but has no executable ada
 test("Luma no-cancel and temporary output semantics remain explicit", () => {
   const model = getVideoProviderModel("luma", "ray-3.2");
   assert.deepEqual(model.constraints.supportedDurationsSeconds, [5, 10]);
+  assert.equal(model.capabilities.startFrame, true);
+  assert.equal(model.capabilities.endFrame, true);
+  assert.equal(model.capabilities.multiKeyframe, true);
+  assert.equal(model.capabilities.videoSource, true);
+  assert.equal(model.capabilities.videoEdit, true);
+  assert.equal(model.capabilities.videoReframe, true);
+  assert.equal(model.capabilities.hdr, true);
+  assert.equal(model.capabilities.exrExport, true);
+  assert.deepEqual(model.capabilities.aspectRatios, ["9:16", "3:4", "1:1", "4:3", "16:9", "21:9"]);
+  assert.deepEqual(model.capabilities.resolutions, ["540p", "720p", "1080p"]);
   assert.equal(model.constraints.maxKeyframes, 64);
-  assert.equal(model.constraints.outputUrlExpirySeconds, 3600);
+  assert.equal(model.constraints.maxVideoEditSourceSeconds, 18);
+  assert.equal(model.constraints.maxVideoReframeSourceSeconds, 10);
+  assert.equal(model.constraints.maxVideoExtendSourceSeconds, 30);
+  assert.equal(model.constraints.maxSourceVideoBytes, 209715200);
+  assert.equal(model.constraints.reframePreservesSourceFrames, true);
+  assert.equal(model.constraints.exrRequiresHdr, true);
+  assert.equal(model.constraints.hdrUnavailableForReframe, true);
   assert.equal(model.constraints.cancellation, "unsupported");
 });
 
