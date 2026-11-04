@@ -41,7 +41,8 @@ export const VIDEO_PROVIDER_CATALOG = freeze([
           audioModes: [],
           // Image-to-video accepts six ratios; text-to-video is limited to landscape/portrait.
           aspectRatios: ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"],
-          resolutions: ["720p"],
+          // provider_default preserves existing enqueue requests that defer resolution to the adapter.
+          resolutions: ["provider_default", "720p"],
           minDurationSeconds: 2,
           maxDurationSeconds: 10
         },
