@@ -1,4 +1,4 @@
-import { validateTimelineDescriptors } from "./timeline-descriptors";
+import { validateTimelineDescriptors } from "./timeline-descriptors.ts";
 import type { TimelineColorEffectDescriptor, TimelineKeyframeDescriptor, TimelineTransitionDescriptor } from "./timeline-descriptors";
 export interface RationalTime { value:number; rate:number }
 export interface TimeRange { start:RationalTime; duration:RationalTime }
