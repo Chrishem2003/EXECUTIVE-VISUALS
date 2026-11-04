@@ -62,3 +62,11 @@ The estimator intentionally does not invent formulas for models and operations
 whose pricing is not represented in this snapshot, including Ruby HDR and
 video-upscaling/frame-rate finishing. Add those only after their current
 pricing units, output constraints and billing semantics are verified.
+
+## Budget reservation integration
+
+`estimateVideoGenerationCost` now delegates to this shared pricing engine and uses the server UTC date. `createCloudVideoEnqueue` compares the approved USD reservation against that estimate before calling the atomic enqueue RPC.
+
+Pricing coverage does not imply adapter availability. The current enqueue boundary explicitly permits only the implemented Runway Gen-4.5 MP4 worker contract (including its private first-frame path). Other priced models, ProRes/PNG/HDR outputs, reference-video/audio inputs, upscaling and frame-rate finishing remain preview-only until their matching adapters, validators, budget rules and approval gates are implemented.
+
+Every estimate is marked non-billable and settlement-ineligible. The worker still requires a separate task-correlated actual-cost resolver before successful jobs can settle.
