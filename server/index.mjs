@@ -23,6 +23,8 @@ import { ensureAuthSecuritySchema, getLoginLockState, recordFailedLogin, clearLo
 import { createSupabaseAuth, SUPABASE_SESSION_COOKIE, SUPABASE_SESSION_MAX_AGE_SECONDS } from "./supabase-auth.mjs";
 import { createGoogleDriveOAuth } from "./google-drive-oauth.mjs";
 import { createGoogleDriveConnectionStore, createGoogleDriveOAuthStateStore } from "./google-drive-connection-store.mjs";
+import { createGoogleDrivePrivateFileBridge } from "./google-drive-private-file-bridge.mjs";
+import { createCloudAssetService } from "./cloud-asset-service.mjs";
 
 const PORT = Number(process.env.API_PORT || process.env.PORT || 4179);
 const HOST = process.env.API_HOST || "127.0.0.1";
@@ -39,6 +41,46 @@ const googleDriveOAuthStateStore = googleDriveOAuthEnabled ? createGoogleDriveOA
 const googleDriveOAuth = googleDriveOAuthEnabled ? createGoogleDriveOAuth({
   stateStore: googleDriveOAuthStateStore,
   connections: googleDriveConnectionStore
+}) : null;
+const googleDriveAssetService = googleDriveOAuthEnabled ? createCloudAssetService({
+  maxBytes: Number(process.env.CLOUD_MEDIA_MAX_UPLOAD_BYTES || process.env.MAX_UPLOAD_BYTES || 250 * 1024 * 1024)
+}) : null;
+const googleDriveBridge = googleDriveOAuthEnabled ? createGoogleDrivePrivateFileBridge({
+  getUserAccessToken: ({ ownerId }) => googleDriveOAuth.getAccessToken({ ownerId }),
+  assets: googleDriveAssetService.assets,
+  maxBytes: Number(process.env.CLOUD_MEDIA_MAX_UPLOAD_BYTES || process.env.MAX_UPLOAD_BYTES || 250 * 1024 * 1024),
+  loadPrivateAsset: async ({ ownerId, projectId = null, assetId }) => {
+    const asset = await googleDriveAssetService.assets.get({ ownerId, assetId });
+    if ((asset.projectId || null) !== (projectId || null)) throw Object.assign(new Error("Private asset project scope does not match."), { code: "GOOGLE_DRIVE_ASSET_FORBIDDEN" });
+    const signed = await googleDriveAssetService.assets.createSignedUrl({ ownerId, assetId, expiresIn: 60 });
+    const signedUrl = new URL(signed.url), storageOrigin = new URL(process.env.SUPABASE_URL).origin;
+    if (signedUrl.protocol !== "https:" || signedUrl.origin !== storageOrigin || signedUrl.username || signedUrl.password) {
+      throw Object.assign(new Error("Private asset storage returned an unsafe signed URL."), { code: "GOOGLE_DRIVE_ASSET_INVALID" });
+    }
+    const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 30000);
+    try {
+      const response = await fetch(signedUrl, { redirect: "error", signal: controller.signal });
+      if (!response.ok || !response.body) throw Object.assign(new Error("Private asset download failed."), { code: "GOOGLE_DRIVE_ASSET_DOWNLOAD_FAILED" });
+      const declared = Number(response.headers.get("content-length") || asset.size);
+      const maxBytes = Number(process.env.CLOUD_MEDIA_MAX_UPLOAD_BYTES || process.env.MAX_UPLOAD_BYTES || 250 * 1024 * 1024);
+      if (declared !== asset.size || declared > maxBytes) throw Object.assign(new Error("Private asset download size is invalid."), { code: "GOOGLE_DRIVE_ASSET_INVALID" });
+      const reader = response.body.getReader(), chunks = []; let total = 0;
+      try {
+        while (true) {
+          const part = await reader.read(); if (part.done) break;
+          total += part.value.byteLength;
+          if (total > maxBytes) { await reader.cancel().catch(() => {}); throw Object.assign(new Error("Private asset exceeds the export limit."), { code: "GOOGLE_DRIVE_ASSET_INVALID" }); }
+          chunks.push(part.value);
+        }
+      } finally { reader.releaseLock(); }
+      const bytes = new Uint8Array(total); let offset = 0;
+      for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+      if (bytes.byteLength !== asset.size || createHash("sha256").update(bytes).digest("hex") !== asset.sha256) {
+        throw Object.assign(new Error("Private asset integrity verification failed."), { code: "GOOGLE_DRIVE_ASSET_INVALID" });
+      }
+      return { asset, bytes };
+    } finally { clearTimeout(timer); }
+  }
 }) : null;
 const DATA_DIR = resolve(process.env.DATA_DIR || "./data");
 const MEDIA_ROOT = resolve(process.env.MEDIA_ROOT || join(DATA_DIR, "media"));
@@ -277,8 +319,8 @@ export function createAppServer() {
     if(req.method==="OPTIONS"){res.writeHead(204,{"access-control-allow-methods":"GET,POST,PUT,DELETE,OPTIONS","access-control-allow-headers":"content-type,authorization,x-file-name,x-project-id,idempotency-key","access-control-max-age":"600",...cors});res.end();return;}
     const url=new URL(req.url||"/","http://localhost");
     const path=url.pathname;
-    const ratePath=path.startsWith("/api/auth/")?"/auth":(path==="/api/assets"||path==="/api/cloud/assets")&&req.method==="POST"?"/upload":path.endsWith("/research/import")&&req.method==="POST"?"/research":path==="/api/admin/ai-upscale/self-test"&&req.method==="POST"?"/ai-upscale-self-test":"";
-    if(ratePath){const key=(req.socket.remoteAddress||"unknown")+ratePath;const limit=ratePath==="/auth"?AUTH_RATE_LIMIT:ratePath==="/research"?10:ratePath==="/ai-upscale-self-test"?2:30;if(!rateAllowed(key,limit,60000)){fail(res,429,"RATE_LIMITED","Too many requests. Wait before trying again.");return;}}
+    const ratePath=path.startsWith("/api/auth/")?"/auth":path.startsWith("/api/integrations/google-drive/")?"/google-drive-oauth":(path==="/api/assets"||path==="/api/cloud/assets")&&req.method==="POST"?"/upload":path.endsWith("/research/import")&&req.method==="POST"?"/research":path==="/api/admin/ai-upscale/self-test"&&req.method==="POST"?"/ai-upscale-self-test":"";
+    if(ratePath){const key=(req.socket.remoteAddress||"unknown")+ratePath;const limit=ratePath==="/auth"?AUTH_RATE_LIMIT:ratePath==="/research"?10:ratePath==="/ai-upscale-self-test"?2:ratePath==="/google-drive-oauth"?20:30;if(!rateAllowed(key,limit,60000)){fail(res,429,"RATE_LIMITED","Too many requests. Wait before trying again.");return;}}
     try {
       if(!path.startsWith("/api/")&&req.method==="GET"){
         const decoded=decodeURIComponent(path);
@@ -418,6 +460,24 @@ export function createAppServer() {
           audit(db,user.id,"integration.google_drive.disconnected","integration","google-drive",{revoked:result.revoked});
           send(res,200,result,cors);return;
         }catch(error){fail(res,503,error.code||"GOOGLE_OAUTH_DISCONNECT_FAILED","Google Drive could not be disconnected cleanly.");return;}
+      }
+      if(path==="/api/integrations/google-drive/import"&&req.method==="POST"){
+        if(!googleDriveBridge){fail(res,503,"GOOGLE_DRIVE_OAUTH_NOT_CONFIGURED","Google Drive file import is not enabled.");return;}
+        const body=await readJson(req);
+        try{
+          const result=await googleDriveBridge.importFile({ownerId:user.id,projectId:body.projectId||null,fileId:body.fileId});
+          audit(db,user.id,"integration.google_drive.file_imported","asset",result.asset.id,{providerFileId:result.sourceFileId,projectId:body.projectId||null});
+          send(res,201,{asset:result.asset,source:result.source},cors);return;
+        }catch(error){const status=error.code==="GOOGLE_DRIVE_AUTH_REQUIRED"?401:error.code==="GOOGLE_DRIVE_FILE_UNSUPPORTED"||error.code==="GOOGLE_DRIVE_FILE_ID_INVALID"?400:error.code==="GOOGLE_DRIVE_ACCESS_DENIED"||error.code==="GOOGLE_DRIVE_ASSET_FORBIDDEN"?403:502;fail(res,status,error.code||"GOOGLE_DRIVE_IMPORT_FAILED",error.message||"Google Drive file import failed.");return;}
+      }
+      if(path==="/api/integrations/google-drive/export"&&req.method==="POST"){
+        if(!googleDriveBridge){fail(res,503,"GOOGLE_DRIVE_OAUTH_NOT_CONFIGURED","Google Drive file export is not enabled.");return;}
+        const body=await readJson(req);
+        try{
+          const result=await googleDriveBridge.uploadPrivateAsset({ownerId:user.id,projectId:body.projectId||null,assetId:body.assetId,parentFolderId:body.parentFolderId||null});
+          audit(db,user.id,"integration.google_drive.file_exported","asset",body.assetId,{driveFileId:result.id,projectId:body.projectId||null});
+          send(res,201,{file:result},cors);return;
+        }catch(error){const status=error.code==="GOOGLE_DRIVE_AUTH_REQUIRED"?401:error.code==="GOOGLE_DRIVE_ASSET_FORBIDDEN"?403:error.code==="GOOGLE_DRIVE_EXPORT_SCOPE_INVALID"?400:502;fail(res,status,error.code||"GOOGLE_DRIVE_EXPORT_FAILED",error.message||"Google Drive file export failed.");return;}
       }
       if(path==="/api/me"&&req.method==="GET"){send(res,200,{user,authMode:AUTH_MODE},cors);return;}
       if(cloudTimelineApi && path==="/api/cloud/assets" && req.method==="POST"){
