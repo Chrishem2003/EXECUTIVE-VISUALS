@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {buildRunwayTextVideoPayload,createRunwayVideoAdapter,RUNWAY_MIN_POLL_INTERVAL_MS} from "../runway-video-gateway.mjs";
+import {buildRunwayTextVideoPayload,buildRunwayImageVideoPayload,createRunwayVideoAdapter,RUNWAY_MIN_POLL_INTERVAL_MS} from "../runway-video-gateway.mjs";
 const enabled={RUNWAY_VIDEO_ENABLED:"true",RUNWAY_VIDEO_ALLOW_REMOTE:"true",RUNWAY_API_KEY:"test-key",RUNWAY_VIDEO_MODEL:"gen4.5"};
 function json(status,body){return {status,ok:status>=200&&status<300,text:async()=>JSON.stringify(body)}}
 const id="17f20503-6c24-4c16-946b-35dbbce2af2f";
@@ -61,5 +61,58 @@ test("Runway adapter rejects normalized options outside its declared model capab
   {prompt:"text",provider:"fal"},
   {prompt:"text",model:"kling_4"}
  ])await assert.rejects(()=>adapter.submit(input));
+ assert.equal(calls,0);
+});
+
+test("Runway image-video payload validates provider upload URIs and maps Gen-4.5 fields",()=>{
+ assert.deepEqual(buildRunwayImageVideoPayload({
+  prompt:"A gentle camera push-in",promptImage:"runway://uploads/asset-123",
+  duration:5,ratio:"1104:832",seed:12
+ }),{
+  model:"gen4.5",promptImage:"runway://uploads/asset-123",
+  promptText:"A gentle camera push-in",position:"first",ratio:"1104:832",duration:5,seed:12
+ });
+ for(const promptImage of ["http://attacker.test/image.png","https://user:pass@cdn.example.test/image.png","https://cdn.example.test/image.png?token=secret","data:image/png;base64,AAAA","not-a-uri"]){
+  assert.throws(()=>buildRunwayImageVideoPayload({prompt:"move",promptImage}));
+ }
+});
+
+test("Runway image-to-video resolves a private first-frame asset using owner and project scope",async()=>{
+ const calls=[],resolved=[];
+ const adapter=createRunwayVideoAdapter({
+  env:enabled,
+  resolveAssetUri:async scope=>{resolved.push(scope);return "runway://uploads/private-image-1";},
+  fetchImpl:async(url,options)=>{calls.push({url,options});return json(200,{id,status:"PENDING",estimatedCost:{credits:60}});}
+ });
+ const result=await adapter.submit({
+  prompt:"Animate this scene gently",startFrameAssetId:"private-asset-1",
+  durationSeconds:5,aspectRatio:"4:3",requestId:"image-request-1"
+ },{
+  job:{owner_id:"owner-1",project_id:"project-1"}
+ });
+ assert.equal(result.taskId,id);
+ assert.deepEqual(resolved,[{assetId:"private-asset-1",ownerId:"owner-1",projectId:"project-1"}]);
+ assert.equal(calls[0].url,"https://api.dev.runwayml.com/v1/image_to_video");
+ assert.deepEqual(JSON.parse(calls[0].options.body),{
+  model:"gen4.5",promptImage:"runway://uploads/private-image-1",
+  promptText:"Animate this scene gently",position:"first",
+  ratio:"1104:832",duration:5
+ });
+});
+
+test("Runway image-to-video fails closed without a scoped asset resolver or owned job context",async()=>{
+ let calls=0;
+ const fetchImpl=async()=>{calls++;return json(200,{id,status:"PENDING"});};
+ const noResolver=createRunwayVideoAdapter({env:enabled,fetchImpl});
+ await assert.rejects(()=>noResolver.submit({prompt:"animate",startFrameAssetId:"asset-1"}),e=>e.code==="RUNWAY_IMAGE_ASSET_RESOLVER_REQUIRED");
+ const withResolver=createRunwayVideoAdapter({env:enabled,fetchImpl,resolveAssetUri:async()=> "runway://uploads/a"});
+ await assert.rejects(()=>withResolver.submit({prompt:"animate",startFrameAssetId:"asset-1"},{}),e=>e.code==="RUNWAY_IMAGE_ASSET_SCOPE_INVALID");
+ assert.equal(calls,0);
+});
+
+test("Runway text-to-video rejects image-only aspect ratios instead of silently changing framing",async()=>{
+ let calls=0;
+ const adapter=createRunwayVideoAdapter({env:enabled,fetchImpl:async()=>{calls++;return json(200,{id,status:"PENDING"});}});
+ await assert.rejects(()=>adapter.submit({prompt:"text",aspectRatio:"4:3"}),e=>e.code==="RUNWAY_UNSUPPORTED_CAPABILITY");
  assert.equal(calls,0);
 });
