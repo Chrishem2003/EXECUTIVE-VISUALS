@@ -21,6 +21,10 @@ The shared server-side preflight normalizes published provider pricing into prov
 
 The estimator rejects unknown providers/models and unsupported combinations. Luma's 360p draft tier is intentionally excluded. HDR generation constraints and the distinct edit/reframe/extend billing bases are enforced by the provider-specific estimator.
 
+## Runway finishing plan builder
+
+The estimate-only `createRunwayVideoFinishingPlan` helper turns verified source media metadata and requested operations into a costed plan for the durable video-finishing pipeline. It supports Magnific video upscale (priced per output frame), Enhance Frame Rate (priced per input second), and Ruby HDR (priced per second with a source megapixel tier). It enforces the cost-aware sequence upscale → retime → HDR, requires post-upscale dimensions for Ruby estimates, and does not execute or authorize provider calls.
+
 ## Governance boundaries
 
 - Every result carries provider/model, currency, pricing source, date and calculation formula.
@@ -28,6 +32,7 @@ The estimator rejects unknown providers/models and unsupported combinations. Lum
 - The system must not treat a default-list-rate USD estimate as the customer's settled or contract-specific spend.
 - Results are immutable and explicitly marked `billable: false` and `settlementEligible: false`.
 - A cost estimate does not enable a provider, create a job, reserve money, or authorize a paid request.
+- Finishing-plan steps are explicitly remote and must pass the existing pipeline's approval ID and full-budget checks before any adapter can execute.
 - Cloud enqueue still independently enforces the currently enabled execution adapter and budget approval. Luma remains disabled/research-only; this change does not add a Luma execution adapter or activate credentials.
 - Pricing must be revalidated against the official provider source before any production budget approval. Promotional rates, taxes, exchange rates and account-specific terms may differ.
 
