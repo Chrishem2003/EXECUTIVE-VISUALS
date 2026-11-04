@@ -37,6 +37,8 @@ Google shut down the Gemini API Veo 3.1 Preview endpoints on October 22, 2026. G
 - `server/google-video-interaction-repository.mjs` persists interaction ID, owner/project/job scope, request hash, lineage, state and application expiry without storing media bytes.
 - `server/google-omni-cloud-video-adapter.mjs` bridges the existing lease-aware cloud-video executor, durable submission ledger and private output ingestor. It is implemented but remains disabled at provider selection and enqueue.
 - `server/google-interaction-retention-worker.mjs` deletes expired stored interactions with a retryable deleting state and idempotent handling of provider 404 responses.
+- `server/google-omni-pricing.mjs` uses Google's published paid-tier token prices. Preflight reserves the maximum 1,048,576-token input context plus a ten-second 720p video output ($2.586464 USD). Actual settlement uses provider-returned `usage.total_input_tokens` and `usage.total_output_tokens`; missing usage is a hard failure, never a guessed charge.
+- The Interactions client requires three independent flags: `GEMINI_OMNI_ENABLED=true`, `GEMINI_OMNI_ALLOW_REMOTE=true`, and `GEMINI_OMNI_PAID_TIER_CONFIRMED=true`. All remain disabled unless explicitly configured.
 - `supabase/migrations/20261105120000_google_video_interactions.sql` adds a service-role-only, forced-RLS interaction ownership ledger tied to cloud jobs, users and projects.
 - `server/google-omni-flash-interaction.mjs`
   - Builds a pure request plan for the Interactions API.
@@ -55,6 +57,8 @@ Google shut down the Gemini API Veo 3.1 Preview endpoints on October 22, 2026. G
   - Covers request planning, project authorization, media URI validation, durations, response normalization and failure cases.
 
 ## Executive Visuals integration boundary
+
+The Google adapter now conforms to the shared leased video executor and provides a provider-usage settlement resolver. However, the normal enqueue path still rejects Google jobs, and the cloud worker process does not yet compose the Google client, asset resolver, private output ingestor and approved-budget callbacks. Provider selection therefore remains disabled. The pricing implementation is available for preflight/settlement testing but does not authorize paid generation.
 
 This provider should plug into the shared video generation contract and durable cloud worker lifecycle. A live adapter must not be enabled until the app can guarantee:
 
