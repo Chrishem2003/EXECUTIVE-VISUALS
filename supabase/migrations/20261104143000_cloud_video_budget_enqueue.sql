@@ -74,8 +74,8 @@ alter table executive_visuals.video_generation_budget_approvals enable row level
 alter table executive_visuals.video_generation_budget_reservations enable row level security;
 alter table executive_visuals.video_generation_usage_reservations enable row level security;
 
-revoke all on executive_visuals.video_generation_budget_policies from public, anon;
-revoke all on executive_visuals.video_generation_budget_approvals from public, anon;
+revoke all on executive_visuals.video_generation_budget_policies from public, anon, authenticated;
+revoke all on executive_visuals.video_generation_budget_approvals from public, anon, authenticated;
 revoke all on executive_visuals.video_generation_budget_reservations from public, anon, authenticated;
 revoke all on executive_visuals.video_generation_usage_reservations from public, anon, authenticated;
 grant select on executive_visuals.video_generation_budget_policies to authenticated;
