@@ -143,6 +143,10 @@ test("enqueue rejects mismatched request scope and invalid budget inputs before 
   await assert.rejects(() => client.enqueue(args({ input: { ...input, outputFormat: "prores" } })), /MP4 output only/);
   await assert.rejects(() => client.enqueue(args({ input: { ...input, durationSeconds: 11 } })), /pricing bounds/);
   await assert.rejects(() => client.enqueue(args({ currency: "EUR" })), /must use USD/);
+  await assert.rejects(() => client.enqueue(args({
+    provider: "luma", model: "ray-3.2",
+    input: { ...input, provider: "luma", model: "ray-3.2" }
+  })), error => error.code === "VIDEO_PRICE_UNVERIFIED");
   await assert.rejects(() => client.enqueue(args({ currency: "usd" })), /three-letter/);
   await assert.rejects(() => client.enqueue(args({ idempotencyKey: "bad key" })), /invalid format/);
   await assert.rejects(() => client.enqueue(args({ input: [] })), /must be an object/);
