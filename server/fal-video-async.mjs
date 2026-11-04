@@ -127,7 +127,10 @@ export function createFalAsyncVideoClient({
         }
         throw error;
       }
-      if (!submitted || typeof submitted !== "object" || Array.isArray(submitted)) {\n        throw fail("FAL returned an invalid submission response.", "VIDEO_GATEWAY_INVALID_RESPONSE");\n      }\n      const requestId = String(submitted.request_id || "");
+      if (!submitted || typeof submitted !== "object" || Array.isArray(submitted)) {
+        throw fail("FAL returned an invalid submission response.", "VIDEO_GATEWAY_INVALID_RESPONSE");
+      }
+      const requestId = String(submitted.request_id || "");
       if (!/^[a-zA-Z0-9_-]{1,200}$/.test(requestId)) {
         throw fail("FAL did not return a valid request identifier.", "VIDEO_GATEWAY_INVALID_RESPONSE");
       }
@@ -163,6 +166,9 @@ export function createFalAsyncVideoClient({
       assertEnabled();
       const descriptor = validateTask(task);
       const data = await request(descriptor.resultUrl);
+      if (data && typeof data.detail === "string" && /still in progress|not completed|not ready/i.test(data.detail)) {
+        throw fail("FAL video result is not ready yet; retain the task and poll status again.", "VIDEO_GATEWAY_RESULT_NOT_READY");
+      }
       if (data && (data.error || data.error_type || data.detail)) {
         throw fail("FAL video task did not produce a successful result.", "VIDEO_GATEWAY_JOB_FAILED");
       }
