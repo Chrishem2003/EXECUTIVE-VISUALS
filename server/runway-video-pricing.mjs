@@ -26,11 +26,24 @@ function audio(value) {
  * published pricing table. This is not a quote, invoice or settlement receipt.
  * pricingDate is explicit so jobs retain the exact pricing snapshot used.
  */
-export function estimateRunwayVideoCredits({
-  model,durationSeconds,resolution:outputResolution,audio:hasAudio,
-  inputVideoSeconds=0,referenceVideoSeconds=0,referenceImageCount=0,referenceAudioCount=0,
-  hasStartFrame=false,outputFrames,sourceWidth,sourceHeight,inputType="text",pricingDate
-}={}) {
+export function estimateRunwayVideoCredits(options={}) {
+  if(!options||typeof options!=="object"||Array.isArray(options)) {
+    throw fail("Pricing options must be an object.","RUNWAY_PRICE_INVALID_INPUT");
+  }
+  const allowed=new Set([
+    "model","durationSeconds","resolution","audio","inputVideoSeconds","referenceVideoSeconds",
+    "referenceImageCount","referenceAudioCount","hasStartFrame","outputFrames","sourceWidth",
+    "sourceHeight","inputType","pricingDate"
+  ]);
+  const unknown=Object.keys(options).filter(key=>!allowed.has(key));
+  if(unknown.length) {
+    throw fail("Unsupported pricing options: "+unknown.join(", "),"RUNWAY_PRICE_UNSUPPORTED_OPTION");
+  }
+  const {
+    model,durationSeconds,resolution:outputResolution,audio:hasAudio,
+    inputVideoSeconds=0,referenceVideoSeconds=0,referenceImageCount=0,referenceAudioCount=0,
+    hasStartFrame=false,outputFrames,sourceWidth,sourceHeight,inputType="text",pricingDate
+  }=options;
   const duration=finiteDuration(durationSeconds,"durationSeconds",{max:30});
   const inputVideo=finiteDuration(inputVideoSeconds,"inputVideoSeconds",{allowZero:true,max:30});
   const referenceVideo=finiteDuration(referenceVideoSeconds,"referenceVideoSeconds",{allowZero:true,max:30});
