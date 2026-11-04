@@ -131,6 +131,8 @@ test("rejects invalid operations, ratios, resolutions, interaction IDs and unsaf
   await assert.rejects(() => buildGeminiOmniFlashInteractionRequest({ ...base, operation: "edit", sourceVideoAssetId: videoId, previousInteractionId: "v1_abcdef123456" }));
   await assert.rejects(() => buildGeminiOmniFlashInteractionRequest({ ...base, lastFrameAssetId: lastId }));
   await assert.rejects(() => buildGeminiOmniFlashInteractionRequest({ ...base, prompt: "x".repeat(12001) }));
+  await assert.rejects(() => buildGeminiOmniFlashInteractionRequest({ ...base, negativePrompt: "no text" }), error => error.code === "GEMINI_OMNI_UNSUPPORTED_OPTION");
+  await assert.rejects(() => buildGeminiOmniFlashInteractionRequest({ ...base, durationSeconds: 8 }), error => error.code === "GEMINI_OMNI_UNSUPPORTED_OPTION");
 });
 
 test("fails closed when private asset authorization or Google Files URI validation fails", async () => {
