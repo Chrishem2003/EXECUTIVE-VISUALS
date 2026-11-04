@@ -71,7 +71,8 @@ test("rejects arbitrary output URLs and malformed interaction output", async () 
   await assert.rejects(() => h.ingestor.ingestInteraction(interaction({
     uri: "https://attacker.example/output.mp4"
   }), context), error => error.code === "GEMINI_OMNI_INVALID_RESPONSE");
-  await assert.rejects(() => h.ingestor.ingestInteraction(interaction({ uri }), {
+  const unauthorized = harness({ authorize: async () => false });
+  await assert.rejects(() => unauthorized.ingestor.ingestInteraction(interaction({ uri }), {
     ...context, ownerId: "owner-2"
   }), error => error.code === "GEMINI_OMNI_OUTPUT_FORBIDDEN");
 });
