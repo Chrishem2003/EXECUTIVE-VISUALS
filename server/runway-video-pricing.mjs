@@ -223,7 +223,7 @@ export function estimateRunwayVideoCredits(options={}) {
       formula="ceil("+inputVideo+" input seconds ÷ 2) credits";
       break;
     case "ruby": {
-      if(!Number.isSafeInteger(sourceWidth)||sourceWidth<16||sourceWidth>4095||!Number.isSafeInteger(sourceHeight)||sourceHeight<16||sourceHeight>4095) {
+      if(!Number.isSafeInteger(sourceWidth)||sourceWidth<16||sourceWidth>4096||!Number.isSafeInteger(sourceHeight)||sourceHeight<16||sourceHeight>4096) {
         throw fail("sourceWidth and sourceHeight are required to determine the Ruby HDR rate tier.","RUNWAY_PRICE_INPUT_REQUIRED");
       }
       const megapixels=sourceWidth*sourceHeight/1000000;
