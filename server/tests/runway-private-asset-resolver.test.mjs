@@ -49,6 +49,25 @@ test("loads only the scoped private image, creates a Runway ephemeral upload and
   assert.equal(form.get("file").type, "image/png");
 });
 
+test("sanitizes original filenames before sending them to the ephemeral upload API",async()=>{
+ const calls=[];
+ const resolve=createRunwayPrivateAssetResolver({
+  env:{RUNWAY_API_KEY:"server-test-key"},
+  loadPrivateAsset:async()=>({...asset,filename:"my frame (1).png"}),
+  fetchImpl:async(url,options)=>{
+   calls.push({url,options});
+   if(url==="https://api.dev.runwayml.com/v1/uploads")return jsonResponse(200,{
+    uploadUrl:"https://upload.runway.example.test/safe-name",fields:{key:"safe"},
+    runwayUri:"runway://uploads/safe-name"
+   });
+   return{status:204,ok:true,text:async()=>""};
+  }
+ });
+ await resolve({assetId,ownerId,projectId});
+ assert.equal(JSON.parse(calls[0].options.body).filename,"my_frame__1_.png");
+ assert.equal(calls[1].options.body.get("file").name,"my_frame__1_.png");
+});
+
 test("rejects cross-owner, cross-project and non-private assets before contacting Runway", async () => {
   for (const returned of [
     { ...asset, ownerId: "other-owner" },
