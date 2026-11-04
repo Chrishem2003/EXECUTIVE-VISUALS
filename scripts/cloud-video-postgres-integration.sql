@@ -302,7 +302,7 @@ select policy_row.id,policy_row.reserved_amount,policy_row.spent_amount,
        reservation_row.state,reservation_row.actual_amount,
        job_row.status,job_row.lease_owner,submission_row.state,
        submission_row.provider_task_id,
-       (select count(*) from executive_visuals.video_generation_usage_reservations) as usage_count
+       (select count(*) from executive_visuals.video_generation_usage_reservations where job_id=(select job_id from test_context)) as usage_count
 from executive_visuals.video_generation_budget_policies policy_row
 cross join executive_visuals.video_generation_budget_reservations reservation_row
 cross join executive_visuals.jobs job_row
@@ -327,7 +327,7 @@ select 1 / case when exists (
     and job_row.status='succeeded' and job_row.lease_owner is null
     and submission_row.state='succeeded'
     and submission_row.provider_task_id='runway-task-pg-test'
-    and (select count(*) from executive_visuals.video_generation_usage_reservations)=1
+    and (select count(*) from executive_visuals.video_generation_usage_reservations where job_id=(select job_id from test_context))=1
 ) then 1 else 0 end as final_state_assertion;
 
 do $provider_gate$
