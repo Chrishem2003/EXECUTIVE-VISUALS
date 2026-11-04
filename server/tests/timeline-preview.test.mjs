@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { rational } from "../../src/core/timeline.ts";
-import { clipSourceSecondsAtTimelineFrame, clampPreviewSeconds, decibelsToLinearGain, frameToSeconds, getTimelineDurationFrames, resolveTimelineFrame, secondsToFrame, stepPreviewSeconds } from "../../src/core/timeline-preview.ts";
+import { clipSourceSecondsAtTimelineFrame, clampPreviewSeconds, decibelsToLinearGain, isPreviewTrackAudible, frameToSeconds, getTimelineDurationFrames, resolveTimelineFrame, secondsToFrame, stepPreviewSeconds } from "../../src/core/timeline-preview.ts";
 
 const rate={numerator:30000,denominator:1001};
 const clip={id:"c",assetId:"a",name:"clip",sourceRange:{start:rational(90,30),duration:rational(150,30)},timelineStart:rational(30,24),duration:rational(120,24),enabled:true};
@@ -88,4 +88,13 @@ test("sequence resolver keeps simultaneous audio clips on separate tracks",()=>{
  assert.deepEqual(active.map(item=>item.clip.id),["music-bed","voiceover"]);
  assert.deepEqual(active.map(item=>item.track.kind),["audio","audio"]);
  assert.equal(active[1].sourceSeconds,3.25);
+});
+
+test("preview mute and solo routing is temporary and does not alter timeline tracks",()=>{
+ const muted=new Set(["music"]);
+ assert.equal(isPreviewTrackAudible("music",muted,null),false);
+ assert.equal(isPreviewTrackAudible("voice",muted,null),true);
+ assert.equal(isPreviewTrackAudible("music",new Set(),"voice"),false);
+ assert.equal(isPreviewTrackAudible("voice",new Set(),"voice"),true);
+ assert.equal(isPreviewTrackAudible("voice",new Set(),null),true);
 });
