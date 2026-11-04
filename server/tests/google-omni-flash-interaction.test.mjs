@@ -55,6 +55,9 @@ test("builds portrait 4K requests and preserves stateful interaction lineage", a
     prompt: "Keep everything else the same. Change the lighting to dusk.",
     operation: "edit",
     previousInteractionId: "v1_abcdef123456",
+    projectId,
+    getAuthorizedAssetContext: async args => ({ ownerId, projectId: args.projectId }),
+    getAuthorizedInteractionContext: async args => ({ ownerId: args.ownerId, projectId: args.projectId, model: "gemini-omni-1.1-flash" }),
     aspectRatio: "9:16",
     resolution: "4k",
     delivery: "uri"
@@ -63,6 +66,35 @@ test("builds portrait 4K requests and preserves stateful interaction lineage", a
   assert.deepEqual(result.payload.response_format, {
     type: "video", aspect_ratio: "9:16", resolution: "4k", delivery: "uri"
   });
+});
+
+test("stateful edit lineage must belong to the authenticated owner, project and model", async () => {
+  const base = {
+    prompt: "Keep everything else the same. Change the lighting.",
+    operation: "edit",
+    previousInteractionId: "v1_abcdef123456",
+    projectId,
+    getAuthorizedAssetContext: async args => ({ ownerId, projectId: args.projectId })
+  };
+  await assert.rejects(() => buildGeminiOmniFlashInteractionRequest(base),
+    error => error.code === "GEMINI_OMNI_INTERACTION_GATES_MISSING");
+  await assert.rejects(() => buildGeminiOmniFlashInteractionRequest({
+    ...base,
+    getAuthorizedInteractionContext: async () => { throw new Error("not found"); }
+  }), error => error.code === "GEMINI_OMNI_INTERACTION_FORBIDDEN");
+  await assert.rejects(() => buildGeminiOmniFlashInteractionRequest({
+    ...base,
+    getAuthorizedInteractionContext: async () => ({
+      ownerId, projectId: "33333333-3333-4333-8333-333333333333", model: "gemini-omni-1.1-flash"
+    })
+  }), error => error.code === "GEMINI_OMNI_INTERACTION_FORBIDDEN");
+  const accepted = await buildGeminiOmniFlashInteractionRequest({
+    ...base,
+    getAuthorizedInteractionContext: async args => ({
+      ownerId: args.ownerId, projectId: args.projectId, model: "gemini-omni-1.1-flash"
+    })
+  });
+  assert.equal(accepted.payload.previous_interaction_id, "v1_abcdef123456");
 });
 
 test("resolves image and video references only through authenticated project scope", async () => {
