@@ -118,3 +118,23 @@ test("rejects invalid Drive identifiers, project scopes and unsafe upload sessio
   await assert.rejects(() => h.bridge.importFile({ ownerId, fileId: "x" }),
     error => error.code === "GOOGLE_DRIVE_FILE_ID_INVALID");
 });
+
+test("rejects a Drive media response whose content type conflicts with file metadata", async () => {
+  const h = harness();
+  const original = h.bridge;
+  // A separate bridge isolates the download response header from the fixture.
+  const calls = [];
+  const bridge = createGoogleDrivePrivateFileBridge({
+    getUserAccessToken: async () => "x".repeat(40),
+    assets: { create: async () => { throw new Error("must not persist"); } },
+    loadPrivateAsset: async () => null,
+    fetchImpl: async (url) => {
+      calls.push(url);
+      if (url.includes("alt=media")) return response({ headers: { "content-type": "application/pdf", "content-length": String(bytes.length) } });
+      return response({ json: sourceFile });
+    }
+  });
+  await assert.rejects(() => bridge.importFile({ ownerId, projectId, fileId: sourceFile.id }),
+    error => error.code === "GOOGLE_DRIVE_MIME_MISMATCH");
+  assert.equal(calls.length, 2);
+});
