@@ -28,12 +28,13 @@ export function estimateVideoGenerationCost({
       outputHeight,targetFramerate,inputType,pricingDate
     });
   } catch(error) {
-    const mapped=Object.assign(new Error(error?.message||"Runway pricing estimate failed."),{
+    const durationInvalid=error?.message?.startsWith("durationSeconds");
+    const mapped=Object.assign(new Error(durationInvalid?"Video duration is outside the verified pricing bounds.":error?.message||"Runway pricing estimate failed."),{
       code:error?.code==="RUNWAY_PRICE_UNSUPPORTED_MODEL"?"VIDEO_PRICE_UNVERIFIED":
         error?.code==="RUNWAY_PRICE_INPUT_REQUIRED"?"VIDEO_PRICE_INPUT_REQUIRED":
         error?.code==="RUNWAY_PRICE_UNSUPPORTED_OPTION"?"VIDEO_PRICE_UNSUPPORTED_OPTION":
         error?.code==="RUNWAY_PRICE_INVALID_RESULT"?"VIDEO_PRICE_INVALID_RESULT":
-        error?.message?.startsWith("durationSeconds")?"VIDEO_PRICE_DURATION_INVALID":"VIDEO_PRICE_INPUT_INVALID"
+        durationInvalid?"VIDEO_PRICE_DURATION_INVALID":"VIDEO_PRICE_INPUT_INVALID"
     });
     throw mapped;
   }
