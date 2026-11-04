@@ -26,7 +26,8 @@ Research and implementation snapshot: 2026-11-05.
 - Transfer bounded chunks with explicit offsets and finalize the final chunk.
 - Poll `GET /v1beta/files/{id}` until the file reaches `ACTIVE`; fail closed for `FAILED` or processing timeout.
 - Persist a mapping with a conservative 48-hour expiry.
-- Reuse only mappings that match the exact owner, project, asset, MIME type and trusted Google URI, with at least two minutes of validity remaining.
+- Reuse only ACTIVE mappings that match the exact authenticated owner, project, asset, MIME type, SHA-256, size and trusted Google URI, with at least two minutes of validity remaining.
+- Re-authorize the private asset before reusing a cached Google URI; project collaborators receive separate user-scoped mappings.
 - Delete expired provider files best-effort before replacing their mappings.
 - If persistence fails after upload, attempt compensating deletion of the remote file.
 
@@ -40,6 +41,10 @@ Google's current Files API documentation lists up to 2 GB per file, 20 GB per pr
 
 The initial allowlist mirrors the Executive Visuals private asset vault: common JPEG/PNG/WebP/GIF images; MP4/WebM/QuickTime video; supported audio; PDF; plain text; WebVTT; and JSON. A provider's general file support does not imply every MIME type is valid for every Gemini Omni operation. The request planner and model contract remain responsible for operation-specific media roles.
 
+## Composition
+
+`server/google-gemini-files-composition.mjs` composes the existing private asset service and materialization IO with the gateway and Postgres mapping repository. It performs no network calls during construction. On resolution, it first obtains an owner/project-authorized asset receipt; the actual upload path materializes the private object, verifies the checksum and always cleans the temporary directory.
+
 ## Persistence
 
 Migration: `supabase/migrations/20261105100000_google_provider_files.sql`
@@ -52,19 +57,20 @@ The migration is source-controlled only. It has not been applied to staging or p
 
 ## Remaining integration work
 
-1. Compose the gateway with the existing `createCloudMediaAssetIO` and authenticated `createCloudAssetService`; the loader must return materialized private bytes/path and always clean temporary files.
-2. Wire `findProviderFile`, `recordProviderFile` and `deleteProviderFileRecord` to the repository in the cloud worker composition.
-3. Add owner/project authorization tests for personal assets, project owners, editors, reviewers, viewers and cross-project access.
-4. Add a bounded cleanup worker for expired Google files and stale mappings; deletion failures must be retryable and auditable.
-5. Implement the live Gemini Interactions adapter using the existing durable queue, one-shot submission ledger, approval/budget controls, interaction lineage, task reconciliation and private output ingestion.
-6. Implement a durable Google interaction record and enforce same-owner/project/model lineage for `previous_interaction_id`.
-7. Add a staging-only migration integration test and contract fixture for actual Google Files responses before any live credentials or paid generation are considered.
+1. Wire the internal composition into an authenticated server route or worker entry point, preserving the existing job write permission and approval gates.
+2. Add a bounded cleanup worker for expired Google files and stale mappings; deletion failures must be retryable and auditable.
+3. Implement the live Gemini Interactions adapter using the existing durable queue, one-shot submission ledger, approval/budget controls, interaction lineage, task reconciliation and private output ingestion.
+4. Implement a durable Google interaction record and enforce same-owner/project/model lineage for `previous_interaction_id`.
+5. Add broader owner/project role tests for personal assets, project owners, editors, reviewers, viewers and cross-project access.
+6. Run exact-head quality and isolated PostgreSQL migration integration against the final PR head before any live credentials or paid generation are considered.
 
 ## Verification
 
 - `server/tests/google-gemini-files-gateway.test.mjs`: mocked resumable upload, cache scope, private asset scope, processing state, API key boundary and failure handling.
 - `server/tests/google-gemini-files-repository.test.mjs`: service-role PostgREST headers, exact-scope queries, upsert and deletion.
-- Both test files are included in `npm run verify:video-routing`.
+- `server/tests/google-gemini-files-composition.test.mjs`: no-network construction and composition wiring.
+- All three test files are included in `npm run verify:video-routing`.
+- The disposable PostgreSQL workflow applies the new migration and verifies RLS, service-role privileges, browser-role denial and the private-asset foreign key.
 
 ## Official references
 
