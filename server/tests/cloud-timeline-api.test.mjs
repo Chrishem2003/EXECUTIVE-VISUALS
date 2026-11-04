@@ -235,6 +235,25 @@ test("cloud asset upload enforces the configured streaming byte limit",async()=>
  const result=await api.uploadAsset({req,ownerId:owner,originalName:"large.png",mediaType:"image/png"});
  assert.equal(result.status,413);assert.equal(called,false);
 });
+test("cloud asset uploads enforce a bounded concurrent upload limit",async()=>{
+ let release;
+ const gate=new Promise(resolve=>{release=resolve;});
+ const blocked=Readable.from((async function*(){await gate;yield Buffer.from("%PDF-1.7\\nfixture");})());
+ blocked.headers={"content-length":"15"};
+ const api=createCloudTimelineApi({url:"https://example.supabase.co",serviceRoleKey:"service-secret",maxConcurrentUploads:1,timelineService:{timelines:{},assets:{async createFromFile(){return{id:"723e4567-e89b-42d3-a456-426614174000"};}}},authorize:async()=>true});
+ const first=api.uploadAsset({req:blocked,ownerId:owner,originalName:"first.pdf",mediaType:"application/pdf"});
+ await new Promise(resolve=>setImmediate(resolve));
+ const secondReq=Readable.from([Buffer.from("%PDF-1.7\\nsecond")]);secondReq.headers={"content-length":"15"};
+ const second=await api.uploadAsset({req:secondReq,ownerId:owner,originalName:"second.pdf",mediaType:"application/pdf"});
+ assert.equal(second.status,429);
+ assert.equal(second.body.error.code,"UPLOAD_CAPACITY_EXCEEDED");
+ release();
+ const completed=await first;
+ assert.equal(completed.status,201);
+});
+test("cloud asset concurrent upload limit rejects invalid configuration",()=>{
+ assert.throws(()=>createCloudTimelineApi({url:"https://example.supabase.co",serviceRoleKey:"service-secret",maxConcurrentUploads:0}),/concurrent upload limit/);
+});
 test("cloud asset signed read and delete delegate to the owner-aware private repository",async()=>{
  const calls=[];
  const api=createCloudTimelineApi({url:"https://example.supabase.co",serviceRoleKey:"service-secret",timelineService:{timelines:{},assets:{
