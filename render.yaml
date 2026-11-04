@@ -4,7 +4,7 @@ services:
     runtime: docker
     plan: starter
     region: frankfurt
-    branch: feat/executive-visuals-unified-platform
+    branch: deploy/render-staging
     dockerfilePath: ./Dockerfile
     dockerContext: .
     autoDeploy: true
