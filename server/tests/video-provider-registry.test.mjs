@@ -138,7 +138,9 @@ test("Gemini conversational lineage and output encoding are explicit", () => {
   assert.equal(model.constraints.supportsConversationalEdits, true);
   assert.equal(model.constraints.lineageField, "previous_interaction_id");
   assert.equal(model.constraints.outputEncoding, "base64_in_interaction_steps");
-  assert.equal(model.constraints.paidTierOnly, true);
+  assert.equal(model.constraints.outputUriDeliverySupported, true);
+  assert.equal(model.constraints.uriDeliveryRecommendedAboveBytes, 4 * 1024 * 1024);
+  assert.equal(model.constraints.paidTierOnly, undefined);
 });
 
 test("retired Sora API is unavailable and cannot be selected", () => {
@@ -237,4 +239,29 @@ test("Runway Veo model IDs are distinct from the retired Gemini API preview endp
   assert.equal(googleOmni.availability, "disabled");
   const retired = getVideoProviderModel("google", "veo-3.1-generate-preview");
   assert.equal(retired, null);
+});
+
+
+test("Google Gemini Omni Flash catalog matches the current Interactions API contract", () => {
+  const model = getVideoProviderModel("google", "gemini-omni-1.1-flash");
+  assert.ok(model);
+  assert.equal(model.availability, "disabled");
+  assert.equal(model.executionAdapter, "not_implemented");
+  assert.equal(model.capabilities.textToVideo, true);
+  assert.equal(model.capabilities.imageToVideo, true);
+  assert.equal(model.capabilities.videoToVideo, true);
+  assert.equal(model.capabilities.videoEdit, true);
+  assert.equal(model.capabilities.videoExtend, true);
+  assert.equal(model.capabilities.nativeAudio, true);
+  assert.equal(model.capabilities.negativePrompt, false);
+  assert.deepEqual(model.capabilities.aspectRatios, ["16:9", "9:16"]);
+  assert.deepEqual(model.capabilities.resolutions, ["360p", "720p", "1080p", "4k"]);
+  assert.equal(model.constraints.maxReferenceVideoClips, 3);
+  assert.equal(model.constraints.maxReferenceVideoSecondsEach, 3);
+  assert.equal(model.constraints.uploadedVideoMaxSeconds, 10);
+  assert.equal(model.constraints.maxExtendedVideoSeconds, 40);
+  assert.equal(model.constraints.audioReferenceUploads, false);
+  assert.equal(model.constraints.outputUriDeliverySupported, true);
+  assert.match(model.constraints.source, /^https:\/\/ai\.google\.dev\/gemini-api\/docs\/omni$/);
+  assert.equal(listSelectableVideoProviderModels().length, 0);
 });
