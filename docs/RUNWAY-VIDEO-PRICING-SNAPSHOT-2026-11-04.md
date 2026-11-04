@@ -13,6 +13,7 @@ Source: https://docs.dev.runwayml.com/guides/pricing/
 | Gen-4.5 | 12 credits/second |
 | Gen-4 Turbo | 5 credits/second |
 | Act-Two | 5 credits/second |
+| Aleph 2.0 | 28 credits/second; 56-credit minimum |
 | Kling 2.5 Turbo Pro | 12 credits/second |
 | Kling 3.0 Standard | 9 credits/second without audio; 13 with audio |
 | Kling 3.0 Pro | 12 credits/second without audio; 17 with audio |
@@ -32,7 +33,10 @@ Source: https://docs.dev.runwayml.com/guides/pricing/
 | Veo 3.1 Fast | 10 credits/second without audio; 15 with audio |
 | HappyHorse 1.0 | 15 / 30 credits/second at 720p / 1080p |
 | Gemini Omni Flash | 10 credits/second for text/image video; image input adds 1 credit. Video-to-video is 11 credits/second of input video, capped at 10 seconds, plus 1 per reference image |
-| Gemini Omni Flash 1.1 | 3.4 / 10 / 15 credits/second at 360p / 720p / 1080p, plus 1 per reference image and 1 per input-video second |
+| Gemini Omni Flash 1.1 | 3.4 / 10 / 15 / 30 credits/second at 360p / 720p / 1080p / 4K, plus 1 per reference image and 1 per input-video second |
+| Magnific Video Upscaler Creative | Per output frame: $0.007 at 720p/1K, $0.009 at 2K, $0.012 at 4K; credits rounded up from USD at $0.01/credit |
+| Enhance Frame Rate | 1 credit per 2 seconds of input video; estimator rounds up conservatively |
+| Ruby HDR | 20 credits/second at or below 4 megapixels; 40 credits/second above 4 megapixels |
 | Kling 4 | 720p and 1080p output/input formulas; temporary 20% discount through 2026-11-30 UTC |
 
 The estimator requires an explicit pricing date. Kling 4's temporary discount
