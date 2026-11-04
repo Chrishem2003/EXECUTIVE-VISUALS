@@ -98,7 +98,13 @@ test("remote generation remains disabled unless both server gates are enabled", 
   assert.equal(calls, 0);
 });
 
-test("keeps an early result response retryable while the provider task is still running", async () => {\n  const task = { model: base.model, requestId, statusUrl: root + "/status", resultUrl: root, cancelUrl: root + "/cancel" };\n  const client = createFalAsyncVideoClient({ ...base, fetchImpl: async () => jsonResponse({ detail: "Request is still in progress" }) });\n  await assert.rejects(() => client.result(task), error => error.code === "VIDEO_GATEWAY_RESULT_NOT_READY");\n});\n\ntest("rejects malformed provider task states and provider failures", async () => {
+test("keeps an early result response retryable while the provider task is still running", async () => {
+  const task = { model: base.model, requestId, statusUrl: root + "/status", resultUrl: root, cancelUrl: root + "/cancel" };
+  const client = createFalAsyncVideoClient({ ...base, fetchImpl: async () => jsonResponse({ detail: "Request is still in progress" }) });
+  await assert.rejects(() => client.result(task), error => error.code === "VIDEO_GATEWAY_RESULT_NOT_READY");
+});
+
+test("rejects malformed provider task states and provider failures", async () => {
   const task = { model: base.model, requestId, statusUrl: root + "/status", resultUrl: root, cancelUrl: root + "/cancel" };
   const unknown = createFalAsyncVideoClient({ ...base, fetchImpl: async () => jsonResponse({ status: "MAYBE" }) });
   await assert.rejects(() => unknown.status(task), error => error.code === "VIDEO_GATEWAY_INVALID_RESPONSE");
