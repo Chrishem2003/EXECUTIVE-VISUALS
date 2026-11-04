@@ -38,6 +38,40 @@ test("Runway catalog exposes implemented Gen-4.5 text-to-video and image-to-vide
   assert.equal(model.constraints.cancellation, "best_effort");
 });
 
+test("Seedance 2.0 tiers expose distinct verified capabilities and dated credit rates", () => {
+  const full = getVideoProviderModel("runway", "seedance2");
+  const fast = getVideoProviderModel("runway", "seedance2_fast");
+  const mini = getVideoProviderModel("runway", "seedance2_mini");
+  for (const model of [full, fast, mini]) {
+    assert.equal(model.availability, "disabled");
+    assert.equal(model.executionAdapter, "not_implemented");
+    assert.equal(model.gateway, "runway");
+    assert.equal(model.capabilities.textToVideo, true);
+    assert.equal(model.capabilities.imageToVideo, true);
+    assert.equal(model.capabilities.videoToVideo, true);
+    assert.equal(model.capabilities.nativeAudio, true);
+    assert.equal(model.capabilities.seed, true);
+    assert.equal(model.capabilities.referenceImages, true);
+    assert.equal(model.capabilities.referenceVideos, true);
+    assert.equal(model.capabilities.referenceAudio, true);
+    assert.equal(model.capabilities.minDurationSeconds, 4);
+    assert.equal(model.capabilities.maxDurationSeconds, 15);
+    assert.equal(model.constraints.maxPromptCharacters, 10000);
+    assert.equal(model.constraints.maxReferenceAudio, 3);
+    assert.equal(model.constraints.durationAutoBilledSeconds, 15);
+    assert.equal(model.constraints.creditUsdValue, 0.01);
+    assert.equal(model.constraints.pricingSnapshotDate, "2026-11-04");
+  }
+  assert.deepEqual(full.capabilities.resolutions, ["480p", "720p", "1080p", "2160p"]);
+  assert.deepEqual(fast.capabilities.resolutions, ["480p", "720p"]);
+  assert.deepEqual(mini.capabilities.resolutions, ["480p", "720p"]);
+  assert.deepEqual(full.constraints.creditsPerSecondByResolution, {"480p":14,"720p":30,"1080p":40,"2160p":150});
+  assert.deepEqual(fast.constraints.creditsPerSecondByResolution, {"480p":11,"720p":24});
+  assert.deepEqual(mini.constraints.creditsPerSecondByResolution, {"480p":7,"720p":15});
+  assert.equal(full.constraints.inputReferencesCharged, false);
+  assert.equal(listSelectableVideoProviderModels().length, 0);
+});
+
 test("Kling 4.0 is catalogued as a Runway-routed model but has no executable adapter", () => {
   const model = getVideoProviderModel("runway", "kling_4");
   assert.equal(model.gateway, "runway");
