@@ -150,12 +150,26 @@ if (!videoBudgetSql.includes("create or replace function executive_visuals.finis
     !videoBudgetSql.includes("update executive_visuals.video_generation_submissions")) {
   issues.push("Budget settlement, submission terminalization and job completion must be atomic and lease-fenced.");
 }
-if ((videoBudgetSql.match(/security invoker/gi) || []).length !== 2 || /security definer/i.test(videoBudgetSql)) {
+if ((videoBudgetSql.match(/security invoker/gi) || []).length !== 5 || /security definer/i.test(videoBudgetSql)) {
   issues.push("Cloud video budget RPCs must use invoker rights and avoid privileged definer execution.");
 }
 if (!videoBudgetSql.includes("as $video_finish$") || !videoBudgetSql.includes("$video_finish$;")) {
   issues.push("Cloud video finalizer must use a complete, unambiguous SQL function delimiter.");
 }
+for (const fn of ["defer_video_generation_job","quarantine_video_generation_job","resume_reconciled_video_generation_job"]) {
+  if (!videoBudgetSql.includes(`create or replace function executive_visuals.${fn}(`) ||
+      !videoBudgetSql.includes(`grant execute on function executive_visuals.${fn}(`) ||
+      !videoBudgetSql.includes(`revoke all on function executive_visuals.${fn}(`)) {
+    issues.push(`Cloud video recovery RPC is missing or not service-role-only: ${fn}.`);
+  }
+}
+if (!videoBudgetSql.includes("VIDEO_SUBMISSION_RECONCILIATION_REQUIRED") ||
+    !videoBudgetSql.includes("VIDEO_JOB_DEFER_REQUIRES_SUBMITTED_TASK") ||
+    !videoBudgetSql.includes("VIDEO_JOB_QUARANTINE_REQUIRES_AMBIGUOUS_SUBMISSION") ||
+    !videoBudgetSql.includes("VIDEO_JOB_RESUME_REQUIRES_RECONCILED_TASK")) {
+  issues.push("Ambiguous submission quarantine, safe polling deferral and evidence-reconciled resume guards are required.");
+}
+
 
 if (issues.length) {
   console.error("Cloud migration guard failed:");
