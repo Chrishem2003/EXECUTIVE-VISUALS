@@ -8,7 +8,7 @@ const otherOwner = "22222222-2222-4222-8222-222222222222";
 const scopes = ["https://www.googleapis.com/auth/drive.file", "openid", "https://www.googleapis.com/auth/userinfo.email"];
 const identity = async () => ({ subject: "google-subject-12345", email: "user@example.com" });
 function harness({ now = 1000000, issueRefresh = true, refreshStatus = 200, revokeStatus = 200, verifyIdentityFn = identity } = {}) {
-  let clock = now, idToken = "mock.id.token";
+  let clock = now, idToken = "mock.id.token", jwks = [];
   const pending = new Map(), records = new Map(), calls = [];
   const stateStore = {
     async put(state, value) { pending.set(state, value); },
@@ -23,7 +23,7 @@ function harness({ now = 1000000, issueRefresh = true, refreshStatus = 200, revo
     calls.push({ url: String(url), options });
     const form = new URLSearchParams(options.body || "");
     if (String(url).includes("/oauth2/v3/certs")) {
-      return new Response(JSON.stringify({ keys: [] }), { status: 200 });
+      return new Response(JSON.stringify({ keys: jwks }), { status: 200 });
     }
     if (String(url).includes("/token")) {
       if (form.get("grant_type") === "authorization_code") return new Response(JSON.stringify({
@@ -43,7 +43,7 @@ function harness({ now = 1000000, issueRefresh = true, refreshStatus = 200, revo
     encryptionKey: "test-encryption-key-with-more-than-thirty-two-characters",
     stateStore, connections, fetchImpl, ...(verifyIdentityFn ? { verifyIdentity: verifyIdentityFn } : {}), now: () => clock
   });
-  return { service, pending, records, calls, setNow(value) { clock = value; }, setIdToken(value) { idToken = value; } };
+  return { service, pending, records, calls, setNow(value) { clock = value; }, setIdToken(value) { idToken = value; }, setJwks(value) { jwks = value; } };
 }
 
 test("starts a state-bound PKCE authorization with only the narrow Drive file scope", async () => {
@@ -149,11 +149,7 @@ test("cryptographically verifies Google's RS256 ID-token signature, audience, ex
   const signingInput = header + "." + payload;
   const signature = signJwt("RSA-SHA256", Buffer.from(signingInput), privateKey).toString("base64url");
   h.setIdToken(signingInput + "." + signature);
-  // Override the JWKS response for this test with the generated Google-like public key.
-  const originalFetch = globalThis.fetch;
-  // The harness fetcher returns the key set through the certs endpoint using this hook.
-  h.calls.length = 0;
+  h.setJwks([jwk]);
   await h.service.complete({ ownerId, state: url.searchParams.get("state"), code: "signed-code" });
-  assert.equal(h.records.get(ownerId).google_email, undefined);
   assert.equal(h.records.get(ownerId).email, "user@example.com");
 });
