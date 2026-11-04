@@ -76,6 +76,9 @@ export function compareTimelineVariants(base: EditorialTimeline, candidate: Edit
     if (a.enabled !== b.enabled) fields.push("enabled state");
     if ((a.gainDb ?? 0) !== (b.gainDb ?? 0)) fields.push("audio gain");
     if ((a.speed ?? 1) !== (b.speed ?? 1)) fields.push("speed");
+    if (stable(a.effects) !== stable(b.effects)) fields.push("effects");
+    if (stable(a.keyframes) !== stable(b.keyframes)) fields.push("keyframes");
+    if (stable(a.transitionIn) !== stable(b.transitionIn) || stable(a.transitionOut) !== stable(b.transitionOut)) fields.push("transitions");
     const aTrace = object(a.metadata) ? a.metadata.creativeTrace : null;
     const bTrace = object(b.metadata) ? b.metadata.creativeTrace : null;
     if (stable(aTrace) !== stable(bTrace)) fields.push("creative intent");
