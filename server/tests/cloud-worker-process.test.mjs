@@ -20,7 +20,7 @@ test("cloud worker supervisor recovers, runs enabled families and stops cleanly"
  {async recoverExpired(){return 0;},async runCycle(options){calls.push(["timeline",options.leaseSeconds]);return{claimed:false};}}];
  const supervisor=createCloudWorkerSupervisor({workers,leaseSeconds:60,heartbeatIntervalMs:10000,pollMs:1000,onLog:event=>events.push(event)});
  await supervisor.start();await supervisor.stop();
- assert.deepEqual(calls.slice(0,3),[["recover",100],["media",60],["timeline",60]]);
+ assert.deepEqual(calls.slice(0,4),[["recover",100],["recover",100],["media",60],["timeline",60]]);
  assert.ok(events.some(event=>event.kind==="started"));assert.ok(events.some(event=>event.kind==="stopped"));
 });
 test("cloud worker supervisor rejects missing worker families",()=>{assert.throws(()=>createCloudWorkerSupervisor({workers:[]}),/one or more/);});
