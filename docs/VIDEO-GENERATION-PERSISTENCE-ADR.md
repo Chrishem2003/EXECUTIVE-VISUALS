@@ -76,3 +76,12 @@ Do not use browser-visible provider URLs as permanent asset URLs. Serve register
 - Provider ambiguity is handled conservatively to prevent duplicate paid generation.
 - The current isolated SQLite implementation remains useful for unit tests but is not a hosted production path.
 - This ADR does not authorize provider activation, migration application, merge or deployment.
+## Cloud submission-ledger implementation checkpoint (2026-11-04)
+
+The source-only migration `20261104120000_cloud_video_submission_ledger.sql` and `server/cloud-video-submissions.mjs` add a server-role-only Postgres ledger contract for hosted workers. The ledger is unique per job, checks that provider/model/request hash match the queued `video.generate` input, and supports `prepared → submitting → submitted/unknown → terminal` transitions.
+
+Only the currently leased worker may begin a provider submission, record a task ID, mark an ambiguous attempt unknown, or finish a submission. The task ID is unique and conflicting IDs are rejected. Ambiguous attempts cannot be moved back into `submitting`; reconciliation is a separate explicit operation requiring an evidence reference. A succeeded terminal ledger state requires a recorded provider task ID.
+
+The RPC client uses the `executive_visuals` PostgREST profile, server-only service-role credentials, bounded requests/timeouts, strict response validation and credential redaction. Mock transport tests cover RPC mapping, lease-bound lifecycle calls, malformed responses, invalid inputs, timeout and error redaction.
+
+This is persistence infrastructure only. It is not wired to a cloud video worker or enqueue API, no provider calls are made, and the migration is not applied to any Supabase project. A dedicated worker must inspect the ledger before any provider POST and must never POST for `submitted`, `unknown` or terminal records.
