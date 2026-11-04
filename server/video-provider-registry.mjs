@@ -51,6 +51,45 @@ export const VIDEO_PROVIDER_CATALOG = freeze([
           minimumPollIntervalMs: 5000,
           cancellation: "best_effort"
         }
+      },
+      {
+        id: "kling_4",
+        name: "Kling 4.0 (Runway Dev)",
+        availability: "disabled",
+        executionAdapter: "not_implemented",
+        gateway: "runway",
+        capabilities: {
+          textToVideo: true,
+          imageToVideo: true,
+          videoToVideo: true,
+          videoEdit: true,
+          videoExtend: false,
+          videoReframe: false,
+          nativeAudio: true,
+          negativePrompt: false,
+          seed: false,
+          startFrame: true,
+          endFrame: true,
+          motionReference: false,
+          referenceImages: true,
+          audioModes: ["provider_default"],
+          aspectRatios: ["16:9", "9:16", "1:1", "21:9"],
+          resolutions: ["720p", "1080p"],
+          minDurationSeconds: 3,
+          maxDurationSeconds: 30
+        },
+        constraints: {
+          maxPromptCharacters: 26000,
+          maxReferenceImages: 10,
+          maxReferenceVideos: 5,
+          maxCombinedImageReferences: 10,
+          inputVideoMaxSeconds: 30,
+          outputUrlTemporary: true,
+          billingBasis: "output_plus_max_input_or_output_duration",
+          pricingModel: "kling_4",
+          pricingPromotionEndDate: "2026-11-30",
+          source: "https://dev.runwayml.com/learn/kling-4-0-api"
+        }
       }
     ]
   },
