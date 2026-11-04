@@ -57,6 +57,8 @@ test("video dry-run rejects unsupported fields, resolution and duration precisio
     {promptText:"test",seed:42},
     {promptText:"test",resolution:"4k"},
     {promptText:"test",duration:5.5},
+    {promptText:"test",duration:2},
+    {promptText:"test",duration:16},
     {promptText:"test",duration:60}
   ]) assert.throws(()=>buildRunwayVideoRouterDryRun({configId:"preview",input}));
 });
