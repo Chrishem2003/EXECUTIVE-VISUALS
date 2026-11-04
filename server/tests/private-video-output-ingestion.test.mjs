@@ -25,7 +25,7 @@ function assetRepo({ failOn = -1, cleanupFails = false, cleanupPending = false }
       if (created.length === failOn) throw new Error("storage registration failed");
       const asset = {
         id: `323e4567-e89b-42d3-a456-42661417400${created.length + 1}`,
-        ownerId: value.ownerId, projectId: value.projectId, value
+        ownerId: value.ownerId, projectId: value.projectId, mediaType: value.mediaType, size: 1024, value
       };
       created.push(asset);
       return asset;
