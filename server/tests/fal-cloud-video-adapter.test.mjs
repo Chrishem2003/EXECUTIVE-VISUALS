@@ -34,6 +34,7 @@ test("implements durable cloud worker adapter contract with a short persisted ta
   assert.deepEqual(submitted, { taskId: requestId, status: "queued" });
   const status = await adapter.getStatus(submitted.taskId, { job: { id: "job-1" } });
   assert.equal(status.status, "succeeded");
+  assert.equal(status.taskId, requestId);
   assert.deepEqual(status.outputUrls, [outputUrl]);
   assert.deepEqual(fake.calls.map(call => call[0]), ["submit", "status", "result"]);
 });
