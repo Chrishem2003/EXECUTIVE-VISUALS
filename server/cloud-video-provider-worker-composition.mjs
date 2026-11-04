@@ -7,7 +7,7 @@ import {
   createPrivateVideoOutputIngestor
 } from "./private-video-output-ingestion.mjs";
 import { createProviderAwareCloudVideoWorker } from "./cloud-video-provider-worker.mjs";
-import { createFalVideoProviderAdapter } from "./fal-video-provider-registration.mjs";
+import { createConfiguredVideoProviderAdapters } from "./configured-video-provider-adapters.mjs";
 
 /**
  * Build the provider-aware worker against the existing Supabase queue,
@@ -25,6 +25,7 @@ export function createProviderAwareCloudVideoWorkerComposition({
   env = process.env,
   fetchImpl = globalThis.fetch,
   createAdapters,
+  providerDependencies = {},
   allowedOutputHosts = [],
   validateMedia,
   ffprobePath = process.env.FFPROBE_PATH || "ffprobe",
@@ -77,9 +78,10 @@ export function createProviderAwareCloudVideoWorkerComposition({
     maxTotalBytes
   });
   const ingestOutputs = args => outputIngestor.ingest(args);
-  const adapterFactory = createAdapters || (({ env: providerEnv, fetchImpl: providerFetch, ingestOutputs: ingest }) => [
-    createFalVideoProviderAdapter({ env: providerEnv, fetchImpl: providerFetch, ingestOutputs: ingest })
-  ]);
+  const adapterFactory = createAdapters || (dependencies => createConfiguredVideoProviderAdapters({
+    ...dependencies,
+    ...providerDependencies
+  }));
   const adapters = adapterFactory({
     env,
     fetchImpl,
