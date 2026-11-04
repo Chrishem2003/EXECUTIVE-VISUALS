@@ -82,7 +82,7 @@ test("maps queued and running provider states without blocking or sleeping", asy
   }
 });
 
-test("rejects unsafe or missing output URLs and missing cost/ingestion gates", async () => {
+test("server opt-in gates remain enforced even when a client is injected", async () => {\n  const fake = client();\n  const adapter = createFalCloudVideoAdapter({ ...gates, client: fake, allowRemote: false });\n  await assert.rejects(() => adapter.submit(jobInput), error => error.code === "VIDEO_GATEWAY_REMOTE_DISABLED");\n  await assert.rejects(() => adapter.getStatus(requestId), error => error.code === "VIDEO_GATEWAY_REMOTE_DISABLED");\n  assert.equal(fake.calls.length, 0);\n});\n\ntest("rejects unsafe or missing output URLs and missing cost/ingestion gates", async () => {
   const unsafe = createFalCloudVideoAdapter({
     ...gates, client: client({ async result() { return { video: { url: "https://attacker.example/video.mp4" } }; } })
   });
