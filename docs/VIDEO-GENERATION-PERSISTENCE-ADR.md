@@ -184,3 +184,6 @@ This expands adapter capability only. It does not enable the provider, add a pub
 Both local and cloud executors now call the adapter's optional `prepareInput` phase before transitioning the submission ledger to `submitting`. Thus private asset lookup or ephemeral upload failure occurs before the one-shot generation POST and does not create a false ambiguous-submission record. The resolver uploads again on a later attempt because Runway ephemeral URIs expire after 24 hours; it does not persist temporary provider URLs.
 
 The resolver is tested with mocked transport and remains unconfigured: no private asset repository, Runway API key, live upload or provider generation is connected. Official upload contract: https://docs.dev.runwayml.com/assets/uploads/.
+
+
+Runway documents that ephemeral uploads require the API project to have purchased credits, even though this preparation step is distinct from starting a generation task. The adapter therefore checks both explicit remote-execution flags before it even reads the private asset or calls the upload endpoint. No upload or generation has been made in this implementation session. See https://docs.dev.runwayml.com/assets/uploads/.
