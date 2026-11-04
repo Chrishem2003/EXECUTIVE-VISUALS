@@ -36,16 +36,17 @@ test("accounts for Seedance 2.5 input and reference video duration with a 30-sec
 });
 
 test("accounts for reference media charges on Grok and Hailuo models",()=>{
-  assert.equal(estimateRunwayVideoCredits({model:"grok_imagine_1_5",durationSeconds:5,resolution:"720p",referenceImageCount:2,pricingDate:date}).estimatedCredits,82);
+  assert.equal(estimateRunwayVideoCredits({model:"grok_imagine_1_5",durationSeconds:5,resolution:"720p",referenceImageCount:2,referenceAudioCount:1,pricingDate:date}).estimatedCredits,83);
+  assert.equal(estimateRunwayVideoCredits({model:"grok_imagine_1_5_lite",durationSeconds:5,resolution:"720p",referenceImageCount:3,hasStartFrame:true,pricingDate:date}).estimatedCredits,16);
   assert.equal(estimateRunwayVideoCredits({model:"hailuo3",durationSeconds:5,resolution:"768p",referenceImageCount:2,referenceVideoSeconds:20,pricingDate:date}).estimatedCredits,110);
 });
 
 test("uses the dated Kling 4 promotion and automatically reverts to list pricing",()=>{
   const promo=estimateRunwayVideoCredits({model:"kling_4",durationSeconds:5,resolution:"720p",pricingDate:"2026-11-04"});
   const regular=estimateRunwayVideoCredits({model:"kling_4",durationSeconds:5,resolution:"720p",pricingDate:"2026-12-01"});
-  assert.equal(promo.estimatedCredits,62.8);
+  assert.equal(promo.estimatedCredits,64);
   assert.equal(promo.discount,"20% promotion through 2026-11-30 UTC");
-  assert.equal(regular.estimatedCredits,78.5);
+  assert.equal(regular.estimatedCredits,79);
 });
 
 test("refuses unsupported models and malformed or missing price inputs",()=>{
@@ -54,4 +55,23 @@ test("refuses unsupported models and malformed or missing price inputs",()=>{
   assert.throws(()=>estimateRunwayVideoCredits({model:"gen4.5",durationSeconds:-1,pricingDate:date}));
   assert.throws(()=>estimateRunwayVideoCredits({model:"gen4.5",durationSeconds:31,pricingDate:date}));
   assert.throws(()=>estimateRunwayVideoCredits({model:"gen4.5",durationSeconds:5,pricingDate:"2026-02-31"}));
+});
+
+test("prices Magnific video upscaling by output frame count and resolution",()=>{
+  assert.equal(estimateRunwayVideoCredits({model:"magnific_video_upscaler_creative",durationSeconds:10,outputFrames:300,resolution:"720p",pricingDate:date}).estimatedCredits,210);
+  assert.equal(estimateRunwayVideoCredits({model:"magnific_video_upscaler_creative",durationSeconds:10,outputFrames:300,resolution:"2k",pricingDate:date}).estimatedCredits,270);
+  assert.equal(estimateRunwayVideoCredits({model:"magnific_video_upscaler_creative",durationSeconds:10,outputFrames:300,resolution:"4k",pricingDate:date}).estimatedCredits,360);
+  assert.throws(()=>estimateRunwayVideoCredits({model:"magnific_video_upscaler_creative",durationSeconds:10,resolution:"4k",pricingDate:date}),e=>e.code==="RUNWAY_PRICE_INPUT_REQUIRED");
+});
+
+test("prices frame-rate enhancement and Ruby HDR from input duration and source dimensions",()=>{
+  assert.equal(estimateRunwayVideoCredits({model:"enhance_frame_rate",durationSeconds:5,inputVideoSeconds:5,pricingDate:date}).estimatedCredits,3);
+  assert.equal(estimateRunwayVideoCredits({model:"ruby",durationSeconds:10,sourceWidth:1920,sourceHeight:1080,pricingDate:date}).estimatedCredits,200);
+  assert.equal(estimateRunwayVideoCredits({model:"ruby",durationSeconds:10,sourceWidth:3840,sourceHeight:2160,pricingDate:date}).estimatedCredits,400);
+  assert.throws(()=>estimateRunwayVideoCredits({model:"ruby",durationSeconds:10,pricingDate:date}),e=>e.code==="RUNWAY_PRICE_INPUT_REQUIRED");
+});
+
+test("includes Aleph 2 minimum charge and Gemini Omni Flash 1.1 4K tier",()=>{
+  assert.equal(estimateRunwayVideoCredits({model:"aleph2",durationSeconds:1,pricingDate:date}).estimatedCredits,56);
+  assert.equal(estimateRunwayVideoCredits({model:"gemini_omni_flash_1.1",durationSeconds:5,resolution:"4k",pricingDate:date}).estimatedCredits,150);
 });
