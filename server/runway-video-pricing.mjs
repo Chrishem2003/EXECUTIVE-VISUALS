@@ -33,7 +33,7 @@ export function estimateRunwayVideoCredits(options={}) {
   const allowed=new Set([
     "model","durationSeconds","resolution","audio","inputVideoSeconds","referenceVideoSeconds",
     "referenceImageCount","referenceAudioCount","hasStartFrame","outputFrames","sourceWidth",
-    "sourceHeight","outputWidth","outputHeight","outputFormat","inputType","pricingDate"
+    "sourceHeight","outputWidth","outputHeight","outputFormat","targetFramerate","inputType","pricingDate"
   ]);
   const unknown=Object.keys(options).filter(key=>!allowed.has(key));
   if(unknown.length) {
@@ -42,7 +42,7 @@ export function estimateRunwayVideoCredits(options={}) {
   const {
     model,durationSeconds,resolution:outputResolution,audio:hasAudio,
     inputVideoSeconds:requestedInputVideoSeconds,referenceVideoSeconds=0,referenceImageCount=0,referenceAudioCount=0,
-    hasStartFrame=false,outputFrames,sourceWidth,sourceHeight,outputWidth,outputHeight,outputFormat:requestedOutputFormat,inputType="text",pricingDate
+    hasStartFrame=false,outputFrames,sourceWidth,sourceHeight,outputWidth,outputHeight,outputFormat:requestedOutputFormat,targetFramerate,inputType="text",pricingDate
   }=options;
   const outputFormat=requestedOutputFormat??(model==="ruby"?"hdr10":"mp4");
   const durationLimit=model==="enhance_frame_rate"?300:30;
@@ -51,6 +51,12 @@ export function estimateRunwayVideoCredits(options={}) {
   const inputVideo=finiteDuration(requestedInputVideoSeconds??(model==="enhance_frame_rate"?durationSeconds:0),"inputVideoSeconds",{allowZero:true,max:inputVideoLimit});
   const referenceVideo=finiteDuration(referenceVideoSeconds,"referenceVideoSeconds",{allowZero:true,max:30});
   if(!["text","image","video"].includes(inputType))throw fail("inputType must be text, image or video.","RUNWAY_PRICE_INVALID_INPUT");
+  const frameRates=new Set([24,25,30,48,50,60,120,"23_98","29_97","59_94"]);
+  if(model==="enhance_frame_rate") {
+    if(!frameRates.has(targetFramerate))throw fail("A documented targetFramerate is required for frame-rate enhancement.","RUNWAY_PRICE_INPUT_REQUIRED");
+  } else if(targetFramerate!==undefined) {
+    throw fail("targetFramerate is supported only by Enhance Frame Rate.","RUNWAY_PRICE_UNSUPPORTED_OPTION");
+  }
   const imageCount=count(referenceImageCount,"referenceImageCount");
   const audioCount=count(referenceAudioCount,"referenceAudioCount");
   if(typeof hasStartFrame!=="boolean")throw fail("hasStartFrame must be a boolean.","RUNWAY_PRICE_INVALID_INPUT");
