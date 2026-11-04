@@ -8,7 +8,7 @@ import {
 
 const workflowId = "4f0c9a52-8a3e-4c5b-9d1e-2b7a6c3e9f10";
 const inputs = [
-  { nodeId: "text-node", outputKey: "prompt", type: "primitive", exposedToApp: true },
+  { nodeId: "text-node", outputKey: "prompt", type: "string", exposedToApp: true },
   { nodeId: "image-node", outputKey: "image", type: "image", exposedToApp: true },
   { nodeId: "video-node", outputKey: "video", type: "video", exposedToApp: true },
   { nodeId: "audio-node", outputKey: "audio", type: "audio", exposedToApp: true },
@@ -117,4 +117,26 @@ test("workflow polling and terminal cost semantics follow Runway's invocation co
   assert.equal(failed.terminal, true);
   assert.equal(failed.costFinalized, true);
   assert.throws(() => normalizeRunwayWorkflowInvocation({ status: "CANCELLED" }));
+});
+
+
+test("published graph primitive types map to the API primitive input wrapper", async () => {
+  const result = await buildRunwayWorkflowInvocationPayload({
+    workflowId,
+    inputs: [
+      { nodeId: "text", outputKey: "prompt", type: "string", exposedToApp: true },
+      { nodeId: "count", outputKey: "shots", type: "number", exposedToApp: true },
+      { nodeId: "flag", outputKey: "enabled", type: "boolean", exposedToApp: true }
+    ],
+    nodeOutputs: {
+      text: { prompt: { type: "primitive", value: "Create a trailer" } },
+      count: { shots: { type: "primitive", value: 5 } },
+      flag: { enabled: { type: "primitive", value: true } }
+    }
+  });
+  assert.deepEqual(result.payload.nodeOutputs, {
+    text: { prompt: { type: "primitive", value: "Create a trailer" } },
+    count: { shots: { type: "primitive", value: 5 } },
+    flag: { enabled: { type: "primitive", value: true } }
+  });
 });
