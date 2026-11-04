@@ -99,9 +99,9 @@ export function estimateRunwayVideoCredits(options={}) {
     case "h3_max": perSecond(resolutionRate({"480p":5,"768p":8})); break;
     case "hailuo3": {
       const rate=resolutionRate({"768p":10,"2k":15});
-      const billableReferenceVideo=Math.min(15,referenceVideo);
+      const billableReferenceVideo=Math.min(15,inputVideo+referenceVideo);
       credits=duration*rate+imageCount*2+billableReferenceVideo*rate;
-      formula=duration+"s × "+rate+" + "+imageCount+" reference images/keyframes × 2 + min(15s, reference video) × "+rate;
+      formula=duration+"s × "+rate+" + "+imageCount+" reference images/keyframes × 2 + min(15s, input/reference video combined) × "+rate;
       break;
     }
     case "veo3.1": perSecond(audio(hasAudio)?40:20); break;
@@ -129,12 +129,13 @@ export function estimateRunwayVideoCredits(options={}) {
       const promo=pricingDate<="2026-11-30";
       const listRate=tier==="720p"?15.7:23.5;
       const listInputRate=tier==="720p"?9.4:14.1;
-      const listCharge=Math.ceil(inputVideo>0
-        ? duration*listInputRate+Math.max(inputVideo,duration)*listInputRate
+      const billableInputVideo=Math.min(30,inputVideo+referenceVideo);
+      const listCharge=Math.ceil(billableInputVideo>0
+        ? duration*listInputRate+Math.max(billableInputVideo,duration)*listInputRate
         : duration*listRate);
       credits=promo?Math.ceil(listCharge*0.8):listCharge;
       formula=inputVideo>0
-        ? "ceil(list price: "+duration+"s output + max("+inputVideo+"s input, "+duration+"s output), each × "+listInputRate+"); then "+(promo?"ceil(80% of list charge)":"list charge")
+        ? "ceil(list price: "+duration+"s output + max("+billableInputVideo+"s combined input/reference video, "+duration+"s output), each × "+listInputRate+"); then "+(promo?"ceil(80% of list charge)":"list charge")
         : "ceil("+duration+"s × "+listRate+" list credits/s)"+(promo?"; then ceil(80% of list charge)":"");
       if(promo)discount="20% promotion through 2026-11-30 UTC";
       break;
