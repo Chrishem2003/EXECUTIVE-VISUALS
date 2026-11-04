@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { rational } from "../../src/core/timeline.ts";
+import { activeCaptionCues, parseCaptionCues } from "../../src/core/caption-preview.ts";
 import { clipSourceSecondsAtTimelineFrame, clampPreviewSeconds, decibelsToLinearGain, isPreviewTrackAudible, frameToSeconds, getTimelineDurationFrames, resolveTimelineFrame, resolveTimelineOverlays, secondsToFrame, stepPreviewSeconds } from "../../src/core/timeline-preview.ts";
 
 const rate={numerator:30000,denominator:1001};
@@ -112,4 +113,17 @@ test("overlay resolver preserves track order and clamps geometry to the sequence
  assert.deepEqual([overlays[0].x,overlays[0].y,overlays[0].width,overlays[0].height,overlays[0].opacity],[24,36,240,120,0.75]);
  assert.deepEqual([overlays[1].x,overlays[1].y,overlays[1].width,overlays[1].height,overlays[1].opacity],[0,0,1920,16,1]);
  assert.equal(resolveTimelineOverlays(timeline,48).length,0);
+});
+
+test("caption preview parses SRT timestamps and strips markup without losing cue text",()=>{
+ const cues=parseCaptionCues("1\\n00:00:01,250 --> 00:00:02,500\\n<b>Hello</b>\\nworld\\n\\n2\\n00:00:03,000 --> 00:00:04,000\\nSecond cue");
+ assert.deepEqual(cues,[{startSeconds:1.25,endSeconds:2.5,text:"Hello\\nworld"},{startSeconds:3,endSeconds:4,text:"Second cue"}]);
+ assert.deepEqual(activeCaptionCues(cues,2).map(cue=>cue.text),["Hello\\nworld"]);
+ assert.deepEqual(activeCaptionCues(cues,2.5),[]);
+});
+test("caption preview parses WebVTT and rejects malformed or oversized input",()=>{
+ const cues=parseCaptionCues("WEBVTT\\n\\nintro\\n00:00:00.000 --> 00:00:01.250 align:center\\nWelcome");
+ assert.deepEqual(cues,[{startSeconds:0,endSeconds:1.25,text:"Welcome"}]);
+ assert.deepEqual(parseCaptionCues("1\\n00:00:02,000 --> 00:00:01,000\\nBad"),[]);
+ assert.throws(()=>parseCaptionCues("x".repeat(2*1024*1024+1)),/2 MB/);
 });
