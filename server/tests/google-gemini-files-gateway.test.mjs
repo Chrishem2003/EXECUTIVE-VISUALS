@@ -194,8 +194,14 @@ test("rejects personal assets belonging to another user and rejects tampered byt
     error => error.code === "GEMINI_FILE_ASSET_SCOPE_INVALID"
   );
 
+  const tamperedBytes = Buffer.from("tampered bytes");
   const tampered = harness({
-    loader: async () => ({ ...privateAsset(), bytes: Buffer.from("tampered bytes") })
+    loader: async () => ({
+      ...privateAsset({ size: tamperedBytes.byteLength }),
+      asset: { ...privateAsset({ size: tamperedBytes.byteLength }).asset },
+      bytes: tamperedBytes,
+      size: tamperedBytes.byteLength
+    })
   });
   await assert.rejects(
     () => tampered.gateway.resolveAsset({ assetId, ownerId, projectId, mediaType: "image/png" }),
