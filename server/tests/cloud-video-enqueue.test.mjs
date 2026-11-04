@@ -202,6 +202,7 @@ test("Gen-4.5 enqueue accepts its private first-frame path but rejects unsupport
   assert.equal(queued.status,"queued");
   await assert.rejects(()=>client.enqueue(args({input:{...input,referenceAssetIds:["923e4567-e89b-42d3-a456-426614174000"]}})),error=>error.code==="VIDEO_GENERATION_UNSUPPORTED_CAPABILITY");
   await assert.rejects(()=>client.enqueue(args({input:{...input,resolution:"720p"}})),error=>error.code==="VIDEO_GENERATION_UNSUPPORTED_CAPABILITY");
+  await assert.rejects(()=>client.enqueue(args({input:{...input,resolution:"1080p"}})),error=>error.code==="VIDEO_GENERATION_UNSUPPORTED_CAPABILITY");
   await assert.rejects(()=>client.enqueue(args({input:{...input,audioMode:"generated"}})),error=>error.code==="VIDEO_GENERATION_UNSUPPORTED_CAPABILITY");
   assert.equal(calls,1);
 });
