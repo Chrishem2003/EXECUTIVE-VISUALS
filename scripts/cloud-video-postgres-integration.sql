@@ -22,6 +22,19 @@ from executive_visuals.video_generation_budget_policies
 where owner_id='123e4567-e89b-42d3-a456-426614174000'
   and project_id='323e4567-e89b-42d3-a456-426614174000'
   and provider='runway' and model='gen4.5' and currency='USD';
+insert into executive_visuals.video_generation_budget_policies(
+ owner_id,project_id,provider,model,currency,spend_limit_amount,max_per_job_amount,
+ rolling_24h_request_limit,enabled
+) values (
+ '123e4567-e89b-42d3-a456-426614174000',
+ '323e4567-e89b-42d3-a456-426614174000',
+ 'google','gemini-omni-1.1-flash','USD',10,3,10,true
+);
+select set_config('test.google_video_policy_id',id::text,false)
+from executive_visuals.video_generation_budget_policies
+where owner_id='123e4567-e89b-42d3-a456-426614174000'
+  and project_id='323e4567-e89b-42d3-a456-426614174000'
+  and provider='google' and model='gemini-omni-1.1-flash' and currency='USD';
 do $column_guard$
 begin
  if has_column_privilege('authenticated','executive_visuals.video_generation_budget_policies','reserved_amount','UPDATE')
@@ -42,6 +55,15 @@ insert into executive_visuals.video_generation_budget_approvals(
  '323e4567-e89b-42d3-a456-426614174000',
  'runway','gen4.5',repeat('a',64),'USD',2,'integration test',clock_timestamp()+interval '10 minutes'
 );
+insert into executive_visuals.video_generation_budget_approvals(
+ id,owner_id,project_id,provider,model,request_hash,currency,approved_max_amount,approval_note,expires_at
+) values
+ ('b23e4567-e89b-42d3-a456-426614174000','123e4567-e89b-42d3-a456-426614174000',
+  '323e4567-e89b-42d3-a456-426614174000','google','gemini-omni-1.1-flash',repeat('b',64),'USD',3,'Gemini integration test',clock_timestamp()+interval '10 minutes'),
+ ('c23e4567-e89b-42d3-a456-426614174000','123e4567-e89b-42d3-a456-426614174000',
+  '323e4567-e89b-42d3-a456-426614174000','google','gemini-omni-1.1-flash',repeat('c',64),'USD',3,'Gemini under-reservation test',clock_timestamp()+interval '10 minutes'),
+ ('d23e4567-e89b-42d3-a456-426614174000','123e4567-e89b-42d3-a456-426614174000',
+  '323e4567-e89b-42d3-a456-426614174000','google','gemini-omni-1.1-flash',repeat('d',64),'USD',3,'Gemini resolution test',clock_timestamp()+interval '10 minutes');
 do $owner_guard$
 begin
  begin
@@ -96,6 +118,70 @@ from executive_visuals.enqueue_video_generation_job(
    'provider','runway','model','gen4.5','requestHash',repeat('a',64),'prompt','test scene','durationSeconds',5),
  '523e4567-e89b-42d3-a456-426614174000',1.25,'USD'
 );
+
+create temporary table google_context as
+select job_id, budget_reservation_id as reservation_id, job_status
+from executive_visuals.enqueue_video_generation_job(
+ '123e4567-e89b-42d3-a456-426614174000',
+ '323e4567-e89b-42d3-a456-426614174000',
+ 'pg-integration-google-video-001','google','gemini-omni-1.1-flash',repeat('b',64),
+ jsonb_build_object('projectId','323e4567-e89b-42d3-a456-426614174000',
+   'provider','google','model','gemini-omni-1.1-flash','requestHash',repeat('b',64),
+   'prompt','A cinematic sunrise','operation','generate','durationSeconds',5,
+   'resolution','720p','aspectRatio','16:9','outputFormat','mp4'),
+ 'b23e4567-e89b-42d3-a456-426614174000',2.586464,'USD'
+);
+do $google_enqueue_assertion$
+declare queued google_context; policy_row executive_visuals.video_generation_budget_policies;
+begin
+ select * into queued from google_context;
+ select * into policy_row from executive_visuals.video_generation_budget_policies
+ where id=current_setting('test.google_video_policy_id')::uuid;
+ if queued.job_status <> 'queued' or policy_row.reserved_amount <> 2.586464 then
+   raise exception 'Gemini Omni enqueue did not create the expected queued reservation';
+ end if;
+end
+$google_enqueue_assertion$;
+
+do $google_budget_floor$
+begin
+ begin
+  perform * from executive_visuals.enqueue_video_generation_job(
+   '123e4567-e89b-42d3-a456-426614174000',
+   '323e4567-e89b-42d3-a456-426614174000',
+   'pg-integration-google-underpriced','google','gemini-omni-1.1-flash',repeat('c',64),
+   jsonb_build_object('projectId','323e4567-e89b-42d3-a456-426614174000',
+     'provider','google','model','gemini-omni-1.1-flash','requestHash',repeat('c',64),
+     'prompt','A cinematic sunrise','durationSeconds',5,'resolution','720p','outputFormat','mp4'),
+   'c23e4567-e89b-42d3-a456-426614174000',2.586463,'USD'
+  );
+  raise exception 'under-reserved Gemini Omni generation unexpectedly enqueued';
+ exception when others then
+  if sqlerrm = 'under-reserved Gemini Omni generation unexpectedly enqueued' then raise; end if;
+  if sqlerrm <> 'VIDEO_BUDGET_BELOW_PROVIDER_ESTIMATE' then raise; end if;
+ end;
+end
+$google_budget_floor$;
+
+do $google_resolution_gate$
+begin
+ begin
+  perform * from executive_visuals.enqueue_video_generation_job(
+   '123e4567-e89b-42d3-a456-426614174000',
+   '323e4567-e89b-42d3-a456-426614174000',
+   'pg-integration-google-1080p','google','gemini-omni-1.1-flash',repeat('d',64),
+   jsonb_build_object('projectId','323e4567-e89b-42d3-a456-426614174000',
+     'provider','google','model','gemini-omni-1.1-flash','requestHash',repeat('d',64),
+     'prompt','A cinematic sunrise','durationSeconds',5,'resolution','1080p','outputFormat','mp4'),
+   'd23e4567-e89b-42d3-a456-426614174000',3,'USD'
+  );
+  raise exception 'unpriced Gemini Omni resolution unexpectedly enqueued';
+ exception when others then
+  if sqlerrm = 'unpriced Gemini Omni resolution unexpectedly enqueued' then raise; end if;
+  if sqlerrm <> 'VIDEO_PRICE_UNSUPPORTED_RESOLUTION' then raise; end if;
+ end;
+end
+$google_resolution_gate$;
 
 create temporary table replay_context as
 select job_id, budget_reservation_id as reservation_id, idempotent_replay
