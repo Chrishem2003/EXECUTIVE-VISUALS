@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 const sql = await readFile(resolve(process.cwd(), "supabase/migrations/20261031210000_executive_visuals_core.sql"), "utf8");
 const checkpointSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261102090000_video_pipeline_checkpoints.sql"), "utf8");
 const videoSubmissionSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261104120000_cloud_video_submission_ledger.sql"), "utf8");
+const videoBudgetSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261104143000_cloud_video_budget_enqueue.sql"), "utf8");
 const issues = [];
 const tables = ["projects","project_members","project_workspace_documents","workflows","workflow_runs","workflow_node_runs","timelines","assets","jobs","job_events","consents","reviews","audit_events"];
 for (const table of tables) {
@@ -112,6 +113,44 @@ if (!videoSubmissionSql.includes("state='unknown' and provider_task_id is null")
 if (!videoSubmissionSql.includes("unique" ) || !videoSubmissionSql.includes("provider_task_id text unique")) issues.push("Provider task IDs must be globally unique in the ledger.");
 if (!videoSubmissionSql.includes("queued.input ->> 'requestHash'")) issues.push("Cloud ledger preparation must verify the queued request hash.");
 if ((videoSubmissionSql.match(/security invoker/gi) || []).length !== 7 || /security definer/i.test(videoSubmissionSql)) issues.push("Cloud video ledger RPCs must use invoker rights and avoid privileged definer execution.");
+
+
+if (/\b(drop\s+table|truncate|delete\s+from)\b/i.test(videoBudgetSql)) issues.push("Cloud video budget migration must not contain destructive DDL/DML.");
+for (const table of ["video_generation_budget_policies","video_generation_budget_approvals","video_generation_budget_reservations","video_generation_usage_reservations"]) {
+  if (!videoBudgetSql.includes(`create table if not exists executive_visuals.${table}`)) issues.push(`Cloud video budget table is missing: ${table}.`);
+  if (!videoBudgetSql.includes(`alter table executive_visuals.${table} enable row level security;`)) issues.push(`Cloud video budget RLS is missing: ${table}.`);
+}
+if (!videoBudgetSql.includes("grant insert (owner_id, project_id, provider, model, currency, spend_limit_amount, max_per_job_amount, rolling_24h_request_limit, enabled)")) {
+  issues.push("Budget policy inserts must not allow clients to seed server-maintained counters.");
+}
+if (!videoBudgetSql.includes("grant update (provider, model, currency, spend_limit_amount, max_per_job_amount, rolling_24h_request_limit, enabled, updated_at)")) {
+  issues.push("Budget policy updates must not allow clients to alter owner scope or accounting totals.");
+}
+if (!videoBudgetSql.includes("new.consumed_at := null") || !videoBudgetSql.includes("interval '15 minutes'")) {
+  issues.push("Explicit budget approvals must be fresh, short-lived and single-use.");
+}
+if (!videoBudgetSql.includes("pg_advisory_xact_lock") || !videoBudgetSql.includes("for update")) {
+  issues.push("Cloud enqueue must serialize idempotency, usage and budget reservation decisions.");
+}
+if (!videoBudgetSql.includes("approval.consumed_at is not null") || !videoBudgetSql.includes("update executive_visuals.video_generation_budget_approvals")) {
+  issues.push("Budget approvals must be consumed exactly once with enqueue.");
+}
+if (!videoBudgetSql.includes("policy.reserved_amount + policy.spent_amount + p_reserved_amount > policy.spend_limit_amount")) {
+  issues.push("Cloud enqueue must enforce the approved cumulative spend ceiling.");
+}
+if (!videoBudgetSql.includes("create or replace function executive_visuals.enqueue_video_generation_job(") ||
+    !videoBudgetSql.includes("grant execute on function executive_visuals.enqueue_video_generation_job(") ||
+    !videoBudgetSql.includes("revoke all on function executive_visuals.enqueue_video_generation_job(")) {
+  issues.push("Atomic cloud video enqueue must be service-role-only.");
+}
+if (!videoBudgetSql.includes("create or replace function executive_visuals.settle_video_generation_budget_reservation(") ||
+    !videoBudgetSql.includes("lease_expires_at > clock_timestamp()") ||
+    !videoBudgetSql.includes("VIDEO_BUDGET_ACTUAL_EXCEEDS_RESERVATION")) {
+  issues.push("Budget settlement must be lease-fenced and cannot exceed the reserved amount.");
+}
+if ((videoBudgetSql.match(/security invoker/gi) || []).length !== 2 || /security definer/i.test(videoBudgetSql)) {
+  issues.push("Cloud video budget RPCs must use invoker rights and avoid privileged definer execution.");
+}
 
 if (issues.length) {
   console.error("Cloud migration guard failed:");
