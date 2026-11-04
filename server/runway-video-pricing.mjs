@@ -62,7 +62,8 @@ export function estimateRunwayVideoCredits(options={}) {
   const imageCount=count(referenceImageCount,"referenceImageCount");
   const audioCount=count(referenceAudioCount,"referenceAudioCount");
   if(typeof hasStartFrame!=="boolean")throw fail("hasStartFrame must be a boolean.","RUNWAY_PRICE_INVALID_INPUT");
-  const billableImageReferences=imageCount+(hasStartFrame?1:0);
+  const hasImageStartFrame=hasStartFrame||inputType==="image";
+  const billableImageReferences=imageCount+(hasImageStartFrame?1:0);
   if(audioCount>0&&model!=="grok_imagine_1_5")throw fail("Reference audio pricing is only verified for Grok Imagine Video 1.5.","RUNWAY_PRICE_UNSUPPORTED_OPTION");
   if(model==="grok_imagine_1_5") {
     if(imageCount>7||audioCount>3||billableImageReferences>7)throw fail("Grok Imagine Video 1.5 accepts at most 7 image and 3 audio references.","RUNWAY_PRICE_INVALID_INPUT");
@@ -158,8 +159,8 @@ export function estimateRunwayVideoCredits(options={}) {
       formula=duration+"s × resolution rate + "+billableImageReferences+" image references (including start frame) + "+audioCount+" audio references";
       break;
     case "grok_imagine_1_5_lite":
-      credits=duration*resolutionRate({"480p":2,"720p":3,"1080p":14})+(hasStartFrame?1:0);
-      formula=duration+"s × resolution rate + "+(hasStartFrame?1:0)+" image-to-video start frame";
+      credits=duration*resolutionRate({"480p":2,"720p":3,"1080p":14})+(hasImageStartFrame?1:0);
+      formula=duration+"s × resolution rate + "+(hasImageStartFrame?1:0)+" image-to-video start frame";
       break;
     case "h3_max": perSecond(resolutionRate({"480p":5,"768p":8})); break;
     case "hailuo3": {
@@ -178,8 +179,8 @@ export function estimateRunwayVideoCredits(options={}) {
         credits=Math.min(10,inputVideo)*11+billableImageReferences;
         formula="min(10s, input video) × 11 + "+billableImageReferences+" reference images";
       } else {
-        credits=duration*10+(inputType==="image"||hasStartFrame?1:0);
-        formula=duration+"s × 10"+(inputType==="image"||hasStartFrame?" + 1 first-frame image":"");
+        credits=duration*10+(hasImageStartFrame?1:0);
+        formula=duration+"s × 10"+(hasImageStartFrame?" + 1 first-frame image":"");
       }
       break;
     }
