@@ -42,8 +42,9 @@ export function estimateRunwayVideoCredits(options={}) {
   const {
     model,durationSeconds,resolution:outputResolution,audio:hasAudio,
     inputVideoSeconds=0,referenceVideoSeconds=0,referenceImageCount=0,referenceAudioCount=0,
-    hasStartFrame=false,outputFrames,sourceWidth,sourceHeight,outputWidth,outputHeight,outputFormat="mp4",inputType="text",pricingDate
+    hasStartFrame=false,outputFrames,sourceWidth,sourceHeight,outputWidth,outputHeight,outputFormat:requestedOutputFormat,inputType="text",pricingDate
   }=options;
+  const outputFormat=requestedOutputFormat??(model==="ruby"?"hdr10":"mp4");
   const duration=finiteDuration(durationSeconds,"durationSeconds",{max:30});
   const inputVideo=finiteDuration(inputVideoSeconds,"inputVideoSeconds",{allowZero:true,max:30});
   const referenceVideo=finiteDuration(referenceVideoSeconds,"referenceVideoSeconds",{allowZero:true,max:30});
@@ -64,6 +65,7 @@ export function estimateRunwayVideoCredits(options={}) {
     "hdr10","hlg","hdr_pq_12bit_master","hdr_prores","hdr_png_sequence",
     "hdr_exr_sequence","hdr_exr_acescg_sequence_1_3","hdr_exr_acescg_sequence_2_0"
   ]);
+  const RUBY_HDR_FORMATS=new Set(["hdr10","hlg","hdr_prores","hdr_exr_sequence","hdr_exr_acescg_sequence_1_3","hdr_exr_acescg_sequence_2_0"]);
   const PROFESSIONAL_SDR_FORMATS=new Set(["sdr_rec709_10bit"]);
   const EDITORIAL_FORMATS=new Set(["prores","png_sequence"]);
   if(typeof outputFormat!=="string")throw fail("outputFormat must be a string.","RUNWAY_PRICE_INVALID_INPUT");
@@ -72,7 +74,9 @@ export function estimateRunwayVideoCredits(options={}) {
     throw fail("No verified pricing formula exists for outputFormat "+outputFormat+".","RUNWAY_PRICE_UNSUPPORTED_OPTION");
   }
   let outputSurcharge=0;
-  if(EDITORIAL_FORMATS.has(outputFormat)) {
+  if(model==="ruby") {
+    if(!RUBY_HDR_FORMATS.has(outputFormat))throw fail("Ruby requires a documented HDR delivery profile.","RUNWAY_PRICE_UNSUPPORTED_OPTION");
+  } else if(EDITORIAL_FORMATS.has(outputFormat)) {
     if(!["gen4.5","aleph2"].includes(model))throw fail("ProRes and PNG sequence outputs are supported only for Gen-4.5 and Aleph 2.0.","RUNWAY_PRICE_UNSUPPORTED_OPTION");
     outputSurcharge=5*duration;
   } else if(PROFESSIONAL_SDR_FORMATS.has(outputFormat)||PROFESSIONAL_HDR_FORMATS.has(outputFormat)) {
