@@ -13,6 +13,7 @@ export function createGoogleGeminiFilesComposition({
   env = process.env,
   fetchImpl = globalThis.fetch,
   loadPrivateAsset,
+  authorizePrivateAsset: authorizePrivateAssetOverride,
   repository,
   maxBytes = 250 * 1024 * 1024,
   timeoutMs = 30000,
@@ -32,7 +33,7 @@ export function createGoogleGeminiFilesComposition({
   }
 
   let privateAssetLoader = loadPrivateAsset;
-  let authorizePrivateAsset;
+  let authorizePrivateAsset = authorizePrivateAssetOverride;
   if (!privateAssetLoader) {
     const cloudAssets = createCloudAssetService({
       url, serviceRoleKey, fetchImpl,
