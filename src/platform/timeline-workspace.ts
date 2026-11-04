@@ -57,6 +57,22 @@ function ensureSequenceAudioContext(){
  if(sequenceAudioContext.state==="suspended")void sequenceAudioContext.resume();
  return sequenceAudioContext;
 }
+async function readCaptionTextBounded(response:Response,maxBytes=2*1024*1024):Promise<string>{
+ const declared=Number(response.headers.get("content-length")||0);
+ if(declared>maxBytes)throw new Error("Caption source exceeds the 2 MB preview limit.");
+ const reader=response.body?.getReader();
+ if(!reader){const text=await response.text();if(new TextEncoder().encode(text).byteLength>maxBytes)throw new Error("Caption source exceeds the 2 MB preview limit.");return text;}
+ const chunks:Uint8Array[]=[];let total=0;
+ while(true){
+  const part=await reader.read();if(part.done)break;
+  total+=part.value.byteLength;
+  if(total>maxBytes){await reader.cancel();throw new Error("Caption source exceeds the 2 MB preview limit.");}
+  chunks.push(part.value);
+ }
+ const bytes=new Uint8Array(total);let offset=0;
+ for(const chunk of chunks){bytes.set(chunk,offset);offset+=chunk.byteLength;}
+ return new TextDecoder("utf-8").decode(bytes);
+}
 function loadSequenceCaptionCues(asset:Asset):Promise<CaptionCue[]>{
  let pending=sequenceCaptionCache.get(asset.id);
  if(!pending){
@@ -64,9 +80,7 @@ function loadSequenceCaptionCues(asset:Asset):Promise<CaptionCue[]>{
    const sourceUrl=await assetMediaUrl(asset);
    const response=await fetch(sourceUrl,{credentials:"same-origin"});
    if(!response.ok)throw new Error("Caption source could not be loaded ("+response.status+").");
-   const declared=Number(response.headers.get("content-length")||0);
-   if(declared>2*1024*1024)throw new Error("Caption source exceeds the 2 MB preview limit.");
-   return parseCaptionCues(await response.text());
+   return parseCaptionCues(await readCaptionTextBounded(response));
   })();
   sequenceCaptionCache.set(asset.id,pending);
   void pending.catch(()=>{if(sequenceCaptionCache.get(asset.id)===pending)sequenceCaptionCache.delete(asset.id);});
@@ -128,7 +142,7 @@ function syncSequenceAudio(frame:number,forceSeek=false){
   let node=sequenceAudioNodes.get(id);
   if(!node){
    const context=ensureSequenceAudioContext(),element=document.createElement("audio");
-   element.preload="auto";
+   element.preload="auto";element.crossOrigin="anonymous";
    const source=context.createMediaElementSource(element),gain=context.createGain();source.connect(gain);gain.connect(context.destination);
    node={element,gain,active:false,trackId:item.track.id,assetId:asset.id};sequenceAudioNodes.set(id,node);
    element.onloadedmetadata=()=>{const expected=Number(element.dataset.previewExpected||0);try{element.currentTime=expected;}catch{}if(sequencePlaying&&node?.active)void element.play().catch(()=>{});};
