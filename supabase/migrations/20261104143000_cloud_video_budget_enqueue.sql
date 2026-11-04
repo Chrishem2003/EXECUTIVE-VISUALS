@@ -1,6 +1,6 @@
 -- Cloud video budget policy, explicit approval and atomic enqueue boundary.
 -- Source-controlled only. Do not apply to shared staging or production from this PR.
--- No provider execution is enabled by this migration.
+-- Provider execution remains disabled by default. The service boundary and worker flags gate every remote provider submission.
 
 create table if not exists executive_visuals.video_generation_budget_policies (
   id uuid primary key default gen_random_uuid(),
@@ -217,7 +217,10 @@ begin
      or p_currency is null or p_currency !~ '^[A-Z]{3}$' then
     raise exception 'VIDEO_ENQUEUE_ARGUMENTS_INVALID';
   end if;
-  if p_provider <> 'runway' or p_model <> 'gen4.5' then
+  if not (
+    (p_provider = 'runway' and p_model = 'gen4.5')
+    or (p_provider = 'google' and p_model = 'gemini-omni-1.1-flash')
+  ) then
     raise exception 'VIDEO_ENQUEUE_PROVIDER_NOT_ENABLED';
   end if;
   if p_currency <> 'USD' then
@@ -226,11 +229,27 @@ begin
   if coalesce(p_input ->> 'outputFormat','mp4') <> 'mp4' then
     raise exception 'VIDEO_PRICE_OUTPUT_FORMAT_UNSUPPORTED';
   end if;
-  if coalesce(p_input ->> 'durationSeconds','') not in ('2','3','4','5','6','7','8','9','10') then
-    raise exception 'VIDEO_PRICE_DURATION_INVALID';
-  end if;
-  if p_reserved_amount < ((p_input ->> 'durationSeconds')::numeric * 0.12) then
-    raise exception 'VIDEO_BUDGET_BELOW_PROVIDER_ESTIMATE';
+  if p_provider = 'runway' then
+    if coalesce(p_input ->> 'durationSeconds','') not in ('2','3','4','5','6','7','8','9','10') then
+      raise exception 'VIDEO_PRICE_DURATION_INVALID';
+    end if;
+    if p_reserved_amount < ((p_input ->> 'durationSeconds')::numeric * 0.12) then
+      raise exception 'VIDEO_BUDGET_BELOW_PROVIDER_ESTIMATE';
+    end if;
+  else
+    -- Gemini Omni direct API preflight: 1,048,576 input tokens at $1.50/M
+    -- plus 57,920 output video tokens (10s at 5,792 tokens/s) at $17.50/M.
+    -- The reservation is deliberately conservative; actual usage is reconciled
+    -- from the completed interaction before budget settlement.
+    if coalesce(p_input ->> 'durationSeconds','') not in ('3','4','5','6','7','8','9','10') then
+      raise exception 'VIDEO_PRICE_DURATION_INVALID';
+    end if;
+    if coalesce(p_input ->> 'resolution','provider_default') not in ('provider_default','720p') then
+      raise exception 'VIDEO_PRICE_UNSUPPORTED_RESOLUTION';
+    end if;
+    if p_reserved_amount < 2.586464 then
+      raise exception 'VIDEO_BUDGET_BELOW_PROVIDER_ESTIMATE';
+    end if;
   end if;
   perform pg_advisory_xact_lock(hashtextextended(p_owner_id::text || ':' || p_idempotency_key, 0));
   perform pg_advisory_xact_lock(hashtextextended(p_owner_id::text || ':video.generate', 0));

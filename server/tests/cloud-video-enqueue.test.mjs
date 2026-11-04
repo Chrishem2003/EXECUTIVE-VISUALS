@@ -206,3 +206,80 @@ test("Gen-4.5 enqueue accepts its private first-frame path but rejects unsupport
   await assert.rejects(()=>client.enqueue(args({input:{...input,audioMode:"generated"}})),error=>error.code==="VIDEO_GENERATION_UNSUPPORTED_CAPABILITY");
   assert.equal(calls,1);
 });
+const googleEnv = {
+  GEMINI_OMNI_ENABLED: "true",
+  GEMINI_OMNI_ALLOW_REMOTE: "true",
+  GEMINI_OMNI_PAID_TIER_CONFIRMED: "true",
+  GEMINI_OMNI_WORKER_ENABLED: "true"
+};
+const googleInput = {
+  projectId, provider: "google", model: "gemini-omni-1.1-flash",
+  requestHash, durationSeconds: 5, resolution: "720p", aspectRatio: "16:9",
+  outputFormat: "mp4", operation: "generate", prompt: "A cinematic sunrise"
+};
+function googleArgs(overrides = {}) {
+  return {
+    ownerId, projectId, idempotencyKey: "google-request-001",
+    provider: "google", model: "gemini-omni-1.1-flash", requestHash,
+    input: googleInput, budgetApprovalId: approvalId,
+    reservedAmount: 2.586464, currency: "USD", ...overrides
+  };
+}
+
+test("Google Omni enqueue is disabled unless remote, paid-tier and worker flags are all explicitly enabled", async () => {
+  let calls = 0;
+  const client = createCloudVideoEnqueue({
+    ...base, env: googleEnv,
+    fetchImpl: async () => { calls++; return response([resultRow]); }
+  });
+  for (const key of Object.keys(googleEnv)) {
+    const env = {...googleEnv,[key]:"false"};
+    const disabled = createCloudVideoEnqueue({...base,env,fetchImpl:async()=>{calls++;return response([resultRow]);}});
+    await assert.rejects(()=>disabled.enqueue(googleArgs()),error=>error.code==="GEMINI_OMNI_REMOTE_DISABLED");
+  }
+  assert.equal(calls,0);
+});
+
+test("Google Omni enqueue accepts only its verified 720p model and reserves the conservative maximum cost", async () => {
+  const calls=[];
+  const client=createCloudVideoEnqueue({
+    ...base,env:googleEnv,
+    fetchImpl:async(url,options)=>{calls.push({url,body:JSON.parse(options.body)});return response([resultRow]);}
+  });
+  const result=await client.enqueue(googleArgs());
+  assert.equal(result.jobId,resultRow.job_id);
+  assert.equal(calls.length,1);
+  assert.equal(calls[0].body.p_provider,"google");
+  assert.equal(calls[0].body.p_model,"gemini-omni-1.1-flash");
+  assert.equal(calls[0].body.p_reserved_amount,2.586464);
+  assert.equal(calls[0].body.p_currency,"USD");
+  assert.deepEqual(calls[0].body.p_input,googleInput);
+});
+
+test("Google Omni enqueue rejects under-reservation, unsupported resolution, invalid duration and unsupported controls", async () => {
+  let calls=0;
+  const client=createCloudVideoEnqueue({...base,env:googleEnv,fetchImpl:async()=>{calls++;return response([resultRow]);}});
+  await assert.rejects(()=>client.enqueue(googleArgs({reservedAmount:2.586463})),error=>
+    error.code==="VIDEO_BUDGET_BELOW_PROVIDER_ESTIMATE"&&error.estimate.amount===2.586464);
+  await assert.rejects(()=>client.enqueue(googleArgs({input:{...googleInput,resolution:"1080p"}})),error=>
+    error.code==="VIDEO_PRICE_UNSUPPORTED_RESOLUTION");
+  await assert.rejects(()=>client.enqueue(googleArgs({input:{...googleInput,durationSeconds:2}})),error=>
+    error.code==="VIDEO_PRICE_DURATION_INVALID");
+  await assert.rejects(()=>client.enqueue(googleArgs({input:{...googleInput,negativePrompt:"no blur"}})),error=>
+    error.code==="VIDEO_GENERATION_UNSUPPORTED_CAPABILITY");
+  await assert.rejects(()=>client.enqueue(googleArgs({input:{...googleInput,operation:"extend"}})),/require a previous interaction or source video/);
+  await assert.rejects(()=>client.enqueue(googleArgs({input:{...googleInput,lastFrameAssetId:"44444444-4444-4444-8444-444444444444"}})),/requires a first frame/);
+  assert.equal(calls,0);
+});
+
+test("Google Omni enqueue normalizes provider-default resolution to the verified 720p budget tier", async () => {
+  let captured;
+  const client=createCloudVideoEnqueue({
+    ...base,env:googleEnv,
+    fetchImpl:async(url,options)=>{captured=JSON.parse(options.body);return response([resultRow]);}
+  });
+  const input={...googleInput};delete input.resolution;
+  await client.enqueue(googleArgs({input}));
+  assert.equal(captured.p_reserved_amount,2.586464);
+  assert.equal(captured.p_input.resolution,undefined);
+});
