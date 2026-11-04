@@ -85,7 +85,7 @@ function syncSequenceAudio(active:ReturnType<typeof resolveTimelineAudioFrame>){
   const key=item.clipId;live.add(key);let audio=sequenceAudio.get(key);
   if(!audio){audio=new Audio();audio.preload="auto";audio.dataset.clipId=key;container.appendChild(audio);sequenceAudio.set(key,audio);}
   const url="/api/assets/"+encodeURIComponent(asset.id)+"/file";
-  if(audio.dataset.assetId!==asset.id){audio.pause();audio.dataset.assetId=asset.id;audio.src=url;audio.load();audio.onloadedmetadata=()=>{if(audio?.dataset.clipId!==key)return;audio.currentTime=Math.max(0,item.sourceSeconds);if(sequencePlaying)void audio.play().catch(()=>{});};}
+  if(audio.dataset.assetId!==asset.id){audio.pause();audio.dataset.assetId=asset.id;audio.src=url;audio.load();audio.onloadedmetadata=()=>{if(!audio||sequenceAudio.get(key)!==audio||audio.dataset.clipId!==key)return;audio.currentTime=Math.max(0,item.sourceSeconds);if(sequencePlaying)void audio.play().catch(()=>{});};}
   const expected=item.sourceSeconds;if(audio.readyState>=1&&Math.abs(audio.currentTime-expected)>0.3)audio.currentTime=expected;
   audio.playbackRate=item.playbackRate;audio.volume=item.gainLinear;
   if(sequencePlaying&&audio.readyState>=2&&audio.paused)void audio.play().catch(()=>{});
