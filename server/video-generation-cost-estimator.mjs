@@ -1,57 +1,83 @@
-const PRICING = Object.freeze({
-  runway: Object.freeze({
-    "gen4.5": Object.freeze({
-      creditsPerSecond: 12,
-      usdPerCredit: 0.01,
-      minDurationSeconds: 2,
-      maxDurationSeconds: 10,
-      outputFormat: "mp4",
-      source: "https://dev.runwayml.com/pricing"
-    })
-  })
-});
+import { estimateRunwayVideoCredits } from "./runway-video-pricing.mjs";
+import { estimateLumaRay32Cost } from "./luma-video-pricing.mjs";
+
+const RUNWAY_PRICING_SOURCE = "https://docs.dev.runwayml.com/guides/pricing/";
+
+function priceError(message, code = "VIDEO_PRICE_INPUT_INVALID") {
+  return Object.assign(new Error(message), { code });
+}
 
 /**
- * Deterministic preflight estimate for the currently implemented Runway model.
- * This is a conservative provider-priced estimate, not a per-task invoice.
+ * Shared preflight estimator used by the cloud budget reservation boundary.
+ * Estimates are provider-dated snapshots, never invoices or settlement evidence.
+ * Only providers with an explicitly verified pricing contract are accepted.
  */
 export function estimateVideoGenerationCost({
-  provider,
-  model,
-  durationSeconds,
-  outputFormat = "mp4"
+  provider, model, operation = "video", durationSeconds, outputFormat,
+  resolution, audio, inputVideoSeconds, referenceVideoSeconds, referenceImageCount,
+  referenceAudioCount, hasStartFrame, outputFrames, sourceWidth, sourceHeight,
+  sourceDynamicRange, outputWidth, outputHeight, targetFramerate, inputType,
+  hdr = false, exrExport = false
 } = {}) {
-  const pricing = PRICING[provider]?.[model];
-  if (!pricing) {
-    const error = new Error("No verified video price is configured for this provider/model.");
-    error.code = "VIDEO_PRICE_UNVERIFIED";
-    throw error;
+  const pricingDate = new Date().toISOString().slice(0, 10);
+
+  if (provider === "luma") {
+    if (model !== "ray-3.2") {
+      throw priceError("No verified Luma price is configured for this provider/model.", "VIDEO_PRICE_UNVERIFIED");
+    }
+    const estimate = estimateLumaRay32Cost({
+      operation, resolution, durationSeconds, hdr, exrExport, pricingDate
+    });
+    return Object.freeze({
+      provider, model, operation, durationSeconds,
+      resolution: estimate.resolution,
+      credits: estimate.credits,
+      currency: estimate.currency,
+      amount: estimate.amount,
+      basis: estimate.basis,
+      creditToUsdRate: estimate.creditToUsdRate,
+      monetaryEstimateScope: estimate.monetaryEstimateScope,
+      pricingSource: estimate.pricingSource,
+      usageSource: estimate.usageSource,
+      pricingDate: estimate.pricingDate,
+      pricingFormula: estimate.pricingFormula,
+      pricingStatus: estimate.pricingStatus,
+      billable: false,
+      settlementEligible: false
+    });
   }
-  if (!Number.isInteger(durationSeconds) ||
-      durationSeconds < pricing.minDurationSeconds ||
-      durationSeconds > pricing.maxDurationSeconds) {
-    const error = new Error("Video duration is outside the verified pricing bounds.");
-    error.code = "VIDEO_PRICE_DURATION_INVALID";
-    throw error;
+
+  if (provider !== "runway") {
+    throw priceError("No verified video price is configured for this provider/model.", "VIDEO_PRICE_UNVERIFIED");
   }
-  if (outputFormat !== pricing.outputFormat) {
-    const error = new Error("The verified estimate currently covers MP4 output only.");
-    error.code = "VIDEO_PRICE_OUTPUT_FORMAT_UNSUPPORTED";
-    throw error;
+
+  const effectiveOutputFormat = outputFormat ?? (model === "ruby" ? "hdr10" : "mp4");
+  let estimate;
+  try {
+    estimate = estimateRunwayVideoCredits({
+      model, durationSeconds, outputFormat, resolution, audio, inputVideoSeconds,
+      referenceVideoSeconds, referenceImageCount, referenceAudioCount, hasStartFrame,
+      outputFrames, sourceWidth, sourceHeight, sourceDynamicRange, outputWidth,
+      outputHeight, targetFramerate, inputType, pricingDate
+    });
+  } catch (error) {
+    const durationInvalid = error?.message?.startsWith("durationSeconds");
+    const mapped = Object.assign(new Error(durationInvalid ? "Video duration is outside the verified pricing bounds." : error?.message || "Runway pricing estimate failed."), {
+      code: error?.code === "RUNWAY_PRICE_UNSUPPORTED_MODEL" ? "VIDEO_PRICE_UNVERIFIED" :
+        error?.code === "RUNWAY_PRICE_INPUT_REQUIRED" ? "VIDEO_PRICE_INPUT_REQUIRED" :
+        error?.code === "RUNWAY_PRICE_UNSUPPORTED_OPTION" ? "VIDEO_PRICE_UNSUPPORTED_OPTION" :
+        error?.code === "RUNWAY_PRICE_INVALID_RESULT" ? "VIDEO_PRICE_INVALID_RESULT" :
+        durationInvalid ? "VIDEO_PRICE_DURATION_INVALID" : "VIDEO_PRICE_INPUT_INVALID"
+    });
+    throw mapped;
   }
-  const credits = durationSeconds * pricing.creditsPerSecond;
-  const amount = Number((credits * pricing.usdPerCredit).toFixed(6));
   return Object.freeze({
-    provider,
-    model,
-    durationSeconds,
-    outputFormat,
-    credits,
-    currency: "USD",
-    amount,
+    provider, model, durationSeconds, outputFormat: effectiveOutputFormat,
+    credits: estimate.estimatedCredits, currency: estimate.currency,
+    amount: Number(estimate.estimatedUsd.toFixed(6)),
     basis: "provider_list_price_estimate",
-    creditsPerSecond: pricing.creditsPerSecond,
-    usdPerCredit: pricing.usdPerCredit,
-    pricingSource: pricing.source
+    pricingSource: RUNWAY_PRICING_SOURCE, pricingDate: estimate.pricingDate,
+    pricingFormula: estimate.formula,
+    evidenceType: estimate.evidenceType, billable: false, settlementEligible: false
   });
 }

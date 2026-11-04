@@ -165,3 +165,128 @@ Provider-specific behavior must remain explicit:
 - [ ] Add UI cost preview, per-project hard budget, approval checkpoints, job progress, output lineage and retry controls.
 
 **Release gate:** no provider adapter may be enabled for end users until contract tests pass, credential storage is verified, cost ceilings are enforced, output ingestion is private and durable, and hosted acceptance is explicitly approved.
+
+
+## Luma Ray 3.2 adapter implementation update
+
+The official current Luma Agents API uses `POST https://agents.lumalabs.ai/v1/generations` with `model: "ray-3.2"`, `type: "video"`, a prompt, aspect ratio, and nested `video` options. The generation returns a provider generation ID and queued state; poll `GET /v1/generations/{id}` until completed/failed. Completed MP4 URLs are presigned and expire after one hour; `usage.credits_charged` is provider-reported usage when available.
+
+Executive Visuals now contains:
+- `server/luma-ray32-video-adapter.mjs`: server-only Bearer credential, one-shot submit, bounded polling, generation status normalization, prompt/resolution/duration validation, HTTPS input-reference validation, first/last-frame and up-to-64-keyframe mapping, and temporary output URL validation.
+- `server/tests/luma-ray32-video-adapter.test.mjs`: mocked API tests; no real API calls or credentials.
+- The cloud executor now accepts explicitly model-bound adapters rather than hard-coding Runway, while preserving the same Postgres submission ledger, one-shot POST, ambiguous-outcome quarantine, actual-cost evidence, and private-output-ingestion gates.
+- The Luma registry marks the adapter as `implemented_disabled`; only text-to-video and image-to-video are implemented by this adapter. Video edit, extend and reframe remain provider capabilities but are not claimed as implemented execution operations.
+
+This is still not live-enabled. A real deployment needs a server-side `LUMA_AGENTS_API_KEY`, provider cost/usage reconciliation, safe asset upload/reference preparation, private output ingestion, per-project budget and explicit approval. No provider request was made by these changes.
+
+
+## Runway Model Router: native routing vs platform-wide routing
+
+The current Runway API reference exposes a native Model Router in addition to direct model-specific task endpoints.
+
+- Create/update/list/delete router configurations with `/v1/routers`.
+- Route video generation through `POST /v1/generate/video` using a saved `configId` and a model-agnostic `input` object.
+- Route image and audio through their respective modality endpoints.
+- Set `optimizeFor` to `cost`, `latency`, or `quality`.
+- Apply a hard per-generation credit ceiling per modality.
+- Restrict the eligible model pool with allowlist-only or deny-except modes.
+- Set capacity fallback behavior.
+- Run the same payload with `dryRun: true` to receive the selected model, estimated cost and resolved settings without generating or billing.
+- Inspect routing request history for live requests; dry runs are not recorded in that history.
+
+Official references:
+- https://docs.dev.runwayml.com/model-routers/configuration/
+- https://docs.dev.runwayml.com/model-routers/generating/
+- https://docs.dev.runwayml.com/api/
+
+Architecture decision: keep Executive Visuals' cross-provider router as the policy authority for Runway, Luma and future providers. Add an optional Runway-native router adapter beneath it when a Runway account config is available. Do not treat Runway's router as a substitute for platform-wide permissions, project budgets, asset rights, audit history, or cross-provider comparisons. A Runway dry-run is a provider preflight signal; it does not replace our own reservation and approval checks.
+
+## Current API model identifiers discovered in Runway reference
+
+The live API reference lists additional model identifiers beyond the initial registry snapshot, including `seedance2_5`, `kling_4`, `happyhorse_1_0`, `wan3`, `wan3_prime`, `h3_max`, `grok_imagine_1_5`, and `grok_imagine_1_5_lite`, alongside `seedance2`, `seedance2_fast`, `seedance2_mini`, `veo3.1`, and other models.
+
+These identifiers are discovery evidence only. Do not add them as selectable models or estimate costs until each model's endpoint compatibility, parameters, constraints, pricing, output lifecycle, moderation behavior and actual adapter tests are verified independently.
+
+
+### Luma Ray 3.2 documentation discrepancy — HDR and 10-second multi-keyframes
+
+The generation guide says the multi-keyframe path lifts the legacy 10-second anchor-frame HDR restriction. However, the current pricing page explicitly says 10-second HDR video generation is rejected and only lists 5-second HDR rates. Because the adapter must never submit an unpriced paid request, Executive Visuals deliberately rejects 10-second HDR generation (including multi-keyframe) until Luma clarifies the discrepancy and publishes a supported price. Standard 10-second SDR multi-keyframe generation remains supported.
+
+References:
+- https://docs.agents.lumalabs.ai/guides/videos/generation/
+- https://docs.agents.lumalabs.ai/guides/pricing/
+
+
+## November 4, 2026 provider discovery — Seedance 2.5 and Veo 3.1
+
+The Runway Dev API now exposes official ByteDance Seedance 2.5 and Google Veo 3.1 / Veo 3.1 Fast through the same Runway task API and credit balance. They are catalogued as separate models with `executionAdapter: "not_implemented"` and remain disabled. The existing Gen-4.5 adapter must not be allowed to silently submit these models because their input schemas and billing rules differ.
+
+### Seedance 2.5
+
+- Model ID: `seedance2_5`; endpoints: text-to-video, image-to-video, video-to-video.
+- Duration: 4–30 seconds or `auto`; `auto` reserves 30 seconds up front and refunds unused duration.
+- Output: 480p, 720p, 1080p.
+- Prompt: up to 15,000 characters.
+- References: text-to-video up to 30 images, 10 videos and 10 audio clips; video-to-video allows 30 images, 9 reference videos plus the source clip, and 10 audio clips.
+- Video reference input is billed separately: 10 / 15 / 34 credits per second at 480p / 720p / 1080p. Images and audio references are free.
+- Output: 20 / 30 / 68 credits per second at 480p / 720p / 1080p; minimum 80 credits.
+- Draft mode is two separate billable tasks: preview at 20 credits/sec and 1080p enhancement at 68 credits/sec.
+- Video edit requires `duration: "auto"`; edit and extend require prompt text and preserve input aspect ratio.
+
+### Veo 3.1 and Veo 3.1 Fast
+
+- Model IDs: `veo3.1` and `veo3.1_fast`; text-to-video and image-to-video.
+- Duration: 4, 6 or 8 seconds. 1080p only supports 8 seconds.
+- Keyframes: first and optional last frame; last requires first.
+- Output sizes are specified by exact ratio values: `1280:720`, `720:1280`, `1080:1920`, `1920:1080`.
+- Native audio defaults on; explicitly send `audio: false` to reduce price.
+- Veo 3.1: 40 credits/sec with audio, 20 without.
+- Veo 3.1 Fast: 15 credits/sec with audio, 10 without.
+- Image inputs add no charge. 1 credit = USD $0.01 as of November 4, 2026.
+
+### Adapter implementation boundary
+
+The catalogue now contains these exact model IDs and verified capability/pricing metadata, with regression tests proving that they remain unselectable. The next implementation should be a separate Runway multi-model adapter (or per-model adapters) that:
+1. validates the selected model against the catalog;
+2. builds the correct endpoint payload for that model and operation;
+3. prepares private asset URIs for each reference type;
+4. reconciles preflight estimates with actual provider credit usage;
+5. uses the existing durable one-shot submission ledger and temporary-output ingestion path.
+
+Do not activate models by changing the catalogue flag alone. No paid request has been sent.
+
+Official sources:
+- https://dev.runwayml.com/learn/seedance-2-5-api
+- https://dev.runwayml.com/learn/veo-3-1-api
+- https://docs.dev.runwayml.com/guides/pricing/
+
+
+## Runway Dev model-directory expansion — November 4, 2026
+
+The current official Runway Dev model directory lists 60 total models and exposes the following additional video families beyond the initial Executive Visuals registry snapshot. The registry now includes these Runway Dev model IDs as catalogue-only entries, with dated price metadata and `executionAdapter: "not_implemented"`. They remain disabled.
+
+| Model ID | Verified advertised capability | Runway Dev rate |
+|---|---|---|
+| `grok_imagine_1_5` | Native audio; prompt-addressable image references; audio-driven performance | 10 / 16 / 29 credits/s at 480p / 720p / 1080p; 1 credit per image/audio reference |
+| `grok_imagine_1_5_lite` | Text or start-frame video; 480p / 720p / 1080p | 2 / 3 / 14 credits/s; 1 credit for start frame |
+| `wan3` | Native audio; 2–30 seconds; image, video and audio references | 5 / 10 / 20 credits/s at 480p / 720p / 1080p |
+| `wan3_prime` | Native audio; 2–30 seconds; image, video and audio references | 6.8 / 14 / 28 credits/s at 480p / 720p / 1080p |
+| `h3_max` | Text/image-to-video; first and last frames; native audio | 5 credits/s at 480p; 8 at 768p |
+| `happyhorse_1_0` | Native audio; 3–15 seconds; ten output aspect ratios | 15 / 30 credits/s at 720p / 1080p |
+| `gemini_omni_flash_1.1` | Multimodal video; native audio; 360p through 4K | 3.4 / 10 / 15 / 30 credits/s at 360p / 720p / 1080p / 4K; reference-image and input-video charges apply |
+
+The shared Runway pricing estimator already contains formulas for these model IDs; this registry expansion makes the models discoverable to capability-aware planning without making them executable. Grok reference billing has explicit count constraints in the pricing estimator. WAN reference input capability is recorded conservatively; exact endpoint payload validation still belongs in a future model-specific adapter.
+
+### Veo 3.1 endpoint separation
+
+There are two different API surfaces and they must not be conflated:
+
+- **Google Gemini API:** the Veo 3.1 Preview model IDs `veo-3.1-generate-preview`, `veo-3.1-fast-generate-preview`, and `veo-3.1-lite-generate-preview` were shut down on October 22, 2026. Google directs developers to Gemini Omni Flash or the GA Veo models available through Gemini Enterprise Agent Platform.
+- **Runway Dev:** the current Runway model directory independently lists `veo3.1` and `veo3.1_fast`, with separate Runway Dev model IDs and credit pricing. Those remain catalogue-only in Executive Visuals until the Runway-specific adapter is implemented and tested.
+
+The Google provider entry for `gemini-omni-1.1-flash` and the Runway provider entry for `gemini_omni_flash_1.1` are separate endpoints, even though their names describe the same model family.
+
+Official sources:
+- Runway Dev model directory: https://docs.dev.runwayml.com/guides/models/
+- Runway Dev pricing: https://docs.dev.runwayml.com/guides/pricing/
+- Google Gemini API video migration notice: https://ai.google.dev/gemini-api/docs/video

@@ -33,8 +33,10 @@ export async function executeCloudVideoGenerationJob({
       typeof ledger.record !== "function" || typeof ledger.markUnknown !== "function") {
     throw new Error("Cloud video executor requires the Postgres submission ledger.");
   }
-  if (!adapter || adapter.provider !== "runway" || typeof adapter.submit !== "function" || typeof adapter.getStatus !== "function") {
-    throw fail("A supported remote video adapter is required.", "VIDEO_ADAPTER_UNAVAILABLE");
+  if (!adapter || typeof adapter.provider !== "string" || !adapter.provider.trim() ||
+      typeof adapter.model !== "string" || !adapter.model.trim() ||
+      typeof adapter.submit !== "function" || typeof adapter.getStatus !== "function") {
+    throw fail("A supported, model-bound remote video adapter is required.", "VIDEO_ADAPTER_UNAVAILABLE");
   }
   if (typeof ingestOutputs !== "function" || typeof resolveActualCost !== "function") {
     throw fail("Private output ingestion and authoritative cost resolution are mandatory.", "VIDEO_EXECUTION_GATES_MISSING");

@@ -146,7 +146,8 @@ test("enqueue rejects mismatched request scope and invalid budget inputs before 
   await assert.rejects(() => client.enqueue(args({
     provider: "luma", model: "ray-3.2",
     input: { ...input, provider: "luma", model: "ray-3.2" }
-  })), error => error.code === "VIDEO_PRICE_UNVERIFIED");
+  })), error => error.code === "VIDEO_GENERATION_UNSUPPORTED_CAPABILITY");
+  await assert.rejects(()=>client.enqueue(args({model:"kling_4",input:{...input,model:"kling_4",resolution:"720p"}})),error=>error.code==="VIDEO_GENERATION_UNSUPPORTED_CAPABILITY");
   await assert.rejects(() => client.enqueue(args({ currency: "usd" })), /three-letter/);
   await assert.rejects(() => client.enqueue(args({ idempotencyKey: "bad key" })), /invalid format/);
   await assert.rejects(() => client.enqueue(args({ input: [] })), /must be an object/);
@@ -172,22 +173,36 @@ test("cloud enqueue configuration rejects insecure remote endpoints", () => {
   assert.throws(() => createCloudVideoEnqueue({ url: base.url }), /SUPABASE_SERVICE_ROLE_KEY/);
 });
 
-test("Runway Gen-4.5 estimate uses the documented credits-per-second rate", () => {
-  assert.deepEqual(estimateVideoGenerationCost({
-    provider: "runway", model: "gen4.5", durationSeconds: 5
-  }), {
-    provider: "runway", model: "gen4.5", durationSeconds: 5,
-    outputFormat: "mp4", credits: 60, currency: "USD", amount: 0.6,
-    basis: "provider_list_price_estimate", creditsPerSecond: 12,
-    usdPerCredit: 0.01, pricingSource: "https://dev.runwayml.com/pricing"
-  });
-  assert.throws(() => estimateVideoGenerationCost({
-    provider: "runway", model: "gen4.5", durationSeconds: 1
-  }), error => error.code === "VIDEO_PRICE_DURATION_INVALID");
-  assert.throws(() => estimateVideoGenerationCost({
-    provider: "runway", model: "gen4.5", durationSeconds: 5, outputFormat: "prores"
-  }), error => error.code === "VIDEO_PRICE_OUTPUT_FORMAT_UNSUPPORTED");
-  assert.throws(() => estimateVideoGenerationCost({
-    provider: "luma", model: "ray-3.2", durationSeconds: 5
-  }), error => error.code === "VIDEO_PRICE_UNVERIFIED");
+test("Runway budget estimate uses the shared dated pricing engine and is not settlement evidence", () => {
+  const estimate=estimateVideoGenerationCost({provider:"runway",model:"gen4.5",durationSeconds:5});
+  assert.equal(estimate.provider,"runway");
+  assert.equal(estimate.model,"gen4.5");
+  assert.equal(estimate.outputFormat,"mp4");
+  assert.equal(estimate.credits,60);
+  assert.equal(estimate.currency,"USD");
+  assert.equal(estimate.amount,0.6);
+  assert.equal(estimate.basis,"provider_list_price_estimate");
+  assert.equal(estimate.pricingSource,"https://docs.dev.runwayml.com/guides/pricing/");
+  assert.match(estimate.pricingDate,/^\d{4}-\d{2}-\d{2}$/);
+  assert.equal(estimate.pricingFormula,"5s × 12 credits/s");
+  assert.equal(estimate.settlementEligible,false);
+  assert.equal(estimate.billable,false);
+  assert.equal(estimateVideoGenerationCost({provider:"runway",model:"gen4.5",durationSeconds:5,outputFormat:"prores"}).credits,85);
+  assert.throws(()=>estimateVideoGenerationCost({provider:"runway",model:"gen4.5",durationSeconds:1}),error=>error.code==="VIDEO_PRICE_DURATION_INVALID");
+  assert.throws(()=>estimateVideoGenerationCost({provider:"runway",model:"ruby",durationSeconds:10}),error=>error.code==="VIDEO_PRICE_INPUT_REQUIRED");
+  const lumaEstimate = estimateVideoGenerationCost({provider:"luma",model:"ray-3.2",resolution:"720p",durationSeconds:5});
+  assert.equal(lumaEstimate.amount,0.3);
+  assert.equal(lumaEstimate.billable,false);
+});
+
+test("Gen-4.5 enqueue accepts its private first-frame path but rejects unsupported execution options",async()=>{
+  let calls=0;
+  const client=createCloudVideoEnqueue({...base,fetchImpl:async()=>{calls++;return response([resultRow]);}});
+  const queued=await client.enqueue(args({input:{...input,startFrameAssetId:"823e4567-e89b-42d3-a456-426614174000"}}));
+  assert.equal(queued.status,"queued");
+  await assert.rejects(()=>client.enqueue(args({input:{...input,referenceAssetIds:["923e4567-e89b-42d3-a456-426614174000"]}})),error=>error.code==="VIDEO_GENERATION_UNSUPPORTED_CAPABILITY");
+  await assert.rejects(()=>client.enqueue(args({input:{...input,resolution:"720p"}})),error=>error.code==="VIDEO_GENERATION_UNSUPPORTED_CAPABILITY");
+  await assert.rejects(()=>client.enqueue(args({input:{...input,resolution:"1080p"}})),error=>error.code==="VIDEO_GENERATION_UNSUPPORTED_CAPABILITY");
+  await assert.rejects(()=>client.enqueue(args({input:{...input,audioMode:"generated"}})),error=>error.code==="VIDEO_GENERATION_UNSUPPORTED_CAPABILITY");
+  assert.equal(calls,1);
 });

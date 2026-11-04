@@ -91,7 +91,7 @@ export function normalizeVideoGenerationRequest(input) {
     ...(negativePrompt ? { negativePrompt } : {}),
   };
 
-  if (input.seed != null) request.seed = finiteNumber(input.seed, "seed", { min: 0, max: 2147483647, integer: true });
+  if (input.seed != null) request.seed = finiteNumber(input.seed, "seed", { min: 0, max: 4294967295, integer: true });
   if (input.startFrameAssetId != null) {
     request.startFrameAssetId = boundedString(input.startFrameAssetId, "startFrameAssetId", 160, { required: true });
   }

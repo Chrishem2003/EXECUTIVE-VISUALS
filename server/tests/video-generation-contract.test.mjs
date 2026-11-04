@@ -114,3 +114,9 @@ test("rejects resolution or audio settings the configured adapter cannot honor",
   assert.throws(() => assertVideoCapabilities(noAudio, { audioModes: [] }),
     (error) => error.code === "VIDEO_GENERATION_UNSUPPORTED_CAPABILITY");
 });
+
+test("accepts the documented unsigned 32-bit provider seed range",()=>{
+  const request=normalizeVideoGenerationRequest({...base,seed:4294967295});
+  assert.equal(request.seed,4294967295);
+  assert.throws(()=>normalizeVideoGenerationRequest({...base,seed:4294967296}),VideoGenerationValidationError);
+});
