@@ -36,3 +36,7 @@ Do not advertise this adapter as a user-facing working generation feature until 
 - https://docs.dev.runwayml.com/api/
 - https://docs.dev.runwayml.com/guides/using-the-api/
 - https://docs.dev.runwayml.com/assets/outputs/
+
+## Initial request contract
+
+The first adapter intentionally targets only Runway Gen-4.5 text-to-video: prompt length 1–1,000 characters, integer duration 2–10 seconds, and output ratio `1280:720` or `720:1280`. Seed is optional and bounded to an unsigned 32-bit integer. Image-to-video, video-to-video, model routing, and additional models are deliberately not advertised by this adapter yet. The API request schema and task lifecycle were checked against the current official API reference on 2026-11-04.
