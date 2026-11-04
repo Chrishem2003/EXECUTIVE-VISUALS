@@ -160,6 +160,10 @@ if (!videoBudgetSql.includes("create or replace function executive_visuals.enque
     !videoBudgetSql.includes("revoke all on function executive_visuals.enqueue_video_generation_job(")) {
   issues.push("Atomic cloud video enqueue must be service-role-only.");
 }
+if (!videoBudgetSql.includes("VIDEO_ENQUEUE_PROVIDER_NOT_ENABLED") ||
+    !videoBudgetSql.includes("p_provider <> 'runway' or p_model <> 'gen4.5'")) {
+  issues.push("Cloud video enqueue must reject provider/model combinations without a verified adapter and price contract.");
+}
 if (!videoBudgetSql.includes("create or replace function executive_visuals.finish_video_generation_job(") ||
     !videoBudgetSql.includes("lease_expires_at <= clock_timestamp()") ||
     !videoBudgetSql.includes("VIDEO_BUDGET_ACTUAL_EXCEEDS_RESERVATION") ||
