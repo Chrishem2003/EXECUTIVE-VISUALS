@@ -32,6 +32,8 @@ test("Runway catalog exposes implemented Gen-4.5 text-to-video and image-to-vide
   assert.deepEqual(model.capabilities.resolutions, ["720p"]);
   assert.equal(model.capabilities.minDurationSeconds, 2);
   assert.equal(model.capabilities.maxDurationSeconds, 10);
+  assert.deepEqual(model.constraints.textToVideoAspectRatios, ["16:9", "9:16"]);
+  assert.deepEqual(model.constraints.imageToVideoAspectRatios, ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"]);
   assert.equal(model.constraints.minimumPollIntervalMs, 5000);
   assert.equal(model.constraints.cancellation, "best_effort");
 });
