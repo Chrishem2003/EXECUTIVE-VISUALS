@@ -392,3 +392,12 @@
 /* Sequence audio track controls */
 .track-audio-controls{display:flex;gap:5px;margin-top:6px}
 .track-audio-controls button{font-size:11px;padding:4px 8px;min-height:26px}
+
+
+/* Google Drive private workspace integration */
+.integration-status{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;padding:14px 0}
+.integration-status>div{min-width:0}
+.integration-status p,.muted{color:var(--muted);font-size:11px;line-height:1.7;margin:7px 0 0}
+.integration-status>.status{white-space:nowrap}
+.action-row{display:flex;flex-wrap:wrap;align-items:center;gap:9px;margin:12px 0}
+@media(max-width:650px){.integration-status{display:block}.integration-status>.status{display:inline-block;margin-top:10px}}
