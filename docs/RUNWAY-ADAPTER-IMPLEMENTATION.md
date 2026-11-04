@@ -14,6 +14,7 @@
 - Exposes explicit task retrieval and guarded cancellation. It checks task state before DELETE so completed tasks are not accidentally deleted.
 - Uses bounded request timeouts, bounded response bodies, redirect rejection, and normalized errors that do not echo provider response bodies or credentials.
 - Image-to-video requires an injected server-side asset resolver. The adapter passes owner ID, project ID and private asset ID to that resolver, and accepts only an HTTPS asset URI or Runway upload URI; browser-supplied arbitrary URLs are never used as first-frame assets.
+- `server/runway-private-asset-resolver.mjs` implements that resolver contract: it loads an owner/project-scoped private asset, checks visibility, image MIME, filename, size and PNG/JPEG/WebP file signature, then creates a Runway ephemeral upload and returns the `runway://` URI. Uploads are prepared before the provider-submission ledger enters its one-shot submitting state, so a failed upload cannot be mistaken for an ambiguous generation POST.
 - Mock-based tests cover payload validation, disabled-by-default behavior, both endpoint request bodies, owner/project-scoped asset resolution, task lifecycle, output URL validation, cancellation, and provider error handling.
 
 ## Safety boundary
