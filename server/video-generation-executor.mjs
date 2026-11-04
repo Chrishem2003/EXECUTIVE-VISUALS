@@ -72,7 +72,7 @@ export async function executeVideoGenerationJob({
     onEvent({ type: "video.provider_submission_started", jobId: job.id, provider: input.provider, model: input.model });
     let task;
     try {
-      task = await adapter.submit(input);
+      task = await adapter.submit(input, { job });
     } catch (error) {
       // A transport error can occur after provider acceptance. Never retry
       // the POST automatically, even for a nominally transient failure.
