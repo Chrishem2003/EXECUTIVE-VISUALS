@@ -352,7 +352,7 @@ begin
   where j.id = p_job_id and j.job_type = 'video.generate'
   for update;
   if current_job.id is null or current_job.status <> 'processing'
-     or current_job.lease_owner <> p_worker_id
+     or current_job.lease_owner is distinct from p_worker_id
      or current_job.lease_expires_at is null
      or current_job.lease_expires_at <= clock_timestamp() then
     return false;
