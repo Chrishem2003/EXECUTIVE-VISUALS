@@ -39,6 +39,7 @@ test("accounts for reference media charges on Grok and Hailuo models",()=>{
   assert.equal(estimateRunwayVideoCredits({model:"grok_imagine_1_5",durationSeconds:5,resolution:"720p",referenceImageCount:2,referenceAudioCount:1,pricingDate:date}).estimatedCredits,83);
   assert.equal(estimateRunwayVideoCredits({model:"grok_imagine_1_5_lite",durationSeconds:5,resolution:"720p",referenceImageCount:3,hasStartFrame:true,pricingDate:date}).estimatedCredits,16);
   assert.equal(estimateRunwayVideoCredits({model:"hailuo3",durationSeconds:5,resolution:"768p",referenceImageCount:2,referenceVideoSeconds:20,pricingDate:date}).estimatedCredits,204);
+  assert.equal(estimateRunwayVideoCredits({model:"hailuo3",durationSeconds:5,resolution:"768p",referenceImageCount:2,inputVideoSeconds:5,pricingDate:date}).estimatedCredits,104);
 });
 
 test("uses the dated Kling 4 promotion and automatically reverts to list pricing",()=>{
@@ -47,6 +48,8 @@ test("uses the dated Kling 4 promotion and automatically reverts to list pricing
   assert.equal(promo.estimatedCredits,64);
   assert.equal(promo.discount,"20% promotion through 2026-11-30 UTC");
   assert.equal(regular.estimatedCredits,79);
+  const referenced=estimateRunwayVideoCredits({model:"kling_4",durationSeconds:5,referenceVideoSeconds:10,resolution:"720p",pricingDate:date});
+  assert.equal(referenced.estimatedCredits,113);
 });
 
 test("refuses unsupported models and malformed or missing price inputs",()=>{
@@ -77,4 +80,13 @@ test("prices frame-rate enhancement and Ruby HDR from input duration and source 
 test("includes Aleph 2 minimum charge and Gemini Omni Flash 1.1 4K tier",()=>{
   assert.equal(estimateRunwayVideoCredits({model:"aleph2",durationSeconds:1,pricingDate:date}).estimatedCredits,56);
   assert.equal(estimateRunwayVideoCredits({model:"gemini_omni_flash_1.1",durationSeconds:5,resolution:"4k",pricingDate:date}).estimatedCredits,150);
+});
+
+test("Kling O3 video-to-video bills against input duration rather than output duration",()=>{
+  const estimate=estimateRunwayVideoCredits({model:"klingO3_pro",durationSeconds:5,inputType:"video",inputVideoSeconds:12,pricingDate:date});
+  assert.equal(estimate.estimatedCredits,204);
+  assert.throws(()=>estimateRunwayVideoCredits({model:"klingO3_pro",durationSeconds:5,inputType:"video",pricingDate:date}),
+    error=>error.code==="RUNWAY_PRICE_INPUT_REQUIRED");
+  assert.throws(()=>estimateRunwayVideoCredits({model:"gen4.5",durationSeconds:5,inputType:"audio",pricingDate:date}),
+    error=>error.code==="RUNWAY_PRICE_INVALID_INPUT");
 });
