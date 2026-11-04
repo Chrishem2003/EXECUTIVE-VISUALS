@@ -17,14 +17,88 @@ function configSlug(value) {
  * Builds a strictly non-billable Runway Model Router request.
  * dryRun is deliberately hard-coded; callers cannot turn this into generation.
  */
+const ASSET_LIMITS = Object.freeze({
+  referenceImages: 4,
+  referenceVideos: 2,
+  referenceAudio: 1
+});
+
+function validateAssetUri(uri, kind) {
+  if (typeof uri !== "string" || uri.length < 13 || uri.length > 5242880) {
+    throw fail("Resolved " + kind + " asset URI is outside the supported size bounds.", "RUNWAY_ROUTER_ASSET_INVALID");
+  }
+  const schemeOk = /^https:\/\//i.test(uri) || /^runway:\/\//i.test(uri) ||
+    (kind === "image" && /^data:image\//i.test(uri)) ||
+    (kind === "video" && /^data:video\//i.test(uri)) ||
+    (kind === "audio" && /^data:audio\//i.test(uri));
+  if (!schemeOk) throw fail("Resolved " + kind + " asset URI has an unsupported scheme or media type.", "RUNWAY_ROUTER_ASSET_INVALID");
+  return uri;
+}
+
+function validateReferenceImages(items = []) {
+  if (!Array.isArray(items) || items.length > ASSET_LIMITS.referenceImages) {
+    throw fail("Runway accepts at most four reference images.");
+  }
+  const roles = new Set();
+  return items.map(item => {
+    if (!item || !["first", "last", "reference"].includes(item.role)) {
+      throw fail("Each reference image requires the first, last or reference role.");
+    }
+    if (item.role !== "reference" && roles.has(item.role)) {
+      throw fail("Only one first-frame and one last-frame image are allowed.");
+    }
+    roles.add(item.role);
+    return { uri: validateAssetUri(item.uri, "image"), role: item.role };
+  });
+}
+
+function validateReferenceVideos(items = []) {
+  if (!Array.isArray(items) || items.length > ASSET_LIMITS.referenceVideos) {
+    throw fail("Runway accepts at most two reference videos.");
+  }
+  const roles = new Set();
+  return items.map(item => {
+    if (!item || !["source", "reference"].includes(item.role)) {
+      throw fail("Each reference video requires the source or reference role.");
+    }
+    if (item.role === "source" && roles.has("source")) {
+      throw fail("Only one source video is allowed.");
+    }
+    roles.add(item.role);
+    return { uri: validateAssetUri(item.uri, "video"), role: item.role };
+  });
+}
+
+function validateReferenceAudio(items = []) {
+  if (!Array.isArray(items) || items.length > ASSET_LIMITS.referenceAudio) {
+    throw fail("Runway accepts at most one reference audio input.");
+  }
+  return items.map(item => {
+    if (!item || typeof item !== "object") throw fail("Reference audio must be an asset object.");
+    return { uri: validateAssetUri(item.uri, "audio") };
+  });
+}
+
+/**
+ * Builds a strictly non-billable Runway Model Router request.
+ * Asset URIs passed here must already have been resolved by a trusted,
+ * owner/project-scoped server asset resolver.
+ */
 export function buildRunwayRouterDryRunPayload({
-  configId, prompt, durationSeconds, aspectRatio, resolution, audio, seed
+  configId, prompt, negativePrompt, durationSeconds, aspectRatio, resolution,
+  audio, seed, referenceImages, referenceVideos, referenceAudio, contentModeration
 } = {}) {
   const input = {};
   if (typeof prompt !== "string" || !prompt.trim() || prompt.length > 26000) {
     throw fail("Runway router prompt must contain 1 to 26,000 characters.");
   }
   input.promptText = prompt.trim();
+  if (negativePrompt !== undefined) {
+    if (typeof negativePrompt !== "string" || negativePrompt.length > 1000) {
+      throw fail("Runway negative prompt must not exceed 1,000 characters.");
+    }
+    if (negativePrompt.trim()) input.negativePrompt = negativePrompt.trim();
+  }
   if (durationSeconds !== undefined) {
     if (!Number.isInteger(durationSeconds) || durationSeconds < 2 || durationSeconds > 30) {
       throw fail("Runway router duration must be a whole number from 2 to 30 seconds.");
@@ -49,11 +123,72 @@ export function buildRunwayRouterDryRunPayload({
     }
     input.seed = seed;
   }
+  const images = validateReferenceImages(referenceImages);
+  const videos = validateReferenceVideos(referenceVideos);
+  const audios = validateReferenceAudio(referenceAudio);
+  if (images.length) input.referenceImages = images;
+  if (videos.length) input.referenceVideos = videos;
+  if (audios.length) input.referenceAudio = audios;
+  if (contentModeration !== undefined) {
+    if (!contentModeration || typeof contentModeration !== "object" ||
+        !["auto", "low"].includes(contentModeration.publicFigureThreshold)) {
+      throw fail("Runway content moderation threshold must be auto or low.");
+    }
+    input.contentModeration = { publicFigureThreshold: contentModeration.publicFigureThreshold };
+  }
   return Object.freeze({
     configId: configSlug(configId),
     dryRun: true,
     input: Object.freeze(input)
   });
+}
+
+const ASSET_GROUPS = Object.freeze([
+  ["referenceImages", "image"],
+  ["referenceVideos", "video"],
+  ["referenceAudio", "audio"]
+]);
+
+async function resolvePrivateReferences(input, resolver) {
+  const resolved = { ...input };
+  const context = {
+    ownerId: input.ownerId,
+    projectId: input.projectId
+  };
+  for (const [field, kind] of ASSET_GROUPS) {
+    const refs = input[field] || [];
+    if (!Array.isArray(refs)) throw fail("Invalid " + field + " asset list.");
+    if (refs.length && typeof resolver !== "function") {
+      throw fail("A private project asset resolver is required for reference media.", "RUNWAY_ROUTER_ASSET_RESOLVER_REQUIRED");
+    }
+    const max = ASSET_LIMITS[field];
+    if (refs.length > max) throw fail("Too many " + field + " assets.");
+    resolved[field] = await Promise.all(refs.map(async ref => {
+      if (!ref || typeof ref.assetId !== "string" ||
+          !/^[A-Za-z0-9_-]{1,128}$/.test(ref.assetId) ||
+          typeof ref.ownerId !== "string" || !ref.ownerId.trim() ||
+          typeof ref.projectId !== "string" || !ref.projectId.trim()) {
+        throw fail("Each reference asset must include an asset ID, owner ID and project ID.", "RUNWAY_ROUTER_ASSET_INVALID");
+      }
+      if (context.ownerId !== ref.ownerId || context.projectId !== ref.projectId) {
+        throw fail("Reference asset does not belong to the active owner and project.", "RUNWAY_ROUTER_ASSET_FORBIDDEN");
+      }
+      let result;
+      try {
+        result = await resolver({
+          assetId: ref.assetId, ownerId: context.ownerId,
+          projectId: context.projectId, mediaType: kind
+        });
+      } catch {
+        throw fail("A private reference asset could not be resolved.", "RUNWAY_ROUTER_ASSET_UNAVAILABLE");
+      }
+      const uri = validateAssetUri(result?.uri, kind);
+      return { uri, ...(field === "referenceAudio" ? {} : { role: ref.role }) };
+    }));
+  }
+  delete resolved.ownerId;
+  delete resolved.projectId;
+  return resolved;
 }
 
 function normalizeDecision(payload, expectedConfigId) {
@@ -120,7 +255,7 @@ export function createRunwayRouterDryRunClient({
     const key = String(env.RUNWAY_API_KEY || "").trim();
     if (!key) throw fail("Configure the Runway API key on the server.", "RUNWAY_CONFIG_INVALID");
 
-    const payload = buildRunwayRouterDryRunPayload(input);
+    const resolvedInput = await resolvePrivateReferences(input, resolvePrivateAsset);\n    const payload = buildRunwayRouterDryRunPayload(resolvedInput);
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), Math.max(1000, Math.min(120000, timeoutMs)));
     try {
