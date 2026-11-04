@@ -33,8 +33,8 @@ const supabaseAuth = AUTH_MODE === "supabase" && process.env.SUPABASE_URL && pro
   ? createSupabaseAuth({ url: process.env.SUPABASE_URL, publishableKey: process.env.SUPABASE_PUBLISHABLE_KEY, sessionSecret: process.env.SUPABASE_SESSION_SECRET })
   : null;
 const googleDriveOAuthEnabled = process.env.GOOGLE_DRIVE_OAUTH_ENABLED === "true";
-if (googleDriveOAuthEnabled && AUTH_MODE !== "supabase") {
-  throw new Error("Google Drive OAuth requires verified Supabase authentication.");
+if (googleDriveOAuthEnabled && (AUTH_MODE !== "supabase" || !supabaseAuth)) {
+  throw new Error("Google Drive OAuth requires fully configured verified Supabase authentication.");
 }
 const googleDriveConnectionStore = googleDriveOAuthEnabled ? createGoogleDriveConnectionStore() : null;
 const googleDriveOAuthStateStore = googleDriveOAuthEnabled ? createGoogleDriveOAuthStateStore() : null;
