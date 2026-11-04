@@ -76,3 +76,21 @@ test("rejects providers without provider-owned ingestion and actual billing evid
     /private output ingestion and authoritative cost reconciliation/
   );
 });
+
+
+test("defaults to the exact FAL provider registration when no custom adapter factory is supplied", () => {
+  let networkCalls = 0;
+  const worker = createProviderAwareCloudVideoWorkerComposition({
+    ...base,
+    env: {
+      ...env,
+      FAL_VIDEO_MODEL: "fal-ai/wan/v2.7/text-to-video",
+      FAL_KEY: "queue-test-key",
+      FAL_BILLING_KEY: "billing-test-key"
+    },
+    fetchImpl: async () => { networkCalls += 1; throw new Error("network must not run during construction"); },
+    createAdapters: undefined
+  });
+  assert.deepEqual(worker.listSupported(), ["fal:fal-ai/wan/v2.7/text-to-video"]);
+  assert.equal(networkCalls, 0);
+});
