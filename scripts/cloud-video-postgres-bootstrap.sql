@@ -24,7 +24,8 @@ grant usage on schema executive_visuals to authenticated, service_role;
 
 create table executive_visuals.projects (
   id uuid primary key,
-  owner_id uuid not null references auth.users(id) on delete cascade
+  owner_id uuid not null references auth.users(id) on delete cascade,
+  name text not null
 );
 alter table executive_visuals.projects enable row level security;
 grant select on executive_visuals.projects to authenticated;
@@ -60,8 +61,12 @@ create table executive_visuals.assets (
   id uuid primary key,
   owner_id uuid not null references auth.users(id),
   project_id uuid references executive_visuals.projects(id),
-  storage_bucket text not null,
+  original_name text not null,
   media_type text not null,
+  byte_size bigint not null,
+  sha256 text not null,
+  storage_bucket text not null,
+  object_path text not null unique,
   deleted_at timestamptz
 );
 create table executive_visuals.job_events (
