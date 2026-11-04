@@ -263,7 +263,8 @@ export function createRunwayRouterDryRunClient({
     const key = String(env.RUNWAY_API_KEY || "").trim();
     if (!key) throw fail("Configure the Runway API key on the server.", "RUNWAY_CONFIG_INVALID");
 
-    const resolvedInput = await resolvePrivateReferences(input, resolvePrivateAsset, getAuthorizedAssetContext);\n    const payload = buildRunwayRouterDryRunPayload(resolvedInput);
+    const resolvedInput = await resolvePrivateReferences(input, resolvePrivateAsset, getAuthorizedAssetContext);
+    const payload = buildRunwayRouterDryRunPayload(resolvedInput);
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), Math.max(1000, Math.min(120000, timeoutMs)));
     try {
