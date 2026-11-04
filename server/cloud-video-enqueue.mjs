@@ -157,7 +157,7 @@ export function createCloudVideoEnqueue({
           unsupported.code = "VIDEO_GENERATION_UNSUPPORTED_CAPABILITY";
           throw unsupported;
         }
-        if (input.durationSeconds < 3 || input.durationSeconds > 10) {
+        if (!Number.isInteger(input.durationSeconds) || input.durationSeconds < 3 || input.durationSeconds > 10) {
           const invalid = new Error("Gemini Omni duration must be between 3 and 10 seconds.");
           invalid.code = "VIDEO_PRICE_DURATION_INVALID";
           throw invalid;
@@ -201,6 +201,7 @@ export function createCloudVideoEnqueue({
       }
       const capabilityInput = googleEnabled ? {
         ...input,
+        resolution: input.resolution === undefined || input.resolution === "provider_default" ? "720p" : input.resolution,
         startFrameAssetId: input.firstFrameAssetId ?? input.startFrameAssetId,
         endFrameAssetId: input.lastFrameAssetId ?? input.endFrameAssetId,
         referenceAssetIds: input.referenceImageAssetIds ?? input.referenceAssetIds
