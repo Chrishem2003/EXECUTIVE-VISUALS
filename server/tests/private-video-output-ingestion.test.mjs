@@ -96,6 +96,19 @@ test("rejects private, loopback, link-local, and mixed public/private DNS answer
   }
 });
 
+test("accepts generic binary MIME only when the media validator identifies a real video", async () => {
+  const assets = assetRepo();
+  const ingest = createPrivateVideoOutputIngestor({
+    ...config, assets,
+    download: async () => ({ size: 1024, contentType: "application/octet-stream" }),
+    validateMedia: async () => ({ valid: true, mediaType: "video/mp4" })
+  });
+  const result = await ingest.ingest({
+    job: { owner_id: ownerId, project_id: projectId }, task, input: {}
+  });
+  assert.equal(result.assetIds.length, 1);
+});
+
 test("fails closed when media validation rejects content even when HTTP MIME looks valid", async () => {
   const assets = assetRepo();
   const ingest = createPrivateVideoOutputIngestor({
