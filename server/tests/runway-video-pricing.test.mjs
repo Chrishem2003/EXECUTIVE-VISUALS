@@ -107,3 +107,20 @@ test("prices 10-bit SDR and Gen-4.5 HDR output by output megapixels",()=>{
   assert.throws(()=>estimateRunwayVideoCredits({model:"aleph2",durationSeconds:5,outputWidth:1920,outputHeight:1080,outputFormat:"hdr10",pricingDate:date}),e=>e.code==="RUNWAY_PRICE_UNSUPPORTED_OPTION");
   assert.throws(()=>estimateRunwayVideoCredits({model:"gen4.5",durationSeconds:5,outputFormat:"hdr10",pricingDate:date}),e=>e.code==="RUNWAY_PRICE_INPUT_REQUIRED");
 });
+
+test("prices Ruby HDR delivery profiles at the base HDR rate without a second surcharge",()=>{
+  const source={model:"ruby",durationSeconds:10,sourceWidth:1920,sourceHeight:1080,pricingDate:date};
+  for(const outputFormat of ["hdr10","hlg","hdr_prores","hdr_exr_sequence","hdr_exr_acescg_sequence_1_3","hdr_exr_acescg_sequence_2_0"]) {
+    assert.equal(estimateRunwayVideoCredits({...source,outputFormat}).estimatedCredits,200);
+  }
+  assert.equal(estimateRunwayVideoCredits({...source,sourceWidth:3840,sourceHeight:2160,outputFormat:"hdr10"}).estimatedCredits,400);
+  assert.throws(()=>estimateRunwayVideoCredits({...source,outputFormat:"hdr_pq_12bit_master"}),e=>e.code==="RUNWAY_PRICE_UNSUPPORTED_OPTION");
+  assert.throws(()=>estimateRunwayVideoCredits({...source,outputFormat:"hdr_png_sequence"}),e=>e.code==="RUNWAY_PRICE_UNSUPPORTED_OPTION");
+});
+
+test("Gen-4.5 HDR formats add the documented professional surcharge",()=>{
+  const base={model:"gen4.5",durationSeconds:5,outputWidth:1920,outputHeight:1080,pricingDate:date};
+  assert.equal(estimateRunwayVideoCredits({...base,outputFormat:"hdr_pq_12bit_master"}).estimatedCredits,160);
+  assert.equal(estimateRunwayVideoCredits({...base,outputFormat:"hdr_png_sequence"}).estimatedCredits,160);
+  assert.equal(estimateRunwayVideoCredits({...base,outputFormat:"hdr_exr_acescg_sequence_2_0"}).estimatedCredits,160);
+});
