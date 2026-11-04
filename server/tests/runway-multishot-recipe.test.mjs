@@ -64,9 +64,9 @@ test("multi-shot recipe rejects invalid modes, versions, ratios, prompts and sho
   await assert.rejects(() => buildRunwayMultiShotRecipePayload({
     mode: "custom", duration: 5,
     shots: [
-      { prompt: "first shot", duration: 1 },
+      { prompt: "first shot", duration: 0 },
       { prompt: "second shot", duration: 2 },
-      { prompt: "third shot", duration: 2 }
+      { prompt: "third shot", duration: 3 }
     ]
   }));
 });
