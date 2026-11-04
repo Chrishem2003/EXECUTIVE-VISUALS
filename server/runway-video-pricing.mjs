@@ -35,7 +35,7 @@ export function estimateRunwayVideoCredits({
   const inputVideo=finiteDuration(inputVideoSeconds,"inputVideoSeconds",{allowZero:true,max:30});
   const referenceVideo=finiteDuration(referenceVideoSeconds,"referenceVideoSeconds",{allowZero:true,max:30});
   const imageCount=count(referenceImageCount,"referenceImageCount");
-  if(typeof pricingDate!=="string"||!/^(20\d{2})-(0[1-9]|1[0-2])-([0-2]\d|3[01])$/.test(pricingDate)) {
+  if(typeof pricingDate!=="string"||!/^(20\d{2})-(0[1-9]|1[0-2])-([0-2]\d|3[01])$/.test(pricingDate)||new Date(pricingDate+"T00:00:00Z").toISOString().slice(0,10)!==pricingDate) {
     throw fail("pricingDate must be an explicit YYYY-MM-DD value.","RUNWAY_PRICE_INPUT_REQUIRED");
   }
   let credits,formula,pricingModel=model,discount=null;
