@@ -17,7 +17,7 @@ create table if not exists executive_visuals.google_provider_files (
   expires_at timestamptz not null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  unique (provider, asset_id)
+  unique (provider, asset_id, owner_id)
 );
 
 create index if not exists google_provider_files_expiry_idx
