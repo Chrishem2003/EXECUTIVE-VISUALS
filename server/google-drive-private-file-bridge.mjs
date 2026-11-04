@@ -139,6 +139,10 @@ export function createGoogleDrivePrivateFileBridge({
       if (declared !== metadata.size || declared > maxBytes) {
         throw fail("Google Drive download size did not match authorized file metadata.", "GOOGLE_DRIVE_SIZE_MISMATCH");
       }
+      const returnedType = response.headers?.get?.("content-type")?.split(";")[0]?.trim();
+      if (returnedType && returnedType !== metadata.mimeType && returnedType !== "application/octet-stream") {
+        throw fail("Google Drive download MIME type did not match authorized file metadata.", "GOOGLE_DRIVE_MIME_MISMATCH");
+      }
       const bytes = new Uint8Array(await response.arrayBuffer());
       if (bytes.byteLength !== metadata.size || bytes.byteLength > maxBytes) {
         throw fail("Google Drive returned a truncated or oversized file.", "GOOGLE_DRIVE_SIZE_MISMATCH");
