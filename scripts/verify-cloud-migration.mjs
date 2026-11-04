@@ -169,6 +169,16 @@ if (!videoBudgetSql.includes("VIDEO_SUBMISSION_RECONCILIATION_REQUIRED") ||
     !videoBudgetSql.includes("VIDEO_JOB_RESUME_REQUIRES_RECONCILED_TASK")) {
   issues.push("Ambiguous submission quarantine, safe polling deferral and evidence-reconciled resume guards are required.");
 }
+if (!videoBudgetSql.includes("VIDEO_JOB_OUTPUT_ASSET_SCOPE_INVALID") ||
+    !videoBudgetSql.includes("a.storage_bucket = 'executive-visuals-media'") ||
+    !videoBudgetSql.includes("a.deleted_at is null")) {
+  issues.push("Successful video finalization must verify registered private asset ownership.");
+}
+if (!videoBudgetSql.includes("VIDEO_JOB_RESUME_EVIDENCE_REQUIRED") ||
+    !videoBudgetSql.includes("p_evidence_reference text")) {
+  issues.push("Resuming a quarantined video job must require an evidence reference.");
+}
+
 
 
 if (issues.length) {
