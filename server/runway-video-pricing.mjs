@@ -80,7 +80,10 @@ export function estimateRunwayVideoCredits(options={}) {
   let credits,formula,pricingModel=model,discount=null;
   const perSecond=(rate)=>{credits=duration*rate;formula=duration+"s × "+rate+" credits/s";};
   const minimum=(rate,min)=>{credits=Math.max(min,duration*rate);formula="max("+min+" credit minimum, "+duration+"s × "+rate+" credits/s)";};
-  const resolutionRate=(rates)=>rates[resolution(outputResolution,Object.keys(rates))];
+  const resolutionRate=(rates)=>{
+    const normalized=outputResolution==="2160p"&&Object.hasOwn(rates,"4k")?"4k":outputResolution;
+    return rates[resolution(normalized,Object.keys(rates))];
+  };
   const PROFESSIONAL_HDR_FORMATS=new Set([
     "hdr10","hlg","hdr_pq_12bit_master","hdr_prores","hdr_png_sequence",
     "hdr_exr_sequence","hdr_exr_acescg_sequence_1_3","hdr_exr_acescg_sequence_2_0"
