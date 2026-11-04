@@ -25,6 +25,11 @@ function validateInput(input) {
   if (typeof prompt !== "string" || !prompt.trim() || prompt.length > 6000) {
     throw fail("Ray 3.2 prompt must contain 1–6000 characters.", "LUMA_VIDEO_INPUT_INVALID");
   }
+  for (const field of ["hdr", "exrExport", "loop"]) {
+    if (input[field] !== undefined && typeof input[field] !== "boolean") {
+      throw fail(field + " must be a boolean when supplied.", "LUMA_VIDEO_INPUT_INVALID");
+    }
+  }
   const durationSeconds = input.durationSeconds ?? 5;
   if (![5, 10].includes(durationSeconds)) throw fail("Ray 3.2 duration must be 5 or 10 seconds.", "LUMA_VIDEO_INPUT_INVALID");
   const resolution = input.resolution ?? "720p";
@@ -142,6 +147,7 @@ export function createLumaRay32Adapter({
         throw fail("Luma generation ID is invalid.", "LUMA_VIDEO_TASK_ID_INVALID");
       }
       const body = await request("/generations/" + encodeURIComponent(taskId));
+      if (body.id !== taskId) throw fail("Luma returned a generation record that does not match the requested task.", "LUMA_VIDEO_RESPONSE_MISMATCH");
       const state = body.state;
       if (state === "failed") {
         return { taskId, status: "failed", failure: String(body.failure_reason || "Luma generation failed.").slice(0, 500), failureCode: String(body.failure_code || "LUMA_GENERATION_FAILED").slice(0, 100), usage: body.usage || null };
