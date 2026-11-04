@@ -2,18 +2,19 @@
 
 **Branch:** `feat/runway-video-adapter`  
 **Provider:** Runway Dev API  
-**Initial model:** Gen-4.5 text-to-video  
+**Initial model:** Gen-4.5 text-to-video and image-to-video  
 **Execution state:** Disabled by default; not connected to a public application route.
 
 ## Implemented
 
 - Server-only adapter in `server/runway-video-gateway.mjs`.
-- Uses the documented `POST /v1/text_to_video` endpoint and API version header `X-Runway-Version: 2024-11-06`.
-- Accepts the shared provider-neutral video-generation contract, then maps only declared Runway Gen-4.5 capabilities: prompt length, 2–10 second duration, 16:9/9:16 aspect ratio, and unsigned 32-bit seed. Unsupported options fail before any network request.
+- Uses the documented `POST /v1/text_to_video` and `POST /v1/image_to_video` endpoints with API version header `X-Runway-Version: 2024-11-06`.
+- Accepts the shared provider-neutral video-generation contract, then maps declared Runway Gen-4.5 capabilities: prompt length, 2–10 second duration, text-to-video 16:9/9:16, image-to-video 16:9/9:16/4:3/3:4/1:1/21:9, first-frame asset ID, and unsigned 32-bit seed. Unsupported options fail before any network request.
 - Normalizes asynchronous task states and output metadata.
 - Exposes explicit task retrieval and guarded cancellation. It checks task state before DELETE so completed tasks are not accidentally deleted.
 - Uses bounded request timeouts, bounded response bodies, redirect rejection, and normalized errors that do not echo provider response bodies or credentials.
-- Mock-based tests cover payload validation, disabled-by-default behavior, request headers/body, task lifecycle, output URL validation, cancellation, and provider error handling.
+- Image-to-video requires an injected server-side asset resolver. The adapter passes owner ID, project ID and private asset ID to that resolver, and accepts only an HTTPS asset URI or Runway upload URI; browser-supplied arbitrary URLs are never used as first-frame assets.
+- Mock-based tests cover payload validation, disabled-by-default behavior, both endpoint request bodies, owner/project-scoped asset resolution, task lifecycle, output URL validation, cancellation, and provider error handling.
 
 ## Safety boundary
 
@@ -39,6 +40,6 @@ Do not advertise this adapter as a user-facing working generation feature until 
 
 ## Initial request contract
 
-The first adapter intentionally targets only Runway Gen-4.5 text-to-video through the shared `normalizeVideoGenerationRequest` / `assertVideoCapabilities` contract: prompt length 1–1,000 characters, integer duration 2–10 seconds, aspect ratio 16:9 or 9:16 (mapped to `1280:720` or `720:1280`), and optional unsigned 32-bit seed. Negative prompts, audio-mode overrides, reference assets, start/end frames, non-default resolution, image/video editing, model routing, and additional models fail closed until their exact model contracts are implemented. The API request schema and task lifecycle were checked against the current official API reference on 2026-11-04.
+The adapter targets Runway Gen-4.5 text-to-video and image-to-video through the shared `normalizeVideoGenerationRequest` / `assertVideoCapabilities` contract: prompt length 1–1,000 characters, integer duration 2–10 seconds, text-to-video aspect ratio 16:9 or 9:16, image-to-video aspect ratios 16:9, 9:16, 4:3, 3:4, 1:1 or 21:9, an optional first-frame asset ID for image-to-video, and optional unsigned 32-bit seed. Negative prompts, audio-mode overrides, extra reference assets, end frames, non-default resolution, video-to-video editing, model routing, and additional models fail closed until their exact model contracts are implemented. The API request schema and task lifecycle were checked against the current official API reference on 2026-11-04.
 
 Cancellation is intentionally conservative: the adapter retrieves task state first and sends DELETE only for queued or running tasks. It never DELETEs a task already reported as succeeded, failed or canceled. Runway documents cancellation as best-effort; task execution can advance concurrently and a cancellation response does not guarantee a refund or stopped generation.
