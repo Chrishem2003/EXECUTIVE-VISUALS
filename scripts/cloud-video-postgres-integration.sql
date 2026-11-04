@@ -10,14 +10,18 @@ select set_config('request.jwt.claim.sub','123e4567-e89b-42d3-a456-426614174000'
 set role authenticated;
 
 insert into executive_visuals.video_generation_budget_policies(
- id,owner_id,project_id,provider,model,currency,spend_limit_amount,max_per_job_amount,
+ owner_id,project_id,provider,model,currency,spend_limit_amount,max_per_job_amount,
  rolling_24h_request_limit,enabled
 ) values (
- '423e4567-e89b-42d3-a456-426614174000',
  '123e4567-e89b-42d3-a456-426614174000',
  '323e4567-e89b-42d3-a456-426614174000',
  'runway','gen4.5','USD',10,5,10,true
 );
+select set_config('test.video_policy_id',id::text,false)
+from executive_visuals.video_generation_budget_policies
+where owner_id='123e4567-e89b-42d3-a456-426614174000'
+  and project_id='323e4567-e89b-42d3-a456-426614174000'
+  and provider='runway' and model='gen4.5' and currency='USD';
 do $column_guard$
 begin
  if has_column_privilege('authenticated','executive_visuals.video_generation_budget_policies','reserved_amount','UPDATE')
@@ -193,7 +197,7 @@ begin
  begin
   update executive_visuals.video_generation_budget_policies
   set spend_limit_amount=0.5,max_per_job_amount=0.5
-  where id='423e4567-e89b-42d3-a456-426614174000';
+  where id=current_setting('test.video_policy_id')::uuid;
   raise exception 'budget ceiling was lowered below committed spend';
  exception when others then
   if sqlerrm = 'budget ceiling was lowered below committed spend' then raise; end if;
