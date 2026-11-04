@@ -19,7 +19,9 @@ The local builder:
 - Requires image references to be pre-uploaded `runway://` URIs. It rejects
   browser-provided HTTPS URLs and data URIs so the caller must resolve private
   project assets and upload them on the server first.
-- Uses the currently documented routed-video duration range of 4–15 seconds and aspect-ratio values `16:9`, `9:16`, `1:1`, `4:3`, `3:4`, and `21:9`. Direct-model `ratio` values such as `1280:720` are not valid router fields.
+- Enforces the current routed-video duration range of 2–30 seconds, aspect-ratio values `16:9`, `9:16`, `1:1`, `4:3`, `3:4`, and `21:9`, and resolution tiers `480p`, `720p`, `1080p`, and `4k`. Direct-model pixel `ratio` values such as `1280:720` are not valid router fields.
+- Supports documented unsigned 32-bit `seed` and `contentModeration.publicFigureThreshold` (`auto` or `low`).
+- Supports up to four server-uploaded image references with roles `first`, `last`, and `reference`, allowing at most one first and one last frame. Video references, audio references, and timed keyframes remain rejected until their own private-media resolvers and contract tests are implemented.
 - Rejects undocumented fields rather than forwarding them speculatively.
 
 The dry-run response contains `routing.model`, `routing.provider`,
