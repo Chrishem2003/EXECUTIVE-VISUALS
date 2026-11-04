@@ -25,6 +25,18 @@ const hasMetricEvidence = value => plain(value) &&
   value.evidenceReference.length <= 1000;
 const hasLatencyEvidence = candidate => Number.isFinite(candidate?.observedLatencyMs) &&
   candidate.observedLatencyMs > 0 && hasMetricEvidence(candidate.latencyEvidence);
+const validPricingDate = value => {
+  if (typeof value !== "string" || !/^20[0-9]{2}-[0-9]{2}-[0-9]{2}$/.test(value)) return false;
+  const date = new Date(value + "T00:00:00Z");
+  return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
+};
+const safePricingSource = value => {
+  if (typeof value !== "string") return false;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && !url.username && !url.password;
+  } catch { return false; }
+};
 
 /**
  * Deterministic, side-effect-free model selection.
@@ -95,8 +107,7 @@ export function routeVideoModel({
     if (!plain(estimate) || estimate.currency !== "USD" ||
         typeof estimate.amount !== "number" || !Number.isFinite(estimate.amount) || estimate.amount < 0 ||
         estimate.billable !== false || estimate.settlementEligible !== false ||
-        typeof estimate.pricingDate !== "string" || !/^20[0-9]{2}-[0-9]{2}-[0-9]{2}$/.test(estimate.pricingDate) ||
-        typeof estimate.pricingSource !== "string" || !estimate.pricingSource.startsWith("https://")) {
+        !validPricingDate(estimate.pricingDate) || !safePricingSource(estimate.pricingSource)) {
       exclude("pricing_unverified"); continue;
     }
     if (maxCostUsd !== undefined && estimate.amount > maxCostUsd) { exclude("over_budget"); continue; }
