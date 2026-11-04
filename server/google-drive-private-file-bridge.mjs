@@ -92,7 +92,7 @@ export function createGoogleDrivePrivateFileBridge({
     return value;
   }
 
-  async function request(url, accessToken, { method = "GET", headers = {}, body, raw = false } = {}) {
+  async function request(url, accessToken, { method = "GET", headers = {}, body, raw = false, readBytes = false } = {}) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
@@ -115,6 +115,31 @@ export function createGoogleDrivePrivateFileBridge({
         error.status = status;
         throw error;
       }
+      if (readBytes) {
+        const reader = response.body?.getReader?.();
+        if (!reader) throw fail("Google Drive media response did not provide a readable stream.", "GOOGLE_DRIVE_RESPONSE_INVALID");
+        const chunks = [];
+        let total = 0;
+        try {
+          while (true) {
+            const part = await reader.read();
+            if (part.done) break;
+            total += part.value.byteLength;
+            if (total > maxBytes) {
+              await reader.cancel().catch(() => {});
+              throw fail("Google Drive download exceeded the private asset size limit.", "GOOGLE_DRIVE_FILE_TOO_LARGE");
+            }
+            chunks.push(part.value);
+          }
+        } catch (error) {
+          if (error?.code) throw error;
+          throw fail("Google Drive media download was interrupted.", "GOOGLE_DRIVE_REQUEST_FAILED");
+        }
+        const bytes = new Uint8Array(total);
+        let offset = 0;
+        for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+        return { headers: response.headers, bytes };
+      }
       if (raw) return response;
       const text = await response.text();
       if (text.length > 1024 * 1024) throw fail("Google Drive response exceeded the metadata limit.", "GOOGLE_DRIVE_RESPONSE_TOO_LARGE");
@@ -134,7 +159,7 @@ export function createGoogleDrivePrivateFileBridge({
         "?supportsAllDrives=true&fields=id,name,mimeType,size,trashed,capabilities(canDownload)";
       const metadata = validateDriveFile(await request(metadataUrl, accessToken), maxBytes);
       const response = await request(DRIVE_ORIGIN + "/drive/v3/files/" + encodeURIComponent(fileId) +
-        "?alt=media&supportsAllDrives=true", accessToken, { raw: true });
+        "?alt=media&supportsAllDrives=true", accessToken, { readBytes: true });
       const declared = Number(response.headers?.get?.("content-length") || metadata.size);
       if (declared !== metadata.size || declared > maxBytes) {
         throw fail("Google Drive download size did not match authorized file metadata.", "GOOGLE_DRIVE_SIZE_MISMATCH");
@@ -143,7 +168,7 @@ export function createGoogleDrivePrivateFileBridge({
       if (returnedType && returnedType !== metadata.mimeType && returnedType !== "application/octet-stream") {
         throw fail("Google Drive download MIME type did not match authorized file metadata.", "GOOGLE_DRIVE_MIME_MISMATCH");
       }
-      const bytes = new Uint8Array(await response.arrayBuffer());
+      const bytes = response.bytes;
       if (bytes.byteLength !== metadata.size || bytes.byteLength > maxBytes) {
         throw fail("Google Drive returned a truncated or oversized file.", "GOOGLE_DRIVE_SIZE_MISMATCH");
       }
