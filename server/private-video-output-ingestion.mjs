@@ -96,9 +96,11 @@ async function downloadPinned(url, destination, { resolver, maxBytes, timeoutMs 
   return new Promise((resolve, reject) => {
     let received = 0;
     let settled = false;
+    let timer;
     const finish = (error, result) => {
       if (settled) return;
       settled = true;
+      if (timer) clearTimeout(timer);
       error ? reject(error) : resolve(result);
     };
     const req = httpsRequest(url, {
@@ -142,8 +144,7 @@ async function downloadPinned(url, destination, { resolver, maxBytes, timeoutMs 
         })
         .catch(error => finish(error));
     });
-    const timer = setTimeout(() => req.destroy(fail("Provider output download timed out.", "VIDEO_OUTPUT_TIMEOUT")), timeoutMs);
-    req.on("close", () => clearTimeout(timer));
+    timer = setTimeout(() => req.destroy(fail("Provider output download timed out.", "VIDEO_OUTPUT_TIMEOUT")), timeoutMs);
     req.on("error", error => finish(error));
     req.end();
   });
@@ -204,7 +205,7 @@ export function createPrivateVideoOutputIngestor({
           try {
             url = new URL(raw);
             if (url.protocol !== "https:" || url.username || url.password || url.hash ||
-                url.port && url.port !== "443" || !allowedHost(url.hostname, allowedHosts)) throw new Error();
+                url.port && url.port !== "443" || url.href.length > 8192 || !allowedHost(url.hostname, allowedHosts)) throw new Error();
           } catch {
             throw fail("Provider output URL is not on the approved HTTPS host allowlist.", "VIDEO_OUTPUT_URL_REJECTED");
           }
@@ -232,10 +233,10 @@ export function createPrivateVideoOutputIngestor({
               model: String(input?.model || "").slice(0, 160),
               providerTaskId: task.taskId.slice(0, 256),
               validated: true,
-              validation: validation.metadata && typeof validation.metadata === "object" && !Array.isArray(validation.metadata) ? validation.metadata : {}
+              validation: validation.metadata && typeof validation.metadata === "object" && !Array.isArray(validation.metadata) &&
+                JSON.stringify(validation.metadata).length <= 8000 ? validation.metadata : {}
             }
           });
-          if (asset && typeof asset.id === "string" && UUID.test(asset.id)) created.push(asset);
           if (asset && typeof asset.id === "string" && UUID.test(asset.id)) created.push(asset);
           if (!asset || typeof asset.id !== "string" || !UUID.test(asset.id) || asset.ownerId !== job.owner_id ||
               (asset.projectId || null) !== (job.project_id || null)) {
