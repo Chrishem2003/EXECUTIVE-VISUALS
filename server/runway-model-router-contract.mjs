@@ -54,9 +54,9 @@ export function buildRunwayVideoRouterDryRun({configId,input}={}) {
     if(typeof input.negativePrompt!=="string"||input.negativePrompt.length>1000) throw fail("Router negativePrompt cannot exceed 1000 characters.","RUNWAY_ROUTER_INVALID_INPUT");
     normalized.negativePrompt=input.negativePrompt;
   }
-  if(input.ratio!==undefined) {
-    if(!RATIOS.has(input.ratio)) throw fail("Router ratio is unsupported.","RUNWAY_ROUTER_INVALID_INPUT");
-    normalized.ratio=input.ratio;
+  if(input.aspectRatio!==undefined) {
+    if(!ASPECT_RATIOS.has(input.aspectRatio)) throw fail("Router aspectRatio is unsupported.","RUNWAY_ROUTER_INVALID_INPUT");
+    normalized.aspectRatio=input.aspectRatio;
   }
   if(input.resolution!==undefined) {
     if(!RESOLUTIONS.has(input.resolution)) throw fail("Router resolution must be 720p or 1080p.","RUNWAY_ROUTER_INVALID_INPUT");
