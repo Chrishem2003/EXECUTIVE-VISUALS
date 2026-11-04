@@ -120,6 +120,9 @@ export function createGoogleOmniCloudVideoIntegration({
       if (result.interactionId !== providerTaskId || result.model !== MODEL) {
         throw fail("Google interaction response does not match the durable task record.", "GEMINI_OMNI_RESPONSE_SCOPE_MISMATCH");
       }
+      if (!["succeeded", "failed", "canceled", "incomplete", "waiting", "running"].includes(result.status)) {
+        throw fail("Google returned an unsupported interaction status.", "VIDEO_PROVIDER_STATUS_INVALID");
+      }
       const state = result.status === "succeeded" ? "succeeded"
         : result.status === "failed" || result.status === "canceled" || result.status === "incomplete"
           ? "failed"
