@@ -90,6 +90,29 @@ grant all privileges on executive_visuals.video_generation_budget_approvals to s
 grant all privileges on executive_visuals.video_generation_budget_reservations to service_role;
 grant all privileges on executive_visuals.video_generation_usage_reservations to service_role;
 
+create or replace function executive_visuals.validate_video_budget_approval()
+returns trigger
+language plpgsql
+set search_path = pg_catalog, executive_visuals
+as $
+begin
+  if new.owner_id is distinct from auth.uid() then
+    raise exception 'VIDEO_BUDGET_APPROVAL_OWNER_INVALID';
+  end if;
+  new.created_at := clock_timestamp();
+  new.consumed_at := null;
+  if new.expires_at <= clock_timestamp()
+     or new.expires_at > clock_timestamp() + interval '15 minutes' then
+    raise exception 'VIDEO_BUDGET_APPROVAL_EXPIRY_INVALID';
+  end if;
+  return new;
+end;
+$;
+
+create trigger ev_video_budget_approval_validate
+  before insert on executive_visuals.video_generation_budget_approvals
+  for each row execute function executive_visuals.validate_video_budget_approval();
+
 create trigger ev_video_budget_policy_owner_immutable
   before update of owner_id on executive_visuals.video_generation_budget_policies
   for each row execute function executive_visuals.prevent_owner_reassignment();
@@ -169,6 +192,7 @@ begin
      or coalesce(p_input ->> 'provider','') <> p_provider
      or coalesce(p_input ->> 'model','') <> p_model
      or coalesce(p_input ->> 'requestHash','') <> p_request_hash
+     or coalesce(p_input ->> 'projectId','') <> coalesce(p_project_id::text,'')
      or p_reserved_amount is null or p_reserved_amount <= 0
      or p_currency is null or p_currency !~ '^[A-Z]{3}$' then
     raise exception 'VIDEO_ENQUEUE_ARGUMENTS_INVALID';
