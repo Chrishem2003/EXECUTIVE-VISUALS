@@ -94,20 +94,20 @@ export function createSupabaseAuth({
     } catch { return null; }
   }
 
-  async function request(path, body, accessToken = "") {
+  async function request(path, body, accessToken = "", method = "POST") {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
       let response;
       try {
         response = await fetchImpl(base + path, {
-          method: "POST",
+          method,
           headers: {
             apikey: key,
             "content-type": "application/json",
             ...(accessToken ? { authorization: "Bearer " + accessToken } : {})
           },
-          body: JSON.stringify(body || {}),
+          ...(method === "GET" ? {} : { body: JSON.stringify(body || {}) }),
           signal: controller.signal,
           redirect: "error"
         });
@@ -177,7 +177,7 @@ export function createSupabaseAuth({
       const session = open(cookie);
       if (!session) return null;
       if (session.expiresAt <= Date.now() + 60000) return refreshSession(session);
-      const result = await request("/auth/v1/user", {}, session.accessToken);
+      const result = await request("/auth/v1/user", {}, session.accessToken, "GET");
       if (result.ok) return { user: safeUser(result.data), cookie: null, maxAge: SESSION_MAX_AGE_SECONDS };
       if (result.status === 401) return refreshSession(session);
       throw fail("Supabase session verification is temporarily unavailable.", "SUPABASE_AUTH_UNAVAILABLE");
