@@ -340,7 +340,13 @@ export const VIDEO_PROVIDER_CATALOG = freeze([
           outputUrlTemporary: true,
           billingBasis: "output_plus_max_input_or_output_duration",
           pricingModel: "kling_4",
+          listCreditsPerSecondByResolution: { "720p": 15.7, "1080p": 23.5 },
+          inputVideoCreditsPerSecondByResolution: { "720p": 9.4, "1080p": 14.1 },
+          billingRounding: "ceil_list_credits_then_discount_then_ceil",
+          promotionalDiscountPercent: 20,
           pricingPromotionEndDate: "2026-11-30",
+          pricingSnapshotDate: "2026-11-04",
+          creditUsdValue: 0.01,
           source: "https://dev.runwayml.com/learn/kling-4-0-api"
         }
       }
