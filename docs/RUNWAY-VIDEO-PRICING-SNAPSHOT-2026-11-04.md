@@ -41,6 +41,8 @@ Source: https://docs.dev.runwayml.com/guides/pricing/
 
 The estimator requires an explicit pricing date. Kling 4's temporary discount
 is applied only through 2026-11-30; later dates use the published list rates.
+For Kling 4, the published list-price charge is rounded up first, then the
+promotional 20% discount is applied and rounded up again.
 
 ## Financial safety
 
