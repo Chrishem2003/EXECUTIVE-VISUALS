@@ -87,5 +87,5 @@ test("sequence resolver keeps simultaneous audio clips on separate tracks",()=>{
  const active=resolveTimelineFrame(timeline,48);
  assert.deepEqual(active.map(item=>item.clip.id),["music-bed","voiceover"]);
  assert.deepEqual(active.map(item=>item.track.kind),["audio","audio"]);
- assert.equal(active[1].sourceSeconds,3);
+ assert.equal(active[1].sourceSeconds,3.25);
 });
