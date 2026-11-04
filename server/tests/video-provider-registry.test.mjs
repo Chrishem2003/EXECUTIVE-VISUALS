@@ -91,6 +91,29 @@ test("Runway Dev catalog-only models are discoverable but cannot be selected", (
   assert.equal(listSelectableVideoProviderModels().length, 0);
 });
 
+test("remaining documented Runway Dev video and finishing operations are catalog-only", () => {
+  const ids = [
+    "seedance2","seedance2_fast","seedance2_mini",
+    "kling3.0_pro","kling3.0_standard","kling3.0_4k",
+    "klingO3_pro","klingO3_standard","klingO3_4k","kling2.5_turbo_pro",
+    "hailuo3","h3_max","wan3","wan3_prime",
+    "grok_imagine_1_5","grok_imagine_1_5_lite","happyhorse_1_0",
+    "veo3.1","veo3.1_fast","gemini_omni_flash","act_two",
+    "magnific_video_upscaler_creative","enhance_frame_rate","ruby"
+  ];
+  for (const id of ids) {
+    const model = getVideoProviderModel("runway", id);
+    assert.ok(model, id + " must be discoverable");
+    assert.equal(model.availability, "disabled");
+    assert.equal(model.implementationState, "catalog_only");
+    assert.equal(model.constraints.apiModelId, id);
+  }
+  assert.equal(getVideoProviderModel("runway", "magnific_video_upscaler_creative").constraints.operationType, "video_upscale");
+  assert.equal(getVideoProviderModel("runway", "enhance_frame_rate").constraints.operationType, "frame_rate_enhancement");
+  assert.equal(getVideoProviderModel("runway", "ruby").constraints.operationType, "video_hdr");
+  assert.equal(listSelectableVideoProviderModels().length, 0);
+});
+
 test("catalog is immutable and unavailable providers can be filtered", () => {
   assert.ok(Object.isFrozen(VIDEO_PROVIDER_CATALOG));
   assert.ok(Object.isFrozen(VIDEO_PROVIDER_CATALOG[0].models[0].capabilities.aspectRatios));
