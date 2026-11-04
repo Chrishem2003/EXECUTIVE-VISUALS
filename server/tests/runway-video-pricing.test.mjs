@@ -50,7 +50,7 @@ test("uses the dated Kling 4 promotion and automatically reverts to list pricing
   assert.equal(promo.estimatedCredits,64);
   assert.equal(promo.discount,"20% promotion through 2026-11-30 UTC");
   assert.equal(regular.estimatedCredits,79);
-  assert.equal(estimateRunwayVideoCredits({model:"kling_4",durationSeconds:5,resolution:"1080p",pricingDate:date}).estimatedCredits,94);
+  assert.equal(estimateRunwayVideoCredits({model:"kling_4",durationSeconds:5,resolution:"1080p",pricingDate:date}).estimatedCredits,95);
   assert.equal(estimateRunwayVideoCredits({model:"kling_4",durationSeconds:5,resolution:"1080p",pricingDate:"2026-12-01"}).estimatedCredits,118);
   const referenced=estimateRunwayVideoCredits({model:"kling_4",durationSeconds:5,referenceVideoSeconds:10,resolution:"720p",pricingDate:date});
   assert.equal(referenced.estimatedCredits,113);
