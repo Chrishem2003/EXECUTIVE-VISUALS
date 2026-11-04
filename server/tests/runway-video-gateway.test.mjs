@@ -15,6 +15,16 @@ test("Runway adapter is disabled and remote opt-in is mandatory by default",asyn
  await assert.rejects(()=>createRunwayVideoAdapter({env:{},fetchImpl}).submit({prompt:"test"}),e=>e.code==="RUNWAY_DISABLED");
  await assert.rejects(()=>createRunwayVideoAdapter({env:{...enabled,RUNWAY_VIDEO_ALLOW_REMOTE:"false"},fetchImpl}).submit({prompt:"test"}),e=>e.code==="RUNWAY_REMOTE_DISABLED");
  assert.equal(calls.length,0);
+ let assetUploads=0;
+ const disabledImage=createRunwayVideoAdapter({
+  env:{},fetchImpl,
+  resolveAssetUri:async()=>{assetUploads++;return "runway://uploads/should-not-happen";}
+ });
+ await assert.rejects(
+  ()=>disabledImage.prepareInput({prompt:"animate",startFrameAssetId:"asset-1"},{job:{owner_id:"owner-1"}}),
+  error=>error.code==="RUNWAY_DISABLED"
+ );
+ assert.equal(assetUploads,0);
 });
 test("Runway adapter submits text-to-video with required version and authorization headers",async()=>{
  const calls=[];
