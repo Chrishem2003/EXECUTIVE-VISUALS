@@ -72,10 +72,13 @@ test("Runway image-video payload validates provider upload URIs and maps Gen-4.5
   model:"gen4.5",promptImage:"runway://uploads/asset-123",
   promptText:"A gentle camera push-in",position:"first",ratio:"1104:832",duration:5,seed:12
  });
- for(const promptImage of ["http://attacker.test/image.png","https://user:pass@cdn.example.test/image.png","https://cdn.example.test/image.png?token=secret","data:image/png;base64,AAAA","not-a-uri"]){
+ for(const promptImage of ["http://attacker.test/image.png","https://user:pass@cdn.example.test/image.png","data:image/png;base64,AAAA","not-a-uri"]){
   assert.throws(()=>buildRunwayImageVideoPayload({prompt:"move",promptImage}));
  }
 });
+ assert.equal(buildRunwayImageVideoPayload({
+  prompt:"move",promptImage:"https://private-assets.example.test/signed/image.png?token=server-issued"
+ }).promptImage,"https://private-assets.example.test/signed/image.png?token=server-issued");
 
 test("Runway image-to-video resolves a private first-frame asset using owner and project scope",async()=>{
  const calls=[],resolved=[];
