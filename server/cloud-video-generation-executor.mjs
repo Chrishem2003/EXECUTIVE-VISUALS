@@ -62,11 +62,14 @@ export async function executeCloudVideoGenerationJob({
   }
 
   if (state === "prepared") {
+    const providerInput = typeof adapter.prepareInput === "function"
+      ? await adapter.prepareInput(input, { job })
+      : input;
     const began = await ledger.begin(job.id, workerId);
     if (!began) throw fail("Another worker owns the provider submission transition.", "VIDEO_SUBMISSION_IN_PROGRESS");
     let submitted;
     try {
-      submitted = await adapter.submit(input, { job });
+      submitted = await adapter.submit(providerInput, { job });
     } catch (error) {
       try { await ledger.markUnknown(job.id, workerId, error?.code || "PROVIDER_SUBMISSION_OUTCOME_UNKNOWN"); } catch {}
       throw fail("Provider submission outcome is unknown and has been quarantined.", "VIDEO_SUBMISSION_REQUIRES_RECONCILIATION");
