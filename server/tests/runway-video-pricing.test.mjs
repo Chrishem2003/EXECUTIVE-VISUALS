@@ -68,6 +68,8 @@ test("prices frame-rate enhancement and Ruby HDR from input duration and source 
   assert.equal(estimateRunwayVideoCredits({model:"enhance_frame_rate",durationSeconds:5,inputVideoSeconds:5,pricingDate:date}).estimatedCredits,3);
   assert.equal(estimateRunwayVideoCredits({model:"ruby",durationSeconds:10,sourceWidth:1920,sourceHeight:1080,pricingDate:date}).estimatedCredits,200);
   assert.equal(estimateRunwayVideoCredits({model:"ruby",durationSeconds:10,sourceWidth:3840,sourceHeight:2160,pricingDate:date}).estimatedCredits,400);
+  assert.equal(estimateRunwayVideoCredits({model:"ruby",durationSeconds:10,sourceWidth:2000,sourceHeight:2000,pricingDate:date}).estimatedCredits,200);
+  assert.equal(estimateRunwayVideoCredits({model:"ruby",durationSeconds:10,sourceWidth:2001,sourceHeight:2000,pricingDate:date}).estimatedCredits,400);
   assert.throws(()=>estimateRunwayVideoCredits({model:"ruby",durationSeconds:10,pricingDate:date}),e=>e.code==="RUNWAY_PRICE_INPUT_REQUIRED");
   assert.throws(()=>estimateRunwayVideoCredits({model:"gen4.5",durationSeconds:5,pricingDate:date,outputFormat:"prores"}),e=>e.code==="RUNWAY_PRICE_UNSUPPORTED_OPTION");
 });
