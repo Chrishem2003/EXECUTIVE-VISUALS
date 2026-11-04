@@ -53,14 +53,17 @@ export function assertTimelineDescriptorsSupported(timeline){
 
 /** Build FFmpeg filters for the currently supported non-destructive color and fade descriptors. */
 export function buildTimelineVideoFilters(clip,durationSeconds,frameRate){
- const filters=[];
- for(const effect of clip.effects||[]){
-  if(effect.enabled===false)continue;
+ const filters=[],effects=(clip.effects||[]).filter(effect=>effect.enabled!==false);
+ let brightness=1,contrast=1,saturation=1;
+ for(const effect of effects){
   if(effect.type!=="color")throw Object.assign(new Error("The selected timeline effect is not supported by the master renderer."),{code:"UNSUPPORTED_TIMELINE_FEATURE"});
-  const p=effect.parameters;
-  const brightness=Number(p.brightness).toFixed(6),contrast=Number(p.contrast).toFixed(6),saturation=Number(p.saturation).toFixed(6);
-  filters.push("lutrgb=r='clip(val*"+brightness+",0,255)':g='clip(val*"+brightness+",0,255)':b='clip(val*"+brightness+",0,255)'");
-  filters.push("eq=contrast="+contrast+":saturation="+saturation);
+  brightness*=Number(effect.parameters.brightness);contrast*=Number(effect.parameters.contrast);saturation*=Number(effect.parameters.saturation);
+ }
+ if(effects.length){
+  brightness=Math.max(0,Math.min(4,brightness));contrast=Math.max(0,Math.min(4,contrast));saturation=Math.max(0,Math.min(6,saturation));
+  const b=brightness.toFixed(6),c=contrast.toFixed(6),s=saturation.toFixed(6);
+  filters.push("lutrgb=r='clip(val*"+b+",0,255)':g='clip(val*"+b+",0,255)':b='clip(val*"+b+",0,255)'");
+  filters.push("eq=contrast="+c+":saturation="+s);
  }
  const fps=Number(frameRate),duration=Number(durationSeconds);
  for(const [edge,transition] of [["in",clip.transitionIn],["out",clip.transitionOut]]){
