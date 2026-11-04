@@ -115,9 +115,11 @@ export async function buildGeminiOmniFlashInteractionRequest({
     if (asset.mediaType !== mediaType) {
       throw fail("The resolved asset media type does not match its requested role.", "GEMINI_OMNI_ASSET_INVALID");
     }
-    if (role === "video" && asset.durationSeconds !== undefined &&
-        (typeof asset.durationSeconds !== "number" || !Number.isFinite(asset.durationSeconds) || asset.durationSeconds <= 0 || asset.durationSeconds > 10)) {
-      throw fail("Uploaded source videos must be ten seconds or shorter.");
+    if (role === "video" && (
+      typeof asset.durationSeconds !== "number" || !Number.isFinite(asset.durationSeconds) ||
+      asset.durationSeconds <= 0 || asset.durationSeconds > 10
+    )) {
+      throw fail("Uploaded source videos must have verified duration metadata and be ten seconds or shorter.");
     }
     if (role === "reference_video" && (
       typeof asset.durationSeconds !== "number" || !Number.isFinite(asset.durationSeconds) ||
