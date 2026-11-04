@@ -152,3 +152,11 @@ test("rejects inline output plans and malformed provider response payloads", asy
   await assert.rejects(async () => bad.client.createInteraction(await plan()), error =>
     error.code === "GEMINI_OMNI_INVALID_RESPONSE");
 });
+
+test("treats an already-deleted Google interaction as an idempotent success", async () => {
+  const h = harness({ fetchImpl: async () => response(404, { error: "not found" }) });
+  const result = await h.client.deleteInteraction(id, { ownerId: "owner-1", projectId: "project-1" });
+  assert.equal(result.deleted, true);
+  assert.equal(result.interactionId, id);
+  assert.equal(h.calls.length, 1);
+});
