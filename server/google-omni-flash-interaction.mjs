@@ -161,7 +161,7 @@ export async function buildGeminiOmniFlashInteractionRequest({
   return Object.freeze({
     endpoint: "https://generativelanguage.googleapis.com/" + API_VERSION + "/interactions",
     method: "POST",
-    headers: Object.freeze({ "content-type": "application/json", "x-goog-api-key": "[server-side credential required]" }),
+    auth: Object.freeze({ headerName: "x-goog-api-key", credentialSource: "server-only" }),
     payload: Object.freeze(payload),
     policy: Object.freeze({
       provider: "google",
