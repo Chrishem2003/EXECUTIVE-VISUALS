@@ -31,6 +31,12 @@ test("valid versioned color, keyframe and fade descriptors pass timeline validat
  assert.deepEqual(validateTimelineClipDescriptors(validClip(),{numerator:24,denominator:1}),[]);
 });
 
+test("color effects are rejected on audio and overlay tracks",()=>{
+ const clip=validClip();
+ assert.ok(validateTimelineDescriptors(clip,{numerator:24,denominator:1},"audio").some(issue=>issue.code==="invalid_effect_track"));
+ assert.ok(validateTimelineClipDescriptors(clip,{numerator:24,denominator:1},"overlay").some(issue=>issue.includes("primary video track")));
+});
+
 test("OTIO export preserves clip effects, keyframes and transition metadata",()=>{
  const otio=toOpenTimelineIo(timeline());
  const metadata=otio.tracks.children[0].children[0].metadata.executiveVisuals;
