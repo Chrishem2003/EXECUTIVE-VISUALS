@@ -401,8 +401,14 @@ begin
   where s.job_id = p_job_id
   for update;
   if submission.id is not null then
-    if target_submission_state = 'succeeded' and submission.provider_task_id is null then
+    if p_status in ('succeeded','partial')
+       and (submission.state <> 'submitted' or submission.provider_task_id is null) then
       raise exception 'VIDEO_SUBMISSION_TASK_ID_REQUIRED';
+    end if;
+    -- An interrupted POST may already have been accepted and billed. Never
+    -- release its reservation until an operator reconciles the provider task.
+    if p_status in ('failed','cancelled') and submission.state in ('submitting','unknown') then
+      raise exception 'VIDEO_SUBMISSION_RECONCILIATION_REQUIRED';
     end if;
     if submission.state not in ('prepared','submitting','submitted','unknown') then
       raise exception 'VIDEO_SUBMISSION_NOT_SETTLEABLE';
@@ -452,3 +458,159 @@ grant execute on function executive_visuals.finish_video_generation_job(uuid, te
   to service_role;
 
 -- Job completion, submission terminalization and budget settlement commit atomically.
+
+
+create or replace function executive_visuals.defer_video_generation_job(
+  p_job_id uuid, p_worker_id text, p_delay_seconds integer default 30, p_reason_code text default 'VIDEO_PROVIDER_POLL_DEFERRED'
+) returns boolean
+language plpgsql
+security invoker
+set search_path = pg_catalog, executive_visuals
+as $video_defer$
+declare
+  current_job executive_visuals.jobs;
+  submission executive_visuals.video_generation_submissions;
+begin
+  if p_worker_id is null or char_length(btrim(p_worker_id)) not between 1 and 128
+     or p_delay_seconds is null or p_delay_seconds not between 5 and 900
+     or p_reason_code is null or p_reason_code !~ '^[A-Z0-9_]{1,100}$' then
+    raise exception 'VIDEO_JOB_DEFER_ARGUMENTS_INVALID';
+  end if;
+  select * into current_job from executive_visuals.jobs
+  where id=p_job_id and job_type='video.generate' for update;
+  if current_job.id is null or current_job.status <> 'processing'
+     or current_job.lease_owner is distinct from p_worker_id
+     or current_job.lease_expires_at is null
+     or current_job.lease_expires_at <= clock_timestamp() then
+    return false;
+  end if;
+  select * into submission from executive_visuals.video_generation_submissions
+  where job_id=p_job_id for update;
+  if submission.id is null or submission.state <> 'submitted' or submission.provider_task_id is null then
+    raise exception 'VIDEO_JOB_DEFER_REQUIRES_SUBMITTED_TASK';
+  end if;
+  if not exists (
+    select 1 from executive_visuals.video_generation_budget_reservations r
+    where r.job_id=p_job_id and r.state='reserved'
+  ) then raise exception 'VIDEO_JOB_DEFER_BUDGET_RESERVATION_MISSING'; end if;
+
+  update executive_visuals.jobs
+  set status='queued', available_at=clock_timestamp()+make_interval(secs=>p_delay_seconds),
+      error=null, updated_at=clock_timestamp(), lease_owner=null,
+      lease_expires_at=null, lease_heartbeat_at=null
+  where id=p_job_id;
+  insert into executive_visuals.job_events(job_id,owner_id,event_type,event_data)
+  values(p_job_id,current_job.owner_id,'job.deferred',
+    jsonb_build_object('reasonCode',p_reason_code,'delaySeconds',p_delay_seconds,'providerTaskId',submission.provider_task_id));
+  insert into executive_visuals.audit_events(owner_id,project_id,event_type,subject_type,subject_id,details)
+  values(current_job.owner_id,current_job.project_id,'job.deferred','job',p_job_id::text,
+    jsonb_build_object('reasonCode',p_reason_code,'delaySeconds',p_delay_seconds));
+  return true;
+end;
+$video_defer$;
+
+revoke all on function executive_visuals.defer_video_generation_job(uuid,text,integer,text)
+  from public, anon, authenticated;
+grant execute on function executive_visuals.defer_video_generation_job(uuid,text,integer,text)
+  to service_role;
+
+
+create or replace function executive_visuals.quarantine_video_generation_job(
+  p_job_id uuid, p_worker_id text, p_reason_code text default 'VIDEO_SUBMISSION_REQUIRES_RECONCILIATION'
+) returns boolean
+language plpgsql
+security invoker
+set search_path = pg_catalog, executive_visuals
+as $video_quarantine$
+declare
+  current_job executive_visuals.jobs;
+  submission executive_visuals.video_generation_submissions;
+begin
+  if p_worker_id is null or char_length(btrim(p_worker_id)) not between 1 and 128
+     or p_reason_code is null or p_reason_code !~ '^[A-Z0-9_]{1,100}$' then
+    raise exception 'VIDEO_JOB_QUARANTINE_ARGUMENTS_INVALID';
+  end if;
+  select * into current_job from executive_visuals.jobs
+  where id=p_job_id and job_type='video.generate' for update;
+  if current_job.id is null or current_job.status <> 'processing'
+     or current_job.lease_owner is distinct from p_worker_id
+     or current_job.lease_expires_at is null
+     or current_job.lease_expires_at <= clock_timestamp() then
+    return false;
+  end if;
+  select * into submission from executive_visuals.video_generation_submissions
+  where job_id=p_job_id for update;
+  if submission.id is null or submission.state not in ('submitting','unknown') then
+    raise exception 'VIDEO_JOB_QUARANTINE_REQUIRES_AMBIGUOUS_SUBMISSION';
+  end if;
+  if not exists (
+    select 1 from executive_visuals.video_generation_budget_reservations r
+    where r.job_id=p_job_id and r.state='reserved'
+  ) then raise exception 'VIDEO_JOB_QUARANTINE_BUDGET_RESERVATION_MISSING'; end if;
+
+  update executive_visuals.jobs
+  set status='needs_input', error=jsonb_build_object('code',p_reason_code,
+      'message','Provider submission outcome requires evidence-based reconciliation.'),
+      updated_at=clock_timestamp(), lease_owner=null,
+      lease_expires_at=null, lease_heartbeat_at=null
+  where id=p_job_id;
+  insert into executive_visuals.job_events(job_id,owner_id,event_type,event_data)
+  values(p_job_id,current_job.owner_id,'job.needs_input',
+    jsonb_build_object('reasonCode',p_reason_code,'submissionState',submission.state));
+  insert into executive_visuals.audit_events(owner_id,project_id,event_type,subject_type,subject_id,details)
+  values(current_job.owner_id,current_job.project_id,'job.needs_input','job',p_job_id::text,
+    jsonb_build_object('reasonCode',p_reason_code,'submissionState',submission.state));
+  return true;
+end;
+$video_quarantine$;
+
+revoke all on function executive_visuals.quarantine_video_generation_job(uuid,text,text)
+  from public, anon, authenticated;
+grant execute on function executive_visuals.quarantine_video_generation_job(uuid,text,text)
+  to service_role;
+
+
+create or replace function executive_visuals.resume_reconciled_video_generation_job(
+  p_job_id uuid, p_owner_id uuid
+) returns boolean
+language plpgsql
+security invoker
+set search_path = pg_catalog, executive_visuals
+as $video_resume$
+declare
+  current_job executive_visuals.jobs;
+  submission executive_visuals.video_generation_submissions;
+begin
+  select * into current_job from executive_visuals.jobs
+  where id=p_job_id and owner_id=p_owner_id and job_type='video.generate'
+  for update;
+  if current_job.id is null or current_job.status <> 'needs_input' then return false; end if;
+  select * into submission from executive_visuals.video_generation_submissions
+  where job_id=p_job_id for update;
+  if submission.id is null or submission.state <> 'submitted' or submission.provider_task_id is null then
+    raise exception 'VIDEO_JOB_RESUME_REQUIRES_RECONCILED_TASK';
+  end if;
+  if not exists (
+    select 1 from executive_visuals.video_generation_budget_reservations r
+    where r.job_id=p_job_id and r.state='reserved'
+  ) then raise exception 'VIDEO_JOB_RESUME_BUDGET_RESERVATION_MISSING'; end if;
+
+  update executive_visuals.jobs
+  set status='queued', available_at=clock_timestamp(), error=null,
+      updated_at=clock_timestamp(), lease_owner=null,
+      lease_expires_at=null, lease_heartbeat_at=null
+  where id=p_job_id;
+  insert into executive_visuals.job_events(job_id,owner_id,event_type,event_data)
+  values(p_job_id,p_owner_id,'job.reconciled_resumed',
+    jsonb_build_object('providerTaskId',submission.provider_task_id));
+  insert into executive_visuals.audit_events(owner_id,project_id,event_type,subject_type,subject_id,details)
+  values(p_owner_id,current_job.project_id,'job.reconciled_resumed','job',p_job_id::text,
+    jsonb_build_object('providerTaskId',submission.provider_task_id));
+  return true;
+end;
+$video_resume$;
+
+revoke all on function executive_visuals.resume_reconciled_video_generation_job(uuid,uuid)
+  from public, anon, authenticated;
+grant execute on function executive_visuals.resume_reconciled_video_generation_job(uuid,uuid)
+  to service_role;
