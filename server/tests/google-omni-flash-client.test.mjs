@@ -64,10 +64,10 @@ test("refuses missing approval before any provider request", async () => {
 
 test("requires explicit remote flags and server-side credentials", async () => {
   const disabled = harness({ overrides: { GEMINI_OMNI_ALLOW_REMOTE: "false" } });
-  await assert.rejects(() => disabled.client.createInteraction(await plan()), error =>
+  await assert.rejects(async () => disabled.client.createInteraction(await plan()), error =>
     error.code === "GEMINI_OMNI_REMOTE_DISABLED");
   const missing = harness({ overrides: { GEMINI_API_KEY: "" } });
-  await assert.rejects(() => missing.client.createInteraction(await plan()), error =>
+  await assert.rejects(async () => missing.client.createInteraction(await plan()), error =>
     error.code === "GEMINI_OMNI_CONFIG_MISSING");
 });
 
