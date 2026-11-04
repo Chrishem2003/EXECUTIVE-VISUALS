@@ -41,6 +41,8 @@ test("finds only the exact provider, asset, owner, project and MIME mapping", as
   assert.equal(result.ownerId, row.owner_id);
   assert.equal(result.projectId, row.project_id);
   assert.equal(result.sizeBytes, 1024);
+  assert.equal(result.sourceType, "upload");
+  assert.equal(result.sourceUri, null);
   assert.match(calls[0].url, /project_id=eq.22222222/);
   assert.equal(calls[0].options.headers.apikey, key);
   assert.equal(calls[0].options.headers["accept-profile"], "executive_visuals");
@@ -79,6 +81,9 @@ test("upserts a provider-file mapping without exposing service-role credentials"
   assert.equal(call.options.method, "POST");
   assert.match(call.options.headers.prefer, /resolution=merge-duplicates/);
   assert.equal(call.options.headers.apikey, key);
+  const body = JSON.parse(call.options.body);
+  assert.equal(body.source_type, "upload");
+  assert.equal(body.source_uri, null);
   assert.equal(call.options.body.includes(key), false);
 });
 
@@ -100,4 +105,24 @@ test("requires safe server configuration and bounds the timeout", () => {
   assert.throws(() => createGoogleGeminiFilesRepository({ url: "http://attacker.example", serviceRoleKey: key }));
   assert.throws(() => createGoogleGeminiFilesRepository({ url: base, serviceRoleKey: "" }));
   assert.throws(() => createGoogleGeminiFilesRepository({ url: base, serviceRoleKey: key, timeoutMs: 100 }));
+});
+
+test("persists GCS registration provenance without changing the private asset identity", async () => {
+  let body;
+  const repository = createGoogleGeminiFilesRepository({
+    url: base, serviceRoleKey: key,
+    fetchImpl: async (_url, options) => {
+      body = JSON.parse(options.body);
+      return response(201, [{ id: row.id }]);
+    }
+  });
+  await repository.recordProviderFile({
+    provider: row.provider, assetId: row.asset_id, ownerId: row.owner_id,
+    projectId: row.project_id, name: row.google_file_name, uri: row.google_file_uri,
+    mimeType: row.mime_type, sizeBytes: row.byte_size, sha256: row.sha256,
+    state: row.state, uploadedAt: row.uploaded_at, expiresAt: row.expires_at,
+    sourceType: "gcs_registration", sourceUri: "gs://private-media-bucket/private/image.png"
+  });
+  assert.equal(body.source_type, "gcs_registration");
+  assert.equal(body.source_uri, "gs://private-media-bucket/private/image.png");
 });
