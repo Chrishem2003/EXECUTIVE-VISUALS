@@ -374,7 +374,7 @@ export function createAppServer() {
       const user=await authenticate(req,res);
       if(!user){fail(res,401,"AUTH_REQUIRED","Sign in to access this workspace.");return;}
       if(path==="/api/me"&&req.method==="GET"){send(res,200,{user,authMode:AUTH_MODE},cors);return;}
-      const cloudMediaMatch=path.match(/^\\/api\\/cloud\\/assets\\/([0-9a-f-]+)\\/content$/i);
+      const cloudMediaMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)\/content$/i);
       if(cloudTimelineApi&&cloudMediaMatch&&(req.method==="GET"||req.method==="HEAD")){
         const streamed=await cloudTimelineApi.streamAsset({ownerId:user.id,assetId:cloudMediaMatch[1],range:String(req.headers.range||""),method:req.method});
         res.writeHead(streamed.status,{...SECURITY_HEADERS,...streamed.headers,...cors});
