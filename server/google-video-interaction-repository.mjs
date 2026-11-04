@@ -160,7 +160,8 @@ export function createGoogleVideoInteractionRepository({
       return rows.length ? mapRow(rows[0]) : null;
     },
 
-    async updateInteraction({ ...scope, state, outputFileName, metadata } = {}) {
+    async updateInteraction({ interactionId, ownerId, projectId = null, jobId, state, outputFileName, metadata } = {}) {
+      const scope = { interactionId, ownerId, projectId, jobId };
       if (!STATES.has(state)) throw new Error("Google interaction state is invalid.");
       const body = { state, updated_at: new Date().toISOString() };
       if (outputFileName !== undefined) body.output_file_name = outputFileName;
@@ -179,7 +180,8 @@ export function createGoogleVideoInteractionRepository({
       return mapRow(rows[0]);
     },
 
-    async markInteractionDeleted({ ...scope } = {}) {
+    async markInteractionDeleted({ interactionId, ownerId, projectId = null, jobId } = {}) {
+      const scope = { interactionId, ownerId, projectId, jobId };
       const params = scopeParams(scope);
       params.delete("select");
       const rows = await request("?" + params.toString() + "&select=" + encodeURIComponent(columns), {
