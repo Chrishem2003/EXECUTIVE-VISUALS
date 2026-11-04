@@ -186,10 +186,16 @@ export function createGeminiOmniFlashClient({
       });
     },
 
-    async getInteraction(id, context = {}) {
+    async getInteractionForIngestion(id, context = {}) {
       const safeId = interactionId(id);
       await authorize(safeId, context, "read");
       const data = await request(BASE + "/interactions/" + encodeURIComponent(safeId));
+      normalized(data);
+      return data;
+    },
+
+    async getInteraction(id, context = {}) {
+      const data = await this.getInteractionForIngestion(id, context);
       const result = normalized(data);
       return Object.freeze({
         taskId: result.interactionId,
@@ -197,7 +203,8 @@ export function createGeminiOmniFlashClient({
         status: result.status,
         provider: "google",
         model: MODEL,
-        outputUrls: Object.freeze(result.video?.delivery === "uri" ? [result.video.uri] : [])
+        outputUrls: Object.freeze(result.video?.delivery === "uri" ? [result.video.uri] : []),
+        outputDelivery: result.video?.delivery || null
       });
     },
 
