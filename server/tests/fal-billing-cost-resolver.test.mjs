@@ -30,6 +30,8 @@ test("resolves exact per-request billed cost using precision-preserving nano-USD
   assert.equal(request.url.pathname, "/v1/models/billing-events");
   assert.equal(request.url.searchParams.get("request_id"), "req-123");
   assert.equal(request.url.searchParams.get("endpoint_id"), event.endpoint_id);
+  assert.ok(Date.parse(request.url.searchParams.get("start")) <= Date.now());
+  assert.ok(Date.now() - Date.parse(request.url.searchParams.get("start")) <= 90 * 24 * 60 * 60 * 1000);
   assert.equal(request.options.headers.authorization, "Key billing-test-key");
 });
 
@@ -46,6 +48,11 @@ test("rejects duplicate and inconsistent billed events", async () => {
   await assert.rejects(() => duplicate({ providerTaskId: "req-123", model: event.endpoint_id }), error => error.code === "VIDEO_BILLING_EVENT_AMBIGUOUS");
   const mismatch = createFalBillingCostResolver({ ...base, fetchImpl: async () => response({ billing_events: [{ ...event, cost_total: 0.5 }] }) });
   await assert.rejects(() => mismatch({ providerTaskId: "req-123", model: event.endpoint_id }), error => error.code === "VIDEO_BILLING_INVALID_RESPONSE");
+});
+
+test("rejects billing lookups outside the FAL 90-day date-range limit", async () => {
+  const resolve = createFalBillingCostResolver({ ...base, fetchImpl: async () => response({ billing_events: [] }) });
+  await assert.rejects(() => resolve({ providerTaskId: "req-123", model: event.endpoint_id, submittedAt: "2025-01-01T00:00:00.000Z" }), error => error.code === "VIDEO_BILLING_LOOKBACK_EXCEEDED");
 });
 
 test("billing permissions and provider failures fail closed", async () => {
