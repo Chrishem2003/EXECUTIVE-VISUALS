@@ -5,7 +5,7 @@ export function validateTimelineClipDescriptors(clip,frameRate,trackKind){
  const seconds=Number(clip?.duration?.value)/Number(clip?.duration?.rate),maxFrames=Number.isFinite(seconds*fps)?Math.max(0,Math.ceil(seconds*fps)):0;
  const add=(id,label)=>{if(typeof id!=="string"||!id.trim()||id.length>128||ids.has(id)){issues.push(label+" IDs must be unique non-empty strings of at most 128 characters.");return;}ids.add(id);};
  if(clip?.effects!==undefined){
-  if(Array.isArray(clip.effects)&&clip.effects.length&&trackKind&&trackKind!=="video"&&trackKind!=="overlay")issues.push("Color effects are supported only on video and overlay tracks.");
+  if(Array.isArray(clip.effects)&&clip.effects.length&&trackKind&&trackKind!=="video")issues.push("Color effects are supported only on the primary video track.");
   if(!Array.isArray(clip.effects)||clip.effects.length>16)issues.push("A clip may contain no more than 16 effect descriptors.");
   else for(const effect of clip.effects){
    add(effect?.id,"Effect");
