@@ -101,8 +101,23 @@ test("rejects weak credentials, insecure remote URLs and short session secrets",
   assert.throws(() => createSupabaseAuth({ ...config, sessionSecret: "short" }), { code: "SUPABASE_AUTH_CONFIG_INVALID" });
   assert.throws(() => createSupabaseAuth({ ...config, url: "http://auth.example.test" }), { code: "SUPABASE_AUTH_CONFIG_INVALID" });
   const auth = createSupabaseAuth({ ...config, fetchImpl: async () => response(tokenPayload()) });
-  assert.rejects(auth.signIn("not-an-email", "a-long-password-value"), { code: "INVALID_CREDENTIALS" });
-  assert.rejects(auth.signIn("creator@example.test", "short"), { code: "INVALID_CREDENTIALS" });
+  await assert.rejects(auth.signIn("not-an-email", "a-long-password-value"), { code: "INVALID_CREDENTIALS" });
+  await assert.rejects(auth.signIn("creator@example.test", "short"), { code: "INVALID_CREDENTIALS" });
+});
+
+test("password recovery uses the configured Supabase Auth endpoint without revealing account existence", async () => {
+  let call;
+  const auth = createSupabaseAuth({
+    ...config,
+    fetchImpl: async (url, options) => {
+      call = { url: String(url), options };
+      return response({});
+    }
+  });
+  assert.equal(await auth.requestPasswordRecovery("Creator@Example.test"), true);
+  assert.equal(call.url, "https://project.example.test/auth/v1/recover");
+  assert.deepEqual(JSON.parse(call.options.body), { email: "creator@example.test" });
+  await assert.rejects(auth.requestPasswordRecovery("not-an-email"), { code: "INVALID_CREDENTIALS" });
 });
 
 test("invalid credentials return a generic authentication error", async () => {
