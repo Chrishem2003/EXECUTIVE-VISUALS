@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { rational } from "../../src/core/timeline.ts";
 import { activeCaptionCues, parseCaptionCues } from "../../src/core/caption-preview.ts";
+import { validatePrivateMediaUrl } from "../../src/core/private-media-url.ts";
 import { clipSourceSecondsAtTimelineFrame, clampPreviewSeconds, decibelsToLinearGain, isPreviewTrackAudible, frameToSeconds, getTimelineDurationFrames, resolveTimelineFrame, resolveTimelineOverlays, secondsToFrame, stepPreviewSeconds } from "../../src/core/timeline-preview.ts";
 
 const rate={numerator:30000,denominator:1001};
@@ -126,4 +127,14 @@ test("caption preview parses WebVTT and rejects malformed or oversized input",()
  assert.deepEqual(cues,[{startSeconds:0,endSeconds:1.25,text:"Welcome"}]);
  assert.deepEqual(parseCaptionCues("1\\n00:00:02,000 --> 00:00:01,000\\nBad"),[]);
  assert.throws(()=>parseCaptionCues("x".repeat(2*1024*1024+1)),/2 MB/);
+});
+
+test("private cloud media URLs require HTTPS and bounded short-lived expiry",()=>{
+ const result=validatePrivateMediaUrl("https://storage.example/signed?token=secret","https://app.example",300,1000);
+ assert.equal(result.url,"https://storage.example/signed?token=secret");
+ assert.equal(result.expiresAt,271000);
+ assert.throws(()=>validatePrivateMediaUrl("http://storage.example/file","https://app.example",300),/HTTPS/);
+ assert.throws(()=>validatePrivateMediaUrl("https://user:pass@storage.example/file","https://app.example",300),/unsafe/);
+ assert.throws(()=>validatePrivateMediaUrl("https://storage.example/file#fragment","https://app.example",300),/unsafe/);
+ assert.throws(()=>validatePrivateMediaUrl("https://storage.example/file","https://app.example",30),/expiry/);
 });
