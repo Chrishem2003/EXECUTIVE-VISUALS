@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openDatabase } from "../db.mjs";
 import { createVideoGenerationJobService } from "../video-generation-jobs.mjs";
+import { ensureRemoteUsageTable } from "../usage-guardrails.mjs";
 
 const ownerId = "123e4567-e89b-42d3-a456-426614174000";
 const projectId = "223e4567-e89b-42d3-a456-426614174000";
@@ -23,6 +24,8 @@ async function fixture(options = {}) {
   const root = await mkdtemp(join(tmpdir(), "ev-video-jobs-"));
   const db = openDatabase(join(root, "jobs.sqlite"));
   db.prepare("INSERT INTO users(id,email) VALUES(?,?)").run(ownerId, "video-owner@example.test");
+  db.prepare("INSERT INTO projects(id,owner_id,name) VALUES(?,?,?)").run(projectId, ownerId, "Video jobs test project");
+  ensureRemoteUsageTable(db);
   const budgetCalls = [];
   const service = createVideoGenerationJobService({
     db,
