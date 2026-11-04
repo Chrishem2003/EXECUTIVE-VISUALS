@@ -67,7 +67,7 @@ export function createFalCloudVideoAdapter({
   const queueClient = client || createFalAsyncVideoClient({
     apiKey, model: selectedModel, enabled, allowRemote, fetchImpl
   });
-  if (!queueClient || typeof queueClient.submit !== "function" ||
+  const assertRemoteEnabled = () => {\n    if (enabled !== true) throw fail("Video generation is disabled by server configuration.", "VIDEO_GATEWAY_DISABLED");\n    if (allowRemote !== true) throw fail("Remote video providers are disabled.", "VIDEO_GATEWAY_REMOTE_DISABLED");\n  };\n  if (!queueClient || typeof queueClient.submit !== "function" ||
       typeof queueClient.status !== "function" || typeof queueClient.result !== "function") {
     throw new Error("FAL cloud adapter requires submit, status and result operations.");
   }
@@ -86,7 +86,7 @@ export function createFalCloudVideoAdapter({
         throw fail("FAL job identity does not match the selected adapter.", "VIDEO_JOB_INPUT_MISMATCH");
       }
       const references = input.referenceAssetIds;
-      if (Array.isArray(references) && references.length > 0 && typeof prepareInput !== "function") {
+      if ((Array.isArray(references) && references.length > 0 || input.referenceImageDataUrl) && typeof prepareInput !== "function") {
         throw fail("Private FAL reference assets require an authenticated project-scoped resolver.", "VIDEO_INPUT_ASSET_RESOLUTION_REQUIRED");
       }
       if (typeof prepareInput !== "function") return input;
