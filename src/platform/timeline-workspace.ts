@@ -12,6 +12,7 @@ import { compareTimelineVariants, createTimelineVariant, type TimelineVariantCom
 import { addClip, addMarker, addTrack, createTimeline, moveClip, rational, splitClip, toOpenTimelineIo, trimClip, type EditorialTimeline, type TimelineTrack } from "../core/timeline";
 import { clampPreviewSeconds, decibelsToLinearGain, frameToSeconds, getTimelineDurationFrames, isPreviewTrackAudible, resolveTimelineFrame, resolveTimelineOverlays, secondsToFrame, stepPreviewSeconds } from "../core/timeline-preview";
 import { activeCaptionCues, parseCaptionCues, type CaptionCue } from "../core/caption-preview";
+import { validatePrivateMediaUrl } from "../core/private-media-url";
 
 type Asset={id:string;name:string;mediaType:string;size:number;metadata?:Record<string,unknown>};
 type SavedTimeline={id:string;projectId?:string|null;name:string;revision:number;document?:EditorialTimeline};
@@ -36,10 +37,8 @@ async function assetMediaUrl(asset:Asset):Promise<string>{
  if(cached?.pending)return cached.pending;
  const entry=cached||{expiresAt:0};
  const pending=apiRequest<{url:string;expiresIn:number}>("/api/cloud/assets/"+encodeURIComponent(asset.id)).then(result=>{
-  const url=new URL(result.url,window.location.href);
-  if(url.protocol!=="https:"&&!["localhost","127.0.0.1","[::1]"].includes(url.hostname))throw new Error("Cloud media URL must use HTTPS.");
-  if(!Number.isInteger(result.expiresIn)||result.expiresIn<60||result.expiresIn>3600)throw new Error("Cloud media URL expiry is invalid.");
-  entry.url=url.href;entry.expiresAt=Date.now()+Math.max(30,result.expiresIn-30)*1000;entry.pending=undefined;
+  const validated=validatePrivateMediaUrl(result.url,window.location.href,result.expiresIn);
+  entry.url=validated.url;entry.expiresAt=validated.expiresAt;entry.pending=undefined;
   sequenceMediaUrlCache.set(asset.id,entry);return entry.url;
  }).catch(error=>{entry.pending=undefined;entry.url=undefined;sequenceMediaUrlCache.delete(asset.id);throw error;});
  entry.pending=pending;sequenceMediaUrlCache.set(asset.id,entry);return pending;
