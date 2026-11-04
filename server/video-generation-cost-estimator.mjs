@@ -1,5 +1,6 @@
 import { estimateRunwayVideoCredits } from "./runway-video-pricing.mjs";
 import { estimateLumaRay32Cost } from "./luma-video-pricing.mjs";
+import { estimateGoogleOmniVideoCost } from "./google-omni-pricing.mjs";
 
 const RUNWAY_PRICING_SOURCE = "https://docs.dev.runwayml.com/guides/pricing/";
 
@@ -20,6 +21,27 @@ export function estimateVideoGenerationCost({
   hdr = false, exrExport = false
 } = {}) {
   const pricingDate = new Date().toISOString().slice(0, 10);
+
+  if (provider === "google") {
+    const estimate = estimateGoogleOmniVideoCost({ model, resolution, durationSeconds });
+    return Object.freeze({
+      provider, model, operation, durationSeconds,
+      resolution: estimate.resolution,
+      currency: estimate.currency,
+      amount: estimate.amount,
+      basis: estimate.basis,
+      maxInputTokens: estimate.maxInputTokens,
+      maxOutputTokens: estimate.maxOutputTokens,
+      maxOutputSeconds: estimate.maxOutputSeconds,
+      inputUsdPerMillionTokens: estimate.inputUsdPerMillionTokens,
+      videoOutputUsdPerMillionTokens: estimate.videoOutputUsdPerMillionTokens,
+      outputTokensPerSecond: estimate.outputTokensPerSecond,
+      pricingSource: estimate.pricingSource,
+      pricingDate: estimate.pricingDate,
+      billable: false,
+      settlementEligible: false
+    });
+  }
 
   if (provider === "luma") {
     if (model !== "ray-3.2") {
