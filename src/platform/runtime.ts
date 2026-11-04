@@ -148,6 +148,20 @@ export async function initRuntime(){
  try{
   const health=await apiRequest<{authMode:"local"|"supabase";media:{ffmpeg:boolean;ffprobe:boolean};textGateway:{enabled:boolean;configured:boolean};imageGateway:{enabled:boolean;configured:boolean}}>("/api/health");
   state.authMode=health.authMode;state.ffmpeg=health.media.ffmpeg;state.ffprobe=health.media.ffprobe;state.textGatewayEnabled=health.textGateway.enabled;state.textGatewayConfigured=health.textGateway.configured;state.imageGatewayEnabled=health.imageGateway.enabled;state.imageGatewayConfigured=health.imageGateway.configured;
+  const recoveryParams=new URLSearchParams(window.location.hash.replace(/^#/,""));
+  if(state.authMode==="supabase"&&recoveryParams.get("type")==="recovery"){
+   const accessToken=recoveryParams.get("access_token")||"",refreshToken=recoveryParams.get("refresh_token")||"";
+   if(accessToken&&refreshToken){
+    try{
+     const recovery=await apiRequest<{user:RuntimeUser}>("/api/auth/recovery/session",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({accessToken,refreshToken})});
+     window.history.replaceState(null,"",window.location.pathname+window.location.search);
+     state.user=recovery.user;state.recoveryMode=true;state.status="auth-required";state.message="Verify your new password below to complete account recovery.";paint();return;
+    }catch(error){
+     window.history.replaceState(null,"",window.location.pathname+window.location.search);
+     state.status="auth-required";state.message=error instanceof Error?error.message:"The recovery link could not be verified.";paint();return;
+    }
+   }
+  }
   try{const me=await apiRequest<{user:RuntimeUser}>("/api/me");state.user=me.user;state.status="online";await refresh();window.dispatchEvent(new Event("ev:authenticated"));}
   catch(error){if(error instanceof ApiError&&error.status===401)state.status="auth-required";else throw error;}
  }catch(error){state.status="offline";state.message=error instanceof Error?error.message:"API unavailable";}
