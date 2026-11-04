@@ -22,8 +22,42 @@ function safePlan(plan) {
       plan.policy?.requiresApproval !== true ||
       !plan.payload || plan.payload.model !== MODEL ||
       plan.payload.response_format?.type !== "video" ||
+      !["16:9", "9:16"].includes(plan.payload.response_format?.aspect_ratio) ||
+      !["360p", "720p", "1080p", "4k"].includes(plan.payload.response_format?.resolution) ||
       plan.payload.response_format?.delivery !== "uri") {
     throw fail("Gemini interaction plan is not a supported, approval-gated URI-delivery plan.", "GEMINI_OMNI_PLAN_INVALID");
+  }
+  const input = plan.payload.input;
+  if (typeof input === "string") {
+    if (!input.trim() || input.length > 12000) throw fail("Gemini interaction text input is invalid.", "GEMINI_OMNI_PLAN_INVALID");
+  } else if (Array.isArray(input) && input.length >= 1 && input.length <= 10) {
+    for (const item of input) {
+      if (!item || typeof item !== "object" || Array.isArray(item) ||
+          !["text", "image", "video"].includes(item.type)) {
+        throw fail("Gemini interaction contains an unsupported input part.", "GEMINI_OMNI_PLAN_INVALID");
+      }
+      if (item.type === "text") {
+        if (typeof item.text !== "string" || !item.text.trim() || item.text.length > 12000) {
+          throw fail("Gemini interaction text part is invalid.", "GEMINI_OMNI_PLAN_INVALID");
+        }
+      } else if (typeof item.uri !== "string" ||
+          !/^https:\/\/generativelanguage\.googleapis\.com\/v1beta\/files\/[A-Za-z0-9_-]+$/.test(item.uri)) {
+        throw fail("Gemini interaction media must reference an authorized Google Files URI.", "GEMINI_OMNI_PLAN_INVALID");
+      }
+    }
+  } else {
+    throw fail("Gemini interaction input must be text or a bounded multimodal content array.", "GEMINI_OMNI_PLAN_INVALID");
+  }
+  if (plan.payload.previous_interaction_id !== undefined &&
+      (typeof plan.payload.previous_interaction_id !== "string" ||
+       !/^v1_[A-Za-z0-9_-]{6,200}$/.test(plan.payload.previous_interaction_id))) {
+    throw fail("Gemini interaction lineage reference is invalid.", "GEMINI_OMNI_PLAN_INVALID");
+  }
+  if (plan.payload.generation_config !== undefined) {
+    const task = plan.payload.generation_config?.video_config?.task;
+    if (!["edit", "extend", "image_to_video", "reference_to_video"].includes(task)) {
+      throw fail("Gemini video generation task is unsupported.", "GEMINI_OMNI_PLAN_INVALID");
+    }
   }
   return plan.payload;
 }
