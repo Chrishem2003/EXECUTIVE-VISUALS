@@ -188,3 +188,8 @@ Google Picker frontend follow-up:
 - The server Content Security Policy now explicitly allows the Google API loader, Picker frames and required Google API connections. Review the staging web origin and API key referrer restrictions before enabling.
 
 - The Cloud project asset register now exposes two Drive export destinations: save directly to the user's Drive root, or use Google Picker's folder view to choose a destination folder. The server still validates the selected folder ID and relies on Drive to enforce the connected user's permissions.
+
+Drive picker upload follow-up:
+- The authenticated Drive picker now includes both a filtered existing-file view and Google's device-upload view. A user can upload a local file into their own Drive from the picker and then import the selected file into the app's private project asset store.
+- OAuth remains limited to the per-file `drive.file` scope (plus OpenID identity scopes); no full-Drive access is requested.
+- This is separate from the Gemini Files API gateway, which uploads private app assets to Google's temporary Files service for model execution. Both upload paths remain disabled until staging credentials and explicit feature flags are configured.
