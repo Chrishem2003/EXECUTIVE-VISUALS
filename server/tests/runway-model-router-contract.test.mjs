@@ -41,13 +41,16 @@ test("video dry-run emits documented model-agnostic fields",()=>{
 test("video dry-run accepts only server-uploaded Runway reference images",()=>{
   const payload=buildRunwayVideoRouterDryRun({configId:"preview",input:{
     promptText:"A cinematic sunrise",
-    referenceImages:[{uri:"runway://upload/abc123",role:"first",view:"front"}]
+    referenceImages:[{uri:"runway://upload/abc123",role:"first"}]
   }});
-  assert.deepEqual(payload.input.referenceImages,[{uri:"runway://upload/abc123",role:"first",view:"front"}]);
+  assert.deepEqual(payload.input.referenceImages,[{uri:"runway://upload/abc123",role:"first"}]);
   for(const referenceImages of [
     [{uri:"https://attacker.invalid/image.png"}],
     [{uri:"data:image/png;base64,AAAA"}],
-    [{uri:"runway://upload/abc",role:"last"}],
+    [{uri:"runway://upload/abc"}],
+    [{uri:"runway://upload/abc",role:"middle"}],
+    [{uri:"runway://upload/abc",role:"first",view:"front"}],
+    [{uri:"runway://upload/abc",role:"extra"}],
     [{uri:"runway://upload/abc",extra:"no"}],
     []
   ]) assert.throws(()=>buildRunwayVideoRouterDryRun({configId:"preview",input:{promptText:"test",referenceImages}}));
@@ -56,12 +59,15 @@ test("video dry-run accepts only server-uploaded Runway reference images",()=>{
 test("video dry-run rejects unsupported fields, resolution and duration precision",()=>{
   for(const input of [
     {promptText:"test",model:"gen4.5"},
-    {promptText:"test",seed:42},
-    {promptText:"test",resolution:"4k"},
+    {promptText:"test",resolution:"360p"},
     {promptText:"test",duration:5.5},
-    {promptText:"test",duration:2},
-    {promptText:"test",duration:16},
-    {promptText:"test",duration:60}
+    {promptText:"test",duration:1},
+    {promptText:"test",duration:31},
+    {promptText:"test",seed:4294967296},
+    {promptText:"test",contentModeration:{publicFigureThreshold:"strict"}},
+    {promptText:"test",referenceVideos:[{uri:"runway://video/source",role:"source"}]},
+    {promptText:"test",referenceAudio:[{uri:"runway://audio/ref"}]},
+    {promptText:"test",keyframes:[{uri:"runway://image/keyframe",at:0.5}]}
   ]) assert.throws(()=>buildRunwayVideoRouterDryRun({configId:"preview",input}));
 });
 
@@ -118,4 +124,34 @@ test("router rejects direct-model pixel ratio field and accepts model-agnostic a
     error=>error.code==="RUNWAY_ROUTER_INVALID_INPUT");
   assert.deepEqual(buildRunwayVideoRouterDryRun({configId:"preview",input:{promptText:"test",aspectRatio:"9:16"}}).input,
     {promptText:"test",aspectRatio:"9:16"});
+});
+
+test("router accepts the current duration, resolution, seed and moderation contract",()=>{
+  for(const duration of [2,30]) {
+    assert.equal(buildRunwayVideoRouterDryRun({configId:"preview",input:{promptText:"test",duration}}).input.duration,duration);
+  }
+  for(const resolution of ["480p","720p","1080p","4k"]) {
+    assert.equal(buildRunwayVideoRouterDryRun({configId:"preview",input:{promptText:"test",resolution}}).input.resolution,resolution);
+  }
+  const payload=buildRunwayVideoRouterDryRun({configId:"preview",input:{promptText:"test",seed:4294967295,contentModeration:{publicFigureThreshold:"low"}}});
+  assert.equal(payload.input.seed,4294967295);
+  assert.deepEqual(payload.input.contentModeration,{publicFigureThreshold:"low"});
+});
+
+test("router reference images support first, last and reference roles with unique frame endpoints",()=>{
+  const payload=buildRunwayVideoRouterDryRun({configId:"preview",input:{
+    promptText:"test",referenceImages:[
+      {uri:"runway://upload/first",role:"first"},
+      {uri:"runway://upload/last",role:"last"},
+      {uri:"runway://upload/ref1",role:"reference"},
+      {uri:"runway://upload/ref2",role:"reference"}
+    ]
+  }});
+  assert.equal(payload.input.referenceImages.length,4);
+  assert.throws(()=>buildRunwayVideoRouterDryRun({configId:"preview",input:{promptText:"test",referenceImages:[
+    {uri:"runway://upload/first1",role:"first"},{uri:"runway://upload/first2",role:"first"}
+  ]}}),error=>error.code==="RUNWAY_ROUTER_INVALID_INPUT");
+  assert.throws(()=>buildRunwayVideoRouterDryRun({configId:"preview",input:{promptText:"test",referenceImages:[
+    {uri:"runway://upload/last1",role:"last"},{uri:"runway://upload/last2",role:"last"}
+  ]}}),error=>error.code==="RUNWAY_ROUTER_INVALID_INPUT");
 });
