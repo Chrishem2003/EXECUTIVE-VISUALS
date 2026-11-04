@@ -94,7 +94,7 @@ create or replace function executive_visuals.validate_video_budget_approval()
 returns trigger
 language plpgsql
 set search_path = pg_catalog, executive_visuals
-as $
+as $$
 begin
   if new.owner_id is distinct from auth.uid() then
     raise exception 'VIDEO_BUDGET_APPROVAL_OWNER_INVALID';
@@ -107,7 +107,7 @@ begin
   end if;
   return new;
 end;
-$;
+$$;
 
 create trigger ev_video_budget_approval_validate
   before insert on executive_visuals.video_generation_budget_approvals
