@@ -7,6 +7,7 @@ const fail = (message, code = "GEMINI_OMNI_INVALID_REQUEST") =>
   Object.assign(new Error(message), { code });
 const plain = value => value !== null && typeof value === "object" && !Array.isArray(value);
 const GOOGLE_FILE_URI = /^https:\/\/generativelanguage\.googleapis\.com\/v1beta\/files\/[A-Za-z0-9_-]+$/;
+const GOOGLE_FILE_DOWNLOAD_URI = /^https:\/\/generativelanguage\.googleapis\.com\/v1beta\/files\/[A-Za-z0-9_-]+(?::download\?alt=media)?$/;
 
 function requiredString(value, label, max = 12000) {
   if (typeof value !== "string" || !value.trim() || value.length > max) {
@@ -160,6 +161,13 @@ export async function buildGeminiOmniFlashInteractionRequest({
   };
   if (previousInteractionId) payload.previous_interaction_id = previousInteractionId;
 
+  let task;
+  if (operation === "edit") task = "edit";
+  else if (operation === "extend") task = "extend";
+  else if (firstFrameAssetId && !lastFrameAssetId) task = "image_to_video";
+  else if (!firstFrameAssetId && (referenceImageAssetIds.length || referenceVideoAssetIds.length)) task = "reference_to_video";
+  if (task) payload.generation_config = { video_config: { task } };
+
   return Object.freeze({
     endpoint: "https://generativelanguage.googleapis.com/" + API_VERSION + "/interactions",
     method: "POST",
@@ -213,7 +221,7 @@ export function normalizeGeminiOmniFlashInteractionResponse(response, {
           throw fail("Inline video exceeds the configured response limit; use URI delivery.", "GEMINI_OMNI_RESPONSE_TOO_LARGE");
         }
         video = { mimeType: "video/mp4", delivery: "inline", base64: item.data, byteLength: bytes };
-      } else if (typeof item.uri === "string" && GOOGLE_FILE_URI.test(item.uri)) {
+      } else if (typeof item.uri === "string" && GOOGLE_FILE_DOWNLOAD_URI.test(item.uri)) {
         video = { mimeType: "video/mp4", delivery: "uri", uri: item.uri };
       } else {
         throw fail("Gemini Omni video output contains neither valid base64 data nor a Google Files URI.", "GEMINI_OMNI_INVALID_RESPONSE");
