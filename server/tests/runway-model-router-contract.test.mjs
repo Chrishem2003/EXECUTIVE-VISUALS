@@ -3,7 +3,9 @@ import assert from "node:assert/strict";
 import {
   buildRunwayVideoRouterConfig,
   buildRunwayVideoRouterDryRun,
-  readRunwayVideoRouterDryRun
+  readRunwayVideoRouterDryRun,
+  readRunwayRouterRequestHistoryPage,
+  matchRunwayRouterRequestToTask
 } from "../runway-model-router-contract.mjs";
 
 test("router policy uses a closed allowlist, hard credit ceiling and no capacity fallback",()=>{
@@ -78,4 +80,35 @@ test("dry-run rejects cost overrun, wrong router and incomplete metadata",()=>{
   assert.throws(()=>readRunwayVideoRouterDryRun(payload,{configId:"preview",maxApprovedCredits:100}),error=>error.code==="RUNWAY_ROUTER_BUDGET_EXCEEDED");
   assert.throws(()=>readRunwayVideoRouterDryRun(payload,{configId:"other",maxApprovedCredits:100}),error=>error.code==="RUNWAY_ROUTER_INVALID_RESPONSE");
   assert.throws(()=>readRunwayVideoRouterDryRun({routing:{...payload.routing,estimatedCost:undefined}},{configId:"preview",maxApprovedCredits:100}),error=>error.code==="RUNWAY_ROUTER_INVALID_RESPONSE");
+});
+
+test("router request history is task-correlatable but never settlement evidence",()=>{
+  const page=readRunwayRouterRequestHistoryPage({
+    data:[{
+      id:"history-row",requestId:"request-123",status:"routed",model:"gen4.5",provider:"runway",
+      estimatedCredits:60,taskId:"17f20503-6c24-4c16-946b-35dbbce2af2f",createdAt:"2026-11-04T12:00:00.000Z"
+    }],
+    hasMore:false,nextCursor:null
+  });
+  const match=matchRunwayRouterRequestToTask(page,{taskId:"17f20503-6c24-4c16-946b-35dbbce2af2f",requestId:"request-123"});
+  assert.equal(match.model,"gen4.5");
+  assert.equal(match.estimatedCredits,60);
+  assert.equal(match.evidenceType,"router_request_history");
+  assert.equal(match.billable,false);
+  assert.equal(match.settlementEligible,false);
+});
+
+test("router history rejects malformed rows and ambiguous or missing task correlations",()=>{
+  assert.throws(()=>readRunwayRouterRequestHistoryPage({data:[{requestId:"x"}],hasMore:false}),
+    error=>error.code==="RUNWAY_ROUTER_INVALID_RESPONSE");
+  const page=readRunwayRouterRequestHistoryPage({
+    data:[
+      {requestId:"a",status:"routed",model:"gen4.5",provider:"runway",estimatedCredits:60,taskId:"17f20503-6c24-4c16-946b-35dbbce2af2f",createdAt:"2026-11-04T12:00:00Z"},
+      {requestId:"b",status:"routed",model:"gen4.5",provider:"runway",estimatedCredits:60,taskId:"17f20503-6c24-4c16-946b-35dbbce2af2f",createdAt:"2026-11-04T12:00:01Z"}
+    ],hasMore:false
+  });
+  assert.throws(()=>matchRunwayRouterRequestToTask(page,{taskId:"17f20503-6c24-4c16-946b-35dbbce2af2f"}),
+    error=>error.code==="RUNWAY_ROUTER_HISTORY_AMBIGUOUS");
+  assert.throws(()=>matchRunwayRouterRequestToTask(page,{taskId:"27f20503-6c24-4c16-946b-35dbbce2af2f"}),
+    error=>error.code==="RUNWAY_ROUTER_HISTORY_NOT_FOUND");
 });
