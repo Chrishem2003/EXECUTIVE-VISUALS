@@ -17,6 +17,7 @@
 - The browser receives only an opaque encrypted `ev_supabase_session` cookie marked `HttpOnly`, `SameSite=Strict`, `Path=/`, and `Secure` in production.
 - API requests automatically verify the access token. When it is near expiry or Supabase returns 401, the server rotates the refresh token and replaces the cookie.
 - The encryption key is derived from `SUPABASE_SESSION_SECRET` using SHA-256. Use a unique random secret of at least 32 characters. Do not reuse the Supabase service-role key, publishable key, JWT secret, or another application's secret.
+- Concurrent refreshes are coalesced within one API process to avoid rotating the same refresh token twice during parallel requests. The current single-instance deployment boundary remains in force; do not horizontally scale the API until a shared session store and cross-instance refresh lock are implemented.
 - The secret is server-only. Never expose it in Vite variables, browser storage, logs, commits, or client responses.
 - Same-origin API requests include cookies. The existing strict same-site cookie policy and origin checks remain in force.
 
