@@ -36,7 +36,7 @@
     "verify:shot-continuity": "node --test server/tests/shot-continuity.test.mjs",
     "verify:upscale-benchmark": "node --test server/tests/upscale-benchmark.test.mjs",
     "verify:transformations": "node --test server/tests/transformation-contract.test.mjs server/tests/transformation-plans.test.mjs server/tests/transformation-readiness.test.mjs",
-    "verify:video-pipeline": "node --test server/tests/video-finishing-pipeline.test.mjs server/tests/sqlite-video-pipeline-checkpoints.test.mjs server/tests/cloud-video-pipeline-checkpoints.test.mjs server/tests/cloud-video-finishing-pipeline.test.mjs",
+    "verify:video-pipeline": "node --test server/tests/video-finishing-pipeline.test.mjs server/tests/sqlite-video-pipeline-checkpoints.test.mjs server/tests/cloud-video-pipeline-checkpoints.test.mjs server/tests/cloud-video-finishing-pipeline.test.mjs server/tests/runway-video-finishing-plan.test.mjs",
     "verify:creative-intent": "node --experimental-strip-types --test server/tests/creative-intent.test.mjs",
     "verify:production-readiness": "node --experimental-strip-types --test server/tests/production-readiness.test.mjs",
     "verify:creative-traceability": "node --experimental-strip-types --test server/tests/creative-traceability.test.mjs",
