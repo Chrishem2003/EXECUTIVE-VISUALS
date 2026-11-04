@@ -36,7 +36,7 @@ export function validateTimelineClipDescriptors(clip,frameRate,trackKind){
   if(trackKind&&trackKind!=="video")issues.push("Fade-to-black transitions are supported only on the primary video track.");
   if(transition?.schemaVersion!==1||transition?.type!=="fade-to-black"||transition.edge!==edge||
    !Number.isSafeInteger(transition.durationFrames)||transition.durationFrames<1||transition.durationFrames>240||
-   transition.durationFrames>maxFrames||transition.curve!=="linear")
+   transition.durationFrames>maxFrames||transition.durationFrames/fps>seconds+1e-6||transition.curve!=="linear")
    issues.push("Transitions must be version-1 linear fade-to-black descriptors on the matching edge, lasting 1–240 frames and no longer than the clip.");
  }
  return issues;
