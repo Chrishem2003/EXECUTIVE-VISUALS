@@ -48,7 +48,7 @@ function safeUploadSession(value) {
   try { url = new URL(value); } catch { throw fail("Google Drive returned an invalid resumable upload session.", "GOOGLE_DRIVE_UPLOAD_SESSION_INVALID"); }
   if (url.protocol !== "https:" ||
       !["www.googleapis.com", "upload.googleapis.com"].includes(url.hostname) ||
-      url.username || url.password || url.hash ||
+      url.username || url.password || url.hash || (url.port && url.port !== "443") ||
       url.pathname !== "/upload/drive/v3/files" ||
       !url.searchParams.has("upload_id")) {
     throw fail("Google Drive returned an upload session outside the approved API origin.", "GOOGLE_DRIVE_UPLOAD_SESSION_INVALID");
