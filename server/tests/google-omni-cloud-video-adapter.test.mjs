@@ -91,6 +91,10 @@ test("prepares an authorized job plan, submits once and durably records owner/pr
   const prepared = await h.adapter.prepareInput(job.input, { job });
   const accepted = await h.adapter.submit(prepared, { job });
   assert.equal(accepted.taskId, interactionId);
+  const createCall = h.calls.find(call => call[0] === "create");
+  assert.equal(createCall[2].jobId, jobId);
+  assert.equal(createCall[2].requestHash, requestHash);
+  assert.equal(createCall[2].estimatedCost.amount, 10);
   assert.equal(h.records.get(interactionId).ownerId, ownerId);
   assert.equal(h.records.get(interactionId).projectId, projectId);
   assert.equal(h.records.get(interactionId).parentInteractionId, "v1_parent123456");
