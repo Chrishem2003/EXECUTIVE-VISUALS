@@ -19,7 +19,7 @@ function validateDocument(document){
     let previousEnd=0;
     for(const clip of [...(track.clips||[])].sort((a,b)=>seconds(a.timelineStart)-seconds(b.timelineStart))){
       count++;
-      issues.push(...validateTimelineClipDescriptors(clip,document.frameRate));
+      issues.push(...validateTimelineClipDescriptors(clip,document.frameRate,track.kind));
       if(typeof clip.id!=="string"||!clip.id||ids.has(clip.id))issues.push("Clip IDs must be unique and non-empty.");else ids.add(clip.id);
       if(typeof clip.assetId!=="string"||!UUID.test(clip.assetId))issues.push("Every clip must reference a valid asset ID.");
       if(Number(clip.speed??1)!==1)issues.push("Clip speed changes are not supported.");

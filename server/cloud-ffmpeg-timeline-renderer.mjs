@@ -1,4 +1,4 @@
-import { assertTimelineDescriptorsSupported } from "./timeline-descriptors.mjs";
+import { assertTimelineDescriptorsSupported, buildTimelineVideoFilters } from "./timeline-descriptors.mjs";
 import { randomUUID } from "node:crypto";
 import { extname, join } from "node:path";
 import { mkdir, readFile, writeFile, unlink } from "node:fs/promises";
@@ -55,7 +55,8 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
    else if(mediaType.startsWith("video/"))args.push("-ss",seconds(clip.sourceRange?.start).toFixed(6),"-t",duration.toFixed(6),"-i",asset.path);
    else fail("Only still images and video clips are supported on the primary video track.","UNSUPPORTED_MEDIA_TYPE");
    const label="v"+segmentIndex++;
-   segments.push({label,filter:`[${inputIndex}:v]trim=duration=${duration.toFixed(6)},setpts=PTS-STARTPTS,scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2,fps=${fpsNum}/${fpsDen},format=yuv420p,setsar=1[${label}]`});
+   const clipFilters=[`trim=duration=${duration.toFixed(6)}`,"setpts=PTS-STARTPTS",`scale=${width}:${height}:force_original_aspect_ratio=decrease`,`pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2`,`fps=${fpsNum}/${fpsDen}`,"setsar=1",...buildTimelineVideoFilters(clip,duration,fpsNum/fpsDen),"format=yuv420p"];
+   segments.push({label,filter:`[${inputIndex}:v]${clipFilters.join(",")}[${label}]`});
    inputIndex++;cursor=start+duration;onProgress(Math.min(65,8+Math.round(segmentIndex/Math.max(clips.length,1)*55)));
   }
   if(!segments.length)fail("No renderable clips were found.","EMPTY_TIMELINE");

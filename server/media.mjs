@@ -1,4 +1,4 @@
-import { assertTimelineDescriptorsSupported } from "./timeline-descriptors.mjs";
+import { assertTimelineDescriptorsSupported, buildTimelineVideoFilters } from "./timeline-descriptors.mjs";
 import { spawn, spawnSync } from "node:child_process";
 import { createReadStream } from "node:fs";
 import { mkdir, unlink, readFile, writeFile } from "node:fs/promises";
@@ -250,7 +250,8 @@ async function renderTimelineJob({db,job,mediaRoot,activeProcesses,onProgress}){
     if(asset.media_type.startsWith("image/"))args.push("-loop","1","-t",duration.toFixed(6),"-i",file);
     else if(asset.media_type.startsWith("video/"))args.push("-ss",sourceStart.toFixed(6),"-t",duration.toFixed(6),"-i",file);
     else throw Object.assign(new Error("Only still images and video clips are supported on the primary video track."),{code:"UNSUPPORTED_MEDIA_TYPE"});
-    const filter=`[${inputIndex}:v]trim=duration=${duration.toFixed(6)},setpts=PTS-STARTPTS,scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2,fps=${fpsNum}/${fpsDen},format=yuv420p,setsar=1[${label}]`;
+    const clipFilters=[`trim=duration=${duration.toFixed(6)}`,"setpts=PTS-STARTPTS",`scale=${width}:${height}:force_original_aspect_ratio=decrease`,`pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2`,`fps=${fpsNum}/${fpsDen}`,"setsar=1",...buildTimelineVideoFilters(clip,duration,fpsNum/fpsDen),"format=yuv420p"];
+    const filter=`[${inputIndex}:v]${clipFilters.join(",")}[${label}]`;
     segments.push({label,filter});
     inputIndex++;cursor=start+duration;
     onProgress(Math.min(70,10+Math.round(segmentIndex/Math.max(clips.length,1)*55)));

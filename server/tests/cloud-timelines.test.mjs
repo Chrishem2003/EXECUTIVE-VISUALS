@@ -79,7 +79,7 @@ test("lists active cloud timelines for an authorized project with bounded pagina
 });
 test("cloud timeline repository persists valid versioned edit descriptors",async()=>{
  const f=setup();
- const clip={...document.tracks[0].clips[0],effects:[{schemaVersion:1,id:"color-1",type:"color",enabled:true,parameters:{brightness:0,contrast:1,saturation:1}}],keyframes:[{schemaVersion:1,id:"opacity-1",property:"opacity",frame:0,value:1,interpolation:"linear"}],transitionIn:{schemaVersion:1,id:"fade-1",type:"fade-to-black",edge:"in",durationFrames:10,curve:"linear"}};
+ const clip={...document.tracks[0].clips[0],effects:[{schemaVersion:1,id:"color-1",type:"color",enabled:true,parameters:{brightness:1,contrast:1,saturation:1}}],keyframes:[{schemaVersion:1,id:"opacity-1",property:"opacity",frame:0,value:1,interpolation:"linear"}],transitionIn:{schemaVersion:1,id:"fade-1",type:"fade-to-black",edge:"in",durationFrames:10,curve:"linear"}};
  const saved=await f.repo.create({ownerId:owner,projectId:project,name:"Descriptor timeline",timeline:{...document,tracks:[{...document.tracks[0],clips:[clip]}]}});
  assert.equal(saved.timeline.tracks[0].clips[0].effects[0].type,"color");
  assert.equal(saved.timeline.tracks[0].clips[0].keyframes[0].property,"opacity");
@@ -90,7 +90,7 @@ test("cloud timeline repository rejects malformed effect, keyframe and transitio
  const f=setup();
  const baseClip=document.tracks[0].clips[0];
  const invalids=[
-  {...baseClip,effects:[{schemaVersion:1,id:"bad-color",type:"color",enabled:true,parameters:{brightness:2,contrast:1,saturation:1}}]},
+  {...baseClip,effects:[{schemaVersion:1,id:"bad-color",type:"color",enabled:true,parameters:{brightness:2.5,contrast:1,saturation:1}}]},
   {...baseClip,keyframes:[{schemaVersion:1,id:"bad-key",property:"opacity",frame:31,value:1,interpolation:"linear"}]},
   {...baseClip,transitionIn:{schemaVersion:1,id:"bad-fade",type:"fade-to-black",edge:"out",durationFrames:10,curve:"linear"}}
  ];

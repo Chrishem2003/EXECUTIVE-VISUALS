@@ -12,9 +12,11 @@ Descriptors are attached to the existing `TimelineClip`; they do not create a pa
 
 `effects[]` currently accepts a version-1 `color` descriptor with bounded parameters:
 
-- Brightness: -1 to +1
+- Brightness multiplier: 0 to 2
 - Contrast: 0 to 2
 - Saturation: 0 to 3
+
+Color effects are available on the primary video track. The clip inspector exposes enablement and bounded values. Browser preview uses CSS color filters; local and cloud master renders compile the same descriptor to FFmpeg LUT/EQ filters. Visual parity still requires fixture-based review across codecs and browser engines.
 
 ### Keyframes
 
@@ -40,15 +42,16 @@ Frames are integer positions relative to the clip and must remain within its dur
 - Timeline variant comparisons report effect, keyframe and transition changes.
 - Local and cloud master renderers fail closed when descriptors are present. They do not silently discard edits that they cannot reproduce.
 
-## Not yet implemented
+## Current execution boundary
 
-This milestone is a typed, durable editing foundation, not a claim that these effects are already rendered. The current renderers reject non-empty effect/keyframe/transition descriptors until the corresponding preview and FFmpeg implementations pass parity tests.
+Color adjustment and linear fade-to-black transitions now have clip-inspector controls, browser preview evaluation and local/cloud FFmpeg filter compilation. The cloud FFmpeg integration test exercises color plus fade-in/out in an actual generated master. Browser CSS preview is an approximation; the FFmpeg master remains authoritative.
+
+Keyframe descriptors are validated and preserved but are still rejected by both master renderers until animation evaluation and preview/master parity are implemented. Crossfades, wipes, motion paths and animated properties are not yet shipped.
 
 Next E2 work:
-1. Implement color effect rendering and browser preview.
-2. Implement fade-to-black preview/master parity.
-3. Add a non-destructive inspector with undo/redo and descriptor history.
-4. Implement keyframe interpolation and supported animated properties.
-5. Add overlap-aware crossfades and transition handles only after the sequence model supports their timing correctly.
+1. Verify color and fade output parity across local/cloud FFmpeg, browser preview and supported codecs.
+2. Add undo/redo and descriptor history to the non-destructive inspector.
+3. Implement keyframe interpolation and supported animated properties.
+4. Add overlap-aware crossfades and transition handles only after the sequence model supports their timing correctly.
 
 No production deployment, database migration or paid provider activation is part of this work.

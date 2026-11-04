@@ -2,8 +2,8 @@
 
 **Date:** 2 November 2026  
 **Repository:** CHRISHEM EXCLUSIVE VISUALS  
-**Working branch:** `feat/timeline-descriptor-schema`  
-**Status:** E1 local/cloud playback, verified proxy-first selection, synchronized multi-track audio, mute/solo, still-image overlays and SRT/VTT caption preview implemented. E2 versioned effects/keyframe/transition descriptors now validate, persist through OTIO metadata and appear in variant comparisons; render/preview execution and editor controls remain outstanding. See [Timeline edit descriptors](TIMELINE-EDIT-DESCRIPTORS.md). See [Sequence preview engine](SEQUENCE-PREVIEW-ENGINE.md) and [Private cloud media streaming](PRIVATE-CLOUD-MEDIA-STREAMING.md).
+**Working branch:** `feat/timeline-color-fade-effects`  
+**Status:** E1 local/cloud playback, verified proxy-first selection, synchronized multi-track audio, mute/solo, still-image overlays and SRT/VTT caption preview implemented. E2 color adjustment and linear fade-to-black now have descriptor validation, clip-inspector controls, browser preview evaluation and local/cloud FFmpeg filter compilation. Keyframe descriptors are preserved but still fail closed in renderers. See [Timeline edit descriptors](TIMELINE-EDIT-DESCRIPTORS.md). See [Sequence preview engine](SEQUENCE-PREVIEW-ENGINE.md) and [Private cloud media streaming](PRIVATE-CLOUD-MEDIA-STREAMING.md).
 
 ## Objective
 
