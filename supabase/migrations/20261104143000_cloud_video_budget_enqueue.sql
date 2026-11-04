@@ -336,6 +336,7 @@ declare
   submission executive_visuals.video_generation_submissions;
   target_submission_state text;
   target_budget_state text;
+  output_asset_id uuid;
 begin
   if p_worker_id is null or char_length(btrim(p_worker_id)) not between 1 and 128
      or p_status is null or p_status not in ('succeeded','partial','failed','cancelled')
@@ -400,6 +401,30 @@ begin
   from executive_visuals.video_generation_submissions s
   where s.job_id = p_job_id
   for update;
+  if p_status in ('succeeded','partial') then
+    if p_output is null
+       or jsonb_typeof(p_output -> 'assetIds') <> 'array'
+       or jsonb_array_length(p_output -> 'assetIds') not between 1 and 10
+       or p_output ->> 'providerTaskId' is distinct from submission.provider_task_id then
+      raise exception 'VIDEO_JOB_OUTPUT_ASSET_RECEIPTS_INVALID';
+    end if;
+    for output_asset_id in
+      select value::uuid from jsonb_array_elements_text(p_output -> 'assetIds') as asset_ids(value)
+    loop
+      if not exists (
+        select 1 from executive_visuals.assets a
+        where a.id = output_asset_id
+          and a.owner_id = current_job.owner_id
+          and a.project_id is not distinct from current_job.project_id
+          and a.storage_bucket = 'executive-visuals-media'
+          and a.media_type like 'video/%'
+          and a.deleted_at is null
+      ) then
+        raise exception 'VIDEO_JOB_OUTPUT_ASSET_SCOPE_INVALID';
+      end if;
+    end loop;
+  end if;
+
   if submission.id is not null then
     if p_status in ('succeeded','partial')
        and (submission.state <> 'submitted' or submission.provider_task_id is null) then
