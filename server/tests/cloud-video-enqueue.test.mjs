@@ -1,12 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createCloudVideoEnqueue } from "../cloud-video-enqueue.mjs";
+import { estimateVideoGenerationCost } from "../video-generation-cost-estimator.mjs";
 
 const base = { url: "https://example.supabase.co", serviceRoleKey: "cloud-video-test-secret" };
 const ownerId = "123e4567-e89b-42d3-a456-426614174000";
 const projectId = "423e4567-e89b-42d3-a456-426614174000";
 const requestHash = "a".repeat(64);
-const input = { projectId, provider: "runway", model: "gen4.5", requestHash, prompt: "A test scene" };
+const input = { projectId, provider: "runway", model: "gen4.5", requestHash, durationSeconds: 5, prompt: "A test scene" };
 const approvalId = "523e4567-e89b-42d3-a456-426614174000";
 const resultRow = {
   job_id: "623e4567-e89b-42d3-a456-426614174000",
@@ -133,6 +134,12 @@ test("enqueue rejects mismatched request scope and invalid budget inputs before 
   const client = createCloudVideoEnqueue({ ...base, fetchImpl: async () => { calls++; return response([resultRow]); } });
   await assert.rejects(() => client.enqueue(args({ input: { ...input, requestHash: "b".repeat(64) } })), /does not match/);
   await assert.rejects(() => client.enqueue(args({ reservedAmount: 0 })), /positive bounded/);
+  await assert.rejects(() => client.enqueue(args({ reservedAmount: 0.59 })), error =>
+    error.code === "VIDEO_BUDGET_BELOW_PROVIDER_ESTIMATE" && error.estimate.amount === 0.6
+  );
+  await assert.rejects(() => client.enqueue(args({ input: { ...input, outputFormat: "prores" } })), /MP4 output only/);
+  await assert.rejects(() => client.enqueue(args({ input: { ...input, durationSeconds: 11 } })), /pricing bounds/);
+  await assert.rejects(() => client.enqueue(args({ currency: "EUR" })), /must use USD/);
   await assert.rejects(() => client.enqueue(args({ currency: "usd" })), /three-letter/);
   await assert.rejects(() => client.enqueue(args({ idempotencyKey: "bad key" })), /invalid format/);
   await assert.rejects(() => client.enqueue(args({ input: [] })), /must be an object/);
@@ -156,4 +163,24 @@ test("enqueue fails closed on malformed RPC results and redacts server credentia
 test("cloud enqueue configuration rejects insecure remote endpoints", () => {
   assert.throws(() => createCloudVideoEnqueue({ url: "http://remote.example", serviceRoleKey: "secret" }), /HTTPS/);
   assert.throws(() => createCloudVideoEnqueue({ url: base.url }), /SUPABASE_SERVICE_ROLE_KEY/);
+});
+
+test("Runway Gen-4.5 estimate uses the documented credits-per-second rate", () => {
+  assert.deepEqual(estimateVideoGenerationCost({
+    provider: "runway", model: "gen4.5", durationSeconds: 5
+  }), {
+    provider: "runway", model: "gen4.5", durationSeconds: 5,
+    outputFormat: "mp4", credits: 60, currency: "USD", amount: 0.6,
+    basis: "provider_list_price_estimate", creditsPerSecond: 12,
+    usdPerCredit: 0.01, pricingSource: "https://dev.runwayml.com/pricing"
+  });
+  assert.throws(() => estimateVideoGenerationCost({
+    provider: "runway", model: "gen4.5", durationSeconds: 1
+  }), error => error.code === "VIDEO_PRICE_DURATION_INVALID");
+  assert.throws(() => estimateVideoGenerationCost({
+    provider: "runway", model: "gen4.5", durationSeconds: 5, outputFormat: "prores"
+  }), error => error.code === "VIDEO_PRICE_OUTPUT_FORMAT_UNSUPPORTED");
+  assert.throws(() => estimateVideoGenerationCost({
+    provider: "luma", model: "ray-3.2", durationSeconds: 5
+  }), error => error.code === "VIDEO_PRICE_UNVERIFIED");
 });
