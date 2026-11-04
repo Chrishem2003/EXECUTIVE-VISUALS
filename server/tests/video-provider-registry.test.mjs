@@ -26,6 +26,7 @@ test("Runway catalog exposes implemented Gen-4.5 text-to-video and image-to-vide
   assert.equal(model.availability, "disabled");
   assert.equal(model.capabilities.textToVideo, true);
   assert.equal(model.capabilities.imageToVideo, true);
+  assert.equal(model.capabilities.startFrame, true);
   assert.equal(model.capabilities.seed, true);
   assert.deepEqual(model.capabilities.aspectRatios, ["16:9", "9:16"]);
   assert.equal(model.capabilities.minDurationSeconds, 2);
@@ -64,6 +65,29 @@ test("retired Sora API is unavailable and cannot be selected", () => {
   assert.equal(model.availability, "unavailable");
   assert.equal(model.constraints.apiShutdownDate, "2026-09-24");
   assert.equal(model.constraints.replacementVerified, false);
+  assert.equal(listSelectableVideoProviderModels().length, 0);
+});
+
+
+test("Runway Dev catalog-only models are discoverable but cannot be selected", () => {
+  const expected = [
+    ["gen4_turbo", "imageToVideo"],
+    ["aleph2", "videoEdit"],
+    ["kling_4", "videoToVideo"],
+    ["seedance2_5", "videoToVideo"],
+    ["gemini_omni_flash_1.1", "nativeAudio"]
+  ];
+  for (const [id, capability] of expected) {
+    const model = getVideoProviderModel("runway", id);
+    assert.ok(model, id + " must be in the Runway Dev catalog");
+    assert.equal(model.availability, "disabled");
+    assert.equal(model.implementationState, "catalog_only");
+    assert.equal(model.capabilities[capability], true);
+  }
+  assert.equal(getVideoProviderModel("runway", "kling_4").constraints.apiModelId, "kling_4");
+  assert.equal(getVideoProviderModel("runway", "seedance2_5").constraints.draftEnhancement, "1080p");
+  assert.equal(getVideoProviderModel("runway", "gemini_omni_flash_1.1").constraints.billingModel,
+    "resolution_plus_reference_images_and_input_video_duration");
   assert.equal(listSelectableVideoProviderModels().length, 0);
 });
 

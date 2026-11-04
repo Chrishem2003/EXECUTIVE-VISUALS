@@ -34,7 +34,7 @@ export const VIDEO_PROVIDER_CATALOG = freeze([
           nativeAudio: false,
           negativePrompt: false,
           seed: true,
-          startFrame: false,
+          startFrame: true,
           endFrame: false,
           motionReference: false,
           referenceImages: false,
@@ -50,6 +50,115 @@ export const VIDEO_PROVIDER_CATALOG = freeze([
           outputUrlTemporary: true,
           minimumPollIntervalMs: 5000,
           cancellation: "best_effort"
+        }
+      },
+      {
+        id: "gen4_turbo",
+        name: "Gen-4 Turbo",
+        availability: "disabled",
+        implementationState: "catalog_only",
+        capabilities: {
+          textToVideo: false,
+          imageToVideo: true,
+          videoToVideo: false,
+          videoEdit: false,
+          nativeAudio: false
+        },
+        constraints: {
+          apiModelId: "gen4_turbo",
+          creditsPerSecond: 5,
+          outputUrlTemporary: true,
+          source: "https://docs.dev.runwayml.com/guides/models/"
+        }
+      },
+      {
+        id: "aleph2",
+        name: "Aleph 2.0",
+        availability: "disabled",
+        implementationState: "catalog_only",
+        capabilities: {
+          textToVideo: false,
+          imageToVideo: false,
+          videoToVideo: true,
+          videoEdit: true,
+          keyframeGuided: true
+        },
+        constraints: {
+          apiModelId: "aleph2",
+          creditsPerSecond: 28,
+          minimumCreditsPerGeneration: 56,
+          source: "https://docs.dev.runwayml.com/guides/models/"
+        }
+      },
+      {
+        id: "kling_4",
+        name: "Kling 4.0 via Runway Dev",
+        availability: "disabled",
+        implementationState: "catalog_only",
+        originProvider: "kling",
+        capabilities: {
+          textToVideo: true,
+          imageToVideo: true,
+          videoToVideo: true,
+          videoEdit: true,
+          nativeAudio: true,
+          referenceImages: true,
+          referenceVideos: true,
+          resolutions: ["720p", "1080p"],
+          minDurationSeconds: 3,
+          maxDurationSeconds: 30
+        },
+        constraints: {
+          apiModelId: "kling_4",
+          billingModel: "resolution_and_input_output_video_duration",
+          temporaryDiscountEnds: "2026-11-30",
+          source: "https://docs.dev.runwayml.com/guides/pricing/"
+        }
+      },
+      {
+        id: "seedance2_5",
+        name: "Seedance 2.5 via Runway Dev",
+        availability: "disabled",
+        implementationState: "catalog_only",
+        originProvider: "bytedance",
+        capabilities: {
+          textToVideo: true,
+          imageToVideo: true,
+          videoToVideo: true,
+          nativeAudio: true,
+          referenceImages: true,
+          referenceVideos: true,
+          resolutions: ["480p", "720p", "1080p"],
+          maxDurationSeconds: 30
+        },
+        constraints: {
+          apiModelId: "seedance2_5",
+          draftPreview: true,
+          draftEnhancement: "1080p",
+          billingModel: "resolution_output_plus_input_and_reference_video_duration",
+          minimumCreditsPerGeneration: 80,
+          source: "https://docs.dev.runwayml.com/guides/models/"
+        }
+      },
+      {
+        id: "gemini_omni_flash_1.1",
+        name: "Gemini Omni Flash 1.1 via Runway Dev",
+        availability: "disabled",
+        implementationState: "catalog_only",
+        originProvider: "google",
+        capabilities: {
+          textToVideo: true,
+          imageToVideo: true,
+          videoToVideo: true,
+          nativeAudio: true,
+          referenceImages: true,
+          referenceVideos: true,
+          resolutions: ["360p", "720p", "1080p", "2160p"]
+        },
+        constraints: {
+          apiModelId: "gemini_omni_flash_1.1",
+          billingModel: "resolution_plus_reference_images_and_input_video_duration",
+          source: "https://docs.dev.runwayml.com/guides/pricing/"
         }
       }
     ]
