@@ -131,8 +131,7 @@ export function createCloudVideoWorker({
   deferSeconds = 30
 } = {}) {
   if (!ledger || (!adapter && typeof resolveAdapter !== "function") ||
-      (adapter && typeof resolveAdapter === "function") ||
-      typeof ingestOutputs !== "function" || typeof resolveActualCost !== "function") {
+      (adapter && typeof resolveAdapter === "function")) {
     throw new Error("Cloud video worker requires a Postgres ledger, provider adapter, private ingestion and cost resolver.");
   }
   return Object.freeze({
