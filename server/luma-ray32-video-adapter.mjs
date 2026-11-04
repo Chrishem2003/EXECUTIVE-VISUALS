@@ -150,6 +150,14 @@ export function createLumaRay32Adapter({
         const outputUrls = Array.isArray(body.output)
           ? body.output.filter(item => item?.type === "video" && typeof item.url === "string").map(item => item.url)
           : [];
+        if (outputUrls.length < 1 || outputUrls.length > 3 || outputUrls.some(value => {
+          try {
+            const url = new URL(value);
+            return url.protocol !== "https:" || url.username || url.password || value.length > 4096;
+          } catch { return true; }
+        })) {
+          throw fail("Luma completed without a valid bounded HTTPS video output.", "LUMA_VIDEO_OUTPUT_INVALID");
+        }
         return { taskId, status: "succeeded", outputUrls, usage: body.usage || null, providerGenerationId: body.id };
       }
       return { taskId, status: state === "queued" ? "queued" : "running", providerState: typeof state === "string" ? state.slice(0, 80) : "unknown" };
