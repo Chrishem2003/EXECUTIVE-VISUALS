@@ -206,3 +206,12 @@ Architecture decision: keep Executive Visuals' cross-provider router as the poli
 The live API reference lists additional model identifiers beyond the initial registry snapshot, including `seedance2_5`, `kling_4`, `happyhorse_1_0`, `wan3`, `wan3_prime`, `h3_max`, `grok_imagine_1_5`, and `grok_imagine_1_5_lite`, alongside `seedance2`, `seedance2_fast`, `seedance2_mini`, `veo3.1`, and other models.
 
 These identifiers are discovery evidence only. Do not add them as selectable models or estimate costs until each model's endpoint compatibility, parameters, constraints, pricing, output lifecycle, moderation behavior and actual adapter tests are verified independently.
+
+
+### Luma Ray 3.2 documentation discrepancy — HDR and 10-second multi-keyframes
+
+The generation guide says the multi-keyframe path lifts the legacy 10-second anchor-frame HDR restriction. However, the current pricing page explicitly says 10-second HDR video generation is rejected and only lists 5-second HDR rates. Because the adapter must never submit an unpriced paid request, Executive Visuals deliberately rejects 10-second HDR generation (including multi-keyframe) until Luma clarifies the discrepancy and publishes a supported price. Standard 10-second SDR multi-keyframe generation remains supported.
+
+References:
+- https://docs.agents.lumalabs.ai/guides/videos/generation/
+- https://docs.agents.lumalabs.ai/guides/pricing/
