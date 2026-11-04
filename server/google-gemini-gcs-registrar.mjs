@@ -160,6 +160,27 @@ export function createGoogleGeminiGcsFilesRegistrar({
   }
 
   return Object.freeze({
+    async deleteAssetRegistration({ assetId, ownerId, projectId: assetProjectId = null, mediaType } = {}) {
+      let resolved;
+      try { resolved = await resolvePrivateGcsAsset({ assetId, ownerId, projectId: assetProjectId }); }
+      catch { throw fail("Private GCS asset resolution failed.", "GEMINI_GCS_ASSET_NOT_FOUND"); }
+      const asset = validAsset(resolved?.asset, { assetId, ownerId, projectId: assetProjectId, mediaType, maxBytes });
+      const uri = safeGcsUri(resolved.gcsUri, allowedBuckets);
+      let authorized = false;
+      try {
+        const decision = await authorizePrivateAsset({ assetId, ownerId, projectId: assetProjectId, asset, gcsUri: uri });
+        authorized = decision === true || (decision && decision.id === assetId &&
+          decision.ownerId === ownerId && (decision.projectId || null) === (assetProjectId || null));
+      } catch {}
+      if (!authorized) throw fail("GCS object is not authorized for this owner and project.", "GEMINI_GCS_ASSET_FORBIDDEN");
+      const mapping = await repository.findProviderFile({ assetId, ownerId, projectId: assetProjectId, mimeType: mediaType });
+      if (!mapping || mapping.sourceType !== "gcs_registration" || mapping.sourceUri !== uri) return false;
+      const accessToken = await token();
+      await deleteProviderFile(mapping.name, accessToken);
+      await repository.deleteProviderFileRecord({ recordId: mapping.id, name: mapping.name });
+      return true;
+    },
+
     async registerAsset({ assetId, ownerId, projectId: assetProjectId = null, mediaType } = {}) {
       for (const [value, label] of [[assetId, "Asset ID"], [ownerId, "Owner ID"], [mediaType, "MIME type"]]) {
         if (typeof value !== "string" || !value.trim() || value.length > 256) throw new Error(label + " is required.");
