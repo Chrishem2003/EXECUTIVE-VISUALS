@@ -67,3 +67,26 @@ This is metadata-only. It does not read a Runway key, submit tasks, make paid re
 - Inputs: https://docs.dev.runwayml.com/assets/inputs/
 - Pricing: https://docs.dev.runwayml.com/guides/pricing/
 - Model Router: https://docs.dev.runwayml.com/model-routers/configuration/
+
+
+## Runway video finishing research (separate from Seedance generation)
+
+The current Runway API exposes dedicated finishing operations:
+
+- `magnific_video_upscaler_creative` on `POST /v1/video_upscale`: source video up to 30 seconds; 720p, 1k, 2k or 4k output; billing is per output frame.
+- `enhance_frame_rate` on `POST /v1/video_upscale`: input up to 300 seconds; documented output rates are 24, 25, 30, 48, 50, 60, 120, 23.98, 29.97 and 59.94 fps; billing is one credit per two seconds of input.
+- `ruby` on `POST /v1/video_to_hdr`: SDR source up to 30 seconds and 4K; HDR10, HLG, ProRes and EXR delivery profiles; billing is 20 credits/second, or 40 credits/second above 4 megapixels.
+
+The API supports task-based chaining. For a cost-efficient finishing plan, upscale at the source frame rate first, retime second, and apply Ruby HDR last. The upscaler's `fpsBoost` is intentionally disabled in the initial plan builder because it changes output frame count and therefore changes per-frame billing.
+
+Executive Visuals now has `server/runway-video-finishing-plan.mjs`, an estimate-only plan builder that:
+- Requires verified source duration, frame rate, dimensions, dynamic range, media type and SHA-256.
+- Calculates frame-based upscaler cost, input-duration retiming cost and source-pixel-tier HDR cost.
+- Converts provider credits into micro-USD budget units.
+- Enforces upscale → frame-rate → HDR order.
+- Requires explicit post-upscale dimensions before estimating a later Ruby step.
+- Marks all steps remote and requires the existing pipeline's explicit remote approval and full-budget gate.
+
+This is a planning contract only. It does not load a Runway credential, upload media, submit tasks, reserve funds or activate any provider adapter.
+
+Official API workflow reference: https://dev.runwayml.com/learn/edit-and-finish-video-api
