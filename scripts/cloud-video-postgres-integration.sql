@@ -3,8 +3,8 @@
 insert into auth.users(id) values
  ('123e4567-e89b-42d3-a456-426614174000'),
  ('223e4567-e89b-42d3-a456-426614174000');
-insert into executive_visuals.projects(id,owner_id) values
- ('323e4567-e89b-42d3-a456-426614174000','123e4567-e89b-42d3-a456-426614174000');
+insert into executive_visuals.projects(id,owner_id,name) values
+ ('323e4567-e89b-42d3-a456-426614174000','123e4567-e89b-42d3-a456-426614174000','Cloud video PostgreSQL test');
 
 select set_config('request.jwt.claim.sub','123e4567-e89b-42d3-a456-426614174000',false);
 set role authenticated;
@@ -127,12 +127,15 @@ select executive_visuals.record_video_generation_submission(
  (select job_id from test_context),'video-worker-pg-test','runway-task-pg-test','{"acceptedStatus":"queued"}'::jsonb
 );
 
-insert into executive_visuals.assets(id,owner_id,project_id,storage_bucket,media_type)
-values (
+insert into executive_visuals.assets(
+ id,owner_id,project_id,original_name,media_type,byte_size,sha256,storage_bucket,object_path
+) values (
  '723e4567-e89b-42d3-a456-426614174000',
  '123e4567-e89b-42d3-a456-426614174000',
  '323e4567-e89b-42d3-a456-426614174000',
- 'executive-visuals-media','video/mp4'
+ 'generated-video-1.mp4','video/mp4',1024,repeat('a',64),
+ 'executive-visuals-media',
+ '323e4567-e89b-42d3-a456-426614174000/723e4567-e89b-42d3-a456-426614174000/original.mp4'
 );
 
 select executive_visuals.finish_video_generation_job(
@@ -142,29 +145,23 @@ select executive_visuals.finish_video_generation_job(
  null,0.75
 );
 
-do $final_state$
-declare
- policy_row executive_visuals.video_generation_budget_policies;
- reservation_row executive_visuals.video_generation_budget_reservations;
- job_row executive_visuals.jobs;
- submission_row executive_visuals.video_generation_submissions;
- target_job uuid;
-begin
- select job_id into target_job from test_context;
- select * into policy_row from executive_visuals.video_generation_budget_policies
- where id='423e4567-e89b-42d3-a456-426614174000';
- select * into reservation_row from executive_visuals.video_generation_budget_reservations where job_id=target_job;
- select * into job_row from executive_visuals.jobs where id=target_job;
- select * into submission_row from executive_visuals.video_generation_submissions where job_id=target_job;
- if policy_row.reserved_amount <> 0 or policy_row.spent_amount <> 0.75 then raise exception 'budget counters did not settle atomically'; end if;
- if reservation_row.state <> 'settled' or reservation_row.actual_amount <> 0.75 then raise exception 'reservation did not settle'; end if;
- if job_row.status <> 'succeeded' or job_row.lease_owner is not null then raise exception 'job did not finish and release its lease'; end if;
- if submission_row.state <> 'succeeded' or submission_row.provider_task_id <> 'runway-task-pg-test' then raise exception 'submission ledger did not terminalize'; end if;
- if (select count(*) from executive_visuals.video_generation_usage_reservations) <> 1 then raise exception 'usage reservation missing or duplicated'; end if;
-end
-$final_state$;
+select 1 / case when
+  policy_row.reserved_amount = 0 and policy_row.spent_amount = 0.75
+  and reservation_row.state = 'settled' and reservation_row.actual_amount = 0.75
+  and job_row.status = 'succeeded' and job_row.lease_owner is null
+  and submission_row.state = 'succeeded'
+  and submission_row.provider_task_id = 'runway-task-pg-test'
+  and (select count(*) from executive_visuals.video_generation_usage_reservations) = 1
+then 1 else 0 end as final_state_assertion
+from executive_visuals.video_generation_budget_policies policy_row
+cross join executive_visuals.video_generation_budget_reservations reservation_row
+cross join executive_visuals.jobs job_row
+cross join executive_visuals.video_generation_submissions submission_row
+where policy_row.id='423e4567-e89b-42d3-a456-426614174000'
+  and reservation_row.job_id=:'job_id'::uuid
+  and job_row.id=:'job_id'::uuid
+  and submission_row.job_id=:'job_id'::uuid;
 
--- Verify an actual provider cost above the reservation rolls back all settlement writes.
 reset role;
 select set_config('request.jwt.claim.sub','123e4567-e89b-42d3-a456-426614174000',false);
 set role authenticated;
