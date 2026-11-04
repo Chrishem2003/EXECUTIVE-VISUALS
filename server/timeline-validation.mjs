@@ -1,3 +1,4 @@
+import { validateTimelineClipDescriptors } from "./timeline-descriptors.mjs";
 import { getAccessibleAsset } from "./db.mjs";
 const seconds=time=>Number(time?.value)/Number(time?.rate);
 export function validateTimelineDocument(timeline,db,ownerId){
@@ -14,6 +15,7 @@ export function validateTimelineDocument(timeline,db,ownerId){
   let end=0;
   for(const clip of [...(track.clips||[])].sort((a,b)=>seconds(a.timelineStart)-seconds(b.timelineStart))){
    clipCount++;
+   issues.push(...validateTimelineClipDescriptors(clip,timeline.frameRate));
    if(!clip.id||ids.has(clip.id))issues.push("Clip and track IDs must be unique and non-empty.");ids.add(clip.id);
    const asset=clip.assetId?getAccessibleAsset(db,ownerId,clip.assetId,true):null;
    if(!asset)issues.push("Every timeline clip must reference a source asset accessible to this account.");
