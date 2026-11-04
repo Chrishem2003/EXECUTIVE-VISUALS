@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { rational } from "../../src/core/timeline.ts";
-import { clipSourceSecondsAtTimelineFrame, clampPreviewSeconds, frameToSeconds, secondsToFrame, stepPreviewSeconds } from "../../src/core/timeline-preview.ts";
+import { clipSourceSecondsAtTimelineFrame, clampPreviewSeconds, frameToSeconds, getTimelineDurationFrames, resolveTimelineFrame, secondsToFrame, stepPreviewSeconds } from "../../src/core/timeline-preview.ts";
 
 const rate={numerator:30000,denominator:1001};
 const clip={id:"c",assetId:"a",name:"clip",sourceRange:{start:rational(90,30),duration:rational(150,30)},timelineStart:rational(30,24),duration:rational(120,24),enabled:true};
@@ -16,6 +16,46 @@ test("clip preview maps timeline frames to source time and respects source trims
  assert.equal(clipSourceSecondsAtTimelineFrame(clip,30,{numerator:24,denominator:1}),3);
  assert.equal(clipSourceSecondsAtTimelineFrame(clip,54,{numerator:24,denominator:1}),4);
  assert.equal(clipSourceSecondsAtTimelineFrame(clip,500,{numerator:24,denominator:1}),8);
+});
+
+const makeClip=(id,trackId,start,duration,sourceStart=0,speed=1)=>({
+ id,assetId:"asset-"+id,name:id,sourceRange:{start:rational(sourceStart,1),duration:rational(20,1)},
+ timelineStart:rational(start,24),duration:rational(duration,24),enabled:true,speed,metadata:{trackId}
+});
+const makeTimeline=(tracks)=>({
+ id:"timeline",projectId:"project",name:"Sequence",revision:1,frameRate:{numerator:24,denominator:1},
+ width:1920,height:1080,pixelAspectRatio:1,tracks,markers:[],createdAt:"2026-01-01T00:00:00.000Z",updatedAt:"2026-01-01T00:00:00.000Z"
+});
+
+test("sequence resolver returns all active layers in track order with correct source-time mapping",()=>{
+ const video=makeClip("video", "v1",24,48,3,2);
+ const overlay=makeClip("overlay","o1",36,24,7);
+ const muted=makeClip("muted","a1",0,120);
+ const timeline=makeTimeline([
+  {id:"v1",name:"Video",kind:"video",enabled:true,locked:false,clips:[video]},
+  {id:"o1",name:"Overlay",kind:"overlay",enabled:true,locked:false,clips:[overlay]},
+  {id:"a1",name:"Muted track",kind:"audio",enabled:false,locked:false,clips:[muted]}
+ ]);
+ const active=resolveTimelineFrame(timeline,48);
+ assert.deepEqual(active.map(item=>item.clip.id),["video","overlay"]);
+ assert.equal(active[0].sourceSeconds,5);
+ assert.equal(active[1].sourceSeconds,7.5);
+ assert.equal(active[0].timelineSeconds,2);
+});
+
+test("sequence resolver treats clip out points as exclusive and respects disabled clips",()=>{
+ const timeline=makeTimeline([{id:"v",name:"Video",kind:"video",enabled:true,locked:false,clips:[
+  makeClip("first","v",0,24),{...makeClip("disabled","v",24,24),enabled:false}
+ ]}]);
+ assert.equal(resolveTimelineFrame(timeline,23).length,1);
+ assert.equal(resolveTimelineFrame(timeline,24).length,0);
+});
+
+test("sequence duration includes enabled tracks and rounds up fractional final frames",()=>{
+ const timeline=makeTimeline([{id:"v",name:"Video",kind:"video",enabled:true,locked:false,clips:[
+  {...makeClip("fractional","v",0,25),duration:rational(25.2,24)}
+ ]},{id:"off",name:"Off",kind:"audio",enabled:false,locked:false,clips:[makeClip("ignored","off",0,240)]}]);
+ assert.equal(getTimelineDurationFrames(timeline),26);
 });
 
 test("preview seek clamps to source in/out and frame steps use source rate",()=>{
