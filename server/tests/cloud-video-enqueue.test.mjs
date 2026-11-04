@@ -272,3 +272,15 @@ test("Google Omni enqueue rejects under-reservation, unsupported resolution, inv
     error.code==="VIDEO_GENERATION_UNSUPPORTED_CAPABILITY" || error.message.includes("endFrame"));
   assert.equal(calls,0);
 });
+
+test("Google Omni enqueue normalizes provider-default resolution to the verified 720p budget tier", async () => {
+  let captured;
+  const client=createCloudVideoEnqueue({
+    ...base,env:googleEnv,
+    fetchImpl:async(url,options)=>{captured=JSON.parse(options.body);return response([resultRow]);}
+  });
+  const input={...googleInput};delete input.resolution;
+  await client.enqueue(googleArgs({input}));
+  assert.equal(captured.p_reserved_amount,2.586464);
+  assert.equal(captured.p_input.resolution,undefined);
+});
