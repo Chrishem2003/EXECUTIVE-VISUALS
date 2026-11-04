@@ -302,3 +302,17 @@ Added the FAL async client, exact-model cloud adapter and request-level billing 
 Reference-asset generation remains fail-closed unless an authenticated project-scoped `prepareInput` resolver is explicitly supplied. The output host allowlist remains mandatory and must include the FAL media hosts. Construction performs no provider or Supabase requests. FAL queue, billing and runtime registration contract tests are included in the cloud-queue suite.
 
 The separate PR #56 remains an independently reviewable implementation branch; this stacked runtime branch includes the provider modules needed for a self-contained integration path, pending final CI and code review.
+
+
+### Runway Gen-4.5 task adapter — 2026-11-05
+
+Added `createRunwayCloudVideoAdapter` for the official Gen-4.5 text-to-video task lifecycle: one-shot `POST /v1/text_to_video`, durable task-ID persistence, `GET /v1/tasks/{id}` polling, terminal state mapping and private output handoff. The adapter pins `X-Runway-Version: 2024-11-06`, requires both gateway/Runway remote opt-ins, and fails closed for unsupported model, duration, ratio and unresolved private references. Runway output URLs are handed directly to the private ingestor; they are never returned as product-facing asset URLs.
+
+**Billing limitation discovered:** Runway task creation returns `estimatedCost.credits`, which is an estimate, not a task settlement receipt. The official organization linked-workspace usage endpoint documents per-generation rows with timestamp, workspace, tool, credits and type, but the documented response does not expose a task ID that can unambiguously bind one charge to one concurrent job. Therefore the adapter requires an injected authoritative task-level `resolveActualCost` function and cannot be enabled in the default runtime until a trustworthy correlation source is supplied. Estimated credits are never treated as actual cost.
+
+Runway task status should not be polled more frequently than every five seconds; this worker defers between leases. Successful output URLs are ephemeral (documented 24–48 hour expiry), so private ingestion must happen promptly. The current adapter supports Gen-4.5 text-to-video only; image/video references and other models remain separate, gated work.
+
+Official references:
+- API reference and task lifecycle: https://docs.dev.runwayml.com/api/
+- API getting started: https://docs.dev.runwayml.com/guides/using-the-api/
+- Output URL retention: https://docs.dev.runwayml.com/assets/outputs/
