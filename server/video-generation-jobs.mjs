@@ -26,7 +26,7 @@ export function createVideoGenerationJobService({
     return model ? { providerId, modelId, availability: model.availability, capabilities: model.capabilities } : null;
   }
 } = {}) {
-  if (!db || typeof db.prepare !== "function" || typeof db.transaction !== "function") {
+  if (!db || typeof db.prepare !== "function" || typeof db.exec !== "function") {
     throw new Error("Video generation jobs require the application database.");
   }
   if (typeof authorizeProject !== "function" || typeof reserveBudget !== "function" || typeof providerResolver !== "function") {
@@ -61,7 +61,9 @@ export function createVideoGenerationJobService({
         .update(stableJson({ ...canonicalRequest, projectId: effectiveProjectId || null }))
         .digest("hex");
 
-      const transaction = db.transaction(() => {
+      const transaction = () => {
+        db.exec("BEGIN IMMEDIATE");
+        try {
         if (key) {
           const existing = db.prepare("SELECT * FROM jobs WHERE owner_id=? AND idempotency_key=?").get(ownerId, key);
           if (existing) {
@@ -110,8 +112,14 @@ export function createVideoGenerationJobService({
         };
         db.prepare("INSERT INTO jobs(id,owner_id,project_id,job_type,status,input_json,idempotency_key) VALUES(?,?,?,?,'queued',?,?)")
           .run(id, ownerId, effectiveProjectId || null, JOB_TYPE, stableJson(storedInput), key);
-        return { job: db.prepare("SELECT * FROM jobs WHERE id=?").get(id), idempotentReplay: false };
-      });
+        const job = db.prepare("SELECT * FROM jobs WHERE id=?").get(id);
+        db.exec("COMMIT");
+        return { job, idempotentReplay: false };
+        } catch (error) {
+          try { db.exec("ROLLBACK"); } catch {}
+          throw error;
+        }
+      };
 
       const result = transaction();
       return Object.freeze({
