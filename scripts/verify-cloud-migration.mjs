@@ -86,6 +86,10 @@ if (!sql.includes("create or replace function executive_visuals.finish_job(") ||
 if (!sql.includes("create or replace function executive_visuals.recover_expired_jobs(") || !sql.includes("WORKER_LEASE_EXPIRED") || !sql.includes("grant execute on function executive_visuals.recover_expired_jobs(integer) to service_role")) {
   issues.push("Cloud workers need bounded expired-lease recovery restricted to service_role.");
 }
+if (!sql.includes("job_type <> 'video.generate'")) {
+  issues.push("Generic cloud lease recovery must leave video jobs to their state-aware recovery RPC.");
+}
+
 if (!sql.includes("started_at timestamptz") || !sql.includes("set status = 'processing'") || !sql.includes("lease_expires_at = clock_timestamp() + make_interval")) {
   issues.push("Cloud job claim must persist its start time, processing state and lease expiry.");
 }
