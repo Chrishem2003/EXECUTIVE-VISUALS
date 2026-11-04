@@ -82,7 +82,7 @@ export function validateTimelineDescriptors(clip:TimelineClip,frameRate:{numerat
     if(trackKind&&trackKind!=="video")issues.push({code:"invalid_transition_track",clipId:clip.id,message:"Fade-to-black transitions are supported only on the primary video track."});
     if(transition?.schemaVersion!==1||transition?.type!=="fade-to-black"||transition.edge!==edge||
       !Number.isSafeInteger(transition.durationFrames)||transition.durationFrames<1||transition.durationFrames>240||
-      transition.durationFrames>maxFrames||transition.curve!=="linear"){
+      transition.durationFrames>maxFrames||transition.durationFrames/fps>durationSeconds+1e-6||transition.curve!=="linear"){
       issues.push({code:"invalid_transition",clipId:clip.id,message:"Transitions must be version-1 linear fade-to-black descriptors on the matching edge, lasting 1–240 frames and no longer than the clip."});
     }
   }
