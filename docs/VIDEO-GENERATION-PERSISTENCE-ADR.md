@@ -166,3 +166,12 @@ A second pass over the current official API reference confirms two different usa
 - `GET /v1/organization/webapp/usage` can return one row per generation for linked Runway web-app workspaces, but that is a separate web-app credit pool and is not evidence of charges made by this API project.
 
 The task retrieval response documents `estimatedCost.credits`, not a definitive settled invoice. Therefore, do not use either an aggregate daily delta or web-app workspace usage to infer the actual cost of an individual API task. A future resolver must require task-correlated, authoritative API billing evidence or an explicit operator-reviewed billing export; absent that, keep the job quarantined and the reservation held. Sources: https://docs.dev.runwayml.com/api/ and https://docs.dev.runwayml.com/guides/pricing/.
+
+
+### Runway Gen-4.5 image-to-video adapter path (2026-11-04)
+
+The server-only Runway gateway now supports both Gen-4.5 text-to-video and image-to-video. Image-to-video is selected only when the normalized request contains a `startFrameAssetId`; the adapter never accepts a browser-supplied image URL. Instead, the executor passes the trusted job context to the adapter, which calls an injected `resolveAssetUri` dependency with the asset ID, owner ID and project ID. That resolver must enforce private asset ownership/project access and return a provider-compatible HTTPS or `runway://` URI. A missing resolver, missing owned job context, failed lookup or invalid URI stops the request before the provider POST.
+
+The image-to-video request uses the documented `POST /v1/image_to_video` contract, sets the image as the first frame, and supports the documented Gen-4.5 image ratios. Text-to-video retains its narrower 16:9/9:16 contract. The shared capability validator now advertises the first-frame input but continues to reject end frames, extra reference images, audio overrides, negative prompts and unsupported resolutions.
+
+This expands adapter capability only. It does not enable the provider, add a public route, configure asset URL resolution, or start the cloud worker. A real private-storage resolver and an isolated Supabase/storage acceptance test remain mandatory before activation.
