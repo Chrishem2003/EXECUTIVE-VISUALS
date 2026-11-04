@@ -87,7 +87,17 @@ export function createRunwayPrivateAssetResolver({
 
     let asset;
     try { asset = await loadPrivateAsset({ assetId, ownerId, projectId }); }
-    catch { throw fail("Private image asset could not be read.", "RUNWAY_IMAGE_ASSET_READ_FAILED"); }
+    catch (error) {
+      const safeCodes = new Set([
+        "RUNWAY_IMAGE_ASSET_SCOPE_INVALID","RUNWAY_IMAGE_ASSET_READ_FAILED",
+        "RUNWAY_IMAGE_ASSET_TYPE_UNSUPPORTED","RUNWAY_IMAGE_ASSET_SIZE_INVALID",
+        "RUNWAY_IMAGE_ASSET_TIMEOUT","RUNWAY_IMAGE_ASSET_INVALID"
+      ]);
+      if (safeCodes.has(error?.code)) {
+        throw fail("Private image asset could not be read or did not satisfy the required constraints.", error.code);
+      }
+      throw fail("Private image asset could not be read.", "RUNWAY_IMAGE_ASSET_READ_FAILED");
+    }
     const assetProjectId=asset?.projectId??null;
     const requestedProjectId=projectId??null;
     const inAuthorizedProject=requestedProjectId!==null&&assetProjectId===requestedProjectId;
