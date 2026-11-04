@@ -43,6 +43,19 @@ function validateFileResource(file, expectedMime, expectedBytes) {
   });
 }
 
+async function digestPrivateAsset({ bytes, path }) {
+  const hash = createHash("sha256");
+  if (bytes instanceof Uint8Array) {
+    hash.update(bytes);
+    return hash.digest("hex");
+  }
+  if (typeof path === "string" && path) {
+    for await (const chunk of createReadStream(path)) hash.update(chunk);
+    return hash.digest("hex");
+  }
+  throw fail("Private asset reader did not return bytes or a file path.", "GEMINI_FILE_ASSET_INVALID");
+}
+
 async function* chunksFromAsset(asset, chunkSize) {
   if (asset.bytes instanceof Uint8Array) {
     for (let offset = 0; offset < asset.bytes.byteLength; offset += chunkSize) {
@@ -209,6 +222,7 @@ export function createGoogleGeminiFilesGateway({
       if (typeof assetId !== "string" || !assetId || typeof ownerId !== "string" || !ownerId) {
         throw fail("Google Files upload requires an authenticated private asset and owner.", "GEMINI_FILE_ASSET_SCOPE_INVALID");
       }
+      apiKey();
       const mimeType = safeMime(mediaType);
       if (typeof findProviderFile === "function") {
         const existing = await findProviderFile({ provider: "google-gemini-files", assetId, ownerId, projectId, mimeType });
@@ -236,7 +250,10 @@ export function createGoogleGeminiFilesGateway({
       let googleFile = null;
       try {
         const asset = loaded.asset;
-        if (asset.id !== assetId || asset.ownerId !== ownerId || (asset.projectId || null) !== (projectId || null) ||
+        const assetProjectId = asset.projectId || null;
+        const authorizedScopeMatches = assetProjectId === (projectId || null) &&
+          (assetProjectId ? true : asset.ownerId === ownerId);
+        if (asset.id !== assetId || !authorizedScopeMatches ||
             asset.storageBucket !== "executive-visuals-media" || asset.mediaType !== mimeType) {
           throw fail("Private asset ownership, project, bucket or MIME type did not match.", "GEMINI_FILE_ASSET_SCOPE_INVALID");
         }
@@ -251,11 +268,17 @@ export function createGoogleGeminiFilesGateway({
           throw fail("Private asset bytes do not match the recorded size.", "GEMINI_FILE_ASSET_INVALID");
         }
         const sha256 = String(loaded.sha256 || asset.sha256 || "");
-        if (!/^[a-f0-9]{64}$/i.test(sha256)) throw fail("Private asset has no verified SHA-256 receipt.", "GEMINI_FILE_ASSET_INVALID");
+        if (!/^[a-f0-9]{64}$/i.test(sha256) ||
+            (loaded.sha256 && asset.sha256 && loaded.sha256 !== asset.sha256)) {
+          throw fail("Private asset has no consistent verified SHA-256 receipt.", "GEMINI_FILE_ASSET_INVALID");
+        }
+        if (await digestPrivateAsset({ bytes: loaded.bytes, path: loaded.path }) !== sha256) {
+          throw fail("Private asset SHA-256 verification failed before Google upload.", "GEMINI_FILE_ASSET_HASH_MISMATCH");
+        }
 
         const displayName = "executive-visuals-" + randomUUID();
         googleFile = await uploadBytes({ bytes: loaded.bytes, path: loaded.path, sizeBytes, mimeType, displayName });
-        const expiresAt = new Date(now() + 48 * 60 * 60 * 1000).toISOString();
+        const expiresAt = new Date(now() + 47 * 60 * 60 * 1000 + 50 * 60 * 1000).toISOString();
         const record = {
           provider: "google-gemini-files", assetId, ownerId, projectId: projectId || null,
           name: googleFile.name, uri: googleFile.uri, mimeType, sizeBytes, sha256,
