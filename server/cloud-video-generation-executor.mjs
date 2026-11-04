@@ -120,7 +120,17 @@ export async function executeCloudVideoGenerationJob({
       }
       let ingested;
       try { ingested = await ingestOutputs({ job, input, task, providerTaskId }); }
-      catch { throw fail("Private output ingestion failed; the completed provider task is held for review.", "VIDEO_OUTPUT_INGESTION_REQUIRES_REVIEW"); }
+      catch (error) {
+        const cleanupPending = error?.cleanupPending === true;
+        const held = fail(
+          cleanupPending
+            ? "Private output ingestion failed and compensating asset cleanup is pending."
+            : "Private output ingestion failed; the completed provider task is held for review.",
+          cleanupPending ? "VIDEO_OUTPUT_INGESTION_CLEANUP_PENDING" : "VIDEO_OUTPUT_INGESTION_REQUIRES_REVIEW"
+        );
+        if (cleanupPending) held.cleanupPending = true;
+        throw held;
+      }
       if (!ingested || !Array.isArray(ingested.assetIds) || ingested.assetIds.length !== task.outputUrls.length ||
           ingested.assetIds.some(id => typeof id !== "string" || !id.trim())) {
         throw fail("Private output ingestion did not register every output asset.", "VIDEO_OUTPUT_INGESTION_REQUIRES_REVIEW");
