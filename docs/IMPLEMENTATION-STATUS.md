@@ -2,7 +2,7 @@
 
 **Updated:** 2 November 2026  
 **Branch:** `feat/executive-visuals-unified-platform`  
-**Delivery posture:** local runtime implemented; external-auth staging blueprint hardened; public release not approved pending account sign-in UX, isolated auth configuration, durable-data recovery tests and deployment verification.
+**Delivery posture:** local runtime implemented; secure Supabase email/session flow added on `feat/secure-supabase-auth-session`; CI and hosted acceptance pending; public release not approved.
 
 ## Implemented in the current branch
 
@@ -71,7 +71,7 @@ A green build does not prove external provider execution, cloud durability, fram
 ## Not yet production-complete
 
 - Durable cloud database and object storage in a dedicated isolated project; PostgREST queue and private object-storage adapters plus a lease-aware worker-cycle orchestrator are implemented and contract-tested, but remain intentionally disconnected until the isolated schema is exposed, storage policies and credentials are configured, and the media/workflow data layer is cloud-compatible.
-- Production OAuth/session refresh, email invitations and distributed multi-tenant collaboration. The current browser auth gate requires users to paste a Supabase access token; ordinary email/password sign-in and refresh-session UX are not yet implemented.
+- Production OAuth/session refresh, email invitations and distributed multi-tenant collaboration. The `feat/secure-supabase-auth-session` branch replaces token pasting with Supabase email/password registration and sign-in, AES-256-GCM encrypted HttpOnly sessions, server-side refresh, logout and password-recovery callback/update. CI and hosted acceptance with a dedicated isolated Supabase project remain pending.
 - Multi-host workers, dead-letter queue, lease metrics and guaranteed process-tree termination on cancellation.
 - Resumable/chunked uploads and range downloads.
 - Timeline preview playback, transitions, effects, animated/video overlays, cache invalidation and round-trip tests against an independent interchange implementation.
