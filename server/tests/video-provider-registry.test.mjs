@@ -191,3 +191,50 @@ test("Veo 3.1 and Fast catalogue enforce duration, resolution, audio and tier-sp
   assert.deepEqual(fast.constraints.outputCreditsPerSecond, { audio: 15, noAudio: 10 });
   assert.equal(listSelectableVideoProviderModels().length, 0);
 });
+
+test("Runway's expanded model directory is catalogued with dated pricing and disabled adapters", () => {
+  const expected = [
+    ["grok_imagine_1_5", ["480p", "720p", "1080p"]],
+    ["grok_imagine_1_5_lite", ["480p", "720p", "1080p"]],
+    ["wan3", ["480p", "720p", "1080p"]],
+    ["wan3_prime", ["480p", "720p", "1080p"]],
+    ["h3_max", ["480p", "768p"]],
+    ["happyhorse_1_0", ["720p", "1080p"]],
+    ["gemini_omni_flash_1.1", ["360p", "720p", "1080p", "4k"]]
+  ];
+  for (const [id, resolutions] of expected) {
+    const model = getVideoProviderModel("runway", id);
+    assert.ok(model, id + " must exist in the Runway Dev catalogue");
+    assert.equal(model.availability, "disabled", id + " must remain disabled");
+    assert.equal(model.executionAdapter, "not_implemented", id + " must not imply execution support");
+    assert.deepEqual(model.capabilities.resolutions, resolutions);
+    assert.equal(model.constraints.pricingSnapshotDate, "2026-11-04");
+    assert.equal(model.constraints.creditUsdValue, 0.01);
+    assert.match(model.constraints.source, /^https:\/\/docs\.dev\.runwayml\.com\//);
+  }
+  assert.deepEqual(getVideoProviderModel("runway", "grok_imagine_1_5").constraints.creditsPerSecondByResolution,
+    { "480p": 10, "720p": 16, "1080p": 29 });
+  assert.deepEqual(getVideoProviderModel("runway", "grok_imagine_1_5_lite").constraints.creditsPerSecondByResolution,
+    { "480p": 2, "720p": 3, "1080p": 14 });
+  assert.deepEqual(getVideoProviderModel("runway", "wan3").constraints.creditsPerSecondByResolution,
+    { "480p": 5, "720p": 10, "1080p": 20 });
+  assert.deepEqual(getVideoProviderModel("runway", "wan3_prime").constraints.creditsPerSecondByResolution,
+    { "480p": 6.8, "720p": 14, "1080p": 28 });
+  assert.deepEqual(getVideoProviderModel("runway", "h3_max").constraints.creditsPerSecondByResolution,
+    { "480p": 5, "768p": 8 });
+  assert.deepEqual(getVideoProviderModel("runway", "happyhorse_1_0").constraints.creditsPerSecondByResolution,
+    { "720p": 15, "1080p": 30 });
+  assert.deepEqual(getVideoProviderModel("runway", "gemini_omni_flash_1.1").constraints.creditsPerSecondByResolution,
+    { "360p": 3.4, "720p": 10, "1080p": 15, "4k": 30 });
+  assert.equal(listSelectableVideoProviderModels().length, 0);
+});
+
+test("Runway Veo model IDs are distinct from the retired Gemini API preview endpoint", () => {
+  const runwayVeo = getVideoProviderModel("runway", "veo3.1");
+  const googleOmni = getVideoProviderModel("google", "gemini-omni-1.1-flash");
+  assert.equal(runwayVeo.gateway, "runway");
+  assert.equal(runwayVeo.availability, "disabled");
+  assert.equal(googleOmni.availability, "disabled");
+  const retired = getVideoProviderModel("google", "veo-3.1-generate-preview");
+  assert.equal(retired, null);
+});
