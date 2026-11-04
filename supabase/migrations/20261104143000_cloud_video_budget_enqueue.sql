@@ -403,8 +403,8 @@ begin
   for update;
   if p_status in ('succeeded','partial') then
     if p_output is null
-       or jsonb_typeof(p_output -> 'assetIds') <> 'array'
-       or jsonb_array_length(p_output -> 'assetIds') not between 1 and 10
+       or coalesce(jsonb_typeof(p_output -> 'assetIds'),'null') <> 'array'
+       or coalesce(jsonb_array_length(p_output -> 'assetIds'),0) not between 1 and 10
        or p_output ->> 'providerTaskId' is distinct from submission.provider_task_id then
       raise exception 'VIDEO_JOB_OUTPUT_ASSET_RECEIPTS_INVALID';
     end if;
