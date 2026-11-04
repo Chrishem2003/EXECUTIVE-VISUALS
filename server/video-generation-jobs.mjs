@@ -16,14 +16,6 @@ function fail(message, code) {
   return Object.assign(new Error(message), { code });
 }
 
-/**
- * Durable enqueue boundary for governed remote video generation.
- *
- * This service deliberately does not contact a provider. It creates a durable
- * job only after provider capability validation, project authorization,
- * explicit budget approval, and an atomic rolling-window usage reservation.
- * The worker that consumes video.generate jobs is a separate release gate.
- */
 export function createVideoGenerationJobService({
   db,
   authorizeProject = () => false,
@@ -57,29 +49,44 @@ export function createVideoGenerationJobService({
       const provider = providerResolver(providerId, modelId);
       if (!provider || provider.availability !== "enabled") throw fail("The selected video provider/model is not enabled for user-facing execution.", "VIDEO_JOB_PROVIDER_DISABLED");
       assertVideoCapabilities(request, provider.capabilities || {});
-      const requestJson = stableJson({ ...request, projectId: projectId || null });
+
       const canonicalRequest = { ...request };
       delete canonicalRequest.requestId;
-      const requestHash = createHash("sha256").update(stableJson({ ...canonicalRequest, projectId: projectId || null })).digest("hex");
+      const requestHash = createHash("sha256")
+        .update(stableJson({ ...canonicalRequest, projectId: projectId || null }))
+        .digest("hex");
 
-      const run = db.transaction(() => {
+      const transaction = db.transaction(() => {
         if (key) {
           const existing = db.prepare("SELECT * FROM jobs WHERE owner_id=? AND idempotency_key=?").get(ownerId, key);
           if (existing) {
+            const prior = JSON.parse(existing.input_json);
+            delete prior.requestId;
+            delete prior.requestHash;
+            delete prior.budgetReservationId;
+            delete prior.remoteUsageReservationId;
+            const priorHash = createHash("sha256")
+              .update(stableJson({ ...prior, projectId: projectId || null }))
+              .digest("hex");
             const same = existing.job_type === JOB_TYPE &&
               existing.project_id === (projectId || null) &&
-              createHash("sha256").update(stableJson(JSON.parse(existing.input_json))).digest("hex") === requestHash;
+              priorHash === requestHash;
             if (!same) throw fail("This idempotency key was already used for a different video request.", "VIDEO_JOB_IDEMPOTENCY_CONFLICT");
             return { job: existing, idempotentReplay: true };
           }
         }
 
-        const budget = reserveBudget({ ownerId, projectId: projectId || null, provider: providerId, model: modelId, capability: "video.generate", requestHash });
-        if (budget && typeof budget.then === "function") throw fail("Budget reservation must be synchronous and participate in the database transaction.", "VIDEO_JOB_BUDGET_ADAPTER_INVALID");
-        if (budget && typeof budget.then === "function") throw fail("Budget reservation must be synchronous and participate in the database transaction.", "VIDEO_JOB_BUDGET_ADAPTER_INVALID");
+        const budget = reserveBudget({
+          ownerId, projectId: projectId || null, provider: providerId,
+          model: modelId, capability: "video.generate", requestHash
+        });
+        if (budget && typeof budget.then === "function") {
+          throw fail("Budget reservation must be synchronous and participate in the database transaction.", "VIDEO_JOB_BUDGET_ADAPTER_INVALID");
+        }
         if (!budget || budget.approved !== true || typeof budget.reservationId !== "string" || !budget.reservationId.trim()) {
           throw fail("A confirmed budget reservation is required before remote video generation can be queued.", "VIDEO_JOB_BUDGET_NOT_APPROVED");
         }
+
         const usage = reserveRemoteRequest(db, {
           ownerId,
           projectId: projectId || null,
@@ -88,14 +95,20 @@ export function createVideoGenerationJobService({
           limit: usageLimit
         });
         const id = randomUUID();
-        const storedInput = { ...request, provider: providerId, model: modelId, requestHash, budgetReservationId: budget.reservationId, remoteUsageReservationId: usage.reservationId };
-        db.prepare("INSERT INTO jobs(id,owner_id,project_id,job_type,status,input_json,idempotency_key) VALUES(?,?,? ,?,'queued',?,?)")
+        const storedInput = {
+          ...request,
+          provider: providerId,
+          model: modelId,
+          requestHash,
+          budgetReservationId: budget.reservationId,
+          remoteUsageReservationId: usage.reservationId
+        };
+        db.prepare("INSERT INTO jobs(id,owner_id,project_id,job_type,status,input_json,idempotency_key) VALUES(?,?,?,?,'queued',?,?)")
           .run(id, ownerId, projectId || null, JOB_TYPE, stableJson(storedInput), key);
-        const job = db.prepare("SELECT * FROM jobs WHERE id=?").get(id);
-        return { job, idempotentReplay: false };
+        return { job: db.prepare("SELECT * FROM jobs WHERE id=?").get(id), idempotentReplay: false };
       });
 
-      const result = run();
+      const result = transaction();
       return Object.freeze({
         job: Object.freeze({
           id: result.job.id,
