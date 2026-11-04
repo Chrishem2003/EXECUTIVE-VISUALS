@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createPrivateVideoOutputIngestor } from "../private-video-output-ingestion.mjs";
+import { createPrivateVideoOutputIngestor, createFfprobeVideoOutputValidator } from "../private-video-output-ingestion.mjs";
 
 const ownerId = "123e4567-e89b-42d3-a456-426614174000";
 const projectId = "223e4567-e89b-42d3-a456-426614174000";
@@ -168,4 +168,65 @@ test("enforces job ownership, output count and bounded response sizes", async ()
   await assert.rejects(ingest.ingest({
     job: { owner_id: ownerId, project_id: projectId }, task, input: {}
   }), error => error.code === "VIDEO_OUTPUT_DOWNLOAD_INVALID");
+});
+
+test("FFprobe validator accepts bounded MP4 video and returns inspected stream metadata", async () => {
+  let invoked = null;
+  const validator = createFfprobeVideoOutputValidator({
+    ffprobePath: "/tools/ffprobe",
+    execFileImpl(command, args, options, callback) {
+      invoked = { command, args, options };
+      callback(null, JSON.stringify({
+        format: { duration: "12.5", format_name: "mov,mp4,m4a,3gp,3g2,mj2" },
+        streams: [
+          { codec_type: "video", codec_name: "h264", width: 1920, height: 1080 },
+          { codec_type: "audio", codec_name: "aac" }
+        ]
+      }), "");
+    }
+  });
+  const result = await validator({ path: "/tmp/output.mp4", contentType: "video/mp4", size: 1024 });
+  assert.equal(result.valid, true);
+  assert.equal(result.mediaType, "video/mp4");
+  assert.equal(result.metadata.durationSeconds, 12.5);
+  assert.equal(result.metadata.width, 1920);
+  assert.equal(invoked.command, "/tools/ffprobe");
+  assert.ok(invoked.args.includes("-show_entries"));
+  assert.equal(invoked.options.shell, undefined);
+});
+
+test("FFprobe validator rejects audio-only, malformed, overlong and MIME-mismatched outputs", async () => {
+  const outputs = [
+    { format: { duration: "12", format_name: "mp4" }, streams: [{ codec_type: "audio" }] },
+    { format: { duration: "9999", format_name: "mp4" }, streams: [{ codec_type: "video", width: 1920, height: 1080 }] },
+    { format: { duration: "12", format_name: "webm" }, streams: [{ codec_type: "video", width: 1920, height: 1080 }] },
+    { format: { duration: "12", format_name: "mp4" }, streams: [{ codec_type: "video", width: 99999, height: 99999 }] }
+  ];
+  for (const output of outputs) {
+    const validator = createFfprobeVideoOutputValidator({
+      execFileImpl(_command, _args, _options, callback) { callback(null, JSON.stringify(output), ""); }
+    });
+    const result = await validator({ path: "/tmp/output", contentType: "video/mp4", size: 1024 });
+    assert.equal(result.valid, false);
+  }
+  const mismatch = createFfprobeVideoOutputValidator({
+    execFileImpl(_command, _args, _options, callback) {
+      callback(null, JSON.stringify({
+        format: { duration: "12", format_name: "webm" },
+        streams: [{ codec_type: "video", width: 1280, height: 720 }]
+      }), "");
+    }
+  });
+  assert.equal((await mismatch({ path: "/tmp/output", contentType: "video/mp4", size: 1024 })).reason, "MIME_CONTAINER_MISMATCH");
+});
+
+test("FFprobe validator fails closed when the binary is missing or output is malformed", async () => {
+  const failed = createFfprobeVideoOutputValidator({
+    execFileImpl(_command, _args, _options, callback) { callback(new Error("not found")); }
+  });
+  assert.equal((await failed({ path: "/tmp/output", contentType: "video/mp4", size: 1024 })).reason, "FFPROBE_FAILED");
+  const malformed = createFfprobeVideoOutputValidator({
+    execFileImpl(_command, _args, _options, callback) { callback(null, "not-json", ""); }
+  });
+  assert.equal((await malformed({ path: "/tmp/output", contentType: "video/mp4", size: 1024 })).reason, "FFPROBE_INVALID_JSON");
 });
