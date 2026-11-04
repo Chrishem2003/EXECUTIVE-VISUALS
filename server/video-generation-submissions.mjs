@@ -108,6 +108,23 @@ export function createVideoSubmissionLedger({ db } = {}) {
       throw fail("Provider task can only be recorded after a submission attempt has started.", "VIDEO_SUBMISSION_STATE_INVALID");
     },
 
+    reconcileSubmitted(jobId, providerTaskId, metadata = {}) {
+      if (typeof providerTaskId !== "string" || !providerTaskId.trim() || providerTaskId.length > 256) {
+        throw fail("Provider task ID is required and must be bounded.", "VIDEO_SUBMISSION_TASK_ID_INVALID");
+      }
+      const now = new Date().toISOString();
+      const changed = db.prepare(`UPDATE video_generation_submissions
+        SET state='submitted',provider_task_id=?,submitted_at=?,updated_at=?,last_error_code=NULL,metadata_json=?
+        WHERE job_id=? AND state='unknown'`)
+        .run(providerTaskId, now, now, JSON.stringify({ ...metadata, reconciled: true }), jobId);
+      if (changed.changes === 1) return Object.freeze({ reconciled: true, submission: get(jobId) });
+      const current = get(jobId);
+      if (current?.state === "submitted" && current.providerTaskId === providerTaskId) {
+        return Object.freeze({ reconciled: true, idempotentReplay: true, submission: current });
+      }
+      throw fail("Only an unknown provider submission can be reconciled to a known task.", "VIDEO_SUBMISSION_STATE_INVALID");
+    },
+
     markUnknown(jobId, errorCode = "PROVIDER_SUBMISSION_OUTCOME_UNKNOWN") {
       const code = String(errorCode || "PROVIDER_SUBMISSION_OUTCOME_UNKNOWN").slice(0, 120);
       const now = new Date().toISOString();
