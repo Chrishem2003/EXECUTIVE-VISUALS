@@ -16,6 +16,7 @@ The timeline preview core now provides:
 - Local still-image overlay composition in timeline track order, with clip-timed visibility and bounded canvas-relative position, dimensions and opacity. Only image assets are rendered as overlays in this browser preview; the FFmpeg master renderer remains authoritative.
 - SRT/WebVTT caption cue preview uses the caption clip's resolved source time, a bounded 2 MB/5,000-cue parser, safe text nodes and the clip's saved font/color/placement/background settings.
 - Cloud sequence and source-clip preview request short-lived signed URLs from the existing `GET /api/cloud/assets/:id` endpoint. The server re-checks owner/project membership before signing; the browser validates HTTPS, rejects URL user-info/fragments and invalid expiry values, keeps cache entries in memory only, refreshes them before expiry and invalidates in-flight requests when the project/session changes. No service-role credential or public storage path reaches the browser.
+- Caption downloads are streamed with a 2 MB byte ceiling before parsing. Cloud audio elements request anonymous CORS mode so Web Audio gain/mute routing can work; hosted storage CORS must explicitly allow the deployed app origin, which remains an acceptance requirement.
 - Track-order preservation so the UI can composite active layers deterministically.
 - Source-time mapping that respects source in points, source duration and clip speed.
 - Exclusive clip out-points and disabled track/clip filtering.
