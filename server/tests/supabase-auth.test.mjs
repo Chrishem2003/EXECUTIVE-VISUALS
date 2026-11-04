@@ -97,7 +97,7 @@ test("sign-up reports email confirmation without creating an application session
   assert.equal(result.cookie, null);
 });
 
-test("rejects weak credentials, insecure remote URLs and short session secrets", () => {
+test("rejects weak credentials, insecure remote URLs and short session secrets", async () => {
   assert.throws(() => createSupabaseAuth({ ...config, sessionSecret: "short" }), { code: "SUPABASE_AUTH_CONFIG_INVALID" });
   assert.throws(() => createSupabaseAuth({ ...config, url: "http://auth.example.test" }), { code: "SUPABASE_AUTH_CONFIG_INVALID" });
   const auth = createSupabaseAuth({ ...config, fetchImpl: async () => response(tokenPayload()) });
