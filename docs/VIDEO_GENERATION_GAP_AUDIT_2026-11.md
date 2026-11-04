@@ -323,3 +323,8 @@ The official FAL billing-events API supports exact `request_id` and `endpoint_id
 
 
 The billing resolver now explicitly supplies a bounded `start` parameter within FAL's documented 90-day maximum, using the job's creation timestamp when available. A dedicated `FAL_BILLING_KEY` environment variable is supported so a least-privilege billing key can be separated from the generation key.
+
+
+### FAL cancellation contract correction — 2026-11-05
+
+Cross-checked the queue client against FAL's current official API reference. Queue cancellation is a `PUT` operation, not `POST`. Corrected the async client and added a regression test that verifies the cancellation URL, HTTP method and authorization header. Cancellation remains best-effort and must be followed by status/billing reconciliation; it does not guarantee that an already-running inference stopped before billing.
