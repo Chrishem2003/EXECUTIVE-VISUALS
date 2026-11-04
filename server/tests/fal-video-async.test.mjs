@@ -112,3 +112,21 @@ test("rejects malformed provider task states and provider failures", async () =>
   const failed = createFalAsyncVideoClient({ ...base, fetchImpl: async () => jsonResponse({ detail: "model failed" }) });
   await assert.rejects(() => failed.result(task), error => error.code === "VIDEO_GATEWAY_JOB_FAILED");
 });
+
+
+test("cancels a FAL queue task with the documented PUT operation", async () => {
+  const calls = [];
+  const task = { model: base.model, requestId, statusUrl: root + "/status", resultUrl: root, cancelUrl: root + "/cancel" };
+  const client = createFalAsyncVideoClient({
+    ...base,
+    fetchImpl: async (url, options) => {
+      calls.push({ url, options });
+      return jsonResponse({ status: "CANCELED" });
+    }
+  });
+  await client.cancel(task);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, root + "/cancel");
+  assert.equal(calls[0].options.method, "PUT");
+  assert.equal(calls[0].options.headers.authorization, "Key test-only-key");
+});
