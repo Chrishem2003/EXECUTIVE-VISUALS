@@ -43,7 +43,10 @@ test("resolves exact provider/model adapter identities without fuzzy fallback", 
 test("rejects duplicate, malformed and job-mismatched adapter registrations", async () => {
   const google = adapter();
   assert.throws(() => createVideoProviderExecutionRouter({ adapters: [google, adapter()] }), /Duplicate/);
-  assert.throws(() => createVideoProviderExecutionRouter({ adapters: [{}] }), /implement prepareInput/);
+  assert.throws(() => createVideoProviderExecutionRouter({ adapters: [{}] }), /implement submit and getStatus/);
+  assert.doesNotThrow(() => createVideoProviderExecutionRouter({ adapters: [{
+    provider: "mock", model: "mock-v1", async submit() {}, async getStatus() {}
+  }] }));
   const router = createVideoProviderExecutionRouter({ adapters: [google] });
   await assert.rejects(() => router.resolveAdapter({
     provider: "google", model: "gemini-omni-1.1-flash",
