@@ -166,6 +166,21 @@ select 1 / case when exists (
 reset role;
 select set_config('request.jwt.claim.sub','123e4567-e89b-42d3-a456-426614174000',false);
 set role authenticated;
+do $budget_floor$
+begin
+ begin
+  update executive_visuals.video_generation_budget_policies
+  set spend_limit_amount=0.5,max_per_job_amount=0.5
+  where id='423e4567-e89b-42d3-a456-426614174000';
+  raise exception 'budget ceiling was lowered below committed spend';
+ exception when others then
+  if sqlerrm = 'budget ceiling was lowered below committed spend' then raise; end if;
+  if sqlerrm <> 'VIDEO_BUDGET_LIMIT_BELOW_COMMITTED_SPEND' then raise; end if;
+ end;
+end
+$budget_floor$;
+reset role;
+set role service_role;
 insert into executive_visuals.video_generation_budget_approvals(
  id,owner_id,project_id,provider,model,request_hash,currency,approved_max_amount,approval_note,expires_at
 ) values (
