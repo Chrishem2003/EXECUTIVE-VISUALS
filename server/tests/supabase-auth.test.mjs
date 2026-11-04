@@ -92,10 +92,12 @@ test("concurrent requests share one refresh-token rotation", async () => {
 });
 
 test("invalid and tampered session cookies fail closed", async () => {
-  const auth = createSupabaseAuth({ ...config, fetchImpl: async () => response({}) });
+  const auth = createSupabaseAuth({ ...config, fetchImpl: async (url) => String(url).includes("/token?") ? response(tokenPayload()) : response({}) });
   assert.equal(await auth.getUser("not-a-session"), null);
   const session = await auth.signIn("creator@example.test", "a-long-password-value");
-  const tampered = session.cookie.slice(0, -1) + (session.cookie.endsWith("a") ? "b" : "a");
+  const parts = session.cookie.split(".");
+  parts[2] = (parts[2][0] === "A" ? "B" : "A") + parts[2].slice(1);
+  const tampered = parts.join(".");
   assert.equal(await auth.getUser(tampered), null);
 });
 
