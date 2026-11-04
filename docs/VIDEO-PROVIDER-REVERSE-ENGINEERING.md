@@ -215,3 +215,47 @@ The generation guide says the multi-keyframe path lifts the legacy 10-second anc
 References:
 - https://docs.agents.lumalabs.ai/guides/videos/generation/
 - https://docs.agents.lumalabs.ai/guides/pricing/
+
+
+## November 4, 2026 provider discovery — Seedance 2.5 and Veo 3.1
+
+The Runway Dev API now exposes official ByteDance Seedance 2.5 and Google Veo 3.1 / Veo 3.1 Fast through the same Runway task API and credit balance. They are catalogued as separate models with `executionAdapter: "not_implemented"` and remain disabled. The existing Gen-4.5 adapter must not be allowed to silently submit these models because their input schemas and billing rules differ.
+
+### Seedance 2.5
+
+- Model ID: `seedance2_5`; endpoints: text-to-video, image-to-video, video-to-video.
+- Duration: 4–30 seconds or `auto`; `auto` reserves 30 seconds up front and refunds unused duration.
+- Output: 480p, 720p, 1080p.
+- Prompt: up to 15,000 characters.
+- References: text-to-video up to 30 images, 10 videos and 10 audio clips; video-to-video allows 30 images, 9 reference videos plus the source clip, and 10 audio clips.
+- Video reference input is billed separately: 10 / 15 / 34 credits per second at 480p / 720p / 1080p. Images and audio references are free.
+- Output: 20 / 30 / 68 credits per second at 480p / 720p / 1080p; minimum 80 credits.
+- Draft mode is two separate billable tasks: preview at 20 credits/sec and 1080p enhancement at 68 credits/sec.
+- Video edit requires `duration: "auto"`; edit and extend require prompt text and preserve input aspect ratio.
+
+### Veo 3.1 and Veo 3.1 Fast
+
+- Model IDs: `veo3.1` and `veo3.1_fast`; text-to-video and image-to-video.
+- Duration: 4, 6 or 8 seconds. 1080p only supports 8 seconds.
+- Keyframes: first and optional last frame; last requires first.
+- Output sizes are specified by exact ratio values: `1280:720`, `720:1280`, `1080:1920`, `1920:1080`.
+- Native audio defaults on; explicitly send `audio: false` to reduce price.
+- Veo 3.1: 40 credits/sec with audio, 20 without.
+- Veo 3.1 Fast: 15 credits/sec with audio, 10 without.
+- Image inputs add no charge. 1 credit = USD $0.01 as of November 4, 2026.
+
+### Adapter implementation boundary
+
+The catalogue now contains these exact model IDs and verified capability/pricing metadata, with regression tests proving that they remain unselectable. The next implementation should be a separate Runway multi-model adapter (or per-model adapters) that:
+1. validates the selected model against the catalog;
+2. builds the correct endpoint payload for that model and operation;
+3. prepares private asset URIs for each reference type;
+4. reconciles preflight estimates with actual provider credit usage;
+5. uses the existing durable one-shot submission ledger and temporary-output ingestion path.
+
+Do not activate models by changing the catalogue flag alone. No paid request has been sent.
+
+Official sources:
+- https://dev.runwayml.com/learn/seedance-2-5-api
+- https://dev.runwayml.com/learn/veo-3-1-api
+- https://docs.dev.runwayml.com/guides/pricing/
