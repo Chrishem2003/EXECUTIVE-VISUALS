@@ -52,3 +52,17 @@ The router accepts up to four reference images (roles `first`, `last`, or `refer
 The preflight client deliberately does **not** trust owner or project IDs supplied per asset. When references are present, it requires an injected `getAuthorizedAssetContext` callback to derive the authenticated owner and authorize the requested project. It then passes that trusted scope to the injected private asset resolver. Both callbacks are required integration points; no production asset service or authorization policy is silently assumed. Missing callbacks fail closed before any provider request.
 
 Official API contract: https://docs.dev.runwayml.com/api/ — Model Router / Routed video generation.
+
+
+## Executive Visuals private asset repository binding
+
+`server/runway-cloud-asset-bindings.mjs` now provides a concrete bridge to the existing `createCloudAssetService().assets` repository:
+
+- Derives the owner ID through an injected authenticated-session callback.
+- Calls the asset repository's project-scoped `list` operation to enforce project membership before any provider call.
+- Fetches each asset through the owner-aware `get` method.
+- Allows project assets and same-owner personal-library assets; rejects assets belonging to a different project.
+- Checks the requested media family (image/video/audio).
+- Generates a short-lived signed URL through the private storage service (default 10 minutes, bounded to 30–3600 seconds).
+
+The binding returns the two callbacks expected by the dry-run client. The actual server route still must supply its authenticated owner resolver and construct the existing cloud asset service; this PR does not guess at or bypass the application's request authentication middleware.
