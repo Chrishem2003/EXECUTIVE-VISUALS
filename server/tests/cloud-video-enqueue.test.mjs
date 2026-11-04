@@ -52,7 +52,7 @@ test("cloud enqueue uses service-role credentials and the private schema", async
 
 test("enqueue preserves idempotent replay information and settles only through its RPC", async () => {
   const calls = [];
-  const replay = { ...resultRow, idempotent_replay: true };
+  const replay = { ...resultRow, job_status: "processing", idempotent_replay: true };
   const client = createCloudVideoEnqueue({
     ...base,
     fetchImpl: async (url, options) => {
@@ -87,7 +87,7 @@ test("enqueue rejects mismatched request scope and invalid budget inputs before 
 });
 
 test("enqueue fails closed on malformed RPC results and redacts server credentials", async () => {
-  const malformed = createCloudVideoEnqueue({ ...base, fetchImpl: async () => response([{ ...resultRow, job_status: "processing" }]) });
+  const malformed = createCloudVideoEnqueue({ ...base, fetchImpl: async () => response([{ ...resultRow, job_status: "not-a-job-state" }]) });
   await assert.rejects(() => malformed.enqueue(args()), /invalid job\/reservation result/);
   const denied = createCloudVideoEnqueue({
     ...base,
