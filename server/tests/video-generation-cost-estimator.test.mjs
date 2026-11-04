@@ -16,6 +16,9 @@ test("shared preflight supports Luma Ray 3.2 published generation and edit price
     provider: "luma", model: "ray-3.2", operation: "video", resolution: "720p", durationSeconds: 5
   });
   assert.equal(generation.amount, 0.3);
+  assert.equal(generation.credits, 100);
+  assert.equal(generation.creditToUsdRate, 0.003);
+  assert.equal(generation.basis, "default_list_rate_usd_per_credit");
   assert.equal(generation.currency, "USD");
   assert.equal(generation.provider, "luma");
   assert.match(generation.pricingDate, /^20\d{2}-\d{2}-\d{2}$/);
