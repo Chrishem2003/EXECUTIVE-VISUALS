@@ -127,3 +127,21 @@ test("compensates a registered Google file when durable mapping persistence fail
     error => error.code === "GEMINI_GCS_MAPPING_PERSIST_FAILED");
   assert.equal(h.calls.some(call => call[0] === "fetch" && call[2].method === "DELETE"), true);
 });
+
+test("deletes only the exact owner/project GCS registration and its durable mapping", async () => {
+  const cached = {
+    id: "mapping-1", ownerId, projectId, assetId, mimeType: "video/mp4",
+    name: fileName, uri: fileUri, state: "ACTIVE", sizeBytes: 1024, sha256,
+    expiresAt: "2026-11-20T00:00:00.000Z",
+    sourceType: "gcs_registration", sourceUri: gcsUri
+  };
+  const h = harness({ cached, fetchImpl: async (_url, options) => {
+    assert.equal(options.method, "DELETE");
+    return response(204, null);
+  }});
+  const deleted = await h.registrar.deleteAssetRegistration({ assetId, ownerId, projectId, mediaType: "video/mp4" });
+  assert.equal(deleted, true);
+  const remoteDelete = h.calls.find(call => call[0] === "fetch");
+  assert.equal(remoteDelete[1], "https://generativelanguage.googleapis.com/v1beta/files/gcs-file-123");
+  assert.equal(h.calls.some(call => call[0] === "deleteRecord" && call[1].recordId === "mapping-1"), true);
+});
