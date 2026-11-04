@@ -16,7 +16,7 @@ function client(overrides = {}) {
   };
 }
 const gates = {
-  model, client: client(),
+  model, enabled: true, allowRemote: true, client: client(),
   ingestOutputs: async () => ({ assetIds: ["private-asset-1"] }),
   resolveActualCost: async () => ({ amount: 0.5, currency: "USD", evidenceReference: "provider-usage:fal-1" })
 };
