@@ -1,6 +1,7 @@
 import { createFalVideoProviderAdapter } from "./fal-video-provider-registration.mjs";
 import { createRunwayCloudVideoAdapter } from "./runway-cloud-video-adapter.mjs";
 import { createLumaRay32Adapter } from "./luma-ray32-video-adapter.mjs";
+import { createLumaActualCostResolver } from "./luma-actual-cost-resolver.mjs";
 
 const fail = (message, code = "VIDEO_PROVIDER_CONFIGURATION_INVALID") =>
   Object.assign(new Error(message), { code });
@@ -75,9 +76,9 @@ export function createConfiguredVideoProviderAdapters({
         env.LUMA_VIDEO_ENABLED !== "true" || env.LUMA_VIDEO_ALLOW_REMOTE !== "true") {
       throw fail("Luma requires VIDEO_GATEWAY_ENABLED, VIDEO_GATEWAY_ALLOW_REMOTE, LUMA_VIDEO_ENABLED and LUMA_VIDEO_ALLOW_REMOTE to be true.", "LUMA_VIDEO_REMOTE_DISABLED");
     }
-    if (typeof resolveLumaActualCost !== "function") {
-      throw fail("Luma registration requires authoritative settled-usage reconciliation; published credit prices are estimates only.", "LUMA_BILLING_RESOLVER_REQUIRED");
-    }
+    const settledCostResolver = typeof resolveLumaActualCost === "function"
+      ? resolveLumaActualCost
+      : createLumaActualCostResolver({ usdPerCredit: env.LUMA_USD_PER_CREDIT });
     const client = lumaClient || createLumaRay32Adapter({
       apiKey: env.LUMA_AGENTS_API_KEY,
       fetchImpl
@@ -131,7 +132,7 @@ export function createConfiguredVideoProviderAdapters({
         return ingestOutputs({ ...args, provider: "luma", model });
       },
       async resolveActualCost(args) {
-        return resolveLumaActualCost({ ...args, provider: "luma", model });
+        return settledCostResolver({ ...args, provider: "luma", model });
       }
     }));
   }
