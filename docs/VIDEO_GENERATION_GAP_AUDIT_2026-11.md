@@ -272,3 +272,20 @@ The provider catalog now exposes the actual configured video adapter capability 
 ## AI upscaling research and selection
 
 Added docs/AI_UPSCALING_ENGINE_SELECTION.md. The initial low-cost candidate is Real-ESRGAN NCNN/Vulkan because its upstream documentation describes portable Intel/AMD/NVIDIA GPU executables without requiring CUDA or PyTorch. It is not enabled or claimed as installed. Video2X is not selected as the hosted dependency because of its AGPL-3.0 licence. The design requires runtime/device probing, adaptive tiling, frame/audio/timebase preservation, temporal-flicker review, derivative-only publishing and explicit licence checks. The existing FFmpeg scaler remains the verified fallback.
+
+
+## Implementation update — asynchronous FAL task adapter — 2026-11-05
+
+Added `server/fal-video-async.mjs` as a non-blocking queue client. It separates provider submission, one-shot status polling, result retrieval and cancellation into distinct operations. It returns a bounded task descriptor (provider, model, request ID and validated queue URLs) that a future durable job handler can persist and resume.
+
+Safety properties:
+- Reuses the existing FAL payload validator; no second provider payload schema is introduced.
+- Requires both existing server-side enablement and remote opt-in flags.
+- Sends FAL's documented `X-Fal-No-Retry: true` header on submission.
+- Validates every task URL against the expected `queue.fal.run` origin and exact model/request path; redirects are rejected.
+- Does not poll, sleep, download, or hold a worker lease while waiting.
+- Treats transport timeout, connection failure or provider 5xx during submission as an ambiguous outcome (`VIDEO_GATEWAY_SUBMISSION_UNKNOWN`) and never automatically resubmits. The caller must reconcile the task before any retry.
+- Status and result retrieval are separate calls; output ingestion and private asset persistence remain the responsibility of the durable worker.
+- Six offline tests cover submission, separate status/result operations, URL validation, ambiguous submission, opt-in gates and provider failure states.
+
+**Integration status:** adapter module and offline tests are added on an isolated feature branch. The existing `workflow-executor.mjs` still calls the legacy blocking `generateFalVideo` path; this change does not claim that production workflow execution has been migrated. The next slice must persist the returned provider task descriptor into the existing job/checkpoint model, schedule status checks through a worker, then ingest the verified MP4 into private storage. No provider request, database migration, production deployment or paid generation was performed.
