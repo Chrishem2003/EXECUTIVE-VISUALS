@@ -10,10 +10,10 @@ Source: https://docs.dev.runwayml.com/guides/pricing/
 
 | Model | Published formula used |
 |---|---|
-| Gen-4.5 | 12 credits/second; ProRes/PNG sequence +5 credits/second; 10-bit SDR +20 credits/second or +40 above 4MP; native HDR only on Gen-4.5, +20 or +40 above 4MP |
+| Gen-4.5 | 12 credits/second; ProRes/PNG sequence +5 credits/second; 10-bit SDR and HDR profiles +20 credits/second or +40 above 4MP |
 | Gen-4 Turbo | 5 credits/second |
 | Act-Two | 5 credits/second |
-| Aleph 2.0 | 28 credits/second; 56-credit minimum; ProRes/PNG sequence +5 credits/second; 10-bit SDR +20 or +40 above 4MP |
+| Aleph 2.0 | 28 credits/second; 56-credit minimum; ProRes/PNG sequence +5 credits/second; 10-bit SDR +20 or +40 above 4MP (HDR requires a separate Ruby conversion) |
 | Kling 2.5 Turbo Pro | 12 credits/second |
 | Kling 3.0 Standard | 9 credits/second without audio; 13 with audio |
 | Kling 3.0 Pro | 12 credits/second without audio; 17 with audio |
@@ -36,7 +36,7 @@ Source: https://docs.dev.runwayml.com/guides/pricing/
 | Gemini Omni Flash 1.1 | 3.4 / 10 / 15 / 30 credits/second at 360p / 720p / 1080p / 4K, plus 1 per reference image and 1 per input-video second |
 | Magnific Video Upscaler Creative | Per output frame: $0.007 at 720p/1K, $0.009 at 2K, $0.012 at 4K; credits rounded up from USD at $0.01/credit |
 | Enhance Frame Rate | 1 credit per 2 seconds of input video; estimator rounds up conservatively |
-| Ruby HDR | 20 credits/second at or below 4 megapixels; 40 credits/second above 4 megapixels |
+| Ruby HDR | 20 credits/second at or below 4 megapixels; 40 credits/second above 4 megapixels; accepts hdr10, hlg, hdr_prores, hdr_exr_sequence and ACEScg EXR profiles at the same base rate |
 | Kling 4 | 720p and 1080p output/input formulas; temporary 20% discount through 2026-11-30 UTC |
 
 The estimator requires an explicit pricing date. Kling 4's temporary discount
