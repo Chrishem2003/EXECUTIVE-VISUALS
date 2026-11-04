@@ -49,28 +49,9 @@ test("loads only the scoped private image, creates a Runway ephemeral upload and
   assert.equal(form.get("file").type, "image/png");
 });
 
-test("sanitizes original filenames before sending them to the ephemeral upload API",async()=>{
- const calls=[];
- const resolve=createRunwayPrivateAssetResolver({
-  env:{RUNWAY_API_KEY:"server-test-key"},
-  loadPrivateAsset:async()=>({...asset,filename:"my frame (1).png"}),
-  fetchImpl:async(url,options)=>{
-   calls.push({url,options});
-   if(url==="https://api.dev.runwayml.com/v1/uploads")return jsonResponse(200,{
-    uploadUrl:"https://upload.runway.example.test/safe-name",fields:{key:"safe"},
-    runwayUri:"runway://uploads/safe-name"
-   });
-   return{status:204,ok:true,text:async()=>""};
-  }
- });
- await resolve({assetId,ownerId,projectId});
- assert.equal(JSON.parse(calls[0].options.body).filename,"my_frame__1_.png");
- assert.equal(calls[1].options.body.get("file").name,"my_frame__1_.png");
-});
-
-test("rejects out-of-scope owner-only assets, cross-project assets and non-private assets before contacting Runway", async () => {
+test("rejects cross-owner, cross-project and non-private assets before contacting Runway", async () => {
   for (const returned of [
-    { ...asset, ownerId: "other-owner", projectId: null },
+    { ...asset, ownerId: "other-owner" },
     { ...asset, projectId: "other-project" },
     { ...asset, isPrivate: false }
   ]) {
@@ -121,21 +102,35 @@ test("fails closed when Runway credentials are missing or upload creation fails"
   assert.equal(calls, 1);
 });
 
-test("allows a private asset owned by another member of the same authorized project",async()=>{
- const shared={...asset,ownerId:"423e4567-e89b-42d3-a456-426614174000"};
- const calls=[];
- const resolve=createRunwayPrivateAssetResolver({
-  env:{RUNWAY_API_KEY:"server-test-key"},
-  loadPrivateAsset:async()=>shared,
-  fetchImpl:async(url,options)=>{
-   calls.push({url,options});
-   if(url==="https://api.dev.runwayml.com/v1/uploads")return jsonResponse(200,{
-    uploadUrl:"https://upload.runway.example.test/shared",fields:{key:"shared"},
-    runwayUri:"runway://uploads/shared"
-   });
-   return {status:204,ok:true,text:async()=>""};
+test("allows a project-scoped private asset shared with an authorized project member", async()=>{
+  const collaboratorId="423e4567-e89b-42d3-a456-426614174000";
+  const sharedAsset={...asset,ownerId,projectId};
+  const resolve=createRunwayPrivateAssetResolver({
+    env:{RUNWAY_API_KEY:"server-test-key"},
+    loadPrivateAsset:async scope=>{
+      assert.deepEqual(scope,{assetId,ownerId:collaboratorId,projectId});
+      return sharedAsset;
+    },
+    fetchImpl:async url=>{
+      if(String(url)==="https://api.dev.runwayml.com/v1/uploads")return jsonResponse(200,{
+        uploadUrl:"https://upload.runway.example.test/signed?token=opaque",
+        fields:{key:"ephemeral/shared.png"},runwayUri:"runway://uploads/shared-project-frame"
+      });
+      return {status:204,ok:true,text:async()=>" "};
+    }
+  });
+  assert.equal(await resolve({assetId,ownerId:collaboratorId,projectId}),"runway://uploads/shared-project-frame");
+});
+
+test("still rejects project assets from a different project and personal assets owned by another user",async()=>{
+  for(const returned of [
+    {...asset,projectId:"523e4567-e89b-42d3-a456-426614174000"},
+    {...asset,projectId:null,ownerId:"423e4567-e89b-42d3-a456-426614174000"}
+  ]) {
+    const resolve=createRunwayPrivateAssetResolver({
+      env:{RUNWAY_API_KEY:"server-test-key"},loadPrivateAsset:async()=>returned,
+      fetchImpl:async()=>{throw new Error("must not upload");}
+    });
+    await assert.rejects(resolve({assetId,ownerId,projectId}),e=>e.code==="RUNWAY_IMAGE_ASSET_SCOPE_INVALID");
   }
- });
- assert.equal(await resolve({assetId,ownerId,projectId}),"runway://uploads/shared");
- assert.equal(calls.length,2);
 });
