@@ -120,7 +120,7 @@ test("rejects private, loopback, link-local, and mixed public/private DNS answer
     [{ address: "10.0.0.5", family: 4 }],
     [{ address: "169.254.169.254", family: 4 }],
     // The implementation deliberately rejects the complete IETF special-purpose 192.0.0.0/24 block.
-    ...["192.0.0.1", "192.0.0.8", "192.0.0.9", "192.0.0.10", "192.0.0.170", "192.0.0.171", "192.0.0.255"].map(address => [{ address, family: 4 }]),
+    ...["192.0.0.0", "192.0.0.1", "192.0.0.8", "192.0.0.9", "192.0.0.10", "192.0.0.170", "192.0.0.171", "192.0.0.254", "192.0.0.255"].map(address => [{ address, family: 4 }]),
     [{ address: "::1", family: 6 }],
     [{ address: "fc00::1", family: 6 }],
     [{ address: "fe80::1", family: 6 }],
