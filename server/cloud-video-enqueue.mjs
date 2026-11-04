@@ -102,9 +102,9 @@ export function createCloudVideoEnqueue({
         provider, model, durationSeconds: input.durationSeconds,
         outputFormat: input.outputFormat || "mp4"
       });
-      if (currency !== estimate.currency) throw new Error("Runway Gen-4.5 budget approvals must use USD.");
+      if (currency !== estimate.currency) throw new Error("Budget approval currency must match the verified provider price.");
       if (reservedAmount < estimate.amount) {
-        const error = new Error("Budget reservation is below the verified Runway Gen-4.5 price estimate.");
+        const error = new Error("Budget reservation is below the verified provider/model price estimate.");
         error.code = "VIDEO_BUDGET_BELOW_PROVIDER_ESTIMATE";
         error.estimate = estimate;
         throw error;
