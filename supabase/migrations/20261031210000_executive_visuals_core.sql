@@ -280,6 +280,7 @@ begin
     select *
     from executive_visuals.jobs
     where status = 'processing'
+      and job_type <> 'video.generate'
       and (lease_expires_at is null or lease_expires_at <= clock_timestamp())
     order by lease_expires_at nulls first, created_at
     limit p_limit
