@@ -94,6 +94,10 @@ test("Kling 4.0 is catalogued as a Runway-routed model but has no executable ada
   assert.equal(model.constraints.maxReferenceImages, 10);
   assert.equal(model.constraints.maxReferenceVideos, 5);
   assert.equal(model.constraints.pricingPromotionEndDate, "2026-11-30");
+  assert.deepEqual(model.constraints.listCreditsPerSecondByResolution, { "720p": 15.7, "1080p": 23.5 });
+  assert.deepEqual(model.constraints.inputVideoCreditsPerSecondByResolution, { "720p": 9.4, "1080p": 14.1 });
+  assert.equal(model.constraints.promotionalDiscountPercent, 20);
+  assert.equal(model.constraints.billingRounding, "ceil_list_credits_then_discount_then_ceil");
   assert.equal(listSelectableVideoProviderModels().length, 0);
 });
 test("Luma no-cancel and temporary output semantics remain explicit", () => {
