@@ -37,9 +37,6 @@ export async function executeCloudVideoGenerationJob({
   if (adapter !== undefined && typeof resolveAdapter === "function") {
     throw fail("Provide either a fixed adapter or an adapter resolver, not both.", "VIDEO_ADAPTER_CONFIGURATION_INVALID");
   }
-  if (typeof ingestOutputs !== "function" || typeof resolveActualCost !== "function") {
-    throw fail("Private output ingestion and authoritative cost resolution are mandatory.", "VIDEO_EXECUTION_GATES_MISSING");
-  }
   if (!Number.isInteger(maxPolls) || maxPolls < 1 || maxPolls > 1000) throw new Error("Video polling limit is invalid.");
 
   const input = jobInput(job);
@@ -56,6 +53,11 @@ export async function executeCloudVideoGenerationJob({
   if (input.provider !== selectedAdapter.provider || input.model !== selectedAdapter.model ||
       typeof input.requestHash !== "string" || !/^[a-f0-9]{64}$/.test(input.requestHash)) {
     throw fail("Cloud video job provider, model or request hash is inconsistent.", "VIDEO_JOB_INPUT_MISMATCH");
+  }
+  const selectedIngestOutputs = typeof ingestOutputs === "function" ? ingestOutputs : selectedAdapter.ingestOutputs;
+  const selectedResolveActualCost = typeof resolveActualCost === "function" ? resolveActualCost : selectedAdapter.resolveActualCost;
+  if (typeof selectedIngestOutputs !== "function" || typeof selectedResolveActualCost !== "function") {
+    throw fail("Provider-specific private output ingestion and authoritative cost resolution are mandatory.", "VIDEO_EXECUTION_GATES_MISSING");
   }
   if (signal?.aborted) throw fail("Cloud video job was cancelled before execution.", "VIDEO_JOB_CANCELLED");
 
@@ -123,7 +125,7 @@ export async function executeCloudVideoGenerationJob({
         throw fail("Provider completed without a bounded output collection.", "VIDEO_OUTPUT_COLLECTION_INVALID");
       }
       let cost;
-      try { cost = await resolveActualCost({ job, input, task, providerTaskId }); }
+      try { cost = await selectedResolveActualCost({ job, input, task, providerTaskId }); }
       catch { throw fail("Actual provider cost could not be verified; budget remains reserved for review.", "VIDEO_BUDGET_COST_UNRESOLVED"); }
       if (signal?.aborted) throw fail("Cloud video worker lease was lost.", "VIDEO_WORKER_LEASE_LOST");
       const approved = job.estimated_cost;
@@ -135,7 +137,7 @@ export async function executeCloudVideoGenerationJob({
         throw fail("Actual provider cost does not match the approved reservation or lacks evidence.", "VIDEO_BUDGET_COST_UNRESOLVED");
       }
       let ingested;
-      try { ingested = await ingestOutputs({ job, input, task, providerTaskId }); }
+      try { ingested = await selectedIngestOutputs({ job, input, task, providerTaskId }); }
       catch (error) {
         const cleanupPending = error?.cleanupPending === true;
         const held = fail(
