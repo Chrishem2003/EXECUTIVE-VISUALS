@@ -26,6 +26,7 @@ test("Runway catalog exposes implemented Gen-4.5 text-to-video and image-to-vide
   assert.equal(model.availability, "disabled");
   assert.equal(model.capabilities.textToVideo, true);
   assert.equal(model.capabilities.imageToVideo, true);
+  assert.equal(model.capabilities.startFrame, true);
   assert.equal(model.capabilities.seed, true);
   assert.deepEqual(model.capabilities.aspectRatios, ["16:9", "9:16"]);
   assert.equal(model.capabilities.minDurationSeconds, 2);
@@ -34,6 +35,19 @@ test("Runway catalog exposes implemented Gen-4.5 text-to-video and image-to-vide
   assert.equal(model.constraints.cancellation, "best_effort");
 });
 
+test("Kling 4.0 is catalogued as a Runway-routed model but has no executable adapter", () => {
+  const model = getVideoProviderModel("runway", "kling_4");
+  assert.equal(model.gateway, "runway");
+  assert.equal(model.availability, "disabled");
+  assert.equal(model.executionAdapter, "not_implemented");
+  assert.equal(model.capabilities.videoToVideo, true);
+  assert.equal(model.capabilities.nativeAudio, true);
+  assert.equal(model.capabilities.maxDurationSeconds, 30);
+  assert.equal(model.constraints.maxReferenceImages, 10);
+  assert.equal(model.constraints.maxReferenceVideos, 5);
+  assert.equal(model.constraints.pricingPromotionEndDate, "2026-11-30");
+  assert.equal(listSelectableVideoProviderModels().length, 0);
+});
 test("Luma no-cancel and temporary output semantics remain explicit", () => {
   const model = getVideoProviderModel("luma", "ray-3.2");
   assert.deepEqual(model.constraints.supportedDurationsSeconds, [5, 10]);
