@@ -235,6 +235,29 @@ test("cloud asset upload enforces the configured streaming byte limit",async()=>
  const result=await api.uploadAsset({req,ownerId:owner,originalName:"large.png",mediaType:"image/png"});
  assert.equal(result.status,413);assert.equal(called,false);
 });
+test("cloud asset upload rejects declared Content-Length values that do not match the streamed bytes",async()=>{
+ const bytes=Buffer.from("%PDF-1.7\\ncontent");
+ let stored=0;
+ const api=createCloudTimelineApi({url:"https://example.supabase.co",serviceRoleKey:"service-secret",timelineService:{timelines:{},assets:{async createFromFile(){stored++;return{id:"723e4567-e89b-42d3-a456-426614174000"};}}},authorize:async()=>true});
+ for(const declared of [String(bytes.length-1),String(bytes.length+1)]){
+  const req=Readable.from([bytes]);req.headers={"content-length":declared};
+  const result=await api.uploadAsset({req,ownerId:owner,originalName:"mismatch.pdf",mediaType:"application/pdf"});
+  assert.equal(result.status,400);
+  assert.equal(result.body.error.code,"CONTENT_LENGTH_MISMATCH");
+ }
+ assert.equal(stored,0,"mismatched uploads must never reach cloud storage");
+});
+test("cloud asset upload rejects malformed Content-Length before reading the body",async()=>{
+ let stored=0,consumed=false;
+ const req=Readable.from((async function*(){consumed=true;yield Buffer.from("%PDF-1.7\\ncontent");})());
+ req.headers={"content-length":"8 bytes"};
+ const api=createCloudTimelineApi({url:"https://example.supabase.co",serviceRoleKey:"service-secret",timelineService:{timelines:{},assets:{async createFromFile(){stored++;}}},authorize:async()=>true});
+ const result=await api.uploadAsset({req,ownerId:owner,originalName:"bad-length.pdf",mediaType:"application/pdf"});
+ assert.equal(result.status,400);
+ assert.equal(result.body.error.code,"INVALID_CONTENT_LENGTH");
+ assert.equal(consumed,false);
+ assert.equal(stored,0);
+});
 test("cloud asset uploads enforce a bounded concurrent upload limit",async()=>{
  let release;
  const gate=new Promise(resolve=>{release=resolve;});
