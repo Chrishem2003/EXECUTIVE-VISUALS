@@ -6,7 +6,7 @@ const fail = (message, code) => Object.assign(new Error(message), { code });
 
 function normalizeModel(value) {
   const model = String(value || "").trim();
-  if (!model || model.length > 240 || !/^[a-zA-Z0-9_./:-]+$/.test(model) || model.startsWith("/") || model.includes("..") || model.split("/").some(part => !part || part === ".")) {
+  if (!model || model.length > 240 || !/^[a-zA-Z0-9_./:-]+$/.test(model) || model.startsWith("/") || model.includes("..") || model.split("/").length < 2 || model.split("/").some(part => !part || part === ".")) {
     throw fail("Configure a valid FAL video model identifier.", "VIDEO_GATEWAY_CONFIG_INVALID");
   }
   return model;
@@ -35,7 +35,7 @@ function validateTask(task) {
   if (!/^[a-zA-Z0-9_-]{1,200}$/.test(requestId)) {
     throw fail("The persisted FAL request ID is invalid.", "VIDEO_GATEWAY_TASK_INVALID");
   }
-  const root = "/" + model + "/requests/" + requestId;
+  const root = "/" + model.split("/").slice(0, 2).join("/") + "/requests/" + requestId;
   return Object.freeze({
     provider: "fal",
     model,
@@ -134,7 +134,7 @@ export function createFalAsyncVideoClient({
       if (!/^[a-zA-Z0-9_-]{1,200}$/.test(requestId)) {
         throw fail("FAL did not return a valid request identifier.", "VIDEO_GATEWAY_INVALID_RESPONSE");
       }
-      const root = "/" + selectedModel + "/requests/" + requestId;
+      const root = "/" + selectedModel.split("/").slice(0, 2).join("/") + "/requests/" + requestId;
       return validateTask({
         model: selectedModel,
         requestId,
