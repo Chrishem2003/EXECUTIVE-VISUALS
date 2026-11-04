@@ -90,7 +90,6 @@ export const VIDEO_PROVIDER_CATALOG = freeze([
           durationAutoBilledSeconds: 15,
           minimumBillableDurationSeconds: 4,
           imageToVideoMaxImages: 2,
-          imageToVideoMaxImages: 2,
           textToVideoMaxReferenceImages: 9,
           videoToVideoMaxReferenceImages: 9,
           textToVideoMaxReferenceVideos: 3,
