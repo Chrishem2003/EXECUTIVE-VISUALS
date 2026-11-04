@@ -186,3 +186,5 @@ Google Picker frontend follow-up:
 - The client obtains a short-lived access token from the authenticated `POST /api/integrations/google-drive/picker-token` endpoint. The token is scoped to the user's selected-file `drive.file` access and is not persisted in localStorage.
 - Picker selection sends only the selected file ID to the authenticated import endpoint; the server independently verifies access and file metadata before ingesting bytes.
 - The server Content Security Policy now explicitly allows the Google API loader, Picker frames and required Google API connections. Review the staging web origin and API key referrer restrictions before enabling.
+
+- The Cloud project asset register now exposes two Drive export destinations: save directly to the user's Drive root, or use Google Picker's folder view to choose a destination folder. The server still validates the selected folder ID and relies on Drive to enforce the connected user's permissions.
