@@ -133,5 +133,6 @@ export function createCloudVideoEnqueue({
       });
       if (typeof result !== "boolean") throw new Error("Cloud video job finalization returned an invalid result.");
       return result;
-    }  });
+    }
+  });
 }
