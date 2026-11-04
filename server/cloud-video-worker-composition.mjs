@@ -1,4 +1,3 @@
-import { readFile } from "node:fs/promises";
 import { createCloudQueue } from "./cloud-queue.mjs";
 import { createCloudVideoEnqueue } from "./cloud-video-enqueue.mjs";
 import { createCloudVideoSubmissionLedger } from "./cloud-video-submissions.mjs";
@@ -8,6 +7,7 @@ import { createRunwayPrivateAssetResolver } from "./runway-private-asset-resolve
 import { createCloudAssetService } from "./cloud-asset-service.mjs";
 import { createCloudMediaAssetIO } from "./cloud-media-io.mjs";
 import { createFfprobeVideoOutputValidator, createPrivateVideoOutputIngestor } from "./private-video-output-ingestion.mjs";
+import { createCloudVideoPrivateAssetReader } from "./cloud-video-private-assets.mjs";
 
 /**
  * Composes the durable cloud video worker without performing network I/O.
@@ -72,25 +72,7 @@ export function createCloudVideoWorkerComposition({
     });
   }
 
-  const privateAssetReader = loadPrivateAsset || (async ({ assetId, ownerId, projectId = null }) => {
-    const materialized = await mediaIO.materialize({ ownerId, assetId });
-    try {
-      const asset = materialized.asset;
-      if (!asset || asset.id !== assetId || (asset.projectId || null) !== (projectId || null) ||
-          asset.storageBucket !== "executive-visuals-media") return null;
-      return {
-        id: asset.id,
-        ownerId: asset.ownerId,
-        projectId: asset.projectId || null,
-        isPrivate: true,
-        filename: asset.name,
-        contentType: asset.mediaType,
-        bytes: await readFile(materialized.path)
-      };
-    } finally {
-      await materialized.cleanup();
-    }
-  });
+  const privateAssetReader = loadPrivateAsset || createCloudVideoPrivateAssetReader({ mediaIO });
 
   let outputIngestor = ingestOutputs;
   if (typeof outputIngestor !== "function") {
