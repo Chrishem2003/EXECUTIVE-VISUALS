@@ -1,6 +1,5 @@
 const SOURCE="https://docs.dev.runwayml.com/guides/pricing/";
 const fail=(message,code)=>Object.assign(new Error(message),{code});
-const RESOLUTIONS=new Set(["360p","480p","720p","768p","1080p","2k","4k"]);
 
 function finiteDuration(value,label,{allowZero=false,max=1800}={}) {
   if(typeof value!=="number"||!Number.isFinite(value)||(allowZero?value<0:value<=0)||value>max) {
@@ -32,9 +31,9 @@ export function estimateRunwayVideoCredits({
   inputVideoSeconds=0,referenceVideoSeconds=0,referenceImageCount=0,
   inputType="text",pricingDate
 }={}) {
-  const duration=finiteDuration(durationSeconds,"durationSeconds");
-  const inputVideo=finiteDuration(inputVideoSeconds,"inputVideoSeconds",{allowZero:true});
-  const referenceVideo=finiteDuration(referenceVideoSeconds,"referenceVideoSeconds",{allowZero:true});
+  const duration=finiteDuration(durationSeconds,"durationSeconds",{max:30});
+  const inputVideo=finiteDuration(inputVideoSeconds,"inputVideoSeconds",{allowZero:true,max:30});
+  const referenceVideo=finiteDuration(referenceVideoSeconds,"referenceVideoSeconds",{allowZero:true,max:30});
   const imageCount=count(referenceImageCount,"referenceImageCount");
   if(typeof pricingDate!=="string"||!/^(20\d{2})-(0[1-9]|1[0-2])-([0-2]\d|3[01])$/.test(pricingDate)) {
     throw fail("pricingDate must be an explicit YYYY-MM-DD value.","RUNWAY_PRICE_INPUT_REQUIRED");
