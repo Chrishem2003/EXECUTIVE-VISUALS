@@ -93,7 +93,7 @@ from executive_visuals.enqueue_video_generation_job(
  '323e4567-e89b-42d3-a456-426614174000',
  'pg-integration-video-001','runway','gen4.5',repeat('a',64),
  jsonb_build_object('projectId','323e4567-e89b-42d3-a456-426614174000',
-   'provider','runway','model','gen4.5','requestHash',repeat('a',64),'prompt','test scene'),
+   'provider','runway','model','gen4.5','requestHash',repeat('a',64),'prompt','test scene','durationSeconds',5),
  '523e4567-e89b-42d3-a456-426614174000',1.25,'USD'
 );
 
@@ -104,7 +104,7 @@ from executive_visuals.enqueue_video_generation_job(
  '323e4567-e89b-42d3-a456-426614174000',
  'pg-integration-video-001','runway','gen4.5',repeat('a',64),
  jsonb_build_object('projectId','323e4567-e89b-42d3-a456-426614174000',
-   'provider','runway','model','gen4.5','requestHash',repeat('a',64),'prompt','test scene'),
+   'provider','runway','model','gen4.5','requestHash',repeat('a',64),'prompt','test scene','durationSeconds',5),
  '523e4567-e89b-42d3-a456-426614174000',1.25,'USD'
 );
 do $idempotency$
@@ -238,7 +238,7 @@ from executive_visuals.enqueue_video_generation_job(
  '323e4567-e89b-42d3-a456-426614174000',
  'pg-integration-video-overrun','runway','gen4.5',repeat('c',64),
  jsonb_build_object('projectId','323e4567-e89b-42d3-a456-426614174000',
-   'provider','runway','model','gen4.5','requestHash',repeat('c',64)),
+   'provider','runway','model','gen4.5','requestHash',repeat('c',64),'durationSeconds',2),
  '923e4567-e89b-42d3-a456-426614174000',0.5,'USD'
 );
 update executive_visuals.jobs
