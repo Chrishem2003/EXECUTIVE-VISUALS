@@ -5,9 +5,12 @@ import { estimateLumaRay32Cost } from "../luma-video-pricing.mjs";
 const date = "2026-11-04";
 
 test("prices standard Ray 3.2 generation by resolution and duration", () => {
-  assert.equal(estimateLumaRay32Cost({resolution:"540p",durationSeconds:5,pricingDate:date}).amount,0.15);
-  assert.equal(estimateLumaRay32Cost({resolution:"720p",durationSeconds:10,pricingDate:date}).amount,0.90);
-  assert.equal(estimateLumaRay32Cost({resolution:"1080p",durationSeconds:5,pricingDate:date}).amount,1.20);
+  const low=estimateLumaRay32Cost({resolution:"540p",durationSeconds:5,pricingDate:date});
+  const medium=estimateLumaRay32Cost({resolution:"720p",durationSeconds:10,pricingDate:date});
+  const high=estimateLumaRay32Cost({resolution:"1080p",durationSeconds:5,pricingDate:date});
+  assert.deepEqual([low.credits,low.amount],[50,0.15]);
+  assert.deepEqual([medium.credits,medium.amount],[300,0.90]);
+  assert.deepEqual([high.credits,high.amount],[400,1.20]);
 });
 
 test("prices HDR and EXR generation only for documented 5-second 720p and 1080p combinations", () => {
@@ -44,5 +47,10 @@ test("estimates are immutable and never marked billable or settlement eligible",
   assert.equal(estimate.billable,false);
   assert.equal(estimate.settlementEligible,false);
   assert.equal(estimate.currency,"USD");
+  assert.equal(estimate.credits,100);
+  assert.equal(estimate.creditToUsdRate,0.003);
+  assert.equal(estimate.amount,0.30);
+  assert.equal(estimate.basis,"default_list_rate_usd_per_credit");
+  assert.equal(estimate.monetaryEstimateScope,"default_list_rate_only_account_plan_or_contract_rate_may_differ");
   assert.ok(Object.isFrozen(estimate));
 });
