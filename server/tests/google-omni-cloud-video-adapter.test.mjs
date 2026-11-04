@@ -157,3 +157,14 @@ test("rejects output ingestion when task and leased job context do not match", a
     providerTaskId: interactionId
   }), error => error.code === "GEMINI_OMNI_OUTPUT_CONTEXT_INVALID");
 });
+
+test("exposes authoritative provider token usage as the cloud executor cost resolver", async () => {
+  const h = harness();
+  const result = await h.resolveActualCost({
+    providerTaskId: interactionId,
+    task: { rawInteraction: { usage: { total_input_tokens: 1000, total_output_tokens: 57920 } } }
+  });
+  assert.equal(result.amount, 1.0151);
+  assert.equal(result.currency, "USD");
+  assert.match(result.evidenceReference, new RegExp(interactionId));
+});
