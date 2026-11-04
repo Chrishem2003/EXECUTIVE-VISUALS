@@ -73,7 +73,7 @@ export function createGoogleGeminiFilesGateway({
   recordProviderFile,
   deleteProviderFileRecord,
   timeoutMs = 30000,
-  maxBytes = MAX_FILE_BYTES,
+  maxBytes = 250 * 1024 * 1024,
   chunkSize = 8 * 1024 * 1024,
   processingPollIntervalMs = 5000,
   maxProcessingPolls = 36,
@@ -196,7 +196,12 @@ export function createGoogleGeminiFilesGateway({
     if (offset !== sizeBytes || !finalResource) {
       throw fail("Google upload did not finalize at the expected byte offset.", "GEMINI_FILE_UPLOAD_INCOMPLETE");
     }
-    return waitUntilActive(finalResource, mimeType, sizeBytes);
+    try {
+      return await waitUntilActive(finalResource, mimeType, sizeBytes);
+    } catch (error) {
+      try { await removeGoogleFile(finalResource.name); } catch {}
+      throw error;
+    }
   }
 
   return Object.freeze({
@@ -213,6 +218,11 @@ export function createGoogleGeminiFilesGateway({
               existing.assetId === assetId && existing.mimeType === mimeType && match) {
             return Object.freeze({ uri: existing.uri, mediaType: mimeType, providerFileName: existing.name, expiresAt: existing.expiresAt });
           }
+        } else if (plain(existing) && existing.ownerId === ownerId &&
+            (existing.projectId || null) === (projectId || null) && existing.assetId === assetId &&
+            FILE_NAME.test(String(existing.name || ""))) {
+          try { await removeGoogleFile(existing.name); } catch {}
+          try { await deleteProviderFileRecord?.({ name: existing.name, recordId: existing.id }); } catch {}
         }
       }
 
