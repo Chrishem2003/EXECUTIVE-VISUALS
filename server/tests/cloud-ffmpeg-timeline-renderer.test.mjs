@@ -16,7 +16,7 @@ test("cloud FFmpeg renderer produces a playable master from materialized video a
   execFileSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-loglevel","error","-y","-f","lavfi","-i","color=c=blue:s=320x240:r=24:d=1","-c:v","libx264","-pix_fmt","yuv420p",video]);
   execFileSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-loglevel","error","-y","-f","lavfi","-i","sine=frequency=440:duration=1","-c:a","pcm_s16le",audio]);
   const timeline={name:"Cloud test",width:320,height:240,frameRate:{numerator:24,denominator:1},tracks:[
-   {id:"v",kind:"video",clips:[{id:"v1",assetId:"asset-video",timelineStart:time(0),duration:time(1),sourceRange:{start:time(0),duration:time(1)}}]},
+   {id:"v",kind:"video",clips:[{id:"v1",assetId:"asset-video",timelineStart:time(0),duration:time(1),sourceRange:{start:time(0),duration:time(1)},effects:[{schemaVersion:1,id:"color-v1",type:"color",enabled:true,parameters:{brightness:1.05,contrast:1.1,saturation:1.2}}],transitionIn:{schemaVersion:1,id:"fade-in-v1",type:"fade-to-black",edge:"in",durationFrames:6,curve:"linear"},transitionOut:{schemaVersion:1,id:"fade-out-v1",type:"fade-to-black",edge:"out",durationFrames:6,curve:"linear"}}]},
    {id:"a",kind:"audio",clips:[{id:"a1",assetId:"asset-audio",timelineStart:time(0),duration:time(1),sourceRange:{start:time(0),duration:time(1)},gainDb:-3}]}
   ]};
   const assets=new Map([
