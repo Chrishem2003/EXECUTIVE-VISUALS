@@ -20,14 +20,16 @@ function inputManifestMap(inputs) {
   if (!Array.isArray(inputs)) throw fail("A published workflow input manifest is required.");
   const map = new Map();
   for (const item of inputs) {
+    const normalizedType = item?.type === "primitive" ||
+      ["string", "number", "boolean"].includes(item?.type) ? "primitive" : item?.type;
     if (!item || typeof item.nodeId !== "string" || !item.nodeId.trim() ||
         typeof item.outputKey !== "string" || !item.outputKey.trim() ||
-        !["primitive", ...MEDIA_TYPES].includes(item.type)) {
+        !["primitive", ...MEDIA_TYPES].includes(normalizedType)) {
       throw fail("Published workflow input manifest contains an invalid input.");
     }
     const key = item.nodeId + ":" + item.outputKey;
     if (map.has(key)) throw fail("Published workflow input manifest contains duplicate inputs.");
-    map.set(key, { ...item });
+    map.set(key, { ...item, type: normalizedType });
   }
   return map;
 }
