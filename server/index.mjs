@@ -383,6 +383,7 @@ export function createAppServer() {
           if(Buffer.isBuffer(streamed.body)){res.end(streamed.body);return;}
           await pipeline(Readable.fromWeb(streamed.body),res);
         }catch(error){if(!res.destroyed)res.destroy(error);}
+        finally{streamed.cleanup?.();}
         return;
       }
       if(cloudTimelineApi && path==="/api/cloud/assets" && req.method==="POST"){
