@@ -293,3 +293,12 @@ This is the composition seam for registering the separately implemented FAL and 
 Added `createProviderAwareCloudVideoWorkerComposition` as the concrete bridge from the exact-match multi-provider worker to the existing Supabase queue, Postgres submission ledger, private cloud asset repository, FFprobe media validation and private output ingestor. Provider adapters are supplied by an explicit factory, allowing each provider to bind its own task-level billing resolver while sharing the hardened storage boundary.
 
 The runtime composition requires `CLOUD_VIDEO_WORKER_ENABLED=true`, `VIDEO_GATEWAY_ENABLED=true`, and `VIDEO_GATEWAY_ALLOW_REMOTE=true`, plus an explicit bounded output-host allowlist. It is side-effect free during construction; provider and database network calls occur only when a host invokes the worker cycle. It is not registered in `cloud-worker-process.mjs` and therefore does not change the running production worker.
+
+
+### FAL provider registration — 2026-11-05
+
+Added the FAL async client, exact-model cloud adapter and request-level billing resolver to the runtime-composition branch, then introduced `createFalVideoProviderAdapter` to bind them to the shared private output ingestor. The runtime composition now defaults to one FAL adapter when no custom adapter factory is supplied; a custom factory can still register additional exact-match providers. FAL registration requires `FAL_VIDEO_MODEL` and a server-side billing key (`FAL_BILLING_KEY`, falling back to `FAL_KEY`). Remote execution remains blocked unless both video gateway flags and the cloud-worker flag are explicitly enabled.
+
+Reference-asset generation remains fail-closed unless an authenticated project-scoped `prepareInput` resolver is explicitly supplied. The output host allowlist remains mandatory and must include the FAL media hosts. Construction performs no provider or Supabase requests. FAL queue, billing and runtime registration contract tests are included in the cloud-queue suite.
+
+The separate PR #56 remains an independently reviewable implementation branch; this stacked runtime branch includes the provider modules needed for a self-contained integration path, pending final CI and code review.
