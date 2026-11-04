@@ -37,3 +37,20 @@ test("cloud video composition wires queue, Postgres ledger, Runway and injected 
   assert.equal(typeof worker.runCycle, "function");
   assert.equal(typeof worker.recoverExpired, "function");
 });
+
+
+test("composed worker claims only video jobs and does not contact Runway when the queue is empty", async () => {
+  const calls = [];
+  const worker = createCloudVideoWorkerComposition({
+    ...base,
+    fetchImpl: async (url, options) => {
+      calls.push({ url: String(url), body: JSON.parse(options.body) });
+      return new Response("[]", { status: 200, headers: { "content-type": "application/json" } });
+    }
+  });
+  const result = await worker.runCycle({ leaseSeconds: 90, heartbeatIntervalMs: 15000 });
+  assert.deepEqual(result, { claimed: false });
+  assert.equal(calls.length, 1);
+  assert.match(calls[0].url, /rpc\\/claim_next_job$/);
+  assert.deepEqual(calls[0].body.p_job_types, ["video.generate"]);
+});
