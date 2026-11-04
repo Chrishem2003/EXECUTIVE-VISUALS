@@ -48,8 +48,13 @@ export function createCloudWorkerSupervisor({workers,leaseSeconds=90,heartbeatIn
  }
  async function recover(){
   if(stopped)return;
-  try{const count=await workers[0].recoverExpired(100);if(count)onLog({kind:"recovery",count});}
-  catch(error){onError(error);}
+  const settled=await Promise.allSettled(workers.map(worker=>worker.recoverExpired(100)));
+  let total=0;
+  for(const item of settled){
+   if(item.status==="rejected"){onError(item.reason);continue;}
+   if(Number.isInteger(item.value)&&item.value>0)total+=item.value;
+  }
+  if(total)onLog({kind:"recovery",count:total});
  }
  return Object.freeze({
   async start(){
