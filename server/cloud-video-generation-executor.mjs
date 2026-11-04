@@ -101,7 +101,7 @@ export async function executeCloudVideoGenerationJob({
     if (signal?.aborted) throw fail("Cloud video worker lease was lost.", "VIDEO_WORKER_LEASE_LOST");
     let task;
     try {
-      task = await adapter.getStatus(providerTaskId);
+      task = await adapter.getStatus(providerTaskId, { job, workerId });
     } catch {
       throw fail("Provider status is temporarily unavailable; polling will resume later.", "VIDEO_PROVIDER_POLL_DEFERRED");
     }

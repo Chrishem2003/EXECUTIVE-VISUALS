@@ -31,7 +31,7 @@ function fixture({ state = "prepared", submitError = null, recordResult = true, 
   const adapter = {
     provider: "runway", model: "gen4.5", minimumPollIntervalMs: 5000,
     async submit(input, context) { calls.push(["submit", input.requestHash, context?.job?.id, context?.job?.owner_id]); if (submitError) throw submitError; return { taskId, status: "queued" }; },
-    async getStatus(id) { calls.push(["poll", id]); if (status instanceof Error) throw status; return status; }
+    async getStatus(id, context) { calls.push(["poll", id, context?.job?.id, context?.workerId]); if (status instanceof Error) throw status; return status; }
   };
   return {
     calls, ledger, adapter,
@@ -141,4 +141,12 @@ test("cloud executor accepts an explicitly model-bound Luma adapter without chan
   assert.equal(result.model, "ray-3.2");
   assert.equal(result.providerTaskId, taskId);
   assert.deepEqual(f.calls.map(call => call[0]), ["prepare", "prepareInput", "begin", "submit", "record", "poll", "cost", "ingest"]);
+});
+
+test("cloud executor passes the current leased job scope to provider status polling", async () => {
+  const f = fixture({ state: "submitted" });
+  await executeCloudVideoGenerationJob({ job, workerId: "worker-context", ...f });
+  const poll = f.calls.find(call => call[0] === "poll");
+  assert.equal(poll[2], job.id);
+  assert.equal(poll[3], "worker-context");
 });

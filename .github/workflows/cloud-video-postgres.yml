@@ -38,6 +38,14 @@ jobs:
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261104120000_cloud_video_submission_ledger.sql
       - name: Apply cloud budget and enqueue migration
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261104143000_cloud_video_budget_enqueue.sql
+      - name: Apply private Google provider-file mapping migration
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261105100000_google_provider_files.sql
+      - name: Verify private Google provider-file mapping privileges
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/google-provider-files-postgres-integration.sql
+      - name: Apply durable Google video interaction migration
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261105120000_google_video_interactions.sql
+      - name: Verify durable Google interaction ownership and privileges
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/google-video-interactions-postgres-integration.sql
       - name: Verify authorization, atomic enqueue and finalization
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/cloud-video-postgres-integration.sql
       - name: Prepare concurrency test approval

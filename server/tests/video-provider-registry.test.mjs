@@ -246,7 +246,7 @@ test("Google Gemini Omni Flash catalog matches the current Interactions API cont
   const model = getVideoProviderModel("google", "gemini-omni-1.1-flash");
   assert.ok(model);
   assert.equal(model.availability, "disabled");
-  assert.equal(model.executionAdapter, "not_implemented");
+  assert.equal(model.executionAdapter, "google-omni-cloud-video-adapter");
   assert.equal(model.capabilities.textToVideo, true);
   assert.equal(model.capabilities.imageToVideo, true);
   assert.equal(model.capabilities.videoToVideo, true);
