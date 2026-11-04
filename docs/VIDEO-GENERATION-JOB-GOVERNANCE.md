@@ -21,16 +21,16 @@ The budget callback must be synchronous and must write its reservation in the sa
 
 ## Deliberate non-claims
 
-This module does not submit to Runway, poll a provider, download output, create an asset row, or expose a user-facing endpoint. The current provider catalog keeps Runway, Luma, Kling and Gemini disabled, so the production resolver rejects every remote provider by default.
+`server/video-generation-executor.mjs` now provides an isolated leased-job execution boundary. It starts a provider submission once, persists the task ID, resumes polling on later leased attempts, quarantines ambiguous POST outcomes, and delegates output ingestion to a required injected callback. It does not itself download media or create assets. The callback must be idempotent by job/task ID and must enforce provider-host allowlisting, HTTPS-only downloads with redirects disabled, private-address/DNS protections, byte/time limits, media probing, checksums, private storage and asset registration.\n\nThe executor is not wired into the local worker dispatch or cloud worker supervisor, and no authenticated route queues video jobs. The current provider catalog keeps Runway, Luma, Kling and Gemini disabled, so the production resolver rejects every remote provider by default.
 
 ## Remaining integration gates
 
 - Add an authenticated HTTP route that uses the real project authorization and budget-ledger implementation.
-- Extend the worker supervisor with a dedicated `video.generate` executor; preserve leases, heartbeats, cancellation and retry semantics.
+- Wire the isolated executor into the existing local worker dispatch and/or a dedicated cloud worker only after confirming the target job database is shared with the enqueue service. Preserve leases, heartbeats, cancellation and retry semantics; the current cloud queue is Supabase-backed while the enqueue ledger is SQLite-backed, so do not connect them without an explicit persistence migration.
 - Integrate the submission ledger with a dedicated worker. On process recovery, move stale `submitting` records to `unknown`; never blindly retry a provider POST when acceptance may have occurred. Runway task creation documentation does not advertise an idempotency key or exactly-once guarantee, so ambiguous outcomes require provider-side reconciliation.
 - Poll according to provider rate limits; handle provider cancellation and terminal states.
 - Download only validated HTTPS provider outputs, enforce byte/time limits, inspect the container with FFprobe, compute SHA-256 and upload to private project storage.
 - Create the platform asset record and durable usage/cost ledger event before marking the job succeeded.
-- Add acceptance tests for worker crash/recovery, provider timeout, duplicate dispatch, budget exhaustion, output expiry, malformed media and project isolation. The ledger currently has isolated tests for one-time submission, stale-attempt quarantine, ambiguous-outcome reconciliation, task-ID persistence and terminal transitions; integration with the cloud worker supervisor and leased queue is still outstanding.
+- Add acceptance tests for worker crash/recovery, provider timeout, duplicate dispatch, budget exhaustion, output expiry, malformed media and project isolation. Isolated tests now cover one-time submission, stale-attempt quarantine, ambiguous-outcome reconciliation, task-ID persistence, resumed polling, no duplicate POSTs and required output-ingestion injection; worker dispatch and real private-storage ingestion remain outstanding.
 
 No provider is enabled by this change. No production data, credentials, deployments or provider billing are touched.
