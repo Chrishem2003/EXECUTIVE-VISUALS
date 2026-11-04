@@ -130,3 +130,8 @@ The hosted execution path now has separate modules, still not enabled by the pro
 - The atomic success finalizer now verifies that every output asset ID exists, is active, belongs to the job owner/project, is stored in the private Executive Visuals media bucket, and matches the recorded provider task ID before it marks the job successful or settles the budget.
 
 This is a code foundation, not a live worker activation. The existing cloud process supervisor does not instantiate this worker, and no Runway key, provider allowlist, budget policy, approval, or provider request has been configured. Before connecting it to the supervisor, the new PostgreSQL migration/RPCs must pass isolated database integration tests and the worker must be tested with mock adapters, real FFprobe, private test storage and fault-injection for lease loss and ambiguous RPC responses.
+
+
+### Idempotent output asset registration
+
+The private asset repository now exposes an owner/project/task/output-index scoped lookup for active generated-video assets. The output ingestor checks this before downloading or registering each provider output, stores the output index in asset metadata, and reuses a matching active asset on retry. Only assets created during the current ingestion attempt are eligible for compensating deletion; previously registered assets are not deleted if a later output fails. This reduces duplicate assets when a worker loses its lease after registration but before the job finalizer commits.
