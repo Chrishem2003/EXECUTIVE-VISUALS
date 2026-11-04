@@ -1,0 +1,28 @@
+# Lightweight image for free hosting tiers (Render free web service, Koyeb, etc.).
+# Differences from ./Dockerfile: no verification suite during the build, and no
+# persistent-disk requirement. Data lives in /tmp and is LOST on restart/redeploy.
+FROM node:22-bookworm-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg fonts-dejavu-core ca-certificates \
+    && apt-get clean
+
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci
+COPY . .
+RUN npx tsc -b && npx vite build
+
+# The host injects PORT (the server reads API_PORT or PORT).
+# SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY must be set as environment variables.
+ENV NODE_ENV=production \
+    API_HOST=0.0.0.0 \
+    AUTH_MODE=supabase \
+    DATA_DIR=/tmp/ev-data \
+    MEDIA_ROOT=/tmp/ev-data/media \
+    WEB_ROOT=./dist \
+    REQUIRE_PERSISTENT_DATA_DIR=false \
+    MAX_UPLOAD_BYTES=104857600
+
+EXPOSE 10000
+CMD ["node", "server/index.mjs"]
