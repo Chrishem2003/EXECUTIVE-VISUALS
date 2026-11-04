@@ -142,7 +142,8 @@ async function downloadPinned(url, destination, { resolver, maxBytes, timeoutMs 
         })
         .catch(error => finish(error));
     });
-    req.setTimeout(timeoutMs, () => req.destroy(fail("Provider output download timed out.", "VIDEO_OUTPUT_TIMEOUT")));
+    const timer = setTimeout(() => req.destroy(fail("Provider output download timed out.", "VIDEO_OUTPUT_TIMEOUT")), timeoutMs);
+    req.on("close", () => clearTimeout(timer));
     req.on("error", error => finish(error));
     req.end();
   });
@@ -234,11 +235,17 @@ export function createPrivateVideoOutputIngestor({
               validation: validation.metadata && typeof validation.metadata === "object" && !Array.isArray(validation.metadata) ? validation.metadata : {}
             }
           });
+          if (asset && typeof asset.id === "string" && UUID.test(asset.id)) created.push(asset);
+          if (asset && typeof asset.id === "string" && UUID.test(asset.id)) created.push(asset);
           if (!asset || typeof asset.id !== "string" || !UUID.test(asset.id) || asset.ownerId !== job.owner_id ||
               (asset.projectId || null) !== (job.project_id || null)) {
+            if (!asset || typeof asset.id !== "string" || !UUID.test(asset.id)) {
+              const error = fail("Private asset registration returned no safe cleanup identifier.", "VIDEO_OUTPUT_ASSET_REGISTRATION_INVALID");
+              error.cleanupPending = true;
+              throw error;
+            }
             throw fail("Private asset registration returned an invalid ownership record.", "VIDEO_OUTPUT_ASSET_REGISTRATION_INVALID");
           }
-          created.push(asset);
         }
         return Object.freeze({
           assetIds: Object.freeze(created.map(asset => asset.id)),
