@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 
 const sql = await readFile(resolve(process.cwd(), "supabase/migrations/20261031210000_executive_visuals_core.sql"), "utf8");
 const checkpointSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261102090000_video_pipeline_checkpoints.sql"), "utf8");
+const videoSubmissionSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261104120000_cloud_video_submission_ledger.sql"), "utf8");
 const issues = [];
 const tables = ["projects","project_members","project_workspace_documents","workflows","workflow_runs","workflow_node_runs","timelines","assets","jobs","job_events","consents","reviews","audit_events"];
 for (const table of tables) {
@@ -93,6 +94,24 @@ if (!sql.includes("revoke all on function executive_visuals.claim_next_job(text,
 if (!sql.includes("lease_expires_at timestamptz") || !sql.includes("available_at timestamptz") || !sql.includes("lease_heartbeat_at timestamptz")) {
   issues.push("Durable worker lease and delayed retry fields are missing from the cloud job contract.");
 }
+if (/\\b(drop\\s+table|truncate|delete\\s+from)\\b/i.test(videoSubmissionSql)) issues.push("Cloud video submission migration must not contain destructive DDL/DML.");
+if (!videoSubmissionSql.includes("create table if not exists executive_visuals.video_generation_submissions")) issues.push("Cloud video submission ledger table is missing.");
+if (!videoSubmissionSql.includes("alter table executive_visuals.video_generation_submissions enable row level security;")) issues.push("Cloud video submission ledger must enable RLS.");
+if (!videoSubmissionSql.includes("revoke all on executive_visuals.video_generation_submissions from public, anon, authenticated;")) issues.push("Cloud video submission ledger must be unavailable to untrusted roles.");
+if (!videoSubmissionSql.includes("grant all privileges on executive_visuals.video_generation_submissions to service_role;")) issues.push("Cloud worker role needs access to the video submission ledger.");
+for (const rpc of ["prepare_video_generation_submission","begin_video_generation_submission","record_video_generation_submission","mark_video_generation_submission_unknown","get_video_generation_submission","reconcile_unknown_video_generation_submission","finish_video_generation_submission"]) {
+  const count = (videoSubmissionSql.match(new RegExp(`create or replace function executive_visuals\\.${rpc}\\(`, "g")) || []).length;
+  if (count !== 1) issues.push(`Cloud video ledger RPC must be defined exactly once: ${rpc}.`);
+  if (!videoSubmissionSql.includes(`grant execute on function executive_visuals.${rpc}(`) || !videoSubmissionSql.includes(`to service_role;`)) issues.push(`Cloud video ledger RPC must be granted to service_role: ${rpc}.`);
+  if (!videoSubmissionSql.includes(`revoke all on function executive_visuals.${rpc}(`)) issues.push(`Cloud video ledger RPC must be revoked from untrusted roles: ${rpc}.`);
+}
+if (!videoSubmissionSql.includes("j.status='processing' and j.lease_owner=p_worker_id and j.lease_expires_at > clock_timestamp()")) issues.push("Cloud submission transitions must be fenced to the active worker lease.");
+if (!videoSubmissionSql.includes("s.state='prepared'")) issues.push("Cloud provider submission must start from prepared state only.");
+if (!videoSubmissionSql.includes("s.state='submitting' and s.provider_task_id is null")) issues.push("Ambiguous cloud submissions must be quarantined without automatic resubmission.");
+if (!videoSubmissionSql.includes("state='unknown' and provider_task_id is null")) issues.push("Explicit reconciliation must be required for ambiguous provider submissions.");
+if (!videoSubmissionSql.includes("unique" ) || !videoSubmissionSql.includes("provider_task_id text unique")) issues.push("Provider task IDs must be globally unique in the ledger.");
+if (!videoSubmissionSql.includes("queued.input ->> 'requestHash'")) issues.push("Cloud ledger preparation must verify the queued request hash.");
+
 if (issues.length) {
   console.error("Cloud migration guard failed:");
   for (const issue of issues) console.error("- " + issue);
