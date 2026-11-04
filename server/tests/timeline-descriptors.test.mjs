@@ -66,6 +66,12 @@ test("transition descriptors must match their edge and stay within clip duration
  assert.ok(issues.some(issue=>issue.code==="invalid_transition"));
 });
 
+test("fade-in and fade-out durations cannot overlap",()=>{
+ const clip=validClip();clip.transitionIn={...clip.transitionIn,durationFrames:30};clip.transitionOut={...clip.transitionOut,durationFrames:30};
+ assert.ok(validateTimelineDescriptors(clip,{numerator:24,denominator:1}).some(issue=>issue.code==="overlapping_fades"));
+ assert.ok(validateTimelineClipDescriptors(clip,{numerator:24,denominator:1}).some(issue=>issue.includes("cannot overlap")));
+});
+
 test("descriptor IDs are unique across effects, keyframes and transitions",()=>{
  const clip=validClip();clip.transitionOut={...clip.transitionOut,id:clip.effects[0].id};
  assert.ok(validateTimelineDescriptors(clip,{numerator:24,denominator:1}).some(issue=>issue.code==="invalid_descriptor_id"));
