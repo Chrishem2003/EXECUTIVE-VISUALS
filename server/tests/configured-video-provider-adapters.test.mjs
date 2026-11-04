@@ -53,7 +53,7 @@ test("fails closed when Luma is partially enabled or has no settlement resolver"
   }), error => error.code === "LUMA_VIDEO_REMOTE_DISABLED");
   assert.throws(() => createConfiguredVideoProviderAdapters({
     ...base, resolveLumaActualCost: undefined
-  }), error => error.code === "LUMA_BILLING_RESOLVER_REQUIRED");
+  }), error => error.code === "LUMA_BILLING_RATE_REQUIRED");
 });
 
 test("requires owner-scoped resolution before Luma reference media is submitted", async () => {
