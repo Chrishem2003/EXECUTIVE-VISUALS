@@ -18,7 +18,7 @@ Source: https://docs.dev.runwayml.com/guides/pricing/
 | Kling 3.0 Standard | 9 credits/second without audio; 13 with audio |
 | Kling 3.0 Pro | 12 credits/second without audio; 17 with audio |
 | Kling 3.0 4K | 43 credits/second |
-| Kling O3 Standard / Pro / 4K | 13 / 17 / 43 credits/second |
+| Kling O3 Standard / Pro / 4K | 13 / 17 / 43 credits/second; O3 video-to-video is billed on input-video duration |
 | WAN 3.0 | 5 / 10 / 20 credits/second at 480p / 720p / 1080p |
 | WAN 3.0 Prime | 6.8 / 14 / 28 credits/second at 480p / 720p / 1080p |
 | Seedance 2.0 | 14 / 30 / 40 / 150 credits/second at 480p / 720p / 1080p / 4K; 56-credit minimum |
@@ -28,7 +28,7 @@ Source: https://docs.dev.runwayml.com/guides/pricing/
 | Grok Imagine Video 1.5 | 10 / 16 / 29 credits/second at 480p / 720p / 1080p, plus 1 credit per image/audio reference |
 | Grok Imagine Video 1.5 Lite | 2 / 3 / 14 credits/second at 480p / 720p / 1080p, plus 1 credit per start-frame image |
 | MiniMax H3 Max | 5 / 8 credits/second at 480p / 768p |
-| MiniMax Hailuo 3 | 10 / 15 credits/second at 768p / 2K, plus 2 credits per image/keyframe and reference-video seconds (capped at 15) |
+| MiniMax Hailuo 3 | 10 / 15 credits/second at 768p / 2K, plus 2 credits per image/keyframe and combined input/reference-video seconds (capped at 15) |
 | Veo 3.1 | 20 credits/second without audio; 40 with audio |
 | Veo 3.1 Fast | 10 credits/second without audio; 15 with audio |
 | HappyHorse 1.0 | 15 / 30 credits/second at 720p / 1080p |
@@ -40,7 +40,8 @@ Source: https://docs.dev.runwayml.com/guides/pricing/
 | Kling 4 | 720p and 1080p output/input formulas; temporary 20% discount through 2026-11-30 UTC |
 
 The estimator requires an explicit pricing date. Kling 4's temporary discount
-is applied only through 2026-11-30; later dates use the published list rates.
+is applied only through 2026-11-30; later dates use the published list rates. Input
+and reference-video durations are combined and capped at 30 seconds.
 For Kling 4, the published list-price charge is rounded up first, then the
 promotional 20% discount is applied and rounded up again.
 
