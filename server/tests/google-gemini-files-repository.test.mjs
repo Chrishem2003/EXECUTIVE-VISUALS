@@ -41,7 +41,7 @@ test("finds only the exact provider, asset, owner, project and MIME mapping", as
   assert.equal(result.ownerId, row.owner_id);
   assert.equal(result.projectId, row.project_id);
   assert.equal(result.sizeBytes, 1024);
-  assert.match(calls[0].url, /project_id=eq%2E22222222/);
+  assert.match(calls[0].url, /project_id=eq.22222222/);
   assert.equal(calls[0].options.headers.apikey, key);
   assert.equal(calls[0].options.headers["accept-profile"], "executive_visuals");
 });
@@ -56,7 +56,7 @@ test("queries personal assets with a null project scope and returns null for no 
     assetId: row.asset_id, ownerId: row.owner_id, projectId: null, mimeType: row.mime_type
   });
   assert.equal(result, null);
-  assert.match(url, /project_id=is%2Enull/);
+  assert.match(url, /project_id=is.null/);
 });
 
 test("upserts a provider-file mapping without exposing service-role credentials", async () => {
@@ -75,7 +75,7 @@ test("upserts a provider-file mapping without exposing service-role credentials"
     state: row.state, uploadedAt: row.uploaded_at, expiresAt: row.expires_at
   });
   assert.equal(id, row.id);
-  assert.match(call.url, /on_conflict=provider%2Casset_id/);
+  assert.match(call.url, /on_conflict=provider%2Casset_id%2Cowner_id/);
   assert.equal(call.options.method, "POST");
   assert.match(call.options.headers.prefer, /resolution=merge-duplicates/);
   assert.equal(call.options.headers.apikey, key);
@@ -92,8 +92,8 @@ test("deletes a provider-file mapping by its durable ID or file name", async () 
   await repository.deleteProviderFileRecord({ name: row.google_file_name });
   assert.equal(calls.length, 2);
   assert.equal(calls[0].options.method, "DELETE");
-  assert.match(calls[0].url, /id=eq%2E44444444/);
-  assert.match(calls[1].url, /google_file_name=eq%2Efiles%2Fgemini-123/);
+  assert.match(calls[0].url, /id=eq.44444444/);
+  assert.match(calls[1].url, /google_file_name=eq.files%2Fgemini-123/);
 });
 
 test("requires safe server configuration and bounds the timeout", () => {
