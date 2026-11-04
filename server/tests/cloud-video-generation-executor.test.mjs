@@ -129,7 +129,7 @@ test("cloud executor accepts an explicitly model-bound Luma adapter without chan
   const f = fixture();
   f.adapter.provider = "luma";
   f.adapter.model = "ray-3.2";
-  f.adapter.prepareInput = async input => ({ model: "ray-3.2", type: "video", prompt: input.prompt });
+  f.adapter.prepareInput = async input => { f.calls.push(["prepareInput"]); return { model: "ray-3.2", type: "video", prompt: input.prompt }; };
   const lumaJob = {
     ...job,
     input: { ...job.input, provider: "luma", model: "ray-3.2" }
