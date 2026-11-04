@@ -301,7 +301,7 @@ Added `server/fal-cloud-video-adapter.mjs`, which implements the provider-aware 
 - The existing remote-enable and remote-opt-in flags are checked even when a client is injected.
 - Output URLs are restricted to HTTPS FAL media hosts before they are handed to the private-ingestion handler.
 
-Seven adapter contract tests cover the durable task-ID handoff, status mapping, private reference resolution requirements, handler injection, exact model matching, output URL validation and remote opt-in. Four billing-resolver tests cover exact request/model matching, missing/duplicate events, nano-USD consistency and permission failures. This adapter is designed to be registered with the exact-match provider router from the separate provider-aware worker branch; it is not yet registered in the production worker composition. The cloud-worker chain and its migrations remain separate draft work and must be reviewed together before any deployment.
+Seven adapter contract tests cover the durable task-ID handoff, status mapping, private reference resolution requirements, handler injection, exact model matching, output URL validation and remote opt-in. Five billing-resolver tests cover exact request/model matching, missing/duplicate events, nano-USD consistency, the 90-day date-range boundary and permission failures. This adapter is designed to be registered with the exact-match provider router from the separate provider-aware worker branch; it is not yet registered in the production worker composition. The cloud-worker chain and its migrations remain separate draft work and must be reviewed together before any deployment.
 
 
 ### Request-level billing reconciliation
@@ -320,3 +320,6 @@ A further documentation review found that FAL's queue URL path is based on the e
 Operational retention constraint: FAL documents that completed results are retained for one hour, but only six minutes when the result payload is at least 10 KB (unless payload storage is enabled). The durable worker must therefore fetch the result promptly after observing `COMPLETED` and ingest it into private storage immediately; it must not assume that a durable task ID alone makes provider results indefinitely retrievable.
 
 The official FAL billing-events API supports exact `request_id` and `endpoint_id` filters, returns `cost_estimate_nano_usd` and `cost_total`, is paginated, and caps each date range at 90 days. The resolver remains an opt-in injected dependency; missing or ambiguous evidence must leave the budget reservation open for reconciliation.
+
+
+The billing resolver now explicitly supplies a bounded `start` parameter within FAL's documented 90-day maximum, using the job's creation timestamp when available. A dedicated `FAL_BILLING_KEY` environment variable is supported so a least-privilege billing key can be separated from the generation key.
