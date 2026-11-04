@@ -63,6 +63,13 @@ export function estimateRunwayVideoCredits(options={}) {
   const audioCount=count(referenceAudioCount,"referenceAudioCount");
   if(typeof hasStartFrame!=="boolean")throw fail("hasStartFrame must be a boolean.","RUNWAY_PRICE_INVALID_INPUT");
   const billableImageReferences=imageCount+(hasStartFrame?1:0);
+  if(audioCount>0&&model!=="grok_imagine_1_5")throw fail("Reference audio pricing is only verified for Grok Imagine Video 1.5.","RUNWAY_PRICE_UNSUPPORTED_OPTION");
+  if(model==="grok_imagine_1_5") {
+    if(imageCount>7||audioCount>3||billableImageReferences>7)throw fail("Grok Imagine Video 1.5 accepts at most 7 image and 3 audio references.","RUNWAY_PRICE_INVALID_INPUT");
+    if(audioCount>0&&billableImageReferences===0)throw fail("Grok Imagine Video 1.5 audio references require at least one image reference or start frame.","RUNWAY_PRICE_INPUT_REQUIRED");
+  }
+  if(model==="grok_imagine_1_5_lite"&&(imageCount>0||audioCount>0))throw fail("Grok Imagine Video 1.5 Lite does not support reference images or audio.","RUNWAY_PRICE_UNSUPPORTED_OPTION");
+  if(model==="gemini_omni_flash"&&((inputType==="text"&&imageCount>0)||(inputType==="image"&&imageCount>0)||(inputType!=="video"&&audioCount>0)))throw fail("The selected Gemini Omni Flash input mode does not support the supplied reference counts.","RUNWAY_PRICE_UNSUPPORTED_OPTION");
   const dateShape=typeof pricingDate==="string"&&/^20[0-9]{2}-(0[1-9]|1[0-2])-([0-2][0-9]|3[01])$/.test(pricingDate);
   const parsedDate=dateShape?new Date(pricingDate+"T00:00:00Z"):null;
   if(!parsedDate||Number.isNaN(parsedDate.getTime())||parsedDate.toISOString().slice(0,10)!==pricingDate) {
@@ -171,8 +178,8 @@ export function estimateRunwayVideoCredits(options={}) {
         credits=Math.min(10,inputVideo)*11+billableImageReferences;
         formula="min(10s, input video) × 11 + "+billableImageReferences+" reference images";
       } else {
-        credits=duration*10+(inputType==="image"?1:0);
-        formula=duration+"s × 10"+(inputType==="image"?" + 1 first-frame image":"");
+        credits=duration*10+(inputType==="image"||hasStartFrame?1:0);
+        formula=duration+"s × 10"+(inputType==="image"||hasStartFrame?" + 1 first-frame image":"");
       }
       break;
     }
