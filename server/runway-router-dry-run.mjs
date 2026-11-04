@@ -149,12 +149,23 @@ const ASSET_GROUPS = Object.freeze([
   ["referenceAudio", "audio"]
 ]);
 
-async function resolvePrivateReferences(input, resolver) {
+async function resolvePrivateReferences(input, resolver, getAuthorizedAssetContext) {
   const resolved = { ...input };
-  const context = {
-    ownerId: input.ownerId,
-    projectId: input.projectId
-  };
+  const hasReferences = ASSET_GROUPS.some(([field]) => Array.isArray(input[field]) && input[field].length > 0);
+  let context = null;
+  if (hasReferences) {
+    if (typeof getAuthorizedAssetContext !== "function") {
+      throw fail("An authenticated project-access resolver is required for reference media.", "RUNWAY_ROUTER_ASSET_AUTH_REQUIRED");
+    }
+    if (typeof input.projectId !== "string" || !input.projectId.trim()) {
+      throw fail("A project ID is required for private reference media.", "RUNWAY_ROUTER_ASSET_INVALID");
+    }
+    try { context = await getAuthorizedAssetContext({ projectId: input.projectId }); }
+    catch { throw fail("The active user is not authorized for this project.", "RUNWAY_ROUTER_ASSET_FORBIDDEN"); }
+    if (!context || typeof context.ownerId !== "string" || !context.ownerId.trim() || context.projectId !== input.projectId) {
+      throw fail("The authenticated project-access resolver returned an invalid scope.", "RUNWAY_ROUTER_ASSET_FORBIDDEN");
+    }
+  }
   for (const [field, kind] of ASSET_GROUPS) {
     const refs = input[field] || [];
     if (!Array.isArray(refs)) throw fail("Invalid " + field + " asset list.");
@@ -165,13 +176,8 @@ async function resolvePrivateReferences(input, resolver) {
     if (refs.length > max) throw fail("Too many " + field + " assets.");
     resolved[field] = await Promise.all(refs.map(async ref => {
       if (!ref || typeof ref.assetId !== "string" ||
-          !/^[A-Za-z0-9_-]{1,128}$/.test(ref.assetId) ||
-          typeof ref.ownerId !== "string" || !ref.ownerId.trim() ||
-          typeof ref.projectId !== "string" || !ref.projectId.trim()) {
-        throw fail("Each reference asset must include an asset ID, owner ID and project ID.", "RUNWAY_ROUTER_ASSET_INVALID");
-      }
-      if (context.ownerId !== ref.ownerId || context.projectId !== ref.projectId) {
-        throw fail("Reference asset does not belong to the active owner and project.", "RUNWAY_ROUTER_ASSET_FORBIDDEN");
+          !/^[A-Za-z0-9_-]{1,128}$/.test(ref.assetId)) {
+        throw fail("Each reference asset must include a valid asset ID.", "RUNWAY_ROUTER_ASSET_INVALID");
       }
       let result;
       try {
@@ -255,7 +261,7 @@ export function createRunwayRouterDryRunClient({
     const key = String(env.RUNWAY_API_KEY || "").trim();
     if (!key) throw fail("Configure the Runway API key on the server.", "RUNWAY_CONFIG_INVALID");
 
-    const resolvedInput = await resolvePrivateReferences(input, resolvePrivateAsset);\n    const payload = buildRunwayRouterDryRunPayload(resolvedInput);
+    const resolvedInput = await resolvePrivateReferences(input, resolvePrivateAsset, getAuthorizedAssetContext);\n    const payload = buildRunwayRouterDryRunPayload(resolvedInput);
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), Math.max(1000, Math.min(120000, timeoutMs)));
     try {
