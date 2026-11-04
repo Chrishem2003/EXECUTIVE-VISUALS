@@ -143,13 +143,18 @@ if (!videoBudgetSql.includes("create or replace function executive_visuals.enque
     !videoBudgetSql.includes("revoke all on function executive_visuals.enqueue_video_generation_job(")) {
   issues.push("Atomic cloud video enqueue must be service-role-only.");
 }
-if (!videoBudgetSql.includes("create or replace function executive_visuals.settle_video_generation_budget_reservation(") ||
-    !videoBudgetSql.includes("lease_expires_at > clock_timestamp()") ||
-    !videoBudgetSql.includes("VIDEO_BUDGET_ACTUAL_EXCEEDS_RESERVATION")) {
-  issues.push("Budget settlement must be lease-fenced and cannot exceed the reserved amount.");
+if (!videoBudgetSql.includes("create or replace function executive_visuals.finish_video_generation_job(") ||
+    !videoBudgetSql.includes("lease_expires_at <= clock_timestamp()") ||
+    !videoBudgetSql.includes("VIDEO_BUDGET_ACTUAL_EXCEEDS_RESERVATION") ||
+    !videoBudgetSql.includes("set status = p_status") ||
+    !videoBudgetSql.includes("update executive_visuals.video_generation_submissions")) {
+  issues.push("Budget settlement, submission terminalization and job completion must be atomic and lease-fenced.");
 }
 if ((videoBudgetSql.match(/security invoker/gi) || []).length !== 2 || /security definer/i.test(videoBudgetSql)) {
   issues.push("Cloud video budget RPCs must use invoker rights and avoid privileged definer execution.");
+}
+if (!videoBudgetSql.includes("as $video_finish$") || !videoBudgetSql.includes("$video_finish$;")) {
+  issues.push("Cloud video finalizer must use a complete, unambiguous SQL function delimiter.");
 }
 
 if (issues.length) {
