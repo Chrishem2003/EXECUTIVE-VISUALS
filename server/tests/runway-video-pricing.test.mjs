@@ -87,6 +87,8 @@ test("prices frame-rate enhancement and Ruby HDR from input duration and source 
 test("includes Aleph 2 minimum charge and Gemini Omni Flash 1.1 4K tier",()=>{
   assert.equal(estimateRunwayVideoCredits({model:"aleph2",durationSeconds:1,pricingDate:date}).estimatedCredits,56);
   assert.equal(estimateRunwayVideoCredits({model:"gemini_omni_flash_1.1",durationSeconds:5,resolution:"4k",pricingDate:date}).estimatedCredits,150);
+  assert.equal(estimateRunwayVideoCredits({model:"gemini_omni_flash_1.1",durationSeconds:5,resolution:"720p",inputVideoSeconds:5,referenceImageCount:2,hasStartFrame:true,pricingDate:date}).estimatedCredits,58);
+  assert.equal(estimateRunwayVideoCredits({model:"gemini_omni_flash",durationSeconds:5,inputType:"image",pricingDate:date}).estimatedCredits,51);
 });
 
 test("Kling O3 video-to-video bills against input duration rather than output duration",()=>{
