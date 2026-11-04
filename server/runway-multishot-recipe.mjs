@@ -78,8 +78,10 @@ export async function buildRunwayMultiShotRecipePayload({
     }
     if (typeof resolved?.uri !== "string" ||
         !(resolved.uri.startsWith("https://") || resolved.uri.startsWith("runway://") ||
-          resolved.uri.startsWith("data:image/"))) {
-      throw fail("Resolved first-frame image URI is invalid.", "RUNWAY_RECIPE_ASSET_INVALID");
+          resolved.uri.startsWith("data:image/")) ||
+        !(resolved.mediaType === "image" ||
+          (typeof resolved.mediaType === "string" && resolved.mediaType.startsWith("image/")))) {
+      throw fail("Resolved first-frame asset must be an authorized image with a valid URI.", "RUNWAY_RECIPE_ASSET_INVALID");
     }
     payload.firstFrame = { uri: resolved.uri };
   }
