@@ -49,6 +49,7 @@ export function estimateRunwayVideoCredits(options={}) {
   const duration=finiteDuration(durationSeconds,"durationSeconds",{max:durationLimit});
   const inputVideoLimit=model==="enhance_frame_rate"?300:30;
   const inputVideo=finiteDuration(requestedInputVideoSeconds??(model==="enhance_frame_rate"?durationSeconds:0),"inputVideoSeconds",{allowZero:true,max:inputVideoLimit});
+  if(model==="gen4.5"&&(duration<2||duration>10))throw fail("durationSeconds must be between 2 and 10 for Gen-4.5.","RUNWAY_PRICE_INVALID_INPUT");
   const referenceVideo=finiteDuration(referenceVideoSeconds,"referenceVideoSeconds",{allowZero:true,max:30});
   if(!["text","image","video"].includes(inputType))throw fail("inputType must be text, image or video.","RUNWAY_PRICE_INVALID_INPUT");
   if(model==="ruby"&&sourceDynamicRange!=="sdr")throw fail("Ruby requires an explicitly verified SDR source video.","RUNWAY_PRICE_INPUT_REQUIRED");
