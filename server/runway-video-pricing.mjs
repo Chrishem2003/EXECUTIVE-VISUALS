@@ -41,12 +41,14 @@ export function estimateRunwayVideoCredits(options={}) {
   }
   const {
     model,durationSeconds,resolution:outputResolution,audio:hasAudio,
-    inputVideoSeconds=0,referenceVideoSeconds=0,referenceImageCount=0,referenceAudioCount=0,
+    inputVideoSeconds:requestedInputVideoSeconds,referenceVideoSeconds=0,referenceImageCount=0,referenceAudioCount=0,
     hasStartFrame=false,outputFrames,sourceWidth,sourceHeight,outputWidth,outputHeight,outputFormat:requestedOutputFormat,inputType="text",pricingDate
   }=options;
   const outputFormat=requestedOutputFormat??(model==="ruby"?"hdr10":"mp4");
-  const duration=finiteDuration(durationSeconds,"durationSeconds",{max:30});
-  const inputVideo=finiteDuration(inputVideoSeconds,"inputVideoSeconds",{allowZero:true,max:30});
+  const durationLimit=model==="enhance_frame_rate"?300:30;
+  const duration=finiteDuration(durationSeconds,"durationSeconds",{max:durationLimit});
+  const inputVideoLimit=model==="enhance_frame_rate"?300:30;
+  const inputVideo=finiteDuration(requestedInputVideoSeconds??(model==="enhance_frame_rate"?durationSeconds:0),"inputVideoSeconds",{allowZero:true,max:inputVideoLimit});
   const referenceVideo=finiteDuration(referenceVideoSeconds,"referenceVideoSeconds",{allowZero:true,max:30});
   if(!["text","image","video"].includes(inputType))throw fail("inputType must be text, image or video.","RUNWAY_PRICE_INVALID_INPUT");
   const imageCount=count(referenceImageCount,"referenceImageCount");
