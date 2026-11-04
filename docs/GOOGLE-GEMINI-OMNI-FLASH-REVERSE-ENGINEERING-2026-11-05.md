@@ -1,6 +1,6 @@
 # Gemini Omni Flash — reverse-engineered integration contract
 
-Research snapshot: 2026-11-05. Sources are Google's current Gemini API documentation. This branch adds a request planner and raw REST response normalizer only; it does not make a provider request.
+Research snapshot: 2026-11-05. Sources are Google's current Gemini API documentation. This branch adds server-side Files API upload and GCS registration gateways, durable interaction state, a cloud-worker adapter, private output ingestion, usage-based cost reconciliation and retention cleanup. All live generation remains disabled.
 
 ## Critical migration finding
 
@@ -34,11 +34,17 @@ Google shut down the Gemini API Veo 3.1 Preview endpoints on October 22, 2026. G
 
 ## Implementation
 
+- `server/google-gemini-files-gateway.mjs` uploads already-authorized private assets using Google's resumable Files API; the original remains in Executive Visuals storage.
+- `server/google-gemini-files-repository.mjs` stores private provider-file mappings and their source provenance.
+- `server/google-gemini-gcs-registrar.mjs` registers allowlisted `gs://` objects with `files:register` without downloading or copying source bytes; it uses injected OAuth credentials and expires its local cache after 29 days.
 - `server/google-video-interaction-repository.mjs` persists interaction ID, owner/project/job scope, request hash, lineage, state and application expiry without storing media bytes.
+- `server/google-omni-flash-client.mjs` provides approval-gated create, authorized retrieval, cancellation and deletion; ambiguous create POSTs are never blindly retried.
+- `server/google-omni-private-output-ingestion.mjs` downloads or decodes completed output and commits it to private asset storage.
 - `server/google-omni-cloud-video-adapter.mjs` bridges the existing lease-aware cloud-video executor, durable submission ledger and private output ingestor. It is implemented but remains disabled at provider selection and enqueue.
 - `server/google-interaction-retention-worker.mjs` deletes expired stored interactions with a retryable deleting state and idempotent handling of provider 404 responses.
 - `server/google-omni-pricing.mjs` uses Google's published paid-tier token prices. Preflight reserves the maximum 1,048,576-token input context plus a ten-second 720p video output ($2.586464 USD). Actual settlement uses provider-returned `usage.total_input_tokens` and `usage.total_output_tokens`; missing usage is a hard failure, never a guessed charge.
 - The Interactions client requires three independent flags: `GEMINI_OMNI_ENABLED=true`, `GEMINI_OMNI_ALLOW_REMOTE=true`, and `GEMINI_OMNI_PAID_TIER_CONFIRMED=true`. All remain disabled unless explicitly configured.
+- `supabase/migrations/20261105100000_google_provider_files.sql` and `20261105133000_google_gcs_file_registration.sql` add service-role-only private provider-file mappings and source provenance.
 - `supabase/migrations/20261105120000_google_video_interactions.sql` adds a service-role-only, forced-RLS interaction ownership ledger tied to cloud jobs, users and projects.
 - `server/google-omni-flash-interaction.mjs`
   - Builds a pure request plan for the Interactions API.
@@ -51,8 +57,8 @@ Google shut down the Gemini API Veo 3.1 Preview endpoints on October 22, 2026. G
   - Caps inline response size and recommends URI delivery for large outputs.
   - Does not send requests, load credentials, upload media, or download outputs.
 - `server/video-provider-registry.mjs`
-  - Updates current Omni capabilities and documents its constraints.
-  - Keeps the provider disabled and adapter marked not implemented.
+  - Updates current Omni capabilities, official pricing metadata and constraints.
+  - Keeps the provider disabled while marking the adapter implemented but not yet wired to the hosted worker process.
 - `server/tests/google-omni-flash-interaction.test.mjs`
   - Covers request planning, project authorization, media URI validation, durations, response normalization and failure cases.
 
@@ -73,3 +79,16 @@ This provider should plug into the shared video generation contract and durable 
 9. A configured retention policy consistent with the project's Gemini API tier and AI Studio log-retention setting.
 
 Google API credentials must remain server-side. The planner returns only the authentication header name and a server-only credential-source marker; it never handles or returns a credential.
+
+## Google Cloud Storage registration
+
+Google's Gemini Files API supports `POST /v1beta/files:register` for GCS objects. The registration does not copy the object; Google reads the original GCS object. The Gemini API Service Agent must have `Storage Object Viewer` on each approved bucket. This is an operator-managed IAM prerequisite; this branch does not create IAM grants.
+
+The registrar requires:
+- `GOOGLE_CLOUD_PROJECT_ID` for quota attribution.
+- `GEMINI_GCS_ALLOWED_BUCKETS` as a server-side exact bucket allowlist.
+- An injected OAuth token provider with `devstorage.read_only` and `cloud-platform` scopes.
+- An authorized GCS-backed private asset resolver returning owner/project metadata, object URI, byte size and SHA-256.
+- A durable mapping repository. The registration cache expires after 29 days, below Google's maximum 30-day access window.
+
+Current Executive Visuals Supabase Storage assets are not silently treated as GCS objects. A GCS-backed asset adapter and explicit bucket IAM provisioning are required before this path can be used.
