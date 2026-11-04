@@ -33,7 +33,7 @@ const isObject=(value:unknown):value is Record<string,unknown>=>Boolean(value)&&
 
 /** Validate versioned clip-level editing descriptors without silently accepting unknown fields. */
 export function validateTimelineDescriptors(clip:TimelineClip,frameRate:{numerator:number;denominator:number}):TimelineIssue[]{
-  const issues:TimelineIssue[]=[],ids=new Set<string>(),keyframeSlots=new Set<string>();
+  const issues:TimelineIssue[]=[],ids=new Set<string>([clip.id]),keyframeSlots=new Set<string>();
   const durationSeconds=clip.duration.value/clip.duration.rate,fps=frameRate.numerator/frameRate.denominator;
   const maxFrames=Number.isFinite(durationSeconds*fps)?Math.max(0,Math.ceil(durationSeconds*fps)):0;
   const addId=(id:unknown,label:string)=>{
