@@ -100,7 +100,7 @@ export function createLumaRay32Adapter({
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      const response = await fetchImpl(new URL(base.pathname.replace(/\\/$/, "") + path, base.origin).toString(), {
+      const response = await fetchImpl(new URL((base.pathname.endsWith("/") ? base.pathname.slice(0, -1) : base.pathname) + path, base.origin).toString(), {
         ...init,
         headers: {
           authorization: "Bearer " + apiKey,
