@@ -48,7 +48,7 @@
     "verify:caption-validation": "node --test server/tests/caption-validation.test.mjs server/tests/captions.test.mjs",
     "verify:caption-evidence": "node --experimental-strip-types --test server/tests/caption-evidence.test.mjs",
     "verify:delivery-evidence": "node --experimental-strip-types --test server/tests/delivery-evidence.test.mjs",
-    "verify:video-routing": "node --test server/tests/video-model-router.test.mjs server/tests/runway-router-dry-run.test.mjs"
+    "verify:video-routing": "node --test server/tests/video-model-router.test.mjs server/tests/runway-router-dry-run.test.mjs server/tests/runway-workflow-contract.test.mjs"
   },
   "devDependencies": {
     "typescript": "^5.8.3",
