@@ -14,7 +14,7 @@ Use `POST /v1/generate/video` with the exact same `configId` and model-agnostic
 
 The local builder:
 - Restricts router IDs to lowercase URL-safe slugs.
-- Accepts documented video prompt, negative prompt, aspect ratio, resolution,
+- Accepts documented video prompt, negative prompt, pixel `ratio`, resolution,
   duration, audio and reference image inputs.
 - Requires image references to be pre-uploaded `runway://` URIs. It rejects
   browser-provided HTTPS URLs and data URIs so the caller must resolve private
