@@ -31,19 +31,37 @@ function decodeJwtPart(value) {
   try { return JSON.parse(Buffer.from(value, "base64url").toString("utf8")); }
   catch { throw fail("Google returned an invalid identity token.", "GOOGLE_OAUTH_ID_TOKEN_INVALID"); }
 }
-function verifyGoogleIdToken(idToken, { clientId, now = Date.now(), fetchImpl }) {
+async function verifyGoogleIdToken(idToken, { clientId, nonce, now = Date.now(), fetchImpl }) {
   if (typeof idToken !== "string" || idToken.length > 12000) throw fail("Google did not return a valid identity token.", "GOOGLE_OAUTH_ID_TOKEN_INVALID");
   const parts = idToken.split(".");
   if (parts.length !== 3) throw fail("Google returned an invalid identity token.", "GOOGLE_OAUTH_ID_TOKEN_INVALID");
   const header = decodeJwtPart(parts[0]), payload = decodeJwtPart(parts[1]);
   if (header.alg !== "RS256" || typeof header.kid !== "string" ||
-      payload.iss !== "https://accounts.google.com" && payload.iss !== "accounts.google.com" ||
-      payload.aud !== clientId || !Number.isFinite(payload.exp) || payload.exp * 1000 <= now ||
+      (payload.iss !== "https://accounts.google.com" && payload.iss !== "accounts.google.com") ||
+      payload.aud !== clientId || payload.nonce !== nonce ||
+      !Number.isFinite(payload.exp) || payload.exp * 1000 <= now ||
       !Number.isFinite(payload.iat) || payload.iat * 1000 > now + 60000 ||
       typeof payload.sub !== "string" || payload.sub.length < 5 || payload.sub.length > 255 ||
       typeof payload.email !== "string" || payload.email.length > 320 || payload.email_verified !== true) {
     throw fail("Google identity token claims failed validation.", "GOOGLE_OAUTH_ID_TOKEN_INVALID");
   }
+  if (typeof fetchImpl !== "function") throw fail("Google identity verification transport is unavailable.", "GOOGLE_OAUTH_UNAVAILABLE");
+  let response;
+  try { response = await fetchImpl("https://www.googleapis.com/oauth2/v3/certs", { redirect: "error" }); }
+  catch { throw fail("Google identity signing keys could not be retrieved.", "GOOGLE_OAUTH_IDENTITY_UNAVAILABLE"); }
+  if (!response.ok) throw fail("Google identity signing keys could not be retrieved.", "GOOGLE_OAUTH_IDENTITY_UNAVAILABLE");
+  const raw = await response.text();
+  if (Buffer.byteLength(raw, "utf8") > MAX_RESPONSE_BYTES) throw fail("Google identity key response is oversized.", "GOOGLE_OAUTH_RESPONSE_INVALID");
+  let jwks;
+  try { jwks = JSON.parse(raw); } catch { throw fail("Google identity signing keys are invalid.", "GOOGLE_OAUTH_RESPONSE_INVALID"); }
+  const jwk = Array.isArray(jwks.keys) ? jwks.keys.find(item => item.kid === header.kid && item.kty === "RSA" && item.use === "sig" && item.alg === "RS256") : null;
+  if (!jwk) throw fail("Google identity signing key was not found.", "GOOGLE_OAUTH_ID_TOKEN_INVALID");
+  let valid = false;
+  try {
+    const publicKey = createPublicKey({ key: jwk, format: "jwk" });
+    valid = verifySignature("RSA-SHA256", Buffer.from(parts[0] + "." + parts[1]), publicKey, Buffer.from(parts[2], "base64url"));
+  } catch { valid = false; }
+  if (!valid) throw fail("Google identity token signature is invalid.", "GOOGLE_OAUTH_ID_TOKEN_INVALID");
   return { subject: payload.sub, email: payload.email.toLowerCase() };
 }
 
@@ -78,7 +96,7 @@ export function createGoogleDriveOAuth({
   if (typeof fetchImpl !== "function" || !Number.isInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 60000) {
     throw fail("Google OAuth transport configuration is invalid.", "GOOGLE_OAUTH_CONFIG_INVALID");
   }
-  if (typeof verifyIdentity !== "function") throw fail("A cryptographic Google ID-token verifier is required.", "GOOGLE_OAUTH_CONFIG_INVALID");
+  const identityVerifier = verifyIdentity || ((token, options) => verifyGoogleIdToken(token, { ...options, fetchImpl }));
   const key = createHash("sha256").update(encryptionKey, "utf8").digest();
   const accessCache = new Map();
 
@@ -138,14 +156,14 @@ export function createGoogleDriveOAuth({
   return Object.freeze({
     async begin({ ownerId } = {}) {
       ownerId = validOwner(ownerId);
-      const state = b64url(randomBytes(32)), verifier = b64url(randomBytes(48));
+      const state = b64url(randomBytes(32)), verifier = b64url(randomBytes(48)), nonce = b64url(randomBytes(32));
       const challenge = createHash("sha256").update(verifier).digest("base64url");
-      await stateStore.put(state, { ownerId, verifier, expiresAt: now() + 10 * 60 * 1000 });
+      await stateStore.put(state, { ownerId, verifier, nonce, expiresAt: now() + 10 * 60 * 1000 });
       const url = new URL(AUTH_ORIGIN + "/o/oauth2/v2/auth");
       url.search = new URLSearchParams({
         client_id: id, redirect_uri: callback, response_type: "code",
         scope: REQUIRED_SCOPES.join(" "), access_type: "offline", prompt: "consent",
-        include_granted_scopes: "true", state, code_challenge: challenge, code_challenge_method: "S256"
+        include_granted_scopes: "true", state, nonce, code_challenge: challenge, code_challenge_method: "S256"
       }).toString();
       return { authorizationUrl: url.toString(), expiresInSeconds: 600 };
     },
@@ -158,7 +176,7 @@ export function createGoogleDriveOAuth({
       }
       const pending = await stateStore.consume(state);
       if (!pending || pending.ownerId !== ownerId || !Number.isFinite(pending.expiresAt) ||
-          pending.expiresAt <= now() || typeof pending.verifier !== "string") {
+          pending.expiresAt <= now() || typeof pending.verifier !== "string" || typeof pending.nonce !== "string") {
         throw fail("Google OAuth state is invalid, expired, or belongs to another user.", "GOOGLE_OAUTH_STATE_INVALID");
       }
       const data = await exchange({
@@ -166,7 +184,7 @@ export function createGoogleDriveOAuth({
         grant_type: "authorization_code", code_verifier: pending.verifier
       });
       const token = validateTokenResponse(data);
-      const identity = await verifyIdentity(token.idToken, { clientId: id, now: now() });
+      const identity = await identityVerifier(token.idToken, { clientId: id, nonce: pending.nonce, now: now() });
       if (!identity || typeof identity.subject !== "string" || typeof identity.email !== "string") {
         throw fail("Google account identity could not be verified.", "GOOGLE_OAUTH_IDENTITY_INVALID");
       }
