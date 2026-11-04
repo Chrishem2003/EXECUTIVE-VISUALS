@@ -118,6 +118,46 @@ test("resolves image and video references only through authenticated project sco
   assert.ok(harness.calls.every(call => call.ownerId === ownerId && call.projectId === projectId));
 });
 
+test("accepts private signed URLs for small media and rejects expired or oversized signed URLs", async () => {
+  const signedUri = "https://private-project.supabase.co/storage/v1/object/sign/executive-visuals-media/" +
+    projectId + "/" + imageId + "/reference.png?token=private-token";
+  const resolver = async args => ({
+    uri: signedUri,
+    mediaType: args.mediaType,
+    sourceType: "signed_url",
+    sizeBytes: 1024,
+    expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString()
+  });
+  const result = await buildGeminiOmniFlashInteractionRequest({
+    prompt: "Animate this private image",
+    projectId, firstFrameAssetId: imageId,
+    getAuthorizedAssetContext: async args => ({ ownerId, projectId: args.projectId }),
+    resolveGoogleFileAsset: resolver
+  });
+  assert.deepEqual(result.payload.input, [
+    { type: "image", uri: signedUri },
+    { type: "text", text: "Animate this private image" }
+  ]);
+
+  await assert.rejects(() => buildGeminiOmniFlashInteractionRequest({
+    prompt: "Animate this private image",
+    projectId, firstFrameAssetId: imageId,
+    getAuthorizedAssetContext: async args => ({ ownerId, projectId: args.projectId }),
+    resolveGoogleFileAsset: async args => ({
+      ...(await resolver(args)), sizeBytes: 100 * 1024 * 1024 + 1
+    })
+  }), error => error.code === "GEMINI_OMNI_SIGNED_URL_INVALID");
+
+  await assert.rejects(() => buildGeminiOmniFlashInteractionRequest({
+    prompt: "Animate this private image",
+    projectId, firstFrameAssetId: imageId,
+    getAuthorizedAssetContext: async args => ({ ownerId, projectId: args.projectId }),
+    resolveGoogleFileAsset: async args => ({
+      ...(await resolver(args)), expiresAt: new Date(Date.now() - 1000).toISOString()
+    })
+  }), error => error.code === "GEMINI_OMNI_SIGNED_URL_INVALID");
+});
+
 test("adds documented image_to_video and reference_to_video task hints only when needed", async () => {
   const harness = assetHarness();
   const image = await buildGeminiOmniFlashInteractionRequest({
