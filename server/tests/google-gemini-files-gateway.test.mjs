@@ -197,10 +197,12 @@ test("rejects personal assets belonging to another user and rejects tampered byt
   );
 
   const tamperedBytes = Buffer.from("tampered bytes");
+  const tamperedAsset = privateAsset({ size: tamperedBytes.byteLength }).asset;
   const tampered = harness({
+    authorize: async () => tamperedAsset,
     loader: async () => ({
       ...privateAsset({ size: tamperedBytes.byteLength }),
-      asset: { ...privateAsset({ size: tamperedBytes.byteLength }).asset },
+      asset: tamperedAsset,
       bytes: tamperedBytes,
       size: tamperedBytes.byteLength
     })
