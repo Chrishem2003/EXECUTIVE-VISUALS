@@ -99,7 +99,8 @@ export function createCloudVideoEnqueue({
         p_budget_approval_id: budgetApprovalId, p_reserved_amount: reservedAmount, p_currency: currency
       });
       if (!Array.isArray(rows) || rows.length !== 1 ||
-          typeof rows[0]?.job_id !== "string" || rows[0]?.job_status !== "queued" ||
+          typeof rows[0]?.job_id !== "string" ||
+          !["queued","submitted","processing","reviewing","succeeded","partial","failed","cancelled","blocked","needs_input","expired"].includes(rows[0]?.job_status) ||
           typeof rows[0]?.idempotent_replay !== "boolean" ||
           typeof rows[0]?.budget_reservation_id !== "string") {
         throw new Error("Cloud video enqueue returned an invalid job/reservation result.");
