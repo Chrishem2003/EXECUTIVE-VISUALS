@@ -291,7 +291,7 @@ export function createAppServer() {
           const session=await supabaseAuth.adoptRecoverySession(body.accessToken,body.refreshToken);
           setSupabaseCookie(res,session.cookie,session.maxAge);
           send(res,200,{user:session.user,recovery:true},cors);return;
-        }catch(error){fail(res,400,error.code||"SUPABASE_RECOVERY_INVALID",error.message||"The recovery link could not be verified.");return;}
+        }catch(error){const status=error.code==="SUPABASE_AUTH_UNAVAILABLE"||error.code==="SUPABASE_AUTH_TIMEOUT"?503:400;fail(res,status,error.code||"SUPABASE_RECOVERY_INVALID",error.message||"The recovery link could not be verified.");return;}
       }
       if(AUTH_MODE==="supabase"&&path==="/api/auth/password"&&req.method==="POST"){
         if(!supabaseAuth){fail(res,503,"SUPABASE_AUTH_NOT_CONFIGURED","The secure identity service is not fully configured.");return;}
@@ -300,7 +300,7 @@ export function createAppServer() {
           const session=await supabaseAuth.updatePassword(cookieValue(req,SUPABASE_SESSION_COOKIE),body.password);
           setSupabaseCookie(res,session.cookie,session.maxAge);
           send(res,200,{user:session.user,authMode:"supabase"},cors);return;
-        }catch(error){fail(res,error.code==="INVALID_PASSWORD"?400:401,error.code||"SUPABASE_PASSWORD_UPDATE_FAILED",error.message||"The password could not be updated.");return;}
+        }catch(error){const status=error.code==="INVALID_PASSWORD"?400:error.code==="SUPABASE_RECOVERY_INVALID"?401:503;fail(res,status,error.code||"SUPABASE_PASSWORD_UPDATE_FAILED",error.message||"The password could not be updated.");return;}
       }
       if(AUTH_MODE==="supabase"&&path==="/api/auth/recover"&&req.method==="POST"){
         if(!supabaseAuth){fail(res,503,"SUPABASE_AUTH_NOT_CONFIGURED","The secure identity service is not fully configured.");return;}
