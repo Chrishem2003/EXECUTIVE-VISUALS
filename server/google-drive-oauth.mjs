@@ -169,16 +169,17 @@ export function createGoogleDriveOAuth({
     },
 
     async complete({ ownerId, state, code } = {}) {
-      ownerId = validOwner(ownerId);
+      if (ownerId !== undefined && ownerId !== null) ownerId = validOwner(ownerId);
       if (typeof state !== "string" || state.length < 32 || state.length > 256 ||
           typeof code !== "string" || code.length < 1 || code.length > 4096) {
         throw fail("Google OAuth callback is incomplete.", "GOOGLE_OAUTH_CALLBACK_INVALID");
       }
       const pending = await stateStore.consume(state);
-      if (!pending || pending.ownerId !== ownerId || !Number.isFinite(pending.expiresAt) ||
+      if (!pending || (ownerId && pending.ownerId !== ownerId) || !Number.isFinite(pending.expiresAt) ||
           pending.expiresAt <= now() || typeof pending.verifier !== "string" || typeof pending.nonce !== "string") {
         throw fail("Google OAuth state is invalid, expired, or belongs to another user.", "GOOGLE_OAUTH_STATE_INVALID");
       }
+      ownerId = validOwner(pending.ownerId);
       const data = await exchange({
         code, client_id: id, client_secret: secret, redirect_uri: callback,
         grant_type: "authorization_code", code_verifier: pending.verifier
