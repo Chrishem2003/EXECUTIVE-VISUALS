@@ -575,7 +575,7 @@ begin
 
   update executive_visuals.jobs
   set status='needs_input', error=jsonb_build_object('code',p_reason_code,
-      'message','Provider submission outcome requires evidence-based reconciliation.'),
+      'message','Provider execution, output ingestion, or cost requires operator review.'),
       updated_at=clock_timestamp(), lease_owner=null,
       lease_expires_at=null, lease_heartbeat_at=null
   where id=p_job_id;
