@@ -59,13 +59,14 @@ Actual image/video generation, speech/dubbing, timeline preview playback, transi
 
 ## Staging deployment
 
-A Docker-based Render Blueprint is provided in `render.yaml`. It uses a private 1 GB persistent disk mounted at `/var/data`; the API refuses to start when the required mount is absent, preventing accidental use of an ephemeral filesystem. The staging blueprint requires Supabase authentication (SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY must be configured as Render secrets) and one worker process. The runtime currently accepts a Supabase access token in its sign-in gate; a polished email/password and refresh-session flow remains a release blocker. Its lease-based queue supports multiple processes only when they share the same SQLite database and media volume. Do not deploy this blueprint on the free ephemeral plan for user data. Review the monthly compute and disk charge before creating the service.
+A Docker-based Render Blueprint is provided in `render.yaml`. It uses a private 1 GB persistent disk mounted at `/var/data`; the API refuses to start when the required mount is absent, preventing accidental use of an ephemeral filesystem. The staging blueprint requires Supabase authentication (SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY and SUPABASE_SESSION_SECRET must be configured as Render secrets) and one worker process. The `feat/secure-supabase-auth-session` branch replaces the access-token paste screen with email/password registration and sign-in, encrypted HttpOnly sessions, server-side refresh, logout and a password-recovery callback. This auth milestone still requires CI and hosted acceptance with a dedicated isolated Supabase project before beta. Its lease-based queue supports multiple processes only when they share the same SQLite database and media volume. Do not deploy this blueprint on the free ephemeral plan for user data. Review the monthly compute and disk charge before creating the service.
 
 
 ## Research and implementation records
 
 - [Editorial runtime next milestones](docs/EDITORIAL-RUNTIME-NEXT-MILESTONES.md)
 - [Public release gates](docs/PUBLIC-RELEASE-GATES.md)
+- [Secure Supabase email authentication](docs/SECURE-SUPABASE-EMAIL-AUTH.md)
 - [Product integration and scale plan](docs/PRODUCT-INTEGRATION-AND-SCALE-PLAN.md)
 - [Implementation status](docs/IMPLEMENTATION-STATUS.md)
 - [Cross-ecosystem capability expansion](docs/CROSS-ECOSYSTEM-CAPABILITY-EXPANSION.md)
