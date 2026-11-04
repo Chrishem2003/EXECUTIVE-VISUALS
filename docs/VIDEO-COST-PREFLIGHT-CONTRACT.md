@@ -5,7 +5,7 @@
 
 ## Purpose
 
-The shared server-side preflight normalizes published provider pricing into a consistent USD estimate before a budget reservation can be evaluated. Estimates are not quotes, invoices, captured charges, or settlement evidence.
+The shared server-side preflight normalizes published provider pricing into provider credits and, where an explicit conversion basis exists, a clearly labelled monetary estimate before a budget reservation can be evaluated. Estimates are not quotes, invoices, captured charges, or settlement evidence.
 
 ## Verified price sources
 
@@ -17,13 +17,15 @@ The shared server-side preflight normalizes published provider pricing into a co
 | Provider/model | Supported estimate operations | Pricing basis |
 |---|---|---|
 | Runway models with explicit entries in the dated Runway table | Model-specific generation, editing, extension, reframing and output-format calculations | Published credit rates converted using the documented USD credit basis |
-| Luma Ray 3.2 | SDR/HDR/EXR generation, video editing, fixed five-second extension and per-second reframing | Published operation/resolution/duration list prices |
+| Luma Ray 3.2 | SDR/HDR/EXR generation, video editing, fixed five-second extension and per-second reframing | Published operation/resolution/duration credit rates; USD uses the documented default list rate of $0.003/credit only |
 
 The estimator rejects unknown providers/models and unsupported combinations. Luma's 360p draft tier is intentionally excluded. HDR generation constraints and the distinct edit/reframe/extend billing bases are enforced by the provider-specific estimator.
 
 ## Governance boundaries
 
 - Every result carries provider/model, currency, pricing source, date and calculation formula.
+- Luma estimates expose provider credits separately. The USD amount uses the documented default list rate of $0.003 per credit; an account's own plan/contract rate or applicable overage rate may differ. See https://docs.agents.lumalabs.ai/guides/usage/.
+- The system must not treat a default-list-rate USD estimate as the customer's settled or contract-specific spend.
 - Results are immutable and explicitly marked `billable: false` and `settlementEligible: false`.
 - A cost estimate does not enable a provider, create a job, reserve money, or authorize a paid request.
 - Cloud enqueue still independently enforces the currently enabled execution adapter and budget approval. Luma remains disabled/research-only; this change does not add a Luma execution adapter or activate credentials.
