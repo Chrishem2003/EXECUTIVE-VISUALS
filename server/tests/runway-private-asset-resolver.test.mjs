@@ -68,9 +68,9 @@ test("sanitizes original filenames before sending them to the ephemeral upload A
  assert.equal(calls[1].options.body.get("file").name,"my_frame__1_.png");
 });
 
-test("rejects cross-owner, cross-project and non-private assets before contacting Runway", async () => {
+test("rejects out-of-scope owner-only assets, cross-project assets and non-private assets before contacting Runway", async () => {
   for (const returned of [
-    { ...asset, ownerId: "other-owner" },
+    { ...asset, ownerId: "other-owner", projectId: null },
     { ...asset, projectId: "other-project" },
     { ...asset, isPrivate: false }
   ]) {
