@@ -205,3 +205,8 @@ Provider-aware worker routing follow-up:
 - `server/video-provider-execution-router.mjs` indexes adapters only by the exact `provider:model` pair and verifies the claimed job's input identity before returning an adapter.
 - The router has no fuzzy fallback and performs no provider network calls. Missing or mismatched adapters fail before provider submission.
 - The existing fixed-adapter path remains supported for the current Runway worker. The Google worker still requires a separate runtime composition for durable approval verification, private asset resolution, output ingestion and retention before it can be enabled.
+
+Provider-specific execution handlers:
+- The shared executor now resolves not only the provider adapter but also that adapter's private-output ingestion and authoritative cost resolver. A caller may still provide shared handlers for legacy fixed-adapter workers.
+- This keeps Google URI output ingestion and usage-based cost evidence paired with the Google adapter, rather than accidentally using another provider's storage or pricing handler.
+- Missing provider-specific handlers fail closed after adapter selection and before the provider is called.
