@@ -306,6 +306,162 @@ export const VIDEO_PROVIDER_CATALOG = freeze([
         }
       },
       {
+        id: "grok_imagine_1_5",
+        name: "Grok Imagine Video 1.5",
+        availability: "disabled",
+        executionAdapter: "not_implemented",
+        gateway: "runway",
+        capabilities: {
+          textToVideo: true, imageToVideo: true, videoToVideo: false,
+          videoEdit: false, videoExtend: false, videoReframe: false,
+          nativeAudio: true, negativePrompt: false, seed: false,
+          startFrame: true, endFrame: false, motionReference: false,
+          referenceImages: true, referenceVideos: false, referenceAudio: true,
+          audioModes: ["generated", "reference"],
+          resolutions: ["480p", "720p", "1080p"]
+        },
+        constraints: {
+          maxReferenceImages: 7, maxReferenceAudio: 3,
+          audioReferencesRequireImageReference: true,
+          creditsPerSecondByResolution: { "480p": 10, "720p": 16, "1080p": 29 },
+          referenceImageCredits: 1, referenceAudioCredits: 1,
+          pricingSnapshotDate: "2026-11-04", creditUsdValue: 0.01,
+          source: "https://docs.dev.runwayml.com/guides/models/"
+        }
+      },
+      {
+        id: "grok_imagine_1_5_lite",
+        name: "Grok Imagine Video 1.5 Lite",
+        availability: "disabled",
+        executionAdapter: "not_implemented",
+        gateway: "runway",
+        capabilities: {
+          textToVideo: true, imageToVideo: true, videoToVideo: false,
+          videoEdit: false, videoExtend: false, videoReframe: false,
+          nativeAudio: false, negativePrompt: false, seed: false,
+          startFrame: true, endFrame: false, motionReference: false,
+          referenceImages: false, referenceVideos: false, referenceAudio: false,
+          audioModes: [],
+          resolutions: ["480p", "720p", "1080p"]
+        },
+        constraints: {
+          creditsPerSecondByResolution: { "480p": 2, "720p": 3, "1080p": 14 },
+          startFrameCredits: 1,
+          pricingSnapshotDate: "2026-11-04", creditUsdValue: 0.01,
+          source: "https://docs.dev.runwayml.com/guides/models/"
+        }
+      },
+      {
+        id: "wan3",
+        name: "WAN 3.0",
+        availability: "disabled",
+        executionAdapter: "not_implemented",
+        gateway: "runway",
+        capabilities: {
+          textToVideo: true, imageToVideo: true, videoToVideo: false,
+          videoEdit: false, videoExtend: false, videoReframe: false,
+          nativeAudio: true, negativePrompt: false, seed: false,
+          startFrame: true, endFrame: false, motionReference: false,
+          referenceImages: true, referenceVideos: true, referenceAudio: true,
+          audioModes: ["generated", "reference"],
+          resolutions: ["480p", "720p", "1080p"],
+          minDurationSeconds: 2, maxDurationSeconds: 30
+        },
+        constraints: {
+          creditsPerSecondByResolution: { "480p": 5, "720p": 10, "1080p": 20 },
+          pricingSnapshotDate: "2026-11-04", creditUsdValue: 0.01,
+          source: "https://docs.dev.runwayml.com/guides/models/"
+        }
+      },
+      {
+        id: "wan3_prime",
+        name: "WAN 3.0 Prime",
+        availability: "disabled",
+        executionAdapter: "not_implemented",
+        gateway: "runway",
+        capabilities: {
+          textToVideo: true, imageToVideo: true, videoToVideo: false,
+          videoEdit: false, videoExtend: false, videoReframe: false,
+          nativeAudio: true, negativePrompt: false, seed: false,
+          startFrame: true, endFrame: false, motionReference: false,
+          referenceImages: true, referenceVideos: true, referenceAudio: true,
+          audioModes: ["generated", "reference"],
+          resolutions: ["480p", "720p", "1080p"],
+          minDurationSeconds: 2, maxDurationSeconds: 30
+        },
+        constraints: {
+          creditsPerSecondByResolution: { "480p": 6.8, "720p": 14, "1080p": 28 },
+          pricingSnapshotDate: "2026-11-04", creditUsdValue: 0.01,
+          source: "https://docs.dev.runwayml.com/guides/models/"
+        }
+      },
+      {
+        id: "h3_max",
+        name: "MiniMax H3 Max",
+        availability: "disabled",
+        executionAdapter: "not_implemented",
+        gateway: "runway",
+        capabilities: {
+          textToVideo: true, imageToVideo: true, videoToVideo: false,
+          videoEdit: false, videoExtend: false, videoReframe: false,
+          nativeAudio: true, negativePrompt: false, seed: false,
+          startFrame: true, endFrame: true, motionReference: false,
+          referenceImages: false, referenceVideos: false, referenceAudio: false,
+          audioModes: ["generated"],
+          resolutions: ["480p", "768p"]
+        },
+        constraints: {
+          creditsPerSecondByResolution: { "480p": 5, "768p": 8 },
+          pricingSnapshotDate: "2026-11-04", creditUsdValue: 0.01,
+          source: "https://docs.dev.runwayml.com/guides/models/"
+        }
+      },
+      {
+        id: "happyhorse_1_0",
+        name: "HappyHorse 1.0",
+        availability: "disabled",
+        executionAdapter: "not_implemented",
+        gateway: "runway",
+        capabilities: {
+          textToVideo: true, imageToVideo: false, videoToVideo: false,
+          videoEdit: false, videoExtend: false, videoReframe: false,
+          nativeAudio: true, negativePrompt: false, seed: false,
+          startFrame: false, endFrame: false, motionReference: false,
+          referenceImages: false, referenceVideos: false, referenceAudio: false,
+          audioModes: ["generated"],
+          resolutions: ["720p", "1080p"],
+          minDurationSeconds: 3, maxDurationSeconds: 15
+        },
+        constraints: {
+          outputAspectRatioCount: 10,
+          creditsPerSecondByResolution: { "720p": 15, "1080p": 30 },
+          pricingSnapshotDate: "2026-11-04", creditUsdValue: 0.01,
+          source: "https://docs.dev.runwayml.com/guides/models/"
+        }
+      },
+      {
+        id: "gemini_omni_flash_1.1",
+        name: "Gemini Omni Flash 1.1 (Runway Dev)",
+        availability: "disabled",
+        executionAdapter: "not_implemented",
+        gateway: "runway",
+        capabilities: {
+          textToVideo: true, imageToVideo: true, videoToVideo: true,
+          videoEdit: true, videoExtend: false, videoReframe: false,
+          nativeAudio: true, negativePrompt: false, seed: false,
+          startFrame: true, endFrame: false, motionReference: false,
+          referenceImages: true, referenceVideos: true, referenceAudio: true,
+          audioModes: ["generated", "reference"],
+          resolutions: ["360p", "720p", "1080p", "4k"]
+        },
+        constraints: {
+          creditsPerSecondByResolution: { "360p": 3.4, "720p": 10, "1080p": 15, "4k": 30 },
+          referenceImageCredits: 1, inputVideoCreditsPerSecond: 1,
+          pricingSnapshotDate: "2026-11-04", creditUsdValue: 0.01,
+          source: "https://docs.dev.runwayml.com/guides/models/"
+        }
+      },
+      {
         id: "kling_4",
         name: "Kling 4.0 (Runway Dev)",
         availability: "disabled",
