@@ -71,7 +71,7 @@ export function createVideoGenerationJobService({
             delete prior.budgetReservationId;
             delete prior.remoteUsageReservationId;
             const priorHash = createHash("sha256")
-              .update(stableJson({ ...prior, projectId: projectId || null }))
+              .update(stableJson({ ...prior, projectId: effectiveProjectId || null }))
               .digest("hex");
             const same = existing.job_type === JOB_TYPE &&
               existing.project_id === (effectiveProjectId || null) &&
@@ -82,7 +82,7 @@ export function createVideoGenerationJobService({
         }
 
         const budget = reserveBudget({
-          ownerId, projectId: projectId || null, provider: providerId,
+          ownerId, projectId: effectiveProjectId || null, provider: providerId,
           model: modelId, capability: "video.generate", requestHash
         });
         if (budget && typeof budget.then === "function") {
@@ -94,7 +94,7 @@ export function createVideoGenerationJobService({
 
         const usage = reserveRemoteRequest(db, {
           ownerId,
-          projectId: projectId || null,
+          projectId: effectiveProjectId || null,
           provider: { provider: providerId, remote: true },
           capability: "video.generate",
           limit: usageLimit
