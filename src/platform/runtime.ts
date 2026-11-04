@@ -181,6 +181,11 @@ async function authenticate(form:HTMLFormElement){
 }
 document.addEventListener("submit",event=>{
  const form=event.target as HTMLFormElement;
+ if(form.id==="ev-auth-reset"){
+  event.preventDefault();const data=new FormData(form),password=String(data.get("password")||""),confirmPassword=String(data.get("confirmPassword")||"");
+  if(password!==confirmPassword){state.message="The passwords do not match. Please try again.";paint();return;}
+  void apiRequest<{user:RuntimeUser}>("/api/auth/password",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({password})}).then(async result=>{state.user=result.user;state.recoveryMode=false;state.status="online";state.message="";await refresh();window.dispatchEvent(new Event("ev:authenticated"));paint();}).catch(error=>{state.message=error instanceof Error?error.message:"The password could not be updated.";paint();});
+ }
  if(form.id==="ev-auth"){event.preventDefault();void authenticate(form);}
  if(form.id==="ev-auth-recover"){event.preventDefault();const email=String(new FormData(form).get("email")||"");void apiRequest("/api/auth/recover",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({email})}).then(()=>{state.message="If an account exists for that email, a password reset link has been sent. Check your inbox.";paint();}).catch(error=>{state.message=error instanceof Error?error.message:"Password recovery could not be completed.";paint();});}
  if(form.id==="ev-project-form"){event.preventDefault();const name=String(new FormData(form).get("name")||"").trim();if(!name)return;void apiRequest<{project:RuntimeProject}>("/api/projects",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({name})}).then(async result=>{state.projectId=result.project.id;await refresh();window.dispatchEvent(new CustomEvent("ev:project-changed",{detail:{projectId:state.projectId}}));paint();}).catch(error=>alert(error.message||error));}
