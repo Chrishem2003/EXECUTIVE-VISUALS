@@ -29,7 +29,7 @@ export async function runCloudVideoWorkerCycle({
     throw new Error("Cloud video worker requires a lease-aware cloud queue.");
   }
   if (!enqueue || typeof enqueue.finish !== "function" || typeof enqueue.defer !== "function" ||
-      typeof enqueue.quarantine !== "function") {
+      typeof enqueue.quarantine !== "function" || typeof enqueue.recoverExpiredVideo !== "function") {
     throw new Error("Cloud video worker requires atomic enqueue/finalization and recovery RPCs.");
   }
   if (typeof execute !== "function") throw new Error("Cloud video worker requires an execution function.");
@@ -142,6 +142,6 @@ export function createCloudVideoWorker({
         })
       });
     },
-    async recoverExpired(limit = 100) { return queue.recover(limit); }
+    async recoverExpired(limit = 100) { return enqueue.recoverExpiredVideo(limit); }
   });
 }
