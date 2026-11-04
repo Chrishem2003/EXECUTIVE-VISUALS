@@ -82,6 +82,7 @@ export function createGoogleGeminiFilesGateway({
   env = process.env,
   fetchImpl = globalThis.fetch,
   loadPrivateAsset,
+  authorizePrivateAsset,
   findProviderFile,
   recordProviderFile,
   deleteProviderFileRecord,
@@ -224,12 +225,30 @@ export function createGoogleGeminiFilesGateway({
       }
       apiKey();
       const mimeType = safeMime(mediaType);
-      if (typeof findProviderFile === "function") {
+      let authorizedAsset = null;
+      if (typeof authorizePrivateAsset === "function") {
+        try { authorizedAsset = await authorizePrivateAsset({ assetId, ownerId, projectId, mediaType: mimeType }); }
+        catch { throw fail("Private asset authorization failed before Google Files reuse or upload.", "GEMINI_FILE_ASSET_SCOPE_INVALID"); }
+        const assetProjectId = authorizedAsset?.projectId || null;
+        if (!plain(authorizedAsset) || authorizedAsset.id !== assetId ||
+            assetProjectId !== (projectId || null) ||
+            (assetProjectId ? false : authorizedAsset.ownerId !== ownerId) ||
+            authorizedAsset.storageBucket !== "executive-visuals-media" ||
+            authorizedAsset.mediaType !== mimeType ||
+            !/^[a-f0-9]{64}$/i.test(String(authorizedAsset.sha256 || "")) ||
+            !Number.isSafeInteger(Number(authorizedAsset.size)) || Number(authorizedAsset.size) < 1) {
+          throw fail("Authorized asset metadata does not match the requested owner/project and media scope.", "GEMINI_FILE_ASSET_SCOPE_INVALID");
+        }
+      }
+      if (typeof findProviderFile === "function" && authorizedAsset) {
         const existing = await findProviderFile({ provider: "google-gemini-files", assetId, ownerId, projectId, mimeType });
-        if (plain(existing) && existing.expiresAt && Date.parse(existing.expiresAt) > now() + 120000) {
+        if (plain(existing) && existing.state === "ACTIVE" && existing.expiresAt &&
+            Date.parse(existing.expiresAt) > now() + 120000) {
           const match = FILE_URI.exec(String(existing.uri || ""));
           if (existing.ownerId === ownerId && (existing.projectId || null) === (projectId || null) &&
-              existing.assetId === assetId && existing.mimeType === mimeType && match) {
+              existing.assetId === assetId && existing.mimeType === mimeType && match &&
+              existing.sha256 === authorizedAsset.sha256 &&
+              Number(existing.sizeBytes) === Number(authorizedAsset.size)) {
             return Object.freeze({ uri: existing.uri, mediaType: mimeType, providerFileName: existing.name, expiresAt: existing.expiresAt });
           }
         } else if (plain(existing) && existing.ownerId === ownerId &&
@@ -254,7 +273,8 @@ export function createGoogleGeminiFilesGateway({
         const authorizedScopeMatches = assetProjectId === (projectId || null) &&
           (assetProjectId ? true : asset.ownerId === ownerId);
         if (asset.id !== assetId || !authorizedScopeMatches ||
-            asset.storageBucket !== "executive-visuals-media" || asset.mediaType !== mimeType) {
+            asset.storageBucket !== "executive-visuals-media" || asset.mediaType !== mimeType ||
+            (authorizedAsset && (asset.sha256 !== authorizedAsset.sha256 || Number(asset.size) !== Number(authorizedAsset.size)))) {
           throw fail("Private asset ownership, project, bucket or MIME type did not match.", "GEMINI_FILE_ASSET_SCOPE_INVALID");
         }
         const sizeBytes = Number(loaded.size ?? asset.size);
