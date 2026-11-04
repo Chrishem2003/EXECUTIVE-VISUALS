@@ -88,3 +88,20 @@ test("does not submit when no exact adapter is registered for the leased job", a
   }), error => error.code === "VIDEO_ADAPTER_UNAVAILABLE");
   assert.equal(submissions, 0);
 });
+
+test("uses provider-specific ingestion and cost resolvers from the selected adapter", async () => {
+  const calls=[];
+  const google=adapter({
+    async submit(){return {taskId:"v1_abcdef123456",status:"running"};},
+    async getStatus(){return {status:"succeeded",outputUrls:["opaque-output"]};},
+    async ingestOutputs(){calls.push("ingest");return {assetIds:["private-google-asset"]};},
+    async resolveActualCost(){calls.push("cost");return {amount:0.5,currency:"USD",evidenceReference:"google-usage:1"};}
+  });
+  const router=createVideoProviderExecutionRouter({adapters:[google]});
+  const result=await executeCloudVideoGenerationJob({
+    job,workerId:"shared-worker-2",ledger:ledger(),resolveAdapter:router.resolveAdapter,
+    maxPolls:1,sleep:async()=>{}
+  });
+  assert.deepEqual(result.assetIds,["private-google-asset"]);
+  assert.deepEqual(calls,["cost","ingest"]);
+});
