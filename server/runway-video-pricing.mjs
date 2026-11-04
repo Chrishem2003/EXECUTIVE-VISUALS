@@ -35,8 +35,10 @@ export function estimateRunwayVideoCredits({
   const inputVideo=finiteDuration(inputVideoSeconds,"inputVideoSeconds",{allowZero:true,max:30});
   const referenceVideo=finiteDuration(referenceVideoSeconds,"referenceVideoSeconds",{allowZero:true,max:30});
   const imageCount=count(referenceImageCount,"referenceImageCount");
-  if(typeof pricingDate!=="string"||!/^(20\d{2})-(0[1-9]|1[0-2])-([0-2]\d|3[01])$/.test(pricingDate)||new Date(pricingDate+"T00:00:00Z").toISOString().slice(0,10)!==pricingDate) {
-    throw fail("pricingDate must be an explicit YYYY-MM-DD value.","RUNWAY_PRICE_INPUT_REQUIRED");
+  const dateShape=typeof pricingDate==="string"&&/^20[0-9]{2}-(0[1-9]|1[0-2])-([0-2][0-9]|3[01])$/.test(pricingDate);
+  const parsedDate=dateShape?new Date(pricingDate+"T00:00:00Z"):null;
+  if(!parsedDate||Number.isNaN(parsedDate.getTime())||parsedDate.toISOString().slice(0,10)!==pricingDate) {
+    throw fail("pricingDate must be a valid explicit YYYY-MM-DD value.","RUNWAY_PRICE_INPUT_REQUIRED");
   }
   let credits,formula,pricingModel=model,discount=null;
   const perSecond=(rate)=>{credits=duration*rate;formula=duration+"s × "+rate+" credits/s";};
