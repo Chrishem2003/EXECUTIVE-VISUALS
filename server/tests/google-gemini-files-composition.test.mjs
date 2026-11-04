@@ -45,6 +45,10 @@ test("composes the private asset loader and durable mapping repository into the 
       },
       bytes, size: bytes.byteLength, sha256, cleanup: async () => {}
     }),
+    authorizePrivateAsset: async () => ({
+      id: assetId, ownerId, projectId, mediaType: "image/png",
+      size: bytes.byteLength, sha256, storageBucket: "executive-visuals-media"
+    }),
     now: () => Date.parse("2026-11-05T00:00:00.000Z")
   });
   const result = await gateway.resolveAsset({ assetId, ownerId, projectId, mediaType: "image/png" });
