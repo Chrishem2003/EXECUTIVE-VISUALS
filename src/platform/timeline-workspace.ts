@@ -77,7 +77,7 @@ function loadCaptionCues(asset:Asset):Promise<Array<{start:number;end:number;tex
  }).catch(error=>{captionSources.delete(asset.id);throw error;});
  captionSources.set(asset.id,request);return request;
 }
-function syncSequenceAudio(active:ReturnType<typeof resolveTimelineFrame>){
+function syncSequenceAudio(active:ReturnType<typeof resolveTimelineAudioFrame>){
  const container=document.querySelector<HTMLElement>("#tl-sequence-audio");if(!container)return;
  const live=new Set<string>();
  for(const item of active){
