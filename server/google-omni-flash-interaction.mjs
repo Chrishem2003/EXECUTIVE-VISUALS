@@ -35,6 +35,7 @@ export async function buildGeminiOmniFlashInteractionRequest({
   sourceVideoAssetId,
   referenceVideoAssetIds = [],
   getAuthorizedAssetContext,
+  getAuthorizedInteractionContext,
   resolveGoogleFileAsset,
   ...unsupportedOptions
 } = {}) {
@@ -88,20 +89,39 @@ export async function buildGeminiOmniFlashInteractionRequest({
   if (new Set(assetIds).size !== assetIds.length) {
     throw fail("The same private asset cannot be assigned multiple media roles.");
   }
-  if (assetIds.length && (
+  if ((assetIds.length || previousInteractionId) && (
     typeof projectId !== "string" || !UUID.test(projectId) ||
-    typeof getAuthorizedAssetContext !== "function" ||
-    typeof resolveGoogleFileAsset !== "function"
+    typeof getAuthorizedAssetContext !== "function"
   )) {
     throw fail("Private media requires authenticated project scope and a Google Files resolver.", "GEMINI_OMNI_ASSET_GATES_MISSING");
   }
 
   let scope;
-  if (assetIds.length) {
+  if (assetIds.length || previousInteractionId) {
     try { scope = await getAuthorizedAssetContext({ projectId }); }
     catch { throw fail("The active user is not authorized for this project.", "GEMINI_OMNI_ASSET_FORBIDDEN"); }
     if (!plain(scope) || !UUID.test(scope.ownerId ?? "") || scope.projectId !== projectId) {
       throw fail("Authenticated project scope is invalid.", "GEMINI_OMNI_ASSET_FORBIDDEN");
+    }
+  }
+  if (assetIds.length && typeof resolveGoogleFileAsset !== "function") {
+    throw fail("Private media requires a server-side Google Files resolver.", "GEMINI_OMNI_ASSET_GATES_MISSING");
+  }
+  if (previousInteractionId) {
+    if (typeof getAuthorizedInteractionContext !== "function") {
+      throw fail("Stateful edits require an owner/project-scoped interaction record.", "GEMINI_OMNI_INTERACTION_GATES_MISSING");
+    }
+    let interactionScope;
+    try {
+      interactionScope = await getAuthorizedInteractionContext({
+        interactionId: previousInteractionId, ownerId: scope.ownerId, projectId: scope.projectId
+      });
+    } catch {
+      throw fail("The previous interaction is not authorized for this project.", "GEMINI_OMNI_INTERACTION_FORBIDDEN");
+    }
+    if (!plain(interactionScope) || interactionScope.ownerId !== scope.ownerId ||
+        interactionScope.projectId !== scope.projectId || interactionScope.model !== MODEL) {
+      throw fail("The previous interaction does not belong to the active owner, project and model.", "GEMINI_OMNI_INTERACTION_FORBIDDEN");
     }
   }
 
