@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createRunwayVideoFinishingPlan } from "../runway-video-finishing-plan.mjs";
+import { createVideoFinishingPipeline } from "../video-finishing-pipeline.mjs";
 
 const sourceAsset = { id: "source-asset-1", mediaType: "video/mp4", sha256: "A".repeat(64) };
 const sourceMetadata = { durationSeconds: 10, frameRate: 30, width: 1920, height: 1080, dynamicRange: "sdr" };
@@ -79,4 +80,45 @@ test("enforces provider source duration limits and verified input metadata", () 
     sourceMetadata: { ...sourceMetadata, frameRate: undefined },
     pricingDate, operations: [{ kind: "upscale", resolution: "4k" }]
   }), /frameRate/);
+});
+
+test("finishing plan plugs into the durable pipeline approval and full-budget gates", async () => {
+  const plan = createRunwayVideoFinishingPlan({
+    pipelineId: "governed-plan",
+    sourceAsset,
+    sourceMetadata,
+    pricingDate,
+    operations: [{ kind: "upscale", resolution: "2k" }, { kind: "frame_rate", targetFramerate: 60 }]
+  });
+  let executions = 0;
+  const checkpoints = new Map();
+  const pipeline = createVideoFinishingPipeline({
+    resolveAdapter: async adapter => ({
+      status: "ready", remote: true,
+      capabilities: [adapter.endsWith("video_upscale") ? "video.upscale" : "video.frame_rate"]
+    }),
+    checkpoints: {
+      get: async (pipelineId, stepId) => checkpoints.get(pipelineId + ":" + stepId) ?? null,
+      save: async record => checkpoints.set(record.pipelineId + ":" + record.stepId, record)
+    },
+    executeStep: async ({ step, sourceAsset: input }) => {
+      executions++;
+      return {
+        id: step.id + "-asset",
+        mediaType: "video/mp4",
+        sha256: String(executions).padStart(64, "0"),
+        derivativeOf: input.id
+      };
+    }
+  });
+  await assert.rejects(() => pipeline.run(plan), error => error.code === "VIDEO_PIPELINE_APPROVAL_REQUIRED");
+  assert.equal(executions, 0);
+  const result = await pipeline.run(plan, {
+    remoteExecutionApproved: true,
+    approvalId: "explicit-approval",
+    approvedBudgetMicros: plan.totalEstimatedCostMicros
+  });
+  assert.equal(result.status, "completed");
+  assert.equal(result.steps.length, 2);
+  assert.equal(executions, 2);
 });
