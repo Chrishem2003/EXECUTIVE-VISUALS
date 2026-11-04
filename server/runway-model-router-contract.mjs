@@ -63,7 +63,7 @@ export function buildRunwayVideoRouterDryRun({configId,input}={}) {
     normalized.resolution=input.resolution;
   }
   if(input.duration!==undefined) {
-    if(!Number.isInteger(input.duration)||input.duration<2||input.duration>30) throw fail("Router duration must be a whole number from 2 to 30 seconds.","RUNWAY_ROUTER_INVALID_INPUT");
+    if(!Number.isInteger(input.duration)||input.duration<4||input.duration>15) throw fail("Router duration must be a whole number from 4 to 15 seconds.","RUNWAY_ROUTER_INVALID_INPUT");
     normalized.duration=input.duration;
   }
   if(input.audio!==undefined) {
