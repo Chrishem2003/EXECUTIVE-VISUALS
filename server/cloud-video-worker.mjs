@@ -122,14 +122,13 @@ export function createCloudVideoWorker({
   enqueue,
   ledger,
   adapter,
+  resolveAdapter,
   ingestOutputs,
   resolveActualCost,
-  sleep,
-  maxPolls = 120,
-  pollIntervalMs,
   deferSeconds = 30
 } = {}) {
-  if (!ledger || !adapter || typeof ingestOutputs !== "function" || typeof resolveActualCost !== "function") {
+  if (!ledger || (!adapter && typeof resolveAdapter !== "function") ||
+      (adapter && typeof resolveAdapter === "function")) {
     throw new Error("Cloud video worker requires a Postgres ledger, provider adapter, private ingestion and cost resolver.");
   }
   return Object.freeze({
@@ -137,8 +136,8 @@ export function createCloudVideoWorker({
       return runCloudVideoWorkerCycle({
         queue, enqueue, workerId, leaseSeconds, heartbeatIntervalMs, deferSeconds, onEvent,
         execute: ({ job, workerId: activeWorker, signal }) => executeCloudVideoGenerationJob({
-          job, workerId: activeWorker, ledger, adapter, ingestOutputs, resolveActualCost,
-          signal, ...(sleep ? { sleep } : {}), maxPolls, pollIntervalMs
+          job, workerId: activeWorker, ledger, adapter, resolveAdapter, ingestOutputs, resolveActualCost,
+          signal
         })
       });
     },

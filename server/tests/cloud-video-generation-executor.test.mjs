@@ -70,11 +70,12 @@ test("ambiguous provider POST is quarantined and never repeated", async () => {
   assert.equal(f.calls.filter(call => call[0] === "unknown").length, 1);
 });
 
-test("cloud executor defers transient status lookup and polling exhaustion", async () => {
+test("cloud executor defers transient or active status after exactly one check per lease", async () => {
   const f = fixture({ state: "submitted", status: new Error("provider unavailable") });
   await assert.rejects(executeCloudVideoGenerationJob({ job, workerId: "worker-1", ...f }), error => error.code === "VIDEO_PROVIDER_POLL_DEFERRED");
   const running = fixture({ state: "submitted", status: { taskId, status: "running" } });
-  await assert.rejects(executeCloudVideoGenerationJob({ job, workerId: "worker-1", ...running, maxPolls: 1 }), error => error.code === "VIDEO_PROVIDER_POLL_DEFERRED");
+  await assert.rejects(executeCloudVideoGenerationJob({ job, workerId: "worker-1", ...running }), error => error.code === "VIDEO_PROVIDER_POLL_DEFERRED");
+  assert.equal(running.calls.filter(call => call[0] === "poll").length, 1);
 });
 
 test("cloud executor holds reservation when actual cost is unknown or exceeds approval", async () => {

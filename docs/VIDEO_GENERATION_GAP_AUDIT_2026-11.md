@@ -272,3 +272,10 @@ The provider catalog now exposes the actual configured video adapter capability 
 ## AI upscaling research and selection
 
 Added docs/AI_UPSCALING_ENGINE_SELECTION.md. The initial low-cost candidate is Real-ESRGAN NCNN/Vulkan because its upstream documentation describes portable Intel/AMD/NVIDIA GPU executables without requiring CUDA or PyTorch. It is not enabled or claimed as installed. Video2X is not selected as the hosted dependency because of its AGPL-3.0 licence. The design requires runtime/device probing, adaptive tiling, frame/audio/timebase preservation, temporal-flicker review, derivative-only publishing and explicit licence checks. The existing FFmpeg scaler remains the verified fallback.
+
+
+### Shared cloud worker lease efficiency and provider-result retention
+
+The first provider-aware executor polled repeatedly inside a single worker lease (up to 120 checks with sleeps). This could occupy workers unnecessarily and risk missing provider result retention windows. The executor now performs exactly one provider status check per lease. Queued/running tasks and transient status failures return VIDEO_PROVIDER_POLL_DEFERRED; the worker atomically defers the job and the next lease resumes from the persisted submission ledger without another provider POST. Successful tasks proceed immediately to cost reconciliation and private output ingestion.
+
+This is particularly important for FAL: its documented result retention is one hour by default, or six minutes for result payloads at least 10 KB unless payload storage is enabled. The worker should retrieve and privately ingest a completed result as soon as it observes completion.

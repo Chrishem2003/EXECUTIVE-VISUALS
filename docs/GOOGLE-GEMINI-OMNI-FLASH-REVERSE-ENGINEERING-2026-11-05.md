@@ -199,3 +199,14 @@ Budgeted enqueue hardening:
 - The direct Gemini API preflight remains restricted to 720p/provider-default until the API pricing contract for other output resolutions is verified. The reservation is USD 2.586464, covering a full 1,048,576-token input context plus a 10-second 720p output at 5,792 tokens/second. This is a conservative maximum, not an invoice.
 - The Postgres enqueue function independently enforces the Google model, 3–10 second duration, 720p-only budget tier and minimum reservation. The existing budget policy, approval consumption, idempotency and service-role-only RPC boundaries remain in force.
 - PostgreSQL integration tests now create a Google budget policy and verify successful queueing, under-reservation rejection and unsupported-resolution rejection. They do not call Google's generation API.
+
+Provider-aware worker routing follow-up:
+- The leased cloud-video executor can now receive an exact-match adapter resolver rather than a single fixed adapter.
+- `server/video-provider-execution-router.mjs` indexes adapters only by the exact `provider:model` pair and verifies the claimed job's input identity before returning an adapter.
+- The router has no fuzzy fallback and performs no provider network calls. Missing or mismatched adapters fail before provider submission.
+- The existing fixed-adapter path remains supported for the current Runway worker. The Google worker still requires a separate runtime composition for durable approval verification, private asset resolution, output ingestion and retention before it can be enabled.
+
+Provider-specific execution handlers:
+- The shared executor now resolves not only the provider adapter but also that adapter's private-output ingestion and authoritative cost resolver. A caller may still provide shared handlers for legacy fixed-adapter workers.
+- This keeps Google URI output ingestion and usage-based cost evidence paired with the Google adapter, rather than accidentally using another provider's storage or pricing handler.
+- Missing provider-specific handlers fail closed after adapter selection and before the provider is called.
