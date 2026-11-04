@@ -74,6 +74,23 @@ test("expired access token rotates the refresh token and returns a replacement c
   assert.deepEqual(JSON.parse(calls[1].options.body), { refresh_token: "refresh-token-old" });
 });
 
+test("concurrent requests share one refresh-token rotation", async () => {
+  let calls = 0;
+  const auth = createSupabaseAuth({
+    ...config,
+    fetchImpl: async () => {
+      calls += 1;
+      await new Promise(resolve => setTimeout(resolve, 15));
+      return response(tokenPayload(calls === 1 ? "old" : "rotated", calls === 1 ? 1 : 3600));
+    }
+  });
+  const session = await auth.signIn("creator@example.test", "a-long-password-value");
+  const results = await Promise.all([auth.getUser(session.cookie), auth.getUser(session.cookie)]);
+  assert.equal(calls, 2);
+  assert.ok(results[0].cookie);
+  assert.equal(results[0].cookie, results[1].cookie);
+});
+
 test("invalid and tampered session cookies fail closed", async () => {
   const auth = createSupabaseAuth({ ...config, fetchImpl: async () => response({}) });
   assert.equal(await auth.getUser("not-a-session"), null);
