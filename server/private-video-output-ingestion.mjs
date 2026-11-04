@@ -36,20 +36,14 @@ function ipv4Public(address) {
 }
 
 function ipv6Public(address) {
-  const value = address.toLowerCase().split("%")[0];
+  let value = address.toLowerCase().split("%")[0];
   if (value.includes(".")) {
-    const tail = value.slice(value.lastIndexOf(":") + 1);
-    if (isIP(tail) === 4) return ipv4Public(tail);
-  }
-  if (value.startsWith("::ffff:")) {
-    const tail = value.slice(7);
-    if (isIP(tail) === 4) return ipv4Public(tail);
-    const words = tail.split(":");
-    if (words.length === 2) {
-      const hi = parseInt(words[0], 16), lo = parseInt(words[1], 16);
-      if ([hi,lo].every(Number.isFinite)) return ipv4Public([hi >> 8, hi & 255, lo >> 8, lo & 255].join("."));
-    }
-    return false;
+    const match = value.match(/^(.*:)(\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3})$/);
+    if (!match || !ipv4Public(match[2])) return false;
+    const octets = match[2].split(".").map(Number);
+    const high = ((octets[0] << 8) | octets[1]).toString(16);
+    const low = ((octets[2] << 8) | octets[3]).toString(16);
+    value = match[1] + high + ":" + low;
   }
   const halves = value.split("::");
   if (halves.length > 2) return false;
@@ -60,12 +54,14 @@ function ipv6Public(address) {
   const words = [...left, ...Array(missing).fill("0"), ...right];
   if (words.length !== 8 || words.some(word => !/^[0-9a-f]{1,4}$/.test(word))) return false;
   const n = words.reduce((acc, word) => (acc << 16n) | BigInt(parseInt(word, 16)), 0n);
-  const prefix = n >> 125n;
   // Only global-unicast 2000::/3 is accepted. This excludes unspecified,
-  // loopback, ULA, link-local, multicast, IPv4-compatible and transition ranges.
-  if (prefix !== 1n) return false;
-  const top32 = n >> 96n;
-  if (top32 === 0x20010db8n || top32 === 0x20010000n || top32 === 0x20020000n) return false;
+  // loopback, IPv4-mapped, ULA, link-local, multicast and other special ranges.
+  if ((n >> 125n) !== 1n) return false;
+  const first = parseInt(words[0], 16);
+  const second = parseInt(words[1], 16);
+  if (first === 0x2001 && second <= 0x01ff) return false; // IETF special-purpose 2001::/23
+  if (first === 0x2002) return false; // 6to4 transition
+  if (first === 0x2001 && second === 0x0db8) return false; // documentation
   return true;
 }
 
