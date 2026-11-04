@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { routeVideoModel } from "../video-model-router.mjs";
+import { VIDEO_PROVIDER_CATALOG } from "../video-provider-registry.mjs";
 
 const estimate = amount => ({
   amount, currency: "USD", billable: false, settlementEligible: false,
@@ -83,4 +84,21 @@ test("fails closed for malformed routing policy and requirements", () => {
   assert.throws(() => routeVideoModel({ candidates: [candidate("runway","x",0.5)], optimizeFor: "random" }), /optimizeFor/);
   assert.throws(() => routeVideoModel({ candidates: [candidate("runway","x",0.5)], requirements: { operation: "music_video" } }), /Unsupported video operation/);
   assert.throws(() => routeVideoModel({ candidates: [candidate("runway","x",0.5)], maxCostUsd: -1 }), /maxCostUsd/);
+});
+
+test("the actual provider catalogue cannot route while every provider remains disabled", () => {
+  const candidates = VIDEO_PROVIDER_CATALOG.flatMap(provider => provider.models.map(model => ({
+    providerId: provider.id,
+    modelId: model.id,
+    providerAvailability: provider.availability,
+    modelAvailability: model.availability,
+    adapterState: provider.adapterState,
+    capabilities: model.capabilities,
+    constraints: model.constraints
+  })));
+  const result = routeVideoModel({ candidates, requirements: { operation: "text_to_video" } });
+  assert.equal(result.status, "no_eligible_model");
+  assert.equal(result.eligibleModelCount, 0);
+  assert.ok(result.excludedCandidates.length > 0);
+  assert.ok(result.excludedCandidates.every(item => item.reason === "model_disabled"));
 });
