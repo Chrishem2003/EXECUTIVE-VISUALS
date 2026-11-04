@@ -26,7 +26,9 @@ Supported task endpoints are `POST /v1/text_to_video`, `POST /v1/image_to_video`
 - Input/reference media are not charged; output duration is billed.
 - `auto` reserves/bills 15 seconds upfront and refunds unused duration after completion.
 - Input moderation failures may still be charged.
-- Aspect ratio is expressed as a pixel-dimension `ratio` string and also determines output resolution. It is not a free-standing resolution selector.
+- Aspect ratio is expressed as an exact pixel-dimension `ratio` string and also determines output resolution. It is not a free-standing resolution selector.
+- Full Seedance 2.0 accepts 24 documented pixel ratios across the three endpoints. Fast and Mini accept the smaller 12-ratio list and do not support 1080p/4K.
+- Image-to-video can take up to two prompt images as first/last keyframes. Text-to-video accepts up to 9 image, 3 video and 3 audio references. Video-to-video accepts up to 9 image, 2 video and 3 audio references.
 
 ## Tier limits and dated list rates
 
@@ -38,7 +40,7 @@ Runway Dev documents 1 credit = USD $0.01 on the research snapshot date.
 | Seedance 2.0 Fast | 11 cr/s | 24 cr/s | Not supported | Not supported |
 | Seedance 2.0 Mini | 7 cr/s | 15 cr/s | Not supported | Not supported |
 
-Minimum generation duration is 4 seconds. The registry stores the dated credit rates and tier-specific resolution eligibility. Do not assume Fast/Mini accept the larger ratio values from the full tier.
+Minimum generation duration is 4 seconds. Minimum charges are 56 credits (full), 44 credits (Fast) and 28 credits (Mini), matching four seconds at the 480p minimum rate. `duration: "auto"` reserves 15 seconds of credits upfront, then refunds unused duration after completion. The registry stores dated credit rates, endpoint-specific ratio values and tier-specific resolution eligibility. Do not assume Fast/Mini accept the larger ratio values from the full tier.
 
 ## Executive Visuals implementation boundary
 
