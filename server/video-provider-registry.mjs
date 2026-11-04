@@ -662,6 +662,7 @@ export const VIDEO_PROVIDER_CATALOG = freeze([
           uriDeliveryRecommendedAboveBytes: 4194304,
           outputIncludesSynthIdWatermark: true,
           source: "https://ai.google.dev/gemini-api/docs/omni",
+          paidTierOnly: true,
           apiEndpoint: "https://generativelanguage.googleapis.com/v1beta/interactions"
         }
       }
