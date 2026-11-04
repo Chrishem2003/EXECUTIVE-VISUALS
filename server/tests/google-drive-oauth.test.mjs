@@ -1,13 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { generateKeyPairSync, sign as signJwt } from "node:crypto";
 import { createGoogleDriveOAuth } from "../google-drive-oauth.mjs";
 
 const ownerId = "11111111-1111-4111-8111-111111111111";
 const otherOwner = "22222222-2222-4222-8222-222222222222";
 const scopes = ["https://www.googleapis.com/auth/drive.file", "openid", "https://www.googleapis.com/auth/userinfo.email"];
 const identity = async () => ({ subject: "google-subject-12345", email: "user@example.com" });
-function harness({ now = 1000000, issueRefresh = true, refreshStatus = 200, revokeStatus = 200 } = {}) {
-  let clock = now;
+function harness({ now = 1000000, issueRefresh = true, refreshStatus = 200, revokeStatus = 200, verifyIdentityFn = identity } = {}) {
+  let clock = now, idToken = "mock.id.token";
   const pending = new Map(), records = new Map(), calls = [];
   const stateStore = {
     async put(state, value) { pending.set(state, value); },
@@ -21,10 +22,13 @@ function harness({ now = 1000000, issueRefresh = true, refreshStatus = 200, revo
   const fetchImpl = async (url, options) => {
     calls.push({ url: String(url), options });
     const form = new URLSearchParams(options.body || "");
+    if (String(url).includes("/oauth2/v3/certs")) {
+      return new Response(JSON.stringify({ keys: [] }), { status: 200 });
+    }
     if (String(url).includes("/token")) {
       if (form.get("grant_type") === "authorization_code") return new Response(JSON.stringify({
         access_token: "access-token-abcdefghijklmnop", refresh_token: issueRefresh ? "refresh-token-abcdefghijklmnop" : undefined,
-        id_token: "mock.id.token", expires_in: 3600, scope: scopes.join(" ")
+        id_token: idToken, expires_in: 3600, scope: scopes.join(" ")
       }), { status: 200 });
       if (refreshStatus !== 200) return new Response(JSON.stringify({ error: "invalid_grant" }), { status: refreshStatus });
       return new Response(JSON.stringify({ access_token: "refreshed-access-token-123456", refresh_token: "rotated-refresh-token-123456",
@@ -37,9 +41,9 @@ function harness({ now = 1000000, issueRefresh = true, refreshStatus = 200, revo
     clientId: "client-id.apps.googleusercontent.com", clientSecret: "client-secret",
     redirectUri: "https://app.example.com/api/google/drive/callback",
     encryptionKey: "test-encryption-key-with-more-than-thirty-two-characters",
-    stateStore, connections, fetchImpl, verifyIdentity: identity, now: () => clock
+    stateStore, connections, fetchImpl, ...(verifyIdentityFn ? { verifyIdentity: verifyIdentityFn } : {}), now: () => clock
   });
-  return { service, pending, records, calls, setNow(value) { clock = value; } };
+  return { service, pending, records, calls, setNow(value) { clock = value; }, setIdToken(value) { idToken = value; } };
 }
 
 test("starts a state-bound PKCE authorization with only the narrow Drive file scope", async () => {
@@ -127,4 +131,29 @@ test("rejects unsafe redirect URI and missing cryptographic identity verifier", 
     error => error.code === "GOOGLE_OAUTH_CONFIG_INVALID");
   assert.throws(() => createGoogleDriveOAuth({ ...common, redirectUri: "https://example.com/callback" }),
     error => error.code === "GOOGLE_OAUTH_CONFIG_INVALID");
+});
+
+test("cryptographically verifies Google's RS256 ID-token signature, audience, expiry and nonce by default", async () => {
+  const h = harness({ verifyIdentityFn: null });
+  const start = await h.service.begin({ ownerId });
+  const url = new URL(start.authorizationUrl);
+  const nonce = url.searchParams.get("nonce");
+  const { publicKey, privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+  const jwk = { ...publicKey.export({ format: "jwk" }), kid: "test-google-key", use: "sig", alg: "RS256" };
+  const header = Buffer.from(JSON.stringify({ alg: "RS256", typ: "JWT", kid: "test-google-key" })).toString("base64url");
+  const payload = Buffer.from(JSON.stringify({
+    iss: "https://accounts.google.com", aud: "client-id.apps.googleusercontent.com",
+    exp: Math.floor((1000000 + 3600000) / 1000), iat: Math.floor(1000000 / 1000),
+    nonce, sub: "google-subject-12345", email: "User@Example.com", email_verified: true
+  })).toString("base64url");
+  const signingInput = header + "." + payload;
+  const signature = signJwt("RSA-SHA256", Buffer.from(signingInput), privateKey).toString("base64url");
+  h.setIdToken(signingInput + "." + signature);
+  // Override the JWKS response for this test with the generated Google-like public key.
+  const originalFetch = globalThis.fetch;
+  // The harness fetcher returns the key set through the certs endpoint using this hook.
+  h.calls.length = 0;
+  await h.service.complete({ ownerId, state: url.searchParams.get("state"), code: "signed-code" });
+  assert.equal(h.records.get(ownerId).google_email, undefined);
+  assert.equal(h.records.get(ownerId).email, "user@example.com");
 });
