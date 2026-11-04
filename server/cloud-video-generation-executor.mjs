@@ -1,6 +1,4 @@
 const fail = (message, code) => Object.assign(new Error(message), { code });
-const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
-
 function jobInput(job) {
   const value = job?.input;
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -21,10 +19,7 @@ export async function executeCloudVideoGenerationJob({
   resolveAdapter,
   ingestOutputs,
   resolveActualCost,
-  signal,
-  sleep = wait,
-  maxPolls = 120,
-  pollIntervalMs
+  signal
 } = {}) {
   if (!job?.id || !job?.owner_id || job.job_type !== "video.generate" ||
       typeof workerId !== "string" || !workerId.trim() || workerId.length > 128) {
@@ -37,7 +32,6 @@ export async function executeCloudVideoGenerationJob({
   if (adapter !== undefined && typeof resolveAdapter === "function") {
     throw fail("Provide either a fixed adapter or an adapter resolver, not both.", "VIDEO_ADAPTER_CONFIGURATION_INVALID");
   }
-  if (!Number.isInteger(maxPolls) || maxPolls < 1 || maxPolls > 1000) throw new Error("Video polling limit is invalid.");
 
   const input = jobInput(job);
   let selectedAdapter = adapter;
@@ -107,68 +101,64 @@ export async function executeCloudVideoGenerationJob({
     throw fail("Cloud video submission has no pollable provider task ID.", "VIDEO_SUBMISSION_REQUIRES_RECONCILIATION");
   }
 
-  const interval = Math.max(5000, Number(pollIntervalMs || selectedAdapter.minimumPollIntervalMs || 5000));
-  for (let attempt = 0; attempt < maxPolls; attempt++) {
-    if (signal?.aborted) throw fail("Cloud video worker lease was lost.", "VIDEO_WORKER_LEASE_LOST");
-    let task;
-    try {
-      task = await selectedAdapter.getStatus(providerTaskId, { job, workerId });
-    } catch {
-      throw fail("Provider status is temporarily unavailable; polling will resume later.", "VIDEO_PROVIDER_POLL_DEFERRED");
-    }
-    if (signal?.aborted) throw fail("Cloud video worker lease was lost.", "VIDEO_WORKER_LEASE_LOST");
-    if (task.status === "failed" || task.status === "canceled") {
-      throw fail(task.failure || "Video provider task did not complete.", task.failureCode || "VIDEO_PROVIDER_FAILED");
-    }
-    if (task.status === "succeeded") {
-      if (!Array.isArray(task.outputUrls) || task.outputUrls.length < 1 || task.outputUrls.length > 10) {
-        throw fail("Provider completed without a bounded output collection.", "VIDEO_OUTPUT_COLLECTION_INVALID");
-      }
-      let cost;
-      try { cost = await selectedResolveActualCost({ job, input, task, providerTaskId }); }
-      catch { throw fail("Actual provider cost could not be verified; budget remains reserved for review.", "VIDEO_BUDGET_COST_UNRESOLVED"); }
-      if (signal?.aborted) throw fail("Cloud video worker lease was lost.", "VIDEO_WORKER_LEASE_LOST");
-      const approved = job.estimated_cost;
-      const reservedAmount = Number(approved?.amount);
-      if (!cost || typeof cost.amount !== "number" || !Number.isFinite(cost.amount) || cost.amount < 0 ||
-          typeof cost.currency !== "string" || cost.currency !== approved?.currency ||
-          !Number.isFinite(reservedAmount) || cost.amount > reservedAmount ||
-          typeof cost.evidenceReference !== "string" || !cost.evidenceReference.trim() || cost.evidenceReference.length > 1000) {
-        throw fail("Actual provider cost does not match the approved reservation or lacks evidence.", "VIDEO_BUDGET_COST_UNRESOLVED");
-      }
-      let ingested;
-      try { ingested = await selectedIngestOutputs({ job, input, task, providerTaskId }); }
-      catch (error) {
-        const cleanupPending = error?.cleanupPending === true;
-        const held = fail(
-          cleanupPending
-            ? "Private output ingestion failed and compensating asset cleanup is pending."
-            : "Private output ingestion failed; the completed provider task is held for review.",
-          cleanupPending ? "VIDEO_OUTPUT_INGESTION_CLEANUP_PENDING" : "VIDEO_OUTPUT_INGESTION_REQUIRES_REVIEW"
-        );
-        if (cleanupPending) held.cleanupPending = true;
-        throw held;
-      }
-      if (signal?.aborted) throw fail("Cloud video worker lease was lost.", "VIDEO_WORKER_LEASE_LOST");
-      if (!ingested || !Array.isArray(ingested.assetIds) || ingested.assetIds.length !== task.outputUrls.length ||
-          ingested.assetIds.some(id => typeof id !== "string" || !id.trim())) {
-        throw fail("Private output ingestion did not register every output asset.", "VIDEO_OUTPUT_INGESTION_REQUIRES_REVIEW");
-      }
-      return Object.freeze({
-        provider: input.provider,
-        model: input.model,
-        providerTaskId,
-        assetIds: Object.freeze([...ingested.assetIds]),
-        usage: ingested.usage || null,
-        actualAmount: cost.amount,
-        currency: cost.currency,
-        costEvidenceReference: cost.evidenceReference
-      });
-    }
+  if (signal?.aborted) throw fail("Cloud video worker lease was lost.", "VIDEO_WORKER_LEASE_LOST");
+  let task;
+  try {
+    task = await selectedAdapter.getStatus(providerTaskId, { job, workerId });
+  } catch {
+    throw fail("Provider status is temporarily unavailable; polling will resume on a later lease.", "VIDEO_PROVIDER_POLL_DEFERRED");
+  }
+  if (signal?.aborted) throw fail("Cloud video worker lease was lost.", "VIDEO_WORKER_LEASE_LOST");
+  if (task.status === "failed" || task.status === "canceled") {
+    throw fail(task.failure || "Video provider task did not complete.", task.failureCode || "VIDEO_PROVIDER_FAILED");
+  }
+  if (task.status !== "succeeded") {
     if (task.status !== "queued" && task.status !== "running") {
       throw fail("Provider returned an unsupported task state.", "VIDEO_PROVIDER_STATUS_INVALID");
     }
-    if (attempt + 1 < maxPolls) await sleep(interval);
+    throw fail("Video generation is still running; polling will resume on a later lease.", "VIDEO_PROVIDER_POLL_DEFERRED");
   }
-  throw fail("Video generation is still running; polling will resume on a later lease.", "VIDEO_PROVIDER_POLL_DEFERRED");
+  if (!Array.isArray(task.outputUrls) || task.outputUrls.length < 1 || task.outputUrls.length > 10) {
+    throw fail("Provider completed without a bounded output collection.", "VIDEO_OUTPUT_COLLECTION_INVALID");
+  }
+  let cost;
+  try { cost = await selectedResolveActualCost({ job, input, task, providerTaskId }); }
+  catch { throw fail("Actual provider cost could not be verified; budget remains reserved for review.", "VIDEO_BUDGET_COST_UNRESOLVED"); }
+  if (signal?.aborted) throw fail("Cloud video worker lease was lost.", "VIDEO_WORKER_LEASE_LOST");
+  const approved = job.estimated_cost;
+  const reservedAmount = Number(approved?.amount);
+  if (!cost || typeof cost.amount !== "number" || !Number.isFinite(cost.amount) || cost.amount < 0 ||
+      typeof cost.currency !== "string" || cost.currency !== approved?.currency ||
+      !Number.isFinite(reservedAmount) || cost.amount > reservedAmount ||
+      typeof cost.evidenceReference !== "string" || !cost.evidenceReference.trim() || cost.evidenceReference.length > 1000) {
+    throw fail("Actual provider cost does not match the approved reservation or lacks evidence.", "VIDEO_BUDGET_COST_UNRESOLVED");
+  }
+  let ingested;
+  try { ingested = await selectedIngestOutputs({ job, input, task, providerTaskId }); }
+  catch (error) {
+    const cleanupPending = error?.cleanupPending === true;
+    const held = fail(
+      cleanupPending
+        ? "Private output ingestion failed and compensating asset cleanup is pending."
+        : "Private output ingestion failed; the completed provider task is held for review.",
+      cleanupPending ? "VIDEO_OUTPUT_INGESTION_CLEANUP_PENDING" : "VIDEO_OUTPUT_INGESTION_REQUIRES_REVIEW"
+    );
+    if (cleanupPending) held.cleanupPending = true;
+    throw held;
+  }
+  if (signal?.aborted) throw fail("Cloud video worker lease was lost.", "VIDEO_WORKER_LEASE_LOST");
+  if (!ingested || !Array.isArray(ingested.assetIds) || ingested.assetIds.length !== task.outputUrls.length ||
+      ingested.assetIds.some(id => typeof id !== "string" || !id.trim())) {
+    throw fail("Private output ingestion did not register every output asset.", "VIDEO_OUTPUT_INGESTION_REQUIRES_REVIEW");
+  }
+  return Object.freeze({
+    provider: input.provider,
+    model: input.model,
+    providerTaskId,
+    assetIds: Object.freeze([...ingested.assetIds]),
+    usage: ingested.usage || null,
+    actualAmount: cost.amount,
+    currency: cost.currency,
+    costEvidenceReference: cost.evidenceReference
+  });
 }
