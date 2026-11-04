@@ -143,7 +143,7 @@ export function createLumaRay32Adapter({
       return { taskId: body.id, status: body.state || "queued" };
     },
     async getStatus(taskId) {
-      if (typeof taskId !== "string" || !/^[a-zA-Z0-9_-]{8,128}$/.test(taskId)) {
+      if (typeof taskId !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(taskId)) {
         throw fail("Luma generation ID is invalid.", "LUMA_VIDEO_TASK_ID_INVALID");
       }
       const body = await request("/generations/" + encodeURIComponent(taskId));
