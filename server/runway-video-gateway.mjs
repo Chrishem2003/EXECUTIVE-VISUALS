@@ -1,7 +1,10 @@
+import {assertVideoCapabilities,normalizeVideoGenerationRequest} from "./video-generation-contract.mjs";
 const API_BASE="https://api.dev.runwayml.com/v1";
 const API_VERSION="2024-11-06";
 const MODEL="gen4.5";
 const RATIOS=new Set(["1280:720","720:1280"]);
+const ASPECT_TO_RATIO=Object.freeze({"16:9":"1280:720","9:16":"720:1280"});
+const CAPABILITIES=Object.freeze({negativePrompt:false,seed:true,startFrame:false,endFrame:false,motionReference:false,referenceImages:false,audioModes:Object.freeze([]),aspectRatios:Object.freeze(["16:9","9:16"]),resolutions:Object.freeze(["provider_default"]),minDurationSeconds:2,maxDurationSeconds:10});
 const TERMINAL=new Set(["SUCCEEDED","FAILED","CANCELED"]);
 export const RUNWAY_MIN_POLL_INTERVAL_MS=5000;
 const fail=(message,code)=>Object.assign(new Error(message),{code});
@@ -69,9 +72,15 @@ export function createRunwayVideoAdapter({env=process.env,fetchImpl=globalThis.f
  return Object.freeze({
   provider:"runway",model:MODEL,minimumPollIntervalMs:RUNWAY_MIN_POLL_INTERVAL_MS,
   async submit(input){
-   const payload=buildRunwayTextVideoPayload(input);
+   const normalized=normalizeVideoGenerationRequest(input);
+   assertVideoCapabilities(normalized,CAPABILITIES);
+   if(normalized.provider&&normalized.provider!=="runway")throw fail("The request selects a different video provider.","RUNWAY_INVALID_INPUT");
+   if(normalized.model&&normalized.model!==MODEL)throw fail("The initial Runway adapter supports gen4.5 only.","RUNWAY_UNSUPPORTED_CAPABILITY");
+   const ratio=ASPECT_TO_RATIO[normalized.aspectRatio];
+   if(!ratio)throw fail("Runway Gen-4.5 text-to-video supports only 16:9 and 9:16.","RUNWAY_UNSUPPORTED_CAPABILITY");
+   const payload=buildRunwayTextVideoPayload({prompt:normalized.prompt,duration:normalized.durationSeconds,ratio,seed:normalized.seed});
    const result=await request("/text_to_video",{method:"POST",body:payload});
-   return normalizeTask(result);
+   return Object.freeze({...normalizeTask(result),platformRequestId:normalized.requestId});
   },
   async getStatus(id){return normalizeTask(await request("/tasks/"+encodeURIComponent(taskId(id))));},
   async cancel(id){
