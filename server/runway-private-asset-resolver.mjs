@@ -2,9 +2,9 @@ const API_BASE = "https://api.dev.runwayml.com/v1";
 const API_VERSION = "2024-11-06";
 const MAX_UPLOAD_BYTES = 200 * 1024 * 1024;
 const IMAGE_TYPES = Object.freeze({
-  "image/png": ".png",
-  "image/jpeg": ".jpg",
-  "image/webp": ".webp"
+  "image/png": [".png"],
+  "image/jpeg": [".jpg", ".jpeg"],
+  "image/webp": [".webp"]
 });
 const fail = (message, code) => Object.assign(new Error(message), { code });
 
@@ -12,6 +12,13 @@ function safeRunwayUri(value) {
   return typeof value === "string" &&
     value.length >= 13 && value.length <= 5000 &&
     /^runway:\/\/[A-Za-z0-9._~:/-]+$/.test(value);
+}
+
+function validImageSignature(bytes, contentType) {
+  if (contentType === "image/png") return bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+  if (contentType === "image/jpeg") return bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+  if (contentType === "image/webp") return bytes.toString("ascii", 0, 4) === "RIFF" && bytes.toString("ascii", 8, 12) === "WEBP";
+  return false;
 }
 
 function validateUploadResponse(value) {
@@ -97,8 +104,11 @@ export function createRunwayPrivateAssetResolver({
     }
     if (typeof asset.filename !== "string" ||
         !/^[A-Za-z0-9][A-Za-z0-9._-]{1,250}$/.test(asset.filename) ||
-        !asset.filename.toLowerCase().endsWith(IMAGE_TYPES[asset.contentType])) {
+        !IMAGE_TYPES[asset.contentType].some(extension => asset.filename.toLowerCase().endsWith(extension))) {
       throw fail("Private image asset filename does not match its media type.", "RUNWAY_IMAGE_ASSET_INVALID");
+    }
+    if (!validImageSignature(bytes, asset.contentType)) {
+      throw fail("Private image asset bytes do not match their declared image format.", "RUNWAY_IMAGE_ASSET_INVALID");
     }
 
     const apiKey = String(env.RUNWAY_API_KEY || "").trim();
