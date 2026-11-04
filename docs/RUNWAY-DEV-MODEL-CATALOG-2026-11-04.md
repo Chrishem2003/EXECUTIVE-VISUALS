@@ -30,6 +30,29 @@ These records are **catalog-only**. They are not a claim that the corresponding 
 
 The existing direct-provider research records for Kling and Google remain separate. A model routed through Runway Dev is not interchangeable with a direct Kling or Google adapter: authentication, API request shapes, billing, task state, output URLs, and provider support responsibilities differ.
 
+## Extended video and finishing catalog coverage
+
+The registry now also records the other video IDs in the official API guide and three finishing operations. These entries are all marked `availability: disabled` and `implementationState: catalog_only`. Their presence means discoverable metadata only; it does not imply request-schema, pricing, storage, UI, or adapter support.
+
+| API model ID | Catalog label | Documented surface |
+|---|---|---|
+| `seedance2`, `seedance2_fast`, `seedance2_mini` | Seedance 2.0 family | Text/image/video-conditioned generation; audio options and reference controls vary by tier |
+| `kling3.0_pro`, `kling3.0_standard`, `kling3.0_4k` | Kling 3.0 family | Text/image video, first/last frames, multi-shot; optional audio |
+| `klingO3_pro`, `klingO3_standard`, `klingO3_4k` | Kling O3 family | Text/image/video input, video editing, image references, optional native audio |
+| `kling2.5_turbo_pro` | Kling 2.5 Turbo Pro | Text/image video, 5- or 10-second clips, optional last frame |
+| `hailuo3`, `h3_max` | MiniMax H3 family | H3 multimodal references; H3 Max text/image video with first/last frames and native audio |
+| `wan3`, `wan3_prime` | WAN 3.0 family | 2–30 seconds, native audio, image/video/audio references, 480p–1080p |
+| `grok_imagine_1_5`, `grok_imagine_1_5_lite` | Grok Imagine Video 1.5 family | Text/image video; full model has native audio and audio-driven performance |
+| `happyhorse_1_0` | HappyHorse 1.0 | Text/image video, native audio, 3–15 seconds, ten aspect ratios |
+| `veo3.1`, `veo3.1_fast` | Veo 3.1 family | Text/image video with generated audio and speech |
+| `gemini_omni_flash` | Gemini Omni Flash | Text/image/video generation and editing |
+| `act_two` | Act-Two | Image/video-driven motion-capture generation |
+| `magnific_video_upscaler_creative` | Magnific Video Upscaler | Video upscaling to 4K with creative detail and frame-rate boost |
+| `enhance_frame_rate` | Enhance Frame Rate | Video frame-rate conversion |
+| `ruby` | Ruby | SDR-to-HDR conversion; HEVC, ProRes or EXR-sequence output |
+
+The model index is not a substitute for per-endpoint schemas. Before an adapter is implemented, verify exact request fields, durations, output formats, accepted reference roles, cost formula, task lifecycle and output expiry from the relevant endpoint and pricing pages. Do not infer that two models sharing a capability label accept the same payload.
+
 ## Pricing details captured on 2026-11-04
 
 Runway Dev credits are listed at USD $0.01 per credit. Pricing is not uniformly “seconds × one flat rate”; model-specific input assets, resolution, audio, minimum charges, promotions and output formats can alter the total.
