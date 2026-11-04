@@ -116,14 +116,14 @@ test("overlay resolver preserves track order and clamps geometry to the sequence
 });
 
 test("caption preview parses SRT timestamps and strips markup without losing cue text",()=>{
- const cues=parseCaptionCues("1\\n00:00:01,250 --> 00:00:02,500\\n<b>Hello</b>\\nworld\\n\\n2\\n00:00:03,000 --> 00:00:04,000\\nSecond cue");
- assert.deepEqual(cues,[{startSeconds:1.25,endSeconds:2.5,text:"Hello\\nworld"},{startSeconds:3,endSeconds:4,text:"Second cue"}]);
- assert.deepEqual(activeCaptionCues(cues,2).map(cue=>cue.text),["Hello\\nworld"]);
+ const cues=parseCaptionCues("1\n00:00:01,250 --> 00:00:02,500\n<b>Hello</b>\nworld\n\n2\n00:00:03,000 --> 00:00:04,000\nSecond cue");
+ assert.deepEqual(cues,[{startSeconds:1.25,endSeconds:2.5,text:"Hello\nworld"},{startSeconds:3,endSeconds:4,text:"Second cue"}]);
+ assert.deepEqual(activeCaptionCues(cues,2).map(cue=>cue.text),["Hello\nworld"]);
  assert.deepEqual(activeCaptionCues(cues,2.5),[]);
 });
 test("caption preview parses WebVTT and rejects malformed or oversized input",()=>{
- const cues=parseCaptionCues("WEBVTT\\n\\nintro\\n00:00:00.000 --> 00:00:01.250 align:center\\nWelcome");
+ const cues=parseCaptionCues("WEBVTT\n\nintro\n00:00:00.000 --> 00:00:01.250 align:center\nWelcome");
  assert.deepEqual(cues,[{startSeconds:0,endSeconds:1.25,text:"Welcome"}]);
- assert.deepEqual(parseCaptionCues("1\\n00:00:02,000 --> 00:00:01,000\\nBad"),[]);
+ assert.deepEqual(parseCaptionCues("1\n00:00:02,000 --> 00:00:01,000\nBad"),[]);
  assert.throws(()=>parseCaptionCues("x".repeat(2*1024*1024+1)),/2 MB/);
 });
