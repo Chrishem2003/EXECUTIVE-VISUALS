@@ -126,6 +126,14 @@ export function createCloudVideoEnqueue({
         unsupported.code = "VIDEO_PRICE_OUTPUT_FORMAT_UNSUPPORTED";
         throw unsupported;
       }
+      // Model capability and worker implementation are separate contracts.
+      // Gen-4.5 accepts 720p at provider level, but this worker currently only
+      // supports provider_default and must reject explicit resolution requests.
+      if (input.resolution !== undefined && input.resolution !== "provider_default") {
+        const unsupported = new Error("The current Gen-4.5 worker only supports provider-default resolution.");
+        unsupported.code = "VIDEO_GENERATION_UNSUPPORTED_CAPABILITY";
+        throw unsupported;
+      }
       const unpricedExecutionFields = ["audio","inputVideoSeconds","referenceVideoSeconds","referenceImageCount",
         "referenceAudioCount","hasStartFrame","outputFrames","sourceWidth","sourceHeight","sourceDynamicRange",
         "outputWidth","outputHeight","targetFramerate","inputType"];
