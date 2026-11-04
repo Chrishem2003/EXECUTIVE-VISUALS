@@ -18,6 +18,7 @@ export async function executeCloudVideoGenerationJob({
   workerId,
   ledger,
   adapter,
+  resolveAdapter,
   ingestOutputs,
   resolveActualCost,
   signal,
@@ -33,10 +34,8 @@ export async function executeCloudVideoGenerationJob({
       typeof ledger.record !== "function" || typeof ledger.markUnknown !== "function") {
     throw new Error("Cloud video executor requires the Postgres submission ledger.");
   }
-  if (!adapter || typeof adapter.provider !== "string" || !adapter.provider.trim() ||
-      typeof adapter.model !== "string" || !adapter.model.trim() ||
-      typeof adapter.submit !== "function" || typeof adapter.getStatus !== "function") {
-    throw fail("A supported, model-bound remote video adapter is required.", "VIDEO_ADAPTER_UNAVAILABLE");
+  if (adapter !== undefined && typeof resolveAdapter === "function") {
+    throw fail("Provide either a fixed adapter or an adapter resolver, not both.", "VIDEO_ADAPTER_CONFIGURATION_INVALID");
   }
   if (typeof ingestOutputs !== "function" || typeof resolveActualCost !== "function") {
     throw fail("Private output ingestion and authoritative cost resolution are mandatory.", "VIDEO_EXECUTION_GATES_MISSING");
@@ -44,7 +43,17 @@ export async function executeCloudVideoGenerationJob({
   if (!Number.isInteger(maxPolls) || maxPolls < 1 || maxPolls > 1000) throw new Error("Video polling limit is invalid.");
 
   const input = jobInput(job);
-  if (input.provider !== adapter.provider || input.model !== adapter.model ||
+  let selectedAdapter = adapter;
+  if (typeof resolveAdapter === "function") {
+    try { selectedAdapter = await resolveAdapter({ provider: input.provider, model: input.model, job }); }
+    catch { throw fail("No authorized execution adapter is registered for this provider/model.", "VIDEO_ADAPTER_UNAVAILABLE"); }
+  }
+  if (!selectedAdapter || typeof selectedAdapter.provider !== "string" || !selectedAdapter.provider.trim() ||
+      typeof selectedAdapter.model !== "string" || !selectedAdapter.model.trim() ||
+      typeof selectedAdapter.submit !== "function" || typeof selectedAdapter.getStatus !== "function") {
+    throw fail("A supported, model-bound remote video adapter is required.", "VIDEO_ADAPTER_UNAVAILABLE");
+  }
+  if (input.provider !== selectedAdapter.provider || input.model !== selectedAdapter.model ||
       typeof input.requestHash !== "string" || !/^[a-f0-9]{64}$/.test(input.requestHash)) {
     throw fail("Cloud video job provider, model or request hash is inconsistent.", "VIDEO_JOB_INPUT_MISMATCH");
   }
@@ -64,14 +73,14 @@ export async function executeCloudVideoGenerationJob({
   }
 
   if (state === "prepared") {
-    const providerInput = typeof adapter.prepareInput === "function"
-      ? await adapter.prepareInput(input, { job })
+    const providerInput = typeof selectedAdapter.prepareInput === "function"
+      ? await selectedAdapter.prepareInput(input, { job })
       : input;
     const began = await ledger.begin(job.id, workerId);
     if (!began) throw fail("Another worker owns the provider submission transition.", "VIDEO_SUBMISSION_IN_PROGRESS");
     let submitted;
     try {
-      submitted = await adapter.submit(providerInput, { job });
+      submitted = await selectedAdapter.submit(providerInput, { job });
     } catch (error) {
       try { await ledger.markUnknown(job.id, workerId, error?.code || "PROVIDER_SUBMISSION_OUTCOME_UNKNOWN"); } catch {}
       throw fail("Provider submission outcome is unknown and has been quarantined.", "VIDEO_SUBMISSION_REQUIRES_RECONCILIATION");
@@ -96,12 +105,12 @@ export async function executeCloudVideoGenerationJob({
     throw fail("Cloud video submission has no pollable provider task ID.", "VIDEO_SUBMISSION_REQUIRES_RECONCILIATION");
   }
 
-  const interval = Math.max(5000, Number(pollIntervalMs || adapter.minimumPollIntervalMs || 5000));
+  const interval = Math.max(5000, Number(pollIntervalMs || selectedAdapter.minimumPollIntervalMs || 5000));
   for (let attempt = 0; attempt < maxPolls; attempt++) {
     if (signal?.aborted) throw fail("Cloud video worker lease was lost.", "VIDEO_WORKER_LEASE_LOST");
     let task;
     try {
-      task = await adapter.getStatus(providerTaskId, { job, workerId });
+      task = await selectedAdapter.getStatus(providerTaskId, { job, workerId });
     } catch {
       throw fail("Provider status is temporarily unavailable; polling will resume later.", "VIDEO_PROVIDER_POLL_DEFERRED");
     }
