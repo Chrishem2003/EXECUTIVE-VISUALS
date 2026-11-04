@@ -18,6 +18,11 @@ const finitePositive = (value, label) => {
   if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) throw fail(label + " must be a positive finite number.");
   return value;
 };
+const hasMetricEvidence = value => plain(value) &&
+  Number.isSafeInteger(value.sampleCount) && value.sampleCount > 0 &&
+  typeof value.measuredAt === "string" && Number.isFinite(Date.parse(value.measuredAt)) &&
+  typeof value.evidenceReference === "string" && value.evidenceReference.trim().length > 0 &&
+  value.evidenceReference.length <= 1000;
 
 /**
  * Deterministic, side-effect-free model selection.
@@ -95,12 +100,14 @@ export function routeVideoModel({
     if (maxCostUsd !== undefined && estimate.amount > maxCostUsd) { exclude("over_budget"); continue; }
 
     if (optimizeFor === "latency") {
-      if (candidate.observedLatencyMs === undefined) { exclude("latency_unmeasured"); continue; }
+      if (candidate.observedLatencyMs === undefined || !hasMetricEvidence(candidate.latencyEvidence)) { exclude("latency_unmeasured"); continue; }
       finitePositive(candidate.observedLatencyMs, "observedLatencyMs");
     }
     if (optimizeFor === "quality") {
       if (typeof candidate.qualityScore !== "number" || !Number.isFinite(candidate.qualityScore) ||
-          candidate.qualityScore < 0 || candidate.qualityScore > 1) { exclude("quality_unmeasured"); continue; }
+          candidate.qualityScore < 0 || candidate.qualityScore > 1 || !hasMetricEvidence(candidate.qualityEvidence)) {
+        exclude("quality_unmeasured"); continue;
+      }
     }
     eligible.push({ candidate, id, estimate });
   }
@@ -110,8 +117,8 @@ export function routeVideoModel({
     if (optimizeFor === "latency" && a.candidate.observedLatencyMs !== b.candidate.observedLatencyMs) return a.candidate.observedLatencyMs - b.candidate.observedLatencyMs;
     if (optimizeFor === "quality" && a.candidate.qualityScore !== b.candidate.qualityScore) return b.candidate.qualityScore - a.candidate.qualityScore;
     if (a.estimate.amount !== b.estimate.amount) return a.estimate.amount - b.estimate.amount;
-    const latencyA = a.candidate.observedLatencyMs ?? Number.MAX_SAFE_INTEGER;
-    const latencyB = b.candidate.observedLatencyMs ?? Number.MAX_SAFE_INTEGER;
+    const latencyA = hasMetricEvidence(a.candidate.latencyEvidence) ? a.candidate.observedLatencyMs : Number.MAX_SAFE_INTEGER;
+    const latencyB = hasMetricEvidence(b.candidate.latencyEvidence) ? b.candidate.observedLatencyMs : Number.MAX_SAFE_INTEGER;
     if (latencyA !== latencyB) return latencyA - latencyB;
     return a.id.localeCompare(b.id);
   };
@@ -127,8 +134,8 @@ export function routeVideoModel({
       estimatedCostUsd: winner.estimate.amount,
       pricingDate: winner.estimate.pricingDate,
       pricingSource: winner.estimate.pricingSource,
-      observedLatencyMs: winner.candidate.observedLatencyMs ?? null,
-      qualityScore: winner.candidate.qualityScore ?? null
+      observedLatencyMs: hasMetricEvidence(winner.candidate.latencyEvidence) ? winner.candidate.observedLatencyMs : null,
+      qualityScore: hasMetricEvidence(winner.candidate.qualityEvidence) ? winner.candidate.qualityScore : null
     } : null,
     eligibleModelCount: eligible.length,
     excludedCandidates: exclusions
