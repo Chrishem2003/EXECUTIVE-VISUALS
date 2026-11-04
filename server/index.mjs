@@ -21,6 +21,7 @@ import { claimNextJob, completeJob, recoverExpiredJobs, renewJobLease } from "./
 import { sanitizeCreativeWorkspaceDocument } from "./workspace-documents.mjs";
 import { importResearchUrl } from "./research-import.mjs";
 import { getProviderCatalog } from "./provider-registry.mjs";
+import { publicModelCatalog, estimateFromRequest } from "./model-catalog.mjs";
 import { ensureRemoteUsageTable, getRemoteUsagePolicy } from "./usage-guardrails.mjs";
 import { createCloudTimelineApi } from "./cloud-timeline-api.mjs";
 import { validateSrt, validateWebVtt } from "./caption-validation.mjs";
@@ -487,6 +488,14 @@ export function createAppServer() {
         const aiUpscale=await aiUpscaleAdapter.probe();
         const catalog=getProviderCatalog(process.env,{ffmpeg:executableAvailable("ffmpeg"),ffprobe:executableAvailable("ffprobe"),aiUpscale});
         send(res,200,catalog,cors);return;
+      }
+      if(path==="/api/models"&&req.method==="GET"){
+        const providerCatalog=getProviderCatalog(process.env,{ffmpeg:false,ffprobe:false,aiUpscale:null});
+        send(res,200,publicModelCatalog({env:process.env,providerCatalog}),cors);return;
+      }
+      if(path==="/api/models/estimate"&&req.method==="POST"){
+        const result=estimateFromRequest(await readJson(req),{env:process.env});
+        send(res,result.status,result.body,cors);return;
       }
       if(path==="/api/usage"&&req.method==="GET"){
         const projectId=url.searchParams.get("projectId");
