@@ -125,7 +125,7 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
    }
    const asset=getAsset(clip.assetId),mediaType=String(asset.mediaType||"");
    const speed=Math.max(0.25,Math.min(4,Number(clip.speed??1))),sourceDuration=duration*speed;
-   if(mediaType.startsWith("image/"))args.push("-loop","1","-t",duration.toFixed(6),"-i",asset.path);
+   if(mediaType.startsWith("image/"))args.push("-loop","1","-t",sourceDuration.toFixed(6),"-i",asset.path);
    else if(mediaType.startsWith("video/"))args.push("-ss",seconds(clip.sourceRange?.start).toFixed(6),"-t",sourceDuration.toFixed(6),"-i",asset.path);
    else fail("Only still images and video clips are supported on the primary video track.","UNSUPPORTED_MEDIA_TYPE");
    const label="v"+segmentIndex++;
@@ -148,7 +148,7 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
     const duration=Math.min(clipDuration,Math.max(0,cursor-start));if(duration<=0)continue;
     const asset=getAsset(clip.assetId),mediaType=String(asset.mediaType||"");
     const speed=Math.max(0.25,Math.min(4,Number(clip.speed??1))),sourceDuration=duration*speed;
-    if(mediaType.startsWith("image/"))args.push("-loop","1","-t",duration.toFixed(6),"-i",asset.path);
+    if(mediaType.startsWith("image/"))args.push("-loop","1","-t",sourceDuration.toFixed(6),"-i",asset.path);
     else if(mediaType.startsWith("video/"))args.push("-ss",seconds(clip.sourceRange?.start).toFixed(6),"-t",sourceDuration.toFixed(6),"-i",asset.path);
     else fail("Secondary video tracks require video or still-image assets.","UNSUPPORTED_MEDIA_TYPE");
     const previous=trackClips[clipPosition-1],fadeInFrames=previous?.transitionToNext?.fadeFrames||0,fadeOutFrames=clip.transitionToNext?.fadeFrames||0;
