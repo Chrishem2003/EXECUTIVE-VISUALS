@@ -177,7 +177,7 @@ begin
   if v_row.expires_at <= clock_timestamp() then
     update executive_visuals.runway_router_approvals
       set state = 'expired' where id = p_approval_id;
-    raise exception 'RUNWAY_APPROVAL_EXPIRED';
+    return false;
   end if;
   update executive_visuals.runway_router_approvals
     set state = 'approved', approved_by = v_actor, approved_at = clock_timestamp()
