@@ -76,5 +76,15 @@ assert.throws(()=>createStoryboardTimeline("","timeline-2",storyboard),/cloud pr
 assert.throws(()=>createStoryboardTimeline("project","timeline-3",{...storyboard,frameRate:29}),/frame rate/);
 assert.throws(()=>createStoryboardTimeline("project","timeline-4",{...storyboard,aspectRatio:"2:1"}),/aspect ratio/);
 assert.throws(()=>createStoryboardTimeline("project","timeline-5",{...storyboard,scenes:[storyboard.scenes[0],{...storyboard.scenes[1],shots:[storyboard.scenes[0].shots[0]]}]}),/duplicate shot/);
+assert.throws(()=>createStoryboardTimeline("project","timeline-6",{...storyboard,scenes:storyboard.scenes.map((scene,index)=>index===0?{...scene,durationSeconds:14}:scene)}),/scene duration/);
+assert.throws(()=>createStoryboardTimeline("project","timeline-7",{...storyboard,scenes:storyboard.scenes.map((scene,index)=>index===1?{...scene,number:1}:scene)}),/out-of-order scene/);
+assert.throws(()=>createStoryboardTimeline("project","timeline-8",{...storyboard,durationSeconds:29}),/total runtime/);
+const optionalNotes={...storyboard,scenes:storyboard.scenes.map(scene=>({...scene,location:"",timeOfDay:"",shots:scene.shots.map(item=>({...item,characterRefs:[{name:"Ada",characterId:"character-ada",role:"",action:"",continuityNotes:""}]}))}))};
+assert.equal(createStoryboardTimeline("project","timeline-9",optionalNotes).metadata.storyboardPlan.scenes.length,2,"optional location and character notes remain valid");
+assert.throws(()=>reflowStoryboardTimelinePlan({...plan,trackIds:{...plan.trackIds,picture:""}}),/track lineage/);
+assert.throws(()=>reflowStoryboardTimelinePlan({...plan,scenes:plan.scenes.map((scene,index)=>index===1?{...scene,shots:[{...scene.shots[0],id:plan.scenes[0].shots[0].id,sourceShotId:plan.scenes[0].shots[0].id}]}:scene)}),/lineage/);
+assert.throws(()=>reflowStoryboardTimelinePlan({...plan,scenes:plan.scenes.map((scene,index)=>index===0?{...scene,shots:scene.shots.map(item=>({...item,assetId:"asset-123"}))}:scene)}),/lineage/);
+assert.throws(()=>reflowStoryboardTimelinePlan({...plan,scenes:plan.scenes.map(scene=>({...scene,shots:scene.shots.map(item=>({...item,durationFrames:30*60+1}))}))}),/duration/);
+
 
 console.log("Storyboard-to-timeline verification passed.");
