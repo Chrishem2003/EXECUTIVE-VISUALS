@@ -291,14 +291,31 @@ export function createGoogleDrivePrivateFileBridge({
               "GOOGLE_DRIVE_EXPORT_RECONCILIATION_REQUIRED");
             return await completedResult(existing);
           }
-          leaseToken = await attempts.claim({ attemptKey: attemptRecord.attemptKey, ownerId: scope.ownerId });
+          if (attemptRecord.state === "RECONCILIATION_REQUIRED") {
+            if (typeof attempts.claimForReconciliation !== "function") {
+              throw fail("Drive export store does not support safe reconciliation claims.",
+                "GOOGLE_DRIVE_EXPORT_STORE_INCOMPLETE");
+            }
+            leaseToken = await attempts.claimForReconciliation({ attemptKey: attemptRecord.attemptKey, ownerId: scope.ownerId });
+          } else {
+            leaseToken = await attempts.claim({ attemptKey: attemptRecord.attemptKey, ownerId: scope.ownerId });
+          }
           if (!leaseToken) throw fail("Another worker is already processing this Drive export attempt.",
             "GOOGLE_DRIVE_EXPORT_IN_PROGRESS");
-          if (["OUTCOME_UNKNOWN", "RECONCILIATION_REQUIRED"].includes(attemptRecord.state)) {
+          if (attemptRecord.state === "RECONCILIATION_REQUIRED") {
+            const existing = await readExistingDriveFile(attemptRecord.driveFileId);
+            if (existing) return await completedResult(existing);
+            await attempts.mark({ attemptKey: attemptRecord.attemptKey, ownerId: scope.ownerId,
+              state: "RECONCILIATION_REQUIRED", errorCode: "GOOGLE_DRIVE_RECONCILIATION_FILE_NOT_FOUND",
+              leaseToken });
+            throw fail("Google Drive export still requires manual reconciliation; no new upload was started.",
+              "GOOGLE_DRIVE_EXPORT_RECONCILIATION_REQUIRED");
+          }
+          if (attemptRecord.state === "OUTCOME_UNKNOWN") {
             const existing = await readExistingDriveFile(attemptRecord.driveFileId);
             if (existing) return await completedResult(existing);
           }
-          session = attemptRecord.state === "RECONCILIATION_REQUIRED" ? null : (attemptRecord.sessionUri ? safeUploadSession(attemptRecord.sessionUri) : null);
+          session = attemptRecord.sessionUri ? safeUploadSession(attemptRecord.sessionUri) : null;
           if (!session) {
             const existing = await readExistingDriveFile(attemptRecord.driveFileId);
             if (existing) return await completedResult(existing);
