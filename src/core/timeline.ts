@@ -1,4 +1,4 @@
-import { evaluateAudioAutomation, type AudioAutomationPoint } from "./audio-automation";
+import { evaluateAudioAutomation, type AudioAutomationPoint } from "./audio-automation.ts";
 export interface RationalTime { value:number; rate:number }
 export interface TimeRange { start:RationalTime; duration:RationalTime }
 export type TrackKind="video"|"audio"|"overlay"|"caption";
