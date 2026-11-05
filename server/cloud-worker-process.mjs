@@ -117,6 +117,29 @@ export function createCloudWorkerSupervisor({workers,maintenanceWorkers=[],maint
  });
 }
 
+/**
+ * Builds an opt-in GCS mirror recovery maintenance worker from an explicitly
+ * injected server-side service factory. The factory owns Google Cloud identity,
+ * token refresh and private Supabase asset access; this module never invents
+ * credentials or falls back to ambient user authentication.
+ */
+export function createGoogleGeminiGcsMirrorRecoveryMaintenanceWorker({
+ enabled=false,createService,serviceOptions={},intervalMs=300000
+}={}){
+ if(!enabled)return null;
+ if(!Number.isInteger(intervalMs)||intervalMs<10000||intervalMs>86400000)
+  throw new Error("GCS mirror recovery interval is invalid.");
+ if(typeof createService!=="function")
+  throw new Error("GCS mirror recovery requires an explicitly injected server-side service factory.");
+ const service=createService(serviceOptions);
+ if(!service||typeof service.recoverMirrorAttempts!=="function")
+  throw new Error("GCS mirror recovery service must expose recoverMirrorAttempts.");
+ return Object.freeze({
+  intervalMs,
+  run:()=>service.recoverMirrorAttempts({limit:100})
+ });
+}
+
 export async function startCloudWorkerProcess(env=process.env,dependencies={}){
  const config=readCloudWorkerConfig(env);
  if((config.media||config.timeline||config.video)&&(!executableAvailable("ffmpeg")||!executableAvailable("ffprobe")))throw new Error("Cloud media workers require FFmpeg and FFprobe on PATH.");
@@ -158,6 +181,24 @@ export async function startCloudWorkerProcess(env=process.env,dependencies={}){
    intervals.push(intervalMs);
   }
   maintenanceIntervalMs=Math.min(...intervals);
+ }
+ const gcsMirrorRecoveryEnabled=truth(env.GEMINI_GCS_MIRROR_RECOVERY_ENABLED);
+ if(gcsMirrorRecoveryEnabled){
+  const intervalMs=integer(
+   env.GEMINI_GCS_MIRROR_RECOVERY_INTERVAL_MS,maintenanceIntervalMs,10000,86400000,
+   "GCS mirror recovery interval"
+  );
+  const worker=createGoogleGeminiGcsMirrorRecoveryMaintenanceWorker({
+   enabled:true,
+   createService:dependencies.createGoogleGeminiGcsMirrorService,
+   serviceOptions:{
+    ...cloudCredentials,env,
+    fetchImpl:dependencies.fetchImpl||globalThis.fetch,
+    ...(dependencies.googleGeminiGcsMirrorDependencies||{})
+   },
+   intervalMs
+  });
+  maintenanceWorkers.push(worker);
  }
  const supervisor=createCloudWorkerSupervisor({
   workers,maintenanceWorkers,maintenanceIntervalMs,leaseSeconds:config.leaseSeconds,heartbeatIntervalMs:config.heartbeatIntervalMs,pollMs:config.pollMs,
