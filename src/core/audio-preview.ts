@@ -1,12 +1,16 @@
+import { evaluateAudioAutomation, normalizeAudioAutomation, type AudioAutomationPoint } from "./audio-automation";
 export interface AudioPreviewTrackInput {
  id:string;
  media:HTMLMediaElement;
  gainDb?:number;
+ pan?:number;
+ automation?:readonly AudioAutomationPoint[];
+ automationTime?:number;
  muted?:boolean;
  solo?:boolean;
 }
 
-type ConnectedTrack={media:HTMLMediaElement;source:MediaElementAudioSourceNode;gain:GainNode;gainDb:number;muted:boolean;solo:boolean};
+type ConnectedTrack={media:HTMLMediaElement;source:MediaElementAudioSourceNode;gain:GainNode;panner:StereoPannerNode;gainDb:number;pan:number;automation:AudioAutomationPoint[];automationTime:number;muted:boolean;solo:boolean};
 
 export function decibelsToGain(value:number,minDb=-60,maxDb=24):number{
  const db=Number.isFinite(value)?Math.max(minDb,Math.min(maxDb,value)):0;
@@ -69,19 +73,17 @@ export class AudioPreviewEngine{
  async resume():Promise<void>{if(this.context.state!=="running")await this.context.resume();}
  sync(tracks:readonly AudioPreviewTrackInput[]):void{
   const active=new Set(tracks.map(track=>track.id));
-  for(const [id,entry] of this.connected){if(!active.has(id)){entry.media.pause();entry.source.disconnect();entry.gain.disconnect();this.connected.delete(id);}}
+  for(const [id,entry] of this.connected){if(!active.has(id)){entry.media.pause();entry.source.disconnect();entry.gain.disconnect();entry.panner.disconnect();this.connected.delete(id);}}
   for(const track of tracks){
    let entry=this.connected.get(track.id);
-   if(entry&&entry.media!==track.media){entry.source.disconnect();entry.gain.disconnect();this.connected.delete(track.id);entry=undefined;}
+   if(entry&&entry.media!==track.media){entry.source.disconnect();entry.gain.disconnect();entry.panner.disconnect();this.connected.delete(track.id);entry=undefined;}
    if(!entry){
-    const source=this.context.createMediaElementSource(track.media),gain=this.context.createGain();
-    source.connect(gain);gain.connect(this.master);
-    entry={media:track.media,source,gain,gainDb:track.gainDb??0,muted:false,solo:false};
+    const source=this.context.createMediaElementSource(track.media),gain=this.context.createGain(),panner=this.context.createStereoPanner();
+    source.connect(gain);gain.connect(panner);panner.connect(this.master);
+    entry={media:track.media,source,gain,panner,gainDb:track.gainDb??0,pan:track.pan??0,automation:[],automationTime:0,muted:false,solo:false};
     this.connected.set(track.id,entry);
    }
-   entry.muted=!!track.muted;entry.solo=!!track.solo;entry.gainDb=track.gainDb??0;
-   const target=decibelsToGain(entry.gainDb);
-   entry.gain.gain.setTargetAtTime(target,this.context.currentTime,0.015);
+   entry.muted=!!track.muted;entry.solo=!!track.solo;entry.gainDb=track.gainDb??0;entry.pan=Math.max(-1,Math.min(1,Number.isFinite(track.pan)?track.pan??0:0));entry.automation=normalizeAudioAutomation(track.automation);entry.automationTime=Math.max(0,Number.isFinite(track.automationTime)?track.automationTime??0:0);
   }
   this.applyTrackStates();
  }
@@ -96,14 +98,22 @@ export class AudioPreviewEngine{
  get masterVolumeLevel():number{return this.masterVolume;}
  private applyMaster():void{this.master.gain.setTargetAtTime(this.masterMuted?0:this.masterVolume,this.context.currentTime,0.015);}
  private applyTrackStates():void{
-  const hasSolo=[...this.connected.values()].some(entry=>entry.solo);
+  const hasSolo=[...this.connected.values()].some(entry=>entry.solo),now=this.context.currentTime;
   for(const entry of this.connected.values()){
-   const suppressed=entry.muted||(hasSolo&&!entry.solo);
-   entry.gain.gain.setTargetAtTime(suppressed?0:decibelsToGain(entry.gainDb),this.context.currentTime,0.015);
+   const suppressed=entry.muted||(hasSolo&&!entry.solo),gainParam=entry.gain.gain,panParam=entry.panner.pan;
+   const gainDb=evaluateAudioAutomation(entry.automation,entry.automationTime,"gainDb",entry.gainDb);
+   const pan=evaluateAudioAutomation(entry.automation,entry.automationTime,"pan",entry.pan);
+   gainParam.cancelScheduledValues?.(now);gainParam.setValueAtTime(suppressed?0:decibelsToGain(gainDb),now);
+   panParam.cancelScheduledValues?.(now);panParam.setValueAtTime(pan,now);
+   for(const point of entry.automation){
+    const at=now+(point.timeSeconds-entry.automationTime);if(at<=now)continue;
+    if(point.gainDb!==undefined&&!suppressed){const value=decibelsToGain(point.gainDb);if(point.interpolation==="step")gainParam.setValueAtTime(value,at);else gainParam.linearRampToValueAtTime(value,at);}
+    if(point.pan!==undefined){if(point.interpolation==="step")panParam.setValueAtTime(point.pan,at);else panParam.linearRampToValueAtTime(point.pan,at);}
+   }
   }
  }
  dispose():void{
-  for(const entry of this.connected.values()){entry.media.pause();entry.source.disconnect();entry.gain.disconnect();}
+  for(const entry of this.connected.values()){entry.media.pause();entry.source.disconnect();entry.gain.disconnect();entry.panner.disconnect();}
   this.connected.clear();this.master.disconnect();this.limiter.disconnect();
   void this.context.close();
  }
