@@ -177,8 +177,8 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
  const outputId=randomUUID(),outputPath=join(workDir,outputId+".mp4");
  await mkdir(workDir,{recursive:true});
  const args=["-hide_banner","-y"],segments=[],audioFilters=[],videoEffects=[],captionTempPaths=[],overlayInputs=[],videoOverlayInputs=[];
- const needsRubberband=audios.some(track=>(track.clips||[]).some(clip=>clip.speedCurve!==undefined));
- const needsMinterpolate=videos.some(track=>(track.clips||[]).some(clip=>clip.metadata?.motionInterpolationMultiplier!==undefined));
+ const needsRubberband=audios.some(track=>(track.clips||[]).some(clip=>clip.enabled!==false&&clip.speedCurve!==undefined));
+ const needsMinterpolate=videos.some(track=>(track.clips||[]).some(clip=>clip.enabled!==false&&clip.metadata?.motionInterpolationMultiplier!==undefined));
  let filterListing="";
  if(needsRubberband||needsMinterpolate){
   const capabilities=await run("ffmpeg",["-hide_banner","-filters"],15000,jobId,activeProcesses,()=>Boolean(signal?.aborted),1024*1024);
