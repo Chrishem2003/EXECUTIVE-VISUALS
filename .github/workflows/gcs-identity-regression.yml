@@ -2,7 +2,7 @@ name: GCS identity regression
 on:
   push:
     branches:
-      - fix/gcs-identity-before-token
+      - fix/gcs-concrete-adc-client-types
   pull_request:
 permissions:
   contents: read
