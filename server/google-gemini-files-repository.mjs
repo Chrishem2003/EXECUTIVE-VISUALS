@@ -1,5 +1,6 @@
 const PROVIDER = "google-gemini-files";
 const TABLE = "google_provider_files";
+const ATTEMPT_TABLE = "google_provider_file_upload_attempts";
 
 function safeOrigin(value) {
   let parsed;
@@ -27,11 +28,11 @@ export function createGoogleGeminiFilesRepository({
   }
   const base = safeOrigin(url);
 
-  async function request(query, { method = "GET", body, prefer } = {}) {
+  async function request(query, { method = "GET", body, prefer, table = TABLE } = {}) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      const response = await fetchImpl(base + "/rest/v1/" + TABLE + query, {
+      const response = await fetchImpl(base + "/rest/v1/" + table + query, {
         method,
         headers: {
           apikey: serviceRoleKey,
@@ -70,6 +71,68 @@ export function createGoogleGeminiFilesRepository({
   }
 
   return Object.freeze({
+    async createUploadAttempt(attempt) {
+      if (!attempt || !/^[a-f0-9]{64}$/.test(String(attempt.attemptKey || "")) ||
+          !/^[a-f0-9]{64}$/.test(String(attempt.sha256 || "")) ||
+          !/^[a-f0-9]{64}$/.test(String(attempt.displayNameHash || ""))) {
+        throw new Error("Google provider upload attempt metadata is invalid.");
+      }
+      const body = {
+        attempt_key: attempt.attemptKey,
+        asset_id: attempt.assetId,
+        owner_id: attempt.ownerId,
+        project_id: attempt.projectId || null,
+        mime_type: attempt.mimeType,
+        byte_size: attempt.sizeBytes,
+        sha256: attempt.sha256,
+        google_display_name: attempt.displayName,
+        state: "PREPARED"
+      };
+      const params = new URLSearchParams({
+        on_conflict: "attempt_key",
+        select: "id,attempt_key,asset_id,owner_id,project_id,mime_type,byte_size,sha256,google_display_name,state,google_file_name,google_file_uri,provider_expires_at,last_error_code,attempt_count,created_at,updated_at,reconciled_at"
+      });
+      let rows = await request("?" + params.toString(), {
+        method: "POST", body, table: ATTEMPT_TABLE,
+        prefer: "resolution=ignore-duplicates,return=representation"
+      });
+      if (!Array.isArray(rows) || rows.length === 0) {
+        const lookup = new URLSearchParams({ select: "id,attempt_key,asset_id,owner_id,project_id,mime_type,byte_size,sha256,google_display_name,state,google_file_name,google_file_uri,provider_expires_at,last_error_code,attempt_count,created_at,updated_at,reconciled_at", attempt_key: "eq." + attempt.attemptKey, limit: "1" });
+        rows = await request("?" + lookup.toString(), { table: ATTEMPT_TABLE });
+      }
+      if (!Array.isArray(rows) || rows.length !== 1) throw new Error("Google provider upload attempt was not durably recorded.");
+      const row = rows[0];
+      return {
+        id: row.id, attemptKey: row.attempt_key, assetId: row.asset_id,
+        ownerId: row.owner_id, projectId: row.project_id || null,
+        mimeType: row.mime_type, sizeBytes: Number(row.byte_size), sha256: row.sha256,
+        displayName: row.google_display_name, state: row.state,
+        providerFileName: row.google_file_name || null,
+        providerFileUri: row.google_file_uri || null,
+        providerExpiresAt: row.provider_expires_at || null,
+        lastErrorCode: row.last_error_code || null,
+        attemptCount: Number(row.attempt_count || 1),
+        updatedAt: row.updated_at, reconciledAt: row.reconciled_at || null
+      };
+    },
+    async updateUploadAttempt({ attemptId, state, providerFileName, providerFileUri, providerExpiresAt, errorCode, reconciledAt } = {}) {
+      if (typeof attemptId !== "string" || !/^[0-9a-f-]{36}$/i.test(attemptId) ||
+          !["PREPARED", "UPLOADING", "OUTCOME_UNKNOWN", "PROVIDER_CREATED", "COMPLETED", "FAILED"].includes(state)) {
+        throw new Error("Google provider upload attempt transition is invalid.");
+      }
+      const body = { state, updated_at: new Date().toISOString() };
+      if (providerFileName !== undefined) body.google_file_name = providerFileName;
+      if (providerFileUri !== undefined) body.google_file_uri = providerFileUri;
+      if (providerExpiresAt !== undefined) body.provider_expires_at = providerExpiresAt;
+      if (errorCode !== undefined) body.last_error_code = errorCode;
+      if (reconciledAt !== undefined) body.reconciled_at = reconciledAt;
+      const params = new URLSearchParams({ id: "eq." + attemptId, select: "id" });
+      const rows = await request("?" + params.toString(), {
+        method: "PATCH", body, table: ATTEMPT_TABLE, prefer: "return=representation"
+      });
+      if (!Array.isArray(rows) || rows.length !== 1) throw new Error("Google provider upload attempt transition did not match one record.");
+      return rows[0].id;
+    },
     async findProviderFile({ assetId, ownerId, projectId = null, mimeType }) {
       const params = new URLSearchParams({
         select: "id,provider,asset_id,owner_id,project_id,google_file_name,google_file_uri,mime_type,byte_size,sha256,state,uploaded_at,expires_at,source_type,source_uri",
