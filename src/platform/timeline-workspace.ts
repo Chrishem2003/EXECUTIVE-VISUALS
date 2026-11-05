@@ -28,11 +28,11 @@ let sequencePlaying=false,sequenceFrame=0,sequenceStartFrame=0,sequenceStartAt=0
 let timelineRecoveryStore:TimelineRecoveryStore|null=null;
 let timelineRecoverySequence=0;
 function recoveryStore(){if(!timelineRecoveryStore)timelineRecoveryStore=new TimelineRecoveryStore();return timelineRecoveryStore;}
-function currentRecoveryKey(){if(!state.timeline)return "";return timelineRecoveryKey(state.mode,state.timeline.projectId||state.cloudProjectId,state.timeline.id);}
+function currentRecoveryKey(){if(!state.timeline)return "";const projectId=state.mode==="cloud"?(state.timeline.projectId||state.cloudProjectId):state.timeline.projectId||"";return timelineRecoveryKey(state.mode,projectId,state.timeline.id);}
 async function saveRecoveryDraft(reason:string):Promise<TimelineRecoveryDraft|null>{
  if(!state.timeline)return null;
  try{
-  const draft=await recoveryStore().saveDraft({key:currentRecoveryKey(),projectId:state.timeline.projectId||state.cloudProjectId,timelineId:state.timeline.id,mode:state.mode,baseRevision:state.serverRevision,localRevision:state.timeline.revision,sequence:++timelineRecoverySequence,updatedAt:new Date().toISOString(),reason,snapshot:structuredClone(state.timeline)});
+  const draft=await recoveryStore().saveDraft({key:currentRecoveryKey(),projectId:state.mode==="cloud"?(state.timeline.projectId||state.cloudProjectId):state.timeline.projectId||"",timelineId:state.timeline.id,mode:state.mode,baseRevision:state.serverRevision,localRevision:state.timeline.revision,sequence:++timelineRecoverySequence,updatedAt:new Date().toISOString(),reason,snapshot:structuredClone(state.timeline)});
   state.recoveryStatus="saved";return draft;
  }catch(error){state.recoveryStatus="unavailable";state.message="Browser recovery storage is unavailable: "+(error instanceof Error?error.message:"unknown storage error")+". The server save will still be attempted.";return null;}
 }
