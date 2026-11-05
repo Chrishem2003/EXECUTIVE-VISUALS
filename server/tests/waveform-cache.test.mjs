@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile, utimes } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -81,4 +81,29 @@ test("FFmpeg produces a real cached waveform PNG from a generated audio fixture"
   assert.deepEqual(pngBytes.subarray(0,8),png.subarray(0,8));
   assert.ok(pngBytes.length>100);
  }finally{await rm(root,{recursive:true,force:true});}
+});
+
+test("prunes least-recently-used waveform derivatives when the cache exceeds its byte budget",async()=>{
+ const f=await fixture(),cache=createWaveformCache({mediaRoot:f.root,maxCacheBytes:png.length,render:async({outputPath})=>writeFile(outputPath,png)});
+ try{
+  const first=await cache.get(f.asset),second=await cache.get({...f.asset,sha256:"c".repeat(64)});
+  await assert.rejects(()=>readFile(first),{code:"ENOENT"});
+  assert.deepEqual((await readFile(second)).subarray(0,8),png.subarray(0,8));
+  const report=await cache.prune();
+  assert.equal(report.bytes,png.length);assert.equal(report.removed,0);
+ }finally{await f.close();}
+});
+test("expires old waveform derivatives and removes stale temporary artifacts",async()=>{
+ const f=await fixture(),cache=createWaveformCache({mediaRoot:f.root,maxCacheAgeMs:1000,maxTempAgeMs:1000});
+ try{
+  await mkdir(cache.cacheRoot,{recursive:true});
+  const key=createHash("sha256").update("waveform-v1:"+sha).digest("hex");
+  const old=join(cache.cacheRoot,key+".png"),temp=join(cache.cacheRoot,"."+key+".123.deadbeef.tmp.png");
+  await writeFile(old,png);await writeFile(temp,png);
+  const stale=new Date(Date.now()-5000);await utimes(old,stale,stale);await utimes(temp,stale,stale);
+  const report=await cache.prune();
+  await assert.rejects(()=>readFile(old),{code:"ENOENT"});
+  await assert.rejects(()=>readFile(temp),{code:"ENOENT"});
+  assert.equal(report.removed,1);
+ }finally{await f.close();}
 });
