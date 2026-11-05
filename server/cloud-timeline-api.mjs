@@ -74,6 +74,7 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
    }
    if(path==="/api/cloud/video/runway/enqueue"&&method==="POST"){
     if(!runwayWorkflow)return response(503,{error:{code:"RUNWAY_WORKFLOW_DISABLED",message:"Runway governed generation is not enabled on this server."}});
+    if(env.CLOUD_VIDEO_WORKER_ENABLED!=="true"||env.VIDEO_GATEWAY_ENABLED!=="true"||env.VIDEO_GATEWAY_ALLOW_REMOTE!=="true"||env.RUNWAY_VIDEO_ALLOW_REMOTE!=="true")return response(503,{error:{code:"RUNWAY_EXECUTION_DISABLED",message:"Runway enqueue requires explicit hosted-worker and remote-execution enablement."}});
     const result=await runwayWorkflow.enqueueApproved({
      ownerId,projectId:body.projectId,idempotencyKey,receipt:body.receipt,
      jobInput:body.jobInput,reservedAmount:body.reservedAmount,currency:body.currency||"USD"
