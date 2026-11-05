@@ -35,12 +35,18 @@ export function readCloudWorkerConfig(env=process.env){
  });
 }
 
-export function createCloudWorkerSupervisor({workers,maintenanceWorkers=[],maintenanceIntervalMs=300000,leaseSeconds=90,heartbeatIntervalMs=15000,pollMs=1000,recoveryIntervalMs=60000,onLog=()=>{},onError=()=>{}}={}){
+export function createCloudWorkerSupervisor({workers,maintenanceWorkers=[],maintenanceIntervalMs=300000,leaseSeconds=90,heartbeatIntervalMs=15000,pollMs=1000,recoveryIntervalMs=60000,now=()=>Date.now(),onLog=()=>{},onError=()=>{}}={}){
  if(!Array.isArray(workers)||workers.length<1||workers.some(worker=>typeof worker?.runCycle!=="function"||typeof worker?.recoverExpired!=="function"))throw new Error("Cloud worker supervisor requires one or more compatible worker families.");
  if(!Number.isInteger(pollMs)||pollMs<500||pollMs>10000)throw new Error("Cloud worker poll interval is invalid.");
  if(!Array.isArray(maintenanceWorkers)||maintenanceWorkers.some(worker=>typeof worker?.run!=="function"))throw new Error("Cloud maintenance workers must expose a run function.");
  if(!Number.isInteger(maintenanceIntervalMs)||maintenanceIntervalMs<10000||maintenanceIntervalMs>86400000)throw new Error("Cloud maintenance interval is invalid.");
  if(!Number.isInteger(recoveryIntervalMs)||recoveryIntervalMs<10000||recoveryIntervalMs>300000)throw new Error("Cloud worker recovery interval is invalid.");
+ if(typeof now!=="function")throw new Error("Cloud maintenance clock must be a function.");
+ const scheduledMaintenance=maintenanceWorkers.map((worker,index)=>({
+  worker,index,intervalMs:worker.intervalMs??maintenanceIntervalMs,lastRunAt:null
+ }));
+ if(scheduledMaintenance.some(item=>!Number.isInteger(item.intervalMs)||item.intervalMs<10000||item.intervalMs>86400000))throw new Error("Cloud maintenance worker interval is invalid.");
+ const schedulerIntervalMs=scheduledMaintenance.length?Math.min(...scheduledMaintenance.map(item=>item.intervalMs)):maintenanceIntervalMs;
  let stopped=true,timer=null,recoveryTimer=null,maintenanceTimer=null,active=null,activeMaintenance=null,busy=false,maintenanceBusy=false;
  async function cycle(){
   if(stopped||busy)return{skipped:true};
@@ -67,14 +73,19 @@ export function createCloudWorkerSupervisor({workers,maintenanceWorkers=[],maint
   if(total)onLog({kind:"recovery",count:total});
  }
  async function maintain(){
-  if(stopped||maintenanceBusy||maintenanceWorkers.length===0)return{skipped:true};
+  if(stopped||maintenanceBusy||scheduledMaintenance.length===0)return{skipped:true};
+  const startedAt=now();
+  const due=scheduledMaintenance.filter(item=>item.lastRunAt===null||startedAt-item.lastRunAt>=item.intervalMs);
+  if(!due.length)return{skipped:true,notDue:true};
+  for(const item of due)item.lastRunAt=startedAt;
   maintenanceBusy=true;
   activeMaintenance=(async()=>{
-   const settled=await Promise.allSettled(maintenanceWorkers.map(worker=>worker.run()));
+   const settled=await Promise.allSettled(due.map(item=>item.worker.run()));
    const results=settled.map((item,index)=>{
+    const scheduled=due[index];
     if(item.status==="rejected"){onError(item.reason);return null;}
     const result=item.value;
-    if(result&&["scanned","reconciled","quarantined","deleted","retryPending"].some(key=>Number(result[key])>0))onLog({kind:"maintenance",workerIndex:index,result});
+    if(result&&["scanned","reconciled","quarantined","deleted","retryPending"].some(key=>Number(result[key])>0))onLog({kind:"maintenance",workerIndex:scheduled.index,result});
     return result;
    });
    return results;
@@ -90,7 +101,7 @@ export function createCloudWorkerSupervisor({workers,maintenanceWorkers=[],maint
    await maintain();
    timer=setInterval(()=>{void cycle();},pollMs);timer.unref?.();
    recoveryTimer=setInterval(()=>{void recover();},recoveryIntervalMs);recoveryTimer.unref?.();
-   if(maintenanceWorkers.length){maintenanceTimer=setInterval(()=>{void maintain();},maintenanceIntervalMs);maintenanceTimer.unref?.();}
+   if(scheduledMaintenance.length){maintenanceTimer=setInterval(()=>{void maintain();},schedulerIntervalMs);maintenanceTimer.unref?.();}
    onLog({kind:"started",workerFamilies:workers.length,maintenanceWorkers:maintenanceWorkers.length,pollMs,leaseSeconds});
   },
   async stop(){
@@ -101,7 +112,8 @@ export function createCloudWorkerSupervisor({workers,maintenanceWorkers=[],maint
    if(active)await active.catch(()=>{});if(activeMaintenance)await activeMaintenance.catch(()=>{});
    onLog({kind:"stopped"});
   },
-  async runOnce(){return cycle();}
+  async runOnce(){return cycle();},
+  async runMaintenanceOnce(){return maintain();}
  });
 }
 
