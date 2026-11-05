@@ -24,7 +24,7 @@ function response({ status = 200, json = null, data = bytes, headers = {} } = {}
     })
   };
 }
-function harness({ metadata = sourceFile, download = bytes, load = null, denied = false, cleanup = async () => {}, uploadError = false, uploadLocation = "https://www.googleapis.com/upload/drive/v3/files?upload_id=private-session", folder = { id: "driveFolder_123456789", mimeType: "application/vnd.google-apps.folder", trashed: false, capabilities: { canAddChildren: true } }, uploadChecksum = createHash("md5").update(bytes).digest("hex"), uploadSteps = [] } = {}) {
+function harness({ metadata = sourceFile, download = bytes, load = null, denied = false, cleanup = async () => {}, uploadError = false, uploadLocation = "https://www.googleapis.com/upload/drive/v3/files?upload_id=private-session", folder = { id: "driveFolder_123456789", mimeType: "application/vnd.google-apps.folder", trashed: false, capabilities: { canAddChildren: true } }, uploadChecksum = createHash("md5").update(bytes).digest("hex"), uploadSteps = [], attempts = null, existingDriveFile = null, generatedFileId = "driveFile_987654321" } = {}) {
   const calls = [], scopes = [];
   let uploadStepIndex = 0;
   const assets = { async create(args) {
@@ -38,8 +38,13 @@ function harness({ metadata = sourceFile, download = bytes, load = null, denied 
     getUserAccessToken: async args => { scopes.push(args); return "x".repeat(40); },
     assets,
     loadPrivateAsset: async () => { if (denied) throw new Error("denied"); return loaded; },
+    attempts,
     fetchImpl: async (url, options = {}) => {
       calls.push({ kind: "fetch", url, options });
+      if (url.includes("/drive/v3/files/generateIds")) return response({ json: { ids: [generatedFileId] } });
+      if (url.includes("fields=id,name,mimeType,size,md5Checksum,webViewLink,appProperties,trashed")) {
+        return existingDriveFile ? response({ json: existingDriveFile }) : response({ status: 404 });
+      }
       if (url.includes("/drive/v3/files/") && url.includes("fields=id,mimeType,trashed,capabilities")) return response({ json: folder });
       if (url.includes("/drive/v3/files/") && url.includes("alt=media")) {
         return response({ data: download, headers: { "content-length": String(metadata.size) } });
@@ -114,6 +119,57 @@ test("exports a verified private asset to Drive using OAuth resumable upload", a
 });
 
 
+
+
+test("uses a persisted pre-generated Drive file ID and marks a verified export complete", async () => {
+  let record = null;
+  const attempts = {
+    async get() { return record; },
+    async createOrGet(value) {
+      record = { ...value, state: "PREPARED", sessionUri: null, webViewLink: null };
+      return record;
+    },
+    async saveSession(value) {
+      record = { ...record, state: "UPLOADING", sessionUri: value.sessionUri };
+      return record;
+    },
+    async mark(value) {
+      record = { ...record, state: value.state, sessionUri: value.state === "COMPLETED" ? null : record.sessionUri,
+        webViewLink: value.webViewLink || null };
+      return record;
+    }
+  };
+  const h = harness({ attempts });
+  const result = await h.bridge.uploadPrivateAsset({ ownerId, projectId, assetId });
+  assert.equal(result.id, "driveFile_987654321");
+  assert.equal(record.state, "COMPLETED");
+  assert.equal(record.driveFileId, "driveFile_987654321");
+  const init = h.calls.find(x => x.url?.includes("uploadType=resumable"));
+  assert.equal(JSON.parse(init.options.body).id, "driveFile_987654321");
+  assert.ok(h.calls.some(x => x.url?.includes("/files/generateIds")));
+});
+
+test("returns an already completed Drive export after provider reconciliation without creating another file", async () => {
+  const expectedMd5 = createHash("md5").update(bytes).digest("hex");
+  const driveFile = { id: "driveFile_987654321", name: "master.mp4", mimeType: "video/mp4",
+    size: String(bytes.length), md5Checksum: expectedMd5,
+    webViewLink: "https://drive.google.com/file/d/driveFile_987654321/view",
+    appProperties: { source: "executive-visuals", assetId }, trashed: false };
+  const attemptRecord = { attemptKey: "a".repeat(64), ownerId, projectId, assetId,
+    parentFolderId: null, driveFileId: driveFile.id, mimeType: "video/mp4", byteSize: bytes.length,
+    sha256, state: "COMPLETED", sessionUri: null };
+  const attempts = {
+    async get() { return attemptRecord; },
+    async createOrGet() { throw new Error("completed attempts must not create a new ledger row"); },
+    async saveSession() { throw new Error("completed attempts must not create a new session"); },
+    async mark() { throw new Error("already completed"); }
+  };
+  const h = harness({ attempts, existingDriveFile: driveFile });
+  const result = await h.bridge.uploadPrivateAsset({ ownerId, projectId, assetId });
+  assert.equal(result.id, driveFile.id);
+  assert.equal(h.calls.some(x => x.url?.includes("uploadType=resumable")), false);
+  assert.equal(h.calls.some(x => x.url?.includes("/files/generateIds")), false);
+});
 
 test("resumes a Drive upload from the provider-confirmed byte range after a lost response", async () => {
   const completed = {
