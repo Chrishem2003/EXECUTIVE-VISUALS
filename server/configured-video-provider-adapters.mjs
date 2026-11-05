@@ -1,3 +1,4 @@
+import { createKieActualCostResolver } from "./kie-seedance-pricing.mjs";
 import { createKieSeedanceVideoAdapter } from "./kie-seedance-video-adapter.mjs";
 import { createFalVideoProviderAdapter } from "./fal-video-provider-registration.mjs";
 import { createRunwayCloudVideoAdapter } from "./runway-cloud-video-adapter.mjs";
@@ -147,10 +148,10 @@ export function createConfiguredVideoProviderAdapters({
         env.KIE_VIDEO_ENABLED !== "true" || env.KIE_VIDEO_ALLOW_REMOTE !== "true") {
       throw fail("Kie requires VIDEO_GATEWAY_ENABLED, VIDEO_GATEWAY_ALLOW_REMOTE, KIE_VIDEO_ENABLED and KIE_VIDEO_ALLOW_REMOTE to be true.", "KIE_VIDEO_REMOTE_DISABLED");
     }
-    if (typeof resolveKieActualCost !== "function") {
-      throw fail("Kie registration requires an authoritative task-level settlement resolver based on verified account credit consumption.", "KIE_BILLING_RESOLVER_REQUIRED");
-    }
-    const model = String(env.KIE_SEEDANCE_MODEL || "bytedance/seedance-2-5").trim();
+    const settledKieCostResolver = typeof resolveKieActualCost === "function"
+      ? resolveKieActualCost
+      : createKieActualCostResolver({ usdPerCredit: env.KIE_USD_PER_CREDIT });
+    const model = String(env.KIE_SEEDANCE_MODEL || "bytedance/seedance-2").trim();
     adapters.push(createKieSeedanceVideoAdapter({
       model,
       apiKey: env.KIE_API_KEY,
@@ -160,7 +161,7 @@ export function createConfiguredVideoProviderAdapters({
       client: kieClient,
       prepareInput: kiePrepareInput,
       ingestOutputs,
-      resolveActualCost: resolveKieActualCost
+      resolveActualCost: settledKieCostResolver
     }));
   }
 
