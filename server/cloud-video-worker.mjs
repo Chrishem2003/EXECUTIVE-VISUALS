@@ -12,7 +12,8 @@ const QUARANTINE_CODES = new Set([
   "VIDEO_OUTPUT_URL_REJECTED",
   "VIDEO_OUTPUT_DOWNLOAD_INVALID",
   "VIDEO_OUTPUT_ASSET_REGISTRATION_INVALID",
-  "VIDEO_PROVIDER_STATUS_INVALID"
+  "VIDEO_PROVIDER_STATUS_INVALID",
+  "VIDEO_CANCELLATION_REQUIRES_RECONCILIATION"
 ]);
 
 export async function runCloudVideoWorkerCycle({
@@ -91,6 +92,15 @@ export async function runCloudVideoWorkerCycle({
     if (leaseLost || controller.signal.aborted) return { claimed: true, finished: false, reason: "lease_lost", jobId: job.id };
     const code = typeof error?.code === "string" ? error.code.slice(0, 100) : "CLOUD_VIDEO_JOB_FAILED";
     const message = String(error?.message || "Cloud video generation failed.").slice(0, 500);
+    if (code === "VIDEO_JOB_CANCELLED") {
+      const cancelled = await enqueue.finish({
+        jobId: job.id, workerId, status: "cancelled",
+        error: { code, message }
+      });
+      if (!cancelled) return { claimed: true, finished: false, reason: "lease_lost", jobId: job.id };
+      onEvent({ type: "video.job.cancelled", jobId: job.id, workerId });
+      return { claimed: true, finished: true, status: "cancelled", jobId: job.id, reason: code };
+    }
     if (code === "VIDEO_PROVIDER_POLL_DEFERRED") {
       const deferred = await enqueue.defer({ jobId: job.id, workerId, delaySeconds: deferSeconds, reasonCode: code });
       if (!deferred) return { claimed: true, finished: false, reason: "lease_lost", jobId: job.id };
