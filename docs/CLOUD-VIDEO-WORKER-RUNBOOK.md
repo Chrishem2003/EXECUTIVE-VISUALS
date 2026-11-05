@@ -16,6 +16,12 @@ The process requires all of the following:
 
 The worker still requires the separate provider-specific enablement flags. Runway requires `RUNWAY_VIDEO_ENABLED=true`, `RUNWAY_VIDEO_ALLOW_REMOTE=true`, `RUNWAY_VIDEO_MODEL=gen4.5`, and a server-side Runway API key.
 
+## Project approval and budget boundary
+
+Project-scoped Runway requests require a verified owner/editor authorization before preflight. The exact normalized request and its request fingerprint are stored with the router and budget approval records. A project owner or a distinct project reviewer must approve the request; the requester cannot approve their own project-scoped generation. Personal, non-project requests may be self-approved by their authenticated owner. Viewers and unrelated users cannot create a project preflight. The enqueue transaction rechecks the approval IDs, owner, project, model, router fingerprint, exact approved payload, expiry and budget binding before creating the job and consuming the approvals atomically.
+
+These rules are enforced in PostgreSQL as well as in the application workflow. Disposable integration tests cover owner/editor/viewer access, project-owner and reviewer approval, requester self-approval rejection, payload tampering, and the existing idempotent enqueue path. Do not weaken database checks to compensate for an application authorization failure.
+
 ## Runway settlement gate — unresolved by design
 
 Do not treat Runway task `estimatedCost.credits` as actual billed usage. The current official API distinguishes two usage systems:
