@@ -33,12 +33,12 @@ export function createWaveformCache({mediaRoot,ffmpegPath=process.env.FFMPEG_PAT
   if(duration>maxDurationSeconds)throw Object.assign(new Error("Audio exceeds the 2-hour waveform generation limit."),{code:"WAVEFORM_DURATION_LIMIT"});
   await run(ffmpegPath,["-hide_banner","-loglevel","error","-nostdin","-y","-i",sourcePath,"-map","0:a:0","-t",String(maxDurationSeconds),"-filter_complex","aformat=channel_layouts=mono,showwavespic=s=1200x80:colors=white:scale=lin:draw=full","-frames:v","1","-f","image2","-vcodec","png",tempPath],{timeoutMs});
  }
- async function get(asset){
+ async function get(asset,sourcePathOverride=null){
   if(!asset||typeof asset.id!=="string"||!UUID.test(asset.id)||!SHA.test(String(asset.sha256||"")))throw Object.assign(new Error("Waveform asset identity is invalid."),{code:"WAVEFORM_INVALID_ASSET"});
   if(!String(asset.media_type||asset.mediaType||"").startsWith("audio/"))throw Object.assign(new Error("Waveforms are available only for audio assets."),{code:"WAVEFORM_UNSUPPORTED_MEDIA"});
   const relativePath=asset.storage_path||asset.storagePath;
-  if(typeof relativePath!=="string"||!relativePath)throw Object.assign(new Error("Audio source path is unavailable."),{code:"WAVEFORM_SOURCE_MISSING"});
-  const sourcePath=resolve(root,relativePath);
+  if(sourcePathOverride===null&&(typeof relativePath!=="string"||!relativePath))throw Object.assign(new Error("Audio source path is unavailable."),{code:"WAVEFORM_SOURCE_MISSING"});
+  const sourcePath=sourcePathOverride===null?resolve(root,relativePath):resolve(String(sourcePathOverride));
   if(!inside(root,sourcePath))throw Object.assign(new Error("Audio source path is outside managed media storage."),{code:"WAVEFORM_INVALID_PATH"});
   const source=await stat(sourcePath).catch(()=>null);
   if(!source?.isFile())throw Object.assign(new Error("Audio source is not available in managed storage."),{code:"WAVEFORM_SOURCE_MISSING"});
