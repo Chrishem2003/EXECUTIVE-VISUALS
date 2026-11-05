@@ -130,40 +130,75 @@ test("GCS bootstrap rejects local user ADC credential clients even when token ac
   class UserRefreshClient {
     async getAccessToken() { return { token: "u".repeat(40) }; }
   }
+  class Compute {}
+  class IdentityPoolClient {}
   class FakeGoogleAuth {
     async getClient() { return new UserRefreshClient(); }
   }
-  const bootstrap = await createGoogleGeminiGcsMirrorBootstrap({ env, GoogleAuthClass: FakeGoogleAuth });
+  const bootstrap = await createGoogleGeminiGcsMirrorBootstrap({
+    env,
+    GoogleAuthClass: FakeGoogleAuth,
+    GoogleCredentialClientClasses: { Compute, IdentityPoolClient }
+  });
   await assert.rejects(bootstrap.checkIdentity(), error =>
     error.code === "GEMINI_GCS_ADC_IDENTITY_TYPE_REJECTED" &&
-    /local user ADC credentials are not accepted/.test(error.message)
+    /local user ADC credentials/.test(error.message)
   );
 });
 
-test("GCS bootstrap accepts an approved external-account WIF client and reports its identity mode", async () => {
-  class ExternalAccountClient {
+test("GCS bootstrap accepts the concrete IdentityPoolClient used by file-based WIF", async () => {
+  class Compute {}
+  class IdentityPoolClient {
     async getAccessToken() { return { token: "w".repeat(40) }; }
   }
   class FakeGoogleAuth {
-    async getClient() { return new ExternalAccountClient(); }
+    async getClient() { return new IdentityPoolClient(); }
   }
-  const bootstrap = await createGoogleGeminiGcsMirrorBootstrap({ env, GoogleAuthClass: FakeGoogleAuth });
+  const bootstrap = await createGoogleGeminiGcsMirrorBootstrap({
+    env,
+    GoogleAuthClass: FakeGoogleAuth,
+    GoogleCredentialClientClasses: { Compute, IdentityPoolClient }
+  });
   const identity = await bootstrap.checkIdentity();
   assert.equal(identity.ready, true);
   assert.equal(identity.identityMode, "external-account-wif");
-  assert.equal(identity.credentialClientType, "ExternalAccountClient");
+  assert.equal(identity.credentialClientType, "IdentityPoolClient");
 });
 
-test("GCS bootstrap accepts an attached Compute workload identity and reports its identity mode", async () => {
+test("GCS bootstrap accepts an attached Compute workload identity by class identity", async () => {
   class Compute {
     async getAccessToken() { return { token: "c".repeat(40) }; }
   }
+  class IdentityPoolClient {}
   class FakeGoogleAuth {
     async getClient() { return new Compute(); }
   }
-  const bootstrap = await createGoogleGeminiGcsMirrorBootstrap({ env, GoogleAuthClass: FakeGoogleAuth });
+  const bootstrap = await createGoogleGeminiGcsMirrorBootstrap({
+    env,
+    GoogleAuthClass: FakeGoogleAuth,
+    GoogleCredentialClientClasses: { Compute, IdentityPoolClient }
+  });
   const identity = await bootstrap.checkIdentity();
   assert.equal(identity.ready, true);
   assert.equal(identity.identityMode, "attached-workload-identity");
   assert.equal(identity.credentialClientType, "Compute");
+});
+
+test("GCS bootstrap rejects a lookalike client even when its constructor name is approved", async () => {
+  class Compute {}
+  class IdentityPoolClient {}
+  const Lookalike = { [Symbol.hasInstance]: () => false };
+  class FakeGoogleAuth {
+    async getClient() {
+      return { constructor: { name: "IdentityPoolClient" }, async getAccessToken() { return { token: "x".repeat(40) }; } };
+    }
+  }
+  const bootstrap = await createGoogleGeminiGcsMirrorBootstrap({
+    env,
+    GoogleAuthClass: FakeGoogleAuth,
+    GoogleCredentialClientClasses: { Compute, IdentityPoolClient: Lookalike }
+  });
+  await assert.rejects(bootstrap.checkIdentity(), error =>
+    error.code === "GEMINI_GCS_ADC_IDENTITY_TYPE_REJECTED"
+  );
 });
