@@ -30,7 +30,7 @@ export function createWaveformCache({mediaRoot,ffmpegPath=process.env.FFMPEG_PAT
   await mkdir(cacheRoot,{recursive:true});
   const now=Date.now(),keep=new Set(preserve.map(path=>resolve(path))),entries=[];
   for(const name of await readdir(cacheRoot)){
-   if(!/^(?:[a-f0-9]{64}\\.png|\\.[a-f0-9]{64}\\.[0-9]+\\.[a-f0-9]+\\.tmp\\.png)$/i.test(name))continue;
+   if(!/^(?:[a-f0-9]{64}\.png|\.[a-f0-9]{64}\.[0-9]+\.[a-f0-9]+\.tmp\.png)$/i.test(name))continue;
    const path=join(cacheRoot,name),info=await stat(path).catch(()=>null);
    if(!info?.isFile())continue;
    const temporary=name.endsWith(".tmp.png");
