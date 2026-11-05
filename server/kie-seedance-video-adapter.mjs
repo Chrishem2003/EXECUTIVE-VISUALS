@@ -26,7 +26,7 @@ function buildInput(input,model){
  const duration=Number(input.durationSeconds??input.duration??5);
  const minDuration=spec.minDuration;
  if(!Number.isInteger(duration)||duration<minDuration||duration>spec.maxDuration)throw fail("Seedance duration is outside the supported range for the selected model.","KIE_VIDEO_INPUT_INVALID");
- const requestedResolution=String(input.resolution||"720p");
+ const requestedResolution=String(!input.resolution||input.resolution==="provider_default"?"720p":input.resolution);
  if(!spec.resolutions.has(requestedResolution))throw fail("Seedance resolution is unsupported for the selected model.","KIE_VIDEO_INPUT_INVALID");
  const resolution=requestedResolution==="2160p"?"4K":requestedResolution;
  const aspectRatio=String(input.aspectRatio||input.aspect_ratio||"16:9");
@@ -82,7 +82,7 @@ export function createKieSeedanceVideoAdapter({
   async prepareInput(input,context){
    assertEnabled();
    if(!plain(input)||input.provider!=="kie"||input.model!==model)throw fail("Kie job provider/model identity does not match the registered adapter.","VIDEO_JOB_INPUT_MISMATCH");
-   const hasPrivateReferences=Boolean(input.firstFrameAssetId||input.lastFrameAssetId||input.firstFrameUrl||input.lastFrameUrl||input.startFrame||input.endFrame)||
+   const hasPrivateReferences=Boolean(input.firstFrameAssetId||input.lastFrameAssetId||input.startFrameAssetId||input.endFrameAssetId||input.firstFrameUrl||input.lastFrameUrl||input.startFrame||input.endFrame)||
     ["referenceAssetIds","referenceImageAssetIds","referenceVideoAssetIds","referenceAudioAssetIds","referenceImageUrls","referenceVideoUrls","referenceAudioUrls"].some(key=>Array.isArray(input[key])&&input[key].length>0);
    if(hasPrivateReferences&&typeof prepareInput!=="function")throw fail("Kie reference assets require an authenticated owner/project-scoped resolver.","KIE_VIDEO_INPUT_ASSET_RESOLUTION_REQUIRED");
    const resolved=typeof prepareInput==="function"?await prepareInput(input,context):input;
