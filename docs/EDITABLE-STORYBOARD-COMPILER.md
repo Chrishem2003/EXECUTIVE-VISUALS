@@ -23,7 +23,7 @@ The storyboard is stored inside the active creative project. The scene, shot, pr
 
 - Authenticated API: `POST /api/creative/storyboard`.
 - Optional project ID is checked for owner/editor write access before the model request.
-- Rate limit: three requests per minute per remote address.
+- Rate limit: five requests per minute per remote address.
 - Request body cap: 48 KiB.
 - Runtime range: 15–1800 seconds; supported aspect ratios and frame rates are explicit.
 - Scene count: 2–12; shots per scene: 1–8; maximum 60 shots; each shot is 1–60 seconds.
