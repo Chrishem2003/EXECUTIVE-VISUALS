@@ -1,8 +1,8 @@
-import { randomUUID } from "node:crypto";
+import { randomUUID, createHash } from "node:crypto";
 import { createWriteStream } from "node:fs";
-import { mkdtemp, rm, readFile } from "node:fs/promises";
+import { mkdtemp, rm, readFile, mkdir, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, join, extname } from "node:path";
+import { basename, join, extname, relative } from "node:path";
 import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { createCloudAssetAuthorizer } from "./cloud-asset-auth.mjs";
@@ -19,7 +19,7 @@ const stableJson=value=>Array.isArray(value)?"["+value.map(stableJson).join(",")
  * by the app's verified authentication middleware; request bodies never set
  * owner_id. Service-role credentials remain inside this server-only module.
  */
-export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRoleKey=process.env.SUPABASE_SERVICE_ROLE_KEY,fetchImpl=globalThis.fetch,timelineService,authorize,maxJobBytes=5*1024*1024,timeoutMs=15000,maxUploadBytes=250*1024*1024,tempRoot=tmpdir(),transformationReadiness=()=>({})}={}){
+export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRoleKey=process.env.SUPABASE_SERVICE_ROLE_KEY,fetchImpl=globalThis.fetch,timelineService,authorize,maxJobBytes=5*1024*1024,timeoutMs=15000,maxUploadBytes=250*1024*1024,tempRoot=tmpdir(),transformationReadiness=()=>({}),waveformCache=null,mediaRoot=null}={}){
  if(!url||!serviceRoleKey)throw new Error("Cloud timeline API requires server-side Supabase credentials.");
  if(typeof fetchImpl!=="function")throw new Error("Cloud timeline API requires fetch.");
  if(!Number.isInteger(maxJobBytes)||maxJobBytes<1024||maxJobBytes>10*1024*1024)throw new Error("Cloud timeline API payload limit is invalid.");
@@ -59,6 +59,43 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     if(method==="GET"){const project=await service.projects.get({ownerId,projectId});return project?response(200,{project}):response(404,{error:{code:"PROJECT_NOT_FOUND",message:"Project not found."}});}
     if(method==="PATCH"){const project=await service.projects.update({ownerId,projectId,expectedRevision:Number(body.expectedRevision),name:body.name,description:body.description,settings:body.settings});return response(200,{project});}
     if(method==="DELETE"){const archived=await service.projects.archive({ownerId,projectId,expectedRevision:Number(body.expectedRevision)});return response(200,{project:archived});}
+   }
+   const waveformMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)\/waveform$/i);
+   if(waveformMatch&&method==="GET"){
+    if(!waveformCache||!mediaRoot||typeof service.storage?.downloadToFile!=="function"||typeof service.storage?.uploadFile!=="function")return response(503,{error:{code:"CLOUD_WAVEFORM_UNAVAILABLE",message:"Cloud waveform processing is not configured."}});
+    const asset=await service.assets.get({ownerId,assetId:waveformMatch[1]});
+    if(!asset.mediaType?.startsWith("audio/"))return response(415,{error:{code:"WAVEFORM_UNSUPPORTED_MEDIA",message:"Waveforms are available only for audio assets."}});
+    if(!/^[a-f0-9]{64}$/i.test(String(asset.sha256||""))||asset.storageBucket!=="executive-visuals-media"||typeof asset.objectPath!=="string")return response(422,{error:{code:"CLOUD_WAVEFORM_ASSET_INVALID",message:"Cloud audio asset metadata is invalid."}});
+    const expectedPrefix=(asset.projectId||asset.ownerId)+"/"+asset.id+"/";
+    if(!asset.objectPath.startsWith(expectedPrefix))return response(422,{error:{code:"CLOUD_WAVEFORM_PATH_INVALID",message:"Cloud audio storage reference is invalid."}});
+    const objectDirectory=asset.objectPath.slice(0,asset.objectPath.lastIndexOf("/")+1);
+    const derivativePath=objectDirectory+"waveform-v1-"+asset.sha256+".png";
+    const workRoot=join(mediaRoot,"derived","cloud-waveform-work");
+    await mkdir(workRoot,{recursive:true});
+    const workDirectory=await mkdtemp(join(workRoot,"asset-"));
+    const cachedPath=join(workDirectory,"cached.png");
+    const sourcePath=join(workDirectory,"source"+(extname(asset.name||"audio.wav")||".audio"));
+    try{
+     let derivativeFile=cachedPath;
+     try{
+      await service.storage.downloadToFile(derivativePath,cachedPath,2*1024*1024);
+      const cachedBytes=await readFile(cachedPath);
+      if(cachedBytes.length<=8||!cachedBytes.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10])))throw new Error("Cached cloud waveform is invalid.");
+     }catch(error){
+      if(error.code!=="CLOUD_STORAGE_HTTP_404")throw error;
+      const downloaded=await service.storage.downloadToFile(asset.objectPath,sourcePath,250*1024*1024);
+      if(downloaded.sha256!==asset.sha256||downloaded.size!==asset.size)throw Object.assign(new Error("Cloud audio source checksum does not match its asset record."),{code:"CLOUD_WAVEFORM_SOURCE_INTEGRITY"});
+      const localAsset={id:asset.id,sha256:asset.sha256,media_type:asset.mediaType,byte_size:asset.size,storage_path:relative(mediaRoot,sourcePath)};
+      derivativeFile=await waveformCache.get(localAsset,sourcePath);
+      await service.storage.uploadFile(derivativePath,derivativeFile,"image/png",true);
+     }
+     const info=await stat(derivativeFile);
+     if(!info.isFile()||info.size<=8||info.size>2*1024*1024)throw new Error("Cloud waveform derivative failed validation.");
+     return{status:200,body:{assetId:asset.id,sourceSha256:asset.sha256,algorithm:"waveform-v1"},waveformPath:derivativeFile,cleanupDirectory:workDirectory};
+    }catch(error){
+     await rm(workDirectory,{recursive:true,force:true}).catch(()=>{});
+     throw error;
+    }
    }
    if(path==="/api/cloud/assets"&&method==="GET"){
     const assets=await service.assets.list({ownerId,projectId:query.projectId||null,limit:Number(query.limit)||50,offset:Number(query.offset)||0});
