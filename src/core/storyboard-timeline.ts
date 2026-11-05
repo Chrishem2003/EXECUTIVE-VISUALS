@@ -38,7 +38,9 @@ const fail=(message:string)=>new Error(message);
 
 export function createStoryboardTimeline(projectId:string,timelineId:string,storyboard:StoryboardInput,name?:string):EditorialTimeline{
   if(!projectId||!timelineId)throw fail("A cloud project and new timeline ID are required.");
-  if(!storyboard||storyboard.schemaVersion!==1||!storyboard.id||!storyboard.inputHash||!storyboard.title)throw fail("A versioned storyboard with lineage is required.");
+  if(!storyboard||storyboard.schemaVersion!==1||storyboard.source!=="model"||!storyboard.id||!storyboard.title||!/^([a-f0-9]{64})$/.test(storyboard.inputHash)||typeof storyboard.model!=="string")throw fail("A versioned storyboard with lineage is required.");
+  if(!Number.isInteger(storyboard.targetDurationSeconds)||storyboard.targetDurationSeconds<15||storyboard.targetDurationSeconds>1800)throw fail("Storyboard target runtime is invalid.");
+  if(!Array.isArray(storyboard.globalContinuityRules)||storyboard.globalContinuityRules.length<3||storyboard.globalContinuityRules.length>10)throw fail("Storyboard continuity rules are invalid.");
   if(!Number.isInteger(storyboard.frameRate)||![24,25,30,50,60].includes(storyboard.frameRate))throw fail("Storyboard frame rate is unsupported.");
   const dimensions=RATIOS[storyboard.aspectRatio];
   if(!dimensions)throw fail("Storyboard aspect ratio is unsupported.");
@@ -50,11 +52,11 @@ export function createStoryboardTimeline(projectId:string,timelineId:string,stor
   const scenes:PlannedStoryboardScene[]=[];
   const markers:TimelineMarker[]=[];
   for(const scene of storyboard.scenes){
-    if(!scene.id||sceneIds.has(scene.id)||!Array.isArray(scene.shots)||scene.shots.length<1||scene.shots.length>8)throw fail("Storyboard contains an invalid or duplicate scene.");
+    if(!scene.id||sceneIds.has(scene.id)||!Number.isInteger(scene.number)||scene.number<1||!Array.isArray(scene.shots)||scene.shots.length<1||scene.shots.length>8)throw fail("Storyboard contains an invalid or duplicate scene.");
     sceneIds.add(scene.id);
     const sceneStart=cursor,plannedShots:PlannedStoryboardShot[]=[];
     for(const shot of scene.shots){
-      if(!shot.id||shotIds.has(shot.id)||!Number.isInteger(shot.durationSeconds)||shot.durationSeconds<1||shot.durationSeconds>60)throw fail("Storyboard contains an invalid or duplicate shot.");
+      if(!shot.id||shotIds.has(shot.id)||!Number.isInteger(shot.number)||shot.number<1||!Number.isInteger(shot.durationSeconds)||shot.durationSeconds<1||shot.durationSeconds>60)throw fail("Storyboard contains an invalid or duplicate shot.");
       shotIds.add(shot.id);totalShots++;
       if(totalShots>60)throw fail("Storyboard exceeds the sixty-shot timeline planning limit.");
       const durationFrames=Math.max(1,Math.round(shot.durationSeconds*fps));
@@ -98,12 +100,13 @@ export function createStoryboardTimeline(projectId:string,timelineId:string,stor
 }
 
 export function reflowStoryboardTimelinePlan(plan:StoryboardTimelinePlan):StoryboardTimelinePlan{
-  if(!plan||plan.schemaVersion!==1||!Number.isInteger(plan.frameRate)||plan.frameRate<=0)throw fail("Storyboard timeline plan is invalid.");
-  let cursor=0;
+  if(!plan||plan.schemaVersion!==1||!Number.isInteger(plan.frameRate)||![24,25,30,50,60].includes(plan.frameRate)||!Array.isArray(plan.scenes)||plan.scenes.length<2||plan.scenes.length>12)throw fail("Storyboard timeline plan is invalid.");
+  let cursor=0,totalShots=0;
   const scenes=plan.scenes.map(scene=>{
     const startFrame=cursor;
     const shots=scene.shots.map(shot=>{
-      if(!Number.isInteger(shot.durationFrames)||shot.durationFrames<1)throw fail("Planned shot duration must be a positive frame count.");
+      totalShots++;
+      if(totalShots>60||!Number.isInteger(shot.durationFrames)||shot.durationFrames<1||shot.durationFrames>plan.frameRate*60)throw fail("Planned shot duration or count is invalid.");
       const next={...shot,startFrame:cursor,timelineStart:rational(cursor,plan.frameRate),timelineDuration:rational(shot.durationFrames,plan.frameRate)};
       cursor+=shot.durationFrames;return next;
     });
