@@ -127,6 +127,7 @@ export function createGeminiOmniFlashClient({
   assertApprovedSubmission,
   authorizeInteraction,
   timeoutMs = 30000,
+  streamTimeoutMs = 120000,
   maxResponseBytes = 4 * 1024 * 1024
 } = {}) {
   if (typeof fetchImpl !== "function") throw new TypeError("Gemini Interactions client requires fetch.");
@@ -137,6 +138,7 @@ export function createGeminiOmniFlashClient({
     throw new TypeError("Gemini Interactions client requires an owner/project interaction authorizer.");
   }
   if (!Number.isInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 120000 ||
+      !Number.isInteger(streamTimeoutMs) || streamTimeoutMs < 1000 || streamTimeoutMs > 300000 ||
       !Number.isSafeInteger(maxResponseBytes) || maxResponseBytes < 1024 || maxResponseBytes > 16 * 1024 * 1024) {
     throw new Error("Gemini Interactions client limits are invalid.");
   }
@@ -212,7 +214,7 @@ export function createGeminiOmniFlashClient({
   async function streamCreate(payload, { onInteractionCreated } = {}) {
     const key = configuration("create");
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const timer = setTimeout(() => controller.abort(), streamTimeoutMs);
     let createdId = null;
     let outputUri = null;
     let completed = null;
