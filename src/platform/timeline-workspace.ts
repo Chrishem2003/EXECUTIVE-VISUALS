@@ -687,7 +687,7 @@ document.addEventListener("submit",event=>{
  if(form.id==="tl-add-track"){
   event.preventDefault();const data=new FormData(form),name=String(data.get("name")||"").trim(),kind=String(data.get("kind")||"video") as TimelineTrack["kind"];
   if(!name)return;
-  state.timeline=addTrack(state.timeline,{id:crypto.randomUUID(),name,kind,enabled:true,locked:false,clips:[]});
+  const before=structuredClone(state.timeline);commitTimelineEdit(addTrack(before,{id:crypto.randomUUID(),name,kind,enabled:true,locked:false,clips:[]}),"Add track",before);
   void persist().then(paint).catch(error=>{state.message=error.message;paint();});
  }
  if(form.id==="tl-add-clip"){
@@ -701,7 +701,7 @@ document.addEventListener("submit",event=>{
   if(destination?.kind==="caption"&&(!["text/plain","text/vtt"].includes(asset.mediaType)||!["srt","vtt"].includes(asset.name.toLowerCase().split(".").pop()||""))){alert("Caption tracks require an SRT or VTT text file.");return;}
   const sourceFps=sourceRate(asset,destination?.kind||"video");
   const sourceDuration=duration/fps()*sourceFps;
-  try{state.timeline=addClip(state.timeline,trackId,{id:crypto.randomUUID(),assetId,name:asset.name,sourceRange:{start:rational(sourceIn,sourceFps),duration:rational(sourceDuration,sourceFps)},timelineStart:rational(start,fps()),duration:rational(duration,fps()),enabled:true});}
+  try{const before=structuredClone(state.timeline);commitTimelineEdit(addClip(before,trackId,{id:crypto.randomUUID(),assetId,name:asset.name,sourceRange:{start:rational(sourceIn,sourceFps),duration:rational(sourceDuration,sourceFps)},timelineStart:rational(start,fps()),duration:rational(duration,fps()),enabled:true}),"Add clip",before);}
   catch(error){alert(error instanceof Error?error.message:String(error));return;}
   void persist().then(paint).catch(error=>{state.message=error.message;paint();});
  }
@@ -727,7 +727,7 @@ document.addEventListener("submit",event=>{
  }
  if(form.id==="tl-add-marker"){
   event.preventDefault();const data=new FormData(form);
-  state.timeline=addMarker(state.timeline,{id:crypto.randomUUID(),name:String(data.get("name")),start:rational(Math.max(0,Number(data.get("frame"))||0),fps()),color:"YELLOW"});
+  const before=structuredClone(state.timeline);commitTimelineEdit(addMarker(before,{id:crypto.randomUUID(),name:String(data.get("name")),start:rational(Math.max(0,Number(data.get("frame"))||0),fps()),color:"YELLOW"}),"Add review marker",before);
   void persist().then(paint).catch(error=>{state.message=error.message;paint();});
  }
 });
