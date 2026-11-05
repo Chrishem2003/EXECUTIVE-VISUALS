@@ -69,7 +69,7 @@ export function createGoogleGeminiGcsMirrorService({
     if (!privateAssetLoader) {
       const mediaIO = createCloudMediaAssetIO({
         assets: cloudAssets.assets, fetchImpl,
-        maxBytes: Math.min(maxBytes, 250 * 1024 * 1024), timeoutMs
+        maxBytes: Math.min(maxBytes, 250 * 1024 * 1024), timeoutMs: Math.min(timeoutMs, 120000)
       });
       privateAssetLoader = async ({ assetId, ownerId, projectId = null }) => {
         const materialized = await mediaIO.materialize({ ownerId, assetId });
