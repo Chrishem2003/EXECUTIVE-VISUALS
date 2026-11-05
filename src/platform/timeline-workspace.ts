@@ -11,7 +11,7 @@ import { assessDeliveryEvidence } from "../core/delivery-evidence";
 import { analyzeCreativeTraceability, readCreativeTrace } from "../core/creative-traceability";
 import { appendCreativeDecision, readCreativeDecisionHistory } from "../core/creative-decision-ledger";
 import { compareTimelineVariants, createTimelineVariant, type TimelineVariantComparison } from "../core/timeline-variants";
-import { addClip, addMarker, addTrack, createTimeline, evaluateTimelineAtFrame, integrateSpeedCurve, moveClip, rational, seconds, splitClip, toOpenTimelineIo, trimClip, validateTimeline, type EditorialTimeline, type TimelineTrack, type SpeedKeyframe } from "../core/timeline";
+import { addClip, addMarker, addTrack, createTimeline, evaluateSpeedCurve, evaluateTimelineAtFrame, integrateSpeedCurve, moveClip, rational, seconds, splitClip, timelineElapsedForSourceElapsed, toOpenTimelineIo, trimClip, validateTimeline, type EditorialTimeline, type TimelineTrack, type SpeedKeyframe } from "../core/timeline";
 
 type Asset={id:string;name:string;mediaType:string;size:number;metadata?:Record<string,unknown>};
 type SavedTimeline={id:string;projectId?:string|null;name:string;revision:number;document?:EditorialTimeline};
@@ -237,7 +237,7 @@ async function syncPreview(){
      const sourceClip=state.timeline.tracks.find(track=>track.id===current.trackId)?.clips.find(item=>item.id===current.clipId);
      if(!sourceClip)return;
      const sourceStart=seconds(sourceClip.sourceRange.start);
-     const sourceEnd=sourceStart+(current.timelineEndSeconds-current.timelineStartSeconds)*current.playbackSpeed;
+     const sourceEnd=sourceStart+seconds(sourceClip.sourceRange.duration);
      if(video.currentTime>=sourceEnd-0.025){
       for(const node of document.querySelectorAll<HTMLVideoElement>("[data-preview-video]"))node.pause();
       state.playheadFrame=Math.ceil(current.timelineEndSeconds*fps());
@@ -245,7 +245,7 @@ async function syncPreview(){
       const readout=document.querySelector<HTMLElement>("#tl-playhead-label");if(readout)readout.textContent="Frame "+state.playheadFrame+" · "+(state.playheadFrame/fps()).toFixed(3)+"s";
       void syncPreview();return;
      }
-     state.playheadFrame=Math.max(0,Math.floor((current.timelineStartSeconds+Math.max(0,video.currentTime-sourceStart)/current.playbackSpeed)*fps()));
+     const sourceElapsed=Math.max(0,video.currentTime-sourceStart),timelineElapsed=timelineElapsedForSourceElapsed(sourceClip,sourceElapsed);video.playbackRate=evaluateSpeedCurve(sourceClip.speedCurve,timelineElapsed,Number(sourceClip.speed??1));state.playheadFrame=Math.max(0,Math.floor((current.timelineStartSeconds+timelineElapsed)*fps()));
      const slider=document.querySelector<HTMLInputElement>("#tl-playhead");if(slider)slider.value=String(state.playheadFrame);
      const readout=document.querySelector<HTMLElement>("#tl-playhead-label");if(readout)readout.textContent="Frame "+state.playheadFrame+" · "+(state.playheadFrame/fps()).toFixed(3)+"s";
      void syncPreview();
@@ -258,7 +258,7 @@ async function syncPreview(){
    const sourceClip=state.timeline.tracks.find(track=>track.id===clip.trackId)?.clips.find(item=>item.id===clip.clipId);
    if(!sourceClip)continue;
    const target=Math.max(0,clip.sourceTimeSeconds);audio.playbackRate=clip.playbackSpeed;
-   const localTime=Math.max(0,audio.currentTime-seconds(sourceClip.sourceRange.start))/clip.playbackSpeed,gainDb=evaluateAudioAutomation(sourceClip.audioAutomation,localTime,"gainDb",Number(sourceClip.gainDb)||0),track=state.timeline.tracks.find(item=>item.id===clip.trackId),envelope=track?audioTransitionEnvelope(track,sourceClip):{fadeInDuration:0,fadeOutStart:0,fadeOutDuration:0},fadeInLevel=envelope.fadeInDuration>0?Math.max(0,Math.min(1,localTime/envelope.fadeInDuration)):1,fadeOutLevel=envelope.fadeOutDuration>0&&localTime>envelope.fadeOutStart?Math.max(0,1-(localTime-envelope.fadeOutStart)/envelope.fadeOutDuration):1;
+   const localTime=timelineElapsedForSourceElapsed(sourceClip,Math.max(0,audio.currentTime-seconds(sourceClip.sourceRange.start)));audio.playbackRate=evaluateSpeedCurve(sourceClip.speedCurve,localTime,Number(sourceClip.speed??1));const gainDb=evaluateAudioAutomation(sourceClip.audioAutomation,localTime,"gainDb",Number(sourceClip.gainDb)||0),track=state.timeline.tracks.find(item=>item.id===clip.trackId),envelope=track?audioTransitionEnvelope(track,sourceClip):{fadeInDuration:0,fadeOutStart:0,fadeOutDuration:0},fadeInLevel=envelope.fadeInDuration>0?Math.max(0,Math.min(1,localTime/envelope.fadeInDuration)):1,fadeOutLevel=envelope.fadeOutDuration>0&&localTime>envelope.fadeOutStart?Math.max(0,1-(localTime-envelope.fadeOutStart)/envelope.fadeOutDuration):1;
    audio.volume=state.audioEngine?1:decibelsToGain(Math.min(0,gainDb))*fadeInLevel*fadeOutLevel;
    if(audio.readyState>=1&&Math.abs(audio.currentTime-target)>0.25)audio.currentTime=target;
    if(audio.readyState<1)audio.onloadedmetadata=()=>{if(state.previewActiveClips.some(item=>item.clipId===clip.clipId))audio.currentTime=target;if(state.previewPlaying)void audio.play().catch(()=>{state.previewPlaying=false;});};
@@ -266,7 +266,7 @@ async function syncPreview(){
    audio.ontimeupdate=()=>{
     const current=state.previewActiveClips.find(item=>item.clipId===clip.clipId);
     if(clip.clipId!==primaryAudio?.clipId||!current||!state.timeline||state.previewActiveClips.some(item=>item.trackKind==="video"))return;
-    const frame=Math.max(0,Math.floor((current.timelineStartSeconds+Math.max(0,audio.currentTime-seconds(sourceClip.sourceRange.start))/current.playbackSpeed)*fps()));
+    const localTime=timelineElapsedForSourceElapsed(sourceClip,Math.max(0,audio.currentTime-seconds(sourceClip.sourceRange.start)));audio.playbackRate=evaluateSpeedCurve(sourceClip.speedCurve,localTime,Number(sourceClip.speed??1));const frame=Math.max(0,Math.floor((current.timelineStartSeconds+localTime)*fps()));
     state.playheadFrame=frame;
     const slider=document.querySelector<HTMLInputElement>("#tl-playhead");if(slider)slider.value=String(frame);
     const readout=document.querySelector<HTMLElement>("#tl-playhead-label");if(readout)readout.textContent="Frame "+frame+" · "+(frame/fps()).toFixed(3)+"s";
