@@ -91,7 +91,9 @@ export function createRunwayRouterApprovalLedger({
       required(ownerId, "ownerId"); required(projectId, "projectId"); required(actorId, "actorId");
       if (!decision || typeof decision !== "object" || Array.isArray(decision) ||
           decision.dryRun !== true || decision.taskCreated !== false || decision.billed !== false ||
-          decision.budgetCheck !== "within_limit") {
+          decision.budgetCheck !== "within_limit" ||
+          !Number.isSafeInteger(decision.maxEstimatedCredits) ||
+          decision.maxEstimatedCredits !== maxEstimatedCredits) {
         throw fail("Only a successful, non-billable dry-run decision within an explicit ceiling can be recorded.", "RUNWAY_APPROVAL_PREFLIGHT_REQUIRED");
       }
       const configId = required(decision.configId, "configId", 64);
