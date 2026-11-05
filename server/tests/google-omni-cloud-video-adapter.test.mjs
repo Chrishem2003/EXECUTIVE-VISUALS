@@ -101,7 +101,7 @@ test("prepares an authorized job plan, submits once and durably records owner/pr
   assert.equal(h.records.get(interactionId).projectId, projectId);
   assert.equal(h.records.get(interactionId).parentInteractionId, "v1_parent123456");
   assert.equal(h.records.get(interactionId).outputUri, "https://generativelanguage.googleapis.com/v1beta/files/generated123");
-  assert.deepEqual(h.calls.map(call => call[0]), ["preparePlan", "create", "retention", "record"]);
+  assert.deepEqual(h.calls.map(call => call[0]), ["preparePlan", "create", "retention", "record", "update"]);
 });
 
 test("polls only an interaction durably scoped to the exact leased job", async () => {
