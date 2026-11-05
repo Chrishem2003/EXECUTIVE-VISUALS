@@ -104,7 +104,10 @@ create temporary table runway_approval_context as
 select * from executive_visuals.record_runway_router_preflight(
  '123e4567-e89b-42d3-a456-426614174000',
  '323e4567-e89b-42d3-a456-426614174000',
- 'creative_low_cost',repeat('f',64),repeat('a',64),60,80,2,'USD',900
+ 'creative_low_cost',repeat('f',64),repeat('a',64),
+ jsonb_build_object('projectId','323e4567-e89b-42d3-a456-426614174000',
+   'provider','runway','model','gen4.5','requestHash',repeat('a',64),'prompt','test scene','durationSeconds',5),
+ 60,80,2,'USD',900
 );
 grant select on runway_approval_context to authenticated;
 reset role;
@@ -116,6 +119,29 @@ from runway_approval_context;
 reset role;
 select set_config('request.jwt.claim.role','service_role',false);
 set role service_role;
+
+do $runway_payload_tamper$
+begin
+ begin
+  perform * from executive_visuals.enqueue_video_generation_job(
+   '123e4567-e89b-42d3-a456-426614174000',
+   '323e4567-e89b-42d3-a456-426614174000',
+   'pg-integration-video-tampered','runway','gen4.5',repeat('a',64),
+   jsonb_build_object('projectId','323e4567-e89b-42d3-a456-426614174000',
+     'provider','runway','model','gen4.5','requestHash',repeat('a',64),
+     'prompt','tampered prompt','durationSeconds',5,
+     'routerApprovalId',(select router_approval_id from runway_approval_context),
+     'routerInputHash',repeat('f',64),'routerConfigId','creative_low_cost',
+     'budgetApprovalId',(select budget_approval_id from runway_approval_context)),
+   (select budget_approval_id from runway_approval_context),1.25,'USD'
+  );
+  raise exception 'tampered Runway job payload unexpectedly enqueued';
+ exception when others then
+  if sqlerrm = 'tampered Runway job payload unexpectedly enqueued' then raise; end if;
+  if sqlerrm <> 'RUNWAY_JOB_APPROVAL_BINDING_INVALID' then raise; end if;
+ end;
+end
+$runway_payload_tamper$;
 
 create temporary table test_context as
 select queued.job_id, queued.budget_reservation_id as reservation_id
@@ -387,7 +413,10 @@ create temporary table overrun_approval_context as
 select * from executive_visuals.record_runway_router_preflight(
  '123e4567-e89b-42d3-a456-426614174000',
  '323e4567-e89b-42d3-a456-426614174000',
- 'creative_low_cost',repeat('e',64),repeat('c',64),24,30,1,'USD',900
+ 'creative_low_cost',repeat('e',64),repeat('c',64),
+ jsonb_build_object('projectId','323e4567-e89b-42d3-a456-426614174000',
+   'provider','runway','model','gen4.5','requestHash',repeat('c',64),'durationSeconds',2),
+ 24,30,1,'USD',900
 );
 grant select on overrun_approval_context to authenticated;
 reset role;
