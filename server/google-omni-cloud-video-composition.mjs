@@ -53,7 +53,10 @@ export function createGoogleOmniCloudVideoComposition({
           record.interactionId !== interactionId ||
           record.ownerId !== context.ownerId ||
           (record.projectId || null) !== (context.projectId || null) ||
-          record.jobId !== context.jobId || record.state !== "succeeded") {
+          record.jobId !== context.jobId ||
+          !/^[a-f0-9]{64}$/.test(String(context.requestHash || "")) ||
+          record.requestHash !== context.requestHash ||
+          record.state !== "succeeded") {
         return false;
       }
       if (additionalOutputAuthorization) {
