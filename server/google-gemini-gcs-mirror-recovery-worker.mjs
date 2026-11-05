@@ -28,7 +28,9 @@ function metadataMatches(metadata, attempt) {
     custom.executivevisualsassetid === attempt.assetId &&
     custom.executivevisualsownerid === attempt.ownerId &&
     (custom.executivevisualsprojectid || null) === attempt.projectId &&
-    custom.executivevisualssha256 === attempt.sha256;
+    custom.executivevisualssha256 === attempt.sha256 &&
+    typeof metadata?.crc32c === "string" && metadata.crc32c === custom.executivevisualscrc32c &&
+    /^[A-Za-z0-9+/]{6}==$/.test(String(custom.executivevisualscrc32c || ""));
 }
 function parsePersistedOffset(range, sizeBytes) {
   if (!range) return 0;
