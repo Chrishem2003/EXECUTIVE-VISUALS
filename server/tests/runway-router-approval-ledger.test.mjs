@@ -118,7 +118,7 @@ test("approval records are scoped to their owner and project and history is boun
   const f=await fixture();
   try {
     const row=create(f);
-    assert.throws(()=>f.ledger.get("missing")===null?f.ledger.approve({approvalId:row.id,ownerId:reviewerId,projectId,actorId:reviewerId,inputHash:hash}):null);
+    assert.throws(()=>f.ledger.approve({approvalId:row.id,ownerId:reviewerId,projectId,actorId:reviewerId,inputHash:hash}),e=>e.code==="RUNWAY_APPROVAL_NOT_FOUND");
     assert.equal(f.ledger.listForProject({ownerId,projectId,limit:10}).length,1);
     assert.throws(()=>f.ledger.listForProject({ownerId,projectId,limit:201}));
   } finally {f.db.close();await rm(f.root,{recursive:true,force:true});}
