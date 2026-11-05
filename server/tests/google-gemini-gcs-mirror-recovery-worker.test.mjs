@@ -20,17 +20,17 @@ const env={GOOGLE_CLOUD_PROJECT_ID:"test-gcp-project-12345",GEMINI_GCS_ALLOWED_B
 const baseAttempt={
   id:attemptId,state:"OUTCOME_UNKNOWN",assetId,ownerId,projectId,
   bucket:"private-media-bucket",objectName:"mirrors/"+ownerId+"/"+projectId+"/"+assetId+"/mirror.mp4",
-  mediaType:"video/mp4",sizeBytes:bytes.length,sha256,sessionUri,
+  mediaType:"video/mp4",sizeBytes:bytes.length,sha256,crc32c,sessionUri,
   sessionExpiresAt:"2026-11-12T00:00:00.000Z"
 };
 function objectMetadata(attempt=baseAttempt,overrides={}) {
   return {
     bucket:attempt.bucket,name:attempt.objectName,generation:"1762300800000000",metageneration:"3",
-    size:String(attempt.sizeBytes),contentType:attempt.mediaType,crc32c,
+    size:String(attempt.sizeBytes),contentType:attempt.mediaType,crc32c:attempt.crc32c,
     metadata:{
       executivevisualsassetid:attempt.assetId,executivevisualsownerid:attempt.ownerId,
       executivevisualsprojectid:attempt.projectId,executivevisualssha256:attempt.sha256,
-      executivevisualscrc32c:crc32c
+      executivevisualscrc32c:attempt.crc32c
     },...overrides
   };
 }
@@ -68,6 +68,7 @@ async function harness({attempt=baseAttempt,statusCode=200,range=null,uploadCode
         assert.deepEqual(Buffer.concat(chunks),bytes.subarray(offset));
         assert.equal(options.headers["content-range"],"bytes "+offset+"-3/4");
         assert.equal(options.headers["content-length"],String(4-offset));
+        assert.equal(options.headers["x-goog-hash"],"crc32c="+crc32c);
         return new Response(null,{status:uploadCode});
       }
     }
