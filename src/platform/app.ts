@@ -225,8 +225,9 @@ function updateStoryboardShot(form:HTMLFormElement){
   proofReference:String(data.get("proofReference")||"").slice(0,300),transitionOut:String(data.get("transitionOut")||"cut"),
   characterRefs:names.map(name=>{const existing=state.characters.find(character=>character.name.toLowerCase()===name.toLowerCase()),suggested=board.characterSuggestions.find(character=>character.name.toLowerCase()===name.toLowerCase());return{name,characterId:existing?.id||suggested?.addedCharacterId||null,role:"On-screen",action:"",continuityNotes:""};})
  })});
- const totalDurationSeconds=scenes.reduce((sum,scene)=>sum+scene.shots.reduce((part,shot)=>part+shot.durationSeconds,0),0);
- state.projects=state.projects.map(item=>item.id===project.id?{...item,storyboard:{...board,scenes,durationSeconds:totalDurationSeconds}}:item);
+ const normalizedScenes=scenes.map(scene=>({...scene,durationSeconds:scene.shots.reduce((sum,shot)=>sum+shot.durationSeconds,0)}));
+ const totalDurationSeconds=normalizedScenes.reduce((sum,scene)=>sum+scene.durationSeconds,0);
+ state.projects=state.projects.map(item=>item.id===project.id?{...item,storyboard:{...board,scenes:normalizedScenes,durationSeconds:totalDurationSeconds}}:item);
  state.storyboardMessage="Shot details and prompts saved. Updated runtime: "+totalDurationSeconds+" seconds.";
  save();render();
 }
@@ -253,7 +254,7 @@ function addStoryboardCharacter(index:number,form:HTMLFormElement){
   state.characters.unshift(saved);
  }
  const suggestions=board.characterSuggestions.map((item,i)=>i===index?{...item,name,addedCharacterId:saved!.id}:item);
- const scenes=board.scenes.map(scene=>({...scene,shots:scene.shots.map(shot=>({...shot,characterRefs:shot.characterRefs.map(reference=>reference.name.toLowerCase()===character.name.toLowerCase()?{...reference,name,characterId:saved!.id}:reference)}))}));
+ const scenes=board.scenes.map(scene=>({...scene,shots:scene.shots.map(shot=>({...shot,characterRefs:shot.characterRefs.map(reference=>(reference.name.toLowerCase()===character.name.toLowerCase()||reference.name.toLowerCase()===name.toLowerCase())?{...reference,name,characterId:saved!.id}:reference)}))}));
  state.projects=state.projects.map(item=>item.id===project.id?{...item,storyboard:{...board,characterSuggestions:suggestions,scenes}}:item);
  state.storyboardMessage="Fictional character added to the reusable character library and linked to matching storyboard shots.";
  save();render();
