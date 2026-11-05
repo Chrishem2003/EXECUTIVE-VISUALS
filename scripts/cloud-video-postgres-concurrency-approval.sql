@@ -26,7 +26,8 @@ insert into executive_visuals.video_generation_budget_approvals(
  '923e4567-e89b-42d3-a456-426614174000',repeat('e',64)
 );
 reset role;
-select set_config('request.jwt.claim.sub','123e4567-e89b-42d3-a456-426614174000',false);
+-- The project requester cannot self-approve; use the reviewer seeded by the integration test.
+select set_config('request.jwt.claim.sub','223e4567-e89b-42d3-a456-426614174000',false);
 select set_config('request.jwt.claim.role','authenticated',false);
 set role authenticated;
 select executive_visuals.approve_runway_router_preflight('923e4567-e89b-42d3-a456-426614174000');
