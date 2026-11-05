@@ -541,15 +541,17 @@ async function runAction(action:HTMLElement){
   paint();return;
  }
  if(type==="discard-recovered-draft"){
+  if(state.recoveryStatus==="conflict"&&!state.conflictServerTimeline){state.message="The latest server snapshot is unavailable. Load the server revision before discarding this conflicting draft.";paint();return;}
   try{if(state.recoveredDraft)await recoveryStore().clearDraft(state.recoveredDraft.key);if(state.conflictServerTimeline)state.timeline=structuredClone(state.conflictServerTimeline);state.recoveredDraft=null;state.conflictServerTimeline=null;state.cloudRevisionConflict=false;state.recoveryStatus="idle";state.message="Recovered browser draft discarded. The server timeline was left unchanged.";}
   catch(error){state.message=error instanceof Error?error.message:"Could not discard recovered draft.";}
   paint();return;
  }
  if(type==="restore-recovered-variant"){
   if(!state.recoveredDraft){state.message="There is no recovered draft to restore.";paint();return;}
-  const recovered=state.recoveredDraft;
-  try{state.timeline=structuredClone(recovered.snapshot);await duplicateTimelineVariant();await recoveryStore().clearDraft(recovered.key);state.recoveredDraft=null;state.conflictServerTimeline=null;state.cloudRevisionConflict=false;state.recoveryStatus="saved";state.message="Recovered edits saved as an independent timeline variant. The newer server revision was preserved.";}
-  catch(error){state.message=error instanceof Error?error.message:"Recovered edits could not be saved as a variant.";}
+  const recovered=state.recoveredDraft,hadConflict=state.cloudRevisionConflict;
+  state.cloudRevisionConflict=false;
+  try{state.timeline=structuredClone(recovered.snapshot);await duplicateTimelineVariant();await recoveryStore().clearDraft(recovered.key);state.recoveredDraft=null;state.conflictServerTimeline=null;state.recoveryStatus="saved";state.message="Recovered edits saved as an independent timeline variant. The newer server revision was preserved.";}
+  catch(error){state.cloudRevisionConflict=hadConflict;state.message=error instanceof Error?error.message:"Recovered edits could not be saved as a variant.";}
   paint();return;
  }
 
