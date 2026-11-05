@@ -5,7 +5,7 @@
 
 ## Runtime registration
 
-The configured provider registry accepts an injected `googleOmniIntegration` through the existing `providerDependencies` object. The worker exposes the integration's existing adapter methods, private output ingestion and task-level cost resolver through the same contract used by the other video providers.
+The configured provider registry accepts an injected `googleOmniIntegration` through the existing `providerDependencies` object. Build it with `createGoogleOmniCloudVideoComposition({ assets, client, interactions, preparePlan, retentionExpiresAt })`; this binds the private output ingestor to `assets.findVideoGenerationOutput` and `assets.create`, and authorizes ingestion against the succeeded, owner/project/job-scoped durable interaction record. The worker exposes the integration's existing adapter methods, private output ingestion and task-level cost resolver through the same contract used by the other video providers.
 
 The provider is opt-in only. All four flags must be explicitly true:
 
@@ -33,9 +33,9 @@ The worker does not infer approval from a client-side flag, accept user-supplied
 
 ## Interactions retention policy
 
-The Gemini Developer API documentation states that stored Interactions are retained for 55 days on the paid tier by default and one day on the free tier. This video model is paid-tier only, and the application independently requires explicit paid-tier confirmation. Set `GEMINI_OMNI_RETENTION_DAYS` to an application-owned cleanup window from 1 through 55 days, then construct `createGoogleInteractionRetentionPolicy({ env })` and pass its `expiresAt` function as `retentionExpiresAt` to `createGoogleOmniCloudVideoIntegration`.
+The Gemini Developer API stores Interactions for 55 days by default on the paid tier and one day on the free tier. Paid-tier projects can configure AI Studio retention to 7, 14, 28 or 55 days. Set `GEMINI_OMNI_PAID_TIER_CONFIRMED=true` and set `GEMINI_OMNI_RETENTION_DAYS` to the exact value selected in AI Studio, then construct `createGoogleInteractionRetentionPolicy({ env })` and pass its `expiresAt` function as `retentionExpiresAt` to `createGoogleOmniCloudVideoIntegration`.
 
-This is an application cleanup deadline, not a remote AI Studio setting. The helper cannot inspect or configure Google's retention policy. Verify the project's paid-tier status during staging acceptance and schedule cleanup ahead of the provider's documented 55-day retention limit. The separate Gemini Enterprise Agent Platform Interactions API has a different endpoint family and must not be mixed with the Developer API.
+The policy rejects missing paid-tier confirmation and any value outside 7, 14, 28 or 55. It does not inspect or configure Google's remote setting, so staging acceptance must independently verify that the environment value matches AI Studio. The separate Gemini Enterprise Agent Platform Interactions API has a different endpoint family and retention behavior; do not mix it with the Developer API.
 
 ## Not yet accepted as complete
 
