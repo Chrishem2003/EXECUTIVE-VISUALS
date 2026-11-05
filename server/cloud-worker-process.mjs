@@ -147,7 +147,8 @@ export async function resolveGoogleGeminiGcsMirrorServiceFactory({env,dependenci
   if(typeof injectedFactory!=="function")throw new Error("Injected GCS mirror service factory is invalid.");
   if(typeof dependencies.checkGoogleGeminiGcsMirrorIdentity!=="function")
    throw new Error("Injected GCS mirror service factory requires an explicit server-side identity check.");
-  await dependencies.checkGoogleGeminiGcsMirrorIdentity();
+  const identity=await dependencies.checkGoogleGeminiGcsMirrorIdentity();
+  if(identity?.ready!==true)throw new Error("Injected GCS mirror identity verification did not confirm readiness.");
   return injectedFactory;
  }
  const bootstrap=await createBootstrap({
@@ -156,7 +157,8 @@ export async function resolveGoogleGeminiGcsMirrorServiceFactory({env,dependenci
  });
  if(typeof bootstrap?.checkIdentity!=="function"||typeof bootstrap?.createService!=="function")
   throw new Error("GCS mirror bootstrap must expose identity verification and a service factory.");
- await bootstrap.checkIdentity();
+ const identity=await bootstrap.checkIdentity();
+ if(identity?.ready!==true)throw new Error("GCS mirror workload identity verification did not confirm readiness.");
  return bootstrap.createService;
 }
 
