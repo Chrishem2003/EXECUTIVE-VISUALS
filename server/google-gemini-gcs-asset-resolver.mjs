@@ -113,7 +113,10 @@ export function createGoogleGeminiGcsAssetResolver({
       } catch {
         throw fail("No authorized GCS source is available for this private asset.", "GEMINI_GCS_SOURCE_NOT_FOUND");
       }
-      if (!source || source.assetId !== assetId || source.ownerId !== ownerId ||
+      if (source === null || source === undefined) {
+        throw fail("No active GCS source is registered for this private asset.", "GEMINI_GCS_SOURCE_NOT_FOUND");
+      }
+      if (source.assetId !== assetId || source.ownerId !== ownerId ||
           (source.projectId || null) !== scopedProjectId || source.state !== "ACTIVE" ||
           !safeBucket(source.bucket) || !allowedBuckets.has(source.bucket) ||
           !safeObjectName(source.objectName) ||
