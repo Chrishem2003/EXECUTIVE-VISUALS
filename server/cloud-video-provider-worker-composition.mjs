@@ -1,3 +1,4 @@
+import { createKiePrivateAssetResolver } from "./kie-private-asset-resolver.mjs";
 import { createCloudQueue } from "./cloud-queue.mjs";
 import { createCloudVideoEnqueue } from "./cloud-video-enqueue.mjs";
 import { createCloudVideoSubmissionLedger } from "./cloud-video-submissions.mjs";
@@ -80,9 +81,12 @@ export function createProviderAwareCloudVideoWorkerComposition({
     maxTotalBytes
   });
   const ingestOutputs = args => outputIngestor.ingest(args);
+  const kiePrepareInput = providerDependencies.kiePrepareInput ||
+    createKiePrivateAssetResolver({ assets: privateAssets.assets });
   const adapterFactory = createAdapters || (dependencies => createConfiguredVideoProviderAdapters({
     ...dependencies,
-    ...providerDependencies
+    ...providerDependencies,
+    kiePrepareInput
   }));
   const adapters = adapterFactory({
     env,
