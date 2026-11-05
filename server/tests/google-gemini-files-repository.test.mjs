@@ -185,6 +185,24 @@ test("lists only stale in-flight Gemini upload attempts with a bounded service-r
   await assert.rejects(() => repository.listRecoveryAttempts({ limit: 501 }));
 });
 
+test("allows terminal quarantine transitions and compare-and-set quarantine claims", async () => {
+  let call;
+  const repository = createGoogleGeminiFilesRepository({
+    url: base, serviceRoleKey: key,
+    fetchImpl: async (url, options) => { call = { url: String(url), options }; return response(200, [{ id: row.id }]); }
+  });
+  assert.equal(await repository.updateUploadAttempt({
+    attemptId: row.id, state: "QUARANTINED", expectedState: "OUTCOME_UNKNOWN",
+    errorCode: "GEMINI_FILE_RECOVERY_NO_PROVIDER_EVIDENCE"
+  }), row.id);
+  assert.equal(new URL(call.url).searchParams.get("state"), "eq.OUTCOME_UNKNOWN");
+  assert.equal(JSON.parse(call.options.body).state, "QUARANTINED");
+  assert.equal(JSON.parse(call.options.body).last_error_code, "GEMINI_FILE_RECOVERY_NO_PROVIDER_EVIDENCE");
+  await assert.rejects(() => repository.updateUploadAttempt({
+    attemptId: row.id, state: "QUARANTINED", expectedState: "DELETING"
+  }));
+});
+
 test("requires safe server configuration and bounds the timeout", () => {
   assert.throws(() => createGoogleGeminiFilesRepository({ url: "http://attacker.example", serviceRoleKey: key }));
   assert.throws(() => createGoogleGeminiFilesRepository({ url: base, serviceRoleKey: "" }));
