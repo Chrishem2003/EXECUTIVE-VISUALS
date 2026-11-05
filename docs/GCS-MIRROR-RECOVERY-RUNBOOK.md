@@ -22,6 +22,14 @@ dedicated workload identity described below. Keep recovery disabled until the
 isolated staging identity, bucket permissions, private storage, and recovery
 behavior have been explicitly approved.
 
+For `GOOGLE_APPLICATION_CREDENTIALS`, the application bootstrap accepts only a
+Google Workload Identity Federation external-account configuration with a
+validated Google STS audience and token endpoints and an absolute file-based
+subject-token source. URL-based, AWS, executable, service-account-key, and user
+credential sources are rejected. This restriction is part of the WIF hardening
+in PR #84 and must be present in the deployed worker revision before recovery is
+enabled.
+
 ## Required server-only settings
 
 - `GOOGLE_CLOUD_PROJECT_ID`
