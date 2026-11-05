@@ -40,11 +40,12 @@ export async function createGoogleGeminiGcsMirrorBootstrap({
     } catch {
       throw fail("GOOGLE_APPLICATION_CREDENTIALS must reference a readable generated WIF credential configuration.", "GEMINI_GCS_WIF_CONFIG_INVALID");
     }
+    let tokenUrl = null;
+    try { tokenUrl = new URL(credentialConfig?.token_url); } catch {}
     if (credentialConfig?.type !== "external_account" ||
         typeof credentialConfig.audience !== "string" ||
         !credentialConfig.audience.startsWith("//iam.googleapis.com/projects/") ||
-        typeof credentialConfig.token_url !== "string" ||
-        new URL(credentialConfig.token_url).hostname !== "sts.googleapis.com" ||
+        tokenUrl?.protocol !== "https:" || tokenUrl?.hostname !== "sts.googleapis.com" ||
         !credentialConfig.credential_source || typeof credentialConfig.credential_source !== "object") {
       throw fail("Only a generated Google Workload Identity Federation external-account config is accepted; service-account keys and user credentials are not supported.", "GEMINI_GCS_WIF_CONFIG_INVALID");
     }
