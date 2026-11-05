@@ -55,7 +55,7 @@ function validateStoryboardInput(storyboard:StoryboardInput){
     let sceneFrames=0;
     for(let shotIndex=0;shotIndex<scene.shots.length;shotIndex++){
       const shot=scene.shots[shotIndex];
-      if(!shot||!validId(shot.id)||shotIds.has(shot.id)||sceneIds.has(shot.id)||shot.number!==shotIndex+1||!Number.isInteger(shot.durationSeconds)||shot.durationSeconds<1||shot.durationSeconds>60)throw fail("Storyboard contains an invalid, duplicate or out-of-order shot.");
+      if(!shot||!validId(shot.id)||shotIds.has(shot.id)||sceneIds.has(shot.id)||shot.number!==shotIndex+1||!Number.isInteger(shot.durationSeconds)||shot.durationSeconds<1||shot.durationSeconds>60)throw fail("Storyboard contains an invalid or duplicate shot, or shots are out of order.");
       for(const [field,max] of Object.entries({shotType:100,framing:120,angle:120,movement:160,lens:100,action:600,dialogue:500,narration:500,visualPrompt:1600,motionPrompt:1000,negativePrompt:600,lighting:300,soundCue:300,continuityIn:300,continuityOut:300,proofReference:300,transitionOut:80})){
         const value=shot[field as keyof StoryboardShotInput];
         if(typeof value!=="string"||value.length>max)throw fail("Storyboard shot "+field+" is invalid or too long.");
