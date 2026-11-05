@@ -33,6 +33,10 @@ begin
      not exists(select 1 from pg_constraint where conrelid=v_table and contype='f' and confrelid='auth.users'::regclass) then
     raise exception 'Drive export attempts must remain bound to private assets and owners';
   end if;
+  if not exists(select 1 from information_schema.columns where table_schema='executive_visuals' and table_name='google_drive_export_attempts' and column_name='lease_token') or
+     not exists(select 1 from information_schema.columns where table_schema='executive_visuals' and table_name='google_drive_export_attempts' and column_name='lease_expires_at') then
+    raise exception 'Drive export-attempt ledger must persist exclusive recovery leases';
+  end if;
   if not exists(select 1 from pg_constraint where conrelid=v_table and contype='u' and pg_get_constraintdef(oid) like '%attempt_key%') or
      not exists(select 1 from pg_constraint where conrelid=v_table and contype='u' and pg_get_constraintdef(oid) like '%drive_file_id%') then
     raise exception 'Drive export attempts require unique idempotency and provider file IDs';
