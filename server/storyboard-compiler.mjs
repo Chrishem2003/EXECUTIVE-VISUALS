@@ -238,7 +238,7 @@ export async function generateStoryboard({ input, generateText = defaultGenerate
   const inputHash = createHash("sha256").update(JSON.stringify(normalized)).digest("hex");
   return Object.freeze({
     storyboard: Object.freeze({
-      schemaVersion: 1, source: "model", model, generatedAt, inputHash, ...storyboard
+      id: randomUUID(), schemaVersion: 1, source: "model", model, generatedAt, inputHash, ...storyboard
     }),
     model,
     usage: response.usage && record(response.usage) ? {
