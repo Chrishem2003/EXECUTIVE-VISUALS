@@ -134,8 +134,13 @@ export function validateTimeline(timeline:EditorialTimeline):{valid:boolean;issu
 export interface ActiveTimelineClip {
   trackId:string;
   trackKind:TrackKind;
+  trackIndex:number;
+  trackName:string;
   clipId:string;
+  clipName:string;
   assetId:string;
+  timelineStartSeconds:number;
+  timelineEndSeconds:number;
   sourceTimeSeconds:number;
   sourceFrame:number;
 }
@@ -152,7 +157,7 @@ export function evaluateTimelineAtFrame(timeline:EditorialTimeline,frame:number)
   const fps=timeline.frameRate.numerator/timeline.frameRate.denominator;
   const timeSeconds=frame/fps;
   const activeClips:ActiveTimelineClip[]=[];
-  for(const track of timeline.tracks){
+  for(const [trackIndex,track] of timeline.tracks.entries()){
     if(!track.enabled)continue;
     for(const clip of track.clips){
       if(!clip.enabled)continue;
@@ -163,8 +168,13 @@ export function evaluateTimelineAtFrame(timeline:EditorialTimeline,frame:number)
       activeClips.push({
         trackId:track.id,
         trackKind:track.kind,
+        trackIndex,
+        trackName:track.name,
         clipId:clip.id,
+        clipName:clip.name,
         assetId:clip.assetId,
+        timelineStartSeconds:clipStart,
+        timelineEndSeconds:clipEnd,
         sourceTimeSeconds,
         sourceFrame:sourceTimeSeconds*clip.sourceRange.start.rate
       });
