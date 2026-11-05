@@ -188,9 +188,15 @@ export function createGoogleOmniPrivateOutputIngestor({
       } catch {
         throw fail("Gemini output could not be committed to private asset storage.", "GEMINI_OMNI_OUTPUT_INGEST_FAILED");
       }
-      if (!asset || typeof asset.id !== "string" || asset.ownerId !== context.ownerId ||
+      // cloud-assets returns a public metadata projection (not an isPrivate
+      // boolean). Verify the private storage bucket and exact persisted bytes.
+      if (!asset || typeof asset.id !== "string" || !asset.id ||
+          asset.ownerId !== context.ownerId ||
           (asset.projectId || null) !== (context.projectId || null) ||
-          asset.mediaType !== "video/mp4" || asset.isPrivate !== true) {
+          asset.mediaType !== "video/mp4" ||
+          asset.storageBucket !== "executive-visuals-media" ||
+          Number(asset.size) !== bytes.byteLength ||
+          asset.sha256 !== sha256) {
         throw fail("Private asset service returned an invalid or incorrectly scoped output record.", "GEMINI_OMNI_OUTPUT_ASSET_INVALID");
       }
       return Object.freeze({
