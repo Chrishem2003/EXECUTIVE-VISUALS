@@ -53,8 +53,6 @@ ensureTransformationPlanSchema(db);
 const aiUpscaleAdapter = createRealEsrganAdapter();
 const cloudTimelineApiEnabled = process.env.CLOUD_TIMELINE_API_ENABLED === "true";
 if (cloudTimelineApiEnabled && AUTH_MODE !== "supabase") throw new Error("Cloud timeline API requires verified Supabase authentication.");
-const cloudTimelineApi = cloudTimelineApiEnabled ? createCloudTimelineApi({maxUploadBytes:Number(process.env.CLOUD_MEDIA_MAX_UPLOAD_BYTES || MAX_UPLOAD_BYTES)}) : null;
-if (cloudTimelineApi) await cloudTimelineApi.checkReadiness();
 const activeProcesses = new Map();
 const WORKER_ID = randomUUID();
 const rateBuckets = new Map();
@@ -63,6 +61,8 @@ function rateAllowed(key,limit,windowMs){const time=Date.now();const old=rateBuc
 await mkdir(join(MEDIA_ROOT,"uploads"), { recursive:true });
 await mkdir(join(MEDIA_ROOT,"derived"), { recursive:true });
 const waveformCache=createWaveformCache({mediaRoot:MEDIA_ROOT});
+const cloudTimelineApi = cloudTimelineApiEnabled ? createCloudTimelineApi({maxUploadBytes:Number(process.env.CLOUD_MEDIA_MAX_UPLOAD_BYTES || MAX_UPLOAD_BYTES),waveformCache,mediaRoot:MEDIA_ROOT}) : null;
+if (cloudTimelineApi) await cloudTimelineApi.checkReadiness();
 
 const now = () => new Date().toISOString();
 const hash = value => createHash("sha256").update(value).digest("hex");
@@ -260,7 +260,7 @@ export function createAppServer() {
     if(req.method==="OPTIONS"){res.writeHead(204,{"access-control-allow-methods":"GET,POST,PUT,DELETE,OPTIONS","access-control-allow-headers":"content-type,authorization,x-file-name,x-project-id,idempotency-key","access-control-max-age":"600",...cors});res.end();return;}
     const url=new URL(req.url||"/","http://localhost");
     const path=url.pathname;
-    const ratePath=path.startsWith("/api/auth/")?"/auth":/^\/api\/assets\/[0-9a-f-]+\/waveform$/i.test(path)&&req.method==="GET"?"/waveform":(path==="/api/assets"||path==="/api/cloud/assets")&&req.method==="POST"?"/upload":path.endsWith("/research/import")&&req.method==="POST"?"/research":path==="/api/admin/ai-upscale/self-test"&&req.method==="POST"?"/ai-upscale-self-test":"";
+    const ratePath=path.startsWith("/api/auth/")?"/auth":/^\/api\/(?:cloud\/)?assets\/[0-9a-f-]+\/waveform$/i.test(path)&&req.method==="GET"?"/waveform":(path==="/api/assets"||path==="/api/cloud/assets")&&req.method==="POST"?"/upload":path.endsWith("/research/import")&&req.method==="POST"?"/research":path==="/api/admin/ai-upscale/self-test"&&req.method==="POST"?"/ai-upscale-self-test":"";
     if(ratePath){const key=(req.socket.remoteAddress||"unknown")+ratePath;const limit=ratePath==="/auth"?AUTH_RATE_LIMIT:ratePath==="/research"?10:ratePath==="/ai-upscale-self-test"?2:ratePath==="/waveform"?20:30;if(!rateAllowed(key,limit,60000)){fail(res,429,"RATE_LIMITED","Too many requests. Wait before trying again.");return;}}
     try {
       if(!path.startsWith("/api/")&&req.method==="GET"){
@@ -322,7 +322,18 @@ export function createAppServer() {
           method:req.method,path,ownerId:user.id,body,query:Object.fromEntries(url.searchParams.entries()),
           idempotencyKey:String(req.headers["idempotency-key"]||"")
         });
-        if(cloudResult){send(res,cloudResult.status,cloudResult.body,cors);return;}
+        if(cloudResult){
+          if(cloudResult.waveformPath){
+            const info=await stat(cloudResult.waveformPath);
+            const cleanup=()=>{if(cloudResult.cleanupDirectory)void rm(cloudResult.cleanupDirectory,{recursive:true,force:true});};
+            const stream=createReadStream(cloudResult.waveformPath);
+            stream.on("error",()=>{cleanup();res.destroy();});
+            res.on("close",cleanup);
+            res.writeHead(cloudResult.status,{"content-type":"image/png","content-length":info.size,"cache-control":"private, no-store","vary":"cookie",...SECURITY_HEADERS,...cors});
+            stream.pipe(res);return;
+          }
+          send(res,cloudResult.status,cloudResult.body,cors);return;
+        }
       }
       if(path==="/api/admin/ai-upscale/self-test"&&req.method==="POST"){
         const allowedAdmins=String(process.env.AI_UPSCALE_ADMIN_EMAILS||"").split(",").map(value=>value.trim().toLowerCase()).filter(Boolean);
