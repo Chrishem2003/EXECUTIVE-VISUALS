@@ -262,12 +262,13 @@ async function syncPreview(){
    audio.onended=()=>{if(state.previewPlaying)void syncPreview();};
   }
   if(state.audioEngine){
-   const inputs:AudioPreviewTrackInput[]=audioClips.map(clip=>{
+   const inputs:AudioPreviewTrackInput[]=[];
+   for(const clip of audioClips){
     const media=document.querySelector<HTMLAudioElement>('[data-preview-audio="'+CSS.escape(clip.clipId)+'"]');
     const sourceClip=state.timeline?.tracks.find(track=>track.id===clip.trackId)?.clips.find(item=>item.id===clip.clipId);
     const controls=state.audioTrackStates[clip.trackId]||{muted:false,solo:false};
-    return media?{id:clip.clipId,media,gainDb:Number(sourceClip?.gainDb)||0,muted:controls.muted,solo:controls.solo}:null;
-   }).filter((item):item is AudioPreviewTrackInput=>!!item);
+    if(media)inputs.push({id:clip.clipId,media,gainDb:Number(sourceClip?.gainDb)||0,muted:controls.muted,solo:controls.solo});
+   }
    state.audioEngine.setMasterVolume(state.audioMasterVolume);
    state.audioEngine.setMasterMuted(state.audioMasterMuted);
    state.audioEngine.sync(inputs);
