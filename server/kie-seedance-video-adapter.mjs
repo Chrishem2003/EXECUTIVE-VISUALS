@@ -4,13 +4,13 @@ const fail=(message,code="KIE_VIDEO_CONFIGURATION_INVALID")=>Object.assign(new E
 const plain=value=>value!==null&&typeof value==="object"&&!Array.isArray(value);
 const RATIOS=new Set(["16:9","9:16","1:1","4:3","3:4","21:9","adaptive"]);
 const MODELS=Object.freeze({
- "bytedance/seedance-2":{maxImages:9,maxVideos:3,maxAudios:3,maxDuration:15,resolutions:new Set(["480p","720p"])},
- "bytedance/seedance-2-5":{maxImages:30,maxVideos:10,maxAudios:10,maxDuration:30,resolutions:new Set(["480p","720p","1080p"])}
+ "bytedance/seedance-2":{maxImages:9,maxVideos:3,maxAudios:3,maxDuration:15,minDuration:5,resolutions:new Set(["480p","720p","1080p","4K","2160p"])},
+ "bytedance/seedance-2-5":{maxImages:30,maxVideos:10,maxAudios:10,maxDuration:30,minDuration:4,resolutions:new Set(["480p","720p","1080p","4K","2160p"])}
 });
 function safeUrl(value,label){
  if(typeof value!=="string"||value.length>4096)throw fail(label+" must be a bounded HTTPS URL.","KIE_VIDEO_INPUT_INVALID");
  let url;try{url=new URL(value);}catch{throw fail(label+" URL is invalid.","KIE_VIDEO_INPUT_INVALID");}
- if(url.protocol!=="https:"||url.username||url.password||url.port||url.hash||!url.hostname.includes(".")||url.hostname==="localhost"||url.hostname.endsWith(".local"))throw fail(label+" must be a credential-free HTTPS URL.","KIE_VIDEO_INPUT_INVALID");
+ if(url.protocol!=="https:"||url.username||url.password||url.port||url.hash||!url.hostname.includes(".")||url.hostname==="localhost"||url.hostname.endsWith(".local")||url.hostname.endsWith(".internal")||url.hostname.endsWith(".test")||url.hostname.endsWith(".invalid")||/^\\d{1,3}(?:\\.\\d{1,3}){3}$/.test(url.hostname)||url.hostname.startsWith("["))throw fail(label+" must be a credential-free HTTPS URL.","KIE_VIDEO_INPUT_INVALID");
  return url.toString();
 }
 function boundedUrls(value,max,label){
@@ -24,10 +24,11 @@ function buildInput(input,model){
  const prompt=typeof input.prompt==="string"?input.prompt.trim():"";
  if(!prompt||prompt.length>30000)throw fail("Seedance prompt must contain 1–30,000 characters.","KIE_VIDEO_INPUT_INVALID");
  const duration=Number(input.durationSeconds??input.duration??5);
- const minDuration=model==="bytedance/seedance-2-5"?4:5;
+ const minDuration=spec.minDuration;
  if(!Number.isInteger(duration)||duration<minDuration||duration>spec.maxDuration)throw fail("Seedance duration is outside the supported range for the selected model.","KIE_VIDEO_INPUT_INVALID");
- const resolution=String(input.resolution||"720p");
- if(!spec.resolutions.has(resolution))throw fail("Seedance resolution is unsupported for the selected model.","KIE_VIDEO_INPUT_INVALID");
+ const requestedResolution=String(input.resolution||"720p");
+ if(!spec.resolutions.has(requestedResolution))throw fail("Seedance resolution is unsupported for the selected model.","KIE_VIDEO_INPUT_INVALID");
+ const resolution=requestedResolution==="2160p"?"4K":requestedResolution;
  const aspectRatio=String(input.aspectRatio||input.aspect_ratio||"16:9");
  if(!RATIOS.has(aspectRatio))throw fail("Seedance aspect ratio is unsupported.","KIE_VIDEO_INPUT_INVALID");
  const firstFrameUrl=input.firstFrameUrl?safeUrl(input.firstFrameUrl,"First frame"):null;
@@ -36,9 +37,13 @@ function buildInput(input,model){
  const referenceImageUrls=boundedUrls(input.referenceImageUrls,spec.maxImages,"Reference images");
  const referenceVideoUrls=boundedUrls(input.referenceVideoUrls,spec.maxVideos,"Reference videos");
  const referenceAudioUrls=boundedUrls(input.referenceAudioUrls,spec.maxAudios,"Reference audio");
+ const referenceVideoDurationSeconds=Number(input.referenceVideoDurationSeconds||0);
+ const referenceAudioDurationSeconds=Number(input.referenceAudioDurationSeconds||0);
+ if(referenceVideoUrls.length&&(!Number.isFinite(referenceVideoDurationSeconds)||referenceVideoDurationSeconds<=0||referenceVideoDurationSeconds>15))throw fail("Reference videos must include verified total duration of 15 seconds or less.","KIE_VIDEO_INPUT_INVALID");
+ if(referenceAudioUrls.length&&(!Number.isFinite(referenceAudioDurationSeconds)||referenceAudioDurationSeconds<=0||referenceAudioDurationSeconds>15))throw fail("Reference audio must include verified total duration of 15 seconds or less.","KIE_VIDEO_INPUT_INVALID");
  const hasReferences=referenceImageUrls.length+referenceVideoUrls.length+referenceAudioUrls.length>0;
  if((firstFrameUrl||lastFrameUrl)&&hasReferences)throw fail("First/last-frame mode is mutually exclusive with multimodal reference mode.","KIE_VIDEO_INPUT_MODE_CONFLICT");
- const generateAudio=input.generateAudio===true;
+ const generateAudio=typeof input.generateAudio==="boolean"?input.generateAudio:input.audioMode!=="none";
  const returnLastFrame=input.returnLastFrame===true;
  const outputFormat=String(input.outputFormat||"mp4");
  if(!["mp4","mov"].includes(outputFormat))throw fail("Seedance output format must be mp4 or mov.","KIE_VIDEO_INPUT_INVALID");
@@ -54,7 +59,7 @@ function buildInput(input,model){
 }
 
 export function createKieSeedanceVideoAdapter({
- model=process.env.KIE_SEEDANCE_MODEL||"bytedance/seedance-2-5",
+ model=process.env.KIE_SEEDANCE_MODEL||"bytedance/seedance-2",
  apiKey=process.env.KIE_API_KEY,
  enabled=process.env.VIDEO_GATEWAY_ENABLED==="true",
  allowRemote=process.env.KIE_VIDEO_ALLOW_REMOTE==="true",
