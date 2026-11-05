@@ -5,6 +5,7 @@ const sql = await readFile(resolve(process.cwd(), "supabase/migrations/202610312
 const checkpointSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261102090000_video_pipeline_checkpoints.sql"), "utf8");
 const videoSubmissionSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261104120000_cloud_video_submission_ledger.sql"), "utf8");
 const videoBudgetSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261104143000_cloud_video_budget_enqueue.sql"), "utf8");
+const timelineVersionsSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261105170000_timeline_versions.sql"), "utf8");
 const issues = [];
 const tables = ["projects","project_members","project_workspace_documents","workflows","workflow_runs","workflow_node_runs","timelines","assets","jobs","job_events","consents","reviews","audit_events"];
 for (const table of tables) {
@@ -227,6 +228,15 @@ if (!videoBudgetSql.includes("create or replace function executive_visuals.recov
 
 
 
+
+if (!timelineVersionsSql.includes("create table if not exists executive_visuals.timeline_versions")) issues.push("Immutable timeline version storage is missing.");
+if (!timelineVersionsSql.includes("alter table executive_visuals.timeline_versions force row level security;")) issues.push("Timeline version storage must force row-level security.");
+if (!timelineVersionsSql.includes("revoke update, delete, truncate, references, trigger on table executive_visuals.timeline_versions from service_role;")) issues.push("Timeline version snapshots must remain append-only.");
+for (const fn of ["ev_create_timeline_with_version","ev_update_timeline_with_version","ev_restore_timeline_version"]) {
+  if (!timelineVersionsSql.includes("create or replace function executive_visuals."+fn)) issues.push("Atomic timeline version function is missing: "+fn+".");
+}
+if (!timelineVersionsSql.includes("on conflict (timeline_id, revision) do nothing")) issues.push("Legacy timeline baselines must be backfilled idempotently.");
+if (/\\b(drop\\s+table|truncate|delete\\s+from)\\b/i.test(timelineVersionsSql)) issues.push("Timeline version migration must not contain destructive DDL/DML.");
 
 if (issues.length) {
   console.error("Cloud migration guard failed:");
