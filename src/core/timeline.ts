@@ -172,6 +172,7 @@ export interface ActiveTimelineClip {
   timelineEndSeconds:number;
   sourceTimeSeconds:number;
   sourceFrame:number;
+  playbackSpeed:number;
   opacity:number;
 }
 export interface TimelineFrameEvaluation {
