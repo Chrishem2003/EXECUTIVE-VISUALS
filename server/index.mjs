@@ -23,6 +23,9 @@ import { ensureTransformationPlanSchema, createTransformationPlan, approveTransf
 const PORT = Number(process.env.API_PORT || process.env.PORT || 4179);
 const HOST = process.env.API_HOST || "127.0.0.1";
 const AUTH_MODE = process.env.AUTH_MODE || "local";
+const SUPABASE_URL = process.env.SUPABASE_URL || "";
+const SUPABASE_PUBLISHABLE_KEY = process.env.SUPABASE_PUBLISHABLE_KEY || "";
+const SUPABASE_AUTH_ORIGIN = (()=>{try{return AUTH_MODE==="supabase"?new URL(SUPABASE_URL).origin:"";}catch{return "";}})();
 const DATA_DIR = resolve(process.env.DATA_DIR || "./data");
 const MEDIA_ROOT = resolve(process.env.MEDIA_ROOT || join(DATA_DIR, "media"));
 const WEB_ROOT = resolve(process.env.WEB_ROOT || "./dist");
@@ -74,7 +77,7 @@ const SECURITY_HEADERS = {
   "cross-origin-resource-policy":"same-origin",
   "permissions-policy":"camera=(), microphone=(), geolocation=()"
 };
-const HTML_CSP = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'";
+const HTML_CSP = `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' ${SUPABASE_AUTH_ORIGIN}; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'`;
 const send = (res,status,body,headers={}) => { res.writeHead(status,{"content-type":"application/json; charset=utf-8","cache-control":"no-store",...SECURITY_HEADERS,...headers});res.end(JSON.stringify(body)); };
 const fail = (res,status,code,message) => send(res,status,{error:{code,message}});
 const readJson = async (req,limit=1024*1024) => {
@@ -275,7 +278,7 @@ export function createAppServer() {
         }
       }
       if(path==="/api/health"&&req.method==="GET"){
-        send(res,200,{status:"ok",storage:"local-disk",database:"sqlite",media:{ffmpeg:executableAvailable("ffmpeg"),ffprobe:executableAvailable("ffprobe")},imageGateway:{enabled:process.env.IMAGE_GATEWAY_ENABLED==="true",configured:(()=>{try{const url=new URL(process.env.IMAGE_GATEWAY_URL||"");const local=["localhost","127.0.0.1","::1","[::1]"].includes(url.hostname.toLowerCase());return Boolean(process.env.IMAGE_GATEWAY_MODEL&&(local||process.env.IMAGE_GATEWAY_ALLOW_REMOTE==="true"));}catch{return false;}})()},textGateway:{enabled:process.env.AI_GATEWAY_ENABLED==="true",configured:(()=>{try{const url=new URL(process.env.AI_GATEWAY_URL||"");const local=["localhost","127.0.0.1","::1"].includes(url.hostname.toLowerCase());return Boolean(process.env.AI_GATEWAY_MODEL&&(local||process.env.AI_GATEWAY_ALLOW_REMOTE==="true"));}catch{return false;}})()},authMode:AUTH_MODE,version:"0.1.0"},cors);return;
+        send(res,200,{status:"ok",storage:"local-disk",database:"sqlite",media:{ffmpeg:executableAvailable("ffmpeg"),ffprobe:executableAvailable("ffprobe")},imageGateway:{enabled:process.env.IMAGE_GATEWAY_ENABLED==="true",configured:(()=>{try{const url=new URL(process.env.IMAGE_GATEWAY_URL||"");const local=["localhost","127.0.0.1","::1","[::1]"].includes(url.hostname.toLowerCase());return Boolean(process.env.IMAGE_GATEWAY_MODEL&&(local||process.env.IMAGE_GATEWAY_ALLOW_REMOTE==="true"));}catch{return false;}})()},textGateway:{enabled:process.env.AI_GATEWAY_ENABLED==="true",configured:(()=>{try{const url=new URL(process.env.AI_GATEWAY_URL||"");const local=["localhost","127.0.0.1","::1"].includes(url.hostname.toLowerCase());return Boolean(process.env.AI_GATEWAY_MODEL&&(local||process.env.AI_GATEWAY_ALLOW_REMOTE==="true"));}catch{return false;}})()},authMode:AUTH_MODE,supabase:AUTH_MODE==="supabase"?{url:SUPABASE_URL,publishableKey:SUPABASE_PUBLISHABLE_KEY}:null,version:"0.1.0"},cors);return;
       }
       if(path==="/api/auth/register"&&req.method==="POST"){
         if(AUTH_MODE!=="local"||process.env.NODE_ENV==="production"){fail(res,403,"REGISTRATION_DISABLED","Local account registration is disabled in this environment.");return;}
