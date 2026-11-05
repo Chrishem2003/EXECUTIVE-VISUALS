@@ -27,9 +27,9 @@ test("waveform SVG emits bounded geometry from numeric peaks",()=>{
 
 class Param{
  value=1;events=[];
- setValueAtTime(value,time){this.value=value;this.events.push([value,time]);}
+ setValueAtTime(value,time){if(time<=1)this.value=value;this.events.push([value,time]);}
  setTargetAtTime(value,time,constant){this.value=value;this.events.push([value,time,constant]);}
- linearRampToValueAtTime(value,time){this.value=value;this.events.push(["ramp",value,time]);}
+ linearRampToValueAtTime(value,time){this.events.push(["ramp",value,time]);}
  cancelScheduledValues(time){this.events.push(["cancel",time]);}
 }
 class Node{
