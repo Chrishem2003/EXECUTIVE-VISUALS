@@ -22,7 +22,7 @@ test("cloud video composition rejects missing server credentials and provider op
 });
 
 test("cloud video composition rejects wildcard or missing output host allowlists", () => {
-  for (const outputHosts of [[], ["*.example.com"], ["https://cdn.example.com"], ["127.0.0.1"]]) {
+  for (const outputHosts of [[], ["*.example.com"], ["https://cdn.example.com"], ["127.0.0.1"], ["localhost"]]) {
     assert.throws(() => createCloudVideoWorkerComposition({
       env: baseEnv, workerId: "video-test", outputHosts
     }), /exact-host output allowlist/);
