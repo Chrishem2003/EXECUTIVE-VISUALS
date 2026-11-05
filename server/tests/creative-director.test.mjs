@@ -55,6 +55,7 @@ test("model-backed Creative Director returns a validated editable plan and prove
   assert.match(request.systemPrompt, /Do not generate media/);
   assert.match(request.prompt, /Community clean-energy film/);
   assert.equal(result.plan.source, "model");
+  assert.equal(result.plan.model, "local-test-model");
   assert.equal(result.plan.title, input.title);
   assert.equal(result.plan.creativeRoutes.length, 2);
   assert.equal(result.plan.storyBeats.length, 5);
