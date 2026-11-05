@@ -115,6 +115,34 @@ export function createGoogleGeminiFilesRepository({
         updatedAt: row.updated_at, reconciledAt: row.reconciled_at || null
       };
     },
+    async listRecoveryAttempts({ before = new Date().toISOString(), limit = 100 } = {}) {
+      const cutoff = new Date(before);
+      if (!Number.isFinite(cutoff.getTime()) || !Number.isInteger(limit) || limit < 1 || limit > 500) {
+        throw new Error("Google provider upload recovery query is invalid.");
+      }
+      const params = new URLSearchParams({
+        select: "id,attempt_key,asset_id,owner_id,project_id,mime_type,byte_size,sha256,google_display_name,state,google_file_name,google_file_uri,provider_expires_at,last_error_code,attempt_count,created_at,updated_at,reconciled_at",
+        state: "in.(UPLOADING,OUTCOME_UNKNOWN,PROVIDER_CREATED)",
+        updated_at: "lt." + cutoff.toISOString(),
+        order: "updated_at.asc",
+        limit: String(limit)
+      });
+      const rows = await request("?" + params.toString(), { table: ATTEMPT_TABLE });
+      if (!Array.isArray(rows)) throw new Error("Google upload recovery query returned an invalid result.");
+      return rows.map(row => ({
+        id: row.id, attemptKey: row.attempt_key, assetId: row.asset_id,
+        ownerId: row.owner_id, projectId: row.project_id || null,
+        mimeType: row.mime_type, sizeBytes: Number(row.byte_size), sha256: row.sha256,
+        displayName: row.google_display_name, state: row.state,
+        providerFileName: row.google_file_name || null,
+        providerFileUri: row.google_file_uri || null,
+        providerExpiresAt: row.provider_expires_at || null,
+        lastErrorCode: row.last_error_code || null,
+        attemptCount: Number(row.attempt_count || 1),
+        createdAt: row.created_at, updatedAt: row.updated_at,
+        reconciledAt: row.reconciled_at || null
+      }));
+    },
     async updateUploadAttempt({ attemptId, state, expectedState, providerFileName, providerFileUri, providerExpiresAt, errorCode, reconciledAt } = {}) {
       if (typeof attemptId !== "string" || !/^[0-9a-f-]{36}$/i.test(attemptId) ||
           !["PREPARED", "UPLOADING", "OUTCOME_UNKNOWN", "PROVIDER_CREATED", "COMPLETED", "FAILED"].includes(state)) {
