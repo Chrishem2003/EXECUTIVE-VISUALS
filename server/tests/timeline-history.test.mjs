@@ -32,7 +32,9 @@ test("split is stored as an entity-level reversible operation, not a timeline sn
   assert.ok(op);
   assert.equal(op.changes.length, 2);
   assert.ok(op.changes.every(change => change.entity === "clip"));
-  const applied = applyTimelineHistoryOperation(before, op);\n  assert.deepEqual(applied.tracks[0].clips.map(item => item.id), after.tracks[0].clips.map(item => item.id));\n  assert.equal(applied.revision, before.revision + 1);
+  const applied = applyTimelineHistoryOperation(before, op);
+  assert.deepEqual(applied.tracks[0].clips.map(item => item.id), after.tracks[0].clips.map(item => item.id));
+  assert.equal(applied.revision, before.revision + 1);
 });
 
 test("undo and redo restore split clips while retaining monotonic local revisions", () => {
