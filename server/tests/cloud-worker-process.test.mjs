@@ -16,12 +16,24 @@ test("GCS recovery verifies an injected server identity before accepting its ser
  const resolved=await resolveGoogleGeminiGcsMirrorServiceFactory({
   env:{},
   dependencies:{
-   async checkGoogleGeminiGcsMirrorIdentity(){calls.push("identity");},
+   async checkGoogleGeminiGcsMirrorIdentity(){calls.push("identity");return{ready:true};},
    createGoogleGeminiGcsMirrorService:factory
   }
  });
  assert.deepEqual(calls,["identity"]);
  assert.equal(resolved,factory);
+});
+
+test("GCS recovery rejects an injected identity check that does not affirm readiness",async()=>{
+ let factoryUsed=false;
+ await assert.rejects(resolveGoogleGeminiGcsMirrorServiceFactory({
+  env:{},
+  dependencies:{
+   async checkGoogleGeminiGcsMirrorIdentity(){return{ready:false};},
+   createGoogleGeminiGcsMirrorService(){factoryUsed=true;return()=>({});}
+  }
+ }),/did not confirm readiness/);
+ assert.equal(factoryUsed,false);
 });
 
 test("GCS recovery default bootstrap checks identity before returning its factory",async()=>{
@@ -32,7 +44,7 @@ test("GCS recovery default bootstrap checks identity before returning its factor
   async createBootstrap(options){
    calls.push(["bootstrap",options.env.GOOGLE_CLOUD_PROJECT_ID]);
    return{
-    async checkIdentity(){calls.push(["identity"]);},
+    async checkIdentity(){calls.push(["identity"]);return{ready:true};},
     createService:factory
    };
   }
