@@ -778,7 +778,7 @@ export function createAppServer() {
         }catch(error){try{db.exec("ROLLBACK");}catch{}throw error;}
         send(res,201,{timeline:{id,projectId,name,revision:1,document:saved}},cors);return;
       }
-      const timelineVersionsMatch=path.match(/^\\/api\\/timelines\\/([0-9a-f-]+)\\/versions(?:\\/([0-9a-f-]+))?$/i);
+      const timelineVersionsMatch=path.match(/^\/api\/timelines\/([0-9a-f-]+)\/versions(?:\/([0-9a-f-]+))?$/i);
       if(timelineVersionsMatch&&req.method==="GET"){
         const record=db.prepare("SELECT id,owner_id,project_id FROM timelines WHERE id=? AND archived_at IS NULL AND ((project_id IS NULL AND owner_id=?) OR project_id IN (SELECT id FROM projects WHERE owner_id=?) OR project_id IN (SELECT project_id FROM project_members WHERE member_id=?))").get(timelineVersionsMatch[1],user.id,user.id,user.id);
         if(!record){fail(res,404,"TIMELINE_NOT_FOUND","Timeline not found.");return;}
@@ -792,7 +792,7 @@ export function createAppServer() {
         const versions=db.prepare("SELECT id,timeline_id,owner_id,project_id,revision,parent_version_id,restored_from_version_id,name,summary,content_hash,created_by,created_at FROM timeline_versions WHERE timeline_id=? AND owner_id=? ORDER BY revision DESC LIMIT 100").all(record.id,record.owner_id);
         send(res,200,{versions:versions.map(row=>mapTimelineVersion(row))},cors);return;
       }
-      const timelineRestoreMatch=path.match(/^\\/api\\/timelines\\/([0-9a-f-]+)\\/restore$/i);
+      const timelineRestoreMatch=path.match(/^\/api\/timelines\/([0-9a-f-]+)\/restore$/i);
       if(timelineRestoreMatch&&req.method==="POST"){
         const record=db.prepare("SELECT * FROM timelines WHERE id=? AND archived_at IS NULL AND ((project_id IS NULL AND owner_id=?) OR project_id IN (SELECT id FROM projects WHERE owner_id=?) OR project_id IN (SELECT project_id FROM project_members WHERE member_id=?))").get(timelineRestoreMatch[1],user.id,user.id,user.id);
         if(!record){fail(res,404,"TIMELINE_NOT_FOUND","Timeline not found.");return;}
