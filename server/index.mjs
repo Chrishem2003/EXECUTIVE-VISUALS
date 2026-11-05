@@ -18,6 +18,7 @@ import { getProviderCatalog } from "./provider-registry.mjs";
 import { ensureRemoteUsageTable, getRemoteUsagePolicy } from "./usage-guardrails.mjs";
 import { createCloudTimelineApi } from "./cloud-timeline-api.mjs";
 import { validateSrt, validateWebVtt } from "./caption-validation.mjs";
+import { createWaveformCache } from "./waveform-cache.mjs";
 import { ensureTransformationPlanSchema, createTransformationPlan, approveTransformationPlan, listTransformationPlans, getTransformationPlan } from "./transformation-plans.mjs";
 
 const PORT = Number(process.env.API_PORT || process.env.PORT || 4179);
@@ -61,6 +62,7 @@ const AUTH_RATE_LIMIT = Math.max(1, Math.min(1000, Number(process.env.AUTH_RATE_
 function rateAllowed(key,limit,windowMs){const time=Date.now();const old=rateBuckets.get(key);if(!old||time-old.start>=windowMs){rateBuckets.set(key,{start:time,count:1});return true;}old.count++;return old.count<=limit;}
 await mkdir(join(MEDIA_ROOT,"uploads"), { recursive:true });
 await mkdir(join(MEDIA_ROOT,"derived"), { recursive:true });
+const waveformCache=createWaveformCache({mediaRoot:MEDIA_ROOT});
 
 const now = () => new Date().toISOString();
 const hash = value => createHash("sha256").update(value).digest("hex");
@@ -258,8 +260,8 @@ export function createAppServer() {
     if(req.method==="OPTIONS"){res.writeHead(204,{"access-control-allow-methods":"GET,POST,PUT,DELETE,OPTIONS","access-control-allow-headers":"content-type,authorization,x-file-name,x-project-id,idempotency-key","access-control-max-age":"600",...cors});res.end();return;}
     const url=new URL(req.url||"/","http://localhost");
     const path=url.pathname;
-    const ratePath=path.startsWith("/api/auth/")?"/auth":(path==="/api/assets"||path==="/api/cloud/assets")&&req.method==="POST"?"/upload":path.endsWith("/research/import")&&req.method==="POST"?"/research":path==="/api/admin/ai-upscale/self-test"&&req.method==="POST"?"/ai-upscale-self-test":"";
-    if(ratePath){const key=(req.socket.remoteAddress||"unknown")+ratePath;const limit=ratePath==="/auth"?AUTH_RATE_LIMIT:ratePath==="/research"?10:ratePath==="/ai-upscale-self-test"?2:30;if(!rateAllowed(key,limit,60000)){fail(res,429,"RATE_LIMITED","Too many requests. Wait before trying again.");return;}}
+    const ratePath=path.startsWith("/api/auth/")?"/auth":/^\/api\/assets\/[0-9a-f-]+\/waveform$/i.test(path)&&req.method==="GET"?"/waveform":(path==="/api/assets"||path==="/api/cloud/assets")&&req.method==="POST"?"/upload":path.endsWith("/research/import")&&req.method==="POST"?"/research":path==="/api/admin/ai-upscale/self-test"&&req.method==="POST"?"/ai-upscale-self-test":"";
+    if(ratePath){const key=(req.socket.remoteAddress||"unknown")+ratePath;const limit=ratePath==="/auth"?AUTH_RATE_LIMIT:ratePath==="/research"?10:ratePath==="/ai-upscale/self-test"?2:ratePath==="/waveform"?20:30;if(!rateAllowed(key,limit,60000)){fail(res,429,"RATE_LIMITED","Too many requests. Wait before trying again.");return;}}
     try {
       if(!path.startsWith("/api/")&&req.method==="GET"){
         const decoded=decodeURIComponent(path);
@@ -517,9 +519,21 @@ export function createAppServer() {
       if(path==="/api/assets"&&req.method==="POST"){
         const result=await storeUpload(req,user,req.headers["x-project-id"]||null);send(res,201,{asset:result},cors);return;
       }
-      const assetMatch=path.match(/^\/api\/assets\/([0-9a-f-]+)(?:\/(file))?$/i);
+      const assetMatch=path.match(/^\/api\/assets\/([0-9a-f-]+)(?:\/(file|waveform))?$/i);
       if(assetMatch){
         const asset=getAccessibleAsset(db,user.id,assetMatch[1],req.method==="DELETE");if(!asset){fail(res,404,"ASSET_NOT_FOUND","Asset not found.");return;}
+        if(assetMatch[2]==="waveform"&&req.method==="GET"){
+          if(!asset.media_type.startsWith("audio/")){fail(res,415,"WAVEFORM_UNSUPPORTED_MEDIA","Waveforms are available only for audio assets.");return;}
+          try{
+            const waveformPath=await waveformCache.get(asset),waveformStat=await stat(waveformPath);
+            res.writeHead(200,{"content-type":"image/png","content-length":waveformStat.size,"cache-control":"private, max-age=31536000, immutable","vary":"cookie",...SECURITY_HEADERS,...cors});
+            createReadStream(waveformPath).pipe(res);return;
+          }catch(error){
+            const code=error.code||"WAVEFORM_FAILED";
+            const status=code==="WAVEFORM_SOURCE_MISSING"?404:code==="WAVEFORM_SIZE_LIMIT"?413:code==="WAVEFORM_UNSUPPORTED_MEDIA"?415:code==="WAVEFORM_TOOL_UNAVAILABLE"?503:422;
+            fail(res,status,code,String(error.message||"Waveform generation failed.").slice(0,300));return;
+          }
+        }
         if(assetMatch[2]==="file"&&req.method==="GET"){
           const file=resolve(MEDIA_ROOT,asset.storage_path);const mediaPrefix=MEDIA_ROOT.endsWith(sep)?MEDIA_ROOT:MEDIA_ROOT+sep;if(!file.startsWith(mediaPrefix)){fail(res,404,"ASSET_NOT_FOUND","Asset not found.");return;}
           res.writeHead(200,{"content-type":asset.media_type,"content-length":asset.byte_size,"content-disposition":`inline; filename="${safeName(asset.original_name)}"`,...SECURITY_HEADERS,...cors});
