@@ -1,8 +1,61 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readCloudWorkerConfig,createCloudWorkerSupervisor,createGoogleGeminiGcsMirrorRecoveryMaintenanceWorker } from "../cloud-worker-process.mjs";
+import { readCloudWorkerConfig,createCloudWorkerSupervisor,createGoogleGeminiGcsMirrorRecoveryMaintenanceWorker,resolveGoogleGeminiGcsMirrorServiceFactory } from "../cloud-worker-process.mjs";
 
 const env={CLOUD_WORKER_ENABLED:"true",CLOUD_MEDIA_WORKER_ENABLED:"true",CLOUD_TIMELINE_WORKER_ENABLED:"true",SUPABASE_URL:"https://example.supabase.co",SUPABASE_SERVICE_ROLE_KEY:"server-secret"};
+test("GCS recovery rejects an injected service factory without an explicit identity verifier",async()=>{
+ let factoryUsed=false;
+ await assert.rejects(resolveGoogleGeminiGcsMirrorServiceFactory({
+  env:{},dependencies:{createGoogleGeminiGcsMirrorService(){factoryUsed=true;}}
+ }),/requires an explicit server-side identity check/);
+ assert.equal(factoryUsed,false);
+});
+
+test("GCS recovery verifies an injected server identity before accepting its service factory",async()=>{
+ const calls=[],factory=()=>({recoverMirrorAttempts:async()=>({reconciled:1})});
+ const resolved=await resolveGoogleGeminiGcsMirrorServiceFactory({
+  env:{},
+  dependencies:{
+   async checkGoogleGeminiGcsMirrorIdentity(){calls.push("identity");},
+   createGoogleGeminiGcsMirrorService(){calls.push("factory");return factory;}
+  }
+ });
+ assert.deepEqual(calls,["identity","factory"]);
+ assert.equal(resolved instanceof Function,true);
+ assert.equal(resolved(),factory());
+});
+
+test("GCS recovery default bootstrap checks identity before returning its factory",async()=>{
+ const calls=[],factory=()=>({recoverMirrorAttempts:async()=>({})});
+ const resolved=await resolveGoogleGeminiGcsMirrorServiceFactory({
+  env:{GOOGLE_CLOUD_PROJECT_ID:"staging"},
+  dependencies:{},
+  async createBootstrap(options){
+   calls.push(["bootstrap",options.env.GOOGLE_CLOUD_PROJECT_ID]);
+   return{
+    async checkIdentity(){calls.push(["identity"]);},
+    createService:factory
+   };
+  }
+ });
+ assert.deepEqual(calls,[["bootstrap","staging"],["identity"]]);
+ assert.equal(resolved,factory);
+});
+
+test("GCS recovery fails closed when default bootstrap identity verification fails",async()=>{
+ let serviceFactoryReturned=false;
+ await assert.rejects(resolveGoogleGeminiGcsMirrorServiceFactory({
+  env:{},dependencies:{},
+  async createBootstrap(){
+   return{
+    async checkIdentity(){throw new Error("identity denied");},
+    createService(){serviceFactoryReturned=true;}
+   };
+  }
+ }),/identity denied/);
+ assert.equal(serviceFactoryReturned,false);
+});
+
 test("cloud worker config remains disabled unless explicitly enabled",()=>{assert.throws(()=>readCloudWorkerConfig({...env,CLOUD_WORKER_ENABLED:"false"}),/disabled/);});
 test("cloud worker config requires a selected worker family and server credentials",()=>{
  assert.throws(()=>readCloudWorkerConfig({...env,CLOUD_MEDIA_WORKER_ENABLED:"false",CLOUD_TIMELINE_WORKER_ENABLED:"false"}),/at least one/);
