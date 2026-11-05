@@ -24,7 +24,7 @@ function setup({ authorized = true, returnedDecision = decision } = {}) {
       },
       async approve(args) { calls.push(["approve", args]); return true; }
     },
-    enqueue: { async enqueue(args) { calls.push(["enqueue", args]); return { jobId: "job-1", status: "queued", idempotentReplay: false, budgetReservationId: "reservation-1" }; } },
+    enqueue: { async enqueue(args) { calls.push(["enqueue", args]); return { jobId: "job-1", status: "queued", idempotentReplay: false, budgetReservationId: "reservation-1" }; }, async getJobStatus(args) { calls.push(["status", args]); return { jobId: args.jobId, status: "processing" }; } },
     authorizeProject: async args => { calls.push(["authorize", args]); return authorized; }
   });
   return { workflow, calls };
@@ -117,3 +117,11 @@ test("enqueue forwards the same approved payload and both approval IDs to the at
   assert.equal(call.requestHash, preflight.requestHash);
 });
 
+
+test("job status lookup validates the job and binds it to the verified owner",async()=>{
+ const {workflow,calls}=setup();
+ const result=await workflow.getJobStatus({ownerId,jobId:"623e4567-e89b-42d3-a456-426614174000"});
+ assert.deepEqual(result,{jobId:"623e4567-e89b-42d3-a456-426614174000",status:"processing"});
+ assert.deepEqual(calls.find(x=>x[0]==="status")[1],{ownerId,jobId:"623e4567-e89b-42d3-a456-426614174000"});
+ await assert.rejects(()=>workflow.getJobStatus({ownerId,jobId:"bad"}),error=>error.code==="RUNWAY_WORKFLOW_JOB_INVALID");
+});
