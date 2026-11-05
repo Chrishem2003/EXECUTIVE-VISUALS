@@ -49,7 +49,7 @@ export function createProviderAwareCloudVideoWorkerComposition({
     throw new Error("Provider-aware cloud video worker requires server-side Supabase credentials and fetch.");
   }
   if (!Array.isArray(allowedOutputHosts) || allowedOutputHosts.length < 1 || allowedOutputHosts.length > 100 ||
-      allowedOutputHosts.some(host => typeof host !== "string" || !/^(?:\*\.)?[a-z0-9.-]{1,253}$/i.test(host))) {
+      allowedOutputHosts.some(host => typeof host !== "string" || host.length > 253 || !HOST_RULE.test(host))) {
     throw new Error("Provider-aware output ingestion requires an explicit bounded hostname allowlist.");
   }
   if (!Number.isInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 120000) {
