@@ -39,9 +39,16 @@ test("creates an owner-scoped durable export attempt without exposing session cr
  assert.equal(h.calls[0].options.headers["content-profile"],"executive_visuals");
 });
 
-test("rejects a reused idempotency key bound to a different pre-generated Drive file ID",async()=>{
+test("reuses the canonical Drive file ID when concurrent creates race on the same idempotency key",async()=>{
  const h=harness();
- await assert.rejects(()=>h.store.createOrGet({attemptKey,ownerId,assetId:row.asset_id,
+ const result=await h.store.createOrGet({attemptKey,ownerId,assetId:row.asset_id,
+  driveFileId:"driveFile_DIFFERENT123",mimeType:"video/mp4",byteSize:5,sha256:row.sha256});
+ assert.equal(result.driveFileId,row.drive_file_id);
+ assert.equal(h.rows.length,1);
+});
+test("rejects an idempotency key reused for a different private asset",async()=>{
+ const h=harness();
+ await assert.rejects(()=>h.store.createOrGet({attemptKey,ownerId,assetId:"44444444-4444-4444-8444-444444444444",
   driveFileId:"driveFile_DIFFERENT123",mimeType:"video/mp4",byteSize:5,sha256:row.sha256}),
   error=>error.code==="GOOGLE_DRIVE_EXPORT_IDEMPOTENCY_CONFLICT");
  assert.equal(h.rows.length,1);
