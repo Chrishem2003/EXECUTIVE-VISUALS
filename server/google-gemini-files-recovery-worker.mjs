@@ -140,8 +140,21 @@ export function createGoogleGeminiFilesRecoveryWorker({
             reconciledAt: new Date(now()).toISOString()
           });
           results.push({ attemptId: attempt.id, status: "reconciled" });
-        } catch {
-          results.push({ attemptId: attempt.id, status: "retry_pending" });
+        } catch (error) {
+          if (attempt.providerFileName && Number(error?.status) === 404) {
+            try {
+              await quarantine(
+                attempt,
+                "GEMINI_FILE_RECOVERY_PROVIDER_FILE_NOT_FOUND",
+                "provider_file_not_found_quarantined",
+                results
+              );
+            } catch {
+              results.push({ attemptId: attempt.id, status: "retry_pending" });
+            }
+          } else {
+            results.push({ attemptId: attempt.id, status: "retry_pending" });
+          }
         }
       }
       return Object.freeze({
