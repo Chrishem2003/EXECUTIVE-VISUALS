@@ -187,6 +187,25 @@ export function openDatabase(filename) {
       archived_at TEXT
     );
     CREATE INDEX IF NOT EXISTS timelines_owner_idx ON timelines(owner_id,updated_at DESC);
+    CREATE TABLE IF NOT EXISTS timeline_versions (
+      id TEXT PRIMARY KEY,
+      timeline_id TEXT NOT NULL REFERENCES timelines(id) ON DELETE CASCADE,
+      owner_id TEXT NOT NULL REFERENCES users(id),
+      project_id TEXT REFERENCES projects(id),
+      revision INTEGER NOT NULL CHECK(revision > 0),
+      parent_version_id TEXT REFERENCES timeline_versions(id),
+      restored_from_version_id TEXT REFERENCES timeline_versions(id),
+      name TEXT NOT NULL,
+      summary TEXT NOT NULL DEFAULT '',
+      content_hash TEXT NOT NULL CHECK(length(content_hash)=64),
+      timeline_json TEXT NOT NULL,
+      otio_json TEXT,
+      created_by TEXT NOT NULL REFERENCES users(id),
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      UNIQUE(timeline_id,revision)
+    );
+    CREATE INDEX IF NOT EXISTS timeline_versions_timeline_revision_idx ON timeline_versions(timeline_id,revision DESC);
+    CREATE INDEX IF NOT EXISTS timeline_versions_owner_created_idx ON timeline_versions(owner_id,created_at DESC);
     CREATE TABLE IF NOT EXISTS reviews (
       id TEXT PRIMARY KEY,
       owner_id TEXT NOT NULL REFERENCES users(id),
