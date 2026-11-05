@@ -74,7 +74,7 @@ export function createCloudWorkerSupervisor({workers,maintenanceWorkers=[],maint
    const results=settled.map((item,index)=>{
     if(item.status==="rejected"){onError(item.reason);return null;}
     const result=item.value;
-    if(result&&((Number(result.deleted)||0)>0||(Number(result.retryPending)||0)>0))onLog({kind:"maintenance",workerIndex:index,result});
+    if(result&&["scanned","reconciled","quarantined","deleted","retryPending"].some(key=>Number(result[key])>0))onLog({kind:"maintenance",workerIndex:index,result});
     return result;
    });
    return results;
