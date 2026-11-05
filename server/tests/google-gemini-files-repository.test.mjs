@@ -157,6 +157,34 @@ test("updates an upload attempt through an exact ID and bounded state transition
   await assert.rejects(() => repository.updateUploadAttempt({ state: "COMPLETED" }));
 });
 
+test("lists only stale in-flight Gemini upload attempts with a bounded service-role query", async () => {
+  let call;
+  const attempt = {
+    id: row.id, attempt_key: "b".repeat(64), asset_id: row.asset_id,
+    owner_id: row.owner_id, project_id: row.project_id, mime_type: row.mime_type,
+    byte_size: row.byte_size, sha256: row.sha256,
+    google_display_name: "executive-visuals-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    state: "OUTCOME_UNKNOWN", google_file_name: null, google_file_uri: null,
+    provider_expires_at: null, last_error_code: "GEMINI_FILE_UPLOAD_OUTCOME_UNKNOWN",
+    attempt_count: 1, created_at: row.uploaded_at, updated_at: row.uploaded_at, reconciled_at: null
+  };
+  const repository = createGoogleGeminiFilesRepository({
+    url: base, serviceRoleKey: key,
+    fetchImpl: async (url, options) => { call = { url: String(url), options }; return response(200, [attempt]); }
+  });
+  const result = await repository.listRecoveryAttempts({ before: "2026-11-06T00:00:00.000Z", limit: 30 });
+  assert.equal(result.length, 1);
+  assert.equal(result[0].state, "OUTCOME_UNKNOWN");
+  assert.equal(result[0].displayName, attempt.google_display_name);
+  assert.equal(result[0].sha256, row.sha256);
+  const params = new URL(call.url).searchParams;
+  assert.equal(params.get("state"), "in.(UPLOADING,OUTCOME_UNKNOWN,PROVIDER_CREATED)");
+  assert.equal(params.get("updated_at"), "lt.2026-11-06T00:00:00.000Z");
+  assert.equal(params.get("limit"), "30");
+  assert.equal(call.options.headers.apikey, key);
+  await assert.rejects(() => repository.listRecoveryAttempts({ limit: 501 }));
+});
+
 test("requires safe server configuration and bounds the timeout", () => {
   assert.throws(() => createGoogleGeminiFilesRepository({ url: "http://attacker.example", serviceRoleKey: key }));
   assert.throws(() => createGoogleGeminiFilesRepository({ url: base, serviceRoleKey: "" }));
