@@ -2,9 +2,14 @@
 
 insert into auth.users(id) values
  ('123e4567-e89b-42d3-a456-426614174000'),
- ('223e4567-e89b-42d3-a456-426614174000');
+ ('223e4567-e89b-42d3-a456-426614174000'),
+ ('323e4567-e89b-42d3-a456-426614174000'),
+ ('423e4567-e89b-42d3-a456-426614174000');
 insert into executive_visuals.projects(id,owner_id,name) values
  ('323e4567-e89b-42d3-a456-426614174000','123e4567-e89b-42d3-a456-426614174000','Cloud video PostgreSQL test');
+insert into executive_visuals.project_members(project_id,member_id,role,invited_by) values
+ ('323e4567-e89b-42d3-a456-426614174000','323e4567-e89b-42d3-a456-426614174000','editor','123e4567-e89b-42d3-a456-426614174000'),
+ ('323e4567-e89b-42d3-a456-426614174000','423e4567-e89b-42d3-a456-426614174000','viewer','123e4567-e89b-42d3-a456-426614174000');
 
 select set_config('request.jwt.claim.sub','123e4567-e89b-42d3-a456-426614174000',false);
 set role authenticated;
@@ -47,14 +52,6 @@ begin
 end
 $column_guard$;
 
-insert into executive_visuals.video_generation_budget_approvals(
- id,owner_id,project_id,provider,model,request_hash,currency,approved_max_amount,approval_note,expires_at
-) values (
- '523e4567-e89b-42d3-a456-426614174000',
- '123e4567-e89b-42d3-a456-426614174000',
- '323e4567-e89b-42d3-a456-426614174000',
- 'runway','gen4.5',repeat('a',64),'USD',2,'integration test',clock_timestamp()+interval '10 minutes'
-);
 insert into executive_visuals.video_generation_budget_approvals(
  id,owner_id,project_id,provider,model,request_hash,currency,approved_max_amount,approval_note,expires_at
 ) values
@@ -106,18 +103,145 @@ $project_approval_guard$;
 select set_config('request.jwt.claim.sub','123e4567-e89b-42d3-a456-426614174000',false);
 
 reset role;
+select set_config('request.jwt.claim.role','service_role',false);
+set role service_role;
+-- Authorized project editors may initiate a request-bound preflight.
+-- A viewer must remain unable to create a generation approval.
+create temporary table editor_runway_approval_context as
+select * from executive_visuals.record_runway_router_preflight(
+ '323e4567-e89b-42d3-a456-426614174000',
+ '323e4567-e89b-42d3-a456-426614174000',
+ 'creative_low_cost',repeat('9',64),repeat('8',64),
+ jsonb_build_object('projectId','323e4567-e89b-42d3-a456-426614174000',
+   'provider','runway','model','gen4.5','requestHash',repeat('8',64),'prompt','editor test scene','durationSeconds',5),
+ 60,80,2,'USD',900
+);
+do $viewer_preflight_guard$
+begin
+ begin
+  perform * from executive_visuals.record_runway_router_preflight(
+   '423e4567-e89b-42d3-a456-426614174000',
+   '323e4567-e89b-42d3-a456-426614174000',
+   'creative_low_cost',repeat('7',64),repeat('6',64),
+   jsonb_build_object('projectId','323e4567-e89b-42d3-a456-426614174000',
+     'provider','runway','model','gen4.5','requestHash',repeat('6',64),'prompt','viewer test scene','durationSeconds',5),
+   60,80,2,'USD',900
+  );
+  raise exception 'viewer unexpectedly created a Runway preflight';
+ exception when others then
+  if sqlerrm = 'viewer unexpectedly created a Runway preflight' then raise; end if;
+  if sqlerrm <> 'RUNWAY_PREFLIGHT_PROJECT_FORBIDDEN' then raise; end if;
+ end;
+end
+$viewer_preflight_guard$;
+
+-- The project owner can review and approve a preflight initiated by an editor.
+grant select on editor_runway_approval_context to authenticated;
+reset role;
+-- The initiating editor cannot approve their own project generation.
+select set_config('request.jwt.claim.sub','323e4567-e89b-42d3-a456-426614174000',false);
+select set_config('request.jwt.claim.role','authenticated',false);
+set role authenticated;
+do $editor_self_approval_guard$
+begin
+ begin
+  perform executive_visuals.approve_runway_router_preflight(router_approval_id)
+  from editor_runway_approval_context;
+  raise exception 'project editor unexpectedly self-approved generation';
+ exception when others then
+  if sqlerrm = 'project editor unexpectedly self-approved generation' then raise; end if;
+  if sqlerrm <> 'RUNWAY_APPROVAL_ACTOR_FORBIDDEN' then raise; end if;
+ end;
+end
+$editor_self_approval_guard$;
+reset role;
+-- The distinct project owner can approve the editor's request.
+select set_config('request.jwt.claim.sub','123e4567-e89b-42d3-a456-426614174000',false);
+select set_config('request.jwt.claim.role','authenticated',false);
+set role authenticated;
+select executive_visuals.approve_runway_router_preflight(router_approval_id)
+from editor_runway_approval_context;
+reset role;
+select set_config('request.jwt.claim.role','service_role',false);
+set role service_role;
+-- Add a reviewer after the earlier outsider permission check.
+insert into executive_visuals.project_members(project_id,member_id,role,invited_by) values
+ ('323e4567-e89b-42d3-a456-426614174000','223e4567-e89b-42d3-a456-426614174000','reviewer','123e4567-e89b-42d3-a456-426614174000');
+
+create temporary table runway_approval_context as
+select * from executive_visuals.record_runway_router_preflight(
+ '123e4567-e89b-42d3-a456-426614174000',
+ '323e4567-e89b-42d3-a456-426614174000',
+ 'creative_low_cost',repeat('f',64),repeat('a',64),
+ jsonb_build_object('projectId','323e4567-e89b-42d3-a456-426614174000',
+   'provider','runway','model','gen4.5','requestHash',repeat('a',64),'prompt','test scene','durationSeconds',5),
+ 60,80,2,'USD',900
+);
+grant select on runway_approval_context to authenticated;
+reset role;
+-- The requester cannot approve their own project-scoped generation.
+select set_config('request.jwt.claim.sub','123e4567-e89b-42d3-a456-426614174000',false);
+select set_config('request.jwt.claim.role','authenticated',false);
+set role authenticated;
+do $self_approval_guard$
+begin
+ begin
+  perform executive_visuals.approve_runway_router_preflight(router_approval_id)
+  from runway_approval_context;
+  raise exception 'project requester unexpectedly self-approved generation';
+ exception when others then
+  if sqlerrm = 'project requester unexpectedly self-approved generation' then raise; end if;
+  if sqlerrm <> 'RUNWAY_APPROVAL_ACTOR_FORBIDDEN' then raise; end if;
+ end;
+end
+$self_approval_guard$;
+reset role;
+-- A distinct project reviewer may approve the same request.
+select set_config('request.jwt.claim.sub','223e4567-e89b-42d3-a456-426614174000',false);
+select set_config('request.jwt.claim.role','authenticated',false);
+set role authenticated;
+select executive_visuals.approve_runway_router_preflight(router_approval_id)
+from runway_approval_context;
+reset role;
+select set_config('request.jwt.claim.role','service_role',false);
 set role service_role;
 
+do $runway_payload_tamper$
+begin
+ begin
+  perform * from executive_visuals.enqueue_video_generation_job(
+   '123e4567-e89b-42d3-a456-426614174000',
+   '323e4567-e89b-42d3-a456-426614174000',
+   'pg-integration-video-tampered','runway','gen4.5',repeat('a',64),
+   jsonb_build_object('projectId','323e4567-e89b-42d3-a456-426614174000',
+     'provider','runway','model','gen4.5','requestHash',repeat('a',64),
+     'prompt','tampered prompt','durationSeconds',5,
+     'routerApprovalId',(select router_approval_id from runway_approval_context),
+     'routerInputHash',repeat('f',64),'routerConfigId','creative_low_cost',
+     'budgetApprovalId',(select budget_approval_id from runway_approval_context)),
+   (select budget_approval_id from runway_approval_context),1.25,'USD'
+  );
+  raise exception 'tampered Runway job payload unexpectedly enqueued';
+ exception when others then
+  if sqlerrm = 'tampered Runway job payload unexpectedly enqueued' then raise; end if;
+  if sqlerrm <> 'RUNWAY_JOB_APPROVAL_BINDING_INVALID' then raise; end if;
+ end;
+end
+$runway_payload_tamper$;
+
 create temporary table test_context as
-select job_id, budget_reservation_id as reservation_id
-from executive_visuals.enqueue_video_generation_job(
+select queued.job_id, queued.budget_reservation_id as reservation_id
+from runway_approval_context approval
+cross join lateral executive_visuals.enqueue_video_generation_job(
  '123e4567-e89b-42d3-a456-426614174000',
  '323e4567-e89b-42d3-a456-426614174000',
  'pg-integration-video-001','runway','gen4.5',repeat('a',64),
  jsonb_build_object('projectId','323e4567-e89b-42d3-a456-426614174000',
-   'provider','runway','model','gen4.5','requestHash',repeat('a',64),'prompt','test scene','durationSeconds',5),
- '523e4567-e89b-42d3-a456-426614174000',1.25,'USD'
-);
+   'provider','runway','model','gen4.5','requestHash',repeat('a',64),'prompt','test scene','durationSeconds',5,
+   'routerApprovalId',approval.router_approval_id,'routerInputHash',repeat('f',64),
+   'routerConfigId','creative_low_cost','budgetApprovalId',approval.budget_approval_id),
+ approval.budget_approval_id,1.25,'USD'
+) queued;
 
 create temporary table google_context as
 select job_id, budget_reservation_id as reservation_id, job_status
@@ -184,15 +308,18 @@ end
 $google_resolution_gate$;
 
 create temporary table replay_context as
-select job_id, budget_reservation_id as reservation_id, idempotent_replay
-from executive_visuals.enqueue_video_generation_job(
+select queued.job_id, queued.budget_reservation_id as reservation_id, queued.idempotent_replay
+from runway_approval_context approval
+cross join lateral executive_visuals.enqueue_video_generation_job(
  '123e4567-e89b-42d3-a456-426614174000',
  '323e4567-e89b-42d3-a456-426614174000',
  'pg-integration-video-001','runway','gen4.5',repeat('a',64),
  jsonb_build_object('projectId','323e4567-e89b-42d3-a456-426614174000',
-   'provider','runway','model','gen4.5','requestHash',repeat('a',64),'prompt','test scene','durationSeconds',5),
- '523e4567-e89b-42d3-a456-426614174000',1.25,'USD'
-);
+   'provider','runway','model','gen4.5','requestHash',repeat('a',64),'prompt','test scene','durationSeconds',5,
+   'routerApprovalId',approval.router_approval_id,'routerInputHash',repeat('f',64),
+   'routerConfigId','creative_low_cost','budgetApprovalId',approval.budget_approval_id),
+ approval.budget_approval_id,1.25,'USD'
+) queued;
 do $idempotency$
 declare first_row test_context; replay_row replay_context;
 begin
@@ -366,27 +493,41 @@ begin
 end
 $budget_floor$;
 reset role;
+select set_config('request.jwt.claim.role','service_role',false);
 set role service_role;
-insert into executive_visuals.video_generation_budget_approvals(
- id,owner_id,project_id,provider,model,request_hash,currency,approved_max_amount,approval_note,expires_at
-) values (
- '923e4567-e89b-42d3-a456-426614174000',
+create temporary table overrun_approval_context as
+select * from executive_visuals.record_runway_router_preflight(
  '123e4567-e89b-42d3-a456-426614174000',
  '323e4567-e89b-42d3-a456-426614174000',
- 'runway','gen4.5',repeat('c',64),'USD',1,'overrun test',clock_timestamp()+interval '10 minutes'
+ 'creative_low_cost',repeat('e',64),repeat('c',64),
+ jsonb_build_object('projectId','323e4567-e89b-42d3-a456-426614174000',
+   'provider','runway','model','gen4.5','requestHash',repeat('c',64),'durationSeconds',2),
+ 24,30,1,'USD',900
 );
+grant select on overrun_approval_context to authenticated;
 reset role;
+-- A distinct project reviewer approves the overrun test request.
+select set_config('request.jwt.claim.sub','223e4567-e89b-42d3-a456-426614174000',false);
+select set_config('request.jwt.claim.role','authenticated',false);
+set role authenticated;
+select executive_visuals.approve_runway_router_preflight(router_approval_id)
+from overrun_approval_context;
+reset role;
+select set_config('request.jwt.claim.role','service_role',false);
 set role service_role;
 create temporary table overrun_context as
-select job_id, budget_reservation_id as reservation_id
-from executive_visuals.enqueue_video_generation_job(
+select queued.job_id, queued.budget_reservation_id as reservation_id
+from overrun_approval_context approval
+cross join lateral executive_visuals.enqueue_video_generation_job(
  '123e4567-e89b-42d3-a456-426614174000',
  '323e4567-e89b-42d3-a456-426614174000',
  'pg-integration-video-overrun','runway','gen4.5',repeat('c',64),
  jsonb_build_object('projectId','323e4567-e89b-42d3-a456-426614174000',
-   'provider','runway','model','gen4.5','requestHash',repeat('c',64),'durationSeconds',2),
- '923e4567-e89b-42d3-a456-426614174000',0.5,'USD'
-);
+   'provider','runway','model','gen4.5','requestHash',repeat('c',64),'durationSeconds',2,
+   'routerApprovalId',approval.router_approval_id,'routerInputHash',repeat('e',64),
+   'routerConfigId','creative_low_cost','budgetApprovalId',approval.budget_approval_id),
+ approval.budget_approval_id,0.5,'USD'
+) queued;
 update executive_visuals.jobs
 set status='processing',lease_owner='video-worker-overrun',
     lease_expires_at=clock_timestamp()+interval '5 minutes'
@@ -423,6 +564,34 @@ begin
  end if;
 end
 $overrun_state$;
+
+do $owned_job_status$
+declare
+ status_row jsonb;
+ target_job uuid;
+begin
+ select job_id into target_job from overrun_context;
+ status_row := executive_visuals.get_owned_video_generation_job_status(
+   target_job,'123e4567-e89b-42d3-a456-426614174000'
+ );
+ if status_row is null
+    or status_row->>'jobId' <> target_job::text
+    or status_row->>'status' <> 'processing'
+    or status_row#>>'{budget,state}' <> 'reserved'
+    or (status_row#>>'{budget,reservedAmount}')::numeric <> 0.5 then
+   raise exception 'owner-scoped video job status projection is invalid';
+ end if;
+ if executive_visuals.get_owned_video_generation_job_status(
+   target_job,'223e4567-e89b-42d3-a456-426614174000'
+ ) is not null then
+   raise exception 'video job status leaked across owners';
+ end if;
+ if has_function_privilege('authenticated',
+   'executive_visuals.get_owned_video_generation_job_status(uuid,uuid)','EXECUTE') then
+   raise exception 'authenticated role can call the server-only video job status RPC';
+ end if;
+end
+$owned_job_status$;
 
 reset role;
 select 'cloud video PostgreSQL integration checks passed' as result;

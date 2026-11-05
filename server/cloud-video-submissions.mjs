@@ -86,7 +86,7 @@ export function createCloudVideoSubmissionLedger({
       required(jobId, "Job ID"); required(ownerId, "Owner ID"); required(provider, "Provider", 100); required(model, "Model", 160);
       if (typeof requestHash !== "string" || !/^[a-f0-9]{64}$/.test(requestHash)) throw new Error("Request hash must be a lowercase SHA-256 digest.");
       const rows = await call(RPC.prepare, { p_job_id: jobId, p_owner_id: ownerId, p_provider: provider, p_model: model, p_request_hash: requestHash });
-      if (!Array.isArray(rows) || rows.length !== 1 || rows[0]?.job_id !== jobId || rows[0]?.owner_id !== ownerId || rows[0]?.request_hash !== requestHash) {
+      if (!Array.isArray(rows) || rows.length !== 1 || rows[0]?.job_id !== jobId || rows[0]?.owner_id !== ownerId || rows[0]?.request_hash !== requestHash || rows[0]?.provider !== provider || rows[0]?.model !== model) {
         throw new Error("Cloud video ledger prepare returned an invalid or mismatched record.");
       }
       return rows[0];

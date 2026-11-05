@@ -1,4 +1,4 @@
-import { apiRequest } from "../core/api";
+import { apiRequest, ApiError } from "../core/api";
 import { analyzeTimelineQuality } from "../core/timeline-quality";
 import { buildProductionReadinessReport } from "../core/production-readiness";
 import { assessSourceMediaEvidence } from "../core/source-media-evidence";
@@ -13,13 +13,15 @@ import { addClip, addMarker, addTrack, createTimeline, moveClip, rational, split
 import { clampPreviewSeconds, decibelsToLinearGain, frameToSeconds, getTimelineDurationFrames, isPreviewTrackAudible, resolveTimelineFrame, resolveTimelineOverlays, secondsToFrame, stepPreviewSeconds } from "../core/timeline-preview";
 import { activeCaptionCues, parseCaptionCues, type CaptionCue } from "../core/caption-preview";
 import { validatePrivateMediaUrl } from "../core/private-media-url";
+import { generatedVideoAlreadyOnTimeline, generatedVideoDurationSeconds, selectLatestGeneratedVideoAsset } from "../core/generated-video-import";
+import { resolveCloudTimelineRefresh } from "../core/timeline-conflict";
 
-type Asset={id:string;name:string;mediaType:string;size:number;metadata?:Record<string,unknown>};
+type Asset={id:string;name:string;mediaType:string;size:number;projectId?:string|null;createdAt?:string;metadata?:Record<string,unknown>};
 type SavedTimeline={id:string;projectId?:string|null;name:string;revision:number;document?:EditorialTimeline};
 type CloudProject={id:string;name:string};
 type CloudSavedTimeline={id:string;projectId?:string|null;name:string;revision:number;timeline:EditorialTimeline;updatedAt:string};
-const state:{timeline:EditorialTimeline|null;serverRevision:number;timelines:SavedTimeline[];cloudTimelines:CloudSavedTimeline[];cloudProjects:CloudProject[];cloudProjectId:string;mode:"local"|"cloud";cloudRenderJobId:string;cloudRenderJobStatus:string;variantBase:EditorialTimeline|null;variantReport:TimelineVariantComparison|null;variantBaseName:string;assets:Asset[];status:"loading"|"ready"|"offline"|"auth";message:string;selectedTrack:string;selectedClipId:string;ffmpeg:boolean}={
- timeline:null,serverRevision:0,timelines:[],cloudTimelines:[],cloudProjects:[],cloudProjectId:"",mode:"local",cloudRenderJobId:"",cloudRenderJobStatus:"",variantBase:null,variantReport:null,variantBaseName:"",assets:[],status:"loading",message:"Loading editorial workspace…",selectedTrack:"",selectedClipId:"",ffmpeg:false
+const state:{timeline:EditorialTimeline|null;serverRevision:number;timelines:SavedTimeline[];cloudTimelines:CloudSavedTimeline[];cloudProjects:CloudProject[];cloudProjectId:string;mode:"local"|"cloud";cloudRenderJobId:string;cloudRenderJobStatus:string;variantBase:EditorialTimeline|null;variantReport:TimelineVariantComparison|null;variantBaseName:string;assets:Asset[];status:"loading"|"ready"|"offline"|"auth";message:string;selectedTrack:string;selectedClipId:string;ffmpeg:boolean;cloudRevisionConflict:boolean}={
+ timeline:null,serverRevision:0,timelines:[],cloudTimelines:[],cloudProjects:[],cloudProjectId:"",mode:"local",cloudRenderJobId:"",cloudRenderJobStatus:"",variantBase:null,variantReport:null,variantBaseName:"",assets:[],status:"loading",message:"Loading editorial workspace…",selectedTrack:"",selectedClipId:"",ffmpeg:false,cloudRevisionConflict:false
 };
 let sequencePlaying=false,sequenceFrame=0,sequenceStartFrame=0,sequenceStartAt=0,sequenceRaf:number|null=null;
 type PreviewAudioNode={element:HTMLAudioElement;gain:GainNode;active:boolean;trackId:string;assetId:string};
@@ -353,8 +355,9 @@ export function timelineQualityPanel(){
  '<small class="muted">Sequence structure and source-media checks use the current timeline and saved FFprobe metadata. A source passes only when its probe contains readable streams, the required track stream exists and every used source range stays within probed duration. Full decode integrity, shot-engine compatibility, continuity, delivery conformance requires a current-revision master with a successful output probe; the gate compares container, codec, resolution, frame rate, duration and required audio against the sequence or explicit delivery profile. Caption readiness requires saved cue-level WebVTT validation for timing, overlaps, reading speed, line length and media-duration bounds. Audio readiness requires saved probe and FFmpeg signal-analysis evidence; clipping and near-full-scale peaks require review. Rights status is based only on explicit asset metadata attestations and supporting references; this is not independent legal verification. This report does not grant approval, submit a provider request or render media.</small></section>';
 }
 export function renderTimelineWorkspace(){
- return '<div id="timeline-workspace"><div class="timeline-toolbar"><label>Workspace <select id="tl-mode"><option value="local" '+(state.mode==="local"?"selected":"")+' >Local</option><option value="cloud" '+(state.mode==="cloud"?"selected":"")+' >Cloud project</option></select></label><label>Cloud project <select id="tl-cloud-project"><option value="">Select project</option>'+state.cloudProjects.map(p=>'<option value="'+esc(p.id)+'" '+(p.id===state.cloudProjectId?'selected':'')+'>'+esc(p.name)+'</option>').join("")+'</select></label><label>Saved sequence <select id="tl-saved-sequence"><option value="">Current sequence</option>'+(state.mode==="cloud"?state.cloudTimelines.map(t=>'<option value="'+esc(t.id)+'" '+(state.timeline?.id===t.id?'selected':'')+'>'+esc(t.name)+' · r'+t.revision+'</option>').join(""):state.timelines.map(t=>'<option value="'+esc(t.id)+'" '+(state.timeline?.id===t.id?'selected':'')+'>'+esc(t.name)+' · r'+t.revision+'</option>').join(""))+'</select></label><button class="secondary" data-tl-create-cloud>＋ New cloud timeline</button><button class="secondary" data-tl-action="duplicate-variant">Duplicate as variant</button><span class="runtime-status '+state.status+'"><i></i>'+esc(state.status==="ready"?"TIMELINE SAVED":state.status==="auth"?"SIGN IN REQUIRED":state.status==="offline"?"API OFFLINE":"LOADING")+'</span><button class="secondary" data-tl-action="refresh">↻ Refresh</button><button class="secondary" data-tl-action="export">Export OTIO JSON</button>'+(state.mode==="cloud"&&state.cloudRenderJobId?'<button class="secondary" data-tl-action="cloud-job">Check cloud render · '+esc(state.cloudRenderJobStatus||"queued")+'</button>':'')+''+(state.ffmpeg?'<button class="primary" data-tl-action="render">Render master MP4</button>':'<span class="muted">FFmpeg required for master render</span>')+'</div>'+
+ return '<div id="timeline-workspace"><div class="timeline-toolbar"><label>Workspace <select id="tl-mode"><option value="local" '+(state.mode==="local"?"selected":"")+' >Local</option><option value="cloud" '+(state.mode==="cloud"?"selected":"")+' >Cloud project</option></select></label><label>Cloud project <select id="tl-cloud-project"><option value="">Select project</option>'+state.cloudProjects.map(p=>'<option value="'+esc(p.id)+'" '+(p.id===state.cloudProjectId?'selected':'')+'>'+esc(p.name)+'</option>').join("")+'</select></label><label>Saved sequence <select id="tl-saved-sequence"><option value="">Current sequence</option>'+(state.mode==="cloud"?state.cloudTimelines.map(t=>'<option value="'+esc(t.id)+'" '+(state.timeline?.id===t.id?'selected':'')+'>'+esc(t.name)+' · r'+t.revision+'</option>').join(""):state.timelines.map(t=>'<option value="'+esc(t.id)+'" '+(state.timeline?.id===t.id?'selected':'')+'>'+esc(t.name)+' · r'+t.revision+'</option>').join(""))+'</select></label><button class="secondary" data-tl-create-cloud>＋ New cloud timeline</button>'+(state.mode==="cloud"?'<button class="secondary" data-tl-action="import-generated-video">＋ Import latest generated video</button>':"")+'<button class="secondary" data-tl-action="duplicate-variant">Duplicate as variant</button><span class="runtime-status '+state.status+'"><i></i>'+esc(state.status==="ready"?"TIMELINE SAVED":state.status==="auth"?"SIGN IN REQUIRED":state.status==="offline"?"API OFFLINE":"LOADING")+'</span><button class="secondary" data-tl-action="refresh">↻ Refresh</button><button class="secondary" data-tl-action="export">Export OTIO JSON</button>'+(state.mode==="cloud"&&state.cloudRenderJobId?'<button class="secondary" data-tl-action="cloud-job">Check cloud render · '+esc(state.cloudRenderJobStatus||"queued")+'</button>':'')+''+(state.ffmpeg?'<button class="primary" data-tl-action="render">Render master MP4</button>':'<span class="muted">FFmpeg required for master render</span>')+'</div>'+
  (state.message?'<div class="notice">'+esc(state.message)+'</div>':'')+
+ (state.cloudRevisionConflict?'<section class="panel timeline-quality"><div class="eyebrow">SAVE CONFLICT · LOCAL DRAFT PRESERVED</div><p>The server has a newer revision. Your current edits remain in this browser session. Choose how to continue:</p><div class="toolbar"><button class="secondary" data-tl-action="reload-server">Load latest server revision</button><button class="primary" data-tl-action="save-conflict-variant">Save my local draft as a new variant</button></div></section>':'')+
  '<div class="timeline-editor-grid"><section class="panel"><div class="eyebrow">SEQUENCE SETTINGS</div><h3>'+(state.timeline?esc(state.timeline.name):"No sequence loaded")+'</h3>'+
  '<form id="tl-add-track"><label>Track name</label><input name="name" required placeholder="Video 2 / Music / Captions"><label>Track type</label><select name="kind"><option value="video">Video</option><option value="audio">Audio</option><option value="overlay">Overlay</option><option value="caption">Captions</option></select><button class="secondary">＋ Add track</button></form>'+
  '<div class="eyebrow" style="margin-top:18px">ADD SOURCE CLIP</div><form id="tl-add-clip"><label>Source asset</label><select id="tl-asset-select" name="assetId" required>'+assetOptions()+'</select><label>Destination track</label><select name="trackId">'+(state.timeline?.tracks.map(t=>'<option value="'+esc(t.id)+'">'+esc(t.name)+'</option>').join("")||"")+'</select><div class="form-grid"><div><label>Timeline start (frames)</label><input name="start" type="number" min="0" value="'+maxEnd()+'"></div><div><label>Source in (source frames)</label><input name="sourceIn" type="number" min="0" value="0"></div><div><label>Duration (timeline frames)</label><input name="duration" type="number" min="1" value="'+(fps()*5)+'"></div></div><button class="primary wide">＋ Place clip on timeline</button></form>'+
@@ -363,7 +366,7 @@ export function renderTimelineWorkspace(){
  sequencePreviewPanel()+timelinePreviewPanel()+(state.timeline?timelineCanvas():'<div class="empty">Sign in and create a sequence to begin.</div>')+
  clipInspector()+variantComparisonPanel()+creativeTraceabilityPanel()+timelineQualityPanel()+
   '<div class="timeline-marker-list">'+(state.timeline?.markers.map(m=>'<span>◆ '+esc(m.name)+' · '+Math.round(m.start.value)+'f</span>').join("")||"No review markers yet.")+'</div></section></div>'+
- '<div class="notice">Master rendering supports synchronized audio, image overlays and captions. The preview monitor plays selected local source clips within saved source trims; cloud preview awaits authenticated private-media playback support. Transitions and effects remain future milestones.</div></div>';
+ '<div class="notice">Master rendering supports synchronized audio, image overlays and captions. The preview monitor plays selected source clips within saved source trims; cloud media uses short-lived owner-authorized private URLs. Transitions and effects remain future milestones.</div></div>';
 }
 async function refresh(){
  if(state.mode==="cloud"){
@@ -378,11 +381,17 @@ async function refresh(){
    apiRequest<{timelines:CloudSavedTimeline[]}>("/api/cloud/timelines"+query)
   ]);
   state.assets=assets.assets||[];state.cloudTimelines=timelines.timelines||[];state.timelines=[];
-  if(state.timeline&&state.cloudTimelines.some(t=>t.id===state.timeline?.id)){
-   const saved=state.cloudTimelines.find(t=>t.id===state.timeline?.id)!;state.timeline=saved.timeline;state.serverRevision=saved.revision;
-  }else if(state.cloudTimelines.length){const saved=state.cloudTimelines[0];state.timeline=saved.timeline;state.serverRevision=saved.revision;}
-  else state.timeline=null;
-  state.ffmpeg=true;state.status="ready";state.message=state.timeline?"Cloud timeline loaded. Changes save to the selected private project.":"No saved cloud timeline yet. Create one to begin.";await loadVariantComparison();return;
+  const refreshResult=resolveCloudTimelineRefresh(
+   {hasConflict:state.cloudRevisionConflict,timelineId:state.timeline?.id,timelineProjectId:state.timeline?.projectId,selectedProjectId:state.cloudProjectId},
+   state.timeline,
+   state.serverRevision,
+   state.cloudTimelines
+  );
+  state.timeline=refreshResult.timeline;state.serverRevision=refreshResult.serverRevision;
+  state.message=refreshResult.preservedLocalDraft
+   ?"Save conflict: your local draft remains protected. Resolve it by loading the server revision or saving a separate variant."
+   :state.timeline?"Cloud timeline loaded. Changes save to the selected private project.":"No saved cloud timeline yet. Create one to begin.";
+  state.ffmpeg=true;state.status="ready";await loadVariantComparison();return;
  }
  if(sequenceMediaProjectId){resetSequenceMediaCache();sequenceMediaProjectId="";}
  const health=await apiRequest<{media:{ffmpeg:boolean}}>("/api/health");state.ffmpeg=health.media.ffmpeg;
@@ -407,8 +416,16 @@ async function persist(){
  if(!state.timeline)return;
  const otio=toOpenTimelineIo(state.timeline);
  if(state.mode==="cloud"){
-  const result=await apiRequest<{timeline:CloudSavedTimeline}>("/api/cloud/timelines/"+state.timeline.id,{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({expectedRevision:state.serverRevision,timeline:state.timeline,otio})});
-  state.serverRevision=result.timeline.revision;state.timeline={...state.timeline,revision:result.timeline.revision};state.status="ready";state.message="Saved cloud revision "+result.timeline.revision+".";return;
+  try{
+   const result=await apiRequest<{timeline:CloudSavedTimeline}>("/api/cloud/timelines/"+state.timeline.id,{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({expectedRevision:state.serverRevision,timeline:state.timeline,otio})});
+   state.serverRevision=result.timeline.revision;state.timeline={...state.timeline,revision:result.timeline.revision};state.cloudRevisionConflict=false;state.status="ready";state.message="Saved cloud revision "+result.timeline.revision+".";return;
+  }catch(error){
+   if(error instanceof ApiError&&error.status===409&&error.code==="REVISION_CONFLICT"){
+    state.cloudRevisionConflict=true;state.status="ready";
+    state.message="This timeline changed on the server. Your local edits are still open and have not been overwritten.";
+   }
+   throw error;
+  }
  }
  const result=await apiRequest<{revision:number}>("/api/timelines/"+state.timeline.id,{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({revision:state.serverRevision,name:state.timeline.name,timeline:state.timeline,otio})});
  state.serverRevision=result.revision;state.timeline={...state.timeline,revision:result.revision};state.status="ready";state.message="Saved revision "+result.revision+".";
@@ -447,6 +464,39 @@ function paint(){
 async function runAction(action:HTMLElement){
  const type=action.dataset.tlAction||"";
  if(type==="refresh"){await refresh();paint();return;}
+ if(type==="reload-server"){
+  if(state.mode!=="cloud"||!state.timeline){state.message="No cloud timeline is selected.";paint();return;}
+  try{
+   const result=await apiRequest<{timeline:CloudSavedTimeline}>("/api/cloud/timelines/"+state.timeline.id);
+   state.timeline=result.timeline.timeline;state.serverRevision=result.timeline.revision;state.cloudRevisionConflict=false;
+   state.selectedTrack=state.timeline.tracks[0]?.id||"";state.selectedClipId="";
+   await refresh();state.message="Loaded server revision "+state.serverRevision+". The previous local draft was not merged.";
+  }catch(error){state.message=error instanceof Error?error.message:"Could not load the latest server revision.";}
+  paint();return;
+ }
+ if(type==="save-conflict-variant"){
+  try{await duplicateTimelineVariant();state.cloudRevisionConflict=false;state.message="Saved your preserved local edits as a separate timeline variant. The original server timeline was not overwritten.";}
+  catch(error){state.message=error instanceof Error?error.message:"Could not save the local draft as a variant.";}
+  paint();return;
+ }
+ if(type==="import-generated-video"){
+  if(state.mode!=="cloud"||!state.cloudProjectId||!state.timeline){state.message="Select a cloud project and load a cloud timeline before importing generated video.";paint();return;}
+  const asset=selectLatestGeneratedVideoAsset(state.assets,state.cloudProjectId);
+  if(!asset){state.message="No validated generated video assets were found in this cloud project. Complete an approved generation first.";paint();return;}
+  if(generatedVideoAlreadyOnTimeline(state.timeline,asset.id)){state.message="The latest generated video is already present on this timeline.";paint();return;}
+  let track=state.timeline.tracks.find(item=>item.kind==="video"&&!item.locked);
+  if(!track){state.timeline=addTrack(state.timeline,{id:crypto.randomUUID(),name:"Generated Video",kind:"video",enabled:true,locked:false,clips:[]});track=state.timeline.tracks[state.timeline.tracks.length-1];}
+  const durationSeconds=generatedVideoDurationSeconds(asset);
+  const clipFrames=Math.max(1,Math.round(durationSeconds*fps()));
+  try{
+   const generatedClipId=crypto.randomUUID();
+   state.timeline=addClip(state.timeline,track.id,{id:generatedClipId,assetId:asset.id,name:asset.name,sourceRange:{start:rational(0,sourceRate(asset,"video")),duration:rational(clipFrames/fps()*sourceRate(asset,"video"),sourceRate(asset,"video"))},timelineStart:rational(maxEnd(),fps()),duration:rational(clipFrames,fps()),enabled:true,metadata:{generatedVideo:true,provider:asset.metadata?.provider||"unknown",providerTaskId:asset.metadata?.providerTaskId||""}});
+   state.selectedTrack=track.id;state.selectedClipId=generatedClipId;
+   state.message="Imported "+asset.name+" from private generated assets. Saving timeline…";
+   await persist();await refresh();
+  }catch(error){state.message=error instanceof Error?error.message:"Generated video could not be added to the timeline.";}
+  paint();return;
+ }
  if(type==="cloud-job"&&state.cloudRenderJobId){try{const result=await apiRequest<{job:{id:string;status:string;progress?:number;output?:{outputAsset?:{id:string;name?:string}}}}>("/api/cloud/jobs/"+state.cloudRenderJobId);state.cloudRenderJobStatus=result.job.status;state.message="Cloud render "+result.job.status+" · "+Number(result.job.progress||0)+"%"+(result.job.output?.outputAsset?.id?" · output asset "+result.job.output.outputAsset.id:"");if(result.job.status==="succeeded")await refresh();}catch(error){state.message=error instanceof Error?error.message:"Could not refresh cloud render status.";}paint();return;}
  if(type==="render"){
   if(!state.timeline||!state.ffmpeg){state.message="FFmpeg is required to render a master file.";paint();return;}
@@ -541,11 +591,11 @@ document.addEventListener("submit",event=>{
 });
 document.addEventListener("change",event=>{
  const target=event.target as HTMLSelectElement;
- if(target.id==="tl-mode"){state.mode=target.value==="cloud"?"cloud":"local";state.timeline=null;state.selectedClipId="";void refresh().then(paint).catch(error=>{state.status="offline";state.message=error instanceof Error?error.message:"Workspace unavailable.";paint();});}
- if(target.id==="tl-cloud-project"){state.cloudProjectId=target.value;state.timeline=null;state.selectedClipId="";void refresh().then(paint).catch(error=>{state.status="offline";state.message=error instanceof Error?error.message:"Cloud project unavailable.";paint();});}
+ if(target.id==="tl-mode"){state.mode=target.value==="cloud"?"cloud":"local";state.timeline=null;state.cloudRevisionConflict=false;state.selectedClipId="";void refresh().then(paint).catch(error=>{state.status="offline";state.message=error instanceof Error?error.message:"Workspace unavailable.";paint();});}
+ if(target.id==="tl-cloud-project"){state.cloudProjectId=target.value;state.timeline=null;state.cloudRevisionConflict=false;state.selectedClipId="";void refresh().then(paint).catch(error=>{state.status="offline";state.message=error instanceof Error?error.message:"Cloud project unavailable.";paint();});}
  if(target.id==="tl-saved-sequence"&&target.value){
   const saved=state.mode==="cloud"?state.cloudTimelines.find(t=>t.id===target.value):state.timelines.find(t=>t.id===target.value);
-  if(saved){if(state.mode==="cloud"){const cloud=saved as CloudSavedTimeline;state.timeline=cloud.timeline;state.serverRevision=cloud.revision;void loadVariantComparison().then(paint);}
+  if(saved){if(state.mode==="cloud"){const cloud=saved as CloudSavedTimeline;state.timeline=cloud.timeline;state.serverRevision=cloud.revision;state.cloudRevisionConflict=false;void loadVariantComparison().then(paint);}
    else void apiRequest<{timeline:SavedTimeline}>("/api/timelines/"+saved.id).then(result=>{state.timeline=result.timeline.document||null;state.serverRevision=result.timeline.revision;void loadVariantComparison().then(paint);}).catch(error=>{state.message=error.message;paint();});}
  }
 });

@@ -141,7 +141,7 @@ export function createSupabaseAuth({
         throw fail("Supabase could not refresh the session. Try again shortly.", "SUPABASE_AUTH_UNAVAILABLE");
       }
       const nextSession = readTokenResponse(result.data);
-      return { user: nextSession.user, cookie: seal(nextSession), maxAge: SESSION_MAX_AGE_SECONDS };
+      return { user: nextSession.user, cookie: seal(nextSession), maxAge: SESSION_MAX_AGE_SECONDS, accessToken: nextSession.accessToken };
     })();
     refreshInFlight.set(refreshKey, pending);
     try { return await pending; }
@@ -188,7 +188,7 @@ export function createSupabaseAuth({
       if (!session) return null;
       if (session.expiresAt <= Date.now() + 60000) return refreshSession(session);
       const result = await request("/auth/v1/user", {}, session.accessToken, "GET");
-      if (result.ok) return { user: safeUser(result.data), cookie: null, maxAge: SESSION_MAX_AGE_SECONDS };
+      if (result.ok) return { user: safeUser(result.data), cookie: null, maxAge: SESSION_MAX_AGE_SECONDS, accessToken: session.accessToken };
       if (result.status === 401) return refreshSession(session);
       throw fail("Supabase session verification is temporarily unavailable.", "SUPABASE_AUTH_UNAVAILABLE");
     },

@@ -3,7 +3,7 @@ on:
   push:
     branches: ["feat/**"]
   pull_request:
-    branches: ["main", "feat/**"]
+    branches: ["main", "feat/**", "fix/**"]
 concurrency:
   group: cloud-video-postgres-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
@@ -38,6 +38,8 @@ jobs:
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261104120000_cloud_video_submission_ledger.sql
       - name: Apply cloud budget and enqueue migration
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261104143000_cloud_video_budget_enqueue.sql
+      - name: Apply Runway PostgreSQL approval bridge migration
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261105160000_runway_router_postgres_approval.sql
       - name: Apply private Google provider-file mapping migration
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261105100000_google_provider_files.sql
       - name: Verify private Google provider-file mapping privileges

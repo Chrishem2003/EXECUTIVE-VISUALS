@@ -53,6 +53,7 @@ test("session verification uses the access token only on the server", async () =
   const verified = await auth.getUser(session.cookie);
   assert.deepEqual(verified.user, { id: "user-123", email: "creator@example.test" });
   assert.equal(verified.cookie, null);
+  assert.equal(verified.accessToken, "access-token-one");
   assert.equal(calls[1].options.headers.authorization, "Bearer access-token-one");
 });
 

@@ -156,6 +156,7 @@ const setSupabaseCookie = (res,token,maxAge) => {
   const secure=process.env.COOKIE_SECURE==="true"||process.env.NODE_ENV==="production" ? "; Secure" : "";
   res.setHeader("set-cookie",`${SUPABASE_SESSION_COOKIE}=${encodeURIComponent(token)}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${maxAge}${secure}`);
 };
+const requestAccessTokens = new WeakMap();
 function createLocalSession(userId) {
   const token=randomBytes(32).toString("base64url");
   db.prepare("INSERT INTO sessions(token_hash,user_id,expires_at) VALUES(?,?,?)")
@@ -167,6 +168,7 @@ async function authenticate(req,res) {
     if(!supabaseAuth)return null;
     const session=await supabaseAuth.getUser(cookieValue(req,SUPABASE_SESSION_COOKIE));
     if(!session)return null;
+    if(typeof session.accessToken === "string" && session.accessToken)requestAccessTokens.set(req,session.accessToken);
     if(session.cookie)setSupabaseCookie(res,session.cookie,session.maxAge||SUPABASE_SESSION_MAX_AGE_SECONDS);
     const user=session.user;
     db.prepare("INSERT INTO users(id,email,auth_source) VALUES(?,?, 'supabase') ON CONFLICT(id) DO UPDATE SET email=excluded.email")
@@ -498,12 +500,13 @@ export function createAppServer() {
         });
         send(res,uploadResult.status,uploadResult.body,cors);return;
       }
-      if(cloudTimelineApi && (path.startsWith("/api/cloud/timelines")||path.startsWith("/api/cloud/jobs")||path.startsWith("/api/cloud/assets")||path.startsWith("/api/cloud/projects")||path.startsWith("/api/cloud/transformations"))){
-        const isCloudMutation=(path.startsWith("/api/cloud/transformations")&&(req.method==="POST"||path.endsWith("/approve")&&req.method==="POST"||path.endsWith("/submit")&&req.method==="POST"))||(path.startsWith("/api/cloud/timelines")&&(req.method==="POST"||req.method==="PUT"))||(path==="/api/cloud/projects"&&req.method==="POST")||(path.startsWith("/api/cloud/projects/")&&(req.method==="PATCH"||req.method==="DELETE"));
+      if(cloudTimelineApi && (path.startsWith("/api/cloud/timelines")||path.startsWith("/api/cloud/jobs")||path.startsWith("/api/cloud/assets")||path.startsWith("/api/cloud/projects")||path.startsWith("/api/cloud/transformations")||path.startsWith("/api/cloud/video"))){
+        const isCloudMutation=(path.startsWith("/api/cloud/video")&&(req.method==="POST"))||(path.startsWith("/api/cloud/transformations")&&(req.method==="POST"||path.endsWith("/approve")&&req.method==="POST"||path.endsWith("/submit")&&req.method==="POST"))||(path.startsWith("/api/cloud/timelines")&&(req.method==="POST"||req.method==="PUT"))||(path==="/api/cloud/projects"&&req.method==="POST")||(path.startsWith("/api/cloud/projects/")&&(req.method==="PATCH"||req.method==="DELETE"));
         const body=isCloudMutation?await readJson(req,5*1024*1024):{};
         const cloudResult=await cloudTimelineApi.handle({
           method:req.method,path,ownerId:user.id,body,query:Object.fromEntries(url.searchParams.entries()),
-          idempotencyKey:String(req.headers["idempotency-key"]||"")
+          idempotencyKey:String(req.headers["idempotency-key"]||""),
+          accessToken:requestAccessTokens.get(req)||null
         });
         if(cloudResult){send(res,cloudResult.status,cloudResult.body,cors);return;}
       }
