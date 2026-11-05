@@ -164,7 +164,7 @@ export async function initRuntime(){
    supabaseAuth.auth.onAuthStateChange((event,session)=>{
     if(session?.access_token)setApiAccessToken(session.access_token);else clearApiAccessToken();
     if(event==="PASSWORD_RECOVERY"){state.authView="reset";state.status="auth-required";state.message="Choose a new password to finish account recovery.";paint();}
-    if(event==="SIGNED_OUT"){state.user=null;state.status="auth-required";state.projects=[];state.assets=[];state.jobs=[];state.audit=[];}
+    if(event==="SIGNED_OUT"){state.user=null;state.status="auth-required";state.authView="login";state.projects=[];state.assets=[];state.jobs=[];state.audit=[];paint();}
    });
    const {data,error}=await supabaseAuth.auth.getSession();
    if(error)throw error;
