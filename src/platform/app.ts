@@ -84,7 +84,7 @@ async function prepareCloudAssetForGemini(assetId:string){
  const asset=state.cloudAssets.find(item=>item.id===assetId);
  if(!asset||!state.cloudProjectId){state.cloudMessage="Select a project asset before preparing it for Gemini.";render();return;}
  if(!state.googleGeminiFilesEnabled){state.cloudMessage="Gemini Files uploads are disabled by server policy.";render();return;}
- if(!confirm("Upload a verified copy of this private asset to Google's temporary Gemini Files service? The original stays in Executive Visuals private storage. This does not submit a generation job or publish anything. The temporary Google copy expires and is cleaned up by the retention worker."))return;
+ if(!confirm("Upload a verified copy of this private asset to Google's temporary Gemini Files service? The original stays in Executive Visuals private storage. This does not submit a generation job or publish anything. Google says Files API uploads are stored for up to 48 hours; our cleanup targets an earlier expiry."))return;
  state.cloudMessage="Verifying and preparing "+asset.name+" for Gemini…";render();
  try{
   const result=await apiRequest<{file:{status:string;assetId:string;mediaType:string;expiresAt:string}}>("/api/integrations/google-gemini/files/prepare",{
