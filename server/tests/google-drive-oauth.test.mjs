@@ -7,7 +7,7 @@ const ownerId = "11111111-1111-4111-8111-111111111111";
 const otherOwner = "22222222-2222-4222-8222-222222222222";
 const scopes = ["https://www.googleapis.com/auth/drive.file", "openid", "https://www.googleapis.com/auth/userinfo.email"];
 const identity = async () => ({ subject: "google-subject-12345", email: "user@example.com" });
-function harness({ now = 1000000, issueRefresh = true, refreshStatus = 200, revokeStatus = 200, verifyIdentityFn = identity } = {}) {
+function harness({ now = 1000000, issueRefresh = true, refreshStatus = 200, revokeStatus = 200, verifyIdentityFn = identity, onRefresh } = {}) {
   let clock = now, idToken = "mock.id.token", jwks = [];
   const pending = new Map(), records = new Map(), calls = [];
   const stateStore = {
@@ -31,6 +31,7 @@ function harness({ now = 1000000, issueRefresh = true, refreshStatus = 200, revo
         id_token: idToken, expires_in: 3600, scope: scopes.join(" ")
       }), { status: 200 });
       if (refreshStatus !== 200) return new Response(JSON.stringify({ error: "invalid_grant" }), { status: refreshStatus });
+      if (onRefresh) await onRefresh();
       return new Response(JSON.stringify({ access_token: "refreshed-access-token-123456", refresh_token: "rotated-refresh-token-123456",
         expires_in: 3600 }), { status: 200 });
     }
@@ -161,6 +162,25 @@ test("cryptographically verifies Google's RS256 ID-token signature, audience, ex
   h.setJwks([jwk]);
   await h.service.complete({ ownerId, state: url.searchParams.get("state"), code: "signed-code" });
   assert.equal(h.records.get(ownerId).email, "user@example.com");
+});
+
+test("does not release an in-flight refreshed access token after disconnect", async () => {
+  let refreshStartedResolve, releaseRefreshResolve;
+  const refreshStarted = new Promise(resolve => { refreshStartedResolve = resolve; });
+  const releaseRefresh = new Promise(resolve => { releaseRefreshResolve = resolve; });
+  const h = harness({ onRefresh: async () => { refreshStartedResolve(); await releaseRefresh; } });
+  const start = await h.service.begin({ ownerId });
+  await h.service.complete({ ownerId, state: new URL(start.authorizationUrl).searchParams.get("state"), code: "code" });
+  h.setNow(4700000);
+  const pendingRefresh = h.service.getAccessToken({ ownerId });
+  await refreshStarted;
+  const disconnected = await h.service.disconnect({ ownerId });
+  assert.equal(disconnected.disconnected, true);
+  releaseRefreshResolve();
+  await assert.rejects(() => pendingRefresh, error => error.code === "GOOGLE_OAUTH_NOT_CONNECTED");
+  await assert.rejects(() => h.service.getAccessToken({ ownerId }),
+    error => error.code === "GOOGLE_OAUTH_NOT_CONNECTED");
+  assert.equal(h.records.has(ownerId), false);
 });
 
 test("coalesces concurrent token refreshes for the same owner", async () => {
