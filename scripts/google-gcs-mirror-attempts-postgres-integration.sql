@@ -32,6 +32,12 @@ begin
   if not exists(select 1 from pg_indexes where schemaname='executive_visuals' and indexname='google_gcs_mirror_attempts_recovery_idx') then
     raise exception 'GCS mirror attempt recovery index is missing';
   end if;
+  if not exists(select 1 from information_schema.columns where table_schema='executive_visuals' and table_name='google_gcs_mirror_attempts' and column_name='crc32c' and data_type='text') then
+    raise exception 'Immutable GCS CRC32C receipt column is missing';
+  end if;
+  if not exists(select 1 from pg_constraint where conrelid=v_table and conname='google_gcs_mirror_attempts_crc32c_check') then
+    raise exception 'GCS CRC32C receipt validation constraint is missing';
+  end if;
   if not exists(select 1 from information_schema.columns where table_schema='executive_visuals' and table_name='google_gcs_mirror_attempts' and column_name='session_uri_ciphertext' and data_type='text') then
     raise exception 'Encrypted session URI column is missing';
   end if;
@@ -45,20 +51,29 @@ begin
   values (v_asset,v_owner,v_project,'master.mp4','video/mp4',4,repeat('b',64),'executive-visuals-media','attempt-test/'||v_asset||'/master.mp4',null);
 
   insert into executive_visuals.google_gcs_mirror_attempts(
-    id,attempt_key,asset_id,owner_id,project_id,bucket,object_name,media_type,byte_size,sha256,state
+    id,attempt_key,asset_id,owner_id,project_id,bucket,object_name,media_type,byte_size,sha256,crc32c,state
   ) values (
     v_attempt,repeat('c',64),v_asset,v_owner,v_project,'private-media-bucket',
-    'mirrors/'||v_asset||'/master.mp4','video/mp4',4,repeat('b',64),'PREPARED'
+    'mirrors/'||v_asset||'/master.mp4','video/mp4',4,repeat('b',64),'4waSgw==','PREPARED'
   );
 
   begin
     insert into executive_visuals.google_gcs_mirror_attempts(
-      id,attempt_key,asset_id,owner_id,project_id,bucket,object_name,media_type,byte_size,sha256,state
+      id,attempt_key,asset_id,owner_id,project_id,bucket,object_name,media_type,byte_size,sha256,crc32c,state
     ) values (
       '86666666-6666-4666-8666-666666666666',repeat('d',64),v_asset,v_other,v_project,
-      'private-media-bucket','mirrors/invalid.mp4','video/mp4',4,repeat('b',64),'PREPARED'
+      'private-media-bucket','mirrors/invalid.mp4','video/mp4',4,repeat('b',64),'4waSgw==','PREPARED'
     );
     raise exception 'Expected GCS mirror attempt owner mismatch to be rejected';
+  exception when check_violation then
+    null;
+  end;
+
+  begin
+    update executive_visuals.google_gcs_mirror_attempts
+       set crc32c='AAAAAA=='
+     where id=v_attempt;
+    raise exception 'Expected immutable GCS CRC32C receipt mutation to be rejected';
   exception when check_violation then
     null;
   end;
