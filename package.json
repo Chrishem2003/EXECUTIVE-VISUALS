@@ -21,6 +21,7 @@
     "verify:model-catalog": "node --experimental-strip-types --test server/tests/model-catalog.test.mjs",
     "verify:studio-tools": "node --experimental-strip-types --test server/tests/studio-tools.test.mjs server/tests/studio-tools2.test.mjs",
     "verify:quick-start": "node --experimental-strip-types --test server/tests/quick-start.test.mjs",
+    "verify:workspace": "node --experimental-strip-types --test server/tests/workspace-sync.test.mjs server/tests/workspace-sync-api.test.mjs server/tests/workspace-snapshot.test.mjs",
     "verify:server": "node --experimental-strip-types --test server/tests/*.test.mjs",
     "verify:timeline": "node --experimental-strip-types scripts/verify-timeline.mjs",
     "verify:timeline-motion": "node --test server/tests/timeline-motion-keyframes.test.mjs",

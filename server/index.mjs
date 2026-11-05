@@ -19,6 +19,7 @@ import { validateTimelineDocument } from "./timeline-validation.mjs";
 import { executeWorkflowRun } from "./workflow-executor.mjs";
 import { claimNextJob, completeJob, recoverExpiredJobs, renewJobLease } from "./queue.mjs";
 import { sanitizeCreativeWorkspaceDocument } from "./workspace-documents.mjs";
+import { createWorkspaceStore } from "./workspace-sync.mjs";
 import { importResearchUrl } from "./research-import.mjs";
 import { getProviderCatalog } from "./provider-registry.mjs";
 import { publicModelCatalog, estimateFromRequest } from "./model-catalog.mjs";
@@ -32,6 +33,9 @@ const PORT = Number(process.env.API_PORT || process.env.PORT || 4179);
 const HOST = process.env.API_HOST || "127.0.0.1";
 const AUTH_MODE = process.env.AUTH_MODE || "local";
 const supabaseAuth = AUTH_MODE === "supabase" && process.env.SUPABASE_URL && process.env.SUPABASE_PUBLISHABLE_KEY ? createSupabaseAuth() : null;
+// Saves each signed-in user's workspace to their own row in Supabase using only their own session
+// and the public key. Needs the one-time table setup in supabase/migrations. Set WORKSPACE_SYNC=off to disable.
+const workspaceStore = supabaseAuth && process.env.WORKSPACE_SYNC !== "off" ? createWorkspaceStore() : null;
 const SUPABASE_REFRESH_COOKIE = "ev_supabase_refresh";
 const DATA_DIR = resolve(process.env.DATA_DIR || "./data");
 const MEDIA_ROOT = resolve(process.env.MEDIA_ROOT || join(DATA_DIR, "media"));
@@ -372,6 +376,20 @@ export function createAppServer() {
       }
       const user=await authenticate(req);
       if(!user){fail(res,401,"AUTH_REQUIRED","Sign in to access this workspace.");return;}
+      if(path==="/api/workspace"&&(req.method==="GET"||req.method==="PUT")){
+        if(!workspaceStore){send(res,200,{enabled:false,reason:AUTH_MODE==="supabase"?"Cloud saving is switched off on this server.":"Cloud saving needs account sign-in, which this server is not using."},cors);return;}
+        const accessToken=(req.headers.authorization||"").replace(/^Bearer\s+/i,"");
+        try{
+          if(req.method==="GET"){send(res,200,{enabled:true,userId:user.id,...await workspaceStore.get(accessToken)},cors);return;}
+          const body=await readJson(req);
+          send(res,200,{enabled:true,...await workspaceStore.put(accessToken,{data:body.data,expectedRevision:body.expectedRevision})},cors);return;
+        }catch(error){
+          const status=Number.isInteger(error?.status)?error.status:502;
+          if(status===409){send(res,409,{error:{code:error.code,message:error.message},currentRevision:error.currentRevision,currentUpdatedAt:error.currentUpdatedAt},cors);return;}
+          // Only our own plain messages are shown; anything unexpected becomes a generic one.
+          const ours=/^(WORKSPACE_|INVALID_|SESSION_|BODY_TOO_LARGE$)/.test(String(error?.code||""));fail(res,ours?status:502,ours?error.code:"WORKSPACE_ERROR",ours?error.message:"Your work could not be saved right now. It is still safe on this device.");return;
+        }
+      }
       if(path==="/api/me"&&req.method==="GET"){const securityAdmins=String(process.env.AUTH_SECURITY_ADMIN_EMAILS||"").split(",").map(value=>value.trim().toLowerCase()).filter(Boolean);send(res,200,{user,authMode:AUTH_MODE,capabilities:{securityEvents:securityAdmins.includes(String(user.email||"").toLowerCase())}},cors);return;}
       const upscaleBenchmarksMatch=path.match(/^\/api\/upscale-benchmarks(?:\/(fixtures|runs)(?:\/([0-9a-f-]+)\/review)?)?$/i);
       if(upscaleBenchmarksMatch){

@@ -14,6 +14,8 @@ import { presetLibraryMarkup, modelMenuMarkup, initPresetWorkspace } from "./pre
 import { scriptBreakdownMarkup, frameFitMarkup, promptCoachMarkup, storyboardExportMarkup, styleKitMarkup, variationMarkup, initStudioTools } from "./studio-tools";
 import { applyKitToShots, type StyleKit } from "../core/style-kit";
 import { quickStartMarkup, initQuickStart } from "./quick-start";
+import { initWorkspaceSync } from "./workspace-sync";
+import { pickWorkspace, LIST_KEYS, TEXT_KEYS } from "../core/workspace-snapshot";
 import { applyPresetToShot, getPreset, shotToPrompt } from "../core/presets";
 import { renderSecurityWorkspace, initSecurityWorkspace } from "./security-workspace";
 type Tab="home"|"explore"|"cloud"|"knowledge"|"series"|"director"|"canvas"|"characters"|"cinema"|"images"|"video"|"voice"|"enhance"|"campaigns"|"library"|"engines"|"settings"|"capabilities"|"runtime"|"security";
@@ -411,3 +413,14 @@ window.addEventListener("ev:storyboard-request",e=>{const d=(e as CustomEvent<{r
 window.addEventListener("ev:apply-kit",e=>{const d=(e as CustomEvent<{kit?:StyleKit}>).detail;if(!d||!d.kit||!state.shots.length)return;const styled=applyKitToShots(state.shots,d.kit);styled.forEach((s,i)=>{state.shots[i].lighting=s.lighting;});save();render();});
 window.addEventListener("ev:quick-start-add",e=>{const d=(e as CustomEvent<{shots?:Array<{scene:string;action:string;camera:string;lens:string;movement:string;lighting:string;duration:number}>}>).detail;if(!d||!Array.isArray(d.shots)||!d.shots.length)return;for(const x of d.shots)state.shots.push({id:uid(),scene:x.scene,action:x.action,camera:x.camera,lens:x.lens,movement:x.movement,lighting:x.lighting,duration:x.duration});state.tab="cinema";save();render();});
 initQuickStart();
+initWorkspaceSync({
+ getSnapshot:()=>pickWorkspace(state as unknown as Record<string,unknown>),
+ restore:data=>{
+  const s=state as unknown as Record<string,unknown>,d=data as Record<string,unknown>;
+  for(const key of LIST_KEYS){const list=Array.isArray(d[key])?d[key] as Array<Record<string,unknown>>:[];s[key]=list.map(item=>typeof item.id==="string"&&item.id?item:{...item,id:uid()});}
+  for(const key of TEXT_KEYS)s[key]=typeof d[key]==="string"?d[key]:"";
+  state.variants=Array.isArray(data.variants)?data.variants.slice():[];
+  state.graph=Array.isArray(data.graph)&&data.graph.length?data.graph.slice():baseGraph.slice();
+  save();render();
+ }
+});
