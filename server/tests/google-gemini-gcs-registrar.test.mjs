@@ -67,6 +67,26 @@ test("registers an authorized private GCS object without downloading or copying 
   assert.equal(JSON.stringify(result).includes("oauth-test-access-token"), false);
 });
 
+test("compensates a GCS registration that lacks provider-confirmed expiry metadata", async () => {
+  const h = harness({
+    fetchImpl: async (url, options) => {
+      if (String(url).endsWith("/files:register")) {
+        return response(200, { files: [{
+          name: fileName, uri: fileUri, mimeType: "video/mp4", sizeBytes: "1024", state: "ACTIVE"
+        }] });
+      }
+      if (options.method === "DELETE") return response(200, {});
+      throw new Error("unexpected provider request");
+    }
+  });
+  await assert.rejects(
+    () => h.registrar.registerAsset({ assetId, ownerId, projectId, mediaType: "video/mp4" }),
+    error => error.code === "GEMINI_GCS_EXPIRY_UNVERIFIED"
+  );
+  assert.equal(h.records.length, 0);
+  assert.ok(h.calls.some(call => call[0] === "fetch" && call[2].method === "DELETE"));
+});
+
 test("reuses a matching unexpired provider file mapping without OAuth or network calls", async () => {
   const cached = {
     ownerId, projectId, assetId, mimeType: "video/mp4", name: fileName,
@@ -79,6 +99,31 @@ test("reuses a matching unexpired provider file mapping without OAuth or network
   assert.equal(result.uri, fileUri);
   assert.equal(h.calls.some(call => call[0] === "token"), false);
   assert.equal(h.calls.some(call => call[0] === "fetch"), false);
+});
+
+test("does not overwrite expired or changed provider mappings and orphan the prior Gemini file", async () => {
+  const staleMappings = [
+    {
+      id: "mapping-expired", ownerId, projectId, assetId, mimeType: "video/mp4",
+      name: fileName, uri: fileUri, state: "ACTIVE", sizeBytes: 1024, sha256,
+      expiresAt: "2026-11-04T00:00:00.000Z", sourceType: "gcs_registration", sourceUri: gcsUri
+    },
+    {
+      id: "mapping-changed-source", ownerId, projectId, assetId, mimeType: "video/mp4",
+      name: fileName, uri: fileUri, state: "ACTIVE", sizeBytes: 1024, sha256,
+      expiresAt: "2026-11-20T00:00:00.000Z", sourceType: "gcs_registration",
+      sourceUri: "gs://private-media-bucket/private/previous-version.mp4"
+    }
+  ];
+  for (const cached of staleMappings) {
+    const h = harness({ cached });
+    await assert.rejects(
+      () => h.registrar.registerAsset({ assetId, ownerId, projectId, mediaType: "video/mp4" }),
+      error => error.code === "GEMINI_GCS_STALE_MAPPING_PRESENT"
+    );
+    assert.equal(h.calls.some(call => call[0] === "fetch"), false);
+    assert.equal(h.records.length, 0);
+  }
 });
 
 test("rejects unapproved buckets, mismatched ownership and malformed GCS URIs before provider access", async () => {
@@ -116,7 +161,8 @@ test("compensates a registered Google file when durable mapping persistence fail
     fetchImpl: async (url, options) => {
       if (String(url).endsWith("/files:register")) {
         return response(200, { files: [{
-          name: fileName, uri: fileUri, mimeType: "video/mp4", sizeBytes: "1024", state: "ACTIVE"
+          name: fileName, uri: fileUri, mimeType: "video/mp4", sizeBytes: "1024", state: "ACTIVE",
+          expirationTime: "2026-11-25T00:00:00.000Z"
         }] });
       }
       assert.equal(options.method, "DELETE");
