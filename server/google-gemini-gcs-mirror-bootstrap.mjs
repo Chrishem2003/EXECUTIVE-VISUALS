@@ -1,0 +1,95 @@
+import { createGoogleGeminiGcsMirrorServiceFactory } from "./google-gemini-gcs-mirror-service-factory.mjs";
+
+const CLOUD_PLATFORM_SCOPE = "https://www.googleapis.com/auth/cloud-platform";
+const fail = (message, code) => Object.assign(new Error(message), { code });
+
+function required(value, name) {
+  const result = String(value || "").trim();
+  if (!result) throw fail(name + " is required for GCS mirror recovery.", "GEMINI_GCS_BOOTSTRAP_CONFIG_MISSING");
+  return result;
+}
+
+/**
+ * Creates the production Google ADC/WIF token provider and encrypted GCS
+ * mirror service factory. No service-account key is parsed or loaded here:
+ * Google Auth Library resolves ADC from an attached workload identity or a
+ * GOOGLE_APPLICATION_CREDENTIALS external-account federation config.
+ *
+ * GoogleAuthClass is injectable for deterministic tests; production loads
+ * Google's maintained google-auth-library package.
+ */
+export async function createGoogleGeminiGcsMirrorBootstrap({
+  env = process.env,
+  fetchImpl = globalThis.fetch,
+  GoogleAuthClass
+} = {}) {
+  const projectId = required(env.GOOGLE_CLOUD_PROJECT_ID, "GOOGLE_CLOUD_PROJECT_ID");
+  const url = required(env.SUPABASE_URL, "SUPABASE_URL");
+  const serviceRoleKey = required(env.SUPABASE_SERVICE_ROLE_KEY, "SUPABASE_SERVICE_ROLE_KEY");
+  required(env.GEMINI_GCS_SESSION_ENCRYPTION_KEY, "GEMINI_GCS_SESSION_ENCRYPTION_KEY");
+  if (typeof fetchImpl !== "function") throw new TypeError("GCS mirror bootstrap requires fetch.");
+
+  let GoogleAuth = GoogleAuthClass;
+  if (!GoogleAuth) {
+    try {
+      ({ GoogleAuth } = await import("google-auth-library"));
+    } catch {
+      throw fail("Install the google-auth-library runtime dependency before enabling GCS mirror recovery.", "GEMINI_GCS_AUTH_LIBRARY_MISSING");
+    }
+  }
+  if (typeof GoogleAuth !== "function") throw new TypeError("GoogleAuth constructor is invalid.");
+
+  const clients = new Map();
+  async function getAccessToken({ projectId: requestedProjectId = projectId, scopes = [CLOUD_PLATFORM_SCOPE] } = {}) {
+    if (requestedProjectId !== projectId) {
+      throw fail("GCS token request project does not match the configured project.", "GEMINI_GCS_PROJECT_MISMATCH");
+    }
+    const normalizedScopes = [...new Set((Array.isArray(scopes) ? scopes : [scopes])
+      .map(value => String(value || "").trim()).filter(Boolean))].sort();
+    if (!normalizedScopes.length || normalizedScopes.length > 10 ||
+        normalizedScopes.some(scope => scope.length > 256 || !/^https:\/\//.test(scope))) {
+      throw fail("GCS token scopes are invalid.", "GEMINI_GCS_SCOPE_INVALID");
+    }
+    const cacheKey = normalizedScopes.join(" ");
+    let client = clients.get(cacheKey);
+    if (!client) {
+      const auth = new GoogleAuth({ projectId, scopes: normalizedScopes });
+      client = await auth.getClient();
+      if (!client || typeof client.getAccessToken !== "function") {
+        throw fail("Google ADC did not return a compatible token client.", "GEMINI_GCS_ADC_UNAVAILABLE");
+      }
+      clients.set(cacheKey, client);
+    }
+    let response;
+    try {
+      response = await client.getAccessToken();
+    } catch {
+      throw fail("Google ADC could not obtain a workload access token.", "GEMINI_GCS_ADC_TOKEN_FAILED");
+    }
+    const token = typeof response === "string" ? response : response?.token;
+    if (typeof token !== "string" || token.length < 20 || token.length > 8192 || /\s/.test(token)) {
+      throw fail("Google ADC returned an invalid access token.", "GEMINI_GCS_ADC_TOKEN_INVALID");
+    }
+    return token;
+  }
+
+  const createService = createGoogleGeminiGcsMirrorServiceFactory({
+    getAccessToken,
+    serviceDependencies: {
+      url,
+      serviceRoleKey,
+      env,
+      fetchImpl,
+      maxBytes: Number(env.CLOUD_WORKER_MAX_BYTES || 250 * 1024 * 1024),
+      timeoutMs: 120000
+    }
+  });
+  return Object.freeze({
+    getAccessToken,
+    createService,
+    async checkIdentity() {
+      await getAccessToken({ projectId, scopes: [CLOUD_PLATFORM_SCOPE] });
+      return Object.freeze({ ready: true, projectId, identityMode: env.GOOGLE_APPLICATION_CREDENTIALS ? "application-default-external-or-file" : "application-default-attached-or-local" });
+    }
+  });
+}
