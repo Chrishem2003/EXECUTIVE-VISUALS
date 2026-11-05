@@ -1,3 +1,4 @@
+import { estimateKieSeedanceCost } from "./kie-seedance-pricing.mjs";
 import { estimateRunwayVideoCredits } from "./runway-video-pricing.mjs";
 import { estimateLumaRay32Cost } from "./luma-video-pricing.mjs";
 import { estimateGoogleOmniVideoCost } from "./google-omni-pricing.mjs";
@@ -21,6 +22,15 @@ export function estimateVideoGenerationCost({
   hdr = false, exrExport = false
 } = {}) {
   const pricingDate = new Date().toISOString().slice(0, 10);
+
+  if (provider === "kie") {
+    const estimate = estimateKieSeedanceCost({ model, durationSeconds, resolution, referenceVideoSeconds });
+    return Object.freeze({
+      ...estimate,
+      operation,
+      outputFormat: outputFormat ?? "mp4"
+    });
+  }
 
   if (provider === "google") {
     const estimate = estimateGoogleOmniVideoCost({ model, resolution, durationSeconds });
