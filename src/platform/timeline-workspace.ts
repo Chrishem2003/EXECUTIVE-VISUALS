@@ -14,6 +14,7 @@ import { clampPreviewSeconds, decibelsToLinearGain, frameToSeconds, getTimelineD
 import { activeCaptionCues, parseCaptionCues, type CaptionCue } from "../core/caption-preview";
 import { validatePrivateMediaUrl } from "../core/private-media-url";
 import { generatedVideoAlreadyOnTimeline, generatedVideoDurationSeconds, selectLatestGeneratedVideoAsset } from "../core/generated-video-import";
+import { shouldPreserveCloudTimelineDraft } from "../core/timeline-conflict";
 
 type Asset={id:string;name:string;mediaType:string;size:number;projectId?:string|null;createdAt?:string;metadata?:Record<string,unknown>};
 type SavedTimeline={id:string;projectId?:string|null;name:string;revision:number;document?:EditorialTimeline};
@@ -380,11 +381,17 @@ async function refresh(){
    apiRequest<{timelines:CloudSavedTimeline[]}>("/api/cloud/timelines"+query)
   ]);
   state.assets=assets.assets||[];state.cloudTimelines=timelines.timelines||[];state.timelines=[];
-  if(state.timeline&&state.cloudTimelines.some(t=>t.id===state.timeline?.id)){
-   const saved=state.cloudTimelines.find(t=>t.id===state.timeline?.id)!;state.timeline=saved.timeline;state.serverRevision=saved.revision;
-  }else if(state.cloudTimelines.length){const saved=state.cloudTimelines[0];state.timeline=saved.timeline;state.serverRevision=saved.revision;}
-  else state.timeline=null;
-  state.ffmpeg=true;state.status="ready";state.message=state.timeline?"Cloud timeline loaded. Changes save to the selected private project.":"No saved cloud timeline yet. Create one to begin.";await loadVariantComparison();return;
+  const preserveLocalDraft=shouldPreserveCloudTimelineDraft({hasConflict:state.cloudRevisionConflict,timelineId:state.timeline?.id,timelineProjectId:state.timeline?.projectId,selectedProjectId:state.cloudProjectId});
+  if(!preserveLocalDraft){
+   if(state.timeline&&state.cloudTimelines.some(t=>t.id===state.timeline?.id)){
+    const saved=state.cloudTimelines.find(t=>t.id===state.timeline?.id)!;state.timeline=saved.timeline;state.serverRevision=saved.revision;
+   }else if(state.cloudTimelines.length){const saved=state.cloudTimelines[0];state.timeline=saved.timeline;state.serverRevision=saved.revision;}
+   else state.timeline=null;
+   state.message=state.timeline?"Cloud timeline loaded. Changes save to the selected private project.":"No saved cloud timeline yet. Create one to begin.";
+  }else{
+   state.message="Save conflict: your local draft remains protected. Resolve it by loading the server revision or saving a separate variant.";
+  }
+  state.ffmpeg=true;state.status="ready";await loadVariantComparison();return;
  }
  if(sequenceMediaProjectId){resetSequenceMediaCache();sequenceMediaProjectId="";}
  const health=await apiRequest<{media:{ffmpeg:boolean}}>("/api/health");state.ffmpeg=health.media.ffmpeg;
@@ -584,11 +591,11 @@ document.addEventListener("submit",event=>{
 });
 document.addEventListener("change",event=>{
  const target=event.target as HTMLSelectElement;
- if(target.id==="tl-mode"){state.mode=target.value==="cloud"?"cloud":"local";state.timeline=null;state.selectedClipId="";void refresh().then(paint).catch(error=>{state.status="offline";state.message=error instanceof Error?error.message:"Workspace unavailable.";paint();});}
- if(target.id==="tl-cloud-project"){state.cloudProjectId=target.value;state.timeline=null;state.selectedClipId="";void refresh().then(paint).catch(error=>{state.status="offline";state.message=error instanceof Error?error.message:"Cloud project unavailable.";paint();});}
+ if(target.id==="tl-mode"){state.mode=target.value==="cloud"?"cloud":"local";state.timeline=null;state.cloudRevisionConflict=false;state.selectedClipId="";void refresh().then(paint).catch(error=>{state.status="offline";state.message=error instanceof Error?error.message:"Workspace unavailable.";paint();});}
+ if(target.id==="tl-cloud-project"){state.cloudProjectId=target.value;state.timeline=null;state.cloudRevisionConflict=false;state.selectedClipId="";void refresh().then(paint).catch(error=>{state.status="offline";state.message=error instanceof Error?error.message:"Cloud project unavailable.";paint();});}
  if(target.id==="tl-saved-sequence"&&target.value){
   const saved=state.mode==="cloud"?state.cloudTimelines.find(t=>t.id===target.value):state.timelines.find(t=>t.id===target.value);
-  if(saved){if(state.mode==="cloud"){const cloud=saved as CloudSavedTimeline;state.timeline=cloud.timeline;state.serverRevision=cloud.revision;void loadVariantComparison().then(paint);}
+  if(saved){if(state.mode==="cloud"){const cloud=saved as CloudSavedTimeline;state.timeline=cloud.timeline;state.serverRevision=cloud.revision;state.cloudRevisionConflict=false;void loadVariantComparison().then(paint);}
    else void apiRequest<{timeline:SavedTimeline}>("/api/timelines/"+saved.id).then(result=>{state.timeline=result.timeline.document||null;state.serverRevision=result.timeline.revision;void loadVariantComparison().then(paint);}).catch(error=>{state.message=error.message;paint();});}
  }
 });
