@@ -1,5 +1,6 @@
 import { createServer } from "node:http";
 import { generateCreativeDirection } from "./creative-director.mjs";
+import { generateStoryboard } from "./storyboard-compiler.mjs";
 import { createHash, randomBytes, randomUUID, scryptSync, timingSafeEqual } from "node:crypto";
 import { createReadStream, createWriteStream, existsSync, statSync } from "node:fs";
 import { mkdir, unlink, open, readFile } from "node:fs/promises";
@@ -343,8 +344,8 @@ export function createAppServer() {
     if(req.method==="OPTIONS"){res.writeHead(204,{"access-control-allow-methods":"GET,POST,PUT,DELETE,OPTIONS","access-control-allow-headers":"content-type,authorization,x-file-name,x-project-id,idempotency-key","access-control-max-age":"600",...cors});res.end();return;}
     const url=new URL(req.url||"/","http://localhost");
     const path=url.pathname;
-    const ratePath=path.startsWith("/api/auth/")?"/auth":path.startsWith("/api/integrations/google-drive/")?"/google-drive-oauth":(path==="/api/assets"||path==="/api/cloud/assets")&&req.method==="POST"?"/upload":path.endsWith("/research/import")&&req.method==="POST"?"/research":path==="/api/creative/director"&&req.method==="POST"?"/creative-director":path==="/api/admin/ai-upscale/self-test"&&req.method==="POST"?"/ai-upscale-self-test":"";
-    if(ratePath){const key=(req.socket.remoteAddress||"unknown")+ratePath;const limit=ratePath==="/auth"?AUTH_RATE_LIMIT:ratePath==="/research"?10:ratePath==="/creative-director"?5:ratePath==="/ai-upscale-self-test"?2:ratePath==="/google-drive-oauth"?20:30;if(!rateAllowed(key,limit,60000)){fail(res,429,"RATE_LIMITED","Too many requests. Wait before trying again.");return;}}
+    const ratePath=path.startsWith("/api/auth/")?"/auth":path.startsWith("/api/integrations/google-drive/")?"/google-drive-oauth":(path==="/api/assets"||path==="/api/cloud/assets")&&req.method==="POST"?"/upload":path.endsWith("/research/import")&&req.method==="POST"?"/research":path==="/api/creative/director"&&req.method==="POST"?"/creative-director":path==="/api/creative/storyboard"&&req.method==="POST"?"/creative-storyboard":path==="/api/admin/ai-upscale/self-test"&&req.method==="POST"?"/ai-upscale-self-test":"";
+    if(ratePath){const key=(req.socket.remoteAddress||"unknown")+ratePath;const limit=ratePath==="/auth"?AUTH_RATE_LIMIT:ratePath==="/research"?10:ratePath==="/creative-director"?5:ratePath==="/creative-storyboard"?5:ratePath==="/ai-upscale-self-test"?2:ratePath==="/google-drive-oauth"?20:30;if(!rateAllowed(key,limit,60000)){fail(res,429,"RATE_LIMITED","Too many requests. Wait before trying again.");return;}}
     try {
       if(!path.startsWith("/api/")&&req.method==="GET"){
         const decoded=decodeURIComponent(path);
@@ -514,16 +515,46 @@ export function createAppServer() {
         }catch(error){const status=error.code==="GOOGLE_DRIVE_AUTH_REQUIRED"?401:error.code==="GOOGLE_DRIVE_ASSET_FORBIDDEN"?403:error.code==="GOOGLE_DRIVE_EXPORT_SCOPE_INVALID"?400:502;fail(res,status,error.code||"GOOGLE_DRIVE_EXPORT_FAILED",error.message||"Google Drive file export failed.");return;}
       }
       if(path==="/api/me"&&req.method==="GET"){send(res,200,{user,authMode:AUTH_MODE},cors);return;}
+      if(path==="/api/creative/storyboard"&&req.method==="POST"){
+        const body=await readJson(req,48*1024);
+        const projectId=String(body?.projectId||"").trim()||null;
+        if(projectId){
+          const access=getProjectAccess(db,user.id,projectId);
+          if(!access){fail(res,404,"PROJECT_NOT_FOUND","Project not found.");return;}
+          if(!canWriteProject(db,user.id,projectId)){fail(res,403,"EDITOR_REQUIRED","Owner or editor access is required to compile a project storyboard.");return;}
+        }
+        try{
+          const result=await generateStoryboard({input:body?.input});
+          const recordId=randomUUID();
+          audit(db,user.id,"creative.storyboard.generated","storyboard",recordId,{
+            model:result.model,
+            inputHash:result.storyboard.inputHash,
+            sceneCount:result.storyboard.scenes.length,
+            shotCount:result.storyboard.scenes.reduce((count,scene)=>count+scene.shots.length,0),
+            durationSeconds:result.storyboard.durationSeconds,
+            promptTokens:result.usage?.promptTokens??null,
+            completionTokens:result.usage?.completionTokens??null,
+            totalTokens:result.usage?.totalTokens??null
+          },projectId);
+          send(res,200,{...result,recordId},cors);return;
+        }catch(error){
+          const code=error.code||"STORYBOARD_COMPILATION_FAILED";
+          const status=["STORYBOARD_INPUT_INVALID","STORYBOARD_DIRECTION_REQUIRED","STORYBOARD_DIRECTION_INVALID"].includes(code)?400:
+            code==="STORYBOARD_OUTPUT_INVALID"||code==="STORYBOARD_DURATION_MISMATCH"?502:503;
+          fail(res,status,code,error.message||"Storyboard compilation failed.");return;
+        }
+      }
+
       if(path==="/api/creative/director"&&req.method==="POST"){
         const body=await readJson(req,16*1024);
-        const projectId=String(body.projectId||"").trim()||null;
+        const projectId=String(body?.projectId||"").trim()||null;
         if(projectId){
           const access=getProjectAccess(db,user.id,projectId);
           if(!access){fail(res,404,"PROJECT_NOT_FOUND","Project not found.");return;}
           if(!canWriteProject(db,user.id,projectId)){fail(res,403,"EDITOR_REQUIRED","Owner or editor access is required to request project creative direction.");return;}
         }
         try{
-          const result=await generateCreativeDirection({input:body.input});
+          const result=await generateCreativeDirection({input:body?.input});
           const recordId=randomUUID();
           audit(db,user.id,"creative.director.generated","creative_plan",recordId,{
             model:result.model,
