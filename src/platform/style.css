@@ -383,3 +383,6 @@
 .timeline-preview-unsupported{display:grid;place-items:center;padding:24px;color:var(--muted);font-size:10px;text-align:center;background:rgba(5,7,11,.88)}
 .timeline-preview-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
 .timeline-preview-actions .muted{font-size:9px}
+
+/* Hidden synchronized audio elements for timeline source monitoring */
+#tl-preview-layers audio[data-preview-audio]{display:none}
