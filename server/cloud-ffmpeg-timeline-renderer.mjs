@@ -166,7 +166,7 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
    const delay=Math.round(start*1000),label="a"+audioIndex++,points=audioPoints(clip,seconds(clip.duration)),baseGainDb=Math.max(-60,Math.min(24,Number(clip.gainDb)||0)),basePan=Math.max(-1,Math.min(1,Number(clip.pan)||0)),gain=gainExpression(points,baseGainDb),pan=panExpressions(points,basePan);
    const panFilter=pan?",aformat=channel_layouts=stereo,aeval=exprs='val(0)*("+pan.left+")|val(1)*("+pan.right+")':channel_layout=stereo":"";
    const fadeInFilter=incomingFade>0?",afade=t=in:st=0:d="+incomingFade.toFixed(6)+":curve=tri":"",fadeOutFilter=outgoingFade>0?",afade=t=out:st="+Math.max(0,seconds(clip.duration)-outgoingFade).toFixed(6)+":d="+outgoingFade.toFixed(6)+":curve=tri":"";
-   audioFilters.push("[${inputIndex}:a]atrim=duration="+duration.toFixed(6)+",asetpts=PTS-STARTPTS"+fadeInFilter+fadeOutFilter+",volume='"+gain+"':eval=frame"+panFilter+",adelay="+delay+"|"+delay+",apad=whole_dur="+cursor.toFixed(6)+",atrim=duration="+cursor.toFixed(6)+",aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo["+label+"]");
+   audioFilters.push("["+inputIndex+":a]atrim=duration="+duration.toFixed(6)+",asetpts=PTS-STARTPTS"+fadeInFilter+fadeOutFilter+",volume='"+gain+"':eval=frame"+panFilter+",adelay="+delay+"|"+delay+",apad=whole_dur="+cursor.toFixed(6)+",atrim=duration="+cursor.toFixed(6)+",aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo["+label+"]");
    inputIndex++;
   }
   for(const clip of overlayClips){
