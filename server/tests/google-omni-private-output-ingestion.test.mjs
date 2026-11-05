@@ -88,6 +88,18 @@ test("waits for Google Files to become ACTIVE before downloading generated video
   assert.equal(h.calls.length, 3);
 });
 
+
+test("bounds Google Files metadata before JSON parsing", async () => {
+  const h = harness({ fetchImpl: async () => new Response(
+    JSON.stringify({ state: "ACTIVE", padding: "x".repeat(70 * 1024) }),
+    { status: 200, headers: { "content-type": "application/json" } }
+  ) });
+  await assert.rejects(() => h.ingestor.ingestInteraction(interaction({ uri }), context), error =>
+    error.code === "GEMINI_OMNI_FILE_METADATA_TOO_LARGE");
+  assert.equal(h.calls.length, 1);
+  assert.equal(h.ingested.length, 0);
+});
+
 test("does not download a Google Files object whose processing state failed", async () => {
   const h = harness({ fetchImpl: async () => new Response(JSON.stringify({ state: "FAILED" }), {
     status: 200, headers: { "content-type": "application/json" }
