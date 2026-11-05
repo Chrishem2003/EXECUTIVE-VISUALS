@@ -142,7 +142,21 @@ export async function createGoogleGeminiGcsMirrorBootstrap({
     createService,
     async checkIdentity() {
       await getAccessToken({ projectId, scopes: [CLOUD_PLATFORM_SCOPE] });
-      return Object.freeze({ ready: true, projectId, identityMode: env.GOOGLE_APPLICATION_CREDENTIALS ? "application-default-external-or-file" : "application-default-attached-or-local" });
+      const client = clients.get(CLOUD_PLATFORM_SCOPE);
+      const credentialClientType = client?.constructor?.name || "";
+      const approvedCredentialClientTypes = new Set(["Compute", "ExternalAccountClient", "IdentityPoolClient"]);
+      if (!approvedCredentialClientTypes.has(credentialClientType)) {
+        throw fail(
+          "GCS recovery requires an attached workload identity or approved external-account federation; local user ADC credentials are not accepted.",
+          "GEMINI_GCS_ADC_IDENTITY_TYPE_REJECTED"
+        );
+      }
+      return Object.freeze({
+        ready: true,
+        projectId,
+        identityMode: credentialClientType === "Compute" ? "attached-workload-identity" : "external-account-wif",
+        credentialClientType
+      });
     }
   });
 }
