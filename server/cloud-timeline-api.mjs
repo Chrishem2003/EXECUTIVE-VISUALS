@@ -9,6 +9,10 @@ import { createCloudAssetAuthorizer } from "./cloud-asset-auth.mjs";
 import { createCloudTimelineService } from "./cloud-timeline-service.mjs";
 import { buildTransformationReadinessReport } from "./transformation-readiness.mjs";
 import { validateSrt, validateWebVtt } from "./caption-validation.mjs";
+import { createRunwayRouterDryRunClient } from "./runway-router-dry-run.mjs";
+import { createRunwayRouterPostgresApprovalClient } from "./runway-router-postgres-approval.mjs";
+import { createRunwayRouterWorkflow } from "./runway-router-workflow.mjs";
+import { createCloudVideoEnqueue } from "./cloud-video-enqueue.mjs";
 
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const safeId=(value)=>typeof value==="string"&&UUID.test(value);
@@ -19,7 +23,7 @@ const stableJson=value=>Array.isArray(value)?"["+value.map(stableJson).join(",")
  * by the app's verified authentication middleware; request bodies never set
  * owner_id. Service-role credentials remain inside this server-only module.
  */
-export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRoleKey=process.env.SUPABASE_SERVICE_ROLE_KEY,fetchImpl=globalThis.fetch,timelineService,authorize,maxJobBytes=5*1024*1024,timeoutMs=15000,maxUploadBytes=250*1024*1024,tempRoot=tmpdir(),transformationReadiness=()=>({})}={}){
+export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRoleKey=process.env.SUPABASE_SERVICE_ROLE_KEY,fetchImpl=globalThis.fetch,timelineService,authorize,runwayWorkflow:providedRunwayWorkflow=null,env=process.env,maxJobBytes=5*1024*1024,timeoutMs=15000,maxUploadBytes=250*1024*1024,tempRoot=tmpdir(),transformationReadiness=()=>({})}={}){
  if(!url||!serviceRoleKey)throw new Error("Cloud timeline API requires server-side Supabase credentials.");
  if(typeof fetchImpl!=="function")throw new Error("Cloud timeline API requires fetch.");
  if(!Number.isInteger(maxJobBytes)||maxJobBytes<1024||maxJobBytes>10*1024*1024)throw new Error("Cloud timeline API payload limit is invalid.");
@@ -27,6 +31,12 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
  if(!Number.isInteger(maxUploadBytes)||maxUploadBytes<1||maxUploadBytes>1024*1024*1024)throw new Error("Cloud asset upload limit is invalid.");
  const service=timelineService||createCloudTimelineService({url,serviceRoleKey,fetchImpl});
  const allow=authorize||createCloudAssetAuthorizer({url,serviceRoleKey,fetchImpl});
+ const runwayWorkflow=providedRunwayWorkflow||(env.RUNWAY_ROUTER_WORKFLOW_ENABLED==="true"?createRunwayRouterWorkflow({
+  dryRun:createRunwayRouterDryRunClient({env,fetchImpl}),
+  approvals:createRunwayRouterPostgresApprovalClient({url,serviceRoleKey,anonKey:env.SUPABASE_ANON_KEY,fetchImpl}),
+  enqueue:createCloudVideoEnqueue({url,serviceRoleKey,fetchImpl,env}),
+  authorizeProject:({ownerId,projectId,action})=>allow({ownerId,projectId,action})
+ }):null);
  const base=new URL(url).origin;
  async function request(path,{method="GET",body=null,prefer="return=representation"}={}){
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs);
@@ -40,11 +50,36 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
   }catch(error){if(error?.name==="AbortError"){const timeout=new Error("Cloud timeline API request timed out.");timeout.code="CLOUD_TIMELINE_API_TIMEOUT";throw timeout;}throw error;}finally{clearTimeout(timer);}
  }
  const response=(status,body)=>({status,body});
- async function handle({method,path,ownerId,body={},query={},idempotencyKey=null}={}){
+ async function handle({method,path,ownerId,body={},query={},idempotencyKey=null,accessToken=null}={}){
   if(!["GET","POST","PUT","PATCH","DELETE"].includes(method)||typeof path!=="string")return null;
   if(!safeId(ownerId))return response(401,{error:{code:"AUTH_REQUIRED",message:"A verified account identity is required."}});
   if(Buffer.byteLength(JSON.stringify(body||{}))>maxJobBytes)return response(413,{error:{code:"PAYLOAD_TOO_LARGE",message:"Cloud timeline request is too large."}});
   try{
+   if(path==="/api/cloud/video/runway/preflight"&&method==="POST"){
+    if(!runwayWorkflow)return response(503,{error:{code:"RUNWAY_WORKFLOW_DISABLED",message:"Runway governed generation is not enabled on this server."}});
+    const preflight=await runwayWorkflow.preflight({
+     ownerId,projectId:body.projectId,configId:body.configId,prompt:body.prompt,
+     durationSeconds:body.durationSeconds,aspectRatio:body.aspectRatio,
+     maxEstimatedCredits:body.maxEstimatedCredits,approvedMaxAmount:body.approvedMaxAmount,
+     currency:body.currency||"USD",ttlSeconds:body.ttlSeconds===undefined?900:body.ttlSeconds
+    });
+    return response(202,{preflight});
+   }
+   const runwayApprovalMatch=path.match(/^\\/api\\/cloud\\/video\\/runway\\/approvals\\/([0-9a-f-]+)\\/approve$/i);
+   if(runwayApprovalMatch&&method==="POST"){
+    if(!runwayWorkflow)return response(503,{error:{code:"RUNWAY_WORKFLOW_DISABLED",message:"Runway governed generation is not enabled on this server."}});
+    if(typeof accessToken!=="string"||!accessToken)return response(401,{error:{code:"RUNWAY_APPROVAL_AUTH_REQUIRED",message:"A verified approver session is required."}});
+    const approval=await runwayWorkflow.approve({routerApprovalId:runwayApprovalMatch[1],accessToken});
+    return response(200,{approval});
+   }
+   if(path==="/api/cloud/video/runway/enqueue"&&method==="POST"){
+    if(!runwayWorkflow)return response(503,{error:{code:"RUNWAY_WORKFLOW_DISABLED",message:"Runway governed generation is not enabled on this server."}});
+    const result=await runwayWorkflow.enqueueApproved({
+     ownerId,projectId:body.projectId,idempotencyKey,receipt:body.receipt,
+     jobInput:body.jobInput,reservedAmount:body.reservedAmount,currency:body.currency||"USD"
+    });
+    return response(202,{job:result});
+   }
    if(path==="/api/cloud/projects"&&method==="POST"){
     const project=await service.projects.create({ownerId,name:body.name,description:body.description||"",settings:body.settings||{}});
     return response(201,{project});
@@ -202,6 +237,10 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
    }
    return null;
   }catch(error){
+   if(error.code==="RUNWAY_WORKFLOW_PROJECT_FORBIDDEN"||error.code==="RUNWAY_APPROVAL_ACTOR_FORBIDDEN")return response(404,{error:{code:"PROJECT_NOT_FOUND",message:"Project not found or approval access is not permitted."}});
+   if(error.code==="RUNWAY_WORKFLOW_AUTH_REQUIRED"||error.code==="RUNWAY_APPROVAL_AUTH_REQUIRED")return response(401,{error:{code:error.code,message:"A verified account session is required."}});
+   if(error.code==="RUNWAY_APPROVAL_PAYLOAD_MISMATCH"||error.code==="RUNWAY_WORKFLOW_INPUT_INVALID"||error.code==="RUNWAY_WORKFLOW_BUDGET_INVALID"||error.code==="RUNWAY_WORKFLOW_TTL_INVALID"||error.code==="RUNWAY_ROUTER_CONFIG_INVALID"||error.code==="RUNWAY_WORKFLOW_DECISION_INVALID")return response(422,{error:{code:error.code,message:error.message}});
+   if(error.code==="RUNWAY_APPROVAL_REQUIRED"||error.code==="RUNWAY_APPROVAL_STATE_INVALID"||error.code==="RUNWAY_APPROVAL_EXPIRED")return response(409,{error:{code:error.code,message:error.message}});
    if(error.code==="CLOUD_PROJECT_NOT_FOUND"||error.code==="CLOUD_PROJECT_ACCESS_DENIED")return response(404,{error:{code:"PROJECT_NOT_FOUND",message:"Project not found."}});
    if(error.code==="CLOUD_PROJECT_REVISION_CONFLICT")return response(409,{error:{code:"REVISION_CONFLICT",message:"Project changed since it was loaded. Refresh and retry."}});
    if(error.code==="CLOUD_ASSET_NOT_FOUND")return response(404,{error:{code:"ASSET_NOT_FOUND",message:"Asset not found."}});
