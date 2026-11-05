@@ -31,7 +31,7 @@ function metadata(objectName, overrides = {}) {
     ...overrides
   };
 }
-async function fixture({ metadataOverrides = {}, recordError = null, putFailure = null } = {}) {
+async function fixture({ metadataOverrides = {}, recordError = null, putFailure = null, attemptRepository = null } = {}) {
   const root = await mkdtemp(join(tmpdir(), "ev-gcs-mirror-test-"));
   const filePath = join(root, "source.mp4");
   await writeFile(filePath, new Uint8Array([1,2,3,4]));
@@ -61,7 +61,7 @@ async function fixture({ metadataOverrides = {}, recordError = null, putFailure 
     throw new Error("Unexpected GCS request");
   };
   const writer = createGoogleGeminiGcsMirrorWriter({
-    env, fetchImpl, sourceRepository,
+    env, fetchImpl, sourceRepository, attemptRepository,
     getAccessToken: async options => {
       assert.deepEqual(options.scopes, [
         "https://www.googleapis.com/auth/devstorage.read_write",
@@ -154,4 +154,44 @@ test("marks a transport failure during resumable upload as outcome-unknown witho
     assert.equal(f.calls.some(call => call.options.method === "DELETE"), false);
     assert.equal(f.records.length, 0);
   } finally { await rm(f.root, { recursive: true, force: true }); }
+});
+
+test("persists encrypted-session lifecycle transitions and retains verified object for recovery if registry write fails", async () => {
+  const transitions = [];
+  const attemptRepository = {
+    async createAttempt(input) { transitions.push({ op:"create", input }); return { id:"44444444-4444-4444-8444-444444444444" }; },
+    async recordSession(input) { transitions.push({ op:"session", input }); },
+    async transition(input) { transitions.push({ op:"transition", input }); }
+  };
+  const f = await fixture({ recordError:new Error("registry unavailable"), attemptRepository });
+  try {
+    await assert.rejects(
+      () => f.writer.mirrorAsset({ assetId, ownerId, projectId, mediaType:"video/mp4", filePath:f.filePath, sizeBytes:4, sha256 }),
+      /registry unavailable/
+    );
+    assert.deepEqual(transitions.map(x=>x.op),["create","session","transition"]);
+    assert.equal(transitions[1].input.sessionUri,sessionUri);
+    assert.equal(transitions[2].input.expectedState,"UPLOADING");
+    assert.equal(transitions[2].input.state,"OBJECT_VERIFIED");
+    assert.equal(f.calls.some(call=>call.options.method==="DELETE"),false);
+  } finally { await rm(f.root,{recursive:true,force:true}); }
+});
+
+test("marks ambiguous GCS upload outcomes in the durable attempt ledger", async () => {
+  const transitions=[];
+  const attemptRepository={
+    async createAttempt(){return {id:"44444444-4444-4444-8444-444444444444"};},
+    async recordSession(){},
+    async transition(input){transitions.push(input);}
+  };
+  const f=await fixture({putFailure:new Error("connection lost"),attemptRepository});
+  try {
+    await assert.rejects(
+      () => f.writer.mirrorAsset({assetId,ownerId,projectId,mediaType:"video/mp4",filePath:f.filePath,sizeBytes:4,sha256}),
+      error=>error.outcomeUnknown===true
+    );
+    assert.equal(transitions.length,1);
+    assert.equal(transitions[0].expectedState,"UPLOADING");
+    assert.equal(transitions[0].state,"OUTCOME_UNKNOWN");
+  } finally { await rm(f.root,{recursive:true,force:true}); }
 });
