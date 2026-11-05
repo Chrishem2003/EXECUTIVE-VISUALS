@@ -44,6 +44,10 @@ test("rejects model mismatch, unsafe URLs and unsupported duration or aspect rat
  const adapter=createKieSeedanceVideoAdapter(dependencies);
  await assert.rejects(adapter.prepareInput({provider:"google",model:"gemini-omni-1.1-flash",prompt:"wrong",durationSeconds:5}),error=>error.code==="VIDEO_JOB_INPUT_MISMATCH");
  await assert.rejects(adapter.prepareInput({provider:"kie",model:"bytedance/seedance-2",prompt:"bad",durationSeconds:3}),error=>error.code==="KIE_VIDEO_INPUT_INVALID");
+ await assert.rejects(adapter.prepareInput({provider:"kie",model:"bytedance/seedance-2",prompt:"unsupported",durationSeconds:5,referenceVideoAssetIds:["asset-video"]}),error=>error.code==="KIE_VIDEO_CAPABILITY_UNSUPPORTED");
+ await assert.rejects(adapter.prepareInput({provider:"kie",model:"bytedance/seedance-2",prompt:"unsupported",durationSeconds:5,negativePrompt:"no"}),error=>error.code==="KIE_VIDEO_CAPABILITY_UNSUPPORTED");
+ await assert.rejects(adapter.prepareInput({provider:"kie",model:"bytedance/seedance-2",prompt:"unsupported",durationSeconds:5,audioMode:"reference"}),error=>error.code==="KIE_VIDEO_INPUT_INVALID");
+ await assert.rejects(adapter.prepareInput({provider:"kie",model:"bytedance/seedance-2",prompt:"unsupported",durationSeconds:5,outputFormat:"mov"}),error=>error.code==="KIE_VIDEO_INPUT_INVALID");
  const unsafe=createKieSeedanceVideoAdapter({...dependencies,prepareInput:async input=>({...input,firstFrameUrl:"https://127.0.0.1/private.png"})});
  await assert.rejects(unsafe.prepareInput({provider:"kie",model:"bytedance/seedance-2",prompt:"bad url",durationSeconds:5,firstFrameAssetId:"asset-1"}),error=>error.code==="KIE_VIDEO_INPUT_INVALID");
 });
