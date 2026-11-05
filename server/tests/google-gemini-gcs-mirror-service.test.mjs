@@ -76,7 +76,10 @@ async function setup({ existing = null, authorize = async () => asset } = {}) {
   const attemptRepository = {
     async createAttempt(input) { calls.push({op:"attempt_create",input}); return {id:"44444444-4444-4444-8444-444444444444"}; },
     async recordSession(input) { calls.push({op:"attempt_session",input}); },
-    async transition(input) { calls.push({op:"attempt_transition",input}); }
+    async transition(input) { calls.push({op:"attempt_transition",input}); },
+    async listRecoveryAttempts() { return []; },
+    async claimRecoveryAttempt() { return null; },
+    async releaseRecoveryAttempt() { return true; }
   };
   const service = createGoogleGeminiGcsMirrorService({
     env, fetchImpl, getAccessToken: async () => token, sourceRepository, attemptRepository,
@@ -95,6 +98,10 @@ test("authorizes and materializes the private asset, mirrors it, verifies it and
   try {
     const result = await f.service.mirrorAsset({ assetId, ownerId, projectId });
     assert.equal(result.reused, false);
+    assert.equal(typeof f.service.recoverMirrorAttempts, "function");
+    assert.deepEqual(await f.service.recoverMirrorAttempts(), {
+      scanned:0,registered:0,quarantined:0,retryPending:0,alreadyClaimed:0,results:[]
+    });
     assert.equal(result.source.state, "ACTIVE");
     assert.equal(result.gcsUri, "gs://private-media-bucket/" + result.source.objectName);
     assert.equal(f.sourceRows.length, 1);
