@@ -129,7 +129,7 @@ export function createRunwayRouterApprovalLedger({
       required(approvalId, "approvalId"); required(ownerId, "ownerId");
       required(projectId, "projectId"); required(actorId, "actorId");
       if (typeof inputHash !== "string" || !HEX_256.test(inputHash)) throw fail("Approval must repeat the exact preflight input fingerprint.", "RUNWAY_APPROVAL_HASH_INVALID");
-      return transact(() => {
+      const result = transact(() => {
         const row = db.prepare("SELECT * FROM runway_router_approvals WHERE id=?").get(approvalId);
         if (!row || row.owner_id !== ownerId || row.project_id !== projectId) throw fail("Approval record was not found in this project scope.", "RUNWAY_APPROVAL_NOT_FOUND");
         assertScope(ownerId, projectId, actorId, authorizeApproval, "RUNWAY_APPROVAL_ACTOR_FORBIDDEN");
@@ -138,22 +138,24 @@ export function createRunwayRouterApprovalLedger({
         if (!(current instanceof Date) || !Number.isFinite(current.getTime())) throw fail("Approval clock returned an invalid timestamp.");
         if (Date.parse(row.expires_at) <= current.getTime()) {
           db.prepare("UPDATE runway_router_approvals SET state='expired' WHERE id=? AND state='pending_approval'").run(approvalId);
-          throw fail("The preflight approval window has expired; run a fresh preflight.", "RUNWAY_APPROVAL_EXPIRED");
+          return { expired: true };
         }
         const changed = db.prepare(`UPDATE runway_router_approvals
           SET state='approved',approved_by=?,approved_at=?
           WHERE id=? AND state='pending_approval' AND input_hash=?`)
           .run(actorId, current.toISOString(), approvalId, inputHash);
         if (changed.changes !== 1) throw fail("Approval is no longer pending and cannot be replayed.", "RUNWAY_APPROVAL_STATE_INVALID");
-        return get(approvalId);
+        return { record: get(approvalId) };
       });
+      if (result.expired) throw fail("The preflight approval window has expired; run a fresh preflight.", "RUNWAY_APPROVAL_EXPIRED");
+      return result.record;
     },
 
     consume({ approvalId, ownerId, projectId, actorId, inputHash } = {}) {
       required(approvalId, "approvalId"); required(ownerId, "ownerId");
       required(projectId, "projectId"); required(actorId, "actorId");
       if (typeof inputHash !== "string" || !HEX_256.test(inputHash)) throw fail("Execution must provide the approved request fingerprint.", "RUNWAY_APPROVAL_HASH_INVALID");
-      return transact(() => {
+      const result = transact(() => {
         const row = db.prepare("SELECT * FROM runway_router_approvals WHERE id=?").get(approvalId);
         if (!row || row.owner_id !== ownerId || row.project_id !== projectId) throw fail("Approval record was not found in this project scope.", "RUNWAY_APPROVAL_NOT_FOUND");
         assertScope(ownerId, projectId, actorId, authorizeExecution, "RUNWAY_APPROVAL_EXECUTOR_FORBIDDEN");
@@ -162,15 +164,17 @@ export function createRunwayRouterApprovalLedger({
         if (!(current instanceof Date) || !Number.isFinite(current.getTime())) throw fail("Approval clock returned an invalid timestamp.");
         if (Date.parse(row.expires_at) <= current.getTime()) {
           db.prepare("UPDATE runway_router_approvals SET state='expired' WHERE id=? AND state='approved'").run(approvalId);
-          throw fail("The approved preflight has expired; approval cannot authorize execution.", "RUNWAY_APPROVAL_EXPIRED");
+          return { expired: true };
         }
         const changed = db.prepare(`UPDATE runway_router_approvals
           SET state='consumed',consumed_by=?,consumed_at=?
           WHERE id=? AND state='approved' AND input_hash=?`)
           .run(actorId, current.toISOString(), approvalId, inputHash);
         if (changed.changes !== 1) throw fail("Approval has already been consumed or is not approved.", "RUNWAY_APPROVAL_STATE_INVALID");
-        return get(approvalId);
+        return { record: get(approvalId) };
       });
+      if (result.expired) throw fail("The approved preflight has expired; approval cannot authorize execution.", "RUNWAY_APPROVAL_EXPIRED");
+      return result.record;
     },
 
     revoke({ approvalId, ownerId, projectId, actorId } = {}) {
