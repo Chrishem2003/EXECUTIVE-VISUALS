@@ -11,20 +11,47 @@ const document={frameRate:{numerator:30,denominator:1},tracks:[{id:"video-1",kin
 const asset={id:assetId,name:"scene.mp4",mediaType:"video/mp4",size:12,sha256:"a".repeat(64)};
 function response(rows,status=200){return{ok:status>=200&&status<300,status,async text(){return JSON.stringify(rows);}};}
 function setup({authorize=async()=>true,assetLookup=async()=>asset,fetchImpl}={}){
- const calls=[];let row=null;
+ const calls=[];let row=null,versionCounter=0;const versions=[];
+ const nextVersionId=()=> "55555555-5555-4555-8555-"+String(++versionCounter).padStart(12,"0");
  const fetcher=fetchImpl||(async(url,options)=>{
   calls.push({url,options});
-  if(options.method==="POST"){row={...JSON.parse(options.body),created_at:"2026-11-01T00:00:00Z",updated_at:"2026-11-01T00:00:00Z"};return response([row]);}
-  if(options.method==="GET")return response(row?[row]:[]);
-  if(options.method==="PATCH"){
-   const expected=Number(new URL(url).searchParams.get("revision")?.replace("eq.",""));
+  const parsed=new URL(url),path=parsed.pathname,body=options.body?JSON.parse(options.body):{};
+  if(path.endsWith("/rpc/ev_create_timeline_with_version")){
+   row={id:body.p_timeline_id,owner_id:body.p_owner_id,project_id:body.p_project_id,name:body.p_name,revision:1,timeline:body.p_timeline,otio:body.p_otio,created_at:"2026-11-01T00:00:00Z",updated_at:"2026-11-01T00:00:00Z"};
+   versions.push({id:nextVersionId(),timeline_id:row.id,owner_id:row.owner_id,project_id:row.project_id,revision:1,parent_version_id:null,restored_from_version_id:null,name:row.name,summary:body.p_summary,content_hash:body.p_content_hash,timeline:row.timeline,otio:row.otio,created_by:body.p_actor_id,created_at:row.created_at});
+   return response([row]);
+  }
+  if(path.endsWith("/rpc/ev_update_timeline_with_version")){
+   if(!row||row.revision!==body.p_expected_revision)return response({message:"revision conflict"},409);
+   const parent=versions.find(version=>version.revision===row.revision);
+   row={...row,name:body.p_name,revision:row.revision+1,timeline:body.p_timeline,otio:body.p_otio,updated_at:"2026-11-01T00:01:00Z"};
+   versions.push({id:nextVersionId(),timeline_id:row.id,owner_id:row.owner_id,project_id:row.project_id,revision:row.revision,parent_version_id:parent?.id||null,restored_from_version_id:null,name:row.name,summary:body.p_summary,content_hash:body.p_content_hash,timeline:row.timeline,otio:row.otio,created_by:body.p_actor_id,created_at:row.updated_at});
+   return response([row]);
+  }
+  if(path.endsWith("/rpc/ev_restore_timeline_version")){
+   if(!row||row.revision!==body.p_expected_revision)return response({message:"revision conflict"},409);
+   const source=versions.find(version=>version.id===body.p_source_version_id&&version.timeline_id===row.id);
+   if(!source)return response({message:"source missing"},404);
+   const parent=versions.find(version=>version.revision===row.revision);
+   row={...row,name:source.name,revision:row.revision+1,timeline:source.timeline,otio:source.otio,updated_at:"2026-11-01T00:02:00Z"};
+   versions.push({id:nextVersionId(),timeline_id:row.id,owner_id:row.owner_id,project_id:row.project_id,revision:row.revision,parent_version_id:parent?.id||null,restored_from_version_id:source.id,name:row.name,summary:body.p_summary,content_hash:body.p_content_hash,timeline:row.timeline,otio:row.otio,created_by:body.p_actor_id,created_at:row.updated_at});
+   return response([row]);
+  }
+  if(path.endsWith("/timeline_versions")&&options.method==="GET"){
+   const id=parsed.searchParams.get("id")?.replace("eq.","");
+   const found=versions.filter(version=>version.timeline_id===parsed.searchParams.get("timeline_id")?.replace("eq.","")&&version.owner_id===parsed.searchParams.get("owner_id")?.replace("eq.","")&&(!id||version.id===id));
+   return response(found.sort((a,b)=>b.revision-a.revision));
+  }
+  if(path.endsWith("/timelines")&&options.method==="GET")return response(row?[row]:[]);
+  if(path.endsWith("/timelines")&&options.method==="PATCH"){
+   const expected=Number(parsed.searchParams.get("revision")?.replace("eq.",""));
    if(!row||row.revision!==expected)return response([]);
-   row={...row,...JSON.parse(options.body)};return response([row]);
+   row={...row,...body};return response([row]);
   }
   return response([],405);
  });
  const repo=createCloudTimelineRepository({...base,authorize,getAsset:assetLookup,fetchImpl:fetcher});
- return{repo,calls,get row(){return row;}};
+ return{repo,calls,get row(){return row;},get versions(){return versions;}};
 }
 
 test("creates and reads a validated timeline using the shared authorized asset registry",async()=>{
