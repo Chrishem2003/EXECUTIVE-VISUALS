@@ -12,7 +12,7 @@ do $$
 declare
   owner_id constant uuid := '11111111-1111-4111-8111-111111111111';
   actor_id constant uuid := '22222222-2222-4222-8222-222222222222';
-  timeline_id constant uuid := '33333333-3333-4333-8333-333333333333';
+  v_timeline_id constant uuid := '33333333-3333-4333-8333-333333333333';
   first_timeline executive_visuals.timelines;
   second_timeline executive_visuals.timelines;
   restored_timeline executive_visuals.timelines;
@@ -24,14 +24,14 @@ declare
 begin
   select * into first_timeline
   from executive_visuals.ev_create_timeline_with_version(
-    timeline_id, owner_id, owner_id, null, 'Version test', first_doc, null,
+    v_timeline_id, owner_id, owner_id, null, 'Version test', first_doc, null,
     'Initial version', repeat('a',64)
   );
   if first_timeline.revision <> 1 then raise exception 'Initial timeline revision was not 1.'; end if;
 
   select * into first_version
   from executive_visuals.timeline_versions tv
-  where tv.timeline_id = timeline_id and tv.revision = 1;
+  where tv.timeline_id = v_timeline_id and tv.revision = 1;
   if first_version.id is null or first_version.content_hash <> repeat('a',64) then
     raise exception 'Initial immutable version was not created.';
   end if;
