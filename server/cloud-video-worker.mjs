@@ -148,6 +148,9 @@ export function createCloudVideoWorker({
         queue, enqueue, workerId, leaseSeconds, heartbeatIntervalMs, deferSeconds, onEvent,
         execute: ({ job, workerId: activeWorker, signal }) => executeCloudVideoGenerationJob({
           job, workerId: activeWorker, ledger, adapter, ingestOutputs, resolveActualCost,
+          isCancellationRequested: typeof enqueue.isCancellationRequested === "function"
+            ? enqueue.isCancellationRequested.bind(enqueue)
+            : async () => false,
           signal, ...(sleep ? { sleep } : {}), maxPolls, pollIntervalMs
         })
       });
