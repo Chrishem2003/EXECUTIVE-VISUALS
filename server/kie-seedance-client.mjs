@@ -9,7 +9,7 @@ function safeOutputUrl(value) {
   try { url = new URL(value); } catch { throw fail("Kie returned an invalid output URL.", "KIE_OUTPUT_URL_REJECTED"); }
   const host = url.hostname.toLowerCase();
   if (url.protocol !== "https:" || url.username || url.password || url.port || url.hash ||
-      !host.includes(".") || host === "localhost" || host.endsWith(".local") ||
+      !host.includes(".") || host === "localhost" || host.endsWith(".local") || host.endsWith(".internal") || host.endsWith(".test") || host.endsWith(".invalid") ||
       /^\d{1,3}(?:\.\d{1,3}){3}$/.test(host) || host.startsWith("[") || url.href.length > 4096) {
     throw fail("Kie output must be a credential-free public HTTPS URL.", "KIE_OUTPUT_URL_REJECTED");
   }
@@ -31,7 +31,7 @@ function parseResultUrls(value) {
 
 export function createKieSeedanceClient({
   apiKey = process.env.KIE_API_KEY,
-  model = process.env.KIE_SEEDANCE_MODEL || "bytedance/seedance-2-5",
+  model = process.env.KIE_SEEDANCE_MODEL || "bytedance/seedance-2",
   fetchImpl = globalThis.fetch,
   baseUrl = API_ORIGIN,
   timeoutMs = 30000
