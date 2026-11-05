@@ -602,6 +602,54 @@ export const VIDEO_PROVIDER_CATALOG = freeze([
     ]
   },
   {
+    id: "kie",
+    name: "Kie.ai",
+    adapterState: "implemented_disabled",
+    availability: "disabled",
+    remote: true,
+    models: [
+      {
+        id: "bytedance/seedance-2",
+        name: "Seedance 2.0",
+        availability: "disabled",
+        executionAdapter: "kie-seedance-video-adapter",
+        capabilities: {
+          textToVideo: true, imageToVideo: true, videoToVideo: false,
+          videoEdit: false, videoExtend: false, videoReframe: false,
+          nativeAudio: true, negativePrompt: false, seed: false,
+          startFrame: true, endFrame: true, motionReference: false,
+          referenceImages: true, referenceVideos: false, referenceAudio: false,
+          audioModes: ["generated", "none"],
+          aspectRatios: ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"],
+          resolutions: ["provider_default", "480p", "720p", "1080p", "2160p"],
+          minDurationSeconds: 5, maxDurationSeconds: 15
+        },
+        pricing: {
+          currency: "USD", creditUsdValue: 0.005,
+          ratesPerSecond: {
+            "480p": { withoutVideo: 0.095, withVideo: 0.0575 },
+            "720p": { withoutVideo: 0.205, withVideo: 0.125 },
+            "1080p": { withoutVideo: 0.51, withVideo: 0.31 },
+            "2160p": { withoutVideo: 1.04, withVideo: 0.64 }
+          },
+          source: "https://kie.ai/seedance-2-0?model=bytedance/seedance-2",
+          snapshotDate: "2026-11-05",
+          preflightReservation: "output_seconds_or_reference_video_plus_output_seconds",
+          actualSettlement: "task_credits_consumed_times_configured_effective_credit_value"
+        },
+        constraints: {
+          maxPromptCharacters: 20000, maxReferenceImages: 9,
+          maxReferenceVideos: 3, maxReferenceVideoSeconds: 15,
+          maxReferenceAudio: 3, maxReferenceAudioSeconds: 15,
+          referenceModesMutuallyExclusive: true,
+          minimumPollIntervalMs: 5000, outputUrlTemporary: true,
+          asynchronousTaskPolling: true,
+          source: "https://docs.kie.ai/market/bytedance/seedance-2"
+        }
+      }
+    ]
+  },
+  {
     id: "google",
     name: "Google",
     adapterState: "implemented_disabled",
