@@ -1,4 +1,4 @@
-import type { AudioAutomationPoint } from "./audio-automation";
+import { evaluateAudioAutomation, type AudioAutomationPoint } from "./audio-automation";
 export interface RationalTime { value:number; rate:number }
 export interface TimeRange { start:RationalTime; duration:RationalTime }
 export type TrackKind="video"|"audio"|"overlay"|"caption";
@@ -65,7 +65,8 @@ export function trimClip(timeline:EditorialTimeline,trackId:string,clipId:string
   const sourceRight=Math.round(removeRight/fps*clip.sourceRange.duration.rate);
   const sourceRemaining=clip.sourceRange.duration.value-sourceLeft-sourceRight;
   if(sourceRemaining<=0)throw new Error("Trim would remove the entire source range.");
-  const changed={...clip,sourceRange:{start:rational(clip.sourceRange.start.value+sourceLeft,clip.sourceRange.start.rate),duration:rational(sourceRemaining,clip.sourceRange.duration.rate)},timelineStart:rational(clip.timelineStart.value+removeLeft,clip.timelineStart.rate),duration:rational(remaining,fps)};
+  const automationOffset=removeLeft/fps,automation=clip.audioAutomation?.length?[{timeSeconds:0,gainDb:evaluateAudioAutomation(clip.audioAutomation,automationOffset,"gainDb",clip.gainDb??0),pan:evaluateAudioAutomation(clip.audioAutomation,automationOffset,"pan",clip.pan??0),interpolation:"linear" as const},...clip.audioAutomation.filter(point=>point.timeSeconds>automationOffset).map(point=>({...point,timeSeconds:point.timeSeconds-automationOffset}))]:undefined;
+  const changed={...clip,sourceRange:{start:rational(clip.sourceRange.start.value+sourceLeft,clip.sourceRange.start.rate),duration:rational(sourceRemaining,clip.sourceRange.duration.rate)},timelineStart:rational(clip.timelineStart.value+removeLeft,clip.timelineStart.rate),duration:rational(remaining,fps),audioAutomation:automation};
   return {...timeline,revision:timeline.revision+1,updatedAt:new Date().toISOString(),tracks:timeline.tracks.map(item=>item.id===trackId?{...item,clips:item.clips.map(c=>c.id===clipId?changed:c)}:item)};
 }
 export function splitClip(timeline:EditorialTimeline,trackId:string,clipId:string,atFrame:number,newClipId:string):EditorialTimeline{
@@ -81,8 +82,12 @@ export function splitClip(timeline:EditorialTimeline,trackId:string,clipId:strin
   const sourceOffset=Math.round(offset/fps*clip.sourceRange.start.rate);
   const sourceRemaining=clip.sourceRange.duration.value-sourceOffset;
   if(sourceRemaining<=0)throw new Error("Split point is outside the source range.");
-  const first={...clip,duration:rational(offset,fps),sourceRange:{...clip.sourceRange,duration:rational(sourceOffset,clip.sourceRange.duration.rate)}};
-  const second={...clip,id:newClipId,name:clip.name+" · B",timelineStart:rational(start+offset,fps),duration:rational(duration-offset,fps),sourceRange:{start:rational(clip.sourceRange.start.value+sourceOffset,clip.sourceRange.start.rate),duration:rational(sourceRemaining,clip.sourceRange.duration.rate)}};
+  const splitSeconds=offset/fps,points=clip.audioAutomation||[];
+  const boundary=points.length?[{timeSeconds:0,gainDb:evaluateAudioAutomation(points,splitSeconds,"gainDb",clip.gainDb??0),pan:evaluateAudioAutomation(points,splitSeconds,"pan",clip.pan??0),interpolation:"linear" as const}]:undefined;
+  const firstAutomation=points.length?[...points.filter(point=>point.timeSeconds<splitSeconds),{timeSeconds:splitSeconds,gainDb:evaluateAudioAutomation(points,splitSeconds,"gainDb",clip.gainDb??0),pan:evaluateAudioAutomation(points,splitSeconds,"pan",clip.pan??0),interpolation:"linear" as const}]:undefined;
+  const secondAutomation=points.length?boundary!.concat(points.filter(point=>point.timeSeconds>splitSeconds).map(point=>({...point,timeSeconds:point.timeSeconds-splitSeconds}))):undefined;
+  const first={...clip,duration:rational(offset,fps),sourceRange:{...clip.sourceRange,duration:rational(sourceOffset,clip.sourceRange.duration.rate)},audioAutomation:firstAutomation};
+  const second={...clip,id:newClipId,name:clip.name+" · B",timelineStart:rational(start+offset,fps),duration:rational(duration-offset,fps),sourceRange:{start:rational(clip.sourceRange.start.value+sourceOffset,clip.sourceRange.start.rate),duration:rational(sourceRemaining,clip.sourceRange.duration.rate)},audioAutomation:secondAutomation};
   return {...timeline,revision:timeline.revision+1,updatedAt:new Date().toISOString(),tracks:timeline.tracks.map(item=>item.id===trackId?{...item,clips:item.clips.flatMap(c=>c.id===clipId?[first,second]:[c])}:item)};
 }
 export function moveClip(timeline:EditorialTimeline,fromTrackId:string,clipId:string,toTrackId:string,toFrame:number):EditorialTimeline{
@@ -201,7 +206,7 @@ export function toOpenTimelineIo(timeline:EditorialTimeline):OtioObject{
         OTIO_SCHEMA:"Clip.2",name:clip.name,
         media_reference:{OTIO_SCHEMA:"ExternalReference.1",target_url:"asset://"+clip.assetId,available_range:otioRange(clip.sourceRange)},
         source_range:otioRange(clip.sourceRange),
-        metadata:{executiveVisuals:{clipId:clip.id,assetId:clip.assetId,enabled:clip.enabled,gainDb:clip.gainDb??0,speed:clip.speed??1,custom:clip.metadata??{}}}
+        metadata:{executiveVisuals:{clipId:clip.id,assetId:clip.assetId,enabled:clip.enabled,gainDb:clip.gainDb??0,pan:clip.pan??0,audioAutomation:clip.audioAutomation??[],speed:clip.speed??1,custom:clip.metadata??{}}}
       });
       cursor=start+duration;
     }
