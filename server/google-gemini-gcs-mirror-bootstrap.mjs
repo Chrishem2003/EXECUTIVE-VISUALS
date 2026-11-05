@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { isAbsolute } from "node:path";
 import { createGoogleGeminiGcsMirrorServiceFactory } from "./google-gemini-gcs-mirror-service-factory.mjs";
 
 const CLOUD_PLATFORM_SCOPE = "https://www.googleapis.com/auth/cloud-platform";
@@ -47,12 +48,12 @@ export async function createGoogleGeminiGcsMirrorBootstrap({
     const source = credentialConfig?.credential_source;
     if (credentialConfig?.type !== "external_account" ||
         typeof credentialConfig.audience !== "string" ||
-        !credentialConfig.audience.startsWith("//iam.googleapis.com/projects/") ||
+        !/^\\/\\/iam\\.googleapis\\.com\\/projects\\/\\d+\\/locations\\/[a-z0-9-]+\\/workloadIdentityPools\\/[A-Za-z0-9_-]+\\/providers\\/[A-Za-z0-9_-]+$/.test(credentialConfig.audience) ||
         tokenUrl?.protocol !== "https:" || tokenUrl?.hostname !== "sts.googleapis.com" ||
         (credentialConfig.token_info_url && (tokenInfoUrl?.protocol !== "https:" || tokenInfoUrl?.hostname !== "sts.googleapis.com")) ||
         (credentialConfig.service_account_impersonation_url && (impersonationUrl?.protocol !== "https:" || impersonationUrl?.hostname !== "iamcredentials.googleapis.com")) ||
         !source || typeof source !== "object" || Array.isArray(source) ||
-        typeof source.file !== "string" || !source.file.trim() ||
+        typeof source.file !== "string" || !source.file.trim() || !isAbsolute(source.file) ||
         Object.keys(source).some(key => !["file", "format"].includes(key)) ||
         (source.format !== undefined &&
           (!source.format || typeof source.format !== "object" || Array.isArray(source.format) ||
