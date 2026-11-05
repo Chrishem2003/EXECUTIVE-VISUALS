@@ -73,6 +73,17 @@ test("claims a Drive export attempt with a bounded exclusive lease",async()=>{
  assert.equal(h.rows[0].lease_token,lease);
  assert.ok(Date.parse(h.rows[0].lease_expires_at)>Date.now());
 });
+test("allows exactly one of two simultaneous workers to claim a prepared export",async()=>{
+ const h=harness();
+ const results=await Promise.all([
+  h.store.claim({attemptKey,ownerId}),
+  h.store.claim({attemptKey,ownerId})
+ ]);
+ assert.equal(results.filter(Boolean).length,1);
+ assert.equal(results.filter(value=>value===null).length,1);
+ assert.equal(h.rows[0].lease_token,results.find(Boolean));
+ assert.ok(Date.parse(h.rows[0].lease_expires_at)>Date.now());
+});
 test("does not automatically reclaim terminal or reconciliation-required attempts",async()=>{
  const h=harness();
  h.rows[0].state="RECONCILIATION_REQUIRED";
