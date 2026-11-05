@@ -66,7 +66,9 @@ test("leaves no-match outcomes quarantined instead of assuming upload did not ha
   assert.equal(result.reconciled, 0);
   assert.equal(result.results[0].status, "no_provider_evidence_quarantined");
   assert.equal(h.records.length, 0);
-  assert.equal(h.updates.length, 0);
+  assert.equal(h.updates.length, 1);
+  assert.equal(h.updates[0].state, "QUARANTINED");
+  assert.equal(h.updates[0].errorCode, "GEMINI_FILE_RECOVERY_NO_PROVIDER_EVIDENCE");
 });
 
 test("quarantines multiple matching display names and never chooses one arbitrarily", async () => {
@@ -74,12 +76,32 @@ test("quarantines multiple matching display names and never chooses one arbitrar
   const result = await h.worker.run();
   assert.equal(result.results[0].status, "ambiguous_multiple_matches");
   assert.equal(h.records.length, 0);
+  assert.equal(h.updates[0].state, "QUARANTINED");
+  assert.equal(h.updates[0].errorCode, "GEMINI_FILE_RECOVERY_MULTIPLE_MATCHES");
 });
 
 test("does not accept metadata mismatches as proof of the uploaded private asset", async () => {
   const h = harness({ pages: [{ files: [{ ...file, sizeBytes: file.sizeBytes + 1 }], nextPageToken: null }] });
   const result = await h.worker.run();
   assert.equal(result.results[0].status, "metadata_mismatch_quarantined");
+  assert.equal(h.records.length, 0);
+  assert.equal(h.updates[0].state, "QUARANTINED");
+});
+
+
+test("quarantines a partial provider listing even when the first page has one match", async () => {
+  const h = harness({ pages: [{ files: [file], nextPageToken: "next-page" }] });
+  const result = await h.worker.run();
+  assert.equal(result.results[0].status, "pagination_incomplete_quarantined");
+  assert.equal(h.records.length, 0);
+  assert.equal(h.updates[0].state, "QUARANTINED");
+  assert.equal(h.updates[0].errorCode, "GEMINI_FILE_RECOVERY_PAGINATION_INCOMPLETE");
+});
+
+test("does not claim quarantine succeeded when its durable state update fails", async () => {
+  const h = harness({ pages: [{ files: [], nextPageToken: null }], failUpdate: true });
+  const result = await h.worker.run();
+  assert.equal(result.results[0].status, "retry_pending");
   assert.equal(h.records.length, 0);
 });
 
@@ -104,4 +126,5 @@ test("does not reconcile a file without verified expiration metadata", async () 
   const result = await h.worker.run();
   assert.equal(result.results[0].status, "expiry_unverified_quarantined");
   assert.equal(h.records.length, 0);
+  assert.equal(h.updates[0].state, "QUARANTINED");
 });
