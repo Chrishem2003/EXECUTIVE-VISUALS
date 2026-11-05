@@ -40,6 +40,8 @@ test("cloud video worker requires an explicit bounded output-host allowlist",()=
  const videoEnv={...env,CLOUD_MEDIA_WORKER_ENABLED:"false",CLOUD_TIMELINE_WORKER_ENABLED:"false",CLOUD_VIDEO_WORKER_ENABLED:"true"};
  assert.throws(()=>readCloudWorkerConfig(videoEnv),/output-host allowlist/);
  assert.throws(()=>readCloudWorkerConfig({...videoEnv,CLOUD_VIDEO_OUTPUT_ALLOWED_HOSTS:"*.runwayml.com,not a host"}),/output-host allowlist/);
+ assert.throws(()=>readCloudWorkerConfig({...videoEnv,CLOUD_VIDEO_OUTPUT_ALLOWED_HOSTS:"*.runwayml.com,cdn..runwayml.com"}),/output-host allowlist/);
+ assert.throws(()=>readCloudWorkerConfig({...videoEnv,CLOUD_VIDEO_OUTPUT_ALLOWED_HOSTS:"*.runwayml.com,-bad.runwayml.com"}),/output-host allowlist/);
  const config=readCloudWorkerConfig({...videoEnv,CLOUD_VIDEO_OUTPUT_ALLOWED_HOSTS:"*.runwayml.com,cdn.runwayml.com"});
  assert.equal(config.video,true);
  assert.deepEqual(config.videoAllowedOutputHosts,["*.runwayml.com","cdn.runwayml.com"]);
