@@ -140,8 +140,14 @@ export function createGoogleDriveOAuth({
       headers: { "content-type": "application/x-www-form-urlencoded", accept: "application/json" },
       body: new URLSearchParams(form).toString()
     });
-    if (!result.ok) throw fail("Google authorization could not be completed. Reconnect your Google account.",
-      result.status === 400 || result.status === 401 ? "GOOGLE_OAUTH_CODE_REJECTED" : "GOOGLE_OAUTH_UNAVAILABLE");
+    if (!result.ok) {
+      const rejected = result.status === 400 || result.status === 401;
+      const refreshRejected = form.grant_type === "refresh_token" && rejected;
+      throw fail(refreshRejected
+        ? "Google Drive authorization has expired or been revoked. Reconnect your Google account."
+        : "Google authorization could not be completed. Reconnect your Google account.",
+        refreshRejected ? "GOOGLE_OAUTH_REAUTH_REQUIRED" : rejected ? "GOOGLE_OAUTH_CODE_REJECTED" : "GOOGLE_OAUTH_UNAVAILABLE");
+    }
     return result.data;
   }
   function validateTokenResponse(data) {
