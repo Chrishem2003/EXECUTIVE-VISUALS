@@ -30,7 +30,7 @@ export function createKiePrivateAssetResolver({assets,expiresIn=3600}={}){
   async function resolveImage(assetId){
    const result=await assets.createSignedUrl({ownerId,assetId,expiresIn});
    const asset=result?.asset;
-   if(!asset||asset.id!==assetId||asset.ownerId!==ownerId||!IMAGE_TYPES.has(asset.mediaType)||!Number.isSafeInteger(asset.size)||asset.size<1||asset.size>MAX_IMAGE_BYTES)throw fail("Kie image input must be a private owner/project asset of a supported type and no more than 30 MB.","KIE_VIDEO_INPUT_ASSET_INVALID");
+   if(!asset||asset.id!==assetId||asset.ownerId!==ownerId||(asset.projectId!==null&&asset.projectId!==projectId)||!IMAGE_TYPES.has(asset.mediaType)||!Number.isSafeInteger(asset.size)||asset.size<1||asset.size>MAX_IMAGE_BYTES)throw fail("Kie image input must be a private owner/project asset of a supported type and no more than 30 MB.","KIE_VIDEO_INPUT_ASSET_INVALID");
    return safeSignedUrl(result.url);
   }
   const [firstFrameUrl,lastFrameUrl]=await Promise.all([firstId?resolveImage(firstId):null,lastId?resolveImage(lastId):null]);
