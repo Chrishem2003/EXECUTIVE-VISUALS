@@ -126,9 +126,10 @@ test("GCS bootstrap rejects service-account key files and malformed WIF endpoint
   }
 });
 
-test("GCS bootstrap rejects local user ADC credential clients even when token acquisition succeeds", async () => {
+test("GCS bootstrap rejects local user ADC before requesting an access token", async () => {
+  let tokenRequests = 0;
   class UserRefreshClient {
-    async getAccessToken() { return { token: "u".repeat(40) }; }
+    async getAccessToken() { tokenRequests += 1; return { token: "u".repeat(40) }; }
   }
   class Compute {}
   class IdentityPoolClient {}
@@ -144,6 +145,7 @@ test("GCS bootstrap rejects local user ADC credential clients even when token ac
     error.code === "GEMINI_GCS_ADC_IDENTITY_TYPE_REJECTED" &&
     /local user ADC credentials/.test(error.message)
   );
+  assert.equal(tokenRequests, 0, "unapproved ADC identities must be rejected before token acquisition");
 });
 
 test("GCS bootstrap accepts the concrete IdentityPoolClient used by file-based WIF", async () => {
