@@ -29,7 +29,7 @@ must fail startup closed; this is intentional.
 - `GEMINI_GCS_SESSION_ENCRYPTION_KEY` — base64-encoded 32-byte key used for
   AES-256-GCM encryption of resumable session URIs
 - `SUPABASE_URL`
-- `SUPABASE_SERVICE_ROLE_KEY` — worker process only
+- `SUPABASE_SERVICE_ROLE_KEY` — server-side API and worker processes only; never browser/client configuration
 - `GEMINI_GCS_MIRROR_RECOVERY_ENABLED=false` until staging approval
 - `GEMINI_GCS_MIRROR_RECOVERY_INTERVAL_MS=300000`
 
@@ -97,9 +97,18 @@ Required startup settings include:
 - `GOOGLE_CLOUD_PROJECT_ID`, `GEMINI_GCS_ALLOWED_BUCKETS`, and
   `GEMINI_GCS_MIRROR_BUCKET`.
 - `GEMINI_GCS_SESSION_ENCRYPTION_KEY`: base64 encoding of exactly 32 random
-  bytes. Generate and store it in the host's secret manager; never reuse the
-  Supabase service-role key or Google OAuth token.
-- `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` in the worker only.
+  bytes. Generate and store it in the host's secret manager; the API and recovery
+  worker must use the same key to read the same encrypted attempt ledger. Never
+  reuse the Supabase service-role key or Google OAuth token.
+- `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` in the server-side API and
+  worker processes only.
+- `GEMINI_GCS_MIRROR_ENABLED=true` on the API service enables the authenticated
+  `POST /api/integrations/google-gcs/mirror` endpoint. It accepts only an asset
+  ID and optional project ID; owner identity comes from the verified session.
+  The endpoint requires owner/editor access for project assets, records an
+  audit event, and never returns the private GCS URI.
+- `GEMINI_GCS_MIRROR_RECOVERY_ENABLED=true` on the isolated background worker
+  enables lease-fenced recovery independently of the API mirror endpoint.
 
 At startup the worker obtains a short-lived ADC token before registering the
 GCS recovery maintenance task. Token acquisition failure aborts startup. The
@@ -112,6 +121,12 @@ Official references:
 - https://docs.cloud.google.com/docs/authentication/application-default-credentials
 - https://docs.cloud.google.com/iam/docs/workload-identity-federation
 - https://github.com/googleapis/google-auth-library-nodejs
+
+The API and worker flags are separate. Keep both disabled until the
+staging identity, bucket policy, secret synchronization and disposable tests
+have been reviewed. The mirror API does not automatically register the object
+with Gemini Files; provider-side GCS registration and UI workflow wiring remain
+separate release work.
 
 ## Staging acceptance gates
 
