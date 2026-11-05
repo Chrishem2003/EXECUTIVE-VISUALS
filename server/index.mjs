@@ -28,6 +28,8 @@ import { createGoogleDrivePrivateFileBridge } from "./google-drive-private-file-
 import { createCloudAssetService } from "./cloud-asset-service.mjs";
 import { createGoogleGeminiFilesComposition } from "./google-gemini-files-composition.mjs";
 import { createGoogleGeminiFilesUploadService } from "./google-gemini-files-upload-service.mjs";
+import { createGoogleGeminiGcsMirrorBootstrap } from "./google-gemini-gcs-mirror-bootstrap.mjs";
+import { createGoogleGeminiGcsMirrorUploadService } from "./google-gemini-gcs-mirror-upload-service.mjs";
 
 const PORT = Number(process.env.API_PORT || process.env.PORT || 4179);
 const HOST = process.env.API_HOST || "127.0.0.1";
@@ -128,6 +130,22 @@ const googleGeminiFilesUpload = googleGeminiFilesGateway ? createGoogleGeminiFil
   canWriteProject: (ownerId, projectId) => canWriteProject(db, ownerId, projectId),
   audit: (...args) => audit(db, ...args)
 }) : null;
+
+const googleGeminiGcsMirrorEnabled = process.env.GEMINI_GCS_MIRROR_ENABLED === "true";
+if (googleGeminiGcsMirrorEnabled && (AUTH_MODE !== "supabase" || !supabaseAuth)) {
+  throw new Error("Private GCS mirroring requires verified Supabase authentication.");
+}
+let googleGeminiGcsMirrorUpload = null;
+if (googleGeminiGcsMirrorEnabled) {
+  const bootstrap = await createGoogleGeminiGcsMirrorBootstrap({ env: process.env });
+  await bootstrap.checkIdentity();
+  googleGeminiGcsMirrorUpload = createGoogleGeminiGcsMirrorUploadService({
+    mirrorService: bootstrap.createService(),
+    getProjectAccess: (ownerId, projectId) => getProjectAccess(db, ownerId, projectId),
+    canWriteProject: (ownerId, projectId) => canWriteProject(db, ownerId, projectId),
+    audit: (...args) => audit(db, ...args)
+  });
+}
 ensureTransformationPlanSchema(db);
 ensureAuthSecuritySchema(db);
 const aiUpscaleAdapter = createRealEsrganAdapter();
@@ -342,8 +360,8 @@ export function createAppServer() {
     if(req.method==="OPTIONS"){res.writeHead(204,{"access-control-allow-methods":"GET,POST,PUT,DELETE,OPTIONS","access-control-allow-headers":"content-type,authorization,x-file-name,x-project-id,idempotency-key","access-control-max-age":"600",...cors});res.end();return;}
     const url=new URL(req.url||"/","http://localhost");
     const path=url.pathname;
-    const ratePath=path.startsWith("/api/auth/")?"/auth":path.startsWith("/api/integrations/google-drive/")?"/google-drive-oauth":path.startsWith("/api/integrations/google-gemini/")?"/google-gemini-files":(path==="/api/assets"||path==="/api/cloud/assets")&&req.method==="POST"?"/upload":path.endsWith("/research/import")&&req.method==="POST"?"/research":path==="/api/admin/ai-upscale/self-test"&&req.method==="POST"?"/ai-upscale-self-test":"";
-    if(ratePath){const key=(req.socket.remoteAddress||"unknown")+ratePath;const limit=ratePath==="/auth"?AUTH_RATE_LIMIT:ratePath==="/research"?10:ratePath==="/ai-upscale-self-test"?2:ratePath==="/google-drive-oauth"?20:ratePath==="/google-gemini-files"?5:30;if(!rateAllowed(key,limit,60000)){fail(res,429,"RATE_LIMITED","Too many requests. Wait before trying again.");return;}}
+    const ratePath=path.startsWith("/api/auth/")?"/auth":path.startsWith("/api/integrations/google-drive/")?"/google-drive-oauth":path.startsWith("/api/integrations/google-gemini/")?"/google-gemini-files":path.startsWith("/api/integrations/google-gcs/")?"/google-gcs-mirror":(path==="/api/assets"||path==="/api/cloud/assets")&&req.method==="POST"?"/upload":path.endsWith("/research/import")&&req.method==="POST"?"/research":path==="/api/admin/ai-upscale/self-test"&&req.method==="POST"?"/ai-upscale-self-test":"";
+    if(ratePath){const key=(req.socket.remoteAddress||"unknown")+ratePath;const limit=ratePath==="/auth"?AUTH_RATE_LIMIT:ratePath==="/research"?10:ratePath==="/ai-upscale-self-test"?2:ratePath==="/google-drive-oauth"?20:ratePath==="/google-gemini-files"||ratePath==="/google-gcs-mirror"?5:30;if(!rateAllowed(key,limit,60000)){fail(res,429,"RATE_LIMITED","Too many requests. Wait before trying again.");return;}}
     try {
       if(!path.startsWith("/api/")&&req.method==="GET"){
         const decoded=decodeURIComponent(path);
@@ -518,6 +536,29 @@ export function createAppServer() {
               "GOOGLE_DRIVE_EXPORT_RECONCILIATION_CONFLICT","GOOGLE_DRIVE_UPLOAD_SESSION_EXPIRED","GOOGLE_DRIVE_EXPORT_IN_PROGRESS"].includes(error.code)?409:
             ["GOOGLE_DRIVE_EXPORT_STORE_UNAVAILABLE","GOOGLE_DRIVE_EXPORT_STORE_TIMEOUT"].includes(error.code)?503:502;
           fail(res,status,error.code||"GOOGLE_DRIVE_EXPORT_FAILED",error.message||"Google Drive file export failed.");return;
+        }
+      }
+      if(path==="/api/integrations/google-gcs/mirror/status"&&req.method==="GET"){
+        send(res,200,{enabled:Boolean(googleGeminiGcsMirrorUpload)},cors);return;
+      }
+      if(path==="/api/integrations/google-gcs/mirror"&&req.method==="POST"){
+        if(!googleGeminiGcsMirrorUpload){fail(res,503,"GOOGLE_GCS_MIRROR_DISABLED","Private GCS mirroring is disabled by server policy.");return;}
+        const body=await readJson(req,12*1024);
+        try{
+          const result=await googleGeminiGcsMirrorUpload.mirror({
+            ownerId:user.id,projectId:body?.projectId||null,assetId:body?.assetId
+          });
+          send(res,200,{mirror:result},cors);return;
+        }catch(error){
+          const status=error.status||(
+            error.code==="PROJECT_NOT_FOUND"?404:
+            error.code==="EDITOR_REQUIRED"?403:
+            error.code==="GEMINI_GCS_MIRROR_REQUEST_INVALID"?400:
+            ["GEMINI_GCS_ASSET_SCOPE_INVALID","GEMINI_GCS_ASSET_FORBIDDEN","GEMINI_GCS_ASSET_INVALID"].includes(error.code)?403:
+            ["GEMINI_GCS_SOURCE_FILE_MISSING"].includes(error.code)?404:
+            ["GEMINI_GCS_ATTEMPT_STORE_UNAVAILABLE","GEMINI_GCS_ATTEMPT_STORE_TIMEOUT"].includes(error.code)?503:502
+          );
+          fail(res,status,error.code||"GOOGLE_GCS_MIRROR_FAILED",error.message||"Private asset could not be mirrored to Google Cloud Storage.");return;
         }
       }
       if(path==="/api/integrations/google-gemini/files/status"&&req.method==="GET"){
