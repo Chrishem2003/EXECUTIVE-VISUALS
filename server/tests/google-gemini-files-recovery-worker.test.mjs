@@ -22,7 +22,7 @@ const file = {
   sha256Hash: Buffer.from(sha256, "hex").toString("base64"),
   state: "ACTIVE", expirationTime: "2026-11-07T00:00:00.000Z"
 };
-function harness({ attempts = [baseAttempt], pages = [{ files: [file], nextPageToken: null }], getFile, failRecord = false, failUpdate = false } = {}) {
+function harness({ attempts = [baseAttempt], pages = [{ files: [file], nextPageToken: null }], getFile, failRecord = false, failUpdate = false, maxPages = 10 } = {}) {
   const calls = [];
   const records = [];
   const updates = [];
@@ -39,7 +39,7 @@ function harness({ attempts = [baseAttempt], pages = [{ files: [file], nextPageT
     async getProviderFile(name) { calls.push(["get", name]); return getFile || file; }
   };
   const worker = createGoogleGeminiFilesRecoveryWorker({
-    repository, gateway, now: () => Date.parse("2026-11-05T00:00:00.000Z")
+    repository, gateway, now: () => Date.parse("2026-11-05T00:00:00.000Z"), maxPages
   });
   return { worker, calls, records, updates };
 }
@@ -92,7 +92,7 @@ test("does not accept metadata mismatches as proof of the uploaded private asset
 
 
 test("quarantines a partial provider listing even when the first page has one match", async () => {
-  const h = harness({ pages: [{ files: [file], nextPageToken: "next-page" }] });
+  const h = harness({ pages: [{ files: [file], nextPageToken: "next-page" }], maxPages: 1 });
   const result = await h.worker.run();
   assert.equal(result.results[0].status, "pagination_incomplete_quarantined");
   assert.equal(h.records.length, 0);
