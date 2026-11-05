@@ -23,6 +23,7 @@ import { ensureAuthSecuritySchema, getLoginLockState, recordFailedLogin, clearLo
 import { createSupabaseAuth, SUPABASE_SESSION_COOKIE, SUPABASE_SESSION_MAX_AGE_SECONDS } from "./supabase-auth.mjs";
 import { createGoogleDriveOAuth } from "./google-drive-oauth.mjs";
 import { createGoogleDriveConnectionStore, createGoogleDriveOAuthStateStore } from "./google-drive-connection-store.mjs";
+import { createGoogleDriveExportAttemptStore } from "./google-drive-export-attempt-store.mjs";
 import { createGoogleDrivePrivateFileBridge } from "./google-drive-private-file-bridge.mjs";
 import { createCloudAssetService } from "./cloud-asset-service.mjs";
 import { createGoogleGeminiFilesComposition } from "./google-gemini-files-composition.mjs";
@@ -39,6 +40,7 @@ if (googleDriveOAuthEnabled && (AUTH_MODE !== "supabase" || !supabaseAuth)) {
   throw new Error("Google Drive OAuth requires fully configured verified Supabase authentication.");
 }
 const googleDriveConnectionStore = googleDriveOAuthEnabled ? createGoogleDriveConnectionStore() : null;
+const googleDriveExportAttemptStore = googleDriveOAuthEnabled ? createGoogleDriveExportAttemptStore() : null;
 const googleDriveOAuthStateStore = googleDriveOAuthEnabled ? createGoogleDriveOAuthStateStore() : null;
 const googleDriveOAuth = googleDriveOAuthEnabled ? createGoogleDriveOAuth({
   stateStore: googleDriveOAuthStateStore,
@@ -48,6 +50,7 @@ const googleDriveAssetService = googleDriveOAuthEnabled ? createCloudAssetServic
   maxBytes: Number(process.env.CLOUD_MEDIA_MAX_UPLOAD_BYTES || process.env.MAX_UPLOAD_BYTES || 250 * 1024 * 1024)
 }) : null;
 const googleDriveBridge = googleDriveOAuthEnabled ? createGoogleDrivePrivateFileBridge({
+  attempts: googleDriveExportAttemptStore,
   getUserAccessToken: ({ ownerId }) => googleDriveOAuth.getAccessToken({ ownerId }),
   assets: googleDriveAssetService.assets,
   maxBytes: Number(process.env.CLOUD_MEDIA_MAX_UPLOAD_BYTES || process.env.MAX_UPLOAD_BYTES || 250 * 1024 * 1024),
