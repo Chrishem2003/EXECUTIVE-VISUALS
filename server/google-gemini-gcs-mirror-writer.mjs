@@ -204,15 +204,23 @@ export function createGoogleGeminiGcsMirrorWriter({
       let generation = null;
       try {
         const stream = createReadStream(filePath);
-        const completed = await request(sessionUri, {
-          method: "PUT",
-          body: stream,
-          headers: { "content-type": mediaType, "content-length": String(sizeBytes) }
-        });
+        let completed;
+        try {
+          completed = await request(sessionUri, {
+            method: "PUT",
+            body: stream,
+            headers: { "content-type": mediaType, "content-length": String(sizeBytes) }
+          });
+        } catch (error) {
+          error.outcomeUnknown = true;
+          error.cleanupPending = true;
+          throw error;
+        }
         uploaded = completed.response.status === 200 || completed.response.status === 201;
         if (!uploaded) throw fail("GCS resumable upload did not complete.", "GEMINI_GCS_UPLOAD_INCOMPLETE");
         generation = String(completed.data?.generation || "");
         const verified = await readObjectMetadata(objectName, accessToken);
+        generation = String(verified?.generation || generation);
         if (!verifyMetadata(verified, expected)) {
           throw fail("Uploaded GCS mirror failed exact object metadata verification.", "GEMINI_GCS_MIRROR_INTEGRITY_MISMATCH");
         }
