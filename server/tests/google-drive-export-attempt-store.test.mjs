@@ -88,7 +88,9 @@ test("uses a separate short lease to reconcile quarantined exports without reope
  const h=harness();
  h.rows[0].state="RECONCILIATION_REQUIRED";
  assert.equal(await h.store.claim({attemptKey,ownerId}),null);
- assert.equal(await h.store.claimForReconciliation({attemptKey,ownerId}),null===true?null:h.rows[0].lease_token);
+ const lease=await h.store.claimForReconciliation({attemptKey,ownerId});
+ assert.match(lease,/^[0-9a-f-]{36}$/);
+ assert.equal(h.rows[0].lease_token,lease);
  assert.match(h.calls.at(-1).url,/state=eq\.RECONCILIATION_REQUIRED/);
  assert.match(h.calls.at(-1).url,/lease_expires_at/);
  assert.equal(h.rows[0].state,"RECONCILIATION_REQUIRED");
