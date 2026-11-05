@@ -57,6 +57,46 @@ test("creates one stored background interaction only after durable approval", as
   assert.equal(JSON.stringify(result).includes("server-google-key"), false);
 });
 
+
+test("captures the creation ID and video URI from bounded SSE events", async () => {
+  const events = [
+    { event_type: "interaction.created", interaction: { id, model: "gemini-omni-1.1-flash", status: "in_progress" } },
+    { event_type: "step.start", index: 0, step: { type: "model_output" } },
+    { event_type: "step.delta", index: 0, delta: { type: "video", mime_type: "video/mp4", uri: fileUri } },
+    { event_type: "interaction.completed", interaction: { id, model: "gemini-omni-1.1-flash", status: "completed", usage: { total_tokens: 12 } } }
+  ];
+  const body = events.map(event => "event: " + event.event_type + "\\ndata: " + JSON.stringify(event) + "\\n\\n").join("") + "event: done\\ndata: [DONE]\\n\\n";
+  const h = harness({ fetchImpl: async () => new Response(body, {
+    status: 200, headers: { "content-type": "text/event-stream" }
+  }) });
+  const persisted = [];
+  const result = await h.client.createInteraction(await plan(), { jobId: "job-1" }, {
+    onInteractionCreated: async event => persisted.push(event)
+  });
+  assert.equal(result.interactionId, id);
+  assert.equal(result.status, "succeeded");
+  assert.deepEqual(result.outputUrls, [fileUri]);
+  assert.equal(result.usage.total_tokens, 12);
+  assert.deepEqual(persisted, [{ interactionId: id, status: "running", model: "gemini-omni-1.1-flash" }]);
+  const payload = JSON.parse(h.calls[0].options.body);
+  assert.equal(payload.stream, true);
+  assert.equal(payload.background, true);
+});
+
+test("preserves durable creation callback when an SSE stream is interrupted", async () => {
+  const event = { event_type: "interaction.created", interaction: { id, model: "gemini-omni-1.1-flash", status: "in_progress" } };
+  const body = "event: interaction.created\\ndata: " + JSON.stringify(event) + "\\n\\n";
+  const h = harness({ fetchImpl: async () => new Response(body, {
+    status: 200, headers: { "content-type": "text/event-stream" }
+  }) });
+  const persisted = [];
+  await assert.rejects(() => h.client.createInteraction(await plan(), {}, {
+    onInteractionCreated: async value => persisted.push(value)
+  }), error => error.code === "GEMINI_OMNI_SUBMISSION_OUTCOME_UNKNOWN");
+  assert.equal(persisted.length, 1);
+  assert.equal(persisted[0].interactionId, id);
+});
+
 test("refuses missing approval before any provider request", async () => {
   const h = harness({ approve: async () => false });
   await assert.rejects(async () => h.client.createInteraction(await plan()), error =>
