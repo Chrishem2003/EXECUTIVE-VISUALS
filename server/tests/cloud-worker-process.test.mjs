@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readCloudWorkerConfig,createCloudWorkerSupervisor } from "../cloud-worker-process.mjs";
+import { readCloudWorkerConfig,createCloudWorkerSupervisor,createGoogleGeminiGcsMirrorRecoveryMaintenanceWorker } from "../cloud-worker-process.mjs";
 
 const env={CLOUD_WORKER_ENABLED:"true",CLOUD_MEDIA_WORKER_ENABLED:"true",CLOUD_TIMELINE_WORKER_ENABLED:"true",SUPABASE_URL:"https://example.supabase.co",SUPABASE_SERVICE_ROLE_KEY:"server-secret"};
 test("cloud worker config remains disabled unless explicitly enabled",()=>{assert.throws(()=>readCloudWorkerConfig({...env,CLOUD_WORKER_ENABLED:"false"}),/disabled/);});
@@ -108,4 +108,38 @@ test("cloud maintenance worker intervals are individually bounded",()=>{
  assert.throws(()=>createCloudWorkerSupervisor({
   workers,maintenanceWorkers:[{intervalMs:86400001,async run(){}}]
  }),/maintenance worker interval/);
+});
+
+test("GCS mirror recovery maintenance remains disabled unless explicitly enabled",()=>{
+ let created=0;
+ const worker=createGoogleGeminiGcsMirrorRecoveryMaintenanceWorker({
+  enabled:false,createService(){created++;return{recoverMirrorAttempts:async()=>({reconciled:1})};}
+ });
+ assert.equal(worker,null);
+ assert.equal(created,0);
+});
+
+test("GCS mirror recovery requires an injected server-side identity and service factory",()=>{
+ assert.throws(()=>createGoogleGeminiGcsMirrorRecoveryMaintenanceWorker({
+  enabled:true,intervalMs:10000
+ }),/explicitly injected server-side service factory/);
+ assert.throws(()=>createGoogleGeminiGcsMirrorRecoveryMaintenanceWorker({
+  enabled:true,intervalMs:10000,createService:()=>({})
+ }),/recoverMirrorAttempts/);
+ assert.throws(()=>createGoogleGeminiGcsMirrorRecoveryMaintenanceWorker({
+  enabled:true,intervalMs:9999,createService:()=>({recoverMirrorAttempts:async()=>({})})
+ }),/interval is invalid/);
+});
+
+test("GCS mirror recovery maintenance delegates a bounded batch to the injected service",async()=>{
+ const calls=[],options={projectId:"server-project",getAccessToken:async()=>"server-token"};
+ const worker=createGoogleGeminiGcsMirrorRecoveryMaintenanceWorker({
+  enabled:true,intervalMs:60000,serviceOptions:options,
+  createService(received){assert.equal(received,options);return{
+   async recoverMirrorAttempts(args){calls.push(args);return{reconciled:2,retryPending:1};}
+  };}
+ });
+ assert.equal(worker.intervalMs,60000);
+ assert.deepEqual(await worker.run(),{reconciled:2,retryPending:1});
+ assert.deepEqual(calls,[{limit:100}]);
 });
