@@ -128,6 +128,54 @@ export function createGoogleGeminiFilesRepository({
       if (!Array.isArray(rows) || rows.length !== 1) throw new Error("Google provider-file mapping was not durably persisted.");
       return rows[0].id;
     },
+    async listExpiredProviderFiles({ before = new Date().toISOString(), limit = 100 } = {}) {
+      if (!Number.isInteger(limit) || limit < 1 || limit > 500) throw new Error("Expired Google provider-file page size is invalid.");
+      const cutoff = new Date(before);
+      if (!Number.isFinite(cutoff.getTime())) throw new Error("Expired Google provider-file cutoff is invalid.");
+      const params = new URLSearchParams({
+        select: "id,provider,asset_id,owner_id,project_id,google_file_name,google_file_uri,mime_type,byte_size,sha256,state,uploaded_at,expires_at,source_type,source_uri",
+        provider: "eq." + PROVIDER,
+        expires_at: "lte." + cutoff.toISOString(),
+        state: "in.(ACTIVE,EXPIRED)",
+        order: "expires_at.asc",
+        limit: String(limit)
+      });
+      const rows = await request("?" + params.toString());
+      if (!Array.isArray(rows)) throw new Error("Expired Google provider-file query returned an invalid result.");
+      return rows.map(row => ({
+        id: row.id,
+        provider: row.provider,
+        assetId: row.asset_id,
+        ownerId: row.owner_id,
+        projectId: row.project_id || null,
+        name: row.google_file_name,
+        uri: row.google_file_uri,
+        mimeType: row.mime_type,
+        sizeBytes: Number(row.byte_size),
+        sha256: row.sha256,
+        state: row.state,
+        uploadedAt: row.uploaded_at,
+        expiresAt: row.expires_at,
+        sourceType: row.source_type || "upload",
+        sourceUri: row.source_uri || null
+      }));
+    },
+    async updateProviderFileState({ name, recordId, state } = {}) {
+      if (!["ACTIVE", "EXPIRED", "DELETED", "FAILED"].includes(state)) {
+        throw new Error("Google provider-file state is invalid.");
+      }
+      const params = new URLSearchParams({ provider: "eq." + PROVIDER, select: "id" });
+      if (recordId) params.set("id", "eq." + recordId);
+      else if (name) params.set("google_file_name", "eq." + name);
+      else throw new Error("Google provider-file state update requires an ID or file name.");
+      const rows = await request("?" + params.toString(), {
+        method: "PATCH",
+        body: { state, updated_at: new Date().toISOString() },
+        prefer: "return=representation"
+      });
+      if (!Array.isArray(rows) || rows.length !== 1) throw new Error("Google provider-file state update did not match one record.");
+      return rows[0].id;
+    },
     async deleteProviderFileRecord({ name, recordId } = {}) {
       const params = new URLSearchParams({ provider: "eq." + PROVIDER });
       if (recordId) params.set("id", "eq." + recordId);
