@@ -155,3 +155,22 @@ test("cloud executor fails closed if cancellation state cannot be checked",async
  );
  assert.equal(f.calls.some(call=>call[0]==="submit"),false);
 });
+
+test("cloud executor preserves a provider task that completes during cancellation preflight",async()=>{
+ const f=fixture({state:"submitted",status:{taskId,status:"running"},cancellationRequested:true});
+ let polls=0;
+ f.adapter.getStatus=async id=>{
+  f.calls.push(["poll",id]);
+  polls++;
+  return polls===1?{taskId:id,status:"running"}:succeeded;
+ };
+ f.adapter.cancel=async id=>{
+  f.calls.push(["cancel",id]);
+  return {taskId:id,status:"succeeded",cancelRequested:false};
+ };
+ const result=await executeCloudVideoGenerationJob({job,workerId:"worker-1",...f});
+ assert.equal(result.providerTaskId,taskId);
+ assert.deepEqual(f.calls.filter(call=>call[0]==="poll").length,2);
+ assert.equal(f.calls.some(call=>call[0]==="cost"),true);
+ assert.equal(f.calls.some(call=>call[0]==="ingest"),true);
+});
