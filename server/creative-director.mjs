@@ -28,7 +28,10 @@ const isRecord = value => Boolean(value) && typeof value === "object" && !Array.
 export function normalizeCreativeDirectorInput(input) {
   if (!isRecord(input)) throw fail("Creative Director input must be an object.", "CREATIVE_DIRECTOR_INPUT_INVALID");
   const normalized = {};
-  for (const [field, max] of Object.entries(LIMITS)) normalized[field] = clean(input[field], max);
+  for (const [field, max] of Object.entries(LIMITS)) {
+    if (typeof input[field] === "string" && input[field].length > max) throw fail("Creative Director field " + field + " exceeds its " + max + " character limit.", "CREATIVE_DIRECTOR_INPUT_INVALID");
+    normalized[field] = clean(input[field], max);
+  }
   if (!normalized.title || !normalized.brief) {
     throw fail("A project title and core brief are required.", "CREATIVE_DIRECTOR_BRIEF_REQUIRED");
   }
