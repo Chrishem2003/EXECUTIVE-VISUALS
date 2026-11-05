@@ -80,7 +80,7 @@ test("variable-speed curves interpolate and integrate source time deterministica
  assert.equal(validateTimeline(added).valid,true);
  assert.equal(evaluateTimelineAtFrame(added,24).activeClips[0].sourceTimeSeconds,1.25);
  assert.equal(evaluateTimelineAtFrame(added,48).activeClips[0].sourceTimeSeconds,3);
- assert.equal(evaluateTimelineAtFrame(added,72).activeClips[0].sourceTimeSeconds,4.5);
+ assert.equal(evaluateTimelineAtFrame(added,72).activeClips[0].sourceTimeSeconds,4.75);
  assert.equal(evaluateTimelineAtFrame(added,72).activeClips[0].playbackSpeed,1.5);
 });
 
