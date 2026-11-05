@@ -74,9 +74,10 @@ export function addClip(timeline:EditorialTimeline,trackId:string,clip:TimelineC
   if(track.locked)throw new Error("Track is locked.");
   if(track.clips.some(item=>item.id===clip.id))throw new Error("Clip ID already exists.");
   if(clip.duration.value<=0||clip.sourceRange.duration.value<=0)throw new Error("Clip duration must be positive.");
-  const speed=Number(clip.speed??1),durationSeconds=seconds(clip.duration),sourceSeconds=integrateSpeedCurve(clip.speedCurve,durationSeconds,speed);
+  const speed=Number(clip.speed??1),durationSeconds=seconds(clip.duration),curve=clip.speedCurve;
   if(!Number.isFinite(speed)||speed<0.25||speed>4)throw new Error("Clip speed must be between 0.25× and 4×.");
-  if(clip.speedCurve&&(!Array.isArray(clip.speedCurve)||clip.speedCurve.length<2||clip.speedCurve.length>64||clip.speedCurve[0]?.timeSeconds!==0||clip.speedCurve.some((point,index)=>!Number.isFinite(point.timeSeconds)||!Number.isFinite(point.speed)||point.speed<0.25||point.speed>4||point.timeSeconds<0||point.timeSeconds>durationSeconds||(index>0&&point.timeSeconds<=clip.speedCurve[index-1].timeSeconds))))throw new Error("Speed curves require 2–64 ordered keyframes, starting at zero, within the clip, with speeds from 0.25× to 4×.");
+  if(curve!==undefined&&(!Array.isArray(curve)||curve.length<2||curve.length>64||curve[0]?.timeSeconds!==0||curve.some((point,index)=>!point||!Number.isFinite(point.timeSeconds)||!Number.isFinite(point.speed)||point.speed<0.25||point.speed>4||point.timeSeconds<0||point.timeSeconds>durationSeconds||(index>0&&point.timeSeconds<=curve[index-1].timeSeconds)))throw new Error("Speed curves require 2–64 ordered keyframes, starting at zero, within the clip, with speeds from 0.25× to 4×.");
+  const sourceSeconds=integrateSpeedCurve(curve,durationSeconds,speed);
   if(Math.abs(sourceSeconds-seconds(clip.sourceRange.duration))>Math.max(0.000001,0.5/clip.sourceRange.duration.rate))throw new Error("Timeline duration and speed curve must match the source duration.");
   const next={...track,clips:[...track.clips,{...clip}].sort((a,b)=>seconds(a.timelineStart)-seconds(b.timelineStart))};
   const updated={...timeline,revision:timeline.revision+1,updatedAt:new Date().toISOString(),tracks:timeline.tracks.map(item=>item.id===trackId?next:item)};
