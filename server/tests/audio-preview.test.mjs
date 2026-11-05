@@ -29,15 +29,18 @@ class Param{
  value=1;events=[];
  setValueAtTime(value,time){this.value=value;this.events.push([value,time]);}
  setTargetAtTime(value,time,constant){this.value=value;this.events.push([value,time,constant]);}
+ linearRampToValueAtTime(value,time){this.value=value;this.events.push(["ramp",value,time]);}
+ cancelScheduledValues(time){this.events.push(["cancel",time]);}
 }
 class Node{
- connections=[];gain=new Param();threshold=new Param();knee=new Param();ratio=new Param();attack=new Param();release=new Param();
+ connections=[];gain=new Param();pan=new Param();threshold=new Param();knee=new Param();ratio=new Param();attack=new Param();release=new Param();
  connect(node){this.connections.push(node);return node;}
  disconnect(){this.connections=[];}
 }
 class FakeContext{
  state="running";currentTime=1;destination=new Node();sources=[];
  createGain(){return new Node();}
+ createStereoPanner(){return new Node();}
  createDynamicsCompressor(){return new Node();}
  createMediaElementSource(media){const node=new Node();node.media=media;this.sources.push(node);return node;}
  async resume(){this.state="running";}
@@ -64,4 +67,20 @@ test("audio engine routes tracks, applies solo/mute, restores gain and master mu
  assert.equal(mediaA.paused,true);
  assert.equal(context.sources.length,2);
  engine.dispose();assert.equal(context.state,"closed");
+});
+
+test("audio engine schedules clip gain and pan keyframes from the current source position",()=>{
+ const context=new FakeContext(),engine=new AudioPreviewEngine(context),media={pause(){}};
+ engine.sync([{id:"automation",media,gainDb:0,pan:-0.5,automationTime:0,automation:[
+  {timeSeconds:1,gainDb:-12,pan:0,interpolation:"linear"},
+  {timeSeconds:2,gainDb:-24,pan:1,interpolation:"step"}
+ ]}]);
+ const entry=engine["connected"].get("automation");
+ assert.equal(entry.gain.gain.value,1);
+ assert.equal(entry.panner.pan.value,-0.5);
+ assert.ok(entry.gain.gain.events.some(event=>event[0]==="ramp"&&Math.abs(event[1]-decibelsToGain(-12))<1e-8&&event[2]===2));
+ assert.ok(entry.panner.pan.events.some(event=>event[0]==="ramp"&&event[1]===0&&event[2]===2));
+ assert.ok(entry.gain.gain.events.some(event=>event[0]===decibelsToGain(-24)&&event[1]===3));
+ assert.ok(entry.panner.pan.events.some(event=>event[0]===1&&event[1]===3));
+ engine.dispose();
 });
