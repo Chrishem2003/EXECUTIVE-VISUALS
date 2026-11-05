@@ -65,7 +65,7 @@ test("captures the creation ID and video URI from bounded SSE events", async () 
     { event_type: "step.delta", index: 0, delta: { type: "video", mime_type: "video/mp4", uri: fileUri } },
     { event_type: "interaction.completed", interaction: { id, model: "gemini-omni-1.1-flash", status: "completed", usage: { total_tokens: 12 } } }
   ];
-  const body = events.map(event => "event: " + event.event_type + "\\ndata: " + JSON.stringify(event) + "\\n\\n").join("") + "event: done\\ndata: [DONE]\\n\\n";
+  const body = events.map(event => "event: " + event.event_type + "\ndata: " + JSON.stringify(event) + "\n\n").join("") + "event: done\ndata: [DONE]\n\n";
   const h = harness({ fetchImpl: async () => new Response(body, {
     status: 200, headers: { "content-type": "text/event-stream" }
   }) });
@@ -85,12 +85,12 @@ test("captures the creation ID and video URI from bounded SSE events", async () 
 
 test("preserves durable creation callback when an SSE stream is interrupted", async () => {
   const event = { event_type: "interaction.created", interaction: { id, model: "gemini-omni-1.1-flash", status: "in_progress" } };
-  const body = "event: interaction.created\\ndata: " + JSON.stringify(event) + "\\n\\n";
+  const body = "event: interaction.created\ndata: " + JSON.stringify(event) + "\n\n";
   const h = harness({ fetchImpl: async () => new Response(body, {
     status: 200, headers: { "content-type": "text/event-stream" }
   }) });
   const persisted = [];
-  await assert.rejects(() => h.client.createInteraction(await plan(), {}, {
+  await assert.rejects(async () => h.client.createInteraction(await plan(), {}, {
     onInteractionCreated: async value => persisted.push(value)
   }), error => error.code === "GEMINI_OMNI_SUBMISSION_OUTCOME_UNKNOWN");
   assert.equal(persisted.length, 1);
