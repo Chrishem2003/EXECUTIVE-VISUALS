@@ -100,6 +100,14 @@ export function createGoogleDriveOAuth({
   const key = createHash("sha256").update(encryptionKey, "utf8").digest();
   const accessCache = new Map();
   const refreshInFlight = new Map();
+  const authGeneration = new Map();
+  const disconnecting = new Set();
+  const generationFor = ownerId => authGeneration.get(ownerId) || 0;
+  const invalidateOwner = ownerId => {
+    authGeneration.set(ownerId, generationFor(ownerId) + 1);
+    accessCache.delete(ownerId);
+    refreshInFlight.delete(ownerId);
+  };
 
   function encryptRefreshToken(token) {
     const iv = randomBytes(12), cipher = createCipheriv("aes-256-gcm", key, iv);
@@ -215,6 +223,8 @@ export function createGoogleDriveOAuth({
 
     async getAccessToken({ ownerId } = {}) {
       ownerId = validOwner(ownerId);
+      if (disconnecting.has(ownerId)) throw fail("Google Drive is disconnected. Reconnect your Google account before continuing.", "GOOGLE_OAUTH_NOT_CONNECTED");
+      const generation = generationFor(ownerId);
       const cached = accessCache.get(ownerId);
       if (cached && cached.expiresAt > now() + 60000) return cached.accessToken;
       const inFlight = refreshInFlight.get(ownerId);
@@ -234,19 +244,35 @@ export function createGoogleDriveOAuth({
           }
           await connections.upsert({ ...connection, encryptedRefreshToken: encryptRefreshToken(data.refresh_token) });
         }
+        if (disconnecting.has(ownerId) || generationFor(ownerId) !== generation) {
+          throw fail("Google Drive connection changed while refreshing credentials. Reconnect before continuing.", "GOOGLE_OAUTH_NOT_CONNECTED");
+        }
         const result = { accessToken: data.access_token, expiresAt: now() + Math.min(Number(data.expires_in), 3600) * 1000 };
         accessCache.set(ownerId, result);
         return result.accessToken;
       })();
       refreshInFlight.set(ownerId, pending);
-      try { return await pending; }
-      finally { refreshInFlight.delete(ownerId); }
+      try {
+        const token = await pending;
+        if (disconnecting.has(ownerId) || generationFor(ownerId) !== generation) {
+          throw fail("Google Drive connection changed while refreshing credentials. Reconnect before continuing.", "GOOGLE_OAUTH_NOT_CONNECTED");
+        }
+        return token;
+      } finally {
+        if (refreshInFlight.get(ownerId) === pending) refreshInFlight.delete(ownerId);
+      }
     },
 
     async disconnect({ ownerId } = {}) {
       ownerId = validOwner(ownerId);
+      disconnecting.add(ownerId);
+      invalidateOwner(ownerId);
       const connection = await connections.get(ownerId);
-      if (!connection || connection.ownerId !== ownerId) { accessCache.delete(ownerId); return { disconnected: true, revoked: false }; }
+      if (!connection || connection.ownerId !== ownerId) {
+        await connections.delete(ownerId);
+        disconnecting.delete(ownerId);
+        return { disconnected: true, revoked: false };
+      }
       const refreshToken = decryptRefreshToken(connection.encryptedRefreshToken);
       let revoked = false;
       try {
@@ -256,8 +282,11 @@ export function createGoogleDriveOAuth({
         });
         revoked = result.ok;
       } catch { revoked = false; } finally {
-        await connections.delete(ownerId);
-        accessCache.delete(ownerId);
+        try { await connections.delete(ownerId); }
+        finally {
+          invalidateOwner(ownerId);
+          disconnecting.delete(ownerId);
+        }
       }
       return { disconnected: true, revoked };
     }
