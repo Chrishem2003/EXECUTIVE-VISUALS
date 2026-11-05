@@ -121,6 +121,7 @@ export function createCloudVideoEnqueue({
       if (typeof currency !== "string" || !/^[A-Z]{3}$/.test(currency)) throw new Error("Currency must be a three-letter uppercase code.");
       const runwayEnabled = provider === "runway" && model === "gen4.5";
       const googleEnabled = provider === "google" && model === "gemini-omni-1.1-flash";
+      const kieEnabled = provider === "kie" && model === "bytedance/seedance-2";
       let enqueueInput = input;
       if (runwayEnabled) {
         if (typeof routerApprovalId !== "string" || !/^[0-9a-f-]{36}$/i.test(routerApprovalId) ||
@@ -139,7 +140,7 @@ export function createCloudVideoEnqueue({
           budgetApprovalId
         };
       }
-      if (!runwayEnabled && !googleEnabled) {
+      if (!runwayEnabled && !googleEnabled && !kieEnabled) {
         const unsupported = new Error("The selected provider/model does not have an enabled, verified cloud execution adapter.");
         unsupported.code = "VIDEO_GENERATION_UNSUPPORTED_CAPABILITY";
         throw unsupported;
@@ -152,6 +153,18 @@ export function createCloudVideoEnqueue({
       )) {
         const disabled = new Error("Gemini Omni enqueue requires explicit remote, paid-tier and hosted-worker enablement.");
         disabled.code = "GEMINI_OMNI_REMOTE_DISABLED";
+        throw disabled;
+      }
+
+      if (kieEnabled && (
+        env.KIE_VIDEO_ENABLED !== "true" ||
+        env.KIE_VIDEO_ALLOW_REMOTE !== "true" ||
+        !Number.isFinite(Number(env.KIE_USD_PER_CREDIT)) ||
+        Number(env.KIE_USD_PER_CREDIT) <= 0 ||
+        Number(env.KIE_USD_PER_CREDIT) > 0.05
+      )) {
+        const disabled = new Error("Kie Seedance enqueue requires explicit remote enablement and a verified effective USD-per-credit setting.");
+        disabled.code = "KIE_VIDEO_REMOTE_DISABLED";
         throw disabled;
       }
       const estimate = estimateVideoGenerationCost({
@@ -187,7 +200,7 @@ export function createCloudVideoEnqueue({
           unsupported.code = "VIDEO_GENERATION_UNSUPPORTED_CAPABILITY";
           throw unsupported;
         }
-      } else {
+      } else if (googleEnabled) {
         if (input.resolution !== undefined && !["provider_default","720p"].includes(input.resolution)) {
           const unsupported = new Error("Gemini Omni budget reservation currently supports 720p only.");
           unsupported.code = "VIDEO_GENERATION_UNSUPPORTED_CAPABILITY";
@@ -228,6 +241,33 @@ export function createCloudVideoEnqueue({
           unsupported.code = "VIDEO_GENERATION_UNSUPPORTED_CAPABILITY";
           throw unsupported;
         }
+      } else if (kieEnabled) {
+        if (!Number.isInteger(input.durationSeconds) || input.durationSeconds < 5 || input.durationSeconds > 15) {
+          const invalid = new Error("Kie Seedance 2.0 duration must be between 5 and 15 seconds.");
+          invalid.code = "VIDEO_PRICE_DURATION_INVALID";
+          throw invalid;
+        }
+        if (input.resolution !== undefined && !["provider_default","480p","720p","1080p","2160p"].includes(input.resolution)) {
+          const unsupported = new Error("Kie Seedance 2.0 supports provider-default, 480p, 720p, 1080p and 4K output.");
+          unsupported.code = "VIDEO_GENERATION_UNSUPPORTED_CAPABILITY";
+          throw unsupported;
+        }
+        if (input.referenceAssetIds !== undefined && (!Array.isArray(input.referenceAssetIds) || input.referenceAssetIds.length > 9)) {
+          throw new Error("Kie Seedance 2.0 accepts at most nine reference images.");
+        }
+        if (input.endFrameAssetId && !input.startFrameAssetId) {
+          throw new Error("A Kie last frame requires a first frame.");
+        }
+        if ((input.referenceVideoAssetIds?.length || input.referenceAudioAssetIds?.length || input.referenceVideoSeconds || input.referenceAudioSeconds)) {
+          const unsupported = new Error("This Kie adapter release supports reference images and first/last frames only; video/audio references are not yet enabled.");
+          unsupported.code = "VIDEO_GENERATION_UNSUPPORTED_CAPABILITY";
+          throw unsupported;
+        }
+        if (input.negativePrompt !== undefined || input.seed !== undefined || input.motionReferenceAssetId !== undefined) {
+          const unsupported = new Error("The current Kie Seedance adapter does not accept negative prompts, seed or motion-reference inputs.");
+          unsupported.code = "VIDEO_GENERATION_UNSUPPORTED_CAPABILITY";
+          throw unsupported;
+        }
       }
       const modelRecord = getVideoProviderModel(provider, model);
       if (!modelRecord) {
@@ -241,6 +281,9 @@ export function createCloudVideoEnqueue({
         startFrameAssetId: input.firstFrameAssetId ?? input.startFrameAssetId,
         endFrameAssetId: input.lastFrameAssetId ?? input.endFrameAssetId,
         referenceAssetIds: input.referenceImageAssetIds ?? input.referenceAssetIds
+      } : kieEnabled ? {
+        ...input,
+        resolution: input.resolution === undefined || input.resolution === "provider_default" ? "720p" : input.resolution
       } : input;
       const normalizedRequest = normalizeVideoGenerationRequest(capabilityInput);
       assertVideoCapabilities(normalizedRequest, modelRecord.capabilities);
