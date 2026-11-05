@@ -186,7 +186,7 @@ export function createGoogleGeminiGcsMirrorWriter({
       const accessToken = await token();
       const attempt = attemptRepository ? await attemptRepository.createAttempt({
         assetId, ownerId, projectId: scopedProjectId, bucket, objectName,
-        mediaType, sizeBytes, sha256
+        mediaType, sizeBytes, sha256, crc32c:checksums.crc32c
       }) : null;
       const metadata = {
         name: objectName,
@@ -247,7 +247,11 @@ export function createGoogleGeminiGcsMirrorWriter({
           completed = await request(sessionUri, {
             method: "PUT",
             body: stream,
-            headers: { "content-type": mediaType, "content-length": String(sizeBytes) }
+            headers: {
+              "content-type": mediaType,
+              "content-length": String(sizeBytes),
+              "x-goog-hash": "crc32c=" + checksums.crc32c
+            }
           });
         } catch (error) {
           error.outcomeUnknown = true;
