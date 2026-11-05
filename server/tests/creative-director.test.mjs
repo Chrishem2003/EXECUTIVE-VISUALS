@@ -92,8 +92,7 @@ test("requires unique creative route names and distinct list entries", async () 
 });
 
 test("normalizes bounded input fields and rejects non-object input", () => {
-  const normalized = normalizeCreativeDirectorInput({ ...input, brief: "  a  
- brief ", constraints: "x".repeat(1200) });
+  const normalized = normalizeCreativeDirectorInput({ ...input, brief: "  a  \n brief ", constraints: "x".repeat(1200) });
   assert.equal(normalized.brief, "a brief");
   assert.equal(normalized.constraints.length, 1000);
   assert.throws(() => normalizeCreativeDirectorInput(null), error => error.code === "CREATIVE_DIRECTOR_INPUT_INVALID");
