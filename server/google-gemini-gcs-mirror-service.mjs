@@ -128,6 +128,7 @@ export function createGoogleGeminiGcsMirrorService({
       if (!materialized || typeof materialized.cleanup !== "function") {
         throw new Error("Private asset loader must return a cleanup callback.");
       }
+      let primaryError = null;
       try {
         const asset = validAsset(materialized.asset, scope);
         if (!materialized.path || !Number.isSafeInteger(materialized.size) ||
@@ -146,8 +147,19 @@ export function createGoogleGeminiGcsMirrorService({
           source: mirrored.source, asset: verified.asset,
           gcsUri: verified.gcsUri, generation: verified.generation, reused: false
         });
+      } catch (error) {
+        primaryError = error;
+        throw error;
       } finally {
-        await materialized.cleanup();
+        try { await materialized.cleanup(); }
+        catch {
+          if (primaryError) primaryError.cleanupPending = true;
+          else {
+            const cleanupError = new Error("Temporary private asset cleanup failed after GCS mirroring.");
+            cleanupError.code = "GEMINI_GCS_TEMP_CLEANUP_FAILED";
+            throw cleanupError;
+          }
+        }
       }
     },
     revokeSource: args => sources.revokeSource(args)
