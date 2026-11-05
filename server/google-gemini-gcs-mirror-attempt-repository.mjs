@@ -3,6 +3,7 @@ import { createCipheriv, createDecipheriv, randomBytes, randomUUID, createHash }
 const TABLE = "google_gcs_mirror_attempts";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const HASH = /^[a-f0-9]{64}$/;
+const CRC32C = /^[A-Za-z0-9+/]{6}==$/;
 const STATES = new Set(["PREPARED","UPLOADING","OUTCOME_UNKNOWN","OBJECT_VERIFIED","REGISTERED","FAILED","QUARANTINED"]);
 const ACTIVE = new Set(["UPLOADING","OUTCOME_UNKNOWN","OBJECT_VERIFIED"]);
 const fail = (message, code) => Object.assign(new Error(message), { code });
@@ -47,7 +48,7 @@ function mapRow(row, key) {
   const result = {
     id: row.id, attemptKey: row.attempt_key, assetId: row.asset_id, ownerId: row.owner_id,
     projectId: row.project_id || null, bucket: row.bucket, objectName: row.object_name,
-    mediaType: row.media_type, sizeBytes: Number(row.byte_size), sha256: row.sha256,
+    mediaType: row.media_type, sizeBytes: Number(row.byte_size), sha256: row.sha256, crc32c: row.crc32c || null,
     state: row.state, sessionExpiresAt: row.session_expires_at || null,
     generation: row.verified_generation || null, metageneration: row.verified_metageneration || null,
     lastErrorCode: row.last_error_code || null, attemptCount: Number(row.attempt_count || 1),
@@ -105,11 +106,11 @@ export function createGoogleGeminiGcsMirrorAttemptRepository({
     } finally { clearTimeout(timer); }
   }
 
-  const select = "id,attempt_key,asset_id,owner_id,project_id,bucket,object_name,media_type,byte_size,sha256,state,session_uri_ciphertext,session_expires_at,verified_generation,verified_metageneration,last_error_code,attempt_count,lease_token,lease_expires_at,updated_at,reconciled_at";
+  const select = "id,attempt_key,asset_id,owner_id,project_id,bucket,object_name,media_type,byte_size,sha256,crc32c,state,session_uri_ciphertext,session_expires_at,verified_generation,verified_metageneration,last_error_code,attempt_count,lease_token,lease_expires_at,updated_at,reconciled_at";
   function validScope(input) {
     if (!UUID.test(String(input?.assetId || "")) || !UUID.test(String(input?.ownerId || "")) ||
         (input?.projectId != null && !UUID.test(String(input.projectId))) ||
-        !HASH.test(String(input?.sha256 || "")) || !Number.isSafeInteger(input?.sizeBytes) ||
+        !HASH.test(String(input?.sha256 || "")) || !CRC32C.test(String(input?.crc32c || "")) || !Number.isSafeInteger(input?.sizeBytes) ||
         input.sizeBytes < 1 || typeof input.bucket !== "string" || !/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/.test(input.bucket) || typeof input.objectName !== "string" || input.objectName.length < 1 || input.objectName.length > 1024 || typeof input.mediaType !== "string" || !/^[a-z0-9.+-]+\/[a-z0-9.+-]+$/.test(input.mediaType)) {
       throw fail("GCS mirror attempt scope is invalid.", "GEMINI_GCS_ATTEMPT_INVALID");
     }
@@ -125,7 +126,7 @@ export function createGoogleGeminiGcsMirrorAttemptRepository({
         body: {
           id, attempt_key:attemptKey, asset_id:input.assetId, owner_id:input.ownerId,
           project_id:input.projectId || null, bucket:input.bucket, object_name:input.objectName,
-          media_type:input.mediaType, byte_size:input.sizeBytes, sha256:input.sha256, state:"PREPARED"
+          media_type:input.mediaType, byte_size:input.sizeBytes, sha256:input.sha256, crc32c:input.crc32c, state:"PREPARED"
         }
       });
       if (!Array.isArray(rows) || rows.length !== 1) throw fail("GCS mirror attempt was not uniquely created.", "GEMINI_GCS_ATTEMPT_CREATE_FAILED");
