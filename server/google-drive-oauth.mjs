@@ -267,28 +267,25 @@ export function createGoogleDriveOAuth({
       ownerId = validOwner(ownerId);
       disconnecting.add(ownerId);
       invalidateOwner(ownerId);
-      const connection = await connections.get(ownerId);
-      if (!connection || connection.ownerId !== ownerId) {
-        await connections.delete(ownerId);
-        disconnecting.delete(ownerId);
-        return { disconnected: true, revoked: false };
-      }
-      const refreshToken = decryptRefreshToken(connection.encryptedRefreshToken);
       let revoked = false;
       try {
-        const result = await request(REVOKE_URL, {
-          method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" },
-          body: new URLSearchParams({ token: refreshToken }).toString()
-        });
-        revoked = result.ok;
-      } catch { revoked = false; } finally {
-        try { await connections.delete(ownerId); }
-        finally {
-          invalidateOwner(ownerId);
-          disconnecting.delete(ownerId);
+        const connection = await connections.get(ownerId);
+        if (connection && connection.ownerId === ownerId) {
+          try {
+            const refreshToken = decryptRefreshToken(connection.encryptedRefreshToken);
+            const result = await request(REVOKE_URL, {
+              method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" },
+              body: new URLSearchParams({ token: refreshToken }).toString()
+            });
+            revoked = result.ok;
+          } catch { revoked = false; }
         }
+        await connections.delete(ownerId);
+        return { disconnected: true, revoked };
+      } finally {
+        invalidateOwner(ownerId);
+        disconnecting.delete(ownerId);
       }
-      return { disconnected: true, revoked };
     }
   });
 }
