@@ -46,5 +46,22 @@ begin
   ) then
     raise exception 'Google interactions must be tied to authenticated owners';
   end if;
+
+  if not exists (
+    select 1 from pg_attribute
+     where attrelid = v_table and attname = 'output_uri'
+       and attnum > 0 and not attisdropped
+  ) then
+    raise exception 'Google interactions must persist creation-time output URIs';
+  end if;
+
+  if not exists (
+    select 1 from pg_constraint
+     where conrelid = v_table
+       and conname = 'google_video_interactions_output_uri_check'
+       and contype = 'c'
+  ) then
+    raise exception 'Google output URI must be constrained to the trusted Files API origin and path';
+  end if;
 end
 $google_interactions_migration$;
