@@ -135,7 +135,9 @@ export function createGoogleGeminiFilesGateway({
       if (!response.ok) {
         const status = response.status;
         const code = status === 429 ? "GEMINI_FILE_RATE_LIMITED" : status >= 500 ? "GEMINI_FILE_PROVIDER_ERROR" : "GEMINI_FILE_REQUEST_REJECTED";
-        throw fail("Google Files rejected the request (HTTP " + status + ").", code);
+        const error = fail("Google Files rejected the request (HTTP " + status + ").", code);
+        error.status = status;
+        throw error;
       }
       return { data, headers: response.headers };
     } finally {
