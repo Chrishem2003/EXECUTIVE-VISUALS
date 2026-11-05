@@ -3,6 +3,10 @@ import { resolve } from "node:path";
 
 const sql = await readFile(resolve(process.cwd(), "supabase/migrations/20261031210000_executive_visuals_core.sql"), "utf8");
 const checkpointSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261102090000_video_pipeline_checkpoints.sql"), "utf8");
+const videoSubmissionSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261104120000_cloud_video_submission_ledger.sql"), "utf8");
+const videoBudgetSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261104143000_cloud_video_budget_enqueue.sql"), "utf8");
+const videoCostEvidenceSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261105100000_video_generation_cost_evidence.sql"), "utf8");
+const videoCancellationSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261105120000_cloud_video_cancellation.sql"), "utf8");
 const issues = [];
 const tables = ["projects","project_members","project_workspace_documents","workflows","workflow_runs","workflow_node_runs","timelines","assets","jobs","job_events","consents","reviews","audit_events"];
 for (const table of tables) {
@@ -84,6 +88,10 @@ if (!sql.includes("create or replace function executive_visuals.finish_job(") ||
 if (!sql.includes("create or replace function executive_visuals.recover_expired_jobs(") || !sql.includes("WORKER_LEASE_EXPIRED") || !sql.includes("grant execute on function executive_visuals.recover_expired_jobs(integer) to service_role")) {
   issues.push("Cloud workers need bounded expired-lease recovery restricted to service_role.");
 }
+if (!sql.includes("job_type <> 'video.generate'")) {
+  issues.push("Generic cloud lease recovery must leave video jobs to their state-aware recovery RPC.");
+}
+
 if (!sql.includes("started_at timestamptz") || !sql.includes("set status = 'processing'") || !sql.includes("lease_expires_at = clock_timestamp() + make_interval")) {
   issues.push("Cloud job claim must persist its start time, processing state and lease expiry.");
 }
@@ -93,6 +101,180 @@ if (!sql.includes("revoke all on function executive_visuals.claim_next_job(text,
 if (!sql.includes("lease_expires_at timestamptz") || !sql.includes("available_at timestamptz") || !sql.includes("lease_heartbeat_at timestamptz")) {
   issues.push("Durable worker lease and delayed retry fields are missing from the cloud job contract.");
 }
+if (/\\b(drop\\s+table|truncate|delete\\s+from)\\b/i.test(videoSubmissionSql)) issues.push("Cloud video submission migration must not contain destructive DDL/DML.");
+if (!videoSubmissionSql.includes("create table if not exists executive_visuals.video_generation_submissions")) issues.push("Cloud video submission ledger table is missing.");
+if (!videoSubmissionSql.includes("alter table executive_visuals.video_generation_submissions enable row level security;")) issues.push("Cloud video submission ledger must enable RLS.");
+if (!videoSubmissionSql.includes("revoke all on executive_visuals.video_generation_submissions from public, anon, authenticated;")) issues.push("Cloud video submission ledger must be unavailable to untrusted roles.");
+if (!videoSubmissionSql.includes("grant all privileges on executive_visuals.video_generation_submissions to service_role;")) issues.push("Cloud worker role needs access to the video submission ledger.");
+for (const rpc of ["prepare_video_generation_submission","begin_video_generation_submission","record_video_generation_submission","mark_video_generation_submission_unknown","get_video_generation_submission","reconcile_unknown_video_generation_submission","finish_video_generation_submission"]) {
+  const count = (videoSubmissionSql.match(new RegExp(`create or replace function executive_visuals\\.${rpc}\\(`, "g")) || []).length;
+  if (count !== 1) issues.push(`Cloud video ledger RPC must be defined exactly once: ${rpc}.`);
+  if (!videoSubmissionSql.includes(`grant execute on function executive_visuals.${rpc}(`) || !videoSubmissionSql.includes(`to service_role;`)) issues.push(`Cloud video ledger RPC must be granted to service_role: ${rpc}.`);
+  if (!videoSubmissionSql.includes(`revoke all on function executive_visuals.${rpc}(`)) issues.push(`Cloud video ledger RPC must be revoked from untrusted roles: ${rpc}.`);
+}
+if (!videoSubmissionSql.includes("j.status='processing' and j.lease_owner=p_worker_id and j.lease_expires_at > clock_timestamp()")) issues.push("Cloud submission transitions must be fenced to the active worker lease.");
+if (!videoSubmissionSql.includes("s.state='prepared'")) issues.push("Cloud provider submission must start from prepared state only.");
+if (!videoSubmissionSql.includes("s.state='submitting' and s.provider_task_id is null")) issues.push("Ambiguous cloud submissions must be quarantined without automatic resubmission.");
+if (!videoSubmissionSql.includes("state='unknown' and provider_task_id is null")) issues.push("Explicit reconciliation must be required for ambiguous provider submissions.");
+if (!videoSubmissionSql.includes("unique" ) || !videoSubmissionSql.includes("provider_task_id text unique")) issues.push("Provider task IDs must be globally unique in the ledger.");
+if (!videoSubmissionSql.includes("queued.input ->> 'requestHash'")) issues.push("Cloud ledger preparation must verify the queued request hash.");
+if ((videoSubmissionSql.match(/security invoker/gi) || []).length !== 7 || /security definer/i.test(videoSubmissionSql)) issues.push("Cloud video ledger RPCs must use invoker rights and avoid privileged definer execution.");
+
+
+if (/\b(drop\s+table|truncate|delete\s+from)\b/i.test(videoBudgetSql)) issues.push("Cloud video budget migration must not contain destructive DDL/DML.");
+for (const table of ["video_generation_budget_policies","video_generation_budget_approvals","video_generation_budget_reservations","video_generation_usage_reservations"]) {
+  if (!videoBudgetSql.includes(`create table if not exists executive_visuals.${table}`)) issues.push(`Cloud video budget table is missing: ${table}.`);
+  if (!videoBudgetSql.includes(`alter table executive_visuals.${table} enable row level security;`)) issues.push(`Cloud video budget RLS is missing: ${table}.`);
+}
+if (!videoBudgetSql.includes("revoke all on executive_visuals.video_generation_budget_policies from public, anon, authenticated;") ||
+    !videoBudgetSql.includes("revoke all on executive_visuals.video_generation_budget_approvals from public, anon, authenticated;")) {
+  issues.push("Budget policy and approval tables must revoke inherited table privileges before granting the minimum client operations.");
+}
+if (!videoBudgetSql.includes("grant insert (owner_id, project_id, provider, model, currency, spend_limit_amount, max_per_job_amount, rolling_24h_request_limit, enabled)")) {
+  issues.push("Budget policy inserts must not allow clients to seed server-maintained counters.");
+}
+if (!videoBudgetSql.includes("grant update (provider, model, currency, spend_limit_amount, max_per_job_amount, rolling_24h_request_limit, enabled, updated_at)")) {
+  issues.push("Budget policy updates must not allow clients to alter owner scope or accounting totals.");
+}
+if (!videoBudgetSql.includes("VIDEO_BUDGET_POLICY_SCOPE_LOCKED_AFTER_USE") ||
+    !videoBudgetSql.includes("ev_video_budget_policy_scope_immutable")) {
+  issues.push("Budget currency/provider/model scope must be immutable after reservations or spend exist.");
+}
+
+if (!videoBudgetSql.includes("new.consumed_at := null") || !videoBudgetSql.includes("interval '15 minutes'")) {
+  issues.push("Explicit budget approvals must be fresh, short-lived and single-use.");
+}
+if (!videoBudgetSql.includes("VIDEO_BUDGET_LIMIT_BELOW_COMMITTED_SPEND") ||
+    !videoBudgetSql.includes("before update of provider, model, currency, spend_limit_amount")) {
+  issues.push("Budget policy updates must not lower the spend ceiling below existing reservations and spend.");
+}
+if (!videoBudgetSql.includes("pg_advisory_xact_lock") || !videoBudgetSql.includes("for update")) {
+  issues.push("Cloud enqueue must serialize idempotency, usage and budget reservation decisions.");
+}
+if (!videoBudgetSql.includes("approval.consumed_at is not null") || !videoBudgetSql.includes("update executive_visuals.video_generation_budget_approvals")) {
+  issues.push("Budget approvals must be consumed exactly once with enqueue.");
+}
+if (!videoBudgetSql.includes("policy.reserved_amount + policy.spent_amount + p_reserved_amount > policy.spend_limit_amount")) {
+  issues.push("Cloud enqueue must enforce the approved cumulative spend ceiling.");
+}
+if (!videoBudgetSql.includes("VIDEO_ENQUEUE_PROVIDER_NOT_ENABLED") ||
+    !videoBudgetSql.includes("VIDEO_PRICE_DURATION_INVALID") ||
+    !videoBudgetSql.includes("VIDEO_PRICE_OUTPUT_FORMAT_UNSUPPORTED") ||
+    !videoBudgetSql.includes("p_reserved_amount < ((p_input ->> 'durationSeconds')::numeric * 0.12)")) {
+  issues.push("Postgres enqueue must fail closed on unpriced models and enforce the verified Gen-4.5 USD price floor.");
+}
+
+if (!videoBudgetSql.includes("create or replace function executive_visuals.enqueue_video_generation_job(") ||
+    !videoBudgetSql.includes("grant execute on function executive_visuals.enqueue_video_generation_job(") ||
+    !videoBudgetSql.includes("revoke all on function executive_visuals.enqueue_video_generation_job(")) {
+  issues.push("Atomic cloud video enqueue must be service-role-only.");
+}
+if (!videoBudgetSql.includes("VIDEO_ENQUEUE_PROVIDER_NOT_ENABLED") ||
+    !videoBudgetSql.includes("p_provider <> 'runway' or p_model <> 'gen4.5'")) {
+  issues.push("Cloud video enqueue must reject provider/model combinations without a verified adapter and price contract.");
+}
+if (!videoBudgetSql.includes("create or replace function executive_visuals.finish_video_generation_job(") ||
+    !videoBudgetSql.includes("lease_expires_at <= clock_timestamp()") ||
+    !videoBudgetSql.includes("VIDEO_BUDGET_ACTUAL_EXCEEDS_RESERVATION") ||
+    !videoBudgetSql.includes("set status = p_status") ||
+    !videoBudgetSql.includes("update executive_visuals.video_generation_submissions")) {
+  issues.push("Budget settlement, submission terminalization and job completion must be atomic and lease-fenced.");
+}
+if (!videoBudgetSql.includes("security invoker") || /security definer/i.test(videoBudgetSql)) {
+  issues.push("Cloud video budget RPCs must use invoker rights and avoid privileged definer execution.");
+}
+if (!videoBudgetSql.includes("as $video_finish$") || !videoBudgetSql.includes("$video_finish$;")) {
+  issues.push("Cloud video finalizer must use a complete, unambiguous SQL function delimiter.");
+}
+const approvalInsertPolicy = videoBudgetSql.split("create policy ev_video_budget_approval_owner_insert")[1]?.split(");")[0] || "";
+if (!approvalInsertPolicy.includes("p.owner_id = (select auth.uid())") || approvalInsertPolicy.includes("project_members")) {
+  issues.push("Per-request budget approvals for project generation must be restricted to the project owner.");
+}
+if (!videoBudgetSql.includes("as $$") ||
+    !videoBudgetSql.includes("end;\n$$;") ||
+    /as \$(?!\$)\s*begin/.test(videoBudgetSql) ||
+    /\n\$(?!\$);/.test(videoBudgetSql)) {
+  issues.push("Cloud video budget trigger functions must use valid, complete dollar quoting.");
+}
+for (const fn of ["defer_video_generation_job","quarantine_video_generation_job","resume_reconciled_video_generation_job"]) {
+  if (!videoBudgetSql.includes(`create or replace function executive_visuals.${fn}(`) ||
+      !videoBudgetSql.includes(`grant execute on function executive_visuals.${fn}(`) ||
+      !videoBudgetSql.includes(`revoke all on function executive_visuals.${fn}(`)) {
+    issues.push(`Cloud video recovery RPC is missing or not service-role-only: ${fn}.`);
+  }
+}
+if (!videoBudgetSql.includes("VIDEO_SUBMISSION_RECONCILIATION_REQUIRED") ||
+    !videoBudgetSql.includes("VIDEO_JOB_DEFER_REQUIRES_SUBMITTED_TASK") ||
+    !videoBudgetSql.includes("VIDEO_JOB_QUARANTINE_REQUIRES_AMBIGUOUS_SUBMISSION") ||
+    !videoBudgetSql.includes("VIDEO_JOB_RESUME_REQUIRES_RECONCILED_TASK")) {
+  issues.push("Ambiguous submission quarantine, safe polling deferral and evidence-reconciled resume guards are required.");
+}
+if (!videoBudgetSql.includes("VIDEO_JOB_OUTPUT_ASSET_SCOPE_INVALID") ||
+    !videoBudgetSql.includes("a.storage_bucket = 'executive-visuals-media'") ||
+    !videoBudgetSql.includes("a.deleted_at is null")) {
+  issues.push("Successful video finalization must verify registered private asset ownership.");
+}
+
+if (/\\b(drop\\s+table|truncate|delete\\s+from)\\b/i.test(videoCostEvidenceSql)) issues.push("Cost evidence migration must not contain destructive DDL/DML.");
+if (!videoCostEvidenceSql.includes("create table if not exists executive_visuals.video_generation_cost_evidence") ||
+    !videoCostEvidenceSql.includes("alter table executive_visuals.video_generation_cost_evidence enable row level security;")) {
+  issues.push("Reviewed provider cost evidence must be stored in an RLS-protected table.");
+}
+if (!videoCostEvidenceSql.includes("evidence_sha256 text") ||
+    !videoCostEvidenceSql.includes("provider_task_id text not null") ||
+    !videoCostEvidenceSql.includes("reviewer_id uuid not null") ||
+    !videoCostEvidenceSql.includes("reviewed_at timestamptz not null")) {
+  issues.push("Cost evidence receipts must bind a task, immutable artifact digest and reviewer identity.");
+}
+if (!videoCostEvidenceSql.includes("VIDEO_COST_EVIDENCE_TASK_MISMATCH") ||
+    !videoCostEvidenceSql.includes("new.actual_amount > reservation_row.reserved_amount") ||
+    !videoCostEvidenceSql.includes("new.reviewer_id := auth.uid()")) {
+  issues.push("Cost evidence must match the exact submitted task, reviewer and reserved amount.");
+}
+if (!videoCostEvidenceSql.includes("VIDEO_COST_EVIDENCE_IMMUTABLE") ||
+    !videoCostEvidenceSql.includes("revoke update, delete on executive_visuals.video_generation_cost_evidence from authenticated;")) {
+  issues.push("Reviewed cost evidence must be append-only for authenticated users.");
+}
+if (!videoCostEvidenceSql.includes("finish_video_generation_job_with_evidence") ||
+    !videoCostEvidenceSql.includes("VIDEO_COST_EVIDENCE_RECEIPT_MISMATCH") ||
+    !videoCostEvidenceSql.includes("evidence_row.actual_amount <> p_actual_amount") ||
+    !videoCostEvidenceSql.includes("evidence_row.provider_task_id is distinct from submission_row.provider_task_id")) {
+  issues.push("Successful settlement must require an exact task-correlated reviewed evidence receipt.");
+}
+if ((videoCostEvidenceSql.match(/security invoker/gi) || []).length !== 3 ||
+    (videoCostEvidenceSql.match(/security definer/gi) || []).length !== 1 ||
+    !/validate_video_generation_cost_evidence\(\)[\s\S]*?security definer\s+set search_path = pg_catalog, executive_visuals/i.test(videoCostEvidenceSql) ||
+    !videoCostEvidenceSql.includes("auth.uid()")) {
+  issues.push("Only the owner-scoped evidence trigger may use definer rights, with a fixed search path and authenticated reviewer checks; settlement RPCs must remain invoker-rights.");
+}
+if (!videoCancellationSql.includes("request_video_generation_cancellation") ||
+    !videoCancellationSql.includes("p_owner_id uuid") ||
+    !videoCancellationSql.includes("VIDEO_CANCELLED_BEFORE_SUBMISSION") ||
+    !videoCancellationSql.includes("VIDEO_CANCELLATION_BUDGET_INVARIANT_FAILED") ||
+    !videoCancellationSql.includes("cancellation_requested_at is null") ||
+    !videoCancellationSql.includes("is_video_generation_cancellation_requested") ||
+    !videoCancellationSql.includes("to service_role")) {
+  issues.push("Cloud video cancellation must be owner-scoped, fence new submissions, and expose worker-only cancellation checks.");
+}
+if (!videoCancellationSql.includes("resume_reconciled_video_generation_job") ||
+    !videoCancellationSql.includes("cancellation_requested_at=null") ||
+    !videoCancellationSql.includes("continue_after_review") ||
+    !videoCancellationSql.includes("job.reconciled_resumed")) {
+  issues.push("Resuming after cancellation must clear the request only through a service-role operation that records an explicit review decision.");
+}
+if (!videoBudgetSql.includes("VIDEO_JOB_RESUME_EVIDENCE_REQUIRED") ||
+    !videoBudgetSql.includes("p_evidence_reference text")) {
+  issues.push("Resuming a quarantined video job must require an evidence reference.");
+}
+if (!videoBudgetSql.includes("create or replace function executive_visuals.recover_expired_video_generation_jobs(") ||
+    !videoBudgetSql.includes("submission.state <> 'prepared'") ||
+    !videoBudgetSql.includes("VIDEO_WORKER_LEASE_EXPIRED_REVIEW")) {
+  issues.push("Expired cloud video jobs must use state-aware recovery and quarantine post-submission states.");
+}
+
+
+
+
 if (issues.length) {
   console.error("Cloud migration guard failed:");
   for (const issue of issues) console.error("- " + issue);
