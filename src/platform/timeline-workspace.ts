@@ -381,10 +381,10 @@ async function duplicateTimelineVariant(){
  if(state.mode==="cloud"){
   if(!state.cloudProjectId)throw new Error("Select a cloud project before creating a variant.");
   const result=await apiRequest<{timeline:CloudSavedTimeline}>("/api/cloud/timelines",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({projectId:state.cloudProjectId,name:variant.name,timeline:variant,otio:toOpenTimelineIo(variant)})});
-  state.timeline=result.timeline.timeline;state.serverRevision=result.timeline.revision;
+  state.timeline=result.timeline.timeline;state.serverRevision=result.timeline.revision;resetTimelineHistory();
  }else{
   const result=await apiRequest<{timeline:SavedTimeline}>("/api/timelines",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({name:variant.name,timeline:variant})});
-  state.timeline=result.timeline.document||variant;state.serverRevision=result.timeline.revision;
+  state.timeline=result.timeline.document||variant;state.serverRevision=result.timeline.revision;resetTimelineHistory();
  }
  state.selectedClipId="";state.selectedTrack=state.timeline.tracks[0]?.id||"";
  await refresh();await loadVariantComparison();
@@ -580,7 +580,7 @@ async function runAction(action:HTMLElement){
  }
  if(type==="discard-recovered-draft"){
   if(state.recoveryStatus==="conflict"&&!state.conflictServerTimeline){state.message="The latest server snapshot is unavailable. Load the server revision before discarding this conflicting draft.";paint();return;}
-  try{if(state.recoveredDraft)await recoveryStore().clearDraft(state.recoveredDraft.key);if(state.conflictServerTimeline)state.timeline=structuredClone(state.conflictServerTimeline);state.recoveredDraft=null;state.conflictServerTimeline=null;state.cloudRevisionConflict=false;state.recoveryStatus="idle";state.message="Recovered browser draft discarded. The server timeline was left unchanged.";}
+  try{if(state.recoveredDraft)await recoveryStore().clearDraft(state.recoveredDraft.key);if(state.conflictServerTimeline){state.timeline=structuredClone(state.conflictServerTimeline);resetTimelineHistory();}state.recoveredDraft=null;state.conflictServerTimeline=null;state.cloudRevisionConflict=false;state.recoveryStatus="idle";state.message="Recovered browser draft discarded. The server timeline was left unchanged.";}
   catch(error){state.message=error instanceof Error?error.message:"Could not discard recovered draft.";}
   paint();return;
  }
@@ -619,13 +619,15 @@ async function runAction(action:HTMLElement){
   const asset=selectLatestGeneratedVideoAsset(state.assets,state.cloudProjectId);
   if(!asset){state.message="No validated generated video assets were found in this cloud project. Complete an approved generation first.";paint();return;}
   if(generatedVideoAlreadyOnTimeline(state.timeline,asset.id)){state.message="The latest generated video is already present on this timeline.";paint();return;}
-  let track=state.timeline.tracks.find(item=>item.kind==="video"&&!item.locked);
-  if(!track){state.timeline=addTrack(state.timeline,{id:crypto.randomUUID(),name:"Generated Video",kind:"video",enabled:true,locked:false,clips:[]});track=state.timeline.tracks[state.timeline.tracks.length-1];}
+  const before=structuredClone(state.timeline);let edited=before;
+  let track=edited.tracks.find(item=>item.kind==="video"&&!item.locked);
+  if(!track){edited=addTrack(edited,{id:crypto.randomUUID(),name:"Generated Video",kind:"video",enabled:true,locked:false,clips:[]});track=edited.tracks[edited.tracks.length-1];}
   const durationSeconds=generatedVideoDurationSeconds(asset);
   const clipFrames=Math.max(1,Math.round(durationSeconds*fps()));
   try{
    const generatedClipId=crypto.randomUUID();
-   state.timeline=addClip(state.timeline,track.id,{id:generatedClipId,assetId:asset.id,name:asset.name,sourceRange:{start:rational(0,sourceRate(asset,"video")),duration:rational(clipFrames/fps()*sourceRate(asset,"video"),sourceRate(asset,"video"))},timelineStart:rational(maxEnd(),fps()),duration:rational(clipFrames,fps()),enabled:true,metadata:{generatedVideo:true,provider:asset.metadata?.provider||"unknown",providerTaskId:asset.metadata?.providerTaskId||""}});
+   edited=addClip(edited,track.id,{id:generatedClipId,assetId:asset.id,name:asset.name,sourceRange:{start:rational(0,sourceRate(asset,"video")),duration:rational(clipFrames/fps()*sourceRate(asset,"video"),sourceRate(asset,"video"))},timelineStart:rational(maxEnd(),fps()),duration:rational(clipFrames,fps()),enabled:true,metadata:{generatedVideo:true,provider:asset.metadata?.provider||"unknown",providerTaskId:asset.metadata?.providerTaskId||""}});
+   commitTimelineEdit(edited,"Import generated video",before);
    state.selectedTrack=track.id;state.selectedClipId=generatedClipId;
    state.message="Imported "+asset.name+" from private generated assets. Saving timeline…";
    await persist();await refresh();
@@ -731,8 +733,8 @@ document.addEventListener("submit",event=>{
 });
 document.addEventListener("change",event=>{
  const target=event.target as HTMLSelectElement;
- if(target.id==="tl-mode"){state.mode=target.value==="cloud"?"cloud":"local";state.timeline=null;state.cloudRevisionConflict=false;state.recoveredDraft=null;state.recoveryStatus="idle";state.selectedClipId="";void refresh().then(paint).catch(error=>{state.status="offline";state.message=error instanceof Error?error.message:"Workspace unavailable.";paint();});}
- if(target.id==="tl-cloud-project"){state.cloudProjectId=target.value;state.timeline=null;state.cloudRevisionConflict=false;state.recoveredDraft=null;state.recoveryStatus="idle";state.selectedClipId="";void refresh().then(paint).catch(error=>{state.status="offline";state.message=error instanceof Error?error.message:"Cloud project unavailable.";paint();});}
+ if(target.id==="tl-mode"){resetTimelineHistory();state.mode=target.value==="cloud"?"cloud":"local";state.timeline=null;state.cloudRevisionConflict=false;state.recoveredDraft=null;state.recoveryStatus="idle";state.selectedClipId="";void refresh().then(paint).catch(error=>{state.status="offline";state.message=error instanceof Error?error.message:"Workspace unavailable.";paint();});}
+ if(target.id==="tl-cloud-project"){resetTimelineHistory();state.cloudProjectId=target.value;state.timeline=null;state.cloudRevisionConflict=false;state.recoveredDraft=null;state.recoveryStatus="idle";state.selectedClipId="";void refresh().then(paint).catch(error=>{state.status="offline";state.message=error instanceof Error?error.message:"Cloud project unavailable.";paint();});}
  if(target.id==="tl-saved-sequence"&&target.value){
   const saved=state.mode==="cloud"?state.cloudTimelines.find(t=>t.id===target.value):state.timelines.find(t=>t.id===target.value);
   if(saved){state.recoveredDraft=null;state.recoveryStatus="idle";if(state.mode==="cloud"){const cloud=saved as CloudSavedTimeline;state.timeline=cloud.timeline;state.serverRevision=cloud.revision;state.cloudRevisionConflict=false;void loadVariantComparison().then(paint);}
