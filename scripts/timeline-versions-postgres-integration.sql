@@ -63,8 +63,11 @@ begin
     v_timeline_id, owner_id, actor_id, 2, first_version.id,
     'Restore the first cut', repeat('b',64), repeat('a',64)
   );
-  if restored_timeline.revision <> 3 or restored_timeline.timeline <> first_doc then
-    raise exception 'Restore did not create a new revision containing the selected snapshot.';
+  if restored_timeline.revision <> 3
+     or restored_timeline.timeline ->> 'title' <> 'First'
+     or restored_timeline.timeline ->> 'revision' <> '3'
+     or restored_timeline.timeline ->> 'id' <> v_timeline_id::text then
+    raise exception 'Restore did not create a normalized new revision containing the selected snapshot.';
   end if;
 
   select * into restored_version
