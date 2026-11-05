@@ -158,7 +158,7 @@ test("cloud waveform endpoint authorizes source, verifies hash and persists a pr
 });
 test("cloud waveform endpoint rejects non-audio sources before storage access",async()=>{
  let storageCalled=false;
- const api=createCloudTimelineApi({timelineService:{assets:{async get(){return{id:"623e4567-e89b-42d3-a456-426614174000",ownerId:owner,projectId:project,name:"clip.mp4",mediaType:"video/mp4",size:10,sha256:"a".repeat(64),storageBucket:"executive-visuals-media",objectPath:project+"/623e4567-e89b-42d3-a456-426614174000/original.mp4"};}},storage:{async downloadToFile(){storageCalled=true;}}},waveformCache:{},mediaRoot:tmpdir()});
+ const api=createCloudTimelineApi({timelineService:{assets:{async get(){return{id:"623e4567-e89b-42d3-a456-426614174000",ownerId:owner,projectId:project,name:"clip.mp4",mediaType:"video/mp4",size:10,sha256:"a".repeat(64),storageBucket:"executive-visuals-media",objectPath:project+"/623e4567-e89b-42d3-a456-426614174000/original.mp4"};}},storage:{async downloadToFile(){storageCalled=true;},async uploadFile(){storageCalled=true;}}},waveformCache:{},mediaRoot:tmpdir()});
  const result=await api.handle({method:"GET",path:"/api/cloud/assets/623e4567-e89b-42d3-a456-426614174000/waveform",ownerId:owner});
  assert.equal(result.status,415);assert.equal(storageCalled,false);
 });
