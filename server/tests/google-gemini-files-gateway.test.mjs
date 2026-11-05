@@ -158,6 +158,53 @@ test("rejects unsafe resumable upload URLs and never follows redirects", async (
     error => error.code === "GEMINI_FILE_UPLOAD_URL_INVALID");
 });
 
+test("reports temporary materialization cleanup failures without exposing details or corrupting a successful upload", async () => {
+  const cleanupEvents = [];
+  const h = harness({
+    loader: async () => ({ ...privateAsset(), cleanup: async () => { throw new Error("sensitive local path /tmp/private.mp4"); } })
+  });
+  // The gateway's cleanup observer is injected separately from provider operations.
+  const gateway = createGoogleGeminiFilesGateway({
+    env, fetchImpl: async (url, options = {}) => {
+      if (String(url) === "https://generativelanguage.googleapis.com/upload/v1beta/files") {
+        return response(200, {}, { "x-goog-upload-url": uploadUrl });
+      }
+      if (String(url) === uploadUrl) return response(200, { file: {
+        name: fileName, uri: fileUri, mimeType: "image/png",
+        sizeBytes: String(bytes.byteLength), state: "ACTIVE"
+      }});
+      throw new Error("Unexpected URL");
+    },
+    loadPrivateAsset: async () => ({ ...privateAsset(), cleanup: async () => { throw new Error("sensitive local path /tmp/private.mp4"); } }),
+    authorizePrivateAsset: async () => privateAsset().asset,
+    recordProviderFile: async () => {},
+    onCleanupError: event => cleanupEvents.push(event),
+    timeoutMs: 3000, chunkSize: 256 * 1024,
+    now: () => Date.parse("2026-11-05T00:00:00.000Z")
+  });
+  const result = await gateway.resolveAsset({ assetId, ownerId, projectId, mediaType: "image/png" });
+  assert.equal(result.providerFileName, fileName);
+  assert.deepEqual(cleanupEvents, [{ code: "GEMINI_FILE_TEMP_CLEANUP_FAILED", assetId }]);
+  assert.equal(JSON.stringify(cleanupEvents).includes("/tmp/private.mp4"), false);
+});
+
+test("reports temporary materialization cleanup failures while preserving the original upload error", async () => {
+  const cleanupEvents = [];
+  const gateway = createGoogleGeminiFilesGateway({
+    env, fetchImpl: async () => { throw new Error("network failure"); },
+    loadPrivateAsset: async () => ({ ...privateAsset(), cleanup: async () => { throw new Error("sensitive local path"); } }),
+    authorizePrivateAsset: async () => privateAsset().asset,
+    recordProviderFile: async () => {},
+    onCleanupError: event => cleanupEvents.push(event),
+    timeoutMs: 3000, chunkSize: 256 * 1024
+  });
+  await assert.rejects(
+    () => gateway.resolveAsset({ assetId, ownerId, projectId, mediaType: "image/png" }),
+    error => error.code === "GEMINI_FILE_UPLOAD_OUTCOME_UNKNOWN"
+  );
+  assert.deepEqual(cleanupEvents, [{ code: "GEMINI_FILE_TEMP_CLEANUP_FAILED", assetId }]);
+});
+
 test("does not expose API keys or resumable upload URLs in public results", async () => {
   const h = harness();
   const result = await h.gateway.resolveAsset({ assetId, ownerId, projectId, mediaType: "image/png" });
