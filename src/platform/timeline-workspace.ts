@@ -459,8 +459,9 @@ async function runAction(action:HTMLElement){
   const durationSeconds=Number(probe?.format?.duration);
   const clipFrames=Math.max(1,Math.round((Number.isFinite(durationSeconds)&&durationSeconds>0?durationSeconds:5)*fps()));
   try{
-   state.timeline=addClip(state.timeline,track.id,{id:crypto.randomUUID(),assetId:asset.id,name:asset.name,sourceRange:{start:rational(0,sourceRate(asset,"video")),duration:rational(clipFrames/fps()*sourceRate(asset,"video"),sourceRate(asset,"video"))},timelineStart:rational(maxEnd(),fps()),duration:rational(clipFrames,fps()),enabled:true,metadata:{generatedVideo:true,provider:asset.metadata?.provider||"unknown",providerTaskId:asset.metadata?.providerTaskId||""}});
-   state.selectedTrack=track.id;state.selectedClipId=track.clips.at(-1)?.id||"";
+   const generatedClipId=crypto.randomUUID();
+   state.timeline=addClip(state.timeline,track.id,{id:generatedClipId,assetId:asset.id,name:asset.name,sourceRange:{start:rational(0,sourceRate(asset,"video")),duration:rational(clipFrames/fps()*sourceRate(asset,"video"),sourceRate(asset,"video"))},timelineStart:rational(maxEnd(),fps()),duration:rational(clipFrames,fps()),enabled:true,metadata:{generatedVideo:true,provider:asset.metadata?.provider||"unknown",providerTaskId:asset.metadata?.providerTaskId||""}});
+   state.selectedTrack=track.id;state.selectedClipId=generatedClipId;
    state.message="Imported "+asset.name+" from private generated assets. Saving timeline…";
    await persist();await refresh();
   }catch(error){state.message=error instanceof Error?error.message:"Generated video could not be added to the timeline.";}
