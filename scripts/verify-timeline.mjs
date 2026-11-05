@@ -93,7 +93,7 @@ assert.strictEqual(conflictedRefresh.timeline,localDraft,"refresh must retain th
 assert.equal(conflictedRefresh.serverRevision,3,"conflict refresh must not advance the stale expected revision");
 assert.equal(conflictedRefresh.preservedLocalDraft,true);
 const resolvedRefresh=resolveCloudTimelineRefresh(
- {hasConflict:true,timelineId:"timeline-1",timelineProjectId:"project-2",selectedProjectId:"project-2"},
+ {hasConflict:true,timelineId:"timeline-1",timelineProjectId:"project-1",selectedProjectId:"project-2"},
  localDraft,3,
  [{id:"timeline-1",projectId:"project-2",revision:4,timeline:latestServerDraft}]
 );
