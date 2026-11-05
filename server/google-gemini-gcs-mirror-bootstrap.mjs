@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import { createGoogleGeminiGcsMirrorServiceFactory } from "./google-gemini-gcs-mirror-service-factory.mjs";
 
 const CLOUD_PLATFORM_SCOPE = "https://www.googleapis.com/auth/cloud-platform";
@@ -28,6 +29,26 @@ export async function createGoogleGeminiGcsMirrorBootstrap({
   const serviceRoleKey = required(env.SUPABASE_SERVICE_ROLE_KEY, "SUPABASE_SERVICE_ROLE_KEY");
   required(env.GEMINI_GCS_SESSION_ENCRYPTION_KEY, "GEMINI_GCS_SESSION_ENCRYPTION_KEY");
   if (typeof fetchImpl !== "function") throw new TypeError("GCS mirror bootstrap requires fetch.");
+
+  // For external hosting, accept only generated Workload Identity Federation
+  // configs. Long-lived service-account JSON keys and user ADC files are
+  // deliberately rejected by this server-side workload bootstrap.
+  if (env.GOOGLE_APPLICATION_CREDENTIALS) {
+    let credentialConfig;
+    try {
+      credentialConfig = JSON.parse(await readFile(String(env.GOOGLE_APPLICATION_CREDENTIALS), "utf8"));
+    } catch {
+      throw fail("GOOGLE_APPLICATION_CREDENTIALS must reference a readable generated WIF credential configuration.", "GEMINI_GCS_WIF_CONFIG_INVALID");
+    }
+    if (credentialConfig?.type !== "external_account" ||
+        typeof credentialConfig.audience !== "string" ||
+        !credentialConfig.audience.startsWith("//iam.googleapis.com/projects/") ||
+        typeof credentialConfig.token_url !== "string" ||
+        new URL(credentialConfig.token_url).hostname !== "sts.googleapis.com" ||
+        !credentialConfig.credential_source || typeof credentialConfig.credential_source !== "object") {
+      throw fail("Only a generated Google Workload Identity Federation external-account config is accepted; service-account keys and user credentials are not supported.", "GEMINI_GCS_WIF_CONFIG_INVALID");
+    }
+  }
 
   let GoogleAuth = GoogleAuthClass;
   if (!GoogleAuth) {
