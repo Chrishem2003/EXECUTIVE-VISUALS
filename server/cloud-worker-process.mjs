@@ -16,6 +16,7 @@ export function readCloudWorkerConfig(env=process.env){
  const media=truth(env.CLOUD_MEDIA_WORKER_ENABLED),timeline=truth(env.CLOUD_TIMELINE_WORKER_ENABLED),video=truth(env.CLOUD_VIDEO_WORKER_ENABLED);
  if(!media&&!timeline&&!video)throw new Error("Enable at least one supported cloud worker family.");
  if(video){
+  if(env.CLOUD_VIDEO_WORKER_STAGING_ACCEPTED!=="true")throw new Error("Cloud video worker requires explicit isolated-staging acceptance before activation.");
   if(env.RUNWAY_VIDEO_ENABLED!=="true"||env.RUNWAY_VIDEO_ALLOW_REMOTE!=="true"||!env.RUNWAY_API_KEY)throw new Error("Cloud video requires explicit Runway remote-execution opt-in and a server-side API key.");
   const hosts=String(env.RUNWAY_VIDEO_OUTPUT_HOSTS||"").split(",").map(host=>host.trim()).filter(Boolean);
   if(hosts.length<1||hosts.length>100||hosts.some(host=>! /^[a-z0-9.-]{1,253}$/i.test(host)||host.startsWith(".")||host.endsWith(".")))throw new Error("Cloud video requires an explicit exact-host RUNWAY_VIDEO_OUTPUT_HOSTS allowlist.");
