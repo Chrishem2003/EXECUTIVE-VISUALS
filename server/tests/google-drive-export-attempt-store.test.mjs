@@ -21,6 +21,7 @@ function harness(){
     const body=JSON.parse(options.body), target=rows[0], query=String(url);
     const leaseMatch=query.match(/[?&]lease_token=eq\.([0-9a-f-]+)/);
     if(leaseMatch&&target.lease_token!==leaseMatch[1])return new Response("[]",{status:200});
+    if(query.includes("state=in.")&&!["PREPARED","UPLOADING","OUTCOME_UNKNOWN"].includes(target.state))return new Response("[]",{status:200});
     Object.assign(target,body);
     return new Response(JSON.stringify([target]),{status:200});
    }
@@ -41,10 +42,23 @@ test("claims a Drive export attempt with a bounded exclusive lease",async()=>{
  const lease=await h.store.claim({attemptKey,ownerId});
  assert.match(lease,/^[0-9a-f-]{36}$/);
  assert.match(h.calls[0].url,/lease_expires_at/);
- assert.match(h.calls[0].url,/state=neq.COMPLETED/);
+ assert.match(h.calls[0].url,/state=in\.\(PREPARED,UPLOADING,OUTCOME_UNKNOWN\)/);
  assert.equal(h.rows[0].lease_token,lease);
  assert.ok(Date.parse(h.rows[0].lease_expires_at)>Date.now());
 });
+test("does not automatically reclaim terminal or reconciliation-required attempts",async()=>{
+ const h=harness();
+ h.rows[0].state="RECONCILIATION_REQUIRED";
+ assert.equal(await h.store.claim({attemptKey,ownerId}),null);
+ assert.equal(h.rows[0].state,"RECONCILIATION_REQUIRED");
+ h.rows[0].state="FAILED";
+ assert.equal(await h.store.claim({attemptKey,ownerId}),null);
+ assert.equal(h.rows[0].state,"FAILED");
+ h.rows[0].state="COMPLETED";
+ assert.equal(await h.store.claim({attemptKey,ownerId}),null);
+ assert.equal(h.rows[0].state,"COMPLETED");
+});
+
 test("rejects malformed attempt keys before issuing a lease update",async()=>{
  const h=harness();
  await assert.rejects(()=>h.store.claim({attemptKey:"bad",ownerId}),
