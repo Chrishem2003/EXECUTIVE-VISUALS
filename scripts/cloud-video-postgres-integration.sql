@@ -252,6 +252,8 @@ insert into executive_visuals.video_generation_cost_evidence(
  '123e4567-e89b-42d3-a456-426614174000',
  'Provider confirmed the charge for this exact task ID.'
 );
+reset role;
+set role service_role;
 do $immutable_cost_evidence$
 begin
  begin
