@@ -5,6 +5,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createGoogleGeminiGcsMirrorBootstrap } from "../google-gemini-gcs-mirror-bootstrap.mjs";
 
+test("installed Google Auth Library exports the concrete workload identity classes", async () => {
+  const authLibrary = await import("google-auth-library");
+  assert.equal(typeof authLibrary.GoogleAuth, "function");
+  assert.equal(typeof authLibrary.Compute, "function");
+  assert.equal(typeof authLibrary.IdentityPoolClient, "function");
+});
+
 const env = {
   GOOGLE_CLOUD_PROJECT_ID: "executive-visuals-staging",
   SUPABASE_URL: "https://example.supabase.co",
@@ -49,13 +56,16 @@ test("GCS bootstrap rejects missing encryption and project configuration", async
 });
 
 test("GCS bootstrap rejects cross-project requests, invalid scopes and malformed tokens", async () => {
+  let response = "short";
   class FakeGoogleAuth {
     constructor() {}
-    async getClient() { return { async getAccessToken() { return "short"; } }; }
+    async getClient() { return { async getAccessToken() { return response; } }; }
   }
   const bootstrap = await createGoogleGeminiGcsMirrorBootstrap({ env, GoogleAuthClass: FakeGoogleAuth });
   await assert.rejects(bootstrap.getAccessToken({ projectId: "another-project" }), /project does not match/);
   await assert.rejects(bootstrap.getAccessToken({ scopes: ["not-a-url"] }), /scopes are invalid/);
+  await assert.rejects(bootstrap.getAccessToken(), /invalid access token/);
+  response = "a".repeat(24) + " " + "b".repeat(24);
   await assert.rejects(bootstrap.getAccessToken(), /invalid access token/);
 });
 
@@ -126,9 +136,10 @@ test("GCS bootstrap rejects service-account key files and malformed WIF endpoint
   }
 });
 
-test("GCS bootstrap rejects local user ADC credential clients even when token acquisition succeeds", async () => {
+test("GCS bootstrap rejects local user ADC before requesting an access token", async () => {
+  let tokenRequests = 0;
   class UserRefreshClient {
-    async getAccessToken() { return { token: "u".repeat(40) }; }
+    async getAccessToken() { tokenRequests += 1; return { token: "u".repeat(40) }; }
   }
   class Compute {}
   class IdentityPoolClient {}
@@ -144,6 +155,7 @@ test("GCS bootstrap rejects local user ADC credential clients even when token ac
     error.code === "GEMINI_GCS_ADC_IDENTITY_TYPE_REJECTED" &&
     /local user ADC credentials/.test(error.message)
   );
+  assert.equal(tokenRequests, 0, "unapproved ADC identities must be rejected before token acquisition");
 });
 
 test("GCS bootstrap accepts the concrete IdentityPoolClient used by file-based WIF", async () => {
@@ -187,11 +199,14 @@ test("GCS bootstrap accepts an attached Compute workload identity by class ident
 test("GCS bootstrap rejects a lookalike client even when its constructor name is approved", async () => {
   class Compute {}
   class IdentityPoolClient {}
-  const Lookalike = { [Symbol.hasInstance]: () => false };
+  class Lookalike { static [Symbol.hasInstance]() { return false; } }
+  const fakeClient = {
+    constructor: { name: "IdentityPoolClient" },
+    async getAccessToken() { return { token: "x".repeat(40) }; }
+  };
+  assert.equal(fakeClient instanceof Lookalike, false);
   class FakeGoogleAuth {
-    async getClient() {
-      return { constructor: { name: "IdentityPoolClient" }, async getAccessToken() { return { token: "x".repeat(40) }; } };
-    }
+    async getClient() { return fakeClient; }
   }
   const bootstrap = await createGoogleGeminiGcsMirrorBootstrap({
     env,

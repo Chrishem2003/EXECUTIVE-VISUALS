@@ -153,7 +153,8 @@ export async function resolveGoogleGeminiGcsMirrorServiceFactory({env,dependenci
  }
  const bootstrap=await createBootstrap({
   env,fetchImpl:dependencies.fetchImpl||globalThis.fetch,
-  GoogleAuthClass:dependencies.GoogleAuthClass
+  GoogleAuthClass:dependencies.GoogleAuthClass,
+  GoogleCredentialClientClasses:dependencies.GoogleCredentialClientClasses
  });
  if(typeof bootstrap?.checkIdentity!=="function"||typeof bootstrap?.createService!=="function")
   throw new Error("GCS mirror bootstrap must expose identity verification and a service factory.");

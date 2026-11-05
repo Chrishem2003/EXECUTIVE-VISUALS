@@ -36,20 +36,23 @@ test("GCS recovery rejects an injected identity check that does not affirm readi
  assert.equal(factoryUsed,false);
 });
 
-test("GCS recovery default bootstrap checks identity before returning its factory",async()=>{
+test("GCS recovery default bootstrap checks identity and forwards concrete credential classes",async()=>{
  const calls=[],factory=()=>({recoverMirrorAttempts:async()=>({})});
+ class Compute {}
+ class IdentityPoolClient {}
+ const credentialClasses={Compute,IdentityPoolClient};
  const resolved=await resolveGoogleGeminiGcsMirrorServiceFactory({
   env:{GOOGLE_CLOUD_PROJECT_ID:"staging"},
-  dependencies:{},
+  dependencies:{GoogleCredentialClientClasses:credentialClasses},
   async createBootstrap(options){
-   calls.push(["bootstrap",options.env.GOOGLE_CLOUD_PROJECT_ID]);
+   calls.push(["bootstrap",options.env.GOOGLE_CLOUD_PROJECT_ID,options.GoogleCredentialClientClasses===credentialClasses]);
    return{
     async checkIdentity(){calls.push(["identity"]);return{ready:true};},
     createService:factory
    };
   }
  });
- assert.deepEqual(calls,[["bootstrap","staging"],["identity"]]);
+ assert.deepEqual(calls,[["bootstrap","staging",true],["identity"]]);
  assert.equal(resolved,factory);
 });
 
