@@ -68,6 +68,10 @@ jobs:
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261105200000_google_gcs_asset_sources.sql
       - name: Verify GCS asset-source registry scope, privileges and lifecycle
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/google-gcs-asset-sources-postgres-integration.sql
+      - name: Apply durable GCS mirror upload-attempt ledger
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261105210000_google_gcs_mirror_attempts.sql
+      - name: Verify private GCS mirror attempt ledger privileges and recovery constraints
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/google-gcs-mirror-attempts-postgres-integration.sql
       - name: Verify concurrent Gemini recovery lease acquisition
         run: bash scripts/google-provider-file-recovery-lease-concurrency.sh
       - name: Apply durable Google video interaction migration
