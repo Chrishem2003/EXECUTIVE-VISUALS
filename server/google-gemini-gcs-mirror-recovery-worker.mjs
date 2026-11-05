@@ -64,7 +64,7 @@ export function createGoogleGeminiGcsMirrorRecoveryWorker({
       typeof attemptRepository.transition !== "function") {
     throw new TypeError("GCS recovery requires the durable lease-fenced attempt repository.");
   }
-  if (!sourceRepository || typeof sourceRepository.recordVerifiedSource !== "function") {
+  if (!sourceRepository || typeof sourceRepository.findActiveSource !== "function" || typeof sourceRepository.recordVerifiedSource !== "function") {
     throw new TypeError("GCS recovery requires the governed source registry.");
   }
   if (typeof loadPrivateAsset !== "function" || typeof getAccessToken !== "function" ||
@@ -141,11 +141,27 @@ export function createGoogleGeminiGcsMirrorRecoveryWorker({
         generation,metageneration,leaseToken
       });
     }
-    await sourceRepository.recordVerifiedSource({
-      assetId:attempt.assetId,ownerId:attempt.ownerId,projectId:attempt.projectId,
-      bucket:attempt.bucket,objectName:attempt.objectName,generation,metageneration,
-      sizeBytes:attempt.sizeBytes,mediaType:attempt.mediaType,sha256:attempt.sha256
-    });
+    const sourceScope={assetId:attempt.assetId,ownerId:attempt.ownerId,projectId:attempt.projectId};
+    const existing=await sourceRepository.findActiveSource(sourceScope);
+    if(existing) {
+      const same=existing.bucket===attempt.bucket && existing.objectName===attempt.objectName &&
+        existing.generation===generation && existing.metageneration===metageneration &&
+        existing.sizeBytes===attempt.sizeBytes && existing.mediaType===attempt.mediaType &&
+        existing.sha256===attempt.sha256;
+      if(!same) {
+        await attemptRepository.transition({
+          attemptId:attempt.id,expectedState:"OBJECT_VERIFIED",state:"QUARANTINED",
+          errorCode:"GEMINI_GCS_RECOVERY_ACTIVE_SOURCE_CONFLICT",leaseToken
+        });
+        results.push({attemptId:attempt.id,status:"active_source_conflict_quarantined"});
+        return;
+      }
+    } else {
+      await sourceRepository.recordVerifiedSource({
+        ...sourceScope,bucket:attempt.bucket,objectName:attempt.objectName,generation,metageneration,
+        sizeBytes:attempt.sizeBytes,mediaType:attempt.mediaType,sha256:attempt.sha256
+      });
+    }
     await attemptRepository.transition({
       attemptId:attempt.id,expectedState:"OBJECT_VERIFIED",state:"REGISTERED",
       generation,metageneration,leaseToken
@@ -245,7 +261,7 @@ export function createGoogleGeminiGcsMirrorRecoveryWorker({
               const error=fail("GCS resumable upload could not be completed (HTTP "+upload.response.status+").","GEMINI_GCS_RECOVERY_RESUME_FAILED");
               error.status=upload.response.status; throw error;
             }
-          } finally { await materialized.cleanup(); }
+          } finally { try { await materialized.cleanup(); } catch { results.push({attemptId:attempt.id,status:"temporary_cleanup_pending"}); } }
         } catch(error) {
           if(leaseToken) {
             try { await attemptRepository.releaseRecoveryAttempt({attemptId:attempt.id,leaseToken}); } catch {}
@@ -259,6 +275,7 @@ export function createGoogleGeminiGcsMirrorRecoveryWorker({
         quarantined:results.filter(x=>x.status.endsWith("_quarantined")).length,
         retryPending:results.filter(x=>x.status==="retry_pending"||x.status==="partial_upload_retry_pending").length,
         alreadyClaimed:results.filter(x=>x.status==="already_claimed").length,
+        cleanupPending:results.filter(x=>x.status==="temporary_cleanup_pending").length,
         results:Object.freeze(results)
       });
     }
