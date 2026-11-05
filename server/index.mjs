@@ -848,6 +848,7 @@ export function createAppServer() {
             const current=db.prepare("SELECT * FROM timelines WHERE id=? AND archived_at IS NULL").get(record.id);
             if(!current||current.revision!==record.revision){db.exec("ROLLBACK");fail(res,409,"REVISION_CONFLICT","Timeline changed while saving. Refresh and retry.");return;}
             if(current.project_id?!canWriteProject(db,user.id,current.project_id):current.owner_id!==user.id){db.exec("ROLLBACK");fail(res,403,"EDITOR_REQUIRED","Editor access is required to edit this timeline.");return;}
+            if(projectId&&!canWriteProject(db,user.id,projectId)){db.exec("ROLLBACK");fail(res,404,"PROJECT_NOT_FOUND","Project not found or editor access required.");return;}
             const parentVersionId=ensureTimelineBaseline(db,current);
             const changed=db.prepare("UPDATE timelines SET project_id=?,name=?,revision=?,timeline_json=?,otio_json=?,updated_at=? WHERE id=? AND revision=?")
               .run(projectId,name,revision,json(saved),otio?json(otio):null,now(),record.id,record.revision);
