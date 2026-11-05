@@ -41,14 +41,17 @@ export function createGoogleOmniPrivateOutputIngestor({
   env = process.env,
   fetchImpl = globalThis.fetch,
   authorizeOutputIngestion,
+  findExistingOutput,
   ingestPrivateOutput,
   timeoutMs = 120000,
   maxOutputBytes = 250 * 1024 * 1024,
   maxInlineVideoBytes = 32 * 1024 * 1024
 } = {}) {
   if (typeof fetchImpl !== "function") throw new TypeError("Gemini output ingestor requires fetch.");
-  if (typeof authorizeOutputIngestion !== "function" || typeof ingestPrivateOutput !== "function") {
-    throw new TypeError("Gemini output ingestor requires durable job authorization and private asset ingestion.");
+  if (typeof authorizeOutputIngestion !== "function" ||
+      typeof findExistingOutput !== "function" ||
+      typeof ingestPrivateOutput !== "function") {
+    throw new TypeError("Gemini output ingestor requires durable authorization, idempotency lookup and private asset ingestion.");
   }
   if (!Number.isInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 300000 ||
       !Number.isSafeInteger(maxOutputBytes) || maxOutputBytes < 1024 * 1024 ||
@@ -117,6 +120,45 @@ export function createGoogleOmniPrivateOutputIngestor({
         throw fail("Gemini output ingestion is not authorized for this job, owner and project.", "GEMINI_OMNI_OUTPUT_FORBIDDEN");
       }
 
+      // Reconcile a prior successful private-asset commit before downloading or
+      // uploading again. The repository lookup is owner/project/task scoped.
+      let existing;
+      try {
+        existing = await findExistingOutput({
+          ownerId: context.ownerId,
+          projectId: context.projectId || null,
+          providerTaskId: interaction.interactionId,
+          outputIndex: 0
+        });
+      } catch {
+        throw fail("Gemini output idempotency lookup failed; refusing duplicate ingestion.",
+          "GEMINI_OMNI_OUTPUT_IDEMPOTENCY_LOOKUP_FAILED");
+      }
+      if (existing) {
+        if (typeof existing.id !== "string" || !existing.id ||
+            existing.ownerId !== context.ownerId ||
+            (existing.projectId || null) !== (context.projectId || null) ||
+            existing.mediaType !== "video/mp4" ||
+            existing.storageBucket !== "executive-visuals-media" ||
+            !Number.isSafeInteger(Number(existing.size)) || Number(existing.size) < 1 ||
+            typeof existing.sha256 !== "string" || !/^[a-f0-9]{64}$/i.test(existing.sha256)) {
+          throw fail("Existing Gemini output asset does not match the authorized private asset scope.",
+            "GEMINI_OMNI_OUTPUT_ASSET_INVALID");
+        }
+        return Object.freeze({
+          assetId: existing.id,
+          ownerId: existing.ownerId,
+          projectId: existing.projectId || null,
+          mediaType: "video/mp4",
+          sizeBytes: Number(existing.size),
+          sha256: existing.sha256,
+          provider: "google",
+          model: interaction.model,
+          interactionId: interaction.interactionId,
+          reused: true
+        });
+      }
+
       const bytes = interaction.video.delivery === "inline"
         ? Buffer.from(interaction.video.base64, "base64")
         : await download(interaction.video.uri);
@@ -136,7 +178,12 @@ export function createGoogleOmniPrivateOutputIngestor({
           interactionId: interaction.interactionId,
           ownerId: context.ownerId,
           projectId: context.projectId,
-          jobId: context.jobId
+          jobId: context.jobId,
+          metadata: {
+            source: "video-generation",
+            providerTaskId: interaction.interactionId,
+            outputIndex: 0
+          }
         });
       } catch {
         throw fail("Gemini output could not be committed to private asset storage.", "GEMINI_OMNI_OUTPUT_INGEST_FAILED");
@@ -155,7 +202,8 @@ export function createGoogleOmniPrivateOutputIngestor({
         sha256,
         provider: "google",
         model: interaction.model,
-        interactionId: interaction.interactionId
+        interactionId: interaction.interactionId,
+        reused: false
       });
     }
   });
