@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
-import { mkdir, rename, rm, stat, readFile } from "node:fs/promises";
+import { mkdir, rename, rm, stat, readFile, readdir } from "node:fs/promises";
 import { extname, isAbsolute, relative, resolve, sep, join } from "node:path";
 
 const PNG=Buffer.from([137,80,78,71,13,10,26,10]);
@@ -21,11 +21,32 @@ function run(executable,args,{timeoutMs=45000,maxOutput=8192}={}){
  });
 }
 
-export function createWaveformCache({mediaRoot,ffmpegPath=process.env.FFMPEG_PATH||"ffmpeg",ffprobePath=process.env.FFPROBE_PATH||"ffprobe",render=null,maxSourceBytes=250*1024*1024,maxDurationSeconds=7200,timeoutMs=45000}={}){
+export function createWaveformCache({mediaRoot,ffmpegPath=process.env.FFMPEG_PATH||"ffmpeg",ffprobePath=process.env.FFPROBE_PATH||"ffprobe",render=null,maxSourceBytes=250*1024*1024,maxDurationSeconds=7200,timeoutMs=45000,maxCacheBytes=512*1024*1024,maxCacheAgeMs=30*24*60*60*1000,maxTempAgeMs=60*60*1000}={}){
  if(typeof mediaRoot!=="string"||!mediaRoot)throw new Error("Waveform cache requires a media root.");
- if(!Number.isSafeInteger(maxSourceBytes)||maxSourceBytes<1||!Number.isFinite(maxDurationSeconds)||maxDurationSeconds<=0)throw new Error("Waveform cache limits are invalid.");
+ if(!Number.isSafeInteger(maxSourceBytes)||maxSourceBytes<1||!Number.isFinite(maxDurationSeconds)||maxDurationSeconds<=0||!Number.isSafeInteger(maxCacheBytes)||maxCacheBytes<1||!Number.isFinite(maxCacheAgeMs)||maxCacheAgeMs<0||!Number.isFinite(maxTempAgeMs)||maxTempAgeMs<0)throw new Error("Waveform cache limits are invalid.");
  const root=resolve(mediaRoot),cacheRoot=resolve(root,"derived","waveforms"),pending=new Map();
  const inside=(base,path)=>{const rel=relative(base,path);return rel!==""&&!rel.startsWith(".."+sep)&&rel!==".."&&!isAbsolute(rel);};
+ async function prune({preserve=[]}={}){
+  await mkdir(cacheRoot,{recursive:true});
+  const now=Date.now(),keep=new Set(preserve.map(path=>resolve(path))),entries=[];
+  for(const name of await readdir(cacheRoot)){
+   if(!/^(?:[a-f0-9]{64}\\.png|\\.[a-f0-9]{64}\\.[0-9]+\\.[a-f0-9]+\\.tmp\\.png)$/i.test(name))continue;
+   const path=join(cacheRoot,name),info=await stat(path).catch(()=>null);
+   if(!info?.isFile())continue;
+   const temporary=name.endsWith(".tmp.png");
+   if(temporary){if(now-info.mtimeMs>maxTempAgeMs)await rm(path,{force:true}).catch(()=>{});continue;}
+   entries.push({path,size:info.size,mtimeMs:info.mtimeMs});
+  }
+  let total=entries.reduce((sum,item)=>sum+item.size,0),removed=0;
+  entries.sort((a,b)=>a.mtimeMs-b.mtimeMs);
+  for(const item of entries){
+   const expired=now-item.mtimeMs>maxCacheAgeMs,overBudget=total>maxCacheBytes;
+   if((expired||overBudget)&&!keep.has(item.path)){
+    await rm(item.path,{force:true});total-=item.size;removed++;
+   }
+  }
+  return{entries:entries.length,bytes:total,removed,maxBytes:maxCacheBytes,maxAgeMs:maxCacheAgeMs};
+ }
  async function generate(sourcePath,tempPath){
   const durationText=await run(ffprobePath,["-v","error","-show_entries","format=duration","-of","default=noprint_wrappers=1:nokey=1",sourcePath],{timeoutMs:Math.min(timeoutMs,15000)});
   const duration=Number(durationText);
@@ -49,6 +70,7 @@ export function createWaveformCache({mediaRoot,ffmpegPath=process.env.FFMPEG_PAT
   if(cached?.isFile()&&cached.size>PNG.length&&cached.size<=2*1024*1024)return output;
   if(pending.has(key))return pending.get(key);
   const task=(async()=>{
+   await prune();
    await mkdir(cacheRoot,{recursive:true});
    const temp=join(cacheRoot,"."+key+"."+process.pid+"."+Math.random().toString(16).slice(2)+".tmp.png");
    try{
@@ -59,11 +81,12 @@ export function createWaveformCache({mediaRoot,ffmpegPath=process.env.FFMPEG_PAT
     const header=await readFile(temp);
     if(!header.subarray(0,8).equals(PNG))throw Object.assign(new Error("Generated waveform is not a PNG image."),{code:"WAVEFORM_INVALID_OUTPUT"});
     await rename(temp,output);
+    await prune({preserve:[output]});
     return output;
    }finally{await rm(temp,{force:true}).catch(()=>{});}
   })();
   pending.set(key,task);
   try{return await task;}finally{pending.delete(key);}
  }
- return Object.freeze({get,cacheRoot});
+ return Object.freeze({get,prune,cacheRoot});
 }
