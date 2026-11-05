@@ -202,3 +202,27 @@ test("Runway Gen-4.5 estimate uses the documented credits-per-second rate", () =
     provider: "luma", model: "ray-3.2", durationSeconds: 5
   }), error => error.code === "VIDEO_PRICE_UNVERIFIED");
 });
+
+test("cloud video enqueue exposes cancellation RPCs with bounded worker scope",async()=>{
+ const calls=[];
+ const client=createCloudVideoEnqueue({
+  ...base,
+  fetchImpl:async(url,options)=>{
+   calls.push({url,body:JSON.parse(options.body)});
+   if(url.endsWith("/request_video_generation_cancellation"))return response([{
+    job_id:resultRow.job_id,job_status:"processing",cancellation_requested:true,submission_state:"submitted"
+   }]);
+   return response(true);
+  }
+ });
+ const requested=await client.requestCancellation({jobId:resultRow.job_id,ownerId});
+ assert.deepEqual(requested,{
+  jobId:resultRow.job_id,status:"processing",cancellationRequested:true,submissionState:"submitted"
+ });
+ assert.equal(await client.isCancellationRequested(resultRow.job_id,"video-worker-1"),true);
+ assert.deepEqual(calls.map(call=>call.url.split("/").pop()),[
+  "request_video_generation_cancellation","is_video_generation_cancellation_requested"
+ ]);
+ assert.deepEqual(calls[0].body,{p_job_id:resultRow.job_id,p_owner_id:ownerId});
+ assert.deepEqual(calls[1].body,{p_job_id:resultRow.job_id,p_worker_id:"video-worker-1"});
+});
