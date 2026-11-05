@@ -9,7 +9,7 @@ const sha256 = "a".repeat(64);
 const token = "oauth-test-access-token-123456";
 const source = {
   assetId, ownerId, projectId, bucket: "private-media-bucket",
-  objectName: "private/final.mp4", generation: "1762300800000000",
+  objectName: "private/final.mp4", generation: "1762300800000000", metageneration: "3",
   sizeBytes: 1024, mediaType: "video/mp4", sha256, state: "ACTIVE"
 };
 const env = {
