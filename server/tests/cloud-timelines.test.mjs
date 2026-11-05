@@ -33,7 +33,8 @@ function setup({authorize=async()=>true,assetLookup=async()=>asset,fetchImpl}={}
    const source=versions.find(version=>version.id===body.p_source_version_id&&version.timeline_id===row.id);
    if(!source)return response({message:"source missing"},404);
    const parent=versions.find(version=>version.revision===row.revision);
-   row={...row,name:source.name,revision:row.revision+1,timeline:source.timeline,otio:source.otio,updated_at:"2026-11-01T00:02:00Z"};
+   const restoredDocument={...source.timeline,id:row.id,projectId:row.project_id,name:source.name,revision:row.revision+1};
+   row={...row,name:source.name,revision:row.revision+1,timeline:restoredDocument,otio:source.otio,updated_at:"2026-11-01T00:02:00Z"};
    versions.push({id:nextVersionId(),timeline_id:row.id,owner_id:row.owner_id,project_id:row.project_id,revision:row.revision,parent_version_id:parent?.id||null,restored_from_version_id:source.id,name:row.name,summary:body.p_summary,content_hash:body.p_content_hash,timeline:row.timeline,otio:row.otio,created_by:body.p_actor_id,created_at:row.updated_at});
    return response([row]);
   }
