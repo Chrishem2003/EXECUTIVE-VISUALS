@@ -63,7 +63,7 @@ test("rejects oversized sources and malformed renderer output",async()=>{
 });
 
 test("FFmpeg produces a real cached waveform PNG from a generated audio fixture",async()=>{
- const ffmpeg=spawnSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-loglevel","error","-f","lavfi","-i","sine=frequency=440:duration=1","-c:a","pcm_s16le","-y"],{encoding:"utf8",timeout:10000});
+ const ffmpeg=spawnSync(process.env.FFMPEG_PATH||"ffmpeg",["-version"],{encoding:"utf8",timeout:10000});
  if(ffmpeg.error?.code==="ENOENT"){return;}
  assert.equal(ffmpeg.status,0,ffmpeg.stderr||"Could not generate audio fixture.");
  const root=await mkdtemp(join(tmpdir(),"ev-waveform-ffmpeg-"));
