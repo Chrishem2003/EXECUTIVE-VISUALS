@@ -12,6 +12,8 @@ create table if not exists executive_visuals.google_drive_export_attempts (
   byte_size bigint not null check (byte_size > 0 and byte_size <= 262144000),
   sha256 text not null check (sha256 ~ '^[a-f0-9]{64}$'),
   encrypted_session_uri text,
+  lease_token uuid,
+  lease_expires_at timestamptz,
   state text not null check (state in ('PREPARED','UPLOADING','OUTCOME_UNKNOWN','COMPLETED','RECONCILIATION_REQUIRED','FAILED')),
   drive_web_view_link text,
   last_error_code text,
