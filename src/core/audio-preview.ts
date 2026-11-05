@@ -6,7 +6,7 @@ export interface AudioPreviewTrackInput {
  solo?:boolean;
 }
 
-type ConnectedTrack={media:HTMLMediaElement;source:MediaElementAudioSourceNode;gain:GainNode;muted:boolean;solo:boolean};
+type ConnectedTrack={media:HTMLMediaElement;source:MediaElementAudioSourceNode;gain:GainNode;gainDb:number;muted:boolean;solo:boolean};
 
 export function decibelsToGain(value:number,minDb=-60,maxDb=24):number{
  const db=Number.isFinite(value)?Math.max(minDb,Math.min(maxDb,value)):0;
@@ -76,18 +76,19 @@ export class AudioPreviewEngine{
    if(!entry){
     const source=this.context.createMediaElementSource(track.media),gain=this.context.createGain();
     source.connect(gain);gain.connect(this.master);
-    entry={media:track.media,source,gain,muted:false,solo:false};
+    entry={media:track.media,source,gain,gainDb:track.gainDb??0,muted:false,solo:false};
     this.connected.set(track.id,entry);
    }
-   entry.muted=!!track.muted;entry.solo=!!track.solo;
-   const target=decibelsToGain(track.gainDb??0);
+   entry.muted=!!track.muted;entry.solo=!!track.solo;entry.gainDb=track.gainDb??0;
+   const target=decibelsToGain(entry.gainDb);
    entry.gain.gain.setTargetAtTime(target,this.context.currentTime,0.015);
   }
   this.applyTrackStates();
  }
  setTrackGain(id:string,gainDb:number):void{
   const entry=this.connected.get(id);if(!entry)return;
-  entry.gain.gain.setTargetAtTime(decibelsToGain(gainDb),this.context.currentTime,0.015);
+  entry.gainDb=gainDb;
+  this.applyTrackStates();
  }
  setMasterVolume(value:number):void{this.masterVolume=Math.max(0,Math.min(1,Number.isFinite(value)?value:0));this.applyMaster();}
  setMasterMuted(muted:boolean):void{this.masterMuted=!!muted;this.applyMaster();}
@@ -98,7 +99,7 @@ export class AudioPreviewEngine{
   const hasSolo=[...this.connected.values()].some(entry=>entry.solo);
   for(const entry of this.connected.values()){
    const suppressed=entry.muted||(hasSolo&&!entry.solo);
-   entry.gain.gain.setTargetAtTime(suppressed?0:entry.gain.gain.value,this.context.currentTime,0.015);
+   entry.gain.gain.setTargetAtTime(suppressed?0:decibelsToGain(entry.gainDb),this.context.currentTime,0.015);
   }
  }
  dispose():void{
