@@ -136,7 +136,7 @@ function activePreviewAtPlayhead(){
  const videoTracks=state.timeline.tracks.filter(track=>track.enabled&&track.kind==="video"&&track.clips.some(clip=>clip.enabled));
  state.previewError=videoTracks.length>1?"The master renderer currently supports one primary video track; additional video tracks are not included in this preview.":"";
  const primaryTrackId=videoTracks[0]?.id;
- return evaluated.activeClips.filter(clip=>clip.trackKind==="overlay"||(clip.trackKind==="video"&&clip.trackId===primaryTrackId));
+ return evaluated.activeClips.filter(clip=>clip.trackKind==="audio"||clip.trackKind==="overlay"||(clip.trackKind==="video"&&clip.trackId===primaryTrackId));
 }
 function renderPreviewLayers(clips:ReturnType<typeof activePreviewAtPlayhead>){
  return clips.map(clip=>{
@@ -153,6 +153,7 @@ function renderPreviewLayers(clips:ReturnType<typeof activePreviewAtPlayhead>){
   const opacity=Math.max(0,Math.min(1,Number(metadata.opacity??1)));
   const z=isOverlay?100+clip.trackIndex:1;
   const position=isOverlay?";left:"+overlayX/timelineWidth*100+"%;top:"+overlayY/timelineHeight*100+"%;width:"+overlayWidth/timelineWidth*100+"%;height:"+overlayHeight/timelineHeight*100+"%;opacity:"+opacity:";
+  if(source.mediaType.startsWith("audio/"))return '<audio data-preview-audio="'+esc(clip.clipId)+'" preload="metadata" src="'+esc(source.url)+'"></audio>';
   if(source.mediaType.startsWith("video/"))return '<video class="timeline-preview-layer" data-preview-video="'+esc(clip.clipId)+'" data-track-index="'+clip.trackIndex+'" style="z-index:'+z+position+'" muted playsinline preload="metadata" src="'+esc(source.url)+'"></video>';
   if(source.mediaType.startsWith("image/"))return '<img class="timeline-preview-layer" data-preview-image="'+esc(clip.clipId)+'" data-track-index="'+clip.trackIndex+'" style="z-index:'+z+position+'" src="'+esc(source.url)+'" alt="'+esc(clip.clipName)+'">';
   return '<div class="timeline-preview-layer timeline-preview-unsupported" data-track-index="'+clip.trackIndex+'" style="z-index:'+z+'">'+esc(asset.name)+' · unsupported preview format</div>';
@@ -170,6 +171,7 @@ async function syncPreview(){
  if(!active.length){
   state.previewLayerKey="";state.previewPlaying=false;
   for(const video of document.querySelectorAll<HTMLVideoElement>("[data-preview-video]")){video.pause();video.removeAttribute("src");video.load();}
+  for(const audio of document.querySelectorAll<HTMLAudioElement>("[data-preview-audio]")){audio.pause();audio.removeAttribute("src");audio.load();}
   const toggle=document.querySelector<HTMLButtonElement>("[data-tl-preview-toggle]");if(toggle)toggle.textContent="Play preview";
   const stage=document.querySelector<HTMLElement>("#tl-preview-layers");
   if(stage)stage.innerHTML=renderPreviewLayers([]);
@@ -198,10 +200,12 @@ async function syncPreview(){
   const stage=document.querySelector<HTMLElement>("#tl-preview-layers");
   if(stage&&(key!==state.previewLayerKey||changed)){
    for(const video of stage.querySelectorAll<HTMLVideoElement>("[data-preview-video]"))video.pause();
+   for(const audio of stage.querySelectorAll<HTMLAudioElement>("[data-preview-audio]"))audio.pause();
    state.previewLayerKey=key;
    stage.innerHTML=renderPreviewLayers(active);
   }
   const videoClips=active.filter(clip=>state.previewSources[clip.assetId]?.mediaType.startsWith("video/"));
+  const audioClips=active.filter(clip=>state.previewSources[clip.assetId]?.mediaType.startsWith("audio/"));
   const primary=videoClips[0]||null;
   for(const clip of videoClips){
    const video=document.querySelector<HTMLVideoElement>('[data-preview-video="'+CSS.escape(clip.clipId)+'"]');
@@ -219,8 +223,6 @@ async function syncPreview(){
      const sourceStart=seconds(sourceClip.sourceRange.start);
      const sourceEnd=sourceStart+current.timelineEndSeconds-current.timelineStartSeconds;
      if(video.currentTime>=sourceEnd-0.025){
-      state.previewPlaying=false;
-      const toggle=document.querySelector<HTMLButtonElement>("[data-tl-preview-toggle]");if(toggle)toggle.textContent="Play preview";
       for(const node of document.querySelectorAll<HTMLVideoElement>("[data-preview-video]"))node.pause();
       state.playheadFrame=Math.ceil(current.timelineEndSeconds*fps());
       const slider=document.querySelector<HTMLInputElement>("#tl-playhead");if(slider)slider.value=String(state.playheadFrame);
@@ -234,6 +236,28 @@ async function syncPreview(){
     };
    }
   }
+  for(const clip of audioClips){
+   const audio=document.querySelector<HTMLAudioElement>('[data-preview-audio="'+CSS.escape(clip.clipId)+'"]');
+   if(!audio)continue;
+   const sourceClip=state.timeline.tracks.find(track=>track.id===clip.trackId)?.clips.find(item=>item.id===clip.clipId);
+   if(!sourceClip)continue;
+   const target=Math.max(0,clip.sourceTimeSeconds);
+   const gainDb=Math.max(-60,Math.min(0,Number(sourceClip.gainDb)||0));
+   audio.volume=Math.pow(10,gainDb/20);
+   if(audio.readyState>=1&&Math.abs(audio.currentTime-target)>0.25)audio.currentTime=target;
+   if(audio.readyState<1)audio.onloadedmetadata=()=>{if(state.previewActiveClips.some(item=>item.clipId===clip.clipId))audio.currentTime=target;if(state.previewPlaying)void audio.play().catch(()=>{state.previewPlaying=false;});};
+   if(state.previewPlaying&&audio.paused&&audio.readyState>=2)void audio.play().catch(()=>{state.previewPlaying=false;});
+   audio.ontimeupdate=()=>{
+    const current=state.previewActiveClips.find(item=>item.clipId===clip.clipId);
+    if(!current||!state.timeline||state.previewActiveClips.some(item=>item.trackKind==="video"))return;
+    const frame=Math.max(0,Math.floor((current.timelineStartSeconds+Math.max(0,audio.currentTime-seconds(sourceClip.sourceRange.start)))*fps()));
+    state.playheadFrame=frame;
+    const slider=document.querySelector<HTMLInputElement>("#tl-playhead");if(slider)slider.value=String(frame);
+    const readout=document.querySelector<HTMLElement>("#tl-playhead-label");if(readout)readout.textContent="Frame "+frame+" · "+(frame/fps()).toFixed(3)+"s";
+    void syncPreview();
+   };
+   audio.onended=()=>{if(state.previewPlaying)void syncPreview();};
+  }
  }catch(error){state.previewError=error instanceof Error?error.message:"Could not load preview sources.";if(label)label.textContent=state.previewError;}
 }
 function previewMonitor(){
@@ -241,22 +265,24 @@ function previewMonitor(){
  let active:ReturnType<typeof activePreviewAtPlayhead>=[];
  try{active=activePreviewAtPlayhead();}catch(error){state.previewError=error instanceof Error?error.message:"Timeline cannot be previewed.";}
  const videoCount=active.filter(clip=>state.assets.find(asset=>asset.id===clip.assetId)?.mediaType.startsWith("video/")).length;
- return '<section class="panel timeline-preview-panel"><div class="timeline-panel-heading"><div><div class="eyebrow">MULTI-TRACK COMPOSITE PREVIEW</div><h3>Preview monitor</h3></div><span class="job-status '+(active.length?"completed":"running")+'">'+(active.length?active.length+" ACTIVE LAYERS":"NO ACTIVE LAYERS")+'</span></div><div class="timeline-preview-stage" style="aspect-ratio: '+(state.timeline.width||1920)+' / '+(state.timeline.height||1080)+' "><div id="tl-preview-layers">'+renderPreviewLayers(active)+'</div></div><div class="timeline-preview-controls"><label for="tl-playhead">Playhead frame</label><input id="tl-playhead" type="range" min="0" max="'+timelineEndFrame()+'" step="1" value="'+Math.min(timelineEndFrame(),Math.max(0,state.playheadFrame))+'"><strong id="tl-playhead-label">Frame '+state.playheadFrame+' · '+(state.playheadFrame/fps()).toFixed(3)+'s</strong></div><div class="timeline-preview-actions"><button class="secondary" type="button" data-tl-preview-toggle '+(videoCount?"":"disabled")+'>'+(state.previewPlaying?"Pause preview":"Play preview")+'</button><span class="muted">'+active.length+' active visual layer(s) · '+videoCount+' video source(s)</span></div><p id="tl-preview-active" class="muted">'+(active.map(clip=>esc(clip.clipName)+" · "+esc(clip.trackName)+" · "+clip.sourceTimeSeconds.toFixed(3)+"s").join(" | ")||"No active video or overlay clips at this frame.")+(state.previewError?" · "+esc(state.previewError):"")+'</p><small class="muted">Layers follow timeline track order. Native browser decoding is codec-dependent. Audio mixing, effects and transitions remain in the FFmpeg master-render path.</small></section>';
+ const audioCount=active.filter(clip=>state.assets.find(asset=>asset.id===clip.assetId)?.mediaType.startsWith("audio/")).length;
+ return '<section class="panel timeline-preview-panel"><div class="timeline-panel-heading"><div><div class="eyebrow">MULTI-TRACK COMPOSITE PREVIEW</div><h3>Preview monitor</h3></div><span class="job-status '+(active.length?"completed":"running")+'">'+(active.length?active.length+" ACTIVE LAYERS":"NO ACTIVE LAYERS")+'</span></div><div class="timeline-preview-stage" style="aspect-ratio: '+(state.timeline.width||1920)+' / '+(state.timeline.height||1080)+' "><div id="tl-preview-layers">'+renderPreviewLayers(active)+'</div></div><div class="timeline-preview-controls"><label for="tl-playhead">Playhead frame</label><input id="tl-playhead" type="range" min="0" max="'+timelineEndFrame()+'" step="1" value="'+Math.min(timelineEndFrame(),Math.max(0,state.playheadFrame))+'"><strong id="tl-playhead-label">Frame '+state.playheadFrame+' · '+(state.playheadFrame/fps()).toFixed(3)+'s</strong></div><div class="timeline-preview-actions"><button class="secondary" type="button" data-tl-preview-toggle '+(videoCount||audioCount?"":"disabled")+'>'+(state.previewPlaying?"Pause preview":"Play preview")+'</button><span class="muted">'+active.filter(clip=>clip.trackKind!=="audio").length+' visual layer(s) · '+videoCount+' video · '+audioCount+' audio</span></div><p id="tl-preview-active" class="muted">'+(active.map(clip=>esc(clip.clipName)+" · "+esc(clip.trackName)+" · "+clip.sourceTimeSeconds.toFixed(3)+"s").join(" | ")||"No active video or overlay clips at this frame.")+(state.previewError?" · "+esc(state.previewError):"")+'</p><small class="muted">Visual layers follow timeline order. Audio tracks preview as synchronized source clips with per-clip gain; final mixing and limiting remain in FFmpeg.</small></section>';
 }
 document.addEventListener("click",event=>{
  const button=(event.target as HTMLElement).closest<HTMLButtonElement>("[data-tl-preview-toggle]");
  if(!button)return;
  const videos=[...document.querySelectorAll<HTMLVideoElement>("[data-preview-video]")];
- if(!videos.length)return;
+ const audios=[...document.querySelectorAll<HTMLAudioElement>("[data-preview-audio]")];
+ if(!videos.length&&!audios.length)return;
  state.previewPlaying=!state.previewPlaying;
  button.textContent=state.previewPlaying?"Pause preview":"Play preview";
  if(state.previewPlaying){
-  void Promise.all(videos.map(video=>video.play().catch(()=>{state.previewPlaying=false;}))).then(()=>{
-   if(!state.previewPlaying)for(const video of videos)video.pause();
+  void Promise.all([...videos.map(video=>video.play().catch(()=>{state.previewPlaying=false;})),...audios.map(audio=>audio.play().catch(()=>{state.previewPlaying=false;}))]).then(()=>{
+   if(!state.previewPlaying){for(const video of videos)video.pause();for(const audio of audios)audio.pause();}
    const current=document.querySelector<HTMLButtonElement>("[data-tl-preview-toggle]");
    if(current)current.textContent=state.previewPlaying?"Pause preview":"Play preview";
   });
- }else videos.forEach(video=>video.pause());
+ }else{videos.forEach(video=>video.pause());audios.forEach(audio=>audio.pause());}
 });
 
 export function renderTimelineWorkspace(){
