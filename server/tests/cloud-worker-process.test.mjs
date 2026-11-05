@@ -8,6 +8,10 @@ test("cloud worker config requires a selected worker family and server credentia
  assert.throws(()=>readCloudWorkerConfig({...env,CLOUD_MEDIA_WORKER_ENABLED:"false",CLOUD_TIMELINE_WORKER_ENABLED:"false"}),/at least one/);
  assert.throws(()=>readCloudWorkerConfig({...env,SUPABASE_SERVICE_ROLE_KEY:""}),/server-side Supabase credentials/);
 });
+test("cloud worker process fails closed if the not-yet-composed video family is requested",()=>{
+ assert.throws(()=>readCloudWorkerConfig({...env,CLOUD_VIDEO_WORKER_ENABLED:"true"}),/not yet released/);
+});
+
 test("cloud worker config validates lease, heartbeat, polling and byte limits",()=>{
  const config=readCloudWorkerConfig(env);assert.equal(config.media,true);assert.equal(config.timeline,true);assert.equal(config.leaseSeconds,90);
  assert.throws(()=>readCloudWorkerConfig({...env,CLOUD_WORKER_HEARTBEAT_MS:"90000"}),/heartbeat/);
