@@ -56,9 +56,12 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
  const tracks=timeline.tracks.filter(track=>track.enabled!==false&&(track.clips||[]).some(enabled));
  const videos=tracks.filter(track=>track.kind==="video"),audios=tracks.filter(track=>track.kind==="audio"),overlays=tracks.filter(track=>track.kind==="overlay"),captions=tracks.filter(track=>track.kind==="caption");
  const unsupported=tracks.filter(track=>!["video","audio","overlay","caption"].includes(track.kind));
- if(tracks.some(track=>track.kind!=="video"&&(track.clips||[]).some(clip=>clip.transitionToNext!==undefined)))fail("Transitions are supported only on the primary video track.","INVALID_TIMELINE_TRANSITION");
+ if(tracks.some(track=>track.kind!=="video"&&(track.clips||[]).some(clip=>clip.transitionToNext!==undefined)))fail("Transitions are supported only on video tracks.","INVALID_TIMELINE_TRANSITION");
  if(videos.length<1||unsupported.length)fail("The master renderer requires at least one video track and supported audio, overlay and caption tracks.","UNSUPPORTED_TIMELINE_FEATURE");
  const clips=ordered([videos[0]]),audioClips=audios.flatMap(track=>ordered([track])),overlayClips=overlays.flatMap(track=>ordered([track])),captionClips=captions.flatMap(track=>ordered([track]));
+ const fpsNum=Math.max(1,Math.min(120,Math.floor(Number(timeline.frameRate?.numerator)||24)));
+ const fpsDen=Math.max(1,Math.min(1001,Math.floor(Number(timeline.frameRate?.denominator)||1)));
+ const fps=fpsNum/fpsDen;
  for(const track of videos.slice(1)){
   const trackClips=ordered([track]);
   for(let index=0;index<trackClips.length;index++){
@@ -72,9 +75,6 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
  if(!clips.length)fail("Add at least one enabled clip to the primary video track.","EMPTY_TIMELINE");
  const width=Math.max(256,Math.min(7680,Math.floor(Number(timeline.width)||1920)));
  const height=Math.max(144,Math.min(4320,Math.floor(Number(timeline.height)||1080)));
- const fpsNum=Math.max(1,Math.min(120,Math.floor(Number(timeline.frameRate?.numerator)||24)));
- const fpsDen=Math.max(1,Math.min(1001,Math.floor(Number(timeline.frameRate?.denominator)||1)));
- const fps=fpsNum/fpsDen;
  for(let index=0;index<clips.length;index++){
   const clip=clips[index],transition=clip.transitionToNext;
   if(transition===undefined)continue;
