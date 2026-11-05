@@ -68,7 +68,8 @@ export function createGoogleDrivePrivateFileBridge({
   loadPrivateAsset,
   fetchImpl = globalThis.fetch,
   maxBytes = MAX_BYTES,
-  timeoutMs = 30000
+  timeoutMs = 30000,
+  onCleanupError = () => {}
 } = {}) {
   if (typeof getUserAccessToken !== "function" || typeof fetchImpl !== "function") {
     throw new TypeError("Google Drive bridge requires a per-user OAuth token provider and fetch.");
@@ -190,50 +191,59 @@ export function createGoogleDrivePrivateFileBridge({
       let loaded;
       try { loaded = await loadPrivateAsset({ ...scope, assetId }); }
       catch { throw fail("Private asset could not be authorized for Google Drive export.", "GOOGLE_DRIVE_ASSET_FORBIDDEN"); }
-      const asset = loaded?.asset;
-      const bytes = loaded?.bytes;
-      if (!asset || asset.id !== assetId || (asset.projectId || null) !== scope.projectId ||
-          (!scope.projectId && asset.ownerId !== scope.ownerId) ||
-          asset.storageBucket !== "executive-visuals-media" ||
-          !MIME_TYPES.has(asset.mediaType) ||
-          !(bytes instanceof Uint8Array) || bytes.byteLength < 1 || bytes.byteLength > maxBytes ||
-          Number(asset.size) !== bytes.byteLength ||
-          typeof asset.sha256 !== "string" ||
-          createHash("sha256").update(bytes).digest("hex") !== asset.sha256) {
-        throw fail("Private asset metadata, ownership, or content hash failed verification.", "GOOGLE_DRIVE_ASSET_INVALID");
+      try {
+        const asset = loaded?.asset;
+        const bytes = loaded?.bytes;
+        if (!asset || asset.id !== assetId || (asset.projectId || null) !== scope.projectId ||
+            (!scope.projectId && asset.ownerId !== scope.ownerId) ||
+            asset.storageBucket !== "executive-visuals-media" ||
+            !MIME_TYPES.has(asset.mediaType) ||
+            !(bytes instanceof Uint8Array) || bytes.byteLength < 1 || bytes.byteLength > maxBytes ||
+            Number(asset.size) !== bytes.byteLength ||
+            typeof asset.sha256 !== "string" ||
+            createHash("sha256").update(bytes).digest("hex") !== asset.sha256) {
+          throw fail("Private asset metadata, ownership, or content hash failed verification.", "GOOGLE_DRIVE_ASSET_INVALID");
+        }
+        const metadata = {
+          name: safeName(asset.name),
+          mimeType: asset.mediaType,
+          ...(parentFolderId ? { parents: [parentFolderId] } : {}),
+          appProperties: { source: "executive-visuals", assetId }
+        };
+        const initUrl = DRIVE_ORIGIN + "/upload/drive/v3/files?uploadType=resumable&supportsAllDrives=true&fields=id,name,mimeType,size,webViewLink";
+        const init = await request(initUrl, accessToken, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json; charset=UTF-8",
+            "x-upload-content-type": asset.mediaType,
+            "x-upload-content-length": String(bytes.byteLength)
+          },
+          body: JSON.stringify(metadata), raw: true
+        });
+        const session = safeUploadSession(init.headers?.get?.("location"));
+        const uploaded = await request(session, accessToken, {
+          method: "PUT",
+          headers: { "content-type": asset.mediaType, "content-length": String(bytes.byteLength) },
+          body: bytes
+        });
+        if (!uploaded || typeof uploaded.id !== "string" || !FILE_ID.test(uploaded.id) ||
+            uploaded.mimeType !== asset.mediaType || Number(uploaded.size) !== bytes.byteLength) {
+          throw fail("Google Drive upload completed without a matching file resource.", "GOOGLE_DRIVE_UPLOAD_RESPONSE_INVALID");
+        }
+        return Object.freeze({
+          id: uploaded.id, name: safeName(uploaded.name), mimeType: uploaded.mimeType,
+          size: bytes.byteLength,
+          webViewLink: typeof uploaded.webViewLink === "string" &&
+            uploaded.webViewLink.startsWith("https://drive.google.com/") ? uploaded.webViewLink : null
+        });
+      } finally {
+        if (typeof loaded?.cleanup === "function") {
+          try { await loaded.cleanup(); }
+          catch {
+            try { onCleanupError({ code: "GOOGLE_DRIVE_TEMP_CLEANUP_FAILED" }); } catch {}
+          }
+        }
       }
-      const metadata = {
-        name: safeName(asset.name),
-        mimeType: asset.mediaType,
-        ...(parentFolderId ? { parents: [parentFolderId] } : {}),
-        appProperties: { source: "executive-visuals", assetId }
-      };
-      const initUrl = DRIVE_ORIGIN + "/upload/drive/v3/files?uploadType=resumable&supportsAllDrives=true&fields=id,name,mimeType,size,webViewLink";
-      const init = await request(initUrl, accessToken, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json; charset=UTF-8",
-          "x-upload-content-type": asset.mediaType,
-          "x-upload-content-length": String(bytes.byteLength)
-        },
-        body: JSON.stringify(metadata), raw: true
-      });
-      const session = safeUploadSession(init.headers?.get?.("location"));
-      const uploaded = await request(session, accessToken, {
-        method: "PUT",
-        headers: { "content-type": asset.mediaType, "content-length": String(bytes.byteLength) },
-        body: bytes
-      });
-      if (!uploaded || typeof uploaded.id !== "string" || !FILE_ID.test(uploaded.id) ||
-          uploaded.mimeType !== asset.mediaType || Number(uploaded.size) !== bytes.byteLength) {
-        throw fail("Google Drive upload completed without a matching file resource.", "GOOGLE_DRIVE_UPLOAD_RESPONSE_INVALID");
-      }
-      return Object.freeze({
-        id: uploaded.id, name: safeName(uploaded.name), mimeType: uploaded.mimeType,
-        size: bytes.byteLength,
-        webViewLink: typeof uploaded.webViewLink === "string" &&
-          uploaded.webViewLink.startsWith("https://drive.google.com/") ? uploaded.webViewLink : null
-      });
     }
   });
 }
