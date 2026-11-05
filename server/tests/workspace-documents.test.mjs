@@ -47,7 +47,7 @@ test("creative workspace rejects oversized or excessively nested storyboard arti
 });
 
 test("creative workspace rejects oversized storyboard artifact payloads", () => {
-  const huge = { scenes: Array.from({ length: 100 }, (_, i) => ({ id: "s" + i, text: "x".repeat(5000) })) };
+  const huge = { scenes: Array.from({ length: 100 }, (_, i) => ({ id: "s" + i, text: "x".repeat(6000) })) };
   assert.throws(() => sanitizeCreativeWorkspaceDocument({
     creativeProjects: [{ id: "p", name: "Too large", storyboard: huge }]
   }), error => error.code === "WORKSPACE_ARTIFACT_INVALID" || error.code === "WORKSPACE_ARTIFACT_TOO_LARGE");
