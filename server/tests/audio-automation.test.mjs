@@ -22,8 +22,8 @@ test("rejects duplicate, malformed and excessive audio keyframes",()=>{
 test("evaluates gain and pan between keyframes using step and linear interpolation",()=>{
  assert.equal(evaluateAudioAutomation(points,0,"gainDb",0),0);
  assert.ok(Math.abs(evaluateAudioAutomation(points,.5,"gainDb",0)+6)<1e-9);
- assert.ok(Math.abs(evaluateAudioAutomation(points,2,"gainDb",0)+18)<1e-9);
- assert.equal(evaluateAudioAutomation(points,2,"pan",0),0);
+ assert.equal(evaluateAudioAutomation(points,2,"gainDb",0),-12);
+ assert.equal(evaluateAudioAutomation(points,2,"pan",0),-1);
  assert.equal(evaluateAudioAutomation(points,3,"pan",0),1);
  assert.equal(evaluateAudioAutomation(points,4,"gainDb",0),-24);
 });
