@@ -12,6 +12,12 @@ import { createRealEsrganAdapter } from "./ai-upscale-engine.mjs";
 const EXTENSION = Object.freeze({
   "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "audio/mpeg": "mp3", "audio/wav": "wav", "video/mp4": "mp4"
 });
+export function aiUpscaleMediaType(format) {
+  const types = { png: "image/png", jpg: "image/jpeg", webp: "image/webp" };
+  if (!Object.hasOwn(types, format)) throw Object.assign(new Error("AI upscale output format is unsupported."), { code: "INVALID_MEDIA_OPTIONS" });
+  return types[format];
+}
+
 const SUPPORTED = new Set([
   "media.probe", "media.thumbnail", "media.audio_extract", "media.audio-clean",
   "media.denoise", "media.color", "media.resize", "media.interpolate",
@@ -172,7 +178,7 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
         if (signal?.aborted) throw Object.assign(new Error("Media job was cancelled."), { code: "JOB_CANCELLED" });
         const info = await stat(outputPath);
         const digest = await checksum(outputPath);
-        const mediaType = format === "jpg" ? "image/jpeg" : "image/" + format;
+        const mediaType = aiUpscaleMediaType(format);
         const sourceName = String(materialized.asset.name || "image");
         const plan = { name: sourceName.replace(/\.[^.]+$/, "").slice(0, 140) + "-ai-upscaled." + format, mediaType };
         const processing = { engine: result.engine, method: result.method, model: result.model, scale: result.scale, tile: Number(input.tile ?? 0), sourceWidth, sourceHeight, outputWidth: expectedWidth, outputHeight: expectedHeight, dimensionsVerified: true };

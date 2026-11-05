@@ -4,7 +4,7 @@ import {mkdtemp,rm} from "node:fs/promises";
 import {join} from "node:path";
 import {tmpdir} from "node:os";
 import {openDatabase} from "../db.mjs";
-import {ensureTransformationPlanSchema,createTransformationPlan,approveTransformationPlan,listTransformationPlans} from "../transformation-plans.mjs";
+import {ensureTransformationPlanSchema,createTransformationPlan,approveTransformationPlan,cancelTransformationPlan,listTransformationPlans} from "../transformation-plans.mjs";
 
 async function fixture(){
  const dir=await mkdtemp(join(tmpdir(),"ev-transform-plans-")),db=openDatabase(join(dir,"test.sqlite"));
@@ -41,4 +41,46 @@ test("rejects malformed requests and unsupported preservation or parameter field
  assert.throws(()=>createTransformationPlan(f.db,{ownerId:f.owner,body:{...f.body,unexpectedProviderParameter:"secret"},idempotencyKey:"transform-key-009"}),e=>e.code==="TRANSFORMATION_FIELD_UNSUPPORTED");
  assert.throws(()=>createTransformationPlan(f.db,{ownerId:f.owner,body:{...f.body,preservation:["camera_motion","invented_constraint"]},idempotencyKey:"transform-key-010"}),e=>e.code==="TRANSFORMATION_PRESERVATION_INVALID");
  assert.throws(()=>createTransformationPlan(f.db,{ownerId:f.owner,body:{...f.body,referenceAssetIds:"not-an-array"},idempotencyKey:"transform-key-011"}),e=>e.code==="REFERENCE_ASSET_INVALID");
+}finally{await f.close();}});
+
+
+test("local transformation drafts reject values that cloud validation rejects",async()=>{const f=await fixture();try{
+ const invalid=[
+  [{...f.body,referenceAssetIds:[f.body.referenceAssetIds[0],f.body.referenceAssetIds[0]]},"REFERENCE_ASSET_INVALID"],
+  [{...f.body,referenceAssetIds:["",f.body.referenceAssetIds[0]]},"REFERENCE_ASSET_INVALID"],
+  [{...f.body,preservation:["camera_motion","camera_motion"]},"TRANSFORMATION_PRESERVATION_INVALID"],
+  [{...f.body,prompt:"x".repeat(8001)},"TRANSFORMATION_PROMPT_INVALID"],
+  [{...f.body,projectId:42},"TRANSFORMATION_INPUT_INVALID"],
+  [{...f.body,sourceAssetId:42},"TRANSFORMATION_INPUT_INVALID"],
+  [{...f.body,operation:42},"TRANSFORMATION_OPERATION_INVALID"]
+ ];
+ for(let i=0;i<invalid.length;i++){
+  const [body,code]=invalid[i];
+  assert.throws(()=>createTransformationPlan(f.db,{ownerId:f.owner,body,idempotencyKey:"strict-local-"+String(i).padStart(3,"0")}),e=>e.code===code);
+ }
+ assert.equal(listTransformationPlans(f.db,f.owner,f.project).length,0,"invalid drafts must not be persisted");
+}finally{await f.close();}});
+
+test("local transformation drafts preserve valid reference and preservation values in order",async()=>{const f=await fixture();try{
+ const body={...f.body,preservation:["camera_motion","composition"]};
+ const {plan}=createTransformationPlan(f.db,{ownerId:f.owner,body,idempotencyKey:"strict-local-valid-001"});
+ assert.deepEqual(plan.referenceAssetIds,f.body.referenceAssetIds);
+ assert.deepEqual(plan.preservation,["camera_motion","composition"]);
+}finally{await f.close();}});
+
+
+test("cancels a draft and prevents later approval or execution submission",async()=>{const f=await fixture();try{
+ const {plan}=createTransformationPlan(f.db,{ownerId:f.owner,body:f.body,idempotencyKey:"transform-cancel-001"});
+ const cancelled=cancelTransformationPlan(f.db,{ownerId:f.owner,planId:plan.id});
+ assert.equal(cancelled.status,"cancelled");
+ assert.throws(()=>approveTransformationPlan(f.db,{ownerId:f.owner,planId:plan.id,body:{estimatedCostMicros:0,approvedBudgetMicros:0,currency:"USD",adapterId:"provider-a",capability:"video.transform"}}),e=>e.code==="TRANSFORMATION_STATE_CONFLICT");
+ assert.throws(()=>cancelTransformationPlan(f.db,{ownerId:f.other,planId:plan.id}),e=>e.code==="TRANSFORMATION_NOT_FOUND");
+}finally{await f.close();}});
+
+test("cancels an approved but unexecuted plan and rejects unsafe active-state cancellation",async()=>{const f=await fixture();try{
+ const {plan}=createTransformationPlan(f.db,{ownerId:f.owner,body:f.body,idempotencyKey:"transform-cancel-002"});
+ approveTransformationPlan(f.db,{ownerId:f.owner,planId:plan.id,body:{estimatedCostMicros:10,approvedBudgetMicros:10,currency:"USD",adapterId:"provider-a",capability:"video.transform"}});
+ assert.equal(cancelTransformationPlan(f.db,{ownerId:f.owner,planId:plan.id}).status,"cancelled");
+ f.db.prepare("UPDATE transformation_plans SET status='running' WHERE id=?").run(plan.id);
+ assert.throws(()=>cancelTransformationPlan(f.db,{ownerId:f.owner,planId:plan.id}),e=>e.code==="TRANSFORMATION_STATE_CONFLICT");
 }finally{await f.close();}});

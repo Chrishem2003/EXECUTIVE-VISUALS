@@ -456,3 +456,44 @@ This is a runnable worker entry point, not a deployed worker. Do not set the ena
 - Connected the Enhancement Lab to cloud draft create/list routes. Prompts and reference IDs are excluded from browser local storage; legacy local transformation drafts are purged on startup.
 - Added separate owner/editor budget approval metadata (estimate, covering budget, currency, adapter/capability declaration) and audit/job events. The local SQLite plan API remains available for development.
 - Submission remains intentionally blocked with an explicit adapter-unavailable response. The checkbox is not independent proof of person consent; evidence-backed consent verification is still required before person replacement can execute. No provider generation, credit spend, cloud migration or deployment has occurred.
+
+
+## Transformation request parity and safe cancellation — 2 November 2026
+
+- The local SQLite transformation-plan API now rejects unknown fields, non-string project/source/operation values, prompts outside 8–8,000 characters, malformed/empty/duplicate reference IDs, and duplicate preservation constraints rather than silently truncating, coercing, filtering, or deduplicating them.
+- Added authenticated `POST /api/transformations/:id/cancel` for draft, approved-but-unexecuted, and failed plans. Project editor access is required and the cancellation is audit logged.
+- Queued/running/succeeded/cancelled plans cannot be cancelled through this endpoint. This is deliberate: active-job interruption must be integrated with worker leases and cancellation polling before it can safely claim to stop execution.
+- Added regression tests for cancellation state transitions, permission isolation, invalid input rejection, and preservation of accepted values. GitHub Actions passed dependency installation, TypeScript typecheck and the production build/verification suite on commit `aaa69aa0a665840056e5d6b9ec5557a5556a5ee4`.
+- This does not enable provider execution, spend credits, merge the draft PR, migrate the database, or deploy production. Durable cloud worker integration and evidence-backed consent remain release blockers.
+
+## Live authorization before remote finishing steps — 2 November 2026
+
+- The provider-neutral video finishing pipeline now requires a server-supplied live authorization callback before every remote step dispatch.
+- The callback must confirm the same approval ID, exact adapter and capability, active approval, and an approved budget covering the full pipeline estimate. A missing callback, revoked approval, mismatched adapter/capability or insufficient budget fails closed before that provider call.
+- Authorization is rechecked separately for each remote step, so revocation or budget changes between steps prevent subsequent provider dispatch. Local finishing steps remain independent of remote approval.
+- Added regression coverage for missing live authorization and mid-pipeline approval denial. Tests use mock adapters only.
+- The production authorization callback still needs wiring to the authoritative cloud approval/budget ledger and worker execution path. No live provider calls, paid usage, database migration or deployment were performed.
+
+## Authoritative live transformation approval lookup — 2 November 2026
+
+- Added a server-only authorization adapter that looks up the approved transformation record in the existing private jobs table immediately before a remote pipeline step.
+- The lookup is scoped to the verified plan owner and project and matches the stored approval ID. It fails closed unless the plan remains in the approved queue state, retains its approval timestamp and approver identity, and the recorded adapter, capability and budget cover the exact requested step and full pipeline estimate.
+- Database errors, malformed responses, timeouts and cancellation all deny dispatch. Service-role credentials are held only by the server-side adapter.
+- Added tests for valid authorization, revoked/mismatched approvals, insufficient budget, malformed responses, database failure and cancellation.
+- **Not yet wired to the production worker:** the worker still needs a governed plan-to-job dispatch path that resolves the plan owner/project, constructs this authorization adapter server-side and invokes the pipeline with verified adapters. No provider calls, paid usage, schema migration or deployment occurred.
+
+## Authorization boundary hardening — 2 November 2026
+
+- Tightened the live approval lookup: only HTTPS database URLs are accepted outside loopback development, authorization timeouts are bounded, and pipeline/step/adapter/capability identifiers must be present.
+- The approval's own cost estimate must be a valid non-negative safe integer and the recorded approved budget must cover both that estimate and the complete pipeline estimate.
+- Added regression tests for insecure database URLs, invalid timeout configuration, missing execution scope and inconsistent estimate/budget records.
+- This remains a reusable server-side authorization boundary, not yet a transformation worker. The existing cloud worker families do not claim transformation plans, and no provider adapter is enabled. The readiness gate remains blocked until the dedicated worker, verified adapter, durable checkpoints, private storage, rights/consent verification and visual QA are integrated.
+
+## Durable cooperative job cancellation — 2 November 2026
+
+- Added a migration for an explicit cancellation-request timestamp on cloud jobs, plus server-only RPCs to request cancellation and let the current lease owner poll it.
+- Queued and pre-execution jobs can be cancelled immediately. Processing jobs receive a durable request; the worker observes it on its heartbeat, aborts the executor signal, and records a cancelled terminal state under its existing lease.
+- The queue claim function excludes cancellation-requested jobs. The terminal database function also enforces cancellation if a request races with normal completion.
+- Added an authenticated job cancellation endpoint and project-write permission checks. Project owners/editors can request cancellation; unrelated users receive a not-found response.
+- Added queue, worker and API regression tests for cancellation contracts, pre-execution cancellation, in-flight cancellation and permission denial.
+- The migration is committed but has **not** been applied to any database. The new endpoint and worker polling require that migration to be applied to staging before use. Production remains untouched.

@@ -70,3 +70,49 @@ test("worker validates inputs and output before finishing",async()=>{
  });
  assert.equal(invalid.status,"failed");
 });
+
+test("worker drains an in-flight heartbeat before attempting terminal completion",async()=>{
+ const calls=[];
+ const queue={
+  async claim(){return{id:"job-race"};},
+  async renew(){calls.push("renew-start");await new Promise(resolve=>setTimeout(resolve,80));calls.push("renew-end");return false;},
+  async finish(){calls.push("finish");return true;}
+ };
+ const result=await runCloudWorkerCycle({
+  queue,workerId:"worker-race",leaseSeconds:15,heartbeatIntervalMs:1000,
+  execute:async()=>{await new Promise(resolve=>setTimeout(resolve,1050));return{assetId:"asset-late"};}
+ });
+ assert.equal(result.finished,false);
+ assert.equal(result.reason,"lease_lost");
+ assert.deepEqual(calls,["renew-start","renew-end"]);
+ assert.equal(calls.includes("finish"),false);
+});
+
+test("worker cancels before execution when the claimed job carries a cancellation request",async()=>{
+ const queue=queueFor({job:{id:"job-pre-cancel",cancel_requested_at:"2026-11-02T10:00:00Z"}});
+ let executed=false;
+ const result=await runCloudWorkerCycle({queue,workerId:"worker-1",execute:async()=>{executed=true;return{};}});
+ assert.equal(executed,false);
+ assert.equal(result.status,"cancelled");
+ assert.ok(queue.calls.some(call=>call[0]==="finish"&&call[3]==="cancelled"));
+});
+
+test("worker observes owner cancellation while executing and persists cancelled state",async()=>{
+ const calls=[];
+ const queue={
+  async claim(){return{id:"job-cancel-live"};},
+  async cancellationRequested(){calls.push("poll");return true;},
+  async renew(){calls.push("renew");return true;},
+  async finish(id,worker,status,output,error){calls.push(status);return true;}
+ };
+ const result=await runCloudWorkerCycle({
+  queue,workerId:"worker-cancel",leaseSeconds:15,heartbeatIntervalMs:1000,
+  execute:async({signal})=>new Promise(resolve=>{
+   const poll=setInterval(()=>{if(signal.aborted){clearInterval(poll);resolve({lateOutput:true});}},10);
+  })
+ });
+ assert.equal(result.status,"cancelled");
+ assert.ok(calls.includes("poll"));
+ assert.ok(calls.includes("cancelled"));
+ assert.equal(calls.includes("renew"),false);
+});

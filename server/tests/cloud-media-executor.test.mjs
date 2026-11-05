@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createCloudMediaExecutor } from "../cloud-media-executor.mjs";
+import { aiUpscaleMediaType, createCloudMediaExecutor } from "../cloud-media-executor.mjs";
 
 async function executable(directory, name, body) {
   const path = join(directory, name);
@@ -489,4 +489,13 @@ test("cloud AI upscale rejects video instead of treating frame-by-frame resampli
       onProgress() {}
     }), error => error.code === "UNSUPPORTED_MEDIA_TYPE");
   } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+
+test("AI upscale output formats use canonical image MIME types",()=>{
+  assert.equal(aiUpscaleMediaType("png"),"image/png");
+  assert.equal(aiUpscaleMediaType("jpg"),"image/jpeg");
+  assert.equal(aiUpscaleMediaType("webp"),"image/webp");
+  assert.throws(()=>aiUpscaleMediaType("jpeg"),error=>error.code==="INVALID_MEDIA_OPTIONS");
+  assert.throws(()=>aiUpscaleMediaType("gif"),error=>error.code==="INVALID_MEDIA_OPTIONS");
 });

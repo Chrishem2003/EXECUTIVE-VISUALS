@@ -97,3 +97,32 @@ test("transformation readiness endpoint reports ready only when all release evid
  assert.equal(result.body.readiness.status,"ready");
  assert.equal(result.body.readiness.canSubmit,true);
 });
+
+test("cloud transformation drafts reject inputs that would otherwise be silently discarded",async()=>{
+ const f=fixture();
+ const cases=[
+  [{...f.body,referenceAssetIds:"not-an-array"},"REFERENCE_ASSET_INVALID"],
+  [{...f.body,referenceAssetIds:[reference,reference]},"REFERENCE_ASSET_INVALID"],
+  [{...f.body,preservation:"camera_motion"},"TRANSFORMATION_PRESERVATION_INVALID"],
+  [{...f.body,preservation:["camera_motion","invented_constraint"]},"TRANSFORMATION_PRESERVATION_INVALID"],
+  [{...f.body,preservation:["camera_motion","camera_motion"]},"TRANSFORMATION_PRESERVATION_INVALID"],
+  [{...f.body,unexpectedProviderOption:"silently ignored"},"TRANSFORMATION_FIELD_UNSUPPORTED"],
+  [{...f.body,prompt:"x".repeat(8001)},"TRANSFORMATION_INPUT_INVALID"]
+ ];
+ for(let i=0;i<cases.length;i++){
+  const [body,code]=cases[i];
+  const result=await f.api.handle({method:"POST",path:"/api/cloud/transformations",ownerId:owner,body,idempotencyKey:"strict-input-"+String(i).padStart(3,"0")});
+  assert.equal(result.status,400);
+  assert.equal(result.body.error.code,code);
+ }
+ assert.equal(f.state.jobs.length,0,"invalid drafts must not be persisted");
+});
+
+test("cloud transformation drafts preserve valid reference and preservation inputs exactly",async()=>{
+ const f=fixture();
+ const body={...f.body,preservation:["camera_motion","composition"]};
+ const result=await f.api.handle({method:"POST",path:"/api/cloud/transformations",ownerId:owner,body,idempotencyKey:"strict-input-valid-001"});
+ assert.equal(result.status,201);
+ assert.deepEqual(result.body.plan.referenceAssetIds,[reference]);
+ assert.deepEqual(result.body.plan.preservation,["camera_motion","composition"]);
+});
