@@ -15,8 +15,9 @@ type Asset={id:string;name:string;mediaType:string;size:number;metadata?:Record<
 type SavedTimeline={id:string;projectId?:string|null;name:string;revision:number;document?:EditorialTimeline};
 type CloudProject={id:string;name:string};
 type CloudSavedTimeline={id:string;projectId?:string|null;name:string;revision:number;timeline:EditorialTimeline;updatedAt:string};
-const state:{timeline:EditorialTimeline|null;serverRevision:number;timelines:SavedTimeline[];cloudTimelines:CloudSavedTimeline[];cloudProjects:CloudProject[];cloudProjectId:string;mode:"local"|"cloud";cloudRenderJobId:string;cloudRenderJobStatus:string;cloudRenderOutputAssetId:string;cloudRenderOutputName:string;cloudRenderOutputUrl:string;variantBase:EditorialTimeline|null;variantReport:TimelineVariantComparison|null;variantBaseName:string;assets:Asset[];status:"loading"|"ready"|"offline"|"auth";message:string;selectedTrack:string;selectedClipId:string;ffmpeg:boolean}={
- timeline:null,serverRevision:0,timelines:[],cloudTimelines:[],cloudProjects:[],cloudProjectId:"",mode:"local",cloudRenderJobId:"",cloudRenderJobStatus:"",cloudRenderOutputAssetId:"",cloudRenderOutputName:"",cloudRenderOutputUrl:"",variantBase:null,variantReport:null,variantBaseName:"",assets:[],status:"loading",message:"Loading editorial workspace…",selectedTrack:"",selectedClipId:"",ffmpeg:false
+type CloudRenderJob={id:string;status:string;progress?:number;input?:{timelineId?:string;timelineRevision?:number};output?:{outputAsset?:{id:string;name?:string}};error?:{code?:string;message?:string};created_at?:string};
+const state:{timeline:EditorialTimeline|null;serverRevision:number;timelines:SavedTimeline[];cloudTimelines:CloudSavedTimeline[];cloudRenderJobs:CloudRenderJob[];cloudProjects:CloudProject[];cloudProjectId:string;mode:"local"|"cloud";cloudRenderJobId:string;cloudRenderJobStatus:string;cloudRenderOutputAssetId:string;cloudRenderOutputName:string;cloudRenderOutputUrl:string;variantBase:EditorialTimeline|null;variantReport:TimelineVariantComparison|null;variantBaseName:string;assets:Asset[];status:"loading"|"ready"|"offline"|"auth";message:string;selectedTrack:string;selectedClipId:string;ffmpeg:boolean}={
+ timeline:null,serverRevision:0,timelines:[],cloudTimelines:[],cloudRenderJobs:[],cloudProjects:[],cloudProjectId:"",mode:"local",cloudRenderJobId:"",cloudRenderJobStatus:"",cloudRenderOutputAssetId:"",cloudRenderOutputName:"",cloudRenderOutputUrl:"",variantBase:null,variantReport:null,variantBaseName:"",assets:[],status:"loading",message:"Loading editorial workspace…",selectedTrack:"",selectedClipId:"",ffmpeg:false
 };
 const esc=(v:unknown)=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]||c));
 const fps=()=>state.timeline?state.timeline.frameRate.numerator/state.timeline.frameRate.denominator:24;
@@ -132,10 +133,18 @@ function renderCloudRenderOutput(){
  const evidence=[video?video.width+" × "+video.height:"Video probe verified",probe?.format?.duration?Number(probe.format.duration).toFixed(1)+" sec":""].filter(Boolean).join(" · ");
  return '<section class="panel timeline-quality"><div class="timeline-panel-heading"><div><div class="eyebrow">VERIFIED CLOUD MASTER</div><h3>'+esc(state.cloudRenderOutputName||asset?.name||"Rendered master")+'</h3></div><span class="job-status completed">Verified output</span></div><p class="muted">'+esc(evidence||"The render worker published this output after its media probe passed.")+'</p>'+(sha256?'<code>SHA-256 · '+esc(sha256)+'</code>':'')+(state.cloudRenderOutputUrl?'<video controls preload="metadata" style="width:100%;max-height:420px" src="'+esc(state.cloudRenderOutputUrl)+'"></video><p><a class="download-output" href="'+esc(state.cloudRenderOutputUrl)+'" target="_blank" rel="noopener noreferrer">Open / download verified master</a></p>':'<button class="primary" data-tl-action="cloud-output-link">Create private preview link</button><small class="muted">A short-lived signed link is requested only when you choose to preview the output.</small>')+'</section>';
 }
+function renderCloudRenderHistory(){
+ if(state.mode!=="cloud"||!state.cloudRenderJobs.length)return "";
+ return '<section class="panel timeline-quality"><div class="timeline-panel-heading"><div><div class="eyebrow">DURABLE CLOUD RENDER HISTORY</div><h3>Recent master renders</h3></div><span>'+state.cloudRenderJobs.length+' jobs</span></div><div class="timeline-quality-list">'+state.cloudRenderJobs.slice(0,10).map(job=>{
+  const revision=Number(job.input?.timelineRevision)||0,created=job.created_at?new Date(job.created_at).toLocaleString():"";
+  const status=String(job.status||"unknown"),tone=status==="succeeded"?"completed":status==="failed"||status==="cancelled"?"failed":"running";
+  return '<article class="timeline-quality-item info"><div class="timeline-panel-heading"><b>Revision '+revision+'</b><span class="job-status '+tone+'">'+esc(status)+'</span></div><p>'+esc(created)+(job.progress!==undefined?' · '+Math.round(Number(job.progress)||0)+'%':'')+'</p>'+(job.error?.message?'<small>'+esc(job.error.code||"RENDER_FAILED")+' · '+esc(job.error.message)+'</small>':'')+'<button class="secondary" data-tl-load-job="'+esc(job.id)+'">Inspect render</button></article>';
+ }).join("")+'</div></section>';
+}
 export function renderTimelineWorkspace(){
  return '<div id="timeline-workspace"><div class="timeline-toolbar"><label>Workspace <select id="tl-mode"><option value="local" '+(state.mode==="local"?"selected":"")+' >Local</option><option value="cloud" '+(state.mode==="cloud"?"selected":"")+' >Cloud project</option></select></label><label>Cloud project <select id="tl-cloud-project"><option value="">Select project</option>'+state.cloudProjects.map(p=>'<option value="'+esc(p.id)+'" '+(p.id===state.cloudProjectId?'selected':'')+'>'+esc(p.name)+'</option>').join("")+'</select></label><label>Saved sequence <select id="tl-saved-sequence"><option value="">Current sequence</option>'+(state.mode==="cloud"?state.cloudTimelines.map(t=>'<option value="'+esc(t.id)+'" '+(state.timeline?.id===t.id?'selected':'')+'>'+esc(t.name)+' · r'+t.revision+'</option>').join(""):state.timelines.map(t=>'<option value="'+esc(t.id)+'" '+(state.timeline?.id===t.id?'selected':'')+'>'+esc(t.name)+' · r'+t.revision+'</option>').join(""))+'</select></label><button class="secondary" data-tl-create-cloud>＋ New cloud timeline</button><button class="secondary" data-tl-action="duplicate-variant">Duplicate as variant</button><span class="runtime-status '+state.status+'"><i></i>'+esc(state.status==="ready"?"TIMELINE SAVED":state.status==="auth"?"SIGN IN REQUIRED":state.status==="offline"?"API OFFLINE":"LOADING")+'</span><button class="secondary" data-tl-action="refresh">↻ Refresh</button><button class="secondary" data-tl-action="export">Export OTIO JSON</button>'+(state.mode==="cloud"&&state.cloudRenderJobId?'<button class="secondary" data-tl-action="cloud-job">Check cloud render · '+esc(state.cloudRenderJobStatus||"queued")+'</button>':'')+''+(state.ffmpeg?'<button class="primary" data-tl-action="render">Render master MP4</button>':'<span class="muted">FFmpeg required for master render</span>')+'</div>'+
  (state.message?'<div class="notice">'+esc(state.message)+'</div>':'')+
- renderCloudRenderOutput()+
+ renderCloudRenderOutput()+renderCloudRenderHistory()+
  '<div class="timeline-editor-grid"><section class="panel"><div class="eyebrow">SEQUENCE SETTINGS</div><h3>'+(state.timeline?esc(state.timeline.name):"No sequence loaded")+'</h3>'+
  '<form id="tl-add-track"><label>Track name</label><input name="name" required placeholder="Video 2 / Music / Captions"><label>Track type</label><select name="kind"><option value="video">Video</option><option value="audio">Audio</option><option value="overlay">Overlay</option><option value="caption">Captions</option></select><button class="secondary">＋ Add track</button></form>'+
  '<div class="eyebrow" style="margin-top:18px">ADD SOURCE CLIP</div><form id="tl-add-clip"><label>Source asset</label><select id="tl-asset-select" name="assetId" required>'+assetOptions()+'</select><label>Destination track</label><select name="trackId">'+(state.timeline?.tracks.map(t=>'<option value="'+esc(t.id)+'">'+esc(t.name)+'</option>').join("")||"")+'</select><div class="form-grid"><div><label>Timeline start (frames)</label><input name="start" type="number" min="0" value="'+maxEnd()+'"></div><div><label>Source in (source frames)</label><input name="sourceIn" type="number" min="0" value="0"></div><div><label>Duration (timeline frames)</label><input name="duration" type="number" min="1" value="'+(fps()*5)+'"></div></div><button class="primary wide">＋ Place clip on timeline</button></form>'+
@@ -153,16 +162,23 @@ async function refresh(){
   if(!state.cloudProjectId||!state.cloudProjects.some(p=>p.id===state.cloudProjectId))state.cloudProjectId=state.cloudProjects[0]?.id||"";
   if(!state.cloudProjectId){state.assets=[];state.cloudTimelines=[];state.timeline=null;state.message="Create a cloud project first, then select it here.";state.status="ready";return;}
   const query="?projectId="+encodeURIComponent(state.cloudProjectId);
-  const [assets,timelines]=await Promise.all([
+  const [assets,timelines,jobs]=await Promise.all([
    apiRequest<{assets:Asset[]}>("/api/cloud/assets"+query),
-   apiRequest<{timelines:CloudSavedTimeline[]}>("/api/cloud/timelines"+query)
+   apiRequest<{timelines:CloudSavedTimeline[]}>("/api/cloud/timelines"+query),
+   apiRequest<{jobs:CloudRenderJob[]}>("/api/cloud/jobs"+query+"&limit=20")
   ]);
-  state.assets=assets.assets||[];state.cloudTimelines=timelines.timelines||[];state.timelines=[];
+  state.assets=assets.assets||[];state.cloudTimelines=timelines.timelines||[];state.cloudRenderJobs=jobs.jobs||[];state.timelines=[];
   if(state.timeline&&state.cloudTimelines.some(t=>t.id===state.timeline?.id)){
    const saved=state.cloudTimelines.find(t=>t.id===state.timeline?.id)!;state.timeline=saved.timeline;state.serverRevision=saved.revision;
   }else if(state.cloudTimelines.length){const saved=state.cloudTimelines[0];state.timeline=saved.timeline;state.serverRevision=saved.revision;}
   else state.timeline=null;
   if(state.timeline){
+   const activeRender=state.cloudRenderJobs.find(job=>job.input?.timelineId===state.timeline?.id);
+   if(activeRender){
+    state.cloudRenderJobId=activeRender.id;state.cloudRenderJobStatus=activeRender.status;
+    const outputAsset=activeRender.output?.outputAsset;
+    if(activeRender.status==="succeeded"&&outputAsset?.id){state.cloudRenderOutputAssetId=outputAsset.id;state.cloudRenderOutputName=outputAsset.name||"Verified cloud master";}
+   }else{state.cloudRenderJobId="";state.cloudRenderJobStatus="";}
    const verifiedMaster=state.assets.find(asset=>asset.metadata?.operation==="timeline.render"&&asset.metadata?.timelineId===state.timeline?.id&&Number(asset.metadata?.timelineRevision)===state.serverRevision);
    if(verifiedMaster){state.cloudRenderOutputAssetId=verifiedMaster.id;state.cloudRenderOutputName=verifiedMaster.name;state.cloudRenderOutputUrl="";}
   }
@@ -313,6 +329,8 @@ document.addEventListener("change",event=>{
  }
 });
 document.addEventListener("click",event=>{
+ const loadJob=(event.target as HTMLElement).closest<HTMLElement>("[data-tl-load-job]");
+ if(loadJob){const job=state.cloudRenderJobs.find(item=>item.id===loadJob.dataset.tlLoadJob);if(job){state.cloudRenderJobId=job.id;state.cloudRenderJobStatus=job.status;const outputAsset=job.output?.outputAsset;if(job.status==="succeeded"&&outputAsset?.id){state.cloudRenderOutputAssetId=outputAsset.id;state.cloudRenderOutputName=outputAsset.name||"Verified cloud master";state.cloudRenderOutputUrl="";state.message="Selected verified render from revision "+Number(job.input?.timelineRevision||0)+".";}else{state.cloudRenderOutputAssetId="";state.cloudRenderOutputName="";state.cloudRenderOutputUrl="";state.message="Selected render job · "+job.status+(job.error?.message?": "+job.error.message:"");}paint();}return;}
  const create=(event.target as HTMLElement).closest<HTMLElement>("[data-tl-create-cloud]");if(create){void createCloudTimeline().catch(error=>{state.message=error instanceof Error?error.message:"Cloud timeline creation failed.";paint();});return;}
  const target=event.target as HTMLElement,select=target.closest<HTMLElement>("[data-tl-select]");
  if(select&&state.timeline){state.selectedTrack=select.dataset.track||"";state.selectedClipId=select.dataset.clip||"";paint();}
