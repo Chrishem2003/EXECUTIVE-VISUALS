@@ -31,7 +31,7 @@ const gatewayPort = await new Promise(resolve => {
   const server = createServer();
   server.listen(0, "127.0.0.1", () => { const port = server.address().port; server.close(() => resolve(port)); });
 });
-let gatewayRequests = 0, malformed = false;
+let gatewayRequests = 0, malformed = false, ownedProjectId = "";
 const gateway = createServer(async (req, res) => {
   let body = ""; for await (const chunk of req) body += chunk;
   gatewayRequests++;
@@ -103,9 +103,12 @@ test("Creative Director endpoint requires authentication and never exposes gatew
   });
   assert.equal(anonymous.status, 401);
   const cookie = await register("creative-director-owner@example.test");
+  const projectResponse = await request("/api/projects", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: "Creative Director test project" }) }, cookie);
+  assert.equal(projectResponse.status, 201);
+  ownedProjectId = (await projectResponse.json()).project.id;
   const response = await request("/api/creative/director", {
     method: "POST", headers: { "content-type": "application/json" },
-    body: JSON.stringify({ input: {
+    body: JSON.stringify({ projectId: ownedProjectId, input: {
       title: "Community solar workshop",
       brief: "A community workshop demonstrates how solar equipment is repaired and reused.",
       audience: "Small businesses", channel: "YouTube", style: "Documentary", duration: "60 seconds",
@@ -123,6 +126,18 @@ test("Creative Director endpoint requires authentication and never exposes gatew
   assert.ok(body.recordId);
   assert.equal(JSON.stringify(body).includes("creative-director-test-secret"), false);
   assert.equal(gatewayRequests, 1);
+});
+
+test("Creative Director project access is owner-scoped and blocks another user's inference", async () => {
+  const other = await register("creative-director-other@example.test");
+  const before = gatewayRequests;
+  const response = await request("/api/creative/director", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ projectId: ownedProjectId, input: { title: "Private project", brief: "Do not process this for another user." } })
+  }, other);
+  assert.equal(response.status, 404);
+  assert.equal((await response.json()).error.code, "PROJECT_NOT_FOUND");
+  assert.equal(gatewayRequests, before);
 });
 
 test("Creative Director endpoint rejects malformed model output without saving a plan", async () => {
