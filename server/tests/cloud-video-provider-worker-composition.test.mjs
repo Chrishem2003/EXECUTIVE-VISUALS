@@ -110,6 +110,8 @@ test("builds the Google Omni integration inside the real worker composition from
     ...env,
     GOOGLE_OMNI_VIDEO_ENABLED: "true",
     GOOGLE_OMNI_VIDEO_ALLOW_REMOTE: "true",
+    GEMINI_OMNI_ENABLED: "true",
+    GEMINI_OMNI_ALLOW_REMOTE: "true",
     GEMINI_OMNI_PAID_TIER_CONFIRMED: "true",
     GEMINI_OMNI_RETENTION_DAYS: "28",
     GEMINI_API_KEY: "server-test-key"
@@ -163,7 +165,9 @@ test("Google worker bootstrap fails closed without durable governance callbacks"
     env: {
       ...env,
       GOOGLE_OMNI_VIDEO_ENABLED: "true",
-      GOOGLE_OMNI_VIDEO_ALLOW_REMOTE: "true"
+      GOOGLE_OMNI_VIDEO_ALLOW_REMOTE: "true",
+      GEMINI_OMNI_ENABLED: "true",
+      GEMINI_OMNI_ALLOW_REMOTE: "true"
     }
   }), /durable approval, owner\/project authorization and private-input planning callbacks/);
 });
