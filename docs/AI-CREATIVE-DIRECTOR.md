@@ -21,7 +21,7 @@ The output is validated against a strict schema before it is returned. Malformed
 
 ## Runtime and security
 
-The endpoint is `POST /api/creative/director`. It requires an authenticated workspace session and is rate-limited to five requests per minute per remote address. The request body is capped at 16 KiB and individual fields have explicit length limits.
+The endpoint is `POST /api/creative/director`. It requires an authenticated workspace session and is rate-limited to five requests per minute per remote address. If a project ID is supplied, the server verifies that the caller is the owner or an editor before making a model request and associates the audit event with that project. The request body is capped at 16 KiB and individual fields have explicit length limits.
 
 The server uses the existing OpenAI-compatible text gateway configuration:
 
