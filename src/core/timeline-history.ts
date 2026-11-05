@@ -8,6 +8,7 @@ import {
 import { validateTimelineDescriptors } from "./timeline-descriptors";
 
 type ClipLocation = { trackId: string; clip: TimelineClip } | null;
+type TimelineSettings = Pick<EditorialTimeline, "name" | "width" | "height" | "pixelAspectRatio" | "frameRate" | "metadata">;
 type TrackValue = {
   id: string;
   name: string;
@@ -19,7 +20,8 @@ type TrackValue = {
 type EntityChange =
   | { entity: "track"; id: string; before: TrackValue | null; after: TrackValue | null }
   | { entity: "clip"; id: string; before: ClipLocation; after: ClipLocation }
-  | { entity: "marker"; id: string; before: TimelineMarker | null; after: TimelineMarker | null };
+  | { entity: "marker"; id: string; before: TimelineMarker | null; after: TimelineMarker | null }
+  | { entity: "settings"; id: "timeline-settings"; before: TimelineSettings; after: TimelineSettings };
 
 export interface TimelineHistoryOperation {
   schemaVersion: 1;
@@ -109,7 +111,10 @@ export function createTimelineHistoryOperation(
     if (!same(a, b)) markerChanges.push({ entity: "marker", id, before: a ? clone(a) : null, after: b ? clone(b) : null });
   }
 
-  const changes = [...trackAdds, ...trackUpdates, ...clipChanges, ...markerChanges, ...trackRemoves];
+  const settingsBefore: TimelineSettings = { name: before.name, width: before.width, height: before.height, pixelAspectRatio: before.pixelAspectRatio, frameRate: clone(before.frameRate), metadata: clone(before.metadata) };
+  const settingsAfter: TimelineSettings = { name: after.name, width: after.width, height: after.height, pixelAspectRatio: after.pixelAspectRatio, frameRate: clone(after.frameRate), metadata: clone(after.metadata) };
+  const settingsChanges: EntityChange[] = same(settingsBefore, settingsAfter) ? [] : [{ entity: "settings", id: "timeline-settings", before: settingsBefore, after: settingsAfter }];
+  const changes = [...settingsChanges, ...trackAdds, ...trackUpdates, ...clipChanges, ...markerChanges, ...trackRemoves];
   if (!changes.length) return null;
   const label = String(options.label || "Edit timeline").trim().slice(0, 120) || "Edit timeline";
   return {
