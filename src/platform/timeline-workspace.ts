@@ -1,5 +1,5 @@
 import { apiRequest } from "../core/api";
-import { AudioPreviewEngine, decibelsToGain, type AudioPreviewTrackInput } from "../core/audio-preview";
+import { AudioPreviewEngine, decibelsToGain, extractWaveformPeaks, waveformSvg, type AudioPreviewTrackInput } from "../core/audio-preview";
 import { analyzeTimelineQuality } from "../core/timeline-quality";
 import { buildProductionReadinessReport } from "../core/production-readiness";
 import { assessSourceMediaEvidence } from "../core/source-media-evidence";
@@ -17,8 +17,8 @@ type SavedTimeline={id:string;projectId?:string|null;name:string;revision:number
 type CloudProject={id:string;name:string};
 type CloudSavedTimeline={id:string;projectId?:string|null;name:string;revision:number;timeline:EditorialTimeline;updatedAt:string};
 let previewRequest=0;
-const state:{timeline:EditorialTimeline|null;serverRevision:number;timelines:SavedTimeline[];cloudTimelines:CloudSavedTimeline[];cloudProjects:CloudProject[];cloudProjectId:string;mode:"local"|"cloud";cloudRenderJobId:string;cloudRenderJobStatus:string;variantBase:EditorialTimeline|null;variantReport:TimelineVariantComparison|null;variantBaseName:string;assets:Asset[];status:"loading"|"ready"|"offline"|"auth";message:string;selectedTrack:string;selectedClipId:string;ffmpeg:boolean;playheadFrame:number;previewAssetId:string;previewUrl:string;previewMediaType:string;previewError:string;previewSources:Record<string,{url:string;mediaType:string}>;previewActiveClips:ReturnType<typeof evaluateTimelineAtFrame>["activeClips"];previewLayerKey:string;previewPlaying:boolean;audioEngine:AudioPreviewEngine|null;audioMasterVolume:number;audioMasterMuted:boolean;audioTrackStates:Record<string,{muted:boolean;solo:boolean}>}={
- timeline:null,serverRevision:0,timelines:[],cloudTimelines:[],cloudProjects:[],cloudProjectId:"",mode:"local",cloudRenderJobId:"",cloudRenderJobStatus:"",variantBase:null,variantReport:null,variantBaseName:"",assets:[],status:"loading",message:"Loading editorial workspace…",selectedTrack:"",selectedClipId:"",ffmpeg:false,playheadFrame:0,previewAssetId:"",previewUrl:"",previewMediaType:"",previewError:"",previewSources:{},previewActiveClips:[],previewLayerKey:"",previewPlaying:false,audioEngine:null,audioMasterVolume:0.85,audioMasterMuted:false,audioTrackStates:{}
+const state:{timeline:EditorialTimeline|null;serverRevision:number;timelines:SavedTimeline[];cloudTimelines:CloudSavedTimeline[];cloudProjects:CloudProject[];cloudProjectId:string;mode:"local"|"cloud";cloudRenderJobId:string;cloudRenderJobStatus:string;variantBase:EditorialTimeline|null;variantReport:TimelineVariantComparison|null;variantBaseName:string;assets:Asset[];status:"loading"|"ready"|"offline"|"auth";message:string;selectedTrack:string;selectedClipId:string;ffmpeg:boolean;playheadFrame:number;previewAssetId:string;previewUrl:string;previewMediaType:string;previewError:string;previewSources:Record<string,{url:string;mediaType:string}>;previewActiveClips:ReturnType<typeof evaluateTimelineAtFrame>["activeClips"];previewLayerKey:string;previewPlaying:boolean;audioEngine:AudioPreviewEngine|null;audioMasterVolume:number;audioMasterMuted:boolean;audioTrackStates:Record<string,{muted:boolean;solo:boolean}>;waveformCache:Record<string,string>;waveformStatus:Record<string,string>}={
+ timeline:null,serverRevision:0,timelines:[],cloudTimelines:[],cloudProjects:[],cloudProjectId:"",mode:"local",cloudRenderJobId:"",cloudRenderJobStatus:"",variantBase:null,variantReport:null,variantBaseName:"",assets:[],status:"loading",message:"Loading editorial workspace…",selectedTrack:"",selectedClipId:"",ffmpeg:false,playheadFrame:0,previewAssetId:"",previewUrl:"",previewMediaType:"",previewError:"",previewSources:{},previewActiveClips:[],previewLayerKey:"",previewPlaying:false,audioEngine:null,audioMasterVolume:0.85,audioMasterMuted:false,audioTrackStates:{},waveformCache:{},waveformStatus:{}
 };
 const esc=(v:unknown)=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]||c));
 const fps=()=>state.timeline?state.timeline.frameRate.numerator/state.timeline.frameRate.denominator:24;
@@ -36,7 +36,7 @@ function timelineCanvas(){
  if(!state.timeline)return '<div class="empty">'+esc(state.message)+'</div>';
  const total=maxEnd();
  return '<div class="timeline-ruler"><span>00:00</span><span>'+Math.round(total/2/fps())+'s</span><span>'+Math.round(total/fps())+'s</span></div>'+
- state.timeline.tracks.map(track=>'<div class="editor-track"><div class="editor-track-label"><b>'+esc(track.name)+'</b><small>'+esc(track.kind)+(track.locked?' · locked':'')+'</small></div><div class="editor-track-lane">'+track.clips.map(clip=>'<article class="editor-clip '+(state.selectedClipId===clip.id?'selected':'')+'" data-tl-select="true" data-track="'+esc(track.id)+'" data-clip="'+esc(clip.id)+'" style="left:'+Math.max(0,clip.timelineStart.value/total*100)+'%;width:'+Math.max(4,clip.duration.value/total*100)+'%"><b>'+esc(clip.name)+'</b><small>'+esc(clip.assetId.slice(0,8))+' · '+Math.round(clip.duration.value)+'f</small><div class="editor-clip-actions"><button data-tl-action="split" data-track="'+esc(track.id)+'" data-clip="'+esc(clip.id)+'">Split</button><button data-tl-action="trim" data-track="'+esc(track.id)+'" data-clip="'+esc(clip.id)+'">Trim 12f</button><button data-tl-action="move" data-track="'+esc(track.id)+'" data-clip="'+esc(clip.id)+'">Next track</button></div></article>').join("")+'</div></div>').join("");
+ state.timeline.tracks.map(track=>'<div class="editor-track"><div class="editor-track-label"><b>'+esc(track.name)+'</b><small>'+esc(track.kind)+(track.locked?' · locked':'')+'</small></div><div class="editor-track-lane">'+track.clips.map(clip=>'<article class="editor-clip '+(state.selectedClipId===clip.id?'selected':'')+'" data-tl-select="true" data-track="'+esc(track.id)+'" data-clip="'+esc(clip.id)+'" style="left:'+Math.max(0,clip.timelineStart.value/total*100)+'%;width:'+Math.max(4,clip.duration.value/total*100)+'%"><b>'+esc(clip.name)+'</b><small>'+esc(clip.assetId.slice(0,8))+' · '+Math.round(clip.duration.value)+'f</small>'+(track.kind==="audio"?'<div class="editor-clip-waveform" data-waveform-asset="'+esc(clip.assetId)+'">'+(state.waveformCache[clip.assetId]||'<span>'+esc(state.waveformStatus[clip.assetId]||"Waveform pending")+'</span>')+'</div>':'')+'<div class="editor-clip-actions"><button data-tl-action="split" data-track="'+esc(track.id)+'" data-clip="'+esc(clip.id)+'">Split</button><button data-tl-action="trim" data-track="'+esc(track.id)+'" data-clip="'+esc(clip.id)+'">Trim 12f</button><button data-tl-action="move" data-track="'+esc(track.id)+'" data-clip="'+esc(clip.id)+'">Next track</button></div></article>').join("")+'</div></div>').join("");
 }
 function clipInspector(){
  if(!state.timeline||!state.selectedClipId)return '<div class="timeline-clip-inspector"><div class="eyebrow">CLIP INSPECTOR</div><p class="muted">Select a clip on the timeline to edit its timing, gain or visual properties.</p></div>';
@@ -385,7 +385,46 @@ export async function initTimelineWorkspace(){
  try{await refresh();}catch(error){state.status=error instanceof Error&&error.message.includes("Sign in")?"auth":"offline";state.message=error instanceof Error?error.message:"Timeline service unavailable.";}
  paint();
 }
-function paint(){const root=document.querySelector<HTMLElement>("#timeline-workspace");if(root)root.outerHTML=renderTimelineWorkspace();void syncPreview();}
+const waveformPending=new Set<string>();
+async function loadTimelineWaveforms(){
+ if(!state.timeline||typeof window.OfflineAudioContext==="undefined")return;
+ const ids=[...new Set(state.timeline.tracks.filter(track=>track.enabled&&track.kind==="audio").flatMap(track=>track.clips.filter(clip=>clip.enabled).map(clip=>clip.assetId)))].slice(0,12);
+ for(const assetId of ids){
+  if(state.waveformCache[assetId]||waveformPending.has(assetId))continue;
+  const asset=state.assets.find(item=>item.id===assetId);
+  if(!asset||!asset.mediaType.startsWith("audio/"))continue;
+  const maxBytes=8*1024*1024;
+  if(asset.size>maxBytes){state.waveformStatus[assetId]="Waveform skipped · source exceeds 8 MB";continue;}
+  const probe=asset.metadata?.probe as {format?:{duration?:string}}|undefined;
+  const duration=Number(probe?.format?.duration);
+  if(Number.isFinite(duration)&&duration>120){state.waveformStatus[assetId]="Waveform skipped · source exceeds 120 seconds";continue;}
+  waveformPending.add(assetId);
+  try{
+   let url="/api/assets/"+encodeURIComponent(assetId)+"/file";
+   if(state.mode==="cloud"){const signed=await apiRequest<{url:string}>("/api/cloud/assets/"+encodeURIComponent(assetId));url=signed.url;}
+   const response=await fetch(url,{credentials:state.mode==="cloud"?"omit":"same-origin"});
+   if(!response.ok)throw new Error("Audio source request failed ("+response.status+").");
+   const declared=Number(response.headers.get("content-length"));
+   if(Number.isFinite(declared)&&declared>maxBytes)throw new Error("Audio source exceeds the 8 MB waveform decoding limit.");
+   let bytes:ArrayBuffer;
+   if(response.body){
+    const reader=response.body.getReader(),chunks:Uint8Array[]=[];let total=0;
+    while(true){const part=await reader.read();if(part.done)break;total+=part.value.byteLength;if(total>maxBytes){await reader.cancel();throw new Error("Audio source exceeds the 8 MB waveform decoding limit.");}chunks.push(part.value);}
+    const joined=new Uint8Array(total);let offset=0;for(const chunk of chunks){joined.set(chunk,offset);offset+=chunk.byteLength;}bytes=joined.buffer;
+   }else{bytes=await response.arrayBuffer();if(bytes.byteLength>maxBytes)throw new Error("Audio source exceeds the 8 MB waveform decoding limit.");}
+   const decoder=new OfflineAudioContext(1,1,44100);
+   const decoded=await decoder.decodeAudioData(bytes);
+   if(decoded.duration>120)throw new Error("Decoded audio exceeds the 120-second waveform limit.");
+   const svg=waveformSvg(extractWaveformPeaks(decoded,180),480,32);
+   state.waveformCache[assetId]=svg;state.waveformStatus[assetId]="";
+   for(const node of document.querySelectorAll<HTMLElement>("[data-waveform-asset]"))if(node.dataset.waveformAsset===assetId)node.innerHTML=svg;
+  }catch(error){
+   state.waveformStatus[assetId]=error instanceof Error?error.message:"Waveform decoding unavailable.";
+   for(const node of document.querySelectorAll<HTMLElement>("[data-waveform-asset]"))if(node.dataset.waveformAsset===assetId)node.textContent=state.waveformStatus[assetId];
+  }finally{waveformPending.delete(assetId);}
+ }
+}
+function paint(){const root=document.querySelector<HTMLElement>("#timeline-workspace");if(root)root.outerHTML=renderTimelineWorkspace();void syncPreview();void loadTimelineWaveforms();}
 async function runAction(action:HTMLElement){
  const type=action.dataset.tlAction||"";
  if(type==="refresh"){await refresh();paint();return;}
