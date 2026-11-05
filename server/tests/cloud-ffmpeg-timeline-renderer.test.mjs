@@ -68,6 +68,20 @@ test("cloud FFmpeg renderer composites a timed secondary video track over the pr
   assert.ok(samples[2][2]>samples[2][0]*2,"the primary picture should be visible again after the secondary clip ends");
  }finally{await rm(root,{recursive:true,force:true});}
 });
+test("cloud FFmpeg renderer rejects overlapping clips within a secondary video track",async()=>{
+ const timeline={tracks:[
+  {kind:"video",clips:[{assetId:"primary",timelineStart:time(0),duration:time(2),sourceRange:{start:time(0),duration:time(2)}}]},
+  {kind:"video",clips:[
+   {assetId:"secondary",timelineStart:time(0),duration:time(1.5),sourceRange:{start:time(0),duration:time(1.5)}},
+   {assetId:"secondary",timelineStart:time(1),duration:time(1),sourceRange:{start:time(1.5),duration:time(1)}}
+  ]}
+ ]};
+ const assets=new Map([
+  ["primary",{path:"/not-used-primary.mp4",asset:{id:"primary",mediaType:"video/mp4",originalName:"primary.mp4"}}],
+  ["secondary",{path:"/not-used-secondary.mp4",asset:{id:"secondary",mediaType:"video/mp4",originalName:"secondary.mp4"}}]
+ ]);
+ await assert.rejects(()=>renderCloudTimeline({timeline,assets,workDir:tmpdir()}),error=>error.code==="TIMELINE_OVERLAP");
+});
 test("cloud FFmpeg renderer rejects transitions on secondary video tracks until secondary transition parity is implemented",async()=>{
  const timeline={tracks:[
   {kind:"video",clips:[{assetId:"primary",timelineStart:time(0),duration:time(2),sourceRange:{start:time(0),duration:time(2)}}]},
