@@ -115,7 +115,7 @@ test("Creative Director endpoint requires authentication and never exposes gatew
       proof: "Workshop demonstration; verify product performance."
     } })
   }, cookie);
-  assert.equal(response.status, 200, await response.text());
+  if (response.status !== 200) throw new Error("Creative Director request failed: " + response.status + " " + await response.text());
   const body = await response.json();
   assert.equal(body.plan.source, "model");
   assert.equal(body.plan.title, "Community solar workshop");
