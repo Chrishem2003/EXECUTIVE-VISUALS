@@ -517,7 +517,7 @@ export function createAppServer() {
         const body=await readJson(req,12*1024);
         try{
           const result=await googleGeminiFilesUpload.prepare({
-            ownerId:user.id,projectId:body.projectId||null,assetId:body.assetId,mediaType:body.mediaType
+            ownerId:user.id,projectId:body?.projectId||null,assetId:body?.assetId,mediaType:body?.mediaType
           });
           send(res,200,{file:result},cors);return;
         }catch(error){
