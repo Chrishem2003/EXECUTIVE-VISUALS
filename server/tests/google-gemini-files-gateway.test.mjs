@@ -222,3 +222,13 @@ test("rejects invalid polling configuration and missing durable mapping callback
     maxBytes: 3 * 1024 * 1024 * 1024
   }));
 });
+
+test("exposes provider HTTP status so retention can reconcile an already-expired file", async () => {
+  const gateway = createGoogleGeminiFilesGateway({
+    env,
+    fetchImpl: async () => response(404, { error: { message: "File not found" } }),
+    loadPrivateAsset: async () => privateAsset(),
+    recordProviderFile: async () => {}
+  });
+  await assert.rejects(() => gateway.deleteProviderFile(fileName), error => error.status === 404);
+});
