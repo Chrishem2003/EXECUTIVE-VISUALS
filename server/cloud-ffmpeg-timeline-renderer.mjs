@@ -132,7 +132,7 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
     else if(mediaType.startsWith("video/"))args.push("-ss",seconds(clip.sourceRange?.start).toFixed(6),"-t",duration.toFixed(6),"-i",asset.path);
     else fail("Secondary video tracks require video or still-image assets.","UNSUPPORTED_MEDIA_TYPE");
     const previous=trackClips[clipPosition-1],fadeInFrames=previous?.transitionToNext?.fadeFrames||0,fadeOutFrames=clip.transitionToNext?.fadeFrames||0;
-    videoOverlayInputs.push({inputIndex,clip,start,duration,asset,trackOrder,fadeIn:fadeInFrames/fps,fadeOut:fadeOutFrames/fps});inputIndex++;
+    videoOverlayInputs.push({inputIndex,clip,start,duration,asset,trackOrder,fadeIn:Math.min(fadeInFrames/fps,duration),fadeOut:Math.min(fadeOutFrames/fps,duration)});inputIndex++;
    }
   }
   let audioIndex=0;
