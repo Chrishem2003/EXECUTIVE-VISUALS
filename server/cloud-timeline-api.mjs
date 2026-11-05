@@ -55,6 +55,13 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
   if(!safeId(ownerId))return response(401,{error:{code:"AUTH_REQUIRED",message:"A verified account identity is required."}});
   if(Buffer.byteLength(JSON.stringify(body||{}))>maxJobBytes)return response(413,{error:{code:"PAYLOAD_TOO_LARGE",message:"Cloud timeline request is too large."}});
   try{
+   const runwayJobStatusMatch=path.match(/^\\/api\\/cloud\\/video\\/runway\\/jobs\\/([0-9a-f-]{36})$/i);
+   if(runwayJobStatusMatch&&method==="GET"){
+    if(!runwayWorkflow)return response(503,{error:{code:"RUNWAY_WORKFLOW_DISABLED",message:"Runway governed generation is not enabled on this server."}});
+    if(typeof runwayWorkflow.getJobStatus!=="function")return response(503,{error:{code:"RUNWAY_STATUS_DISABLED",message:"Runway job status lookup is not configured."}});
+    const job=await runwayWorkflow.getJobStatus({ownerId,jobId:runwayJobStatusMatch[1]});
+    return job?response(200,{job}):response(404,{error:{code:"VIDEO_JOB_NOT_FOUND",message:"Video job not found for this account."}});
+   }
    if(path==="/api/cloud/video/runway/preflight"&&method==="POST"){
     if(!runwayWorkflow)return response(503,{error:{code:"RUNWAY_WORKFLOW_DISABLED",message:"Runway governed generation is not enabled on this server."}});
     const preflight=await runwayWorkflow.preflight({
