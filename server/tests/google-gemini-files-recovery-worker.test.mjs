@@ -26,10 +26,28 @@ function harness({ attempts = [baseAttempt], pages = [{ files: [file], nextPageT
   const calls = [];
   const records = [];
   const updates = [];
+  const leaseToken = "55555555-5555-4555-8555-555555555555";
+  let claimed = false;
   const repository = {
     async listRecoveryAttempts(args) { calls.push(["attempts", args]); return attempts; },
+    async claimRecoveryAttempt(args) {
+      calls.push(["claim", args]);
+      if (claimed) return null;
+      claimed = true;
+      return leaseToken;
+    },
+    async releaseRecoveryAttempt(args) {
+      calls.push(["release", args]);
+      if (args.leaseToken !== leaseToken || !claimed) return false;
+      claimed = false;
+      return true;
+    },
     async recordProviderFile(value) { records.push(value); if (failRecord) throw new Error("db failure"); },
-    async updateUploadAttempt(value) { updates.push(value); if (failUpdate) throw new Error("db failure"); }
+    async updateUploadAttempt(value) {
+      updates.push(value);
+      if (failUpdate) throw new Error("db failure");
+      if (value.leaseToken === leaseToken) claimed = false;
+    }
   };
   const gateway = {
     async listProviderFiles(args) {
@@ -41,7 +59,7 @@ function harness({ attempts = [baseAttempt], pages = [{ files: [file], nextPageT
   const worker = createGoogleGeminiFilesRecoveryWorker({
     repository, gateway, now: () => Date.parse("2026-11-05T00:00:00.000Z"), maxPages
   });
-  return { worker, calls, records, updates };
+  return { worker, calls, records, updates, leaseToken };
 }
 
 test("reconciles one exact provider file using display name, MIME, size and SHA-256", async () => {
@@ -53,7 +71,7 @@ test("reconciles one exact provider file using display name, MIME, size and SHA-
   assert.equal(h.records[0].name, file.name);
   assert.equal(h.records[0].sha256, sha256);
   assert.deepEqual(h.updates[0], {
-    attemptId, expectedState: "OUTCOME_UNKNOWN", state: "COMPLETED",
+    attemptId, expectedState: "OUTCOME_UNKNOWN", leaseToken: h.leaseToken, state: "COMPLETED",
     providerFileName: file.name, providerFileUri: file.uri,
     providerExpiresAt: file.expirationTime,
     reconciledAt: "2026-11-05T00:00:00.000Z"
@@ -71,6 +89,7 @@ test("leaves no-match outcomes quarantined instead of assuming upload did not ha
   assert.equal(h.updates.length, 1);
   assert.equal(h.updates[0].state, "QUARANTINED");
   assert.equal(h.updates[0].errorCode, "GEMINI_FILE_RECOVERY_NO_PROVIDER_EVIDENCE");
+  assert.equal(h.updates[0].leaseToken, h.leaseToken);
 });
 
 test("quarantines multiple matching display names and never chooses one arbitrarily", async () => {
@@ -80,6 +99,23 @@ test("quarantines multiple matching display names and never chooses one arbitrar
   assert.equal(h.records.length, 0);
   assert.equal(h.updates[0].state, "QUARANTINED");
   assert.equal(h.updates[0].errorCode, "GEMINI_FILE_RECOVERY_MULTIPLE_MATCHES");
+});
+
+test("does not contact Google when another recovery worker owns the lease", async () => {
+  const h = harness();
+  await h.worker.run();
+  const second = await h.worker.run();
+  assert.equal(second.reconciled, 0);
+  assert.equal(second.results[0].status, "already_claimed");
+  assert.equal(h.calls.filter(call => call[0] === "list").length, 1);
+  assert.equal(h.calls.filter(call => call[0] === "claim").length, 2);
+});
+
+test("releases a recovery lease after transient provider or persistence errors", async () => {
+  const h = harness({ failRecord: true });
+  const result = await h.worker.run();
+  assert.equal(result.retryPending, 1);
+  assert.ok(h.calls.some(call => call[0] === "release" && call[1].leaseToken === h.leaseToken));
 });
 
 test("does not accept metadata mismatches as proof of the uploaded private asset", async () => {
