@@ -45,7 +45,7 @@ test("records a durable owner/project/job scoped interaction without storing med
     assert.equal(body.job_id, jobId);
     assert.equal(body.interaction_id, interactionId);
     assert.equal("video" in body, false);
-    return response(201, [row()]);
+    return response(201, [row({ output_uri: body.output_uri })]);
   });
   const result = await h.repository.recordInteraction({
     provider: "google", model: "gemini-omni-1.1-flash",
@@ -53,6 +53,7 @@ test("records a durable owner/project/job scoped interaction without storing med
   });
   assert.equal(result.interactionId, interactionId);
   assert.equal(result.ownerId, ownerId);
+  assert.equal(result.outputUri, "https://generativelanguage.googleapis.com/v1beta/files/generated123");
   assert.equal(h.calls[0].options.headers["content-profile"], "executive_visuals");
   assert.equal(h.calls[0].options.headers.authorization, "Bearer server-service-role");
 });
@@ -80,7 +81,7 @@ test("updates and deletes only a matching scoped interaction", async () => {
     }
     return response(200, [row({ state: JSON.parse(options.body).state })]);
   });
-  assert.equal((await h.repository.updateInteraction({ ...scope, state: "succeeded" })).state, "succeeded");
+  assert.equal((await h.repository.updateInteraction({ ...scope, state: "succeeded", outputUri: "https://generativelanguage.googleapis.com/v1beta/files/generated123" })).outputUri, "https://generativelanguage.googleapis.com/v1beta/files/generated123");
   assert.equal((await h.repository.markInteractionDeleted(scope)).state, "deleted");
 });
 
