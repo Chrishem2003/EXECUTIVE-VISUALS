@@ -1,4 +1,5 @@
 import { apiRequest } from "../core/api";
+import { AudioPreviewEngine, decibelsToGain, type AudioPreviewTrackInput } from "../core/audio-preview";
 import { analyzeTimelineQuality } from "../core/timeline-quality";
 import { buildProductionReadinessReport } from "../core/production-readiness";
 import { assessSourceMediaEvidence } from "../core/source-media-evidence";
@@ -16,8 +17,8 @@ type SavedTimeline={id:string;projectId?:string|null;name:string;revision:number
 type CloudProject={id:string;name:string};
 type CloudSavedTimeline={id:string;projectId?:string|null;name:string;revision:number;timeline:EditorialTimeline;updatedAt:string};
 let previewRequest=0;
-const state:{timeline:EditorialTimeline|null;serverRevision:number;timelines:SavedTimeline[];cloudTimelines:CloudSavedTimeline[];cloudProjects:CloudProject[];cloudProjectId:string;mode:"local"|"cloud";cloudRenderJobId:string;cloudRenderJobStatus:string;variantBase:EditorialTimeline|null;variantReport:TimelineVariantComparison|null;variantBaseName:string;assets:Asset[];status:"loading"|"ready"|"offline"|"auth";message:string;selectedTrack:string;selectedClipId:string;ffmpeg:boolean;playheadFrame:number;previewAssetId:string;previewUrl:string;previewMediaType:string;previewError:string;previewSources:Record<string,{url:string;mediaType:string}>;previewActiveClips:ReturnType<typeof evaluateTimelineAtFrame>["activeClips"];previewLayerKey:string;previewPlaying:boolean}={
- timeline:null,serverRevision:0,timelines:[],cloudTimelines:[],cloudProjects:[],cloudProjectId:"",mode:"local",cloudRenderJobId:"",cloudRenderJobStatus:"",variantBase:null,variantReport:null,variantBaseName:"",assets:[],status:"loading",message:"Loading editorial workspace…",selectedTrack:"",selectedClipId:"",ffmpeg:false,playheadFrame:0,previewAssetId:"",previewUrl:"",previewMediaType:"",previewError:"",previewSources:{},previewActiveClips:[],previewLayerKey:"",previewPlaying:false
+const state:{timeline:EditorialTimeline|null;serverRevision:number;timelines:SavedTimeline[];cloudTimelines:CloudSavedTimeline[];cloudProjects:CloudProject[];cloudProjectId:string;mode:"local"|"cloud";cloudRenderJobId:string;cloudRenderJobStatus:string;variantBase:EditorialTimeline|null;variantReport:TimelineVariantComparison|null;variantBaseName:string;assets:Asset[];status:"loading"|"ready"|"offline"|"auth";message:string;selectedTrack:string;selectedClipId:string;ffmpeg:boolean;playheadFrame:number;previewAssetId:string;previewUrl:string;previewMediaType:string;previewError:string;previewSources:Record<string,{url:string;mediaType:string}>;previewActiveClips:ReturnType<typeof evaluateTimelineAtFrame>["activeClips"];previewLayerKey:string;previewPlaying:boolean;audioEngine:AudioPreviewEngine|null;audioMasterVolume:number;audioMasterMuted:boolean;audioTrackStates:Record<string,{muted:boolean;solo:boolean}>}={
+ timeline:null,serverRevision:0,timelines:[],cloudTimelines:[],cloudProjects:[],cloudProjectId:"",mode:"local",cloudRenderJobId:"",cloudRenderJobStatus:"",variantBase:null,variantReport:null,variantBaseName:"",assets:[],status:"loading",message:"Loading editorial workspace…",selectedTrack:"",selectedClipId:"",ffmpeg:false,playheadFrame:0,previewAssetId:"",previewUrl:"",previewMediaType:"",previewError:"",previewSources:{},previewActiveClips:[],previewLayerKey:"",previewPlaying:false,audioEngine:null,audioMasterVolume:0.85,audioMasterMuted:false,audioTrackStates:{}
 };
 const esc=(v:unknown)=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]||c));
 const fps=()=>state.timeline?state.timeline.frameRate.numerator/state.timeline.frameRate.denominator:24;
@@ -153,7 +154,7 @@ function renderPreviewLayers(clips:ReturnType<typeof activePreviewAtPlayhead>){
   const opacity=Math.max(0,Math.min(1,Number(metadata.opacity??1)));
   const z=isOverlay?100+clip.trackIndex:1;
   const position=isOverlay?";left:"+overlayX/timelineWidth*100+"%;top:"+overlayY/timelineHeight*100+"%;width:"+overlayWidth/timelineWidth*100+"%;height:"+overlayHeight/timelineHeight*100+"%;opacity:"+opacity:"";
-  if(source.mediaType.startsWith("audio/"))return '<audio data-preview-audio="'+esc(clip.clipId)+'" preload="metadata" src="'+esc(source.url)+'"></audio>';
+  if(source.mediaType.startsWith("audio/"))return '<audio data-preview-audio="'+esc(clip.clipId)+'" crossorigin="anonymous" preload="metadata" src="'+esc(source.url)+'"></audio>';
   if(source.mediaType.startsWith("video/"))return '<video class="timeline-preview-layer" data-preview-video="'+esc(clip.clipId)+'" data-track-index="'+clip.trackIndex+'" style="z-index:'+z+position+'" muted playsinline preload="metadata" src="'+esc(source.url)+'"></video>';
   if(source.mediaType.startsWith("image/"))return '<img class="timeline-preview-layer" data-preview-image="'+esc(clip.clipId)+'" data-track-index="'+clip.trackIndex+'" style="z-index:'+z+position+'" src="'+esc(source.url)+'" alt="'+esc(clip.clipName)+'">';
   return '<div class="timeline-preview-layer timeline-preview-unsupported" data-track-index="'+clip.trackIndex+'" style="z-index:'+z+'">'+esc(asset.name)+' · unsupported preview format</div>';
@@ -244,7 +245,7 @@ async function syncPreview(){
    if(!sourceClip)continue;
    const target=Math.max(0,clip.sourceTimeSeconds);
    const gainDb=Math.max(-60,Math.min(0,Number(sourceClip.gainDb)||0));
-   audio.volume=Math.pow(10,gainDb/20);
+   audio.volume=state.audioEngine?1:decibelsToGain(gainDb);
    if(audio.readyState>=1&&Math.abs(audio.currentTime-target)>0.25)audio.currentTime=target;
    if(audio.readyState<1)audio.onloadedmetadata=()=>{if(state.previewActiveClips.some(item=>item.clipId===clip.clipId))audio.currentTime=target;if(state.previewPlaying)void audio.play().catch(()=>{state.previewPlaying=false;});};
    if(state.previewPlaying&&audio.paused&&audio.readyState>=2)void audio.play().catch(()=>{state.previewPlaying=false;});
