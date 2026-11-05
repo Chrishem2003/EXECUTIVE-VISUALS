@@ -69,3 +69,20 @@ The operator must establish the task-to-charge relationship, not merely temporal
 ## Explicit non-goals
 
 This decision does not authorize live Runway calls, provider uploads, billing changes, Supabase migration application, process enablement, PR merge or deployment.
+
+
+## Implementation status update — 2026-11-05
+
+The first evidence-backed review/settlement slice is now implemented on PR #34:
+
+- Migration: `20261105100000_video_generation_cost_evidence.sql`.
+- Immutable evidence receipt table with owner/project/task/reservation scope, evidence reference + SHA-256, reviewer identity/time and mandatory reviewer rationale.
+- Authenticated owner review is checked against the submitted provider task and held reservation.
+- Service-side resolver: `server/cloud-video-cost-evidence.mjs`.
+- Successful settlement uses `finish_video_generation_job_with_evidence` and rejects missing or mismatched evidence.
+
+This is a manual human-review path, not an automatic Runway invoice integration. It does not make aggregate API usage task-correlated. The evidence artifact must be inspected by the reviewer and the exact task-to-charge link must be explained in the review note.
+
+Disposable PostgreSQL CI exposed an unmatched dollar-quote delimiter in the first migration attempt; the getter delimiter was corrected in commit `54df61e`. A separate unit-test assertion was corrected in `cab0d0a`. The latest commit `beefc90` adds a mandatory non-empty reviewer rationale. Re-run exact-head CI is pending.
+
+The hosted video worker is still not composed into the worker process. Keep remote generation disabled until the exact-head checks pass and process, cancellation, private-media and isolated staging gates are complete.
