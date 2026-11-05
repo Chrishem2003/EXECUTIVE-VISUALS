@@ -2,10 +2,10 @@ begin;
 
 do $google_gcs_sources$
 declare
-  v_owner uuid := '11111111-1111-4111-8111-111111111111';
-  v_project uuid := '22222222-2222-4222-8222-222222222222';
-  v_asset uuid := '33333333-3333-4333-8333-333333333333';
-  v_source uuid := '44444444-4444-4444-8444-444444444444';
+  v_owner uuid := '91111111-1111-4111-8111-111111111111';
+  v_project uuid := '92222222-2222-4222-8222-222222222222';
+  v_asset uuid := '93333333-3333-4333-8333-333333333333';
+  v_source uuid := '94444444-4444-4444-8444-444444444444';
   v_table regclass := 'executive_visuals.google_gcs_asset_sources'::regclass;
   v_rls boolean;
   v_force_rls boolean;
