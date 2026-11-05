@@ -124,6 +124,16 @@ test("fails closed when no connection exists or the refresh token is revoked", a
   await assert.rejects(() => h.service.getAccessToken({ ownerId }), error => error.code === "GOOGLE_OAUTH_NOT_CONNECTED");
 });
 
+test("classifies a revoked Google refresh token as requiring account reconnection", async () => {
+  const h = harness({ refreshStatus: 400 });
+  const start = await h.service.begin({ ownerId });
+  await h.service.complete({ ownerId, state: new URL(start.authorizationUrl).searchParams.get("state"), code: "code" });
+  h.setNow(4700000);
+  await assert.rejects(() => h.service.getAccessToken({ ownerId }),
+    error => error.code === "GOOGLE_OAUTH_REAUTH_REQUIRED" && !error.message.includes("refresh-token"));
+  assert.equal(h.records.has(ownerId), true);
+});
+
 test("rejects unsafe redirect URI and accepts the built-in cryptographic identity verifier", () => {
   const common = { clientId: "client", clientSecret: "secret", encryptionKey: "a".repeat(40),
     stateStore: { put() {}, consume() {} }, connections: { get() {}, upsert() {}, delete() {} } };
