@@ -118,7 +118,7 @@ export function createGoogleDrivePrivateFileBridge({
         throw fail(error?.name === "AbortError" ? "Google Drive request timed out." : "Google Drive request failed.",
           error?.name === "AbortError" ? "GOOGLE_DRIVE_TIMEOUT" : "GOOGLE_DRIVE_REQUEST_FAILED");
       }
-      if (!response.ok) {
+      if (!response.ok && !allowStatuses.includes(response.status)) {
         const status = response.status;
         const error = fail("Google Drive rejected the request (HTTP " + status + ").",
           status === 401 || status === 403 ? "GOOGLE_DRIVE_ACCESS_DENIED" :
@@ -270,7 +270,7 @@ export function createGoogleDrivePrivateFileBridge({
             const range = uploadResponse.headers?.get?.("range");
             if (range === null || range === undefined) offset = 0;
             else {
-              const match = /^bytes=0-(\\d+)$/.exec(range);
+              const match = /^bytes=0-(\d+)$/.exec(range);
               if (!match) throw fail("Google Drive returned an invalid resumable upload range.", "GOOGLE_DRIVE_UPLOAD_RANGE_INVALID");
               offset = Number(match[1]) + 1;
               if (!Number.isSafeInteger(offset) || offset < 0 || offset > bytes.byteLength) {
@@ -278,14 +278,10 @@ export function createGoogleDrivePrivateFileBridge({
               }
             }
             if (offset === bytes.byteLength) {
-              uploadResponse = await request(session, accessToken, {
-                method: "PUT",
-                headers: { "content-length": "0", "content-range": `bytes */${bytes.byteLength}` },
-                raw: true,
-                allowStatuses: [308]
-              });
-              if (uploadResponse.status === 308) continue;
-            } else continue;
+              throw fail("Google Drive reported all bytes received without confirming file creation.",
+                "GOOGLE_DRIVE_UPLOAD_COMPLETION_UNCONFIRMED");
+            }
+            continue;
           }
           if (uploadResponse.status === 200 || uploadResponse.status === 201) completed = true;
         }
