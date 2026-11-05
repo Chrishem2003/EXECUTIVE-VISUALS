@@ -165,6 +165,57 @@ begin
 end;
 $video_cancel_request$;
 
+-- Resuming a quarantined submitted task after review is an explicit decision
+-- to continue polling; clear the prior cancellation request and audit that decision.
+create or replace function executive_visuals.resume_reconciled_video_generation_job(
+  p_job_id uuid, p_owner_id uuid, p_evidence_reference text
+) returns boolean
+language plpgsql
+security invoker
+set search_path = pg_catalog, executive_visuals
+as $video_resume_after_cancel$
+declare
+  current_job executive_visuals.jobs;
+  submission executive_visuals.video_generation_submissions;
+  cancellation_was_requested boolean;
+begin
+  if p_evidence_reference is null or char_length(btrim(p_evidence_reference)) not between 1 and 1000 then
+    raise exception 'VIDEO_JOB_RESUME_EVIDENCE_REQUIRED';
+  end if;
+  select * into current_job from executive_visuals.jobs
+  where id=p_job_id and owner_id=p_owner_id and job_type='video.generate'
+  for update;
+  if current_job.id is null or current_job.status <> 'needs_input' then return false; end if;
+  select * into submission from executive_visuals.video_generation_submissions
+  where job_id=p_job_id for update;
+  if submission.id is null or submission.state <> 'submitted' or submission.provider_task_id is null then
+    raise exception 'VIDEO_JOB_RESUME_REQUIRES_RECONCILED_TASK';
+  end if;
+  if not exists (
+    select 1 from executive_visuals.video_generation_budget_reservations r
+    where r.job_id=p_job_id and r.state='reserved'
+  ) then raise exception 'VIDEO_JOB_RESUME_BUDGET_RESERVATION_MISSING'; end if;
+
+  cancellation_was_requested := current_job.cancellation_requested_at is not null;
+  update executive_visuals.jobs
+  set status='queued', available_at=clock_timestamp(), error=null,
+      cancellation_requested_at=null, updated_at=clock_timestamp(),
+      lease_owner=null, lease_expires_at=null, lease_heartbeat_at=null
+  where id=p_job_id;
+  insert into executive_visuals.job_events(job_id,owner_id,event_type,event_data)
+  values(p_job_id,p_owner_id,'job.reconciled_resumed',
+    jsonb_build_object('providerTaskId',submission.provider_task_id,
+      'evidenceReference',p_evidence_reference,
+      'cancellationDecision',case when cancellation_was_requested then 'continue_after_review' else 'not_applicable' end));
+  insert into executive_visuals.audit_events(owner_id,project_id,event_type,subject_type,subject_id,details)
+  values(p_owner_id,current_job.project_id,'job.reconciled_resumed','job',p_job_id::text,
+    jsonb_build_object('providerTaskId',submission.provider_task_id,
+      'evidenceReference',p_evidence_reference,
+      'cancellationDecision',case when cancellation_was_requested then 'continue_after_review' else 'not_applicable' end));
+  return true;
+end;
+$video_resume_after_cancel$;
+
 create or replace function executive_visuals.is_video_generation_cancellation_requested(
   p_job_id uuid,
   p_worker_id text
