@@ -163,11 +163,6 @@ function durationSeconds(value:string){
  return /minute/i.test(value)?amount*60:amount;
 }
 function activeStoryboardProject(){return state.projects.find(item=>item.id===state.activeProject)||null;}
-function saveActiveStoryboard(next:ModelStoryboard){
- const project=activeStoryboardProject();if(!project)return;
- state.projects=state.projects.map(item=>item.id===project.id?{...item,storyboard:next}:item);
- save();render();
-}
 function storyboardPanel(){
  const project=activeStoryboardProject(),board=project?.storyboard;
  const button=project?.modelCreativeDirection?'<button type="button" class="primary" data-build-storyboard '+(state.storyboardBusy?'disabled':'')+'>Compile editable storyboard ↗</button>':'';
@@ -188,7 +183,7 @@ async function requestModelStoryboard(){
    body:JSON.stringify({projectId:state.apiProjectId||undefined,input:{
     creativeDirection:project.modelCreativeDirection,targetDurationSeconds:durationSeconds(project.duration||"60 seconds"),
     aspectRatio:project.aspectRatio||"9:16",frameRate:24,
-    characters:state.characters.map(character=>({id:character.id,name:character.name,description:character.description,voice:character.voice})),
+    characters:state.characters.slice(0,12).map(character=>({id:character.id,name:character.name,description:character.description.slice(0,500),voice:character.voice.slice(0,180)})),
     constraints:"Preserve supplied proof, consent and production constraints. Keep prompts provider-neutral."
    }})
   });
