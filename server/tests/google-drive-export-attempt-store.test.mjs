@@ -23,6 +23,8 @@ function harness(){
     const body=JSON.parse(options.body), target=rows[0], query=String(url);
     const leaseMatch=query.match(/[?&]lease_token=eq\.([0-9a-f-]+)/);
     if(leaseMatch&&target.lease_token!==leaseMatch[1])return new Response("[]",{status:200});
+    const expiryMatch=query.match(/[?&]lease_expires_at=gt\.([^&]+)/);
+    if(expiryMatch&&Date.parse(target.lease_expires_at)<=Date.parse(decodeURIComponent(expiryMatch[1])))return new Response("[]",{status:200});
     if(query.includes("state=in.")&&!["PREPARED","UPLOADING","OUTCOME_UNKNOWN"].includes(target.state))return new Response("[]",{status:200});
     Object.assign(target,body);
     return new Response(JSON.stringify([target]),{status:200});
@@ -121,6 +123,24 @@ test("prevents a stale worker from mutating an attempt after its lease changes",
   leaseToken:"55555555-5555-4555-8555-555555555555"}),
   error=>error.code==="GOOGLE_DRIVE_EXPORT_STORE_FAILED");
  assert.equal(h.rows[0].state,"PREPARED");
+});
+test("rejects state writes from a worker whose lease expired even before another worker reclaims it",async()=>{
+ const h=harness();
+ const leaseToken=await h.store.claim({attemptKey,ownerId});
+ h.rows[0].lease_expires_at=new Date(Date.now()-1000).toISOString();
+ await assert.rejects(()=>h.store.mark({attemptKey,ownerId,state:"OUTCOME_UNKNOWN",leaseToken}),
+  error=>error.code==="GOOGLE_DRIVE_EXPORT_STORE_FAILED");
+ assert.equal(h.rows[0].state,"PREPARED");
+ assert.match(h.calls.at(-1).url,/lease_expires_at=gt\./);
+});
+test("rejects session persistence from an expired export lease",async()=>{
+ const h=harness();
+ const leaseToken=await h.store.claim({attemptKey,ownerId});
+ h.rows[0].lease_expires_at=new Date(Date.now()-1000).toISOString();
+ await assert.rejects(()=>h.store.saveSession({attemptKey,ownerId,leaseToken,
+  sessionUri:"https://www.googleapis.com/upload/drive/v3/files?upload_id=private-session"}),
+  error=>error.code==="GOOGLE_DRIVE_EXPORT_STORE_FAILED");
+ assert.equal(h.rows[0].encrypted_session_uri,null);
 });
 test("rejects corrupted durable lease pairs and completed rows retaining upload credentials",async()=>{
  const h=harness();
