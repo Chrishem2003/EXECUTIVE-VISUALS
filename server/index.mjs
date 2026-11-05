@@ -517,14 +517,14 @@ export function createAppServer() {
       if(path==="/api/me"&&req.method==="GET"){send(res,200,{user,authMode:AUTH_MODE},cors);return;}
       if(path==="/api/creative/storyboard"&&req.method==="POST"){
         const body=await readJson(req,48*1024);
-        const projectId=String(body.projectId||"").trim()||null;
+        const projectId=String(body?.projectId||"").trim()||null;
         if(projectId){
           const access=getProjectAccess(db,user.id,projectId);
           if(!access){fail(res,404,"PROJECT_NOT_FOUND","Project not found.");return;}
           if(!canWriteProject(db,user.id,projectId)){fail(res,403,"EDITOR_REQUIRED","Owner or editor access is required to compile a project storyboard.");return;}
         }
         try{
-          const result=await generateStoryboard({input:body.input});
+          const result=await generateStoryboard({input:body?.input});
           const recordId=randomUUID();
           audit(db,user.id,"creative.storyboard.generated","storyboard",recordId,{
             model:result.model,
@@ -554,7 +554,7 @@ export function createAppServer() {
           if(!canWriteProject(db,user.id,projectId)){fail(res,403,"EDITOR_REQUIRED","Owner or editor access is required to request project creative direction.");return;}
         }
         try{
-          const result=await generateCreativeDirection({input:body.input});
+          const result=await generateCreativeDirection({input:body?.input});
           const recordId=randomUUID();
           audit(db,user.id,"creative.director.generated","creative_plan",recordId,{
             model:result.model,
