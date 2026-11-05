@@ -47,4 +47,4 @@ Model output is a proposal, not an approved script or a factual research report.
 
 ## Next stage
 
-P1.4 will consume the reviewed direction and compile an editable storyboard with scenes, shots, character references, continuity constraints, proof anchors and provider-neutral prompts. It must preserve the source brief and director decisions as lineage, and must not submit media jobs.
+P1.4 now consumes the reviewed direction through the separate editable Storyboard Compiler. P1.5 will convert the reviewed storyboard into validated timeline tracks and clips while preserving scene/shot IDs, source lineage, timebase, character references and prompt provenance.
