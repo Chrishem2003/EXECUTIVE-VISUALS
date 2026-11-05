@@ -28,7 +28,7 @@ async function fixture() {
     [ownerId,reviewerId,workerId].includes(actorId);
   const ledger = createRunwayRouterApprovalLedger({
     db, now: () => new Date(clock),
-    authorizeProject: scope => allowed(scope,scope.actorId) && [ownerId,reviewerId].includes(scope.actorId),
+    authorizeProject: scope => allowed(scope,scope.actorId) && scope.actorId === ownerId,
     authorizeApproval: scope => allowed(scope,scope.actorId) && scope.actorId === reviewerId,
     authorizeExecution: scope => allowed(scope,scope.actorId) && scope.actorId === workerId
   });
@@ -51,11 +51,12 @@ test("records only successful dry-run decisions within a bounded credit ceiling"
       {...decision,dryRun:false},
       {...decision,taskCreated:true},
       {...decision,billed:true},
-      {...decision,budgetCheck:"not_checked"},\n      {...decision,maxEstimatedCredits:500},
+      {...decision,budgetCheck:"not_checked"},
+      {...decision,maxEstimatedCredits:500},
       {...decision,inputHash:"bad"},
       {...decision,estimatedCredits:251}
     ]) assert.throws(()=>f.ledger.recordPreflight({ownerId,projectId,actorId:ownerId,decision:bad,maxEstimatedCredits:250}));
-    assert.throws(()=>f.ledger.recordPreflight({ownerId,projectId,actorId:ownerId,decision,maxEstimatedCredits:239}),e=>e.code==="RUNWAY_APPROVAL_BUDGET_INVALID");
+    assert.throws(()=>f.ledger.recordPreflight({ownerId,projectId,actorId:ownerId,decision:{...decision,maxEstimatedCredits:239},maxEstimatedCredits:239}),e=>e.code==="RUNWAY_APPROVAL_BUDGET_INVALID");
     assert.throws(()=>f.ledger.recordPreflight({ownerId,projectId,actorId:reviewerId,decision,maxEstimatedCredits:250}),e=>e.code==="RUNWAY_APPROVAL_PROJECT_FORBIDDEN");
   } finally {f.db.close();await rm(f.root,{recursive:true,force:true});}
 });
