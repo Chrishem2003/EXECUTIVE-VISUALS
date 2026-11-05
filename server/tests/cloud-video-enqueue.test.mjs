@@ -9,6 +9,9 @@ const projectId = "423e4567-e89b-42d3-a456-426614174000";
 const requestHash = "a".repeat(64);
 const input = { projectId, provider: "runway", model: "gen4.5", requestHash, durationSeconds: 5, prompt: "A test scene" };
 const approvalId = "523e4567-e89b-42d3-a456-426614174000";
+const routerApprovalId = "823e4567-e89b-42d3-a456-426614174000";
+const routerInputHash = "b".repeat(64);
+const routerConfigId = "creative_low_cost";
 const resultRow = {
   job_id: "623e4567-e89b-42d3-a456-426614174000",
   job_status: "queued",
@@ -21,7 +24,7 @@ function response(body, status = 200) {
 function args(overrides = {}) {
   return {
     ownerId, projectId, idempotencyKey: "request-001", provider: "runway", model: "gen4.5",
-    requestHash, input, budgetApprovalId: approvalId, reservedAmount: 1.25, currency: "USD", ...overrides
+    requestHash, input, budgetApprovalId: approvalId, routerApprovalId, routerInputHash, routerConfigId, reservedAmount: 1.25, currency: "USD", ...overrides
   };
 }
 
@@ -47,7 +50,7 @@ test("cloud enqueue uses service-role credentials and the private schema", async
   assert.deepEqual(JSON.parse(calls[0].options.body), {
     p_owner_id: ownerId, p_project_id: projectId, p_idempotency_key: "request-001",
     p_provider: "runway", p_model: "gen4.5", p_request_hash: requestHash,
-    p_input: input, p_budget_approval_id: approvalId, p_reserved_amount: 1.25, p_currency: "USD"
+    p_input: { ...input, routerApprovalId, routerInputHash, routerConfigId, budgetApprovalId: approvalId }, p_budget_approval_id: approvalId, p_reserved_amount: 1.25, p_currency: "USD"
   });
 });
 
@@ -132,6 +135,9 @@ test("cloud video deferral and quarantine reject invalid controls before network
 test("enqueue rejects mismatched request scope and invalid budget inputs before network access", async () => {
   let calls = 0;
   const client = createCloudVideoEnqueue({ ...base, fetchImpl: async () => { calls++; return response([resultRow]); } });
+  await assert.rejects(() => client.enqueue(args({ routerApprovalId: undefined })), error => error.code === "RUNWAY_APPROVAL_REQUIRED");
+  await assert.rejects(() => client.enqueue(args({ routerInputHash: "invalid" })), error => error.code === "RUNWAY_APPROVAL_REQUIRED");
+  await assert.rejects(() => client.enqueue(args({ routerConfigId: "../other" })), error => error.code === "RUNWAY_APPROVAL_REQUIRED");
   await assert.rejects(() => client.enqueue(args({ input: { ...input, requestHash: "b".repeat(64) } })), /does not match/);
   await assert.rejects(() => client.enqueue(args({ reservedAmount: 0 })), /positive bounded/);
   await assert.rejects(() => client.enqueue(args({ reservedAmount: 0.5 })), error =>
