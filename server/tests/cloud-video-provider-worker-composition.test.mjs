@@ -103,3 +103,67 @@ test("defaults to the exact FAL provider registration when no custom adapter fac
   assert.deepEqual(worker.listSupported(), ["fal:fal-ai/wan/v2.7/text-to-video"]);
   assert.equal(networkCalls, 0);
 });
+
+
+test("builds the Google Omni integration inside the real worker composition from explicit governance dependencies", () => {
+  const envWithGoogle = {
+    ...env,
+    GOOGLE_OMNI_VIDEO_ENABLED: "true",
+    GOOGLE_OMNI_VIDEO_ALLOW_REMOTE: "true",
+    GEMINI_OMNI_PAID_TIER_CONFIRMED: "true",
+    GEMINI_OMNI_RETENTION_DAYS: "28",
+    GEMINI_API_KEY: "server-test-key"
+  };
+  const interactions = {
+    async findInteraction() { return null; },
+    async recordInteraction() {},
+    async updateInteraction() {}
+  };
+  const client = {
+    async createInteraction() { throw new Error("provider calls must not happen during composition"); },
+    async getInteractionForIngestion() { throw new Error("provider calls must not happen during composition"); }
+  };
+  let captured;
+  const worker = createProviderAwareCloudVideoWorkerComposition({
+    ...base,
+    env: envWithGoogle,
+    providerDependencies: {
+      googleOmniClient: client,
+      googleOmniInteractions: interactions,
+      googleOmniAssertApprovedSubmission: async () => true,
+      googleOmniAuthorizeInteraction: async () => true,
+      googleOmniPreparePlan: async () => ({
+        policy: { provider: "google", model: "gemini-omni-1.1-flash", requiresApproval: true },
+        payload: {}
+      })
+    },
+    createAdapters: dependencies => {
+      captured = dependencies.googleOmniIntegration;
+      return [{
+        provider: "google",
+        model: "gemini-omni-1.1-flash",
+        async submit() {},
+        async getStatus() {},
+        async ingestOutputs() {},
+        async resolveActualCost() { return { amount: 0, currency: "USD", evidenceReference: "test" }; }
+      }];
+    }
+  });
+  assert.ok(captured);
+  assert.equal(typeof captured.adapter.prepareInput, "function");
+  assert.equal(typeof captured.adapter.submit, "function");
+  assert.equal(typeof captured.ingestOutputs, "function");
+  assert.equal(typeof captured.resolveActualCost, "function");
+  assert.deepEqual(worker.listSupported(), ["google:gemini-omni-1.1-flash"]);
+});
+
+test("Google worker bootstrap fails closed without durable governance callbacks", () => {
+  assert.throws(() => createProviderAwareCloudVideoWorkerComposition({
+    ...base,
+    env: {
+      ...env,
+      GOOGLE_OMNI_VIDEO_ENABLED: "true",
+      GOOGLE_OMNI_VIDEO_ALLOW_REMOTE: "true"
+    }
+  }), /durable approval, owner\/project authorization and private-input planning callbacks/);
+});
