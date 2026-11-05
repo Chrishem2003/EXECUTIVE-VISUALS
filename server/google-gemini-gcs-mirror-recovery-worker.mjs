@@ -15,14 +15,14 @@ function validSessionUri(value) {
   } catch { return false; }
 }
 function validToken(value) {
-  return typeof value === "string" && value.length >= 20 && value.length <= 8192 && !/\\s/.test(value);
+  return typeof value === "string" && value.length >= 20 && value.length <= 8192 && !/\s/.test(value);
 }
 function metadataMatches(metadata, attempt) {
   const custom = metadata?.metadata || {};
   return metadata?.bucket === attempt.bucket &&
     metadata?.name === attempt.objectName &&
-    /^\\d{1,30}$/.test(String(metadata?.generation || "")) &&
-    /^\\d{1,30}$/.test(String(metadata?.metageneration || "")) &&
+    /^\d{1,30}$/.test(String(metadata?.generation || "")) &&
+    /^\d{1,30}$/.test(String(metadata?.metageneration || "")) &&
     String(metadata?.size || "") === String(attempt.sizeBytes) &&
     metadata?.contentType === attempt.mediaType &&
     custom.executivevisualsassetid === attempt.assetId &&
@@ -32,7 +32,7 @@ function metadataMatches(metadata, attempt) {
 }
 function parsePersistedOffset(range, sizeBytes) {
   if (!range) return 0;
-  const match = /^bytes=0-(\\d+)$/.exec(String(range).trim());
+  const match = /^bytes=0-(\d+)$/.exec(String(range).trim());
   if (!match) throw fail("GCS returned an invalid resumable upload range.", "GEMINI_GCS_RECOVERY_RANGE_INVALID");
   const last = Number(match[1]);
   if (!Number.isSafeInteger(last) || last < 0 || last >= sizeBytes) {
