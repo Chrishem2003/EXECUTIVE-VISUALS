@@ -64,3 +64,27 @@ test("rejects invalid encryption keys and non-GCS session endpoints",async()=>{
   const f=setup();
   await assert.rejects(()=>f.repository.recordSession({attemptId:"33333333-3333-4333-8333-333333333333",sessionUri:"https://attacker.example/upload/storage/v1/bucket",expiresAt:new Date(Date.now()+86400000).toISOString()}),error=>error.code==="GEMINI_GCS_SESSION_URI_INVALID");
 });
+
+
+test("retains a recovery lease across OBJECT_VERIFIED and clears it only at terminal registration",async()=>{
+  const f=setup();
+  const attempt=await f.repository.createAttempt(input);
+  await f.repository.recordSession({attemptId:attempt.id,sessionUri,expiresAt:new Date(Date.now()+86400000).toISOString()});
+  const leaseToken=await f.repository.claimRecoveryAttempt({attemptId:attempt.id,expectedState:"UPLOADING"});
+  assert.ok(leaseToken);
+  await f.repository.transition({
+    attemptId:attempt.id,expectedState:"UPLOADING",state:"OBJECT_VERIFIED",
+    generation:"1762300800000000",metageneration:"3",leaseToken
+  });
+  assert.equal(f.rows[0].state,"OBJECT_VERIFIED");
+  assert.equal(f.rows[0].lease_token,leaseToken);
+  assert.ok(f.rows[0].lease_expires_at);
+  await f.repository.transition({
+    attemptId:attempt.id,expectedState:"OBJECT_VERIFIED",state:"REGISTERED",
+    generation:"1762300800000000",metageneration:"3",leaseToken
+  });
+  assert.equal(f.rows[0].state,"REGISTERED");
+  assert.equal(f.rows[0].lease_token,null);
+  assert.equal(f.rows[0].lease_expires_at,null);
+  assert.ok(f.rows[0].reconciled_at);
+});
