@@ -364,7 +364,7 @@ export function createGoogleDrivePrivateFileBridge({
           }
           if (uploadResponse.status === 404) {
             if (attempts) await attempts.mark({ attemptKey: attemptRecord.attemptKey, ownerId: scope.ownerId,
-              state: "RECONCILIATION_REQUIRED", errorCode: "GOOGLE_DRIVE_UPLOAD_SESSION_EXPIRED" });
+              state: "RECONCILIATION_REQUIRED", errorCode: "GOOGLE_DRIVE_UPLOAD_SESSION_EXPIRED", leaseToken });
             throw fail("Google Drive resumable session expired; reconcile the reserved file ID before restarting.",
               "GOOGLE_DRIVE_UPLOAD_SESSION_EXPIRED");
           }
