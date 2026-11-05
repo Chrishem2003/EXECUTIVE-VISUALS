@@ -221,6 +221,20 @@ test("persists a deterministic upload attempt through provider creation and mapp
   assert.equal(updates[2].attemptId, "attempt-id");
 });
 
+
+test("does not start a provider upload when the durable attempt claim loses a race", async () => {
+  const h = harness({
+    createAttempt: async () => ({ id: "attempt-race", state: "PREPARED" }),
+    updateAttempt: async () => { throw new Error("compare-and-set matched no row"); }
+  });
+  await assert.rejects(
+    () => h.gateway.resolveAsset({ assetId, ownerId, projectId, mediaType: "image/png" }),
+    error => error.code === "GEMINI_FILE_ATTEMPT_CLAIM_FAILED"
+  );
+  assert.equal(h.calls.length, 0);
+  assert.equal(h.records.length, 0);
+});
+
 test("quarantines ambiguous resumable upload outcomes and refuses blind retries", async () => {
   const updates = [];
   const gateway = createGoogleGeminiFilesGateway({
