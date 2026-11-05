@@ -15,7 +15,8 @@ create table if not exists executive_visuals.google_gcs_asset_sources (
   object_name text not null check (
     char_length(object_name) between 1 and 1024 and
     object_name !~ '^/' and
-    object_name !~ '[[:cntrl:][:space:]?#%\\]' and
+    object_name !~ '[[:cntrl:][:space:]?#%]' and
+    position(chr(92) in object_name) = 0 and
     object_name !~ '(^|/)\.\.(/|$)' and
     object_name !~ '(^|/)\.(/|$)'
   ),
