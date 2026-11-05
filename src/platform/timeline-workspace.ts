@@ -519,7 +519,7 @@ async function updateStoryboardTimelineShot(form:HTMLFormElement){
   narration:String(data.get("narration")||"").slice(0,500),continuityIn:String(data.get("continuityIn")||"").slice(0,300),
   continuityOut:String(data.get("continuityOut")||"").slice(0,300)
  })}));
- const nextPlan=reflowStoryboardTimelinePlan({...plan,scenes});
+ let nextPlan:StoryboardTimelinePlan;try{nextPlan=reflowStoryboardTimelinePlan({...plan,scenes});}catch(error){state.message=error instanceof Error?error.message:"Storyboard timeline edit failed validation.";paint();return;}
  const sceneMarkers=nextPlan.scenes.map(scene=>({id:"storyboard-scene-"+scene.id,name:"Scene "+String(scene.number).padStart(2,"0")+" · "+scene.title,start:rational(scene.startFrame,plan.frameRate),note:scene.purpose}));
  const otherMarkers=timeline.markers.filter(marker=>!marker.id.startsWith("storyboard-scene-"));
  const after={...timeline,metadata:{...(timeline.metadata||{}),storyboardPlan:nextPlan},markers:[...otherMarkers,...sceneMarkers].sort((a,b)=>a.start.value/a.start.rate-b.start.value/b.start.rate)};
