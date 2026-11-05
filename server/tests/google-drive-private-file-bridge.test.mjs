@@ -237,6 +237,7 @@ test("returns an already completed Drive export after provider reconciliation wi
   const attempts = {
     async get() { return attemptRecord; },
     async createOrGet() { throw new Error("completed attempts must not create a new ledger row"); },
+    async claim() { throw new Error("completed attempts must not acquire a new lease"); },
     async saveSession() { throw new Error("completed attempts must not create a new session"); },
     async mark() { throw new Error("already completed"); }
   };
