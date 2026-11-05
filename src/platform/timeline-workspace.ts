@@ -156,7 +156,9 @@ async function syncPreview(){
  const layerSummary=active.map(clip=>clip.clipName+" · "+clip.trackName+" · "+clip.sourceTimeSeconds.toFixed(3)+"s").join(" | ");
  if(label)label.textContent=layerSummary||"No active video or overlay clips at this frame.";
  if(!active.length){
-  state.previewLayerKey="";
+  state.previewLayerKey="";state.previewPlaying=false;
+  for(const video of document.querySelectorAll<HTMLVideoElement>("[data-preview-video]")){video.pause();video.removeAttribute("src");video.load();}
+  const toggle=document.querySelector<HTMLButtonElement>("[data-tl-preview-toggle]");if(toggle)toggle.textContent="Play preview";
   const stage=document.querySelector<HTMLElement>("#tl-preview-layers");
   if(stage)stage.innerHTML=renderPreviewLayers([]);
   return;
@@ -183,6 +185,7 @@ async function syncPreview(){
   const key=active.map(clip=>clip.trackId+":"+clip.clipId+":"+clip.assetId).join("|");
   const stage=document.querySelector<HTMLElement>("#tl-preview-layers");
   if(stage&&(key!==state.previewLayerKey||changed)){
+   for(const video of stage.querySelectorAll<HTMLVideoElement>("[data-preview-video]"))video.pause();
    state.previewLayerKey=key;
    stage.innerHTML=renderPreviewLayers(active);
   }
