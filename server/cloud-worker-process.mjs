@@ -20,7 +20,7 @@ export function readCloudWorkerConfig(env=process.env){
  const heartbeatIntervalMs=integer(env.CLOUD_WORKER_HEARTBEAT_MS,15000,1000,30000,"Cloud worker heartbeat");
  if(heartbeatIntervalMs>=leaseSeconds*1000)throw new Error("Cloud worker heartbeat must be shorter than the lease duration.");
  const videoAllowedOutputHosts=String(env.CLOUD_VIDEO_OUTPUT_ALLOWED_HOSTS||"").split(",").map(host=>host.trim().toLowerCase()).filter(Boolean);
- if(video&&(!videoAllowedOutputHosts.length||videoAllowedOutputHosts.length>100||videoAllowedOutputHosts.some(host=>! /^(?:\\*\\.)?[a-z0-9.-]{1,253}$/.test(host))))throw new Error("Cloud video worker requires an explicit bounded output-host allowlist.");
+ if(video&&(!videoAllowedOutputHosts.length||videoAllowedOutputHosts.length>100||videoAllowedOutputHosts.some(host=>!/^(?:\*\.)?[a-z0-9.-]{1,253}$/.test(host))))throw new Error("Cloud video worker requires an explicit bounded output-host allowlist.");
  return Object.freeze({
   media,timeline,video,videoAllowedOutputHosts:Object.freeze(videoAllowedOutputHosts),
   pollMs:integer(env.CLOUD_WORKER_POLL_MS,1000,500,10000,"Cloud worker poll interval"),
