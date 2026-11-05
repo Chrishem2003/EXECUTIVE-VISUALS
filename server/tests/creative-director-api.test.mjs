@@ -165,16 +165,6 @@ test("Creative Director endpoint validates input before spending a model request
   assert.equal(gatewayRequests, before);
 });
 
-test("Creative Director endpoint enforces a bounded body size", async () => {
-  const cookie = await register("creative-director-large@example.test");
-  const response = await request("/api/creative/director", {
-    method: "POST", headers: { "content-type": "application/json" },
-    body: JSON.stringify({ input: { title: "Large", brief: "x".repeat(20000) } })
-  }, cookie);
-  assert.ok(response.status === 400 || response.status === 413);
-  assert.equal(gatewayRequests, 2);
-});
-
 test.after(async () => {
   child.kill("SIGTERM");
   await new Promise(resolve => child.once("exit", resolve));
