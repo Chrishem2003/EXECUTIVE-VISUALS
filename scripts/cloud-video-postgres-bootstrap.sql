@@ -36,6 +36,18 @@ create table executive_visuals.projects (
   name text not null
 );
 
+create table executive_visuals.timelines (
+  id uuid primary key,
+  owner_id uuid not null references auth.users(id) on delete cascade,
+  project_id uuid references executive_visuals.projects(id) on delete cascade,
+  name text not null,
+  revision integer not null default 1 check (revision > 0),
+  timeline jsonb not null check (jsonb_typeof(timeline) = 'object'),
+  otio jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  archived_at timestamptz
+);
 create table executive_visuals.project_members (
   project_id uuid not null references executive_visuals.projects(id) on delete cascade,
   member_id uuid not null references auth.users(id) on delete cascade,
