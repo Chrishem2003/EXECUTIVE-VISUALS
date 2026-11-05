@@ -51,7 +51,8 @@ test("records only successful dry-run decisions within a bounded credit ceiling"
       {...decision,dryRun:false},
       {...decision,taskCreated:true},
       {...decision,billed:true},
-      {...decision,budgetCheck:"not_checked"},\n      {...decision,maxEstimatedCredits:500},
+      {...decision,budgetCheck:"not_checked"},
+      {...decision,maxEstimatedCredits:500},
       {...decision,inputHash:"bad"},
       {...decision,estimatedCredits:251}
     ]) assert.throws(()=>f.ledger.recordPreflight({ownerId,projectId,actorId:ownerId,decision:bad,maxEstimatedCredits:250}));
