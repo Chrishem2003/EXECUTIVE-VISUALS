@@ -146,7 +146,7 @@ as $video_cost_evidence_get$
   select e.*
   from executive_visuals.video_generation_cost_evidence e
   where e.job_id = p_job_id
-$$;
+$video_cost_evidence_get$;
 
 revoke all on function executive_visuals.get_video_generation_cost_evidence(uuid) from public, anon, authenticated;
 grant execute on function executive_visuals.get_video_generation_cost_evidence(uuid) to service_role;
