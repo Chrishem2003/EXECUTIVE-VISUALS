@@ -193,6 +193,9 @@ select executive_visuals.begin_video_generation_submission((select job_id from t
 select executive_visuals.record_video_generation_submission(
  (select job_id from test_context),'video-worker-pg-test','runway-task-pg-test','{"acceptedStatus":"queued"}'::jsonb
 );
+select set_config('test.video_job_id',job_id::text,false),
+       set_config('test.video_reservation_id',reservation_id::text,false)
+from test_context;
 
 -- A completed task cannot settle without a reviewed evidence receipt.
 do $missing_cost_evidence$
@@ -223,7 +226,7 @@ begin
    job_id,reservation_id,owner_id,project_id,provider,model,provider_task_id,
    actual_amount,currency,source_type,evidence_reference,evidence_sha256,reviewer_id
   ) values (
-   (select job_id from test_context),(select reservation_id from test_context),
+   current_setting('test.video_job_id')::uuid,current_setting('test.video_reservation_id')::uuid,
    '123e4567-e89b-42d3-a456-426614174000','323e4567-e89b-42d3-a456-426614174000',
    'runway','gen4.5','wrong-task-id',0.75,'USD','provider_support',
    'provider-support://case/wrong-task',repeat('c',64),
@@ -242,8 +245,8 @@ insert into executive_visuals.video_generation_cost_evidence(
  actual_amount,currency,source_type,evidence_reference,evidence_sha256,
  reviewer_id,reviewer_note
 ) values (
- (select job_id from test_context),
- (select reservation_id from test_context),
+ current_setting('test.video_job_id')::uuid,
+ current_setting('test.video_reservation_id')::uuid,
  '123e4567-e89b-42d3-a456-426614174000',
  '323e4567-e89b-42d3-a456-426614174000',
  'runway','gen4.5','runway-task-pg-test',
