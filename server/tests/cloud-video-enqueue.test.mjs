@@ -179,6 +179,32 @@ test("cloud enqueue configuration rejects insecure remote endpoints", () => {
   assert.throws(() => createCloudVideoEnqueue({ url: base.url }), /SUPABASE_SERVICE_ROLE_KEY/);
 });
 
+test("Kie Seedance enqueue requires explicit remote gates and a verified account credit value",async()=>{
+ let calls=0;
+ const make=(env)=>createCloudVideoEnqueue({...base,env,fetchImpl:async()=>{calls++;return response([resultRow]);}});
+ const kieInput={projectId,provider:"kie",model:"bytedance/seedance-2",requestHash,prompt:"A vertical product film",durationSeconds:5,resolution:"720p",aspectRatio:"9:16",audioMode:"provider_default",outputFormat:"mp4"};
+ const kieArgs={ownerId,projectId,idempotencyKey:"kie-request-001",provider:"kie",model:"bytedance/seedance-2",requestHash,input:kieInput,budgetApprovalId:approvalId,reservedAmount:1.025,currency:"USD"};
+ await assert.rejects(()=>make({}).enqueue(kieArgs),error=>error.code==="VIDEO_GENERATION_UNSUPPORTED_CAPABILITY");
+ await assert.rejects(()=>make({VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",KIE_VIDEO_ENABLED:"true"}).enqueue(kieArgs),error=>error.code==="KIE_VIDEO_REMOTE_DISABLED");
+ const env={VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",KIE_VIDEO_ENABLED:"true",KIE_VIDEO_ALLOW_REMOTE:"true",KIE_USD_PER_CREDIT:"0.005"};
+ const result=await make(env).enqueue(kieArgs);
+ assert.equal(result.status,"queued");
+ assert.equal(calls,1);
+});
+
+test("Kie Seedance enqueue enforces resolution, duration, reference and reservation bounds",async()=>{
+ let calls=0;
+ const client=createCloudVideoEnqueue({...base,env:{VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",KIE_VIDEO_ENABLED:"true",KIE_VIDEO_ALLOW_REMOTE:"true",KIE_USD_PER_CREDIT:"0.005"},fetchImpl:async()=>{calls++;return response([resultRow]);}});
+ const kieInput={projectId,provider:"kie",model:"bytedance/seedance-2",requestHash,prompt:"A vertical product film",durationSeconds:5,resolution:"720p",aspectRatio:"9:16",audioMode:"provider_default",outputFormat:"mp4"};
+ const kieArgs={ownerId,projectId,idempotencyKey:"kie-request-002",provider:"kie",model:"bytedance/seedance-2",requestHash,input:kieInput,budgetApprovalId:approvalId,reservedAmount:1.025,currency:"USD"};
+ await assert.rejects(()=>client.enqueue({...kieArgs,reservedAmount:1.024}),error=>error.code==="VIDEO_BUDGET_BELOW_PROVIDER_ESTIMATE");
+ await assert.rejects(()=>client.enqueue({...kieArgs,input:{...kieInput,durationSeconds:16}}),error=>error.code==="VIDEO_PRICE_DURATION_INVALID");
+ await assert.rejects(()=>client.enqueue({...kieArgs,input:{...kieInput,resolution:"8K"}}),error=>error.code==="VIDEO_GENERATION_UNSUPPORTED_CAPABILITY");
+ await assert.rejects(()=>client.enqueue({...kieArgs,input:{...kieInput,referenceVideoAssetIds:["asset-video"]}}),error=>error.code==="VIDEO_GENERATION_UNSUPPORTED_CAPABILITY");
+ await assert.rejects(()=>client.enqueue({...kieArgs,input:{...kieInput,endFrameAssetId:"asset-last"}}),/last frame requires a first/);
+ assert.equal(calls,0);
+});
+
 test("Runway budget estimate uses the shared dated pricing engine and is not settlement evidence", () => {
   const estimate=estimateVideoGenerationCost({provider:"runway",model:"gen4.5",durationSeconds:5});
   assert.equal(estimate.provider,"runway");
@@ -196,6 +222,10 @@ test("Runway budget estimate uses the shared dated pricing engine and is not set
   assert.equal(estimateVideoGenerationCost({provider:"runway",model:"gen4.5",durationSeconds:5,outputFormat:"prores"}).credits,85);
   assert.throws(()=>estimateVideoGenerationCost({provider:"runway",model:"gen4.5",durationSeconds:1}),error=>error.code==="VIDEO_PRICE_DURATION_INVALID");
   assert.throws(()=>estimateVideoGenerationCost({provider:"runway",model:"ruby",durationSeconds:10}),error=>error.code==="VIDEO_PRICE_INPUT_REQUIRED");
+  const kieEstimate = estimateVideoGenerationCost({provider:"kie",model:"bytedance/seedance-2",resolution:"720p",durationSeconds:5});
+  assert.equal(kieEstimate.amount,1.025);
+  assert.equal(kieEstimate.credits,205);
+  assert.equal(kieEstimate.settlementEligible,false);
   const lumaEstimate = estimateVideoGenerationCost({provider:"luma",model:"ray-3.2",resolution:"720p",durationSeconds:5});
   assert.equal(lumaEstimate.amount,0.3);
   assert.equal(lumaEstimate.billable,false);
