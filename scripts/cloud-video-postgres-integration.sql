@@ -35,6 +35,19 @@ from executive_visuals.video_generation_budget_policies
 where owner_id='123e4567-e89b-42d3-a456-426614174000'
   and project_id='323e4567-e89b-42d3-a456-426614174000'
   and provider='google' and model='gemini-omni-1.1-flash' and currency='USD';
+insert into executive_visuals.video_generation_budget_policies(
+ owner_id,project_id,provider,model,currency,spend_limit_amount,max_per_job_amount,
+ rolling_24h_request_limit,enabled
+) values (
+ '123e4567-e89b-42d3-a456-426614174000',
+ '323e4567-e89b-42d3-a456-426614174000',
+ 'kie','bytedance/seedance-2','USD',10,5,10,true
+);
+select set_config('test.kie_video_policy_id',id::text,false)
+from executive_visuals.video_generation_budget_policies
+where owner_id='123e4567-e89b-42d3-a456-426614174000'
+  and project_id='323e4567-e89b-42d3-a456-426614174000'
+  and provider='kie' and model='bytedance/seedance-2' and currency='USD';
 do $column_guard$
 begin
  if has_column_privilege('authenticated','executive_visuals.video_generation_budget_policies','reserved_amount','UPDATE')
@@ -55,7 +68,11 @@ insert into executive_visuals.video_generation_budget_approvals(
  ('c23e4567-e89b-42d3-a456-426614174000','123e4567-e89b-42d3-a456-426614174000',
   '323e4567-e89b-42d3-a456-426614174000','google','gemini-omni-1.1-flash',repeat('c',64),'USD',3,'Gemini under-reservation test',clock_timestamp()+interval '10 minutes'),
  ('d23e4567-e89b-42d3-a456-426614174000','123e4567-e89b-42d3-a456-426614174000',
-  '323e4567-e89b-42d3-a456-426614174000','google','gemini-omni-1.1-flash',repeat('d',64),'USD',3,'Gemini resolution test',clock_timestamp()+interval '10 minutes');
+  '323e4567-e89b-42d3-a456-426614174000','google','gemini-omni-1.1-flash',repeat('d',64),'USD',3,'Gemini resolution test',clock_timestamp()+interval '10 minutes'),
+ ('e23e4567-e89b-42d3-a456-426614174000','123e4567-e89b-42d3-a456-426614174000',
+  '323e4567-e89b-42d3-a456-426614174000','kie','bytedance/seedance-2',repeat('e',64),'USD',2,'Kie Seedance integration test',clock_timestamp()+interval '10 minutes'),
+ ('f23e4567-e89b-42d3-a456-426614174000','123e4567-e89b-42d3-a456-426614174000',
+  '323e4567-e89b-42d3-a456-426614174000','kie','bytedance/seedance-2',repeat('f',64),'USD',2,'Kie Seedance under-reservation test',clock_timestamp()+interval '10 minutes');
 do $owner_guard$
 begin
  begin
@@ -220,6 +237,71 @@ begin
  end;
 end
 $google_resolution_gate$;
+
+create temporary table kie_context as
+select queued.job_id,queued.budget_reservation_id as reservation_id,queued.job_status
+from executive_visuals.enqueue_video_generation_job(
+ '123e4567-e89b-42d3-a456-426614174000',
+ '323e4567-e89b-42d3-a456-426614174000',
+ 'pg-integration-kie-video-001','kie','bytedance/seedance-2',repeat('e',64),
+ jsonb_build_object('projectId','323e4567-e89b-42d3-a456-426614174000',
+   'provider','kie','model','bytedance/seedance-2','requestHash',repeat('e',64),
+   'prompt','A vertical product film','durationSeconds',5,'resolution','720p',
+   'aspectRatio','9:16','audioMode','provider_default','outputFormat','mp4'),
+ 'e23e4567-e89b-42d3-a456-426614174000',1.025,'USD'
+) queued;
+do $kie_enqueue_assertion$
+declare queued kie_context; policy_row executive_visuals.video_generation_budget_policies;
+begin
+ select * into queued from kie_context;
+ select * into policy_row from executive_visuals.video_generation_budget_policies
+ where id=current_setting('test.kie_video_policy_id')::uuid;
+ if queued.job_status <> 'queued' or policy_row.reserved_amount <> 1.025 then
+   raise exception 'Kie Seedance enqueue did not create the expected queued reservation';
+ end if;
+end
+$kie_enqueue_assertion$;
+
+do $kie_budget_floor$
+begin
+ begin
+  perform * from executive_visuals.enqueue_video_generation_job(
+   '123e4567-e89b-42d3-a456-426614174000',
+   '323e4567-e89b-42d3-a456-426614174000',
+   'pg-integration-kie-underpriced','kie','bytedance/seedance-2',repeat('f',64),
+   jsonb_build_object('projectId','323e4567-e89b-42d3-a456-426614174000',
+     'provider','kie','model','bytedance/seedance-2','requestHash',repeat('f',64),
+     'prompt','A vertical product film','durationSeconds',5,'resolution','720p','outputFormat','mp4'),
+   'f23e4567-e89b-42d3-a456-426614174000',1.024,'USD'
+  );
+  raise exception 'under-reserved Kie Seedance generation unexpectedly enqueued';
+ exception when others then
+  if sqlerrm = 'under-reserved Kie Seedance generation unexpectedly enqueued' then raise; end if;
+  if sqlerrm <> 'VIDEO_BUDGET_BELOW_PROVIDER_ESTIMATE' then raise; end if;
+ end;
+end
+$kie_budget_floor$;
+
+do $kie_reference_mode_guard$
+begin
+ begin
+  perform * from executive_visuals.enqueue_video_generation_job(
+   '123e4567-e89b-42d3-a456-426614174000',
+   '323e4567-e89b-42d3-a456-426614174000',
+   'pg-integration-kie-reference-conflict','kie','bytedance/seedance-2',repeat('1',64),
+   jsonb_build_object('projectId','323e4567-e89b-42d3-a456-426614174000',
+     'provider','kie','model','bytedance/seedance-2','requestHash',repeat('1',64),
+     'prompt','Conflicting references','durationSeconds',5,'resolution','720p',
+     'startFrameAssetId','asset-first','referenceAssetIds',jsonb_build_array('asset-reference')),
+   'f23e4567-e89b-42d3-a456-426614174000',1.025,'USD'
+  );
+  raise exception 'Kie first-frame and multimodal reference conflict unexpectedly enqueued';
+ exception when others then
+  if sqlerrm = 'Kie first-frame and multimodal reference conflict unexpectedly enqueued' then raise; end if;
+  if sqlerrm <> 'VIDEO_REFERENCE_MODE_CONFLICT' then raise; end if;
+ end;
+end
+$kie_reference_mode_guard$;
 
 create temporary table replay_context as
 select queued.job_id, queued.budget_reservation_id as reservation_id, queued.idempotent_replay
