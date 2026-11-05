@@ -9,7 +9,7 @@ import {
 import { createProviderAwareCloudVideoWorker } from "./cloud-video-provider-worker.mjs";
 import { createConfiguredVideoProviderAdapters } from "./configured-video-provider-adapters.mjs";
 
-const HOST_RULE=/^(?:\\*\\.)?(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)(?:\\.(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?))*$/i;
+const HOST_RULE=/^(?:\*\.)?(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)(?:\.(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?))*$/i;
 
 /**
  * Build the provider-aware worker against the existing Supabase queue,
