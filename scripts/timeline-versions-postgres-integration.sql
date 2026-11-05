@@ -52,7 +52,7 @@ begin
 
   select * into restored_timeline
   from executive_visuals.ev_restore_timeline_version(
-    timeline_id, owner_id, actor_id, 2, first_version.id,
+    v_timeline_id, owner_id, actor_id, 2, first_version.id,
     'Restore the first cut', repeat('b',64), repeat('a',64)
   );
   if restored_timeline.revision <> 3 or restored_timeline.timeline <> first_doc then
@@ -61,7 +61,7 @@ begin
 
   select * into restored_version
   from executive_visuals.timeline_versions tv
-  where tv.timeline_id = timeline_id and tv.revision = 3;
+  where tv.timeline_id = v_timeline_id and tv.revision = 3;
   if restored_version.parent_version_id <> second_version.id
      or restored_version.restored_from_version_id <> first_version.id then
     raise exception 'Restore lineage must point to both the previous head and restored source.';
@@ -69,7 +69,7 @@ begin
 
   begin
     perform * from executive_visuals.ev_update_timeline_with_version(
-      timeline_id, owner_id, actor_id, 2, 'Stale', second_doc, null,
+      v_timeline_id, owner_id, actor_id, 2, 'Stale', second_doc, null,
       'Stale update', repeat('a',64), repeat('c',64)
     );
     raise exception 'Stale version update unexpectedly succeeded.';
