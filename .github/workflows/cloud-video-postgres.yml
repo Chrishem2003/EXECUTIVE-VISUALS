@@ -48,6 +48,10 @@ jobs:
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261105120000_google_provider_file_upload_attempts.sql
       - name: Verify private Google upload-attempt ledger and quarantine state
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/google-provider-file-upload-attempts-postgres-integration.sql
+      - name: Apply durable Google Drive export-attempt migration
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261105170000_google_drive_export_attempts.sql
+      - name: Verify private Google Drive export-attempt ledger
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/google-drive-export-attempts-postgres-integration.sql
       - name: Apply private GCS registration metadata migration
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261105133000_google_gcs_file_registration.sql
       - name: Verify private GCS registration metadata privileges
