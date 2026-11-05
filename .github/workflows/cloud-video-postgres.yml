@@ -3,7 +3,7 @@ on:
   push:
     branches: ["feat/**"]
   pull_request:
-    branches: ["main", "feat/**"]
+    branches: ["main", "feat/**", "fix/**"]
 concurrency:
   group: cloud-video-postgres-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
