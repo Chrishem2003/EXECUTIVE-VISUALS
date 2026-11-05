@@ -1,4 +1,4 @@
-import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID } from "node:crypto";
 
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const fail=(message,code)=>Object.assign(new Error(message),{code});
@@ -86,7 +86,7 @@ export function createGoogleDriveExportAttemptStore({
     return Object.freeze({attemptKey:row.attempt_key,ownerId:row.owner_id,projectId:row.project_id||null,assetId:row.asset_id,
       parentFolderId:row.parent_folder_id||null,driveFileId:row.drive_file_id,mimeType:row.mime_type,byteSize:Number(row.byte_size),
       sha256:row.sha256,state:row.state,sessionUri:row.encrypted_session_uri?open(row.encrypted_session_uri):null,
-      webViewLink:row.drive_web_view_link||null,attemptCount:Number(row.attempt_count),updatedAt:row.updated_at});
+      webViewLink:row.drive_web_view_link||null,leaseToken:row.lease_token||null,leaseExpiresAt:row.lease_expires_at||null,attemptCount:Number(row.attempt_count),updatedAt:row.updated_at});
   }
   async function get(attemptKey,ownerId){
     ownerId=owner(ownerId);
@@ -116,26 +116,39 @@ export function createGoogleDriveExportAttemptStore({
       }
       return existing;
     },
-    async saveSession({attemptKey,ownerId,sessionUri}){
+    async claim({attemptKey,ownerId}){
       ownerId=owner(ownerId);
       if(typeof attemptKey!=="string"||!/^[a-f0-9]{64}$/.test(attemptKey))throw fail("Drive export attempt key is invalid.","GOOGLE_DRIVE_EXPORT_ATTEMPT_INVALID");
+      const leaseToken=randomUUID(),now=new Date(),expiresAt=new Date(now.getTime()+60*60*1000);
+      const rows=await request("attempt_key=eq."+attemptKey+"&owner_id=eq."+encodeURIComponent(ownerId)+
+        "&or=(lease_expires_at.is.null,lease_expires_at.lt."+encodeURIComponent(now.toISOString())+")&state=neq.COMPLETED&select=*",{
+        method:"PATCH",prefer:"return=representation",body:{lease_token:leaseToken,lease_expires_at:expiresAt.toISOString(),updated_at:now.toISOString()}});
+      return rows.length===1?leaseToken:null;
+    },
+    async saveSession({attemptKey,ownerId,sessionUri,leaseToken}){
+      ownerId=owner(ownerId);
+      if(typeof attemptKey!=="string"||!/^[a-f0-9]{64}$/.test(attemptKey)||typeof leaseToken!=="string"||!UUID.test(leaseToken))
+        throw fail("Drive export attempt lease is invalid.","GOOGLE_DRIVE_EXPORT_ATTEMPT_INVALID");
       const encrypted_session_uri=seal(sessionUri);
-      const rows=await request("attempt_key=eq."+attemptKey+"&owner_id=eq."+encodeURIComponent(ownerId)+"&select=*",{
+      const rows=await request("attempt_key=eq."+attemptKey+"&owner_id=eq."+encodeURIComponent(ownerId)+
+        "&lease_token=eq."+leaseToken+"&select=*",{
         method:"PATCH",prefer:"return=representation",body:{encrypted_session_uri,state:"UPLOADING",updated_at:new Date().toISOString()}});
-      if(rows.length!==1)throw fail("Drive upload session could not be persisted.","GOOGLE_DRIVE_EXPORT_STORE_FAILED");
+      if(rows.length!==1)throw fail("Drive upload session could not be persisted under the active lease.","GOOGLE_DRIVE_EXPORT_STORE_FAILED");
       return map(rows[0]);
     },
-    async mark({attemptKey,ownerId,state,webViewLink=null,errorCode=null}){
+    async mark({attemptKey,ownerId,state,webViewLink=null,errorCode=null,leaseToken=null}){
       ownerId=owner(ownerId);
-      if(typeof attemptKey!=="string"||!/^[a-f0-9]{64}$/.test(attemptKey))throw fail("Drive export attempt key is invalid.","GOOGLE_DRIVE_EXPORT_ATTEMPT_INVALID");
+      if(typeof attemptKey!=="string"||!/^[a-f0-9]{64}$/.test(attemptKey)||
+        (leaseToken!==null&&(typeof leaseToken!=="string"||!UUID.test(leaseToken))))throw fail("Drive export attempt lease is invalid.","GOOGLE_DRIVE_EXPORT_ATTEMPT_INVALID");
       if(webViewLink!==null){let link;try{link=new URL(webViewLink);}catch{throw fail("Drive file link is invalid.","GOOGLE_DRIVE_EXPORT_LINK_INVALID");}
         if(link.protocol!=="https:"||link.origin!=="https://drive.google.com")throw fail("Drive file link is outside the approved origin.","GOOGLE_DRIVE_EXPORT_LINK_INVALID");}
       if(!["OUTCOME_UNKNOWN","COMPLETED","RECONCILIATION_REQUIRED","FAILED"].includes(state))throw fail("Drive export state transition is invalid.","GOOGLE_DRIVE_EXPORT_STATE_INVALID");
-      const patch={state,last_error_code:errorCode,updated_at:new Date().toISOString()};
+      const patch={state,last_error_code:errorCode,lease_token:null,lease_expires_at:null,updated_at:new Date().toISOString()};
       if(state==="COMPLETED"){patch.drive_web_view_link=webViewLink;patch.completed_at=new Date().toISOString();patch.encrypted_session_uri=null;}
-      const rows=await request("attempt_key=eq."+attemptKey+"&owner_id=eq."+encodeURIComponent(ownerId)+"&select=*",{
+      const leaseFilter=leaseToken?"&lease_token=eq."+leaseToken:"";
+      const rows=await request("attempt_key=eq."+attemptKey+"&owner_id=eq."+encodeURIComponent(ownerId)+leaseFilter+"&select=*",{
         method:"PATCH",prefer:"return=representation",body:patch});
-      if(rows.length!==1)throw fail("Drive export state could not be persisted.","GOOGLE_DRIVE_EXPORT_STORE_FAILED");
+      if(rows.length!==1)throw fail("Drive export state could not be persisted under the active lease.","GOOGLE_DRIVE_EXPORT_STORE_FAILED");
       return map(rows[0]);
     }
   });
