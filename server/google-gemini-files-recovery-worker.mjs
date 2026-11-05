@@ -147,7 +147,9 @@ export function createGoogleGeminiFilesRecoveryWorker({
       return Object.freeze({
         scanned: attempts.length,
         reconciled: results.filter(item => item.status === "reconciled").length,
+        quarantined: results.filter(item => item.status.endsWith("_quarantined") || item.status === "ambiguous_multiple_matches").length,
         unresolved: results.filter(item => item.status !== "reconciled").length,
+        retryPending: results.filter(item => item.status === "retry_pending").length,
         results: Object.freeze(results)
       });
     }
