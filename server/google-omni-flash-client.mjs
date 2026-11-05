@@ -221,14 +221,14 @@ export function createGeminiOmniFlashClient({
     const decoder = new TextDecoder();
     let reader;
     const emit = async (block) => {
-      const dataLines = block.split(/\\r?\\n/).filter(line => line.startsWith("data:"));
+      const dataLines = block.split(/\r?\n/).filter(line => line.startsWith("data:"));
       if (!dataLines.length) return;
-      const raw = dataLines.map(line => line.slice(5).trimStart()).join("\\n");
+      const raw = dataLines.map(line => line.slice(5).trimStart()).join("\n");
       if (raw === "[DONE]") return;
       let event;
       try { event = JSON.parse(raw); }
       catch { throw fail("Gemini streaming response contained invalid event JSON.", "GEMINI_OMNI_STREAM_INVALID"); }
-      const type = event.event_type || block.split(/\\r?\\n/).find(line => line.startsWith("event:"))?.slice(6).trim();
+      const type = event.event_type || block.split(/\r?\n/).find(line => line.startsWith("event:"))?.slice(6).trim();
       if (type === "error") {
         const error = fail("Gemini streaming interaction failed.", "GEMINI_OMNI_STREAM_PROVIDER_ERROR");
         error.providerCode = event.error?.code || null;
@@ -318,9 +318,9 @@ export function createGeminiOmniFlashClient({
         }
         buffer += decoder.decode(value, { stream: true });
         let boundary;
-        while ((boundary = buffer.search(/\\r?\\n\\r?\\n/)) >= 0) {
+        while ((boundary = buffer.search(/\r?\n\r?\n/)) >= 0) {
           const block = buffer.slice(0, boundary);
-          const delimiter = buffer.slice(boundary).match(/^\\r?\\n\\r?\\n/)[0];
+          const delimiter = buffer.slice(boundary).match(/^\r?\n\r?\n/)[0];
           buffer = buffer.slice(boundary + delimiter.length);
           await emit(block);
         }
