@@ -32,7 +32,19 @@ Research and implementation snapshot: 2026-11-05.
 - Delete expired provider files best-effort before replacing their mappings.
 - If persistence fails after upload, attempt compensating deletion of the remote file.
 
-An ambiguous upload transport failure is surfaced as `GEMINI_FILE_UPLOAD_OUTCOME_UNKNOWN`. The caller must not blindly restart the upload; reconciliation is a separate release requirement.
+An ambiguous upload transport failure is surfaced as `GEMINI_FILE_UPLOAD_OUTCOME_UNKNOWN`. The caller must not blindly restart the upload.
+
+## Recovery and quarantine
+
+- The durable upload-attempt ledger is stored in `executive_visuals.google_provider_file_upload_attempts`; it is separate from the active provider-file mapping.
+- The opt-in recovery worker scans only stale `UPLOADING`, `OUTCOME_UNKNOWN` and `PROVIDER_CREATED` attempts.
+- If a provider file name is known, recovery retrieves that exact resource. Otherwise it lists provider metadata using bounded pagination and a deterministic display name.
+- Recovery accepts a match only when display name, MIME type, byte size and base64 SHA-256 agree with the original private asset receipt.
+- A complete listing with no match, multiple matches, metadata mismatch, incomplete pagination, unsupported provider state, unverified expiry, or a confirmed 404 for a known resource is persisted as `QUARANTINED`. The attempt is not silently retried.
+- Network, provider and database errors remain retry-pending. If the private mapping is written but the ledger transition fails, the next pass must remain idempotent.
+- Recovery reports scanned, reconciled, quarantined and retry-pending counts to cloud maintenance logs.
+- The worker is opt-in through `GOOGLE_GEMINI_FILES_RECOVERY_ENABLED=true`, with its own `GOOGLE_GEMINI_FILES_RECOVERY_INTERVAL_MS` cadence. Cleanup and recovery have independent opt-in flags and intervals.
+- Provider files expire after 48 hours. Recovery is best-effort and cannot restore bytes from Google; the authoritative media remains in the private Executive Visuals asset store.
 
 ## Size and storage limits
 
@@ -48,7 +60,7 @@ The initial allowlist mirrors the Executive Visuals private asset vault: common 
 
 ## Persistence
 
-Migration: `supabase/migrations/20261105100000_google_provider_files.sql`
+Mapping migration: `supabase/migrations/20261105100000_google_provider_files.sql`\n\nUpload-attempt migration: `supabase/migrations/20261105120000_google_provider_file_upload_attempts.sql`
 
 Repository: `server/google-gemini-files-repository.mjs`
 
@@ -60,7 +72,7 @@ The migration is source-controlled only. It has not been applied to staging or p
 
 1. Complete isolated staging verification with test media: owner/editor/viewer/cross-project authorization, Drive Picker import/export, private asset integrity, upload and exact-scope cache reuse.
 2. Verify the opt-in cleanup schedule against staging provider files, including retry after provider/network failure and idempotent handling of provider 404 responses.
-3. Reconcile ambiguous resumable-upload outcomes before automatic retry; never assume a timed-out upload did not create a provider file.
+3. Complete exact-head verification of the recovery worker, quarantine state transitions and disposable PostgreSQL upload-attempt migration.
 4. Implement and verify the live Gemini Interactions adapter using the existing durable queue, one-shot submission ledger, approval/budget controls, interaction lineage, task reconciliation and private output ingestion.
 5. Enforce same-owner/project/model lineage for `previous_interaction_id` and prove that generated outputs remain private and attributable.
 6. Confirm all checks on the final exact PR head. Supabase Preview must be explicitly enabled or an equivalent isolated staging database must be used before migration or live provider credentials are considered.
@@ -69,7 +81,7 @@ The migration is source-controlled only. It has not been applied to staging or p
 
 - `server/tests/google-gemini-files-gateway.test.mjs`: mocked resumable upload, cache scope, private asset scope, processing state, API key boundary and failure handling.
 - `server/tests/google-gemini-files-repository.test.mjs`: service-role PostgREST headers, exact-scope queries, upsert and deletion.
-- `server/tests/google-gemini-files-composition.test.mjs`: no-network construction and composition wiring.
+- `server/tests/google-gemini-files-composition.test.mjs`: no-network construction and composition wiring.\n- `server/tests/google-gemini-files-recovery-worker.test.mjs`: exact metadata matching, pagination completeness, durable quarantine, known-file 404 handling and retry behavior.
 - `server/tests/google-gemini-files-upload-service.test.mjs`: owner/editor authorization, viewer denial, invalid requests, safe receipts and audit behavior.
 - `server/tests/google-gemini-files-retention-worker.test.mjs`: expiry tombstones, provider deletion, 404 reconciliation and retry behavior.
 - `server/tests/api.test.mjs`: authenticated HTTP route gates and fail-closed disabled behavior.
