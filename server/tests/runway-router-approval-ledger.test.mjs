@@ -14,7 +14,7 @@ const hash = "a".repeat(64);
 const decision = {
   status: "preflighted", dryRun: true, taskCreated: false, billed: false,
   configId: "creative_low_cost", provider: "bytedance", model: "seedance2_5",
-  estimatedCredits: 240, inputHash: hash, budgetCheck: "within_limit"
+  estimatedCredits: 240, inputHash: hash, budgetCheck: "within_limit", maxEstimatedCredits: 250
 };
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), "ev-runway-approval-"));
@@ -51,7 +51,7 @@ test("records only successful dry-run decisions within a bounded credit ceiling"
       {...decision,dryRun:false},
       {...decision,taskCreated:true},
       {...decision,billed:true},
-      {...decision,budgetCheck:"not_checked"},
+      {...decision,budgetCheck:"not_checked"},\n      {...decision,maxEstimatedCredits:500},
       {...decision,inputHash:"bad"},
       {...decision,estimatedCredits:251}
     ]) assert.throws(()=>f.ledger.recordPreflight({ownerId,projectId,actorId:ownerId,decision:bad,maxEstimatedCredits:250}));
