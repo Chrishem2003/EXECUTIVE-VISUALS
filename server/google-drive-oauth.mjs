@@ -195,6 +195,8 @@ export function createGoogleDriveOAuth({
         throw fail("Google OAuth state is invalid, expired, or belongs to another user.", "GOOGLE_OAUTH_STATE_INVALID");
       }
       ownerId = validOwner(pending.ownerId);
+      if (disconnecting.has(ownerId)) throw fail("Google Drive is disconnecting. Reconnect after disconnection completes.", "GOOGLE_OAUTH_NOT_CONNECTED");
+      const generation = generationFor(ownerId);
       const data = await exchange({
         code, client_id: id, client_secret: secret, redirect_uri: callback,
         grant_type: "authorization_code", code_verifier: pending.verifier
@@ -213,10 +215,19 @@ export function createGoogleDriveOAuth({
       if (typeof refreshToken !== "string" || refreshToken.length < 20 || refreshToken.length > 8192) {
         throw fail("Google returned an invalid refresh token.", "GOOGLE_OAUTH_RESPONSE_INVALID");
       }
+      if (disconnecting.has(ownerId) || generationFor(ownerId) !== generation) {
+        throw fail("Google Drive connection changed during authorization. Reconnect before continuing.", "GOOGLE_OAUTH_NOT_CONNECTED");
+      }
+      const encryptedRefreshToken = encryptRefreshToken(refreshToken);
       await connections.upsert({
         ownerId, googleSubject: identity.subject, email: identity.email,
-        encryptedRefreshToken: encryptRefreshToken(refreshToken), grantedScopes: token.scopes
+        encryptedRefreshToken, grantedScopes: token.scopes
       });
+      if (disconnecting.has(ownerId) || generationFor(ownerId) !== generation) {
+        const current = await connections.get(ownerId);
+        if (current?.encryptedRefreshToken === encryptedRefreshToken) await connections.delete(ownerId);
+        throw fail("Google Drive connection changed during authorization. Reconnect before continuing.", "GOOGLE_OAUTH_NOT_CONNECTED");
+      }
       accessCache.set(ownerId, { accessToken: token.accessToken, expiresAt: token.expiresAt });
       return { connected: true, email: identity.email, grantedScopes: token.scopes };
     },
