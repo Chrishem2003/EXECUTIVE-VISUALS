@@ -190,6 +190,29 @@ test("releases the export lease as outcome-unknown after ambiguous session initi
   assert.equal(marks[0].leaseToken, leaseToken);
 });
 
+test("recovers an ambiguous initiation using the same reserved Drive file ID", async () => {
+  const leaseToken = "44444444-4444-4444-8444-444444444444";
+  let record = {
+    attemptKey: "a".repeat(64), ownerId, projectId, assetId, parentFolderId: null,
+    driveFileId: "driveFile_987654321", mimeType: "video/mp4", byteSize: bytes.length,
+    sha256, state: "OUTCOME_UNKNOWN", sessionUri: null
+  };
+  const attempts = {
+    async get() { return record; },
+    async createOrGet() { throw new Error("an existing attempt must not be recreated"); },
+    async claim() { return leaseToken; },
+    async saveSession(value) { record = { ...record, state: "UPLOADING", sessionUri: value.sessionUri }; return record; },
+    async mark(value) { record = { ...record, state: value.state }; return record; }
+  };
+  const h = harness({ attempts });
+  const result = await h.bridge.uploadPrivateAsset({ ownerId, projectId, assetId });
+  assert.equal(result.id, "driveFile_987654321");
+  const init = h.calls.find(x => x.url?.includes("uploadType=resumable"));
+  assert.equal(JSON.parse(init.options.body).id, "driveFile_987654321");
+  assert.equal(h.calls.filter(x => x.url?.includes("/files/generateIds")).length, 0);
+  assert.equal(record.state, "COMPLETED");
+});
+
 test("rejects a durable attempt whose MIME type differs from the private asset", async () => {
   const attempts = {
     async get() { return { ownerId, projectId, assetId, mimeType: "application/pdf",
