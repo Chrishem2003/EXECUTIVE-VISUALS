@@ -160,7 +160,7 @@ async function refresh(){
   const projects=await apiRequest<{projects:CloudProject[]}>("/api/cloud/projects");
   state.cloudProjects=projects.projects||[];
   if(!state.cloudProjectId||!state.cloudProjects.some(p=>p.id===state.cloudProjectId))state.cloudProjectId=state.cloudProjects[0]?.id||"";
-  if(!state.cloudProjectId){state.assets=[];state.cloudTimelines=[];state.timeline=null;state.message="Create a cloud project first, then select it here.";state.status="ready";return;}
+  if(!state.cloudProjectId){state.assets=[];state.cloudTimelines=[];state.cloudRenderJobs=[];state.timeline=null;state.cloudRenderJobId="";state.cloudRenderJobStatus="";state.cloudRenderOutputAssetId="";state.cloudRenderOutputName="";state.cloudRenderOutputUrl="";state.message="Create a cloud project first, then select it here.";state.status="ready";return;}
   const query="?projectId="+encodeURIComponent(state.cloudProjectId);
   const [assets,timelines,jobs]=await Promise.all([
    apiRequest<{assets:Asset[]}>("/api/cloud/assets"+query),
@@ -181,7 +181,8 @@ async function refresh(){
    }else{state.cloudRenderJobId="";state.cloudRenderJobStatus="";}
    const verifiedMaster=state.assets.find(asset=>asset.metadata?.operation==="timeline.render"&&asset.metadata?.timelineId===state.timeline?.id&&Number(asset.metadata?.timelineRevision)===state.serverRevision);
    if(verifiedMaster){state.cloudRenderOutputAssetId=verifiedMaster.id;state.cloudRenderOutputName=verifiedMaster.name;state.cloudRenderOutputUrl="";}
-  }
+   else{state.cloudRenderOutputAssetId="";state.cloudRenderOutputName="";state.cloudRenderOutputUrl="";}
+  }else{state.cloudRenderJobId="";state.cloudRenderJobStatus="";state.cloudRenderOutputAssetId="";state.cloudRenderOutputName="";state.cloudRenderOutputUrl="";}
   state.ffmpeg=true;state.status="ready";state.message=state.timeline?"Cloud timeline loaded. Changes save to the selected private project.":"No saved cloud timeline yet. Create one to begin.";await loadVariantComparison();return;
  }
  const health=await apiRequest<{media:{ffmpeg:boolean}}>("/api/health");state.ffmpeg=health.media.ffmpeg;
