@@ -35,3 +35,20 @@ test("cloud worker supervisor waits for all families and reports individual fail
  await supervisor.start();await supervisor.stop();
  assert.deepEqual(calls,["failed","completed"]);assert.deepEqual(errors,["queue unavailable"]);
 });
+
+test("cloud video worker requires an explicit bounded output-host allowlist",()=>{
+ const videoEnv={...env,CLOUD_MEDIA_WORKER_ENABLED:"false",CLOUD_TIMELINE_WORKER_ENABLED:"false",CLOUD_VIDEO_WORKER_ENABLED:"true"};
+ assert.throws(()=>readCloudWorkerConfig(videoEnv),/output-host allowlist/);
+ assert.throws(()=>readCloudWorkerConfig({...videoEnv,CLOUD_VIDEO_OUTPUT_ALLOWED_HOSTS:"*.runwayml.com,not a host"}),/output-host allowlist/);
+ const config=readCloudWorkerConfig({...videoEnv,CLOUD_VIDEO_OUTPUT_ALLOWED_HOSTS:"*.runwayml.com,cdn.runwayml.com"});
+ assert.equal(config.video,true);
+ assert.deepEqual(config.videoAllowedOutputHosts,["*.runwayml.com","cdn.runwayml.com"]);
+ assert.equal(config.media,false);
+ assert.equal(config.timeline,false);
+});
+test("video worker remains an explicit opt-in and cannot replace the existing media families",()=>{
+ const config=readCloudWorkerConfig(env);
+ assert.equal(config.video,false);
+ assert.equal(config.media,true);
+ assert.equal(config.timeline,true);
+});
