@@ -532,6 +532,29 @@ begin
 end
 $cancel_in_flight$;
 
+-- Only an explicit evidence-backed operator resume clears the cancellation request.
+select executive_visuals.resume_reconciled_video_generation_job(
+ (select job_id from in_flight_cancel_context),
+ '123e4567-e89b-42d3-a456-426614174000',
+ 'operator-review:provider-task-confirmed-running'
+);
+do $cancel_resume$
+declare job_row executive_visuals.jobs;
+begin
+ select * into job_row from executive_visuals.jobs where id=(select job_id from in_flight_cancel_context);
+ if job_row.status <> 'queued' or job_row.cancellation_requested_at is not null then
+  raise exception 'reviewed resume did not clear cancellation request';
+ end if;
+ if not exists (
+  select 1 from executive_visuals.job_events
+  where job_id=job_row.id and event_type='job.reconciled_resumed'
+    and event_data->>'cancellationDecision'='continue_after_review'
+ ) then
+  raise exception 'reviewed cancellation resume decision was not audited';
+ end if;
+end
+$cancel_resume$;
+
 -- A different owner cannot discover or cancel the job through the RPC.
 do $cancel_owner_scope$
 begin
