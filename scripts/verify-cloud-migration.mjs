@@ -256,6 +256,12 @@ if (!videoCancellationSql.includes("request_video_generation_cancellation") ||
     !videoCancellationSql.includes("to service_role")) {
   issues.push("Cloud video cancellation must be owner-scoped, fence new submissions, and expose worker-only cancellation checks.");
 }
+if (!videoCancellationSql.includes("resume_reconciled_video_generation_job") ||
+    !videoCancellationSql.includes("cancellation_requested_at=null") ||
+    !videoCancellationSql.includes("continue_after_review") ||
+    !videoCancellationSql.includes("job.reconciled_resumed")) {
+  issues.push("Resuming after cancellation must clear the request only through a service-role operation that records an explicit review decision.");
+}
 if (!videoBudgetSql.includes("VIDEO_JOB_RESUME_EVIDENCE_REQUIRED") ||
     !videoBudgetSql.includes("p_evidence_reference text")) {
   issues.push("Resuming a quarantined video job must require an evidence reference.");
