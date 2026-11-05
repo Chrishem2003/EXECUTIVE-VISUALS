@@ -49,13 +49,16 @@ test("GCS bootstrap rejects missing encryption and project configuration", async
 });
 
 test("GCS bootstrap rejects cross-project requests, invalid scopes and malformed tokens", async () => {
+  let response = "short";
   class FakeGoogleAuth {
     constructor() {}
-    async getClient() { return { async getAccessToken() { return "short"; } }; }
+    async getClient() { return { async getAccessToken() { return response; } }; }
   }
   const bootstrap = await createGoogleGeminiGcsMirrorBootstrap({ env, GoogleAuthClass: FakeGoogleAuth });
   await assert.rejects(bootstrap.getAccessToken({ projectId: "another-project" }), /project does not match/);
   await assert.rejects(bootstrap.getAccessToken({ scopes: ["not-a-url"] }), /scopes are invalid/);
+  await assert.rejects(bootstrap.getAccessToken(), /invalid access token/);
+  response = "a".repeat(24) + " " + "b".repeat(24);
   await assert.rejects(bootstrap.getAccessToken(), /invalid access token/);
 });
 
