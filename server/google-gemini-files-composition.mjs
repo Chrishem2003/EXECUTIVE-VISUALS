@@ -79,7 +79,9 @@ export function createGoogleGeminiFilesComposition({
   });
   if (typeof mappings.findProviderFile !== "function" ||
       typeof mappings.recordProviderFile !== "function" ||
-      typeof mappings.deleteProviderFileRecord !== "function") {
+      typeof mappings.deleteProviderFileRecord !== "function" ||
+      typeof mappings.createUploadAttempt !== "function" ||
+      typeof mappings.updateUploadAttempt !== "function") {
     throw new Error("Google Gemini Files composition requires the durable provider-file repository.");
   }
 
@@ -88,6 +90,8 @@ export function createGoogleGeminiFilesComposition({
     findProviderFile: args => mappings.findProviderFile(args),
     recordProviderFile: record => mappings.recordProviderFile(record),
     deleteProviderFileRecord: args => mappings.deleteProviderFileRecord(args),
+    createUploadAttempt: attempt => mappings.createUploadAttempt(attempt),
+    updateUploadAttempt: update => mappings.updateUploadAttempt(update),
     maxBytes: Math.min(maxBytes, 2 * 1024 * 1024 * 1024),
     timeoutMs,
     ...gatewayOptions
