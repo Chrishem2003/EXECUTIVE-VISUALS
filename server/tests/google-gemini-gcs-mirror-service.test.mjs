@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { crc32cBase64 } from "../google-cloud-storage-checksum.mjs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -8,7 +10,9 @@ import { createGoogleGeminiGcsMirrorService } from "../google-gemini-gcs-mirror-
 const ownerId = "11111111-1111-4111-8111-111111111111";
 const projectId = "22222222-2222-4222-8222-222222222222";
 const assetId = "33333333-3333-4333-8333-333333333333";
-const sha256 = "a".repeat(64);
+const sourceBytes=Buffer.from([1,2,3,4]);
+const sha256=createHash("sha256").update(sourceBytes).digest("hex");
+const crc32c=crc32cBase64(sourceBytes);
 const token = "oauth-test-access-token-123456";
 const generation = "1762300800000000";
 const metageneration = "3";
@@ -32,17 +36,18 @@ function source(objectName) {
 function gcsMetadata(objectName) {
   return {
     bucket: "private-media-bucket", name: objectName, generation, metageneration,
-    size: "4", contentType: "video/mp4",
+    size: "4", contentType: "video/mp4",crc32c,
     metadata: {
       executivevisualsassetid: assetId, executivevisualsownerid: ownerId,
-      executivevisualsprojectid: projectId, executivevisualssha256: sha256
+      executivevisualsprojectid: projectId, executivevisualssha256: sha256,
+      executivevisualscrc32c:crc32c
     }
   };
 }
 async function setup({ existing = null, authorize = async () => asset } = {}) {
   const root = await mkdtemp(join(tmpdir(), "ev-gcs-service-test-"));
   const filePath = join(root, "source.mp4");
-  await writeFile(filePath, new Uint8Array([1,2,3,4]));
+  await writeFile(filePath, sourceBytes);
   const calls = [], sourceRows = [];
   let active = existing;
   const sourceRepository = {
