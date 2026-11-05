@@ -28,7 +28,7 @@ async function fixture() {
     [ownerId,reviewerId,workerId].includes(actorId);
   const ledger = createRunwayRouterApprovalLedger({
     db, now: () => new Date(clock),
-    authorizeProject: scope => allowed(scope,scope.actorId) && [ownerId,reviewerId].includes(scope.actorId),
+    authorizeProject: scope => allowed(scope,scope.actorId) && scope.actorId === ownerId,
     authorizeApproval: scope => allowed(scope,scope.actorId) && scope.actorId === reviewerId,
     authorizeExecution: scope => allowed(scope,scope.actorId) && scope.actorId === workerId
   });
