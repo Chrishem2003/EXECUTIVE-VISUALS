@@ -43,7 +43,7 @@ test("calls only the documented dry-run endpoint and returns routing estimates w
   assert.equal(result.model, "seedance2_5");
   assert.equal(result.estimatedCredits, 240);
   assert.match(result.inputHash, /^[a-f0-9]{64}$/);
-  assert.equal(result.budgetCheck, "not_checked");
+  assert.equal(result.budgetCheck, "not_checked");\n  assert.equal(result.maxEstimatedCredits, null);
 });
 
 test("quarantines any response contradicting dry-run semantics or omitting routing", async () => {
@@ -92,7 +92,7 @@ test("binds the router decision to a canonical input fingerprint and enforces an
   const client = createRunwayRouterDryRunClient({ env, fetchImpl: async () => response(200, decision) });
   const input = { configId: "creative_low_cost", prompt: "A cinematic sunrise", durationSeconds: 8, resolution: "720p" };
   const accepted = await client.preflight(input, { maxEstimatedCredits: 240 });
-  assert.equal(accepted.budgetCheck, "within_limit");
+  assert.equal(accepted.budgetCheck, "within_limit");\n  assert.equal(accepted.maxEstimatedCredits, 240);
   assert.match(accepted.inputHash, /^[a-f0-9]{64}$/);
   await assert.rejects(() => client.preflight(input, { maxEstimatedCredits: 239 }), error => error.code === "RUNWAY_ROUTER_BUDGET_EXCEEDED");
   await assert.rejects(() => client.preflight(input, { maxEstimatedCredits: -1 }), error => error.code === "RUNWAY_ROUTER_BUDGET_INVALID");
