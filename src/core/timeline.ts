@@ -192,10 +192,10 @@ export function evaluateTimelineAtFrame(timeline:EditorialTimeline,frame:number)
       const sourceTimeSeconds=seconds(clip.sourceRange.start)+(timeSeconds-clipStart);
       let opacity=1;
       if(track.kind==="video"){
-        const fadeOut=clip.transitionToNext?.type==="dip-to-black"?clip.transitionToNext.fadeFrames/fps:0;
+        const fadeOut=clip.transitionToNext&&(clip.transitionToNext.type==="dip-to-black"||clip.transitionToNext.type==="crossfade")?clip.transitionToNext.fadeFrames/fps:0;
         const orderedClips=track.clips.filter(item=>item.enabled).slice().sort((a,b)=>seconds(a.timelineStart)-seconds(b.timelineStart));
         const index=orderedClips.findIndex(item=>item.id===clip.id),previous=orderedClips[index-1];
-        const fadeIn=previous?.transitionToNext?.type==="dip-to-black"?previous.transitionToNext.fadeFrames/fps:0;
+        const fadeIn=previous?.transitionToNext&&(previous.transitionToNext.type==="dip-to-black"||previous.transitionToNext.type==="crossfade")?previous.transitionToNext.fadeFrames/fps:0;
         if(fadeIn>0&&timeSeconds<clipStart+fadeIn)opacity=Math.min(opacity,Math.max(0,(timeSeconds-clipStart)/fadeIn));
         if(fadeOut>0&&timeSeconds>clipEnd-fadeOut)opacity=Math.min(opacity,Math.max(0,(clipEnd-timeSeconds)/fadeOut));
       }
