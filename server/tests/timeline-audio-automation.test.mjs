@@ -71,6 +71,54 @@ test("retimed trim and split preserve source time when start and duration use di
  assert.equal(seconds(second.sourceRange.duration),10);
 });
 
+test("variable-speed curves interpolate and integrate source time deterministically",()=>{
+ const timeline=createTimeline("project","speed-curve","Speed curve",{numerator:24,denominator:1});
+ const withTrack=addTrack(timeline,{id:"video",name:"Video",kind:"video",enabled:true,locked:false,clips:[]});
+ const curve=[{timeSeconds:0,speed:1},{timeSeconds:2,speed:2},{timeSeconds:4,speed:1}];
+ const clip={id:"ramp",assetId:"source",name:"Ramp",sourceRange:{start:rational(0,24),duration:rational(144,24)},timelineStart:rational(0,24),duration:rational(96,24),enabled:true,speed:1,speedCurve:curve};
+ const added=addClip(withTrack,"video",clip);
+ assert.equal(validateTimeline(added).valid,true);
+ assert.equal(evaluateTimelineAtFrame(added,24).activeClips[0].sourceTimeSeconds,1.25);
+ assert.equal(evaluateTimelineAtFrame(added,48).activeClips[0].sourceTimeSeconds,3);
+ assert.equal(evaluateTimelineAtFrame(added,72).activeClips[0].sourceTimeSeconds,4.5);
+ assert.equal(evaluateTimelineAtFrame(added,72).activeClips[0].playbackSpeed,1.5);
+});
+
+test("variable-speed trim and split preserve integrated source intervals and rebase keyframes",()=>{
+ const timeline=createTimeline("project","speed-curve-edit","Speed curve edit",{numerator:24,denominator:1});
+ const withTrack=addTrack(timeline,{id:"video",name:"Video",kind:"video",enabled:true,locked:false,clips:[]});
+ const curve=[{timeSeconds:0,speed:1},{timeSeconds:2,speed:2},{timeSeconds:4,speed:1}];
+ const clip={id:"ramp",assetId:"source",name:"Ramp",sourceRange:{start:rational(0,24),duration:rational(144,24)},timelineStart:rational(0,24),duration:rational(96,24),enabled:true,speed:1,speedCurve:curve};
+ const added=addClip(withTrack,"video",clip);
+ const trimmed=trimClip(added,"video","ramp",24,0).tracks[0].clips[0];
+ assert.equal(seconds(trimmed.sourceRange.start),1.25);
+ assert.equal(seconds(trimmed.sourceRange.duration),4.75);
+ assert.equal(trimmed.speedCurve[0].timeSeconds,0);
+ assert.equal(trimmed.speedCurve.at(-1).timeSeconds,3);
+ const [first,second]=splitClip(added,"video","ramp",48,"ramp-b").tracks[0].clips;
+ assert.equal(seconds(first.sourceRange.duration),3);
+ assert.equal(seconds(second.sourceRange.start),3);
+ assert.equal(seconds(second.sourceRange.duration),3);
+ assert.equal(second.speedCurve[0].speed,2);
+ assert.equal(second.speedCurve.at(-1).timeSeconds,2);
+});
+
+test("timeline validation rejects malformed variable-speed curves",()=>{
+ const timeline=createTimeline("project","speed-curve-invalid","Invalid speed curve",{numerator:24,denominator:1});
+ const withTrack=addTrack(timeline,{id:"video",name:"Video",kind:"video",enabled:true,locked:false,clips:[]});
+ const base={id:"bad-curve",assetId:"source",name:"Bad curve",sourceRange:{start:rational(0,24),duration:rational(48,24)},timelineStart:rational(0,24),duration:rational(48,24),enabled:true,speed:1};
+ const invalidCurves=[
+  [{timeSeconds:1,speed:1},{timeSeconds:2,speed:1}],
+  [{timeSeconds:0,speed:1},{timeSeconds:1,speed:5}],
+  [{timeSeconds:0,speed:1},{timeSeconds:0,speed:2}],
+  [{timeSeconds:0,speed:1},{timeSeconds:3,speed:2}]
+ ];
+ for(const speedCurve of invalidCurves){
+  const candidate={...withTrack,tracks:withTrack.tracks.map(track=>({...track,clips:[{...base,speedCurve}]}))};
+  assert.equal(validateTimeline(candidate).issues.some(issue=>issue.code==="invalid_speed_curve"||issue.code==="timebase_mismatch"),true);
+ }
+});
+
 test("timeline validation rejects non-finite and out-of-range playback speeds",()=>{
  const timeline=createTimeline("project","speed-invalid","Invalid speed",{numerator:24,denominator:1});
  const withTrack=addTrack(timeline,{id:"video",name:"Video",kind:"video",enabled:true,locked:false,clips:[]});
