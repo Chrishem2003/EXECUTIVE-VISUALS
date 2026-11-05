@@ -194,9 +194,49 @@ select executive_visuals.record_video_generation_submission(
  (select job_id from test_context),'video-worker-pg-test','runway-task-pg-test','{"acceptedStatus":"queued"}'::jsonb
 );
 
+-- A completed task cannot settle without a reviewed evidence receipt.
+do $missing_cost_evidence$
+begin
+ begin
+  perform executive_visuals.finish_video_generation_job_with_evidence(
+   (select job_id from test_context),'video-worker-pg-test',
+   jsonb_build_object('providerTaskId','runway-task-pg-test',
+     'assetIds',jsonb_build_array('723e4567-e89b-42d3-a456-426614174000'),
+     'costEvidenceReference','missing-evidence'),
+   0.75,'missing-evidence'
+  );
+  raise exception 'settlement without reviewed cost evidence unexpectedly succeeded';
+ exception when others then
+  if sqlerrm = 'settlement without reviewed cost evidence unexpectedly succeeded' then raise; end if;
+  if sqlerrm <> 'VIDEO_COST_EVIDENCE_RECEIPT_MISMATCH' then raise; end if;
+ end;
+end
+$missing_cost_evidence$;
+
 -- The project owner reviews a task-correlated evidence artifact before settlement.
 reset role;
 set role authenticated;
+do $wrong_cost_evidence_task$
+begin
+ begin
+  insert into executive_visuals.video_generation_cost_evidence(
+   job_id,reservation_id,owner_id,project_id,provider,model,provider_task_id,
+   actual_amount,currency,source_type,evidence_reference,evidence_sha256,reviewer_id
+  ) values (
+   (select job_id from test_context),(select reservation_id from test_context),
+   '123e4567-e89b-42d3-a456-426614174000','323e4567-e89b-42d3-a456-426614174000',
+   'runway','gen4.5','wrong-task-id',0.75,'USD','provider_support',
+   'provider-support://case/wrong-task',repeat('c',64),
+   '123e4567-e89b-42d3-a456-426614174000'
+  );
+  raise exception 'evidence for a different task unexpectedly succeeded';
+ exception when others then
+  if sqlerrm = 'evidence for a different task unexpectedly succeeded' then raise; end if;
+  if sqlerrm <> 'VIDEO_COST_EVIDENCE_TASK_MISMATCH' then raise; end if;
+ end;
+end
+$wrong_cost_evidence_task$;
+
 insert into executive_visuals.video_generation_cost_evidence(
  job_id,reservation_id,owner_id,project_id,provider,model,provider_task_id,
  actual_amount,currency,source_type,evidence_reference,evidence_sha256,
@@ -212,6 +252,19 @@ insert into executive_visuals.video_generation_cost_evidence(
  '123e4567-e89b-42d3-a456-426614174000',
  'Provider confirmed the charge for this exact task ID.'
 );
+do $immutable_cost_evidence$
+begin
+ begin
+  update executive_visuals.video_generation_cost_evidence
+  set reviewer_note='attempted mutation'
+  where job_id=(select job_id from test_context);
+  raise exception 'reviewed cost evidence unexpectedly changed';
+ exception when others then
+  if sqlerrm = 'reviewed cost evidence unexpectedly changed' then raise; end if;
+  if sqlerrm <> 'VIDEO_COST_EVIDENCE_IMMUTABLE' then raise; end if;
+ end;
+end
+$immutable_cost_evidence$;
 reset role;
 set role service_role;
 
