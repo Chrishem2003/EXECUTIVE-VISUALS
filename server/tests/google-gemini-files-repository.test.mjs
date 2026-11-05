@@ -101,6 +101,61 @@ test("deletes a provider-file mapping by its durable ID or file name", async () 
   assert.match(calls[1].url, /google_file_name=eq.files%2Fgemini-123/);
 });
 
+
+test("creates a durable idempotent upload attempt and reads the existing attempt after an ignored duplicate", async () => {
+  const calls = [];
+  const attemptRow = {
+    id: row.id, attempt_key: "b".repeat(64), asset_id: row.asset_id, owner_id: row.owner_id,
+    project_id: row.project_id, mime_type: row.mime_type, byte_size: row.byte_size,
+    sha256: row.sha256, google_display_name: "executive-visuals-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    state: "OUTCOME_UNKNOWN", google_file_name: null, google_file_uri: null,
+    provider_expires_at: null, last_error_code: "GEMINI_FILE_UPLOAD_OUTCOME_UNKNOWN",
+    attempt_count: 1, updated_at: row.updated_at, reconciled_at: null
+  };
+  const repository = createGoogleGeminiFilesRepository({
+    url: base, serviceRoleKey: key,
+    fetchImpl: async (url, options) => {
+      calls.push({ url: String(url), options });
+      if (options.method === "POST") return response(201, []);
+      return response(200, [attemptRow]);
+    }
+  });
+  const result = await repository.createUploadAttempt({
+    attemptKey: attemptRow.attempt_key, displayNameHash: attemptRow.attempt_key,
+    displayName: attemptRow.google_display_name, assetId: row.asset_id, ownerId: row.owner_id,
+    projectId: row.project_id, mimeType: row.mime_type, sizeBytes: row.byte_size, sha256: row.sha256
+  });
+  assert.equal(result.id, row.id);
+  assert.equal(result.state, "OUTCOME_UNKNOWN");
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].options.method, "POST");
+  assert.match(calls[0].url, /google_provider_file_upload_attempts/);
+  assert.match(calls[0].options.headers.prefer, /resolution=ignore-duplicates/);
+  assert.match(calls[1].url, /attempt_key=eq/);
+  assert.equal(calls[0].options.body.includes(key), false);
+});
+
+test("updates an upload attempt through an exact ID and bounded state transition", async () => {
+  let call;
+  const repository = createGoogleGeminiFilesRepository({
+    url: base, serviceRoleKey: key,
+    fetchImpl: async (url, options) => { call = { url: String(url), options }; return response(200, [{ id: row.id }]); }
+  });
+  assert.equal(await repository.updateUploadAttempt({
+    attemptId: row.id, state: "PROVIDER_CREATED",
+    providerFileName: "files/gemini-123",
+    providerFileUri: "https://generativelanguage.googleapis.com/v1beta/files/gemini-123",
+    providerExpiresAt: row.expires_at
+  }), row.id);
+  assert.equal(call.options.method, "PATCH");
+  assert.match(call.url, /google_provider_file_upload_attempts/);
+  const body = JSON.parse(call.options.body);
+  assert.equal(body.state, "PROVIDER_CREATED");
+  assert.equal(body.google_file_name, "files/gemini-123");
+  await assert.rejects(() => repository.updateUploadAttempt({ attemptId: row.id, state: "DELETING" }));
+  await assert.rejects(() => repository.updateUploadAttempt({ state: "COMPLETED" }));
+});
+
 test("requires safe server configuration and bounds the timeout", () => {
   assert.throws(() => createGoogleGeminiFilesRepository({ url: "http://attacker.example", serviceRoleKey: key }));
   assert.throws(() => createGoogleGeminiFilesRepository({ url: base, serviceRoleKey: "" }));
