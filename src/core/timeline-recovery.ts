@@ -128,6 +128,7 @@ function transactionDone(transaction: IDBTransaction): Promise<void> {
 
 export class TimelineRecoveryStore {
   private database: Promise<IDBDatabase> | null = null;
+  private writeQueue: Promise<void> = Promise.resolve();
   constructor(private readonly factory: IDBFactory = globalThis.indexedDB) {
     if (!factory) throw new Error("IndexedDB is not available in this browser.");
   }
@@ -163,20 +164,24 @@ export class TimelineRecoveryStore {
     return this.database;
   }
 
-  async saveDraft(input: Omit<TimelineRecoveryDraft, "checksum">): Promise<TimelineRecoveryDraft> {
-    const draft: TimelineRecoveryDraft = { ...input, checksum: await checksumTimeline(input.snapshot) };
-    const db = await this.open();
-    const transaction = db.transaction(["drafts", "journal"], "readwrite");
-    const done = transactionDone(transaction);
-    transaction.objectStore("drafts").put(draft);
-    transaction.objectStore("journal").add({
-      key: draft.key, projectId: draft.projectId, timelineId: draft.timelineId, mode: draft.mode,
-      baseRevision: draft.baseRevision, localRevision: draft.localRevision, sequence: draft.sequence,
-      updatedAt: draft.updatedAt, reason: draft.reason, checksum: draft.checksum
+  saveDraft(input: Omit<TimelineRecoveryDraft, "checksum">): Promise<TimelineRecoveryDraft> {
+    const write = this.writeQueue.then(async () => {
+      const draft: TimelineRecoveryDraft = { ...input, checksum: await checksumTimeline(input.snapshot) };
+      const db = await this.open();
+      const transaction = db.transaction(["drafts", "journal"], "readwrite");
+      const done = transactionDone(transaction);
+      transaction.objectStore("drafts").put(draft);
+      transaction.objectStore("journal").add({
+        key: draft.key, projectId: draft.projectId, timelineId: draft.timelineId, mode: draft.mode,
+        baseRevision: draft.baseRevision, localRevision: draft.localRevision, sequence: draft.sequence,
+        updatedAt: draft.updatedAt, reason: draft.reason, checksum: draft.checksum
+      });
+      await done;
+      await this.pruneJournal(draft.key);
+      return draft;
     });
-    await done;
-    await this.pruneJournal(draft.key);
-    return draft;
+    this.writeQueue = write.then(() => undefined, () => undefined);
+    return write;
   }
 
   async getDraft(key: string): Promise<TimelineRecoveryDraft | null> {
@@ -208,7 +213,12 @@ export class TimelineRecoveryStore {
     const transaction = db.transaction(["checkpoints", "drafts"], "readwrite");
     const done = transactionDone(transaction);
     transaction.objectStore("checkpoints").put(checkpoint);
-    transaction.objectStore("drafts").delete(draft.key);
+    const draftStore = transaction.objectStore("drafts");
+    const currentDraft = draftStore.get(draft.key);
+    currentDraft.onsuccess = () => {
+      const current = currentDraft.result as TimelineRecoveryDraft | undefined;
+      if (!current || current.sequence <= draft.sequence) draftStore.delete(draft.key);
+    };
     await done;
     await this.pruneCheckpoints(draft.key);
     return checkpoint;
