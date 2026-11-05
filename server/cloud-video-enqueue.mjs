@@ -252,10 +252,11 @@ export function createCloudVideoEnqueue({
           unsupported.code = "VIDEO_GENERATION_UNSUPPORTED_CAPABILITY";
           throw unsupported;
         }
-        if (input.referenceAssetIds !== undefined && (!Array.isArray(input.referenceAssetIds) || input.referenceAssetIds.length > 9)) {
+        const kieReferenceAssetIds = input.referenceImageAssetIds ?? input.referenceAssetIds;
+        if (kieReferenceAssetIds !== undefined && (!Array.isArray(kieReferenceAssetIds) || kieReferenceAssetIds.length > 9)) {
           throw new Error("Kie Seedance 2.0 accepts at most nine reference images.");
         }
-        if (input.endFrameAssetId && !input.startFrameAssetId) {
+        if ((input.endFrameAssetId || input.lastFrameAssetId) && !(input.startFrameAssetId || input.firstFrameAssetId)) {
           throw new Error("A Kie last frame requires a first frame.");
         }
         if ((input.referenceVideoAssetIds?.length || input.referenceAudioAssetIds?.length || input.referenceVideoSeconds || input.referenceAudioSeconds)) {
@@ -283,9 +284,18 @@ export function createCloudVideoEnqueue({
         referenceAssetIds: input.referenceImageAssetIds ?? input.referenceAssetIds
       } : kieEnabled ? {
         ...input,
-        resolution: input.resolution === undefined || input.resolution === "provider_default" ? "720p" : input.resolution
+        resolution: input.resolution === undefined || input.resolution === "provider_default" ? "720p" : input.resolution,
+        startFrameAssetId: input.firstFrameAssetId ?? input.startFrameAssetId,
+        endFrameAssetId: input.lastFrameAssetId ?? input.endFrameAssetId,
+        referenceAssetIds: input.referenceImageAssetIds ?? input.referenceAssetIds
       } : input;
       const normalizedRequest = normalizeVideoGenerationRequest(capabilityInput);
+      if (kieEnabled) enqueueInput = {
+        ...input,
+        startFrameAssetId: input.firstFrameAssetId ?? input.startFrameAssetId,
+        endFrameAssetId: input.lastFrameAssetId ?? input.endFrameAssetId,
+        referenceAssetIds: input.referenceImageAssetIds ?? input.referenceAssetIds
+      };
       assertVideoCapabilities(normalizedRequest, modelRecord.capabilities);
       if (currency !== estimate.currency) throw new Error("Budget approval currency must match the verified provider price.");
       if (reservedAmount < estimate.amount) {
