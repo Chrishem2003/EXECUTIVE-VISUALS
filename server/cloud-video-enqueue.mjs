@@ -3,6 +3,7 @@ const SCHEMA = "executive_visuals";
 const RPC = Object.freeze({
   enqueue: "enqueue_video_generation_job",
   finish: "finish_video_generation_job",
+  finishWithEvidence: "finish_video_generation_job_with_evidence",
   defer: "defer_video_generation_job",
   quarantine: "quarantine_video_generation_job",
   resume: "resume_reconciled_video_generation_job",
@@ -180,10 +181,20 @@ export function createCloudVideoEnqueue({
       } else if (actualAmount !== null) {
         throw new Error("Failed or cancelled video jobs must release their reservation without an actual amount.");
       }
-      const result = await call(RPC.finish, {
-        p_job_id: jobId, p_worker_id: workerId, p_status: status,
-        p_output: output, p_error: error, p_actual_amount: actualAmount
-      });
+      let result;
+      if (["succeeded", "partial"].includes(status)) {
+        const evidenceReference = output?.costEvidenceReference;
+        required(evidenceReference, "Reviewed cost evidence reference", 1000);
+        result = await call(RPC.finishWithEvidence, {
+          p_job_id: jobId, p_worker_id: workerId, p_output: output,
+          p_actual_amount: actualAmount, p_evidence_reference: evidenceReference
+        });
+      } else {
+        result = await call(RPC.finish, {
+          p_job_id: jobId, p_worker_id: workerId, p_status: status,
+          p_output: output, p_error: error, p_actual_amount: actualAmount
+        });
+      }
       if (typeof result !== "boolean") throw new Error("Cloud video job finalization returned an invalid result.");
       return result;
     }
