@@ -293,7 +293,7 @@ export function createGoogleDrivePrivateFileBridge({
             const existing = await readExistingDriveFile(attemptRecord.driveFileId);
             if (existing) return await completedResult(existing);
           }
-          session = attemptRecord.sessionUri ? safeUploadSession(attemptRecord.sessionUri) : null;
+          session = attemptRecord.state === "RECONCILIATION_REQUIRED" ? null : (attemptRecord.sessionUri ? safeUploadSession(attemptRecord.sessionUri) : null);
           if (!session) {
             const existing = await readExistingDriveFile(attemptRecord.driveFileId);
             if (existing) return await completedResult(existing);
@@ -343,6 +343,12 @@ export function createGoogleDrivePrivateFileBridge({
               allowStatuses: [308]
             });
           } catch (error) {
+            if (error?.status === 404) {
+              if (attempts) await attempts.mark({ attemptKey: attemptRecord.attemptKey, ownerId: scope.ownerId,
+                state: "RECONCILIATION_REQUIRED", errorCode: "GOOGLE_DRIVE_UPLOAD_SESSION_EXPIRED" });
+              throw fail("Google Drive resumable session expired; reconcile the reserved file ID before restarting.",
+                "GOOGLE_DRIVE_UPLOAD_SESSION_EXPIRED");
+            }
             if (!["GOOGLE_DRIVE_TIMEOUT", "GOOGLE_DRIVE_REQUEST_FAILED", "GOOGLE_DRIVE_PROVIDER_ERROR"].includes(error?.code) ||
                 (error.status && error.status < 500)) throw error;
             uploadResponse = await request(session, accessToken, {
@@ -396,6 +402,8 @@ export function createGoogleDrivePrivateFileBridge({
           throw fail("Google Drive completed an upload but returned invalid file metadata.", "GOOGLE_DRIVE_RESPONSE_INVALID");
         }
         if (!uploaded || typeof uploaded.id !== "string" || !FILE_ID.test(uploaded.id) ||
+            (attempts && (uploaded.id !== attemptRecord.driveFileId || uploaded.appProperties?.assetId !== assetId ||
+              uploaded.appProperties?.source !== "executive-visuals")) ||
             uploaded.mimeType !== asset.mediaType || Number(uploaded.size) !== bytes.byteLength ||
             typeof uploaded.md5Checksum !== "string" || !/^[a-f0-9]{32}$/i.test(uploaded.md5Checksum) ||
             uploaded.md5Checksum.toLowerCase() !== expectedMd5) {
