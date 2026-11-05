@@ -34,13 +34,13 @@ export function normalizeStoryboardInput(input) {
   const frameRate = Number(input.frameRate || 24);
   if (![24, 25, 30, 50, 60].includes(frameRate)) throw fail("Storyboard frame rate is invalid.", "STORYBOARD_INPUT_INVALID");
   const constraints = clean(input.constraints, 1200);
-  const characters = Array.isArray(input.characters) ? input.characters.slice(0, 20).map(item => {
+  const characters = Array.isArray(input.characters) ? input.characters.slice(0, 12).map(item => {
     if (!record(item)) throw fail("A supplied character reference is malformed.", "STORYBOARD_INPUT_INVALID");
     const id = clean(item.id, 120), name = clean(item.name, 120);
     if (!id || !name) throw fail("Existing character references require an ID and name.", "STORYBOARD_INPUT_INVALID");
     return {
-      id, name, description: clean(item.description, 800), appearance: clean(item.appearance, 500),
-      wardrobe: clean(item.wardrobe, 400), voice: clean(item.voice, 300)
+      id, name, description: clean(item.description, 500), appearance: clean(item.appearance, 300),
+      wardrobe: clean(item.wardrobe, 200), voice: clean(item.voice, 180)
     };
   }) : [];
   if (new Set(characters.map(item => item.id)).size !== characters.length) {
@@ -215,7 +215,7 @@ export async function generateStoryboard({ input, generateText = defaultGenerate
     systemPrompt: SYSTEM_PROMPT,
     prompt: buildPrompt(normalized),
     temperature: 0.3,
-    maxTokens: 3800
+    maxTokens: 4096
   });
   if (!response || typeof response.text !== "string" || !response.text.trim()) {
     throw fail("Storyboard model returned an empty response.", "STORYBOARD_OUTPUT_INVALID");
