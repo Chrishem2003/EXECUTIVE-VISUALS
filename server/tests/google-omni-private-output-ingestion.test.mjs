@@ -59,7 +59,7 @@ test("downloads Google URI output and commits it to owner/project private storag
   assert.equal(result.projectId, context.projectId);
   assert.equal(result.sha256, createHash("sha256").update(bytes).digest("hex"));
   assert.equal(h.calls.filter(call => call.url).length, 2);
-  assert.match(h.calls[0].url, /\\/v1beta\\/files\\/generated-video$/);
+  assert.ok(h.calls[0].url.endsWith("/v1beta/files/generated-video"));
   assert.equal(h.calls[1].url, uri);
   assert.equal(h.calls.find(call => call.url).options.headers["x-goog-api-key"], "server-google-key");
   assert.equal(h.calls[0].options.redirect, "error");
