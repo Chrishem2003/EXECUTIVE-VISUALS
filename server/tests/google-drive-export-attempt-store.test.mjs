@@ -73,6 +73,15 @@ test("marks completed attempts and clears encrypted resumable credentials",async
  assert.equal(done.sessionUri,null);
  assert.equal(h.rows[0].encrypted_session_uri,null);
 });
+test("requires an active lease token for every state mutation",async()=>{
+ const h=harness();
+ await assert.rejects(()=>h.store.mark({attemptKey,ownerId,state:"OUTCOME_UNKNOWN"}),
+  error=>error.code==="GOOGLE_DRIVE_EXPORT_ATTEMPT_INVALID");
+ assert.equal(h.calls.length,0);
+ const leaseToken=await h.store.claim({attemptKey,ownerId});
+ await h.store.mark({attemptKey,ownerId,state:"OUTCOME_UNKNOWN",leaseToken});
+ assert.match(h.calls.at(-1).url,/lease_token=eq\./);
+});
 test("rejects malformed owner, attempt and unsafe session records",async()=>{
  const h=harness();
  await assert.rejects(()=>h.store.get(attemptKey,"bad"),error=>error.code==="GOOGLE_DRIVE_EXPORT_SCOPE_INVALID");
