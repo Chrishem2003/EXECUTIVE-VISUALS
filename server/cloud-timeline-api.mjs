@@ -268,10 +268,12 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
    if(error.code==="CLOUD_PROJECT_NOT_FOUND"||error.code==="CLOUD_PROJECT_ACCESS_DENIED")return response(404,{error:{code:"PROJECT_NOT_FOUND",message:"Project not found."}});
    if(error.code==="CLOUD_PROJECT_REVISION_CONFLICT")return response(409,{error:{code:"REVISION_CONFLICT",message:"Project changed since it was loaded. Refresh and retry."}});
    if(error.code==="CLOUD_ASSET_NOT_FOUND")return response(404,{error:{code:"ASSET_NOT_FOUND",message:"Asset not found."}});
-   if(error.code==="CLOUD_TIMELINE_NOT_FOUND")return response(404,{error:{code:"TIMELINE_NOT_FOUND",message:"Timeline not found."}});\n   if(error.code==="CLOUD_TIMELINE_VERSION_NOT_FOUND")return response(404,{error:{code:"TIMELINE_VERSION_NOT_FOUND",message:"Timeline version not found."}});
+   if(error.code==="CLOUD_TIMELINE_NOT_FOUND")return response(404,{error:{code:"TIMELINE_NOT_FOUND",message:"Timeline not found."}});
+   if(error.code==="CLOUD_TIMELINE_VERSION_NOT_FOUND")return response(404,{error:{code:"TIMELINE_VERSION_NOT_FOUND",message:"Timeline version not found."}});
    if(error.code==="CLOUD_ASSET_ACCESS_DENIED")return response(404,{error:{code:"ASSET_NOT_FOUND",message:"Asset not found."}});
    if(error.code==="CLOUD_TIMELINE_ACCESS_DENIED")return response(404,{error:{code:"TIMELINE_NOT_FOUND",message:"Timeline not found."}});
-   if(error.code==="CLOUD_TIMELINE_REVISION_CONFLICT")return response(409,{error:{code:"REVISION_CONFLICT",message:"Timeline changed since it was loaded. Refresh and retry."}});\n   if(error.code==="CLOUD_TIMELINE_VERSION_CORRUPT"||error.code==="CLOUD_TIMELINE_VERSION_WRITE_FAILED"||error.code==="CLOUD_TIMELINE_VERSION_RESTORE_FAILED")return response(409,{error:{code:error.code,message:error.message}});
+   if(error.code==="CLOUD_TIMELINE_REVISION_CONFLICT")return response(409,{error:{code:"REVISION_CONFLICT",message:"Timeline changed since it was loaded. Refresh and retry."}});
+   if(error.code==="CLOUD_TIMELINE_VERSION_CORRUPT"||error.code==="CLOUD_TIMELINE_VERSION_WRITE_FAILED"||error.code==="CLOUD_TIMELINE_VERSION_RESTORE_FAILED")return response(409,{error:{code:error.code,message:error.message}});
    if(error.code==="CLOUD_TIMELINE_INVALID")return response(422,{error:{code:"TIMELINE_INVALID",message:error.message,issues:error.issues||[]}});
    if(error.status===409)return response(409,{error:{code:"IDEMPOTENCY_CONFLICT",message:"The render request conflicts with an existing job."}});
    throw error;
