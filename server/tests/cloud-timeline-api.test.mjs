@@ -13,6 +13,9 @@ function setup({canWrite=true,projectId=project,existing=[],runwayWorkflow=null,
   async create(input){created.push(input);return{...timeline,...input,revision:1};},
   async get(input){calls.push(["get",input]);return input.ownerId===owner?timeline:null;},
   async list(input){calls.push(["timeline-list",input]);return[{...timeline}];},
+  async listVersions(input){calls.push(["version-list",input]);return[{id:"623e4567-e89b-42d3-a456-426614174000",revision:1,parentVersionId:null}];},
+  async getVersion(input){calls.push(["version-get",input]);return{id:input.versionId,timelineId,revision:1,document:timelineDoc,otio:null};},
+  async restore(input){calls.push(["restore",input]);if(revisionConflict){const error=new Error("stale revision");error.code="CLOUD_TIMELINE_REVISION_CONFLICT";throw error;}return{...timeline,revision:input.expectedRevision+1,timeline:timelineDoc};},
   async update(input){calls.push(["update",input]);if(revisionConflict){const error=new Error("stale revision");error.code="CLOUD_TIMELINE_REVISION_CONFLICT";throw error;}return{...timeline,revision:input.expectedRevision+1,timeline:input.timeline};}
  };
  const fetchImpl=async(url,options)=>{calls.push(["fetch",url,options]);if(url.includes("/jobs")&&options.method==="POST")return{ok:true,status:201,async text(){return JSON.stringify([{id:JSON.parse(options.body).id,owner_id:owner,project_id:projectId,job_type:"timeline.render",status:"queued",input:JSON.parse(options.body).input}])}};if(url.includes("/jobs?"))return{ok:true,status:200,async text(){return JSON.stringify(existing)}};return{ok:true,status:201,async text(){return""}};};
@@ -194,4 +197,31 @@ test("Runway job status endpoint does not reveal jobs outside the verified owner
  const result=await f.api.handle({method:"GET",path:"/api/cloud/video/runway/jobs/623e4567-e89b-42d3-a456-426614174000",ownerId:owner});
  assert.equal(result.status,404);
  assert.equal(result.body.error.code,"VIDEO_JOB_NOT_FOUND");
+});
+
+
+test("cloud timeline API exposes authorized version lists and snapshot inspection",async()=>{
+ const f=setup();
+ const list=await f.api.handle({method:"GET",path:"/api/cloud/timelines/"+timelineId+"/versions",ownerId:owner});
+ assert.equal(list.status,200);
+ assert.equal(list.body.versions[0].revision,1);
+ assert.equal(f.calls.find(call=>call[0]==="version-list")[1].ownerId,owner);
+ const detail=await f.api.handle({method:"GET",path:"/api/cloud/timelines/"+timelineId+"/versions/623e4567-e89b-42d3-a456-426614174000",ownerId:owner});
+ assert.equal(detail.status,200);
+ assert.equal(detail.body.version.document.width,1280);
+});
+
+test("cloud timeline API restores a selected version using the current expected revision",async()=>{
+ const f=setup();
+ const restored=await f.api.handle({method:"POST",path:"/api/cloud/timelines/"+timelineId+"/restore",ownerId:owner,body:{expectedRevision:2,sourceVersionId:"623e4567-e89b-42d3-a456-426614174000",summary:"Restore approved cut"}});
+ assert.equal(restored.status,200);
+ assert.equal(f.calls.find(call=>call[0]==="restore")[1].expectedRevision,2);
+ assert.equal(f.calls.find(call=>call[0]==="restore")[1].sourceVersionId,"623e4567-e89b-42d3-a456-426614174000");
+});
+
+test("cloud timeline restore returns a conflict when another editor advances the revision",async()=>{
+ const f=setup({revisionConflict:true});
+ const result=await f.api.handle({method:"POST",path:"/api/cloud/timelines/"+timelineId+"/restore",ownerId:owner,body:{expectedRevision:1,sourceVersionId:"623e4567-e89b-42d3-a456-426614174000"}});
+ assert.equal(result.status,409);
+ assert.equal(result.body.error.code,"REVISION_CONFLICT");
 });
