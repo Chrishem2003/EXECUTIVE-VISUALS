@@ -276,8 +276,6 @@ if (issues.length) {
 } else {
   console.log(`Cloud migration guard passed: ${tables.length} RLS tables, immutable run snapshots, private storage, and server-only job/audit writes.`);
 }
-") ||
-    !googleGcsAssetSourcesSql.includes("metageneration ~ '^[0-9]{1,30}
 const tables = ["projects","project_members","project_workspace_documents","workflows","workflow_runs","workflow_node_runs","timelines","assets","jobs","job_events","consents","reviews","audit_events"];
 for (const table of tables) {
   if (!sql.includes(`alter table executive_visuals.${table} enable row level security;`)) {
