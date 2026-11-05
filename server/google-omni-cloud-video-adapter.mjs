@@ -153,7 +153,8 @@ export function createGoogleOmniCloudVideoIntegration({
     const result = await outputIngestor.ingestInteraction(task.rawInteraction, {
       ownerId: job.owner_id,
       projectId: job.project_id || null,
-      jobId: job.id
+      jobId: job.id,
+      requestHash: job.input?.requestHash || null
     });
     if (!result || typeof result.assetId !== "string" || !result.assetId) {
       throw fail("Google Omni private output ingestion did not return an asset ID.", "GEMINI_OMNI_OUTPUT_INGEST_FAILED");
