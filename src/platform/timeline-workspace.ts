@@ -1,6 +1,6 @@
 import { apiRequest } from "../core/api";
 import { AudioPreviewEngine, decibelsToGain, type AudioPreviewTrackInput } from "../core/audio-preview";
-import { evaluateAudioAutomation } from "../core/audio-automation";
+import { evaluateAudioAutomation } from "../core/audio-automation.ts";
 import { analyzeTimelineQuality } from "../core/timeline-quality";
 import { buildProductionReadinessReport } from "../core/production-readiness";
 import { assessSourceMediaEvidence } from "../core/source-media-evidence";
