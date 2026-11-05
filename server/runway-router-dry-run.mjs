@@ -218,11 +218,21 @@ export function createRunwayRouterDryRunClient({
       }
       if (response.status === 429) throw fail("Runway rate limit reached.", "RUNWAY_RATE_LIMITED");
       if (response.status >= 500) throw fail("Runway returned a temporary server error.", "RUNWAY_SERVER_ERROR");
-      if (!response.ok) throw fail("Runway rejected the router preflight (HTTP " + response.status + ").", "RUNWAY_REQUEST_REJECTED");
       const raw = await response.text();
       if (Buffer.byteLength(raw) > 1024 * 1024) throw fail("Runway router response exceeded the 1 MB limit.", "RUNWAY_ROUTER_PREFLIGHT_INVALID_RESPONSE");
       let result;
-      try { result = JSON.parse(raw); } catch { throw fail("Runway returned invalid router JSON.", "RUNWAY_ROUTER_PREFLIGHT_INVALID_RESPONSE"); }
+      try { result = raw ? JSON.parse(raw) : null; }
+      catch {
+        if (!response.ok) throw fail("Runway rejected the router preflight (HTTP " + response.status + ").", "RUNWAY_REQUEST_REJECTED");
+        throw fail("Runway returned invalid router JSON.", "RUNWAY_ROUTER_PREFLIGHT_INVALID_RESPONSE");
+      }
+      if (!response.ok) {
+        if (response.status === 400 && result?.code === "no_eligible_model") {
+          throw fail("Runway Model Router found no eligible model for this input and configuration.", "RUNWAY_NO_ELIGIBLE_MODEL");
+        }
+        if (response.status === 404) throw fail("The saved Runway Model Router configuration is unavailable to this account.", "RUNWAY_ROUTER_CONFIG_NOT_FOUND");
+        throw fail("Runway rejected the router preflight (HTTP " + response.status + ").", "RUNWAY_REQUEST_REJECTED");
+      }
       const decision = normalizeDecision(result, payload.configId, requestFingerprint);
       if (maxEstimatedCredits !== undefined && decision.estimatedCredits > maxEstimatedCredits) {
         throw fail("Runway router estimate exceeds the approved credit ceiling; no generation was created.", "RUNWAY_ROUTER_BUDGET_EXCEEDED");
