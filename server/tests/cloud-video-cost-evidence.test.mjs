@@ -86,7 +86,7 @@ test("cost evidence resolver requires an owned completed task and safe server en
     url, serviceRoleKey: secret, fetchImpl: async () => { calls++; return response([row]); }
   });
   await assert.rejects(resolve({ job, providerTaskId: taskId, task: { status: "running" } }), /completed owned provider task/);
-  await assert.rejects(() => createCloudVideoCostEvidenceResolver({
+  assert.throws(() => createCloudVideoCostEvidenceResolver({
     url: "http://remote.example", serviceRoleKey: secret
   }), /HTTPS/);
   assert.equal(calls, 0);
