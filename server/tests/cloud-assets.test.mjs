@@ -124,3 +124,20 @@ test("does not list project assets without read authorization",async()=>{
  await assert.rejects(()=>f.repo.list({ownerId,projectId}),e=>e.code==="CLOUD_ASSET_ACCESS_DENIED");
  assert.equal(f.calls.length,0);
 });
+
+test("soft-deletes audio waveform sidecars with the original private object",async()=>{
+ const f=fixture();f.row.media_type="audio/wav";
+ const result=await f.repo.softDelete({ownerId,assetId});
+ assert.equal(result.deleted,true);assert.equal(result.storageRemoved,true);
+ assert.deepEqual(f.storageCalls.map(x=>x.path),[
+  f.row.object_path,
+  projectId+"/"+assetId+"/waveform-v1-"+f.row.sha256+".png"
+ ]);
+ assert.deepEqual(f.storageCalls.map(x=>x.op),["remove","remove"]);
+});
+test("reports pending cleanup when waveform sidecar removal fails after source deletion",async()=>{
+ const f=fixture({removeError:true});f.row.media_type="audio/wav";
+ const result=await f.repo.softDelete({ownerId,assetId});
+ assert.equal(result.deleted,true);assert.equal(result.storageRemoved,false);assert.equal(result.cleanupPending,true);
+ assert.equal(f.storageCalls.length,2);
+});
