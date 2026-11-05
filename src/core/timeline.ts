@@ -65,12 +65,14 @@ export function trimClip(timeline:EditorialTimeline,trackId:string,clipId:string
   const remaining=clip.duration.value-removeLeft-removeRight;
   if(remaining<=0)throw new Error("Trim would remove the entire clip.");
   const speed=Number(clip.speed??1);
-  const sourceLeft=Math.round(removeLeft/fps*speed*clip.sourceRange.start.rate);
-  const sourceRight=Math.round(removeRight/fps*speed*clip.sourceRange.duration.rate);
+  const sourceLeftSeconds=removeLeft/fps*speed,sourceRightSeconds=removeRight/fps*speed;
+  const sourceStartOffset=Math.round(sourceLeftSeconds*clip.sourceRange.start.rate);
+  const sourceLeft=Math.round(sourceLeftSeconds*clip.sourceRange.duration.rate);
+  const sourceRight=Math.round(sourceRightSeconds*clip.sourceRange.duration.rate);
   const sourceRemaining=clip.sourceRange.duration.value-sourceLeft-sourceRight;
   if(sourceRemaining<=0)throw new Error("Trim would remove the entire source range.");
   const automationOffset=removeLeft/fps,automation=clip.audioAutomation?.length?[{timeSeconds:0,gainDb:evaluateAudioAutomation(clip.audioAutomation,automationOffset,"gainDb",clip.gainDb??0),pan:evaluateAudioAutomation(clip.audioAutomation,automationOffset,"pan",clip.pan??0),interpolation:"linear" as const},...clip.audioAutomation.filter(point=>point.timeSeconds>automationOffset).map(point=>({...point,timeSeconds:point.timeSeconds-automationOffset}))]:undefined;
-  const changed={...clip,sourceRange:{start:rational(clip.sourceRange.start.value+sourceLeft,clip.sourceRange.start.rate),duration:rational(sourceRemaining,clip.sourceRange.duration.rate)},timelineStart:rational(clip.timelineStart.value+removeLeft,clip.timelineStart.rate),duration:rational(remaining,fps),audioAutomation:automation};
+  const changed={...clip,sourceRange:{start:rational(clip.sourceRange.start.value+sourceStartOffset,clip.sourceRange.start.rate),duration:rational(sourceRemaining,clip.sourceRange.duration.rate)},timelineStart:rational(clip.timelineStart.value+removeLeft,clip.timelineStart.rate),duration:rational(remaining,fps),audioAutomation:automation};
   return {...timeline,revision:timeline.revision+1,updatedAt:new Date().toISOString(),tracks:timeline.tracks.map(item=>item.id===trackId?{...item,clips:item.clips.map(c=>c.id===clipId?changed:c)}:item)};
 }
 export function splitClip(timeline:EditorialTimeline,trackId:string,clipId:string,atFrame:number,newClipId:string):EditorialTimeline{
@@ -83,7 +85,9 @@ export function splitClip(timeline:EditorialTimeline,trackId:string,clipId:strin
   if(offset<=0||offset>=duration)throw new Error("Split point must be inside the clip.");
   if(track.clips.some(item=>item.id===newClipId))throw new Error("New clip ID already exists.");
   const fps=timeline.frameRate.numerator/timeline.frameRate.denominator;
-  const sourceOffset=Math.round(offset/fps*Number(clip.speed??1)*clip.sourceRange.start.rate);
+  const sourceOffsetSeconds=offset/fps*Number(clip.speed??1);
+  const sourceStartOffset=Math.round(sourceOffsetSeconds*clip.sourceRange.start.rate);
+  const sourceOffset=Math.round(sourceOffsetSeconds*clip.sourceRange.duration.rate);
   const sourceRemaining=clip.sourceRange.duration.value-sourceOffset;
   if(sourceRemaining<=0)throw new Error("Split point is outside the source range.");
   const splitSeconds=offset/fps,points=clip.audioAutomation||[];
@@ -91,7 +95,7 @@ export function splitClip(timeline:EditorialTimeline,trackId:string,clipId:strin
   const firstAutomation=points.length?[...points.filter(point=>point.timeSeconds<splitSeconds),{timeSeconds:splitSeconds,gainDb:evaluateAudioAutomation(points,splitSeconds,"gainDb",clip.gainDb??0),pan:evaluateAudioAutomation(points,splitSeconds,"pan",clip.pan??0),interpolation:"linear" as const}]:undefined;
   const secondAutomation:AudioAutomationPoint[]|undefined=points.length?[...boundary!,...points.filter(point=>point.timeSeconds>splitSeconds).map(point=>({...point,timeSeconds:point.timeSeconds-splitSeconds}))]:undefined;
   const first={...clip,duration:rational(offset,fps),sourceRange:{...clip.sourceRange,duration:rational(sourceOffset,clip.sourceRange.duration.rate)},audioAutomation:firstAutomation};
-  const second={...clip,id:newClipId,name:clip.name+" · B",timelineStart:rational(start+offset,fps),duration:rational(duration-offset,fps),sourceRange:{start:rational(clip.sourceRange.start.value+sourceOffset,clip.sourceRange.start.rate),duration:rational(sourceRemaining,clip.sourceRange.duration.rate)},audioAutomation:secondAutomation};
+  const second={...clip,id:newClipId,name:clip.name+" · B",timelineStart:rational(start+offset,fps),duration:rational(duration-offset,fps),sourceRange:{start:rational(clip.sourceRange.start.value+sourceStartOffset,clip.sourceRange.start.rate),duration:rational(sourceRemaining,clip.sourceRange.duration.rate)},audioAutomation:secondAutomation};
   return {...timeline,revision:timeline.revision+1,updatedAt:new Date().toISOString(),tracks:timeline.tracks.map(item=>item.id===trackId?{...item,clips:item.clips.flatMap(c=>c.id===clipId?[first,second]:[c])}:item)};
 }
 export function moveClip(timeline:EditorialTimeline,fromTrackId:string,clipId:string,toTrackId:string,toFrame:number):EditorialTimeline{
