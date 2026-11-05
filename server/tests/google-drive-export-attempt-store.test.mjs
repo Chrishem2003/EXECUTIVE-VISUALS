@@ -18,7 +18,9 @@ function harness(){
     return new Response(JSON.stringify(rows.filter(x=>x.attempt_key===attemptKey)),{status:201});
    }
    if(options.method==="PATCH"){
-    const body=JSON.parse(options.body), target=rows[0];
+    const body=JSON.parse(options.body), target=rows[0], query=String(url);
+    const leaseMatch=query.match(/[?&]lease_token=eq\.([0-9a-f-]+)/);
+    if(leaseMatch&&target.lease_token!==leaseMatch[1])return new Response("[]",{status:200});
     Object.assign(target,body);
     return new Response(JSON.stringify([target]),{status:200});
    }
@@ -81,6 +83,14 @@ test("requires an active lease token for every state mutation",async()=>{
  const leaseToken=await h.store.claim({attemptKey,ownerId});
  await h.store.mark({attemptKey,ownerId,state:"OUTCOME_UNKNOWN",leaseToken});
  assert.match(h.calls.at(-1).url,/lease_token=eq\./);
+});
+test("prevents a stale worker from mutating an attempt after its lease changes",async()=>{
+ const h=harness();
+ await h.store.claim({attemptKey,ownerId});
+ await assert.rejects(()=>h.store.mark({attemptKey,ownerId,state:"OUTCOME_UNKNOWN",
+  leaseToken:"55555555-5555-4555-8555-555555555555"}),
+  error=>error.code==="GOOGLE_DRIVE_EXPORT_STORE_FAILED");
+ assert.equal(h.rows[0].state,"PREPARED");
 });
 test("rejects malformed owner, attempt and unsafe session records",async()=>{
  const h=harness();
