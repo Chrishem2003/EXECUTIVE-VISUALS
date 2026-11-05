@@ -83,7 +83,8 @@ export function createCloudVideoEnqueue({
   return Object.freeze({
     async enqueue({
       ownerId, projectId = null, idempotencyKey, provider, model, requestHash,
-      input, budgetApprovalId, reservedAmount, currency
+      input, budgetApprovalId, reservedAmount, currency,
+      routerApprovalId, routerInputHash, routerConfigId
     } = {}) {
       required(ownerId, "Owner ID");
       if (projectId !== null) required(projectId, "Project ID");
@@ -103,6 +104,24 @@ export function createCloudVideoEnqueue({
       if (typeof currency !== "string" || !/^[A-Z]{3}$/.test(currency)) throw new Error("Currency must be a three-letter uppercase code.");
       const runwayEnabled = provider === "runway" && model === "gen4.5";
       const googleEnabled = provider === "google" && model === "gemini-omni-1.1-flash";
+      let enqueueInput = input;
+      if (runwayEnabled) {
+        if (typeof routerApprovalId !== "string" || !/^[0-9a-f-]{36}$/i.test(routerApprovalId) ||
+            typeof routerInputHash !== "string" || !/^[a-f0-9]{64}$/.test(routerInputHash) ||
+            typeof routerConfigId !== "string" || !/^[a-z][a-z0-9_-]{0,63}$/.test(routerConfigId) ||
+            !/^[0-9a-f-]{36}$/i.test(budgetApprovalId)) {
+          const approval = new Error("Runway generation requires a PostgreSQL-backed, request-bound human approval.");
+          approval.code = "RUNWAY_APPROVAL_REQUIRED";
+          throw approval;
+        }
+        enqueueInput = {
+          ...input,
+          routerApprovalId,
+          routerInputHash,
+          routerConfigId,
+          budgetApprovalId
+        };
+      }
       if (!runwayEnabled && !googleEnabled) {
         const unsupported = new Error("The selected provider/model does not have an enabled, verified cloud execution adapter.");
         unsupported.code = "VIDEO_GENERATION_UNSUPPORTED_CAPABILITY";
@@ -217,7 +236,7 @@ export function createCloudVideoEnqueue({
       }
       const rows = await call(RPC.enqueue, {
         p_owner_id: ownerId, p_project_id: projectId, p_idempotency_key: idempotencyKey,
-        p_provider: provider, p_model: model, p_request_hash: requestHash, p_input: input,
+        p_provider: provider, p_model: model, p_request_hash: requestHash, p_input: enqueueInput,
         p_budget_approval_id: budgetApprovalId, p_reserved_amount: reservedAmount, p_currency: currency
       });
       if (!Array.isArray(rows) || rows.length !== 1 ||
