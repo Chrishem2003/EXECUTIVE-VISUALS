@@ -8,8 +8,17 @@ test("cloud worker config requires a selected worker family and server credentia
  assert.throws(()=>readCloudWorkerConfig({...env,CLOUD_MEDIA_WORKER_ENABLED:"false",CLOUD_TIMELINE_WORKER_ENABLED:"false"}),/at least one/);
  assert.throws(()=>readCloudWorkerConfig({...env,SUPABASE_SERVICE_ROLE_KEY:""}),/server-side Supabase credentials/);
 });
-test("cloud worker process fails closed if the not-yet-composed video family is requested",()=>{
- assert.throws(()=>readCloudWorkerConfig({...env,CLOUD_VIDEO_WORKER_ENABLED:"true"}),/not yet released/);
+test("cloud video worker requires isolated staging acceptance, explicit provider opt-in and exact output hosts",()=>{
+ const requested={...env,CLOUD_VIDEO_WORKER_ENABLED:"true"};
+ assert.throws(()=>readCloudWorkerConfig(requested),/isolated-staging acceptance/);
+ const accepted={...requested,CLOUD_VIDEO_WORKER_STAGING_ACCEPTED:"true"};
+ assert.throws(()=>readCloudWorkerConfig(accepted),/Runway remote-execution opt-in/);
+ const optedIn={...accepted,RUNWAY_VIDEO_ENABLED:"true",RUNWAY_VIDEO_ALLOW_REMOTE:"true",RUNWAY_API_KEY:"server-only",RUNWAY_VIDEO_OUTPUT_HOSTS:"cdn.example.com,media.example.com"};
+ const config=readCloudWorkerConfig(optedIn);
+ assert.equal(config.video,true);
+ assert.deepEqual(config.outputHosts,["cdn.example.com","media.example.com"]);
+ assert.throws(()=>readCloudWorkerConfig({...optedIn,RUNWAY_VIDEO_OUTPUT_HOSTS:"*.example.com"}),/exact-host/);
+ assert.throws(()=>readCloudWorkerConfig({...optedIn,RUNWAY_VIDEO_OUTPUT_HOSTS:""}),/exact-host/);
 });
 
 test("cloud worker config validates lease, heartbeat, polling and byte limits",()=>{
