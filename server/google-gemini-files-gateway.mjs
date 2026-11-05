@@ -415,11 +415,25 @@ export function createGoogleGeminiFilesGateway({
       return removeGoogleFile(name);
     },
     async getProviderFile(name) {
+      if (typeof name !== "string" || !FILE_NAME.test(name)) {
+        throw fail("Google file resource name is invalid.", "GEMINI_FILE_RESPONSE_INVALID");
+      }
       const file = await getGoogleFile(name);
+      const sizeBytes = Number(file?.sizeBytes);
+      const hash = file?.sha256Hash;
+      if (!plain(file) || file.name !== name ||
+          typeof file.displayName !== "string" || file.displayName.length > 512 ||
+          typeof file.uri !== "string" || !FILE_URI.test(file.uri) ||
+          typeof file.mimeType !== "string" || !Number.isSafeInteger(sizeBytes) || sizeBytes < 1 ||
+          typeof hash !== "string" || !/^[A-Za-z0-9+/]+={0,2}$/.test(hash) ||
+          Buffer.from(hash, "base64").byteLength !== 32 ||
+          (file.expirationTime !== undefined && (typeof file.expirationTime !== "string" || !Number.isFinite(Date.parse(file.expirationTime))))) {
+        throw fail("Google Files API returned invalid metadata for the requested resource.", "GEMINI_FILE_RESPONSE_INVALID");
+      }
       return Object.freeze({
-        name: file.name, displayName: file.displayName || null, uri: file.uri,
-        mimeType: file.mimeType, state: String(file.state || "STATE_UNSPECIFIED").toUpperCase(),
-        sizeBytes: Number(file.sizeBytes), sha256Hash: file.sha256Hash || null,
+        name: file.name, displayName: file.displayName, uri: file.uri,
+        mimeType: safeMime(file.mimeType), state: String(file.state || "STATE_UNSPECIFIED").toUpperCase(),
+        sizeBytes, sha256Hash: hash,
         expirationTime: file.expirationTime || null
       });
     },
