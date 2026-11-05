@@ -30,8 +30,8 @@ begin
   if first_timeline.revision <> 1 then raise exception 'Initial timeline revision was not 1.'; end if;
 
   select * into first_version
-  from executive_visuals.timeline_versions
-  where timeline_id = timeline_id and revision = 1;
+  from executive_visuals.timeline_versions tv
+  where tv.timeline_id = timeline_id and tv.revision = 1;
   if first_version.id is null or first_version.content_hash <> repeat('a',64) then
     raise exception 'Initial immutable version was not created.';
   end if;
@@ -44,8 +44,8 @@ begin
   if second_timeline.revision <> 2 then raise exception 'Versioned update did not increment revision.'; end if;
 
   select * into second_version
-  from executive_visuals.timeline_versions
-  where timeline_id = timeline_id and revision = 2;
+  from executive_visuals.timeline_versions tv
+  where tv.timeline_id = timeline_id and tv.revision = 2;
   if second_version.parent_version_id <> first_version.id then
     raise exception 'Version update did not preserve its parent lineage.';
   end if;
@@ -60,8 +60,8 @@ begin
   end if;
 
   select * into restored_version
-  from executive_visuals.timeline_versions
-  where timeline_id = timeline_id and revision = 3;
+  from executive_visuals.timeline_versions tv
+  where tv.timeline_id = timeline_id and tv.revision = 3;
   if restored_version.parent_version_id <> second_version.id
      or restored_version.restored_from_version_id <> first_version.id then
     raise exception 'Restore lineage must point to both the previous head and restored source.';
