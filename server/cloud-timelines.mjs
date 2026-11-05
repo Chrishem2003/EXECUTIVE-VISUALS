@@ -50,7 +50,7 @@ export function createCloudTimelineRepository({url=process.env.SUPABASE_URL,serv
       if(body!==null)headers["content-type"]="application/json";
       const response=await fetchImpl(base+"/rest/v1/"+path,{method,headers,...(body===null?{}:{body:JSON.stringify(body)}),signal:controller.signal});
       const raw=await response.text();let data=null;if(raw){try{data=JSON.parse(raw);}catch{if(response.ok)throw new Error("Cloud timeline service returned invalid JSON.");}}
-      if(!response.ok){const error=new Error("Cloud timeline request failed (HTTP "+response.status+").");error.code="CLOUD_TIMELINE_HTTP_"+response.status;error.status=response.status;throw error;}
+      if(!response.ok){const error=new Error("Cloud timeline request failed (HTTP "+response.status+").");error.code=response.status===409?"CLOUD_TIMELINE_REVISION_CONFLICT":response.status===404?"CLOUD_TIMELINE_NOT_FOUND":"CLOUD_TIMELINE_HTTP_"+response.status;error.status=response.status;throw error;}
       return data;
     }catch(error){if(error?.name==="AbortError"){const timeout=new Error("Cloud timeline request timed out.");timeout.code="CLOUD_TIMELINE_TIMEOUT";throw timeout;}throw error;}
     finally{clearTimeout(timer);}
