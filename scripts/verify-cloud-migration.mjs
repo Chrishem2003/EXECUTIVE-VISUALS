@@ -6,6 +6,7 @@ const checkpointSql = await readFile(resolve(process.cwd(), "supabase/migrations
 const videoSubmissionSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261104120000_cloud_video_submission_ledger.sql"), "utf8");
 const videoBudgetSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261104143000_cloud_video_budget_enqueue.sql"), "utf8");
 const videoCostEvidenceSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261105100000_video_generation_cost_evidence.sql"), "utf8");
+const videoCancellationSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261105120000_cloud_video_cancellation.sql"), "utf8");
 const issues = [];
 const tables = ["projects","project_members","project_workspace_documents","workflows","workflow_runs","workflow_node_runs","timelines","assets","jobs","job_events","consents","reviews","audit_events"];
 for (const table of tables) {
@@ -245,6 +246,15 @@ if ((videoCostEvidenceSql.match(/security invoker/gi) || []).length !== 3 ||
     !/validate_video_generation_cost_evidence\(\)[\s\S]*?security definer\s+set search_path = pg_catalog, executive_visuals/i.test(videoCostEvidenceSql) ||
     !videoCostEvidenceSql.includes("auth.uid()")) {
   issues.push("Only the owner-scoped evidence trigger may use definer rights, with a fixed search path and authenticated reviewer checks; settlement RPCs must remain invoker-rights.");
+}
+if (!videoCancellationSql.includes("request_video_generation_cancellation") ||
+    !videoCancellationSql.includes("p_owner_id uuid") ||
+    !videoCancellationSql.includes("VIDEO_CANCELLED_BEFORE_SUBMISSION") ||
+    !videoCancellationSql.includes("VIDEO_CANCELLATION_REQUIRES_RECONCILIATION") ||
+    !videoCancellationSql.includes("cancellation_requested_at is null") ||
+    !videoCancellationSql.includes("is_video_generation_cancellation_requested") ||
+    !videoCancellationSql.includes("to service_role")) {
+  issues.push("Cloud video cancellation must be owner-scoped, fence new submissions, and expose worker-only cancellation checks.");
 }
 if (!videoBudgetSql.includes("VIDEO_JOB_RESUME_EVIDENCE_REQUIRED") ||
     !videoBudgetSql.includes("p_evidence_reference text")) {
