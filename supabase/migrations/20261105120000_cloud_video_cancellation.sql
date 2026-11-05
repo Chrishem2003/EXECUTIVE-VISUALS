@@ -148,6 +148,11 @@ begin
     values (p_job_id,p_owner_id,'job.cancellation_requested',
       jsonb_build_object('status',current_job.status,'providerTaskKnown',submission.provider_task_id is not null));
 
+    insert into executive_visuals.audit_events(owner_id,project_id,event_type,subject_type,subject_id,details)
+    values (p_owner_id,current_job.project_id,'video.cancellation_requested',
+      'job',p_job_id::text,jsonb_build_object('jobStatus',current_job.status,
+        'submissionState',submission.state,'providerTaskKnown',submission.provider_task_id is not null));
+
     return query select current_job.id, current_job.status, true, submission.state;
     return;
   end if;
