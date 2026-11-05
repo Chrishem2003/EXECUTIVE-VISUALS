@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { addClip, addMarker, addTrack, createTimeline, moveClip, rational, seconds, splitClip, toOpenTimelineIo, trimClip, validateTimeline } from "../src/core/timeline.ts";
+import { addClip, addMarker, addTrack, createTimeline, evaluateTimelineAtFrame, moveClip, rational, seconds, splitClip, toOpenTimelineIo, trimClip, validateTimeline } from "../src/core/timeline.ts";
 import { analyzeTimelineQuality } from "../src/core/timeline-quality.ts";
 
 let timeline=createTimeline("project-1","timeline-1","Pilot episode",{numerator:24,denominator:1});
@@ -56,6 +56,19 @@ const legacySpeed={...speedTrack,tracks:speedTrack.tracks.map(track=>({...track,
  timelineStart:rational(0,24),duration:rational(48,24),enabled:true,speed:0.5
 }]}))};
 assert.ok(validateTimeline(legacySpeed).issues.some(issue=>issue.code==="unsupported_speed"));
+const previewBase=createTimeline("project-preview","timeline-preview","Preview test",{numerator:24,denominator:1});
+let previewTimeline=addTrack(previewBase,{id:"preview-video",name:"Video",kind:"video",enabled:true,locked:false,clips:[]});
+previewTimeline=addTrack(previewTimeline,{id:"preview-overlay",name:"Overlay",kind:"overlay",enabled:true,locked:false,clips:[]});
+previewTimeline=addClip(previewTimeline,"preview-video",{id:"preview-clip",assetId:"preview-asset",name:"Preview shot",sourceRange:{start:rational(48,24),duration:rational(48,24)},timelineStart:rational(24,24),duration:rational(48,24),enabled:true});
+previewTimeline=addClip(previewTimeline,"preview-overlay",{id:"preview-overlay-clip",assetId:"overlay-asset",name:"Overlay",sourceRange:{start:rational(0,24),duration:rational(24,24)},timelineStart:rational(36,24),duration:rational(24,24),enabled:true});
+const previewFrame=evaluateTimelineAtFrame(previewTimeline,36);
+assert.equal(previewFrame.timeSeconds,1.5);
+assert.deepEqual(previewFrame.activeClips.map(x=>x.clipId),["preview-clip","preview-overlay-clip"]);
+assert.equal(previewFrame.activeClips[0].sourceTimeSeconds,2.5);
+assert.equal(previewFrame.activeClips[0].sourceFrame,60);
+assert.equal(evaluateTimelineAtFrame(previewTimeline,72).activeClips.length,0);
+assert.throws(()=>evaluateTimelineAtFrame(previewTimeline,-1),/non-negative safe integer/);
+assert.throws(()=>evaluateTimelineAtFrame(previewTimeline,1.5),/non-negative safe integer/);
 const locked={...timeline,tracks:timeline.tracks.map(track=>track.id==="v1"?{...track,locked:true}:track)};
 assert.throws(()=>moveClip(locked,"v1","clip-a","v2",600),/locked/);
 
