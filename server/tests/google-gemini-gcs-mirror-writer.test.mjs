@@ -31,7 +31,7 @@ function metadata(objectName, overrides = {}) {
     ...overrides
   };
 }
-async function fixture({ metadataOverrides = {}, recordError = null } = {}) {
+async function fixture({ metadataOverrides = {}, recordError = null, putFailure = null } = {}) {
   const root = await mkdtemp(join(tmpdir(), "ev-gcs-mirror-test-"));
   const filePath = join(root, "source.mp4");
   await writeFile(filePath, new Uint8Array([1,2,3,4]));
@@ -48,6 +48,7 @@ async function fixture({ metadataOverrides = {}, recordError = null } = {}) {
     calls.push({ url: String(url), options });
     if (options.method === "POST") return new Response(null, { status: 200, headers: { location: sessionUri } });
     if (options.method === "PUT") {
+      if (putFailure) throw putFailure;
       const chunks = [];
       for await (const chunk of options.body) chunks.push(Buffer.from(chunk));
       assert.deepEqual(Buffer.concat(chunks), Buffer.from([1,2,3,4]));
@@ -139,5 +140,18 @@ test("rejects a source file whose current size no longer matches the authorized 
       error => error.code === "GEMINI_GCS_SOURCE_FILE_MISMATCH"
     );
     assert.equal(f.calls.length, 0);
+  } finally { await rm(f.root, { recursive: true, force: true }); }
+});
+
+test("marks a transport failure during resumable upload as outcome-unknown without retrying or unsafe deletion", async () => {
+  const f = await fixture({ putFailure: new Error("connection lost after request dispatch") });
+  try {
+    await assert.rejects(
+      () => f.writer.mirrorAsset({ assetId, ownerId, projectId, mediaType: "video/mp4", filePath: f.filePath, sizeBytes: 4, sha256 }),
+      error => error.outcomeUnknown === true && error.cleanupPending === true
+    );
+    assert.equal(f.calls.filter(call => call.options.method === "POST").length, 1);
+    assert.equal(f.calls.some(call => call.options.method === "DELETE"), false);
+    assert.equal(f.records.length, 0);
   } finally { await rm(f.root, { recursive: true, force: true }); }
 });
