@@ -284,7 +284,7 @@ export function createGoogleGeminiGcsMirrorWriter({
           const removed = await deleteExactObject(objectName, generation, accessToken);
           if (!removed) error.cleanupPending = true;
         }
-        if (attempt && !verifiedObject) {
+        if (attempt && !verifiedObject && !error.outcomeUnknown) {
           try {
             await attemptRepository.transition({
               attemptId:attempt.id,expectedState:"UPLOADING",state:"FAILED",
