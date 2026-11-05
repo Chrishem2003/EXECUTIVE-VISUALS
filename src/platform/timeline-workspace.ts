@@ -17,13 +17,14 @@ import { generatedVideoAlreadyOnTimeline, generatedVideoDurationSeconds, selectL
 import { resolveCloudTimelineRefresh } from "../core/timeline-conflict";
 import { TimelineRecoveryStore, assessTimelineRecovery, checksumTimeline, requestPersistentBrowserStorage, timelineRecoveryKey, type TimelineRecoveryDraft } from "../core/timeline-recovery";
 import { retryWithBackoff } from "../core/retry";
+import { applyTimelineHistoryOperation, createTimelineHistory, createTimelineHistoryOperation, recordTimelineHistory, redoTimelineHistory, undoTimelineHistory, type TimelineHistory } from "../core/timeline-history";
 
 type Asset={id:string;name:string;mediaType:string;size:number;projectId?:string|null;createdAt?:string;metadata?:Record<string,unknown>};
 type SavedTimeline={id:string;projectId?:string|null;name:string;revision:number;document?:EditorialTimeline};
 type CloudProject={id:string;name:string};
 type CloudSavedTimeline={id:string;projectId?:string|null;name:string;revision:number;timeline:EditorialTimeline;updatedAt:string};
-const state:{timeline:EditorialTimeline|null;serverRevision:number;timelines:SavedTimeline[];cloudTimelines:CloudSavedTimeline[];cloudProjects:CloudProject[];cloudProjectId:string;mode:"local"|"cloud";cloudRenderJobId:string;cloudRenderJobStatus:string;variantBase:EditorialTimeline|null;variantReport:TimelineVariantComparison|null;variantBaseName:string;assets:Asset[];status:"loading"|"ready"|"offline"|"auth";message:string;selectedTrack:string;selectedClipId:string;ffmpeg:boolean;cloudRevisionConflict:boolean;recoveryStatus:"idle"|"saved"|"recovered"|"conflict"|"unavailable";recoveredDraft:TimelineRecoveryDraft|null;conflictServerTimeline:EditorialTimeline|null}={
- timeline:null,serverRevision:0,timelines:[],cloudTimelines:[],cloudProjects:[],cloudProjectId:"",mode:"local",cloudRenderJobId:"",cloudRenderJobStatus:"",variantBase:null,variantReport:null,variantBaseName:"",assets:[],status:"loading",message:"Loading editorial workspace…",selectedTrack:"",selectedClipId:"",ffmpeg:false,cloudRevisionConflict:false,recoveryStatus:"idle",recoveredDraft:null,conflictServerTimeline:null
+const state:{timeline:EditorialTimeline|null;serverRevision:number;timelines:SavedTimeline[];cloudTimelines:CloudSavedTimeline[];cloudProjects:CloudProject[];cloudProjectId:string;mode:"local"|"cloud";cloudRenderJobId:string;cloudRenderJobStatus:string;variantBase:EditorialTimeline|null;variantReport:TimelineVariantComparison|null;variantBaseName:string;assets:Asset[];status:"loading"|"ready"|"offline"|"auth";message:string;selectedTrack:string;selectedClipId:string;ffmpeg:boolean;cloudRevisionConflict:boolean;recoveryStatus:"idle"|"saved"|"recovered"|"conflict"|"unavailable";recoveredDraft:TimelineRecoveryDraft|null;conflictServerTimeline:EditorialTimeline|null;timelineHistory:TimelineHistory}={
+ timeline:null,serverRevision:0,timelines:[],cloudTimelines:[],cloudProjects:[],cloudProjectId:"",mode:"local",cloudRenderJobId:"",cloudRenderJobStatus:"",variantBase:null,variantReport:null,variantBaseName:"",assets:[],status:"loading",message:"Loading editorial workspace…",selectedTrack:"",selectedClipId:"",ffmpeg:false,cloudRevisionConflict:false,recoveryStatus:"idle",recoveredDraft:null,conflictServerTimeline:null,timelineHistory:createTimelineHistory()
 };
 let sequencePlaying=false,sequenceFrame=0,sequenceStartFrame=0,sequenceStartAt=0,sequenceRaf:number|null=null;
 let timelineRecoveryStore:TimelineRecoveryStore|null=null;
@@ -57,6 +58,45 @@ async function restoreTimelineRecovery():Promise<void>{
  }catch(error){state.recoveryStatus="unavailable";state.message="Could not inspect the browser recovery journal: "+(error instanceof Error?error.message:"unknown error")+"."}
 }
 
+function resetTimelineHistory(){state.timelineHistory=createTimelineHistory();}
+function commitTimelineEdit(next:EditorialTimeline,label:string,before:EditorialTimeline|null=state.timeline){
+ if(!before)throw new Error("Load a timeline before editing it.");
+ const operation=createTimelineHistoryOperation(before,next,{label,origin:"local"});
+ if(!operation){state.timeline=next;return;}
+ state.timeline=applyTimelineHistoryOperation(before,operation,"forward");
+ state.timelineHistory=recordTimelineHistory(state.timelineHistory,operation);
+}
+async function travelTimelineHistory(direction:"undo"|"redo"){
+ if(!state.timeline)return;
+ let result;
+ try{
+  result=direction==="undo"
+   ?undoTimelineHistory(state.timelineHistory,state.timeline)
+   :redoTimelineHistory(state.timelineHistory,state.timeline);
+ }catch(error){state.message=error instanceof Error?error.message:"Timeline history operation was rejected.";paint();return;}
+ if(!result){state.message=direction==="undo"?"There are no more local edits to undo.":"There are no local edits to redo.";paint();return;}
+ state.timeline=result.timeline;state.timelineHistory=result.history;
+ state.message=(direction==="undo"?"Undid ":"Redid ")+result.operation.label+".";
+ paint();
+ try{
+  if(state.cloudRevisionConflict){await saveRecoveryDraft("timeline-"+direction);state.message+=" The change remains in your preserved local draft; resolve the server conflict before publishing it.";}
+  else await persist();
+ }catch(error){state.message=(error instanceof Error?error.message:"Timeline history change could not be saved.")+" Your local edit remains available for recovery.";state.status="offline";}
+ paint();
+}
+let timelineHistoryKeysBound=false;
+function bindTimelineHistoryKeys(){
+ if(timelineHistoryKeysBound)return;timelineHistoryKeysBound=true;
+ document.addEventListener("keydown",event=>{
+  if(!state.timeline||!document.querySelector("#timeline-workspace"))return;
+  const target=event.target as HTMLElement|null;
+  if(target?.closest("input,textarea,select,[contenteditable='true']"))return;
+  if(!(event.metaKey||event.ctrlKey))return;
+  const key=event.key.toLowerCase();
+  if(key==="z"){event.preventDefault();void travelTimelineHistory(event.shiftKey?"redo":"undo");}
+  else if(key==="y"){event.preventDefault();void travelTimelineHistory("redo");}
+ });
+}
 type PreviewAudioNode={element:HTMLAudioElement;gain:GainNode;active:boolean;trackId:string;assetId:string};
 const sequenceAudioNodes=new Map<string,PreviewAudioNode>();
 const sequenceCaptionCache=new Map<string,Promise<CaptionCue[]>>();
@@ -344,10 +384,10 @@ async function duplicateTimelineVariant(){
  if(state.mode==="cloud"){
   if(!state.cloudProjectId)throw new Error("Select a cloud project before creating a variant.");
   const result=await apiRequest<{timeline:CloudSavedTimeline}>("/api/cloud/timelines",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({projectId:state.cloudProjectId,name:variant.name,timeline:variant,otio:toOpenTimelineIo(variant)})});
-  state.timeline=result.timeline.timeline;state.serverRevision=result.timeline.revision;
+  state.timeline=result.timeline.timeline;state.serverRevision=result.timeline.revision;resetTimelineHistory();
  }else{
   const result=await apiRequest<{timeline:SavedTimeline}>("/api/timelines",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({name:variant.name,timeline:variant})});
-  state.timeline=result.timeline.document||variant;state.serverRevision=result.timeline.revision;
+  state.timeline=result.timeline.document||variant;state.serverRevision=result.timeline.revision;resetTimelineHistory();
  }
  state.selectedClipId="";state.selectedTrack=state.timeline.tracks[0]?.id||"";
  await refresh();await loadVariantComparison();
@@ -404,7 +444,7 @@ function recoveryConflictPanel():string{
  return '<section class="panel timeline-quality"><div class="eyebrow">RECOVERY CONFLICT · COMPARE BEFORE CHOOSING</div><p>Recovered draft is based on revision '+state.recoveredDraft.baseRevision+'; latest server revision is '+state.serverRevision+'. Neither version has been silently overwritten.</p>'+comparisonHtml+'<div class="toolbar"><button class="primary" data-tl-action="restore-recovered-variant">Save recovered work as a new variant</button><button class="secondary" data-tl-action="reload-server">Use server revision</button><button class="secondary" data-tl-action="discard-recovered-draft">Discard recovered work</button></div></section>';
 }
 export function renderTimelineWorkspace(){
- return '<div id="timeline-workspace"><div class="timeline-toolbar"><label>Workspace <select id="tl-mode"><option value="local" '+(state.mode==="local"?"selected":"")+' >Local</option><option value="cloud" '+(state.mode==="cloud"?"selected":"")+' >Cloud project</option></select></label><label>Cloud project <select id="tl-cloud-project"><option value="">Select project</option>'+state.cloudProjects.map(p=>'<option value="'+esc(p.id)+'" '+(p.id===state.cloudProjectId?'selected':'')+'>'+esc(p.name)+'</option>').join("")+'</select></label><label>Saved sequence <select id="tl-saved-sequence"><option value="">Current sequence</option>'+(state.mode==="cloud"?state.cloudTimelines.map(t=>'<option value="'+esc(t.id)+'" '+(state.timeline?.id===t.id?'selected':'')+'>'+esc(t.name)+' · r'+t.revision+'</option>').join(""):state.timelines.map(t=>'<option value="'+esc(t.id)+'" '+(state.timeline?.id===t.id?'selected':'')+'>'+esc(t.name)+' · r'+t.revision+'</option>').join(""))+'</select></label><button class="secondary" data-tl-create-cloud>＋ New cloud timeline</button>'+(state.mode==="cloud"?'<button class="secondary" data-tl-action="import-generated-video">＋ Import latest generated video</button>':"")+'<button class="secondary" data-tl-action="duplicate-variant">Duplicate as variant</button><span class="runtime-status '+state.status+'"><i></i>'+esc(state.status==="ready"?"TIMELINE SAVED":state.status==="auth"?"SIGN IN REQUIRED":state.status==="offline"?"API OFFLINE":"LOADING")+'</span><button class="secondary" data-tl-action="refresh">↻ Refresh</button><button class="secondary" data-tl-action="export">Export OTIO JSON</button>'+(state.mode==="cloud"&&state.cloudRenderJobId?'<button class="secondary" data-tl-action="cloud-job">Check cloud render · '+esc(state.cloudRenderJobStatus||"queued")+'</button>':'')+''+(state.ffmpeg?'<button class="primary" data-tl-action="render">Render master MP4</button>':'<span class="muted">FFmpeg required for master render</span>')+'</div>'+
+ return '<div id="timeline-workspace"><div class="timeline-toolbar"><label>Workspace <select id="tl-mode"><option value="local" '+(state.mode==="local"?"selected":"")+' >Local</option><option value="cloud" '+(state.mode==="cloud"?"selected":"")+' >Cloud project</option></select></label><label>Cloud project <select id="tl-cloud-project"><option value="">Select project</option>'+state.cloudProjects.map(p=>'<option value="'+esc(p.id)+'" '+(p.id===state.cloudProjectId?'selected':'')+'>'+esc(p.name)+'</option>').join("")+'</select></label><label>Saved sequence <select id="tl-saved-sequence"><option value="">Current sequence</option>'+(state.mode==="cloud"?state.cloudTimelines.map(t=>'<option value="'+esc(t.id)+'" '+(state.timeline?.id===t.id?'selected':'')+'>'+esc(t.name)+' · r'+t.revision+'</option>').join(""):state.timelines.map(t=>'<option value="'+esc(t.id)+'" '+(state.timeline?.id===t.id?'selected':'')+'>'+esc(t.name)+' · r'+t.revision+'</option>').join(""))+'</select></label><button class="secondary" data-tl-create-cloud>＋ New cloud timeline</button>'+(state.mode==="cloud"?'<button class="secondary" data-tl-action="import-generated-video">＋ Import latest generated video</button>':"")+'<button class="secondary" data-tl-action="duplicate-variant">Duplicate as variant</button><button class="secondary" data-tl-action="undo" '+(!state.timelineHistory.undo.length?'disabled':'')+' title="Undo · Ctrl/Cmd+Z">↶ Undo</button><button class="secondary" data-tl-action="redo" '+(!state.timelineHistory.redo.length?'disabled':'')+' title="Redo · Ctrl/Cmd+Shift+Z">↷ Redo</button><span class="runtime-status '+state.status+'"><i></i>'+esc(state.status==="ready"?"TIMELINE SAVED":state.status==="auth"?"SIGN IN REQUIRED":state.status==="offline"?"API OFFLINE":"LOADING")+'</span><button class="secondary" data-tl-action="refresh">↻ Refresh</button><button class="secondary" data-tl-action="export">Export OTIO JSON</button>'+(state.mode==="cloud"&&state.cloudRenderJobId?'<button class="secondary" data-tl-action="cloud-job">Check cloud render · '+esc(state.cloudRenderJobStatus||"queued")+'</button>':'')+''+(state.ffmpeg?'<button class="primary" data-tl-action="render">Render master MP4</button>':'<span class="muted">FFmpeg required for master render</span>')+'</div>'+
  (state.message?'<div class="notice">'+esc(state.message)+'</div>':'')+
  recoveryConflictPanel()+
  '<div class="timeline-editor-grid"><section class="panel"><div class="eyebrow">SEQUENCE SETTINGS</div><h3>'+(state.timeline?esc(state.timeline.name):"No sequence loaded")+'</h3>'+
@@ -511,6 +551,7 @@ async function createCloudTimeline(){
  state.timeline=result.timeline.timeline;state.serverRevision=result.timeline.revision;state.selectedTrack=timeline.tracks[0].id;state.message="Cloud timeline created.";state.status="ready";await refresh();paint();
 }
 export async function initTimelineWorkspace(){
+ resetTimelineHistory();bindTimelineHistoryKeys();
  try{await requestPersistentBrowserStorage();await refresh();await restoreTimelineRecovery();}catch(error){state.status=error instanceof Error&&error.message.includes("Sign in")?"auth":"offline";state.message=error instanceof Error?error.message:"Timeline service unavailable.";}
  paint();
 }
@@ -535,6 +576,7 @@ function paint(){
 }
 async function runAction(action:HTMLElement){
  const type=action.dataset.tlAction||"";
+ if(type==="undo"||type==="redo"){await travelTimelineHistory(type);return;}
  if(type==="save-recovered-draft"){
   try{await persist();state.recoveredDraft=null;state.message="Recovered edits saved as a new server revision.";}
   catch(error){state.message=error instanceof Error?error.message:"Recovered draft could not be saved.";}
@@ -542,7 +584,7 @@ async function runAction(action:HTMLElement){
  }
  if(type==="discard-recovered-draft"){
   if(state.recoveryStatus==="conflict"&&!state.conflictServerTimeline){state.message="The latest server snapshot is unavailable. Load the server revision before discarding this conflicting draft.";paint();return;}
-  try{if(state.recoveredDraft)await recoveryStore().clearDraft(state.recoveredDraft.key);if(state.conflictServerTimeline)state.timeline=structuredClone(state.conflictServerTimeline);state.recoveredDraft=null;state.conflictServerTimeline=null;state.cloudRevisionConflict=false;state.recoveryStatus="idle";state.message="Recovered browser draft discarded. The server timeline was left unchanged.";}
+  try{if(state.recoveredDraft)await recoveryStore().clearDraft(state.recoveredDraft.key);if(state.conflictServerTimeline){state.timeline=structuredClone(state.conflictServerTimeline);resetTimelineHistory();}state.recoveredDraft=null;state.conflictServerTimeline=null;state.cloudRevisionConflict=false;state.recoveryStatus="idle";state.message="Recovered browser draft discarded. The server timeline was left unchanged.";}
   catch(error){state.message=error instanceof Error?error.message:"Could not discard recovered draft.";}
   paint();return;
  }
@@ -555,7 +597,7 @@ async function runAction(action:HTMLElement){
   paint();return;
  }
 
- if(type==="refresh"){await refresh();paint();return;}
+ if(type==="refresh"){resetTimelineHistory();await refresh();paint();return;}
  if(type==="reload-server"){
   if(!state.timeline){state.message="No timeline is selected.";paint();return;}
   const recoveryKey=currentRecoveryKey(),timelineId=state.timeline.id;
@@ -564,7 +606,7 @@ async function runAction(action:HTMLElement){
    else{const result=await apiRequest<{timeline:SavedTimeline}>("/api/timelines/"+timelineId);state.timeline=result.timeline.document||null;state.serverRevision=result.timeline.revision;}
    if(recoveryKey)await recoveryStore().clearDraft(recoveryKey);
    state.recoveredDraft=null;state.conflictServerTimeline=null;state.recoveryStatus="idle";state.cloudRevisionConflict=false;
-   state.selectedTrack=state.timeline?.tracks[0]?.id||"";state.selectedClipId="";
+   resetTimelineHistory();state.selectedTrack=state.timeline?.tracks[0]?.id||"";state.selectedClipId="";
    await refresh();state.message="Loaded the latest server revision. The previous local draft was not merged.";
   }catch(error){state.message=error instanceof Error?error.message:"Could not load the latest server revision.";}
   paint();return;
@@ -581,13 +623,15 @@ async function runAction(action:HTMLElement){
   const asset=selectLatestGeneratedVideoAsset(state.assets,state.cloudProjectId);
   if(!asset){state.message="No validated generated video assets were found in this cloud project. Complete an approved generation first.";paint();return;}
   if(generatedVideoAlreadyOnTimeline(state.timeline,asset.id)){state.message="The latest generated video is already present on this timeline.";paint();return;}
-  let track=state.timeline.tracks.find(item=>item.kind==="video"&&!item.locked);
-  if(!track){state.timeline=addTrack(state.timeline,{id:crypto.randomUUID(),name:"Generated Video",kind:"video",enabled:true,locked:false,clips:[]});track=state.timeline.tracks[state.timeline.tracks.length-1];}
+  const before=structuredClone(state.timeline);let edited=before;
+  let track=edited.tracks.find(item=>item.kind==="video"&&!item.locked);
+  if(!track){edited=addTrack(edited,{id:crypto.randomUUID(),name:"Generated Video",kind:"video",enabled:true,locked:false,clips:[]});track=edited.tracks[edited.tracks.length-1];}
   const durationSeconds=generatedVideoDurationSeconds(asset);
   const clipFrames=Math.max(1,Math.round(durationSeconds*fps()));
   try{
    const generatedClipId=crypto.randomUUID();
-   state.timeline=addClip(state.timeline,track.id,{id:generatedClipId,assetId:asset.id,name:asset.name,sourceRange:{start:rational(0,sourceRate(asset,"video")),duration:rational(clipFrames/fps()*sourceRate(asset,"video"),sourceRate(asset,"video"))},timelineStart:rational(maxEnd(),fps()),duration:rational(clipFrames,fps()),enabled:true,metadata:{generatedVideo:true,provider:asset.metadata?.provider||"unknown",providerTaskId:asset.metadata?.providerTaskId||""}});
+   edited=addClip(edited,track.id,{id:generatedClipId,assetId:asset.id,name:asset.name,sourceRange:{start:rational(0,sourceRate(asset,"video")),duration:rational(clipFrames/fps()*sourceRate(asset,"video"),sourceRate(asset,"video"))},timelineStart:rational(maxEnd(),fps()),duration:rational(clipFrames,fps()),enabled:true,metadata:{generatedVideo:true,provider:asset.metadata?.provider||"unknown",providerTaskId:asset.metadata?.providerTaskId||""}});
+   commitTimelineEdit(edited,"Import generated video",before);
    state.selectedTrack=track.id;state.selectedClipId=generatedClipId;
    state.message="Imported "+asset.name+" from private generated assets. Saving timeline…";
    await persist();await refresh();
@@ -623,14 +667,17 @@ async function runAction(action:HTMLElement){
  if(!state.timeline)return;
  const trackId=action.dataset.track||"",clipId=action.dataset.clip||"";
  if(type==="split"){
-  const track=state.timeline.tracks.find(t=>t.id===trackId),clip=track?.clips.find(c=>c.id===clipId);if(!track||!clip)return;
+  const before=structuredClone(state.timeline),track=before.tracks.find(t=>t.id===trackId),clip=track?.clips.find(c=>c.id===clipId);if(!track||!clip)return;
   const splitAt=Math.round(clip.timelineStart.value+clip.duration.value/2);
-  state.timeline=splitClip(state.timeline,trackId,clipId,splitAt,crypto.randomUUID());
- }else if(type==="trim")state.timeline=trimClip(state.timeline,trackId,clipId,12,12);
- else if(type==="move"){
-  const from=state.timeline.tracks.findIndex(t=>t.id===trackId);const target=state.timeline.tracks[(from+1)%state.timeline.tracks.length];if(!target)return;
-  const clip=state.timeline.tracks[from].clips.find(c=>c.id===clipId);if(!clip)return;
-  const start=maxEnd()+12;state.timeline=moveClip(state.timeline,trackId,clipId,target.id,start);
+  commitTimelineEdit(splitClip(before,trackId,clipId,splitAt,crypto.randomUUID()),"Split clip",before);
+ }else if(type==="trim"){
+  const before=structuredClone(state.timeline);
+  commitTimelineEdit(trimClip(before,trackId,clipId,12,12),"Trim clip",before);
+ }else if(type==="move"){
+  const before=structuredClone(state.timeline),from=before.tracks.findIndex(t=>t.id===trackId);const target=before.tracks[(from+1)%before.tracks.length];if(!target)return;
+  const clip=before.tracks[from].clips.find(c=>c.id===clipId);if(!clip)return;
+  const start=Math.max(1,...before.tracks.flatMap(t=>t.clips.map(c=>c.timelineStart.value+c.duration.value)))+12;
+  commitTimelineEdit(moveClip(before,trackId,clipId,target.id,start),"Move clip",before);
  }else if(type==="export"){
   const content=JSON.stringify(toOpenTimelineIo(state.timeline),null,2);
   const blob=new Blob([content],{type:"application/json"}),url=URL.createObjectURL(blob),a=document.createElement("a");
@@ -644,7 +691,7 @@ document.addEventListener("submit",event=>{
  if(form.id==="tl-add-track"){
   event.preventDefault();const data=new FormData(form),name=String(data.get("name")||"").trim(),kind=String(data.get("kind")||"video") as TimelineTrack["kind"];
   if(!name)return;
-  state.timeline=addTrack(state.timeline,{id:crypto.randomUUID(),name,kind,enabled:true,locked:false,clips:[]});
+  const before=structuredClone(state.timeline);commitTimelineEdit(addTrack(before,{id:crypto.randomUUID(),name,kind,enabled:true,locked:false,clips:[]}),"Add track",before);
   void persist().then(paint).catch(error=>{state.message=error.message;paint();});
  }
  if(form.id==="tl-add-clip"){
@@ -658,13 +705,14 @@ document.addEventListener("submit",event=>{
   if(destination?.kind==="caption"&&(!["text/plain","text/vtt"].includes(asset.mediaType)||!["srt","vtt"].includes(asset.name.toLowerCase().split(".").pop()||""))){alert("Caption tracks require an SRT or VTT text file.");return;}
   const sourceFps=sourceRate(asset,destination?.kind||"video");
   const sourceDuration=duration/fps()*sourceFps;
-  try{state.timeline=addClip(state.timeline,trackId,{id:crypto.randomUUID(),assetId,name:asset.name,sourceRange:{start:rational(sourceIn,sourceFps),duration:rational(sourceDuration,sourceFps)},timelineStart:rational(start,fps()),duration:rational(duration,fps()),enabled:true});}
+  try{const before=structuredClone(state.timeline);commitTimelineEdit(addClip(before,trackId,{id:crypto.randomUUID(),assetId,name:asset.name,sourceRange:{start:rational(sourceIn,sourceFps),duration:rational(sourceDuration,sourceFps)},timelineStart:rational(start,fps()),duration:rational(duration,fps()),enabled:true}),"Add clip",before);}
   catch(error){alert(error instanceof Error?error.message:String(error));return;}
   void persist().then(paint).catch(error=>{state.message=error.message;paint();});
  }
  if(form.id==="tl-clip-inspector"){
   event.preventDefault();const data=new FormData(form),trackId=form.dataset.track||"",clipId=form.dataset.clip||"";
-  const track=state.timeline.tracks.find(item=>item.id===trackId),clip=track?.clips.find(item=>item.id===clipId);if(!track||!clip)return;
+  const before=structuredClone(state.timeline),edited=structuredClone(state.timeline);
+  const track=edited.tracks.find(item=>item.id===trackId),clip=track?.clips.find(item=>item.id===clipId);if(!track||!clip)return;
   const asset=state.assets.find(item=>item.id===clip.assetId);if(!asset)return;
   const start=Math.max(0,Number(data.get("start"))||0),duration=Math.max(1,Number(data.get("duration"))||1),sourceIn=Math.max(0,Number(data.get("sourceIn"))||0),sourceFps=sourceRate(asset,track.kind);
   clip.name=String(data.get("name")||clip.name).trim()||clip.name;
@@ -678,21 +726,22 @@ document.addEventListener("submit",event=>{
   const nextMetadata:Record<string,unknown>={...clip.metadata,creativeTraceHistory:decisionHistory};
   if(nextTrace)nextMetadata.creativeTrace=nextTrace;else delete nextMetadata.creativeTrace;
   clip.metadata=nextMetadata;
+  try{commitTimelineEdit(edited,"Edit clip properties",before);}catch(error){alert(error instanceof Error?error.message:"Clip properties failed validation.");return;}
   state.message="Saving clip properties…";void persist().then(paint).catch(error=>{state.message=error.message;paint();});
  }
  if(form.id==="tl-add-marker"){
   event.preventDefault();const data=new FormData(form);
-  state.timeline=addMarker(state.timeline,{id:crypto.randomUUID(),name:String(data.get("name")),start:rational(Math.max(0,Number(data.get("frame"))||0),fps()),color:"YELLOW"});
+  const before=structuredClone(state.timeline);commitTimelineEdit(addMarker(before,{id:crypto.randomUUID(),name:String(data.get("name")),start:rational(Math.max(0,Number(data.get("frame"))||0),fps()),color:"YELLOW"}),"Add review marker",before);
   void persist().then(paint).catch(error=>{state.message=error.message;paint();});
  }
 });
 document.addEventListener("change",event=>{
  const target=event.target as HTMLSelectElement;
- if(target.id==="tl-mode"){state.mode=target.value==="cloud"?"cloud":"local";state.timeline=null;state.cloudRevisionConflict=false;state.recoveredDraft=null;state.recoveryStatus="idle";state.selectedClipId="";void refresh().then(paint).catch(error=>{state.status="offline";state.message=error instanceof Error?error.message:"Workspace unavailable.";paint();});}
- if(target.id==="tl-cloud-project"){state.cloudProjectId=target.value;state.timeline=null;state.cloudRevisionConflict=false;state.recoveredDraft=null;state.recoveryStatus="idle";state.selectedClipId="";void refresh().then(paint).catch(error=>{state.status="offline";state.message=error instanceof Error?error.message:"Cloud project unavailable.";paint();});}
+ if(target.id==="tl-mode"){resetTimelineHistory();state.mode=target.value==="cloud"?"cloud":"local";state.timeline=null;state.cloudRevisionConflict=false;state.recoveredDraft=null;state.recoveryStatus="idle";state.selectedClipId="";void refresh().then(paint).catch(error=>{state.status="offline";state.message=error instanceof Error?error.message:"Workspace unavailable.";paint();});}
+ if(target.id==="tl-cloud-project"){resetTimelineHistory();state.cloudProjectId=target.value;state.timeline=null;state.cloudRevisionConflict=false;state.recoveredDraft=null;state.recoveryStatus="idle";state.selectedClipId="";void refresh().then(paint).catch(error=>{state.status="offline";state.message=error instanceof Error?error.message:"Cloud project unavailable.";paint();});}
  if(target.id==="tl-saved-sequence"&&target.value){
   const saved=state.mode==="cloud"?state.cloudTimelines.find(t=>t.id===target.value):state.timelines.find(t=>t.id===target.value);
-  if(saved){state.recoveredDraft=null;state.recoveryStatus="idle";if(state.mode==="cloud"){const cloud=saved as CloudSavedTimeline;state.timeline=cloud.timeline;state.serverRevision=cloud.revision;state.cloudRevisionConflict=false;void loadVariantComparison().then(paint);}
+  if(saved){resetTimelineHistory();state.recoveredDraft=null;state.recoveryStatus="idle";if(state.mode==="cloud"){const cloud=saved as CloudSavedTimeline;state.timeline=cloud.timeline;state.serverRevision=cloud.revision;state.cloudRevisionConflict=false;void loadVariantComparison().then(paint);}
    else void apiRequest<{timeline:SavedTimeline}>("/api/timelines/"+saved.id).then(result=>{state.timeline=result.timeline.document||null;state.serverRevision=result.timeline.revision;void loadVariantComparison().then(paint);}).catch(error=>{state.message=error.message;paint();});}
  }
 });
