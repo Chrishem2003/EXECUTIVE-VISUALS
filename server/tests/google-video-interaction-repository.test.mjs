@@ -49,7 +49,8 @@ test("records a durable owner/project/job scoped interaction without storing med
   });
   const result = await h.repository.recordInteraction({
     provider: "google", model: "gemini-omni-1.1-flash",
-    ...scope, requestHash, state: "running", expiresAt: now
+    ...scope, requestHash, state: "running", expiresAt: now,
+    outputUri: "https://generativelanguage.googleapis.com/v1beta/files/generated123"
   });
   assert.equal(result.interactionId, interactionId);
   assert.equal(result.ownerId, ownerId);
