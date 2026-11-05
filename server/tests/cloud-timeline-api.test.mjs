@@ -1,7 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { Readable } from "node:stream";
-import { readFile } from "node:fs/promises";
+import { readFile, mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { createHash } from "node:crypto";
 import { createCloudTimelineApi } from "../cloud-timeline-api.mjs";
 
 const owner="123e4567-e89b-42d3-a456-426614174000",editor="223e4567-e89b-42d3-a456-426614174000",project="423e4567-e89b-42d3-a456-426614174000",timelineId="523e4567-e89b-42d3-a456-426614174000";
@@ -126,4 +129,36 @@ test("cloud caption uploads persist SRT validation evidence for readiness checks
  const req=Readable.from([bytes]);req.headers={"content-length":String(bytes.length)};
  const result=await api.uploadAsset({req,ownerId:owner,projectId:project,originalName:"captions.srt",mediaType:"text/plain"});
  assert.equal(result.status,201);assert.equal(stored.metadata.captionValidation.format,"srt");assert.equal(stored.metadata.captionValidation.status,"passed");
+});
+
+test("cloud waveform endpoint authorizes source, verifies hash and persists a private content-addressed derivative",async()=>{
+ const root=await mkdtemp(join(tmpdir(),"ev-cloud-waveform-")),source=Buffer.from("cloud-audio-source"),png=Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]),Buffer.from("waveform")]);
+ const sha=createHash("sha256").update(source).digest("hex"),assetId="623e4567-e89b-42d3-a456-426614174000",objectPath=project+"/"+assetId+"/original.wav",uploads=[];
+ const asset={id:assetId,ownerId:owner,projectId:project,name:"song.wav",mediaType:"audio/wav",size:source.length,sha256:sha,storageBucket:"executive-visuals-media",objectPath};
+ const storage={
+  async downloadToFile(path,file,limit){
+   if(path!==objectPath)throw Object.assign(new Error("Not found"),{code:"CLOUD_STORAGE_HTTP_404"});
+   await writeFile(file,source);return{size:source.length,sha256:sha};
+  },
+  async uploadFile(path,file,mime,upsert){uploads.push({path,file,mime,upsert});return{path,size:png.length};}
+ };
+ const waveformCache={async get(localAsset,sourcePath){
+  assert.equal(localAsset.sha256,sha);assert.equal(localAsset.media_type,"audio/wav");
+  const dir=join(root,"derived","waveforms");await mkdir(dir,{recursive:true});const output=join(dir,"waveform.png");await writeFile(output,png);return output;
+ }};
+ const api=createCloudTimelineApi({timelineService:{assets:{async get(input){assert.deepEqual(input,{ownerId:owner,assetId});return asset;}},storage},waveformCache,mediaRoot:root});
+ try{
+  const result=await api.handle({method:"GET",path:"/api/cloud/assets/"+assetId+"/waveform",ownerId:owner});
+  assert.equal(result.status,200);assert.equal(result.body.sourceSha256,sha);
+  assert.equal(uploads.length,1);assert.equal(uploads[0].path,project+"/"+assetId+"/waveform-v1-"+sha+".png");
+  assert.equal(uploads[0].mime,"image/png");assert.equal(uploads[0].upsert,true);
+  assert.deepEqual(await readFile(result.waveformPath),png);
+  await rm(result.cleanupDirectory,{recursive:true,force:true});
+ }finally{await rm(root,{recursive:true,force:true});}
+});
+test("cloud waveform endpoint rejects non-audio sources before storage access",async()=>{
+ let storageCalled=false;
+ const api=createCloudTimelineApi({timelineService:{assets:{async get(){return{id:"623e4567-e89b-42d3-a456-426614174000",ownerId:owner,projectId:project,name:"clip.mp4",mediaType:"video/mp4",size:10,sha256:"a".repeat(64),storageBucket:"executive-visuals-media",objectPath:project+"/623e4567-e89b-42d3-a456-426614174000/original.mp4"};}},storage:{async downloadToFile(){storageCalled=true;}}},waveformCache:{},mediaRoot:tmpdir()});
+ const result=await api.handle({method:"GET",path:"/api/cloud/assets/623e4567-e89b-42d3-a456-426614174000/waveform",ownerId:owner});
+ assert.equal(result.status,415);assert.equal(storageCalled,false);
 });
