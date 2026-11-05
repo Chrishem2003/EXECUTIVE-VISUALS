@@ -31,7 +31,7 @@ function objectMetadata(attempt=baseAttempt,overrides={}) {
     },...overrides
   };
 }
-async function harness({attempt=baseAttempt,statusCode=200,range=null,uploadCode=200,metadata=objectMetadata(),fetchFailure=null,sourceFailure=null,materializedBytes=bytes}={}) {
+async function harness({attempt=baseAttempt,statusCode=200,range=null,uploadCode=200,metadata=objectMetadata(),fetchFailure=null,sourceFailure=null,materializedBytes=bytes,existingSource=null}={}) {
   const root=await mkdtemp(join(tmpdir(),"ev-gcs-recovery-"));
   const filePath=join(root,"source.mp4");
   await writeFile(filePath,materializedBytes);
@@ -48,7 +48,10 @@ async function harness({attempt=baseAttempt,statusCode=200,range=null,uploadCode
       return input;
     }
   };
-  const sourceRepository={async recordVerifiedSource(input){records.push(input);if(sourceFailure)throw sourceFailure;return {...input,state:"ACTIVE"};}};
+  const sourceRepository={
+    async findActiveSource(){return existingSource;},
+    async recordVerifiedSource(input){records.push(input);if(sourceFailure)throw sourceFailure;return {...input,state:"ACTIVE"};}
+  };
   const fetchImpl=async(url,options)=>{
     calls.push({url:String(url),options});
     if(fetchFailure)throw fetchFailure;
@@ -154,6 +157,33 @@ test("retains retryable state and releases lease after transient network errors"
 
 test("quarantines a private source whose materialized digest differs from the durable receipt",async()=>{
   const h=await harness({statusCode:308,range:"bytes=0-1",materializedBytes:Buffer.from([9,9,9,9])});
+  try{
+    const result=await h.worker.run();
+    assert.equal(result.quarantined,1);
+    assert.equal(h.records.length,0);
+    assert.equal(h.transitions[0].state,"QUARANTINED");
+  }finally{await rm(h.root,{recursive:true,force:true});}
+});
+
+test("reuses an identical active source mapping after a crash before attempt finalization",async()=>{
+  const existingSource={
+    bucket:baseAttempt.bucket,objectName:baseAttempt.objectName,generation:"1762300800000000",
+    metageneration:"3",sizeBytes:baseAttempt.sizeBytes,mediaType:baseAttempt.mediaType,sha256:baseAttempt.sha256
+  };
+  const attempt={...baseAttempt,state:"OBJECT_VERIFIED",sessionUri:undefined,sessionExpiresAt:null};
+  const h=await harness({attempt,existingSource});
+  try{
+    const result=await h.worker.run();
+    assert.equal(result.registered,1);
+    assert.equal(h.records.length,0);
+    assert.deepEqual(h.transitions.map(x=>x.state),["REGISTERED"]);
+  }finally{await rm(h.root,{recursive:true,force:true});}
+});
+
+test("quarantines an existing active source mapping that points to a different GCS generation",async()=>{
+  const existingSource={bucket:baseAttempt.bucket,objectName:baseAttempt.objectName,generation:"999",metageneration:"3",sizeBytes:4,mediaType:"video/mp4",sha256};
+  const attempt={...baseAttempt,state:"OBJECT_VERIFIED",sessionUri:undefined,sessionExpiresAt:null};
+  const h=await harness({attempt,existingSource});
   try{
     const result=await h.worker.run();
     assert.equal(result.quarantined,1);
