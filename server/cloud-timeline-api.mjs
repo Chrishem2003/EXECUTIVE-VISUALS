@@ -165,7 +165,7 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     if(row.job_id!==cancelVideoMatch[1]||typeof row.job_status!=="string"||typeof row.cancellation_requested!=="boolean")throw new Error("Cloud video cancellation returned an invalid job receipt.");
     if(row.job_status==="cancelled")return response(200,{job:{id:row.job_id,status:"cancelled",cancellationRequested:false,submissionState:row.submission_state||null}});
     if(row.cancellation_requested)return response(202,{job:{id:row.job_id,status:row.job_status,cancellationRequested:true,submissionState:row.submission_state||null},notice:"Cancellation was requested. Provider cancellation is best-effort; generation and billing must be reconciled before the job can be marked cancelled."});
-    return response(409,{error:{code:"JOB_TERMINAL",message:"This cloud video job is already terminal and cannot be cancelled.",status:row.job_status}});
+    return response(409,{error:{code:"JOB_CANCELLATION_NOT_AVAILABLE",message:"This cloud video job cannot be cancelled in its current state.",status:row.job_status}});
    }
    const jobMatch=path.match(/^\/api\/cloud\/jobs\/([0-9a-f-]+)(?:\/(events))?$/i);
    if(jobMatch&&safeId(jobMatch[1])&&method==="GET"){
