@@ -77,7 +77,8 @@ test("rejects unsupported Google-native documents, trashed, non-downloadable and
   for (const metadata of [
     { ...sourceFile, mimeType: "application/vnd.google-apps.document" },
     { ...sourceFile, trashed: true },
-    { ...sourceFile, capabilities: { canDownload: false } },\n    { ...sourceFile, capabilities: {} },
+    { ...sourceFile, capabilities: { canDownload: false } },
+    { ...sourceFile, capabilities: {} },
     { ...sourceFile, size: String(251 * 1024 * 1024) }
   ]) {
     const h = harness({ metadata });
@@ -121,7 +122,8 @@ test("rejects a non-folder, trashed folder, or folder without add-child capabili
   for (const folder of [
     { id: "driveFolder_123456789", mimeType: "video/mp4", trashed: false, capabilities: { canAddChildren: true } },
     { id: "driveFolder_123456789", mimeType: "application/vnd.google-apps.folder", trashed: true, capabilities: { canAddChildren: true } },
-    { id: "driveFolder_123456789", mimeType: "application/vnd.google-apps.folder", trashed: false, capabilities: { canAddChildren: false } },\n    { id: "driveFolder_123456789", mimeType: "application/vnd.google-apps.folder", trashed: false, capabilities: {} }
+    { id: "driveFolder_123456789", mimeType: "application/vnd.google-apps.folder", trashed: false, capabilities: { canAddChildren: false } },
+    { id: "driveFolder_123456789", mimeType: "application/vnd.google-apps.folder", trashed: false, capabilities: {} }
   ]) {
     const h = harness({ folder });
     await assert.rejects(
