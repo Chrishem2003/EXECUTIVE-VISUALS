@@ -68,9 +68,12 @@ function commitTimelineEdit(next:EditorialTimeline,label:string,before:Editorial
 }
 async function travelTimelineHistory(direction:"undo"|"redo"){
  if(!state.timeline)return;
- const result=direction==="undo"
-  ?undoTimelineHistory(state.timelineHistory,state.timeline)
-  :redoTimelineHistory(state.timelineHistory,state.timeline);
+ let result;
+ try{
+  result=direction==="undo"
+   ?undoTimelineHistory(state.timelineHistory,state.timeline)
+   :redoTimelineHistory(state.timelineHistory,state.timeline);
+ }catch(error){state.message=error instanceof Error?error.message:"Timeline history operation was rejected.";paint();return;}
  if(!result){state.message=direction==="undo"?"There are no more local edits to undo.":"There are no local edits to redo.";paint();return;}
  state.timeline=result.timeline;state.timelineHistory=result.history;
  state.message=(direction==="undo"?"Undid ":"Redid ")+result.operation.label+".";
@@ -737,7 +740,7 @@ document.addEventListener("change",event=>{
  if(target.id==="tl-cloud-project"){resetTimelineHistory();state.cloudProjectId=target.value;state.timeline=null;state.cloudRevisionConflict=false;state.recoveredDraft=null;state.recoveryStatus="idle";state.selectedClipId="";void refresh().then(paint).catch(error=>{state.status="offline";state.message=error instanceof Error?error.message:"Cloud project unavailable.";paint();});}
  if(target.id==="tl-saved-sequence"&&target.value){
   const saved=state.mode==="cloud"?state.cloudTimelines.find(t=>t.id===target.value):state.timelines.find(t=>t.id===target.value);
-  if(saved){state.recoveredDraft=null;state.recoveryStatus="idle";if(state.mode==="cloud"){const cloud=saved as CloudSavedTimeline;state.timeline=cloud.timeline;state.serverRevision=cloud.revision;state.cloudRevisionConflict=false;void loadVariantComparison().then(paint);}
+  if(saved){resetTimelineHistory();state.recoveredDraft=null;state.recoveryStatus="idle";if(state.mode==="cloud"){const cloud=saved as CloudSavedTimeline;state.timeline=cloud.timeline;state.serverRevision=cloud.revision;state.cloudRevisionConflict=false;void loadVariantComparison().then(paint);}
    else void apiRequest<{timeline:SavedTimeline}>("/api/timelines/"+saved.id).then(result=>{state.timeline=result.timeline.document||null;state.serverRevision=result.timeline.revision;void loadVariantComparison().then(paint);}).catch(error=>{state.message=error.message;paint();});}
  }
 });
