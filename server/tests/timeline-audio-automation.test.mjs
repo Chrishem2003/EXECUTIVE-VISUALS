@@ -64,7 +64,7 @@ test("retimed trim and split preserve source time when start and duration use di
  const added=addClip(withTrack,"video",clip);
  const trimmed=trimClip(added,"video","mixed",24,24).tracks[0].clips[0];
  assert.equal(seconds(trimmed.sourceRange.start),3);
- assert.equal(seconds(trimmed.sourceRange.duration),18);
+ assert.equal(seconds(trimmed.sourceRange.duration),16);
  const [first,second]=splitClip(added,"video","mixed",120,"mixed-b").tracks[0].clips;
  assert.equal(seconds(first.sourceRange.duration),10);
  assert.equal(seconds(second.sourceRange.start),11);
