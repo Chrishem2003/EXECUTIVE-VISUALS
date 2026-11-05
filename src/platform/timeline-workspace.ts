@@ -45,6 +45,8 @@ async function restoreTimelineRecovery():Promise<void>{
  if(!state.timeline)return;
  try{
   const key=currentRecoveryKey(),draft=await recoveryStore().getDraft(key);
+  if(draft)timelineRecoverySequence=Math.max(timelineRecoverySequence,draft.sequence);
+  state.recoveredDraft=null;state.recoveryStatus="idle";
   const assessment=await assessTimelineRecovery(draft,state.serverRevision);
   if(assessment.disposition==="recover"&&assessment.draft){
    if(await checksumTimeline(state.timeline)===assessment.draft.checksum){await recoveryStore().saveCheckpoint(assessment.draft,state.serverRevision,"Confirmed server save recovered after interrupted checkpoint");state.recoveryStatus="saved";return;}
