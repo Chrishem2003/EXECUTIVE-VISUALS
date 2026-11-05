@@ -75,9 +75,10 @@ export function createKieSeedanceVideoAdapter({
  return Object.freeze({
   provider:"kie",model,minimumPollIntervalMs:selectedClient.minimumPollIntervalMs||5000,
   async prepareInput(input,context){
+   assertEnabled();
    if(!plain(input)||input.provider!=="kie"||input.model!==model)throw fail("Kie job provider/model identity does not match the registered adapter.","VIDEO_JOB_INPUT_MISMATCH");
-   const hasPrivateReferences=Boolean(input.firstFrameAssetId||input.lastFrameAssetId||input.startFrame||input.endFrame)||
-    ["referenceAssetIds","referenceImageAssetIds","referenceVideoAssetIds","referenceAudioAssetIds"].some(key=>Array.isArray(input[key])&&input[key].length>0);
+   const hasPrivateReferences=Boolean(input.firstFrameAssetId||input.lastFrameAssetId||input.firstFrameUrl||input.lastFrameUrl||input.startFrame||input.endFrame)||
+    ["referenceAssetIds","referenceImageAssetIds","referenceVideoAssetIds","referenceAudioAssetIds","referenceImageUrls","referenceVideoUrls","referenceAudioUrls"].some(key=>Array.isArray(input[key])&&input[key].length>0);
    if(hasPrivateReferences&&typeof prepareInput!=="function")throw fail("Kie reference assets require an authenticated owner/project-scoped resolver.","KIE_VIDEO_INPUT_ASSET_RESOLUTION_REQUIRED");
    const resolved=typeof prepareInput==="function"?await prepareInput(input,context):input;
    if(!plain(resolved)||resolved.provider!=="kie"||resolved.model!==model)throw fail("Kie private input resolver returned an invalid or mismatched payload.","KIE_VIDEO_INPUT_INVALID");
