@@ -705,7 +705,8 @@ document.addEventListener("submit",event=>{
  }
  if(form.id==="tl-clip-inspector"){
   event.preventDefault();const data=new FormData(form),trackId=form.dataset.track||"",clipId=form.dataset.clip||"";
-  const track=state.timeline.tracks.find(item=>item.id===trackId),clip=track?.clips.find(item=>item.id===clipId);if(!track||!clip)return;
+  const before=structuredClone(state.timeline),edited=structuredClone(state.timeline);
+  const track=edited.tracks.find(item=>item.id===trackId),clip=track?.clips.find(item=>item.id===clipId);if(!track||!clip)return;
   const asset=state.assets.find(item=>item.id===clip.assetId);if(!asset)return;
   const start=Math.max(0,Number(data.get("start"))||0),duration=Math.max(1,Number(data.get("duration"))||1),sourceIn=Math.max(0,Number(data.get("sourceIn"))||0),sourceFps=sourceRate(asset,track.kind);
   clip.name=String(data.get("name")||clip.name).trim()||clip.name;
@@ -719,6 +720,7 @@ document.addEventListener("submit",event=>{
   const nextMetadata:Record<string,unknown>={...clip.metadata,creativeTraceHistory:decisionHistory};
   if(nextTrace)nextMetadata.creativeTrace=nextTrace;else delete nextMetadata.creativeTrace;
   clip.metadata=nextMetadata;
+  try{commitTimelineEdit(edited,"Edit clip properties",before);}catch(error){alert(error instanceof Error?error.message:"Clip properties failed validation.");return;}
   state.message="Saving clip properties…";void persist().then(paint).catch(error=>{state.message=error.message;paint();});
  }
  if(form.id==="tl-add-marker"){
