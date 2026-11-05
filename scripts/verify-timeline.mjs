@@ -64,6 +64,12 @@ previewTimeline=addClip(previewTimeline,"preview-overlay",{id:"preview-overlay-c
 const previewFrame=evaluateTimelineAtFrame(previewTimeline,36);
 assert.equal(previewFrame.timeSeconds,1.5);
 assert.deepEqual(previewFrame.activeClips.map(x=>x.clipId),["preview-clip","preview-overlay-clip"]);
+assert.deepEqual(previewFrame.activeClips.map(x=>x.trackIndex),[0,1]);
+assert.equal(previewFrame.activeClips[0].trackName,"Video");
+assert.equal(previewFrame.activeClips[1].trackKind,"overlay");
+assert.equal(previewFrame.activeClips[1].clipName,"Overlay");
+assert.equal(previewFrame.activeClips[0].timelineStartSeconds,1);
+assert.equal(previewFrame.activeClips[0].timelineEndSeconds,3);
 assert.equal(previewFrame.activeClips[0].sourceTimeSeconds,2.5);
 assert.equal(previewFrame.activeClips[0].sourceFrame,60);
 assert.equal(evaluateTimelineAtFrame(previewTimeline,72).activeClips.length,0);
