@@ -171,3 +171,19 @@ test("Runway enqueue stays blocked until the hosted worker and remote execution 
  assert.equal(result.status,503);
  assert.equal(result.body.error.code,"RUNWAY_EXECUTION_DISABLED");
 });
+
+test("Runway job status endpoint returns only the verified owner's job record",async()=>{
+ const calls=[];
+ const job={jobId:"623e4567-e89b-42d3-a456-426614174000",status:"processing"};
+ const f=setup({runwayWorkflow:{async getJobStatus(args){calls.push(args);return job;}}});
+ const result=await f.api.handle({method:"GET",path:"/api/cloud/video/runway/jobs/"+job.jobId,ownerId:owner});
+ assert.equal(result.status,200);
+ assert.deepEqual(result.body.job,job);
+ assert.deepEqual(calls,[{ownerId:owner,jobId:job.jobId}]);
+});
+test("Runway job status endpoint does not reveal jobs outside the verified owner scope",async()=>{
+ const f=setup({runwayWorkflow:{async getJobStatus(){return null;}}});
+ const result=await f.api.handle({method:"GET",path:"/api/cloud/video/runway/jobs/623e4567-e89b-42d3-a456-426614174000",ownerId:owner});
+ assert.equal(result.status,404);
+ assert.equal(result.body.error.code,"VIDEO_JOB_NOT_FOUND");
+});
