@@ -250,7 +250,7 @@ if ((videoCostEvidenceSql.match(/security invoker/gi) || []).length !== 3 ||
 if (!videoCancellationSql.includes("request_video_generation_cancellation") ||
     !videoCancellationSql.includes("p_owner_id uuid") ||
     !videoCancellationSql.includes("VIDEO_CANCELLED_BEFORE_SUBMISSION") ||
-    !videoCancellationSql.includes("VIDEO_CANCELLATION_REQUIRES_RECONCILIATION") ||
+    !videoCancellationSql.includes("VIDEO_CANCELLATION_BUDGET_INVARIANT_FAILED") ||
     !videoCancellationSql.includes("cancellation_requested_at is null") ||
     !videoCancellationSql.includes("is_video_generation_cancellation_requested") ||
     !videoCancellationSql.includes("to service_role")) {
