@@ -1,4 +1,4 @@
-import { evaluateAudioAutomation, normalizeAudioAutomation, type AudioAutomationPoint } from "./audio-automation";
+import { evaluateAudioAutomation, normalizeAudioAutomation, type AudioAutomationPoint } from "./audio-automation.ts";
 export interface AudioPreviewTrackInput {
  id:string;
  media:HTMLMediaElement;
