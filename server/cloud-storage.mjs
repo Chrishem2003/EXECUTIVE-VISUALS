@@ -1,7 +1,7 @@
-import { createReadStream } from "node:fs";
-import { stat } from "node:fs/promises";
+import { createReadStream, createWriteStream } from "node:fs";
+import { stat, unlink } from "node:fs/promises";
 import { createHash } from "node:crypto";
-import { Transform } from "node:stream";
+import { Transform, Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 
 const BUCKET = "executive-visuals-media";
@@ -118,7 +118,7 @@ export function createCloudStorage({
       });
       return { bucket:BUCKET, path:objectPath, size:bytes.byteLength, contentType };
     },
-    async uploadFile(objectPath,filePath,contentType) {
+    async uploadFile(objectPath,filePath,contentType,upsert=false) {
       const path=safeObjectPath(objectPath);
       if(!MIME_TYPES.has(contentType))throw new Error("Unsupported cloud media content type.");
       const info=await stat(filePath);
@@ -131,7 +131,7 @@ export function createCloudStorage({
       try{
         const response=await fetchImpl(base+"/storage/v1/object/"+BUCKET+"/"+path,{
           method:"POST",
-          headers:{apikey:serviceRoleKey,authorization:"Bearer "+serviceRoleKey,"content-type":contentType,"content-length":String(info.size),"cache-control":"max-age=3600","x-upsert":"false"},
+          headers:{apikey:serviceRoleKey,authorization:"Bearer "+serviceRoleKey,"content-type":contentType,"content-length":String(info.size),"cache-control":"max-age=3600","x-upsert":upsert===true?"true":"false"},
           body:meter,duplex:"half",signal:controller.signal
         });
         await streamDone;
@@ -146,6 +146,34 @@ export function createCloudStorage({
         controller.abort();source.destroy();meter.destroy();
         await streamDone.catch(()=>{});
         if(error?.name==="AbortError"){const timeout=new Error("Cloud storage request timed out.");timeout.code="CLOUD_STORAGE_TIMEOUT";throw timeout;}
+        throw error;
+      }finally{clearTimeout(timer);}
+    },
+    async downloadToFile(objectPath,filePath,limit=maxBytes) {
+      const path=safeObjectPath(objectPath);
+      if(typeof filePath!=="string"||!filePath)throw new Error("Cloud download destination is invalid.");
+      if(!Number.isSafeInteger(limit)||limit<1||limit>maxBytes)throw new Error("Cloud download size limit is invalid.");
+      const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs);
+      let size=0;const digest=createHash("sha256");
+      const meter=new Transform({transform(chunk,encoding,callback){size+=chunk.length;if(size>limit){callback(Object.assign(new Error("Cloud object exceeds the download size limit."),{code:"CLOUD_STORAGE_TOO_LARGE"}));return;}digest.update(chunk);callback(null,chunk);}});
+      try{
+        const response=await fetchImpl(base+"/storage/v1/object/"+BUCKET+"/"+path,{method:"GET",headers:{apikey:serviceRoleKey,authorization:"Bearer "+serviceRoleKey},signal:controller.signal});
+        if(!response.ok){
+          const raw=await response.text().catch(()=>"");
+          const error=new Error("Cloud storage download failed.");
+          error.code="CLOUD_STORAGE_HTTP_"+response.status;error.status=response.status;
+          if(raw.includes(serviceRoleKey))error.message="Cloud storage download failed.";
+          throw error;
+        }
+        const declared=Number(response.headers?.get?.("content-length"));
+        if(Number.isFinite(declared)&&declared>limit)throw Object.assign(new Error("Cloud object exceeds the download size limit."),{code:"CLOUD_STORAGE_TOO_LARGE"});
+        if(!response.body)throw new Error("Cloud storage returned an empty download stream.");
+        await pipeline(Readable.fromWeb(response.body),meter,createWriteStream(filePath,{flags:"wx"}));
+        if(size<1)throw new Error("Cloud storage returned an empty object.");
+        return{bucket:BUCKET,path,size,sha256:digest.digest("hex")};
+      }catch(error){
+        controller.abort();await unlink(filePath).catch(()=>{});
+        if(error?.name==="AbortError"){const timeout=new Error("Cloud storage download timed out.");timeout.code="CLOUD_STORAGE_TIMEOUT";throw timeout;}
         throw error;
       }finally{clearTimeout(timer);}
     },
