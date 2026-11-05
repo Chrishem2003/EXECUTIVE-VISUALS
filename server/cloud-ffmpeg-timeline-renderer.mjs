@@ -9,7 +9,8 @@ const rawSeconds=(time)=>{const value=Number(time?.value),rate=Number(time?.rate
 const validateClipTiming=(clip)=>{
  const start=rawSeconds(clip?.timelineStart),duration=rawSeconds(clip?.duration),sourceStart=rawSeconds(clip?.sourceRange?.start),sourceDuration=rawSeconds(clip?.sourceRange?.duration),speed=Number(clip?.speed??1);
  if(start===null||duration===null||sourceStart===null||sourceDuration===null||start<0||duration<=0||sourceStart<0||sourceDuration<=0||start+duration>86400||sourceStart+sourceDuration>86400||!Number.isFinite(speed)||speed<=0)fail("Timeline clip has invalid or out-of-range timing values.","INVALID_TIMELINE_TIMING");
- if(Math.abs(duration-sourceDuration)>0.0001)fail("Clip source and timeline durations must match until time remapping is implemented.","INVALID_TIMELINE_TIMING");
+ const sourceRate=Number(clip?.sourceRange?.duration?.rate);if(!Number.isFinite(sourceRate)||sourceRate<=0)fail("Timeline clip source frame rate is invalid.","INVALID_TIMELINE_TIMING");
+ if(Math.abs(duration-sourceDuration)>Math.max(0.0001,0.5/sourceRate))fail("Clip source and timeline durations must match within half a source frame until time remapping is implemented.","INVALID_TIMELINE_TIMING");
 };
 const enabled=(clip)=>clip?.enabled!==false;
 const ordered=(tracks)=>tracks.flatMap(track=>(track.clips||[]).filter(enabled)).sort((a,b)=>seconds(a.timelineStart)-seconds(b.timelineStart));
