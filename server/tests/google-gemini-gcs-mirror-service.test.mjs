@@ -73,8 +73,13 @@ async function setup({ existing = null, authorize = async () => asset } = {}) {
     }
     throw new Error("Unexpected GCS method");
   };
+  const attemptRepository = {
+    async createAttempt(input) { calls.push({op:"attempt_create",input}); return {id:"44444444-4444-4444-8444-444444444444"}; },
+    async recordSession(input) { calls.push({op:"attempt_session",input}); },
+    async transition(input) { calls.push({op:"attempt_transition",input}); }
+  };
   const service = createGoogleGeminiGcsMirrorService({
-    env, fetchImpl, getAccessToken: async () => token, sourceRepository,
+    env, fetchImpl, getAccessToken: async () => token, sourceRepository, attemptRepository,
     authorizePrivateAsset: authorize,
     loadPrivateAsset: async scope => {
       calls.push({ op: "load", scope });
@@ -96,6 +101,9 @@ test("authorizes and materializes the private asset, mirrors it, verifies it and
     assert.ok(f.calls.some(call => call.op === "POST"));
     assert.ok(f.calls.some(call => call.op === "PUT"));
     assert.ok(f.calls.some(call => call.op === "cleanup"));
+    assert.ok(f.calls.some(call => call.op === "attempt_create"));
+    assert.ok(f.calls.some(call => call.op === "attempt_session"));
+    assert.ok(f.calls.some(call => call.op === "attempt_transition" && call.input.state === "REGISTERED"));
     assert.ok(f.calls.findIndex(call => call.op === "find") < f.calls.findIndex(call => call.op === "load"));
     assert.ok(f.calls.findIndex(call => call.op === "load") < f.calls.findIndex(call => call.op === "POST"));
   } finally { await rm(f.root, { recursive: true, force: true }); }
