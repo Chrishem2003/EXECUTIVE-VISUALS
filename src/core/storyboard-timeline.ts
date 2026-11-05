@@ -35,6 +35,45 @@ const RATIOS:Record<string,[number,number]> = {
   "4:3":[1440,1080], "3:4":[1080,1440], "21:9":[2560,1080]
 };
 const fail=(message:string)=>new Error(message);
+const validText=(value:unknown,max:number)=>typeof value==="string"&&value.trim().length>0&&value.length<=max;
+const validId=(value:unknown)=>validText(value,120)&&/^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(value as string);
+const validUniqueStrings=(values:unknown,min:number,max:number,itemMax:number)=>{
+  if(!Array.isArray(values)||values.length<min||values.length>max)return false;
+  const normalized=values.map(value=>typeof value==="string"?value.trim():"");
+  return normalized.every(value=>value.length>0&&value.length<=itemMax)&&new Set(normalized).size===normalized.length;
+};
+function validateStoryboardInput(storyboard:StoryboardInput){
+  validateStoryboardInput(storyboard);
+  const dimensions=RATIOS[storyboard.aspectRatio];
+  const sceneIds=new Set<string>(),shotIds=new Set<string>();
+  let totalShots=0,totalFrames=0;
+  for(let sceneIndex=0;sceneIndex<storyboard.scenes.length;sceneIndex++){
+    const scene=storyboard.scenes[sceneIndex];
+    if(!scene||!validId(scene.id)||sceneIds.has(scene.id)||shotIds.has(scene.id)||scene.number!==sceneIndex+1||!validText(scene.title,160)||!validText(scene.slugline,160)||!validText(scene.purpose,500)||!validText(scene.storyBeat,160)||!validText(scene.location,160)||!validText(scene.timeOfDay,80)||!Array.isArray(scene.shots)||scene.shots.length<1||scene.shots.length>8)throw fail("Storyboard contains an invalid, duplicate or out-of-order scene.");
+    sceneIds.add(scene.id);
+    let sceneFrames=0;
+    for(let shotIndex=0;shotIndex<scene.shots.length;shotIndex++){
+      const shot=scene.shots[shotIndex];
+      if(!shot||!validId(shot.id)||shotIds.has(shot.id)||sceneIds.has(shot.id)||shot.number!==shotIndex+1||!Number.isInteger(shot.durationSeconds)||shot.durationSeconds<1||shot.durationSeconds>60)throw fail("Storyboard contains an invalid, duplicate or out-of-order shot.");
+      for(const [field,max] of Object.entries({shotType:100,framing:120,angle:120,movement:160,lens:100,action:600,dialogue:500,narration:500,visualPrompt:1600,motionPrompt:1000,negativePrompt:600,lighting:300,soundCue:300,continuityIn:300,continuityOut:300,proofReference:300,transitionOut:80})){
+        const value=shot[field as keyof StoryboardShotInput];
+        if(typeof value!=="string"||value.length>max)throw fail("Storyboard shot "+field+" is invalid or too long.");
+      }
+      if(!Array.isArray(shot.characterRefs)||shot.characterRefs.length>12||shot.characterRefs.some(reference=>!reference||!validText(reference.name,120)||!validText(reference.role,160)||(typeof reference.characterId!=="string"&&reference.characterId!==null)||!validText(reference.action,300)||!validText(reference.continuityNotes,300)))throw fail("Storyboard shot character references are invalid.");
+      shotIds.add(shot.id);totalShots++;
+      const frames=Math.round(shot.durationSeconds*storyboard.frameRate);
+      if(frames<1)throw fail("Storyboard shot duration is below one frame.");
+      sceneFrames+=frames;
+    }
+    const declaredSceneFrames=Math.round(scene.durationSeconds*storyboard.frameRate);
+    if(!Number.isFinite(scene.durationSeconds)||Math.abs(sceneFrames-declaredSceneFrames)>1)throw fail("Storyboard scene duration does not match its shot durations.");
+    totalFrames+=sceneFrames;
+  }
+  if(totalShots>60||totalFrames/storyboard.frameRate>1800)throw fail("Storyboard exceeds the sixty-shot or thirty-minute planning limit.");
+  if(!Number.isFinite(storyboard.durationSeconds)||Math.abs(totalFrames/storyboard.frameRate-storyboard.durationSeconds)>1/storyboard.frameRate)throw fail("Storyboard total runtime does not match its shot durations.");
+  const tolerance=Math.max(2,Math.round(storyboard.targetDurationSeconds*0.05));
+  if(Math.abs(totalFrames/storyboard.frameRate-storyboard.targetDurationSeconds)>tolerance)throw fail("Storyboard runtime does not match its approved target within five percent.");
+}
 
 export function createStoryboardTimeline(projectId:string,timelineId:string,storyboard:StoryboardInput,name?:string):EditorialTimeline{
   if(!projectId||!timelineId)throw fail("A cloud project and new timeline ID are required.");
@@ -100,18 +139,28 @@ export function createStoryboardTimeline(projectId:string,timelineId:string,stor
 }
 
 export function reflowStoryboardTimelinePlan(plan:StoryboardTimelinePlan):StoryboardTimelinePlan{
-  if(!plan||plan.schemaVersion!==1||!Number.isInteger(plan.frameRate)||![24,25,30,50,60].includes(plan.frameRate)||!Array.isArray(plan.scenes)||plan.scenes.length<2||plan.scenes.length>12)throw fail("Storyboard timeline plan is invalid.");
+  if(!plan||plan.schemaVersion!==1||!validId(plan.sourceStoryboardId)||!/^([a-f0-9]{64})$/.test(plan.sourceInputHash)||!validText(plan.sourceModel,160)||!validText(plan.title,160)||!validText(plan.logline,1000))throw fail("Storyboard timeline lineage is invalid.");
+  if(!Number.isInteger(plan.frameRate)||![24,25,30,50,60].includes(plan.frameRate)||!Number.isInteger(plan.targetDurationSeconds)||plan.targetDurationSeconds<15||plan.targetDurationSeconds>1800)throw fail("Storyboard timeline frame rate or target runtime is invalid.");
+  if(!RATIOS[plan.aspectRatio])throw fail("Storyboard timeline aspect ratio is unsupported.");
+  if(!validUniqueStrings(plan.globalContinuityRules,3,10,400))throw fail("Storyboard timeline continuity rules are invalid.");
+  if(!plan.trackIds||![plan.trackIds.picture,plan.trackIds.audio,plan.trackIds.captions].every(validId)||new Set(Object.values(plan.trackIds)).size!==3)throw fail("Storyboard timeline track lineage is invalid.");
+  if(!Array.isArray(plan.scenes)||plan.scenes.length<2||plan.scenes.length>12)throw fail("Storyboard timeline scene count is invalid.");
+  const sceneIds=new Set<string>(),shotIds=new Set<string>();
   let cursor=0,totalShots=0;
-  const scenes=plan.scenes.map(scene=>{
+  const scenes=plan.scenes.map((scene,sceneIndex)=>{
+    if(!scene||!validId(scene.id)||sceneIds.has(scene.id)||shotIds.has(scene.id)||scene.number!==sceneIndex+1||!validText(scene.title,160)||!validText(scene.slugline,160)||!validText(scene.purpose,500)||!validText(scene.storyBeat,160)||!validText(scene.location,160)||!validText(scene.timeOfDay,80)||!Array.isArray(scene.shots)||scene.shots.length<1||scene.shots.length>8)throw fail("Storyboard timeline contains an invalid or duplicate scene.");
+    sceneIds.add(scene.id);
     const startFrame=cursor;
-    const shots=scene.shots.map(shot=>{
+    const shots=scene.shots.map((shot,shotIndex)=>{
       totalShots++;
-      if(totalShots>60||!Number.isInteger(shot.durationFrames)||shot.durationFrames<1||shot.durationFrames>plan.frameRate*60)throw fail("Planned shot duration or count is invalid.");
+      if(totalShots>60||!shot||!validId(shot.id)||shotIds.has(shot.id)||sceneIds.has(shot.id)||shot.number!==shotIndex+1||shot.sourceShotId!==shot.id||shot.sourceSceneId!==scene.id||shot.sceneNumber!==scene.number||shot.shotNumber!==shot.number||shot.targetTrackId!==plan.trackIds.picture||shot.assetId!==null||shot.status!=="planned"||!Number.isInteger(shot.durationFrames)||shot.durationFrames<1||shot.durationFrames>plan.frameRate*60)throw fail("Planned storyboard shot lineage or duration is invalid.");
+      shotIds.add(shot.id);
       const next={...shot,startFrame:cursor,durationSeconds:shot.durationFrames/plan.frameRate,timelineStart:rational(cursor,plan.frameRate),timelineDuration:rational(shot.durationFrames,plan.frameRate)};
       cursor+=shot.durationFrames;return next;
     });
     const durationFrames=cursor-startFrame;
     return {...scene,startFrame,durationFrames,durationSeconds:durationFrames/plan.frameRate,shots,shotIds:shots.map(shot=>shot.id)};
   });
+  if(totalShots<2||cursor/plan.frameRate>1800)throw fail("Edited storyboard timeline exceeds the sixty-shot or thirty-minute planning limit.");
   return {...plan,scenes,totalFrames:cursor,durationSeconds:cursor/plan.frameRate};
 }
