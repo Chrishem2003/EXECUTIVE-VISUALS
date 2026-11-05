@@ -4,7 +4,7 @@ import { rational, validateTimeline } from "../src/core/timeline.ts";
 import { applyTimelineHistoryOperation, createTimelineHistory, createTimelineHistoryOperation, recordTimelineHistory, redoTimelineHistory, undoTimelineHistory } from "../src/core/timeline-history.ts";
 
 const shot=(id,durationSeconds)=>({
- id,number:1,durationSeconds,shotType:"Detail",framing:"Close-up",angle:"Eye level",movement:"Slow push",lens:"50mm",
+ id,number:Number(id.split("-").at(-1)),durationSeconds,shotType:"Detail",framing:"Close-up",angle:"Eye level",movement:"Slow push",lens:"50mm",
  action:"Show the process clearly.",dialogue:"",narration:"",visualPrompt:"A provider-neutral still prompt.",motionPrompt:"A provider-neutral motion prompt.",
  negativePrompt:"No invented claims.",lighting:"Soft daylight",soundCue:"Workshop ambience",continuityIn:"Match previous frame.",
  continuityOut:"Hold on the result.",proofReference:"Verify demonstration before publishing.",transitionOut:"cut",
