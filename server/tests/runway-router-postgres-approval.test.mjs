@@ -16,6 +16,10 @@ const decision = {
   provider: "runway", model: "gen4.5", configId: "creative_low_cost",
   inputHash: "b".repeat(64), estimatedCredits: 60, maxEstimatedCredits: 80
 };
+const jobInput = {
+  projectId, provider: "runway", model: "gen4.5",
+  requestHash: "a".repeat(64), durationSeconds: 5, prompt: "Approved scene"
+};
 const response = body => ({ ok: true, status: 200, async text() { return JSON.stringify(body); } });
 
 test("records only a bounded non-billable Gen-4.5 preflight using service-role RPC", async () => {
@@ -32,7 +36,7 @@ test("records only a bounded non-billable Gen-4.5 preflight using service-role R
     }
   });
   const result = await client.recordPreflight({
-    ownerId, projectId, decision, requestHash: "a".repeat(64),
+    ownerId, projectId, decision, requestHash: "a".repeat(64), jobInput,
     approvedMaxAmount: 1.25, currency: "USD", maxEstimatedCredits: 80
   });
   assert.equal(result.routerApprovalId, routerApprovalId);
@@ -43,7 +47,7 @@ test("records only a bounded non-billable Gen-4.5 preflight using service-role R
   assert.equal(calls[0].options.headers["content-profile"], "executive_visuals");
   assert.deepEqual(calls[0].body, {
     p_owner_id: ownerId, p_project_id: projectId, p_config_id: decision.configId,
-    p_input_hash: decision.inputHash, p_request_hash: "a".repeat(64),
+    p_input_hash: decision.inputHash, p_request_hash: "a".repeat(64), p_job_input: jobInput,
     p_estimated_credits: 60, p_max_estimated_credits: 80,
     p_approved_max_amount: 1.25, p_currency: "USD", p_ttl_seconds: 900
   });
@@ -55,7 +59,7 @@ test("rejects provider tasks, billed decisions, mismatched ceilings and invalid 
     ...base, fetchImpl: async () => { calls++; return response([]); }
   });
   const args = {
-    ownerId, projectId, decision, requestHash: "a".repeat(64),
+    ownerId, projectId, decision, requestHash: "a".repeat(64), jobInput,
     approvedMaxAmount: 1.25, maxEstimatedCredits: 80
   };
   await assert.rejects(() => client.recordPreflight({ ...args, decision: { ...decision, taskCreated: true } }), error => error.code === "RUNWAY_PREFLIGHT_DECISION_INVALID");
