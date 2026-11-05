@@ -1,4 +1,4 @@
-import { addMarker, addTrack, createTimeline, rational, validateTimeline, type EditorialTimeline, type TimelineMarker } from "./timeline";
+import { addMarker, addTrack, createTimeline, rational, validateTimeline, type EditorialTimeline, type TimelineMarker } from "./timeline.ts";
 
 export interface StoryboardShotInput {
   id: string; number: number; durationSeconds: number; shotType: string; framing: string; angle: string;
