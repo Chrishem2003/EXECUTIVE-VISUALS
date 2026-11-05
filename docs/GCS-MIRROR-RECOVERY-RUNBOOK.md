@@ -102,11 +102,18 @@ Required startup settings include:
   reuse the Supabase service-role key or Google OAuth token.
 - `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` in the server-side API and
   worker processes only.
-- `GEMINI_GCS_MIRROR_ENABLED=true` on the API service enables the authenticated
-  `POST /api/integrations/google-gcs/mirror` endpoint. It accepts only an asset
-  ID and optional project ID; owner identity comes from the verified session.
-  The endpoint requires owner/editor access for project assets, records an
-  audit event, and never returns the private GCS URI.
+- `GEMINI_GCS_MIRROR_ENABLED=true` on the API service enables authenticated
+  private mirroring and Gemini Files registration endpoints:
+  - `POST /api/integrations/google-gcs/mirror` accepts an asset ID and optional
+    project ID, then returns a verified generation receipt.
+  - `POST /api/integrations/google-gcs/register` accepts an asset ID, optional
+    project ID and media type; it mirrors first, then registers the private
+    `gs://` object with Gemini Files. It returns the Gemini provider-file URI,
+    not the private GCS object URI.
+  Owner identity comes from the verified session. Project assets require
+  owner/editor access. Both successful operations are audited.
+- `GEMINI_GCS_MAX_BYTES` optionally bounds both mirror and Gemini registration
+  size; default is 250 MiB.
 - `GEMINI_GCS_MIRROR_RECOVERY_ENABLED=true` on the isolated background worker
   enables lease-fenced recovery independently of the API mirror endpoint.
 
@@ -124,9 +131,9 @@ Official references:
 
 The API and worker flags are separate. Keep both disabled until the
 staging identity, bucket policy, secret synchronization and disposable tests
-have been reviewed. The mirror API does not automatically register the object
-with Gemini Files; provider-side GCS registration and UI workflow wiring remain
-separate release work.
+have been reviewed. The authenticated backend registration endpoint is now
+wired; frontend workflow wiring and real provider acceptance remain separate
+release gates.
 
 ## Staging acceptance gates
 
