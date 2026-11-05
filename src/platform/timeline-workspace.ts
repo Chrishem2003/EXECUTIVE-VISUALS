@@ -496,13 +496,13 @@ document.addEventListener("submit",event=>{
     if(nextClip&&transitionType==="crossfade"&&Math.abs(seconds(nextClip.timelineStart)-oldEnd)<=tolerance)nextClip.timelineStart=rational(Math.round((newEnd-fadeFrames/frameRate)*frameRate),frameRate);
     else if(nextClip&&previousTransition?.type==="crossfade"&&transitionType!=="crossfade"&&Math.abs(seconds(nextClip.timelineStart)-(newEnd-previousTransition.fadeFrames/frameRate))<=tolerance)nextClip.timelineStart=rational(Math.round(newEnd*frameRate),frameRate);
     const transitionValidation=validateTimeline(state.timeline);
-    if(!transitionValidation.valid){if(previousTransition)clip.transitionToNext=previousTransition;else delete clip.transitionToNext;if(nextClip&&previousNextStart)nextClip.timelineStart=previousNextStart;alert(transitionValidation.issues[0].message);return;}
+    if(!transitionValidation.valid){if(previousTransition)clip.transitionToNext=previousTransition;else delete clip.transitionToNext;if(nextClip&&previousNextStart)nextClip.timelineStart=previousNextStart;clip.timelineStart=originalTimelineStart;clip.duration=originalDuration;clip.sourceRange=originalSourceRange;clip.speed=originalSpeed;alert(transitionValidation.issues[0].message);return;}
    }else{
     const previousTransition=clip.transitionToNext,previousMetadata=clip.metadata;
     if(data.get("transitionType")==="dip-to-black")clip.transitionToNext={type:"dip-to-black",fadeFrames:Math.max(1,Math.min(240,Math.floor(Number(data.get("transitionFadeFrames"))||12)))};
     else delete clip.transitionToNext;
     const transitionValidation=validateTimeline(state.timeline);
-    if(!transitionValidation.valid){if(previousTransition)clip.transitionToNext=previousTransition;else delete clip.transitionToNext;clip.metadata=previousMetadata;alert(transitionValidation.issues[0].message);return;}
+    if(!transitionValidation.valid){if(previousTransition)clip.transitionToNext=previousTransition;else delete clip.transitionToNext;clip.metadata=previousMetadata;clip.timelineStart=originalTimelineStart;clip.duration=originalDuration;clip.sourceRange=originalSourceRange;clip.speed=originalSpeed;alert(transitionValidation.issues[0].message);return;}
     const width=state.timeline.width||1920,height=state.timeline.height||1080;
     const videoWidth=Math.max(16,Math.min(width,Number(data.get("videoWidth"))||width)),videoHeight=Math.max(16,Math.min(height,Number(data.get("videoHeight"))||height));
     clip.metadata={...clip.metadata,x:Math.max(0,Math.min(width-videoWidth,Number(data.get("videoX"))||0)),y:Math.max(0,Math.min(height-videoHeight,Number(data.get("videoY"))||0)),width:videoWidth,height:videoHeight,opacity:Math.max(0,Math.min(1,Number(data.get("videoOpacity")??1)))};
