@@ -237,3 +237,23 @@ test("quarantines a completed object when its recorded CRC32C receipt is missing
   assert.equal(h.records.length,0);
  }finally{await rm(h.root,{recursive:true,force:true});}
 });
+
+test("quarantines an object whose server and custom CRC32C disagree with the immutable attempt receipt",async()=>{
+ const forgedMetadata=objectMetadata(baseAttempt,{
+  crc32c:"AAAAAA==",
+  metadata:{
+   executivevisualsassetid:baseAttempt.assetId,
+   executivevisualsownerid:baseAttempt.ownerId,
+   executivevisualsprojectid:baseAttempt.projectId,
+   executivevisualssha256:baseAttempt.sha256,
+   executivevisualscrc32c:"AAAAAA=="
+  }
+ });
+ const h=await harness({metadata:forgedMetadata});
+ try{
+  const result=await h.worker.run();
+  assert.equal(result.quarantined,1);
+  assert.equal(h.records.length,0);
+  assert.equal(h.transitions[0].state,"QUARANTINED");
+ }finally{await rm(h.root,{recursive:true,force:true});}
+});
