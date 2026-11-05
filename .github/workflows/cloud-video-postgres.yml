@@ -46,7 +46,9 @@ jobs:
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/google-provider-files-postgres-integration.sql
       - name: Apply durable Google provider-file upload-attempt migration
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261105120000_google_provider_file_upload_attempts.sql
-      - name: Verify private Google upload-attempt ledger and quarantine state
+      - name: Apply Gemini provider-file recovery lease migration
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261105190000_google_provider_file_recovery_leases.sql
+      - name: Verify private Google upload-attempt ledger, quarantine state and recovery lease
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/google-provider-file-upload-attempts-postgres-integration.sql
       - name: Apply durable Google Drive export-attempt migration
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261105170000_google_drive_export_attempts.sql
