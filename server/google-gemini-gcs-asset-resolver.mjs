@@ -118,6 +118,7 @@ export function createGoogleGeminiGcsAssetResolver({
           !safeBucket(source.bucket) || !allowedBuckets.has(source.bucket) ||
           !safeObjectName(source.objectName) ||
           typeof source.generation !== "string" || !/^\d{1,30}$/.test(source.generation) ||
+          typeof source.metageneration !== "string" || !/^\d{1,30}$/.test(source.metageneration) ||
           !Number.isSafeInteger(source.sizeBytes) || source.sizeBytes < 1 || source.sizeBytes > maxBytes ||
           typeof source.mediaType !== "string" || !/^[a-z0-9.+-]+\/[a-z0-9.+-]+$/.test(source.mediaType) ||
           typeof source.sha256 !== "string" || !SHA256.test(source.sha256)) {
@@ -136,11 +137,12 @@ export function createGoogleGeminiGcsAssetResolver({
 
       const objectUrl = "https://storage.googleapis.com/storage/v1/b/" +
         encodeURIComponent(source.bucket) + "/o/" + encodeURIComponent(source.objectName) +
-        "?fields=bucket,name,generation,size,contentType,metadata";
+        "?fields=bucket,name,generation,metageneration,size,contentType,metadata";
       const metadata = await requestMetadata(objectUrl, accessToken);
       const custom = metadata?.metadata || {};
       if (metadata?.bucket !== source.bucket || metadata?.name !== source.objectName ||
           String(metadata?.generation || "") !== source.generation ||
+          String(metadata?.metageneration || "") !== source.metageneration ||
           String(metadata?.size || "") !== String(source.sizeBytes) ||
           metadata?.contentType !== source.mediaType ||
           custom.executivevisualsassetid !== assetId ||
