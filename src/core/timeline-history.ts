@@ -146,7 +146,14 @@ function applyTrackChanges(timeline: EditorialTimeline, changes: EntityChange[])
       continue;
     }
     desired.set(change.id, {
-      track: { ...clone(change.after), clips: found ? found.track.clips : [] },
+      track: {
+        id: change.after.id,
+        name: change.after.name,
+        kind: change.after.kind,
+        enabled: change.after.enabled,
+        locked: change.after.locked,
+        clips: found ? found.track.clips : []
+      },
       index: change.after.index
     });
   }
