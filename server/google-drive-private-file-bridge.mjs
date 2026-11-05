@@ -103,7 +103,7 @@ export function createGoogleDrivePrivateFileBridge({
     return value;
   }
 
-  async function request(url, accessToken, { method = "GET", headers = {}, body, raw = false, readBytes = false } = {}) {
+  async function request(url, accessToken, { method = "GET", headers = {}, body, raw = false, readBytes = false, allowStatuses = [] } = {}) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
@@ -236,11 +236,70 @@ export function createGoogleDrivePrivateFileBridge({
           body: JSON.stringify(metadata), raw: true
         });
         const session = safeUploadSession(init.headers?.get?.("location"));
-        const uploaded = await request(session, accessToken, {
-          method: "PUT",
-          headers: { "content-type": asset.mediaType, "content-length": String(bytes.byteLength) },
-          body: bytes
-        });
+        let uploadResponse;
+        let offset = 0;
+        let completed = false;
+        for (let attempt = 0; attempt < 6 && !completed; attempt++) {
+          try {
+            uploadResponse = await request(session, accessToken, {
+              method: "PUT",
+              headers: {
+                "content-type": asset.mediaType,
+                "content-length": String(bytes.byteLength - offset),
+                "content-range": `bytes ${offset}-${bytes.byteLength - 1}/${bytes.byteLength}`
+              },
+              body: bytes.subarray(offset),
+              raw: true,
+              allowStatuses: [308]
+            });
+          } catch (error) {
+            if (!["GOOGLE_DRIVE_TIMEOUT", "GOOGLE_DRIVE_REQUEST_FAILED", "GOOGLE_DRIVE_PROVIDER_ERROR"].includes(error?.code) ||
+                (error.status && error.status < 500)) throw error;
+            uploadResponse = await request(session, accessToken, {
+              method: "PUT",
+              headers: { "content-length": "0", "content-range": `bytes */${bytes.byteLength}` },
+              raw: true,
+              allowStatuses: [308, 404]
+            });
+          }
+          if (uploadResponse.status === 404) {
+            throw fail("Google Drive resumable session expired; reconcile the asset before creating a new upload.",
+              "GOOGLE_DRIVE_UPLOAD_SESSION_EXPIRED");
+          }
+          if (uploadResponse.status === 308) {
+            const range = uploadResponse.headers?.get?.("range");
+            if (range === null || range === undefined) offset = 0;
+            else {
+              const match = /^bytes=0-(\\d+)$/.exec(range);
+              if (!match) throw fail("Google Drive returned an invalid resumable upload range.", "GOOGLE_DRIVE_UPLOAD_RANGE_INVALID");
+              offset = Number(match[1]) + 1;
+              if (!Number.isSafeInteger(offset) || offset < 0 || offset > bytes.byteLength) {
+                throw fail("Google Drive returned an out-of-bounds resumable upload range.", "GOOGLE_DRIVE_UPLOAD_RANGE_INVALID");
+              }
+            }
+            if (offset === bytes.byteLength) {
+              uploadResponse = await request(session, accessToken, {
+                method: "PUT",
+                headers: { "content-length": "0", "content-range": `bytes */${bytes.byteLength}` },
+                raw: true,
+                allowStatuses: [308]
+              });
+              if (uploadResponse.status === 308) continue;
+            } else continue;
+          }
+          if (uploadResponse.status === 200 || uploadResponse.status === 201) completed = true;
+        }
+        if (!completed || !uploadResponse) {
+          throw fail("Google Drive resumable upload did not complete within the bounded recovery attempts.",
+            "GOOGLE_DRIVE_UPLOAD_RECOVERY_EXHAUSTED");
+        }
+        let uploaded;
+        try {
+          const raw = await uploadResponse.text();
+          uploaded = raw ? JSON.parse(raw) : null;
+        } catch {
+          throw fail("Google Drive completed an upload but returned invalid file metadata.", "GOOGLE_DRIVE_RESPONSE_INVALID");
+        }
         const expectedMd5 = createHash("md5").update(bytes).digest("hex");
         if (!uploaded || typeof uploaded.id !== "string" || !FILE_ID.test(uploaded.id) ||
             uploaded.mimeType !== asset.mediaType || Number(uploaded.size) !== bytes.byteLength ||
