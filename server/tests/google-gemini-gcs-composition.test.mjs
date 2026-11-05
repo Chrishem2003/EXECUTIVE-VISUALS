@@ -31,10 +31,10 @@ test("composes caller-readable GCS object verification with Gemini registration 
     bucket: source.bucket, name: source.objectName, generation: source.generation,
     size: String(source.sizeBytes), contentType: source.mediaType,
     metadata: {
-      executiveVisualsAssetId: assetId,
-      executiveVisualsOwnerId: ownerId,
-      executiveVisualsProjectId: projectId,
-      executiveVisualsSha256: sha256
+      executivevisualsassetid: assetId,
+      executivevisualsownerid: ownerId,
+      executivevisualsprojectid: projectId,
+      executivevisualssha256: sha256
     }
   };
   const composition = createGoogleGeminiGcsFilesComposition({
