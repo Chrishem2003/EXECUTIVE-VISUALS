@@ -54,7 +54,7 @@ create policy ev_video_cost_evidence_owner_insert
 create or replace function executive_visuals.validate_video_generation_cost_evidence()
 returns trigger
 language plpgsql
-security invoker
+security definer
 set search_path = pg_catalog, executive_visuals
 as $video_cost_evidence_validate$
 declare
@@ -113,6 +113,8 @@ begin
   return new;
 end;
 $video_cost_evidence_validate$;
+
+revoke all on function executive_visuals.validate_video_generation_cost_evidence() from public, anon, authenticated;
 
 create trigger ev_video_cost_evidence_validate
   before insert on executive_visuals.video_generation_cost_evidence
