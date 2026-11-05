@@ -8,7 +8,7 @@ const ACTIVE = new Set(["UPLOADING","OUTCOME_UNKNOWN","OBJECT_VERIFIED"]);
 const fail = (message, code) => Object.assign(new Error(message), { code });
 
 function keyFromEnv(value) {
-  if (typeof value !== "string" || !/^[A-Za-z0-9_-]{43}=$/.test(value)) {
+  if (typeof value !== "string" || !/^[A-Za-z0-9+/_-]{43}=$/.test(value)) {
     throw fail("GCS session encryption key must be a base64-encoded 32-byte key.", "GEMINI_GCS_SESSION_KEY_INVALID");
   }
   const key = Buffer.from(value, "base64");
@@ -110,7 +110,7 @@ export function createGoogleGeminiGcsMirrorAttemptRepository({
     if (!UUID.test(String(input?.assetId || "")) || !UUID.test(String(input?.ownerId || "")) ||
         (input?.projectId != null && !UUID.test(String(input.projectId))) ||
         !HASH.test(String(input?.sha256 || "")) || !Number.isSafeInteger(input?.sizeBytes) ||
-        input.sizeBytes < 1 || typeof input.bucket !== "string" || typeof input.objectName !== "string") {
+        input.sizeBytes < 1 || typeof input.bucket !== "string" || !/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/.test(input.bucket) || typeof input.objectName !== "string" || input.objectName.length < 1 || input.objectName.length > 1024 || typeof input.mediaType !== "string" || !/^[a-z0-9.+-]+\/[a-z0-9.+-]+$/.test(input.mediaType)) {
       throw fail("GCS mirror attempt scope is invalid.", "GEMINI_GCS_ATTEMPT_INVALID");
     }
   }
