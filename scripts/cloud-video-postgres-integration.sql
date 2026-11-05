@@ -427,4 +427,66 @@ end
 $overrun_state$;
 
 reset role;
+set role service_role;
+
+-- A queued job canceled before the first provider submission is terminalized
+-- atomically and its reserved budget is released exactly once.
+insert into executive_visuals.video_generation_budget_approvals(
+ id,owner_id,project_id,provider,model,request_hash,currency,approved_max_amount,approval_note,expires_at
+) values (
+ 'b23e4567-e89b-42d3-a456-426614174000',
+ '123e4567-e89b-42d3-a456-426614174000',
+ '323e4567-e89b-42d3-a456-426614174000',
+ 'runway','gen4.5',repeat('e',64),'USD',1,'queued cancellation test',clock_timestamp()+interval '10 minutes'
+);
+create temporary table cancellation_context as
+select job_id,budget_reservation_id as reservation_id
+from executive_visuals.enqueue_video_generation_job(
+ '123e4567-e89b-42d3-a456-426614174000',
+ '323e4567-e89b-42d3-a456-426614174000',
+ 'pg-integration-video-cancel-before-submit','runway','gen4.5',repeat('e',64),
+ jsonb_build_object('projectId','323e4567-e89b-42d3-a456-426614174000',
+   'provider','runway','model','gen4.5','requestHash',repeat('e',64),'durationSeconds',2),
+ 'b23e4567-e89b-42d3-a456-426614174000',0.5,'USD'
+);
+select * from executive_visuals.request_video_generation_cancellation(
+ (select job_id from cancellation_context),'123e4567-e89b-42d3-a456-426614174000'
+);
+do $cancel_before_submit$
+declare job_row executive_visuals.jobs;
+        reservation_row executive_visuals.video_generation_budget_reservations;
+        policy_row executive_visuals.video_generation_budget_policies;
+begin
+ select * into job_row from executive_visuals.jobs where id=(select job_id from cancellation_context);
+ select * into reservation_row from executive_visuals.video_generation_budget_reservations where id=(select reservation_id from cancellation_context);
+ select * into policy_row from executive_visuals.video_generation_budget_policies where id=reservation_row.policy_id;
+ if job_row.status <> 'cancelled' or job_row.cancellation_requested_at is null then
+  raise exception 'queued video cancellation did not terminalize the job';
+ end if;
+ if reservation_row.state <> 'released' or reservation_row.actual_amount is not null then
+  raise exception 'queued video cancellation did not release the budget reservation';
+ end if;
+ if policy_row.reserved_amount <> 0.5 then
+  raise exception 'queued video cancellation changed reserved budget by the wrong amount';
+ end if;
+ if not exists (select 1 from executive_visuals.job_events where job_id=job_row.id and event_type='job.cancelled') then
+  raise exception 'queued video cancellation event is missing';
+ end if;
+end
+$cancel_before_submit$;
+
+-- A different owner cannot discover or cancel the job through the RPC.
+do $cancel_owner_scope$
+begin
+ if exists (
+  select 1 from executive_visuals.request_video_generation_cancellation(
+   (select job_id from cancellation_context),'223e4567-e89b-42d3-a456-426614174000'
+  )
+ ) then
+  raise exception 'non-owner cancellation unexpectedly returned a job';
+ end if;
+end
+$cancel_owner_scope$;
+
+reset role;
 select 'cloud video PostgreSQL integration checks passed' as result;
