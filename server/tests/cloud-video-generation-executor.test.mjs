@@ -49,7 +49,7 @@ test("cloud executor submits once, records task, verifies cost and ingests priva
   assert.equal(result.actualAmount, 0.75);
   assert.equal(result.currency, "USD");
   assert.deepEqual(result.assetIds, ["423e4567-e89b-42d3-a456-426614174000"]);
-  assert.deepEqual(f.calls.map(call => call[0]), ["prepare", "begin", "submit", "record", "poll", "cost", "ingest"]);
+  assert.deepEqual(f.calls.map(call => call[0]), ["prepare", "cancellation-check", "begin", "cancellation-check", "submit", "record", "poll", "cancellation-check", "cost", "ingest"]);
   const submission = f.calls.find(call => call[0] === "submit");
   assert.equal(submission[2], job.id);
   assert.equal(submission[3], ownerId);
@@ -108,7 +108,7 @@ test("cloud executor prepares private image inputs before beginning the one-shot
   return {...input,runwayPromptImage:"runway://uploads/private-frame"};
  };
  await executeCloudVideoGenerationJob({job,workerId:"worker-1",...f});
- assert.deepEqual(f.calls.map(call=>call[0]),["prepare","prepareInput","begin","submit","record","poll","cost","ingest"]);
+ assert.deepEqual(f.calls.map(call=>call[0]),["prepare","cancellation-check","prepareInput","begin","cancellation-check","submit","record","poll","cancellation-check","cost","ingest"]);
  const prepared=f.calls.find(call=>call[0]==="prepareInput");
  assert.equal(prepared[1],job.id);
  assert.equal(prepared[2],ownerId);
