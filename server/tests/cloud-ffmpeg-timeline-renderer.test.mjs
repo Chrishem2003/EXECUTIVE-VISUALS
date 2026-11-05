@@ -17,20 +17,21 @@ test("cloud FFmpeg renderer produces a playable master from materialized video a
   execFileSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-loglevel","error","-y","-f","lavfi","-i","sine=frequency=440:duration=1","-c:a","pcm_s16le",audio]);
   const timeline={name:"Cloud test",width:320,height:240,frameRate:{numerator:24,denominator:1},tracks:[
    {id:"v",kind:"video",clips:[{id:"v1",assetId:"asset-video",timelineStart:time(0),duration:time(1),sourceRange:{start:time(0),duration:time(1)}}]},
-   {id:"a",kind:"audio",clips:[{id:"a1",assetId:"asset-audio",timelineStart:time(0),duration:time(1),sourceRange:{start:time(0),duration:time(1)},gainDb:-3}]}
+   {id:"a",kind:"audio",clips:[{id:"a1",assetId:"asset-audio",timelineStart:time(0),duration:time(1),sourceRange:{start:time(0),duration:time(1)},gainDb:-3,pan:0,audioAutomation:[{timeSeconds:0,gainDb:-3,pan:-1,interpolation:"linear"},{timeSeconds:0.5,gainDb:-12,pan:1,interpolation:"linear"}]}]}
   ]};
   const assets=new Map([
    ["asset-video",{path:video,asset:{id:"asset-video",mediaType:"video/mp4",originalName:"source.mp4"}}],
    ["asset-audio",{path:audio,asset:{id:"asset-audio",mediaType:"audio/wav",originalName:"voice.wav"}}]
   ]);
   const result=await renderCloudTimeline({timeline,assets,workDir:root,onProgress(){}});
-  const probe=JSON.parse(execFileSync(process.env.FFPROBE_PATH||"ffprobe",["-v","error","-show_entries","stream=codec_type","-of","json",result.path],{encoding:"utf8"}));
+  const probe=JSON.parse(execFileSync(process.env.FFPROBE_PATH||"ffprobe",["-v","error","-show_entries","stream=codec_type,channels","-of","json",result.path],{encoding:"utf8"}));
   assert.equal(result.mediaType,"video/mp4");
   assert.match(result.filename,/Cloud test-master\.mp4$/);
   assert.ok(probe.streams.some(stream=>stream.codec_type==="video"));
-  assert.ok(probe.streams.some(stream=>stream.codec_type==="audio"));
+  assert.ok(probe.streams.some(stream=>stream.codec_type==="audio"&&stream.channels===2));
   assert.equal(result.render.videoClips,1);
   assert.equal(result.render.audioClips,1);
+  assert.equal(result.render.automatedAudioClips,1);
  }finally{await rm(root,{recursive:true,force:true});}
 });
 
