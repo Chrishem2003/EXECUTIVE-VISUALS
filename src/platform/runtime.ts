@@ -1,4 +1,7 @@
 import { apiRequest, ApiError, setApiAccessToken, clearApiAccessToken } from "../core/api";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+
+let supabaseAuth:SupabaseClient|null=null;
 
 type RuntimeUser={id:string;email:string};
 type RuntimeProject={id:string;name:string;description?:string;revision?:number;access_role?:"owner"|"editor"|"reviewer"|"viewer"};
@@ -10,8 +13,8 @@ type RemoteUsage={window:string;configurationValid:boolean;limit:number|null;use
 let workspaceRevisions=new Map<string,number>();
 let workspaceSaveTimers=new Map<string,ReturnType<typeof setTimeout>>();
 let workspaceSaveChain:Promise<void>=Promise.resolve();
-const state:{status:"checking"|"offline"|"auth-required"|"online";authMode:"local"|"supabase";user:RuntimeUser|null;projects:RuntimeProject[];assets:RuntimeAsset[];jobs:RuntimeJob[];audit:Array<Record<string,unknown>>;members:Array<{id:string;email:string;role:string;createdAt:string}>;reviews:RuntimeReview[];projectId:string;message:string;ffmpeg:boolean;ffprobe:boolean;textGatewayEnabled:boolean;textGatewayConfigured:boolean;imageGatewayEnabled:boolean;imageGatewayConfigured:boolean;providers:ProviderStatus[];remoteUsage:RemoteUsage|null}={
- status:"checking",authMode:"local",user:null,projects:[],assets:[],jobs:[],audit:[],members:[],reviews:[],projectId:"",message:"",ffmpeg:false,ffprobe:false,textGatewayEnabled:false,textGatewayConfigured:false,imageGatewayEnabled:false,imageGatewayConfigured:false,providers:[],remoteUsage:null
+const state:{status:"checking"|"offline"|"auth-required"|"online";authMode:"local"|"supabase";authView:"login"|"register"|"recover"|"reset";user:RuntimeUser|null;projects:RuntimeProject[];assets:RuntimeAsset[];jobs:RuntimeJob[];audit:Array<Record<string,unknown>>;members:Array<{id:string;email:string;role:string;createdAt:string}>;reviews:RuntimeReview[];projectId:string;message:string;ffmpeg:boolean;ffprobe:boolean;textGatewayEnabled:boolean;textGatewayConfigured:boolean;imageGatewayEnabled:boolean;imageGatewayConfigured:boolean;providers:ProviderStatus[];remoteUsage:RemoteUsage|null}={
+ status:"checking",authMode:"local",authView:"login",user:null,projects:[],assets:[],jobs:[],audit:[],members:[],reviews:[],projectId:"",message:"",ffmpeg:false,ffprobe:false,textGatewayEnabled:false,textGatewayConfigured:false,imageGatewayEnabled:false,imageGatewayConfigured:false,providers:[],remoteUsage:null
 };
 const esc=(value:unknown)=>String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]||c));
 const fmt=(value:string)=>new Date(value).toLocaleString();
@@ -30,10 +33,15 @@ function renderGate(){
  document.querySelector("#ev-auth-gate")?.remove();
  if(state.status!=="auth-required")return;
  const external=state.authMode==="supabase";
- document.body.insertAdjacentHTML("beforeend",'<main id="ev-auth-gate" class="auth-landing"><section class="auth-story"><a class="auth-brand" href="#" aria-label="Executive Visuals home"><span class="brand-mark">CEV</span><span><b>CHRISHEM</b><small>EXCLUSIVE VISUALS</small></span></a><div class="auth-story-copy"><div class="eyebrow">THE CREATIVE PRODUCTION WORKSPACE</div><h1>From first idea<br>to <em>final frame.</em></h1><p>Plan, direct, edit, enhance and prepare your visual productions in one connected studio.</p><div class="auth-feature-list"><div><i>✳</i><span><b>Direct with intention</b><small>Creative briefs, series plans and storyboards.</small></span></div><div><i>▤</i><span><b>Keep every asset connected</b><small>Projects, source media, timelines and versions.</small></span></div><div><i>◈</i><span><b>Deliver with confidence</b><small>Caption, rights, quality and master checks.</small></span></div></div></div><div class="auth-story-footer">A focused workspace for serious visual storytelling.</div></section><section class="auth-panel-wrap"><div class="auth-card auth-card-modern"><div class="eyebrow">YOUR PRIVATE STUDIO</div><h2>'+(external?"Verify your workspace":"Welcome back")+'</h2><p>'+(external?"Connect your authenticated session to access private projects and media.":"Sign in to continue, or create a local development account to explore the workspace.")+'</p>'+
- (external?'<form id="ev-auth-token"><label>Access token</label><textarea name="token" rows="3" required autocomplete="off" placeholder="Paste a short-lived access token"></textarea><button class="primary wide">Verify secure session</button></form>':
- '<div class="auth-switch" role="group" aria-label="Account action"><button type="button" class="active" data-auth-mode="login">Sign in</button><button type="button" data-auth-mode="register">Create account</button></div><form id="ev-auth"><input type="hidden" name="mode" value="login"><label>Email address</label><input name="email" type="email" required autocomplete="username" placeholder="you@example.com"><label>Password</label><input name="password" type="password" minlength="12" required autocomplete="current-password" placeholder="At least 12 characters"><button class="primary wide">Continue securely</button></form>')+
- '<div class="auth-security"><span>⌑</span><div><b>Private by design</b><small>Your projects and media remain account-scoped. Authentication is handled by the configured service.</small></div></div><p class="auth-error">'+esc(state.message)+'</p><small class="auth-footnote">'+(external?"This environment uses its configured external identity provider.":"Local password accounts are for development only. Production sign-in requires the configured external identity service.")+'</small></div></section></main>');
+ const mode=state.authView;
+ const form=external
+  ? mode==="recover"
+   ? '<form id="ev-auth-supabase"><input type="hidden" name="mode" value="recover"><label>Email address</label><input name="email" type="email" required autocomplete="email" placeholder="you@example.com"><button class="primary wide">Send recovery link</button><button type="button" class="quiet" data-auth-view="login">Back to sign in</button></form>'
+   : mode==="reset"
+    ? '<form id="ev-auth-supabase"><input type="hidden" name="mode" value="reset"><label>New password</label><input name="password" type="password" minlength="12" required autocomplete="new-password" placeholder="At least 12 characters"><label>Confirm new password</label><input name="confirmPassword" type="password" minlength="12" required autocomplete="new-password" placeholder="Repeat your password"><button class="primary wide">Update password</button></form>'
+    : '<div class="auth-switch" role="group" aria-label="Account action"><button type="button" class="'+(mode==="login"?"active":"")+'" data-auth-view="login">Sign in</button><button type="button" class="'+(mode==="register"?"active":"")+'" data-auth-view="register">Create account</button></div><form id="ev-auth-supabase"><input type="hidden" name="mode" value="'+mode+'"><label>Email address</label><input name="email" type="email" required autocomplete="email" placeholder="you@example.com"><label>Password</label><input name="password" type="password" minlength="12" required autocomplete="'+(mode==="register"?"new-password":"current-password")+'" placeholder="At least 12 characters">'+(mode==="register"?'<small>Use at least 12 characters. You may need to confirm your email before signing in.</small>':'<button type="button" class="quiet" data-auth-view="recover">Forgot password?</button>')+'<button class="primary wide">'+(mode==="register"?"Create secure account":"Continue securely")+'</button></form>'
+  : '<div class="auth-switch" role="group" aria-label="Account action"><button type="button" class="active" data-auth-view="login">Sign in</button><button type="button" data-auth-view="register">Create account</button></div><form id="ev-auth"><input type="hidden" name="mode" value="'+mode+'"><label>Email address</label><input name="email" type="email" required autocomplete="username" placeholder="you@example.com"><label>Password</label><input name="password" type="password" minlength="12" required autocomplete="'+(mode==="register"?"new-password":"current-password")+'" placeholder="At least 12 characters"><button class="primary wide">Continue securely</button></form>';
+ document.body.insertAdjacentHTML("beforeend",'<main id="ev-auth-gate" class="auth-landing"><section class="auth-story"><a class="auth-brand" href="#" aria-label="Executive Visuals home"><span class="brand-mark">CEV</span><span><b>CHRISHEM</b><small>EXCLUSIVE VISUALS</small></span></a><div class="auth-story-copy"><div class="eyebrow">THE CREATIVE PRODUCTION WORKSPACE</div><h1>From first idea<br>to <em>final frame.</em></h1><p>Plan, direct, edit, enhance and prepare your visual productions in one connected studio.</p><div class="auth-feature-list"><div><i>✳</i><span><b>Direct with intention</b><small>Creative briefs, storyboards and production plans.</small></span></div><div><i>▤</i><span><b>Keep every asset connected</b><small>Projects, source media, timelines and versions.</small></span></div><div><i>◈</i><span><b>Deliver with confidence</b><small>Review, rights, quality and master checks.</small></span></div></div></div><div class="auth-story-footer">A focused workspace for serious visual storytelling.</div></section><section class="auth-panel-wrap"><div class="auth-card auth-card-modern"><div class="eyebrow">YOUR PRIVATE STUDIO</div><h2>'+(external?(mode==="recover"?"Recover your account":mode==="reset"?"Choose a new password":mode==="register"?"Create your account":"Welcome back"):"Welcome back")+'</h2><p>'+(external?"Sign in securely to access private projects and media.": "Local development accounts are available only outside production.")+'</p>'+form+'<div class="auth-security"><span>⌑</span><div><b>Private by design</b><small>Your projects and media remain account-scoped. Authentication is handled by the configured identity service.</small></div></div><p class="auth-error">'+esc(state.message)+'</p><small class="auth-footnote">'+(external?"Email confirmation and password recovery are handled by your configured Supabase project.":"Local password accounts are for development only.")+'</small></div></section></main>');
 }
 function projectOptions(){return '<option value="">Personal library</option>'+state.projects.map(p=>'<option value="'+esc(p.id)+'" '+(state.projectId===p.id?"selected":"")+'>'+esc(p.name)+'</option>').join("");}
 function renderAssets(){
@@ -148,8 +156,20 @@ async function refresh(){
 function paint(){updateShell();renderGate();const root=document.querySelector<HTMLElement>("#runtime-workspace");if(root){const view=root.dataset.runtimeView;root.outerHTML=view==="library"?renderAssetLibrary():view==="engines"?renderEngineStatus():view==="overview"?renderRuntimeOverview():renderRuntimeWorkspace();}}
 export async function initRuntime(){
  try{
-  const health=await apiRequest<{authMode:"local"|"supabase";media:{ffmpeg:boolean;ffprobe:boolean};textGateway:{enabled:boolean;configured:boolean};imageGateway:{enabled:boolean;configured:boolean}}>("/api/health");
+  const health=await apiRequest<{authMode:"local"|"supabase";supabase?:{url:string;publishableKey:string}|null;media:{ffmpeg:boolean;ffprobe:boolean};textGateway:{enabled:boolean;configured:boolean};imageGateway:{enabled:boolean;configured:boolean}}>( "/api/health");
   state.authMode=health.authMode;state.ffmpeg=health.media.ffmpeg;state.ffprobe=health.media.ffprobe;state.textGatewayEnabled=health.textGateway.enabled;state.textGatewayConfigured=health.textGateway.configured;state.imageGatewayEnabled=health.imageGateway.enabled;state.imageGatewayConfigured=health.imageGateway.configured;
+  if(state.authMode==="supabase"){
+   if(!health.supabase?.url||!health.supabase.publishableKey)throw new Error("Supabase public authentication configuration is missing.");
+   supabaseAuth=createClient(health.supabase.url,health.supabase.publishableKey,{auth:{autoRefreshToken:true,persistSession:true,detectSessionInUrl:true,flowType:"pkce"}});
+   supabaseAuth.auth.onAuthStateChange((event,session)=>{
+    if(session?.access_token)setApiAccessToken(session.access_token);else clearApiAccessToken();
+    if(event==="PASSWORD_RECOVERY"){state.authView="reset";state.status="auth-required";state.message="Choose a new password to finish account recovery.";paint();}
+    if(event==="SIGNED_OUT"){state.user=null;state.status="auth-required";state.projects=[];state.assets=[];state.jobs=[];state.audit=[];}
+   });
+   const {data,error}=await supabaseAuth.auth.getSession();
+   if(error)throw error;
+   if(data.session?.access_token)setApiAccessToken(data.session.access_token);
+  }
   try{const me=await apiRequest<{user:RuntimeUser}>("/api/me");state.user=me.user;state.status="online";await refresh();window.dispatchEvent(new Event("ev:authenticated"));}
   catch(error){if(error instanceof ApiError&&error.status===401)state.status="auth-required";else throw error;}
  }catch(error){state.status="offline";state.message=error instanceof Error?error.message:"API unavailable";}
@@ -159,17 +179,45 @@ async function authenticate(form:HTMLFormElement){
  const data=new FormData(form);
  try{
   if(form.id==="ev-auth-token"){setApiAccessToken(String(data.get("token")||""));}
-  else{
+  else if(form.id==="ev-auth-supabase"){
+   if(!supabaseAuth)throw new Error("Supabase authentication is not initialized.");
+   const mode=String(data.get("mode")||"login");
+   const email=String(data.get("email")||"").trim();
+   const password=String(data.get("password")||"");
+   if(mode==="recover"){
+    const {error}=await supabaseAuth.auth.resetPasswordForEmail(email,{redirectTo:window.location.origin});
+    if(error)throw error;
+    state.authView="login";state.message="If an account exists for that address, a password recovery email has been sent.";paint();return;
+   }
+   if(mode==="reset"){
+    if(password.length<12||password!==String(data.get("confirmPassword")||""))throw new Error("Passwords must match and contain at least 12 characters.");
+    const {error}=await supabaseAuth.auth.updateUser({password});
+    if(error)throw error;
+    state.authView="login";state.message="Your password has been updated. Sign in with your new password.";await supabaseAuth.auth.signOut();paint();return;
+   }
+   if(mode==="register"){
+    const {data:result,error}=await supabaseAuth.auth.signUp({email,password,options:{emailRedirectTo:window.location.origin}});
+    if(error)throw error;
+    if(!result.session){state.authView="login";state.message="Account registration received. Check your email to confirm the account, then sign in.";paint();return;}
+   }else{
+    const {error}=await supabaseAuth.auth.signInWithPassword({email,password});
+    if(error)throw error;
+   }
+   const {data:sessionResult,error:sessionError}=await supabaseAuth.auth.getSession();
+   if(sessionError)throw sessionError;
+   if(!sessionResult.session)throw new Error("Authentication succeeded without an active session. Complete email confirmation and sign in.");
+   setApiAccessToken(sessionResult.session.access_token);
+  }else{
    const mode=String(data.get("mode")||"login");
    const response=await apiRequest<{user:RuntimeUser}>("/api/auth/"+(mode==="register"?"register":"login"),{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({email:String(data.get("email")),password:String(data.get("password"))})});
    state.user=response.user;
   }
-  const me=await apiRequest<{user:RuntimeUser}>("/api/me");state.user=me.user;state.status="online";state.message="";await refresh();window.dispatchEvent(new Event("ev:authenticated"));paint();
+  const me=await apiRequest<{user:RuntimeUser}>("/api/me");state.user=me.user;state.status="online";state.message="";state.authView="login";await refresh();window.dispatchEvent(new Event("ev:authenticated"));paint();
  }catch(error){clearApiAccessToken();state.status="auth-required";state.message=error instanceof Error?error.message:"Authentication failed.";paint();}
 }
 document.addEventListener("submit",event=>{
  const form=event.target as HTMLFormElement;
- if(form.id==="ev-auth"||form.id==="ev-auth-token"){event.preventDefault();void authenticate(form);}
+ if(form.id==="ev-auth"||form.id==="ev-auth-token"||form.id==="ev-auth-supabase"){event.preventDefault();void authenticate(form);}
  if(form.id==="ev-project-form"){event.preventDefault();const name=String(new FormData(form).get("name")||"").trim();if(!name)return;void apiRequest<{project:RuntimeProject}>("/api/projects",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({name})}).then(async result=>{state.projectId=result.project.id;await refresh();window.dispatchEvent(new CustomEvent("ev:project-changed",{detail:{projectId:state.projectId}}));paint();}).catch(error=>alert(error.message||error));}
  if(form.id==="ev-member-form"){event.preventDefault();const data=new FormData(form);void apiRequest("/api/projects/"+state.projectId+"/members",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({email:String(data.get("email")),role:String(data.get("role"))})}).then(async()=>{await refresh();paint();}).catch(error=>alert(error.message||error));}
  if(form.id==="ev-review-form"){event.preventDefault();const data=new FormData(form),timecode=String(data.get("timecode")||"");void apiRequest("/api/reviews",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({projectId:state.projectId,decision:String(data.get("decision")),body:String(data.get("body")),assetId:String(data.get("assetId")||"")||null,timecodeSeconds:timecode?Number(timecode):null})}).then(async()=>{await refresh();paint();}).catch(error=>alert(error.message||error));}
@@ -181,10 +229,10 @@ document.addEventListener("change",event=>{
 });
 document.addEventListener("click",event=>{
  const target=event.target as HTMLElement;
- const authMode=target.closest<HTMLElement>("[data-auth-mode]");if(authMode){const form=document.querySelector<HTMLFormElement>("#ev-auth");const mode=form?.elements.namedItem("mode") as HTMLInputElement|null;if(mode)mode.value=authMode.dataset.authMode||"login";document.querySelectorAll("[data-auth-mode]").forEach(button=>button.classList.toggle("active",button===authMode));return;}
+ const authMode=target.closest<HTMLElement>("[data-auth-view]");if(authMode){state.authView=(authMode.dataset.authView||"login") as typeof state.authView;state.message="";paint();return;}
  const action=target.closest<HTMLElement>("[data-ev-action]");
  if(action?.dataset.evAction==="refresh"){void refresh().then(paint).catch(error=>alert(error.message||error));return;}
- if(action?.dataset.evAction==="logout"){void apiRequest("/api/auth/logout",{method:"POST"}).catch(()=>{});clearApiAccessToken();state.user=null;state.status="auth-required";state.jobs=[];state.assets=[];state.projects=[];paint();return;}
+ if(action?.dataset.evAction==="logout"){void (async()=>{try{if(supabaseAuth)await supabaseAuth.auth.signOut();else await apiRequest("/api/auth/logout",{method:"POST"});}catch{}clearApiAccessToken();state.user=null;state.status="auth-required";state.authView="login";state.jobs=[];state.assets=[];state.projects=[];paint();})();return;}
  const job=target.closest<HTMLElement>("[data-ev-job]");
  if(job){const assetId=job.dataset.evAsset||"",jobType=job.dataset.evJob||"",input:Record<string,unknown>={};for(const [key,value] of Object.entries(job.dataset))if(key.startsWith("ev")&&!["evAsset","evJob"].includes(key)){const name=key.slice(2).replace(/^[A-Z]/,letter=>letter.toLowerCase());input[name]=value!==""&&Number.isFinite(Number(value))?Number(value):value;}void apiRequest("/api/jobs",{method:"POST",headers:{"content-type":"application/json","idempotency-key":crypto.randomUUID()},body:JSON.stringify({jobType,sourceAssetId:assetId,projectId:state.projectId||undefined,...input})}).then(async()=>{await refresh();paint();}).catch(error=>alert(error.message||error));return;}
  const remove=target.closest<HTMLElement>("[data-ev-remove-member]");
