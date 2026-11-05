@@ -171,3 +171,15 @@ test("Google worker bootstrap fails closed without durable governance callbacks"
     }
   }), /durable approval, owner\/project authorization and private-input planning callbacks/);
 });
+
+test("Google worker bootstrap requires both registry and transport opt-in pairs", () => {
+  assert.throws(() => createProviderAwareCloudVideoWorkerComposition({
+    ...base,
+    env: {
+      ...env,
+      GOOGLE_OMNI_VIDEO_ENABLED: "true",
+      GOOGLE_OMNI_VIDEO_ALLOW_REMOTE: "true"
+    },
+    providerDependencies: {}
+  }), /both provider registration gates and both Gemini transport gates/);
+});
