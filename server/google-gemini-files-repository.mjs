@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 const PROVIDER = "google-gemini-files";
 const TABLE = "google_provider_files";
 const ATTEMPT_TABLE = "google_provider_file_upload_attempts";
@@ -143,7 +145,43 @@ export function createGoogleGeminiFilesRepository({
         reconciledAt: row.reconciled_at || null
       }));
     },
-    async updateUploadAttempt({ attemptId, state, expectedState, providerFileName, providerFileUri, providerExpiresAt, errorCode, reconciledAt } = {}) {
+    async claimRecoveryAttempt({ attemptId, expectedState } = {}) {
+      if (typeof attemptId !== "string" || !/^[0-9a-f-]{36}$/i.test(attemptId) ||
+          !["UPLOADING", "OUTCOME_UNKNOWN", "PROVIDER_CREATED"].includes(expectedState)) {
+        throw new Error("Google provider recovery claim is invalid.");
+      }
+      const now = new Date();
+      const leaseToken = randomUUID();
+      const expiresAt = new Date(now.getTime() + 15 * 60 * 1000);
+      const params = new URLSearchParams({
+        id: "eq." + attemptId,
+        state: "eq." + expectedState,
+        or: "(lease_token.is.null,lease_expires_at.lt." + now.toISOString() + ")",
+        select: "id,lease_token"
+      });
+      const rows = await request("?" + params.toString(), {
+        method: "PATCH", body: {
+          lease_token: leaseToken,
+          lease_expires_at: expiresAt.toISOString(),
+          updated_at: now.toISOString()
+        }, table: ATTEMPT_TABLE, prefer: "return=representation"
+      });
+      return Array.isArray(rows) && rows.length === 1 && rows[0].lease_token === leaseToken
+        ? leaseToken : null;
+    },
+    async releaseRecoveryAttempt({ attemptId, leaseToken } = {}) {
+      if (typeof attemptId !== "string" || !/^[0-9a-f-]{36}$/i.test(attemptId) ||
+          typeof leaseToken !== "string" || !/^[0-9a-f-]{36}$/i.test(leaseToken)) {
+        throw new Error("Google provider recovery lease release is invalid.");
+      }
+      const params = new URLSearchParams({ id: "eq." + attemptId, lease_token: "eq." + leaseToken, select: "id" });
+      const rows = await request("?" + params.toString(), {
+        method: "PATCH", body: { lease_token: null, lease_expires_at: null, updated_at: new Date().toISOString() },
+        table: ATTEMPT_TABLE, prefer: "return=representation"
+      });
+      return Array.isArray(rows) && rows.length === 1;
+    },
+    async updateUploadAttempt({ attemptId, state, expectedState, providerFileName, providerFileUri, providerExpiresAt, errorCode, reconciledAt, leaseToken } = {}) {
       if (typeof attemptId !== "string" || !/^[0-9a-f-]{36}$/i.test(attemptId) ||
           !["PREPARED", "UPLOADING", "OUTCOME_UNKNOWN", "PROVIDER_CREATED", "COMPLETED", "FAILED", "QUARANTINED"].includes(state)) {
         throw new Error("Google provider upload attempt transition is invalid.");
@@ -154,7 +192,13 @@ export function createGoogleGeminiFilesRepository({
       if (providerExpiresAt !== undefined) body.provider_expires_at = providerExpiresAt;
       if (errorCode !== undefined) body.last_error_code = errorCode;
       if (reconciledAt !== undefined) body.reconciled_at = reconciledAt;
+      if (leaseToken !== undefined) {
+        if (typeof leaseToken !== "string" || !/^[0-9a-f-]{36}$/i.test(leaseToken)) throw new Error("Google provider recovery lease token is invalid.");
+        body.lease_token = null;
+        body.lease_expires_at = null;
+      }
       const params = new URLSearchParams({ id: "eq." + attemptId, select: "id" });
+      if (leaseToken !== undefined) params.set("lease_token", "eq." + leaseToken);
       if (expectedState !== undefined) {
         if (!["PREPARED", "UPLOADING", "OUTCOME_UNKNOWN", "PROVIDER_CREATED", "COMPLETED", "FAILED", "QUARANTINED"].includes(expectedState)) throw new Error("Google provider upload attempt expected state is invalid.");
         params.set("state", "eq." + expectedState);
