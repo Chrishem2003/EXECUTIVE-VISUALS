@@ -27,18 +27,20 @@ Construct the integration using the existing `createGoogleOmniCloudVideoIntegrat
 4. An authorized request planner that resolves private media through the Gemini Files gateway or the supported private GCS registration path.
 5. An explicit interaction retention policy and task-level cost resolver.
 
-Pass the resulting object as `providerDependencies.googleOmniIntegration` to `createProviderAwareCloudVideoWorkerComposition`, or through `videoProviderDependencies.googleOmniIntegration` to `startCloudWorkerProcess`.
+Pass the resulting object as `providerDependencies.googleOmniIntegration` to `createProviderAwareCloudVideoWorkerComposition`, or through `videoProviderDependencies.googleOmniIntegration` to `startCloudWorkerProcess`. Pass the Files and Interactions retention workers through `startCloudWorkerProcess(env, { maintenanceWorkers: [...] })`; the supervisor runs these at a separate five-minute maintenance cadence by default, not on every media-job poll.
 
 The worker does not infer approval from a client-side flag, accept user-supplied owner IDs, or expose provider file URLs to the browser. The Interactions POST is intentionally not retried after an ambiguous outcome; it must be reconciled through its durable interaction record.
 
 ## Not yet accepted as complete
 
-This registration layer does not by itself prove:
+The repository now includes a retryable Gemini Files retention worker: it marks expired mappings as `EXPIRED`, deletes the remote Files resource, then marks the record `DELETED`. Provider 404 is treated as already deleted; transient provider or database errors leave an `EXPIRED` tombstone for the next maintenance run. The cloud-worker supervisor now supports optional scheduled maintenance tasks. These components are injectable but are not activated by default.
+
+This integration still does not by itself prove:
 
 - Google Drive resumable transfer recovery and private asset import/export end to end.
 - Gemini Files upload, expiry, cleanup and provider-file mapping recovery.
 - GCS object registration, signed access and deletion lifecycle.
-- Interactions retention scheduling and deletion recovery.
+- A staging run with the provider-file and Interactions retention workers scheduled and verified end to end.
 - Actual task-level Google billing reconciliation.
 - A staging run with approved test credentials and a real private test asset.
 
