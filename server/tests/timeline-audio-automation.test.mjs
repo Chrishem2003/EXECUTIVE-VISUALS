@@ -57,6 +57,20 @@ test("trimming and splitting a retimed clip preserve source-to-record mapping",(
  assert.equal(seconds(second.sourceRange.duration),10);
 });
 
+test("retimed trim and split preserve source time when start and duration use different timebases",()=>{
+ const timeline=createTimeline("project","speed-timebases","Mixed source timebases",{numerator:24,denominator:1});
+ const withTrack=addTrack(timeline,{id:"video",name:"Video",kind:"video",enabled:true,locked:false,clips:[]});
+ const clip={id:"mixed",assetId:"source",name:"Mixed-rate source",sourceRange:{start:rational(30,30),duration:rational(480,24)},timelineStart:rational(0,24),duration:rational(240,24),enabled:true,speed:2};
+ const added=addClip(withTrack,"video",clip);
+ const trimmed=trimClip(added,"video","mixed",24,24).tracks[0].clips[0];
+ assert.equal(seconds(trimmed.sourceRange.start),3);
+ assert.equal(seconds(trimmed.sourceRange.duration),18);
+ const [first,second]=splitClip(added,"video","mixed",120,"mixed-b").tracks[0].clips;
+ assert.equal(seconds(first.sourceRange.duration),10);
+ assert.equal(seconds(second.sourceRange.start),11);
+ assert.equal(seconds(second.sourceRange.duration),10);
+});
+
 test("timeline validation rejects non-finite and out-of-range playback speeds",()=>{
  const timeline=createTimeline("project","speed-invalid","Invalid speed",{numerator:24,denominator:1});
  const withTrack=addTrack(timeline,{id:"video",name:"Video",kind:"video",enabled:true,locked:false,clips:[]});
