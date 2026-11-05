@@ -80,8 +80,8 @@ test("cancels an expired running interaction and confirms terminal state before 
   const result = await h.worker.run();
   assert.equal(result.deleted, 1);
   assert.deepEqual(h.calls.map(call => call[0]), ["list", "get", "cancel", "get", "update", "update", "delete", "markDeleted"]);
-  assert.equal(h.calls[3][1].state, "canceled");
-  assert.equal(h.calls[4][1].state, "deleting");
+  assert.equal(h.calls[4][1].state, "canceled");
+  assert.equal(h.calls[5][1].state, "deleting");
 });
 
 test("does not delete while cancellation remains in progress", async () => {
