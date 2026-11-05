@@ -43,6 +43,16 @@ function validateDriveFile(file, maxBytes) {
   return { id: file.id, name: safeName(file.name), mimeType: file.mimeType, size: Number(file.size) };
 }
 
+function validateDriveFolder(folder, expectedId) {
+  if (!folder || typeof folder !== "object" || Array.isArray(folder) ||
+      folder.id !== expectedId || folder.mimeType !== "application/vnd.google-apps.folder" ||
+      folder.trashed === true || folder.capabilities?.canAddChildren === false) {
+    throw fail("Google Drive destination must be an accessible folder where this account can add files.",
+      "GOOGLE_DRIVE_FOLDER_UNAVAILABLE");
+  }
+  return folder.id;
+}
+
 function safeUploadSession(value) {
   let url;
   try { url = new URL(value); } catch { throw fail("Google Drive returned an invalid resumable upload session.", "GOOGLE_DRIVE_UPLOAD_SESSION_INVALID"); }
@@ -188,6 +198,11 @@ export function createGoogleDrivePrivateFileBridge({
         throw fail("Google Drive export asset or destination folder ID is invalid.", "GOOGLE_DRIVE_EXPORT_SCOPE_INVALID");
       }
       const accessToken = await token(scope.ownerId);
+      if (parentFolderId) {
+        const folderUrl = DRIVE_ORIGIN + "/drive/v3/files/" + encodeURIComponent(parentFolderId) +
+          "?supportsAllDrives=true&fields=id,mimeType,trashed,capabilities(canAddChildren)";
+        validateDriveFolder(await request(folderUrl, accessToken), parentFolderId);
+      }
       let loaded;
       try { loaded = await loadPrivateAsset({ ...scope, assetId }); }
       catch { throw fail("Private asset could not be authorized for Google Drive export.", "GOOGLE_DRIVE_ASSET_FORBIDDEN"); }
@@ -210,7 +225,7 @@ export function createGoogleDrivePrivateFileBridge({
           ...(parentFolderId ? { parents: [parentFolderId] } : {}),
           appProperties: { source: "executive-visuals", assetId }
         };
-        const initUrl = DRIVE_ORIGIN + "/upload/drive/v3/files?uploadType=resumable&supportsAllDrives=true&fields=id,name,mimeType,size,webViewLink";
+        const initUrl = DRIVE_ORIGIN + "/upload/drive/v3/files?uploadType=resumable&supportsAllDrives=true&fields=id,name,mimeType,size,md5Checksum,webViewLink";
         const init = await request(initUrl, accessToken, {
           method: "POST",
           headers: {
@@ -226,9 +241,12 @@ export function createGoogleDrivePrivateFileBridge({
           headers: { "content-type": asset.mediaType, "content-length": String(bytes.byteLength) },
           body: bytes
         });
+        const expectedMd5 = createHash("md5").update(bytes).digest("hex");
         if (!uploaded || typeof uploaded.id !== "string" || !FILE_ID.test(uploaded.id) ||
-            uploaded.mimeType !== asset.mediaType || Number(uploaded.size) !== bytes.byteLength) {
-          throw fail("Google Drive upload completed without a matching file resource.", "GOOGLE_DRIVE_UPLOAD_RESPONSE_INVALID");
+            uploaded.mimeType !== asset.mediaType || Number(uploaded.size) !== bytes.byteLength ||
+            typeof uploaded.md5Checksum !== "string" || !/^[a-f0-9]{32}$/i.test(uploaded.md5Checksum) ||
+            uploaded.md5Checksum.toLowerCase() !== expectedMd5) {
+          throw fail("Google Drive upload completed without matching size, MIME type, and content checksum.", "GOOGLE_DRIVE_UPLOAD_RESPONSE_INVALID");
         }
         return Object.freeze({
           id: uploaded.id, name: safeName(uploaded.name), mimeType: uploaded.mimeType,
