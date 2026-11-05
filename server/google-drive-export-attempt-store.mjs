@@ -126,7 +126,7 @@ export function createGoogleDriveExportAttemptStore({
       if(typeof attemptKey!=="string"||!/^[a-f0-9]{64}$/.test(attemptKey))throw fail("Drive export attempt key is invalid.","GOOGLE_DRIVE_EXPORT_ATTEMPT_INVALID");
       const leaseToken=randomUUID(),now=new Date(),expiresAt=new Date(now.getTime()+60*60*1000);
       const rows=await request("attempt_key=eq."+attemptKey+"&owner_id=eq."+encodeURIComponent(ownerId)+
-        "&or=(lease_expires_at.is.null,lease_expires_at.lt."+encodeURIComponent(now.toISOString())+")&state=neq.COMPLETED&select=*",{
+        "&or=(lease_expires_at.is.null,lease_expires_at.lt."+encodeURIComponent(now.toISOString())+")&state=in.(PREPARED,UPLOADING,OUTCOME_UNKNOWN)&select=*",{
         method:"PATCH",prefer:"return=representation",body:{lease_token:leaseToken,lease_expires_at:expiresAt.toISOString(),updated_at:now.toISOString()}});
       return rows.length===1?leaseToken:null;
     },
