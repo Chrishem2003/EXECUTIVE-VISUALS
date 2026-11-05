@@ -135,6 +135,18 @@ begin
 end
 $viewer_preflight_guard$;
 
+-- The project owner can review and approve a preflight initiated by an editor.
+grant select on editor_runway_approval_context to authenticated;
+reset role;
+select set_config('request.jwt.claim.sub','123e4567-e89b-42d3-a456-426614174000',false);
+select set_config('request.jwt.claim.role','authenticated',false);
+set role authenticated;
+select executive_visuals.approve_runway_router_preflight(router_approval_id)
+from editor_runway_approval_context;
+reset role;
+select set_config('request.jwt.claim.role','service_role',false);
+set role service_role;
+
 create temporary table runway_approval_context as
 select * from executive_visuals.record_runway_router_preflight(
  '123e4567-e89b-42d3-a456-426614174000',
