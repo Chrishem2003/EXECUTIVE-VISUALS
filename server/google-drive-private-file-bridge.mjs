@@ -79,7 +79,8 @@ export function createGoogleDrivePrivateFileBridge({
   fetchImpl = globalThis.fetch,
   maxBytes = MAX_BYTES,
   timeoutMs = 30000,
-  onCleanupError = () => {}
+  onCleanupError = () => {},
+  attempts = null
 } = {}) {
   if (typeof getUserAccessToken !== "function" || typeof fetchImpl !== "function") {
     throw new TypeError("Google Drive bridge requires a per-user OAuth token provider and fetch.");
@@ -225,17 +226,105 @@ export function createGoogleDrivePrivateFileBridge({
           ...(parentFolderId ? { parents: [parentFolderId] } : {}),
           appProperties: { source: "executive-visuals", assetId }
         };
-        const initUrl = DRIVE_ORIGIN + "/upload/drive/v3/files?uploadType=resumable&supportsAllDrives=true&fields=id,name,mimeType,size,md5Checksum,webViewLink";
-        const init = await request(initUrl, accessToken, {
-          method: "POST",
-          headers: {
-            "content-type": "application/json; charset=UTF-8",
-            "x-upload-content-type": asset.mediaType,
-            "x-upload-content-length": String(bytes.byteLength)
-          },
-          body: JSON.stringify(metadata), raw: true
-        });
-        const session = safeUploadSession(init.headers?.get?.("location"));
+        const initUrl = DRIVE_ORIGIN + "/upload/drive/v3/files?uploadType=resumable&supportsAllDrives=true&fields=id,name,mimeType,size,md5Checksum,webViewLink,appProperties";
+        const expectedMd5 = createHash("md5").update(bytes).digest("hex");
+        let attemptRecord = null;
+        let session = null;
+        const readExistingDriveFile = async driveFileId => {
+          const url = DRIVE_ORIGIN + "/drive/v3/files/" + encodeURIComponent(driveFileId) +
+            "?supportsAllDrives=true&fields=id,name,mimeType,size,md5Checksum,webViewLink,appProperties,trashed";
+          const response = await request(url, accessToken, { raw: true, allowStatuses: [404] });
+          if (response.status === 404) return null;
+          let file;
+          try { file = JSON.parse(await response.text()); }
+          catch { throw fail("Google Drive returned invalid reconciliation metadata.", "GOOGLE_DRIVE_RESPONSE_INVALID"); }
+          if (!file || file.id !== driveFileId || file.trashed === true ||
+              file.appProperties?.source !== "executive-visuals" || file.appProperties?.assetId !== assetId ||
+              file.mimeType !== asset.mediaType || Number(file.size) !== bytes.byteLength ||
+              typeof file.md5Checksum !== "string" || file.md5Checksum.toLowerCase() !== expectedMd5) {
+            throw fail("Existing Google Drive file does not match the private asset export attempt.",
+              "GOOGLE_DRIVE_EXPORT_RECONCILIATION_CONFLICT");
+          }
+          return file;
+        };
+        const completedResult = async file => {
+          if (attempts && attemptRecord?.state !== "COMPLETED") {
+            await attempts.mark({ attemptKey: attemptRecord.attemptKey, ownerId: scope.ownerId,
+              state: "COMPLETED", webViewLink: typeof file.webViewLink === "string" &&
+                file.webViewLink.startsWith("https://drive.google.com/") ? file.webViewLink : null });
+          }
+          return Object.freeze({ id: file.id, name: safeName(file.name), mimeType: file.mimeType,
+            size: bytes.byteLength, webViewLink: typeof file.webViewLink === "string" &&
+              file.webViewLink.startsWith("https://drive.google.com/") ? file.webViewLink : null });
+        };
+        if (attempts) {
+          if (typeof attempts.get !== "function" || typeof attempts.createOrGet !== "function" ||
+              typeof attempts.saveSession !== "function" || typeof attempts.mark !== "function") {
+            throw new TypeError("Google Drive export attempt store is incomplete.");
+          }
+          const attemptKey = createHash("sha256").update(JSON.stringify({
+            ownerId: scope.ownerId, projectId: scope.projectId, assetId, parentFolderId,
+            sha256: asset.sha256, byteSize: bytes.byteLength, mimeType: asset.mediaType
+          })).digest("hex");
+          attemptRecord = await attempts.get(attemptKey, scope.ownerId);
+          if (!attemptRecord) {
+            const generated = await request(DRIVE_ORIGIN + "/drive/v3/files/generateIds?count=1&space=drive", accessToken);
+            if (!Array.isArray(generated?.ids) || generated.ids.length !== 1 ||
+                typeof generated.ids[0] !== "string" || !FILE_ID.test(generated.ids[0])) {
+              throw fail("Google Drive did not return a valid pre-generated file ID.", "GOOGLE_DRIVE_GENERATED_ID_INVALID");
+            }
+            attemptRecord = await attempts.createOrGet({ attemptKey, ownerId: scope.ownerId,
+              projectId: scope.projectId, assetId, parentFolderId, driveFileId: generated.ids[0],
+              mimeType: asset.mediaType, byteSize: bytes.byteLength, sha256: asset.sha256 });
+          }
+          if (attemptRecord.ownerId !== scope.ownerId || attemptRecord.projectId !== scope.projectId ||
+              attemptRecord.assetId !== assetId || attemptRecord.sha256 !== asset.sha256 ||
+              attemptRecord.byteSize !== bytes.byteLength || attemptRecord.parentFolderId !== parentFolderId) {
+            throw fail("Stored Drive export attempt does not match the authorized private asset.",
+              "GOOGLE_DRIVE_EXPORT_IDEMPOTENCY_CONFLICT");
+          }
+          if (attemptRecord.state === "COMPLETED") {
+            const existing = await readExistingDriveFile(attemptRecord.driveFileId);
+            if (!existing) throw fail("Completed Drive export is missing from the provider; manual reconciliation is required.",
+              "GOOGLE_DRIVE_EXPORT_RECONCILIATION_REQUIRED");
+            return await completedResult(existing);
+          }
+          if (["OUTCOME_UNKNOWN", "RECONCILIATION_REQUIRED"].includes(attemptRecord.state)) {
+            const existing = await readExistingDriveFile(attemptRecord.driveFileId);
+            if (existing) return await completedResult(existing);
+          }
+          session = attemptRecord.sessionUri ? safeUploadSession(attemptRecord.sessionUri) : null;
+          if (!session) {
+            const existing = await readExistingDriveFile(attemptRecord.driveFileId);
+            if (existing) return await completedResult(existing);
+            metadata.id = attemptRecord.driveFileId;
+          }
+        }
+        if (!session) {
+          let init;
+          try {
+            init = await request(initUrl, accessToken, {
+              method: "POST",
+              headers: {
+                "content-type": "application/json; charset=UTF-8",
+                "x-upload-content-type": asset.mediaType,
+                "x-upload-content-length": String(bytes.byteLength)
+              },
+              body: JSON.stringify(metadata), raw: true
+            });
+          } catch (error) {
+            if (attempts && error?.status === 409 && attemptRecord) {
+              const existing = await readExistingDriveFile(attemptRecord.driveFileId);
+              if (existing) return await completedResult(existing);
+            }
+            throw error;
+          }
+          session = safeUploadSession(init.headers?.get?.("location"));
+          if (attempts) {
+            attemptRecord = await attempts.saveSession({ attemptKey: attemptRecord.attemptKey,
+              ownerId: scope.ownerId, sessionUri: session });
+          }
+        }
         let uploadResponse;
         let offset = 0;
         let completed = false;
