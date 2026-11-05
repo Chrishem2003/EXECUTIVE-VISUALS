@@ -14,7 +14,12 @@ create table if not exists executive_visuals.runway_router_approvals (
   provider text not null check (provider = 'runway'),
   model text not null check (model = 'gen4.5'),
   input_hash text not null check (input_hash ~ '^[a-f0-9]{64}$'),
-  request_hash text not null check (request_hash ~ '^[a-f0-9]{64}
+  request_hash text not null check (request_hash ~ '^[a-f0-9]{64}$'),
+  approved_job_input jsonb not null check (
+    jsonb_typeof(approved_job_input) = 'object'
+    and octet_length(approved_job_input::text) <= 32000
+  ),
+  estimated_credits bigint not null check (estimated_credits >= 0),
   max_estimated_credits bigint not null check (max_estimated_credits >= estimated_credits),
   state text not null default 'pending_approval'
     check (state in ('pending_approval','approved','consumed','revoked','expired')),
