@@ -22,7 +22,7 @@ for (const required of [
 ]) {
   if (!googleGcsAssetSourcesSql.includes(required)) issues.push("Governed GCS source registry is missing required boundary: " + required + ".");
 }
-if (/\\b(drop\\s+table|truncate|delete\\s+from)\\b/i.test(googleGcsAssetSourcesSql)) {
+if (/\b(drop\s+table|truncate|delete\s+from)\b/i.test(googleGcsAssetSourcesSql)) {
   issues.push("GCS source registry migration must not contain destructive DDL/DML.");
 }
 if (!googleGcsAssetSourcesSql.includes("position(chr(92) in object_name) = 0") ||
