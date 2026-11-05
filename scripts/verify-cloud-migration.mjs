@@ -5,6 +5,7 @@ const sql = await readFile(resolve(process.cwd(), "supabase/migrations/202610312
 const checkpointSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261102090000_video_pipeline_checkpoints.sql"), "utf8");
 const videoSubmissionSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261104120000_cloud_video_submission_ledger.sql"), "utf8");
 const videoBudgetSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261104143000_cloud_video_budget_enqueue.sql"), "utf8");
+const videoCostEvidenceSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261105100000_video_generation_cost_evidence.sql"), "utf8");
 const issues = [];
 const tables = ["projects","project_members","project_workspace_documents","workflows","workflow_runs","workflow_node_runs","timelines","assets","jobs","job_events","consents","reviews","audit_events"];
 for (const table of tables) {
@@ -211,6 +212,37 @@ if (!videoBudgetSql.includes("VIDEO_JOB_OUTPUT_ASSET_SCOPE_INVALID") ||
     !videoBudgetSql.includes("a.storage_bucket = 'executive-visuals-media'") ||
     !videoBudgetSql.includes("a.deleted_at is null")) {
   issues.push("Successful video finalization must verify registered private asset ownership.");
+}
+
+if (/\\b(drop\\s+table|truncate|delete\\s+from)\\b/i.test(videoCostEvidenceSql)) issues.push("Cost evidence migration must not contain destructive DDL/DML.");
+if (!videoCostEvidenceSql.includes("create table if not exists executive_visuals.video_generation_cost_evidence") ||
+    !videoCostEvidenceSql.includes("alter table executive_visuals.video_generation_cost_evidence enable row level security;")) {
+  issues.push("Reviewed provider cost evidence must be stored in an RLS-protected table.");
+}
+if (!videoCostEvidenceSql.includes("evidence_sha256 text") ||
+    !videoCostEvidenceSql.includes("provider_task_id text not null") ||
+    !videoCostEvidenceSql.includes("reviewer_id uuid not null") ||
+    !videoCostEvidenceSql.includes("reviewed_at timestamptz not null")) {
+  issues.push("Cost evidence receipts must bind a task, immutable artifact digest and reviewer identity.");
+}
+if (!videoCostEvidenceSql.includes("VIDEO_COST_EVIDENCE_TASK_MISMATCH") ||
+    !videoCostEvidenceSql.includes("new.actual_amount > reservation_row.reserved_amount") ||
+    !videoCostEvidenceSql.includes("new.reviewer_id := auth.uid()")) {
+  issues.push("Cost evidence must match the exact submitted task, reviewer and reserved amount.");
+}
+if (!videoCostEvidenceSql.includes("VIDEO_COST_EVIDENCE_IMMUTABLE") ||
+    !videoCostEvidenceSql.includes("revoke update, delete on executive_visuals.video_generation_cost_evidence from authenticated;")) {
+  issues.push("Reviewed cost evidence must be append-only for authenticated users.");
+}
+if (!videoCostEvidenceSql.includes("finish_video_generation_job_with_evidence") ||
+    !videoCostEvidenceSql.includes("VIDEO_COST_EVIDENCE_RECEIPT_MISMATCH") ||
+    !videoCostEvidenceSql.includes("evidence_row.actual_amount <> p_actual_amount") ||
+    !videoCostEvidenceSql.includes("evidence_row.provider_task_id is distinct from submission_row.provider_task_id")) {
+  issues.push("Successful settlement must require an exact task-correlated reviewed evidence receipt.");
+}
+if ((videoCostEvidenceSql.match(/security invoker/gi) || []).length !== 3 ||
+    /security definer/i.test(videoCostEvidenceSql)) {
+  issues.push("Cost evidence validation and settlement RPCs must use invoker rights.");
 }
 if (!videoBudgetSql.includes("VIDEO_JOB_RESUME_EVIDENCE_REQUIRED") ||
     !videoBudgetSql.includes("p_evidence_reference text")) {
