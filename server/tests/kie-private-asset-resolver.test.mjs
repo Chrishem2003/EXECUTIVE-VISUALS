@@ -45,7 +45,9 @@ test("rejects unsafe signed URLs, duplicate IDs and excess references",async()=>
  await assert.rejects(unsafe.resolver(input({referenceAssetIds:[ids[0]]}),{job}),error=>error.code==="KIE_VIDEO_INPUT_ASSET_URL_INVALID");
  const {resolver}=make();
  await assert.rejects(resolver(input({referenceAssetIds:[ids[0],ids[0]]}),{job}),error=>error.code==="KIE_VIDEO_INPUT_INVALID");
- await assert.rejects(resolver(input({referenceAssetIds:[...ids,...ids,...ids]}),{job}),error=>error.code==="KIE_VIDEO_INPUT_INVALID");
+ const ten=Array.from({length:10},(_,i)=>"a23e4567-e89b-42d3-a456-"+String(i+100).padStart(4,"0")+"000000000000");
+ await assert.rejects(resolver(input({referenceAssetIds:ten}),{job}),error=>error.code==="KIE_VIDEO_INPUT_INVALID");
+ await assert.rejects(resolver(input({referenceVideoAssetIds:[ids[0]]}),{job}),error=>error.code==="KIE_VIDEO_CAPABILITY_UNSUPPORTED");
 });
 
 test("requires a real private asset repository and bounded signed URL expiry",()=>{
