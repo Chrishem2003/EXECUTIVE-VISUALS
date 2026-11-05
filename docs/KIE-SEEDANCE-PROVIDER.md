@@ -55,7 +55,7 @@ Only set these on a protected staging worker after the account, billing rate, ou
 - Existing global gates `VIDEO_GATEWAY_ENABLED=true` and `VIDEO_GATEWAY_ALLOW_REMOTE=true`.
 - Add only the verified Kie output hostname to the private output ingestor's exact host allowlist.
 
-The worker will not register the Kie adapter unless all global and provider-specific gates are true and the account credit conversion is present. The catalog remains non-selectable until release approval. Never enable production flags as part of this draft.
+The worker will not register the Kie adapter unless all global and provider-specific gates are true, the server API key is present and the account credit conversion is present. This first adapter uses a protected server-managed key; per-user BYOK credential vault integration is a separate release task. The catalog remains non-selectable until release approval. Never enable production flags as part of this draft.
 
 ## Safety and failure handling
 
@@ -64,6 +64,7 @@ The worker will not register the Kie adapter unless all global and provider-spec
 - Reject unsafe hosts, non-HTTPS URLs, malformed task IDs and invalid provider responses.
 - Kie task outputs must pass the shared output-host allowlist, private ingestion and media validation.
 - Task-reported credits are mandatory for settlement; estimates are never substituted for actual usage.
+- The initial worker polls task status; Kie recommends callbacks for production. Callback delivery, replay protection and signature verification must be added before replacing the durable polling path.
 - Explicit budget approval and reservation are required before a paid task can be enqueued.
 - No automatic retry of a paid task after an ambiguous submission outcome.
 
