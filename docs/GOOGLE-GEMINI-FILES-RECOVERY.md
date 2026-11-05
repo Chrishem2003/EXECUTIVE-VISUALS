@@ -65,9 +65,22 @@ The repository `server/google-gemini-gcs-mirror-attempt-repository.mjs` encrypts
 
 The writer accepts an optional trusted `attemptRepository`. When supplied, it records PREPARED, UPLOADING, OUTCOME_UNKNOWN, OBJECT_VERIFIED and REGISTERED transitions. A verified object whose source-registry write fails is retained as OBJECT_VERIFIED for reconciliation instead of being deleted prematurely. An ambiguous upload is retained with its encrypted session URI and is not blindly restarted.
 
-**Recovery worker is not yet enabled or complete.** The next implementation must claim attempts with a lease, query the exact resumable session status, distinguish completed uploads from incomplete sessions, rematerialize the same immutable private asset receipt, resume only from the server-reported byte offset, verify the final object metadata, and idempotently register the source. Session status and resume behavior follow the official [Cloud Storage resumable upload protocol](https://docs.cloud.google.com/storage/docs/performing-resumable-uploads). Sessions expire after one week. A lost or expired session must be quarantined or restarted under a new object identity only after an explicit safe recovery decision.
+**GCS mirror recovery worker implemented; scheduler remains disabled.** The opt-in worker is `server/google-gemini-gcs-mirror-recovery-worker.mjs`, exposed by the mirror service as `recoverMirrorAttempts()`. It claims stale attempts with the repository's conditional lease, checks the exact resumable session, resumes from the server-reported byte offset, rematerializes and SHA-256 verifies the same private asset, verifies the final GCS object metadata, and idempotently registers the verified source. A previously verified object can be registered without re-uploading. Expired sessions, invalid ranges, and metadata mismatches are quarantined; transient errors release only the matching lease. Session status and resume behavior follow the official [Cloud Storage resumable upload protocol](https://docs.cloud.google.com/storage/docs/performing-resumable-uploads). Sessions expire after one week.
+
+The worker is callable for controlled tests and maintenance, but no timer, queue consumer, production credential activation, or deployment has been enabled. The next gates are local/CI test success, PostgreSQL lease/concurrency coverage, then staging-only recovery against real private test objects.
 
 **Still required before user traffic:** a production-grade OAuth identity provider, a dedicated configured GCS mirror bucket, least-privilege IAM for the application uploader (including object create/read/delete permissions) and the Gemini service agent's object-viewer access, plus staging acceptance using real private objects. Do not create source rows manually or enable GCS registration in production until those gates pass.
+
+
+## GCS mirror recovery worker
+
+The mirror service exposes `recoverMirrorAttempts({ before, limit })`. The default query is bounded to 100 stale attempts; the hard limit is 500. Only the exact allowlisted GCS bucket and the encrypted `storage.googleapis.com/upload/storage/v1/` session URI are accepted. The worker never logs or returns the session URI.
+
+For `UPLOADING` and `OUTCOME_UNKNOWN`, it sends the Cloud Storage status probe (`PUT`, `Content-Length: 0`, `Content-Range: bytes */SIZE`). A completed response triggers exact metadata verification. A `308 Resume Incomplete` response is interpreted using the inclusive `Range: bytes=0-N` header; no Range means byte zero. The worker rematerializes the same owner/project-scoped Supabase asset and recomputes SHA-256 before resuming the remaining byte range. The private Supabase asset remains canonical.
+
+The lease is retained across the intermediate `OBJECT_VERIFIED` transition and is cleared only after `REGISTERED`, `FAILED`, or `QUARANTINED`. This prevents another worker from claiming the object between GCS verification and source-registry persistence. A transient source-registry failure leaves the attempt in `OBJECT_VERIFIED` for a later idempotent registration pass.
+
+Automated tests are in `server/tests/google-gemini-gcs-mirror-recovery-worker.test.mjs` and are included in `npm run verify:video-routing`. These tests use local fixtures and mocked GCS responses; they do not prove real cloud IAM, network, bucket, or staging behavior.
 
 ## GCS registration IAM preflight
 
