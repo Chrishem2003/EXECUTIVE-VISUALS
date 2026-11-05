@@ -122,8 +122,19 @@ begin
     raise exception 'RUNWAY_PREFLIGHT_ARGUMENTS_INVALID';
   end if;
   if p_project_id is not null and not exists (
-    select 1 from executive_visuals.projects p
-    where p.id = p_project_id and p.owner_id = p_owner_id
+    select 1
+    from executive_visuals.projects p
+    where p.id = p_project_id
+      and (
+        p.owner_id = p_owner_id
+        or exists (
+          select 1
+          from executive_visuals.project_members m
+          where m.project_id = p.id
+            and m.member_id = p_owner_id
+            and m.role = 'editor'
+        )
+      )
   ) then
     raise exception 'RUNWAY_PREFLIGHT_PROJECT_FORBIDDEN';
   end if;
