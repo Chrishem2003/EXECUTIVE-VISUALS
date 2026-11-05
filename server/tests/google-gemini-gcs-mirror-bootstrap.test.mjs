@@ -65,14 +65,14 @@ test("GCS bootstrap rejects service-account key files and malformed WIF endpoint
   const file = join(directory, "credentials.json");
   try {
     await writeFile(file, JSON.stringify({ type: "service_account", private_key: "never-a-real-key" }));
-    await assert.rejects(createGoogleGeminiGcsMirrorBootstrap({ env: { ...env, GOOGLE_APPLICATION_CREDENTIALS: file }, GoogleAuthClass: FakeGoogleAuth }), /Only a generated Google Workload Identity Federation/);
+    await assert.rejects(createGoogleGeminiGcsMirrorBootstrap({ env: { ...env, GOOGLE_APPLICATION_CREDENTIALS: file }, GoogleAuthClass: FakeGoogleAuth }), /Only generated Google Workload Identity Federation/);
     await writeFile(file, JSON.stringify({
       type: "external_account",
       audience: "//iam.googleapis.com/projects/123456/locations/global/workloadIdentityPools/staging/providers/render",
       token_url: "https://sts.googleapis.com.evil.invalid/v1/token",
       credential_source: { file: "/tmp/subject-token" }
     }));
-    await assert.rejects(createGoogleGeminiGcsMirrorBootstrap({ env: { ...env, GOOGLE_APPLICATION_CREDENTIALS: file }, GoogleAuthClass: FakeGoogleAuth }), /Only a generated Google Workload Identity Federation/);
+    await assert.rejects(createGoogleGeminiGcsMirrorBootstrap({ env: { ...env, GOOGLE_APPLICATION_CREDENTIALS: file }, GoogleAuthClass: FakeGoogleAuth }), /Only generated Google Workload Identity Federation/);
     await writeFile(file, JSON.stringify({
       type: "external_account",
       audience: "//iam.googleapis.com/projects/123456/locations/global/workloadIdentityPools/staging/providers/render",
@@ -87,7 +87,40 @@ test("GCS bootstrap rejects service-account key files and malformed WIF endpoint
       token_url: "https://sts.googleapis.com/v1/token",
       credential_source: { executable: { command: "/tmp/untrusted-command" } }
     }));
-    await assert.rejects(createGoogleGeminiGcsMirrorBootstrap({ env: { ...env, GOOGLE_APPLICATION_CREDENTIALS: file }, GoogleAuthClass: FakeGoogleAuth }), /executable token sources are not supported/);
+    await assert.rejects(createGoogleGeminiGcsMirrorBootstrap({ env: { ...env, GOOGLE_APPLICATION_CREDENTIALS: file }, GoogleAuthClass: FakeGoogleAuth }), /URL, AWS, executable/);
+
+    await writeFile(file, JSON.stringify({
+      type: "external_account",
+      audience: "//iam.googleapis.com/projects/123456/locations/global/workloadIdentityPools/staging/providers/render",
+      token_url: "https://sts.googleapis.com/v1/token",
+      credential_source: { url: "http://169.254.169.254/latest/meta-data/token" }
+    }));
+    await assert.rejects(createGoogleGeminiGcsMirrorBootstrap({ env: { ...env, GOOGLE_APPLICATION_CREDENTIALS: file }, GoogleAuthClass: FakeGoogleAuth }), /file-based subject token/);
+
+    await writeFile(file, JSON.stringify({
+      type: "external_account",
+      audience: "//iam.googleapis.com/projects/123456/locations/global/workloadIdentityPools/staging/providers/render",
+      token_url: "https://sts.googleapis.com/v1/token",
+      credential_source: { aws: { url: "http://169.254.169.254/latest/meta-data/iam/security-credentials" } }
+    }));
+    await assert.rejects(createGoogleGeminiGcsMirrorBootstrap({ env: { ...env, GOOGLE_APPLICATION_CREDENTIALS: file }, GoogleAuthClass: FakeGoogleAuth }), /file-based subject token/);
+
+    await writeFile(file, JSON.stringify({
+      type: "external_account",
+      audience: "//iam.googleapis.com/projects/123456/locations/global/workloadIdentityPools/staging/providers/render",
+      token_url: "https://sts.googleapis.com/v1/token",
+      credential_source: { file: "/tmp/subject-token", format: { type: "xml" } }
+    }));
+    await assert.rejects(createGoogleGeminiGcsMirrorBootstrap({ env: { ...env, GOOGLE_APPLICATION_CREDENTIALS: file }, GoogleAuthClass: FakeGoogleAuth }), /file-based subject token/);
+
+    await writeFile(file, JSON.stringify({
+      type: "external_account",
+      audience: "//iam.googleapis.com/projects/123456/locations/global/workloadIdentityPools/staging/providers/render",
+      token_url: "https://sts.googleapis.com/v1/token",
+      credential_source: { file: "/tmp/subject-token", format: { type: "json", subject_token_field_name: "token" } }
+    }));
+    const accepted = await createGoogleGeminiGcsMirrorBootstrap({ env: { ...env, GOOGLE_APPLICATION_CREDENTIALS: file }, GoogleAuthClass: FakeGoogleAuth });
+    assert.equal(typeof accepted.getAccessToken, "function");
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

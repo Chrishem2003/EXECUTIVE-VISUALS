@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { isAbsolute } from "node:path";
 import { createGoogleGeminiGcsMirrorServiceFactory } from "./google-gemini-gcs-mirror-service-factory.mjs";
 
 const CLOUD_PLATFORM_SCOPE = "https://www.googleapis.com/auth/cloud-platform";
@@ -45,15 +46,39 @@ export async function createGoogleGeminiGcsMirrorBootstrap({
     try { if (credentialConfig?.token_info_url) tokenInfoUrl = new URL(credentialConfig.token_info_url); } catch {}
     try { if (credentialConfig?.service_account_impersonation_url) impersonationUrl = new URL(credentialConfig.service_account_impersonation_url); } catch {}
     const source = credentialConfig?.credential_source;
+    const audienceParts = typeof credentialConfig?.audience === "string" ? credentialConfig.audience.split("/") : [];
+    const validAudience = audienceParts.length === 11 &&
+      audienceParts[0] === "" && audienceParts[1] === "" &&
+      audienceParts[2] === "iam.googleapis.com" && audienceParts[3] === "projects" &&
+      /^\d+$/.test(audienceParts[4]) && audienceParts[5] === "locations" &&
+      /^[a-z0-9-]+$/.test(audienceParts[6]) && audienceParts[7] === "workloadIdentityPools" &&
+      /^[A-Za-z0-9_-]+$/.test(audienceParts[8]) && audienceParts[9] === "providers" &&
+      /^[A-Za-z0-9_-]+$/.test(audienceParts[10]);
+    const validFileSource = source &&
+      typeof source === "object" &&
+      !Array.isArray(source) &&
+      typeof source.file === "string" &&
+      source.file.trim().length > 0 &&
+      isAbsolute(source.file) &&
+      Object.keys(source).every(key => key === "file" || key === "format") &&
+      (source.format === undefined ||
+        (source.format &&
+          typeof source.format === "object" &&
+          !Array.isArray(source.format) &&
+          ["text", "json"].includes(source.format.type) &&
+          Object.keys(source.format).every(key => key === "type" || key === "subject_token_field_name") &&
+          (source.format.type !== "text" || source.format.subject_token_field_name === undefined) &&
+          (source.format.subject_token_field_name === undefined ||
+            (typeof source.format.subject_token_field_name === "string" &&
+              /^[A-Za-z_][A-Za-z0-9_]*$/.test(source.format.subject_token_field_name)))));
     if (credentialConfig?.type !== "external_account" ||
         typeof credentialConfig.audience !== "string" ||
-        !credentialConfig.audience.startsWith("//iam.googleapis.com/projects/") ||
+        !validAudience ||
         tokenUrl?.protocol !== "https:" || tokenUrl?.hostname !== "sts.googleapis.com" ||
         (credentialConfig.token_info_url && (tokenInfoUrl?.protocol !== "https:" || tokenInfoUrl?.hostname !== "sts.googleapis.com")) ||
         (credentialConfig.service_account_impersonation_url && (impersonationUrl?.protocol !== "https:" || impersonationUrl?.hostname !== "iamcredentials.googleapis.com")) ||
-        !source || typeof source !== "object" || Array.isArray(source) ||
-        source.executable || source.executable_command) {
-      throw fail("Only a generated Google Workload Identity Federation external-account config with trusted Google token endpoints is accepted; service-account keys, user credentials and executable token sources are not supported.", "GEMINI_GCS_WIF_CONFIG_INVALID");
+        !validFileSource) {
+      throw fail("Only generated Google Workload Identity Federation configs with a file-based subject token and trusted Google token endpoints are accepted; URL, AWS, executable, service-account key and user credential sources are not supported.", "GEMINI_GCS_WIF_CONFIG_INVALID");
     }
   }
 
