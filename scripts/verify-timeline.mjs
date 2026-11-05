@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { addClip, addMarker, addTrack, createTimeline, moveClip, rational, seconds, splitClip, toOpenTimelineIo, trimClip, validateTimeline } from "../src/core/timeline.ts";
 import { analyzeTimelineQuality } from "../src/core/timeline-quality.ts";
 import { generatedVideoAlreadyOnTimeline, generatedVideoDurationSeconds, selectLatestGeneratedVideoAsset } from "../src/core/generated-video-import.ts";
+import { shouldPreserveCloudTimelineDraft } from "../src/core/timeline-conflict.ts";
 
 let timeline=createTimeline("project-1","timeline-1","Pilot episode",{numerator:24,denominator:1});
 timeline=addTrack(timeline,{id:"v1",name:"Video 1",kind:"video",enabled:true,locked:false,clips:[]});
@@ -76,5 +77,9 @@ assert.equal(generatedVideoDurationSeconds({id:"fallback",name:"Fallback",mediaT
 assert.equal(selectLatestGeneratedVideoAsset(generatedAssets,"project-missing"),null);
 assert.equal(generatedVideoAlreadyOnTimeline({tracks:[{clips:[{assetId:"asset-new"}]}]},"asset-new"),true);
 assert.equal(generatedVideoAlreadyOnTimeline({tracks:[{clips:[]}]},"asset-new"),false);
+assert.equal(shouldPreserveCloudTimelineDraft({hasConflict:true,timelineId:"timeline-1",timelineProjectId:"project-1",selectedProjectId:"project-1"}),true);
+assert.equal(shouldPreserveCloudTimelineDraft({hasConflict:false,timelineId:"timeline-1",timelineProjectId:"project-1",selectedProjectId:"project-1"}),false);
+assert.equal(shouldPreserveCloudTimelineDraft({hasConflict:true,timelineId:"timeline-1",timelineProjectId:"project-1",selectedProjectId:"project-2"}),false);
+assert.equal(shouldPreserveCloudTimelineDraft({hasConflict:true,timelineId:null,timelineProjectId:"project-1",selectedProjectId:"project-1"}),false);
 
 console.log("Timeline engine checks passed: rational timing, source trims, split, cross-track and same-track moves, overlap protection, markers and editorial interchange export.");
