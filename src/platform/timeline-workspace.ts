@@ -393,9 +393,6 @@ async function loadTimelineWaveforms(){
   if(state.waveformCache[assetId]||waveformPending.has(assetId))continue;
   const asset=state.assets.find(item=>item.id===assetId);
   if(!asset||!asset.mediaType.startsWith("audio/"))continue;
-  const maxBytes=8*1024*1024;
-  const probe=asset.metadata?.probe as {format?:{duration?:string}}|undefined;
-  const duration=Number(probe?.format?.duration);
   waveformPending.add(assetId);
   try{
    const waveformUrl=(state.mode==="cloud"?"/api/cloud/assets/":"/api/assets/")+encodeURIComponent(assetId)+"/waveform";
