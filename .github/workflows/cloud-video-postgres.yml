@@ -40,6 +40,8 @@ jobs:
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261104143000_cloud_video_budget_enqueue.sql
       - name: Apply reviewed cost evidence migration
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261105100000_video_generation_cost_evidence.sql
+      - name: Apply cloud video cancellation migration
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261105120000_cloud_video_cancellation.sql
       - name: Verify authorization, atomic enqueue and finalization
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/cloud-video-postgres-integration.sql
       - name: Prepare concurrency test approval
