@@ -42,6 +42,8 @@ test("calls only the documented dry-run endpoint and returns routing estimates w
   assert.equal(result.billed, false);
   assert.equal(result.model, "seedance2_5");
   assert.equal(result.estimatedCredits, 240);
+  assert.match(result.inputHash, /^[a-f0-9]{64}$/);
+  assert.equal(result.budgetCheck, "not_checked");
 });
 
 test("quarantines any response contradicting dry-run semantics or omitting routing", async () => {
@@ -83,4 +85,19 @@ test("validates media roles, count limits, MIME families and provider output fie
   assert.throws(() => buildRunwayRouterDryRunPayload({ configId: "router", prompt: "test", referenceAudio: [{ uri: "https://assets.example.com/a.mp3" }, { uri: "https://assets.example.com/b.mp3" }] }));
   assert.throws(() => buildRunwayRouterDryRunPayload({ configId: "router", prompt: "test", referenceImages: [{ uri: "data:audio/mpeg;base64,AAAA", role: "reference" }] }));
   assert.throws(() => buildRunwayRouterDryRunPayload({ configId: "router", prompt: "test", referenceImages: [{ uri: "https://user:pass@assets.example.com/a.png", role: "reference" }] }));
+});
+
+
+test("binds the router decision to a canonical input fingerprint and enforces an explicit credit ceiling", async () => {
+  const client = createRunwayRouterDryRunClient({ env, fetchImpl: async () => response(200, decision) });
+  const input = { configId: "creative_low_cost", prompt: "A cinematic sunrise", durationSeconds: 8, resolution: "720p" };
+  const accepted = await client.preflight(input, { maxEstimatedCredits: 240 });
+  assert.equal(accepted.budgetCheck, "within_limit");
+  assert.match(accepted.inputHash, /^[a-f0-9]{64}$/);
+  await assert.rejects(() => client.preflight(input, { maxEstimatedCredits: 239 }), error => error.code === "RUNWAY_ROUTER_BUDGET_EXCEEDED");
+  await assert.rejects(() => client.preflight(input, { maxEstimatedCredits: -1 }), error => error.code === "RUNWAY_ROUTER_BUDGET_INVALID");
+  const reordered = await client.preflight({ resolution: "720p", durationSeconds: 8, prompt: "A cinematic sunrise", configId: "creative_low_cost" });
+  assert.equal(reordered.inputHash, accepted.inputHash);
+  const changed = await client.preflight({ ...input, prompt: "A different scene" });
+  assert.notEqual(changed.inputHash, accepted.inputHash);
 });
