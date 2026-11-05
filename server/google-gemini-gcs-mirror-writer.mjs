@@ -55,12 +55,15 @@ export function createGoogleGeminiGcsMirrorWriter({
   fetchImpl = globalThis.fetch,
   getAccessToken,
   sourceRepository,
+  attemptRepository = null,
   maxBytes = 250 * 1024 * 1024,
   timeoutMs = 120000,
   makeId = randomUUID
 } = {}) {
   if (typeof fetchImpl !== "function" || typeof getAccessToken !== "function" ||
-      !sourceRepository || typeof sourceRepository.recordVerifiedSource !== "function") {
+      !sourceRepository || typeof sourceRepository.recordVerifiedSource !== "function" ||
+      (attemptRepository && (typeof attemptRepository.createAttempt !== "function" ||
+        typeof attemptRepository.recordSession !== "function" || typeof attemptRepository.transition !== "function"))) {
     throw new TypeError("GCS mirror writer requires OAuth, fetch and the governed source repository.");
   }
   if (!Number.isSafeInteger(maxBytes) || maxBytes < 1 || maxBytes > 2 * 1024 * 1024 * 1024 ||
@@ -173,6 +176,10 @@ export function createGoogleGeminiGcsMirrorWriter({
         assetId, ownerId, projectId: scopedProjectId, bucket, objectName,
         sizeBytes, mediaType, sha256
       };
+      const attempt = attemptRepository ? await attemptRepository.createAttempt({
+        assetId, ownerId, projectId: scopedProjectId, bucket, objectName,
+        mediaType, sizeBytes, sha256
+      }) : null;
       const accessToken = await token();
       const metadata = {
         name: objectName,
@@ -197,10 +204,25 @@ export function createGoogleGeminiGcsMirrorWriter({
       });
       const sessionUri = initiated.response.headers.get("location");
       if (!safeSessionUri(sessionUri)) {
+        if (attempt) {
+          try { await attemptRepository.transition({attemptId:attempt.id,expectedState:"PREPARED",state:"OUTCOME_UNKNOWN",errorCode:"GEMINI_GCS_UPLOAD_SESSION_INVALID"}); } catch {}
+        }
         throw fail("GCS did not return a valid resumable upload session.", "GEMINI_GCS_UPLOAD_SESSION_INVALID");
+      }
+      if (attempt) {
+        try {
+          await attemptRepository.recordSession({
+            attemptId: attempt.id, sessionUri,
+            expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+          });
+        } catch (error) {
+          try { await attemptRepository.transition({attemptId:attempt.id,expectedState:"PREPARED",state:"FAILED",errorCode:"GEMINI_GCS_ATTEMPT_SESSION_PERSIST_FAILED"}); } catch {}
+          throw error;
+        }
       }
 
       let uploaded = false;
+      let verifiedObject = false;
       let generation = null;
       try {
         const stream = createReadStream(filePath);
@@ -214,6 +236,9 @@ export function createGoogleGeminiGcsMirrorWriter({
         } catch (error) {
           error.outcomeUnknown = true;
           error.cleanupPending = true;
+          if (attempt) {
+            try { await attemptRepository.transition({attemptId:attempt.id,expectedState:"UPLOADING",state:"OUTCOME_UNKNOWN",errorCode:error.code || "GEMINI_GCS_UPLOAD_OUTCOME_UNKNOWN"}); } catch {}
+          }
           throw error;
         }
         uploaded = completed.response.status === 200 || completed.response.status === 201;
@@ -225,11 +250,21 @@ export function createGoogleGeminiGcsMirrorWriter({
           throw fail("Uploaded GCS mirror failed exact object metadata verification.", "GEMINI_GCS_MIRROR_INTEGRITY_MISMATCH");
         }
         generation = String(verified.generation);
+        verifiedObject = true;
+        if (attempt) {
+          await attemptRepository.transition({
+            attemptId:attempt.id,expectedState:"UPLOADING",state:"OBJECT_VERIFIED",
+            generation,metageneration:String(verified.metageneration)
+          });
+        }
         const source = await sourceRepository.recordVerifiedSource({
           assetId, ownerId, projectId: scopedProjectId, bucket, objectName,
           generation, metageneration: String(verified.metageneration),
           sizeBytes, mediaType, sha256
         });
+        if (attempt) {
+          await attemptRepository.transition({attemptId:attempt.id,expectedState:"OBJECT_VERIFIED",state:"REGISTERED",generation,metageneration:String(verified.metageneration)});
+        }
         return Object.freeze({
           source,
           gcsUri: "gs://" + bucket + "/" + objectName,
@@ -237,9 +272,17 @@ export function createGoogleGeminiGcsMirrorWriter({
           reused: false
         });
       } catch (error) {
-        if (uploaded && generation) {
+        if (uploaded && generation && !(attempt && verifiedObject)) {
           const removed = await deleteExactObject(objectName, generation, accessToken);
           if (!removed) error.cleanupPending = true;
+        }
+        if (attempt && !verifiedObject) {
+          try {
+            await attemptRepository.transition({
+              attemptId:attempt.id,expectedState:"UPLOADING",state:"FAILED",
+              errorCode:error.code || "GEMINI_GCS_MIRROR_FAILED"
+            });
+          } catch {}
         }
         throw error;
       }
