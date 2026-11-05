@@ -87,3 +87,65 @@ test("requires exact provider/model identity before Luma preparation", async () 
     provider: "runway", model: "gen4.5", prompt: "wrong provider"
   }), error => error.code === "VIDEO_JOB_INPUT_MISMATCH");
 });
+
+const googleOmniIntegration = {
+  adapter: {
+    provider: "google",
+    model: "gemini-omni-1.1-flash",
+    minimumPollIntervalMs: 5000,
+    async prepareInput(input, context) { return { plan: input, context }; },
+    async submit(prepared) { return { taskId: "v1_abcdef123456", status: "running", prepared }; },
+    async getStatus(taskId) { return { taskId, status: "succeeded", provider: "google", model: "gemini-omni-1.1-flash", rawInteraction: { id: taskId } }; }
+  },
+  async ingestOutputs(args) { return { assetIds: ["private-google-output"], usage: { outputCount: 1 }, args }; },
+  async resolveActualCost() { return { amount: 0.2, currency: "USD", evidenceReference: "google:verified-settlement" }; }
+};
+const googleEnv = {
+  VIDEO_GATEWAY_ENABLED: "true",
+  VIDEO_GATEWAY_ALLOW_REMOTE: "true",
+  GOOGLE_OMNI_VIDEO_ENABLED: "true",
+  GOOGLE_OMNI_VIDEO_ALLOW_REMOTE: "true"
+};
+
+test("registers Gemini Omni only through an injected private integration and explicit global/provider gates", async () => {
+  const [adapter] = createConfiguredVideoProviderAdapters({
+    env: googleEnv,
+    ingestOutputs: base.ingestOutputs,
+    googleOmniIntegration
+  });
+  assert.equal(adapter.provider, "google");
+  assert.equal(adapter.model, "gemini-omni-1.1-flash");
+  const prepared = await adapter.prepareInput({ prompt: "A vertical product film" }, { job: { id: "job-1" } });
+  const submitted = await adapter.submit(prepared, { job: { id: "job-1" } });
+  const task = await adapter.getStatus(submitted.taskId, { job: { id: "job-1" } });
+  assert.equal(task.status, "succeeded");
+  assert.deepEqual(await adapter.ingestOutputs({ task }), {
+    assetIds: ["private-google-output"], usage: { outputCount: 1 }, args: { task }
+  });
+  assert.equal((await adapter.resolveActualCost({ task })).evidenceReference, "google:verified-settlement");
+});
+
+test("fails closed when Gemini Omni is partially enabled or lacks its private integration", () => {
+  assert.throws(() => createConfiguredVideoProviderAdapters({
+    env: { ...googleEnv, GOOGLE_OMNI_VIDEO_ALLOW_REMOTE: "false" },
+    ingestOutputs: base.ingestOutputs,
+    googleOmniIntegration
+  }), error => error.code === "GOOGLE_OMNI_VIDEO_REMOTE_DISABLED");
+  assert.throws(() => createConfiguredVideoProviderAdapters({
+    env: googleEnv,
+    ingestOutputs: base.ingestOutputs
+  }), error => error.code === "GOOGLE_OMNI_INTEGRATION_REQUIRED");
+  assert.throws(() => createConfiguredVideoProviderAdapters({
+    env: { ...googleEnv, VIDEO_GATEWAY_ALLOW_REMOTE: "false" },
+    ingestOutputs: base.ingestOutputs,
+    googleOmniIntegration
+  }), error => error.code === "GOOGLE_OMNI_VIDEO_REMOTE_DISABLED");
+});
+
+test("does not construct or register Gemini Omni when provider opt-ins are absent", () => {
+  const [adapter] = createConfiguredVideoProviderAdapters({
+    env: { VIDEO_GATEWAY_ENABLED: "true", VIDEO_GATEWAY_ALLOW_REMOTE: "true" },
+    ingestOutputs: base.ingestOutputs
+  });
+  assert.equal(adapter.provider, "luma");
+});
