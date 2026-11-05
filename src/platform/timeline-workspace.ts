@@ -1,5 +1,5 @@
 import { apiRequest } from "../core/api";
-import { AudioPreviewEngine, decibelsToGain, extractWaveformPeaks, waveformSvg, type AudioPreviewTrackInput } from "../core/audio-preview";
+import { AudioPreviewEngine, decibelsToGain, type AudioPreviewTrackInput } from "../core/audio-preview";
 import { analyzeTimelineQuality } from "../core/timeline-quality";
 import { buildProductionReadinessReport } from "../core/production-readiness";
 import { assessSourceMediaEvidence } from "../core/source-media-evidence";
