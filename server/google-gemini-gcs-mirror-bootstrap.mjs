@@ -46,6 +46,14 @@ export async function createGoogleGeminiGcsMirrorBootstrap({
     try { if (credentialConfig?.token_info_url) tokenInfoUrl = new URL(credentialConfig.token_info_url); } catch {}
     try { if (credentialConfig?.service_account_impersonation_url) impersonationUrl = new URL(credentialConfig.service_account_impersonation_url); } catch {}
     const source = credentialConfig?.credential_source;
+    const audienceParts = typeof credentialConfig?.audience === "string" ? credentialConfig.audience.split("/") : [];
+    const validAudience = audienceParts.length === 11 &&
+      audienceParts[0] === "" && audienceParts[1] === "" &&
+      audienceParts[2] === "iam.googleapis.com" && audienceParts[3] === "projects" &&
+      /^\d+$/.test(audienceParts[4]) && audienceParts[5] === "locations" &&
+      /^[a-z0-9-]+$/.test(audienceParts[6]) && audienceParts[7] === "workloadIdentityPools" &&
+      /^[A-Za-z0-9_-]+$/.test(audienceParts[8]) && audienceParts[9] === "providers" &&
+      /^[A-Za-z0-9_-]+$/.test(audienceParts[10]);
     const validFileSource = source &&
       typeof source === "object" &&
       !Array.isArray(source) &&
@@ -65,7 +73,7 @@ export async function createGoogleGeminiGcsMirrorBootstrap({
               /^[A-Za-z_][A-Za-z0-9_]*$/.test(source.format.subject_token_field_name)))));
     if (credentialConfig?.type !== "external_account" ||
         typeof credentialConfig.audience !== "string" ||
-        !/^\\/\\/iam\\.googleapis\\.com\\/projects\\/\\d+\\/locations\\/[a-z0-9-]+\\/workloadIdentityPools\\/[A-Za-z0-9_-]+\\/providers\\/[A-Za-z0-9_-]+$/.test(credentialConfig.audience) ||
+        !validAudience ||
         tokenUrl?.protocol !== "https:" || tokenUrl?.hostname !== "sts.googleapis.com" ||
         (credentialConfig.token_info_url && (tokenInfoUrl?.protocol !== "https:" || tokenInfoUrl?.hostname !== "sts.googleapis.com")) ||
         (credentialConfig.service_account_impersonation_url && (impersonationUrl?.protocol !== "https:" || impersonationUrl?.hostname !== "iamcredentials.googleapis.com")) ||
