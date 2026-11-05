@@ -183,6 +183,22 @@ test("does not restore a disconnected connection when refresh-token persistence 
   assert.equal(h.records.has(ownerId), false);
 });
 
+test("does not restore an OAuth connection when callback persistence races with disconnect", async () => {
+  let persistenceStartedResolve, releasePersistenceResolve;
+  const persistenceStarted = new Promise(resolve => { persistenceStartedResolve = resolve; });
+  const releasePersistence = new Promise(resolve => { releasePersistenceResolve = resolve; });
+  const h = harness({ onRefreshTokenUpsert: async () => { persistenceStartedResolve(); await releasePersistence; } });
+  const first = await h.service.begin({ ownerId });
+  await h.service.complete({ ownerId, state: new URL(first.authorizationUrl).searchParams.get("state"), code: "first-code" });
+  const second = await h.service.begin({ ownerId });
+  const pendingCallback = h.service.complete({ ownerId, state: new URL(second.authorizationUrl).searchParams.get("state"), code: "second-code" });
+  await persistenceStarted;
+  await h.service.disconnect({ ownerId });
+  releasePersistenceResolve();
+  await assert.rejects(() => pendingCallback, error => error.code === "GOOGLE_OAUTH_NOT_CONNECTED");
+  assert.equal(h.records.has(ownerId), false);
+});
+
 test("does not release an in-flight refreshed access token after disconnect", async () => {
   let refreshStartedResolve, releaseRefreshResolve;
   const refreshStarted = new Promise(resolve => { refreshStartedResolve = resolve; });
