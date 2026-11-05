@@ -297,3 +297,15 @@ test("rejects malformed, oversized or completed-without-output REST responses", 
     ...response, id: "bad-id"
   }), error => error.code === "GEMINI_OMNI_INVALID_RESPONSE");
 });
+
+test("normalizes queued and requires_action Interactions API states as pending", () => {
+  for (const providerStatus of ["queued", "requires_action"]) {
+    const result = normalizeGeminiOmniFlashInteractionResponse({
+      id: "v1_abcdef123456",
+      model: "gemini-omni-1.1-flash",
+      status: providerStatus,
+      steps: []
+    });
+    assert.equal(result.status, "waiting", providerStatus);
+  }
+});
