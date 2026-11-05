@@ -13,6 +13,42 @@ function interactionId(value) {
   return value;
 }
 
+async function readBoundedResponseText(response, maxBytes) {
+  const declared = Number(response.headers?.get?.("content-length"));
+  if (Number.isFinite(declared) && declared > maxBytes) {
+    try { await response.body?.cancel?.(); } catch {}
+    throw fail("Gemini Interactions response exceeded its configured size limit.",
+      "GEMINI_OMNI_RESPONSE_TOO_LARGE");
+  }
+  if (!response.body || typeof response.body.getReader !== "function") {
+    const raw = await response.text();
+    if (Buffer.byteLength(raw) > maxBytes) {
+      throw fail("Gemini Interactions response exceeded its configured size limit.",
+        "GEMINI_OMNI_RESPONSE_TOO_LARGE");
+    }
+    return raw;
+  }
+  const reader = response.body.getReader();
+  const chunks = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > maxBytes) {
+        try { await reader.cancel(); } catch {}
+        throw fail("Gemini Interactions response exceeded its configured size limit.",
+          "GEMINI_OMNI_RESPONSE_TOO_LARGE");
+      }
+      chunks.push(Buffer.from(value));
+    }
+  } finally {
+    try { reader.releaseLock(); } catch {}
+  }
+  return Buffer.concat(chunks, total).toString("utf8");
+}
+
 function safeExternalMediaUri(value, supabaseUrl) {
   if (typeof supabaseUrl !== "string" || !supabaseUrl.trim()) return false;
   let storage, uri;
@@ -147,10 +183,7 @@ export function createGeminiOmniFlashClient({
         throw fail(error?.name === "AbortError" ? "Gemini Interactions request timed out." : "Gemini Interactions request failed.",
           error?.name === "AbortError" ? "GEMINI_OMNI_REQUEST_TIMEOUT" : "GEMINI_OMNI_REQUEST_FAILED");
       }
-      const raw = await response.text();
-      if (Buffer.byteLength(raw) > maxResponseBytes) {
-        throw fail("Gemini Interactions response exceeded its configured size limit.", "GEMINI_OMNI_RESPONSE_TOO_LARGE");
-      }
+      const raw = await readBoundedResponseText(response, maxResponseBytes);
       let data = null;
       if (raw) {
         try { data = JSON.parse(raw); }
@@ -190,7 +223,13 @@ export function createGeminiOmniFlashClient({
   async function fetchAuthorizedInteraction(id, context) {
     const safeId = interactionId(id);
     await authorize(safeId, context, "read");
-    const data = await request(BASE + "/interactions/" + encodeURIComponent(safeId));
+    // Request only lifecycle and URI metadata. The Interactions GET response
+    // can echo generated video as large inline base64 even when URI delivery was
+    // requested; selecting only uri prevents media bytes entering the poller.
+    const fields = "id,model,status,steps(type,content(type,mime_type,uri))";
+    const url = new URL(BASE + "/interactions/" + encodeURIComponent(safeId));
+    url.searchParams.set("fields", fields);
+    const data = await request(url.toString());
     normalized(data);
     return data;
   }
