@@ -2,13 +2,16 @@
 select set_config('request.jwt.claim.role','service_role',false);
 set role service_role;
 insert into executive_visuals.runway_router_approvals(
- id,owner_id,project_id,config_id,provider,model,input_hash,request_hash,
+ id,owner_id,project_id,config_id,provider,model,input_hash,request_hash,approved_job_input,
  estimated_credits,max_estimated_credits,expires_at
 ) values (
  '923e4567-e89b-42d3-a456-426614174000',
  '123e4567-e89b-42d3-a456-426614174000',
  '323e4567-e89b-42d3-a456-426614174000',
  'creative_low_cost','runway','gen4.5',repeat('e',64),repeat('b',64),
+ jsonb_build_object('projectId','323e4567-e89b-42d3-a456-426614174000',
+   'provider','runway','model','gen4.5','requestHash',repeat('b',64),
+   'prompt','concurrent test','durationSeconds',2),
  24,30,clock_timestamp()+interval '10 minutes'
 );
 insert into executive_visuals.video_generation_budget_approvals(
