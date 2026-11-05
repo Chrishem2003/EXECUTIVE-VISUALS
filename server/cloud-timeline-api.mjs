@@ -213,6 +213,21 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     }
     return response(200,{job});
    }
+   const versionsMatch=path.match(/^\/api\/cloud\/timelines\/([0-9a-f-]+)\/versions(?:\/([0-9a-f-]+))?$/i);
+   if(versionsMatch&&safeId(versionsMatch[1])&&method==="GET"){
+    const timelineId=versionsMatch[1];
+    if(versionsMatch[2]){
+     const version=await service.timelines.getVersion({ownerId,timelineId,versionId:versionsMatch[2]});
+     return response(200,{version});
+    }
+    const versions=await service.timelines.listVersions({ownerId,timelineId,limit:Number(query.limit)||100,offset:Number(query.offset)||0});
+    return response(200,{versions});
+   }
+   const restoreMatch=path.match(/^\/api\/cloud\/timelines\/([0-9a-f-]+)\/restore$/i);
+   if(restoreMatch&&safeId(restoreMatch[1])&&method==="POST"){
+    const timeline=await service.timelines.restore({ownerId,timelineId:restoreMatch[1],expectedRevision:Number(body.expectedRevision),sourceVersionId:body.sourceVersionId,summary:body.summary});
+    return response(200,{timeline});
+   }
    const match=path.match(/^\/api\/cloud\/timelines\/([0-9a-f-]+)(?:\/(render))?$/i);
    if(!match||!safeId(match[1]))return null;
    const timelineId=match[1];
