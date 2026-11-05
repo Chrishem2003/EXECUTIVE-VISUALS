@@ -108,7 +108,7 @@ test("reconciles legacy deleting records that are still active", async () => {
   });
   const result = await h.worker.run();
   assert.equal(result.deleted, 1);
-  assert.deepEqual(h.calls.map(call => call[0]), ["list", "get", "cancel", "update", "update", "delete", "markDeleted"]);
+  assert.deepEqual(h.calls.map(call => call[0]), ["list", "get", "cancel", "get", "update", "update", "delete", "markDeleted"]);
 });
 
 test("leaves a retryable record when provider cancellation fails", async () => {
