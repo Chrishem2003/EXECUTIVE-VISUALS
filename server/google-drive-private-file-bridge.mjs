@@ -279,8 +279,9 @@ export function createGoogleDrivePrivateFileBridge({
               mimeType: asset.mediaType, byteSize: bytes.byteLength, sha256: asset.sha256 });
           }
           if (attemptRecord.ownerId !== scope.ownerId || attemptRecord.projectId !== scope.projectId ||
-              attemptRecord.assetId !== assetId || attemptRecord.sha256 !== asset.sha256 ||
-              attemptRecord.byteSize !== bytes.byteLength || attemptRecord.parentFolderId !== parentFolderId) {
+              attemptRecord.assetId !== assetId || attemptRecord.mimeType !== asset.mediaType ||
+              attemptRecord.sha256 !== asset.sha256 || attemptRecord.byteSize !== bytes.byteLength ||
+              attemptRecord.parentFolderId !== parentFolderId) {
             throw fail("Stored Drive export attempt does not match the authorized private asset.",
               "GOOGLE_DRIVE_EXPORT_IDEMPOTENCY_CONFLICT");
           }
@@ -317,16 +318,39 @@ export function createGoogleDrivePrivateFileBridge({
               body: JSON.stringify(metadata), raw: true
             });
           } catch (error) {
-            if (attempts && error?.status === 409 && attemptRecord) {
-              const existing = await readExistingDriveFile(attemptRecord.driveFileId);
-              if (existing) return await completedResult(existing);
+            if (attempts && attemptRecord) {
+              if (error?.status === 409) {
+                const existing = await readExistingDriveFile(attemptRecord.driveFileId);
+                if (existing) return await completedResult(existing);
+                await attempts.mark({ attemptKey: attemptRecord.attemptKey, ownerId: scope.ownerId,
+                  state: "RECONCILIATION_REQUIRED", errorCode: "GOOGLE_DRIVE_EXPORT_FILE_ID_CONFLICT", leaseToken });
+                throw fail("Reserved Google Drive file ID conflicts with an existing provider resource; manual reconciliation is required.",
+                  "GOOGLE_DRIVE_EXPORT_RECONCILIATION_REQUIRED");
+              }
+              const ambiguous = ["GOOGLE_DRIVE_TIMEOUT", "GOOGLE_DRIVE_REQUEST_FAILED", "GOOGLE_DRIVE_PROVIDER_ERROR"]
+                .includes(error?.code) && (!error.status || error.status >= 500);
+              await attempts.mark({ attemptKey: attemptRecord.attemptKey, ownerId: scope.ownerId,
+                state: ambiguous ? "OUTCOME_UNKNOWN" : "FAILED",
+                errorCode: error?.code || "GOOGLE_DRIVE_UPLOAD_INIT_FAILED", leaseToken });
             }
             throw error;
           }
-          session = safeUploadSession(init.headers?.get?.("location"));
+          try {
+            session = safeUploadSession(init.headers?.get?.("location"));
+          } catch (error) {
+            if (attempts && attemptRecord) await attempts.mark({ attemptKey: attemptRecord.attemptKey,
+              ownerId: scope.ownerId, state: "FAILED", errorCode: error?.code || "GOOGLE_DRIVE_UPLOAD_SESSION_INVALID", leaseToken });
+            throw error;
+          }
           if (attempts) {
-            attemptRecord = await attempts.saveSession({ attemptKey: attemptRecord.attemptKey,
-              ownerId: scope.ownerId, sessionUri: session, leaseToken });
+            try {
+              attemptRecord = await attempts.saveSession({ attemptKey: attemptRecord.attemptKey,
+                ownerId: scope.ownerId, sessionUri: session, leaseToken });
+            } catch (error) {
+              await attempts.mark({ attemptKey: attemptRecord.attemptKey, ownerId: scope.ownerId,
+                state: "OUTCOME_UNKNOWN", errorCode: error?.code || "GOOGLE_DRIVE_SESSION_PERSIST_FAILED", leaseToken });
+              throw error;
+            }
           }
         }
         let uploadResponse;
