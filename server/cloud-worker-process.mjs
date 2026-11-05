@@ -10,6 +10,7 @@ import { createProviderAwareCloudVideoWorkerComposition } from "./cloud-video-pr
 import { createGoogleGeminiFilesComposition } from "./google-gemini-files-composition.mjs";
 import { createGoogleGeminiFilesRepository } from "./google-gemini-files-repository.mjs";
 import { createGoogleGeminiFilesRetentionWorker } from "./google-gemini-files-retention-worker.mjs";
+import { createGoogleGeminiFilesRecoveryWorker } from "./google-gemini-files-recovery-worker.mjs";
 
 const truth=(value)=>value==="true";
 const HOST_RULE=/^(?:\*\.)?(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)(?:\.(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?))*$/i;
@@ -121,15 +122,28 @@ export async function startCloudWorkerProcess(env=process.env,dependencies={}){
  }));
  const maintenanceWorkers=[...(dependencies.maintenanceWorkers||[])];
  let maintenanceIntervalMs=dependencies.maintenanceIntervalMs||300000;
- if(truth(env.GOOGLE_GEMINI_FILES_CLEANUP_ENABLED)){
-  if(!(env.GEMINI_API_KEY||env.GOOGLE_GEMINI_API_KEY))throw new Error("Gemini Files cleanup requires a server-side Gemini API key.");
+ const geminiFilesCleanupEnabled=truth(env.GOOGLE_GEMINI_FILES_CLEANUP_ENABLED);
+ const geminiFilesRecoveryEnabled=truth(env.GOOGLE_GEMINI_FILES_RECOVERY_ENABLED);
+ if(geminiFilesCleanupEnabled||geminiFilesRecoveryEnabled){
+  if(!(env.GEMINI_API_KEY||env.GOOGLE_GEMINI_API_KEY))throw new Error("Gemini Files maintenance requires a server-side Gemini API key.");
   const repository=createGoogleGeminiFilesRepository({...cloudCredentials,fetchImpl:dependencies.fetchImpl||globalThis.fetch});
   const gateway=createGoogleGeminiFilesComposition({
    ...cloudCredentials,env,fetchImpl:dependencies.fetchImpl||globalThis.fetch,repository,
    maxBytes:config.maxBytes
   });
-  maintenanceWorkers.push(createGoogleGeminiFilesRetentionWorker({repository,gateway}));
-  maintenanceIntervalMs=integer(env.GOOGLE_GEMINI_FILES_CLEANUP_INTERVAL_MS,maintenanceIntervalMs,10000,86400000,"Gemini Files cleanup interval");
+  if(geminiFilesCleanupEnabled)maintenanceWorkers.push(createGoogleGeminiFilesRetentionWorker({repository,gateway}));
+  if(geminiFilesRecoveryEnabled)maintenanceWorkers.push(createGoogleGeminiFilesRecoveryWorker({repository,gateway}));
+  const intervalFallback=maintenanceIntervalMs;
+  const configuredInterval=geminiFilesRecoveryEnabled
+   ? env.GOOGLE_GEMINI_FILES_RECOVERY_INTERVAL_MS
+   : env.GOOGLE_GEMINI_FILES_CLEANUP_INTERVAL_MS;
+  maintenanceIntervalMs=integer(
+   configuredInterval,
+   intervalFallback,
+   10000,
+   86400000,
+   "Gemini Files maintenance interval"
+  );
  }
  const supervisor=createCloudWorkerSupervisor({
   workers,maintenanceWorkers,maintenanceIntervalMs,leaseSeconds:config.leaseSeconds,heartbeatIntervalMs:config.heartbeatIntervalMs,pollMs:config.pollMs,
