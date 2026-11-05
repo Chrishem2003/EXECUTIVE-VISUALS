@@ -145,7 +145,7 @@ export function createGoogleGeminiFilesRepository({
     },
     async updateUploadAttempt({ attemptId, state, expectedState, providerFileName, providerFileUri, providerExpiresAt, errorCode, reconciledAt } = {}) {
       if (typeof attemptId !== "string" || !/^[0-9a-f-]{36}$/i.test(attemptId) ||
-          !["PREPARED", "UPLOADING", "OUTCOME_UNKNOWN", "PROVIDER_CREATED", "COMPLETED", "FAILED"].includes(state)) {
+          !["PREPARED", "UPLOADING", "OUTCOME_UNKNOWN", "PROVIDER_CREATED", "COMPLETED", "FAILED", "QUARANTINED"].includes(state)) {
         throw new Error("Google provider upload attempt transition is invalid.");
       }
       const body = { state, updated_at: new Date().toISOString() };
@@ -156,7 +156,7 @@ export function createGoogleGeminiFilesRepository({
       if (reconciledAt !== undefined) body.reconciled_at = reconciledAt;
       const params = new URLSearchParams({ id: "eq." + attemptId, select: "id" });
       if (expectedState !== undefined) {
-        if (!["PREPARED", "UPLOADING", "OUTCOME_UNKNOWN", "PROVIDER_CREATED", "COMPLETED", "FAILED"].includes(expectedState)) throw new Error("Google provider upload attempt expected state is invalid.");
+        if (!["PREPARED", "UPLOADING", "OUTCOME_UNKNOWN", "PROVIDER_CREATED", "COMPLETED", "FAILED", "QUARANTINED"].includes(expectedState)) throw new Error("Google provider upload attempt expected state is invalid.");
         params.set("state", "eq." + expectedState);
       }
       const rows = await request("?" + params.toString(), {
