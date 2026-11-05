@@ -92,6 +92,19 @@ test("prevents a stale worker from mutating an attempt after its lease changes",
   error=>error.code==="GOOGLE_DRIVE_EXPORT_STORE_FAILED");
  assert.equal(h.rows[0].state,"PREPARED");
 });
+test("rejects corrupted durable lease pairs and completed rows retaining upload credentials",async()=>{
+ const h=harness();
+ h.rows[0].lease_token="not-a-uuid";
+ await assert.rejects(()=>h.store.get(attemptKey,ownerId),error=>error.code==="GOOGLE_DRIVE_EXPORT_STORE_RESPONSE_INVALID");
+ h.rows[0].lease_token=null;
+ h.rows[0].lease_expires_at="2026-11-06T00:00:00Z";
+ await assert.rejects(()=>h.store.get(attemptKey,ownerId),error=>error.code==="GOOGLE_DRIVE_EXPORT_STORE_RESPONSE_INVALID");
+ h.rows[0].lease_expires_at=null;
+ h.rows[0].state="COMPLETED";
+ h.rows[0].encrypted_session_uri="gdrive-session:v1:invalid";
+ await assert.rejects(()=>h.store.get(attemptKey,ownerId),error=>error.code==="GOOGLE_DRIVE_EXPORT_STORE_RESPONSE_INVALID");
+});
+
 test("rejects malformed owner, attempt and unsafe session records",async()=>{
  const h=harness();
  await assert.rejects(()=>h.store.get(attemptKey,"bad"),error=>error.code==="GOOGLE_DRIVE_EXPORT_SCOPE_INVALID");
