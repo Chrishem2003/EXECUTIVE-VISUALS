@@ -12,7 +12,7 @@ export interface StoryboardSceneInput {
   location: string; timeOfDay: string; durationSeconds: number; shots: StoryboardShotInput[];
 }
 export interface StoryboardInput {
-  id: string; title: string; logline: string; inputHash: string; model: string; generatedAt: string;
+  schemaVersion: 1; source: "model"; id: string; title: string; logline: string; inputHash: string; model: string; generatedAt: string;
   targetDurationSeconds: number; durationSeconds: number; aspectRatio: string; frameRate: number;
   globalContinuityRules: string[]; scenes: StoryboardSceneInput[];
 }
