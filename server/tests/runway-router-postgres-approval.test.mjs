@@ -104,7 +104,7 @@ test("approval bridge refuses malformed RPC response and insecure endpoint", asy
     ...base, fetchImpl: async () => response([])
   });
   await assert.rejects(() => client.recordPreflight({
-    ownerId, projectId, decision, requestHash: "a".repeat(64),
+    ownerId, projectId, decision, requestHash: "a".repeat(64), jobInput,
     approvedMaxAmount: 1.25, maxEstimatedCredits: 80
   }), error => error.code === "RUNWAY_APPROVAL_RESPONSE_INVALID");
   assert.throws(() => createRunwayRouterPostgresApprovalClient({
