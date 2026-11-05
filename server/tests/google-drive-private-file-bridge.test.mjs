@@ -136,6 +136,20 @@ test("resumes a Drive upload from the provider-confirmed byte range after a lost
 });
 
 
+
+test("rejects malformed or out-of-bounds Drive resumable byte ranges", async () => {
+  for (const range of ["bytes=2-4", "bytes=0-99", "bytes=invalid"]) {
+    const h = harness({ uploadSteps: [
+      { throw: true },
+      { status: 308, headers: { range } }
+    ]});
+    await assert.rejects(
+      () => h.bridge.uploadPrivateAsset({ ownerId, projectId, assetId }),
+      error => error.code === "GOOGLE_DRIVE_UPLOAD_RANGE_INVALID"
+    );
+  }
+});
+
 test("restarts the current transfer from byte zero when Drive reports no persisted range", async () => {
   const completed = {
     id: "driveFile_987654321", name: "master.mp4", mimeType: "video/mp4",
