@@ -40,14 +40,20 @@ export async function createGoogleGeminiGcsMirrorBootstrap({
     } catch {
       throw fail("GOOGLE_APPLICATION_CREDENTIALS must reference a readable generated WIF credential configuration.", "GEMINI_GCS_WIF_CONFIG_INVALID");
     }
-    let tokenUrl = null;
+    let tokenUrl = null, tokenInfoUrl = null, impersonationUrl = null;
     try { tokenUrl = new URL(credentialConfig?.token_url); } catch {}
+    try { if (credentialConfig?.token_info_url) tokenInfoUrl = new URL(credentialConfig.token_info_url); } catch {}
+    try { if (credentialConfig?.service_account_impersonation_url) impersonationUrl = new URL(credentialConfig.service_account_impersonation_url); } catch {}
+    const source = credentialConfig?.credential_source;
     if (credentialConfig?.type !== "external_account" ||
         typeof credentialConfig.audience !== "string" ||
         !credentialConfig.audience.startsWith("//iam.googleapis.com/projects/") ||
         tokenUrl?.protocol !== "https:" || tokenUrl?.hostname !== "sts.googleapis.com" ||
-        !credentialConfig.credential_source || typeof credentialConfig.credential_source !== "object") {
-      throw fail("Only a generated Google Workload Identity Federation external-account config is accepted; service-account keys and user credentials are not supported.", "GEMINI_GCS_WIF_CONFIG_INVALID");
+        (credentialConfig.token_info_url && (tokenInfoUrl?.protocol !== "https:" || tokenInfoUrl?.hostname !== "sts.googleapis.com")) ||
+        (credentialConfig.service_account_impersonation_url && (impersonationUrl?.protocol !== "https:" || impersonationUrl?.hostname !== "iamcredentials.googleapis.com")) ||
+        !source || typeof source !== "object" || Array.isArray(source) ||
+        source.executable || source.executable_command) {
+      throw fail("Only a generated Google Workload Identity Federation external-account config with trusted Google token endpoints is accepted; service-account keys, user credentials and executable token sources are not supported.", "GEMINI_GCS_WIF_CONFIG_INVALID");
     }
   }
 
