@@ -153,6 +153,24 @@ test("uses a persisted pre-generated Drive file ID and marks a verified export c
 });
 
 
+test("requires provider reconciliation when completed upload metadata fails checksum validation", async () => {
+  const leaseToken = "44444444-4444-4444-8444-444444444444";
+  const marks = [];
+  let record = null;
+  const attempts = {
+    async get() { return record; },
+    async createOrGet(value) { record = { ...value, state: "PREPARED", sessionUri: null }; return record; },
+    async claim() { return leaseToken; },
+    async saveSession(value) { record = { ...record, state: "UPLOADING", sessionUri: value.sessionUri }; return record; },
+    async mark(value) { marks.push(value); record = { ...record, state: value.state }; return record; }
+  };
+  const h = harness({ attempts, uploadChecksum: "00000000000000000000000000000000" });
+  await assert.rejects(() => h.bridge.uploadPrivateAsset({ ownerId, projectId, assetId }),
+    error => error.code === "GOOGLE_DRIVE_UPLOAD_RESPONSE_INVALID");
+  assert.equal(marks.at(-1).state, "RECONCILIATION_REQUIRED");
+  assert.equal(marks.at(-1).leaseToken, leaseToken);
+});
+
 test("releases the export lease as outcome-unknown after ambiguous session initiation", async () => {
   const leaseToken = "44444444-4444-4444-8444-444444444444";
   const marks = [];
