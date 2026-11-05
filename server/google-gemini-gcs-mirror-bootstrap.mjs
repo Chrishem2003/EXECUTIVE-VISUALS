@@ -48,7 +48,7 @@ export async function createGoogleGeminiGcsMirrorBootstrap({
     const source = credentialConfig?.credential_source;
     if (credentialConfig?.type !== "external_account" ||
         typeof credentialConfig.audience !== "string" ||
-        !/^\\/\\/iam\\.googleapis\\.com\\/projects\\/\\d+\\/locations\\/[a-z0-9-]+\\/workloadIdentityPools\\/[A-Za-z0-9_-]+\\/providers\\/[A-Za-z0-9_-]+$/.test(credentialConfig.audience) ||
+        !/^\/\/iam\.googleapis\.com\/projects\/\d+\/locations\/[a-z0-9-]+\/workloadIdentityPools\/[A-Za-z0-9_-]+\/providers\/[A-Za-z0-9_-]+$/.test(credentialConfig.audience) ||
         tokenUrl?.protocol !== "https:" || tokenUrl?.hostname !== "sts.googleapis.com" ||
         (credentialConfig.token_info_url && (tokenInfoUrl?.protocol !== "https:" || tokenInfoUrl?.hostname !== "sts.googleapis.com")) ||
         (credentialConfig.service_account_impersonation_url && (impersonationUrl?.protocol !== "https:" || impersonationUrl?.hostname !== "iamcredentials.googleapis.com")) ||
