@@ -207,6 +207,7 @@ async function syncPreview(){
   const videoClips=active.filter(clip=>state.previewSources[clip.assetId]?.mediaType.startsWith("video/"));
   const audioClips=active.filter(clip=>state.previewSources[clip.assetId]?.mediaType.startsWith("audio/"));
   const primary=videoClips[0]||null;
+  const primaryAudio=audioClips[0]||null;
   for(const clip of videoClips){
    const video=document.querySelector<HTMLVideoElement>('[data-preview-video="'+CSS.escape(clip.clipId)+'"]');
    if(!video)continue;
@@ -249,7 +250,7 @@ async function syncPreview(){
    if(state.previewPlaying&&audio.paused&&audio.readyState>=2)void audio.play().catch(()=>{state.previewPlaying=false;});
    audio.ontimeupdate=()=>{
     const current=state.previewActiveClips.find(item=>item.clipId===clip.clipId);
-    if(!current||!state.timeline||state.previewActiveClips.some(item=>item.trackKind==="video"))return;
+    if(clip.clipId!==primaryAudio?.clipId||!current||!state.timeline||state.previewActiveClips.some(item=>item.trackKind==="video"))return;
     const frame=Math.max(0,Math.floor((current.timelineStartSeconds+Math.max(0,audio.currentTime-seconds(sourceClip.sourceRange.start)))*fps()));
     state.playheadFrame=frame;
     const slider=document.querySelector<HTMLInputElement>("#tl-playhead");if(slider)slider.value=String(frame);
