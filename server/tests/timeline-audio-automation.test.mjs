@@ -16,7 +16,7 @@ test("trimming audio clips shifts keyframes and inserts the evaluated boundary v
  assert.equal(seconds(clip.duration),7);
  assert.equal(clip.audioAutomation[0].timeSeconds,0);
  assert.ok(Math.abs(clip.audioAutomation[0].gainDb+4.8)<1e-9);
- assert.equal(clip.audioAutomation[0].pan,-0.2);
+ assert.ok(Math.abs(clip.audioAutomation[0].pan+0.2)<1e-9);
  assert.equal(clip.audioAutomation[1].timeSeconds,3);
  assert.equal(clip.audioAutomation[2].timeSeconds,7);
 });
