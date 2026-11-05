@@ -343,33 +343,6 @@ begin
   return new;
 end;
 $validate_budget_approval$;
-),
-  approved_job_input jsonb not null check (jsonb_typeof(approved_job_input) = 'object' and octet_length(approved_job_input::text) <= 32000),
-  estimated_credits bigint not null check (estimated_credits >= 0),
-  max_estimated_credits bigint not null check (max_estimated_credits >= estimated_credits),
-  state text not null default 'pending_approval'
-    check (state in ('pending_approval','approved','consumed','revoked','expired')),
-  created_at timestamptz not null default now(),
-  expires_at timestamptz not null,
-  approved_by uuid references auth.users(id),
-  approved_at timestamptz,
-  consumed_at timestamptz,
-  check (expires_at > created_at),
-  check ((state = 'approved') = (approved_by is not null and approved_at is not null)
-      or state in ('consumed','revoked','expired')),
-  check ((state = 'consumed') = (consumed_at is not null)
-      or state in ('revoked','expired'))
-);
-
-create index if not exists ev_runway_router_approvals_owner_created
-  on executive_visuals.runway_router_approvals(owner_id, created_at desc);
-create index if not exists ev_runway_router_approvals_expiry
-  on executive_visuals.runway_router_approvals(state, expires_at);
-
-alter table executive_visuals.runway_router_approvals enable row level security;
-revoke all on executive_visuals.runway_router_approvals from public, anon, authenticated;
-grant select on executive_visuals.runway_router_approvals to authenticated;
-grant all privileges on executive_visuals.runway_router_approvals to service_role;
 
 alter table executive_visuals.video_generation_budget_approvals
   add column if not exists router_approval_id uuid,
