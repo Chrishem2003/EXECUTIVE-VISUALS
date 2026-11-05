@@ -9,7 +9,7 @@ const objectName = "private/project/final-cut.mp4";
 const sha256 = "a".repeat(64);
 const source = {
   assetId, ownerId, projectId, bucket: "private-media-bucket", objectName,
-  generation: "1762300800000000", sizeBytes: 1024, mediaType: "video/mp4",
+  generation: "1762300800000000", metageneration: "3", sizeBytes: 1024, mediaType: "video/mp4",
   sha256, state: "ACTIVE"
 };
 const env = {
@@ -26,6 +26,7 @@ function objectMetadata(overrides = {}) {
     bucket: source.bucket,
     name: source.objectName,
     generation: source.generation,
+    metageneration: source.metageneration,
     size: String(source.sizeBytes),
     contentType: source.mediaType,
     metadata: {
@@ -87,6 +88,7 @@ test("fails closed when the caller identity cannot read the exact GCS object", a
 test("rejects an object generation, checksum, owner or MIME mismatch before returning a gs URI", async () => {
   for (const metadata of [
     objectMetadata({ generation: "1762300800000001" }),
+    objectMetadata({ metageneration: "4" }),
     objectMetadata({ metadata: { executivevisualsassetid: assetId, executivevisualsownerid: ownerId, executivevisualsprojectid: projectId, executivevisualssha256: "b".repeat(64) } }),
     objectMetadata({ contentType: "application/octet-stream" }),
     objectMetadata({ metadata: { executivevisualsassetid: assetId, executivevisualsownerid: "44444444-4444-4444-8444-444444444444", executivevisualsprojectid: projectId, executivevisualssha256: sha256 } })
