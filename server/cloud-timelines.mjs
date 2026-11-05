@@ -154,7 +154,10 @@ export function createCloudTimelineRepository({url=process.env.SUPABASE_URL,serv
       if(!Number.isInteger(expectedRevision)||expectedRevision<1)throw new Error("Expected timeline revision must be a positive integer.");
       const current=await getTimeline({ownerId,timelineId});if(!current){const error=new Error("Timeline not found.");error.code="CLOUD_TIMELINE_NOT_FOUND";throw error;}
       await allowed(ownerId,current.projectId,"write");
-      const source=await this.getVersion({ownerId,timelineId,versionId:sourceVersionId});
+      const sourceRows=await request("timeline_versions?select=*&id=eq."+encodeURIComponent(sourceVersionId)+"&timeline_id=eq."+encodeURIComponent(timelineId)+"&owner_id=eq."+encodeURIComponent(current.ownerId)+"&limit=1");
+      const sourceRow=Array.isArray(sourceRows)?sourceRows[0]:null;
+      if(!sourceRow){const error=new Error("Timeline version not found.");error.code="CLOUD_TIMELINE_VERSION_NOT_FOUND";throw error;}
+      const source=mapVersion(sourceRow,true);
       await checkedDocument(ownerId,source.document);
       const contentHash=timelineHash(source.document,source.otio);
       const rows=await request("rpc/ev_restore_timeline_version",{method:"POST",body:{
