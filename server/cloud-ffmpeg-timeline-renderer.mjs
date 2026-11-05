@@ -86,7 +86,7 @@ const buildRubberbandCommands=(clip,duration,fps)=>{
  const commands=[];
  for(let frame=1;frame<frameCount;frame++){
   const timelineTime=frame/fps,sourceTime=sourceAtTimeline(segments,timelineTime),speed=speedAtTimeline(segments,timelineTime);
-  commands.push(n(sourceTime)+" rubberband@rb tempo "+n(speed));
+  commands.push(n(sourceTime)+" rubberband@rb tempo "+n(speed)+";");
  }
  return commands.length?commands.join("\n")+"\n":"";
 };
