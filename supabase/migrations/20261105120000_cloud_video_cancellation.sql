@@ -12,6 +12,32 @@ create index if not exists ev_video_jobs_cancel_requested
   on executive_visuals.jobs(cancellation_requested_at, status)
   where job_type = 'video.generate' and cancellation_requested_at is not null;
 
+-- Prevent a provider submission transition when cancellation was already committed.
+create or replace function executive_visuals.begin_video_generation_submission(
+  p_job_id uuid, p_worker_id text
+) returns boolean
+language plpgsql security invoker
+set search_path = pg_catalog, executive_visuals
+as $video_begin$
+declare changed integer;
+begin
+  if p_worker_id is null or char_length(btrim(p_worker_id)) not between 1 and 128 then
+    raise exception 'VIDEO_SUBMISSION_WORKER_INVALID';
+  end if;
+  update executive_visuals.video_generation_submissions s
+  set state='submitting', submission_started_at=clock_timestamp(),
+      updated_at=clock_timestamp(), last_error_code=null
+  from executive_visuals.jobs j
+  where s.job_id=p_job_id and j.id=s.job_id and j.job_type='video.generate'
+    and j.status='processing' and j.lease_owner=p_worker_id
+    and j.lease_expires_at > clock_timestamp()
+    and j.cancellation_requested_at is null
+    and s.state='prepared';
+  get diagnostics changed = row_count;
+  return changed = 1;
+end;
+$video_begin$;
+
 create or replace function executive_visuals.request_video_generation_cancellation(
   p_job_id uuid,
   p_owner_id uuid
