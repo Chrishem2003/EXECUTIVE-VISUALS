@@ -270,6 +270,56 @@ test("quarantines ambiguous resumable upload outcomes and refuses blind retries"
   assert.equal(providerCalls, 0);
 });
 
+test("lists provider metadata with bounded pagination and preserves the base64 SHA-256 evidence", async () => {
+  const displayName = "executive-visuals-" + "a".repeat(32);
+  const hash = createHash("sha256").update(bytes).digest("base64");
+  const calls = [];
+  const gateway = createGoogleGeminiFilesGateway({
+    env,
+    fetchImpl: async (url, options) => {
+      calls.push({ url: String(url), options });
+      return response(200, { files: [{
+        name: fileName, displayName, uri: fileUri, mimeType: "image/png",
+        sizeBytes: String(bytes.byteLength), sha256Hash: hash,
+        state: "ACTIVE", expirationTime: "2026-11-07T00:00:00.000Z"
+      }], nextPageToken: "next-page" });
+    },
+    loadPrivateAsset: async () => privateAsset(),
+    recordProviderFile: async () => {},
+    timeoutMs: 3000
+  });
+  const result = await gateway.listProviderFiles({ pageSize: 100, pageToken: "cursor" });
+  assert.equal(result.files.length, 1);
+  assert.equal(result.files[0].displayName, displayName);
+  assert.equal(result.files[0].sha256Hash, hash);
+  assert.equal(result.nextPageToken, "next-page");
+  const url = new URL(calls[0].url);
+  assert.equal(url.pathname, "/v1beta/files");
+  assert.equal(url.searchParams.get("pageSize"), "100");
+  assert.equal(url.searchParams.get("pageToken"), "cursor");
+  assert.equal(calls[0].options.headers["x-goog-api-key"], "server-test-key");
+  await assert.rejects(() => gateway.listProviderFiles({ pageSize: 101 }));
+});
+
+test("gets provider metadata needed for recovery without exposing the API key", async () => {
+  const hash = createHash("sha256").update(bytes).digest("base64");
+  const gateway = createGoogleGeminiFilesGateway({
+    env,
+    fetchImpl: async () => response(200, { file: {
+      name: fileName, displayName: "executive-visuals-test", uri: fileUri,
+      mimeType: "image/png", sizeBytes: String(bytes.byteLength),
+      sha256Hash: hash, state: "ACTIVE", expirationTime: "2026-11-07T00:00:00.000Z"
+    }}),
+    loadPrivateAsset: async () => privateAsset(),
+    recordProviderFile: async () => {},
+    timeoutMs: 3000
+  });
+  const result = await gateway.getProviderFile(fileName);
+  assert.equal(result.sha256Hash, hash);
+  assert.equal(result.expirationTime, "2026-11-07T00:00:00.000Z");
+  assert.equal(JSON.stringify(result).includes("server-test-key"), false);
+});
+
 test("does not expose API keys or resumable upload URLs in public results", async () => {
   const h = harness();
   const result = await h.gateway.resolveAsset({ assetId, ownerId, projectId, mediaType: "image/png" });
