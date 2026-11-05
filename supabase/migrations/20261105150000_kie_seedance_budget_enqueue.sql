@@ -92,16 +92,16 @@ begin
        or coalesce(p_input ->> 'referenceAudioSeconds','0') <> '0' then
       raise exception 'VIDEO_GENERATION_UNSUPPORTED_CAPABILITY';
     end if;
-    if jsonb_typeof(p_input -> 'referenceAssetIds') = 'array'
-       and jsonb_array_length(p_input -> 'referenceAssetIds') > 9 then
+    if case when jsonb_typeof(p_input -> 'referenceAssetIds') = 'array'
+       then jsonb_array_length(p_input -> 'referenceAssetIds') > 9 else false end then
       raise exception 'VIDEO_REFERENCE_LIMIT_EXCEEDED';
     end if;
     if (p_input ? 'endFrameAssetId') and not (p_input ? 'startFrameAssetId') then
       raise exception 'VIDEO_LAST_FRAME_REQUIRES_FIRST_FRAME';
     end if;
     if (p_input ? 'startFrameAssetId' or p_input ? 'endFrameAssetId')
-       and jsonb_typeof(p_input -> 'referenceAssetIds') = 'array'
-       and jsonb_array_length(p_input -> 'referenceAssetIds') > 0 then
+       and case when jsonb_typeof(p_input -> 'referenceAssetIds') = 'array'
+         then jsonb_array_length(p_input -> 'referenceAssetIds') > 0 else false end then
       raise exception 'VIDEO_REFERENCE_MODE_CONFLICT';
     end if;
     if p_reserved_amount < (
