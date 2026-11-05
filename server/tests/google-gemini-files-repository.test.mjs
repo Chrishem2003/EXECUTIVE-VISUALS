@@ -185,6 +185,56 @@ test("lists only stale in-flight Gemini upload attempts with a bounded service-r
   await assert.rejects(() => repository.listRecoveryAttempts({ limit: 501 }));
 });
 
+test("claims one stale recovery attempt with a bounded atomic lease", async () => {
+  let call;
+  const leaseToken = "55555555-5555-4555-8555-555555555555";
+  const repository = createGoogleGeminiFilesRepository({
+    url: base, serviceRoleKey: key,
+    fetchImpl: async (url, options) => {
+      call = { url: String(url), options };
+      return response(200, [{ id: row.id, lease_token: leaseToken }]);
+    }
+  });
+  assert.equal(await repository.claimRecoveryAttempt({ attemptId: row.id, expectedState: "OUTCOME_UNKNOWN" }), leaseToken);
+  const params = new URL(call.url).searchParams;
+  assert.equal(call.options.method, "PATCH");
+  assert.equal(params.get("id"), "eq." + row.id);
+  assert.equal(params.get("state"), "eq.OUTCOME_UNKNOWN");
+  assert.match(params.get("or"), /lease_token\.is\.null/);
+  assert.match(params.get("or"), /lease_expires_at\.lt\./);
+  assert.equal(JSON.parse(call.options.body).lease_token, leaseToken);
+  assert.ok(Date.parse(JSON.parse(call.options.body).lease_expires_at) > Date.now());
+});
+
+test("does not claim recovery attempts already leased by another worker", async () => {
+  const repository = createGoogleGeminiFilesRepository({
+    url: base, serviceRoleKey: key,
+    fetchImpl: async () => response(200, [])
+  });
+  assert.equal(await repository.claimRecoveryAttempt({ attemptId: row.id, expectedState: "PROVIDER_CREATED" }), null);
+});
+
+test("releases only the matching recovery lease and clears lease fields on a fenced transition", async () => {
+  const calls = [];
+  const repository = createGoogleGeminiFilesRepository({
+    url: base, serviceRoleKey: key,
+    fetchImpl: async (url, options) => {
+      calls.push({ url: String(url), options });
+      return response(200, [{ id: row.id }]);
+    }
+  });
+  const leaseToken = "55555555-5555-4555-8555-555555555555";
+  assert.equal(await repository.releaseRecoveryAttempt({ attemptId: row.id, leaseToken }), true);
+  assert.equal(new URL(calls[0].url).searchParams.get("lease_token"), "eq." + leaseToken);
+  assert.equal(JSON.parse(calls[0].options.body).lease_token, null);
+  assert.equal(JSON.parse(calls[0].options.body).lease_expires_at, null);
+  await repository.updateUploadAttempt({
+    attemptId: row.id, expectedState: "OUTCOME_UNKNOWN", state: "COMPLETED", leaseToken
+  });
+  assert.equal(new URL(calls[1].url).searchParams.get("lease_token"), "eq." + leaseToken);
+  assert.equal(JSON.parse(calls[1].options.body).lease_token, null);
+});
+
 test("allows terminal quarantine transitions and compare-and-set quarantine claims", async () => {
   let call;
   const repository = createGoogleGeminiFilesRepository({
