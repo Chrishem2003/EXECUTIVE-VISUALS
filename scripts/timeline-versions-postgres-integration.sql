@@ -22,6 +22,14 @@ declare
   first_doc jsonb := '{"frameRate":{"numerator":24,"denominator":1},"tracks":[],"markers":[],"title":"First"}'::jsonb;
   second_doc jsonb := '{"frameRate":{"numerator":24,"denominator":1},"tracks":[],"markers":[],"title":"Second"}'::jsonb;
 begin
+  if not exists (
+    select 1 from executive_visuals.timeline_versions
+    where timeline_id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+      and revision = 7 and content_hash is null
+  ) then
+    raise exception 'Existing timeline baseline was not backfilled.';
+  end if;
+
   select * into first_timeline
   from executive_visuals.ev_create_timeline_with_version(
     v_timeline_id, owner_id, owner_id, null, 'Version test', first_doc, null,
