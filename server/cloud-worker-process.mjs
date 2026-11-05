@@ -31,11 +31,13 @@ export function readCloudWorkerConfig(env=process.env){
  });
 }
 
-export function createCloudWorkerSupervisor({workers,leaseSeconds=90,heartbeatIntervalMs=15000,pollMs=1000,recoveryIntervalMs=60000,onLog=()=>{},onError=()=>{}}={}){
+export function createCloudWorkerSupervisor({workers,maintenanceWorkers=[],maintenanceIntervalMs=300000,leaseSeconds=90,heartbeatIntervalMs=15000,pollMs=1000,recoveryIntervalMs=60000,onLog=()=>{},onError=()=>{}}={}){
  if(!Array.isArray(workers)||workers.length<1||workers.some(worker=>typeof worker?.runCycle!=="function"||typeof worker?.recoverExpired!=="function"))throw new Error("Cloud worker supervisor requires one or more compatible worker families.");
  if(!Number.isInteger(pollMs)||pollMs<500||pollMs>10000)throw new Error("Cloud worker poll interval is invalid.");
+ if(!Array.isArray(maintenanceWorkers)||maintenanceWorkers.some(worker=>typeof worker?.run!=="function"))throw new Error("Cloud maintenance workers must expose a run function.");
+ if(!Number.isInteger(maintenanceIntervalMs)||maintenanceIntervalMs<10000||maintenanceIntervalMs>86400000)throw new Error("Cloud maintenance interval is invalid.");
  if(!Number.isInteger(recoveryIntervalMs)||recoveryIntervalMs<10000||recoveryIntervalMs>300000)throw new Error("Cloud worker recovery interval is invalid.");
- let stopped=true,timer=null,recoveryTimer=null,active=null,busy=false;
+ let stopped=true,timer=null,recoveryTimer=null,maintenanceTimer=null,active=null,activeMaintenance=null,busy=false,maintenanceBusy=false;
  async function cycle(){
   if(stopped||busy)return{skipped:true};
   busy=true;
@@ -60,22 +62,39 @@ export function createCloudWorkerSupervisor({workers,leaseSeconds=90,heartbeatIn
   }
   if(total)onLog({kind:"recovery",count:total});
  }
+ async function maintain(){
+  if(stopped||maintenanceBusy||maintenanceWorkers.length===0)return{skipped:true};
+  maintenanceBusy=true;
+  activeMaintenance=(async()=>{
+   const settled=await Promise.allSettled(maintenanceWorkers.map(worker=>worker.run()));
+   const results=settled.map((item,index)=>{
+    if(item.status==="rejected"){onError(item.reason);return null;}
+    const result=item.value;
+    if(result&&((Number(result.deleted)||0)>0||(Number(result.retryPending)||0)>0))onLog({kind:"maintenance",workerIndex:index,result});
+    return result;
+   });
+   return results;
+  })();
+  try{return await activeMaintenance;}finally{activeMaintenance=null;maintenanceBusy=false;}
+ }
  return Object.freeze({
   async start(){
    if(!stopped)throw new Error("Cloud worker supervisor is already running.");
    stopped=false;
    await recover();
    await cycle();
+   await maintain();
    timer=setInterval(()=>{void cycle();},pollMs);timer.unref?.();
    recoveryTimer=setInterval(()=>{void recover();},recoveryIntervalMs);recoveryTimer.unref?.();
-   onLog({kind:"started",workerFamilies:workers.length,pollMs,leaseSeconds});
+   if(maintenanceWorkers.length){maintenanceTimer=setInterval(()=>{void maintain();},maintenanceIntervalMs);maintenanceTimer.unref?.();}
+   onLog({kind:"started",workerFamilies:workers.length,maintenanceWorkers:maintenanceWorkers.length,pollMs,leaseSeconds});
   },
   async stop(){
    if(stopped)return;
    stopped=true;
-   if(timer)clearInterval(timer);if(recoveryTimer)clearInterval(recoveryTimer);
-   timer=null;recoveryTimer=null;
-   if(active)await active.catch(()=>{});
+   if(timer)clearInterval(timer);if(recoveryTimer)clearInterval(recoveryTimer);if(maintenanceTimer)clearInterval(maintenanceTimer);
+   timer=null;recoveryTimer=null;maintenanceTimer=null;
+   if(active)await active.catch(()=>{});if(activeMaintenance)await activeMaintenance.catch(()=>{});
    onLog({kind:"stopped"});
   },
   async runOnce(){return cycle();}
@@ -98,7 +117,7 @@ export async function startCloudWorkerProcess(env=process.env,dependencies={}){
   providerDependencies:dependencies.videoProviderDependencies||{}
  }));
  const supervisor=createCloudWorkerSupervisor({
-  workers,leaseSeconds:config.leaseSeconds,heartbeatIntervalMs:config.heartbeatIntervalMs,pollMs:config.pollMs,
+  workers,maintenanceWorkers:dependencies.maintenanceWorkers||[],maintenanceIntervalMs:dependencies.maintenanceIntervalMs||300000,leaseSeconds:config.leaseSeconds,heartbeatIntervalMs:config.heartbeatIntervalMs,pollMs:config.pollMs,
   onLog:event=>process.stdout.write(JSON.stringify(event)+"\n"),
   onError:error=>process.stderr.write(JSON.stringify({kind:"worker_error",code:error?.code||"WORKER_ERROR",message:String(error?.message||"Worker cycle failed.").slice(0,500)})+"\n")
  });
