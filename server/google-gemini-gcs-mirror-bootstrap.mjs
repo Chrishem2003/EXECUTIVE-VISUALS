@@ -46,23 +46,30 @@ export async function createGoogleGeminiGcsMirrorBootstrap({
     try { if (credentialConfig?.token_info_url) tokenInfoUrl = new URL(credentialConfig.token_info_url); } catch {}
     try { if (credentialConfig?.service_account_impersonation_url) impersonationUrl = new URL(credentialConfig.service_account_impersonation_url); } catch {}
     const source = credentialConfig?.credential_source;
+    const validFileSource = source &&
+      typeof source === "object" &&
+      !Array.isArray(source) &&
+      typeof source.file === "string" &&
+      source.file.trim().length > 0 &&
+      isAbsolute(source.file) &&
+      Object.keys(source).every(key => key === "file" || key === "format") &&
+      (source.format === undefined ||
+        (source.format &&
+          typeof source.format === "object" &&
+          !Array.isArray(source.format) &&
+          ["text", "json"].includes(source.format.type) &&
+          Object.keys(source.format).every(key => key === "type" || key === "subject_token_field_name") &&
+          (source.format.type !== "text" || source.format.subject_token_field_name === undefined) &&
+          (source.format.subject_token_field_name === undefined ||
+            (typeof source.format.subject_token_field_name === "string" &&
+              /^[A-Za-z_][A-Za-z0-9_]*$/.test(source.format.subject_token_field_name)))));
     if (credentialConfig?.type !== "external_account" ||
         typeof credentialConfig.audience !== "string" ||
-        !/^\/\/iam\.googleapis\.com\/projects\/\d+\/locations\/[a-z0-9-]+\/workloadIdentityPools\/[A-Za-z0-9_-]+\/providers\/[A-Za-z0-9_-]+$/.test(credentialConfig.audience) ||
+        !/^\\/\\/iam\\.googleapis\\.com\\/projects\\/\\d+\\/locations\\/[a-z0-9-]+\\/workloadIdentityPools\\/[A-Za-z0-9_-]+\\/providers\\/[A-Za-z0-9_-]+$/.test(credentialConfig.audience) ||
         tokenUrl?.protocol !== "https:" || tokenUrl?.hostname !== "sts.googleapis.com" ||
         (credentialConfig.token_info_url && (tokenInfoUrl?.protocol !== "https:" || tokenInfoUrl?.hostname !== "sts.googleapis.com")) ||
         (credentialConfig.service_account_impersonation_url && (impersonationUrl?.protocol !== "https:" || impersonationUrl?.hostname !== "iamcredentials.googleapis.com")) ||
-        !source || typeof source !== "object" || Array.isArray(source) ||
-        typeof source.file !== "string" || !source.file.trim() || !isAbsolute(source.file) ||
-        Object.keys(source).some(key => !["file", "format"].includes(key)) ||
-        (source.format !== undefined &&
-          (!source.format || typeof source.format !== "object" || Array.isArray(source.format) ||
-           !["text", "json"].includes(source.format.type) ||
-           Object.keys(source.format).some(key => !["type", "subject_token_field_name"].includes(key)) ||
-           (source.format.type === "text" && source.format.subject_token_field_name !== undefined) ||
-           (source.format.subject_token_field_name !== undefined &&
-            (typeof source.format.subject_token_field_name !== "string" ||
-             !/^[A-Za-z_][A-Za-z0-9_]*$/.test(source.format.subject_token_field_name))))) {
+        !validFileSource) {
       throw fail("Only generated Google Workload Identity Federation configs with a file-based subject token and trusted Google token endpoints are accepted; URL, AWS, executable, service-account key and user credential sources are not supported.", "GEMINI_GCS_WIF_CONFIG_INVALID");
     }
   }
