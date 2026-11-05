@@ -74,3 +74,38 @@ test("cloud worker supervisor validates optional maintenance worker contracts",(
  assert.throws(()=>createCloudWorkerSupervisor({workers,maintenanceWorkers:[{}]}),/maintenance workers/);
  assert.throws(()=>createCloudWorkerSupervisor({workers,maintenanceWorkers:[],maintenanceIntervalMs:1000}),/maintenance interval/);
 });
+
+test("cloud maintenance workers honor independent intervals",async()=>{
+ let clock=1_000_000;
+ const calls=[],events=[];
+ const workers=[{async recoverExpired(){return 0;},async runCycle(){return{claimed:false};}}];
+ const maintenanceWorkers=[
+  {intervalMs:10_000,async run(){calls.push("cleanup");return{deleted:1};}},
+  {intervalMs:60_000,async run(){calls.push("recovery");return{reconciled:1};}}
+ ];
+ const supervisor=createCloudWorkerSupervisor({
+  workers,maintenanceWorkers,maintenanceIntervalMs:10_000,now:()=>clock,
+  leaseSeconds:60,heartbeatIntervalMs:10_000,pollMs:1000,onLog:event=>events.push(event)
+ });
+ await supervisor.start();
+ assert.deepEqual(calls,["cleanup","recovery"]);
+ clock+=10_000;
+ await supervisor.runMaintenanceOnce();
+ assert.deepEqual(calls,["cleanup","recovery","cleanup"]);
+ clock+=50_000;
+ await supervisor.runMaintenanceOnce();
+ assert.deepEqual(calls,["cleanup","recovery","cleanup","cleanup","recovery"]);
+ assert.ok(events.some(event=>event.kind==="maintenance"&&event.workerIndex===0));
+ assert.ok(events.some(event=>event.kind==="maintenance"&&event.workerIndex===1));
+ await supervisor.stop();
+});
+
+test("cloud maintenance worker intervals are individually bounded",()=>{
+ const workers=[{async recoverExpired(){return 0;},async runCycle(){return{claimed:false};}}];
+ assert.throws(()=>createCloudWorkerSupervisor({
+  workers,maintenanceWorkers:[{intervalMs:9999,async run(){}}]
+ }),/maintenance worker interval/);
+ assert.throws(()=>createCloudWorkerSupervisor({
+  workers,maintenanceWorkers:[{intervalMs:86400001,async run(){}}]
+ }),/maintenance worker interval/);
+});
