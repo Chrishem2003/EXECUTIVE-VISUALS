@@ -517,16 +517,20 @@ async function runAction(action:HTMLElement){
  if(type==="refresh"){await refresh();paint();return;}
  if(type==="reload-server"){
   if(state.mode!=="cloud"||!state.timeline){state.message="No cloud timeline is selected.";paint();return;}
+  const recoveryKey=currentRecoveryKey();
   try{
    const result=await apiRequest<{timeline:CloudSavedTimeline}>("/api/cloud/timelines/"+state.timeline.id);
    state.timeline=result.timeline.timeline;state.serverRevision=result.timeline.revision;state.cloudRevisionConflict=false;
+   if(recoveryKey)await recoveryStore().clearDraft(recoveryKey);
+   state.recoveredDraft=null;state.recoveryStatus="idle";
    state.selectedTrack=state.timeline.tracks[0]?.id||"";state.selectedClipId="";
    await refresh();state.message="Loaded server revision "+state.serverRevision+". The previous local draft was not merged.";
   }catch(error){state.message=error instanceof Error?error.message:"Could not load the latest server revision.";}
   paint();return;
  }
  if(type==="save-conflict-variant"){
-  try{await duplicateTimelineVariant();state.cloudRevisionConflict=false;state.message="Saved your preserved local edits as a separate timeline variant. The original server timeline was not overwritten.";}
+  const recoveryKey=currentRecoveryKey();
+  try{await duplicateTimelineVariant();if(recoveryKey)await recoveryStore().clearDraft(recoveryKey);state.recoveredDraft=null;state.recoveryStatus="saved";state.cloudRevisionConflict=false;state.message="Saved your preserved local edits as a separate timeline variant. The original server timeline was not overwritten.";}
   catch(error){state.message=error instanceof Error?error.message:"Could not save the local draft as a variant.";}
   paint();return;
  }
