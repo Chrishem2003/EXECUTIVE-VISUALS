@@ -52,7 +52,7 @@ export function createWaveformCache({mediaRoot,ffmpegPath=process.env.FFMPEG_PAT
   const duration=Number(durationText);
   if(!Number.isFinite(duration)||duration<=0)throw Object.assign(new Error("Audio duration could not be determined."),{code:"WAVEFORM_INVALID_DURATION"});
   if(duration>maxDurationSeconds)throw Object.assign(new Error("Audio exceeds the 2-hour waveform generation limit."),{code:"WAVEFORM_DURATION_LIMIT"});
-  await run(ffmpegPath,["-hide_banner","-loglevel","error","-nostdin","-y","-i",sourcePath,"-map","0:a:0","-t",String(maxDurationSeconds),"-filter_complex","aformat=channel_layouts=mono,showwavespic=s=1200x80:colors=white:scale=lin:draw=full","-frames:v","1","-f","image2","-vcodec","png",tempPath],{timeoutMs});
+  await run(ffmpegPath,["-hide_banner","-loglevel","error","-nostdin","-y","-i",sourcePath,"-t",String(maxDurationSeconds),"-filter_complex","[0:a:0]aformat=channel_layouts=mono,showwavespic=s=1200x80:colors=white:scale=lin:draw=full[wave]","-map","[wave]","-frames:v","1","-f","image2","-vcodec","png",tempPath],{timeoutMs});
  }
  async function get(asset,sourcePathOverride=null){
   if(!asset||typeof asset.id!=="string"||!UUID.test(asset.id)||!SHA.test(String(asset.sha256||"")))throw Object.assign(new Error("Waveform asset identity is invalid."),{code:"WAVEFORM_INVALID_ASSET"});
