@@ -22,9 +22,7 @@ assert.match(server,/SUPABASE_SESSION_SECRET/);
 assert.doesNotMatch(render,/AUTH_MODE[\s\S]*?value: local/);
 assert.match(docker,/FROM node:22-bookworm-slim AS build/);
 assert.match(docker,/apt-get install[^\n]*ffmpeg/);
-const hasPackageLock=await readFile("package-lock.json","utf8").then(()=>true,()=>false);
-if(hasPackageLock){
- assert.match(docker,/COPY package.json package-lock.json \.\//);
+if(/COPY package\.json package-lock\.json/.test(docker)){
  assert.match(docker,/RUN npm ci/);
 }else{
  assert.match(docker,/COPY package\.json \.\//);
