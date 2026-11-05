@@ -532,7 +532,7 @@ begin
 end
 $cancel_in_flight$;
 
--- Only an explicit evidence-backed operator resume clears the cancellation request.
+-- Only a service-role operator resume with a recorded review reference clears the cancellation request.
 select executive_visuals.resume_reconciled_video_generation_job(
  (select job_id from in_flight_cancel_context),
  '123e4567-e89b-42d3-a456-426614174000',
