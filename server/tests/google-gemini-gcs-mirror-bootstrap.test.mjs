@@ -1,5 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createGoogleGeminiGcsMirrorBootstrap } from "../google-gemini-gcs-mirror-bootstrap.mjs";
 
 const env = {
@@ -54,4 +57,23 @@ test("GCS bootstrap rejects cross-project requests, invalid scopes and malformed
   await assert.rejects(bootstrap.getAccessToken({ projectId: "another-project" }), /project does not match/);
   await assert.rejects(bootstrap.getAccessToken({ scopes: ["not-a-url"] }), /scopes are invalid/);
   await assert.rejects(bootstrap.getAccessToken(), /invalid access token/);
+});
+
+test("GCS bootstrap rejects service-account key files and malformed WIF endpoints", async () => {
+  class FakeGoogleAuth { async getClient() { return { async getAccessToken() { return "d".repeat(40); } }; } }
+  const directory = await mkdtemp(join(tmpdir(), "ev-gcs-auth-"));
+  const file = join(directory, "credentials.json");
+  try {
+    await writeFile(file, JSON.stringify({ type: "service_account", private_key: "never-a-real-key" }));
+    await assert.rejects(createGoogleGeminiGcsMirrorBootstrap({ env: { ...env, GOOGLE_APPLICATION_CREDENTIALS: file }, GoogleAuthClass: FakeGoogleAuth }), /Only a generated Google Workload Identity Federation/);
+    await writeFile(file, JSON.stringify({
+      type: "external_account",
+      audience: "//iam.googleapis.com/projects/123456/locations/global/workloadIdentityPools/staging/providers/render",
+      token_url: "https://sts.googleapis.com.evil.invalid/v1/token",
+      credential_source: { file: "/tmp/subject-token" }
+    }));
+    await assert.rejects(createGoogleGeminiGcsMirrorBootstrap({ env: { ...env, GOOGLE_APPLICATION_CREDENTIALS: file }, GoogleAuthClass: FakeGoogleAuth }), /Only a generated Google Workload Identity Federation/);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
