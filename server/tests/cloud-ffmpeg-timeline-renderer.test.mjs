@@ -32,6 +32,14 @@ test("cloud FFmpeg renderer produces a playable master from materialized video a
   assert.equal(result.render.videoClips,1);
   assert.equal(result.render.audioClips,1);
   assert.equal(result.render.automatedAudioClips,1);
+  const pcm=execFileSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-loglevel","error","-i",result.path,"-map","0:a:0","-f","f32le","-acodec","pcm_f32le","-ar","48000","-ac","2","pipe:1"]);
+  const samples=new Float32Array(pcm.buffer,pcm.byteOffset,pcm.byteLength/4);
+  const rms=(from,to,channel)=>{let sum=0,count=0;for(let frame=Math.floor(from*48000);frame<Math.floor(to*48000);frame++){const value=samples[frame*2+channel]||0;sum+=value*value;count++;}return Math.sqrt(sum/Math.max(1,count));};
+  const earlyLeft=rms(.1,.3,0),earlyRight=rms(.1,.3,1),lateLeft=rms(.7,.9,0),lateRight=rms(.7,.9,1);
+  assert.ok(earlyLeft>earlyRight*4,"left-panned opening keyframe should favour the left channel");
+  assert.ok(lateRight>lateLeft*4,"right-panned ending keyframe should favour the right channel");
+  const earlyLevel=Math.hypot(earlyLeft,earlyRight),lateLevel=Math.hypot(lateLeft,lateRight);
+  assert.ok(earlyLevel>lateLevel*1.5,"the rendered gain automation should attenuate the later section");
  }finally{await rm(root,{recursive:true,force:true});}
 });
 
