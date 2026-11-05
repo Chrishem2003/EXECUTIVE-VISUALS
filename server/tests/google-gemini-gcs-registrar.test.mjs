@@ -101,6 +101,31 @@ test("reuses a matching unexpired provider file mapping without OAuth or network
   assert.equal(h.calls.some(call => call[0] === "fetch"), false);
 });
 
+test("does not overwrite expired or changed provider mappings and orphan the prior Gemini file", async () => {
+  const staleMappings = [
+    {
+      id: "mapping-expired", ownerId, projectId, assetId, mimeType: "video/mp4",
+      name: fileName, uri: fileUri, state: "ACTIVE", sizeBytes: 1024, sha256,
+      expiresAt: "2026-11-04T00:00:00.000Z", sourceType: "gcs_registration", sourceUri: gcsUri
+    },
+    {
+      id: "mapping-changed-source", ownerId, projectId, assetId, mimeType: "video/mp4",
+      name: fileName, uri: fileUri, state: "ACTIVE", sizeBytes: 1024, sha256,
+      expiresAt: "2026-11-20T00:00:00.000Z", sourceType: "gcs_registration",
+      sourceUri: "gs://private-media-bucket/private/previous-version.mp4"
+    }
+  ];
+  for (const cached of staleMappings) {
+    const h = harness({ cached });
+    await assert.rejects(
+      () => h.registrar.registerAsset({ assetId, ownerId, projectId, mediaType: "video/mp4" }),
+      error => error.code === "GEMINI_GCS_STALE_MAPPING_PRESENT"
+    );
+    assert.equal(h.calls.some(call => call[0] === "fetch"), false);
+    assert.equal(h.records.length, 0);
+  }
+});
+
 test("rejects unapproved buckets, mismatched ownership and malformed GCS URIs before provider access", async () => {
   const deniedBucket = harness({ resolved: { asset, gcsUri: "gs://other-bucket/private/file.mp4" } });
   await assert.rejects(() => deniedBucket.registrar.registerAsset({ assetId, ownerId, projectId, mediaType: "video/mp4" }),
