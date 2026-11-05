@@ -9,6 +9,11 @@ import { renderCloudTimeline } from "../cloud-ffmpeg-timeline-renderer.mjs";
 const hasFfmpeg=spawnSync(process.env.FFMPEG_PATH||"ffmpeg",["-version"],{stdio:"ignore"}).status===0;
 const hasFfprobe=spawnSync(process.env.FFPROBE_PATH||"ffprobe",["-version"],{stdio:"ignore"}).status===0;
 const time=(value)=>({value,rate:1});
+test("cloud FFmpeg renderer fails closed for variable-speed curves until render parity is implemented",async()=>{
+ const timeline={name:"Speed curve export guard",width:320,height:240,frameRate:{numerator:24,denominator:1},tracks:[{id:"v",kind:"video",clips:[{id:"v1",assetId:"missing",timelineStart:time(0),duration:time(4),sourceRange:{start:time(0),duration:time(6)},speed:1,speedCurve:[{timeSeconds:0,speed:1},{timeSeconds:2,speed:2},{timeSeconds:4,speed:1}]}]}]};
+ await assert.rejects(()=>renderCloudTimeline({timeline,assets:new Map(),workDir:tmpdir(),onProgress(){}}),error=>error.code==="UNSUPPORTED_SPEED_CURVE");
+});
+
 test("cloud FFmpeg renderer applies a frame-bounded dip-to-black transition between adjacent clips", {skip:!hasFfmpeg||!hasFfprobe}, async()=>{
  const root=await mkdtemp(join(tmpdir(),"ev-cloud-transition-test-"));
  try{
