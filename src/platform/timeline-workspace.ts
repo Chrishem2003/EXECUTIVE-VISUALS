@@ -23,8 +23,10 @@ type Asset={id:string;name:string;mediaType:string;size:number;projectId?:string
 type SavedTimeline={id:string;projectId?:string|null;name:string;revision:number;document?:EditorialTimeline};
 type CloudProject={id:string;name:string};
 type CloudSavedTimeline={id:string;projectId?:string|null;name:string;revision:number;timeline:EditorialTimeline;updatedAt:string};
-const state:{timeline:EditorialTimeline|null;serverRevision:number;timelines:SavedTimeline[];cloudTimelines:CloudSavedTimeline[];cloudProjects:CloudProject[];cloudProjectId:string;mode:"local"|"cloud";cloudRenderJobId:string;cloudRenderJobStatus:string;variantBase:EditorialTimeline|null;variantReport:TimelineVariantComparison|null;variantBaseName:string;assets:Asset[];status:"loading"|"ready"|"offline"|"auth";message:string;selectedTrack:string;selectedClipId:string;ffmpeg:boolean;cloudRevisionConflict:boolean;recoveryStatus:"idle"|"saved"|"recovered"|"conflict"|"unavailable";recoveredDraft:TimelineRecoveryDraft|null;conflictServerTimeline:EditorialTimeline|null;timelineHistory:TimelineHistory}={
- timeline:null,serverRevision:0,timelines:[],cloudTimelines:[],cloudProjects:[],cloudProjectId:"",mode:"local",cloudRenderJobId:"",cloudRenderJobStatus:"",variantBase:null,variantReport:null,variantBaseName:"",assets:[],status:"loading",message:"Loading editorial workspace…",selectedTrack:"",selectedClipId:"",ffmpeg:false,cloudRevisionConflict:false,recoveryStatus:"idle",recoveredDraft:null,conflictServerTimeline:null,timelineHistory:createTimelineHistory()
+type TimelineVersionSummary={id:string;timelineId:string;revision:number;parentVersionId:string|null;restoredFromVersionId:string|null;name:string;summary:string;contentHash:string|null;createdBy:string;createdAt:string};
+type TimelineVersionSnapshot=TimelineVersionSummary&{document:EditorialTimeline;otio:Record<string,unknown>|null};
+const state:{timeline:EditorialTimeline|null;serverRevision:number;timelines:SavedTimeline[];cloudTimelines:CloudSavedTimeline[];cloudProjects:CloudProject[];cloudProjectId:string;mode:"local"|"cloud";cloudRenderJobId:string;cloudRenderJobStatus:string;variantBase:EditorialTimeline|null;variantReport:TimelineVariantComparison|null;variantBaseName:string;assets:Asset[];status:"loading"|"ready"|"offline"|"auth";message:string;selectedTrack:string;selectedClipId:string;ffmpeg:boolean;cloudRevisionConflict:boolean;recoveryStatus:"idle"|"saved"|"recovered"|"conflict"|"unavailable";recoveredDraft:TimelineRecoveryDraft|null;conflictServerTimeline:EditorialTimeline|null;timelineHistory:TimelineHistory;timelineVersions:TimelineVersionSummary[];versionHistoryOpen:boolean;versionComparison:TimelineVariantComparison|null;versionComparisonRevision:number|null;versionLoading:boolean}={
+ timeline:null,serverRevision:0,timelines:[],cloudTimelines:[],cloudProjects:[],cloudProjectId:"",mode:"local",cloudRenderJobId:"",cloudRenderJobStatus:"",variantBase:null,variantReport:null,variantBaseName:"",assets:[],status:"loading",message:"Loading editorial workspace…",selectedTrack:"",selectedClipId:"",ffmpeg:false,cloudRevisionConflict:false,recoveryStatus:"idle",recoveredDraft:null,conflictServerTimeline:null,timelineHistory:createTimelineHistory(),timelineVersions:[],versionHistoryOpen:false,versionComparison:null,versionComparisonRevision:null,versionLoading:false
 };
 let sequencePlaying=false,sequenceFrame=0,sequenceStartFrame=0,sequenceStartAt=0,sequenceRaf:number|null=null;
 let timelineRecoveryStore:TimelineRecoveryStore|null=null;
@@ -59,6 +61,51 @@ async function restoreTimelineRecovery():Promise<void>{
 }
 
 function resetTimelineHistory(){state.timelineHistory=createTimelineHistory();}
+function clearTimelineVersionPanel(){state.timelineVersions=[];state.versionComparison=null;state.versionComparisonRevision=null;state.versionHistoryOpen=false;state.versionLoading=false;}
+function timelineVersionsPath(){return (state.mode==="cloud"?"/api/cloud/timelines/":"/api/timelines/")+encodeURIComponent(state.timeline?.id||"")+"/versions";}
+async function loadTimelineVersions(){
+ if(!state.timeline)return;
+ state.versionLoading=true;paint();
+ try{
+  const result=await apiRequest<{versions:TimelineVersionSummary[]}>(timelineVersionsPath());
+  state.timelineVersions=result.versions||[];state.versionHistoryOpen=true;
+  state.message=state.timelineVersions.length?"Loaded "+state.timelineVersions.length+" immutable versions.":"No historical versions are available yet; the next save will establish a baseline.";
+ }catch(error){state.message=error instanceof Error?error.message:"Timeline history could not be loaded.";}
+ finally{state.versionLoading=false;paint();}
+}
+async function compareTimelineVersion(versionId:string){
+ if(!state.timeline)return;
+ state.versionLoading=true;paint();
+ try{
+  const version=await apiRequest<{version:TimelineVersionSnapshot}>(timelineVersionsPath()+"/"+encodeURIComponent(versionId));
+  state.versionComparison=compareTimelineVariants(version.version.document,state.timeline);
+  state.versionComparisonRevision=version.version.revision;
+  state.versionHistoryOpen=true;state.message="Compared revision "+version.version.revision+" with the current sequence.";
+ }catch(error){state.message=error instanceof Error?error.message:"Version comparison could not be loaded.";}
+ finally{state.versionLoading=false;paint();}
+}
+async function restoreTimelineVersion(versionId:string){
+ if(!state.timeline)return;
+ if(state.cloudRevisionConflict||state.recoveredDraft){state.message="Resolve or save the preserved local draft before restoring a historical version.";paint();return;}
+ const version=state.timelineVersions.find(item=>item.id===versionId);
+ if(!version)return;
+ if(!window.confirm("Restore revision "+version.revision+"? This creates a new revision; it does not delete later versions."))return;
+ state.versionLoading=true;paint();
+ try{
+  const result=await apiRequest<{timeline:{id:string;projectId?:string|null;name:string;revision:number;document?:EditorialTimeline;timeline?:EditorialTimeline};version?:TimelineVersionSummary}>(
+   (state.mode==="cloud"?"/api/cloud/timelines/":"/api/timelines/")+encodeURIComponent(state.timeline.id)+"/restore",
+   {method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({expectedRevision:state.serverRevision,sourceVersionId:versionId,summary:"Restored from revision "+version.revision})}
+  );
+  state.timeline=result.timeline.document||result.timeline.timeline||null;
+  if(!state.timeline)throw new Error("Restore completed without a timeline document.");
+  state.serverRevision=result.timeline.revision;state.cloudRevisionConflict=false;state.recoveredDraft=null;state.conflictServerTimeline=null;
+  resetTimelineHistory();state.versionComparison=null;state.versionComparisonRevision=null;
+  const refreshed=await apiRequest<{versions:TimelineVersionSummary[]}>(timelineVersionsPath());
+  state.timelineVersions=refreshed.versions||[];state.versionHistoryOpen=true;
+  state.message="Restored revision "+version.revision+" as new revision "+state.serverRevision+". Previous versions remain preserved.";
+ }catch(error){state.message=error instanceof Error?error.message:"Timeline version restore failed.";}
+ finally{state.versionLoading=false;paint();}
+}
 function commitTimelineEdit(next:EditorialTimeline,label:string,before:EditorialTimeline|null=state.timeline){
  if(!before)throw new Error("Load a timeline before editing it.");
  const operation=createTimelineHistoryOperation(before,next,{label,origin:"local"});
