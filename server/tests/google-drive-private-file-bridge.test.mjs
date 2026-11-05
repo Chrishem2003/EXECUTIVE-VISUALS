@@ -213,6 +213,57 @@ test("recovers an ambiguous initiation using the same reserved Drive file ID", a
   assert.equal(record.state, "COMPLETED");
 });
 
+test("reconciles a quarantined export under a dedicated lease without starting another upload", async () => {
+  const leaseToken = "44444444-4444-4444-8444-444444444444";
+  const expectedMd5 = createHash("md5").update(bytes).digest("hex");
+  const driveFile = { id: "driveFile_987654321", name: "master.mp4", mimeType: "video/mp4",
+    size: String(bytes.length), md5Checksum: expectedMd5,
+    webViewLink: "https://drive.google.com/file/d/driveFile_987654321/view",
+    appProperties: { source: "executive-visuals", assetId }, trashed: false };
+  const record = { attemptKey: "a".repeat(64), ownerId, projectId, assetId, parentFolderId: null,
+    driveFileId: driveFile.id, mimeType: "video/mp4", byteSize: bytes.length, sha256,
+    state: "RECONCILIATION_REQUIRED", sessionUri: null };
+  const marks = [];
+  const attempts = {
+    async get() { return record; },
+    async createOrGet() { throw new Error("reconciliation must not create a new attempt"); },
+    async claim() { throw new Error("ordinary upload claim must not be used for reconciliation"); },
+    async claimForReconciliation() { return leaseToken; },
+    async saveSession() { throw new Error("reconciliation must not persist an upload session"); },
+    async mark(value) { marks.push(value); return { ...record, state: value.state }; }
+  };
+  const h = harness({ attempts, existingDriveFile: driveFile });
+  const result = await h.bridge.uploadPrivateAsset({ ownerId, projectId, assetId });
+  assert.equal(result.id, driveFile.id);
+  assert.equal(marks.at(-1).state, "COMPLETED");
+  assert.equal(marks.at(-1).leaseToken, leaseToken);
+  assert.equal(h.calls.some(x => x.url?.includes("uploadType=resumable")), false);
+  assert.equal(h.calls.some(x => x.url?.includes("/files/generateIds")), false);
+});
+
+test("keeps a quarantined export blocked when its reserved Drive file is not found", async () => {
+  const leaseToken = "44444444-4444-4444-8444-444444444444";
+  const record = { attemptKey: "a".repeat(64), ownerId, projectId, assetId, parentFolderId: null,
+    driveFileId: "driveFile_987654321", mimeType: "video/mp4", byteSize: bytes.length, sha256,
+    state: "RECONCILIATION_REQUIRED", sessionUri: null };
+  const marks = [];
+  const attempts = {
+    async get() { return record; },
+    async createOrGet() { throw new Error("reconciliation must not create a new attempt"); },
+    async claim() { throw new Error("ordinary upload claim must not be used for reconciliation"); },
+    async claimForReconciliation() { return leaseToken; },
+    async saveSession() { throw new Error("quarantined export must not restart"); },
+    async mark(value) { marks.push(value); return { ...record, state: value.state }; }
+  };
+  const h = harness({ attempts });
+  await assert.rejects(() => h.bridge.uploadPrivateAsset({ ownerId, projectId, assetId }),
+    error => error.code === "GOOGLE_DRIVE_EXPORT_RECONCILIATION_REQUIRED");
+  assert.equal(marks.at(-1).state, "RECONCILIATION_REQUIRED");
+  assert.equal(marks.at(-1).leaseToken, leaseToken);
+  assert.equal(h.calls.some(x => x.url?.includes("uploadType=resumable")), false);
+  assert.equal(h.calls.some(x => x.url?.includes("/files/generateIds")), false);
+});
+
 test("rejects a durable attempt whose MIME type differs from the private asset", async () => {
   const attempts = {
     async get() { return { ownerId, projectId, assetId, mimeType: "application/pdf",
