@@ -6,6 +6,7 @@ const id="33333333-3333-4333-8333-333333333333";
 const ownerId="11111111-1111-4111-8111-111111111111";
 const projectId="22222222-2222-4222-8222-222222222222";
 const sha256="a".repeat(64);
+const crc32c="4waSgw==";
 const sessionUri="https://storage.googleapis.com/upload/storage/v1/b/private-media-bucket/o?uploadType=resumable&upload_id=opaque-session-secret";
 const key=Buffer.alloc(32,7).toString("base64");
 function setup({tamper=false}={}) {
@@ -15,7 +16,7 @@ function setup({tamper=false}={}) {
     const method=options.method||"GET";
     if(method==="POST"){
       const body=JSON.parse(options.body);
-      const row={...body,attempt_key:body.attempt_key,project_id:body.project_id,asset_id:body.asset_id,owner_id:body.owner_id,bucket:body.bucket,object_name:body.object_name,media_type:body.media_type,byte_size:body.byte_size,sha256:body.sha256,session_uri_ciphertext:null,session_expires_at:null,verified_generation:null,verified_metageneration:null,last_error_code:null,attempt_count:1,lease_token:null,lease_expires_at:null,updated_at:new Date().toISOString(),reconciled_at:null};
+      const row={...body,attempt_key:body.attempt_key,project_id:body.project_id,asset_id:body.asset_id,owner_id:body.owner_id,bucket:body.bucket,object_name:body.object_name,media_type:body.media_type,byte_size:body.byte_size,sha256:body.sha256,crc32c:body.crc32c,session_uri_ciphertext:null,session_expires_at:null,verified_generation:null,verified_metageneration:null,last_error_code:null,attempt_count:1,lease_token:null,lease_expires_at:null,updated_at:new Date().toISOString(),reconciled_at:null};
       rows.push(row);
       return new Response(JSON.stringify([row]),{status:201});
     }
@@ -36,7 +37,7 @@ function setup({tamper=false}={}) {
   });
   return {repository,requests,rows};
 }
-const input={assetId:id,ownerId,projectId,bucket:"private-media-bucket",objectName:"mirrors/owner/project/asset/test.mp4",mediaType:"video/mp4",sizeBytes:4,sha256};
+const input={assetId:id,ownerId,projectId,bucket:"private-media-bucket",objectName:"mirrors/owner/project/asset/test.mp4",mediaType:"video/mp4",sizeBytes:4,sha256,crc32c};
 
 test("persists resumable session URI only as authenticated AES-256-GCM ciphertext",async()=>{
   const f=setup();
@@ -50,6 +51,7 @@ test("persists resumable session URI only as authenticated AES-256-GCM ciphertex
   assert.equal(recovered.length,1);
   assert.equal(recovered[0].sessionUri,sessionUri);
   assert.equal(recovered[0].state,"UPLOADING");
+  assert.equal(recovered[0].crc32c,crc32c);
 });
 
 test("fails closed when encrypted session state is tampered",async()=>{
