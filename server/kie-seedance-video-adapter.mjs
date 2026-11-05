@@ -22,7 +22,7 @@ function buildInput(input,model){
  if(!plain(input))throw fail("Kie Seedance input must be an object.","KIE_VIDEO_INPUT_INVALID");
  const spec=MODELS[model];
  const prompt=typeof input.prompt==="string"?input.prompt.trim():"";
- if(!prompt||prompt.length>30000)throw fail("Seedance prompt must contain 1–30,000 characters.","KIE_VIDEO_INPUT_INVALID");
+ if(!prompt||prompt.length>20000)throw fail("Seedance prompt must contain 1–20,000 characters.","KIE_VIDEO_INPUT_INVALID");
  const duration=Number(input.durationSeconds??input.duration??5);
  const minDuration=spec.minDuration;
  if(!Number.isInteger(duration)||duration<minDuration||duration>spec.maxDuration)throw fail("Seedance duration is outside the supported range for the selected model.","KIE_VIDEO_INPUT_INVALID");
@@ -46,7 +46,7 @@ function buildInput(input,model){
  const generateAudio=typeof input.generateAudio==="boolean"?input.generateAudio:input.audioMode!=="none";
  const returnLastFrame=input.returnLastFrame===true;
  const outputFormat=String(input.outputFormat||"mp4");
- if(!["mp4","mov"].includes(outputFormat))throw fail("Seedance output format must be mp4 or mov.","KIE_VIDEO_INPUT_INVALID");
+ if(outputFormat!=="mp4")throw fail("This hosted Seedance adapter supports MP4 output only.","KIE_VIDEO_INPUT_INVALID");
  return Object.freeze({
   prompt,duration,resolution,aspect_ratio:aspectRatio,generate_audio:generateAudio,
   return_last_frame:returnLastFrame,output_format:outputFormat,web_search:false,nsfw_checker:true,
@@ -82,6 +82,10 @@ export function createKieSeedanceVideoAdapter({
   async prepareInput(input,context){
    assertEnabled();
    if(!plain(input)||input.provider!=="kie"||input.model!==model)throw fail("Kie job provider/model identity does not match the registered adapter.","VIDEO_JOB_INPUT_MISMATCH");
+   if(input.operation!==undefined&&input.operation!=="generate")throw fail("The current Kie Seedance adapter supports generation only.","KIE_VIDEO_CAPABILITY_UNSUPPORTED");
+   if(["referenceVideoAssetIds","referenceAudioAssetIds","referenceVideoUrls","referenceAudioUrls"].some(key=>Array.isArray(input[key])&&input[key].length>0))throw fail("This Kie adapter release supports image references and first/last frames only.","KIE_VIDEO_CAPABILITY_UNSUPPORTED");
+   if(input.negativePrompt!==undefined||input.seed!==undefined||input.motionReferenceAssetId!==undefined)throw fail("This Kie adapter release does not support negative prompts, seeds or motion references.","KIE_VIDEO_CAPABILITY_UNSUPPORTED");
+   if(input.audioMode!==undefined&&!["provider_default","generated","none"].includes(input.audioMode))throw fail("Kie audio mode must be provider-default, generated or none.","KIE_VIDEO_INPUT_INVALID");
    const hasPrivateReferences=Boolean(input.firstFrameAssetId||input.lastFrameAssetId||input.startFrameAssetId||input.endFrameAssetId||input.firstFrameUrl||input.lastFrameUrl||input.startFrame||input.endFrame)||
     ["referenceAssetIds","referenceImageAssetIds","referenceVideoAssetIds","referenceAudioAssetIds","referenceImageUrls","referenceVideoUrls","referenceAudioUrls"].some(key=>Array.isArray(input[key])&&input[key].length>0);
    if(hasPrivateReferences&&typeof prepareInput!=="function")throw fail("Kie reference assets require an authenticated owner/project-scoped resolver.","KIE_VIDEO_INPUT_ASSET_RESOLUTION_REQUIRED");
