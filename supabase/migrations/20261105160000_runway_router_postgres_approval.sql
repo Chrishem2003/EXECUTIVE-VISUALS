@@ -343,3 +343,47 @@ begin
   return new;
 end;
 $validate_budget_approval$;
+
+
+-- Owner-scoped, read-only status projection for the authenticated cloud UI.
+-- The server passes only the identity established by verified Supabase auth.
+create or replace function executive_visuals.get_owned_video_generation_job_status(
+  p_job_id uuid,
+  p_owner_id uuid
+) returns jsonb
+language sql
+security invoker
+set search_path = pg_catalog, executive_visuals
+as $job_status$
+  select jsonb_build_object(
+    'jobId', j.id,
+    'status', j.status,
+    'createdAt', to_jsonb(j)->'created_at',
+    'updatedAt', to_jsonb(j)->'updated_at',
+    'submission', case when s.job_id is null then null else jsonb_build_object(
+      'state', s.state,
+      'providerTaskId', s.provider_task_id,
+      'updatedAt', s.updated_at,
+      'lastErrorCode', s.last_error_code
+    ) end,
+    'budget', case when r.job_id is null then null else jsonb_build_object(
+      'reservedAmount', r.reserved_amount,
+      'actualAmount', r.actual_amount,
+      'currency', r.currency,
+      'state', r.state
+    ) end
+  )
+  from executive_visuals.jobs j
+  left join executive_visuals.video_generation_submissions s
+    on s.job_id = j.id and s.owner_id = j.owner_id
+  left join executive_visuals.video_generation_budget_reservations r
+    on r.job_id = j.id and r.owner_id = j.owner_id
+  where j.id = p_job_id
+    and j.owner_id = p_owner_id
+    and j.job_type = 'video.generate'
+$job_status$;
+
+revoke all on function executive_visuals.get_owned_video_generation_job_status(uuid,uuid)
+  from public, anon, authenticated;
+grant execute on function executive_visuals.get_owned_video_generation_job_status(uuid,uuid)
+  to service_role;
