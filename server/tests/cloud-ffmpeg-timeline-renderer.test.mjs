@@ -24,7 +24,7 @@ test("cloud FFmpeg renderer mixes audio and accepts automation beyond the pictur
    ["asset-audio",{path:audio,asset:{id:"asset-audio",mediaType:"audio/wav",originalName:"voice.wav"}}]
   ]);
   const result=await renderCloudTimeline({timeline,assets,workDir:root,onProgress(){}});
-  const probe=JSON.parse(execFileSync(process.env.FFPROBE_PATH||"ffprobe",["-v","error","-show_entries","stream=codec_type,channels","-of","json",result.path],{encoding:"utf8"}));
+  const probe=JSON.parse(execFileSync(process.env.FFPROBE_PATH||"ffprobe",["-v","error","-show_entries","format=duration:stream=codec_type,channels","-of","json",result.path],{encoding:"utf8"}));
   assert.equal(result.mediaType,"video/mp4");
   assert.match(result.filename,/Cloud test-master\.mp4$/);
   assert.ok(probe.streams.some(stream=>stream.codec_type==="video"));
@@ -32,6 +32,7 @@ test("cloud FFmpeg renderer mixes audio and accepts automation beyond the pictur
   assert.equal(result.render.videoClips,1);
   assert.equal(result.render.audioClips,1);
   assert.equal(result.render.automatedAudioClips,1);
+  assert.ok(Number(probe.format?.duration)<=1.1,"audio extending beyond the picture sequence must not extend the rendered master");
   const pcm=execFileSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-loglevel","error","-i",result.path,"-map","0:a:0","-f","f32le","-acodec","pcm_f32le","-ar","48000","-ac","2","pipe:1"]);
   const samples=new Float32Array(pcm.buffer,pcm.byteOffset,pcm.byteLength/4);
   const rms=(from,to,channel)=>{let sum=0,count=0;for(let frame=Math.floor(from*48000);frame<Math.floor(to*48000);frame++){const value=samples[frame*2+channel]||0;sum+=value*value;count++;}return Math.sqrt(sum/Math.max(1,count));};
