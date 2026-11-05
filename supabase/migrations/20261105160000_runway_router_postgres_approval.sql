@@ -2,6 +2,10 @@
 -- Source-controlled only. Do not apply to shared staging or production without an approved target.
 -- No provider calls, task creation, or paid execution are enabled by this migration.
 
+create schema if not exists private;
+revoke all on schema private from public, anon;
+grant usage on schema private to authenticated, service_role;
+
 create table if not exists executive_visuals.runway_router_approvals (
   id uuid primary key default gen_random_uuid(),
   owner_id uuid not null references auth.users(id) on delete cascade,
@@ -92,7 +96,7 @@ declare
   v_budget_id uuid;
   v_expires timestamptz;
 begin
-  if coalesce(auth.role(),'') <> 'service_role' then
+  if current_user <> 'service_role' and coalesce(auth.role(),'') <> 'service_role' then
     raise exception 'RUNWAY_PREFLIGHT_SERVICE_ROLE_REQUIRED';
   end if;
   if p_owner_id is null
@@ -141,8 +145,9 @@ grant execute on function executive_visuals.record_runway_router_preflight(uuid,
   to service_role;
 
 -- Human approval is performed by the project owner or a project reviewer.
--- The RPC is deliberately narrow: callers cannot edit the decision payload.
-create or replace function executive_visuals.approve_runway_router_preflight(p_approval_id uuid)
+-- Privileged implementation stays in the unexposed private schema. The exposed
+-- RPC is SECURITY INVOKER and has only this narrow operation.
+create or replace function private.approve_runway_router_preflight(p_approval_id uuid)
 returns boolean
 language plpgsql
 security definer
@@ -186,6 +191,18 @@ begin
   return true;
 end;
 $approve_runway_preflight$;
+
+revoke all on function private.approve_runway_router_preflight(uuid) from public, anon;
+grant execute on function private.approve_runway_router_preflight(uuid) to authenticated;
+
+create or replace function executive_visuals.approve_runway_router_preflight(p_approval_id uuid)
+returns boolean
+language sql
+security invoker
+set search_path = pg_catalog, executive_visuals, private
+as $approve_runway_preflight_rpc$
+  select private.approve_runway_router_preflight(p_approval_id);
+$approve_runway_preflight_rpc$;
 
 revoke all on function executive_visuals.approve_runway_router_preflight(uuid)
   from public, anon;
@@ -301,7 +318,8 @@ language plpgsql
 set search_path = pg_catalog, executive_visuals
 as $validate_budget_approval$
 begin
-  if coalesce(auth.role(),'') <> 'service_role'
+  if current_user <> 'service_role'
+     and coalesce(auth.role(),'') <> 'service_role'
      and new.owner_id is distinct from auth.uid() then
     raise exception 'VIDEO_BUDGET_APPROVAL_OWNER_INVALID';
   end if;
