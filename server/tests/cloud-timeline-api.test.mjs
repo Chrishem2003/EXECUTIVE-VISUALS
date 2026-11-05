@@ -140,7 +140,7 @@ test("cloud waveform endpoint authorizes source, verifies hash and persists a pr
    if(path!==objectPath)throw Object.assign(new Error("Not found"),{code:"CLOUD_STORAGE_HTTP_404"});
    await writeFile(file,source);return{size:source.length,sha256:sha};
   },
-  async uploadFile(path,file,mime,upsert){uploads.push({path,file,mime,upsert});return{path,size:png.length};}
+  async uploadFile(path,file,mime,upsert){uploads.push({path,file,mime,upsert});return{bucket:"executive-visuals-media",path,size:png.length,contentType:mime,sha256:createHash("sha256").update(png).digest("hex")};}
  };
  const waveformCache={async get(localAsset,sourcePath){
   assert.equal(localAsset.sha256,sha);assert.equal(localAsset.media_type,"audio/wav");
