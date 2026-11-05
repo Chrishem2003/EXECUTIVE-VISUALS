@@ -510,7 +510,15 @@ export function createAppServer() {
           const result=await googleDriveBridge.uploadPrivateAsset({ownerId:user.id,projectId:body.projectId||null,assetId:body.assetId,parentFolderId:body.parentFolderId||null});
           audit(db,user.id,"integration.google_drive.file_exported","asset",body.assetId,{driveFileId:result.id,projectId:body.projectId||null});
           send(res,201,{file:result},cors);return;
-        }catch(error){const status=error.code==="GOOGLE_DRIVE_AUTH_REQUIRED"?401:error.code==="GOOGLE_DRIVE_ASSET_FORBIDDEN"||error.code==="GOOGLE_DRIVE_FOLDER_UNAVAILABLE"?403:error.code==="GOOGLE_DRIVE_EXPORT_SCOPE_INVALID"?400:502;fail(res,status,error.code||"GOOGLE_DRIVE_EXPORT_FAILED",error.message||"Google Drive file export failed.");return;}
+        }catch(error){
+          const status=error.code==="GOOGLE_DRIVE_AUTH_REQUIRED"?401:
+            ["GOOGLE_DRIVE_ASSET_FORBIDDEN","GOOGLE_DRIVE_FOLDER_UNAVAILABLE"].includes(error.code)?403:
+            ["GOOGLE_DRIVE_EXPORT_SCOPE_INVALID","GOOGLE_DRIVE_EXPORT_ATTEMPT_INVALID"].includes(error.code)?400:
+            ["GOOGLE_DRIVE_EXPORT_IDEMPOTENCY_CONFLICT","GOOGLE_DRIVE_EXPORT_RECONCILIATION_REQUIRED",
+              "GOOGLE_DRIVE_EXPORT_RECONCILIATION_CONFLICT","GOOGLE_DRIVE_UPLOAD_SESSION_EXPIRED"].includes(error.code)?409:
+            ["GOOGLE_DRIVE_EXPORT_STORE_UNAVAILABLE","GOOGLE_DRIVE_EXPORT_STORE_TIMEOUT"].includes(error.code)?503:502;
+          fail(res,status,error.code||"GOOGLE_DRIVE_EXPORT_FAILED",error.message||"Google Drive file export failed.");return;
+        }
       }
       if(path==="/api/integrations/google-gemini/files/status"&&req.method==="GET"){
         send(res,200,{enabled:Boolean(googleGeminiFilesUpload)},cors);return;
