@@ -151,6 +151,21 @@ test("uses a persisted pre-generated Drive file ID and marks a verified export c
   assert.ok(h.calls.some(x => x.url?.includes("/files/generateIds")));
 });
 
+
+test("refuses a second worker while a durable Drive export lease is active", async () => {
+  const attempts = {
+    async get() { return null; },
+    async createOrGet(value) { return { ...value, state: "PREPARED", sessionUri: null }; },
+    async claim() { return null; },
+    async saveSession() { throw new Error("a worker without a lease must not save a session"); },
+    async mark() { throw new Error("a worker without a lease must not mutate attempt state"); }
+  };
+  const h = harness({ attempts });
+  await assert.rejects(() => h.bridge.uploadPrivateAsset({ ownerId, projectId, assetId }),
+    error => error.code === "GOOGLE_DRIVE_EXPORT_IN_PROGRESS");
+  assert.equal(h.calls.some(x => x.url?.includes("uploadType=resumable")), false);
+});
+
 test("returns an already completed Drive export after provider reconciliation without creating another file", async () => {
   const expectedMd5 = createHash("md5").update(bytes).digest("hex");
   const driveFile = { id: "driveFile_987654321", name: "master.mp4", mimeType: "video/mp4",
