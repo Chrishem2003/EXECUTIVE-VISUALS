@@ -138,6 +138,24 @@ $viewer_preflight_guard$;
 -- The project owner can review and approve a preflight initiated by an editor.
 grant select on editor_runway_approval_context to authenticated;
 reset role;
+-- The initiating editor cannot approve their own project generation.
+select set_config('request.jwt.claim.sub','323e4567-e89b-42d3-a456-426614174000',false);
+select set_config('request.jwt.claim.role','authenticated',false);
+set role authenticated;
+do $editor_self_approval_guard$
+begin
+ begin
+  perform executive_visuals.approve_runway_router_preflight(router_approval_id)
+  from editor_runway_approval_context;
+  raise exception 'project editor unexpectedly self-approved generation';
+ exception when others then
+  if sqlerrm = 'project editor unexpectedly self-approved generation' then raise; end if;
+  if sqlerrm <> 'RUNWAY_APPROVAL_ACTOR_FORBIDDEN' then raise; end if;
+ end;
+end
+$editor_self_approval_guard$;
+reset role;
+-- The distinct project owner can approve the editor's request.
 select set_config('request.jwt.claim.sub','123e4567-e89b-42d3-a456-426614174000',false);
 select set_config('request.jwt.claim.role','authenticated',false);
 set role authenticated;
@@ -146,6 +164,9 @@ from editor_runway_approval_context;
 reset role;
 select set_config('request.jwt.claim.role','service_role',false);
 set role service_role;
+-- Add a reviewer after the earlier outsider permission check.
+insert into executive_visuals.project_members(project_id,member_id,role,invited_by) values
+ ('323e4567-e89b-42d3-a456-426614174000','223e4567-e89b-42d3-a456-426614174000','reviewer','123e4567-e89b-42d3-a456-426614174000');
 
 create temporary table runway_approval_context as
 select * from executive_visuals.record_runway_router_preflight(
@@ -158,7 +179,25 @@ select * from executive_visuals.record_runway_router_preflight(
 );
 grant select on runway_approval_context to authenticated;
 reset role;
+-- The requester cannot approve their own project-scoped generation.
 select set_config('request.jwt.claim.sub','123e4567-e89b-42d3-a456-426614174000',false);
+select set_config('request.jwt.claim.role','authenticated',false);
+set role authenticated;
+do $self_approval_guard$
+begin
+ begin
+  perform executive_visuals.approve_runway_router_preflight(router_approval_id)
+  from runway_approval_context;
+  raise exception 'project requester unexpectedly self-approved generation';
+ exception when others then
+  if sqlerrm = 'project requester unexpectedly self-approved generation' then raise; end if;
+  if sqlerrm <> 'RUNWAY_APPROVAL_ACTOR_FORBIDDEN' then raise; end if;
+ end;
+end
+$self_approval_guard$;
+reset role;
+-- A distinct project reviewer may approve the same request.
+select set_config('request.jwt.claim.sub','223e4567-e89b-42d3-a456-426614174000',false);
 select set_config('request.jwt.claim.role','authenticated',false);
 set role authenticated;
 select executive_visuals.approve_runway_router_preflight(router_approval_id)
