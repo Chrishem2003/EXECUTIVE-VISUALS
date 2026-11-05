@@ -58,6 +58,7 @@ async function fixture({ metadataOverrides = {}, recordError = null, putFailure 
       for await (const chunk of options.body) chunks.push(Buffer.from(chunk));
       assert.deepEqual(Buffer.concat(chunks), Buffer.from([1,2,3,4]));
       assert.equal(options.headers["content-length"], "4");
+      assert.equal(options.headers["x-goog-hash"], "crc32c=" + crc32c);
       assert.equal(options.headers.authorization, undefined);
       return new Response(JSON.stringify({ generation }), { status: 200 });
     }
@@ -165,7 +166,7 @@ test("marks a transport failure during resumable upload as outcome-unknown witho
 test("persists encrypted-session lifecycle transitions and retains verified object for recovery if registry write fails", async () => {
   const transitions = [];
   const attemptRepository = {
-    async createAttempt(input) { transitions.push({ op:"create", input }); return { id:"44444444-4444-4444-8444-444444444444" }; },
+    async createAttempt(input) { transitions.push({ op:"create", input }); assert.equal(input.crc32c,crc32c); return { id:"44444444-4444-4444-8444-444444444444" }; },
     async recordSession(input) { transitions.push({ op:"session", input }); },
     async transition(input) { transitions.push({ op:"transition", input }); }
   };
