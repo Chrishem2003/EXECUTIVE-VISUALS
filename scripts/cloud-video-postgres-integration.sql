@@ -475,6 +475,63 @@ begin
 end
 $cancel_before_submit$;
 
+-- A submitted task receives a cancellation request but keeps its budget reserved
+-- until the provider task and actual billing are independently reconciled.
+insert into executive_visuals.video_generation_budget_approvals(
+ id,owner_id,project_id,provider,model,request_hash,currency,approved_max_amount,approval_note,expires_at
+) values (
+ 'c23e4567-e89b-42d3-a456-426614174000',
+ '123e4567-e89b-42d3-a456-426614174000',
+ '323e4567-e89b-42d3-a456-426614174000',
+ 'runway','gen4.5',repeat('f',64),'USD',1,'in-flight cancellation test',clock_timestamp()+interval '10 minutes'
+);
+create temporary table in_flight_cancel_context as
+select job_id,budget_reservation_id as reservation_id
+from executive_visuals.enqueue_video_generation_job(
+ '123e4567-e89b-42d3-a456-426614174000',
+ '323e4567-e89b-42d3-a456-426614174000',
+ 'pg-integration-video-cancel-in-flight','runway','gen4.5',repeat('f',64),
+ jsonb_build_object('projectId','323e4567-e89b-42d3-a456-426614174000',
+   'provider','runway','model','gen4.5','requestHash',repeat('f',64),'durationSeconds',2),
+ 'c23e4567-e89b-42d3-a456-426614174000',0.5,'USD'
+);
+update executive_visuals.jobs
+set status='processing',lease_owner='video-worker-cancel',
+    lease_expires_at=clock_timestamp()+interval '5 minutes'
+where id=(select job_id from in_flight_cancel_context);
+insert into executive_visuals.video_generation_submissions(
+ job_id,owner_id,provider,model,request_hash,state,provider_task_id,submitted_at
+) values (
+ (select job_id from in_flight_cancel_context),
+ '123e4567-e89b-42d3-a456-426614174000',
+ 'runway','gen4.5',repeat('f',64),'submitted','runway-task-cancel-pg-test',clock_timestamp()
+);
+select * from executive_visuals.request_video_generation_cancellation(
+ (select job_id from in_flight_cancel_context),'123e4567-e89b-42d3-a456-426614174000'
+);
+do $cancel_in_flight$
+declare job_row executive_visuals.jobs;
+        reservation_row executive_visuals.video_generation_budget_reservations;
+        policy_row executive_visuals.video_generation_budget_policies;
+begin
+ select * into job_row from executive_visuals.jobs where id=(select job_id from in_flight_cancel_context);
+ select * into reservation_row from executive_visuals.video_generation_budget_reservations where id=(select reservation_id from in_flight_cancel_context);
+ select * into policy_row from executive_visuals.video_generation_budget_policies where id=reservation_row.policy_id;
+ if job_row.status <> 'processing' or job_row.cancellation_requested_at is null then
+  raise exception 'in-flight cancellation did not remain a request';
+ end if;
+ if reservation_row.state <> 'reserved' or policy_row.reserved_amount <> 1.0 then
+  raise exception 'in-flight cancellation released a provider reservation prematurely';
+ end if;
+ if not executive_visuals.is_video_generation_cancellation_requested(job_row.id,'video-worker-cancel') then
+  raise exception 'leased worker could not observe cancellation request';
+ end if;
+ if executive_visuals.is_video_generation_cancellation_requested(job_row.id,'different-worker') then
+  raise exception 'non-owner worker observed another worker cancellation lease';
+ end if;
+end
+$cancel_in_flight$;
+
 -- A different owner cannot discover or cancel the job through the RPC.
 do $cancel_owner_scope$
 begin
