@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createTimeline, addTrack, addClip, trimClip, splitClip, rational, seconds, validateTimeline } from "../../src/core/timeline.ts";
+import { createTimeline, addTrack, addClip, trimClip, splitClip, rational, seconds, validateTimeline, evaluateTimelineAtFrame } from "../../src/core/timeline.ts";
 
 function fixture(){
  let timeline=createTimeline("project","timeline","Audio test",{numerator:24,denominator:1});
@@ -29,6 +29,44 @@ test("splitting audio clips preserves automation on both clip segments",()=>{
  assert.equal(second.audioAutomation[0].pan,1);
  assert.equal(second.audioAutomation[1].timeSeconds,4);
 });
+test("constant-speed remapping keeps timeline duration and maps source time at playback rate",()=>{
+ const timeline=createTimeline("project","speed","Speed test",{numerator:24,denominator:1});
+ const withTrack=addTrack(timeline,{id:"video",name:"Video",kind:"video",enabled:true,locked:false,clips:[]});
+ const clip={id:"fast",assetId:"source",name:"Fast clip",sourceRange:{start:rational(0,24),duration:rational(480,24)},timelineStart:rational(0,24),duration:rational(240,24),enabled:true,speed:2};
+ const added=addClip(withTrack,"video",clip),evaluated=validateTimeline(added);
+ assert.equal(evaluated.valid,true);
+ const frame=evaluateTimelineAtFrame(added,24).activeClips[0];
+ assert.equal(frame.sourceTimeSeconds,2);
+ assert.equal(frame.playbackSpeed,2);
+});
+
+test("trimming and splitting a retimed clip preserve source-to-record mapping",()=>{
+ const timeline=createTimeline("project","speed-edit","Speed edit",{numerator:24,denominator:1});
+ const withTrack=addTrack(timeline,{id:"video",name:"Video",kind:"video",enabled:true,locked:false,clips:[]});
+ const added=addClip(withTrack,"video",{id:"fast",assetId:"source",name:"Fast clip",sourceRange:{start:rational(0,24),duration:rational(480,24)},timelineStart:rational(0,24),duration:rational(240,24),enabled:true,speed:2});
+ const trimmed=trimClip(added,"video","fast",24,24),trimmedClip=trimmed.tracks[0].clips[0];
+ assert.equal(seconds(trimmedClip.timelineStart),1);
+ assert.equal(seconds(trimmedClip.duration),8);
+ assert.equal(seconds(trimmedClip.sourceRange.start),2);
+ assert.equal(seconds(trimmedClip.sourceRange.duration),16);
+ const split=splitClip(added,"video","fast",120,"fast-b"),[first,second]=split.tracks[0].clips;
+ assert.equal(seconds(first.duration),5);
+ assert.equal(seconds(first.sourceRange.duration),10);
+ assert.equal(seconds(second.timelineStart),5);
+ assert.equal(seconds(second.sourceRange.start),10);
+ assert.equal(seconds(second.sourceRange.duration),10);
+});
+
+test("timeline validation rejects non-finite and out-of-range playback speeds",()=>{
+ const timeline=createTimeline("project","speed-invalid","Invalid speed",{numerator:24,denominator:1});
+ const withTrack=addTrack(timeline,{id:"video",name:"Video",kind:"video",enabled:true,locked:false,clips:[]});
+ const base={id:"bad",assetId:"source",name:"Bad speed",sourceRange:{start:rational(0,24),duration:rational(24,24)},timelineStart:rational(0,24),duration:rational(24,24),enabled:true};
+ for(const speed of [0,0.1,4.1,Number.NaN,Number.POSITIVE_INFINITY]){
+  const candidate={...withTrack,tracks:withTrack.tracks.map(track=>({...track,clips:[{...base,speed}]}))};
+  assert.equal(validateTimeline(candidate).issues.some(issue=>issue.code==="invalid_speed"),true);
+ }
+});
+
 test("timeline validation accepts only frame-matched audio crossfade overlaps",()=>{
  const timeline=fixture(),track=timeline.tracks[0],first={id:"out",assetId:"out",name:"Outgoing",sourceRange:{start:rational(0,24),duration:rational(24,24)},timelineStart:rational(0,24),duration:rational(24,24),enabled:true,transitionToNext:{type:"crossfade",fadeFrames:6}},second={id:"in",assetId:"in",name:"Incoming",sourceRange:{start:rational(0,24),duration:rational(24,24)},timelineStart:rational(18,24),duration:rational(24,24),enabled:true};
  const valid={...timeline,tracks:[{...track,clips:[first,second]}]};
