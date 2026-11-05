@@ -107,3 +107,13 @@ test("expires old waveform derivatives and removes stale temporary artifacts",as
   assert.equal(report.removed,1);
  }finally{await f.close();}
 });
+
+test("rebuilds a corrupted local waveform cache entry",async()=>{
+ const f=await fixture(),cache=createWaveformCache({mediaRoot:f.root,render:async({outputPath})=>writeFile(outputPath,png)});
+ try{
+  const first=await cache.get(f.asset);await writeFile(first,Buffer.from("corrupt-cache"));
+  const rebuilt=await cache.get(f.asset);
+  assert.equal(first,rebuilt);
+  assert.deepEqual((await readFile(rebuilt)).subarray(0,8),png.subarray(0,8));
+ }finally{await f.close();}
+});
