@@ -77,7 +77,7 @@ test("compiles a structured editable storyboard with scene, shot and character l
     }
   });
   assert.equal(request.temperature, 0.3);
-  assert.equal(request.maxTokens, 3800);
+  assert.equal(request.maxTokens, 4096);
   assert.match(request.systemPrompt, /untrusted data/);
   assert.match(request.systemPrompt, /do not generate images or video/);
   assert.match(request.prompt, /character-ada/);
