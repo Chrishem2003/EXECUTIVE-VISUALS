@@ -134,16 +134,16 @@ export async function startCloudWorkerProcess(env=process.env,dependencies={}){
   if(geminiFilesCleanupEnabled)maintenanceWorkers.push(createGoogleGeminiFilesRetentionWorker({repository,gateway}));
   if(geminiFilesRecoveryEnabled)maintenanceWorkers.push(createGoogleGeminiFilesRecoveryWorker({repository,gateway}));
   const intervalFallback=maintenanceIntervalMs;
-  const configuredInterval=geminiFilesRecoveryEnabled
-   ? env.GOOGLE_GEMINI_FILES_RECOVERY_INTERVAL_MS
-   : env.GOOGLE_GEMINI_FILES_CLEANUP_INTERVAL_MS;
-  maintenanceIntervalMs=integer(
-   configuredInterval,
-   intervalFallback,
-   10000,
-   86400000,
-   "Gemini Files maintenance interval"
-  );
+  const intervals=[];
+  if(geminiFilesCleanupEnabled)intervals.push(integer(
+   env.GOOGLE_GEMINI_FILES_CLEANUP_INTERVAL_MS,intervalFallback,10000,86400000,
+   "Gemini Files cleanup interval"
+  ));
+  if(geminiFilesRecoveryEnabled)intervals.push(integer(
+   env.GOOGLE_GEMINI_FILES_RECOVERY_INTERVAL_MS,intervalFallback,10000,86400000,
+   "Gemini Files recovery interval"
+  ));
+  maintenanceIntervalMs=Math.min(...intervals);
  }
  const supervisor=createCloudWorkerSupervisor({
   workers,maintenanceWorkers,maintenanceIntervalMs,leaseSeconds:config.leaseSeconds,heartbeatIntervalMs:config.heartbeatIntervalMs,pollMs:config.pollMs,
