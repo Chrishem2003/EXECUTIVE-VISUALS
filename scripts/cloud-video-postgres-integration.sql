@@ -194,6 +194,27 @@ select executive_visuals.record_video_generation_submission(
  (select job_id from test_context),'video-worker-pg-test','runway-task-pg-test','{"acceptedStatus":"queued"}'::jsonb
 );
 
+-- The project owner reviews a task-correlated evidence artifact before settlement.
+reset role;
+set role authenticated;
+insert into executive_visuals.video_generation_cost_evidence(
+ job_id,reservation_id,owner_id,project_id,provider,model,provider_task_id,
+ actual_amount,currency,source_type,evidence_reference,evidence_sha256,
+ reviewer_id,reviewer_note
+) values (
+ (select job_id from test_context),
+ (select reservation_id from test_context),
+ '123e4567-e89b-42d3-a456-426614174000',
+ '323e4567-e89b-42d3-a456-426614174000',
+ 'runway','gen4.5','runway-task-pg-test',
+ 0.75,'USD','provider_support',
+ 'provider-support://case/cev-pg-test',repeat('b',64),
+ '123e4567-e89b-42d3-a456-426614174000',
+ 'Provider confirmed the charge for this exact task ID.'
+);
+reset role;
+set role service_role;
+
 insert into executive_visuals.assets(
  id,owner_id,project_id,original_name,media_type,byte_size,sha256,storage_bucket,object_path
 ) values (
@@ -205,26 +226,31 @@ insert into executive_visuals.assets(
  '323e4567-e89b-42d3-a456-426614174000/723e4567-e89b-42d3-a456-426614174000/original.mp4'
 );
 
-select executive_visuals.finish_video_generation_job(
- (select job_id from test_context),'video-worker-pg-test','succeeded',
+select executive_visuals.finish_video_generation_job_with_evidence(
+ (select job_id from test_context),'video-worker-pg-test',
  jsonb_build_object('providerTaskId','runway-task-pg-test',
-   'assetIds',jsonb_build_array('723e4567-e89b-42d3-a456-426614174000')),
- null,0.75
+   'assetIds',jsonb_build_array('723e4567-e89b-42d3-a456-426614174000'),
+   'costEvidenceReference','provider-support://case/cev-pg-test'),
+ 0.75,'provider-support://case/cev-pg-test'
 );
 
 select policy_row.id,policy_row.reserved_amount,policy_row.spent_amount,
        reservation_row.state,reservation_row.actual_amount,
        job_row.status,job_row.lease_owner,submission_row.state,
        submission_row.provider_task_id,
+       evidence_row.reviewer_id,
+       evidence_row.evidence_sha256,
        (select count(*) from executive_visuals.video_generation_usage_reservations) as usage_count
 from executive_visuals.video_generation_budget_policies policy_row
 cross join executive_visuals.video_generation_budget_reservations reservation_row
 cross join executive_visuals.jobs job_row
 cross join executive_visuals.video_generation_submissions submission_row
+cross join executive_visuals.video_generation_cost_evidence evidence_row
 where policy_row.id=current_setting('test.video_policy_id')::uuid
   and reservation_row.job_id=(select job_id from test_context)
   and job_row.id=(select job_id from test_context)
-  and submission_row.job_id=(select job_id from test_context);
+  and submission_row.job_id=(select job_id from test_context)
+  and evidence_row.job_id=(select job_id from test_context);
 
 select 1 / case when exists (
   select 1
@@ -241,6 +267,10 @@ select 1 / case when exists (
     and job_row.status='succeeded' and job_row.lease_owner is null
     and submission_row.state='succeeded'
     and submission_row.provider_task_id='runway-task-pg-test'
+    and exists (select 1 from executive_visuals.video_generation_cost_evidence e
+      where e.job_id=(select job_id from test_context)
+        and e.reviewer_id='123e4567-e89b-42d3-a456-426614174000'
+        and e.evidence_sha256=repeat('b',64))
     and (select count(*) from executive_visuals.video_generation_usage_reservations)=1
 ) then 1 else 0 end as final_state_assertion;
 
