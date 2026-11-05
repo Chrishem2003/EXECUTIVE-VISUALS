@@ -570,9 +570,10 @@ async function runAction(action:HTMLElement){
   paint();return;
  }
  if(type==="save-conflict-variant"){
-  const recoveryKey=currentRecoveryKey();
-  try{await duplicateTimelineVariant();if(recoveryKey)await recoveryStore().clearDraft(recoveryKey);state.recoveredDraft=null;state.recoveryStatus="saved";state.cloudRevisionConflict=false;state.message="Saved your preserved local edits as a separate timeline variant. The original server timeline was not overwritten.";}
-  catch(error){state.message=error instanceof Error?error.message:"Could not save the local draft as a variant.";}
+  const recoveryKey=currentRecoveryKey(),hadConflict=state.cloudRevisionConflict;
+  state.cloudRevisionConflict=false;
+  try{await duplicateTimelineVariant();if(recoveryKey)await recoveryStore().clearDraft(recoveryKey);state.recoveredDraft=null;state.conflictServerTimeline=null;state.recoveryStatus="saved";state.message="Saved your preserved local edits as a separate timeline variant. The original server timeline was not overwritten.";}
+  catch(error){state.cloudRevisionConflict=hadConflict;state.message=error instanceof Error?error.message:"Could not save the local draft as a variant.";}
   paint();return;
  }
  if(type==="import-generated-video"){
