@@ -332,7 +332,13 @@ export function createGoogleGeminiFilesGateway({
           if (!uploadAttempt || typeof updateUploadAttempt !== "function") return;
           try { await updateUploadAttempt({ attemptId: uploadAttempt.id, state, ...extra }); } catch {}
         };
-        if (uploadAttempt) await setAttemptState("UPLOADING");
+        if (uploadAttempt) {
+          try {
+            await updateUploadAttempt({ attemptId: uploadAttempt.id, state: "UPLOADING", expectedState: "PREPARED" });
+          } catch {
+            throw fail("Another request already claimed this Google upload attempt; no provider upload was started.", "GEMINI_FILE_ATTEMPT_CLAIM_FAILED");
+          }
+        }
         try {
           googleFile = await uploadBytes({ bytes: loaded.bytes, path: loaded.path, sizeBytes, mimeType, displayName });
         } catch (error) {
