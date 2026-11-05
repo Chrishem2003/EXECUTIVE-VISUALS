@@ -5,6 +5,8 @@ declare
   v_force_rls boolean;
   v_state_constraint text;
   v_attempt_index text;
+  v_lease_constraint text;
+  v_lease_index text;
 begin
   select c.relrowsecurity, c.relforcerowsecurity
     into v_rls, v_force_rls
@@ -69,6 +71,30 @@ begin
      v_attempt_index not like '%OUTCOME_UNKNOWN%' or
      v_attempt_index not like '%PROVIDER_CREATED%' then
     raise exception 'Gemini upload-attempt recovery index is missing expected states';
+  end if;
+
+  select pg_get_constraintdef(oid)
+    into v_lease_constraint
+    from pg_constraint
+   where conrelid = v_table
+     and conname = 'google_provider_file_upload_attempts_lease_pair_check';
+
+  if v_lease_constraint is null or
+     v_lease_constraint not like '%lease_token%' or
+     v_lease_constraint not like '%lease_expires_at%' then
+    raise exception 'Gemini recovery lease token and expiry must be constrained as a pair';
+  end if;
+
+  select indexdef into v_lease_index
+    from pg_indexes
+   where schemaname = 'executive_visuals'
+     and tablename = 'google_provider_file_upload_attempts'
+     and indexname = 'google_provider_file_upload_attempts_recovery_lease_idx';
+
+  if v_lease_index is null or
+     v_lease_index not like '%lease_expires_at%' or
+     v_lease_index not like '%OUTCOME_UNKNOWN%' then
+    raise exception 'Gemini recovery lease index is missing expected columns or states';
   end if;
 end
 $google_upload_attempts_migration$;
