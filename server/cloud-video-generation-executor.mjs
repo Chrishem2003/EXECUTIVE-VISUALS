@@ -20,6 +20,7 @@ export async function executeCloudVideoGenerationJob({
   adapter,
   ingestOutputs,
   resolveActualCost,
+  isCancellationRequested = async () => false,
   signal,
   sleep = wait,
   maxPolls = 120,
@@ -62,11 +63,23 @@ export async function executeCloudVideoGenerationJob({
   }
 
   if (state === "prepared") {
+    if (await isCancellationRequested(job.id, workerId)) {
+      throw fail("Cloud video job was cancelled before provider submission.", "VIDEO_JOB_CANCELLED");
+    }
     const providerInput = typeof adapter.prepareInput === "function"
       ? await adapter.prepareInput(input, { job })
       : input;
     const began = await ledger.begin(job.id, workerId);
-    if (!began) throw fail("Another worker owns the provider submission transition.", "VIDEO_SUBMISSION_IN_PROGRESS");
+    if (!began) {
+      if (await isCancellationRequested(job.id, workerId)) {
+        throw fail("Cloud video job was cancelled before provider submission.", "VIDEO_JOB_CANCELLED");
+      }
+      throw fail("Another worker owns the provider submission transition.", "VIDEO_SUBMISSION_IN_PROGRESS");
+    }
+    if (await isCancellationRequested(job.id, workerId)) {
+      try { await ledger.markUnknown(job.id, workerId, "CANCELLATION_RACED_PROVIDER_SUBMISSION"); } catch {}
+      throw fail("Cancellation arrived during provider submission authorization; reconciliation is required.", "VIDEO_SUBMISSION_REQUIRES_RECONCILIATION");
+    }
     let submitted;
     try {
       submitted = await adapter.submit(providerInput, { job });
@@ -104,6 +117,12 @@ export async function executeCloudVideoGenerationJob({
       throw fail("Provider status is temporarily unavailable; polling will resume later.", "VIDEO_PROVIDER_POLL_DEFERRED");
     }
     if (signal?.aborted) throw fail("Cloud video worker lease was lost.", "VIDEO_WORKER_LEASE_LOST");
+    if (await isCancellationRequested(job.id, workerId) && task.status !== "succeeded") {
+      if (task.status === "queued" || task.status === "running") {
+        try { await adapter.cancel(providerTaskId); } catch {}
+      }
+      throw fail("Provider cancellation was requested; task and billing state require reconciliation.", "VIDEO_CANCELLATION_REQUIRES_RECONCILIATION");
+    }
     if (task.status === "failed" || task.status === "canceled") {
       throw fail(task.failure || "Video provider task did not complete.", task.failureCode || "VIDEO_PROVIDER_FAILED");
     }
