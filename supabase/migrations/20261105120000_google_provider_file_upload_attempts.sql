@@ -11,7 +11,7 @@ create table if not exists executive_visuals.google_provider_file_upload_attempt
   byte_size bigint not null check (byte_size > 0 and byte_size <= 2147483648),
   sha256 text not null check (sha256 ~ '^[a-f0-9]{64}$'),
   google_display_name text not null unique,
-  state text not null check (state in ('PREPARED','UPLOADING','OUTCOME_UNKNOWN','PROVIDER_CREATED','COMPLETED','FAILED')),
+  state text not null check (state in ('PREPARED','UPLOADING','OUTCOME_UNKNOWN','PROVIDER_CREATED','COMPLETED','FAILED','QUARANTINED')),
   google_file_name text,
   google_file_uri text,
   provider_expires_at timestamptz,
