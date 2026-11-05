@@ -14,8 +14,10 @@ function harness(){
    calls.push({url:String(url),options});
    if(options.method==="POST"){
     const body=JSON.parse(options.body);
-    if(!rows.some(x=>x.attempt_key===body.attempt_key)){rows.push({...body,id:"row-id",attempt_count:1,updated_at:"2026-11-05T00:00:00Z"});}
-    return new Response(JSON.stringify(rows.filter(x=>x.attempt_key===attemptKey)),{status:201});
+    if(rows.some(x=>x.attempt_key===body.attempt_key))return new Response("[]",{status:201});
+    const created={...body,id:"row-id",attempt_count:1,updated_at:"2026-11-05T00:00:00Z"};
+    rows.push(created);
+    return new Response(JSON.stringify([created]),{status:201});
    }
    if(options.method==="PATCH"){
     const body=JSON.parse(options.body), target=rows[0], query=String(url);
@@ -37,6 +39,13 @@ test("creates an owner-scoped durable export attempt without exposing session cr
  assert.equal(h.calls[0].options.headers["content-profile"],"executive_visuals");
 });
 
+test("rejects a reused idempotency key bound to a different pre-generated Drive file ID",async()=>{
+ const h=harness();
+ await assert.rejects(()=>h.store.createOrGet({attemptKey,ownerId,assetId:row.asset_id,
+  driveFileId:"driveFile_DIFFERENT123",mimeType:"video/mp4",byteSize:5,sha256:row.sha256}),
+  error=>error.code==="GOOGLE_DRIVE_EXPORT_IDEMPOTENCY_CONFLICT");
+ assert.equal(h.rows.length,1);
+});
 test("claims a Drive export attempt with a bounded exclusive lease",async()=>{
  const h=harness();
  const lease=await h.store.claim({attemptKey,ownerId});
