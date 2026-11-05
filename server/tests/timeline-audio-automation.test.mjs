@@ -71,6 +71,17 @@ test("retimed trim and split preserve source time when start and duration use di
  assert.equal(seconds(second.sourceRange.duration),10);
 });
 
+test("timeline validation permits optical-flow interpolation only on video at supported multipliers",()=>{
+ let timeline=createTimeline("project","motion-interpolation","Motion interpolation",{numerator:24,denominator:1});
+ timeline=addTrack(timeline,{id:"video",name:"Video",kind:"video",enabled:true,locked:false,clips:[]});
+ timeline=addClip(timeline,"video",{id:"clip",assetId:"asset",name:"Slow motion",sourceRange:{start:rational(0,24),duration:rational(48,24)},timelineStart:rational(0,24),duration:rational(48,24),enabled:true,metadata:{motionInterpolationMultiplier:2}});
+ assert.equal(validateTimeline(timeline).valid,true);
+ const invalidMultiplier={...timeline,tracks:timeline.tracks.map(track=>({...track,clips:track.clips.map(clip=>({...clip,metadata:{motionInterpolationMultiplier:3}}))}))};
+ assert.equal(validateTimeline(invalidMultiplier).issues.some(issue=>issue.code==="invalid_motion_interpolation"),true);
+ const invalidTrack={...timeline,tracks:timeline.tracks.map(track=>({...track,kind:"audio"}))};
+ assert.equal(validateTimeline(invalidTrack).issues.some(issue=>issue.code==="invalid_motion_interpolation"),true);
+});
+
 test("variable-speed curves interpolate and integrate source time deterministically",()=>{
  const timeline=createTimeline("project","speed-curve","Speed curve",{numerator:24,denominator:1});
  const withTrack=addTrack(timeline,{id:"video",name:"Video",kind:"video",enabled:true,locked:false,clips:[]});

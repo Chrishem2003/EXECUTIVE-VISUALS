@@ -53,6 +53,16 @@ const retimed=addClip(speedTrack,"speed-track",{
 assert.equal(validateTimeline(retimed).valid,true);
 assert.equal(evaluateTimelineAtFrame(retimed,24).activeClips[0].sourceTimeSeconds,2);
 assert.equal(evaluateTimelineAtFrame(retimed,24).activeClips[0].playbackSpeed,2);
+const speedCurveTimeline=addClip(speedTrack,"speed-track",{
+ id:"speed-curve-clip",assetId:"asset-speed",name:"Speed curve",
+ sourceRange:{start:rational(0,24),duration:rational(144,24)},
+ timelineStart:rational(120,24),duration:rational(96,24),enabled:true,speed:1,
+ speedCurve:[{timeSeconds:0,speed:1},{timeSeconds:2,speed:2},{timeSeconds:4,speed:1}]
+});
+assert.equal(validateTimeline(speedCurveTimeline).valid,true);
+assert.equal(evaluateTimelineAtFrame(speedCurveTimeline,144).activeClips[0].sourceTimeSeconds,1.25);
+assert.equal(evaluateTimelineAtFrame(speedCurveTimeline,168).activeClips[0].sourceTimeSeconds,3);
+
 const legacySpeed={...speedTrack,tracks:speedTrack.tracks.map(track=>({...track,clips:[{
  id:"legacy-speed-clip",assetId:"asset-speed",name:"Mismatched speed",
  sourceRange:{start:rational(0,24),duration:rational(48,24)},
