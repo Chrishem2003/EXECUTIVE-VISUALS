@@ -81,6 +81,17 @@ test("registers Runway only when billing settlement evidence is injected", () =>
   assert.equal(adapter.model, "gen4.5");
 });
 
+test("registers Kie Seedance only behind global/provider gates and verified credit settlement",()=>{
+ const env={VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",KIE_VIDEO_ENABLED:"true",KIE_VIDEO_ALLOW_REMOTE:"true",KIE_SEEDANCE_MODEL:"bytedance/seedance-2",KIE_USD_PER_CREDIT:"0.005"};
+ const kieClient={model:"bytedance/seedance-2",minimumPollIntervalMs:5000,async submit(){return{taskId:"task_bytedance_123456",status:"queued"};},async getStatus(taskId){return{taskId,status:"running"};}};
+ const [adapter]=createConfiguredVideoProviderAdapters({env,fetchImpl:base.fetchImpl,ingestOutputs:base.ingestOutputs,kieClient});
+ assert.equal(adapter.provider,"kie");
+ assert.equal(adapter.model,"bytedance/seedance-2");
+});
+test("fails closed when Kie remote gates are partial or credit conversion is missing",()=>{
+ assert.throws(()=>createConfiguredVideoProviderAdapters({env:{VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",KIE_VIDEO_ENABLED:"true"},fetchImpl:base.fetchImpl,ingestOutputs:base.ingestOutputs}),error=>error.code==="KIE_VIDEO_REMOTE_DISABLED");
+ assert.throws(()=>createConfiguredVideoProviderAdapters({env:{VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",KIE_VIDEO_ENABLED:"true",KIE_VIDEO_ALLOW_REMOTE:"true"},fetchImpl:base.fetchImpl,ingestOutputs:base.ingestOutputs,kieClient:{model:"bytedance/seedance-2",submit:async()=>({}),getStatus:async()=>({})}}),error=>error.code==="KIE_BILLING_RATE_REQUIRED");
+});
 test("requires exact provider/model identity before Luma preparation", async () => {
   const [adapter] = createConfiguredVideoProviderAdapters(base);
   await assert.rejects(adapter.prepareInput({
