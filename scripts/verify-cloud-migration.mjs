@@ -5,7 +5,31 @@ const sql = await readFile(resolve(process.cwd(), "supabase/migrations/202610312
 const checkpointSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261102090000_video_pipeline_checkpoints.sql"), "utf8");
 const videoSubmissionSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261104120000_cloud_video_submission_ledger.sql"), "utf8");
 const videoBudgetSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261104143000_cloud_video_budget_enqueue.sql"), "utf8");
+const googleFileAttemptSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261105120000_google_provider_file_upload_attempts.sql"), "utf8");
+const googleFileRecoveryLeaseSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261105190000_google_provider_file_recovery_leases.sql"), "utf8");
+const googleGcsAssetSourcesSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261105200000_google_gcs_asset_sources.sql"), "utf8");
 const issues = [];
+for (const required of [
+  "create table if not exists executive_visuals.google_gcs_asset_sources",
+  "alter table executive_visuals.google_gcs_asset_sources enable row level security",
+  "alter table executive_visuals.google_gcs_asset_sources force row level security",
+  "revoke all on table executive_visuals.google_gcs_asset_sources from public, anon, authenticated",
+  "grant select, insert, update on table executive_visuals.google_gcs_asset_sources to service_role",
+  "google_gcs_asset_sources_one_active_per_asset_idx",
+  "GOOGLE_GCS_SOURCE_ASSET_SCOPE_INVALID",
+  "GOOGLE_GCS_SOURCE_IDENTITY_IMMUTABLE",
+  "GOOGLE_GCS_SOURCE_ONLY_ACTIVE_TO_REVOKED"
+]) {
+  if (!googleGcsAssetSourcesSql.includes(required)) issues.push("Governed GCS source registry is missing required boundary: " + required + ".");
+}
+if (/\b(drop\s+table|truncate|delete\s+from)\b/i.test(googleGcsAssetSourcesSql)) {
+  issues.push("GCS source registry migration must not contain destructive DDL/DML.");
+}
+if (!googleGcsAssetSourcesSql.includes("position(chr(92) in object_name) = 0") ||
+    !googleGcsAssetSourcesSql.includes("generation ~ '^[0-9]{1,30}$'") ||
+    !googleGcsAssetSourcesSql.includes("metageneration ~ '^[0-9]{1,30}$'")) {
+  issues.push("GCS source registry must validate object paths and immutable GCS generation metadata.");
+}
 const tables = ["projects","project_members","project_workspace_documents","workflows","workflow_runs","workflow_node_runs","timelines","assets","jobs","job_events","consents","reviews","audit_events"];
 for (const table of tables) {
   if (!sql.includes(`alter table executive_visuals.${table} enable row level security;`)) {
@@ -59,7 +83,7 @@ if (!checkpointSql.includes("octet_length(output_json::text) <= 32000")) issues.
 if (!checkpointSql.includes("output_asset.derivative_of = new.input_asset_id")) issues.push("Cloud checkpoint outputs must be verified as derivatives of their recorded inputs.");
 if (!checkpointSql.includes("output_asset.owner_id = new.owner_id") || !checkpointSql.includes("output_asset.project_id = new.project_id")) issues.push("Cloud checkpoint output assets must match the checkpoint owner and project.");
 if (!checkpointSql.includes("output_asset.sha256 = lower(new.output_json ->> 'sha256')")) issues.push("Cloud checkpoint output checksums must match persisted asset metadata.");
-if (/\\b(drop\\s+table|truncate|delete\\s+from)\\b/i.test(checkpointSql)) issues.push("Checkpoint migration must not contain destructive DDL/DML.");
+if (/\b(drop\s+table|truncate|delete\s+from)\b/i.test(checkpointSql)) issues.push("Checkpoint migration must not contain destructive DDL/DML.");
 
 
 
@@ -99,7 +123,24 @@ if (!sql.includes("revoke all on function executive_visuals.claim_next_job(text,
 if (!sql.includes("lease_expires_at timestamptz") || !sql.includes("available_at timestamptz") || !sql.includes("lease_heartbeat_at timestamptz")) {
   issues.push("Durable worker lease and delayed retry fields are missing from the cloud job contract.");
 }
-if (/\\b(drop\\s+table|truncate|delete\\s+from)\\b/i.test(videoSubmissionSql)) issues.push("Cloud video submission migration must not contain destructive DDL/DML.");
+if (/\b(drop\s+table|truncate|delete\s+from)\b/i.test(videoSubmissionSql)) issues.push("Cloud video submission migration must not contain destructive DDL/DML.");
+
+if (/\b(drop\s+table|truncate|delete\s+from)\b/i.test(googleFileAttemptSql + googleFileRecoveryLeaseSql)) {
+  issues.push("Gemini provider-file recovery migrations must not contain destructive DDL/DML.");
+}
+for (const fragment of [
+  "add column if not exists lease_token uuid",
+  "add column if not exists lease_expires_at timestamptz",
+  "google_provider_file_upload_attempts_lease_pair_check",
+  "google_provider_file_upload_attempts_recovery_lease_idx",
+  "revoke all on table executive_visuals.google_provider_file_upload_attempts from public, anon, authenticated"
+]) {
+  if (!googleFileRecoveryLeaseSql.includes(fragment)) issues.push("Gemini recovery lease migration is missing: " + fragment);
+}
+if (!googleFileAttemptSql.includes("create table if not exists executive_visuals.google_provider_file_upload_attempts") ||
+    !googleFileAttemptSql.includes("alter table executive_visuals.google_provider_file_upload_attempts force row level security;")) {
+  issues.push("Gemini provider-file upload-attempt ledger must remain durable and forced-RLS.");
+}
 if (!videoSubmissionSql.includes("create table if not exists executive_visuals.video_generation_submissions")) issues.push("Cloud video submission ledger table is missing.");
 if (!videoSubmissionSql.includes("alter table executive_visuals.video_generation_submissions enable row level security;")) issues.push("Cloud video submission ledger must enable RLS.");
 if (!videoSubmissionSql.includes("revoke all on executive_visuals.video_generation_submissions from public, anon, authenticated;")) issues.push("Cloud video submission ledger must be unavailable to untrusted roles.");
