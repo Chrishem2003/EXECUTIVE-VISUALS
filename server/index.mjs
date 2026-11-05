@@ -767,10 +767,15 @@ export function createAppServer() {
         const validation=validateTimelineDocument(timeline,db,user.id);
         if(!validation.valid){send(res,422,{error:{code:"TIMELINE_INVALID",message:"Timeline failed validation.",issues:validation.issues}},cors);return;}
         const id=randomUUID(),name=String(body.name||timeline.name||"Untitled sequence").trim().slice(0,160);
-        const saved={...timeline,id,projectId,name,revision:1};
-        db.prepare("INSERT INTO timelines(id,owner_id,project_id,name,timeline_json,otio_json) VALUES(?,?,?,?,?,?)")
-          .run(id,user.id,projectId,name,json(saved),body.otio?json(body.otio):null);
-        audit(db,user.id,"timeline.created","timeline",id,{revision:1},projectId);
+        const saved={...timeline,id,projectId,name,revision:1},otio=body.otio||null;
+        db.exec("BEGIN IMMEDIATE");
+        try{
+          db.prepare("INSERT INTO timelines(id,owner_id,project_id,name,timeline_json,otio_json) VALUES(?,?,?,?,?,?)")
+            .run(id,user.id,projectId,name,json(saved),otio?json(otio):null);
+          insertTimelineVersion(db,{timelineId:id,ownerId:user.id,projectId,revision:1,name,summary:String(body.versionSummary||"Initial version"),timeline:saved,otio,createdBy:user.id});
+          audit(db,user.id,"timeline.created","timeline",id,{revision:1},projectId);
+          db.exec("COMMIT");
+        }catch(error){try{db.exec("ROLLBACK");}catch{}throw error;}
         send(res,201,{timeline:{id,projectId,name,revision:1,document:saved}},cors);return;
       }
       const timelineMatch=path.match(/^\/api\/timelines\/([0-9a-f-]+)(?:\/(otio))?$/i);
