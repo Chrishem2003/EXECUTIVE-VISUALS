@@ -20,6 +20,11 @@ function harness({ authorize = async () => true, existing = null, findError = fa
     fetchImpl: async (url, options) => {
       calls.push({ url: String(url), options });
       if (fetchImpl) return fetchImpl(url, options);
+      if (String(url).includes("/v1beta/files/") && !String(url).includes(":download")) {
+        return new Response(JSON.stringify({ name: "files/generated-video", state: "ACTIVE" }), {
+          status: 200, headers: { "content-type": "application/json" }
+        });
+      }
       return new Response(bytes, { status: 200, headers: { "content-type": "video/mp4", "content-length": String(bytes.byteLength) } });
     },
     authorizeOutputIngestion: authorize,
@@ -38,6 +43,8 @@ function harness({ authorize = async () => true, existing = null, findError = fa
       };
     },
     timeoutMs: 3000,
+    fileReadyTimeoutMs: 1000,
+    filePollIntervalMs: 10,
     maxOutputBytes
   });
   return { ingestor, calls, ingested, lookups };
@@ -51,7 +58,9 @@ test("downloads Google URI output and commits it to owner/project private storag
   assert.equal(result.ownerId, context.ownerId);
   assert.equal(result.projectId, context.projectId);
   assert.equal(result.sha256, createHash("sha256").update(bytes).digest("hex"));
-  assert.equal(h.calls.filter(call => call.url).length, 1);
+  assert.equal(h.calls.filter(call => call.url).length, 2);
+  assert.match(h.calls[0].url, /\\/v1beta\\/files\\/generated-video$/);
+  assert.equal(h.calls[1].url, uri);
   assert.equal(h.calls.find(call => call.url).options.headers["x-goog-api-key"], "server-google-key");
   assert.equal(h.calls[0].options.redirect, "error");
   assert.equal(h.ingested[0].bytes.toString(), bytes.toString());
@@ -59,6 +68,34 @@ test("downloads Google URI output and commits it to owner/project private storag
   assert.deepEqual(h.ingested[0].metadata, {
     source: "video-generation", providerTaskId: id, outputIndex: 0
   });
+});
+
+
+test("waits for Google Files to become ACTIVE before downloading generated video", async () => {
+  let checks = 0;
+  const h = harness({ fetchImpl: async url => {
+    if (String(url).includes(":download")) {
+      return new Response(bytes, { status: 200, headers: { "content-type": "video/mp4" } });
+    }
+    checks++;
+    return new Response(JSON.stringify({ state: checks === 1 ? "PROCESSING" : "ACTIVE" }), {
+      status: 200, headers: { "content-type": "application/json" }
+    });
+  } });
+  const result = await h.ingestor.ingestInteraction(interaction({ uri }), context);
+  assert.equal(result.assetId, "asset-private-1");
+  assert.equal(checks, 2);
+  assert.equal(h.calls.length, 3);
+});
+
+test("does not download a Google Files object whose processing state failed", async () => {
+  const h = harness({ fetchImpl: async () => new Response(JSON.stringify({ state: "FAILED" }), {
+    status: 200, headers: { "content-type": "application/json" }
+  }) });
+  await assert.rejects(() => h.ingestor.ingestInteraction(interaction({ uri }), context), error =>
+    error.code === "GEMINI_OMNI_FILE_PROCESSING_FAILED");
+  assert.equal(h.calls.length, 1);
+  assert.equal(h.ingested.length, 0);
 });
 
 test("accepts bounded inline base64 output without a second provider request", async () => {
@@ -88,8 +125,9 @@ test("rejects arbitrary output URLs and malformed interaction output", async () 
 });
 
 test("enforces response and configured byte limits before private ingestion", async () => {
-  const h = harness({ maxOutputBytes: 1024 * 1024, fetchImpl: async () =>
-    new Response(Buffer.alloc(2 * 1024 * 1024), { status: 200, headers: { "content-type": "video/mp4" } }) });
+  const h = harness({ maxOutputBytes: 1024 * 1024, fetchImpl: async url => String(url).includes(":download")
+    ? new Response(Buffer.alloc(2 * 1024 * 1024), { status: 200, headers: { "content-type": "video/mp4" } })
+    : new Response(JSON.stringify({ state: "ACTIVE" }), { status: 200, headers: { "content-type": "application/json" } }) });
   await assert.rejects(() => h.ingestor.ingestInteraction(interaction({ uri }), context), error =>
     error.code === "GEMINI_OMNI_OUTPUT_TOO_LARGE");
   assert.equal(h.ingested.length, 0);
