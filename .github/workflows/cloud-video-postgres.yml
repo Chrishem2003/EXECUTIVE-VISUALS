@@ -70,6 +70,11 @@ jobs:
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/google-gcs-asset-sources-postgres-integration.sql
       - name: Apply durable GCS mirror upload-attempt ledger
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261105210000_google_gcs_mirror_attempts.sql
+      - name: Apply immutable GCS mirror CRC32C receipt migration
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261105211000_google_gcs_mirror_attempt_crc32c.sql
+      - name: Verify immutable GCS mirror CRC32C receipt constraints
+        run: |
+          psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -c "DO \$\$ BEGIN IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='executive_visuals' AND table_name='google_gcs_mirror_attempts' AND column_name='crc32c') THEN RAISE EXCEPTION 'GCS mirror CRC32C receipt column missing'; END IF; IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='google_gcs_mirror_attempts_crc32c_check') THEN RAISE EXCEPTION 'GCS mirror CRC32C validation constraint missing'; END IF; END \$\$;"
       - name: Verify private GCS mirror attempt ledger privileges and recovery constraints
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/google-gcs-mirror-attempts-postgres-integration.sql
       - name: Verify concurrent Gemini recovery lease acquisition
