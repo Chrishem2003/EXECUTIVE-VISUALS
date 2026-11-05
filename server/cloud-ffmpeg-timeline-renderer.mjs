@@ -58,7 +58,7 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
  const unsupported=tracks.filter(track=>!["video","audio","overlay","caption"].includes(track.kind));
  if(tracks.some(track=>track.kind!=="video"&&(track.clips||[]).some(clip=>clip.transitionToNext!==undefined)))fail("Transitions are supported only on the primary video track.","INVALID_TIMELINE_TRANSITION");
  if(videos.length<1||unsupported.length)fail("The master renderer requires at least one video track and supported audio, overlay and caption tracks.","UNSUPPORTED_TIMELINE_FEATURE");
- const clips=ordered([videos[0]]),secondaryVideoClips=videos.slice(1).flatMap(track=>ordered([track])),audioClips=audios.flatMap(track=>ordered([track])),overlayClips=overlays.flatMap(track=>ordered([track])),captionClips=captions.flatMap(track=>ordered([track]));
+ const clips=ordered([videos[0]]),audioClips=audios.flatMap(track=>ordered([track])),overlayClips=overlays.flatMap(track=>ordered([track])),captionClips=captions.flatMap(track=>ordered([track]));
  for(const track of videos.slice(1))if((track.clips||[]).some(clip=>clip.transitionToNext!==undefined))fail("Transitions are currently supported only on the primary video track.","INVALID_TIMELINE_TRANSITION");
  if(!clips.length)fail("Add at least one enabled clip to the primary video track.","EMPTY_TIMELINE");
  const width=Math.max(256,Math.min(7680,Math.floor(Number(timeline.width)||1920)));
@@ -109,15 +109,21 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
    inputIndex++;cursor=start+duration;onProgress(Math.min(65,8+Math.round(segmentIndex/Math.max(clips.length,1)*55)));
   }
   if(!segments.length)fail("No renderable clips were found.","EMPTY_TIMELINE");
-  for(const [index,clip] of secondaryVideoClips.entries()){
-   if(signal?.aborted)fail("Timeline render was cancelled.","JOB_CANCELLED");
-   const start=seconds(clip.timelineStart),duration=Math.min(seconds(clip.duration),Math.max(0,cursor-start));if(duration<=0)continue;
-   if(Math.abs(Number(clip.speed??1)-1)>0.000001)fail("Speed changes require the time-remapping renderer milestone.","UNSUPPORTED_TIME_REMAP");
-   const asset=getAsset(clip.assetId),mediaType=String(asset.mediaType||"");
-   if(mediaType.startsWith("image/"))args.push("-loop","1","-t",duration.toFixed(6),"-i",asset.path);
-   else if(mediaType.startsWith("video/"))args.push("-ss",seconds(clip.sourceRange?.start).toFixed(6),"-t",duration.toFixed(6),"-i",asset.path);
-   else fail("Secondary video tracks require video or still-image assets.","UNSUPPORTED_MEDIA_TYPE");
-   videoOverlayInputs.push({inputIndex,clip,start,duration,asset,trackOrder:index});inputIndex++;
+  for(const [trackOrder,track] of videos.slice(1).entries()){
+   let secondaryCursor=0;
+   for(const clip of ordered([track])){
+    if(signal?.aborted)fail("Timeline render was cancelled.","JOB_CANCELLED");
+    const start=seconds(clip.timelineStart),clipDuration=seconds(clip.duration);
+    if(start+0.000001<secondaryCursor)fail("Secondary video track contains overlapping clips.","TIMELINE_OVERLAP");
+    secondaryCursor=Math.max(secondaryCursor,start+clipDuration);
+    const duration=Math.min(clipDuration,Math.max(0,cursor-start));if(duration<=0)continue;
+    if(Math.abs(Number(clip.speed??1)-1)>0.000001)fail("Speed changes require the time-remapping renderer milestone.","UNSUPPORTED_TIME_REMAP");
+    const asset=getAsset(clip.assetId),mediaType=String(asset.mediaType||"");
+    if(mediaType.startsWith("image/"))args.push("-loop","1","-t",duration.toFixed(6),"-i",asset.path);
+    else if(mediaType.startsWith("video/"))args.push("-ss",seconds(clip.sourceRange?.start).toFixed(6),"-t",duration.toFixed(6),"-i",asset.path);
+    else fail("Secondary video tracks require video or still-image assets.","UNSUPPORTED_MEDIA_TYPE");
+    videoOverlayInputs.push({inputIndex,clip,start,duration,asset,trackOrder});inputIndex++;
+   }
   }
   let audioIndex=0;
   for(const clip of audioClips){
