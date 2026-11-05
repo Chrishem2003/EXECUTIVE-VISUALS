@@ -125,6 +125,27 @@ await mkdir(join(MEDIA_ROOT,"derived"), { recursive:true });
 const now = () => new Date().toISOString();
 const hash = value => createHash("sha256").update(value).digest("hex");
 const stableJson = value => Array.isArray(value) ? "["+value.map(stableJson).join(",")+"]" : value && typeof value==="object" ? "{"+Object.keys(value).sort().map(key=>JSON.stringify(key)+":"+stableJson(value[key])).join(",")+"}" : JSON.stringify(value);
+function timelineVersionHash(timeline,otio=null){return hash(stableJson({timeline,otio:otio??null}));}
+function insertTimelineVersion(db,{timelineId,ownerId,projectId,revision,parentVersionId=null,restoredFromVersionId=null,name,summary="",timeline,otio=null,createdBy}){
+ const id=randomUUID(),timelineJson=json(timeline),otioJson=otio?json(otio):null,contentHash=timelineVersionHash(timeline,otio);
+ db.prepare("INSERT INTO timeline_versions(id,timeline_id,owner_id,project_id,revision,parent_version_id,restored_from_version_id,name,summary,content_hash,timeline_json,otio_json,created_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)")
+  .run(id,timelineId,ownerId,projectId,revision,parentVersionId,restoredFromVersionId,name,String(summary||"").slice(0,500),contentHash,timelineJson,otioJson,createdBy);
+ return{id,timelineId,ownerId,projectId,revision,parentVersionId,restoredFromVersionId,name,summary:String(summary||"").slice(0,500),contentHash,createdBy};
+}
+function ensureTimelineBaseline(db,record){
+ const existing=db.prepare("SELECT id FROM timeline_versions WHERE timeline_id=? AND revision=?").get(record.id,record.revision);
+ if(existing)return existing.id;
+ return insertTimelineVersion(db,{
+  timelineId:record.id,ownerId:record.owner_id,projectId:record.project_id,revision:record.revision,
+  name:record.name,summary:"Baseline captured before version history was enabled.",
+  timeline:parseJson(record.timeline_json),otio:record.otio_json?parseJson(record.otio_json):null,createdBy:record.owner_id
+ }).id;
+}
+function mapTimelineVersion(row,includeSnapshot=false){
+ const version={id:row.id,timelineId:row.timeline_id,ownerId:row.owner_id,projectId:row.project_id,revision:row.revision,parentVersionId:row.parent_version_id,restoredFromVersionId:row.restored_from_version_id,name:row.name,summary:row.summary,contentHash:row.content_hash,createdBy:row.created_by,createdAt:row.created_at};
+ if(includeSnapshot){version.document=parseJson(row.timeline_json);version.otio=row.otio_json?parseJson(row.otio_json):null;if(version.contentHash&&timelineVersionHash(version.document,version.otio)!==version.contentHash)throw Object.assign(new Error("Timeline version snapshot failed its integrity check."),{code:"TIMELINE_VERSION_CORRUPT"});}
+ return version;
+}
 const safeName = value => basename(String(value || "upload")).replace(/[\u0000-\u001f\u007f]/g,"").replace(/[^\p{L}\p{N}._() -]/gu,"_").slice(0,180) || "upload";
 const SECURITY_HEADERS = {
   "x-content-type-options":"nosniff",
