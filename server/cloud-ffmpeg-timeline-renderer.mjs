@@ -59,6 +59,8 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
  if(tracks.some(track=>(track.kind!=="video"&&track.kind!=="audio")&&(track.clips||[]).some(clip=>clip.transitionToNext!==undefined)))fail("Transitions are supported only on video and audio tracks.","INVALID_TIMELINE_TRANSITION");
  if(audios.some(track=>(track.clips||[]).some(clip=>clip.transitionToNext!==undefined&&clip.transitionToNext.type!=="crossfade")))fail("Audio tracks support crossfade transitions only.","INVALID_TIMELINE_TRANSITION");
  if(videos.length<1||unsupported.length)fail("The master renderer requires at least one video track and supported audio, overlay and caption tracks.","UNSUPPORTED_TIMELINE_FEATURE");
+ const mediaTracks=[...videos,...audios];
+ if(mediaTracks.some(track=>(track.clips||[]).some(clip=>clip.speedCurve!==undefined)))fail("Variable-speed curves are modeled and editable but are not yet supported by the cloud FFmpeg renderer; export was stopped to prevent audio/video timing drift.","UNSUPPORTED_SPEED_CURVE");
  const clips=ordered([videos[0]]),audioClips=audios.flatMap(track=>ordered([track])),overlayClips=overlays.flatMap(track=>ordered([track])),captionClips=captions.flatMap(track=>ordered([track]));
  const fpsNum=Math.max(1,Math.min(120,Math.floor(Number(timeline.frameRate?.numerator)||24)));
  const fpsDen=Math.max(1,Math.min(1001,Math.floor(Number(timeline.frameRate?.denominator)||1)));
