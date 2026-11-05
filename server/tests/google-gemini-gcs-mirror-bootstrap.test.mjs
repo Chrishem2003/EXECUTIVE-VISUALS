@@ -199,7 +199,7 @@ test("GCS bootstrap accepts an attached Compute workload identity by class ident
 test("GCS bootstrap rejects a lookalike client even when its constructor name is approved", async () => {
   class Compute {}
   class IdentityPoolClient {}
-  const Lookalike = { [Symbol.hasInstance]: () => false };
+  class Lookalike { static [Symbol.hasInstance]() { return false; } }
   class FakeGoogleAuth {
     async getClient() {
       return { constructor: { name: "IdentityPoolClient" }, async getAccessToken() { return { token: "x".repeat(40) }; } };
