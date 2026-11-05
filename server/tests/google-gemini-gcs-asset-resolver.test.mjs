@@ -5,7 +5,7 @@ import { createGoogleGeminiGcsAssetResolver } from "../google-gemini-gcs-asset-r
 const ownerId = "11111111-1111-4111-8111-111111111111";
 const projectId = "22222222-2222-4222-8222-222222222222";
 const assetId = "33333333-3333-4333-8333-333333333333";
-const objectName = "private/project/final cut.mp4";
+const objectName = "private/project/final-cut.mp4";
 const sha256 = "a".repeat(64);
 const source = {
   assetId, ownerId, projectId, bucket: "private-media-bucket", objectName,
