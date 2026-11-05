@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { isIP } from "node:net";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -19,7 +20,8 @@ export function readCloudWorkerConfig(env=process.env){
   if(env.CLOUD_VIDEO_WORKER_STAGING_ACCEPTED!=="true")throw new Error("Cloud video worker requires explicit isolated-staging acceptance before activation.");
   if(env.RUNWAY_VIDEO_ENABLED!=="true"||env.RUNWAY_VIDEO_ALLOW_REMOTE!=="true"||!env.RUNWAY_API_KEY)throw new Error("Cloud video requires explicit Runway remote-execution opt-in and a server-side API key.");
   const hosts=String(env.RUNWAY_VIDEO_OUTPUT_HOSTS||"").split(",").map(host=>host.trim()).filter(Boolean);
-  if(hosts.length<1||hosts.length>100||hosts.some(host=>! /^[a-z0-9.-]{1,253}$/i.test(host)||host.startsWith(".")||host.endsWith(".")))throw new Error("Cloud video requires an explicit exact-host RUNWAY_VIDEO_OUTPUT_HOSTS allowlist.");
+  const validHost=host=>host.length<=253&&host.includes(".")&&!isIP(host)&&host.split(".").every(label=>label.length<=63&&/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/i.test(label));
+  if(hosts.length<1||hosts.length>100||hosts.some(host=>!validHost(host)))throw new Error("Cloud video requires an explicit exact-host RUNWAY_VIDEO_OUTPUT_HOSTS allowlist.");
  }
  if(!env.SUPABASE_URL||!env.SUPABASE_SERVICE_ROLE_KEY)throw new Error("Cloud workers require server-side Supabase credentials.");
  const leaseSeconds=integer(env.CLOUD_WORKER_LEASE_SECONDS,90,30,900,"Cloud worker lease duration");
