@@ -228,6 +228,29 @@ test("cloud FFmpeg renderer applies frame-accurate audio crossfades on audio tra
  }finally{await rm(root,{recursive:true,force:true});}
 });
 
+test("cloud FFmpeg renderer retimes video and audio sources at the requested constant speed", {skip:!hasFfmpeg||!hasFfprobe}, async()=>{
+ const root=await mkdtemp(join(tmpdir(),"ev-cloud-time-remap-test-"));
+ try{
+  const video=join(root,"picture.mp4"),audio=join(root,"music.wav");
+  execFileSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-loglevel","error","-y","-f","lavfi","-i","testsrc2=s=320x240:r=24:d=2","-c:v","libx264","-pix_fmt","yuv420p",video]);
+  execFileSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-loglevel","error","-y","-f","lavfi","-i","sine=frequency=440:duration=2","-c:a","pcm_s16le",audio]);
+  const timeline={name:"Constant speed test",width:320,height:240,frameRate:{numerator:24,denominator:1},tracks:[
+   {id:"v",kind:"video",clips:[{id:"v1",assetId:"picture",timelineStart:time(0),duration:time(1),sourceRange:{start:time(0),duration:time(2)},speed:2}]},
+   {id:"a",kind:"audio",clips:[{id:"a1",assetId:"music",timelineStart:time(0),duration:time(1),sourceRange:{start:time(0),duration:time(2)},speed:2}]}
+  ]};
+  const assets=new Map([
+   ["picture",{path:video,asset:{id:"picture",mediaType:"video/mp4",originalName:"picture.mp4"}}],
+   ["music",{path:audio,asset:{id:"music",mediaType:"audio/wav",originalName:"music.wav"}}]
+  ]);
+  const result=await renderCloudTimeline({timeline,assets,workDir:root,onProgress(){}});
+  const probe=JSON.parse(execFileSync(process.env.FFPROBE_PATH||"ffprobe",["-v","error","-show_entries","format=duration:stream=codec_type","-of","json",result.path],{encoding:"utf8"}));
+  const duration=Number(probe.format.duration);
+  assert.ok(duration>=0.95&&duration<=1.1,"the two-second source should render to one second at 2×");
+  assert.ok(probe.streams.some(stream=>stream.codec_type==="video"));
+  assert.ok(probe.streams.some(stream=>stream.codec_type==="audio"));
+ }finally{await rm(root,{recursive:true,force:true});}
+});
+
 test("cloud FFmpeg renderer rejects audio crossfades with mismatched overlap",async()=>{
  const timeline={tracks:[
   {kind:"video",clips:[{assetId:"v",timelineStart:time(0),duration:time(2),sourceRange:{start:time(0),duration:time(2)}}]},
