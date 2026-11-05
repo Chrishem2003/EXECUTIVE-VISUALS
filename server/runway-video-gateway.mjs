@@ -74,6 +74,9 @@ export function createRunwayVideoAdapter({env=process.env,fetchImpl=globalThis.f
    let response;
    try{response=await fetchImpl(API_BASE+path,{method,headers:{authorization:"Bearer "+key,"X-Runway-Version":API_VERSION,...(body?{"content-type":"application/json"}:{})},...(body?{body:JSON.stringify(body)}:{}),signal:controller.signal,redirect:"error"});}
    catch(error){throw fail(error?.name==="AbortError"?"Runway request timed out.":"Runway API could not be reached.",error?.name==="AbortError"?"RUNWAY_TIMEOUT":"RUNWAY_UNAVAILABLE");}
+   // Runway documents DELETE 404 as idempotent when a task was already aborted/deleted.
+   // This is especially relevant after the status preflight races with provider state changes.
+   if(response.status===404&&method==="DELETE")return null;
    if(response.status===429)throw fail("Runway rate limit reached.","RUNWAY_RATE_LIMITED");
    if(response.status>=500)throw fail("Runway returned a temporary server error.","RUNWAY_SERVER_ERROR");
    if(!response.ok)throw fail("Runway rejected the request ("+response.status+").","RUNWAY_REQUEST_REJECTED");
