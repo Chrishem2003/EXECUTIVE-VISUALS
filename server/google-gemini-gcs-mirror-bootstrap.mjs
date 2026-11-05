@@ -104,16 +104,20 @@ export async function createGoogleGeminiGcsMirrorBootstrap({
   }
 
   const clients = new Map();
-  async function getAccessToken({ projectId: requestedProjectId = projectId, scopes = [CLOUD_PLATFORM_SCOPE] } = {}) {
-    if (requestedProjectId !== projectId) {
-      throw fail("GCS token request project does not match the configured project.", "GEMINI_GCS_PROJECT_MISMATCH");
-    }
+  function normalizeScopes(scopes) {
     const normalizedScopes = [...new Set((Array.isArray(scopes) ? scopes : [scopes])
       .map(value => String(value || "").trim()).filter(Boolean))].sort();
     if (!normalizedScopes.length || normalizedScopes.length > 10 ||
         normalizedScopes.some(scope => scope.length > 256 || !/^https:\/\//.test(scope))) {
       throw fail("GCS token scopes are invalid.", "GEMINI_GCS_SCOPE_INVALID");
     }
+    return normalizedScopes;
+  }
+  async function getCredentialClient({ projectId: requestedProjectId = projectId, scopes = [CLOUD_PLATFORM_SCOPE] } = {}) {
+    if (requestedProjectId !== projectId) {
+      throw fail("GCS token request project does not match the configured project.", "GEMINI_GCS_PROJECT_MISMATCH");
+    }
+    const normalizedScopes = normalizeScopes(scopes);
     const cacheKey = normalizedScopes.join(" ");
     let client = clients.get(cacheKey);
     if (!client) {
@@ -124,6 +128,10 @@ export async function createGoogleGeminiGcsMirrorBootstrap({
       }
       clients.set(cacheKey, client);
     }
+    return client;
+  }
+  async function getAccessToken(options = {}) {
+    const client = await getCredentialClient(options);
     let response;
     try {
       response = await client.getAccessToken();
@@ -131,7 +139,7 @@ export async function createGoogleGeminiGcsMirrorBootstrap({
       throw fail("Google ADC could not obtain a workload access token.", "GEMINI_GCS_ADC_TOKEN_FAILED");
     }
     const token = typeof response === "string" ? response : response?.token;
-    if (typeof token !== "string" || token.length < 20 || token.length > 8192 || /\s/.test(token)) {
+    if (typeof token !== "string" || token.length < 20 || token.length > 8192 || /\\s/.test(token)) {
       throw fail("Google ADC returned an invalid access token.", "GEMINI_GCS_ADC_TOKEN_INVALID");
     }
     return token;
@@ -152,8 +160,7 @@ export async function createGoogleGeminiGcsMirrorBootstrap({
     getAccessToken,
     createService,
     async checkIdentity() {
-      await getAccessToken({ projectId, scopes: [CLOUD_PLATFORM_SCOPE] });
-      const client = clients.get(CLOUD_PLATFORM_SCOPE);
+      const client = await getCredentialClient({ projectId, scopes: [CLOUD_PLATFORM_SCOPE] });
       const isAttachedWorkloadIdentity = client instanceof credentialClientClasses.Compute;
       const isFileBasedWifIdentity = client instanceof credentialClientClasses.IdentityPoolClient;
       if (!isAttachedWorkloadIdentity && !isFileBasedWifIdentity) {
@@ -162,6 +169,7 @@ export async function createGoogleGeminiGcsMirrorBootstrap({
           "GEMINI_GCS_ADC_IDENTITY_TYPE_REJECTED"
         );
       }
+      await getAccessToken({ projectId, scopes: [CLOUD_PLATFORM_SCOPE] });
       const credentialClientType = isAttachedWorkloadIdentity ? "Compute" : "IdentityPoolClient";
       return Object.freeze({
         ready: true,
