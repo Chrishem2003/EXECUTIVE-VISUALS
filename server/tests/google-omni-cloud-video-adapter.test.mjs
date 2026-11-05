@@ -26,12 +26,16 @@ function raw(status = "in_progress") {
     }] : []
   };
 }
-function harness({ providerStatus = "completed", failRecord = false, stored = true } = {}) {
+function harness({ providerStatus = "completed", failRecord = false, stored = true, interruptAfterCreate = false } = {}) {
   const calls = [];
   const records = new Map();
   const client = {
-    async createInteraction(value, context) {
+    async createInteraction(value, context, options = {}) {
       calls.push(["create", value, context]);
+      if (interruptAfterCreate) {
+        await options.onInteractionCreated({ interactionId, status: "running", model: "gemini-omni-1.1-flash" });
+        throw Object.assign(new Error("stream interrupted"), { code: "GEMINI_OMNI_SUBMISSION_OUTCOME_UNKNOWN" });
+      }
       return { interactionId, taskId: interactionId, provider: "google", model: "gemini-omni-1.1-flash", status: "running", outputUrls: ["https://generativelanguage.googleapis.com/v1beta/files/generated123"] };
     },
     async getInteractionForIngestion(id, context) {
@@ -136,6 +140,18 @@ test("quarantines submission if interaction ownership cannot be persisted", asyn
   await assert.rejects(() => h.adapter.submit(prepared, { job }));
   assert.equal(h.calls.filter(call => call[0] === "create").length, 1);
   assert.equal(h.calls.some(call => call[0] === "record"), true);
+});
+
+
+test("persists the interaction ID before an interrupted SSE submission is reconciled", async () => {
+  const h = harness({ interruptAfterCreate: true });
+  const prepared = await h.adapter.prepareInput(job.input, { job });
+  await assert.rejects(() => h.adapter.submit(prepared, { job }), error =>
+    error.code === "GEMINI_OMNI_SUBMISSION_OUTCOME_UNKNOWN");
+  assert.equal(h.records.get(interactionId).state, "running");
+  assert.equal(h.records.get(interactionId).outputUri, null);
+  assert.equal(h.calls.filter(call => call[0] === "create").length, 1);
+  assert.equal(h.calls.filter(call => call[0] === "record").length, 1);
 });
 
 test("rejects polling without a matching durable job record before contacting Google", async () => {
