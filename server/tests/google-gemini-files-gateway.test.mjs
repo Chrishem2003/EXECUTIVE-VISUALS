@@ -160,9 +160,6 @@ test("rejects unsafe resumable upload URLs and never follows redirects", async (
 
 test("reports temporary materialization cleanup failures without exposing details or corrupting a successful upload", async () => {
   const cleanupEvents = [];
-  const h = harness({
-    loader: async () => ({ ...privateAsset(), cleanup: async () => { throw new Error("sensitive local path /tmp/private.mp4"); } })
-  });
   // The gateway's cleanup observer is injected separately from provider operations.
   const gateway = createGoogleGeminiFilesGateway({
     env, fetchImpl: async (url, options = {}) => {
