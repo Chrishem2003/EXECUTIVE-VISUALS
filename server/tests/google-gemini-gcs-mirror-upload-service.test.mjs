@@ -54,3 +54,41 @@ test("GCS mirror upload rejects malformed scopes and incomplete receipts",async(
  await assert.rejects(service.mirror({ownerId:"not-a-user",assetId}),/Authenticated owner/);
  await assert.rejects(service.mirror({ownerId,assetId}),/verified generation receipt/);
 });
+
+test("Gemini GCS registration mirrors first, enforces editor access and returns provider receipt",async()=>{
+ const calls=[],audits=[];
+ const service=createGoogleGeminiGcsMirrorUploadService({
+  mirrorService:{async mirrorAsset(args){calls.push(["mirror",args]);return{generation:"1740000000000000",reused:false};}},
+  geminiFiles:{async registerAsset(args){calls.push(["register",args]);return{uri:"https://generativelanguage.googleapis.com/v1beta/files/file_123",providerFileName:"files/file_123",expiresAt:"2026-11-20T00:00:00.000Z",reused:false};}},
+  getProjectAccess:()=>({access_role:"editor"}),canWriteProject:()=>true,audit:async(...args)=>audits.push(args)
+ });
+ const result=await service.registerWithGemini({ownerId,assetId,projectId,mediaType:"video/mp4"});
+ assert.equal(calls.length,2);
+ assert.equal(calls[0][0],"mirror");
+ assert.equal(calls[1][0],"register");
+ assert.equal(result.status,"registered");
+ assert.equal(result.providerFileName,"files/file_123");
+ assert.equal(audits[0][1],"integration.google_gcs.gemini_file_registered");
+});
+
+test("Gemini GCS registration cannot bypass project authorization or use caller GCS URIs",async()=>{
+ const calls=[];
+ const service=createGoogleGeminiGcsMirrorUploadService({
+  mirrorService:{async mirrorAsset(args){calls.push(args);return{generation:"1740000000000000"};}},
+  geminiFiles:{async registerAsset(){throw new Error("must not register");}},
+  getProjectAccess:()=>({access_role:"viewer"}),canWriteProject:()=>false,audit:async()=>{}
+ });
+ await assert.rejects(service.registerWithGemini({ownerId,assetId,projectId,mediaType:"video/mp4"}),/Owner or editor access/);
+ await assert.rejects(service.registerWithGemini({ownerId,assetId,projectId,mediaType:"text/plain",gcsUri:"gs://attacker-bucket/object"}),/Owner or editor access/);
+ assert.equal(calls.length,0);
+});
+
+test("Gemini GCS registration rejects unsupported media and malformed provider receipts",async()=>{
+ const service=createGoogleGeminiGcsMirrorUploadService({
+  mirrorService:{async mirrorAsset(){return{generation:"1740000000000000"};}},
+  geminiFiles:{async registerAsset(){return{uri:"not-a-google-uri",providerFileName:"files/file_123",expiresAt:"bad-date"};}},
+  getProjectAccess:()=>({access_role:"owner"}),canWriteProject:()=>true,audit:async()=>{}
+ });
+ await assert.rejects(service.registerWithGemini({ownerId,assetId,mediaType:"application/x-executable"}),/supported media type/);
+ await assert.rejects(service.registerWithGemini({ownerId,assetId,mediaType:"video/mp4"}),/valid active provider-file receipt/);
+});
