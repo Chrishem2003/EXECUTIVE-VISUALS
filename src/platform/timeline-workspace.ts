@@ -16,6 +16,7 @@ import { validatePrivateMediaUrl } from "../core/private-media-url";
 import { generatedVideoAlreadyOnTimeline, generatedVideoDurationSeconds, selectLatestGeneratedVideoAsset } from "../core/generated-video-import";
 import { resolveCloudTimelineRefresh } from "../core/timeline-conflict";
 import { TimelineRecoveryStore, assessTimelineRecovery, checksumTimeline, requestPersistentBrowserStorage, timelineRecoveryKey, type TimelineRecoveryDraft } from "../core/timeline-recovery";
+import { retryWithBackoff } from "../core/retry";
 
 type Asset={id:string;name:string;mediaType:string;size:number;projectId?:string|null;createdAt?:string;metadata?:Record<string,unknown>};
 type SavedTimeline={id:string;projectId?:string|null;name:string;revision:number;document?:EditorialTimeline};
@@ -444,13 +445,29 @@ async function refresh(){
  if(!state.timeline?.tracks.some(track=>track.clips.some(clip=>clip.id===state.selectedClipId)))state.selectedClipId="";
  state.status="ready";state.message="";await loadVariantComparison();
 }
+function isRetryableTimelineSaveError(error:unknown):boolean{
+ if(error instanceof ApiError)return error.status===408||error.status===425||error.status===429||error.status>=500;
+ return error instanceof TypeError;
+}
+async function saveTimelineRequest<T>(path:string,init:RequestInit):Promise<T>{
+ try{
+  return await retryWithBackoff(()=>apiRequest<T>(path,init),{
+   attempts:3,baseDelayMs:500,maxDelayMs:2500,shouldRetry:isRetryableTimelineSaveError,
+   onRetry:(failedAttempt,delayMs)=>{state.message="Temporary save failure. Retrying in "+delayMs+" ms ("+(failedAttempt+1)+"/3). Your local recovery draft is protected.";}
+  });
+ }catch(error){
+  if(error instanceof ApiError&&error.status===409)throw error;
+  state.message="The server save did not complete. Your IndexedDB recovery draft is retained; retry when the connection is restored.";
+  throw error;
+ }
+}
 async function persist(){
  if(!state.timeline)return;
  const recoveryDraft=await saveRecoveryDraft("timeline-edit");
  const otio=toOpenTimelineIo(state.timeline);
  if(state.mode==="cloud"){
   try{
-   const result=await apiRequest<{timeline:CloudSavedTimeline}>("/api/cloud/timelines/"+state.timeline.id,{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({expectedRevision:state.serverRevision,timeline:state.timeline,otio})});
+   const result=await saveTimelineRequest<{timeline:CloudSavedTimeline}>("/api/cloud/timelines/"+state.timeline.id,{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({expectedRevision:state.serverRevision,timeline:state.timeline,otio})});
    state.serverRevision=result.timeline.revision;state.timeline={...state.timeline,revision:result.timeline.revision};state.cloudRevisionConflict=false;state.status="ready";state.message="Saved cloud revision "+result.timeline.revision+".";await completeRecoveryCheckpoint(recoveryDraft,result.timeline.revision);return;
   }catch(error){
    if(error instanceof ApiError&&error.status===409&&error.code==="REVISION_CONFLICT"){
@@ -460,7 +477,7 @@ async function persist(){
    throw error;
   }
  }
- const result=await apiRequest<{revision:number}>("/api/timelines/"+state.timeline.id,{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({revision:state.serverRevision,name:state.timeline.name,timeline:state.timeline,otio})});
+ const result=await saveTimelineRequest<{revision:number}>("/api/timelines/"+state.timeline.id,{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({revision:state.serverRevision,name:state.timeline.name,timeline:state.timeline,otio})});
  state.serverRevision=result.revision;state.timeline={...state.timeline,revision:result.revision};state.status="ready";state.message="Saved revision "+result.revision+".";await completeRecoveryCheckpoint(recoveryDraft,result.revision);
 }
 async function createCloudTimeline(){
