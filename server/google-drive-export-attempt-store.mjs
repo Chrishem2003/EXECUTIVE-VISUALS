@@ -139,14 +139,14 @@ export function createGoogleDriveExportAttemptStore({
     async mark({attemptKey,ownerId,state,webViewLink=null,errorCode=null,leaseToken=null}){
       ownerId=owner(ownerId);
       if(typeof attemptKey!=="string"||!/^[a-f0-9]{64}$/.test(attemptKey)||
-        (leaseToken!==null&&(typeof leaseToken!=="string"||!UUID.test(leaseToken))))throw fail("Drive export attempt lease is invalid.","GOOGLE_DRIVE_EXPORT_ATTEMPT_INVALID");
+        typeof leaseToken!=="string"||!UUID.test(leaseToken))throw fail("Drive export attempt lease is invalid.","GOOGLE_DRIVE_EXPORT_ATTEMPT_INVALID");
       if(webViewLink!==null){let link;try{link=new URL(webViewLink);}catch{throw fail("Drive file link is invalid.","GOOGLE_DRIVE_EXPORT_LINK_INVALID");}
         if(link.protocol!=="https:"||link.origin!=="https://drive.google.com")throw fail("Drive file link is outside the approved origin.","GOOGLE_DRIVE_EXPORT_LINK_INVALID");}
       if(!["OUTCOME_UNKNOWN","COMPLETED","RECONCILIATION_REQUIRED","FAILED"].includes(state))throw fail("Drive export state transition is invalid.","GOOGLE_DRIVE_EXPORT_STATE_INVALID");
       const patch={state,last_error_code:errorCode,lease_token:null,lease_expires_at:null,updated_at:new Date().toISOString()};
       if(state==="COMPLETED"){patch.drive_web_view_link=webViewLink;patch.completed_at=new Date().toISOString();patch.encrypted_session_uri=null;}
-      const leaseFilter=leaseToken?"&lease_token=eq."+leaseToken:"";
-      const rows=await request("attempt_key=eq."+attemptKey+"&owner_id=eq."+encodeURIComponent(ownerId)+leaseFilter+"&select=*",{
+      const rows=await request("attempt_key=eq."+attemptKey+"&owner_id=eq."+encodeURIComponent(ownerId)+
+        "&lease_token=eq."+leaseToken+"&select=*",{
         method:"PATCH",prefer:"return=representation",body:patch});
       if(rows.length!==1)throw fail("Drive export state could not be persisted under the active lease.","GOOGLE_DRIVE_EXPORT_STORE_FAILED");
       return map(rows[0]);
