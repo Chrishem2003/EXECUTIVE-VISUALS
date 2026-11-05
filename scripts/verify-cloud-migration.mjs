@@ -5,6 +5,8 @@ const sql = await readFile(resolve(process.cwd(), "supabase/migrations/202610312
 const checkpointSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261102090000_video_pipeline_checkpoints.sql"), "utf8");
 const videoSubmissionSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261104120000_cloud_video_submission_ledger.sql"), "utf8");
 const videoBudgetSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261104143000_cloud_video_budget_enqueue.sql"), "utf8");
+const googleFileAttemptSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261105120000_google_provider_file_upload_attempts.sql"), "utf8");
+const googleFileRecoveryLeaseSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261105190000_google_provider_file_recovery_leases.sql"), "utf8");
 const issues = [];
 const tables = ["projects","project_members","project_workspace_documents","workflows","workflow_runs","workflow_node_runs","timelines","assets","jobs","job_events","consents","reviews","audit_events"];
 for (const table of tables) {
@@ -100,6 +102,23 @@ if (!sql.includes("lease_expires_at timestamptz") || !sql.includes("available_at
   issues.push("Durable worker lease and delayed retry fields are missing from the cloud job contract.");
 }
 if (/\\b(drop\\s+table|truncate|delete\\s+from)\\b/i.test(videoSubmissionSql)) issues.push("Cloud video submission migration must not contain destructive DDL/DML.");
+
+if (/\\b(drop\\s+table|truncate|delete\\s+from)\\b/i.test(googleFileAttemptSql + googleFileRecoveryLeaseSql)) {
+  issues.push("Gemini provider-file recovery migrations must not contain destructive DDL/DML.");
+}
+for (const fragment of [
+  "add column if not exists lease_token uuid",
+  "add column if not exists lease_expires_at timestamptz",
+  "google_provider_file_upload_attempts_lease_pair_check",
+  "google_provider_file_upload_attempts_recovery_lease_idx",
+  "revoke all on table executive_visuals.google_provider_file_upload_attempts from public, anon, authenticated"
+]) {
+  if (!googleFileRecoveryLeaseSql.includes(fragment)) issues.push("Gemini recovery lease migration is missing: " + fragment);
+}
+if (!googleFileAttemptSql.includes("create table if not exists executive_visuals.google_provider_file_upload_attempts") ||
+    !googleFileAttemptSql.includes("alter table executive_visuals.google_provider_file_upload_attempts force row level security;")) {
+  issues.push("Gemini provider-file upload-attempt ledger must remain durable and forced-RLS.");
+}
 if (!videoSubmissionSql.includes("create table if not exists executive_visuals.video_generation_submissions")) issues.push("Cloud video submission ledger table is missing.");
 if (!videoSubmissionSql.includes("alter table executive_visuals.video_generation_submissions enable row level security;")) issues.push("Cloud video submission ledger must enable RLS.");
 if (!videoSubmissionSql.includes("revoke all on executive_visuals.video_generation_submissions from public, anon, authenticated;")) issues.push("Cloud video submission ledger must be unavailable to untrusted roles.");
