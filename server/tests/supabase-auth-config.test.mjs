@@ -64,6 +64,7 @@ test("Supabase public auth config is exposed safely and allowed by the HTML CSP"
     assert.ok(healthResponse?.ok, "API did not become healthy: " + stderr);
     const health = await healthResponse.json();
     assert.equal(health.authMode, "supabase");
+    assert.equal(health.cloudAssets, false, "cloud asset UI stays disabled unless the cloud API is explicitly enabled");
     assert.deepEqual(health.supabase, {
       url: "https://auth-test.supabase.co",
       publishableKey: "sb_publishable_test_key"
