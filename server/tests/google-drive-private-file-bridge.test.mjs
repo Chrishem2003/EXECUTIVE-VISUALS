@@ -25,7 +25,8 @@ function response({ status = 200, json = null, data = bytes, headers = {} } = {}
   };
 }
 function harness({ metadata = sourceFile, download = bytes, load = null, denied = false, cleanup = async () => {}, uploadError = false, uploadLocation = "https://www.googleapis.com/upload/drive/v3/files?upload_id=private-session", folder = { id: "driveFolder_123456789", mimeType: "application/vnd.google-apps.folder", trashed: false, capabilities: { canAddChildren: true } }, uploadChecksum = createHash("md5").update(bytes).digest("hex"), uploadSteps = [] } = {}) {
-  const calls = [], scopes = [];\n  let uploadStepIndex = 0;
+  const calls = [], scopes = [];
+  let uploadStepIndex = 0;
   const assets = { async create(args) {
     calls.push({ kind: "asset-create", args });
     return { id: assetId, ownerId, projectId, name: args.originalName, mediaType: args.mediaType,
