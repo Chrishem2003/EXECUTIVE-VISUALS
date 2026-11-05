@@ -136,10 +136,8 @@ function activePreviewAtPlayhead(){
  if(!state.timeline)return [];
  const frame=Math.min(timelineEndFrame(),Math.max(0,Math.floor(state.playheadFrame)));
  const evaluated=evaluateTimelineAtFrame(state.timeline,frame);
- const videoTracks=state.timeline.tracks.filter(track=>track.enabled&&track.kind==="video"&&track.clips.some(clip=>clip.enabled));
- state.previewError=videoTracks.length>1?"The master renderer currently supports one primary video track; additional video tracks are not included in this preview.":"";
- const primaryTrackId=videoTracks[0]?.id;
- return evaluated.activeClips.filter(clip=>clip.trackKind==="audio"||clip.trackKind==="overlay"||(clip.trackKind==="video"&&clip.trackId===primaryTrackId));
+ state.previewError="";
+ return evaluated.activeClips;
 }
 function renderPreviewLayers(clips:ReturnType<typeof activePreviewAtPlayhead>){
  return clips.map(clip=>{
@@ -154,7 +152,7 @@ function renderPreviewLayers(clips:ReturnType<typeof activePreviewAtPlayhead>){
   const overlayX=Math.max(0,Math.min(timelineWidth-overlayWidth,Number.isFinite(Number(metadata.x))?Number(metadata.x):timelineWidth-overlayWidth-24));
   const overlayY=Math.max(0,Math.min(timelineHeight-overlayHeight,Number.isFinite(Number(metadata.y))?Number(metadata.y):24));
   const opacity=Math.max(0,Math.min(1,isOverlay?Number(metadata.opacity??1):Number(clip.opacity??1)));
-  const z=isOverlay?100+clip.trackIndex:1;
+  const z=isOverlay?100+clip.trackIndex:1+clip.trackIndex;
   const position=isOverlay?";left:"+overlayX/timelineWidth*100+"%;top:"+overlayY/timelineHeight*100+"%;width:"+overlayWidth/timelineWidth*100+"%;height:"+overlayHeight/timelineHeight*100+"%;opacity:"+opacity:";opacity:"+opacity;
   if(source.mediaType.startsWith("audio/"))return '<audio data-preview-audio="'+esc(clip.clipId)+'" crossorigin="anonymous" preload="metadata" src="'+esc(source.url)+'"></audio>';
   if(source.mediaType.startsWith("video/"))return '<video class="timeline-preview-layer" data-preview-video="'+esc(clip.clipId)+'" data-track-index="'+clip.trackIndex+'" style="z-index:'+z+position+'" muted playsinline preload="metadata" src="'+esc(source.url)+'"></video>';
