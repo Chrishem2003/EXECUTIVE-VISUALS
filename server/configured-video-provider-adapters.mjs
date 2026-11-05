@@ -34,7 +34,8 @@ export function createConfiguredVideoProviderAdapters({
   resolveRunwayActualCost,
   lumaPrepareInput,
   resolveLumaActualCost,
-  lumaClient
+  lumaClient,
+  googleOmniIntegration
 } = {}) {
   if (!plain(env)) throw fail("Provider configuration environment must be an object.");
   if (typeof fetchImpl !== "function") throw fail("Provider registration requires fetch.");
@@ -133,6 +134,33 @@ export function createConfiguredVideoProviderAdapters({
       },
       async resolveActualCost(args) {
         return settledCostResolver({ ...args, provider: "luma", model });
+      }
+    }));
+  }
+
+  if (env.GOOGLE_OMNI_VIDEO_ENABLED === "true" || env.GOOGLE_OMNI_VIDEO_ALLOW_REMOTE === "true") {
+    if (!globalEnabled || !globalRemote ||
+        env.GOOGLE_OMNI_VIDEO_ENABLED !== "true" || env.GOOGLE_OMNI_VIDEO_ALLOW_REMOTE !== "true") {
+      throw fail("Google Omni requires VIDEO_GATEWAY_ENABLED, VIDEO_GATEWAY_ALLOW_REMOTE, GOOGLE_OMNI_VIDEO_ENABLED and GOOGLE_OMNI_VIDEO_ALLOW_REMOTE to be true.", "GOOGLE_OMNI_VIDEO_REMOTE_DISABLED");
+    }
+    const integration = googleOmniIntegration;
+    if (!plain(integration) || !plain(integration.adapter) ||
+        integration.adapter.provider !== "google" ||
+        integration.adapter.model !== "gemini-omni-1.1-flash" ||
+        typeof integration.adapter.prepareInput !== "function" ||
+        typeof integration.adapter.submit !== "function" ||
+        typeof integration.adapter.getStatus !== "function" ||
+        typeof integration.ingestOutputs !== "function" ||
+        typeof integration.resolveActualCost !== "function") {
+      throw fail("Google Omni registration requires the authorized Interactions integration, private output ingestor and actual-cost resolver.", "GOOGLE_OMNI_INTEGRATION_REQUIRED");
+    }
+    adapters.push(Object.freeze({
+      ...integration.adapter,
+      async ingestOutputs(args) {
+        return integration.ingestOutputs(args);
+      },
+      async resolveActualCost(args) {
+        return integration.resolveActualCost(args);
       }
     }));
   }
