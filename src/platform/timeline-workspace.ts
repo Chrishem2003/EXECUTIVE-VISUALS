@@ -282,6 +282,8 @@ function previewMonitor(){
  return '<section class="panel timeline-preview-panel"><div class="timeline-panel-heading"><div><div class="eyebrow">MULTI-TRACK COMPOSITE PREVIEW</div><h3>Preview monitor</h3></div><span class="job-status '+(active.length?"completed":"running")+'">'+(active.length?active.length+" ACTIVE LAYERS":"NO ACTIVE LAYERS")+'</span></div><div class="timeline-preview-stage" style="aspect-ratio: '+(state.timeline.width||1920)+' / '+(state.timeline.height||1080)+' "><div id="tl-preview-layers">'+renderPreviewLayers(active)+'</div></div><div class="timeline-preview-controls"><label for="tl-playhead">Playhead frame</label><input id="tl-playhead" type="range" min="0" max="'+timelineEndFrame()+'" step="1" value="'+Math.min(timelineEndFrame(),Math.max(0,state.playheadFrame))+'"><strong id="tl-playhead-label">Frame '+state.playheadFrame+' · '+(state.playheadFrame/fps()).toFixed(3)+'s</strong></div><div class="timeline-preview-actions"><button class="secondary" type="button" data-tl-preview-toggle '+(videoCount||audioCount?"":"disabled")+'>'+(state.previewPlaying?"Pause preview":"Play preview")+'</button><label class="audio-master-control">Master <input type="range" min="0" max="100" step="1" value="'+Math.round(state.audioMasterVolume*100)+'" data-audio-master-volume></label><button class="secondary" type="button" data-audio-master-mute>'+(state.audioMasterMuted?"Unmute master":"Mute master")+'</button><span class="muted">'+active.filter(clip=>clip.trackKind!=="audio").length+' visual layer(s) · '+videoCount+' video · '+audioCount+' audio</span></div><p id="tl-preview-active" class="muted">'+(active.map(clip=>esc(clip.clipName)+" · "+esc(clip.trackName)+" · "+clip.sourceTimeSeconds.toFixed(3)+"s").join(" | ")||"No active video or overlay clips at this frame.")+(state.previewError?" · "+esc(state.previewError):"")+'</p><small class="muted">Visual layers follow timeline order. Audio tracks preview as synchronized source clips with per-clip gain; final mixing and limiting remain in FFmpeg.</small></section>';
 }
 document.addEventListener("click",event=>{
+ const masterMute=(event.target as HTMLElement).closest<HTMLButtonElement>("[data-audio-master-mute]");
+ if(masterMute){state.audioMasterMuted=!state.audioMasterMuted;state.audioEngine?.setMasterMuted(state.audioMasterMuted);masterMute.textContent=state.audioMasterMuted?"Unmute master":"Mute master";return;}
  const button=(event.target as HTMLElement).closest<HTMLButtonElement>("[data-tl-preview-toggle]");
  if(!button)return;
  const videos=[...document.querySelectorAll<HTMLVideoElement>("[data-preview-video]")];
@@ -290,15 +292,25 @@ document.addEventListener("click",event=>{
  state.previewPlaying=!state.previewPlaying;
  button.textContent=state.previewPlaying?"Pause preview":"Play preview";
  if(state.previewPlaying){
-  void Promise.all([...videos.map(video=>video.play().catch(()=>{state.previewPlaying=false;})),...audios.map(audio=>audio.play().catch(()=>{state.previewPlaying=false;}))]).then(()=>{
-   if(!state.previewPlaying){for(const video of videos)video.pause();for(const audio of audios)audio.pause();}
+  void (async()=>{
+   if(audios.length){
+    try{if(!state.audioEngine)state.audioEngine=await AudioPreviewEngine.create();else await state.audioEngine.resume();await syncPreview();}
+    catch(error){state.previewError=error instanceof Error?error.message:"Web Audio is unavailable; native audio preview will be used.";}
+   }
+   const activeAudios=[...document.querySelectorAll<HTMLAudioElement>("[data-preview-audio]")];
+   for(const audio of activeAudios){
+    const clip=state.previewActiveClips.find(item=>item.clipId===audio.dataset.previewAudio);
+    const source=clip&&state.timeline?.tracks.find(track=>track.id===clip.trackId)?.clips.find(item=>item.id===clip.clipId);
+    audio.volume=state.audioEngine?1:decibelsToGain(Number(source?.gainDb)||0);
+   }
+   await Promise.all([...videos.map(video=>video.play().catch(()=>{state.previewPlaying=false;})),...activeAudios.map(audio=>audio.play().catch(()=>{state.previewPlaying=false;}))]);
+   if(!state.previewPlaying){for(const video of videos)video.pause();for(const audio of activeAudios)audio.pause();}
    const current=document.querySelector<HTMLButtonElement>("[data-tl-preview-toggle]");
    if(current)current.textContent=state.previewPlaying?"Pause preview":"Play preview";
-  });
+  })();
  }else{videos.forEach(video=>video.pause());audios.forEach(audio=>audio.pause());}
 });
 
-export function renderTimelineWorkspace(){
  return '<div id="timeline-workspace"><div class="timeline-toolbar"><label>Workspace <select id="tl-mode"><option value="local" '+(state.mode==="local"?"selected":"")+' >Local</option><option value="cloud" '+(state.mode==="cloud"?"selected":"")+' >Cloud project</option></select></label><label>Cloud project <select id="tl-cloud-project"><option value="">Select project</option>'+state.cloudProjects.map(p=>'<option value="'+esc(p.id)+'" '+(p.id===state.cloudProjectId?'selected':'')+'>'+esc(p.name)+'</option>').join("")+'</select></label><label>Saved sequence <select id="tl-saved-sequence"><option value="">Current sequence</option>'+(state.mode==="cloud"?state.cloudTimelines.map(t=>'<option value="'+esc(t.id)+'" '+(state.timeline?.id===t.id?'selected':'')+'>'+esc(t.name)+' · r'+t.revision+'</option>').join(""):state.timelines.map(t=>'<option value="'+esc(t.id)+'" '+(state.timeline?.id===t.id?'selected':'')+'>'+esc(t.name)+' · r'+t.revision+'</option>').join(""))+'</select></label><button class="secondary" data-tl-create-cloud>＋ New cloud timeline</button><button class="secondary" data-tl-action="duplicate-variant">Duplicate as variant</button><span class="runtime-status '+state.status+'"><i></i>'+esc(state.status==="ready"?"TIMELINE SAVED":state.status==="auth"?"SIGN IN REQUIRED":state.status==="offline"?"API OFFLINE":"LOADING")+'</span><button class="secondary" data-tl-action="refresh">↻ Refresh</button><button class="secondary" data-tl-action="export">Export OTIO JSON</button>'+(state.mode==="cloud"&&state.cloudRenderJobId?'<button class="secondary" data-tl-action="cloud-job">Check cloud render · '+esc(state.cloudRenderJobStatus||"queued")+'</button>':'')+''+(state.ffmpeg?'<button class="primary" data-tl-action="render">Render master MP4</button>':'<span class="muted">FFmpeg required for master render</span>')+'</div>'+
  (state.message?'<div class="notice">'+esc(state.message)+'</div>':'')+
  '<div class="timeline-editor-grid"><section class="panel"><div class="eyebrow">SEQUENCE SETTINGS</div><h3>'+(state.timeline?esc(state.timeline.name):"No sequence loaded")+'</h3>'+
@@ -454,6 +466,7 @@ document.addEventListener("submit",event=>{
 });
 document.addEventListener("input",event=>{
  const target=event.target as HTMLInputElement;
+ if(target.hasAttribute("data-audio-master-volume")){state.audioMasterVolume=Math.max(0,Math.min(1,Number(target.value)/100));state.audioEngine?.setMasterVolume(state.audioMasterVolume);}
  if(target.id==="tl-playhead"){state.playheadFrame=Math.max(0,Math.min(timelineEndFrame(),Math.floor(Number(target.value)||0)));const label=document.querySelector<HTMLElement>("#tl-playhead-label");if(label)label.textContent="Frame "+state.playheadFrame+" · "+(state.playheadFrame/fps()).toFixed(3)+"s";void syncPreview();}
 });
 document.addEventListener("change",event=>{
