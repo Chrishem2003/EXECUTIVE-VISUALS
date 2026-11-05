@@ -191,9 +191,15 @@ begin
   where id = p_approval_id
   for update;
   if not found then raise exception 'RUNWAY_APPROVAL_NOT_FOUND'; end if;
-  if not (
-    v_row.owner_id = v_actor
-    or exists (
+  -- Personal jobs may be self-approved. Project jobs require a distinct
+  -- project owner or reviewer, preventing requesters from approving their own
+  -- billable generation inside a shared workspace.
+  if v_row.project_id is null then
+    if v_row.owner_id is distinct from v_actor then
+      raise exception 'RUNWAY_APPROVAL_ACTOR_FORBIDDEN';
+    end if;
+  elsif v_row.owner_id = v_actor or not (
+    exists (
       select 1 from executive_visuals.projects p
       where p.id = v_row.project_id
         and p.owner_id = v_actor
