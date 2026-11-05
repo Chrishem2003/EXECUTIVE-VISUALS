@@ -242,8 +242,7 @@ if (!videoCostEvidenceSql.includes("finish_video_generation_job_with_evidence") 
 }
 if ((videoCostEvidenceSql.match(/security invoker/gi) || []).length !== 3 ||
     (videoCostEvidenceSql.match(/security definer/gi) || []).length !== 1 ||
-    !videoCostEvidenceSql.includes("validate_video_generation_cost_evidence()") ||
-    !videoCostEvidenceSql.includes("security definer\\nset search_path = pg_catalog, executive_visuals") ||
+    !/validate_video_generation_cost_evidence\\(\\)[\\s\\S]*?security definer\\s+set search_path = pg_catalog, executive_visuals/i.test(videoCostEvidenceSql) ||
     !videoCostEvidenceSql.includes("auth.uid()")) {
   issues.push("Only the owner-scoped evidence trigger may use definer rights, with a fixed search path and authenticated reviewer checks; settlement RPCs must remain invoker-rights.");
 }
