@@ -18,6 +18,7 @@ export function readCloudWorkerConfig(env=process.env){
  if(!media&&!timeline&&!video)throw new Error("Enable at least one supported cloud worker family.");
  if(video){
   if(env.CLOUD_VIDEO_WORKER_STAGING_ACCEPTED!=="true")throw new Error("Cloud video worker requires explicit isolated-staging acceptance before activation.");
+  if(env.CLOUD_VIDEO_WORKER_CANCELLATION_ACCEPTED!=="true")throw new Error("Cloud video worker requires end-to-end cancellation acceptance before activation.");
   if(env.RUNWAY_VIDEO_ENABLED!=="true"||env.RUNWAY_VIDEO_ALLOW_REMOTE!=="true"||!env.RUNWAY_API_KEY)throw new Error("Cloud video requires explicit Runway remote-execution opt-in and a server-side API key.");
   const hosts=String(env.RUNWAY_VIDEO_OUTPUT_HOSTS||"").split(",").map(host=>host.trim()).filter(Boolean);
   const validHost=host=>host.length<=253&&host.includes(".")&&!isIP(host)&&host.split(".").every(label=>label.length<=63&&/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/i.test(label));
