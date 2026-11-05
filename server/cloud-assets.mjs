@@ -25,7 +25,6 @@ function publicAsset(row) {
   return {
     id:row.id,ownerId:row.owner_id,projectId:row.project_id||null,name:row.original_name,
     mediaType:row.media_type,size:Number(row.byte_size),sha256:row.sha256,
-    storageBucket:row.storage_bucket,objectPath:row.object_path,
     derivativeOf:row.derivative_of||null,metadata:row.metadata||{},createdAt:row.created_at
   };
 }
@@ -156,18 +155,64 @@ export function createCloudAssetRepository({
       if(row.storage_bucket!=="executive-visuals-media"||typeof row.object_path!=="string"||!row.object_path.startsWith(expectedPrefix)) throw new Error("Cloud asset storage reference is invalid.");
       return {asset:publicAsset(row),url:await storage.createSignedUrl(row.object_path,expiresIn)};
     },
+    /**
+     * Retry physical deletion for old tombstoned assets after transient storage
+     * failures. This is an internal maintenance operation, not a user API.
+     * Callers must supply an explicit age cutoff; the bounded batch never
+     * touches active assets or metadata rows.
+     */
+    async cleanupDeleted({olderThan,limit=25}={}) {
+      const cutoff=typeof olderThan==="string"?Date.parse(olderThan):NaN;
+      if(!Number.isFinite(cutoff)||new Date(cutoff).toISOString()!==olderThan) throw new Error("Cloud asset cleanup requires an explicit ISO-8601 age cutoff.");
+      if(!Number.isInteger(limit)||limit<1||limit>100) throw new Error("Cloud asset cleanup batch size must be between 1 and 100.");
+      const rows=await request("assets?select=id,owner_id,project_id,object_path,storage_bucket,deleted_at&deleted_at=lt."+encodeURIComponent(new Date(cutoff).toISOString())+"&order=deleted_at.asc&limit="+limit);
+      const result={scanned:Array.isArray(rows)?rows.length:0,removed:0,pending:0,skippedInvalid:0};
+      for(const row of Array.isArray(rows)?rows:[]) {
+        try {
+          validUuid(row.owner_id,"owner ID");
+          validUuid(row.id,"asset ID");
+          if(row.project_id) validUuid(row.project_id,"project ID");
+          const prefix=(row.project_id||row.owner_id)+"/"+row.id+"/";
+          if(row.storage_bucket!=="executive-visuals-media"||typeof row.object_path!=="string"||!row.object_path.startsWith(prefix)||row.deleted_at==null||!Number.isFinite(Date.parse(row.deleted_at))||Date.parse(row.deleted_at)>=cutoff) {
+            result.skippedInvalid++;
+            continue;
+          }
+        } catch {
+          result.skippedInvalid++;
+          continue;
+        }
+        try {
+          await storage.remove(row.object_path);
+          result.removed++;
+        } catch {
+          result.pending++;
+        }
+      }
+      return result;
+    },
     async softDelete({ownerId,assetId}) {
       ownerId=validUuid(ownerId,"owner ID");assetId=validUuid(assetId,"asset ID");
-      const rows=await request("assets?select=id,owner_id,project_id,object_path,storage_bucket&id=eq."+encodeURIComponent(assetId)+"&deleted_at=is.null&limit=1");
+      // Keep deleted rows addressable here so an authorized retry can finish
+      // physical cleanup after a transient storage failure. Normal reads still
+      // filter deleted_at and never expose the asset again.
+      const lookup=()=>request("assets?select=id,owner_id,project_id,object_path,storage_bucket,deleted_at&id=eq."+encodeURIComponent(assetId)+"&limit=1");
+      const rows=await lookup();
       const row=Array.isArray(rows)?rows[0]:null;
       if(!row||(!row.project_id&&row.owner_id!==ownerId)) {const error=new Error("Cloud asset not found.");error.code="CLOUD_ASSET_NOT_FOUND";throw error;}
       await allowed(ownerId,row.project_id||null,"write");
       const expectedPrefix=(row.project_id||row.owner_id)+"/"+row.id+"/";
       if(row.storage_bucket!=="executive-visuals-media"||typeof row.object_path!=="string"||!row.object_path.startsWith(expectedPrefix)) throw new Error("Cloud asset storage reference is invalid.");
-      const changed=await request("assets?id=eq."+encodeURIComponent(assetId)+"&deleted_at=is.null",{method:"PATCH",prefer:"return=representation",body:{deleted_at:new Date().toISOString()}});
-      if(!Array.isArray(changed)||changed.length!==1) throw new Error("Cloud asset could not be safely marked deleted.");
+      if(!row.deleted_at) {
+        const changed=await request("assets?id=eq."+encodeURIComponent(assetId)+"&deleted_at=is.null",{method:"PATCH",prefer:"return=representation",body:{deleted_at:new Date().toISOString()}});
+        if(!Array.isArray(changed)||changed.length!==1) {
+          // A concurrent delete may have won the race. Confirm that state
+          // before allowing this request to retry storage cleanup.
+          const latest=await lookup();
+          if(!Array.isArray(latest)||latest[0]?.deleted_at==null) throw new Error("Cloud asset could not be safely marked deleted.");
+        }
+      }
       let storageRemoved=false;
-      try { if(row.storage_bucket!=="executive-visuals-media") throw new Error("Unexpected cloud asset bucket."); await storage.remove(row.object_path); storageRemoved=true; }
+      try { await storage.remove(row.object_path); storageRemoved=true; }
       catch { storageRemoved=false; }
       return {id:assetId,deleted:true,storageRemoved,cleanupPending:!storageRemoved};
     }

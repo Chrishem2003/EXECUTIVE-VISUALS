@@ -30,3 +30,28 @@ test("cloud media worker requires an explicit stable worker identity", () => {
     /worker ID/
   );
 });
+
+test("cloud media worker exposes explicit tombstone cleanup without scheduling it",async()=>{
+  const calls=[];
+  const result={scanned:2,removed:1,pending:1,skippedInvalid:0};
+  const worker=createCloudMediaWorker({
+    workerId:"media-maintenance-worker",
+    queue:{async claim(){return null;},async renew(){return true;},async finish(){return true;},async recover(){return 0;}},
+    assetService:{assets:{async cleanupDeleted(options){calls.push(options);return result;}}},
+    mediaIO:{},
+    execute:async()=>({ok:true})
+  });
+  assert.deepEqual(await worker.cleanupDeletedAssets({olderThan:"2026-11-01T00:00:00.000Z",limit:10}),result);
+  assert.deepEqual(calls,[{olderThan:"2026-11-01T00:00:00.000Z",limit:10}]);
+});
+
+test("cloud media worker fails closed when tombstone cleanup is not supported",async()=>{
+  const worker=createCloudMediaWorker({
+    workerId:"media-worker-no-cleanup",
+    queue:{async claim(){return null;},async renew(){return true;},async finish(){return true;},async recover(){return 0;}},
+    assetService:{assets:{}},
+    mediaIO:{},
+    execute:async()=>({ok:true})
+  });
+  await assert.rejects(()=>worker.cleanupDeletedAssets({olderThan:"2026-11-01T00:00:00.000Z"}),/does not support tombstone cleanup/);
+});
