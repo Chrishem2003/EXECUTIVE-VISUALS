@@ -1,6 +1,7 @@
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
+import { computeFileChecksums } from "./google-cloud-storage-checksum.mjs";
 
 const SCOPES = Object.freeze([
   "https://www.googleapis.com/auth/devstorage.read_write",
@@ -41,7 +42,9 @@ function verifyMetadata(metadata, expected) {
     custom.executivevisualsassetid === expected.assetId &&
     custom.executivevisualsownerid === expected.ownerId &&
     (custom.executivevisualsprojectid || null) === expected.projectId &&
-    custom.executivevisualssha256 === expected.sha256;
+    custom.executivevisualssha256 === expected.sha256 &&
+    typeof metadata?.crc32c === "string" && metadata.crc32c === expected.crc32c &&
+    custom.executivevisualscrc32c === expected.crc32c;
 }
 
 /**
@@ -168,13 +171,17 @@ export function createGoogleGeminiGcsMirrorWriter({
       if (!fileStat.isFile() || fileStat.size !== sizeBytes) {
         throw fail("Authorized private source file size changed before mirroring.", "GEMINI_GCS_SOURCE_FILE_MISMATCH");
       }
+      const checksums=await computeFileChecksums(filePath);
+      if(checksums.sha256!==sha256) {
+        throw fail("Authorized private source bytes do not match the durable SHA-256 receipt.","GEMINI_GCS_SOURCE_FILE_MISMATCH");
+      }
 
       const objectName = "mirrors/" + ownerId + "/" + (scopedProjectId || "personal") +
         "/" + assetId + "/" + makeId() + "." + MIME_EXTENSIONS.get(mediaType);
       if (objectName.length > 1024) throw fail("Generated GCS object name is invalid.", "GEMINI_GCS_OBJECT_NAME_INVALID");
       const expected = {
         assetId, ownerId, projectId: scopedProjectId, bucket, objectName,
-        sizeBytes, mediaType, sha256
+        sizeBytes, mediaType, sha256, crc32c:checksums.crc32c
       };
       const accessToken = await token();
       const attempt = attemptRepository ? await attemptRepository.createAttempt({
@@ -188,7 +195,8 @@ export function createGoogleGeminiGcsMirrorWriter({
           executivevisualsassetid: assetId,
           executivevisualsownerid: ownerId,
           ...(scopedProjectId ? { executivevisualsprojectid: scopedProjectId } : {}),
-          executivevisualssha256: sha256
+          executivevisualssha256: sha256,
+          executivevisualscrc32c: checksums.crc32c
         }
       };
       const initiateUrl = "https://storage.googleapis.com/upload/storage/v1/b/" +
