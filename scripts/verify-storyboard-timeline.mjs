@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { createStoryboardTimeline, reflowStoryboardTimelinePlan } from "../src/core/storyboard-timeline.ts";
-import { validateTimeline } from "../src/core/timeline.ts";
+import { rational, validateTimeline } from "../src/core/timeline.ts";
+import { applyTimelineHistoryOperation, createTimelineHistory, createTimelineHistoryOperation, recordTimelineHistory, redoTimelineHistory, undoTimelineHistory } from "../src/core/timeline-history.ts";
 
 const shot=(id,durationSeconds)=>({
  id,number:1,durationSeconds,shotType:"Detail",framing:"Close-up",angle:"Eye level",movement:"Slow push",lens:"50mm",
@@ -48,6 +49,27 @@ assert.deepEqual(reflowed.scenes.flatMap(scene=>scene.shots).map(shot=>shot.star
 assert.equal(reflowed.totalFrames,840);
 assert.equal(reflowed.scenes[0].durationFrames,390);
 assert.equal(reflowed.durationSeconds,28);
+const afterTimeline={
+  ...timeline,
+  metadata:{...timeline.metadata,storyboardPlan:reflowed},
+  markers:timeline.markers.map(marker=>{
+    const scene=reflowed.scenes.find(item=>marker.id==="storyboard-scene-"+item.id);
+    return scene?{...marker,start:rational(scene.startFrame,reflowed.frameRate)}:marker;
+  })
+};
+const operation=createTimelineHistoryOperation(timeline,afterTimeline,{label:"Edit planned storyboard shot",origin:"local"});
+assert.ok(operation);
+const history=recordTimelineHistory(createTimelineHistory(),operation);
+const applied=applyTimelineHistoryOperation(timeline,operation,"forward");
+assert.equal(applied.metadata.storyboardPlan.totalFrames,840);
+assert.deepEqual(applied.markers.map(marker=>marker.start.value),[0,390]);
+const undone=undoTimelineHistory(history,applied);
+assert.ok(undone);
+assert.equal(undone.timeline.metadata.storyboardPlan.totalFrames,900);
+assert.deepEqual(undone.timeline.markers.map(marker=>marker.start.value),[0,450]);
+const redone=redoTimelineHistory(undone.history,undone.timeline);
+assert.ok(redone);
+assert.equal(redone.timeline.metadata.storyboardPlan.totalFrames,840);
 
 assert.throws(()=>createStoryboardTimeline("","timeline-2",storyboard),/cloud project/);
 assert.throws(()=>createStoryboardTimeline("project","timeline-3",{...storyboard,frameRate:29}),/frame rate/);
