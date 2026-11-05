@@ -39,6 +39,17 @@ export function createGoogleGeminiFilesRecoveryWorker({
     throw new TypeError("Gemini Files recovery page limit is invalid.");
   }
 
+  async function quarantine(attempt, code, status, results) {
+    await repository.updateUploadAttempt({
+      attemptId: attempt.id,
+      expectedState: attempt.state,
+      state: "QUARANTINED",
+      errorCode: code,
+      reconciledAt: new Date(now()).toISOString()
+    });
+    results.push({ attemptId: attempt.id, status });
+  }
+
   async function listCandidates(displayName) {
     let pageToken;
     let complete = false;
@@ -67,19 +78,23 @@ export function createGoogleGeminiFilesRecoveryWorker({
             file = await gateway.getProviderFile(attempt.providerFileName);
           } else {
             const listed = await listCandidates(attempt.displayName);
+            if (!listed.complete) {
+              await quarantine(attempt, "GEMINI_FILE_RECOVERY_PAGINATION_INCOMPLETE", "pagination_incomplete_quarantined", results);
+              continue;
+            }
             if (listed.matches.length > 1) {
-              results.push({ attemptId: attempt.id, status: "ambiguous_multiple_matches" });
+              await quarantine(attempt, "GEMINI_FILE_RECOVERY_MULTIPLE_MATCHES", "ambiguous_multiple_matches", results);
               continue;
             }
             if (listed.matches.length === 0) {
-              results.push({ attemptId: attempt.id, status: listed.complete ? "no_provider_evidence_quarantined" : "pagination_incomplete_quarantined" });
+              await quarantine(attempt, "GEMINI_FILE_RECOVERY_NO_PROVIDER_EVIDENCE", "no_provider_evidence_quarantined", results);
               continue;
             }
             file = listed.matches[0];
           }
 
           if (!metadataMatches(file, attempt)) {
-            results.push({ attemptId: attempt.id, status: "metadata_mismatch_quarantined" });
+            await quarantine(attempt, "GEMINI_FILE_RECOVERY_METADATA_MISMATCH", "metadata_mismatch_quarantined", results);
             continue;
           }
           if (file.state === FAILED) {
@@ -101,14 +116,14 @@ export function createGoogleGeminiFilesRecoveryWorker({
               });
               results.push({ attemptId: attempt.id, status: "provider_processing" });
             } else {
-              results.push({ attemptId: attempt.id, status: "provider_state_unrecognized_quarantined" });
+              await quarantine(attempt, "GEMINI_FILE_RECOVERY_PROVIDER_STATE_UNRECOGNIZED", "provider_state_unrecognized_quarantined", results);
             }
             continue;
           }
 
           const expiresAt = file.expirationTime || attempt.providerExpiresAt;
           if (!expiresAt || !Number.isFinite(Date.parse(expiresAt)) || Date.parse(expiresAt) <= now()) {
-            results.push({ attemptId: attempt.id, status: "expiry_unverified_quarantined" });
+            await quarantine(attempt, "GEMINI_FILE_RECOVERY_EXPIRY_UNVERIFIED", "expiry_unverified_quarantined", results);
             continue;
           }
           await repository.recordProviderFile({
