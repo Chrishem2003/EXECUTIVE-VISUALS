@@ -152,7 +152,7 @@ function renderPreviewLayers(clips:ReturnType<typeof activePreviewAtPlayhead>){
   const overlayY=Math.max(0,Math.min(timelineHeight-overlayHeight,Number.isFinite(Number(metadata.y))?Number(metadata.y):24));
   const opacity=Math.max(0,Math.min(1,Number(metadata.opacity??1)));
   const z=isOverlay?100+clip.trackIndex:1;
-  const position=isOverlay?";left:"+overlayX/timelineWidth*100+"%;top:"+overlayY/timelineHeight*100+"%;width:"+overlayWidth/timelineWidth*100+"%;height:"+overlayHeight/timelineHeight*100+"%;opacity:"+opacity:";
+  const position=isOverlay?";left:"+overlayX/timelineWidth*100+"%;top:"+overlayY/timelineHeight*100+"%;width:"+overlayWidth/timelineWidth*100+"%;height:"+overlayHeight/timelineHeight*100+"%;opacity:"+opacity:"";
   if(source.mediaType.startsWith("audio/"))return '<audio data-preview-audio="'+esc(clip.clipId)+'" preload="metadata" src="'+esc(source.url)+'"></audio>';
   if(source.mediaType.startsWith("video/"))return '<video class="timeline-preview-layer" data-preview-video="'+esc(clip.clipId)+'" data-track-index="'+clip.trackIndex+'" style="z-index:'+z+position+'" muted playsinline preload="metadata" src="'+esc(source.url)+'"></video>';
   if(source.mediaType.startsWith("image/"))return '<img class="timeline-preview-layer" data-preview-image="'+esc(clip.clipId)+'" data-track-index="'+clip.trackIndex+'" style="z-index:'+z+position+'" src="'+esc(source.url)+'" alt="'+esc(clip.clipName)+'">';
