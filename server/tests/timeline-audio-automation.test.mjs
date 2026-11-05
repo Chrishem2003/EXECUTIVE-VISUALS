@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createTimeline, addTrack, addClip, trimClip, splitClip, rational, seconds } from "../../src/core/timeline.ts";
+import { createTimeline, addTrack, addClip, trimClip, splitClip, rational, seconds, validateTimeline } from "../../src/core/timeline.ts";
 
 function fixture(){
  let timeline=createTimeline("project","timeline","Audio test",{numerator:24,denominator:1});
@@ -34,6 +34,5 @@ test("timeline validation rejects malformed audio automation",()=>{
  clip.audioAutomation=[{timeSeconds:12,gainDb:-3}];
  assert.throws(()=>addClip(createTimeline("p","t"),"missing",clip),/Track not found/);
  const invalid={...timeline,tracks:timeline.tracks.map(track=>({...track,clips:track.clips.map(item=>({...item,audioAutomation:[{timeSeconds:12,gainDb:-3}]}))}))};
- const {validateTimeline}=await import("../../src/core/timeline.ts");
  assert.equal(validateTimeline(invalid).valid,false);
 });
