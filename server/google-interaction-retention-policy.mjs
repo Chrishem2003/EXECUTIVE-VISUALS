@@ -1,9 +1,10 @@
-const SUPPORTED_RETENTION_DAYS = new Set([7, 14, 28, 55]);
+const MAX_PROVIDER_RETENTION_DAYS = 55;
 
 /**
  * Creates an explicit local cleanup policy for Gemini Developer API stored
- * Interactions. Configure GEMINI_OMNI_RETENTION_DAYS to the same value selected
- * in AI Studio (paid tier supports 7, 14, 28 or 55 days).
+ * Interactions. Configure GEMINI_OMNI_RETENTION_DAYS as the application cleanup window. The
+ * Developer API paid tier retains stored Interactions for 55 days by default;
+ * this application may delete its own records earlier, but never later.
  *
  * This policy does not inspect or mutate the remote AI Studio setting; the
  * deployment operator must verify that setting before enabling generation.
@@ -14,8 +15,9 @@ export function createGoogleInteractionRetentionPolicy({
 } = {}) {
   const raw = String(env.GEMINI_OMNI_RETENTION_DAYS || "").trim();
   const retentionDays = Number(raw);
-  if (!SUPPORTED_RETENTION_DAYS.has(retentionDays) || String(retentionDays) !== raw) {
-    const error = new Error("Set GEMINI_OMNI_RETENTION_DAYS to the verified AI Studio paid-tier value: 7, 14, 28 or 55.");
+  if (!Number.isSafeInteger(retentionDays) || retentionDays < 1 ||
+      retentionDays > MAX_PROVIDER_RETENTION_DAYS || String(retentionDays) !== raw) {
+    const error = new Error("Set GEMINI_OMNI_RETENTION_DAYS to an integer from 1 through 55 days.");
     error.code = "GEMINI_OMNI_RETENTION_POLICY_REQUIRED";
     throw error;
   }
