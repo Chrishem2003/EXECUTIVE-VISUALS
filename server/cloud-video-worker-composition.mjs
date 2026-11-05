@@ -1,3 +1,4 @@
+import { isIP } from "node:net";
 import { createCloudQueue } from "./cloud-queue.mjs";
 import { createCloudVideoEnqueue } from "./cloud-video-enqueue.mjs";
 import { createCloudVideoSubmissionLedger } from "./cloud-video-submissions.mjs";
@@ -32,8 +33,10 @@ export function createCloudVideoWorkerComposition({
   if (typeof workerId !== "string" || !workerId.trim() || workerId.length > 128) {
     throw new Error("Cloud video composition requires a bounded worker ID.");
   }
+  const validHost = host => typeof host === "string" && host.length <= 253 && host.includes(".") &&
+    !isIP(host) && host.split(".").every(label => label.length <= 63 && /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/i.test(label));
   if (!Array.isArray(outputHosts) || outputHosts.length < 1 || outputHosts.length > 100 ||
-      outputHosts.some(host => typeof host !== "string" || !/^[a-z0-9.-]{1,253}$/i.test(host) || host.startsWith(".") || host.endsWith("."))) {
+      outputHosts.some(host => !validHost(host))) {
     throw new Error("Cloud video composition requires an explicit exact-host output allowlist.");
   }
   if (!Number.isSafeInteger(maxBytes) || maxBytes < 1024 || maxBytes > 1024 * 1024 * 1024) {
