@@ -14,7 +14,7 @@ import { clampPreviewSeconds, decibelsToLinearGain, frameToSeconds, getTimelineD
 import { activeCaptionCues, parseCaptionCues, type CaptionCue } from "../core/caption-preview";
 import { validatePrivateMediaUrl } from "../core/private-media-url";
 import { generatedVideoAlreadyOnTimeline, generatedVideoDurationSeconds, selectLatestGeneratedVideoAsset } from "../core/generated-video-import";
-import { shouldPreserveCloudTimelineDraft } from "../core/timeline-conflict";
+import { resolveCloudTimelineRefresh } from "../core/timeline-conflict";
 
 type Asset={id:string;name:string;mediaType:string;size:number;projectId?:string|null;createdAt?:string;metadata?:Record<string,unknown>};
 type SavedTimeline={id:string;projectId?:string|null;name:string;revision:number;document?:EditorialTimeline};
@@ -381,16 +381,16 @@ async function refresh(){
    apiRequest<{timelines:CloudSavedTimeline[]}>("/api/cloud/timelines"+query)
   ]);
   state.assets=assets.assets||[];state.cloudTimelines=timelines.timelines||[];state.timelines=[];
-  const preserveLocalDraft=shouldPreserveCloudTimelineDraft({hasConflict:state.cloudRevisionConflict,timelineId:state.timeline?.id,timelineProjectId:state.timeline?.projectId,selectedProjectId:state.cloudProjectId});
-  if(!preserveLocalDraft){
-   if(state.timeline&&state.cloudTimelines.some(t=>t.id===state.timeline?.id)){
-    const saved=state.cloudTimelines.find(t=>t.id===state.timeline?.id)!;state.timeline=saved.timeline;state.serverRevision=saved.revision;
-   }else if(state.cloudTimelines.length){const saved=state.cloudTimelines[0];state.timeline=saved.timeline;state.serverRevision=saved.revision;}
-   else state.timeline=null;
-   state.message=state.timeline?"Cloud timeline loaded. Changes save to the selected private project.":"No saved cloud timeline yet. Create one to begin.";
-  }else{
-   state.message="Save conflict: your local draft remains protected. Resolve it by loading the server revision or saving a separate variant.";
-  }
+  const refreshResult=resolveCloudTimelineRefresh(
+   {hasConflict:state.cloudRevisionConflict,timelineId:state.timeline?.id,timelineProjectId:state.timeline?.projectId,selectedProjectId:state.cloudProjectId},
+   state.timeline,
+   state.serverRevision,
+   state.cloudTimelines
+  );
+  state.timeline=refreshResult.timeline;state.serverRevision=refreshResult.serverRevision;
+  state.message=refreshResult.preservedLocalDraft
+   ?"Save conflict: your local draft remains protected. Resolve it by loading the server revision or saving a separate variant."
+   :state.timeline?"Cloud timeline loaded. Changes save to the selected private project.":"No saved cloud timeline yet. Create one to begin.";
   state.ffmpeg=true;state.status="ready";await loadVariantComparison();return;
  }
  if(sequenceMediaProjectId){resetSequenceMediaCache();sequenceMediaProjectId="";}
