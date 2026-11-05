@@ -9,14 +9,14 @@ import { assessDeliveryEvidence } from "../core/delivery-evidence";
 import { analyzeCreativeTraceability, readCreativeTrace } from "../core/creative-traceability";
 import { appendCreativeDecision, readCreativeDecisionHistory } from "../core/creative-decision-ledger";
 import { compareTimelineVariants, createTimelineVariant, type TimelineVariantComparison } from "../core/timeline-variants";
-import { addClip, addMarker, addTrack, createTimeline, moveClip, rational, splitClip, toOpenTimelineIo, trimClip, type EditorialTimeline, type TimelineTrack } from "../core/timeline";
+import { addClip, addMarker, addTrack, createTimeline, evaluateTimelineAtFrame, moveClip, rational, seconds, splitClip, toOpenTimelineIo, trimClip, type EditorialTimeline, type TimelineTrack } from "../core/timeline";
 
 type Asset={id:string;name:string;mediaType:string;size:number;metadata?:Record<string,unknown>};
 type SavedTimeline={id:string;projectId?:string|null;name:string;revision:number;document?:EditorialTimeline};
 type CloudProject={id:string;name:string};
 type CloudSavedTimeline={id:string;projectId?:string|null;name:string;revision:number;timeline:EditorialTimeline;updatedAt:string};
-const state:{timeline:EditorialTimeline|null;serverRevision:number;timelines:SavedTimeline[];cloudTimelines:CloudSavedTimeline[];cloudProjects:CloudProject[];cloudProjectId:string;mode:"local"|"cloud";cloudRenderJobId:string;cloudRenderJobStatus:string;variantBase:EditorialTimeline|null;variantReport:TimelineVariantComparison|null;variantBaseName:string;assets:Asset[];status:"loading"|"ready"|"offline"|"auth";message:string;selectedTrack:string;selectedClipId:string;ffmpeg:boolean}={
- timeline:null,serverRevision:0,timelines:[],cloudTimelines:[],cloudProjects:[],cloudProjectId:"",mode:"local",cloudRenderJobId:"",cloudRenderJobStatus:"",variantBase:null,variantReport:null,variantBaseName:"",assets:[],status:"loading",message:"Loading editorial workspace…",selectedTrack:"",selectedClipId:"",ffmpeg:false
+const state:{timeline:EditorialTimeline|null;serverRevision:number;timelines:SavedTimeline[];cloudTimelines:CloudSavedTimeline[];cloudProjects:CloudProject[];cloudProjectId:string;mode:"local"|"cloud";cloudRenderJobId:string;cloudRenderJobStatus:string;variantBase:EditorialTimeline|null;variantReport:TimelineVariantComparison|null;variantBaseName:string;assets:Asset[];status:"loading"|"ready"|"offline"|"auth";message:string;selectedTrack:string;selectedClipId:string;ffmpeg:boolean;playheadFrame:number;previewAssetId:string;previewUrl:string;previewMediaType:string;previewError:string}={
+ timeline:null,serverRevision:0,timelines:[],cloudTimelines:[],cloudProjects:[],cloudProjectId:"",mode:"local",cloudRenderJobId:"",cloudRenderJobStatus:"",variantBase:null,variantReport:null,variantBaseName:"",assets:[],status:"loading",message:"Loading editorial workspace…",selectedTrack:"",selectedClipId:"",ffmpeg:false,playheadFrame:0,previewAssetId:"",previewUrl:"",previewMediaType:"",previewError:""
 };
 const esc=(v:unknown)=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]||c));
 const fps=()=>state.timeline?state.timeline.frameRate.numerator/state.timeline.frameRate.denominator:24;
@@ -122,6 +122,36 @@ export function timelineQualityPanel(){
  (findings.length?'<div class="eyebrow" style="margin-top:16px">SEQUENCE FINDINGS · '+errorCount+' errors · '+warningCount+' warnings</div><div class="timeline-quality-list">'+findings.map(item=>'<article class="timeline-quality-item '+item.severity+'"><b>'+esc(item.title)+'</b><p>'+esc(item.detail)+'</p></article>').join("")+'</div>':'')+
  '<small class="muted">Sequence structure and source-media checks use the current timeline and saved FFprobe metadata. A source passes only when its probe contains readable streams, the required track stream exists and every used source range stays within probed duration. Full decode integrity, shot-engine compatibility, continuity, delivery conformance requires a current-revision master with a successful output probe; the gate compares container, codec, resolution, frame rate, duration and required audio against the sequence or explicit delivery profile. Caption readiness requires saved cue-level WebVTT validation for timing, overlaps, reading speed, line length and media-duration bounds. Audio readiness requires saved probe and FFmpeg signal-analysis evidence; clipping and near-full-scale peaks require review. Rights status is based only on explicit asset metadata attestations and supporting references; this is not independent legal verification. This report does not grant approval, submit a provider request or render media.</small></section>';
 }
+function timelineEndFrame(){
+ if(!state.timeline)return 1;
+ return Math.max(1,...state.timeline.tracks.flatMap(track=>track.clips.map(clip=>Math.ceil((seconds(clip.timelineStart)+seconds(clip.duration))*fps()))));
+}
+function activePreviewAtPlayhead(){
+ if(!state.timeline)return null;
+ const frame=Math.min(timelineEndFrame(),Math.max(0,Math.floor(state.playheadFrame)));
+ const evaluated=evaluateTimelineAtFrame(state.timeline,frame);
+ return evaluated.activeClips.find(clip=>clip.trackKind==="video")||null;
+}
+async function syncPreview(){
+ if(!state.timeline)return;
+ let active;
+ try{active=activePreviewAtPlayhead();}catch(error){state.previewError=error instanceof Error?error.message:"Timeline cannot be previewed.";const label=document.querySelector<HTMLElement>("#tl-preview-active");if(label)label.textContent=state.previewError;return;}
+ const label=document.querySelector<HTMLElement>("#tl-preview-active");
+ if(!active){state.previewAssetId="";state.previewUrl="";state.previewMediaType="";const video=document.querySelector<HTMLVideoElement>("#tl-preview-video");if(video){video.pause();video.removeAttribute("src");video.load();}const image=document.querySelector<HTMLImageElement>("#tl-preview-image");if(image)image.removeAttribute("src");if(label)label.textContent="No active video-track clip at this frame.";return;}
+ const asset=state.assets.find(item=>item.id===active.assetId);
+ if(!asset){if(label)label.textContent="The active source asset is not available in this workspace.";return;}
+ if(label)label.textContent=asset.name+" · "+active.sourceTimeSeconds.toFixed(3)+"s source position · frame "+Math.round(active.sourceFrame);
+ if(state.previewAssetId!==active.assetId||!state.previewUrl){
+  try{let url="/api/assets/"+encodeURIComponent(active.assetId)+"/file";if(state.mode==="cloud"){const signed=await apiRequest<{url:string}>("/api/cloud/assets/"+encodeURIComponent(active.assetId));url=signed.url;}state.previewAssetId=active.assetId;state.previewUrl=url;state.previewMediaType=asset.mediaType;state.previewError="";const video=document.querySelector<HTMLVideoElement>("#tl-preview-video");const image=document.querySelector<HTMLImageElement>("#tl-preview-image");if(asset.mediaType.startsWith("video/")&&video){video.src=url;video.load();video.addEventListener("loadedmetadata",()=>{if(state.previewAssetId===active?.assetId)video.currentTime=Math.max(0,active.sourceTimeSeconds);},{once:true});}else if(asset.mediaType.startsWith("image/")&&image){image.src=url;}else if(label)label.textContent=asset.name+" · "+asset.mediaType+" is not directly previewable in this monitor.";}
+  catch(error){state.previewError=error instanceof Error?error.message:"Could not load preview source.";if(label)label.textContent=state.previewError;}
+ }else{const video=document.querySelector<HTMLVideoElement>("#tl-preview-video");if(video&&asset.mediaType.startsWith("video/")&&video.readyState>=1){const target=Math.max(0,active.sourceTimeSeconds);if(Math.abs(video.currentTime-target)>0.08)video.currentTime=target;}}
+}
+function previewMonitor(){
+ if(!state.timeline)return '<section class="panel"><div class="eyebrow">PREVIEW MONITOR</div><p class="muted">Load a timeline to preview its active source clip.</p></section>';
+ const active=activePreviewAtPlayhead();const asset=active?state.assets.find(item=>item.id===active.assetId):null;
+ const media=asset?.mediaType.startsWith("video/")&&state.previewUrl&&state.previewAssetId===asset.id?'<video id="tl-preview-video" controls preload="metadata" playsinline src="'+esc(state.previewUrl)+'"></video>':asset?.mediaType.startsWith("image/")&&state.previewUrl&&state.previewAssetId===asset.id?'<img id="tl-preview-image" src="'+esc(state.previewUrl)+'" alt="'+esc(asset.name)+'">':'<div class="timeline-preview-empty">Move the playhead over a video or image clip to preview its source.</div>';
+ return '<section class="panel timeline-preview-panel"><div class="timeline-panel-heading"><div><div class="eyebrow">FRAME-AWARE PREVIEW</div><h3>Preview monitor</h3></div><span class="job-status '+(active?"completed":"running")+'">'+(active?"SOURCE ACTIVE":"NO ACTIVE CLIP")+'</span></div><div class="timeline-preview-stage">'+media+'</div><div class="timeline-preview-controls"><label for="tl-playhead">Playhead frame</label><input id="tl-playhead" type="range" min="0" max="'+timelineEndFrame()+'" step="1" value="'+Math.min(timelineEndFrame(),Math.max(0,state.playheadFrame))+'"><strong id="tl-playhead-label">Frame '+state.playheadFrame+' · '+(state.playheadFrame/fps()).toFixed(3)+'s</strong></div><p id="tl-preview-active" class="muted">'+(active&&asset?esc(asset.name)+" · "+active.sourceTimeSeconds.toFixed(3)+"s source position · frame "+Math.round(active.sourceFrame):"No active video-track clip at this frame.")+'</p><small class="muted">Preview uses the canonical timeline frame evaluator and authorized source-asset endpoints. Final exports continue through the FFmpeg master renderer.</small></section>';
+}
 export function renderTimelineWorkspace(){
  return '<div id="timeline-workspace"><div class="timeline-toolbar"><label>Workspace <select id="tl-mode"><option value="local" '+(state.mode==="local"?"selected":"")+' >Local</option><option value="cloud" '+(state.mode==="cloud"?"selected":"")+' >Cloud project</option></select></label><label>Cloud project <select id="tl-cloud-project"><option value="">Select project</option>'+state.cloudProjects.map(p=>'<option value="'+esc(p.id)+'" '+(p.id===state.cloudProjectId?'selected':'')+'>'+esc(p.name)+'</option>').join("")+'</select></label><label>Saved sequence <select id="tl-saved-sequence"><option value="">Current sequence</option>'+(state.mode==="cloud"?state.cloudTimelines.map(t=>'<option value="'+esc(t.id)+'" '+(state.timeline?.id===t.id?'selected':'')+'>'+esc(t.name)+' · r'+t.revision+'</option>').join(""):state.timelines.map(t=>'<option value="'+esc(t.id)+'" '+(state.timeline?.id===t.id?'selected':'')+'>'+esc(t.name)+' · r'+t.revision+'</option>').join(""))+'</select></label><button class="secondary" data-tl-create-cloud>＋ New cloud timeline</button><button class="secondary" data-tl-action="duplicate-variant">Duplicate as variant</button><span class="runtime-status '+state.status+'"><i></i>'+esc(state.status==="ready"?"TIMELINE SAVED":state.status==="auth"?"SIGN IN REQUIRED":state.status==="offline"?"API OFFLINE":"LOADING")+'</span><button class="secondary" data-tl-action="refresh">↻ Refresh</button><button class="secondary" data-tl-action="export">Export OTIO JSON</button>'+(state.mode==="cloud"&&state.cloudRenderJobId?'<button class="secondary" data-tl-action="cloud-job">Check cloud render · '+esc(state.cloudRenderJobStatus||"queued")+'</button>':'')+''+(state.ffmpeg?'<button class="primary" data-tl-action="render">Render master MP4</button>':'<span class="muted">FFmpeg required for master render</span>')+'</div>'+
  (state.message?'<div class="notice">'+esc(state.message)+'</div>':'')+
@@ -130,6 +160,7 @@ export function renderTimelineWorkspace(){
  '<div class="eyebrow" style="margin-top:18px">ADD SOURCE CLIP</div><form id="tl-add-clip"><label>Source asset</label><select id="tl-asset-select" name="assetId" required>'+assetOptions()+'</select><label>Destination track</label><select name="trackId">'+(state.timeline?.tracks.map(t=>'<option value="'+esc(t.id)+'">'+esc(t.name)+'</option>').join("")||"")+'</select><div class="form-grid"><div><label>Timeline start (frames)</label><input name="start" type="number" min="0" value="'+maxEnd()+'"></div><div><label>Source in (source frames)</label><input name="sourceIn" type="number" min="0" value="0"></div><div><label>Duration (timeline frames)</label><input name="duration" type="number" min="1" value="'+(fps()*5)+'"></div></div><button class="primary wide">＋ Place clip on timeline</button></form>'+
  '<form id="tl-add-marker"><div class="eyebrow" style="margin-top:18px">REVIEW MARKER</div><label>Marker title</label><input name="name" required placeholder="Hook / transition / review note"><label>Position (frames)</label><input name="frame" type="number" min="0" value="0"><button class="secondary">＋ Add marker</button></form></section>'+
  '<section class="panel"><div class="timeline-panel-heading"><div><div class="eyebrow">MULTI-TRACK EDITOR</div><h3>Sequence timeline</h3></div><small>'+(state.timeline?.frameRate.numerator+"/"+state.timeline?.frameRate.denominator+" fps")+'</small></div>'+
+ previewMonitor()+
  (state.timeline?timelineCanvas():'<div class="empty">Sign in and create a sequence to begin.</div>')+
  clipInspector()+variantComparisonPanel()+creativeTraceabilityPanel()+timelineQualityPanel()+
   '<div class="timeline-marker-list">'+(state.timeline?.markers.map(m=>'<span>◆ '+esc(m.name)+' · '+Math.round(m.start.value)+'f</span>').join("")||"No review markers yet.")+'</div></section></div>'+
@@ -193,7 +224,7 @@ export async function initTimelineWorkspace(){
  try{await refresh();}catch(error){state.status=error instanceof Error&&error.message.includes("Sign in")?"auth":"offline";state.message=error instanceof Error?error.message:"Timeline service unavailable.";}
  paint();
 }
-function paint(){const root=document.querySelector<HTMLElement>("#timeline-workspace");if(root)root.outerHTML=renderTimelineWorkspace();}
+function paint(){const root=document.querySelector<HTMLElement>("#timeline-workspace");if(root)root.outerHTML=renderTimelineWorkspace();void syncPreview();}
 async function runAction(action:HTMLElement){
  const type=action.dataset.tlAction||"";
  if(type==="refresh"){await refresh();paint();return;}
@@ -274,6 +305,10 @@ document.addEventListener("submit",event=>{
   state.timeline=addMarker(state.timeline,{id:crypto.randomUUID(),name:String(data.get("name")),start:rational(Math.max(0,Number(data.get("frame"))||0),fps()),color:"YELLOW"});
   void persist().then(paint).catch(error=>{state.message=error.message;paint();});
  }
+});
+document.addEventListener("input",event=>{
+ const target=event.target as HTMLInputElement;
+ if(target.id==="tl-playhead"){state.playheadFrame=Math.max(0,Math.min(timelineEndFrame(),Math.floor(Number(target.value)||0)));const label=document.querySelector<HTMLElement>("#tl-playhead-label");if(label)label.textContent="Frame "+state.playheadFrame+" · "+(state.playheadFrame/fps()).toFixed(3)+"s";void syncPreview();}
 });
 document.addEventListener("change",event=>{
  const target=event.target as HTMLSelectElement;
