@@ -5,6 +5,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createGoogleGeminiGcsMirrorRecoveryWorker } from "../google-gemini-gcs-mirror-recovery-worker.mjs";
+import { crc32cBase64 } from "../google-cloud-storage-checksum.mjs";
 
 const ownerId="11111111-1111-4111-8111-111111111111";
 const projectId="22222222-2222-4222-8222-222222222222";
@@ -13,6 +14,7 @@ const attemptId="44444444-4444-4444-8444-444444444444";
 const leaseToken="55555555-5555-4555-8555-555555555555";
 const bytes=Buffer.from([1,2,3,4]);
 const sha256=createHash("sha256").update(bytes).digest("hex");
+const crc32c=crc32cBase64(bytes);
 const sessionUri="https://storage.googleapis.com/upload/storage/v1/b/private-media-bucket/o?uploadType=resumable&upload_id=opaque-session-secret";
 const env={GOOGLE_CLOUD_PROJECT_ID:"test-gcp-project-12345",GEMINI_GCS_ALLOWED_BUCKETS:"private-media-bucket"};
 const baseAttempt={
@@ -24,10 +26,11 @@ const baseAttempt={
 function objectMetadata(attempt=baseAttempt,overrides={}) {
   return {
     bucket:attempt.bucket,name:attempt.objectName,generation:"1762300800000000",metageneration:"3",
-    size:String(attempt.sizeBytes),contentType:attempt.mediaType,
+    size:String(attempt.sizeBytes),contentType:attempt.mediaType,crc32c,
     metadata:{
       executivevisualsassetid:attempt.assetId,executivevisualsownerid:attempt.ownerId,
-      executivevisualsprojectid:attempt.projectId,executivevisualssha256:attempt.sha256
+      executivevisualsprojectid:attempt.projectId,executivevisualssha256:attempt.sha256,
+      executivevisualscrc32c:crc32c
     },...overrides
   };
 }
@@ -211,4 +214,25 @@ test("quarantines invalid or out-of-bounds server ranges",async()=>{
     assert.equal(h.records.length,0);
     assert.equal(h.releases.length,1);
   }finally{await rm(h.root,{recursive:true,force:true});}
+});
+
+test("quarantines a completed object when the GCS server CRC32C differs from the upload receipt",async()=>{
+ const h=await harness({metadata:objectMetadata(baseAttempt,{crc32c:"AAAAAA=="})});
+ try{
+  const result=await h.worker.run();
+  assert.equal(result.quarantined,1);
+  assert.equal(h.records.length,0);
+  assert.equal(h.transitions[0].state,"QUARANTINED");
+ }finally{await rm(h.root,{recursive:true,force:true});}
+});
+
+test("quarantines a completed object when its recorded CRC32C receipt is missing",async()=>{
+ const metadata=objectMetadata();
+ delete metadata.metadata.executivevisualscrc32c;
+ const h=await harness({metadata});
+ try{
+  const result=await h.worker.run();
+  assert.equal(result.quarantined,1);
+  assert.equal(h.records.length,0);
+ }finally{await rm(h.root,{recursive:true,force:true});}
 });
