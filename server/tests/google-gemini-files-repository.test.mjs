@@ -142,13 +142,14 @@ test("updates an upload attempt through an exact ID and bounded state transition
     fetchImpl: async (url, options) => { call = { url: String(url), options }; return response(200, [{ id: row.id }]); }
   });
   assert.equal(await repository.updateUploadAttempt({
-    attemptId: row.id, state: "PROVIDER_CREATED",
+    attemptId: row.id, state: "PROVIDER_CREATED", expectedState: "UPLOADING",
     providerFileName: "files/gemini-123",
     providerFileUri: "https://generativelanguage.googleapis.com/v1beta/files/gemini-123",
     providerExpiresAt: row.expires_at
   }), row.id);
   assert.equal(call.options.method, "PATCH");
   assert.match(call.url, /google_provider_file_upload_attempts/);
+  assert.equal(new URL(call.url).searchParams.get("state"), "eq.UPLOADING");
   const body = JSON.parse(call.options.body);
   assert.equal(body.state, "PROVIDER_CREATED");
   assert.equal(body.google_file_name, "files/gemini-123");
