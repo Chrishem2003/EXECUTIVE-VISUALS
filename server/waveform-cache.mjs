@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
-import { mkdir, rename, rm, stat, readFile, readdir } from "node:fs/promises";
+import { mkdir, rename, rm, stat, readFile, readdir, utimes } from "node:fs/promises";
 import { extname, isAbsolute, relative, resolve, sep, join } from "node:path";
 
 const PNG=Buffer.from([137,80,78,71,13,10,26,10]);
@@ -67,7 +67,11 @@ export function createWaveformCache({mediaRoot,ffmpegPath=process.env.FFMPEG_PAT
   const key=createHash("sha256").update(VERSION+":"+asset.sha256).digest("hex");
   const output=join(cacheRoot,key+".png");
   const cached=await stat(output).catch(()=>null);
-  if(cached?.isFile()&&cached.size>PNG.length&&cached.size<=2*1024*1024)return output;
+  if(cached?.isFile()&&cached.size>PNG.length&&cached.size<=2*1024*1024){
+   const bytes=await readFile(output);
+   if(bytes.subarray(0,8).equals(PNG)){const now=new Date();await utimes(output,now,now);return output;}
+   await rm(output,{force:true});
+  }
   if(pending.has(key))return pending.get(key);
   const task=(async()=>{
    await prune();
