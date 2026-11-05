@@ -4,7 +4,8 @@ import { createAuthRateLimiter } from "./auth-rate-limit.mjs";
 import { createRedisRestRateLimiter } from "./distributed-rate-limit.mjs";
 import { createClientIpResolver } from "./client-ip.mjs";
 import { isBlockedDotPath } from "./static-path-security.mjs";
-import { ensureAuthSecuritySchema, getLoginLockState, recordFailedLogin, clearLoginFailures, recordLoginLockoutEvent, listAuthSecurityEvents, getAuthSecuritySummary } from "./auth-login-security.mjs";
+import { ensureAuthSecuritySchema, getLoginLockState, recordFailedLogin, clearLoginFailures, recordLoginLockoutEvent, listAuthSecurityEvents, getAuthSecuritySummary, countActiveLocks, adminUnlockLogin, listAdminAudit } from "./auth-login-security.mjs";
+import { isAdminUser } from "./admin-access.mjs";
 import { createHash, randomBytes, randomUUID, scryptSync, timingSafeEqual } from "node:crypto";
 import { createReadStream, createWriteStream, existsSync, statSync } from "node:fs";
 import { mkdir, unlink, open, readFile } from "node:fs/promises";
@@ -390,7 +391,7 @@ export function createAppServer() {
           const ours=/^(WORKSPACE_|INVALID_|SESSION_|BODY_TOO_LARGE$)/.test(String(error?.code||""));fail(res,ours?status:502,ours?error.code:"WORKSPACE_ERROR",ours?error.message:"Your work could not be saved right now. It is still safe on this device.");return;
         }
       }
-      if(path==="/api/me"&&req.method==="GET"){const securityAdmins=String(process.env.AUTH_SECURITY_ADMIN_EMAILS||"").split(",").map(value=>value.trim().toLowerCase()).filter(Boolean);send(res,200,{user,authMode:AUTH_MODE,capabilities:{securityEvents:securityAdmins.includes(String(user.email||"").toLowerCase())}},cors);return;}
+      if(path==="/api/me"&&req.method==="GET"){const admin=isAdminUser(user);send(res,200,{user,authMode:AUTH_MODE,capabilities:{securityEvents:admin,admin}},cors);return;}
       const upscaleBenchmarksMatch=path.match(/^\/api\/upscale-benchmarks(?:\/(fixtures|runs)(?:\/([0-9a-f-]+)\/review)?)?$/i);
       if(upscaleBenchmarksMatch){
         const section=upscaleBenchmarksMatch[1]||"";
@@ -916,17 +917,27 @@ export function createAppServer() {
         }
       }
 
+      if(path==="/api/admin/overview"&&req.method==="GET"){
+        if(!isAdminUser(user)){fail(res,403,"AUTH_SECURITY_ADMIN_REQUIRED","An explicitly allowlisted security administrator is required. The site owner adds your email to ADMIN_EMAILS.");return;}
+        send(res,200,{admin:true,authMode:AUTH_MODE,lockedAccounts:countActiveLocks(db),recentAdminActions:listAdminAudit(db,10),workspaceSync:!!workspaceStore},cors);return;
+      }
+      if(path==="/api/admin/unlock"&&req.method==="POST"){
+        if(!isAdminUser(user)){fail(res,403,"AUTH_SECURITY_ADMIN_REQUIRED","An explicitly allowlisted security administrator is required. The site owner adds your email to ADMIN_EMAILS.");return;}
+        const body=await readJson(req);
+        const target=String(body?.email||"").trim();
+        if(!target||target.length>320||!target.includes("@")){fail(res,400,"INVALID_UNLOCK_TARGET","Enter the email address to unlock.");return;}
+        const result=adminUnlockLogin(db,target,user.email);
+        send(res,200,{ok:true,...result},cors);return;
+      }
       if(path==="/api/admin/security-summary"&&req.method==="GET"){
-        const allowedAdmins=String(process.env.AUTH_SECURITY_ADMIN_EMAILS||"").split(",").map(value=>value.trim().toLowerCase()).filter(Boolean);
-        if(!allowedAdmins.length||!allowedAdmins.includes(String(user.email||"").toLowerCase())){
-          fail(res,403,"AUTH_SECURITY_ADMIN_REQUIRED","An explicitly allowlisted security administrator is required.");return;
+        if(!isAdminUser(user)){
+          fail(res,403,"AUTH_SECURITY_ADMIN_REQUIRED","An explicitly allowlisted security administrator is required. The site owner adds your email to ADMIN_EMAILS.");return;
         }
         send(res,200,getAuthSecuritySummary(db),cors);return;
       }
       if(path==="/api/admin/security-events"&&req.method==="GET"){
-        const allowedAdmins=String(process.env.AUTH_SECURITY_ADMIN_EMAILS||"").split(",").map(value=>value.trim().toLowerCase()).filter(Boolean);
-        if(!allowedAdmins.length||!allowedAdmins.includes(String(user.email||"").toLowerCase())){
-          fail(res,403,"AUTH_SECURITY_ADMIN_REQUIRED","An explicitly allowlisted security administrator is required.");return;
+        if(!isAdminUser(user)){
+          fail(res,403,"AUTH_SECURITY_ADMIN_REQUIRED","An explicitly allowlisted security administrator is required. The site owner adds your email to ADMIN_EMAILS.");return;
         }
         const rawLimit=url.searchParams.get("limit");
         const limit=rawLimit===null?50:Number(rawLimit);

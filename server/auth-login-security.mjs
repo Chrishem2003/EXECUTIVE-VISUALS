@@ -40,7 +40,57 @@ export function ensureAuthSecuritySchema(db) {
     );
     CREATE INDEX IF NOT EXISTS auth_security_events_created_idx ON auth_security_events(created_at_ms DESC);
     CREATE INDEX IF NOT EXISTS auth_security_events_identifier_idx ON auth_security_events(identifier_hash,created_at_ms DESC);
+    CREATE TABLE IF NOT EXISTS admin_audit_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      actor_hash TEXT NOT NULL,
+      action TEXT NOT NULL,
+      target_hash TEXT,
+      detail TEXT,
+      created_at_ms INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS admin_audit_log_created_idx ON admin_audit_log(created_at_ms DESC);
   `);
+}
+
+/** Number of accounts that are locked right now (no identities, just a count). */
+export function countActiveLocks(db, now = Date.now()) {
+  return Number(db.prepare("SELECT COUNT(*) AS n FROM auth_login_security WHERE locked_until_ms IS NOT NULL AND locked_until_ms>?").get(now).n) || 0;
+}
+
+/**
+ * An administrator clears the lock and failure history for one sign-in address.
+ * The action is written to the audit log using hashes only (no raw emails).
+ */
+export function adminUnlockLogin(db, identifier, actorIdentifier, now = Date.now()) {
+  if (!normalizeLoginIdentifier(identifier)) throw Object.assign(new Error("An email address is required."), { code: "INVALID_UNLOCK_TARGET" });
+  const key = loginIdentifierHash(identifier);
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    const hashes = new Set([key]);
+    if (process.env.AUTH_IDENTIFIER_HMAC_KEY) hashes.add(legacyLoginIdentifierHash(identifier));
+    let changes = 0;
+    let wasLocked = false;
+    for (const hash of hashes) {
+      const row = db.prepare("SELECT locked_until_ms FROM auth_login_security WHERE identifier_hash=?").get(hash);
+      if (row?.locked_until_ms && row.locked_until_ms > now) wasLocked = true;
+      changes += Number(db.prepare("DELETE FROM auth_login_security WHERE identifier_hash=?").run(hash).changes) || 0;
+    }
+    db.prepare("INSERT INTO admin_audit_log(actor_hash,action,target_hash,detail,created_at_ms) VALUES(?,?,?,?,?)")
+      .run(loginIdentifierHash(actorIdentifier), "unlock_account", key, wasLocked ? "was_locked" : changes ? "cleared_failures" : "nothing_to_clear", now);
+    db.prepare("DELETE FROM admin_audit_log WHERE created_at_ms < ?").run(now - 365 * 24 * 60 * 60 * 1000);
+    db.exec("COMMIT");
+    return { wasLocked, cleared: changes > 0 };
+  } catch (error) {
+    try { db.exec("ROLLBACK"); } catch {}
+    throw error;
+  }
+}
+
+/** Newest-first admin actions (hashes only). */
+export function listAdminAudit(db, limit = 20) {
+  const safe = Math.max(1, Math.min(100, Math.trunc(Number(limit) || 20)));
+  return db.prepare("SELECT id,action,target_hash AS targetHash,detail,created_at_ms AS createdAtMs FROM admin_audit_log ORDER BY id DESC LIMIT ?").all(safe)
+    .map(row => ({ id: Number(row.id), action: row.action, targetHash: row.targetHash, detail: row.detail, createdAtMs: Number(row.createdAtMs) }));
 }
 function writeAuthSecurityEvent(db, identifier, eventType, state = {}, now = Date.now()) {
   const identifierHash=loginIdentifierHash(identifier);

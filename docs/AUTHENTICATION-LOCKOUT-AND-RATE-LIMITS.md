@@ -44,3 +44,9 @@ The API stores a separate `auth_security_events` trail for failed sign-ins, newl
 ## Verification
 
 Unit tests cover the privacy-preserving event trail, bounded retention, blocked-attempt/success events, the three-failure threshold, 15-minute initial duration, immediate 30-minute extension after an expired lock, exponential progression and 24-hour cap, successful reset, identifier hashing and legacy-to-HMAC migration. Client-IP tests cover untrusted spoofed headers, trusted proxy chains, malformed headers and invalid configuration. Redis REST limiter tests cover atomic command construction, hashed keys, normalized email budgets, denial at the threshold, invalid responses and fail-closed outage behavior. The API integration test covers the Supabase sign-in route, HTTP 423, and the `Retry-After: 900` header. CI must pass on the exact latest commit before this policy is considered verified.
+
+## Administrators and unlocking accounts
+
+Administrators are decided only on the server. Set `ADMIN_EMAILS` (comma-separated, not case sensitive) in the hosting settings; the older `AUTH_SECURITY_ADMIN_EMAILS` is still honoured. Nobody is an administrator until their sign-in email is listed. `GET /api/me` reports `capabilities.admin` for the signed-in person, and the Security operations page shows the admin tools.
+
+An administrator can clear a lock from Security operations → **Unlock an account** (`POST /api/admin/unlock` with `{ "email": "..." }`). This removes the lock and failure history for that address, so the next wrong password starts counting from one. Each unlock is written to `admin_audit_log` using hashes only (no raw emails, retained one year) and appears under "Recent admin actions" (`GET /api/admin/overview`). Without a persistent disk, the lock database also resets whenever the service is redeployed.
