@@ -17,8 +17,8 @@ begin
         (lease_token is not null and lease_expires_at is not null)
       );
   end if;
-end
-$$;
+end;
+$;
 
 create index if not exists google_drive_export_attempts_expired_lease_idx
   on executive_visuals.google_drive_export_attempts (lease_expires_at, updated_at)
