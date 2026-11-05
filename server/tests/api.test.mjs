@@ -79,6 +79,34 @@ test("usage API reports account request allowance without exposing secrets",asyn
   assert.equal(JSON.stringify(body).includes("REMOTE_AI_DAILY_REQUEST_LIMIT"),false);
 });
 
+test("Gemini Files status and prepare endpoints enforce authenticated, fail-closed HTTP behavior",async()=>{
+  const anonymousStatus=await fetch(base+"/api/integrations/google-gemini/files/status");
+  assert.equal(anonymousStatus.status,401,"Gemini status must not disclose provider configuration to anonymous callers");
+
+  const anonymousPrepare=await fetch(base+"/api/integrations/google-gemini/files/prepare",{
+    method:"POST",headers:{"content-type":"application/json"},
+    body:JSON.stringify({projectId:"123e4567-e89b-42d3-a456-426614174001",assetId:"123e4567-e89b-42d3-a456-426614174002",mediaType:"video/mp4"})
+  });
+  assert.equal(anonymousPrepare.status,401,"Gemini preparation must reject anonymous callers before reading or processing provider inputs");
+
+  const cookie=await register("gemini-http-owner@example.test");
+  const status=await request("/api/integrations/google-gemini/files/status",{},cookie);
+  assert.equal(status.status,200);
+  const statusBody=await status.json();
+  assert.deepEqual(statusBody,{enabled:false},"local test configuration must keep the provider integration disabled");
+  assert.equal(JSON.stringify(statusBody).includes("GEMINI_API_KEY"),false);
+
+  const disabledPrepare=await request("/api/integrations/google-gemini/files/prepare",{
+    method:"POST",headers:{"content-type":"application/json"},
+    body:JSON.stringify({projectId:"123e4567-e89b-42d3-a456-426614174001",assetId:"123e4567-e89b-42d3-a456-426614174002",mediaType:"video/mp4"})
+  },cookie);
+  assert.equal(disabledPrepare.status,503);
+  const disabledBody=await disabledPrepare.json();
+  assert.equal(disabledBody.error.code,"GOOGLE_GEMINI_FILES_DISABLED");
+  assert.equal(JSON.stringify(disabledBody).includes("GEMINI_API_KEY"),false);
+  assert.equal(JSON.stringify(disabledBody).includes("server-test-key"),false);
+});
+
 test("static application shell applies a restrictive content security policy",async()=>{
   const response=await fetch(base+"/");
   assert.equal(response.status,200);
