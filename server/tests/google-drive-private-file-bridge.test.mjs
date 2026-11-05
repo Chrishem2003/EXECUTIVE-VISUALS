@@ -126,6 +126,7 @@ test("uses a persisted pre-generated Drive file ID and marks a verified export c
   let record = null;
   const attempts = {
     async get() { return record; },
+    async claim() { return "44444444-4444-4444-8444-444444444444"; },
     async createOrGet(value) {
       record = { ...value, state: "PREPARED", sessionUri: null, webViewLink: null };
       return record;
