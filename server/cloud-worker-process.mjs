@@ -12,7 +12,8 @@ const integer=(value,fallback,min,max,label)=>{const parsed=value===undefined||v
 
 export function readCloudWorkerConfig(env=process.env){
  if(!truth(env.CLOUD_WORKER_ENABLED))throw new Error("Cloud worker process is disabled. Set CLOUD_WORKER_ENABLED=true only after the isolated database and private storage are ready.");
- const media=truth(env.CLOUD_MEDIA_WORKER_ENABLED),timeline=truth(env.CLOUD_TIMELINE_WORKER_ENABLED);
+ const media=truth(env.CLOUD_MEDIA_WORKER_ENABLED),timeline=truth(env.CLOUD_TIMELINE_WORKER_ENABLED),video=truth(env.CLOUD_VIDEO_WORKER_ENABLED);
+ if(video)throw new Error("Cloud video worker composition is not yet released; keep CLOUD_VIDEO_WORKER_ENABLED unset until private media, provider cancellation and reviewed-cost dependencies are wired and staging-accepted.");
  if(!media&&!timeline)throw new Error("Enable at least one supported cloud worker family.");
  if(!env.SUPABASE_URL||!env.SUPABASE_SERVICE_ROLE_KEY)throw new Error("Cloud workers require server-side Supabase credentials.");
  const leaseSeconds=integer(env.CLOUD_WORKER_LEASE_SECONDS,90,30,900,"Cloud worker lease duration");
