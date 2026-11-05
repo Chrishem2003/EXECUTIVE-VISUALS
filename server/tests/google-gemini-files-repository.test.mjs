@@ -126,3 +126,34 @@ test("persists GCS registration provenance without changing the private asset id
   assert.equal(body.source_type, "gcs_registration");
   assert.equal(body.source_uri, "gs://private-media-bucket/private/image.png");
 });
+
+test("lists expired active and retryable mappings with bounded service-role queries", async () => {
+  let call;
+  const repository = createGoogleGeminiFilesRepository({
+    url: base, serviceRoleKey: key,
+    fetchImpl: async (url, options) => { call = { url: String(url), options }; return response(200, [row]); }
+  });
+  const result = await repository.listExpiredProviderFiles({ before: "2026-11-05T00:00:00.000Z", limit: 25 });
+  assert.equal(result.length, 1);
+  assert.equal(result[0].assetId, row.asset_id);
+  assert.equal(result[0].ownerId, row.owner_id);
+  assert.equal(result[0].name, row.google_file_name);
+  const params = new URL(call.url).searchParams;
+  assert.equal(params.get("state"), "in.(ACTIVE,EXPIRED)");
+  assert.equal(params.get("limit"), "25");
+  assert.equal(params.get("expires_at"), "lte.2026-11-05T00:00:00.000Z");
+  assert.equal(call.options.headers.apikey, key);
+});
+
+test("updates provider-file state only through a bounded exact record selector", async () => {
+  const calls = [];
+  const repository = createGoogleGeminiFilesRepository({
+    url: base, serviceRoleKey: key,
+    fetchImpl: async (url, options) => { calls.push({ url: String(url), options }); return response(200, [{ id: row.id }]); }
+  });
+  assert.equal(await repository.updateProviderFileState({ recordId: row.id, state: "EXPIRED" }), row.id);
+  assert.equal(calls[0].options.method, "PATCH");
+  assert.equal(JSON.parse(calls[0].options.body).state, "EXPIRED");
+  await assert.rejects(() => repository.updateProviderFileState({ recordId: row.id, state: "DELETING" }));
+  await assert.rejects(() => repository.updateProviderFileState({ state: "DELETED" }));
+});
