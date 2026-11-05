@@ -42,6 +42,11 @@ export async function executeCloudVideoGenerationJob({
   }
   if (!Number.isInteger(maxPolls) || maxPolls < 1 || maxPolls > 1000) throw new Error("Video polling limit is invalid.");
 
+  const cancellationPending = async () => {
+    try { return await isCancellationRequested(job.id, workerId) === true; }
+    catch { throw fail("Cancellation state could not be verified; execution is held for review.", "VIDEO_CANCELLATION_STATE_UNAVAILABLE"); }
+  };
+
   const input = jobInput(job);
   if (input.provider !== adapter.provider || input.model !== adapter.model ||
       typeof input.requestHash !== "string" || !/^[a-f0-9]{64}$/.test(input.requestHash)) {
