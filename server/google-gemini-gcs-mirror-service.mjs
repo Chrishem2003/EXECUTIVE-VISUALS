@@ -30,6 +30,7 @@ export function createGoogleGeminiGcsMirrorService({
   loadPrivateAsset,
   authorizePrivateAsset: authorizePrivateAssetOverride,
   sourceRepository,
+  attemptRepository = null,
   maxBytes = 250 * 1024 * 1024,
   timeoutMs = 120000,
   makeId
@@ -104,7 +105,7 @@ export function createGoogleGeminiGcsMirrorService({
     getAccessToken, fetchImpl, maxBytes, timeoutMs: Math.min(timeoutMs, 120000)
   });
   const writer = createGoogleGeminiGcsMirrorWriter({
-    env, fetchImpl, getAccessToken, sourceRepository: sources,
+    env, fetchImpl, getAccessToken, sourceRepository: sources, attemptRepository,
     maxBytes, timeoutMs, ...(typeof makeId === "function" ? { makeId } : {})
   });
 
