@@ -45,12 +45,11 @@ export function createGoogleInteractionRetentionWorker({
 
     let status = remote?.status;
     if (ACTIVE.has(status)) {
-      const cancellation = await client.cancelInteraction(record.interactionId, context);
-      status = cancellation?.status;
-      if (ACTIVE.has(status)) {
-        remote = await client.getInteraction(record.interactionId, context);
-        status = remote?.status;
-      }
+      // Cancellation responses may precede the provider's persisted terminal
+      // state. Always re-read before deletion; GET is the deletion gate.
+      await client.cancelInteraction(record.interactionId, context);
+      remote = await client.getInteraction(record.interactionId, context);
+      status = remote?.status;
     }
 
     if (TERMINAL.has(status)) return status;
