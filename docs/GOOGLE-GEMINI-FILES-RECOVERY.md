@@ -22,6 +22,21 @@ Official references:
 - Treat provider expiration metadata as authoritative when present. Never extend a provider expiry using an application-side guess.
 - Keep original media in private application storage and reconcile provider mappings independently.
 
+## GCS registration IAM preflight
+
+The repository includes `server/google-gemini-gcs-iam-verifier.mjs`, a read-only preflight for the Google side of GCS registration.
+
+Required server configuration:
+- `GOOGLE_CLOUD_PROJECT_ID`
+- `GOOGLE_CLOUD_PROJECT_NUMBER`
+- `GEMINI_GCS_ALLOWED_BUCKETS` (comma-separated exact bucket allowlist)
+
+The injected OAuth token provider must obtain a token with `cloud-platform` and `devstorage.read_only` scopes. The preflight checks that the Gemini API is enabled and that the Gemini API service agent (`service-{PROJECT_NUMBER}@gcp-sa-generativelanguage.iam.gserviceaccount.com`) has an unconditional `roles/storage.objectViewer` binding on every allowlisted bucket.
+
+This check is read-only: it does not create the service agent, grant IAM roles, or alter bucket policies. Operators must review and apply any IAM changes through their normal cloud governance process, then rerun the preflight. A missing grant returns `ready: false`; API or IAM lookup errors fail closed.
+
+**Important storage boundary:** the current Executive Visuals private asset adapter stores media in the Supabase Storage bucket `executive-visuals-media`. That bucket is not automatically a Google Cloud Storage bucket and must not be passed to the Gemini GCS registration API as a `gs://` URI. GCS registration is only valid for an actual GCS object whose bucket and object identity have been resolved and authorized server-side. Until a governed GCS-backed asset source is connected, the existing private upload and signed-URL paths remain the supported routes for Supabase-hosted assets.
+
 ## Recovery lease protocol
 
 The recovery worker processes only stale attempts in `UPLOADING`, `OUTCOME_UNKNOWN`, or `PROVIDER_CREATED`.
