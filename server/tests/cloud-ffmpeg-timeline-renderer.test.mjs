@@ -32,7 +32,8 @@ test("cloud FFmpeg renderer mixes audio and accepts automation beyond the pictur
   assert.equal(result.render.videoClips,1);
   assert.equal(result.render.audioClips,1);
   assert.equal(result.render.automatedAudioClips,1);
-  assert.ok(Number(probe.format?.duration)<=1.1,"audio extending beyond the picture sequence must not extend the rendered master");
+  const masterDuration=Number(probe.format?.duration);
+  assert.ok(masterDuration>=0.95&&masterDuration<=1.1,"the rendered master must remain approximately one second, not extend to the two-second audio tail");
   const pcm=execFileSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-loglevel","error","-i",result.path,"-map","0:a:0","-f","f32le","-acodec","pcm_f32le","-ar","48000","-ac","2","pipe:1"]);
   const samples=new Float32Array(pcm.buffer,pcm.byteOffset,pcm.byteLength/4);
   const rms=(from,to,channel)=>{let sum=0,count=0;for(let frame=Math.floor(from*48000);frame<Math.floor(to*48000);frame++){const value=samples[frame*2+channel]||0;sum+=value*value;count++;}return Math.sqrt(sum/Math.max(1,count));};
