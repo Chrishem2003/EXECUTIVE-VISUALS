@@ -60,7 +60,7 @@ async function restoreTimelineRecovery():Promise<void>{
  }catch(error){state.recoveryStatus="unavailable";state.message="Could not inspect the browser recovery journal: "+(error instanceof Error?error.message:"unknown error")+"."}
 }
 
-function resetTimelineHistory(){state.timelineHistory=createTimelineHistory();}
+function resetTimelineHistory(){state.timelineHistory=createTimelineHistory();clearTimelineVersionPanel();}
 function clearTimelineVersionPanel(){state.timelineVersions=[];state.versionComparison=null;state.versionComparisonRevision=null;state.versionHistoryOpen=false;state.versionLoading=false;}
 function timelineVersionsPath(){return (state.mode==="cloud"?"/api/cloud/timelines/":"/api/timelines/")+encodeURIComponent(state.timeline?.id||"")+"/versions";}
 async function loadTimelineVersions(){
