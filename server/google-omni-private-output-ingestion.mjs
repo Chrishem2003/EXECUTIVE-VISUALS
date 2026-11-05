@@ -5,6 +5,20 @@ const ORIGIN = "https://generativelanguage.googleapis.com";
 const FILE_URI = /^https:\/\/generativelanguage\.googleapis\.com\/v1beta\/files\/([A-Za-z0-9_-]+)(?::download\?alt=media)?$/;
 const fail = (message, code) => Object.assign(new Error(message), { code });
 
+async function readSmallJson(response, maxBytes = 64 * 1024) {
+  const declared = Number(response.headers?.get?.("content-length"));
+  if (Number.isFinite(declared) && declared > maxBytes) {
+    try { await response.body?.cancel?.(); } catch {}
+    throw fail("Google Files metadata response exceeded its configured size limit.", "GEMINI_OMNI_FILE_METADATA_TOO_LARGE");
+  }
+  const raw = await response.text();
+  if (Buffer.byteLength(raw) > maxBytes) {
+    throw fail("Google Files metadata response exceeded its configured size limit.", "GEMINI_OMNI_FILE_METADATA_TOO_LARGE");
+  }
+  try { return JSON.parse(raw); }
+  catch { throw fail("Google Files returned invalid metadata JSON.", "GEMINI_OMNI_FILE_METADATA_INVALID"); }
+}
+
 async function readBounded(response, maxBytes) {
   if (!response.body || typeof response.body.getReader !== "function") {
     throw fail("Google video download did not provide a readable body.", "GEMINI_OMNI_OUTPUT_INVALID");
@@ -44,6 +58,8 @@ export function createGoogleOmniPrivateOutputIngestor({
   findExistingOutput,
   ingestPrivateOutput,
   timeoutMs = 120000,
+  fileReadyTimeoutMs = 120000,
+  filePollIntervalMs = 5000,
   maxOutputBytes = 250 * 1024 * 1024,
   maxInlineVideoBytes = 32 * 1024 * 1024
 } = {}) {
@@ -54,6 +70,8 @@ export function createGoogleOmniPrivateOutputIngestor({
     throw new TypeError("Gemini output ingestor requires durable authorization, idempotency lookup and private asset ingestion.");
   }
   if (!Number.isInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 300000 ||
+      !Number.isInteger(fileReadyTimeoutMs) || fileReadyTimeoutMs < 1000 || fileReadyTimeoutMs > 300000 ||
+      !Number.isInteger(filePollIntervalMs) || filePollIntervalMs < 10 || filePollIntervalMs > 60000 ||
       !Number.isSafeInteger(maxOutputBytes) || maxOutputBytes < 1024 * 1024 ||
       maxOutputBytes > 2 * 1024 * 1024 * 1024 ||
       !Number.isSafeInteger(maxInlineVideoBytes) || maxInlineVideoBytes < 1024 ||
@@ -67,6 +85,43 @@ export function createGoogleOmniPrivateOutputIngestor({
     return key;
   }
 
+  async function waitForFileReady(fileId) {
+    const deadline = Date.now() + fileReadyTimeoutMs;
+    while (Date.now() < deadline) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      let metadata;
+      try {
+        const response = await fetchImpl(ORIGIN + "/v1beta/files/" + encodeURIComponent(fileId), {
+          method: "GET",
+          headers: { "x-goog-api-key": apiKey() },
+          redirect: "error",
+          signal: controller.signal
+        });
+        if (!response.ok) {
+          throw fail("Google Files status lookup failed (HTTP " + response.status + ").",
+            "GEMINI_OMNI_FILE_STATUS_FAILED");
+        }
+        metadata = await readSmallJson(response);
+      } catch (error) {
+        if (error?.code?.startsWith?.("GEMINI_OMNI_")) throw error;
+        throw fail(error?.name === "AbortError" ? "Google Files status lookup timed out." : "Google Files status lookup failed.",
+          error?.name === "AbortError" ? "GEMINI_OMNI_FILE_STATUS_TIMEOUT" : "GEMINI_OMNI_FILE_STATUS_FAILED");
+      } finally {
+        clearTimeout(timer);
+      }
+      if (metadata.state === "ACTIVE") return;
+      if (metadata.state === "FAILED") {
+        throw fail("Google Files processing failed; generated video is not downloadable.", "GEMINI_OMNI_FILE_PROCESSING_FAILED");
+      }
+      if (metadata.state !== "PROCESSING") {
+        throw fail("Google Files returned an unsupported processing state.", "GEMINI_OMNI_FILE_STATE_INVALID");
+      }
+      await new Promise(resolve => setTimeout(resolve, Math.min(filePollIntervalMs, Math.max(1, deadline - Date.now()))));
+    }
+    throw fail("Google Files did not become ACTIVE before the configured deadline.", "GEMINI_OMNI_FILE_READY_TIMEOUT");
+  }
+
   async function download(uri) {
     const match = FILE_URI.exec(String(uri || ""));
     if (!match) throw fail("Gemini output URI is not a trusted Google Files resource.", "GEMINI_OMNI_OUTPUT_URI_INVALID");
@@ -75,6 +130,7 @@ export function createGoogleOmniPrivateOutputIngestor({
         (url.search && url.search !== "?alt=media")) {
       throw fail("Gemini output URI contains unsupported URL components.", "GEMINI_OMNI_OUTPUT_URI_INVALID");
     }
+    await waitForFileReady(match[1]);
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
