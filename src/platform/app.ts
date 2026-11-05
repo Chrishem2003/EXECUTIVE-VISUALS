@@ -20,7 +20,7 @@ type StoryboardScene={id:string;number:number;title:string;slugline:string;purpo
 type StoryboardCharacterSuggestion={id:string;fictional:true;name:string;role:string;description:string;appearance:string;wardrobe:string;voiceDirection:string;continuityRules:string[];addedCharacterId?:string};
 type ModelStoryboard={schemaVersion:1;source:"model";model:string;generatedAt:string;inputHash:string;title:string;logline:string;targetDurationSeconds:number;durationSeconds:number;aspectRatio:string;frameRate:number;globalContinuityRules:string[];characterSuggestions:StoryboardCharacterSuggestion[];scenes:StoryboardScene[]};
 type Project={id:string;name:string;brief:string;audience:string;style:string;created:string;duration?:string;aspectRatio?:string;creativeDNA?:CreativeIntentPlan;modelCreativeDirection?:ModelCreativeDirection;storyboard?:ModelStoryboard};
-type CloudCreativeProduction={version?:number;project?:Project&{duration?:string};blueprint?:string;creativeDNA?:CreativeIntentPlan;seriesPlans?:SeriesProductionPlan[];activeSeriesId?:string};
+type CloudCreativeProduction={version?:number;project?:Project&{duration?:string};blueprint?:string;creativeDNA?:CreativeIntentPlan;modelCreativeDirection?:ModelCreativeDirection;storyboard?:ModelStoryboard;seriesPlans?:SeriesProductionPlan[];activeSeriesId?:string};
 type TransformationReadiness={status:"ready"|"blocked";canSubmit:boolean;gates:Array<{key:string;label:string;detail:string;ready:boolean}>;missing:Array<{key:string;label:string}>};
 type TransformationDraft={id:string;projectId:string;sourceAssetId:string;sourceName:string;operation:string;targetDescription:string;prompt:string;durationSeconds:number;referenceAssetIds:string[];preserve:string[];rightsConfirmed:true;subjectConsentConfirmed:boolean;createdAt:string;status?:"draft"|"approved"|"queued"|"running"|"succeeded"|"failed"|"cancelled";execution:{mode:"draft";submitted:false;requiresApproval:true}};
 const KEY="executive-visuals:unified:v1";
@@ -310,7 +310,7 @@ async function loadCloudWorkspace(){
   const savedProduction=selectedCloudProject?.settings?.creativeProduction;
   const savedBrief=savedProduction?.project;
   if(savedBrief?.id&&savedBrief.name&&savedBrief.brief&&savedProduction?.blueprint){
-   const restoredProject:Project={...savedBrief,creativeDNA:savedProduction.creativeDNA};
+   const restoredProject:Project={...savedBrief,creativeDNA:savedProduction.creativeDNA,modelCreativeDirection:savedProduction.modelCreativeDirection,storyboard:savedProduction.storyboard};
    state.projects=[restoredProject,...state.projects.filter(project=>project.id!==restoredProject.id)];
    state.activeProject=restoredProject.id;state.prompt=restoredProject.brief;state.plan=savedProduction.blueprint;
    state.cloudProjectLinks[restoredProject.id]={id:selectedCloudProject!.id,revision:selectedCloudProject!.revision};
@@ -447,9 +447,9 @@ async function publishBriefToCloud(){
  if(!project){state.cloudMessage="Create or select a creative brief first.";state.tab="director";render();return;}
  state.cloudMessage="Saving the production brief and creative bible…";render();
  try{
-  const duration=state.plan.match(/DURATION:\s*([^\n]+)/)?.[1]||"Not specified";
+  const duration=project.duration||state.plan.match(/DURATION:\s*([^\n]+)/)?.[1]||"Not specified";
   const existingSettings=state.cloudProjects.find(item=>item.id===state.cloudProjectLinks[project.id]?.id)?.settings||{};
-  const settings={...existingSettings,schemaVersion:1,creativeProduction:{version:3,project:{id:project.id,name:project.name,brief:project.brief,audience:project.audience,style:project.style,duration,created:project.created},blueprint:state.plan,creativeDNA:project.creativeDNA||null,shots:state.shots,characters:state.characters,variants:state.variants,seriesPlans:state.seriesPlans}};
+  const settings={...existingSettings,schemaVersion:1,creativeProduction:{version:4,project:{id:project.id,name:project.name,brief:project.brief,audience:project.audience,style:project.style,duration,aspectRatio:project.aspectRatio||"9:16",created:project.created},blueprint:state.plan,creativeDNA:project.creativeDNA||null,modelCreativeDirection:project.modelCreativeDirection||null,storyboard:project.storyboard||null,shots:state.shots,characters:state.characters,variants:state.variants,seriesPlans:state.seriesPlans}};
   const link=state.cloudProjectLinks[project.id];
   let saved:{id:string;name:string;revision:number};
   if(link){
