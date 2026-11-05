@@ -39,7 +39,8 @@ function harness({ metadata = sourceFile, download = bytes, load = null, denied 
     loadPrivateAsset: async () => { if (denied) throw new Error("denied"); return loaded; },
     fetchImpl: async (url, options = {}) => {
       calls.push({ kind: "fetch", url, options });
-      if (url.includes("/drive/v3/files/") && url.includes("fields=id,mimeType,trashed,capabilities")) return response({ json: folder });\n      if (url.includes("/drive/v3/files/") && url.includes("alt=media")) {
+      if (url.includes("/drive/v3/files/") && url.includes("fields=id,mimeType,trashed,capabilities")) return response({ json: folder });
+      if (url.includes("/drive/v3/files/") && url.includes("alt=media")) {
         return response({ data: download, headers: { "content-length": String(metadata.size) } });
       }
       if (url.includes("/drive/v3/files/")) return response({ json: metadata });
