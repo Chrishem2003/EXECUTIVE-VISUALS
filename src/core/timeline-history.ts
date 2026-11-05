@@ -5,7 +5,6 @@ import {
   type TimelineMarker,
   type TimelineTrack
 } from "./timeline";
-import { validateTimelineDescriptors } from "./timeline-descriptors";
 
 type ClipLocation = { trackId: string; clip: TimelineClip } | null;
 type TimelineSettings = Pick<EditorialTimeline, "name" | "width" | "height" | "pixelAspectRatio" | "frameRate" | "metadata">;
@@ -68,12 +67,6 @@ function markerMap(timeline: EditorialTimeline): Map<string, TimelineMarker> {
 function validateEditableTimeline(timeline: EditorialTimeline): void {
   const result = validateTimeline(timeline);
   if (!result.valid) throw new Error(result.issues[0]?.message || "Timeline validation failed.");
-  for (const track of timeline.tracks) {
-    for (const clip of track.clips) {
-      const issues = validateTimelineDescriptors(clip, timeline.frameRate, track.kind);
-      if (issues.length) throw new Error(issues[0].message);
-    }
-  }
 }
 
 /** Build a compact, entity-level operation. No whole-timeline snapshots are stored in history. */
@@ -171,6 +164,11 @@ function applyTrackChanges(timeline: EditorialTimeline, changes: EntityChange[])
 }
 
 function applyEntityChange(timeline: EditorialTimeline, change: Exclude<EntityChange, { entity: "track" }>): EditorialTimeline {
+  if (change.entity === "settings") {
+    const actual: TimelineSettings = { name: timeline.name, width: timeline.width, height: timeline.height, pixelAspectRatio: timeline.pixelAspectRatio, frameRate: clone(timeline.frameRate), metadata: clone(timeline.metadata) };
+    assertExpected(actual, change.before, "Timeline settings");
+    return { ...timeline, ...clone(change.after) };
+  }
   if (change.entity === "clip") {
     let current: Exclude<ClipLocation, null> | null = null;
     for (const track of timeline.tracks) {
