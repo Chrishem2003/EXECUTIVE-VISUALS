@@ -114,7 +114,8 @@ export function createGoogleOmniCloudVideoIntegration({
       await interactions.updateInteraction({
         interactionId: accepted.interactionId, ownerId: job.owner_id,
         projectId: job.project_id || null, jobId: job.id, state: nextState,
-        ...(accepted.outputUrls?.[0] ? { outputUri: accepted.outputUrls[0] } : {})
+        ...((accepted.outputUri || accepted.outputUrls?.[0])
+          ? { outputUri: accepted.outputUri || accepted.outputUrls[0] } : {})
       });
       return { taskId: accepted.interactionId, status: accepted.status || "running" };
     },
@@ -170,7 +171,7 @@ export function createGoogleOmniCloudVideoIntegration({
         // The executor only needs a bounded output count. This opaque handle is
         // never fetched by a browser; ingestOutputs consumes rawInteraction.
         outputUrls: Object.freeze(state === "succeeded" ? ["google-interaction:" + providerTaskId] : []),
-        rawInteraction
+        rawInteraction: interactionForIngestion
       });
     }
   });

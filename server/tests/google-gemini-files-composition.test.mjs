@@ -21,7 +21,9 @@ test("composes the private asset loader and durable mapping repository into the 
   const repository = {
     findProviderFile: async args => { calls.push(["find", args]); return null; },
     recordProviderFile: async record => { records.push(record); return "mapping-id"; },
-    deleteProviderFileRecord: async args => { calls.push(["delete", args]); }
+    deleteProviderFileRecord: async args => { calls.push(["delete", args]); },
+    createUploadAttempt: async attempt => ({ id: "attempt-id", state: "PREPARED", ...attempt }),
+    updateUploadAttempt: async update => { calls.push(["attempt-update", update]); }
   };
   const fetchImpl = async (url, options) => {
     if (String(url) === "https://generativelanguage.googleapis.com/upload/v1beta/files") {
@@ -64,7 +66,9 @@ test("does not make Supabase or Google requests during composition", () => {
   const repository = {
     findProviderFile: async () => null,
     recordProviderFile: async () => {},
-    deleteProviderFileRecord: async () => {}
+    deleteProviderFileRecord: async () => {},
+    createUploadAttempt: async attempt => ({ id: "attempt-id", state: "PREPARED", ...attempt }),
+    updateUploadAttempt: async () => {}
   };
   createGoogleGeminiFilesComposition({
     url: "https://supabase.example", serviceRoleKey: "service-role",

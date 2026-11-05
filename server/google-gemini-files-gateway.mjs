@@ -86,11 +86,14 @@ export function createGoogleGeminiFilesGateway({
   findProviderFile,
   recordProviderFile,
   deleteProviderFileRecord,
+  createUploadAttempt,
+  updateUploadAttempt,
   timeoutMs = 30000,
   maxBytes = 250 * 1024 * 1024,
   chunkSize = 8 * 1024 * 1024,
   processingPollIntervalMs = 5000,
   maxProcessingPolls = 36,
+  onCleanupError = () => {},
   now = () => Date.now(),
   sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
 } = {}) {
@@ -157,6 +160,38 @@ export function createGoogleGeminiFilesGateway({
     if (!match) throw fail("Google file resource name is invalid.", "GEMINI_FILE_RESPONSE_INVALID");
     const result = await request(API_ORIGIN + "/v1beta/files/" + match[1]);
     return result.data?.file || result.data;
+  }
+
+  async function listGoogleFiles({ pageSize = 100, pageToken } = {}) {
+    if (!Number.isInteger(pageSize) || pageSize < 1 || pageSize > 100 ||
+        (pageToken !== undefined && (typeof pageToken !== "string" || pageToken.length > 2048))) {
+      throw fail("Google Files list pagination is invalid.", "GEMINI_FILE_LIST_REQUEST_INVALID");
+    }
+    const params = new URLSearchParams({ pageSize: String(pageSize) });
+    if (pageToken) params.set("pageToken", pageToken);
+    const result = await request(API_ORIGIN + "/v1beta/files?" + params.toString(), { maxResponseBytes: 2 * 1024 * 1024 });
+    const files = result.data?.files;
+    if (!Array.isArray(files)) throw fail("Google Files list returned an invalid collection.", "GEMINI_FILE_RESPONSE_INVALID");
+    const normalized = files.map(file => {
+      if (!plain(file) || typeof file.name !== "string" || !FILE_NAME.test(file.name) ||
+          typeof file.displayName !== "string" || file.displayName.length > 512 ||
+          typeof file.mimeType !== "string" || !Number.isSafeInteger(Number(file.sizeBytes)) ||
+          typeof file.sha256Hash !== "string" || !/^[A-Za-z0-9+/]+={0,2}$/.test(file.sha256Hash) ||
+          typeof file.uri !== "string" || !FILE_URI.test(file.uri)) {
+        throw fail("Google Files list included an invalid resource.", "GEMINI_FILE_RESPONSE_INVALID");
+      }
+      return Object.freeze({
+        name: file.name, displayName: file.displayName, uri: file.uri,
+        mimeType: file.mimeType, sizeBytes: Number(file.sizeBytes),
+        sha256Hash: file.sha256Hash, state: String(file.state || "STATE_UNSPECIFIED").toUpperCase(),
+        expirationTime: typeof file.expirationTime === "string" ? file.expirationTime : null
+      });
+    });
+    const nextPageToken = result.data?.nextPageToken;
+    if (nextPageToken !== undefined && (typeof nextPageToken !== "string" || nextPageToken.length > 2048)) {
+      throw fail("Google Files list returned an invalid page token.", "GEMINI_FILE_RESPONSE_INVALID");
+    }
+    return Object.freeze({ files: Object.freeze(normalized), nextPageToken: nextPageToken || null });
   }
 
   async function waitUntilActive(file, mimeType, sizeBytes) {
@@ -305,9 +340,53 @@ export function createGoogleGeminiFilesGateway({
           throw fail("Private asset SHA-256 verification failed before Google upload.", "GEMINI_FILE_ASSET_HASH_MISMATCH");
         }
 
-        const displayName = "executive-visuals-" + randomUUID();
-        googleFile = await uploadBytes({ bytes: loaded.bytes, path: loaded.path, sizeBytes, mimeType, displayName });
+        const attemptKey = createHash("sha256")
+          .update(["google-gemini-files", ownerId, projectId || "", assetId, mimeType, sha256].join("\\0"))
+          .digest("hex");
+        const displayName = typeof createUploadAttempt === "function"
+          ? "executive-visuals-" + attemptKey.slice(0, 32)
+          : "executive-visuals-" + randomUUID();
+        let uploadAttempt = null;
+        if (typeof createUploadAttempt === "function") {
+          try {
+            uploadAttempt = await createUploadAttempt({
+              attemptKey, displayNameHash: attemptKey, displayName,
+              assetId, ownerId, projectId: projectId || null, mimeType, sizeBytes, sha256
+            });
+          } catch {
+            throw fail("Google upload attempt could not be durably prepared.", "GEMINI_FILE_ATTEMPT_PERSIST_FAILED");
+          }
+          if (!plain(uploadAttempt) || typeof uploadAttempt.id !== "string" || uploadAttempt.state !== "PREPARED") {
+            throw fail("A prior Google upload attempt requires reconciliation before another upload can start.", "GEMINI_FILE_RECONCILIATION_REQUIRED");
+          }
+        }
+        const setAttemptState = async (state, extra = {}) => {
+          if (!uploadAttempt || typeof updateUploadAttempt !== "function") return;
+          try { await updateUploadAttempt({ attemptId: uploadAttempt.id, state, ...extra }); } catch {}
+        };
+        if (uploadAttempt) {
+          try {
+            await updateUploadAttempt({ attemptId: uploadAttempt.id, state: "UPLOADING", expectedState: "PREPARED" });
+          } catch {
+            throw fail("Another request already claimed this Google upload attempt; no provider upload was started.", "GEMINI_FILE_ATTEMPT_CLAIM_FAILED");
+          }
+        }
+        try {
+          googleFile = await uploadBytes({ bytes: loaded.bytes, path: loaded.path, sizeBytes, mimeType, displayName });
+        } catch (error) {
+          const uncertain = [
+            "GEMINI_FILE_UPLOAD_OUTCOME_UNKNOWN", "GEMINI_FILE_TIMEOUT",
+            "GEMINI_FILE_UPLOAD_INCOMPLETE", "GEMINI_FILE_PROCESSING_TIMEOUT"
+          ].includes(error?.code);
+          await setAttemptState(uncertain ? "OUTCOME_UNKNOWN" : "FAILED", {
+            errorCode: typeof error?.code === "string" ? error.code : "GEMINI_FILE_UPLOAD_FAILED"
+          });
+          throw error;
+        }
         const expiresAt = new Date(now() + 47 * 60 * 60 * 1000 + 50 * 60 * 1000).toISOString();
+        await setAttemptState("PROVIDER_CREATED", {
+          providerFileName: googleFile.name, providerFileUri: googleFile.uri, providerExpiresAt: expiresAt
+        });
         const record = {
           provider: "google-gemini-files", assetId, ownerId, projectId: projectId || null,
           name: googleFile.name, uri: googleFile.uri, mimeType, sizeBytes, sha256,
@@ -316,21 +395,50 @@ export function createGoogleGeminiFilesGateway({
         try {
           await recordProviderFile(record);
         } catch {
-          try { await removeGoogleFile(googleFile.name); } catch {}
+          let deleted = false;
+          try { await removeGoogleFile(googleFile.name); deleted = true; } catch {}
+          if (deleted) await setAttemptState("FAILED", { errorCode: "GEMINI_FILE_MAPPING_PERSIST_FAILED" });
           googleFile = null;
           throw fail("Google upload succeeded but its private provider-file mapping could not be persisted.", "GEMINI_FILE_MAPPING_PERSIST_FAILED");
         }
+        await setAttemptState("COMPLETED", { reconciledAt: new Date(now()).toISOString() });
         return Object.freeze({ uri: googleFile.uri, mediaType: mimeType, providerFileName: googleFile.name, expiresAt });
       } finally {
-        await loaded.cleanup();
+        try {
+          await loaded.cleanup();
+        } catch {
+          try { onCleanupError({ code: "GEMINI_FILE_TEMP_CLEANUP_FAILED", assetId }); } catch {}
+        }
       }
     },
     async deleteProviderFile(name) {
       return removeGoogleFile(name);
     },
     async getProviderFile(name) {
+      if (typeof name !== "string" || !FILE_NAME.test(name)) {
+        throw fail("Google file resource name is invalid.", "GEMINI_FILE_RESPONSE_INVALID");
+      }
       const file = await getGoogleFile(name);
-      return Object.freeze({ name: file.name, uri: file.uri, mimeType: file.mimeType, state: file.state, sizeBytes: Number(file.sizeBytes) });
+      const sizeBytes = Number(file?.sizeBytes);
+      const hash = file?.sha256Hash;
+      if (!plain(file) || file.name !== name ||
+          typeof file.displayName !== "string" || file.displayName.length > 512 ||
+          typeof file.uri !== "string" || !FILE_URI.test(file.uri) ||
+          typeof file.mimeType !== "string" || !Number.isSafeInteger(sizeBytes) || sizeBytes < 1 ||
+          typeof hash !== "string" || !/^[A-Za-z0-9+/]+={0,2}$/.test(hash) ||
+          Buffer.from(hash, "base64").byteLength !== 32 ||
+          (file.expirationTime !== undefined && (typeof file.expirationTime !== "string" || !Number.isFinite(Date.parse(file.expirationTime))))) {
+        throw fail("Google Files API returned invalid metadata for the requested resource.", "GEMINI_FILE_RESPONSE_INVALID");
+      }
+      return Object.freeze({
+        name: file.name, displayName: file.displayName, uri: file.uri,
+        mimeType: safeMime(file.mimeType), state: String(file.state || "STATE_UNSPECIFIED").toUpperCase(),
+        sizeBytes, sha256Hash: hash,
+        expirationTime: file.expirationTime || null
+      });
+    },
+    async listProviderFiles(options) {
+      return listGoogleFiles(options);
     },
     async forgetProviderFile({ name, recordId } = {}) {
       if (typeof deleteProviderFileRecord === "function") await deleteProviderFileRecord({ name, recordId });

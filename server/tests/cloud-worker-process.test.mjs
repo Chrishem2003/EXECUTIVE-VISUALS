@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readCloudWorkerConfig,createCloudWorkerSupervisor } from "../cloud-worker-process.mjs";
+import { readCloudWorkerConfig,createCloudWorkerSupervisor,createGoogleGeminiGcsMirrorRecoveryMaintenanceWorker } from "../cloud-worker-process.mjs";
 
 const env={CLOUD_WORKER_ENABLED:"true",CLOUD_MEDIA_WORKER_ENABLED:"true",CLOUD_TIMELINE_WORKER_ENABLED:"true",SUPABASE_URL:"https://example.supabase.co",SUPABASE_SERVICE_ROLE_KEY:"server-secret"};
 test("cloud worker config remains disabled unless explicitly enabled",()=>{assert.throws(()=>readCloudWorkerConfig({...env,CLOUD_WORKER_ENABLED:"false"}),/disabled/);});
@@ -58,14 +58,14 @@ test("video worker remains an explicit opt-in and cannot replace the existing me
 test("cloud worker supervisor runs optional maintenance tasks and waits for them on shutdown",async()=>{
  const events=[],calls=[];
  const workers=[{async recoverExpired(){return 0;},async runCycle(){return{claimed:false};}}];
- const maintenanceWorkers=[{async run(){calls.push("retention");return{scanned:3,deleted:2,retryPending:1};}}];
+ const maintenanceWorkers=[{async run(){calls.push("retention");return{scanned:3,reconciled:1,quarantined:1,deleted:2,retryPending:1};}}];
  const supervisor=createCloudWorkerSupervisor({
   workers,maintenanceWorkers,maintenanceIntervalMs:10000,leaseSeconds:60,
   heartbeatIntervalMs:10000,pollMs:1000,onLog:event=>events.push(event)
  });
  await supervisor.start();await supervisor.stop();
  assert.deepEqual(calls,["retention"]);
- assert.ok(events.some(event=>event.kind==="maintenance"&&event.result.deleted===2));
+ assert.ok(events.some(event=>event.kind==="maintenance"&&event.result.deleted===2&&event.result.reconciled===1&&event.result.quarantined===1));
  assert.ok(events.some(event=>event.kind==="started"&&event.maintenanceWorkers===1));
 });
 
@@ -73,4 +73,73 @@ test("cloud worker supervisor validates optional maintenance worker contracts",(
  const workers=[{async recoverExpired(){return 0;},async runCycle(){return{claimed:false};}}];
  assert.throws(()=>createCloudWorkerSupervisor({workers,maintenanceWorkers:[{}]}),/maintenance workers/);
  assert.throws(()=>createCloudWorkerSupervisor({workers,maintenanceWorkers:[],maintenanceIntervalMs:1000}),/maintenance interval/);
+});
+
+test("cloud maintenance workers honor independent intervals",async()=>{
+ let clock=1_000_000;
+ const calls=[],events=[];
+ const workers=[{async recoverExpired(){return 0;},async runCycle(){return{claimed:false};}}];
+ const maintenanceWorkers=[
+  {intervalMs:10_000,async run(){calls.push("cleanup");return{deleted:1};}},
+  {intervalMs:60_000,async run(){calls.push("recovery");return{reconciled:1};}}
+ ];
+ const supervisor=createCloudWorkerSupervisor({
+  workers,maintenanceWorkers,maintenanceIntervalMs:10_000,now:()=>clock,
+  leaseSeconds:60,heartbeatIntervalMs:10_000,pollMs:1000,onLog:event=>events.push(event)
+ });
+ await supervisor.start();
+ assert.deepEqual(calls,["cleanup","recovery"]);
+ clock+=10_000;
+ await supervisor.runMaintenanceOnce();
+ assert.deepEqual(calls,["cleanup","recovery","cleanup"]);
+ clock+=50_000;
+ await supervisor.runMaintenanceOnce();
+ assert.deepEqual(calls,["cleanup","recovery","cleanup","cleanup","recovery"]);
+ assert.ok(events.some(event=>event.kind==="maintenance"&&event.workerIndex===0));
+ assert.ok(events.some(event=>event.kind==="maintenance"&&event.workerIndex===1));
+ await supervisor.stop();
+});
+
+test("cloud maintenance worker intervals are individually bounded",()=>{
+ const workers=[{async recoverExpired(){return 0;},async runCycle(){return{claimed:false};}}];
+ assert.throws(()=>createCloudWorkerSupervisor({
+  workers,maintenanceWorkers:[{intervalMs:9999,async run(){}}]
+ }),/maintenance worker interval/);
+ assert.throws(()=>createCloudWorkerSupervisor({
+  workers,maintenanceWorkers:[{intervalMs:86400001,async run(){}}]
+ }),/maintenance worker interval/);
+});
+
+test("GCS mirror recovery maintenance remains disabled unless explicitly enabled",()=>{
+ let created=0;
+ const worker=createGoogleGeminiGcsMirrorRecoveryMaintenanceWorker({
+  enabled:false,createService(){created++;return{recoverMirrorAttempts:async()=>({reconciled:1})};}
+ });
+ assert.equal(worker,null);
+ assert.equal(created,0);
+});
+
+test("GCS mirror recovery requires an injected server-side identity and service factory",()=>{
+ assert.throws(()=>createGoogleGeminiGcsMirrorRecoveryMaintenanceWorker({
+  enabled:true,intervalMs:10000
+ }),/explicitly injected server-side service factory/);
+ assert.throws(()=>createGoogleGeminiGcsMirrorRecoveryMaintenanceWorker({
+  enabled:true,intervalMs:10000,createService:()=>({})
+ }),/recoverMirrorAttempts/);
+ assert.throws(()=>createGoogleGeminiGcsMirrorRecoveryMaintenanceWorker({
+  enabled:true,intervalMs:9999,createService:()=>({recoverMirrorAttempts:async()=>({})})
+ }),/interval is invalid/);
+});
+
+test("GCS mirror recovery maintenance delegates a bounded batch to the injected service",async()=>{
+ const calls=[],options={projectId:"server-project",getAccessToken:async()=>"server-token"};
+ const worker=createGoogleGeminiGcsMirrorRecoveryMaintenanceWorker({
+  enabled:true,intervalMs:60000,serviceOptions:options,
+  createService(received){assert.equal(received,options);return{
+   async recoverMirrorAttempts(args){calls.push(args);return{reconciled:2,retryPending:1};}
+  };}
+ });
+ assert.equal(worker.intervalMs,60000);
+ assert.deepEqual(await worker.run(),{reconciled:2,retryPending:1});
+ assert.deepEqual(calls,[{limit:100}]);
 });

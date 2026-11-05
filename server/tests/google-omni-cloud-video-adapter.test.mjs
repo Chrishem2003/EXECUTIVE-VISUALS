@@ -36,7 +36,7 @@ function harness({ providerStatus = "completed", failRecord = false, stored = tr
         await options.onInteractionCreated({ interactionId, status: "running", model: "gemini-omni-1.1-flash" });
         throw Object.assign(new Error("stream interrupted"), { code: "GEMINI_OMNI_SUBMISSION_OUTCOME_UNKNOWN" });
       }
-      return { interactionId, taskId: interactionId, provider: "google", model: "gemini-omni-1.1-flash", status: "running", outputUrls: ["https://generativelanguage.googleapis.com/v1beta/files/generated123"] };
+      return { interactionId, taskId: interactionId, provider: "google", model: "gemini-omni-1.1-flash", status: "running", outputUri: "https://generativelanguage.googleapis.com/v1beta/files/generated123" };
     },
     async getInteractionForIngestion(id, context) {
       calls.push(["get", id, context]);
@@ -116,7 +116,7 @@ test("polls only an interaction durably scoped to the exact leased job", async (
   assert.equal(task.status, "succeeded");
   assert.equal(task.outputUrls.length, 1);
   assert.equal(task.rawInteraction.id, interactionId);
-  assert.equal(task.rawInteraction.steps[0].content[0].uri, "https://generativelanguage.googleapis.com/v1beta/files/generated123");
+  assert.ok(task.rawInteraction.steps.some(step => step?.type === "model_output" && Array.isArray(step.content) && step.content.some(item => item?.type === "video" && item.uri === "https://generativelanguage.googleapis.com/v1beta/files/generated123")));
   assert.equal(h.records.get(interactionId).state, "succeeded");
 });
 

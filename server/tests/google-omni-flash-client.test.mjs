@@ -173,7 +173,7 @@ test("cancels and deletes only authorized, syntactically valid interaction IDs",
     error.code === "GEMINI_OMNI_INVALID_INTERACTION_ID");
 });
 
-test("rejects inline output plans and malformed provider response payloads", async () => {
+test("rejects inline plans and treats malformed successful responses as ambiguous submissions", async () => {
   const h = harness();
   const inline = await buildGeminiOmniFlashInteractionRequest({
     prompt: "A sunrise", delivery: "inline"
@@ -195,7 +195,7 @@ test("rejects inline output plans and malformed provider response payloads", asy
     error.code === "GEMINI_OMNI_PLAN_INVALID");
   const bad = harness({ fetchImpl: async () => response(200, { id, model: "wrong", status: "completed", steps: [] }) });
   await assert.rejects(async () => bad.client.createInteraction(await plan()), error =>
-    error.code === "GEMINI_OMNI_INVALID_RESPONSE");
+    error.code === "GEMINI_OMNI_SUBMISSION_OUTCOME_UNKNOWN");
 });
 
 test("treats an already-deleted Google interaction as an idempotent success", async () => {
