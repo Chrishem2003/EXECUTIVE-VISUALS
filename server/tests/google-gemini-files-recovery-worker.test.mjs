@@ -103,10 +103,10 @@ test("quarantines multiple matching display names and never chooses one arbitrar
 
 test("does not contact Google when another recovery worker owns the lease", async () => {
   const h = harness();
-  await h.worker.run();
-  const second = await h.worker.run();
-  assert.equal(second.reconciled, 0);
-  assert.equal(second.results[0].status, "already_claimed");
+  const results = await Promise.all([h.worker.run(), h.worker.run()]);
+  const skipped = results.find(result => result.results[0]?.status === "already_claimed");
+  assert.ok(skipped);
+  assert.equal(results.filter(result => result.reconciled === 1).length, 1);
   assert.equal(h.calls.filter(call => call[0] === "list").length, 1);
   assert.equal(h.calls.filter(call => call[0] === "claim").length, 2);
 });
