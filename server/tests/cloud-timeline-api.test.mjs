@@ -179,3 +179,22 @@ test("cloud waveform endpoint reuses a valid private derivative without download
   await rm(result.cleanupDirectory,{recursive:true,force:true});
  }finally{await rm(root,{recursive:true,force:true});}
 });
+
+test("cloud waveform endpoint repairs a corrupt cached derivative before serving it",async()=>{
+ const root=await mkdtemp(join(tmpdir(),"ev-cloud-waveform-corrupt-")),source=Buffer.from("cloud-audio-source"),png=Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]),Buffer.from("repaired-waveform")]);
+ const sha=createHash("sha256").update(source).digest("hex"),assetId="823e4567-e89b-42d3-a456-426614174000",objectPath=project+"/"+assetId+"/original.wav",derivativePath=project+"/"+assetId+"/waveform-v1-"+sha+".png";let removed=0,downloaded=0;
+ const asset={id:assetId,ownerId:owner,projectId:project,name:"song.wav",mediaType:"audio/wav",size:source.length,sha256:sha,storageBucket:"executive-visuals-media",objectPath};
+ const storage={
+  async downloadToFile(path,file){downloaded++;if(path===derivativePath){await writeFile(file,Buffer.from("bad-png"));return{size:7,sha256:"bad"};}if(path===objectPath){await writeFile(file,source);return{size:source.length,sha256:sha};}throw new Error("Unexpected object path.");},
+  async remove(path){assert.equal(path,derivativePath);removed++;},
+  async uploadFile(path,file,mime,upsert){const info=await import("node:fs/promises").then(fs=>fs.stat(file));return{bucket:"executive-visuals-media",path,size:info.size,contentType:mime,sha256:createHash("sha256").update(png).digest("hex")};}
+ };
+ const waveformCache={async get(){const dir=join(root,"derived","waveforms");await mkdir(dir,{recursive:true});const output=join(dir,"repaired.png");await writeFile(output,png);return output;}};
+ const api=createCloudTimelineApi({timelineService:{assets:{async get(){return asset;}},storage},waveformCache,mediaRoot:root});
+ try{
+  const result=await api.handle({method:"GET",path:"/api/cloud/assets/"+assetId+"/waveform",ownerId:owner});
+  assert.equal(result.status,200);assert.equal(removed,1);assert.equal(downloaded,2);
+  assert.deepEqual(await readFile(result.waveformPath),png);
+  await rm(result.cleanupDirectory,{recursive:true,force:true});
+ }finally{await rm(root,{recursive:true,force:true});}
+});
