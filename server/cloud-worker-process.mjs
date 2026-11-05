@@ -11,6 +11,7 @@ import { createGoogleGeminiFilesComposition } from "./google-gemini-files-compos
 import { createGoogleGeminiFilesRepository } from "./google-gemini-files-repository.mjs";
 import { createGoogleGeminiFilesRetentionWorker } from "./google-gemini-files-retention-worker.mjs";
 import { createGoogleGeminiFilesRecoveryWorker } from "./google-gemini-files-recovery-worker.mjs";
+import { createGoogleGeminiGcsMirrorBootstrap } from "./google-gemini-gcs-mirror-bootstrap.mjs";
 
 const truth=(value)=>value==="true";
 const HOST_RULE=/^(?:\*\.)?(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)(?:\.(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?))*$/i;
@@ -188,9 +189,18 @@ export async function startCloudWorkerProcess(env=process.env,dependencies={}){
    env.GEMINI_GCS_MIRROR_RECOVERY_INTERVAL_MS,maintenanceIntervalMs,10000,86400000,
    "GCS mirror recovery interval"
   );
+  let createService=dependencies.createGoogleGeminiGcsMirrorService;
+  if(!createService){
+   const bootstrap=await createGoogleGeminiGcsMirrorBootstrap({
+    env,fetchImpl:dependencies.fetchImpl||globalThis.fetch,
+    GoogleAuthClass:dependencies.GoogleAuthClass
+   });
+   await bootstrap.checkIdentity();
+   createService=bootstrap.createService;
+  }
   const worker=createGoogleGeminiGcsMirrorRecoveryMaintenanceWorker({
    enabled:true,
-   createService:dependencies.createGoogleGeminiGcsMirrorService,
+   createService,
    serviceOptions:{
     ...cloudCredentials,env,
     fetchImpl:dependencies.fetchImpl||globalThis.fetch,
