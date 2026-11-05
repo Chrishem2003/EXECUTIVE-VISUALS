@@ -56,7 +56,7 @@ test("records only successful dry-run decisions within a bounded credit ceiling"
       {...decision,inputHash:"bad"},
       {...decision,estimatedCredits:251}
     ]) assert.throws(()=>f.ledger.recordPreflight({ownerId,projectId,actorId:ownerId,decision:bad,maxEstimatedCredits:250}));
-    assert.throws(()=>f.ledger.recordPreflight({ownerId,projectId,actorId:ownerId,decision,maxEstimatedCredits:239}),e=>e.code==="RUNWAY_APPROVAL_BUDGET_INVALID");
+    assert.throws(()=>f.ledger.recordPreflight({ownerId,projectId,actorId:ownerId,decision:{...decision,maxEstimatedCredits:239},maxEstimatedCredits:239}),e=>e.code==="RUNWAY_APPROVAL_BUDGET_INVALID");
     assert.throws(()=>f.ledger.recordPreflight({ownerId,projectId,actorId:reviewerId,decision,maxEstimatedCredits:250}),e=>e.code==="RUNWAY_APPROVAL_PROJECT_FORBIDDEN");
   } finally {f.db.close();await rm(f.root,{recursive:true,force:true});}
 });
