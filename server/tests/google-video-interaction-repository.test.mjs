@@ -14,7 +14,7 @@ function row(overrides = {}) {
     provider: "google", model: "gemini-omni-1.1-flash",
     interaction_id: interactionId, job_id: jobId, owner_id: ownerId,
     project_id: projectId, request_hash: requestHash,
-    parent_interaction_id: null, state: "running", output_file_name: null,
+    parent_interaction_id: null, state: "running", output_file_name: null, output_uri: null,
     submitted_at: new Date().toISOString(), expires_at: now, deleted_at: null, metadata: {},
     ...overrides
   };
@@ -80,7 +80,8 @@ test("updates and deletes only a matching scoped interaction", async () => {
     if (options.method === "PATCH" && JSON.parse(options.body).state === "deleted") {
       return response(200, [row({ state: "deleted", deleted_at: new Date().toISOString() })]);
     }
-    return response(200, [row({ state: JSON.parse(options.body).state })]);
+    const body = JSON.parse(options.body);
+    return response(200, [row({ state: body.state, output_uri: body.output_uri ?? null })]);
   });
   assert.equal((await h.repository.updateInteraction({ ...scope, state: "succeeded", outputUri: "https://generativelanguage.googleapis.com/v1beta/files/generated123" })).outputUri, "https://generativelanguage.googleapis.com/v1beta/files/generated123");
   assert.equal((await h.repository.markInteractionDeleted(scope)).state, "deleted");
