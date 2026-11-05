@@ -4,22 +4,31 @@ Status: implementation and disposable CI complete; real-cloud staging is not app
 
 ## Architecture boundary
 
-The cloud worker supervisor accepts an explicitly injected
-`createGoogleGeminiGcsMirrorService` factory. The factory can be constructed with
-`createGoogleGeminiGcsMirrorServiceFactory` from
-`server/google-gemini-gcs-mirror-service-factory.mjs`.
+When `GEMINI_GCS_MIRROR_RECOVERY_ENABLED=true`, the standard
+`startCloudWorkerProcess()` entry point creates the Google ADC/WIF bootstrap
+through `createGoogleGeminiGcsMirrorBootstrap()`, verifies the configured
+identity, and uses its server-side service factory to construct the recovery
+maintenance worker. The standalone `npm run start:cloud-worker` entry point
+therefore does not require a manually injected factory for this supported path.
 
-The factory deliberately does **not** manufacture Google credentials. The
-hosting process must inject a server-side `getAccessToken` implementation
-backed by an approved workload identity. Do not reuse per-user Google Drive
-OAuth tokens: those represent user consent and are not a workload identity for
-the GCS bucket.
+The optional `dependencies.createGoogleGeminiGcsMirrorService` injection is
+for controlled hosting overrides and deterministic tests; it is not required
+by the normal worker startup path. Bootstrap and identity failures stop startup
+rather than falling back to user credentials or unauthenticated access.
 
-The repository's standalone `npm run start:cloud-worker` entry point calls
-`startCloudWorkerProcess()` without injected dependencies. Therefore the GCS
-recovery feature flag must remain disabled for that entry point until a reviewed
-server bootstrap supplies the factory. Enabling the flag without the factory
-must fail startup closed; this is intentional.
+Do not reuse per-user Google Drive OAuth tokens: those represent user consent
+and are not a workload identity for the GCS bucket. The worker must use the
+dedicated workload identity described below. Keep recovery disabled until the
+isolated staging identity, bucket permissions, private storage, and recovery
+behavior have been explicitly approved.
+
+For `GOOGLE_APPLICATION_CREDENTIALS`, the application bootstrap accepts only a
+Google Workload Identity Federation external-account configuration with a
+validated Google STS audience and token endpoints and an absolute file-based
+subject-token source. URL-based, AWS, executable, service-account-key, and user
+credential sources are rejected. This restriction is part of the WIF hardening
+in PR #84 and must be present in the deployed worker revision before recovery is
+enabled.
 
 ## Required server-only settings
 
