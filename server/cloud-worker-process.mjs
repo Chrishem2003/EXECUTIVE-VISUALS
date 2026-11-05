@@ -141,6 +141,27 @@ export function createGoogleGeminiGcsMirrorRecoveryMaintenanceWorker({
  });
 }
 
+export async function resolveGoogleGeminiGcsMirrorServiceFactory({env,dependencies={},createBootstrap=createGoogleGeminiGcsMirrorBootstrap}={}){
+ const injectedFactory=dependencies.createGoogleGeminiGcsMirrorService;
+ if(injectedFactory!==undefined){
+  if(typeof injectedFactory!=="function")throw new Error("Injected GCS mirror service factory is invalid.");
+  if(typeof dependencies.checkGoogleGeminiGcsMirrorIdentity!=="function")
+   throw new Error("Injected GCS mirror service factory requires an explicit server-side identity check.");
+  const identity=await dependencies.checkGoogleGeminiGcsMirrorIdentity();
+  if(identity?.ready!==true)throw new Error("Injected GCS mirror identity verification did not confirm readiness.");
+  return injectedFactory;
+ }
+ const bootstrap=await createBootstrap({
+  env,fetchImpl:dependencies.fetchImpl||globalThis.fetch,
+  GoogleAuthClass:dependencies.GoogleAuthClass
+ });
+ if(typeof bootstrap?.checkIdentity!=="function"||typeof bootstrap?.createService!=="function")
+  throw new Error("GCS mirror bootstrap must expose identity verification and a service factory.");
+ const identity=await bootstrap.checkIdentity();
+ if(identity?.ready!==true)throw new Error("GCS mirror workload identity verification did not confirm readiness.");
+ return bootstrap.createService;
+}
+
 export async function startCloudWorkerProcess(env=process.env,dependencies={}){
  const config=readCloudWorkerConfig(env);
  if((config.media||config.timeline||config.video)&&(!executableAvailable("ffmpeg")||!executableAvailable("ffprobe")))throw new Error("Cloud media workers require FFmpeg and FFprobe on PATH.");
@@ -189,15 +210,7 @@ export async function startCloudWorkerProcess(env=process.env,dependencies={}){
    env.GEMINI_GCS_MIRROR_RECOVERY_INTERVAL_MS,maintenanceIntervalMs,10000,86400000,
    "GCS mirror recovery interval"
   );
-  let createService=dependencies.createGoogleGeminiGcsMirrorService;
-  if(!createService){
-   const bootstrap=await createGoogleGeminiGcsMirrorBootstrap({
-    env,fetchImpl:dependencies.fetchImpl||globalThis.fetch,
-    GoogleAuthClass:dependencies.GoogleAuthClass
-   });
-   await bootstrap.checkIdentity();
-   createService=bootstrap.createService;
-  }
+  const createService=await resolveGoogleGeminiGcsMirrorServiceFactory({env,dependencies});
   const worker=createGoogleGeminiGcsMirrorRecoveryMaintenanceWorker({
    enabled:true,
    createService,
