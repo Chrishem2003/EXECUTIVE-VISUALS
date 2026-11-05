@@ -271,8 +271,6 @@ test("workflow graphs are validated, versioned and owner-scoped",async()=>{
   const other=await register("workflow-other@example.test");
   const hidden=await request("/api/workflows/"+workflow.id,{},other);
   assert.equal(hidden.status,404);
-  const hiddenVersions=await request("/api/timelines/"+timeline.id+"/versions",{},other);
-  assert.equal(hiddenVersions.status,404);
 });
 
 
@@ -405,6 +403,8 @@ test("timelines persist with asset ownership, revision checks and interchange ex
   const other=await register("timeline-other@example.test");
   const hidden=await request("/api/timelines/"+timeline.id,{},other);
   assert.equal(hidden.status,404);
+  const hiddenVersions=await request("/api/timelines/"+timeline.id+"/versions",{},other);
+  assert.equal(hiddenVersions.status,404);
   const invalid={...document,tracks:[{...document.tracks[0],clips:[...document.tracks[0].clips,{...document.tracks[0].clips[0],id:"clip-overlap",timelineStart:{value:120,rate:24}}]}]};
   const reject=await request("/api/timelines",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({timeline:invalid})},cookie);
   assert.equal(reject.status,422);
