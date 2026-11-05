@@ -29,10 +29,10 @@ function objectMetadata(overrides = {}) {
     size: String(source.sizeBytes),
     contentType: source.mediaType,
     metadata: {
-      executiveVisualsAssetId: assetId,
-      executiveVisualsOwnerId: ownerId,
-      executiveVisualsProjectId: projectId,
-      executiveVisualsSha256: sha256
+      executivevisualsassetid: assetId,
+      executivevisualsownerid: ownerId,
+      executivevisualsprojectid: projectId,
+      executivevisualssha256: sha256
     },
     ...overrides
   };
@@ -87,9 +87,9 @@ test("fails closed when the caller identity cannot read the exact GCS object", a
 test("rejects an object generation, checksum, owner or MIME mismatch before returning a gs URI", async () => {
   for (const metadata of [
     objectMetadata({ generation: "1762300800000001" }),
-    objectMetadata({ metadata: { executiveVisualsAssetId: assetId, executiveVisualsOwnerId: ownerId, executiveVisualsProjectId: projectId, executiveVisualsSha256: "b".repeat(64) } }),
+    objectMetadata({ metadata: { executivevisualsassetid: assetId, executivevisualsownerid: ownerId, executivevisualsprojectid: projectId, executivevisualssha256: "b".repeat(64) } }),
     objectMetadata({ contentType: "application/octet-stream" }),
-    objectMetadata({ metadata: { executiveVisualsAssetId: assetId, executiveVisualsOwnerId: "44444444-4444-4444-8444-444444444444", executiveVisualsProjectId: projectId, executiveVisualsSha256: sha256 } })
+    objectMetadata({ metadata: { executivevisualsassetid: assetId, executivevisualsownerid: "44444444-4444-4444-8444-444444444444", executivevisualsprojectid: projectId, executivevisualssha256: sha256 } })
   ]) {
     const h = harness({ metadata });
     await assert.rejects(
