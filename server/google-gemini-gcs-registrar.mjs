@@ -209,6 +209,15 @@ export function createGoogleGeminiGcsFilesRegistrar({
           expiresAt: cached.expiresAt, sourceType: cached.sourceType || "upload", reused: true
         });
       }
+      // The provider mapping is unique per asset/owner. Never silently replace a
+      // stale or changed mapping: doing so would orphan the old provider file.
+      // Explicit deletion/reconciliation must retire it before a new registration.
+      if (cached) {
+        throw fail(
+          "An existing Gemini provider-file mapping must be retired before this asset can be registered again.",
+          "GEMINI_GCS_STALE_MAPPING_PRESENT"
+        );
+      }
 
       const accessToken = await token();
       const response = await request(ORIGIN + "/v1beta/files:register", accessToken, {
@@ -218,15 +227,13 @@ export function createGoogleGeminiGcsFilesRegistrar({
         throw fail("Google GCS registration did not return exactly one File resource.", "GEMINI_GCS_RESPONSE_INVALID");
       }
       const file = parseFile(response.files[0], asset);
-      const expiresAtMs = currentTime + registrationDays * 24 * 60 * 60 * 1000;
-      let expiresAt = new Date(expiresAtMs).toISOString();
-      if (response.files[0].expirationTime !== undefined) {
-        const providerExpiry = Date.parse(response.files[0].expirationTime);
-        if (!Number.isFinite(providerExpiry) || providerExpiry <= currentTime) {
-          throw fail("Google GCS registration returned an invalid expiration.", "GEMINI_GCS_RESPONSE_INVALID");
-        }
-        expiresAt = new Date(Math.min(expiresAtMs, providerExpiry)).toISOString();
+      const providerExpiry = Date.parse(response.files[0].expirationTime || "");
+      if (!response.files[0].expirationTime || !Number.isFinite(providerExpiry) || providerExpiry <= currentTime) {
+        try { await deleteProviderFile(file.name, accessToken); } catch {}
+        throw fail("Google GCS registration did not return a verified future expiration.", "GEMINI_GCS_EXPIRY_UNVERIFIED");
       }
+      const expiresAtMs = currentTime + registrationDays * 24 * 60 * 60 * 1000;
+      const expiresAt = new Date(Math.min(expiresAtMs, providerExpiry)).toISOString();
       try {
         await repository.recordProviderFile({
           provider: "google-gemini-files",
