@@ -5,8 +5,8 @@ import {
   checksumTimeline,
   isTimelineRecoveryDraft,
   timelineRecoveryKey
-} from "../src/core/timeline-recovery.ts";
-import { createTimeline, addTrack } from "../src/core/timeline.ts";
+} from "../../src/core/timeline-recovery.ts";
+import { createTimeline, addTrack } from "../../src/core/timeline.ts";
 
 function sampleTimeline() {
   return addTrack(createTimeline("project-1", "timeline-1", "Recovery test"), {
