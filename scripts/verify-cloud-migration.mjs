@@ -100,7 +100,7 @@ if (!sql.includes("revoke all on function executive_visuals.claim_next_job(text,
 if (!sql.includes("lease_expires_at timestamptz") || !sql.includes("available_at timestamptz") || !sql.includes("lease_heartbeat_at timestamptz")) {
   issues.push("Durable worker lease and delayed retry fields are missing from the cloud job contract.");
 }
-if (/\\b(drop\\s+table|truncate|delete\\s+from)\\b/i.test(videoSubmissionSql)) issues.push("Cloud video submission migration must not contain destructive DDL/DML.");
+if (/\b(drop\s+table|truncate|delete\s+from)\b/i.test(videoSubmissionSql)) issues.push("Cloud video submission migration must not contain destructive DDL/DML.");
 if (!videoSubmissionSql.includes("create table if not exists executive_visuals.video_generation_submissions")) issues.push("Cloud video submission ledger table is missing.");
 if (!videoSubmissionSql.includes("alter table executive_visuals.video_generation_submissions enable row level security;")) issues.push("Cloud video submission ledger must enable RLS.");
 if (!videoSubmissionSql.includes("revoke all on executive_visuals.video_generation_submissions from public, anon, authenticated;")) issues.push("Cloud video submission ledger must be unavailable to untrusted roles.");
