@@ -171,7 +171,7 @@ export function createGoogleOmniCloudVideoIntegration({
         // The executor only needs a bounded output count. This opaque handle is
         // never fetched by a browser; ingestOutputs consumes rawInteraction.
         outputUrls: Object.freeze(state === "succeeded" ? ["google-interaction:" + providerTaskId] : []),
-        rawInteraction
+        rawInteraction: interactionForIngestion
       });
     }
   });
