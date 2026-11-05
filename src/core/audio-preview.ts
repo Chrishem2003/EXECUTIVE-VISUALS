@@ -26,7 +26,7 @@ export function extractWaveformPeaks(buffer:Pick<AudioBuffer,"length"|"numberOfC
    peaks[bucket]=Math.max(peaks[bucket],Math.min(1,peak));
   }
  }
- return peaks;
+ return peaks.map(peak=>Number(peak.toFixed(6)));
 }
 
 export function waveformSvg(peaks:readonly number[],width=480,height=36):string{
