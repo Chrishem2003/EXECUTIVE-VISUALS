@@ -31,6 +31,8 @@ A succeeded provider task is allowed to proceed through private output ingestion
 
 If the cancellation state cannot be checked, the worker quarantines the job. If a cancellation request races with the one-shot provider POST, the submission ledger is marked unknown and must be reconciled. The provider may have accepted or billed the request.
 
+A service-role-only `resume_reconciled_video_generation_job` operation can resume a quarantined task only when the operator supplies a bounded review reference and the existing submitted task and reserved budget are present. If a cancellation request was pending, the operation clears that flag and records `cancellationDecision=continue_after_review` in the job and audit event. This is an operator attestation/reference string, not an independently verified evidence artifact; production staging must provide an auditable review procedure before enabling this path.
+
 ## Billing and provider contract
 
 Runway documents that DELETE returns 204 for cancellation/deletion, but execution can advance concurrently; neither the response nor a refund eligibility decision guarantees generation stops. A DELETE 404 is idempotent for already aborted/deleted tasks, but does not establish billing state. Therefore:
