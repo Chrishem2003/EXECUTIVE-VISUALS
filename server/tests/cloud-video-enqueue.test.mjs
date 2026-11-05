@@ -194,7 +194,7 @@ test("Kie Seedance enqueue requires explicit remote gates and a verified account
 
 test("Kie Seedance enqueue enforces resolution, duration, reference and reservation bounds",async()=>{
  let calls=0;
- const client=createCloudVideoEnqueue({...base,env:{VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",KIE_VIDEO_ENABLED:"true",KIE_VIDEO_ALLOW_REMOTE:"true",KIE_USD_PER_CREDIT:"0.005"},fetchImpl:async()=>{calls++;return response([resultRow]);}});
+ const client=createCloudVideoEnqueue({...base,env:{VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",KIE_VIDEO_ENABLED:"true",KIE_VIDEO_ALLOW_REMOTE:"true",KIE_API_KEY:"kie-test-key",KIE_USD_PER_CREDIT:"0.005"},fetchImpl:async()=>{calls++;return response([resultRow]);}});
  const kieInput={projectId,provider:"kie",model:"bytedance/seedance-2",requestHash,prompt:"A vertical product film",durationSeconds:5,resolution:"720p",aspectRatio:"9:16",audioMode:"provider_default",outputFormat:"mp4"};
  const kieArgs={ownerId,projectId,idempotencyKey:"kie-request-002",provider:"kie",model:"bytedance/seedance-2",requestHash,input:kieInput,budgetApprovalId:approvalId,reservedAmount:1.025,currency:"USD"};
  await assert.rejects(()=>client.enqueue({...kieArgs,reservedAmount:1.024}),error=>error.code==="VIDEO_BUDGET_BELOW_PROVIDER_ESTIMATE");
@@ -207,7 +207,7 @@ test("Kie Seedance enqueue enforces resolution, duration, reference and reservat
 
 test("Kie enqueue canonicalizes storyboard frame aliases into durable private asset IDs",async()=>{
  let body;
- const client=createCloudVideoEnqueue({...base,env:{VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",KIE_VIDEO_ENABLED:"true",KIE_VIDEO_ALLOW_REMOTE:"true",KIE_USD_PER_CREDIT:"0.005"},fetchImpl:async(url,options)=>{body=JSON.parse(options.body);return response([resultRow]);}});
+ const client=createCloudVideoEnqueue({...base,env:{VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",KIE_VIDEO_ENABLED:"true",KIE_VIDEO_ALLOW_REMOTE:"true",KIE_API_KEY:"kie-test-key",KIE_USD_PER_CREDIT:"0.005"},fetchImpl:async(url,options)=>{body=JSON.parse(options.body);return response([resultRow]);}});
  const kieInput={projectId,provider:"kie",model:"bytedance/seedance-2",requestHash,prompt:"A product shot",durationSeconds:5,resolution:"720p",firstFrameAssetId:"923e4567-e89b-42d3-a456-426614174000",referenceImageAssetIds:[],outputFormat:"mp4"};
  await client.enqueue({ownerId,projectId,idempotencyKey:"kie-frame-alias",provider:"kie",model:"bytedance/seedance-2",requestHash,input:kieInput,budgetApprovalId:approvalId,reservedAmount:1.025,currency:"USD"});
  assert.equal(body.p_input.startFrameAssetId,kieInput.firstFrameAssetId);
