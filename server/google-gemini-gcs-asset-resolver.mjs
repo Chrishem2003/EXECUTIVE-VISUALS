@@ -143,10 +143,10 @@ export function createGoogleGeminiGcsAssetResolver({
           String(metadata?.generation || "") !== source.generation ||
           String(metadata?.size || "") !== String(source.sizeBytes) ||
           metadata?.contentType !== source.mediaType ||
-          custom.executiveVisualsAssetId !== assetId ||
-          custom.executiveVisualsOwnerId !== ownerId ||
-          (custom.executiveVisualsProjectId || null) !== scopedProjectId ||
-          custom.executiveVisualsSha256 !== source.sha256) {
+          custom.executivevisualsassetid !== assetId ||
+          custom.executivevisualsownerid !== ownerId ||
+          (custom.executivevisualsprojectid || null) !== scopedProjectId ||
+          custom.executivevisualssha256 !== source.sha256) {
         throw fail("GCS object generation, size, media type or ownership metadata does not match the private source registry.", "GEMINI_GCS_OBJECT_INTEGRITY_MISMATCH");
       }
 
