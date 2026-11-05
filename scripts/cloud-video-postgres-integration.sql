@@ -478,5 +478,33 @@ begin
 end
 $overrun_state$;
 
+do $owned_job_status$
+declare
+ status_row jsonb;
+ target_job uuid;
+begin
+ select job_id into target_job from overrun_context;
+ status_row := executive_visuals.get_owned_video_generation_job_status(
+   target_job,'123e4567-e89b-42d3-a456-426614174000'
+ );
+ if status_row is null
+    or status_row->>'jobId' <> target_job::text
+    or status_row->>'status' <> 'processing'
+    or status_row#>>'{budget,state}' <> 'reserved'
+    or (status_row#>>'{budget,reservedAmount}')::numeric <> 0.5 then
+   raise exception 'owner-scoped video job status projection is invalid';
+ end if;
+ if executive_visuals.get_owned_video_generation_job_status(
+   target_job,'223e4567-e89b-42d3-a456-426614174000'
+ ) is not null then
+   raise exception 'video job status leaked across owners';
+ end if;
+ if has_function_privilege('authenticated',
+   'executive_visuals.get_owned_video_generation_job_status(uuid,uuid)','EXECUTE') then
+   raise exception 'authenticated role can call the server-only video job status RPC';
+ end if;
+end
+$owned_job_status$;
+
 reset role;
 select 'cloud video PostgreSQL integration checks passed' as result;
