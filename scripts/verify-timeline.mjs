@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { addClip, addMarker, addTrack, createTimeline, moveClip, rational, seconds, splitClip, toOpenTimelineIo, trimClip, validateTimeline } from "../src/core/timeline.ts";
 import { analyzeTimelineQuality } from "../src/core/timeline-quality.ts";
 import { generatedVideoAlreadyOnTimeline, generatedVideoDurationSeconds, selectLatestGeneratedVideoAsset } from "../src/core/generated-video-import.ts";
-import { shouldPreserveCloudTimelineDraft } from "../src/core/timeline-conflict.ts";
+import { resolveCloudTimelineRefresh, shouldPreserveCloudTimelineDraft } from "../src/core/timeline-conflict.ts";
 
 let timeline=createTimeline("project-1","timeline-1","Pilot episode",{numerator:24,denominator:1});
 timeline=addTrack(timeline,{id:"v1",name:"Video 1",kind:"video",enabled:true,locked:false,clips:[]});
@@ -81,5 +81,32 @@ assert.equal(shouldPreserveCloudTimelineDraft({hasConflict:true,timelineId:"time
 assert.equal(shouldPreserveCloudTimelineDraft({hasConflict:false,timelineId:"timeline-1",timelineProjectId:"project-1",selectedProjectId:"project-1"}),false);
 assert.equal(shouldPreserveCloudTimelineDraft({hasConflict:true,timelineId:"timeline-1",timelineProjectId:"project-1",selectedProjectId:"project-2"}),false);
 assert.equal(shouldPreserveCloudTimelineDraft({hasConflict:true,timelineId:null,timelineProjectId:"project-1",selectedProjectId:"project-1"}),false);
+const localDraft={id:"timeline-1",projectId:"project-1",name:"Unsaved local edit"};
+const latestServerDraft={id:"timeline-1",projectId:"project-1",name:"Server revision"};
+const otherServerDraft={id:"timeline-2",projectId:"project-1",name:"Other timeline"};
+const conflictedRefresh=resolveCloudTimelineRefresh(
+ {hasConflict:true,timelineId:"timeline-1",timelineProjectId:"project-1",selectedProjectId:"project-1"},
+ localDraft,3,
+ [{id:"timeline-1",projectId:"project-1",revision:4,timeline:latestServerDraft}]
+);
+assert.strictEqual(conflictedRefresh.timeline,localDraft,"refresh must retain the exact unsaved local draft object");
+assert.equal(conflictedRefresh.serverRevision,3,"conflict refresh must not advance the stale expected revision");
+assert.equal(conflictedRefresh.preservedLocalDraft,true);
+const resolvedRefresh=resolveCloudTimelineRefresh(
+ {hasConflict:true,timelineId:"timeline-1",timelineProjectId:"project-2",selectedProjectId:"project-2"},
+ localDraft,3,
+ [{id:"timeline-1",projectId:"project-2",revision:4,timeline:latestServerDraft}]
+);
+assert.strictEqual(resolvedRefresh.timeline,latestServerDraft);
+assert.equal(resolvedRefresh.serverRevision,4);
+assert.equal(resolvedRefresh.preservedLocalDraft,false);
+const initialRefresh=resolveCloudTimelineRefresh(
+ {hasConflict:false,timelineId:null,timelineProjectId:null,selectedProjectId:"project-1"},
+ null,0,
+ [{id:"timeline-2",projectId:"project-1",revision:2,timeline:otherServerDraft}]
+);
+assert.strictEqual(initialRefresh.timeline,otherServerDraft);
+assert.equal(initialRefresh.serverRevision,2);
+
 
 console.log("Timeline engine checks passed: rational timing, source trims, split, cross-track and same-track moves, overlap protection, markers and editorial interchange export.");
