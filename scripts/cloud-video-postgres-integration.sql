@@ -532,6 +532,13 @@ begin
 end
 $cancel_in_flight$;
 
+-- Model the worker's actual quarantine transition before operator review/resume.
+select executive_visuals.quarantine_video_generation_job(
+ (select job_id from in_flight_cancel_context),
+ 'video-worker-cancel',
+ 'VIDEO_CANCELLATION_REQUIRES_RECONCILIATION'
+);
+
 -- Only a service-role operator resume with a recorded review reference clears the cancellation request.
 select executive_visuals.resume_reconciled_video_generation_job(
  (select job_id from in_flight_cancel_context),
