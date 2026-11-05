@@ -26,6 +26,8 @@ function harness(initialRows=[row]){
     const expiryMatch=query.match(/[?&]lease_expires_at=gt\.([^&]+)/);
     if(expiryMatch&&Date.parse(target.lease_expires_at)<=Date.parse(decodeURIComponent(expiryMatch[1])))return new Response("[]",{status:200});
     if(query.includes("state=in.")&&!["PREPARED","UPLOADING","OUTCOME_UNKNOWN"].includes(target.state))return new Response("[]",{status:200});
+    const stateEqMatch=query.match(/[?&]state=eq\.([A-Z_]+)/);
+    if(stateEqMatch&&target.state!==stateEqMatch[1])return new Response("[]",{status:200});
     Object.assign(target,body);
     return new Response(JSON.stringify([target]),{status:200});
    }
@@ -82,6 +84,16 @@ test("does not automatically reclaim terminal or reconciliation-required attempt
  assert.equal(h.rows[0].state,"COMPLETED");
 });
 
+test("uses a separate short lease to reconcile quarantined exports without reopening upload claims",async()=>{
+ const h=harness();
+ h.rows[0].state="RECONCILIATION_REQUIRED";
+ assert.equal(await h.store.claim({attemptKey,ownerId}),null);
+ assert.equal(await h.store.claimForReconciliation({attemptKey,ownerId}),null===true?null:h.rows[0].lease_token);
+ assert.match(h.calls.at(-1).url,/state=eq\.RECONCILIATION_REQUIRED/);
+ assert.match(h.calls.at(-1).url,/lease_expires_at/);
+ assert.equal(h.rows[0].state,"RECONCILIATION_REQUIRED");
+ assert.ok(h.rows[0].lease_token);
+});
 test("rejects malformed attempt keys before issuing a lease update",async()=>{
  const h=harness();
  await assert.rejects(()=>h.store.claim({attemptKey:"bad",ownerId}),
