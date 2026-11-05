@@ -7,8 +7,8 @@ const attemptKey="a".repeat(64);
 const row={attempt_key:attemptKey,owner_id:ownerId,project_id:null,asset_id:"33333333-3333-4333-8333-333333333333",
  parent_folder_id:null,drive_file_id:"driveFile_123456789",mime_type:"video/mp4",byte_size:5,sha256:"b".repeat(64),
  encrypted_session_uri:null,state:"PREPARED",attempt_count:1,updated_at:"2026-11-05T00:00:00Z"};
-function harness(){
- const rows=[{...row}],calls=[];
+function harness(initialRows=[row]){
+ const rows=initialRows.map(value=>({...value})),calls=[];
  const store=createGoogleDriveExportAttemptStore({url:"https://example.supabase.co",serviceRoleKey:"service-role-secret-123456789",
   encryptionKey:"0123456789abcdef0123456789abcdef",fetchImpl:async(url,options)=>{
    calls.push({url:String(url),options});
@@ -41,11 +41,16 @@ test("creates an owner-scoped durable export attempt without exposing session cr
  assert.equal(h.calls[0].options.headers["content-profile"],"executive_visuals");
 });
 
-test("reuses the canonical Drive file ID when concurrent creates race on the same idempotency key",async()=>{
- const h=harness();
- const result=await h.store.createOrGet({attemptKey,ownerId,assetId:row.asset_id,
-  driveFileId:"driveFile_DIFFERENT123",mimeType:"video/mp4",byteSize:5,sha256:row.sha256});
- assert.equal(result.driveFileId,row.drive_file_id);
+test("concurrent creates converge on the first persisted canonical Drive file ID",async()=>{
+ const h=harness([]);
+ const [first,second]=await Promise.all([
+  h.store.createOrGet({attemptKey,ownerId,assetId:row.asset_id,driveFileId:"driveFile_FIRST12345",
+   mimeType:"video/mp4",byteSize:5,sha256:row.sha256}),
+  h.store.createOrGet({attemptKey,ownerId,assetId:row.asset_id,driveFileId:"driveFile_SECOND123",
+   mimeType:"video/mp4",byteSize:5,sha256:row.sha256})
+ ]);
+ assert.equal(first.driveFileId,second.driveFileId);
+ assert.equal(first.driveFileId,h.rows[0].drive_file_id);
  assert.equal(h.rows.length,1);
 });
 test("rejects an idempotency key reused for a different private asset",async()=>{
