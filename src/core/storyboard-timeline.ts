@@ -107,7 +107,7 @@ export function reflowStoryboardTimelinePlan(plan:StoryboardTimelinePlan):Storyb
     const shots=scene.shots.map(shot=>{
       totalShots++;
       if(totalShots>60||!Number.isInteger(shot.durationFrames)||shot.durationFrames<1||shot.durationFrames>plan.frameRate*60)throw fail("Planned shot duration or count is invalid.");
-      const next={...shot,startFrame:cursor,timelineStart:rational(cursor,plan.frameRate),timelineDuration:rational(shot.durationFrames,plan.frameRate)};
+      const next={...shot,startFrame:cursor,durationSeconds:shot.durationFrames/plan.frameRate,timelineStart:rational(cursor,plan.frameRate),timelineDuration:rational(shot.durationFrames,plan.frameRate)};
       cursor+=shot.durationFrames;return next;
     });
     const durationFrames=cursor-startFrame;
