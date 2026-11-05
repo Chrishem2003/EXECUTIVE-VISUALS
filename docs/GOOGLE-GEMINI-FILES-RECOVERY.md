@@ -28,7 +28,7 @@ The registrar must never accept a caller-supplied `gs://` URI. The new `server/g
 
 Before returning a GCS URI, the resolver performs an authenticated metadata GET for the exact bucket/object using the application's Google Cloud OAuth identity. This verifies the caller identity can read that exact object and checks:
 - bucket and object name against the trusted source record;
-- immutable GCS object generation;
+- immutable GCS object generation and metageneration (detecting object metadata changes);
 - byte size and MIME type;
 - custom metadata binding the object to the Executive Visuals asset, owner, project and SHA-256 digest;
 - the server-side bucket allowlist and active source state.
