@@ -14,7 +14,7 @@ const job = {
 const succeeded = { taskId, status: "succeeded", outputUrls: ["https://cdn.example.test/output.mp4"] };
 function fixture({ state = "prepared", submitError = null, recordResult = true, status = succeeded,
   cost = { amount: 0.75, currency: "USD", evidenceReference: "provider-invoice:line-9" },
-  costError = null, ingestError = null } = {}) {
+  costError = null, ingestError = null, cancellationRequested = false, cancellationError = null } = {}) {
   const calls = [];
   let currentState = state;
   let currentTaskId = state === "submitted" ? taskId : null;
@@ -31,10 +31,12 @@ function fixture({ state = "prepared", submitError = null, recordResult = true, 
   const adapter = {
     provider: "runway", model: "gen4.5", minimumPollIntervalMs: 5000,
     async submit(input, context) { calls.push(["submit", input.requestHash, context?.job?.id, context?.job?.owner_id]); if (submitError) throw submitError; return { taskId, status: "queued" }; },
-    async getStatus(id) { calls.push(["poll", id]); if (status instanceof Error) throw status; return status; }
+    async getStatus(id) { calls.push(["poll", id]); if (status instanceof Error) throw status; return status; },
+    async cancel(id) { calls.push(["cancel", id]); return { taskId: id, status: "cancel_requested", cancelRequested: true }; }
   };
   return {
     calls, ledger, adapter,
+    isCancellationRequested: async () => { calls.push(["cancellation-check"]); if (cancellationError) throw cancellationError; return cancellationRequested; },
     ingestOutputs: async value => { calls.push(["ingest", value.providerTaskId]); if (ingestError) throw ingestError; return { assetIds: ["423e4567-e89b-42d3-a456-426614174000"], usage: { outputCount: 1 } }; },
     resolveActualCost: async value => { calls.push(["cost", value.providerTaskId]); if (costError) throw costError; return cost; }
   };
@@ -123,4 +125,33 @@ test("cloud executor does not enter submitting state when private input preparat
  assert.equal(f.calls.some(call=>call[0]==="begin"),false);
  assert.equal(f.calls.some(call=>call[0]==="submit"),false);
  assert.equal(f.calls.some(call=>call[0]==="unknown"),false);
+});
+
+test("cloud executor cancels a prepared job before provider submission",async()=>{
+ const f=fixture({cancellationRequested:true});
+ await assert.rejects(
+  executeCloudVideoGenerationJob({job,workerId:"worker-1",...f}),
+  error=>error.code==="VIDEO_JOB_CANCELLED"
+ );
+ assert.equal(f.calls.some(call=>call[0]==="begin"),false);
+ assert.equal(f.calls.some(call=>call[0]==="submit"),false);
+});
+
+test("cloud executor requests best-effort provider cancellation and quarantines submitted jobs for reconciliation",async()=>{
+ const f=fixture({state:"submitted",status:{taskId,status:"running"},cancellationRequested:true});
+ await assert.rejects(
+  executeCloudVideoGenerationJob({job,workerId:"worker-1",...f}),
+  error=>error.code==="VIDEO_CANCELLATION_REQUIRES_RECONCILIATION"
+ );
+ assert.equal(f.calls.some(call=>call[0]==="cancel"&&call[1]===taskId),true);
+ assert.equal(f.calls.some(call=>call[0]==="ingest"),false);
+});
+
+test("cloud executor fails closed if cancellation state cannot be checked",async()=>{
+ const f=fixture({cancellationError:new Error("database unavailable")});
+ await assert.rejects(
+  executeCloudVideoGenerationJob({job,workerId:"worker-1",...f}),
+  error=>error.code==="VIDEO_CANCELLATION_STATE_UNAVAILABLE"
+ );
+ assert.equal(f.calls.some(call=>call[0]==="submit"),false);
 });
