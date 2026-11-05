@@ -87,6 +87,14 @@ export function createProviderAwareCloudVideoWorkerComposition({
   const googleEnabled = env.GOOGLE_OMNI_VIDEO_ENABLED === "true" ||
     env.GOOGLE_OMNI_VIDEO_ALLOW_REMOTE === "true";
   let googleOmniIntegration = providerDependencies.googleOmniIntegration;
+  if (googleEnabled && (
+      env.GOOGLE_OMNI_VIDEO_ENABLED !== "true" ||
+      env.GOOGLE_OMNI_VIDEO_ALLOW_REMOTE !== "true" ||
+      env.GEMINI_OMNI_ENABLED !== "true" ||
+      env.GEMINI_OMNI_ALLOW_REMOTE !== "true"
+  )) {
+    throw new Error("Google Omni requires both provider registration gates and both Gemini transport gates to be explicitly enabled.");
+  }
   if (googleEnabled && !googleOmniIntegration) {
     const {
       googleOmniAssertApprovedSubmission,
