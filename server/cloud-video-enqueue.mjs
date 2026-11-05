@@ -8,7 +8,8 @@ const RPC = Object.freeze({
   defer: "defer_video_generation_job",
   quarantine: "quarantine_video_generation_job",
   resume: "resume_reconciled_video_generation_job",
-  recover: "recover_expired_video_generation_jobs"
+  recover: "recover_expired_video_generation_jobs",
+  status: "get_owned_video_generation_job_status"
 });
 
 function endpoint(value) {
@@ -81,6 +82,22 @@ export function createCloudVideoEnqueue({
   }
 
   return Object.freeze({
+    async getJobStatus({ jobId, ownerId } = {}) {
+      required(jobId, "Job ID");
+      required(ownerId, "Owner ID");
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(jobId) ||
+          !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(ownerId)) {
+        throw new Error("Job status scope must use valid UUIDs.");
+      }
+      const result = await call(RPC.status, { p_job_id: jobId, p_owner_id: ownerId });
+      if (result === null) return null;
+      if (!result || typeof result !== "object" || Array.isArray(result) ||
+          result.jobId !== jobId || typeof result.status !== "string" ||
+          result.status.length < 1 || result.status.length > 40) {
+        throw new Error("Cloud video status returned an invalid owner-scoped job record.");
+      }
+      return Object.freeze(result);
+    },
     async enqueue({
       ownerId, projectId = null, idempotencyKey, provider, model, requestHash,
       input, budgetApprovalId, reservedAmount, currency,
