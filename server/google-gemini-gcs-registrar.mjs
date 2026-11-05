@@ -209,6 +209,15 @@ export function createGoogleGeminiGcsFilesRegistrar({
           expiresAt: cached.expiresAt, sourceType: cached.sourceType || "upload", reused: true
         });
       }
+      // The provider mapping is unique per asset/owner. Never silently replace a
+      // stale or changed mapping: doing so would orphan the old provider file.
+      // Explicit deletion/reconciliation must retire it before a new registration.
+      if (cached) {
+        throw fail(
+          "An existing Gemini provider-file mapping must be retired before this asset can be registered again.",
+          "GEMINI_GCS_STALE_MAPPING_PRESENT"
+        );
+      }
 
       const accessToken = await token();
       const response = await request(ORIGIN + "/v1beta/files:register", accessToken, {
