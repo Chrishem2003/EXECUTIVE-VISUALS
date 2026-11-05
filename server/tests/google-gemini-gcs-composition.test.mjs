@@ -29,6 +29,7 @@ test("composes caller-readable GCS object verification with Gemini registration 
   };
   const metadata = {
     bucket: source.bucket, name: source.objectName, generation: source.generation,
+    metageneration: source.metageneration,
     size: String(source.sizeBytes), contentType: source.mediaType,
     metadata: {
       executivevisualsassetid: assetId,
