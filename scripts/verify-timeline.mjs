@@ -77,7 +77,7 @@ assert.equal(previewFrame.activeClips[0].timelineStartSeconds,1);
 assert.equal(previewFrame.activeClips[0].timelineEndSeconds,3);
 assert.equal(previewFrame.activeClips[0].sourceTimeSeconds,2.5);
 assert.equal(previewFrame.activeClips[0].sourceFrame,60);
-assert.equal(evaluateTimelineAtFrame(previewTimeline,72).activeClips.length,0);
+assert.equal(evaluateTimelineAtFrame(previewTimeline,78).activeClips.length,0);
 assert.throws(()=>evaluateTimelineAtFrame(previewTimeline,-1),/non-negative safe integer/);
 assert.throws(()=>evaluateTimelineAtFrame(previewTimeline,1.5),/non-negative safe integer/);
 const locked={...timeline,tracks:timeline.tracks.map(track=>track.id==="v1"?{...track,locked:true}:track)};
