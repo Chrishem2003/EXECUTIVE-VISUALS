@@ -387,7 +387,7 @@ export async function initTimelineWorkspace(){
 }
 const waveformPending=new Set<string>();
 async function loadTimelineWaveforms(){
- if(!state.timeline||typeof window.OfflineAudioContext==="undefined")return;
+ if(!state.timeline)return;
  const ids=[...new Set(state.timeline.tracks.filter(track=>track.enabled&&track.kind==="audio").flatMap(track=>track.clips.filter(clip=>clip.enabled).map(clip=>clip.assetId)))].slice(0,12);
  for(const assetId of ids){
   if(state.waveformCache[assetId]||waveformPending.has(assetId))continue;
@@ -407,6 +407,7 @@ async function loadTimelineWaveforms(){
     for(const node of document.querySelectorAll<HTMLElement>("[data-waveform-asset]"))if(node.dataset.waveformAsset===assetId)node.innerHTML=state.waveformCache[assetId];
     continue;
    }
+   if(typeof window.OfflineAudioContext==="undefined"){state.waveformStatus[assetId]="Browser audio decoding is unavailable for cloud waveform previews.";continue;}
    if(asset.size>maxBytes){state.waveformStatus[assetId]="Waveform skipped · cloud source exceeds 8 MB";continue;}
    if(Number.isFinite(duration)&&duration>120){state.waveformStatus[assetId]="Waveform skipped · cloud source exceeds 120 seconds";continue;}
    let url="/api/assets/"+encodeURIComponent(assetId)+"/file";
