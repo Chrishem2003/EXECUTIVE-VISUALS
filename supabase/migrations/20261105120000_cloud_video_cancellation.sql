@@ -60,6 +60,7 @@ begin
       set state = 'cancelled', updated_at = clock_timestamp(),
           metadata = metadata || jsonb_build_object('cancellation','cancelled_before_provider_submission')
       where id = submission.id and state = 'prepared';
+      submission.state := 'cancelled';
     end if;
 
     select * into reservation
