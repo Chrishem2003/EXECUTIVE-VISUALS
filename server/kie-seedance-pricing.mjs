@@ -14,14 +14,15 @@ const round=value=>Number(value.toFixed(6));
 export function estimateKieSeedanceCost({model="bytedance/seedance-2",durationSeconds,resolution="720p",referenceVideoSeconds=0}={}){
  if(model!=="bytedance/seedance-2")throw fail("No verified Kie pricing snapshot is configured for this model.","VIDEO_PRICE_UNVERIFIED");
  if(!Number.isInteger(durationSeconds)||durationSeconds<5||durationSeconds>15)throw fail("Kie Seedance 2.0 duration must be between 5 and 15 seconds.","VIDEO_PRICE_DURATION_INVALID");
- if(!Object.hasOwn(RATES,resolution))throw fail("Kie Seedance 2.0 resolution is not in the verified pricing snapshot.","VIDEO_PRICE_UNSUPPORTED_OPTION");
+ const selectedResolution=resolution==="provider_default"?"720p":resolution==="2160p"?"4K":resolution;
+ if(!Object.hasOwn(RATES,selectedResolution))throw fail("Kie Seedance 2.0 resolution is not in the verified pricing snapshot.","VIDEO_PRICE_UNSUPPORTED_OPTION");
  if(typeof referenceVideoSeconds!=="number"||!Number.isFinite(referenceVideoSeconds)||referenceVideoSeconds<0||referenceVideoSeconds>15)throw fail("Kie reference video duration must be between zero and fifteen seconds.","VIDEO_PRICE_INPUT_INVALID");
  const withVideo=referenceVideoSeconds>0;
- const rate=RATES[resolution][withVideo?"withVideo":"withoutVideo"];
+ const rate=RATES[selectedResolution][withVideo?"withVideo":"withoutVideo"];
  const billableSeconds=withVideo?durationSeconds+referenceVideoSeconds:durationSeconds;
  const credits=round(rate/ USD_PER_CREDIT * billableSeconds);
  const amount=round(rate*billableSeconds);
- return Object.freeze({provider:"kie",model,operation:"video",durationSeconds,resolution,referenceVideoSeconds,
+ return Object.freeze({provider:"kie",model,operation:"video",durationSeconds,resolution:selectedResolution,referenceVideoSeconds,
   currency:"USD",amount,credits,basis:withVideo?"provider_list_price_reference_video_seconds_plus_output":"provider_list_price_output_seconds",
   creditUsdValue:USD_PER_CREDIT,pricingSource:PRICING_SOURCE,pricingDate:PRICING_DATE,
   billable:false,settlementEligible:false});
