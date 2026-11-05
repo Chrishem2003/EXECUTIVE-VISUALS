@@ -129,8 +129,10 @@ function transactionDone(transaction: IDBTransaction): Promise<void> {
 export class TimelineRecoveryStore {
   private database: Promise<IDBDatabase> | null = null;
   private writeQueue: Promise<void> = Promise.resolve();
-  constructor(private readonly factory: IDBFactory = globalThis.indexedDB) {
+  private readonly factory: IDBFactory;
+  constructor(factory: IDBFactory = globalThis.indexedDB) {
     if (!factory) throw new Error("IndexedDB is not available in this browser.");
+    this.factory = factory;
   }
 
   private open(): Promise<IDBDatabase> {
