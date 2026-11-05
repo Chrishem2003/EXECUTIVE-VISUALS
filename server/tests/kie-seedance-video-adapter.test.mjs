@@ -37,7 +37,7 @@ test("requires a private resolver for referenced assets and validates reference 
  const adapter=createKieSeedanceVideoAdapter(dependencies);
  await assert.rejects(adapter.prepareInput({provider:"kie",model:"bytedance/seedance-2",prompt:"Reference me",durationSeconds:5,referenceAssetIds:["asset-1"]}),error=>error.code==="KIE_VIDEO_INPUT_ASSET_RESOLUTION_REQUIRED");
  const resolver=createKieSeedanceVideoAdapter({...dependencies,prepareInput:async input=>({...input,referenceVideoUrls:["https://private.example.com/ref.mp4"],referenceVideoDurationSeconds:16})});
- await assert.rejects(resolver.prepareInput({provider:"kie",model:"bytedance/seedance-2",prompt:"Reference video",durationSeconds:5,referenceVideoAssetIds:["asset-video"]}),error=>error.code==="KIE_VIDEO_INPUT_INVALID");
+ await assert.rejects(resolver.prepareInput({provider:"kie",model:"bytedance/seedance-2",prompt:"Reference video",durationSeconds:5,referenceVideoAssetIds:["asset-video"]}),error=>error.code==="KIE_VIDEO_CAPABILITY_UNSUPPORTED");
 });
 
 test("rejects model mismatch, unsafe URLs and unsupported duration or aspect ratio",async()=>{
