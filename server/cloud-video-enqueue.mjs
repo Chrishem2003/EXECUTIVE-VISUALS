@@ -157,8 +157,11 @@ export function createCloudVideoEnqueue({
       }
 
       if (kieEnabled && (
+        env.VIDEO_GATEWAY_ENABLED !== "true" ||
+        env.VIDEO_GATEWAY_ALLOW_REMOTE !== "true" ||
         env.KIE_VIDEO_ENABLED !== "true" ||
         env.KIE_VIDEO_ALLOW_REMOTE !== "true" ||
+        !String(env.KIE_API_KEY || "").trim() ||
         !Number.isFinite(Number(env.KIE_USD_PER_CREDIT)) ||
         Number(env.KIE_USD_PER_CREDIT) <= 0 ||
         Number(env.KIE_USD_PER_CREDIT) > 0.05
