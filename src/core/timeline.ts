@@ -47,6 +47,11 @@ export function integrateSpeedCurve(curve:SpeedKeyframe[]|undefined,durationSeco
 export function sourceElapsedSeconds(clip:TimelineClip,timelineElapsedSeconds:number):number{
  const elapsed=Math.max(0,Math.min(seconds(clip.duration),timelineElapsedSeconds));return integrateSpeedCurve(clip.speedCurve,elapsed,Number(clip.speed??1));
 }
+export function timelineElapsedForSourceElapsed(clip:TimelineClip,sourceElapsed:number):number{
+ const target=Math.max(0,Math.min(seconds(clip.sourceRange.duration),sourceElapsed));let low=0,high=seconds(clip.duration);
+ for(let iteration=0;iteration<48;iteration++){const middle=(low+high)/2;if(sourceElapsedSeconds(clip,middle)<target)low=middle;else high=middle;}
+ return (low+high)/2;
+}
 export function sliceSpeedCurve(curve:SpeedKeyframe[]|undefined,startSeconds:number,endSeconds:number,fallback=1):SpeedKeyframe[]|undefined{
  if(!curve?.length)return undefined;
  const start=Math.max(0,startSeconds),end=Math.max(start,endSeconds),points:SpeedKeyframe[]=[{timeSeconds:0,speed:evaluateSpeedCurve(curve,start,fallback)}];
