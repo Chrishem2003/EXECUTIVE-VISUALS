@@ -65,7 +65,7 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     if(!waveformCache||!mediaRoot||typeof service.storage?.downloadToFile!=="function"||typeof service.storage?.uploadFile!=="function")return response(503,{error:{code:"CLOUD_WAVEFORM_UNAVAILABLE",message:"Cloud waveform processing is not configured."}});
     const asset=await service.assets.get({ownerId,assetId:waveformMatch[1]});
     if(!asset.mediaType?.startsWith("audio/"))return response(415,{error:{code:"WAVEFORM_UNSUPPORTED_MEDIA",message:"Waveforms are available only for audio assets."}});
-    if(!/^[a-f0-9]{64}$/i.test(String(asset.sha256||""))||asset.storageBucket!=="executive-visuals-media"||typeof asset.objectPath!=="string")return response(422,{error:{code:"CLOUD_WAVEFORM_ASSET_INVALID",message:"Cloud audio asset metadata is invalid."}});
+    if(!/^[a-f0-9]{64}$/i.test(String(asset.sha256||""))||!Number.isSafeInteger(asset.size)||asset.size<1||asset.storageBucket!=="executive-visuals-media"||typeof asset.objectPath!=="string")return response(422,{error:{code:"CLOUD_WAVEFORM_ASSET_INVALID",message:"Cloud audio asset metadata is invalid."}});
     const expectedPrefix=(asset.projectId||asset.ownerId)+"/"+asset.id+"/";
     if(!asset.objectPath.startsWith(expectedPrefix))return response(422,{error:{code:"CLOUD_WAVEFORM_PATH_INVALID",message:"Cloud audio storage reference is invalid."}});
     const objectDirectory=asset.objectPath.slice(0,asset.objectPath.lastIndexOf("/")+1);
