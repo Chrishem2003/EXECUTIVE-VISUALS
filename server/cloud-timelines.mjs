@@ -133,6 +133,38 @@ export function createCloudTimelineRepository({url=process.env.SUPABASE_URL,serv
       if(!Array.isArray(rows)||rows.length!==1){const error=new Error("Timeline versioned update returned an invalid result.");error.code="CLOUD_TIMELINE_VERSION_WRITE_FAILED";throw error;}
       return map(rows[0]);
     },
+    async listVersions({ownerId,timelineId,limit=100,offset=0}={}){
+      ownerId=validOwner(ownerId);if(typeof timelineId!=="string"||!UUID.test(timelineId))throw new Error("Timeline ID must be a UUID.");
+      limit=Math.max(1,Math.min(100,Number.isInteger(limit)?limit:100));offset=Math.max(0,Math.min(100000,Number.isInteger(offset)?offset:0));
+      const current=await getTimeline({ownerId,timelineId});if(!current){const error=new Error("Timeline not found.");error.code="CLOUD_TIMELINE_NOT_FOUND";throw error;}
+      await allowed(ownerId,current.projectId,"read");
+      const rows=await request("timeline_versions?select=id,timeline_id,owner_id,project_id,revision,parent_version_id,restored_from_version_id,name,summary,content_hash,created_by,created_at&timeline_id=eq."+encodeURIComponent(timelineId)+"&owner_id=eq."+encodeURIComponent(current.ownerId)+"&order=revision.desc&limit="+limit+"&offset="+offset);
+      return(Array.isArray(rows)?rows:[]).map(row=>mapVersion(row));
+    },
+    async getVersion({ownerId,timelineId,versionId}={}){
+      ownerId=validOwner(ownerId);if(typeof timelineId!=="string"||!UUID.test(timelineId)||typeof versionId!=="string"||!UUID.test(versionId))throw new Error("Timeline and version IDs must be UUIDs.");
+      const current=await getTimeline({ownerId,timelineId});if(!current){const error=new Error("Timeline not found.");error.code="CLOUD_TIMELINE_NOT_FOUND";throw error;}
+      await allowed(ownerId,current.projectId,"read");
+      const rows=await request("timeline_versions?select=*&id=eq."+encodeURIComponent(versionId)+"&timeline_id=eq."+encodeURIComponent(timelineId)+"&owner_id=eq."+encodeURIComponent(current.ownerId)+"&limit=1");
+      const row=Array.isArray(rows)?rows[0]:null;if(!row){const error=new Error("Timeline version not found.");error.code="CLOUD_TIMELINE_VERSION_NOT_FOUND";throw error;}
+      return mapVersion(row,true);
+    },
+    async restore({ownerId,timelineId,expectedRevision,sourceVersionId,summary}={}){
+      ownerId=validOwner(ownerId);if(typeof timelineId!=="string"||!UUID.test(timelineId)||typeof sourceVersionId!=="string"||!UUID.test(sourceVersionId))throw new Error("Timeline and source version IDs must be UUIDs.");
+      if(!Number.isInteger(expectedRevision)||expectedRevision<1)throw new Error("Expected timeline revision must be a positive integer.");
+      const current=await getTimeline({ownerId,timelineId});if(!current){const error=new Error("Timeline not found.");error.code="CLOUD_TIMELINE_NOT_FOUND";throw error;}
+      await allowed(ownerId,current.projectId,"write");
+      const source=await this.getVersion({ownerId,timelineId,versionId:sourceVersionId});
+      await checkedDocument(ownerId,source.document);
+      const contentHash=timelineHash(source.document,source.otio);
+      const rows=await request("rpc/ev_restore_timeline_version",{method:"POST",body:{
+        p_timeline_id:timelineId,p_owner_id:current.ownerId,p_actor_id:ownerId,p_expected_revision:expectedRevision,
+        p_source_version_id:sourceVersionId,p_summary:String(summary||("Restored from revision "+source.revision)).slice(0,500),
+        p_previous_content_hash:timelineHash(current.timeline,current.otio),p_content_hash:contentHash
+      }});
+      if(!Array.isArray(rows)||rows.length!==1){const error=new Error("Timeline version restore returned an invalid result.");error.code="CLOUD_TIMELINE_VERSION_RESTORE_FAILED";throw error;}
+      return map(rows[0]);
+    },
     async archive({ownerId,timelineId,expectedRevision}={}){
       ownerId=validOwner(ownerId);
       if(typeof timelineId!=="string"||!UUID.test(timelineId))throw new Error("Timeline ID must be a UUID.");
