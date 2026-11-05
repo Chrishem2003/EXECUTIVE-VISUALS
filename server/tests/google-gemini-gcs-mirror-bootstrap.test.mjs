@@ -73,6 +73,21 @@ test("GCS bootstrap rejects service-account key files and malformed WIF endpoint
       credential_source: { file: "/tmp/subject-token" }
     }));
     await assert.rejects(createGoogleGeminiGcsMirrorBootstrap({ env: { ...env, GOOGLE_APPLICATION_CREDENTIALS: file }, GoogleAuthClass: FakeGoogleAuth }), /Only a generated Google Workload Identity Federation/);
+    await writeFile(file, JSON.stringify({
+      type: "external_account",
+      audience: "//iam.googleapis.com/projects/123456/locations/global/workloadIdentityPools/staging/providers/render",
+      token_url: "https://sts.googleapis.com/v1/token",
+      service_account_impersonation_url: "https://evil.invalid/token",
+      credential_source: { file: "/tmp/subject-token" }
+    }));
+    await assert.rejects(createGoogleGeminiGcsMirrorBootstrap({ env: { ...env, GOOGLE_APPLICATION_CREDENTIALS: file }, GoogleAuthClass: FakeGoogleAuth }), /trusted Google token endpoints/);
+    await writeFile(file, JSON.stringify({
+      type: "external_account",
+      audience: "//iam.googleapis.com/projects/123456/locations/global/workloadIdentityPools/staging/providers/render",
+      token_url: "https://sts.googleapis.com/v1/token",
+      credential_source: { executable: { command: "/tmp/untrusted-command" } }
+    }));
+    await assert.rejects(createGoogleGeminiGcsMirrorBootstrap({ env: { ...env, GOOGLE_APPLICATION_CREDENTIALS: file }, GoogleAuthClass: FakeGoogleAuth }), /executable token sources are not supported/);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
