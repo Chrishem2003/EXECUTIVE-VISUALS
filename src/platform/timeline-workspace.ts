@@ -605,7 +605,7 @@ async function createCloudTimeline(){
  state.timeline=result.timeline.timeline;state.serverRevision=result.timeline.revision;state.selectedTrack=timeline.tracks[0].id;state.message="Cloud timeline created.";state.status="ready";await refresh();paint();
 }
 export async function initTimelineWorkspace(){
- resetTimelineHistory();bindTimelineHistoryKeys();
+ resetTimelineHistory();clearTimelineVersionPanel();bindTimelineHistoryKeys();
  try{await requestPersistentBrowserStorage();await refresh();await restoreTimelineRecovery();}catch(error){state.status=error instanceof Error&&error.message.includes("Sign in")?"auth":"offline";state.message=error instanceof Error?error.message:"Timeline service unavailable.";}
  paint();
 }
@@ -630,6 +630,10 @@ function paint(){
 }
 async function runAction(action:HTMLElement){
  const type=action.dataset.tlAction||"";
+ if(type==="versions"){await loadTimelineVersions();return;}
+ if(type==="close-version-history"){state.versionHistoryOpen=false;state.versionComparison=null;state.versionComparisonRevision=null;paint();return;}
+ if(type==="compare-version"){await compareTimelineVersion(action.dataset.versionId||"");return;}
+ if(type==="restore-version"){await restoreTimelineVersion(action.dataset.versionId||"");return;}
  if(type==="undo"||type==="redo"){await travelTimelineHistory(type);return;}
  if(type==="save-recovered-draft"){
   try{await persist();state.recoveredDraft=null;state.message="Recovered edits saved as a new server revision.";}
@@ -651,7 +655,7 @@ async function runAction(action:HTMLElement){
   paint();return;
  }
 
- if(type==="refresh"){resetTimelineHistory();await refresh();paint();return;}
+ if(type==="refresh"){resetTimelineHistory();clearTimelineVersionPanel();await refresh();paint();return;}
  if(type==="reload-server"){
   if(!state.timeline){state.message="No timeline is selected.";paint();return;}
   const recoveryKey=currentRecoveryKey(),timelineId=state.timeline.id;
@@ -791,11 +795,11 @@ document.addEventListener("submit",event=>{
 });
 document.addEventListener("change",event=>{
  const target=event.target as HTMLSelectElement;
- if(target.id==="tl-mode"){resetTimelineHistory();state.mode=target.value==="cloud"?"cloud":"local";state.timeline=null;state.cloudRevisionConflict=false;state.recoveredDraft=null;state.recoveryStatus="idle";state.selectedClipId="";void refresh().then(paint).catch(error=>{state.status="offline";state.message=error instanceof Error?error.message:"Workspace unavailable.";paint();});}
- if(target.id==="tl-cloud-project"){resetTimelineHistory();state.cloudProjectId=target.value;state.timeline=null;state.cloudRevisionConflict=false;state.recoveredDraft=null;state.recoveryStatus="idle";state.selectedClipId="";void refresh().then(paint).catch(error=>{state.status="offline";state.message=error instanceof Error?error.message:"Cloud project unavailable.";paint();});}
+ if(target.id==="tl-mode"){resetTimelineHistory();clearTimelineVersionPanel();state.mode=target.value==="cloud"?"cloud":"local";state.timeline=null;state.cloudRevisionConflict=false;state.recoveredDraft=null;state.recoveryStatus="idle";state.selectedClipId="";void refresh().then(paint).catch(error=>{state.status="offline";state.message=error instanceof Error?error.message:"Workspace unavailable.";paint();});}
+ if(target.id==="tl-cloud-project"){resetTimelineHistory();clearTimelineVersionPanel();state.cloudProjectId=target.value;state.timeline=null;state.cloudRevisionConflict=false;state.recoveredDraft=null;state.recoveryStatus="idle";state.selectedClipId="";void refresh().then(paint).catch(error=>{state.status="offline";state.message=error instanceof Error?error.message:"Cloud project unavailable.";paint();});}
  if(target.id==="tl-saved-sequence"&&target.value){
   const saved=state.mode==="cloud"?state.cloudTimelines.find(t=>t.id===target.value):state.timelines.find(t=>t.id===target.value);
-  if(saved){resetTimelineHistory();state.recoveredDraft=null;state.recoveryStatus="idle";if(state.mode==="cloud"){const cloud=saved as CloudSavedTimeline;state.timeline=cloud.timeline;state.serverRevision=cloud.revision;state.cloudRevisionConflict=false;void loadVariantComparison().then(paint);}
+  if(saved){resetTimelineHistory();clearTimelineVersionPanel();state.recoveredDraft=null;state.recoveryStatus="idle";if(state.mode==="cloud"){const cloud=saved as CloudSavedTimeline;state.timeline=cloud.timeline;state.serverRevision=cloud.revision;state.cloudRevisionConflict=false;void loadVariantComparison().then(paint);}
    else void apiRequest<{timeline:SavedTimeline}>("/api/timelines/"+saved.id).then(result=>{state.timeline=result.timeline.document||null;state.serverRevision=result.timeline.revision;void loadVariantComparison().then(paint);}).catch(error=>{state.message=error.message;paint();});}
  }
 });
