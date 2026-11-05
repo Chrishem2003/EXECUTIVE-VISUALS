@@ -240,7 +240,7 @@ if (!videoCostEvidenceSql.includes("finish_video_generation_job_with_evidence") 
     !videoCostEvidenceSql.includes("evidence_row.provider_task_id is distinct from submission_row.provider_task_id")) {
   issues.push("Successful settlement must require an exact task-correlated reviewed evidence receipt.");
 }
-if ((videoCostEvidenceSql.match(/security invoker/gi) || []).length !== 3 ||
+if ((videoCostEvidenceSql.match(/security invoker/gi) || []).length !== 4 ||
     /security definer/i.test(videoCostEvidenceSql)) {
   issues.push("Cost evidence validation and settlement RPCs must use invoker rights.");
 }
