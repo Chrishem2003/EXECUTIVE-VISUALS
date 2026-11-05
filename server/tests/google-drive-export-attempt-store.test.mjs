@@ -114,6 +114,19 @@ test("uses a separate short lease to reconcile quarantined exports without reope
  assert.match(reclaimed,/^[0-9a-f-]{36}$/);
  assert.notEqual(reclaimed,lease);
 });
+test("allows exactly one simultaneous reconciliation worker to claim a quarantined export",async()=>{
+ const h=harness();
+ h.rows[0].state="RECONCILIATION_REQUIRED";
+ const results=await Promise.all([
+  h.store.claimForReconciliation({attemptKey,ownerId}),
+  h.store.claimForReconciliation({attemptKey,ownerId})
+ ]);
+ assert.equal(results.filter(Boolean).length,1);
+ assert.equal(results.filter(value=>value===null).length,1);
+ assert.equal(h.rows[0].lease_token,results.find(Boolean));
+ assert.ok(Date.parse(h.rows[0].lease_expires_at)>Date.now());
+ assert.equal(h.rows[0].state,"RECONCILIATION_REQUIRED");
+});
 test("rejects malformed attempt keys before issuing a lease update",async()=>{
  const h=harness();
  await assert.rejects(()=>h.store.claim({attemptKey:"bad",ownerId}),
