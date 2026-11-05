@@ -15,15 +15,47 @@ import { activeCaptionCues, parseCaptionCues, type CaptionCue } from "../core/ca
 import { validatePrivateMediaUrl } from "../core/private-media-url";
 import { generatedVideoAlreadyOnTimeline, generatedVideoDurationSeconds, selectLatestGeneratedVideoAsset } from "../core/generated-video-import";
 import { resolveCloudTimelineRefresh } from "../core/timeline-conflict";
+import { TimelineRecoveryStore, assessTimelineRecovery, checksumTimeline, requestPersistentBrowserStorage, timelineRecoveryKey, type TimelineRecoveryDraft } from "../core/timeline-recovery";
 
 type Asset={id:string;name:string;mediaType:string;size:number;projectId?:string|null;createdAt?:string;metadata?:Record<string,unknown>};
 type SavedTimeline={id:string;projectId?:string|null;name:string;revision:number;document?:EditorialTimeline};
 type CloudProject={id:string;name:string};
 type CloudSavedTimeline={id:string;projectId?:string|null;name:string;revision:number;timeline:EditorialTimeline;updatedAt:string};
-const state:{timeline:EditorialTimeline|null;serverRevision:number;timelines:SavedTimeline[];cloudTimelines:CloudSavedTimeline[];cloudProjects:CloudProject[];cloudProjectId:string;mode:"local"|"cloud";cloudRenderJobId:string;cloudRenderJobStatus:string;variantBase:EditorialTimeline|null;variantReport:TimelineVariantComparison|null;variantBaseName:string;assets:Asset[];status:"loading"|"ready"|"offline"|"auth";message:string;selectedTrack:string;selectedClipId:string;ffmpeg:boolean;cloudRevisionConflict:boolean}={
- timeline:null,serverRevision:0,timelines:[],cloudTimelines:[],cloudProjects:[],cloudProjectId:"",mode:"local",cloudRenderJobId:"",cloudRenderJobStatus:"",variantBase:null,variantReport:null,variantBaseName:"",assets:[],status:"loading",message:"Loading editorial workspace…",selectedTrack:"",selectedClipId:"",ffmpeg:false,cloudRevisionConflict:false
+const state:{timeline:EditorialTimeline|null;serverRevision:number;timelines:SavedTimeline[];cloudTimelines:CloudSavedTimeline[];cloudProjects:CloudProject[];cloudProjectId:string;mode:"local"|"cloud";cloudRenderJobId:string;cloudRenderJobStatus:string;variantBase:EditorialTimeline|null;variantReport:TimelineVariantComparison|null;variantBaseName:string;assets:Asset[];status:"loading"|"ready"|"offline"|"auth";message:string;selectedTrack:string;selectedClipId:string;ffmpeg:boolean;cloudRevisionConflict:boolean;recoveryStatus:"idle"|"saved"|"recovered"|"conflict"|"unavailable";recoveredDraft:TimelineRecoveryDraft|null}={
+ timeline:null,serverRevision:0,timelines:[],cloudTimelines:[],cloudProjects:[],cloudProjectId:"",mode:"local",cloudRenderJobId:"",cloudRenderJobStatus:"",variantBase:null,variantReport:null,variantBaseName:"",assets:[],status:"loading",message:"Loading editorial workspace…",selectedTrack:"",selectedClipId:"",ffmpeg:false,cloudRevisionConflict:false,recoveryStatus:"idle",recoveredDraft:null
 };
 let sequencePlaying=false,sequenceFrame=0,sequenceStartFrame=0,sequenceStartAt=0,sequenceRaf:number|null=null;
+let timelineRecoveryStore:TimelineRecoveryStore|null=null;
+let timelineRecoverySequence=0;
+function recoveryStore(){if(!timelineRecoveryStore)timelineRecoveryStore=new TimelineRecoveryStore();return timelineRecoveryStore;}
+function currentRecoveryKey(){if(!state.timeline)return "";const projectId=state.mode==="cloud"?(state.timeline.projectId||state.cloudProjectId):state.timeline.projectId||"";return timelineRecoveryKey(state.mode,projectId,state.timeline.id);}
+async function saveRecoveryDraft(reason:string):Promise<TimelineRecoveryDraft|null>{
+ if(!state.timeline)return null;
+ try{
+  const draft=await recoveryStore().saveDraft({key:currentRecoveryKey(),projectId:state.mode==="cloud"?(state.timeline.projectId||state.cloudProjectId):state.timeline.projectId||"",timelineId:state.timeline.id,mode:state.mode,baseRevision:state.serverRevision,localRevision:state.timeline.revision,sequence:++timelineRecoverySequence,updatedAt:new Date().toISOString(),reason,snapshot:structuredClone(state.timeline)});
+  state.recoveryStatus="saved";return draft;
+ }catch(error){state.recoveryStatus="unavailable";state.message="Browser recovery storage is unavailable: "+(error instanceof Error?error.message:"unknown storage error")+". The server save will still be attempted.";return null;}
+}
+async function completeRecoveryCheckpoint(draft:TimelineRecoveryDraft|null,revision:number):Promise<void>{
+ if(!draft)return;
+ try{await recoveryStore().saveCheckpoint(draft,revision,"Server-confirmed timeline save");state.recoveryStatus="saved";state.recoveredDraft=null;}
+ catch(error){state.recoveryStatus="unavailable";state.message="Timeline saved on the server, but its local checkpoint could not be finalized: "+(error instanceof Error?error.message:"storage error")+". The recovery draft was retained where possible.";}
+}
+async function restoreTimelineRecovery():Promise<void>{
+ if(!state.timeline)return;
+ try{
+  const key=currentRecoveryKey(),draft=await recoveryStore().getDraft(key);
+  if(draft)timelineRecoverySequence=Math.max(timelineRecoverySequence,draft.sequence);
+  state.recoveredDraft=null;state.recoveryStatus="idle";
+  const assessment=await assessTimelineRecovery(draft,state.serverRevision);
+  if(assessment.disposition==="recover"&&assessment.draft){
+   if(await checksumTimeline(state.timeline)===assessment.draft.checksum){await recoveryStore().saveCheckpoint(assessment.draft,state.serverRevision,"Confirmed server save recovered after interrupted checkpoint");state.recoveryStatus="saved";return;}
+   state.timeline=structuredClone(assessment.draft.snapshot);state.recoveredDraft=assessment.draft;state.recoveryStatus="recovered";state.message=assessment.reason+" Save or discard it explicitly.";
+  }else if(assessment.disposition==="conflict"&&assessment.draft){state.recoveredDraft=assessment.draft;state.recoveryStatus="conflict";state.message=assessment.reason+" The latest server timeline remains loaded and unchanged.";
+  }else if(assessment.disposition==="invalid"){state.recoveryStatus="unavailable";state.message=assessment.reason;}
+ }catch(error){state.recoveryStatus="unavailable";state.message="Could not inspect the browser recovery journal: "+(error instanceof Error?error.message:"unknown error")+"."}
+}
+
 type PreviewAudioNode={element:HTMLAudioElement;gain:GainNode;active:boolean;trackId:string;assetId:string};
 const sequenceAudioNodes=new Map<string,PreviewAudioNode>();
 const sequenceCaptionCache=new Map<string,Promise<CaptionCue[]>>();
@@ -357,7 +389,7 @@ export function timelineQualityPanel(){
 export function renderTimelineWorkspace(){
  return '<div id="timeline-workspace"><div class="timeline-toolbar"><label>Workspace <select id="tl-mode"><option value="local" '+(state.mode==="local"?"selected":"")+' >Local</option><option value="cloud" '+(state.mode==="cloud"?"selected":"")+' >Cloud project</option></select></label><label>Cloud project <select id="tl-cloud-project"><option value="">Select project</option>'+state.cloudProjects.map(p=>'<option value="'+esc(p.id)+'" '+(p.id===state.cloudProjectId?'selected':'')+'>'+esc(p.name)+'</option>').join("")+'</select></label><label>Saved sequence <select id="tl-saved-sequence"><option value="">Current sequence</option>'+(state.mode==="cloud"?state.cloudTimelines.map(t=>'<option value="'+esc(t.id)+'" '+(state.timeline?.id===t.id?'selected':'')+'>'+esc(t.name)+' · r'+t.revision+'</option>').join(""):state.timelines.map(t=>'<option value="'+esc(t.id)+'" '+(state.timeline?.id===t.id?'selected':'')+'>'+esc(t.name)+' · r'+t.revision+'</option>').join(""))+'</select></label><button class="secondary" data-tl-create-cloud>＋ New cloud timeline</button>'+(state.mode==="cloud"?'<button class="secondary" data-tl-action="import-generated-video">＋ Import latest generated video</button>':"")+'<button class="secondary" data-tl-action="duplicate-variant">Duplicate as variant</button><span class="runtime-status '+state.status+'"><i></i>'+esc(state.status==="ready"?"TIMELINE SAVED":state.status==="auth"?"SIGN IN REQUIRED":state.status==="offline"?"API OFFLINE":"LOADING")+'</span><button class="secondary" data-tl-action="refresh">↻ Refresh</button><button class="secondary" data-tl-action="export">Export OTIO JSON</button>'+(state.mode==="cloud"&&state.cloudRenderJobId?'<button class="secondary" data-tl-action="cloud-job">Check cloud render · '+esc(state.cloudRenderJobStatus||"queued")+'</button>':'')+''+(state.ffmpeg?'<button class="primary" data-tl-action="render">Render master MP4</button>':'<span class="muted">FFmpeg required for master render</span>')+'</div>'+
  (state.message?'<div class="notice">'+esc(state.message)+'</div>':'')+
- (state.cloudRevisionConflict?'<section class="panel timeline-quality"><div class="eyebrow">SAVE CONFLICT · LOCAL DRAFT PRESERVED</div><p>The server has a newer revision. Your current edits remain in this browser session. Choose how to continue:</p><div class="toolbar"><button class="secondary" data-tl-action="reload-server">Load latest server revision</button><button class="primary" data-tl-action="save-conflict-variant">Save my local draft as a new variant</button></div></section>':'')+
+ (state.recoveredDraft?'<section class="panel timeline-quality"><div class="eyebrow">BROWSER RECOVERY · '+(state.recoveryStatus==="conflict"?"REVISION CONFLICT":"UNSAVED DRAFT")+'</div><p>'+esc(state.recoveryStatus==="conflict"?"Recovered edits are based on server revision "+state.recoveredDraft.baseRevision+", while the current server revision is "+state.serverRevision+". Your server timeline has not been replaced.":"Recovered unsaved edits from browser storage. Review them before continuing.")+'</p><div class="toolbar">'+(state.recoveryStatus==="conflict"?'<button class="primary" data-tl-action="restore-recovered-variant">Save recovered edits as a new variant</button>':'<button class="primary" data-tl-action="save-recovered-draft">Save recovered edits</button>')+'<button class="secondary" data-tl-action="discard-recovered-draft">Discard recovered draft</button></div></section>':"")+(state.cloudRevisionConflict?'<section class="panel timeline-quality"><div class="eyebrow">SAVE CONFLICT · LOCAL DRAFT PRESERVED</div><p>The server has a newer revision. Your current edits remain in this browser session. Choose how to continue:</p><div class="toolbar"><button class="secondary" data-tl-action="reload-server">Load latest server revision</button><button class="primary" data-tl-action="save-conflict-variant">Save my local draft as a new variant</button></div></section>':'')+
  '<div class="timeline-editor-grid"><section class="panel"><div class="eyebrow">SEQUENCE SETTINGS</div><h3>'+(state.timeline?esc(state.timeline.name):"No sequence loaded")+'</h3>'+
  '<form id="tl-add-track"><label>Track name</label><input name="name" required placeholder="Video 2 / Music / Captions"><label>Track type</label><select name="kind"><option value="video">Video</option><option value="audio">Audio</option><option value="overlay">Overlay</option><option value="caption">Captions</option></select><button class="secondary">＋ Add track</button></form>'+
  '<div class="eyebrow" style="margin-top:18px">ADD SOURCE CLIP</div><form id="tl-add-clip"><label>Source asset</label><select id="tl-asset-select" name="assetId" required>'+assetOptions()+'</select><label>Destination track</label><select name="trackId">'+(state.timeline?.tracks.map(t=>'<option value="'+esc(t.id)+'">'+esc(t.name)+'</option>').join("")||"")+'</select><div class="form-grid"><div><label>Timeline start (frames)</label><input name="start" type="number" min="0" value="'+maxEnd()+'"></div><div><label>Source in (source frames)</label><input name="sourceIn" type="number" min="0" value="0"></div><div><label>Duration (timeline frames)</label><input name="duration" type="number" min="1" value="'+(fps()*5)+'"></div></div><button class="primary wide">＋ Place clip on timeline</button></form>'+
@@ -414,11 +446,12 @@ async function refresh(){
 }
 async function persist(){
  if(!state.timeline)return;
+ const recoveryDraft=await saveRecoveryDraft("timeline-edit");
  const otio=toOpenTimelineIo(state.timeline);
  if(state.mode==="cloud"){
   try{
    const result=await apiRequest<{timeline:CloudSavedTimeline}>("/api/cloud/timelines/"+state.timeline.id,{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({expectedRevision:state.serverRevision,timeline:state.timeline,otio})});
-   state.serverRevision=result.timeline.revision;state.timeline={...state.timeline,revision:result.timeline.revision};state.cloudRevisionConflict=false;state.status="ready";state.message="Saved cloud revision "+result.timeline.revision+".";return;
+   state.serverRevision=result.timeline.revision;state.timeline={...state.timeline,revision:result.timeline.revision};state.cloudRevisionConflict=false;state.status="ready";state.message="Saved cloud revision "+result.timeline.revision+".";await completeRecoveryCheckpoint(recoveryDraft,result.timeline.revision);return;
   }catch(error){
    if(error instanceof ApiError&&error.status===409&&error.code==="REVISION_CONFLICT"){
     state.cloudRevisionConflict=true;state.status="ready";
@@ -428,7 +461,7 @@ async function persist(){
   }
  }
  const result=await apiRequest<{revision:number}>("/api/timelines/"+state.timeline.id,{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({revision:state.serverRevision,name:state.timeline.name,timeline:state.timeline,otio})});
- state.serverRevision=result.revision;state.timeline={...state.timeline,revision:result.revision};state.status="ready";state.message="Saved revision "+result.revision+".";
+ state.serverRevision=result.revision;state.timeline={...state.timeline,revision:result.revision};state.status="ready";state.message="Saved revision "+result.revision+".";await completeRecoveryCheckpoint(recoveryDraft,result.revision);
 }
 async function createCloudTimeline(){
  if(state.mode!=="cloud"||!state.cloudProjectId)throw new Error("Select a cloud project before creating a timeline.");
@@ -439,7 +472,7 @@ async function createCloudTimeline(){
  state.timeline=result.timeline.timeline;state.serverRevision=result.timeline.revision;state.selectedTrack=timeline.tracks[0].id;state.message="Cloud timeline created.";state.status="ready";await refresh();paint();
 }
 export async function initTimelineWorkspace(){
- try{await refresh();}catch(error){state.status=error instanceof Error&&error.message.includes("Sign in")?"auth":"offline";state.message=error instanceof Error?error.message:"Timeline service unavailable.";}
+ try{await requestPersistentBrowserStorage();await refresh();await restoreTimelineRecovery();}catch(error){state.status=error instanceof Error&&error.message.includes("Sign in")?"auth":"offline";state.message=error instanceof Error?error.message:"Timeline service unavailable.";}
  paint();
 }
 function paint(){
@@ -463,19 +496,41 @@ function paint(){
 }
 async function runAction(action:HTMLElement){
  const type=action.dataset.tlAction||"";
+ if(type==="save-recovered-draft"){
+  try{await persist();state.recoveredDraft=null;state.message="Recovered edits saved as a new server revision.";}
+  catch(error){state.message=error instanceof Error?error.message:"Recovered draft could not be saved.";}
+  paint();return;
+ }
+ if(type==="discard-recovered-draft"){
+  try{if(state.recoveredDraft)await recoveryStore().clearDraft(state.recoveredDraft.key);state.recoveredDraft=null;state.recoveryStatus="idle";state.message="Recovered browser draft discarded. The server timeline was left unchanged.";}
+  catch(error){state.message=error instanceof Error?error.message:"Could not discard recovered draft.";}
+  paint();return;
+ }
+ if(type==="restore-recovered-variant"){
+  if(!state.recoveredDraft){state.message="There is no recovered draft to restore.";paint();return;}
+  const recovered=state.recoveredDraft;
+  try{state.timeline=structuredClone(recovered.snapshot);await duplicateTimelineVariant();await recoveryStore().clearDraft(recovered.key);state.recoveredDraft=null;state.recoveryStatus="saved";state.message="Recovered edits saved as an independent timeline variant. The newer server revision was preserved.";}
+  catch(error){state.message=error instanceof Error?error.message:"Recovered edits could not be saved as a variant.";}
+  paint();return;
+ }
+
  if(type==="refresh"){await refresh();paint();return;}
  if(type==="reload-server"){
   if(state.mode!=="cloud"||!state.timeline){state.message="No cloud timeline is selected.";paint();return;}
+  const recoveryKey=currentRecoveryKey();
   try{
    const result=await apiRequest<{timeline:CloudSavedTimeline}>("/api/cloud/timelines/"+state.timeline.id);
    state.timeline=result.timeline.timeline;state.serverRevision=result.timeline.revision;state.cloudRevisionConflict=false;
+   if(recoveryKey)await recoveryStore().clearDraft(recoveryKey);
+   state.recoveredDraft=null;state.recoveryStatus="idle";
    state.selectedTrack=state.timeline.tracks[0]?.id||"";state.selectedClipId="";
    await refresh();state.message="Loaded server revision "+state.serverRevision+". The previous local draft was not merged.";
   }catch(error){state.message=error instanceof Error?error.message:"Could not load the latest server revision.";}
   paint();return;
  }
  if(type==="save-conflict-variant"){
-  try{await duplicateTimelineVariant();state.cloudRevisionConflict=false;state.message="Saved your preserved local edits as a separate timeline variant. The original server timeline was not overwritten.";}
+  const recoveryKey=currentRecoveryKey();
+  try{await duplicateTimelineVariant();if(recoveryKey)await recoveryStore().clearDraft(recoveryKey);state.recoveredDraft=null;state.recoveryStatus="saved";state.cloudRevisionConflict=false;state.message="Saved your preserved local edits as a separate timeline variant. The original server timeline was not overwritten.";}
   catch(error){state.message=error instanceof Error?error.message:"Could not save the local draft as a variant.";}
   paint();return;
  }
@@ -591,11 +646,11 @@ document.addEventListener("submit",event=>{
 });
 document.addEventListener("change",event=>{
  const target=event.target as HTMLSelectElement;
- if(target.id==="tl-mode"){state.mode=target.value==="cloud"?"cloud":"local";state.timeline=null;state.cloudRevisionConflict=false;state.selectedClipId="";void refresh().then(paint).catch(error=>{state.status="offline";state.message=error instanceof Error?error.message:"Workspace unavailable.";paint();});}
- if(target.id==="tl-cloud-project"){state.cloudProjectId=target.value;state.timeline=null;state.cloudRevisionConflict=false;state.selectedClipId="";void refresh().then(paint).catch(error=>{state.status="offline";state.message=error instanceof Error?error.message:"Cloud project unavailable.";paint();});}
+ if(target.id==="tl-mode"){state.mode=target.value==="cloud"?"cloud":"local";state.timeline=null;state.cloudRevisionConflict=false;state.recoveredDraft=null;state.recoveryStatus="idle";state.selectedClipId="";void refresh().then(paint).catch(error=>{state.status="offline";state.message=error instanceof Error?error.message:"Workspace unavailable.";paint();});}
+ if(target.id==="tl-cloud-project"){state.cloudProjectId=target.value;state.timeline=null;state.cloudRevisionConflict=false;state.recoveredDraft=null;state.recoveryStatus="idle";state.selectedClipId="";void refresh().then(paint).catch(error=>{state.status="offline";state.message=error instanceof Error?error.message:"Cloud project unavailable.";paint();});}
  if(target.id==="tl-saved-sequence"&&target.value){
   const saved=state.mode==="cloud"?state.cloudTimelines.find(t=>t.id===target.value):state.timelines.find(t=>t.id===target.value);
-  if(saved){if(state.mode==="cloud"){const cloud=saved as CloudSavedTimeline;state.timeline=cloud.timeline;state.serverRevision=cloud.revision;state.cloudRevisionConflict=false;void loadVariantComparison().then(paint);}
+  if(saved){state.recoveredDraft=null;state.recoveryStatus="idle";if(state.mode==="cloud"){const cloud=saved as CloudSavedTimeline;state.timeline=cloud.timeline;state.serverRevision=cloud.revision;state.cloudRevisionConflict=false;void loadVariantComparison().then(paint);}
    else void apiRequest<{timeline:SavedTimeline}>("/api/timelines/"+saved.id).then(result=>{state.timeline=result.timeline.document||null;state.serverRevision=result.timeline.revision;void loadVariantComparison().then(paint);}).catch(error=>{state.message=error.message;paint();});}
  }
 });
