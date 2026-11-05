@@ -7,6 +7,7 @@ const interactionId = "v1_abcdef123456";
 const ownerId = "owner-1";
 const projectId = "project-1";
 const jobId = "job-1";
+const requestHash = "a".repeat(64);
 const bytes = Buffer.from("private-video");
 const digest = createHash("sha256").update(bytes).digest("hex");
 const rawInteraction = {
@@ -36,7 +37,7 @@ function setup({ record = {}, existing = null, extraAuthorization } = {}) {
   };
   const stored = {
     interactionId, provider: "google", model: "gemini-omni-1.1-flash",
-    ownerId, projectId, jobId, state: "succeeded", ...record
+    ownerId, projectId, jobId, requestHash, state: "succeeded", ...record
   };
   const interactions = {
     async findInteraction(scope) {
@@ -64,7 +65,7 @@ function setup({ record = {}, existing = null, extraAuthorization } = {}) {
   });
   return { integration, calls, asset };
 }
-const job = { id: jobId, owner_id: ownerId, project_id: projectId };
+const job = { id: jobId, owner_id: ownerId, project_id: projectId, input: { requestHash } };
 
 test("composes Google output ingestion into the existing private Cloud Asset repository", async () => {
   const h = setup();
@@ -113,7 +114,8 @@ test("rejects output ingestion unless the durable interaction is succeeded and c
     { ownerId: "owner-2" },
     { projectId: "project-2" },
     { jobId: "job-2" },
-    { model: "another-model" }
+    { model: "another-model" },
+    { requestHash: "b".repeat(64) }
   ]) {
     const h = setup({ record });
     await assert.rejects(() => h.integration.ingestOutputs({
