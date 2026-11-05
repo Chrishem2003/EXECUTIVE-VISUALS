@@ -3,7 +3,6 @@ on:
   push:
     branches: [main, "feat/**", "fix/**"]
   pull_request:
-    branches: [main, "feat/**"]
 concurrency:
   group: quality-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
@@ -24,6 +23,8 @@ jobs:
           ffmpeg -version
           fc-match "DejaVu Sans"
       - run: npm install
+      - name: Run Google GCS bootstrap and cloud-worker identity tests
+        run: node --test server/tests/google-gemini-gcs-mirror-bootstrap.test.mjs server/tests/cloud-worker-process.test.mjs
       - name: Run targeted video and Google provider regression suite
         run: npm run verify:video-routing
       - run: npm run typecheck
