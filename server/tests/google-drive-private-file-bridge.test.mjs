@@ -264,6 +264,32 @@ test("keeps a quarantined export blocked when its reserved Drive file is not fou
   assert.equal(h.calls.some(x => x.url?.includes("/files/generateIds")), false);
 });
 
+test("releases the reconciliation lease when provider metadata conflicts", async () => {
+  const leaseToken = "44444444-4444-4444-8444-444444444444";
+  const record = { attemptKey: "a".repeat(64), ownerId, projectId, assetId, parentFolderId: null,
+    driveFileId: "driveFile_987654321", mimeType: "video/mp4", byteSize: bytes.length, sha256,
+    state: "RECONCILIATION_REQUIRED", sessionUri: null };
+  const marks = [];
+  const attempts = {
+    async get() { return record; },
+    async createOrGet() { throw new Error("reconciliation must not create a new attempt"); },
+    async claim() { throw new Error("ordinary upload claim must not be used"); },
+    async claimForReconciliation() { return leaseToken; },
+    async saveSession() { throw new Error("reconciliation must not upload"); },
+    async mark(value) { marks.push(value); return { ...record, state: value.state }; }
+  };
+  const conflictingFile = { id: record.driveFileId, name: "wrong.mp4", mimeType: "video/mp4",
+    size: String(bytes.length), md5Checksum: "0".repeat(32),
+    appProperties: { source: "executive-visuals", assetId }, trashed: false };
+  const h = harness({ attempts, existingDriveFile: conflictingFile });
+  await assert.rejects(() => h.bridge.uploadPrivateAsset({ ownerId, projectId, assetId }),
+    error => error.code === "GOOGLE_DRIVE_EXPORT_RECONCILIATION_CONFLICT");
+  assert.equal(marks.at(-1).state, "RECONCILIATION_REQUIRED");
+  assert.equal(marks.at(-1).leaseToken, leaseToken);
+  assert.equal(marks.at(-1).errorCode, "GOOGLE_DRIVE_EXPORT_RECONCILIATION_CONFLICT");
+  assert.equal(h.calls.some(x => x.url?.includes("uploadType=resumable")), false);
+});
+
 test("rejects a durable attempt whose MIME type differs from the private asset", async () => {
   const attempts = {
     async get() { return { ownerId, projectId, assetId, mimeType: "application/pdf",
