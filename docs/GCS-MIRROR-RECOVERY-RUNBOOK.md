@@ -40,14 +40,29 @@ responses.
 ## Google Cloud identity
 
 Use a dedicated service identity for this application and grant access only on
-the dedicated mirror bucket. Prefer a custom role containing the operations
-actually required by the reviewed code path. The current writer/recovery path
-needs object create, metadata read, and exact-generation delete for failed
-verification cleanup. Do not grant project-wide Storage Admin.
+the dedicated mirror bucket. Prefer a custom role containing only the operations
+required by the reviewed code path:
+
+- `storage.objects.create` — create-only resumable upload (the writer uses
+  `ifGenerationMatch=0`).
+- `storage.objects.get` — read back object metadata for integrity and ownership
+  verification.
+- `storage.objects.delete` — remove an exact generation after failed
+  verification, guarded by `ifGenerationMatch`.
+
+Do not grant bucket IAM administration, bucket creation, project-wide Storage
+Admin, or object listing unless a separately reviewed feature requires it.
+
+Google's resumable-upload guidance lists object create and, for overwrite cases,
+object delete; its checksum guidance documents sending CRC32C in the final
+resumable-upload request's `X-Goog-Hash` header. See:
+- https://docs.cloud.google.com/storage/docs/performing-resumable-uploads
+- https://docs.cloud.google.com/storage/docs/data-validation
+- https://docs.cloud.google.com/storage/docs/access-control/iam-permissions
 
 Google documents `roles/storage.objectUser` as create/read/update/delete object
-access; it is broader than the narrowest custom role. Bucket IAM and uniform
-bucket-level access must be reviewed before staging.
+access; it is broader than the narrow custom role described above. Bucket IAM
+and uniform bucket-level access must be reviewed before staging.
 
 ## Staging acceptance gates
 
