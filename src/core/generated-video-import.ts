@@ -7,10 +7,10 @@ export interface GeneratedVideoAsset {
   metadata?: Record<string, unknown>;
 }
 
-export function selectLatestGeneratedVideoAsset(
-  assets: readonly GeneratedVideoAsset[],
+export function selectLatestGeneratedVideoAsset<T extends GeneratedVideoAsset>(
+  assets: readonly T[],
   projectId: string
-): GeneratedVideoAsset | null {
+): T | null {
   return assets
     .filter(asset =>
       asset.projectId === projectId &&
