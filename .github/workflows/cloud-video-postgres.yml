@@ -52,6 +52,30 @@ jobs:
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261105170000_google_drive_export_attempts.sql
       - name: Verify private Google Drive export-attempt ledger
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/google-drive-export-attempts-postgres-integration.sql
+      - name: Apply Google Drive export lease-integrity migration
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261105180000_google_drive_export_lease_integrity.sql
+      - name: Verify Google Drive export lease-integrity constraint and recovery index
+        run: |
+          psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 <<'SQL'
+          do $
+          begin
+            if not exists (
+              select 1 from pg_constraint
+              where conname = 'google_drive_export_attempts_lease_pair_check'
+                and conrelid = 'executive_visuals.google_drive_export_attempts'::regclass
+            ) then
+              raise exception 'Google Drive export lease-pair constraint is missing';
+            end if;
+            if not exists (
+              select 1 from pg_indexes
+              where schemaname = 'executive_visuals'
+                and indexname = 'google_drive_export_attempts_expired_lease_idx'
+            ) then
+              raise exception 'Google Drive expired-lease recovery index is missing';
+            end if;
+          end
+          $;
+          SQL
       - name: Apply private GCS registration metadata migration
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261105133000_google_gcs_file_registration.sql
       - name: Verify private GCS registration metadata privileges
