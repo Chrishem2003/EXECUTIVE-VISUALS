@@ -146,7 +146,7 @@ test("cloud waveform endpoint authorizes source, verifies hash and persists a pr
   assert.equal(localAsset.sha256,sha);assert.equal(localAsset.media_type,"audio/wav");
   const dir=join(root,"derived","waveforms");await mkdir(dir,{recursive:true});const output=join(dir,"waveform.png");await writeFile(output,png);return output;
  }};
- const api=createCloudTimelineApi({timelineService:{assets:{async get(input){assert.deepEqual(input,{ownerId:owner,assetId});return asset;}},storage},waveformCache,mediaRoot:root});
+ const api=createCloudTimelineApi({url:"https://example.supabase.co",serviceRoleKey:"test-service-key",timelineService:{assets:{async get(input){assert.deepEqual(input,{ownerId:owner,assetId});return asset;}},storage},waveformCache,mediaRoot:root});
  try{
   const result=await api.handle({method:"GET",path:"/api/cloud/assets/"+assetId+"/waveform",ownerId:owner});
   assert.equal(result.status,200);assert.equal(result.body.sourceSha256,sha);
@@ -158,7 +158,7 @@ test("cloud waveform endpoint authorizes source, verifies hash and persists a pr
 });
 test("cloud waveform endpoint rejects non-audio sources before storage access",async()=>{
  let storageCalled=false;
- const api=createCloudTimelineApi({timelineService:{assets:{async get(){return{id:"623e4567-e89b-42d3-a456-426614174000",ownerId:owner,projectId:project,name:"clip.mp4",mediaType:"video/mp4",size:10,sha256:"a".repeat(64),storageBucket:"executive-visuals-media",objectPath:project+"/623e4567-e89b-42d3-a456-426614174000/original.mp4"};}},storage:{async downloadToFile(){storageCalled=true;},async uploadFile(){storageCalled=true;}}},waveformCache:{},mediaRoot:tmpdir()});
+ const api=createCloudTimelineApi({url:"https://example.supabase.co",serviceRoleKey:"test-service-key",timelineService:{assets:{async get(){return{id:"623e4567-e89b-42d3-a456-426614174000",ownerId:owner,projectId:project,name:"clip.mp4",mediaType:"video/mp4",size:10,sha256:"a".repeat(64),storageBucket:"executive-visuals-media",objectPath:project+"/623e4567-e89b-42d3-a456-426614174000/original.mp4"};}},storage:{async downloadToFile(){storageCalled=true;},async uploadFile(){storageCalled=true;}}},waveformCache:{},mediaRoot:tmpdir()});
  const result=await api.handle({method:"GET",path:"/api/cloud/assets/623e4567-e89b-42d3-a456-426614174000/waveform",ownerId:owner});
  assert.equal(result.status,415);assert.equal(storageCalled,false);
 });
@@ -171,7 +171,7 @@ test("cloud waveform endpoint reuses a valid private derivative without download
   async downloadToFile(path,file){downloads++;if(!path.endsWith("waveform-v1-"+sha+".png"))throw new Error("Source must not be fetched on cache hit.");await writeFile(file,png);return{size:png.length,sha256:createHash("sha256").update(png).digest("hex")};},
   async uploadFile(){uploads++;throw new Error("Cache hit must not upload.");}
  };
- const api=createCloudTimelineApi({timelineService:{assets:{async get(){return asset;}},storage},waveformCache:{},mediaRoot:root});
+ const api=createCloudTimelineApi({url:"https://example.supabase.co",serviceRoleKey:"test-service-key",timelineService:{assets:{async get(){return asset;}},storage},waveformCache:{},mediaRoot:root});
  try{
   const result=await api.handle({method:"GET",path:"/api/cloud/assets/"+assetId+"/waveform",ownerId:owner});
   assert.equal(result.status,200);assert.equal(downloads,1);assert.equal(uploads,0);
@@ -190,7 +190,7 @@ test("cloud waveform endpoint repairs a corrupt cached derivative before serving
   async uploadFile(path,file,mime,upsert){const info=await import("node:fs/promises").then(fs=>fs.stat(file));return{bucket:"executive-visuals-media",path,size:info.size,contentType:mime,sha256:createHash("sha256").update(png).digest("hex")};}
  };
  const waveformCache={async get(){const dir=join(root,"derived","waveforms");await mkdir(dir,{recursive:true});const output=join(dir,"repaired.png");await writeFile(output,png);return output;}};
- const api=createCloudTimelineApi({timelineService:{assets:{async get(){return asset;}},storage},waveformCache,mediaRoot:root});
+ const api=createCloudTimelineApi({url:"https://example.supabase.co",serviceRoleKey:"test-service-key",timelineService:{assets:{async get(){return asset;}},storage},waveformCache,mediaRoot:root});
  try{
   const result=await api.handle({method:"GET",path:"/api/cloud/assets/"+assetId+"/waveform",ownerId:owner});
   assert.equal(result.status,200);assert.equal(removed,1);assert.equal(downloaded,2);
