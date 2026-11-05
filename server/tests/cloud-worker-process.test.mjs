@@ -11,7 +11,9 @@ test("cloud worker config requires a selected worker family and server credentia
 test("cloud video worker requires isolated staging acceptance, explicit provider opt-in and exact output hosts",()=>{
  const requested={...env,CLOUD_VIDEO_WORKER_ENABLED:"true"};
  assert.throws(()=>readCloudWorkerConfig(requested),/isolated-staging acceptance/);
- const accepted={...requested,CLOUD_VIDEO_WORKER_STAGING_ACCEPTED:"true"};
+ const staged={...requested,CLOUD_VIDEO_WORKER_STAGING_ACCEPTED:"true"};
+ assert.throws(()=>readCloudWorkerConfig(staged),/cancellation acceptance/);
+ const accepted={...staged,CLOUD_VIDEO_WORKER_CANCELLATION_ACCEPTED:"true"};
  assert.throws(()=>readCloudWorkerConfig(accepted),/Runway remote-execution opt-in/);
  const optedIn={...accepted,RUNWAY_VIDEO_ENABLED:"true",RUNWAY_VIDEO_ALLOW_REMOTE:"true",RUNWAY_API_KEY:"server-only",RUNWAY_VIDEO_OUTPUT_HOSTS:"cdn.example.com,media.example.com"};
  const config=readCloudWorkerConfig(optedIn);
