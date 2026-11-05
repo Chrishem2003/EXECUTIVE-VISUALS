@@ -25,7 +25,7 @@ The provider submission transition also checks `cancellation_requested_at IS NUL
 
 The RPC records `cancellation_requested_at` and an audit event. The worker checks the cancellation flag during execution. If the provider task is queued/running, it sends the adapter's best-effort cancellation request. It then moves the job to `needs_input` for reconciliation instead of claiming the task stopped or releasing the budget.
 
-A succeeded provider task is allowed to proceed through private output ingestion and evidence-backed settlement even if a cancellation request arrived after the provider completed.
+A succeeded provider task is allowed to proceed through private output ingestion and evidence-backed settlement even if a cancellation request arrived after the provider completed. If the task changes from running to succeeded between the worker's first status read and the adapter's cancellation preflight, the worker re-reads the task and preserves the completed output instead of treating it as canceled.
 
 ### Ambiguous outcomes
 
