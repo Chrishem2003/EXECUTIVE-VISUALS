@@ -3,10 +3,11 @@ export interface RationalTime { value:number; rate:number }
 export interface TimeRange { start:RationalTime; duration:RationalTime }
 export type TrackKind="video"|"audio"|"overlay"|"caption";
 export interface TimelineTransition { type:"dip-to-black"|"crossfade"; fadeFrames:number }
+export interface SpeedKeyframe { timeSeconds:number; speed:number }
 export interface TimelineClip {
   id:string; assetId:string; name:string; sourceRange:TimeRange;
   timelineStart:RationalTime; duration:RationalTime;
-  enabled:boolean; gainDb?:number; pan?:number; audioAutomation?:AudioAutomationPoint[]; speed?:number; transitionToNext?:TimelineTransition; metadata?:Record<string,unknown>;
+  enabled:boolean; gainDb?:number; pan?:number; audioAutomation?:AudioAutomationPoint[]; speed?:number; speedCurve?:SpeedKeyframe[]; transitionToNext?:TimelineTransition; metadata?:Record<string,unknown>;
 }
 export interface TimelineTrack {
   id:string; name:string; kind:TrackKind; enabled:boolean; locked:boolean;
@@ -32,6 +33,32 @@ export const rational=(value:number,rate:number):RationalTime=>{
 };
 export const seconds=(time:RationalTime)=>time.value/time.rate;
 export const frames=(time:RationalTime,rate:number)=>Math.round(seconds(time)*rate);
+export function evaluateSpeedCurve(curve:SpeedKeyframe[]|undefined,timeSeconds:number,fallback=1):number{
+ if(!curve?.length)return fallback;
+ if(timeSeconds<=curve[0].timeSeconds)return curve[0].speed;
+ for(let index=1;index<curve.length;index++){const left=curve[index-1],right=curve[index];if(timeSeconds<=right.timeSeconds){const span=right.timeSeconds-left.timeSeconds;if(span<=0)return right.speed;const ratio=(timeSeconds-left.timeSeconds)/span;return left.speed+(right.speed-left.speed)*ratio;}}
+ return curve[curve.length-1].speed;
+}
+export function integrateSpeedCurve(curve:SpeedKeyframe[]|undefined,durationSeconds:number,fallback=1):number{
+ if(!curve?.length)return durationSeconds*fallback;
+ const end=Math.max(0,durationSeconds),boundaries=[0,...curve.map(point=>point.timeSeconds).filter(time=>time>0&&time<end),end].sort((a,b)=>a-b);
+ let source=0;for(let index=1;index<boundaries.length;index++){const left=boundaries[index-1],right=boundaries[index];source+=(evaluateSpeedCurve(curve,left,fallback)+evaluateSpeedCurve(curve,right,fallback))*.5*(right-left);}return source;
+}
+export function sourceElapsedSeconds(clip:TimelineClip,timelineElapsedSeconds:number):number{
+ const elapsed=Math.max(0,Math.min(seconds(clip.duration),timelineElapsedSeconds));return integrateSpeedCurve(clip.speedCurve,elapsed,Number(clip.speed??1));
+}
+export function timelineElapsedForSourceElapsed(clip:TimelineClip,sourceElapsed:number):number{
+ const target=Math.max(0,Math.min(seconds(clip.sourceRange.duration),sourceElapsed));let low=0,high=seconds(clip.duration);
+ for(let iteration=0;iteration<48;iteration++){const middle=(low+high)/2;if(sourceElapsedSeconds(clip,middle)<target)low=middle;else high=middle;}
+ return (low+high)/2;
+}
+export function sliceSpeedCurve(curve:SpeedKeyframe[]|undefined,startSeconds:number,endSeconds:number,fallback=1):SpeedKeyframe[]|undefined{
+ if(!curve?.length)return undefined;
+ const start=Math.max(0,startSeconds),end=Math.max(start,endSeconds),points:SpeedKeyframe[]=[{timeSeconds:0,speed:evaluateSpeedCurve(curve,start,fallback)}];
+ for(const point of curve){if(point.timeSeconds>start&&point.timeSeconds<end)points.push({timeSeconds:point.timeSeconds-start,speed:point.speed});}
+ if(end>start)points.push({timeSeconds:end-start,speed:evaluateSpeedCurve(curve,end,fallback)});
+ return points;
+}
 export function createTimeline(projectId:string,id:string,name="Untitled sequence",fps={numerator:24,denominator:1}):EditorialTimeline{
   if(fps.numerator<=0||fps.denominator<=0)throw new Error("Frame rate must be positive.");
   const timestamp=new Date().toISOString();
@@ -47,7 +74,11 @@ export function addClip(timeline:EditorialTimeline,trackId:string,clip:TimelineC
   if(track.locked)throw new Error("Track is locked.");
   if(track.clips.some(item=>item.id===clip.id))throw new Error("Clip ID already exists.");
   if(clip.duration.value<=0||clip.sourceRange.duration.value<=0)throw new Error("Clip duration must be positive.");
-  if(Math.abs(seconds(clip.duration)-seconds(clip.sourceRange.duration))>Math.max(0.000001,0.5/clip.sourceRange.duration.rate))throw new Error("Timeline and source duration must match within half a source frame for constant-speed clips.");
+  const speed=Number(clip.speed??1),durationSeconds=seconds(clip.duration),curve=clip.speedCurve;
+  if(!Number.isFinite(speed)||speed<0.25||speed>4)throw new Error("Clip speed must be between 0.25× and 4×.");
+  if(curve!==undefined&&(!Array.isArray(curve)||curve.length<2||curve.length>64||curve[0]?.timeSeconds!==0||curve.some((point,index)=>!point||!Number.isFinite(point.timeSeconds)||!Number.isFinite(point.speed)||point.speed<0.25||point.speed>4||point.timeSeconds<0||point.timeSeconds>durationSeconds||(index>0&&point.timeSeconds<=curve[index-1].timeSeconds))))throw new Error("Speed curves require 2–64 ordered keyframes, starting at zero, within the clip, with speeds from 0.25× to 4×.");
+  const sourceSeconds=integrateSpeedCurve(curve,durationSeconds,speed);
+  if(Math.abs(sourceSeconds-seconds(clip.sourceRange.duration))>Math.max(0.000001,0.5/clip.sourceRange.duration.rate))throw new Error("Timeline duration and speed curve must match the source duration.");
   const next={...track,clips:[...track.clips,{...clip}].sort((a,b)=>seconds(a.timelineStart)-seconds(b.timelineStart))};
   const updated={...timeline,revision:timeline.revision+1,updatedAt:new Date().toISOString(),tracks:timeline.tracks.map(item=>item.id===trackId?next:item)};
   const validation=validateTimeline(updated);
@@ -62,12 +93,15 @@ export function trimClip(timeline:EditorialTimeline,trackId:string,clipId:string
   const removeLeft=Math.max(0,Math.floor(leftFrames)),removeRight=Math.max(0,Math.floor(rightFrames));
   const remaining=clip.duration.value-removeLeft-removeRight;
   if(remaining<=0)throw new Error("Trim would remove the entire clip.");
-  const sourceLeft=Math.round(removeLeft/fps*clip.sourceRange.start.rate);
-  const sourceRight=Math.round(removeRight/fps*clip.sourceRange.duration.rate);
+  const speed=Number(clip.speed??1),clipDurationSeconds=seconds(clip.duration),trimStartSeconds=removeLeft/fps,trimEndSeconds=clipDurationSeconds-removeRight/fps;
+  const sourceLeftSeconds=sourceElapsedSeconds(clip,trimStartSeconds),sourceRightSeconds=sourceElapsedSeconds(clip,clipDurationSeconds)-sourceElapsedSeconds(clip,trimEndSeconds);
+  const sourceStartOffset=Math.round(sourceLeftSeconds*clip.sourceRange.start.rate);
+  const sourceLeft=Math.round(sourceLeftSeconds*clip.sourceRange.duration.rate);
+  const sourceRight=Math.round(sourceRightSeconds*clip.sourceRange.duration.rate);
   const sourceRemaining=clip.sourceRange.duration.value-sourceLeft-sourceRight;
   if(sourceRemaining<=0)throw new Error("Trim would remove the entire source range.");
   const automationOffset=removeLeft/fps,automation=clip.audioAutomation?.length?[{timeSeconds:0,gainDb:evaluateAudioAutomation(clip.audioAutomation,automationOffset,"gainDb",clip.gainDb??0),pan:evaluateAudioAutomation(clip.audioAutomation,automationOffset,"pan",clip.pan??0),interpolation:"linear" as const},...clip.audioAutomation.filter(point=>point.timeSeconds>automationOffset).map(point=>({...point,timeSeconds:point.timeSeconds-automationOffset}))]:undefined;
-  const changed={...clip,sourceRange:{start:rational(clip.sourceRange.start.value+sourceLeft,clip.sourceRange.start.rate),duration:rational(sourceRemaining,clip.sourceRange.duration.rate)},timelineStart:rational(clip.timelineStart.value+removeLeft,clip.timelineStart.rate),duration:rational(remaining,fps),audioAutomation:automation};
+  const changed={...clip,sourceRange:{start:rational(clip.sourceRange.start.value+sourceStartOffset,clip.sourceRange.start.rate),duration:rational(sourceRemaining,clip.sourceRange.duration.rate)},timelineStart:rational(clip.timelineStart.value+removeLeft,clip.timelineStart.rate),duration:rational(remaining,fps),audioAutomation:automation,speedCurve:sliceSpeedCurve(clip.speedCurve,trimStartSeconds,trimEndSeconds,speed)};
   return {...timeline,revision:timeline.revision+1,updatedAt:new Date().toISOString(),tracks:timeline.tracks.map(item=>item.id===trackId?{...item,clips:item.clips.map(c=>c.id===clipId?changed:c)}:item)};
 }
 export function splitClip(timeline:EditorialTimeline,trackId:string,clipId:string,atFrame:number,newClipId:string):EditorialTimeline{
@@ -80,15 +114,17 @@ export function splitClip(timeline:EditorialTimeline,trackId:string,clipId:strin
   if(offset<=0||offset>=duration)throw new Error("Split point must be inside the clip.");
   if(track.clips.some(item=>item.id===newClipId))throw new Error("New clip ID already exists.");
   const fps=timeline.frameRate.numerator/timeline.frameRate.denominator;
-  const sourceOffset=Math.round(offset/fps*clip.sourceRange.start.rate);
+  const sourceOffsetSeconds=sourceElapsedSeconds(clip,offset/fps),clipDurationSeconds=seconds(clip.duration);
+  const sourceStartOffset=Math.round(sourceOffsetSeconds*clip.sourceRange.start.rate);
+  const sourceOffset=Math.round(sourceOffsetSeconds*clip.sourceRange.duration.rate);
   const sourceRemaining=clip.sourceRange.duration.value-sourceOffset;
   if(sourceRemaining<=0)throw new Error("Split point is outside the source range.");
   const splitSeconds=offset/fps,points=clip.audioAutomation||[];
   const boundary=points.length?[{timeSeconds:0,gainDb:evaluateAudioAutomation(points,splitSeconds,"gainDb",clip.gainDb??0),pan:evaluateAudioAutomation(points,splitSeconds,"pan",clip.pan??0),interpolation:"linear" as const}]:undefined;
   const firstAutomation=points.length?[...points.filter(point=>point.timeSeconds<splitSeconds),{timeSeconds:splitSeconds,gainDb:evaluateAudioAutomation(points,splitSeconds,"gainDb",clip.gainDb??0),pan:evaluateAudioAutomation(points,splitSeconds,"pan",clip.pan??0),interpolation:"linear" as const}]:undefined;
   const secondAutomation:AudioAutomationPoint[]|undefined=points.length?[...boundary!,...points.filter(point=>point.timeSeconds>splitSeconds).map(point=>({...point,timeSeconds:point.timeSeconds-splitSeconds}))]:undefined;
-  const first={...clip,duration:rational(offset,fps),sourceRange:{...clip.sourceRange,duration:rational(sourceOffset,clip.sourceRange.duration.rate)},audioAutomation:firstAutomation};
-  const second={...clip,id:newClipId,name:clip.name+" · B",timelineStart:rational(start+offset,fps),duration:rational(duration-offset,fps),sourceRange:{start:rational(clip.sourceRange.start.value+sourceOffset,clip.sourceRange.start.rate),duration:rational(sourceRemaining,clip.sourceRange.duration.rate)},audioAutomation:secondAutomation};
+  const first={...clip,duration:rational(offset,fps),sourceRange:{...clip.sourceRange,duration:rational(sourceOffset,clip.sourceRange.duration.rate)},audioAutomation:firstAutomation,speedCurve:sliceSpeedCurve(clip.speedCurve,0,offset/fps,Number(clip.speed??1))};
+  const second={...clip,id:newClipId,name:clip.name+" · B",timelineStart:rational(start+offset,fps),duration:rational(duration-offset,fps),sourceRange:{start:rational(clip.sourceRange.start.value+sourceStartOffset,clip.sourceRange.start.rate),duration:rational(sourceRemaining,clip.sourceRange.duration.rate)},audioAutomation:secondAutomation,speedCurve:sliceSpeedCurve(clip.speedCurve,offset/fps,clipDurationSeconds,Number(clip.speed??1))};
   return {...timeline,revision:timeline.revision+1,updatedAt:new Date().toISOString(),tracks:timeline.tracks.map(item=>item.id===trackId?{...item,clips:item.clips.flatMap(c=>c.id===clipId?[first,second]:[c])}:item)};
 }
 export function moveClip(timeline:EditorialTimeline,fromTrackId:string,clipId:string,toTrackId:string,toFrame:number):EditorialTimeline{
@@ -129,9 +165,11 @@ export function validateTimeline(timeline:EditorialTimeline):{valid:boolean;issu
       const start=seconds(clip.timelineStart),duration=seconds(clip.duration);
       if(!clip.assetId)issues.push({code:"missing_asset",trackId:track.id,clipId:clip.id,message:"Clip has no source asset."});
       const speed=Number(clip.speed??1);
-      if(!Number.isFinite(speed)||speed!==1)issues.push({code:"unsupported_speed",trackId:track.id,clipId:clip.id,message:"Clip speed changes are not supported until time remapping is implemented."});
+      if(!Number.isFinite(speed)||speed<0.25||speed>4)issues.push({code:"invalid_speed",trackId:track.id,clipId:clip.id,message:"Clip speed must be between 0.25× and 4×."});
+       if(clip.speedCurve!==undefined){const curve=clip.speedCurve;if(!Array.isArray(curve)||curve.length<2||curve.length>64||curve[0]?.timeSeconds!==0||curve.some((point,index)=>!Number.isFinite(point.timeSeconds)||!Number.isFinite(point.speed)||point.speed<0.25||point.speed>4||point.timeSeconds<0||point.timeSeconds>duration||(index>0&&point.timeSeconds<=curve[index-1].timeSeconds)))issues.push({code:"invalid_speed_curve",trackId:track.id,clipId:clip.id,message:"Speed curves require 2–64 ordered keyframes, starting at zero, within the clip, with speeds from 0.25× to 4×."});}
+      if((track.kind==="overlay"||track.kind==="caption")&&(speed!==1||clip.speedCurve!==undefined))issues.push({code:"unsupported_speed",trackId:track.id,clipId:clip.id,message:"Playback speed is available only for video and audio clips."});
       if(start<0||duration<=0||clip.sourceRange.start.value<0||clip.sourceRange.duration.value<=0)issues.push({code:"invalid_range",trackId:track.id,clipId:clip.id,message:"Clip has an invalid source or record range."});
-      if(Math.abs(duration-seconds(clip.sourceRange.duration))>Math.max(0.000001,0.5/clip.sourceRange.duration.rate))issues.push({code:"timebase_mismatch",trackId:track.id,clipId:clip.id,message:"Source and timeline durations differ by more than half a source frame."});
+      if(Math.abs(integrateSpeedCurve(clip.speedCurve,duration,speed)-seconds(clip.sourceRange.duration))>Math.max(0.000001,0.5/clip.sourceRange.duration.rate))issues.push({code:"timebase_mismatch",trackId:track.id,clipId:clip.id,message:"Timeline duration and speed curve must match the source duration, within half a source frame."});
       if(clip.transitionToNext!==undefined){
         const transition=clip.transitionToNext,index=enabledClips.findIndex(item=>item.id===clip.id),next=enabledClips[index+1],previousTransition=index>0?enabledClips[index-1]?.transitionToNext:undefined,fps=timeline.frameRate.numerator/timeline.frameRate.denominator,fadeFrames=Number(transition?.fadeFrames),clipFrames=Math.round(duration*fps),isPrimaryVideo=track.kind==="video"&&timeline.tracks.find(item=>item.enabled&&item.kind==="video")?.id===track.id,isAudioCrossfade=track.kind==="audio"&&transition?.type==="crossfade",isVideoTransition=track.kind==="video"&&(transition?.type==="dip-to-black"||(transition?.type==="crossfade"&&isPrimaryVideo));
         if((!isVideoTransition&&!isAudioCrossfade)||!Number.isSafeInteger(fadeFrames)||fadeFrames<1||fadeFrames>clipFrames)issues.push({code:"invalid_transition",trackId:track.id,clipId:clip.id,message:"Video transitions require a valid video track; audio tracks support crossfades only. Fade length must be a positive integer no longer than the outgoing clip."});
@@ -168,6 +206,7 @@ export interface ActiveTimelineClip {
   timelineEndSeconds:number;
   sourceTimeSeconds:number;
   sourceFrame:number;
+  playbackSpeed:number;
   opacity:number;
 }
 export interface TimelineFrameEvaluation {
@@ -190,7 +229,7 @@ export function evaluateTimelineAtFrame(timeline:EditorialTimeline,frame:number)
       const clipStart=seconds(clip.timelineStart);
       const clipEnd=clipStart+seconds(clip.duration);
       if(timeSeconds<clipStart||timeSeconds>=clipEnd)continue;
-      const sourceTimeSeconds=seconds(clip.sourceRange.start)+(timeSeconds-clipStart);
+      const localTimelineTime=timeSeconds-clipStart,sourceTimeSeconds=seconds(clip.sourceRange.start)+sourceElapsedSeconds(clip,localTimelineTime),playbackSpeed=evaluateSpeedCurve(clip.speedCurve,localTimelineTime,Number(clip.speed??1));
       let opacity=1;
       if(track.kind==="video"){
         const fadeOut=clip.transitionToNext&&(clip.transitionToNext.type==="dip-to-black"||clip.transitionToNext.type==="crossfade")?clip.transitionToNext.fadeFrames/fps:0;
@@ -212,6 +251,7 @@ export function evaluateTimelineAtFrame(timeline:EditorialTimeline,frame:number)
         timelineEndSeconds:clipEnd,
         sourceTimeSeconds,
         sourceFrame:sourceTimeSeconds*clip.sourceRange.start.rate,
+        playbackSpeed,
         opacity
       });
     }
@@ -233,7 +273,7 @@ export function toOpenTimelineIo(timeline:EditorialTimeline):OtioObject{
         OTIO_SCHEMA:"Clip.2",name:clip.name,
         media_reference:{OTIO_SCHEMA:"ExternalReference.1",target_url:"asset://"+clip.assetId,available_range:otioRange(clip.sourceRange)},
         source_range:otioRange(clip.sourceRange),
-        metadata:{executiveVisuals:{clipId:clip.id,assetId:clip.assetId,enabled:clip.enabled,gainDb:clip.gainDb??0,pan:clip.pan??0,audioAutomation:clip.audioAutomation??[],speed:clip.speed??1,transitionToNext:clip.transitionToNext??null,custom:clip.metadata??{}}}
+        metadata:{executiveVisuals:{clipId:clip.id,assetId:clip.assetId,enabled:clip.enabled,gainDb:clip.gainDb??0,pan:clip.pan??0,audioAutomation:clip.audioAutomation??[],speed:clip.speed??1,speedCurve:clip.speedCurve??null,transitionToNext:clip.transitionToNext??null,custom:clip.metadata??{}}}
       });
       cursor=start+duration;
     }
