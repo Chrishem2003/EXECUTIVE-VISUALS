@@ -393,7 +393,7 @@ async function requestModelCreativeDirection(form:HTMLFormElement){
  state.directorAiBusy=true;state.directorAiMessage="Requesting a model-backed creative direction…";render();
  try{
   const result=await apiRequest<{plan:ModelCreativeDirection;model:string;usage:{promptTokens:number;completionTokens:number;totalTokens:number}|null}>("/api/creative/director",{
-   method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({input})
+   method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({projectId:state.apiProjectId||undefined,input})
   });
   const existing=state.projects.find(project=>project.id===state.activeProject);
   const project:Project={
