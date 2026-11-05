@@ -289,3 +289,19 @@ test("Google Omni enqueue normalizes provider-default resolution to the verified
   assert.equal(captured.p_reserved_amount,2.586464);
   assert.equal(captured.p_input.resolution,undefined);
 });
+
+test("cloud video job status is read through the owner-scoped PostgreSQL RPC", async () => {
+  const calls=[];
+  const status={jobId:resultRow.job_id,status:"processing",submission:{state:"submitted",providerTaskId:"provider-task-1"},budget:{reservedAmount:1.25,actualAmount:null,currency:"USD",state:"reserved"}};
+  const client=createCloudVideoEnqueue({...base,fetchImpl:async(url,options)=>{calls.push({url,options});return response(status);}});
+  const result=await client.getJobStatus({jobId:resultRow.job_id,ownerId});
+  assert.deepEqual(result,status);
+  assert.equal(calls[0].url,"https://example.supabase.co/rest/v1/rpc/get_owned_video_generation_job_status");
+  assert.deepEqual(JSON.parse(calls[0].options.body),{p_job_id:resultRow.job_id,p_owner_id:owner});
+  assert.equal(calls[0].options.headers.authorization,"Bearer "+base.serviceRoleKey);
+});
+test("cloud video job status rejects invalid identifiers before making a database request",async()=>{
+ let calls=0;const client=createCloudVideoEnqueue({...base,fetchImpl:async()=>{calls++;return response(null);}});
+ await assert.rejects(()=>client.getJobStatus({jobId:"not-a-uuid",ownerId}),/valid UUIDs/);
+ assert.equal(calls,0);
+});
