@@ -36,7 +36,9 @@ function harness({ providerStatus = "completed", failRecord = false, stored = tr
     },
     async getInteractionForIngestion(id, context) {
       calls.push(["get", id, context]);
-      const value = raw(providerStatus);\n      if (providerStatus === "completed") value.steps = []; // Simulate GET omitting the creation-time URI.\n      return value;
+      const value = raw(providerStatus);
+      if (providerStatus === "completed") value.steps = []; // Simulate GET omitting the creation-time URI.
+      return value;
     }
   };
   const interactions = {
@@ -97,7 +99,8 @@ test("prepares an authorized job plan, submits once and durably records owner/pr
   assert.equal(createCall[2].estimatedCost.amount, 10);
   assert.equal(h.records.get(interactionId).ownerId, ownerId);
   assert.equal(h.records.get(interactionId).projectId, projectId);
-  assert.equal(h.records.get(interactionId).parentInteractionId, "v1_parent123456");\n  assert.equal(h.records.get(interactionId).outputUri, "https://generativelanguage.googleapis.com/v1beta/files/generated123");
+  assert.equal(h.records.get(interactionId).parentInteractionId, "v1_parent123456");
+  assert.equal(h.records.get(interactionId).outputUri, "https://generativelanguage.googleapis.com/v1beta/files/generated123");
   assert.deepEqual(h.calls.map(call => call[0]), ["preparePlan", "create", "retention", "record"]);
 });
 
@@ -108,7 +111,8 @@ test("polls only an interaction durably scoped to the exact leased job", async (
   const task = await h.adapter.getStatus(interactionId, { job, workerId: "worker-1" });
   assert.equal(task.status, "succeeded");
   assert.equal(task.outputUrls.length, 1);
-  assert.equal(task.rawInteraction.id, interactionId);\n  assert.equal(task.rawInteraction.steps[0].content[0].uri, "https://generativelanguage.googleapis.com/v1beta/files/generated123");
+  assert.equal(task.rawInteraction.id, interactionId);
+  assert.equal(task.rawInteraction.steps[0].content[0].uri, "https://generativelanguage.googleapis.com/v1beta/files/generated123");
   assert.equal(h.records.get(interactionId).state, "succeeded");
 });
 
