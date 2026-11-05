@@ -2,9 +2,14 @@
 
 insert into auth.users(id) values
  ('123e4567-e89b-42d3-a456-426614174000'),
- ('223e4567-e89b-42d3-a456-426614174000');
+ ('223e4567-e89b-42d3-a456-426614174000'),
+ ('323e4567-e89b-42d3-a456-426614174000'),
+ ('423e4567-e89b-42d3-a456-426614174000');
 insert into executive_visuals.projects(id,owner_id,name) values
  ('323e4567-e89b-42d3-a456-426614174000','123e4567-e89b-42d3-a456-426614174000','Cloud video PostgreSQL test');
+insert into executive_visuals.project_members(project_id,member_id,role,invited_by) values
+ ('323e4567-e89b-42d3-a456-426614174000','323e4567-e89b-42d3-a456-426614174000','editor','123e4567-e89b-42d3-a456-426614174000'),
+ ('323e4567-e89b-42d3-a456-426614174000','423e4567-e89b-42d3-a456-426614174000','viewer','123e4567-e89b-42d3-a456-426614174000');
 
 select set_config('request.jwt.claim.sub','123e4567-e89b-42d3-a456-426614174000',false);
 set role authenticated;
@@ -100,6 +105,36 @@ select set_config('request.jwt.claim.sub','123e4567-e89b-42d3-a456-426614174000'
 reset role;
 select set_config('request.jwt.claim.role','service_role',false);
 set role service_role;
+-- Authorized project editors may initiate a request-bound preflight.
+-- A viewer must remain unable to create a generation approval.
+create temporary table editor_runway_approval_context as
+select * from executive_visuals.record_runway_router_preflight(
+ '323e4567-e89b-42d3-a456-426614174000',
+ '323e4567-e89b-42d3-a456-426614174000',
+ 'creative_low_cost',repeat('9',64),repeat('8',64),
+ jsonb_build_object('projectId','323e4567-e89b-42d3-a456-426614174000',
+   'provider','runway','model','gen4.5','requestHash',repeat('8',64),'prompt','editor test scene','durationSeconds',5),
+ 60,80,2,'USD',900
+);
+do $viewer_preflight_guard$
+begin
+ begin
+  perform * from executive_visuals.record_runway_router_preflight(
+   '423e4567-e89b-42d3-a456-426614174000',
+   '323e4567-e89b-42d3-a456-426614174000',
+   'creative_low_cost',repeat('7',64),repeat('6',64),
+   jsonb_build_object('projectId','323e4567-e89b-42d3-a456-426614174000',
+     'provider','runway','model','gen4.5','requestHash',repeat('6',64),'prompt','viewer test scene','durationSeconds',5),
+   60,80,2,'USD',900
+  );
+  raise exception 'viewer unexpectedly created a Runway preflight';
+ exception when others then
+  if sqlerrm = 'viewer unexpectedly created a Runway preflight' then raise; end if;
+  if sqlerrm <> 'RUNWAY_PREFLIGHT_PROJECT_FORBIDDEN' then raise; end if;
+ end;
+end
+$viewer_preflight_guard$;
+
 create temporary table runway_approval_context as
 select * from executive_visuals.record_runway_router_preflight(
  '123e4567-e89b-42d3-a456-426614174000',
