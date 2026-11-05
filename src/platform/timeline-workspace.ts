@@ -23,8 +23,10 @@ type Asset={id:string;name:string;mediaType:string;size:number;projectId?:string
 type SavedTimeline={id:string;projectId?:string|null;name:string;revision:number;document?:EditorialTimeline};
 type CloudProject={id:string;name:string};
 type CloudSavedTimeline={id:string;projectId?:string|null;name:string;revision:number;timeline:EditorialTimeline;updatedAt:string};
-const state:{timeline:EditorialTimeline|null;serverRevision:number;timelines:SavedTimeline[];cloudTimelines:CloudSavedTimeline[];cloudProjects:CloudProject[];cloudProjectId:string;mode:"local"|"cloud";cloudRenderJobId:string;cloudRenderJobStatus:string;variantBase:EditorialTimeline|null;variantReport:TimelineVariantComparison|null;variantBaseName:string;assets:Asset[];status:"loading"|"ready"|"offline"|"auth";message:string;selectedTrack:string;selectedClipId:string;ffmpeg:boolean;cloudRevisionConflict:boolean;recoveryStatus:"idle"|"saved"|"recovered"|"conflict"|"unavailable";recoveredDraft:TimelineRecoveryDraft|null;conflictServerTimeline:EditorialTimeline|null;timelineHistory:TimelineHistory}={
- timeline:null,serverRevision:0,timelines:[],cloudTimelines:[],cloudProjects:[],cloudProjectId:"",mode:"local",cloudRenderJobId:"",cloudRenderJobStatus:"",variantBase:null,variantReport:null,variantBaseName:"",assets:[],status:"loading",message:"Loading editorial workspace…",selectedTrack:"",selectedClipId:"",ffmpeg:false,cloudRevisionConflict:false,recoveryStatus:"idle",recoveredDraft:null,conflictServerTimeline:null,timelineHistory:createTimelineHistory()
+type TimelineVersionSummary={id:string;timelineId:string;revision:number;parentVersionId:string|null;restoredFromVersionId:string|null;name:string;summary:string;contentHash:string|null;createdBy:string;createdAt:string};
+type TimelineVersionSnapshot=TimelineVersionSummary&{document:EditorialTimeline;otio:Record<string,unknown>|null};
+const state:{timeline:EditorialTimeline|null;serverRevision:number;timelines:SavedTimeline[];cloudTimelines:CloudSavedTimeline[];cloudProjects:CloudProject[];cloudProjectId:string;mode:"local"|"cloud";cloudRenderJobId:string;cloudRenderJobStatus:string;variantBase:EditorialTimeline|null;variantReport:TimelineVariantComparison|null;variantBaseName:string;assets:Asset[];status:"loading"|"ready"|"offline"|"auth";message:string;selectedTrack:string;selectedClipId:string;ffmpeg:boolean;cloudRevisionConflict:boolean;recoveryStatus:"idle"|"saved"|"recovered"|"conflict"|"unavailable";recoveredDraft:TimelineRecoveryDraft|null;conflictServerTimeline:EditorialTimeline|null;timelineHistory:TimelineHistory;timelineVersions:TimelineVersionSummary[];versionHistoryOpen:boolean;versionComparison:TimelineVariantComparison|null;versionComparisonRevision:number|null;versionLoading:boolean}={
+ timeline:null,serverRevision:0,timelines:[],cloudTimelines:[],cloudProjects:[],cloudProjectId:"",mode:"local",cloudRenderJobId:"",cloudRenderJobStatus:"",variantBase:null,variantReport:null,variantBaseName:"",assets:[],status:"loading",message:"Loading editorial workspace…",selectedTrack:"",selectedClipId:"",ffmpeg:false,cloudRevisionConflict:false,recoveryStatus:"idle",recoveredDraft:null,conflictServerTimeline:null,timelineHistory:createTimelineHistory(),timelineVersions:[],versionHistoryOpen:false,versionComparison:null,versionComparisonRevision:null,versionLoading:false
 };
 let sequencePlaying=false,sequenceFrame=0,sequenceStartFrame=0,sequenceStartAt=0,sequenceRaf:number|null=null;
 let timelineRecoveryStore:TimelineRecoveryStore|null=null;
@@ -58,7 +60,52 @@ async function restoreTimelineRecovery():Promise<void>{
  }catch(error){state.recoveryStatus="unavailable";state.message="Could not inspect the browser recovery journal: "+(error instanceof Error?error.message:"unknown error")+"."}
 }
 
-function resetTimelineHistory(){state.timelineHistory=createTimelineHistory();}
+function resetTimelineHistory(){state.timelineHistory=createTimelineHistory();clearTimelineVersionPanel();}
+function clearTimelineVersionPanel(){state.timelineVersions=[];state.versionComparison=null;state.versionComparisonRevision=null;state.versionHistoryOpen=false;state.versionLoading=false;}
+function timelineVersionsPath(){return (state.mode==="cloud"?"/api/cloud/timelines/":"/api/timelines/")+encodeURIComponent(state.timeline?.id||"")+"/versions";}
+async function loadTimelineVersions(){
+ if(!state.timeline)return;
+ state.versionLoading=true;paint();
+ try{
+  const result=await apiRequest<{versions:TimelineVersionSummary[]}>(timelineVersionsPath());
+  state.timelineVersions=result.versions||[];state.versionHistoryOpen=true;
+  state.message=state.timelineVersions.length?"Loaded "+state.timelineVersions.length+" immutable versions.":"No historical versions are available yet; the next save will establish a baseline.";
+ }catch(error){state.message=error instanceof Error?error.message:"Timeline history could not be loaded.";}
+ finally{state.versionLoading=false;paint();}
+}
+async function compareTimelineVersion(versionId:string){
+ if(!state.timeline)return;
+ state.versionLoading=true;paint();
+ try{
+  const version=await apiRequest<{version:TimelineVersionSnapshot}>(timelineVersionsPath()+"/"+encodeURIComponent(versionId));
+  state.versionComparison=compareTimelineVariants(version.version.document,state.timeline);
+  state.versionComparisonRevision=version.version.revision;
+  state.versionHistoryOpen=true;state.message="Compared revision "+version.version.revision+" with the current sequence.";
+ }catch(error){state.message=error instanceof Error?error.message:"Version comparison could not be loaded.";}
+ finally{state.versionLoading=false;paint();}
+}
+async function restoreTimelineVersion(versionId:string){
+ if(!state.timeline)return;
+ if(state.cloudRevisionConflict||state.recoveredDraft){state.message="Resolve or save the preserved local draft before restoring a historical version.";paint();return;}
+ const version=state.timelineVersions.find(item=>item.id===versionId);
+ if(!version)return;
+ if(!window.confirm("Restore revision "+version.revision+"? This creates a new revision; it does not delete later versions."))return;
+ state.versionLoading=true;paint();
+ try{
+  const result=await apiRequest<{timeline:{id:string;projectId?:string|null;name:string;revision:number;document?:EditorialTimeline;timeline?:EditorialTimeline};version?:TimelineVersionSummary}>(
+   (state.mode==="cloud"?"/api/cloud/timelines/":"/api/timelines/")+encodeURIComponent(state.timeline.id)+"/restore",
+   {method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({expectedRevision:state.serverRevision,sourceVersionId:versionId,summary:"Restored from revision "+version.revision})}
+  );
+  state.timeline=result.timeline.document||result.timeline.timeline||null;
+  if(!state.timeline)throw new Error("Restore completed without a timeline document.");
+  state.serverRevision=result.timeline.revision;state.cloudRevisionConflict=false;state.recoveredDraft=null;state.conflictServerTimeline=null;
+  resetTimelineHistory();state.versionComparison=null;state.versionComparisonRevision=null;
+  const refreshed=await apiRequest<{versions:TimelineVersionSummary[]}>(timelineVersionsPath());
+  state.timelineVersions=refreshed.versions||[];state.versionHistoryOpen=true;
+  state.message="Restored revision "+version.revision+" as new revision "+state.serverRevision+". Previous versions remain preserved.";
+ }catch(error){state.message=error instanceof Error?error.message:"Timeline version restore failed.";}
+ finally{state.versionLoading=false;paint();}
+}
 function commitTimelineEdit(next:EditorialTimeline,label:string,before:EditorialTimeline|null=state.timeline){
  if(!before)throw new Error("Load a timeline before editing it.");
  const operation=createTimelineHistoryOperation(before,next,{label,origin:"local"});
@@ -443,10 +490,17 @@ function recoveryConflictPanel():string{
  }
  return '<section class="panel timeline-quality"><div class="eyebrow">RECOVERY CONFLICT · COMPARE BEFORE CHOOSING</div><p>Recovered draft is based on revision '+state.recoveredDraft.baseRevision+'; latest server revision is '+state.serverRevision+'. Neither version has been silently overwritten.</p>'+comparisonHtml+'<div class="toolbar"><button class="primary" data-tl-action="restore-recovered-variant">Save recovered work as a new variant</button><button class="secondary" data-tl-action="reload-server">Use server revision</button><button class="secondary" data-tl-action="discard-recovered-draft">Discard recovered work</button></div></section>';
 }
+function timelineVersionHistoryPanel(){
+ if(!state.versionHistoryOpen)return "";
+ const comparison=state.versionComparison;
+ const comparisonHtml=comparison?'<div class="timeline-quality-item"><b>Current sequence compared with revision '+state.versionComparisonRevision+'</b><p>'+esc(comparison.summary)+'</p></div><div class="timeline-quality-list">'+(comparison.changes.slice(0,20).map(change=>'<article class="timeline-quality-item '+(change.kind==="removed"?"warning":change.kind==="added"?"success":"info")+'"><b>'+esc(change.kind.toUpperCase())+' · '+esc(change.clipName)+'</b><p>'+esc(change.fields.join(" · "))+'</p></article>').join("")||'<p class="muted">No structural clip differences were found.</p>')+'</div><small class="muted">Comparison is deterministic. It does not merge or alter either version.</small>':'';
+ const rows=state.timelineVersions.map(version=>'<article class="timeline-quality-item"><div class="timeline-panel-heading"><div><b>Revision '+version.revision+' · '+esc(version.name)+'</b><p>'+esc(version.summary||"Saved timeline version")+'</p><small class="muted">'+esc(new Date(version.createdAt).toLocaleString())+(version.restoredFromVersionId?' · Restored from another version':'')+'</small></div><span class="job-status completed">Immutable</span></div><div class="toolbar"><button class="secondary" data-tl-action="compare-version" data-version-id="'+esc(version.id)+'" '+(state.versionLoading?'disabled':'')+'>Compare</button><button class="secondary" data-tl-action="restore-version" data-version-id="'+esc(version.id)+'" '+(state.versionLoading?'disabled':'')+'>Restore as new revision</button></div></article>').join("");
+ return '<section class="panel timeline-quality"><div class="timeline-panel-heading"><div><div class="eyebrow">IMMUTABLE VERSION HISTORY</div><h3>Compare and restore</h3></div><button class="secondary" data-tl-action="close-version-history">Close</button></div><p>Every saved version is preserved. Restoring an older cut creates a new revision and records both its parent and its restored source.</p>'+(state.versionLoading?'<p class="muted">Loading version history…</p>':rows||'<p class="muted">No versions have been recorded yet. Save this timeline to establish its first baseline.</p>')+comparisonHtml+'</section>';
+}
 export function renderTimelineWorkspace(){
- return '<div id="timeline-workspace"><div class="timeline-toolbar"><label>Workspace <select id="tl-mode"><option value="local" '+(state.mode==="local"?"selected":"")+' >Local</option><option value="cloud" '+(state.mode==="cloud"?"selected":"")+' >Cloud project</option></select></label><label>Cloud project <select id="tl-cloud-project"><option value="">Select project</option>'+state.cloudProjects.map(p=>'<option value="'+esc(p.id)+'" '+(p.id===state.cloudProjectId?'selected':'')+'>'+esc(p.name)+'</option>').join("")+'</select></label><label>Saved sequence <select id="tl-saved-sequence"><option value="">Current sequence</option>'+(state.mode==="cloud"?state.cloudTimelines.map(t=>'<option value="'+esc(t.id)+'" '+(state.timeline?.id===t.id?'selected':'')+'>'+esc(t.name)+' · r'+t.revision+'</option>').join(""):state.timelines.map(t=>'<option value="'+esc(t.id)+'" '+(state.timeline?.id===t.id?'selected':'')+'>'+esc(t.name)+' · r'+t.revision+'</option>').join(""))+'</select></label><button class="secondary" data-tl-create-cloud>＋ New cloud timeline</button>'+(state.mode==="cloud"?'<button class="secondary" data-tl-action="import-generated-video">＋ Import latest generated video</button>':"")+'<button class="secondary" data-tl-action="duplicate-variant">Duplicate as variant</button><button class="secondary" data-tl-action="undo" '+(!state.timelineHistory.undo.length?'disabled':'')+' title="Undo · Ctrl/Cmd+Z">↶ Undo</button><button class="secondary" data-tl-action="redo" '+(!state.timelineHistory.redo.length?'disabled':'')+' title="Redo · Ctrl/Cmd+Shift+Z">↷ Redo</button><span class="runtime-status '+state.status+'"><i></i>'+esc(state.status==="ready"?"TIMELINE SAVED":state.status==="auth"?"SIGN IN REQUIRED":state.status==="offline"?"API OFFLINE":"LOADING")+'</span><button class="secondary" data-tl-action="refresh">↻ Refresh</button><button class="secondary" data-tl-action="export">Export OTIO JSON</button>'+(state.mode==="cloud"&&state.cloudRenderJobId?'<button class="secondary" data-tl-action="cloud-job">Check cloud render · '+esc(state.cloudRenderJobStatus||"queued")+'</button>':'')+''+(state.ffmpeg?'<button class="primary" data-tl-action="render">Render master MP4</button>':'<span class="muted">FFmpeg required for master render</span>')+'</div>'+
+ return '<div id="timeline-workspace"><div class="timeline-toolbar"><label>Workspace <select id="tl-mode"><option value="local" '+(state.mode==="local"?"selected":"")+' >Local</option><option value="cloud" '+(state.mode==="cloud"?"selected":"")+' >Cloud project</option></select></label><label>Cloud project <select id="tl-cloud-project"><option value="">Select project</option>'+state.cloudProjects.map(p=>'<option value="'+esc(p.id)+'" '+(p.id===state.cloudProjectId?'selected':'')+'>'+esc(p.name)+'</option>').join("")+'</select></label><label>Saved sequence <select id="tl-saved-sequence"><option value="">Current sequence</option>'+(state.mode==="cloud"?state.cloudTimelines.map(t=>'<option value="'+esc(t.id)+'" '+(state.timeline?.id===t.id?'selected':'')+'>'+esc(t.name)+' · r'+t.revision+'</option>').join(""):state.timelines.map(t=>'<option value="'+esc(t.id)+'" '+(state.timeline?.id===t.id?'selected':'')+'>'+esc(t.name)+' · r'+t.revision+'</option>').join(""))+'</select></label><button class="secondary" data-tl-create-cloud>＋ New cloud timeline</button>'+(state.mode==="cloud"?'<button class="secondary" data-tl-action="import-generated-video">＋ Import latest generated video</button>':"")+'<button class="secondary" data-tl-action="duplicate-variant">Duplicate as variant</button><button class="secondary" data-tl-action="versions" '+(!state.timeline?'disabled':'')+'>Version history'+(state.timelineVersions.length?" · "+state.timelineVersions.length:"")+'</button><button class="secondary" data-tl-action="undo" '+(!state.timelineHistory.undo.length?'disabled':'')+' title="Undo · Ctrl/Cmd+Z">↶ Undo</button><button class="secondary" data-tl-action="redo" '+(!state.timelineHistory.redo.length?'disabled':'')+' title="Redo · Ctrl/Cmd+Shift+Z">↷ Redo</button><span class="runtime-status '+state.status+'"><i></i>'+esc(state.status==="ready"?"TIMELINE SAVED":state.status==="auth"?"SIGN IN REQUIRED":state.status==="offline"?"API OFFLINE":"LOADING")+'</span><button class="secondary" data-tl-action="refresh">↻ Refresh</button><button class="secondary" data-tl-action="export">Export OTIO JSON</button>'+(state.mode==="cloud"&&state.cloudRenderJobId?'<button class="secondary" data-tl-action="cloud-job">Check cloud render · '+esc(state.cloudRenderJobStatus||"queued")+'</button>':'')+''+(state.ffmpeg?'<button class="primary" data-tl-action="render">Render master MP4</button>':'<span class="muted">FFmpeg required for master render</span>')+'</div>'+
  (state.message?'<div class="notice">'+esc(state.message)+'</div>':'')+
- recoveryConflictPanel()+
+ recoveryConflictPanel()+timelineVersionHistoryPanel()+
  '<div class="timeline-editor-grid"><section class="panel"><div class="eyebrow">SEQUENCE SETTINGS</div><h3>'+(state.timeline?esc(state.timeline.name):"No sequence loaded")+'</h3>'+
  '<form id="tl-add-track"><label>Track name</label><input name="name" required placeholder="Video 2 / Music / Captions"><label>Track type</label><select name="kind"><option value="video">Video</option><option value="audio">Audio</option><option value="overlay">Overlay</option><option value="caption">Captions</option></select><button class="secondary">＋ Add track</button></form>'+
  '<div class="eyebrow" style="margin-top:18px">ADD SOURCE CLIP</div><form id="tl-add-clip"><label>Source asset</label><select id="tl-asset-select" name="assetId" required>'+assetOptions()+'</select><label>Destination track</label><select name="trackId">'+(state.timeline?.tracks.map(t=>'<option value="'+esc(t.id)+'">'+esc(t.name)+'</option>').join("")||"")+'</select><div class="form-grid"><div><label>Timeline start (frames)</label><input name="start" type="number" min="0" value="'+maxEnd()+'"></div><div><label>Source in (source frames)</label><input name="sourceIn" type="number" min="0" value="0"></div><div><label>Duration (timeline frames)</label><input name="duration" type="number" min="1" value="'+(fps()*5)+'"></div></div><button class="primary wide">＋ Place clip on timeline</button></form>'+
@@ -551,7 +605,7 @@ async function createCloudTimeline(){
  state.timeline=result.timeline.timeline;state.serverRevision=result.timeline.revision;state.selectedTrack=timeline.tracks[0].id;state.message="Cloud timeline created.";state.status="ready";await refresh();paint();
 }
 export async function initTimelineWorkspace(){
- resetTimelineHistory();bindTimelineHistoryKeys();
+ resetTimelineHistory();clearTimelineVersionPanel();bindTimelineHistoryKeys();
  try{await requestPersistentBrowserStorage();await refresh();await restoreTimelineRecovery();}catch(error){state.status=error instanceof Error&&error.message.includes("Sign in")?"auth":"offline";state.message=error instanceof Error?error.message:"Timeline service unavailable.";}
  paint();
 }
@@ -576,6 +630,10 @@ function paint(){
 }
 async function runAction(action:HTMLElement){
  const type=action.dataset.tlAction||"";
+ if(type==="versions"){await loadTimelineVersions();return;}
+ if(type==="close-version-history"){state.versionHistoryOpen=false;state.versionComparison=null;state.versionComparisonRevision=null;paint();return;}
+ if(type==="compare-version"){await compareTimelineVersion(action.dataset.versionId||"");return;}
+ if(type==="restore-version"){await restoreTimelineVersion(action.dataset.versionId||"");return;}
  if(type==="undo"||type==="redo"){await travelTimelineHistory(type);return;}
  if(type==="save-recovered-draft"){
   try{await persist();state.recoveredDraft=null;state.message="Recovered edits saved as a new server revision.";}
@@ -597,7 +655,7 @@ async function runAction(action:HTMLElement){
   paint();return;
  }
 
- if(type==="refresh"){resetTimelineHistory();await refresh();paint();return;}
+ if(type==="refresh"){resetTimelineHistory();clearTimelineVersionPanel();await refresh();paint();return;}
  if(type==="reload-server"){
   if(!state.timeline){state.message="No timeline is selected.";paint();return;}
   const recoveryKey=currentRecoveryKey(),timelineId=state.timeline.id;
@@ -737,11 +795,11 @@ document.addEventListener("submit",event=>{
 });
 document.addEventListener("change",event=>{
  const target=event.target as HTMLSelectElement;
- if(target.id==="tl-mode"){resetTimelineHistory();state.mode=target.value==="cloud"?"cloud":"local";state.timeline=null;state.cloudRevisionConflict=false;state.recoveredDraft=null;state.recoveryStatus="idle";state.selectedClipId="";void refresh().then(paint).catch(error=>{state.status="offline";state.message=error instanceof Error?error.message:"Workspace unavailable.";paint();});}
- if(target.id==="tl-cloud-project"){resetTimelineHistory();state.cloudProjectId=target.value;state.timeline=null;state.cloudRevisionConflict=false;state.recoveredDraft=null;state.recoveryStatus="idle";state.selectedClipId="";void refresh().then(paint).catch(error=>{state.status="offline";state.message=error instanceof Error?error.message:"Cloud project unavailable.";paint();});}
+ if(target.id==="tl-mode"){resetTimelineHistory();clearTimelineVersionPanel();state.mode=target.value==="cloud"?"cloud":"local";state.timeline=null;state.cloudRevisionConflict=false;state.recoveredDraft=null;state.recoveryStatus="idle";state.selectedClipId="";void refresh().then(paint).catch(error=>{state.status="offline";state.message=error instanceof Error?error.message:"Workspace unavailable.";paint();});}
+ if(target.id==="tl-cloud-project"){resetTimelineHistory();clearTimelineVersionPanel();state.cloudProjectId=target.value;state.timeline=null;state.cloudRevisionConflict=false;state.recoveredDraft=null;state.recoveryStatus="idle";state.selectedClipId="";void refresh().then(paint).catch(error=>{state.status="offline";state.message=error instanceof Error?error.message:"Cloud project unavailable.";paint();});}
  if(target.id==="tl-saved-sequence"&&target.value){
   const saved=state.mode==="cloud"?state.cloudTimelines.find(t=>t.id===target.value):state.timelines.find(t=>t.id===target.value);
-  if(saved){resetTimelineHistory();state.recoveredDraft=null;state.recoveryStatus="idle";if(state.mode==="cloud"){const cloud=saved as CloudSavedTimeline;state.timeline=cloud.timeline;state.serverRevision=cloud.revision;state.cloudRevisionConflict=false;void loadVariantComparison().then(paint);}
+  if(saved){resetTimelineHistory();clearTimelineVersionPanel();state.recoveredDraft=null;state.recoveryStatus="idle";if(state.mode==="cloud"){const cloud=saved as CloudSavedTimeline;state.timeline=cloud.timeline;state.serverRevision=cloud.revision;state.cloudRevisionConflict=false;void loadVariantComparison().then(paint);}
    else void apiRequest<{timeline:SavedTimeline}>("/api/timelines/"+saved.id).then(result=>{state.timeline=result.timeline.document||null;state.serverRevision=result.timeline.revision;void loadVariantComparison().then(paint);}).catch(error=>{state.message=error.message;paint();});}
  }
 });

@@ -125,6 +125,27 @@ await mkdir(join(MEDIA_ROOT,"derived"), { recursive:true });
 const now = () => new Date().toISOString();
 const hash = value => createHash("sha256").update(value).digest("hex");
 const stableJson = value => Array.isArray(value) ? "["+value.map(stableJson).join(",")+"]" : value && typeof value==="object" ? "{"+Object.keys(value).sort().map(key=>JSON.stringify(key)+":"+stableJson(value[key])).join(",")+"}" : JSON.stringify(value);
+function timelineVersionHash(timeline,otio=null){return hash(stableJson({timeline,otio:otio??null}));}
+function insertTimelineVersion(db,{timelineId,ownerId,projectId,revision,parentVersionId=null,restoredFromVersionId=null,name,summary="",timeline,otio=null,createdBy}){
+ const id=randomUUID(),timelineJson=json(timeline),otioJson=otio?json(otio):null,contentHash=timelineVersionHash(timeline,otio);
+ db.prepare("INSERT INTO timeline_versions(id,timeline_id,owner_id,project_id,revision,parent_version_id,restored_from_version_id,name,summary,content_hash,timeline_json,otio_json,created_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)")
+  .run(id,timelineId,ownerId,projectId,revision,parentVersionId,restoredFromVersionId,name,String(summary||"").slice(0,500),contentHash,timelineJson,otioJson,createdBy);
+ return{id,timelineId,ownerId,projectId,revision,parentVersionId,restoredFromVersionId,name,summary:String(summary||"").slice(0,500),contentHash,createdBy};
+}
+function ensureTimelineBaseline(db,record){
+ const existing=db.prepare("SELECT id FROM timeline_versions WHERE timeline_id=? AND revision=?").get(record.id,record.revision);
+ if(existing)return existing.id;
+ return insertTimelineVersion(db,{
+  timelineId:record.id,ownerId:record.owner_id,projectId:record.project_id,revision:record.revision,
+  name:record.name,summary:"Baseline captured before version history was enabled.",
+  timeline:parseJson(record.timeline_json),otio:record.otio_json?parseJson(record.otio_json):null,createdBy:record.owner_id
+ }).id;
+}
+function mapTimelineVersion(row,includeSnapshot=false){
+ const version={id:row.id,timelineId:row.timeline_id,ownerId:row.owner_id,projectId:row.project_id,revision:row.revision,parentVersionId:row.parent_version_id,restoredFromVersionId:row.restored_from_version_id,name:row.name,summary:row.summary,contentHash:row.content_hash,createdBy:row.created_by,createdAt:row.created_at};
+ if(includeSnapshot){version.document=parseJson(row.timeline_json);version.otio=row.otio_json?parseJson(row.otio_json):null;if(version.contentHash&&timelineVersionHash(version.document,version.otio)!==version.contentHash)throw Object.assign(new Error("Timeline version snapshot failed its integrity check."),{code:"TIMELINE_VERSION_CORRUPT"});}
+ return version;
+}
 const safeName = value => basename(String(value || "upload")).replace(/[\u0000-\u001f\u007f]/g,"").replace(/[^\p{L}\p{N}._() -]/gu,"_").slice(0,180) || "upload";
 const SECURITY_HEADERS = {
   "x-content-type-options":"nosniff",
@@ -746,11 +767,60 @@ export function createAppServer() {
         const validation=validateTimelineDocument(timeline,db,user.id);
         if(!validation.valid){send(res,422,{error:{code:"TIMELINE_INVALID",message:"Timeline failed validation.",issues:validation.issues}},cors);return;}
         const id=randomUUID(),name=String(body.name||timeline.name||"Untitled sequence").trim().slice(0,160);
-        const saved={...timeline,id,projectId,name,revision:1};
-        db.prepare("INSERT INTO timelines(id,owner_id,project_id,name,timeline_json,otio_json) VALUES(?,?,?,?,?,?)")
-          .run(id,user.id,projectId,name,json(saved),body.otio?json(body.otio):null);
-        audit(db,user.id,"timeline.created","timeline",id,{revision:1},projectId);
+        const saved={...timeline,id,projectId,name,revision:1},otio=body.otio||null;
+        db.exec("BEGIN IMMEDIATE");
+        try{
+          db.prepare("INSERT INTO timelines(id,owner_id,project_id,name,timeline_json,otio_json) VALUES(?,?,?,?,?,?)")
+            .run(id,user.id,projectId,name,json(saved),otio?json(otio):null);
+          insertTimelineVersion(db,{timelineId:id,ownerId:user.id,projectId,revision:1,name,summary:String(body.versionSummary||"Initial version"),timeline:saved,otio,createdBy:user.id});
+          audit(db,user.id,"timeline.created","timeline",id,{revision:1},projectId);
+          db.exec("COMMIT");
+        }catch(error){try{db.exec("ROLLBACK");}catch{}throw error;}
         send(res,201,{timeline:{id,projectId,name,revision:1,document:saved}},cors);return;
+      }
+      const timelineVersionsMatch=path.match(/^\/api\/timelines\/([0-9a-f-]+)\/versions(?:\/([0-9a-f-]+))?$/i);
+      if(timelineVersionsMatch&&req.method==="GET"){
+        const record=db.prepare("SELECT id,owner_id,project_id FROM timelines WHERE id=? AND archived_at IS NULL AND ((project_id IS NULL AND owner_id=?) OR project_id IN (SELECT id FROM projects WHERE owner_id=?) OR project_id IN (SELECT project_id FROM project_members WHERE member_id=?))").get(timelineVersionsMatch[1],user.id,user.id,user.id);
+        if(!record){fail(res,404,"TIMELINE_NOT_FOUND","Timeline not found.");return;}
+        if(timelineVersionsMatch[2]){
+          const version=db.prepare("SELECT * FROM timeline_versions WHERE id=? AND timeline_id=? AND owner_id=?").get(timelineVersionsMatch[2],record.id,record.owner_id);
+          if(!version){fail(res,404,"TIMELINE_VERSION_NOT_FOUND","Timeline version not found.");return;}
+          try{send(res,200,{version:mapTimelineVersion(version,true)},cors);}
+          catch(error){fail(res,409,"TIMELINE_VERSION_CORRUPT",error.message);}
+          return;
+        }
+        const versions=db.prepare("SELECT id,timeline_id,owner_id,project_id,revision,parent_version_id,restored_from_version_id,name,summary,content_hash,created_by,created_at FROM timeline_versions WHERE timeline_id=? AND owner_id=? ORDER BY revision DESC LIMIT 100").all(record.id,record.owner_id);
+        send(res,200,{versions:versions.map(row=>mapTimelineVersion(row))},cors);return;
+      }
+      const timelineRestoreMatch=path.match(/^\/api\/timelines\/([0-9a-f-]+)\/restore$/i);
+      if(timelineRestoreMatch&&req.method==="POST"){
+        const record=db.prepare("SELECT * FROM timelines WHERE id=? AND archived_at IS NULL AND ((project_id IS NULL AND owner_id=?) OR project_id IN (SELECT id FROM projects WHERE owner_id=?) OR project_id IN (SELECT project_id FROM project_members WHERE member_id=?))").get(timelineRestoreMatch[1],user.id,user.id,user.id);
+        if(!record){fail(res,404,"TIMELINE_NOT_FOUND","Timeline not found.");return;}
+        if(record.project_id?!canWriteProject(db,user.id,record.project_id):record.owner_id!==user.id){fail(res,403,"EDITOR_REQUIRED","Editor access is required to restore this timeline.");return;}
+        const body=await readJson(req,1024*1024),expectedRevision=Number(body.expectedRevision),sourceVersionId=String(body.sourceVersionId||"");
+        if(!Number.isInteger(expectedRevision)||expectedRevision<1||!sourceVersionId){fail(res,400,"TIMELINE_RESTORE_INVALID","A current revision and source version are required.");return;}
+        db.exec("BEGIN IMMEDIATE");
+        try{
+          const current=db.prepare("SELECT * FROM timelines WHERE id=? AND archived_at IS NULL").get(record.id);
+          if(!current||current.revision!==expectedRevision){db.exec("ROLLBACK");fail(res,409,"REVISION_CONFLICT","Timeline changed before restore. Refresh and compare again.");return;}
+          if(current.project_id?!canWriteProject(db,user.id,current.project_id):current.owner_id!==user.id){db.exec("ROLLBACK");fail(res,403,"EDITOR_REQUIRED","Editor access is required to restore this timeline.");return;}
+          const source=db.prepare("SELECT * FROM timeline_versions WHERE id=? AND timeline_id=? AND owner_id=?").get(sourceVersionId,current.id,current.owner_id);
+          if(!source){db.exec("ROLLBACK");fail(res,404,"TIMELINE_VERSION_NOT_FOUND","Source version not found for this timeline.");return;}
+          let sourceVersion;
+          try{sourceVersion=mapTimelineVersion(source,true);}catch(error){db.exec("ROLLBACK");fail(res,409,"TIMELINE_VERSION_CORRUPT",error.message);return;}
+          const sourceDocument=sourceVersion.document,validation=validateTimelineDocument(sourceDocument,db,user.id);
+          if(!validation.valid){db.exec("ROLLBACK");send(res,422,{error:{code:"TIMELINE_VERSION_INVALID",message:"The selected historical version no longer passes current asset and timeline validation.",issues:validation.issues}},cors);return;}
+          const parentVersionId=ensureTimelineBaseline(db,current),revision=current.revision+1;
+          const saved={...sourceDocument,id:current.id,projectId:current.project_id,name:source.name,revision};
+          const otio=sourceVersion.otio;
+          const changed=db.prepare("UPDATE timelines SET name=?,revision=?,timeline_json=?,otio_json=?,updated_at=? WHERE id=? AND revision=?")
+            .run(saved.name,revision,json(saved),otio?json(otio):null,now(),current.id,current.revision);
+          if(changed.changes!==1){db.exec("ROLLBACK");fail(res,409,"REVISION_CONFLICT","Timeline changed while restoring. Refresh and retry.");return;}
+          const version=insertTimelineVersion(db,{timelineId:current.id,ownerId:current.owner_id,projectId:current.project_id,revision,parentVersionId,restoredFromVersionId:source.id,name:saved.name,summary:String(body.summary||("Restored from revision "+source.revision)),timeline:saved,otio,createdBy:user.id});
+          audit(db,user.id,"timeline.restored","timeline",current.id,{revision,restoredFromVersionId:source.id,restoredFromRevision:source.revision},current.project_id);
+          db.exec("COMMIT");
+          send(res,200,{timeline:{id:current.id,projectId:current.project_id,name:saved.name,revision,document:saved,updatedAt:now()},version},cors);return;
+        }catch(error){try{db.exec("ROLLBACK");}catch{}throw error;}
       }
       const timelineMatch=path.match(/^\/api\/timelines\/([0-9a-f-]+)(?:\/(otio))?$/i);
       if(timelineMatch){
@@ -772,11 +842,21 @@ export function createAppServer() {
           const projectId=body.projectId??record.project_id;
           if(projectId&&!canWriteProject(db,user.id,projectId)){fail(res,404,"PROJECT_NOT_FOUND","Project not found or editor access required.");return;}
           const revision=record.revision+1,name=String(body.name||timeline.name||record.name).trim().slice(0,160);
-          const saved={...timeline,id:record.id,projectId,name,revision};
-          const changed=db.prepare("UPDATE timelines SET project_id=?,name=?,revision=?,timeline_json=?,otio_json=?,updated_at=? WHERE id=? AND revision=?")
-            .run(projectId,name,revision,json(saved),body.otio?json(body.otio):record.otio_json,now(),record.id,record.revision);
-          if(changed.changes!==1){fail(res,409,"REVISION_CONFLICT","Timeline changed while saving. Refresh and retry.");return;}
-          audit(db,user.id,"timeline.updated","timeline",record.id,{revision},projectId);
+          const saved={...timeline,id:record.id,projectId,name,revision},otio=body.otio?body.otio:(record.otio_json?parseJson(record.otio_json):null);
+          db.exec("BEGIN IMMEDIATE");
+          try{
+            const current=db.prepare("SELECT * FROM timelines WHERE id=? AND archived_at IS NULL").get(record.id);
+            if(!current||current.revision!==record.revision){db.exec("ROLLBACK");fail(res,409,"REVISION_CONFLICT","Timeline changed while saving. Refresh and retry.");return;}
+            if(current.project_id?!canWriteProject(db,user.id,current.project_id):current.owner_id!==user.id){db.exec("ROLLBACK");fail(res,403,"EDITOR_REQUIRED","Editor access is required to edit this timeline.");return;}
+            if(projectId&&!canWriteProject(db,user.id,projectId)){db.exec("ROLLBACK");fail(res,404,"PROJECT_NOT_FOUND","Project not found or editor access required.");return;}
+            const parentVersionId=ensureTimelineBaseline(db,current);
+            const changed=db.prepare("UPDATE timelines SET project_id=?,name=?,revision=?,timeline_json=?,otio_json=?,updated_at=? WHERE id=? AND revision=?")
+              .run(projectId,name,revision,json(saved),otio?json(otio):null,now(),record.id,record.revision);
+            if(changed.changes!==1){db.exec("ROLLBACK");fail(res,409,"REVISION_CONFLICT","Timeline changed while saving. Refresh and retry.");return;}
+            insertTimelineVersion(db,{timelineId:record.id,ownerId:record.owner_id,projectId,revision,parentVersionId,name,summary:String(body.versionSummary||("Saved revision "+revision)),timeline:saved,otio,createdBy:user.id});
+            audit(db,user.id,"timeline.updated","timeline",record.id,{revision},projectId);
+            db.exec("COMMIT");
+          }catch(error){try{db.exec("ROLLBACK");}catch{}throw error;}
           send(res,200,{ok:true,revision},cors);return;
         }
         if(!timelineMatch[2]&&req.method==="DELETE"){

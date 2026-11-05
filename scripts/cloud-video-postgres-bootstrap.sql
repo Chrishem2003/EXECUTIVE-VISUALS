@@ -36,6 +36,29 @@ create table executive_visuals.projects (
   name text not null
 );
 
+create table executive_visuals.timelines (
+  id uuid primary key,
+  owner_id uuid not null references auth.users(id) on delete cascade,
+  project_id uuid references executive_visuals.projects(id) on delete cascade,
+  name text not null,
+  revision integer not null default 1 check (revision > 0),
+  timeline jsonb not null check (jsonb_typeof(timeline) = 'object'),
+  otio jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  archived_at timestamptz
+);
+insert into auth.users(id) values ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa') on conflict (id) do nothing;
+insert into executive_visuals.timelines(id,owner_id,project_id,name,revision,timeline,otio)
+values (
+  'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+  'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+  null,
+  'Pre-existing timeline baseline fixture',
+  7,
+  '{"frameRate":{"numerator":24,"denominator":1},"tracks":[],"markers":[]}'::jsonb,
+  null
+);
 create table executive_visuals.project_members (
   project_id uuid not null references executive_visuals.projects(id) on delete cascade,
   member_id uuid not null references auth.users(id) on delete cascade,

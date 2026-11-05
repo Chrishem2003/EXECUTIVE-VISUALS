@@ -34,6 +34,10 @@ jobs:
           sudo apt-get install -y postgresql-client
       - name: Bootstrap disposable Supabase-compatible schema
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/cloud-video-postgres-bootstrap.sql
+      - name: Apply immutable timeline version migration
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261105170000_timeline_versions.sql
+      - name: Verify timeline version and restore lineage
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/timeline-versions-postgres-integration.sql
       - name: Apply cloud submission ledger migration
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261104120000_cloud_video_submission_ledger.sql
       - name: Apply cloud budget and enqueue migration

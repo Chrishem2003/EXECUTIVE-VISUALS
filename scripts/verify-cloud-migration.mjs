@@ -5,6 +5,7 @@ const sql = await readFile(resolve(process.cwd(), "supabase/migrations/202610312
 const checkpointSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261102090000_video_pipeline_checkpoints.sql"), "utf8");
 const videoSubmissionSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261104120000_cloud_video_submission_ledger.sql"), "utf8");
 const videoBudgetSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261104143000_cloud_video_budget_enqueue.sql"), "utf8");
+const timelineVersionsSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261105170000_timeline_versions.sql"), "utf8");
 const issues = [];
 const tables = ["projects","project_members","project_workspace_documents","workflows","workflow_runs","workflow_node_runs","timelines","assets","jobs","job_events","consents","reviews","audit_events"];
 for (const table of tables) {
@@ -59,7 +60,7 @@ if (!checkpointSql.includes("octet_length(output_json::text) <= 32000")) issues.
 if (!checkpointSql.includes("output_asset.derivative_of = new.input_asset_id")) issues.push("Cloud checkpoint outputs must be verified as derivatives of their recorded inputs.");
 if (!checkpointSql.includes("output_asset.owner_id = new.owner_id") || !checkpointSql.includes("output_asset.project_id = new.project_id")) issues.push("Cloud checkpoint output assets must match the checkpoint owner and project.");
 if (!checkpointSql.includes("output_asset.sha256 = lower(new.output_json ->> 'sha256')")) issues.push("Cloud checkpoint output checksums must match persisted asset metadata.");
-if (/\\b(drop\\s+table|truncate|delete\\s+from)\\b/i.test(checkpointSql)) issues.push("Checkpoint migration must not contain destructive DDL/DML.");
+if (/\b(drop\s+table|truncate|delete\s+from)\b/i.test(checkpointSql)) issues.push("Checkpoint migration must not contain destructive DDL/DML.");
 
 
 
@@ -99,7 +100,7 @@ if (!sql.includes("revoke all on function executive_visuals.claim_next_job(text,
 if (!sql.includes("lease_expires_at timestamptz") || !sql.includes("available_at timestamptz") || !sql.includes("lease_heartbeat_at timestamptz")) {
   issues.push("Durable worker lease and delayed retry fields are missing from the cloud job contract.");
 }
-if (/\\b(drop\\s+table|truncate|delete\\s+from)\\b/i.test(videoSubmissionSql)) issues.push("Cloud video submission migration must not contain destructive DDL/DML.");
+if (/\b(drop\s+table|truncate|delete\s+from)\b/i.test(videoSubmissionSql)) issues.push("Cloud video submission migration must not contain destructive DDL/DML.");
 if (!videoSubmissionSql.includes("create table if not exists executive_visuals.video_generation_submissions")) issues.push("Cloud video submission ledger table is missing.");
 if (!videoSubmissionSql.includes("alter table executive_visuals.video_generation_submissions enable row level security;")) issues.push("Cloud video submission ledger must enable RLS.");
 if (!videoSubmissionSql.includes("revoke all on executive_visuals.video_generation_submissions from public, anon, authenticated;")) issues.push("Cloud video submission ledger must be unavailable to untrusted roles.");
@@ -227,6 +228,15 @@ if (!videoBudgetSql.includes("create or replace function executive_visuals.recov
 
 
 
+
+if (!timelineVersionsSql.includes("create table if not exists executive_visuals.timeline_versions")) issues.push("Immutable timeline version storage is missing.");
+if (!timelineVersionsSql.includes("alter table executive_visuals.timeline_versions force row level security;")) issues.push("Timeline version storage must force row-level security.");
+if (!timelineVersionsSql.includes("revoke update, delete, truncate, references, trigger on table executive_visuals.timeline_versions from service_role;")) issues.push("Timeline version snapshots must remain append-only.");
+for (const fn of ["ev_create_timeline_with_version","ev_update_timeline_with_version","ev_restore_timeline_version"]) {
+  if (!timelineVersionsSql.includes("create or replace function executive_visuals."+fn)) issues.push("Atomic timeline version function is missing: "+fn+".");
+}
+if (!timelineVersionsSql.includes("on conflict (timeline_id, revision) do nothing")) issues.push("Legacy timeline baselines must be backfilled idempotently.");
+if (/\\b(drop\\s+table|truncate|delete\\s+from)\\b/i.test(timelineVersionsSql)) issues.push("Timeline version migration must not contain destructive DDL/DML.");
 
 if (issues.length) {
   console.error("Cloud migration guard failed:");
