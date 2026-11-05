@@ -2,11 +2,10 @@ import { randomUUID } from "node:crypto";
 
 const fail = (message, code = "RUNWAY_APPROVAL_INVALID") => Object.assign(new Error(message), { code });
 const HEX_256 = /^[a-f0-9]{64}$/;
-const STATES = new Set(["pending_approval", "approved", "consumed", "revoked", "expired"]);
 const MAX_TTL_MS = 30 * 60 * 1000;
 
 export function ensureRunwayRouterApprovalSchema(db) {
-  if (!db || typeof db.exec !== "function") throw new Error("Runway approval ledger requires the application database.");
+  if (!db || typeof db.exec !== "function" || typeof db.prepare !== "function") throw new Error("Runway approval ledger requires the application database.");
   db.exec(`
     CREATE TABLE IF NOT EXISTS runway_router_approvals (
       id TEXT PRIMARY KEY,
@@ -87,7 +86,7 @@ export function createRunwayRouterApprovalLedger({
 
   return Object.freeze({
     recordPreflight({
-      ownerId, projectId, actorId, decision, maxEstimatedCredits, ttlMs = 15 * 60 * 1000, metadata = {}
+      ownerId, projectId, actorId, decision, maxEstimatedCredits, ttlMs = 15 * 60 * 1000
     } = {}) {
       required(ownerId, "ownerId"); required(projectId, "projectId"); required(actorId, "actorId");
       if (!decision || typeof decision !== "object" || Array.isArray(decision) ||
@@ -114,14 +113,12 @@ export function createRunwayRouterApprovalLedger({
       const createdAt = created.toISOString();
       const expiresAt = new Date(created.getTime() + ttlMs).toISOString();
       const id = randomUUID();
-      const safeMetadata = metadata && typeof metadata === "object" && !Array.isArray(metadata)
-        ? JSON.stringify(metadata) : "{}";
       db.prepare(`INSERT INTO runway_router_approvals
         (id,owner_id,project_id,config_id,provider,model,input_hash,estimated_credits,
          max_estimated_credits,state,created_at,expires_at,metadata_json)
         VALUES(?,?,?,?,?,?,?,?,?,'pending_approval',?,?,?)`)
         .run(id, ownerId, projectId, configId, provider, model, inputHash,
-          decision.estimatedCredits, maxEstimatedCredits, createdAt, expiresAt, safeMetadata);
+          decision.estimatedCredits, maxEstimatedCredits, createdAt, expiresAt, "{}");
       return get(id);
     },
 
