@@ -428,16 +428,27 @@ export function createGoogleDrivePrivateFileBridge({
         try {
           const raw = await uploadResponse.text();
           uploaded = raw ? JSON.parse(raw) : null;
-        } catch {
-          throw fail("Google Drive completed an upload but returned invalid file metadata.", "GOOGLE_DRIVE_RESPONSE_INVALID");
-        }
-        if (!uploaded || typeof uploaded.id !== "string" || !FILE_ID.test(uploaded.id) ||
-            (attempts && (uploaded.id !== attemptRecord.driveFileId || uploaded.appProperties?.assetId !== assetId ||
-              uploaded.appProperties?.source !== "executive-visuals")) ||
-            uploaded.mimeType !== asset.mediaType || Number(uploaded.size) !== bytes.byteLength ||
-            typeof uploaded.md5Checksum !== "string" || !/^[a-f0-9]{32}$/i.test(uploaded.md5Checksum) ||
-            uploaded.md5Checksum.toLowerCase() !== expectedMd5) {
-          throw fail("Google Drive upload completed without matching size, MIME type, and content checksum.", "GOOGLE_DRIVE_UPLOAD_RESPONSE_INVALID");
+          if (!uploaded || typeof uploaded.id !== "string" || !FILE_ID.test(uploaded.id) ||
+              (attempts && (uploaded.id !== attemptRecord.driveFileId || uploaded.appProperties?.assetId !== assetId ||
+                uploaded.appProperties?.source !== "executive-visuals")) ||
+              uploaded.mimeType !== asset.mediaType || Number(uploaded.size) !== bytes.byteLength ||
+              typeof uploaded.md5Checksum !== "string" || !/^[a-f0-9]{32}$/i.test(uploaded.md5Checksum) ||
+              uploaded.md5Checksum.toLowerCase() !== expectedMd5) {
+            throw fail("Google Drive upload completed without matching size, MIME type, and content checksum.",
+              "GOOGLE_DRIVE_UPLOAD_RESPONSE_INVALID");
+          }
+        } catch (error) {
+          // The provider may have committed the file even when its completion
+          // payload is missing or untrustworthy. Preserve the reserved ID and
+          // release the lease into reconciliation instead of inviting a blind retry.
+          if (attempts && attemptRecord) {
+            try {
+              await attempts.mark({ attemptKey: attemptRecord.attemptKey, ownerId: scope.ownerId,
+                state: "RECONCILIATION_REQUIRED", errorCode: error?.code || "GOOGLE_DRIVE_RESPONSE_INVALID", leaseToken });
+            } catch {}
+          }
+          throw error?.code ? error : fail("Google Drive completed an upload but returned invalid file metadata.",
+            "GOOGLE_DRIVE_RESPONSE_INVALID");
         }
         if (attempts) {
           await attempts.mark({ attemptKey: attemptRecord.attemptKey, ownerId: scope.ownerId, state: "COMPLETED", leaseToken,
