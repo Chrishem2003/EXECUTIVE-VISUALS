@@ -51,7 +51,13 @@ Security and lifecycle rules:
 - The server adapter `server/google-gemini-gcs-source-repository.mjs` scopes lookups by asset, owner, project and ACTIVE state. It refuses ambiguous mappings and provides an exact-scope revocation operation.
 - The GCS composition uses this repository by default when no trusted source loader is injected.
 
-**Not yet complete:** the controlled GCS mirror writer and its metadata verification/compensation lifecycle. Do not create source rows manually or treat an unverified upload receipt as proof. The next implementation step must upload the private asset to an allowlisted GCS bucket, write the ownership/checksum custom metadata, read back the exact object metadata, and only then call `recordVerifiedSource`. Until that writer exists and passes staging acceptance, existing Supabase private storage remains the canonical asset store and GCS registration is not enabled for user traffic.
+The controlled writer is implemented in `server/google-gemini-gcs-mirror-writer.mjs`, and `server/google-gemini-gcs-mirror-service.mjs` composes private asset authorization, bounded local materialization, GCS upload, metadata read-back, registry persistence and temporary-file cleanup.
+
+The writer uses a create-only resumable upload (`ifGenerationMatch=0`), includes asset/owner/project/checksum custom metadata, streams from the private materialized file, verifies the completed object's generation, metageneration, size, MIME type and ownership metadata, and only then calls `recordVerifiedSource`. If registry persistence fails after a completed upload, it attempts a generation-fenced delete. If the upload response is ambiguous, it marks the result as outcome-unknown/cleanup-pending rather than retrying automatically. The resumable session URI is treated as a bearer secret and is never returned or logged.
+
+The application service reuses an existing ACTIVE mirror only after re-verifying it. Otherwise it authorizes the private source, materializes it through the existing private asset boundary, mirrors it, re-verifies the registered source and cleans up the temporary file. The original Supabase asset remains canonical.
+
+**Still required before user traffic:** a production-grade OAuth identity provider, a dedicated configured GCS mirror bucket, least-privilege IAM for the application uploader (including object create/read/delete permissions) and the Gemini service agent's object-viewer access, plus staging acceptance using real private objects. Do not create source rows manually or enable GCS registration in production until those gates pass.
 
 ## GCS registration IAM preflight
 
