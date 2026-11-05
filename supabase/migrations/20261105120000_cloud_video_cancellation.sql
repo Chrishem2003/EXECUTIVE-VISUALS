@@ -53,6 +53,7 @@ declare
   reservation executive_visuals.video_generation_budget_reservations;
   policy executive_visuals.video_generation_budget_policies;
   changed integer;
+  was_requested boolean := false;
 begin
   if p_job_id is null or p_owner_id is null then
     raise exception 'VIDEO_CANCELLATION_ARGUMENTS_INVALID';
@@ -138,20 +139,23 @@ begin
   end if;
 
   if current_job.status in ('queued','processing') then
+    was_requested := current_job.cancellation_requested_at is not null;
     update executive_visuals.jobs
     set cancellation_requested_at = coalesce(cancellation_requested_at, clock_timestamp()),
         updated_at = clock_timestamp()
     where id = p_job_id
     returning * into current_job;
 
-    insert into executive_visuals.job_events(job_id,owner_id,event_type,event_data)
-    values (p_job_id,p_owner_id,'job.cancellation_requested',
-      jsonb_build_object('status',current_job.status,'providerTaskKnown',submission.provider_task_id is not null));
+    if not was_requested then
+      insert into executive_visuals.job_events(job_id,owner_id,event_type,event_data)
+      values (p_job_id,p_owner_id,'job.cancellation_requested',
+        jsonb_build_object('status',current_job.status,'providerTaskKnown',submission.provider_task_id is not null));
 
-    insert into executive_visuals.audit_events(owner_id,project_id,event_type,subject_type,subject_id,details)
-    values (p_owner_id,current_job.project_id,'video.cancellation_requested',
-      'job',p_job_id::text,jsonb_build_object('jobStatus',current_job.status,
-        'submissionState',submission.state,'providerTaskKnown',submission.provider_task_id is not null));
+      insert into executive_visuals.audit_events(owner_id,project_id,event_type,subject_type,subject_id,details)
+      values (p_owner_id,current_job.project_id,'video.cancellation_requested',
+        'job',p_job_id::text,jsonb_build_object('jobStatus',current_job.status,
+          'submissionState',submission.state,'providerTaskKnown',submission.provider_task_id is not null));
+    end if;
 
     return query select current_job.id, current_job.status, true, submission.state;
     return;
