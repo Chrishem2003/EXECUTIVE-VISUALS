@@ -39,7 +39,7 @@ create or replace function executive_visuals.guard_google_gcs_mirror_attempt()
 returns trigger
 language plpgsql
 set search_path = pg_catalog, executive_visuals
-as $
+as $gcs_attempt$
 declare
   source_asset executive_visuals.assets%rowtype;
 begin
@@ -72,7 +72,7 @@ begin
   end if;
   return new;
 end;
-$$;
+$gcs_attempt$;
 
 drop trigger if exists ev_google_gcs_mirror_attempt_guard on executive_visuals.google_gcs_mirror_attempts;
 create trigger ev_google_gcs_mirror_attempt_guard
