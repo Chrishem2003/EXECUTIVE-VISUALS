@@ -1,0 +1,239 @@
+import {
+  validateTimeline,
+  type EditorialTimeline,
+  type TimelineClip,
+  type TimelineMarker,
+  type TimelineTrack
+} from "./timeline";
+import { validateTimelineDescriptors } from "./timeline-descriptors";
+
+type ClipLocation = { trackId: string; clip: TimelineClip } | null;
+type TrackValue = {
+  id: string;
+  name: string;
+  kind: TimelineTrack["kind"];
+  enabled: boolean;
+  locked: boolean;
+  index: number;
+};
+type EntityChange =
+  | { entity: "track"; id: string; before: TrackValue | null; after: TrackValue | null }
+  | { entity: "clip"; id: string; before: ClipLocation; after: ClipLocation }
+  | { entity: "marker"; id: string; before: TimelineMarker | null; after: TimelineMarker | null };
+
+export interface TimelineHistoryOperation {
+  schemaVersion: 1;
+  id: string;
+  label: string;
+  origin: "local" | "remote" | "system";
+  createdAt: string;
+  baseRevision: number;
+  changes: EntityChange[];
+}
+
+export interface TimelineHistory {
+  undo: TimelineHistoryOperation[];
+  redo: TimelineHistoryOperation[];
+  limit: number;
+}
+
+export function createTimelineHistory(limit = 100): TimelineHistory {
+  return { undo: [], redo: [], limit: Math.max(1, Math.min(500, Math.floor(limit) || 100)) };
+}
+
+const clone = <T>(value: T): T => structuredClone(value);
+const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+const seconds = (value: { value: number; rate: number }) => value.value / value.rate;
+
+function trackValue(track: TimelineTrack, index: number): TrackValue {
+  return { id: track.id, name: track.name, kind: track.kind, enabled: track.enabled, locked: track.locked, index };
+}
+
+function trackMap(timeline: EditorialTimeline): Map<string, TrackValue> {
+  return new Map(timeline.tracks.map((track, index) => [track.id, trackValue(track, index)]));
+}
+
+function clipMap(timeline: EditorialTimeline): Map<string, Exclude<ClipLocation, null>> {
+  const result = new Map<string, Exclude<ClipLocation, null>>();
+  for (const track of timeline.tracks) for (const clip of track.clips) result.set(clip.id, { trackId: track.id, clip: clone(clip) });
+  return result;
+}
+
+function markerMap(timeline: EditorialTimeline): Map<string, TimelineMarker> {
+  return new Map(timeline.markers.map(marker => [marker.id, clone(marker)]));
+}
+
+function validateEditableTimeline(timeline: EditorialTimeline): void {
+  const result = validateTimeline(timeline);
+  if (!result.valid) throw new Error(result.issues[0]?.message || "Timeline validation failed.");
+  for (const track of timeline.tracks) {
+    for (const clip of track.clips) {
+      const issues = validateTimelineDescriptors(clip, timeline.frameRate, track.kind);
+      if (issues.length) throw new Error(issues[0].message);
+    }
+  }
+}
+
+/** Build a compact, entity-level operation. No whole-timeline snapshots are stored in history. */
+export function createTimelineHistoryOperation(
+  before: EditorialTimeline,
+  after: EditorialTimeline,
+  options: { label: string; origin?: "local" | "remote" | "system"; id?: string; createdAt?: string } 
+): TimelineHistoryOperation | null {
+  if (before.id !== after.id || before.projectId !== after.projectId) {
+    throw new Error("A history operation cannot change timeline or project identity.");
+  }
+  validateEditableTimeline(before);
+  validateEditableTimeline(after);
+
+  const beforeTracks = trackMap(before), afterTracks = trackMap(after);
+  const beforeClips = clipMap(before), afterClips = clipMap(after);
+  const beforeMarkers = markerMap(before), afterMarkers = markerMap(after);
+  const trackAdds: EntityChange[] = [], trackUpdates: EntityChange[] = [];
+  const clipChanges: EntityChange[] = [], markerChanges: EntityChange[] = [], trackRemoves: EntityChange[] = [];
+
+  for (const id of new Set([...beforeTracks.keys(), ...afterTracks.keys()])) {
+    const a = beforeTracks.get(id) || null, b = afterTracks.get(id) || null;
+    if (same(a, b)) continue;
+    const change: EntityChange = { entity: "track", id, before: a ? clone(a) : null, after: b ? clone(b) : null };
+    if (!a && b) trackAdds.push(change);
+    else if (a && !b) trackRemoves.push(change);
+    else trackUpdates.push(change);
+  }
+  for (const id of new Set([...beforeClips.keys(), ...afterClips.keys()])) {
+    const a = beforeClips.get(id) || null, b = afterClips.get(id) || null;
+    if (!same(a, b)) clipChanges.push({ entity: "clip", id, before: a ? clone(a) : null, after: b ? clone(b) : null });
+  }
+  for (const id of new Set([...beforeMarkers.keys(), ...afterMarkers.keys()])) {
+    const a = beforeMarkers.get(id) || null, b = afterMarkers.get(id) || null;
+    if (!same(a, b)) markerChanges.push({ entity: "marker", id, before: a ? clone(a) : null, after: b ? clone(b) : null });
+  }
+
+  const changes = [...trackAdds, ...trackUpdates, ...clipChanges, ...markerChanges, ...trackRemoves];
+  if (!changes.length) return null;
+  const label = String(options.label || "Edit timeline").trim().slice(0, 120) || "Edit timeline";
+  return {
+    schemaVersion: 1,
+    id: options.id || crypto.randomUUID(),
+    label,
+    origin: options.origin || "local",
+    createdAt: options.createdAt || new Date().toISOString(),
+    baseRevision: before.revision,
+    changes
+  };
+}
+
+function inverse(change: EntityChange): EntityChange {
+  return { ...change, before: clone(change.after), after: clone(change.before) } as EntityChange;
+}
+
+function assertExpected(actual: unknown, expected: unknown, label: string): void {
+  if (!same(actual, expected)) throw new Error("Timeline history conflict: " + label + " changed since this operation was recorded.");
+}
+
+function applyChange(timeline: EditorialTimeline, change: EntityChange): EditorialTimeline {
+  if (change.entity === "track") {
+    const index = timeline.tracks.findIndex(track => track.id === change.id);
+    const current = index < 0 ? null : trackValue(timeline.tracks[index], index);
+    assertExpected(current, change.before, "Track " + change.id);
+    const tracks = [...timeline.tracks];
+    if (change.after === null) {
+      if (index >= 0 && tracks[index].clips.length) throw new Error("Cannot remove a track while it still contains clips.");
+      if (index >= 0) tracks.splice(index, 1);
+    } else if (index < 0) {
+      const next: TimelineTrack = { ...clone(change.after), clips: [] };
+      tracks.splice(Math.max(0, Math.min(change.after.index, tracks.length)), 0, next);
+    } else {
+      tracks[index] = { ...clone(change.after), clips: tracks[index].clips };
+    }
+    return { ...timeline, tracks };
+  }
+
+  if (change.entity === "clip") {
+    let current: Exclude<ClipLocation, null> | null = null;
+    let currentTrackIndex = -1;
+    for (let i = 0; i < timeline.tracks.length; i++) {
+      const clip = timeline.tracks[i].clips.find(item => item.id === change.id);
+      if (clip) { current = { trackId: timeline.tracks[i].id, clip: clone(clip) }; currentTrackIndex = i; break; }
+    }
+    assertExpected(current, change.before, "Clip " + change.id);
+    const tracks = timeline.tracks.map(track => ({ ...track, clips: track.clips.filter(clip => clip.id !== change.id) }));
+    if (change.after) {
+      const destination = tracks.find(track => track.id === change.after!.trackId);
+      if (!destination) throw new Error("Timeline history conflict: destination track no longer exists.");
+      if (destination.locked) throw new Error("Cannot restore a clip to a locked track.");
+      const clips = [...destination.clips, clone(change.after.clip)].sort((a, b) => seconds(a.timelineStart) - seconds(b.timelineStart));
+      const destinationIndex = tracks.findIndex(track => track.id === destination.id);
+      tracks[destinationIndex] = { ...destination, clips };
+    }
+    return { ...timeline, tracks };
+  }
+
+  const markerIndex = timeline.markers.findIndex(marker => marker.id === change.id);
+  const current = markerIndex < 0 ? null : clone(timeline.markers[markerIndex]);
+  assertExpected(current, change.before, "Marker " + change.id);
+  const markers = [...timeline.markers];
+  if (change.after === null) {
+    if (markerIndex >= 0) markers.splice(markerIndex, 1);
+  } else if (markerIndex < 0) {
+    markers.push(clone(change.after));
+  } else {
+    markers[markerIndex] = clone(change.after);
+  }
+  markers.sort((a, b) => seconds(a.start) - seconds(b.start));
+  return { ...timeline, markers };
+}
+
+/** Apply a validated operation or its inverse, rejecting stale or conflicting entity state. */
+export function applyTimelineHistoryOperation(
+  timeline: EditorialTimeline,
+  operation: TimelineHistoryOperation,
+  direction: "forward" | "undo" = "forward"
+): EditorialTimeline {
+  if (!operation || operation.schemaVersion !== 1 || !Array.isArray(operation.changes) || !operation.changes.length) {
+    throw new Error("Timeline history operation is invalid.");
+  }
+  const changes = direction === "undo" ? [...operation.changes].reverse().map(inverse) : operation.changes;
+  let next = timeline;
+  for (const change of changes) next = applyChange(next, change);
+  next = { ...next, revision: timeline.revision + 1, updatedAt: new Date().toISOString() };
+  validateEditableTimeline(next);
+  return next;
+}
+
+export function recordTimelineHistory(history: TimelineHistory, operation: TimelineHistoryOperation): TimelineHistory {
+  if (operation.origin !== "local") return history;
+  return {
+    ...history,
+    undo: [...history.undo, clone(operation)].slice(-history.limit),
+    redo: []
+  };
+}
+
+export function undoTimelineHistory(
+  history: TimelineHistory,
+  timeline: EditorialTimeline
+): { timeline: EditorialTimeline; history: TimelineHistory; operation: TimelineHistoryOperation } | null {
+  const operation = history.undo[history.undo.length - 1];
+  if (!operation) return null;
+  const nextTimeline = applyTimelineHistoryOperation(timeline, operation, "undo");
+  return {
+    timeline: nextTimeline,
+    history: { ...history, undo: history.undo.slice(0, -1), redo: [...history.redo, operation] },
+    operation
+  };
+}
+
+export function redoTimelineHistory(
+  history: TimelineHistory,
+  timeline: EditorialTimeline
+): { timeline: EditorialTimeline; history: TimelineHistory; operation: TimelineHistoryOperation } | null {
+  const operation = history.redo[history.redo.length - 1];
+  if (!operation) return null;
+  const nextTimeline = applyTimelineHistoryOperation(timeline, operation, "forward");
+  return {
+    timeline: nextTimeline,
+    history: { ...history, undo: [...history.undo, operation].slice(-history.limit), redo: history.redo.slice(0, -1) },
+    operation
+  };
+}
