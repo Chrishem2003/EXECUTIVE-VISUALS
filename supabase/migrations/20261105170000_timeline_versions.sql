@@ -208,6 +208,7 @@ declare
   current_row executive_visuals.timelines;
   source_row executive_visuals.timeline_versions;
   restored_row executive_visuals.timelines;
+  restored_document jsonb;
   parent_id uuid;
   next_revision integer;
 begin
@@ -262,10 +263,14 @@ begin
   end if;
 
   next_revision := current_row.revision + 1;
+  restored_document := jsonb_set(source_row.timeline, '{id}', to_jsonb(current_row.id::text), true);
+  restored_document := jsonb_set(restored_document, '{projectId}', coalesce(to_jsonb(current_row.project_id::text), 'null'::jsonb), true);
+  restored_document := jsonb_set(restored_document, '{name}', to_jsonb(source_row.name), true);
+  restored_document := jsonb_set(restored_document, '{revision}', to_jsonb(next_revision), true);
   update executive_visuals.timelines
   set name = source_row.name,
       revision = next_revision,
-      timeline = source_row.timeline,
+      timeline = restored_document,
       otio = source_row.otio,
       updated_at = now()
   where id = p_timeline_id
@@ -279,7 +284,7 @@ begin
     restored_row.revision, parent_id, source_row.id,
     restored_row.name,
     left(coalesce(p_summary, 'Restored from revision ' || source_row.revision::text), 500),
-    p_content_hash, restored_row.timeline, restored_row.otio, p_actor_id
+    p_content_hash, restored_document, restored_row.otio, p_actor_id
   );
 
   return next restored_row;
