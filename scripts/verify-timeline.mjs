@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { addClip, addMarker, addTrack, createTimeline, moveClip, rational, seconds, splitClip, toOpenTimelineIo, trimClip, validateTimeline } from "../src/core/timeline.ts";
 import { analyzeTimelineQuality } from "../src/core/timeline-quality.ts";
+import { generatedVideoAlreadyOnTimeline, generatedVideoDurationSeconds, selectLatestGeneratedVideoAsset } from "../src/core/generated-video-import.ts";
 
 let timeline=createTimeline("project-1","timeline-1","Pilot episode",{numerator:24,denominator:1});
 timeline=addTrack(timeline,{id:"v1",name:"Video 1",kind:"video",enabled:true,locked:false,clips:[]});
@@ -60,5 +61,20 @@ const outOfRange=analyzeTimelineQuality(quality,[{id:"quality-asset",metadata:{p
 assert.ok(outOfRange.some(item=>item.code==="SOURCE_RANGE_EXCEEDS_MEDIA"));
 assert.ok(analyzeTimelineQuality(quality,[]).some(item=>item.code==="ASSET_NOT_IN_LIBRARY"));
 assert.ok(analyzeTimelineQuality(null).some(item=>item.code==="NO_SEQUENCE"));
+
+const generatedAssets=[
+ {id:"asset-old",name:"Old output",mediaType:"video/mp4",projectId:"project-1",createdAt:"2026-11-04T10:00:00Z",metadata:{source:"video-generation",validated:true,validation:{durationSeconds:12.5}}},
+ {id:"asset-new-unvalidated",name:"Unvalidated output",mediaType:"video/mp4",projectId:"project-1",createdAt:"2026-11-05T10:00:00Z",metadata:{source:"video-generation",validated:false,validation:{durationSeconds:30}}},
+ {id:"asset-other-project",name:"Other project",mediaType:"video/mp4",projectId:"project-2",createdAt:"2026-11-06T10:00:00Z",metadata:{source:"video-generation",validated:true,validation:{durationSeconds:40}}},
+ {id:"asset-new",name:"Newest output",mediaType:"video/webm",projectId:"project-1",createdAt:"2026-11-05T09:00:00Z",metadata:{source:"video-generation",validated:true,validation:{durationSeconds:8.25}}},
+ {id:"asset-image",name:"Generated still",mediaType:"image/png",projectId:"project-1",createdAt:"2026-11-07T10:00:00Z",metadata:{source:"video-generation",validated:true}}
+];
+const latestGenerated=selectLatestGeneratedVideoAsset(generatedAssets,"project-1");
+assert.equal(latestGenerated?.id,"asset-new");
+assert.equal(generatedVideoDurationSeconds(latestGenerated),8.25);
+assert.equal(generatedVideoDurationSeconds({id:"fallback",name:"Fallback",mediaType:"video/mp4",metadata:{validation:{durationSeconds:"invalid"}}}),5);
+assert.equal(selectLatestGeneratedVideoAsset(generatedAssets,"project-missing"),null);
+assert.equal(generatedVideoAlreadyOnTimeline({tracks:[{clips:[{assetId:"asset-new"}]}]},"asset-new"),true);
+assert.equal(generatedVideoAlreadyOnTimeline({tracks:[{clips:[]}]},"asset-new"),false);
 
 console.log("Timeline engine checks passed: rational timing, source trims, split, cross-track and same-track moves, overlap protection, markers and editorial interchange export.");
