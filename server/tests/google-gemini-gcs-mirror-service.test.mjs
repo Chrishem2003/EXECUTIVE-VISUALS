@@ -100,7 +100,7 @@ test("authorizes and materializes the private asset, mirrors it, verifies it and
     assert.equal(result.reused, false);
     assert.equal(typeof f.service.recoverMirrorAttempts, "function");
     assert.deepEqual(await f.service.recoverMirrorAttempts(), {
-      scanned:0,registered:0,quarantined:0,retryPending:0,alreadyClaimed:0,results:[]
+      scanned:0,registered:0,quarantined:0,retryPending:0,alreadyClaimed:0,cleanupPending:0,results:[]
     });
     assert.equal(result.source.state, "ACTIVE");
     assert.equal(result.gcsUri, "gs://private-media-bucket/" + result.source.objectName);
