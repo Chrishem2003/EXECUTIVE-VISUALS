@@ -572,6 +572,7 @@ function paint(){
 }
 async function runAction(action:HTMLElement){
  const type=action.dataset.tlAction||"";
+ if(type==="undo"||type==="redo"){await travelTimelineHistory(type);return;}
  if(type==="save-recovered-draft"){
   try{await persist();state.recoveredDraft=null;state.message="Recovered edits saved as a new server revision.";}
   catch(error){state.message=error instanceof Error?error.message:"Recovered draft could not be saved.";}
@@ -592,7 +593,7 @@ async function runAction(action:HTMLElement){
   paint();return;
  }
 
- if(type==="refresh"){await refresh();paint();return;}
+ if(type==="refresh"){resetTimelineHistory();await refresh();paint();return;}
  if(type==="reload-server"){
   if(!state.timeline){state.message="No timeline is selected.";paint();return;}
   const recoveryKey=currentRecoveryKey(),timelineId=state.timeline.id;
@@ -601,7 +602,7 @@ async function runAction(action:HTMLElement){
    else{const result=await apiRequest<{timeline:SavedTimeline}>("/api/timelines/"+timelineId);state.timeline=result.timeline.document||null;state.serverRevision=result.timeline.revision;}
    if(recoveryKey)await recoveryStore().clearDraft(recoveryKey);
    state.recoveredDraft=null;state.conflictServerTimeline=null;state.recoveryStatus="idle";state.cloudRevisionConflict=false;
-   state.selectedTrack=state.timeline?.tracks[0]?.id||"";state.selectedClipId="";
+   resetTimelineHistory();state.selectedTrack=state.timeline?.tracks[0]?.id||"";state.selectedClipId="";
    await refresh();state.message="Loaded the latest server revision. The previous local draft was not merged.";
   }catch(error){state.message=error instanceof Error?error.message:"Could not load the latest server revision.";}
   paint();return;
@@ -660,14 +661,17 @@ async function runAction(action:HTMLElement){
  if(!state.timeline)return;
  const trackId=action.dataset.track||"",clipId=action.dataset.clip||"";
  if(type==="split"){
-  const track=state.timeline.tracks.find(t=>t.id===trackId),clip=track?.clips.find(c=>c.id===clipId);if(!track||!clip)return;
+  const before=structuredClone(state.timeline),track=before.tracks.find(t=>t.id===trackId),clip=track?.clips.find(c=>c.id===clipId);if(!track||!clip)return;
   const splitAt=Math.round(clip.timelineStart.value+clip.duration.value/2);
-  state.timeline=splitClip(state.timeline,trackId,clipId,splitAt,crypto.randomUUID());
- }else if(type==="trim")state.timeline=trimClip(state.timeline,trackId,clipId,12,12);
- else if(type==="move"){
-  const from=state.timeline.tracks.findIndex(t=>t.id===trackId);const target=state.timeline.tracks[(from+1)%state.timeline.tracks.length];if(!target)return;
-  const clip=state.timeline.tracks[from].clips.find(c=>c.id===clipId);if(!clip)return;
-  const start=maxEnd()+12;state.timeline=moveClip(state.timeline,trackId,clipId,target.id,start);
+  commitTimelineEdit(splitClip(before,trackId,clipId,splitAt,crypto.randomUUID()),"Split clip",before);
+ }else if(type==="trim"){
+  const before=structuredClone(state.timeline);
+  commitTimelineEdit(trimClip(before,trackId,clipId,12,12),"Trim clip",before);
+ }else if(type==="move"){
+  const before=structuredClone(state.timeline),from=before.tracks.findIndex(t=>t.id===trackId);const target=before.tracks[(from+1)%before.tracks.length];if(!target)return;
+  const clip=before.tracks[from].clips.find(c=>c.id===clipId);if(!clip)return;
+  const start=Math.max(1,...before.tracks.flatMap(t=>t.clips.map(c=>c.timelineStart.value+c.duration.value)))+12;
+  commitTimelineEdit(moveClip(before,trackId,clipId,target.id,start),"Move clip",before);
  }else if(type==="export"){
   const content=JSON.stringify(toOpenTimelineIo(state.timeline),null,2);
   const blob=new Blob([content],{type:"application/json"}),url=URL.createObjectURL(blob),a=document.createElement("a");
