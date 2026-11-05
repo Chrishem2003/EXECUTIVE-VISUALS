@@ -76,7 +76,7 @@ $$;
 
 drop trigger if exists ev_google_gcs_mirror_attempt_guard on executive_visuals.google_gcs_mirror_attempts;
 create trigger ev_google_gcs_mirror_attempt_guard
-before update on executive_visuals.google_gcs_mirror_attempts
+before insert or update on executive_visuals.google_gcs_mirror_attempts
 for each row execute function executive_visuals.guard_google_gcs_mirror_attempt();
 
 alter table executive_visuals.google_gcs_mirror_attempts enable row level security;
