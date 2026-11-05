@@ -81,6 +81,8 @@ jobs:
         run: bash scripts/google-provider-file-recovery-lease-concurrency.sh
       - name: Apply durable Google video interaction migration
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261105120000_google_video_interactions.sql
+      - name: Apply durable Google interaction creation-time output URI migration
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261105143000_google_video_output_uri.sql
       - name: Verify durable Google interaction ownership and privileges
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/google-video-interactions-postgres-integration.sql
       - name: Verify authorization, atomic enqueue and finalization
