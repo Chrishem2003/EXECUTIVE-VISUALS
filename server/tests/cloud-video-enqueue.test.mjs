@@ -186,7 +186,7 @@ test("Kie Seedance enqueue requires explicit remote gates and a verified account
  const kieArgs={ownerId,projectId,idempotencyKey:"kie-request-001",provider:"kie",model:"bytedance/seedance-2",requestHash,input:kieInput,budgetApprovalId:approvalId,reservedAmount:1.025,currency:"USD"};
  await assert.rejects(()=>make({}).enqueue(kieArgs),error=>error.code==="VIDEO_GENERATION_UNSUPPORTED_CAPABILITY");
  await assert.rejects(()=>make({VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",KIE_VIDEO_ENABLED:"true"}).enqueue(kieArgs),error=>error.code==="KIE_VIDEO_REMOTE_DISABLED");
- const env={VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",KIE_VIDEO_ENABLED:"true",KIE_VIDEO_ALLOW_REMOTE:"true",KIE_USD_PER_CREDIT:"0.005"};
+ const env={VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",KIE_VIDEO_ENABLED:"true",KIE_VIDEO_ALLOW_REMOTE:"true",KIE_API_KEY:"kie-test-key",KIE_USD_PER_CREDIT:"0.005"};
  const result=await make(env).enqueue(kieArgs);
  assert.equal(result.status,"queued");
  assert.equal(calls,1);
