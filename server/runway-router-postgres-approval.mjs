@@ -69,7 +69,7 @@ export function createRunwayRouterPostgresApprovalClient({
 
   return Object.freeze({
     async recordPreflight({
-      ownerId, projectId = null, decision, requestHash,
+      ownerId, projectId = null, decision, requestHash, jobInput,
       approvedMaxAmount, currency = "USD", ttlSeconds = 900,
       maxEstimatedCredits
     } = {}) {
@@ -82,7 +82,11 @@ export function createRunwayRouterPostgresApprovalClient({
           !Number.isSafeInteger(decision.estimatedCredits) || decision.estimatedCredits < 0) {
         throw fail("Only a verified non-billable Gen-4.5 router preflight can be recorded.", "RUNWAY_PREFLIGHT_DECISION_INVALID");
       }
-      if (typeof requestHash !== "string" || !/^[a-f0-9]{64}$/.test(requestHash) ||
+      if (!jobInput || typeof jobInput !== "object" || Array.isArray(jobInput) ||
+          jobInput.provider !== "runway" || jobInput.model !== "gen4.5" ||
+          jobInput.requestHash !== requestHash || (jobInput.projectId || null) !== projectId ||
+          Buffer.byteLength(JSON.stringify(jobInput), "utf8") > 32000 ||
+          typeof requestHash !== "string" || !/^[a-f0-9]{64}$/.test(requestHash) ||
           !Number.isSafeInteger(maxEstimatedCredits) || maxEstimatedCredits < decision.estimatedCredits ||
           decision.budgetCheck !== "within_limit" ||
           decision.maxEstimatedCredits !== maxEstimatedCredits) {
@@ -98,6 +102,7 @@ export function createRunwayRouterPostgresApprovalClient({
         p_config_id: decision.configId,
         p_input_hash: decision.inputHash,
         p_request_hash: requestHash,
+        p_job_input: jobInput,
         p_estimated_credits: decision.estimatedCredits,
         p_max_estimated_credits: maxEstimatedCredits,
         p_approved_max_amount: approvedMaxAmount,
