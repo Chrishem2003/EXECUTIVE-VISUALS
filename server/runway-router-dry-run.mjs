@@ -1,9 +1,22 @@
+import { createHash } from "node:crypto";
 const API_BASE = "https://api.dev.runwayml.com/v1";
 const API_VERSION = "2024-11-06";
 const fail = (message, code = "RUNWAY_ROUTER_PREFLIGHT_INVALID_INPUT") =>
   Object.assign(new Error(message), { code });
 const plain = value => value !== null && typeof value === "object" && !Array.isArray(value);
 const LIMITS = Object.freeze({ referenceImages: 4, referenceVideos: 2, referenceAudio: 1 });
+
+function stableJson(value) {
+  if (Array.isArray(value)) return "[" + value.map(stableJson).join(",") + "]";
+  if (plain(value)) return "{" + Object.keys(value).sort().map(key => JSON.stringify(key) + ":" + stableJson(value[key])).join(",") + "}";
+  return JSON.stringify(value);
+}
+
+function inputFingerprint(payload) {
+  return createHash("sha256")
+    .update(stableJson({ configId: payload.configId, input: payload.input }))
+    .digest("hex");
+}
 
 function configSlug(value) {
   const slug = String(value ?? "").trim();
@@ -142,7 +155,7 @@ async function resolvePrivateReferences(input, resolver, getAuthorizedAssetConte
   return resolved;
 }
 
-function normalizeDecision(payload, expectedConfigId) {
+function normalizeDecision(payload, expectedConfigId, requestFingerprint) {
   if (!plain(payload)) throw fail("Runway returned an invalid router preflight response.", "RUNWAY_ROUTER_PREFLIGHT_INVALID_RESPONSE");
   if (typeof payload.id === "string" && payload.id.trim()) {
     throw fail("Runway returned a task ID for a dry-run request; the response was quarantined.", "RUNWAY_ROUTER_DRY_RUN_UNEXPECTED_TASK");
@@ -150,7 +163,7 @@ function normalizeDecision(payload, expectedConfigId) {
   const routing = payload.routing;
   if (!plain(routing)) throw fail("Runway omitted the router decision.", "RUNWAY_ROUTER_PREFLIGHT_INVALID_RESPONSE");
   const credits = routing.estimatedCost?.credits;
-  if (typeof credits !== "number" || !Number.isFinite(credits) || credits < 0) {
+  if (!Number.isSafeInteger(credits) || credits < 0) {
     throw fail("Runway omitted a valid estimated credit cost.", "RUNWAY_ROUTER_PREFLIGHT_INVALID_RESPONSE");
   }
   if (routing.configId !== undefined && routing.configId !== expectedConfigId) {
@@ -162,7 +175,7 @@ function normalizeDecision(payload, expectedConfigId) {
   return Object.freeze({
     status: "preflighted", dryRun: true, taskCreated: false, billed: false,
     configId: expectedConfigId, provider: routing.provider, model: routing.model,
-    estimatedCredits: credits,
+    estimatedCredits: credits, inputHash: requestFingerprint,
     ...(plain(routing.resolvedSettings) ? { resolvedSettings: Object.freeze({ ...routing.resolvedSettings }) } : {}),
     ...(plain(routing.resolvedInput) ? { resolvedInput: Object.freeze({ ...routing.resolvedInput }) } : {}),
     ...(plain(routing.capacityFallback) ? { capacityFallback: Object.freeze({ ...routing.capacityFallback }) } : {})
@@ -177,7 +190,7 @@ export function createRunwayRouterDryRunClient({
   resolvePrivateAsset, getAuthorizedAssetContext
 } = {}) {
   if (typeof fetchImpl !== "function") throw new TypeError("A fetch implementation is required.");
-  async function preflight(input) {
+  async function preflight(input, { maxEstimatedCredits } = {}) {
     if (env.RUNWAY_ROUTER_PREFLIGHT_ENABLED !== "true") throw fail("Runway Model Router preflight is disabled.", "RUNWAY_ROUTER_PREFLIGHT_DISABLED");
     if (env.RUNWAY_VIDEO_ALLOW_REMOTE !== "true") throw fail("Runway remote access requires explicit server-side opt-in.", "RUNWAY_REMOTE_DISABLED");
     const key = String(env.RUNWAY_API_KEY || env.RUNWAYML_API_SECRET || "").trim();
@@ -185,6 +198,10 @@ export function createRunwayRouterDryRunClient({
     if (!Number.isInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 120000) throw fail("Runway preflight timeout is invalid.");
     const resolvedInput = await resolvePrivateReferences(input, resolvePrivateAsset, getAuthorizedAssetContext);
     const payload = buildRunwayRouterDryRunPayload(resolvedInput);
+    if (maxEstimatedCredits !== undefined && (!Number.isSafeInteger(maxEstimatedCredits) || maxEstimatedCredits < 0)) {
+      throw fail("Maximum estimated credits must be a non-negative safe integer.", "RUNWAY_ROUTER_BUDGET_INVALID");
+    }
+    const requestFingerprint = inputFingerprint(payload);
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
@@ -201,12 +218,26 @@ export function createRunwayRouterDryRunClient({
       }
       if (response.status === 429) throw fail("Runway rate limit reached.", "RUNWAY_RATE_LIMITED");
       if (response.status >= 500) throw fail("Runway returned a temporary server error.", "RUNWAY_SERVER_ERROR");
-      if (!response.ok) throw fail("Runway rejected the router preflight (HTTP " + response.status + ").", "RUNWAY_REQUEST_REJECTED");
       const raw = await response.text();
       if (Buffer.byteLength(raw) > 1024 * 1024) throw fail("Runway router response exceeded the 1 MB limit.", "RUNWAY_ROUTER_PREFLIGHT_INVALID_RESPONSE");
       let result;
-      try { result = JSON.parse(raw); } catch { throw fail("Runway returned invalid router JSON.", "RUNWAY_ROUTER_PREFLIGHT_INVALID_RESPONSE"); }
-      return normalizeDecision(result, payload.configId);
+      try { result = raw ? JSON.parse(raw) : null; }
+      catch {
+        if (!response.ok) throw fail("Runway rejected the router preflight (HTTP " + response.status + ").", "RUNWAY_REQUEST_REJECTED");
+        throw fail("Runway returned invalid router JSON.", "RUNWAY_ROUTER_PREFLIGHT_INVALID_RESPONSE");
+      }
+      if (!response.ok) {
+        if (response.status === 400 && result?.code === "no_eligible_model") {
+          throw fail("Runway Model Router found no eligible model for this input and configuration.", "RUNWAY_NO_ELIGIBLE_MODEL");
+        }
+        if (response.status === 404) throw fail("The saved Runway Model Router configuration is unavailable to this account.", "RUNWAY_ROUTER_CONFIG_NOT_FOUND");
+        throw fail("Runway rejected the router preflight (HTTP " + response.status + ").", "RUNWAY_REQUEST_REJECTED");
+      }
+      const decision = normalizeDecision(result, payload.configId, requestFingerprint);
+      if (maxEstimatedCredits !== undefined && decision.estimatedCredits > maxEstimatedCredits) {
+        throw fail("Runway router estimate exceeds the approved credit ceiling; no generation was created.", "RUNWAY_ROUTER_BUDGET_EXCEEDED");
+      }
+      return Object.freeze({ ...decision, budgetCheck: maxEstimatedCredits === undefined ? "not_checked" : "within_limit" });
     } finally { clearTimeout(timer); }
   }
   return Object.freeze({ provider: "runway", mode: "dry_run_only", preflight });
