@@ -121,7 +121,7 @@ test("cloud executor does not enter submitting state when private input preparat
   executeCloudVideoGenerationJob({job,workerId:"worker-1",...f}),
   error=>error.code==="RUNWAY_IMAGE_ASSET_RESOLUTION_FAILED"
  );
- assert.deepEqual(f.calls.map(call=>call[0]),["prepare","prepareInput"]);
+ assert.deepEqual(f.calls.map(call=>call[0]),["prepare","cancellation-check","prepareInput"]);
  assert.equal(f.calls.some(call=>call[0]==="begin"),false);
  assert.equal(f.calls.some(call=>call[0]==="submit"),false);
  assert.equal(f.calls.some(call=>call[0]==="unknown"),false);
