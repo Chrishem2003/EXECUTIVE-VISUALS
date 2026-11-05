@@ -75,19 +75,28 @@ export const VIDEO_PROVIDER_CATALOG = freeze([
           nativeAudio: false,
           negativePrompt: false,
           seed: false,
-          startFrame: false,
-          endFrame: false,
+          startFrame: true,
+          endFrame: true,
           motionReference: false,
           referenceImages: true,
           audioModes: [],
+          aspectRatios: ["9:16", "3:4", "1:1", "4:3", "16:9", "21:9"],
+          resolutions: ["540p", "720p", "1080p"],
           minDurationSeconds: 5,
           maxDurationSeconds: 10
         },
         constraints: {
           supportedDurationsSeconds: [5, 10],
           maxKeyframes: 64,
+          hdrOutput: true,
+          hdrGenerationDurationsSeconds: [5],
+          hdrGenerationResolutions: ["720p", "1080p"],
+          hdrVideoEditDurationsSeconds: [5, 10],
+          exrExportRequiresHdr: true,
+          reframeDynamicRange: "sdr_only",
           outputUrlExpirySeconds: 3600,
-          cancellation: "unsupported"
+          cancellation: "unsupported",
+          source: "https://docs.agents.lumalabs.ai/guides/model/"
         }
       }
     ]
