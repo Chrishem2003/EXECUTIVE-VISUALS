@@ -1,10 +1,11 @@
+import type { AudioAutomationPoint } from "./audio-automation";
 export interface RationalTime { value:number; rate:number }
 export interface TimeRange { start:RationalTime; duration:RationalTime }
 export type TrackKind="video"|"audio"|"overlay"|"caption";
 export interface TimelineClip {
   id:string; assetId:string; name:string; sourceRange:TimeRange;
   timelineStart:RationalTime; duration:RationalTime;
-  enabled:boolean; gainDb?:number; speed?:number; metadata?:Record<string,unknown>;
+  enabled:boolean; gainDb?:number; pan?:number; audioAutomation?:AudioAutomationPoint[]; speed?:number; metadata?:Record<string,unknown>;
 }
 export interface TimelineTrack {
   id:string; name:string; kind:TrackKind; enabled:boolean; locked:boolean;
@@ -124,6 +125,9 @@ export function validateTimeline(timeline:EditorialTimeline):{valid:boolean;issu
       if(!Number.isFinite(speed)||speed!==1)issues.push({code:"unsupported_speed",trackId:track.id,clipId:clip.id,message:"Clip speed changes are not supported until time remapping is implemented."});
       if(start<0||duration<=0||clip.sourceRange.start.value<0||clip.sourceRange.duration.value<=0)issues.push({code:"invalid_range",trackId:track.id,clipId:clip.id,message:"Clip has an invalid source or record range."});
       if(Math.abs(duration-seconds(clip.sourceRange.duration))>Math.max(0.000001,0.5/clip.sourceRange.duration.rate))issues.push({code:"timebase_mismatch",trackId:track.id,clipId:clip.id,message:"Source and timeline durations differ by more than half a source frame."});
+      if(clip.gainDb!==undefined&&(!Number.isFinite(clip.gainDb)||clip.gainDb< -60||clip.gainDb>24))issues.push({code:"invalid_audio_gain",trackId:track.id,clipId:clip.id,message:"Clip gain must be between -60 and 24 dB."});
+      if(clip.pan!==undefined&&(!Number.isFinite(clip.pan)||clip.pan< -1||clip.pan>1))issues.push({code:"invalid_audio_pan",trackId:track.id,clipId:clip.id,message:"Clip pan must be between -1 and 1."});
+      if(clip.audioAutomation!==undefined){try{const points=clip.audioAutomation;if(!Array.isArray(points)||points.length>256)throw new Error("Audio automation supports at most 256 keyframes per clip.");let previous=-1;for(const point of points){if(!Number.isFinite(point.timeSeconds)||point.timeSeconds<0||point.timeSeconds>duration)throw new Error("Audio automation keyframes must fall inside the clip duration.");if(point.timeSeconds<=previous)throw new Error("Audio automation keyframes must be sorted with unique times.");if(point.gainDb!==undefined&&(!Number.isFinite(point.gainDb)||point.gainDb< -60||point.gainDb>24))throw new Error("Automation gain must be between -60 and 24 dB.");if(point.pan!==undefined&&(!Number.isFinite(point.pan)||point.pan< -1||point.pan>1))throw new Error("Automation pan must be between -1 and 1.");if(point.gainDb===undefined&&point.pan===undefined)throw new Error("Automation keyframes require gain or pan.");previous=point.timeSeconds;}}catch(error){issues.push({code:"invalid_audio_automation",trackId:track.id,clipId:clip.id,message:error instanceof Error?error.message:"Audio automation is invalid."});}}
       if(start+0.000001<end)issues.push({code:"overlap",trackId:track.id,clipId:clip.id,message:"Clips overlap on the same track; use another track for overlays."});
       end=Math.max(end,start+duration);
     }
