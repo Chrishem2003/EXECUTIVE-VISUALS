@@ -89,3 +89,48 @@ test("composes caller-readable GCS object verification with Gemini registration 
 test("requires trusted source, authorization and OAuth dependencies before constructing", () => {
   assert.throws(() => createGoogleGeminiGcsFilesComposition({}), /requires OAuth/);
 });
+
+test("uses the governed source repository by default and exposes scoped source revocation", async () => {
+  const calls = [];
+  const sourceRepository = {
+    async findActiveSource(scope) { calls.push({ op: "find", scope }); return source; },
+    async revokeSource(scope) { calls.push({ op: "revoke", scope }); return { id: "source-1", state: "REVOKED" }; }
+  };
+  const metadata = {
+    bucket: source.bucket, name: source.objectName, generation: source.generation,
+    metageneration: source.metageneration, size: String(source.sizeBytes),
+    contentType: source.mediaType,
+    metadata: {
+      executivevisualsassetid: assetId,
+      executivevisualsownerid: ownerId,
+      executivevisualsprojectid: projectId,
+      executivevisualssha256: sha256
+    }
+  };
+  const repository = {
+    async findProviderFile() { return null; },
+    async recordProviderFile() { return "mapping-1"; },
+    async deleteProviderFileRecord() { return true; }
+  };
+  const composition = createGoogleGeminiGcsFilesComposition({
+    env, sourceRepository, repository,
+    getAccessToken: async () => token,
+    authorizePrivateAsset: async () => ({ id: assetId, ownerId, projectId }),
+    fetchImpl: async (url, options) => {
+      if (String(url).startsWith("https://storage.googleapis.com/")) return response(metadata);
+      if (String(url).endsWith("/v1beta/files:register")) return response({ files: [{
+        name: "files/gcs-file-456",
+        uri: "https://generativelanguage.googleapis.com/v1beta/files/gcs-file-456",
+        mimeType: "video/mp4", sizeBytes: "1024", state: "ACTIVE",
+        expirationTime: "2026-11-25T00:00:00.000Z"
+      }] });
+      throw new Error("Unexpected provider request: " + url);
+    }
+  });
+  const result = await composition.registerAsset({ assetId, ownerId, projectId, mediaType: "video/mp4" });
+  assert.equal(result.sourceType, "gcs_registration");
+  assert.deepEqual(calls[0], { op: "find", scope: { assetId, ownerId, projectId } });
+  const revoked = await composition.revokeSource({ sourceId: "source-1", assetId, ownerId, projectId });
+  assert.equal(revoked.state, "REVOKED");
+  assert.deepEqual(calls[1], { op: "revoke", scope: { sourceId: "source-1", assetId, ownerId, projectId } });
+});
