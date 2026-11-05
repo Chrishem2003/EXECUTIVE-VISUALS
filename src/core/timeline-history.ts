@@ -4,7 +4,7 @@ import {
   type TimelineClip,
   type TimelineMarker,
   type TimelineTrack
-} from "./timeline";
+} from "./timeline.ts";
 
 type ClipLocation = { trackId: string; clip: TimelineClip } | null;
 type TimelineSettings = Pick<EditorialTimeline, "name" | "width" | "height" | "pixelAspectRatio" | "frameRate" | "metadata">;
