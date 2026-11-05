@@ -58,14 +58,14 @@ test("video worker remains an explicit opt-in and cannot replace the existing me
 test("cloud worker supervisor runs optional maintenance tasks and waits for them on shutdown",async()=>{
  const events=[],calls=[];
  const workers=[{async recoverExpired(){return 0;},async runCycle(){return{claimed:false};}}];
- const maintenanceWorkers=[{async run(){calls.push("retention");return{scanned:3,deleted:2,retryPending:1};}}];
+ const maintenanceWorkers=[{async run(){calls.push("retention");return{scanned:3,reconciled:1,quarantined:1,deleted:2,retryPending:1};}}];
  const supervisor=createCloudWorkerSupervisor({
   workers,maintenanceWorkers,maintenanceIntervalMs:10000,leaseSeconds:60,
   heartbeatIntervalMs:10000,pollMs:1000,onLog:event=>events.push(event)
  });
  await supervisor.start();await supervisor.stop();
  assert.deepEqual(calls,["retention"]);
- assert.ok(events.some(event=>event.kind==="maintenance"&&event.result.deleted===2));
+ assert.ok(events.some(event=>event.kind==="maintenance"&&event.result.deleted===2&&event.result.reconciled===1&&event.result.quarantined===1));
  assert.ok(events.some(event=>event.kind==="started"&&event.maintenanceWorkers===1));
 });
 
