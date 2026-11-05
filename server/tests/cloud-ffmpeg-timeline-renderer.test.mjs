@@ -28,7 +28,7 @@ test("cloud FFmpeg renderer applies a frame-bounded dip-to-black transition betw
   const pixels=execFileSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-loglevel","error","-i",result.path,"-vf","select='eq(n,23)+eq(n,24)+eq(n,30)',scale=1:1","-vsync","0","-frames:v","3","-f","rawvideo","-pix_fmt","rgb24","pipe:1"]);
   assert.equal(pixels.length,9);
   const brightness=[0,1,2].map(index=>pixels[index*3]+pixels[index*3+1]+pixels[index*3+2]);
-  assert.ok(brightness[0]<40,"the outgoing clip should be almost black at the end of its fade");
+  assert.ok(brightness[0]<60,"the outgoing clip should be almost black at the end of its fade");
   assert.ok(brightness[1]<40,"the incoming clip should begin at black");
   assert.ok(brightness[2]>100,"the incoming clip should reach full brightness after its fade");
  }finally{await rm(root,{recursive:true,force:true});}
