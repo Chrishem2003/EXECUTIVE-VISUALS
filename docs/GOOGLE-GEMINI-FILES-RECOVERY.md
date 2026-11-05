@@ -22,6 +22,23 @@ Official references:
 - Treat provider expiration metadata as authoritative when present. Never extend a provider expiry using an application-side guess.
 - Keep original media in private application storage and reconcile provider mappings independently.
 
+## GCS source resolver and caller access verification
+
+The registrar must never accept a caller-supplied `gs://` URI. The new `server/google-gemini-gcs-asset-resolver.mjs` accepts only a server-owned source record returned by an injected registry loader scoped to the authenticated asset ID, owner ID and project ID.
+
+Before returning a GCS URI, the resolver performs an authenticated metadata GET for the exact bucket/object using the application's Google Cloud OAuth identity. This verifies the caller identity can read that exact object and checks:
+- bucket and object name against the trusted source record;
+- immutable GCS object generation;
+- byte size and MIME type;
+- custom metadata binding the object to the Executive Visuals asset, owner, project and SHA-256 digest;
+- the server-side bucket allowlist and active source state.
+
+The resolver does not download media bytes. A 403 from the metadata lookup fails closed as `GEMINI_GCS_CALLER_ACCESS_DENIED`. The separate IAM preflight checks the Gemini service agent's bucket-level access. Both checks are required; one does not replace the other.
+
+`server/google-gemini-gcs-composition.mjs` composes this resolver with the existing Gemini GCS registrar and durable provider-file repository. Its dependencies (`loadSource`, `getAccessToken`, and `authorizePrivateAsset`) must be supplied by trusted server code. It is intentionally not enabled in the main server runtime until a GCS mirror/source registry and a production-grade Google Cloud OAuth identity provider are available.
+
+The current Supabase Storage assets are not GCS objects. The source registry callback must resolve only assets that have an independently created and verified GCS mirror; it must not synthesize a GCS URI from a Supabase bucket or object path.
+
 ## GCS registration IAM preflight
 
 The repository includes `server/google-gemini-gcs-iam-verifier.mjs`, a read-only preflight for the Google side of GCS registration.
