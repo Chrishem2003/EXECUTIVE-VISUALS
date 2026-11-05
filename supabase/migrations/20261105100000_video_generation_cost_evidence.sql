@@ -74,9 +74,7 @@ begin
     raise exception 'VIDEO_COST_EVIDENCE_JOB_SCOPE_INVALID';
   end if;
 
-  if job_row.project_id is not distinct from null then
-    null;
-  else
+  if job_row.project_id is not null then
     select owner_id into project_owner from executive_visuals.projects where id = job_row.project_id;
     if project_owner is distinct from auth.uid() then
       raise exception 'VIDEO_COST_EVIDENCE_PROJECT_OWNER_REQUIRED';
