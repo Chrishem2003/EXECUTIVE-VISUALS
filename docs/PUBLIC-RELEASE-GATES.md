@@ -2,7 +2,7 @@
 
 **Current decision: NOT APPROVED for public users.**  
 **Scope:** staging deployment review for the unified production application.  
-**Last reviewed:** 1 November 2026.
+**Last reviewed:** 5 November 2026.
 
 This checklist separates a successful source build from a safe, usable hosted service. Do not promote the feature branch to the production branch or expose the application to public users until every mandatory gate below has evidence.
 
@@ -10,11 +10,12 @@ This checklist separates a successful source build from a safe, usable hosted se
 
 | Gate | Status | Evidence / remaining work |
 |---|---|---|
-| Source build | Passed on the last completed quality workflow | Workflow 1692 completed successfully: dependency install, TypeScript check and full build. |
-| Latest deployment guard | Running | Workflow 1696 includes the new checks that reject development-only authentication in the Render production-mode blueprint. |
+| Source build | Passed on PR #97 | Quality workflow #6172 completed successfully, including dependency installation, TypeScript typecheck and the full production build. PR #97 remains draft and unmerged. |
+| Latest deployment guard | Not re-verified in this review | The deployment guard must be checked on the current staging deployment commit before any promotion. A historical green workflow is not current deployment evidence. |
 | Production-mode authentication | Blueprint corrected; user flow incomplete | Render blueprint now requires Supabase auth and non-synchronized secret inputs. Browser gate still asks users to paste an access token; implement email/password or passwordless sign-in, refresh, logout and account recovery before beta. |
+| GCS workload identity | Focused CI passed; live identity not verified | PR #96 GCS identity workflow #21 passed 104/104 tests and PostgreSQL integration #2430 passed. PR #93 follow-up workflow #23 passed 103/103 tests and PostgreSQL integration #2431 passed. These are isolated CI tests only; no live Google Cloud workload identity, bucket IAM or upload/recovery test has been run. |
 | Isolated identity/database | Blocked | Connected Supabase projects already contain unrelated NEMA and shared platform tables. Do not reuse or migrate either for this application. Provision and review a dedicated project before applying the application schema. |
-| Durable media storage | Blocked | Current active API uses SQLite and a local media directory. Cloud object-storage adapter is not integrated into the main asset API/UI. |
+| Durable media storage | Implemented as an opt-in boundary; active library still local | Private Supabase Storage adapter, owner-aware cloud asset repository, streaming upload, SHA-256 receipts, signed reads, soft-delete and authenticated `/api/cloud/assets` routes exist and are contract-tested. The separate Cloud workspace can upload/list/read assets, but the primary Asset Library and local `/api/assets` lifecycle still use local disk. `CLOUD_TIMELINE_API_ENABLED` defaults off; staging has not been connected to a dedicated project. |
 | Durable application database | Blocked for multi-instance use | Current runtime uses SQLite on one persistent disk. It is a single-instance staging architecture, not a horizontally scalable multi-tenant deployment. |
 | Worker recovery | Partial | Local queue leases/retries exist. Cloud worker process is not deployed or connected to the active application queue. |
 | Media generation | Explicitly limited | Local FFmpeg editing/enhancement is implemented. Actual image/video generation and verified neural super-resolution are not generally available; provider adapters remain gated. |
@@ -44,6 +45,22 @@ This checklist separates a successful source build from a safe, usable hosted se
 - Do not apply this project's migration to any existing shared Supabase database.
 - Do not enable remote AI/image/video/speech providers without a price and approval gate.
 - Keep original user media immutable; all edits create traceable derivatives.
+
+
+## Evidence recorded on 5 November 2026
+
+- PR #97 Quality checks run #6172: successful full build on commit `75c9ae3e43f3a179da12a1b0b7881f8e9bdae257`.
+- PR #96 GCS identity regression run #21: 104 tests passed, 0 failed on commit `6092906689a57956f6e3fdfacdd0dfa63141f75a`.
+- PR #96 cloud video PostgreSQL integration run #2430: all schema, privilege, lease-integrity and concurrent enqueue checks completed successfully.
+- PR #93 GCS identity regression run #23: 103 tests passed, 0 failed on commit `8974afcdb9170085ce8d8cdcb3c13747c5882a27` after correcting the lookalike-constructor fixture.
+- PR #93 cloud video PostgreSQL integration run #2431: all steps completed successfully.
+- PRs #93, #96 and #97 remain drafts and unmerged. CI evidence does not mean the live staging services have been provisioned or tested.
+
+## Exact remaining cloud acceptance boundary
+
+The opt-in cloud asset API checks the required `executive_visuals` tables and verifies that the `executive-visuals-media` bucket reports `public=false` at startup. The current Render Blueprint does not enable `CLOUD_TIMELINE_API_ENABLED` or configure server-side service-role credentials, and no dedicated isolated Supabase project has been approved or connected. Do not enable the flag against an existing NEMA or shared-platform project.
+
+The next implementation slice is to complete ordinary Supabase sign-in/session lifecycle, provision and review a dedicated isolated project only after approval, then connect the private cloud asset lifecycle to the primary Asset Library. Keep local SQLite/media mode as the safe default until the cloud path passes hosted end-to-end tests.
 
 ## Approval rule
 
