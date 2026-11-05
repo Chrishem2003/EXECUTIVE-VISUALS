@@ -303,6 +303,28 @@ begin
 end
 $kie_reference_mode_guard$;
 
+do $kie_unsupported_reference_guard$
+begin
+ begin
+  perform * from executive_visuals.enqueue_video_generation_job(
+   '123e4567-e89b-42d3-a456-426614174000',
+   '323e4567-e89b-42d3-a456-426614174000',
+   'pg-integration-kie-video-reference','kie','bytedance/seedance-2',repeat('2',64),
+   jsonb_build_object('projectId','323e4567-e89b-42d3-a456-426614174000',
+     'provider','kie','model','bytedance/seedance-2','requestHash',repeat('2',64),
+     'prompt','Unsupported reference mode','durationSeconds',5,'resolution','720p',
+     'referenceVideoAssetIds',jsonb_build_array('asset-video')),
+   'f23e4567-e89b-42d3-a456-426614174000',1.025,'USD'
+  );
+  raise exception 'unsupported Kie video reference unexpectedly enqueued';
+ exception when others then
+  if sqlerrm = 'unsupported Kie video reference unexpectedly enqueued' then raise; end if;
+  if sqlerrm <> 'VIDEO_GENERATION_UNSUPPORTED_CAPABILITY' then raise; end if;
+ end;
+end
+$kie_unsupported_reference_guard$;
+
+
 create temporary table replay_context as
 select queued.job_id, queued.budget_reservation_id as reservation_id, queued.idempotent_replay
 from runway_approval_context approval
