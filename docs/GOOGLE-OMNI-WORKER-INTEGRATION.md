@@ -37,7 +37,7 @@ The repository includes an authenticated private-asset upload route and a retrya
 
 This integration still does not by itself prove:
 
-- Google Drive import/export now preflights destination-folder capability, verifies private asset SHA-256 before export, and verifies the returned Drive MD5 checksum and byte size before reporting success. Resumable-session interruption recovery and durable export idempotency remain release gates.
+- Google Drive import/export now preflights destination-folder capability, verifies private asset SHA-256 before export, and verifies the returned Drive MD5 checksum and byte size before reporting success. The bridge now probes a resumable session after ambiguous network/5xx outcomes, resumes only from Drive's confirmed `Range`, and refuses to restart an expired session before reconciliation. This recovery is bounded to the active request; encrypted durable session persistence across process restarts and export idempotency remain release gates.
 - Gemini Files upload, expiry, cleanup and provider-file mapping recovery.
 - GCS object registration, signed access and deletion lifecycle.
 - A staging run with the provider-file and Interactions retention workers scheduled and verified end to end.
