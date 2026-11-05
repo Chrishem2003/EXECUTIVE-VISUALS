@@ -13,7 +13,7 @@ async function fixture(render){
  await mkdir(join(root,"uploads"),{recursive:true});
  const source=join(root,"uploads","audio.wav");await writeFile(source,Buffer.from("source"));
  const asset={id,sha256:sha,media_type:"audio/wav",byte_size:6,storage_path:"uploads/audio.wav"};
- const cache=createWaveformCache({mediaRoot:root,render:render||async({outputPath})=>writeFile(outputPath,png)});
+ const cache=createWaveformCache({mediaRoot:root,render:render||(async({outputPath})=>writeFile(outputPath,png))});
  return{root,source,asset,cache,close:()=>rm(root,{recursive:true,force:true})};
 }
 
