@@ -58,7 +58,7 @@ test("enqueue preserves active-job idempotent replay and atomically finalizes bu
     ...base,
     fetchImpl: async (url, options) => {
       calls.push({ url, body: JSON.parse(options.body) });
-      return response(url.endsWith("/finish_video_generation_job") ? true : [replay]);
+      return response(url.includes("/finish_video_generation_job") ? true : [replay]);
     }
   });
   const queued = await client.enqueue(args());
@@ -66,20 +66,31 @@ test("enqueue preserves active-job idempotent replay and atomically finalizes bu
   assert.equal(queued.status, "processing");
   assert.equal(await client.finish({
     jobId: resultRow.job_id, workerId: "video-worker-1", status: "succeeded",
-    output: { assetIds: ["asset-1"] }, actualAmount: 0.8
+    output: { assetIds: ["asset-1"], costEvidenceReference: "provider-invoice:line-9" }, actualAmount: 0.8
   }), true);
   assert.equal(await client.finish({
     jobId: resultRow.job_id, workerId: "video-worker-1", status: "failed",
     error: { code: "PROVIDER_FAILED" }
   }), true);
   assert.deepEqual(calls.map(call => call.url.split("/").pop()), [
-    "enqueue_video_generation_job", "finish_video_generation_job", "finish_video_generation_job"
+    "enqueue_video_generation_job", "finish_video_generation_job_with_evidence", "finish_video_generation_job"
   ]);
   assert.deepEqual(calls[1].body, {
-    p_job_id: resultRow.job_id, p_worker_id: "video-worker-1", p_status: "succeeded",
-    p_output: { assetIds: ["asset-1"] }, p_error: null, p_actual_amount: 0.8
+    p_job_id: resultRow.job_id, p_worker_id: "video-worker-1",
+    p_output: { assetIds: ["asset-1"], costEvidenceReference: "provider-invoice:line-9" },
+    p_actual_amount: 0.8, p_evidence_reference: "provider-invoice:line-9"
   });
   assert.equal(calls[2].body.p_actual_amount, null);
+});
+
+test("successful settlement requires an owner-reviewed evidence reference before network access", async () => {
+  let calls = 0;
+  const client = createCloudVideoEnqueue({ ...base, fetchImpl: async () => { calls++; return response(true); } });
+  await assert.rejects(() => client.finish({
+    jobId: resultRow.job_id, workerId: "video-worker-1", status: "succeeded",
+    output: { assetIds: ["asset-1"] }, actualAmount: 0.8
+  }), /Reviewed cost evidence reference/);
+  assert.equal(calls, 0);
 });
 
 test("cloud video deferral, quarantine and evidence-reconciled resume use dedicated RPCs", async () => {
