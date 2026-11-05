@@ -17,12 +17,13 @@ import { generatedVideoAlreadyOnTimeline, generatedVideoDurationSeconds, selectL
 import { resolveCloudTimelineRefresh } from "../core/timeline-conflict";
 import { TimelineRecoveryStore, assessTimelineRecovery, checksumTimeline, requestPersistentBrowserStorage, timelineRecoveryKey, type TimelineRecoveryDraft } from "../core/timeline-recovery";
 import { retryWithBackoff } from "../core/retry";
+import { applyTimelineHistoryOperation, createTimelineHistory, createTimelineHistoryOperation, recordTimelineHistory, redoTimelineHistory, undoTimelineHistory, type TimelineHistory } from "../core/timeline-history";
 
 type Asset={id:string;name:string;mediaType:string;size:number;projectId?:string|null;createdAt?:string;metadata?:Record<string,unknown>};
 type SavedTimeline={id:string;projectId?:string|null;name:string;revision:number;document?:EditorialTimeline};
 type CloudProject={id:string;name:string};
 type CloudSavedTimeline={id:string;projectId?:string|null;name:string;revision:number;timeline:EditorialTimeline;updatedAt:string};
-const state:{timeline:EditorialTimeline|null;serverRevision:number;timelines:SavedTimeline[];cloudTimelines:CloudSavedTimeline[];cloudProjects:CloudProject[];cloudProjectId:string;mode:"local"|"cloud";cloudRenderJobId:string;cloudRenderJobStatus:string;variantBase:EditorialTimeline|null;variantReport:TimelineVariantComparison|null;variantBaseName:string;assets:Asset[];status:"loading"|"ready"|"offline"|"auth";message:string;selectedTrack:string;selectedClipId:string;ffmpeg:boolean;cloudRevisionConflict:boolean;recoveryStatus:"idle"|"saved"|"recovered"|"conflict"|"unavailable";recoveredDraft:TimelineRecoveryDraft|null;conflictServerTimeline:EditorialTimeline|null}={
+const state:{timeline:EditorialTimeline|null;serverRevision:number;timelines:SavedTimeline[];cloudTimelines:CloudSavedTimeline[];cloudProjects:CloudProject[];cloudProjectId:string;mode:"local"|"cloud";cloudRenderJobId:string;cloudRenderJobStatus:string;variantBase:EditorialTimeline|null;variantReport:TimelineVariantComparison|null;variantBaseName:string;assets:Asset[];status:"loading"|"ready"|"offline"|"auth";message:string;selectedTrack:string;selectedClipId:string;ffmpeg:boolean;cloudRevisionConflict:boolean;recoveryStatus:"idle"|"saved"|"recovered"|"conflict"|"unavailable";recoveredDraft:TimelineRecoveryDraft|null;conflictServerTimeline:EditorialTimeline|null;timelineHistory:TimelineHistory}={
  timeline:null,serverRevision:0,timelines:[],cloudTimelines:[],cloudProjects:[],cloudProjectId:"",mode:"local",cloudRenderJobId:"",cloudRenderJobStatus:"",variantBase:null,variantReport:null,variantBaseName:"",assets:[],status:"loading",message:"Loading editorial workspace…",selectedTrack:"",selectedClipId:"",ffmpeg:false,cloudRevisionConflict:false,recoveryStatus:"idle",recoveredDraft:null,conflictServerTimeline:null
 };
 let sequencePlaying=false,sequenceFrame=0,sequenceStartFrame=0,sequenceStartAt=0,sequenceRaf:number|null=null;
@@ -57,6 +58,42 @@ async function restoreTimelineRecovery():Promise<void>{
  }catch(error){state.recoveryStatus="unavailable";state.message="Could not inspect the browser recovery journal: "+(error instanceof Error?error.message:"unknown error")+"."}
 }
 
+function resetTimelineHistory(){state.timelineHistory=createTimelineHistory();}
+function commitTimelineEdit(next:EditorialTimeline,label:string,before:EditorialTimeline|null=state.timeline){
+ if(!before)throw new Error("Load a timeline before editing it.");
+ const operation=createTimelineHistoryOperation(before,next,{label,origin:"local"});
+ if(!operation){state.timeline=next;return;}
+ state.timeline=applyTimelineHistoryOperation(before,operation,"forward");
+ state.timelineHistory=recordTimelineHistory(state.timelineHistory,operation);
+}
+async function travelTimelineHistory(direction:"undo"|"redo"){
+ if(!state.timeline)return;
+ const result=direction==="undo"
+  ?undoTimelineHistory(state.timelineHistory,state.timeline)
+  :redoTimelineHistory(state.timelineHistory,state.timeline);
+ if(!result){state.message=direction==="undo"?"There are no more local edits to undo.":"There are no local edits to redo.";paint();return;}
+ state.timeline=result.timeline;state.timelineHistory=result.history;
+ state.message=(direction==="undo"?"Undid ":"Redid ")+result.operation.label+".";
+ paint();
+ try{
+  if(state.cloudRevisionConflict){await saveRecoveryDraft("timeline-"+direction);state.message+=" The change remains in your preserved local draft; resolve the server conflict before publishing it.";}
+  else await persist();
+ }catch(error){state.message=(error instanceof Error?error.message:"Timeline history change could not be saved.")+" Your local edit remains available for recovery.";state.status="offline";}
+ paint();
+}
+let timelineHistoryKeysBound=false;
+function bindTimelineHistoryKeys(){
+ if(timelineHistoryKeysBound)return;timelineHistoryKeysBound=true;
+ document.addEventListener("keydown",event=>{
+  if(!state.timeline||!document.querySelector("#timeline-workspace"))return;
+  const target=event.target as HTMLElement|null;
+  if(target?.closest("input,textarea,select,[contenteditable='true']"))return;
+  if(!(event.metaKey||event.ctrlKey))return;
+  const key=event.key.toLowerCase();
+  if(key==="z"){event.preventDefault();void travelTimelineHistory(event.shiftKey?"redo":"undo");}
+  else if(key==="y"){event.preventDefault();void travelTimelineHistory("redo");}
+ });
+}
 type PreviewAudioNode={element:HTMLAudioElement;gain:GainNode;active:boolean;trackId:string;assetId:string};
 const sequenceAudioNodes=new Map<string,PreviewAudioNode>();
 const sequenceCaptionCache=new Map<string,Promise<CaptionCue[]>>();
