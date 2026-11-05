@@ -36,6 +36,7 @@ const RATIOS:Record<string,[number,number]> = {
 };
 const fail=(message:string)=>new Error(message);
 const validText=(value:unknown,max:number)=>typeof value==="string"&&value.trim().length>0&&value.length<=max;
+const validOptionalText=(value:unknown,max:number)=>typeof value==="string"&&value.length<=max;
 const validId=(value:unknown)=>validText(value,120)&&/^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(value as string);
 const validUniqueStrings=(values:unknown,min:number,max:number,itemMax:number)=>{
   if(!Array.isArray(values)||values.length<min||values.length>max)return false;
@@ -49,7 +50,7 @@ function validateStoryboardInput(storyboard:StoryboardInput){
   let totalShots=0,totalFrames=0;
   for(let sceneIndex=0;sceneIndex<storyboard.scenes.length;sceneIndex++){
     const scene=storyboard.scenes[sceneIndex];
-    if(!scene||!validId(scene.id)||sceneIds.has(scene.id)||shotIds.has(scene.id)||scene.number!==sceneIndex+1||!validText(scene.title,160)||!validText(scene.slugline,160)||!validText(scene.purpose,500)||!validText(scene.storyBeat,160)||!validText(scene.location,160)||!validText(scene.timeOfDay,80)||!Array.isArray(scene.shots)||scene.shots.length<1||scene.shots.length>8)throw fail("Storyboard contains an invalid, duplicate or out-of-order scene.");
+    if(!scene||!validId(scene.id)||sceneIds.has(scene.id)||shotIds.has(scene.id)||scene.number!==sceneIndex+1||!validText(scene.title,160)||!validText(scene.slugline,160)||!validText(scene.purpose,500)||!validText(scene.storyBeat,160)||!validOptionalText(scene.location,160)||!validOptionalText(scene.timeOfDay,80)||!Array.isArray(scene.shots)||scene.shots.length<1||scene.shots.length>8)throw fail("Storyboard contains an invalid, duplicate or out-of-order scene.");
     sceneIds.add(scene.id);
     let sceneFrames=0;
     for(let shotIndex=0;shotIndex<scene.shots.length;shotIndex++){
@@ -59,7 +60,7 @@ function validateStoryboardInput(storyboard:StoryboardInput){
         const value=shot[field as keyof StoryboardShotInput];
         if(typeof value!=="string"||value.length>max)throw fail("Storyboard shot "+field+" is invalid or too long.");
       }
-      if(!Array.isArray(shot.characterRefs)||shot.characterRefs.length>12||shot.characterRefs.some(reference=>!reference||!validText(reference.name,120)||!validText(reference.role,160)||(typeof reference.characterId!=="string"&&reference.characterId!==null)||!validText(reference.action,300)||!validText(reference.continuityNotes,300)))throw fail("Storyboard shot character references are invalid.");
+      if(!Array.isArray(shot.characterRefs)||shot.characterRefs.length>12||shot.characterRefs.some(reference=>!reference||!validText(reference.name,120)||!validOptionalText(reference.role,160)||(typeof reference.characterId!=="string"&&reference.characterId!==null)||!validOptionalText(reference.action,300)||!validOptionalText(reference.continuityNotes,300)))throw fail("Storyboard shot character references are invalid.");
       shotIds.add(shot.id);totalShots++;
       const frames=Math.round(shot.durationSeconds*storyboard.frameRate);
       if(frames<1)throw fail("Storyboard shot duration is below one frame.");
@@ -148,7 +149,7 @@ export function reflowStoryboardTimelinePlan(plan:StoryboardTimelinePlan):Storyb
   const sceneIds=new Set<string>(),shotIds=new Set<string>();
   let cursor=0,totalShots=0;
   const scenes=plan.scenes.map((scene,sceneIndex)=>{
-    if(!scene||!validId(scene.id)||sceneIds.has(scene.id)||shotIds.has(scene.id)||scene.number!==sceneIndex+1||!validText(scene.title,160)||!validText(scene.slugline,160)||!validText(scene.purpose,500)||!validText(scene.storyBeat,160)||!validText(scene.location,160)||!validText(scene.timeOfDay,80)||!Array.isArray(scene.shots)||scene.shots.length<1||scene.shots.length>8)throw fail("Storyboard timeline contains an invalid or duplicate scene.");
+    if(!scene||!validId(scene.id)||sceneIds.has(scene.id)||shotIds.has(scene.id)||scene.number!==sceneIndex+1||!validText(scene.title,160)||!validText(scene.slugline,160)||!validText(scene.purpose,500)||!validText(scene.storyBeat,160)||!validOptionalText(scene.location,160)||!validOptionalText(scene.timeOfDay,80)||!Array.isArray(scene.shots)||scene.shots.length<1||scene.shots.length>8)throw fail("Storyboard timeline contains an invalid or duplicate scene.");
     sceneIds.add(scene.id);
     const startFrame=cursor;
     const shots=scene.shots.map((shot,shotIndex)=>{
