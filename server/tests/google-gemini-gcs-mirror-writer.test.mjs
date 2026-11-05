@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { crc32cBase64 } from "../google-cloud-storage-checksum.mjs";
+import { crc32cBase64,computeFileChecksums } from "../google-cloud-storage-checksum.mjs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -216,4 +216,11 @@ test("rejects same-size source bytes whose SHA-256 differs from the durable asse
 
 test("uses the standard CRC32C base64 encoding for a known test vector",()=>{
  assert.equal(crc32cBase64(Buffer.from("123456789")),"4waSgw==");
+});
+
+test("computes streaming SHA-256 and CRC32C for a private source file",async()=>{
+ const f=await fixture();
+ try{
+  assert.deepEqual(await computeFileChecksums(f.filePath),{sha256,crc32c});
+ }finally{await rm(f.root,{recursive:true,force:true});}
 });
