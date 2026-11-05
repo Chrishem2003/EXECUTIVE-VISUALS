@@ -33,9 +33,9 @@ The worker does not infer approval from a client-side flag, accept user-supplied
 
 ## Interactions retention policy
 
-The Developer API paid tier retains stored Interactions for a configurable 7, 14, 28 or 55 days; the free tier retains them for one day. This provider integration independently requires paid-tier confirmation. Set `GEMINI_OMNI_RETENTION_DAYS` to the exact retention window configured in the project's AI Studio settings, then construct `createGoogleInteractionRetentionPolicy({ env })` and pass its `expiresAt` function as `retentionExpiresAt` to `createGoogleOmniCloudVideoIntegration`.
+The Gemini Developer API documentation states that stored Interactions are retained for 55 days on the paid tier by default and one day on the free tier. This video model is paid-tier only, and the application independently requires explicit paid-tier confirmation. Set `GEMINI_OMNI_RETENTION_DAYS` to an application-owned cleanup window from 1 through 55 days, then construct `createGoogleInteractionRetentionPolicy({ env })` and pass its `expiresAt` function as `retentionExpiresAt` to `createGoogleOmniCloudVideoIntegration`.
 
-The policy helper rejects missing or unsupported values and calculates expiry from the provider submission timestamp. It does not read or change the remote AI Studio setting: deployment acceptance must independently verify that the configured value matches AI Studio. Keep cleanup scheduled well before the selected provider retention window. Google Developer API retention differs from the separate Gemini Enterprise Agent Platform Interactions API retention behavior; do not mix the two endpoint families.
+This is an application cleanup deadline, not a remote AI Studio setting. The helper cannot inspect or configure Google's retention policy. Verify the project's paid-tier status during staging acceptance and schedule cleanup ahead of the provider's documented 55-day retention limit. The separate Gemini Enterprise Agent Platform Interactions API has a different endpoint family and must not be mixed with the Developer API.
 
 ## Not yet accepted as complete
 
