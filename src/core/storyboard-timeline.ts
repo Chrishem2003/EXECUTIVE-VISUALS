@@ -44,8 +44,13 @@ const validUniqueStrings=(values:unknown,min:number,max:number,itemMax:number)=>
   return normalized.every(value=>value.length>0&&value.length<=itemMax)&&new Set(normalized).size===normalized.length;
 };
 function validateStoryboardInput(storyboard:StoryboardInput){
-  validateStoryboardInput(storyboard);
-  const dimensions=RATIOS[storyboard.aspectRatio];
+  if(!storyboard||storyboard.schemaVersion!==1||storyboard.source!=="model"||!validId(storyboard.id)||!validText(storyboard.title,160)||!validText(storyboard.logline,1000)||!validText(storyboard.model,160)||!/^([a-f0-9]{64})$/.test(storyboard.inputHash))throw fail("A versioned storyboard with valid lineage and bounded title is required.");
+  if(!Number.isInteger(storyboard.targetDurationSeconds)||storyboard.targetDurationSeconds<15||storyboard.targetDurationSeconds>1800)throw fail("Storyboard target runtime is invalid.");
+  if(!Number.isFinite(Date.parse(storyboard.generatedAt)))throw fail("Storyboard generation timestamp is invalid.");
+  if(!validUniqueStrings(storyboard.globalContinuityRules,3,10,400))throw fail("Storyboard continuity rules are invalid.");
+  if(!Number.isInteger(storyboard.frameRate)||![24,25,30,50,60].includes(storyboard.frameRate))throw fail("Storyboard frame rate is unsupported.");
+  if(!RATIOS[storyboard.aspectRatio])throw fail("Storyboard aspect ratio is unsupported.");
+  if(!Array.isArray(storyboard.scenes)||storyboard.scenes.length<2||storyboard.scenes.length>12)throw fail("Storyboard scene count is invalid.");
   const sceneIds=new Set<string>(),shotIds=new Set<string>();
   let totalShots=0,totalFrames=0;
   for(let sceneIndex=0;sceneIndex<storyboard.scenes.length;sceneIndex++){
@@ -78,13 +83,8 @@ function validateStoryboardInput(storyboard:StoryboardInput){
 
 export function createStoryboardTimeline(projectId:string,timelineId:string,storyboard:StoryboardInput,name?:string):EditorialTimeline{
   if(!projectId||!timelineId)throw fail("A cloud project and new timeline ID are required.");
-  if(!storyboard||storyboard.schemaVersion!==1||storyboard.source!=="model"||!storyboard.id||!storyboard.title||!/^([a-f0-9]{64})$/.test(storyboard.inputHash)||typeof storyboard.model!=="string")throw fail("A versioned storyboard with lineage is required.");
-  if(!Number.isInteger(storyboard.targetDurationSeconds)||storyboard.targetDurationSeconds<15||storyboard.targetDurationSeconds>1800)throw fail("Storyboard target runtime is invalid.");
-  if(!Array.isArray(storyboard.globalContinuityRules)||storyboard.globalContinuityRules.length<3||storyboard.globalContinuityRules.length>10)throw fail("Storyboard continuity rules are invalid.");
-  if(!Number.isInteger(storyboard.frameRate)||![24,25,30,50,60].includes(storyboard.frameRate))throw fail("Storyboard frame rate is unsupported.");
+  validateStoryboardInput(storyboard);
   const dimensions=RATIOS[storyboard.aspectRatio];
-  if(!dimensions)throw fail("Storyboard aspect ratio is unsupported.");
-  if(!Array.isArray(storyboard.scenes)||storyboard.scenes.length<2||storyboard.scenes.length>12)throw fail("Storyboard scene count is invalid.");
   const sceneIds=new Set<string>(),shotIds=new Set<string>();
   const fps=storyboard.frameRate;
   let cursor=0,totalShots=0;
