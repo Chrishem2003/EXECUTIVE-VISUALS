@@ -1,7 +1,7 @@
 const TABLE = "google_video_interactions";
 const MODEL = "gemini-omni-1.1-flash";
 const ID = /^v1_[A-Za-z0-9_-]{6,200}$/;
-const OUTPUT_URI = /^https:\/\/generativelanguage\\.googleapis\\.com\/v1beta\/files\/[A-Za-z0-9_-]+(?::download\\?alt=media)?$/;
+const OUTPUT_URI = /^https:\/\/generativelanguage\.googleapis\.com\/v1beta\/files\/[A-Za-z0-9_-]+(?::download\\?alt=media)?$/;
 const STATES = new Set(["running", "waiting", "succeeded", "failed", "canceled", "incomplete", "unknown", "deleting", "deleted"]);
 
 function safeOrigin(value) {
