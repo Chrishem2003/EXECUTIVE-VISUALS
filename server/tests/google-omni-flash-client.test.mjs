@@ -24,7 +24,7 @@ function interaction(status = "in_progress", video = null) {
 function response(status, body) {
   return new Response(body === null ? null : JSON.stringify(body), { status });
 }
-function harness({ fetchImpl, approve = async () => true, authorize = async () => true, overrides = {} } = {}) {
+function harness({ fetchImpl, approve = async () => true, authorize = async () => true, overrides = {}, maxResponseBytes = 4 * 1024 * 1024 } = {}) {
   const calls = [];
   const client = createGeminiOmniFlashClient({
     env: { ...env, ...overrides },
@@ -34,7 +34,8 @@ function harness({ fetchImpl, approve = async () => true, authorize = async () =
     },
     assertApprovedSubmission: approve,
     authorizeInteraction: authorize,
-    timeoutMs: 3000
+    timeoutMs: 3000,
+    maxResponseBytes
   });
   return { client, calls };
 }
@@ -99,6 +100,8 @@ test("retrieves completed interactions and returns only validated Google output 
   assert.equal(result.status, "succeeded");
   assert.deepEqual(result.outputUrls, [fileUri]);
   assert.equal(h.calls[0].options.method, "GET");
+  assert.equal(new URL(h.calls[0].url).searchParams.get("fields"),
+    "id,model,status,steps(type,content(type,mime_type,uri))");
 });
 
 test("enforces owner/project authorization before retrieval, cancellation and deletion", async () => {
@@ -223,4 +226,21 @@ test("rejects external media URLs from other origins, buckets and with extra que
     await assert.rejects(()=>h.client.createInteraction(forged),error=>error.code==="GEMINI_OMNI_PLAN_INVALID");
     assert.equal(h.calls.length,0);
   }
+});
+
+
+test("bounds interaction polling response bytes before JSON parsing", async () => {
+  const oversized = {
+    id, model: "gemini-omni-1.1-flash", status: "in_progress", steps: [],
+    padding: "x".repeat(4096)
+  };
+  const h = harness({
+    maxResponseBytes: 1024,
+    fetchImpl: async () => response(200, oversized)
+  });
+  await assert.rejects(
+    () => h.client.getInteraction(id, { ownerId: "owner-1", projectId: "project-1" }),
+    error => error.code === "GEMINI_OMNI_RESPONSE_TOO_LARGE"
+  );
+  assert.equal(h.calls.length, 1);
 });
