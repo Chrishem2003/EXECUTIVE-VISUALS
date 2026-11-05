@@ -320,6 +320,26 @@ test("gets provider metadata needed for recovery without exposing the API key", 
   assert.equal(JSON.stringify(result).includes("server-test-key"), false);
 });
 
+test("rejects malformed provider metadata returned by direct file lookup", async () => {
+  const gateway = createGoogleGeminiFilesGateway({
+    env,
+    fetchImpl: async () => response(200, { file: {
+      name: fileName, displayName: "executive-visuals-test",
+      uri: "https://attacker.example/files/gemini-123",
+      mimeType: "image/png", sizeBytes: String(bytes.byteLength),
+      sha256Hash: createHash("sha256").update(bytes).digest("base64"),
+      state: "ACTIVE", expirationTime: "2026-11-07T00:00:00.000Z"
+    }}),
+    loadPrivateAsset: async () => privateAsset(),
+    recordProviderFile: async () => {},
+    timeoutMs: 3000
+  });
+  await assert.rejects(
+    () => gateway.getProviderFile(fileName),
+    error => error.code === "GEMINI_FILE_RESPONSE_INVALID"
+  );
+});
+
 test("does not expose API keys or resumable upload URLs in public results", async () => {
   const h = harness();
   const result = await h.gateway.resolveAsset({ assetId, ownerId, projectId, mediaType: "image/png" });
