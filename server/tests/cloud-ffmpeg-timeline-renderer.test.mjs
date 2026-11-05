@@ -99,6 +99,17 @@ test("cloud FFmpeg renderer rejects overlapping primary video clips",async()=>{
  await assert.rejects(()=>renderCloudTimeline({timeline,assets,workDir:tmpdir()}),error=>error.code==="TIMELINE_OVERLAP");
 });
 
+test("cloud FFmpeg renderer rejects transitions on non-video tracks",async()=>{
+ const timeline={tracks:[
+  {kind:"video",clips:[{assetId:"v",timelineStart:time(0),duration:time(1),sourceRange:{start:time(0),duration:time(1)}}]},
+  {kind:"audio",clips:[{assetId:"a",timelineStart:time(0),duration:time(1),sourceRange:{start:time(0),duration:time(1)},transitionToNext:{type:"dip-to-black",fadeFrames:6}}]}
+ ]};
+ const assets=new Map([
+  ["v",{path:"/not-used-video.mp4",asset:{id:"v",mediaType:"video/mp4",originalName:"v.mp4"}}],
+  ["a",{path:"/not-used-audio.wav",asset:{id:"a",mediaType:"audio/wav",originalName:"a.wav"}}]
+ ]);
+ await assert.rejects(()=>renderCloudTimeline({timeline,assets,workDir:tmpdir()}),error=>error.code==="INVALID_TIMELINE_TRANSITION");
+});
 test("cloud FFmpeg renderer honours an already-aborted signal",async()=>{
  const controller=new AbortController();controller.abort();
  await assert.rejects(()=>renderCloudTimeline({timeline:{tracks:[]},assets:new Map(),workDir:tmpdir(),signal:controller.signal}),error=>error.code==="JOB_CANCELLED");
