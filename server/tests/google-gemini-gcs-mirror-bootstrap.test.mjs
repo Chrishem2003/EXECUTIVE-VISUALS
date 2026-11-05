@@ -5,6 +5,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createGoogleGeminiGcsMirrorBootstrap } from "../google-gemini-gcs-mirror-bootstrap.mjs";
 
+test("installed Google Auth Library exports the concrete workload identity classes", async () => {
+  const authLibrary = await import("google-auth-library");
+  assert.equal(typeof authLibrary.GoogleAuth, "function");
+  assert.equal(typeof authLibrary.Compute, "function");
+  assert.equal(typeof authLibrary.IdentityPoolClient, "function");
+});
+
 const env = {
   GOOGLE_CLOUD_PROJECT_ID: "executive-visuals-staging",
   SUPABASE_URL: "https://example.supabase.co",
