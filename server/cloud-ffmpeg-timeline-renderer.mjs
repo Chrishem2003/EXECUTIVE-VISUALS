@@ -118,20 +118,20 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
    if(signal?.aborted)fail("Timeline render was cancelled.","JOB_CANCELLED");
    const start=seconds(clip.timelineStart),duration=seconds(clip.duration);
    if(duration<=0)continue;
-   if(Math.abs(Number(clip.speed??1)-1)>0.000001)fail("Speed changes require the time-remapping renderer milestone.","UNSUPPORTED_TIME_REMAP");
    if(start+0.000001<cursor){const previous=clips[clipPosition-1],fadeFrames=Number(previous?.transitionToNext?.fadeFrames),expectedStart=seconds(previous?.timelineStart)+seconds(previous?.duration)-fadeFrames/fps;if(previous?.transitionToNext?.type!=="crossfade"||Math.abs(start-expectedStart)>0.5/fps)fail("Primary video track contains overlapping clips without a matching crossfade.","TIMELINE_OVERLAP");}
    if(start>cursor+0.000001){
     const gap=start-cursor;args.push("-f","lavfi","-t",gap.toFixed(6),"-i",`color=c=black:s=${width}x${height}:r=${fpsNum}/${fpsDen}`);
     const label="v"+segmentIndex++;segments.push({label,start:cursor,duration:gap,filter:`[${inputIndex}:v]fps=${fpsNum}/${fpsDen},format=yuv420p,setsar=1,settb=AVTB,setpts=PTS-STARTPTS[${label}]`});inputIndex++;
    }
    const asset=getAsset(clip.assetId),mediaType=String(asset.mediaType||"");
+   const speed=Math.max(0.25,Math.min(4,Number(clip.speed??1))),sourceDuration=duration*speed;
    if(mediaType.startsWith("image/"))args.push("-loop","1","-t",duration.toFixed(6),"-i",asset.path);
-   else if(mediaType.startsWith("video/"))args.push("-ss",seconds(clip.sourceRange?.start).toFixed(6),"-t",duration.toFixed(6),"-i",asset.path);
+   else if(mediaType.startsWith("video/"))args.push("-ss",seconds(clip.sourceRange?.start).toFixed(6),"-t",sourceDuration.toFixed(6),"-i",asset.path);
    else fail("Only still images and video clips are supported on the primary video track.","UNSUPPORTED_MEDIA_TYPE");
    const label="v"+segmentIndex++;
    const previous=clips[clipPosition-1],fadeInFrames=previous?.transitionToNext?.type==="dip-to-black"?previous.transitionToNext.fadeFrames:0,fadeOutFrames=clip.transitionToNext?.type==="dip-to-black"?clip.transitionToNext.fadeFrames:0;
    const fadeIn=fadeInFrames/fps,fadeOut=fadeOutFrames/fps;
-   let filter=`[${inputIndex}:v]trim=duration=${duration.toFixed(6)},setpts=PTS-STARTPTS,scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2,fps=${fpsNum}/${fpsDen},format=yuv420p,setsar=1,settb=AVTB`;
+   let filter=`[${inputIndex}:v]trim=duration=${sourceDuration.toFixed(6)},setpts=(PTS-STARTPTS)/${speed.toFixed(6)},scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2,fps=${fpsNum}/${fpsDen},format=yuv420p,setsar=1,settb=AVTB`;
    if(fadeIn>0)filter+=`,fade=t=in:st=0:d=${fadeIn.toFixed(6)}:color=black`;
    if(fadeOut>0)filter+=`,fade=t=out:st=${Math.max(0,duration-fadeOut).toFixed(6)}:d=${fadeOut.toFixed(6)}:color=black`;
    segments.push({label,start,duration,clip,filter:filter+`[${label}]`});
@@ -146,27 +146,28 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
     if(start+0.000001<secondaryCursor)fail("Secondary video track contains overlapping clips.","TIMELINE_OVERLAP");
     secondaryCursor=Math.max(secondaryCursor,start+clipDuration);
     const duration=Math.min(clipDuration,Math.max(0,cursor-start));if(duration<=0)continue;
-    if(Math.abs(Number(clip.speed??1)-1)>0.000001)fail("Speed changes require the time-remapping renderer milestone.","UNSUPPORTED_TIME_REMAP");
     const asset=getAsset(clip.assetId),mediaType=String(asset.mediaType||"");
+    const speed=Math.max(0.25,Math.min(4,Number(clip.speed??1))),sourceDuration=duration*speed;
     if(mediaType.startsWith("image/"))args.push("-loop","1","-t",duration.toFixed(6),"-i",asset.path);
-    else if(mediaType.startsWith("video/"))args.push("-ss",seconds(clip.sourceRange?.start).toFixed(6),"-t",duration.toFixed(6),"-i",asset.path);
+    else if(mediaType.startsWith("video/"))args.push("-ss",seconds(clip.sourceRange?.start).toFixed(6),"-t",sourceDuration.toFixed(6),"-i",asset.path);
     else fail("Secondary video tracks require video or still-image assets.","UNSUPPORTED_MEDIA_TYPE");
     const previous=trackClips[clipPosition-1],fadeInFrames=previous?.transitionToNext?.fadeFrames||0,fadeOutFrames=clip.transitionToNext?.fadeFrames||0;
-    videoOverlayInputs.push({inputIndex,clip,start,duration,asset,trackOrder,fadeIn:Math.min(fadeInFrames/fps,duration),fadeOut:Math.min(fadeOutFrames/fps,duration)});inputIndex++;
+    videoOverlayInputs.push({inputIndex,clip,start,duration,speed,sourceDuration,asset,trackOrder,fadeIn:Math.min(fadeInFrames/fps,duration),fadeOut:Math.min(fadeOutFrames/fps,duration)});inputIndex++;
    }
   }
   let audioIndex=0;
   for(const clip of audioClips){
    const start=seconds(clip.timelineStart);if(start>=cursor)continue;
    const duration=Math.min(seconds(clip.duration),cursor-start);if(duration<=0)continue;
-   if(Math.abs(Number(clip.speed??1)-1)>0.000001)fail("Audio speed changes require the time-remapping renderer milestone.","UNSUPPORTED_TIME_REMAP");
    const asset=getAsset(clip.assetId);if(!String(asset.mediaType||"").startsWith("audio/"))fail("Audio tracks require audio source assets.","UNSUPPORTED_AUDIO_SOURCE");
-   args.push("-ss",seconds(clip.sourceRange?.start).toFixed(6),"-t",duration.toFixed(6),"-i",asset.path);
+   const speed=Math.max(0.25,Math.min(4,Number(clip.speed??1))),sourceDuration=duration*speed;
+   args.push("-ss",seconds(clip.sourceRange?.start).toFixed(6),"-t",sourceDuration.toFixed(6),"-i",asset.path);
    const audioTrack=audios.find(track=>(track.clips||[]).some(item=>item.id===clip.id)),trackClips=audioTrack?ordered([audioTrack]):[],clipIndex=trackClips.findIndex(item=>item.id===clip.id),previousClip=trackClips[clipIndex-1],incomingFadeFrames=previousClip?.transitionToNext?.type==="crossfade"?Number(previousClip.transitionToNext.fadeFrames):0,outgoingFadeFrames=clip.transitionToNext?.type==="crossfade"?Number(clip.transitionToNext.fadeFrames):0,incomingFade=incomingFadeFrames/fps,outgoingFade=outgoingFadeFrames/fps;
    const delay=Math.round(start*1000),label="a"+audioIndex++,points=audioPoints(clip,seconds(clip.duration)),baseGainDb=Math.max(-60,Math.min(24,Number(clip.gainDb)||0)),basePan=Math.max(-1,Math.min(1,Number(clip.pan)||0)),gain=gainExpression(points,baseGainDb),pan=panExpressions(points,basePan);
    const panFilter=pan?",aformat=channel_layouts=stereo,aeval=exprs='val(0)*("+pan.left+")|val(1)*("+pan.right+")':channel_layout=stereo":"";
    const fadeInFilter=incomingFade>0?",afade=t=in:st=0:d="+incomingFade.toFixed(6)+":curve=tri":"",fadeOutFilter=outgoingFade>0?",afade=t=out:st="+Math.max(0,seconds(clip.duration)-outgoingFade).toFixed(6)+":d="+outgoingFade.toFixed(6)+":curve=tri":"";
-   audioFilters.push("["+inputIndex+":a]atrim=duration="+duration.toFixed(6)+",asetpts=PTS-STARTPTS"+fadeInFilter+fadeOutFilter+",volume='"+gain+"':eval=frame"+panFilter+",adelay="+delay+"|"+delay+",apad=whole_dur="+cursor.toFixed(6)+",atrim=duration="+cursor.toFixed(6)+",aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo["+label+"]");
+   const tempoParts=[];let tempo=speed;while(tempo>2){tempoParts.push("atempo=2");tempo/=2;}while(tempo<0.5){tempoParts.push("atempo=0.5");tempo/=0.5;}if(Math.abs(tempo-1)>0.000001)tempoParts.push("atempo="+tempo.toFixed(6));
+   audioFilters.push("["+inputIndex+":a]atrim=duration="+sourceDuration.toFixed(6)+",asetpts=PTS-STARTPTS"+(tempoParts.length?","+tempoParts.join(","):"")+fadeInFilter+fadeOutFilter+",volume='"+gain+"':eval=frame"+panFilter+",adelay="+delay+"|"+delay+",apad=whole_dur="+cursor.toFixed(6)+",atrim=duration="+cursor.toFixed(6)+",aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo["+label+"]");
    inputIndex++;
   }
   for(const clip of overlayClips){
@@ -191,7 +192,7 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
    const metadata=item.clip.metadata||{},ow=Math.max(16,Math.min(width,Math.round(Number(metadata.width)||width))),oh=Math.max(16,Math.min(height,Math.round(Number(metadata.height)||height)));
    const x=Math.max(0,Math.min(width-ow,Number.isFinite(Number(metadata.x))?Math.round(Number(metadata.x)):0)),y=Math.max(0,Math.min(height-oh,Number.isFinite(Number(metadata.y))?Math.round(Number(metadata.y)):0)),opacity=Math.max(0,Math.min(1,Number(metadata.opacity??1)));
    const source="video-track-source-"+index,output="video-track-composite-"+index;
-   let sourceFilter=`[${item.inputIndex}:v]trim=duration=${item.duration.toFixed(6)},setpts=PTS-STARTPTS,scale=${ow}:${oh}:force_original_aspect_ratio=decrease,pad=${ow}:${oh}:(ow-iw)/2:(oh-ih)/2,format=rgba,colorchannelmixer=aa=${opacity.toFixed(3)}`;
+   let sourceFilter=`[${item.inputIndex}:v]trim=duration=${item.sourceDuration.toFixed(6)},setpts=(PTS-STARTPTS)/${item.speed.toFixed(6)},scale=${ow}:${oh}:force_original_aspect_ratio=decrease,pad=${ow}:${oh}:(ow-iw)/2:(oh-ih)/2,format=rgba,colorchannelmixer=aa=${opacity.toFixed(3)}`;
    if(item.fadeIn>0)sourceFilter+=`,fade=t=in:st=0:d=${item.fadeIn.toFixed(6)}:alpha=1`;
    if(item.fadeOut>0)sourceFilter+=`,fade=t=out:st=${Math.max(0,item.duration-item.fadeOut).toFixed(6)}:d=${item.fadeOut.toFixed(6)}:alpha=1`;
    videoEffects.push(sourceFilter+`,setpts=PTS-STARTPTS+${item.start.toFixed(6)}/TB[${source}]`);
