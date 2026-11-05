@@ -32,7 +32,9 @@ function harness({ authorize = async () => true, existing = null, findError = fa
       ingested.push(value);
       return ingest ? ingest(value) : {
         id: "asset-private-1", ownerId: "owner-1", projectId: "project-1",
-        mediaType: "video/mp4", isPrivate: true
+        mediaType: "video/mp4", size: bytes.byteLength,
+        sha256: createHash("sha256").update(bytes).digest("hex"),
+        storageBucket: "executive-visuals-media"
       };
     },
     timeoutMs: 3000,
@@ -130,4 +132,22 @@ test("fails closed when output idempotency metadata cannot be checked", async ()
     error.code === "GEMINI_OMNI_OUTPUT_IDEMPOTENCY_LOOKUP_FAILED");
   assert.equal(h.calls.length, 0);
   assert.equal(h.ingested.length, 0);
+});
+
+test("rejects a cloud asset response outside the private storage contract", async () => {
+  for (const patch of [
+    { storageBucket: "public-assets" },
+    { sha256: "0".repeat(64) },
+    { size: bytes.byteLength + 1 }
+  ]) {
+    const h = harness({ ingest: async () => ({
+      id: "asset-1", ownerId: context.ownerId, projectId: context.projectId,
+      mediaType: "video/mp4", size: bytes.byteLength,
+      sha256: createHash("sha256").update(bytes).digest("hex"),
+      storageBucket: "executive-visuals-media", ...patch
+    }) });
+    await assert.rejects(() => h.ingestor.ingestInteraction(
+      interaction({ data: bytes.toString("base64") }), context
+    ), error => error.code === "GEMINI_OMNI_OUTPUT_ASSET_INVALID");
+  }
 });
