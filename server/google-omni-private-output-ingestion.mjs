@@ -11,9 +11,31 @@ async function readSmallJson(response, maxBytes = 64 * 1024) {
     try { await response.body?.cancel?.(); } catch {}
     throw fail("Google Files metadata response exceeded its configured size limit.", "GEMINI_OMNI_FILE_METADATA_TOO_LARGE");
   }
-  const raw = await response.text();
-  if (Buffer.byteLength(raw) > maxBytes) {
-    throw fail("Google Files metadata response exceeded its configured size limit.", "GEMINI_OMNI_FILE_METADATA_TOO_LARGE");
+  let raw;
+  if (response.body?.getReader) {
+    const reader = response.body.getReader();
+    const chunks = [];
+    let total = 0;
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        total += value.byteLength;
+        if (total > maxBytes) {
+          try { await reader.cancel(); } catch {}
+          throw fail("Google Files metadata response exceeded its configured size limit.", "GEMINI_OMNI_FILE_METADATA_TOO_LARGE");
+        }
+        chunks.push(Buffer.from(value));
+      }
+    } finally {
+      try { reader.releaseLock(); } catch {}
+    }
+    raw = Buffer.concat(chunks, total).toString("utf8");
+  } else {
+    raw = await response.text();
+    if (Buffer.byteLength(raw) > maxBytes) {
+      throw fail("Google Files metadata response exceeded its configured size limit.", "GEMINI_OMNI_FILE_METADATA_TOO_LARGE");
+    }
   }
   try { return JSON.parse(raw); }
   catch { throw fail("Google Files returned invalid metadata JSON.", "GEMINI_OMNI_FILE_METADATA_INVALID"); }
