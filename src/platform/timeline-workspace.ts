@@ -173,6 +173,7 @@ async function syncPreview(){
   state.previewLayerKey="";state.previewPlaying=false;
   for(const video of document.querySelectorAll<HTMLVideoElement>("[data-preview-video]")){video.pause();video.removeAttribute("src");video.load();}
   for(const audio of document.querySelectorAll<HTMLAudioElement>("[data-preview-audio]")){audio.pause();audio.removeAttribute("src");audio.load();}
+  state.audioEngine?.sync([]);
   const toggle=document.querySelector<HTMLButtonElement>("[data-tl-preview-toggle]");if(toggle)toggle.textContent="Play preview";
   const stage=document.querySelector<HTMLElement>("#tl-preview-layers");
   if(stage)stage.innerHTML=renderPreviewLayers([]);
