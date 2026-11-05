@@ -4,6 +4,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
+import { Readable } from "node:stream";
 import { createCloudStorage, buildCloudAssetObjectPath } from "../cloud-storage.mjs";
 
 const config={url:"https://example.supabase.co",serviceRoleKey:"storage-secret"};
@@ -85,4 +86,28 @@ test("cloud asset object paths match owner and project storage policy prefixes",
  assert.equal(buildCloudAssetObjectPath({ownerId,projectId,assetId,filename:"master.mp4"}),projectId+"/"+assetId+"/master.mp4");
  assert.throws(()=>buildCloudAssetObjectPath({ownerId:"invalid",assetId,filename:"x.mp4"}),/UUID/);
  assert.throws(()=>buildCloudAssetObjectPath({ownerId,assetId,filename:"../escape.mp4"}),/filename/);
+});
+
+test("downloads private objects to bounded files and verifies the streamed checksum",async()=>{
+ const root=await mkdtemp(join(tmpdir(),"ev-storage-download-")),file=join(root,"waveform.png"),bytes=Buffer.from("private-waveform-object"),calls=[];
+ const storage=createCloudStorage({...config,fetchImpl:async(url,options)=>{
+  calls.push({url,options});
+  return{ok:true,status:200,headers:{get:()=>String(bytes.length)},body:Readable.toWeb(Readable.from([bytes]))};
+ }});
+ const result=await storage.downloadToFile(path,file,1024);
+ assert.equal(result.size,bytes.length);
+ assert.equal(result.sha256,createHash("sha256").update(bytes).digest("hex"));
+ assert.deepEqual(await (await import("node:fs/promises")).readFile(file),bytes);
+ assert.equal(calls[0].options.method,"GET");
+ assert.equal(calls[0].options.headers.apikey,config.serviceRoleKey);
+ await rm(root,{recursive:true,force:true});
+});
+test("streaming derivative uploads may safely upsert deterministic content-addressed objects",async()=>{
+ const root=await mkdtemp(join(tmpdir(),"ev-storage-upsert-")),file=join(root,"waveform.png");
+ await writeFile(file,Buffer.from("waveform-png"));
+ let request;
+ const storage=createCloudStorage({...config,fetchImpl:async(url,options)=>{request={url,options};return response({Key:"waveform"});}});
+ await storage.uploadFile(path,file,"image/png",true);
+ assert.equal(request.options.headers["x-upsert"],"true");
+ await rm(root,{recursive:true,force:true});
 });

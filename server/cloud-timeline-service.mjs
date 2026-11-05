@@ -19,5 +19,5 @@ export function createCloudTimelineService(options={}){
     timeoutMs:options.timeoutMs??12000,
     maxDocumentBytes:options.maxDocumentBytes??5*1024*1024
   });
-  return Object.freeze({assets:assets.assets,timelines,projects});
+  return Object.freeze({assets:assets.assets,storage:assets.storage,timelines,projects});
 }

@@ -17,20 +17,29 @@ test("cloud FFmpeg renderer produces a playable master from materialized video a
   execFileSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-loglevel","error","-y","-f","lavfi","-i","sine=frequency=440:duration=1","-c:a","pcm_s16le",audio]);
   const timeline={name:"Cloud test",width:320,height:240,frameRate:{numerator:24,denominator:1},tracks:[
    {id:"v",kind:"video",clips:[{id:"v1",assetId:"asset-video",timelineStart:time(0),duration:time(1),sourceRange:{start:time(0),duration:time(1)}}]},
-   {id:"a",kind:"audio",clips:[{id:"a1",assetId:"asset-audio",timelineStart:time(0),duration:time(1),sourceRange:{start:time(0),duration:time(1)},gainDb:-3}]}
+   {id:"a",kind:"audio",clips:[{id:"a1",assetId:"asset-audio",timelineStart:time(0),duration:time(1),sourceRange:{start:time(0),duration:time(1)},gainDb:-3,pan:0,audioAutomation:[{timeSeconds:0,gainDb:-3,pan:-1,interpolation:"linear"},{timeSeconds:0.2,gainDb:-3,pan:-1,interpolation:"step"},{timeSeconds:0.5,gainDb:-12,pan:1,interpolation:"linear"}]}]}
   ]};
   const assets=new Map([
    ["asset-video",{path:video,asset:{id:"asset-video",mediaType:"video/mp4",originalName:"source.mp4"}}],
    ["asset-audio",{path:audio,asset:{id:"asset-audio",mediaType:"audio/wav",originalName:"voice.wav"}}]
   ]);
   const result=await renderCloudTimeline({timeline,assets,workDir:root,onProgress(){}});
-  const probe=JSON.parse(execFileSync(process.env.FFPROBE_PATH||"ffprobe",["-v","error","-show_entries","stream=codec_type","-of","json",result.path],{encoding:"utf8"}));
+  const probe=JSON.parse(execFileSync(process.env.FFPROBE_PATH||"ffprobe",["-v","error","-show_entries","stream=codec_type,channels","-of","json",result.path],{encoding:"utf8"}));
   assert.equal(result.mediaType,"video/mp4");
   assert.match(result.filename,/Cloud test-master\.mp4$/);
   assert.ok(probe.streams.some(stream=>stream.codec_type==="video"));
-  assert.ok(probe.streams.some(stream=>stream.codec_type==="audio"));
+  assert.ok(probe.streams.some(stream=>stream.codec_type==="audio"&&stream.channels===2));
   assert.equal(result.render.videoClips,1);
   assert.equal(result.render.audioClips,1);
+  assert.equal(result.render.automatedAudioClips,1);
+  const pcm=execFileSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-loglevel","error","-i",result.path,"-map","0:a:0","-f","f32le","-acodec","pcm_f32le","-ar","48000","-ac","2","pipe:1"]);
+  const samples=new Float32Array(pcm.buffer,pcm.byteOffset,pcm.byteLength/4);
+  const rms=(from,to,channel)=>{let sum=0,count=0;for(let frame=Math.floor(from*48000);frame<Math.floor(to*48000);frame++){const value=samples[frame*2+channel]||0;sum+=value*value;count++;}return Math.sqrt(sum/Math.max(1,count));};
+  const earlyLeft=rms(.1,.3,0),earlyRight=rms(.1,.3,1),lateLeft=rms(.7,.9,0),lateRight=rms(.7,.9,1);
+  assert.ok(earlyLeft>earlyRight*4,"left-panned opening keyframe should favour the left channel (left="+earlyLeft+", right="+earlyRight+")");
+  assert.ok(lateRight>lateLeft*4,"right-panned ending keyframe should favour the right channel (left="+lateLeft+", right="+lateRight+")");
+  const earlyLevel=Math.hypot(earlyLeft,earlyRight),lateLevel=Math.hypot(lateLeft,lateRight);
+  assert.ok(earlyLevel>lateLevel*1.5,"the rendered gain automation should attenuate the later section");
  }finally{await rm(root,{recursive:true,force:true});}
 });
 
