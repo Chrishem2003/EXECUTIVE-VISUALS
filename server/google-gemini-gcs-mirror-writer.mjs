@@ -176,11 +176,11 @@ export function createGoogleGeminiGcsMirrorWriter({
         assetId, ownerId, projectId: scopedProjectId, bucket, objectName,
         sizeBytes, mediaType, sha256
       };
+      const accessToken = await token();
       const attempt = attemptRepository ? await attemptRepository.createAttempt({
         assetId, ownerId, projectId: scopedProjectId, bucket, objectName,
         mediaType, sizeBytes, sha256
       }) : null;
-      const accessToken = await token();
       const metadata = {
         name: objectName,
         contentType: mediaType,
@@ -194,18 +194,26 @@ export function createGoogleGeminiGcsMirrorWriter({
       const initiateUrl = "https://storage.googleapis.com/upload/storage/v1/b/" +
         encodeURIComponent(bucket) + "/o?uploadType=resumable&ifGenerationMatch=0&name=" +
         encodeURIComponent(objectName);
-      const initiated = await request(initiateUrl, {
-        method: "POST", accessToken, body: JSON.stringify(metadata),
-        headers: {
-          "content-type": "application/json",
-          "x-upload-content-type": mediaType,
-          "x-upload-content-length": String(sizeBytes)
+      let initiated;
+      try {
+        initiated = await request(initiateUrl, {
+          method: "POST", accessToken, body: JSON.stringify(metadata),
+          headers: {
+            "content-type": "application/json",
+            "x-upload-content-type": mediaType,
+            "x-upload-content-length": String(sizeBytes)
+          }
+        });
+      } catch (error) {
+        if (attempt) {
+          try { await attemptRepository.transition({attemptId:attempt.id,expectedState:"PREPARED",state:"FAILED",errorCode:error.code || "GEMINI_GCS_SESSION_INIT_FAILED"}); } catch {}
         }
-      });
+        throw error;
+      }
       const sessionUri = initiated.response.headers.get("location");
       if (!safeSessionUri(sessionUri)) {
         if (attempt) {
-          try { await attemptRepository.transition({attemptId:attempt.id,expectedState:"PREPARED",state:"OUTCOME_UNKNOWN",errorCode:"GEMINI_GCS_UPLOAD_SESSION_INVALID"}); } catch {}
+          try { await attemptRepository.transition({attemptId:attempt.id,expectedState:"PREPARED",state:"FAILED",errorCode:"GEMINI_GCS_UPLOAD_SESSION_INVALID"}); } catch {}
         }
         throw fail("GCS did not return a valid resumable upload session.", "GEMINI_GCS_UPLOAD_SESSION_INVALID");
       }
