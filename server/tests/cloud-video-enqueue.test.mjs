@@ -297,7 +297,7 @@ test("cloud video job status is read through the owner-scoped PostgreSQL RPC", a
   const result=await client.getJobStatus({jobId:resultRow.job_id,ownerId});
   assert.deepEqual(result,status);
   assert.equal(calls[0].url,"https://example.supabase.co/rest/v1/rpc/get_owned_video_generation_job_status");
-  assert.deepEqual(JSON.parse(calls[0].options.body),{p_job_id:resultRow.job_id,p_owner_id:owner});
+  assert.deepEqual(JSON.parse(calls[0].options.body),{p_job_id:resultRow.job_id,p_owner_id:ownerId});
   assert.equal(calls[0].options.headers.authorization,"Bearer "+base.serviceRoleKey);
 });
 test("cloud video job status rejects invalid identifiers before making a database request",async()=>{
