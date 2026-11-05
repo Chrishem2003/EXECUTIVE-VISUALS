@@ -57,6 +57,16 @@ The writer uses a create-only resumable upload (`ifGenerationMatch=0`), includes
 
 The application service reuses an existing ACTIVE mirror only after re-verifying it. Otherwise it authorizes the private source, materializes it through the existing private asset boundary, mirrors it, re-verifies the registered source and cleans up the temporary file. The original Supabase asset remains canonical.
 
+## Durable GCS mirror upload attempts
+
+The additive migration `20261105210000_google_gcs_mirror_attempts.sql` introduces a separate service-role-only ledger for mirror uploads. It records the immutable asset scope, destination object identity, byte size, MIME type and SHA-256 independently from the verified source registry.
+
+The repository `server/google-gemini-gcs-mirror-attempt-repository.mjs` encrypts the resumable session URI with AES-256-GCM before persistence. Configure `GEMINI_GCS_SESSION_ENCRYPTION_KEY` as a base64-encoded 32-byte key from the deployment secret manager. Do not reuse the Supabase service-role key. Session URIs are bearer credentials; they must never appear in logs, API receipts, telemetry or plaintext database columns.
+
+The writer accepts an optional trusted `attemptRepository`. When supplied, it records PREPARED, UPLOADING, OUTCOME_UNKNOWN, OBJECT_VERIFIED and REGISTERED transitions. A verified object whose source-registry write fails is retained as OBJECT_VERIFIED for reconciliation instead of being deleted prematurely. An ambiguous upload is retained with its encrypted session URI and is not blindly restarted.
+
+**Recovery worker is not yet enabled or complete.** The next implementation must claim attempts with a lease, query the exact resumable session status, distinguish completed uploads from incomplete sessions, rematerialize the same immutable private asset receipt, resume only from the server-reported byte offset, verify the final object metadata, and idempotently register the source. Session status and resume behavior follow the official [Cloud Storage resumable upload protocol](https://docs.cloud.google.com/storage/docs/performing-resumable-uploads). Sessions expire after one week. A lost or expired session must be quarantined or restarted under a new object identity only after an explicit safe recovery decision.
+
 **Still required before user traffic:** a production-grade OAuth identity provider, a dedicated configured GCS mirror bucket, least-privilege IAM for the application uploader (including object create/read/delete permissions) and the Gemini service agent's object-viewer access, plus staging acceptance using real private objects. Do not create source rows manually or enable GCS registration in production until those gates pass.
 
 ## GCS registration IAM preflight
