@@ -334,7 +334,7 @@ export function renderTimelineWorkspace(){
  (state.timeline?timelineCanvas():'<div class="empty">Sign in and create a sequence to begin.</div>')+
  clipInspector()+variantComparisonPanel()+creativeTraceabilityPanel()+timelineQualityPanel()+
   '<div class="timeline-marker-list">'+(state.timeline?.markers.map(m=>'<span>◆ '+esc(m.name)+' · '+Math.round(m.start.value)+'f</span>').join("")||"No review markers yet.")+'</div></section></div>'+
- '<div class="notice">Master rendering supports synchronized audio, multi-track video compositing, image overlays, SRT/VTT captions and primary-track dip-to-black transitions. Crossfades, secondary-track transitions, effects and animated overlays remain future milestones.</div></div>';
+ '<div class="notice">Master rendering supports synchronized audio, multi-track video compositing, image overlays, SRT/VTT captions and dip-to-black transitions on enabled video tracks. Secondary-track fades reveal lower layers; crossfades, effects and animated overlays remain future milestones.</div></div>';
 }
 async function refresh(){
  if(state.mode==="cloud"){
