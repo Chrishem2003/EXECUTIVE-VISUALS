@@ -7,7 +7,9 @@ const RPC = Object.freeze({
   defer: "defer_video_generation_job",
   quarantine: "quarantine_video_generation_job",
   resume: "resume_reconciled_video_generation_job",
-  recover: "recover_expired_video_generation_jobs"
+  recover: "recover_expired_video_generation_jobs",
+  requestCancellation: "request_video_generation_cancellation",
+  isCancellationRequested: "is_video_generation_cancellation_requested"
 });
 
 function endpoint(value) {
@@ -154,6 +156,31 @@ export function createCloudVideoEnqueue({
       if (!Number.isInteger(limit) || limit < 1 || limit > 1000) throw new Error("Video recovery limit must be between 1 and 1000.");
       const result = await call(RPC.recover, { p_limit: limit });
       if (!Number.isInteger(result) || result < 0) throw new Error("Cloud video recovery returned an invalid count.");
+      return result;
+    },
+    async requestCancellation({ jobId, ownerId } = {}) {
+      required(jobId, "Job ID");
+      required(ownerId, "Owner ID");
+      const rows = await call(RPC.requestCancellation, { p_job_id: jobId, p_owner_id: ownerId });
+      if (!Array.isArray(rows) || rows.length > 1) throw new Error("Cloud video cancellation returned an invalid result.");
+      if (!rows.length) return null;
+      const row = rows[0];
+      if (row.job_id !== jobId || typeof row.job_status !== "string" ||
+          typeof row.cancellation_requested !== "boolean") {
+        throw new Error("Cloud video cancellation returned an invalid job receipt.");
+      }
+      return Object.freeze({
+        jobId: row.job_id,
+        status: row.job_status,
+        cancellationRequested: row.cancellation_requested,
+        submissionState: row.submission_state || null
+      });
+    },
+    async isCancellationRequested(jobId, workerId) {
+      required(jobId, "Job ID");
+      required(workerId, "Worker ID", 128);
+      const result = await call(RPC.isCancellationRequested, { p_job_id: jobId, p_worker_id: workerId });
+      if (typeof result !== "boolean") throw new Error("Cloud video cancellation check returned an invalid result.");
       return result;
     },
     async resumeReconciled({ jobId, ownerId, evidenceReference } = {}) {
