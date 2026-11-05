@@ -42,6 +42,16 @@ test("submission lifecycle maps to server-only atomic RPCs", async () => {
 test("prepare and get reject mismatched rows; boolean RPCs reject non-booleans", async () => {
   const mismatch = createCloudVideoSubmissionLedger({ ...base, fetchImpl: async () => response([{ ...row, owner_id: "other-owner" }]) });
   await assert.rejects(() => mismatch.prepare({ jobId: "job-1", ownerId: "owner-1", provider: "runway", model: "gen4.5", requestHash: "a".repeat(64) }), /mismatched record/);
+  for (const invalid of [{ provider: "fal" }, { model: "gen4.6" }]) {
+    const ledger = createCloudVideoSubmissionLedger({
+      ...base,
+      fetchImpl: async () => response([{ ...row, ...invalid }])
+    });
+    await assert.rejects(
+      () => ledger.prepare({ jobId: "job-1", ownerId: "owner-1", provider: "runway", model: "gen4.5", requestHash: "a".repeat(64) }),
+      /mismatched record/
+    );
+  }
   const invalidBool = createCloudVideoSubmissionLedger({ ...base, fetchImpl: async () => response("true") });
   await assert.rejects(() => invalidBool.begin("job-1", "worker-1"), /invalid result/);
   const invalidGet = createCloudVideoSubmissionLedger({ ...base, fetchImpl: async () => response([{ ...row, job_id: "job-2" }]) });
