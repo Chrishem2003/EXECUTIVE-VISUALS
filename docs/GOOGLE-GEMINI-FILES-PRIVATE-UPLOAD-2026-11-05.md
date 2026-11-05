@@ -7,7 +7,7 @@ Research and implementation snapshot: 2026-11-05.
 - PR #48 supplies the Gemini Omni Flash request planner and response normalizer.
 - This branch adds the server-side resumable Files API upload gateway and a service-role-only Postgres mapping repository.
 - All remote execution remains disabled. Tests use mocked fetch only; no Google API key or live upload is used.
-- The gateway is not yet composed into the cloud worker or application upload route.
+- The gateway is now composed into an authenticated application upload route for selected private project assets. A separate opt-in worker maintenance path schedules expired-file cleanup. The provider generation worker remains independently gated.
 
 ## Security model
 
