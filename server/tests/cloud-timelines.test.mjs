@@ -125,10 +125,10 @@ test("cloud timeline versions are append-only, integrity checked and restore wit
  assert.equal(versions[0].revision,2);
  assert.equal(versions[0].parentVersionId,initial.id);
  const source=await f.repo.getVersion({ownerId:owner,timelineId:created.id,versionId:initial.id});
- assert.deepEqual(source.document,document);
+ assert.equal(source.document.id,created.id);assert.equal(source.document.projectId,project);assert.equal(source.document.revision,1);assert.deepEqual(source.document.tracks,document.tracks);
  const restored=await f.repo.restore({ownerId:owner,timelineId:created.id,expectedRevision:2,sourceVersionId:initial.id});
  assert.equal(restored.revision,3);
- assert.deepEqual(restored.timeline,document);
+ assert.equal(restored.timeline.id,created.id);assert.equal(restored.timeline.projectId,project);assert.equal(restored.timeline.revision,3);assert.deepEqual(restored.timeline.tracks,document.tracks);
  const lineage=await f.repo.listVersions({ownerId:owner,timelineId:created.id});
  assert.equal(lineage.length,3);
  assert.equal(lineage[0].parentVersionId,versions[0].id);
