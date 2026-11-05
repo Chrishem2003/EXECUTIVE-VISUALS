@@ -178,8 +178,7 @@ export async function initRuntime(){
 async function authenticate(form:HTMLFormElement){
  const data=new FormData(form);
  try{
-  if(form.id==="ev-auth-token"){setApiAccessToken(String(data.get("token")||""));}
-  else if(form.id==="ev-auth-supabase"){
+  if(form.id==="ev-auth-supabase"){
    if(!supabaseAuth)throw new Error("Supabase authentication is not initialized.");
    const mode=String(data.get("mode")||"login");
    const email=String(data.get("email")||"").trim();
@@ -217,7 +216,7 @@ async function authenticate(form:HTMLFormElement){
 }
 document.addEventListener("submit",event=>{
  const form=event.target as HTMLFormElement;
- if(form.id==="ev-auth"||form.id==="ev-auth-token"||form.id==="ev-auth-supabase"){event.preventDefault();void authenticate(form);}
+ if(form.id==="ev-auth"||form.id==="ev-auth-supabase"){event.preventDefault();void authenticate(form);}
  if(form.id==="ev-project-form"){event.preventDefault();const name=String(new FormData(form).get("name")||"").trim();if(!name)return;void apiRequest<{project:RuntimeProject}>("/api/projects",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({name})}).then(async result=>{state.projectId=result.project.id;await refresh();window.dispatchEvent(new CustomEvent("ev:project-changed",{detail:{projectId:state.projectId}}));paint();}).catch(error=>alert(error.message||error));}
  if(form.id==="ev-member-form"){event.preventDefault();const data=new FormData(form);void apiRequest("/api/projects/"+state.projectId+"/members",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({email:String(data.get("email")),role:String(data.get("role"))})}).then(async()=>{await refresh();paint();}).catch(error=>alert(error.message||error));}
  if(form.id==="ev-review-form"){event.preventDefault();const data=new FormData(form),timecode=String(data.get("timecode")||"");void apiRequest("/api/reviews",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({projectId:state.projectId,decision:String(data.get("decision")),body:String(data.get("body")),assetId:String(data.get("assetId")||"")||null,timecodeSeconds:timecode?Number(timecode):null})}).then(async()=>{await refresh();paint();}).catch(error=>alert(error.message||error));}
