@@ -238,11 +238,20 @@ export function createGoogleDriveOAuth({
             !Number.isFinite(Number(data.expires_in)) || Number(data.expires_in) < 1) {
           throw fail("Google returned an incomplete refreshed access token.", "GOOGLE_OAUTH_RESPONSE_INVALID");
         }
+        if (disconnecting.has(ownerId) || generationFor(ownerId) !== generation) {
+          throw fail("Google Drive connection changed while refreshing credentials. Reconnect before continuing.", "GOOGLE_OAUTH_NOT_CONNECTED");
+        }
         if (data.refresh_token) {
           if (typeof data.refresh_token !== "string" || data.refresh_token.length < 20 || data.refresh_token.length > 8192) {
             throw fail("Google returned an invalid rotated refresh token.", "GOOGLE_OAUTH_RESPONSE_INVALID");
           }
-          await connections.upsert({ ...connection, encryptedRefreshToken: encryptRefreshToken(data.refresh_token) });
+          const encryptedRotatedToken = encryptRefreshToken(data.refresh_token);
+          await connections.upsert({ ...connection, encryptedRefreshToken: encryptedRotatedToken });
+          if (disconnecting.has(ownerId) || generationFor(ownerId) !== generation) {
+            const current = await connections.get(ownerId);
+            if (current?.encryptedRefreshToken === encryptedRotatedToken) await connections.delete(ownerId);
+            throw fail("Google Drive connection changed while refreshing credentials. Reconnect before continuing.", "GOOGLE_OAUTH_NOT_CONNECTED");
+          }
         }
         if (disconnecting.has(ownerId) || generationFor(ownerId) !== generation) {
           throw fail("Google Drive connection changed while refreshing credentials. Reconnect before continuing.", "GOOGLE_OAUTH_NOT_CONNECTED");
