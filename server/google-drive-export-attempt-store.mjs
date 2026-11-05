@@ -136,9 +136,10 @@ export function createGoogleDriveExportAttemptStore({
       if(typeof attemptKey!=="string"||!/^[a-f0-9]{64}$/.test(attemptKey)||typeof leaseToken!=="string"||!UUID.test(leaseToken))
         throw fail("Drive export attempt lease is invalid.","GOOGLE_DRIVE_EXPORT_ATTEMPT_INVALID");
       const encrypted_session_uri=seal(sessionUri);
+      const now=new Date().toISOString();
       const rows=await request("attempt_key=eq."+attemptKey+"&owner_id=eq."+encodeURIComponent(ownerId)+
-        "&lease_token=eq."+leaseToken+"&select=*",{
-        method:"PATCH",prefer:"return=representation",body:{encrypted_session_uri,state:"UPLOADING",updated_at:new Date().toISOString()}});
+        "&lease_token=eq."+leaseToken+"&lease_expires_at=gt."+encodeURIComponent(now)+"&select=*",{
+        method:"PATCH",prefer:"return=representation",body:{encrypted_session_uri,state:"UPLOADING",updated_at:now}});
       if(rows.length!==1)throw fail("Drive upload session could not be persisted under the active lease.","GOOGLE_DRIVE_EXPORT_STORE_FAILED");
       return map(rows[0]);
     },
@@ -151,8 +152,10 @@ export function createGoogleDriveExportAttemptStore({
       if(!["OUTCOME_UNKNOWN","COMPLETED","RECONCILIATION_REQUIRED","FAILED"].includes(state))throw fail("Drive export state transition is invalid.","GOOGLE_DRIVE_EXPORT_STATE_INVALID");
       const patch={state,last_error_code:errorCode,lease_token:null,lease_expires_at:null,updated_at:new Date().toISOString()};
       if(state==="COMPLETED"){patch.drive_web_view_link=webViewLink;patch.completed_at=new Date().toISOString();patch.encrypted_session_uri=null;}
+      const now=new Date().toISOString();
+      patch.updated_at=now;
       const rows=await request("attempt_key=eq."+attemptKey+"&owner_id=eq."+encodeURIComponent(ownerId)+
-        "&lease_token=eq."+leaseToken+"&select=*",{
+        "&lease_token=eq."+leaseToken+"&lease_expires_at=gt."+encodeURIComponent(now)+"&select=*",{
         method:"PATCH",prefer:"return=representation",body:patch});
       if(rows.length!==1)throw fail("Drive export state could not be persisted under the active lease.","GOOGLE_DRIVE_EXPORT_STORE_FAILED");
       return map(rows[0]);
