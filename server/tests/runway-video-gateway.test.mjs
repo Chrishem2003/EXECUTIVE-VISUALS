@@ -52,6 +52,21 @@ test("Runway cancel checks state first and never DELETEs a terminal task",async(
  const pending=createRunwayVideoAdapter({env:enabled,fetchImpl:async(url,options)=>{calls.push(options.method||"GET");return options.method==="DELETE"?{status:204,ok:true,text:async()=>""}:json(200,{id,status:"RUNNING"});}});
  const canceled=await pending.cancel(id);assert.equal(canceled.cancelRequested,true);assert.deepEqual(calls.slice(-2),["GET","DELETE"]);
 });
+test("Runway cancellation treats a raced DELETE 404 as idempotent without claiming a refund",async()=>{
+ const calls=[];
+ const adapter=createRunwayVideoAdapter({env:enabled,fetchImpl:async(url,options)=>{
+  calls.push(options.method||"GET");
+  return options.method==="DELETE"
+   ?{status:404,ok:false,text:async()=>JSON.stringify({error:"task already canceled"})}
+   :json(200,{id,status:"RUNNING"});
+ }});
+ const result=await adapter.cancel(id);
+ assert.equal(result.cancelRequested,true);
+ assert.equal(result.status,"cancel_requested");
+ assert.match(result.warning,/best-effort/);
+ assert.deepEqual(calls,["GET","DELETE"]);
+});
+
 test("Runway task IDs and HTTP failures fail closed without leaking provider bodies",async()=>{
  const adapter=createRunwayVideoAdapter({env:enabled,fetchImpl:async()=>({status:429,ok:false,text:async()=>"private provider details"})});
  await assert.rejects(()=>adapter.getStatus("not-a-uuid"),e=>e.code==="RUNWAY_INVALID_TASK_ID");
