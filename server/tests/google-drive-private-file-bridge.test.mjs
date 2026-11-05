@@ -24,7 +24,7 @@ function response({ status = 200, json = null, data = bytes, headers = {} } = {}
     })
   };
 }
-function harness({ metadata = sourceFile, download = bytes, load = null, denied = false, uploadLocation = "https://www.googleapis.com/upload/drive/v3/files?upload_id=private-session" } = {}) {
+function harness({ metadata = sourceFile, download = bytes, load = null, denied = false, cleanup = async () => {}, uploadError = false, uploadLocation = "https://www.googleapis.com/upload/drive/v3/files?upload_id=private-session" } = {}) {
   const calls = [], scopes = [];
   const assets = { async create(args) {
     calls.push({ kind: "asset-create", args });
@@ -32,7 +32,7 @@ function harness({ metadata = sourceFile, download = bytes, load = null, denied 
       size: args.bytes.byteLength, sha256: args.metadata.sha256, storageBucket: "executive-visuals-media" };
   }};
   const loaded = load || { asset: { id: assetId, ownerId, projectId, name: "master.mp4",
-    mediaType: "video/mp4", size: bytes.length, sha256, storageBucket: "executive-visuals-media" }, bytes };
+    mediaType: "video/mp4", size: bytes.length, sha256, storageBucket: "executive-visuals-media" }, bytes, cleanup };
   const bridge = createGoogleDrivePrivateFileBridge({
     getUserAccessToken: async args => { scopes.push(args); return "x".repeat(40); },
     assets,
@@ -46,10 +46,13 @@ function harness({ metadata = sourceFile, download = bytes, load = null, denied 
       if (url.includes("uploadType=resumable")) return response({ headers: {
         location: uploadLocation
       }});
-      if (options.method === "PUT") return response({ json: {
-        id: "driveFile_987654321", name: "master.mp4", mimeType: "video/mp4",
-        size: String(bytes.length), webViewLink: "https://drive.google.com/file/d/driveFile_987654321/view"
-      }});
+      if (options.method === "PUT") {
+        if (uploadError) throw new Error("simulated interrupted Drive upload");
+        return response({ json: {
+          id: "driveFile_987654321", name: "master.mp4", mimeType: "video/mp4",
+          size: String(bytes.length), webViewLink: "https://drive.google.com/file/d/driveFile_987654321/view"
+        }});
+      }
       throw new Error("Unexpected URL");
     }
   });
@@ -100,6 +103,21 @@ test("exports a verified private asset to Drive using OAuth resumable upload", a
   assert.equal(init.options.headers["x-upload-content-length"], String(bytes.length));
   const upload = h.calls.find(x => x.options?.method === "PUT");
   assert.equal(upload.options.body.byteLength, bytes.length);
+});
+
+test("cleans up the private asset materialization after a successful Drive export", async () => {
+  let cleanupCalls = 0;
+  const h = harness({ cleanup: async () => { cleanupCalls++; } });
+  await h.bridge.uploadPrivateAsset({ ownerId, projectId, assetId });
+  assert.equal(cleanupCalls, 1);
+});
+
+test("cleans up the private asset materialization when a resumable Drive upload fails", async () => {
+  let cleanupCalls = 0;
+  const h = harness({ cleanup: async () => { cleanupCalls++; }, uploadError: true });
+  await assert.rejects(() => h.bridge.uploadPrivateAsset({ ownerId, projectId, assetId }),
+    error => error.code === "GOOGLE_DRIVE_REQUEST_FAILED");
+  assert.equal(cleanupCalls, 1);
 });
 
 test("does not export when private asset authorization fails or hash does not match", async () => {
