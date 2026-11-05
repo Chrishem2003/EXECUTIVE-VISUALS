@@ -24,8 +24,8 @@ function response({ status = 200, json = null, data = bytes, headers = {} } = {}
     })
   };
 }
-function harness({ metadata = sourceFile, download = bytes, load = null, denied = false, cleanup = async () => {}, uploadError = false, uploadLocation = "https://www.googleapis.com/upload/drive/v3/files?upload_id=private-session", folder = { id: "driveFolder_123456789", mimeType: "application/vnd.google-apps.folder", trashed: false, capabilities: { canAddChildren: true } }, uploadChecksum = createHash("md5").update(bytes).digest("hex") } = {}) {
-  const calls = [], scopes = [];
+function harness({ metadata = sourceFile, download = bytes, load = null, denied = false, cleanup = async () => {}, uploadError = false, uploadLocation = "https://www.googleapis.com/upload/drive/v3/files?upload_id=private-session", folder = { id: "driveFolder_123456789", mimeType: "application/vnd.google-apps.folder", trashed: false, capabilities: { canAddChildren: true } }, uploadChecksum = createHash("md5").update(bytes).digest("hex"), uploadSteps = [] } = {}) {
+  const calls = [], scopes = [];\n  let uploadStepIndex = 0;
   const assets = { async create(args) {
     calls.push({ kind: "asset-create", args });
     return { id: assetId, ownerId, projectId, name: args.originalName, mediaType: args.mediaType,
@@ -48,6 +48,11 @@ function harness({ metadata = sourceFile, download = bytes, load = null, denied 
         location: uploadLocation
       }});
       if (options.method === "PUT") {
+        if (uploadSteps[uploadStepIndex]) {
+          const step = uploadSteps[uploadStepIndex++];
+          if (step.throw) throw new Error("simulated interrupted Drive upload");
+          return response(step);
+        }
         if (uploadError) throw new Error("simulated interrupted Drive upload");
         return response({ json: {
           id: "driveFile_987654321", name: "master.mp4", mimeType: "video/mp4",
@@ -107,6 +112,39 @@ test("exports a verified private asset to Drive using OAuth resumable upload", a
   assert.equal(upload.options.body.byteLength, bytes.length);
 });
 
+
+
+test("resumes a Drive upload from the provider-confirmed byte range after a lost response", async () => {
+  const completed = {
+    id: "driveFile_987654321", name: "master.mp4", mimeType: "video/mp4",
+    size: String(bytes.length), md5Checksum: createHash("md5").update(bytes).digest("hex"),
+    webViewLink: "https://drive.google.com/file/d/driveFile_987654321/view"
+  };
+  const h = harness({ uploadSteps: [
+    { throw: true },
+    { status: 308, headers: { range: "bytes=0-1" } },
+    { json: completed }
+  ]});
+  const result = await h.bridge.uploadPrivateAsset({ ownerId, projectId, assetId });
+  assert.equal(result.id, completed.id);
+  const puts = h.calls.filter(x => x.options?.method === "PUT");
+  assert.equal(puts.length, 3);
+  assert.equal(puts[1].options.headers["content-range"], `bytes */${bytes.length}`);
+  assert.equal(puts[2].options.headers["content-range"], `bytes 2-${bytes.length - 1}/${bytes.length}`);
+  assert.equal(puts[2].options.body.byteLength, bytes.length - 2);
+});
+
+test("does not restart an expired Drive upload session without reconciliation", async () => {
+  const h = harness({ uploadSteps: [
+    { throw: true },
+    { status: 404 }
+  ]});
+  await assert.rejects(
+    () => h.bridge.uploadPrivateAsset({ ownerId, projectId, assetId }),
+    error => error.code === "GOOGLE_DRIVE_UPLOAD_SESSION_EXPIRED"
+  );
+  assert.equal(h.calls.filter(x => x.url?.includes("uploadType=resumable")).length, 1);
+});
 
 test("preflights a selected Drive destination folder before exporting a private asset", async () => {
   const h = harness();
