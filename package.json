@@ -17,7 +17,7 @@
     "verify:media-quality": "node --test server/tests/media-quality.test.mjs",
     "verify:media-signals": "node --test server/tests/media-signal-analysis.test.mjs",
     "verify:workflow": "node --experimental-strip-types scripts/verify-workflow-engine.mjs",
-    "verify:server": "node --experimental-strip-types --test server/tests/*.test.mjs",
+    "verify:server": "node --check server/index.mjs && node --experimental-strip-types --test server/tests/*.test.mjs",
     "verify:timeline": "node --experimental-strip-types scripts/verify-timeline.mjs",
     "verify:timeline-recovery": "node --experimental-strip-types --test server/tests/timeline-recovery.test.mjs",
     "verify:save-retry": "node --experimental-strip-types --test server/tests/retry.test.mjs",
