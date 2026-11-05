@@ -133,16 +133,28 @@ function activePreviewAtPlayhead(){
  if(!state.timeline)return [];
  const frame=Math.min(timelineEndFrame(),Math.max(0,Math.floor(state.playheadFrame)));
  const evaluated=evaluateTimelineAtFrame(state.timeline,frame);
- return evaluated.activeClips.filter(clip=>clip.trackKind==="video"||clip.trackKind==="overlay");
+ const videoTracks=state.timeline.tracks.filter(track=>track.enabled&&track.kind==="video"&&track.clips.some(clip=>clip.enabled));
+ state.previewError=videoTracks.length>1?"The master renderer currently supports one primary video track; additional video tracks are not included in this preview.":"";
+ const primaryTrackId=videoTracks[0]?.id;
+ return evaluated.activeClips.filter(clip=>clip.trackKind==="overlay"||(clip.trackKind==="video"&&clip.trackId===primaryTrackId));
 }
 function renderPreviewLayers(clips:ReturnType<typeof activePreviewAtPlayhead>){
  return clips.map(clip=>{
   const source=state.previewSources[clip.assetId];
   const asset=state.assets.find(item=>item.id===clip.assetId);
   if(!source||!asset)return "";
-  const z=clip.trackIndex+1;
-  if(source.mediaType.startsWith("video/"))return '<video class="timeline-preview-layer" data-preview-video="'+esc(clip.clipId)+'" data-track-index="'+clip.trackIndex+'" style="z-index:'+z+'" muted playsinline preload="metadata" src="'+esc(source.url)+'"></video>';
-  if(source.mediaType.startsWith("image/"))return '<img class="timeline-preview-layer" data-preview-image="'+esc(clip.clipId)+'" data-track-index="'+clip.trackIndex+'" style="z-index:'+z+'" src="'+esc(source.url)+'" alt="'+esc(clip.clipName)+'">';
+  const isOverlay=clip.trackKind==="overlay";
+  const timelineWidth=Math.max(1,Number(state.timeline?.width)||1920),timelineHeight=Math.max(1,Number(state.timeline?.height)||1080);
+  const metadata=state.timeline?.tracks.find(track=>track.id===clip.trackId)?.clips.find(item=>item.id===clip.clipId)?.metadata||{};
+  const overlayWidth=Math.max(16,Math.min(timelineWidth,Number(metadata.width)||timelineWidth*.24));
+  const overlayHeight=Math.max(16,Math.min(timelineHeight,Number(metadata.height)||timelineHeight*.24));
+  const overlayX=Math.max(0,Math.min(timelineWidth-overlayWidth,Number.isFinite(Number(metadata.x))?Number(metadata.x):timelineWidth-overlayWidth-24));
+  const overlayY=Math.max(0,Math.min(timelineHeight-overlayHeight,Number.isFinite(Number(metadata.y))?Number(metadata.y):24));
+  const opacity=Math.max(0,Math.min(1,Number(metadata.opacity??1)));
+  const z=isOverlay?100+clip.trackIndex:1;
+  const position=isOverlay?";left:"+overlayX/timelineWidth*100+"%;top:"+overlayY/timelineHeight*100+"%;width:"+overlayWidth/timelineWidth*100+"%;height:"+overlayHeight/timelineHeight*100+"%;opacity:"+opacity:";
+  if(source.mediaType.startsWith("video/"))return '<video class="timeline-preview-layer" data-preview-video="'+esc(clip.clipId)+'" data-track-index="'+clip.trackIndex+'" style="z-index:'+z+position+'" muted playsinline preload="metadata" src="'+esc(source.url)+'"></video>';
+  if(source.mediaType.startsWith("image/"))return '<img class="timeline-preview-layer" data-preview-image="'+esc(clip.clipId)+'" data-track-index="'+clip.trackIndex+'" style="z-index:'+z+position+'" src="'+esc(source.url)+'" alt="'+esc(clip.clipName)+'">';
   return '<div class="timeline-preview-layer timeline-preview-unsupported" data-track-index="'+clip.trackIndex+'" style="z-index:'+z+'">'+esc(asset.name)+' · unsupported preview format</div>';
  }).join("")||'<div class="timeline-preview-empty">Move the playhead over a video or overlay clip to preview the composite.</div>';
 }
@@ -229,7 +241,7 @@ function previewMonitor(){
  let active:ReturnType<typeof activePreviewAtPlayhead>=[];
  try{active=activePreviewAtPlayhead();}catch(error){state.previewError=error instanceof Error?error.message:"Timeline cannot be previewed.";}
  const videoCount=active.filter(clip=>state.previewSources[clip.assetId]?.mediaType.startsWith("video/")).length;
- return '<section class="panel timeline-preview-panel"><div class="timeline-panel-heading"><div><div class="eyebrow">MULTI-TRACK COMPOSITE PREVIEW</div><h3>Preview monitor</h3></div><span class="job-status '+(active.length?"completed":"running")+'">'+(active.length?active.length+" ACTIVE LAYERS":"NO ACTIVE LAYERS")+'</span></div><div class="timeline-preview-stage"><div id="tl-preview-layers">'+renderPreviewLayers(active)+'</div></div><div class="timeline-preview-controls"><label for="tl-playhead">Playhead frame</label><input id="tl-playhead" type="range" min="0" max="'+timelineEndFrame()+'" step="1" value="'+Math.min(timelineEndFrame(),Math.max(0,state.playheadFrame))+'"><strong id="tl-playhead-label">Frame '+state.playheadFrame+' · '+(state.playheadFrame/fps()).toFixed(3)+'s</strong></div><div class="timeline-preview-actions"><button class="secondary" type="button" data-tl-preview-toggle '+(videoCount?"":"disabled")+'>'+(state.previewPlaying?"Pause preview":"Play preview")+'</button><span class="muted">'+active.length+' active visual layer(s) · '+videoCount+' video source(s)</span></div><p id="tl-preview-active" class="muted">'+(active.map(clip=>esc(clip.clipName)+" · "+esc(clip.trackName)+" · "+clip.sourceTimeSeconds.toFixed(3)+"s").join(" | ")||state.previewError||"No active video or overlay clips at this frame.")+'</p><small class="muted">Layers follow timeline track order. Native browser decoding is codec-dependent. Audio mixing, effects and transitions remain in the FFmpeg master-render path.</small></section>';
+ return '<section class="panel timeline-preview-panel"><div class="timeline-panel-heading"><div><div class="eyebrow">MULTI-TRACK COMPOSITE PREVIEW</div><h3>Preview monitor</h3></div><span class="job-status '+(active.length?"completed":"running")+'">'+(active.length?active.length+" ACTIVE LAYERS":"NO ACTIVE LAYERS")+'</span></div><div class="timeline-preview-stage" style="aspect-ratio: '+(state.timeline.width||1920)+' / '+(state.timeline.height||1080)+' "><div id="tl-preview-layers">'+renderPreviewLayers(active)+'</div></div><div class="timeline-preview-controls"><label for="tl-playhead">Playhead frame</label><input id="tl-playhead" type="range" min="0" max="'+timelineEndFrame()+'" step="1" value="'+Math.min(timelineEndFrame(),Math.max(0,state.playheadFrame))+'"><strong id="tl-playhead-label">Frame '+state.playheadFrame+' · '+(state.playheadFrame/fps()).toFixed(3)+'s</strong></div><div class="timeline-preview-actions"><button class="secondary" type="button" data-tl-preview-toggle '+(videoCount?"":"disabled")+'>'+(state.previewPlaying?"Pause preview":"Play preview")+'</button><span class="muted">'+active.length+' active visual layer(s) · '+videoCount+' video source(s)</span></div><p id="tl-preview-active" class="muted">'+(active.map(clip=>esc(clip.clipName)+" · "+esc(clip.trackName)+" · "+clip.sourceTimeSeconds.toFixed(3)+"s").join(" | ")||"No active video or overlay clips at this frame.")+(state.previewError?" · "+esc(state.previewError):"")+'</p><small class="muted">Layers follow timeline track order. Native browser decoding is codec-dependent. Audio mixing, effects and transitions remain in the FFmpeg master-render path.</small></section>';
 }
 document.addEventListener("click",event=>{
  const button=(event.target as HTMLElement).closest<HTMLButtonElement>("[data-tl-preview-toggle]");
