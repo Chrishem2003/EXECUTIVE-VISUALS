@@ -113,7 +113,7 @@ const googleGeminiFilesEnabled = process.env.GOOGLE_GEMINI_FILES_ENABLED === "tr
 if (googleGeminiFilesEnabled && (AUTH_MODE !== "supabase" || !supabaseAuth)) {
   throw new Error("Gemini Files upload requires verified Supabase authentication.");
 }
-if (googleGeminiFilesEnabled && !(process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_API_KEY)) {
+if (googleGeminiFilesEnabled && !String(process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_API_KEY || "").trim()) {
   throw new Error("Gemini Files upload requires a server-side Gemini API key.");
 }
 const googleGeminiFilesGateway = googleGeminiFilesEnabled ? createGoogleGeminiFilesComposition({
