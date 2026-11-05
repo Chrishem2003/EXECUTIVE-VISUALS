@@ -35,6 +35,7 @@ function harness({ fetchImpl, approve = async () => true, authorize = async () =
     assertApprovedSubmission: approve,
     authorizeInteraction: authorize,
     timeoutMs: 3000,
+    streamTimeoutMs: 3000,
     maxResponseBytes
   });
   return { client, calls };
