@@ -386,3 +386,7 @@
 
 /* Hidden synchronized audio elements for timeline source monitoring */
 #tl-preview-layers audio[data-preview-audio]{display:none}
+
+.audio-master-control{display:inline-flex;align-items:center;gap:8px;font-size:9px;color:var(--muted)}
+.audio-master-control input[type=range]{width:112px;padding:0;accent-color:var(--purple-400)}
+.timeline-clip-inspector input[type=checkbox]{width:auto;min-width:16px;margin-right:6px;vertical-align:middle}
