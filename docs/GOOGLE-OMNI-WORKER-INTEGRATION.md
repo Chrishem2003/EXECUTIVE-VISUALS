@@ -31,6 +31,12 @@ Pass the resulting object as `providerDependencies.googleOmniIntegration` to `cr
 
 The worker does not infer approval from a client-side flag, accept user-supplied owner IDs, or expose provider file URLs to the browser. The Interactions POST is intentionally not retried after an ambiguous outcome; it must be reconciled through its durable interaction record.
 
+## Interactions retention policy
+
+The Developer API paid tier retains stored Interactions for a configurable 7, 14, 28 or 55 days; the free tier retains them for one day. This provider integration independently requires paid-tier confirmation. Set `GEMINI_OMNI_RETENTION_DAYS` to the exact retention window configured in the project's AI Studio settings, then construct `createGoogleInteractionRetentionPolicy({ env })` and pass its `expiresAt` function as `retentionExpiresAt` to `createGoogleOmniCloudVideoIntegration`.
+
+The policy helper rejects missing or unsupported values and calculates expiry from the provider submission timestamp. It does not read or change the remote AI Studio setting: deployment acceptance must independently verify that the configured value matches AI Studio. Keep cleanup scheduled well before the selected provider retention window. Google Developer API retention differs from the separate Gemini Enterprise Agent Platform Interactions API retention behavior; do not mix the two endpoint families.
+
 ## Not yet accepted as complete
 
 The repository now includes a retryable Gemini Files retention worker: it marks expired mappings as `EXPIRED`, deletes the remote Files resource, then marks the record `DELETED`. Provider 404 is treated as already deleted; transient provider or database errors leave an `EXPIRED` tombstone for the next maintenance run. The cloud-worker supervisor now supports optional scheduled maintenance tasks. These components are injectable but are not activated by default.
