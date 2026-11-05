@@ -14,7 +14,7 @@ import { clampPreviewSeconds, decibelsToLinearGain, frameToSeconds, getTimelineD
 import { activeCaptionCues, parseCaptionCues, type CaptionCue } from "../core/caption-preview";
 import { validatePrivateMediaUrl } from "../core/private-media-url";
 
-type Asset={id:string;name:string;mediaType:string;size:number;metadata?:Record<string,unknown>};
+type Asset={id:string;name:string;mediaType:string;size:number;createdAt?:string;metadata?:Record<string,unknown>};
 type SavedTimeline={id:string;projectId?:string|null;name:string;revision:number;document?:EditorialTimeline};
 type CloudProject={id:string;name:string};
 type CloudSavedTimeline={id:string;projectId?:string|null;name:string;revision:number;timeline:EditorialTimeline;updatedAt:string};
@@ -450,9 +450,10 @@ async function runAction(action:HTMLElement){
  if(type==="import-generated-video"){
   if(state.mode!=="cloud"||!state.cloudProjectId||!state.timeline){state.message="Select a cloud project and load a cloud timeline before importing generated video.";paint();return;}
   const generated=state.assets.filter(asset=>asset.mediaType.startsWith("video/")&&asset.metadata?.source==="video-generation")
-   .sort((a,b)=>String((b as Asset & {createdAt?:string}).createdAt||"").localeCompare(String((a as Asset & {createdAt?:string}).createdAt||"")));
+   .sort((a,b)=>String(b.createdAt||"").localeCompare(String(a.createdAt||"")));
   const asset=generated[0];
   if(!asset){state.message="No generated video assets were found in this cloud project. Complete an approved generation first.";paint();return;}
+  if(state.timeline.tracks.some(item=>item.clips.some(clip=>clip.assetId===asset.id))){state.message="The latest generated video is already present on this timeline.";paint();return;}
   let track=state.timeline.tracks.find(item=>item.kind==="video"&&!item.locked);
   if(!track){state.timeline=addTrack(state.timeline,{id:crypto.randomUUID(),name:"Generated Video",kind:"video",enabled:true,locked:false,clips:[]});track=state.timeline.tracks[state.timeline.tracks.length-1];}
   const probe=asset.metadata?.probe as {format?:{duration?:string}}|undefined;
