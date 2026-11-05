@@ -1,6 +1,7 @@
 const MODEL = "gemini-omni-1.1-flash";
 const PRICING_SOURCE = "https://ai.google.dev/gemini-api/docs/pricing";
 const INPUT_USD_PER_MILLION = 1.50;
+const TEXT_OUTPUT_USD_PER_MILLION = 9.00;
 const VIDEO_OUTPUT_USD_PER_MILLION = 17.50;
 const VIDEO_OUTPUT_TOKENS_PER_SECOND_720P = 5792;
 const MAX_CONTEXT_TOKENS = 1_048_576;
@@ -12,17 +13,20 @@ function fail(message, code = "GOOGLE_OMNI_PRICE_INPUT_INVALID") {
 function money(value) {
   return Math.round(value * 1_000_000) / 1_000_000;
 }
-function usageMoney(inputTokens, outputTokens) {
-  const microsNumerator = BigInt(inputTokens) * 3n + BigInt(outputTokens) * 35n;
-  return Number((microsNumerator + 1n) / 2n) / 1_000_000;
+function usageMoney(inputTokens, textOutputTokens, videoOutputTokens) {
+  // USD micro-rate numerator: input $1.50, text output $9.00,
+  // video output $17.50 per million tokens. Divide by 2 for exact half units.
+  const numerator = BigInt(inputTokens) * 3n +
+    BigInt(textOutputTokens) * 18n +
+    BigInt(videoOutputTokens) * 35n;
+  return Number((numerator + 1n) / 2n) / 1_000_000;
 }
 
 /**
  * Conservative preflight reservation for Gemini Omni Flash.
  * The public Gemini API exposes 720p video-token pricing but does not let
  * callers set a deterministic output duration. Reserve the full 10-second
- * output and full context window; actual usage is reconciled from provider
- * interaction usage metadata after completion.
+ * output and full context window; actual usage is reconciled by modality.
  */
 export function estimateGoogleOmniVideoCost({
   model = MODEL,
@@ -39,7 +43,7 @@ export function estimateGoogleOmniVideoCost({
   const maxInputCost = MAX_CONTEXT_TOKENS * INPUT_USD_PER_MILLION / 1_000_000;
   const maxOutputTokens = VIDEO_OUTPUT_TOKENS_PER_SECOND_720P * MAX_OUTPUT_SECONDS;
   const maxOutputCost = maxOutputTokens * VIDEO_OUTPUT_USD_PER_MILLION / 1_000_000;
-  const amount = usageMoney(MAX_CONTEXT_TOKENS, maxOutputTokens);
+  const amount = money(maxInputCost + maxOutputCost);
   return Object.freeze({
     provider: "google",
     model: MODEL,
@@ -51,6 +55,7 @@ export function estimateGoogleOmniVideoCost({
     maxOutputSeconds: MAX_OUTPUT_SECONDS,
     resolution: "720p",
     inputUsdPerMillionTokens: INPUT_USD_PER_MILLION,
+    textOutputUsdPerMillionTokens: TEXT_OUTPUT_USD_PER_MILLION,
     videoOutputUsdPerMillionTokens: VIDEO_OUTPUT_USD_PER_MILLION,
     outputTokensPerSecond: VIDEO_OUTPUT_TOKENS_PER_SECOND_720P,
     pricingSource: PRICING_SOURCE,
@@ -60,7 +65,7 @@ export function estimateGoogleOmniVideoCost({
   });
 }
 
-/** Actual provider usage reconciliation; never guesses when usage is absent. */
+/** Actual provider usage reconciliation; refuses aggregate-only output usage. */
 export function resolveGoogleOmniActualCost({ task, providerTaskId } = {}) {
   if (typeof providerTaskId !== "string" || !/^v1_[A-Za-z0-9_-]{6,200}$/.test(providerTaskId)) {
     throw fail("Google usage reconciliation requires a valid interaction ID.", "GOOGLE_OMNI_USAGE_EVIDENCE_INVALID");
@@ -68,26 +73,49 @@ export function resolveGoogleOmniActualCost({ task, providerTaskId } = {}) {
   const usage = task?.rawInteraction?.usage;
   const inputTokens = usage?.total_input_tokens;
   const outputTokens = usage?.total_output_tokens;
+  const breakdown = usage?.output_tokens_by_modality;
   if (!Number.isSafeInteger(inputTokens) || inputTokens < 0 ||
+      inputTokens > MAX_CONTEXT_TOKENS ||
       !Number.isSafeInteger(outputTokens) || outputTokens < 0 ||
-      inputTokens > MAX_CONTEXT_TOKENS || outputTokens > 10_000_000) {
-    throw fail("Google did not return bounded, authoritative interaction token usage.", "GOOGLE_OMNI_USAGE_EVIDENCE_MISSING");
+      outputTokens > 10_000_000 ||
+      !Array.isArray(breakdown) || breakdown.length < 1 || breakdown.length > 8) {
+    throw fail("Google did not return bounded token usage with output modality breakdown.", "GOOGLE_OMNI_USAGE_EVIDENCE_MISSING");
   }
-  const inputCost = inputTokens * INPUT_USD_PER_MILLION / 1_000_000;
-  // Video output is priced at the highest applicable Omni output modality.
-  // This conservative rate also avoids under-settling if the response includes
-  // auxiliary text/thought tokens alongside the video payload.
-  const outputCost = outputTokens * VIDEO_OUTPUT_USD_PER_MILLION / 1_000_000;
-  const amount = usageMoney(inputTokens, outputTokens);
+
+  let textOutputTokens = 0;
+  let videoOutputTokens = 0;
+  const seen = new Set();
+  for (const item of breakdown) {
+    if (!item || typeof item !== "object" || Array.isArray(item) ||
+        !["text", "video"].includes(item.modality) ||
+        !Number.isSafeInteger(item.tokens) || item.tokens < 0 ||
+        seen.has(item.modality)) {
+      throw fail("Google output modality usage is malformed or includes an unpriced modality.", "GOOGLE_OMNI_USAGE_EVIDENCE_MISSING");
+    }
+    seen.add(item.modality);
+    if (item.modality === "text") textOutputTokens = item.tokens;
+    if (item.modality === "video") videoOutputTokens = item.tokens;
+  }
+  if (textOutputTokens + videoOutputTokens !== outputTokens) {
+    throw fail("Google output modality totals do not reconcile to total_output_tokens.", "GOOGLE_OMNI_USAGE_EVIDENCE_MISSING");
+  }
+
+  const inputAmount = money(inputTokens * INPUT_USD_PER_MILLION / 1_000_000);
+  const textOutputAmount = money(textOutputTokens * TEXT_OUTPUT_USD_PER_MILLION / 1_000_000);
+  const videoOutputAmount = money(videoOutputTokens * VIDEO_OUTPUT_USD_PER_MILLION / 1_000_000);
+  const amount = usageMoney(inputTokens, textOutputTokens, videoOutputTokens);
   return Object.freeze({
     amount,
     currency: "USD",
     evidenceReference: "google-interaction-usage:" + providerTaskId +
-      ":input=" + inputTokens + ":output=" + outputTokens,
+      ":input=" + inputTokens + ":text=" + textOutputTokens + ":video=" + videoOutputTokens,
     inputTokens,
     outputTokens,
-    inputAmount: money(inputCost),
-    outputAmount: money(outputCost),
+    textOutputTokens,
+    videoOutputTokens,
+    inputAmount,
+    textOutputAmount,
+    videoOutputAmount,
     pricingSource: PRICING_SOURCE
   });
 }
