@@ -1,6 +1,6 @@
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
-import { createHash } from "node:crypto";
+import { computeFileChecksums } from "./google-cloud-storage-checksum.mjs";
 
 const ACTIVE_STATES = new Set(["UPLOADING","OUTCOME_UNKNOWN","OBJECT_VERIFIED"]);
 const TERMINAL_STATES = new Set(["REGISTERED","FAILED","QUARANTINED"]);
@@ -29,8 +29,9 @@ function metadataMatches(metadata, attempt) {
     custom.executivevisualsownerid === attempt.ownerId &&
     (custom.executivevisualsprojectid || null) === attempt.projectId &&
     custom.executivevisualssha256 === attempt.sha256 &&
-    typeof metadata?.crc32c === "string" && metadata.crc32c === custom.executivevisualscrc32c &&
-    /^[A-Za-z0-9+/]{6}==$/.test(String(custom.executivevisualscrc32c || ""));
+    typeof attempt.crc32c === "string" && /^[A-Za-z0-9+/]{6}==$/.test(attempt.crc32c) &&
+    metadata?.crc32c === attempt.crc32c &&
+    custom.executivevisualscrc32c === attempt.crc32c;
 }
 function parsePersistedOffset(range, sizeBytes) {
   if (!range) return 0;
@@ -234,11 +235,10 @@ export function createGoogleGeminiGcsMirrorRecoveryWorker({
           }
           try {
             const fileStat=await stat(materialized.path);
-            const digest=createHash("sha256");
-            for await(const chunk of createReadStream(materialized.path)) digest.update(chunk);
-            const actualHash=digest.digest("hex");
+            const checksums=await computeFileChecksums(materialized.path);
             if(!fileStat.isFile()||fileStat.size!==attempt.sizeBytes||
-                materialized.size!==attempt.sizeBytes||materialized.sha256!==attempt.sha256||actualHash!==attempt.sha256) {
+                materialized.size!==attempt.sizeBytes||materialized.sha256!==attempt.sha256||
+                checksums.sha256!==attempt.sha256||checksums.crc32c!==attempt.crc32c) {
               await quarantine(attempt,leaseToken,"GEMINI_GCS_RECOVERY_SOURCE_MISMATCH","source_mismatch_quarantined",results);
               continue;
             }
@@ -248,7 +248,8 @@ export function createGoogleGeminiGcsMirrorRecoveryWorker({
               headers:{
                 "content-type":attempt.mediaType,
                 "content-length":String(attempt.sizeBytes-offset),
-                "content-range":"bytes "+offset+"-"+(attempt.sizeBytes-1)+"/"+attempt.sizeBytes
+                "content-range":"bytes "+offset+"-"+(attempt.sizeBytes-1)+"/"+attempt.sizeBytes,
+                "x-goog-hash":"crc32c="+checksums.crc32c
               }
             });
             if(upload.response.status===200||upload.response.status===201) {
