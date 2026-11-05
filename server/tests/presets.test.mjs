@@ -47,7 +47,10 @@ test("new product files contain no third-party product or brand names", () => {
     "src/core/script-breakdown.ts",
     "src/core/frame-fit.ts",
     "src/core/prompt-coach.ts",
-    "src/platform/studio-tools.ts"
+    "src/platform/studio-tools.ts",
+    "src/core/storyboard-export.ts",
+    "src/core/style-kit.ts",
+    "src/core/variation-plan.ts"
   ].filter(existsSync);
   assert.ok(files.includes("src/core/presets.ts"));
   for (const file of files) {
