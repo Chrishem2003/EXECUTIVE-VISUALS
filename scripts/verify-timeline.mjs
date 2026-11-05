@@ -91,6 +91,15 @@ assert.ok(Math.abs(evaluateTimelineAtFrame(transitionTimeline,42).activeClips[0]
 assert.equal(evaluateTimelineAtFrame(transitionTimeline,48).activeClips[0].opacity,0);
 assert.ok(Math.abs(evaluateTimelineAtFrame(transitionTimeline,54).activeClips[0].opacity-0.5)<0.001);
 assert.equal(evaluateTimelineAtFrame(transitionTimeline,60).activeClips[0].opacity,1);
+const crossfadeTimeline={...transitionTimeline,tracks:transitionTimeline.tracks.map(track=>({...track,clips:track.clips.map(clip=>clip.id==="transition-a"?{...clip,transitionToNext:{type:"crossfade",fadeFrames:6}}:clip.id==="transition-b"?{...clip,timelineStart:rational(42,24)}:clip)}))};
+assert.equal(validateTimeline(crossfadeTimeline).valid,true);
+const crossfadeFrame=evaluateTimelineAtFrame(crossfadeTimeline,45);
+assert.equal(crossfadeFrame.activeClips.length,2);
+assert.ok(Math.abs(crossfadeFrame.activeClips.find(clip=>clip.clipId==="transition-a").opacity-0.5)<0.001);
+assert.ok(Math.abs(crossfadeFrame.activeClips.find(clip=>clip.clipId==="transition-b").opacity-0.5)<0.001);
+const invalidCrossfade={...crossfadeTimeline,tracks:crossfadeTimeline.tracks.map(track=>({...track,clips:track.clips.map(clip=>clip.id==="transition-b"?{...clip,timelineStart:rational(43,24)}:clip)}))};
+assert.ok(validateTimeline(invalidCrossfade).issues.some(issue=>issue.code==="crossfade_overlap_mismatch"));
+
 const transitionOtio=toOpenTimelineIo(transitionTimeline);
 assert.ok(JSON.stringify(transitionOtio).includes('"type":"dip-to-black"'));
 const invalidTransition={...transitionTimeline,tracks:transitionTimeline.tracks.map(track=>({...track,clips:track.clips.map(clip=>clip.id==="transition-b"?{...clip,timelineStart:rational(60,24)}:clip)}))};
