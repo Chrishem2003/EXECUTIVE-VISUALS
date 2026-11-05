@@ -102,7 +102,14 @@ begin
   if p_owner_id is null
      or p_config_id is null or p_config_id !~ '^[a-z][a-z0-9_-]{0,63}$'
      or p_input_hash is null or p_input_hash !~ '^[a-f0-9]{64}$'
-     or p_request_hash is null or p_request_hash !~ '^[a-f0-9]{64}
+     or p_request_hash is null or p_request_hash !~ '^[a-f0-9]{64}$'
+     or p_job_input is null or jsonb_typeof(p_job_input) <> 'object'
+     or octet_length(p_job_input::text) > 32000
+     or coalesce(p_job_input ->> 'provider','') <> 'runway'
+     or coalesce(p_job_input ->> 'model','') <> 'gen4.5'
+     or coalesce(p_job_input ->> 'requestHash','') <> p_request_hash
+     or coalesce(p_job_input ->> 'projectId','') <> coalesce(p_project_id::text,'')
+     or p_estimated_credits is null or p_estimated_credits < 0
      or p_max_estimated_credits is null or p_max_estimated_credits < p_estimated_credits
      or p_approved_max_amount is null or p_approved_max_amount <= 0
      or p_currency <> 'USD'
