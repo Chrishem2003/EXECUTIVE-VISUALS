@@ -125,3 +125,45 @@ test("GCS bootstrap rejects service-account key files and malformed WIF endpoint
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test("GCS bootstrap rejects local user ADC credential clients even when token acquisition succeeds", async () => {
+  class UserRefreshClient {
+    async getAccessToken() { return { token: "u".repeat(40) }; }
+  }
+  class FakeGoogleAuth {
+    async getClient() { return new UserRefreshClient(); }
+  }
+  const bootstrap = await createGoogleGeminiGcsMirrorBootstrap({ env, GoogleAuthClass: FakeGoogleAuth });
+  await assert.rejects(bootstrap.checkIdentity(), error =>
+    error.code === "GEMINI_GCS_ADC_IDENTITY_TYPE_REJECTED" &&
+    /local user ADC credentials are not accepted/.test(error.message)
+  );
+});
+
+test("GCS bootstrap accepts an approved external-account WIF client and reports its identity mode", async () => {
+  class ExternalAccountClient {
+    async getAccessToken() { return { token: "w".repeat(40) }; }
+  }
+  class FakeGoogleAuth {
+    async getClient() { return new ExternalAccountClient(); }
+  }
+  const bootstrap = await createGoogleGeminiGcsMirrorBootstrap({ env, GoogleAuthClass: FakeGoogleAuth });
+  const identity = await bootstrap.checkIdentity();
+  assert.equal(identity.ready, true);
+  assert.equal(identity.identityMode, "external-account-wif");
+  assert.equal(identity.credentialClientType, "ExternalAccountClient");
+});
+
+test("GCS bootstrap accepts an attached Compute workload identity and reports its identity mode", async () => {
+  class Compute {
+    async getAccessToken() { return { token: "c".repeat(40) }; }
+  }
+  class FakeGoogleAuth {
+    async getClient() { return new Compute(); }
+  }
+  const bootstrap = await createGoogleGeminiGcsMirrorBootstrap({ env, GoogleAuthClass: FakeGoogleAuth });
+  const identity = await bootstrap.checkIdentity();
+  assert.equal(identity.ready, true);
+  assert.equal(identity.identityMode, "attached-workload-identity");
+  assert.equal(identity.credentialClientType, "Compute");
+});
