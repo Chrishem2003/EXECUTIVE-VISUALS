@@ -109,3 +109,41 @@ test("does not list cloud timelines when project read permission is denied",asyn
  await assert.rejects(()=>f.repo.list({ownerId:owner,projectId:project}),error=>error.code==="CLOUD_TIMELINE_ACCESS_DENIED");
  assert.equal(f.calls.length,0);
 });
+
+
+test("cloud timeline versions are append-only, integrity checked and restore with two-way lineage",async()=>{
+ const f=setup();
+ const created=await f.repo.create({ownerId:owner,projectId:project,name:"Episode master",timeline:document});
+ const initial=(await f.repo.listVersions({ownerId:owner,timelineId:created.id}))[0];
+ assert.equal(initial.revision,1);
+ assert.equal(initial.parentVersionId,null);
+ const changed={...document,markers:[{id:"marker-1",start:{value:30,rate:30}}]};
+ const updated=await f.repo.update({ownerId:owner,timelineId:created.id,expectedRevision:1,timeline:changed,versionSummary:"Added a review marker"});
+ assert.equal(updated.revision,2);
+ const versions=await f.repo.listVersions({ownerId:owner,timelineId:created.id});
+ assert.equal(versions.length,2);
+ assert.equal(versions[0].revision,2);
+ assert.equal(versions[0].parentVersionId,initial.id);
+ const source=await f.repo.getVersion({ownerId:owner,timelineId:created.id,versionId:initial.id});
+ assert.deepEqual(source.document,document);
+ const restored=await f.repo.restore({ownerId:owner,timelineId:created.id,expectedRevision:2,sourceVersionId:initial.id});
+ assert.equal(restored.revision,3);
+ assert.deepEqual(restored.timeline,document);
+ const lineage=await f.repo.listVersions({ownerId:owner,timelineId:created.id});
+ assert.equal(lineage.length,3);
+ assert.equal(lineage[0].parentVersionId,versions[0].id);
+ assert.equal(lineage[0].restoredFromVersionId,initial.id);
+});
+
+test("cloud version snapshots fail closed when their content hash does not match",async()=>{
+ const f=setup();
+ const created=await f.repo.create({ownerId:owner,name:"Integrity",timeline:document});
+ f.versions[0].content_hash="f".repeat(64);
+ await assert.rejects(()=>f.repo.getVersion({ownerId:owner,timelineId:created.id,versionId:f.versions[0].id}),error=>error.code==="CLOUD_TIMELINE_VERSION_CORRUPT");
+});
+
+test("cloud version history obeys project read authorization",async()=>{
+ const f=setup({authorize:async({action})=>action!=="read"});
+ const created=await f.repo.create({ownerId:owner,projectId:project,name:"Private history",timeline:document});
+ await assert.rejects(()=>f.repo.listVersions({ownerId:owner,timelineId:created.id}),error=>error.code==="CLOUD_TIMELINE_ACCESS_DENIED");
+});
