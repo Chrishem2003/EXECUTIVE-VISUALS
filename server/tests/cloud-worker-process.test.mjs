@@ -17,12 +17,11 @@ test("GCS recovery verifies an injected server identity before accepting its ser
   env:{},
   dependencies:{
    async checkGoogleGeminiGcsMirrorIdentity(){calls.push("identity");},
-   createGoogleGeminiGcsMirrorService(){calls.push("factory");return factory;}
+   createGoogleGeminiGcsMirrorService:factory
   }
  });
- assert.deepEqual(calls,["identity","factory"]);
- assert.equal(resolved instanceof Function,true);
- assert.equal(resolved(),factory());
+ assert.deepEqual(calls,["identity"]);
+ assert.equal(resolved,factory);
 });
 
 test("GCS recovery default bootstrap checks identity before returning its factory",async()=>{
