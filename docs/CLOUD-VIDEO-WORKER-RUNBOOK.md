@@ -18,13 +18,18 @@ The worker still requires the separate provider-specific enablement flags. Runwa
 
 ## Runway settlement gate — unresolved by design
 
-Do not treat Runway task `estimatedCost.credits` as actual billed usage. The task detail endpoint exposes an estimate. The organization linked-workspace usage endpoint exposes per-generation credit rows, but its documented row fields do not include a provider task ID. Therefore a deterministic job-to-billing-row match and a verified USD conversion cannot be assumed.
+Do not treat Runway task `estimatedCost.credits` as actual billed usage. The current official API distinguishes two usage systems:
 
-The configured adapter requires a host-injected `resolveRunwayActualCost` callback. It must return a verified amount, currency, and evidence reference for the exact persisted provider task. If this evidence cannot be matched unambiguously, keep the task and budget reservation quarantined for reconciliation; do not settle using a pricing estimate.
+- `POST /v1/organization/usage` reports the API project's own usage aggregated by model and day (up to 90 days). It is not a per-task ledger.
+- Enterprise-only `GET /v1/organization/webapp/usage` reports one row per generation in linked Runway web-app workspaces. Its documented row fields include timestamp, user ID, workspace ID/name, tool and credits, but not the API task ID. It is also a separate credit pool from Runway Dev API usage.
+
+Consequently, neither endpoint alone provides a deterministic task-ID-to-charge mapping for this adapter. The published developer credit price is $0.01 per credit before applicable taxes, but a price conversion does not solve attribution. Do not settle a job by matching only on approximate timestamp, model/tool name or user.
+
+The configured adapter requires a host-injected `resolveRunwayActualCost` callback. It must return a verified amount, currency and evidence reference that can be tied unambiguously to the exact persisted provider task and the correct credit pool. If this evidence cannot be matched, keep the task and budget reservation quarantined for reconciliation; do not settle using a pricing estimate, daily aggregate or unrelated web-app usage row.
 
 `startCloudWorkerProcess(env, dependencies)` accepts host-supplied `dependencies.videoProviderDependencies` for this purpose. The default command-line entry point does not manufacture a billing resolver. Without a verified resolver, Runway adapter registration fails closed.
 
-## Isolated acceptance sequence
+## Usage reporting references\n\n- [Runway API pricing and credit rate](https://docs.dev.runwayml.com/guides/pricing/)\n- [Runway organization usage API](https://docs.dev.runwayml.com/api/)\n- [Enterprise web-app workspace usage reporting](https://docs.dev.runwayml.com/usage/workspace-reporting/)\n\n## Isolated acceptance sequence
 
 1. Use a disposable development Supabase project, never shared staging or production.
 2. Apply the source-controlled migrations to that disposable project only.
