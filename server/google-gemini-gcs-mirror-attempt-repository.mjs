@@ -151,7 +151,11 @@ export function createGoogleGeminiGcsMirrorAttemptRepository({
       if (generation !== undefined) body.verified_generation = generation;
       if (metageneration !== undefined) body.verified_metageneration = metageneration;
       if (errorCode !== undefined) body.last_error_code = errorCode;
-      if (leaseToken) { body.lease_token = null; body.lease_expires_at = null; body.reconciled_at = now().toISOString(); }
+      if (leaseToken && ["REGISTERED","FAILED","QUARANTINED"].includes(state)) {
+        body.lease_token = null;
+        body.lease_expires_at = null;
+        body.reconciled_at = now().toISOString();
+      }
       const rows = await request("?"+params.toString(), {method:"PATCH",prefer:"return=representation",body});
       if (!Array.isArray(rows) || rows.length !== 1) throw fail("GCS mirror attempt transition lost its state or lease fence.", "GEMINI_GCS_ATTEMPT_TRANSITION_CONFLICT");
       return mapRow(rows[0], key);
