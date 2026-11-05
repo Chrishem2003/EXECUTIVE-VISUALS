@@ -504,7 +504,7 @@ document.addEventListener("submit",event=>{
     const transitionValidation=validateTimeline(state.timeline);
     if(!transitionValidation.valid){if(previousTransition)clip.transitionToNext=previousTransition;else delete clip.transitionToNext;if(nextClip&&previousNextStart)nextClip.timelineStart=previousNextStart;clip.timelineStart=originalTimelineStart;clip.duration=originalDuration;clip.sourceRange=originalSourceRange;clip.speed=originalSpeed;clip.speedCurve=originalSpeedCurve;clip.metadata=originalMetadata;alert(transitionValidation.issues[0].message);return;}
    }else{
-    const previousTransition=clip.transitionToNext,previousMetadata=clip.metadata;
+    const previousTransition=clip.transitionToNext;
     if(data.get("transitionType")==="dip-to-black")clip.transitionToNext={type:"dip-to-black",fadeFrames:Math.max(1,Math.min(240,Math.floor(Number(data.get("transitionFadeFrames"))||12)))};
     else delete clip.transitionToNext;
     const transitionValidation=validateTimeline(state.timeline);
