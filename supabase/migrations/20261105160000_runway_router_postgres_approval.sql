@@ -14,12 +14,7 @@ create table if not exists executive_visuals.runway_router_approvals (
   provider text not null check (provider = 'runway'),
   model text not null check (model = 'gen4.5'),
   input_hash text not null check (input_hash ~ '^[a-f0-9]{64}$'),
-  request_hash text not null check (request_hash ~ '^[a-f0-9]{64}$'),
-  approved_job_input jsonb not null check (
-    jsonb_typeof(approved_job_input) = 'object'
-    and octet_length(approved_job_input::text) <= 32000
-  ),
-  estimated_credits bigint not null check (estimated_credits >= 0),
+  request_hash text not null check (request_hash ~ '^[a-f0-9]{64}
   max_estimated_credits bigint not null check (max_estimated_credits >= estimated_credits),
   state text not null default 'pending_approval'
     check (state in ('pending_approval','approved','consumed','revoked','expired')),
@@ -107,14 +102,7 @@ begin
   if p_owner_id is null
      or p_config_id is null or p_config_id !~ '^[a-z][a-z0-9_-]{0,63}$'
      or p_input_hash is null or p_input_hash !~ '^[a-f0-9]{64}$'
-     or p_request_hash is null or p_request_hash !~ '^[a-f0-9]{64}$'
-     or p_job_input is null or jsonb_typeof(p_job_input) <> 'object'
-     or octet_length(p_job_input::text) > 32000
-     or coalesce(p_job_input ->> 'provider','') <> 'runway'
-     or coalesce(p_job_input ->> 'model','') <> 'gen4.5'
-     or coalesce(p_job_input ->> 'requestHash','') <> p_request_hash
-     or coalesce(p_job_input ->> 'projectId','') <> coalesce(p_project_id::text,'')
-     or p_estimated_credits is null or p_estimated_credits < 0
+     or p_request_hash is null or p_request_hash !~ '^[a-f0-9]{64}
      or p_max_estimated_credits is null or p_max_estimated_credits < p_estimated_credits
      or p_approved_max_amount is null or p_approved_max_amount <= 0
      or p_currency <> 'USD'
@@ -264,6 +252,8 @@ begin
      or v_router.input_hash <> coalesce(new.input ->> 'routerInputHash','')
      or v_router.config_id <> coalesce(new.input ->> 'routerConfigId','')
      or v_router.request_hash <> coalesce(new.input ->> 'requestHash','')
+     or v_router.approved_job_input is distinct from
+       (new.input - 'routerApprovalId' - 'routerInputHash' - 'routerConfigId' - 'budgetApprovalId')
      or v_budget.router_approval_id is distinct from v_router.id
      or v_budget.router_input_hash is distinct from v_router.input_hash
      or v_budget.owner_id is distinct from new.owner_id
@@ -343,6 +333,33 @@ begin
   return new;
 end;
 $validate_budget_approval$;
+),
+  approved_job_input jsonb not null check (jsonb_typeof(approved_job_input) = 'object' and octet_length(approved_job_input::text) <= 32000),
+  estimated_credits bigint not null check (estimated_credits >= 0),
+  max_estimated_credits bigint not null check (max_estimated_credits >= estimated_credits),
+  state text not null default 'pending_approval'
+    check (state in ('pending_approval','approved','consumed','revoked','expired')),
+  created_at timestamptz not null default now(),
+  expires_at timestamptz not null,
+  approved_by uuid references auth.users(id),
+  approved_at timestamptz,
+  consumed_at timestamptz,
+  check (expires_at > created_at),
+  check ((state = 'approved') = (approved_by is not null and approved_at is not null)
+      or state in ('consumed','revoked','expired')),
+  check ((state = 'consumed') = (consumed_at is not null)
+      or state in ('revoked','expired'))
+);
+
+create index if not exists ev_runway_router_approvals_owner_created
+  on executive_visuals.runway_router_approvals(owner_id, created_at desc);
+create index if not exists ev_runway_router_approvals_expiry
+  on executive_visuals.runway_router_approvals(state, expires_at);
+
+alter table executive_visuals.runway_router_approvals enable row level security;
+revoke all on executive_visuals.runway_router_approvals from public, anon, authenticated;
+grant select on executive_visuals.runway_router_approvals to authenticated;
+grant all privileges on executive_visuals.runway_router_approvals to service_role;
 
 alter table executive_visuals.video_generation_budget_approvals
   add column if not exists router_approval_id uuid,
