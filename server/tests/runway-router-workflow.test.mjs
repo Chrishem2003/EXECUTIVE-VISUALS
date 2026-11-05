@@ -1,6 +1,5 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 import { createRunwayRouterWorkflow } from "../runway-router-workflow.mjs";
 
 const ownerId = "123e4567-e89b-42d3-a456-426614174000";
@@ -118,11 +117,3 @@ test("enqueue forwards the same approved payload and both approval IDs to the at
   assert.equal(call.requestHash, preflight.requestHash);
 });
 
-test("request fingerprint is deterministic across equivalent object key order", () => {
-  const first = { a: 1, b: { c: 2, d: 3 } };
-  const second = { b: { d: 3, c: 2 }, a: 1 };
-  const canonical = value => JSON.stringify(value, Object.keys(value).sort());
-  assert.equal(createHash("sha256").update(JSON.stringify(first)).digest("hex").length, 64);
-  assert.equal(canonical(first).length > 0, true);
-  assert.equal(canonical(second).length > 0, true);
-});
