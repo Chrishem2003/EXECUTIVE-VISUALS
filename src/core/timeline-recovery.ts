@@ -18,8 +18,18 @@ export interface TimelineRecoveryDraft {
   snapshot: EditorialTimeline;
 }
 
-export interface TimelineRecoveryJournalEntry extends TimelineRecoveryDraft {
+export interface TimelineRecoveryJournalEntry {
   id?: number;
+  key: string;
+  projectId: string;
+  timelineId: string;
+  mode: "local" | "cloud";
+  baseRevision: number;
+  localRevision: number;
+  sequence: number;
+  updatedAt: string;
+  reason: string;
+  checksum: string;
 }
 
 export interface TimelineRecoveryCheckpoint {
@@ -159,7 +169,11 @@ export class TimelineRecoveryStore {
     const transaction = db.transaction(["drafts", "journal"], "readwrite");
     const done = transactionDone(transaction);
     transaction.objectStore("drafts").put(draft);
-    transaction.objectStore("journal").add({ ...draft });
+    transaction.objectStore("journal").add({
+      key: draft.key, projectId: draft.projectId, timelineId: draft.timelineId, mode: draft.mode,
+      baseRevision: draft.baseRevision, localRevision: draft.localRevision, sequence: draft.sequence,
+      updatedAt: draft.updatedAt, reason: draft.reason, checksum: draft.checksum
+    });
     await done;
     await this.pruneJournal(draft.key);
     return draft;
@@ -226,23 +240,27 @@ export class TimelineRecoveryStore {
 
   private async pruneJournal(key: string): Promise<void> {
     const db = await this.open();
-    const transaction = db.transaction("journal", "readwrite");
-    const done = transactionDone(transaction);
-    const index = transaction.objectStore("journal").index("byKey");
-    const entries = await requestResult<TimelineRecoveryJournalEntry[]>(index.getAll(key));
+    const read = db.transaction("journal", "readonly");
+    const entries = await requestResult<TimelineRecoveryJournalEntry[]>(read.objectStore("journal").index("byKey").getAll(key));
+    await transactionDone(read);
     const stale = entries.sort((a, b) => b.sequence - a.sequence).slice(TIMELINE_RECOVERY_LIMIT);
-    for (const entry of stale) if (entry.id !== undefined) transaction.objectStore("journal").delete(entry.id);
+    if (!stale.length) return;
+    const write = db.transaction("journal", "readwrite");
+    const done = transactionDone(write);
+    for (const entry of stale) if (entry.id !== undefined) write.objectStore("journal").delete(entry.id);
     await done;
   }
 
   private async pruneCheckpoints(key: string): Promise<void> {
     const db = await this.open();
-    const transaction = db.transaction("checkpoints", "readwrite");
-    const done = transactionDone(transaction);
-    const index = transaction.objectStore("checkpoints").index("byKey");
-    const checkpoints = await requestResult<TimelineRecoveryCheckpoint[]>(index.getAll(key));
+    const read = db.transaction("checkpoints", "readonly");
+    const checkpoints = await requestResult<TimelineRecoveryCheckpoint[]>(read.objectStore("checkpoints").index("byKey").getAll(key));
+    await transactionDone(read);
     const stale = checkpoints.sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(20);
-    for (const checkpoint of stale) transaction.objectStore("checkpoints").delete(checkpoint.id);
+    if (!stale.length) return;
+    const write = db.transaction("checkpoints", "readwrite");
+    const done = transactionDone(write);
+    for (const checkpoint of stale) write.objectStore("checkpoints").delete(checkpoint.id);
     await done;
   }
 }
