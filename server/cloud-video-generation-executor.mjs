@@ -68,7 +68,7 @@ export async function executeCloudVideoGenerationJob({
   }
 
   if (state === "prepared") {
-    if (await isCancellationRequested(job.id, workerId)) {
+    if (await cancellationPending()) {
       throw fail("Cloud video job was cancelled before provider submission.", "VIDEO_JOB_CANCELLED");
     }
     const providerInput = typeof adapter.prepareInput === "function"
@@ -76,12 +76,12 @@ export async function executeCloudVideoGenerationJob({
       : input;
     const began = await ledger.begin(job.id, workerId);
     if (!began) {
-      if (await isCancellationRequested(job.id, workerId)) {
+      if (await cancellationPending()) {
         throw fail("Cloud video job was cancelled before provider submission.", "VIDEO_JOB_CANCELLED");
       }
       throw fail("Another worker owns the provider submission transition.", "VIDEO_SUBMISSION_IN_PROGRESS");
     }
-    if (await isCancellationRequested(job.id, workerId)) {
+    if (await cancellationPending()) {
       try { await ledger.markUnknown(job.id, workerId, "CANCELLATION_RACED_PROVIDER_SUBMISSION"); } catch {}
       throw fail("Cancellation arrived during provider submission authorization; reconciliation is required.", "VIDEO_SUBMISSION_REQUIRES_RECONCILIATION");
     }
@@ -122,7 +122,7 @@ export async function executeCloudVideoGenerationJob({
       throw fail("Provider status is temporarily unavailable; polling will resume later.", "VIDEO_PROVIDER_POLL_DEFERRED");
     }
     if (signal?.aborted) throw fail("Cloud video worker lease was lost.", "VIDEO_WORKER_LEASE_LOST");
-    if (await isCancellationRequested(job.id, workerId) && task.status !== "succeeded") {
+    if (await cancellationPending() && task.status !== "succeeded") {
       if (task.status === "queued" || task.status === "running") {
         try { await adapter.cancel(providerTaskId); } catch {}
       }
