@@ -1,4 +1,9 @@
 const fail = (message, code) => Object.assign(new Error(message), { code });
+const PERMANENT_PROVIDER_STATUS_ERRORS = new Set([
+  "KIE_RESPONSE_INVALID",
+  "KIE_OUTPUT_URL_REJECTED",
+  "KIE_TASK_ID_INVALID"
+]);
 function jobInput(job) {
   const value = job?.input;
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -105,7 +110,10 @@ export async function executeCloudVideoGenerationJob({
   let task;
   try {
     task = await selectedAdapter.getStatus(providerTaskId, { job, workerId });
-  } catch {
+  } catch (error) {
+    if (PERMANENT_PROVIDER_STATUS_ERRORS.has(error?.code)) {
+      throw fail("Provider status or output reference failed validation and requires review.", "VIDEO_PROVIDER_STATUS_INVALID");
+    }
     throw fail("Provider status is temporarily unavailable; polling will resume on a later lease.", "VIDEO_PROVIDER_POLL_DEFERRED");
   }
   if (signal?.aborted) throw fail("Cloud video worker lease was lost.", "VIDEO_WORKER_LEASE_LOST");
