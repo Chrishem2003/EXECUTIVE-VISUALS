@@ -80,6 +80,11 @@ export function createGoogleDriveExportAttemptStore({
       (row.parent_folder_id!==null&&row.parent_folder_id!==undefined&&!/^[-_A-Za-z0-9]{10,200}$/.test(row.parent_folder_id))||
       typeof row.mime_type!=="string"||!Number.isSafeInteger(Number(row.byte_size))||Number(row.byte_size)<1||
       typeof row.sha256!=="string"||!/^[a-f0-9]{64}$/.test(row.sha256)||
+      (row.lease_token!==null&&row.lease_token!==undefined&&!UUID.test(row.lease_token))||
+      (row.lease_expires_at!==null&&row.lease_expires_at!==undefined&&!Number.isFinite(Date.parse(row.lease_expires_at)))||
+      ((row.lease_token===null||row.lease_token===undefined)!==(row.lease_expires_at===null||row.lease_expires_at===undefined))||
+      !Number.isSafeInteger(Number(row.attempt_count))||Number(row.attempt_count)<1||
+      (row.state==="COMPLETED"&&(row.lease_token||row.lease_expires_at||row.encrypted_session_uri))||
       !["PREPARED","UPLOADING","OUTCOME_UNKNOWN","COMPLETED","RECONCILIATION_REQUIRED","FAILED"].includes(row.state)){
       throw fail("Drive export attempt failed validation.","GOOGLE_DRIVE_EXPORT_STORE_RESPONSE_INVALID");
     }
