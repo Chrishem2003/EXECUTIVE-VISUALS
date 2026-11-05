@@ -86,10 +86,14 @@ begin
     if coalesce(p_input ->> 'resolution','provider_default') not in ('provider_default','480p','720p','1080p','2160p') then
       raise exception 'VIDEO_PRICE_UNSUPPORTED_RESOLUTION';
     end if;
-    if coalesce(p_input ->> 'referenceVideoAssetIds','null') <> 'null'
-       or coalesce(p_input ->> 'referenceAudioAssetIds','null') <> 'null'
-       or coalesce(p_input ->> 'referenceVideoSeconds','0') <> '0'
-       or coalesce(p_input ->> 'referenceAudioSeconds','0') <> '0' then
+    if case when jsonb_typeof(p_input -> 'referenceVideoAssetIds') = 'array'
+         then jsonb_array_length(p_input -> 'referenceVideoAssetIds') > 0
+         else p_input ? 'referenceVideoAssetIds' end
+       or case when jsonb_typeof(p_input -> 'referenceAudioAssetIds') = 'array'
+         then jsonb_array_length(p_input -> 'referenceAudioAssetIds') > 0
+         else p_input ? 'referenceAudioAssetIds' end
+       or coalesce((p_input ->> 'referenceVideoSeconds')::numeric,0) > 0
+       or coalesce((p_input ->> 'referenceAudioSeconds')::numeric,0) > 0 then
       raise exception 'VIDEO_GENERATION_UNSUPPORTED_CAPABILITY';
     end if;
     if case when jsonb_typeof(p_input -> 'referenceAssetIds') = 'array'
