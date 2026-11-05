@@ -163,16 +163,18 @@ export async function generateCreativeDirection({ input, generateText = defaultG
   const plan = validateModelPlan(parseModelObject(response.text));
   const generatedAt = new Date(now()).toISOString();
   const inputHash = createHash("sha256").update(JSON.stringify(normalized)).digest("hex");
+  const model = clean(response.model, 120) || "configured-text-model";
   return Object.freeze({
     plan: Object.freeze({
       schemaVersion: 1,
       source: "model",
+      model,
       title: normalized.title,
       ...plan,
       generatedAt,
       inputHash
     }),
-    model: clean(response.model, 120) || "configured-text-model",
+    model,
     usage: response.usage && isRecord(response.usage) ? {
       promptTokens: Math.max(0, Math.floor(Number(response.usage.promptTokens) || 0)),
       completionTokens: Math.max(0, Math.floor(Number(response.usage.completionTokens) || 0)),
