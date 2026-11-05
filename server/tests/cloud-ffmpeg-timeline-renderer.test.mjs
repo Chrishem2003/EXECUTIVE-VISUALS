@@ -60,7 +60,7 @@ test("cloud FFmpeg renderer composites a timed secondary video track over the pr
   assert.equal(result.render.videoClips,2);
   assert.equal(result.render.primaryVideoClips,1);
   assert.equal(result.render.secondaryVideoClips,1);
-  const pixels=execFileSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-loglevel","error","-i",result.path,"-vf","select='eq(n,0)+eq(n,24)+eq(n,48)',crop=1:1:10:10","-vsync","0","-frames:v","3","-f","rawvideo","-pix_fmt","rgb24","pipe:1"]);
+  const pixels=execFileSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-loglevel","error","-i",result.path,"-vf","select='eq(n,0)+eq(n,24)+eq(n,47)',crop=1:1:10:10","-vsync","0","-frames:v","3","-f","rawvideo","-pix_fmt","rgb24","pipe:1"]);
   assert.equal(pixels.length,9);
   const samples=[0,1,2].map(index=>[pixels[index*3],pixels[index*3+1],pixels[index*3+2]]);
   assert.ok(samples[0][2]>samples[0][0]*2,"the primary blue picture should be visible before the secondary clip starts");
