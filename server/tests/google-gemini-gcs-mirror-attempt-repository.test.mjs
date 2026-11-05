@@ -59,8 +59,8 @@ test("fails closed when encrypted session state is tampered",async()=>{
   await assert.rejects(()=>f.repository.listRecoveryAttempts({before:new Date(Date.now()+1000).toISOString()}),error=>error.code==="GEMINI_GCS_SESSION_CIPHERTEXT_INVALID");
 });
 
-test("rejects invalid encryption keys and non-GCS session endpoints",()=>{
+test("rejects invalid encryption keys and non-GCS session endpoints",async()=>{
   assert.throws(()=>createGoogleGeminiGcsMirrorAttemptRepository({url:"https://project.supabase.co",serviceRoleKey:"x",encryptionKey:"not-a-key"}),error=>error.code==="GEMINI_GCS_SESSION_KEY_INVALID");
   const f=setup();
-  assert.rejects(()=>f.repository.recordSession({attemptId:"33333333-3333-4333-8333-333333333333",sessionUri:"https://attacker.example/upload/storage/v1/bucket",expiresAt:new Date(Date.now()+86400000).toISOString()}),error=>error.code==="GEMINI_GCS_SESSION_URI_INVALID");
+  await assert.rejects(()=>f.repository.recordSession({attemptId:"33333333-3333-4333-8333-333333333333",sessionUri:"https://attacker.example/upload/storage/v1/bucket",expiresAt:new Date(Date.now()+86400000).toISOString()}),error=>error.code==="GEMINI_GCS_SESSION_URI_INVALID");
 });
