@@ -76,6 +76,10 @@ export function createGoogleDriveExportAttemptStore({
     if(!row||typeof row.attempt_key!=="string"||!/^[a-f0-9]{64}$/.test(row.attempt_key)||
       typeof row.owner_id!=="string"||!UUID.test(row.owner_id)||typeof row.asset_id!=="string"||!UUID.test(row.asset_id)||
       typeof row.drive_file_id!=="string"||!/^[-_A-Za-z0-9]{10,200}$/.test(row.drive_file_id)||
+      (row.project_id!==null&&row.project_id!==undefined&&!UUID.test(row.project_id))||
+      (row.parent_folder_id!==null&&row.parent_folder_id!==undefined&&!/^[-_A-Za-z0-9]{10,200}$/.test(row.parent_folder_id))||
+      typeof row.mime_type!=="string"||!Number.isSafeInteger(Number(row.byte_size))||Number(row.byte_size)<1||
+      typeof row.sha256!=="string"||!/^[a-f0-9]{64}$/.test(row.sha256)||
       !["PREPARED","UPLOADING","OUTCOME_UNKNOWN","COMPLETED","RECONCILIATION_REQUIRED","FAILED"].includes(row.state)){
       throw fail("Drive export attempt failed validation.","GOOGLE_DRIVE_EXPORT_STORE_RESPONSE_INVALID");
     }
@@ -113,7 +117,9 @@ export function createGoogleDriveExportAttemptStore({
       return existing;
     },
     async saveSession({attemptKey,ownerId,sessionUri}){
-      ownerId=owner(ownerId);const encrypted_session_uri=seal(sessionUri);
+      ownerId=owner(ownerId);
+      if(typeof attemptKey!=="string"||!/^[a-f0-9]{64}$/.test(attemptKey))throw fail("Drive export attempt key is invalid.","GOOGLE_DRIVE_EXPORT_ATTEMPT_INVALID");
+      const encrypted_session_uri=seal(sessionUri);
       const rows=await request("attempt_key=eq."+attemptKey+"&owner_id=eq."+encodeURIComponent(ownerId)+"&select=*",{
         method:"PATCH",prefer:"return=representation",body:{encrypted_session_uri,state:"UPLOADING",updated_at:new Date().toISOString()}});
       if(rows.length!==1)throw fail("Drive upload session could not be persisted.","GOOGLE_DRIVE_EXPORT_STORE_FAILED");
@@ -121,6 +127,9 @@ export function createGoogleDriveExportAttemptStore({
     },
     async mark({attemptKey,ownerId,state,webViewLink=null,errorCode=null}){
       ownerId=owner(ownerId);
+      if(typeof attemptKey!=="string"||!/^[a-f0-9]{64}$/.test(attemptKey))throw fail("Drive export attempt key is invalid.","GOOGLE_DRIVE_EXPORT_ATTEMPT_INVALID");
+      if(webViewLink!==null){let link;try{link=new URL(webViewLink);}catch{throw fail("Drive file link is invalid.","GOOGLE_DRIVE_EXPORT_LINK_INVALID");}
+        if(link.protocol!=="https:"||link.origin!=="https://drive.google.com")throw fail("Drive file link is outside the approved origin.","GOOGLE_DRIVE_EXPORT_LINK_INVALID");}
       if(!["OUTCOME_UNKNOWN","COMPLETED","RECONCILIATION_REQUIRED","FAILED"].includes(state))throw fail("Drive export state transition is invalid.","GOOGLE_DRIVE_EXPORT_STATE_INVALID");
       const patch={state,last_error_code:errorCode,updated_at:new Date().toISOString()};
       if(state==="COMPLETED"){patch.drive_web_view_link=webViewLink;patch.completed_at=new Date().toISOString();patch.encrypted_session_uri=null;}
