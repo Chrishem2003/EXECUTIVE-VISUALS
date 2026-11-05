@@ -515,9 +515,9 @@ document.addEventListener("change",event=>{
   if(input&&Number.isFinite(duration))input.value=String(Math.max(1,Math.floor(duration*fps())));
  }
 });
-document.addEventListener("click",event=>{
+document.addEventListener("click",async event=>{
  const create=(event.target as HTMLElement).closest<HTMLElement>("[data-tl-create-cloud]");if(create){void createCloudTimeline().catch(error=>{state.message=error instanceof Error?error.message:"Cloud timeline creation failed.";paint();});return;}
- const target=event.target as HTMLElement,keyframe=target.closest<HTMLElement>("[data-tl-audio-keyframe]");
+ const keyframe=(event.target as HTMLElement).closest<HTMLElement>("[data-tl-audio-keyframe]");
  if(keyframe&&state.timeline){
   const track=state.timeline.tracks.find(item=>item.id===keyframe.dataset.track),clip=track?.clips.find(item=>item.id===keyframe.dataset.clip),form=document.querySelector<HTMLFormElement>("#tl-clip-inspector");
   if(!track||track.kind!=="audio"||!clip||!form)return;
