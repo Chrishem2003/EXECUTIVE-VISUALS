@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { crc32cBase64 } from "../google-cloud-storage-checksum.mjs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -8,7 +10,9 @@ import { createGoogleGeminiGcsMirrorWriter } from "../google-gemini-gcs-mirror-w
 const ownerId = "11111111-1111-4111-8111-111111111111";
 const projectId = "22222222-2222-4222-8222-222222222222";
 const assetId = "33333333-3333-4333-8333-333333333333";
-const sha256 = "a".repeat(64);
+const sourceBytes=Buffer.from([1,2,3,4]);
+const sha256=createHash("sha256").update(sourceBytes).digest("hex");
+const crc32c=crc32cBase64(sourceBytes);
 const generation = "1762300800000000";
 const metageneration = "3";
 const token = "oauth-test-access-token-123456";
@@ -21,12 +25,13 @@ const env = {
 function metadata(objectName, overrides = {}) {
   return {
     bucket: "private-media-bucket", name: objectName, generation, metageneration,
-    size: "4", contentType: "video/mp4",
+    size: "4", contentType: "video/mp4", crc32c,
     metadata: {
       executivevisualsassetid: assetId,
       executivevisualsownerid: ownerId,
       executivevisualsprojectid: projectId,
-      executivevisualssha256: sha256
+      executivevisualssha256: sha256,
+      executivevisualscrc32c: crc32c
     },
     ...overrides
   };
@@ -34,7 +39,7 @@ function metadata(objectName, overrides = {}) {
 async function fixture({ metadataOverrides = {}, recordError = null, putFailure = null, attemptRepository = null } = {}) {
   const root = await mkdtemp(join(tmpdir(), "ev-gcs-mirror-test-"));
   const filePath = join(root, "source.mp4");
-  await writeFile(filePath, new Uint8Array([1,2,3,4]));
+  await writeFile(filePath, sourceBytes);
   const calls = [], records = [];
   const objectName = "mirrors/" + ownerId + "/" + projectId + "/" + assetId + "/fixed-id.mp4";
   const sourceRepository = {
@@ -93,6 +98,7 @@ test("streams a create-only resumable upload, verifies exact metadata, then reco
     assert.equal(initiation.name, f.objectName);
     assert.equal(initiation.metadata.executivevisualsassetid, assetId);
     assert.equal(initiation.metadata.executivevisualsownerid, ownerId);
+    assert.equal(initiation.metadata.executivevisualscrc32c,crc32c);
     assert.equal(f.calls.some(call => call.url === sessionUri), true);
     assert.equal(JSON.stringify(result).includes(token), false);
     assert.equal(JSON.stringify(result).includes("opaque-session-secret"), false);
@@ -194,4 +200,20 @@ test("marks ambiguous GCS upload outcomes in the durable attempt ledger", async 
     assert.equal(transitions[0].expectedState,"UPLOADING");
     assert.equal(transitions[0].state,"OUTCOME_UNKNOWN");
   } finally { await rm(f.root,{recursive:true,force:true}); }
+});
+
+test("rejects same-size source bytes whose SHA-256 differs from the durable asset receipt",async()=>{
+ const f=await fixture();
+ try{
+  await writeFile(f.filePath,new Uint8Array([4,3,2,1]));
+  await assert.rejects(
+   ()=>f.writer.mirrorAsset({assetId,ownerId,projectId,mediaType:"video/mp4",filePath:f.filePath,sizeBytes:4,sha256}),
+   error=>error.code==="GEMINI_GCS_SOURCE_FILE_MISMATCH"
+  );
+  assert.equal(f.calls.length,0);
+ }finally{await rm(f.root,{recursive:true,force:true});}
+});
+
+test("uses the standard CRC32C base64 encoding for a known test vector",()=>{
+ assert.equal(crc32cBase64(Buffer.from("123456789")),"4waSgw==");
 });
