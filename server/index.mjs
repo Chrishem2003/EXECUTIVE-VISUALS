@@ -798,11 +798,19 @@ export function createAppServer() {
           const projectId=body.projectId??record.project_id;
           if(projectId&&!canWriteProject(db,user.id,projectId)){fail(res,404,"PROJECT_NOT_FOUND","Project not found or editor access required.");return;}
           const revision=record.revision+1,name=String(body.name||timeline.name||record.name).trim().slice(0,160);
-          const saved={...timeline,id:record.id,projectId,name,revision};
-          const changed=db.prepare("UPDATE timelines SET project_id=?,name=?,revision=?,timeline_json=?,otio_json=?,updated_at=? WHERE id=? AND revision=?")
-            .run(projectId,name,revision,json(saved),body.otio?json(body.otio):record.otio_json,now(),record.id,record.revision);
-          if(changed.changes!==1){fail(res,409,"REVISION_CONFLICT","Timeline changed while saving. Refresh and retry.");return;}
-          audit(db,user.id,"timeline.updated","timeline",record.id,{revision},projectId);
+          const saved={...timeline,id:record.id,projectId,name,revision},otio=body.otio?body.otio:(record.otio_json?parseJson(record.otio_json):null);
+          db.exec("BEGIN IMMEDIATE");
+          try{
+            const current=db.prepare("SELECT * FROM timelines WHERE id=? AND archived_at IS NULL").get(record.id);
+            if(!current||current.revision!==record.revision){db.exec("ROLLBACK");fail(res,409,"REVISION_CONFLICT","Timeline changed while saving. Refresh and retry.");return;}
+            const parentVersionId=ensureTimelineBaseline(db,current);
+            const changed=db.prepare("UPDATE timelines SET project_id=?,name=?,revision=?,timeline_json=?,otio_json=?,updated_at=? WHERE id=? AND revision=?")
+              .run(projectId,name,revision,json(saved),otio?json(otio):null,now(),record.id,record.revision);
+            if(changed.changes!==1){db.exec("ROLLBACK");fail(res,409,"REVISION_CONFLICT","Timeline changed while saving. Refresh and retry.");return;}
+            insertTimelineVersion(db,{timelineId:record.id,ownerId:record.owner_id,projectId,revision,parentVersionId,name,summary:String(body.versionSummary||("Saved revision "+revision)),timeline:saved,otio,createdBy:user.id});
+            audit(db,user.id,"timeline.updated","timeline",record.id,{revision},projectId);
+            db.exec("COMMIT");
+          }catch(error){try{db.exec("ROLLBACK");}catch{}throw error;}
           send(res,200,{ok:true,revision},cors);return;
         }
         if(!timelineMatch[2]&&req.method==="DELETE"){
