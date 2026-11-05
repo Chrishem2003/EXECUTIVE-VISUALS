@@ -110,8 +110,8 @@ export function createGoogleDriveExportAttemptStore({
       if(rows.length===1)return map(rows[0]);
       const existing=await get(value.attemptKey,ownerId);
       if(!existing)throw fail("Drive export attempt could not be created or recovered.","GOOGLE_DRIVE_EXPORT_STORE_FAILED");
-      if(existing.assetId!==value.assetId||existing.projectId!==projectId||existing.sha256!==value.sha256||
-        existing.byteSize!==value.byteSize||existing.parentFolderId!==(value.parentFolderId||null)){
+      if(existing.assetId!==value.assetId||existing.projectId!==projectId||existing.mimeType!==value.mimeType||
+        existing.sha256!==value.sha256||existing.byteSize!==value.byteSize||existing.parentFolderId!==(value.parentFolderId||null)){
         throw fail("Drive export idempotency key collides with a different asset scope.","GOOGLE_DRIVE_EXPORT_IDEMPOTENCY_CONFLICT");
       }
       return existing;
