@@ -27,6 +27,8 @@ export function createGoogleGeminiFilesRecoveryWorker({
   repository, gateway, now = () => Date.now(), maxPages = 10
 } = {}) {
   if (!repository || typeof repository.listRecoveryAttempts !== "function" ||
+      typeof repository.claimRecoveryAttempt !== "function" ||
+      typeof repository.releaseRecoveryAttempt !== "function" ||
       typeof repository.updateUploadAttempt !== "function" ||
       typeof repository.recordProviderFile !== "function") {
     throw new TypeError("Gemini Files recovery requires the durable upload-attempt repository.");
@@ -39,10 +41,11 @@ export function createGoogleGeminiFilesRecoveryWorker({
     throw new TypeError("Gemini Files recovery page limit is invalid.");
   }
 
-  async function quarantine(attempt, code, status, results) {
+  async function quarantine(attempt, code, status, results, leaseToken) {
     await repository.updateUploadAttempt({
       attemptId: attempt.id,
       expectedState: attempt.state,
+      leaseToken,
       state: "QUARANTINED",
       errorCode: code,
       reconciledAt: new Date(now()).toISOString()
@@ -72,34 +75,40 @@ export function createGoogleGeminiFilesRecoveryWorker({
           results.push({ attemptId: attempt.id, status: "ignored_state" });
           continue;
         }
+        let leaseToken = null;
         try {
+          leaseToken = await repository.claimRecoveryAttempt({ attemptId: attempt.id, expectedState: attempt.state });
+          if (!leaseToken) {
+            results.push({ attemptId: attempt.id, status: "already_claimed" });
+            continue;
+          }
           let file = null;
           if (attempt.providerFileName) {
             file = await gateway.getProviderFile(attempt.providerFileName);
           } else {
             const listed = await listCandidates(attempt.displayName);
             if (!listed.complete) {
-              await quarantine(attempt, "GEMINI_FILE_RECOVERY_PAGINATION_INCOMPLETE", "pagination_incomplete_quarantined", results);
+              await quarantine(attempt, "GEMINI_FILE_RECOVERY_PAGINATION_INCOMPLETE", "pagination_incomplete_quarantined", results, leaseToken);
               continue;
             }
             if (listed.matches.length > 1) {
-              await quarantine(attempt, "GEMINI_FILE_RECOVERY_MULTIPLE_MATCHES", "ambiguous_multiple_matches", results);
+              await quarantine(attempt, "GEMINI_FILE_RECOVERY_MULTIPLE_MATCHES", "ambiguous_multiple_matches", results, leaseToken);
               continue;
             }
             if (listed.matches.length === 0) {
-              await quarantine(attempt, "GEMINI_FILE_RECOVERY_NO_PROVIDER_EVIDENCE", "no_provider_evidence_quarantined", results);
+              await quarantine(attempt, "GEMINI_FILE_RECOVERY_NO_PROVIDER_EVIDENCE", "no_provider_evidence_quarantined", results, leaseToken);
               continue;
             }
             file = listed.matches[0];
           }
 
           if (!metadataMatches(file, attempt)) {
-            await quarantine(attempt, "GEMINI_FILE_RECOVERY_METADATA_MISMATCH", "metadata_mismatch_quarantined", results);
+            await quarantine(attempt, "GEMINI_FILE_RECOVERY_METADATA_MISMATCH", "metadata_mismatch_quarantined", results, leaseToken);
             continue;
           }
           if (file.state === FAILED) {
             await repository.updateUploadAttempt({
-              attemptId: attempt.id, expectedState: attempt.state,
+              attemptId: attempt.id, expectedState: attempt.state, leaseToken,
               state: "FAILED", errorCode: "GEMINI_FILE_PROVIDER_PROCESSING_FAILED",
               reconciledAt: new Date(now()).toISOString()
             });
@@ -109,21 +118,21 @@ export function createGoogleGeminiFilesRecoveryWorker({
           if (file.state !== ACTIVE) {
             if (file.state === PROCESSING || file.state === "STATE_UNSPECIFIED") {
               await repository.updateUploadAttempt({
-                attemptId: attempt.id, expectedState: attempt.state,
+                attemptId: attempt.id, expectedState: attempt.state, leaseToken,
                 state: "PROVIDER_CREATED", providerFileName: file.name,
                 providerFileUri: file.uri,
                 ...(file.expirationTime ? { providerExpiresAt: file.expirationTime } : {})
               });
               results.push({ attemptId: attempt.id, status: "provider_processing" });
             } else {
-              await quarantine(attempt, "GEMINI_FILE_RECOVERY_PROVIDER_STATE_UNRECOGNIZED", "provider_state_unrecognized_quarantined", results);
+              await quarantine(attempt, "GEMINI_FILE_RECOVERY_PROVIDER_STATE_UNRECOGNIZED", "provider_state_unrecognized_quarantined", results, leaseToken);
             }
             continue;
           }
 
           const expiresAt = file.expirationTime || attempt.providerExpiresAt;
           if (!expiresAt || !Number.isFinite(Date.parse(expiresAt)) || Date.parse(expiresAt) <= now()) {
-            await quarantine(attempt, "GEMINI_FILE_RECOVERY_EXPIRY_UNVERIFIED", "expiry_unverified_quarantined", results);
+            await quarantine(attempt, "GEMINI_FILE_RECOVERY_EXPIRY_UNVERIFIED", "expiry_unverified_quarantined", results, leaseToken);
             continue;
           }
           await repository.recordProviderFile({
@@ -134,25 +143,30 @@ export function createGoogleGeminiFilesRecoveryWorker({
             state: "ACTIVE", uploadedAt: new Date(now()).toISOString(), expiresAt
           });
           await repository.updateUploadAttempt({
-            attemptId: attempt.id, expectedState: attempt.state,
+            attemptId: attempt.id, expectedState: attempt.state, leaseToken,
             state: "COMPLETED", providerFileName: file.name,
             providerFileUri: file.uri, providerExpiresAt: expiresAt,
             reconciledAt: new Date(now()).toISOString()
           });
           results.push({ attemptId: attempt.id, status: "reconciled" });
         } catch (error) {
-          if (attempt.providerFileName && Number(error?.status) === 404) {
+          let handled = false;
+          if (leaseToken && attempt.providerFileName && Number(error?.status) === 404) {
             try {
               await quarantine(
                 attempt,
                 "GEMINI_FILE_RECOVERY_PROVIDER_FILE_NOT_FOUND",
                 "provider_file_not_found_quarantined",
-                results
+                results,
+                leaseToken
               );
-            } catch {
-              results.push({ attemptId: attempt.id, status: "retry_pending" });
+              handled = true;
+            } catch {}
+          }
+          if (!handled) {
+            if (leaseToken) {
+              try { await repository.releaseRecoveryAttempt({ attemptId: attempt.id, leaseToken }); } catch {}
             }
-          } else {
             results.push({ attemptId: attempt.id, status: "retry_pending" });
           }
         }
