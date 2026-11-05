@@ -24,7 +24,7 @@ function response({ status = 200, json = null, data = bytes, headers = {} } = {}
     })
   };
 }
-function harness({ metadata = sourceFile, download = bytes, load = null, denied = false, cleanup = async () => {}, uploadError = false, uploadLocation = "https://www.googleapis.com/upload/drive/v3/files?upload_id=private-session", folder = { id: "driveFolder_123456789", mimeType: "application/vnd.google-apps.folder", trashed: false, capabilities: { canAddChildren: true } }, uploadChecksum = createHash("md5").update(bytes).digest("hex"), uploadSteps = [], attempts = null, existingDriveFile = null, generatedFileId = "driveFile_987654321" } = {}) {
+function harness({ metadata = sourceFile, download = bytes, load = null, denied = false, cleanup = async () => {}, uploadError = false, initError = false, uploadLocation = "https://www.googleapis.com/upload/drive/v3/files?upload_id=private-session", folder = { id: "driveFolder_123456789", mimeType: "application/vnd.google-apps.folder", trashed: false, capabilities: { canAddChildren: true } }, uploadChecksum = createHash("md5").update(bytes).digest("hex"), uploadSteps = [], attempts = null, existingDriveFile = null, generatedFileId = "driveFile_987654321" } = {}) {
   const calls = [], scopes = [];
   let uploadStepIndex = 0;
   const assets = { async create(args) {
@@ -50,9 +50,10 @@ function harness({ metadata = sourceFile, download = bytes, load = null, denied 
         return response({ data: download, headers: { "content-length": String(metadata.size) } });
       }
       if (url.includes("/drive/v3/files/")) return response({ json: metadata });
-      if (url.includes("uploadType=resumable")) return response({ headers: {
-        location: uploadLocation
-      }});
+      if (url.includes("uploadType=resumable")) {
+        if (initError) throw new Error("simulated interrupted Drive session initiation");
+        return response({ headers: { location: uploadLocation } });
+      }
       if (options.method === "PUT") {
         if (uploadSteps[uploadStepIndex]) {
           const step = uploadSteps[uploadStepIndex++];
@@ -151,6 +152,25 @@ test("uses a persisted pre-generated Drive file ID and marks a verified export c
   assert.ok(h.calls.some(x => x.url?.includes("/files/generateIds")));
 });
 
+
+test("releases the export lease as outcome-unknown after ambiguous session initiation", async () => {
+  const leaseToken = "44444444-4444-4444-8444-444444444444";
+  const marks = [];
+  let record = null;
+  const attempts = {
+    async get() { return record; },
+    async createOrGet(value) { record = { ...value, state: "PREPARED", sessionUri: null }; return record; },
+    async claim() { return leaseToken; },
+    async saveSession() { throw new Error("session must not be persisted after failed initiation"); },
+    async mark(value) { marks.push(value); record = { ...record, state: value.state }; return record; }
+  };
+  const h = harness({ attempts, initError: true });
+  await assert.rejects(() => h.bridge.uploadPrivateAsset({ ownerId, projectId, assetId }),
+    error => error.code === "GOOGLE_DRIVE_REQUEST_FAILED");
+  assert.equal(marks.length, 1);
+  assert.equal(marks[0].state, "OUTCOME_UNKNOWN");
+  assert.equal(marks[0].leaseToken, leaseToken);
+});
 
 test("fences expired-session reconciliation with the worker lease", async () => {
   const leaseToken = "44444444-4444-4444-8444-444444444444";
