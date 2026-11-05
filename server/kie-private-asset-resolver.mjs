@@ -19,6 +19,7 @@ export function createKiePrivateAssetResolver({assets,expiresIn=3600}={}){
   if(!input||typeof input!=="object"||Array.isArray(input)||input.provider!=="kie"||input.model!=="bytedance/seedance-2")throw fail("Kie private input scope is invalid.","KIE_VIDEO_INPUT_SCOPE_INVALID");
   if(!job||!validId(job.owner_id)||(job.project_id!==null&&job.project_id!==undefined&&!validId(job.project_id)))throw fail("Kie private input requires an owned cloud job.","KIE_VIDEO_INPUT_SCOPE_INVALID");
   if(input.firstFrameUrl||input.lastFrameUrl||input.referenceImageUrls||input.referenceVideoUrls||input.referenceAudioUrls)throw fail("Kie accepts only private asset IDs; direct URLs are not allowed.","KIE_VIDEO_INPUT_DIRECT_URL_REJECTED");
+  if(["referenceVideoAssetIds","referenceAudioAssetIds"].some(key=>Array.isArray(input[key])&&input[key].length>0))throw fail("This Kie resolver release supports image references only.","KIE_VIDEO_CAPABILITY_UNSUPPORTED");
   const ownerId=job.owner_id,projectId=job.project_id||null;
   const referenceIds=input.referenceAssetIds===undefined?[]:input.referenceAssetIds;
   if(!Array.isArray(referenceIds)||referenceIds.length>9)throw fail("Kie accepts at most nine reference images.","KIE_VIDEO_INPUT_INVALID");
