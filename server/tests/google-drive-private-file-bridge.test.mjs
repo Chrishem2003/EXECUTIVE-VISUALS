@@ -62,7 +62,7 @@ function harness({ metadata = sourceFile, download = bytes, load = null, denied 
         if (uploadError) throw new Error("simulated interrupted Drive upload");
         return response({ json: {
           id: "driveFile_987654321", name: "master.mp4", mimeType: "video/mp4",
-          size: String(bytes.length), md5Checksum: uploadChecksum, webViewLink: "https://drive.google.com/file/d/driveFile_987654321/view"
+          size: String(bytes.length), md5Checksum: uploadChecksum, webViewLink: "https://drive.google.com/file/d/driveFile_987654321/view",\n          appProperties: { source: "executive-visuals", assetId }
         }});
       }
       throw new Error("Unexpected URL");
