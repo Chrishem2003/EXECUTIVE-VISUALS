@@ -162,6 +162,38 @@ export function createGoogleGeminiFilesGateway({
     return result.data?.file || result.data;
   }
 
+  async function listGoogleFiles({ pageSize = 100, pageToken } = {}) {
+    if (!Number.isInteger(pageSize) || pageSize < 1 || pageSize > 100 ||
+        (pageToken !== undefined && (typeof pageToken !== "string" || pageToken.length > 2048))) {
+      throw fail("Google Files list pagination is invalid.", "GEMINI_FILE_LIST_REQUEST_INVALID");
+    }
+    const params = new URLSearchParams({ pageSize: String(pageSize) });
+    if (pageToken) params.set("pageToken", pageToken);
+    const result = await request(API_ORIGIN + "/v1beta/files?" + params.toString(), { maxResponseBytes: 2 * 1024 * 1024 });
+    const files = result.data?.files;
+    if (!Array.isArray(files)) throw fail("Google Files list returned an invalid collection.", "GEMINI_FILE_RESPONSE_INVALID");
+    const normalized = files.map(file => {
+      if (!plain(file) || typeof file.name !== "string" || !FILE_NAME.test(file.name) ||
+          typeof file.displayName !== "string" || file.displayName.length > 512 ||
+          typeof file.mimeType !== "string" || !Number.isSafeInteger(Number(file.sizeBytes)) ||
+          typeof file.sha256Hash !== "string" || !/^[A-Za-z0-9+/]+={0,2}$/.test(file.sha256Hash) ||
+          typeof file.uri !== "string" || !FILE_URI.test(file.uri)) {
+        throw fail("Google Files list included an invalid resource.", "GEMINI_FILE_RESPONSE_INVALID");
+      }
+      return Object.freeze({
+        name: file.name, displayName: file.displayName, uri: file.uri,
+        mimeType: file.mimeType, sizeBytes: Number(file.sizeBytes),
+        sha256Hash: file.sha256Hash, state: String(file.state || "STATE_UNSPECIFIED").toUpperCase(),
+        expirationTime: typeof file.expirationTime === "string" ? file.expirationTime : null
+      });
+    });
+    const nextPageToken = result.data?.nextPageToken;
+    if (nextPageToken !== undefined && (typeof nextPageToken !== "string" || nextPageToken.length > 2048)) {
+      throw fail("Google Files list returned an invalid page token.", "GEMINI_FILE_RESPONSE_INVALID");
+    }
+    return Object.freeze({ files: Object.freeze(normalized), nextPageToken: nextPageToken || null });
+  }
+
   async function waitUntilActive(file, mimeType, sizeBytes) {
     let current = validateFileResource(file, mimeType, sizeBytes);
     for (let attempt = 0; current.state === "PROCESSING" && attempt < maxProcessingPolls; attempt++) {
@@ -384,7 +416,15 @@ export function createGoogleGeminiFilesGateway({
     },
     async getProviderFile(name) {
       const file = await getGoogleFile(name);
-      return Object.freeze({ name: file.name, uri: file.uri, mimeType: file.mimeType, state: file.state, sizeBytes: Number(file.sizeBytes) });
+      return Object.freeze({
+        name: file.name, displayName: file.displayName || null, uri: file.uri,
+        mimeType: file.mimeType, state: String(file.state || "STATE_UNSPECIFIED").toUpperCase(),
+        sizeBytes: Number(file.sizeBytes), sha256Hash: file.sha256Hash || null,
+        expirationTime: file.expirationTime || null
+      });
+    },
+    async listProviderFiles(options) {
+      return listGoogleFiles(options);
     },
     async forgetProviderFile({ name, recordId } = {}) {
       if (typeof deleteProviderFileRecord === "function") await deleteProviderFileRecord({ name, recordId });
