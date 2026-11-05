@@ -205,6 +205,15 @@ test("Kie Seedance enqueue enforces resolution, duration, reference and reservat
  assert.equal(calls,0);
 });
 
+test("Kie enqueue canonicalizes storyboard frame aliases into durable private asset IDs",async()=>{
+ let body;
+ const client=createCloudVideoEnqueue({...base,env:{VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",KIE_VIDEO_ENABLED:"true",KIE_VIDEO_ALLOW_REMOTE:"true",KIE_USD_PER_CREDIT:"0.005"},fetchImpl:async(url,options)=>{body=JSON.parse(options.body);return response([resultRow]);}});
+ const kieInput={projectId,provider:"kie",model:"bytedance/seedance-2",requestHash,prompt:"A product shot",durationSeconds:5,resolution:"720p",firstFrameAssetId:"923e4567-e89b-42d3-a456-426614174000",referenceImageAssetIds:[],outputFormat:"mp4"};
+ await client.enqueue({ownerId,projectId,idempotencyKey:"kie-frame-alias",provider:"kie",model:"bytedance/seedance-2",requestHash,input:kieInput,budgetApprovalId:approvalId,reservedAmount:1.025,currency:"USD"});
+ assert.equal(body.p_input.startFrameAssetId,kieInput.firstFrameAssetId);
+ assert.equal(body.p_input.endFrameAssetId,undefined);
+ assert.deepEqual(body.p_input.referenceAssetIds,[]);
+});
 test("Runway budget estimate uses the shared dated pricing engine and is not settlement evidence", () => {
   const estimate=estimateVideoGenerationCost({provider:"runway",model:"gen4.5",durationSeconds:5});
   assert.equal(estimate.provider,"runway");
