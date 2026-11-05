@@ -398,36 +398,12 @@ async function loadTimelineWaveforms(){
   const duration=Number(probe?.format?.duration);
   waveformPending.add(assetId);
   try{
-   if(state.mode!=="cloud"){
-    const waveformUrl="/api/assets/"+encodeURIComponent(assetId)+"/waveform";
-    const response=await fetch(waveformUrl,{credentials:"same-origin"});
-    if(!response.ok){let message="Server waveform generation failed ("+response.status+").";try{const body=await response.json() as {error?:{message?:string}};message=body.error?.message||message;}catch{}throw new Error(message);}
-    state.waveformCache[assetId]='<img src="'+waveformUrl+'" alt="Audio waveform" />';
-    state.waveformStatus[assetId]="";
-    for(const node of document.querySelectorAll<HTMLElement>("[data-waveform-asset]"))if(node.dataset.waveformAsset===assetId)node.innerHTML=state.waveformCache[assetId];
-    continue;
-   }
-   if(typeof window.OfflineAudioContext==="undefined"){state.waveformStatus[assetId]="Browser audio decoding is unavailable for cloud waveform previews.";continue;}
-   if(asset.size>maxBytes){state.waveformStatus[assetId]="Waveform skipped · cloud source exceeds 8 MB";continue;}
-   if(Number.isFinite(duration)&&duration>120){state.waveformStatus[assetId]="Waveform skipped · cloud source exceeds 120 seconds";continue;}
-   let url="/api/assets/"+encodeURIComponent(assetId)+"/file";
-   if(state.mode==="cloud"){const signed=await apiRequest<{url:string}>("/api/cloud/assets/"+encodeURIComponent(assetId));url=signed.url;}
-   const response=await fetch(url,{credentials:state.mode==="cloud"?"omit":"same-origin"});
-   if(!response.ok)throw new Error("Audio source request failed ("+response.status+").");
-   const declared=Number(response.headers.get("content-length"));
-   if(Number.isFinite(declared)&&declared>maxBytes)throw new Error("Audio source exceeds the 8 MB waveform decoding limit.");
-   let bytes:ArrayBuffer;
-   if(response.body){
-    const reader=response.body.getReader(),chunks:Uint8Array[]=[];let total=0;
-    while(true){const part=await reader.read();if(part.done)break;total+=part.value.byteLength;if(total>maxBytes){await reader.cancel();throw new Error("Audio source exceeds the 8 MB waveform decoding limit.");}chunks.push(part.value);}
-    const joined=new Uint8Array(total);let offset=0;for(const chunk of chunks){joined.set(chunk,offset);offset+=chunk.byteLength;}bytes=joined.buffer;
-   }else{bytes=await response.arrayBuffer();if(bytes.byteLength>maxBytes)throw new Error("Audio source exceeds the 8 MB waveform decoding limit.");}
-   const decoder=new OfflineAudioContext(1,1,44100);
-   const decoded=await decoder.decodeAudioData(bytes);
-   if(decoded.duration>120)throw new Error("Decoded audio exceeds the 120-second waveform limit.");
-   const svg=waveformSvg(extractWaveformPeaks(decoded,180),480,32);
-   state.waveformCache[assetId]=svg;state.waveformStatus[assetId]="";
-   for(const node of document.querySelectorAll<HTMLElement>("[data-waveform-asset]"))if(node.dataset.waveformAsset===assetId)node.innerHTML=svg;
+   const waveformUrl=(state.mode==="cloud"?"/api/cloud/assets/":"/api/assets/")+encodeURIComponent(assetId)+"/waveform";
+   const response=await fetch(waveformUrl,{credentials:"same-origin"});
+   if(!response.ok){let message="Waveform generation failed ("+response.status+").";try{const body=await response.json() as {error?:{message?:string}};message=body.error?.message||message;}catch{}throw new Error(message);}
+   state.waveformCache[assetId]='<img src="'+waveformUrl+'" alt="Audio waveform" />';
+   state.waveformStatus[assetId]="";
+   for(const node of document.querySelectorAll<HTMLElement>("[data-waveform-asset]"))if(node.dataset.waveformAsset===assetId)node.innerHTML=state.waveformCache[assetId];
   }catch(error){
    state.waveformStatus[assetId]=error instanceof Error?error.message:"Waveform decoding unavailable.";
    for(const node of document.querySelectorAll<HTMLElement>("[data-waveform-asset]"))if(node.dataset.waveformAsset===assetId)node.textContent=state.waveformStatus[assetId];
