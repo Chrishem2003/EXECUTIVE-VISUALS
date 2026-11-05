@@ -131,30 +131,46 @@ function assertExpected(actual: unknown, expected: unknown, label: string): void
   if (!same(actual, expected)) throw new Error("Timeline history conflict: " + label + " changed since this operation was recorded.");
 }
 
-function applyChange(timeline: EditorialTimeline, change: EntityChange): EditorialTimeline {
-  if (change.entity === "track") {
-    const index = timeline.tracks.findIndex(track => track.id === change.id);
-    const current = index < 0 ? null : trackValue(timeline.tracks[index], index);
-    assertExpected(current, change.before, "Track " + change.id);
-    const tracks = [...timeline.tracks];
+function applyTrackChanges(timeline: EditorialTimeline, changes: EntityChange[]): { timeline: EditorialTimeline; removeIds: string[] } {
+  const trackChanges = changes.filter((change): change is Extract<EntityChange, { entity: "track" }> => change.entity === "track");
+  const current = new Map(timeline.tracks.map((track, index) => [track.id, { track, index }]));
+  const desired = new Map<string, { track: TimelineTrack; index: number }>();
+  for (const [id, value] of current) desired.set(id, { track: value.track, index: value.index });
+  const removeIds: string[] = [];
+
+  for (const change of trackChanges) {
+    const found = current.get(change.id);
+    const actual = found ? trackValue(found.track, found.index) : null;
+    assertExpected(actual, change.before, "Track " + change.id);
     if (change.after === null) {
-      if (index >= 0 && tracks[index].clips.length) throw new Error("Cannot remove a track while it still contains clips.");
-      if (index >= 0) tracks.splice(index, 1);
-    } else if (index < 0) {
-      const next: TimelineTrack = { ...clone(change.after), clips: [] };
-      tracks.splice(Math.max(0, Math.min(change.after.index, tracks.length)), 0, next);
-    } else {
-      tracks[index] = { ...clone(change.after), clips: tracks[index].clips };
+      if (!found) throw new Error("Timeline history conflict: track no longer exists.");
+      removeIds.push(change.id);
+      continue;
     }
-    return { ...timeline, tracks };
+    desired.set(change.id, {
+      track: { ...clone(change.after), clips: found ? found.track.clips : [] },
+      index: change.after.index
+    });
   }
 
+  const tracks = [...desired.entries()]
+    .filter(([id]) => !removeIds.includes(id))
+    .sort((a, b) => a[1].index - b[1].index)
+    .map(([, value]) => value.track);
+  // Removed tracks remain temporarily so clip removals can be applied before deletion.
+  for (const id of removeIds) {
+    const found = current.get(id);
+    if (found && !tracks.some(track => track.id === id)) tracks.splice(Math.max(0, Math.min(found.index, tracks.length)), 0, found.track);
+  }
+  return { timeline: { ...timeline, tracks }, removeIds };
+}
+
+function applyEntityChange(timeline: EditorialTimeline, change: Exclude<EntityChange, { entity: "track" }>): EditorialTimeline {
   if (change.entity === "clip") {
     let current: Exclude<ClipLocation, null> | null = null;
-    let currentTrackIndex = -1;
-    for (let i = 0; i < timeline.tracks.length; i++) {
-      const clip = timeline.tracks[i].clips.find(item => item.id === change.id);
-      if (clip) { current = { trackId: timeline.tracks[i].id, clip: clone(clip) }; currentTrackIndex = i; break; }
+    for (const track of timeline.tracks) {
+      const clip = track.clips.find(item => item.id === change.id);
+      if (clip) { current = { trackId: track.id, clip: clone(clip) }; break; }
     }
     assertExpected(current, change.before, "Clip " + change.id);
     const tracks = timeline.tracks.map(track => ({ ...track, clips: track.clips.filter(clip => clip.id !== change.id) }));
@@ -194,8 +210,16 @@ export function applyTimelineHistoryOperation(
     throw new Error("Timeline history operation is invalid.");
   }
   const changes = direction === "undo" ? [...operation.changes].reverse().map(inverse) : operation.changes;
-  let next = timeline;
-  for (const change of changes) next = applyChange(next, change);
+  const trackResult = applyTrackChanges(timeline, changes);
+  let next = trackResult.timeline;
+  for (const change of changes) {
+    if (change.entity !== "track") next = applyEntityChange(next, change);
+  }
+  for (const id of trackResult.removeIds) {
+    const track = next.tracks.find(item => item.id === id);
+    if (track?.clips.length) throw new Error("Cannot remove a track while it still contains clips.");
+    next = { ...next, tracks: next.tracks.filter(item => item.id !== id) };
+  }
   next = { ...next, revision: timeline.revision + 1, updatedAt: new Date().toISOString() };
   validateEditableTimeline(next);
   return next;
