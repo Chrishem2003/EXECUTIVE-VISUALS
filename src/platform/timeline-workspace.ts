@@ -162,6 +162,10 @@ async function refresh(){
    const saved=state.cloudTimelines.find(t=>t.id===state.timeline?.id)!;state.timeline=saved.timeline;state.serverRevision=saved.revision;
   }else if(state.cloudTimelines.length){const saved=state.cloudTimelines[0];state.timeline=saved.timeline;state.serverRevision=saved.revision;}
   else state.timeline=null;
+  if(state.timeline){
+   const verifiedMaster=state.assets.find(asset=>asset.metadata?.operation==="timeline.render"&&asset.metadata?.timelineId===state.timeline?.id&&Number(asset.metadata?.timelineRevision)===state.serverRevision);
+   if(verifiedMaster){state.cloudRenderOutputAssetId=verifiedMaster.id;state.cloudRenderOutputName=verifiedMaster.name;state.cloudRenderOutputUrl="";}
+  }
   state.ffmpeg=true;state.status="ready";state.message=state.timeline?"Cloud timeline loaded. Changes save to the selected private project.":"No saved cloud timeline yet. Create one to begin.";await loadVariantComparison();return;
  }
  const health=await apiRequest<{media:{ffmpeg:boolean}}>("/api/health");state.ffmpeg=health.media.ffmpeg;
