@@ -14,6 +14,7 @@ test("provider catalog is evidence-backed metadata and all remote providers rema
       ["runway", "disabled"],
       ["luma", "disabled"],
       ["kling", "disabled"],
+      ["kie", "disabled"],
       ["google", "disabled"],
       ["openai", "unavailable"]
     ]
@@ -258,4 +259,25 @@ test("Google Gemini Omni Flash catalog matches the current Interactions API cont
   assert.equal(model.constraints.outputUriDeliverySupported, true);
   assert.match(model.constraints.source, /^https:\/\/ai\.google\.dev\/gemini-api\/docs\/omni$/);
   assert.equal(listSelectableVideoProviderModels().length, 0);
+});
+
+test("Kie Seedance 2.0 is catalogued with its own disabled adapter and dated Kie price snapshot",()=>{
+ const model=getVideoProviderModel("kie","bytedance/seedance-2");
+ assert.ok(model);
+ assert.equal(model.availability,"disabled");
+ assert.equal(model.executionAdapter,"kie-seedance-video-adapter");
+ assert.equal(model.capabilities.textToVideo,true);
+ assert.equal(model.capabilities.imageToVideo,true);
+ assert.equal(model.capabilities.videoToVideo,false);
+ assert.equal(model.capabilities.nativeAudio,true);
+ assert.equal(model.capabilities.negativePrompt,false);
+ assert.equal(model.capabilities.startFrame,true);
+ assert.equal(model.capabilities.endFrame,true);
+ assert.deepEqual(model.capabilities.aspectRatios,["16:9","9:16","1:1","4:3","3:4","21:9"]);
+ assert.deepEqual(model.capabilities.resolutions,["provider_default","480p","720p","1080p","2160p"]);
+ assert.equal(model.capabilities.minDurationSeconds,5);
+ assert.equal(model.capabilities.maxDurationSeconds,15);
+ assert.deepEqual(model.pricing.ratesPerSecond["720p"],{withoutVideo:0.205,withVideo:0.125});
+ assert.equal(model.pricing.snapshotDate,"2026-11-05");
+ assert.equal(listSelectableVideoProviderModels().length,0);
 });
