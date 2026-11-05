@@ -205,6 +205,7 @@ async function syncPreview(){
      const sourceEnd=sourceStart+current.timelineEndSeconds-current.timelineStartSeconds;
      if(video.currentTime>=sourceEnd-0.025){
       state.previewPlaying=false;
+      const toggle=document.querySelector<HTMLButtonElement>("[data-tl-preview-toggle]");if(toggle)toggle.textContent="Play preview";
       for(const node of document.querySelectorAll<HTMLVideoElement>("[data-preview-video]"))node.pause();
       state.playheadFrame=Math.ceil(current.timelineEndSeconds*fps());
       const slider=document.querySelector<HTMLInputElement>("#tl-playhead");if(slider)slider.value=String(state.playheadFrame);
@@ -214,6 +215,7 @@ async function syncPreview(){
      state.playheadFrame=Math.max(0,Math.floor((current.timelineStartSeconds+Math.max(0,video.currentTime-sourceStart))*fps()));
      const slider=document.querySelector<HTMLInputElement>("#tl-playhead");if(slider)slider.value=String(state.playheadFrame);
      const readout=document.querySelector<HTMLElement>("#tl-playhead-label");if(readout)readout.textContent="Frame "+state.playheadFrame+" · "+(state.playheadFrame/fps()).toFixed(3)+"s";
+     void syncPreview();
     };
    }
   }
