@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { runCloudVideoWorkerCycle } from "../cloud-video-worker.mjs";
+import { createCloudVideoWorker, runCloudVideoWorkerCycle } from "../cloud-video-worker.mjs";
 
 const job = {
   id: "123e4567-e89b-42d3-a456-426614174000",
@@ -79,4 +79,84 @@ test("cloud video worker validates recovery and finalizer dependencies", async (
   const f = fixture();
   await assert.rejects(runCloudVideoWorkerCycle({ ...f, workerId: "" }), /worker ID/);
   await assert.rejects(runCloudVideoWorkerCycle({ ...f, enqueue: {}, workerId: "worker" }), /atomic enqueue/);
+});
+
+
+test("integrated cloud video worker completes submit, poll, cost verification, private ingestion and atomic finalization", async () => {
+  const calls = [];
+  const providerTaskId = "323e4567-e89b-42d3-a456-426614174000";
+  const assetId = "423e4567-e89b-42d3-a456-426614174000";
+  const requestHash = "a".repeat(64);
+  const leasedJob = {
+    ...job,
+    input: { provider: "runway", model: "gen4.5", requestHash, prompt: "Integration test" },
+    estimated_cost: { amount: 2, currency: "USD" }
+  };
+  let submissionState = "prepared";
+  const queue = {
+    async claim(workerId, leaseSeconds, types) {
+      calls.push(["claim", workerId, leaseSeconds, types]);
+      return leasedJob;
+    },
+    async renew() { return true; }
+  };
+  const ledger = {
+    async prepare(value) {
+      calls.push(["prepare", value.jobId, value.ownerId]);
+      return { job_id: job.id, owner_id: job.owner_id, state: submissionState, provider_task_id: null };
+    },
+    async begin(id, workerId) { calls.push(["begin", id, workerId]); return true; },
+    async record(id, workerId, taskId) {
+      calls.push(["record", id, workerId, taskId]);
+      submissionState = "submitted";
+      return true;
+    },
+    async markUnknown(id, workerId, reason) {
+      calls.push(["unknown", id, workerId, reason]);
+      submissionState = "unknown";
+      return true;
+    }
+  };
+  const adapter = {
+    provider: "runway",
+    model: "gen4.5",
+    async submit(input, context) {
+      calls.push(["submit", input.requestHash, context.job.id]);
+      return { taskId: providerTaskId, status: "queued" };
+    },
+    async getStatus(taskId, context) {
+      calls.push(["poll", taskId, context.job.id, context.workerId]);
+      return { status: "succeeded", taskId, outputUrls: ["https://cdn.example.test/video.mp4"] };
+    },
+    async resolveActualCost(value) {
+      calls.push(["cost", value.providerTaskId]);
+      return { amount: 0.75, currency: "USD", evidenceReference: "test:verified-billing-event" };
+    },
+    async ingestOutputs(value) {
+      calls.push(["ingest", value.providerTaskId]);
+      return { assetIds: [assetId], usage: { outputCount: 1 } };
+    }
+  };
+  const finalized = [];
+  const enqueue = {
+    async finish(value) { finalized.push(value); calls.push(["finish", value.status, value.actualAmount]); return true; },
+    async defer(value) { calls.push(["defer", value.reasonCode]); return true; },
+    async quarantine(value) { calls.push(["quarantine", value.reasonCode]); return true; },
+    async recoverExpiredVideo() { return 0; }
+  };
+  const worker = createCloudVideoWorker({
+    workerId: "integration-video-worker",
+    queue, enqueue, ledger, adapter, deferSeconds: 30
+  });
+  const result = await worker.runCycle({ leaseSeconds: 90, heartbeatIntervalMs: 60000 });
+  assert.equal(result.status, "succeeded");
+  assert.equal(result.finished, true);
+  assert.deepEqual(calls.map(call => call[0]), [
+    "claim", "prepare", "begin", "submit", "record", "poll", "cost", "ingest", "finish"
+  ]);
+  assert.equal(finalized.length, 1);
+  assert.equal(finalized[0].status, "succeeded");
+  assert.equal(finalized[0].actualAmount, 0.75);
+  assert.deepEqual(finalized[0].output.assetIds, [assetId]);
+  assert.equal(finalized[0].output.providerTaskId, providerTaskId);
 });
