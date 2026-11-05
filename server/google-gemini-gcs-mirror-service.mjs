@@ -3,6 +3,7 @@ import { createCloudMediaAssetIO } from "./cloud-media-io.mjs";
 import { createGoogleGeminiGcsAssetResolver } from "./google-gemini-gcs-asset-resolver.mjs";
 import { createGoogleGeminiGcsMirrorWriter } from "./google-gemini-gcs-mirror-writer.mjs";
 import { createGoogleGeminiGcsSourceRepository } from "./google-gemini-gcs-source-repository.mjs";
+import { createGoogleGeminiGcsMirrorRecoveryWorker } from "./google-gemini-gcs-mirror-recovery-worker.mjs";
 
 function validAsset(asset, { assetId, ownerId, projectId }) {
   if (!asset || asset.id !== assetId || asset.ownerId !== ownerId ||
@@ -112,8 +113,13 @@ export function createGoogleGeminiGcsMirrorService({
     env, fetchImpl, getAccessToken, sourceRepository: sources, attemptRepository,
     maxBytes, timeoutMs, ...(typeof makeId === "function" ? { makeId } : {})
   });
+  const recoveryWorker = createGoogleGeminiGcsMirrorRecoveryWorker({
+    env, fetchImpl, getAccessToken, sourceRepository: sources, attemptRepository,
+    loadPrivateAsset: privateAssetLoader, maxBytes, timeoutMs
+  });
 
   return Object.freeze({
+    recoverMirrorAttempts: args => recoveryWorker.run(args),
     async mirrorAsset({ assetId, ownerId, projectId: assetProjectId = null } = {}) {
       if (typeof assetId !== "string" || typeof ownerId !== "string" ||
           (assetProjectId !== null && assetProjectId !== undefined && typeof assetProjectId !== "string")) {
