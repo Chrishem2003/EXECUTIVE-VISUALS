@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { createGoogleInteractionRetentionPolicy } from "../google-interaction-retention-policy.mjs";
 
 test("requires an explicit supported paid-tier retention setting", () => {
-  for (const value of [undefined, "", "1", "6", "8", "30", "56", "7.0", "07"]) {
+  for (const value of [undefined, "", "0", "56", "7.0", "07", "1.5"]) {
     assert.throws(
       () => createGoogleInteractionRetentionPolicy({ env: { GEMINI_OMNI_RETENTION_DAYS: value } }),
       error => error.code === "GEMINI_OMNI_RETENTION_POLICY_REQUIRED"
@@ -21,8 +21,8 @@ test("computes an exact expiry from the configured AI Studio retention window", 
     "2026-12-03T12:30:00.000Z");
 });
 
-test("supports only documented paid-tier retention windows", async () => {
-  for (const days of [7, 14, 28, 55]) {
+test("supports local cleanup windows from one through the paid-tier 55-day maximum", async () => {
+  for (const days of [1, 7, 14, 28, 30, 55]) {
     const policy = createGoogleInteractionRetentionPolicy({
       env: { GEMINI_OMNI_RETENTION_DAYS: String(days) }
     });
