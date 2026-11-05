@@ -187,15 +187,16 @@ test("lists only stale in-flight Gemini upload attempts with a bounded service-r
 
 test("claims one stale recovery attempt with a bounded atomic lease", async () => {
   let call;
-  const leaseToken = "55555555-5555-4555-8555-555555555555";
+  let leaseToken;
   const repository = createGoogleGeminiFilesRepository({
     url: base, serviceRoleKey: key,
     fetchImpl: async (url, options) => {
       call = { url: String(url), options };
+      leaseToken = JSON.parse(options.body).lease_token;
       return response(200, [{ id: row.id, lease_token: leaseToken }]);
     }
   });
-  assert.equal(await repository.claimRecoveryAttempt({ attemptId: row.id, expectedState: "OUTCOME_UNKNOWN" }), leaseToken);
+  assert.match(await repository.claimRecoveryAttempt({ attemptId: row.id, expectedState: "OUTCOME_UNKNOWN" }), /^[0-9a-f-]{36}$/i);
   const params = new URL(call.url).searchParams;
   assert.equal(call.options.method, "PATCH");
   assert.equal(params.get("id"), "eq." + row.id);
