@@ -162,3 +162,20 @@ test("cloud waveform endpoint rejects non-audio sources before storage access",a
  const result=await api.handle({method:"GET",path:"/api/cloud/assets/623e4567-e89b-42d3-a456-426614174000/waveform",ownerId:owner});
  assert.equal(result.status,415);assert.equal(storageCalled,false);
 });
+
+test("cloud waveform endpoint reuses a valid private derivative without downloading source audio",async()=>{
+ const root=await mkdtemp(join(tmpdir(),"ev-cloud-waveform-hit-")),png=Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]),Buffer.from("cached-waveform")]);
+ const assetId="723e4567-e89b-42d3-a456-426614174000",sha="b".repeat(64),objectPath=project+"/"+assetId+"/original.wav";let downloads=0,uploads=0;
+ const asset={id:assetId,ownerId:owner,projectId:project,name:"song.wav",mediaType:"audio/wav",size:64,sha256:sha,storageBucket:"executive-visuals-media",objectPath};
+ const storage={
+  async downloadToFile(path,file){downloads++;if(!path.endsWith("waveform-v1-"+sha+".png"))throw new Error("Source must not be fetched on cache hit.");await writeFile(file,png);return{size:png.length,sha256:createHash("sha256").update(png).digest("hex")};},
+  async uploadFile(){uploads++;throw new Error("Cache hit must not upload.");}
+ };
+ const api=createCloudTimelineApi({timelineService:{assets:{async get(){return asset;}},storage},waveformCache:{},mediaRoot:root});
+ try{
+  const result=await api.handle({method:"GET",path:"/api/cloud/assets/"+assetId+"/waveform",ownerId:owner});
+  assert.equal(result.status,200);assert.equal(downloads,1);assert.equal(uploads,0);
+  assert.deepEqual(await readFile(result.waveformPath),png);
+  await rm(result.cleanupDirectory,{recursive:true,force:true});
+ }finally{await rm(root,{recursive:true,force:true});}
+});
