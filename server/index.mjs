@@ -803,6 +803,7 @@ export function createAppServer() {
         try{
           const current=db.prepare("SELECT * FROM timelines WHERE id=? AND archived_at IS NULL").get(record.id);
           if(!current||current.revision!==expectedRevision){db.exec("ROLLBACK");fail(res,409,"REVISION_CONFLICT","Timeline changed before restore. Refresh and compare again.");return;}
+          if(current.project_id?!canWriteProject(db,user.id,current.project_id):current.owner_id!==user.id){db.exec("ROLLBACK");fail(res,403,"EDITOR_REQUIRED","Editor access is required to restore this timeline.");return;}
           const source=db.prepare("SELECT * FROM timeline_versions WHERE id=? AND timeline_id=? AND owner_id=?").get(sourceVersionId,current.id,current.owner_id);
           if(!source){db.exec("ROLLBACK");fail(res,404,"TIMELINE_VERSION_NOT_FOUND","Source version not found for this timeline.");return;}
           let sourceVersion;
@@ -846,6 +847,7 @@ export function createAppServer() {
           try{
             const current=db.prepare("SELECT * FROM timelines WHERE id=? AND archived_at IS NULL").get(record.id);
             if(!current||current.revision!==record.revision){db.exec("ROLLBACK");fail(res,409,"REVISION_CONFLICT","Timeline changed while saving. Refresh and retry.");return;}
+            if(current.project_id?!canWriteProject(db,user.id,current.project_id):current.owner_id!==user.id){db.exec("ROLLBACK");fail(res,403,"EDITOR_REQUIRED","Editor access is required to edit this timeline.");return;}
             const parentVersionId=ensureTimelineBaseline(db,current);
             const changed=db.prepare("UPDATE timelines SET project_id=?,name=?,revision=?,timeline_json=?,otio_json=?,updated_at=? WHERE id=? AND revision=?")
               .run(projectId,name,revision,json(saved),otio?json(otio):null,now(),record.id,record.revision);
