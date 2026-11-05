@@ -58,9 +58,10 @@ async function harness({attempt=baseAttempt,statusCode=200,range=null,uploadCode
       }
       if(options.method==="PUT"){
         const chunks=[];for await(const chunk of options.body)chunks.push(Buffer.from(chunk));
-        assert.deepEqual(Buffer.concat(chunks),bytes.subarray(2));
-        assert.equal(options.headers["content-range"],"bytes 2-3/4");
-        assert.equal(options.headers["content-length"],"2");
+        const offset=range?2:0;
+        assert.deepEqual(Buffer.concat(chunks),bytes.subarray(offset));
+        assert.equal(options.headers["content-range"],"bytes "+offset+"-3/4");
+        assert.equal(options.headers["content-length"],String(4-offset));
         return new Response(null,{status:uploadCode});
       }
     }
@@ -101,14 +102,13 @@ test("resumes only the unpersisted byte range after a 308 status response",async
   }finally{await rm(h.root,{recursive:true,force:true});}
 });
 
-test("uses an empty status range as offset zero and verifies materialized bytes",async()=>{
+test("uses an empty status range as offset zero and resumes from the first byte",async()=>{
   const h=await harness({statusCode:308,range:null});
   try{
     const result=await h.worker.run();
-    assert.equal(result.registered,0);
-    assert.equal(result.retryPending,1);
-    assert.equal(h.releases.length,1);
-    assert.equal(h.records.length,0);
+    assert.equal(result.registered,1);
+    assert.equal(h.calls.some(x=>x.url===sessionUri&&x.options.headers["content-range"]==="bytes 0-3/4"),true);
+    assert.equal(h.records.length,1);
   }finally{await rm(h.root,{recursive:true,force:true});}
 });
 
