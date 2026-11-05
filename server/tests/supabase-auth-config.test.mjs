@@ -3,7 +3,7 @@ import { spawn } from "node:child_process";
 import { createServer } from "node:net";
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { test } from "node:test";
 
 async function unusedPort() {
