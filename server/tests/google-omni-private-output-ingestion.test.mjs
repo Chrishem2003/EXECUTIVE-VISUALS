@@ -14,7 +14,7 @@ function interaction(video, status = "completed") {
   };
 }
 function harness({ authorize = async () => true, existing = null, findError = false, ingest, fetchImpl, overrides = {}, maxOutputBytes = 1024 * 1024 } = {}) {
-  const calls = [], ingested = [];
+  const calls = [], ingested = [], lookups = [];
   const ingestor = createGoogleOmniPrivateOutputIngestor({
     env: { ...env, ...overrides },
     fetchImpl: async (url, options) => {
@@ -25,7 +25,7 @@ function harness({ authorize = async () => true, existing = null, findError = fa
     authorizeOutputIngestion: authorize,
     findExistingOutput: async scope => {
       if (findError) throw new Error("metadata lookup unavailable");
-      calls.push({ lookup: scope });
+      lookups.push(scope);
       return existing;
     },
     ingestPrivateOutput: async value => {
@@ -38,7 +38,7 @@ function harness({ authorize = async () => true, existing = null, findError = fa
     timeoutMs: 3000,
     maxOutputBytes
   });
-  return { ingestor, calls, ingested };
+  return { ingestor, calls, ingested, lookups };
 }
 const context = { ownerId: "owner-1", projectId: "project-1", jobId: "job-1" };
 
@@ -120,6 +120,7 @@ test("reuses an existing owner/project-scoped asset on retry without downloading
   assert.equal(result.assetId, existing.id);
   assert.equal(result.reused, true);
   assert.equal(h.calls.length, 0);
+  assert.equal(h.lookups.length, 1);
   assert.equal(h.ingested.length, 0);
 });
 
