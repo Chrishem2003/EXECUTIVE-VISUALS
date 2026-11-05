@@ -363,7 +363,7 @@ export function renderTimelineWorkspace(){
  sequencePreviewPanel()+timelinePreviewPanel()+(state.timeline?timelineCanvas():'<div class="empty">Sign in and create a sequence to begin.</div>')+
  clipInspector()+variantComparisonPanel()+creativeTraceabilityPanel()+timelineQualityPanel()+
   '<div class="timeline-marker-list">'+(state.timeline?.markers.map(m=>'<span>◆ '+esc(m.name)+' · '+Math.round(m.start.value)+'f</span>').join("")||"No review markers yet.")+'</div></section></div>'+
- '<div class="notice">Master rendering supports synchronized audio, image overlays and captions. The preview monitor plays selected local source clips within saved source trims; cloud preview awaits authenticated private-media playback support. Transitions and effects remain future milestones.</div></div>';
+ '<div class="notice">Master rendering supports synchronized audio, image overlays and captions. The preview monitor plays selected source clips within saved source trims; cloud media uses short-lived owner-authorized private URLs. Transitions and effects remain future milestones.</div></div>';
 }
 async function refresh(){
  if(state.mode==="cloud"){
