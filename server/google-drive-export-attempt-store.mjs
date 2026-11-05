@@ -27,7 +27,7 @@ export function createGoogleDriveExportAttemptStore({
     let parsed;
     try{parsed=new URL(uri);}catch{throw fail("Drive upload session URI is invalid.","GOOGLE_DRIVE_EXPORT_SESSION_INVALID");}
     if(parsed.protocol!=="https:"||!["www.googleapis.com","upload.googleapis.com"].includes(parsed.hostname)||
-      parsed.pathname!=="/upload/drive/v3/files"||!parsed.searchParams.has("upload_id")||parsed.username||parsed.password||parsed.hash){
+      parsed.pathname!=="/upload/drive/v3/files"||!parsed.searchParams.has("upload_id")||parsed.username||parsed.password||parsed.hash||(parsed.port&&parsed.port!=="443")){
       throw fail("Drive upload session URI is outside the approved Google API origin.","GOOGLE_DRIVE_EXPORT_SESSION_INVALID");
     }
     const iv=randomBytes(12),cipher=createCipheriv("aes-256-gcm",key,iv);
@@ -45,7 +45,7 @@ export function createGoogleDriveExportAttemptStore({
       const uri=Buffer.concat([decipher.update(data),decipher.final()]).toString("utf8");
       const parsed=new URL(uri);
       if(parsed.protocol!=="https:"||!["www.googleapis.com","upload.googleapis.com"].includes(parsed.hostname)||
-        parsed.pathname!=="/upload/drive/v3/files"||!parsed.searchParams.has("upload_id"))throw new Error();
+        parsed.pathname!=="/upload/drive/v3/files"||!parsed.searchParams.has("upload_id")||(parsed.port&&parsed.port!=="443"))throw new Error();
       return uri;
     }catch{throw fail("Stored Drive upload session could not be safely decrypted.","GOOGLE_DRIVE_EXPORT_SESSION_STORE_INVALID");}
   }
