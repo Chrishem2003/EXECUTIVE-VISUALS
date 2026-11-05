@@ -145,7 +145,8 @@ test("fails closed when Gemini Omni is partially enabled or lacks its private in
 test("does not construct or register Gemini Omni when provider opt-ins are absent", () => {
   const [adapter] = createConfiguredVideoProviderAdapters({
     env: base.env,
-    ingestOutputs: base.ingestOutputs
+    ingestOutputs: base.ingestOutputs,
+    resolveLumaActualCost: base.resolveLumaActualCost
   });
   assert.equal(adapter.provider, "luma");
 });
