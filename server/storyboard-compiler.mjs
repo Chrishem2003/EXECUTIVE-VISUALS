@@ -43,8 +43,8 @@ export function normalizeStoryboardInput(input) {
       wardrobe: clean(item.wardrobe, 200), voice: clean(item.voice, 180)
     };
   }) : [];
-  if (new Set(characters.map(item => item.id)).size !== characters.length) {
-    throw fail("Existing character reference IDs must be unique.", "STORYBOARD_INPUT_INVALID");
+  if (new Set(characters.map(item => item.id)).size !== characters.length || new Set(characters.map(item => item.name.toLowerCase())).size !== characters.length) {
+    throw fail("Existing character reference IDs and names must be unique.", "STORYBOARD_INPUT_INVALID");
   }
   return Object.freeze({ creativeDirection, targetDurationSeconds, aspectRatio, frameRate, constraints, characters });
 }
@@ -80,8 +80,9 @@ function validateCharacters(raw, supplied) {
       continuityRules: textArray(item, "continuityRules", 1, 6, 300)
     };
   });
-  if (new Set(suggestions.map(item => item.name.toLowerCase())).size !== suggestions.length) {
-    throw fail("Storyboard character suggestions must have unique names.", "STORYBOARD_OUTPUT_INVALID");
+  const suppliedNames = new Set(supplied.map(item => item.name.toLowerCase()));
+  if (new Set(suggestions.map(item => item.name.toLowerCase())).size !== suggestions.length || suggestions.some(item => suppliedNames.has(item.name.toLowerCase()))) {
+    throw fail("Storyboard character suggestions must have unique names and cannot duplicate supplied project characters.", "STORYBOARD_OUTPUT_INVALID");
   }
   const byId = new Map(supplied.map(item => [item.id, item]));
   const byName = new Set([...supplied.map(item => item.name), ...suggestions.map(item => item.name)].map(name => name.toLowerCase()));
