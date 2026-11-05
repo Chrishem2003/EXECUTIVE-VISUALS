@@ -45,17 +45,27 @@ assert.throws(()=>addClip(createTimeline("project-speed","timeline-speed","Speed
 }),/Track not found/);
 const speedBase=createTimeline("project-speed","timeline-speed","Speed test");
 const speedTrack=addTrack(speedBase,{id:"speed-track",name:"Picture",kind:"video",enabled:true,locked:false,clips:[]});
-assert.throws(()=>addClip(speedTrack,"speed-track",{
- id:"speed-clip",assetId:"asset-speed",name:"Unsupported speed",
- sourceRange:{start:rational(0,24),duration:rational(48,24)},
+const retimed=addClip(speedTrack,"speed-track",{
+ id:"speed-clip",assetId:"asset-speed",name:"Retimed speed",
+ sourceRange:{start:rational(0,24),duration:rational(96,24)},
  timelineStart:rational(0,24),duration:rational(48,24),enabled:true,speed:2
-}),/Clip speed changes are not supported/);
+});
+assert.equal(validateTimeline(retimed).valid,true);
+assert.equal(evaluateTimelineAtFrame(retimed,24).activeClips[0].sourceTimeSeconds,2);
+assert.equal(evaluateTimelineAtFrame(retimed,24).activeClips[0].playbackSpeed,2);
 const legacySpeed={...speedTrack,tracks:speedTrack.tracks.map(track=>({...track,clips:[{
- id:"legacy-speed-clip",assetId:"asset-speed",name:"Legacy speed",
+ id:"legacy-speed-clip",assetId:"asset-speed",name:"Mismatched speed",
  sourceRange:{start:rational(0,24),duration:rational(48,24)},
  timelineStart:rational(0,24),duration:rational(48,24),enabled:true,speed:0.5
 }]}))};
-assert.ok(validateTimeline(legacySpeed).issues.some(issue=>issue.code==="unsupported_speed"));
+assert.ok(validateTimeline(legacySpeed).issues.some(issue=>issue.code==="timebase_mismatch"));
+const overlayTrack=addTrack(speedBase,{id:"overlay-speed",name:"Overlay",kind:"overlay",enabled:true,locked:false,clips:[]});
+const invalidOverlay={...overlayTrack,tracks:overlayTrack.tracks.map(track=>track.id==="overlay-speed"?{...track,clips:[{
+ id:"overlay-speed-clip",assetId:"asset-speed",name:"Unsupported overlay speed",
+ sourceRange:{start:rational(0,24),duration:rational(96,24)},
+ timelineStart:rational(0,24),duration:rational(48,24),enabled:true,speed:2
+}]}:track)};
+assert.ok(validateTimeline(invalidOverlay).issues.some(issue=>issue.code==="unsupported_speed"));
 const previewBase=createTimeline("project-preview","timeline-preview","Preview test",{numerator:24,denominator:1});
 let previewTimeline=addTrack(previewBase,{id:"preview-video",name:"Video",kind:"video",enabled:true,locked:false,clips:[]});
 previewTimeline=addTrack(previewTimeline,{id:"preview-overlay",name:"Overlay",kind:"overlay",enabled:true,locked:false,clips:[]});
