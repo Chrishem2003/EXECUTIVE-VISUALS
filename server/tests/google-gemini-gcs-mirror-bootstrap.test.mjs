@@ -200,10 +200,13 @@ test("GCS bootstrap rejects a lookalike client even when its constructor name is
   class Compute {}
   class IdentityPoolClient {}
   class Lookalike { static [Symbol.hasInstance]() { return false; } }
+  const fakeClient = {
+    constructor: { name: "IdentityPoolClient" },
+    async getAccessToken() { return { token: "x".repeat(40) }; }
+  };
+  assert.equal(fakeClient instanceof Lookalike, false);
   class FakeGoogleAuth {
-    async getClient() {
-      return { constructor: { name: "IdentityPoolClient" }, async getAccessToken() { return { token: "x".repeat(40) }; } };
-    }
+    async getClient() { return fakeClient; }
   }
   const bootstrap = await createGoogleGeminiGcsMirrorBootstrap({
     env,
