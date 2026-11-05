@@ -1,3 +1,4 @@
+import { createKieSeedanceVideoAdapter } from "./kie-seedance-video-adapter.mjs";
 import { createFalVideoProviderAdapter } from "./fal-video-provider-registration.mjs";
 import { createRunwayCloudVideoAdapter } from "./runway-cloud-video-adapter.mjs";
 import { createLumaRay32Adapter } from "./luma-ray32-video-adapter.mjs";
@@ -35,6 +36,9 @@ export function createConfiguredVideoProviderAdapters({
   lumaPrepareInput,
   resolveLumaActualCost,
   lumaClient,
+  kieClient,
+  kiePrepareInput,
+  resolveKieActualCost,
   googleOmniIntegration
 } = {}) {
   if (!plain(env)) throw fail("Provider configuration environment must be an object.");
@@ -135,6 +139,28 @@ export function createConfiguredVideoProviderAdapters({
       async resolveActualCost(args) {
         return settledCostResolver({ ...args, provider: "luma", model });
       }
+    }));
+  }
+
+  if (env.KIE_VIDEO_ENABLED === "true" || env.KIE_VIDEO_ALLOW_REMOTE === "true") {
+    if (!globalEnabled || !globalRemote ||
+        env.KIE_VIDEO_ENABLED !== "true" || env.KIE_VIDEO_ALLOW_REMOTE !== "true") {
+      throw fail("Kie requires VIDEO_GATEWAY_ENABLED, VIDEO_GATEWAY_ALLOW_REMOTE, KIE_VIDEO_ENABLED and KIE_VIDEO_ALLOW_REMOTE to be true.", "KIE_VIDEO_REMOTE_DISABLED");
+    }
+    if (typeof resolveKieActualCost !== "function") {
+      throw fail("Kie registration requires an authoritative task-level settlement resolver based on verified account credit consumption.", "KIE_BILLING_RESOLVER_REQUIRED");
+    }
+    const model = String(env.KIE_SEEDANCE_MODEL || "bytedance/seedance-2-5").trim();
+    adapters.push(createKieSeedanceVideoAdapter({
+      model,
+      apiKey: env.KIE_API_KEY,
+      enabled: globalEnabled,
+      allowRemote: true,
+      fetchImpl,
+      client: kieClient,
+      prepareInput: kiePrepareInput,
+      ingestOutputs,
+      resolveActualCost: resolveKieActualCost
     }));
   }
 
