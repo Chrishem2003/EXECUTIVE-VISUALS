@@ -394,12 +394,21 @@ async function loadTimelineWaveforms(){
   const asset=state.assets.find(item=>item.id===assetId);
   if(!asset||!asset.mediaType.startsWith("audio/"))continue;
   const maxBytes=8*1024*1024;
-  if(asset.size>maxBytes){state.waveformStatus[assetId]="Waveform skipped · source exceeds 8 MB";continue;}
   const probe=asset.metadata?.probe as {format?:{duration?:string}}|undefined;
   const duration=Number(probe?.format?.duration);
-  if(Number.isFinite(duration)&&duration>120){state.waveformStatus[assetId]="Waveform skipped · source exceeds 120 seconds";continue;}
   waveformPending.add(assetId);
   try{
+   if(state.mode!=="cloud"){
+    const waveformUrl="/api/assets/"+encodeURIComponent(assetId)+"/waveform";
+    const response=await fetch(waveformUrl,{credentials:"same-origin"});
+    if(!response.ok){let message="Server waveform generation failed ("+response.status+").";try{const body=await response.json() as {error?:{message?:string}};message=body.error?.message||message;}catch{}throw new Error(message);}
+    state.waveformCache[assetId]='<img src="'+waveformUrl+'" alt="Audio waveform" />';
+    state.waveformStatus[assetId]="";
+    for(const node of document.querySelectorAll<HTMLElement>("[data-waveform-asset]"))if(node.dataset.waveformAsset===assetId)node.innerHTML=state.waveformCache[assetId];
+    continue;
+   }
+   if(asset.size>maxBytes){state.waveformStatus[assetId]="Waveform skipped · cloud source exceeds 8 MB";continue;}
+   if(Number.isFinite(duration)&&duration>120){state.waveformStatus[assetId]="Waveform skipped · cloud source exceeds 120 seconds";continue;}
    let url="/api/assets/"+encodeURIComponent(assetId)+"/file";
    if(state.mode==="cloud"){const signed=await apiRequest<{url:string}>("/api/cloud/assets/"+encodeURIComponent(assetId));url=signed.url;}
    const response=await fetch(url,{credentials:state.mode==="cloud"?"omit":"same-origin"});
