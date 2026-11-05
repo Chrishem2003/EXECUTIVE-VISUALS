@@ -7,7 +7,7 @@ const ownerId = "11111111-1111-4111-8111-111111111111";
 const otherOwner = "22222222-2222-4222-8222-222222222222";
 const scopes = ["https://www.googleapis.com/auth/drive.file", "openid", "https://www.googleapis.com/auth/userinfo.email"];
 const identity = async () => ({ subject: "google-subject-12345", email: "user@example.com" });
-function harness({ now = 1000000, issueRefresh = true, refreshStatus = 200, revokeStatus = 200, verifyIdentityFn = identity, onRefresh } = {}) {
+function harness({ now = 1000000, issueRefresh = true, refreshStatus = 200, revokeStatus = 200, verifyIdentityFn = identity, onRefresh, onRefreshTokenUpsert } = {}) {
   let clock = now, idToken = "mock.id.token", jwks = [];
   const pending = new Map(), records = new Map(), calls = [];
   const stateStore = {
@@ -16,7 +16,10 @@ function harness({ now = 1000000, issueRefresh = true, refreshStatus = 200, revo
   };
   const connections = {
     async get(id) { return records.get(id) || null; },
-    async upsert(value) { records.set(value.ownerId, value); },
+    async upsert(value) {
+      if (records.has(value.ownerId) && onRefreshTokenUpsert) await onRefreshTokenUpsert(value);
+      records.set(value.ownerId, value);
+    },
     async delete(id) { records.delete(id); }
   };
   const fetchImpl = async (url, options) => {
@@ -162,6 +165,22 @@ test("cryptographically verifies Google's RS256 ID-token signature, audience, ex
   h.setJwks([jwk]);
   await h.service.complete({ ownerId, state: url.searchParams.get("state"), code: "signed-code" });
   assert.equal(h.records.get(ownerId).email, "user@example.com");
+});
+
+test("does not restore a disconnected connection when refresh-token persistence races with disconnect", async () => {
+  let persistenceStartedResolve, releasePersistenceResolve;
+  const persistenceStarted = new Promise(resolve => { persistenceStartedResolve = resolve; });
+  const releasePersistence = new Promise(resolve => { releasePersistenceResolve = resolve; });
+  const h = harness({ onRefreshTokenUpsert: async () => { persistenceStartedResolve(); await releasePersistence; } });
+  const start = await h.service.begin({ ownerId });
+  await h.service.complete({ ownerId, state: new URL(start.authorizationUrl).searchParams.get("state"), code: "code" });
+  h.setNow(4700000);
+  const pendingRefresh = h.service.getAccessToken({ ownerId });
+  await persistenceStarted;
+  await h.service.disconnect({ ownerId });
+  releasePersistenceResolve();
+  await assert.rejects(() => pendingRefresh, error => error.code === "GOOGLE_OAUTH_NOT_CONNECTED");
+  assert.equal(h.records.has(ownerId), false);
 });
 
 test("does not release an in-flight refreshed access token after disconnect", async () => {
