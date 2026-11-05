@@ -64,6 +64,55 @@ Google documents `roles/storage.objectUser` as create/read/update/delete object
 access; it is broader than the narrow custom role described above. Bucket IAM
 and uniform bucket-level access must be reviewed before staging.
 
+## Server-side ADC and Workload Identity Federation bootstrap
+
+The cloud worker now constructs its Google token provider through Google's
+official `google-auth-library` and Application Default Credentials (ADC).
+The recovery worker no longer depends on a manually injected factory when
+started through `npm run start:cloud-worker`.
+
+Choose exactly one production identity path:
+
+- **Google Cloud hosted worker:** attach a dedicated user-managed service
+  account to the worker and let ADC obtain short-lived credentials from the
+  workload metadata server.
+- **External host (for example, a non-Google cloud):** generate a Workload
+  Identity Federation external-account credential configuration with the
+  Google Cloud CLI and set `GOOGLE_APPLICATION_CREDENTIALS` to its protected
+  file path. The external identity must be permitted to impersonate the
+  dedicated service account, or be granted direct bucket access.
+
+The bootstrap rejects service-account private-key JSON and user credential
+files when `GOOGLE_APPLICATION_CREDENTIALS` is set. Do not paste credential
+configuration contents or subject tokens into environment variables, logs,
+tickets, or source control. The external-account file contains federation
+configuration, not a private service-account key; protect it as deployment
+configuration because it describes the external token source.
+
+Required startup settings include:
+
+- `CLOUD_WORKER_ENABLED=true` and at least one approved worker family.
+- `GEMINI_GCS_MIRROR_RECOVERY_ENABLED=true` only for the isolated staging
+  worker after the identity and bucket policy are approved.
+- `GOOGLE_CLOUD_PROJECT_ID`, `GEMINI_GCS_ALLOWED_BUCKETS`, and
+  `GEMINI_GCS_MIRROR_BUCKET`.
+- `GEMINI_GCS_SESSION_ENCRYPTION_KEY`: base64 encoding of exactly 32 random
+  bytes. Generate and store it in the host's secret manager; never reuse the
+  Supabase service-role key or Google OAuth token.
+- `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` in the worker only.
+
+At startup the worker obtains a short-lived ADC token before registering the
+GCS recovery maintenance task. Token acquisition failure aborts startup. The
+token provider is cached by scope set and does not log or persist access
+tokens. The GCS mirror remains opt-in; this bootstrap does not enable the
+feature flag or change cloud IAM.
+
+Official references:
+- https://docs.cloud.google.com/storage/docs/authentication
+- https://docs.cloud.google.com/docs/authentication/application-default-credentials
+- https://docs.cloud.google.com/iam/docs/workload-identity-federation
+- https://github.com/googleapis/google-auth-library-nodejs
+
 ## Staging acceptance gates
 
 1. Review workload identity configuration and token audience/scopes.
