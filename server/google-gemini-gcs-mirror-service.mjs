@@ -38,6 +38,10 @@ export function createGoogleGeminiGcsMirrorService({
   if (typeof fetchImpl !== "function" || typeof getAccessToken !== "function") {
     throw new TypeError("GCS mirror service requires fetch and a Google Cloud OAuth token provider.");
   }
+  if (!attemptRepository || typeof attemptRepository.createAttempt !== "function" ||
+      typeof attemptRepository.recordSession !== "function" || typeof attemptRepository.transition !== "function") {
+    throw new TypeError("GCS mirror service requires the encrypted durable attempt repository.");
+  }
   if (typeof loadPrivateAsset !== "undefined" && typeof loadPrivateAsset !== "function") {
     throw new TypeError("GCS mirror private asset loader must be a function.");
   }
