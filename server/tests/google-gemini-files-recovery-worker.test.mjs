@@ -64,6 +64,8 @@ test("leaves no-match outcomes quarantined instead of assuming upload did not ha
   const h = harness({ pages: [{ files: [], nextPageToken: null }] });
   const result = await h.worker.run();
   assert.equal(result.reconciled, 0);
+  assert.equal(result.quarantined, 1);
+  assert.equal(result.retryPending, 0);
   assert.equal(result.results[0].status, "no_provider_evidence_quarantined");
   assert.equal(h.records.length, 0);
   assert.equal(h.updates.length, 1);
