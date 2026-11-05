@@ -86,6 +86,8 @@ export function createGoogleGeminiFilesGateway({
   findProviderFile,
   recordProviderFile,
   deleteProviderFileRecord,
+  createUploadAttempt,
+  updateUploadAttempt,
   timeoutMs = 30000,
   maxBytes = 250 * 1024 * 1024,
   chunkSize = 8 * 1024 * 1024,
@@ -306,9 +308,47 @@ export function createGoogleGeminiFilesGateway({
           throw fail("Private asset SHA-256 verification failed before Google upload.", "GEMINI_FILE_ASSET_HASH_MISMATCH");
         }
 
-        const displayName = "executive-visuals-" + randomUUID();
-        googleFile = await uploadBytes({ bytes: loaded.bytes, path: loaded.path, sizeBytes, mimeType, displayName });
+        const attemptKey = createHash("sha256")
+          .update(["google-gemini-files", ownerId, projectId || "", assetId, mimeType, sha256].join("\\0"))
+          .digest("hex");
+        const displayName = typeof createUploadAttempt === "function"
+          ? "executive-visuals-" + attemptKey.slice(0, 32)
+          : "executive-visuals-" + randomUUID();
+        let uploadAttempt = null;
+        if (typeof createUploadAttempt === "function") {
+          try {
+            uploadAttempt = await createUploadAttempt({
+              attemptKey, displayNameHash: attemptKey, displayName,
+              assetId, ownerId, projectId: projectId || null, mimeType, sizeBytes, sha256
+            });
+          } catch {
+            throw fail("Google upload attempt could not be durably prepared.", "GEMINI_FILE_ATTEMPT_PERSIST_FAILED");
+          }
+          if (!plain(uploadAttempt) || typeof uploadAttempt.id !== "string" || uploadAttempt.state !== "PREPARED") {
+            throw fail("A prior Google upload attempt requires reconciliation before another upload can start.", "GEMINI_FILE_RECONCILIATION_REQUIRED");
+          }
+        }
+        const setAttemptState = async (state, extra = {}) => {
+          if (!uploadAttempt || typeof updateUploadAttempt !== "function") return;
+          try { await updateUploadAttempt({ attemptId: uploadAttempt.id, state, ...extra }); } catch {}
+        };
+        if (uploadAttempt) await setAttemptState("UPLOADING");
+        try {
+          googleFile = await uploadBytes({ bytes: loaded.bytes, path: loaded.path, sizeBytes, mimeType, displayName });
+        } catch (error) {
+          const uncertain = [
+            "GEMINI_FILE_UPLOAD_OUTCOME_UNKNOWN", "GEMINI_FILE_TIMEOUT",
+            "GEMINI_FILE_UPLOAD_INCOMPLETE", "GEMINI_FILE_PROCESSING_TIMEOUT"
+          ].includes(error?.code);
+          await setAttemptState(uncertain ? "OUTCOME_UNKNOWN" : "FAILED", {
+            errorCode: typeof error?.code === "string" ? error.code : "GEMINI_FILE_UPLOAD_FAILED"
+          });
+          throw error;
+        }
         const expiresAt = new Date(now() + 47 * 60 * 60 * 1000 + 50 * 60 * 1000).toISOString();
+        await setAttemptState("PROVIDER_CREATED", {
+          providerFileName: googleFile.name, providerFileUri: googleFile.uri, providerExpiresAt: expiresAt
+        });
         const record = {
           provider: "google-gemini-files", assetId, ownerId, projectId: projectId || null,
           name: googleFile.name, uri: googleFile.uri, mimeType, sizeBytes, sha256,
@@ -317,10 +357,13 @@ export function createGoogleGeminiFilesGateway({
         try {
           await recordProviderFile(record);
         } catch {
-          try { await removeGoogleFile(googleFile.name); } catch {}
+          let deleted = false;
+          try { await removeGoogleFile(googleFile.name); deleted = true; } catch {}
+          if (deleted) await setAttemptState("FAILED", { errorCode: "GEMINI_FILE_MAPPING_PERSIST_FAILED" });
           googleFile = null;
           throw fail("Google upload succeeded but its private provider-file mapping could not be persisted.", "GEMINI_FILE_MAPPING_PERSIST_FAILED");
         }
+        await setAttemptState("COMPLETED", { reconciledAt: new Date(now()).toISOString() });
         return Object.freeze({ uri: googleFile.uri, mediaType: mimeType, providerFileName: googleFile.name, expiresAt });
       } finally {
         try {
