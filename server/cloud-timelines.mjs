@@ -97,12 +97,14 @@ export function createCloudTimelineRepository({url=process.env.SUPABASE_URL,serv
     async create({ownerId,projectId=null,name="Untitled timeline",timeline,otio=null,versionSummary="Initial version"}={}){
       ownerId=validOwner(ownerId);if(projectId!==null&&projectId!==undefined&&projectId!==""){if(typeof projectId!=="string"||!UUID.test(projectId))throw new Error("Project ID must be a UUID.");}else projectId=null;
       if(typeof name!=="string"||name.trim().length<1||name.trim().length>160)throw new Error("Timeline name must contain 1–160 characters.");
-      await allowed(ownerId,projectId,"write");await checkedDocument(ownerId,timeline);
+      await allowed(ownerId,projectId,"write");
       if(otio!==null&&!object(otio))throw new Error("OTIO document must be a JSON object.");
-      const timelineId=randomUUID(),contentHash=timelineHash(timeline,otio);
+      const timelineId=randomUUID(),savedTimeline={...timeline,id:timelineId,projectId,name:name.trim(),revision:1};
+      await checkedDocument(ownerId,savedTimeline);
+      const contentHash=timelineHash(savedTimeline,otio);
       const rows=await request("rpc/ev_create_timeline_with_version",{method:"POST",body:{
         p_timeline_id:timelineId,p_owner_id:ownerId,p_actor_id:ownerId,p_project_id:projectId,
-        p_name:name.trim(),p_timeline:timeline,p_otio:otio,p_summary:String(versionSummary||"Initial version").slice(0,500),p_content_hash:contentHash
+        p_name:name.trim(),p_timeline:savedTimeline,p_otio:otio,p_summary:String(versionSummary||"Initial version").slice(0,500),p_content_hash:contentHash
       }});
       if(!Array.isArray(rows)||rows.length!==1||rows[0].owner_id!==ownerId)throw new Error("Cloud timeline creation with initial version returned an invalid record.");
       return map(rows[0]);
@@ -121,14 +123,17 @@ export function createCloudTimelineRepository({url=process.env.SUPABASE_URL,serv
       ownerId=validOwner(ownerId);if(typeof timelineId!=="string"||!UUID.test(timelineId))throw new Error("Timeline ID must be a UUID.");
       if(!Number.isInteger(expectedRevision)||expectedRevision<1)throw new Error("Expected timeline revision must be a positive integer.");
       const current=await getTimeline({ownerId,timelineId});if(!current){const error=new Error("Timeline not found.");error.code="CLOUD_TIMELINE_NOT_FOUND";throw error;}
-      await allowed(ownerId,current.projectId,"write");await checkedDocument(ownerId,timeline);
+      await allowed(ownerId,current.projectId,"write");
       if(otio!==undefined&&otio!==null&&!object(otio))throw new Error("OTIO document must be a JSON object.");
       const nextOtio=otio===undefined?current.otio:otio;
+      const nextName=timeline.name||current.name;
+      const savedTimeline={...timeline,id:current.id,projectId:current.projectId,name:nextName,revision:expectedRevision+1};
+      await checkedDocument(ownerId,savedTimeline);
       const rows=await request("rpc/ev_update_timeline_with_version",{method:"POST",body:{
         p_timeline_id:timelineId,p_owner_id:current.ownerId,p_actor_id:ownerId,p_expected_revision:expectedRevision,
-        p_name:timeline.name||current.name,p_timeline:timeline,p_otio:nextOtio,
+        p_name:nextName,p_timeline:savedTimeline,p_otio:nextOtio,
         p_summary:String(versionSummary||("Saved revision "+(expectedRevision+1))).slice(0,500),
-        p_previous_content_hash:timelineHash(current.timeline,current.otio),p_content_hash:timelineHash(timeline,nextOtio)
+        p_previous_content_hash:timelineHash(current.timeline,current.otio),p_content_hash:timelineHash(savedTimeline,nextOtio)
       }});
       if(!Array.isArray(rows)||rows.length!==1){const error=new Error("Timeline versioned update returned an invalid result.");error.code="CLOUD_TIMELINE_VERSION_WRITE_FAILED";throw error;}
       return map(rows[0]);
@@ -158,8 +163,9 @@ export function createCloudTimelineRepository({url=process.env.SUPABASE_URL,serv
       const sourceRow=Array.isArray(sourceRows)?sourceRows[0]:null;
       if(!sourceRow){const error=new Error("Timeline version not found.");error.code="CLOUD_TIMELINE_VERSION_NOT_FOUND";throw error;}
       const source=mapVersion(sourceRow,true);
-      await checkedDocument(ownerId,source.document);
-      const contentHash=timelineHash(source.document,source.otio);
+      const restoredDocument={...source.document,id:current.id,projectId:current.projectId,name:source.name,revision:expectedRevision+1};
+      await checkedDocument(ownerId,restoredDocument);
+      const contentHash=timelineHash(restoredDocument,source.otio);
       const rows=await request("rpc/ev_restore_timeline_version",{method:"POST",body:{
         p_timeline_id:timelineId,p_owner_id:current.ownerId,p_actor_id:ownerId,p_expected_revision:expectedRevision,
         p_source_version_id:sourceVersionId,p_summary:String(summary||("Restored from revision "+source.revision)).slice(0,500),
