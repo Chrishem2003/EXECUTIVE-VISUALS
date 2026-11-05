@@ -4,8 +4,7 @@ import {
   assessTimelineRecovery,
   checksumTimeline,
   isTimelineRecoveryDraft,
-  timelineRecoveryKey,
-  type TimelineRecoveryDraft
+  timelineRecoveryKey
 } from "../src/core/timeline-recovery.ts";
 import { createTimeline, addTrack } from "../src/core/timeline.ts";
 
@@ -15,7 +14,7 @@ function sampleTimeline() {
   });
 }
 
-async function draft(baseRevision = 4): Promise<TimelineRecoveryDraft> {
+async function draft(baseRevision = 4) {
   const snapshot = sampleTimeline();
   return {
     key: timelineRecoveryKey("cloud", "project-1", snapshot.id),
