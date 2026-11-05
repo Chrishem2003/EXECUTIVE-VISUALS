@@ -39,6 +39,20 @@ The resolver does not download media bytes. A 403 from the metadata lookup fails
 
 The current Supabase Storage assets are not GCS objects. The source registry callback must resolve only assets that have an independently created and verified GCS mirror; it must not synthesize a GCS URI from a Supabase bucket or object path.
 
+## Governed GCS mirror source registry
+
+The additive migration `20261105200000_google_gcs_asset_sources.sql` introduces `executive_visuals.google_gcs_asset_sources`. It stores the exact GCS bucket/object, immutable object generation and metageneration, byte size, MIME type, SHA-256, and the linked Executive Visuals asset/owner/project scope.
+
+Security and lifecycle rules:
+- RLS is enabled and forced; public, anon and authenticated roles receive no table privileges. Only the trusted service role can read or write source records.
+- A database trigger verifies the referenced asset exists, is not deleted, and has the same owner, project, media type, byte size and SHA-256 at insert time.
+- Only one ACTIVE GCS mirror can exist for an asset.
+- Source identity fields are immutable. The only supported update is ACTIVE to REVOKED; source records are not repointed to a different object.
+- The server adapter `server/google-gemini-gcs-source-repository.mjs` scopes lookups by asset, owner, project and ACTIVE state. It refuses ambiguous mappings and provides an exact-scope revocation operation.
+- The GCS composition uses this repository by default when no trusted source loader is injected.
+
+**Not yet complete:** the controlled GCS mirror writer and its metadata verification/compensation lifecycle. Do not create source rows manually or treat an unverified upload receipt as proof. The next implementation step must upload the private asset to an allowlisted GCS bucket, write the ownership/checksum custom metadata, read back the exact object metadata, and only then call `recordVerifiedSource`. Until that writer exists and passes staging acceptance, existing Supabase private storage remains the canonical asset store and GCS registration is not enabled for user traffic.
+
 ## GCS registration IAM preflight
 
 The repository includes `server/google-gemini-gcs-iam-verifier.mjs`, a read-only preflight for the Google side of GCS registration.
