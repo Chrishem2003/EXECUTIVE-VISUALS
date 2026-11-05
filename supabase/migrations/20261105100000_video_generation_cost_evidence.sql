@@ -17,7 +17,7 @@ create table if not exists executive_visuals.video_generation_cost_evidence (
   evidence_reference text not null check (char_length(btrim(evidence_reference)) between 1 and 1000),
   evidence_sha256 text not null check (evidence_sha256 ~ '^[a-f0-9]{64}$'),
   reviewer_id uuid not null references auth.users(id),
-  reviewer_note text not null default '' check (char_length(reviewer_note) <= 2000),
+  reviewer_note text not null check (char_length(btrim(reviewer_note)) between 1 and 2000),
   reviewed_at timestamptz not null default now(),
   created_at timestamptz not null default now()
 );
