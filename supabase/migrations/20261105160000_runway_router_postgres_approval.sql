@@ -69,6 +69,11 @@ create policy ev_runway_router_approval_read
   using (
     owner_id = (select auth.uid())
     or exists (
+      select 1 from executive_visuals.projects p
+      where p.id = runway_router_approvals.project_id
+        and p.owner_id = (select auth.uid())
+    )
+    or exists (
       select 1 from executive_visuals.project_members m
       where m.project_id = runway_router_approvals.project_id
         and m.member_id = (select auth.uid())
@@ -188,6 +193,11 @@ begin
   if not found then raise exception 'RUNWAY_APPROVAL_NOT_FOUND'; end if;
   if not (
     v_row.owner_id = v_actor
+    or exists (
+      select 1 from executive_visuals.projects p
+      where p.id = v_row.project_id
+        and p.owner_id = v_actor
+    )
     or exists (
       select 1 from executive_visuals.project_members m
       where m.project_id = v_row.project_id
