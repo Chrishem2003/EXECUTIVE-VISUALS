@@ -24,5 +24,7 @@ jobs:
           ffmpeg -version
           fc-match "DejaVu Sans"
       - run: npm install
+      - name: Run targeted video and Google provider regression suite
+        run: npm run verify:video-routing
       - run: npm run typecheck
       - run: npm run build
