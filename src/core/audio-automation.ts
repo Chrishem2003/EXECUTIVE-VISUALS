@@ -55,6 +55,21 @@ export function buildAudioAutomationExpression(points:readonly AudioAutomationPo
  }
  return expression;
 }
+export function buildGainAutomationExpression(points:readonly AudioAutomationPoint[]|undefined,baseGainDb=0):string{
+ const relevant=normalizeAudioAutomation(points).filter(point=>point.gainDb!==undefined);
+ if(!relevant.length)return number(decibelsToLinearGain(baseGainDb));
+ let expression=number(decibelsToLinearGain(relevant[relevant.length-1].gainDb as number));
+ for(let index=relevant.length-1;index>=0;index--){
+  const point=relevant[index],to=point.timeSeconds,from=index?relevant[index-1].timeSeconds:0;
+  const fromDb=index?relevant[index-1].gainDb as number:baseGainDb,toDb=point.gainDb as number;
+  const fromValue=decibelsToLinearGain(fromDb),toValue=decibelsToLinearGain(toDb);
+  const segment=point.interpolation==="linear"&&to>from
+   ?`(${number(fromValue)}+(${number(toValue)}-(${number(fromValue)}))*((t-${number(from)})/(${number(to)}-${number(from)})))`
+   :number(fromValue);
+  expression=`if(lt(t,${number(to)}),${segment},${expression})`;
+ }
+ return expression;
+}
 export function audioPanExpressions(points:readonly AudioAutomationPoint[]|undefined,basePan=0):{left:string;right:string}{
  const pan=buildAudioAutomationExpression(points,"pan",clamp(Number.isFinite(basePan)?basePan:0,-1,1));
  return {left:`if(gt((${pan}),0),1-(${pan}),1)`,right:`if(lt((${pan}),0),1+(${pan}),1)`};
