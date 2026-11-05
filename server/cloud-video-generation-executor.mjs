@@ -124,9 +124,19 @@ export async function executeCloudVideoGenerationJob({
     if (signal?.aborted) throw fail("Cloud video worker lease was lost.", "VIDEO_WORKER_LEASE_LOST");
     if (await cancellationPending() && task.status !== "succeeded") {
       if (task.status === "queued" || task.status === "running") {
-        try { await adapter.cancel(providerTaskId); } catch {}
+        let cancellation = null;
+        try { cancellation = await adapter.cancel(providerTaskId); } catch {}
+        // The provider may have completed between the first status read and
+        // the adapter's own cancellation preflight. Re-fetch output metadata
+        // instead of deleting or quarantining a task now known to be complete.
+        if (cancellation?.status === "succeeded") {
+          try { task = await adapter.getStatus(providerTaskId); }
+          catch { throw fail("Provider completed during cancellation, but its output status could not be re-read.", "VIDEO_CANCELLATION_REQUIRES_RECONCILIATION"); }
+        }
       }
-      throw fail("Provider cancellation was requested; task and billing state require reconciliation.", "VIDEO_CANCELLATION_REQUIRES_RECONCILIATION");
+      if (task.status !== "succeeded") {
+        throw fail("Provider cancellation was requested; task and billing state require reconciliation.", "VIDEO_CANCELLATION_REQUIRES_RECONCILIATION");
+      }
     }
     if (task.status === "failed" || task.status === "canceled") {
       throw fail(task.failure || "Video provider task did not complete.", task.failureCode || "VIDEO_PROVIDER_FAILED");
