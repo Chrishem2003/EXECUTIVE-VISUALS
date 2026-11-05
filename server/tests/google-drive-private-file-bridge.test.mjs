@@ -24,7 +24,7 @@ function response({ status = 200, json = null, data = bytes, headers = {} } = {}
     })
   };
 }
-function harness({ metadata = sourceFile, download = bytes, load = null, denied = false, cleanup = async () => {}, uploadError = false, uploadLocation = "https://www.googleapis.com/upload/drive/v3/files?upload_id=private-session" } = {}) {
+function harness({ metadata = sourceFile, download = bytes, load = null, denied = false, cleanup = async () => {}, uploadError = false, uploadLocation = "https://www.googleapis.com/upload/drive/v3/files?upload_id=private-session", folder = { id: "driveFolder_123456789", mimeType: "application/vnd.google-apps.folder", trashed: false, capabilities: { canAddChildren: true } }, uploadChecksum = createHash("md5").update(bytes).digest("hex") } = {}) {
   const calls = [], scopes = [];
   const assets = { async create(args) {
     calls.push({ kind: "asset-create", args });
@@ -39,7 +39,7 @@ function harness({ metadata = sourceFile, download = bytes, load = null, denied 
     loadPrivateAsset: async () => { if (denied) throw new Error("denied"); return loaded; },
     fetchImpl: async (url, options = {}) => {
       calls.push({ kind: "fetch", url, options });
-      if (url.includes("/drive/v3/files/") && url.includes("alt=media")) {
+      if (url.includes("/drive/v3/files/") && url.includes("fields=id,mimeType,trashed,capabilities")) return response({ json: folder });\n      if (url.includes("/drive/v3/files/") && url.includes("alt=media")) {
         return response({ data: download, headers: { "content-length": String(metadata.size) } });
       }
       if (url.includes("/drive/v3/files/")) return response({ json: metadata });
@@ -50,7 +50,7 @@ function harness({ metadata = sourceFile, download = bytes, load = null, denied 
         if (uploadError) throw new Error("simulated interrupted Drive upload");
         return response({ json: {
           id: "driveFile_987654321", name: "master.mp4", mimeType: "video/mp4",
-          size: String(bytes.length), webViewLink: "https://drive.google.com/file/d/driveFile_987654321/view"
+          size: String(bytes.length), md5Checksum: uploadChecksum, webViewLink: "https://drive.google.com/file/d/driveFile_987654321/view"
         }});
       }
       throw new Error("Unexpected URL");
@@ -103,6 +103,40 @@ test("exports a verified private asset to Drive using OAuth resumable upload", a
   assert.equal(init.options.headers["x-upload-content-length"], String(bytes.length));
   const upload = h.calls.find(x => x.options?.method === "PUT");
   assert.equal(upload.options.body.byteLength, bytes.length);
+});
+
+
+test("preflights a selected Drive destination folder before exporting a private asset", async () => {
+  const h = harness();
+  await h.bridge.uploadPrivateAsset({ ownerId, projectId, assetId, parentFolderId: "driveFolder_123456789" });
+  const folderCheck = h.calls.findIndex(x => x.url?.includes("fields=id,mimeType,trashed,capabilities"));
+  const uploadInit = h.calls.findIndex(x => x.url?.includes("uploadType=resumable"));
+  assert.ok(folderCheck >= 0);
+  assert.ok(uploadInit > folderCheck);
+  assert.match(h.calls[folderCheck].url, /supportsAllDrives=true/);
+});
+
+test("rejects a non-folder, trashed folder, or folder without add-child capability", async () => {
+  for (const folder of [
+    { id: "driveFolder_123456789", mimeType: "video/mp4", trashed: false, capabilities: { canAddChildren: true } },
+    { id: "driveFolder_123456789", mimeType: "application/vnd.google-apps.folder", trashed: true, capabilities: { canAddChildren: true } },
+    { id: "driveFolder_123456789", mimeType: "application/vnd.google-apps.folder", trashed: false, capabilities: { canAddChildren: false } }
+  ]) {
+    const h = harness({ folder });
+    await assert.rejects(
+      () => h.bridge.uploadPrivateAsset({ ownerId, projectId, assetId, parentFolderId: "driveFolder_123456789" }),
+      error => error.code === "GOOGLE_DRIVE_FOLDER_UNAVAILABLE"
+    );
+    assert.equal(h.calls.some(x => x.url?.includes("uploadType=resumable")), false);
+  }
+});
+
+test("rejects a Drive upload whose returned MD5 checksum does not match the private asset", async () => {
+  const h = harness({ uploadChecksum: "0".repeat(32) });
+  await assert.rejects(
+    () => h.bridge.uploadPrivateAsset({ ownerId, projectId, assetId }),
+    error => error.code === "GOOGLE_DRIVE_UPLOAD_RESPONSE_INVALID"
+  );
 });
 
 test("cleans up the private asset materialization after a successful Drive export", async () => {
