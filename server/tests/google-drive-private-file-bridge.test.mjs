@@ -135,6 +135,25 @@ test("resumes a Drive upload from the provider-confirmed byte range after a lost
   assert.equal(puts[2].options.body.byteLength, bytes.length - 2);
 });
 
+
+test("restarts the current transfer from byte zero when Drive reports no persisted range", async () => {
+  const completed = {
+    id: "driveFile_987654321", name: "master.mp4", mimeType: "video/mp4",
+    size: String(bytes.length), md5Checksum: createHash("md5").update(bytes).digest("hex"),
+    webViewLink: "https://drive.google.com/file/d/driveFile_987654321/view"
+  };
+  const h = harness({ uploadSteps: [
+    { throw: true },
+    { status: 308 },
+    { json: completed }
+  ]});
+  const result = await h.bridge.uploadPrivateAsset({ ownerId, projectId, assetId });
+  assert.equal(result.id, completed.id);
+  const puts = h.calls.filter(x => x.options?.method === "PUT");
+  assert.equal(puts[2].options.headers["content-range"], `bytes 0-${bytes.length - 1}/${bytes.length}`);
+  assert.equal(puts[2].options.body.byteLength, bytes.length);
+});
+
 test("does not restart an expired Drive upload session without reconciliation", async () => {
   const h = harness({ uploadSteps: [
     { throw: true },
