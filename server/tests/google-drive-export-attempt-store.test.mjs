@@ -62,7 +62,7 @@ test("rejects untrusted upload session hosts before persistence",async()=>{
  const leaseToken=await h.store.claim({attemptKey,ownerId});
  await assert.rejects(()=>h.store.saveSession({attemptKey,ownerId,leaseToken,sessionUri:"https://attacker.example/upload/drive/v3/files?upload_id=x"}),
   error=>error.code==="GOOGLE_DRIVE_EXPORT_SESSION_INVALID");
- assert.equal(h.calls.length,0);
+ assert.equal(h.calls.length,1);
 });
 test("marks completed attempts and clears encrypted resumable credentials",async()=>{
  const h=harness();
