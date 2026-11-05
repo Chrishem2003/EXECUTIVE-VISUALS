@@ -82,12 +82,16 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
       const cachedBytes=await readFile(cachedPath);
       if(cachedBytes.length<=8||!cachedBytes.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10])))throw new Error("Cached cloud waveform is invalid.");
      }catch(error){
-      if(error.code!=="CLOUD_STORAGE_HTTP_404")throw error;
-      const downloaded=await service.storage.downloadToFile(asset.objectPath,sourcePath,250*1024*1024);
+      const missing=error.code==="CLOUD_STORAGE_HTTP_404",corrupt=error.message==="Cached cloud waveform is invalid.";
+      if(!missing&&!corrupt)throw error;
+      if(corrupt)await service.storage.remove(derivativePath);
+      const downloaded=await service.storage.downloadToFile(asset.objectPath,sourcePath,Math.min(250*1024*1024,asset.size));
       if(downloaded.sha256!==asset.sha256||downloaded.size!==asset.size)throw Object.assign(new Error("Cloud audio source checksum does not match its asset record."),{code:"CLOUD_WAVEFORM_SOURCE_INTEGRITY"});
       const localAsset={id:asset.id,sha256:asset.sha256,media_type:asset.mediaType,byte_size:asset.size,storage_path:relative(mediaRoot,sourcePath)};
       derivativeFile=await waveformCache.get(localAsset,sourcePath);
-      await service.storage.uploadFile(derivativePath,derivativeFile,"image/png",true);
+      const uploaded=await service.storage.uploadFile(derivativePath,derivativeFile,"image/png",true);
+      const derivativeInfo=await stat(derivativeFile);
+      if(uploaded?.bucket!=="executive-visuals-media"||uploaded?.path!==derivativePath||uploaded?.size!==derivativeInfo.size||uploaded?.contentType!=="image/png")throw new Error("Cloud waveform derivative upload receipt is invalid.");
      }
      const info=await stat(derivativeFile);
      if(!info.isFile()||info.size<=8||info.size>2*1024*1024)throw new Error("Cloud waveform derivative failed validation.");
