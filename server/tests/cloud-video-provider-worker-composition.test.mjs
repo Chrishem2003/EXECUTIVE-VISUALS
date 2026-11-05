@@ -46,6 +46,15 @@ test("provider-aware worker composition requires explicit output hostname allowl
   );
 });
 
+test("rejects malformed DNS labels in the output hostname allowlist", () => {
+  for (const host of ["cdn..fal.media", "-bad.fal.media", "bad-.fal.media", "bad host.fal.media"]) {
+    assert.throws(
+      () => createProviderAwareCloudVideoWorkerComposition({ ...base, allowedOutputHosts: [host] }),
+      /explicit bounded hostname allowlist/
+    );
+  }
+});
+
 test("composes provider adapters with Supabase queue, ledger and private asset services without network I/O", () => {
   let adapterFactoryCalls = 0;
   const worker = createProviderAwareCloudVideoWorkerComposition({
