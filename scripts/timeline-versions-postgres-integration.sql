@@ -38,14 +38,14 @@ begin
 
   select * into second_timeline
   from executive_visuals.ev_update_timeline_with_version(
-    timeline_id, owner_id, actor_id, 1, 'Version test v2', second_doc, null,
+    v_timeline_id, owner_id, actor_id, 1, 'Version test v2', second_doc, null,
     'Updated title and sequence', repeat('a',64), repeat('b',64)
   );
   if second_timeline.revision <> 2 then raise exception 'Versioned update did not increment revision.'; end if;
 
   select * into second_version
   from executive_visuals.timeline_versions tv
-  where tv.timeline_id = timeline_id and tv.revision = 2;
+  where tv.timeline_id = v_timeline_id and tv.revision = 2;
   if second_version.parent_version_id <> first_version.id then
     raise exception 'Version update did not preserve its parent lineage.';
   end if;
