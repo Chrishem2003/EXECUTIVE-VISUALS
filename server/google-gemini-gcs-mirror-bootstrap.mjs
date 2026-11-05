@@ -139,7 +139,7 @@ export async function createGoogleGeminiGcsMirrorBootstrap({
       throw fail("Google ADC could not obtain a workload access token.", "GEMINI_GCS_ADC_TOKEN_FAILED");
     }
     const token = typeof response === "string" ? response : response?.token;
-    if (typeof token !== "string" || token.length < 20 || token.length > 8192 || /\\s/.test(token)) {
+    if (typeof token !== "string" || token.length < 20 || token.length > 8192 || /\s/.test(token)) {
       throw fail("Google ADC returned an invalid access token.", "GEMINI_GCS_ADC_TOKEN_INVALID");
     }
     return token;
