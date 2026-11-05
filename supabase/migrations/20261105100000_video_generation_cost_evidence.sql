@@ -120,9 +120,20 @@ create trigger ev_video_cost_evidence_validate
   before insert on executive_visuals.video_generation_cost_evidence
   for each row execute function executive_visuals.validate_video_generation_cost_evidence();
 
+create or replace function executive_visuals.prevent_video_cost_evidence_mutation()
+returns trigger
+language plpgsql
+security invoker
+set search_path = pg_catalog, executive_visuals
+as $video_cost_evidence_immutable$
+begin
+  raise exception 'VIDEO_COST_EVIDENCE_IMMUTABLE';
+end;
+$video_cost_evidence_immutable$;
+
 create trigger ev_video_cost_evidence_immutable
   before update or delete on executive_visuals.video_generation_cost_evidence
-  for each row execute function executive_visuals.prevent_owner_reassignment();
+  for each row execute function executive_visuals.prevent_video_cost_evidence_mutation();
 
 -- Evidence rows are append-only. The owner can create one review receipt per job;
 -- conflicting replacements require a separate audited correction workflow.
