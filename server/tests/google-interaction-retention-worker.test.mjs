@@ -130,7 +130,12 @@ test("leaves a retryable deleting record when provider deletion fails", async ()
 });
 
 test("treats queued provider interactions as pending rather than unknown or terminal", async () => {
-  const h = harness({ initialState: "waiting", remoteStatus: "waiting" });
+  const h = harness({
+    initialState: "waiting",
+    remoteStatus: "waiting",
+    cancelStatus: "canceled",
+    afterCancelStatus: "running"
+  });
   const result = await h.worker.run();
   assert.equal(result.deleted, 0);
   assert.equal(result.retryPending, 1);
