@@ -110,6 +110,19 @@ export function createRunwayRouterWorkflow({
       });
     },
 
+    async getJobStatus({ ownerId, jobId } = {}) {
+      if (typeof ownerId !== "string" || !UUID.test(ownerId)) {
+        throw fail("A verified owner identity is required.", "RUNWAY_WORKFLOW_AUTH_REQUIRED");
+      }
+      if (typeof jobId !== "string" || !UUID.test(jobId)) {
+        throw fail("A valid video job ID is required.", "RUNWAY_WORKFLOW_JOB_INVALID");
+      }
+      if (typeof enqueue.getJobStatus !== "function") {
+        throw fail("Durable Runway job status is not configured.", "RUNWAY_WORKFLOW_STATUS_UNAVAILABLE");
+      }
+      return enqueue.getJobStatus({ ownerId, jobId });
+    },
+
     async approve({ routerApprovalId, accessToken } = {}) {
       if (typeof routerApprovalId !== "string" || !UUID.test(routerApprovalId)) {
         throw fail("A valid Runway router approval ID is required.", "RUNWAY_APPROVAL_ARGUMENT_INVALID");
