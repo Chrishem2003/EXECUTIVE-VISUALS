@@ -135,7 +135,7 @@ export class TimelineRecoveryStore {
 
   private open(): Promise<IDBDatabase> {
     if (this.database) return this.database;
-    this.database = new Promise((resolve, reject) => {
+    const opening = new Promise<IDBDatabase>((resolve, reject) => {
       const request = this.factory.open(TIMELINE_RECOVERY_DB, TIMELINE_RECOVERY_VERSION);
       request.onupgradeneeded = () => {
         const db = request.result;
@@ -157,11 +157,13 @@ export class TimelineRecoveryStore {
       };
       request.onerror = () => reject(request.error || new Error("Could not open recovery storage."));
       request.onblocked = () => reject(new Error("Recovery storage upgrade is blocked by another open tab."));
-    }).catch(error => {
+    });
+    const guarded = opening.catch(error => {
       this.database = null;
       throw error;
     });
-    return this.database;
+    this.database = guarded;
+    return guarded;
   }
 
   saveDraft(input: Omit<TimelineRecoveryDraft, "checksum">): Promise<TimelineRecoveryDraft> {
