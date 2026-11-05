@@ -172,6 +172,20 @@ test("releases the export lease as outcome-unknown after ambiguous session initi
   assert.equal(marks[0].leaseToken, leaseToken);
 });
 
+test("rejects a durable attempt whose MIME type differs from the private asset", async () => {
+  const attempts = {
+    async get() { return { ownerId, projectId, assetId, mimeType: "application/pdf",
+      sha256, byteSize: bytes.length, parentFolderId: null, state: "PREPARED", driveFileId: "driveFile_987654321" }; },
+    async claim() { throw new Error("mismatched attempts must be rejected before claiming"); },
+    async createOrGet() { throw new Error("mismatched attempts must not be recreated"); },
+    async saveSession() {}, async mark() {}
+  };
+  const h = harness({ attempts });
+  await assert.rejects(() => h.bridge.uploadPrivateAsset({ ownerId, projectId, assetId }),
+    error => error.code === "GOOGLE_DRIVE_EXPORT_IDEMPOTENCY_CONFLICT");
+  assert.equal(h.calls.some(x => x.url?.includes("uploadType=resumable")), false);
+});
+
 test("fences expired-session reconciliation with the worker lease", async () => {
   const leaseToken = "44444444-4444-4444-8444-444444444444";
   const marks = [];
