@@ -108,7 +108,7 @@ export async function createGoogleGeminiGcsMirrorBootstrap({
       serviceRoleKey,
       env,
       fetchImpl,
-      maxBytes: Number(env.CLOUD_WORKER_MAX_BYTES || 250 * 1024 * 1024),
+      maxBytes: Number(env.GEMINI_GCS_MAX_BYTES || env.CLOUD_WORKER_MAX_BYTES || 250 * 1024 * 1024),
       timeoutMs: 120000
     }
   });
