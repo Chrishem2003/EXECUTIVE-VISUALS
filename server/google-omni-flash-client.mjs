@@ -232,7 +232,8 @@ export function createGeminiOmniFlashClient({
       catch { throw fail("Gemini streaming response contained invalid event JSON.", "GEMINI_OMNI_STREAM_INVALID"); }
       const type = event.event_type || block.split(/\r?\n/).find(line => line.startsWith("event:"))?.slice(6).trim();
       if (type === "error") {
-        const error = fail("Gemini streaming interaction failed.", "GEMINI_OMNI_STREAM_PROVIDER_ERROR");
+        const error = fail("Gemini streaming interaction failed; reconcile the interaction before any retry.",
+          "GEMINI_OMNI_SUBMISSION_OUTCOME_UNKNOWN");
         error.providerCode = event.error?.code || null;
         throw error;
       }
@@ -345,11 +346,11 @@ export function createGeminiOmniFlashClient({
           : "Gemini interaction submission timed out; its outcome is unknown and must be reconciled.",
         "GEMINI_OMNI_SUBMISSION_OUTCOME_UNKNOWN");
       }
-      if (error?.code === "GEMINI_OMNI_SUBMISSION_OUTCOME_UNKNOWN" ||
-          error?.code?.startsWith?.("GEMINI_OMNI_")) throw error;
+      if (["GEMINI_OMNI_SUBMISSION_OUTCOME_UNKNOWN", "GEMINI_OMNI_REQUEST_REJECTED",
+          "GEMINI_OMNI_RATE_LIMITED"].includes(error?.code)) throw error;
       throw fail(createdId
-        ? "Gemini stream was interrupted after interaction creation; reconcile the durable interaction."
-        : "Gemini interaction submission outcome is unknown; reconcile before any retry.",
+        ? "Gemini stream failed after interaction creation; reconcile the durable interaction before any retry."
+        : "Gemini accepted or may have accepted the submission; reconcile before any retry.",
       "GEMINI_OMNI_SUBMISSION_OUTCOME_UNKNOWN");
     } finally {
       clearTimeout(timer);
