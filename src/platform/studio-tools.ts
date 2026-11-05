@@ -35,8 +35,8 @@ function renderScriptResult(): void {
     addButton.textContent = "Add " + result.shots.length + " draft shot" + (result.shots.length === 1 ? "" : "s") + " to storyboard";
   }
   const warnings = result.warnings.map(w => '<p class="notice">' + esc(w) + "</p>").join("");
-  const rows = result.shots.map((s, i) =>
-    '<li><b>' + (i + 1) + ". " + esc(s.scene) + '</b> · ' + s.duration + ' s<br><span>' + esc(s.action) + '</span><br><small>' +
+  const rows = result.shots.map(s =>
+    '<li><b>' + esc(s.scene) + '</b> · ' + s.duration + ' s<br><span>' + esc(s.action) + '</span><br><small>' +
     esc([s.camera, s.lens, s.movement].join(" · ")) + "</small></li>").join("");
   box.innerHTML = warnings + (rows ? '<p class="tool-note">' + result.shots.length + " shots · about " + result.totalSeconds + ' seconds</p><ol class="draft-list">' + rows + "</ol>" : "");
 }

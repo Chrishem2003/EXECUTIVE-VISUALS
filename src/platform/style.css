@@ -423,3 +423,6 @@
 
 /* Style kits, export and variations */
 .kit-presets{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:6px;border:1px solid var(--line);border-radius:8px;padding:10px;margin:0}.kit-presets legend{font-size:11px;color:var(--muted);padding:0 6px}.kit-check{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text)}.kit-make{margin-top:10px}.kit-make summary{cursor:pointer;font-size:12px;color:var(--gold2)}.draft-list li .quiet{margin:6px 8px 0 0}
+
+/* Quick start */
+.qs-panel{display:grid;gap:14px;margin-bottom:18px;border-color:var(--gold)}.qs-panel h2{margin:0}.qs-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px;margin-bottom:12px}.qs-card{display:grid;gap:6px;padding:12px;border:1px solid var(--line);border-radius:8px;background:var(--panel2);cursor:pointer;position:relative}.qs-card input{position:absolute;opacity:0;pointer-events:none}.qs-card b{font-size:13px}.qs-card span{font-size:11px;color:var(--text)}.qs-card small{font-size:10px;color:var(--muted)}.qs-card:has(input:checked){border-color:var(--gold);box-shadow:0 0 0 1px var(--gold) inset}.qs-card:has(input:focus-visible){outline:2px solid var(--gold2)}.qs-sub{margin:10px 0 4px;font-size:13px}.qs-hooks,.qs-checks{margin:0;padding-left:18px;font-size:12px;display:grid;gap:5px}.qs-hooks li .quiet{margin-left:6px}
