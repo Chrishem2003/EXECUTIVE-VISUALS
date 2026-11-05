@@ -33,7 +33,7 @@ The worker does not infer approval from a client-side flag, accept user-supplied
 
 ## Not yet accepted as complete
 
-The repository now includes a retryable Gemini Files retention worker: it marks expired mappings as `EXPIRED`, deletes the remote Files resource, then marks the record `DELETED`. Provider 404 is treated as already deleted; transient provider or database errors leave an `EXPIRED` tombstone for the next maintenance run. The cloud-worker supervisor now supports optional scheduled maintenance tasks. These components are injectable but are not activated by default.
+The repository includes an authenticated private-asset upload route and a retryable Gemini Files retention worker. The cloud-worker process now composes that retention worker automatically when `GOOGLE_GEMINI_FILES_CLEANUP_ENABLED=true`; the supervisor runs it on the separately configured maintenance cadence. It marks expired mappings as `EXPIRED`, deletes the remote Files resource, then marks the record `DELETED`. Provider 404 is treated as already deleted; transient provider or database errors leave an `EXPIRED` tombstone for the next maintenance run. Uploads remain independently disabled unless `GOOGLE_GEMINI_FILES_ENABLED=true`.
 
 This integration still does not by itself prove:
 
