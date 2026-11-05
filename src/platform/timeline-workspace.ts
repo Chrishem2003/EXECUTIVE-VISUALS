@@ -23,6 +23,10 @@ const state:{timeline:EditorialTimeline|null;serverRevision:number;timelines:Sav
 };
 const esc=(v:unknown)=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]||c));
 const fps=()=>state.timeline?state.timeline.frameRate.numerator/state.timeline.frameRate.denominator:24;
+function audioTransitionEnvelope(track:TimelineTrack,clip:TimelineTrack["clips"][number]){
+ const clips=track.clips.filter(item=>item.enabled).slice().sort((a,b)=>seconds(a.timelineStart)-seconds(b.timelineStart)),index=clips.findIndex(item=>item.id===clip.id),previous=clips[index-1],fadeInDuration=previous?.transitionToNext?.type==="crossfade"?previous.transitionToNext.fadeFrames/fps():0,fadeOutDuration=clip.transitionToNext?.type==="crossfade"?clip.transitionToNext.fadeFrames/fps():0;
+ return {fadeInDuration,fadeOutStart:Math.max(0,seconds(clip.duration)-fadeOutDuration),fadeOutDuration};
+}
 const maxEnd=()=>Math.max(1,...(state.timeline?.tracks.flatMap(t=>t.clips.map(c=>c.timelineStart.value+c.duration.value))||[240]));
 function sourceRate(asset:Asset,kind:string){
  const probe=asset.metadata?.probe as {streams?:Array<{codec_type?:string;r_frame_rate?:string;avg_frame_rate?:string;sample_rate?:string}>}|undefined;
@@ -254,8 +258,8 @@ async function syncPreview(){
    const sourceClip=state.timeline.tracks.find(track=>track.id===clip.trackId)?.clips.find(item=>item.id===clip.clipId);
    if(!sourceClip)continue;
    const target=Math.max(0,clip.sourceTimeSeconds);
-   const localTime=Math.max(0,audio.currentTime-seconds(sourceClip.sourceRange.start)),gainDb=evaluateAudioAutomation(sourceClip.audioAutomation,localTime,"gainDb",Number(sourceClip.gainDb)||0);
-   audio.volume=state.audioEngine?1:decibelsToGain(Math.min(0,gainDb));
+   const localTime=Math.max(0,audio.currentTime-seconds(sourceClip.sourceRange.start)),gainDb=evaluateAudioAutomation(sourceClip.audioAutomation,localTime,"gainDb",Number(sourceClip.gainDb)||0),track=state.timeline.tracks.find(item=>item.id===clip.trackId),envelope=track?audioTransitionEnvelope(track,sourceClip):{fadeInDuration:0,fadeOutStart:0,fadeOutDuration:0},fadeInLevel=envelope.fadeInDuration>0?Math.max(0,Math.min(1,localTime/envelope.fadeInDuration)):1,fadeOutLevel=envelope.fadeOutDuration>0&&localTime>envelope.fadeOutStart?Math.max(0,1-(localTime-envelope.fadeOutStart)/envelope.fadeOutDuration):1;
+   audio.volume=state.audioEngine?1:decibelsToGain(Math.min(0,gainDb))*fadeInLevel*fadeOutLevel;
    if(audio.readyState>=1&&Math.abs(audio.currentTime-target)>0.25)audio.currentTime=target;
    if(audio.readyState<1)audio.onloadedmetadata=()=>{if(state.previewActiveClips.some(item=>item.clipId===clip.clipId))audio.currentTime=target;if(state.previewPlaying)void audio.play().catch(()=>{state.previewPlaying=false;});};
    if(state.previewPlaying&&audio.paused&&audio.readyState>=2)void audio.play().catch(()=>{state.previewPlaying=false;});
@@ -276,7 +280,7 @@ async function syncPreview(){
     const media=document.querySelector<HTMLAudioElement>('[data-preview-audio="'+CSS.escape(clip.clipId)+'"]');
     const sourceClip=state.timeline?.tracks.find(track=>track.id===clip.trackId)?.clips.find(item=>item.id===clip.clipId);
     const controls=state.audioTrackStates[clip.trackId]||{muted:false,solo:false};
-    if(media&&sourceClip)inputs.push({id:clip.clipId,media,gainDb:Number(sourceClip.gainDb)||0,pan:Number(sourceClip.pan)||0,automation:sourceClip.audioAutomation,automationTime:Math.max(0,media.currentTime-seconds(sourceClip.sourceRange.start)),muted:controls.muted,solo:controls.solo});
+    if(media&&sourceClip){const track=state.timeline?.tracks.find(item=>item.id===clip.trackId);if(track)inputs.push({id:clip.clipId,media,gainDb:Number(sourceClip.gainDb)||0,pan:Number(sourceClip.pan)||0,automation:sourceClip.audioAutomation,automationTime:Math.max(0,media.currentTime-seconds(sourceClip.sourceRange.start)),...audioTransitionEnvelope(track,sourceClip),muted:controls.muted,solo:controls.solo});}
    }
    state.audioEngine.setMasterVolume(state.audioMasterVolume);
    state.audioEngine.setMasterMuted(state.audioMasterMuted);
