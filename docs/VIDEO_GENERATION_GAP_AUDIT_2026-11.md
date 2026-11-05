@@ -272,3 +272,59 @@ The provider catalog now exposes the actual configured video adapter capability 
 ## AI upscaling research and selection
 
 Added docs/AI_UPSCALING_ENGINE_SELECTION.md. The initial low-cost candidate is Real-ESRGAN NCNN/Vulkan because its upstream documentation describes portable Intel/AMD/NVIDIA GPU executables without requiring CUDA or PyTorch. It is not enabled or claimed as installed. Video2X is not selected as the hosted dependency because of its AGPL-3.0 licence. The design requires runtime/device probing, adaptive tiling, frame/audio/timebase preservation, temporal-flicker review, derivative-only publishing and explicit licence checks. The existing FFmpeg scaler remains the verified fallback.
+
+
+## Implementation update — asynchronous FAL task adapter — 2026-11-05
+
+Added `server/fal-video-async.mjs` as a non-blocking queue client. It separates provider submission, one-shot status polling, result retrieval and cancellation into distinct operations. It returns a bounded task descriptor (provider, model, request ID and validated queue URLs) that a future durable job handler can persist and resume.
+
+Safety properties:
+- Reuses the existing FAL payload validator; no second provider payload schema is introduced.
+- Requires both existing server-side enablement and remote opt-in flags.
+- Sends FAL's documented `X-Fal-No-Retry: true` header on submission.
+- Validates every task URL against the expected `queue.fal.run` origin and exact model/request path; redirects are rejected.
+- Does not poll, sleep, download, or hold a worker lease while waiting.
+- Treats transport timeout, connection failure or provider 5xx during submission as an ambiguous outcome (`VIDEO_GATEWAY_SUBMISSION_UNKNOWN`) and never automatically resubmits. The caller must reconcile the task before any retry.
+- Status and result retrieval are separate calls; output ingestion and private asset persistence remain the responsibility of the durable worker.
+- Seven offline tests cover submission, separate status/result operations, URL validation, ambiguous submission, opt-in gates, early-result retryability and provider failure states.
+
+**Integration status:** adapter module and offline tests are added on an isolated feature branch. The existing `workflow-executor.mjs` still calls the legacy blocking `generateFalVideo` path; this change does not claim that production workflow execution has been migrated. The next slice must persist the returned provider task descriptor into the existing job/checkpoint model, schedule status checks through a worker, then ingest the verified MP4 into private storage. No provider request, database migration, production deployment or paid generation was performed.
+
+
+### Durable worker adapter follow-up
+
+Added `server/fal-cloud-video-adapter.mjs`, which implements the provider-aware cloud worker's exact adapter contract:
+- Provider/model identity is fixed and checked before submission.
+- Only the short FAL request ID is persisted as the ledger task ID; the known model and request ID reconstruct the three task URLs.
+- `IN_QUEUE` and `IN_PROGRESS` map to nonterminal worker states; completion retrieves bounded output URLs without sleeping or blocking inside the adapter.
+- Authenticated private-reference preparation, private output ingestion, and authoritative actual-cost resolution are mandatory injected handlers where applicable. The adapter will not invent a cost or store provider URLs as final assets.
+- The existing remote-enable and remote-opt-in flags are checked even when a client is injected.
+- Output URLs are restricted to HTTPS FAL media hosts before they are handed to the private-ingestion handler.
+
+Seven adapter contract tests cover the durable task-ID handoff, status mapping, private reference resolution requirements, handler injection, exact model matching, output URL validation and remote opt-in. Five billing-resolver tests cover exact request/model matching, missing/duplicate events, nano-USD consistency, the 90-day date-range boundary and permission failures. This adapter is designed to be registered with the exact-match provider router from the separate provider-aware worker branch; it is not yet registered in the production worker composition. The cloud-worker chain and its migrations remain separate draft work and must be reviewed together before any deployment.
+
+
+### Request-level billing reconciliation
+
+Added `server/fal-billing-cost-resolver.mjs`. It queries FAL's documented `GET /v1/models/billing-events` endpoint using both the exact request ID and exact model endpoint, requires one matching billed event, and derives USD cost from the precision-preserving `cost_estimate_nano_usd` field. It cross-checks the value against `cost_total` and records a request/timestamp evidence reference.
+
+No model list-price estimate or generated-duration heuristic is treated as actual cost. Missing billing events return a retryable not-ready code; duplicate or inconsistent events fail closed. The resolver requires a FAL API key with the documented billing permissions (`billing:usage:read`, `auth:keys:read`, `account:users:read`; BILLING or FULL preset). The FAL adapter still requires the resolver to be explicitly injected, so no production billing credential or permission is assumed.
+
+
+### CI corrections and FAL queue URL semantics — 2026-11-05
+
+The first full CI run on PR #56 exposed two failures: the injected-client adapter path was not actually invoking the remote opt-in guard, and the delivery-manifest validator accepted negative numeric timeline revisions. Both implementation paths have been corrected, with explicit test fixtures for enabled/remote-opted-in adapter operations and a non-negative revision rule.
+
+A further documentation review found that FAL's queue URL path is based on the endpoint **owner/app**, while multi-segment endpoint paths are used only for submission. The queue status/result/cancel URLs must not append every segment of the model endpoint. Both the async queue client and durable adapter now reconstruct task URLs from the first two endpoint segments and retain the full model path for submission. The queue tests now assert the distinction using `fal-ai/wan/v2.7/text-to-video`.
+
+Operational retention constraint: FAL documents that completed results are retained for one hour, but only six minutes when the result payload is at least 10 KB (unless payload storage is enabled). The durable worker must therefore fetch the result promptly after observing `COMPLETED` and ingest it into private storage immediately; it must not assume that a durable task ID alone makes provider results indefinitely retrievable.
+
+The official FAL billing-events API supports exact `request_id` and `endpoint_id` filters, returns `cost_estimate_nano_usd` and `cost_total`, is paginated, and caps each date range at 90 days. The resolver remains an opt-in injected dependency; missing or ambiguous evidence must leave the budget reservation open for reconciliation.
+
+
+The billing resolver now explicitly supplies a bounded `start` parameter within FAL's documented 90-day maximum, using the job's creation timestamp when available. A dedicated `FAL_BILLING_KEY` environment variable is supported so a least-privilege billing key can be separated from the generation key.
+
+
+### FAL cancellation contract correction — 2026-11-05
+
+Cross-checked the queue client against FAL's current official API reference. Queue cancellation is a `PUT` operation, not `POST`. Corrected the async client and added a regression test that verifies the cancellation URL, HTTP method and authorization header. Cancellation remains best-effort and must be followed by status/billing reconciliation; it does not guarantee that an already-running inference stopped before billing.
