@@ -15,5 +15,8 @@ test("rejects incomplete or unsafe output evidence",()=>{
  assert.throws(()=>createDeliveryManifest({...base,sha256:"bad"}),e=>e.code==="DELIVERY_MANIFEST_CHECKSUM_INVALID");
  assert.throws(()=>createDeliveryManifest({...base,byteSize:0}),e=>e.code==="DELIVERY_MANIFEST_SIZE_INVALID");
  assert.throws(()=>createDeliveryManifest({...base,timelineRevision:-1}),e=>e.code==="DELIVERY_MANIFEST_REVISION_INVALID");
+ assert.throws(()=>createDeliveryManifest({...base,timelineRevision:"-1"}),e=>e.code==="DELIVERY_MANIFEST_REVISION_INVALID");
+ assert.throws(()=>createDeliveryManifest({...base,timelineRevision:"-0"}),e=>e.code==="DELIVERY_MANIFEST_REVISION_INVALID");
+ assert.throws(()=>createDeliveryManifest({...base,timelineRevision:"   "}),e=>e.code==="DELIVERY_MANIFEST_REVISION_INVALID");
 });
 test("rejects a modified fingerprint",()=>{const m=createDeliveryManifest(base);assert.equal(verifyDeliveryManifest({...m,fingerprint:"f".repeat(64)}),false);});
