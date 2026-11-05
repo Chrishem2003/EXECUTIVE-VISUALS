@@ -80,3 +80,20 @@ test("cloud video worker validates recovery and finalizer dependencies", async (
   await assert.rejects(runCloudVideoWorkerCycle({ ...f, workerId: "" }), /worker ID/);
   await assert.rejects(runCloudVideoWorkerCycle({ ...f, enqueue: {}, workerId: "worker" }), /atomic enqueue/);
 });
+
+test("cloud video worker finalizes cancellation only before provider submission",async()=>{
+ const f=fixture({execute:async()=>{throw Object.assign(new Error("cancelled before provider submission"),{code:"VIDEO_JOB_CANCELLED"});}});
+ const result=await runCloudVideoWorkerCycle({...f,workerId:"video-worker-1"});
+ assert.equal(result.status,"cancelled");
+ const finish=f.calls.find(call=>call[0]==="finish")[1];
+ assert.equal(finish.status,"cancelled");
+ assert.equal(f.calls.some(call=>call[0]==="quarantine"),false);
+});
+
+test("cloud video worker quarantines provider cancellation until task and billing reconciliation",async()=>{
+ const f=fixture({execute:async()=>{throw Object.assign(new Error("provider cancellation is best-effort"),{code:"VIDEO_CANCELLATION_REQUIRES_RECONCILIATION"});}});
+ const result=await runCloudVideoWorkerCycle({...f,workerId:"video-worker-1"});
+ assert.equal(result.status,"needs_input");
+ assert.equal(f.calls.some(call=>call[0]==="quarantine"),true);
+ assert.equal(f.calls.some(call=>call[0]==="finish"),false);
+});
