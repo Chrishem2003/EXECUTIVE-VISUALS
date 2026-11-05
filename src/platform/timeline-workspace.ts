@@ -479,11 +479,18 @@ document.addEventListener("submit",event=>{
   clip.timelineStart=rational(start,fps());clip.duration=rational(duration,fps());
   clip.sourceRange={start:rational(sourceIn,sourceFps),duration:rational(duration/fps()*sourceFps,sourceFps)};
   if(track.kind==="video"){
-   const previousTransition=clip.transitionToNext;
-   if(data.get("transitionType")==="dip-to-black")clip.transitionToNext={type:"dip-to-black",fadeFrames:Math.max(1,Math.min(240,Math.floor(Number(data.get("transitionFadeFrames"))||12)))};
-   else delete clip.transitionToNext;
-   const transitionValidation=validateTimeline(state.timeline);
-   if(!transitionValidation.valid){if(previousTransition)clip.transitionToNext=previousTransition;else delete clip.transitionToNext;alert(transitionValidation.issues[0].message);return;}
+   const primaryVideoTrackId=state.timeline.tracks.find(item=>item.enabled&&item.kind==="video")?.id;
+   if(track.id===primaryVideoTrackId){
+    const previousTransition=clip.transitionToNext;
+    if(data.get("transitionType")==="dip-to-black")clip.transitionToNext={type:"dip-to-black",fadeFrames:Math.max(1,Math.min(240,Math.floor(Number(data.get("transitionFadeFrames"))||12)))};
+    else delete clip.transitionToNext;
+    const transitionValidation=validateTimeline(state.timeline);
+    if(!transitionValidation.valid){if(previousTransition)clip.transitionToNext=previousTransition;else delete clip.transitionToNext;alert(transitionValidation.issues[0].message);return;}
+   }else{
+    const width=state.timeline.width||1920,height=state.timeline.height||1080;
+    const videoWidth=Math.max(16,Math.min(width,Number(data.get("videoWidth"))||width)),videoHeight=Math.max(16,Math.min(height,Number(data.get("videoHeight"))||height));
+    clip.metadata={...clip.metadata,x:Math.max(0,Math.min(width-videoWidth,Number(data.get("videoX"))||0)),y:Math.max(0,Math.min(height-videoHeight,Number(data.get("videoY"))||0)),width:videoWidth,height:videoHeight,opacity:Math.max(0,Math.min(1,Number(data.get("videoOpacity")??1)))};
+   }
   }
   if(track.kind==="audio"){clip.gainDb=Math.max(-60,Math.min(24,Number(data.get("gainDb"))||0));clip.pan=Math.max(-1,Math.min(1,Number(data.get("pan"))||0));state.audioTrackStates[track.id]={muted:data.get("trackMuted")==="on",solo:data.get("trackSolo")==="on"};}
   if(track.kind==="overlay")clip.metadata={...clip.metadata,x:Number(data.get("x"))||0,y:Number(data.get("y"))||0,width:Math.max(16,Number(data.get("width"))||16),height:Math.max(16,Number(data.get("height"))||16),opacity:Math.max(0,Math.min(1,Number(data.get("opacity")??1)))};
