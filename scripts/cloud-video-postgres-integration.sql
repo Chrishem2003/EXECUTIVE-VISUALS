@@ -106,6 +106,7 @@ select * from executive_visuals.record_runway_router_preflight(
  '323e4567-e89b-42d3-a456-426614174000',
  'creative_low_cost',repeat('f',64),repeat('a',64),60,80,2,'USD',900
 );
+grant select on runway_approval_context to authenticated;
 reset role;
 select set_config('request.jwt.claim.sub','123e4567-e89b-42d3-a456-426614174000',false);
 select set_config('request.jwt.claim.role','authenticated',false);
@@ -388,6 +389,7 @@ select * from executive_visuals.record_runway_router_preflight(
  '323e4567-e89b-42d3-a456-426614174000',
  'creative_low_cost',repeat('e',64),repeat('c',64),24,30,1,'USD',900
 );
+grant select on overrun_approval_context to authenticated;
 reset role;
 select set_config('request.jwt.claim.sub','123e4567-e89b-42d3-a456-426614174000',false);
 select set_config('request.jwt.claim.role','authenticated',false);
