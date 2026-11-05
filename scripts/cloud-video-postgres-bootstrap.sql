@@ -18,6 +18,14 @@ as $auth_uid$
   select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid
 $auth_uid$;
 
+create or replace function auth.role()
+returns text
+language sql stable
+set search_path = pg_catalog
+as $auth_role$
+  select nullif(current_setting('request.jwt.claim.role', true), '')
+$auth_role$;
+
 create schema executive_visuals;
 grant usage on schema auth to authenticated, service_role;
 grant usage on schema executive_visuals to authenticated, service_role;
@@ -27,6 +35,16 @@ create table executive_visuals.projects (
   owner_id uuid not null references auth.users(id) on delete cascade,
   name text not null
 );
+
+create table executive_visuals.project_members (
+  project_id uuid not null references executive_visuals.projects(id) on delete cascade,
+  member_id uuid not null references auth.users(id) on delete cascade,
+  role text not null check (role in ('editor','reviewer','viewer')),
+  invited_by uuid not null references auth.users(id),
+  created_at timestamptz not null default now(),
+  primary key(project_id,member_id)
+);
+grant select on executive_visuals.project_members to authenticated, service_role;
 alter table executive_visuals.projects enable row level security;
 grant select on executive_visuals.projects to authenticated;
 create policy test_project_owner_read on executive_visuals.projects
