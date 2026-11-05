@@ -82,6 +82,7 @@ test("compiles a structured editable storyboard with scene, shot and character l
   assert.match(request.systemPrompt, /do not generate images or video/);
   assert.match(request.prompt, /character-ada/);
   assert.equal(result.storyboard.source, "model");
+  assert.ok(result.storyboard.id);
   assert.equal(result.storyboard.model, "local-storyboard-model");
   assert.equal(result.storyboard.scenes.length, 2);
   assert.equal(result.storyboard.scenes[0].shots.length, 2);
