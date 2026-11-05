@@ -328,8 +328,9 @@ export function createGoogleDrivePrivateFileBridge({
         let uploadResponse;
         let offset = 0;
         let completed = false;
-        for (let attempt = 0; attempt < 6 && !completed; attempt++) {
-          try {
+        try {
+          for (let attempt = 0; attempt < 6 && !completed; attempt++) {
+            try {
             uploadResponse = await request(session, accessToken, {
               method: "PUT",
               headers: {
@@ -352,7 +353,9 @@ export function createGoogleDrivePrivateFileBridge({
             });
           }
           if (uploadResponse.status === 404) {
-            throw fail("Google Drive resumable session expired; reconcile the asset before creating a new upload.",
+            if (attempts) await attempts.mark({ attemptKey: attemptRecord.attemptKey, ownerId: scope.ownerId,
+              state: "RECONCILIATION_REQUIRED", errorCode: "GOOGLE_DRIVE_UPLOAD_SESSION_EXPIRED" });
+            throw fail("Google Drive resumable session expired; reconcile the reserved file ID before restarting.",
               "GOOGLE_DRIVE_UPLOAD_SESSION_EXPIRED");
           }
           if (uploadResponse.status === 308) {
@@ -373,6 +376,13 @@ export function createGoogleDrivePrivateFileBridge({
             continue;
           }
           if (uploadResponse.status === 200 || uploadResponse.status === 201) completed = true;
+          }
+        } catch (error) {
+          if (attempts && attemptRecord && !["GOOGLE_DRIVE_UPLOAD_SESSION_EXPIRED","GOOGLE_DRIVE_UPLOAD_RANGE_INVALID"].includes(error?.code)) {
+            try { await attempts.mark({ attemptKey: attemptRecord.attemptKey, ownerId: scope.ownerId,
+              state: "OUTCOME_UNKNOWN", errorCode: error?.code || "GOOGLE_DRIVE_UPLOAD_OUTCOME_UNKNOWN" }); } catch {}
+          }
+          throw error;
         }
         if (!completed || !uploadResponse) {
           throw fail("Google Drive resumable upload did not complete within the bounded recovery attempts.",
@@ -385,12 +395,16 @@ export function createGoogleDrivePrivateFileBridge({
         } catch {
           throw fail("Google Drive completed an upload but returned invalid file metadata.", "GOOGLE_DRIVE_RESPONSE_INVALID");
         }
-        const expectedMd5 = createHash("md5").update(bytes).digest("hex");
         if (!uploaded || typeof uploaded.id !== "string" || !FILE_ID.test(uploaded.id) ||
             uploaded.mimeType !== asset.mediaType || Number(uploaded.size) !== bytes.byteLength ||
             typeof uploaded.md5Checksum !== "string" || !/^[a-f0-9]{32}$/i.test(uploaded.md5Checksum) ||
             uploaded.md5Checksum.toLowerCase() !== expectedMd5) {
           throw fail("Google Drive upload completed without matching size, MIME type, and content checksum.", "GOOGLE_DRIVE_UPLOAD_RESPONSE_INVALID");
+        }
+        if (attempts) {
+          await attempts.mark({ attemptKey: attemptRecord.attemptKey, ownerId: scope.ownerId, state: "COMPLETED",
+            webViewLink: typeof uploaded.webViewLink === "string" &&
+              uploaded.webViewLink.startsWith("https://drive.google.com/") ? uploaded.webViewLink : null });
         }
         return Object.freeze({
           id: uploaded.id, name: safeName(uploaded.name), mimeType: uploaded.mimeType,
