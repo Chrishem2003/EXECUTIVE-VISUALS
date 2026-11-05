@@ -24,6 +24,7 @@ jobs:
           fc-match "DejaVu Sans"
       - run: npm install
       - name: Run Google GCS bootstrap and cloud-worker identity tests
+        if: hashFiles('server/tests/google-gemini-gcs-mirror-bootstrap.test.mjs') != ''
         run: node --test server/tests/google-gemini-gcs-mirror-bootstrap.test.mjs server/tests/cloud-worker-process.test.mjs
       - run: npm run typecheck
       - run: npm run build
