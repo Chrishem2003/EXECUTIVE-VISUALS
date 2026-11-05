@@ -76,7 +76,7 @@ test("accepts a fenced JSON response but strips unrecognized model fields", asyn
 test("rejects empty or oversized briefs before calling the model", async () => {
   let calls = 0;
   await assert.rejects(() => generateCreativeDirection({ input: { ...input, brief: " " }, generateText: async () => { calls++; return {}; } }), error => error.code === "CREATIVE_DIRECTOR_BRIEF_REQUIRED");
-  await assert.rejects(() => generateCreativeDirection({ input: { ...input, title: "x".repeat(121) }, generateText: async () => { calls++; return {}; } }), error => error.code === "CREATIVE_DIRECTOR_OUTPUT_INVALID" || error.code === "CREATIVE_DIRECTOR_BRIEF_REQUIRED");
+  await assert.rejects(() => generateCreativeDirection({ input: { ...input, title: "x".repeat(121) }, generateText: async () => { calls++; return {}; } }), error => error.code === "CREATIVE_DIRECTOR_INPUT_INVALID" || error.code === "CREATIVE_DIRECTOR_BRIEF_REQUIRED");
   assert.equal(calls, 0);
 });
 
@@ -92,8 +92,9 @@ test("requires unique creative route names and distinct list entries", async () 
 });
 
 test("normalizes bounded input fields and rejects non-object input", () => {
-  const normalized = normalizeCreativeDirectorInput({ ...input, brief: "  a  \n brief ", constraints: "x".repeat(1200) });
+  const normalized = normalizeCreativeDirectorInput({ ...input, brief: "  a  \n brief ", constraints: "x".repeat(1000) });
   assert.equal(normalized.brief, "a brief");
   assert.equal(normalized.constraints.length, 1000);
+  assert.throws(() => normalizeCreativeDirectorInput({ ...input, constraints: "x".repeat(1001) }), error => error.code === "CREATIVE_DIRECTOR_INPUT_INVALID");
   assert.throws(() => normalizeCreativeDirectorInput(null), error => error.code === "CREATIVE_DIRECTOR_INPUT_INVALID");
 });
