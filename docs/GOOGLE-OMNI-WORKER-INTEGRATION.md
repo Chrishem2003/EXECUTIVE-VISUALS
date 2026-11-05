@@ -51,3 +51,10 @@ This integration still does not by itself prove:
 - A staging run with approved test credentials and a real private test asset.
 
 Keep provider flags disabled until those lifecycle tests pass in an isolated staging environment. Do not enable paid generation or production worker execution as part of this change.
+
+
+### Large generated-video retrieval
+
+Gemini Omni URI delivery is required for generated videos. The Interactions API guide documents that the output URI is available in the initial response or streaming events, while a later full interaction retrieval can include the video as inline base64. The worker therefore requests a partial response for polling using `fields=id,model,status,steps(type,content(type,mime_type,uri))`, excluding the `data` field. It then downloads the Google Files URI separately with a bounded streaming reader and commits bytes to the private Cloud Asset repository.
+
+The REST client also bounds interaction response reads while streaming; it cancels the response body once the configured limit is exceeded, before JSON parsing. This is a defensive cap, not a substitute for URI delivery. If the Interactions endpoint does not honor the field mask, polling fails closed with `GEMINI_OMNI_RESPONSE_TOO_LARGE`; do not increase the response cap to accommodate base64 video. Verify field-mask behavior against a paid-tier staging project before enabling remote generation.
