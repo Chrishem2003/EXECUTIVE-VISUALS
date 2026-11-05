@@ -1,11 +1,11 @@
 import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
-import { mkdir, rename, rm, stat } from "node:fs/promises";
+import { mkdir, rename, rm, stat, readFile } from "node:fs/promises";
 import { extname, isAbsolute, relative, resolve, sep, join } from "node:path";
 
 const PNG=Buffer.from([137,80,78,71,13,10,26,10]);
 const VERSION="waveform-v1";
-const UUID=/^[0-9a-f]{8}-[0-9a-f-]{27}$/i;
+const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SHA=/^[a-f0-9]{64}$/i;
 
 function run(executable,args,{timeoutMs=45000,maxOutput=8192}={}){
@@ -56,7 +56,6 @@ export function createWaveformCache({mediaRoot,ffmpegPath=process.env.FFMPEG_PAT
     else await generate(sourcePath,temp);
     const info=await stat(temp);
     if(!info.isFile()||info.size<=PNG.length||info.size>2*1024*1024)throw Object.assign(new Error("Generated waveform image failed size validation."),{code:"WAVEFORM_INVALID_OUTPUT"});
-    const {readFile}=await import("node:fs/promises");
     const header=await readFile(temp);
     if(!header.subarray(0,8).equals(PNG))throw Object.assign(new Error("Generated waveform is not a PNG image."),{code:"WAVEFORM_INVALID_OUTPUT"});
     await rename(temp,output);
