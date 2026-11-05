@@ -199,7 +199,7 @@ test("Kie Seedance enqueue enforces resolution, duration, reference and reservat
  const kieArgs={ownerId,projectId,idempotencyKey:"kie-request-002",provider:"kie",model:"bytedance/seedance-2",requestHash,input:kieInput,budgetApprovalId:approvalId,reservedAmount:1.025,currency:"USD"};
  await assert.rejects(()=>client.enqueue({...kieArgs,reservedAmount:1.024}),error=>error.code==="VIDEO_BUDGET_BELOW_PROVIDER_ESTIMATE");
  await assert.rejects(()=>client.enqueue({...kieArgs,input:{...kieInput,durationSeconds:16}}),error=>error.code==="VIDEO_PRICE_DURATION_INVALID");
- await assert.rejects(()=>client.enqueue({...kieArgs,input:{...kieInput,resolution:"8K"}}),error=>error.code==="VIDEO_GENERATION_UNSUPPORTED_CAPABILITY");
+ await assert.rejects(()=>client.enqueue({...kieArgs,input:{...kieInput,resolution:"8K"}}),error=>error.code==="VIDEO_PRICE_UNSUPPORTED_OPTION");
  await assert.rejects(()=>client.enqueue({...kieArgs,input:{...kieInput,referenceVideoAssetIds:["asset-video"]}}),error=>error.code==="VIDEO_GENERATION_UNSUPPORTED_CAPABILITY");
  await assert.rejects(()=>client.enqueue({...kieArgs,input:{...kieInput,endFrameAssetId:"asset-last"}}),/last frame requires a first/);
  assert.equal(calls,0);
