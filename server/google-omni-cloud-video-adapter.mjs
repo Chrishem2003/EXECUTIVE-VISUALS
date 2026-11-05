@@ -95,7 +95,8 @@ export function createGoogleOmniCloudVideoIntegration({
         parentInteractionId: prepared.plan.payload?.previous_interaction_id || null,
         state: accepted.status === "running" ? "running" : "waiting",
         expiresAt,
-        metadata: { outputDelivery: "uri" }
+        outputUri: accepted.outputUrls?.[0] || null,
+        metadata: { outputDelivery: "uri", outputUriCapturedAtSubmission: Boolean(accepted.outputUrls?.[0]) }
       });
       return { taskId: accepted.interactionId, status: accepted.status || "running" };
     },
@@ -120,7 +121,18 @@ export function createGoogleOmniCloudVideoIntegration({
       const rawInteraction = await client.getInteractionForIngestion(providerTaskId, {
         ownerId: job.owner_id, projectId: job.project_id || null, jobId: job.id
       });
-      const result = normalizeGeminiOmniFlashInteractionResponse(rawInteraction);
+      let interactionForIngestion = rawInteraction;
+      const hasVideo = Array.isArray(rawInteraction?.steps) && rawInteraction.steps.some(step =>
+        step?.type === "model_output" && Array.isArray(step.content) && step.content.some(item => item?.type === "video"));
+      if (!hasVideo && stored.outputUri) {
+        interactionForIngestion = {
+          ...rawInteraction,
+          steps: [...(Array.isArray(rawInteraction?.steps) ? rawInteraction.steps : []), {
+            type: "model_output", content: [{ type: "video", mime_type: "video/mp4", uri: stored.outputUri }]
+          }]
+        };
+      }
+      const result = normalizeGeminiOmniFlashInteractionResponse(interactionForIngestion);
       if (result.interactionId !== providerTaskId || result.model !== MODEL) {
         throw fail("Google interaction response does not match the durable task record.", "GEMINI_OMNI_RESPONSE_SCOPE_MISMATCH");
       }
@@ -131,7 +143,7 @@ export function createGoogleOmniCloudVideoIntegration({
         : result.status === "failed" || result.status === "canceled" || result.status === "incomplete"
           ? "failed"
           : result.status === "waiting" ? "waiting" : "running";
-      await interactions.updateInteraction({ ...scope, state });
+      await interactions.updateInteraction({ ...scope, state, outputUri: result.video?.uri || stored.outputUri || undefined });
       return Object.freeze({
         taskId: providerTaskId,
         status: state === "waiting" ? "running" : state,
