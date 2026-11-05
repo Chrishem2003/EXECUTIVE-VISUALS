@@ -33,6 +33,22 @@ test("creates an owner-scoped durable export attempt without exposing session cr
  assert.match(h.calls[0].url,/on_conflict=attempt_key/);
  assert.equal(h.calls[0].options.headers["content-profile"],"executive_visuals");
 });
+
+test("claims a Drive export attempt with a bounded exclusive lease",async()=>{
+ const h=harness();
+ const lease=await h.store.claim({attemptKey,ownerId});
+ assert.match(lease,/^[0-9a-f-]{36}$/);
+ assert.match(h.calls[0].url,/lease_expires_at/);
+ assert.match(h.calls[0].url,/state=neq.COMPLETED/);
+ assert.equal(h.rows[0].lease_token,lease);
+ assert.ok(Date.parse(h.rows[0].lease_expires_at)>Date.now());
+});
+test("rejects malformed attempt keys before issuing a lease update",async()=>{
+ const h=harness();
+ await assert.rejects(()=>h.store.claim({attemptKey:"bad",ownerId}),
+  error=>error.code==="GOOGLE_DRIVE_EXPORT_ATTEMPT_INVALID");
+ assert.equal(h.calls.length,0);
+});
 test("encrypts a validated Google Drive resumable session URI at rest",async()=>{
  const h=harness(),uri="https://www.googleapis.com/upload/drive/v3/files?upload_id=private-session";
  await h.store.saveSession({attemptKey,ownerId,sessionUri:uri});
