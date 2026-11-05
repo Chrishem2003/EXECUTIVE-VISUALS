@@ -131,6 +131,47 @@ export function validateTimeline(timeline:EditorialTimeline):{valid:boolean;issu
   for(const marker of timeline.markers){if(ids.has(marker.id))issues.push({code:"duplicate_id",message:"Duplicate marker ID."});ids.add(marker.id);if(marker.start.value<0)issues.push({code:"invalid_marker",message:"Marker starts before the timeline."});}
   return {valid:issues.length===0,issues};
 }
+export interface ActiveTimelineClip {
+  trackId:string;
+  trackKind:TrackKind;
+  clipId:string;
+  assetId:string;
+  sourceTimeSeconds:number;
+  sourceFrame:number;
+}
+export interface TimelineFrameEvaluation {
+  frame:number;
+  timeSeconds:number;
+  activeClips:ActiveTimelineClip[];
+}
+/** Resolve the active media clips at a zero-based timeline frame for preview and render parity. */
+export function evaluateTimelineAtFrame(timeline:EditorialTimeline,frame:number):TimelineFrameEvaluation{
+  if(!Number.isSafeInteger(frame)||frame<0)throw new Error("Timeline frame must be a non-negative safe integer.");
+  const validation=validateTimeline(timeline);
+  if(!validation.valid)throw new Error(validation.issues[0].message);
+  const fps=timeline.frameRate.numerator/timeline.frameRate.denominator;
+  const timeSeconds=frame/fps;
+  const activeClips:ActiveTimelineClip[]=[];
+  for(const track of timeline.tracks){
+    if(!track.enabled)continue;
+    for(const clip of track.clips){
+      if(!clip.enabled)continue;
+      const clipStart=seconds(clip.timelineStart);
+      const clipEnd=clipStart+seconds(clip.duration);
+      if(timeSeconds<clipStart||timeSeconds>=clipEnd)continue;
+      const sourceTimeSeconds=seconds(clip.sourceRange.start)+(timeSeconds-clipStart);
+      activeClips.push({
+        trackId:track.id,
+        trackKind:track.kind,
+        clipId:clip.id,
+        assetId:clip.assetId,
+        sourceTimeSeconds,
+        sourceFrame:sourceTimeSeconds*clip.sourceRange.start.rate
+      });
+    }
+  }
+  return {frame,timeSeconds,activeClips};
+}
 function otioTime(time:RationalTime){return {OTIO_SCHEMA:"RationalTime.1",value:time.value,rate:time.rate};}
 function otioRange(range:TimeRange){return {OTIO_SCHEMA:"TimeRange.1",start_time:otioTime(range.start),duration:otioTime(range.duration)};}
 export function toOpenTimelineIo(timeline:EditorialTimeline):OtioObject{
