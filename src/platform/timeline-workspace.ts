@@ -226,7 +226,7 @@ async function syncPreview(){
   for(const clip of videoClips){
    const video=document.querySelector<HTMLVideoElement>('[data-preview-video="'+CSS.escape(clip.clipId)+'"]');
    if(!video)continue;
-   const target=Math.max(0,clip.sourceTimeSeconds);
+   const target=Math.max(0,clip.sourceTimeSeconds);video.playbackRate=clip.playbackSpeed;
    if(video.readyState>=1&&Math.abs(video.currentTime-target)>0.12)video.currentTime=target;
    if(video.readyState<1)video.onloadedmetadata=()=>{if(state.previewActiveClips.some(item=>item.clipId===clip.clipId))video.currentTime=target;if(state.previewPlaying)void video.play().catch(()=>{state.previewPlaying=false;});};
    if(state.previewPlaying&&video.paused&&video.readyState>=2)void video.play().catch(()=>{state.previewPlaying=false;});
@@ -237,7 +237,7 @@ async function syncPreview(){
      const sourceClip=state.timeline.tracks.find(track=>track.id===current.trackId)?.clips.find(item=>item.id===current.clipId);
      if(!sourceClip)return;
      const sourceStart=seconds(sourceClip.sourceRange.start);
-     const sourceEnd=sourceStart+current.timelineEndSeconds-current.timelineStartSeconds;
+     const sourceEnd=sourceStart+(current.timelineEndSeconds-current.timelineStartSeconds)*current.playbackSpeed;
      if(video.currentTime>=sourceEnd-0.025){
       for(const node of document.querySelectorAll<HTMLVideoElement>("[data-preview-video]"))node.pause();
       state.playheadFrame=Math.ceil(current.timelineEndSeconds*fps());
@@ -245,7 +245,7 @@ async function syncPreview(){
       const readout=document.querySelector<HTMLElement>("#tl-playhead-label");if(readout)readout.textContent="Frame "+state.playheadFrame+" · "+(state.playheadFrame/fps()).toFixed(3)+"s";
       void syncPreview();return;
      }
-     state.playheadFrame=Math.max(0,Math.floor((current.timelineStartSeconds+Math.max(0,video.currentTime-sourceStart))*fps()));
+     state.playheadFrame=Math.max(0,Math.floor((current.timelineStartSeconds+Math.max(0,video.currentTime-sourceStart)/current.playbackSpeed)*fps()));
      const slider=document.querySelector<HTMLInputElement>("#tl-playhead");if(slider)slider.value=String(state.playheadFrame);
      const readout=document.querySelector<HTMLElement>("#tl-playhead-label");if(readout)readout.textContent="Frame "+state.playheadFrame+" · "+(state.playheadFrame/fps()).toFixed(3)+"s";
      void syncPreview();
@@ -257,8 +257,8 @@ async function syncPreview(){
    if(!audio)continue;
    const sourceClip=state.timeline.tracks.find(track=>track.id===clip.trackId)?.clips.find(item=>item.id===clip.clipId);
    if(!sourceClip)continue;
-   const target=Math.max(0,clip.sourceTimeSeconds);
-   const localTime=Math.max(0,audio.currentTime-seconds(sourceClip.sourceRange.start)),gainDb=evaluateAudioAutomation(sourceClip.audioAutomation,localTime,"gainDb",Number(sourceClip.gainDb)||0),track=state.timeline.tracks.find(item=>item.id===clip.trackId),envelope=track?audioTransitionEnvelope(track,sourceClip):{fadeInDuration:0,fadeOutStart:0,fadeOutDuration:0},fadeInLevel=envelope.fadeInDuration>0?Math.max(0,Math.min(1,localTime/envelope.fadeInDuration)):1,fadeOutLevel=envelope.fadeOutDuration>0&&localTime>envelope.fadeOutStart?Math.max(0,1-(localTime-envelope.fadeOutStart)/envelope.fadeOutDuration):1;
+   const target=Math.max(0,clip.sourceTimeSeconds);audio.playbackRate=clip.playbackSpeed;
+   const localTime=Math.max(0,audio.currentTime-seconds(sourceClip.sourceRange.start))/clip.playbackSpeed,gainDb=evaluateAudioAutomation(sourceClip.audioAutomation,localTime,"gainDb",Number(sourceClip.gainDb)||0),track=state.timeline.tracks.find(item=>item.id===clip.trackId),envelope=track?audioTransitionEnvelope(track,sourceClip):{fadeInDuration:0,fadeOutStart:0,fadeOutDuration:0},fadeInLevel=envelope.fadeInDuration>0?Math.max(0,Math.min(1,localTime/envelope.fadeInDuration)):1,fadeOutLevel=envelope.fadeOutDuration>0&&localTime>envelope.fadeOutStart?Math.max(0,1-(localTime-envelope.fadeOutStart)/envelope.fadeOutDuration):1;
    audio.volume=state.audioEngine?1:decibelsToGain(Math.min(0,gainDb))*fadeInLevel*fadeOutLevel;
    if(audio.readyState>=1&&Math.abs(audio.currentTime-target)>0.25)audio.currentTime=target;
    if(audio.readyState<1)audio.onloadedmetadata=()=>{if(state.previewActiveClips.some(item=>item.clipId===clip.clipId))audio.currentTime=target;if(state.previewPlaying)void audio.play().catch(()=>{state.previewPlaying=false;});};
@@ -266,7 +266,7 @@ async function syncPreview(){
    audio.ontimeupdate=()=>{
     const current=state.previewActiveClips.find(item=>item.clipId===clip.clipId);
     if(clip.clipId!==primaryAudio?.clipId||!current||!state.timeline||state.previewActiveClips.some(item=>item.trackKind==="video"))return;
-    const frame=Math.max(0,Math.floor((current.timelineStartSeconds+Math.max(0,audio.currentTime-seconds(sourceClip.sourceRange.start)))*fps()));
+    const frame=Math.max(0,Math.floor((current.timelineStartSeconds+Math.max(0,audio.currentTime-seconds(sourceClip.sourceRange.start))/current.playbackSpeed)*fps()));
     state.playheadFrame=frame;
     const slider=document.querySelector<HTMLInputElement>("#tl-playhead");if(slider)slider.value=String(frame);
     const readout=document.querySelector<HTMLElement>("#tl-playhead-label");if(readout)readout.textContent="Frame "+frame+" · "+(frame/fps()).toFixed(3)+"s";
@@ -280,7 +280,7 @@ async function syncPreview(){
     const media=document.querySelector<HTMLAudioElement>('[data-preview-audio="'+CSS.escape(clip.clipId)+'"]');
     const sourceClip=state.timeline?.tracks.find(track=>track.id===clip.trackId)?.clips.find(item=>item.id===clip.clipId);
     const controls=state.audioTrackStates[clip.trackId]||{muted:false,solo:false};
-    if(media&&sourceClip){const track=state.timeline?.tracks.find(item=>item.id===clip.trackId);if(track)inputs.push({id:clip.clipId,media,gainDb:Number(sourceClip.gainDb)||0,pan:Number(sourceClip.pan)||0,automation:sourceClip.audioAutomation,automationTime:Math.max(0,media.currentTime-seconds(sourceClip.sourceRange.start)),...audioTransitionEnvelope(track,sourceClip),muted:controls.muted,solo:controls.solo});}
+    if(media&&sourceClip){const track=state.timeline?.tracks.find(item=>item.id===clip.trackId);if(track)inputs.push({id:clip.clipId,media,gainDb:Number(sourceClip.gainDb)||0,pan:Number(sourceClip.pan)||0,automation:sourceClip.audioAutomation,automationTime:Math.max(0,media.currentTime-seconds(sourceClip.sourceRange.start))/Number(sourceClip.speed??1),...audioTransitionEnvelope(track,sourceClip),muted:controls.muted,solo:controls.solo});}
    }
    state.audioEngine.setMasterVolume(state.audioMasterVolume);
    state.audioEngine.setMasterMuted(state.audioMasterMuted);
