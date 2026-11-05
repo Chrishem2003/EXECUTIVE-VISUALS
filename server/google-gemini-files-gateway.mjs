@@ -91,6 +91,7 @@ export function createGoogleGeminiFilesGateway({
   chunkSize = 8 * 1024 * 1024,
   processingPollIntervalMs = 5000,
   maxProcessingPolls = 36,
+  onCleanupError = () => {},
   now = () => Date.now(),
   sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
 } = {}) {
@@ -322,7 +323,11 @@ export function createGoogleGeminiFilesGateway({
         }
         return Object.freeze({ uri: googleFile.uri, mediaType: mimeType, providerFileName: googleFile.name, expiresAt });
       } finally {
-        await loaded.cleanup();
+        try {
+          await loaded.cleanup();
+        } catch {
+          try { onCleanupError({ code: "GEMINI_FILE_TEMP_CLEANUP_FAILED", assetId }); } catch {}
+        }
       }
     },
     async deleteProviderFile(name) {
