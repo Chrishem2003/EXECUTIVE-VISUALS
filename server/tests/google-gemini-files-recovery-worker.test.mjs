@@ -22,7 +22,7 @@ const file = {
   sha256Hash: Buffer.from(sha256, "hex").toString("base64"),
   state: "ACTIVE", expirationTime: "2026-11-07T00:00:00.000Z"
 };
-function harness({ attempts = [baseAttempt], pages = [{ files: [file], nextPageToken: null }], getFile, failRecord = false, failUpdate = false, maxPages = 10 } = {}) {
+function harness({ attempts = [baseAttempt], pages = [{ files: [file], nextPageToken: null }], getFile, getFileError, failRecord = false, failUpdate = false, maxPages = 10 } = {}) {
   const calls = [];
   const records = [];
   const updates = [];
@@ -36,7 +36,7 @@ function harness({ attempts = [baseAttempt], pages = [{ files: [file], nextPageT
       calls.push(["list", args]);
       return pages.shift() || { files: [], nextPageToken: null };
     },
-    async getProviderFile(name) { calls.push(["get", name]); return getFile || file; }
+    async getProviderFile(name) { calls.push(["get", name]); if (getFileError) throw getFileError; return getFile || file; }
   };
   const worker = createGoogleGeminiFilesRecoveryWorker({
     repository, gateway, now: () => Date.parse("2026-11-05T00:00:00.000Z"), maxPages
@@ -114,6 +114,19 @@ test("uses direct metadata lookup for attempts with a known provider file name",
   assert.equal(result.reconciled, 1);
   assert.ok(h.calls.some(call => call[0] === "get" && call[1] === file.name));
   assert.equal(h.records.length, 1);
+});
+
+
+test("quarantines a known provider resource after Google confirms it no longer exists", async () => {
+  const attempt = { ...baseAttempt, state: "PROVIDER_CREATED", providerFileName: file.name };
+  const missing = Object.assign(new Error("not found"), { status: 404 });
+  const h = harness({ attempts: [attempt], getFileError: missing });
+  const result = await h.worker.run();
+  assert.equal(result.results[0].status, "provider_file_not_found_quarantined");
+  assert.equal(result.quarantined, 1);
+  assert.equal(h.records.length, 0);
+  assert.equal(h.updates[0].state, "QUARANTINED");
+  assert.equal(h.updates[0].errorCode, "GEMINI_FILE_RECOVERY_PROVIDER_FILE_NOT_FOUND");
 });
 
 test("retains retry-pending state when mapping persistence fails", async () => {
