@@ -39,7 +39,7 @@ async function saveRecoveryDraft(reason:string):Promise<TimelineRecoveryDraft|nu
 }
 async function completeRecoveryCheckpoint(draft:TimelineRecoveryDraft|null,revision:number):Promise<void>{
  if(!draft)return;
- try{await recoveryStore().saveCheckpoint(draft,revision,"Server-confirmed timeline save");state.recoveryStatus="saved";state.recoveredDraft=null;}
+ try{await recoveryStore().saveCheckpoint(draft,revision,"Server-confirmed timeline save");state.recoveryStatus="saved";state.recoveredDraft=null;state.conflictServerTimeline=null;}
  catch(error){state.recoveryStatus="unavailable";state.message="Timeline saved on the server, but its local checkpoint could not be finalized: "+(error instanceof Error?error.message:"storage error")+". The recovery draft was retained where possible.";}
 }
 async function restoreTimelineRecovery():Promise<void>{
@@ -51,7 +51,7 @@ async function restoreTimelineRecovery():Promise<void>{
   const assessment=await assessTimelineRecovery(draft,state.serverRevision);
   if(assessment.disposition==="recover"&&assessment.draft){
    if(await checksumTimeline(state.timeline)===assessment.draft.checksum){await recoveryStore().saveCheckpoint(assessment.draft,state.serverRevision,"Confirmed server save recovered after interrupted checkpoint");state.recoveryStatus="saved";return;}
-   state.timeline=structuredClone(assessment.draft.snapshot);state.recoveredDraft=assessment.draft;state.recoveryStatus="recovered";state.message=assessment.reason+" Save or discard it explicitly.";
+   state.conflictServerTimeline=structuredClone(state.timeline);state.timeline=structuredClone(assessment.draft.snapshot);state.recoveredDraft=assessment.draft;state.recoveryStatus="recovered";state.message=assessment.reason+" Save or discard it explicitly.";
   }else if(assessment.disposition==="conflict"&&assessment.draft){state.recoveredDraft=assessment.draft;state.conflictServerTimeline=structuredClone(state.timeline);state.recoveryStatus="conflict";state.message=assessment.reason+" The latest server timeline remains loaded and unchanged."
   }else if(assessment.disposition==="invalid"){state.recoveryStatus="unavailable";state.message=assessment.reason;}
  }catch(error){state.recoveryStatus="unavailable";state.message="Could not inspect the browser recovery journal: "+(error instanceof Error?error.message:"unknown error")+"."}
@@ -393,7 +393,7 @@ function recoveryConflictPanel():string{
   return '<section class="panel timeline-quality"><div class="eyebrow">BROWSER RECOVERY · UNSAVED DRAFT</div><p>Recovered edits from the last confirmed server revision. Save or discard them explicitly.</p><div class="toolbar"><button class="primary" data-tl-action="save-recovered-draft">Save recovered edits</button><button class="secondary" data-tl-action="discard-recovered-draft">Discard recovered draft</button></div></section>';
  }
  if(!state.recoveredDraft)return '<section class="panel timeline-quality"><div class="eyebrow">SAVE CONFLICT · LOCAL DRAFT PRESERVED</div><p>A newer server revision exists. Your current edits have not been overwritten.</p><div class="toolbar"><button class="secondary" data-tl-action="reload-server">Load latest server revision</button></div></section>';
- const server=state.conflictServerTimeline||state.timeline;
+ const server=state.conflictServerTimeline;
  let comparisonHtml='<p class="muted">The latest server snapshot is unavailable, so a structural comparison could not be generated.</p>';
  if(server){
   try{
@@ -541,7 +541,7 @@ async function runAction(action:HTMLElement){
   paint();return;
  }
  if(type==="discard-recovered-draft"){
-  try{if(state.recoveredDraft)await recoveryStore().clearDraft(state.recoveredDraft.key);if(state.recoveryStatus==="conflict"&&state.conflictServerTimeline)state.timeline=structuredClone(state.conflictServerTimeline);state.recoveredDraft=null;state.conflictServerTimeline=null;state.cloudRevisionConflict=false;state.recoveryStatus="idle";state.message="Recovered browser draft discarded. The server timeline was left unchanged.";}
+  try{if(state.recoveredDraft)await recoveryStore().clearDraft(state.recoveredDraft.key);if(state.conflictServerTimeline)state.timeline=structuredClone(state.conflictServerTimeline);state.recoveredDraft=null;state.conflictServerTimeline=null;state.cloudRevisionConflict=false;state.recoveryStatus="idle";state.message="Recovered browser draft discarded. The server timeline was left unchanged.";}
   catch(error){state.message=error instanceof Error?error.message:"Could not discard recovered draft.";}
   paint();return;
  }
