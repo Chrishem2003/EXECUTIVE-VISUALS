@@ -26,7 +26,10 @@ if (/\b(drop\s+table|truncate|delete\s+from)\b/i.test(googleGcsAssetSourcesSql))
   issues.push("GCS source registry migration must not contain destructive DDL/DML.");
 }
 if (!googleGcsAssetSourcesSql.includes("position(chr(92) in object_name) = 0") ||
-    !googleGcsAssetSourcesSql.includes("generation ~ '^[0-9]{1,30}
+    !googleGcsAssetSourcesSql.includes("generation ~ '^[0-9]{1,30}$'") ||
+    !googleGcsAssetSourcesSql.includes("metageneration ~ '^[0-9]{1,30}$'")) {
+  issues.push("GCS source registry must validate object paths and immutable GCS generation metadata.");
+}
 const tables = ["projects","project_members","project_workspace_documents","workflows","workflow_runs","workflow_node_runs","timelines","assets","jobs","job_events","consents","reviews","audit_events"];
 for (const table of tables) {
   if (!sql.includes(`alter table executive_visuals.${table} enable row level security;`)) {
