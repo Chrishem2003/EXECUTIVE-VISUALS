@@ -70,6 +70,7 @@ export function createCloudVideoCostEvidenceResolver({
           typeof row.evidence_reference !== "string" || !row.evidence_reference.trim() ||
           typeof row.evidence_sha256 !== "string" || !/^[a-f0-9]{64}$/.test(row.evidence_sha256) ||
           typeof row.reviewer_id !== "string" || !row.reviewer_id ||
+          !["provider_invoice", "provider_export", "provider_portal", "provider_support"].includes(row.source_type) ||
           typeof row.reviewed_at !== "string" || !Number.isFinite(Date.parse(row.reviewed_at))) {
         throw Object.assign(new Error("Cost evidence receipt does not match the job and provider task."), { code: "VIDEO_BUDGET_COST_UNRESOLVED" });
       }
