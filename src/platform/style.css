@@ -362,3 +362,27 @@
 @media(max-width:500px){.auth-story-copy h1{font-size:36px}.auth-feature-list{grid-template-columns:1fr}.auth-feature-list>div{gap:10px}.auth-panel-wrap{padding:25px 20px}}
 
 @media(max-width:760px){.nav-collapse{display:none}.sidebar-brand-row .brand{flex:1}.mobile-nav-open{flex:0 0 34px}}
+
+
+/* Timeline preview monitor */
+.timeline-preview-panel{display:grid;gap:12px}
+.timeline-preview-stage{display:grid;place-items:center;min-height:220px;max-height:520px;overflow:hidden;border:1px solid var(--line);border-radius:8px;background:#05070b;aspect-ratio:16/9}
+.timeline-preview-stage video,.timeline-preview-stage img{display:block;width:100%;height:100%;max-height:520px;object-fit:contain;background:#05070b}
+.timeline-preview-empty{max-width:420px;padding:24px;text-align:center;color:var(--muted);font-size:10px;line-height:1.8}
+.timeline-preview-controls{display:grid;grid-template-columns:auto minmax(120px,1fr) auto;gap:12px;align-items:center}
+.timeline-preview-controls label,.timeline-preview-controls strong{font-size:9px;color:var(--muted)}
+.timeline-preview-controls input[type=range]{padding:0;accent-color:var(--purple-400)}
+.timeline-preview-panel>p{margin:0}
+@media(max-width:600px){.timeline-preview-controls{grid-template-columns:1fr}.timeline-preview-controls input{width:100%}.timeline-preview-controls strong{text-align:right}}
+
+
+/* Multi-track composite preview */
+.timeline-preview-stage{position:relative;display:block;min-height:220px;max-height:520px;overflow:hidden;aspect-ratio:16/9}
+#tl-preview-layers{position:absolute;inset:0;overflow:hidden;background:#05070b}
+.timeline-preview-layer{position:absolute;inset:0;width:100%;height:100%;max-height:none;object-fit:contain;background:transparent}
+.timeline-preview-unsupported{display:grid;place-items:center;padding:24px;color:var(--muted);font-size:10px;text-align:center;background:rgba(5,7,11,.88)}
+.timeline-preview-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.timeline-preview-actions .muted{font-size:9px}
+
+/* Hidden synchronized audio elements for timeline source monitoring */
+#tl-preview-layers audio[data-preview-audio]{display:none}

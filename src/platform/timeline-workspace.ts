@@ -9,14 +9,15 @@ import { assessDeliveryEvidence } from "../core/delivery-evidence";
 import { analyzeCreativeTraceability, readCreativeTrace } from "../core/creative-traceability";
 import { appendCreativeDecision, readCreativeDecisionHistory } from "../core/creative-decision-ledger";
 import { compareTimelineVariants, createTimelineVariant, type TimelineVariantComparison } from "../core/timeline-variants";
-import { addClip, addMarker, addTrack, createTimeline, moveClip, rational, splitClip, toOpenTimelineIo, trimClip, type EditorialTimeline, type TimelineTrack } from "../core/timeline";
+import { addClip, addMarker, addTrack, createTimeline, evaluateTimelineAtFrame, moveClip, rational, seconds, splitClip, toOpenTimelineIo, trimClip, type EditorialTimeline, type TimelineTrack } from "../core/timeline";
 
 type Asset={id:string;name:string;mediaType:string;size:number;metadata?:Record<string,unknown>};
 type SavedTimeline={id:string;projectId?:string|null;name:string;revision:number;document?:EditorialTimeline};
 type CloudProject={id:string;name:string};
 type CloudSavedTimeline={id:string;projectId?:string|null;name:string;revision:number;timeline:EditorialTimeline;updatedAt:string};
-const state:{timeline:EditorialTimeline|null;serverRevision:number;timelines:SavedTimeline[];cloudTimelines:CloudSavedTimeline[];cloudProjects:CloudProject[];cloudProjectId:string;mode:"local"|"cloud";cloudRenderJobId:string;cloudRenderJobStatus:string;variantBase:EditorialTimeline|null;variantReport:TimelineVariantComparison|null;variantBaseName:string;assets:Asset[];status:"loading"|"ready"|"offline"|"auth";message:string;selectedTrack:string;selectedClipId:string;ffmpeg:boolean}={
- timeline:null,serverRevision:0,timelines:[],cloudTimelines:[],cloudProjects:[],cloudProjectId:"",mode:"local",cloudRenderJobId:"",cloudRenderJobStatus:"",variantBase:null,variantReport:null,variantBaseName:"",assets:[],status:"loading",message:"Loading editorial workspace…",selectedTrack:"",selectedClipId:"",ffmpeg:false
+let previewRequest=0;
+const state:{timeline:EditorialTimeline|null;serverRevision:number;timelines:SavedTimeline[];cloudTimelines:CloudSavedTimeline[];cloudProjects:CloudProject[];cloudProjectId:string;mode:"local"|"cloud";cloudRenderJobId:string;cloudRenderJobStatus:string;variantBase:EditorialTimeline|null;variantReport:TimelineVariantComparison|null;variantBaseName:string;assets:Asset[];status:"loading"|"ready"|"offline"|"auth";message:string;selectedTrack:string;selectedClipId:string;ffmpeg:boolean;playheadFrame:number;previewAssetId:string;previewUrl:string;previewMediaType:string;previewError:string;previewSources:Record<string,{url:string;mediaType:string}>;previewActiveClips:ReturnType<typeof evaluateTimelineAtFrame>["activeClips"];previewLayerKey:string;previewPlaying:boolean}={
+ timeline:null,serverRevision:0,timelines:[],cloudTimelines:[],cloudProjects:[],cloudProjectId:"",mode:"local",cloudRenderJobId:"",cloudRenderJobStatus:"",variantBase:null,variantReport:null,variantBaseName:"",assets:[],status:"loading",message:"Loading editorial workspace…",selectedTrack:"",selectedClipId:"",ffmpeg:false,playheadFrame:0,previewAssetId:"",previewUrl:"",previewMediaType:"",previewError:"",previewSources:{},previewActiveClips:[],previewLayerKey:"",previewPlaying:false
 };
 const esc=(v:unknown)=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]||c));
 const fps=()=>state.timeline?state.timeline.frameRate.numerator/state.timeline.frameRate.denominator:24;
@@ -122,6 +123,169 @@ export function timelineQualityPanel(){
  (findings.length?'<div class="eyebrow" style="margin-top:16px">SEQUENCE FINDINGS · '+errorCount+' errors · '+warningCount+' warnings</div><div class="timeline-quality-list">'+findings.map(item=>'<article class="timeline-quality-item '+item.severity+'"><b>'+esc(item.title)+'</b><p>'+esc(item.detail)+'</p></article>').join("")+'</div>':'')+
  '<small class="muted">Sequence structure and source-media checks use the current timeline and saved FFprobe metadata. A source passes only when its probe contains readable streams, the required track stream exists and every used source range stays within probed duration. Full decode integrity, shot-engine compatibility, continuity, delivery conformance requires a current-revision master with a successful output probe; the gate compares container, codec, resolution, frame rate, duration and required audio against the sequence or explicit delivery profile. Caption readiness requires saved cue-level WebVTT validation for timing, overlaps, reading speed, line length and media-duration bounds. Audio readiness requires saved probe and FFmpeg signal-analysis evidence; clipping and near-full-scale peaks require review. Rights status is based only on explicit asset metadata attestations and supporting references; this is not independent legal verification. This report does not grant approval, submit a provider request or render media.</small></section>';
 }
+
+// Preview monitor composites active video and overlay tracks in timeline order. FFmpeg remains authoritative for final output.
+function timelineEndFrame(){
+ if(!state.timeline)return 1;
+ return Math.max(1,...state.timeline.tracks.flatMap(track=>track.clips.map(clip=>Math.ceil((seconds(clip.timelineStart)+seconds(clip.duration))*fps()))));
+}
+function activePreviewAtPlayhead(){
+ if(!state.timeline)return [];
+ const frame=Math.min(timelineEndFrame(),Math.max(0,Math.floor(state.playheadFrame)));
+ const evaluated=evaluateTimelineAtFrame(state.timeline,frame);
+ const videoTracks=state.timeline.tracks.filter(track=>track.enabled&&track.kind==="video"&&track.clips.some(clip=>clip.enabled));
+ state.previewError=videoTracks.length>1?"The master renderer currently supports one primary video track; additional video tracks are not included in this preview.":"";
+ const primaryTrackId=videoTracks[0]?.id;
+ return evaluated.activeClips.filter(clip=>clip.trackKind==="audio"||clip.trackKind==="overlay"||(clip.trackKind==="video"&&clip.trackId===primaryTrackId));
+}
+function renderPreviewLayers(clips:ReturnType<typeof activePreviewAtPlayhead>){
+ return clips.map(clip=>{
+  const source=state.previewSources[clip.assetId];
+  const asset=state.assets.find(item=>item.id===clip.assetId);
+  if(!source||!asset)return "";
+  const isOverlay=clip.trackKind==="overlay";
+  const timelineWidth=Math.max(1,Number(state.timeline?.width)||1920),timelineHeight=Math.max(1,Number(state.timeline?.height)||1080);
+  const metadata=state.timeline?.tracks.find(track=>track.id===clip.trackId)?.clips.find(item=>item.id===clip.clipId)?.metadata||{};
+  const overlayWidth=Math.max(16,Math.min(timelineWidth,Number(metadata.width)||timelineWidth*.24));
+  const overlayHeight=Math.max(16,Math.min(timelineHeight,Number(metadata.height)||timelineHeight*.24));
+  const overlayX=Math.max(0,Math.min(timelineWidth-overlayWidth,Number.isFinite(Number(metadata.x))?Number(metadata.x):timelineWidth-overlayWidth-24));
+  const overlayY=Math.max(0,Math.min(timelineHeight-overlayHeight,Number.isFinite(Number(metadata.y))?Number(metadata.y):24));
+  const opacity=Math.max(0,Math.min(1,Number(metadata.opacity??1)));
+  const z=isOverlay?100+clip.trackIndex:1;
+  const position=isOverlay?";left:"+overlayX/timelineWidth*100+"%;top:"+overlayY/timelineHeight*100+"%;width:"+overlayWidth/timelineWidth*100+"%;height:"+overlayHeight/timelineHeight*100+"%;opacity:"+opacity:"";
+  if(source.mediaType.startsWith("audio/"))return '<audio data-preview-audio="'+esc(clip.clipId)+'" preload="metadata" src="'+esc(source.url)+'"></audio>';
+  if(source.mediaType.startsWith("video/"))return '<video class="timeline-preview-layer" data-preview-video="'+esc(clip.clipId)+'" data-track-index="'+clip.trackIndex+'" style="z-index:'+z+position+'" muted playsinline preload="metadata" src="'+esc(source.url)+'"></video>';
+  if(source.mediaType.startsWith("image/"))return '<img class="timeline-preview-layer" data-preview-image="'+esc(clip.clipId)+'" data-track-index="'+clip.trackIndex+'" style="z-index:'+z+position+'" src="'+esc(source.url)+'" alt="'+esc(clip.clipName)+'">';
+  return '<div class="timeline-preview-layer timeline-preview-unsupported" data-track-index="'+clip.trackIndex+'" style="z-index:'+z+'">'+esc(asset.name)+' · unsupported preview format</div>';
+ }).join("")||'<div class="timeline-preview-empty">Move the playhead over a video or overlay clip to preview the composite.</div>';
+}
+async function syncPreview(){
+ const request=++previewRequest;
+ if(!state.timeline)return;
+ let active:ReturnType<typeof activePreviewAtPlayhead>=[];
+ try{active=activePreviewAtPlayhead();}catch(error){state.previewError=error instanceof Error?error.message:"Timeline cannot be previewed.";const label=document.querySelector<HTMLElement>("#tl-preview-active");if(label)label.textContent=state.previewError;return;}
+ state.previewActiveClips=active;
+ const label=document.querySelector<HTMLElement>("#tl-preview-active");
+ const layerSummary=active.map(clip=>clip.clipName+" · "+clip.trackName+" · "+clip.sourceTimeSeconds.toFixed(3)+"s").join(" | ");
+ if(label)label.textContent=(layerSummary||"No active video or overlay clips at this frame.")+(state.previewError?" · "+state.previewError:"");
+ if(!active.length){
+  state.previewLayerKey="";state.previewPlaying=false;
+  for(const video of document.querySelectorAll<HTMLVideoElement>("[data-preview-video]")){video.pause();video.removeAttribute("src");video.load();}
+  for(const audio of document.querySelectorAll<HTMLAudioElement>("[data-preview-audio]")){audio.pause();audio.removeAttribute("src");audio.load();}
+  const toggle=document.querySelector<HTMLButtonElement>("[data-tl-preview-toggle]");if(toggle)toggle.textContent="Play preview";
+  const stage=document.querySelector<HTMLElement>("#tl-preview-layers");
+  if(stage)stage.innerHTML=renderPreviewLayers([]);
+  return;
+ }
+ const uniqueAssets=[...new Set(active.map(clip=>clip.assetId))];
+ let changed=false;
+ try{
+  await Promise.all(uniqueAssets.map(async assetId=>{
+   if(state.previewSources[assetId])return;
+   const asset=state.assets.find(item=>item.id===assetId);
+   if(!asset)return;
+   let url="/api/assets/"+encodeURIComponent(assetId)+"/file";
+   if(state.mode==="cloud"){
+    const signed=await apiRequest<{url:string}>("/api/cloud/assets/"+encodeURIComponent(assetId));
+    url=signed.url;
+   }
+   if(request!==previewRequest)return;
+   state.previewSources[assetId]={url,mediaType:asset.mediaType};
+   changed=true;
+  }));
+  if(request!==previewRequest)return;
+  const missing=active.filter(clip=>!state.previewSources[clip.assetId]);
+  if(missing.length){if(label)label.textContent="One or more active source assets are unavailable in this workspace.";return;}
+  const key=active.map(clip=>clip.trackId+":"+clip.clipId+":"+clip.assetId).join("|");
+  const stage=document.querySelector<HTMLElement>("#tl-preview-layers");
+  if(stage&&(key!==state.previewLayerKey||changed)){
+   for(const video of stage.querySelectorAll<HTMLVideoElement>("[data-preview-video]"))video.pause();
+   for(const audio of stage.querySelectorAll<HTMLAudioElement>("[data-preview-audio]"))audio.pause();
+   state.previewLayerKey=key;
+   stage.innerHTML=renderPreviewLayers(active);
+  }
+  const videoClips=active.filter(clip=>state.previewSources[clip.assetId]?.mediaType.startsWith("video/"));
+  const audioClips=active.filter(clip=>state.previewSources[clip.assetId]?.mediaType.startsWith("audio/"));
+  const primary=videoClips[0]||null;
+  const primaryAudio=audioClips[0]||null;
+  for(const clip of videoClips){
+   const video=document.querySelector<HTMLVideoElement>('[data-preview-video="'+CSS.escape(clip.clipId)+'"]');
+   if(!video)continue;
+   const target=Math.max(0,clip.sourceTimeSeconds);
+   if(video.readyState>=1&&Math.abs(video.currentTime-target)>0.12)video.currentTime=target;
+   if(video.readyState<1)video.onloadedmetadata=()=>{if(state.previewActiveClips.some(item=>item.clipId===clip.clipId))video.currentTime=target;if(state.previewPlaying)void video.play().catch(()=>{state.previewPlaying=false;});};
+   if(state.previewPlaying&&video.paused&&video.readyState>=2)void video.play().catch(()=>{state.previewPlaying=false;});
+   if(clip.clipId===primary?.clipId){
+    video.ontimeupdate=()=>{
+     const current=state.previewActiveClips.find(item=>item.clipId===clip.clipId);
+     if(!current||!state.timeline)return;
+     const sourceClip=state.timeline.tracks.find(track=>track.id===current.trackId)?.clips.find(item=>item.id===current.clipId);
+     if(!sourceClip)return;
+     const sourceStart=seconds(sourceClip.sourceRange.start);
+     const sourceEnd=sourceStart+current.timelineEndSeconds-current.timelineStartSeconds;
+     if(video.currentTime>=sourceEnd-0.025){
+      for(const node of document.querySelectorAll<HTMLVideoElement>("[data-preview-video]"))node.pause();
+      state.playheadFrame=Math.ceil(current.timelineEndSeconds*fps());
+      const slider=document.querySelector<HTMLInputElement>("#tl-playhead");if(slider)slider.value=String(state.playheadFrame);
+      const readout=document.querySelector<HTMLElement>("#tl-playhead-label");if(readout)readout.textContent="Frame "+state.playheadFrame+" · "+(state.playheadFrame/fps()).toFixed(3)+"s";
+      void syncPreview();return;
+     }
+     state.playheadFrame=Math.max(0,Math.floor((current.timelineStartSeconds+Math.max(0,video.currentTime-sourceStart))*fps()));
+     const slider=document.querySelector<HTMLInputElement>("#tl-playhead");if(slider)slider.value=String(state.playheadFrame);
+     const readout=document.querySelector<HTMLElement>("#tl-playhead-label");if(readout)readout.textContent="Frame "+state.playheadFrame+" · "+(state.playheadFrame/fps()).toFixed(3)+"s";
+     void syncPreview();
+    };
+   }
+  }
+  for(const clip of audioClips){
+   const audio=document.querySelector<HTMLAudioElement>('[data-preview-audio="'+CSS.escape(clip.clipId)+'"]');
+   if(!audio)continue;
+   const sourceClip=state.timeline.tracks.find(track=>track.id===clip.trackId)?.clips.find(item=>item.id===clip.clipId);
+   if(!sourceClip)continue;
+   const target=Math.max(0,clip.sourceTimeSeconds);
+   const gainDb=Math.max(-60,Math.min(0,Number(sourceClip.gainDb)||0));
+   audio.volume=Math.pow(10,gainDb/20);
+   if(audio.readyState>=1&&Math.abs(audio.currentTime-target)>0.25)audio.currentTime=target;
+   if(audio.readyState<1)audio.onloadedmetadata=()=>{if(state.previewActiveClips.some(item=>item.clipId===clip.clipId))audio.currentTime=target;if(state.previewPlaying)void audio.play().catch(()=>{state.previewPlaying=false;});};
+   if(state.previewPlaying&&audio.paused&&audio.readyState>=2)void audio.play().catch(()=>{state.previewPlaying=false;});
+   audio.ontimeupdate=()=>{
+    const current=state.previewActiveClips.find(item=>item.clipId===clip.clipId);
+    if(clip.clipId!==primaryAudio?.clipId||!current||!state.timeline||state.previewActiveClips.some(item=>item.trackKind==="video"))return;
+    const frame=Math.max(0,Math.floor((current.timelineStartSeconds+Math.max(0,audio.currentTime-seconds(sourceClip.sourceRange.start)))*fps()));
+    state.playheadFrame=frame;
+    const slider=document.querySelector<HTMLInputElement>("#tl-playhead");if(slider)slider.value=String(frame);
+    const readout=document.querySelector<HTMLElement>("#tl-playhead-label");if(readout)readout.textContent="Frame "+frame+" · "+(frame/fps()).toFixed(3)+"s";
+    void syncPreview();
+   };
+   audio.onended=()=>{if(state.previewPlaying)void syncPreview();};
+  }
+ }catch(error){state.previewError=error instanceof Error?error.message:"Could not load preview sources.";if(label)label.textContent=state.previewError;}
+}
+function previewMonitor(){
+ if(!state.timeline)return '<section class="panel"><div class="eyebrow">PREVIEW MONITOR</div><p class="muted">Load a timeline to preview its active source clips.</p></section>';
+ let active:ReturnType<typeof activePreviewAtPlayhead>=[];
+ try{active=activePreviewAtPlayhead();}catch(error){state.previewError=error instanceof Error?error.message:"Timeline cannot be previewed.";}
+ const videoCount=active.filter(clip=>state.assets.find(asset=>asset.id===clip.assetId)?.mediaType.startsWith("video/")).length;
+ const audioCount=active.filter(clip=>state.assets.find(asset=>asset.id===clip.assetId)?.mediaType.startsWith("audio/")).length;
+ return '<section class="panel timeline-preview-panel"><div class="timeline-panel-heading"><div><div class="eyebrow">MULTI-TRACK COMPOSITE PREVIEW</div><h3>Preview monitor</h3></div><span class="job-status '+(active.length?"completed":"running")+'">'+(active.length?active.length+" ACTIVE LAYERS":"NO ACTIVE LAYERS")+'</span></div><div class="timeline-preview-stage" style="aspect-ratio: '+(state.timeline.width||1920)+' / '+(state.timeline.height||1080)+' "><div id="tl-preview-layers">'+renderPreviewLayers(active)+'</div></div><div class="timeline-preview-controls"><label for="tl-playhead">Playhead frame</label><input id="tl-playhead" type="range" min="0" max="'+timelineEndFrame()+'" step="1" value="'+Math.min(timelineEndFrame(),Math.max(0,state.playheadFrame))+'"><strong id="tl-playhead-label">Frame '+state.playheadFrame+' · '+(state.playheadFrame/fps()).toFixed(3)+'s</strong></div><div class="timeline-preview-actions"><button class="secondary" type="button" data-tl-preview-toggle '+(videoCount||audioCount?"":"disabled")+'>'+(state.previewPlaying?"Pause preview":"Play preview")+'</button><span class="muted">'+active.filter(clip=>clip.trackKind!=="audio").length+' visual layer(s) · '+videoCount+' video · '+audioCount+' audio</span></div><p id="tl-preview-active" class="muted">'+(active.map(clip=>esc(clip.clipName)+" · "+esc(clip.trackName)+" · "+clip.sourceTimeSeconds.toFixed(3)+"s").join(" | ")||"No active video or overlay clips at this frame.")+(state.previewError?" · "+esc(state.previewError):"")+'</p><small class="muted">Visual layers follow timeline order. Audio tracks preview as synchronized source clips with per-clip gain; final mixing and limiting remain in FFmpeg.</small></section>';
+}
+document.addEventListener("click",event=>{
+ const button=(event.target as HTMLElement).closest<HTMLButtonElement>("[data-tl-preview-toggle]");
+ if(!button)return;
+ const videos=[...document.querySelectorAll<HTMLVideoElement>("[data-preview-video]")];
+ const audios=[...document.querySelectorAll<HTMLAudioElement>("[data-preview-audio]")];
+ if(!videos.length&&!audios.length)return;
+ state.previewPlaying=!state.previewPlaying;
+ button.textContent=state.previewPlaying?"Pause preview":"Play preview";
+ if(state.previewPlaying){
+  void Promise.all([...videos.map(video=>video.play().catch(()=>{state.previewPlaying=false;})),...audios.map(audio=>audio.play().catch(()=>{state.previewPlaying=false;}))]).then(()=>{
+   if(!state.previewPlaying){for(const video of videos)video.pause();for(const audio of audios)audio.pause();}
+   const current=document.querySelector<HTMLButtonElement>("[data-tl-preview-toggle]");
+   if(current)current.textContent=state.previewPlaying?"Pause preview":"Play preview";
+  });
+ }else{videos.forEach(video=>video.pause());audios.forEach(audio=>audio.pause());}
+});
+
 export function renderTimelineWorkspace(){
  return '<div id="timeline-workspace"><div class="timeline-toolbar"><label>Workspace <select id="tl-mode"><option value="local" '+(state.mode==="local"?"selected":"")+' >Local</option><option value="cloud" '+(state.mode==="cloud"?"selected":"")+' >Cloud project</option></select></label><label>Cloud project <select id="tl-cloud-project"><option value="">Select project</option>'+state.cloudProjects.map(p=>'<option value="'+esc(p.id)+'" '+(p.id===state.cloudProjectId?'selected':'')+'>'+esc(p.name)+'</option>').join("")+'</select></label><label>Saved sequence <select id="tl-saved-sequence"><option value="">Current sequence</option>'+(state.mode==="cloud"?state.cloudTimelines.map(t=>'<option value="'+esc(t.id)+'" '+(state.timeline?.id===t.id?'selected':'')+'>'+esc(t.name)+' · r'+t.revision+'</option>').join(""):state.timelines.map(t=>'<option value="'+esc(t.id)+'" '+(state.timeline?.id===t.id?'selected':'')+'>'+esc(t.name)+' · r'+t.revision+'</option>').join(""))+'</select></label><button class="secondary" data-tl-create-cloud>＋ New cloud timeline</button><button class="secondary" data-tl-action="duplicate-variant">Duplicate as variant</button><span class="runtime-status '+state.status+'"><i></i>'+esc(state.status==="ready"?"TIMELINE SAVED":state.status==="auth"?"SIGN IN REQUIRED":state.status==="offline"?"API OFFLINE":"LOADING")+'</span><button class="secondary" data-tl-action="refresh">↻ Refresh</button><button class="secondary" data-tl-action="export">Export OTIO JSON</button>'+(state.mode==="cloud"&&state.cloudRenderJobId?'<button class="secondary" data-tl-action="cloud-job">Check cloud render · '+esc(state.cloudRenderJobStatus||"queued")+'</button>':'')+''+(state.ffmpeg?'<button class="primary" data-tl-action="render">Render master MP4</button>':'<span class="muted">FFmpeg required for master render</span>')+'</div>'+
  (state.message?'<div class="notice">'+esc(state.message)+'</div>':'')+
@@ -130,6 +294,7 @@ export function renderTimelineWorkspace(){
  '<div class="eyebrow" style="margin-top:18px">ADD SOURCE CLIP</div><form id="tl-add-clip"><label>Source asset</label><select id="tl-asset-select" name="assetId" required>'+assetOptions()+'</select><label>Destination track</label><select name="trackId">'+(state.timeline?.tracks.map(t=>'<option value="'+esc(t.id)+'">'+esc(t.name)+'</option>').join("")||"")+'</select><div class="form-grid"><div><label>Timeline start (frames)</label><input name="start" type="number" min="0" value="'+maxEnd()+'"></div><div><label>Source in (source frames)</label><input name="sourceIn" type="number" min="0" value="0"></div><div><label>Duration (timeline frames)</label><input name="duration" type="number" min="1" value="'+(fps()*5)+'"></div></div><button class="primary wide">＋ Place clip on timeline</button></form>'+
  '<form id="tl-add-marker"><div class="eyebrow" style="margin-top:18px">REVIEW MARKER</div><label>Marker title</label><input name="name" required placeholder="Hook / transition / review note"><label>Position (frames)</label><input name="frame" type="number" min="0" value="0"><button class="secondary">＋ Add marker</button></form></section>'+
  '<section class="panel"><div class="timeline-panel-heading"><div><div class="eyebrow">MULTI-TRACK EDITOR</div><h3>Sequence timeline</h3></div><small>'+(state.timeline?.frameRate.numerator+"/"+state.timeline?.frameRate.denominator+" fps")+'</small></div>'+
+ previewMonitor()+
  (state.timeline?timelineCanvas():'<div class="empty">Sign in and create a sequence to begin.</div>')+
  clipInspector()+variantComparisonPanel()+creativeTraceabilityPanel()+timelineQualityPanel()+
   '<div class="timeline-marker-list">'+(state.timeline?.markers.map(m=>'<span>◆ '+esc(m.name)+' · '+Math.round(m.start.value)+'f</span>').join("")||"No review markers yet.")+'</div></section></div>'+
@@ -193,7 +358,7 @@ export async function initTimelineWorkspace(){
  try{await refresh();}catch(error){state.status=error instanceof Error&&error.message.includes("Sign in")?"auth":"offline";state.message=error instanceof Error?error.message:"Timeline service unavailable.";}
  paint();
 }
-function paint(){const root=document.querySelector<HTMLElement>("#timeline-workspace");if(root)root.outerHTML=renderTimelineWorkspace();}
+function paint(){const root=document.querySelector<HTMLElement>("#timeline-workspace");if(root)root.outerHTML=renderTimelineWorkspace();void syncPreview();}
 async function runAction(action:HTMLElement){
  const type=action.dataset.tlAction||"";
  if(type==="refresh"){await refresh();paint();return;}
@@ -274,6 +439,10 @@ document.addEventListener("submit",event=>{
   state.timeline=addMarker(state.timeline,{id:crypto.randomUUID(),name:String(data.get("name")),start:rational(Math.max(0,Number(data.get("frame"))||0),fps()),color:"YELLOW"});
   void persist().then(paint).catch(error=>{state.message=error.message;paint();});
  }
+});
+document.addEventListener("input",event=>{
+ const target=event.target as HTMLInputElement;
+ if(target.id==="tl-playhead"){state.playheadFrame=Math.max(0,Math.min(timelineEndFrame(),Math.floor(Number(target.value)||0)));const label=document.querySelector<HTMLElement>("#tl-playhead-label");if(label)label.textContent="Frame "+state.playheadFrame+" · "+(state.playheadFrame/fps()).toFixed(3)+"s";void syncPreview();}
 });
 document.addEventListener("change",event=>{
  const target=event.target as HTMLSelectElement;
