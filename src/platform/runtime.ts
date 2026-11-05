@@ -31,7 +31,7 @@ function updateShell(){
 }
 function renderGate(){
  document.querySelector("#ev-auth-gate")?.remove();
- if(state.status!=="auth-required")return;
+ if(state.status!=="auth-required"&&!(state.authMode==="supabase"&&state.authView==="reset"))return;
  const external=state.authMode==="supabase";
  const mode=state.authView;
  const form=external
