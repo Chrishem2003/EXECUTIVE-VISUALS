@@ -162,7 +162,7 @@ test("exposes authoritative provider token usage as the cloud executor cost reso
   const h = harness();
   const result = await h.resolveActualCost({
     providerTaskId: interactionId,
-    task: { rawInteraction: { usage: { total_input_tokens: 1000, total_output_tokens: 57920 } } }
+    task: { rawInteraction: { usage: { total_input_tokens: 1000, total_output_tokens: 57920, output_tokens_by_modality: [{ modality: "video", tokens: 57920 }] } } }
   });
   assert.equal(result.amount, 1.0151);
   assert.equal(result.currency, "USD");
