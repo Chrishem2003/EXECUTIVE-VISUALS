@@ -90,3 +90,15 @@ test("retains a recovery lease across OBJECT_VERIFIED and clears it only at term
   assert.equal(f.rows[0].lease_expires_at,null);
   assert.ok(f.rows[0].reconciled_at);
 });
+
+test("requires a valid immutable CRC32C receipt when creating a recovery attempt",async()=>{
+ const f=setup();
+ await assert.rejects(
+  ()=>f.repository.createAttempt({...input,crc32c:undefined}),
+  error=>error.code==="GEMINI_GCS_ATTEMPT_INVALID"
+ );
+ await assert.rejects(
+  ()=>f.repository.createAttempt({...input,crc32c:"not-a-crc"}),
+  error=>error.code==="GEMINI_GCS_ATTEMPT_INVALID"
+ );
+});
