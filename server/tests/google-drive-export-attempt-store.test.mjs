@@ -51,21 +51,24 @@ test("rejects malformed attempt keys before issuing a lease update",async()=>{
 });
 test("encrypts a validated Google Drive resumable session URI at rest",async()=>{
  const h=harness(),uri="https://www.googleapis.com/upload/drive/v3/files?upload_id=private-session";
- await h.store.saveSession({attemptKey,ownerId,sessionUri:uri});
+ const leaseToken=await h.store.claim({attemptKey,ownerId});
+ await h.store.saveSession({attemptKey,ownerId,sessionUri:uri,leaseToken});
  assert.notEqual(h.rows[0].encrypted_session_uri,uri);
  assert.match(h.rows[0].encrypted_session_uri,/^gdrive-session:v1:/);
  assert.equal((await h.store.get(attemptKey,ownerId)).sessionUri,uri);
 });
 test("rejects untrusted upload session hosts before persistence",async()=>{
  const h=harness();
- await assert.rejects(()=>h.store.saveSession({attemptKey,ownerId,sessionUri:"https://attacker.example/upload/drive/v3/files?upload_id=x"}),
+ const leaseToken=await h.store.claim({attemptKey,ownerId});
+ await assert.rejects(()=>h.store.saveSession({attemptKey,ownerId,leaseToken,sessionUri:"https://attacker.example/upload/drive/v3/files?upload_id=x"}),
   error=>error.code==="GOOGLE_DRIVE_EXPORT_SESSION_INVALID");
  assert.equal(h.calls.length,0);
 });
 test("marks completed attempts and clears encrypted resumable credentials",async()=>{
  const h=harness();
- await h.store.saveSession({attemptKey,ownerId,sessionUri:"https://www.googleapis.com/upload/drive/v3/files?upload_id=private-session"});
- const done=await h.store.mark({attemptKey,ownerId,state:"COMPLETED",webViewLink:"https://drive.google.com/file/d/driveFile_123456789/view"});
+ const leaseToken=await h.store.claim({attemptKey,ownerId});
+ await h.store.saveSession({attemptKey,ownerId,sessionUri:"https://www.googleapis.com/upload/drive/v3/files?upload_id=private-session",leaseToken});
+ const done=await h.store.mark({attemptKey,ownerId,state:"COMPLETED",leaseToken,webViewLink:"https://drive.google.com/file/d/driveFile_123456789/view"});
  assert.equal(done.state,"COMPLETED");
  assert.equal(done.sessionUri,null);
  assert.equal(h.rows[0].encrypted_session_uri,null);
