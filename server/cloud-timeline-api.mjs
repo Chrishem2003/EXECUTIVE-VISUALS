@@ -33,7 +33,7 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
  const allow=authorize||createCloudAssetAuthorizer({url,serviceRoleKey,fetchImpl});
  const runwayWorkflow=providedRunwayWorkflow||(env.RUNWAY_ROUTER_WORKFLOW_ENABLED==="true"?createRunwayRouterWorkflow({
   dryRun:createRunwayRouterDryRunClient({env,fetchImpl}),
-  approvals:createRunwayRouterPostgresApprovalClient({url,serviceRoleKey,anonKey:env.SUPABASE_ANON_KEY,fetchImpl}),
+  approvals:createRunwayRouterPostgresApprovalClient({url,serviceRoleKey,anonKey:env.SUPABASE_ANON_KEY||env.SUPABASE_PUBLISHABLE_KEY,fetchImpl}),
   enqueue:createCloudVideoEnqueue({url,serviceRoleKey,fetchImpl,env}),
   authorizeProject:({ownerId,projectId,action})=>allow({ownerId,projectId,action})
  }):null);
