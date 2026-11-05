@@ -13,8 +13,9 @@ import { addClip, addMarker, addTrack, createTimeline, moveClip, rational, split
 import { clampPreviewSeconds, decibelsToLinearGain, frameToSeconds, getTimelineDurationFrames, isPreviewTrackAudible, resolveTimelineFrame, resolveTimelineOverlays, secondsToFrame, stepPreviewSeconds } from "../core/timeline-preview";
 import { activeCaptionCues, parseCaptionCues, type CaptionCue } from "../core/caption-preview";
 import { validatePrivateMediaUrl } from "../core/private-media-url";
+import { generatedVideoAlreadyOnTimeline, generatedVideoDurationSeconds, selectLatestGeneratedVideoAsset } from "../core/generated-video-import";
 
-type Asset={id:string;name:string;mediaType:string;size:number;createdAt?:string;metadata?:Record<string,unknown>};
+type Asset={id:string;name:string;mediaType:string;size:number;projectId?:string|null;createdAt?:string;metadata?:Record<string,unknown>};
 type SavedTimeline={id:string;projectId?:string|null;name:string;revision:number;document?:EditorialTimeline};
 type CloudProject={id:string;name:string};
 type CloudSavedTimeline={id:string;projectId?:string|null;name:string;revision:number;timeline:EditorialTimeline;updatedAt:string};
@@ -449,16 +450,13 @@ async function runAction(action:HTMLElement){
  if(type==="refresh"){await refresh();paint();return;}
  if(type==="import-generated-video"){
   if(state.mode!=="cloud"||!state.cloudProjectId||!state.timeline){state.message="Select a cloud project and load a cloud timeline before importing generated video.";paint();return;}
-  const generated=state.assets.filter(asset=>asset.mediaType.startsWith("video/")&&asset.metadata?.source==="video-generation")
-   .sort((a,b)=>String(b.createdAt||"").localeCompare(String(a.createdAt||"")));
-  const asset=generated[0];
-  if(!asset){state.message="No generated video assets were found in this cloud project. Complete an approved generation first.";paint();return;}
-  if(state.timeline.tracks.some(item=>item.clips.some(clip=>clip.assetId===asset.id))){state.message="The latest generated video is already present on this timeline.";paint();return;}
+  const asset=selectLatestGeneratedVideoAsset(state.assets,state.cloudProjectId);
+  if(!asset){state.message="No validated generated video assets were found in this cloud project. Complete an approved generation first.";paint();return;}
+  if(generatedVideoAlreadyOnTimeline(state.timeline,asset.id)){state.message="The latest generated video is already present on this timeline.";paint();return;}
   let track=state.timeline.tracks.find(item=>item.kind==="video"&&!item.locked);
   if(!track){state.timeline=addTrack(state.timeline,{id:crypto.randomUUID(),name:"Generated Video",kind:"video",enabled:true,locked:false,clips:[]});track=state.timeline.tracks[state.timeline.tracks.length-1];}
-  const probe=asset.metadata?.probe as {format?:{duration?:string}}|undefined;
-  const durationSeconds=Number(probe?.format?.duration);
-  const clipFrames=Math.max(1,Math.round((Number.isFinite(durationSeconds)&&durationSeconds>0?durationSeconds:5)*fps()));
+  const durationSeconds=generatedVideoDurationSeconds(asset);
+  const clipFrames=Math.max(1,Math.round(durationSeconds*fps()));
   try{
    const generatedClipId=crypto.randomUUID();
    state.timeline=addClip(state.timeline,track.id,{id:generatedClipId,assetId:asset.id,name:asset.name,sourceRange:{start:rational(0,sourceRate(asset,"video")),duration:rational(clipFrames/fps()*sourceRate(asset,"video"),sourceRate(asset,"video"))},timelineStart:rational(maxEnd(),fps()),duration:rational(clipFrames,fps()),enabled:true,metadata:{generatedVideo:true,provider:asset.metadata?.provider||"unknown",providerTaskId:asset.metadata?.providerTaskId||""}});
