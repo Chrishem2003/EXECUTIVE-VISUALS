@@ -118,7 +118,7 @@ export function createGoogleGeminiGcsMirrorRecoveryWorker({
   async function readMetadata(attempt, accessToken) {
     const url="https://storage.googleapis.com/storage/v1/b/"+encodeURIComponent(attempt.bucket)+
       "/o/"+encodeURIComponent(attempt.objectName)+
-      "?fields=bucket,name,generation,metageneration,size,contentType,metadata";
+      "?fields=bucket,name,generation,metageneration,size,contentType,crc32c,metadata";
     const {response,data}=await request(url,{accessToken});
     if(!response.ok) {
       const error=fail("GCS object metadata lookup failed (HTTP "+response.status+").","GEMINI_GCS_RECOVERY_METADATA_LOOKUP_FAILED");
