@@ -489,8 +489,8 @@ document.addEventListener("submit",event=>{
     const previousTransition=clip.transitionToNext,orderedClips=track.clips.filter(item=>item.enabled).slice().sort((a,b)=>seconds(a.timelineStart)-seconds(b.timelineStart)),clipIndex=orderedClips.findIndex(item=>item.id===clip.id),nextClip=orderedClips[clipIndex+1],previousNextStart=nextClip?.timelineStart,transitionType=String(data.get("transitionType")||""),fadeFrames=Math.max(1,Math.min(240,Math.floor(Number(data.get("transitionFadeFrames"))||12))),frameRate=fps(),oldEnd=seconds(originalTimelineStart)+seconds(originalDuration),newEnd=seconds(clip.timelineStart)+seconds(clip.duration),tolerance=0.5/frameRate;
     if(transitionType==="dip-to-black"||transitionType==="crossfade")clip.transitionToNext={type:transitionType,fadeFrames};
     else delete clip.transitionToNext;
-    if(nextClip&&transitionType==="crossfade"&&Math.abs(seconds(previousNextStart)-oldEnd)<=tolerance)nextClip.timelineStart=rational(Math.round((newEnd-fadeFrames/frameRate)*frameRate),frameRate);
-    else if(nextClip&&previousTransition?.type==="crossfade"&&transitionType!=="crossfade"&&Math.abs(seconds(previousNextStart)-(newEnd-previousTransition.fadeFrames/frameRate))<=tolerance)nextClip.timelineStart=rational(Math.round(newEnd*frameRate),frameRate);
+    if(nextClip&&transitionType==="crossfade"&&Math.abs(seconds(nextClip.timelineStart)-oldEnd)<=tolerance)nextClip.timelineStart=rational(Math.round((newEnd-fadeFrames/frameRate)*frameRate),frameRate);
+    else if(nextClip&&previousTransition?.type==="crossfade"&&transitionType!=="crossfade"&&Math.abs(seconds(nextClip.timelineStart)-(newEnd-previousTransition.fadeFrames/frameRate))<=tolerance)nextClip.timelineStart=rational(Math.round(newEnd*frameRate),frameRate);
     const transitionValidation=validateTimeline(state.timeline);
     if(!transitionValidation.valid){if(previousTransition)clip.transitionToNext=previousTransition;else delete clip.transitionToNext;if(nextClip&&previousNextStart)nextClip.timelineStart=previousNextStart;alert(transitionValidation.issues[0].message);return;}
    }else{
