@@ -23,7 +23,7 @@ Construct the integration using the existing `createGoogleOmniCloudVideoIntegrat
 
 1. A server-only Gemini Interactions client with durable approval checks and owner/project-scoped read, cancel and delete authorization.
 2. The durable Google interaction repository.
-3. A private output ingestor that validates the completed interaction and stores its MP4 in the existing private asset system.
+3. A private output ingestor that validates the completed interaction, checks `assets.findVideoGenerationOutput({ ownerId, projectId, providerTaskId, outputIndex: 0 })` before retrying, and stores its MP4 through `assets.create` with metadata `{ source: "video-generation", providerTaskId, outputIndex: 0 }`. This reuses a previously committed output asset instead of uploading it again after a worker retry.
 4. An authorized request planner that resolves private media through the Gemini Files gateway or the supported private GCS registration path.
 5. An explicit interaction retention policy and task-level cost resolver.
 
