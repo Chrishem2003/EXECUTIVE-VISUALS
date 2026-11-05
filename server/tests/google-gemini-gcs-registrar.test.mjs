@@ -161,7 +161,8 @@ test("compensates a registered Google file when durable mapping persistence fail
     fetchImpl: async (url, options) => {
       if (String(url).endsWith("/files:register")) {
         return response(200, { files: [{
-          name: fileName, uri: fileUri, mimeType: "video/mp4", sizeBytes: "1024", state: "ACTIVE"
+          name: fileName, uri: fileUri, mimeType: "video/mp4", sizeBytes: "1024", state: "ACTIVE",
+          expirationTime: "2026-11-25T00:00:00.000Z"
         }] });
       }
       assert.equal(options.method, "DELETE");
