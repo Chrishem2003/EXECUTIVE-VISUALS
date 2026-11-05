@@ -3,8 +3,8 @@ import { createStoryboardTimeline, reflowStoryboardTimelinePlan } from "../src/c
 import { rational, validateTimeline } from "../src/core/timeline.ts";
 import { applyTimelineHistoryOperation, createTimelineHistory, createTimelineHistoryOperation, recordTimelineHistory, redoTimelineHistory, undoTimelineHistory } from "../src/core/timeline-history.ts";
 
-const shot=(id,durationSeconds)=>({
- id,number:Number(id.split("-").at(-1)),durationSeconds,shotType:"Detail",framing:"Close-up",angle:"Eye level",movement:"Slow push",lens:"50mm",
+const shot=(id,durationSeconds,number=1)=>({
+ id,number,durationSeconds,shotType:"Detail",framing:"Close-up",angle:"Eye level",movement:"Slow push",lens:"50mm",
  action:"Show the process clearly.",dialogue:"",narration:"",visualPrompt:"A provider-neutral still prompt.",motionPrompt:"A provider-neutral motion prompt.",
  negativePrompt:"No invented claims.",lighting:"Soft daylight",soundCue:"Workshop ambience",continuityIn:"Match previous frame.",
  continuityOut:"Hold on the result.",proofReference:"Verify demonstration before publishing.",transitionOut:"cut",
@@ -17,8 +17,8 @@ const storyboard={
  globalContinuityRules:["Keep workshop layout consistent","Preserve product geometry","Maintain screen direction"],
  characterSuggestions:[],
  scenes:[
-  {id:"scene-1",number:1,title:"The problem",slugline:"INT. WORKSHOP - DAY",purpose:"Establish the challenge.",storyBeat:"Problem",location:"Workshop",timeOfDay:"Day",durationSeconds:15,shots:[shot("shot-1",10),shot("shot-2",5)]},
-  {id:"scene-2",number:2,title:"The proof",slugline:"INT. WORKSHOP - LATER",purpose:"Show a verifiable result.",storyBeat:"Proof",location:"Inspection bench",timeOfDay:"Day",durationSeconds:15,shots:[shot("shot-3",15)]}
+  {id:"scene-1",number:1,title:"The problem",slugline:"INT. WORKSHOP - DAY",purpose:"Establish the challenge.",storyBeat:"Problem",location:"Workshop",timeOfDay:"Day",durationSeconds:15,shots:[shot("shot-1",10,1),shot("shot-2",5,2)]},
+  {id:"scene-2",number:2,title:"The proof",slugline:"INT. WORKSHOP - LATER",purpose:"Show a verifiable result.",storyBeat:"Proof",location:"Inspection bench",timeOfDay:"Day",durationSeconds:15,shots:[shot("shot-3",15,1)]}
  ]
 };
 
