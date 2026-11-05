@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { createWaveformCache } from "../waveform-cache.mjs";
 
 const id="123e4567-e89b-42d3-a456-426614174000";
@@ -58,4 +60,25 @@ test("rejects oversized sources and malformed renderer output",async()=>{
   await assert.rejects(()=>f.cache.get({...f.asset,byte_size:300*1024*1024}),e=>e.code==="WAVEFORM_SIZE_LIMIT");
   await assert.rejects(()=>f.cache.get(f.asset),e=>e.code==="WAVEFORM_INVALID_OUTPUT");
  }finally{await f.close();}
+});
+
+test("FFmpeg produces a real cached waveform PNG from a generated audio fixture",async()=>{
+ const ffmpeg=spawnSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-loglevel","error","-f","lavfi","-i","sine=frequency=440:duration=1","-c:a","pcm_s16le","-y"],{encoding:"utf8",timeout:10000});
+ if(ffmpeg.error?.code==="ENOENT"){return;}
+ assert.equal(ffmpeg.status,0,ffmpeg.stderr||"Could not generate audio fixture.");
+ const root=await mkdtemp(join(tmpdir(),"ev-waveform-ffmpeg-"));
+ try{
+  await mkdir(join(root,"uploads"),{recursive:true});
+  const source=join(root,"uploads","tone.wav");
+  const generated=spawnSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-loglevel","error","-f","lavfi","-i","sine=frequency=440:duration=1","-c:a","pcm_s16le","-y",source],{encoding:"utf8",timeout:10000});
+  assert.equal(generated.status,0,generated.stderr||"Could not generate audio fixture.");
+  const {stat}=await import("node:fs/promises");
+  const info=await stat(source),bytes=await readFile(source);
+  const asset={id,sha256:createHash("sha256").update(bytes).digest("hex"),media_type:"audio/wav",byte_size:info.size,storage_path:"uploads/tone.wav"};
+  const cache=createWaveformCache({mediaRoot:root});
+  const derivative=await cache.get(asset);
+  const pngBytes=await readFile(derivative);
+  assert.deepEqual(pngBytes.subarray(0,8),png.subarray(0,8));
+  assert.ok(pngBytes.length>100);
+ }finally{await rm(root,{recursive:true,force:true});}
 });
