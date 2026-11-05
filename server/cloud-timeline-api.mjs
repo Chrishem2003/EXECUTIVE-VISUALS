@@ -65,11 +65,12 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     });
     return response(202,{preflight});
    }
-   const runwayApprovalMatch=path.match(/^\\/api\\/cloud\\/video\\/runway\\/approvals\\/([0-9a-f-]+)\\/approve$/i);
-   if(runwayApprovalMatch&&method==="POST"){
+   const runwayApprovalPrefix="/api/cloud/video/runway/approvals/";
+   const runwayApprovalId=path.startsWith(runwayApprovalPrefix)&&path.endsWith("/approve")?path.slice(runwayApprovalPrefix.length,-"/approve".length):null;
+   if(runwayApprovalId&&/^[0-9a-f-]{36}$/i.test(runwayApprovalId)&&method==="POST"){
     if(!runwayWorkflow)return response(503,{error:{code:"RUNWAY_WORKFLOW_DISABLED",message:"Runway governed generation is not enabled on this server."}});
     if(typeof accessToken!=="string"||!accessToken)return response(401,{error:{code:"RUNWAY_APPROVAL_AUTH_REQUIRED",message:"A verified approver session is required."}});
-    const approval=await runwayWorkflow.approve({routerApprovalId:runwayApprovalMatch[1],accessToken});
+    const approval=await runwayWorkflow.approve({routerApprovalId:runwayApprovalId,accessToken});
     return response(200,{approval});
    }
    if(path==="/api/cloud/video/runway/enqueue"&&method==="POST"){
