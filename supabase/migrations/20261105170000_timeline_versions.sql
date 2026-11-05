@@ -196,7 +196,8 @@ create or replace function executive_visuals.ev_restore_timeline_version(
   p_expected_revision integer,
   p_source_version_id uuid,
   p_summary text,
-  p_previous_content_hash text
+  p_previous_content_hash text,
+  p_content_hash text
 ) returns setof executive_visuals.timelines
 language plpgsql
 security invoker
@@ -211,7 +212,83 @@ declare
 begin
   if p_timeline_id is null or p_owner_id is null or p_actor_id is null
      or p_expected_revision is null or p_expected_revision < 1
-     or p_source_version_id is null then
+     or p_source_version_id is null or p_content_hash is null or p_content_hash !~ '^[a-f0-9]{64}
+    raise exception 'Timeline restore identity or revision is invalid.' using errcode = '22023';
+  end if;
+
+  select * into current_row
+  from executive_visuals.timelines
+  where id = p_timeline_id and archived_at is null
+  for update;
+  if not found or current_row.owner_id <> p_owner_id then
+    raise exception 'Timeline not found.' using errcode = 'P0002';
+  end if;
+  if current_row.revision <> p_expected_revision then
+    raise exception 'Timeline revision conflict.' using errcode = '40001';
+  end if;
+
+  select * into source_row
+  from executive_visuals.timeline_versions
+  where id = p_source_version_id
+    and timeline_id = p_timeline_id
+    and owner_id = p_owner_id;
+  if not found then
+    raise exception 'Source version not found.' using errcode = 'P0002';
+  end if;
+
+  select id into parent_id
+  from executive_visuals.timeline_versions
+  where timeline_id = p_timeline_id and revision = current_row.revision
+  limit 1;
+  if parent_id is null then
+    insert into executive_visuals.timeline_versions(
+      timeline_id, owner_id, project_id, revision, name, summary,
+      content_hash, timeline, otio, created_by
+    ) values (
+      current_row.id, current_row.owner_id, current_row.project_id,
+      current_row.revision, current_row.name,
+      'Baseline captured before version restore.',
+      p_previous_content_hash, current_row.timeline, current_row.otio, p_actor_id
+    )
+    on conflict (timeline_id, revision) do nothing;
+    select id into parent_id
+    from executive_visuals.timeline_versions
+    where timeline_id = p_timeline_id and revision = current_row.revision
+    limit 1;
+  end if;
+
+  next_revision := current_row.revision + 1;
+  update executive_visuals.timelines
+  set name = source_row.name,
+      revision = next_revision,
+      timeline = source_row.timeline,
+      otio = source_row.otio,
+      updated_at = now()
+  where id = p_timeline_id
+  returning * into restored_row;
+
+  insert into executive_visuals.timeline_versions(
+    timeline_id, owner_id, project_id, revision, parent_version_id,
+    restored_from_version_id, name, summary, content_hash, timeline, otio, created_by
+  ) values (
+    restored_row.id, restored_row.owner_id, restored_row.project_id,
+    restored_row.revision, parent_id, source_row.id,
+    restored_row.name,
+    left(coalesce(p_summary, 'Restored from revision ' || source_row.revision::text), 500),
+    p_content_hash, restored_row.timeline, restored_row.otio, p_actor_id
+  );
+
+  return next restored_row;
+end;
+$function$;
+
+revoke all on function executive_visuals.ev_create_timeline_with_version(uuid,uuid,uuid,uuid,text,jsonb,jsonb,text,text) from public, anon, authenticated;
+revoke all on function executive_visuals.ev_update_timeline_with_version(uuid,uuid,uuid,integer,text,jsonb,jsonb,text,text,text) from public, anon, authenticated;
+revoke all on function executive_visuals.ev_restore_timeline_version(uuid,uuid,uuid,integer,uuid,text,text,text) from public, anon, authenticated;
+grant execute on function executive_visuals.ev_create_timeline_with_version(uuid,uuid,uuid,uuid,text,jsonb,jsonb,text,text) to service_role;
+grant execute on function executive_visuals.ev_update_timeline_with_version(uuid,uuid,uuid,integer,text,jsonb,jsonb,text,text,text) to service_role;
+grant execute on function executive_visuals.ev_restore_timeline_version(uuid,uuid,uuid,integer,uuid,text,text,text) to service_role;
+ then
     raise exception 'Timeline restore identity or revision is invalid.' using errcode = '22023';
   end if;
 
