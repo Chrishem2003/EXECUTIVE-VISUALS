@@ -1,6 +1,7 @@
 import { createGoogleGeminiGcsAssetResolver } from "./google-gemini-gcs-asset-resolver.mjs";
 import { createGoogleGeminiGcsFilesRegistrar } from "./google-gemini-gcs-registrar.mjs";
 import { createGoogleGeminiFilesRepository } from "./google-gemini-files-repository.mjs";
+import { createGoogleGeminiGcsSourceRepository } from "./google-gemini-gcs-source-repository.mjs";
 
 /**
  * Composes the verified GCS source resolver with the durable Gemini provider
@@ -14,6 +15,7 @@ export function createGoogleGeminiGcsFilesComposition({
   fetchImpl = globalThis.fetch,
   getAccessToken,
   loadSource,
+  sourceRepository,
   authorizePrivateAsset,
   repository,
   maxBytes = 250 * 1024 * 1024,
@@ -21,7 +23,8 @@ export function createGoogleGeminiGcsFilesComposition({
   registrationDays = 29,
   now
 } = {}) {
-  if (typeof getAccessToken !== "function" || typeof loadSource !== "function" ||
+  if (typeof getAccessToken !== "function" ||
+      (loadSource !== undefined && typeof loadSource !== "function") ||
       typeof authorizePrivateAsset !== "function" || typeof fetchImpl !== "function") {
     throw new TypeError("Gemini GCS composition requires OAuth, a trusted source registry, private asset authorization and fetch.");
   }
@@ -34,8 +37,10 @@ export function createGoogleGeminiGcsFilesComposition({
     throw new TypeError("Gemini GCS composition requires the durable provider-file repository.");
   }
 
+  const sources = sourceRepository || createGoogleGeminiGcsSourceRepository({ url, serviceRoleKey, fetchImpl, timeoutMs: Math.min(timeoutMs, 30000) });
+  const trustedSourceLoader = loadSource || (scope => sources.findActiveSource(scope));
   const resolver = createGoogleGeminiGcsAssetResolver({
-    env, loadSource, getAccessToken, fetchImpl, maxBytes, timeoutMs: Math.min(timeoutMs, 120000)
+    env, loadSource: trustedSourceLoader, getAccessToken, fetchImpl, maxBytes, timeoutMs: Math.min(timeoutMs, 120000)
   });
   const registrar = createGoogleGeminiGcsFilesRegistrar({
     env,
@@ -52,6 +57,7 @@ export function createGoogleGeminiGcsFilesComposition({
 
   return Object.freeze({
     registerAsset: args => registrar.registerAsset(args),
-    deleteAssetRegistration: args => registrar.deleteAssetRegistration(args)
+    deleteAssetRegistration: args => registrar.deleteAssetRegistration(args),
+    revokeSource: args => sources.revokeSource(args)
   });
 }
