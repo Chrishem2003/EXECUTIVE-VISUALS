@@ -37,7 +37,10 @@ export function createGoogleGeminiGcsFilesComposition({
     throw new TypeError("Gemini GCS composition requires the durable provider-file repository.");
   }
 
-  const sources = sourceRepository || createGoogleGeminiGcsSourceRepository({ url, serviceRoleKey, fetchImpl, timeoutMs: Math.min(timeoutMs, 30000) });
+  const sources = sourceRepository || (loadSource ? null : createGoogleGeminiGcsSourceRepository({ url, serviceRoleKey, fetchImpl, timeoutMs: Math.min(timeoutMs, 30000) }));
+  if (sources && (typeof sources.findActiveSource !== "function" || typeof sources.revokeSource !== "function")) {
+    throw new TypeError("Gemini GCS composition requires the governed GCS source repository.");
+  }
   const trustedSourceLoader = loadSource || (scope => sources.findActiveSource(scope));
   const resolver = createGoogleGeminiGcsAssetResolver({
     env, loadSource: trustedSourceLoader, getAccessToken, fetchImpl, maxBytes, timeoutMs: Math.min(timeoutMs, 120000)
@@ -58,6 +61,9 @@ export function createGoogleGeminiGcsFilesComposition({
   return Object.freeze({
     registerAsset: args => registrar.registerAsset(args),
     deleteAssetRegistration: args => registrar.deleteAssetRegistration(args),
-    revokeSource: args => sources.revokeSource(args)
+    revokeSource: args => {
+      if (!sources) throw new Error("Source revocation is unavailable when a custom source loader is injected.");
+      return sources.revokeSource(args);
+    }
   });
 }
