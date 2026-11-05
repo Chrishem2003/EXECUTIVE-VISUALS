@@ -33,7 +33,7 @@ function validateDriveFile(file, maxBytes) {
   if (!file || typeof file !== "object" || Array.isArray(file) ||
       typeof file.id !== "string" || !FILE_ID.test(file.id) ||
       typeof file.name !== "string" || !file.name.trim() ||
-      file.trashed === true || file.capabilities?.canDownload === false ||
+      file.trashed === true || file.capabilities?.canDownload !== true ||
       !MIME_TYPES.has(file.mimeType) ||
       !Number.isSafeInteger(Number(file.size)) || Number(file.size) < 1 ||
       Number(file.size) > maxBytes) {
@@ -46,7 +46,7 @@ function validateDriveFile(file, maxBytes) {
 function validateDriveFolder(folder, expectedId) {
   if (!folder || typeof folder !== "object" || Array.isArray(folder) ||
       folder.id !== expectedId || folder.mimeType !== "application/vnd.google-apps.folder" ||
-      folder.trashed === true || folder.capabilities?.canAddChildren === false) {
+      folder.trashed === true || folder.capabilities?.canAddChildren !== true) {
     throw fail("Google Drive destination must be an accessible folder where this account can add files.",
       "GOOGLE_DRIVE_FOLDER_UNAVAILABLE");
   }
