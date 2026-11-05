@@ -54,3 +54,23 @@ test("video worker remains an explicit opt-in and cannot replace the existing me
  assert.equal(config.media,true);
  assert.equal(config.timeline,true);
 });
+
+test("cloud worker supervisor runs optional maintenance tasks and waits for them on shutdown",async()=>{
+ const events=[],calls=[];
+ const workers=[{async recoverExpired(){return 0;},async runCycle(){return{claimed:false};}}];
+ const maintenanceWorkers=[{async run(){calls.push("retention");return{scanned:3,deleted:2,retryPending:1};}}];
+ const supervisor=createCloudWorkerSupervisor({
+  workers,maintenanceWorkers,maintenanceIntervalMs:10000,leaseSeconds:60,
+  heartbeatIntervalMs:10000,pollMs:1000,onLog:event=>events.push(event)
+ });
+ await supervisor.start();await supervisor.stop();
+ assert.deepEqual(calls,["retention"]);
+ assert.ok(events.some(event=>event.kind==="maintenance"&&event.result.deleted===2));
+ assert.ok(events.some(event=>event.kind==="started"&&event.maintenanceWorkers===1));
+});
+
+test("cloud worker supervisor validates optional maintenance worker contracts",()=>{
+ const workers=[{async recoverExpired(){return 0;},async runCycle(){return{claimed:false};}}];
+ assert.throws(()=>createCloudWorkerSupervisor({workers,maintenanceWorkers:[{}]}),/maintenance workers/);
+ assert.throws(()=>createCloudWorkerSupervisor({workers,maintenanceWorkers:[],maintenanceIntervalMs:1000}),/maintenance interval/);
+});
