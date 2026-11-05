@@ -48,6 +48,7 @@ const reflowed=reflowStoryboardTimelinePlan(changed);
 assert.deepEqual(reflowed.scenes.flatMap(scene=>scene.shots).map(shot=>shot.startFrame),[0,240,390]);
 assert.equal(reflowed.totalFrames,840);
 assert.equal(reflowed.scenes[0].durationFrames,390);
+assert.equal(reflowed.scenes[0].shots[0].durationSeconds,8);
 assert.equal(reflowed.durationSeconds,28);
 const afterTimeline={
   ...timeline,
