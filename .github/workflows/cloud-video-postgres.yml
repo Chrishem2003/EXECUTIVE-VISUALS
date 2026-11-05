@@ -44,10 +44,41 @@ jobs:
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261105100000_google_provider_files.sql
       - name: Verify private Google provider-file mapping privileges
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/google-provider-files-postgres-integration.sql
+      - name: Apply durable Google provider-file upload-attempt migration
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261105120000_google_provider_file_upload_attempts.sql
+      - name: Apply Gemini provider-file recovery lease migration
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261105190000_google_provider_file_recovery_leases.sql
+      - name: Verify private Google upload-attempt ledger, quarantine state and recovery lease
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/google-provider-file-upload-attempts-postgres-integration.sql
+      - name: Apply durable Google Drive export-attempt migration
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261105170000_google_drive_export_attempts.sql
+      - name: Apply Google Drive export lease-integrity migration
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261105180000_google_drive_export_lease_integrity.sql
+      - name: Verify private Google Drive export-attempt ledger
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/google-drive-export-attempts-postgres-integration.sql
+      - name: Verify Google Drive export lease-integrity constraint and recovery index
+        run: |
+          test "$(psql "$DATABASE_URL" -X -Atqc "select count(*) from pg_constraint where conname = 'google_drive_export_attempts_lease_pair_check' and conrelid = 'executive_visuals.google_drive_export_attempts'::regclass")" = "1"
+          test "$(psql "$DATABASE_URL" -X -Atqc "select count(*) from pg_indexes where schemaname = 'executive_visuals' and indexname = 'google_drive_export_attempts_expired_lease_idx'")" = "1"
       - name: Apply private GCS registration metadata migration
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261105133000_google_gcs_file_registration.sql
       - name: Verify private GCS registration metadata privileges
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/google-gcs-registration-postgres-integration.sql
+      - name: Apply governed GCS asset-source registry migration
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261105200000_google_gcs_asset_sources.sql
+      - name: Verify GCS asset-source registry scope, privileges and lifecycle
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/google-gcs-asset-sources-postgres-integration.sql
+      - name: Apply durable GCS mirror upload-attempt ledger
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261105210000_google_gcs_mirror_attempts.sql
+      - name: Apply immutable GCS mirror CRC32C receipt migration
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261105211000_google_gcs_mirror_attempt_crc32c.sql
+      - name: Verify immutable GCS mirror CRC32C receipt constraints
+        run: |
+          psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -c "DO \$\$ BEGIN IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='executive_visuals' AND table_name='google_gcs_mirror_attempts' AND column_name='crc32c') THEN RAISE EXCEPTION 'GCS mirror CRC32C receipt column missing'; END IF; IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='google_gcs_mirror_attempts_crc32c_check') THEN RAISE EXCEPTION 'GCS mirror CRC32C validation constraint missing'; END IF; END \$\$;"
+      - name: Verify private GCS mirror attempt ledger privileges and recovery constraints
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/google-gcs-mirror-attempts-postgres-integration.sql
+      - name: Verify concurrent Gemini recovery lease acquisition
+        run: bash scripts/google-provider-file-recovery-lease-concurrency.sh
       - name: Apply durable Google video interaction migration
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261105120000_google_video_interactions.sql
       - name: Verify durable Google interaction ownership and privileges
