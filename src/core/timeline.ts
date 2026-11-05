@@ -120,6 +120,8 @@ export function validateTimeline(timeline:EditorialTimeline):{valid:boolean;issu
       if(ids.has(clip.id))issues.push({code:"duplicate_id",trackId:track.id,clipId:clip.id,message:"Duplicate clip ID."});ids.add(clip.id);
       const start=seconds(clip.timelineStart),duration=seconds(clip.duration);
       if(!clip.assetId)issues.push({code:"missing_asset",trackId:track.id,clipId:clip.id,message:"Clip has no source asset."});
+      const speed=Number(clip.speed??1);
+      if(!Number.isFinite(speed)||speed!==1)issues.push({code:"unsupported_speed",trackId:track.id,clipId:clip.id,message:"Clip speed changes are not supported until time remapping is implemented."});
       if(start<0||duration<=0||clip.sourceRange.start.value<0||clip.sourceRange.duration.value<=0)issues.push({code:"invalid_range",trackId:track.id,clipId:clip.id,message:"Clip has an invalid source or record range."});
       if(Math.abs(duration-seconds(clip.sourceRange.duration))>Math.max(0.000001,0.5/clip.sourceRange.duration.rate))issues.push({code:"timebase_mismatch",trackId:track.id,clipId:clip.id,message:"Source and timeline durations differ by more than half a source frame."});
       if(start+0.000001<end)issues.push({code:"overlap",trackId:track.id,clipId:clip.id,message:"Clips overlap on the same track; use another track for overlays."});
