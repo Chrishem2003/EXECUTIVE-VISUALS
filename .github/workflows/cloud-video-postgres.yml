@@ -50,10 +50,10 @@ jobs:
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/google-provider-file-upload-attempts-postgres-integration.sql
       - name: Apply durable Google Drive export-attempt migration
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261105170000_google_drive_export_attempts.sql
-      - name: Verify private Google Drive export-attempt ledger
-        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/google-drive-export-attempts-postgres-integration.sql
       - name: Apply Google Drive export lease-integrity migration
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261105180000_google_drive_export_lease_integrity.sql
+      - name: Verify private Google Drive export-attempt ledger
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/google-drive-export-attempts-postgres-integration.sql
       - name: Verify Google Drive export lease-integrity constraint and recovery index
         run: |
           test "$(psql "$DATABASE_URL" -X -Atqc "select count(*) from pg_constraint where conname = 'google_drive_export_attempts_lease_pair_check' and conrelid = 'executive_visuals.google_drive_export_attempts'::regclass")" = "1"
