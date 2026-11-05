@@ -23,7 +23,8 @@ function required(value, name) {
 export async function createGoogleGeminiGcsMirrorBootstrap({
   env = process.env,
   fetchImpl = globalThis.fetch,
-  GoogleAuthClass
+  GoogleAuthClass,
+  GoogleCredentialClientClasses
 } = {}) {
   const projectId = required(env.GOOGLE_CLOUD_PROJECT_ID, "GOOGLE_CLOUD_PROJECT_ID");
   const url = required(env.SUPABASE_URL, "SUPABASE_URL");
@@ -83,14 +84,24 @@ export async function createGoogleGeminiGcsMirrorBootstrap({
   }
 
   let GoogleAuth = GoogleAuthClass;
-  if (!GoogleAuth) {
+  let credentialClientClasses = GoogleCredentialClientClasses;
+  if (!GoogleAuth || !credentialClientClasses) {
     try {
-      ({ GoogleAuth } = await import("google-auth-library"));
+      const authLibrary = await import("google-auth-library");
+      GoogleAuth ||= authLibrary.GoogleAuth;
+      credentialClientClasses ||= {
+        Compute: authLibrary.Compute,
+        IdentityPoolClient: authLibrary.IdentityPoolClient
+      };
     } catch {
       throw fail("Install the google-auth-library runtime dependency before enabling GCS mirror recovery.", "GEMINI_GCS_AUTH_LIBRARY_MISSING");
     }
   }
   if (typeof GoogleAuth !== "function") throw new TypeError("GoogleAuth constructor is invalid.");
+  if (typeof credentialClientClasses?.Compute !== "function" ||
+      typeof credentialClientClasses?.IdentityPoolClient !== "function") {
+    throw fail("Google Auth Library must expose the Compute and IdentityPoolClient credential classes.", "GEMINI_GCS_AUTH_TYPES_UNAVAILABLE");
+  }
 
   const clients = new Map();
   async function getAccessToken({ projectId: requestedProjectId = projectId, scopes = [CLOUD_PLATFORM_SCOPE] } = {}) {
@@ -143,18 +154,19 @@ export async function createGoogleGeminiGcsMirrorBootstrap({
     async checkIdentity() {
       await getAccessToken({ projectId, scopes: [CLOUD_PLATFORM_SCOPE] });
       const client = clients.get(CLOUD_PLATFORM_SCOPE);
-      const credentialClientType = client?.constructor?.name || "";
-      const approvedCredentialClientTypes = new Set(["Compute", "ExternalAccountClient", "IdentityPoolClient"]);
-      if (!approvedCredentialClientTypes.has(credentialClientType)) {
+      const isAttachedWorkloadIdentity = client instanceof credentialClientClasses.Compute;
+      const isFileBasedWifIdentity = client instanceof credentialClientClasses.IdentityPoolClient;
+      if (!isAttachedWorkloadIdentity && !isFileBasedWifIdentity) {
         throw fail(
-          "GCS recovery requires an attached workload identity or approved external-account federation; local user ADC credentials are not accepted.",
+          "GCS recovery requires an attached Compute workload identity or file-based IdentityPoolClient federation; local user ADC credentials and unsupported external credential sources are not accepted.",
           "GEMINI_GCS_ADC_IDENTITY_TYPE_REJECTED"
         );
       }
+      const credentialClientType = isAttachedWorkloadIdentity ? "Compute" : "IdentityPoolClient";
       return Object.freeze({
         ready: true,
         projectId,
-        identityMode: credentialClientType === "Compute" ? "attached-workload-identity" : "external-account-wif",
+        identityMode: isAttachedWorkloadIdentity ? "attached-workload-identity" : "external-account-wif",
         credentialClientType
       });
     }
