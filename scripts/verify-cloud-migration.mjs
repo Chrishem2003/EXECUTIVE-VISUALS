@@ -240,9 +240,12 @@ if (!videoCostEvidenceSql.includes("finish_video_generation_job_with_evidence") 
     !videoCostEvidenceSql.includes("evidence_row.provider_task_id is distinct from submission_row.provider_task_id")) {
   issues.push("Successful settlement must require an exact task-correlated reviewed evidence receipt.");
 }
-if ((videoCostEvidenceSql.match(/security invoker/gi) || []).length !== 4 ||
-    /security definer/i.test(videoCostEvidenceSql)) {
-  issues.push("Cost evidence validation and settlement RPCs must use invoker rights.");
+if ((videoCostEvidenceSql.match(/security invoker/gi) || []).length !== 3 ||
+    (videoCostEvidenceSql.match(/security definer/gi) || []).length !== 1 ||
+    !videoCostEvidenceSql.includes("validate_video_generation_cost_evidence()") ||
+    !videoCostEvidenceSql.includes("security definer\\nset search_path = pg_catalog, executive_visuals") ||
+    !videoCostEvidenceSql.includes("auth.uid()")) {
+  issues.push("Only the owner-scoped evidence trigger may use definer rights, with a fixed search path and authenticated reviewer checks; settlement RPCs must remain invoker-rights.");
 }
 if (!videoBudgetSql.includes("VIDEO_JOB_RESUME_EVIDENCE_REQUIRED") ||
     !videoBudgetSql.includes("p_evidence_reference text")) {
