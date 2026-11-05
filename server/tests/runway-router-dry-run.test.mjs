@@ -101,3 +101,11 @@ test("binds the router decision to a canonical input fingerprint and enforces an
   const changed = await client.preflight({ ...input, prompt: "A different scene" });
   assert.notEqual(changed.inputHash, accepted.inputHash);
 });
+
+
+test("classifies no-eligible-model and inaccessible-router responses without exposing provider payloads", async () => {
+  const noEligible = createRunwayRouterDryRunClient({ env, fetchImpl: async () => response(400, { code: "no_eligible_model", message: "provider internals" }) });
+  await assert.rejects(() => noEligible.preflight({ configId: "creative_low_cost", prompt: "test" }), error => error.code === "RUNWAY_NO_ELIGIBLE_MODEL" && !error.message.includes("provider internals"));
+  const missing = createRunwayRouterDryRunClient({ env, fetchImpl: async () => response(404, { code: "not_found" }) });
+  await assert.rejects(() => missing.preflight({ configId: "creative_low_cost", prompt: "test" }), error => error.code === "RUNWAY_ROUTER_CONFIG_NOT_FOUND");
+});
