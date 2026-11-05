@@ -1,4 +1,3 @@
-import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import { computeFileChecksums } from "./google-cloud-storage-checksum.mjs";
 
