@@ -506,7 +506,8 @@ select * from executive_visuals.record_runway_router_preflight(
 );
 grant select on overrun_approval_context to authenticated;
 reset role;
-select set_config('request.jwt.claim.sub','123e4567-e89b-42d3-a456-426614174000',false);
+-- A distinct project reviewer approves the overrun test request.
+select set_config('request.jwt.claim.sub','223e4567-e89b-42d3-a456-426614174000',false);
 select set_config('request.jwt.claim.role','authenticated',false);
 set role authenticated;
 select executive_visuals.approve_runway_router_preflight(router_approval_id)
