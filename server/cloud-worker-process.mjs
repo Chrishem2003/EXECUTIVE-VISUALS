@@ -143,18 +143,20 @@ export async function startCloudWorkerProcess(env=process.env,dependencies={}){
    ...cloudCredentials,env,fetchImpl:dependencies.fetchImpl||globalThis.fetch,repository,
    maxBytes:config.maxBytes
   });
-  if(geminiFilesCleanupEnabled)maintenanceWorkers.push(createGoogleGeminiFilesRetentionWorker({repository,gateway}));
-  if(geminiFilesRecoveryEnabled)maintenanceWorkers.push(createGoogleGeminiFilesRecoveryWorker({repository,gateway}));
   const intervalFallback=maintenanceIntervalMs;
   const intervals=[];
-  if(geminiFilesCleanupEnabled)intervals.push(integer(
-   env.GOOGLE_GEMINI_FILES_CLEANUP_INTERVAL_MS,intervalFallback,10000,86400000,
-   "Gemini Files cleanup interval"
-  ));
-  if(geminiFilesRecoveryEnabled)intervals.push(integer(
-   env.GOOGLE_GEMINI_FILES_RECOVERY_INTERVAL_MS,intervalFallback,10000,86400000,
-   "Gemini Files recovery interval"
-  ));
+  if(geminiFilesCleanupEnabled){
+   const intervalMs=integer(env.GOOGLE_GEMINI_FILES_CLEANUP_INTERVAL_MS,intervalFallback,10000,86400000,"Gemini Files cleanup interval");
+   const worker=createGoogleGeminiFilesRetentionWorker({repository,gateway});
+   maintenanceWorkers.push({intervalMs,run:()=>worker.run()});
+   intervals.push(intervalMs);
+  }
+  if(geminiFilesRecoveryEnabled){
+   const intervalMs=integer(env.GOOGLE_GEMINI_FILES_RECOVERY_INTERVAL_MS,intervalFallback,10000,86400000,"Gemini Files recovery interval");
+   const worker=createGoogleGeminiFilesRecoveryWorker({repository,gateway});
+   maintenanceWorkers.push({intervalMs,run:()=>worker.run()});
+   intervals.push(intervalMs);
+  }
   maintenanceIntervalMs=Math.min(...intervals);
  }
  const supervisor=createCloudWorkerSupervisor({
