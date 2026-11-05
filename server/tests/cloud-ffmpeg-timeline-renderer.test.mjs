@@ -45,6 +45,18 @@ test("cloud FFmpeg renderer mixes audio and accepts automation beyond the pictur
  }finally{await rm(root,{recursive:true,force:true});}
 });
 
+test("cloud FFmpeg renderer rejects automation beyond the full audio clip even when the render window is shorter",async()=>{
+ const timeline={tracks:[
+  {kind:"video",clips:[{assetId:"v",timelineStart:time(0),duration:time(1),sourceRange:{start:time(0),duration:time(1)}}]},
+  {kind:"audio",clips:[{assetId:"a",timelineStart:time(0),duration:time(2),sourceRange:{start:time(0),duration:time(2)},audioAutomation:[{timeSeconds:2.1,gainDb:-12}]}]}
+ ]};
+ const assets=new Map([
+  ["v",{path:"/not-used-video.mp4",asset:{id:"v",mediaType:"video/mp4",originalName:"v.mp4"}}],
+  ["a",{path:"/not-used-audio.wav",asset:{id:"a",mediaType:"audio/wav",originalName:"a.wav"}}]
+ ]);
+ await assert.rejects(()=>renderCloudTimeline({timeline,assets,workDir:tmpdir()}),error=>error.code==="INVALID_AUDIO_AUTOMATION");
+});
+
 test("cloud FFmpeg renderer rejects overlapping primary video clips",async()=>{
  const timeline={tracks:[{kind:"video",clips:[
   {assetId:"v",timelineStart:time(0),duration:time(2),sourceRange:{start:time(0),duration:time(2)}},
