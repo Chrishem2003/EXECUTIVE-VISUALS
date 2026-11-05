@@ -136,7 +136,7 @@ export function createGoogleGeminiGcsMirrorWriter({
   async function readObjectMetadata(objectName, accessToken) {
     const url = "https://storage.googleapis.com/storage/v1/b/" + encodeURIComponent(bucket) +
       "/o/" + encodeURIComponent(objectName) +
-      "?fields=bucket,name,generation,metageneration,size,contentType,metadata";
+      "?fields=bucket,name,generation,metageneration,size,contentType,crc32c,metadata";
     return (await request(url, { accessToken })).data;
   }
 
