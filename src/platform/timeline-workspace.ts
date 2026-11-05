@@ -392,7 +392,7 @@ function recoveryConflictPanel():string{
  if(state.recoveryStatus!=="conflict"&&state.recoveredDraft){
   return '<section class="panel timeline-quality"><div class="eyebrow">BROWSER RECOVERY · UNSAVED DRAFT</div><p>Recovered edits from the last confirmed server revision. Save or discard them explicitly.</p><div class="toolbar"><button class="primary" data-tl-action="save-recovered-draft">Save recovered edits</button><button class="secondary" data-tl-action="discard-recovered-draft">Discard recovered draft</button></div></section>';
  }
- if(!state.recoveredDraft)return '<section class="panel timeline-quality"><div class="eyebrow">SAVE CONFLICT · LOCAL DRAFT PRESERVED</div><p>A newer server revision exists. Your current edits have not been overwritten.</p><div class="toolbar"><button class="secondary" data-tl-action="reload-server">Load latest server revision</button></div></section>';
+ if(!state.recoveredDraft)return '<section class="panel timeline-quality"><div class="eyebrow">SAVE CONFLICT · LOCAL DRAFT PRESERVED</div><p>A newer server revision exists. Your current edits have not been overwritten. Browser recovery storage was unavailable, so keep this tab open until you save or discard the local work.</p><div class="toolbar"><button class="primary" data-tl-action="save-conflict-variant">Save current local work as a new variant</button><button class="secondary" data-tl-action="reload-server">Load latest server revision</button></div></section>';
  const server=state.conflictServerTimeline;
  let comparisonHtml='<p class="muted">The latest server snapshot is unavailable, so a structural comparison could not be generated.</p>';
  if(server){
