@@ -79,7 +79,7 @@ test("cancels an expired running interaction and confirms terminal state before 
   });
   const result = await h.worker.run();
   assert.equal(result.deleted, 1);
-  assert.deepEqual(h.calls.map(call => call[0]), ["list", "get", "cancel", "update", "update", "delete", "markDeleted"]);
+  assert.deepEqual(h.calls.map(call => call[0]), ["list", "get", "cancel", "get", "update", "update", "delete", "markDeleted"]);
   assert.equal(h.calls[3][1].state, "canceled");
   assert.equal(h.calls[4][1].state, "deleting");
 });
@@ -88,12 +88,13 @@ test("does not delete while cancellation remains in progress", async () => {
   const h = harness({
     initialState: "waiting",
     remoteStatus: "waiting",
-    cancelStatus: "waiting",
+    cancelStatus: "canceled",
     afterCancelStatus: "running"
   });
   const result = await h.worker.run();
   assert.equal(result.deleted, 0);
   assert.equal(result.retryPending, 1);
+  assert.deepEqual(h.calls.map(call => call[0]), ["list", "get", "cancel", "get", "update"]);
   assert.equal(h.calls.some(call => call[0] === "delete"), false);
   assert.equal(h.rows[0].state, "running");
 });
@@ -126,4 +127,12 @@ test("leaves a retryable deleting record when provider deletion fails", async ()
   assert.equal(result.retryPending, 1);
   assert.equal(h.rows[0].state, "deleting");
   assert.equal(h.calls.some(call => call[0] === "markDeleted"), false);
+});
+
+test("treats queued provider interactions as pending rather than unknown or terminal", async () => {
+  const h = harness({ initialState: "waiting", remoteStatus: "waiting" });
+  const result = await h.worker.run();
+  assert.equal(result.deleted, 0);
+  assert.equal(result.retryPending, 1);
+  assert.equal(h.calls.some(call => call[0] === "delete"), false);
 });
