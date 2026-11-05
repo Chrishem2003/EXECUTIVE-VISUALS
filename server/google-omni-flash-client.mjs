@@ -13,6 +13,42 @@ function interactionId(value) {
   return value;
 }
 
+async function readBoundedResponseText(response, maxBytes) {
+  const declared = Number(response.headers?.get?.("content-length"));
+  if (Number.isFinite(declared) && declared > maxBytes) {
+    try { await response.body?.cancel?.(); } catch {}
+    throw fail("Gemini Interactions response exceeded its configured size limit.",
+      "GEMINI_OMNI_RESPONSE_TOO_LARGE");
+  }
+  if (!response.body || typeof response.body.getReader !== "function") {
+    const raw = await response.text();
+    if (Buffer.byteLength(raw) > maxBytes) {
+      throw fail("Gemini Interactions response exceeded its configured size limit.",
+        "GEMINI_OMNI_RESPONSE_TOO_LARGE");
+    }
+    return raw;
+  }
+  const reader = response.body.getReader();
+  const chunks = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > maxBytes) {
+        try { await reader.cancel(); } catch {}
+        throw fail("Gemini Interactions response exceeded its configured size limit.",
+          "GEMINI_OMNI_RESPONSE_TOO_LARGE");
+      }
+      chunks.push(Buffer.from(value));
+    }
+  } finally {
+    try { reader.releaseLock(); } catch {}
+  }
+  return Buffer.concat(chunks, total).toString("utf8");
+}
+
 function safeExternalMediaUri(value, supabaseUrl) {
   if (typeof supabaseUrl !== "string" || !supabaseUrl.trim()) return false;
   let storage, uri;
@@ -91,6 +127,7 @@ export function createGeminiOmniFlashClient({
   assertApprovedSubmission,
   authorizeInteraction,
   timeoutMs = 30000,
+  streamTimeoutMs = 120000,
   maxResponseBytes = 4 * 1024 * 1024
 } = {}) {
   if (typeof fetchImpl !== "function") throw new TypeError("Gemini Interactions client requires fetch.");
@@ -101,6 +138,7 @@ export function createGeminiOmniFlashClient({
     throw new TypeError("Gemini Interactions client requires an owner/project interaction authorizer.");
   }
   if (!Number.isInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 120000 ||
+      !Number.isInteger(streamTimeoutMs) || streamTimeoutMs < 1000 || streamTimeoutMs > 300000 ||
       !Number.isSafeInteger(maxResponseBytes) || maxResponseBytes < 1024 || maxResponseBytes > 16 * 1024 * 1024) {
     throw new Error("Gemini Interactions client limits are invalid.");
   }
@@ -147,10 +185,7 @@ export function createGeminiOmniFlashClient({
         throw fail(error?.name === "AbortError" ? "Gemini Interactions request timed out." : "Gemini Interactions request failed.",
           error?.name === "AbortError" ? "GEMINI_OMNI_REQUEST_TIMEOUT" : "GEMINI_OMNI_REQUEST_FAILED");
       }
-      const raw = await response.text();
-      if (Buffer.byteLength(raw) > maxResponseBytes) {
-        throw fail("Gemini Interactions response exceeded its configured size limit.", "GEMINI_OMNI_RESPONSE_TOO_LARGE");
-      }
+      const raw = await readBoundedResponseText(response, maxResponseBytes);
       let data = null;
       if (raw) {
         try { data = JSON.parse(raw); }
@@ -176,6 +211,153 @@ export function createGeminiOmniFlashClient({
     }
   }
 
+  async function streamCreate(payload, { onInteractionCreated } = {}) {
+    const key = configuration("create");
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), streamTimeoutMs);
+    let createdId = null;
+    let outputUri = null;
+    let completed = null;
+    let totalBytes = 0;
+    let buffer = "";
+    const decoder = new TextDecoder();
+    let reader;
+    const emit = async (block) => {
+      const dataLines = block.split(/\r?\n/).filter(line => line.startsWith("data:"));
+      if (!dataLines.length) return;
+      const raw = dataLines.map(line => line.slice(5).trimStart()).join("\n");
+      if (raw === "[DONE]") return;
+      let event;
+      try { event = JSON.parse(raw); }
+      catch { throw fail("Gemini streaming response contained invalid event JSON.", "GEMINI_OMNI_STREAM_INVALID"); }
+      const type = event.event_type || block.split(/\r?\n/).find(line => line.startsWith("event:"))?.slice(6).trim();
+      if (type === "error") {
+        const error = fail("Gemini streaming interaction failed; reconcile the interaction before any retry.",
+          "GEMINI_OMNI_SUBMISSION_OUTCOME_UNKNOWN");
+        error.providerCode = event.error?.code || null;
+        throw error;
+      }
+      if (type === "interaction.created") {
+        const interaction = event.interaction || {};
+        const id = interactionId(interaction.id);
+        if (interaction.model !== MODEL) throw fail("Gemini stream returned an unexpected model.", "GEMINI_OMNI_INVALID_RESPONSE");
+        if (createdId && createdId !== id) throw fail("Gemini stream changed interaction identity.", "GEMINI_OMNI_STREAM_INVALID");
+        createdId = id;
+        if (typeof onInteractionCreated === "function") {
+          await onInteractionCreated({ interactionId: id, status: "running", model: MODEL });
+        }
+      } else if (type === "step.delta") {
+        const delta = event.delta || {};
+        if (delta.type === "video" && typeof delta.uri === "string") outputUri = delta.uri;
+        if (Array.isArray(delta.content)) {
+          const video = delta.content.find(item => item?.type === "video" && typeof item.uri === "string");
+          if (video) outputUri = video.uri;
+        }
+      } else if (type === "interaction.completed") {
+        const interaction = event.interaction || {};
+        if (interaction.id && createdId && interaction.id !== createdId) {
+          throw fail("Gemini completion event does not match the created interaction.", "GEMINI_OMNI_STREAM_INVALID");
+        }
+        if (!createdId && interaction.id) {
+          createdId = interactionId(interaction.id);
+          if (interaction.model !== MODEL) throw fail("Gemini stream returned an unexpected model.", "GEMINI_OMNI_INVALID_RESPONSE");
+          if (typeof onInteractionCreated === "function") {
+            await onInteractionCreated({ interactionId: createdId, status: "running", model: MODEL });
+          }
+        }
+        completed = interaction;
+      }
+    };
+    try {
+      let response;
+      try {
+        response = await fetchImpl(BASE + "/interactions", {
+          method: "POST",
+          headers: { "x-goog-api-key": key, "content-type": "application/json", accept: "text/event-stream" },
+          body: JSON.stringify({ ...payload, background: true, store: true, stream: true }),
+          redirect: "error",
+          signal: controller.signal
+        });
+      } catch {
+        throw fail("Gemini interaction submission outcome is unknown; reconcile before any retry.",
+          "GEMINI_OMNI_SUBMISSION_OUTCOME_UNKNOWN");
+      }
+      if (!response.ok) {
+        const raw = await readBoundedResponseText(response, maxResponseBytes);
+        if (response.status >= 500) throw fail("Gemini interaction submission returned a server error; reconcile before retry.",
+          "GEMINI_OMNI_SUBMISSION_OUTCOME_UNKNOWN");
+        const error = fail("Gemini Interactions rejected the request (HTTP " + response.status + ").",
+          response.status === 429 ? "GEMINI_OMNI_RATE_LIMITED" : "GEMINI_OMNI_REQUEST_REJECTED");
+        error.status = response.status;
+        error.providerMessage = raw.slice(0, 500);
+        throw error;
+      }
+      const contentType = response.headers?.get?.("content-type") || "";
+      if (!contentType.toLowerCase().includes("text/event-stream")) {
+        const raw = await readBoundedResponseText(response, maxResponseBytes);
+        let data;
+        try { data = JSON.parse(raw); }
+        catch { throw fail("Gemini accepted the submission but returned an unsupported streaming response; reconcile before retry.",
+          "GEMINI_OMNI_SUBMISSION_OUTCOME_UNKNOWN"); }
+        const result = normalized(data);
+        createdId = result.interactionId;
+        outputUri = result.video?.delivery === "uri" ? result.video.uri : null;
+        if (typeof onInteractionCreated === "function") {
+          await onInteractionCreated({ interactionId: createdId, status: result.status, model: MODEL });
+        }
+        return { interactionId: createdId, status: result.status, outputUri, usage: data.usage || null };
+      }
+      if (!response.body?.getReader) throw fail("Gemini streaming response body is unavailable.",
+        "GEMINI_OMNI_STREAM_INVALID");
+      reader = response.body.getReader();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        totalBytes += value.byteLength;
+        if (totalBytes > maxResponseBytes) {
+          try { await reader.cancel(); } catch {}
+          throw fail("Gemini streaming response exceeded its configured size limit.",
+            "GEMINI_OMNI_RESPONSE_TOO_LARGE");
+        }
+        buffer += decoder.decode(value, { stream: true });
+        let boundary;
+        while ((boundary = buffer.search(/\r?\n\r?\n/)) >= 0) {
+          const block = buffer.slice(0, boundary);
+          const delimiter = buffer.slice(boundary).match(/^\r?\n\r?\n/)[0];
+          buffer = buffer.slice(boundary + delimiter.length);
+          await emit(block);
+        }
+      }
+      buffer += decoder.decode();
+      if (buffer.trim()) await emit(buffer);
+      if (!completed || !createdId) {
+        throw fail("Gemini streaming submission ended before a durable completion event; reconcile before retry.",
+          "GEMINI_OMNI_SUBMISSION_OUTCOME_UNKNOWN");
+      }
+      const statusMap = new Map([["completed", "succeeded"], ["in_progress", "running"],
+        ["requires_action", "waiting"], ["failed", "failed"], ["cancelled", "canceled"],
+        ["incomplete", "incomplete"], ["budget_exceeded", "failed"]]);
+      return { interactionId: createdId, status: statusMap.get(completed.status) || "unknown",
+        outputUri, usage: completed.usage || null };
+    } catch (error) {
+      if (error?.name === "AbortError") {
+        throw fail(createdId
+          ? "Gemini stream timed out after interaction creation; the durable interaction must be reconciled."
+          : "Gemini interaction submission timed out; its outcome is unknown and must be reconciled.",
+        "GEMINI_OMNI_SUBMISSION_OUTCOME_UNKNOWN");
+      }
+      if (["GEMINI_OMNI_SUBMISSION_OUTCOME_UNKNOWN", "GEMINI_OMNI_REQUEST_REJECTED",
+          "GEMINI_OMNI_RATE_LIMITED"].includes(error?.code)) throw error;
+      throw fail(createdId
+        ? "Gemini stream failed after interaction creation; reconcile the durable interaction before any retry."
+        : "Gemini accepted or may have accepted the submission; reconcile before any retry.",
+      "GEMINI_OMNI_SUBMISSION_OUTCOME_UNKNOWN");
+    } finally {
+      clearTimeout(timer);
+      try { reader?.releaseLock(); } catch {}
+    }
+  }
+
   async function authorize(id, context, action) {
     let allowed = false;
     try { allowed = await authorizeInteraction({ interactionId: id, context, action }); }
@@ -190,7 +372,13 @@ export function createGeminiOmniFlashClient({
   async function fetchAuthorizedInteraction(id, context) {
     const safeId = interactionId(id);
     await authorize(safeId, context, "read");
-    const data = await request(BASE + "/interactions/" + encodeURIComponent(safeId));
+    // Request only lifecycle and URI metadata. The Interactions GET response
+    // can echo generated video as large inline base64 even when URI delivery was
+    // requested; selecting only uri prevents media bytes entering the poller.
+    const fields = "id,model,status,steps(type,content(type,mime_type,uri))";
+    const url = new URL(BASE + "/interactions/" + encodeURIComponent(safeId));
+    url.searchParams.set("fields", fields);
+    const data = await request(url.toString());
     normalized(data);
     return data;
   }
@@ -200,25 +388,22 @@ export function createGeminiOmniFlashClient({
     model: MODEL,
     minimumPollIntervalMs: 5000,
 
-    async createInteraction(plan, context = {}) {
+    async createInteraction(plan, context = {}, options = {}) {
       const payload = safePlan(plan, { supabaseUrl: env.SUPABASE_URL });
       let approved = false;
       try { approved = await assertApprovedSubmission({ plan, context }); }
       catch {}
       if (approved !== true) throw fail("A durable approval and budget reservation are required before Gemini submission.",
         "GEMINI_OMNI_APPROVAL_REQUIRED");
-      const requestPayload = { ...payload, background: true, store: true };
-      const data = await request(BASE + "/interactions", {
-        method: "POST", body: requestPayload, ambiguousPost: true, purpose: "create"
-      });
-      const result = normalized(data);
+      const result = await streamCreate(payload, options);
       return Object.freeze({
         taskId: result.interactionId,
         interactionId: result.interactionId,
         status: result.status,
         provider: "google",
         model: MODEL,
-        outputUrls: Object.freeze(result.video?.delivery === "uri" ? [result.video.uri] : [])
+        usage: result.usage,
+        outputUrls: Object.freeze(result.outputUri ? [result.outputUri] : [])
       });
     },
 

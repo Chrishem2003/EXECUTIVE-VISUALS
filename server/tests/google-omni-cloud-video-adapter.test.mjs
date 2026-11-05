@@ -22,21 +22,27 @@ function raw(status = "in_progress") {
     id: interactionId, model: "gemini-omni-1.1-flash", status,
     steps: status === "completed" ? [{
       type: "model_output",
-      content: [{ type: "video", mime_type: "video/mp4", data: videoBytes.toString("base64") }]
+      content: [{ type: "video", mime_type: "video/mp4", uri: "https://generativelanguage.googleapis.com/v1beta/files/generated123" }]
     }] : []
   };
 }
-function harness({ providerStatus = "completed", failRecord = false, stored = true } = {}) {
+function harness({ providerStatus = "completed", failRecord = false, stored = true, interruptAfterCreate = false } = {}) {
   const calls = [];
   const records = new Map();
   const client = {
-    async createInteraction(value, context) {
+    async createInteraction(value, context, options = {}) {
       calls.push(["create", value, context]);
-      return { interactionId, taskId: interactionId, provider: "google", model: "gemini-omni-1.1-flash", status: "running" };
+      if (interruptAfterCreate) {
+        await options.onInteractionCreated({ interactionId, status: "running", model: "gemini-omni-1.1-flash" });
+        throw Object.assign(new Error("stream interrupted"), { code: "GEMINI_OMNI_SUBMISSION_OUTCOME_UNKNOWN" });
+      }
+      return { interactionId, taskId: interactionId, provider: "google", model: "gemini-omni-1.1-flash", status: "running", outputUrls: ["https://generativelanguage.googleapis.com/v1beta/files/generated123"] };
     },
     async getInteractionForIngestion(id, context) {
       calls.push(["get", id, context]);
-      return raw(providerStatus);
+      const value = raw(providerStatus);
+      if (providerStatus === "completed") value.steps = []; // Simulate GET omitting the creation-time URI.
+      return value;
     }
   };
   const interactions = {
@@ -61,7 +67,7 @@ function harness({ providerStatus = "completed", failRecord = false, stored = tr
       calls.push(["update", value]);
       const current = records.get(value.interactionId);
       if (!current) throw new Error("missing");
-      const next = { ...current, state: value.state };
+      const next = { ...current, state: value.state, ...(value.outputUri !== undefined ? { outputUri: value.outputUri } : {}) };
       records.set(value.interactionId, next);
       return next;
     }
@@ -98,7 +104,8 @@ test("prepares an authorized job plan, submits once and durably records owner/pr
   assert.equal(h.records.get(interactionId).ownerId, ownerId);
   assert.equal(h.records.get(interactionId).projectId, projectId);
   assert.equal(h.records.get(interactionId).parentInteractionId, "v1_parent123456");
-  assert.deepEqual(h.calls.map(call => call[0]), ["preparePlan", "create", "retention", "record"]);
+  assert.equal(h.records.get(interactionId).outputUri, "https://generativelanguage.googleapis.com/v1beta/files/generated123");
+  assert.deepEqual(h.calls.map(call => call[0]), ["preparePlan", "create", "retention", "record", "update"]);
 });
 
 test("polls only an interaction durably scoped to the exact leased job", async () => {
@@ -109,6 +116,7 @@ test("polls only an interaction durably scoped to the exact leased job", async (
   assert.equal(task.status, "succeeded");
   assert.equal(task.outputUrls.length, 1);
   assert.equal(task.rawInteraction.id, interactionId);
+  assert.equal(task.rawInteraction.steps[0].content[0].uri, "https://generativelanguage.googleapis.com/v1beta/files/generated123");
   assert.equal(h.records.get(interactionId).state, "succeeded");
 });
 
@@ -132,6 +140,18 @@ test("quarantines submission if interaction ownership cannot be persisted", asyn
   await assert.rejects(() => h.adapter.submit(prepared, { job }));
   assert.equal(h.calls.filter(call => call[0] === "create").length, 1);
   assert.equal(h.calls.some(call => call[0] === "record"), true);
+});
+
+
+test("persists the interaction ID before an interrupted SSE submission is reconciled", async () => {
+  const h = harness({ interruptAfterCreate: true });
+  const prepared = await h.adapter.prepareInput(job.input, { job });
+  await assert.rejects(() => h.adapter.submit(prepared, { job }), error =>
+    error.code === "GEMINI_OMNI_SUBMISSION_OUTCOME_UNKNOWN");
+  assert.equal(h.records.get(interactionId).state, "running");
+  assert.equal(h.records.get(interactionId).outputUri, null);
+  assert.equal(h.calls.filter(call => call[0] === "create").length, 1);
+  assert.equal(h.calls.filter(call => call[0] === "record").length, 1);
 });
 
 test("rejects polling without a matching durable job record before contacting Google", async () => {
@@ -162,7 +182,7 @@ test("exposes authoritative provider token usage as the cloud executor cost reso
   const h = harness();
   const result = await h.resolveActualCost({
     providerTaskId: interactionId,
-    task: { rawInteraction: { usage: { total_input_tokens: 1000, total_output_tokens: 57920 } } }
+    task: { rawInteraction: { usage: { total_input_tokens: 1000, total_output_tokens: 57920, output_tokens_by_modality: [{ modality: "video", tokens: 57920 }] } } }
   });
   assert.equal(result.amount, 1.0151);
   assert.equal(result.currency, "USD");

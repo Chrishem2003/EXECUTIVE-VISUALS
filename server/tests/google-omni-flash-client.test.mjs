@@ -24,7 +24,7 @@ function interaction(status = "in_progress", video = null) {
 function response(status, body) {
   return new Response(body === null ? null : JSON.stringify(body), { status });
 }
-function harness({ fetchImpl, approve = async () => true, authorize = async () => true, overrides = {} } = {}) {
+function harness({ fetchImpl, approve = async () => true, authorize = async () => true, overrides = {}, maxResponseBytes = 4 * 1024 * 1024 } = {}) {
   const calls = [];
   const client = createGeminiOmniFlashClient({
     env: { ...env, ...overrides },
@@ -34,7 +34,9 @@ function harness({ fetchImpl, approve = async () => true, authorize = async () =
     },
     assertApprovedSubmission: approve,
     authorizeInteraction: authorize,
-    timeoutMs: 3000
+    timeoutMs: 3000,
+    streamTimeoutMs: 3000,
+    maxResponseBytes
   });
   return { client, calls };
 }
@@ -54,6 +56,46 @@ test("creates one stored background interaction only after durable approval", as
   assert.equal(payload.store, true);
   assert.equal(payload.response_format.delivery, "uri");
   assert.equal(JSON.stringify(result).includes("server-google-key"), false);
+});
+
+
+test("captures the creation ID and video URI from bounded SSE events", async () => {
+  const events = [
+    { event_type: "interaction.created", interaction: { id, model: "gemini-omni-1.1-flash", status: "in_progress" } },
+    { event_type: "step.start", index: 0, step: { type: "model_output" } },
+    { event_type: "step.delta", index: 0, delta: { type: "video", mime_type: "video/mp4", uri: fileUri } },
+    { event_type: "interaction.completed", interaction: { id, model: "gemini-omni-1.1-flash", status: "completed", usage: { total_tokens: 12 } } }
+  ];
+  const body = events.map(event => "event: " + event.event_type + "\ndata: " + JSON.stringify(event) + "\n\n").join("") + "event: done\ndata: [DONE]\n\n";
+  const h = harness({ fetchImpl: async () => new Response(body, {
+    status: 200, headers: { "content-type": "text/event-stream" }
+  }) });
+  const persisted = [];
+  const result = await h.client.createInteraction(await plan(), { jobId: "job-1" }, {
+    onInteractionCreated: async event => persisted.push(event)
+  });
+  assert.equal(result.interactionId, id);
+  assert.equal(result.status, "succeeded");
+  assert.deepEqual(result.outputUrls, [fileUri]);
+  assert.equal(result.usage.total_tokens, 12);
+  assert.deepEqual(persisted, [{ interactionId: id, status: "running", model: "gemini-omni-1.1-flash" }]);
+  const payload = JSON.parse(h.calls[0].options.body);
+  assert.equal(payload.stream, true);
+  assert.equal(payload.background, true);
+});
+
+test("preserves durable creation callback when an SSE stream is interrupted", async () => {
+  const event = { event_type: "interaction.created", interaction: { id, model: "gemini-omni-1.1-flash", status: "in_progress" } };
+  const body = "event: interaction.created\ndata: " + JSON.stringify(event) + "\n\n";
+  const h = harness({ fetchImpl: async () => new Response(body, {
+    status: 200, headers: { "content-type": "text/event-stream" }
+  }) });
+  const persisted = [];
+  await assert.rejects(async () => h.client.createInteraction(await plan(), {}, {
+    onInteractionCreated: async value => persisted.push(value)
+  }), error => error.code === "GEMINI_OMNI_SUBMISSION_OUTCOME_UNKNOWN");
+  assert.equal(persisted.length, 1);
+  assert.equal(persisted[0].interactionId, id);
 });
 
 test("refuses missing approval before any provider request", async () => {
@@ -99,6 +141,8 @@ test("retrieves completed interactions and returns only validated Google output 
   assert.equal(result.status, "succeeded");
   assert.deepEqual(result.outputUrls, [fileUri]);
   assert.equal(h.calls[0].options.method, "GET");
+  assert.equal(new URL(h.calls[0].url).searchParams.get("fields"),
+    "id,model,status,steps(type,content(type,mime_type,uri))");
 });
 
 test("enforces owner/project authorization before retrieval, cancellation and deletion", async () => {
@@ -223,4 +267,21 @@ test("rejects external media URLs from other origins, buckets and with extra que
     await assert.rejects(()=>h.client.createInteraction(forged),error=>error.code==="GEMINI_OMNI_PLAN_INVALID");
     assert.equal(h.calls.length,0);
   }
+});
+
+
+test("bounds interaction polling response bytes before JSON parsing", async () => {
+  const oversized = {
+    id, model: "gemini-omni-1.1-flash", status: "in_progress", steps: [],
+    padding: "x".repeat(4096)
+  };
+  const h = harness({
+    maxResponseBytes: 1024,
+    fetchImpl: async () => response(200, oversized)
+  });
+  await assert.rejects(
+    () => h.client.getInteraction(id, { ownerId: "owner-1", projectId: "project-1" }),
+    error => error.code === "GEMINI_OMNI_RESPONSE_TOO_LARGE"
+  );
+  assert.equal(h.calls.length, 1);
 });

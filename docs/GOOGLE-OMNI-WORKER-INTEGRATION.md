@@ -5,7 +5,7 @@
 
 ## Runtime registration
 
-The configured provider registry accepts an injected `googleOmniIntegration` through the existing `providerDependencies` object. The worker exposes the integration's existing adapter methods, private output ingestion and task-level cost resolver through the same contract used by the other video providers.
+The provider-aware worker composition now constructs `googleOmniIntegration` when all four explicit gates are true: `GOOGLE_OMNI_VIDEO_ENABLED`, `GOOGLE_OMNI_VIDEO_ALLOW_REMOTE`, `GEMINI_OMNI_ENABLED`, and `GEMINI_OMNI_ALLOW_REMOTE`. The host must inject `googleOmniAssertApprovedSubmission`, `googleOmniAuthorizeInteraction`, and `googleOmniPreparePlan`; optional `googleOmniClient`, `googleOmniInteractions`, `googleOmniRetentionExpiresAt`, and `googleOmniAuthorizeOutputIngestion` overrides are available for controlled environments. The default client and durable interaction repository are created server-side from the worker's Supabase credentials and Gemini API key. The planner must resolve private references to authorized Google Files URIs and return an approval-required plan. The approval callback must verify the persisted budget approval/reservation and leased job lineage; the interaction authorizer must verify owner/project/job scope. Missing governance callbacks fail worker construction closed. Build it with `createGoogleOmniCloudVideoComposition({ assets, client, interactions, preparePlan, retentionExpiresAt })`; this binds the private output ingestor to `assets.findVideoGenerationOutput` and `assets.create`, and authorizes ingestion against the succeeded, owner/project/job-scoped durable interaction record. The worker exposes the integration's existing adapter methods, private output ingestion and task-level cost resolver through the same contract used by the other video providers.
 
 The provider is opt-in only. All four flags must be explicitly true:
 
@@ -23,23 +23,50 @@ Construct the integration using the existing `createGoogleOmniCloudVideoIntegrat
 
 1. A server-only Gemini Interactions client with durable approval checks and owner/project-scoped read, cancel and delete authorization.
 2. The durable Google interaction repository.
-3. A private output ingestor that validates the completed interaction and stores its MP4 in the existing private asset system.
+3. A private output ingestor that validates the completed interaction, checks `assets.findVideoGenerationOutput({ ownerId, projectId, providerTaskId, outputIndex: 0 })` before retrying, and stores its MP4 through `assets.create` with metadata `{ source: "video-generation", providerTaskId, outputIndex: 0 }`. This reuses a previously committed output asset instead of uploading it again after a worker retry.
 4. An authorized request planner that resolves private media through the Gemini Files gateway or the supported private GCS registration path.
 5. An explicit interaction retention policy and task-level cost resolver.
 
-Pass the resulting object as `providerDependencies.googleOmniIntegration` to `createProviderAwareCloudVideoWorkerComposition`, or through `videoProviderDependencies.googleOmniIntegration` to `startCloudWorkerProcess`.
+Pass the resulting object as `providerDependencies.googleOmniIntegration` to `createProviderAwareCloudVideoWorkerComposition`, or through `videoProviderDependencies.googleOmniIntegration` to `startCloudWorkerProcess`. Pass the Files and Interactions retention workers through `startCloudWorkerProcess(env, { maintenanceWorkers: [...] })`; the supervisor runs these at a separate five-minute maintenance cadence by default, not on every media-job poll.
 
 The worker does not infer approval from a client-side flag, accept user-supplied owner IDs, or expose provider file URLs to the browser. The Interactions POST is intentionally not retried after an ambiguous outcome; it must be reconciled through its durable interaction record.
 
+## Interactions retention policy
+
+The Gemini Developer API stores Interactions for 55 days by default on the paid tier and one day on the free tier. Paid-tier projects can configure AI Studio retention to 7, 14, 28 or 55 days. Set `GEMINI_OMNI_PAID_TIER_CONFIRMED=true` and set `GEMINI_OMNI_RETENTION_DAYS` to the exact value selected in AI Studio, then construct `createGoogleInteractionRetentionPolicy({ env })` and pass its `expiresAt` function as `retentionExpiresAt` to `createGoogleOmniCloudVideoIntegration`.
+
+The policy rejects missing paid-tier confirmation and any value outside 7, 14, 28 or 55. It does not inspect or configure Google's remote setting, so staging acceptance must independently verify that the environment value matches AI Studio. The separate Gemini Enterprise Agent Platform Interactions API has a different endpoint family and retention behavior; do not mix it with the Developer API.
+
 ## Not yet accepted as complete
 
-This registration layer does not by itself prove:
+The repository now includes a retryable Gemini Files retention worker: it marks expired mappings as `EXPIRED`, deletes the remote Files resource, then marks the record `DELETED`. Provider 404 is treated as already deleted; transient provider or database errors leave an `EXPIRED` tombstone for the next maintenance run. The cloud-worker supervisor now supports optional scheduled maintenance tasks. These components are injectable but are not activated by default.
+
+This integration still does not by itself prove:
 
 - Google Drive resumable transfer recovery and private asset import/export end to end.
 - Gemini Files upload, expiry, cleanup and provider-file mapping recovery.
 - GCS object registration, signed access and deletion lifecycle.
-- Interactions retention scheduling and deletion recovery.
+- A staging run with the provider-file and Interactions retention workers scheduled and verified end to end.
 - Actual task-level Google billing reconciliation.
 - A staging run with approved test credentials and a real private test asset.
 
 Keep provider flags disabled until those lifecycle tests pass in an isolated staging environment. Do not enable paid generation or production worker execution as part of this change.
+
+
+### Large generated-video retrieval
+
+Gemini Omni URI delivery is required for generated videos. The Interactions API guide documents that the output URI is available in the initial response or streaming events, while a later full interaction retrieval can include the video as inline base64. The worker therefore requests a partial response for polling using `fields=id,model,status,steps(type,content(type,mime_type,uri))`, excluding the `data` field. If the URI is present in the filtered response, it then downloads the Google Files URI separately with a bounded streaming reader and commits bytes to the private Cloud Asset repository. Important limitation: Google's current Omni guide guarantees the URI in the initial creation response or SSE stream, but does not guarantee that a later GET contains it. The field mask is therefore only a payload-reduction attempt, not proof that URI retrieval works for every background interaction; a staging test must verify the actual response. The durable production path must capture the URI from a create/GET SSE stream and persist it before relying on Files API polling.
+
+The REST client also bounds interaction response reads while streaming; it cancels the response body once the configured limit is exceeded, before JSON parsing. This is a defensive cap, not a substitute for URI delivery. If the Interactions endpoint does not honor the field mask, polling fails closed with `GEMINI_OMNI_RESPONSE_TOO_LARGE`; do not increase the response cap to accommodate base64 video. Verify field-mask behavior against a paid-tier staging project before enabling remote generation.
+
+### Durable creation-time output URI
+
+The worker persists the Google Files output URI returned by the initial Interaction creation response in the owner/project/job-scoped `google_video_interactions.output_uri` column. Later polling may omit video content or URI; in that case the adapter reconstructs only the typed video URI metadata from the already-authorized durable record. It never substitutes an untrusted URL, accepts only the Google Files URI pattern, and still downloads bytes through the bounded private-output ingestor. The URI is a provider reference, not a public asset URL. If the initial response contains no URI, the record remains null and the adapter does not fabricate one; capture from SSE remains a follow-up requirement for provider responses that only emit URI events.
+
+### Streaming output URI capture and crash recovery
+
+Submission uses the Interactions API SSE stream (`stream: true`) with background storage enabled. The adapter persists the validated interaction ID as soon as `interaction.created` arrives, before waiting for generation to finish. It captures video URI metadata from `step.delta` events and updates the durable row when the stream completes. The stream reader is bounded by the configured response-byte limit and a dedicated 120-second default stream timeout (configurable up to five minutes); ordinary lifecycle GET requests retain their shorter request timeout. The existing worker renews its 90-second job lease every 15 seconds while execution is active, so the stream does not depend on a single unrenewed lease. If the stream is interrupted after creation, the submission remains an unknown/reconciliation state; the worker must recover the already-persisted interaction and must never submit a second generation automatically. The non-streaming JSON response remains accepted for controlled compatibility tests and providers that return a normal response despite the stream request.
+
+### Google Files readiness gate
+
+Before downloading a generated video URI, the private-output ingestor extracts the Google Files resource ID and polls `GET /v1beta/files/{file_id}` until the resource reports `ACTIVE`. It fails closed on `FAILED`, unknown states, metadata errors, or the bounded readiness deadline. Only after the readiness gate passes does it stream the media response through the existing byte-limited private ingestion path. Inline output remains a separate bounded compatibility path and does not make a Files API request.

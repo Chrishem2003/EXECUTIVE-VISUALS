@@ -1,6 +1,7 @@
 const TABLE = "google_video_interactions";
 const MODEL = "gemini-omni-1.1-flash";
 const ID = /^v1_[A-Za-z0-9_-]{6,200}$/;
+const OUTPUT_URI = /^https:\/\/generativelanguage\.googleapis\.com\/v1beta\/files\/[A-Za-z0-9_-]+(?::download\?alt=media)?$/;
 const STATES = new Set(["running", "waiting", "succeeded", "failed", "canceled", "incomplete", "unknown", "deleting", "deleted"]);
 
 function safeOrigin(value) {
@@ -39,6 +40,7 @@ function mapRow(row) {
     parentInteractionId: row.parent_interaction_id || null,
     state: row.state,
     outputFileName: row.output_file_name || null,
+    outputUri: row.output_uri || null,
     submittedAt: row.submitted_at,
     expiresAt: row.expires_at,
     deletedAt: row.deleted_at || null,
@@ -60,7 +62,7 @@ export function createGoogleVideoInteractionRepository({
     throw new Error("Google interaction repository timeout is invalid.");
   }
   const base = safeOrigin(url);
-  const columns = "id,provider,model,interaction_id,job_id,owner_id,project_id,request_hash,parent_interaction_id,state,output_file_name,submitted_at,expires_at,deleted_at,metadata";
+  const columns = "id,provider,model,interaction_id,job_id,owner_id,project_id,request_hash,parent_interaction_id,state,output_file_name,output_uri,submitted_at,expires_at,deleted_at,metadata";
 
   async function request(query, { method = "GET", body, prefer } = {}) {
     const controller = new AbortController();
@@ -134,6 +136,8 @@ export function createGoogleVideoInteractionRepository({
       if (!STATES.has(record.state) || record.state === "deleted") throw new Error("Initial Google interaction state is invalid.");
       const expiresAt = iso(record.expiresAt, "Interaction expiry");
       if (Date.parse(expiresAt) <= Date.now()) throw new Error("Interaction expiry must be in the future.");
+      const outputUri = record.outputUri ?? null;
+      if (outputUri !== null && (typeof outputUri !== "string" || !OUTPUT_URI.test(outputUri))) throw new Error("Google output URI is invalid.");
       const metadata = record.metadata ?? {};
       if (!metadata || typeof metadata !== "object" || Array.isArray(metadata) || Buffer.byteLength(JSON.stringify(metadata)) > 4000) {
         throw new Error("Google interaction metadata must be a bounded JSON object.");
@@ -143,6 +147,7 @@ export function createGoogleVideoInteractionRepository({
         owner_id: ownerId, project_id: projectId, request_hash: requestHash,
         parent_interaction_id: parent, state: record.state,
         output_file_name: record.outputFileName || null,
+        output_uri: outputUri,
         submitted_at: iso(record.submittedAt || new Date().toISOString(), "Submission time"),
         expires_at: expiresAt, metadata
       };
@@ -160,11 +165,15 @@ export function createGoogleVideoInteractionRepository({
       return rows.length ? mapRow(rows[0]) : null;
     },
 
-    async updateInteraction({ interactionId, ownerId, projectId = null, jobId, state, outputFileName, metadata } = {}) {
+    async updateInteraction({ interactionId, ownerId, projectId = null, jobId, state, outputFileName, outputUri, metadata } = {}) {
       const scope = { interactionId, ownerId, projectId, jobId };
       if (!STATES.has(state)) throw new Error("Google interaction state is invalid.");
       const body = { state, updated_at: new Date().toISOString() };
       if (outputFileName !== undefined) body.output_file_name = outputFileName;
+      if (outputUri !== undefined) {
+        if (outputUri !== null && (typeof outputUri !== "string" || !OUTPUT_URI.test(outputUri))) throw new Error("Google output URI is invalid.");
+        body.output_uri = outputUri;
+      }
       if (metadata !== undefined) {
         if (!metadata || typeof metadata !== "object" || Array.isArray(metadata) || Buffer.byteLength(JSON.stringify(metadata)) > 4000) {
           throw new Error("Google interaction metadata must be a bounded JSON object.");

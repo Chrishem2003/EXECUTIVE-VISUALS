@@ -297,3 +297,20 @@ test("rejects malformed, oversized or completed-without-output REST responses", 
     ...response, id: "bad-id"
   }), error => error.code === "GEMINI_OMNI_INVALID_RESPONSE");
 });
+
+test("normalizes requires_action and leaves undocumented queued state unknown", () => {
+  const waiting = normalizeGeminiOmniFlashInteractionResponse({
+    id: "v1_abcdef123456",
+    model: "gemini-omni-1.1-flash",
+    status: "requires_action",
+    steps: []
+  });
+  assert.equal(waiting.status, "waiting");
+  const undocumented = normalizeGeminiOmniFlashInteractionResponse({
+    id: "v1_abcdef123456",
+    model: "gemini-omni-1.1-flash",
+    status: "queued",
+    steps: []
+  });
+  assert.equal(undocumented.status, "unknown");
+});
