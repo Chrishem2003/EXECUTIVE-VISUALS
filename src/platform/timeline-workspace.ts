@@ -18,6 +18,7 @@ import { resolveCloudTimelineRefresh } from "../core/timeline-conflict";
 import { TimelineRecoveryStore, assessTimelineRecovery, checksumTimeline, requestPersistentBrowserStorage, timelineRecoveryKey, type TimelineRecoveryDraft } from "../core/timeline-recovery";
 import { retryWithBackoff } from "../core/retry";
 import { applyTimelineHistoryOperation, createTimelineHistory, createTimelineHistoryOperation, recordTimelineHistory, redoTimelineHistory, undoTimelineHistory, type TimelineHistory } from "../core/timeline-history";
+import { createStoryboardTimeline, reflowStoryboardTimelinePlan, type StoryboardInput, type StoryboardTimelinePlan } from "../core/storyboard-timeline";
 
 type Asset={id:string;name:string;mediaType:string;size:number;projectId?:string|null;createdAt?:string;metadata?:Record<string,unknown>};
 type SavedTimeline={id:string;projectId?:string|null;name:string;revision:number;document?:EditorialTimeline};
@@ -497,10 +498,58 @@ function timelineVersionHistoryPanel(){
  const rows=state.timelineVersions.map(version=>'<article class="timeline-quality-item"><div class="timeline-panel-heading"><div><b>Revision '+version.revision+' · '+esc(version.name)+'</b><p>'+esc(version.summary||"Saved timeline version")+'</p><small class="muted">'+esc(new Date(version.createdAt).toLocaleString())+(version.restoredFromVersionId?' · Restored from another version':'')+'</small></div><span class="job-status completed">Immutable</span></div><div class="toolbar"><button class="secondary" data-tl-action="compare-version" data-version-id="'+esc(version.id)+'" '+(state.versionLoading?'disabled':'')+'>Compare</button><button class="secondary" data-tl-action="restore-version" data-version-id="'+esc(version.id)+'" '+(state.versionLoading?'disabled':'')+'>Restore as new revision</button></div></article>').join("");
  return '<section class="panel timeline-quality"><div class="timeline-panel-heading"><div><div class="eyebrow">IMMUTABLE VERSION HISTORY</div><h3>Compare and restore</h3></div><button class="secondary" data-tl-action="close-version-history">Close</button></div><p>Every saved version is preserved. Restoring an older cut creates a new revision and records both its parent and its restored source.</p>'+(state.versionLoading?'<p class="muted">Loading version history…</p>':rows||'<p class="muted">No versions have been recorded yet. Save this timeline to establish its first baseline.</p>')+comparisonHtml+'</section>';
 }
+function currentStoryboardTimelinePlan():StoryboardTimelinePlan|null{
+ const value=state.timeline?.metadata?.storyboardPlan;
+ return value&&typeof value==="object"?value as StoryboardTimelinePlan:null;
+}
+function storyboardTimelinePlanPanel(){
+ const plan=currentStoryboardTimelinePlan();
+ if(!plan)return "";
+ return '<section class="panel storyboard-timeline-plan"><div class="timeline-panel-heading"><div><div class="eyebrow">STORYBOARD-TO-TIMELINE</div><h3>'+esc(plan.title)+'</h3><p class="muted">'+esc(plan.logline)+'</p></div><span class="status">PLANNED · NO MEDIA ATTACHED</span></div><div class="creative-plan-meta"><span>'+plan.scenes.length+' scenes</span><span>'+plan.scenes.reduce((n,scene)=>n+scene.shots.length,0)+' planned shots</span><span>'+plan.durationSeconds.toFixed(2)+' sec</span><span>'+plan.totalFrames+' frames @ '+plan.frameRate+' fps</span><span>'+esc(plan.aspectRatio)+'</span></div><p class="muted">These are editable shot blocks, not fake media clips. When generated assets are approved, they can be attached to their source shot IDs.</p>'+plan.scenes.map(scene=>'<article class="project"><div class="creative-plan-meta"><b>SCENE '+String(scene.number).padStart(2,"0")+' · '+esc(scene.title)+'</b><span>Starts at '+scene.startFrame+'f · '+scene.durationFrames+'f</span></div><p>'+esc(scene.purpose)+'</p>'+scene.shots.map(shot=>'<form class="timeline-quality-item info form-grid" data-tl-storyboard-shot="'+esc(shot.id)+'"><div class="creative-plan-meta full"><b>SHOT '+String(shot.number).padStart(2,"0")+' · '+esc(shot.shotType)+'</b><span>'+shot.startFrame+'f → '+(shot.startFrame+shot.durationFrames)+'f</span><span>Asset pending</span></div><label>Action<textarea name="action" rows="2" maxlength="600">'+esc(shot.action)+'</textarea></label><label>Shot type<input name="shotType" maxlength="100" value="'+esc(shot.shotType)+'"></label><label>Framing<input name="framing" maxlength="120" value="'+esc(shot.framing)+'"></label><label>Camera angle<input name="angle" maxlength="120" value="'+esc(shot.angle)+'"></label><label>Camera movement<input name="movement" maxlength="160" value="'+esc(shot.movement)+'"></label><label>Lens<input name="lens" maxlength="100" value="'+esc(shot.lens)+'"></label><label>Lighting<input name="lighting" maxlength="300" value="'+esc(shot.lighting)+'"></label><label>Duration (frames)<input name="durationFrames" type="number" min="1" max="'+(plan.frameRate*60)+'" value="'+shot.durationFrames+'"></label><label>Transition<select name="transitionOut">'+["cut","match_cut","dissolve","fade","sound_bridge","whip_pan","none"].map(value=>'<option value="'+value+'" '+(shot.transitionOut===value?'selected':'')+'>'+value.replaceAll("_"," ")+'</option>').join("")+'</select></label><label class="full">Visual prompt<textarea name="visualPrompt" rows="2" maxlength="1600">'+esc(shot.visualPrompt)+'</textarea></label><label class="full">Motion prompt<textarea name="motionPrompt" rows="2" maxlength="1000">'+esc(shot.motionPrompt)+'</textarea></label><label class="full">Negative prompt<textarea name="negativePrompt" rows="2" maxlength="600">'+esc(shot.negativePrompt)+'</textarea></label><label>Sound cue<input name="soundCue" maxlength="300" value="'+esc(shot.soundCue)+'"></label><label>Dialogue<textarea name="dialogue" rows="2" maxlength="500">'+esc(shot.dialogue)+'</textarea></label><label>Narration<textarea name="narration" rows="2" maxlength="500">'+esc(shot.narration)+'</textarea></label><label>Continuity in<input name="continuityIn" maxlength="300" value="'+esc(shot.continuityIn)+'"></label><label>Continuity out<input name="continuityOut" maxlength="300" value="'+esc(shot.continuityOut)+'"></label><label class="full">Proof / evidence reference<input name="proofReference" maxlength="300" value="'+esc(shot.proofReference)+'"></label><button class="secondary">Save planned shot</button></form>').join('')+'</article>').join('')+'</section>';
+}
+async function updateStoryboardTimelineShot(form:HTMLFormElement){
+ const timeline=state.timeline,plan=currentStoryboardTimelinePlan(),shotId=form.dataset.tlStoryboardShot;
+ if(!timeline||!plan||!shotId)return;
+ const data=new FormData(form),durationFrames=Number(data.get("durationFrames"));
+ if(!Number.isInteger(durationFrames)||durationFrames<1||durationFrames>plan.frameRate*60){state.message="Planned shot duration must be between one frame and sixty seconds.";paint();return;}
+ const scenes=plan.scenes.map(scene=>({...scene,shots:scene.shots.map(shot=>shot.id!==shotId?shot:{
+  ...shot,shotType:String(data.get("shotType")||"").slice(0,100),framing:String(data.get("framing")||"").slice(0,120),angle:String(data.get("angle")||"").slice(0,120),movement:String(data.get("movement")||"").slice(0,160),lens:String(data.get("lens")||"").slice(0,100),lighting:String(data.get("lighting")||"").slice(0,300),transitionOut:String(data.get("transitionOut")||"cut"),proofReference:String(data.get("proofReference")||"").slice(0,300),durationFrames,action:String(data.get("action")||"").slice(0,600),visualPrompt:String(data.get("visualPrompt")||"").slice(0,1600),
+  motionPrompt:String(data.get("motionPrompt")||"").slice(0,1000),negativePrompt:String(data.get("negativePrompt")||"").slice(0,600),
+  soundCue:String(data.get("soundCue")||"").slice(0,300),dialogue:String(data.get("dialogue")||"").slice(0,500),
+  narration:String(data.get("narration")||"").slice(0,500),continuityIn:String(data.get("continuityIn")||"").slice(0,300),
+  continuityOut:String(data.get("continuityOut")||"").slice(0,300)
+ })}));
+ let nextPlan:StoryboardTimelinePlan;try{nextPlan=reflowStoryboardTimelinePlan({...plan,scenes});}catch(error){state.message=error instanceof Error?error.message:"Storyboard timeline edit failed validation.";paint();return;}
+ const sceneMarkers=nextPlan.scenes.map(scene=>({id:"storyboard-scene-"+scene.id,name:"Scene "+String(scene.number).padStart(2,"0")+" · "+scene.title,start:rational(scene.startFrame,plan.frameRate),note:scene.purpose}));
+ const otherMarkers=timeline.markers.filter(marker=>!marker.id.startsWith("storyboard-scene-"));
+ const after={...timeline,metadata:{...(timeline.metadata||{}),storyboardPlan:nextPlan},markers:[...otherMarkers,...sceneMarkers].sort((a,b)=>a.start.value/a.start.rate-b.start.value/b.start.rate)};
+ const operation=createTimelineHistoryOperation(timeline,after,{label:"Edit planned storyboard shot",origin:"local"});
+ if(!operation)return;
+ state.timeline=applyTimelineHistoryOperation(timeline,operation,"forward");
+ state.timelineHistory=recordTimelineHistory(state.timelineHistory,operation);
+ state.message="Planned shot saved. Timeline reflowed to "+nextPlan.durationSeconds.toFixed(2)+" seconds; no media clip was created.";
+ try{await persist();}catch(error){state.message=error instanceof Error?error.message:"Planned shot save failed.";}
+ paint();
+}
+async function createTimelineFromStoryboard(detail:{projectId:string;projectName?:string;storyboard:StoryboardInput}){
+ if(!detail?.projectId||!detail.storyboard){state.message="A cloud project and storyboard are required.";paint();return;}
+ try{
+  state.mode="cloud";state.cloudProjectId=detail.projectId;state.timeline=null;state.serverRevision=0;state.cloudRevisionConflict=false;
+  state.recoveredDraft=null;state.conflictServerTimeline=null;state.recoveryStatus="idle";resetTimelineHistory();
+  await refresh();
+  if(state.cloudProjectId!==detail.projectId)throw new Error("The selected cloud project is not available to this account.");
+  const timeline=createStoryboardTimeline(detail.projectId,crypto.randomUUID(),detail.storyboard,(detail.projectName||detail.storyboard.title)+" — Assembly");
+  const result=await apiRequest<{timeline:CloudSavedTimeline}>("/api/cloud/timelines",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({projectId:detail.projectId,name:timeline.name,timeline,otio:toOpenTimelineIo(timeline)})});
+  state.timeline=result.timeline.timeline;state.serverRevision=result.timeline.revision;state.cloudTimelines=[result.timeline,...state.cloudTimelines];
+  state.selectedTrack=timeline.tracks[0].id;state.selectedClipId="";state.status="ready";
+  state.message="Created a new cloud timeline from the storyboard. Planned shots are editable; no media clips or provider jobs were created.";
+  resetTimelineHistory();await restoreTimelineRecovery();paint();
+ }catch(error){state.status="ready";state.message=error instanceof Error?error.message:"Could not create a timeline from this storyboard.";paint();}
+}
 export function renderTimelineWorkspace(){
  return '<div id="timeline-workspace"><div class="timeline-toolbar"><label>Workspace <select id="tl-mode"><option value="local" '+(state.mode==="local"?"selected":"")+' >Local</option><option value="cloud" '+(state.mode==="cloud"?"selected":"")+' >Cloud project</option></select></label><label>Cloud project <select id="tl-cloud-project"><option value="">Select project</option>'+state.cloudProjects.map(p=>'<option value="'+esc(p.id)+'" '+(p.id===state.cloudProjectId?'selected':'')+'>'+esc(p.name)+'</option>').join("")+'</select></label><label>Saved sequence <select id="tl-saved-sequence"><option value="">Current sequence</option>'+(state.mode==="cloud"?state.cloudTimelines.map(t=>'<option value="'+esc(t.id)+'" '+(state.timeline?.id===t.id?'selected':'')+'>'+esc(t.name)+' · r'+t.revision+'</option>').join(""):state.timelines.map(t=>'<option value="'+esc(t.id)+'" '+(state.timeline?.id===t.id?'selected':'')+'>'+esc(t.name)+' · r'+t.revision+'</option>').join(""))+'</select></label><button class="secondary" data-tl-create-cloud>＋ New cloud timeline</button>'+(state.mode==="cloud"?'<button class="secondary" data-tl-action="import-generated-video">＋ Import latest generated video</button>':"")+'<button class="secondary" data-tl-action="duplicate-variant">Duplicate as variant</button><button class="secondary" data-tl-action="versions" '+(!state.timeline?'disabled':'')+'>Version history'+(state.timelineVersions.length?" · "+state.timelineVersions.length:"")+'</button><button class="secondary" data-tl-action="undo" '+(!state.timelineHistory.undo.length?'disabled':'')+' title="Undo · Ctrl/Cmd+Z">↶ Undo</button><button class="secondary" data-tl-action="redo" '+(!state.timelineHistory.redo.length?'disabled':'')+' title="Redo · Ctrl/Cmd+Shift+Z">↷ Redo</button><span class="runtime-status '+state.status+'"><i></i>'+esc(state.status==="ready"?"TIMELINE SAVED":state.status==="auth"?"SIGN IN REQUIRED":state.status==="offline"?"API OFFLINE":"LOADING")+'</span><button class="secondary" data-tl-action="refresh">↻ Refresh</button><button class="secondary" data-tl-action="export">Export OTIO JSON</button>'+(state.mode==="cloud"&&state.cloudRenderJobId?'<button class="secondary" data-tl-action="cloud-job">Check cloud render · '+esc(state.cloudRenderJobStatus||"queued")+'</button>':'')+''+(state.ffmpeg?'<button class="primary" data-tl-action="render">Render master MP4</button>':'<span class="muted">FFmpeg required for master render</span>')+'</div>'+
  (state.message?'<div class="notice">'+esc(state.message)+'</div>':'')+
- recoveryConflictPanel()+timelineVersionHistoryPanel()+
+ recoveryConflictPanel()+timelineVersionHistoryPanel()+storyboardTimelinePlanPanel()+
  '<div class="timeline-editor-grid"><section class="panel"><div class="eyebrow">SEQUENCE SETTINGS</div><h3>'+(state.timeline?esc(state.timeline.name):"No sequence loaded")+'</h3>'+
  '<form id="tl-add-track"><label>Track name</label><input name="name" required placeholder="Video 2 / Music / Captions"><label>Track type</label><select name="kind"><option value="video">Video</option><option value="audio">Audio</option><option value="overlay">Overlay</option><option value="caption">Captions</option></select><button class="secondary">＋ Add track</button></form>'+
  '<div class="eyebrow" style="margin-top:18px">ADD SOURCE CLIP</div><form id="tl-add-clip"><label>Source asset</label><select id="tl-asset-select" name="assetId" required>'+assetOptions()+'</select><label>Destination track</label><select name="trackId">'+(state.timeline?.tracks.map(t=>'<option value="'+esc(t.id)+'">'+esc(t.name)+'</option>').join("")||"")+'</select><div class="form-grid"><div><label>Timeline start (frames)</label><input name="start" type="number" min="0" value="'+maxEnd()+'"></div><div><label>Source in (source frames)</label><input name="sourceIn" type="number" min="0" value="0"></div><div><label>Duration (timeline frames)</label><input name="duration" type="number" min="1" value="'+(fps()*5)+'"></div></div><button class="primary wide">＋ Place clip on timeline</button></form>'+
@@ -745,7 +794,7 @@ async function runAction(action:HTMLElement){
  try{await persist();}catch(error){state.message=error instanceof Error?error.message:"Save failed.";state.status="offline";}paint();
 }
 document.addEventListener("submit",event=>{
- const form=event.target as HTMLFormElement;if(!state.timeline)return;
+ const form=event.target as HTMLFormElement;if(form.dataset.tlStoryboardShot){event.preventDefault();void updateStoryboardTimelineShot(form);return;}if(!state.timeline)return;
  if(form.id==="tl-add-track"){
   event.preventDefault();const data=new FormData(form),name=String(data.get("name")||"").trim(),kind=String(data.get("kind")||"video") as TimelineTrack["kind"];
   if(!name)return;
@@ -821,6 +870,7 @@ document.addEventListener("click",event=>{
  const action=target.closest<HTMLElement>("[data-tl-action]");
  if(action)void runAction(action);
 });
+window.addEventListener("ev:storyboard-to-timeline",event=>{const detail=(event as CustomEvent<{projectId:string;projectName?:string;storyboard:StoryboardInput}>).detail;if(detail)void createTimelineFromStoryboard(detail);});
 window.addEventListener("ev:authenticated",()=>{resetSequenceMediaCache();sequenceMediaProjectId="";void initTimelineWorkspace();});
 window.addEventListener("ev:unauthenticated",()=>{resetSequenceMediaCache();sequenceMediaProjectId="";});
 window.addEventListener("ev:assets-updated",()=>void refresh().then(paint).catch(error=>{state.message=error.message;paint();}));
