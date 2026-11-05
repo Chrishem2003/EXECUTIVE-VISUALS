@@ -166,7 +166,7 @@ async function syncPreview(){
  state.previewActiveClips=active;
  const label=document.querySelector<HTMLElement>("#tl-preview-active");
  const layerSummary=active.map(clip=>clip.clipName+" · "+clip.trackName+" · "+clip.sourceTimeSeconds.toFixed(3)+"s").join(" | ");
- if(label)label.textContent=layerSummary||"No active video or overlay clips at this frame.";
+ if(label)label.textContent=(layerSummary||"No active video or overlay clips at this frame.")+(state.previewError?" · "+state.previewError:"");
  if(!active.length){
   state.previewLayerKey="";state.previewPlaying=false;
   for(const video of document.querySelectorAll<HTMLVideoElement>("[data-preview-video]")){video.pause();video.removeAttribute("src");video.load();}
@@ -240,7 +240,7 @@ function previewMonitor(){
  if(!state.timeline)return '<section class="panel"><div class="eyebrow">PREVIEW MONITOR</div><p class="muted">Load a timeline to preview its active source clips.</p></section>';
  let active:ReturnType<typeof activePreviewAtPlayhead>=[];
  try{active=activePreviewAtPlayhead();}catch(error){state.previewError=error instanceof Error?error.message:"Timeline cannot be previewed.";}
- const videoCount=active.filter(clip=>state.previewSources[clip.assetId]?.mediaType.startsWith("video/")).length;
+ const videoCount=active.filter(clip=>state.assets.find(asset=>asset.id===clip.assetId)?.mediaType.startsWith("video/")).length;
  return '<section class="panel timeline-preview-panel"><div class="timeline-panel-heading"><div><div class="eyebrow">MULTI-TRACK COMPOSITE PREVIEW</div><h3>Preview monitor</h3></div><span class="job-status '+(active.length?"completed":"running")+'">'+(active.length?active.length+" ACTIVE LAYERS":"NO ACTIVE LAYERS")+'</span></div><div class="timeline-preview-stage" style="aspect-ratio: '+(state.timeline.width||1920)+' / '+(state.timeline.height||1080)+' "><div id="tl-preview-layers">'+renderPreviewLayers(active)+'</div></div><div class="timeline-preview-controls"><label for="tl-playhead">Playhead frame</label><input id="tl-playhead" type="range" min="0" max="'+timelineEndFrame()+'" step="1" value="'+Math.min(timelineEndFrame(),Math.max(0,state.playheadFrame))+'"><strong id="tl-playhead-label">Frame '+state.playheadFrame+' · '+(state.playheadFrame/fps()).toFixed(3)+'s</strong></div><div class="timeline-preview-actions"><button class="secondary" type="button" data-tl-preview-toggle '+(videoCount?"":"disabled")+'>'+(state.previewPlaying?"Pause preview":"Play preview")+'</button><span class="muted">'+active.length+' active visual layer(s) · '+videoCount+' video source(s)</span></div><p id="tl-preview-active" class="muted">'+(active.map(clip=>esc(clip.clipName)+" · "+esc(clip.trackName)+" · "+clip.sourceTimeSeconds.toFixed(3)+"s").join(" | ")||"No active video or overlay clips at this frame.")+(state.previewError?" · "+esc(state.previewError):"")+'</p><small class="muted">Layers follow timeline track order. Native browser decoding is codec-dependent. Audio mixing, effects and transitions remain in the FFmpeg master-render path.</small></section>';
 }
 document.addEventListener("click",event=>{
