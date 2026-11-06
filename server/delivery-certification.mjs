@@ -39,6 +39,8 @@ export function buildDeliveryCertification({profileId="source",metadata,render={
   add(checks,"audio-stream","present",audio?"present":"missing",Boolean(audio));
   add(checks,"audio-codec","aac",audio?.codec_name,audio?.codec_name==="aac");
   add(checks,"audio-sample-rate","48000",audio?.sample_rate,String(audio?.sample_rate)==="48000");
+  const videoStart=Number(video?.start_time),audioStart=Number(audio?.start_time),offset=Math.abs(videoStart-audioStart);
+  add(checks,"audio-video-start-alignment","≤0.1 seconds",Number.isFinite(offset)?Number(offset.toFixed(6)):null,Number.isFinite(offset)&&offset<=0.1);
  }
  const failed=checks.filter(check=>!check.passed);
  return{
