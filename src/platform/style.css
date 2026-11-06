@@ -479,3 +479,13 @@
 .asset-quality b{font-size:12px;text-transform:capitalize}
 .asset-quality small{font-size:11px;color:var(--muted,#9aa4b2)}
 .asset-quality p{margin:2px 0 0;font-size:11px;line-height:1.45;color:var(--muted,#9aa4b2)}
+
+
+/* In-app collaboration notifications */
+.notification-list{display:grid;gap:8px}
+.notification-item{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding:12px 14px;border:1px solid var(--line,#303744);border-radius:10px}
+.notification-item.unread{background:var(--surface-soft,rgba(127,139,156,.06));border-color:var(--accent,#7388ad)}
+.notification-item>div{display:grid;gap:4px;min-width:0}
+.notification-item b{font-size:12px}
+.notification-item small{font-size:11px;color:var(--muted,#9aa4b2);overflow-wrap:anywhere}
+.notification-item.read{opacity:.72}

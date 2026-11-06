@@ -72,6 +72,15 @@ const cloudTimelineApi = cloudTimelineApiEnabled ? createCloudTimelineApi({maxUp
 if (cloudTimelineApi) await cloudTimelineApi.checkReadiness();
 
 const now = () => new Date().toISOString();
+function notifyProjectMembers(db,projectId,actorId,eventType,subjectType,subjectId,message){
+ const project=db.prepare("SELECT owner_id FROM projects WHERE id=?").get(projectId);
+ if(!project)return;
+ const members=db.prepare("SELECT member_id FROM project_members WHERE project_id=? AND role IN ('editor','reviewer')").all(projectId);
+ const recipients=new Set([project.owner_id,...members.map(row=>row.member_id)]);
+ const insert=db.prepare("INSERT INTO notifications(id,user_id,project_id,event_type,subject_type,subject_id,message) VALUES(?,?,?,?,?,?,?)");
+ for(const userId of recipients){if(userId&&userId!==actorId)insert.run(randomUUID(),userId,projectId,eventType,subjectType,subjectId,String(message).slice(0,500));}
+}
+
 const hash = value => createHash("sha256").update(value).digest("hex");
 const stableJson = value => Array.isArray(value) ? "["+value.map(stableJson).join(",")+"]" : value && typeof value==="object" ? "{"+Object.keys(value).sort().map(key=>JSON.stringify(key)+":"+stableJson(value[key])).join(",")+"}" : JSON.stringify(value);
 const safeName = value => basename(String(value || "upload")).replace(/[\u0000-\u001f\u007f]/g,"").replace(/[^\p{L}\p{N}._() -]/gu,"_").slice(0,180) || "upload";
@@ -930,6 +939,7 @@ export function createAppServer() {
         db.prepare("INSERT INTO reviews(id,owner_id,project_id,asset_id,reviewer_id,timecode_seconds,decision,body,status,resolved_at) VALUES(?,?,?,?,?,?,?,?,?,?)")
           .run(id,user.id,projectId,assetId,decision==="comment"?null:user.id,timecode,decision,text,status,status==="resolved"?now():null);
         audit(db,user.id,"review.created","review",id,{decision,timecodeSeconds:timecode},projectId);
+        notifyProjectMembers(db,projectId,user.id,"review.created","review",id,decision==="request_changes"?"Changes requested on a project review.":decision==="approve"?"A project review was approved.":"A new project review comment was added.");
         send(res,201,{review:{id,projectId,assetId,decision,body:text,status,timecodeSeconds:timecode,createdAt:now()}},cors);return;
       }
       const reviewMatch=path.match(/^\/api\/reviews\/([0-9a-f-]+)$/i);
@@ -943,8 +953,26 @@ export function createAppServer() {
           if(!["open","resolved","dismissed"].includes(status)){fail(res,400,"INVALID_REVIEW_STATUS","Choose open, resolved or dismissed.");return;}
           db.prepare("UPDATE reviews SET status=?,resolved_at=? WHERE id=?").run(status,status==="open"?null:now(),review.id);
           audit(db,user.id,"review.status_changed","review",review.id,{status},review.project_id);
+          notifyProjectMembers(db,review.project_id,user.id,"review.status_changed","review",review.id,status==="resolved"?"A project review was resolved.":status==="dismissed"?"A project review was dismissed.":"A project review was reopened.");
           send(res,200,{ok:true,status},cors);return;
         }
+      }
+      if(path==="/api/notifications"&&req.method==="GET"){
+        const requested=Number(url.searchParams.get("limit")||30),limit=Number.isInteger(requested)&&requested>0?Math.min(100,requested):30;
+        const visible="(n.project_id IS NULL OR n.project_id IN (SELECT p.id FROM projects p LEFT JOIN project_members pm ON pm.project_id=p.id WHERE p.owner_id=? OR pm.member_id=?))";
+        const rows=db.prepare("SELECT n.id,n.project_id,n.event_type,n.subject_type,n.subject_id,n.message,n.read_at,n.created_at FROM notifications n WHERE n.user_id=? AND "+visible+" ORDER BY n.created_at DESC LIMIT ?").all(user.id,user.id,user.id,limit);
+        const unread=db.prepare("SELECT COUNT(*) AS count FROM notifications n WHERE n.user_id=? AND n.read_at IS NULL AND "+visible).get(user.id,user.id,user.id);
+        send(res,200,{notifications:rows.map(row=>({id:row.id,projectId:row.project_id,eventType:row.event_type,subjectType:row.subject_type,subjectId:row.subject_id,message:row.message,readAt:row.read_at,createdAt:row.created_at})),unreadCount:unread.count},cors);return;
+      }
+      if(path==="/api/notifications/read-all"&&req.method==="POST"){
+        db.prepare("UPDATE notifications SET read_at=? WHERE user_id=? AND read_at IS NULL AND (project_id IS NULL OR project_id IN (SELECT p.id FROM projects p LEFT JOIN project_members pm ON pm.project_id=p.id WHERE p.owner_id=? OR pm.member_id=?))").run(now(),user.id,user.id,user.id);
+        send(res,200,{ok:true},cors);return;
+      }
+      const notificationReadMatch=path.match(/^\/api\/notifications\/([0-9a-f-]+)\/read$/i);
+      if(notificationReadMatch&&req.method==="POST"){
+        const changed=db.prepare("UPDATE notifications SET read_at=COALESCE(read_at,?) WHERE id=? AND user_id=? AND (project_id IS NULL OR project_id IN (SELECT p.id FROM projects p LEFT JOIN project_members pm ON pm.project_id=p.id WHERE p.owner_id=? OR pm.member_id=?))").run(now(),notificationReadMatch[1],user.id,user.id,user.id);
+        if(changed.changes!==1){fail(res,404,"NOTIFICATION_NOT_FOUND","Notification not found.");return;}
+        send(res,200,{ok:true},cors);return;
       }
       if(path==="/api/audit"&&req.method==="GET"){
         const projectId=String(url.searchParams.get("projectId")||"").trim();
