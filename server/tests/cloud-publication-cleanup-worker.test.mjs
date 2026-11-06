@@ -12,7 +12,7 @@ const now=()=>new Date("2026-11-07T12:00:00.000Z");
 const publication={owner_id:owner,project_id:null,job_id:jobId,publication_key:publicationKey,asset_id:asset,status:"reserved",updated_at:"2026-11-05T00:00:00.000Z"};
 const job={id:jobId,status:"failed",lease_expires_at:"2026-11-06T00:00:00.000Z"};
 function response(data,status=200){return{ok:status>=200&&status<300,status,async text(){return JSON.stringify(data);}};}
-function fixture({jobRow=job,deleteEnabled=false,confirmDelete=false}={}){
+function fixture({jobRow=job,deleteEnabled=false,confirmDelete=false,storageOverride=null}={}){
  const calls=[],removed=[],audit=[];
  const fetchImpl=async(url,options)=>{
   calls.push({url,options});
@@ -25,7 +25,7 @@ function fixture({jobRow=job,deleteEnabled=false,confirmDelete=false}={}){
   if(parsed.pathname.endsWith("/publication_cleanup_audit_events")&&options.method==="POST"){audit.push(JSON.parse(options.body));return response(null,201);}
   throw new Error("Unexpected request "+options.method+" "+parsed.pathname);
  };
- const storage={async listObjects(args){assert.equal(args.prefix,owner+"/"+asset+"/");return{objects:[{name:attempt,createdAt:"2026-11-05T00:00:00.000Z"}],hasNext:false,nextCursor:null};},async remove(path){removed.push(path);return true;}};
+ const storage=storageOverride||{async listObjects(args){assert.equal(args.prefix,owner+"/"+asset+"/");return{objects:[{name:attempt,createdAt:"2026-11-05T00:00:00.000Z"}],hasNext:false,nextCursor:null};},async remove(path){removed.push(path);return true;}};
  const worker=createCloudPublicationCleanupWorker({
   url:"https://example.supabase.co",serviceRoleKey:"private-key",fetchImpl,storage,now,
   olderThanMs:24*60*60*1000,publicationLimit:5,objectLimit:10,pollIntervalMs:10000,
@@ -66,4 +66,23 @@ test("skips nonterminal jobs before listing storage or writing cleanup events",a
  assert.equal(f.calls.some(call=>call.url.includes("/assets?")),false);
  assert.deepEqual(f.removed,[]);
  assert.deepEqual(f.audit,[]);
+});
+
+
+test("traverses a bounded continuation page rather than repeatedly scanning the first storage page",async()=>{
+ const pageCalls=[];
+ const storage={
+  async listObjects(args){
+   pageCalls.push(args.cursor);
+   if(args.cursor===null)return{objects:[{name:attempt,createdAt:"2026-11-05T00:00:00.000Z"}],hasNext:true,nextCursor:"page-2"};
+   assert.equal(args.cursor,"page-2");
+   return{objects:[],hasNext:false,nextCursor:null};
+  },
+  async remove(){throw new Error("dry-run must not delete");}
+ };
+ const f=fixture({storageOverride:storage});
+ const result=await f.worker.runCycle();
+ assert.equal(result.results[0].pages,2);
+ assert.equal(result.results[0].eligibleCount,1);
+ assert.deepEqual(pageCalls,[null,"page-2"]);
 });
