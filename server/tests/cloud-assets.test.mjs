@@ -13,21 +13,22 @@ const bytes=new Uint8Array([1,2,3,4]);
 const config={url:"https://example.supabase.co",serviceRoleKey:"private-service-key"};
 function response(body,status=200){return{ok:status>=200&&status<300,status,async text(){return JSON.stringify(body);}};}
 function fixture({authorize=async()=>true,insertResponse=null,removeError=false}={}) {
+ let removeFails=removeError;
  const calls=[],storageCalls=[];
  const storage={
   async upload(path,data,type){storageCalls.push({op:"upload",path,data,type});return{bucket:"executive-visuals-media",path,size:data.byteLength,contentType:type};},
   async uploadFile(path,file,type){const data=await readFile(file);storageCalls.push({op:"uploadFile",path,file,type});return{bucket:"executive-visuals-media",path,size:data.byteLength,sha256:createHash("sha256").update(data).digest("hex"),contentType:type};},
   async createSignedUrl(path,expiry){storageCalls.push({op:"sign",path,expiry});return"https://example.supabase.co/storage/signed";},
-  async remove(path){storageCalls.push({op:"remove",path});if(removeError)throw new Error("storage cleanup unavailable");return true;}
+  async remove(path){storageCalls.push({op:"remove",path});if(removeFails)throw new Error("storage cleanup unavailable");return true;}
  };
- const row={id:assetId,owner_id:ownerId,project_id:projectId,original_name:"final cut.mp4",media_type:"video/mp4",byte_size:4,sha256:createHash("sha256").update(bytes).digest("hex"),storage_bucket:"executive-visuals-media",object_path:projectId+"/"+assetId+"/original.mp4",derivative_of:null,metadata:{role:"master"},created_at:"2026-11-01T00:00:00Z"};
+ const row={id:assetId,owner_id:ownerId,project_id:projectId,original_name:"final cut.mp4",media_type:"video/mp4",byte_size:4,sha256:createHash("sha256").update(bytes).digest("hex"),storage_bucket:"executive-visuals-media",object_path:projectId+"/"+assetId+"/original.mp4",derivative_of:null,metadata:{role:"master"},created_at:"2026-11-01T00:00:00Z",deleted_at:null};
  const fetchImpl=async(url,options)=>{
   calls.push({url,options});
   if(options.method==="POST"){const payload=JSON.parse(options.body);return response(insertResponse===null?[{...row,...payload,created_at:row.created_at}]:insertResponse);}
-  if(options.method==="PATCH")return response([row]);
+  if(options.method==="PATCH"){row.deleted_at=JSON.parse(options.body).deleted_at;return response([row]);}
   return response([row]);
  };
- return {repo:createCloudAssetRepository({...config,storage,authorize,fetchImpl}),calls,storageCalls,row};
+ return {repo:createCloudAssetRepository({...config,storage,authorize,fetchImpl}),calls,storageCalls,row,setRemoveError(value){removeFails=value;}};
 }
 
 test("creates a cloud asset only after project authorization and verifies metadata ownership",async()=>{
@@ -38,7 +39,8 @@ test("creates a cloud asset only after project authorization and verifies metada
  assert.equal(f.storageCalls[0].op,"upload");assert.equal(f.calls[0].options.method,"POST");
  assert.equal(f.calls[0].options.headers["content-profile"],"executive_visuals");
  assert.equal(f.calls[0].options.headers.authorization,"Bearer "+config.serviceRoleKey);
- assert.equal(JSON.parse(f.calls[0].options.body).object_path,asset.objectPath);
+ assert.equal(JSON.parse(f.calls[0].options.body).object_path,f.storageCalls[0].path);
+ assert.equal("objectPath" in asset,false);assert.equal("storageBucket" in asset,false);
 });
 
 test("creates a cloud asset from a file using the streaming storage boundary",async()=>{
@@ -73,6 +75,20 @@ test("signed URL lookup checks record owner and project authorization",async()=>
  assert.equal(f.storageCalls[0].op,"sign");
 });
 
+test("public cloud asset records never expose private bucket or object path",async()=>{
+ const f=fixture();
+ const created=await f.repo.create({ownerId,projectId,originalName:"final cut.mp4",mediaType:"video/mp4",bytes});
+ const listed=await f.repo.list({ownerId,projectId});
+ const signed=await f.repo.createSignedUrl({ownerId,assetId});
+ for(const asset of [created,listed[0],signed.asset]){
+  assert.equal("storageBucket" in asset,false);
+  assert.equal("objectPath" in asset,false);
+  assert.equal("storage_bucket" in asset,false);
+  assert.equal("object_path" in asset,false);
+ }
+ assert.match(f.storageCalls[0].path,new RegExp("^"+projectId+"/[0-9a-f-]{36}/original\\.mp4$"));
+});
+
 test("does not sign assets belonging to another owner",async()=>{
  const f=fixture({authorize:async()=>false});
  await assert.rejects(()=>f.repo.createSignedUrl({ownerId:"423e4567-e89b-42d3-a456-426614174000",assetId}),e=>e.code==="CLOUD_ASSET_ACCESS_DENIED");
@@ -92,6 +108,28 @@ test("soft deletion remains private and exposes cleanup pending if object remova
  const f=fixture({removeError:true});
  const result=await f.repo.softDelete({ownerId,assetId});
  assert.equal(result.deleted,true);assert.equal(result.cleanupPending,true);
+});
+
+
+test("retries physical cleanup for an already deleted asset without repeating the metadata transition",async()=>{
+ const f=fixture({removeError:true});
+ const first=await f.repo.softDelete({ownerId,assetId});
+ assert.equal(first.deleted,true);assert.equal(first.cleanupPending,true);
+ assert.ok(f.row.deleted_at);
+ f.setRemoveError(false);
+ const second=await f.repo.softDelete({ownerId,assetId});
+ assert.equal(second.deleted,true);assert.equal(second.storageRemoved,true);assert.equal(second.cleanupPending,false);
+ assert.equal(f.calls.filter(call=>call.options.method==="PATCH").length,1);
+ assert.equal(f.storageCalls.filter(call=>call.op==="remove").length,2);
+});
+
+test("does not permit an unauthorized caller to retry pending storage cleanup",async()=>{
+ const f=fixture({removeError:true});
+ await f.repo.softDelete({ownerId,assetId});
+ const denied=fixture({authorize:async()=>false});
+ denied.row.deleted_at=f.row.deleted_at;
+ await assert.rejects(()=>denied.repo.softDelete({ownerId,assetId}),error=>error.code==="CLOUD_ASSET_ACCESS_DENIED");
+ assert.equal(denied.storageCalls.length,0);
 });
 
 test("rejects malformed identifiers, unsupported media and non-object metadata",async()=>{
