@@ -93,7 +93,7 @@ test("durable cleanup claims serialize with publication and retain path tombston
   assert.match(claimSql, /job_row\.status not in \('failed','cancelled','expired'\)/i);
   assert.match(claimSql, /publication_row\.updated_at > pg_catalog\.clock_timestamp\(\) - p_min_age/i);
   assert.match(claimSql, /from executive_visuals\.assets[\s\S]*?where a\.object_path = p_object_path/i);
-  assert.match(claimSql, /on conflict \(object_path\) do update[\s\S]*?status = 'claimed'[\s\S]*?where executive_visuals\.asset_publication_cleanup_claims\.status = 'deleted'/i);
+  assert.match(claimSql, /on conflict on constraint asset_publication_cleanup_claims_object_path_key do update[\s\S]*?status = 'claimed'[\s\S]*?where executive_visuals\.asset_publication_cleanup_claims\.status = 'deleted'/i);
   const finalizer = sql.slice(finalizeStart);
   assert.match(finalizer, /from executive_visuals\.asset_publication_cleanup_claims[\s\S]*?cleanup_claim\.object_path = p_object_path/i);
   assert.match(finalizer, /publication_row\.job_id is distinct from p_job_id/i);
