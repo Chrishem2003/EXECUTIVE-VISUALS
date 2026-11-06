@@ -461,6 +461,41 @@ test("project membership separates editor, reviewer and viewer permissions",asyn
   assert.equal(revokedTimeline.status,404);
 });
 
+test("project activity feed is scoped, attributed and cursor-paginated",async()=>{
+  const owner=await register("activity-owner@example.test");
+  const member=await register("activity-member@example.test");
+  const outsider=await register("activity-outsider@example.test");
+  const created=await request("/api/projects",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({name:"Governed activity"})},owner);
+  assert.equal(created.status,201);
+  const project=(await created.json()).project;
+  const added=await request("/api/projects/"+project.id+"/members",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({email:"activity-member@example.test",role:"reviewer"})},owner);
+  assert.equal(added.status,201);
+
+  assert.equal((await fetch(base+"/api/audit?projectId="+project.id)).status,401);
+  const first=await request("/api/audit?projectId="+project.id+"&limit=1",{},member);
+  assert.equal(first.status,200);
+  const firstBody=await first.json();
+  assert.equal(firstBody.events.length,1);
+  assert.equal(firstBody.events[0].type,"project.member_added");
+  assert.equal(firstBody.events[0].actorEmail,"activity-owner@example.test");
+  assert.equal(firstBody.hasMore,true);
+  assert.ok(Number.isSafeInteger(firstBody.nextCursor));
+
+  const second=await request("/api/audit?projectId="+project.id+"&limit=1&beforeId="+firstBody.nextCursor,{},member);
+  assert.equal(second.status,200);
+  const secondBody=await second.json();
+  assert.equal(secondBody.events.length,1);
+  assert.equal(secondBody.events[0].type,"project.created");
+  assert.equal(secondBody.hasMore,false);
+  assert.equal(secondBody.nextCursor,null);
+
+  const hidden=await request("/api/audit?projectId="+project.id,{},outsider);
+  assert.equal(hidden.status,404);
+  const invalidCursor=await request("/api/audit?projectId="+project.id+"&beforeId=not-a-number",{},member);
+  assert.equal(invalidCursor.status,400);
+  assert.equal((await invalidCursor.json()).error.code,"INVALID_AUDIT_CURSOR");
+});
+
 test("workflow approval requires reviewer permissions and cannot be replayed",async()=>{
   const owner=await register("approval-owner@example.test");
   const viewer=await register("approval-viewer@example.test");
