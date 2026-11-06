@@ -40,6 +40,15 @@ test("cloud FFmpeg renderer produces a playable master from materialized video a
   assert.ok(lateRight>lateLeft*4,"right-panned ending keyframe should favour the right channel (left="+lateLeft+", right="+lateRight+")");
   const earlyLevel=Math.hypot(earlyLeft,earlyRight),lateLevel=Math.hypot(lateLeft,lateRight);
   assert.ok(earlyLevel>lateLevel*1.5,"the rendered gain automation should attenuate the later section");
+  const vertical=await renderCloudTimeline({timeline,assets,workDir:root,onProgress(){},deliveryProfile:"vertical-1080p"});
+  const verticalProbe=JSON.parse(execFileSync(process.env.FFPROBE_PATH||"ffprobe",["-v","error","-select_streams","v:0","-show_entries","stream=width,height,pix_fmt,profile","-of","json",vertical.path],{encoding:"utf8"}));
+  assert.deepEqual([verticalProbe.streams[0].width,verticalProbe.streams[0].height],[1080,1920]);
+  assert.equal(verticalProbe.streams[0].pix_fmt,"yuv420p");
+  assert.equal(vertical.render.deliveryProfile,"vertical-1080p");
+  assert.equal(vertical.render.deliveryLabel,"Vertical 1080p H.264");
+  const square=await renderCloudTimeline({timeline,assets,workDir:root,onProgress(){},deliveryProfile:"square-1080p"});
+  const squareProbe=JSON.parse(execFileSync(process.env.FFPROBE_PATH||"ffprobe",["-v","error","-select_streams","v:0","-show_entries","stream=width,height","-of","json",square.path],{encoding:"utf8"}));
+  assert.deepEqual([squareProbe.streams[0].width,squareProbe.streams[0].height],[1080,1080]);
   const mastered=await renderCloudTimeline({timeline,assets,workDir:root,onProgress(){},mastering:{enabled:true,integratedLufs:-16,loudnessRange:11,truePeakDbtp:-1.5}});
   const masteredProbe=JSON.parse(execFileSync(process.env.FFPROBE_PATH||"ffprobe",["-v","error","-show_entries","stream=codec_type","-of","json",mastered.path],{encoding:"utf8"}));
   assert.equal(mastered.mastering.enabled,true);

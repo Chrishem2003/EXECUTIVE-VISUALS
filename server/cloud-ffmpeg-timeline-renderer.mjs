@@ -9,6 +9,13 @@ const seconds=(time)=>{const value=Number(time?.value),rate=Number(time?.rate);i
 const enabled=(clip)=>clip?.enabled!==false;
 const ordered=(tracks)=>tracks.flatMap(track=>(track.clips||[]).filter(enabled)).sort((a,b)=>seconds(a.timelineStart)-seconds(b.timelineStart));
 const safeName=(value)=>String(value||"sequence").normalize("NFKC").replace(/[^a-zA-Z0-9._ -]/g,"").trim().replace(/[ .]+$/,"").slice(0,100)||"sequence";
+const DELIVERY_PROFILES={
+ source:{id:"source",label:"Source dimensions",width:null,height:null,audioBitrate:"192k"},
+ "youtube-1080p":{id:"youtube-1080p",label:"YouTube 1080p H.264",width:1920,height:1080,audioBitrate:"384k"},
+ "vertical-1080p":{id:"vertical-1080p",label:"Vertical 1080p H.264",width:1080,height:1920,audioBitrate:"192k"},
+ "square-1080p":{id:"square-1080p",label:"Square 1080p H.264",width:1080,height:1080,audioBitrate:"192k"}
+};
+
 const audioPoints=(clip,duration)=>{
  const points=clip.audioAutomation??[];
  if(!Array.isArray(points)||points.length>256)fail("Audio automation must contain at most 256 keyframes.","INVALID_AUDIO_AUTOMATION");
@@ -60,7 +67,7 @@ const panExpressions=(points,basePan,channels)=>{
  * It shares the local renderer's caption and process primitives but has no
  * SQLite, local asset repository, or local media-root dependency.
  */
-export async function renderCloudTimeline({timeline,assets,workDir,signal,onProgress=()=>{},activeProcesses=new Map(),jobId=null,mastering=null}={}){
+export async function renderCloudTimeline({timeline,assets,workDir,signal,onProgress=()=>{},activeProcesses=new Map(),jobId=null,mastering=null,deliveryProfile="source"}={}){
  if(!timeline||!Array.isArray(timeline.tracks)||!(assets instanceof Map)||typeof workDir!=="string")throw new Error("Cloud timeline renderer received invalid inputs.");
  if(signal?.aborted)fail("Timeline render was cancelled.","JOB_CANCELLED");
  const tracks=timeline.tracks.filter(track=>track.enabled!==false&&(track.clips||[]).some(enabled));
@@ -69,8 +76,10 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
  if(videos.length!==1||unsupported.length)fail("The master renderer requires exactly one primary video track and supported audio, overlay and caption tracks.","UNSUPPORTED_TIMELINE_FEATURE");
  const clips=ordered(videos),audioClips=audios.flatMap(track=>ordered([track])),overlayClips=overlays.flatMap(track=>ordered([track])),captionClips=captions.flatMap(track=>ordered([track]));
  if(!clips.length)fail("Add at least one enabled clip to the primary video track.","EMPTY_TIMELINE");
- const width=Math.max(256,Math.min(7680,Math.floor(Number(timeline.width)||1920)));
- const height=Math.max(144,Math.min(4320,Math.floor(Number(timeline.height)||1080)));
+ const profile=DELIVERY_PROFILES[deliveryProfile];
+ if(!profile)fail("Delivery profile is not supported.","INVALID_DELIVERY_PROFILE");
+ const width=profile.width||Math.max(256,Math.min(7680,Math.floor(Number(timeline.width)||1920)));
+ const height=profile.height||Math.max(144,Math.min(4320,Math.floor(Number(timeline.height)||1080)));
  const fpsNum=Math.max(1,Math.min(120,Math.floor(Number(timeline.frameRate?.numerator)||24)));
  const fpsDen=Math.max(1,Math.min(1001,Math.floor(Number(timeline.frameRate?.denominator)||1)));
  const outputId=randomUUID(),outputPath=join(workDir,outputId+".mp4");
@@ -166,8 +175,8 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
   }
   const filters=[videoGraph,...videoEffects,audioFilters.length?audioFilters.join(";")+";"+audioFilters.map((_,i)=>`[a${i}]`).join("")+`amix=inputs=${audioFilters.length}:duration=longest:dropout_transition=0,alimiter=limit=0.95[aout]`:""].filter(Boolean).join(";");
   args.push("-filter_complex_threads","1","-filter_complex",filters,"-map",currentVideo);
-  if(audioFilters.length)args.push("-map","[aout]","-c:a","aac","-b:a","192k");else args.push("-an");
-  args.push("-c:v","libx264","-preset","veryfast","-crf","20","-pix_fmt","yuv420p","-movflags","+faststart","-r",`${fpsNum}/${fpsDen}`,outputPath);
+  if(audioFilters.length)args.push("-map","[aout]","-c:a","aac","-b:a",profile.audioBitrate,"-ar","48000");else args.push("-an");
+  args.push("-c:v","libx264","-profile:v","high","-preset","veryfast","-crf","20","-pix_fmt","yuv420p","-movflags","+faststart","-r",`${fpsNum}/${fpsDen}`,outputPath);
   await run("ffmpeg",args,60*60*1000,jobId,activeProcesses,()=>Boolean(signal?.aborted));
   if(signal?.aborted)fail("Timeline render was cancelled.","JOB_CANCELLED");
   if(mastering!==null&&mastering!==undefined&&typeof mastering!=="object")fail("Mastering settings must be an object.","INVALID_MASTERING_OPTIONS");
@@ -181,7 +190,7 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
    const measurements=parseLoudnormMeasurements(analysis.stderr||analysis.stdout);
    if(!measurements)fail("Mastering analysis did not return complete EBU R128 measurements.","LOUDNORM_ANALYSIS_FAILED");
    masteringOutputPath=join(workDir,outputId+"-mastered.mp4");
-   const normalizationArgs=buildLoudnormNormalizationArgs({inputPath:outputPath,outputPath:masteringOutputPath,measurements,...settings,audioBitrate:"192k"});
+   const normalizationArgs=buildLoudnormNormalizationArgs({inputPath:outputPath,outputPath:masteringOutputPath,measurements,...settings,audioBitrate:profile.audioBitrate});
    onProgress(94);
    const normalized=await run("ffmpeg",normalizationArgs,60*60*1000,jobId,activeProcesses,()=>Boolean(signal?.aborted));
    if(signal?.aborted)fail("Timeline render was cancelled.","JOB_CANCELLED");
@@ -200,7 +209,7 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
   if(signal?.aborted)fail("Timeline render was cancelled.","JOB_CANCELLED");
   onProgress(98);
   const name=safeName(timeline.name);
-  return{path:finalOutputPath,filename:name+"-master.mp4",mediaType:"video/mp4",...(masteringReport?{mastering:masteringReport}:{}),render:{width,height,frameRate:{numerator:fpsNum,denominator:fpsDen},videoClips:clips.length,audioClips:audioClips.length,automatedAudioClips:audioClips.filter(clip=>(clip.audioAutomation||[]).length>0||Number(clip.pan)!==0).length,overlayClips:overlayClips.length,captionClips:captionClips.length,durationSeconds:cursor}};
+  return{path:finalOutputPath,filename:name+"-master.mp4",mediaType:"video/mp4",...(masteringReport?{mastering:masteringReport}:{}),render:{deliveryProfile:profile.id,deliveryLabel:profile.label,width,height,frameRate:{numerator:fpsNum,denominator:fpsDen},videoClips:clips.length,audioClips:audioClips.length,automatedAudioClips:audioClips.filter(clip=>(clip.audioAutomation||[]).length>0||Number(clip.pan)!==0).length,overlayClips:overlayClips.length,captionClips:captionClips.length,durationSeconds:cursor}};
  }catch(error){
   await Promise.all([outputPath,masteringOutputPath].filter(Boolean).map(path=>unlink(path).catch(()=>{})));
   if(signal?.aborted)throw Object.assign(new Error("Timeline render was cancelled."),{code:"JOB_CANCELLED"});
