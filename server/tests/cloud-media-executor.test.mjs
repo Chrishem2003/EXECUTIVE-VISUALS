@@ -90,7 +90,7 @@ test("cloud media enhancement publishes a checksummed derivative using the claim
         input: { sourceAssetId: "asset-source", brightness: 0.1, contrast: 1, saturation: 1 }
       },
       onProgress() {},
-      async assertLease() { publicationOrder.push("assert-lease"); }
+      async assertLease(stage) { assert.equal(stage,"media.publish"); publicationOrder.push("assert-lease"); }
     });
     assert.deepEqual(publicationOrder, ["assert-lease", "publish"]);
     assert.equal(published.ownerId, "verified-owner");
