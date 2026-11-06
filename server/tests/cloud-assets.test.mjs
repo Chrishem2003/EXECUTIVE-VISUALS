@@ -24,10 +24,10 @@ function fixture({authorize=async()=>true,insertResponse=null,removeError=false}
  const row={id:assetId,owner_id:ownerId,project_id:projectId,original_name:"final cut.mp4",media_type:"video/mp4",byte_size:4,sha256:createHash("sha256").update(bytes).digest("hex"),storage_bucket:"executive-visuals-media",object_path:projectId+"/"+assetId+"/original.mp4",derivative_of:null,metadata:{role:"master"},created_at:"2026-11-01T00:00:00Z"};
  const fetchImpl=async(url,options)=>{
   calls.push({url,options});
-  if(url.includes("/rpc/reserve_asset_publication")){
+  if(url.includes("/rpc/reserve_asset_publication_v2")){
    const payload=JSON.parse(options.body);
-   if(publicationReservation&&(publicationReservation.payload_sha256!==payload.p_payload_sha256||publicationReservation.project_id!==payload.p_project_id))return response({message:"publication conflict"},409);
-   if(!publicationReservation)publicationReservation={owner_id:payload.p_owner_id,project_id:payload.p_project_id,publication_key:payload.p_publication_key,payload_sha256:payload.p_payload_sha256,asset_id:payload.p_asset_id,status:"reserved"};
+   if(publicationReservation&&(publicationReservation.job_id!==payload.p_job_id||publicationReservation.payload_sha256!==payload.p_payload_sha256||publicationReservation.project_id!==payload.p_project_id))return response({message:"publication conflict"},409);
+   if(!publicationReservation)publicationReservation={job_id:payload.p_job_id,owner_id:payload.p_owner_id,project_id:payload.p_project_id,publication_key:payload.p_publication_key,payload_sha256:payload.p_payload_sha256,asset_id:payload.p_asset_id,status:"reserved"};
    return response([publicationReservation]);
   }
   if(url.includes("/rpc/finalize_asset_publication_v1")){
@@ -158,6 +158,10 @@ test("publishes the same logical output once across repeated publication attempt
  assert.equal(f.storageCalls[0].options.upsert,false);
  assert.match(first.objectPath,/\/attempt-[0-9a-f-]{36}\.mp4$/i);
  assert.equal(f.publicationReservation.status,"published");
+ assert.equal(f.publicationReservation.job_id,leaseContext.jobId);
+ const reserveCall=f.calls.find(call=>call.url.includes("/rpc/reserve_asset_publication_v2"));
+ assert.equal(JSON.parse(reserveCall.options.body).p_job_id,leaseContext.jobId);
+ assert.equal(JSON.parse(reserveCall.options.body).p_lease_token,leaseContext.leaseToken);
  const finalizeCall=f.calls.find(call=>call.url.includes("/rpc/finalize_asset_publication_v1"));
  assert.ok(finalizeCall,"publication metadata and ledger must be finalized through one RPC");
  assert.equal(JSON.parse(finalizeCall.options.body).p_lease_token,leaseContext.leaseToken);
