@@ -129,6 +129,7 @@ export function createCloudStorage({
       const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs);
       const abortFromCaller=()=>controller.abort(externalSignal?.reason);
       externalSignal?.addEventListener("abort",abortFromCaller,{once:true});
+      if(externalSignal?.aborted)abortFromCaller();
       const source=createReadStream(filePath);source.on("error",error=>meter.destroy(error));
       const streamDone=pipeline(source,meter);
       try{
