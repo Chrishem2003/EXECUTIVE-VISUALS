@@ -2,6 +2,49 @@
 -- against the exact worker claim attempt. Storage upload remains outside this
 -- short transaction; each uploaded object is immutable and unique per attempt.
 
+-- A foreign key proves that a derivative source exists, but not that it
+-- belongs to the same tenant/project. Enforce that invariant for every asset
+-- write path, not only the atomic publication RPC.
+create or replace function executive_visuals.validate_asset_derivative_scope_v1()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $
+declare
+  parent_asset executive_visuals.assets;
+begin
+  if new.derivative_of is null then
+    return new;
+  end if;
+
+  select * into parent_asset
+  from executive_visuals.assets
+  where id = new.derivative_of
+  for key share;
+
+  if not found
+     or parent_asset.owner_id is distinct from new.owner_id
+     or parent_asset.project_id is distinct from new.project_id
+     or parent_asset.deleted_at is not null
+  then
+    raise exception 'asset derivative source must be active and in the same owner/project scope'
+      using errcode = '23514';
+  end if;
+
+  return new;
+end;
+$;
+
+revoke all on function executive_visuals.validate_asset_derivative_scope_v1()
+  from public, anon, authenticated, service_role;
+
+drop trigger if exists ev_assets_validate_derivative_scope on executive_visuals.assets;
+create trigger ev_assets_validate_derivative_scope
+before insert or update of derivative_of, owner_id, project_id
+on executive_visuals.assets
+for each row execute function executive_visuals.validate_asset_derivative_scope_v1();
+
 create or replace function executive_visuals.finalize_asset_publication_v1(
   p_job_id uuid,
   p_worker_id text,
