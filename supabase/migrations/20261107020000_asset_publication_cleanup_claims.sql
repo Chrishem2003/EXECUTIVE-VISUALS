@@ -1,3 +1,86 @@
+-- Bind each new reservation to the job whose lease authorized it.
+alter table executive_visuals.asset_publications
+  add column if not exists job_id uuid;
+
+create index if not exists ev_asset_publications_job_id
+  on executive_visuals.asset_publications(job_id)
+  where job_id is not null;
+
+create or replace function executive_visuals.reserve_asset_publication_v2(
+  p_job_id uuid,
+  p_worker_id text,
+  p_lease_token uuid,
+  p_owner_id uuid,
+  p_project_id uuid,
+  p_publication_key text,
+  p_payload_sha256 text,
+  p_asset_id uuid
+)
+returns setof executive_visuals.asset_publications
+language plpgsql
+security definer
+set search_path = ''
+as $reserve_publication$
+declare
+  job_row executive_visuals.jobs;
+  reserved executive_visuals.asset_publications;
+begin
+  if p_job_id is null or p_worker_id is null
+     or pg_catalog.char_length(pg_catalog.btrim(p_worker_id)) not between 1 and 128
+     or p_lease_token is null or p_owner_id is null or p_asset_id is null
+     or p_publication_key is null
+     or pg_catalog.char_length(p_publication_key) not between 1 and 200
+     or p_payload_sha256 is null or p_payload_sha256 !~ '^[0-9a-f]{64}$'
+  then
+    raise exception 'invalid asset publication reservation parameters'
+      using errcode = '22023';
+  end if;
+
+  select j.* into job_row
+  from executive_visuals.jobs j
+  where j.id = p_job_id
+  for update;
+
+  if not found
+     or job_row.owner_id is distinct from p_owner_id
+     or job_row.project_id is distinct from p_project_id
+     or job_row.status <> 'processing'
+     or job_row.lease_owner is distinct from p_worker_id
+     or job_row.lease_token is distinct from p_lease_token
+     or job_row.lease_expires_at is null
+     or job_row.lease_expires_at <= pg_catalog.clock_timestamp()
+  then
+    raise exception 'current worker lease is required to reserve asset publication'
+      using errcode = '55000';
+  end if;
+
+  insert into executive_visuals.asset_publications as current_publication
+    (owner_id, project_id, job_id, publication_key, payload_sha256, asset_id)
+  values
+    (p_owner_id, p_project_id, p_job_id, p_publication_key, p_payload_sha256, p_asset_id)
+  on conflict on constraint asset_publications_owner_publication_key_unique do update
+    set updated_at = pg_catalog.clock_timestamp()
+    where current_publication.job_id = excluded.job_id
+      and current_publication.project_id is not distinct from excluded.project_id
+      and current_publication.payload_sha256 = excluded.payload_sha256
+  returning current_publication.* into reserved;
+
+  if not found then
+    raise exception 'publication key is already bound to another job, project, or payload'
+      using errcode = '23505';
+  end if;
+
+  return next reserved;
+end;
+$reserve_publication$;
+
+revoke all on function executive_visuals.reserve_asset_publication(uuid,uuid,text,text,uuid)
+  from public, anon, authenticated, service_role;
+revoke all on function executive_visuals.reserve_asset_publication_v2(uuid,text,uuid,uuid,uuid,text,text,uuid)
+  from public, anon, authenticated;
+grant execute on function executive_visuals.reserve_asset_publication_v2(uuid,text,uuid,uuid,uuid,text,text,uuid)
+  to service_role;
+
 -- Durable tombstones fence storage cleanup against late publication finalization.
 -- Additive only. This migration does not delete storage objects or invoke a cleanup worker.
 create table if not exists executive_visuals.asset_publication_cleanup_claims (
@@ -79,6 +162,7 @@ begin
 
   if not found
      or publication_row.status not in ('reserved','published')
+     or publication_row.job_id is distinct from p_job_id
      or publication_row.updated_at > pg_catalog.clock_timestamp() - p_min_age
   then
     raise exception 'publication is missing, already finalized, or not old enough for cleanup'
@@ -370,6 +454,7 @@ begin
      or publication_row.payload_sha256 is distinct from p_payload_sha256
      or publication_row.asset_id is distinct from p_asset_id
      or publication_row.status not in ('reserved', 'published')
+     or publication_row.job_id is distinct from p_job_id
   then
     raise exception 'asset publication reservation does not match finalization'
       using errcode = '23505';
