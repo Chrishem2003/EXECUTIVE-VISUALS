@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { createServer } from "node:http";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -12,7 +13,7 @@ const dataDir=await mkdtemp(join(tmpdir(),"ev-api-test-"));
 const webDir=join(dataDir,"web");await mkdir(webDir,{recursive:true});await writeFile(join(webDir,"index.html"),"<!doctype html><html><body>test</body></html>");
 const child=spawn(process.execPath,["server/index.mjs"],{
   cwd:process.cwd(),
-  env:{...process.env,NODE_ENV:"development",AUTH_MODE:"local",AUTH_RATE_LIMIT:"1000",REMOTE_AI_DAILY_REQUEST_LIMIT:"7",API_HOST:"127.0.0.1",API_PORT:String(port),DATA_DIR:dataDir,MEDIA_ROOT:join(dataDir,"media"),WEB_ROOT:webDir,DISABLE_WORKER:"true"},
+  env:{...process.env,NODE_ENV:"development",AUTH_MODE:"local",AUTH_RATE_LIMIT:"1000",SESSION_IDLE_TIMEOUT_MINUTES:"5",SESSION_MAX_CONCURRENT:"2",REMOTE_AI_DAILY_REQUEST_LIMIT:"7",API_HOST:"127.0.0.1",API_PORT:String(port),DATA_DIR:dataDir,MEDIA_ROOT:join(dataDir,"media"),WEB_ROOT:webDir,DISABLE_WORKER:"true"},
   stdio:["ignore","pipe","pipe"]
 });
 let stdout="",stderr="";
@@ -176,6 +177,145 @@ test("operations summary reports scoped queue health and completed-job performan
   const invalid=await request("/api/operations/summary?days=14",{},owner);
   assert.equal(invalid.status,400);
   assert.equal((await invalid.json()).error.code,"OPERATIONS_PERIOD_INVALID");
+});
+
+test("session cookies are hardened, hashed, origin-protected and safely invalidated",async()=>{
+  const response=await fetch(base+"/api/auth/register",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({email:"session-security@example.test",password:"local-test-password-123"})});
+  assert.equal(response.status,201);
+  const setCookie=response.headers.get("set-cookie")||"";
+  assert.match(setCookie,/HttpOnly/);
+  assert.match(setCookie,/SameSite=Strict/);
+  assert.match(setCookie,/Path=\//);
+  assert.match(setCookie,/Max-Age=300/,"cookie lifetime follows the server-enforced idle timeout");
+  const cookie=setCookie.split(";")[0];
+  const token=cookie.slice("ev_session=".length);
+  const db=openDatabase(join(dataDir,"executive-visuals.sqlite"));
+  try{
+    const row=db.prepare("SELECT s.token_hash FROM sessions s JOIN users u ON u.id=s.user_id WHERE u.email=?").get("session-security@example.test");
+    assert.ok(row);
+    assert.equal(row.token_hash,createHash("sha256").update(token).digest("hex"));
+    assert.notEqual(row.token_hash,token,"raw session tokens must never be persisted");
+  }finally{db.close();}
+
+  assert.equal((await request("/api/me",{},cookie)).status,200);
+  const malformed=await request("/api/me",{},"ev_session=%E0%A4%A");
+  assert.equal(malformed.status,401,"malformed cookie encoding must fail closed");
+  const crossOrigin=await request("/api/me",{headers:{Origin:"https://attacker.example"}},cookie);
+  assert.equal(crossOrigin.status,403);
+  const wrongScheme=await request("/api/me",{headers:{Origin:base.replace(/^http:/,"https:")}},cookie);
+  assert.equal(wrongScheme.status,403,"same host with a different scheme is not same-origin");
+  const malformedOrigin=await request("/api/me",{headers:{Origin:base+"/unexpected-path"}},cookie);
+  assert.equal(malformedOrigin.status,403,"Origin headers must contain only a serialized origin");
+  const sameOrigin=await request("/api/me",{headers:{Origin:base}},cookie);
+  assert.equal(sameOrigin.status,200);
+  assert.equal(sameOrigin.headers.get("access-control-allow-origin"),base);
+  assert.equal(sameOrigin.headers.get("access-control-allow-credentials"),"true");
+
+  const logout=await request("/api/auth/logout",{method:"POST"},cookie);
+  assert.equal(logout.status,200);
+  assert.match(logout.headers.get("set-cookie")||"",/Max-Age=0/);
+  assert.equal((await request("/api/me",{},cookie)).status,401,"logout must revoke the persisted session");
+});
+
+test("idle local sessions are rejected, deleted and cleared server-side",async()=>{
+  const cookie=await register("idle-session@example.test");
+  const token=cookie.slice("ev_session=".length);
+  const db=openDatabase(join(dataDir,"executive-visuals.sqlite"));
+  try{
+    db.prepare("UPDATE sessions SET last_seen_at=? WHERE token_hash=?")
+      .run(new Date(Date.now()-6*60*1000).toISOString(),createHash("sha256").update(token).digest("hex"));
+  }finally{db.close();}
+  const response=await request("/api/me",{},cookie);
+  assert.equal(response.status,401);
+  assert.match(response.headers.get("set-cookie")||"",/Max-Age=0/);
+  const verify=openDatabase(join(dataDir,"executive-visuals.sqlite"));
+  try{
+    assert.equal(verify.prepare("SELECT COUNT(*) AS count FROM sessions WHERE token_hash=?").get(createHash("sha256").update(token).digest("hex")).count,0);
+  }finally{verify.close();}
+});
+
+test("password changes revoke every prior local session and retain only the rotated current session",async()=>{
+  const firstCookie=await register("password-rotation@example.test");
+  const login=await request("/api/auth/login",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({email:"password-rotation@example.test",password:"local-test-password-123"})});
+  assert.equal(login.status,200);
+  const secondCookie=(login.headers.get("set-cookie")||"").split(";")[0];
+  assert.ok(secondCookie);
+  const changed=await request("/api/auth/password",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({currentPassword:"local-test-password-123",newPassword:"local-test-password-456"})},firstCookie);
+  assert.equal(changed.status,200,await changed.clone().text());
+  assert.deepEqual(await changed.json(),{ok:true,sessionsRevoked:true});
+  const rotatedCookie=(changed.headers.get("set-cookie")||"").split(";")[0];
+  assert.ok(rotatedCookie);
+  assert.equal((await request("/api/me",{},rotatedCookie)).status,200);
+  assert.equal((await request("/api/me",{},firstCookie)).status,401,"old current session must be revoked");
+  assert.equal((await request("/api/me",{},secondCookie)).status,401,"other devices must be revoked");
+  const oldLogin=await request("/api/auth/login",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({email:"password-rotation@example.test",password:"local-test-password-123"})});
+  assert.equal(oldLogin.status,401);
+  const newLogin=await request("/api/auth/login",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({email:"password-rotation@example.test",password:"local-test-password-456"})});
+  assert.equal(newLogin.status,200);
+});
+
+test("users can list active local sessions and revoke another device without exposing session tokens",async()=>{
+  const firstCookie=await register("session-management@example.test");
+  const secondLogin=await request("/api/auth/login",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({email:"session-management@example.test",password:"local-test-password-123"})});
+  assert.equal(secondLogin.status,200);
+  const secondCookie=(secondLogin.headers.get("set-cookie")||"").split(";")[0];
+  const listed=await request("/api/auth/sessions",{},firstCookie);
+  assert.equal(listed.status,200);
+  const payload=await listed.json();
+  assert.equal(payload.maxConcurrent,2);
+  assert.equal(payload.sessions.length,2);
+  assert.equal(payload.sessions.filter(x=>x.current).length,1);
+  assert.ok(payload.sessions.every(x=>x.id&&!Object.hasOwn(x,"token")&&!Object.hasOwn(x,"tokenHash")));
+  const other=payload.sessions.find(x=>!x.current);
+  const wrongPassword=await request("/api/auth/sessions/"+other.id,{method:"DELETE",headers:{"content-type":"application/json"},body:JSON.stringify({currentPassword:"incorrect-password"})},firstCookie);
+  assert.equal(wrongPassword.status,401,"revocation requires fresh password authentication");
+  const revoked=await request("/api/auth/sessions/"+other.id,{method:"DELETE",headers:{"content-type":"application/json"},body:JSON.stringify({currentPassword:"local-test-password-123"})},firstCookie);
+  assert.equal(revoked.status,200);
+  assert.deepEqual(await revoked.json(),{ok:true,current:false});
+  assert.equal((await request("/api/me",{},secondCookie)).status,401);
+  const remaining=await request("/api/auth/sessions",{},firstCookie);
+  assert.equal((await remaining.json()).sessions.length,1);
+});
+
+test("concurrent local session limit revokes least-recently-used sessions",async()=>{
+  const firstCookie=await register("session-limit@example.test");
+  const secondLogin=await request("/api/auth/login",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({email:"session-limit@example.test",password:"local-test-password-123"})});
+  assert.equal(secondLogin.status,200);
+  const secondCookie=(secondLogin.headers.get("set-cookie")||"").split(";")[0];
+  const thirdLogin=await request("/api/auth/login",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({email:"session-limit@example.test",password:"local-test-password-123"})});
+  assert.equal(thirdLogin.status,200);
+  const thirdCookie=(thirdLogin.headers.get("set-cookie")||"").split(";")[0];
+  assert.equal((await request("/api/me",{},firstCookie)).status,401);
+  assert.equal((await request("/api/me",{},secondCookie)).status,200);
+  assert.equal((await request("/api/me",{},thirdCookie)).status,200);
+  const sessions=await request("/api/auth/sessions",{},thirdCookie);
+  const payload=await sessions.json();
+  assert.equal(payload.maxConcurrent,2);
+  assert.equal(payload.sessions.length,2);
+});
+
+test("session revocation is scoped to the authenticated account",async()=>{
+  const ownerCookie=await register("session-owner@example.test");
+  const outsiderCookie=await register("session-outsider@example.test");
+  const sessions=await request("/api/auth/sessions",{},ownerCookie);
+  const sessionId=(await sessions.json()).sessions[0].id;
+  assert.equal((await request("/api/auth/sessions/"+sessionId,{method:"DELETE",headers:{"content-type":"application/json"},body:JSON.stringify({currentPassword:"local-test-password-123"})},outsiderCookie)).status,404);
+  assert.equal((await request("/api/me",{},ownerCookie)).status,200);
+});
+
+test("expired local sessions are rejected and removed from persistence",async()=>{
+  const cookie=await register("expired-session@example.test");
+  const token=cookie.slice("ev_session=".length);
+  const db=openDatabase(join(dataDir,"executive-visuals.sqlite"));
+  try{
+    db.prepare("UPDATE sessions SET expires_at=? WHERE token_hash=?")
+      .run(new Date(Date.now()-1000).toISOString(),createHash("sha256").update(token).digest("hex"));
+  }finally{db.close();}
+  assert.equal((await request("/api/me",{},cookie)).status,401);
+  const verify=openDatabase(join(dataDir,"executive-visuals.sqlite"));
+  try{
+    assert.equal(verify.prepare("SELECT COUNT(*) AS count FROM sessions WHERE token_hash=?").get(createHash("sha256").update(token).digest("hex")).count,0);
+  }finally{verify.close();}
 });
 
 test("static application shell applies a restrictive content security policy",async()=>{
@@ -550,6 +690,17 @@ test("project membership separates editor, reviewer and viewer permissions",asyn
   const editorWorkflow=await request("/api/workflows/"+workflowId,{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({revision:1,name:"Edited by team member",graph:sharedGraph})},editor);
   assert.equal(editorWorkflow.status,200);
   assert.equal((await editorWorkflow.json()).revision,2,"editor changes must persist on an owner-created workflow");
+  assert.equal((await request("/api/workflows/"+workflowId,{},editor)).status,200);
+  const editorReviews=await request("/api/reviews?projectId="+project.id,{},editor);
+  assert.equal(editorReviews.status,200);
+  assert.equal((await request("/api/audit?projectId="+project.id,{},editor)).status,200,
+    "active project members may read the project's audit feed");
+  assert.equal((await request("/api/usage/summary?projectId="+project.id,{},editor)).status,200,
+    "active project members may read authorized project usage telemetry");
+  const projectJobResponse=await request("/api/jobs",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({jobType:"media.probe",projectId:project.id,sourceAssetId:asset.id})},editor);
+  assert.equal(projectJobResponse.status,202,await projectJobResponse.clone().text());
+  const projectJobId=(await projectJobResponse.json()).job.id;
+  assert.equal((await request("/api/jobs/"+projectJobId,{},editor)).status,200);
   const editorInvite=await request("/api/projects/"+project.id+"/members",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({email:"owner-a@example.test",role:"viewer"})},editor);
   assert.equal(editorInvite.status,403);
   const remove=await request("/api/projects/"+project.id+"/members/"+JSON.parse(await addEditor.clone().text()).member.id,{method:"DELETE"},owner);
@@ -558,6 +709,15 @@ test("project membership separates editor, reviewer and viewer permissions",asyn
   assert.equal((await revokedAssets.json()).assets.length,0);
   const revokedTimeline=await request("/api/timelines/"+timelineId,{},editor);
   assert.equal(revokedTimeline.status,404);
+  assert.equal((await request("/api/workflows/"+workflowId,{},editor)).status,404);
+  assert.equal((await request("/api/reviews?projectId="+project.id,{},editor)).status,404);
+  assert.equal((await request("/api/audit?projectId="+project.id,{},editor)).status,404,
+    "former members must lose access to project audit history");
+  assert.equal((await request("/api/usage/summary?projectId="+project.id,{},editor)).status,404,
+    "former members must lose access to project usage telemetry");
+  assert.equal((await request("/api/jobs/"+projectJobId,{},editor)).status,404);
+  assert.equal((await request("/api/jobs/"+projectJobId,{},owner)).status,200,
+    "project owners retain access to project jobs after a collaborator is removed");
 });
 
 test("project activity feed is scoped, attributed and cursor-paginated",async()=>{

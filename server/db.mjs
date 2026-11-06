@@ -18,8 +18,10 @@ export function openDatabase(filename) {
     );
     CREATE TABLE IF NOT EXISTS sessions (
       token_hash TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL UNIQUE,
       user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       expires_at TEXT NOT NULL,
+      last_seen_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
       created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
     );
     CREATE INDEX IF NOT EXISTS sessions_user_idx ON sessions(user_id);
@@ -259,6 +261,16 @@ export function openDatabase(filename) {
     );
     CREATE INDEX IF NOT EXISTS transformation_plans_project_idx ON transformation_plans(project_id,created_at DESC);
   `);
+  const sessionColumns = new Set(db.prepare("PRAGMA table_info(sessions)").all().map(column => column.name));
+  if (!sessionColumns.has("session_id")) {
+    db.exec("ALTER TABLE sessions ADD COLUMN session_id TEXT");
+    db.exec("UPDATE sessions SET session_id=lower(hex(randomblob(16))) WHERE session_id IS NULL");
+    db.exec("CREATE UNIQUE INDEX IF NOT EXISTS sessions_session_id_idx ON sessions(session_id)");
+  }
+  if (!sessionColumns.has("last_seen_at")) {
+    db.exec("ALTER TABLE sessions ADD COLUMN last_seen_at TEXT NOT NULL DEFAULT ''");
+    db.exec("UPDATE sessions SET last_seen_at=created_at WHERE last_seen_at=''");
+  }
   const jobColumns = new Set(db.prepare("PRAGMA table_info(jobs)").all().map(column => column.name));
   for (const [name, definition] of [
     ["available_at", "TEXT"],

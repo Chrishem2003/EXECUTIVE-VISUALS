@@ -102,6 +102,20 @@ test("rechecks project write permission when reading and appending chunks", asyn
   assert.equal(getUploadSession(f.db,"owner",session.id).offset,0);
 });
 
+test("rechecks project write permission before finalizing a completed upload", async t => {
+  const f=await fixture(t), session=await create(f,{projectId:"project-1"});
+  await appendUploadChunk({
+    db:f.db,mediaRoot:f.root,ownerId:"owner",id:session.id,offset:0,
+    request:Readable.from([Buffer.from("RIFFWAVE")]),expectedChunkSize:8
+  });
+  await assert.rejects(
+    prepareUploadCompletion({db:f.db,ownerId:"owner",id:session.id,canWriteProject:()=>false}),
+    error=>error.code==="UPLOAD_SESSION_NOT_FOUND"
+  );
+  assert.equal(f.db.prepare("SELECT status FROM upload_sessions WHERE id=?").get(session.id).status,"open",
+    "a revoked collaborator must not lock or finalize the upload");
+});
+
 test("limits each owner to ten active upload sessions", async t => {
   const f=await fixture(t);
   for(let i=0;i<10;i++) await create(f);
