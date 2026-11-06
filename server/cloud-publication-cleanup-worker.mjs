@@ -73,6 +73,7 @@ export function createCloudPublicationCleanupWorker({
   return rows;
  }
  let publicationOffset=0;
+ const publicationCursors=new Map();
  async function listStalePublications(offset=0){
   const cutoff=new Date(now().getTime()-olderThanMs).toISOString();
   const params=new URLSearchParams({
@@ -156,7 +157,8 @@ export function createCloudPublicationCleanupWorker({
      const prefix=(publication.project_id||publication.owner_id)+"/"+publication.asset_id+"/";
      const cleanup=await createCleanupFor(publication,runId);
      const pages=[];
-     let cursor=null,pageCount=0;
+     const cursorKey=publication.owner_id+":"+(publication.project_id||"")+":"+publication.publication_key;
+     let cursor=publicationCursors.get(cursorKey)||null,pageCount=0;
      do {
       const page=await cleanup.run({
        prefix,jobId:publication.job_id,ownerId:publication.owner_id,projectId:publication.project_id,
@@ -167,6 +169,7 @@ export function createCloudPublicationCleanupWorker({
       cursor=page.hasNext?page.nextCursor:null;
       pageCount++;
      } while(cursor&&pageCount<3);
+     if(cursor)publicationCursors.set(cursorKey,cursor);else publicationCursors.delete(cursorKey);
      const first=pages[0];
      const result={
       ...first,
