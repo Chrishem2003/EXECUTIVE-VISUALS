@@ -22,6 +22,10 @@ alter table executive_visuals.reviews
   add constraint ev_reviews_frame_anchor_consistent check (
     (frame_number is null and duration_frames is null and annotation is null)
     or frame_number is not null
+  ),
+  add constraint ev_reviews_timeline_anchor_consistent check (
+    (timeline_id is null and timeline_revision is null)
+    or (timeline_id is not null and timeline_revision is not null and asset_id is not null and frame_number is not null)
   );
 
 create unique index if not exists ev_reviews_owner_request
@@ -70,6 +74,26 @@ using (
           where m.project_id=r.project_id and m.member_id=(select auth.uid())
             and (r.visibility='project' or m.role in ('editor','reviewer')))))
 );
+
+create or replace function executive_visuals.touch_review_updated_at()
+returns trigger
+language plpgsql
+set search_path = pg_catalog, executive_visuals
+as $
+begin
+  new.updated_at := now();
+  if row(new.body,new.decision,new.status,new.visibility,new.annotation)
+     is distinct from row(old.body,old.decision,old.status,old.visibility,old.annotation) then
+    new.edited_at := now();
+  end if;
+  return new;
+end;
+$;
+drop trigger if exists ev_reviews_touch_updated_at on executive_visuals.reviews;
+create trigger ev_reviews_touch_updated_at
+before update on executive_visuals.reviews
+for each row execute function executive_visuals.touch_review_updated_at();
+revoke all on function executive_visuals.touch_review_updated_at() from public,anon,authenticated;
 
 create or replace function executive_visuals.record_review_event()
 returns trigger
