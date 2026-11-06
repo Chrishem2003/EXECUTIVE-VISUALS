@@ -125,7 +125,7 @@ begin
     'hasAnnotation',new.annotation is not null
   );
   insert into executive_visuals.review_events(review_id,owner_id,project_id,actor_id,event_type,event_data)
-  values(new.id,new.owner_id,new.project_id,coalesce(new.reviewer_id,new.owner_id),kind,payload);
+  values(new.id,new.owner_id,new.project_id,new.owner_id,kind,payload);
   return new;
 end;
 $$;
