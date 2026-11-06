@@ -111,7 +111,7 @@ export function createCloudAssetRepository({
         throw error;
       }
     },
-    async createFromFileIdempotent({ownerId,projectId=null,originalName,mediaType,filePath,publicationKey,derivativeOf=null,metadata={}}) {
+    async createFromFileIdempotent({ownerId,projectId=null,originalName,mediaType,filePath,publicationKey,derivativeOf=null,metadata={},assertLease=async()=>true,signal=null}) {
       ownerId=validUuid(ownerId,"owner ID");
       if(projectId!==null&&projectId!==undefined&&projectId!=="")projectId=validUuid(projectId,"project ID");else projectId=null;
       if(derivativeOf!==null&&derivativeOf!==undefined)derivativeOf=validUuid(derivativeOf,"derivative ID");else derivativeOf=null;
@@ -121,6 +121,14 @@ export function createCloudAssetRepository({
       if(!plainObject(metadata))throw new Error("Cloud asset metadata must be a JSON object.");
       if(JSON.stringify(metadata).length>16000)throw new Error("Cloud asset metadata exceeds the 16 KB limit.");
       if(typeof storage.uploadFile!=="function")throw new Error("Cloud storage adapter does not support streaming file uploads.");
+      if(typeof assertLease!=="function")throw new Error("Cloud asset publication requires a worker lease assertion.");
+      const verifyLease=async()=>{
+        if(signal?.aborted)throw Object.assign(new Error("Cloud asset publication was cancelled after worker lease loss."),{code:"CLOUD_ASSET_PUBLICATION_LEASE_LOST"});
+        const valid=await assertLease();
+        if(valid===false)throw Object.assign(new Error("Cloud asset publication lease is no longer valid."),{code:"CLOUD_ASSET_PUBLICATION_LEASE_LOST"});
+        return true;
+      };
+      await verifyLease();
       await allowed(ownerId,projectId,"write");
       const file=await digestFile(filePath),name=safeName(originalName),candidateId=randomUUID();
       const reservations=await request("rpc/reserve_asset_publication",{method:"POST",body:{p_owner_id:ownerId,p_project_id:projectId,p_publication_key:publicationKey,p_payload_sha256:file.sha256,p_asset_id:candidateId}});
