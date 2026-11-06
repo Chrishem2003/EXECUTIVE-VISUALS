@@ -11,9 +11,9 @@ const ordered=(tracks)=>tracks.flatMap(track=>(track.clips||[]).filter(enabled))
 const safeName=(value)=>String(value||"sequence").normalize("NFKC").replace(/[^a-zA-Z0-9._ -]/g,"").trim().replace(/[ .]+$/,"").slice(0,100)||"sequence";
 const DELIVERY_PROFILES={
  source:{id:"source",label:"Source dimensions",width:null,height:null,audioBitrate:"192k"},
- "youtube-1080p":{id:"youtube-1080p",label:"YouTube 1080p SDR",width:1920,height:1080,audioBitrate:"384k"},
- "vertical-1080p":{id:"vertical-1080p",label:"Vertical 1080p SDR",width:1080,height:1920,audioBitrate:"192k"},
- "square-1080p":{id:"square-1080p",label:"Square 1080p SDR",width:1080,height:1080,audioBitrate:"192k"}
+ "youtube-1080p":{id:"youtube-1080p",label:"YouTube 1080p H.264",width:1920,height:1080,audioBitrate:"384k"},
+ "vertical-1080p":{id:"vertical-1080p",label:"Vertical 1080p H.264",width:1080,height:1920,audioBitrate:"192k"},
+ "square-1080p":{id:"square-1080p",label:"Square 1080p H.264",width:1080,height:1080,audioBitrate:"192k"}
 };
 
 const audioPoints=(clip,duration)=>{
@@ -176,7 +176,7 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
   const filters=[videoGraph,...videoEffects,audioFilters.length?audioFilters.join(";")+";"+audioFilters.map((_,i)=>`[a${i}]`).join("")+`amix=inputs=${audioFilters.length}:duration=longest:dropout_transition=0,alimiter=limit=0.95[aout]`:""].filter(Boolean).join(";");
   args.push("-filter_complex_threads","1","-filter_complex",filters,"-map",currentVideo);
   if(audioFilters.length)args.push("-map","[aout]","-c:a","aac","-b:a",profile.audioBitrate,"-ar","48000");else args.push("-an");
-  args.push("-c:v","libx264","-profile:v","high","-preset","veryfast","-crf","20","-pix_fmt","yuv420p","-color_primaries","bt709","-color_trc","bt709","-colorspace","bt709","-movflags","+faststart","-r",`${fpsNum}/${fpsDen}`,outputPath);
+  args.push("-c:v","libx264","-profile:v","high","-preset","veryfast","-crf","20","-pix_fmt","yuv420p","-movflags","+faststart","-r",`${fpsNum}/${fpsDen}`,outputPath);
   await run("ffmpeg",args,60*60*1000,jobId,activeProcesses,()=>Boolean(signal?.aborted));
   if(signal?.aborted)fail("Timeline render was cancelled.","JOB_CANCELLED");
   if(mastering!==null&&mastering!==undefined&&typeof mastering!=="object")fail("Mastering settings must be an object.","INVALID_MASTERING_OPTIONS");
