@@ -27,7 +27,7 @@ export function createCloudReviewRepository({url=process.env.SUPABASE_URL,servic
   const membership=actorId===project.ownerId?{role:"owner"}:(await request("project_members?select=role&project_id=eq."+encodeURIComponent(projectId)+"&member_id=eq."+encodeURIComponent(actorId)+"&limit=1"))?.[0]||null;
   return{project,membership};
  }
- async function visible(row,actorId,project,membership){
+ function visible(row,actorId,project,membership){
   return row.visibility!=="internal"||actorId===project.ownerId||row.reviewer_id===actorId||["editor","reviewer"].includes(membership?.role);
  }
  async function getRow(reviewId){
