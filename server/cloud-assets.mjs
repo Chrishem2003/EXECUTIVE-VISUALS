@@ -146,6 +146,19 @@ export function createCloudAssetRepository({
       await allowed(ownerId,row.project_id||null,"read");
       return publicAsset(row);
     },
+    async updateMetadata({ownerId,assetId,patch}={}) {
+      ownerId=validUuid(ownerId,"owner ID");assetId=validUuid(assetId,"asset ID");
+      if(!patch||typeof patch!=="object"||Array.isArray(patch))throw new Error("Cloud asset metadata patch must be an object.");
+      const rows=await request("assets?select=id,owner_id,project_id,metadata&id=eq."+encodeURIComponent(assetId)+"&deleted_at=is.null&limit=1");
+      const row=Array.isArray(rows)?rows[0]:null;
+      if(!row||(!row.project_id&&row.owner_id!==ownerId)){const error=new Error("Cloud asset not found.");error.code="CLOUD_ASSET_NOT_FOUND";throw error;}
+      await allowed(ownerId,row.project_id||null,"write");
+      const metadata={...(row.metadata||{}),...patch};
+      if(JSON.stringify(metadata).length>16000)throw new Error("Cloud asset metadata exceeds the 16 KB limit.");
+      const changed=await request("assets?id=eq."+encodeURIComponent(assetId)+"&deleted_at=is.null",{method:"PATCH",body:{metadata}});
+      if(!Array.isArray(changed)||changed.length!==1||changed[0].id!==assetId||changed[0].owner_id!==row.owner_id||changed[0].project_id!==row.project_id)throw new Error("Cloud asset metadata update did not return the expected asset.");
+      return publicAsset(changed[0]);
+    },
     async createSignedUrl({ownerId,assetId,expiresIn=300}) {
       ownerId=validUuid(ownerId,"owner ID");assetId=validUuid(assetId,"asset ID");
       const rows=await request("assets?select=id,owner_id,project_id,original_name,media_type,byte_size,sha256,storage_bucket,object_path,derivative_of,metadata,created_at,deleted_at&id=eq."+encodeURIComponent(assetId)+"&deleted_at=is.null&limit=1");
