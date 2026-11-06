@@ -45,8 +45,7 @@ function exportCloudReviews(format:"csv"|"json"){
  const reviews=getVisibleCloudReviews(),stamp=new Date().toISOString().replace(/[:.]/g,"-");
  const columns=["id","assetId","decision","status","visibility","body","frameNumber","timecodeSeconds","authorId","createdAt","updatedAt","resolvedAt","resolvedBy"];
  const quote=(value:unknown)=>'"'+String(value??"").replace(/"/g,'""')+'"';
- const content=format==="json"?JSON.stringify({schemaVersion:1,projectId:state.cloudProjectId,exportedAt:new Date().toISOString(),filters:{search:state.reviewSearch,status:state.reviewStatusFilter,sort:state.reviewSort},reviews},null,2):[columns.join(","),...reviews.map(review=>columns.map(key=>quote((review as unknown as Record<string,unknown>)[key])).join(","))].join("\r
-");
+ const content=format==="json"?JSON.stringify({schemaVersion:1,projectId:state.cloudProjectId,exportedAt:new Date().toISOString(),filters:{search:state.reviewSearch,status:state.reviewStatusFilter,sort:state.reviewSort},reviews},null,2):[columns.join(","),...reviews.map(review=>columns.map(key=>quote((review as unknown as Record<string,unknown>)[key])).join(","))].join(String.fromCharCode(13,10));
  const blob=new Blob([content],{type:format==="json"?"application/json":"text/csv;charset=utf-8"}),url=URL.createObjectURL(blob),link=document.createElement("a");
  link.href=url;link.download="executive-visuals-reviews-"+stamp+"."+format;link.click();URL.revokeObjectURL(url);
 }
