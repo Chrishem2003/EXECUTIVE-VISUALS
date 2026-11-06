@@ -39,7 +39,10 @@ if (REQUIRE_PERSISTENT_DATA_DIR && (!existsSync(DATA_DIR) || !isWithinDataDir(DB
   throw new Error("Persistent storage is required. Mount the configured data volume before starting the service.");
 }
 const MAX_UPLOAD_BYTES = Number(process.env.MAX_UPLOAD_BYTES || 250 * 1024 * 1024);
-const SESSION_DAYS = 30;
+const SESSION_DAYS = Math.max(1,Math.min(90,Number(process.env.SESSION_ABSOLUTE_DAYS)||30));
+const SESSION_IDLE_MINUTES = Math.max(5,Math.min(1440,Number(process.env.SESSION_IDLE_TIMEOUT_MINUTES)||30));
+const SESSION_IDLE_MS = SESSION_IDLE_MINUTES*60*1000;
+const SESSION_COOKIE_MAX_AGE = SESSION_IDLE_MINUTES*60;
 const ALLOWED_MEDIA = new Set([
   "image/jpeg","image/png","image/webp","image/gif",
   "video/mp4","video/webm","video/quicktime","video/x-matroska",
@@ -119,11 +122,11 @@ const setCookie = (res,token,maxAge) => {
 };
 function createLocalSession(userId) {
   const token=randomBytes(32).toString("base64url");
-  db.prepare("INSERT INTO sessions(token_hash,user_id,expires_at) VALUES(?,?,?)")
-    .run(hash(token),userId,new Date(Date.now()+SESSION_DAYS*86400000).toISOString());
+  db.prepare("INSERT INTO sessions(token_hash,user_id,expires_at,last_seen_at) VALUES(?,?,?,?)")
+    .run(hash(token),userId,new Date(Date.now()+SESSION_DAYS*86400000).toISOString(),now());
   return token;
 }
-async function authenticate(req) {
+async function authenticate(req,res) {
   if (AUTH_MODE === "supabase") {
     const token=extractBearerToken(req.headers.authorization||"");
     if(!token||!process.env.SUPABASE_URL||!process.env.SUPABASE_PUBLISHABLE_KEY)return null;
@@ -140,9 +143,19 @@ async function authenticate(req) {
   }
   const token=cookieValue(req,"ev_session");
   if(!token)return null;
-  const row=db.prepare("SELECT u.id,u.email,s.expires_at FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=?").get(hash(token));
+  const tokenHash=hash(token);
+  const row=db.prepare("SELECT u.id,u.email,s.expires_at,s.last_seen_at FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=?").get(tokenHash);
   if(!row)return null;
-  if(Date.parse(row.expires_at)<=Date.now()){db.prepare("DELETE FROM sessions WHERE token_hash=?").run(hash(token));return null;}
+  const expired=Date.parse(row.expires_at)<=Date.now();
+  const idleExpired=!Number.isFinite(Date.parse(row.last_seen_at))||Date.now()-Date.parse(row.last_seen_at)>=SESSION_IDLE_MS;
+  if(expired||idleExpired){
+    db.prepare("DELETE FROM sessions WHERE token_hash=?").run(tokenHash);
+    setCookie(res,"",0);
+    return null;
+  }
+  const activityAt=now();
+  db.prepare("UPDATE sessions SET last_seen_at=? WHERE token_hash=?").run(activityAt,tokenHash);
+  setCookie(res,token,Math.min(SESSION_COOKIE_MAX_AGE,Math.max(0,Math.floor((Date.parse(row.expires_at)-Date.now())/1000))));
   return {id:row.id,email:row.email};
 }
 function originHeaders(req) {
@@ -326,7 +339,7 @@ export function createAppServer() {
         const id=randomUUID(),salt=randomBytes(16).toString("hex"),passwordHash=scryptSync(password,salt,64).toString("hex");
         try{db.prepare("INSERT INTO users(id,email,password_hash,password_salt) VALUES(?,?,?,?)").run(id,email,passwordHash,salt);}
         catch{fail(res,409,"ACCOUNT_EXISTS","An account with this email already exists.");return;}
-        const token=createLocalSession(id);setCookie(res,token,SESSION_DAYS*86400);audit(db,id,"account.created","user",id,{authMode:"local"});
+        const token=createLocalSession(id);setCookie(res,token,SESSION_COOKIE_MAX_AGE);audit(db,id,"account.created","user",id,{authMode:"local"});
         send(res,201,{user:{id,email},authMode:"local"},cors);return;
       }
       if(path==="/api/auth/login"&&req.method==="POST"){
@@ -337,15 +350,36 @@ export function createAppServer() {
         const candidate=user?scryptSync(password,user.password_salt,64).toString("hex"):"";
         const valid=!!user&&candidate.length===user.password_hash.length&&timingSafeEqual(Buffer.from(candidate,"hex"),Buffer.from(user.password_hash,"hex"));
         if(!valid){fail(res,401,"INVALID_CREDENTIALS","Email or password is incorrect.");return;}
-        const token=createLocalSession(user.id);setCookie(res,token,SESSION_DAYS*86400);
+        const token=createLocalSession(user.id);setCookie(res,token,SESSION_COOKIE_MAX_AGE);
         send(res,200,{user:{id:user.id,email:user.email},authMode:"local"},cors);return;
       }
       if(path==="/api/auth/logout"&&req.method==="POST"){
         const token=cookieValue(req,"ev_session");if(token)db.prepare("DELETE FROM sessions WHERE token_hash=?").run(hash(token));
         setCookie(res,"",0);send(res,200,{ok:true},cors);return;
       }
-      const user=await authenticate(req);
+      const user=await authenticate(req,res);
       if(!user){fail(res,401,"AUTH_REQUIRED","Sign in to access this workspace.");return;}
+      if(path==="/api/auth/password"&&req.method==="POST"){
+        if(AUTH_MODE!=="local"){fail(res,403,"PASSWORD_CHANGE_UNAVAILABLE","Change your password through the configured identity provider.");return;}
+        const body=await readJson(req);
+        const currentPassword=String(body.currentPassword||"");
+        const newPassword=String(body.newPassword||"");
+        if(currentPassword.length===0||currentPassword.length>256||newPassword.length<12||newPassword.length>256){
+          fail(res,400,"INVALID_PASSWORD","Enter your current password and a new password between 12 and 256 characters.");return;
+        }
+        const account=db.prepare("SELECT password_hash,password_salt FROM users WHERE id=?").get(user.id);
+        const candidate=account?.password_salt?scryptSync(currentPassword,account.password_salt,64).toString("hex"):"";
+        const valid=!!account?.password_hash&&candidate.length===account.password_hash.length&&timingSafeEqual(Buffer.from(candidate,"hex"),Buffer.from(account.password_hash,"hex"));
+        if(!valid){fail(res,401,"INVALID_CREDENTIALS","Current password is incorrect.");return;}
+        const salt=randomBytes(16).toString("hex");
+        const passwordHash=scryptSync(newPassword,salt,64).toString("hex");
+        db.prepare("UPDATE users SET password_hash=?,password_salt=? WHERE id=?").run(passwordHash,salt,user.id);
+        db.prepare("DELETE FROM sessions WHERE user_id=?").run(user.id);
+        const token=createLocalSession(user.id);
+        setCookie(res,token,SESSION_COOKIE_MAX_AGE);
+        audit(db,user.id,"account.password_changed","user",user.id,{sessionsRevoked:true});
+        send(res,200,{ok:true,sessionsRevoked:true},cors);return;
+      }
       if(path==="/api/me"&&req.method==="GET"){send(res,200,{user,authMode:AUTH_MODE},cors);return;}
       if(path==="/api/uploads"&&req.method==="POST"){
         await cleanupExpiredUploadSessions(db);
