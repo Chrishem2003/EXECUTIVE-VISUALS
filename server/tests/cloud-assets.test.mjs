@@ -162,3 +162,12 @@ test("reschedules failed cleanup with bounded exponential backoff",async()=>{
  assert.equal(body.attempts,2);
  assert.equal(body.next_attempt_at,"2026-11-06T12:01:00.000Z");
 });
+
+test("refuses to delete storage objects from invalid cleanup records",async()=>{
+ const f=fixture({cleanupRows:[{id:"unsafe-1",storage_bucket:"other-bucket",object_path:"../../unrelated.mp4",attempts:0}]});
+ const result=await f.repo.reconcilePendingStorageCleanup({limit:1,now:"2026-11-06T12:00:00.000Z"});
+ assert.equal(result.examined,1);
+ assert.equal(result.removed,0);
+ assert.equal(result.results[0].permanentError,"unsafe_cleanup_record");
+ assert.equal(f.storageCalls.length,0);
+});
