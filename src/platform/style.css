@@ -472,3 +472,10 @@
 .job-stage-copy small{font-size:10px;color:var(--muted,#9aa4b2);line-height:1.45}
 .job-stage-copy .job-stage-error{color:#e17b7b}
 .job-stage-empty{font-size:11px;color:var(--muted,#9aa4b2);margin:10px 0 2px}
+
+
+/* Structured media quality evidence */
+.asset-quality{display:grid;gap:5px;padding:10px 12px;margin:10px 0;border:1px solid var(--line,#303744);border-radius:10px;background:var(--surface-soft,rgba(127,139,156,.06))}
+.asset-quality b{font-size:12px;text-transform:capitalize}
+.asset-quality small{font-size:11px;color:var(--muted,#9aa4b2)}
+.asset-quality p{margin:2px 0 0;font-size:11px;line-height:1.45;color:var(--muted,#9aa4b2)}
