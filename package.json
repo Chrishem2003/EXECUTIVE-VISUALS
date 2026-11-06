@@ -50,7 +50,8 @@
     "verify:audio-preview": "node --experimental-strip-types --test server/tests/audio-preview.test.mjs",
     "verify:waveform-cache": "node --test server/tests/waveform-cache.test.mjs",
     "verify:audio-automation": "node --experimental-strip-types --test server/tests/audio-automation.test.mjs",
-    "verify:timeline-audio-automation": "node --experimental-strip-types --test server/tests/timeline-audio-automation.test.mjs"
+    "verify:timeline-audio-automation": "node --experimental-strip-types --test server/tests/timeline-audio-automation.test.mjs",
+    "benchmark:cloud-audio-render": "node scripts/benchmark-cloud-audio-render.mjs"
   },
   "devDependencies": {
     "typescript": "^5.8.3",
