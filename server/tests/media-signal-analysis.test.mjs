@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {parseBlackFrameEvents,parseSilenceEvents,buildMediaSignalFindings,parseAudioMetrics,buildAudioMetricFindings,parseFreezeEvents,parseSceneChangeTimes,runOptionalSignalCheck} from "../media-signal-analysis.mjs";
+import {parseBlackFrameEvents,parseSilenceEvents,buildMediaSignalFindings,parseAudioMetrics,buildAudioMetricFindings,parseFreezeEvents,parseSceneChangeTimes,runOptionalSignalCheck,buildNonSilenceActivityIntervals} from "../media-signal-analysis.mjs";
 
 test("parses FFmpeg blackdetect intervals",()=>{
  const events=parseBlackFrameEvents("[blackdetect @ 0x1] black_start:0.500 black_end:2.000 black_duration:1.500");
@@ -53,4 +53,22 @@ test("parses freeze intervals and scene-change timestamps from FFmpeg diagnostic
 test("flags sustained freeze intervals for human review",()=>{
  const findings=buildMediaSignalFindings({freezes:[{startSeconds:2,endSeconds:5,durationSeconds:3}]});
  assert.ok(findings.some(item=>item.code==="FROZEN_VIDEO_INTERVAL"&&item.severity==="warning"));
+});
+
+test("derives bounded non-silence activity intervals from detected silence",()=>{
+ const intervals=buildNonSilenceActivityIntervals({durationSeconds:10,silence:[{startSeconds:2,endSeconds:4},{startSeconds:6,endSeconds:8}],minActivitySeconds:.5,padSeconds:.1});
+ assert.deepEqual(intervals,[
+  {startSeconds:0,endSeconds:2.1,durationSeconds:2.1},
+  {startSeconds:3.9,endSeconds:6.1,durationSeconds:2.2},
+  {startSeconds:7.9,endSeconds:10,durationSeconds:2.1}
+ ]);
+});
+test("merges overlapping silence, clips out-of-range events and ignores short active bursts",()=>{
+ const intervals=buildNonSilenceActivityIntervals({durationSeconds:5,silence:[{startSeconds:-1,endSeconds:1},{startSeconds:.8,endSeconds:2},{startSeconds:4,endSeconds:8}],minActivitySeconds:.2,padSeconds:0});
+ assert.deepEqual(intervals,[{startSeconds:2,endSeconds:4,durationSeconds:2}]);
+});
+test("activity analysis validates duration, silence intervals and tuning bounds",()=>{
+ assert.throws(()=>buildNonSilenceActivityIntervals({durationSeconds:0}),/positive finite/);
+ assert.throws(()=>buildNonSilenceActivityIntervals({durationSeconds:2,silence:[{startSeconds:2,endSeconds:1}]}),/ordered timestamps/);
+ assert.throws(()=>buildNonSilenceActivityIntervals({durationSeconds:2,padSeconds:3}),/padding/);
 });
