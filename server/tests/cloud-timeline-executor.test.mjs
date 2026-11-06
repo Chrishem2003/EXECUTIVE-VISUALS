@@ -84,3 +84,16 @@ test("cloud timeline executor refuses to publish a master when its output probe 
  assert.equal(published.length,0);assert.deepEqual(cleaned.sort(),["asset-a","asset-b"]);
  await rm(root,{recursive:true,force:true});
 });
+test("cloud timeline executor does not publish a master when cancellation arrives during finalization",async()=>{
+ const root=await mkdtemp(join(tmpdir(),"ev-cloud-timeline-cancel-publish-"));
+ const controller=new AbortController(),published=[];
+ const executor=createCloudTimelineExecutor({tempRoot:root,
+  timelines:{async get(){return{id:timelineId,projectId:null,revision:1,timeline};}},
+  mediaIO:{async materialize({assetId}){const path=join(root,assetId);await writeFile(path,"source");return{path,asset:{id:assetId},async cleanup(){}};},async publish(args){published.push(args);return{id:"must-not-publish"};}},
+  async renderTimeline({workDir}){const path=join(workDir,"master.mp4");await writeFile(path,"rendered");return{path,filename:"master.mp4",mediaType:"video/mp4"};}
+ });
+ try{
+  await assert.rejects(executor({job:{id:"job-cancel",owner_id:owner,project_id:null,job_type:"timeline.render",input:{timelineId,timelineRevision:1}},signal:controller.signal,onProgress(value){if(value===90)controller.abort();}}),error=>error.code==="JOB_CANCELLED");
+  assert.equal(published.length,0,"cancelled master must not become a durable asset");
+ }finally{await rm(root,{recursive:true,force:true});}
+});
