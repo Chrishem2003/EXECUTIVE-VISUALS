@@ -1,0 +1,165 @@
+import { randomUUID } from "node:crypto";
+import { createCloudStorage } from "./cloud-storage.mjs";
+import { createCloudPublicationCleanup } from "./cloud-publication-cleanup.mjs";
+import { createCloudPublicationAuditSink,createCloudPublicationAuditHandler } from "./cloud-publication-audit.mjs";
+
+const TERMINAL_CLEANUP_STATES=new Set(["failed","cancelled","expired"]);
+const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const DAY_MS=24*60*60*1000;
+
+function safeOrigin(value){
+ let parsed;
+ try{parsed=new URL(value);}catch{throw new Error("Publication cleanup worker requires a valid Supabase URL.");}
+ const local=["localhost","127.0.0.1","::1","[::1]"].includes(parsed.hostname.toLowerCase());
+ if((parsed.protocol!=="https:"&&!(local&&parsed.protocol==="http:"))||parsed.username||parsed.password||parsed.search||parsed.hash)throw new Error("Publication cleanup worker requires a safe HTTPS Supabase URL.");
+ return parsed.origin;
+}
+function safePublication(row){
+ if(!row||!UUID.test(row.owner_id||"")||!UUID.test(row.asset_id||"")||!UUID.test(row.job_id||"")||
+    row.project_id!==null&&!UUID.test(row.project_id||"")||
+    typeof row.publication_key!=="string"||row.publication_key.length<1||row.publication_key.length>200||
+    !["reserved","published"].includes(row.status)||!Number.isFinite(Date.parse(row.updated_at||"")))return null;
+ return row;
+}
+
+/**
+ * Bounded, opt-in publication cleanup worker.
+ * Defaults to dry-run. Destructive execution additionally requires an explicit
+ * two-flag operator gate; the database claim RPC remains the final authority.
+ */
+export function createCloudPublicationCleanupWorker({
+ url=process.env.SUPABASE_URL,
+ serviceRoleKey=process.env.SUPABASE_SERVICE_ROLE_KEY,
+ fetchImpl=globalThis.fetch,
+ storage,
+ olderThanMs=DAY_MS,
+ publicationLimit=10,
+ objectLimit=100,
+ dryRun=true,
+ confirmDelete=false,
+ allowDelete=false,
+ now=()=>new Date(),
+ onLog=()=>{}
+}={}){
+ if(!url||!serviceRoleKey)throw new Error("Publication cleanup worker requires server-side Supabase credentials.");
+ if(typeof fetchImpl!=="function")throw new Error("Publication cleanup worker requires fetch.");
+ if(!Number.isSafeInteger(olderThanMs)||olderThanMs<DAY_MS||olderThanMs>30*DAY_MS)throw new Error("Publication cleanup worker age must be between 1 and 30 days.");
+ if(!Number.isInteger(publicationLimit)||publicationLimit<1||publicationLimit>50)throw new Error("Publication cleanup worker publication limit must be between 1 and 50.");
+ if(!Number.isInteger(objectLimit)||objectLimit<1||objectLimit>100)throw new Error("Publication cleanup worker object limit must be between 1 and 100.");
+ if(typeof dryRun!=="boolean"||typeof confirmDelete!=="boolean"||typeof allowDelete!=="boolean")throw new Error("Publication cleanup worker safety gates must be boolean.");
+ if(!dryRun&&(!confirmDelete||!allowDelete))throw new Error("Destructive publication cleanup requires both explicit confirmation and the worker delete enable flag.");
+ if(typeof onLog!=="function")throw new Error("Publication cleanup worker logger must be a function.");
+ const base=safeOrigin(url);
+ const cloudStorage=storage||createCloudStorage({url,serviceRoleKey,fetchImpl});
+ async function request(path,{method="GET",body=null,prefer=null}={}){
+  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),15000);
+  try{
+   const headers={apikey:serviceRoleKey,authorization:"Bearer "+serviceRoleKey,"accept-profile":"executive_visuals","content-profile":"executive_visuals",accept:"application/json"};
+   if(body!==null)headers["content-type"]="application/json";
+   if(prefer)headers.prefer=prefer;
+   const response=await fetchImpl(base+"/rest/v1/"+path,{method,headers,...(body===null?{}:{body:JSON.stringify(body)}),signal:controller.signal});
+   const raw=await response.text();
+   let data=null;
+   if(raw){try{data=JSON.parse(raw);}catch{if(response.ok)throw new Error("Publication cleanup database returned invalid JSON.");}}
+   if(!response.ok){const error=new Error("Publication cleanup database request failed (HTTP "+response.status+").");error.code="PUBLICATION_CLEANUP_HTTP_"+response.status;throw error;}
+   return data;
+  }catch(error){if(error?.name==="AbortError")throw new Error("Publication cleanup database request timed out.");throw error;}
+  finally{clearTimeout(timer);}
+ }
+ async function rpc(name,args){
+  const rows=await request("rpc/"+name,{method:"POST",body:args});
+  return rows;
+ }
+ async function listStalePublications(){
+  const cutoff=new Date(now().getTime()-olderThanMs).toISOString();
+  const params=new URLSearchParams({
+   select:"owner_id,project_id,job_id,publication_key,asset_id,status,updated_at",
+   status:"in.(reserved,published)",
+   updated_at:"lte."+cutoff,
+   order:"updated_at.asc",
+   limit:String(publicationLimit)
+  });
+  const rows=await request("asset_publications?"+params.toString());
+  if(!Array.isArray(rows))throw new Error("Publication cleanup ledger returned an invalid list.");
+  return rows.map(safePublication).filter(Boolean);
+ }
+ async function getJob(jobId){
+  const params=new URLSearchParams({select:"id,status,lease_expires_at",id:"eq."+jobId,limit:"1"});
+  const rows=await request("jobs?"+params.toString());
+  return Array.isArray(rows)&&rows.length===1?rows[0]:null;
+ }
+ async function createCleanupFor(publication,runId){
+  const scopeId=publication.project_id||publication.owner_id;
+  const prefix=scopeId+"/"+publication.asset_id+"/";
+  const sink=createCloudPublicationAuditSink({
+   url,serviceRoleKey,ownerId:publication.owner_id,projectId:publication.project_id,
+   jobId:publication.job_id,publicationKey:publication.publication_key,actorType:"system",runId,fetchImpl
+  });
+  const audit=createCloudPublicationAuditHandler({sink,maxAttempts:3,retryDelayMs:250,onRetry:event=>onLog({kind:"audit_retry",...event})});
+  return createCloudPublicationCleanup({
+   storage:cloudStorage,
+   requireAudit:true,
+   onEvent:event=>audit.onEvent(event),
+   findReferencedPaths:async paths=>{
+    if(!paths.length)return [];
+    const params=new URLSearchParams({select:"object_path",object_path:"in.("+paths.map(path=>'"'+path+'"').join(",")+")"});
+    const rows=await request("assets?"+params.toString());
+    if(!Array.isArray(rows))throw new Error("Publication cleanup asset-reference query returned an invalid response.");
+    return rows.map(row=>row.object_path);
+   },
+   isAttemptActive:async()=>{
+    const job=await getJob(publication.job_id);
+    if(!job)return null;
+    if(!TERMINAL_CLEANUP_STATES.has(job.status))return true;
+    if(job.lease_expires_at&&Date.parse(job.lease_expires_at)>now().getTime())return true;
+    return false;
+   },
+   claimCleanup:async input=>{
+    const rows=await rpc("claim_asset_publication_cleanup_v1",{
+     p_job_id:publication.job_id,p_owner_id:publication.owner_id,p_project_id:publication.project_id,
+     p_publication_key:publication.publication_key,p_object_path:input.objectPath,
+     p_min_age:Math.floor(olderThanMs/3600000)+" hours"
+    });
+    if(!Array.isArray(rows)||rows.length!==1)return null;
+    const row=rows[0];
+    return {claimId:row.claim_id,claimToken:row.claim_token,status:row.status};
+   },
+   completeCleanup:async claim=>{
+    const result=await rpc("complete_asset_publication_cleanup_v1",{p_claim_id:claim.claimId,p_claim_token:claim.claimToken});
+    return result===true;
+   },
+   now
+  });
+ }
+ let busy=false;
+ return Object.freeze({
+  workerId:"publication-cleanup-"+randomUUID(),
+  async runCycle(){
+   if(busy)return{skipped:true};
+   busy=true;
+   const runId=randomUUID(),results=[];
+   try{
+    const publications=await listStalePublications();
+    for(const publication of publications){
+     const job=await getJob(publication.job_id);
+     if(!job||!TERMINAL_CLEANUP_STATES.has(job.status)||(job.lease_expires_at&&Date.parse(job.lease_expires_at)>now().getTime())){
+      results.push({publicationKey:publication.publication_key,status:"skipped_nonterminal_job"});
+      continue;
+     }
+     const prefix=(publication.project_id||publication.owner_id)+"/"+publication.asset_id+"/";
+     const cleanup=await createCleanupFor(publication,runId);
+     const result=await cleanup.run({
+      prefix,jobId:publication.job_id,ownerId:publication.owner_id,projectId:publication.project_id,
+      publicationKey:publication.publication_key,olderThanMs,limit:objectLimit,dryRun,
+      confirmDelete:!dryRun&&confirmDelete
+     });
+     results.push({publicationKey:publication.publication_key,...result});
+    }
+    const summary={claimed:false,runId,dryRun,publicationsScanned:publications.length,results};
+    onLog({kind:"publication_cleanup_cycle",runId,dryRun,publicationsScanned:publications.length,cleanupRuns:results.length});
+    return summary;
+   }finally{busy=false;}
+  },
+  async recoverExpired(){return 0;}
+ });
+}
