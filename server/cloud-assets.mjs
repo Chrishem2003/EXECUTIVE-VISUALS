@@ -132,7 +132,7 @@ export function createCloudAssetRepository({
       const verifyLease=async()=>{
         if(signal?.aborted)throw Object.assign(new Error("Cloud asset publication was cancelled after worker lease loss."),{code:"CLOUD_ASSET_PUBLICATION_LEASE_LOST"});
         const valid=await assertLease();
-        if(valid===false)throw Object.assign(new Error("Cloud asset publication lease is no longer valid."),{code:"CLOUD_ASSET_PUBLICATION_LEASE_LOST"});
+        if(valid!==true)throw Object.assign(new Error("Cloud asset publication lease could not be positively verified."),{code:"CLOUD_ASSET_PUBLICATION_LEASE_LOST"});
         return true;
       };
       await verifyLease();
@@ -169,8 +169,10 @@ export function createCloudAssetRepository({
 
       let existing=await readAsset();
       if(existing){
-        const asset=verifyAsset(existing);
-        if(reservation.status==="published")return asset;
+        // Even an already-published idempotent retry must pass through the
+        // database transaction: it re-verifies immutable metadata and the
+        // current lease instead of returning success from a stale worker.
+        verifyAsset(existing);
         return await finalize(existing);
       }
       if(reservation.status==="published")throw new Error("Published asset publication record is missing its asset metadata.");
