@@ -121,10 +121,9 @@ async function loadCloudWorkspace(){
   await loadTransformationPlans(state.cloudProjectId);
   await loadTransformationReadiness(state.cloudProjectId);
   const timelines=await apiRequest<{timelines:Array<{id:string;name:string;revision:number;updatedAt:string}>}>("/api/cloud/timelines"+query);
-  state.cloudTimelines=timelines.timelines||[];
+  state.cloudTimelines=timelines.timelines||[];state.cloudMessage="Private cloud workspace connected.";
   if(state.cloudProjectId){try{const reviews=await apiRequest<{reviews:typeof state.cloudReviews}>("/api/cloud/reviews?projectId="+encodeURIComponent(state.cloudProjectId));state.cloudReviews=reviews.reviews||[];}catch(error){state.cloudReviews=[];state.cloudMessage=error instanceof Error?"Cloud reviews unavailable: "+error.message:"Cloud reviews unavailable.";}}
   else state.cloudReviews=[];
-  state.cloudMessage=state.cloudMessage.startsWith("Cloud reviews unavailable")?state.cloudMessage:"Private cloud workspace connected.";
  }catch(error){state.cloudMessage=error instanceof Error?error.message:"Cloud workspace is unavailable. Check Supabase sign-in and cloud API configuration.";state.cloudAssets=[];state.transformationDrafts=[];}
  finally{state.cloudLoading=false;render();}
 }
