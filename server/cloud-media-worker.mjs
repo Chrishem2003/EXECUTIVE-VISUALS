@@ -56,6 +56,7 @@ export function createCloudMediaWorker({
   const mediaQueue = Object.freeze({
     claim: (id, leaseSeconds) => cloudQueue.claim(id, leaseSeconds, MEDIA_JOB_TYPES),
     renew: (...args) => cloudQueue.renew(...args),
+    assertLease: (...args) => cloudQueue.assertLease(...args),
     finish: (...args) => cloudQueue.finish(...args),
     recover: (...args) => cloudQueue.recover(...args)
   });
