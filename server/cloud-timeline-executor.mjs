@@ -1,4 +1,5 @@
 import { run, validateMediaOutputProbe } from "./media.mjs";
+import { buildDeliveryCertification } from "./delivery-certification.mjs";
 import { createHash, randomUUID } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { mkdtemp, rm, stat } from "node:fs/promises";
@@ -64,14 +65,19 @@ export function createCloudTimelineExecutor({timelines,mediaIO,renderTimeline,pr
       if(info.size>maxOutputBytes)throw Object.assign(new Error("Timeline output exceeds the configured limit."),{code:"CLOUD_TIMELINE_OUTPUT_TOO_LARGE"});
       const probed=await probeOutput(output.path);
       const probeValidation=validateMediaOutputProbe(probed,output.mediaType);
+      const deliveryCertification=input.deliveryProfile?buildDeliveryCertification({profileId:input.deliveryProfile,metadata:probed,render:output.render||{}}):null;
+      if(deliveryCertification&&deliveryCertification.status!=="passed"){
+        const failed=deliveryCertification.checks.filter(check=>!check.passed).map(check=>check.id);
+        throw Object.assign(new Error("Delivery certification failed: "+failed.join(", ")),{code:"DELIVERY_CERTIFICATION_FAILED",certification:deliveryCertification});
+      }
       const sha256=await digest(output.path);
       onProgress(90);
       const outputAsset=await mediaIO.publish({
         ownerId:job.owner_id,projectId:record.projectId,filename:output.filename,mediaType:output.mediaType,
-        path:output.path,metadata:{...(output.metadata||{}),operation:"timeline.render",timelineId:record.id,timelineRevision:record.revision,sha256,probe:probed,probeValidation,...(output.mastering?{mastering:output.mastering}:{}),render:output.render||{}}
+        path:output.path,metadata:{...(output.metadata||{}),operation:"timeline.render",timelineId:record.id,timelineRevision:record.revision,sha256,probe:probed,probeValidation,...(output.mastering?{mastering:output.mastering}:{}),...(deliveryCertification?{deliveryCertification}:{}),render:output.render||{}}
       });
       onProgress(100);
-      return{timelineId:record.id,timelineRevision:record.revision,outputAsset,sha256,byteSize:info.size,probeValidation,...(output.mastering?{mastering:output.mastering}:{}),render:output.render||{}};
+      return{timelineId:record.id,timelineRevision:record.revision,outputAsset,sha256,byteSize:info.size,probeValidation,...(output.mastering?{mastering:output.mastering}:{}),...(deliveryCertification?{deliveryCertification}:{}),render:output.render||{}};
     }finally{
       await Promise.all([...materialized.values()].map(asset=>asset.cleanup?.().catch(()=>{})));
       await rm(workDir,{recursive:true,force:true}).catch(()=>{});
