@@ -29,7 +29,7 @@ export async function runCloudWorkerCycle({
     if (heartbeatPending || leaseLost || controller.signal.aborted) return;
     heartbeatPending = true;
     try {
-      const renewed = await queue.renew(job.id, workerId, leaseSeconds);
+      const renewed = await queue.renew(job.id, workerId, leaseSeconds, job.lease_token);
       if (!renewed) {
         leaseLost = true;
         controller.abort(new Error("Worker lease is no longer valid."));
@@ -62,7 +62,7 @@ export async function runCloudWorkerCycle({
     if (output !== null && (typeof output !== "object" || Array.isArray(output))) {
       throw new Error("Cloud worker output must be an object or null.");
     }
-    const finished = await queue.finish(job.id, workerId, "succeeded", output ?? {}, null);
+    const finished = await queue.finish(job.id, workerId, "succeeded", output ?? {}, null, job.lease_token);
     if (!finished) {
       leaseLost = true;
       onEvent({ type: "job.lease_lost", jobId: job.id, workerId });
@@ -78,7 +78,7 @@ export async function runCloudWorkerCycle({
       code: typeof error?.code === "string" ? error.code.slice(0, 100) : "CLOUD_JOB_FAILED",
       message: String(error?.message || "Cloud job execution failed.").slice(0, 500)
     };
-    const finished = await queue.finish(job.id, workerId, "failed", null, details);
+    const finished = await queue.finish(job.id, workerId, "failed", null, details, job.lease_token);
     if (!finished) {
       leaseLost = true;
       onEvent({ type: "job.lease_lost", jobId: job.id, workerId });
