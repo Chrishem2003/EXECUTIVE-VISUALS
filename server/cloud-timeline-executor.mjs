@@ -56,7 +56,7 @@ export function createCloudTimelineExecutor({timelines,mediaIO,renderTimeline,pr
         materialized.set(assetIds[i],asset);
         onProgress(Math.min(25,5+Math.round((i+1)/assetIds.length*20)));
       }
-      const output=await renderTimeline({timeline:record.timeline,assets:materialized,workDir,signal,onProgress});
+      const output=await renderTimeline({timeline:record.timeline,assets:materialized,workDir,signal,onProgress,...(input.mastering?{mastering:input.mastering}:{})});
       if(signal?.aborted)throw Object.assign(new Error("Timeline render was cancelled."),{code:"JOB_CANCELLED"});
       if(!output||typeof output.path!=="string"||typeof output.filename!=="string"||typeof output.mediaType!=="string")throw new Error("Cloud timeline renderer returned invalid output metadata.");
       const info=await stat(output.path);
@@ -68,10 +68,10 @@ export function createCloudTimelineExecutor({timelines,mediaIO,renderTimeline,pr
       onProgress(90);
       const outputAsset=await mediaIO.publish({
         ownerId:job.owner_id,projectId:record.projectId,filename:output.filename,mediaType:output.mediaType,
-        path:output.path,metadata:{...(output.metadata||{}),operation:"timeline.render",timelineId:record.id,timelineRevision:record.revision,sha256,probe:probed,probeValidation,render:output.render||{}}
+        path:output.path,metadata:{...(output.metadata||{}),operation:"timeline.render",timelineId:record.id,timelineRevision:record.revision,sha256,probe:probed,probeValidation,...(output.mastering?{mastering:output.mastering}:{}),render:output.render||{}}
       });
       onProgress(100);
-      return{timelineId:record.id,timelineRevision:record.revision,outputAsset,sha256,byteSize:info.size,probeValidation,render:output.render||{}};
+      return{timelineId:record.id,timelineRevision:record.revision,outputAsset,sha256,byteSize:info.size,probeValidation,...(output.mastering?{mastering:output.mastering}:{}),render:output.render||{}};
     }finally{
       await Promise.all([...materialized.values()].map(asset=>asset.cleanup?.().catch(()=>{})));
       await rm(workDir,{recursive:true,force:true}).catch(()=>{});
