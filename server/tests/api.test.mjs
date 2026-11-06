@@ -267,7 +267,9 @@ test("users can list active local sessions and revoke another device without exp
   assert.equal(payload.sessions.filter(x=>x.current).length,1);
   assert.ok(payload.sessions.every(x=>x.id&&!Object.hasOwn(x,"token")&&!Object.hasOwn(x,"tokenHash")));
   const other=payload.sessions.find(x=>!x.current);
-  const revoked=await request("/api/auth/sessions/"+other.id,{method:"DELETE"},firstCookie);
+  const wrongPassword=await request("/api/auth/sessions/"+other.id,{method:"DELETE",headers:{"content-type":"application/json"},body:JSON.stringify({currentPassword:"incorrect-password"})},firstCookie);
+  assert.equal(wrongPassword.status,401,"revocation requires fresh password authentication");
+  const revoked=await request("/api/auth/sessions/"+other.id,{method:"DELETE",headers:{"content-type":"application/json"},body:JSON.stringify({currentPassword:"local-test-password-123"})},firstCookie);
   assert.equal(revoked.status,200);
   assert.deepEqual(await revoked.json(),{ok:true,current:false});
   assert.equal((await request("/api/me",{},secondCookie)).status,401);
@@ -297,7 +299,7 @@ test("session revocation is scoped to the authenticated account",async()=>{
   const outsiderCookie=await register("session-outsider@example.test");
   const sessions=await request("/api/auth/sessions",{},ownerCookie);
   const sessionId=(await sessions.json()).sessions[0].id;
-  assert.equal((await request("/api/auth/sessions/"+sessionId,{method:"DELETE"},outsiderCookie)).status,404);
+  assert.equal((await request("/api/auth/sessions/"+sessionId,{method:"DELETE",headers:{"content-type":"application/json"},body:JSON.stringify({currentPassword:"local-test-password-123"})},outsiderCookie)).status,404);
   assert.equal((await request("/api/me",{},ownerCookie)).status,200);
 });
 
