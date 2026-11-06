@@ -43,6 +43,39 @@ test("cloud FFmpeg renderer produces a playable master from materialized video a
  }finally{await rm(root,{recursive:true,force:true});}
 });
 
+test("cloud FFmpeg renderer matches Web Audio center panning for mono and stereo sources", {skip:!hasFfmpeg||!hasFfprobe}, async()=>{
+ const root=await mkdtemp(join(tmpdir(),"ev-cloud-pan-parity-"));
+ try{
+  const video=join(root,"picture.mp4"),mono=join(root,"mono.wav"),stereo=join(root,"stereo.wav");
+  execFileSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-loglevel","error","-y","-f","lavfi","-i","color=c=black:s=320x240:r=24:d=1","-c:v","libx264","-pix_fmt","yuv420p",video]);
+  execFileSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-loglevel","error","-y","-f","lavfi","-i","sine=frequency=440:duration=1","-ac","1","-c:a","pcm_s16le",mono]);
+  execFileSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-loglevel","error","-y","-f","lavfi","-i","aevalsrc=0.2*sin(2*PI*440*t)|0.1*sin(2*PI*880*t):s=48000:d=1","-c:a","pcm_s16le",stereo]);
+  const render=async(assetId,path,pan=0)=>{
+   const timeline={name:"Pan parity",width:320,height:240,frameRate:{numerator:24,denominator:1},tracks:[
+    {id:"v",kind:"video",clips:[{id:"v1",assetId:"video",timelineStart:time(0),duration:time(1),sourceRange:{start:time(0),duration:time(1)}}]},
+    {id:"a",kind:"audio",clips:[{id:"a1",assetId,timelineStart:time(0),duration:time(1),sourceRange:{start:time(0),duration:time(1)},pan}]}
+   ]};
+   return renderCloudTimeline({timeline,assets:new Map([
+    ["video",{path:video,asset:{id:"video",mediaType:"video/mp4"}}],
+    [assetId,{path,asset:{id:assetId,mediaType:"audio/wav"}}]
+   ]),workDir:root,onProgress(){}});
+  };
+  const monoOutput=await render("mono",mono),stereoOutput=await render("stereo",stereo),hardLeft=await render("stereo",stereo,-1);
+  const decode=path=>execFileSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-loglevel","error","-i",path,"-map","0:a:0","-f","f32le","-acodec","pcm_f32le","-ar","48000","-ac","2","pipe:1"]);
+  const rms=(buffer,from,to,channel)=>{const samples=new Float32Array(buffer.buffer,buffer.byteOffset,buffer.byteLength/4);let sum=0,count=0;for(let frame=Math.floor(from*48000);frame<Math.floor(to*48000);frame++){const value=samples[frame*2+channel]||0;sum+=value*value;count++;}return Math.sqrt(sum/Math.max(1,count));};
+  const monoPcm=decode(monoOutput.path),monoLeft=rms(monoPcm,.1,.9,0),monoRight=rms(monoPcm,.1,.9,1);
+  const sourcePcm=execFileSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-loglevel","error","-i",mono,"-f","f32le","-acodec","pcm_f32le","-ar","48000","-ac","1","pipe:1"]);
+  const sourceSamples=new Float32Array(sourcePcm.buffer,sourcePcm.byteOffset,sourcePcm.byteLength/4);
+  const sourceRms=Math.sqrt(sourceSamples.reduce((sum,value)=>sum+value*value,0)/sourceSamples.length);
+  assert.ok(Math.abs(monoLeft/monoRight-1)<0.08,"mono center pan should produce equal left/right energy");
+  assert.ok(Math.abs(monoLeft/sourceRms-Math.SQRT1_2)<0.09,"mono center pan should apply equal-power -3 dB per channel");
+  const stereoPcm=decode(stereoOutput.path),stereoLeft=rms(stereoPcm,.1,.9,0),stereoRight=rms(stereoPcm,.1,.9,1);
+  assert.ok(stereoLeft>stereoRight*1.6&&stereoLeft<stereoRight*2.4,"stereo center pan should preserve the source channel balance");
+  const hardLeftPcm=decode(hardLeft.path),hardLeftRms=rms(hardLeftPcm,.1,.9,0),hardRightRms=rms(hardLeftPcm,.1,.9,1);
+  assert.ok(hardLeftRms>hardRightRms*20,"stereo hard-left pan should move both source channels left");
+ }finally{await rm(root,{recursive:true,force:true});}
+});
+
 test("cloud FFmpeg renderer rejects overlapping primary video clips",async()=>{
  const timeline={tracks:[{kind:"video",clips:[
   {assetId:"v",timelineStart:time(0),duration:time(2),sourceRange:{start:time(0),duration:time(2)}},
