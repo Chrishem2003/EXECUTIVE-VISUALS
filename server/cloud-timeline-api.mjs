@@ -257,7 +257,7 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
      const existing=await request("jobs?select=id,owner_id,project_id,job_type,status,progress,input,output,error,created_at,updated_at&idempotency_key=eq."+encodeURIComponent(key)+"&owner_id=eq."+encodeURIComponent(ownerId)+"&limit=1");
      if(Array.isArray(existing)&&existing[0]){
       const row=existing[0],input=row.input||{};
-      if(row.job_type!=="timeline.render"||input.timelineId!==timelineId||input.timelineRevision!==timeline.revision||stableJson(input.mastering??null)!==stableJson(mastering??null)||validateDeliveryProfile(input.deliveryProfile)!==deliveryProfile)return response(409,{error:{code:"IDEMPOTENCY_CONFLICT",message:"This idempotency key belongs to a different render request."}});
+      if(row.job_type!=="timeline.render"||input.timelineId!==timelineId||input.timelineRevision!==timeline.revision||stableJson(input.mastering??null)!==stableJson(mastering??null)||(input.deliveryProfile??"source")!==deliveryProfile)return response(409,{error:{code:"IDEMPOTENCY_CONFLICT",message:"This idempotency key belongs to a different render request."}});
       return response(200,{job:row,idempotentReplay:true});
      }
     }
@@ -277,7 +277,7 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
    }
    return null;
   }catch(error){
-   if(error.code==="INVALID_MASTERING_OPTIONS")return response(422,{error:{code:error.code,message:error.message}});
+   if(error.code==="INVALID_MASTERING_OPTIONS"||error.code==="INVALID_DELIVERY_PROFILE")return response(422,{error:{code:error.code,message:error.message}});
    if(error.code==="CLOUD_PROJECT_NOT_FOUND"||error.code==="CLOUD_PROJECT_ACCESS_DENIED")return response(404,{error:{code:"PROJECT_NOT_FOUND",message:"Project not found."}});
    if(error.code==="CLOUD_PROJECT_REVISION_CONFLICT")return response(409,{error:{code:"REVISION_CONFLICT",message:"Project changed since it was loaded. Refresh and retry."}});
    if(error.code==="CLOUD_ASSET_NOT_FOUND")return response(404,{error:{code:"ASSET_NOT_FOUND",message:"Asset not found."}});
