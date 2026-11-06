@@ -265,7 +265,7 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
     const tempoParts=[];let tempo=speed;while(tempo>2){tempoParts.push("atempo=2");tempo/=2;}while(tempo<0.5){tempoParts.push("atempo=0.5");tempo/=0.5;}if(Math.abs(tempo-1)>0.000001)tempoParts.push("atempo="+tempo.toFixed(6));
     if(tempoParts.length)retimeFilters=","+tempoParts.join(",");
    }
-   audioFilters.push("["+inputIndex+":a]atrim=duration="+sourceDuration.toFixed(6)+",asetpts=PTS-STARTPTS"+retimeFilters+fadeInFilter+fadeOutFilter+",volume='"+gain+"':eval=frame"+panFilter+",adelay="+delay+"|"+delay+",apad=whole_dur="+cursor.toFixed(6)+",atrim=duration="+cursor.toFixed(6)+",aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo["+label+"]");
+   audioFilters.push("["+inputIndex+":a]atrim=duration="+sourceDuration.toFixed(6)+",asetpts=PTS-STARTPTS"+retimeFilters+fadeInFilter+fadeOutFilter+",aeval=exprs='val(ch)*("+gain+")':channel_layout=same"+panFilter+",adelay="+delay+"|"+delay+",apad=whole_dur="+cursor.toFixed(6)+",atrim=duration="+cursor.toFixed(6)+",aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo["+label+"]");
    inputIndex++;
   }
   for(const clip of overlayClips){
