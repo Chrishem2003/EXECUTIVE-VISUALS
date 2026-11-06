@@ -385,7 +385,7 @@ test("cloud FFmpeg renderer matches Web Audio equal-power panning for mono sourc
   const rms=(values,channelCount,channel)=>{let sum=0,count=0;for(let frame=4800;frame<values.length/channelCount-4800;frame++){const value=values[frame*channelCount+channel]||0;sum+=value*value;count++;}return Math.sqrt(sum/Math.max(1,count));};
   const sourceLevel=rms(source,1,0),left=rms(samples,2,0),right=rms(samples,2,1);
   assert.ok(Math.abs(left/right-1)<0.06,"center mono pan should remain balanced across output channels");
-  assert.ok(Math.abs(left/sourceLevel-Math.SQRT1_2)<0.08,"center mono pan should apply the equal-power -3 dB coefficient");
+  assert.ok(Math.abs(left/sourceLevel-Math.SQRT1_2)<0.08,"center mono pan should apply the equal-power -3 dB coefficient (source="+sourceLevel+", left="+left+", right="+right+", ratio="+(left/sourceLevel)+")");
  }finally{await rm(root,{recursive:true,force:true});}
 });
 
