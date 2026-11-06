@@ -72,14 +72,16 @@ export function createCloudPublicationCleanupWorker({
   const rows=await request("rpc/"+name,{method:"POST",body:args});
   return rows;
  }
- async function listStalePublications(){
+ let publicationOffset=0;
+ async function listStalePublications(offset=0){
   const cutoff=new Date(now().getTime()-olderThanMs).toISOString();
   const params=new URLSearchParams({
    select:"owner_id,project_id,job_id,publication_key,asset_id,status,updated_at",
    status:"in.(reserved,published)",
    updated_at:"lte."+cutoff,
    order:"updated_at.asc",
-   limit:String(publicationLimit)
+   limit:String(publicationLimit),
+   offset:String(offset)
   });
   const rows=await request("asset_publications?"+params.toString());
   if(!Array.isArray(rows))throw new Error("Publication cleanup ledger returned an invalid list.");
@@ -143,7 +145,8 @@ export function createCloudPublicationCleanupWorker({
    busy=true;lastRunAt=startedAt;
    const runId=randomUUID(),results=[];
    try{
-    const publications=await listStalePublications();
+    const publications=await listStalePublications(publicationOffset);
+    publicationOffset=publications.length<publicationLimit?0:publicationOffset+publications.length;
     for(const publication of publications){
      const job=await getJob(publication.job_id);
      if(!job||!TERMINAL_CLEANUP_STATES.has(job.status)||(job.lease_expires_at&&Date.parse(job.lease_expires_at)>now().getTime())){
