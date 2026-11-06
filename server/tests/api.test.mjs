@@ -213,6 +213,21 @@ test("session cookies are hardened, hashed, origin-protected and safely invalida
   assert.equal((await request("/api/me",{},cookie)).status,401,"logout must revoke the persisted session");
 });
 
+test("expired local sessions are rejected and removed from persistence",async()=>{
+  const cookie=await register("expired-session@example.test");
+  const token=cookie.slice("ev_session=".length);
+  const db=openDatabase(join(dataDir,"executive-visuals.sqlite"));
+  try{
+    db.prepare("UPDATE sessions SET expires_at=? WHERE token_hash=?")
+      .run(new Date(Date.now()-1000).toISOString(),createHash("sha256").update(token).digest("hex"));
+  }finally{db.close();}
+  assert.equal((await request("/api/me",{},cookie)).status,401);
+  const verify=openDatabase(join(dataDir,"executive-visuals.sqlite"));
+  try{
+    assert.equal(verify.prepare("SELECT COUNT(*) AS count FROM sessions WHERE token_hash=?").get(createHash("sha256").update(token).digest("hex")).count,0);
+  }finally{verify.close();}
+});
+
 test("static application shell applies a restrictive content security policy",async()=>{
   const response=await fetch(base+"/");
   assert.equal(response.status,200);
