@@ -129,7 +129,10 @@ INSERT INTO executive_visuals.jobs(
   clock_timestamp()+interval '5 minutes',clock_timestamp()
 );
 
-SELECT * FROM executive_visuals.reserve_asset_publication(
+SELECT * FROM executive_visuals.reserve_asset_publication_v2(
+  '55555555-5555-4555-8555-555555555555',
+  'integration-worker',
+  '66666666-6666-4666-8666-666666666666',
   '11111111-1111-4111-8111-111111111111',
   'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
   'integration:valid-publication',repeat('c',64),
@@ -209,7 +212,10 @@ BEGIN
 END;
 $publication$;
 
-SELECT * FROM executive_visuals.reserve_asset_publication(
+SELECT * FROM executive_visuals.reserve_asset_publication_v2(
+  '55555555-5555-4555-8555-555555555555',
+  'integration-worker',
+  '66666666-6666-4666-8666-666666666666',
   '11111111-1111-4111-8111-111111111111',
   'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
   'integration:stale-lease',repeat('d',64),
@@ -255,20 +261,31 @@ $stale_lease$;
 -- Durable cleanup claims must fence a late worker from publishing the exact
 -- object path selected for deletion. All work remains inside disposable CI DB.
 INSERT INTO executive_visuals.jobs(
-  id,owner_id,project_id,job_type,status,input
+  id,owner_id,project_id,job_type,status,input,lease_owner,lease_token,
+  lease_expires_at,lease_heartbeat_at
 ) VALUES (
   'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
   '11111111-1111-4111-8111-111111111111',
   'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-  'timeline.render','failed','{"integration":"cleanup-fence"}'::jsonb
+  'timeline.render','processing','{"integration":"cleanup-fence"}'::jsonb,
+  'cleanup-worker','abababab-abab-4aba-8aba-abababababab',
+  clock_timestamp()+interval '5 minutes',clock_timestamp()
 );
 
-SELECT * FROM executive_visuals.reserve_asset_publication(
+SELECT * FROM executive_visuals.reserve_asset_publication_v2(
+  'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+  'cleanup-worker',
+  'abababab-abab-4aba-8aba-abababababab',
   '11111111-1111-4111-8111-111111111111',
   'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
   'integration:cleanup-fence',repeat('f',64),
   'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee'
 );
+
+UPDATE executive_visuals.jobs
+SET status='failed',lease_owner=NULL,lease_token=NULL,
+    lease_expires_at=NULL,lease_heartbeat_at=NULL
+WHERE id='dddddddd-dddd-4ddd-8ddd-dddddddddddd';
 
 UPDATE executive_visuals.asset_publications
 SET updated_at=clock_timestamp()-interval '25 hours'
