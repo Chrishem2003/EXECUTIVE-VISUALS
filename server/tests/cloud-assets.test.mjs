@@ -12,10 +12,10 @@ const assetId="323e4567-e89b-42d3-a456-426614174000";
 const bytes=new Uint8Array([1,2,3,4]);
 const config={url:"https://example.supabase.co",serviceRoleKey:"private-service-key"};
 function response(body,status=200){return{ok:status>=200&&status<300,status,async text(){return JSON.stringify(body);}};}
-function fixture({authorize=async()=>true,insertResponse=null,removeError=false,cleanupRows=[]}={}) {
+function fixture({authorize=async()=>true,insertResponse=null,removeError=false,cleanupRows=[],uploadReceiptInvalid=false}={}) {
  const calls=[],storageCalls=[];
  const storage={
-  async upload(path,data,type){storageCalls.push({op:"upload",path,data,type});return{bucket:"executive-visuals-media",path,size:data.byteLength,contentType:type};},
+  async upload(path,data,type){storageCalls.push({op:"upload",path,data,type});return{bucket:uploadReceiptInvalid?"wrong-bucket":"executive-visuals-media",path,size:data.byteLength,contentType:type};},
   async uploadFile(path,file,type){const data=await readFile(file);storageCalls.push({op:"uploadFile",path,file,type});return{bucket:"executive-visuals-media",path,size:data.byteLength,sha256:createHash("sha256").update(data).digest("hex"),contentType:type};},
   async createSignedUrl(path,expiry){storageCalls.push({op:"sign",path,expiry});return"https://example.supabase.co/storage/signed";},
   async remove(path){storageCalls.push({op:"remove",path});if(removeError)throw new Error("storage cleanup unavailable");return true;}
@@ -183,4 +183,12 @@ test("queues durable storage cleanup when a soft-deleted asset cannot be removed
  const queued=f.calls.find(call=>call.url.includes("/asset_storage_cleanup")&&call.options.method==="POST");
  assert.ok(queued);
  assert.equal(JSON.parse(queued.options.body).object_path,f.row.object_path);
+});
+
+test("queues cleanup when an upload receipt is invalid and immediate removal fails",async()=>{
+ const f=fixture({removeError:true,uploadReceiptInvalid:true});
+ await assert.rejects(()=>f.repo.create({ownerId,projectId,originalName:"x.mp4",mediaType:"video/mp4",bytes}),error=>error.code==="CLOUD_STORAGE_UPLOAD_RECEIPT_INVALID"&&error.cleanupPending===true);
+ const queued=f.calls.find(call=>call.url.includes("/asset_storage_cleanup")&&call.options.method==="POST");
+ assert.ok(queued);
+ assert.equal(JSON.parse(queued.options.body).object_path,f.storageCalls.find(call=>call.op==="upload").path);
 });
