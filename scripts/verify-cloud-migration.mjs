@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 
 const sql = await readFile(resolve(process.cwd(), "supabase/migrations/20261031210000_executive_visuals_core.sql"), "utf8");
 const checkpointSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261102090000_video_pipeline_checkpoints.sql"), "utf8");
+const fencingSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261106220000_job_lease_fencing_tokens.sql"), "utf8");
 const publicationSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261106230000_asset_publication_ledger.sql"), "utf8");
 const issues = [];
 const tables = ["projects","project_members","project_workspace_documents","workflows","workflow_runs","workflow_node_runs","timelines","assets","jobs","job_events","consents","reviews","audit_events"];
@@ -59,6 +60,22 @@ if (!checkpointSql.includes("output_asset.derivative_of = new.input_asset_id")) 
 if (!checkpointSql.includes("output_asset.owner_id = new.owner_id") || !checkpointSql.includes("output_asset.project_id = new.project_id")) issues.push("Cloud checkpoint output assets must match the checkpoint owner and project.");
 if (!checkpointSql.includes("output_asset.sha256 = lower(new.output_json ->> 'sha256')")) issues.push("Cloud checkpoint output checksums must match persisted asset metadata.");
 if (/\\b(drop\\s+table|truncate|delete\\s+from)\\b/i.test(checkpointSql)) issues.push("Checkpoint migration must not contain destructive DDL/DML.");
+
+if (/\\b(drop\\s+table|truncate|delete\\s+from)\\b/i.test(fencingSql)) issues.push("Lease fencing migration must not contain destructive DDL/DML.");
+if (!fencingSql.includes("add column if not exists lease_token uuid")) issues.push("Jobs must store a per-attempt fencing token.");
+if (!fencingSql.includes("lease_token=gen_random_uuid()")) issues.push("Every claim must generate a fresh database-side fencing token.");
+if (!fencingSql.includes("lease_token=p_lease_token")) issues.push("Lease renewal and completion must match the current fencing token.");
+if (!fencingSql.includes("lease_token=null") || !fencingSql.includes("lease_token=null,lease_expires_at=null")) issues.push("Recovery and completion must clear the prior fencing token.");
+for (const fn of ["claim_next_job_v2","renew_job_lease_v2","finish_job_v2","assert_job_lease_v2"]) {
+  if (!fencingSql.includes("create or replace function executive_visuals."+fn+"(")) issues.push("Fenced queue RPC is missing: "+fn+".");
+  if (!fencingSql.includes("to service_role")) issues.push("Fenced queue RPC permissions must be restricted to service_role.");
+}
+if (!fencingSql.includes("revoke all on function executive_visuals.claim_next_job(text,integer,text[]) from public,anon,authenticated,service_role;")
+ || !fencingSql.includes("revoke all on function executive_visuals.renew_job_lease(uuid,text,integer) from public,anon,authenticated,service_role;")
+ || !fencingSql.includes("revoke all on function executive_visuals.finish_job(uuid,text,text,jsonb,jsonb) from public,anon,authenticated,service_role;")) {
+  issues.push("Legacy unfenced worker RPCs must be disabled after v2 migration.");
+}
+
 
 if (/\\b(drop\\s+table|truncate|delete\\s+from)\\b/i.test(publicationSql)) issues.push("Publication ledger migration must not contain destructive DDL/DML.");
 if (!publicationSql.includes("unique(owner_id, publication_key)") || !publicationSql.includes("unique(asset_id)")) issues.push("Asset publication identity must be unique per owner and asset.");
