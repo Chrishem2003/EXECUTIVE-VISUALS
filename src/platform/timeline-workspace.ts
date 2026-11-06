@@ -350,6 +350,7 @@ export function renderTimelineWorkspace(){
  '<div class="notice">Master rendering supports synchronized audio, multi-track video compositing, primary-track crossfades, dip-to-black transitions on enabled video tracks, image overlays and SRT/VTT captions. Secondary-track fades reveal lower layers; effects and animated overlays remain future milestones.</div></div>';
 }
 async function refresh(){
+ state.audioActivityPreview=null;
  if(state.mode==="cloud"){
   const projects=await apiRequest<{projects:CloudProject[]}>("/api/cloud/projects");
   state.cloudProjects=projects.projects||[];
