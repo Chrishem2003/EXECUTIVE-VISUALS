@@ -22,7 +22,7 @@ import { ensureResumableUploadSchema, createUploadSession, getUploadSession, app
 import { recordJobStage, getJobStageTimeline } from "./job-observability.mjs";
 import { parseByteRange } from "./http-range.mjs";
 import { createWaveformCache } from "./waveform-cache.mjs";
-import { verifySupabaseUser } from "./supabase-auth.mjs";
+import { extractBearerToken, verifySupabaseUser } from "./supabase-auth.mjs";
 import { ensureTransformationPlanSchema, createTransformationPlan, approveTransformationPlan, listTransformationPlans, getTransformationPlan } from "./transformation-plans.mjs";
 
 const PORT = Number(process.env.API_PORT || process.env.PORT || 4179);
@@ -124,7 +124,7 @@ function createLocalSession(userId) {
 }
 async function authenticate(req) {
   if (AUTH_MODE === "supabase") {
-    const token=(req.headers.authorization||"").replace(/^Bearer\s+/i,"");
+    const token=extractBearerToken(req.headers.authorization||"");
     if(!token||!process.env.SUPABASE_URL||!process.env.SUPABASE_PUBLISHABLE_KEY)return null;
     const user=await verifySupabaseUser({
       supabaseUrl:process.env.SUPABASE_URL,
