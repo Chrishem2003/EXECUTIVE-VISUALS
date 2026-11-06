@@ -102,3 +102,20 @@ test("durable cleanup claims serialize with publication and retain path tombston
   assert.match(sql, /grant execute on function executive_visuals\.claim_asset_publication_cleanup_v1[\s\S]*?to service_role/i);
   assert.match(sql, /grant execute on function executive_visuals\.complete_asset_publication_cleanup_v1[\s\S]*?to service_role/i);
 });
+
+
+const auditMigrationUrl = new URL("../../supabase/migrations/20261107030000_publication_cleanup_audit_events.sql", import.meta.url);
+test("publication cleanup audit ledger is append-only, private and durable beyond tenant resource deletion", async () => {
+  const sql = await readFile(auditMigrationUrl, "utf8");
+  assert.match(sql, /create table if not exists executive_visuals\.publication_cleanup_audit_events/i);
+  assert.match(sql, /enable row level security/i);
+  assert.match(sql, /revoke all on executive_visuals\.publication_cleanup_audit_events from public, anon, authenticated, service_role/i);
+  assert.match(sql, /grant select, insert on executive_visuals\.publication_cleanup_audit_events to service_role/i);
+  assert.match(sql, /before update or delete on executive_visuals\.publication_cleanup_audit_events/i);
+  assert.match(sql, /publication cleanup audit events are append-only/i);
+  assert.doesNotMatch(sql, /references auth\.users|references executive_visuals\.projects/i);
+  assert.match(sql, /run_id uuid not null/i);
+  assert.match(sql, /actor_type text not null/i);
+  assert.match(sql, /object_path text/i);
+  assert.match(sql, /details jsonb not null/i);
+});
