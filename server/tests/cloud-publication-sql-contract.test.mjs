@@ -79,10 +79,10 @@ test("durable cleanup claims serialize with publication and retain path tombston
   const claimSql = sql.slice(claimStart, completeStart);
   assert.ok(claimSql.indexOf("from executive_visuals.jobs") < claimSql.indexOf("from executive_visuals.asset_publications"));
   assert.match(claimSql, /for update[\s\S]*?from executive_visuals\.asset_publications[\s\S]*?for update/i);
-  assert.match(claimSql, /publication_row\.status <> 'reserved'/i);
+  assert.match(claimSql, /publication_row\.status not in \('reserved','published'\)/i);
   assert.match(claimSql, /publication_row\.updated_at > pg_catalog\.clock_timestamp\(\) - p_min_age/i);
   assert.match(claimSql, /from executive_visuals\.assets[\s\S]*?where a\.object_path = p_object_path/i);
-  assert.match(claimSql, /on conflict \(object_path\) do nothing/i);
+  assert.match(claimSql, /on conflict \(object_path\) do update[\s\S]*?status = 'claimed'[\s\S]*?where executive_visuals\.asset_publication_cleanup_claims\.status = 'deleted'/i);
   const finalizer = sql.slice(finalizeStart);
   assert.match(finalizer, /from executive_visuals\.asset_publication_cleanup_claims[\s\S]*?cleanup_claim\.object_path = p_object_path/i);
   assert.match(finalizer, /asset object path is fenced by a durable cleanup claim/i);
