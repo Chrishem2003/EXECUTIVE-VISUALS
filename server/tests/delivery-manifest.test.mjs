@@ -17,3 +17,9 @@ test("rejects incomplete or unsafe output evidence",()=>{
  assert.throws(()=>createDeliveryManifest({...base,timelineRevision:-1}),e=>e.code==="DELIVERY_MANIFEST_REVISION_INVALID");
 });
 test("rejects a modified fingerprint",()=>{const m=createDeliveryManifest(base);assert.equal(verifyDeliveryManifest({...m,fingerprint:"f".repeat(64)}),false);});
+
+test("accepts zero and non-empty string timeline revisions but rejects blank strings",()=>{
+ assert.equal(createDeliveryManifest({...base,timelineRevision:0}).timelineRevision,0);
+ assert.equal(createDeliveryManifest({...base,timelineRevision:"rev-0"}).timelineRevision,"rev-0");
+ assert.throws(()=>createDeliveryManifest({...base,timelineRevision:"   "}),e=>e.code==="DELIVERY_MANIFEST_REVISION_INVALID");
+});
