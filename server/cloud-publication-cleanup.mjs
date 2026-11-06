@@ -30,18 +30,26 @@ export function createCloudPublicationCleanup({
   isAttemptActive,
   claimCleanup,
   completeCleanup,
-  onEvent=()=>{},
+  onEvent,
+  requireAudit=true,
   now=()=>new Date()
 }={}) {
   if(!storage||typeof storage.listObjects!=="function"||typeof storage.remove!=="function") {
     throw new Error("Publication cleanup requires a private storage adapter with list and remove operations.");
   }
   if(typeof findReferencedPaths!=="function")throw new Error("Publication cleanup requires an authoritative asset-reference lookup.");
-  if(typeof onEvent!=="function")throw new Error("Publication cleanup event handler must be a function.");
+  if(typeof onEvent!=="function")throw new Error("Publication cleanup requires a durable audit event handler.");
+  if(typeof requireAudit!=="boolean")throw new Error("Publication cleanup audit requirement must be boolean.");
 
   async function emit(event) {
-    try { await onEvent(Object.freeze({...event})); }
-    catch { /* Audit callback failure must never broaden cleanup or hide a deletion result. */ }
+    let stored;
+    try { stored=await onEvent(Object.freeze({...event})); }
+    catch {
+      if(requireAudit)throw Object.assign(new Error("Publication cleanup audit persistence failed; cleanup is stopped."),{code:"CLOUD_PUBLICATION_CLEANUP_AUDIT_FAILED"});
+      return false;
+    }
+    if(requireAudit&&stored!==true)throw Object.assign(new Error("Publication cleanup audit event was not durably acknowledged; cleanup is stopped."),{code:"CLOUD_PUBLICATION_CLEANUP_AUDIT_FAILED"});
+    return stored===true;
   }
   async function recordSkip(skipped, candidate, reason, extra={}, at, dryRun=true) {
     const item={...candidate,reason,...extra};
