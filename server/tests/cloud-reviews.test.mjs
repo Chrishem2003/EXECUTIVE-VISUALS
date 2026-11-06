@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createCloudReviewRepository } from "../cloud-reviews.mjs";
-const owner="123e4567-e89b-42d3-a456-426614174000",editor="223e4567-e89b-42d3-a456-426614174000",projectId="423e4567-e89b-42d3-a456-426614174000",assetId="523e4567-e89b-42d3-a456-426614174000",timelineId="623e4567-e89b-42d3-a456-426614174000",reviewId="723e4567-e89b-42d3-a456-426614174000";
+const owner="123e4567-e89b-42d3-a456-426614174000",editor="223e4567-e89b-42d3-a456-426614174000",viewer="323e4567-e89b-42d3-a456-426614174000",projectId="423e4567-e89b-42d3-a456-426614174000",assetId="523e4567-e89b-42d3-a456-426614174000",timelineId="623e4567-e89b-42d3-a456-426614174000",reviewId="723e4567-e89b-42d3-a456-426614174000";
 const timeline={id:timelineId,projectId,revision:5,timeline:{frameRate:{numerator:24,denominator:1}}};
 function setup({role="editor",existing=[]}={}){
  const calls=[],rows=[...existing];
@@ -28,7 +28,7 @@ function setup({role="editor",existing=[]}={}){
   }
   throw new Error("Unexpected request "+options.method+" "+path);
  };
- const repo=createCloudReviewRepository({url:"https://example.supabase.co",serviceRoleKey:"server-secret",fetchImpl,authorize:async({ownerId,projectId:pid,action})=>[owner,editor].includes(ownerId)&&pid===projectId&&(action==="read"||action==="write"),projects,assets,timelines});
+ const repo=createCloudReviewRepository({url:"https://example.supabase.co",serviceRoleKey:"server-secret",fetchImpl,authorize:async({ownerId,projectId:pid,action})=>[owner,editor,viewer].includes(ownerId)&&pid===projectId&&(action==="read"||action==="write"),projects,assets,timelines});
  return{repo,calls,rows};
 }
 const input={projectId,assetId,timelineId,timelineRevision:4,frameNumber:240,durationFrames:24,body:"Fix the title alignment.",annotation:{version:1,shapes:[{type:"arrow",points:[{x:0.1,y:0.2},{x:0.8,y:0.7}]}]}};
@@ -50,7 +50,7 @@ test("rejects viewer roles from creating comments",async()=>{
 });
 test("lists project comments but filters internal notes from viewer membership",async()=>{
  const rows=[{id:reviewId,owner_id:owner,project_id:projectId,reviewer_id:owner,body:"public",visibility:"project",status:"open",decision:"comment",created_at:"2026-11-06T12:00:00Z"},{id:"823e4567-e89b-42d3-a456-426614174000",owner_id:owner,project_id:projectId,reviewer_id:owner,body:"private",visibility:"internal",status:"open",decision:"comment",created_at:"2026-11-06T12:00:00Z"}];
- const f=setup({role:"viewer",existing:rows});const result=await f.repo.list({actorId:editor,projectId});assert.equal(result.length,1);assert.equal(result[0].body,"public");
+ const f=setup({role:"viewer",existing:rows});const result=await f.repo.list({actorId:viewer,projectId});assert.equal(result.length,1);assert.equal(result[0].body,"public");
 });
 test("only comment author or project editor can edit, and optimistic concurrency prevents lost updates",async()=>{
  const row={id:reviewId,owner_id:owner,project_id:projectId,reviewer_id:editor,body:"Old note",visibility:"project",status:"open",decision:"comment",created_at:"2026-11-06T12:00:00Z",updated_at:"2026-11-06T12:00:00Z"};
@@ -63,5 +63,5 @@ test("rejects unauthorized review edits",async()=>{
  const f=setup({role:"reviewer",existing:[row]});await assert.rejects(()=>f.repo.update({actorId:editor,reviewId,input:{body:"Tamper"}}),error=>error.code==="CLOUD_REVIEW_ACCESS_DENIED");
 });
 test("rejects review payload attempts to forge ownership or author identity",async()=>{
- const f=setup();await assert.rejects(()=>f.repo.create({actorId:editor,input:{...input,ownerId:owner,reviewerId:owner}}),error=>error.code==="CLOUD_REVIEW_INVALID");
+ const f=setup();await assert.rejects(()=>f.repo.create({actorId:editor,input:{...input,ownerId:owner,reviewerId:owner}}),error=>error.code==="REVIEW_INVALID");
 });
