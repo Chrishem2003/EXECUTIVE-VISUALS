@@ -83,6 +83,7 @@ test("usage summary aggregates complete owner and authorized project telemetry w
   assert.equal((await fetch(base+"/api/usage/summary")).status,401);
   const owner=await register("usage-summary-owner@example.test");
   const outsider=await register("usage-summary-outsider@example.test");
+  const unauthorized=await register("usage-summary-unauthorized@example.test");
   const created=await request("/api/projects",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({name:"Usage summary project"})},owner);
   assert.equal(created.status,201);
   const project=(await created.json()).project;
@@ -120,7 +121,7 @@ test("usage summary aggregates complete owner and authorized project telemetry w
   assert.equal(projectBody.totals.unknownCostEvents,3);
   assert.ok(projectBody.costDisclosure.includes("never treated as zero-cost"));
 
-  const denied=await request("/api/usage/summary?projectId="+encodeURIComponent(project.id),{},outsider);
+  const denied=await request("/api/usage/summary?projectId="+encodeURIComponent(project.id),{},unauthorized);
   assert.equal(denied.status,404);
   const invalid=await request("/api/usage/summary?days=14",{},owner);
   assert.equal(invalid.status,400);
