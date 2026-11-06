@@ -1,6 +1,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { verifySupabaseUser } from "../supabase-auth.mjs";
+import { extractBearerToken, verifySupabaseUser } from "../supabase-auth.mjs";
+
+test("Supabase authentication accepts only a bounded Bearer authorization token", () => {
+  assert.equal(extractBearerToken("Bearer eyJhbGciOi.test.signature"), "eyJhbGciOi.test.signature");
+  assert.equal(extractBearerToken("bearer token"), "token");
+  assert.equal(extractBearerToken("Basic dXNlcjpwYXNz"), "");
+  assert.equal(extractBearerToken("token-without-scheme"), "");
+  assert.equal(extractBearerToken("Bearer token with-spaces"), "");
+  assert.equal(extractBearerToken("Bearer " + "x".repeat(16385)), "");
+});
 
 test("Supabase identity verification sends only the publishable key and bearer token", async () => {
   let observed;
