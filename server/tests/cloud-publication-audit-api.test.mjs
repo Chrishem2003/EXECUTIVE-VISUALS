@@ -38,12 +38,13 @@ test("scopes personal audit events to the authenticated owner and null project",
 });
 test("authorizes project scope before querying and applies filters",async()=>{
  const f=fixture({rows:[row("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb")]});
- const result=await f.api.handle({method:"GET",path:"/api/cloud/publication-audit",user:admin,query:{projectId:project,jobId:job,runId:run,eventType:"publication.cleanup_completed",from:"2026-11-01T00:00:00Z",to:"2026-11-08T00:00:00Z"}});
+ const result=await f.api.handle({method:"GET",path:"/api/cloud/publication-audit",user:admin,query:{projectId:project,jobId:job,runId:run,actorId:owner,eventType:"publication.cleanup_completed",from:"2026-11-01T00:00:00Z",to:"2026-11-08T00:00:00Z"}});
  assert.equal(result.status,200);
  const url=new URL(f.calls[0].url);
  assert.equal(url.searchParams.get("project_id"),"eq."+project);
  assert.equal(url.searchParams.get("job_id"),"eq."+job);
  assert.equal(url.searchParams.get("run_id"),"eq."+run);
+ assert.equal(url.searchParams.get("actor_id"),"eq."+owner);
  assert.equal(url.searchParams.get("event_type"),"eq.publication.cleanup_completed");
  assert.equal(url.searchParams.get("and"),"(occurred_at.gte.2026-11-01T00:00:00.000Z,occurred_at.lte.2026-11-08T00:00:00.000Z)");
  assert.equal(url.searchParams.get("or"),null);
