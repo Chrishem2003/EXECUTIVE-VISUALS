@@ -90,7 +90,8 @@ test("cloud timeline executor does not publish a master when cancellation arrive
  const executor=createCloudTimelineExecutor({tempRoot:root,
   timelines:{async get(){return{id:timelineId,projectId:null,revision:1,timeline};}},
   mediaIO:{async materialize({assetId}){const path=join(root,assetId);await writeFile(path,"source");return{path,asset:{id:assetId},async cleanup(){}};},async publish(args){published.push(args);return{id:"must-not-publish"};}},
-  async renderTimeline({workDir}){const path=join(workDir,"master.mp4");await writeFile(path,"rendered");return{path,filename:"master.mp4",mediaType:"video/mp4"};}
+  async renderTimeline({workDir}){const path=join(workDir,"master.mp4");await writeFile(path,"rendered");return{path,filename:"master.mp4",mediaType:"video/mp4"};},
+  async probeOutput(){return{format:{duration:"1",format_name:"mov,mp4,m4a,3gp,3g2,mj2"},streams:[{codec_type:"video",codec_name:"h264",width:320,height:240,avg_frame_rate:"24/1"}]};}
  });
  try{
   await assert.rejects(executor({job:{id:"job-cancel",owner_id:owner,project_id:null,job_type:"timeline.render",input:{timelineId,timelineRevision:1}},signal:controller.signal,onProgress(value){if(value===90)controller.abort();}}),error=>error.code==="JOB_CANCELLED");
