@@ -52,8 +52,10 @@ The M8 integration test exercises:
 - Same-origin credentialed API access.
 - Logout cookie expiry and server-side session revocation.
 - Expired-session rejection and removal from persisted sessions.
+- Strict Bearer-token parsing for Supabase identity verification.
+- Supabase identity timeout, network-error, rejected-response and malformed-payload handling.
 
-CI must pass on the draft pull request before this change is considered verified.
+CI must pass on the draft pull request before these changes are considered verified.
 
 ## 4. Release gates
 
@@ -61,7 +63,7 @@ Do not enable production release based solely on green CI. Before production app
 
 1. Explicit production cookie and exact CORS origin configuration.
 2. Distributed rate limiting appropriate to the deployment topology.
-3. Bounded external identity-provider request timeouts.
+3. Verify the bounded external identity-provider timeout under the deployed network/proxy conditions.
 4. Expired-session and credential-change lifecycle tests.
 5. Tenant-isolation tests for every sensitive object family, including projects, assets, uploads, jobs, timelines, comments and usage records.
 6. Backup/restore and rollback evidence for persistent storage and database changes.
