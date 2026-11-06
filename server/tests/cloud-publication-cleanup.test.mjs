@@ -29,7 +29,7 @@ function fixture({referenced=[],active=false,leaseCheck=true,removeError=false,c
   ...(leaseCheck?{isAttemptActive:async()=>active}:{}),
   claimCleanup:async input=>{claims.push(input);if(claimError)throw new Error("claim unavailable");return{claimId:"claim-"+claims.length,claimToken:"token-"+claims.length,status:"claimed"};},
   completeCleanup:async claim=>{completed.push(claim);if(completeError)throw new Error("completion unavailable");return true;},
-  onEvent:async event=>events.push(event),
+  onEvent:async event=>{events.push(event);return true;},
   now:()=>now
  });
  return {cleanup,removed,events,claims,completed};
@@ -198,4 +198,21 @@ test("destructive failure audit events preserve the destructive mode and never h
  });
  const empty=await throwingAudit.run({prefix});
  assert.equal(empty.removedCount,0);
+});
+
+
+test("stops before destructive storage removal when audit persistence is not acknowledged",async()=>{
+ const f=fixture({active:false});
+ const cleanup=createCloudPublicationCleanup({
+  storage:{async listObjects(){return{objects:[{name:orphanAttempt,createdAt:old}],hasNext:false,nextCursor:null};},async remove(path){f.removed.push(path);}},
+  findReferencedPaths:async()=>[],
+  isAttemptActive:async()=>false,
+  claimCleanup:async()=>({claimId:"claim-1",claimToken:"token-1",status:"claimed"}),
+  completeCleanup:async()=>true,
+  onEvent:async()=>false,
+  requireAudit:true,
+  now:()=>now
+ });
+ await assert.rejects(()=>cleanup.run({...cleanupIdentity,prefix,dryRun:false,confirmDelete:true}),error=>error.code==="CLOUD_PUBLICATION_CLEANUP_AUDIT_FAILED");
+ assert.equal(f.removed.length,0);
 });
