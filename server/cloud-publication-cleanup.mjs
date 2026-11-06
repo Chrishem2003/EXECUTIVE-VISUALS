@@ -28,6 +28,8 @@ export function createCloudPublicationCleanup({
   storage,
   findReferencedPaths,
   isAttemptActive,
+  claimCleanup,
+  completeCleanup,
   onEvent=()=>{},
   now=()=>new Date()
 }={}) {
@@ -60,6 +62,7 @@ export function createCloudPublicationCleanup({
       if(typeof dryRun!=="boolean"||typeof confirmDelete!=="boolean")throw new Error("Publication cleanup safety flags must be boolean.");
       if(!dryRun&&!confirmDelete)throw new Error("Destructive publication cleanup requires explicit confirmation.");
       if(!dryRun&&typeof isAttemptActive!=="function")throw new Error("Destructive cleanup requires an authoritative active-worker lease check.");
+      if(!dryRun&&(typeof claimCleanup!=="function"||typeof completeCleanup!=="function"))throw new Error("Destructive cleanup requires durable database claim and completion callbacks.");
 
       const current=now();
       const nowMs=current instanceof Date?current.getTime():Date.parse(current);
@@ -113,12 +116,31 @@ export function createCloudPublicationCleanup({
       const removed=[];
       if(!dryRun) {
         for(const candidate of eligible) {
+          let claim;
+          try {
+            claim=await claimCleanup({prefix,objectPath:candidate.objectPath,createdAt:candidate.createdAt});
+            if(!claim||typeof claim.claimId!=="string"||typeof claim.claimToken!=="string"||claim.status!=="claimed") {
+              throw new Error("Durable cleanup claim was not granted.");
+            }
+          } catch {
+            skipped.push({...candidate,reason:"durable_cleanup_claim_failed"});
+            continue;
+          }
           try {
             await storage.remove(candidate.objectPath);
             removed.push(candidate);
-            await emit({type:"publication.orphan_removed",prefix,objectPath:candidate.objectPath,createdAt:candidate.createdAt,at:new Date(nowMs).toISOString()});
           } catch {
-            skipped.push({...candidate,reason:"storage_remove_failed"});
+            // Keep the durable claim. A retry can safely repeat the Storage API
+            // removal with the same claim token and then complete the tombstone.
+            skipped.push({...candidate,reason:"storage_remove_failed",claimId:claim.claimId});
+            continue;
+          }
+          try {
+            const completed=await completeCleanup({...claim,prefix,objectPath:candidate.objectPath});
+            if(completed!==true)throw new Error("Durable cleanup claim completion was not confirmed.");
+            await emit({type:"publication.orphan_removed",prefix,objectPath:candidate.objectPath,createdAt:candidate.createdAt,claimId:claim.claimId,at:new Date(nowMs).toISOString()});
+          } catch {
+            skipped.push({...candidate,reason:"cleanup_claim_completion_failed",claimId:claim.claimId});
           }
         }
       }
