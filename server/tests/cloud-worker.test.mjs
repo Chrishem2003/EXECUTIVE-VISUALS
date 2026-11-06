@@ -8,7 +8,8 @@ function queueFor({job={id:"job-1",lease_token:"11111111-1111-4111-8111-11111111
   calls,
   async claim(workerId,seconds){calls.push(["claim",workerId,seconds]);return job;},
   async renew(id,workerId,seconds,leaseToken){calls.push(["renew",id,workerId,seconds,leaseToken]);return typeof renew==="function"?renew():renew;},
-  async finish(id,workerId,status,output,error,leaseToken){calls.push(["finish",id,workerId,status,output,error,leaseToken]);if(failFinish)throw new Error("finish unavailable");return finish;}
+  async finish(id,workerId,status,output,error,leaseToken){calls.push(["finish",id,workerId,status,output,error,leaseToken]);if(failFinish)throw new Error("finish unavailable");return finish;},
+  async assertLease(id,workerId,leaseToken){calls.push(["assertLease",id,workerId,leaseToken]);return true;}
  };
 }
 
@@ -96,4 +97,15 @@ test("worker drains an in-flight heartbeat before attempting terminal completion
  const result=await running;
  assert.equal(result.status,"succeeded");
  assert.equal(queue.calls.some(call=>call[0]==="finish"),true);
+});
+
+test("worker blocks terminal writes when the database rejects the attempt fence",async()=>{
+ const queue=queueFor();
+ queue.assertLease=async()=>false;
+ const result=await runCloudWorkerCycle({
+  queue,workerId:"worker-1",heartbeatIntervalMs:60000,
+  execute:async({assertLease})=>{await assertLease();return{assetId:"must-not-publish"};}
+ });
+ assert.equal(result.reason,"lease_lost");
+ assert.equal(queue.calls.some(call=>call[0]==="finish"),false);
 });
