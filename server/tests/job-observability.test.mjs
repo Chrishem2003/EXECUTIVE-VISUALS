@@ -45,3 +45,15 @@ test("rejects invalid stage states and malformed identifiers", () => {
   assert.throws(()=>recordJobStage(db,{jobId:"job-1",ownerId:"owner-1",stageId:"execution",label:"Execution",status:"unknown"}),e=>e.code==="INVALID_JOB_STAGE_STATUS");
   db.close();
 });
+
+test("restarts stage timing when a retry enters the same stage again", () => {
+  const db=fixture();
+  recordJobStage(db,{jobId:"job-1",ownerId:"owner-1",stageId:"encode",label:"Encode",status:"running",timestamp:"2026-11-06T10:00:00.000Z"});
+  recordJobStage(db,{jobId:"job-1",ownerId:"owner-1",stageId:"encode",label:"Encode",status:"failed",timestamp:"2026-11-06T10:00:02.000Z"});
+  recordJobStage(db,{jobId:"job-1",ownerId:"owner-1",stageId:"encode",label:"Encode",status:"running",attributes:{attempt:2},timestamp:"2026-11-06T10:01:00.000Z"});
+  recordJobStage(db,{jobId:"job-1",ownerId:"owner-1",stageId:"encode",label:"Encode",status:"succeeded",timestamp:"2026-11-06T10:01:03.000Z"});
+  const [stage]=getJobStageTimeline(db,"job-1","owner-1");
+  assert.equal(stage.durationMs,3000);
+  assert.equal(stage.startedAt,"2026-11-06T10:01:00.000Z");
+  db.close();
+});
