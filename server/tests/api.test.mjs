@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { createServer } from "node:http";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -176,6 +177,40 @@ test("operations summary reports scoped queue health and completed-job performan
   const invalid=await request("/api/operations/summary?days=14",{},owner);
   assert.equal(invalid.status,400);
   assert.equal((await invalid.json()).error.code,"OPERATIONS_PERIOD_INVALID");
+});
+
+test("session cookies are hardened, hashed, origin-protected and safely invalidated",async()=>{
+  const response=await fetch(base+"/api/auth/register",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({email:"session-security@example.test",password:"local-test-password-123"})});
+  assert.equal(response.status,201);
+  const setCookie=response.headers.get("set-cookie")||"";
+  assert.match(setCookie,/HttpOnly/);
+  assert.match(setCookie,/SameSite=Strict/);
+  assert.match(setCookie,/Path=\//);
+  assert.match(setCookie,/Max-Age=2592000/);
+  const cookie=setCookie.split(";")[0];
+  const token=cookie.slice("ev_session=".length);
+  const db=openDatabase(join(dataDir,"executive-visuals.sqlite"));
+  try{
+    const row=db.prepare("SELECT s.token_hash FROM sessions s JOIN users u ON u.id=s.user_id WHERE u.email=?").get("session-security@example.test");
+    assert.ok(row);
+    assert.equal(row.token_hash,createHash("sha256").update(token).digest("hex"));
+    assert.notEqual(row.token_hash,token,"raw session tokens must never be persisted");
+  }finally{db.close();}
+
+  assert.equal((await request("/api/me",{},cookie)).status,200);
+  const malformed=await request("/api/me",{},"ev_session=%E0%A4%A");
+  assert.equal(malformed.status,401,"malformed cookie encoding must fail closed");
+  const crossOrigin=await request("/api/me",{headers:{Origin:"https://attacker.example"}},cookie);
+  assert.equal(crossOrigin.status,403);
+  const sameOrigin=await request("/api/me",{headers:{Origin:base}},cookie);
+  assert.equal(sameOrigin.status,200);
+  assert.equal(sameOrigin.headers.get("access-control-allow-origin"),base);
+  assert.equal(sameOrigin.headers.get("access-control-allow-credentials"),"true");
+
+  const logout=await request("/api/auth/logout",{method:"POST"},cookie);
+  assert.equal(logout.status,200);
+  assert.match(logout.headers.get("set-cookie")||"",/Max-Age=0/);
+  assert.equal((await request("/api/me",{},cookie)).status,401,"logout must revoke the persisted session");
 });
 
 test("static application shell applies a restrictive content security policy",async()=>{
