@@ -34,7 +34,7 @@ printf '%s\n' '[silencedetect @ 0x1] silence_start:2.000' '[silencedetect @ 0x1]
     assert.equal(analysis.status, "completed");
     assert.equal(analysis.activityMethod, "non-silence-envelope");
     assert.deepEqual(analysis.silence.map(item => [item.startSeconds, item.endSeconds]), [[2,4],[6,8]]);
-    assert.deepEqual(analysis.activityIntervals.map(item => [item.startSeconds, item.endSeconds]), [[0,1.92],[3.92,6.08],[7.92,10]]);
+    assert.deepEqual(analysis.activityIntervals.map(item => [item.startSeconds, item.endSeconds]), [[0,2.08],[3.92,6.08],[7.92,10]]);
     assert.ok(analysis.limitations.some(item => item.includes("not speech recognition")));
   } finally {
     if (previousProbe === undefined) delete process.env.FFPROBE_PATH; else process.env.FFPROBE_PATH = previousProbe;
