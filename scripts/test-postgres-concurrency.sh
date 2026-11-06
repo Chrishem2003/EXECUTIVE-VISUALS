@@ -203,8 +203,8 @@ if [[ "$CLEANUP_STATUS" == "0" ]]; then
   cat "$TMP_DIR/cleanup-after-finalize.log" >&2
   exit 1
 fi
-if ! grep -q "publication is missing, already finalized, or not old enough for cleanup" "$TMP_DIR/cleanup-after-finalize.log"; then
-  echo "Cleanup did not reject the finalized publication for the expected reason" >&2
+if ! grep -q "publication cleanup is blocked by a missing, mismatched, or active job" "$TMP_DIR/cleanup-after-finalize.log"; then
+  echo "Cleanup did not wait for publication and reject the still-active job" >&2
   cat "$TMP_DIR/cleanup-after-finalize.log" >&2
   exit 1
 fi
