@@ -117,7 +117,7 @@ export function createCloudAssetRepository({
       if(derivativeOf!==null&&derivativeOf!==undefined)derivativeOf=validUuid(derivativeOf,"derivative ID");else derivativeOf=null;
       if(!EXTENSIONS.has(mediaType))throw new Error("Unsupported cloud asset media type.");
       if(typeof filePath!=="string"||!filePath)throw new Error("Cloud asset file path is required.");
-      if(typeof publicationKey!=="string"||publicationKey.length<1||publicationKey.length>200)throw new Error("Cloud asset publication key must contain 1 to 200 characters.");
+      if(typeof publicationKey!=="string"||!publicationKey.trim()||publicationKey.length>200)throw new Error("Cloud asset publication key must contain 1 to 200 characters.");
       if(!plainObject(metadata))throw new Error("Cloud asset metadata must be a JSON object.");
       if(JSON.stringify(metadata).length>16000)throw new Error("Cloud asset metadata exceeds the 16 KB limit.");
       if(typeof storage.uploadFile!=="function")throw new Error("Cloud storage adapter does not support streaming file uploads.");
