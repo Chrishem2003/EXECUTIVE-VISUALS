@@ -102,7 +102,7 @@ psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 <<SQL
 DO \$fencing\$
 BEGIN
   IF executive_visuals.assert_job_lease_v2(
-    '$JOB_ID', 'integration-worker-a', '$OLD_TOKEN'
+    '$JOB_ID', '$OLD_WORKER', '$OLD_TOKEN'
   ) THEN
     RAISE EXCEPTION 'previous worker token became valid again after retry';
   END IF;
