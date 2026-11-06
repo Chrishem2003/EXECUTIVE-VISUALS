@@ -150,7 +150,7 @@ export function createCloudStorage({
       }finally{clearTimeout(timer);}
     },
     async listObjects({prefix,limit=100,offset=0}={}) {
-      if(typeof prefix!=="string"||!/^([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\\/([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\\/$/i.test(prefix)) {
+      if(typeof prefix!=="string"||!/^([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\/([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\/$/i.test(prefix)) {
         throw new Error("Storage listing requires an exact owner-or-project and asset UUID prefix.");
       }
       if(!Number.isInteger(limit)||limit<1||limit>1000||!Number.isInteger(offset)||offset<0||offset>100000) {
