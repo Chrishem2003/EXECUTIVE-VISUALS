@@ -3,6 +3,9 @@ import { resolve } from "node:path";
 
 const sql = await readFile(resolve(process.cwd(), "supabase/migrations/20261031210000_executive_visuals_core.sql"), "utf8");
 const checkpointSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261102090000_video_pipeline_checkpoints.sql"), "utf8");
+const upscaleBenchmarkSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261102150000_upscale_benchmark_governance.sql"), "utf8");
+const deliveryReviewSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261102120000_delivery_review_uniqueness.sql"), "utf8");
+const retrySql = await readFile(resolve(process.cwd(), "supabase/migrations/20261103143000_retry_transient_cloud_jobs.sql"), "utf8");
 const issues = [];
 const tables = ["projects","project_members","project_workspace_documents","workflows","workflow_runs","workflow_node_runs","timelines","assets","jobs","job_events","consents","reviews","audit_events"];
 for (const table of tables) {
@@ -57,7 +60,30 @@ if (!checkpointSql.includes("octet_length(output_json::text) <= 32000")) issues.
 if (!checkpointSql.includes("output_asset.derivative_of = new.input_asset_id")) issues.push("Cloud checkpoint outputs must be verified as derivatives of their recorded inputs.");
 if (!checkpointSql.includes("output_asset.owner_id = new.owner_id") || !checkpointSql.includes("output_asset.project_id = new.project_id")) issues.push("Cloud checkpoint output assets must match the checkpoint owner and project.");
 if (!checkpointSql.includes("output_asset.sha256 = lower(new.output_json ->> 'sha256')")) issues.push("Cloud checkpoint output checksums must match persisted asset metadata.");
-if (/\\b(drop\\s+table|truncate|delete\\s+from)\\b/i.test(checkpointSql)) issues.push("Checkpoint migration must not contain destructive DDL/DML.");
+if (/\b(drop\s+table|truncate|delete\s+from)\b/i.test(checkpointSql)) issues.push("Checkpoint migration must not contain destructive DDL/DML.");
+for (const table of ["upscale_benchmark_fixtures","upscale_benchmark_runs"]) {
+  if (!upscaleBenchmarkSql.includes(`create table if not exists executive_visuals.${table}`)) issues.push(`Cloud benchmark table is missing: ${table}.`);
+  if (!upscaleBenchmarkSql.includes(`alter table executive_visuals.${table} enable row level security;`)) issues.push(`Cloud benchmark RLS is missing: ${table}.`);
+}
+if (!upscaleBenchmarkSql.includes("revoke all on executive_visuals.upscale_benchmark_fixtures, executive_visuals.upscale_benchmark_runs from authenticated;")) issues.push("Cloud benchmark tables must be server-write-only.");
+if (!upscaleBenchmarkSql.includes("grant all on executive_visuals.upscale_benchmark_fixtures, executive_visuals.upscale_benchmark_runs to service_role;")) issues.push("Cloud benchmark service role grants are missing.");
+if (!upscaleBenchmarkSql.includes("unique(asset_id,fixture_id)") || !upscaleBenchmarkSql.includes("foreign key(fixture_id,project_id)")) issues.push("Cloud benchmark runs must be unique and bound to a fixture in the same project.");
+if (!upscaleBenchmarkSql.includes("reviewer_id is null and review_decision is null and reviewed_at is null")) issues.push("Cloud benchmark review state must be all-null before review.");
+if (!upscaleBenchmarkSql.includes("reviewer_id is not null and review_decision is not null and reviewed_at is not null")) issues.push("Cloud benchmark review state must be complete after review.");
+if (!upscaleBenchmarkSql.includes("create trigger ev_upscale_benchmark_review_immutable")) issues.push("Cloud benchmark review decisions must be database-immutable.");
+if (!upscaleBenchmarkSql.includes("new.reviewer_id = new.owner_id")) issues.push("Cloud benchmark reviews must be independent from the submitting user.");
+if (!upscaleBenchmarkSql.includes("new.review_decision is null")) issues.push("Cloud benchmark review decisions must be non-null.");
+if (!upscaleBenchmarkSql.includes("(new.review_decision = 'reviewed_fail' and btrim(new.review_note) = '')")) issues.push("Cloud benchmark rejection decisions must include a non-empty quality issue note.");
+if (!upscaleBenchmarkSql.includes("new.record->>'qualityReview' is distinct from new.review_decision")) issues.push("Cloud benchmark review state must match its immutable decision.");
+if (/\b(drop\s+table|truncate|delete\s+from)\b/i.test(upscaleBenchmarkSql)) issues.push("Upscale benchmark migration must not contain destructive DDL/DML.");
+if (!deliveryReviewSql.includes("create unique index ev_delivery_review_reviewer_fingerprint_unique")) issues.push("Delivery reviews must prevent duplicate reviewer decisions.");
+if (!deliveryReviewSql.includes("(event_data ->> 'reviewerId')") || !deliveryReviewSql.includes("(event_data ->> 'fingerprint')")) issues.push("Delivery review uniqueness must include reviewer identity and immutable receipt fingerprint.");
+if (!deliveryReviewSql.includes("    job_id,") || !deliveryReviewSql.includes("    owner_id,")) issues.push("Delivery review uniqueness must be scoped to the render job and owning project user.");
+if (!deliveryReviewSql.includes("event_type = 'delivery.reviewed'")) issues.push("Delivery review uniqueness must be scoped only to delivery review events.");
+if (!deliveryReviewSql.includes("^[0-9a-f-]{36}$") || !deliveryReviewSql.includes("^[a-f0-9]{64}$")) issues.push("Delivery review index must validate reviewer IDs and SHA-256 receipt fingerprints.");
+if (/\b(drop\s+table|truncate|delete\s+from)\b/i.test(deliveryReviewSql)) issues.push("Delivery review migration must not contain destructive DDL/DML.");
+
+if (/grant [^;]+ to authenticated/i.test(upscaleBenchmarkSql)) issues.push("Cloud benchmark tables must not grant direct client access.");
 
 
 
@@ -93,6 +119,18 @@ if (!sql.includes("revoke all on function executive_visuals.claim_next_job(text,
 if (!sql.includes("lease_expires_at timestamptz") || !sql.includes("available_at timestamptz") || !sql.includes("lease_heartbeat_at timestamptz")) {
   issues.push("Durable worker lease and delayed retry fields are missing from the cloud job contract.");
 }
+if (!retrySql.includes("create or replace function executive_visuals.retry_job(")
+  || !retrySql.includes("current_job.attempt_count < current_job.max_attempts")
+  || !retrySql.includes("lease_owner = p_worker_id")
+  || !retrySql.includes("lease_expires_at > clock_timestamp()")
+  || !retrySql.includes("'job.retry_scheduled'")
+  || !retrySql.includes("grant execute on function executive_visuals.retry_job(uuid, text, jsonb) to service_role")
+  || !retrySql.includes("revoke all on function executive_visuals.retry_job(uuid, text, jsonb) from public, anon, authenticated;")) {
+  issues.push("Transient job retries must be bounded, lease-fenced, auditable and service-role-only.");
+}
+const retrySqlLower = retrySql.toLowerCase();
+if (retrySqlLower.includes("drop table") || retrySqlLower.includes("truncate") || retrySqlLower.includes("delete from")) issues.push("Retry migration must not contain destructive DDL/DML.");
+
 if (issues.length) {
   console.error("Cloud migration guard failed:");
   for (const issue of issues) console.error("- " + issue);

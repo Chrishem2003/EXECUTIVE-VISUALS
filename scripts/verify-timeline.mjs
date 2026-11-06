@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { addClip, addMarker, addTrack, createTimeline, moveClip, rational, seconds, splitClip, toOpenTimelineIo, trimClip, validateTimeline } from "../src/core/timeline.ts";
-import { analyzeTimelineQuality } from "../src/core/timeline-quality.ts";
+import { analyzeTimelineQuality, assessTimelineRenderPreflight } from "../src/core/timeline-quality.ts";
+import { assessDerivativeEligibility, replaceTimelineClipAsset } from "../src/core/timeline-derivatives.ts";
+import { buildEnhancementEvidenceReport } from "../src/core/enhancement-evidence-report.ts";
+import { buildProductionReadinessReport } from "../src/core/production-readiness.ts";
 
 let timeline=createTimeline("project-1","timeline-1","Pilot episode",{numerator:24,denominator:1});
 timeline=addTrack(timeline,{id:"v1",name:"Video 1",kind:"video",enabled:true,locked:false,clips:[]});
@@ -8,6 +11,30 @@ timeline=addTrack(timeline,{id:"v2",name:"Overlays",kind:"overlay",enabled:true,
 timeline=addClip(timeline,"v1",{id:"clip-a",assetId:"asset-a",name:"Opening",sourceRange:{start:rational(0,24),duration:rational(240,24)},timelineStart:rational(0,24),duration:rational(240,24),enabled:true});
 timeline=addClip(timeline,"v1",{id:"clip-b",assetId:"asset-b",name:"Second scene",sourceRange:{start:rational(0,24),duration:rational(120,24)},timelineStart:rational(300,24),duration:rational(120,24),enabled:true});
 assert.equal(validateTimeline(timeline).valid,true);
+const sourceHash="a".repeat(64),outputHash="b".repeat(64);
+const approvedDerivative={id:"asset-a-upscaled",derivativeOf:"asset-a",sha256:outputHash,metadata:{sourceSha256:sourceHash,processing:{sourceAssetId:"asset-a",inputSha256:sourceHash,outputSha256:outputHash,dimensionsVerified:true,decoderVerified:true,qualityReview:"reviewed_pass"}}};
+assert.equal(assessDerivativeEligibility(approvedDerivative,"asset-a").eligible,true);
+const uppercaseChecksumDerivative={...approvedDerivative,sha256:outputHash.toUpperCase(),metadata:{...approvedDerivative.metadata,sourceSha256:sourceHash.toUpperCase(),processing:{...approvedDerivative.metadata.processing,inputSha256:sourceHash.toUpperCase(),outputSha256:outputHash.toUpperCase()}}};
+assert.equal(assessDerivativeEligibility(uppercaseChecksumDerivative,"asset-a").eligible,true,"SHA-256 hex comparisons must be case-insensitive");
+const malformedSourceChecksum={...approvedDerivative,metadata:{...approvedDerivative.metadata,sourceSha256:"not-a-sha256"}};
+assert.equal(assessDerivativeEligibility(malformedSourceChecksum,"asset-a").eligible,false,"malformed source checksums must remain ineligible");
+const malformedOutputChecksum={...approvedDerivative,metadata:{...approvedDerivative.metadata,processing:{...approvedDerivative.metadata.processing,outputSha256:"not-a-sha256"}}};
+assert.equal(assessDerivativeEligibility(malformedOutputChecksum,"asset-a").eligible,false,"malformed output checksums must remain ineligible");
+assert.equal(assessDerivativeEligibility({...approvedDerivative,mediaType:"video/mp4"},"asset-a","image/png").eligible,false,"derivative media family must match source");
+assert.equal(assessDerivativeEligibility({...approvedDerivative,derivativeOf:"other-source"},"asset-a").eligible,false);
+assert.equal(assessDerivativeEligibility({...approvedDerivative,metadata:{...approvedDerivative.metadata,processing:{...approvedDerivative.metadata.processing,qualityReview:"not_reviewed"}}},"asset-a").eligible,false);
+assert.equal(assessDerivativeEligibility({...approvedDerivative,metadata:{...approvedDerivative.metadata,processing:{...approvedDerivative.metadata.processing,decoderVerified:false}}},"asset-a").eligible,false);
+const beforeReplacement=timeline.tracks[0].clips.find(item=>item.id==="clip-a");
+const replacedTimeline=replaceTimelineClipAsset(timeline,"v1","clip-a",approvedDerivative.id);
+const afterReplacement=replacedTimeline.tracks[0].clips.find(item=>item.id==="clip-a");
+assert.equal(afterReplacement.assetId,approvedDerivative.id);
+assert.equal(afterReplacement.id,beforeReplacement.id);
+assert.equal(afterReplacement.name,beforeReplacement.name);
+assert.deepEqual(afterReplacement.sourceRange,beforeReplacement.sourceRange);
+assert.deepEqual(afterReplacement.timelineStart,beforeReplacement.timelineStart);
+assert.deepEqual(afterReplacement.duration,beforeReplacement.duration);
+assert.equal(timeline.tracks[0].clips.find(item=>item.id==="clip-a").assetId,"asset-a","source timeline must remain immutable");
+assert.throws(()=>replaceTimelineClipAsset({...timeline,tracks:timeline.tracks.map(track=>track.id==="v1"?{...track,locked:true}:track)},"v1","clip-a",approvedDerivative.id),/locked/);
 timeline=trimClip(timeline,"v1","clip-a",24,24);
 const trimmed=timeline.tracks[0].clips.find(x=>x.id==="clip-a");
 assert.equal(trimmed.sourceRange.start.value,24);
@@ -59,6 +86,70 @@ assert.ok(codes.has("SEQUENCE_DURATION"));
 const outOfRange=analyzeTimelineQuality(quality,[{id:"quality-asset",metadata:{probe:{format:{duration:2}}}}]);
 assert.ok(outOfRange.some(item=>item.code==="SOURCE_RANGE_EXCEEDS_MEDIA"));
 assert.ok(analyzeTimelineQuality(quality,[]).some(item=>item.code==="ASSET_NOT_IN_LIBRARY"));
+const derivativeBase={id:"quality-asset",name:"AI derivative",mediaType:"image/png",sha256:"b".repeat(64),derivativeOf:"source-asset",metadata:{sha256:"b".repeat(64),processing:{schemaVersion:1,engine:"realesrgan-ncnn-vulkan",method:"ai-super-resolution",model:"realesrgan-x4plus",modelVersion:"build-fingerprint",inputSha256:"a".repeat(64),outputSha256:"b".repeat(64),dimensionsVerified:true,decoderVerified:true,qualityReview:"reviewed_pass"}}};
+const derivativeSource={id:"source-asset",name:"Original source",mediaType:"image/png",sha256:"a".repeat(64),metadata:{}};
+const derivativeTimeline={...quality,tracks:quality.tracks.map(track=>track.id==="quality-video"?{...track,clips:track.clips.slice(0,1)}:track)};
+const verifiedDerivativeFindings=analyzeTimelineQuality(derivativeTimeline,[derivativeBase,derivativeSource]);
+assert.equal(verifiedDerivativeFindings.some(item=>item.code.startsWith("DERIVATIVE_")),false,"fully evidenced and independently approved derivative should not add provenance warnings");
+const pendingDerivative={...derivativeBase,metadata:{...derivativeBase.metadata,processing:{...derivativeBase.metadata.processing,qualityReview:"not_reviewed"}}};
+assert.ok(analyzeTimelineQuality(derivativeTimeline,[pendingDerivative,derivativeSource]).some(item=>item.code==="DERIVATIVE_QUALITY_REVIEW_PENDING"&&item.severity==="warning"));
+const rejectedDerivative={...derivativeBase,metadata:{...derivativeBase.metadata,processing:{...derivativeBase.metadata.processing,qualityReview:"reviewed_fail"}}};
+assert.ok(analyzeTimelineQuality(derivativeTimeline,[rejectedDerivative,derivativeSource]).some(item=>item.code==="DERIVATIVE_QUALITY_REJECTED"&&item.severity==="error"));
+const mismatchedDerivative={...derivativeBase,metadata:{...derivativeBase.metadata,processing:{...derivativeBase.metadata.processing,outputSha256:"c".repeat(64)}}};
+assert.ok(analyzeTimelineQuality(derivativeTimeline,[mismatchedDerivative,derivativeSource]).some(item=>item.code==="DERIVATIVE_OUTPUT_HASH_UNVERIFIED"));
+const unverifiedDerivative={...derivativeBase,metadata:{...derivativeBase.metadata,processing:{...derivativeBase.metadata.processing,dimensionsVerified:false,decoderVerified:false}}};
+const unverifiedFindings=analyzeTimelineQuality(derivativeTimeline,[unverifiedDerivative,derivativeSource]);
+assert.ok(unverifiedFindings.some(item=>item.code==="DERIVATIVE_DIMENSIONS_UNVERIFIED"));
+assert.ok(unverifiedFindings.some(item=>item.code==="DERIVATIVE_DECODER_UNVERIFIED"));
+const wrongParentDerivative={...derivativeBase,metadata:{...derivativeBase.metadata,processing:{...derivativeBase.metadata.processing,sourceAssetId:"different-source"}}};
+assert.ok(analyzeTimelineQuality(derivativeTimeline,[wrongParentDerivative,derivativeSource]).some(item=>item.code==="DERIVATIVE_PARENT_MISMATCH"&&item.severity==="error"));
+const missingPersistedHash={...derivativeBase,sha256:undefined};
+assert.ok(analyzeTimelineQuality(derivativeTimeline,[missingPersistedHash,derivativeSource]).some(item=>item.code==="DERIVATIVE_OUTPUT_HASH_UNVERIFIED"));
+const noEvidenceDerivative={id:"quality-asset",name:"Legacy derivative",mediaType:"image/png",sha256:"b".repeat(64),derivativeOf:"source-asset",metadata:{}};
+assert.ok(analyzeTimelineQuality(derivativeTimeline,[noEvidenceDerivative,derivativeSource]).some(item=>item.code==="DERIVATIVE_PROVENANCE_MISSING"));
+const mismatchedParentHashDerivative={...derivativeBase,metadata:{...derivativeBase.metadata,processing:{...derivativeBase.metadata.processing,inputSha256:"d".repeat(64)}}};
+assert.ok(analyzeTimelineQuality(derivativeTimeline,[mismatchedParentHashDerivative,derivativeSource]).some(item=>item.code==="DERIVATIVE_SOURCE_PARENT_HASH_MISMATCH"&&item.severity==="error"));
+const unavailableParentFindings=analyzeTimelineQuality(derivativeTimeline,[derivativeBase]);
+assert.ok(unavailableParentFindings.some(item=>item.code==="DERIVATIVE_PARENT_ASSET_UNAVAILABLE"&&item.severity==="warning"));
+const blockedRenderPreflight=assessTimelineRenderPreflight(derivativeTimeline,[mismatchedParentHashDerivative,derivativeSource]);
+assert.equal(blockedRenderPreflight.ready,false,"a derivative source/parent checksum mismatch must block rendering");
+assert.ok(blockedRenderPreflight.blockers.some(item=>item.code==="DERIVATIVE_SOURCE_PARENT_HASH_MISMATCH"));
+const warningOnlyRenderPreflight=assessTimelineRenderPreflight(derivativeTimeline,[derivativeBase]);
+assert.equal(warningOnlyRenderPreflight.ready,true,"warnings should remain reviewable without being silently promoted to hard blockers");
+assert.ok(warningOnlyRenderPreflight.warnings.some(item=>item.code==="DERIVATIVE_PARENT_ASSET_UNAVAILABLE"));
+
 assert.ok(analyzeTimelineQuality(null).some(item=>item.code==="NO_SEQUENCE"));
+const derivativeBlockedGate=buildProductionReadinessReport({checks:{derivative_integrity:{status:"blocked",summary:"Derivative source checksum mismatch.",findings:[{code:"DERIVATIVE_SOURCE_PARENT_HASH_MISMATCH",detail:"Input checksum does not match the parent."}]}}});
+assert.equal(derivativeBlockedGate.decision,"blocked","a derivative integrity error must block production readiness");
+assert.equal(derivativeBlockedGate.checks.find(item=>item.id==="derivative_integrity")?.status,"blocked");
+assert.equal(derivativeBlockedGate.policy.humanApprovalGranted,false,"technical readiness must never grant human approval");
+const derivativeReviewGate=buildProductionReadinessReport({checks:{derivative_integrity:{status:"review",summary:"Derivative parent checksum unavailable."}}});
+assert.equal(derivativeReviewGate.decision,"review_required","incomplete derivative evidence must require review");
+
+
+
+const evidenceReport=buildEnhancementEvidenceReport({
+ id:"derivative-1",name:"Enhanced still",mediaType:"image/png",size:4096,sha256:outputHash,derivativeOf:"asset-a",
+ metadata:{processing:{engine:"test-engine",method:"ai-super-resolution",model:"test-model",modelVersion:"build-1",scale:4,durationMs:1200,sourceWidth:640,sourceHeight:360,width:2560,height:1440,inputSha256:sourceHash,outputSha256:outputHash,dimensionsVerified:true,decoderVerified:true,qualityReview:"reviewed_pass",binarySha256:"c".repeat(64)}}
+},{ancestors:[{id:"asset-a",name:"Original",sha256:sourceHash}],descendants:[],truncated:false,nodeCount:2},"2026-11-02T12:00:00.000Z");
+assert.equal(evidenceReport.schema,"executive-visuals.enhancement-evidence.v1");
+assert.equal(evidenceReport.checks.find(item=>item.key==="output_checksum").status,"verified");
+assert.equal(evidenceReport.checks.find(item=>item.key==="independent_review").status,"reviewed_pass");
+assert.equal(evidenceReport.lineage.ancestors[0].id,"asset-a");
+assert.equal(evidenceReport.checks.find(item=>item.key==="parent_asset").status,"found");
+assert.equal(evidenceReport.checks.find(item=>item.key==="source_checksum_matches_parent").status,"verified");
+const mismatchedParent=buildEnhancementEvidenceReport({id:"derivative-2",sha256:outputHash,derivativeOf:"asset-a",metadata:{processing:{inputSha256:"d".repeat(64),outputSha256:outputHash}}},{ancestors:[{id:"asset-a",sha256:sourceHash}],descendants:[]},"2026-11-02T12:00:00.000Z");
+assert.equal(mismatchedParent.checks.find(item=>item.key==="source_checksum_matches_parent").status,"mismatch");
+const absentParent=buildEnhancementEvidenceReport({id:"derivative-3",sha256:outputHash,derivativeOf:"gone",metadata:{processing:{inputSha256:sourceHash,outputSha256:outputHash}}},{ancestors:[{id:"gone",missing:true}],descendants:[]},"2026-11-02T12:00:00.000Z");
+assert.equal(absentParent.checks.find(item=>item.key==="parent_asset").status,"missing");
+assert.equal(absentParent.checks.find(item=>item.key==="source_checksum_matches_parent").status,"parent_checksum_unavailable");
+
+assert.equal(evidenceReport.interpretation.perceptualQualityAssessed,false);
+assert.equal(evidenceReport.interpretation.privatePreviewUrlsIncluded,false);
+assert.equal(JSON.stringify(evidenceReport).includes("https://"),false,"evidence report must not include private signed URLs");
+const incompleteEvidence=buildEnhancementEvidenceReport({id:"legacy",sha256:outputHash,derivativeOf:"old-source",metadata:{}},null,"2026-11-02T12:00:00.000Z");
+assert.equal(incompleteEvidence.checks.find(item=>item.key==="processing_record").status,"missing");
+assert.equal(incompleteEvidence.checks.find(item=>item.key==="independent_review").status,"pending_or_missing");
+assert.throws(()=>buildEnhancementEvidenceReport({id:"bad"},null,"not-a-date"),/timestamp/);
 
 console.log("Timeline engine checks passed: rational timing, source trims, split, cross-track and same-track moves, overlap protection, markers and editorial interchange export.");

@@ -43,6 +43,16 @@ test("renew, recovery and finish map to the committed RPC contracts",async()=>{
   assert.deepEqual(requests[2].body,{p_job_id:"job-1",p_worker_id:"worker-1",p_status:"succeeded",p_output:{assetId:"asset-1"},p_error:null});
 });
 
+test("expired job recovery can be scoped to an explicit worker pool",async()=>{
+ const requests=[];
+ const queue=createCloudQueue({...base,fetchImpl:async(url,options)=>{requests.push({url,body:JSON.parse(options.body)});return response(2);}});
+ assert.equal(await queue.recover(20,["timeline.render"]),2);
+ assert.equal(requests[0].url,"https://example.supabase.co/rest/v1/rpc/recover_expired_jobs_by_type");
+ assert.deepEqual(requests[0].body,{p_limit:20,p_job_types:["timeline.render"]});
+ await assert.rejects(()=>queue.recover(20,[]),/Recovery job type filters/);
+ await assert.rejects(()=>queue.recover(20,["timeline.render","timeline.render"]),/Recovery job type filters/);
+});
+ 
 test("configuration, arguments and HTTP errors fail closed",async()=>{
   assert.throws(()=>createCloudQueue({url:"http://remote.example",serviceRoleKey:"secret"}),/HTTPS/);
   assert.throws(()=>createCloudQueue({url:base.url}),/SUPABASE_SERVICE_ROLE_KEY/);
@@ -55,4 +65,25 @@ test("configuration, arguments and HTTP errors fail closed",async()=>{
   await assert.rejects(()=>queue.recover(1001),/Recovery limit/);
   await assert.rejects(()=>queue.finish("job-1","worker-1","processing"),/terminal job status/);
   await assert.rejects(()=>queue.finish("job-1","worker-1","failed",[]),/must be an object/);
+});
+
+test("transient retry RPC is validated and uses the current worker identity",async()=>{
+ const requests=[];
+ const queue=createCloudQueue({...base,fetchImpl:async(url,options)=>{requests.push({url,body:JSON.parse(options.body)});return response({accepted:true,status:"queued",retryable:true,delaySeconds:2,attempt:2,maxAttempts:4});}});
+ const result=await queue.retry("job-1","worker-1",{code:"CLOUD_QUEUE_TIMEOUT",message:"temporary timeout",retryable:true});
+ assert.deepEqual(result,{accepted:true,status:"queued",retryable:true,delaySeconds:2,attempt:2,maxAttempts:4});
+ assert.equal(requests[0].url,"https://example.supabase.co/rest/v1/rpc/retry_job");
+ assert.deepEqual(requests[0].body,{p_job_id:"job-1",p_worker_id:"worker-1",p_error:{code:"CLOUD_QUEUE_TIMEOUT",message:"temporary timeout",retryable:true}});
+});
+test("retry RPC rejects malformed arguments and response contracts",async()=>{
+ const invalid=createCloudQueue({...base,fetchImpl:async()=>response({accepted:true,status:"queued",retryable:true,delaySeconds:-1,attempt:1,maxAttempts:2})});
+ await assert.rejects(()=>invalid.retry("job-1","worker-1",{retryable:true}),/invalid result/);
+ const contradictory=createCloudQueue({...base,fetchImpl:async()=>response({accepted:true,status:"queued",retryable:false,delaySeconds:0,attempt:1,maxAttempts:3})});
+ await assert.rejects(()=>contradictory.retry("job-1","worker-1",{retryable:true}),/invalid result/);
+ const exhaustedQueued=createCloudQueue({...base,fetchImpl:async()=>response({accepted:true,status:"queued",retryable:true,delaySeconds:1,attempt:3,maxAttempts:3})});
+ await assert.rejects(()=>exhaustedQueued.retry("job-1","worker-1",{retryable:true}),/invalid result/);
+ const lostLease=createCloudQueue({...base,fetchImpl:async()=>response({accepted:false,status:"lease_lost",retryable:false,delaySeconds:0,attempt:0,maxAttempts:1})});
+ assert.deepEqual(await lostLease.retry("job-1","worker-1",{retryable:true}),{accepted:false,status:"lease_lost",retryable:false,delaySeconds:0,attempt:0,maxAttempts:1});
+ await assert.rejects(()=>invalid.retry("","worker-1",{retryable:true}),/Job ID and worker ID/);
+ await assert.rejects(()=>invalid.retry("job-1","worker-1",[]),/must be an object/);
 });

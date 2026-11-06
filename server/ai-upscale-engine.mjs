@@ -1,10 +1,12 @@
 import { spawn } from "node:child_process";
-import { access, lstat, stat, open } from "node:fs/promises";
+import { access, link, lstat, open, rm as removeFile, stat } from "node:fs/promises";
 import { constants } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
-import { tmpdir } from "node:os";
-import { randomUUID } from "node:crypto";
+import { tmpdir, cpus, totalmem, platform, arch, release } from "node:os";
+import { createHash, randomUUID } from "node:crypto";
+import { createReadStream } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
+import { nativeProcessSpawnOptions, signalNativeProcessTree } from "./process-tree.mjs";
 
 const MODELS = new Set(["realesrgan-x4plus", "realesrgan-x4plus-anime", "realesr-animevideov3", "realesrgan-x2plus"]);
 const FORMATS = new Set(["png", "jpg", "webp"]);
@@ -28,35 +30,57 @@ async function regularFile(path, label) {
   } catch { return false; }
 }
 
+async function sha256File(path) {
+  const hash = createHash("sha256");
+  for await (const chunk of createReadStream(path)) hash.update(chunk);
+  return hash.digest("hex");
+}
+
 function run(binary, args, timeoutMs, signal) {
   return new Promise((resolvePromise, reject) => {
-    const child = spawn(binary, args, { shell: false, windowsHide: true, stdio: ["ignore", "ignore", "pipe"] });
-    let stderr = "", settled = false;
+    if (signal?.aborted) return reject(fail("AI upscaling job was cancelled.", "JOB_CANCELLED"));
+    const child = spawn(binary, args, nativeProcessSpawnOptions({ shell: false, windowsHide: true, stdio: ["ignore", "ignore", "pipe"] }));
+    let stderr = "", settled = false, childClosed = false, pendingFailure = null;
+    let timer = null, killTimer = null;
     const finish = (error) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      clearTimeout(killTimer);
       signal?.removeEventListener("abort", abort);
       if (error) reject(error); else resolvePromise({ stderr });
     };
-    const abort = () => {
-      child.kill("SIGTERM");
-      const killTimer = setTimeout(() => child.kill("SIGKILL"), 2000);
-      killTimer.unref?.();
-      finish(fail("AI upscaling job was cancelled.", "JOB_CANCELLED"));
+    const stopChild = (error, firstSignal) => {
+      if (settled || childClosed || pendingFailure) return;
+      pendingFailure = error;
+      try { signalNativeProcessTree(child, firstSignal); } catch {}
+      if (firstSignal === "SIGTERM") {
+        killTimer = setTimeout(() => {
+          // Keep the caller waiting until close: execute() removes its private
+          // temporary output in finally, so rejecting early would race the
+          // still-running native process.
+          if (!childClosed) { try { signalNativeProcessTree(child, "SIGKILL"); } catch {} }
+        }, 2000);
+        killTimer.unref?.();
+      }
     };
-    const timer = setTimeout(() => {
-      child.kill("SIGKILL");
-      finish(fail("AI upscaling process exceeded its time limit.", "AI_UPSCALE_TIMEOUT"));
-    }, timeoutMs);
+    const abort = () => stopChild(fail("AI upscaling job was cancelled.", "JOB_CANCELLED"), "SIGTERM");
+    timer = setTimeout(() => stopChild(
+      fail("AI upscaling process exceeded its time limit.", "AI_UPSCALE_TIMEOUT"),
+      "SIGKILL"
+    ), timeoutMs);
     timer.unref?.();
-    if (signal?.aborted) abort();
-    else signal?.addEventListener("abort", abort, { once: true });
+    signal?.addEventListener("abort", abort, { once: true });
     child.stderr.on("data", chunk => { stderr = (stderr + chunk.toString()).slice(-4000); });
     child.once("error", () => finish(fail("AI upscaling executable could not start.", "AI_UPSCALE_ENGINE_UNAVAILABLE")));
-    child.once("close", code => code === 0
-      ? finish()
-      : finish(fail("AI upscaling process failed: " + stderr.slice(-1200), "AI_UPSCALE_PROCESS_FAILED")));
+    child.once("close", code => {
+      childClosed = true;
+      if (pendingFailure) return finish(pendingFailure);
+      code === 0
+        ? finish()
+        : finish(fail("AI upscaling process failed: " + stderr.slice(-1200), "AI_UPSCALE_PROCESS_FAILED"));
+    });
+    if (signal?.aborted) abort();
   });
 }
 
@@ -75,12 +99,60 @@ async function validateImageOutput(path, format) {
   } finally { await handle.close(); }
 }
 
+async function readImageDimensions(path, format) {
+  const handle = await open(path, "r");
+  try {
+    const header = Buffer.alloc(1024 * 1024);
+    const { bytesRead } = await handle.read(header, 0, header.length, 0);
+    const data = header.subarray(0, bytesRead);
+    let width = 0, height = 0;
+    if (format === "png") {
+      if (data.length < 24 || !data.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10])) || data.toString("ascii", 12, 16) !== "IHDR") throw fail("PNG image header is invalid.", "AI_UPSCALE_IMAGE_INVALID");
+      width = data.readUInt32BE(16); height = data.readUInt32BE(20);
+    } else if (format === "jpg") {
+      if (data.length < 4 || data[0] !== 0xff || data[1] !== 0xd8) throw fail("JPEG image header is invalid.", "AI_UPSCALE_IMAGE_INVALID");
+      let offset = 2;
+      while (offset + 4 <= data.length) {
+        if (data[offset] !== 0xff) { offset++; continue; }
+        while (data[offset] === 0xff) offset++;
+        const marker = data[offset++];
+        if (marker === 0xd8 || marker === 0xd9 || marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) continue;
+        if (offset + 2 > data.length) break;
+        const length = data.readUInt16BE(offset);
+        if (length < 2 || offset + length > data.length) break;
+        if ([0xc0,0xc1,0xc2,0xc3,0xc5,0xc6,0xc7,0xc9,0xca,0xcb,0xcd,0xce,0xcf].includes(marker)) {
+          if (length < 7) break;
+          height = data.readUInt16BE(offset + 3); width = data.readUInt16BE(offset + 5); break;
+        }
+        offset += length;
+      }
+    } else {
+      if (data.length < 30 || data.toString("ascii", 0, 4) !== "RIFF" || data.toString("ascii", 8, 12) !== "WEBP") throw fail("WebP image header is invalid.", "AI_UPSCALE_IMAGE_INVALID");
+      const chunk = data.toString("ascii", 12, 16);
+      if (chunk === "VP8X") {
+        width = 1 + data.readUIntLE(24, 3); height = 1 + data.readUIntLE(27, 3);
+      } else if (chunk === "VP8 ") {
+        if (data.length < 30 || data[23] !== 0x9d || data[24] !== 0x01 || data[25] !== 0x2a) throw fail("WebP frame header is invalid.", "AI_UPSCALE_IMAGE_INVALID");
+        width = data.readUInt16LE(26) & 0x3fff; height = data.readUInt16LE(28) & 0x3fff;
+      } else if (chunk === "VP8L") {
+        if (data[20] !== 0x2f) throw fail("WebP lossless frame header is invalid.", "AI_UPSCALE_IMAGE_INVALID");
+        width = 1 + data[21] + ((data[22] & 0x3f) << 8);
+        height = 1 + (data[22] >> 6) + (data[23] << 2) + ((data[24] & 0x0f) << 10);
+      }
+    }
+    if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width < 1 || height < 1 || width * height > 100_000_000) throw fail("Image dimensions are missing, invalid or exceed the 100-megapixel safety limit.", "AI_UPSCALE_IMAGE_INVALID");
+    return { width, height };
+  } finally { await handle.close(); }
+}
+
 export function createRealEsrganAdapter({
   binaryPath = process.env.REALESRGAN_NCNN_PATH || "",
   modelDirectory = process.env.REALESRGAN_MODEL_DIR || "",
   timeoutMs = 30 * 60 * 1000,
   maxOutputBytes = 250 * 1024 * 1024,
-  enabled = process.env.AI_UPSCALE_ENABLED === "true"
+  enabled = process.env.AI_UPSCALE_ENABLED === "true",
+  requireProvenance = false,
+  manifestPath = process.env.UPSCALE_ENGINE_MANIFEST || ""
 } = {}) {
   if (!Number.isInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 2 * 60 * 60 * 1000) throw new Error("AI upscale timeout is invalid.");
   if (!Number.isInteger(maxOutputBytes) || maxOutputBytes < 1024 || maxOutputBytes > 2 * 1024 * 1024 * 1024) throw new Error("AI upscale output limit is invalid.");
@@ -90,9 +162,38 @@ export function createRealEsrganAdapter({
   async function fingerprint(model) {
     const files = [binaryPath, resolve(modelDirectory || ".", model + ".param"), resolve(modelDirectory || ".", model + ".bin")];
     try {
-      const metadata = await Promise.all(files.map(path => stat(path)));
-      return metadata.map(item => item.size + ":" + item.mtimeMs).join("|");
+      const digests = await Promise.all(files.map(async path => {
+        const info = await lstat(path);
+        if (!info.isFile() || info.isSymbolicLink()) throw new Error("Engine component is not a regular, non-symlink file.");
+        return sha256File(path);
+      }));
+      const binarySha256 = digests[0];
+      const modelFilesSha256 = createHash("sha256").update(digests.slice(1).join(":")).digest("hex");
+      const fingerprint = createHash("sha256").update(digests.join(":")).digest("hex");
+      return { fingerprint, binarySha256, modelFilesSha256 };
     } catch { return null; }
+  }
+
+  async function verifyProvenance(model, expectedFingerprint = null) {
+    if (!manifestPath) return { configured: false, verified: false, reason: "ENGINE_PROVENANCE_MANIFEST_REQUIRED" };
+    try {
+      const manifestInfo = await lstat(manifestPath);
+      if (!manifestInfo.isFile() || manifestInfo.isSymbolicLink() || manifestInfo.size > 16 * 1024) return { configured: true, verified: false, reason: "ENGINE_MANIFEST_INVALID" };
+      const manifestHandle = await open(manifestPath, constants.O_RDONLY | (constants.O_NOFOLLOW || 0));
+      let manifest;
+      try {
+        const openedInfo = await manifestHandle.stat();
+        if (!openedInfo.isFile() || openedInfo.size > 16 * 1024) return { verified: false, reason: "ENGINE_MANIFEST_INVALID" };
+        manifest = JSON.parse(await manifestHandle.readFile("utf8"));
+      } finally {
+        await manifestHandle.close();
+      }
+      const requiredText = ["source", "release", "license"];
+      const metadataValid = manifest && manifest.schemaVersion === 1 && manifest.engine === "realesrgan-ncnn-vulkan" && manifest.model === String(model) && requiredText.every(key => typeof manifest[key] === "string" && manifest[key].trim().length > 0) && /^[a-f0-9]{64}$/.test(String(manifest.binarySha256 || "")) && /^[a-f0-9]{64}$/.test(String(manifest.modelFilesSha256 || ""));
+      const current = await fingerprint(String(model));
+      const hashesMatch = metadataValid && current && current.binarySha256 === manifest.binarySha256 && current.modelFilesSha256 === manifest.modelFilesSha256 && (!expectedFingerprint || current.fingerprint === expectedFingerprint);
+      return { configured: true, verified: Boolean(hashesMatch), source: metadataValid ? manifest.source : undefined, release: metadataValid ? manifest.release : undefined, license: metadataValid ? manifest.license : undefined, reason: !metadataValid ? "ENGINE_MANIFEST_INVALID" : !hashesMatch ? "ENGINE_MANIFEST_HASH_MISMATCH" : null };
+    } catch (error) { return { configured: true, verified: false, reason: error?.code === "ENOENT" ? "ENGINE_MANIFEST_NOT_FOUND" : "ENGINE_MANIFEST_INVALID" }; }
   }
 
   async function probe(model) {
@@ -102,7 +203,7 @@ export function createRealEsrganAdapter({
       await regularFile(resolve(modelDirectory || ".", selected + ".bin"));
     const configured = binaryReady && modelReady;
     const currentFingerprint = configured ? await fingerprint(selected) : null;
-    const executionVerified = Boolean(currentFingerprint && executionFingerprints.get(selected) === currentFingerprint);
+    const executionVerified = Boolean(currentFingerprint && executionFingerprints.get(selected) === currentFingerprint.fingerprint);
     return {
       engine: "realesrgan-ncnn-vulkan",
       available: configured,
@@ -112,6 +213,9 @@ export function createRealEsrganAdapter({
       binaryReady,
       modelReady,
       model: selected,
+      binarySha256: currentFingerprint?.binarySha256 || null,
+      modelFilesSha256: currentFingerprint?.modelFilesSha256 || null,
+      engineFingerprint: currentFingerprint?.fingerprint || null,
       reason: !binaryReady ? "Configure a readable NCNN/Vulkan executable." : !modelReady ? "The selected allowlisted model files are not installed." : !enabled ? "Engine is installed, but AI_UPSCALE_ENABLED is not enabled on this worker." : executionVerified ? "Execution self-test passed; neural inference quality has not been independently verified." : "Configured, but an execution self-test has not passed on this worker."
     };
   }
@@ -128,9 +232,9 @@ export function createRealEsrganAdapter({
       const outputPath = join(directory, randomUUID() + "." + format);
       const result = await execute({ inputPath, outputPath, model: selected, scale, tile, format, signal });
       const after = await fingerprint(selected);
-      if (!after || before !== after) throw fail("Engine or model files changed during the self-test.", "AI_UPSCALE_SELF_TEST_FAILED");
-      executionFingerprints.set(selected, after);
-      return { passed: true, executionVerified: true, inferenceVerified: false, engine: result.engine, model: result.model, scale: result.scale, outputBytes: result.byteSize };
+      if (!after || before.fingerprint !== after.fingerprint) throw fail("Engine or model files changed during the self-test.", "AI_UPSCALE_SELF_TEST_FAILED");
+      executionFingerprints.set(selected, after.fingerprint);
+      return { passed: true, executionVerified: true, inferenceVerified: false, engine: result.engine, model: result.model, scale: result.scale, outputBytes: result.byteSize, binarySha256: after.binarySha256, modelFilesSha256: after.modelFilesSha256 };
     } catch (error) {
       executionFingerprints.delete(selected);
       throw error;
@@ -158,15 +262,53 @@ export function createRealEsrganAdapter({
     if (!readiness.available || !readiness.executionEnabled) throw fail(readiness.reason, "AI_UPSCALE_ENGINE_UNAVAILABLE");
     const input = resolve(options.inputPath), output = resolve(options.outputPath);
     if (!(await regularFile(input))) throw fail("AI upscale input must be an existing regular file.", "AI_UPSCALE_INVALID_INPUT");
+    const inputDimensions = await readImageDimensions(input, options.inputFormat || prepared.format);
     try { await lstat(output); throw fail("AI upscale output already exists; source files are never overwritten.", "AI_UPSCALE_OUTPUT_EXISTS"); }
     catch (error) { if (error.code !== "ENOENT") throw error; }
     if (dirname(output) === input || output.startsWith(input + sep)) throw fail("AI upscale output path is invalid.", "AI_UPSCALE_INVALID_PATH");
-    await run(prepared.binary, prepared.args, timeoutMs, options.signal);
-    const info = await stat(output).catch(() => null);
-    if (!info?.isFile() || info.size < 24 || info.size > maxOutputBytes) throw fail("AI upscale output is missing, empty or exceeds the configured size limit.", "AI_UPSCALE_OUTPUT_INVALID");
-    await validateImageOutput(output, prepared.format);
-    return { path: output, byteSize: info.size, model: prepared.model, scale: prepared.scale, tile: prepared.tile, format: prepared.format, engine: "realesrgan-ncnn-vulkan", method: "ai-super-resolution" };
+    const executionStartedAt = Date.now();
+    const engineBefore = await fingerprint(prepared.model);
+    if (!engineBefore || engineBefore.fingerprint !== readiness.engineFingerprint) throw fail("AI upscale engine changed after readiness verification.", "AI_UPSCALE_ENGINE_CHANGED");
+    if (requireProvenance) {
+      const provenance = await verifyProvenance(prepared.model, engineBefore.fingerprint);
+      if (!provenance.verified) throw fail("AI upscale engine provenance is not verified: " + provenance.reason, "AI_UPSCALE_PROVENANCE_UNVERIFIED");
+    }
+    // The native process writes only to a unique sibling path in the destination
+    // directory. After validation, link() publishes that complete inode atomically;
+    // an existing target (including a symlink) is never overwritten.
+    const temporaryOutput = join(dirname(output), ".ev-upscale-" + randomUUID() + "." + prepared.format);
+    const args = [...prepared.args];
+    const outputFlag = args.indexOf("-o");
+    if (outputFlag < 0 || !args[outputFlag + 1]) throw fail("AI upscale output argument is invalid.", "AI_UPSCALE_INVALID_PATH");
+    args[outputFlag + 1] = temporaryOutput;
+    try {
+      await run(prepared.binary, args, timeoutMs, options.signal);
+      const engineAfter = await fingerprint(prepared.model);
+      if (!engineAfter || engineAfter.fingerprint !== engineBefore.fingerprint) throw fail("AI upscale executable or model weights changed during inference; output cannot be published.", "AI_UPSCALE_ENGINE_CHANGED");
+      if (!(await regularFile(temporaryOutput))) throw fail("AI upscale output is missing or is not a regular file.", "AI_UPSCALE_OUTPUT_INVALID");
+      const info = await stat(temporaryOutput);
+      if (info.size < 24 || info.size > maxOutputBytes) throw fail("AI upscale output is missing, empty or exceeds the configured size limit.", "AI_UPSCALE_OUTPUT_INVALID");
+      await validateImageOutput(temporaryOutput, prepared.format);
+      const outputDimensions = await readImageDimensions(temporaryOutput, prepared.format);
+      const expectedWidth = inputDimensions.width * prepared.scale, expectedHeight = inputDimensions.height * prepared.scale;
+      if (outputDimensions.width !== expectedWidth || outputDimensions.height !== expectedHeight) throw fail("AI upscale output dimensions do not match the requested scale factor.", "AI_UPSCALE_OUTPUT_DIMENSIONS_MISMATCH");
+      try {
+        // A same-directory hard link publishes the fully validated inode in
+        // one atomic namespace operation. Unlike a streamed/copy publication,
+        // a failed transfer cannot leave a truncated destination behind.
+        // link() also fails atomically when any file or symlink already exists.
+        await link(temporaryOutput, output);
+      } catch (error) {
+        if (error.code === "EEXIST") throw fail("AI upscale output already exists; source files are never overwritten.", "AI_UPSCALE_OUTPUT_EXISTS");
+        throw error;
+      }
+      const cpuList=cpus();
+      const runtime={platform:platform(),architecture:arch(),osRelease:release(),cpuModel:String(cpuList[0]?.model||"unknown").slice(0,160),logicalCores:cpuList.length,totalMemoryBytes:totalmem(),nodeVersion:process.versions.node,vulkanIcdConfigured:Boolean(process.env.VK_ICD_FILENAMES||process.env.VK_DRIVER_FILES)};
+      return { path: output, byteSize: info.size, model: prepared.model, modelVersion: readiness.binarySha256 + ":" + readiness.modelFilesSha256, scale: prepared.scale, tile: prepared.tile, format: prepared.format, width: outputDimensions.width, height: outputDimensions.height, sourceWidth: inputDimensions.width, sourceHeight: inputDimensions.height, durationMs: Math.max(1, Date.now() - executionStartedAt), binarySha256: readiness.binarySha256, modelFilesSha256: readiness.modelFilesSha256, engine: "realesrgan-ncnn-vulkan", method: "ai-super-resolution", runtime };
+    } finally {
+      await removeFile(temporaryOutput, { force: true }).catch(() => {});
+    }
   }
 
-  return Object.freeze({ probe, plan, execute, selfTest });
+  return Object.freeze({ probe, plan, execute, selfTest, verifyProvenance });
 }

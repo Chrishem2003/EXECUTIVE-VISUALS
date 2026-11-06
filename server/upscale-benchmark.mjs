@@ -43,6 +43,16 @@ export function validateUpscaleBenchmarkRecord(record) {
       }
     }
   }
+  if(record.runtime!==undefined){
+    const runtime=record.runtime;
+    if(!runtime||typeof runtime!=="object"||Array.isArray(runtime))issues.push("runtime must be an object");
+    else{
+      for(const key of ["platform","architecture","cpuModel","nodeVersion"])if(typeof runtime[key]!=="string"||!runtime[key].trim()||runtime[key].length>160)issues.push("runtime."+key+" must be a bounded non-empty string");
+      for(const key of ["logicalCores","totalMemoryBytes"])if(!Number.isSafeInteger(runtime[key])||runtime[key]<=0)issues.push("runtime."+key+" must be a positive safe integer");
+      if(runtime.osRelease!==undefined&&(typeof runtime.osRelease!=="string"||runtime.osRelease.length>160))issues.push("runtime.osRelease must be a bounded string");
+      if(runtime.vulkanIcdConfigured!==undefined&&typeof runtime.vulkanIcdConfigured!=="boolean")issues.push("runtime.vulkanIcdConfigured must be boolean");
+    }
+  }
   if (record.executionStatus === "passed" && record.outputWidth < record.inputWidth) issues.push("passed output width is smaller than input width");
   if (record.executionStatus === "passed" && record.outputHeight < record.inputHeight) issues.push("passed output height is smaller than input height");
   if (record.executionStatus === "passed" && Number.isFinite(record.inputWidth) && Number.isFinite(record.inputHeight) &&
@@ -87,6 +97,114 @@ export function summarizeUpscaleBenchmarks(records) {
   };
 }
 
+/**
+ * Convert a completed AI-upscale derivative into benchmark evidence. Fixture
+ * identity/category are supplied by the controlled fixture registry; hashes,
+ * model build and measurements are taken from the persisted asset provenance.
+ */
+export function buildUpscaleBenchmarkRecordFromAsset({outputAsset,fixtureId,fixtureCategory,timestamp,metrics}={}) {
+  const processing=outputAsset?.metadata?.processing;
+  const record={
+    fixtureId,
+    fixtureCategory,
+    model:processing?.model,
+    modelVersion:processing?.modelVersion,
+    binarySha256:processing?.binarySha256,
+    modelFilesSha256:processing?.modelFilesSha256,
+    inputSha256:processing?.inputSha256,
+    outputSha256:outputAsset?.sha256,
+    inputWidth:processing?.sourceWidth,
+    inputHeight:processing?.sourceHeight,
+    outputWidth:processing?.width,
+    outputHeight:processing?.height,
+    scale:processing?.scale,
+    durationMs:processing?.durationMs,
+    ...(processing?.runtime?{runtime:processing.runtime}:{}),
+    executionStatus:processing?.dimensionsVerified===true&&processing?.decoderVerified===true?"passed":"failed",
+    qualityReview:processing?.qualityReview||"not_reviewed",
+    timestamp:timestamp||outputAsset?.createdAt||new Date().toISOString(),
+    ...(metrics?{metrics}:{})
+  };
+  const validation=validateUpscaleBenchmarkRecord(record);
+  if(!String(outputAsset?.mediaType||"").startsWith("image/")) validation.issues.push("output asset must be an image");
+  if(!processing||processing.schemaVersion!==1||typeof processing.sourceAssetId!=="string"||!processing.sourceAssetId) validation.issues.push("versioned source asset provenance is required");
+  if(outputAsset?.derivativeOf!==processing?.sourceAssetId) validation.issues.push("processing source asset does not match derivative parent");
+  if(outputAsset?.sha256!==processing?.outputSha256) validation.issues.push("processing output hash does not match persisted asset hash");
+  if(processing?.modelVersion!==processing?.binarySha256+":"+processing?.modelFilesSha256) validation.issues.push("model build identity does not match executable and weights fingerprints");
+  if(validation.issues.length) throw Object.assign(new Error("Upscale asset cannot be registered as benchmark evidence: "+validation.issues.join("; ")),{code:"UPSCALE_BENCHMARK_EVIDENCE_INVALID",issues:validation.issues});
+  return record;
+}
+
 export function sha256Hex(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
+}
+
+/**
+ * Compare model builds only on validated benchmark records. Quality approval is
+ * a hard eligibility gate; latency and metric summaries never promote an
+ * unreviewed model to a production recommendation.
+ */
+export function compareUpscaleBenchmarkCandidates(records) {
+  const valid = [];
+  const invalid = [];
+  for (const [index, record] of (Array.isArray(records) ? records : []).entries()) {
+    const result = validateUpscaleBenchmarkRecord(record);
+    if (result.valid) valid.push(record);
+    else invalid.push({ index, fixtureId: record?.fixtureId || null, issues: result.issues });
+  }
+  const groups = new Map();
+  const seenFixtures = new Map();
+  for (const record of valid) {
+    const key = JSON.stringify([record.model, record.modelVersion, record.binarySha256, record.modelFilesSha256, record.runtime||null]);
+    const fixtureKey = key + ":" + record.fixtureId;
+    if (seenFixtures.has(fixtureKey)) {
+      invalid.push({ fixtureId: record.fixtureId, issues: ["fixtureId must be unique within a pinned model build"] });
+      continue;
+    }
+    seenFixtures.set(fixtureKey, true);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(record);
+  }
+  const percentile = (values, fraction) => {
+    if (!values.length) return null;
+    const sorted = [...values].sort((a, b) => a - b);
+    return sorted[Math.min(sorted.length - 1, Math.ceil(sorted.length * fraction) - 1)];
+  };
+  const candidates = [...groups.values()].map(items => {
+    const successful = items.filter(item => item.executionStatus === "passed");
+    const reviewedPass = successful.filter(item => item.qualityReview === "reviewed_pass");
+    const reviewedFail = items.filter(item => item.qualityReview === "reviewed_fail");
+    const categories = [...new Set(reviewedPass.map(item => item.fixtureCategory))].sort();
+    const missingCategories = REQUIRED_UPSCALE_FIXTURE_CATEGORIES.filter(category => !categories.includes(category));
+    const qualityVerified = items.length > 0 && successful.length === items.length &&
+      reviewedPass.length === items.length && reviewedFail.length === 0 && missingCategories.length === 0;
+    const durations = successful.map(item => item.durationMs);
+    const metricMedian = key => {
+      const values = successful.map(item => item.metrics?.[key]).filter(Number.isFinite);
+      return values.length ? percentile(values, 0.5) : null;
+    };
+    const first = items[0];
+    return {
+      model: first.model, modelVersion: first.modelVersion,
+      binarySha256: first.binarySha256, modelFilesSha256: first.modelFilesSha256,
+      runtime:first.runtime||null,
+      records: items.length, executionPassed: successful.length,
+      executionFailed: items.length - successful.length,
+      reviewedPass: reviewedPass.length, reviewedFail: reviewedFail.length,
+      missingCategories, qualityVerified,
+      latencyMs: { median: percentile(durations, 0.5), p95: percentile(durations, 0.95) },
+      metrics: { psnrMedian: metricMedian("psnr"), ssimMedian: metricMedian("ssim"), lpipsMedian: metricMedian("lpips") }
+    };
+  });
+  candidates.sort((a, b) => Number(b.qualityVerified) - Number(a.qualityVerified) ||
+    (a.latencyMs.median ?? Number.POSITIVE_INFINITY) - (b.latencyMs.median ?? Number.POSITIVE_INFINITY) ||
+    a.model.localeCompare(b.model));
+  return {
+    schemaVersion: 1,
+    generatedAt: new Date().toISOString(),
+    candidateCount: candidates.length,
+    invalidRecords: invalid,
+    recommended: candidates.find(candidate => candidate.qualityVerified) || null,
+    candidates
+  };
 }

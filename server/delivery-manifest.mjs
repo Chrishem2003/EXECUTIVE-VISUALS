@@ -1,27 +1,132 @@
-import {createHash} from "node:crypto";
+import { createHash } from "node:crypto";
+import { verifyRenderManifest } from "./render-manifest.mjs";
 
-function canonical(value){
- if(Array.isArray(value))return value.map(canonical);
- if(value&&typeof value==="object")return Object.fromEntries(Object.keys(value).sort().map(key=>[key,canonical(value[key])]));
- return value;
-}
-function stable(value){return JSON.stringify(canonical(value));}
-function fail(message,code){throw Object.assign(new Error(message),{code});}
+const SHA256 = /^[a-f0-9]{64}$/i;
+const plain = value => value !== null && typeof value === "object" && !Array.isArray(value) && (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null);
+const fail = message => { throw Object.assign(new Error(message), { code: "DELIVERY_MANIFEST_INVALID" }); };
 
-export function createDeliveryManifest({timelineId,timelineRevision,outputAsset,sha256,byteSize,mediaType,profileId=null,deliveryReport=null,renderManifest=null,createdAt=new Date().toISOString()}){
- if(typeof timelineId!=="string"||!timelineId)fail("A timeline ID is required.","DELIVERY_MANIFEST_TIMELINE_REQUIRED");
- if(!(typeof timelineRevision==="string"||Number.isSafeInteger(timelineRevision)))fail("A valid timeline revision is required.","DELIVERY_MANIFEST_REVISION_INVALID");
- if(typeof outputAsset!=="string"||!outputAsset)fail("A published output asset ID is required.","DELIVERY_MANIFEST_ASSET_REQUIRED");
- if(!/^[a-f0-9]{64}$/i.test(String(sha256||"")))fail("A SHA-256 output checksum is required.","DELIVERY_MANIFEST_CHECKSUM_INVALID");
- if(!Number.isSafeInteger(byteSize)||byteSize<1)fail("A positive output byte size is required.","DELIVERY_MANIFEST_SIZE_INVALID");
- if(typeof mediaType!=="string"||!mediaType.includes("/"))fail("A valid media type is required.","DELIVERY_MANIFEST_MEDIA_TYPE_INVALID");
- if(typeof createdAt!=="string"||!Number.isFinite(Date.parse(createdAt)))fail("A valid creation timestamp is required.","DELIVERY_MANIFEST_TIMESTAMP_INVALID");
- const evidence={schemaVersion:1,timelineId,timelineRevision,output:{assetId:outputAsset,sha256:sha256.toLowerCase(),byteSize,mediaType},profileId,deliveryReport:deliveryReport?canonical(deliveryReport):null,renderManifest:renderManifest?canonical(renderManifest):null,createdAt};
- const fingerprint=createHash("sha256").update(stable(evidence)).digest("hex");
- return Object.freeze({...evidence,fingerprint});
+function canonical(value, seen = new Set()) {
+  if (value === null || typeof value === "string" || typeof value === "boolean") return JSON.stringify(value);
+  if (typeof value === "number" && Number.isFinite(value)) return JSON.stringify(value);
+  if (typeof value !== "object" || seen.has(value)) fail("Delivery evidence must be finite, acyclic JSON data.");
+  seen.add(value);
+  let result;
+  if (Array.isArray(value)) result = "[" + value.map(item => canonical(item, seen)).join(",") + "]";
+  else {
+    if (!plain(value)) fail("Delivery evidence must contain plain JSON objects.");
+    result = "{" + Object.keys(value).sort().map(key => JSON.stringify(key) + ":" + canonical(value[key], seen)).join(",") + "}";
+  }
+  seen.delete(value);
+  return result;
 }
-export function verifyDeliveryManifest(manifest){
- if(!manifest||typeof manifest!=="object"||typeof manifest.fingerprint!=="string")return false;
- const {fingerprint,...evidence}=manifest;
- return /^[a-f0-9]{64}$/i.test(fingerprint)&&createHash("sha256").update(stable(evidence)).digest("hex")===fingerprint;
+const fingerprint = value => createHash("sha256").update(canonical(value)).digest("hex");
+
+export function verifyMediaQualityReport(report) {
+  if (!plain(report) || !["passed","review","needs-attention"].includes(report.status) ||
+      !plain(report.counts) || !Number.isSafeInteger(report.counts.errors) || report.counts.errors < 0 ||
+      !Number.isSafeInteger(report.counts.warnings) || report.counts.warnings < 0 ||
+      !Array.isArray(report.findings) || report.findings.length > 1000 ||
+      report.findings.some(item => !plain(item) || typeof item.code !== "string" || item.code.length > 100 ||
+        !["error","warning"].includes(item.severity) || typeof item.message !== "string" || item.message.length > 2000) ||
+      !Array.isArray(report.limitations) || report.limitations.length > 100 ||
+      report.limitations.some(item => typeof item !== "string" || item.length > 1000)) return false;
+  const errors = report.findings.filter(item => item.severity === "error").length;
+  const warnings = report.findings.filter(item => item.severity === "warning").length;
+  const expectedStatus = errors ? "needs-attention" : warnings ? "review" : "passed";
+  return report.counts.errors === errors && report.counts.warnings === warnings && report.status === expectedStatus;
+}
+
+export function createDeliveryManifest({
+  timelineId, timelineRevision, outputAsset, sha256, byteSize, mediaType,
+  profileId = null, deliveryReport = null, renderManifest, createdAt = new Date().toISOString()
+} = {}) {
+  if (typeof timelineId !== "string" || !timelineId.trim() || timelineId.length > 256) fail("A valid timeline ID is required.");
+  if (!Number.isSafeInteger(Number(timelineRevision)) || Number(timelineRevision) < 1) fail("A positive timeline revision is required.");
+  if (typeof outputAsset !== "string" || !outputAsset.trim() || outputAsset.length > 256) fail("A published output asset ID is required.");
+  if (typeof sha256 !== "string" || !SHA256.test(sha256)) fail("A valid output SHA-256 checksum is required.");
+  if (!Number.isSafeInteger(byteSize) || byteSize < 1) fail("A positive output byte size is required.");
+  if (typeof mediaType !== "string" || !/^[\w.+-]+\/[\w.+-]+(?:;[\w=.+-]+)*$/.test(mediaType)) fail("A valid output media type is required.");
+  if (profileId !== null && (typeof profileId !== "string" || !profileId.trim() || profileId.length > 128)) fail("The delivery profile ID is invalid.");
+  if (deliveryReport !== null && !plain(deliveryReport)) fail("The delivery report must be a JSON object or null.");
+  if (!renderManifest || !verifyRenderManifest(renderManifest)) fail("A verified render manifest is required.");
+  if (typeof createdAt !== "string" || !Number.isFinite(Date.parse(createdAt)) || new Date(createdAt).toISOString() !== createdAt) fail("A valid ISO timestamp is required.");
+
+  const evidence = {
+    schemaVersion: 1,
+    timelineId: timelineId.trim(),
+    timelineRevision: Number(timelineRevision),
+    outputAsset,
+    sha256: sha256.toLowerCase(),
+    byteSize,
+    mediaType,
+    profileId,
+    deliveryReport,
+    renderManifest,
+    createdAt
+  };
+  return Object.freeze({ ...evidence, fingerprint: fingerprint(evidence) });
+}
+
+export function verifyDeliveryManifest(manifest) {
+  if (!plain(manifest) || manifest.schemaVersion !== 1 || typeof manifest.fingerprint !== "string" || !SHA256.test(manifest.fingerprint)) return false;
+  const { fingerprint: supplied, ...evidence } = manifest;
+  try {
+    // A matching hash proves byte-level consistency, not that the evidence is valid.
+    // Re-run the full receipt contract so a caller cannot re-hash a forged render manifest.
+    return createDeliveryManifest(evidence).fingerprint === supplied;
+  } catch { return false; }
+}
+
+
+export function createDeliveryPackage({
+  jobId, projectId, timelineId, timelineRevision, master,
+  deliveryReceipt, renderManifest, deliveryReport = null, qualityReport = null, reviewHistory = [],
+  generatedAt = new Date().toISOString()
+} = {}) {
+  if (typeof jobId !== "string" || !jobId.trim() || jobId.length > 256) fail("A delivery job ID is required.");
+  if (typeof projectId !== "string" || !projectId.trim() || projectId.length > 256) fail("A project ID is required.");
+  if (!verifyDeliveryManifest(deliveryReceipt)) fail("A verified delivery receipt is required.");
+  if (deliveryReceipt.timelineId !== timelineId || deliveryReceipt.timelineRevision !== Number(timelineRevision)) fail("Delivery package timeline evidence does not match its receipt.");
+  if (!plain(master) || master.assetId !== deliveryReceipt.outputAsset || master.sha256 !== deliveryReceipt.sha256 || master.byteSize !== deliveryReceipt.byteSize || master.mediaType !== deliveryReceipt.mediaType) fail("Delivery package master metadata does not match its receipt.");
+  if (typeof master.filename !== "string" || !master.filename.trim() || master.filename.length > 256) fail("A valid master filename is required.");
+  if (typeof master.downloadUrl !== "string") fail("A private master download URL is required.");
+  let downloadUrl;
+  try { downloadUrl = new URL(master.downloadUrl); if (downloadUrl.protocol !== "https:" || downloadUrl.username || downloadUrl.password || downloadUrl.hash) fail("The master download URL is unsafe."); }
+  catch { fail("The master download URL is invalid."); }
+  if (master.downloadUrlExpiresInSeconds !== 300) fail("The master download URL must have the five-minute expiry contract.");
+  if (canonical(renderManifest) !== canonical(deliveryReceipt.renderManifest) || !verifyRenderManifest(renderManifest)) fail("The render manifest must be the verified manifest bound into the receipt.");
+  if (canonical(deliveryReport) !== canonical(deliveryReceipt.deliveryReport)) fail("The delivery report must match the receipt.");
+  if (!Array.isArray(reviewHistory) || reviewHistory.length > 1000) fail("Review history must be a bounded array.");
+  const reviewers = new Set();
+  for (const item of reviewHistory) {
+    if (!plain(item) || !(typeof item.id === "string" && item.id.trim() || Number.isSafeInteger(item.id) && item.id > 0) ||
+        item.schemaVersion !== 1 || !["approved", "rejected", "changes_requested"].includes(item.decision) ||
+        item.fingerprint !== deliveryReceipt.fingerprint || item.timelineId !== deliveryReceipt.timelineId ||
+        item.timelineRevision !== deliveryReceipt.timelineRevision || item.outputAsset !== deliveryReceipt.outputAsset ||
+        typeof item.reviewerId !== "string" || !item.reviewerId.trim() || item.reviewerId.length > 256 ||
+        typeof item.note !== "string" || item.note.length > 2000 ||
+        typeof item.reviewedAt !== "string" || !Number.isFinite(Date.parse(item.reviewedAt)) || new Date(item.reviewedAt).toISOString() !== item.reviewedAt ||
+        typeof item.createdAt !== "string" || !Number.isFinite(Date.parse(item.createdAt)) || new Date(item.createdAt).toISOString() !== item.createdAt) {
+      fail("Review history contains an incomplete or mismatched decision.");
+    }
+    if (reviewers.has(item.reviewerId)) fail("Review history cannot contain duplicate decisions from one reviewer.");
+    reviewers.add(item.reviewerId);
+  }
+  if (qualityReport !== null && !verifyMediaQualityReport(qualityReport)) fail("The media quality report is invalid: status and counts must agree with findings, and evidence must remain within package limits.");
+  if (typeof generatedAt !== "string" || !Number.isFinite(Date.parse(generatedAt)) || new Date(generatedAt).toISOString() !== generatedAt) fail("A valid package timestamp is required.");
+  const evidence = {
+    schemaVersion: 1, packageType: "executive-visuals-delivery", generatedAt,
+    jobId, projectId, timelineId, timelineRevision: Number(timelineRevision),
+    master, deliveryReceipt, renderManifest, deliveryReport, qualityReport, reviewHistory
+  };
+  return Object.freeze({ ...evidence, packageFingerprint: fingerprint(evidence) });
+}
+
+export function verifyDeliveryPackage(value) {
+  if (!plain(value) || value.schemaVersion !== 1 || value.packageType !== "executive-visuals-delivery" || typeof value.packageFingerprint !== "string" || !SHA256.test(value.packageFingerprint)) return false;
+  const { packageFingerprint: supplied, ...evidence } = value;
+  try {
+    const recreated = createDeliveryPackage(evidence);
+    return recreated.packageFingerprint === supplied;
+  } catch { return false; }
 }

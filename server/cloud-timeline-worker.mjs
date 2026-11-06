@@ -13,7 +13,7 @@ const TIMELINE_JOB_TYPES=Object.freeze(["timeline.render"]);
  */
 export function createCloudTimelineWorker({
   workerId,queue,timelineService,timelines,assets,mediaIO,renderTimeline=renderCloudTimeline,
-  url,serviceRoleKey,fetchImpl,tempRoot,maxBytes,maxOutputBytes,timeoutMs
+  url,serviceRoleKey,fetchImpl,tempRoot,maxBytes,maxOutputBytes,maxInputBytes,maxDurationSeconds,timeoutMs
 }={}){
   if(typeof workerId!=="string"||!workerId.trim()||workerId.length>128)throw new Error("Cloud timeline worker ID must contain between 1 and 128 characters.");
   const cloudQueue=queue||createCloudQueue({url,serviceRoleKey,fetchImpl});
@@ -21,7 +21,7 @@ export function createCloudTimelineWorker({
   const timelineRepository=timelines||service.timelines;
   const assetRepository=assets||service.assets;
   const io=mediaIO||createCloudMediaAssetIO({assets:assetRepository,fetchImpl,tempRoot,maxBytes,timeoutMs});
-  const execute=createCloudTimelineExecutor({timelines:timelineRepository,mediaIO:io,renderTimeline,tempRoot,maxOutputBytes:maxOutputBytes??maxBytes??250*1024*1024});
+  const execute=createCloudTimelineExecutor({timelines:timelineRepository,mediaIO:io,renderTimeline,tempRoot,maxOutputBytes:maxOutputBytes??maxBytes??250*1024*1024,maxInputBytes,maxDurationSeconds});
   const timelineQueue=Object.freeze({
     claim:(id,leaseSeconds)=>cloudQueue.claim(id,leaseSeconds,TIMELINE_JOB_TYPES),
     renew:(...args)=>cloudQueue.renew(...args),
@@ -34,9 +34,10 @@ export function createCloudTimelineWorker({
       queue:timelineQueue,workerId,execute,
       leaseSeconds:options.leaseSeconds??90,
       heartbeatIntervalMs:options.heartbeatIntervalMs??15000,
+      signal:options.signal,
       onProgress:options.onProgress??(()=>{}),
       onEvent:options.onEvent??(()=>{})
     });},
-    recoverExpired(limit=100){return cloudQueue.recover(limit);}
+    recoverExpired(limit=100){return cloudQueue.recover(limit,TIMELINE_JOB_TYPES);}
   });
 }

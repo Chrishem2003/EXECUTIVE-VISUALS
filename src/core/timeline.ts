@@ -8,6 +8,8 @@ export interface TimelineClip {
 }
 export interface TimelineTrack {
   id:string; name:string; kind:TrackKind; enabled:boolean; locked:boolean;
+  /** Audio mix controls; omitted means unmuted and not soloed. */
+  muted?:boolean; solo?:boolean;
   clips:TimelineClip[];
 }
 export interface TimelineMarker {
@@ -17,7 +19,7 @@ export interface TimelineMarker {
 export interface EditorialTimeline {
   id:string; projectId:string; name:string; revision:number;
   frameRate:{numerator:number;denominator:number};
-  width:number;height:number;pixelAspectRatio:number;
+  width:number;height:number;pixelAspectRatio:number;deliveryProfileId?:string;
   tracks:TimelineTrack[];markers:TimelineMarker[];
   createdAt:string;updatedAt:string;metadata?:Record<string,unknown>;
 }
@@ -67,6 +69,25 @@ export function trimClip(timeline:EditorialTimeline,trackId:string,clipId:string
   const changed={...clip,sourceRange:{start:rational(clip.sourceRange.start.value+sourceLeft,clip.sourceRange.start.rate),duration:rational(sourceRemaining,clip.sourceRange.duration.rate)},timelineStart:rational(clip.timelineStart.value+removeLeft,clip.timelineStart.rate),duration:rational(remaining,fps)};
   return {...timeline,revision:timeline.revision+1,updatedAt:new Date().toISOString(),tracks:timeline.tracks.map(item=>item.id===trackId?{...item,clips:item.clips.map(c=>c.id===clipId?changed:c)}:item)};
 }
+/** Remove a clip; ripple mode closes the gap on this track only. */
+export function removeClip(timeline:EditorialTimeline,trackId:string,clipId:string,ripple=false):EditorialTimeline{
+  const track=timeline.tracks.find(item=>item.id===trackId);
+  if(!track)throw new Error("Track not found.");
+  if(track.locked)throw new Error("Track is locked.");
+  const clip=track.clips.find(item=>item.id===clipId);
+  if(!clip)throw new Error("Clip not found.");
+  const removedStart=seconds(clip.timelineStart),removedDuration=seconds(clip.duration),removedEnd=removedStart+removedDuration;
+  const fps=timeline.frameRate.numerator/timeline.frameRate.denominator;
+  const clips=track.clips.filter(item=>item.id!==clipId).map(item=>{
+    if(!ripple||seconds(item.timelineStart)<removedEnd-0.000001)return item;
+    const shifted=Math.max(0,Math.round((seconds(item.timelineStart)-removedDuration)*fps));
+    return {...item,timelineStart:rational(shifted,fps)};
+  }).sort((a,b)=>seconds(a.timelineStart)-seconds(b.timelineStart));
+  const updated={...timeline,revision:timeline.revision+1,updatedAt:new Date().toISOString(),tracks:timeline.tracks.map(item=>item.id===trackId?{...item,clips}:item)};
+  const validation=validateTimeline(updated);
+  if(!validation.valid)throw new Error(validation.issues[0].message);
+  return updated;
+}
 export function splitClip(timeline:EditorialTimeline,trackId:string,clipId:string,atFrame:number,newClipId:string):EditorialTimeline{
   const track=timeline.tracks.find(item=>item.id===trackId);if(!track)throw new Error("Track not found.");
   if(track.locked)throw new Error("Track is locked.");
@@ -102,6 +123,17 @@ export function moveClip(timeline:EditorialTimeline,fromTrackId:string,clipId:st
   const updated={...timeline,revision:timeline.revision+1,updatedAt:new Date().toISOString(),tracks};
   const validation=validateTimeline(updated);if(!validation.valid)throw new Error(validation.issues[0].message);
   return updated;
+}
+/** Set audio mute/solo state as an immutable timeline revision. */
+export function setAudioTrackState(timeline:EditorialTimeline,trackId:string,state:{muted?:boolean;solo?:boolean}):EditorialTimeline{
+  const track=timeline.tracks.find(item=>item.id===trackId);
+  if(!track)throw new Error("Track not found.");
+  if(track.kind!=="audio")throw new Error("Mute and solo controls are only available on audio tracks.");
+  if(!state||typeof state!=="object"||Array.isArray(state)||Object.keys(state).length===0)throw new Error("Provide at least one audio track state change.");
+  for(const key of Object.keys(state))if(key!=="muted"&&key!=="solo")throw new Error("Unsupported audio track state field.");
+  if(state.muted!==undefined&&typeof state.muted!=="boolean")throw new Error("Muted state must be boolean.");
+  if(state.solo!==undefined&&typeof state.solo!=="boolean")throw new Error("Solo state must be boolean.");
+  return {...timeline,revision:timeline.revision+1,updatedAt:new Date().toISOString(),tracks:timeline.tracks.map(item=>item.id===trackId?{...item,...state}:item)};
 }
 export function addMarker(timeline:EditorialTimeline,marker:TimelineMarker):EditorialTimeline{
   if(timeline.markers.some(item=>item.id===marker.id))throw new Error("Marker ID already exists.");
@@ -151,4 +183,24 @@ export function toOpenTimelineIo(timeline:EditorialTimeline):OtioObject{
     return {OTIO_SCHEMA:"Track.1",name:track.name,kind:track.kind==="audio"?"Audio":"Video",children,metadata:{executiveVisuals:{trackId:track.id,role:track.kind,enabled:track.enabled,locked:track.locked}}};
   });
   return {OTIO_SCHEMA:"Timeline.1",name:timeline.name,global_start_time:otioTime(rational(0,timeline.frameRate.numerator/timeline.frameRate.denominator)),tracks:{OTIO_SCHEMA:"Stack.1",name:"Tracks",children:tracks},markers:timeline.markers.map(marker=>({OTIO_SCHEMA:"Marker.2",name:marker.name,marked_range:otioRange({start:marker.start,duration:marker.duration||rational(0,marker.start.rate)}),color:marker.color||"GREEN",metadata:{executiveVisuals:{id:marker.id,note:marker.note||""}}})),metadata:{executiveVisuals:{id:timeline.id,projectId:timeline.projectId,revision:timeline.revision,frameRate:timeline.frameRate,width:timeline.width,height:timeline.height,pixelAspectRatio:timeline.pixelAspectRatio,timelineMetadata:timeline.metadata||{}}}};
+}
+
+/** Snap a requested frame to the nearest useful edit boundary within tolerance. */
+export function snapTimelineFrame(frame:number,timeline:EditorialTimeline,trackId:string,thresholdFrames=6,excludeClipId=""):{frame:number;snappedTo:number|null}{
+ if(!Number.isFinite(frame)||frame<0||!Number.isFinite(thresholdFrames)||thresholdFrames<0)throw new Error("Snap frame and threshold must be non-negative finite numbers.");
+ const rate=timeline.frameRate.numerator/timeline.frameRate.denominator,candidates:number[]=[];
+ for(const track of timeline.tracks){
+  for(const clip of track.clips){
+   if(clip.id===excludeClipId)continue;
+   const start=frames(clip.timelineStart,rate),end=start+frames(clip.duration,rate);
+   if(track.id!==trackId)candidates.push(start,end);
+   else candidates.push(end);
+  }
+ }
+ for(const marker of timeline.markers)candidates.push(frames(marker.start,rate));
+ const nearest=candidates.reduce<number|null>((best,candidate)=>{
+  if(Math.abs(candidate-frame)>thresholdFrames)return best;
+  return best===null||Math.abs(candidate-frame)<Math.abs(best-frame)?candidate:best;
+ },null);
+ return nearest===null?{frame:Math.round(frame),snappedTo:null}:{frame:nearest,snappedTo:nearest};
 }

@@ -31,12 +31,14 @@ export function createCloudWorkerSupervisor({workers,leaseSeconds=90,heartbeatIn
  if(!Array.isArray(workers)||workers.length<1||workers.some(worker=>typeof worker?.runCycle!=="function"||typeof worker?.recoverExpired!=="function"))throw new Error("Cloud worker supervisor requires one or more compatible worker families.");
  if(!Number.isInteger(pollMs)||pollMs<500||pollMs>10000)throw new Error("Cloud worker poll interval is invalid.");
  if(!Number.isInteger(recoveryIntervalMs)||recoveryIntervalMs<10000||recoveryIntervalMs>300000)throw new Error("Cloud worker recovery interval is invalid.");
- let stopped=true,timer=null,recoveryTimer=null,active=null,busy=false;
+ let stopped=true,timer=null,recoveryTimer=null,active=null,busy=false,recoveryActive=null,recoveryBusy=false,cycleController=null;
  async function cycle(){
   if(stopped||busy)return{skipped:true};
   busy=true;
+  cycleController=new AbortController();
+  const shutdownSignal=cycleController.signal;
   active=(async()=>{
-   const settled=await Promise.allSettled(workers.map(worker=>worker.runCycle({leaseSeconds,heartbeatIntervalMs,onEvent:event=>onLog({kind:"event",...event})})));
+   const settled=await Promise.allSettled(workers.map(worker=>worker.runCycle({leaseSeconds,heartbeatIntervalMs,signal:shutdownSignal,onEvent:event=>onLog({kind:"event",...event})})));
    const results=settled.map((item,index)=>{
     if(item.status==="rejected"){onError(item.reason);return null;}
     if(item.value?.claimed)onLog({kind:"cycle",result:item.value,workerIndex:index});
@@ -44,19 +46,28 @@ export function createCloudWorkerSupervisor({workers,leaseSeconds=90,heartbeatIn
    });
    return results;
   })();
-  try{return await active;}finally{active=null;busy=false;}
+  try{return await active;}finally{active=null;busy=false;cycleController=null;}
  }
  async function recover(){
-  if(stopped)return;
-  try{const count=await workers[0].recoverExpired(100);if(count)onLog({kind:"recovery",count});}
-  catch(error){onError(error);}
+  if(stopped||recoveryBusy)return{skipped:true};
+  recoveryBusy=true;
+  recoveryActive=(async()=>{
+   const settled=await Promise.allSettled(workers.map(worker=>worker.recoverExpired(100)));
+   settled.forEach((item,index)=>{
+    if(item.status==="rejected"){onError(item.reason);return;}
+    if(Number.isInteger(item.value)&&item.value>0)onLog({kind:"recovery",count:item.value,workerIndex:index});
+   });
+  })();
+  try{return await recoveryActive;}finally{recoveryActive=null;recoveryBusy=false;}
  }
  return Object.freeze({
   async start(){
    if(!stopped)throw new Error("Cloud worker supervisor is already running.");
    stopped=false;
    await recover();
+   if(stopped)return;
    await cycle();
+   if(stopped)return;
    timer=setInterval(()=>{void cycle();},pollMs);timer.unref?.();
    recoveryTimer=setInterval(()=>{void recover();},recoveryIntervalMs);recoveryTimer.unref?.();
    onLog({kind:"started",workerFamilies:workers.length,pollMs,leaseSeconds});
@@ -65,12 +76,26 @@ export function createCloudWorkerSupervisor({workers,leaseSeconds=90,heartbeatIn
    if(stopped)return;
    stopped=true;
    if(timer)clearInterval(timer);if(recoveryTimer)clearInterval(recoveryTimer);
+   cycleController?.abort(new Error("Cloud worker supervisor is stopping."));
    timer=null;recoveryTimer=null;
    if(active)await active.catch(()=>{});
+   if(recoveryActive)await recoveryActive.catch(()=>{});
    onLog({kind:"stopped"});
   },
   async runOnce(){return cycle();}
  });
+}
+
+export function registerCloudWorkerShutdownHandlers(supervisor,processLike=process,exit=(code)=>processLike.exit(code)){
+ let shutdownPromise=null;
+ const shutdown=()=>{
+  if(shutdownPromise)return shutdownPromise;
+  shutdownPromise=(async()=>{await supervisor.stop();exit(0);})();
+  return shutdownPromise;
+ };
+ processLike.once("SIGINT",shutdown);
+ processLike.once("SIGTERM",shutdown);
+ return ()=>{processLike.removeListener("SIGINT",shutdown);processLike.removeListener("SIGTERM",shutdown);};
 }
 
 export async function startCloudWorkerProcess(env=process.env){
@@ -87,10 +112,16 @@ export async function startCloudWorkerProcess(env=process.env){
   onLog:event=>process.stdout.write(JSON.stringify(event)+"\n"),
   onError:error=>process.stderr.write(JSON.stringify({kind:"worker_error",code:error?.code||"WORKER_ERROR",message:String(error?.message||"Worker cycle failed.").slice(0,500)})+"\n")
  });
- await supervisor.start();
- const shutdown=async()=>{await supervisor.stop();process.exit(0);};
- process.once("SIGINT",shutdown);process.once("SIGTERM",shutdown);
- return supervisor;
+ const unregisterShutdown=registerCloudWorkerShutdownHandlers(supervisor);
+ try {
+  // Install handlers before recovery/first-cycle awaits so an OS signal during
+  // startup still cancels the worker lifecycle instead of orphaning a child.
+  await supervisor.start();
+  return supervisor;
+ } catch(error) {
+  unregisterShutdown();
+  throw error;
+ }
 }
 
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){

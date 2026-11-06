@@ -9,7 +9,7 @@ test("cloud media worker composes the leased queue and injected media executor",
     async claim(workerId, leaseSeconds, jobTypes) { calls.push("claim"); claimedTypes = jobTypes; return null; },
     async renew() { return true; },
     async finish() { return true; },
-    async recover(limit) { calls.push("recover:" + limit); return 2; }
+    async recover(...args) { calls.push("recover:" + args[0]); calls.push(args[1]); return 2; }
   };
   const worker = createCloudMediaWorker({
     workerId: "media-worker-a",
@@ -19,9 +19,9 @@ test("cloud media worker composes the leased queue and injected media executor",
     execute: async () => ({ ok: true })
   });
   assert.deepEqual(await worker.runCycle({ onEvent: event => calls.push(event.type) }), { claimed: false });
-  assert.deepEqual(claimedTypes, ["media.probe", "media.thumbnail", "media.audio_extract", "media.audio-clean", "media.denoise", "media.color", "media.resize", "media.interpolate", "media.upscale", "media.ai-upscale", "media.transcode", "media.proxy"]);
+  assert.deepEqual(claimedTypes, ["media.probe", "media.thumbnail", "media.audio_extract", "media.audio-clean", "media.denoise", "media.color", "media.resize", "media.interpolate", "media.upscale", "media.ai-upscale", "media.transcode", "media.proxy", "media.waveform"]);
   assert.equal(await worker.recoverExpired(25), 2);
-  assert.deepEqual(calls, ["claim", "recover:25"]);
+  assert.deepEqual(calls, ["claim", "recover:25", ["media.probe", "media.thumbnail", "media.audio_extract", "media.audio-clean", "media.denoise", "media.color", "media.resize", "media.interpolate", "media.upscale", "media.ai-upscale", "media.transcode", "media.proxy", "media.waveform"]]);
 });
 
 test("cloud media worker requires an explicit stable worker identity", () => {

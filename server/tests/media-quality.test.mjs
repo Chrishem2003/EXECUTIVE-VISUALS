@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {buildMediaQualityReport} from "../media-quality.mjs";
+import {buildMediaQualityReport,attachMediaQualityReport} from "../media-quality.mjs";
 
 test("reports valid HD audio-video media as structurally passed",()=>{
  const report=buildMediaQualityReport({format:{duration:"42.5"},streams:[
@@ -51,10 +51,11 @@ test("includes detected black frames and silence as review findings",()=>{
 test("reports audio clipping and near-full-scale peak findings",()=>{
  const report=buildMediaQualityReport({format:{duration:"9"},streams:[
   {codec_type:"audio",sample_rate:"48000",channels:2}
- ],signalAnalysis:{audioMetrics:{clippedSamples:3,peakDbfs:-0.3,rmsDbfs:-18,integratedLufs:-16.5},performed:["audio-metrics"]}});
+ ],signalAnalysis:{audioMetrics:{clippedSamples:3,peakDbfs:-0.3,truePeakDbtp:-0.4,rmsDbfs:-18,integratedLufs:-16.5},performed:["audio-metrics"]}});
  assert.equal(report.status,"review");
  assert.ok(report.findings.some(item=>item.code==="AUDIO_CLIPPING"));
  assert.ok(report.findings.some(item=>item.code==="AUDIO_PEAK_NEAR_FULL_SCALE"));
+ assert.ok(report.findings.some(item=>item.code==="AUDIO_TRUE_PEAK_NEAR_LIMIT"));
  assert.equal(report.signalAnalysis.audioMetrics.integratedLufs,-16.5);
 });
 
@@ -77,3 +78,37 @@ test("includes freeze warnings and scene-change timestamps in QA evidence",()=>{
 import { captionStyle } from "../media.mjs";
 test("caption styles render readable background panels and configurable typography",()=>{const style=captionStyle({fontSize:38,primaryColor:"#F2E8D5",backgroundColor:"#101820",backgroundOpacity:0.7,backgroundMode:"box",outline:2,shadow:1,alignment:2,marginV:54});assert.match(style,/FontSize=38/);assert.match(style,/BorderStyle=3/);assert.match(style,/BackColour=&H4D201810/i);assert.match(style,/Alignment=2/);});
 test("caption panels can be disabled without losing text styling",()=>{const style=captionStyle({backgroundMode:"none",fontSize:30});assert.match(style,/BorderStyle=1/);assert.match(style,/FontSize=30/);});
+
+
+test("attaches structured quality findings to media probe metadata without losing source fields",()=>{
+ const metadata={format:{duration:"8"},streams:[{codec_type:"video",width:640,height:360,avg_frame_rate:"24/1"}],signalAnalysis:{performed:["black-frame"],blackFrames:[]}};
+ const enriched=attachMediaQualityReport(metadata,{requireVideo:true});
+ assert.equal(enriched.format,metadata.format);
+ assert.equal(enriched.signalAnalysis,metadata.signalAnalysis);
+ assert.equal(enriched.qualityReport.status,"review");
+ assert.ok(enriched.qualityReport.findings.some(item=>item.code==="BELOW_HD"));
+ assert.equal(metadata.qualityReport,undefined);
+});
+
+
+test("includes decoded-frame temporal luminance findings in the QA report",()=>{
+ const report=buildMediaQualityReport({format:{duration:"8"},streams:[{codec_type:"video",width:1920,height:1080,avg_frame_rate:"25/1"}],signalAnalysis:{
+  performed:["frame-luma"],lumaSamples:[{frame:0,timeSeconds:0,meanLuma:32},{frame:1,timeSeconds:.04,meanLuma:84},{frame:2,timeSeconds:.08,meanLuma:35},{frame:3,timeSeconds:.12,meanLuma:88},{frame:4,timeSeconds:.16,meanLuma:32}],sceneChanges:[]
+ }},{requireVideo:true});
+ assert.equal(report.status,"review");
+ assert.equal(report.signalAnalysis.lumaSampleCount,5);
+ assert.ok(report.findings.some(item=>item.code==="TEMPORAL_LUMA_FLICKER"));
+ assert.ok(report.limitations.some(item=>item.includes("decoded frame mean-luma")));
+});
+
+
+test("exposes bounded temporal-analysis coverage without claiming a complete scan",()=>{
+ const report=buildMediaQualityReport({format:{duration:"300"},streams:[{codec_type:"video",width:1920,height:1080,avg_frame_rate:"24/1"}],signalAnalysis:{
+  method:"ffmpeg-sampled-frame-luma",performed:["temporal-luma"],lumaSamples:[{timeSeconds:0,meanLuma:40}],coverageSeconds:120,truncated:true,
+  unavailable:[{check:"temporal-luma-coverage",reason:"ANALYSIS_DURATION_LIMIT"}]
+ }},{requireVideo:true});
+ assert.equal(report.signalAnalysis.lumaCoverageSeconds,120);
+ assert.equal(report.signalAnalysis.lumaAnalysisTruncated,true);
+ assert.equal(report.status,"review");
+ assert.ok(report.findings.some(item=>item.code==="SIGNAL_ANALYSIS_UNAVAILABLE"&&item.reason==="ANALYSIS_DURATION_LIMIT"));
+});

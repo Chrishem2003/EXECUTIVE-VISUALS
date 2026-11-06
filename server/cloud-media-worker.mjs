@@ -7,7 +7,7 @@ import { runCloudWorkerCycle } from "./cloud-worker.mjs";
 const MEDIA_JOB_TYPES = Object.freeze([
   "media.probe", "media.thumbnail", "media.audio_extract", "media.audio-clean",
   "media.denoise", "media.color", "media.resize", "media.interpolate",
-  "media.upscale", "media.ai-upscale", "media.transcode", "media.proxy"
+  "media.upscale", "media.ai-upscale", "media.transcode", "media.proxy", "media.waveform"
 ]);
 
 /**
@@ -69,12 +69,13 @@ export function createCloudMediaWorker({
         execute: executor,
         leaseSeconds: options.leaseSeconds ?? 90,
         heartbeatIntervalMs: options.heartbeatIntervalMs ?? 15000,
+        signal: options.signal,
         onProgress: options.onProgress ?? (() => {}),
         onEvent: options.onEvent ?? (() => {})
       });
     },
     recoverExpired(limit = 100) {
-      return cloudQueue.recover(limit);
+      return cloudQueue.recover(limit, MEDIA_JOB_TYPES);
     }
   });
 }

@@ -4,11 +4,15 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createCloudTimelineExecutor } from "../cloud-timeline-executor.mjs";
+import { createRenderManifest } from "../render-manifest.mjs";
+import { verifyDeliveryManifest } from "../delivery-manifest.mjs";
 
 const owner="11111111-1111-4111-8111-111111111111";
 const project="22222222-2222-4222-8222-222222222222";
 const timelineId="33333333-3333-4333-8333-333333333333";
-const timeline={tracks:[{id:"v1",kind:"video",clips:[{id:"c1",assetId:"asset-a",enabled:true}]},{id:"a1",kind:"audio",clips:[{id:"c2",assetId:"asset-b"}]}]};
+const time=value=>({value,rate:1});
+const timeline={tracks:[{id:"v1",kind:"video",clips:[{id:"c1",assetId:"asset-a",enabled:true,timelineStart:time(0),duration:time(6)}]},{id:"a1",kind:"audio",clips:[{id:"c2",assetId:"asset-b",timelineStart:time(0),duration:time(6)}]}]};
+const sha="a".repeat(64);
 test("cloud timeline executor materializes all unique sources and publishes a revision-linked master",async()=>{
  const root=await mkdtemp(join(tmpdir(),"ev-cloud-timeline-test-"));
  const cleanups=[],materialized=[],published=[];
@@ -16,18 +20,19 @@ test("cloud timeline executor materializes all unique sources and publishes a re
   tempRoot:root,
   timelines:{async get(args){assert.deepEqual(args,{ownerId:owner,timelineId});return{id:timelineId,ownerId:owner,projectId:project,revision:7,timeline};}},
   mediaIO:{
-   async materialize(args){materialized.push(args);const path=join(root,args.assetId+".bin");await writeFile(path,args.assetId);return{path,asset:{id:args.assetId},async cleanup(){cleanups.push(args.assetId);}};},
+   async materialize(args){materialized.push(args);const path=join(root,args.assetId+".bin");await writeFile(path,args.assetId);return{path,sha256:sha,asset:{id:args.assetId,mediaType:args.assetId==="asset-a"?"video/mp4":"audio/wav",sha256:sha},async cleanup(){cleanups.push(args.assetId);}};},
    async publish(args){published.push({...args,content:await readFile(args.path,"utf8")});return{id:"master-asset",name:args.filename};}
   },
   async probeOutput(){return{format:{duration:"12",format_name:"mov,mp4,m4a,3gp,3g2,mj2"},streams:[{codec_type:"video",codec_name:"h264",width:1920,height:1080,avg_frame_rate:"24/1"}]};},
-  async renderTimeline(args){assert.equal(args.timeline,timeline);assert.equal(args.assets.size,2);const path=join(args.workDir,"master.mp4");await writeFile(path,"final-master");return{path,filename:"episode-master.mp4",mediaType:"video/mp4",render:{durationSeconds:12}};}
+  async analyzeVideo({durationSeconds}){return{lumaSamples:[{frame:0,timeSeconds:0,meanLuma:40},{frame:1,timeSeconds:.04,meanLuma:80},{frame:2,timeSeconds:.08,meanLuma:42},{frame:3,timeSeconds:.12,meanLuma:82},{frame:4,timeSeconds:.16,meanLuma:40}],sceneChanges:[],coverageSeconds:durationSeconds,truncated:false};},
+  async renderTimeline(args){assert.equal(args.timeline,timeline);assert.equal(args.assets.size,2);assert.equal(args.timelineRevision,7);const path=join(args.workDir,"master.mp4");await writeFile(path,"final-master");return{path,filename:"episode-master.mp4",mediaType:"video/mp4",render:{durationSeconds:12},renderManifest:createRenderManifest({timeline:args.timeline,assets:args.assets,timelineRevision:args.timelineRevision,output:{codec:"h264"}})};}
  });
  const result=await executor({job:{id:"job-1",owner_id:owner,project_id:project,job_type:"timeline.render",input:{timelineId,timelineRevision:7}},onProgress(){}});
  assert.equal(materialized.length,2);assert.deepEqual(materialized.map(x=>x.assetId).sort(),["asset-a","asset-b"]);
  assert.deepEqual(cleanups.sort(),["asset-a","asset-b"]);
  assert.equal(published[0].ownerId,owner);assert.equal(published[0].projectId,project);
- assert.equal(published[0].metadata.timelineRevision,7);assert.equal(published[0].metadata.probe.streams[0].codec_name,"h264");assert.equal(published[0].metadata.render.durationSeconds,12);assert.equal(published[0].content,"final-master");
- assert.equal(result.outputAsset.id,"master-asset");assert.equal(result.byteSize,12);assert.equal(result.timelineRevision,7);assert.equal(result.probeValidation.validatedStreamType,"video");
+ assert.equal(published[0].metadata.timelineRevision,7);assert.equal(published[0].metadata.renderManifest.timelineRevision,"7");assert.equal(published[0].metadata.probe.streams[0].codec_name,"h264");assert.equal(published[0].metadata.qualityReport.signalAnalysis.lumaSampleCount,5);assert.equal(published[0].metadata.signalAnalysis.lumaSamples,undefined);assert.equal(published[0].metadata.render.durationSeconds,12);assert.equal(published[0].content,"final-master");
+ assert.equal(result.outputAsset.id,"master-asset");assert.equal(result.byteSize,12);assert.equal(result.timelineRevision,7);assert.equal(result.renderManifest.timelineRevision,"7");assert.equal(result.probeValidation.validatedStreamType,"video");assert.equal(result.qualityReport.signalAnalysis.lumaCoverageSeconds,12);assert.ok(result.qualityReport.findings.some(item=>item.code==="TEMPORAL_LUMA_FLICKER"));assert.equal(result.deliveryManifest.outputAsset,"master-asset");assert.equal(result.deliveryManifest.sha256,result.sha256);assert.equal(result.deliveryManifest.byteSize,result.byteSize);assert.equal(verifyDeliveryManifest(result.deliveryManifest),true);
  await rm(root,{recursive:true,force:true});
 });
 
@@ -77,10 +82,112 @@ test("cloud timeline executor refuses to publish a master when its output probe 
   tempRoot:root,
   timelines:{async get(){return{id:timelineId,projectId:null,revision:1,timeline};}},
   mediaIO:{async materialize({assetId}){const path=join(root,assetId);await writeFile(path,"source");return{path,asset:{id:assetId},async cleanup(){cleaned.push(assetId);}};},async publish(args){published.push(args);}},
-  async renderTimeline({workDir}){const path=join(workDir,"master.mp4");await writeFile(path,"rendered");return{path,filename:"master.mp4",mediaType:"video/mp4"};},
+  async renderTimeline({workDir}){const path=join(workDir,"master.mp4");await writeFile(path,"rendered");return{path,filename:"master.mp4",mediaType:"video/mp4",renderManifest:createRenderManifest({timeline,assets:new Map([["asset-a",{path:join(root,"asset-a"),asset:{id:"asset-a",sha256:sha,mediaType:"video/mp4"}}],["asset-b",{path:join(root,"asset-b"),asset:{id:"asset-b",sha256:sha,mediaType:"audio/wav"}}]]),timelineRevision:1})};},
   async probeOutput(){throw new Error("ffprobe failed");}
  });
  await assert.rejects(()=>executor({job:{id:"job-probe-fail",owner_id:owner,project_id:null,job_type:"timeline.render",input:{timelineId,timelineRevision:1}}}),/ffprobe failed/);
  assert.equal(published.length,0);assert.deepEqual(cleaned.sort(),["asset-a","asset-b"]);
+ await rm(root,{recursive:true,force:true});
+});
+
+
+test("cloud timeline executor refuses to publish output that fails the selected delivery profile",async()=>{
+ const root=await mkdtemp(join(tmpdir(),"ev-cloud-delivery-gate-"));const published=[];
+ const selectedTimeline={...timeline,deliveryProfileId:"youtube-1080p"};
+ const executor=createCloudTimelineExecutor({
+  tempRoot:root,
+  timelines:{async get(){return{id:timelineId,projectId:null,revision:1,timeline:selectedTimeline};}},
+  mediaIO:{
+   async materialize({assetId}){const path=join(root,assetId);await writeFile(path,"source");return{path,asset:{id:assetId,mediaType:assetId==="asset-a"?"video/mp4":"audio/wav",sha256:sha},async cleanup(){}};},
+   async publish(args){published.push(args);return{id:"should-not-publish"};}
+  },
+  async renderTimeline({workDir,assets,timeline:renderTimeline}){const path=join(workDir,"profile-failed.mp4");await writeFile(path,"rendered");return{path,filename:"failed.mp4",mediaType:"video/mp4",renderManifest:createRenderManifest({timeline:renderTimeline,assets,timelineRevision:1,output:{codec:"h264"}})};},
+  async probeOutput(){return{format:{duration:"10"},streams:[{codec_type:"video",codec_name:"h264",width:1280,height:720,pix_fmt:"yuv420p",avg_frame_rate:"30/1"},{codec_type:"audio",codec_name:"aac",sample_rate:"48000"}]};}
+ });
+ await assert.rejects(()=>executor({job:{id:"delivery-gate",owner_id:owner,project_id:null,job_type:"timeline.render",input:{timelineId,timelineRevision:1}}}),error=>error.code==="DELIVERY_PROFILE_VALIDATION_FAILED"&&error.deliveryReport.status==="needs-attention");
+ assert.equal(published.length,0);
+ await rm(root,{recursive:true,force:true});
+});
+
+
+test("cloud timeline executor publishes a review warning when optional frame analysis is unavailable",async()=>{
+ const root=await mkdtemp(join(tmpdir(),"ev-cloud-temporal-unavailable-"));const published=[];
+ const executor=createCloudTimelineExecutor({
+  tempRoot:root,
+  timelines:{async get(){return{id:timelineId,projectId:null,revision:1,timeline};}},
+  mediaIO:{async materialize({assetId}){const path=join(root,assetId);await writeFile(path,"source");return{path,asset:{id:assetId,sha256:"a".repeat(64)},async cleanup(){}};},async publish(args){published.push(args);return{id:"master-unanalysed"};}},
+  async renderTimeline({workDir,assets}){const path=join(workDir,"master.mp4");await writeFile(path,"rendered");return{path,filename:"master.mp4",mediaType:"video/mp4",renderManifest:createRenderManifest({timeline,assets,timelineRevision:1})};},
+  async probeOutput(){return{format:{duration:"8"},streams:[{codec_type:"video",codec_name:"h264",width:1920,height:1080,avg_frame_rate:"24/1"}]};},
+  async analyzeVideo(){throw Object.assign(new Error("sample pass failed"),{code:"MEDIA_PROCESS_FAILED"});}
+ });
+ const result=await executor({job:{id:"temporal-unavailable",owner_id:owner,project_id:null,job_type:"timeline.render",input:{timelineId,timelineRevision:1}}});
+ assert.equal(published.length,1);
+ assert.equal(result.qualityReport.status,"review");
+ assert.ok(result.qualityReport.findings.some(item=>item.code==="SIGNAL_ANALYSIS_UNAVAILABLE"&&item.reason==="MEDIA_PROCESS_FAILED"));
+ assert.equal(result.qualityReport.signalAnalysis.lumaSampleCount,0);
+ await rm(root,{recursive:true,force:true});
+});
+
+
+test("cloud timeline executor propagates cancellation during temporal analysis and does not publish",async()=>{
+ const root=await mkdtemp(join(tmpdir(),"ev-cloud-temporal-cancel-"));const published=[];
+ const controller=new AbortController();
+ const executor=createCloudTimelineExecutor({
+  tempRoot:root,
+  timelines:{async get(){return{id:timelineId,projectId:null,revision:1,timeline};}},
+  mediaIO:{async materialize({assetId}){const path=join(root,assetId);await writeFile(path,"source");return{path,asset:{id:assetId,sha256:"a".repeat(64)},async cleanup(){}};},async publish(args){published.push(args);return{id:"must-not-publish"};}},
+  async renderTimeline({workDir,assets}){const path=join(workDir,"master.mp4");await writeFile(path,"rendered");return{path,filename:"master.mp4",mediaType:"video/mp4",renderManifest:createRenderManifest({timeline,assets,timelineRevision:1})};},
+  async probeOutput(){return{format:{duration:"8"},streams:[{codec_type:"video",codec_name:"h264",width:1920,height:1080,avg_frame_rate:"24/1"}]};},
+  async analyzeVideo(){controller.abort();throw Object.assign(new Error("cancelled"),{code:"MEDIA_PROCESS_FAILED"});}
+ });
+ await assert.rejects(()=>executor({job:{id:"temporal-cancel",owner_id:owner,project_id:null,job_type:"timeline.render",input:{timelineId,timelineRevision:1}},signal:controller.signal}),error=>error.code==="JOB_CANCELLED");
+ assert.equal(published.length,0);
+ await rm(root,{recursive:true,force:true});
+});
+
+
+test("cloud timeline executor forwards the lease abort signal into source materialization",async()=>{
+ const controller=new AbortController();let receivedSignal;
+ const executor=createCloudTimelineExecutor({
+  timelines:{async get(){return{id:timelineId,projectId:null,revision:1,timeline};}},
+  mediaIO:{
+   async materialize(args){receivedSignal=args.signal;controller.abort();throw Object.assign(new Error("download cancelled"),{code:"JOB_CANCELLED"});},
+   async publish(){throw new Error("cancelled materialization must not publish");}
+  },
+  async renderTimeline(){throw new Error("cancelled materialization must not render");}
+ });
+ await assert.rejects(()=>executor({job:{id:"job-materialize-cancel",owner_id:owner,project_id:null,job_type:"timeline.render",input:{timelineId,timelineRevision:1}},signal:controller.signal}),error=>error.code==="JOB_CANCELLED");
+ assert.equal(receivedSignal,controller.signal);
+});
+
+test("cloud timeline executor preserves the render failure when a materialized cleanup hook throws synchronously",async()=>{
+ const root=await mkdtemp(join(tmpdir(),"ev-cloud-timeline-cleanup-"));
+ const executor=createCloudTimelineExecutor({
+  tempRoot:root,
+  timelines:{async get(){return{id:timelineId,projectId:null,revision:1,timeline};}},
+  mediaIO:{
+   async materialize({assetId}){const path=join(root,assetId);await writeFile(path,"source");return{path,asset:{id:assetId},cleanup(){throw new Error("cleanup failed");}};},
+   async publish(){throw new Error("render failure must prevent publication");}
+  },
+  async renderTimeline(){throw new Error("original render failure");}
+ });
+ try{
+  await assert.rejects(()=>executor({job:{id:"job-cleanup-throws",owner_id:owner,project_id:null,job_type:"timeline.render",input:{timelineId,timelineRevision:1}}}),/original render failure/);
+ }finally{await rm(root,{recursive:true,force:true});}
+});
+
+test("cloud timeline executor rejects excessive timeline duration before materializing sources",async()=>{
+ let materialized=false;
+ const longTimeline={tracks:[{kind:"video",enabled:true,clips:[{assetId:"asset-a",enabled:true,timelineStart:time(0),duration:time(61)}]}]};
+ const executor=createCloudTimelineExecutor({maxDurationSeconds:60,timelines:{async get(){return{id:timelineId,projectId:null,revision:1,timeline:longTimeline};}},mediaIO:{async materialize(){materialized=true;},async publish(){}},async renderTimeline(){}});
+ await assert.rejects(()=>executor({job:{id:"job-long",owner_id:owner,project_id:null,job_type:"timeline.render",input:{timelineId,timelineRevision:1}}}),error=>error.code==="CLOUD_TIMELINE_DURATION_TOO_LARGE");
+ assert.equal(materialized,false);
+});
+
+test("cloud timeline executor enforces aggregate source byte limits and cleans materialized assets",async()=>{
+ const root=await mkdtemp(join(tmpdir(),"ev-cloud-timeline-bytes-")),cleaned=[];
+ const executor=createCloudTimelineExecutor({tempRoot:root,maxInputBytes:10,timelines:{async get(){return{id:timelineId,projectId:null,revision:1,timeline};}},mediaIO:{async materialize({assetId}){const path=join(root,assetId);await writeFile(path,"source");return{path,asset:{id:assetId},async cleanup(){cleaned.push(assetId);}};},async publish(){}},async renderTimeline(){}});
+ await assert.rejects(()=>executor({job:{id:"job-bytes",owner_id:owner,project_id:null,job_type:"timeline.render",input:{timelineId,timelineRevision:1}}}),error=>error.code==="CLOUD_TIMELINE_INPUT_TOO_LARGE");
+ assert.deepEqual(cleaned.sort(),["asset-a","asset-b"]);
  await rm(root,{recursive:true,force:true});
 });

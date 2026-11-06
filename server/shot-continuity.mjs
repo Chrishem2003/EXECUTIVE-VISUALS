@@ -57,6 +57,7 @@ export function getShotContinuityReferenceIds({document,shotId}={}){
 }
 
 const CONTINUITY_FIELDS=["identity","wardrobe","location","props","lighting","colorGrade"];
+const CAMERA_FIELDS=["camera","shotSize","angle","lens","movement"];
 export function buildShotContinuityReport(shots=[]){
  if(!Array.isArray(shots))throw new TypeError("shots must be an array");
  if(shots.length>500)throw new RangeError("continuity analysis is limited to 500 shots per report");
@@ -65,16 +66,24 @@ export function buildShotContinuityReport(shots=[]){
   if(!shot||typeof shot!=="object"||Array.isArray(shot))throw new TypeError("each shot must be an object");
   const id=clean(shot.id,80)||"shot-"+(index+1),group=clean(shot.continuityGroup,80)||"default",values={};
   for(const field of CONTINUITY_FIELDS)values[field]=clean(shot.continuity?.[field],240);
-  if(!groups.has(group))groups.set(group,{baseline:{id,values},shots:[]});
-  groups.get(group).shots.push({id,values});
+  if(!groups.has(group))groups.set(group,{baseline:{id,values,shot},shots:[]});
+  groups.get(group).shots.push({id,values,shot});
  }
  for(const [group,data] of groups){
   const baseline=data.baseline;
   for(const field of CONTINUITY_FIELDS)if(!baseline.values[field])findings.push({code:"CONTINUITY_REFERENCE_MISSING",severity:"info",group,shotId:baseline.id,field});
-  for(const shot of data.shots.slice(1))for(const field of CONTINUITY_FIELDS){
-   const expected=baseline.values[field],actual=shot.values[field];
-   if(expected&&actual&&expected.toLocaleLowerCase()!==actual.toLocaleLowerCase())findings.push({code:"CONTINUITY_VARIATION",severity:"warning",group,referenceShotId:baseline.id,shotId:shot.id,field,expected,actual});
+  for(const shot of data.shots.slice(1)){
+   for(const field of CONTINUITY_FIELDS){
+    const expected=baseline.values[field],actual=shot.values[field];
+    if(expected&&actual&&expected.toLocaleLowerCase()!==actual.toLocaleLowerCase())findings.push({code:"CONTINUITY_VARIATION",severity:"warning",group,referenceShotId:baseline.id,shotId:shot.id,field,expected,actual});
+   }
+   // Camera language is allowed to change for creative reasons. Surface it as
+   // advisory context only; never turn a camera change into a continuity block.
+   for(const field of CAMERA_FIELDS){
+    const expected=clean(baseline.shot?.[field],240),actual=clean(shot.shot?.[field],240);
+    if(expected&&actual&&expected.toLocaleLowerCase()!==actual.toLocaleLowerCase())findings.push({code:"CAMERA_VARIATION_ADVISORY",severity:"info",group,referenceShotId:baseline.id,shotId:shot.id,field,expected,actual});
+   }
   }
  }
- return {schemaVersion:1,method:"declared-shot-metadata-comparison",shotCount:shots.length,groupCount:groups.size,status:findings.some(item=>item.severity==="warning")?"review":"informational",findings,limitations:["Metadata comparison only; no image pixels are inspected and no visual identity, wardrobe or prop recognition is claimed.","Camera framing and movement are intentionally allowed to vary.","Human creative review decides whether a variation is intentional."]};
+ return {schemaVersion:1,method:"declared-shot-metadata-comparison",shotCount:shots.length,groupCount:groups.size,status:findings.some(item=>item.severity==="warning")?"review":"informational",findings,limitations:["Metadata comparison only; no image pixels are inspected and no visual identity, wardrobe or prop recognition is claimed.","Camera framing, shot size, angle, lens and movement variations are surfaced as informational advisories only; they do not block delivery.","Human creative review decides whether a variation is intentional."]};
 }

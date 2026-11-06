@@ -362,3 +362,48 @@
 @media(max-width:500px){.auth-story-copy h1{font-size:36px}.auth-feature-list{grid-template-columns:1fr}.auth-feature-list>div{gap:10px}.auth-panel-wrap{padding:25px 20px}}
 
 @media(max-width:760px){.nav-collapse{display:none}.sidebar-brand-row .brand{flex:1}.mobile-nav-open{flex:0 0 34px}}
+
+
+.timeline-preview{margin:14px 0;background:#0d131d}
+.preview-stage{min-height:180px;max-height:440px;display:grid;place-items:center;background:#070a10;border:1px solid var(--line);border-radius:8px;overflow:hidden;margin:12px 0}
+.preview-media{display:block;width:100%;max-height:420px;object-fit:contain;background:#05070a}
+.preview-audio{width:min(680px,94%);margin:36px auto}
+.preview-still{display:block;max-width:100%;max-height:420px;object-fit:contain}
+.preview-empty{padding:28px 16px;border:1px dashed #465064;border-radius:8px;color:var(--muted);font-size:10px;line-height:1.7;text-align:center;margin:12px 0}
+.preview-transport{display:flex;flex-wrap:wrap;align-items:center;gap:7px;margin:10px 0}
+.preview-transport button{font-size:9px;padding:8px 10px}
+.preview-transport output{margin-left:auto;color:#d8c39a;font:10px ui-monospace,monospace}
+@media(max-width:650px){.preview-stage{min-height:140px}.preview-transport output{width:100%;margin:4px 0 0}}
+
+.preview-transport input[type="range"]{flex:1 1 180px;min-width:120px;accent-color:#c9a76e}
+
+
+/* Independent delivery review */
+.delivery-approval{display:grid;gap:10px;margin-top:16px;padding:14px;border:1px solid var(--border,#303846);border-radius:12px;background:var(--surface-raised,#151b24)}
+.delivery-approval textarea{width:100%;min-height:64px;resize:vertical}
+.delivery-approval .button-row{display:flex;flex-wrap:wrap;gap:8px}
+.delivery-approval .button-row button{min-height:36px}
+.delivery-approval .timeline-quality-list{max-height:240px;overflow:auto}
+
+
+.delivery-package-actions{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:12px 0;padding:12px;border:1px solid var(--border,#303846);border-radius:10px}
+.delivery-package-actions small{flex:1 1 220px}
+
+/* Authorized asset-lineage explorer */
+.asset-lineage{grid-column:1/-1;min-width:0;margin-top:10px;padding:12px;border:1px solid var(--line);border-radius:8px;background:#0d131c}.lineage-columns{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin:10px 0}.lineage-columns>div{min-width:0}.lineage-columns>div>b{display:block;font-size:11px;margin-bottom:7px}.lineage-columns ol{list-style:none;padding:0;margin:0;display:grid;gap:6px}.lineage-columns li{min-width:0;padding:8px;border:1px solid var(--line);border-radius:6px;background:#111923}.lineage-columns li>b,.lineage-columns li>small,.lineage-columns li>code,.lineage-columns li>span{display:block;overflow-wrap:anywhere}.lineage-columns li>b{font-size:10px}.lineage-columns li>small,.lineage-columns li>code,.lineage-columns li>span,.asset-lineage>small{font-size:9px;color:var(--muted);margin-top:4px}.lineage-missing,.lineage-cycle{border-style:dashed!important}.lineage-error{color:#e8a3a3;font-size:11px}.lineage-empty{font-size:10px;color:var(--muted)}@media(max-width:600px){.lineage-columns{grid-template-columns:1fr}}
+
+/* Side-by-side private source / derivative preview */
+.asset-comparison{grid-column:1/-1;margin-top:12px;padding:12px;border:1px solid var(--line);border-radius:8px;background:#0a1119}.comparison-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:10px 0}.comparison-grid>div{min-width:0;display:grid;align-content:start;gap:8px}.comparison-grid b{font-size:11px;overflow-wrap:anywhere}.comparison-grid img,.comparison-grid video{display:block;width:100%;max-height:280px;object-fit:contain;background:#05080d;border-radius:6px}.comparison-grid audio{width:100%;max-width:100%}.asset-comparison>small{font-size:9px;color:var(--muted)}.lineage-columns li button{margin-top:7px;font-size:10px}@media(max-width:600px){.comparison-grid{grid-template-columns:1fr}}
+
+/* Processing provenance and evidence checks in the cloud asset register */
+.asset-evidence{margin:10px 0;padding:11px;border:1px solid var(--line);border-radius:8px;background:#0c131c;min-width:0}.evidence-summary{display:flex;flex-wrap:wrap;justify-content:space-between;gap:6px;margin:7px 0}.evidence-summary b{font-size:11px}.evidence-summary span{font-size:10px;color:var(--muted)}.asset-evidence dl{display:grid;grid-template-columns:minmax(90px,1fr) minmax(0,2fr);gap:5px 12px;margin:8px 0}.asset-evidence dt{font-size:9px;color:var(--muted)}.asset-evidence dd{margin:0;font-size:9px;overflow-wrap:anywhere}.evidence-checks{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}.evidence-checks span,.evidence-warning{font-size:9px;padding:4px 6px;border-radius:5px;background:#171f2b}.evidence-pass{color:#9dd8b0}.evidence-warning{color:#e6bd79}.asset-evidence>small{font-size:9px;color:var(--muted)}
+
+/* Safe timeline replacement controls for independently reviewed derivatives */
+.derivative-replacement{display:grid;gap:8px;margin:14px 0;padding:12px;border:1px solid var(--line);border-radius:8px;background:#0c131c}.derivative-replacement p{margin:0;font-size:11px}.derivative-replacement label{font-size:10px;color:var(--muted)}.derivative-replacement select{width:100%;min-width:0}.derivative-replacement small{font-size:10px;line-height:1.45;overflow-wrap:anywhere}.derivative-replacement button{justify-self:start}
+
+/* Timeline source/derivative side-by-side review */
+.derivative-comparison{display:grid;gap:9px;margin:12px 0;padding:12px;border:1px solid var(--line);border-radius:8px;background:#0c131c}.derivative-comparison p{margin:0;font-size:11px}.derivative-comparison label{font-size:10px;color:var(--muted)}.derivative-comparison-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:8px}.derivative-comparison-grid>div{display:grid;align-content:start;gap:7px;min-width:0}.derivative-comparison-grid b{font-size:11px;overflow-wrap:anywhere}.derivative-comparison-grid img,.derivative-comparison-grid video{display:block;width:100%;max-height:240px;object-fit:contain;background:#05080c;border-radius:6px}.derivative-comparison-grid audio{width:100%;min-width:0}.derivative-comparison-grid a{font-size:11px;overflow-wrap:anywhere}@media(max-width:700px){.derivative-comparison-grid{grid-template-columns:minmax(0,1fr)}}
+
+/* Unified derivative enhancement review queue */
+.enhancement-review{margin:18px 0;min-width:0}.enhancement-review-heading{display:flex;align-items:end;justify-content:space-between;gap:14px;flex-wrap:wrap}.enhancement-review-heading h2{margin:5px 0}.enhancement-review-heading label{display:grid;gap:5px;font-size:10px;color:var(--muted)}.enhancement-review-heading select{min-width:180px}.enhancement-review-summary{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}.enhancement-review-summary span,.enhancement-review-metrics span{font-size:10px;color:var(--muted);padding:6px 8px;border:1px solid var(--line);border-radius:6px}.enhancement-review-summary b{color:var(--text)}.enhancement-review-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,250px),1fr));gap:10px}.enhancement-review-item{display:grid;gap:8px;min-width:0;padding:12px;border:1px solid var(--line);border-radius:8px;background:#0c131c}.enhancement-review-item[hidden]{display:none}.enhancement-review-top{display:flex;align-items:start;justify-content:space-between;gap:8px}.enhancement-review-top>b{font-size:11px;overflow-wrap:anywhere}.review-state{flex:none;font-size:9px;padding:4px 6px;border-radius:5px;background:#1a2230;color:var(--muted)}.review-approved{color:#9dd8b0}.review-rejected{color:#e6a1a1}.review-pending{color:#e6bd79}.enhancement-review-item>small,.enhancement-review>small{font-size:9px;line-height:1.55;color:var(--muted);overflow-wrap:anywhere}.enhancement-review-metrics{display:flex;flex-wrap:wrap;gap:6px}.enhancement-review-item button{justify-self:start}
+.enhancement-review-heading input[type=search]{min-width:min(230px,70vw)}.enhancement-review-actions{display:flex;flex-wrap:wrap;gap:7px}.enhancement-review-actions button{justify-self:start}

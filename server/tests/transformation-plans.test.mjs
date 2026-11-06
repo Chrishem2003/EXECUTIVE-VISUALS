@@ -4,7 +4,7 @@ import {mkdtemp,rm} from "node:fs/promises";
 import {join} from "node:path";
 import {tmpdir} from "node:os";
 import {openDatabase} from "../db.mjs";
-import {ensureTransformationPlanSchema,createTransformationPlan,approveTransformationPlan,listTransformationPlans} from "../transformation-plans.mjs";
+import {ensureTransformationPlanSchema,createTransformationPlan,approveTransformationPlan,listTransformationPlans,verifyTransformationApproval} from "../transformation-plans.mjs";
 
 async function fixture(){
  const dir=await mkdtemp(join(tmpdir(),"ev-transform-plans-")),db=openDatabase(join(dir,"test.sqlite"));
@@ -42,3 +42,15 @@ test("rejects malformed requests and unsupported preservation or parameter field
  assert.throws(()=>createTransformationPlan(f.db,{ownerId:f.owner,body:{...f.body,preservation:["camera_motion","invented_constraint"]},idempotencyKey:"transform-key-010"}),e=>e.code==="TRANSFORMATION_PRESERVATION_INVALID");
  assert.throws(()=>createTransformationPlan(f.db,{ownerId:f.owner,body:{...f.body,referenceAssetIds:"not-an-array"},idempotencyKey:"transform-key-011"}),e=>e.code==="REFERENCE_ASSET_INVALID");
 }finally{await f.close();}});
+
+test("local transformation approval is bound to its canonical plan fingerprint",async()=>{
+ const f=await fixture();try{
+  const {plan}=createTransformationPlan(f.db,{ownerId:f.owner,body:f.body,idempotencyKey:"transform-key-012"});
+  const approved=approveTransformationPlan(f.db,{ownerId:f.owner,planId:plan.id,body:{estimatedCostMicros:100,approvedBudgetMicros:150,currency:"USD",adapterId:"provider-a",capability:"video.transform.vehicle_replace"}});
+  assert.match(approved.approval.planHash,/^[a-f0-9]{64}$/);
+  assert.deepEqual(verifyTransformationApproval(f.db,f.owner,plan.id),{valid:true,planHash:approved.approval.planHash});
+  f.db.prepare("UPDATE transformation_plans SET prompt=? WHERE id=?").run("A changed request that was never approved.",plan.id);
+  assert.deepEqual(verifyTransformationApproval(f.db,f.owner,plan.id),{valid:false,planHash:approved.approval.planHash});
+  assert.throws(()=>verifyTransformationApproval(f.db,f.other,plan.id),e=>e.code==="TRANSFORMATION_NOT_FOUND");
+ }finally{await f.close();}
+});

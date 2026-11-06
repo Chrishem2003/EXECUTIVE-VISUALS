@@ -35,6 +35,29 @@ test("rejects downloads that exceed the configured byte limit",async()=>{
  await assert.rejects(()=>f.io.materialize({ownerId:"owner-1",assetId:"asset-1"}),e=>e.code==="CLOUD_MEDIA_TOO_LARGE");
  assert.deepEqual(await readdir(f.root),[]);await rm(f.root,{recursive:true,force:true});
 });
+test("cancels an in-flight cloud media download when the worker lease is lost",async()=>{
+ const root=await mkdtemp(join(tmpdir(),"ev-media-cancel-test-"));
+ const controller=new AbortController();
+ const assets={
+  async createSignedUrl(){return{url:"https://storage.example/signed",asset:{id:"asset-1",ownerId:"owner-1",size:content.length,sha256:digest,mediaType:"video/mp4"}};},
+  async create(){}
+ };
+ let observedSignal, markStarted;
+ const started=new Promise(resolve=>{markStarted=resolve;});
+ const io=createCloudMediaAssetIO({assets,tempRoot:root,timeoutMs:10000,fetchImpl:async(url,options)=>{
+  observedSignal=options.signal;markStarted();
+  return await new Promise((resolve,reject)=>{
+   options.signal.addEventListener("abort",()=>reject(Object.assign(new Error("aborted"),{name:"AbortError"})),{once:true});
+  });
+ }});
+ const pending=io.materialize({ownerId:"owner-1",assetId:"asset-1",signal:controller.signal});
+ await started;
+ controller.abort();
+ await assert.rejects(()=>pending,error=>error.code==="JOB_CANCELLED");
+ assert.equal(observedSignal.aborted,true);
+ assert.deepEqual(await readdir(root),[]);
+ await rm(root,{recursive:true,force:true});
+});
 test("publishes generated media using asset repository metadata and bytes",async()=>{
  const f=await fixture();const path=join(f.root,"render.mp4");await writeFile(path,content);
  const result=await f.io.publish({ownerId:"owner-1",projectId:"project-1",filename:"render.mp4",mediaType:"video/mp4",path,metadata:{operation:"timeline.render"}});
@@ -51,6 +74,24 @@ test("publishes worker output through the streaming repository method when avail
  assert.equal(result.id,"streamed-asset");assert.equal(call.filePath,path);assert.equal(call.ownerId,"owner-1");
  await rm(root,{recursive:true,force:true});
 });
+test("rejects oversized streamed output before calling the file repository method",async()=>{
+ const root=await mkdtemp(join(tmpdir(),"ev-media-stream-limit-test-")),path=join(root,"large.mp4");
+ await writeFile(path,Buffer.alloc(101));let called=false;
+ const assets={async createSignedUrl(){},async createFromFile(){called=true;return{id:"unexpected"}}};
+ const io=createCloudMediaAssetIO({assets,tempRoot:root,maxBytes:100});
+ await assert.rejects(()=>io.publish({ownerId:"owner-1",filename:"large.mp4",mediaType:"video/mp4",path}),error=>error.code==="CLOUD_MEDIA_TOO_LARGE");
+ assert.equal(called,false,"oversized files must be rejected before the repository streams them");
+ await rm(root,{recursive:true,force:true});
+});
+test("rejects non-file streamed output before calling the file repository method",async()=>{
+ const root=await mkdtemp(join(tmpdir(),"ev-media-stream-type-test-")),path=join(root,"directory");
+ await import("node:fs/promises").then(({mkdir})=>mkdir(path));let called=false;
+ const assets={async createSignedUrl(){},async createFromFile(){called=true;return{id:"unexpected"}}};
+ const io=createCloudMediaAssetIO({assets,tempRoot:root,maxBytes:100});
+ await assert.rejects(()=>io.publish({ownerId:"owner-1",filename:"directory",mediaType:"video/mp4",path}),/regular file/);
+ assert.equal(called,false,"directories must never be passed to the streaming repository method");
+ await rm(root,{recursive:true,force:true});
+});
 test("rejects oversized output before reading it into memory or calling the repository",async()=>{
  const f=await fixture({maxBytes:5});const path=join(f.root,"large.mp4");await writeFile(path,Buffer.alloc(6));
  await assert.rejects(()=>f.io.publish({ownerId:"owner-1",filename:"large.mp4",mediaType:"video/mp4",path}),e=>e.code==="CLOUD_MEDIA_TOO_LARGE");
@@ -62,6 +103,23 @@ test("rejects unsafe signed download URLs before making a request",async()=>{
  await assert.rejects(()=>io.materialize({ownerId:"owner-1",assetId:"asset-1"}),/unsafe signed URL/);
  assert.equal(calls.length,0);await rm(root,{recursive:true,force:true});
 });
+test("forbids redirects when fetching signed cloud media and cleans temporary files",async()=>{
+ const root=await mkdtemp(join(tmpdir(),"ev-media-redirect-test-")),calls=[];
+ const io=createCloudMediaAssetIO({
+  tempRoot:root,
+  assets:{async createSignedUrl(){return{url:"https://storage.example/signed",asset:{id:"asset-1",ownerId:"owner-1",size:content.length,sha256:digest,mediaType:"video/mp4"}}},async create(){}},
+  fetchImpl:async(url,options)=>{
+   calls.push({url,options});
+   assert.equal(options.redirect,"error","signed media downloads must not follow redirects");
+   throw new TypeError("redirect mode rejected the redirect");
+  }
+ });
+ await assert.rejects(()=>io.materialize({ownerId:"owner-1",assetId:"asset-1"}),/redirect mode rejected the redirect/);
+ assert.equal(calls.length,1);
+ assert.deepEqual(await readdir(root),[],"failed redirect attempts must leave no temporary media behind");
+ await rm(root,{recursive:true,force:true});
+});
+
 test("requires explicit repository methods and valid limits",()=>{
  assert.throws(()=>createCloudMediaAssetIO({}),/asset repository/);
  assert.throws(()=>createCloudMediaAssetIO({assets:{createSignedUrl(){},create(){}},maxBytes:0}),/byte limit/);

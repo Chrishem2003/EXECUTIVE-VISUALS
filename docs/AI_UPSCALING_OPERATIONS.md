@@ -55,3 +55,17 @@ A successful response includes `selfTest.passed=true` and `selfTest.inferenceVer
 - The self-test is synchronous and may take up to the configured engine timeout. Keep test images small and run it during a controlled maintenance window.
 - A passing test does not replace output dimension/decode checks, provenance capture, asset review, or approval gates in the media job pipeline.
 - If the worker is horizontally scaled, each process must pass its own self-test. A readiness result on one process is not proof that another process is ready.
+
+
+## Comparing candidate model builds
+
+The benchmark module also exports `compareUpscaleBenchmarkCandidates(records)`. It groups records by model name, model version, executable SHA-256 and model-files SHA-256, so a changed binary or weight set is treated as a different candidate.
+
+The comparison report includes:
+- successful and failed executions, and human-reviewed pass/fail counts;
+- required fixture categories still missing;
+- median and p95 execution time;
+- median PSNR, SSIM and LPIPS where those metrics were actually supplied;
+- a `recommended` candidate only when every record for that pinned build passed execution, every required fixture category has a human-reviewed pass, and no record remains pending or rejected.
+
+A candidate with a faster runtime or a higher metric is never recommended when quality review is incomplete. Missing metrics remain null; no synthetic score is calculated. The comparison function does not run a model, download weights, or enable the GPU worker.

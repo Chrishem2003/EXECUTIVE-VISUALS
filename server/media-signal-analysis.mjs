@@ -45,15 +45,16 @@ export function parseAudioMetrics(stderr=""){
  const peaks=[...text.matchAll(/Peak level dB:\s*(-?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)|-inf)/gi)].map(match=>match[1].toLowerCase()==="-inf"?null:Number(match[1]));
  const rms=[...text.matchAll(/RMS level dB:\s*(-?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)|-inf)/gi)].map(match=>match[1].toLowerCase()==="-inf"?null:Number(match[1]));
  const integrated=[...text.matchAll(/^\s*I:\s*(-?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+))\s*LUFS/gm)].map(match=>Number(match[1])).filter(Number.isFinite);
- return {clippedSamples:clipped.length?Math.max(...clipped):null,peakDbfs:peaks.length?peaks.at(-1):null,rmsDbfs:rms.length?rms.at(-1):null,integratedLufs:integrated.length?integrated.at(-1):null};
+ const truePeaks=[...text.matchAll(/True peak:\s*(-?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+))\s*dBFS/gi)].map(match=>Number(match[1])).filter(Number.isFinite);
+ return {clippedSamples:clipped.length?Math.max(...clipped):null,peakDbfs:peaks.length?peaks.at(-1):null,truePeakDbtp:truePeaks.length?truePeaks.at(-1):null,rmsDbfs:rms.length?rms.at(-1):null,integratedLufs:integrated.length?integrated.at(-1):null};
 }
 export function buildAudioMetricFindings(metrics={}){
  const findings=[];
  if(Number(metrics.clippedSamples)>0)findings.push({code:"AUDIO_CLIPPING",severity:"warning",clippedSamples:Number(metrics.clippedSamples),message:"Clipped audio samples were reported by the signal analyzer."});
- if(Number.isFinite(metrics.peakDbfs)&&metrics.peakDbfs>=-1)findings.push({code:"AUDIO_PEAK_NEAR_FULL_SCALE",severity:"warning",peakDbfs:metrics.peakDbfs,message:"Audio peaks are within 1 dB of full scale; review true-peak and delivery headroom."});
+ if(Number.isFinite(metrics.peakDbfs)&&metrics.peakDbfs>=-1)findings.push({code:"AUDIO_PEAK_NEAR_FULL_SCALE",severity:"warning",peakDbfs:metrics.peakDbfs,message:"Sample peaks are within 1 dB of full scale; review true-peak and delivery headroom."});
+ if(Number.isFinite(metrics.truePeakDbtp)&&metrics.truePeakDbtp>=-1)findings.push({code:"AUDIO_TRUE_PEAK_NEAR_LIMIT",severity:"warning",truePeakDbtp:metrics.truePeakDbtp,message:"Measured true peak is above -1 dBTP; review the delivery headroom requirement."});
  return findings;
 }
-
 export async function runOptionalSignalCheck(check,{isCancelled=()=>false}={}) {
  try {
   return {status:"completed",result:await check()};
@@ -61,4 +62,68 @@ export async function runOptionalSignalCheck(check,{isCancelled=()=>false}={}) {
   if(isCancelled())throw error;
   return {status:"unavailable",reason:String(error?.code||"ANALYSIS_FAILED").slice(0,80)};
  }
+}
+
+
+/**
+ * Parse FFmpeg signalstats metadata=print output into bounded per-frame
+ * luma samples. Missing timestamps/values are discarded rather than guessed.
+ */
+export function parseVideoLumaSamples(stderr=""){
+ const samples=[];
+ const blocks=String(stderr||"").split(/(?=^frame:\s*\d+)/m);
+ for(const block of blocks){
+  const frame=block.match(/^frame:\s*(\d+)/m);
+  const time=block.match(/pts_time:\s*(-?(?:\d+(?:\.\d*)?|\.\d+))/);
+  const luma=block.match(/lavfi\.signalstats\.YAVG=([0-9]+(?:\.[0-9]+)?)/);
+  if(!frame||!time||!luma)continue;
+  const sample={frame:Number(frame[1]),timeSeconds:Number(time[1]),meanLuma:Number(luma[1])};
+  if(Number.isSafeInteger(sample.frame)&&Number.isFinite(sample.timeSeconds)&&sample.timeSeconds>=0&&Number.isFinite(sample.meanLuma)&&sample.meanLuma>=0&&sample.meanLuma<=255)samples.push(sample);
+ }
+ return samples.sort((a,b)=>a.timeSeconds-b.timeSeconds||a.frame-b.frame);
+}
+
+/**
+ * Conservative temporal luminance anomaly detector. Scene-cut-adjacent
+ * changes are excluded; findings are review prompts, never quality scores.
+ */
+export function parseSceneCutTimes(stderr="",minimumScore=10){
+ const cuts=[];
+ const blocks=String(stderr||"").split(/(?=^frame:\s*\d+)/m);
+ for(const block of blocks){
+  const time=block.match(/pts_time:\s*(-?(?:\d+(?:\.\d*)?|\.\d+))/);
+  const score=block.match(/lavfi\.scd\.score=([0-9]+(?:\.[0-9]+)?)/);
+  if(!time||!score)continue;
+  const timeSeconds=Number(time[1]),value=Number(score[1]);
+  if(Number.isFinite(timeSeconds)&&timeSeconds>=0&&Number.isFinite(value)&&value>=minimumScore)cuts.push(timeSeconds);
+ }
+ return [...new Set(cuts)].sort((a,b)=>a-b);
+}
+
+export function buildTemporalLumaFindings({lumaSamples=[],sceneChanges=[],minimumDelta=30,sceneGuardSeconds=0.18,alternatingWindow=4,alternatingMinimumDelta=18}={}){
+ const samples=Array.isArray(lumaSamples)?lumaSamples.filter(item=>Number.isFinite(item?.timeSeconds)&&item.timeSeconds>=0&&Number.isFinite(item?.meanLuma)&&item.meanLuma>=0&&item.meanLuma<=255).sort((a,b)=>a.timeSeconds-b.timeSeconds):[];
+ const cuts=Array.isArray(sceneChanges)?sceneChanges.filter(Number.isFinite):[];
+ const deltas=[];
+ for(let i=1;i<samples.length;i++){
+  const previous=samples[i-1],current=samples[i],delta=current.meanLuma-previous.meanLuma;
+  if(current.timeSeconds<=previous.timeSeconds)continue;
+  const nearCut=cuts.some(time=>Math.abs(time-current.timeSeconds)<=sceneGuardSeconds);
+  deltas.push({startSeconds:previous.timeSeconds,endSeconds:current.timeSeconds,delta,nearCut});
+ }
+ const findings=[];
+ for(const item of deltas){
+  if(!item.nearCut&&Math.abs(item.delta)>=minimumDelta)findings.push({code:"ABRUPT_LUMA_CHANGE",severity:"warning",startSeconds:item.startSeconds,endSeconds:item.endSeconds,lumaDelta:Number(item.delta.toFixed(2)),message:"A large frame-to-frame luminance change was detected away from a known scene cut; review for a flash, exposure jump or intentional lighting change."});
+ }
+ const eligible=deltas.filter(item=>!item.nearCut);
+ for(let i=alternatingWindow-1;i<eligible.length;i++){
+  const window=eligible.slice(i-alternatingWindow+1,i+1);
+  if(window.some(item=>Math.abs(item.delta)<alternatingMinimumDelta))continue;
+  const signs=window.map(item=>Math.sign(item.delta));
+  if(signs.every((sign,index)=>index===0||sign!==signs[index-1])){
+   const startSeconds=window[0].startSeconds,endSeconds=window.at(-1).endSeconds;
+   if(!findings.some(item=>item.code==="TEMPORAL_LUMA_FLICKER"&&Math.abs(item.startSeconds-startSeconds)<0.0001))
+    findings.push({code:"TEMPORAL_LUMA_FLICKER",severity:"warning",startSeconds,endSeconds,frameTransitions:window.length,message:"Repeated alternating frame luminance changes may indicate flicker; inspect this interval visually."});
+  }
+ }
+ return findings.sort((a,b)=>a.startSeconds-b.startSeconds);
 }

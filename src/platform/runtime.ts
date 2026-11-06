@@ -10,13 +10,15 @@ type RemoteUsage={window:string;configurationValid:boolean;limit:number|null;use
 let workspaceRevisions=new Map<string,number>();
 let workspaceSaveTimers=new Map<string,ReturnType<typeof setTimeout>>();
 let workspaceSaveChain:Promise<void>=Promise.resolve();
-const state:{status:"checking"|"offline"|"auth-required"|"online";authMode:"local"|"supabase";user:RuntimeUser|null;projects:RuntimeProject[];assets:RuntimeAsset[];jobs:RuntimeJob[];audit:Array<Record<string,unknown>>;members:Array<{id:string;email:string;role:string;createdAt:string}>;reviews:RuntimeReview[];projectId:string;message:string;ffmpeg:boolean;ffprobe:boolean;textGatewayEnabled:boolean;textGatewayConfigured:boolean;imageGatewayEnabled:boolean;imageGatewayConfigured:boolean;providers:ProviderStatus[];remoteUsage:RemoteUsage|null}={
- status:"checking",authMode:"local",user:null,projects:[],assets:[],jobs:[],audit:[],members:[],reviews:[],projectId:"",message:"",ffmpeg:false,ffprobe:false,textGatewayEnabled:false,textGatewayConfigured:false,imageGatewayEnabled:false,imageGatewayConfigured:false,providers:[],remoteUsage:null
+const state:{status:"checking"|"offline"|"auth-required"|"online";authMode:"local"|"supabase";user:RuntimeUser|null;projects:RuntimeProject[];assets:RuntimeAsset[];jobs:RuntimeJob[];audit:Array<Record<string,unknown>>;members:Array<{id:string;email:string;role:string;createdAt:string}>;reviews:RuntimeReview[];projectId:string;message:string;ffmpeg:boolean;ffprobe:boolean;textGatewayEnabled:boolean;textGatewayConfigured:boolean;imageGatewayEnabled:boolean;imageGatewayConfigured:boolean;providers:ProviderStatus[];remoteUsage:RemoteUsage|null;workspaceSaveStatus:"idle"|"saving"|"saved"|"error"}={
+ status:"checking",authMode:"local",workspaceSaveStatus:"idle",user:null,projects:[],assets:[],jobs:[],audit:[],members:[],reviews:[],projectId:"",message:"",ffmpeg:false,ffprobe:false,textGatewayEnabled:false,textGatewayConfigured:false,imageGatewayEnabled:false,imageGatewayConfigured:false,providers:[],remoteUsage:null,
 };
 const esc=(value:unknown)=>String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]||c));
 const fmt=(value:string)=>new Date(value).toLocaleString();
 function statusMarkup(){return '<span class="runtime-status '+state.status+'"><i></i>'+esc(state.status==="online"?"API CONNECTED":state.status==="auth-required"?"SIGN IN REQUIRED":state.status==="offline"?"OFFLINE":"CONNECTING")+'</span>';}
 function updateShell(){
+ const saveBadge=document.querySelector<HTMLElement>("#workspace-save-status");
+ if(saveBadge){const labels={idle:"NO PENDING CHANGES",saving:"SAVING WORKSPACE…",saved:"ALL CHANGES SAVED",error:"SAVE FAILED — RETRY REQUIRED"};saveBadge.textContent=labels[state.workspaceSaveStatus];saveBadge.dataset.state=state.workspaceSaveStatus;saveBadge.setAttribute("aria-label",labels[state.workspaceSaveStatus]);}
  const projectLabel=document.querySelector<HTMLElement>("#project-name");
  if(projectLabel)projectLabel.textContent=state.projects.find(project=>project.id===state.projectId)?.name||"No project selected";
  const foot=document.querySelector<HTMLElement>(".sidebar-foot small");
@@ -46,7 +48,7 @@ function renderAssets(){
   const processing=a.metadata&&typeof a.metadata==="object"&&a.metadata.processing&&typeof a.metadata.processing==="object"?a.metadata.processing as Record<string,unknown>:{};
   const lineage=sourceAsset&&isImage?'<section class="asset-comparison"><div class="eyebrow">SOURCE / ENHANCED REVIEW</div><div class="asset-comparison-grid"><div><small>Original · '+esc(sourceAsset.name)+'</small><a href="/api/assets/'+esc(sourceAsset.id)+'/file" target="_blank" rel="noopener"><img loading="lazy" src="/api/assets/'+esc(sourceAsset.id)+'/file" alt="Original source image"></a></div><div><small>Derivative · '+esc(a.name)+'</small><a href="'+file+'" target="_blank" rel="noopener"><img loading="lazy" src="'+file+'" alt="Enhanced derivative image"></a></div></div><p>'+esc(processing.method||"Processed derivative")+' · '+esc(processing.model||"model not recorded")+' · '+esc(processing.scale?String(processing.scale)+"×":"scale not recorded")+(processing.dimensionsVerified?" · dimensions verified":"")+'</p><small>Original SHA-256: '+esc(sourceAsset.sha256.slice(0,16))+'… · Enhanced SHA-256: '+esc(a.sha256.slice(0,16))+'…</small></section>':'';
   const actions='<a class="download-output" href="'+file+'" target="_blank" rel="noopener">Open original</a>'+(state.projectId&&["owner","editor","reviewer"].includes(state.projects.find(p=>p.id===state.projectId)?.access_role||"")?'<button data-ev-review-asset="'+esc(a.id)+'">Review asset</button>':'')+'<button data-ev-job="media.probe" data-ev-asset="'+esc(a.id)+'">Inspect</button>'+(isVideo?'<button data-ev-job="media.thumbnail" data-ev-asset="'+esc(a.id)+'">Extract frame</button><button data-ev-job="media.proxy" data-ev-asset="'+esc(a.id)+'">Create proxy</button><button data-ev-job="media.audio_extract" data-ev-asset="'+esc(a.id)+'">Extract audio</button><button data-ev-job="media.denoise" data-ev-asset="'+esc(a.id)+'" data-ev-luma="4" data-ev-chroma="3">Denoise</button><button data-ev-job="media.color" data-ev-asset="'+esc(a.id)+'" data-ev-brightness="0" data-ev-contrast="1" data-ev-saturation="1">Color correction</button><button data-ev-job="media.resize" data-ev-asset="'+esc(a.id)+'" data-ev-width="1920" data-ev-height="1080" data-ev-fit="contain">Reframe 16:9</button><button data-ev-job="media.interpolate" data-ev-asset="'+esc(a.id)+'" data-ev-fps="30">Interpolate 30 fps</button><button data-ev-job="media.upscale" data-ev-asset="'+esc(a.id)+'" data-ev-width="2560" data-ev-height="1440" data-ev-algorithm="lanczos">Scale to QHD · Lanczos</button><button data-ev-job="media.upscale" data-ev-asset="'+esc(a.id)+'" data-ev-width="2560" data-ev-height="1440" data-ev-algorithm="spline36" data-ev-sharpness="0.5">Scale to QHD · Spline + sharpen</button><button data-ev-job="media.upscale" data-ev-asset="'+esc(a.id)+'" data-ev-width="3840" data-ev-height="2160" data-ev-algorithm="lanczos">Scale to 4K · Lanczos</button>':isAudio?'<button data-ev-job="media.probe" data-ev-asset="'+esc(a.id)+'">Inspect audio</button><button data-ev-job="media.audio-clean" data-ev-asset="'+esc(a.id)+'" data-ev-noise-floor="-25" data-ev-target-lufs="-16">Clean speech & normalize</button>':isImage?(state.providers.some(provider=>provider.id==="ai-upscale"&&provider.status==="ready")?'<button data-ev-job="media.ai-upscale" data-ev-asset="'+esc(a.id)+'" data-ev-model="realesrgan-x4plus" data-ev-scale="4" data-ev-tile="128" data-ev-format="png">AI super-resolution · 4×</button>':'<span class="muted">AI super-resolution unavailable · configure and enable a compatible worker</span>'):'');
-  return '<article class="runtime-asset"><div class="runtime-asset-preview">'+preview+'</div><div class="runtime-asset-info"><b>'+esc(a.name)+'</b><small>'+Math.max(1,Math.round(a.size/1024))+' KB · '+esc(a.mediaType)+'</small><code>'+esc(a.sha256.slice(0,20))+'…</code>'+(a.derivativeOf?'<small>Derivative of '+esc(sourceAsset?.name||a.derivativeOf)+'</small>':'')+'</div>'+lineage+'<div class="runtime-asset-actions">'+actions+'</div></article>';
+  return '<article class="runtime-asset"><div class="runtime-asset-preview">'+preview+'</div><div class="runtime-asset-info"><b>'+esc(a.name)+'</b><small>'+Math.max(1,Math.round(a.size/1024))+' KB · '+esc(a.mediaType)+'</small><code>'+esc(a.sha256.slice(0,20))+'…</code>'+(a.derivativeOf?'<small>Derivative of '+esc(sourceAsset?.name||a.derivativeOf)+'</small>':'')+'</div>'+lineage+'<div class="runtime-asset-actions">' +actions+'</div></article>';
  }).join("")+'</div>';
 }
 function renderJobs(){
@@ -108,16 +110,18 @@ function queueCreativeDraft(document:Record<string,unknown>){
  const projectId=state.projectId;
  const project=state.projects.find(item=>item.id===projectId);
  if(!projectId||state.status!=="online"||!project||!["owner","editor"].includes(project.access_role||""))return;
+ state.workspaceSaveStatus="saving";updateShell();
  const old=workspaceSaveTimers.get(projectId);if(old)clearTimeout(old);
  const timer=setTimeout(()=>{
   workspaceSaveTimers.delete(projectId);
   workspaceSaveChain=workspaceSaveChain.then(async()=>{
    const current=state.projects.find(item=>item.id===projectId);
-   if(state.status!=="online"||!current||!["owner","editor"].includes(current.access_role||""))return;
+   if(state.status!=="online"||!current||!["owner","editor"].includes(current.access_role||"")){state.workspaceSaveStatus="error";updateShell();return;}
    const revision=workspaceRevisions.get(projectId)||0;
    const result=await apiRequest<{revision:number}>("/api/projects/"+projectId+"/workspace",{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({revision,document})});
    workspaceRevisions.set(projectId,result.revision);
-  }).catch(error=>{state.message=error instanceof Error?"Creative draft save failed: "+error.message:"Creative draft save failed.";paint();});
+   state.workspaceSaveStatus="saved";updateShell();
+  }).catch(error=>{state.workspaceSaveStatus="error";state.message=error instanceof Error?"Creative draft save failed: "+error.message:"Creative draft save failed.";updateShell();paint();});
  },600);
  workspaceSaveTimers.set(projectId,timer);
 }

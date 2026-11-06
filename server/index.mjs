@@ -18,7 +18,8 @@ import { getProviderCatalog } from "./provider-registry.mjs";
 import { ensureRemoteUsageTable, getRemoteUsagePolicy } from "./usage-guardrails.mjs";
 import { createCloudTimelineApi } from "./cloud-timeline-api.mjs";
 import { validateSrt, validateWebVtt } from "./caption-validation.mjs";
-import { ensureTransformationPlanSchema, createTransformationPlan, approveTransformationPlan, listTransformationPlans, getTransformationPlan } from "./transformation-plans.mjs";
+import { ensureTransformationPlanSchema, createTransformationPlan, approveTransformationPlan, listTransformationPlans, getTransformationPlan, verifyTransformationApproval } from "./transformation-plans.mjs";
+import { createUpscaleBenchmarkFixture, listUpscaleBenchmarkFixtures, registerUpscaleBenchmarkRun, listUpscaleBenchmarkRuns, reviewUpscaleBenchmarkRun, getUpscaleBenchmarkReport } from "./upscale-benchmark-store.mjs";
 
 const PORT = Number(process.env.API_PORT || process.env.PORT || 4179);
 const HOST = process.env.API_HOST || "127.0.0.1";
@@ -305,19 +306,53 @@ export function createAppServer() {
       const user=await authenticate(req);
       if(!user){fail(res,401,"AUTH_REQUIRED","Sign in to access this workspace.");return;}
       if(path==="/api/me"&&req.method==="GET"){send(res,200,{user,authMode:AUTH_MODE},cors);return;}
-      if(cloudTimelineApi && path==="/api/cloud/assets" && req.method==="POST"){
-        const uploadResult=await cloudTimelineApi.uploadAsset({
-          req,ownerId:user.id,projectId:String(req.headers["x-project-id"]||""),
-          originalName:String(req.headers["x-file-name"]||"upload"),
-          mediaType:String(req.headers["content-type"]||"application/octet-stream")
-        });
-        send(res,uploadResult.status,uploadResult.body,cors);return;
+      const upscaleBenchmarksMatch=path.match(/^\/api\/upscale-benchmarks(?:\/(fixtures|runs)(?:\/([0-9a-f-]+)\/review)?)?$/i);
+      if(upscaleBenchmarksMatch){
+        const section=upscaleBenchmarksMatch[1]||"";
+        const runId=upscaleBenchmarksMatch[2]||"";
+        const projectId=String(url.searchParams.get("projectId")||"");
+        if(!projectId||!getProjectAccess(db,user.id,projectId)){fail(res,404,"PROJECT_NOT_FOUND","Benchmark project not found.");return;}
+        if(path==="/api/upscale-benchmarks/fixtures"&&req.method==="GET"){
+          send(res,200,{fixtures:listUpscaleBenchmarkFixtures(db,projectId)},cors);return;
+        }
+        if(path==="/api/upscale-benchmarks/runs"&&req.method==="GET"){
+          const runs=listUpscaleBenchmarkRuns(db,projectId);
+          send(res,200,{runs,report:getUpscaleBenchmarkReport(db,projectId).report},cors);return;
+        }
+        if(section==="fixtures"&&req.method==="POST"){
+          if(!canWriteProject(db,user.id,projectId)){fail(res,403,"EDITOR_REQUIRED","Owner or editor access is required to register benchmark fixtures.");return;}
+          const body=await readJson(req,16*1024);
+          try{
+            const fixture=createUpscaleBenchmarkFixture(db,{ownerId:user.id,projectId,sourceAssetId:String(body.sourceAssetId||""),category:String(body.category||""),label:body.label});
+            audit(db,user.id,"upscale_benchmark.fixture_registered","upscale_benchmark_fixture",fixture.id,{category:fixture.category,sourceAssetId:fixture.sourceAssetId},projectId);
+            send(res,201,{fixture},cors);return;
+          }catch(error){fail(res,error.status||400,error.code||"UPSCALE_FIXTURE_FAILED",String(error.message||"Could not register benchmark fixture."));return;}
+        }
+        if(section==="runs"&&req.method==="POST"){
+          if(!canWriteProject(db,user.id,projectId)){fail(res,403,"EDITOR_REQUIRED","Owner or editor access is required to register benchmark runs.");return;}
+          const body=await readJson(req,16*1024);
+          try{
+            const run=registerUpscaleBenchmarkRun(db,{ownerId:user.id,projectId,assetId:String(body.assetId||""),fixtureId:String(body.fixtureId||"")});
+            audit(db,user.id,"upscale_benchmark.run_registered","upscale_benchmark_run",run.id,{assetId:run.assetId,fixtureId:run.fixtureId,model:run.record.model,modelVersion:run.record.modelVersion},projectId);
+            send(res,201,{run},cors);return;
+          }catch(error){fail(res,error.status||400,error.code||"UPSCALE_BENCHMARK_REGISTER_FAILED",String(error.message||"Could not register benchmark evidence."));return;}
+        }
+        if(runId&&path.endsWith("/review")&&req.method==="POST"){
+          const access=getProjectAccess(db,user.id,projectId);
+          if(!["owner","reviewer"].includes(access?.access_role)){fail(res,403,"BENCHMARK_REVIEWER_REQUIRED","Only the project owner or an assigned reviewer can decide benchmark quality.");return;}
+          const body=await readJson(req,16*1024);
+          try{
+            const reviewed=reviewUpscaleBenchmarkRun(db,{runId,projectId,reviewerId:user.id,decision:String(body.decision||""),note:body.note});
+            audit(db,user.id,"upscale_benchmark.quality_reviewed","upscale_benchmark_run",runId,{decision:reviewed.review.decision,noteLength:reviewed.review.note.length},projectId);
+            send(res,200,{run:reviewed},cors);return;
+          }catch(error){fail(res,error.status||400,error.code||"UPSCALE_BENCHMARK_REVIEW_FAILED",String(error.message||"Could not review benchmark evidence."));return;}
+        }
       }
-      if(cloudTimelineApi && (path.startsWith("/api/cloud/timelines")||path.startsWith("/api/cloud/jobs")||path.startsWith("/api/cloud/assets")||path.startsWith("/api/cloud/projects")||path.startsWith("/api/cloud/transformations"))){
-        const isCloudMutation=(path.startsWith("/api/cloud/transformations")&&(req.method==="POST"||path.endsWith("/approve")&&req.method==="POST"||path.endsWith("/submit")&&req.method==="POST"))||(path.startsWith("/api/cloud/timelines")&&(req.method==="POST"||req.method==="PUT"))||(path==="/api/cloud/projects"&&req.method==="POST")||(path.startsWith("/api/cloud/projects/")&&(req.method==="PATCH"||req.method==="DELETE"));
+      if(cloudTimelineApi && (path.startsWith("/api/cloud/timelines")||path.startsWith("/api/cloud/jobs")||path.startsWith("/api/cloud/assets")||path.startsWith("/api/cloud/projects")||path.startsWith("/api/cloud/transformations")||path.startsWith("/api/cloud/upscale"))){
+        const isCloudMutation=(path.startsWith("/api/cloud/transformations")&&(req.method==="POST"||path.endsWith("/approve")&&req.method==="POST"||path.endsWith("/submit")&&req.method==="POST"))||(path.startsWith("/api/cloud/timelines")&&(req.method==="POST"||req.method==="PUT"))||(path==="/api/cloud/projects"&&req.method==="POST")||(path.startsWith("/api/cloud/projects/")&&(req.method==="PATCH"||req.method==="DELETE"))||((path==="/api/cloud/upscale"||path.startsWith("/api/cloud/upscale-benchmarks"))&&req.method==="POST");
         const body=isCloudMutation?await readJson(req,5*1024*1024):{};
         const cloudResult=await cloudTimelineApi.handle({
-          method:req.method,path,ownerId:user.id,body,query:Object.fromEntries(url.searchParams.entries()),
+          method:req.method,path,ownerId:user.id,body,req,query:Object.fromEntries(url.searchParams.entries()),
           idempotencyKey:String(req.headers["idempotency-key"]||"")
         });
         if(cloudResult){send(res,cloudResult.status,cloudResult.body,cors);return;}
@@ -377,6 +412,8 @@ export function createAppServer() {
         if(transformationMatch[2]==="submit"&&req.method==="POST"){
           if(!canWriteProject(db,user.id,plan.project_id)){fail(res,403,"EDITOR_REQUIRED","Owner or editor access is required to submit a transformation.");return;}
           if(plan.status!=="approved"){fail(res,409,"TRANSFORMATION_APPROVAL_REQUIRED","Approve the plan and budget before submission.");return;}
+          const approvalIntegrity=verifyTransformationApproval(db,user.id,plan.id);
+          if(!approvalIntegrity.valid){fail(res,409,"TRANSFORMATION_PLAN_CHANGED","The approved transformation no longer matches its immutable plan fingerprint. Create and approve a new plan.");return;}
           fail(res,409,"TRANSFORMATION_ADAPTER_UNAVAILABLE","No verified video-transformation adapter is enabled. The approved plan remains saved; no provider request or charge was made.");return;
         }
       }

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { validateUpscaleBenchmarkRecord, summarizeUpscaleBenchmarks, sha256Hex } from "../upscale-benchmark.mjs";
+import { validateUpscaleBenchmarkRecord, summarizeUpscaleBenchmarks, compareUpscaleBenchmarkCandidates, sha256Hex, buildUpscaleBenchmarkRecordFromAsset } from "../upscale-benchmark.mjs";
 
 const digest = char => char.repeat(64);
 const validRecord = overrides => ({
@@ -116,4 +116,112 @@ test("summary fails closed for a non-array input", () => {
   assert.equal(summary.recordCount, 0);
   assert.equal(summary.qualityVerified, false);
   assert.equal(summary.validRecordCount, 0);
+});
+
+
+test("compares pinned model builds but recommends only fully human-reviewed quality candidates", () => {
+  const categories = ["portrait", "fine_texture", "text", "animation", "low_light_noisy"];
+  const approved = categories.map((fixtureCategory, index) => validRecord({
+    fixtureId: "approved-" + index, fixtureCategory, qualityReview: "reviewed_pass",
+    durationMs: 1800 - index * 100, metrics: { psnr: 30 + index, ssim: 0.9 + index * 0.01 }
+  }));
+  const unreviewed = categories.map((fixtureCategory, index) => validRecord({
+    fixtureId: "unreviewed-" + index, fixtureCategory, model: "candidate-b",
+    qualityReview: "not_reviewed", durationMs: 400
+  }));
+  const report = compareUpscaleBenchmarkCandidates([...approved, ...unreviewed]);
+  assert.equal(report.candidateCount, 2);
+  assert.equal(report.recommended.model, "realesrgan-x4plus");
+  const waiting = report.candidates.find(candidate => candidate.model === "candidate-b");
+  assert.equal(waiting.qualityVerified, false);
+  assert.deepEqual(waiting.missingCategories, categories);
+  assert.equal(report.recommended.metrics.ssimMedian, 0.92);
+});
+
+test("does not recommend a model when all candidates have incomplete or rejected quality review", () => {
+  const report = compareUpscaleBenchmarkCandidates([
+    validRecord({ qualityReview: "reviewed_fail" }),
+    validRecord({ fixtureId: "pending", fixtureCategory: "text", qualityReview: "not_reviewed" })
+  ]);
+  assert.equal(report.recommended, null);
+});
+
+test("candidate comparison excludes malformed benchmark records", () => {
+  const report = compareUpscaleBenchmarkCandidates([
+    validRecord({ qualityReview: "reviewed_pass" }),
+    validRecord({ fixtureId: "bad", inputSha256: "invalid" })
+  ]);
+  assert.equal(report.invalidRecords.length, 1);
+  assert.equal(report.candidateCount, 1);
+  assert.equal(report.recommended, null);
+});
+
+
+test("candidate comparison rejects duplicate fixture evidence for the same pinned model build", () => {
+  const duplicateFixture = validRecord({ qualityReview: "reviewed_pass" });
+  const report = compareUpscaleBenchmarkCandidates([
+    duplicateFixture,
+    { ...duplicateFixture, durationMs: 900 }
+  ]);
+  assert.equal(report.invalidRecords.length, 1);
+  assert.equal(report.candidates[0].qualityVerified, false);
+  assert.equal(report.recommended, null);
+});
+
+
+test("creates benchmark evidence from a persisted AI-upscale derivative and its provenance", () => {
+  const sourceHash=digest("c"),outputHash=digest("d");
+  const asset={
+    id:"derived-asset",mediaType:"image/png",sha256:outputHash,derivativeOf:"source-asset",
+    createdAt:"2026-11-02T12:00:00.000Z",
+    metadata:{processing:{
+      schemaVersion:1,sourceAssetId:"source-asset",inputSha256:sourceHash,outputSha256:outputHash,
+      model:"realesrgan-x4plus",modelVersion:digest("a")+":"+digest("b"),
+      binarySha256:digest("a"),modelFilesSha256:digest("b"),
+      sourceWidth:320,sourceHeight:240,width:1280,height:960,scale:4,durationMs:1250,
+      dimensionsVerified:true,decoderVerified:true,qualityReview:"not_reviewed"
+    }}
+  };
+  const record=buildUpscaleBenchmarkRecordFromAsset({
+    outputAsset:asset,fixtureId:"portrait-01",fixtureCategory:"portrait",qualityReview:"reviewed_pass"
+  });
+  assert.equal(validateUpscaleBenchmarkRecord(record).valid,true);
+  assert.equal(record.inputSha256,sourceHash);
+  assert.equal(record.outputSha256,outputHash);
+  assert.equal(record.executionStatus,"passed");
+  assert.equal(record.qualityReview,"not_reviewed");
+  assert.equal(record.timestamp,asset.createdAt);
+});
+
+test("refuses benchmark evidence if the stored derivative hash or parent lineage disagrees", () => {
+  const asset={
+    mediaType:"image/png",sha256:digest("e"),derivativeOf:"different-source",
+    metadata:{processing:{
+      sourceAssetId:"source-asset",inputSha256:digest("c"),outputSha256:digest("d"),
+      model:"realesrgan-x4plus",modelVersion:"build",binarySha256:digest("a"),modelFilesSha256:digest("b"),
+      sourceWidth:320,sourceHeight:240,width:1280,height:960,scale:4,durationMs:1250,
+      dimensionsVerified:true,decoderVerified:true,qualityReview:"not_reviewed"
+    }}
+  };
+  assert.throws(()=>buildUpscaleBenchmarkRecordFromAsset({
+    outputAsset:asset,fixtureId:"portrait-02",fixtureCategory:"portrait"
+  }),error=>error.code==="UPSCALE_BENCHMARK_EVIDENCE_INVALID"&&error.issues.length>=2);
+});
+
+
+test("candidate comparisons keep identical model builds separate across hardware runtimes",()=>{
+ const categories=["portrait","fine_texture","text","animation","low_light_noisy"];
+ const runtimeA={platform:"linux",architecture:"x64",osRelease:"6.8",cpuModel:"CPU A",logicalCores:8,totalMemoryBytes:16000000000,nodeVersion:"24.0.0",vulkanIcdConfigured:true};
+ const runtimeB={...runtimeA,cpuModel:"CPU B",logicalCores:16,totalMemoryBytes:32000000000};
+ const records=[...categories.map((fixtureCategory,index)=>validRecord({fixtureId:"host-a-"+index,fixtureCategory,qualityReview:"reviewed_pass",runtime:runtimeA,durationMs:900})),...categories.map((fixtureCategory,index)=>validRecord({fixtureId:"host-b-"+index,fixtureCategory,qualityReview:"reviewed_pass",runtime:runtimeB,durationMs:300}))];
+ const report=compareUpscaleBenchmarkCandidates(records);
+ assert.equal(report.candidateCount,2);
+ assert.notDeepEqual(report.candidates[0].runtime,report.candidates[1].runtime);
+ assert.deepEqual(new Set(report.candidates.map(candidate=>candidate.runtime.cpuModel)),new Set(["CPU A","CPU B"]));
+});
+
+test("benchmark evidence rejects malformed runtime hardware metadata",()=>{
+ const result=validateUpscaleBenchmarkRecord(validRecord({runtime:{platform:"linux",architecture:"x64",cpuModel:"CPU",logicalCores:0,totalMemoryBytes:1024,nodeVersion:"24"}}));
+ assert.equal(result.valid,false);
+ assert.ok(result.issues.some(issue=>issue.includes("runtime.logicalCores")));
 });

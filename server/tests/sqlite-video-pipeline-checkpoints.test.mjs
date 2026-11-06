@@ -52,3 +52,14 @@ test("refuses to create a checkpoint store for a project the owner cannot access
   assert.equal(await editorStore.get("pipe-1","edit"),null);
  }finally{await f.close();}
 });
+
+
+test("treats equivalent checkpoint JSON with different object key order as the same receipt",async()=>{
+ const f=await fixture();try{
+  const store=createSqliteVideoPipelineCheckpointStore({db:f.db,ownerId:f.ownerA,projectId:f.projectA});
+  await store.save({...record,outputAsset:{id:"derived-1",mediaType:"video/mp4",sha256:"c".repeat(64),derivativeOf:"source-1",metadata:{codec:"h264",width:1920}}});
+  const replay={...record,outputAsset:{metadata:{width:1920,codec:"h264"},derivativeOf:"source-1",sha256:"c".repeat(64),mediaType:"video/mp4",id:"derived-1"}};
+  const saved=await store.save(replay);
+  assert.equal(saved.outputAsset.id,"derived-1");
+ }finally{await f.close();}
+});

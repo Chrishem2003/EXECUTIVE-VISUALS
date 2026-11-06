@@ -111,10 +111,13 @@ export function createCloudAssetRepository({
       if(typeof storage.uploadFile!=="function")throw new Error("Cloud storage adapter does not support streaming file uploads.");
       await allowed(ownerId,projectId,"write");
       const id=randomUUID(),name=safeName(originalName),objectPath=buildCloudAssetObjectPath({ownerId,projectId,assetId:id,filename:"original."+EXTENSIONS.get(mediaType)});
-      const uploaded=await storage.uploadFile(objectPath,filePath,mediaType);
+      let uploaded;
+      try{uploaded=await storage.uploadFile(objectPath,filePath,mediaType);}
+      catch(error){try{await storage.remove(objectPath);}catch{error.cleanupPending=true;}throw error;}
       if(uploaded?.bucket!=="executive-visuals-media"||uploaded?.path!==objectPath||!Number.isSafeInteger(uploaded?.size)||uploaded.size<1||typeof uploaded?.sha256!=="string"||!/^[a-f0-9]{64}$/i.test(uploaded.sha256)){
-        try{await storage.remove(objectPath);}catch{}
-        throw new Error("Cloud storage returned an unexpected streaming upload receipt.");
+        const error=new Error("Cloud storage returned an unexpected streaming upload receipt.");
+        try{await storage.remove(objectPath);}catch{error.cleanupPending=true;}
+        throw error;
       }
       try{
         const rows=await request("assets?select=id,owner_id,project_id,original_name,media_type,byte_size,sha256,storage_bucket,object_path,derivative_of,metadata,created_at",{
@@ -155,6 +158,17 @@ export function createCloudAssetRepository({
       const expectedPrefix=(row.project_id||row.owner_id)+"/"+row.id+"/";
       if(row.storage_bucket!=="executive-visuals-media"||typeof row.object_path!=="string"||!row.object_path.startsWith(expectedPrefix)) throw new Error("Cloud asset storage reference is invalid.");
       return {asset:publicAsset(row),url:await storage.createSignedUrl(row.object_path,expiresIn)};
+    },
+    async retryCleanup({ownerId,assetId}) {
+      ownerId=validUuid(ownerId,"owner ID");assetId=validUuid(assetId,"asset ID");
+      const rows=await request("assets?select=id,owner_id,project_id,object_path,storage_bucket,deleted_at&id=eq."+encodeURIComponent(assetId)+"&deleted_at=not.is.null&limit=1");
+      const row=Array.isArray(rows)?rows[0]:null;
+      if(!row||(!row.project_id&&row.owner_id!==ownerId)){const error=new Error("Deleted cloud asset not found.");error.code="CLOUD_ASSET_NOT_FOUND";throw error;}
+      await allowed(ownerId,row.project_id||null,"write");
+      const expectedPrefix=(row.project_id||row.owner_id)+"/"+row.id+"/";
+      if(row.storage_bucket!=="executive-visuals-media"||typeof row.object_path!=="string"||!row.object_path.startsWith(expectedPrefix))throw new Error("Cloud asset storage reference is invalid.");
+      await storage.remove(row.object_path);
+      return {id:assetId,deleted:true,storageRemoved:true,cleanupPending:false};
     },
     async softDelete({ownerId,assetId}) {
       ownerId=validUuid(ownerId,"owner ID");assetId=validUuid(assetId,"asset ID");

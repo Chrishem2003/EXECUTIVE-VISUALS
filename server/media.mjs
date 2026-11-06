@@ -9,6 +9,7 @@ import { stat } from "node:fs/promises";
 import { Transform } from "node:stream";
 import { addJobEvent, getAccessibleAsset, json, parseJson } from "./db.mjs";
 import { createRealEsrganAdapter } from "./ai-upscale-engine.mjs";
+import { attachMediaQualityReport } from "./media-quality.mjs";
 import { parseBlackFrameEvents, parseSilenceEvents, parseAudioMetrics, parseFreezeEvents, parseSceneChangeTimes, runOptionalSignalCheck } from "./media-signal-analysis.mjs";
 
 const ALLOWED_JOBS = new Set(["media.probe", "media.thumbnail", "media.transcode", "media.audio_extract", "media.proxy", "media.denoise", "media.color", "media.resize", "media.interpolate", "media.upscale", "media.audio-clean", "media.ai-upscale", "timeline.render"]);
@@ -151,6 +152,50 @@ export function validateMediaOutputProbe(metadata, mediaType) {
   if(!Number.isFinite(duration)&&!streams.some(stream=>Number(stream?.duration)>0))
     throw Object.assign(new Error("Media output has no verifiable duration."),{code:"MEDIA_OUTPUT_VALIDATION_FAILED"});
   return {streamCount:streams.length,durationSeconds:Number.isFinite(duration)?duration:null,validatedStreamType:expected};
+}
+
+export function buildAiUpscaleProvenance({result,sourceAsset,outputSha256,durationMs,dimensions}={}) {
+  const digest=/^[a-f0-9]{64}$/i;
+  if(!result||!sourceAsset||!digest.test(String(sourceAsset.sha256||""))||!digest.test(String(outputSha256||""))||
+    !digest.test(String(result.binarySha256||""))||!digest.test(String(result.modelFilesSha256||""))||
+    !Number.isFinite(durationMs)||durationMs<1||!Number.isInteger(dimensions?.width)||!Number.isInteger(dimensions?.height)||
+    dimensions.width<1||dimensions.height<1) {
+    throw Object.assign(new Error("AI upscale provenance is incomplete or invalid."),{code:"MEDIA_PROVENANCE_INVALID"});
+  }
+  return {
+    schemaVersion:1,
+    engine:result.engine,
+    method:result.method,
+    model:result.model,
+    modelVersion:result.modelVersion||result.binarySha256+":"+result.modelFilesSha256,
+    scale:result.scale,
+    tile:result.tile,
+    sourceAssetId:sourceAsset.id,
+    inputSha256:sourceAsset.sha256,
+    outputSha256,
+    durationMs:Math.max(1,Math.round(durationMs)),
+    sourceWidth:result.sourceWidth,
+    sourceHeight:result.sourceHeight,
+    width:dimensions.width,
+    height:dimensions.height,
+    dimensionsVerified:true,
+    decoderVerified:true,
+    binarySha256:result.binarySha256,
+    modelFilesSha256:result.modelFilesSha256,
+    qualityReview:"not_reviewed"
+  };
+}
+
+export function validateAiUpscaleProbeDimensions(probeOutput, expected={}) {
+  let metadata;
+  try { metadata=typeof probeOutput==="string"?JSON.parse(probeOutput):probeOutput; }
+  catch { throw Object.assign(new Error("AI upscale output dimensions could not be parsed."),{code:"MEDIA_OUTPUT_VALIDATION_FAILED"}); }
+  const stream=metadata?.streams?.[0];
+  const width=Number(stream?.width),height=Number(stream?.height);
+  if(!Number.isSafeInteger(width)||!Number.isSafeInteger(height)||width<=0||height<=0||
+    width!==Number(expected.width)||height!==Number(expected.height))
+    throw Object.assign(new Error("FFprobe output dimensions do not match the verified AI upscale result."),{code:"MEDIA_OUTPUT_VALIDATION_FAILED"});
+  return {width,height};
 }
 
 export function buildMediaProcessingProvenance({jobType,input={},sourceAsset={}}={}) {
@@ -360,23 +405,38 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
     const controller = new AbortController();
     const poll = setInterval(() => { if (cancelled()) controller.abort(); }, 500);
     poll.unref?.();
+    let outputRegistered=false;
     try {
       const adapter = createRealEsrganAdapter({ timeoutMs:30*60*1000, maxOutputBytes:250*1024*1024 });
+      const inputFormat = source.media_type==="image/jpeg"?"jpg":source.media_type==="image/png"?"png":source.media_type==="image/webp"?"webp":null;
+      if (!inputFormat) throw Object.assign(new Error("AI super-resolution accepts JPEG, PNG and WebP source images."), { code:"UNSUPPORTED_MEDIA_TYPE" });
+      if (!executableAvailable("ffprobe") || !executableAvailable("ffmpeg")) throw Object.assign(new Error("FFprobe and FFmpeg are required to verify and decode AI-upscaled output."), { code:"MEDIA_ENGINE_MISSING" });
+      const upscaleStartedAt=Date.now();
       const result = await adapter.execute({
         inputPath:sourcePath, outputPath, model:input.model||"realesrgan-x4plus",
-        scale:input.scale??4, tile:input.tile??0, format, signal:controller.signal
+        scale:input.scale??4, tile:input.tile??0, format, inputFormat, signal:controller.signal
       });
       if (controller.signal.aborted || cancelled()) throw Object.assign(new Error("Job cancelled."), { code:"JOB_CANCELLED" });
+      const probe = await run("ffprobe", ["-v","error","-select_streams","v:0","-show_entries","stream=width,height","-of","json",outputPath], 120000, job.id, activeProcesses, cancelled);
+      const dimensions=validateAiUpscaleProbeDimensions(probe.stdout||"{}",result);
+      await run("ffmpeg", ["-v","error","-i",outputPath,"-f","null","-"], 120000, job.id, activeProcesses, cancelled);
+      if (controller.signal.aborted || cancelled()) throw Object.assign(new Error("Job cancelled."), { code:"JOB_CANCELLED" });
       const fileStat = await stat(outputPath);
+      if(fileStat.size<=0)throw Object.assign(new Error("AI upscale output is empty."),{code:"MEDIA_OUTPUT_VALIDATION_FAILED"});
       const hash = createHash("sha256");
       await pipeline(createReadStream(outputPath),new Transform({transform(chunk,enc,cb){hash.update(chunk);cb(null,chunk);}}),new Transform({transform(chunk,enc,cb){cb();}}));
       const mime = format==="jpg"?"image/jpeg":"image/"+format;
       const baseName = source.original_name.split(".").slice(0,-1).join(".") || source.original_name;
-      const processing = {engine:result.engine,method:result.method,model:result.model,scale:result.scale,tile:result.tile};
-      const outputAsset = addAsset(db,job,"derived/"+id+"."+format,baseName+"-ai-upscaled."+format,mime,fileStat.size,hash.digest("hex"),source.id,{operation:job.job_type,processing});
+      const outputSha256=hash.digest("hex");
+      const processing=buildAiUpscaleProvenance({result,sourceAsset:source,outputSha256,durationMs:result.durationMs||Date.now()-upscaleStartedAt,dimensions});
+      const outputAsset = addAsset(db,job,"derived/"+id+"."+format,baseName+"-ai-upscaled."+format,mime,fileStat.size,outputSha256,source.id,{operation:job.job_type,processing});
+      outputRegistered=true;
       emit("media.output_created",{assetId:outputAsset.id,sha256:outputAsset.sha256});
       onProgress(100);
       return {outputAsset,processing};
+    } catch(error) {
+      if(!outputRegistered) await unlink(outputPath).catch(()=>{});
+      throw error;
     } finally { clearInterval(poll); }
   }
 
@@ -401,6 +461,7 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
       } else signalAnalysis.unavailable.push({check:"audio-signal-and-metrics",reason:check.reason});
     }
     metadata.signalAnalysis=signalAnalysis;
+    Object.assign(metadata,attachMediaQualityReport(metadata,{requireVideo:false,requireAudio:false}));
     return { metadata, outputAsset:null };
   }
 
@@ -445,22 +506,31 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
     args.push(outputPath);
   }
   const outputPath = join(outputDir,id+"."+ext);
-  onProgress(35);
-  await run("ffmpeg", args,30*60*1000,job.id,activeProcesses,cancelled);
-  onProgress(85);
-  if (cancelled()) { await unlink(outputPath).catch(()=>{}); throw Object.assign(new Error("Job cancelled."), { code:"JOB_CANCELLED" }); }
-  
-  const probeResult=await run("ffprobe",["-v","error","-show_format","-show_streams","-of","json",outputPath],60000,job.id,activeProcesses,cancelled);
-  let outputMetadata;
-  try { outputMetadata=JSON.parse(probeResult.stdout||"{}"); }
-  catch { throw Object.assign(new Error("Media output metadata could not be parsed."),{code:"MEDIA_OUTPUT_VALIDATION_FAILED"}); }
-  const validation=validateMediaOutputProbe(outputMetadata,mime);
-  const fileStat = await stat(outputPath);
-  if(fileStat.size<=0)throw Object.assign(new Error("Media output is empty."),{code:"MEDIA_OUTPUT_VALIDATION_FAILED"});
-  const hash = createHash("sha256");
-  await pipeline(createReadStream(outputPath), new Transform({ transform(chunk, enc, cb) { hash.update(chunk); cb(null, chunk); } }), new Transform({ transform(chunk, enc, cb) { cb(); } }));
-  const provenance=buildMediaProcessingProvenance({jobType:job.job_type,input,sourceAsset:source});
-  const outputAsset = addAsset(db, job, "derived/"+id+"."+ext, outputName, mime, fileStat.size, hash.digest("hex"), source.id, { operation:job.job_type, ...(provenance?{processing:provenance}:{}) });
-  emit("media.output_created", { assetId:outputAsset.id, sha256:outputAsset.sha256 });
-  return { outputAsset, validation };
+  let outputRegistered=false;
+  try {
+    onProgress(35);
+    await run("ffmpeg", args,30*60*1000,job.id,activeProcesses,cancelled);
+    onProgress(85);
+    if (cancelled()) throw Object.assign(new Error("Job cancelled."), { code:"JOB_CANCELLED" });
+
+    const probeResult=await run("ffprobe",["-v","error","-show_format","-show_streams","-of","json",outputPath],60000,job.id,activeProcesses,cancelled);
+    if(cancelled())throw Object.assign(new Error("Job cancelled."),{code:"JOB_CANCELLED"});
+    let outputMetadata;
+    try { outputMetadata=JSON.parse(probeResult.stdout||"{}"); }
+    catch { throw Object.assign(new Error("Media output metadata could not be parsed."),{code:"MEDIA_OUTPUT_VALIDATION_FAILED"}); }
+    const validation=validateMediaOutputProbe(outputMetadata,mime);
+    const fileStat = await stat(outputPath);
+    if(fileStat.size<=0)throw Object.assign(new Error("Media output is empty."),{code:"MEDIA_OUTPUT_VALIDATION_FAILED"});
+    const hash = createHash("sha256");
+    await pipeline(createReadStream(outputPath), new Transform({ transform(chunk, enc, cb) { hash.update(chunk); cb(null, chunk); } }), new Transform({ transform(chunk, enc, cb) { cb(); } }));
+    if(cancelled())throw Object.assign(new Error("Job cancelled."),{code:"JOB_CANCELLED"});
+    const provenance=buildMediaProcessingProvenance({jobType:job.job_type,input,sourceAsset:source});
+    const outputAsset = addAsset(db, job, "derived/"+id+"."+ext, outputName, mime, fileStat.size, hash.digest("hex"), source.id, { operation:job.job_type, ...(provenance?{processing:provenance}:{}) });
+    outputRegistered=true;
+    emit("media.output_created", { assetId:outputAsset.id, sha256:outputAsset.sha256 });
+    return { outputAsset, validation };
+  } catch(error) {
+    if(!outputRegistered) await unlink(outputPath).catch(()=>{});
+    throw error;
+  }
 }

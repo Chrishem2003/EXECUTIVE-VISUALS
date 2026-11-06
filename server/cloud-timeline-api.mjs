@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { createWriteStream } from "node:fs";
 import { mkdtemp, rm, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -9,6 +9,9 @@ import { createCloudAssetAuthorizer } from "./cloud-asset-auth.mjs";
 import { createCloudTimelineService } from "./cloud-timeline-service.mjs";
 import { buildTransformationReadinessReport } from "./transformation-readiness.mjs";
 import { validateSrt, validateWebVtt } from "./caption-validation.mjs";
+import { REQUIRED_UPSCALE_FIXTURE_CATEGORIES, buildUpscaleBenchmarkRecordFromAsset, compareUpscaleBenchmarkCandidates } from "./upscale-benchmark.mjs";
+import { createDeliveryPackage, verifyDeliveryManifest, verifyMediaQualityReport } from "./delivery-manifest.mjs";
+import { buildAssetLineage } from "./asset-lineage.mjs";
 
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const safeId=(value)=>typeof value==="string"&&UUID.test(value);
@@ -35,14 +38,15 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
   if(body!==null)headers["content-type"]="application/json";
   const response=await fetchImpl(base+"/rest/v1/"+path,{method,headers,...(body===null?{}:{body:JSON.stringify(body)}),signal:controller.signal});
   const raw=await response.text();let data=null;if(raw){try{data=JSON.parse(raw);}catch{throw new Error("Cloud timeline API received an invalid database response.");}}
-  if(!response.ok){const error=new Error("Cloud timeline API database request failed (HTTP "+response.status+").");error.status=response.status;error.code="CLOUD_TIMELINE_API_DATABASE_ERROR";throw error;}
+  if(!response.ok){const error=new Error("Cloud timeline API database request failed (HTTP "+response.status+").");error.status=response.status;error.databaseCode=data?.code||null;error.code="CLOUD_TIMELINE_API_DATABASE_ERROR";throw error;}
   return data;
   }catch(error){if(error?.name==="AbortError"){const timeout=new Error("Cloud timeline API request timed out.");timeout.code="CLOUD_TIMELINE_API_TIMEOUT";throw timeout;}throw error;}finally{clearTimeout(timer);}
  }
  const response=(status,body)=>({status,body});
- async function handle({method,path,ownerId,body={},query={},idempotencyKey=null}={}){
+ async function handle({method,path,ownerId,body={},req=null,query={},idempotencyKey=null}={}){
   if(!["GET","POST","PUT","PATCH","DELETE"].includes(method)||typeof path!=="string")return null;
   if(!safeId(ownerId))return response(401,{error:{code:"AUTH_REQUIRED",message:"A verified account identity is required."}});
+  if(path==="/api/cloud/assets"&&method==="POST")return await uploadAsset({req,ownerId,projectId:String(req?.headers?.["x-project-id"]||query.projectId||""),originalName:String(req?.headers?.["x-file-name"]||"upload"),mediaType:String(req?.headers?.["content-type"]||"application/octet-stream")});
   if(Buffer.byteLength(JSON.stringify(body||{}))>maxJobBytes)return response(413,{error:{code:"PAYLOAD_TOO_LARGE",message:"Cloud timeline request is too large."}});
   try{
    if(path==="/api/cloud/projects"&&method==="POST"){
@@ -60,9 +64,173 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     if(method==="PATCH"){const project=await service.projects.update({ownerId,projectId,expectedRevision:Number(body.expectedRevision),name:body.name,description:body.description,settings:body.settings});return response(200,{project});}
     if(method==="DELETE"){const archived=await service.projects.archive({ownerId,projectId,expectedRevision:Number(body.expectedRevision)});return response(200,{project:archived});}
    }
+   if(path==="/api/cloud/waveform-jobs"&&method==="GET"){
+    const projectId=String(query.projectId||"");
+    if(!safeId(projectId))return response(400,{error:{code:"INVALID_PROJECT_ID",message:"Choose a valid project."}});
+    if(await allow({ownerId,projectId,action:"read"})!==true)return response(404,{error:{code:"PROJECT_NOT_FOUND",message:"Project not found or access denied."}});
+    const rows=await request("jobs?select=id,job_type,status,progress,input,output,error,created_at,updated_at&owner_id=eq."+encodeURIComponent(ownerId)+"&project_id=eq."+encodeURIComponent(projectId)+"&job_type=eq.media.waveform&order=created_at.desc&limit=50");
+    return response(200,{jobs:(rows||[]).map(row=>({id:row.id,status:row.status,progress:Number(row.progress||0),input:row.input||{},output:row.output||null,error:row.error||null,createdAt:row.created_at,updatedAt:row.updated_at}))});
+   }
+   if(path==="/api/cloud/waveforms"&&method==="POST"){
+    const projectId=String(body.projectId||""),sourceAssetId=String(body.sourceAssetId||"");
+    if(!safeId(projectId)||!safeId(sourceAssetId))return response(400,{error:{code:"WAVEFORM_INPUT_INVALID",message:"Choose a valid project and audio source."}});
+    if(await allow({ownerId,projectId,action:"write"})!==true)return response(404,{error:{code:"PROJECT_NOT_FOUND",message:"Project not found or editor access required."}});
+    const source=await service.assets.get({ownerId,assetId:sourceAssetId});
+    if(!source||source.projectId!==projectId||!String(source.mediaType||"").startsWith("audio/"))return response(422,{error:{code:"WAVEFORM_SOURCE_INVALID",message:"Waveform generation requires an audio asset in this project."}});
+    if(!/^[a-f0-9]{64}$/i.test(String(source.sha256||"")))return response(422,{error:{code:"WAVEFORM_SOURCE_HASH_UNAVAILABLE",message:"The source audio has no verified SHA-256 fingerprint."}});
+    const width=Number(body.width??1200),height=Number(body.height??180),color=/^#[a-f0-9]{6}$/i.test(String(body.color||""))?String(body.color):"#66b3ff";
+    if(!Number.isInteger(width)||width<256||width>2400||!Number.isInteger(height)||height<48||height>400)return response(400,{error:{code:"WAVEFORM_OPTIONS_INVALID",message:"Waveform width must be 256–2400 and height 48–400."}});
+    const input={sourceAssetId,sourceSha256:source.sha256,width,height,color};
+    const key=String(idempotencyKey||"").trim().slice(0,180);
+    if(key.length<8)return response(400,{error:{code:"IDEMPOTENCY_KEY_REQUIRED",message:"An idempotency key is required for waveform generation."}});
+    const existing=await request("jobs?select=id,owner_id,project_id,job_type,status,progress,input,output,error,created_at,updated_at&owner_id=eq."+encodeURIComponent(ownerId)+"&idempotency_key=eq."+encodeURIComponent(key)+"&limit=1");
+    if(Array.isArray(existing)&&existing[0]){
+     const row=existing[0];
+     if(row.job_type!=="media.waveform"||row.project_id!==projectId||stableJson(row.input)!==stableJson(input))return response(409,{error:{code:"IDEMPOTENCY_CONFLICT",message:"This idempotency key belongs to a different waveform request."}});
+     return response(200,{job:row,idempotentReplay:true});
+    }
+    const jobId=randomUUID(),rows=await request("jobs?select=id,owner_id,project_id,job_type,status,progress,input,output,error,created_at,updated_at",{method:"POST",body:{id:jobId,owner_id:ownerId,project_id:projectId,job_type:"media.waveform",status:"queued",progress:0,input,idempotency_key:key}});
+    if(!Array.isArray(rows)||rows.length!==1||rows[0].id!==jobId||rows[0].job_type!=="media.waveform"||rows[0].owner_id!==ownerId||rows[0].project_id!==projectId)throw new Error("Cloud waveform job creation returned an invalid record.");
+    await request("job_events",{method:"POST",body:{job_id:jobId,owner_id:ownerId,event_type:"job.queued",event_data:{jobType:"media.waveform",sourceAssetId,width,height}},prefer:"return=minimal"});
+    return response(202,{job:rows[0],idempotentReplay:false});
+   }
+   if(path==="/api/cloud/upscale-jobs"&&method==="GET"){
+    const projectId=String(query.projectId||"");
+    if(!safeId(projectId))return response(400,{error:{code:"INVALID_PROJECT_ID",message:"Choose a valid project."}});
+    if(await allow({ownerId,projectId,action:"read"})!==true)return response(404,{error:{code:"PROJECT_NOT_FOUND",message:"Project not found or access denied."}});
+    const rows=await request("jobs?select=id,owner_id,project_id,job_type,status,progress,input,output,error,created_at,updated_at&project_id=eq."+encodeURIComponent(projectId)+"&job_type=eq.media.ai-upscale&order=created_at.desc&limit=50");
+    return response(200,{jobs:(rows||[]).map(row=>({id:row.id,status:row.status,progress:Number(row.progress||0),input:row.input||{},output:row.output||null,error:row.error||null,createdAt:row.created_at,updatedAt:row.updated_at}))});
+   }
+   if(path==="/api/cloud/upscale"&&method==="POST"){
+    const projectId=String(body.projectId||""),sourceAssetId=String(body.sourceAssetId||"");
+    if(!safeId(projectId)||!safeId(sourceAssetId))return response(400,{error:{code:"UPSCALE_INPUT_INVALID",message:"Choose a valid project and source image."}});
+    if(await allow({ownerId,projectId,action:"write"})!==true)return response(404,{error:{code:"PROJECT_NOT_FOUND",message:"Project not found or editor access required."}});
+    const source=await service.assets.get({ownerId,assetId:sourceAssetId});
+    if(source.projectId!==projectId||!["image/png","image/jpeg","image/webp"].includes(source.mediaType))return response(422,{error:{code:"UPSCALE_SOURCE_INVALID",message:"AI upscaling accepts project PNG, JPEG or WebP still images only."}});
+    if(body.rightsConfirmed!==true)return response(403,{error:{code:"MEDIA_RIGHTS_REQUIRED",message:"Confirm that you have the rights to process this source image."}});
+    const model=String(body.model||"realesrgan-x4plus"),scale=Number(body.scale??4),tile=Number(body.tile??0),format=String(body.format||"png");
+    if(!["realesrgan-x4plus","realesrgan-x4plus-anime","realesr-animevideov3","realesrgan-x2plus"].includes(model)||!Number.isInteger(scale)||scale<2||scale>4||!Number.isInteger(tile)||tile<0||tile>512||(tile!==0&&tile<32)||!["png","jpg","webp"].includes(format))return response(400,{error:{code:"UPSCALE_OPTIONS_INVALID",message:"Choose an allowlisted model, scale 2–4, tile 0 or 32–512 and PNG/JPEG/WebP output."}});
+    const key=String(idempotencyKey||"").trim().slice(0,180);
+    if(key.length<8)return response(400,{error:{code:"IDEMPOTENCY_KEY_REQUIRED",message:"An idempotency key is required for cloud AI upscaling."}});
+    if(!/^[a-f0-9]{64}$/i.test(String(source.sha256||"")))return response(422,{error:{code:"UPSCALE_SOURCE_HASH_UNAVAILABLE",message:"The source image has no verified SHA-256 fingerprint."}});
+    const input={sourceAssetId,sourceSha256:source.sha256,model,scale,tile,format,rightsConfirmed:true};
+    const existing=await request("jobs?select=id,owner_id,project_id,job_type,status,progress,input,output,error,created_at,updated_at&owner_id=eq."+encodeURIComponent(ownerId)+"&idempotency_key=eq."+encodeURIComponent(key)+"&limit=1");
+    if(Array.isArray(existing)&&existing[0]){
+     const row=existing[0];
+     if(row.job_type!=="media.ai-upscale"||row.project_id!==projectId||stableJson(row.input)!==stableJson(input))return response(409,{error:{code:"IDEMPOTENCY_CONFLICT",message:"This idempotency key was used for a different AI-upscale request."}});
+     return response(200,{job:row,idempotentReplay:true});
+    }
+    const jobId=randomUUID();
+    const rows=await request("jobs?select=id,owner_id,project_id,job_type,status,progress,input,output,error,created_at,updated_at",{method:"POST",body:{id:jobId,owner_id:ownerId,project_id:projectId,job_type:"media.ai-upscale",status:"queued",progress:0,input,idempotency_key:key}});
+    if(!Array.isArray(rows)||rows.length!==1||rows[0].id!==jobId||rows[0].job_type!=="media.ai-upscale"||rows[0].owner_id!==ownerId||rows[0].project_id!==projectId)throw new Error("Cloud AI-upscale job creation returned an invalid record.");
+    await request("job_events",{method:"POST",body:{job_id:jobId,owner_id:ownerId,event_type:"job.queued",event_data:{jobType:"media.ai-upscale",sourceAssetId,model,scale,tile,format}},prefer:"return=minimal"});
+    return response(202,{job:rows[0],idempotentReplay:false});
+   }
+   const benchmarkPath=path.match(/^\/api\/cloud\/upscale-benchmarks(?:\/(fixtures|runs)(?:\/([0-9a-f-]+)\/review)?)?$/i);
+   if(benchmarkPath){
+    const section=benchmarkPath[1]||"",runId=benchmarkPath[2]||"",projectId=String(query.projectId||"");
+    if(!safeId(projectId))return response(400,{error:{code:"INVALID_PROJECT_ID",message:"Choose a valid project."}});
+    const reviewRequest=Boolean(runId&&path.endsWith("/review"));
+    if(await allow({ownerId,projectId,action:method==="GET"||reviewRequest?"read":"write"})!==true)return response(404,{error:{code:"PROJECT_NOT_FOUND",message:"Benchmark project not found or access denied."}});
+    if(path==="/api/cloud/upscale-benchmarks/fixtures"&&method==="GET"){
+     const fixtures=await request("upscale_benchmark_fixtures?select=id,project_id,source_asset_id,source_sha256,fixture_category,label,created_at&project_id=eq."+encodeURIComponent(projectId)+"&order=created_at.desc&limit=100");
+     return response(200,{fixtures:(fixtures||[]).map(row=>({id:row.id,projectId:row.project_id,sourceAssetId:row.source_asset_id,sourceSha256:row.source_sha256,category:row.fixture_category,label:row.label,createdAt:row.created_at}))});
+    }
+    if(path==="/api/cloud/upscale-benchmarks/fixtures"&&method==="POST"){
+     const sourceAssetId=String(body.sourceAssetId||""),category=String(body.category||"");
+     if(!safeId(sourceAssetId)||!REQUIRED_UPSCALE_FIXTURE_CATEGORIES.includes(category))return response(400,{error:{code:"UPSCALE_FIXTURE_INVALID",message:"A valid source image and one of the five supported categories are required."}});
+     const source=await service.assets.get({ownerId,assetId:sourceAssetId});
+     if(source.projectId!==projectId||!["image/png","image/jpeg","image/webp"].includes(source.mediaType))return response(422,{error:{code:"UPSCALE_FIXTURE_SOURCE_INVALID",message:"Fixture source must be a PNG, JPEG or WebP image in this project."}});
+     const id=randomUUID(),label=String(body.label||source.name||category).trim().slice(0,120);
+     const rows=await request("upscale_benchmark_fixtures?select=id,project_id,source_asset_id,source_sha256,fixture_category,label,created_at",{method:"POST",body:{id,owner_id:ownerId,project_id:projectId,source_asset_id:source.id,source_sha256:source.sha256,fixture_category:category,label},prefer:"return=representation"});
+     if(!Array.isArray(rows)||rows.length!==1||rows[0].id!==id)throw new Error("Cloud benchmark fixture insert did not return the expected record.");
+     await request("audit_events",{method:"POST",body:{owner_id:ownerId,project_id:projectId,event_type:"upscale_benchmark.fixture_registered",subject_type:"upscale_benchmark_fixture",subject_id:id,details:{category,sourceAssetId:source.id}},prefer:"return=minimal"});
+     return response(201,{fixture:{id,projectId,sourceAssetId:source.id,sourceSha256:source.sha256,category,label,createdAt:rows[0].created_at}});
+    }
+    if(path==="/api/cloud/upscale-benchmarks/runs"&&method==="GET"){
+     const pageSize=Math.min(100,Math.max(1,Number.parseInt(String(query.limit||"50"),10)||50));
+     const offset=Math.max(0,Number.parseInt(String(query.offset||"0"),10)||0);
+     const select="select=id,asset_id,fixture_id,fixture_category,model,model_version,record,reviewer_id,review_decision,review_note,reviewed_at,created_at";
+     const pageRows=await request("upscale_benchmark_runs?"+select+"&project_id=eq."+encodeURIComponent(projectId)+"&order=created_at.desc,id.desc&limit="+(pageSize+1)+"&offset="+offset);
+     const hasMore=(pageRows||[]).length>pageSize,visibleRows=(pageRows||[]).slice(0,pageSize);
+     const runs=visibleRows.map(row=>({id:row.id,assetId:row.asset_id,fixtureId:row.fixture_id,record:row.record,review:{reviewerId:row.reviewer_id,decision:row.review_decision,note:row.review_note,reviewedAt:row.reviewed_at},createdAt:row.created_at}));
+     const allRecords=[],batchSize=1000,safetyLimit=50000;let reportOffset=0,evidenceTruncated=false;
+     while(reportOffset<safetyLimit){
+      const batch=await request("upscale_benchmark_runs?select=record&project_id=eq."+encodeURIComponent(projectId)+"&order=created_at.desc,id.desc&limit="+batchSize+"&offset="+reportOffset);
+      allRecords.push(...(batch||[]).map(row=>row.record));
+      if((batch||[]).length<batchSize)break;
+      reportOffset+=batchSize;
+     }
+     if(reportOffset>=safetyLimit)evidenceTruncated=true;
+     const report=compareUpscaleBenchmarkCandidates(allRecords);
+     return response(200,{runs,report:{...report,recommended:evidenceTruncated?null:report.recommended,evidenceTruncated,evidenceLimit:safetyLimit},page:{offset,limit:pageSize,hasMore,nextOffset:offset+runs.length}});
+    }
+    if(path==="/api/cloud/upscale-benchmarks/runs"&&method==="POST"){
+     const assetId=String(body.assetId||""),fixtureId=String(body.fixtureId||"");
+     if(!safeId(assetId)||!safeId(fixtureId))return response(400,{error:{code:"UPSCALE_BENCHMARK_INPUT_INVALID",message:"A valid derivative asset and registered fixture are required."}});
+     const fixtures=await request("upscale_benchmark_fixtures?select=id,source_asset_id,source_sha256,fixture_category&project_id=eq."+encodeURIComponent(projectId)+"&id=eq."+encodeURIComponent(fixtureId)+"&limit=1");
+     const fixture=Array.isArray(fixtures)?fixtures[0]:null;
+     if(!fixture)return response(404,{error:{code:"UPSCALE_FIXTURE_NOT_FOUND",message:"Benchmark fixture not found."}});
+     const asset=await service.assets.get({ownerId,assetId});
+     if(asset.projectId!==projectId)return response(404,{error:{code:"UPSCALE_BENCHMARK_ASSET_NOT_FOUND",message:"Derivative asset not found in this project."}});
+     const record=buildUpscaleBenchmarkRecordFromAsset({outputAsset:{id:asset.id,mediaType:asset.mediaType,sha256:asset.sha256,derivativeOf:asset.derivativeOf,createdAt:asset.createdAt,metadata:asset.metadata},fixtureId:fixture.id,fixtureCategory:fixture.fixture_category});
+     if(record.inputSha256!==fixture.source_sha256||asset.derivativeOf!==fixture.source_asset_id)return response(409,{error:{code:"UPSCALE_BENCHMARK_FIXTURE_MISMATCH",message:"Derivative does not originate from the exact registered fixture source."}});
+     const id=randomUUID();
+     const inserted=await request("upscale_benchmark_runs?select=id,created_at",{method:"POST",body:{id,owner_id:ownerId,project_id:projectId,asset_id:asset.id,fixture_id:fixture.id,fixture_category:fixture.fixture_category,model:record.model,model_version:record.modelVersion,record},prefer:"return=representation"});
+     if(!Array.isArray(inserted)||inserted.length!==1||inserted[0].id!==id)throw new Error("Cloud benchmark run insert did not return the expected record.");
+     await request("audit_events",{method:"POST",body:{owner_id:ownerId,project_id:projectId,event_type:"upscale_benchmark.run_registered",subject_type:"upscale_benchmark_run",subject_id:id,details:{assetId:asset.id,fixtureId:fixture.id,model:record.model,modelVersion:record.modelVersion}},prefer:"return=minimal"});
+     return response(201,{run:{id,assetId:asset.id,fixtureId:fixture.id,record,review:{decision:null,reviewerId:null,reviewedAt:null},createdAt:inserted[0].created_at}});
+    }
+    if(runId&&path.endsWith("/review")&&method==="POST"){
+     const projects=await request("projects?select=owner_id&id=eq."+encodeURIComponent(projectId)+"&limit=1");
+     const projectOwner=Array.isArray(projects)?projects[0]?.owner_id:null;
+     const members=await request("project_members?select=role&project_id=eq."+encodeURIComponent(projectId)+"&member_id=eq."+encodeURIComponent(ownerId)+"&limit=1");
+     const role=Array.isArray(members)?members[0]?.role:null;
+     if(projectOwner!==ownerId&&role!=="reviewer")return response(403,{error:{code:"BENCHMARK_REVIEWER_REQUIRED",message:"Only the project owner or an assigned reviewer can review benchmark quality."}});
+     const decision=String(body.decision||"");
+     if(!["reviewed_pass","reviewed_fail"].includes(decision))return response(400,{error:{code:"UPSCALE_BENCHMARK_REVIEW_INVALID",message:"Decision must be reviewed_pass or reviewed_fail."}});
+     const existingRows=await request("upscale_benchmark_runs?select=id,owner_id,record,reviewer_id&project_id=eq."+encodeURIComponent(projectId)+"&id=eq."+encodeURIComponent(runId)+"&limit=1");
+     const existing=Array.isArray(existingRows)?existingRows[0]:null;
+     if(!existing)return response(404,{error:{code:"UPSCALE_BENCHMARK_RUN_NOT_FOUND",message:"Benchmark run not found."}});
+     if(existing.reviewer_id)return response(409,{error:{code:"UPSCALE_BENCHMARK_ALREADY_REVIEWED",message:"Benchmark review is immutable once recorded."}});
+     if(existing.owner_id===ownerId)return response(403,{error:{code:"UPSCALE_BENCHMARK_INDEPENDENT_REVIEW_REQUIRED",message:"The person who registered this run cannot review their own evidence."}});
+     const note=String(body.note||"").trim().slice(0,2000);
+     if(decision==="reviewed_fail"&&!note)return response(400,{error:{code:"UPSCALE_BENCHMARK_REVIEW_NOTE_REQUIRED",message:"A rejection requires a short note describing the quality issue."}});
+     const reviewedAt=new Date().toISOString(),record={...existing.record,qualityReview:decision};
+     const updated=await request("upscale_benchmark_runs?id=eq."+encodeURIComponent(runId)+"&project_id=eq."+encodeURIComponent(projectId)+"&reviewer_id=is.null",{method:"PATCH",body:{record,reviewer_id:ownerId,review_decision:decision,review_note:note,reviewed_at:reviewedAt},prefer:"return=representation"});
+     if(!Array.isArray(updated)||updated.length!==1)return response(409,{error:{code:"UPSCALE_BENCHMARK_ALREADY_REVIEWED",message:"Benchmark evidence was reviewed by another user."}});
+     await request("audit_events",{method:"POST",body:{owner_id:ownerId,project_id:projectId,event_type:"upscale_benchmark.quality_reviewed",subject_type:"upscale_benchmark_run",subject_id:runId,details:{decision,noteLength:note.length}},prefer:"return=minimal"});
+     return response(200,{run:{id:runId,record,review:{decision,reviewerId:ownerId,reviewedAt,note}}});
+    }
+   }
    if(path==="/api/cloud/assets"&&method==="GET"){
     const assets=await service.assets.list({ownerId,projectId:query.projectId||null,limit:Number(query.limit)||50,offset:Number(query.offset)||0});
     return response(200,{assets});
+   }
+   const lineageMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)\/lineage$/i);
+   if(lineageMatch&&safeId(lineageMatch[1])&&method==="GET"){
+    const assetId=lineageMatch[1];
+    const root=await service.assets.get({ownerId,assetId});
+    if(!root)return response(404,{error:{code:"CLOUD_ASSET_NOT_FOUND",message:"Asset not found."}});
+    if(typeof service.assets.list!=="function")return response(501,{error:{code:"ASSET_LINEAGE_UNAVAILABLE",message:"Asset lineage listing is not configured."}});
+    const assets=[];let offset=0;
+    while(offset<1000){
+     const page=await service.assets.list({ownerId,projectId:root.projectId||null,limit:100,offset});
+     if(!Array.isArray(page))throw new Error("Asset lineage listing returned an invalid response.");
+     assets.push(...page);
+     if(page.length<100)break;
+     offset+=page.length;
+    }
+    if(!assets.some(asset=>asset.id===root.id))assets.push(root);
+    const lineage=buildAssetLineage({assetId,assets,maxNodes:1000,maxDepth:32});
+    if(!lineage)return response(404,{error:{code:"CLOUD_ASSET_NOT_FOUND",message:"Asset not found."}});
+    return response(200,{lineage:{...lineage,collectionTruncated:assets.length>=1000}});
+   }
+   const assetCleanupMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)\/retry-cleanup$/i);
+   if(assetCleanupMatch&&safeId(assetCleanupMatch[1])&&method==="POST"){
+    if(typeof service.assets.retryCleanup!=="function")return response(501,{error:{code:"ASSET_CLEANUP_RETRY_UNAVAILABLE",message:"Cloud asset cleanup retry is not configured."}});
+    const result=await service.assets.retryCleanup({ownerId,assetId:assetCleanupMatch[1]});
+    return response(200,{asset:result});
    }
    if(path==="/api/cloud/timelines"&&method==="GET"){
     const timelines=await service.timelines.list({ownerId,projectId:query.projectId||null,limit:Number(query.limit)||50,offset:Number(query.offset)||0});
@@ -94,7 +262,7 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
    const preservationOptions=new Set(["camera_motion","timing","composition","source_audio","subject_identity","pose","lighting","background"]);
    const mapTransformation=row=>{
     const input=row.input||{},approval=row.estimated_cost||{};
-    return {id:row.id,projectId:row.project_id,sourceAssetId:input.sourceAssetId,operation:input.operation,prompt:input.prompt,durationSeconds:input.durationSeconds,referenceAssetIds:input.referenceAssetIds||[],preservation:input.preservation||[],status:row.approved_at?"approved":row.status==="draft"?"draft":row.status,rightsConfirmed:input.rightsConfirmed===true,subjectConsentConfirmed:input.subjectConsentConfirmed===true,approval:row.approved_at?{id:approval.approvalId,estimatedCostMicros:approval.estimatedCostMicros,approvedBudgetMicros:approval.approvedBudgetMicros,currency:approval.currency,adapterId:approval.adapterId,capability:approval.capability,approvedAt:row.approved_at}:null,createdAt:row.created_at,updatedAt:row.updated_at};
+    return {id:row.id,projectId:row.project_id,sourceAssetId:input.sourceAssetId,operation:input.operation,prompt:input.prompt,durationSeconds:input.durationSeconds,referenceAssetIds:input.referenceAssetIds||[],preservation:input.preservation||[],status:row.approved_at?"approved":row.status==="draft"?"draft":row.status,rightsConfirmed:input.rightsConfirmed===true,subjectConsentConfirmed:input.subjectConsentConfirmed===true,approval:row.approved_at?{id:approval.approvalId,planHash:approval.planHash||null,estimatedCostMicros:approval.estimatedCostMicros,approvedBudgetMicros:approval.approvedBudgetMicros,currency:approval.currency,adapterId:approval.adapterId,capability:approval.capability,approvedAt:row.approved_at}:null,createdAt:row.created_at,updatedAt:row.updated_at};
    };
    if(path==="/api/cloud/transformations"&&method==="GET"){
     const projectId=String(query.projectId||"");
@@ -144,17 +312,70 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
      if(row.status!=="draft"||row.approved_at)return response(409,{error:{code:"TRANSFORMATION_STATE_CONFLICT",message:"Only an unapproved draft can be approved."}});
      const estimate=body?.estimatedCostMicros,budget=body?.approvedBudgetMicros,currency=String(body?.currency||"").toUpperCase(),adapterId=String(body?.adapterId||"").trim(),capability=String(body?.capability||"").trim();
      if(!Number.isSafeInteger(estimate)||estimate<0||!Number.isSafeInteger(budget)||budget<estimate||! /^[A-Z]{3}$/.test(currency)||!adapterId||!capability)return response(400,{error:{code:"TRANSFORMATION_BUDGET_INVALID",message:"Provide a known estimate, a covering budget, currency, adapter and capability."}});
-     const approval={approvalId:randomUUID(),estimatedCostMicros:estimate,approvedBudgetMicros:budget,currency,adapterId,capability};
+     const planHash=createHash("sha256").update(stableJson(row.input||{})).digest("hex");
+     const approval={schemaVersion:1,approvalId:randomUUID(),planHash,estimatedCostMicros:estimate,approvedBudgetMicros:budget,currency,adapterId,capability};
      const updated=await request("jobs?id=eq."+encodeURIComponent(row.id)+"&status=eq.draft&approved_at=is.null",{method:"PATCH",body:{status:"awaiting_approval",estimated_cost:approval,approved_by:ownerId,approved_at:new Date().toISOString(),updated_at:new Date().toISOString()}});
      if(!Array.isArray(updated)||updated.length!==1)return response(409,{error:{code:"TRANSFORMATION_STATE_CONFLICT",message:"Transformation plan changed while approval was recorded."}});
-     await request("job_events",{method:"POST",body:{job_id:row.id,owner_id:row.owner_id,event_type:"transformation.approved",event_data:{approvalId:approval.approvalId,estimatedCostMicros:estimate,currency}}});
+     await request("job_events",{method:"POST",body:{job_id:row.id,owner_id:row.owner_id,event_type:"transformation.approved",event_data:{approvalId:approval.approvalId,planHash,estimatedCostMicros:estimate,currency}}});
      return response(200,{plan:mapTransformation(updated[0])});
     }
     if(cloudTransformationMatch[2]==="submit"&&method==="POST"){
      if(await allow({ownerId,projectId:row.project_id,action:"write"})!==true)return response(403,{error:{code:"EDITOR_REQUIRED",message:"Owner or editor access is required."}});
      if(!row.approved_at||!row.approved_by)return response(409,{error:{code:"TRANSFORMATION_APPROVAL_REQUIRED",message:"Approve the plan and budget before submission."}});
+     const approvedPlanHash=row.estimated_cost?.planHash;
+     const currentPlanHash=createHash("sha256").update(stableJson(row.input||{})).digest("hex");
+     if(typeof approvedPlanHash!=="string"||!/^[a-f0-9]{64}$/.test(approvedPlanHash)||approvedPlanHash!==currentPlanHash)return response(409,{error:{code:"TRANSFORMATION_PLAN_CHANGED",message:"The approved transformation no longer matches its immutable plan fingerprint. Create and approve a new plan."}});
      return response(409,{error:{code:"TRANSFORMATION_ADAPTER_UNAVAILABLE",message:"No verified video-transformation adapter is enabled. No provider request or charge was made."}});
     }
+   }
+   const deliveryApprovalMatch=path.match(/^\/api\/cloud\/jobs\/([0-9a-f-]+)\/delivery-approval$/i);
+   if(deliveryApprovalMatch&&safeId(deliveryApprovalMatch[1])&&(method==="GET"||method==="POST")){
+    const jobRows=await request("jobs?select=id,owner_id,project_id,job_type,status,input,output&id=eq."+encodeURIComponent(deliveryApprovalMatch[1])+"&limit=1");
+    const job=Array.isArray(jobRows)?jobRows[0]:null;
+    if(!job||job.job_type!=="timeline.render"||!job.project_id)return response(404,{error:{code:"DELIVERY_JOB_NOT_FOUND",message:"A completed project timeline render was not found."}});
+    if(await allow({ownerId,projectId:job.project_id,action:method==="POST"?"write":"read"})!==true)return response(404,{error:{code:"DELIVERY_JOB_NOT_FOUND",message:"Delivery review access was not found."}});
+    const output=job.output&&typeof job.output==="object"?job.output:{};
+    const receipt=output.deliveryManifest;
+    const timelineInput=job.input&&typeof job.input==="object"?job.input:{};
+    if(job.status!=="succeeded"||!receipt||!verifyDeliveryManifest(receipt)||receipt.timelineId!==timelineInput.timelineId||receipt.timelineRevision!==Number(timelineInput.timelineRevision)||receipt.outputAsset!==(output.outputAsset?.id||output.outputAssetId)||receipt.sha256!==output.sha256)
+     return response(409,{error:{code:"DELIVERY_EVIDENCE_UNVERIFIED",message:"This render has no valid, revision-matched delivery receipt. Approval is blocked."}});
+    const events=await request("job_events?select=id,event_type,event_data,created_at&job_id=eq."+encodeURIComponent(job.id)+"&order=id.asc");
+    const approvals=(Array.isArray(events)?events:[]).filter(event=>event.event_type==="delivery.reviewed"&&event.event_data?.fingerprint===receipt.fingerprint);
+    if(method==="GET")return response(200,{receipt,approval:approvals.length?{...approvals.at(-1).event_data,createdAt:approvals.at(-1).created_at}:null,approvalHistory:approvals.map(event=>({id:event.id,...event.event_data,createdAt:event.created_at}))});
+    if(job.owner_id===ownerId)return response(403,{error:{code:"INDEPENDENT_REVIEW_REQUIRED",message:"The render creator cannot approve their own delivery. A different authorized project reviewer is required."}});
+    if(approvals.some(event=>event.event_data?.reviewerId===ownerId))return response(409,{error:{code:"DELIVERY_ALREADY_REVIEWED",message:"This reviewer has already recorded a decision for this exact delivery fingerprint."}});
+    const decision=String(body.decision||"");
+    if(!["approved","rejected","changes_requested"].includes(decision))return response(400,{error:{code:"DELIVERY_DECISION_INVALID",message:"Choose approved, rejected or changes_requested."}});
+    const note=typeof body.note==="string"?body.note.trim():"";
+    if(note.length>2000)return response(400,{error:{code:"DELIVERY_NOTE_TOO_LONG",message:"Review notes must be 2,000 characters or fewer."}});
+    if(output.qualityReport!==undefined&&output.qualityReport!==null&&!verifyMediaQualityReport(output.qualityReport))return response(409,{error:{code:"MEDIA_QUALITY_EVIDENCE_INVALID",message:"The saved media-quality report is inconsistent or incomplete; regenerate quality evidence before approval."}});
+    if(decision==="approved"&&output.deliveryReport?.status==="needs-attention")return response(409,{error:{code:"DELIVERY_VALIDATION_BLOCKED",message:"A delivery with blocking validation errors cannot be approved."}});
+    if(decision==="approved"&&output.qualityReport?.status==="needs-attention")return response(409,{error:{code:"MEDIA_QUALITY_BLOCKED",message:"A render with blocking media-quality errors cannot be approved."}});
+    if(decision==="approved"&&output.qualityReport?.status==="review"&&Number(output.qualityReport.counts?.warnings)>0&&!note)return response(400,{error:{code:"QUALITY_ACKNOWLEDGEMENT_REQUIRED",message:"Record a review note acknowledging the media-quality warnings before approving this delivery."}});
+    const eventData={schemaVersion:1,decision,fingerprint:receipt.fingerprint,timelineId:receipt.timelineId,timelineRevision:receipt.timelineRevision,outputAsset:receipt.outputAsset,reviewerId:ownerId,note,reviewedAt:new Date().toISOString()};
+    await request("job_events",{method:"POST",body:{job_id:job.id,owner_id:ownerId,event_type:"delivery.reviewed",event_data:eventData}});
+    return response(201,{approval:eventData});
+   }
+   const deliveryPackageMatch=path.match(/^\/api\/cloud\/jobs\/([0-9a-f-]+)\/delivery-package$/i);
+   if(deliveryPackageMatch&&safeId(deliveryPackageMatch[1])&&method==="GET"){
+    const rows=await request("jobs?select=id,owner_id,project_id,job_type,status,input,output&id=eq."+encodeURIComponent(deliveryPackageMatch[1])+"&limit=1");
+    const job=Array.isArray(rows)?rows[0]:null;
+    if(!job||job.job_type!=="timeline.render"||!job.project_id)return response(404,{error:{code:"DELIVERY_JOB_NOT_FOUND",message:"A completed project timeline render was not found."}});
+    if(await allow({ownerId,projectId:job.project_id,action:"read"})!==true)return response(404,{error:{code:"DELIVERY_JOB_NOT_FOUND",message:"Delivery package access was not found."}});
+    const output=job.output&&typeof job.output==="object"?job.output:{},receipt=output.deliveryManifest,input=job.input&&typeof job.input==="object"?job.input:{};
+    if(job.status!=="succeeded"||!receipt||!verifyDeliveryManifest(receipt)||receipt.timelineId!==input.timelineId||receipt.timelineRevision!==Number(input.timelineRevision)||receipt.outputAsset!==(output.outputAsset?.id||output.outputAssetId)||receipt.sha256!==output.sha256)
+     return response(409,{error:{code:"DELIVERY_EVIDENCE_UNVERIFIED",message:"A valid revision-matched delivery receipt is required to package this render."}});
+    if(!service.assets||typeof service.assets.get!=="function"||typeof service.assets.createSignedUrl!=="function")return response(503,{error:{code:"DELIVERY_PACKAGE_UNAVAILABLE",message:"Private asset download is not available."}});
+    const asset=await service.assets.get({ownerId,assetId:receipt.outputAsset});
+    if(!asset||asset.id!==receipt.outputAsset||asset.projectId!==job.project_id||asset.sha256!==receipt.sha256||asset.size!==receipt.byteSize||asset.mediaType!==receipt.mediaType)
+     return response(409,{error:{code:"DELIVERY_ASSET_MISMATCH",message:"The published master asset does not match its delivery receipt."}});
+    const signed=await service.assets.createSignedUrl({ownerId,assetId:receipt.outputAsset,expiresIn:300});
+    if(!signed?.asset||signed.asset.id!==asset.id||signed.asset.sha256!==receipt.sha256||Number(signed.asset.size)!==receipt.byteSize||signed.asset.projectId!==job.project_id)return response(409,{error:{code:"DELIVERY_SIGNED_ASSET_MISMATCH",message:"The private download ticket does not reference the verified master asset."}});
+    let downloadUrl;try{downloadUrl=new URL(signed.url);if(downloadUrl.protocol!=="https:"||downloadUrl.username||downloadUrl.password||downloadUrl.hash)throw new Error();}catch{return response(502,{error:{code:"DELIVERY_DOWNLOAD_URL_INVALID",message:"The private storage service returned an unsafe download URL."}});}
+    const events=await request("job_events?select=id,event_type,event_data,created_at&job_id=eq."+encodeURIComponent(job.id)+"&order=id.asc");
+    const approvals=(Array.isArray(events)?events:[]).filter(event=>event.event_type==="delivery.reviewed"&&event.event_data?.fingerprint===receipt.fingerprint).map(event=>({id:event.id,...event.event_data,createdAt:event.created_at}));
+    const deliveryPackage=createDeliveryPackage({jobId:job.id,projectId:job.project_id,timelineId:receipt.timelineId,timelineRevision:receipt.timelineRevision,master:{assetId:asset.id,filename:asset.name,mediaType:asset.mediaType,byteSize:asset.size,sha256:asset.sha256,downloadUrl:downloadUrl.href,downloadUrlExpiresInSeconds:300},deliveryReceipt:receipt,renderManifest:receipt.renderManifest,deliveryReport:receipt.deliveryReport,qualityReport:output.qualityReport||null,reviewHistory:approvals});
+    return response(200,{deliveryPackage});
    }
    const jobMatch=path.match(/^\/api\/cloud\/jobs\/([0-9a-f-]+)(?:\/(events))?$/i);
    if(jobMatch&&safeId(jobMatch[1])&&method==="GET"){
@@ -168,6 +389,92 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
      return response(200,{events:Array.isArray(events)?events.map(event=>({id:event.id,type:event.event_type,data:event.event_data,createdAt:event.created_at})):[]});
     }
     return response(200,{job});
+   }
+   const handoffMatch=path.match(/^\/api\/cloud\/timelines\/([0-9a-f-]+)\/handoff$/i);
+   if(handoffMatch&&safeId(handoffMatch[1])&&method==="POST"){
+    const timelineId=handoffMatch[1],assetId=String(body.assetId||""),jobId=String(body.jobId||""),trackId=String(body.trackId||""),clipId=String(body.clipId||"");
+    if(!safeId(assetId)||!safeId(jobId)||!trackId||trackId.length>180||!clipId||clipId.length>180)return response(400,{error:{code:"HANDOFF_INPUT_INVALID",message:"Provide valid asset, job, track and clip identifiers."}});
+    const timeline=await service.timelines.get({ownerId,timelineId});
+    if(!timeline)return response(404,{error:{code:"TIMELINE_NOT_FOUND",message:"Timeline not found."}});
+    if(await allow({ownerId,projectId:timeline.projectId,action:"write"})!==true)return response(404,{error:{code:"TIMELINE_NOT_FOUND",message:"Timeline not found or editor access required."}});
+    if(!Number.isInteger(body.expectedRevision)||body.expectedRevision<1)return response(400,{error:{code:"HANDOFF_REVISION_REQUIRED",message:"Provide the timeline revision you reviewed."}});
+    if(body.expectedRevision!==timeline.revision)return response(409,{error:{code:"REVISION_CONFLICT",message:"Timeline changed since it was loaded. Refresh and retry."}});
+    const asset=await service.assets.get({ownerId,assetId});
+    if(!asset||asset.projectId!==timeline.projectId)return response(404,{error:{code:"HANDOFF_ASSET_NOT_FOUND",message:"Generated asset not found in this project."}});
+    const metadata=asset.metadata||{},verification=metadata.mediaVerification||{},probe=metadata.probe||{},format=probe.format||{};
+    if(metadata.generated!==true||metadata.jobId!==jobId||verification.status!=="passed"||verification.readable!==true||verification.sha256!==asset.sha256)
+     return response(422,{error:{code:"HANDOFF_ASSET_UNVERIFIED",message:"Asset must have a matching generation job and server-recorded readability/checksum verification before handoff."}});
+    const mediaPrefix=String(asset.mediaType||"").split("/")[0].toLowerCase();
+    const kind=mediaPrefix==="video"?"video":mediaPrefix==="audio"?"audio":mediaPrefix==="image"?"image":null;
+    if(!kind)return response(422,{error:{code:"HANDOFF_MEDIA_UNSUPPORTED",message:"This media type cannot be placed on the timeline."}});
+    const track=timeline.timeline.tracks.find(item=>item.id===trackId);
+    if(!track)return response(422,{error:{code:"HANDOFF_TRACK_NOT_FOUND",message:"Choose an existing track."}});
+    if(track.locked)return response(422,{error:{code:"HANDOFF_TRACK_LOCKED",message:"The target track is locked."}});
+    if((kind==="audio"&&track.kind!=="audio")||(kind==="video"&&track.kind!=="video")||(kind==="image"&&track.kind!=="video"&&track.kind!=="overlay"))
+     return response(422,{error:{code:"HANDOFF_TRACK_INCOMPATIBLE",message:"The target track cannot contain this media type."}});
+    const duration=kind==="image"?Number(body.durationSeconds):Number(format.duration);
+    if(!Number.isFinite(duration)||duration<=0||duration>3600)return response(422,{error:{code:"HANDOFF_DURATION_UNVERIFIED",message:"A valid source duration is required; for still images, specify an explicit clip duration."}});
+    const fps=timeline.timeline.frameRate.numerator/timeline.timeline.frameRate.denominator;
+    if(!Number.isFinite(fps)||fps<=0)return response(422,{error:{code:"HANDOFF_TIMELINE_RATE_INVALID",message:"Timeline frame rate is invalid."}});
+    const startSeconds=Number(body.playheadSeconds);
+    if(!Number.isFinite(startSeconds)||startSeconds<0||startSeconds>86400)return response(400,{error:{code:"HANDOFF_PLAYHEAD_INVALID",message:"Playhead must be a finite time between 0 and 24 hours."}});
+    const existing=track.clips.find(item=>item.id===clipId);
+    if(existing){
+     if(existing.assetId===assetId&&existing.metadata?.generationJobId===jobId)return response(200,{timeline,idempotentReplay:true});
+     return response(409,{error:{code:"HANDOFF_CLIP_CONFLICT",message:"Clip ID already exists for a different edit."}});
+    }
+    const sourceTimebase=1000,sourceDurationTicks=Math.round(duration*sourceTimebase),startFrame=Math.round(startSeconds*fps);
+    if(sourceDurationTicks<=0)return response(422,{error:{code:"HANDOFF_DURATION_INVALID",message:"Media duration is too short for the supported timebase."}});
+    const start=startFrame/fps,end=start+sourceDurationTicks/sourceTimebase;
+    for(const clip of track.clips){
+     const clipStart=clip.timelineStart.value/clip.timelineStart.rate,clipEnd=clipStart+clip.duration.value/clip.duration.rate;
+     if(start<clipEnd-1e-6&&end>clipStart+1e-6)return response(409,{error:{code:"HANDOFF_OVERLAP",message:"Choose an empty position or another track; existing clips will not be replaced."}});
+    }
+    const clip={id:clipId,assetId,name:String(body.clipName||asset.name||("Generated "+kind)).slice(0,180),sourceRange:{start:{value:0,rate:sourceTimebase},duration:{value:sourceDurationTicks,rate:sourceTimebase}},timelineStart:{value:startFrame,rate:fps},duration:{value:sourceDurationTicks,rate:sourceTimebase},enabled:true,metadata:{origin:"generated-media-handoff",generationJobId:jobId,verifiedSha256:asset.sha256,sourceProjectId:timeline.projectId}};
+    const updatedDocument={...timeline.timeline,tracks:timeline.timeline.tracks.map(item=>item.id===trackId?{...item,clips:[...item.clips,clip].sort((a,b)=>a.timelineStart.value/a.timelineStart.rate-b.timelineStart.value/b.timelineStart.rate)}:item)};
+    const otio=body.otio??timeline.otio??null;
+    const saved=await service.timelines.update({ownerId,timelineId,expectedRevision:timeline.revision,timeline:updatedDocument,otio});
+    return response(200,{timeline:saved,idempotentReplay:false});
+   }
+   const previewMatch=path.match(/^\/api\/cloud\/timelines\/([0-9a-f-]+)\/preview\/([0-9a-f-]+)$/i);
+   if(previewMatch&&safeId(previewMatch[1])&&safeId(previewMatch[2])&&method==="GET"){
+    const timelineId=previewMatch[1],assetId=previewMatch[2];
+    const timeline=await service.timelines.get({ownerId,timelineId});
+    if(!timeline)return response(404,{error:{code:"TIMELINE_NOT_FOUND",message:"Timeline not found."}});
+    if(await allow({ownerId,projectId:timeline.projectId,action:"read"})!==true)return response(404,{error:{code:"TIMELINE_NOT_FOUND",message:"Timeline not found."}});
+    if(query.revision!==undefined&&String(query.revision)!==String(timeline.revision))return response(409,{error:{code:"REVISION_CONFLICT",message:"Timeline changed since this preview was requested. Refresh the timeline."}});
+    const referenced=(timeline.timeline?.tracks||[]).some(track=>track?.enabled!==false&&(track?.clips||[]).some(clip=>clip?.enabled!==false&&clip?.assetId===assetId));
+    if(!referenced)return response(404,{error:{code:"PREVIEW_ASSET_NOT_FOUND",message:"This asset is not part of the requested timeline."}});
+    const sourceAsset=await service.assets.get({ownerId,assetId});
+    if(!sourceAsset||sourceAsset.projectId!==(timeline.projectId||null))return response(404,{error:{code:"PREVIEW_ASSET_NOT_FOUND",message:"Preview asset not found in this project."}});
+    // Prefer a structurally validated, same-project proxy for video preview.
+    // The timeline continues to reference the original asset; proxy selection
+    // is a read-only transport optimization and never changes edit provenance.
+    let previewAsset=sourceAsset,usingProxy=false;
+    if(String(sourceAsset.mediaType||"").startsWith("video/")&&typeof service.assets.list==="function"){
+     const candidates=await service.assets.list({ownerId,projectId:timeline.projectId||null,limit:100,offset:0});
+     const sourceHash=String(sourceAsset.sha256||"");
+     const proxy=(Array.isArray(candidates)?candidates:[]).find(candidate=>
+      candidate?.derivativeOf===assetId&&candidate?.projectId===(timeline.projectId||null)&&
+      String(candidate?.mediaType||"").startsWith("video/")&&candidate?.metadata?.operation==="media.proxy"&&
+      /^[a-f0-9]{64}$/i.test(sourceHash)&&candidate?.metadata?.sourceSha256===sourceHash&&
+      /^[a-f0-9]{64}$/i.test(String(candidate?.sha256||""))&&candidate.sha256!==sourceHash
+     );
+     if(proxy){previewAsset=proxy;usingProxy=true;}
+    }
+    const signed=await service.assets.createSignedUrl({ownerId,assetId:previewAsset.id,expiresIn:300});
+    let waveformUrl=null;
+    if(String(sourceAsset.mediaType||"").startsWith("audio/")&&typeof service.assets.list==="function"){
+     const candidates=await service.assets.list({ownerId,projectId:timeline.projectId||null,limit:100,offset:0});
+     const sourceHash=String(sourceAsset.sha256||"");
+     const waveform=(Array.isArray(candidates)?candidates:[]).find(candidate=>
+      candidate?.derivativeOf===assetId&&candidate?.projectId===(timeline.projectId||null)&&candidate?.mediaType==="image/png"&&
+      candidate?.metadata?.operation==="media.waveform"&&/^[a-f0-9]{64}$/i.test(sourceHash)&&candidate?.metadata?.sourceSha256===sourceHash&&
+      /^[a-f0-9]{64}$/i.test(String(candidate?.sha256||""))
+     );
+     if(waveform){const waveformTicket=await service.assets.createSignedUrl({ownerId,assetId:waveform.id,expiresIn:300});waveformUrl=waveformTicket.url;}
+    }
+    return response(200,{preview:{timelineId,timelineRevision:timeline.revision,sourceAssetId:assetId,asset:signed.asset,url:signed.url,usingProxy,waveformUrl,expiresIn:300,cacheControl:"no-store"}});
    }
    const match=path.match(/^\/api\/cloud\/timelines\/([0-9a-f-]+)(?:\/(render))?$/i);
    if(!match||!safeId(match[1]))return null;
@@ -202,6 +509,9 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
    }
    return null;
   }catch(error){
+   if(error.code==="CLOUD_TIMELINE_API_DATABASE_ERROR"&&error.status===409&&error.databaseCode==="23505"&&path==="/api/cloud/upscale-benchmarks/fixtures")return response(409,{error:{code:"UPSCALE_FIXTURE_EXISTS",message:"This source asset is already registered as a fixture in this project."}});
+   if(error.code==="CLOUD_TIMELINE_API_DATABASE_ERROR"&&error.status===409&&error.databaseCode==="23505"&&path==="/api/cloud/upscale-benchmarks/runs")return response(409,{error:{code:"UPSCALE_BENCHMARK_ALREADY_REGISTERED",message:"This derivative is already registered for the selected fixture."}});
+   if(error.code==="CLOUD_TIMELINE_API_DATABASE_ERROR"&&error.status===409&&error.databaseCode==="23505")return response(409,{error:{code:"DELIVERY_ALREADY_REVIEWED",message:"A review decision already exists for this reviewer and delivery fingerprint."}});
    if(error.code==="CLOUD_PROJECT_NOT_FOUND"||error.code==="CLOUD_PROJECT_ACCESS_DENIED")return response(404,{error:{code:"PROJECT_NOT_FOUND",message:"Project not found."}});
    if(error.code==="CLOUD_PROJECT_REVISION_CONFLICT")return response(409,{error:{code:"REVISION_CONFLICT",message:"Project changed since it was loaded. Refresh and retry."}});
    if(error.code==="CLOUD_ASSET_NOT_FOUND")return response(404,{error:{code:"ASSET_NOT_FOUND",message:"Asset not found."}});

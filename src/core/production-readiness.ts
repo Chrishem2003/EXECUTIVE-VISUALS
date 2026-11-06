@@ -1,4 +1,4 @@
-export type ProductionCheckId = "sequence" | "source_media" | "shot_capability" | "continuity" | "rights" | "captions" | "audio" | "delivery";
+export type ProductionCheckId = "sequence" | "source_media" | "derivative_integrity" | "shot_capability" | "continuity" | "rights" | "captions" | "audio" | "delivery";
 export type ProductionCheckStatus = "passed" | "review" | "blocked" | "not_run";
 export interface ProductionCheckEvidence {
   status: ProductionCheckStatus;
@@ -34,6 +34,7 @@ export interface ProductionReadinessReport {
 const REQUIRED: Array<{ id: ProductionCheckId; label: string }> = [
   { id: "sequence", label: "Sequence structure" },
   { id: "source_media", label: "Source media integrity" },
+  { id: "derivative_integrity", label: "Enhancement and derivative integrity" },
   { id: "shot_capability", label: "Shot and engine compatibility" },
   { id: "continuity", label: "Story and visual continuity" },
   { id: "rights", label: "Rights and identity permissions" },

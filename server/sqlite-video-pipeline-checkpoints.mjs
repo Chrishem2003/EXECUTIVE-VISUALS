@@ -1,6 +1,7 @@
 const SHA256=/^[a-f0-9]{64}$/i;
 const fail=(message,code)=>Object.assign(new Error(message),{code});
-const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
+const stable=value=>Array.isArray(value)?"["+value.map(stable).join(",")+"]":value!==null&&typeof value==="object"?"{"+Object.keys(value).sort().map(key=>JSON.stringify(key)+":"+stable(value[key])).join(",")+"}":JSON.stringify(value);
+const same=(a,b)=>stable(a)===stable(b);
 
 /** Owner/project-scoped durable checkpoint repository backed by the local SQLite database. */
 export function createSqliteVideoPipelineCheckpointStore({db,ownerId,projectId=null,authorizeProject=null}={}){

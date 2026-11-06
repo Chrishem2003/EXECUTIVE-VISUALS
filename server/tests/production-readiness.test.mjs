@@ -5,20 +5,20 @@ import { buildProductionReadinessReport } from "../../src/core/production-readin
 test("missing evidence remains not-run and prevents a ready decision", () => {
   const report = buildProductionReadinessReport();
   assert.equal(report.decision, "review_required");
-  assert.equal(report.counts.notRun, 8);
+  assert.equal(report.counts.notRun, 9);
   assert.equal(report.policy.allRequiredChecksPassed, false);
   assert.equal(report.policy.humanApprovalGranted, false);
   assert.ok(report.checks.every(check => check.status === "not_run"));
 });
 
-test("all eight evidence-backed checks can reach human-approval readiness only", () => {
+test("all nine evidence-backed checks can reach human-approval readiness only", () => {
   const checks = Object.fromEntries([
-    "sequence", "source_media", "shot_capability", "continuity",
+    "sequence", "source_media", "derivative_integrity", "shot_capability", "continuity",
     "rights", "captions", "audio", "delivery",
   ].map(id => [id, { status: "passed", summary: id + " verified", evidenceRef: "evidence:" + id }]));
   const report = buildProductionReadinessReport({ checks });
   assert.equal(report.decision, "ready_for_human_approval");
-  assert.equal(report.counts.passed, 8);
+  assert.equal(report.counts.passed, 9);
   assert.equal(report.policy.humanApprovalGranted, false);
   assert.equal(report.policy.mediaRendered, false);
   assert.equal(report.policy.providerSubmitted, false);
@@ -33,7 +33,7 @@ test("a blocker dominates review and passed checks", () => {
   assert.equal(report.decision, "blocked");
   assert.equal(report.counts.blocked, 1);
   assert.equal(report.counts.review, 1);
-  assert.equal(report.counts.notRun, 5);
+  assert.equal(report.counts.notRun, 6);
   assert.equal(report.checks.find(check => check.id === "rights")?.findings[0].code, "RIGHTS_REQUIRED");
 });
 

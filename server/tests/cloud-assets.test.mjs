@@ -12,11 +12,11 @@ const assetId="323e4567-e89b-42d3-a456-426614174000";
 const bytes=new Uint8Array([1,2,3,4]);
 const config={url:"https://example.supabase.co",serviceRoleKey:"private-service-key"};
 function response(body,status=200){return{ok:status>=200&&status<300,status,async text(){return JSON.stringify(body);}};}
-function fixture({authorize=async()=>true,insertResponse=null,removeError=false}={}) {
+function fixture({authorize=async()=>true,insertResponse=null,removeError=false,uploadFileError=false}={}) {
  const calls=[],storageCalls=[];
  const storage={
   async upload(path,data,type){storageCalls.push({op:"upload",path,data,type});return{bucket:"executive-visuals-media",path,size:data.byteLength,contentType:type};},
-  async uploadFile(path,file,type){const data=await readFile(file);storageCalls.push({op:"uploadFile",path,file,type});return{bucket:"executive-visuals-media",path,size:data.byteLength,sha256:createHash("sha256").update(data).digest("hex"),contentType:type};},
+  async uploadFile(path,file,type){const data=await readFile(file);storageCalls.push({op:"uploadFile",path,file,type});if(uploadFileError)throw new Error("stream ended after remote request began");return{bucket:"executive-visuals-media",path,size:data.byteLength,sha256:createHash("sha256").update(data).digest("hex"),contentType:type};},
   async createSignedUrl(path,expiry){storageCalls.push({op:"sign",path,expiry});return"https://example.supabase.co/storage/signed";},
   async remove(path){storageCalls.push({op:"remove",path});if(removeError)throw new Error("storage cleanup unavailable");return true;}
  };
@@ -46,6 +46,21 @@ test("creates a cloud asset from a file using the streaming storage boundary",as
  const f=fixture();const asset=await f.repo.createFromFile({ownerId,projectId,originalName:"master.mp4",mediaType:"video/mp4",filePath:file,metadata:{role:"master"}});
  assert.equal(asset.size,bytes.length);assert.equal(asset.sha256,createHash("sha256").update(bytes).digest("hex"));
  assert.equal(f.storageCalls[0].op,"uploadFile");assert.equal(JSON.parse(f.calls[0].options.body).sha256,asset.sha256);
+ await rm(root,{recursive:true,force:true});
+});
+test("cleans the exact object path after an uncertain streaming upload failure",async()=>{
+ const root=await mkdtemp(join(tmpdir(),"ev-asset-stream-failure-")),file=join(root,"master.mp4");await writeFile(file,bytes);
+ const f=fixture({uploadFileError:true});
+ await assert.rejects(()=>f.repo.createFromFile({ownerId,projectId,originalName:"master.mp4",mediaType:"video/mp4",filePath:file}),/stream ended/);
+ assert.deepEqual(f.storageCalls.map(x=>x.op),["uploadFile","remove"]);
+ assert.match(f.storageCalls[1].path,new RegExp("^"+projectId+"/"));
+ await rm(root,{recursive:true,force:true});
+});
+test("reports pending cleanup when uncertain streaming upload and compensation both fail",async()=>{
+ const root=await mkdtemp(join(tmpdir(),"ev-asset-stream-cleanup-")),file=join(root,"master.mp4");await writeFile(file,bytes);
+ const f=fixture({uploadFileError:true,removeError:true});
+ await assert.rejects(()=>f.repo.createFromFile({ownerId,projectId,originalName:"master.mp4",mediaType:"video/mp4",filePath:file}),e=>e.cleanupPending===true);
+ assert.deepEqual(f.storageCalls.map(x=>x.op),["uploadFile","remove"]);
  await rm(root,{recursive:true,force:true});
 });
 test("denies upload before touching storage when project role authorization fails",async()=>{
@@ -123,4 +138,19 @@ test("does not list project assets without read authorization",async()=>{
  const f=fixture({authorize:async()=>false});
  await assert.rejects(()=>f.repo.list({ownerId,projectId}),e=>e.code==="CLOUD_ASSET_ACCESS_DENIED");
  assert.equal(f.calls.length,0);
+});
+
+test("retries storage cleanup for a previously soft-deleted asset",async()=>{
+ const f=fixture();
+ const result=await f.repo.retryCleanup({ownerId,assetId});
+ assert.deepEqual(result,{id:assetId,deleted:true,storageRemoved:true,cleanupPending:false});
+ assert.equal(f.calls[0].options.method,"GET");
+ assert.ok(f.calls[0].url.includes("deleted_at=not.is.null"));
+ assert.equal(f.storageCalls[0].op,"remove");
+ assert.equal(f.storageCalls[0].path,f.row.object_path);
+});
+test("does not retry cleanup without project write authorization",async()=>{
+ const f=fixture({authorize:async()=>false});
+ await assert.rejects(()=>f.repo.retryCleanup({ownerId,assetId}),e=>e.code==="CLOUD_ASSET_ACCESS_DENIED");
+ assert.equal(f.storageCalls.length,0);
 });

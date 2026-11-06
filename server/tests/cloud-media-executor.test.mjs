@@ -1,9 +1,26 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { chmod, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createCloudMediaExecutor } from "../cloud-media-executor.mjs";
+import { createCloudMediaExecutor, runMediaProcess } from "../cloud-media-executor.mjs";
+import { buildUpscaleBenchmarkRecordFromAsset, validateUpscaleBenchmarkRecord } from "../upscale-benchmark.mjs";
+
+
+async function writeUpscaleManifest(directory, binary, model) {
+  const binarySha256 = createHash("sha256").update(await readFile(binary)).digest("hex");
+  const paramSha256 = createHash("sha256").update(await readFile(join(directory, model + ".param"))).digest("hex");
+  const weightsSha256 = createHash("sha256").update(await readFile(join(directory, model + ".bin"))).digest("hex");
+  const modelFilesSha256 = createHash("sha256").update(paramSha256 + ":" + weightsSha256).digest("hex");
+  const manifestPath = join(directory, "upscale-engine-manifest.json");
+  await writeFile(manifestPath, JSON.stringify({
+    schemaVersion: 1, engine: "realesrgan-ncnn-vulkan", model,
+    binarySha256, modelFilesSha256,
+    source: "test fixture", release: "test release", license: "test fixture license"
+  }));
+  return manifestPath;
+}
 
 async function executable(directory, name, body) {
   const path = join(directory, name);
@@ -103,6 +120,37 @@ test("cloud media enhancement publishes a checksummed derivative using the claim
     else process.env.FFMPEG_PATH = previous;
     if (previousProbe === undefined) delete process.env.FFPROBE_PATH;
     else process.env.FFPROBE_PATH = previousProbe;
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("cloud media executor forwards the lease cancellation signal and cleans materialized assets if workspace creation fails", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "ev-cloud-cancel-test-"));
+  const invalidTempRoot = join(directory, "missing-parent", "worker");
+  let forwardedSignal = null, cleaned = false;
+  const controller = new AbortController();
+  const execute = createCloudMediaExecutor({
+    tempRoot: invalidTempRoot,
+    mediaIO: {
+      async materialize(args) {
+        forwardedSignal = args.signal;
+        return {
+          path: join(directory, "unused.mp4"),
+          asset: { id: "asset-cancel", name: "clip.mp4", mediaType: "video/mp4" },
+          async cleanup() { cleaned = true; }
+        };
+      },
+      async publish() { throw new Error("No output should be published."); }
+    }
+  });
+  try {
+    await assert.rejects(
+      execute({ job: { id: "job-cancel", owner_id: "owner", job_type: "media.probe", input: { sourceAssetId: "asset-cancel" } }, signal: controller.signal }),
+      error => error.code === "ENOENT"
+    );
+    assert.equal(forwardedSignal, controller.signal);
+    assert.equal(cleaned, true);
+  } finally {
     await rm(directory, { recursive: true, force: true });
   }
 });
@@ -372,16 +420,20 @@ test("cloud AI upscale publishes a separate image derivative with engine provena
   const previousModels = process.env.REALESRGAN_MODEL_DIR;
   const previousEnabled = process.env.AI_UPSCALE_ENABLED;
   const previousFfprobe = process.env.FFPROBE_PATH;
+  const previousManifest = process.env.UPSCALE_ENGINE_MANIFEST;
   const previousFfmpeg = process.env.FFMPEG_PATH;
   const source = join(directory, "source.png");
   const model = "realesrgan-x4plus";
-  const binary = await executable(directory, "realesrgan-ncnn-vulkan", String.raw`while [ "$1" != "" ]; do if [ "$1" = "-o" ]; then shift; printf '\211PNG\r\n\032\n\000\000\000\015IHDR\000\000\000\001\000\000\000\001' > "$1"; fi; shift; done`);
-  await writeFile(source, Buffer.from([137,80,78,71,13,10,26,10]));
+  const binary = await executable(directory, "realesrgan-ncnn-vulkan", String.raw`while [ "$1" != "" ]; do if [ "$1" = "-o" ]; then shift; printf '\211PNG\r\n\032\n\000\000\000\015IHDR\000\000\000\050\000\000\000\050' > "$1"; fi; shift; done`);
+  const sourceBytes=Buffer.from([137,80,78,71,13,10,26,10,0,0,0,13,73,72,68,82,0,0,0,10,0,0,0,10]);
+  const sourceSha256=createHash("sha256").update(sourceBytes).digest("hex");
+  await writeFile(source, sourceBytes);
   await writeFile(join(directory, model + ".param"), "model");
   await writeFile(join(directory, model + ".bin"), "weights");
   process.env.REALESRGAN_NCNN_PATH = binary;
   process.env.REALESRGAN_MODEL_DIR = directory;
   process.env.AI_UPSCALE_ENABLED = "true";
+  process.env.UPSCALE_ENGINE_MANIFEST = await writeUpscaleManifest(directory, binary, model);
   process.env.FFMPEG_PATH = await executable(directory, "ffmpeg", "exit 0");
   process.env.FFPROBE_PATH = await executable(directory, "ffprobe", "for last do :; done\ncase \"$last\" in *source.png) echo '{\"streams\":[{\"width\":10,\"height\":10}]}' ;; *) echo '{\"streams\":[{\"width\":40,\"height\":40}]}' ;; esac");
   let published;
@@ -390,7 +442,7 @@ test("cloud AI upscale publishes a separate image derivative with engine provena
       tempRoot: directory,
       mediaIO: {
         async materialize() {
-          return { path: source, asset: { id: "image-source", name: "portrait.png", mediaType: "image/png", sha256: "d".repeat(64) }, async cleanup() {} };
+          return { path: source, asset: { id: "image-source", name: "portrait.png", mediaType: "image/png", sha256: sourceSha256 }, async cleanup() {} };
         },
         async publish(args) {
           published = args;
@@ -400,23 +452,45 @@ test("cloud AI upscale publishes a separate image derivative with engine provena
     });
     const result = await execute({
       job: { id: "job-ai-up", owner_id: "owner-ai", project_id: "project-ai", job_type: "media.ai-upscale",
-        input: { sourceAssetId: "image-source", model, scale: 4, tile: 128, format: "png" } },
+        input: { sourceAssetId: "image-source", sourceSha256, model, scale: 4, tile: 128, format: "png" } },
       onProgress() {}
     });
     assert.equal(result.processing.method, "ai-super-resolution");
     assert.equal(result.processing.engine, "realesrgan-ncnn-vulkan");
     assert.equal(result.processing.model, model);
     assert.equal(result.processing.scale, 4);
+    assert.ok(result.processing.runtime);
+    assert.equal(result.processing.runtime.platform, process.platform);
+    assert.ok(result.processing.runtime.logicalCores > 0);
+    assert.equal(published.metadata.processing.runtime.cpuModel, result.processing.runtime.cpuModel);
     assert.equal(result.processing.dimensionsVerified, true);
     assert.equal(result.processing.outputWidth, 40);
     assert.equal(result.processing.outputHeight, 40);
     assert.equal(published.derivativeOf, "image-source");
     assert.equal(published.mediaType, "image/png");
     assert.equal(published.metadata.processing.method, "ai-super-resolution");
+    assert.equal(result.processing.schemaVersion, 1);
+    assert.equal(result.processing.sourceAssetId, "image-source");
+    assert.equal(result.processing.inputSha256, sourceSha256);
+    assert.equal(result.processing.outputSha256, published.metadata.sha256);
+    assert.match(result.processing.modelVersion, /^[a-f0-9]{64}:[a-f0-9]{64}$/);
+    assert.ok(Number.isInteger(result.processing.durationMs) && result.processing.durationMs > 0);
+    assert.equal(result.processing.width, 40);
+    assert.equal(result.processing.height, 40);
+    assert.equal(result.processing.decoderVerified, true);
+    assert.equal(result.processing.qualityReview, "not_reviewed");
+    const benchmarkRecord=buildUpscaleBenchmarkRecordFromAsset({
+      outputAsset:{id:"image-ai-output",mediaType:published.mediaType,sha256:published.metadata.sha256,derivativeOf:published.derivativeOf,createdAt:"2026-11-02T12:00:00.000Z",metadata:published.metadata},
+      fixtureId:"portrait-fixture",fixtureCategory:"portrait"
+    });
+    assert.equal(validateUpscaleBenchmarkRecord(benchmarkRecord).valid,true);
+    assert.equal(benchmarkRecord.inputSha256,sourceSha256);
+    assert.equal(benchmarkRecord.outputSha256,published.metadata.sha256);
   } finally {
     if (previousBinary === undefined) delete process.env.REALESRGAN_NCNN_PATH; else process.env.REALESRGAN_NCNN_PATH = previousBinary;
     if (previousModels === undefined) delete process.env.REALESRGAN_MODEL_DIR; else process.env.REALESRGAN_MODEL_DIR = previousModels;
     if (previousEnabled === undefined) delete process.env.AI_UPSCALE_ENABLED; else process.env.AI_UPSCALE_ENABLED = previousEnabled;
+    if (previousManifest === undefined) delete process.env.UPSCALE_ENGINE_MANIFEST; else process.env.UPSCALE_ENGINE_MANIFEST = previousManifest;
     if (previousFfprobe === undefined) delete process.env.FFPROBE_PATH; else process.env.FFPROBE_PATH = previousFfprobe;
     if (previousFfmpeg === undefined) delete process.env.FFMPEG_PATH; else process.env.FFMPEG_PATH = previousFfmpeg;
     await rm(directory, { recursive: true, force: true });
@@ -430,16 +504,18 @@ test("cloud AI upscale blocks publication when output dimensions do not match", 
   const previousModels = process.env.REALESRGAN_MODEL_DIR;
   const previousEnabled = process.env.AI_UPSCALE_ENABLED;
   const previousFfprobe = process.env.FFPROBE_PATH;
+  const previousManifest = process.env.UPSCALE_ENGINE_MANIFEST;
   const previousFfmpeg = process.env.FFMPEG_PATH;
   const source = join(directory, "source.png");
   const model = "realesrgan-x4plus";
   const binary = await executable(directory, "realesrgan-ncnn-vulkan", String.raw`while [ "$1" != "" ]; do if [ "$1" = "-o" ]; then shift; printf '\211PNG\r\n\032\n\000\000\000\015IHDR\000\000\000\001\000\000\000\001' > "$1"; fi; shift; done`);
-  await writeFile(source, Buffer.from([137,80,78,71,13,10,26,10]));
+  await writeFile(source, Buffer.from([137,80,78,71,13,10,26,10,0,0,0,13,73,72,68,82,0,0,0,10,0,0,0,10]));
   await writeFile(join(directory, model + ".param"), "model");
   await writeFile(join(directory, model + ".bin"), "weights");
   process.env.REALESRGAN_NCNN_PATH = binary;
   process.env.REALESRGAN_MODEL_DIR = directory;
   process.env.AI_UPSCALE_ENABLED = "true";
+  process.env.UPSCALE_ENGINE_MANIFEST = await writeUpscaleManifest(directory, binary, model);
   process.env.FFMPEG_PATH = await executable(directory, "ffmpeg", "exit 0");
   process.env.FFPROBE_PATH = await executable(directory, "ffprobe", "case \"$last\" in *source.png) echo '{\"streams\":[{\"width\":10,\"height\":10}]}' ;; *) echo '{\"streams\":[{\"width\":40,\"height\":40}]}' ;; esac");
   let published;
@@ -460,12 +536,13 @@ test("cloud AI upscale blocks publication when output dimensions do not match", 
       job: { id: "job-ai-up-mismatch", owner_id: "owner-ai", project_id: "project-ai", job_type: "media.ai-upscale",
         input: { sourceAssetId: "image-source", model, scale: 4, tile: 128, format: "png" } },
       onProgress() {}
-    }), error => error.code === "MEDIA_OUTPUT_VALIDATION_FAILED");
+    }), error => error.code === "AI_UPSCALE_OUTPUT_DIMENSIONS_MISMATCH");
     assert.equal(published, undefined, "dimension-mismatched derivative must never be published");
   } finally {
     if (previousBinary === undefined) delete process.env.REALESRGAN_NCNN_PATH; else process.env.REALESRGAN_NCNN_PATH = previousBinary;
     if (previousModels === undefined) delete process.env.REALESRGAN_MODEL_DIR; else process.env.REALESRGAN_MODEL_DIR = previousModels;
     if (previousEnabled === undefined) delete process.env.AI_UPSCALE_ENABLED; else process.env.AI_UPSCALE_ENABLED = previousEnabled;
+    if (previousManifest === undefined) delete process.env.UPSCALE_ENGINE_MANIFEST; else process.env.UPSCALE_ENGINE_MANIFEST = previousManifest;
     if (previousFfprobe === undefined) delete process.env.FFPROBE_PATH; else process.env.FFPROBE_PATH = previousFfprobe;
     if (previousFfmpeg === undefined) delete process.env.FFMPEG_PATH; else process.env.FFMPEG_PATH = previousFfmpeg;
     await rm(directory, { recursive: true, force: true });
@@ -489,4 +566,176 @@ test("cloud AI upscale rejects video instead of treating frame-by-frame resampli
       onProgress() {}
     }), error => error.code === "UNSUPPORTED_MEDIA_TYPE");
   } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+
+test("refuses cloud AI-upscale inference when the queued source fingerprint changed",async()=>{
+ const directory=await mkdtemp(join(tmpdir(),"cloud-ai-upscale-source-"));
+ let cleaned=false;
+ try{
+  const execute=createCloudMediaExecutor({tempRoot:directory,mediaIO:{
+   async materialize(){return{path:join(directory,"unused.png"),asset:{id:"image-source",name:"portrait.png",mediaType:"image/png",sha256:"d".repeat(64)},async cleanup(){cleaned=true;}};},
+   async publish(){throw new Error("publish must not be reached");}
+  }});
+  await assert.rejects(()=>execute({job:{id:"job-source-change",owner_id:"owner",project_id:"project",job_type:"media.ai-upscale",input:{sourceAssetId:"image-source",sourceSha256:"e".repeat(64),model:"realesrgan-x4plus",scale:4,tile:0,format:"png"}},onProgress(){}}),error=>error.code==="AI_UPSCALE_SOURCE_CHANGED");
+  assert.equal(cleaned,true);
+ }finally{await rm(directory,{recursive:true,force:true});}
+});
+
+
+test("cloud AI upscale hashes materialized bytes instead of trusting unchanged asset metadata",async()=>{
+ const directory=await mkdtemp(join(tmpdir(),"cloud-ai-upscale-byte-hash-"));
+ const source=join(directory,"source.png");
+ let cleaned=false,published=false;
+ try{
+  await writeFile(source,"tampered image bytes");
+  const execute=createCloudMediaExecutor({tempRoot:directory,mediaIO:{
+   async materialize(){return{path:source,asset:{id:"image-source",name:"portrait.png",mediaType:"image/png",sha256:"d".repeat(64)},async cleanup(){cleaned=true;}};},
+   async publish(){published=true;throw new Error("publish must not be reached");}
+  }});
+  await assert.rejects(()=>execute({job:{id:"job-source-byte-change",owner_id:"owner",project_id:"project",job_type:"media.ai-upscale",input:{sourceAssetId:"image-source",sourceSha256:"d".repeat(64),model:"realesrgan-x4plus",scale:4,tile:0,format:"png"}},onProgress(){}}),error=>error.code==="AI_UPSCALE_SOURCE_CHANGED");
+  assert.equal(cleaned,true);
+  assert.equal(published,false);
+ }finally{await rm(directory,{recursive:true,force:true});}
+});
+
+
+test("cloud media executor removes its workspace even when materialized cleanup throws synchronously", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "ev-cloud-cleanup-throw-test-"));
+  const source = join(directory, "source.mp4");
+  await writeFile(source, "fixture");
+  const previous = process.env.FFPROBE_PATH;
+  process.env.FFPROBE_PATH = await executable(directory, "ffprobe", String.raw`printf '%s' '{"streams":[{"codec_type":"video"}],"format":{"duration":"1.0"}}'`);
+  const execute = createCloudMediaExecutor({
+    tempRoot: directory,
+    mediaIO: {
+      async materialize() {
+        return {
+          path: source,
+          asset: { id: "asset-cleanup", name: "clip.mp4", mediaType: "video/mp4" },
+          cleanup() { throw new Error("cleanup adapter failed"); }
+        };
+      },
+      async publish() { throw new Error("Probe jobs must not publish."); }
+    }
+  });
+  try {
+    const result = await execute({
+      job: { id: "job-cleanup", owner_id: "owner", job_type: "media.probe", input: { sourceAssetId: "asset-cleanup" } },
+      onProgress() {}
+    });
+    assert.equal(result.sourceAssetId, "asset-cleanup");
+    assert.deepEqual((await readdir(directory)).filter(name => name.startsWith("ev-cloud-job-")), []);
+  } finally {
+    if (previous === undefined) delete process.env.FFPROBE_PATH; else process.env.FFPROBE_PATH = previous;
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+
+test("media process escalates SIGTERM to SIGKILL when a cancelled child ignores termination", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "ev-media-process-kill-test-"));
+  const pidPath = join(directory, "child.pid");
+  const controller = new AbortController();
+  const script = [
+    'require("node:fs").writeFileSync(' + JSON.stringify(pidPath) + ', String(process.pid));',
+    'process.on("SIGTERM", () => {});',
+    'setInterval(() => {}, 1000);'
+  ].join("");
+  try {
+    const pending = runMediaProcess(process.execPath, ["-e", script], {
+      signal: controller.signal,
+      killGraceMs: 25,
+      timeoutMs: 5000
+    });
+    let pidText = "";
+    for (let attempt = 0; attempt < 100 && !pidText; attempt++) {
+      try { pidText = await readFile(pidPath, "utf8"); } catch {}
+      if (!pidText) await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    assert.match(pidText, /^\d+$/, "child process should start before cancellation");
+    const pid = Number(pidText);
+    controller.abort();
+    await assert.rejects(pending, error => error.code === "JOB_CANCELLED");
+    assert.throws(() => process.kill(pid, 0), error => error.code === "ESRCH",
+      "cancellation must not settle until the child is gone, so workspace cleanup cannot race it");
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+
+test("cloud AI upscale refuses inference when the engine provenance manifest is missing", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "ev-cloud-ai-upscale-no-manifest-"));
+  const previous = {
+    binary: process.env.REALESRGAN_NCNN_PATH,
+    models: process.env.REALESRGAN_MODEL_DIR,
+    enabled: process.env.AI_UPSCALE_ENABLED,
+    manifest: process.env.UPSCALE_ENGINE_MANIFEST,
+    ffprobe: process.env.FFPROBE_PATH,
+    ffmpeg: process.env.FFMPEG_PATH
+  };
+  const source = join(directory, "source.png");
+  const marker = join(directory, "inference-started");
+  const model = "realesrgan-x4plus";
+  const binary = await executable(directory, "realesrgan-ncnn-vulkan", 'printf "started" > "' + marker + '"\nwhile [ "$1" != "" ]; do if [ "$1" = "-o" ]; then shift; printf "fake-output" > "$1"; fi; shift; done');
+  const sourceBytes = Buffer.from([137,80,78,71,13,10,26,10,0,0,0,13,73,72,68,82,0,0,0,10,0,0,0,10]);
+  await writeFile(source, sourceBytes);
+  await writeFile(join(directory, model + ".param"), "model");
+  await writeFile(join(directory, model + ".bin"), "weights");
+  process.env.REALESRGAN_NCNN_PATH = binary;
+  process.env.REALESRGAN_MODEL_DIR = directory;
+  process.env.AI_UPSCALE_ENABLED = "true";
+  delete process.env.UPSCALE_ENGINE_MANIFEST;
+  process.env.FFMPEG_PATH = await executable(directory, "ffmpeg", "exit 0");
+  process.env.FFPROBE_PATH = await executable(directory, "ffprobe", "printf '%s' '{\"streams\":[{\"width\":10,\"height\":10}]}'");
+  try {
+    const execute = createCloudMediaExecutor({
+      tempRoot: directory,
+      mediaIO: {
+        async materialize() {
+          return { path: source, asset: { id: "image-source", name: "portrait.png", mediaType: "image/png", sha256: createHash("sha256").update(sourceBytes).digest("hex") }, async cleanup() {} };
+        },
+        async publish() { throw new Error("Missing provenance must prevent publication."); }
+      }
+    });
+    await assert.rejects(execute({
+      job: { id: "job-ai-no-manifest", owner_id: "owner", project_id: "project", job_type: "media.ai-upscale",
+        input: { sourceAssetId: "image-source", model, scale: 4, tile: 0, format: "png" } },
+      onProgress() {}
+    }), error => error.code === "AI_UPSCALE_PROVENANCE_UNVERIFIED");
+    await assert.rejects(readFile(marker), error => error.code === "ENOENT");
+  } finally {
+    if (previous.binary === undefined) delete process.env.REALESRGAN_NCNN_PATH; else process.env.REALESRGAN_NCNN_PATH = previous.binary;
+    if (previous.models === undefined) delete process.env.REALESRGAN_MODEL_DIR; else process.env.REALESRGAN_MODEL_DIR = previous.models;
+    if (previous.enabled === undefined) delete process.env.AI_UPSCALE_ENABLED; else process.env.AI_UPSCALE_ENABLED = previous.enabled;
+    if (previous.manifest === undefined) delete process.env.UPSCALE_ENGINE_MANIFEST; else process.env.UPSCALE_ENGINE_MANIFEST = previous.manifest;
+    if (previous.ffprobe === undefined) delete process.env.FFPROBE_PATH; else process.env.FFPROBE_PATH = previous.ffprobe;
+    if (previous.ffmpeg === undefined) delete process.env.FFMPEG_PATH; else process.env.FFMPEG_PATH = previous.ffmpeg;
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("cloud waveform job creates a verified PNG derivative of the leased audio source",async()=>{
+ const directory=await mkdtemp(join(tmpdir(),"ev-waveform-test-"));
+ const previous=process.env.FFMPEG_PATH,previousProbe=process.env.FFPROBE_PATH;
+ const source=join(directory,"voice.wav"),sourceBytes=Buffer.from("licensed-audio-fixture");
+ await writeFile(source,sourceBytes);
+ const sourceSha256=createHash("sha256").update(sourceBytes).digest("hex");
+ const ffmpeg=await executable(directory,"ffmpeg",'for last do :; done\nprintf "PNG-waveform" > "$last"');
+ const ffprobe=await executable(directory,"ffprobe",String.raw`printf '%s' '{"streams":[{"codec_type":"video","codec_name":"png","width":1200,"height":180}],"format":{}}'`);
+ process.env.FFMPEG_PATH=ffmpeg;process.env.FFPROBE_PATH=ffprobe;
+ let published=null,publishedBytes=null;
+ try{
+  const execute=createCloudMediaExecutor({tempRoot:directory,mediaIO:{
+   async materialize({ownerId,assetId}){assert.equal(ownerId,"verified-owner");assert.equal(assetId,"audio-source");return{path:source,asset:{id:assetId,name:"voice.wav",mediaType:"audio/wav",sha256:sourceSha256},async cleanup(){}};},
+   async publish(args){published=args;publishedBytes=await readFile(args.path);return{id:"waveform-asset",name:args.filename,mediaType:args.mediaType,metadata:args.metadata};}
+  }});
+  const result=await execute({job:{id:"waveform-job",owner_id:"verified-owner",project_id:"project-1",job_type:"media.waveform",input:{sourceAssetId:"audio-source",sourceSha256,width:1200,height:180,color:"#66b3ff"}},onProgress(){}});
+  assert.equal(published.mediaType,"image/png");assert.equal(published.derivativeOf,"audio-source");assert.equal(published.metadata.operation,"media.waveform");assert.equal(published.metadata.sourceSha256,sourceSha256);assert.equal(publishedBytes.toString(),"PNG-waveform");assert.equal(result.outputAsset.id,"waveform-asset");assert.equal(result.operation,"media.waveform");
+ }finally{
+  if(previous===undefined)delete process.env.FFMPEG_PATH;else process.env.FFMPEG_PATH=previous;
+  if(previousProbe===undefined)delete process.env.FFPROBE_PATH;else process.env.FFPROBE_PATH=previousProbe;
+  await rm(directory,{recursive:true,force:true});
+ }
 });

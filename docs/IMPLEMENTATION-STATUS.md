@@ -1,7 +1,7 @@
 # Executive Visuals — implementation status
 
-**Updated:** 2 November 2026  
-**Branch:** `feat/executive-visuals-unified-platform`  
+**Updated:** 3 November 2026  
+**Branch:** `feat/timeline-preview-transport`  
 **Delivery posture:** local runtime implemented; external-auth staging blueprint hardened; public release not approved pending account sign-in UX, isolated auth configuration, durable-data recovery tests and deployment verification.
 
 ## Implemented in the current branch
@@ -30,6 +30,7 @@
 | Runtime console | Sign-in, project creation, persistent asset library, live engine readiness, uploads, media job submission, job inspection and audit view | Browser UI uses the local API; creative briefs, shot lists, characters, research sources and linked knowledge records sync to project workspace documents |
 | Project collaboration | Owner-managed invitations with editor, reviewer and viewer roles; access revocation enforced across project records | Existing local accounts only; invitation email delivery not connected |
 | Review and approvals | Timecoded comments, approve/request-changes decisions and status updates | Local API persistence; external review links and visual drawing annotations not implemented |
+| Timeline render preflight | Detects invalid and unsupported non-1× clip speed as clip-specific hard blockers before render submission | Master renderer remains fail-closed for time remapping; preflight prevents avoidable queued jobs and gives correction guidance |
 | Editorial timeline | Multi-track clips, rational source timebases, trim, split, move, markers, overlap validation, interchange export and local MP4 master render | FFmpeg supports synchronized audio, still-image overlays, burned-in SRT/VTT captions and per-clip gain; preview playback, transitions, effects and animated/video overlays remain pending |
 | Creative intent traceability | Timeline clip inspector records story beat, audience promise, shot purpose, proof/source reference and creative decision note; coverage panel identifies clips without explicit intent anchors | Deterministic annotation analysis only; no automatic scene understanding or creative-quality scoring; trace metadata persists with the timeline; automated tests added to build |
 | Creative decision ledger | Clip intent edits append timestamped, sequential before/after records; duplicate IDs rejected, no-op edits ignored, malformed persisted entries filtered and history bounded to 100 records; latest decisions visible in clip inspector | Append-only application contract within timeline metadata; no identity attribution beyond recorded time; not a multi-user conflict-free event store; tests added to build |
@@ -41,7 +42,7 @@
 | Source-media readiness evidence | Production gate consumes saved FFprobe evidence for every referenced source; verifies readable streams, expected video/audio track type and clip source ranges against probed duration; missing or invalid sources block, unprobed sources remain not-run | Probe-backed structural evidence only; no full decode, checksum revalidation, perceptual quality or corruption scan |
 | Timeline variants and comparison | One-click independent timeline duplication with original/parent lineage; deterministic comparison of added, removed and changed clips, timing, source trims, track moves, markers and creative-intent annotations; local and cloud project creation; original sequence remains untouched | Structural comparison only; no pixel-level A/B playback, render-difference analysis, multi-user branch merge or automatic conflict resolution |
 | Timeline persistence | Owner-scoped timelines, asset ownership checks, optimistic revisions and saved interchange package | SQLite local DB; isolated SQL migration pending dedicated database review |
-| Database migration and cloud queue adapter | Dedicated multi-tenant schema, row-level security, immutable workflow-run snapshots, private object-storage policies, atomic `SKIP LOCKED` job claiming with server-side job-type filters, owner-bound lease renewal, bounded expired-lease recovery and lease-fenced completion RPCs; provider-neutral PostgREST queue adapter calls the four RPCs with server-only credentials, schema-scoped headers, argument/result validation and bounded request timeouts; private object-storage adapter supports bounded uploads, exact-path removal and same-origin expiring signed URLs; ownership-aware object-path builder matches the bucket policies (project UUID prefix for project assets, owner UUID for personal assets); generic cloud worker cycle claims, heartbeats, executes with an abort signal, and lease-fenced finishes or failures; cloud media worker factory composes the cloud queue, private asset service, media IO and executor into an explicit one-cycle worker entry point; its claim filter ensures it only leases supported media jobs (it does not start automatically); cloud media executor connects leased single-source media jobs (probe, thumbnail, audio extraction/cleanup, video enhancement, proxy and transcode) to verified cloud asset materialization and streamed derivative publication with checksum lineage; authorization-aware cloud asset repository validates ownership/project permissions before upload/read/delete, verifies SHA-256, persists metadata through the isolated schema, compensates failed metadata inserts by removing uploaded objects, and reports cleanup-pending states | Adapter contract tests are in CI, but the migration is **not applied**, the custom schema must be exposed in the isolated project's API settings, cloud storage policies must be applied, the cloud worker cycle and single-source cloud media executor are implemented and contract-tested, but no cloud worker process is deployed or auto-started; workflow execution still depends on SQLite and local asset paths; cloud timeline rendering now has a dedicated materialized-file FFmpeg worker, and a separate opt-in cloud asset API now supports bounded streaming ingest, private signed reads and soft-delete, but it is **not yet integrated into the existing asset-library UI/local asset API**; an opt-in authenticated cloud timeline API now exposes revision-checked timeline create/read/update, durable timeline.render job submission with idempotency, and role-checked job/event inspection using the verified Supabase user ID; CLOUD_TIMELINE_API_ENABLED defaults to false and refuses to start unless AUTH_MODE=supabase; never apply to shared staging or another product's database |
+| Database migration and cloud queue adapter | Dedicated multi-tenant schema, row-level security, immutable workflow-run snapshots, private object-storage policies, atomic `SKIP LOCKED` job claiming with server-side job-type filters, owner-bound lease renewal, bounded expired-lease recovery and lease-fenced completion RPCs; provider-neutral PostgREST queue adapter calls the four RPCs with server-only credentials, schema-scoped headers, argument/result validation and bounded request timeouts; private object-storage adapter supports bounded uploads, exact-path removal and same-origin expiring signed URLs; ownership-aware object-path builder matches the bucket policies (project UUID prefix for project assets, owner UUID for personal assets); generic cloud worker cycle claims, heartbeats, executes with an abort signal, and lease-fenced finishes or failures; cloud media worker factory composes the cloud queue, private asset service, media IO and executor into an explicit one-cycle worker entry point; its claim filter ensures it only leases supported media jobs (it does not start automatically); cloud media executor connects leased single-source media jobs (probe, thumbnail, audio extraction/cleanup, video enhancement, proxy and transcode) to verified cloud asset materialization and streamed derivative publication with checksum lineage; authorization-aware cloud asset repository validates ownership/project permissions before upload/read/delete, verifies SHA-256, persists metadata through the isolated schema, compensates failed metadata inserts by removing uploaded objects, and reports cleanup-pending states | Adapter contract tests are in CI, but the migration is **not applied**, the custom schema must be exposed in the isolated project's API settings, cloud storage policies must be applied, the cloud worker cycle and single-source cloud media executor are implemented and contract-tested, but no cloud worker process is deployed or auto-started; workflow execution still depends on SQLite and local asset paths; cloud timeline rendering now has a dedicated materialized-file FFmpeg worker with configurable maximum sequence duration, aggregate source-byte and output-byte limits, and cleanup on bounded-input failure, and a separate opt-in cloud asset API now supports bounded streaming ingest, private signed reads and soft-delete, but it is **not yet integrated into the existing asset-library UI/local asset API**; an opt-in authenticated cloud timeline API now exposes revision-checked timeline create/read/update, durable timeline.render job submission with idempotency, and role-checked job/event inspection using the verified Supabase user ID; CLOUD_TIMELINE_API_ENABLED defaults to false and refuses to start unless AUTH_MODE=supabase; never apply to shared staging or another product's database |
 | Text-model adapter | Server-side chat-completions-compatible text gateway with request timeouts, sanitized errors, usage normalization, server-only credentials and upstream approval ancestry | Disabled by default; remote gateways require explicit server opt-in; no provider price estimator; local/remote endpoint must be configured |
 | Speech synthesis | Approved `voice.generate` workflow node using a provider-neutral speech gateway; checks presenter voice scope when an identity profile is selected; validates and stores MP3/WAV/FLAC/OGG narration as a private checksummed asset | Disabled by default; remote HTTPS requires explicit server opt-in; no live provider call used for verification; transcription, diarization, cloning, dubbing and lip-sync remain unimplemented |
 | Speech transcription | `voice.transcribe` workflow node accepts an accessible audio asset, verifies its path, size and SHA-256, requires upstream human approval, sends bounded multipart audio to the configured speech gateway and persists transcript, language, duration and timestamped segments in the immutable workflow node output | Disabled by default; shares server-side speech gateway and remote HTTPS opt-in; local mock-server end-to-end test; no provider call used |
@@ -215,8 +216,9 @@ The cloud timeline worker now defaults to a real FFmpeg renderer that consumes t
 
 - Reuses the shared FFmpeg process runner and the existing subtitle timing/style helpers; the local SQLite renderer remains unchanged.
 - Renders a primary video track with still-image or video sources, black gap-fill, synchronized audio tracks, gain control, still-image overlays with bounded placement/opacity, and burned-in SRT/VTT caption clips.
-- Enforces a single primary video track, non-overlapping clips, supported media types, bounded output dimensions/frame rate, no unimplemented speed changes, and a 2 MiB caption-source limit.
+- Enforces one primary video track plus composited additional video layers, non-overlapping clips on each track, supported media types, bounded output dimensions/frame rate, no unimplemented speed changes, and a 2 MiB caption-source limit.
 - Uses the cloud worker's abort signal for process cancellation, writes only inside the isolated job work directory, and returns a private MP4 master for checksum publication by the cloud timeline executor.
+- Forwards the lease abort signal into every cloud source-asset materialization so storage downloads can stop promptly; cleanup hooks are isolated so synchronous or asynchronous cleanup failures do not mask the render result or primary failure.
 - CI includes a real FFmpeg/FFprobe integration test that verifies the rendered output contains both video and audio streams, plus overlap and cancellation checks.
 
 This closes the renderer-adapter gap in the cloud timeline execution contract. It does **not** mean the cloud path is deployed or live: the isolated database migration is still unapplied, the custom schema/API exposure and credentials are not configured, and the cloud worker is not connected to the HTTP API or a running service. SQLite/local-disk rendering remains the active application path.
@@ -456,3 +458,160 @@ This is a runnable worker entry point, not a deployed worker. Do not set the ena
 - Connected the Enhancement Lab to cloud draft create/list routes. Prompts and reference IDs are excluded from browser local storage; legacy local transformation drafts are purged on startup.
 - Added separate owner/editor budget approval metadata (estimate, covering budget, currency, adapter/capability declaration) and audit/job events. The local SQLite plan API remains available for development.
 - Submission remains intentionally blocked with an explicit adapter-unavailable response. The checkbox is not independent proof of person consent; evidence-backed consent verification is still required before person replacement can execute. No provider generation, credit spend, cloud migration or deployment has occurred.
+
+
+## Timeline source preview transport — 2 November 2026
+
+- Added a preview monitor to the existing timeline workspace for selected local video, audio and still-image clips. Playback uses the existing authenticated local asset file route and never constructs a filesystem path.
+- Video/audio previews are constrained to the clip's saved source in/out range. The monitor includes native playback controls, source-in/out jumps, one-source-frame stepping, a frame-indexed scrubber and a time readout.
+- Frame conversion and source-time clamping are isolated in `src/core/timeline-preview.ts`; rational frame-rate conversion is covered for fractional frame rates, source trims, playback bounds and invalid input.
+- Added `verify:timeline-preview` to the standard build pipeline.
+- Superseded by the cloud timeline preview integration recorded in the later PR #8 continuation below: the editor now requests short-lived, authenticated preview tickets for project-authorized assets and uses the saved timeline revision. Browser-level staging playback and lineage acceptance remain required; no guessed cloud URLs or public storage paths are used.
+- **Verification status at the time of this original milestone:** pending. See the 3 November verification record below for the current branch head.
+
+
+## Timeline preview and editing follow-up — 2 November 2026
+
+- Fixed the preview monitor's strict TypeScript narrowing: the selected track is now checked before its kind is read.
+- Added a non-destructive `removeClip` core operation with optional ripple mode. Ripple mode removes the selected clip and shifts only later clips on the same unlocked track; other tracks and the original immutable timeline value remain unchanged.
+- Added a visible Ripple delete action to each timeline clip and included focused tests for ripple, ordinary delete, cross-track isolation, locked tracks and missing clips.
+- Added `verify:timeline-editing` to the production build verification.
+- **CI correction:** the first preview PR run failed during `tsc --noEmit` on the possibly-undefined track access. This was a real build failure, not an environment issue. The fix and ripple editing changes are now committed; a fresh Actions run is required before claiming the branch passes.
+- Speed changes and transitions are not exposed as finished controls because the current render engine explicitly rejects time remapping. They require coordinated local/cloud renderer support and render fixtures before activation.
+
+
+## Timeline editing history — 2 November 2026
+
+- Added bounded (50-edit default) immutable undo/redo snapshots for the active timeline document.
+- Added Undo and Redo toolbar actions. Restoring a history state persists through the same revision-checked local/cloud timeline API; it does not bypass concurrency checks.
+- Timeline switches reset history so edits from one sequence cannot be applied to another.
+- Added automated coverage for undo, redo, redo invalidation after a new edit, history bounds and empty stacks.
+- The history feature is draft-branch code pending its new CI run. Browser interaction and multi-user conflict behavior still require manual acceptance testing.
+
+## Latest verified delivery-integrity increment — 2 November 2026
+
+- Delivery-package construction now validates each review-history record against the exact delivery receipt: schema version, decision enum, timeline ID/revision, published output asset, receipt fingerprint, reviewer identity, bounded note, and canonical review/creation timestamps.
+- A package cannot contain duplicate decisions from the same reviewer for one receipt. This matches the API's one-decision-per-reviewer-per-receipt rule and the separate database uniqueness migration (which remains unapplied).
+- Regression coverage includes malformed decisions, mismatched output assets, invalid timestamps and duplicate reviewers.
+- GitHub Actions full workflow passed for feature head `2ca834900d7b6d6e4c4b6b90fc420ff6ad87d473` (run [41508815429](https://github.com/Chrishem2003/EXECUTIVE-VISUALS/actions/runs/41508815429)).
+- The previous implementation-only run was cancelled when the newer commit superseded it; this does not invalidate the successful combined run.
+- Release status is unchanged: PR #8 remains draft and GitHub reports it as non-mergeable; staging end-to-end acceptance, safe base-branch reconciliation, and isolated database review remain outstanding. No migration, merge, deployment, or production service change has occurred.
+
+
+
+## 3 November 2026 — current cloud-media and timeline verification checkpoint
+
+This section supersedes older status notes above wherever they describe cloud preview, cloud asset access, delivery review, or CI as still unimplemented/pending. Earlier sections remain useful as a historical capability inventory, but are not a complete description of the current feature branch.
+
+### Verified on the current feature branch
+
+- Current branch: `feat/timeline-preview-transport`.
+- Current verified head at this checkpoint: `c27072716bd5193279af76c10e41090e95ecf0d4`.
+- Hardened derivative integrity checks so SHA-256 hex comparisons are case-insensitive while malformed checksums remain ineligible. The timeline verifier now covers uppercase valid source/output hashes and malformed source/output hashes.
+- GitHub Actions Quality checks completed successfully twice on the exact head commit above (runs `41574707765` and `41574698868`). The build job passed dependency installation, upscale benchmark verification, TypeScript typecheck and the full production build.
+- The existing timeline/cloud-media feature branch also contains the authenticated private cloud asset ingestion and signing/preview flow, timeline handoff, revision-pinned render manifests, delivery profiles and conformance reports, media-quality analysis, delivery receipts/packages, independent review workflow, asset lineage explorer, source/derivative comparison and processing-provenance visibility. These are code capabilities, not proof of a deployed or accepted staging service.
+- The latest derivative-integrity change is committed on the existing PR #8 branch. PR #8 remains a draft and unmerged.
+
+### Related cloud transformation hardening
+
+- Separate draft PR #19, `fix/cloud-transformation-input-contract`, adds strict cloud transformation input validation, authenticated/audit-logged cancellation for work that has not entered active execution, and canonical image MIME/output-format validation for AI-upscale publication.
+- PR #19's recorded head `5b16e9b04748ae0ae1382978441caefd06f8e8ed` has a successful Quality checks run (`41461872662`). It remains a separate draft; this status note does not merge it or imply its migration has been applied.
+- Provider execution remains fail-closed without a verified adapter, explicit approval and budget, and the required release gates. No paid provider call is enabled by this checkpoint.
+
+### Remaining release gates
+
+1. Run browser-level staging acceptance across authenticated upload → private preview → timeline handoff/edit → revision-pinned render → quality report → delivery package → independent review.
+2. Validate with representative real media, including large files, interrupted uploads/downloads, expired preview links, cancellation, retry/recovery, and source/derivative checksum mismatch cases.
+3. Provision and verify an isolated staging environment and database/storage configuration. Review migrations against that staging schema before applying any migration.
+4. Verify multi-user roles, audit identity, cross-project isolation, private URL expiry and concurrent revision/review behavior in staging.
+5. Review output quality with humans; technical decode, dimensions, checksums and metadata checks are not perceptual quality approval.
+6. Reconcile and review the large feature-branch delta against `main`; keep PRs draft until the acceptance evidence and code review are complete.
+
+No production deployment, production database/storage write, migration application, paid provider execution, PR merge or force-push was performed for this checkpoint.
+
+## Cloud media transfer hardening — signed downloads and streamed derivatives
+
+The cloud media IO boundary now rejects HTTP redirects for signed object downloads, validates signed URL safety, bounds streamed download and upload sizes, verifies downloaded bytes against repository SHA-256 metadata, and removes isolated temporary files after failed materialization. The streaming derivative-publication path now checks that the output is a non-empty regular file and enforces the configured byte limit before handing the path to the asset repository. Regression coverage includes redirect rejection/cleanup, oversized streamed outputs, non-file outputs, checksum mismatch and cancellation. The Quality Checks workflow passed on commit `b3e731261be623201891f0a3ead37dcd767d6a20`; this is code-level verification and does not replace real isolated-staging storage tests.
+
+## Continuation — race-safe AI upscale publication
+
+- The Real-ESRGAN worker now writes inference output to a unique temporary sibling file, validates its regular-file status, byte limit, image signature and exact requested dimensions, then publishes with exclusive-create copy semantics.
+- This closes a time-of-check/time-of-use gap: a target file or symlink created after the initial destination check cannot be overwritten by the upscaler. Temporary inference outputs are removed on success and failure.
+- Added a regression test that creates a symlink to a protected file while inference is running and verifies publication is rejected, the protected bytes remain unchanged, and the temporary output is cleaned up.
+- Implementation commit: `159c65f85695df5911c46a47d4b052ae078914a8`; regression coverage: `42a85604e3ba1423a25f425118e73f984c5f6203`. This latest change is committed but awaits a new CI run; do not treat it as verified until the PR workflow completes.
+
+
+## Continuation — atomic AI upscale publication
+
+- Replaced exclusive-copy publication with a same-directory hard-link publication after inference output has passed engine-fingerprint, regular-file, byte-size, image-signature and exact-dimension checks.
+- The final output name is now created in one atomic filesystem operation. Existing files and symlinks still fail with `AI_UPSCALE_OUTPUT_EXISTS`; a failed copy/stream can no longer leave a partially written destination because no copy into the final path occurs.
+- The private inference output is removed in the existing `finally` cleanup path after publication or failure.
+- Commit `048bfdd08faa763ec6e1099dcac135ad4708cde3` is committed on `feat/timeline-preview-transport`. Automated CI for this follow-up is pending; verify hard-link support on the worker filesystem before enabling the neural path there. No GPU execution, provider activation, database migration, merge or deployment was performed.
+
+
+## Continuation — atomic upscale publication regression coverage
+
+- Added `server/tests/ai-upscale-publication.test.mjs` to exercise the same-directory hard-link publication path with a deterministic test executable.
+- The test verifies that the final output is published, the temporary `.ev-upscale-*` sibling is removed (the final file has one link), and an existing destination cannot be linked over.
+- Added the regression file to `npm run verify:ai-upscale`, which is also part of the production build verification chain.
+- Test and script commits: `283c0ea0febf8bfda467b30699990f0d491d67b8`, `7086aa95cc43ff868df21445f517810a87297cd6`, and fixture correction `c5c190d65ec1c6796f7dbc72e33f72e078745be7`.
+- GitHub Actions has not yet returned a pull-request workflow run or status check for the latest head. Treat the new test as committed but **not CI-verified** until the checks execute. The connected workflow-run query currently returns no PR-triggered runs for this head.
+- Hard-link support must be confirmed on the actual cloud worker filesystem before enabling neural inference there. Unsupported filesystems fail closed; no fallback that writes a partially published destination is introduced.
+- No real model inference, production deployment, migration, paid provider activation or PR merge was performed.
+
+
+### Follow-up — publication byte-integrity assertions
+
+- Tightened the atomic-publication regression to compare the exact bytes at the final output path with the expected validated inference fixture, and to compare the published file size with the adapter's reported byte count.
+- Corrected the implementation comment so it describes the current same-directory hard-link operation rather than the superseded exclusive-copy approach.
+- Commits: implementation comment `8d39775cba5074391ddd6fc4f7d75db0c94cd0b0`; byte-integrity assertions `8e1124bd0e4432d1bf992563bc0eeed1f3f415bd`.
+- These changes are committed but still await an observed CI run. They do not constitute a real GPU quality test or cloud-worker filesystem acceptance.
+
+
+### Follow-up — cloud worker child-process cancellation
+
+- Fixed cancellation escalation in the cloud media executor. Node's `ChildProcess.killed` flag indicates that a signal was sent, not that the process exited; using it to decide whether to send `SIGKILL` could leave an unresponsive FFmpeg/media child alive after lease cancellation.
+- The worker now tracks the actual `close` event and sends `SIGKILL` after the grace period whenever the child has not exited. Timeout handling also checks the observed exit state.
+- Exported the process runner for focused regression coverage and added a test with a child that deliberately ignores `SIGTERM`, asserting that it is force-killed.
+- Commits: worker fix `64e37edfdf3f9fbd139db10dc4b1163830582cd1`; regression test `e1290305b87a1086858728b842f0124a640e8bd5`.
+- The regression is committed but awaits CI execution. This does not replace staging tests for worker shutdown, lease expiry, retry/recovery or process-tree cleanup.
+
+
+### Clip-edge fades and expanded delivery profiles
+- Cloud timeline renders now apply clip metadata `fadeInSeconds` and `fadeOutSeconds` as bounded FFmpeg video `fade` and audio `afade` filters. Values are clamped to each clip duration; invalid or negative values do not create unsafe filter timestamps.
+- The timeline clip inspector exposes fade-in/fade-out controls for video and audio clips. The real-media cloud-render regression fixture exercises both video and audio fade filters.
+- Delivery profiles now include Instagram square (1080×1080), social landscape (1080p), YouTube 1440p and lightweight web 720p in addition to vertical social, YouTube 1080p/4K and broadcast review. These presets define encode settings and metadata checks; they do not guarantee platform acceptance or perceptual quality.
+
+- Timeline placement now snaps new and repositioned clips to nearby edit boundaries, cross-track clip edges and markers within a six-frame tolerance. Snap calculations are frame-rate aware, exclude the clip being repositioned, and are covered by boundary and invalid-input tests.
+
+- Timeline review markers now support reviewer notes (up to 500 characters) and explicit yellow/review, red/issue, green/approved and blue/reference categories. Notes are rendered in the marker list and saved with the timeline revision.
+
+- Reusable caption presets are now available in the clip inspector: Standard clean, Social bold, Documentary and Top headline. Selecting a preset updates the editable typography, alignment, panel, outline, shadow and safe-area fields; the selected preset is stored with clip metadata. Manual field edits remain available after preset selection.
+
+- Cloud timeline creation now offers four editable starter sequences: Social short, YouTube essay, Interview and Product demo. Each template establishes a suitable aspect ratio/frame rate, picture/audio/graphics/caption tracks and timecoded editorial review markers. Templates add structure only; they do not fabricate clips or assets.
+
+- Cloud timeline audio now supports opt-in voice-led music ducking. Editors can tag audio clips as voice/dialogue, background music or other, then enable ducking on music clips and tune threshold/ratio. The cloud FFmpeg renderer builds a shared voice sidechain for multiple voice clips and applies bounded sidechain compression to opted-in music clips; ordinary audio remains unchanged. Automated graph tests and a real FFmpeg render fixture cover the path.
+
+- Voice-led music ducking uses FFmpeg audio splitting so the voice remains audible in the final mix while a separate sidechain copy controls ducked music; this avoids consuming the same filter output twice.
+
+- Cloud timeline source preview now prefers a same-project, structurally validated `media.proxy` derivative when its recorded source SHA-256 matches the original. The timeline still references the original asset, the proxy is used only for short-lived preview delivery, and signed URLs remain revision-aware and expiring. If no eligible proxy exists, preview falls back to the original source. Local-mode preview behavior is unchanged.
+
+- Cloud audio waveform generation is now a first-class leased media job (`media.waveform`): it accepts only project-scoped audio with a verified source SHA-256, creates a bounded 1200×180 PNG derivative, records derivative lineage/source checksum, and exposes an idempotent authenticated queue endpoint. Audio preview tickets include a short-lived signed waveform URL only when a same-project derivative matches the current source checksum; the editor offers Generate / refresh waveform and displays the waveform alongside the audio preview. The original audio and timeline clip reference remain unchanged.
+
+- Overlay motion keyframes are stored non-destructively in clip metadata as up to 50 unique frame-relative `{frame,x,y,scale}` points. The inspector validates frame bounds, canvas positions and scale (0.1–4); the cloud FFmpeg renderer interpolates position and scale per frame and reports animated overlay count. Static overlays remain backward-compatible when no keyframes are present. Additional video tracks are composited above the primary picture with timeline activation, bounded opacity, fit-to-canvas placement and the same motion-keyframe interpolation.
+
+- The cloud FFmpeg renderer now composites additional video tracks above the first enabled video track instead of treating every video track as a sequential primary edit. Layer clips are source-trimmed, time-bounded to the primary sequence, fit within the output canvas with transparent padding, composited in track order, and support opacity plus the shared position/scale keyframes. The render report distinguishes primary clips from video-layer clips. Audio from video-layer source files is intentionally not auto-mixed; add audio separately on an audio track.
+
+
+## AI upscaling runtime provenance — 3 November 2026
+
+- The local Real-ESRGAN adapter records a bounded host profile with each successful derivative: OS platform/release, architecture, CPU model, logical cores, total memory, Node.js version and whether Vulkan ICD/driver environment variables are configured.
+- The cloud media executor persists that profile inside the derivative asset's processing metadata, so benchmark registration can retain the execution context rather than losing it at the worker boundary.
+- Benchmark record validation checks the profile shape. Candidate grouping now includes the runtime profile in addition to the model, executable and model-weight fingerprints; latency summaries from distinct host profiles are not combined.
+- Regression coverage verifies profile persistence, malformed-profile rejection and separation of identical model builds across different hardware profiles. Full Quality checks passed for branch head `b8f60db94c3ae8a9047e40f98ac8e5162c71f088` (run 2874).
+- These are provenance and comparability safeguards, not a claim of GPU execution, perceptual quality, or a winning model. The real licensed fixture corpus, actual inference runs and independent human reviews remain required before any model can be marked quality-verified.
+
+
+### AI-upscale benchmark hardware transparency
+
+The Enhancement Lab now displays the recorded host profile beside each benchmark candidate and individual run: CPU model, OS/architecture, logical core count, memory and Node.js version. Legacy evidence without a profile is explicitly labelled as unknown hardware and must not be used for cross-host latency comparisons. The Vulkan environment flag remains informational only; it does not establish which GPU executed inference. Runtime provenance is attached to the persisted derivative and included in benchmark grouping and report output.
