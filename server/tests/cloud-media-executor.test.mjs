@@ -1,3 +1,17 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { createCloudMediaExecutor } from "../cloud-media-executor.mjs";
+
+async function executable(directory, name, body) {
+  const path = join(directory, name);
+  await writeFile(path, "#!/bin/sh\n" + body + "\n", "utf8");
+  await chmod(path, 0o755);
+  return path;
+}
+
 test("cloud audio probe reports heuristic non-silence activity intervals without claiming speech recognition", async () => {
   const directory = await mkdtemp(join(tmpdir(), "ev-cloud-audio-probe-test-"));
   const previousProbe = process.env.FFPROBE_PATH, previousFfmpeg = process.env.FFMPEG_PATH;
@@ -28,20 +42,6 @@ printf '%s\\n' '[silencedetect @ 0x1] silence_start:2.000' '[silencedetect @ 0x1
     await rm(directory, { recursive: true, force: true });
   }
 });
-
-import test from "node:test";
-import assert from "node:assert/strict";
-import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { createCloudMediaExecutor } from "../cloud-media-executor.mjs";
-
-async function executable(directory, name, body) {
-  const path = join(directory, name);
-  await writeFile(path, "#!/bin/sh\n" + body + "\n", "utf8");
-  await chmod(path, 0o755);
-  return path;
-}
 
 test("cloud media probe uses the leased owner and cleans up its materialized source", async () => {
   const directory = await mkdtemp(join(tmpdir(), "ev-cloud-executor-test-"));
