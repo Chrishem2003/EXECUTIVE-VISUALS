@@ -69,11 +69,13 @@ test("forwards worker lease assertions and abort signals into idempotent publica
  const assets={async createSignedUrl(){},async create(){},async createFromFileIdempotent(args){argsSeen=args;return{id:"lease-guarded-asset"};}};
  const io=createCloudMediaAssetIO({assets,tempRoot:root,maxBytes:100});
  const assertLease=async()=>{leaseChecks++;return true;};
- const result=await io.publish({ownerId:"owner-1",filename:"master.mp4",mediaType:"video/mp4",path,publicationKey:"job-lease:output:v1",assertLease,signal:controller.signal});
+ const leaseContext={jobId:"523e4567-e89b-42d3-a456-426614174000",workerId:"worker-test-1",leaseToken:"623e4567-e89b-42d3-a456-426614174000"};
+ const result=await io.publish({ownerId:"owner-1",filename:"master.mp4",mediaType:"video/mp4",path,publicationKey:"job-lease:output:v1",assertLease,signal:controller.signal,leaseContext});
  assert.equal(result.id,"lease-guarded-asset");
  assert.equal(leaseChecks,1);
  assert.equal(argsSeen.assertLease,assertLease);
  assert.equal(argsSeen.signal,controller.signal);
+ assert.deepEqual(argsSeen.leaseContext,leaseContext);
  await rm(root,{recursive:true,force:true});
 });
 
