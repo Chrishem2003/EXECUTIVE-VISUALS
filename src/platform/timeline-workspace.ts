@@ -12,7 +12,7 @@ import { analyzeCreativeTraceability, readCreativeTrace } from "../core/creative
 import { appendCreativeDecision, readCreativeDecisionHistory } from "../core/creative-decision-ledger";
 import { compareTimelineVariants, createTimelineVariant, type TimelineVariantComparison } from "../core/timeline-variants";
 import { addClip, addMarker, addTrack, createTimeline, evaluateSpeedCurve, evaluateTimelineAtFrame, integrateSpeedCurve, moveClip, rational, seconds, splitClip, timelineElapsedForSourceElapsed, toOpenTimelineIo, trimClip, validateTimeline, type EditorialTimeline, type TimelineTrack, type SpeedKeyframe } from "../core/timeline";
-import { normalizeAudioAutomation } from "../core/audio-automation";
+import { parseAudioAutomationEditorInput } from "../core/audio-automation";
 
 type Asset={id:string;name:string;mediaType:string;size:number;metadata?:Record<string,unknown>};
 type SavedTimeline={id:string;projectId?:string|null;name:string;revision:number;document?:EditorialTimeline};
@@ -491,9 +491,8 @@ document.addEventListener("submit",event=>{
    let audioAutomation=clip.audioAutomation;
    if(track.kind==="audio"){
     try{
-     const raw=String(data.get("audioAutomation")||"").trim(),parsed=raw?JSON.parse(raw):[];
-     audioAutomation=normalizeAudioAutomation(parsed);
-     if(audioAutomation.some(point=>point.timeSeconds>duration/fps()))throw new Error("Audio automation keyframes must fall inside the edited clip duration.");
+     const raw=String(data.get("audioAutomation")||"");
+     audioAutomation=parseAudioAutomationEditorInput(raw,duration/fps());
      if(!audioAutomation.length)audioAutomation=undefined;
     }catch(error){alert(error instanceof Error?error.message:"Invalid audio automation.");return;}
    }
