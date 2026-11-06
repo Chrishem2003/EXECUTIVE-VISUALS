@@ -329,7 +329,7 @@ export function createAppServer() {
       if(uploadMatch){
         const uploadId=uploadMatch[1];
         if(req.method==="GET"&&!uploadMatch[2]){
-          const upload=getUploadSession(db,user.id,uploadId);
+          const upload=getUploadSession(db,user.id,uploadId,canWriteProject);
           if(!upload){fail(res,404,"UPLOAD_SESSION_NOT_FOUND","Upload session not found or expired.");return;}
           send(res,200,{upload},cors);return;
         }
@@ -337,7 +337,7 @@ export function createAppServer() {
           const rawOffset=req.headers["upload-offset"];
           const offset=rawOffset===undefined?NaN:Number(rawOffset);
           const chunkSize=Number(req.headers["content-length"]||0);
-          const result=await appendUploadChunk({db,mediaRoot:MEDIA_ROOT,ownerId:user.id,id:uploadId,offset,request:req,expectedChunkSize:chunkSize,maxChunkBytes:8*1024*1024});
+          const result=await appendUploadChunk({db,mediaRoot:MEDIA_ROOT,ownerId:user.id,id:uploadId,offset,request:req,expectedChunkSize:chunkSize,maxChunkBytes:8*1024*1024,canWriteProject});
           send(res,200,{upload:result},cors);return;
         }
         if(req.method==="DELETE"&&!uploadMatch[2]){
@@ -346,7 +346,7 @@ export function createAppServer() {
           send(res,200,{ok:true},cors);return;
         }
         if(req.method==="POST"&&uploadMatch[2]==="complete"){
-          const prepared=await prepareUploadCompletion({db,ownerId:user.id,id:uploadId});
+          const prepared=await prepareUploadCompletion({db,ownerId:user.id,id:uploadId,canWriteProject});
           const sessionRow=db.prepare("SELECT * FROM upload_sessions WHERE id=? AND owner_id=? AND status='finalizing'").get(uploadId,user.id);
           if(!sessionRow){await resetUploadFinalization(db,user.id,uploadId);fail(res,404,"UPLOAD_SESSION_NOT_FOUND","Upload session not found.");return;}
           let headerBytes;
