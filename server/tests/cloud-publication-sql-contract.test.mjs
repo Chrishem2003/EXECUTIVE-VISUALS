@@ -15,7 +15,7 @@ test("atomic publication migration serializes against the active job lease", asy
   assert.match(sql, /job_row.owner_id is distinct from p_owner_id/i);
   assert.match(sql, /job_row.project_id is distinct from p_project_id/i);
   assert.match(sql, /expected_extension := case p_media_type/i);
-  assert.match(sql, /attempt-\\[0-9a-f\\].*\\|original\\)\\[\\.\\]/i);
+  assert.ok(sql.includes("attempt-[0-9a-f]{8}-") && sql.includes("|original)[.]"), "object path must be an exact UUID attempt or legacy original with a literal extension separator");
 });
 
 test("asset metadata and publication ledger are finalized inside the same database function", async () => {
