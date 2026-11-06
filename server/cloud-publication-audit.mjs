@@ -140,3 +140,52 @@ export function createCloudPublicationAuditSink({
     getStatus(){return Object.freeze({attempted,stored,failed,lastFailureCode});}
   });
 }
+
+
+/**
+ * Converts the audit sink's transport-failure result into bounded retries.
+ * The cleanup service requires a literal true acknowledgement before it
+ * proceeds to a destructive storage operation.
+ */
+export function createCloudPublicationAuditHandler({
+  sink,
+  maxAttempts=3,
+  retryDelayMs=250,
+  onRetry=()=>{}
+}={}) {
+  if(!sink||typeof sink.onEvent!=="function")throw new Error("Publication audit handler requires a compatible audit sink.");
+  if(!Number.isInteger(maxAttempts)||maxAttempts<1||maxAttempts>5)throw new Error("Publication audit retry count must be between 1 and 5.");
+  if(!Number.isInteger(retryDelayMs)||retryDelayMs<0||retryDelayMs>30000)throw new Error("Publication audit retry delay is invalid.");
+  if(typeof onRetry!=="function")throw new Error("Publication audit retry observer must be a function.");
+  return Object.freeze({
+    async onEvent(event) {
+      for(let attempt=1;attempt<=maxAttempts;attempt++) {
+        const stored=await sink.onEvent(event);
+        if(stored===true)return true;
+        if(attempt<maxAttempts) {
+          try { await onRetry(Object.freeze({eventType:event?.type,attempt,nextAttempt:attempt+1})); } catch {}
+          if(retryDelayMs>0)await new Promise(resolve=>setTimeout(resolve,retryDelayMs));
+        }
+      }
+      throw Object.assign(new Error("Publication audit event could not be persisted after bounded retries."),{code:"CLOUD_PUBLICATION_AUDIT_RETRIES_EXHAUSTED"});
+    }
+  });
+}
+
+
+test("audit handler retries transient sink failures and requires a durable acknowledgement",async()=>{
+ let attempts=0;const retries=[];
+ const handler=createCloudPublicationAuditHandler({
+  sink:{async onEvent(){attempts++;return attempts===3;}},
+  maxAttempts:3,retryDelayMs:0,onRetry:event=>retries.push(event)
+ });
+ assert.equal(await handler.onEvent({type:"publication.cleanup_completed"}),true);
+ assert.equal(attempts,3);
+ assert.equal(retries.length,2);
+});
+test("audit handler stops after its bounded retry budget",async()=>{
+ let attempts=0;
+ const handler=createCloudPublicationAuditHandler({sink:{async onEvent(){attempts++;return false;}},maxAttempts:2,retryDelayMs:0});
+ await assert.rejects(()=>handler.onEvent({type:"publication.cleanup_completed"}),error=>error.code==="CLOUD_PUBLICATION_AUDIT_RETRIES_EXHAUSTED");
+ assert.equal(attempts,2);
+});
