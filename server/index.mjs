@@ -22,7 +22,7 @@ import { ensureTransformationPlanSchema, createTransformationPlan, approveTransf
 import { signInWithSupabasePassword, signUpWithSupabasePassword, refreshSupabaseSession, getSupabaseUser, revokeSupabaseSession } from "./supabase-password-auth.mjs";
 
 const PORT = Number(process.env.API_PORT || process.env.PORT || 4179);
-const HOST = process.env.API_HOST || "127.0.0.1";
+const HOST = process.env.API_HOST || (process.env.NODE_ENV === "production" ? "0.0.0.0" : "127.0.0.1");
 const AUTH_MODE = process.env.AUTH_MODE || "local";
 const DATA_DIR = resolve(process.env.DATA_DIR || "./data");
 const MEDIA_ROOT = resolve(process.env.MEDIA_ROOT || join(DATA_DIR, "media"));
