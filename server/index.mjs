@@ -400,6 +400,15 @@ export function createAppServer() {
         if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sessionId)){
           fail(res,400,"INVALID_SESSION_ID","A valid session identifier is required.");return;
         }
+        const body=await readJson(req);
+        const currentPassword=String(body.currentPassword||"");
+        if(currentPassword.length===0||currentPassword.length>256){
+          fail(res,400,"REAUTHENTICATION_REQUIRED","Enter your current password to revoke a session.");return;
+        }
+        const account=db.prepare("SELECT password_hash,password_salt FROM users WHERE id=?").get(user.id);
+        const candidate=account?.password_salt?scryptSync(currentPassword,account.password_salt,64).toString("hex"):"";
+        const valid=!!account?.password_hash&&candidate.length===account.password_hash.length&&timingSafeEqual(Buffer.from(candidate,"hex"),Buffer.from(account.password_hash,"hex"));
+        if(!valid){fail(res,401,"INVALID_CREDENTIALS","Current password is incorrect.");return;}
         const currentHash=hash(cookieValue(req,"ev_session")||"");
         const target=db.prepare("SELECT token_hash FROM sessions WHERE user_id=? AND session_id=?").get(user.id,sessionId);
         if(!target){fail(res,404,"SESSION_NOT_FOUND","Session not found.");return;}
