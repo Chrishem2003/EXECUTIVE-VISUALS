@@ -276,3 +276,23 @@ test("review API rejects unauthenticated access and invalid project filters",asy
  assert.equal((await api.handle({method:"GET",path:"/api/cloud/reviews",ownerId:owner,query:{projectId:"invalid"}})).status,400);
  assert.equal((await api.handle({method:"POST",path:"/api/cloud/reviews",ownerId:owner,body:{projectId:project,body:""}})).status,400);
 });
+
+test("timeline revision history endpoint returns only snapshots for the authorized timeline",async()=>{
+ const f=setup();
+ const result=await f.api.handle({method:"GET",path:"/api/cloud/timelines/"+timelineId+"/versions",ownerId:owner});
+ assert.equal(result.status,200);
+ assert.deepEqual(result.body.versions,[]);
+ assert.ok(f.calls.some(call=>call[0]==="get"&&call[1].timelineId===timelineId));
+ assert.ok(f.calls.some(call=>call[0]==="fetch"&&call[1].includes("timeline_versions?")&&call[1].includes("order=revision.desc")));
+});
+test("timeline revision history hides timelines without read permission",async()=>{
+ const f=setup({canRead:false});
+ const result=await f.api.handle({method:"GET",path:"/api/cloud/timelines/"+timelineId+"/versions",ownerId:owner});
+ assert.equal(result.status,404);
+ assert.equal(f.calls.some(call=>call[0]==="fetch"&&call[1].includes("timeline_versions?")),false);
+});
+test("timeline revision history rejects malformed timeline identifiers",async()=>{
+ const f=setup();
+ const result=await f.api.handle({method:"GET",path:"/api/cloud/timelines/not-a-uuid/versions",ownerId:owner});
+ assert.equal(result,null);
+});
