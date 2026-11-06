@@ -372,7 +372,13 @@ export function createAppServer() {
           const relative="uploads/"+assetId+"."+extension;
           const finalPath=join(MEDIA_ROOT,relative);
           const fileExtension=extname(sessionRow.original_name).toLowerCase();
-          const metadata=(fileExtension===".srt"&&sessionRow.media_type==="text/plain")?{captionValidation:validateSrt(await readFile(prepared.path,"utf8"))}:fileExtension===".vtt"&&sessionRow.media_type==="text/vtt"?{captionValidation:validateWebVtt(await readFile(prepared.path,"utf8"))}:{};
+          let metadata;
+          try{
+            metadata=(fileExtension===".srt"&&sessionRow.media_type==="text/plain")?{captionValidation:validateSrt(await readFile(prepared.path,"utf8"))}:fileExtension===".vtt"&&sessionRow.media_type==="text/vtt"?{captionValidation:validateWebVtt(await readFile(prepared.path,"utf8"))}:{};
+          }catch(error){
+            await resetUploadFinalization(db,user.id,uploadId);
+            throw error;
+          }
           let moved=false,committed=false;
           try{
             await rename(prepared.path,finalPath);moved=true;
