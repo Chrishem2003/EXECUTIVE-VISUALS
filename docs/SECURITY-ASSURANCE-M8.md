@@ -64,6 +64,24 @@ The M8 integration test exercises:
 
 CI must pass on the draft pull request before these changes are considered verified.
 
+## 4. Tenant-isolation evidence matrix
+
+| Resource family | Verified behavior | Evidence / remaining boundary |
+|---|---|---|
+| Projects and memberships | Owner-managed membership; editor/reviewer/viewer permissions are distinct; former members lose project access | API integration tests |
+| Assets and media | Personal assets are owner-only; project assets follow project read/write roles; revoked members lose list/detail access | API integration tests; cloud asset authorizer unit tests |
+| Resumable uploads | Upload sessions are owner-scoped; project write permission is rechecked on chunk and completion paths | Upload integration tests, including revoked collaborator finalization |
+| Timelines and workflows | Authorized project members can read; editors can modify; viewers cannot modify; revoked members lose access | API integration tests |
+| Jobs and workflow runs | Project-scoped job access follows current membership; former member denied while owner retains access | API integration tests; workflow-run ownership tests |
+| Reviews | Reviewer/editor capabilities are enforced; revoked members cannot read project reviews | API integration tests |
+| Notifications | User inbox is private and project notifications are additionally filtered by current project membership; revoked reviewer loses notification/read access | API integration tests |
+| Audit events | Project audit feed requires current project access; cursor pagination and outsider/former-member denial are tested | API integration tests |
+| Usage telemetry | Account usage is owner-scoped; project usage is visible to authorized members and denied after membership revocation | API integration tests |
+| Transformation plans | Plans and approvals are project/owner scoped; rights, consent, budget, idempotency and execution-state checks are enforced | API and module tests |
+| Cloud asset authorization | Owner/editor write; reviewer/viewer read-only; unrelated identities and malformed IDs denied; lookup errors fail closed | Cloud authorization unit tests |
+
+This matrix records the currently inspected test evidence; it is not a substitute for independent penetration testing or a complete review of every cloud timeline, storage, worker, webhook and future resource endpoint. Continue expanding it whenever new sensitive resource families are introduced.
+
 ## 4. Architecture decision and release gates
 
 The current Render blueprint is a single web service backed by SQLite on a persistent disk. Multi-instance scaling is blocked until the application data store and media storage are migrated to shared durable services. A shared rate limiter is therefore a dependent architecture milestone, not a standalone Redis toggle. Preserve the current single-instance deployment until that migration has its own staging acceptance, backup/restore evidence and rollback plan.
@@ -76,7 +94,7 @@ Do not enable production release based solely on green CI. Before production app
 2. Distributed rate limiting appropriate to the deployment topology.
 3. Verify the bounded external identity-provider timeout under the deployed network/proxy conditions.
 4. Review the configured inactivity/absolute timeout policy and verify local password-change revocation; verify Supabase session lifecycle separately with the identity provider.
-5. Complete the tenant-isolation matrix for every sensitive object family, including projects, assets, uploads, jobs, timelines, comments, notifications and usage records; existing coverage is substantial but is not a complete independent verification.
+5. Complete the remaining cloud storage, cloud timeline, worker, webhook and future-resource authorization review; the current local API tenant-isolation matrix is expanded but is not a complete independent verification.
 6. Backup/restore and rollback evidence for persistent storage and database changes.
 7. Human release approval after staging acceptance.
 
