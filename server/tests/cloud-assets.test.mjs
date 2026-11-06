@@ -33,7 +33,10 @@ function fixture({authorize=async()=>true,insertResponse=null,removeError=false}
    publicationReservation={...publicationReservation,status:"published"};
    return response([{owner_id:publicationReservation.owner_id,publication_key:publicationReservation.publication_key,asset_id:publicationReservation.asset_id,status:"published"}]);
   }
-  if(url.includes("/assets?")&&options.method==="POST"&&publicationReservation){const payload=JSON.parse(options.body);publicationAsset={...row,...payload,created_at:row.created_at};return response([publicationAsset]);}
+  if(url.includes("/assets?")&&options.method==="POST"&&publicationReservation){
+   if(publicationAsset)return response({message:"duplicate asset identity"},409);
+   const payload=JSON.parse(options.body);publicationAsset={...row,...payload,created_at:row.created_at};return response([publicationAsset]);
+  }
   if(url.includes("/assets?")&&url.includes("id=eq.")&&publicationReservation)return response(publicationAsset?[publicationAsset]:[]);
   if(options.method==="POST"){const payload=JSON.parse(options.body);return response(insertResponse===null?[{...row,...payload,created_at:row.created_at}]:insertResponse);}
   if(options.method==="PATCH")return response([row]);
@@ -147,7 +150,8 @@ test("publishes the same logical output once across repeated publication attempt
  assert.equal(first.id,second.id);
  assert.equal(first.objectPath,second.objectPath);
  assert.equal(f.storageCalls.filter(call=>call.op==="uploadFile").length,1);
- assert.equal(f.storageCalls[0].options.upsert,true);
+ assert.equal(f.storageCalls[0].options.upsert,false);
+ assert.match(first.objectPath,/\\/attempt-[0-9a-f-]{36}\\.mp4$/i);
  assert.equal(f.publicationReservation.status,"published");
  await rm(root,{recursive:true,force:true});
 });
@@ -173,7 +177,12 @@ test("concurrent attempts for one publication key converge on the same asset ide
  assert.equal(left.id,right.id);
  assert.equal(left.objectPath,right.objectPath);
  const uploads=f.storageCalls.filter(call=>call.op==="uploadFile");
- assert.ok(uploads.length>=1&&uploads.length<=2);
- assert.equal(new Set(uploads.map(call=>call.path)).size,1);
+ assert.equal(uploads.length,2,"concurrent workers write isolated attempt objects");
+ assert.equal(new Set(uploads.map(call=>call.path)).size,2,"concurrent workers never share a storage object path");
+ assert.ok(uploads.every(call=>call.options.upsert===false),"publication uploads must never overwrite");
+ const removals=f.storageCalls.filter(call=>call.op==="remove");
+ assert.equal(removals.length,1,"the losing attempt object is removed after the winner is verified");
+ assert.ok(uploads.some(call=>call.path===left.objectPath));
+ assert.ok(uploads.some(call=>call.path===removals[0].path));
  await rm(root,{recursive:true,force:true});
 });
