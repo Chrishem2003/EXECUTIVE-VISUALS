@@ -52,3 +52,12 @@ test("closes the file handle when inference fails",async()=>{
  }),/inference failed/);
  assert.equal(closed,true);
 });
+
+test("maps extracted audio speech regions back to source-media timestamps",()=>{
+ const result=normalizeVoiceActivityReport(report,{durationSeconds:12,analysisDurationSeconds:8,timestampOffsetSeconds:3.5});
+ assert.deepEqual(result.segments,[{start:3.532,end:3.62}]);
+ assert.equal(result.durationSeconds,12);
+ assert.equal(result.analysisDurationSeconds,8);
+ assert.equal(result.timestampOffsetSeconds,3.5);
+ assert.equal(result.speechRatio,0.011);
+});
