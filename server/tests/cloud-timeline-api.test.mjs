@@ -254,7 +254,7 @@ test("authenticated review API routes delegate verified identity and bounded rev
  const api=createCloudTimelineApi({url:"https://example.supabase.co",serviceRoleKey:"server-secret",timelineService:{reviews,timelines:{},assets:{},projects:{}},authorize:async()=>true,fetchImpl:async()=>({ok:true,status:200,async text(){return"[]";}})});
  const listed=await api.handle({method:"GET",path:"/api/cloud/reviews",ownerId:owner,query:{projectId:project}});
  assert.equal(listed.status,200);assert.equal(calls[0][1].actorId,owner);
- const created=await api.handle({method:"POST",path:"/api/cloud/reviews",ownerId:owner,body:{projectId,body:"Check the title."},idempotencyKey:"review-0001"});
+ const created=await api.handle({method:"POST",path:"/api/cloud/reviews",ownerId:owner,body:{projectId:project,body:"Check the title."},idempotencyKey:"review-0001"});
  assert.equal(created.status,201);assert.equal(calls[1][1].actorId,owner);assert.equal(calls[1][1].idempotencyKey,"review-0001");
  const fetched=await api.handle({method:"GET",path:"/api/cloud/reviews/823e4567-e89b-42d3-a456-426614174000",ownerId:owner});
  assert.equal(fetched.status,200);
@@ -266,5 +266,5 @@ test("review API rejects unauthenticated access and invalid project filters",asy
  const api=createCloudTimelineApi({url:"https://example.supabase.co",serviceRoleKey:"server-secret",timelineService:{reviews,timelines:{},assets:{},projects:{}},authorize:async()=>true,fetchImpl:async()=>({ok:true,status:200,async text(){return"[]";}})});
  assert.equal((await api.handle({method:"GET",path:"/api/cloud/reviews",ownerId:"invalid",query:{projectId:project}})).status,401);
  assert.equal((await api.handle({method:"GET",path:"/api/cloud/reviews",ownerId:owner,query:{projectId:"invalid"}})).status,400);
- assert.equal((await api.handle({method:"POST",path:"/api/cloud/reviews",ownerId:owner,body:{projectId,body:""}})).status,400);
+ assert.equal((await api.handle({method:"POST",path:"/api/cloud/reviews",ownerId:owner,body:{projectId:project,body:""}})).status,400);
 });
