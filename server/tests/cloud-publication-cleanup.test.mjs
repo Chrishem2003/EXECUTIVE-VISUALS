@@ -130,3 +130,34 @@ test("destructive cleanup requires an exact publication identity and matching sc
  await assert.rejects(()=>f.cleanup.run({prefix,dryRun:false,confirmDelete:true}),/exact job, owner, optional project, and publication key/);
  await assert.rejects(()=>f.cleanup.run({...cleanupIdentity,ownerId:"823e4567-e89b-42d3-a456-426614174000",prefix,dryRun:false,confirmDelete:true}),/prefix does not match/);
 });
+
+test("storage deletion retries reuse the same durable claim token until completion",async()=>{
+ const objectPath=prefix+orphanAttempt,removed=[],claimCalls=[],completed=[];
+ let removeAttempts=0;
+ const stableClaim={claimId:"durable-claim-1",claimToken:"durable-token-1",status:"claimed"};
+ const cleanup=createCloudPublicationCleanup({
+  storage:{
+   async listObjects(){return{objects:[{name:orphanAttempt,createdAt:old}],hasNext:false,nextCursor:null};},
+   async remove(path){removeAttempts++;if(removeAttempts===1)throw new Error("temporary storage outage");removed.push(path);return true;}
+  },
+  findReferencedPaths:async()=>[],
+  isAttemptActive:async()=>false,
+  claimCleanup:async input=>{claimCalls.push(input);return stableClaim;},
+  completeCleanup:async claim=>{completed.push(claim);return true;},
+  now:()=>now
+ });
+ const args={...cleanupIdentity,prefix,dryRun:false,confirmDelete:true};
+ const first=await cleanup.run(args);
+ assert.equal(first.removedCount,0);
+ assert.ok(first.skipped.some(item=>item.reason==="storage_remove_failed"));
+ assert.equal(completed.length,0);
+
+ const second=await cleanup.run(args);
+ assert.equal(second.removedCount,1);
+ assert.deepEqual(removed,[objectPath]);
+ assert.equal(claimCalls.length,2);
+ assert.equal(claimCalls[0].objectPath,objectPath);
+ assert.equal(claimCalls[1].objectPath,objectPath);
+ assert.equal(completed.length,1);
+ assert.equal(completed[0].claimToken,stableClaim.claimToken);
+});
