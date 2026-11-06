@@ -23,7 +23,7 @@ claim_worker() {
   local worker="$1"
   local output="$2"
   psql "$DATABASE_URL" -X -A -t -F '|' -v ON_ERROR_STOP=1 \
-    -c "SELECT id::text, lease_token::text FROM executive_visuals.claim_next_job_v2('$worker', 30, ARRAY['timeline.render'])" \
+    -c "SELECT id::text, lease_token::text, lease_owner FROM executive_visuals.claim_next_job_v2('$worker', 30, ARRAY['timeline.render'])" \
     > "$output"
 }
 
@@ -44,8 +44,8 @@ if [[ "$CLAIM_COUNT" != "1" ]]; then
   exit 1
 fi
 
-IFS='|' read -r CLAIMED_JOB_ID OLD_TOKEN < "$TMP_DIR/claims"
-if [[ "$CLAIMED_JOB_ID" != "$JOB_ID" || -z "$OLD_TOKEN" ]]; then
+IFS='|' read -r CLAIMED_JOB_ID OLD_TOKEN OLD_WORKER < "$TMP_DIR/claims"
+if [[ "$CLAIMED_JOB_ID" != "$JOB_ID" || -z "$OLD_TOKEN" || -z "$OLD_WORKER" ]]; then
   echo "Concurrent claim returned an invalid job or fencing token" >&2
   exit 1
 fi
@@ -73,12 +73,12 @@ BEGIN
     RAISE EXCEPTION 'recovery did not clear the previous lease epoch';
   END IF;
   IF executive_visuals.assert_job_lease_v2(
-    '$JOB_ID', 'integration-worker-a', '$OLD_TOKEN'
+    '$JOB_ID', '$OLD_WORKER', '$OLD_TOKEN'
   ) THEN
     RAISE EXCEPTION 'expired worker fencing token remained valid after recovery';
   END IF;
   IF executive_visuals.finish_job_v2(
-    '$JOB_ID', 'integration-worker-a', '$OLD_TOKEN', 'succeeded',
+    '$JOB_ID', '$OLD_WORKER', '$OLD_TOKEN', 'succeeded',
     '{"stale":true}'::jsonb, NULL
   ) THEN
     RAISE EXCEPTION 'stale worker unexpectedly completed recovered job';
