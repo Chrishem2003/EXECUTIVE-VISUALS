@@ -19,7 +19,7 @@ test("cloud audio probe reports heuristic non-silence activity intervals without
   await writeFile(source, "fixture");
   const ffprobe = await executable(directory, "ffprobe", String.raw`printf '%s' '{"streams":[{"codec_type":"audio","codec_name":"pcm_s16le"}],"format":{"duration":"10"}}'`);
   const ffmpeg = await executable(directory, "ffmpeg", String.raw`if [ "$1" = "-version" ]; then echo "ffmpeg test"; exit 0; fi
-printf '%s\\n' '[silencedetect @ 0x1] silence_start:2.000' '[silencedetect @ 0x1] silence_end:4.000 | silence_duration:2.000' '[silencedetect @ 0x1] silence_start:6.000' '[silencedetect @ 0x1] silence_end:8.000 | silence_duration:2.000' >&2`);
+printf '%s\n' '[silencedetect @ 0x1] silence_start:2.000' '[silencedetect @ 0x1] silence_end:4.000 | silence_duration:2.000' '[silencedetect @ 0x1] silence_start:6.000' '[silencedetect @ 0x1] silence_end:8.000 | silence_duration:2.000' >&2`);
   process.env.FFPROBE_PATH = ffprobe; process.env.FFMPEG_PATH = ffmpeg;
   try {
     const execute = createCloudMediaExecutor({
