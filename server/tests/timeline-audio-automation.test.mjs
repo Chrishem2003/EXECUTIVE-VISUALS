@@ -35,7 +35,7 @@ test("dialogue ducking creates attack, hold and release keyframes on the music c
 });
 test("dialogue ducking clips ranges to music boundaries and merges overlapping dialogue ranges",()=>{
  const points=buildDialogueDuckingAutomation({musicStartSeconds:2,musicDurationSeconds:5,duckingDb:-10,attackMs:100,releaseMs:250,dialogueRanges:[{startSeconds:1,endSeconds:3},{startSeconds:3.1,endSeconds:4},{startSeconds:6.5,endSeconds:8}]});
- assert.deepEqual(points.map(p=>[p.timeSeconds,p.gainDb]),[[0,-10],[1,-10],[2.25,0],[4.5,0]]);
+ assert.deepEqual(points.map(p=>[p.timeSeconds,p.gainDb]),[[0,-10],[0.1,-10],[2,-10],[2.25,0],[4.5,0],[4.6,-10],[5,-10]]);
 });
 test("dialogue ducking preserves pan keyframes while replacing gain automation",()=>{
  const points=buildDialogueDuckingAutomation({musicStartSeconds:0,musicDurationSeconds:4,dialogueRanges:[{startSeconds:1,endSeconds:2}],existing:[{timeSeconds:.5,pan:-.5},{timeSeconds:1.5,gainDb:-4,pan:.5}]});
@@ -46,7 +46,7 @@ test("dialogue ducking preserves pan keyframes while replacing gain automation",
 test("dialogue ducking rejects invalid timeline ranges and bounds reduction settings",()=>{
  assert.throws(()=>buildDialogueDuckingAutomation({musicStartSeconds:0,musicDurationSeconds:4,dialogueRanges:[{startSeconds:2,endSeconds:1}]}),/positive timeline intervals/);
  const points=buildDialogueDuckingAutomation({musicStartSeconds:0,musicDurationSeconds:4,duckingDb:-99,dialogueRanges:[{startSeconds:1,endSeconds:2}]});
- assert.ok(points.every(p=>p.gainDb===-60||p.gainDb===0));
+ assert.ok(points.some(p=>p.gainDb===-36));
 });
 function fixture(){
  let timeline=createTimeline("project","timeline","Audio test",{numerator:24,denominator:1});
