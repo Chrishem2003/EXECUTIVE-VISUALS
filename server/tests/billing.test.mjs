@@ -4,7 +4,7 @@ import { openDatabase } from "../db.mjs";
 import {
   ensureBillingSchema,touchBillingAccount,listBillingPlans,saveBillingPlan,assignManualSubscription,
   getBillingOverview,getBillingBalance,getAdminOverview,listAdminUsers,adjustBillingCredits,
-  setBillingAccountStatus,canUsePaidModels
+  setBillingAccountStatus,canUsePaidModels,saveBillingModelPrice,listBillingModelPrices
 } from "../billing.mjs";
 
 function setup() {
@@ -90,7 +90,6 @@ test("account status and admin reporting expose only known application accounts"
 
 test("model price references require a valid source URL and retain provenance",()=>{
   const db=setup();
-  const {saveBillingModelPrice,listBillingModelPrices}=require("../billing.mjs");
   const price=saveBillingModelPrice(db,{provider:"fal",model:"fal-ai/seedance",capability:"video.generate",unit:"5-second 720p clip",priceMicros:35000,currency:"USD",sourceUrl:"https://fal.ai/pricing",verifiedAt:"2026-11-07"});
   assert.equal(price.priceMicros,35000);
   assert.equal(listBillingModelPrices(db).length,1);
