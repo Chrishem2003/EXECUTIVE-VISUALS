@@ -66,7 +66,7 @@ test("deletes only verified orphan attempt paths and emits audit events",async()
  const result=await f.cleanup.run({prefix,dryRun:false,confirmDelete:true});
  assert.equal(result.removedCount,2);
  assert.deepEqual(f.removed,result.removed.map(item=>item.objectPath));
- assert.ok(f.removed.every(path=>/^.+\\/attempt-[0-9a-f-]{36}\\.[A-Za-z0-9]+$/i.test(path)));
+ assert.ok(f.removed.every(path=>/^.+\/attempt-[0-9a-f-]{36}\.[A-Za-z0-9]+$/i.test(path)));
  assert.ok(f.events.some(event=>event.type==="publication.orphan_removed"));
  assert.ok(f.events.some(event=>event.type==="publication.cleanup_completed"&&event.removedCount===2));
 });
