@@ -21,7 +21,7 @@ begin
   select * into parent_asset
   from executive_visuals.assets
   where id = new.derivative_of
-  for key share;
+  for share;
 
   if not found
      or parent_asset.owner_id is distinct from new.owner_id
