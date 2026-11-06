@@ -28,6 +28,7 @@ declare
   job_row executive_visuals.jobs;
   publication_row executive_visuals.asset_publications;
   asset_row executive_visuals.assets;
+  expected_extension text;
 begin
   if p_job_id is null or p_worker_id is null
      or char_length(btrim(p_worker_id)) not between 1 and 128
@@ -46,6 +47,31 @@ begin
      or p_metadata is null or pg_catalog.jsonb_typeof(p_metadata) <> 'object'
   then
     raise exception 'invalid asset publication finalization parameters'
+      using errcode = '22023';
+  end if;
+
+  expected_extension := case p_media_type
+    when 'image/jpeg' then 'jpg'
+    when 'image/png' then 'png'
+    when 'image/webp' then 'webp'
+    when 'image/gif' then 'gif'
+    when 'video/mp4' then 'mp4'
+    when 'video/webm' then 'webm'
+    when 'video/quicktime' then 'mov'
+    when 'video/x-matroska' then 'mkv'
+    when 'audio/mpeg' then 'mp3'
+    when 'audio/wav' then 'wav'
+    when 'audio/x-wav' then 'wav'
+    when 'audio/mp4' then 'm4a'
+    when 'audio/ogg' then 'ogg'
+    when 'application/pdf' then 'pdf'
+    when 'text/plain' then 'txt'
+    when 'text/vtt' then 'vtt'
+    when 'application/json' then 'json'
+    else null
+  end;
+  if expected_extension is null then
+    raise exception 'unsupported asset media type for publication'
       using errcode = '22023';
   end if;
 
@@ -115,11 +141,13 @@ begin
   if not found
      or asset_row.owner_id is distinct from p_owner_id
      or asset_row.project_id is distinct from p_project_id
+     or asset_row.original_name is distinct from p_original_name
      or asset_row.media_type is distinct from p_media_type
      or asset_row.byte_size is distinct from p_byte_size
      or asset_row.sha256 is distinct from p_payload_sha256
      or asset_row.storage_bucket is distinct from p_storage_bucket
      or asset_row.derivative_of is distinct from p_derivative_of
+     or asset_row.metadata is distinct from p_metadata
      or asset_row.deleted_at is not null
      or asset_row.object_path !~ (
        '^' || coalesce(p_project_id, p_owner_id)::text || '/'
