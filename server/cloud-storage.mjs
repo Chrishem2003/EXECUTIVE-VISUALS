@@ -149,6 +149,26 @@ export function createCloudStorage({
         throw error;
       }finally{clearTimeout(timer);}
     },
+    async listObjects({prefix,limit=100,offset=0}={}) {
+      if(typeof prefix!=="string"||!/^([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\\/([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\\/$/i.test(prefix)) {
+        throw new Error("Storage listing requires an exact owner-or-project and asset UUID prefix.");
+      }
+      if(!Number.isInteger(limit)||limit<1||limit>1000||!Number.isInteger(offset)||offset<0||offset>100000) {
+        throw new Error("Storage listing pagination is invalid.");
+      }
+      const result=await request("/storage/v1/object/list/"+BUCKET,{
+        method:"POST",
+        headers:{"content-type":"application/json"},
+        body:JSON.stringify({prefix,limit,offset,sortBy:{column:"created_at",order:"asc"}})
+      });
+      if(!Array.isArray(result))throw new Error("Cloud storage returned an invalid object listing.");
+      return result.filter(item=>item&&typeof item.name==="string").map(item=>({
+        name:item.name,
+        createdAt:item.created_at||item.createdAt||null,
+        updatedAt:item.updated_at||item.updatedAt||null,
+        metadata:item.metadata&&typeof item.metadata==="object"?item.metadata:{}
+      }));
+    },
     async createSignedUrl(objectPath, expiresIn = 300) {
       const path = safeObjectPath(objectPath);
       if (!Number.isInteger(expiresIn) || expiresIn < 30 || expiresIn > 3600) throw new Error("Signed URL expiry must be between 30 and 3600 seconds.");
