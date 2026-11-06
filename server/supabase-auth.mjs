@@ -28,7 +28,6 @@ export async function verifySupabaseUser({
     : DEFAULT_TIMEOUT_MS;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), boundedTimeout);
-  timer.unref?.();
 
   try {
     const response = await fetchImpl(endpoint, {
