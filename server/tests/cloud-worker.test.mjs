@@ -86,8 +86,9 @@ test("worker drains an in-flight heartbeat before attempting terminal completion
  const started=new Promise(resolve=>{heartbeatStarted=resolve;});
  const gate=new Promise(resolve=>{releaseHeartbeat=resolve;});
  const queue=queueFor({renew:()=>{heartbeatStarted();return gate;}});
+ const keepAlive=setTimeout(()=>{},5000);
  const running=runCloudWorkerCycle({
-  queue,workerId:"worker-1",leaseSeconds:15,heartbeatIntervalMs:1000,
+  queue,workerId:"worker-1",leaseSeconds:15,heartbeatIntervalMs:5,
   execute:async()=>{await started;return{assetId:"asset-after-heartbeat"};}
  });
  await started;
@@ -95,6 +96,7 @@ test("worker drains an in-flight heartbeat before attempting terminal completion
  assert.equal(queue.calls.some(call=>call[0]==="finish"),false,"finish must wait for the pending lease renewal");
  releaseHeartbeat(true);
  const result=await running;
+ clearTimeout(keepAlive);
  assert.equal(result.status,"succeeded");
  assert.equal(queue.calls.some(call=>call[0]==="finish"),true);
 });
