@@ -199,7 +199,10 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
             if(check.status==="completed"){
               const silence=parseSilenceEvents(check.result.stderr,durationSeconds);
               analysis.silence=silence;
-              analysis.activityIntervals=buildNonSilenceActivityIntervals({silence,durationSeconds,minActivitySeconds:0.15,padSeconds:0.08});
+              const rawActivity=buildNonSilenceActivityIntervals({silence,durationSeconds,minActivitySeconds:0.15,padSeconds:0.08,maxIntervals:129});
+              analysis.activityIntervals=rawActivity.slice(0,128);
+              analysis.activityIntervalsTruncated=rawActivity.length>128;
+              analysis.limitations.push("At most 128 activity intervals are retained; truncated analysis must not be used for automatic ducking.");
               analysis.status="completed";
             }else{analysis.status="unavailable";analysis.reason=check.reason;}
           }else{analysis.status="unavailable";analysis.reason="MEDIA_ENGINE_MISSING";}
