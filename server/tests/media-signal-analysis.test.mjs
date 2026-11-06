@@ -56,7 +56,7 @@ test("builds a bounded first-pass EBU R128 loudness analysis filter",()=>{
  assert.throws(()=>buildLoudnormAnalysisFilter({truePeakDbtp:-10}),/truePeakDbtp/);
 });
 test("parses FFmpeg loudnorm first-pass JSON measurements",()=>{
- assert.deepEqual(parseLoudnormMeasurements("noise before\\n"+loudnormFixture+"\\nnoise after"),{integratedLufs:-20,truePeakDbtp:-2.1,loudnessRange:4.5,thresholdDb:-30,offsetDb:4});
+ assert.deepEqual(parseLoudnormMeasurements("noise before\n"+loudnormFixture+"\nnoise after"),{integratedLufs:-20,truePeakDbtp:-2.1,loudnessRange:4.5,thresholdDb:-30,offsetDb:4});
  assert.equal(parseLoudnormMeasurements("no valid JSON"),null);
  assert.equal(parseLoudnormMeasurements(JSON.stringify({input_i:"-inf",input_tp:"-2",input_lra:"4",input_thresh:"-30",target_offset:"0"})),null);
 });
