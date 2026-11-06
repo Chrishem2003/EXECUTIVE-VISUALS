@@ -156,6 +156,21 @@ test("publishes the same logical output once across repeated publication attempt
  await rm(root,{recursive:true,force:true});
 });
 
+test("removes an uploaded attempt object when the worker lease is lost before metadata insert",async()=>{
+ const root=await mkdtemp(join(tmpdir(),"ev-idempotent-lease-loss-")),file=join(root,"render.mp4");
+ await writeFile(file,bytes);
+ const f=fixture();let checks=0;
+ const args={ownerId,projectId,originalName:"render.mp4",mediaType:"video/mp4",filePath:file,publicationKey:"job-lease-loss:output:v1",
+  async assertLease(){checks++;return checks<3;}};
+ await assert.rejects(()=>f.repo.createFromFileIdempotent(args),error=>error.code==="CLOUD_ASSET_PUBLICATION_LEASE_LOST");
+ assert.equal(checks,3);
+ assert.equal(f.storageCalls.filter(call=>call.op==="uploadFile").length,1);
+ assert.equal(f.storageCalls.filter(call=>call.op==="remove").length,1);
+ assert.equal(f.calls.some(call=>call.options.method==="POST"&&call.url.includes("/assets?")),false);
+ assert.equal(f.publicationReservation.status,"reserved");
+ await rm(root,{recursive:true,force:true});
+});
+
 test("rejects reuse of a publication key for different output bytes before storage upload",async()=>{
  const root=await mkdtemp(join(tmpdir(),"ev-idempotent-conflict-")),file=join(root,"render.mp4");
  await writeFile(file,bytes);
