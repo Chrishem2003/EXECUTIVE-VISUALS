@@ -130,7 +130,7 @@ if (!sql.includes("lease_expires_at timestamptz") || !sql.includes("available_at
 }
 
 const atomicPublicationSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261107010000_atomic_asset_publication_lease_fencing.sql"), "utf8");
-if (/\\b(drop\\s+table|truncate|delete\\s+from)\\b/i.test(atomicPublicationSql)) issues.push("Atomic publication migration must not contain destructive DDL/DML.");
+if (["drop table", "truncate", "delete from"].some(token => atomicPublicationSql.toLowerCase().includes(token))) issues.push("Atomic publication migration must not contain destructive DDL/DML.");
 if (!atomicPublicationSql.includes("create or replace function executive_visuals.finalize_asset_publication_v1(")) issues.push("Atomic lease-fenced publication RPC is missing.");
 if (!atomicPublicationSql.includes("set search_path = ''")) issues.push("Atomic publication RPC must use an empty, pinned search_path.");
 if (!atomicPublicationSql.includes("from executive_visuals.jobs") || !atomicPublicationSql.includes("for update")) issues.push("Atomic publication must lock the active job row.");
