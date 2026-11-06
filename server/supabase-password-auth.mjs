@@ -38,32 +38,32 @@ function sessionFrom(payload){
   throw fail("Identity provider did not return a complete authenticated session.","SUPABASE_AUTH_INVALID_RESPONSE",502);
  return {accessToken:payload.access_token,refreshToken:payload.refresh_token,expiresIn:Math.max(60,Number(payload.expires_in)||3600),user:{id:String(payload.user.id),email:String(payload.user.email||"")}};
 }
-export async function signInWithSupabasePassword({supabaseUrl,publishableKey,email,password}){
+export async function signInWithSupabasePassword({supabaseUrl,publishableKey,email,password,fetchImpl=fetch}){
  const normalizedEmail=String(email||"").trim().toLowerCase(),secret=String(password||"");
  if(!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(normalizedEmail)||secret.length<1||secret.length>256)throw fail("Enter a valid email and password.","INVALID_CREDENTIALS",400);
- return sessionFrom(await request({supabaseUrl,publishableKey,path:"/auth/v1/token?grant_type=password",method:"POST",body:{email:normalizedEmail,password:secret}}));
+ return sessionFrom(await request({supabaseUrl,publishableKey,path:"/auth/v1/token?grant_type=password",method:"POST",body:{email:normalizedEmail,password:secret},fetchImpl}));
 }
-export async function signUpWithSupabasePassword({supabaseUrl,publishableKey,email,password}){
+export async function signUpWithSupabasePassword({supabaseUrl,publishableKey,email,password,fetchImpl=fetch}){
  const normalizedEmail=String(email||"").trim().toLowerCase(),secret=String(password||"");
  if(!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(normalizedEmail)||secret.length<12||secret.length>256)throw fail("Enter a valid email and a password of at least 12 characters.","INVALID_CREDENTIALS",400);
- const payload=await request({supabaseUrl,publishableKey,path:"/auth/v1/signup",method:"POST",body:{email:normalizedEmail,password:secret}});
+ const payload=await request({supabaseUrl,publishableKey,path:"/auth/v1/signup",method:"POST",body:{email:normalizedEmail,password:secret},fetchImpl});
  if(typeof payload.access_token!=="string"||typeof payload.refresh_token!=="string"||!payload.user?.id)
   return {confirmationRequired:true,user:payload.user?.id?{id:String(payload.user.id),email:String(payload.user.email||normalizedEmail)}:null};
  return {...sessionFrom(payload),confirmationRequired:false};
 }
-export async function refreshSupabaseSession({supabaseUrl,publishableKey,refreshToken}){
+export async function refreshSupabaseSession({supabaseUrl,publishableKey,refreshToken,fetchImpl=fetch}){
  if(typeof refreshToken!=="string"||!refreshToken)return null;
- try{return sessionFrom(await request({supabaseUrl,publishableKey,path:"/auth/v1/token?grant_type=refresh_token",method:"POST",body:{refresh_token:refreshToken}}));}
+ try{return sessionFrom(await request({supabaseUrl,publishableKey,path:"/auth/v1/token?grant_type=refresh_token",method:"POST",body:{refresh_token:refreshToken},fetchImpl}));}
  catch(error){if(error?.status===401||error?.status===400)return null;throw error;}
 }
-export async function getSupabaseUser({supabaseUrl,publishableKey,accessToken}){
+export async function getSupabaseUser({supabaseUrl,publishableKey,accessToken,fetchImpl=fetch}){
  if(!accessToken)return null;
  try{
-  const payload=await request({supabaseUrl,publishableKey,path:"/auth/v1/user",accessToken});
+  const payload=await request({supabaseUrl,publishableKey,path:"/auth/v1/user",accessToken,fetchImpl});
   return payload?.id?{id:String(payload.id),email:String(payload.email||"")}:null;
  }catch(error){if(error?.status===401)return null;throw error;}
 }
-export async function revokeSupabaseSession({supabaseUrl,publishableKey,accessToken}){
+export async function revokeSupabaseSession({supabaseUrl,publishableKey,accessToken,fetchImpl=fetch}){
  if(!accessToken)return;
- try{await request({supabaseUrl,publishableKey,path:"/auth/v1/logout",method:"POST",accessToken});}catch{}
+ try{await request({supabaseUrl,publishableKey,path:"/auth/v1/logout",method:"POST",accessToken,fetchImpl});}catch{}
 }
