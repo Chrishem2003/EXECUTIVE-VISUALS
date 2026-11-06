@@ -185,6 +185,11 @@ begin
 end;
 $$;
 
+-- The legacy completion RPC can publish a ledger row without proving the
+-- current worker claim. All new render publication must use the atomic RPC.
+revoke all on function executive_visuals.complete_asset_publication(uuid,text,uuid)
+  from public, anon, authenticated, service_role;
+
 revoke all on function executive_visuals.finalize_asset_publication_v1(
   uuid,text,uuid,uuid,uuid,text,text,uuid,text,text,bigint,text,text,uuid,jsonb
 ) from public, anon, authenticated;
