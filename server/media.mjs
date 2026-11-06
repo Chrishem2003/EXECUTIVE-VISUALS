@@ -9,6 +9,7 @@ import { createHash } from "node:crypto";
 import { stat } from "node:fs/promises";
 import { Transform } from "node:stream";
 import { addJobEvent, getAccessibleAsset, json, parseJson } from "./db.mjs";
+import { buildMediaQualityReport } from "./media-quality.mjs";
 import { createRealEsrganAdapter } from "./ai-upscale-engine.mjs";
 import { analyzeVoiceActivityFile } from "./voice-activity-detection.mjs";
 import { parseBlackFrameEvents, parseSilenceEvents, parseAudioMetrics, parseFreezeEvents, parseSceneChangeTimes, runOptionalSignalCheck } from "./media-signal-analysis.mjs";
@@ -481,16 +482,17 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
   try { outputMetadata=JSON.parse(probeResult.stdout||"{}"); }
   catch { throw Object.assign(new Error("Media output metadata could not be parsed."),{code:"MEDIA_OUTPUT_VALIDATION_FAILED"}); }
   const validation=validateMediaOutputProbe(outputMetadata,mime);
-  onStage({id:"output-validation",label:"Validate generated output",status:"succeeded",attributes:{nodeKind:"validation"}});
+  const quality=buildMediaQualityReport(outputMetadata,{requireVideo:mime.startsWith("video/"),requireAudio:mime.startsWith("audio/")});
+  onStage({id:"output-validation",label:"Validate generated output",status:"succeeded",attributes:{nodeKind:"validation",qualityStatus:quality.status,qualityErrors:quality.counts.errors,qualityWarnings:quality.counts.warnings}});
   const fileStat = await stat(outputPath);
   if(fileStat.size<=0)throw Object.assign(new Error("Media output is empty."),{code:"MEDIA_OUTPUT_VALIDATION_FAILED"});
   const hash = createHash("sha256");
   await pipeline(createReadStream(outputPath), new Transform({ transform(chunk, enc, cb) { hash.update(chunk); cb(null, chunk); } }), new Transform({ transform(chunk, enc, cb) { cb(); } }));
   const provenance=buildMediaProcessingProvenance({jobType:job.job_type,input,sourceAsset:source});
   onStage({id:"output-persist",label:"Save output asset",status:"running",attributes:{nodeKind:"asset"}});
-  const outputAsset = addAsset(db, job, "derived/"+id+"."+ext, outputName, mime, fileStat.size, hash.digest("hex"), source.id, { operation:job.job_type, ...(provenance?{processing:provenance}:{}) });
+  const outputAsset = addAsset(db, job, "derived/"+id+"."+ext, outputName, mime, fileStat.size, hash.digest("hex"), source.id, { operation:job.job_type, ...(provenance?{processing:provenance}:{}), quality });
   onStage({id:"output-persist",label:"Save output asset",status:"succeeded",attributes:{nodeKind:"asset"}});
   onStage({id:"output-persist",label:"Save output asset",status:"succeeded",attributes:{nodeKind:"asset"}});
   emit("media.output_created", { assetId:outputAsset.id, sha256:outputAsset.sha256 });
-  return { outputAsset, validation };
+  return { outputAsset, validation, quality };
 }
