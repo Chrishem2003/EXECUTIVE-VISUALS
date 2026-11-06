@@ -14,6 +14,7 @@ import { presetLibraryMarkup, modelMenuMarkup, initPresetWorkspace } from "./pre
 import { scriptBreakdownMarkup, frameFitMarkup, promptCoachMarkup, storyboardExportMarkup, styleKitMarkup, variationMarkup, initStudioTools } from "./studio-tools";
 import { applyKitToShots, type StyleKit } from "../core/style-kit";
 import { quickStartMarkup, initQuickStart } from "./quick-start";
+import { initCredits } from "./credits";
 import { initWorkspaceSync } from "./workspace-sync";
 import { pickWorkspace, LIST_KEYS, TEXT_KEYS } from "../core/workspace-snapshot";
 import { applyPresetToShot, getPreset, shotToPrompt } from "../core/presets";
@@ -424,3 +425,4 @@ initWorkspaceSync({
   save();render();
  }
 });
+initCredits();

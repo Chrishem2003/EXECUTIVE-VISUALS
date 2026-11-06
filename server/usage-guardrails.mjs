@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { creditsEnabled, spendCredits } from "./credits.mjs";
 
 const DEFAULT_REMOTE_DAILY_LIMIT = 50;
 const MAX_REMOTE_DAILY_LIMIT = 10000;
@@ -70,5 +71,14 @@ export function reserveRemoteRequest(db, {
       code: "REMOTE_USAGE_LIMIT_REACHED", limit, used, window: "rolling_24_hours"
     });
   }
-  return { reserved: true, reservationId: id, limit, window: "rolling_24_hours" };
+  let credits = null;
+  if (creditsEnabled()) {
+    try { credits = spendCredits(db, { ownerId, capability, reference: jobId }); }
+    catch (error) {
+      // Not enough credits: give the request slot back so the failed attempt is not counted.
+      db.prepare("DELETE FROM remote_usage_reservations WHERE id=?").run(id);
+      throw error;
+    }
+  }
+  return { reserved: true, reservationId: id, limit, window: "rolling_24_hours", credits };
 }

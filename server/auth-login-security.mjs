@@ -209,3 +209,9 @@ export function getAuthSecuritySummary(db, now = Date.now()) {
     generatedAtMs:now
   };
 }
+
+/** Write one administrator action to the audit log (hashes only, no raw emails). */
+export function recordAdminAction(db, actorIdentifier, action, targetHash = null, detail = null, now = Date.now()) {
+  db.prepare("INSERT INTO admin_audit_log(actor_hash,action,target_hash,detail,created_at_ms) VALUES(?,?,?,?,?)")
+    .run(loginIdentifierHash(actorIdentifier), String(action).slice(0, 60), targetHash, detail ? String(detail).slice(0, 120) : null, now);
+}

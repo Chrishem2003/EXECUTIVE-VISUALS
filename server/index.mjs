@@ -4,8 +4,9 @@ import { createAuthRateLimiter } from "./auth-rate-limit.mjs";
 import { createRedisRestRateLimiter } from "./distributed-rate-limit.mjs";
 import { createClientIpResolver } from "./client-ip.mjs";
 import { isBlockedDotPath } from "./static-path-security.mjs";
-import { ensureAuthSecuritySchema, getLoginLockState, recordFailedLogin, clearLoginFailures, recordLoginLockoutEvent, listAuthSecurityEvents, getAuthSecuritySummary, countActiveLocks, adminUnlockLogin, listAdminAudit } from "./auth-login-security.mjs";
+import { ensureAuthSecuritySchema, getLoginLockState, recordFailedLogin, clearLoginFailures, recordLoginLockoutEvent, listAuthSecurityEvents, getAuthSecuritySummary, countActiveLocks, adminUnlockLogin, listAdminAudit, recordAdminAction } from "./auth-login-security.mjs";
 import { isAdminUser } from "./admin-access.mjs";
+import { creditsEnabled, ensureCreditTables, getCredits, adminGrantCredits } from "./credits.mjs";
 import { createHash, randomBytes, randomUUID, scryptSync, timingSafeEqual } from "node:crypto";
 import { createReadStream, createWriteStream, existsSync, statSync } from "node:fs";
 import { mkdir, unlink, open, readFile } from "node:fs/promises";
@@ -65,6 +66,7 @@ const MEDIA_JOBS = new Set(["media.probe","media.thumbnail","media.transcode","m
 const db = openDatabase(DB_FILE);
 ensureTransformationPlanSchema(db);
 ensureAuthSecuritySchema(db);
+ensureCreditTables(db);
 const aiUpscaleAdapter = createRealEsrganAdapter();
 const cloudTimelineApiEnabled = process.env.CLOUD_TIMELINE_API_ENABLED === "true";
 if (cloudTimelineApiEnabled && AUTH_MODE !== "supabase") throw new Error("Cloud timeline API requires verified Supabase authentication.");
@@ -917,6 +919,26 @@ export function createAppServer() {
         }
       }
 
+      if(path==="/api/credits"&&req.method==="GET"){
+        if(!creditsEnabled()){send(res,200,{enabled:false},cors);return;}
+        send(res,200,{enabled:true,...getCredits(db,{ownerId:user.id,email:user.email})},cors);return;
+      }
+      if(path==="/api/admin/credits/grant"&&req.method==="POST"){
+        if(!isAdminUser(user)){fail(res,403,"AUTH_SECURITY_ADMIN_REQUIRED","An explicitly allowlisted security administrator is required. The site owner adds your email to ADMIN_EMAILS.");return;}
+        if(!creditsEnabled()){fail(res,409,"CREDITS_DISABLED","Credits are switched off. Set CREDITS_ENABLED=true in the hosting settings.");return;}
+        const body=await readJson(req);
+        const email=String(body?.email||"").trim();
+        if(!email||email.length>320||!email.includes("@")){fail(res,400,"INVALID_CREDIT_TARGET","Enter the email address to add credits for.");return;}
+        try{
+          const result=adminGrantCredits(db,{email,amount:Number(body?.amount),note:body?.note});
+          recordAdminAction(db,user.email,"grant_credits",result.targetHash,String(result.granted)+" credits");
+          send(res,200,{ok:true,granted:result.granted},cors);return;
+        }catch(error){
+          const ours=/^(INVALID_CREDIT_AMOUNT|CREDIT_ACCOUNT_NOT_FOUND)$/.test(String(error?.code||""));
+          if(ours){fail(res,error.status||400,error.code,error.message);return;}
+          throw error;
+        }
+      }
       if(path==="/api/admin/overview"&&req.method==="GET"){
         if(!isAdminUser(user)){fail(res,403,"AUTH_SECURITY_ADMIN_REQUIRED","An explicitly allowlisted security administrator is required. The site owner adds your email to ADMIN_EMAILS.");return;}
         send(res,200,{admin:true,authMode:AUTH_MODE,lockedAccounts:countActiveLocks(db),recentAdminActions:listAdminAudit(db,10),workspaceSync:!!workspaceStore},cors);return;

@@ -36,13 +36,30 @@ async function loadSummary(){
 }
 function unlockMarkup(){
  const actions=overview?.recentAdminActions.length?overview.recentAdminActions.map(item=>'<li>'+escapeHtml(label(item.action))+' · '+escapeHtml(label(item.detail||"done"))+' · '+escapeHtml(date(item.createdAtMs))+'</li>').join(""):'<li>No admin actions yet.</li>';
- return '<section class="panel security-unlock"><div><h2>Unlock an account</h2><p>If someone is locked out after too many wrong passwords, enter their email to clear the lock. Every unlock is logged (without the email).</p></div><form id="admin-unlock-form"><input id="admin-unlock-email" type="email" placeholder="person@example.com" autocomplete="off" required><button class="primary" type="submit">Unlock account</button></form><p id="admin-unlock-message" class="security-message" role="status">'+escapeHtml(unlockMessage||(overview?String(overview.lockedAccounts)+" account(s) locked right now.":""))+'</p><details><summary>Recent admin actions</summary><ul>'+actions+'</ul></details></section>';
+ return '<section class="panel security-unlock"><div><h2>Unlock an account</h2><p>If someone is locked out after too many wrong passwords, enter their email to clear the lock. Every unlock is logged (without the email).</p></div><form id="admin-unlock-form"><input id="admin-unlock-email" type="email" placeholder="person@example.com" autocomplete="off" required><button class="primary" type="submit">Unlock account</button></form><p id="admin-unlock-message" class="security-message" role="status">'+escapeHtml(unlockMessage||(overview?String(overview.lockedAccounts)+" account(s) locked right now.":""))+'</p><div><h2>Add credits</h2><p>Give someone extra credits by their sign-in email. They must have opened the app at least once. Only works when credits are switched on (CREDITS_ENABLED=true).</p></div><form id="admin-credit-form"><input id="admin-credit-email" type="email" placeholder="person@example.com" autocomplete="off" required><input id="admin-credit-amount" type="number" min="1" max="100000" step="1" value="50" required aria-label="Credits to add"><button class="primary" type="submit">Add credits</button></form><p id="admin-credit-message" class="security-message" role="status"></p><details><summary>Recent admin actions</summary><ul>'+actions+'</ul></details></section>';
 }
 async function loadOverview(){
  try{overview=await apiRequest<Overview>("/api/admin/overview");}catch{overview=null;}
  const host=document.querySelector<HTMLElement>("#security-unlock-host");if(host){host.innerHTML=unlockMarkup();bindUnlock();}
 }
+function bindCredits(){
+ const form=document.querySelector<HTMLFormElement>("#admin-credit-form");
+ if(!form||form.dataset.bound)return;form.dataset.bound="true";
+ form.addEventListener("submit",async event=>{
+  event.preventDefault();
+  const email=(document.querySelector<HTMLInputElement>("#admin-credit-email")?.value||"").trim();
+  const amount=Number(document.querySelector<HTMLInputElement>("#admin-credit-amount")?.value);
+  let text="";
+  try{
+   const result=await apiRequest<{granted:number}>("/api/admin/credits/grant",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({email,amount})});
+   text="Added "+result.granted+" credits.";
+  }catch(error){text=error instanceof Error?error.message:"Could not add credits.";}
+  const node=document.querySelector<HTMLElement>("#admin-credit-message");if(node)node.textContent=text;
+  window.dispatchEvent(new Event("ev:credits-changed"));
+ });
+}
 function bindUnlock(){
+ bindCredits();
  const form=document.querySelector<HTMLFormElement>("#admin-unlock-form");
  if(!form||form.dataset.bound)return;form.dataset.bound="true";
  form.addEventListener("submit",async event=>{

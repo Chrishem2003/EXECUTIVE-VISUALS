@@ -55,7 +55,7 @@ test("new product files contain no third-party product or brand names", () => {
     "src/platform/quick-start.ts",
     "src/core/workspace-snapshot.ts",
     "src/platform/workspace-sync.ts",
-    "server/workspace-sync.mjs", "server/admin-access.mjs"
+    "server/workspace-sync.mjs", "server/admin-access.mjs", "server/credits.mjs", "src/platform/credits.ts"
   ].filter(existsSync);
   assert.ok(files.includes("src/core/presets.ts"));
   for (const file of files) {
