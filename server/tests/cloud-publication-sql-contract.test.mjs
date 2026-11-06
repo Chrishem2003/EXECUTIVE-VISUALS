@@ -35,4 +35,5 @@ test("atomic publication RPC is callable only by service_role", async () => {
   assert.match(sql, /security definer\s+set search_path = ''/i);
   assert.match(sql, /revoke all on function executive_visuals\.finalize_asset_publication_v1[\s\S]*?from public, anon, authenticated/i);
   assert.match(sql, /grant execute on function executive_visuals\.finalize_asset_publication_v1[\s\S]*?to service_role/i);
+  assert.match(sql, /revoke all on function executive_visuals\.complete_asset_publication\(uuid,text,uuid\)[\s\S]*?from public, anon, authenticated, service_role/i);
 });
