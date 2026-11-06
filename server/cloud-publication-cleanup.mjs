@@ -30,7 +30,7 @@ export function createCloudPublicationCleanup({
   isAttemptActive,
   claimCleanup,
   completeCleanup,
-  onEvent,
+  onEvent=async()=>false,
   requireAudit=true,
   now=()=>new Date()
 }={}) {
