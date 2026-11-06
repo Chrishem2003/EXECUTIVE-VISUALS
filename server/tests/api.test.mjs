@@ -150,6 +150,7 @@ test("operations summary reports scoped queue health and completed-job performan
     insert.run("ops-failed",collaboratorId,project.id,"media.render","failed",ago(120000),now,ago(120000),now,null,null);
     insert.run("ops-queued",ownerId,null,"media.render","queued",ago(600000),now,null,null,null,null);
     insert.run("ops-running",ownerId,project.id,"media.render","running",ago(180000),now,ago(120000),null,"worker-1",ago(60000));
+    insert.run("ops-running-active",ownerId,project.id,"media.render","running",ago(180000),now,ago(60000),null,"worker-2",new Date(Date.now()+60000).toISOString());
     insert.run("ops-private",collaboratorId,null,"media.render","queued",ago(300000),now,null,null,null,null);
   }finally{db.close();}
 
@@ -157,19 +158,19 @@ test("operations summary reports scoped queue health and completed-job performan
   assert.equal(account.status,200);
   const body=await account.json();
   assert.equal(body.scope,"accessible_workspaces");
-  assert.equal(body.period.jobs,4,"private unscoped collaborator jobs must not leak");
+  assert.equal(body.period.jobs,5,"private unscoped collaborator jobs must not leak");
   assert.equal(body.period.completed,1);
   assert.equal(body.period.failed,1);
   assert.ok(body.period.averageCompletionMs>=59000&&body.period.averageCompletionMs<=61000);
   assert.equal(body.queue.queued,1);
-  assert.equal(body.queue.running,1);
+  assert.equal(body.queue.running,2);
   assert.equal(body.queue.activeWorkers,1);
   assert.equal(body.queue.expiredLeases,1);
   assert.ok(body.queue.oldestQueuedSeconds>=500);
 
   const projectSummary=await request("/api/operations/summary?projectId="+encodeURIComponent(project.id),{},owner);
   assert.equal(projectSummary.status,200);
-  assert.equal((await projectSummary.json()).period.jobs,3);
+  assert.equal((await projectSummary.json()).period.jobs,4);
   const denied=await request("/api/operations/summary?projectId="+encodeURIComponent(project.id),{},unauthorized);
   assert.equal(denied.status,404);
   const invalid=await request("/api/operations/summary?days=14",{},owner);
