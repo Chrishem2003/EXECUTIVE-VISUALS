@@ -1,3 +1,10 @@
+export function extractBearerToken(header) {
+  if (typeof header !== "string") return "";
+  const match = /^Bearer\\s+([^\\s]+)$/i.exec(header.trim());
+  if (!match || match[1].length > 16384) return "";
+  return match[1];
+}
+
 const DEFAULT_TIMEOUT_MS = 5000;
 const MIN_TIMEOUT_MS = 100;
 const MAX_TIMEOUT_MS = 30000;
