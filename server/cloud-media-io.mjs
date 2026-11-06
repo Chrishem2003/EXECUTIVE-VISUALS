@@ -50,11 +50,11 @@ export function createCloudMediaAssetIO({assets,fetchImpl=globalThis.fetch,tempR
     return{asset:signed.asset,path,size:downloaded.size,sha256:downloaded.sha256,async cleanup(){if(cleaned)return;cleaned=true;await rm(directory,{recursive:true,force:true});}};
    }catch(error){await rm(directory,{recursive:true,force:true}).catch(()=>{});throw error;}
   },
-  async publish({ownerId,projectId=null,filename,mediaType,path,derivativeOf=null,metadata={},publicationKey=null,assertLease=async()=>true,signal=null}){
+  async publish({ownerId,projectId=null,filename,mediaType,path,derivativeOf=null,metadata={},publicationKey=null,assertLease=async()=>true,signal=null,leaseContext=null}){
    if(typeof assertLease!=="function")throw new Error("Cloud media publication requires a worker lease assertion.");
    await assertLease();
    if(signal?.aborted)throw Object.assign(new Error("Cloud media publication was cancelled."),{code:"CLOUD_MEDIA_PUBLICATION_ABORTED"});
-   if(publicationKey&&typeof assets.createFromFileIdempotent==="function")return assets.createFromFileIdempotent({ownerId,projectId,originalName:filename,mediaType,filePath:path,publicationKey,derivativeOf,metadata,assertLease,signal});
+   if(publicationKey&&typeof assets.createFromFileIdempotent==="function")return assets.createFromFileIdempotent({ownerId,projectId,originalName:filename,mediaType,filePath:path,publicationKey,derivativeOf,metadata,assertLease,signal,leaseContext});
    if(typeof assets.createFromFile==="function")return assets.createFromFile({ownerId,projectId,originalName:filename,mediaType,filePath:path,derivativeOf,metadata});
    const handle=await open(path,"r");
    let bytes;
