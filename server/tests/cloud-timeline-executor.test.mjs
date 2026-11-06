@@ -22,7 +22,9 @@ test("cloud timeline executor materializes all unique sources and publishes a re
   async probeOutput(){return{format:{duration:"12",format_name:"mov,mp4,m4a,3gp,3g2,mj2"},streams:[{codec_type:"video",codec_name:"h264",width:1920,height:1080,avg_frame_rate:"24/1"}]};},
   async renderTimeline(args){assert.equal(args.timeline,timeline);assert.equal(args.assets.size,2);const path=join(args.workDir,"master.mp4");await writeFile(path,"final-master");return{path,filename:"episode-master.mp4",mediaType:"video/mp4",render:{durationSeconds:12}};}
  });
- const executionSignal=new AbortController().signal;\n const leaseAssertion=async()=>{publicationOrder.push("assert-lease");};\n const result=await executor({job:{id:"job-1",owner_id:owner,project_id:project,job_type:"timeline.render",input:{timelineId,timelineRevision:7}},signal:executionSignal,onProgress(){},assertLease:leaseAssertion});
+ const executionSignal=new AbortController().signal;
+ const leaseAssertion=async()=>{publicationOrder.push("assert-lease");};
+ const result=await executor({job:{id:"job-1",owner_id:owner,project_id:project,job_type:"timeline.render",input:{timelineId,timelineRevision:7}},signal:executionSignal,onProgress(){},assertLease:leaseAssertion});
  assert.deepEqual(publicationOrder,["assert-lease","publish"]);
  assert.equal(materialized.length,2);assert.deepEqual(materialized.map(x=>x.assetId).sort(),["asset-a","asset-b"]);
  assert.deepEqual(cleanups.sort(),["asset-a","asset-b"]);
