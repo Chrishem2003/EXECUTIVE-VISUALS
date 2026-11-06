@@ -55,7 +55,7 @@ test("maps analyzed source activity through trimmed constant-speed dialogue clip
   {startSeconds:3,endSeconds:7},
   {startSeconds:10,endSeconds:12}
  ],{sourceStartSeconds:2,sourceDurationSeconds:10,timelineStartSeconds:10,timelineDurationSeconds:5,speed:2});
- assert.deepEqual(ranges,[{startSeconds:10.5,endSeconds:12.5}]);
+ assert.deepEqual(ranges,[{startSeconds:10.5,endSeconds:12.5},{startSeconds:14,endSeconds:15}]);
 });
 test("maps analyzed source activity through variable-speed dialogue clips",()=>{
  const ranges=mapSourceActivityToTimelineRanges([{startSeconds:1.25,endSeconds:3}],{
