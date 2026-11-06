@@ -13,7 +13,7 @@ const dataDir=await mkdtemp(join(tmpdir(),"ev-api-test-"));
 const webDir=join(dataDir,"web");await mkdir(webDir,{recursive:true});await writeFile(join(webDir,"index.html"),"<!doctype html><html><body>test</body></html>");
 const child=spawn(process.execPath,["server/index.mjs"],{
   cwd:process.cwd(),
-  env:{...process.env,NODE_ENV:"development",AUTH_MODE:"local",AUTH_RATE_LIMIT:"1000",REMOTE_AI_DAILY_REQUEST_LIMIT:"7",API_HOST:"127.0.0.1",API_PORT:String(port),DATA_DIR:dataDir,MEDIA_ROOT:join(dataDir,"media"),WEB_ROOT:webDir,DISABLE_WORKER:"true"},
+  env:{...process.env,NODE_ENV:"development",AUTH_MODE:"local",AUTH_RATE_LIMIT:"1000",SESSION_IDLE_TIMEOUT_MINUTES:"5",REMOTE_AI_DAILY_REQUEST_LIMIT:"7",API_HOST:"127.0.0.1",API_PORT:String(port),DATA_DIR:dataDir,MEDIA_ROOT:join(dataDir,"media"),WEB_ROOT:webDir,DISABLE_WORKER:"true"},
   stdio:["ignore","pipe","pipe"]
 });
 let stdout="",stderr="";
@@ -186,7 +186,7 @@ test("session cookies are hardened, hashed, origin-protected and safely invalida
   assert.match(setCookie,/HttpOnly/);
   assert.match(setCookie,/SameSite=Strict/);
   assert.match(setCookie,/Path=\//);
-  assert.match(setCookie,/Max-Age=2592000/);
+  assert.match(setCookie,/Max-Age=300/,"cookie lifetime follows the server-enforced idle timeout");
   const cookie=setCookie.split(";")[0];
   const token=cookie.slice("ev_session=".length);
   const db=openDatabase(join(dataDir,"executive-visuals.sqlite"));
@@ -215,6 +215,43 @@ test("session cookies are hardened, hashed, origin-protected and safely invalida
   assert.equal(logout.status,200);
   assert.match(logout.headers.get("set-cookie")||"",/Max-Age=0/);
   assert.equal((await request("/api/me",{},cookie)).status,401,"logout must revoke the persisted session");
+});
+
+test("idle local sessions are rejected, deleted and cleared server-side",async()=>{
+  const cookie=await register("idle-session@example.test");
+  const token=cookie.slice("ev_session=".length);
+  const db=openDatabase(join(dataDir,"executive-visuals.sqlite"));
+  try{
+    db.prepare("UPDATE sessions SET last_seen_at=? WHERE token_hash=?")
+      .run(new Date(Date.now()-6*60*1000).toISOString(),createHash("sha256").update(token).digest("hex"));
+  }finally{db.close();}
+  const response=await request("/api/me",{},cookie);
+  assert.equal(response.status,401);
+  assert.match(response.headers.get("set-cookie")||"",/Max-Age=0/);
+  const verify=openDatabase(join(dataDir,"executive-visuals.sqlite"));
+  try{
+    assert.equal(verify.prepare("SELECT COUNT(*) AS count FROM sessions WHERE token_hash=?").get(createHash("sha256").update(token).digest("hex")).count,0);
+  }finally{verify.close();}
+});
+
+test("password changes revoke every prior local session and retain only the rotated current session",async()=>{
+  const firstCookie=await register("password-rotation@example.test");
+  const login=await request("/api/auth/login",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({email:"password-rotation@example.test",password:"local-test-password-123"})});
+  assert.equal(login.status,200);
+  const secondCookie=(login.headers.get("set-cookie")||"").split(";")[0];
+  assert.ok(secondCookie);
+  const changed=await request("/api/auth/password",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({currentPassword:"local-test-password-123",newPassword:"local-test-password-456"})},firstCookie);
+  assert.equal(changed.status,200,await changed.clone().text());
+  assert.deepEqual(await changed.json(),{ok:true,sessionsRevoked:true});
+  const rotatedCookie=(changed.headers.get("set-cookie")||"").split(";")[0];
+  assert.ok(rotatedCookie);
+  assert.equal((await request("/api/me",{},rotatedCookie)).status,200);
+  assert.equal((await request("/api/me",{},firstCookie)).status,401,"old current session must be revoked");
+  assert.equal((await request("/api/me",{},secondCookie)).status,401,"other devices must be revoked");
+  const oldLogin=await request("/api/auth/login",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({email:"password-rotation@example.test",password:"local-test-password-123"})});
+  assert.equal(oldLogin.status,401);
+  const newLogin=await request("/api/auth/login",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({email:"password-rotation@example.test",password:"local-test-password-456"})});
+  assert.equal(newLogin.status,200);
 });
 
 test("expired local sessions are rejected and removed from persistence",async()=>{
