@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { extname, join } from "node:path";
 import { mkdir, readFile, writeFile, unlink } from "node:fs/promises";
-import { captionStyle, buildSrt, escapeFilterPath, run } from "./media.mjs";
+import { captionStyle, buildSrt, escapeFilterPath, run, validateMediaOutputProbe } from "./media.mjs";
+import { buildLoudnormAnalysisArgs, parseLoudnormMeasurements, buildLoudnormNormalizationArgs, parseLoudnormOutput, buildLoudnormOutputFindings } from "./media-signal-analysis.mjs";
 
 const fail=(message,code)=>{throw Object.assign(new Error(message),{code});};
 const seconds=(time)=>{const value=Number(time?.value),rate=Number(time?.rate);if(!Number.isFinite(value)||!Number.isFinite(rate)||rate<=0)return 0;return Math.max(0,Math.min(86400,value/rate));};
@@ -59,7 +60,7 @@ const panExpressions=(points,basePan,channels)=>{
  * It shares the local renderer's caption and process primitives but has no
  * SQLite, local asset repository, or local media-root dependency.
  */
-export async function renderCloudTimeline({timeline,assets,workDir,signal,onProgress=()=>{},activeProcesses=new Map(),jobId=null}={}){
+export async function renderCloudTimeline({timeline,assets,workDir,signal,onProgress=()=>{},activeProcesses=new Map(),jobId=null,mastering=null}={}){
  if(!timeline||!Array.isArray(timeline.tracks)||!(assets instanceof Map)||typeof workDir!=="string")throw new Error("Cloud timeline renderer received invalid inputs.");
  if(signal?.aborted)fail("Timeline render was cancelled.","JOB_CANCELLED");
  const tracks=timeline.tracks.filter(track=>track.enabled!==false&&(track.clips||[]).some(enabled));
@@ -73,6 +74,7 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
  const fpsNum=Math.max(1,Math.min(120,Math.floor(Number(timeline.frameRate?.numerator)||24)));
  const fpsDen=Math.max(1,Math.min(1001,Math.floor(Number(timeline.frameRate?.denominator)||1)));
  const outputId=randomUUID(),outputPath=join(workDir,outputId+".mp4");
+ let masteringOutputPath=null,finalOutputPath=outputPath,masteringReport=null;
  await mkdir(workDir,{recursive:true});
  const args=["-hide_banner","-y"],segments=[],audioFilters=[],videoEffects=[],captionTempPaths=[],overlayInputs=[];
  let cursor=0,inputIndex=0,segmentIndex=0,captionIndex=0;
@@ -168,11 +170,39 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
   args.push("-c:v","libx264","-preset","veryfast","-crf","20","-pix_fmt","yuv420p","-movflags","+faststart","-r",`${fpsNum}/${fpsDen}`,outputPath);
   await run("ffmpeg",args,60*60*1000,jobId,activeProcesses,()=>Boolean(signal?.aborted));
   if(signal?.aborted)fail("Timeline render was cancelled.","JOB_CANCELLED");
-  onProgress(90);
+  if(mastering!==null&&mastering!==undefined&&typeof mastering!=="object")fail("Mastering settings must be an object.","INVALID_MASTERING_OPTIONS");
+  if(mastering?.enabled===true){
+   if(!audioFilters.length)fail("Opt-in mastering requires at least one enabled audio track.","MASTERING_AUDIO_REQUIRED");
+   const settings={integratedLufs:mastering.integratedLufs??-16,loudnessRange:mastering.loudnessRange??11,truePeakDbtp:mastering.truePeakDbtp??-1.5,dualMono:mastering.dualMono??false,tolerance:mastering.tolerance??0.5};
+   onProgress(91);
+   const analysisArgs=buildLoudnormAnalysisArgs({inputPath:outputPath,...settings});
+   const analysis=await run("ffmpeg",analysisArgs,60*60*1000,jobId,activeProcesses,()=>Boolean(signal?.aborted));
+   if(signal?.aborted)fail("Timeline render was cancelled.","JOB_CANCELLED");
+   const measurements=parseLoudnormMeasurements(analysis.stderr||analysis.stdout);
+   if(!measurements)fail("Mastering analysis did not return complete EBU R128 measurements.","LOUDNORM_ANALYSIS_FAILED");
+   masteringOutputPath=join(workDir,outputId+"-mastered.mp4");
+   const normalizationArgs=buildLoudnormNormalizationArgs({inputPath:outputPath,outputPath:masteringOutputPath,measurements,...settings,audioBitrate:"192k"});
+   onProgress(94);
+   const normalized=await run("ffmpeg",normalizationArgs,60*60*1000,jobId,activeProcesses,()=>Boolean(signal?.aborted));
+   if(signal?.aborted)fail("Timeline render was cancelled.","JOB_CANCELLED");
+   const output=parseLoudnormOutput(normalized.stderr||normalized.stdout);
+   if(!output)fail("Mastering output did not return verifiable EBU R128 results.","LOUDNORM_OUTPUT_UNVERIFIED");
+   const findings=buildLoudnormOutputFindings(output,settings);
+   const probeResult=await run("ffprobe",["-v","error","-show_format","-show_streams","-of","json",masteringOutputPath],60000,jobId,activeProcesses,()=>Boolean(signal?.aborted));
+   let metadata;
+   try{metadata=JSON.parse(probeResult.stdout||"{}");}catch{fail("Mastered output metadata could not be parsed.","MEDIA_OUTPUT_VALIDATION_FAILED");}
+   validateMediaOutputProbe(metadata,"video/mp4");
+   if(!metadata.streams?.some(stream=>stream?.codec_type==="audio"))fail("Mastered output is missing its audio stream.","MEDIA_OUTPUT_VALIDATION_FAILED");
+   masteringReport={enabled:true,targets:{integratedLufs:settings.integratedLufs,loudnessRange:settings.loudnessRange,truePeakDbtp:settings.truePeakDbtp},measurements,output,findings,verified:findings.length===0};
+   await unlink(outputPath).catch(()=>{});
+   finalOutputPath=masteringOutputPath;
+  }
+  if(signal?.aborted)fail("Timeline render was cancelled.","JOB_CANCELLED");
+  onProgress(98);
   const name=safeName(timeline.name);
-  return{path:outputPath,filename:name+"-master.mp4",mediaType:"video/mp4",render:{width,height,frameRate:{numerator:fpsNum,denominator:fpsDen},videoClips:clips.length,audioClips:audioClips.length,automatedAudioClips:audioClips.filter(clip=>(clip.audioAutomation||[]).length>0||Number(clip.pan)!==0).length,overlayClips:overlayClips.length,captionClips:captionClips.length,durationSeconds:cursor}};
+  return{path:finalOutputPath,filename:name+"-master.mp4",mediaType:"video/mp4",...(masteringReport?{mastering:masteringReport}:{}),render:{width,height,frameRate:{numerator:fpsNum,denominator:fpsDen},videoClips:clips.length,audioClips:audioClips.length,automatedAudioClips:audioClips.filter(clip=>(clip.audioAutomation||[]).length>0||Number(clip.pan)!==0).length,overlayClips:overlayClips.length,captionClips:captionClips.length,durationSeconds:cursor}};
  }catch(error){
-  await unlink(outputPath).catch(()=>{});
+  await Promise.all([outputPath,masteringOutputPath].filter(Boolean).map(path=>unlink(path).catch(()=>{})));
   if(signal?.aborted)throw Object.assign(new Error("Timeline render was cancelled."),{code:"JOB_CANCELLED"});
   throw error;
  }finally{await Promise.all(captionTempPaths.map(path=>unlink(path).catch(()=>{})));}

@@ -40,6 +40,15 @@ test("cloud FFmpeg renderer produces a playable master from materialized video a
   assert.ok(lateRight>lateLeft*4,"right-panned ending keyframe should favour the right channel (left="+lateLeft+", right="+lateRight+")");
   const earlyLevel=Math.hypot(earlyLeft,earlyRight),lateLevel=Math.hypot(lateLeft,lateRight);
   assert.ok(earlyLevel>lateLevel*1.5,"the rendered gain automation should attenuate the later section");
+  const mastered=await renderCloudTimeline({timeline,assets,workDir:root,onProgress(){},mastering:{enabled:true,integratedLufs:-16,loudnessRange:11,truePeakDbtp:-1.5}});
+  const masteredProbe=JSON.parse(execFileSync(process.env.FFPROBE_PATH||"ffprobe",["-v","error","-show_entries","stream=codec_type","-of","json",mastered.path],{encoding:"utf8"}));
+  assert.equal(mastered.mastering.enabled,true);
+  assert.equal(typeof mastered.mastering.verified,"boolean");
+  assert.ok(Number.isFinite(mastered.mastering.output.integratedLufs));
+  assert.ok(Number.isFinite(mastered.mastering.output.truePeakDbtp));
+  assert.ok(masteredProbe.streams.some(stream=>stream.codec_type==="video"),"mastering must preserve the rendered video stream");
+  assert.ok(masteredProbe.streams.some(stream=>stream.codec_type==="audio"),"mastering must preserve the rendered audio stream");
+  assert.notEqual(mastered.path,result.path,"opt-in mastering must produce a separate verified output");
  }finally{await rm(root,{recursive:true,force:true});}
 });
 
