@@ -29,6 +29,12 @@ export function parseAudioAutomationEditorInput(raw:string,durationSeconds:numbe
  if(points.some(point=>point.timeSeconds>durationSeconds))throw new Error("Audio automation keyframes must fall inside the edited clip duration.");
  return points;
 }
+export function audioAutomationPointFromGraphPosition(xRatio:number,yRatio:number,durationSeconds:number,pan=0):AudioAutomationPoint{
+ if(!Number.isFinite(durationSeconds)||durationSeconds<=0)throw new Error("Audio automation clip duration must be positive.");
+ const x=Math.max(0,Math.min(1,Number.isFinite(xRatio)?xRatio:0));
+ const y=Math.max(0,Math.min(1,Number.isFinite(yRatio)?yRatio:0));
+ return {timeSeconds:Number((x*durationSeconds).toFixed(4)),gainDb:Number((24-y*84).toFixed(2)),pan:Math.max(-1,Math.min(1,Number.isFinite(pan)?pan:0)),interpolation:"linear"};
+}
 export function evaluateAudioAutomation(points:readonly AudioAutomationPoint[]|undefined,timeSeconds:number,property:AudioAutomationProperty,fallback:number):number{
  const safe=normalizeAudioAutomation(points),time=Math.max(0,Number.isFinite(timeSeconds)?timeSeconds:0);
  const relevant=safe.filter(point=>point[property]!==undefined);
