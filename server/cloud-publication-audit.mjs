@@ -113,6 +113,7 @@ export function createCloudPublicationAuditSink({
           apikey:serviceRoleKey,
           authorization:"Bearer "+serviceRoleKey,
           "content-type":"application/json",
+          "content-profile":"executive_visuals",
           prefer:"return=minimal"
         },
         body:JSON.stringify(payload),
