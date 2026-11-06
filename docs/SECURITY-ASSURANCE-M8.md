@@ -33,9 +33,9 @@ The in-memory limiter prunes expired buckets and enforces a configurable capacit
 **Priority:** Implemented; deployment verification remains  
 The Supabase `/auth/v1/user` lookup has a configurable abort deadline (`SUPABASE_AUTH_TIMEOUT_MS`, default 5 seconds, clamped to 100–30,000 ms), accepts only bounded Bearer tokens, requires HTTPS for remote identity-provider URLs (HTTP is allowed only for loopback development), and fails closed on timeout, network errors, non-success responses or malformed identity payloads. Unit tests use controlled fetch implementations. Verify timeout behavior through the deployed proxy/network path before release. Never log bearer tokens or provider response bodies.
 
-### M8-04 — Session lifecycle coverage is incomplete
-**Priority:** P2  
-Expired-session rejection and pruning are covered by an integration test. Session invalidation after credential changes and the intended idle/absolute lifetime policy still need review. The current implementation has a 30-day absolute expiry; there is no verified inactivity timeout or credential-change revocation policy. Document and approve these policies before changing session behavior. Relevant ASVS 5.0.0 checks include V7.1.1, V7.3.1–V7.3.2 and V7.4.1–V7.4.3.
+### M8-04 — Session lifecycle controls
+**Priority:** Implemented for local-password sessions; federated-provider lifecycle remains provider-managed  
+Local sessions now enforce a server-side sliding inactivity timeout (default 30 minutes, configurable with `SESSION_IDLE_TIMEOUT_MINUTES`, bounded to 5–1,440 minutes) and an absolute maximum lifetime (default 30 days, configurable with `SESSION_ABSOLUTE_DAYS`, bounded to 1–90 days). The browser cookie is refreshed on authenticated requests and its Max-Age is bounded by the idle and remaining absolute lifetime. Expired sessions are deleted server-side and the cookie is cleared. The `POST /api/auth/password` route requires the current password, updates the salted scrypt password hash, revokes every existing local session and issues a new session to the current device. These local-password controls do not revoke Supabase-managed sessions; federated credential changes and revocation must be configured and tested in the identity provider. Defaults are explicit starting policy values and must be reviewed against the deployment's risk classification before release. Relevant ASVS 5.0.0 checks include V7.1.1–V7.1.2, V7.3.1–V7.3.2, V7.4.1–V7.4.3 and V7.5.1–V7.5.2.
 
 ### M8-05 — Production evidence is not yet available
 **Priority:** Release blocker  
@@ -52,6 +52,9 @@ The M8 integration test exercises:
 - Same-origin credentialed API access.
 - Logout cookie expiry and server-side session revocation.
 - Expired-session rejection and removal from persisted sessions.
+- Sliding idle timeout, server-side activity tracking and cookie refresh.
+- Idle-expired session deletion and cookie clearing.
+- Local password change requiring the current password, rotating the active session and revoking other sessions.
 - Strict Bearer-token parsing for Supabase identity verification.
 - Supabase identity timeout, network-error, rejected-response, malformed-payload and remote cleartext-transport rejection.
 - Project permission revalidation before resumable-upload finalization after a collaborator's access is revoked.
@@ -72,11 +75,11 @@ Do not enable production release based solely on green CI. Before production app
 1. Explicit production cookie and exact CORS origin configuration.
 2. Distributed rate limiting appropriate to the deployment topology.
 3. Verify the bounded external identity-provider timeout under the deployed network/proxy conditions.
-4. Expired-session and credential-change lifecycle tests.
+4. Review the configured inactivity/absolute timeout policy and verify local password-change revocation; verify Supabase session lifecycle separately with the identity provider.
 5. Complete the tenant-isolation matrix for every sensitive object family, including projects, assets, uploads, jobs, timelines, comments, notifications and usage records; existing coverage is substantial but is not a complete independent verification.
 6. Backup/restore and rollback evidence for persistent storage and database changes.
 7. Human release approval after staging acceptance.
 
 ## 5. Scope and safety
 
-This milestone hardens malformed session-cookie parsing, bounded Supabase identity verification, Bearer-token parsing, remote TLS requirements, process-local rate-limit memory bounds, and exact CORS origin validation; it also adds regression tests for these controls and upload-permission revalidation. It does not change authentication providers, session lifetime, authorization roles, database schema, provider activation, or production infrastructure. All automated integration tests use the isolated local API process and temporary SQLite data.
+This milestone hardens malformed session-cookie parsing, bounded Supabase identity verification, Bearer-token parsing, remote TLS requirements, process-local rate-limit memory bounds, and exact CORS origin validation; it also adds regression tests for these controls and upload-permission revalidation. It does not change authentication providers, authorization roles, provider activation, or production infrastructure. All automated integration tests use the isolated local API process and temporary SQLite data.
