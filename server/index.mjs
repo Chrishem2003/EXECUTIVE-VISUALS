@@ -1,7 +1,7 @@
 import { createServer } from "node:http";
 import { createHash, randomBytes, randomUUID, scryptSync, timingSafeEqual } from "node:crypto";
 import { createReadStream, createWriteStream, existsSync, statSync } from "node:fs";
-import { mkdir, unlink, open, readFile, stat, rm } from "node:fs/promises";
+import { mkdir, unlink, open, readFile, stat, rm, rename } from "node:fs/promises";
 import { dirname, extname, join, resolve, basename, sep } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { Transform } from "node:stream";
