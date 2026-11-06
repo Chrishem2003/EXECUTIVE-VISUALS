@@ -46,6 +46,8 @@ test("health reports local storage and media-engine availability without secrets
   assert.equal(body.status,"ok");
   assert.equal(body.storage,"local-disk");
   assert.equal(body.database,"sqlite");
+  assert.equal(body.persistence.dataDirectory,"ephemeral");
+  assert.equal(body.persistence.requiredVolume,false);
   assert.deepEqual(body.capabilities,{cloudAssets:false,cloudProjects:false,privateSignedDownloads:false,cloudModeRequiresSupabaseAuth:false});
   assert.equal("SUPABASE_SERVICE_ROLE_KEY" in body,false);
   assert.equal(response.headers.get("x-frame-options"),"DENY");
