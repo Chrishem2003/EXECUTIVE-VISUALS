@@ -152,7 +152,162 @@ begin
      or asset_row.deleted_at is not null
      or asset_row.object_path !~ (
        '^' || coalesce(p_project_id, p_owner_id)::text || '/'
-       || p_asset_id::text || '/(attempt-[0-9a-f-]{36}|original)\.[A-Za-z0-9]+$'
+       || p_asset_id::text || '/(attempt-[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|original)[.]'
+    || expected_extension || '
+     )
+  then
+    raise exception 'existing asset does not match reserved publication identity'
+      using errcode = '23505';
+  end if;
+
+  -- Recheck wall-clock expiry after acquiring all locks and verifying the
+  -- asset. If the lease expired while this transaction ran, all writes roll back.
+  if job_row.lease_expires_at <= pg_catalog.clock_timestamp()
+     or job_row.lease_token is distinct from p_lease_token
+     or job_row.lease_owner is distinct from p_worker_id
+  then
+    raise exception 'worker lease expired before publication commit'
+      using errcode = '55000';
+  end if;
+
+  update executive_visuals.asset_publications
+  set status = 'published',
+      published_at = coalesce(published_at, pg_catalog.clock_timestamp()),
+      updated_at = pg_catalog.clock_timestamp()
+  where id = publication_row.id
+  returning * into publication_row;
+
+  return next asset_row;
+end;
+$$;
+
+revoke all on function executive_visuals.finalize_asset_publication_v1(
+  uuid,text,uuid,uuid,uuid,text,text,uuid,text,text,bigint,text,text,uuid,jsonb
+) from public, anon, authenticated;
+grant execute on function executive_visuals.finalize_asset_publication_v1(
+  uuid,text,uuid,uuid,uuid,text,text,uuid,text,text,bigint,text,text,uuid,jsonb
+) to service_role;
+
+comment on function executive_visuals.finalize_asset_publication_v1(
+  uuid,text,uuid,uuid,uuid,text,text,uuid,text,text,bigint,text,text,uuid,jsonb
+) is
+  'Atomically validates the active worker lease, inserts or verifies asset metadata, and publishes its owner-scoped idempotency ledger row.';
+
+  ) then
+    raise exception 'asset object path is outside the reserved immutable prefix'
+      using errcode = '22023';
+  end if;
+
+  -- Insert once. Concurrent finalizers serialize on the publication row and
+  -- the asset primary key; a retry must verify the existing immutable identity.
+  insert into executive_visuals.assets (
+    id, owner_id, project_id, original_name, media_type, byte_size, sha256,
+    storage_bucket, object_path, derivative_of, metadata
+  ) values (
+    p_asset_id, p_owner_id, p_project_id, p_original_name, p_media_type,
+    p_byte_size, p_payload_sha256, p_storage_bucket, p_object_path,
+    p_derivative_of, p_metadata
+  )
+  on conflict (id) do nothing;
+
+  select * into asset_row
+  from executive_visuals.assets
+  where id = p_asset_id
+  for update;
+
+  if not found
+     or asset_row.owner_id is distinct from p_owner_id
+     or asset_row.project_id is distinct from p_project_id
+     or asset_row.original_name is distinct from p_original_name
+     or asset_row.media_type is distinct from p_media_type
+     or asset_row.byte_size is distinct from p_byte_size
+     or asset_row.sha256 is distinct from p_payload_sha256
+     or asset_row.storage_bucket is distinct from p_storage_bucket
+     or asset_row.derivative_of is distinct from p_derivative_of
+     or asset_row.metadata is distinct from p_metadata
+     or asset_row.deleted_at is not null
+     or asset_row.object_path !~ (
+       '^' || coalesce(p_project_id, p_owner_id)::text || '/'
+       || p_asset_id::text || '/(attempt-[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|original)[.]'
+    || expected_extension || '
+     )
+  then
+    raise exception 'existing asset does not match reserved publication identity'
+      using errcode = '23505';
+  end if;
+
+  -- Recheck wall-clock expiry after acquiring all locks and verifying the
+  -- asset. If the lease expired while this transaction ran, all writes roll back.
+  if job_row.lease_expires_at <= pg_catalog.clock_timestamp()
+     or job_row.lease_token is distinct from p_lease_token
+     or job_row.lease_owner is distinct from p_worker_id
+  then
+    raise exception 'worker lease expired before publication commit'
+      using errcode = '55000';
+  end if;
+
+  update executive_visuals.asset_publications
+  set status = 'published',
+      published_at = coalesce(published_at, pg_catalog.clock_timestamp()),
+      updated_at = pg_catalog.clock_timestamp()
+  where id = publication_row.id
+  returning * into publication_row;
+
+  return next asset_row;
+end;
+$$;
+
+revoke all on function executive_visuals.finalize_asset_publication_v1(
+  uuid,text,uuid,uuid,uuid,text,text,uuid,text,text,bigint,text,text,uuid,jsonb
+) from public, anon, authenticated;
+grant execute on function executive_visuals.finalize_asset_publication_v1(
+  uuid,text,uuid,uuid,uuid,text,text,uuid,text,text,bigint,text,text,uuid,jsonb
+) to service_role;
+
+comment on function executive_visuals.finalize_asset_publication_v1(
+  uuid,text,uuid,uuid,uuid,text,text,uuid,text,text,bigint,text,text,uuid,jsonb
+) is
+  'Atomically validates the active worker lease, inserts or verifies asset metadata, and publishes its owner-scoped idempotency ledger row.';
+
+     )
+  then
+    raise exception 'existing asset does not match reserved publication identity'
+      using errcode = '23505';
+  end if;
+
+  -- Recheck wall-clock expiry after acquiring all locks and verifying the
+  -- asset. If the lease expired while this transaction ran, all writes roll back.
+  if job_row.lease_expires_at <= pg_catalog.clock_timestamp()
+     or job_row.lease_token is distinct from p_lease_token
+     or job_row.lease_owner is distinct from p_worker_id
+  then
+    raise exception 'worker lease expired before publication commit'
+      using errcode = '55000';
+  end if;
+
+  update executive_visuals.asset_publications
+  set status = 'published',
+      published_at = coalesce(published_at, pg_catalog.clock_timestamp()),
+      updated_at = pg_catalog.clock_timestamp()
+  where id = publication_row.id
+  returning * into publication_row;
+
+  return next asset_row;
+end;
+$$;
+
+revoke all on function executive_visuals.finalize_asset_publication_v1(
+  uuid,text,uuid,uuid,uuid,text,text,uuid,text,text,bigint,text,text,uuid,jsonb
+) from public, anon, authenticated;
+grant execute on function executive_visuals.finalize_asset_publication_v1(
+  uuid,text,uuid,uuid,uuid,text,text,uuid,text,text,bigint,text,text,uuid,jsonb
+) to service_role;
+
+comment on function executive_visuals.finalize_asset_publication_v1(
+  uuid,text,uuid,uuid,uuid,text,text,uuid,text,text,bigint,text,text,uuid,jsonb
+) is
+  'Atomically validates the active worker lease, inserts or verifies asset metadata, and publishes its owner-scoped idempotency ledger row.';
+
      )
   then
     raise exception 'existing asset does not match reserved publication identity'
