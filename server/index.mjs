@@ -20,7 +20,7 @@ import { createCloudTimelineApi } from "./cloud-timeline-api.mjs";
 import { validateSrt, validateWebVtt } from "./caption-validation.mjs";
 import { ensureTransformationPlanSchema, createTransformationPlan, approveTransformationPlan, listTransformationPlans, getTransformationPlan } from "./transformation-plans.mjs";
 import { signInWithSupabasePassword, signUpWithSupabasePassword, refreshSupabaseSession, getSupabaseUser, revokeSupabaseSession } from "./supabase-password-auth.mjs";
-import { ensureBillingSchema, touchBillingAccount, getBillingOverview, listBillingPlans, getAdminOverview, listAdminUsers, saveBillingPlan, assignManualSubscription, adjustBillingCredits, setBillingAccountStatus } from "./billing.mjs";
+import { ensureBillingSchema, touchBillingAccount, getBillingOverview, listBillingPlans, getAdminOverview, listAdminUsers, saveBillingPlan, assignManualSubscription, adjustBillingCredits, setBillingAccountStatus, listBillingModelPrices, saveBillingModelPrice } from "./billing.mjs";
 
 const PORT = Number(process.env.PORT || process.env.API_PORT || 4179);
 const HOST = process.env.API_HOST || (process.env.NODE_ENV === "production" ? "0.0.0.0" : "127.0.0.1");
@@ -358,6 +358,17 @@ export function createAppServer() {
           send(res,200,{users:listAdminUsers(db,{query,limit})},cors);return;
         }
         if(path==="/api/admin/plans"&&req.method==="GET"){send(res,200,{plans:listBillingPlans(db,{activeOnly:false})},cors);return;}
+        if(path==="/api/admin/model-prices"&&req.method==="GET"){send(res,200,{prices:listBillingModelPrices(db)},cors);return;}
+        if(path==="/api/admin/model-prices"&&req.method==="POST"){
+          const body=await readJson(req,16*1024);
+          const price=saveBillingModelPrice(db,body);
+          audit(db,user.id,"admin.model_price_saved","model_price",price.id,{provider:price.provider,model:price.model,capability:price.capability,priceMicros:price.priceMicros,currency:price.currency,verifiedAt:price.verifiedAt});
+          send(res,200,{price},cors);return;
+        }
+        if(path==="/api/admin/audit"&&req.method==="GET"){
+          const events=db.prepare("SELECT id,event_type,subject_type,subject_id,details_json,created_at FROM audit_events WHERE event_type LIKE 'admin.%' ORDER BY id DESC LIMIT 100").all();
+          send(res,200,{events:events.map(row=>({id:row.id,type:row.event_type,subjectType:row.subject_type,subjectId:row.subject_id,details:parseJson(row.details_json),createdAt:row.created_at}))},cors);return;
+        }
         if(path==="/api/admin/plans"&&req.method==="POST"){
           const body=await readJson(req,64*1024);
           const plan=saveBillingPlan(db,body);
