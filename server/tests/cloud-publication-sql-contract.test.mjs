@@ -33,7 +33,7 @@ test("asset metadata and publication ledger are finalized inside the same databa
 test("asset derivatives cannot cross owner/project boundaries or use deleted sources", async () => {
   const sql = await readFile(migrationUrl, "utf8");
   assert.match(sql, /create or replace function executive_visuals\.validate_asset_derivative_scope_v1\s*\(/i);
-  assert.match(sql, /from executive_visuals\.assets[\s\S]*?where id = new\.derivative_of[\s\S]*?for key share/i);
+  assert.match(sql, /from executive_visuals\.assets[\s\S]*?where id = new\.derivative_of[\s\S]*?for share/i);
   assert.match(sql, /parent_asset\.owner_id is distinct from new\.owner_id/i);
   assert.match(sql, /parent_asset\.project_id is distinct from new\.project_id/i);
   assert.match(sql, /parent_asset\.deleted_at is not null/i);
