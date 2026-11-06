@@ -19,11 +19,11 @@ export function createCloudReviewConversationRepository({url=process.env.SUPABAS
   const project=await projects.get({ownerId:actorId,projectId:parent.projectId});if(!project)fail("REVIEW_NOT_FOUND","Review not found.");
   if(await authorize({ownerId:actorId,projectId:parent.projectId,action:"read"})!==true)fail("REVIEW_ACCESS_DENIED","Project access denied.");
   const membership=actorId===project.ownerId?{role:"owner"}:(await request("project_members?select=role&project_id=eq."+encodeURIComponent(parent.projectId)+"&member_id=eq."+encodeURIComponent(actorId)+"&limit=1"))?.[0]||null;
-  if(!["owner","editor","reviewer"].includes(membership?.role))fail("REVIEW_ACCESS_DENIED","Project reviewer access is required to reply.");
-  return{parent,project};
+  if(!["owner","editor","reviewer","viewer"].includes(membership?.role))fail("REVIEW_ACCESS_DENIED","Project membership is required to access this thread.");
+  return{parent,project,membership};
  }
  return Object.freeze({
   async list({actorId,reviewId}={}){await context(actorId,reviewId);const rows=await request("review_replies?select=id,review_id,author_id,body,created_at,updated_at&review_id=eq."+encodeURIComponent(reviewId)+"&order=created_at.asc&limit=200");return(Array.isArray(rows)?rows:[]).map(map);},
-  async create({actorId,reviewId,body}={}){const {parent,project}=await context(actorId,reviewId);if(typeof body!=="string"||!body.trim()||body.trim().length>5000)fail("REVIEW_INVALID","Reply must contain 1 to 5,000 characters.");const row={id:randomUUID(),owner_id:project.ownerId,project_id:parent.projectId,review_id:reviewId,author_id:actorId,body:body.trim()};const rows=await request("review_replies?select=id,review_id,author_id,body,created_at,updated_at",{method:"POST",body:row});if(!Array.isArray(rows)||rows.length!==1||rows[0].id!==row.id)throw new Error("Review reply creation returned an invalid receipt.");return map(rows[0]);}
+  async create({actorId,reviewId,body}={}){const {parent,project,membership}=await context(actorId,reviewId);if(!["owner","editor","reviewer"].includes(membership?.role))fail("REVIEW_ACCESS_DENIED","Project reviewer access is required to reply.");if(typeof body!=="string"||!body.trim()||body.trim().length>5000)fail("REVIEW_INVALID","Reply must contain 1 to 5,000 characters.");const row={id:randomUUID(),owner_id:project.ownerId,project_id:parent.projectId,review_id:reviewId,author_id:actorId,body:body.trim()};const rows=await request("review_replies?select=id,review_id,author_id,body,created_at,updated_at",{method:"POST",body:row});if(!Array.isArray(rows)||rows.length!==1||rows[0].id!==row.id)throw new Error("Review reply creation returned an invalid receipt.");return map(rows[0]);}
  });
 }
