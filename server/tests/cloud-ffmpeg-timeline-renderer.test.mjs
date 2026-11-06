@@ -411,3 +411,26 @@ test("cloud FFmpeg renderer matches Web Audio stereo panning for stereo sources"
   assert.ok(Math.abs(ratio-(1/Math.sqrt(3)))<0.09,"stereo pan at +0.5 should follow the StereoPannerNode equal-power channel matrix (left/right="+ratio+")");
  }finally{await rm(root,{recursive:true,force:true});}
 });
+test("cloud FFmpeg renderer preserves linear mono pan automation like Web Audio preview", {skip:!hasFfmpeg||!hasFfprobe}, async()=>{
+ const root=await mkdtemp(join(tmpdir(),"ev-mono-pan-automation-parity-test-"));
+ try{
+  const video=join(root,"picture.mp4"),audio=join(root,"mono.wav");
+  execFileSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-loglevel","error","-y","-f","lavfi","-i","color=c=blue:s=320x240:r=24:d=2","-c:v","libx264","-pix_fmt","yuv420p",video]);
+  execFileSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-loglevel","error","-y","-f","lavfi","-i","sine=frequency=440:sample_rate=48000:duration=2","-ac","1","-c:a","pcm_s16le",audio]);
+  const timeline={name:"Mono pan automation parity",width:320,height:240,frameRate:{numerator:24,denominator:1},tracks:[
+   {id:"v",kind:"video",clips:[{id:"v1",assetId:"picture",timelineStart:time(0),duration:time(2),sourceRange:{start:time(0),duration:time(2)}}]},
+   {id:"a",kind:"audio",clips:[{id:"a1",assetId:"mono",timelineStart:time(0),duration:time(2),sourceRange:{start:time(0),duration:time(2)},gainDb:0,pan:0,audioAutomation:[{timeSeconds:0,pan:-1,interpolation:"linear"},{timeSeconds:1,pan:1,interpolation:"linear"}]}]}
+  ]};
+  const assets=new Map([
+   ["picture",{path:video,asset:{id:"picture",mediaType:"video/mp4",originalName:"picture.mp4"}}],
+   ["mono",{path:audio,asset:{id:"mono",mediaType:"audio/wav",originalName:"mono.wav",metadata:{probe:{streams:[{codec_type:"audio",channels:1}]}}}}]
+  ]);
+  const result=await renderCloudTimeline({timeline,assets,workDir:root,onProgress(){}});
+  const output=execFileSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-loglevel","error","-i",result.path,"-map","0:a:0","-f","f32le","-acodec","pcm_f32le","-ar","48000","-ac","2","pipe:1"]);
+  const samples=new Float32Array(output.buffer,output.byteOffset,output.byteLength/4);
+  const rms=(channel,start,end)=>{let sum=0,count=0;for(let frame=Math.floor(start*48000);frame<Math.min(samples.length/2,Math.floor(end*48000));frame++){const value=samples[frame*2+channel]||0;sum+=value*value;count++;}return Math.sqrt(sum/Math.max(1,count));};
+  const earlyLeft=rms(0,0.2,0.3),earlyRight=rms(1,0.2,0.3),lateLeft=rms(0,0.7,0.8),lateRight=rms(1,0.7,0.8);
+  assert.ok(Math.abs(earlyLeft/earlyRight-Math.tan(3*Math.PI/8))<0.18,"mono pan at -0.5 should favor left according to equal-power automation (ratio="+(earlyLeft/earlyRight)+")");
+  assert.ok(Math.abs(lateLeft/lateRight-Math.tan(Math.PI/8))<0.12,"mono pan at +0.5 should favor right according to equal-power automation (ratio="+(lateLeft/lateRight)+")");
+ }finally{await rm(root,{recursive:true,force:true});}
+});
