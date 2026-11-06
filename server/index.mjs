@@ -375,21 +375,21 @@ export function createAppServer() {
           audit(db,user.id,"admin.billing_plan_saved","billing_plan",plan.id,{code:plan.code,active:plan.active});
           send(res,200,{plan},cors);return;
         }
-        const subscriptionMatch=path.match(/^\\/api\\/admin\\/users\\/([a-zA-Z0-9_-]+)\\/subscription$/);
+        const subscriptionMatch=path.match(new RegExp("^/api/admin/users/([a-zA-Z0-9_-]+)/subscription$"));
         if(subscriptionMatch&&req.method==="POST"){
           const body=await readJson(req,16*1024);
           const result=assignManualSubscription(db,{userId:subscriptionMatch[1],planId:String(body.planId||""),periodDays:Number(body.periodDays||30),status:String(body.status||"active"),actorId:user.id});
           audit(db,user.id,"admin.subscription_assigned","subscription",result.id,{userId:result.userId,planId:result.planId,status:result.status});
           send(res,200,{subscription:result},cors);return;
         }
-        const creditsMatch=path.match(/^\\/api\\/admin\\/users\\/([a-zA-Z0-9_-]+)\\/credits$/);
+        const creditsMatch=path.match(new RegExp("^/api/admin/users/([a-zA-Z0-9_-]+)/credits$"));
         if(creditsMatch&&req.method==="POST"){
           const body=await readJson(req,16*1024);
           const result=adjustBillingCredits(db,{userId:creditsMatch[1],amount:Number(body.amount),description:String(body.description||""),actorId:user.id,idempotencyKey:String(req.headers["idempotency-key"]||body.idempotencyKey||"")});
           audit(db,user.id,"admin.credits_adjusted","user",creditsMatch[1],{amount:result.amount,ledgerId:result.id,replayed:result.replayed});
           send(res,200,{adjustment:result},cors);return;
         }
-        const statusMatch=path.match(/^\\/api\\/admin\\/users\\/([a-zA-Z0-9_-]+)\\/status$/);
+        const statusMatch=path.match(new RegExp("^/api/admin/users/([a-zA-Z0-9_-]+)/status$"));
         if(statusMatch&&req.method==="POST"){
           const body=await readJson(req,8*1024);
           const result=setBillingAccountStatus(db,{userId:statusMatch[1],status:String(body.status||"")});
