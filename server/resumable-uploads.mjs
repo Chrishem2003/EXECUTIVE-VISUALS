@@ -88,8 +88,8 @@ export async function appendUploadChunk({
   if (offset !== row.received_size) throw error(409, "UPLOAD_OFFSET_MISMATCH", "Chunk offset does not match the server's committed offset.",);
   if (offset + expectedChunkSize > row.total_size) throw error(413, "UPLOAD_EXCEEDS_DECLARED_SIZE", "Chunk would exceed the declared upload size.");
 
-  const reservation = db.prepare("UPDATE upload_sessions SET status='writing',updated_at=? WHERE id=? AND owner_id=? AND status='open' AND received_size=?")
-    .run(new Date().toISOString(), id, ownerId, offset);
+  const reservation = db.prepare("UPDATE upload_sessions SET status='writing',expires_at=?,updated_at=? WHERE id=? AND owner_id=? AND status='open' AND received_size=?")
+    .run(isoAfter(SESSION_TTL_MS), new Date().toISOString(), id, ownerId, offset);
   if (reservation.changes !== 1) throw error(409, "UPLOAD_BUSY", "Another chunk is being written. Retry using the latest offset.");
 
   let handle;
