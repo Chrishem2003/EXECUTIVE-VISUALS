@@ -1,6 +1,6 @@
 export function extractBearerToken(header) {
   if (typeof header !== "string") return "";
-  const match = /^Bearer\\s+([^\\s]+)$/i.exec(header.trim());
+  const match = /^Bearer\s+([^\s]+)$/i.exec(header.trim());
   if (!match || match[1].length > 16384) return "";
   return match[1];
 }
