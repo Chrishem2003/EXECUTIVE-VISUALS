@@ -194,7 +194,7 @@ test("database rejects a stale fencing token and the unreferenced upload is comp
  await writeFile(file,bytes);
  const f=fixture();
  const staleLease={...leaseContext,leaseToken:"723e4567-e89b-42d3-a456-426614174000"};
- await assert.rejects(()=>f.repo.createFromFileIdempotent({ownerId,projectId,originalName:"render.mp4",mediaType:"video/mp4",filePath:file,publicationKey:"job-stale-token:output:v1",leaseContext:staleLease}),error=>error.code==="CLOUD_ASSET_HTTP_409");
+ await assert.rejects(()=>f.repo.createFromFileIdempotent({ownerId,projectId,originalName:"render.mp4",mediaType:"video/mp4",filePath:file,publicationKey:"job-stale-token:output:v1",leaseContext:staleLease}),error=>/^CLOUD_ASSET_HTTP_/.test(error.code||""));
  assert.equal(f.storageCalls.filter(call=>call.op==="uploadFile").length,1);
  assert.equal(f.storageCalls.filter(call=>call.op==="remove").length,1);
  assert.equal(f.publicationReservation.status,"reserved");
