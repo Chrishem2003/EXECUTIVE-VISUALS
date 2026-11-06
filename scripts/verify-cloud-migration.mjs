@@ -74,7 +74,7 @@ if (!reviewSql.includes("reviews.visibility='project' or m.role in ('editor','re
 if (!reviewSql.includes("create trigger ev_reviews_record_event")) issues.push("Review create/edit/resolve actions must produce durable event records.");
 if (!reviewSql.includes("create trigger ev_reviews_touch_updated_at")) issues.push("Review edits must update durable timestamps.");
 if (/\b(drop\s+table|truncate|delete\s+from)\b/i.test(reviewSql)) issues.push("Review migration must not contain destructive DDL/DML.");
-if (!reviewSql.includes("language plpgsql") || !reviewSql.includes("as $$") || !reviewSql.includes("end;\\n$$;")) issues.push("Review migration trigger functions must use valid PL/pgSQL dollar quoting.");
+if (!reviewSql.includes("language plpgsql") || !reviewSql.includes("as $$") || !reviewSql.includes("end;\n$$;")) issues.push("Review migration trigger functions must use valid PL/pgSQL dollar quoting.");
 
 
 
