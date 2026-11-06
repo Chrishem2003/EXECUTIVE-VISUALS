@@ -67,10 +67,11 @@ export async function runOptionalSignalCheck(check,{isCancelled=()=>false}={}) {
  * Derive non-silence activity windows from FFmpeg silence intervals.
  * This is an amplitude heuristic, not speech recognition or voice-activity classification.
  */
-export function buildNonSilenceActivityIntervals({silence=[],durationSeconds=0,minActivitySeconds=0.15,padSeconds=0.08}={}){
+export function buildNonSilenceActivityIntervals({silence=[],durationSeconds=0,minActivitySeconds=0.15,padSeconds=0.08,maxIntervals=128}={}){
  if(!Number.isFinite(durationSeconds)||durationSeconds<=0)throw new Error("Audio duration must be a positive finite value.");
  if(!Number.isFinite(minActivitySeconds)||minActivitySeconds<0||minActivitySeconds>10)throw new Error("Minimum activity duration is outside the supported range.");
  if(!Number.isFinite(padSeconds)||padSeconds<0||padSeconds>2)throw new Error("Activity padding is outside the supported range.");
+ if(!Number.isInteger(maxIntervals)||maxIntervals<1||maxIntervals>1024)throw new Error("Activity interval limit is outside the supported range.");
  const normalized=silence.map(event=>{
   if(!event||!Number.isFinite(event.startSeconds)||!Number.isFinite(event.endSeconds)||event.endSeconds<event.startSeconds)throw new Error("Silence intervals must contain finite ordered timestamps.");
   return {start:Math.max(0,Math.min(durationSeconds,event.startSeconds)),end:Math.max(0,Math.min(durationSeconds,event.endSeconds))};
@@ -88,5 +89,5 @@ export function buildNonSilenceActivityIntervals({silence=[],durationSeconds=0,m
    if(last&&event.startSeconds<=last.endSeconds){last.endSeconds=Math.max(last.endSeconds,event.endSeconds);last.durationSeconds=Number((last.endSeconds-last.startSeconds).toFixed(4));}
    else result.push(event);
    return result;
-  },[]);
+  },[]).slice(0,maxIntervals);
 }
