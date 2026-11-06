@@ -5,7 +5,7 @@ const config={supabaseUrl:"https://example.supabase.co",publishableKey:"sb_publi
 function mockFetch(payload,status=200){return async (url,options)=>({ok:status>=200&&status<300,status,text:async()=>JSON.stringify(payload),url:String(url),options});}
 const session={access_token:"access-token",refresh_token:"refresh-token",expires_in:3600,user:{id:"user-1",email:"test@example.com"}};
 test("signs in with a password and returns only the validated session fields",async()=>{
- const result=await signInWithSupabasePassword({...config,email:"Test@example.com",password:"secret" ,fetchImpl:mockFetch(session)});
+ const result=await signInWithSupabasePassword({...config,email:"Test@example.com",password:"secret",fetchImpl:mockFetch(session)});
  assert.equal(result.user.id,"user-1");assert.equal(result.accessToken,"access-token");assert.equal(result.refreshToken,"refresh-token");
 });
 test("rejects malformed local input before contacting the identity provider",async()=>{
