@@ -12,6 +12,10 @@ test("atomic publication migration serializes against the active job lease", asy
   assert.match(sql, /job_row\.lease_owner is distinct from p_worker_id/i);
   assert.match(sql, /job_row\.lease_token is distinct from p_lease_token/i);
   assert.match(sql, /job_row\.lease_expires_at <= pg_catalog\.clock_timestamp\(\)/i);
+  assert.match(sql, /job_row.owner_id is distinct from p_owner_id/i);
+  assert.match(sql, /job_row.project_id is distinct from p_project_id/i);
+  assert.match(sql, /expected_extension := case p_media_type/i);
+  assert.match(sql, /attempt-\\[0-9a-f\\].*\\|original\\)\\[\\.\\]/i);
 });
 
 test("asset metadata and publication ledger are finalized inside the same database function", async () => {
@@ -21,6 +25,9 @@ test("asset metadata and publication ledger are finalized inside the same databa
   assert.match(sql, /on conflict \(id\) do nothing/i);
   assert.match(sql, /update executive_visuals\.asset_publications[\s\S]*?set status = 'published'/i);
   assert.match(sql, /return next asset_row/i);
+  assert.match(sql, /asset_row.original_name is distinct from p_original_name/i);
+  assert.match(sql, /asset_row.metadata is distinct from p_metadata/i);
+  assert.match(sql, /asset_row.object_path !~/i);
 });
 
 test("atomic publication RPC is callable only by service_role", async () => {
