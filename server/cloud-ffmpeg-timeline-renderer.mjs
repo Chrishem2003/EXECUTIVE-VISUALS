@@ -33,16 +33,24 @@ const gainExpression=(points,baseDb)=>{
  }
  return expression;
 };
-const panExpressions=(points,basePan)=>{
+const panExpressions=(points,basePan,channels)=>{
  const list=points.filter(point=>point.pan!==undefined),pan=value=>Math.max(-1,Math.min(1,Number.isFinite(value)?value:0));
- if(!list.length)return pan(basePan)===0?null:{left:"if(gt("+n(pan(basePan))+",0),1-"+n(pan(basePan))+",1)",right:"if(lt("+n(pan(basePan))+",0),1+"+n(pan(basePan))+",1)"};
- let expression=n(pan(list[list.length-1].pan));
+ let expression=n(pan(basePan));
  for(let i=list.length-1;i>=0;i--){
   const point=list[i],from=i?list[i-1].timeSeconds:0,to=point.timeSeconds,fromPan=i?pan(list[i-1].pan):pan(basePan),toPan=pan(point.pan);
   const segment=point.interpolation==="step"||to<=from?n(fromPan):"("+n(fromPan)+"+("+n(toPan)+"-"+n(fromPan)+")*((t-"+n(from)+")/("+n(to)+"-"+n(from)+")))";
   expression="if(lt(t,"+n(to)+"),"+segment+","+expression+")";
  }
- return{left:"if(gt(("+expression+"),0),1-("+expression+"),1)",right:"if(lt(("+expression+"),0),1+("+expression+"),1)"};
+ const p="("+expression+")",halfPi=n(Math.PI/2);
+ if(channels===1){
+  const angle="((("+p+")+1)/2)*"+halfPi;
+  return{left:"val(0)*cos("+angle+")",right:"val(0)*sin("+angle+")"};
+ }
+ const x="if(lte("+p+",0),("+p+")+1,"+p+")",angle="("+x+")*"+halfPi;
+ return{
+  left:"if(lte("+p+",0),val(0)+val(1)*cos("+angle+"),val(0)*cos("+angle+"))",
+  right:"if(lte("+p+",0),val(1)*sin("+angle+"),val(1)+val(0)*sin("+angle+"))"
+ };
 };
 
 /**
@@ -73,6 +81,17 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
   const asset=entry.asset;
   return{path:entry.path,id:asset.id,mediaType:asset.mediaType||asset.media_type,originalName:asset.originalName||asset.original_name||asset.name||"",size:asset.size,sha256:asset.sha256};
  };
+ const audioChannelCache=new Map();
+ const getAudioChannels=async(path)=>{
+  if(audioChannelCache.has(path))return audioChannelCache.get(path);
+  const result=await run("ffprobe",["-v","error","-select_streams","a:0","-show_entries","stream=channels","-of","json",path],60000,jobId,activeProcesses,()=>Boolean(signal?.aborted));
+  let metadata;
+  try{metadata=JSON.parse(result.stdout||"{}");}catch{fail("Audio channel metadata could not be read.","AUDIO_CHANNEL_METADATA_INVALID");}
+  const channels=Number(metadata.streams?.[0]?.channels);
+  if(!Number.isSafeInteger(channels)||channels<1)fail("Audio source has no supported audio channel layout.","AUDIO_CHANNEL_LAYOUT_UNSUPPORTED");
+  audioChannelCache.set(path,channels);
+  return channels;
+ };
  try{
   for(const clip of clips){
    if(signal?.aborted)fail("Timeline render was cancelled.","JOB_CANCELLED");
@@ -100,8 +119,9 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
    if(Math.abs(Number(clip.speed??1)-1)>0.000001)fail("Audio speed changes require the time-remapping renderer milestone.","UNSUPPORTED_TIME_REMAP");
    const asset=getAsset(clip.assetId);if(!String(asset.mediaType||"").startsWith("audio/"))fail("Audio tracks require audio source assets.","UNSUPPORTED_AUDIO_SOURCE");
    args.push("-ss",seconds(clip.sourceRange?.start).toFixed(6),"-t",duration.toFixed(6),"-i",asset.path);
-   const delay=Math.round(start*1000),label="a"+audioIndex++,points=audioPoints(clip,duration),baseGainDb=Math.max(-60,Math.min(24,Number(clip.gainDb)||0)),basePan=Math.max(-1,Math.min(1,Number(clip.pan)||0)),gain=gainExpression(points,baseGainDb),pan=panExpressions(points,basePan);
-   const panFilter=pan?",aformat=channel_layouts=stereo,aeval=exprs='val(0)*("+pan.left+")|val(1)*("+pan.right+")':channel_layout=stereo":"";
+   const delay=Math.round(start*1000),label="a"+audioIndex++,points=audioPoints(clip,duration),baseGainDb=Math.max(-60,Math.min(24,Number(clip.gainDb)||0)),basePan=Math.max(-1,Math.min(1,Number(clip.pan)||0)),gain=gainExpression(points,baseGainDb),channels=await getAudioChannels(asset.path),pan=panExpressions(points,basePan,channels);
+   const panInput=channels>2?"aformat=channel_layouts=stereo,":"";
+   const panFilter=","+panInput+"aeval=exprs='"+pan.left+"|"+pan.right+"':channel_layout=stereo";
    audioFilters.push(`[${inputIndex}:a]atrim=duration=${duration.toFixed(6)},asetpts=PTS-STARTPTS,volume='${gain}':eval=frame${panFilter},adelay=${delay}|${delay},apad=whole_dur=${cursor.toFixed(6)},atrim=duration=${cursor.toFixed(6)},aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo[${label}]`);
    inputIndex++;
   }
