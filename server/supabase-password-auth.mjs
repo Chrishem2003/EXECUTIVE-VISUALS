@@ -5,14 +5,14 @@ function endpoint(base,path){
  if(url.username||url.password||url.search||url.hash)throw fail("Supabase URL must not contain credentials or query parameters.","SUPABASE_AUTH_CONFIG_INVALID",500);
  return new URL(path,url.origin);
 }
-async function request({supabaseUrl,publishableKey,path,method="GET",body,accessToken=""}){
+async function request({supabaseUrl,publishableKey,path,method="GET",body,accessToken="",fetchImpl=fetch}){
  const key=String(publishableKey||"").trim();
  if(!key)throw fail("Supabase publishable key is not configured.","SUPABASE_AUTH_CONFIG_INVALID",500);
  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),15000);
  try{
   let response;
   try{
-   response=await fetch(endpoint(supabaseUrl,path),{
+   response=await fetchImpl(endpoint(supabaseUrl,path),{
     method,redirect:"error",signal:controller.signal,
     headers:{"apikey":key,"authorization":"Bearer "+(accessToken||key),"content-type":"application/json"},
     ...(body===undefined?{}:{body:JSON.stringify(body)})
