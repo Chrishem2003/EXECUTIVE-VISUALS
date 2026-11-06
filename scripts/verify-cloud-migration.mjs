@@ -66,9 +66,15 @@ if (!fencingSql.includes("add column if not exists lease_token uuid")) issues.pu
 if (!fencingSql.includes("lease_token=gen_random_uuid()")) issues.push("Every claim must generate a fresh database-side fencing token.");
 if (!fencingSql.includes("lease_token=p_lease_token")) issues.push("Lease renewal and completion must match the current fencing token.");
 if (!fencingSql.includes("lease_token=null") || !fencingSql.includes("lease_token=null,lease_expires_at=null")) issues.push("Recovery and completion must clear the prior fencing token.");
-for (const fn of ["claim_next_job_v2","renew_job_lease_v2","finish_job_v2","assert_job_lease_v2"]) {
+const fencedGrants = {
+  claim_next_job_v2: "grant execute on function executive_visuals.claim_next_job_v2(text,integer,text[]) to service_role",
+  renew_job_lease_v2: "grant execute on function executive_visuals.renew_job_lease_v2(uuid,text,uuid,integer) to service_role",
+  finish_job_v2: "grant execute on function executive_visuals.finish_job_v2(uuid,text,uuid,text,jsonb,jsonb) to service_role",
+  assert_job_lease_v2: "grant execute on function executive_visuals.assert_job_lease_v2(uuid,text,uuid) to service_role"
+};
+for (const [fn,grant] of Object.entries(fencedGrants)) {
   if (!fencingSql.includes("create or replace function executive_visuals."+fn+"(")) issues.push("Fenced queue RPC is missing: "+fn+".");
-  if (!fencingSql.includes("to service_role")) issues.push("Fenced queue RPC permissions must be restricted to service_role.");
+  if (!fencingSql.includes(grant)) issues.push("Fenced queue RPC permissions must be restricted to service_role: "+fn+".");
 }
 if (!fencingSql.includes("revoke all on function executive_visuals.claim_next_job(text,integer,text[]) from public,anon,authenticated,service_role;")
  || !fencingSql.includes("revoke all on function executive_visuals.renew_job_lease(uuid,text,integer) from public,anon,authenticated,service_role;")
