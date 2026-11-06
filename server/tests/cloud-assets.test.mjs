@@ -136,7 +136,9 @@ test("persists failed upload compensation in the durable cleanup outbox",async()
  const queued=f.calls.find(call=>call.url.includes("/asset_storage_cleanup"));
  assert.ok(queued);
  assert.equal(queued.options.method,"POST");
- assert.equal(JSON.parse(queued.options.body).object_path,projectId+"/"+assetId+"/original.mp4");
+ const queuedPath=JSON.parse(queued.options.body).object_path;
+ assert.equal(queuedPath,f.storageCalls.find(call=>call.op==="upload").path);
+ assert.match(queuedPath,new RegExp("^"+ownerId+"/[0-9a-f-]{36}/original\\.mp4$","i"));
 });
 
 test("reconciles pending storage cleanup and marks the exact object complete",async()=>{
