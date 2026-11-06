@@ -27,7 +27,18 @@ test("closes trailing silence against the known media duration",()=>{
 
 test("parses audio clipping, peak, RMS and integrated loudness",()=>{
  const metrics=parseAudioMetrics("Peak level dB: -0.4\nRMS level dB: -18.2\nNumber of samples clipped: 12\n I: -16.7 LUFS");
- assert.deepEqual(metrics,{clippedSamples:12,peakDbfs:-0.4,rmsDbfs:-18.2,integratedLufs:-16.7});
+ assert.deepEqual(metrics,{clippedSamples:12,peakDbfs:-0.4,truePeakDbfs:null,rmsDbfs:-18.2,integratedLufs:-16.7});
+});
+test("parses FFmpeg EBU R128 true-peak summary separately from sample peak",()=>{
+ const metrics=parseAudioMetrics("Peak level dB: -1.2\nRMS level dB: -18.2\n I: -16.7 LUFS\n\n True peak:\n Peak: -0.4 dBFS");
+ assert.equal(metrics.peakDbfs,-1.2);
+ assert.equal(metrics.truePeakDbfs,-0.4);
+ const silence=parseAudioMetrics("True peak:\n Peak: -inf dBFS");
+ assert.equal(silence.truePeakDbfs,null);
+});
+test("flags true-peak headroom independently from sample-peak headroom",()=>{
+ const findings=buildAudioMetricFindings({peakDbfs:-2.5,truePeakDbfs:-0.4});
+ assert.deepEqual(findings.map(item=>item.code),["AUDIO_TRUE_PEAK_NEAR_FULL_SCALE"]);
 });
 test("flags clipped samples and near-full-scale peaks without imposing a loudness target",()=>{
  const findings=buildAudioMetricFindings({clippedSamples:4,peakDbfs:-0.5,rmsDbfs:-18,integratedLufs:-16});
