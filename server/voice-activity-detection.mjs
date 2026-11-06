@@ -50,11 +50,11 @@ export async function analyzeVoiceActivityFile({filePath,durationSeconds,thresho
  const open=typeof openFile==="function"?openFile:(await import("decibri")).File.open;
  if(typeof open!=="function")throw new TypeError("The configured audio runtime does not expose File.open().");
  const file=await open(filePath,{sampleRate:16000,channels:1,vad:{model:"silero",threshold,holdoffMs}});
- if(!file||typeof file.analyze!=="function")throw new TypeError("The audio runtime does not expose File.analyze().");
  try{
+  if(!file||typeof file.analyze!=="function")throw new TypeError("The audio runtime does not expose File.analyze().");
   const report=await file.analyze();
   return normalizeVoiceActivityReport(report,{durationSeconds,threshold,holdoffMs});
  }finally{
-  if(typeof file.close==="function")file.close();
+  if(typeof file?.close==="function")await file.close();
  }
 }
