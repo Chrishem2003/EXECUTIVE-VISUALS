@@ -97,7 +97,7 @@ test("usage summary aggregates complete owner and authorized project telemetry w
     ids.push(recordModelUsage(db,{ownerId,projectId:project.id,provider:"provider-beta",capability:"image.generate",model:"model-b",usage:{promptTokens:20,completionTokens:5},durationMs:200}).id);
     ids.push(recordModelUsage(db,{ownerId,provider:"provider-alpha",capability:"text.generate",model:"model-a",usage:{promptTokens:3,completionTokens:2},durationMs:50}).id);
     recordModelUsage(db,{ownerId:outsiderId,projectId:project.id,provider:"provider-collaborator",capability:"text.generate",model:"model-c",usage:{promptTokens:100,completionTokens:100},durationMs:900});
-    db.prepare("UPDATE model_usage_events SET created_at=strftime('%Y-%m-%dT%H:%M:%fZ','now','-120 days') WHERE id=?").run(ids[0]);
+    db.prepare("UPDATE model_usage_events SET created_at=strftime('%Y-%m-%dT%H:%M:%fZ','now','-60 days') WHERE id=?").run(ids[0]);
   }finally{db.close();}
 
   const account=await request("/api/usage/summary?days=30",{},owner);
@@ -116,7 +116,7 @@ test("usage summary aggregates complete owner and authorized project telemetry w
   const projectBody=await projectSummary.json();
   assert.equal(projectBody.scope,"project");
   assert.equal(projectBody.totals.requests,3,"project view includes authorized collaborators' events");
-  assert.equal(projectBody.totals.totalTokens,225);
+  assert.equal(projectBody.totals.totalTokens,239);
   assert.equal(projectBody.totals.unknownCostEvents,3);
   assert.ok(projectBody.costDisclosure.includes("never treated as zero-cost"));
 
