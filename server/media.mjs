@@ -335,7 +335,7 @@ async function renderTimelineJob({db,job,mediaRoot,activeProcesses,onProgress}){
   return {outputAsset,render:{timelineId:record.id,width,height,frameRate:{numerator:fpsNum,denominator:fpsDen},videoClips:clips.length,audioClips:audioClips.length,overlayClips:overlayClips.length,captionClips:captionClips.length,durationSeconds:cursor}};
 }
 
-export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = new Map(), onProgress = () => {} }) {
+export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = new Map(), onProgress = () => {}, onStage = () => {} }) {
   if (!ALLOWED_JOBS.has(job.job_type)) throw Object.assign(new Error("No execution adapter is registered for this job type."), { code:"ENGINE_UNAVAILABLE" });
   if(job.job_type==="timeline.render"){
     if(!executableAvailable("ffmpeg"))throw Object.assign(new Error("FFmpeg is not installed on this worker."),{code:"MEDIA_ENGINE_MISSING"});
@@ -345,8 +345,10 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
   if (!executableAvailable("ffmpeg") && job.job_type !== "media.probe" && job.job_type !== "media.ai-upscale") throw Object.assign(new Error("FFmpeg is not installed on this worker."), { code:"MEDIA_ENGINE_MISSING" });
   if (!executableAvailable("ffprobe") && job.job_type !== "media.ai-upscale") throw Object.assign(new Error("FFprobe is not installed on this worker."), { code:"MEDIA_ENGINE_MISSING" });
   const input = parseJson(job.input_json);
+  onStage({id:"source-validation",label:"Validate source asset",status:"running",attributes:{nodeKind:"asset"}});
   const source = getAccessibleAsset(db, job.owner_id, input.sourceAssetId, true);
   if (!source) throw Object.assign(new Error("Source asset does not exist or is not accessible."), { code:"SOURCE_ASSET_NOT_FOUND" });
+  onStage({id:"source-validation",label:"Validate source asset",status:"succeeded",attributes:{nodeKind:"asset"}});
   const sourcePath = join(mediaRoot, source.storage_path);
   const id = randomUUID();
   const outputDir = join(mediaRoot, "derived");
@@ -364,6 +366,7 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
     poll.unref?.();
     try {
       const adapter = createRealEsrganAdapter({ timeoutMs:30*60*1000, maxOutputBytes:250*1024*1024 });
+      onStage({id:"ai-upscale",label:"Run AI super-resolution",status:"running",attributes:{nodeKind:"ai-inference"}});
       const result = await adapter.execute({
         inputPath:sourcePath, outputPath, model:input.model||"realesrgan-x4plus",
         scale:input.scale??4, tile:input.tile??0, format, signal:controller.signal
@@ -376,6 +379,7 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
       const baseName = source.original_name.split(".").slice(0,-1).join(".") || source.original_name;
       const processing = {engine:result.engine,method:result.method,model:result.model,scale:result.scale,tile:result.tile};
       const outputAsset = addAsset(db,job,"derived/"+id+"."+format,baseName+"-ai-upscaled."+format,mime,fileStat.size,hash.digest("hex"),source.id,{operation:job.job_type,processing});
+      onStage({id:"ai-upscale",label:"Run AI super-resolution",status:"succeeded",attributes:{nodeKind:"ai-inference"}});
       emit("media.output_created",{assetId:outputAsset.id,sha256:outputAsset.sha256});
       onProgress(100);
       return {outputAsset,processing};
@@ -383,7 +387,10 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
   }
 
   if (job.job_type === "media.probe") {
+    onStage({id:"source-probe",label:"Inspect source media",status:"running",attributes:{nodeKind:"probe"}});
     const result = await run("ffprobe", ["-v","error","-show_format","-show_streams","-of","json",sourcePath],30*60*1000,job.id,activeProcesses,cancelled);
+    onStage({id:"source-probe",label:"Inspect source media",status:"succeeded",attributes:{nodeKind:"probe"}});
+    onStage({id:"signal-analysis",label:"Analyze media signals",status:"running",attributes:{nodeKind:"analysis"}});
     const metadata = JSON.parse(result.stdout || "{}");
     const streams=Array.isArray(metadata.streams)?metadata.streams:[];
     const signalAnalysis={schemaVersion:2,method:"ffmpeg-signal-analysis-with-optional-silero-vad",blackFrames:[],silence:[],freezes:[],sceneChanges:[],audioMetrics:null,voiceActivity:null,performed:[],unavailable:[],limitations:["Black-frame and silence detection are heuristic signal checks. They cannot determine whether an intentional pause, fade, or black transition is creatively correct.","Audio clipping and loudness metrics depend on installed FFmpeg filters and are not a substitute for mastering or perceptual review.","Neural voice activity detection estimates speech presence; it does not transcribe words, identify speakers, infer emotion or certify dialogue quality."]};
@@ -414,6 +421,7 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
       else signalAnalysis.unavailable.push({check:"voice-activity-detection",reason:vadCheck.reason});
     }
     metadata.signalAnalysis=signalAnalysis;
+    onStage({id:"signal-analysis",label:"Analyze media signals",status:"succeeded",attributes:{nodeKind:"analysis"}});
     return { metadata, outputAsset:null };
   }
 
@@ -459,21 +467,26 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
   }
   const outputPath = join(outputDir,id+"."+ext);
   onProgress(35);
+  onStage({id:"media-encode",label:"Process media",status:"running",attributes:{nodeKind:"media-encode"}});
   await run("ffmpeg", args,30*60*1000,job.id,activeProcesses,cancelled);
+  onStage({id:"media-encode",label:"Process media",status:"succeeded",attributes:{nodeKind:"media-encode"}});
   onProgress(85);
   if (cancelled()) { await unlink(outputPath).catch(()=>{}); throw Object.assign(new Error("Job cancelled."), { code:"JOB_CANCELLED" }); }
   
+  onStage({id:"output-validation",label:"Validate generated output",status:"running",attributes:{nodeKind:"validation"}});
   const probeResult=await run("ffprobe",["-v","error","-show_format","-show_streams","-of","json",outputPath],60000,job.id,activeProcesses,cancelled);
   let outputMetadata;
   try { outputMetadata=JSON.parse(probeResult.stdout||"{}"); }
   catch { throw Object.assign(new Error("Media output metadata could not be parsed."),{code:"MEDIA_OUTPUT_VALIDATION_FAILED"}); }
   const validation=validateMediaOutputProbe(outputMetadata,mime);
+  onStage({id:"output-validation",label:"Validate generated output",status:"succeeded",attributes:{nodeKind:"validation"}});
   const fileStat = await stat(outputPath);
   if(fileStat.size<=0)throw Object.assign(new Error("Media output is empty."),{code:"MEDIA_OUTPUT_VALIDATION_FAILED"});
   const hash = createHash("sha256");
   await pipeline(createReadStream(outputPath), new Transform({ transform(chunk, enc, cb) { hash.update(chunk); cb(null, chunk); } }), new Transform({ transform(chunk, enc, cb) { cb(); } }));
   const provenance=buildMediaProcessingProvenance({jobType:job.job_type,input,sourceAsset:source});
   const outputAsset = addAsset(db, job, "derived/"+id+"."+ext, outputName, mime, fileStat.size, hash.digest("hex"), source.id, { operation:job.job_type, ...(provenance?{processing:provenance}:{}) });
+  onStage({id:"output-persist",label:"Save output asset",status:"succeeded",attributes:{nodeKind:"asset"}});
   emit("media.output_created", { assetId:outputAsset.id, sha256:outputAsset.sha256 });
   return { outputAsset, validation };
 }
