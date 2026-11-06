@@ -19,6 +19,7 @@ import { ensureRemoteUsageTable, getRemoteUsagePolicy } from "./usage-guardrails
 import { createCloudTimelineApi } from "./cloud-timeline-api.mjs";
 import { validateSrt, validateWebVtt } from "./caption-validation.mjs";
 import { ensureTransformationPlanSchema, createTransformationPlan, approveTransformationPlan, listTransformationPlans, getTransformationPlan } from "./transformation-plans.mjs";
+import { signInWithSupabasePassword, signUpWithSupabasePassword, refreshSupabaseSession, getSupabaseUser, revokeSupabaseSession } from "./supabase-password-auth.mjs";
 
 const PORT = Number(process.env.API_PORT || process.env.PORT || 4179);
 const HOST = process.env.API_HOST || "127.0.0.1";
@@ -98,26 +99,43 @@ function createLocalSession(userId) {
     .run(hash(token),userId,new Date(Date.now()+SESSION_DAYS*86400000).toISOString());
   return token;
 }
-async function authenticate(req) {
-  if (AUTH_MODE === "supabase") {
-    const token=(req.headers.authorization||"").replace(/^Bearer\s+/i,"");
-    if(!token||!process.env.SUPABASE_URL||!process.env.SUPABASE_PUBLISHABLE_KEY)return null;
-    const response=await fetch(process.env.SUPABASE_URL.replace(/\/$/,"")+"/auth/v1/user",{
-      headers:{apikey:process.env.SUPABASE_PUBLISHABLE_KEY,authorization:"Bearer "+token}
-    });
-    if(!response.ok)return null;
-    const user=await response.json();
-    if(!user?.id)return null;
-    db.prepare("INSERT INTO users(id,email,auth_source) VALUES(?,?, 'supabase') ON CONFLICT(id) DO UPDATE SET email=excluded.email")
-      .run(user.id,user.email||user.id+"@supabase.invalid");
-    return {id:user.id,email:user.email||""};
+function setSupabaseSessionCookies(res,session){
+ const secure=process.env.NODE_ENV==="production"||process.env.COOKIE_SECURE==="true"?"; Secure":"";
+ res.setHeader("set-cookie",[
+  "ev_supabase_access="+encodeURIComponent(session.accessToken)+"; HttpOnly; SameSite=Strict; Path=/; Max-Age="+Math.max(60,session.expiresIn||3600)+secure,
+  "ev_supabase_refresh="+encodeURIComponent(session.refreshToken)+"; HttpOnly; SameSite=Strict; Path=/; Max-Age=2592000"+secure
+ ]);
+}
+function clearSupabaseSessionCookies(res){
+ const secure=process.env.NODE_ENV==="production"||process.env.COOKIE_SECURE==="true"?"; Secure":"";
+ res.setHeader("set-cookie",[
+  "ev_supabase_access=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0"+secure,
+  "ev_supabase_refresh=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0"+secure
+ ]);
+}
+async function authenticate(req,res) {
+ if (AUTH_MODE === "supabase") {
+  const config={supabaseUrl:process.env.SUPABASE_URL,publishableKey:process.env.SUPABASE_PUBLISHABLE_KEY};
+  let token=(req.headers.authorization||"").replace(/^Bearer\\s+/i,"")||cookieValue(req,"ev_supabase_access");
+  let user=token?await getSupabaseUser({...config,accessToken:token}):null;
+  if(!user){
+   const refreshToken=cookieValue(req,"ev_supabase_refresh");
+   if(refreshToken){
+    const session=await refreshSupabaseSession({...config,refreshToken});
+    if(session){setSupabaseSessionCookies(res,session);token=session.accessToken;user=session.user;}
+    else clearSupabaseSessionCookies(res);
+   }
   }
-  const token=cookieValue(req,"ev_session");
-  if(!token)return null;
-  const row=db.prepare("SELECT u.id,u.email,s.expires_at FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=?").get(hash(token));
-  if(!row)return null;
-  if(Date.parse(row.expires_at)<=Date.now()){db.prepare("DELETE FROM sessions WHERE token_hash=?").run(hash(token));return null;}
-  return {id:row.id,email:row.email};
+  if(!user)return null;
+  db.prepare("INSERT INTO users(id,email,auth_source) VALUES(?,?, 'supabase') ON CONFLICT(id) DO UPDATE SET email=excluded.email").run(user.id,user.email||user.id+"@supabase.invalid");
+  return {id:user.id,email:user.email||""};
+ }
+ const token=cookieValue(req,"ev_session");
+ if(!token)return null;
+ const row=db.prepare("SELECT u.id,u.email,s.expires_at FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=?").get(hash(token));
+ if(!row)return null;
+ if(Date.parse(row.expires_at)<=Date.now()){db.prepare("DELETE FROM sessions WHERE token_hash=?").run(hash(token));return null;}
+ return {id:row.id,email:row.email};
 }
 function originHeaders(req) {
   const origin=req.headers.origin;
@@ -278,9 +296,14 @@ export function createAppServer() {
         send(res,200,{status:"ok",storage:"local-disk",database:"sqlite",media:{ffmpeg:executableAvailable("ffmpeg"),ffprobe:executableAvailable("ffprobe")},imageGateway:{enabled:process.env.IMAGE_GATEWAY_ENABLED==="true",configured:(()=>{try{const url=new URL(process.env.IMAGE_GATEWAY_URL||"");const local=["localhost","127.0.0.1","::1","[::1]"].includes(url.hostname.toLowerCase());return Boolean(process.env.IMAGE_GATEWAY_MODEL&&(local||process.env.IMAGE_GATEWAY_ALLOW_REMOTE==="true"));}catch{return false;}})()},textGateway:{enabled:process.env.AI_GATEWAY_ENABLED==="true",configured:(()=>{try{const url=new URL(process.env.AI_GATEWAY_URL||"");const local=["localhost","127.0.0.1","::1"].includes(url.hostname.toLowerCase());return Boolean(process.env.AI_GATEWAY_MODEL&&(local||process.env.AI_GATEWAY_ALLOW_REMOTE==="true"));}catch{return false;}})()},authMode:AUTH_MODE,version:"0.1.0"},cors);return;
       }
       if(path==="/api/auth/register"&&req.method==="POST"){
-        if(AUTH_MODE!=="local"||process.env.NODE_ENV==="production"){fail(res,403,"REGISTRATION_DISABLED","Local account registration is disabled in this environment.");return;}
         const body=await readJson(req);const email=String(body.email||"").trim().toLowerCase();const password=String(body.password||"");
-        if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||password.length<12){fail(res,400,"INVALID_CREDENTIALS","Enter a valid email and a password of at least 12 characters.");return;}
+        if(AUTH_MODE==="supabase"){
+          const result=await signUpWithSupabasePassword({supabaseUrl:process.env.SUPABASE_URL,publishableKey:process.env.SUPABASE_PUBLISHABLE_KEY,email,password});
+          if(result.confirmationRequired){send(res,202,{confirmationRequired:true,user:result.user,authMode:"supabase"},cors);return;}
+          setSupabaseSessionCookies(res,result);send(res,201,{user:result.user,authMode:"supabase"},cors);return;
+        }
+        if(AUTH_MODE!=="local"||process.env.NODE_ENV==="production"){fail(res,403,"REGISTRATION_DISABLED","Local account registration is disabled in this environment.");return;}
+        if(!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)||password.length<12){fail(res,400,"INVALID_CREDENTIALS","Enter a valid email and a password of at least 12 characters.");return;}
         const id=randomUUID(),salt=randomBytes(16).toString("hex"),passwordHash=scryptSync(password,salt,64).toString("hex");
         try{db.prepare("INSERT INTO users(id,email,password_hash,password_salt) VALUES(?,?,?,?)").run(id,email,passwordHash,salt);}
         catch{fail(res,409,"ACCOUNT_EXISTS","An account with this email already exists.");return;}
@@ -288,8 +311,12 @@ export function createAppServer() {
         send(res,201,{user:{id,email},authMode:"local"},cors);return;
       }
       if(path==="/api/auth/login"&&req.method==="POST"){
-        if(AUTH_MODE!=="local"){fail(res,403,"USE_EXTERNAL_AUTH","Sign in through the configured identity provider.");return;}
         const body=await readJson(req);const email=String(body.email||"").trim().toLowerCase();const password=String(body.password||"");
+        if(AUTH_MODE==="supabase"){
+          const session=await signInWithSupabasePassword({supabaseUrl:process.env.SUPABASE_URL,publishableKey:process.env.SUPABASE_PUBLISHABLE_KEY,email,password});
+          setSupabaseSessionCookies(res,session);send(res,200,{user:session.user,authMode:"supabase"},cors);return;
+        }
+        if(AUTH_MODE!=="local"){fail(res,403,"USE_EXTERNAL_AUTH","Sign in through the configured identity provider.");return;}
         if(password.length===0||password.length>256){fail(res,401,"INVALID_CREDENTIALS","Email or password is incorrect.");return;}
         const user=db.prepare("SELECT * FROM users WHERE email=? COLLATE NOCASE").get(email);
         const candidate=user?scryptSync(password,user.password_salt,64).toString("hex"):"";
@@ -300,9 +327,14 @@ export function createAppServer() {
       }
       if(path==="/api/auth/logout"&&req.method==="POST"){
         const token=cookieValue(req,"ev_session");if(token)db.prepare("DELETE FROM sessions WHERE token_hash=?").run(hash(token));
-        setCookie(res,"",0);send(res,200,{ok:true},cors);return;
+        if(AUTH_MODE==="supabase"){
+          const accessToken=cookieValue(req,"ev_supabase_access")||(req.headers.authorization||"").replace(/^Bearer\\s+/i,"");
+          await revokeSupabaseSession({supabaseUrl:process.env.SUPABASE_URL,publishableKey:process.env.SUPABASE_PUBLISHABLE_KEY,accessToken});
+          clearSupabaseSessionCookies(res);
+        }else setCookie(res,"",0);
+        send(res,200,{ok:true},cors);return;
       }
-      const user=await authenticate(req);
+      const user=await authenticate(req,res);
       if(!user){fail(res,401,"AUTH_REQUIRED","Sign in to access this workspace.");return;}
       if(path==="/api/me"&&req.method==="GET"){send(res,200,{user,authMode:AUTH_MODE},cors);return;}
       if(cloudTimelineApi && path==="/api/cloud/assets" && req.method==="POST"){
