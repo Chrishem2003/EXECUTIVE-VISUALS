@@ -134,7 +134,7 @@ export function createCloudAssetRepository({
       const readAsset=async()=>{const rows=await request("assets?select="+select+"&id=eq."+encodeURIComponent(id)+"&limit=1");return Array.isArray(rows)?rows[0]||null:null;};
       const verifyAsset=row=>{
         const validObjectPath=typeof row?.object_path==="string"&&row.object_path.startsWith(assetPrefix)&&
-          (row.object_path===legacyObjectPath||/^attempt-[0-9a-f-]{36}\\.[A-Za-z0-9]+$/i.test(row.object_path.slice(assetPrefix.length)));
+          (row.object_path===legacyObjectPath||/^attempt-[0-9a-f-]{36}\.[A-Za-z0-9]+$/i.test(row.object_path.slice(assetPrefix.length)));
         if(!row||row.id!==id||row.owner_id!==ownerId||(row.project_id||null)!==projectId||!validObjectPath||row.storage_bucket!=="executive-visuals-media"||row.media_type!==mediaType||row.derivative_of!==(derivativeOf||null)||row.deleted_at||Number(row.byte_size)!==file.size||row.sha256!==file.sha256)throw new Error("Existing publication asset does not match its reserved identity and checksum.");
         return publicAsset(row);
       };
