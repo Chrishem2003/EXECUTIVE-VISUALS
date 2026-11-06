@@ -60,13 +60,23 @@ export function createCloudMediaWorker({
     recover: (...args) => cloudQueue.recover(...args)
   });
 
+  const executeWithProbePersistence=async context=>{
+    const result=await executor(context);
+    if(context.job?.job_type==="media.probe"&&result?.metadata&&typeof cloudAssets.assets?.updateMetadata==="function"){
+      const sourceAssetId=String(context.job.input?.sourceAssetId||"");
+      if(!sourceAssetId)throw new Error("Cloud media probe is missing its source asset ID.");
+      await cloudAssets.assets.updateMetadata({ownerId:context.job.owner_id,assetId:sourceAssetId,patch:{probe:result.metadata}});
+    }
+    return result;
+  };
+
   return Object.freeze({
     workerId,
     async runCycle(options = {}) {
       return runCloudWorkerCycle({
         queue: mediaQueue,
         workerId,
-        execute: executor,
+        execute: executeWithProbePersistence,
         leaseSeconds: options.leaseSeconds ?? 90,
         heartbeatIntervalMs: options.heartbeatIntervalMs ?? 15000,
         onProgress: options.onProgress ?? (() => {}),
