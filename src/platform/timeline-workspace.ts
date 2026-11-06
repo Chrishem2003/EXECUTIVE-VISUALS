@@ -17,12 +17,13 @@ type Asset={id:string;name:string;mediaType:string;size:number;metadata?:Record<
 type SavedTimeline={id:string;projectId?:string|null;name:string;revision:number;document?:EditorialTimeline};
 type CloudProject={id:string;name:string};
 type CloudSavedTimeline={id:string;projectId?:string|null;name:string;revision:number;timeline:EditorialTimeline;updatedAt:string};
+type CloudTimelineVersion={id:string;timelineId:string;projectId:string|null;revision:number;name:string;timeline:EditorialTimeline;otio:Record<string,unknown>|null;createdAt:string};
 type MasteringReport={enabled:boolean;verified:boolean;targets?:{integratedLufs:number;loudnessRange:number;truePeakDbtp:number};output?:{normalizationType?:string;integratedLufs?:number|null;truePeakDbtp?:number|null;loudnessRange?:number|null};findings?:Array<{code:string;severity:string;message:string}>};
 type DeliveryCertification={schemaVersion:number;profileId:string;status:"passed"|"failed";generatedAt:string;summary:{passed:number;failed:number;total:number};checks:Array<{id:string;expected:unknown;actual:unknown;passed:boolean}>};
 type CloudRenderJob={id:string;status:string;progress?:number;created_at:string;input?:{deliveryProfile?:string};output?:{outputAsset?:{id:string;name?:string};mastering?:MasteringReport;deliveryCertification?:DeliveryCertification;render?:Record<string,unknown>;probeValidation?:Record<string,unknown>};error?:{message?:string;deliveryCertification?:DeliveryCertification}|string|null};
 let previewRequest=0;
-const state:{timeline:EditorialTimeline|null;serverRevision:number;timelines:SavedTimeline[];cloudTimelines:CloudSavedTimeline[];cloudProjects:CloudProject[];cloudProjectId:string;mode:"local"|"cloud";cloudRenderJobId:string;cloudRenderJobStatus:string;deliveryProfile:"source"|"youtube-1080p"|"vertical-1080p"|"square-1080p";masteringSettings:{enabled:boolean;integratedLufs:number;loudnessRange:number;truePeakDbtp:number;dualMono:boolean};masteringReport:MasteringReport|null;cloudRenderJobs:CloudRenderJob[];variantBase:EditorialTimeline|null;variantReport:TimelineVariantComparison|null;variantBaseName:string;assets:Asset[];status:"loading"|"ready"|"offline"|"auth";message:string;selectedTrack:string;selectedClipId:string;ffmpeg:boolean;playheadFrame:number;previewAssetId:string;previewUrl:string;previewMediaType:string;previewError:string;previewSources:Record<string,{url:string;mediaType:string}>;previewActiveClips:ReturnType<typeof evaluateTimelineAtFrame>["activeClips"];previewLayerKey:string;previewPlaying:boolean;audioEngine:AudioPreviewEngine|null;audioMasterVolume:number;audioMasterMuted:boolean;audioTrackStates:Record<string,{muted:boolean;solo:boolean}>;waveformCache:Record<string,string>;waveformStatus:Record<string,string>}={
- timeline:null,serverRevision:0,timelines:[],cloudTimelines:[],cloudProjects:[],cloudProjectId:"",mode:"local",cloudRenderJobId:"",cloudRenderJobStatus:"",deliveryProfile:"source",masteringSettings:{enabled:false,integratedLufs:-16,loudnessRange:11,truePeakDbtp:-1.5,dualMono:false},masteringReport:null,cloudRenderJobs:[],variantBase:null,variantReport:null,variantBaseName:"",assets:[],status:"loading",message:"Loading editorial workspace…",selectedTrack:"",selectedClipId:"",ffmpeg:false,playheadFrame:0,previewAssetId:"",previewUrl:"",previewMediaType:"",previewError:"",previewSources:{},previewActiveClips:[],previewLayerKey:"",previewPlaying:false,audioEngine:null,audioMasterVolume:0.85,audioMasterMuted:false,audioTrackStates:{},waveformCache:{},waveformStatus:{}
+const state:{timeline:EditorialTimeline|null;serverRevision:number;timelines:SavedTimeline[];cloudTimelines:CloudSavedTimeline[];cloudTimelineVersions:CloudTimelineVersion[];revisionBase:string;revisionComparison:TimelineVariantComparison|null;cloudProjects:CloudProject[];cloudProjectId:string;mode:"local"|"cloud";cloudRenderJobId:string;cloudRenderJobStatus:string;deliveryProfile:"source"|"youtube-1080p"|"vertical-1080p"|"square-1080p";masteringSettings:{enabled:boolean;integratedLufs:number;loudnessRange:number;truePeakDbtp:number;dualMono:boolean};masteringReport:MasteringReport|null;cloudRenderJobs:CloudRenderJob[];variantBase:EditorialTimeline|null;variantReport:TimelineVariantComparison|null;variantBaseName:string;assets:Asset[];status:"loading"|"ready"|"offline"|"auth";message:string;selectedTrack:string;selectedClipId:string;ffmpeg:boolean;playheadFrame:number;previewAssetId:string;previewUrl:string;previewMediaType:string;previewError:string;previewSources:Record<string,{url:string;mediaType:string}>;previewActiveClips:ReturnType<typeof evaluateTimelineAtFrame>["activeClips"];previewLayerKey:string;previewPlaying:boolean;audioEngine:AudioPreviewEngine|null;audioMasterVolume:number;audioMasterMuted:boolean;audioTrackStates:Record<string,{muted:boolean;solo:boolean}>;waveformCache:Record<string,string>;waveformStatus:Record<string,string>}={
+ timeline:null,serverRevision:0,timelines:[],cloudTimelines:[],cloudTimelineVersions:[],revisionBase:"",revisionComparison:null,cloudProjects:[],cloudProjectId:"",mode:"local",cloudRenderJobId:"",cloudRenderJobStatus:"",deliveryProfile:"source",masteringSettings:{enabled:false,integratedLufs:-16,loudnessRange:11,truePeakDbtp:-1.5,dualMono:false},masteringReport:null,cloudRenderJobs:[],variantBase:null,variantReport:null,variantBaseName:"",assets:[],status:"loading",message:"Loading editorial workspace…",selectedTrack:"",selectedClipId:"",ffmpeg:false,playheadFrame:0,previewAssetId:"",previewUrl:"",previewMediaType:"",previewError:"",previewSources:{},previewActiveClips:[],previewLayerKey:"",previewPlaying:false,audioEngine:null,audioMasterVolume:0.85,audioMasterMuted:false,audioTrackStates:{},waveformCache:{},waveformStatus:{}
 };
 const esc=(v:unknown)=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]||c));
 const fps=()=>state.timeline?state.timeline.frameRate.numerator/state.timeline.frameRate.denominator:24;
@@ -352,9 +353,19 @@ function readMasteringSettings(){
  return state.masteringSettings;
 }
 
+function revisionComparisonPanel(){
+ if(state.mode!=="cloud")return "";
+ const versions=state.cloudTimelineVersions;
+ const current=state.serverRevision;
+ const options=versions.filter(version=>version.revision!==current).map(version=>'<option value="'+version.revision+'" '+(String(version.revision)===state.revisionBase?'selected':'')+'>Revision '+version.revision+' · '+esc(new Date(version.createdAt).toLocaleString())+'</option>').join("");
+ const report=state.revisionComparison;
+ const summary=report?'<div class="revision-comparison-summary"><b>'+esc(report.summary)+'</b><div class="revision-comparison-metrics"><span>Added clips <strong>'+report.addedClips+'</strong></span><span>Removed clips <strong>'+report.removedClips+'</strong></span><span>Changed clips <strong>'+report.changedClips+'</strong></span><span>Marker changes <strong>'+(report.addedMarkers+report.removedMarkers+report.changedMarkers)+'</strong></span><span>Track delta <strong>'+report.trackCountDelta+'</strong></span></div>'+(report.changes.length?'<ul>'+report.changes.map(change=>'<li><span class="revision-change-kind '+change.kind+'">'+change.kind+'</span><b>'+esc(change.clipName)+'</b><small>'+esc(change.fields.join(" · "))+'</small></li>').join("")+'</ul>':'')+'</div>':'';
+ return '<section class="panel revision-comparison-panel"><div class="eyebrow">REVISION CONTROL</div><h3>Compare saved revisions</h3><p class="muted">Inspect immutable snapshots of earlier saves without changing the active timeline or its current revision.</p><div class="revision-comparison-controls"><button type="button" class="secondary" data-tl-load-revisions>Load revision history</button>'+(versions.length?'<label>Compare current r'+current+' against<select id="tl-revision-base"><option value="">Choose earlier revision</option>'+options+'</select></label><button type="button" class="primary" data-tl-compare-revision '+(!state.revisionBase||!state.timeline?'disabled':'')+'>Compare revisions</button>':'<small class="muted">'+(state.timeline?'Load revision history to see earlier snapshots.':'Select a saved cloud timeline first.')+'</small>')+'</div>'+(versions.length?'<small class="muted">'+versions.length+' immutable revision snapshot(s) available</small>':'')+summary+'</section>';
+}
 export function renderTimelineWorkspace(){
  return '<div id="timeline-workspace"><div class="timeline-toolbar"><label>Workspace <select id="tl-mode"><option value="local" '+(state.mode==="local"?"selected":"")+' >Local</option><option value="cloud" '+(state.mode==="cloud"?"selected":"")+' >Cloud project</option></select></label><label>Cloud project <select id="tl-cloud-project"><option value="">Select project</option>'+state.cloudProjects.map(p=>'<option value="'+esc(p.id)+'" '+(p.id===state.cloudProjectId?'selected':'')+'>'+esc(p.name)+'</option>').join("")+'</select></label><label>Saved sequence <select id="tl-saved-sequence"><option value="">Current sequence</option>'+(state.mode==="cloud"?state.cloudTimelines.map(t=>'<option value="'+esc(t.id)+'" '+(state.timeline?.id===t.id?'selected':'')+'>'+esc(t.name)+' · r'+t.revision+'</option>').join(""):state.timelines.map(t=>'<option value="'+esc(t.id)+'" '+(state.timeline?.id===t.id?'selected':'')+'>'+esc(t.name)+' · r'+t.revision+'</option>').join(""))+'</select></label><button class="secondary" data-tl-create-cloud>＋ New cloud timeline</button><button class="secondary" data-tl-action="duplicate-variant">Duplicate as variant</button><span class="runtime-status '+state.status+'"><i></i>'+esc(state.status==="ready"?"TIMELINE SAVED":state.status==="auth"?"SIGN IN REQUIRED":state.status==="offline"?"API OFFLINE":"LOADING")+'</span><button class="secondary" data-tl-action="refresh">↻ Refresh</button><button class="secondary" data-tl-action="export">Export OTIO JSON</button>'+(state.mode==="cloud"&&state.cloudRenderJobId?'<button class="secondary" data-tl-action="cloud-job">Check cloud render · '+esc(state.cloudRenderJobStatus||"queued")+'</button>':'')+''+(state.ffmpeg?'<button class="primary" data-tl-action="render">Render master MP4</button>':'<span class="muted">FFmpeg required for master render</span>')+'</div>'+
  masteringPanel()+
+ revisionComparisonPanel()+
  (state.message?'<div class="notice">'+esc(state.message)+'</div>':'')+
  '<div class="timeline-editor-grid"><section class="panel"><div class="eyebrow">SEQUENCE SETTINGS</div><h3>'+(state.timeline?esc(state.timeline.name):"No sequence loaded")+'</h3>'+
  '<form id="tl-add-track"><label>Track name</label><input name="name" required placeholder="Video 2 / Music / Captions"><label>Track type</label><select name="kind"><option value="video">Video</option><option value="audio">Audio</option><option value="overlay">Overlay</option><option value="caption">Captions</option></select><button class="secondary">＋ Add track</button></form>'+
@@ -575,6 +586,7 @@ document.addEventListener("change",event=>{
  if(target.name==="masteringTruePeakDbtp")state.masteringSettings.truePeakDbtp=Number(target.value);
  if(target.id==="tl-mode"){state.mode=target.value==="cloud"?"cloud":"local";state.timeline=null;state.selectedClipId="";void refresh().then(paint).catch(error=>{state.status="offline";state.message=error instanceof Error?error.message:"Workspace unavailable.";paint();});}
  if(target.id==="tl-cloud-project"){state.cloudProjectId=target.value;state.timeline=null;state.selectedClipId="";void refresh().then(paint).catch(error=>{state.status="offline";state.message=error instanceof Error?error.message:"Cloud project unavailable.";paint();});}
+ if(target.id==="tl-revision-base"){state.revisionBase=target.value;state.revisionComparison=null;}
  if(target.id==="tl-saved-sequence"&&target.value){
   const saved=state.mode==="cloud"?state.cloudTimelines.find(t=>t.id===target.value):state.timelines.find(t=>t.id===target.value);
   if(saved){if(state.mode==="cloud"){const cloud=saved as CloudSavedTimeline;state.timeline=cloud.timeline;state.serverRevision=cloud.revision;void loadVariantComparison().then(paint);}
@@ -611,6 +623,30 @@ document.addEventListener("click",async event=>{
  if(select&&state.timeline){state.selectedTrack=select.dataset.track||"";state.selectedClipId=select.dataset.clip||"";paint();}
  const action=target.closest<HTMLElement>("[data-tl-action]");
  if(action)void runAction(action);
+});
+document.addEventListener("click",async event=>{
+ const target=event.target as HTMLElement;
+ const load=target.closest<HTMLElement>("[data-tl-load-revisions]");
+ if(load){
+  if(state.mode!=="cloud"||!state.timeline?.id){state.message="Select a saved cloud timeline before loading revision history.";paint();return;}
+  try{
+   const result=await apiRequest<{versions:CloudTimelineVersion[]}>("/api/cloud/timelines/"+encodeURIComponent(state.timeline.id)+"/versions");
+   state.cloudTimelineVersions=result.versions||[];
+   const previous=state.cloudTimelineVersions.find(version=>version.revision<state.serverRevision);
+   state.revisionBase=previous?String(previous.revision):"";
+   state.revisionComparison=null;
+   state.message=state.cloudTimelineVersions.length+" saved revision snapshot(s) loaded.";
+  }catch(error){state.message=error instanceof Error?error.message:"Could not load revision history.";}
+  paint();return;
+ }
+ const compare=target.closest<HTMLElement>("[data-tl-compare-revision]");
+ if(compare){
+  const base=state.cloudTimelineVersions.find(version=>String(version.revision)===state.revisionBase);
+  if(!base||!state.timeline){state.message="Choose an earlier revision to compare.";paint();return;}
+  try{state.revisionComparison=compareTimelineVariants(base.timeline,state.timeline);state.message="Compared revision "+base.revision+" with current revision "+state.serverRevision+".";}
+  catch(error){state.revisionComparison=null;state.message=error instanceof Error?error.message:"Could not compare timeline revisions.";}
+  paint();return;
+ }
 });
 window.addEventListener("ev:authenticated",()=>void initTimelineWorkspace());
 window.addEventListener("ev:assets-updated",()=>void refresh().then(paint).catch(error=>{state.message=error.message;paint();}));
