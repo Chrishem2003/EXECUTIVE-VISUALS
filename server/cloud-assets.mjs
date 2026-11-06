@@ -174,7 +174,7 @@ export function createCloudAssetRepository({
       if(!row||(!row.project_id&&row.owner_id!==ownerId)) {const error=new Error("Cloud asset not found.");error.code="CLOUD_ASSET_NOT_FOUND";throw error;}
       await allowed(ownerId,row.project_id||null,"read");
       const expectedPrefix=(row.project_id||row.owner_id)+"/"+row.id+"/";
-      if(row.storage_bucket!=="executive-visuals-media"||typeof row.object_path!=="string"||!row.object_path.startsWith(expectedPrefix)) throw new Error("Cloud asset storage reference is invalid.");
+      if(row.storage_bucket!=="executive-visuals-media"||!validCleanupPath(row.object_path)||!row.object_path.startsWith(expectedPrefix)) throw new Error("Cloud asset storage reference is invalid.");
       return {asset:publicAsset(row),url:await storage.createSignedUrl(row.object_path,expiresIn)};
     },
     async reconcilePendingStorageCleanup({limit=20,now=new Date()}={}) {
@@ -214,10 +214,14 @@ export function createCloudAssetRepository({
       if(row.storage_bucket!=="executive-visuals-media"||typeof row.object_path!=="string"||!row.object_path.startsWith(expectedPrefix)) throw new Error("Cloud asset storage reference is invalid.");
       const changed=await request("assets?id=eq."+encodeURIComponent(assetId)+"&deleted_at=is.null",{method:"PATCH",prefer:"return=representation",body:{deleted_at:new Date().toISOString()}});
       if(!Array.isArray(changed)||changed.length!==1) throw new Error("Cloud asset could not be safely marked deleted.");
-      let storageRemoved=false;
-      try { if(row.storage_bucket!=="executive-visuals-media") throw new Error("Unexpected cloud asset bucket."); await storage.remove(row.object_path); storageRemoved=true; }
-      catch { storageRemoved=false; }
-      return {id:assetId,deleted:true,storageRemoved,cleanupPending:!storageRemoved};
+      let storageRemoved=false,cleanupRecordFailed=false;
+      try { await storage.remove(row.object_path); storageRemoved=true; }
+      catch(error) {
+        storageRemoved=false;
+        try { await enqueueStorageCleanup(row.object_path,error?.code||"asset_soft_delete_storage_cleanup_failed"); }
+        catch { cleanupRecordFailed=true; }
+      }
+      return {id:assetId,deleted:true,storageRemoved,cleanupPending:!storageRemoved,...(cleanupRecordFailed?{cleanupRecordFailed:true}:{})};
     }
   });
 }
