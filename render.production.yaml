@@ -1,0 +1,31 @@
+services:
+  - type: web
+    name: EXECUTIVE-VISUALS
+    runtime: docker
+    plan: starter
+    region: frankfurt
+    repo: https://github.com/Chrishem2003/EXECUTIVE-VISUALS
+    branch: main
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    autoDeployTrigger: commit
+    healthCheckPath: /api/health
+    disk:
+      name: executive-visuals-data
+      mountPath: /var/data
+      sizeGB: 5
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: API_HOST
+        value: 0.0.0.0
+      - key: DATA_DIR
+        value: /var/data
+      - key: DB_FILE
+        value: /var/data/executive-visuals.sqlite
+      - key: MEDIA_ROOT
+        value: /var/data/media
+      - key: REQUIRE_PERSISTENT_DATA_DIR
+        value: "true"
+      - key: MAX_UPLOAD_BYTES
+        value: "262144000"
