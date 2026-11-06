@@ -138,9 +138,13 @@ export function createCloudAssetRepository({
       await verifyLease();
       await allowed(ownerId,projectId,"write");
       const file=await digestFile(filePath),name=safeName(originalName),candidateId=randomUUID();
-      const reservations=await request("rpc/reserve_asset_publication",{method:"POST",body:{p_owner_id:ownerId,p_project_id:projectId,p_publication_key:publicationKey,p_payload_sha256:file.sha256,p_asset_id:candidateId}});
+      const reservations=await request("rpc/reserve_asset_publication_v2",{method:"POST",body:{
+        p_job_id:lease.jobId,p_worker_id:lease.workerId,p_lease_token:lease.leaseToken,
+        p_owner_id:ownerId,p_project_id:projectId,p_publication_key:publicationKey,
+        p_payload_sha256:file.sha256,p_asset_id:candidateId
+      }});
       const reservation=Array.isArray(reservations)?reservations[0]:null;
-      if(!reservation||reservation.owner_id!==ownerId||(reservation.project_id||null)!==projectId||reservation.publication_key!==publicationKey||reservation.payload_sha256!==file.sha256||typeof reservation.asset_id!=="string"||!UUID.test(reservation.asset_id)||!["reserved","published"].includes(reservation.status))throw new Error("Cloud asset publication reservation returned an invalid record.");
+      if(!reservation||reservation.job_id!==lease.jobId||reservation.owner_id!==ownerId||(reservation.project_id||null)!==projectId||reservation.publication_key!==publicationKey||reservation.payload_sha256!==file.sha256||typeof reservation.asset_id!=="string"||!UUID.test(reservation.asset_id)||!["reserved","published"].includes(reservation.status))throw new Error("Cloud asset publication reservation returned an invalid record.");
       const id=reservation.asset_id;
       const assetPrefix=(projectId||ownerId)+"/"+id+"/";
       const attemptPattern=/^attempt-[0-9a-f-]{36}\.[A-Za-z0-9]+$/i;
