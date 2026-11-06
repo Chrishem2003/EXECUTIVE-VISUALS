@@ -191,10 +191,15 @@ BEGIN
       AND status='published'
   ) THEN RAISE EXCEPTION 'atomic publication ledger was not finalized'; END IF;
 
-  IF NOT has_function_privilege('anon',
+  IF has_function_privilege('anon',
     'executive_visuals.finalize_asset_publication_v1(uuid,text,uuid,uuid,uuid,text,text,uuid,text,text,bigint,text,text,uuid,jsonb)',
     'EXECUTE') THEN
     RAISE EXCEPTION 'anon unexpectedly has publication RPC access';
+  END IF;
+  IF has_function_privilege('authenticated',
+    'executive_visuals.finalize_asset_publication_v1(uuid,text,uuid,uuid,uuid,text,text,uuid,text,text,bigint,text,text,uuid,jsonb)',
+    'EXECUTE') THEN
+    RAISE EXCEPTION 'authenticated unexpectedly has publication RPC access';
   END IF;
   IF NOT has_function_privilege('service_role',
     'executive_visuals.finalize_asset_publication_v1(uuid,text,uuid,uuid,uuid,text,text,uuid,text,text,bigint,text,text,uuid,jsonb)',
