@@ -28,7 +28,7 @@ function fixture({jobRow=job,deleteEnabled=false,confirmDelete=false}={}){
  const storage={async listObjects(args){assert.equal(args.prefix,owner+"/"+asset+"/");return{objects:[{name:attempt,createdAt:"2026-11-05T00:00:00.000Z"}],hasNext:false,nextCursor:null};},async remove(path){removed.push(path);return true;}};
  const worker=createCloudPublicationCleanupWorker({
   url:"https://example.supabase.co",serviceRoleKey:"private-key",fetchImpl,storage,now,
-  olderThanMs:24*60*60*1000,publicationLimit:5,objectLimit:10,
+  olderThanMs:24*60*60*1000,publicationLimit:5,objectLimit:10,pollIntervalMs:10000,
   dryRun:!deleteEnabled,allowDelete:deleteEnabled,confirmDelete,
   onLog:()=>{}
  });
