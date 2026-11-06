@@ -127,11 +127,15 @@ export function createCloudAssetRepository({
       const reservation=Array.isArray(reservations)?reservations[0]:null;
       if(!reservation||reservation.owner_id!==ownerId||(reservation.project_id||null)!==projectId||reservation.publication_key!==publicationKey||reservation.payload_sha256!==file.sha256||typeof reservation.asset_id!=="string"||!UUID.test(reservation.asset_id)||!["reserved","published"].includes(reservation.status))throw new Error("Cloud asset publication reservation returned an invalid record.");
       const id=reservation.asset_id;
-      const objectPath=buildCloudAssetObjectPath({ownerId,projectId,assetId:id,filename:"original."+EXTENSIONS.get(mediaType)});
+      const assetPrefix=(projectId||ownerId)+"/"+id+"/";
+      const legacyObjectPath=buildCloudAssetObjectPath({ownerId,projectId,assetId:id,filename:"original."+EXTENSIONS.get(mediaType)});
+      const attemptObjectPath=buildCloudAssetObjectPath({ownerId,projectId,assetId:id,filename:"attempt-"+randomUUID()+"."+EXTENSIONS.get(mediaType)});
       const select="id,owner_id,project_id,original_name,media_type,byte_size,sha256,storage_bucket,object_path,derivative_of,metadata,created_at,deleted_at";
       const readAsset=async()=>{const rows=await request("assets?select="+select+"&id=eq."+encodeURIComponent(id)+"&limit=1");return Array.isArray(rows)?rows[0]||null:null;};
       const verifyAsset=row=>{
-        if(!row||row.id!==id||row.owner_id!==ownerId||(row.project_id||null)!==projectId||row.object_path!==objectPath||row.storage_bucket!=="executive-visuals-media"||row.media_type!==mediaType||row.derivative_of!==(derivativeOf||null)||row.deleted_at||Number(row.byte_size)!==file.size||row.sha256!==file.sha256)throw new Error("Existing publication asset does not match its reserved identity and checksum.");
+        const validObjectPath=typeof row?.object_path==="string"&&row.object_path.startsWith(assetPrefix)&&
+          (row.object_path===legacyObjectPath||/^attempt-[0-9a-f-]{36}\.[A-Za-z0-9]+$/i.test(row.object_path.slice(assetPrefix.length)));
+        if(!row||row.id!==id||row.owner_id!==ownerId||(row.project_id||null)!==projectId||!validObjectPath||row.storage_bucket!=="executive-visuals-media"||row.media_type!==mediaType||row.derivative_of!==(derivativeOf||null)||row.deleted_at||Number(row.byte_size)!==file.size||row.sha256!==file.sha256)throw new Error("Existing publication asset does not match its reserved identity and checksum.");
         return publicAsset(row);
       };
       let existing=await readAsset();
@@ -144,16 +148,27 @@ export function createCloudAssetRepository({
         return asset;
       }
       if(reservation.status==="published")throw new Error("Published asset publication record is missing its asset metadata.");
-      const uploaded=await storage.uploadFile(objectPath,filePath,mediaType,{upsert:true});
+      const objectPath=attemptObjectPath;
+      const uploaded=await storage.uploadFile(objectPath,filePath,mediaType,{upsert:false});
       if(uploaded?.bucket!=="executive-visuals-media"||uploaded?.path!==objectPath||uploaded?.size!==file.size||uploaded?.sha256!==file.sha256)throw new Error("Cloud storage upload did not match the reserved publication checksum.");
       try{
-        const rows=await request("assets?select="+select,{method:"POST",prefer:"return=representation",body:{id,owner_id:ownerId,project_id:projectId,original_name:name,media_type:mediaType,byte_size:file.size,sha256:file.sha256,storage_bucket:uploaded.bucket,object_path:objectPath,derivative_of:derivativeOf,metadata}});
+        const rows=await request("assets?select="+select,{method:"POST",prefer:"return=representation",body:{id,owner_id:ownerId,project_id:projectId,original_name:name,media_type:mediaType,byte_size:file.size,sha256:file.sha256,storage_bucket:uploaded.bucket,object_path:uploaded.path,derivative_of:derivativeOf,metadata}});
         existing=Array.isArray(rows)?rows[0]||null:null;
-      }catch(error){existing=await readAsset();if(!existing)throw error;}
+      }catch(error){
+        existing=await readAsset();
+        if(!existing){
+          try{await storage.remove(uploaded.path);}catch{error.cleanupPending=true;}
+          throw error;
+        }
+      }
       const asset=verifyAsset(existing);
+      let cleanupPending=false;
+      if(existing.object_path!==uploaded.path){
+        try{await storage.remove(uploaded.path);}catch{cleanupPending=true;}
+      }
       const completed=await request("rpc/complete_asset_publication",{method:"POST",body:{p_owner_id:ownerId,p_publication_key:publicationKey,p_asset_id:id}});
       if(!Array.isArray(completed)||completed.length!==1||completed[0].status!=="published"||completed[0].asset_id!==id)throw new Error("Cloud asset publication could not be finalized.");
-      return asset;
+      return cleanupPending?{...asset,cleanupPending:true}:asset;
     },
     async createFromFile({ownerId,projectId=null,originalName,mediaType,filePath,derivativeOf=null,metadata={}}) {
       ownerId=validUuid(ownerId,"owner ID");
