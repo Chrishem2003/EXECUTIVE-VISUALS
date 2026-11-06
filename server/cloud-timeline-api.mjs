@@ -285,7 +285,7 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     const result=await service.reviews.create({actorId:ownerId,input:body,idempotencyKey});
     return response(result.idempotentReplay?200:201,result);
    }
-   const reviewMatch=path.match(/^\\/api\\/cloud\\/reviews\\/([0-9a-f-]+)$/i);
+   const reviewMatch=path.match(/^\/api\/cloud\/reviews\/([0-9a-f-]+)$/i);
    if(reviewMatch&&safeId(reviewMatch[1])){
     if(method==="GET"){
      const review=await service.reviews.get({actorId:ownerId,reviewId:reviewMatch[1]});
