@@ -33,10 +33,8 @@ function fixture({authorize=async()=>true,insertResponse=null,removeError=false}
    publicationReservation={...publicationReservation,status:"published"};
    return response([{owner_id:publicationReservation.owner_id,publication_key:publicationReservation.publication_key,asset_id:publicationReservation.asset_id,status:"published"}]);
   }
-  if(url.includes("/assets?")&&url.includes("id=eq.")){
-   if(options.method==="POST"){const payload=JSON.parse(options.body);publicationAsset={...row,...payload,created_at:row.created_at};return response([publicationAsset]);}
-   return response(publicationAsset?[publicationAsset]:[]);
-  }
+  if(url.includes("/assets?")&&options.method==="POST"){const payload=JSON.parse(options.body);publicationAsset={...row,...payload,created_at:row.created_at};return response([publicationAsset]);}
+  if(url.includes("/assets?")&&url.includes("id=eq."))return response(publicationAsset?[publicationAsset]:[]);
   if(options.method==="POST"){const payload=JSON.parse(options.body);return response(insertResponse===null?[{...row,...payload,created_at:row.created_at}]:insertResponse);}
   if(options.method==="PATCH")return response([row]);
   return response([row]);
