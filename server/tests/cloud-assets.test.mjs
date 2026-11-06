@@ -186,3 +186,15 @@ test("concurrent attempts for one publication key converge on the same asset ide
  assert.ok(uploads.some(call=>call.path===removals[0].path));
  await rm(root,{recursive:true,force:true});
 });
+
+test("keeps the winning publication successful when losing-attempt cleanup is pending",async()=>{
+ const root=await mkdtemp(join(tmpdir(),"ev-idempotent-cleanup-pending-")),file=join(root,"render.mp4");
+ await writeFile(file,bytes);
+ const f=fixture({removeError:true});
+ const args={ownerId,projectId,originalName:"render.mp4",mediaType:"video/mp4",filePath:file,publicationKey:"job-cleanup-pending:output:v1"};
+ const [left,right]=await Promise.all([f.repo.createFromFileIdempotent(args),f.repo.createFromFileIdempotent(args)]);
+ assert.equal(left.id,right.id);
+ assert.equal([left,right].filter(asset=>asset.cleanupPending===true).length,1);
+ assert.equal(f.publicationReservation.status,"published");
+ await rm(root,{recursive:true,force:true});
+});
