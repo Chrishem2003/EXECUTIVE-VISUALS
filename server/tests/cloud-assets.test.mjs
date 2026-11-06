@@ -173,3 +173,14 @@ test("refuses to delete storage objects from invalid cleanup records",async()=>{
  assert.equal(result.results[0].permanentError,"unsafe_cleanup_record");
  assert.equal(f.storageCalls.length,0);
 });
+
+test("queues durable storage cleanup when a soft-deleted asset cannot be removed immediately",async()=>{
+ const f=fixture({removeError:true});
+ const result=await f.repo.softDelete({ownerId,assetId});
+ assert.equal(result.deleted,true);
+ assert.equal(result.storageRemoved,false);
+ assert.equal(result.cleanupPending,true);
+ const queued=f.calls.find(call=>call.url.includes("/asset_storage_cleanup")&&call.options.method==="POST");
+ assert.ok(queued);
+ assert.equal(JSON.parse(queued.options.body).object_path,f.row.object_path);
+});
