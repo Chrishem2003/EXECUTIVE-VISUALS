@@ -7,7 +7,7 @@ create table if not exists executive_visuals.review_replies (
  author_id uuid not null references auth.users(id) on delete restrict,
  body text not null check (char_length(btrim(body)) between 1 and 5000),
  created_at timestamptz not null default now(),
- updated_at timestamptz not null default now(),
+ updated_at timestamptz not null default now()
 );
 create index if not exists ev_review_replies_thread_created on executive_visuals.review_replies(review_id,created_at,id);
 alter table executive_visuals.review_replies enable row level security;
