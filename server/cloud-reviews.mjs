@@ -35,7 +35,8 @@ export function createCloudReviewRepository({url=process.env.SUPABASE_URL,servic
  }
  return Object.freeze({
   async create({actorId,input,idempotencyKey}={}){
-   const normalized=normalizeReviewCreate({...input,requestId:input?.requestId??idempotencyKey??null});
+   const payload={...input};if(payload.requestId===undefined&&idempotencyKey)payload.requestId=idempotencyKey;
+   const normalized=normalizeReviewCreate(payload);
    const {project,membership}=await context(actorId,normalized.projectId,"read");
    if(!["owner","editor","reviewer"].includes(membership?.role))throw Object.assign(new Error("Editor or reviewer access is required to comment."),{code:"CLOUD_REVIEW_ACCESS_DENIED"});
    if(normalized.assetId){const asset=await assets.get({ownerId:actorId,assetId:normalized.assetId});if(asset.projectId!==normalized.projectId)throw Object.assign(new Error("Asset does not belong to this project."),{code:"CLOUD_REVIEW_INVALID"});}
