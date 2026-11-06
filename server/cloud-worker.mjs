@@ -26,28 +26,40 @@ export async function runCloudWorkerCycle({
   let leaseLost = false;
   let heartbeatPending = false;
   let heartbeatError = null;
+  let heartbeatStopped = false;
+  let heartbeatInFlight = Promise.resolve();
   onEvent({ type: "job.started", jobId: job.id, workerId });
 
-  const heartbeat = setInterval(async () => {
-    if (heartbeatPending || leaseLost || controller.signal.aborted) return;
+  const heartbeat = setInterval(() => {
+    if (heartbeatPending || heartbeatStopped || leaseLost || controller.signal.aborted) return;
     heartbeatPending = true;
-    try {
-      const renewed = await queue.renew(job.id, workerId, leaseSeconds, job.lease_token);
-      if (!renewed) {
+    heartbeatInFlight = (async () => {
+      try {
+        const renewed = await queue.renew(job.id, workerId, leaseSeconds, job.lease_token);
+        if (!renewed) {
+          leaseLost = true;
+          controller.abort(new Error("Worker lease is no longer valid."));
+          onEvent({ type: "job.lease_lost", jobId: job.id, workerId });
+        }
+      } catch (error) {
+        heartbeatError = error;
         leaseLost = true;
-        controller.abort(new Error("Worker lease is no longer valid."));
+        controller.abort(new Error("Worker could not renew its execution lease."));
         onEvent({ type: "job.lease_lost", jobId: job.id, workerId });
+      } finally {
+        heartbeatPending = false;
       }
-    } catch (error) {
-      heartbeatError = error;
-      leaseLost = true;
-      controller.abort(new Error("Worker could not renew its execution lease."));
-      onEvent({ type: "job.lease_lost", jobId: job.id, workerId });
-    } finally {
-      heartbeatPending = false;
-    }
+    })();
   }, heartbeatIntervalMs);
   heartbeat.unref?.();
+
+  async function stopHeartbeat() {
+    if (!heartbeatStopped) {
+      heartbeatStopped = true;
+      clearInterval(heartbeat);
+    }
+    await heartbeatInFlight;
+  }
 
   try {
     const output = await execute({
@@ -59,6 +71,7 @@ export async function runCloudWorkerCycle({
         onProgress({ jobId: job.id, workerId, progress: value });
       }
     });
+    await stopHeartbeat();
     if (leaseLost || controller.signal.aborted) {
       return { claimed: true, finished: false, reason: "lease_lost", jobId: job.id };
     }
@@ -74,6 +87,7 @@ export async function runCloudWorkerCycle({
     onEvent({ type: "job.succeeded", jobId: job.id, workerId });
     return { claimed: true, finished: true, status: "succeeded", jobId: job.id, output: output ?? {} };
   } catch (error) {
+    await stopHeartbeat();
     if (leaseLost || controller.signal.aborted) {
       return { claimed: true, finished: false, reason: "lease_lost", jobId: job.id };
     }
@@ -90,7 +104,7 @@ export async function runCloudWorkerCycle({
     onEvent({ type: "job.failed", jobId: job.id, workerId, error: details });
     return { claimed: true, finished: true, status: "failed", jobId: job.id, error: details };
   } finally {
-    clearInterval(heartbeat);
+    await stopHeartbeat();
     if (heartbeatError) onEvent({ type: "job.heartbeat_error", jobId: job.id, workerId });
   }
 }
