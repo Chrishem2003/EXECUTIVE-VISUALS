@@ -59,9 +59,9 @@ if (!checkpointSql.includes("octet_length(output_json::text) <= 32000")) issues.
 if (!checkpointSql.includes("output_asset.derivative_of = new.input_asset_id")) issues.push("Cloud checkpoint outputs must be verified as derivatives of their recorded inputs.");
 if (!checkpointSql.includes("output_asset.owner_id = new.owner_id") || !checkpointSql.includes("output_asset.project_id = new.project_id")) issues.push("Cloud checkpoint output assets must match the checkpoint owner and project.");
 if (!checkpointSql.includes("output_asset.sha256 = lower(new.output_json ->> 'sha256')")) issues.push("Cloud checkpoint output checksums must match persisted asset metadata.");
-if (/\\b(drop\\s+table|truncate|delete\\s+from)\\b/i.test(checkpointSql)) issues.push("Checkpoint migration must not contain destructive DDL/DML.");
+if (/\b(drop\s+table|truncate|delete\s+from)\b/i.test(checkpointSql)) issues.push("Checkpoint migration must not contain destructive DDL/DML.");
 
-if (/\\b(drop\\s+table|truncate|delete\\s+from)\\b/i.test(fencingSql)) issues.push("Lease fencing migration must not contain destructive DDL/DML.");
+if (/\b(drop\s+table|truncate|delete\s+from)\b/i.test(fencingSql)) issues.push("Lease fencing migration must not contain destructive DDL/DML.");
 if (!fencingSql.includes("add column if not exists lease_token uuid")) issues.push("Jobs must store a per-attempt fencing token.");
 if (!fencingSql.includes("lease_token=gen_random_uuid()")) issues.push("Every claim must generate a fresh database-side fencing token.");
 if (!fencingSql.includes("lease_token=p_lease_token")) issues.push("Lease renewal and completion must match the current fencing token.");
@@ -83,7 +83,7 @@ if (!fencingSql.includes("revoke all on function executive_visuals.claim_next_jo
 }
 
 
-if (/\\b(drop\\s+table|truncate|delete\\s+from)\\b/i.test(publicationSql)) issues.push("Publication ledger migration must not contain destructive DDL/DML.");
+if (/\b(drop\s+table|truncate|delete\s+from)\b/i.test(publicationSql)) issues.push("Publication ledger migration must not contain destructive DDL/DML.");
 if (!publicationSql.includes("unique(owner_id, publication_key)") || !publicationSql.includes("unique(asset_id)")) issues.push("Asset publication identity must be unique per owner and asset.");
 if (!publicationSql.includes("payload_sha256") || !publicationSql.includes("status in ('reserved','published')")) issues.push("Asset publication ledger must bind a checksum to a recoverable state.");
 if (!publicationSql.includes("alter table executive_visuals.asset_publications enable row level security;")) issues.push("Asset publication ledger must enable RLS.");
