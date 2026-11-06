@@ -6,6 +6,7 @@ import { executableAvailable } from "./media.mjs";
 import { createCloudTimelineApi } from "./cloud-timeline-api.mjs";
 import { createCloudMediaWorker } from "./cloud-media-worker.mjs";
 import { createCloudTimelineWorker } from "./cloud-timeline-worker.mjs";
+import { createCloudPublicationCleanupWorker } from "./cloud-publication-cleanup-worker.mjs";
 
 const truth=(value)=>value==="true";
 const integer=(value,fallback,min,max,label)=>{const parsed=value===undefined||value===""?fallback:Number(value);if(!Number.isInteger(parsed)||parsed<min||parsed>max)throw new Error(label+" is outside the supported range.");return parsed;};
@@ -13,13 +14,19 @@ const integer=(value,fallback,min,max,label)=>{const parsed=value===undefined||v
 export function readCloudWorkerConfig(env=process.env){
  if(!truth(env.CLOUD_WORKER_ENABLED))throw new Error("Cloud worker process is disabled. Set CLOUD_WORKER_ENABLED=true only after the isolated database and private storage are ready.");
  const media=truth(env.CLOUD_MEDIA_WORKER_ENABLED),timeline=truth(env.CLOUD_TIMELINE_WORKER_ENABLED);
- if(!media&&!timeline)throw new Error("Enable at least one supported cloud worker family.");
+ const publicationCleanup=truth(env.CLOUD_PUBLICATION_CLEANUP_WORKER_ENABLED);
+ if(!media&&!timeline&&!publicationCleanup)throw new Error("Enable at least one supported cloud worker family.");
  if(!env.SUPABASE_URL||!env.SUPABASE_SERVICE_ROLE_KEY)throw new Error("Cloud workers require server-side Supabase credentials.");
  const leaseSeconds=integer(env.CLOUD_WORKER_LEASE_SECONDS,90,30,900,"Cloud worker lease duration");
  const heartbeatIntervalMs=integer(env.CLOUD_WORKER_HEARTBEAT_MS,15000,1000,30000,"Cloud worker heartbeat");
  if(heartbeatIntervalMs>=leaseSeconds*1000)throw new Error("Cloud worker heartbeat must be shorter than the lease duration.");
  return Object.freeze({
-  media,timeline,
+  media,timeline,publicationCleanup,
+  cleanupDryRun:!truth(env.CLOUD_PUBLICATION_CLEANUP_DELETE_ENABLED),
+  cleanupConfirmDelete:truth(env.CLOUD_PUBLICATION_CLEANUP_CONFIRM_DELETE),
+  cleanupOlderThanMs:integer(env.CLOUD_PUBLICATION_CLEANUP_OLDER_THAN_DAYS,1,1,30,"Publication cleanup age in days")*24*60*60*1000,
+  cleanupPublicationLimit:integer(env.CLOUD_PUBLICATION_CLEANUP_PUBLICATION_LIMIT,10,1,50,"Publication cleanup publication limit"),
+  cleanupObjectLimit:integer(env.CLOUD_PUBLICATION_CLEANUP_OBJECT_LIMIT,100,1,100,"Publication cleanup object limit"),
   pollMs:integer(env.CLOUD_WORKER_POLL_MS,1000,500,10000,"Cloud worker poll interval"),
   leaseSeconds,heartbeatIntervalMs,
   maxBytes:integer(env.CLOUD_WORKER_MAX_BYTES,250*1024*1024,1024,1024*1024*1024,"Cloud worker media limit"),
@@ -77,11 +84,20 @@ export async function startCloudWorkerProcess(env=process.env){
  const config=readCloudWorkerConfig(env);
  if((config.media||config.timeline)&&(!executableAvailable("ffmpeg")||!executableAvailable("ffprobe")))throw new Error("Cloud media workers require FFmpeg and FFprobe on PATH.");
  const cloudCredentials={url:env.SUPABASE_URL,serviceRoleKey:env.SUPABASE_SERVICE_ROLE_KEY};
- const readiness=createCloudTimelineApi({...cloudCredentials,maxUploadBytes:config.maxBytes});
- await readiness.checkReadiness();
+ if(config.media||config.timeline){const readiness=createCloudTimelineApi({...cloudCredentials,maxUploadBytes:config.maxBytes});await readiness.checkReadiness();}
  const workers=[];
  if(config.media)workers.push(createCloudMediaWorker({workerId:"media-"+randomUUID(),...cloudCredentials,tempRoot:config.tempRoot,maxBytes:config.maxBytes}));
  if(config.timeline)workers.push(createCloudTimelineWorker({workerId:"timeline-"+randomUUID(),...cloudCredentials,tempRoot:config.tempRoot,maxBytes:config.maxBytes,maxOutputBytes:config.maxBytes}));
+ if(config.publicationCleanup)workers.push(createCloudPublicationCleanupWorker({
+  ...cloudCredentials,
+  olderThanMs:config.cleanupOlderThanMs,
+  publicationLimit:config.cleanupPublicationLimit,
+  objectLimit:config.cleanupObjectLimit,
+  dryRun:config.cleanupDryRun,
+  confirmDelete:config.cleanupConfirmDelete,
+  allowDelete:truth(env.CLOUD_PUBLICATION_CLEANUP_DELETE_ENABLED),
+  onLog:event=>process.stdout.write(JSON.stringify(event)+"\n")
+ }));
  const supervisor=createCloudWorkerSupervisor({
   workers,leaseSeconds:config.leaseSeconds,heartbeatIntervalMs:config.heartbeatIntervalMs,pollMs:config.pollMs,
   onLog:event=>process.stdout.write(JSON.stringify(event)+"\n"),
