@@ -118,14 +118,17 @@ export function createCloudStorage({
       });
       return { bucket:BUCKET, path:objectPath, size:bytes.byteLength, contentType };
     },
-    async uploadFile(objectPath,filePath,contentType,{upsert=false}={}) {
+    async uploadFile(objectPath,filePath,contentType,{upsert=false,signal:externalSignal}={}) {
       const path=safeObjectPath(objectPath);
       if(!MIME_TYPES.has(contentType))throw new Error("Unsupported cloud media content type.");
       const info=await stat(filePath);
       if(!info.isFile()||info.size<1||info.size>maxBytes)throw new Error("Cloud media file is empty or exceeds the configured size limit.");
       const digest=createHash("sha256");let size=0;
       const meter=new Transform({transform(chunk,encoding,callback){size+=chunk.length;if(size>maxBytes){callback(Object.assign(new Error("Cloud media file exceeds the configured size limit."),{code:"CLOUD_STORAGE_TOO_LARGE"}));return;}digest.update(chunk);callback(null,chunk);}});
+      if(externalSignal?.aborted)throw Object.assign(new Error("Cloud media upload was cancelled before it started."),{code:"CLOUD_STORAGE_UPLOAD_ABORTED"});
       const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs);
+      const abortFromCaller=()=>controller.abort(externalSignal?.reason);
+      externalSignal?.addEventListener("abort",abortFromCaller,{once:true});
       const source=createReadStream(filePath);source.on("error",error=>meter.destroy(error));
       const streamDone=pipeline(source,meter);
       try{
@@ -145,9 +148,10 @@ export function createCloudStorage({
       }catch(error){
         controller.abort();source.destroy();meter.destroy();
         await streamDone.catch(()=>{});
+        if(externalSignal?.aborted){const cancelled=new Error("Cloud media upload was cancelled because its worker lease or execution was lost.");cancelled.code="CLOUD_STORAGE_UPLOAD_ABORTED";throw cancelled;}
         if(error?.name==="AbortError"){const timeout=new Error("Cloud storage request timed out.");timeout.code="CLOUD_STORAGE_TIMEOUT";throw timeout;}
         throw error;
-      }finally{clearTimeout(timer);}
+      }finally{externalSignal?.removeEventListener("abort",abortFromCaller);clearTimeout(timer);}
     },
     async listObjects({prefix,limit=100,offset=0}={}) {
       if(typeof prefix!=="string"||!/^([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\/([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\/$/i.test(prefix)) {
