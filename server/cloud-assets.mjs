@@ -157,9 +157,11 @@ export function createCloudAssetRepository({
       }
       if(reservation.status==="published")throw new Error("Published asset publication record is missing its asset metadata.");
       const objectPath=attemptObjectPath;
-      const uploaded=await storage.uploadFile(objectPath,filePath,mediaType,{upsert:false});
+      await verifyLease();
+      const uploaded=await storage.uploadFile(objectPath,filePath,mediaType,{upsert:false,signal});
       if(uploaded?.bucket!=="executive-visuals-media"||uploaded?.path!==objectPath||uploaded?.size!==file.size||uploaded?.sha256!==file.sha256)throw new Error("Cloud storage upload did not match the reserved publication checksum.");
       try{
+        await verifyLease();
         const rows=await request("assets?select="+select,{method:"POST",prefer:"return=representation",body:{id,owner_id:ownerId,project_id:projectId,original_name:name,media_type:mediaType,byte_size:file.size,sha256:file.sha256,storage_bucket:uploaded.bucket,object_path:uploaded.path,derivative_of:derivativeOf,metadata}});
         existing=Array.isArray(rows)?rows[0]||null:null;
       }catch(error){
