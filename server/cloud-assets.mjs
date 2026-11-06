@@ -150,6 +150,7 @@ export function createCloudAssetRepository({
       if(existing){
         const asset=verifyAsset(existing);
         if(reservation.status!=="published"){
+          await verifyLease();
           const completed=await request("rpc/complete_asset_publication",{method:"POST",body:{p_owner_id:ownerId,p_publication_key:publicationKey,p_asset_id:id}});
           if(!Array.isArray(completed)||completed.length!==1||completed[0].status!=="published")throw new Error("Existing asset could not complete its publication record.");
         }
@@ -176,6 +177,7 @@ export function createCloudAssetRepository({
       if(existing.object_path!==uploaded.path){
         try{await storage.remove(uploaded.path);}catch{cleanupPending=true;}
       }
+      await verifyLease();
       const completed=await request("rpc/complete_asset_publication",{method:"POST",body:{p_owner_id:ownerId,p_publication_key:publicationKey,p_asset_id:id}});
       if(!Array.isArray(completed)||completed.length!==1||completed[0].status!=="published"||completed[0].asset_id!==id)throw new Error("Cloud asset publication could not be finalized.");
       return cleanupPending?{...asset,cleanupPending:true}:asset;
