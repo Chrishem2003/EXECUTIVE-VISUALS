@@ -86,6 +86,8 @@ test("usage summary aggregates complete owner and authorized project telemetry w
   const created=await request("/api/projects",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({name:"Usage summary project"})},owner);
   assert.equal(created.status,201);
   const project=(await created.json()).project;
+  const member=await request("/api/projects/"+project.id+"/members",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({email:"usage-summary-outsider@example.test",role:"editor"})},owner);
+  assert.equal(member.status,201);
   const db=openDatabase(join(dataDir,"executive-visuals.sqlite"));
   let ids=[];
   try{
