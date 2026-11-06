@@ -7,8 +7,8 @@ function queueFor({job={id:"job-1",lease_token:"11111111-1111-4111-8111-11111111
  return {
   calls,
   async claim(workerId,seconds){calls.push(["claim",workerId,seconds]);return job;},
-  async renew(id,workerId,seconds){calls.push(["renew",id,workerId,seconds]);return typeof renew==="function"?renew():renew;},
-  async finish(id,workerId,status,output,error){calls.push(["finish",id,workerId,status,output,error]);if(failFinish)throw new Error("finish unavailable");return finish;}
+  async renew(id,workerId,seconds,leaseToken){calls.push(["renew",id,workerId,seconds,leaseToken]);return typeof renew==="function"?renew():renew;},
+  async finish(id,workerId,status,output,error,leaseToken){calls.push(["finish",id,workerId,status,output,error,leaseToken]);if(failFinish)throw new Error("finish unavailable");return finish;}
  };
 }
 
