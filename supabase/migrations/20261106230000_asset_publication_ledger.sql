@@ -6,7 +6,7 @@ create table if not exists executive_visuals.asset_publications (
   project_id uuid references executive_visuals.projects(id) on delete cascade,
   publication_key text not null check (char_length(publication_key) between 1 and 200),
   payload_sha256 text not null check (payload_sha256 ~ '^[0-9a-f]{64}$'),
-  asset_id uuid not null references executive_visuals.assets(id) on delete restrict,
+  asset_id uuid not null,
   status text not null default 'reserved' check (status in ('reserved','published')),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
