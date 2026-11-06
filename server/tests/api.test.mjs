@@ -128,6 +128,55 @@ test("usage summary aggregates complete owner and authorized project telemetry w
   assert.equal((await invalid.json()).error.code,"USAGE_PERIOD_INVALID");
 });
 
+test("operations summary reports scoped queue health and completed-job performance",async()=>{
+  assert.equal((await fetch(base+"/api/operations/summary")).status,401);
+  const owner=await register("operations-owner@example.test");
+  const collaborator=await register("operations-collaborator@example.test");
+  const unauthorized=await register("operations-unauthorized@example.test");
+  const created=await request("/api/projects",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({name:"Operations summary project"})},owner);
+  assert.equal(created.status,201);
+  const project=(await created.json()).project;
+  const member=await request("/api/projects/"+project.id+"/members",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({email:"operations-collaborator@example.test",role:"editor"})},owner);
+  assert.equal(member.status,201);
+
+  const db=openDatabase(join(dataDir,"executive-visuals.sqlite"));
+  try{
+    const ownerId=db.prepare("SELECT id FROM users WHERE email=?").get("operations-owner@example.test").id;
+    const collaboratorId=db.prepare("SELECT id FROM users WHERE email=?").get("operations-collaborator@example.test").id;
+    const now=new Date().toISOString();
+    const ago=(ms)=>new Date(Date.now()-ms).toISOString();
+    const insert=db.prepare("INSERT INTO jobs(id,owner_id,project_id,job_type,status,progress,input_json,created_at,updated_at,started_at,completed_at,lease_owner,lease_expires_at) VALUES(?,?,?,?,?,0,'{}',?,?,?,?,?,?)");
+    insert.run("ops-success",ownerId,project.id,"media.render","succeeded",ago(60000),now,ago(60000),now,null,null);
+    insert.run("ops-failed",collaboratorId,project.id,"media.render","failed",ago(120000),now,ago(120000),now,null,null);
+    insert.run("ops-queued",ownerId,null,"media.render","queued",ago(600000),now,null,null,null,null);
+    insert.run("ops-running",ownerId,project.id,"media.render","running",ago(180000),now,ago(120000),null,"worker-1",ago(60000));
+    insert.run("ops-private",collaboratorId,null,"media.render","queued",ago(300000),now,null,null,null,null);
+  }finally{db.close();}
+
+  const account=await request("/api/operations/summary?days=30",{},owner);
+  assert.equal(account.status,200);
+  const body=await account.json();
+  assert.equal(body.scope,"accessible_workspaces");
+  assert.equal(body.period.jobs,4,"private unscoped collaborator jobs must not leak");
+  assert.equal(body.period.completed,1);
+  assert.equal(body.period.failed,1);
+  assert.ok(body.period.averageCompletionMs>=59000&&body.period.averageCompletionMs<=61000);
+  assert.equal(body.queue.queued,1);
+  assert.equal(body.queue.running,1);
+  assert.equal(body.queue.activeWorkers,1);
+  assert.equal(body.queue.expiredLeases,1);
+  assert.ok(body.queue.oldestQueuedSeconds>=500);
+
+  const projectSummary=await request("/api/operations/summary?projectId="+encodeURIComponent(project.id),{},owner);
+  assert.equal(projectSummary.status,200);
+  assert.equal((await projectSummary.json()).period.jobs,3);
+  const denied=await request("/api/operations/summary?projectId="+encodeURIComponent(project.id),{},unauthorized);
+  assert.equal(denied.status,404);
+  const invalid=await request("/api/operations/summary?days=14",{},owner);
+  assert.equal(invalid.status,400);
+  assert.equal((await invalid.json()).error.code,"OPERATIONS_PERIOD_INVALID");
+});
+
 test("static application shell applies a restrictive content security policy",async()=>{
   const response=await fetch(base+"/");
   assert.equal(response.status,200);
