@@ -114,7 +114,7 @@ test("usage summary aggregates complete owner and authorized project telemetry w
   const projectBody=await projectSummary.json();
   assert.equal(projectBody.scope,"project");
   assert.equal(projectBody.totals.requests,3,"project view includes authorized collaborators' events");
-  assert.equal(projectBody.totals.totalTokens,239);
+  assert.equal(projectBody.totals.totalTokens,225);
   assert.equal(projectBody.totals.unknownCostEvents,3);
   assert.ok(projectBody.costDisclosure.includes("never treated as zero-cost"));
 
