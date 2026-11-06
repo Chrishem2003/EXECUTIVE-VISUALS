@@ -202,6 +202,10 @@ test("session cookies are hardened, hashed, origin-protected and safely invalida
   assert.equal(malformed.status,401,"malformed cookie encoding must fail closed");
   const crossOrigin=await request("/api/me",{headers:{Origin:"https://attacker.example"}},cookie);
   assert.equal(crossOrigin.status,403);
+  const wrongScheme=await request("/api/me",{headers:{Origin:base.replace(/^http:/,"https:")}},cookie);
+  assert.equal(wrongScheme.status,403,"same host with a different scheme is not same-origin");
+  const malformedOrigin=await request("/api/me",{headers:{Origin:base+"/unexpected-path"}},cookie);
+  assert.equal(malformedOrigin.status,403,"Origin headers must contain only a serialized origin");
   const sameOrigin=await request("/api/me",{headers:{Origin:base}},cookie);
   assert.equal(sameOrigin.status,200);
   assert.equal(sameOrigin.headers.get("access-control-allow-origin"),base);
