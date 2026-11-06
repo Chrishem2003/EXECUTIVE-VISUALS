@@ -19,6 +19,9 @@ export async function runCloudWorkerCycle({
 
   const job = await queue.claim(workerId, leaseSeconds);
   if (!job) return { claimed: false };
+  if (typeof job.lease_token !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(job.lease_token)) {
+    throw new Error("Cloud worker claim is missing a valid per-attempt lease fencing token.");
+  }
   const controller = new AbortController();
   let leaseLost = false;
   let heartbeatPending = false;
