@@ -97,7 +97,7 @@ export function buildLoudnormNormalizationFilter({integratedLufs=-16,loudnessRan
 
 export function parseLoudnormOutput(stderr=""){
  const text=String(stderr||"");
- const candidates=[...text.matchAll(/\\{[\\s\\S]*?\\}/g)].reverse();
+ const candidates=[...text.matchAll(/\{[\s\S]*?\}/g)].reverse();
  const numeric=value=>typeof value==="number"||typeof value==="string"&&value.trim()!==""?Number(value):NaN;
  for(const candidate of candidates){
   let parsed;
