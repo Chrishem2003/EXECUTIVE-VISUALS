@@ -45,7 +45,7 @@ test("cloud FFmpeg renderer produces a playable master from materialized video a
   assert.deepEqual([verticalProbe.streams[0].width,verticalProbe.streams[0].height],[1080,1920]);
   assert.equal(verticalProbe.streams[0].pix_fmt,"yuv420p");
   assert.equal(vertical.render.deliveryProfile,"vertical-1080p");
-  assert.equal(vertical.render.deliveryLabel,"Vertical 1080p SDR");
+  assert.equal(vertical.render.deliveryLabel,"Vertical 1080p H.264");
   const square=await renderCloudTimeline({timeline,assets,workDir:root,onProgress(){},deliveryProfile:"square-1080p"});
   const squareProbe=JSON.parse(execFileSync(process.env.FFPROBE_PATH||"ffprobe",["-v","error","-select_streams","v:0","-show_entries","stream=width,height","-of","json",square.path],{encoding:"utf8"}));
   assert.deepEqual([squareProbe.streams[0].width,squareProbe.streams[0].height],[1080,1080]);
