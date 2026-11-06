@@ -511,6 +511,20 @@ export function createAppServer() {
         const catalog=getProviderCatalog(process.env,{ffmpeg:executableAvailable("ffmpeg"),ffprobe:executableAvailable("ffprobe"),aiUpscale});
         send(res,200,catalog,cors);return;
       }
+      if(path==="/api/usage/summary"&&req.method==="GET"){
+        const projectId=url.searchParams.get("projectId");
+        if(projectId&&!getProjectAccess(db,user.id,projectId)){fail(res,404,"PROJECT_NOT_FOUND","Project not found.");return;}
+        const rawDays=url.searchParams.get("days")||"30";
+        const days=Number(rawDays);
+        if(!Number.isInteger(days)||![7,30,90].includes(days)){fail(res,400,"USAGE_PERIOD_INVALID","Usage summary days must be 7, 30 or 90.");return;}
+        const where=projectId?"project_id=? AND created_at>=strftime('%Y-%m-%dT%H:%M:%fZ','now',?)":"owner_id=? AND created_at>=strftime('%Y-%m-%dT%H:%M:%fZ','now',?)";
+        const scope=projectId?[projectId,"-"+days+" days"]:[user.id,"-"+days+" days"];
+        const totals=db.prepare("SELECT COUNT(*) AS requests,COALESCE(SUM(prompt_tokens),0) AS prompt_tokens,COALESCE(SUM(completion_tokens),0) AS completion_tokens,COALESCE(SUM(total_tokens),0) AS total_tokens,COALESCE(SUM(duration_ms),0) AS duration_ms,COALESCE(AVG(duration_ms),0) AS average_duration_ms,COALESCE(SUM(estimated_cost_micros),0) AS known_cost_micros,COUNT(estimated_cost_micros) AS known_cost_events,COUNT(*)-COUNT(estimated_cost_micros) AS unknown_cost_events FROM model_usage_events WHERE "+where).get(...scope);
+        const providers=db.prepare("SELECT provider,COUNT(*) AS requests,COALESCE(SUM(total_tokens),0) AS total_tokens,COALESCE(AVG(duration_ms),0) AS average_duration_ms,COALESCE(SUM(estimated_cost_micros),0) AS known_cost_micros,COUNT(estimated_cost_micros) AS known_cost_events,COUNT(*)-COUNT(estimated_cost_micros) AS unknown_cost_events FROM model_usage_events WHERE "+where+" GROUP BY provider ORDER BY requests DESC,provider ASC LIMIT 20").all(...scope);
+        const daily=db.prepare("SELECT strftime('%Y-%m-%d',created_at) AS day,COUNT(*) AS requests,COALESCE(SUM(total_tokens),0) AS total_tokens,COALESCE(SUM(estimated_cost_micros),0) AS known_cost_micros,COUNT(estimated_cost_micros) AS known_cost_events,COUNT(*)-COUNT(estimated_cost_micros) AS unknown_cost_events FROM model_usage_events WHERE "+where+" GROUP BY strftime('%Y-%m-%d',created_at) ORDER BY day ASC").all(...scope);
+        send(res,200,{periodDays:days,scope:projectId?"project":"account",projectId,totals:{requests:totals.requests,promptTokens:totals.prompt_tokens,completionTokens:totals.completion_tokens,totalTokens:totals.total_tokens,durationMs:totals.duration_ms,averageDurationMs:Math.round(totals.average_duration_ms),knownCostMicros:totals.known_cost_micros,knownCostEvents:totals.known_cost_events,unknownCostEvents:totals.unknown_cost_events},providers:providers.map(row=>({provider:row.provider,requests:row.requests,totalTokens:row.total_tokens,averageDurationMs:Math.round(row.average_duration_ms),knownCostMicros:row.known_cost_micros,knownCostEvents:row.known_cost_events,unknownCostEvents:row.unknown_cost_events})),daily:daily.map(row=>({day:row.day,requests:row.requests,totalTokens:row.total_tokens,knownCostMicros:row.known_cost_micros,knownCostEvents:row.known_cost_events,unknownCostEvents:row.unknown_cost_events})),costDisclosure:"Only persisted estimated_cost_micros values are included. Missing provider prices are counted as unknown, never treated as zero-cost."},cors);return;
+      }
+
       if(path==="/api/usage"&&req.method==="GET"){
         const projectId=url.searchParams.get("projectId");
         if(projectId&&!getProjectAccess(db,user.id,projectId)){fail(res,404,"PROJECT_NOT_FOUND","Project not found.");return;}
