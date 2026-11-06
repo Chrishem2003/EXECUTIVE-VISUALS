@@ -24,11 +24,11 @@ test("cloud timeline executor materializes all unique sources and publishes a re
  });
  const executionSignal=new AbortController().signal;
  const leaseAssertion=async()=>{publicationOrder.push("assert-lease");};
- const result=await executor({job:{id:"job-1",owner_id:owner,project_id:project,job_type:"timeline.render",input:{timelineId,timelineRevision:7}},signal:executionSignal,onProgress(){},assertLease:leaseAssertion});
+ const result=await executor({job:{id:"job-1",owner_id:owner,project_id:project,lease_owner:"worker-1",lease_token:"623e4567-e89b-42d3-a456-426614174000",job_type:"timeline.render",input:{timelineId,timelineRevision:7}},signal:executionSignal,onProgress(){},assertLease:leaseAssertion});
  assert.deepEqual(publicationOrder,["assert-lease","publish"]);
  assert.equal(materialized.length,2);assert.deepEqual(materialized.map(x=>x.assetId).sort(),["asset-a","asset-b"]);
  assert.deepEqual(cleanups.sort(),["asset-a","asset-b"]);
- assert.equal(published[0].ownerId,owner);assert.equal(published[0].projectId,project);assert.equal(published[0].publicationKey,"job-1:output:v1");assert.equal(published[0].signal,executionSignal);assert.equal(published[0].assertLease,leaseAssertion);
+ assert.equal(published[0].ownerId,owner);assert.equal(published[0].projectId,project);assert.equal(published[0].publicationKey,"job-1:output:v1");assert.equal(published[0].signal,executionSignal);assert.equal(published[0].assertLease,leaseAssertion);assert.deepEqual(published[0].leaseContext,{jobId:"job-1",workerId:"worker-1",leaseToken:"623e4567-e89b-42d3-a456-426614174000"});
  assert.equal(published[0].metadata.timelineRevision,7);assert.equal(published[0].metadata.probe.streams[0].codec_name,"h264");assert.equal(published[0].metadata.render.durationSeconds,12);assert.equal(published[0].content,"final-master");
  assert.equal(result.outputAsset.id,"master-asset");assert.equal(result.byteSize,12);assert.equal(result.timelineRevision,7);assert.equal(result.probeValidation.validatedStreamType,"video");
  await rm(root,{recursive:true,force:true});

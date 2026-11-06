@@ -28,23 +28,50 @@ export function createCloudPublicationCleanup({
   storage,
   findReferencedPaths,
   isAttemptActive,
-  onEvent=()=>{},
+  claimCleanup,
+  completeCleanup,
+  onEvent=async()=>false,
+  requireAudit=true,
   now=()=>new Date()
 }={}) {
   if(!storage||typeof storage.listObjects!=="function"||typeof storage.remove!=="function") {
     throw new Error("Publication cleanup requires a private storage adapter with list and remove operations.");
   }
   if(typeof findReferencedPaths!=="function")throw new Error("Publication cleanup requires an authoritative asset-reference lookup.");
-  if(typeof onEvent!=="function")throw new Error("Publication cleanup event handler must be a function.");
+  if(typeof onEvent!=="function")throw new Error("Publication cleanup requires a durable audit event handler.");
+  if(typeof requireAudit!=="boolean")throw new Error("Publication cleanup audit requirement must be boolean.");
 
   async function emit(event) {
-    try { await onEvent(Object.freeze({...event})); }
-    catch { /* Audit callback failure must never broaden cleanup or hide a deletion result. */ }
+    let stored;
+    try { stored=await onEvent(Object.freeze({...event})); }
+    catch {
+      if(requireAudit)throw Object.assign(new Error("Publication cleanup audit persistence failed; cleanup is stopped."),{code:"CLOUD_PUBLICATION_CLEANUP_AUDIT_FAILED"});
+      return false;
+    }
+    if(requireAudit&&stored!==true)throw Object.assign(new Error("Publication cleanup audit event was not durably acknowledged; cleanup is stopped."),{code:"CLOUD_PUBLICATION_CLEANUP_AUDIT_FAILED"});
+    return stored===true;
+  }
+  async function recordSkip(skipped, candidate, reason, extra={}, at, dryRun=true) {
+    const item={...candidate,reason,...extra};
+    skipped.push(item);
+    await emit({
+      type:"publication.cleanup_candidate_skipped",
+      objectPath:candidate.objectPath,
+      createdAt:candidate.createdAt||null,
+      reason,
+      dryRun,
+      ...(extra.claimId?{claimId:extra.claimId}:{}),
+      at
+    });
   }
 
   return Object.freeze({
     async run({
       prefix,
+      jobId=null,
+      ownerId=null,
+      projectId=null,
+      publicationKey=null,
       olderThanMs=DAY_MS,
       limit=100,
       cursor=null,
@@ -59,12 +86,18 @@ export function createCloudPublicationCleanup({
       if(cursor!==null&&(typeof cursor!=="string"||!cursor||cursor.length>4096))throw new Error("Publication cleanup cursor is invalid.");
       if(typeof dryRun!=="boolean"||typeof confirmDelete!=="boolean")throw new Error("Publication cleanup safety flags must be boolean.");
       if(!dryRun&&!confirmDelete)throw new Error("Destructive publication cleanup requires explicit confirmation.");
+      if(!dryRun&&(!UUID.test(jobId||"")||!UUID.test(ownerId||"")||(projectId!==null&&!UUID.test(projectId))||typeof publicationKey!=="string"||publicationKey.length<1||publicationKey.length>200)) {
+        throw new Error("Destructive cleanup requires the exact job, owner, optional project, and publication key identity.");
+      }
+      if(!dryRun&&prefix.split("/")[0] !== (projectId||ownerId))throw new Error("Cleanup prefix does not match the publication owner/project scope.");
       if(!dryRun&&typeof isAttemptActive!=="function")throw new Error("Destructive cleanup requires an authoritative active-worker lease check.");
+      if(!dryRun&&(typeof claimCleanup!=="function"||typeof completeCleanup!=="function"))throw new Error("Destructive cleanup requires durable database claim and completion callbacks.");
 
       const current=now();
       const nowMs=current instanceof Date?current.getTime():Date.parse(current);
       if(!Number.isFinite(nowMs))throw new Error("Publication cleanup clock returned an invalid time.");
       const cutoff=new Date(nowMs-olderThanMs).toISOString();
+      const eventAt=new Date(nowMs).toISOString();
       const listing=await storage.listObjects({prefix,limit,cursor});
       if(!listing||!Array.isArray(listing.objects)||typeof listing.hasNext!=="boolean")throw new Error("Publication cleanup storage listing is invalid.");
       const entries=listing.objects;
@@ -75,7 +108,7 @@ export function createCloudPublicationCleanup({
         const objectPath=prefix+entry.name;
         const created=Date.parse(entry.createdAt||"");
         if(!Number.isFinite(created)) {
-          skipped.push({objectPath,reason:"created_at_unavailable"});
+          await recordSkip(skipped,{objectPath},"created_at_unavailable",{},eventAt,dryRun);
           continue;
         }
         if(created>nowMs-olderThanMs)continue;
@@ -93,33 +126,54 @@ export function createCloudPublicationCleanup({
       const eligible=[];
       for(const candidate of candidates) {
         if(referenced.has(candidate.objectPath)) {
-          skipped.push({...candidate,reason:"asset_reference_exists"});
+          await recordSkip(skipped,candidate,"asset_reference_exists",{},eventAt,dryRun);
           continue;
         }
         if(typeof isAttemptActive!=="function") {
-          skipped.push({...candidate,reason:"lease_state_unavailable"});
+          await recordSkip(skipped,candidate,"lease_state_unavailable",{},eventAt,dryRun);
           continue;
         }
         let active;
         try { active=await isAttemptActive({prefix,objectPath:candidate.objectPath,createdAt:candidate.createdAt}); }
         catch { active=null; }
         if(active!==false) {
-          skipped.push({...candidate,reason:active===true?"active_worker_lease":"lease_state_unavailable"});
+          await recordSkip(skipped,candidate,active===true?"active_worker_lease":"lease_state_unavailable",{},eventAt,dryRun);
           continue;
         }
         eligible.push(candidate);
+        await emit({type:"publication.cleanup_candidate_eligible",objectPath:candidate.objectPath,createdAt:candidate.createdAt,dryRun,at:eventAt});
       }
 
       const removed=[];
       if(!dryRun) {
         for(const candidate of eligible) {
+          let claim;
+          try {
+            claim=await claimCleanup({jobId,ownerId,projectId,publicationKey,prefix,objectPath:candidate.objectPath,createdAt:candidate.createdAt});
+            if(!claim||typeof claim.claimId!=="string"||typeof claim.claimToken!=="string"||claim.status!=="claimed") {
+              throw new Error("Durable cleanup claim was not granted.");
+            }
+          } catch {
+            await recordSkip(skipped,candidate,"durable_cleanup_claim_failed",{},eventAt,dryRun);
+            continue;
+          }
           try {
             await storage.remove(candidate.objectPath);
             removed.push(candidate);
-            await emit({type:"publication.orphan_removed",prefix,objectPath:candidate.objectPath,createdAt:candidate.createdAt,at:new Date(nowMs).toISOString()});
           } catch {
-            skipped.push({...candidate,reason:"storage_remove_failed"});
+            // Keep the durable claim. A retry can safely repeat the Storage API
+            // removal with the same claim token and then complete the tombstone.
+            await recordSkip(skipped,candidate,"storage_remove_failed",{claimId:claim.claimId},eventAt,dryRun);
+            continue;
           }
+          try {
+            const completed=await completeCleanup({...claim,jobId,ownerId,projectId,publicationKey,prefix,objectPath:candidate.objectPath});
+            if(completed!==true)throw new Error("Durable cleanup claim completion was not confirmed.");
+          } catch {
+            await recordSkip(skipped,candidate,"cleanup_claim_completion_failed",{claimId:claim.claimId},eventAt,dryRun);
+            continue;
+          }
+          await emit({type:"publication.orphan_removed",prefix,objectPath:candidate.objectPath,createdAt:candidate.createdAt,claimId:claim.claimId,dryRun,at:eventAt});
         }
       }
       const result={
@@ -127,7 +181,9 @@ export function createCloudPublicationCleanup({
         eligibleCount:eligible.length,removedCount:removed.length,
         dryRun,confirmDelete,eligible,removed,skipped
       };
-      await emit({type:"publication.cleanup_completed",prefix,dryRun,scanned:result.scanned,candidateCount:result.candidateCount,eligibleCount:result.eligibleCount,removedCount:result.removedCount,skippedCount:skipped.length,at:new Date(nowMs).toISOString()});
+      result.skippedCount=skipped.length;
+      result.failureCount=skipped.filter(item=>item.reason.endsWith("_failed")).length;
+      await emit({type:"publication.cleanup_completed",prefix,dryRun,scanned:result.scanned,candidateCount:result.candidateCount,eligibleCount:result.eligibleCount,removedCount:result.removedCount,skippedCount:result.skippedCount,failureCount:result.failureCount,at:eventAt});
       return result;
     }
   });

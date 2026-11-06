@@ -69,7 +69,7 @@ export function createCloudTimelineExecutor({timelines,mediaIO,renderTimeline,pr
       await assertLease();
       const outputAsset=await mediaIO.publish({
         ownerId:job.owner_id,projectId:record.projectId,filename:output.filename,mediaType:output.mediaType,
-        path:output.path,publicationKey:job.id+":output:v1",signal,assertLease,metadata:{...(output.metadata||{}),operation:"timeline.render",timelineId:record.id,timelineRevision:record.revision,sha256,probe:probed,probeValidation,render:output.render||{}}
+        path:output.path,publicationKey:job.id+":output:v1",signal,assertLease,leaseContext:{jobId:job.id,workerId:job.lease_owner,leaseToken:job.lease_token},metadata:{...(output.metadata||{}),operation:"timeline.render",timelineId:record.id,timelineRevision:record.revision,sha256,probe:probed,probeValidation,render:output.render||{}}
       });
       onProgress(100);
       return{timelineId:record.id,timelineRevision:record.revision,outputAsset,sha256,byteSize:info.size,probeValidation,render:output.render||{}};

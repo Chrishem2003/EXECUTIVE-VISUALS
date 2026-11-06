@@ -87,7 +87,7 @@ test("cloud media enhancement publishes a checksummed derivative using the claim
     const leaseAssertion = async () => { publicationOrder.push("assert-lease"); };
     const result = await execute({
       job: {
-        id: "job-2", owner_id: "verified-owner", project_id: "project-2",
+        id: "job-2", owner_id: "verified-owner", project_id: "project-2", lease_owner: "worker-2", lease_token: "623e4567-e89b-42d3-a456-426614174000",
         job_type: "media.color",
         input: { sourceAssetId: "asset-source", brightness: 0.1, contrast: 1, saturation: 1 }
       },
@@ -102,6 +102,7 @@ test("cloud media enhancement publishes a checksummed derivative using the claim
     assert.equal(published.publicationKey, "job-2:output:v1");
     assert.equal(published.signal, executionSignal);
     assert.equal(published.assertLease, leaseAssertion);
+    assert.deepEqual(published.leaseContext, { jobId: "job-2", workerId: "worker-2", leaseToken: "623e4567-e89b-42d3-a456-426614174000" });
     assert.equal(published.mediaType, "video/mp4");
     assert.equal(result.outputAsset.id, "asset-output");
     assert.equal(result.sha256.length, 64);
