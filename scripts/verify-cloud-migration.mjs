@@ -57,9 +57,9 @@ if (!checkpointSql.includes("revoke all on executive_visuals.video_pipeline_chec
 if (!checkpointSql.includes("grant all privileges on executive_visuals.video_pipeline_checkpoints to service_role;")) issues.push("Trusted cloud worker role needs checkpoint access.");
 if (!checkpointSql.includes("ev_video_pipeline_checkpoints_validate_scope")) issues.push("Cloud checkpoint writes must validate owner, project and source asset scope.");
 if (!checkpointSql.includes("octet_length(output_json::text) <= 32000")) issues.push("Cloud checkpoint output must be size-bounded.");
-if (!checkpointSql.includes("output_asset.derivative_of = new.input_asset_id")) issues.push("Cloud checkpoint outputs must be verified as derivatives of their recorded inputs.");
-if (!checkpointSql.includes("output_asset.owner_id = new.owner_id") || !checkpointSql.includes("output_asset.project_id = new.project_id")) issues.push("Cloud checkpoint output assets must match the checkpoint owner and project.");
-if (!checkpointSql.includes("output_asset.sha256 = lower(new.output_json ->> 'sha256')")) issues.push("Cloud checkpoint output checksums must match persisted asset metadata.");
+if (!checkpointSql.includes("output_asset.derivative_of is distinct from new.input_asset_id")) issues.push("Cloud checkpoint outputs must be verified as derivatives of their recorded inputs.");
+if (!checkpointSql.includes("output_asset.owner_id is distinct from new.owner_id") || !checkpointSql.includes("output_asset.project_id is distinct from new.project_id")) issues.push("Cloud checkpoint output assets must match the checkpoint owner and project.");
+if (!checkpointSql.includes("output_asset.sha256 is distinct from output_sha256") || !checkpointSql.includes("output_sha256 := lower(coalesce(new.output_json ->> 'sha256', ''))")) issues.push("Cloud checkpoint output checksums must match persisted asset metadata.");
 if (/\b(drop\s+table|truncate|delete\s+from)\b/i.test(checkpointSql)) issues.push("Checkpoint migration must not contain destructive DDL/DML.");
 
 if (/\b(drop\s+table|truncate|delete\s+from)\b/i.test(fencingSql)) issues.push("Lease fencing migration must not contain destructive DDL/DML.");
