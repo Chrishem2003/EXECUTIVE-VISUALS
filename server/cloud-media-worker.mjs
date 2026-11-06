@@ -62,7 +62,13 @@ export function createCloudMediaWorker({
 
   const executeWithProbePersistence=async context=>{
     const result=await executor(context);
-    if(context.job?.job_type==="media.probe"&&result?.metadata&&typeof cloudAssets.assets?.updateMetadata==="function"){
+    if(context.job?.job_type==="media.probe"){
+      if(!result?.metadata||typeof result.metadata!=="object"||Array.isArray(result.metadata)){
+        throw Object.assign(new Error("Cloud media probe completed without metadata to persist."),{code:"CLOUD_MEDIA_PROBE_METADATA_MISSING"});
+      }
+      if(typeof cloudAssets.assets?.updateMetadata!=="function"){
+        throw Object.assign(new Error("Cloud media probe metadata persistence is unavailable."),{code:"CLOUD_MEDIA_PROBE_PERSISTENCE_UNAVAILABLE"});
+      }
       const sourceAssetId=String(context.job.input?.sourceAssetId||"");
       if(!sourceAssetId)throw new Error("Cloud media probe is missing its source asset ID.");
       await cloudAssets.assets.updateMetadata({ownerId:context.job.owner_id,assetId:sourceAssetId,patch:{probe:result.metadata}});
