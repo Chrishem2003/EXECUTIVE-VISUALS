@@ -87,7 +87,7 @@ test("fails closed when reference lookup fails or cleanup deletion fails",async(
   now:()=>now
  });
  await assert.rejects(()=>failedLookup.run({prefix}),/reference lookup/);
- const result=await f.cleanup.run({prefix,dryRun:false,confirmDelete:true});
+ const result=await f.cleanup.run({...cleanupIdentity,prefix,dryRun:false,confirmDelete:true});
  assert.equal(result.removedCount,0);
  assert.ok(result.skipped.some(item=>item.reason==="storage_remove_failed"));
 });
@@ -107,7 +107,7 @@ test("destructive cleanup fails closed without durable claim callbacks",async()=
   findReferencedPaths:async()=>[],
   isAttemptActive:async()=>false
  });
- await assert.rejects(()=>cleanup.run({prefix,dryRun:false,confirmDelete:true}),/durable database claim and completion/);
+ await assert.rejects(()=>cleanup.run({...cleanupIdentity,prefix,dryRun:false,confirmDelete:true}),/durable database claim and completion/);
  assert.equal(f.removed.length,0);
 });
 
