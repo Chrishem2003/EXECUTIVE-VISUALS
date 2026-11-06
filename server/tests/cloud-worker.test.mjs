@@ -35,6 +35,8 @@ test("cloud worker executes and finishes success under its lease",async()=>{
  assert.deepEqual(progress,[{jobId:"job-1",workerId:"worker-1",progress:50}]);
  assert.ok(queue.calls.some(call=>call[0]==="finish"&&call[3]==="succeeded"));
  assert.ok(events.some(event=>event.type==="job.succeeded"));
+ assert.ok(events.some(event=>event.type==="job.lease_verified"&&event.stage==="worker.finalize"));
+ assert.equal(JSON.stringify(events).includes("11111111-1111-4111-8111-111111111111"),false,"telemetry must never expose the fencing token");
 });
 
 test("worker failure is persisted as a bounded failed-job result",async()=>{
@@ -51,15 +53,18 @@ test("worker failure is persisted as a bounded failed-job result",async()=>{
 
 test("worker stops and does not finish when lease renewal is lost",async()=>{
  const queue=queueFor({renew:false});
+ const events=[];
  const result=await runCloudWorkerCycle({
   queue,workerId:"worker-1",leaseSeconds:15,heartbeatIntervalMs:1000,
   execute:async({signal})=>new Promise(resolve=>{
    const poll=setInterval(()=>{if(signal.aborted){clearInterval(poll);resolve({lateOutput:true});}},10);
-  })
+  }),
+  onEvent:event=>events.push(event)
  });
  assert.equal(result.finished,false);
  assert.equal(result.reason,"lease_lost");
  assert.equal(queue.calls.some(call=>call[0]==="finish"),false);
+ assert.ok(events.some(event=>event.type==="job.lease_renewal_rejected"));
 });
 
 test("worker validates inputs and output before finishing",async()=>{
@@ -86,10 +91,12 @@ test("worker drains an in-flight heartbeat before attempting terminal completion
  const started=new Promise(resolve=>{heartbeatStarted=resolve;});
  const gate=new Promise(resolve=>{releaseHeartbeat=resolve;});
  const queue=queueFor({renew:()=>{heartbeatStarted();return gate;}});
+ const events=[];
  const keepAlive=setTimeout(()=>{},5000);
  const running=runCloudWorkerCycle({
   queue,workerId:"worker-1",leaseSeconds:15,heartbeatIntervalMs:1000,
-  execute:async()=>{await started;return{assetId:"asset-after-heartbeat"};}
+  execute:async()=>{await started;return{assetId:"asset-after-heartbeat"};},
+  onEvent:event=>events.push(event)
  });
  await started;
  await new Promise(resolve=>setTimeout(resolve,0));
@@ -99,6 +106,7 @@ test("worker drains an in-flight heartbeat before attempting terminal completion
  clearTimeout(keepAlive);
  assert.equal(result.status,"succeeded");
  assert.equal(queue.calls.some(call=>call[0]==="finish"),true);
+ assert.ok(events.some(event=>event.type==="job.lease_renewed"&&event.leaseSeconds===15));
 });
 
 test("worker blocks terminal writes when the database rejects the attempt fence",async()=>{

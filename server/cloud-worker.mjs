@@ -28,16 +28,18 @@ export async function runCloudWorkerCycle({
   let heartbeatError = null;
   let heartbeatStopped = false;
   let heartbeatInFlight = Promise.resolve();
-  async function assertLease() {
+  async function assertLease(stage = "worker.finalize") {
+    const verificationStartedAt = Date.now();
     if (leaseLost || controller.signal.aborted) throw new Error("Worker lease is no longer valid.");
     try {
       const valid = await queue.assertLease(job.id, workerId, job.lease_token);
       if (!valid) throw new Error("Worker lease is no longer valid.");
+      onEvent({ type: "job.lease_verified", jobId: job.id, workerId, stage, durationMs: Date.now() - verificationStartedAt });
       return true;
     } catch (error) {
       leaseLost = true;
       controller.abort(new Error("Worker lease could not be verified."));
-      onEvent({ type: "job.lease_lost", jobId: job.id, workerId });
+      onEvent({ type: "job.lease_lost", jobId: job.id, workerId, stage, reason: "verification_failed" });
       throw Object.assign(new Error("Worker lease verification failed; side effects are blocked."), { code: "CLOUD_WORKER_LEASE_LOST" });
     }
   }
@@ -49,18 +51,23 @@ export async function runCloudWorkerCycle({
     if (heartbeatPending || heartbeatStopped || leaseLost || controller.signal.aborted) return;
     heartbeatPending = true;
     heartbeatInFlight = (async () => {
+      const renewalStartedAt = Date.now();
       try {
         const renewed = await queue.renew(job.id, workerId, leaseSeconds, job.lease_token);
         if (!renewed) {
+          onEvent({ type: "job.lease_renewal_rejected", jobId: job.id, workerId, durationMs: Date.now() - renewalStartedAt });
           leaseLost = true;
           controller.abort(new Error("Worker lease is no longer valid."));
-          onEvent({ type: "job.lease_lost", jobId: job.id, workerId });
+          onEvent({ type: "job.lease_lost", jobId: job.id, workerId, reason: "renewal_rejected" });
+        } else {
+          onEvent({ type: "job.lease_renewed", jobId: job.id, workerId, leaseSeconds, durationMs: Date.now() - renewalStartedAt });
         }
       } catch (error) {
         heartbeatError = error;
+        onEvent({ type: "job.lease_renewal_failed", jobId: job.id, workerId, code: typeof error?.code === "string" ? error.code.slice(0, 100) : "LEASE_RENEWAL_FAILED", durationMs: Date.now() - renewalStartedAt });
         leaseLost = true;
         controller.abort(new Error("Worker could not renew its execution lease."));
-        onEvent({ type: "job.lease_lost", jobId: job.id, workerId });
+        onEvent({ type: "job.lease_lost", jobId: job.id, workerId, reason: "renewal_failed" });
       } finally {
         heartbeatPending = false;
       }

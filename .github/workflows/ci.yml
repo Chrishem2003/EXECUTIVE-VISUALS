@@ -1,7 +1,7 @@
 name: Quality checks
 on:
   push:
-    branches: [main]
+    branches: [main, feat/worker-lease-observability]
   pull_request:
     branches: [main, feat/idempotent-asset-publication-ledger, feat/lease-fencing-tokens-v2]
 concurrency:
