@@ -75,6 +75,22 @@ test("lists only a bounded exact asset prefix through the Storage API",async()=>
  await assert.rejects(()=>storage.listObjects({prefix,limit:1001}),/pagination/);
 });
 
+test("aborts a streaming upload when its worker execution signal is cancelled",async()=>{
+ const root=await mkdtemp(join(tmpdir(),"ev-storage-abort-")),file=join(root,"render.mp4");
+ await writeFile(file,Buffer.from("render"));
+ const controller=new AbortController();
+ const storage=createCloudStorage({...config,fetchImpl:async(url,options)=>{
+  if(options.signal.aborted)throw Object.assign(new Error("aborted"),{name:"AbortError"});
+  return await new Promise((resolve,reject)=>{
+   options.signal.addEventListener("abort",()=>reject(Object.assign(new Error("aborted"),{name:"AbortError"})),{once:true});
+  });
+ }});
+ const pending=storage.uploadFile(path,file,"video/mp4",{signal:controller.signal});
+ controller.abort();
+ await assert.rejects(()=>pending,error=>error.code==="CLOUD_STORAGE_UPLOAD_ABORTED");
+ await rm(root,{recursive:true,force:true});
+});
+
 test("removal is scoped to the fixed bucket and exact object prefix",async()=>{
  const calls=[];
  const storage=createCloudStorage({...config,fetchImpl:async(url,options)=>{calls.push({url,options});return response({});}});
