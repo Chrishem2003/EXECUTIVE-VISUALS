@@ -252,6 +252,12 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     const result=await service.reviews.create({actorId:ownerId,input:body,idempotencyKey});
     return response(result.idempotentReplay?200:201,result);
    }
+   const reactionMatch=path.match(/^\\/api\\/cloud\\/reviews\\/([0-9a-f-]+)\\/reactions$/i);
+   if(reactionMatch&&safeId(reactionMatch[1])){
+    if(method==="GET"){const reactions=await service.reactions.list({actorId:ownerId,reviewId:reactionMatch[1]});return response(200,{reactions});}
+    if(method==="POST"){const reaction=await service.reactions.add({actorId:ownerId,reviewId:reactionMatch[1],emoji:body?.emoji});return response(201,{reaction});}
+    if(method==="DELETE"){const removed=await service.reactions.remove({actorId:ownerId,reviewId:reactionMatch[1],emoji:query.emoji});return response(200,{removed});}
+   }
    const replyMatch=path.match(/^\/api\/cloud\/reviews\/([0-9a-f-]+)\/replies$/i);
    if(replyMatch&&safeId(replyMatch[1])){
     if(method==="GET"){const replies=await service.conversations.list({actorId:ownerId,reviewId:replyMatch[1]});return response(200,{replies});}
@@ -304,7 +310,7 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
    return null;
   }catch(error){
    if(error.code==="INVALID_MASTERING_OPTIONS"||error.code==="INVALID_DELIVERY_PROFILE")return response(422,{error:{code:error.code,message:error.message}});
-   if(error.code==="REVIEW_INVALID"||error.code==="REVIEW_ANNOTATION_INVALID"||error.code==="CLOUD_REVIEW_INVALID")return response(400,{error:{code:error.code,message:error.message}});
+   if(error.code==="REVIEW_INVALID"||error.code==="REVIEW_ANNOTATION_INVALID"||error.code==="REVIEW_REACTION_INVALID"||error.code==="CLOUD_REVIEW_INVALID")return response(400,{error:{code:error.code,message:error.message}});
    if(error.code==="CLOUD_REVIEW_NOT_FOUND"||error.code==="CLOUD_REVIEW_ACCESS_DENIED")return response(404,{error:{code:"REVIEW_NOT_FOUND",message:"Review not found."}});
    if(error.code==="CLOUD_REVIEW_CONFLICT"||error.code==="CLOUD_REVIEW_IDEMPOTENCY_CONFLICT")return response(409,{error:{code:error.code,message:error.message}});
    if(error.code==="CLOUD_PROJECT_NOT_FOUND"||error.code==="CLOUD_PROJECT_ACCESS_DENIED")return response(404,{error:{code:"PROJECT_NOT_FOUND",message:"Project not found."}});
