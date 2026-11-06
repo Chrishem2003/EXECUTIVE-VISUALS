@@ -45,7 +45,7 @@ RETURNS text[]
 LANGUAGE sql
 IMMUTABLE
 AS $foldername$
-  SELECT string_to_array(name, '/')[1:greatest(array_length(string_to_array(name, '/'), 1) - 1, 0)];
+  SELECT (string_to_array(name, '/'))[1:greatest(array_length(string_to_array(name, '/'), 1) - 1, 0)];
 $foldername$;
 
 CREATE TABLE IF NOT EXISTS auth.users (
