@@ -43,6 +43,23 @@ test("asset derivatives cannot cross owner/project boundaries or use deleted sou
   assert.match(sql, /revoke all on function executive_visuals\.validate_asset_derivative_scope_v1\(\)[\s\S]*?from public, anon, authenticated, service_role/i);
 });
 
+test("video pipeline checkpoint migration enforces source and output integrity exactly once", async () => {
+  const migration = await readFile(
+    new URL("../../supabase/migrations/20261102090000_video_pipeline_checkpoints.sql", import.meta.url),
+    "utf8",
+  );
+  assert.equal((migration.match(/create or replace function executive_visuals\\.validate_video_pipeline_checkpoint_scope/g) || []).length, 1);
+  assert.equal((migration.match(/create trigger ev_video_pipeline_checkpoints_validate_scope/g) || []).length, 1);
+  assert.match(migration, /security definer\\s+set search_path = ''/i);
+  assert.match(migration, /source_asset\\.sha256 is distinct from new\\.input_sha256/i);
+  assert.match(migration, /source_asset\\.deleted_at is not null/i);
+  assert.match(migration, /output_asset\\.owner_id is distinct from new\\.owner_id/i);
+  assert.match(migration, /output_asset\\.project_id is distinct from new\\.project_id/i);
+  assert.match(migration, /output_asset\\.derivative_of is distinct from new\\.input_asset_id/i);
+  assert.match(migration, /output_asset\\.sha256 is distinct from output_sha256/i);
+  assert.match(migration, /revoke all on function executive_visuals\\.validate_video_pipeline_checkpoint_scope\\(\\)[\\s\\S]*?from public, anon, authenticated, service_role/i);
+});
+
 test("atomic publication RPC is callable only by service_role", async () => {
   const sql = await readFile(migrationUrl, "utf8");
   assert.match(sql, /security definer\s+set search_path = ''/i);
