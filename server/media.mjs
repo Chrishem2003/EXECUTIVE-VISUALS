@@ -378,7 +378,9 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
       const mime = format==="jpg"?"image/jpeg":"image/"+format;
       const baseName = source.original_name.split(".").slice(0,-1).join(".") || source.original_name;
       const processing = {engine:result.engine,method:result.method,model:result.model,scale:result.scale,tile:result.tile};
+      onStage({id:"output-persist",label:"Save output asset",status:"running",attributes:{nodeKind:"asset"}});
       const outputAsset = addAsset(db,job,"derived/"+id+"."+format,baseName+"-ai-upscaled."+format,mime,fileStat.size,hash.digest("hex"),source.id,{operation:job.job_type,processing});
+      onStage({id:"output-persist",label:"Save output asset",status:"succeeded",attributes:{nodeKind:"asset"}});
       onStage({id:"ai-upscale",label:"Run AI super-resolution",status:"succeeded",attributes:{nodeKind:"ai-inference"}});
       emit("media.output_created",{assetId:outputAsset.id,sha256:outputAsset.sha256});
       onProgress(100);
@@ -485,7 +487,9 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
   const hash = createHash("sha256");
   await pipeline(createReadStream(outputPath), new Transform({ transform(chunk, enc, cb) { hash.update(chunk); cb(null, chunk); } }), new Transform({ transform(chunk, enc, cb) { cb(); } }));
   const provenance=buildMediaProcessingProvenance({jobType:job.job_type,input,sourceAsset:source});
+  onStage({id:"output-persist",label:"Save output asset",status:"running",attributes:{nodeKind:"asset"}});
   const outputAsset = addAsset(db, job, "derived/"+id+"."+ext, outputName, mime, fileStat.size, hash.digest("hex"), source.id, { operation:job.job_type, ...(provenance?{processing:provenance}:{}) });
+  onStage({id:"output-persist",label:"Save output asset",status:"succeeded",attributes:{nodeKind:"asset"}});
   onStage({id:"output-persist",label:"Save output asset",status:"succeeded",attributes:{nodeKind:"asset"}});
   emit("media.output_created", { assetId:outputAsset.id, sha256:outputAsset.sha256 });
   return { outputAsset, validation };
