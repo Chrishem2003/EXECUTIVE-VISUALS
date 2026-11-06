@@ -13,7 +13,7 @@ const dataDir=await mkdtemp(join(tmpdir(),"ev-api-test-"));
 const webDir=join(dataDir,"web");await mkdir(webDir,{recursive:true});await writeFile(join(webDir,"index.html"),"<!doctype html><html><body>test</body></html>");
 const child=spawn(process.execPath,["server/index.mjs"],{
   cwd:process.cwd(),
-  env:{...process.env,NODE_ENV:"development",AUTH_MODE:"local",AUTH_RATE_LIMIT:"1000",SESSION_IDLE_TIMEOUT_MINUTES:"5",REMOTE_AI_DAILY_REQUEST_LIMIT:"7",API_HOST:"127.0.0.1",API_PORT:String(port),DATA_DIR:dataDir,MEDIA_ROOT:join(dataDir,"media"),WEB_ROOT:webDir,DISABLE_WORKER:"true"},
+  env:{...process.env,NODE_ENV:"development",AUTH_MODE:"local",AUTH_RATE_LIMIT:"1000",SESSION_IDLE_TIMEOUT_MINUTES:"5",SESSION_MAX_CONCURRENT:"2",REMOTE_AI_DAILY_REQUEST_LIMIT:"7",API_HOST:"127.0.0.1",API_PORT:String(port),DATA_DIR:dataDir,MEDIA_ROOT:join(dataDir,"media"),WEB_ROOT:webDir,DISABLE_WORKER:"true"},
   stdio:["ignore","pipe","pipe"]
 });
 let stdout="",stderr="";
@@ -252,6 +252,53 @@ test("password changes revoke every prior local session and retain only the rota
   assert.equal(oldLogin.status,401);
   const newLogin=await request("/api/auth/login",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({email:"password-rotation@example.test",password:"local-test-password-456"})});
   assert.equal(newLogin.status,200);
+});
+
+test("users can list active local sessions and revoke another device without exposing session tokens",async()=>{
+  const firstCookie=await register("session-management@example.test");
+  const secondLogin=await request("/api/auth/login",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({email:"session-management@example.test",password:"local-test-password-123"})});
+  assert.equal(secondLogin.status,200);
+  const secondCookie=(secondLogin.headers.get("set-cookie")||"").split(";")[0];
+  const listed=await request("/api/auth/sessions",{},firstCookie);
+  assert.equal(listed.status,200);
+  const payload=await listed.json();
+  assert.equal(payload.maxConcurrent,2);
+  assert.equal(payload.sessions.length,2);
+  assert.equal(payload.sessions.filter(x=>x.current).length,1);
+  assert.ok(payload.sessions.every(x=>x.id&&!Object.hasOwn(x,"token")&&!Object.hasOwn(x,"tokenHash")));
+  const other=payload.sessions.find(x=>!x.current);
+  const revoked=await request("/api/auth/sessions/"+other.id,{method:"DELETE"},firstCookie);
+  assert.equal(revoked.status,200);
+  assert.deepEqual(await revoked.json(),{ok:true,current:false});
+  assert.equal((await request("/api/me",{},secondCookie)).status,401);
+  const remaining=await request("/api/auth/sessions",{},firstCookie);
+  assert.equal((await remaining.json()).sessions.length,1);
+});
+
+test("concurrent local session limit revokes least-recently-used sessions",async()=>{
+  const firstCookie=await register("session-limit@example.test");
+  const secondLogin=await request("/api/auth/login",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({email:"session-limit@example.test",password:"local-test-password-123"})});
+  assert.equal(secondLogin.status,200);
+  const secondCookie=(secondLogin.headers.get("set-cookie")||"").split(";")[0];
+  const thirdLogin=await request("/api/auth/login",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({email:"session-limit@example.test",password:"local-test-password-123"})});
+  assert.equal(thirdLogin.status,200);
+  const thirdCookie=(thirdLogin.headers.get("set-cookie")||"").split(";")[0];
+  assert.equal((await request("/api/me",{},firstCookie)).status,401);
+  assert.equal((await request("/api/me",{},secondCookie)).status,200);
+  assert.equal((await request("/api/me",{},thirdCookie)).status,200);
+  const sessions=await request("/api/auth/sessions",{},thirdCookie);
+  const payload=await sessions.json();
+  assert.equal(payload.maxConcurrent,2);
+  assert.equal(payload.sessions.length,2);
+});
+
+test("session revocation is scoped to the authenticated account",async()=>{
+  const ownerCookie=await register("session-owner@example.test");
+  const outsiderCookie=await register("session-outsider@example.test");
+  const sessions=await request("/api/auth/sessions",{},ownerCookie);
+  const sessionId=(await sessions.json()).sessions[0].id;
+  assert.equal((await request("/api/auth/sessions/"+sessionId,{method:"DELETE"},outsiderCookie)).status,404);
+  assert.equal((await request("/api/me",{},ownerCookie)).status,200);
 });
 
 test("expired local sessions are rejected and removed from persistence",async()=>{
