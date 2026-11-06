@@ -1,4 +1,8 @@
 -- Bind append-only review audit events to the authenticated API actor.
+-- Idempotency is scoped to the submitting reviewer, not the project owner.
+drop index if exists executive_visuals.ev_reviews_owner_request;
+create unique index if not exists ev_reviews_reviewer_request
+  on executive_visuals.reviews(reviewer_id,request_id) where request_id is not null;
 alter table executive_visuals.reviews
   add column if not exists last_actor_id uuid references auth.users(id) on delete set null;
 
