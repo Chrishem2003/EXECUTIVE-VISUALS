@@ -56,7 +56,10 @@ export function createCloudWorkerSupervisor({workers,leaseSeconds=90,heartbeatIn
    if(!stopped)throw new Error("Cloud worker supervisor is already running.");
    stopped=false;
    await recover();
-   await cycle();
+   // Start the first poll without blocking process startup on a long render.
+   // This lets the process install SIGINT/SIGTERM handlers before a job can
+   // occupy the worker for its full execution duration.
+   void cycle();
    timer=setInterval(()=>{void cycle();},pollMs);timer.unref?.();
    recoveryTimer=setInterval(()=>{void recover();},recoveryIntervalMs);recoveryTimer.unref?.();
    onLog({kind:"started",workerFamilies:workers.length,pollMs,leaseSeconds});
@@ -87,9 +90,17 @@ export async function startCloudWorkerProcess(env=process.env){
   onLog:event=>process.stdout.write(JSON.stringify(event)+"\n"),
   onError:error=>process.stderr.write(JSON.stringify({kind:"worker_error",code:error?.code||"WORKER_ERROR",message:String(error?.message||"Worker cycle failed.").slice(0,500)})+"\n")
  });
- await supervisor.start();
- const shutdown=async()=>{await supervisor.stop();process.exit(0);};
+ let shuttingDown=false;
+ const shutdown=async()=>{
+  if(shuttingDown)return;
+  shuttingDown=true;
+  await supervisor.stop();
+ };
+ // Install handlers before start(): startup recovery and the first poll must
+ // not leave a window where termination bypasses graceful shutdown.
  process.once("SIGINT",shutdown);process.once("SIGTERM",shutdown);
+ try{await supervisor.start();}
+ catch(error){process.removeListener("SIGINT",shutdown);process.removeListener("SIGTERM",shutdown);throw error;}
  return supervisor;
 }
 
