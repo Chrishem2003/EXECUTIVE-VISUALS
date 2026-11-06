@@ -193,7 +193,7 @@ begin
   ) values (
     publication_row.id, p_job_id, p_owner_id, p_project_id, p_object_path
   )
-  on conflict (object_path) do update
+  on conflict on constraint asset_publication_cleanup_claims_object_path_key do update
     set status = 'claimed',
         claim_token = pg_catalog.gen_random_uuid(),
         claimed_at = pg_catalog.clock_timestamp(),
