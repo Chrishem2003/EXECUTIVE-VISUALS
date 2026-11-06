@@ -15,7 +15,7 @@
 | Malformed cookie handling | Invalid percent-encoding now resolves to an empty/invalid token and fails closed | Code change and integration test added |
 | Origin handling | Requests with a non-allowlisted Origin are rejected; same-origin matching checks exact serialized origin, host and effective scheme; configured/same-origin origins receive credentialed CORS headers | Integration test added |
 | API authentication | API routes authenticate before serving protected workspace data | Existing integration tests cover anonymous denial |
-| Project authorization | Existing project-access helpers and cloud asset authorization distinguish owner/editor/reviewer/viewer permissions | Existing unit/integration coverage |
+| Project authorization | Existing project-access helpers distinguish owner/editor/reviewer/viewer permissions; API regression now verifies collaborator revocation across project assets, timelines, workflows, reviews and jobs, while the owner retains project-job access | Expanded integration coverage; full resource-family matrix remains open |
 | Upload ownership | Resumable upload sessions are owner-scoped, size-bounded, time-limited and project-write checked | Existing upload tests |
 | Response protections | JSON responses include security headers; HTML uses a restrictive Content Security Policy | Existing integration tests |
 
@@ -55,6 +55,7 @@ The M8 integration test exercises:
 - Strict Bearer-token parsing for Supabase identity verification.
 - Supabase identity timeout, network-error, rejected-response, malformed-payload and remote cleartext-transport rejection.
 - Project permission revalidation before resumable-upload finalization after a collaborator's access is revoked.
+- API-level project membership revocation across assets, timelines, workflows, reviews and jobs; owner access to project jobs remains intact.
 - Bounded in-memory rate-limit storage, expired-key pruning and capacity behavior.
 - Exact same-origin scheme matching and rejection of malformed Origin serialization.
 
