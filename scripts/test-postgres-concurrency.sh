@@ -131,14 +131,15 @@ wait_for_marker() {
 expect_sql_failure() {
   local label="$1"
   local sql_file="$2"
+  local expected_message="$3"
   local output="$TMP_DIR/$label.log"
   if psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f "$sql_file" >"$output" 2>&1; then
     echo "Expected $label to be rejected, but it succeeded" >&2
     cat "$output" >&2
     exit 1
   fi
-  if ! grep -q "ERROR:" "$output"; then
-    echo "$label failed without a PostgreSQL error diagnostic" >&2
+  if ! grep -q "ERROR:" "$output" || ! grep -q "$expected_message" "$output"; then
+    echo "$label did not fail for the expected PostgreSQL reason: $expected_message" >&2
     cat "$output" >&2
     exit 1
   fi
@@ -284,7 +285,7 @@ SQL
 psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f "$TMP_DIR/cleanup-wins.sql" >"$TMP_DIR/cleanup-wins.log" 2>&1 &
 CLEANUP_WIN_PID=$!
 wait_for_marker "$TMP_DIR/cleanup-wins-held"
-expect_sql_failure "finalizer-after-cleanup" "$TMP_DIR/finalizer-after-cleanup.sql"
+expect_sql_failure "finalizer-after-cleanup" "$TMP_DIR/finalizer-after-cleanup.sql" "worker lease is not current for asset publication"
 wait "$CLEANUP_WIN_PID"
 
 # Model a recovered worker with a fresh lease; the tombstone must still win.
@@ -304,7 +305,7 @@ SELECT id FROM executive_visuals.finalize_asset_publication_v1(
   'executive-visuals-media','$RACE_B_PATH',NULL,'{"race":"must-remain-fenced"}'::jsonb
 );
 SQL
-expect_sql_failure "finalizer-after-reclaim" "$TMP_DIR/finalizer-after-reclaim.sql"
+expect_sql_failure "finalizer-after-reclaim" "$TMP_DIR/finalizer-after-reclaim.sql" "asset object path is fenced by a durable cleanup claim"
 
 psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 <<SQL
 DO \$assert_cleanup_wins\$
