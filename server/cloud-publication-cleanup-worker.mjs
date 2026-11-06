@@ -155,11 +155,34 @@ export function createCloudPublicationCleanupWorker({
      }
      const prefix=(publication.project_id||publication.owner_id)+"/"+publication.asset_id+"/";
      const cleanup=await createCleanupFor(publication,runId);
-     const result=await cleanup.run({
-      prefix,jobId:publication.job_id,ownerId:publication.owner_id,projectId:publication.project_id,
-      publicationKey:publication.publication_key,olderThanMs,limit:objectLimit,dryRun,
-      confirmDelete:!dryRun&&confirmDelete
-     });
+     const pages=[];
+     let cursor=null,pageCount=0;
+     do {
+      const page=await cleanup.run({
+       prefix,jobId:publication.job_id,ownerId:publication.owner_id,projectId:publication.project_id,
+       publicationKey:publication.publication_key,olderThanMs,limit:objectLimit,cursor,dryRun,
+       confirmDelete:!dryRun&&confirmDelete
+      });
+      pages.push(page);
+      cursor=page.hasNext?page.nextCursor:null;
+      pageCount++;
+     } while(cursor&&pageCount<3);
+     const first=pages[0];
+     const result={
+      ...first,
+      pages:pages.length,
+      scanned:pages.reduce((sum,page)=>sum+page.scanned,0),
+      candidateCount:pages.reduce((sum,page)=>sum+page.candidateCount,0),
+      eligibleCount:pages.reduce((sum,page)=>sum+page.eligibleCount,0),
+      removedCount:pages.reduce((sum,page)=>sum+page.removedCount,0),
+      skippedCount:pages.reduce((sum,page)=>sum+page.skippedCount,0),
+      failureCount:pages.reduce((sum,page)=>sum+page.failureCount,0),
+      eligible:pages.flatMap(page=>page.eligible),
+      removed:pages.flatMap(page=>page.removed),
+      skipped:pages.flatMap(page=>page.skipped),
+      hasNext:Boolean(cursor),
+      nextCursor:cursor
+     };
      results.push({publicationKey:publication.publication_key,...result});
     }
     const summary={claimed:false,runId,dryRun,publicationsScanned:publications.length,results};
