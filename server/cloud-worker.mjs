@@ -7,7 +7,7 @@ export async function runCloudWorkerCycle({
   onProgress = () => {},
   onEvent = () => {}
 }) {
-  if (!queue || typeof queue.claim !== "function" || typeof queue.renew !== "function" || typeof queue.finish !== "function") {
+  if (!queue || typeof queue.claim !== "function" || typeof queue.renew !== "function" || typeof queue.finish !== "function" || typeof queue.assertLease !== "function") {
     throw new Error("Cloud worker requires a compatible queue adapter.");
   }
   if (typeof execute !== "function") throw new Error("Cloud worker requires an execution function.");
@@ -28,6 +28,19 @@ export async function runCloudWorkerCycle({
   let heartbeatError = null;
   let heartbeatStopped = false;
   let heartbeatInFlight = Promise.resolve();
+  async function assertLease() {
+    if (leaseLost || controller.signal.aborted) throw new Error("Worker lease is no longer valid.");
+    try {
+      const valid = await queue.assertLease(job.id, workerId, job.lease_token);
+      if (!valid) throw new Error("Worker lease is no longer valid.");
+      return true;
+    } catch (error) {
+      leaseLost = true;
+      controller.abort(new Error("Worker lease could not be verified."));
+      onEvent({ type: "job.lease_lost", jobId: job.id, workerId });
+      throw Object.assign(new Error("Worker lease verification failed; side effects are blocked."), { code: "CLOUD_WORKER_LEASE_LOST" });
+    }
+  }
   onEvent({ type: "job.started", jobId: job.id, workerId });
 
   // The database-issued lease token identifies this claim attempt, not the worker process.
@@ -67,6 +80,7 @@ export async function runCloudWorkerCycle({
     const output = await execute({
       job,
       signal: controller.signal,
+      assertLease,
       onProgress(value) {
         if (leaseLost || controller.signal.aborted) return;
         if (!Number.isFinite(value) || value < 0 || value > 100) throw new Error("Worker progress must be between 0 and 100.");
@@ -74,6 +88,7 @@ export async function runCloudWorkerCycle({
       }
     });
     await stopHeartbeat();
+    if (!leaseLost && !controller.signal.aborted) await assertLease();
     if (leaseLost || controller.signal.aborted) {
       return { claimed: true, finished: false, reason: "lease_lost", jobId: job.id };
     }
