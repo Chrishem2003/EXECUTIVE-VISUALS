@@ -33,6 +33,7 @@ function fixture({authorize=async()=>true,insertResponse=null,removeError=false}
   if(url.includes("/rpc/finalize_asset_publication_v1")){
    const payload=JSON.parse(options.body);
    if(payload.p_job_id!==leaseContext.jobId||payload.p_worker_id!==leaseContext.workerId||payload.p_lease_token!==leaseContext.leaseToken)return response({message:"invalid worker lease"},409);
+   if(publicationAsset&&(publicationAsset.original_name!==payload.p_original_name||publicationAsset.media_type!==payload.p_media_type||publicationAsset.byte_size!==payload.p_byte_size||publicationAsset.sha256!==payload.p_payload_sha256||publicationAsset.storage_bucket!==payload.p_storage_bucket||publicationAsset.derivative_of!==payload.p_derivative_of||JSON.stringify(publicationAsset.metadata)!==JSON.stringify(payload.p_metadata)))return response({message:"existing asset identity mismatch"},409);
    if(!publicationAsset)publicationAsset={...row,id:payload.p_asset_id,owner_id:payload.p_owner_id,project_id:payload.p_project_id,original_name:payload.p_original_name,media_type:payload.p_media_type,byte_size:payload.p_byte_size,sha256:payload.p_payload_sha256,storage_bucket:payload.p_storage_bucket,object_path:payload.p_object_path,derivative_of:payload.p_derivative_of,metadata:payload.p_metadata,deleted_at:null};
    publicationReservation={...publicationReservation,status:"published"};
    return response([publicationAsset]);
@@ -162,6 +163,9 @@ test("publishes the same logical output once across repeated publication attempt
  assert.equal(JSON.parse(finalizeCall.options.body).p_lease_token,leaseContext.leaseToken);
  assert.equal(f.calls.some(call=>call.url.includes("/assets?")&&call.options.method==="POST"),false,"idempotent publication must not insert metadata outside the transaction");
  assert.equal(f.calls.filter(call=>call.url.includes("/rpc/finalize_asset_publication_v1")).length,2,"published retries must revalidate the lease and immutable identity through the atomic transaction");
+ f.publicationAsset.metadata={operation:"tampered"};
+ await assert.rejects(()=>f.repo.createFromFileIdempotent(args),error=>error.code==="CLOUD_ASSET_HTTP_409");
+ assert.equal(f.storageCalls.filter(call=>call.op==="uploadFile").length,1,"identity mismatch must not upload a replacement object");
  await rm(root,{recursive:true,force:true});
 });
 
