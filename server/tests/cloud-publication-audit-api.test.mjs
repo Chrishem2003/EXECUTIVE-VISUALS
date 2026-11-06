@@ -45,7 +45,7 @@ test("authorizes project scope before querying and applies filters",async()=>{
  assert.equal(url.searchParams.get("job_id"),"eq."+job);
  assert.equal(url.searchParams.get("run_id"),"eq."+run);
  assert.equal(url.searchParams.get("event_type"),"eq.publication.cleanup_completed");
- assert.equal(url.searchParams.get("occurred_at"),"lte.2026-11-08T00:00:00.000Z");
+ assert.equal(url.searchParams.get("and"),"(occurred_at.gte.2026-11-01T00:00:00.000Z,occurred_at.lte.2026-11-08T00:00:00.000Z)");
  assert.equal(url.searchParams.get("or"),null);
 });
 test("denies project access without querying the audit ledger",async()=>{
