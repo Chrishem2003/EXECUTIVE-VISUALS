@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 
 const sql = await readFile(resolve(process.cwd(), "supabase/migrations/20261031210000_executive_visuals_core.sql"), "utf8");
 const checkpointSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261102090000_video_pipeline_checkpoints.sql"), "utf8");
+const reviewSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261106130000_frame_accurate_review_foundation.sql"), "utf8");
 const issues = [];
 const tables = ["projects","project_members","project_workspace_documents","workflows","workflow_runs","workflow_node_runs","timelines","assets","jobs","job_events","consents","reviews","audit_events"];
 for (const table of tables) {
@@ -58,6 +59,23 @@ if (!checkpointSql.includes("output_asset.derivative_of = new.input_asset_id")) 
 if (!checkpointSql.includes("output_asset.owner_id = new.owner_id") || !checkpointSql.includes("output_asset.project_id = new.project_id")) issues.push("Cloud checkpoint output assets must match the checkpoint owner and project.");
 if (!checkpointSql.includes("output_asset.sha256 = lower(new.output_json ->> 'sha256')")) issues.push("Cloud checkpoint output checksums must match persisted asset metadata.");
 if (/\\b(drop\\s+table|truncate|delete\\s+from)\\b/i.test(checkpointSql)) issues.push("Checkpoint migration must not contain destructive DDL/DML.");
+
+for (const column of ["timeline_id","timeline_revision","frame_number","duration_frames","annotation","visibility","updated_at","edited_at","request_id"]) {
+  if (!reviewSql.includes("add column if not exists " + column)) issues.push("Review migration is missing the " + column + " field.");
+}
+for (const invariant of ["ev_reviews_frame_nonnegative","ev_reviews_duration_frames_valid","ev_reviews_visibility_valid","ev_reviews_annotation_object","ev_reviews_timeline_anchor_consistent"]) {
+  if (!reviewSql.includes("constraint " + invariant)) issues.push("Review migration is missing constraint " + invariant + ".");
+}
+if (!reviewSql.includes("create table if not exists executive_visuals.review_events")) issues.push("Append-only review event table is missing.");
+if (!reviewSql.includes("revoke all on executive_visuals.review_events from public,anon,authenticated;")) issues.push("Review events must not be client-writable.");
+if (!reviewSql.includes("grant select on executive_visuals.review_events to authenticated;")) issues.push("Authenticated users need RLS-governed review event reads.");
+if (!reviewSql.includes("create policy ev_review_events_read")) issues.push("Review event visibility policy is missing.");
+if (!reviewSql.includes("reviews.visibility='project' or m.role in ('editor','reviewer')")) issues.push("Internal review comments must be hidden from viewer-only project members.");
+if (!reviewSql.includes("create trigger ev_reviews_record_event")) issues.push("Review create/edit/resolve actions must produce durable event records.");
+if (!reviewSql.includes("create trigger ev_reviews_touch_updated_at")) issues.push("Review edits must update durable timestamps.");
+if (/\b(drop\s+table|truncate|delete\s+from)\b/i.test(reviewSql)) issues.push("Review migration must not contain destructive DDL/DML.");
+if (!reviewSql.includes("language plpgsql") || !reviewSql.includes("as $$") || !reviewSql.includes("end;\n$$;")) issues.push("Review migration trigger functions must use valid PL/pgSQL dollar quoting.");
+
 
 
 
