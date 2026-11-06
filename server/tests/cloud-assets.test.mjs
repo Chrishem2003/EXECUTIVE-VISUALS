@@ -11,6 +11,7 @@ const projectId="223e4567-e89b-42d3-a456-426614174000";
 const assetId="323e4567-e89b-42d3-a456-426614174000";
 const bytes=new Uint8Array([1,2,3,4]);
 const config={url:"https://example.supabase.co",serviceRoleKey:"private-service-key"};
+const leaseContext={jobId:"523e4567-e89b-42d3-a456-426614174000",workerId:"worker-test-1",leaseToken:"623e4567-e89b-42d3-a456-426614174000"};
 function response(body,status=200){return{ok:status>=200&&status<300,status,async text(){return JSON.stringify(body);}};}
 function fixture({authorize=async()=>true,insertResponse=null,removeError=false}={}) {
  const calls=[],storageCalls=[];let publicationReservation=null,publicationAsset=null;
@@ -29,9 +30,12 @@ function fixture({authorize=async()=>true,insertResponse=null,removeError=false}
    if(!publicationReservation)publicationReservation={owner_id:payload.p_owner_id,project_id:payload.p_project_id,publication_key:payload.p_publication_key,payload_sha256:payload.p_payload_sha256,asset_id:payload.p_asset_id,status:"reserved"};
    return response([publicationReservation]);
   }
-  if(url.includes("/rpc/complete_asset_publication")){
+  if(url.includes("/rpc/finalize_asset_publication_v1")){
+   const payload=JSON.parse(options.body);
+   if(payload.p_job_id!==leaseContext.jobId||payload.p_worker_id!==leaseContext.workerId||payload.p_lease_token!==leaseContext.leaseToken)return response({message:"invalid worker lease"},409);
+   if(!publicationAsset)publicationAsset={...row,id:payload.p_asset_id,owner_id:payload.p_owner_id,project_id:payload.p_project_id,original_name:payload.p_original_name,media_type:payload.p_media_type,byte_size:payload.p_byte_size,sha256:payload.p_payload_sha256,storage_bucket:payload.p_storage_bucket,object_path:payload.p_object_path,derivative_of:payload.p_derivative_of,metadata:payload.p_metadata,deleted_at:null};
    publicationReservation={...publicationReservation,status:"published"};
-   return response([{owner_id:publicationReservation.owner_id,publication_key:publicationReservation.publication_key,asset_id:publicationReservation.asset_id,status:"published"}]);
+   return response([publicationAsset]);
   }
   if(url.includes("/assets?")&&options.method==="POST"&&publicationReservation){
    if(publicationAsset)return response({message:"duplicate asset identity"},409);
@@ -144,7 +148,7 @@ test("publishes the same logical output once across repeated publication attempt
  const root=await mkdtemp(join(tmpdir(),"ev-idempotent-publication-")),file=join(root,"render.mp4");
  await writeFile(file,bytes);
  const f=fixture();
- const args={ownerId,projectId,originalName:"render.mp4",mediaType:"video/mp4",filePath:file,publicationKey:"job-123:output:v1",metadata:{operation:"timeline.render"}};
+ const args={ownerId,projectId,originalName:"render.mp4",mediaType:"video/mp4",filePath:file,publicationKey:"job-123:output:v1",metadata:{operation:"timeline.render"},leaseContext};
  const first=await f.repo.createFromFileIdempotent(args);
  const second=await f.repo.createFromFileIdempotent(args);
  assert.equal(first.id,second.id);
@@ -153,6 +157,10 @@ test("publishes the same logical output once across repeated publication attempt
  assert.equal(f.storageCalls[0].options.upsert,false);
  assert.match(first.objectPath,/\/attempt-[0-9a-f-]{36}\.mp4$/i);
  assert.equal(f.publicationReservation.status,"published");
+ const finalizeCall=f.calls.find(call=>call.url.includes("/rpc/finalize_asset_publication_v1"));
+ assert.ok(finalizeCall,"publication metadata and ledger must be finalized through one RPC");
+ assert.equal(JSON.parse(finalizeCall.options.body).p_lease_token,leaseContext.leaseToken);
+ assert.equal(f.calls.some(call=>call.url.includes("/assets?")&&call.options.method==="POST"),false,"idempotent publication must not insert metadata outside the transaction");
  await rm(root,{recursive:true,force:true});
 });
 
@@ -160,7 +168,7 @@ test("removes an uploaded attempt object when the worker lease is lost before me
  const root=await mkdtemp(join(tmpdir(),"ev-idempotent-lease-loss-")),file=join(root,"render.mp4");
  await writeFile(file,bytes);
  const f=fixture();let checks=0;
- const args={ownerId,projectId,originalName:"render.mp4",mediaType:"video/mp4",filePath:file,publicationKey:"job-lease-loss:output:v1",
+ const args={ownerId,projectId,originalName:"render.mp4",mediaType:"video/mp4",filePath:file,publicationKey:"job-lease-loss:output:v1",leaseContext,
   async assertLease(){checks++;return checks<3;}};
  await assert.rejects(()=>f.repo.createFromFileIdempotent(args),error=>error.code==="CLOUD_ASSET_PUBLICATION_LEASE_LOST");
  assert.equal(checks,3);
@@ -171,11 +179,34 @@ test("removes an uploaded attempt object when the worker lease is lost before me
  await rm(root,{recursive:true,force:true});
 });
 
+test("requires a database-verifiable worker lease identity before reserving a publication",async()=>{
+ const root=await mkdtemp(join(tmpdir(),"ev-publication-requires-lease-")),file=join(root,"render.mp4");
+ await writeFile(file,bytes);
+ const f=fixture();
+ await assert.rejects(()=>f.repo.createFromFileIdempotent({ownerId,projectId,originalName:"render.mp4",mediaType:"video/mp4",filePath:file,publicationKey:"job-no-lease:output:v1"}),/claimed worker lease identity/);
+ assert.equal(f.calls.length,0);
+ assert.equal(f.storageCalls.length,0);
+ await rm(root,{recursive:true,force:true});
+});
+
+test("database rejects a stale fencing token and the unreferenced upload is compensated",async()=>{
+ const root=await mkdtemp(join(tmpdir(),"ev-publication-stale-token-")),file=join(root,"render.mp4");
+ await writeFile(file,bytes);
+ const f=fixture();
+ const staleLease={...leaseContext,leaseToken:"723e4567-e89b-42d3-a456-426614174000"};
+ await assert.rejects(()=>f.repo.createFromFileIdempotent({ownerId,projectId,originalName:"render.mp4",mediaType:"video/mp4",filePath:file,publicationKey:"job-stale-token:output:v1",leaseContext:staleLease}),error=>error.code==="CLOUD_ASSET_HTTP_409");
+ assert.equal(f.storageCalls.filter(call=>call.op==="uploadFile").length,1);
+ assert.equal(f.storageCalls.filter(call=>call.op==="remove").length,1);
+ assert.equal(f.publicationReservation.status,"reserved");
+ assert.equal(f.publicationAsset,null);
+ await rm(root,{recursive:true,force:true});
+});
+
 test("rejects reuse of a publication key for different output bytes before storage upload",async()=>{
  const root=await mkdtemp(join(tmpdir(),"ev-idempotent-conflict-")),file=join(root,"render.mp4");
  await writeFile(file,bytes);
  const f=fixture();
- const args={ownerId,projectId,originalName:"render.mp4",mediaType:"video/mp4",filePath:file,publicationKey:"job-123:output:v1"};
+ const args={ownerId,projectId,originalName:"render.mp4",mediaType:"video/mp4",filePath:file,publicationKey:"job-123:output:v1",leaseContext};
  await f.repo.createFromFileIdempotent(args);
  await writeFile(file,Buffer.from("different output"));
  await assert.rejects(()=>f.repo.createFromFileIdempotent(args),error=>error.code==="CLOUD_ASSET_HTTP_409");
@@ -187,7 +218,7 @@ test("concurrent attempts for one publication key converge on the same asset ide
  const root=await mkdtemp(join(tmpdir(),"ev-idempotent-concurrent-")),file=join(root,"render.mp4");
  await writeFile(file,bytes);
  const f=fixture();
- const args={ownerId,projectId,originalName:"render.mp4",mediaType:"video/mp4",filePath:file,publicationKey:"job-concurrent:output:v1"};
+ const args={ownerId,projectId,originalName:"render.mp4",mediaType:"video/mp4",filePath:file,publicationKey:"job-concurrent:output:v1",leaseContext};
  const [left,right]=await Promise.all([f.repo.createFromFileIdempotent(args),f.repo.createFromFileIdempotent(args)]);
  assert.equal(left.id,right.id);
  assert.equal(left.objectPath,right.objectPath);
@@ -206,7 +237,7 @@ test("keeps the winning publication successful when losing-attempt cleanup is pe
  const root=await mkdtemp(join(tmpdir(),"ev-idempotent-cleanup-pending-")),file=join(root,"render.mp4");
  await writeFile(file,bytes);
  const f=fixture({removeError:true});
- const args={ownerId,projectId,originalName:"render.mp4",mediaType:"video/mp4",filePath:file,publicationKey:"job-cleanup-pending:output:v1"};
+ const args={ownerId,projectId,originalName:"render.mp4",mediaType:"video/mp4",filePath:file,publicationKey:"job-cleanup-pending:output:v1",leaseContext};
  const [left,right]=await Promise.all([f.repo.createFromFileIdempotent(args),f.repo.createFromFileIdempotent(args)]);
  assert.equal(left.id,right.id);
  assert.equal([left,right].filter(asset=>asset.cleanupPending===true).length,1);
