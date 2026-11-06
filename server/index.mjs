@@ -103,7 +103,12 @@ const readJson = async (req,limit=1024*1024) => {
 };
 const cookieValue = (req,name) => {
   const raw=req.headers.cookie||"";
-  for(const part of raw.split(";")){const [key,...rest]=part.trim().split("=");if(key===name)return decodeURIComponent(rest.join("="));}
+  for(const part of raw.split(";")){
+    const [key,...rest]=part.trim().split("=");
+    if(key!==name)continue;
+    try{return decodeURIComponent(rest.join("="));}
+    catch{return "";}
+  }
   return "";
 };
 const setCookie = (res,token,maxAge) => {
