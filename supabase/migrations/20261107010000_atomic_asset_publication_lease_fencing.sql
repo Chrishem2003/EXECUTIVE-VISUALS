@@ -88,7 +88,7 @@ begin
   -- asset UUID prefix. Permit the legacy original name for recovery, plus
   -- the immutable per-attempt object naming convention.
   if p_object_path !~ (
-    '^' || pg_catalog.coalesce(p_project_id, p_owner_id)::text || '/'
+    '^' || coalesce(p_project_id, p_owner_id)::text || '/'
     || p_asset_id::text || '/(attempt-[0-9a-f-]{36}|original)\.[A-Za-z0-9]+$'
   ) then
     raise exception 'asset object path is outside the reserved immutable prefix'
@@ -122,7 +122,7 @@ begin
      or asset_row.derivative_of is distinct from p_derivative_of
      or asset_row.deleted_at is not null
      or asset_row.object_path !~ (
-       '^' || pg_catalog.coalesce(p_project_id, p_owner_id)::text || '/'
+       '^' || coalesce(p_project_id, p_owner_id)::text || '/'
        || p_asset_id::text || '/(attempt-[0-9a-f-]{36}|original)\.[A-Za-z0-9]+$'
      )
   then
@@ -142,7 +142,7 @@ begin
 
   update executive_visuals.asset_publications
   set status = 'published',
-      published_at = pg_catalog.coalesce(published_at, pg_catalog.clock_timestamp()),
+      published_at = coalesce(published_at, pg_catalog.clock_timestamp()),
       updated_at = pg_catalog.clock_timestamp()
   where id = publication_row.id
   returning * into publication_row;
