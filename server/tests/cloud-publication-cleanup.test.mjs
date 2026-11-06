@@ -9,8 +9,8 @@ const orphanAttempt="attempt-523e4567-e89b-42d3-a456-426614174000.mp4";
 const prefix=ownerId+"/"+assetId+"/";
 const now=new Date("2026-11-06T12:00:00.000Z");
 const old="2026-11-04T00:00:00.000Z";
-function fixture({referenced=[],active=false,leaseCheck=true,removeError=false}={}) {
- const removed=[],events=[];
+function fixture({referenced=[],active=false,leaseCheck=true,removeError=false,claimError=false,completeError=false}={}) {
+ const removed=[],events=[],claims=[],completed=[];
  const entries=[
   {name:activeAttempt,createdAt:old},
   {name:orphanAttempt,createdAt:old},
@@ -26,10 +26,12 @@ function fixture({referenced=[],active=false,leaseCheck=true,removeError=false}=
   storage,
   findReferencedPaths:async paths=>paths.filter(path=>referenced.includes(path)),
   ...(leaseCheck?{isAttemptActive:async()=>active}:{}),
+  claimCleanup:async input=>{claims.push(input);if(claimError)throw new Error("claim unavailable");return{claimId:"claim-"+claims.length,claimToken:"token-"+claims.length,status:"claimed"};},
+  completeCleanup:async claim=>{completed.push(claim);if(completeError)throw new Error("completion unavailable");return true;},
   onEvent:async event=>events.push(event),
   now:()=>now
  });
- return {cleanup,removed,events};
+ return {cleanup,removed,events,claims,completed};
 }
 
 test("defaults to a dry-run and reports only old unreferenced inactive attempt objects",async()=>{
@@ -67,6 +69,8 @@ test("deletes only verified orphan attempt paths and emits audit events",async()
  const f=fixture({active:false});
  const result=await f.cleanup.run({prefix,dryRun:false,confirmDelete:true});
  assert.equal(result.removedCount,2);
+ assert.equal(f.claims.length,2);
+ assert.equal(f.completed.length,2);
  assert.deepEqual(f.removed,result.removed.map(item=>item.objectPath));
  assert.ok(f.removed.every(path=>/^.+\/attempt-[0-9a-f-]{36}\.[A-Za-z0-9]+$/i.test(path)));
  assert.ok(f.events.some(event=>event.type==="publication.orphan_removed"));
@@ -93,4 +97,29 @@ test("rejects unsafe prefixes, age thresholds and unbounded batches",async()=>{
  await assert.rejects(()=>f.cleanup.run({prefix,olderThanMs:1000}),/24 hours/);
  await assert.rejects(()=>f.cleanup.run({prefix,limit:101}),/between 1 and 100/);
  await assert.rejects(()=>f.cleanup.run({prefix,cursor:""}),/cursor is invalid/);
+});
+
+test("destructive cleanup fails closed without durable claim callbacks",async()=>{
+ const f=fixture();
+ const cleanup=createCloudPublicationCleanup({
+  storage:{listObjects:async()=>({objects:[{name:orphanAttempt,createdAt:old}],hasNext:false}),remove:async()=>true},
+  findReferencedPaths:async()=>[],
+  isAttemptActive:async()=>false
+ });
+ await assert.rejects(()=>cleanup.run({prefix,dryRun:false,confirmDelete:true}),/durable database claim and completion/);
+ assert.equal(f.removed.length,0);
+});
+
+test("claim failure prevents deletion and completion failure retains the durable fence",async()=>{
+ const failedClaim=fixture({claimError:true});
+ const claimResult=await failedClaim.cleanup.run({prefix,dryRun:false,confirmDelete:true});
+ assert.equal(claimResult.removedCount,0);
+ assert.equal(failedClaim.removed.length,0);
+ assert.ok(claimResult.skipped.some(item=>item.reason==="durable_cleanup_claim_failed"));
+
+ const failedCompletion=fixture({completeError:true});
+ const completionResult=await failedCompletion.cleanup.run({prefix,dryRun:false,confirmDelete:true});
+ assert.equal(completionResult.removedCount,2);
+ assert.equal(failedCompletion.completed.length,2);
+ assert.ok(completionResult.skipped.some(item=>item.reason==="cleanup_claim_completion_failed"));
 });
