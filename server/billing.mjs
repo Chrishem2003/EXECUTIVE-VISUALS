@@ -178,12 +178,14 @@ export function listAdminUsers(db, { query = "", limit = 100 } = {}) {
   const term = String(query || "").trim().toLowerCase();
   const rows = term
     ? db.prepare(`SELECT a.user_id,a.email,a.status,a.created_at,a.last_seen_at,
-        (SELECT p.name FROM billing_subscriptions s JOIN billing_plans p ON p.id=s.plan_id WHERE s.user_id=a.user_id AND s.status IN ('active','trialing','past_due') ORDER BY s.current_period_end DESC LIMIT 1) AS plan_name
+        (SELECT p.name FROM billing_subscriptions s JOIN billing_plans p ON p.id=s.plan_id WHERE s.user_id=a.user_id AND s.status IN ('active','trialing','past_due') ORDER BY s.current_period_end DESC LIMIT 1) AS plan_name,
+        (SELECT COALESCE(SUM(l.amount),0) FROM billing_credit_ledger l WHERE l.user_id=a.user_id AND (l.expires_at IS NULL OR l.expires_at>strftime('%Y-%m-%dT%H:%M:%fZ','now'))) AS credit_balance
         FROM billing_accounts a WHERE lower(a.email) LIKE ? ORDER BY a.last_seen_at DESC LIMIT ?`).all("%"+term+"%", safeLimit)
     : db.prepare(`SELECT a.user_id,a.email,a.status,a.created_at,a.last_seen_at,
-        (SELECT p.name FROM billing_subscriptions s JOIN billing_plans p ON p.id=s.plan_id WHERE s.user_id=a.user_id AND s.status IN ('active','trialing','past_due') ORDER BY s.current_period_end DESC LIMIT 1) AS plan_name
+        (SELECT p.name FROM billing_subscriptions s JOIN billing_plans p ON p.id=s.plan_id WHERE s.user_id=a.user_id AND s.status IN ('active','trialing','past_due') ORDER BY s.current_period_end DESC LIMIT 1) AS plan_name,
+        (SELECT COALESCE(SUM(l.amount),0) FROM billing_credit_ledger l WHERE l.user_id=a.user_id AND (l.expires_at IS NULL OR l.expires_at>strftime('%Y-%m-%dT%H:%M:%fZ','now'))) AS credit_balance
         FROM billing_accounts a ORDER BY a.last_seen_at DESC LIMIT ?`).all(safeLimit);
-  return rows.map(row => ({ id: row.user_id, email: row.email, status: row.status, createdAt: row.created_at, lastSeenAt: row.last_seen_at, planName: row.plan_name || "No active plan" }));
+  return rows.map(row => ({ id: row.user_id, email: row.email, status: row.status, createdAt: row.created_at, lastSeenAt: row.last_seen_at, planName: row.plan_name || "No active plan", creditBalance: Number(row.credit_balance || 0) }));
 }
 
 export function saveBillingPlan(db, input) {
@@ -198,8 +200,12 @@ export function saveBillingPlan(db, input) {
   if (!/^[A-Z]{3}$/.test(currency) || !["month","year","one_time"].includes(interval)) throw fail("Currency or billing interval is invalid.", "BILLING_PLAN_INVALID");
   if (amount !== null && (!Number.isSafeInteger(amount) || amount < 0)) throw fail("Price must be a non-negative integer in the smallest currency unit.", "BILLING_PLAN_INVALID");
   if (!Number.isSafeInteger(credits) || credits < 0 || credits > 100000000) throw fail("Credit allowance is invalid.", "BILLING_PLAN_INVALID");
-  const limits = input.limits && typeof input.limits === "object" && !Array.isArray(input.limits) ? input.limits : {};
-  const features = Array.isArray(input.features) ? input.features.filter(x => typeof x === "string").slice(0,40) : [];
+  const rawLimits = input.limits && typeof input.limits === "object" && !Array.isArray(input.limits) ? input.limits : {};
+  const seats = Number(rawLimits.seats ?? 1), concurrentJobs = Number(rawLimits.concurrentJobs ?? 1), storageBytes = Number(rawLimits.storageBytes ?? 0);
+  const modelAllowlist = Array.isArray(rawLimits.modelAllowlist) ? [...new Set(rawLimits.modelAllowlist.filter(x => typeof x === "string").map(x => x.trim()).filter(Boolean))].slice(0,100) : [];
+  if (![seats,concurrentJobs,storageBytes].every(Number.isSafeInteger) || seats < 1 || seats > 1000 || concurrentJobs < 1 || concurrentJobs > 1000 || storageBytes < 0) throw fail("Plan quotas are invalid.", "BILLING_PLAN_INVALID");
+  const limits = { seats, concurrentJobs, storageBytes, modelAllowlist };
+  const features = Array.isArray(input.features) ? input.features.filter(x => typeof x === "string").map(x => x.slice(0,120)).slice(0,40) : [];
   const active = input.active === false ? 0 : 1;
   const existing = db.prepare("SELECT id FROM billing_plans WHERE code=?").get(code);
   const id = existing?.id || randomUUID();
@@ -272,4 +278,30 @@ export function canUsePaidModels(db, userId) {
   if (!row) return false;
   const limits = parseJson(row.limits_json);
   return Array.isArray(limits.modelAllowlist) && limits.modelAllowlist.length > 0;
+}
+
+export function listBillingModelPrices(db) {
+  return db.prepare("SELECT * FROM billing_model_prices ORDER BY provider,model,capability").all().map(row => ({
+    id:row.id,provider:row.provider,model:row.model,capability:row.capability,unit:row.unit,
+    priceMicros:Number(row.price_micros),currency:row.currency,sourceUrl:row.source_url,
+    verifiedAt:row.verified_at,active:!!row.active
+  }));
+}
+
+export function saveBillingModelPrice(db, input) {
+  const provider=String(input.provider||"").trim().toLowerCase(),model=String(input.model||"").trim();
+  const capability=String(input.capability||"").trim(),unit=String(input.unit||"").trim();
+  const price=Number(input.priceMicros),currency=String(input.currency||"USD").trim().toUpperCase();
+  const sourceUrl=String(input.sourceUrl||"").trim(),verifiedAt=String(input.verifiedAt||"").trim()||null;
+  if(!provider||provider.length>80||!model||model.length>160||!capability||capability.length>80||!unit||unit.length>40||
+    !Number.isSafeInteger(price)||price<0||!/^[A-Z]{3}$/.test(currency)||
+    sourceUrl && (!/^https:\/\//i.test(sourceUrl)||sourceUrl.length>1000)||
+    verifiedAt && Number.isNaN(Date.parse(verifiedAt))) throw fail("Model pricing record is invalid.", "BILLING_MODEL_PRICE_INVALID");
+  const id=randomUUID();
+  db.prepare(`INSERT INTO billing_model_prices(id,provider,model,capability,unit,price_micros,currency,source_url,verified_at,active,updated_at)
+    VALUES(?,?,?,?,?,?,?,?,?,1,strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    ON CONFLICT(provider,model,capability,unit) DO UPDATE SET price_micros=excluded.price_micros,currency=excluded.currency,
+    source_url=excluded.source_url,verified_at=excluded.verified_at,active=1,updated_at=excluded.updated_at`)
+    .run(id,provider,model,capability,unit,price,currency,sourceUrl,verifiedAt);
+  return listBillingModelPrices(db).find(row=>row.provider===provider&&row.model===model&&row.capability===capability&&row.unit===unit);
 }
