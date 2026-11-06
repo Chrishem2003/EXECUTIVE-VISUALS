@@ -143,7 +143,6 @@ export function createCloudAssetRepository({
       if(!reservation||reservation.owner_id!==ownerId||(reservation.project_id||null)!==projectId||reservation.publication_key!==publicationKey||reservation.payload_sha256!==file.sha256||typeof reservation.asset_id!=="string"||!UUID.test(reservation.asset_id)||!["reserved","published"].includes(reservation.status))throw new Error("Cloud asset publication reservation returned an invalid record.");
       const id=reservation.asset_id;
       const assetPrefix=(projectId||ownerId)+"/"+id+"/";
-      const legacyObjectPath=buildCloudAssetObjectPath({ownerId,projectId,assetId:id,filename:"original."+EXTENSIONS.get(mediaType)});
       const attemptPattern=/^attempt-[0-9a-f-]{36}\.[A-Za-z0-9]+$/i;
       const select="id,owner_id,project_id,original_name,media_type,byte_size,sha256,storage_bucket,object_path,derivative_of,metadata,created_at,deleted_at";
       const readAsset=async()=>{const rows=await request("assets?select="+select+"&id=eq."+encodeURIComponent(id)+"&limit=1");return Array.isArray(rows)?rows[0]||null:null;};
@@ -197,7 +196,11 @@ export function createCloudAssetRepository({
       }catch(error){
         // A competing finalizer may have committed while this request failed.
         // Never delete an object that the committed metadata row references.
-        existing=await readAsset();
+        try{existing=await readAsset();}catch(readError){
+          error.cleanupPending=true;
+          error.reconciliationPending=true;
+          throw error;
+        }
         if(existing){
           const asset=verifyAsset(existing);
           let cleanupPending=false;
