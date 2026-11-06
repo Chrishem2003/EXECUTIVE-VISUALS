@@ -57,6 +57,15 @@ try{
  assert.equal(simpleResult.status,"completed");
  assert.deepEqual(simpleResult.nodeOutputs.merge.result,["A strong opening"]);
  assert.equal(db.prepare("SELECT status FROM workflow_runs WHERE id=?").get("run-simple").status,"completed");
+ const interruptedPure={id:"interrupted-pure",projectId:"",revision:1,nodes:[
+  {id:"brief",kind:"text",label:"Pure text transform",inputs:[],outputs:[{id:"text",type:"text"}],config:{text:"safe to replay"}}
+ ],edges:[]};
+ const pureJob=seedRun("run-interrupted-pure",interruptedPure);
+ db.prepare("UPDATE workflow_node_runs SET status='running',attempt=1,started_at=? WHERE run_id=? AND node_id='brief'").run(now,"run-interrupted-pure");
+ const pureResume=await executeWorkflowRun({db,job:pureJob,mediaRoot,activeProcesses:new Map(),onProgress:()=>{}});
+ assert.equal(pureResume.status,"completed","deterministic pure nodes may be safely replayed after interruption");
+ assert.equal(db.prepare("SELECT status FROM workflow_node_runs WHERE run_id=? AND node_id='brief'").get("run-interrupted-pure").status,"completed");
+
 
  const approval={
   id:"approval",projectId:"",revision:1,nodes:[
@@ -88,6 +97,12 @@ try{
    {id:"approval-edge",sourceNodeId:"gate",sourcePortId:"approved",targetNodeId:"image",targetPortId:"approval"}
   ]
  };
+
+ const interruptedProviderJob=seedRun("run-interrupted-provider",provider);
+ db.prepare("UPDATE workflow_node_runs SET status='running',attempt=1,started_at=? WHERE run_id=? AND node_id='image'").run(now,"run-interrupted-provider");
+ await assert.rejects(()=>executeWorkflowRun({db,job:interruptedProviderJob,mediaRoot,activeProcesses:new Map(),onProgress:()=>{}}),error=>error.code==="WORKFLOW_RECOVERY_REVIEW_REQUIRED");
+ assert.equal(db.prepare("SELECT status FROM workflow_runs WHERE id=?").get("run-interrupted-provider").status,"blocked","interrupted external provider work must be held for review");
+ assert.equal(db.prepare("SELECT status FROM workflow_node_runs WHERE run_id=? AND node_id='image'").get("run-interrupted-provider").status,"blocked");
  const providerJob=seedRun("run-provider",provider);
  db.prepare("UPDATE workflow_node_runs SET status='completed',output_json=?,completed_at=? WHERE run_id=? AND node_id='gate'")
   .run(json({approved:true}),now,"run-provider");

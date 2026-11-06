@@ -454,3 +454,28 @@
 .delivery-certification ul{list-style:none;padding:0;margin:10px 0;display:grid;gap:6px}
 .delivery-certification li{font-size:11px;color:var(--muted);overflow-wrap:anywhere}
 .delivery-certification li span{font-weight:700;margin-right:5px}
+
+
+/* Live execution-stage observability */
+.job-stage-details{margin-top:14px;border-top:1px solid var(--line,#303744);padding-top:10px}
+.job-stage-details summary{display:flex;align-items:center;justify-content:space-between;gap:12px;cursor:pointer;list-style:none;font-size:12px;font-weight:700;color:var(--text,#eef1f5)}
+.job-stage-details summary::-webkit-details-marker{display:none}
+.job-stage-details summary span{font-size:11px;color:var(--muted,#9aa4b2);font-weight:600}
+.job-stage-list{list-style:none;margin:12px 0 2px;padding:0;display:grid;gap:10px}
+.job-stage{display:grid;grid-template-columns:12px minmax(0,1fr);gap:9px;align-items:start}
+.job-stage-indicator{width:8px;height:8px;margin-top:5px;border-radius:50%;background:#8791a1;box-shadow:0 0 0 3px color-mix(in srgb,#8791a1 16%,transparent)}
+.job-stage.running .job-stage-indicator{background:#e2b45e;box-shadow:0 0 0 3px color-mix(in srgb,#e2b45e 18%,transparent)}
+.job-stage.succeeded .job-stage-indicator{background:#68c9a2;box-shadow:0 0 0 3px color-mix(in srgb,#68c9a2 16%,transparent)}
+.job-stage.failed .job-stage-indicator{background:#e17b7b;box-shadow:0 0 0 3px color-mix(in srgb,#e17b7b 16%,transparent)}
+.job-stage-copy{min-width:0;display:grid;gap:3px}
+.job-stage-copy b{font-size:12px;font-weight:650}
+.job-stage-copy small{font-size:10px;color:var(--muted,#9aa4b2);line-height:1.45}
+.job-stage-copy .job-stage-error{color:#e17b7b}
+.job-stage-empty{font-size:11px;color:var(--muted,#9aa4b2);margin:10px 0 2px}
+
+
+/* Structured media quality evidence */
+.asset-quality{display:grid;gap:5px;padding:10px 12px;margin:10px 0;border:1px solid var(--line,#303744);border-radius:10px;background:var(--surface-soft,rgba(127,139,156,.06))}
+.asset-quality b{font-size:12px;text-transform:capitalize}
+.asset-quality small{font-size:11px;color:var(--muted,#9aa4b2)}
+.asset-quality p{margin:2px 0 0;font-size:11px;line-height:1.45;color:var(--muted,#9aa4b2)}
