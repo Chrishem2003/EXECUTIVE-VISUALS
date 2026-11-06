@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {parseBlackFrameEvents,parseSilenceEvents,buildMediaSignalFindings,parseAudioMetrics,buildAudioMetricFindings,parseFreezeEvents,parseSceneChangeTimes,runOptionalSignalCheck,buildLoudnormAnalysisFilter,parseLoudnormMeasurements,buildLoudnormNormalizationFilter} from "../media-signal-analysis.mjs";
+import {parseBlackFrameEvents,parseSilenceEvents,buildMediaSignalFindings,parseAudioMetrics,buildAudioMetricFindings,parseFreezeEvents,parseSceneChangeTimes,runOptionalSignalCheck,buildLoudnormAnalysisFilter,parseLoudnormMeasurements,buildLoudnormNormalizationFilter,parseLoudnormOutput,buildLoudnormOutputFindings} from "../media-signal-analysis.mjs";
 
 test("parses FFmpeg blackdetect intervals",()=>{
  const events=parseBlackFrameEvents("[blackdetect @ 0x1] black_start:0.500 black_end:2.000 black_duration:1.500");
@@ -65,6 +65,20 @@ test("builds measured two-pass normalization only from complete bounded measurem
  assert.equal(buildLoudnormNormalizationFilter({measurements}),"loudnorm=I=-16:LRA=11:TP=-1.5:measured_I=-20:measured_TP=-2.1:measured_LRA=4.5:measured_thresh=-30:offset=4:linear=true:dual_mono=false:print_format=json");
  assert.throws(()=>buildLoudnormNormalizationFilter(),/first-pass/);
  assert.throws(()=>buildLoudnormNormalizationFilter({measurements:{...measurements,truePeakDbtp:100}}),/truePeakDbtp/);
+});
+
+test("parses FFmpeg loudnorm second-pass output mode and measurements",()=>{
+ const result=parseLoudnormOutput("log\\n"+JSON.stringify({output_i:"-16.2",output_tp:"-1.4",output_lra:"5.1",output_thresh:"-26.2",normalization_type:"linear",target_offset:"0.2"})+"\\n");
+ assert.deepEqual(result,{normalizationType:"linear",integratedLufs:-16.2,truePeakDbtp:-1.4,loudnessRange:5.1,thresholdDb:-26.2,targetOffsetDb:0.2});
+ const dynamic=parseLoudnormOutput(JSON.stringify({output_i:"-18",output_tp:"-2",output_lra:"12",output_thresh:"-28",normalization_type:"dynamic",target_offset:"1"}));
+ assert.equal(dynamic.normalizationType,"dynamic");
+ assert.equal(parseLoudnormOutput("not loudnorm json"),null);
+});
+test("reports linear fallback and post-render loudness or true-peak target misses",()=>{
+ const fallback=buildLoudnormOutputFindings({normalizationType:"dynamic",integratedLufs:-18,truePeakDbtp:-1},{integratedLufs:-16,truePeakDbtp:-1.5});
+ assert.deepEqual(fallback.map(item=>item.code),["LOUDNORM_LINEAR_FALLBACK","LOUDNORM_INTEGRATED_TARGET_MISS"]);
+ const truePeak=buildLoudnormOutputFindings({normalizationType:"linear",integratedLufs:-16.2,truePeakDbtp:-0.8},{integratedLufs:-16,truePeakDbtp:-1.5});
+ assert.deepEqual(truePeak.map(item=>item.code),["LOUDNORM_TRUE_PEAK_TARGET_MISS"]);
 });
 test("records unsupported optional filters without disguising them as clean results",async()=>{
  const result=await runOptionalSignalCheck(async()=>{throw Object.assign(new Error("missing filter"),{code:"MEDIA_PROCESS_FAILED"});});
