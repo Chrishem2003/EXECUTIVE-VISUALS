@@ -72,17 +72,18 @@ export function buildLoudnormAnalysisFilter({integratedLufs=-16,loudnessRange=11
 }
 export function parseLoudnormMeasurements(stderr=""){
  const text=String(stderr||"");
- const candidates=[...text.matchAll(/\\{[\\s\\S]*?\\}/g)].reverse();
+ const candidates=[...text.matchAll(/\{[\s\S]*?\}/g)].reverse();
  for(const candidate of candidates){
   let parsed;
   try{parsed=JSON.parse(candidate[0]);}catch{continue;}
-  const fields={integratedLufs:parsed.input_i,truePeakDbtp:parsed.input_tp,loudnessRange:parsed.input_lra,thresholdDb:parsed.input_thresh,offsetDb:parsed.target_offset};
-  if(Object.values(fields).every(value=>typeof value==="number"&&Number.isFinite(value)))return fields;
+  const numeric=value=>typeof value==="number"||typeof value==="string"&&value.trim()!==""?Number(value):NaN;
+  const fields={integratedLufs:numeric(parsed.input_i),truePeakDbtp:numeric(parsed.input_tp),loudnessRange:numeric(parsed.input_lra),thresholdDb:numeric(parsed.input_thresh),offsetDb:numeric(parsed.target_offset)};
+  if(Object.values(fields).every(Number.isFinite))return fields;
  }
  return null;
 }
 export function buildLoudnormNormalizationFilter({integratedLufs=-16,loudnessRange=11,truePeakDbtp=-1.5,measurements,dualMono=false}={}){
- const analysisFilter=buildLoudnormAnalysisFilter({integratedLufs,loudnessRange,truePeakDbtp,dualMono});
+ buildLoudnormAnalysisFilter({integratedLufs,loudnessRange,truePeakDbtp,dualMono});
  if(!measurements||typeof measurements!=="object")throw new TypeError("Valid first-pass loudness measurements are required.");
  const measured=measurements;
  assertRange("measurements.integratedLufs",measured.integratedLufs,[-99,0]);
