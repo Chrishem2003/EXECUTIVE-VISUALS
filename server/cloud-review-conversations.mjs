@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const fail=(code,message)=>{throw Object.assign(new Error(message),{code});};
 const map=row=>({id:row.id,reviewId:row.review_id,authorId:row.author_id,body:row.body,createdAt:row.created_at,updatedAt:row.updated_at});
@@ -23,6 +24,6 @@ export function createCloudReviewConversationRepository({url=process.env.SUPABAS
  }
  return Object.freeze({
   async list({actorId,reviewId}={}){await context(actorId,reviewId);const rows=await request("review_replies?select=id,review_id,author_id,body,created_at,updated_at&review_id=eq."+encodeURIComponent(reviewId)+"&order=created_at.asc&limit=200");return(Array.isArray(rows)?rows:[]).map(map);},
-  async create({actorId,reviewId,body}={}){const {parent,project}=await context(actorId,reviewId);if(typeof body!=="string"||!body.trim()||body.trim().length>5000)fail("REVIEW_INVALID","Reply must contain 1 to 5,000 characters.");const row={id:crypto.randomUUID(),owner_id:project.ownerId,project_id:parent.projectId,review_id:reviewId,author_id:actorId,body:body.trim()};const rows=await request("review_replies?select=id,review_id,author_id,body,created_at,updated_at",{method:"POST",body:row});if(!Array.isArray(rows)||rows.length!==1||rows[0].id!==row.id)throw new Error("Review reply creation returned an invalid receipt.");return map(rows[0]);}
+  async create({actorId,reviewId,body}={}){const {parent,project}=await context(actorId,reviewId);if(typeof body!=="string"||!body.trim()||body.trim().length>5000)fail("REVIEW_INVALID","Reply must contain 1 to 5,000 characters.");const row={id:randomUUID(),owner_id:project.ownerId,project_id:parent.projectId,review_id:reviewId,author_id:actorId,body:body.trim()};const rows=await request("review_replies?select=id,review_id,author_id,body,created_at,updated_at",{method:"POST",body:row});if(!Array.isArray(rows)||rows.length!==1||rows[0].id!==row.id)throw new Error("Review reply creation returned an invalid receipt.");return map(rows[0]);}
  });
 }
