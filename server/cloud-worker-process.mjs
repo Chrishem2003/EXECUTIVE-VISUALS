@@ -56,6 +56,9 @@ export function createCloudWorkerSupervisor({workers,leaseSeconds=90,heartbeatIn
    if(!stopped)throw new Error("Cloud worker supervisor is already running.");
    stopped=false;
    await recover();
+   // A termination signal may arrive while startup recovery is awaiting the
+   // database. Do not create timers or claim work after stop() wins that race.
+   if(stopped)return;
    // Start the first poll without blocking process startup on a long render.
    // This lets the process install SIGINT/SIGTERM handlers before a job can
    // occupy the worker for its full execution duration.
