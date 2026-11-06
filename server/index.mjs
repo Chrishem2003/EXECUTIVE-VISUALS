@@ -43,6 +43,7 @@ const SESSION_DAYS = Math.max(1,Math.min(90,Number(process.env.SESSION_ABSOLUTE_
 const SESSION_IDLE_MINUTES = Math.max(5,Math.min(1440,Number(process.env.SESSION_IDLE_TIMEOUT_MINUTES)||30));
 const SESSION_IDLE_MS = SESSION_IDLE_MINUTES*60*1000;
 const SESSION_COOKIE_MAX_AGE = SESSION_IDLE_MINUTES*60;
+const SESSION_MAX_CONCURRENT = Math.max(1,Math.min(25,Number(process.env.SESSION_MAX_CONCURRENT)||10));
 const ALLOWED_MEDIA = new Set([
   "image/jpeg","image/png","image/webp","image/gif",
   "video/mp4","video/webm","video/quicktime","video/x-matroska",
@@ -122,8 +123,14 @@ const setCookie = (res,token,maxAge) => {
 };
 function createLocalSession(userId) {
   const token=randomBytes(32).toString("base64url");
-  db.prepare("INSERT INTO sessions(token_hash,user_id,expires_at,last_seen_at) VALUES(?,?,?,?)")
-    .run(hash(token),userId,new Date(Date.now()+SESSION_DAYS*86400000).toISOString(),now());
+  db.prepare("INSERT INTO sessions(token_hash,session_id,user_id,expires_at,last_seen_at) VALUES(?,?,?,?,?)")
+    .run(hash(token),randomUUID(),userId,new Date(Date.now()+SESSION_DAYS*86400000).toISOString(),now());
+  const excess=db.prepare("SELECT session_id FROM sessions WHERE user_id=? ORDER BY last_seen_at DESC,created_at DESC,rowid DESC LIMIT -1 OFFSET ?")
+    .all(userId,SESSION_MAX_CONCURRENT);
+  if(excess.length){
+    const remove=db.prepare("DELETE FROM sessions WHERE user_id=? AND session_id=?");
+    for(const row of excess)remove.run(userId,row.session_id);
+  }
   return token;
 }
 async function authenticate(req,res) {
@@ -379,6 +386,28 @@ export function createAppServer() {
         setCookie(res,token,SESSION_COOKIE_MAX_AGE);
         audit(db,user.id,"account.password_changed","user",user.id,{sessionsRevoked:true});
         send(res,200,{ok:true,sessionsRevoked:true},cors);return;
+      }
+      if(path==="/api/auth/sessions"&&req.method==="GET"){
+        if(AUTH_MODE!=="local"){fail(res,403,"SESSION_MANAGEMENT_UNAVAILABLE","Manage active sessions through the configured identity provider.");return;}
+        const currentHash=hash(cookieValue(req,"ev_session")||"");
+        const sessions=db.prepare("SELECT session_id,created_at,last_seen_at,expires_at,token_hash FROM sessions WHERE user_id=? AND expires_at>? ORDER BY last_seen_at DESC,created_at DESC")
+          .all(user.id,now()).map(row=>({id:row.session_id,createdAt:row.created_at,lastSeenAt:row.last_seen_at,expiresAt:row.expires_at,current:row.token_hash===currentHash}));
+        send(res,200,{sessions,maxConcurrent:SESSION_MAX_CONCURRENT},cors);return;
+      }
+      if(path.startsWith("/api/auth/sessions/")&&req.method==="DELETE"){
+        if(AUTH_MODE!=="local"){fail(res,403,"SESSION_MANAGEMENT_UNAVAILABLE","Manage active sessions through the configured identity provider.");return;}
+        const sessionId=path.slice("/api/auth/sessions/".length);
+        if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sessionId)){
+          fail(res,400,"INVALID_SESSION_ID","A valid session identifier is required.");return;
+        }
+        const currentHash=hash(cookieValue(req,"ev_session")||"");
+        const target=db.prepare("SELECT token_hash FROM sessions WHERE user_id=? AND session_id=?").get(user.id,sessionId);
+        if(!target){fail(res,404,"SESSION_NOT_FOUND","Session not found.");return;}
+        db.prepare("DELETE FROM sessions WHERE user_id=? AND session_id=?").run(user.id,sessionId);
+        const current=target.token_hash===currentHash;
+        if(current)setCookie(res,"",0);
+        audit(db,user.id,"account.session_revoked","session",sessionId,{current});
+        send(res,200,{ok:true,current},cors);return;
       }
       if(path==="/api/me"&&req.method==="GET"){send(res,200,{user,authMode:AUTH_MODE},cors);return;}
       if(path==="/api/uploads"&&req.method==="POST"){
