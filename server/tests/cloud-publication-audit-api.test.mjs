@@ -6,7 +6,7 @@ const owner="11111111-1111-4111-8111-111111111111";
 const project="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const job="55555555-5555-4555-8555-555555555555";
 const run="99999999-9999-4999-8999-999999999999";
-const admin={id:owner,email:"admin@example.test"};
+const admin={id:owner,email:"admin@example.test",emailVerified:true};
 const row=(id,at="2026-11-07T12:00:00.000Z")=>({id,run_id:run,event_type:"publication.cleanup_completed",owner_id:owner,project_id:project,occurred_at:at,details:{removedCount:0}});
 function fixture({rows=[],allow=true,admins="admin@example.test",status=200}={}){
  const calls=[];
@@ -19,7 +19,8 @@ function fixture({rows=[],allow=true,admins="admin@example.test",status=200}={})
 }
 test("requires an explicit administrator allowlist and rejects untrusted identities",async()=>{
  const f=fixture();
- assert.equal((await f.api.handle({method:"GET",path:"/api/cloud/publication-audit",user:{id:owner,email:"other@example.test"},query:{}})).status,403);
+ assert.equal((await f.api.handle({method:"GET",path:"/api/cloud/publication-audit",user:{id:owner,email:"other@example.test",emailVerified:true},query:{}})).status,403);
+ assert.equal((await f.api.handle({method:"GET",path:"/api/cloud/publication-audit",user:{id:owner,email:"admin@example.test",emailVerified:false},query:{}})).status,403);
  assert.equal(f.calls.length,0);
  assert.equal((await f.api.handle({method:"GET",path:"/api/cloud/publication-audit",user:null,query:{}})).status,401);
  assert.equal((await f.api.handle({method:"POST",path:"/api/cloud/publication-audit",user:admin,query:{}})).status,405);
