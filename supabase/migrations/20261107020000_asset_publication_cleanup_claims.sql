@@ -62,9 +62,9 @@ begin
   if not found
      or job_row.owner_id is distinct from p_owner_id
      or job_row.project_id is distinct from p_project_id
-     or (job_row.status = 'processing'
-         and (job_row.lease_expires_at is null
-              or job_row.lease_expires_at > pg_catalog.clock_timestamp()))
+     or job_row.status not in ('failed','cancelled','expired')
+     or (job_row.lease_expires_at is not null
+         and job_row.lease_expires_at > pg_catalog.clock_timestamp())
   then
     raise exception 'publication cleanup is blocked by a missing, mismatched, or active job'
       using errcode = '55000';
