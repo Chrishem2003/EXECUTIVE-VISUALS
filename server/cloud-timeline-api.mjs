@@ -242,6 +242,27 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     }
     return response(200,{job});
    }
+   if(path==="/api/cloud/reviews"&&method==="GET"){
+    const projectId=String(query.projectId||"");
+    if(!safeId(projectId))return response(400,{error:{code:"INVALID_PROJECT_ID",message:"Choose a valid project."}});
+    const reviews=await service.reviews.list({actorId:ownerId,projectId,assetId:query.assetId||null,limit:Number(query.limit)||100,offset:Number(query.offset)||0});
+    return response(200,{reviews});
+   }
+   if(path==="/api/cloud/reviews"&&method==="POST"){
+    const result=await service.reviews.create({actorId:ownerId,input:body,idempotencyKey});
+    return response(result.idempotentReplay?200:201,result);
+   }
+   const reviewMatch=path.match(/^\/api\/cloud\/reviews\/([0-9a-f-]+)$/i);
+   if(reviewMatch&&safeId(reviewMatch[1])){
+    if(method==="GET"){
+     const review=await service.reviews.get({actorId:ownerId,reviewId:reviewMatch[1]});
+     return review?response(200,{review}):response(404,{error:{code:"REVIEW_NOT_FOUND",message:"Review not found."}});
+    }
+    if(method==="PATCH"){
+     const review=await service.reviews.update({actorId:ownerId,reviewId:reviewMatch[1],input:body});
+     return response(200,{review});
+    }
+   }
    const match=path.match(/^\/api\/cloud\/timelines\/([0-9a-f-]+)(?:\/(render))?$/i);
    if(!match||!safeId(match[1]))return null;
    const timelineId=match[1];
@@ -274,27 +295,6 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
    if(method==="PUT"&&!match[2]){
     const timeline=await service.timelines.update({ownerId,timelineId,expectedRevision:Number(body.expectedRevision),timeline:body.timeline,otio:body.otio});
     return response(200,{timeline});
-   }
-   if(path==="/api/cloud/reviews"&&method==="GET"){
-    const projectId=String(query.projectId||"");
-    if(!safeId(projectId))return response(400,{error:{code:"INVALID_PROJECT_ID",message:"Choose a valid project."}});
-    const reviews=await service.reviews.list({actorId:ownerId,projectId,assetId:query.assetId||null,limit:Number(query.limit)||100,offset:Number(query.offset)||0});
-    return response(200,{reviews});
-   }
-   if(path==="/api/cloud/reviews"&&method==="POST"){
-    const result=await service.reviews.create({actorId:ownerId,input:body,idempotencyKey});
-    return response(result.idempotentReplay?200:201,result);
-   }
-   const reviewMatch=path.match(/^\/api\/cloud\/reviews\/([0-9a-f-]+)$/i);
-   if(reviewMatch&&safeId(reviewMatch[1])){
-    if(method==="GET"){
-     const review=await service.reviews.get({actorId:ownerId,reviewId:reviewMatch[1]});
-     return review?response(200,{review}):response(404,{error:{code:"REVIEW_NOT_FOUND",message:"Review not found."}});
-    }
-    if(method==="PATCH"){
-     const review=await service.reviews.update({actorId:ownerId,reviewId:reviewMatch[1],input:body});
-     return response(200,{review});
-    }
    }
    return null;
   }catch(error){
