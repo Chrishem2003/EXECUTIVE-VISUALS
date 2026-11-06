@@ -151,7 +151,7 @@ test("publishes the same logical output once across repeated publication attempt
  assert.equal(first.objectPath,second.objectPath);
  assert.equal(f.storageCalls.filter(call=>call.op==="uploadFile").length,1);
  assert.equal(f.storageCalls[0].options.upsert,false);
- assert.match(first.objectPath,/\\/attempt-[0-9a-f-]{36}\\.mp4$/i);
+ assert.match(first.objectPath,/\/attempt-[0-9a-f-]{36}\.mp4$/i);
  assert.equal(f.publicationReservation.status,"published");
  await rm(root,{recursive:true,force:true});
 });
