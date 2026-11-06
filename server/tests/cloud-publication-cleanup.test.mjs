@@ -144,6 +144,7 @@ test("storage deletion retries reuse the same durable claim token until completi
   isAttemptActive:async()=>false,
   claimCleanup:async input=>{claimCalls.push(input);return stableClaim;},
   completeCleanup:async claim=>{completed.push(claim);return true;},
+  onEvent:async()=>true,
   now:()=>now
  });
  const args={...cleanupIdentity,prefix,dryRun:false,confirmDelete:true};
@@ -196,8 +197,7 @@ test("destructive failure audit events preserve the destructive mode and never h
   onEvent:async()=>{throw new Error("audit sink unavailable");},
   now:()=>now
  });
- const empty=await throwingAudit.run({prefix});
- assert.equal(empty.removedCount,0);
+ await assert.rejects(()=>throwingAudit.run({prefix}),error=>error.code==="CLOUD_PUBLICATION_CLEANUP_AUDIT_FAILED");
 });
 
 
