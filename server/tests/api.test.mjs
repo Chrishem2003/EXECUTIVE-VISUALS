@@ -604,6 +604,13 @@ test("project membership separates editor, reviewer and viewer permissions",asyn
   const editorWorkflow=await request("/api/workflows/"+workflowId,{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({revision:1,name:"Edited by team member",graph:sharedGraph})},editor);
   assert.equal(editorWorkflow.status,200);
   assert.equal((await editorWorkflow.json()).revision,2,"editor changes must persist on an owner-created workflow");
+  assert.equal((await request("/api/workflows/"+workflowId,{},editor)).status,200);
+  const editorReviews=await request("/api/reviews?projectId="+project.id,{},editor);
+  assert.equal(editorReviews.status,200);
+  const projectJobResponse=await request("/api/jobs",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({jobType:"media.probe",projectId:project.id,sourceAssetId:asset.id})},editor);
+  assert.equal(projectJobResponse.status,202,await projectJobResponse.clone().text());
+  const projectJobId=(await projectJobResponse.json()).job.id;
+  assert.equal((await request("/api/jobs/"+projectJobId,{},editor)).status,200);
   const editorInvite=await request("/api/projects/"+project.id+"/members",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({email:"owner-a@example.test",role:"viewer"})},editor);
   assert.equal(editorInvite.status,403);
   const remove=await request("/api/projects/"+project.id+"/members/"+JSON.parse(await addEditor.clone().text()).member.id,{method:"DELETE"},owner);
@@ -612,6 +619,11 @@ test("project membership separates editor, reviewer and viewer permissions",asyn
   assert.equal((await revokedAssets.json()).assets.length,0);
   const revokedTimeline=await request("/api/timelines/"+timelineId,{},editor);
   assert.equal(revokedTimeline.status,404);
+  assert.equal((await request("/api/workflows/"+workflowId,{},editor)).status,404);
+  assert.equal((await request("/api/reviews?projectId="+project.id,{},editor)).status,404);
+  assert.equal((await request("/api/jobs/"+projectJobId,{},editor)).status,404);
+  assert.equal((await request("/api/jobs/"+projectJobId,{},owner)).status,200,
+    "project owners retain access to project jobs after a collaborator is removed");
 });
 
 test("project activity feed is scoped, attributed and cursor-paginated",async()=>{
