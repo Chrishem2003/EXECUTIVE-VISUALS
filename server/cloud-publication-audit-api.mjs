@@ -88,6 +88,7 @@ export function createCloudPublicationAuditApi({
    const projectId=safeUuid(query.projectId,"project ID");
    const jobId=safeUuid(query.jobId,"job ID");
    const runId=safeUuid(query.runId,"run ID");
+   const actorId=safeUuid(query.actorId,"actor ID");
    const limit=safeLimit(query.limit);
    const cursor=decodeCursor(query.cursor);
    const eventType=query.eventType||null;
@@ -108,6 +109,7 @@ export function createCloudPublicationAuditApi({
    else {params.set("owner_id","eq."+user.id);params.set("project_id","is.null");}
    if(jobId)params.set("job_id","eq."+jobId);
    if(runId)params.set("run_id","eq."+runId);
+   if(actorId)params.set("actor_id","eq."+actorId);
    if(eventType)params.set("event_type","eq."+eventType);
    if(from&&to)params.set("and","(occurred_at.gte."+from+",occurred_at.lte."+to+")");
    else if(from)params.set("occurred_at","gte."+from);
