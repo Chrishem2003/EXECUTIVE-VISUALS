@@ -5,6 +5,7 @@ const sql = await readFile(resolve(process.cwd(), "supabase/migrations/202610312
 const checkpointSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261102090000_video_pipeline_checkpoints.sql"), "utf8");
 const fencingSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261107000000_job_lease_fencing_tokens.sql"), "utf8");
 const publicationSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261106230000_asset_publication_ledger.sql"), "utf8");
+const atomicPublicationSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261107010000_atomic_asset_publication_lease_fencing.sql"), "utf8");
 const issues = [];
 const tables = ["projects","project_members","project_workspace_documents","workflows","workflow_runs","workflow_node_runs","timelines","assets","jobs","job_events","consents","reviews","audit_events"];
 for (const table of tables) {
@@ -92,6 +93,23 @@ if (!publicationSql.includes("revoke all on executive_visuals.asset_publications
 if (!publicationSql.includes("grant select, insert, update on executive_visuals.asset_publications to service_role;")) issues.push("Asset publication ledger must be service-role-only.");
 if (!publicationSql.includes("create or replace function executive_visuals.reserve_asset_publication(") || !publicationSql.includes("grant execute on function executive_visuals.reserve_asset_publication(uuid,uuid,text,text,uuid) to service_role")) issues.push("Asset publication reservation RPC must be restricted to service_role.");
 if (!publicationSql.includes("create or replace function executive_visuals.complete_asset_publication(") || !publicationSql.includes("asset.sha256=publication.payload_sha256") || !publicationSql.includes("grant execute on function executive_visuals.complete_asset_publication(uuid,text,uuid) to service_role")) issues.push("Asset publication completion must verify the persisted asset checksum and be restricted to service_role.");
+
+
+if (/\\b(drop\\s+table|truncate|delete\\s+from)\\b/i.test(atomicPublicationSql)) issues.push("Atomic publication migration must not contain destructive DDL/DML.");
+if (!atomicPublicationSql.includes("create or replace function executive_visuals.finalize_asset_publication_v1(")) issues.push("Atomic lease-fenced asset publication RPC is missing.");
+if (!atomicPublicationSql.includes("set search_path = ''")) issues.push("Atomic publication SECURITY DEFINER RPC must pin an empty search_path.");
+const atomicJobLock = atomicPublicationSql.indexOf("from executive_visuals.jobs");
+const atomicLedgerLock = atomicPublicationSql.indexOf("from executive_visuals.asset_publications");
+if (atomicJobLock < 0 || atomicLedgerLock < 0 || atomicJobLock > atomicLedgerLock || !atomicPublicationSql.slice(atomicJobLock, atomicLedgerLock).includes("for update") || !atomicPublicationSql.slice(atomicLedgerLock).includes("for update")) issues.push("Atomic publication must lock the job before the owner-scoped publication ledger.");
+for (const required of ["job_row.owner_id is distinct from p_owner_id","job_row.project_id is distinct from p_project_id","job_row.lease_owner is distinct from p_worker_id","job_row.lease_token is distinct from p_lease_token","job_row.lease_expires_at <= pg_catalog.clock_timestamp()"]) {
+  if (!atomicPublicationSql.includes(required)) issues.push("Atomic publication lease/scope validation is missing: " + required + ".");
+}
+for (const required of ["insert into executive_visuals.assets","update executive_visuals.asset_publications","set status = 'published'","asset_row.sha256 is distinct from p_payload_sha256","asset_row.original_name is distinct from p_original_name","asset_row.metadata is distinct from p_metadata","asset_row.object_path !~ expected_path_pattern"]) {
+  if (!atomicPublicationSql.includes(required)) issues.push("Atomic asset identity/finalization invariant is missing: " + required + ".");
+}
+if (!atomicPublicationSql.includes("revoke all on function executive_visuals.finalize_asset_publication_v1") || !atomicPublicationSql.includes("from public, anon, authenticated")) issues.push("Atomic publication RPC must be unavailable to untrusted roles.");
+if (!atomicPublicationSql.includes("grant execute on function executive_visuals.finalize_asset_publication_v1") || !atomicPublicationSql.includes("to service_role")) issues.push("Atomic publication RPC must be callable by the trusted service role.");
+if (!atomicPublicationSql.includes("revoke all on function executive_visuals.complete_asset_publication(uuid,text,uuid)") || !atomicPublicationSql.includes("from public, anon, authenticated, service_role")) issues.push("Legacy unfenced publication completion RPC must be disabled.");
 
 
 
