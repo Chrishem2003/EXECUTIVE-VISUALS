@@ -70,3 +70,16 @@ test("worker validates inputs and output before finishing",async()=>{
  });
  assert.equal(invalid.status,"failed");
 });
+
+
+test("worker persists bounded delivery certification evidence when a profile fails",async()=>{
+ const queue=queueFor(),certification={schemaVersion:1,profileId:"vertical-1080p",status:"failed",generatedAt:"2026-11-06T00:00:00.000Z",summary:{passed:5,failed:2,total:7},checks:[{id:"width",expected:1080,actual:1920,passed:false},{id:"height",expected:1920,actual:1080,passed:false}]};
+ const result=await runCloudWorkerCycle({
+  queue,workerId:"worker-1",heartbeatIntervalMs:60000,
+  execute:async()=>{throw Object.assign(new Error("Delivery certification failed: width, height"),{code:"DELIVERY_CERTIFICATION_FAILED",certification});}
+ });
+ assert.equal(result.status,"failed");
+ const finish=queue.calls.find(call=>call[0]==="finish");
+ assert.equal(finish[5].code,"DELIVERY_CERTIFICATION_FAILED");
+ assert.deepEqual(finish[5].deliveryCertification,certification);
+});
