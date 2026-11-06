@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {parseBlackFrameEvents,parseSilenceEvents,buildMediaSignalFindings,parseAudioMetrics,buildAudioMetricFindings,parseFreezeEvents,parseSceneChangeTimes,runOptionalSignalCheck} from "../media-signal-analysis.mjs";
+import {parseBlackFrameEvents,parseSilenceEvents,buildMediaSignalFindings,parseAudioMetrics,buildAudioMetricFindings,parseFreezeEvents,parseSceneChangeTimes,runOptionalSignalCheck,buildLoudnormAnalysisFilter,parseLoudnormMeasurements,buildLoudnormNormalizationFilter} from "../media-signal-analysis.mjs";
 
 test("parses FFmpeg blackdetect intervals",()=>{
  const events=parseBlackFrameEvents("[blackdetect @ 0x1] black_start:0.500 black_end:2.000 black_duration:1.500");
@@ -47,6 +47,25 @@ test("flags clipped samples and near-full-scale peaks without imposing a loudnes
  assert.equal(findings.length,2);
 });
 
+
+const loudnormFixture=JSON.stringify({input_i:"-20.0",input_tp:"-2.1",input_lra:"4.5",input_thresh:"-30.0",output_i:"-16.0",output_tp:"-1.5",output_lra:"4.5",output_thresh:"-26.0",normalization_type:"linear",target_offset:"4.0"});
+test("builds a bounded first-pass EBU R128 loudness analysis filter",()=>{
+ assert.equal(buildLoudnormAnalysisFilter(), "loudnorm=I=-16:LRA=11:TP=-1.5:dual_mono=false:print_format=json");
+ assert.equal(buildLoudnormAnalysisFilter({integratedLufs:-23,loudnessRange:7,truePeakDbtp:-2,dualMono:true}),"loudnorm=I=-23:LRA=7:TP=-2:dual_mono=true:print_format=json");
+ assert.throws(()=>buildLoudnormAnalysisFilter({integratedLufs:1}),/integratedLufs/);
+ assert.throws(()=>buildLoudnormAnalysisFilter({truePeakDbtp:-10}),/truePeakDbtp/);
+});
+test("parses FFmpeg loudnorm first-pass JSON measurements",()=>{
+ assert.deepEqual(parseLoudnormMeasurements("noise before\\n"+loudnormFixture+"\\nnoise after"),{integratedLufs:-20,truePeakDbtp:-2.1,loudnessRange:4.5,thresholdDb:-30,offsetDb:4});
+ assert.equal(parseLoudnormMeasurements("no valid JSON"),null);
+ assert.equal(parseLoudnormMeasurements(JSON.stringify({input_i:"-inf",input_tp:"-2",input_lra:"4",input_thresh:"-30",target_offset:"0"})),null);
+});
+test("builds measured two-pass normalization only from complete bounded measurements",()=>{
+ const measurements={integratedLufs:-20,truePeakDbtp:-2.1,loudnessRange:4.5,thresholdDb:-30,offsetDb:4};
+ assert.equal(buildLoudnormNormalizationFilter({measurements}),"loudnorm=I=-16:LRA=11:TP=-1.5:measured_I=-20:measured_TP=-2.1:measured_LRA=4.5:measured_thresh=-30:offset=4:linear=true:dual_mono=false:print_format=json");
+ assert.throws(()=>buildLoudnormNormalizationFilter(),/first-pass/);
+ assert.throws(()=>buildLoudnormNormalizationFilter({measurements:{...measurements,truePeakDbtp:100}}),/truePeakDbtp/);
+});
 test("records unsupported optional filters without disguising them as clean results",async()=>{
  const result=await runOptionalSignalCheck(async()=>{throw Object.assign(new Error("missing filter"),{code:"MEDIA_PROCESS_FAILED"});});
  assert.deepEqual(result,{status:"unavailable",reason:"MEDIA_PROCESS_FAILED"});
