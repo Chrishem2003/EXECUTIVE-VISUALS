@@ -28,7 +28,7 @@ function updateShell(){
  const projectLabel=document.querySelector<HTMLElement>("#project-name");
  if(projectLabel)projectLabel.textContent=state.projects.find(project=>project.id===state.projectId)?.name||"No project selected";
  const foot=document.querySelector<HTMLElement>(".sidebar-foot small");
- if(foot)foot.textContent=state.status==="online"?(state.dataDirectoryPersistence==="ephemeral"?"Preview storage · temporary":state.persistentVolumeRequired?"Persistent API · "+(state.user?.email||"authenticated"):"API connected · "+(state.user?.email||"authenticated")):state.status==="auth-required"?"Sign in to enable persistent projects":state.status==="offline"?"API offline · local planning only":"Connecting to local API";
+ if(foot)foot.textContent=state.status==="online"?(state.dataDirectoryPersistence==="ephemeral"?"Preview storage · temporary":state.persistentVolumeRequired?"Persistent API · "+(state.user?.email||"authenticated"):"API connected · "+(state.user?.email||"authenticated")):state.status==="auth-required"?"Sign in to access account-backed projects":state.status==="offline"?"API offline · local planning only":"Connecting to local API";
  const badge=document.querySelector<HTMLElement>(".local-badge");
  if(badge)badge.textContent=state.status==="online"?"API CONNECTED":state.status==="auth-required"?"SIGN IN REQUIRED":state.status==="offline"?"OFFLINE MODE":"CONNECTING";
  const dot=document.querySelector<HTMLElement>(".local-dot");
