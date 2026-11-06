@@ -161,6 +161,7 @@ test("publishes the same logical output once across repeated publication attempt
  assert.ok(finalizeCall,"publication metadata and ledger must be finalized through one RPC");
  assert.equal(JSON.parse(finalizeCall.options.body).p_lease_token,leaseContext.leaseToken);
  assert.equal(f.calls.some(call=>call.url.includes("/assets?")&&call.options.method==="POST"),false,"idempotent publication must not insert metadata outside the transaction");
+ assert.equal(f.calls.filter(call=>call.url.includes("/rpc/finalize_asset_publication_v1")).length,2,"published retries must revalidate the lease and immutable identity through the atomic transaction");
  await rm(root,{recursive:true,force:true});
 });
 
@@ -169,13 +170,23 @@ test("removes an uploaded attempt object when the worker lease is lost before me
  await writeFile(file,bytes);
  const f=fixture();let checks=0;
  const args={ownerId,projectId,originalName:"render.mp4",mediaType:"video/mp4",filePath:file,publicationKey:"job-lease-loss:output:v1",leaseContext,
-  async assertLease(){checks++;return checks<3;}};
+  async assertLease(){checks++;return checks<2;}};
  await assert.rejects(()=>f.repo.createFromFileIdempotent(args),error=>error.code==="CLOUD_ASSET_PUBLICATION_LEASE_LOST");
- assert.equal(checks,3);
+ assert.equal(checks,2);
  assert.equal(f.storageCalls.filter(call=>call.op==="uploadFile").length,1);
  assert.equal(f.storageCalls.filter(call=>call.op==="remove").length,1);
  assert.equal(f.calls.some(call=>call.options.method==="POST"&&call.url.includes("/assets?")),false);
  assert.equal(f.publicationReservation.status,"reserved");
+ await rm(root,{recursive:true,force:true});
+});
+
+test("rejects a lease assertion that does not positively return true",async()=>{
+ const root=await mkdtemp(join(tmpdir(),"ev-publication-indeterminate-lease-")),file=join(root,"render.mp4");
+ await writeFile(file,bytes);
+ const f=fixture();
+ await assert.rejects(()=>f.repo.createFromFileIdempotent({ownerId,projectId,originalName:"render.mp4",mediaType:"video/mp4",filePath:file,publicationKey:"job-indeterminate:output:v1",leaseContext,async assertLease(){}}),error=>error.code==="CLOUD_ASSET_PUBLICATION_LEASE_LOST");
+ assert.equal(f.calls.length,0);
+ assert.equal(f.storageCalls.length,0);
  await rm(root,{recursive:true,force:true});
 });
 
