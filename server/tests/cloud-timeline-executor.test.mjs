@@ -31,6 +31,26 @@ test("cloud timeline executor materializes all unique sources and publishes a re
  await rm(root,{recursive:true,force:true});
 });
 
+test("cloud timeline executor forwards mastering settings and preserves its verification report",async()=>{
+ const root=await mkdtemp(join(tmpdir(),"ev-cloud-timeline-mastering-"));
+ const mastering={enabled:true,integratedLufs:-16,truePeakDbtp:-1.5};
+ let received=null,published=null;
+ const executor=createCloudTimelineExecutor({
+  tempRoot:root,
+  timelines:{async get(){return{id:timelineId,ownerId:owner,projectId:project,revision:7,timeline};}},
+  mediaIO:{
+   async materialize(args){const path=join(root,args.assetId+".bin");await writeFile(path,args.assetId);return{path,asset:{id:args.assetId},async cleanup(){}};},
+   async publish(args){published=args;return{id:"mastered-asset"};}
+  },
+  async probeOutput(){return{format:{duration:"12"},streams:[{codec_type:"video"},{codec_type:"audio"}]};},
+  async renderTimeline(args){received=args.mastering;const path=join(args.workDir,"master.mp4");await writeFile(path,"master");return{path,filename:"master.mp4",mediaType:"video/mp4",mastering:{enabled:true,verified:true,output:{integratedLufs:-16,truePeakDbtp:-1.5}}};}
+ });
+ const result=await executor({job:{id:"job-master",owner_id:owner,project_id:project,job_type:"timeline.render",input:{timelineId,timelineRevision:7,mastering}},onProgress(){}});
+ assert.deepEqual(received,mastering);
+ assert.equal(published.metadata.mastering.verified,true);
+ assert.equal(result.mastering.verified,true);
+ await rm(root,{recursive:true,force:true});
+});
 test("cloud timeline executor rejects project mismatch before materializing media",async()=>{
  let materialized=false;
  const executor=createCloudTimelineExecutor({
