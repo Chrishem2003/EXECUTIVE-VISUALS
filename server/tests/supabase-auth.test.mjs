@@ -71,6 +71,9 @@ test("Supabase identity verification rejects missing credentials and unsafe URLs
   const fetchImpl = async () => { calls++; return { ok: true, json: async () => ({ id: "user-1" }) }; };
   assert.equal(await verifySupabaseUser({ supabaseUrl: "https://project.example", publishableKey: "", accessToken: "token", fetchImpl }), null);
   assert.equal(await verifySupabaseUser({ supabaseUrl: "file:///etc/passwd", publishableKey: "public", accessToken: "token", fetchImpl }), null);
+  assert.equal(await verifySupabaseUser({ supabaseUrl: "http://auth.example", publishableKey: "public", accessToken: "token", fetchImpl }), null);
   assert.equal(await verifySupabaseUser({ supabaseUrl: "https://project.example", publishableKey: "public", accessToken: "x".repeat(16385), fetchImpl }), null);
   assert.equal(calls, 0);
+  const loopback = await verifySupabaseUser({ supabaseUrl: "http://127.0.0.1:54321", publishableKey: "public", accessToken: "token", fetchImpl });
+  assert.deepEqual(loopback, { id: "user-1", email: "" });
 });
