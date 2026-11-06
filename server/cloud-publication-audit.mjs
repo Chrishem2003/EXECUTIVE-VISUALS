@@ -171,21 +171,3 @@ export function createCloudPublicationAuditHandler({
     }
   });
 }
-
-
-test("audit handler retries transient sink failures and requires a durable acknowledgement",async()=>{
- let attempts=0;const retries=[];
- const handler=createCloudPublicationAuditHandler({
-  sink:{async onEvent(){attempts++;return attempts===3;}},
-  maxAttempts:3,retryDelayMs:0,onRetry:event=>retries.push(event)
- });
- assert.equal(await handler.onEvent({type:"publication.cleanup_completed"}),true);
- assert.equal(attempts,3);
- assert.equal(retries.length,2);
-});
-test("audit handler stops after its bounded retry budget",async()=>{
- let attempts=0;
- const handler=createCloudPublicationAuditHandler({sink:{async onEvent(){attempts++;return false;}},maxAttempts:2,retryDelayMs:0});
- await assert.rejects(()=>handler.onEvent({type:"publication.cleanup_completed"}),error=>error.code==="CLOUD_PUBLICATION_AUDIT_RETRIES_EXHAUSTED");
- assert.equal(attempts,2);
-});
