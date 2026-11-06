@@ -21,7 +21,7 @@ alter table executive_visuals.reviews
   add constraint ev_reviews_request_id_valid check (request_id is null or char_length(request_id) between 8 and 128),
   add constraint ev_reviews_frame_anchor_consistent check (
     (frame_number is null and duration_frames is null and annotation is null)
-    or (asset_id is not null and frame_number is not null)
+    or frame_number is not null
   );
 
 create unique index if not exists ev_reviews_owner_request
@@ -46,6 +46,7 @@ create index if not exists ev_review_events_review_created
 
 alter table executive_visuals.review_events enable row level security;
 revoke all on executive_visuals.review_events from public,anon,authenticated;
+grant select on executive_visuals.review_events to authenticated;
 grant all privileges on executive_visuals.review_events to service_role;
 
 -- Internal comments are visible only to project owners, their author, editors and reviewers.
