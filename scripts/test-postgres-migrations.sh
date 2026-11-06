@@ -65,3 +65,4 @@ do
 done
 
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$ROOT_DIR/scripts/postgres-migration-integration.sql"
+bash "$ROOT_DIR/scripts/test-postgres-concurrency.sh"
