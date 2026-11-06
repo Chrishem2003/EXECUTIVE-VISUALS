@@ -113,7 +113,7 @@ export function createCloudStorage({
       }
       await request("/storage/v1/object/" + BUCKET + "/" + path, {
         method:"POST",
-        headers:{"content-type":contentType,"cache-control":"max-age=3600","x-upsert":upsert?"true":"false"},
+        headers:{"content-type":contentType,"cache-control":"max-age=3600","x-upsert":"false"},
         body:bytes
       });
       return { bucket:BUCKET, path:objectPath, size:bytes.byteLength, contentType };
@@ -131,7 +131,7 @@ export function createCloudStorage({
       try{
         const response=await fetchImpl(base+"/storage/v1/object/"+BUCKET+"/"+path,{
           method:"POST",
-          headers:{apikey:serviceRoleKey,authorization:"Bearer "+serviceRoleKey,"content-type":contentType,"content-length":String(info.size),"cache-control":"max-age=3600","x-upsert":"false"},
+          headers:{apikey:serviceRoleKey,authorization:"Bearer "+serviceRoleKey,"content-type":contentType,"content-length":String(info.size),"cache-control":"max-age=3600","x-upsert":upsert?"true":"false"},
           body:meter,duplex:"half",signal:controller.signal
         });
         await streamDone;
