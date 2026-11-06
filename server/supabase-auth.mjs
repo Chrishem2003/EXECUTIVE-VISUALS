@@ -23,7 +23,8 @@ export async function verifySupabaseUser({
   let endpoint;
   try {
     const base = new URL(supabaseUrl);
-    if (!["http:", "https:"].includes(base.protocol)) return null;
+    const loopback = ["localhost", "127.0.0.1", "[::1]"].includes(base.hostname.toLowerCase());
+    if (base.protocol !== "https:" && !(base.protocol === "http:" && loopback)) return null;
     endpoint = new URL("/auth/v1/user", base).toString();
   } catch {
     return null;
