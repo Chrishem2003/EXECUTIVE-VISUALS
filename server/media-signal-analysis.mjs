@@ -128,6 +128,23 @@ export function buildLoudnormOutputFindings(result,{integratedLufs=-16,truePeakD
  return findings;
 }
 
+
+function assertMediaPath(name,value){
+ if(typeof value!=="string"||!value.trim()||value.includes("\\0"))throw new TypeError(name+" must be a non-empty media path.");
+}
+export function buildLoudnormAnalysisArgs({inputPath,integratedLufs=-16,loudnessRange=11,truePeakDbtp=-1.5,dualMono=false}={}){
+ assertMediaPath("inputPath",inputPath);
+ const filter=buildLoudnormAnalysisFilter({integratedLufs,loudnessRange,truePeakDbtp,dualMono});
+ return ["-hide_banner","-i",inputPath,"-map","0:a:0","-af",filter,"-f","null","-"];
+}
+export function buildLoudnormNormalizationArgs({inputPath,outputPath,measurements,integratedLufs=-16,loudnessRange=11,truePeakDbtp=-1.5,dualMono=false,audioBitrate="192k"}={}){
+ assertMediaPath("inputPath",inputPath);
+ assertMediaPath("outputPath",outputPath);
+ if(typeof audioBitrate!=="string"||!/^[0-9]{2,4}k$/.test(audioBitrate))throw new TypeError("audioBitrate must be a bounded kilobit-per-second value.");
+ const filter=buildLoudnormNormalizationFilter({integratedLufs,loudnessRange,truePeakDbtp,measurements,dualMono});
+ return ["-hide_banner","-y","-i",inputPath,"-map","0:v:0?","-map","0:a:0","-c:v","copy","-af",filter,"-c:a","aac","-b:a",audioBitrate,"-movflags","+faststart",outputPath];
+}
+
 export async function runOptionalSignalCheck(check,{isCancelled=()=>false}={}) {
  try {
   return {status:"completed",result:await check()};
