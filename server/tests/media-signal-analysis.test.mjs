@@ -58,7 +58,7 @@ test("flags sustained freeze intervals for human review",()=>{
 test("derives bounded non-silence activity intervals from detected silence",()=>{
  const intervals=buildNonSilenceActivityIntervals({durationSeconds:10,silence:[{startSeconds:2,endSeconds:4},{startSeconds:6,endSeconds:8}],minActivitySeconds:.5,padSeconds:.1});
  assert.deepEqual(intervals,[
-  {startSeconds:0,endSeconds:1.9,durationSeconds:1.9},
+  {startSeconds:0,endSeconds:2.1,durationSeconds:2.1},
   {startSeconds:3.9,endSeconds:6.1,durationSeconds:2.2},
   {startSeconds:7.9,endSeconds:10,durationSeconds:2.1}
  ]);
