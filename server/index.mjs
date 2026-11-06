@@ -23,6 +23,7 @@ import { recordJobStage, getJobStageTimeline } from "./job-observability.mjs";
 import { parseByteRange } from "./http-range.mjs";
 import { createWaveformCache } from "./waveform-cache.mjs";
 import { extractBearerToken, verifySupabaseUser } from "./supabase-auth.mjs";
+import { createInMemoryRateLimiter } from "./rate-limiter.mjs";
 import { ensureTransformationPlanSchema, createTransformationPlan, approveTransformationPlan, listTransformationPlans, getTransformationPlan } from "./transformation-plans.mjs";
 
 const PORT = Number(process.env.API_PORT || process.env.PORT || 4179);
@@ -60,9 +61,9 @@ const cloudTimelineApiEnabled = process.env.CLOUD_TIMELINE_API_ENABLED === "true
 if (cloudTimelineApiEnabled && AUTH_MODE !== "supabase") throw new Error("Cloud timeline API requires verified Supabase authentication.");
 const activeProcesses = new Map();
 const WORKER_ID = randomUUID();
-const rateBuckets = new Map();
+const rateLimiter=createInMemoryRateLimiter({maxBuckets:Number(process.env.RATE_LIMIT_MAX_BUCKETS)||10000});
 const AUTH_RATE_LIMIT = Math.max(1, Math.min(1000, Number(process.env.AUTH_RATE_LIMIT) || 20));
-function rateAllowed(key,limit,windowMs){const time=Date.now();const old=rateBuckets.get(key);if(!old||time-old.start>=windowMs){rateBuckets.set(key,{start:time,count:1});return true;}old.count++;return old.count<=limit;}
+const rateAllowed=(key,limit,windowMs)=>rateLimiter.allow(key,limit,windowMs);
 await mkdir(join(MEDIA_ROOT,"uploads"), { recursive:true });
 await mkdir(join(MEDIA_ROOT,"derived"), { recursive:true });
 await cleanupExpiredUploadSessions(db).catch(error=>console.error("Upload-session cleanup failed:",error));
