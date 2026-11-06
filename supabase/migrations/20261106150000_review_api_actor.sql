@@ -3,6 +3,11 @@
 drop index if exists executive_visuals.ev_reviews_owner_request;
 create unique index if not exists ev_reviews_reviewer_request
   on executive_visuals.reviews(reviewer_id,request_id) where request_id is not null;
+
+-- All review writes must pass through the authenticated server API so actor identity,
+-- role checks, optimistic concurrency and event recording cannot be bypassed.
+revoke insert,update,delete on executive_visuals.reviews from authenticated;
+revoke insert,update,delete on executive_visuals.review_events from authenticated;
 alter table executive_visuals.reviews
   add column if not exists last_actor_id uuid references auth.users(id) on delete set null;
 
