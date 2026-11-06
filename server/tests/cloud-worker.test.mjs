@@ -71,3 +71,10 @@ test("worker validates inputs and output before finishing",async()=>{
  });
  assert.equal(invalid.status,"failed");
 });
+
+test("worker refuses to execute a claimed job without a valid fencing token",async()=>{
+ const queue=queueFor({job:{id:"job-stale"}});
+ let executed=false;
+ await assert.rejects(()=>runCloudWorkerCycle({queue,workerId:"worker-1",execute:async()=>{executed=true;return{};}}),/fencing token/);
+ assert.equal(executed,false);
+});
