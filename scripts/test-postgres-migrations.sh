@@ -60,6 +60,7 @@ for migration in \
   "$ROOT_DIR"/supabase/migrations/20261107000000_job_lease_fencing_tokens.sql \
   "$ROOT_DIR"/supabase/migrations/20261107010000_atomic_asset_publication_lease_fencing.sql \
   "$ROOT_DIR"/supabase/migrations/20261107020000_asset_publication_cleanup_claims.sql
+  "$ROOT_DIR"/supabase/migrations/20261107030000_publication_cleanup_audit_events.sql\
 do
   echo "Applying $(basename "$migration")"
   psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$migration"
