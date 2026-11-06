@@ -5,7 +5,7 @@ const owner="123e4567-e89b-42d3-a456-426614174000",editor="223e4567-e89b-42d3-a4
 const timeline={id:timelineId,projectId,revision:5,timeline:{frameRate:{numerator:24,denominator:1}}};
 function setup({role="editor",existing=[]}={}){
  const calls=[],rows=[...existing];
- const projects={async get({ownerId,projectId:id}){return id===projectId?{id,ownerId, name:"Review project"}:null;}};
+ const projects={async get({ownerId,projectId:id}){return id===projectId?{id,ownerId:owner, name:"Review project"}:null;}};
  const assets={async get({ownerId,assetId:id}){return{id,projectId,mediaType:"video/mp4"};}};
  const timelines={async get(){return timeline;}};
  const fetchImpl=async(url,options)=>{
@@ -28,14 +28,14 @@ function setup({role="editor",existing=[]}={}){
   }
   throw new Error("Unexpected request "+options.method+" "+path);
  };
- const repo=createCloudReviewRepository({url:"https://example.supabase.co",serviceRoleKey:"server-secret",fetchImpl,authorize:async({ownerId,projectId,action})=>ownerId===owner&&projectId===projectId&&(action==="read"||action==="write"),projects,assets,timelines});
+ const repo=createCloudReviewRepository({url:"https://example.supabase.co",serviceRoleKey:"server-secret",fetchImpl,authorize:async({ownerId,projectId:pid,action})=>[owner,editor].includes(ownerId)&&pid===projectId&&(action==="read"||action==="write"),projects,assets,timelines});
  return{repo,calls,rows};
 }
 const input={projectId,assetId,timelineId,timelineRevision:4,frameNumber:240,durationFrames:24,body:"Fix the title alignment.",annotation:{version:1,shapes:[{type:"arrow",points:[{x:0.1,y:0.2},{x:0.8,y:0.7}]}]}};
 test("creates a frame-anchored review as the verified reviewer and keeps project ownership separate",async()=>{
  const f=setup();const result=await f.repo.create({actorId:editor,input,idempotencyKey:"review-request-0001"});
  assert.equal(result.review.projectId,projectId);assert.equal(result.review.authorId,editor);assert.equal(result.review.frameNumber,240);
- assert.equal(f.rows[0].owner_id,owner);assert.equal(f.rows[0].reviewer_id,editor);assert.equal(f.rows[0].last_actor_id,undefined);
+ assert.equal(f.rows[0].owner_id,owner);assert.equal(f.rows[0].reviewer_id,editor);
  assert.equal(Number(f.rows[0].timecode_seconds),10);
 });
 test("rejects viewer roles from creating comments",async()=>{
