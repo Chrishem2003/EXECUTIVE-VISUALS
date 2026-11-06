@@ -241,3 +241,29 @@ test("cloud waveform endpoint repairs a corrupt cached derivative before serving
   await rm(result.cleanupDirectory,{recursive:true,force:true});
  }finally{await rm(root,{recursive:true,force:true});}
 });
+
+
+test("authenticated review API routes delegate verified identity and bounded review payloads",async()=>{
+ const calls=[];
+ const reviews={
+  async list(input){calls.push(["list",input]);return[{id:"823e4567-e89b-42d3-a456-426614174000"}];},
+  async create(input){calls.push(["create",input]);return{review:{id:"823e4567-e89b-42d3-a456-426614174000"},idempotentReplay:false};},
+  async get(input){calls.push(["get",input]);return{id:input.reviewId};},
+  async update(input){calls.push(["update",input]);return{id:input.reviewId,body:input.input.body};}
+ };
+ const api=createCloudTimelineApi({url:"https://example.supabase.co",serviceRoleKey:"server-secret",timelineService:{reviews,timelines:{},assets:{},projects:{}},authorize:async()=>true,fetchImpl:async()=>({ok:true,status:200,async text(){return"[]";}})});
+ const listed=await api.handle({method:"GET",path:"/api/cloud/reviews",ownerId:owner,query:{projectId:project}});
+ assert.equal(listed.status,200);assert.equal(calls[0][1].actorId,owner);
+ const created=await api.handle({method:"POST",path:"/api/cloud/reviews",ownerId:owner,body:{projectId,body:"Check the title."},idempotencyKey:"review-0001"});
+ assert.equal(created.status,201);assert.equal(calls[1][1].actorId,owner);assert.equal(calls[1][1].idempotencyKey,"review-0001");
+ const fetched=await api.handle({method:"GET",path:"/api/cloud/reviews/823e4567-e89b-42d3-a456-426614174000",ownerId:owner});
+ assert.equal(fetched.status,200);
+ const patched=await api.handle({method:"PATCH",path:"/api/cloud/reviews/823e4567-e89b-42d3-a456-426614174000",ownerId:owner,body:{body:"Updated note."}});
+ assert.equal(patched.status,200);assert.equal(patched.body.review.body,"Updated note.");
+});
+test("review API rejects unauthenticated access and invalid project filters",async()=>{
+ const reviews={async list(){throw new Error("must not be called");}};
+ const api=createCloudTimelineApi({url:"https://example.supabase.co",serviceRoleKey:"server-secret",timelineService:{reviews,timelines:{},assets:{},projects:{}},authorize:async()=>true,fetchImpl:async()=>({ok:true,status:200,async text(){return"[]";}})});
+ assert.equal((await api.handle({method:"GET",path:"/api/cloud/reviews",ownerId:"invalid",query:{projectId:project}})).status,401);
+ assert.equal((await api.handle({method:"GET",path:"/api/cloud/reviews",ownerId:owner,query:{projectId:"invalid"}})).status,400);
+});
