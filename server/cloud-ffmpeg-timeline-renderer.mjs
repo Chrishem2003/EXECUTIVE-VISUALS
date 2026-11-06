@@ -10,7 +10,7 @@ const enabled=(clip)=>clip?.enabled!==false;
 const ordered=(tracks)=>tracks.flatMap(track=>(track.clips||[]).filter(enabled)).sort((a,b)=>seconds(a.timelineStart)-seconds(b.timelineStart));
 const safeName=(value)=>String(value||"sequence").normalize("NFKC").replace(/[^a-zA-Z0-9._ -]/g,"").trim().replace(/[ .]+$/,"").slice(0,100)||"sequence";
 const DELIVERY_PROFILES={
- source:{id:"source",label:"Source dimensions",width:null,height:null,audioBitrate:profile.audioBitrate},
+ source:{id:"source",label:"Source dimensions",width:null,height:null,audioBitrate:"192k"},
  "youtube-1080p":{id:"youtube-1080p",label:"YouTube 1080p SDR",width:1920,height:1080,audioBitrate:"384k"},
  "vertical-1080p":{id:"vertical-1080p",label:"Vertical 1080p SDR",width:1080,height:1920,audioBitrate:"192k"},
  "square-1080p":{id:"square-1080p",label:"Square 1080p SDR",width:1080,height:1080,audioBitrate:"192k"}
@@ -190,7 +190,7 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
    const measurements=parseLoudnormMeasurements(analysis.stderr||analysis.stdout);
    if(!measurements)fail("Mastering analysis did not return complete EBU R128 measurements.","LOUDNORM_ANALYSIS_FAILED");
    masteringOutputPath=join(workDir,outputId+"-mastered.mp4");
-   const normalizationArgs=buildLoudnormNormalizationArgs({inputPath:outputPath,outputPath:masteringOutputPath,measurements,...settings,audioBitrate:"192k"});
+   const normalizationArgs=buildLoudnormNormalizationArgs({inputPath:outputPath,outputPath:masteringOutputPath,measurements,...settings,audioBitrate:profile.audioBitrate});
    onProgress(94);
    const normalized=await run("ffmpeg",normalizationArgs,60*60*1000,jobId,activeProcesses,()=>Boolean(signal?.aborted));
    if(signal?.aborted)fail("Timeline render was cancelled.","JOB_CANCELLED");
