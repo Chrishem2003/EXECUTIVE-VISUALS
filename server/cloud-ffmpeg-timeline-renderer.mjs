@@ -105,7 +105,7 @@ const gainExpression=(points,baseDb)=>{
 };
 const panExpressions=(points,basePan,channels=2)=>{
  const list=points.filter(point=>point.pan!==undefined),pan=value=>Math.max(-1,Math.min(1,Number.isFinite(value)?value:0));
- if(!list.length&&pan(basePan)===0)return null;
+ if(!list.length&&pan(basePan)===0&&channels!==1)return null;
  let expression=n(pan(basePan));
  for(let i=list.length-1;i>=0;i--){
   const point=list[i],from=i?list[i-1].timeSeconds:0,to=point.timeSeconds,fromPan=i?pan(list[i-1].pan):pan(basePan),toPan=pan(point.pan);
