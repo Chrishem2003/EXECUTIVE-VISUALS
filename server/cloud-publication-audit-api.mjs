@@ -109,8 +109,9 @@ export function createCloudPublicationAuditApi({
    if(jobId)params.set("job_id","eq."+jobId);
    if(runId)params.set("run_id","eq."+runId);
    if(eventType)params.set("event_type","eq."+eventType);
-   if(from)params.set("occurred_at","gte."+from);
-   if(to)params.set("occurred_at",params.has("occurred_at")?params.get("occurred_at")+"&lte."+to:"lte."+to);
+   if(from&&to)params.set("and","(occurred_at.gte."+from+",occurred_at.lte."+to+")");
+   else if(from)params.set("occurred_at","gte."+from);
+   else if(to)params.set("occurred_at","lte."+to);
    if(cursor)params.set("or","(occurred_at.lt."+cursor.at+",and(occurred_at.eq."+cursor.at+",id.lt."+cursor.id+"))");
    const rows=await queryRows(params);
    const page=rows.slice(0,limit);
