@@ -30,10 +30,10 @@ test("parses audio clipping, peak, RMS and integrated loudness",()=>{
  assert.deepEqual(metrics,{clippedSamples:12,peakDbfs:-0.4,truePeakDbfs:null,rmsDbfs:-18.2,integratedLufs:-16.7});
 });
 test("parses FFmpeg EBU R128 true-peak summary separately from sample peak",()=>{
- const metrics=parseAudioMetrics("Peak level dB: -1.2\\nRMS level dB: -18.2\\n I: -16.7 LUFS\\n\\n True peak:\\n Peak: -0.4 dBFS");
+ const metrics=parseAudioMetrics("Peak level dB: -1.2\nRMS level dB: -18.2\n I: -16.7 LUFS\n\n True peak:\n Peak: -0.4 dBFS");
  assert.equal(metrics.peakDbfs,-1.2);
  assert.equal(metrics.truePeakDbfs,-0.4);
- const silence=parseAudioMetrics("True peak:\\n Peak: -inf dBFS");
+ const silence=parseAudioMetrics("True peak:\n Peak: -inf dBFS");
  assert.equal(silence.truePeakDbfs,null);
 });
 test("flags true-peak headroom independently from sample-peak headroom",()=>{
