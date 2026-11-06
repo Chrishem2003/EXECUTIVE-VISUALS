@@ -19,7 +19,7 @@ function fixture({referenced=[],active=false,leaseCheck=true,removeError=false}=
   {name:"attempt-723e4567-e89b-42d3-a456-426614174000.mp4",createdAt:null}
  ];
  const storage={
-  async listObjects(args){assert.deepEqual(args,{prefix,limit:100,offset:0});return entries;},
+  async listObjects(args){assert.deepEqual(args,{prefix,limit:100,cursor:null});return{objects:entries,hasNext:true,nextCursor:"next-cleanup-page"};},
   async remove(path){if(removeError)throw new Error("storage unavailable");removed.push(path);return true;}
  };
  const cleanup=createCloudPublicationCleanup({
@@ -74,7 +74,7 @@ test("deletes only verified orphan attempt paths and emits audit events",async()
 test("fails closed when reference lookup fails or cleanup deletion fails",async()=>{
  const f=fixture({removeError:true});
  const failedLookup=createCloudPublicationCleanup({
-  storage:{listObjects:async()=>[{name:orphanAttempt,createdAt:old}],remove:async()=>true},
+  storage:{listObjects:async()=>({objects:[{name:orphanAttempt,createdAt:old}],hasNext:false,nextCursor:null}),remove:async()=>true},
   findReferencedPaths:async()=>{throw new Error("database unavailable");},
   isAttemptActive:async()=>false,
   now:()=>now
@@ -89,5 +89,5 @@ test("rejects unsafe prefixes, age thresholds and unbounded batches",async()=>{
  const f=fixture();
  await assert.rejects(()=>f.cleanup.run({prefix:"../"}),/exactly an owner-or-project/);
  await assert.rejects(()=>f.cleanup.run({prefix,olderThanMs:1000}),/24 hours/);
- await assert.rejects(()=>f.cleanup.run({prefix,limit:101}),/between 1 and 100/);
+ await assert.rejects(()=>f.cleanup.run({prefix,limit:101}),/between 1 and 100/);\n await assert.rejects(()=>f.cleanup.run({prefix,cursor:""}),/cursor is invalid/);
 });
