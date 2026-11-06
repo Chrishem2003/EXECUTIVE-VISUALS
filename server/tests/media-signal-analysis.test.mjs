@@ -93,7 +93,7 @@ test("builds argument-safe first-pass FFmpeg analysis commands",()=>{
 test("builds second-pass commands that preserve video and normalize only the mixed master audio",()=>{
  const args=buildLoudnormNormalizationArgs({inputPath:"/tmp/mixed.mp4",outputPath:"/tmp/mastered.mp4",measurements:{integratedLufs:-20,truePeakDbtp:-2.1,loudnessRange:4.5,thresholdDb:-30,offsetDb:4}});
  assert.deepEqual(args.slice(0,11),["-hide_banner","-y","-i","/tmp/mixed.mp4","-map","0:v:0?","-map","0:a:0","-c:v","copy","-af"]);
- assert.ok(args.includes("loudnorm="));
+ assert.ok(args.some(value=>typeof value==="string"&&value.startsWith("loudnorm=")));
  assert.ok(args.includes("192k"));
  assert.equal(args.at(-1),"/tmp/mastered.mp4");
  assert.throws(()=>buildLoudnormNormalizationArgs({inputPath:"/tmp/a.mp4",outputPath:"/tmp/b.mp4",measurements:{},audioBitrate:"999999k"}),/audioBitrate/);
