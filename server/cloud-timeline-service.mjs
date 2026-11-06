@@ -2,6 +2,7 @@ import { createCloudAssetService } from "./cloud-asset-service.mjs";
 import { createCloudAssetAuthorizer } from "./cloud-asset-auth.mjs";
 import { createCloudTimelineRepository } from "./cloud-timelines.mjs";
 import { createCloudProjectRepository } from "./cloud-projects.mjs";
+import { createCloudReviewRepository } from "./cloud-reviews.mjs";
 
 /**
  * Opt-in cloud timeline service. Asset lookup and authorization share the
@@ -19,5 +20,6 @@ export function createCloudTimelineService(options={}){
     timeoutMs:options.timeoutMs??12000,
     maxDocumentBytes:options.maxDocumentBytes??5*1024*1024
   });
-  return Object.freeze({assets:assets.assets,storage:assets.storage,timelines,projects});
+  const reviews=createCloudReviewRepository({...shared,authorize,projects,assets:assets.assets,timelines,timeoutMs:options.timeoutMs??12000});
+  return Object.freeze({assets:assets.assets,storage:assets.storage,timelines,projects,reviews});
 }
