@@ -169,7 +169,7 @@ export function createCloudPublicationCleanup({
           try {
             const completed=await completeCleanup({...claim,jobId,ownerId,projectId,publicationKey,prefix,objectPath:candidate.objectPath});
             if(completed!==true)throw new Error("Durable cleanup claim completion was not confirmed.");
-            await emit({type:"publication.orphan_removed",prefix,objectPath:candidate.objectPath,createdAt:candidate.createdAt,claimId:claim.claimId,at:eventAt});
+            await emit({type:"publication.orphan_removed",prefix,objectPath:candidate.objectPath,createdAt:candidate.createdAt,claimId:claim.claimId,dryRun,at:eventAt});
           } catch {
             await recordSkip(skipped,candidate,"cleanup_claim_completion_failed",{claimId:claim.claimId},eventAt,dryRun);
           }
