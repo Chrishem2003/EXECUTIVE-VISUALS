@@ -644,6 +644,10 @@ test("project membership separates editor, reviewer and viewer permissions",asyn
   assert.equal((await request("/api/workflows/"+workflowId,{},editor)).status,200);
   const editorReviews=await request("/api/reviews?projectId="+project.id,{},editor);
   assert.equal(editorReviews.status,200);
+  assert.equal((await request("/api/audit?projectId="+project.id,{},editor)).status,200,
+    "active project members may read the project's audit feed");
+  assert.equal((await request("/api/usage/summary?projectId="+project.id,{},editor)).status,200,
+    "active project members may read authorized project usage telemetry");
   const projectJobResponse=await request("/api/jobs",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({jobType:"media.probe",projectId:project.id,sourceAssetId:asset.id})},editor);
   assert.equal(projectJobResponse.status,202,await projectJobResponse.clone().text());
   const projectJobId=(await projectJobResponse.json()).job.id;
@@ -658,6 +662,10 @@ test("project membership separates editor, reviewer and viewer permissions",asyn
   assert.equal(revokedTimeline.status,404);
   assert.equal((await request("/api/workflows/"+workflowId,{},editor)).status,404);
   assert.equal((await request("/api/reviews?projectId="+project.id,{},editor)).status,404);
+  assert.equal((await request("/api/audit?projectId="+project.id,{},editor)).status,404,
+    "former members must lose access to project audit history");
+  assert.equal((await request("/api/usage/summary?projectId="+project.id,{},editor)).status,404,
+    "former members must lose access to project usage telemetry");
   assert.equal((await request("/api/jobs/"+projectJobId,{},editor)).status,404);
   assert.equal((await request("/api/jobs/"+projectJobId,{},owner)).status,200,
     "project owners retain access to project jobs after a collaborator is removed");
