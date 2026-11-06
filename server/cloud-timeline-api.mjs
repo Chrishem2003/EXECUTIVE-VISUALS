@@ -381,6 +381,8 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
    const asset=await service.assets.createFromFile({ownerId,projectId,originalName:name,mediaType,filePath,metadata});
    return response(201,{asset});
   }catch(error){
+   if(error.code==="REVIEW_NOT_FOUND"||error.code==="REVIEW_ACCESS_DENIED")return response(404,{error:{code:"REVIEW_NOT_FOUND",message:"Review not found."}});
+   if(error.code==="REVIEW_INVALID")return response(400,{error:{code:error.code,message:error.message}});
    if(error.code==="UPLOAD_TOO_LARGE")return response(413,{error:{code:error.code,message:error.message}});
    if(error.code==="CLOUD_ASSET_ACCESS_DENIED"||error.code==="CLOUD_ASSET_NOT_FOUND")return response(404,{error:{code:"ASSET_NOT_FOUND",message:"Asset not found."}});
    throw error;
