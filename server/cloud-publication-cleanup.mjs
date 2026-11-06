@@ -1,3 +1,4 @@
+// Opt-in cleanup primitive only: callers must supply authoritative reference and lease checks.
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const ATTEMPT=/^attempt-[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\\.[A-Za-z0-9]{1,12}$/i;
 const DAY_MS=24*60*60*1000;
