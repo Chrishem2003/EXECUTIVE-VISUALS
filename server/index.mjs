@@ -525,7 +525,7 @@ export function createAppServer() {
         const body=await readJson(req);const name=String(body.name||"").trim().slice(0,160);
         if(!name){fail(res,400,"PROJECT_NAME_REQUIRED","Project name is required.");return;}
         const id=randomUUID();db.prepare("INSERT INTO projects(id,owner_id,name,description,settings_json) VALUES(?,?,?,?,?)").run(id,user.id,name,String(body.description||"").slice(0,4000),json(body.settings));
-        audit(db,user.id,"project.created","project",id,{name});send(res,201,{project:{id,name,description:body.description||"",revision:1}},cors);return;
+        audit(db,user.id,"project.created","project",id,{name},id);send(res,201,{project:{id,name,description:body.description||"",revision:1}},cors);return;
       }
       const membersMatch=path.match(/^\/api\/projects\/([0-9a-f-]+)\/members(?:\/([0-9a-f-]+))?$/i);
       if(membersMatch){
