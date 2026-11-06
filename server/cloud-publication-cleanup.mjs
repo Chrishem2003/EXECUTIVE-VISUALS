@@ -47,6 +47,10 @@ export function createCloudPublicationCleanup({
   return Object.freeze({
     async run({
       prefix,
+      jobId=null,
+      ownerId=null,
+      projectId=null,
+      publicationKey=null,
       olderThanMs=DAY_MS,
       limit=100,
       cursor=null,
@@ -61,6 +65,10 @@ export function createCloudPublicationCleanup({
       if(cursor!==null&&(typeof cursor!=="string"||!cursor||cursor.length>4096))throw new Error("Publication cleanup cursor is invalid.");
       if(typeof dryRun!=="boolean"||typeof confirmDelete!=="boolean")throw new Error("Publication cleanup safety flags must be boolean.");
       if(!dryRun&&!confirmDelete)throw new Error("Destructive publication cleanup requires explicit confirmation.");
+      if(!dryRun&&(!UUID.test(jobId||"")||!UUID.test(ownerId||"")||(projectId!==null&&!UUID.test(projectId))||typeof publicationKey!=="string"||publicationKey.length<1||publicationKey.length>200)) {
+        throw new Error("Destructive cleanup requires the exact job, owner, optional project, and publication key identity.");
+      }
+      if(!dryRun&&prefix.split("/")[0] !== (projectId||ownerId))throw new Error("Cleanup prefix does not match the publication owner/project scope.");
       if(!dryRun&&typeof isAttemptActive!=="function")throw new Error("Destructive cleanup requires an authoritative active-worker lease check.");
       if(!dryRun&&(typeof claimCleanup!=="function"||typeof completeCleanup!=="function"))throw new Error("Destructive cleanup requires durable database claim and completion callbacks.");
 
@@ -118,7 +126,7 @@ export function createCloudPublicationCleanup({
         for(const candidate of eligible) {
           let claim;
           try {
-            claim=await claimCleanup({prefix,objectPath:candidate.objectPath,createdAt:candidate.createdAt});
+            claim=await claimCleanup({jobId,ownerId,projectId,publicationKey,prefix,objectPath:candidate.objectPath,createdAt:candidate.createdAt});
             if(!claim||typeof claim.claimId!=="string"||typeof claim.claimToken!=="string"||claim.status!=="claimed") {
               throw new Error("Durable cleanup claim was not granted.");
             }
@@ -136,7 +144,7 @@ export function createCloudPublicationCleanup({
             continue;
           }
           try {
-            const completed=await completeCleanup({...claim,prefix,objectPath:candidate.objectPath});
+            const completed=await completeCleanup({...claim,jobId,ownerId,projectId,publicationKey,prefix,objectPath:candidate.objectPath});
             if(completed!==true)throw new Error("Durable cleanup claim completion was not confirmed.");
             await emit({type:"publication.orphan_removed",prefix,objectPath:candidate.objectPath,createdAt:candidate.createdAt,claimId:claim.claimId,at:new Date(nowMs).toISOString()});
           } catch {
