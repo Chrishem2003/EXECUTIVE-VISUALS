@@ -8,6 +8,8 @@ import { pipeline } from "node:stream/promises";
 import { Transform } from "node:stream";
 import { buildMediaOperationArgs, executableAvailable } from "./media.mjs";
 import { createRealEsrganAdapter } from "./ai-upscale-engine.mjs";
+import { analyzeVoiceActivityFile } from "./voice-activity-detection.mjs";
+import { runOptionalSignalCheck } from "./media-signal-analysis.mjs";
 
 const EXTENSION = Object.freeze({
   "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "audio/mpeg": "mp3", "audio/wav": "wav", "video/mp4": "mp4"
@@ -118,7 +120,7 @@ function outputPlan(jobType, input, source, sourcePath, outputPath) {
  * Timeline rendering remains deliberately separate until its timeline document
  * and asset references are migrated to the cloud repository.
  */
-export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.env.FFMPEG_PATH || "ffmpeg", ffprobe = process.env.FFPROBE_PATH || "ffprobe", timeoutMs = 30 * 60 * 1000 } = {}) {
+export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.env.FFMPEG_PATH || "ffmpeg", ffprobe = process.env.FFPROBE_PATH || "ffprobe", timeoutMs = 30 * 60 * 1000, analyzeVoiceActivity = analyzeVoiceActivityFile } = {}) {
   if (!mediaIO || typeof mediaIO.materialize !== "function" || typeof mediaIO.publish !== "function") throw new Error("Cloud media executor requires cloud media IO.");
   if (!Number.isInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 60 * 60 * 1000) throw new Error("Cloud media execution timeout is invalid.");
 
@@ -189,6 +191,19 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
         const result = await runProcess(ffprobe, ["-v", "error", "-show_format", "-show_streams", "-of", "json", sourcePath], { signal, timeoutMs, onProgress });
         let metadata;
         try { metadata = JSON.parse(result.stdout || "{}"); } catch { throw Object.assign(new Error("FFprobe returned invalid metadata."), { code: "MEDIA_PROBE_INVALID" }); }
+        const streams=Array.isArray(metadata.streams)?metadata.streams:[];
+        const signalAnalysis={schemaVersion:1,method:"ffprobe-with-optional-silero-vad",voiceActivity:null,performed:[],unavailable:[],limitations:["Neural voice activity detection estimates speech presence; it does not transcribe words, identify speakers, infer emotion or certify dialogue quality."]};
+        if(streams.some(stream=>stream?.codec_type==="audio")){
+          const vadCheck=await runOptionalSignalCheck(async()=>{
+            const wavPath=join(workDir,"voice-activity-analysis.wav");
+            await runProcess(ffmpeg,["-hide_banner","-y","-i",sourcePath,"-map","0:a:0","-vn","-ac","1","-ar","16000","-c:a","pcm_s16le",wavPath],{signal,timeoutMs:Math.min(timeoutMs,10*60*1000),onProgress});
+            if(signal?.aborted)throw Object.assign(new Error("Media job was cancelled."),{code:"JOB_CANCELLED"});
+            return await analyzeVoiceActivity({filePath:wavPath,durationSeconds:Number(metadata.format?.duration),threshold:0.5,holdoffMs:300});
+          },{isCancelled:()=>Boolean(signal?.aborted)});
+          if(vadCheck.status==="completed"){signalAnalysis.voiceActivity=vadCheck.result;signalAnalysis.performed.push("silero-vad");}
+          else signalAnalysis.unavailable.push({check:"voice-activity-detection",reason:vadCheck.reason});
+        }
+        metadata.signalAnalysis=signalAnalysis;
         return { sourceAssetId: sourceId, metadata };
       }
       if (!executableAvailable("ffmpeg")) throw Object.assign(new Error("FFmpeg is not installed on this worker."), { code: "MEDIA_ENGINE_MISSING" });
