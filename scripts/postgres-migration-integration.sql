@@ -423,3 +423,77 @@ END;
 $cleanup_reclaim$;
 
 SELECT 'PostgreSQL migration integration checks passed' AS result;
+
+
+-- Persistent cleanup audit events are private, append-only, and independent of
+-- owner/project deletion. The service role can append/read but cannot rewrite.
+INSERT INTO executive_visuals.publication_cleanup_audit_events(
+  id,run_id,event_type,actor_type,actor_id,job_id,owner_id,project_id,
+  publication_key,claim_id,object_path,reason,dry_run,details,occurred_at
+) VALUES (
+  'abababab-abab-4bab-8bab-abababababab',
+  '99999999-9999-4999-8999-999999999999',
+  'publication.cleanup_candidate_skipped','system',NULL,
+  '55555555-5555-4555-8555-555555555555',
+  '11111111-1111-4111-8111-111111111111',
+  'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+  'integration:cleanup-audit',NULL,
+  'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee/attempt-88888888-8888-4888-8888-888888888888.mp4',
+  'asset_reference_exists',true,'{"createdAt":"2026-11-06T00:00:00Z"}'::jsonb,
+  clock_timestamp()
+);
+
+DO $audit_ledger$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM executive_visuals.publication_cleanup_audit_events
+    WHERE id='abababab-abab-4bab-8bab-abababababab'
+      AND event_type='publication.cleanup_candidate_skipped'
+      AND reason='asset_reference_exists'
+  ) THEN RAISE EXCEPTION 'cleanup audit event was not persisted'; END IF;
+
+  IF NOT (
+    SELECT c.relrowsecurity FROM pg_class c
+    JOIN pg_namespace n ON n.oid=c.relnamespace
+    WHERE n.nspname='executive_visuals'
+      AND c.relname='publication_cleanup_audit_events'
+  ) THEN RAISE EXCEPTION 'cleanup audit ledger does not have RLS enabled'; END IF;
+
+  IF has_table_privilege('anon','executive_visuals.publication_cleanup_audit_events','SELECT')
+     OR has_table_privilege('authenticated','executive_visuals.publication_cleanup_audit_events','SELECT')
+     OR has_table_privilege('anon','executive_visuals.publication_cleanup_audit_events','INSERT')
+     OR has_table_privilege('authenticated','executive_visuals.publication_cleanup_audit_events','INSERT') THEN
+    RAISE EXCEPTION 'public roles unexpectedly have cleanup audit access'; END IF;
+
+  IF NOT has_table_privilege('service_role','executive_visuals.publication_cleanup_audit_events','SELECT')
+     OR NOT has_table_privilege('service_role','executive_visuals.publication_cleanup_audit_events','INSERT') THEN
+    RAISE EXCEPTION 'service_role lacks append/read access to cleanup audit ledger'; END IF;
+
+  IF has_table_privilege('service_role','executive_visuals.publication_cleanup_audit_events','UPDATE')
+     OR has_table_privilege('service_role','executive_visuals.publication_cleanup_audit_events','DELETE')
+     OR has_table_privilege('service_role','executive_visuals.publication_cleanup_audit_events','TRUNCATE') THEN
+    RAISE EXCEPTION 'service_role unexpectedly has audit mutation privileges'; END IF;
+
+  BEGIN
+    UPDATE executive_visuals.publication_cleanup_audit_events
+    SET reason='tampered'
+    WHERE id='abababab-abab-4bab-8bab-abababababab';
+    RAISE EXCEPTION 'cleanup audit update unexpectedly succeeded';
+  EXCEPTION WHEN SQLSTATE '55000' THEN
+    IF SQLERRM='cleanup audit update unexpectedly succeeded' THEN RAISE; END IF;
+  END;
+
+  BEGIN
+    DELETE FROM executive_visuals.publication_cleanup_audit_events
+    WHERE id='abababab-abab-4bab-8bab-abababababab';
+    RAISE EXCEPTION 'cleanup audit delete unexpectedly succeeded';
+  EXCEPTION WHEN SQLSTATE '55000' THEN
+    IF SQLERRM='cleanup audit delete unexpectedly succeeded' THEN RAISE; END IF;
+  END;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM executive_visuals.publication_cleanup_audit_events
+    WHERE id='abababab-abab-4bab-8bab-abababababab'
+  ) THEN RAISE EXCEPTION 'cleanup audit row did not survive rejected mutations'; END IF;
+END;
+$audit_ledger$;
