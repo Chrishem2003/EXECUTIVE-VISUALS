@@ -254,7 +254,7 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
    args.push("-ss",seconds(clip.sourceRange?.start).toFixed(6),"-t",sourceDuration.toFixed(6),"-i",asset.path);
    const audioTrack=audios.find(track=>(track.clips||[]).some(item=>item.id===clip.id)),trackClips=audioTrack?ordered([audioTrack]):[],clipIndex=trackClips.findIndex(item=>item.id===clip.id),previousClip=trackClips[clipIndex-1],incomingFadeFrames=previousClip?.transitionToNext?.type==="crossfade"?Number(previousClip.transitionToNext.fadeFrames):0,outgoingFadeFrames=clip.transitionToNext?.type==="crossfade"?Number(clip.transitionToNext.fadeFrames):0,incomingFade=incomingFadeFrames/fps,outgoingFade=outgoingFadeFrames/fps;
    const delay=Math.round(start*1000),label="a"+audioIndex++,points=audioPoints(clip,seconds(clip.duration)),baseGainDb=Math.max(-60,Math.min(24,Number(clip.gainDb)||0)),basePan=Math.max(-1,Math.min(1,Number(clip.pan)||0)),gain=gainExpression(points,baseGainDb),audioProbe=asset.metadata?.probe?.streams?.find(stream=>stream?.codec_type==="audio"),sourceChannels=Number(audioProbe?.channels)||2,pan=panExpressions(points,basePan,sourceChannels===1?1:2);
-    const panFilter=pan?",aformat=channel_layouts=stereo,aeval=exprs='"+pan.left+"|"+pan.right+"':channel_layout=stereo":"";
+    const panFilter=pan?(sourceChannels>2?",aformat=channel_layouts=stereo":"")+",aeval=exprs='"+pan.left+"|"+pan.right+"':channel_layout=stereo":"";
    const fadeInFilter=incomingFade>0?",afade=t=in:st=0:d="+incomingFade.toFixed(6)+":curve=tri":"",fadeOutFilter=outgoingFade>0?",afade=t=out:st="+Math.max(0,seconds(clip.duration)-outgoingFade).toFixed(6)+":d="+outgoingFade.toFixed(6)+":curve=tri":"";
    let retimeFilters="";
    if(clip.speedCurve!==undefined){
