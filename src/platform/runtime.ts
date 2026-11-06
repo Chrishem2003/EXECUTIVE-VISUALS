@@ -140,7 +140,7 @@ window.addEventListener("ev:save-creative-draft",event=>{
 
 async function refresh(){
  const previousProjectId=state.projectId;
- const [projects,assets,jobs,providerCatalog,usageResponse,notificationResponse]=await Promise.all([
+ const [projects,assets,jobs,providerCatalog,usageResponse,usageSummaryResponse,notificationResponse]=await Promise.all([
   apiRequest<{projects:RuntimeProject[]}>("/api/projects"),
   apiRequest<{assets:RuntimeAsset[]}>("/api/assets"),
   apiRequest<{jobs:RuntimeJob[]}>("/api/jobs"),
