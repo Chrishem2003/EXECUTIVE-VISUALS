@@ -61,3 +61,15 @@ test("configuration, arguments and HTTP errors fail closed",async()=>{
   await assert.rejects(()=>queue.finish("job-1","worker-1","processing",null,null,leaseToken),/terminal job status/);
   await assert.rejects(()=>queue.finish("job-1","worker-1","failed",[],null,leaseToken),/must be an object/);
 });
+
+test("stale attempt tokens are forwarded unchanged and rejected by the lease RPC",async()=>{
+ const staleToken="22222222-2222-4222-8222-222222222222",requests=[];
+ const queue=createCloudQueue({...base,fetchImpl:async(url,options)=>{
+  requests.push({url,body:JSON.parse(options.body)});
+  return response(false);
+ }});
+ assert.equal(await queue.renew("job-1","worker-1",90,staleToken),false);
+ assert.equal(await queue.finish("job-1","worker-1","succeeded",{},null,staleToken),false);
+ assert.equal(await queue.assertLease("job-1","worker-1",staleToken),false);
+ assert.deepEqual(requests.map(item=>item.body.p_lease_token),[staleToken,staleToken,staleToken]);
+});
