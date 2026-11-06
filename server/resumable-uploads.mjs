@@ -49,6 +49,8 @@ export async function createUploadSession({
   if (!Number.isSafeInteger(totalSize) || totalSize <= 0) throw error(400, "INVALID_UPLOAD_SIZE", "Upload size must be a positive safe integer.");
   if (!Number.isSafeInteger(maxUploadBytes) || maxUploadBytes <= 0 || totalSize > maxUploadBytes) throw error(413, "UPLOAD_TOO_LARGE", "Upload exceeds the configured size limit.");
   if (projectId && !canWriteProject(db, ownerId, projectId)) throw error(404, "PROJECT_NOT_FOUND", "Project not found or you do not have editor access.");
+  const activeCount = db.prepare("SELECT COUNT(*) AS count FROM upload_sessions WHERE owner_id=? AND status IN ('open','writing','finalizing') AND expires_at>?").get(ownerId, new Date().toISOString()).count;
+  if (activeCount >= 10) throw error(429, "TOO_MANY_UPLOAD_SESSIONS", "Finish or cancel an existing upload before creating another session.");
   if (expectedSha256 != null && !/^[a-f0-9]{64}$/i.test(expectedSha256)) throw error(400, "INVALID_SHA256", "Expected SHA-256 must contain exactly 64 hexadecimal characters.");
 
   const id = randomUUID();
@@ -67,20 +69,21 @@ export async function createUploadSession({
   return { id, projectId: projectId || null, name: originalName, mediaType, totalSize, receivedSize: 0, offset: 0, expectedSha256: expectedSha256?.toLowerCase() || null, status: "open", expiresAt };
 }
 
-export function getUploadSession(db, ownerId, id) {
+export function getUploadSession(db, ownerId, id, canWriteProject = () => true) {
   const row = db.prepare("SELECT * FROM upload_sessions WHERE id=? AND owner_id=?").get(id, ownerId);
   if (!row || Date.parse(row.expires_at) <= Date.now()) return null;
+  if (row.project_id && !canWriteProject(db, ownerId, row.project_id)) return null;
   return sessionView(row);
 }
 
 export async function appendUploadChunk({
   db, mediaRoot, ownerId, id, offset, request,
-  expectedChunkSize, maxChunkBytes = 8 * 1024 * 1024
+  expectedChunkSize, maxChunkBytes = 8 * 1024 * 1024, canWriteProject = () => true
 }) {
   if (!Number.isSafeInteger(offset) || offset < 0) throw error(400, "INVALID_UPLOAD_OFFSET", "Upload-Offset must be a non-negative safe integer.");
   if (!Number.isSafeInteger(expectedChunkSize) || expectedChunkSize <= 0 || expectedChunkSize > maxChunkBytes) throw error(413, "CHUNK_TOO_LARGE", "Chunk size must be between 1 byte and the configured chunk limit.");
   const row = db.prepare("SELECT * FROM upload_sessions WHERE id=? AND owner_id=?").get(id, ownerId);
-  if (!row || Date.parse(row.expires_at) <= Date.now()) throw error(404, "UPLOAD_SESSION_NOT_FOUND", "Upload session not found or expired.");
+  if (!row || Date.parse(row.expires_at) <= Date.now() || (row.project_id && !canWriteProject(db, ownerId, row.project_id))) throw error(404, "UPLOAD_SESSION_NOT_FOUND", "Upload session not found or expired.");
   if (row.status !== "open") throw error(409, "UPLOAD_BUSY", "This upload session is already processing another operation.");
   if (offset !== row.received_size) throw error(409, "UPLOAD_OFFSET_MISMATCH", "Chunk offset does not match the server's committed offset.",);
   if (offset + expectedChunkSize > row.total_size) throw error(413, "UPLOAD_EXCEEDS_DECLARED_SIZE", "Chunk would exceed the declared upload size.");
@@ -125,9 +128,9 @@ export async function appendUploadChunk({
   }
 }
 
-export async function prepareUploadCompletion({ db, ownerId, id }) {
+export async function prepareUploadCompletion({ db, ownerId, id, canWriteProject = () => true }) {
   const row = db.prepare("SELECT * FROM upload_sessions WHERE id=? AND owner_id=?").get(id, ownerId);
-  if (!row || Date.parse(row.expires_at) <= Date.now()) throw error(404, "UPLOAD_SESSION_NOT_FOUND", "Upload session not found or expired.");
+  if (!row || Date.parse(row.expires_at) <= Date.now() || (row.project_id && !canWriteProject(db, ownerId, row.project_id))) throw error(404, "UPLOAD_SESSION_NOT_FOUND", "Upload session not found or expired.");
   if (row.status !== "open") throw error(409, "UPLOAD_BUSY", "Upload session is currently busy.");
   if (row.received_size !== row.total_size) throw error(409, "UPLOAD_INCOMPLETE", "Upload is incomplete; continue from the returned offset.");
   const lock = db.prepare("UPDATE upload_sessions SET status='finalizing',updated_at=? WHERE id=? AND owner_id=? AND status='open' AND received_size=total_size")
@@ -160,7 +163,7 @@ export async function resetUploadFinalization(db, ownerId, id) {
 
 export async function cleanupExpiredUploadSessions(db, { now = new Date(), staleWriteMs = STALE_WRITE_MS } = {}) {
   const cutoff = new Date(now.getTime() - staleWriteMs).toISOString();
-  const rows = db.prepare("SELECT id,storage_path FROM upload_sessions WHERE expires_at<=? AND (status='open' OR (status='writing' AND updated_at<=?))")
+  const rows = db.prepare("SELECT id,storage_path FROM upload_sessions WHERE expires_at<=? AND (status='open' OR (status IN ('writing','finalizing') AND updated_at<=?))")
     .all(now.toISOString(), cutoff);
   for (const row of rows) {
     const deleted = db.prepare("DELETE FROM upload_sessions WHERE id=? AND storage_path=?").run(row.id, row.storage_path);
