@@ -170,7 +170,7 @@ export function buildDialogueDuckingAutomation(options:DialogueDuckingOptions):A
  for(const range of merged){
   const start=range.start-musicStartSeconds,end=range.end-musicStartSeconds,target=clamp(base+reduction,-60,24);
   if(start>0)push(start,base);else push(0,attack>0&&!range.alreadyActiveAtMusicStart?base:target);
-  const attackEnd=Math.min(end,start+attack);
+  const attackEnd=Math.min(end,start+(range.alreadyActiveAtMusicStart?0:attack));
   if(attackEnd>start)push(attackEnd,target);
   else if(start>0)push(start,target);
   push(end,target);
