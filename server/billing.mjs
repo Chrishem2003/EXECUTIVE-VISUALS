@@ -162,7 +162,7 @@ export function getBillingOverview(db, userId) {
 
 export function getAdminOverview(db) {
   const users = db.prepare("SELECT COUNT(*) AS total,SUM(CASE WHEN status='active' THEN 1 ELSE 0 END) AS active,SUM(CASE WHEN status='suspended' THEN 1 ELSE 0 END) AS suspended FROM billing_accounts").get();
-  const subscriptions = db.prepare("SELECT COUNT(*) AS total,SUM(CASE WHEN status='active' THEN 1 ELSE 0 END) AS active,SUM(CASE WHEN status='past_due' THEN 1 ELSE 0 END) AS past_due FROM billing_subscriptions").get();
+  const subscriptions = db.prepare("SELECT COUNT(*) AS total,SUM(CASE WHEN status IN ('active','trialing') AND current_period_end>? THEN 1 ELSE 0 END) AS active,SUM(CASE WHEN status='past_due' AND current_period_end>? THEN 1 ELSE 0 END) AS past_due FROM billing_subscriptions").get(isoNow(),isoNow());
   const jobs = db.prepare("SELECT COUNT(*) AS total,SUM(CASE WHEN status IN ('queued','running','reviewing') THEN 1 ELSE 0 END) AS in_flight FROM jobs").get();
   const usage = db.prepare("SELECT COUNT(*) AS operations,COALESCE(SUM(estimated_cost_micros),0) AS estimated_cost_micros FROM model_usage_events WHERE created_at>=?").get(new Date(Date.now()-30*86400000).toISOString());
   return { users: { total: Number(users.total||0), active: Number(users.active||0), suspended: Number(users.suspended||0) },
@@ -246,7 +246,8 @@ export function adjustBillingCredits(db, { userId, amount, description, actorId,
   if (!user) throw fail("User was not found.", "BILLING_TARGET_NOT_FOUND", 404);
   const key = String(idempotencyKey || "").trim();
   if (key.length < 8 || key.length > 200) throw fail("A unique idempotency key is required.", "BILLING_IDEMPOTENCY_REQUIRED");
-  const existing = db.prepare("SELECT id,amount FROM billing_credit_ledger WHERE idempotency_key=?").get(key);
+  const existing = db.prepare("SELECT id,user_id,amount FROM billing_credit_ledger WHERE idempotency_key=?").get(key);
+  if (existing && existing.user_id !== userId) throw fail("This idempotency key was already used for another account.", "BILLING_IDEMPOTENCY_CONFLICT", 409);
   if (existing) return { id: existing.id, amount: Number(existing.amount), replayed: true, balance: getBillingBalance(db,userId) };
   db.exec("BEGIN IMMEDIATE");
   try {
