@@ -14,7 +14,7 @@ function setup({role="editor",existing=[]}={}){
   if(path.startsWith("project_members?"))return{ok:true,status:200,async text(){return JSON.stringify(role? [{role}]:[]);}};
   if(path.startsWith("reviews?")&&options.method==="GET"){
    const params=new URLSearchParams(path.split("?")[1]||"");
-   const result=rows.filter(row=>(!params.has("id")||params.get("id")==="eq."+row.id)&&(!params.has("project_id")||params.get("project_id")==="eq."+row.project_id)&&(!params.has("owner_id")||params.get("owner_id")==="eq."+row.owner_id)&&(!params.has("request_id")||params.get("request_id")==="eq."+row.request_id));
+   const result=rows.filter(row=>(!params.has("id")||params.get("id")==="eq."+row.id)&&(!params.has("project_id")||params.get("project_id")==="eq."+row.project_id)&&(!params.has("owner_id")||params.get("owner_id")==="eq."+row.owner_id)&&(!params.has("reviewer_id")||params.get("reviewer_id")==="eq."+row.reviewer_id)&&(!params.has("request_id")||params.get("request_id")==="eq."+row.request_id));
    return{ok:true,status:200,async text(){return JSON.stringify(result);}};
   }
   if(path.startsWith("reviews?")&&options.method==="POST"){
@@ -37,6 +37,13 @@ test("creates a frame-anchored review as the verified reviewer and keeps project
  assert.equal(result.review.projectId,projectId);assert.equal(result.review.authorId,editor);assert.equal(result.review.frameNumber,240);
  assert.equal(f.rows[0].owner_id,owner);assert.equal(f.rows[0].reviewer_id,editor);assert.equal(f.rows[0].last_actor_id,editor);
  assert.equal(Number(f.rows[0].timecode_seconds),10);
+});
+test("replays only an exact reviewer-scoped idempotent create request",async()=>{
+ const existing={id:reviewId,owner_id:owner,project_id:projectId,asset_id:assetId,reviewer_id:editor,last_actor_id:editor,timeline_id:timelineId,timeline_revision:4,frame_number:240,duration_frames:24,timecode_seconds:10,body:input.body,decision:"comment",status:"open",visibility:"project",annotation:input.annotation,request_id:"review-request-0001",created_at:"2026-11-06T12:00:00Z",updated_at:"2026-11-06T12:00:00Z"};
+ const f=setup({existing:[existing]});
+ const replay=await f.repo.create({actorId:editor,input,idempotencyKey:"review-request-0001"});
+ assert.equal(replay.idempotentReplay,true);assert.equal(f.rows.length,1);
+ await assert.rejects(()=>f.repo.create({actorId:editor,input:{...input,body:"Different content."},idempotencyKey:"review-request-0001"}),error=>error.code==="CLOUD_REVIEW_IDEMPOTENCY_CONFLICT");
 });
 test("rejects viewer roles from creating comments",async()=>{
  const f=setup({role:"viewer"});await assert.rejects(()=>f.repo.create({actorId:editor,input}),error=>error.code==="CLOUD_REVIEW_ACCESS_DENIED");
