@@ -163,3 +163,17 @@ test("rejects reuse of a publication key for different output bytes before stora
  assert.equal(f.storageCalls.filter(call=>call.op==="uploadFile").length,1);
  await rm(root,{recursive:true,force:true});
 });
+
+test("concurrent attempts for one publication key converge on the same asset identity",async()=>{
+ const root=await mkdtemp(join(tmpdir(),"ev-idempotent-concurrent-")),file=join(root,"render.mp4");
+ await writeFile(file,bytes);
+ const f=fixture();
+ const args={ownerId,projectId,originalName:"render.mp4",mediaType:"video/mp4",filePath:file,publicationKey:"job-concurrent:output:v1"};
+ const [left,right]=await Promise.all([f.repo.createFromFileIdempotent(args),f.repo.createFromFileIdempotent(args)]);
+ assert.equal(left.id,right.id);
+ assert.equal(left.objectPath,right.objectPath);
+ const uploads=f.storageCalls.filter(call=>call.op==="uploadFile");
+ assert.ok(uploads.length>=1&&uploads.length<=2);
+ assert.equal(new Set(uploads.map(call=>call.path)).size,1);
+ await rm(root,{recursive:true,force:true});
+});
