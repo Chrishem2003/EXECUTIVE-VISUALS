@@ -1,6 +1,5 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { DatabaseSync } from "node:sqlite";
 import { openDatabase } from "../db.mjs";
 import {
   ensureBillingSchema,touchBillingAccount,listBillingPlans,saveBillingPlan,assignManualSubscription,
@@ -67,6 +66,8 @@ test("credit adjustments are idempotent and cannot overdraw a user", () => {
   assert.equal(replay.replayed,true);
   assert.equal(replay.balance,100);
   assert.throws(()=>adjustBillingCredits(db,{userId:"user-3",amount:-101,description:"Overdraw",actorId:"admin-1",idempotencyKey:"debit-key-0001"}),e=>e.code==="BILLING_INSUFFICIENT_CREDITS");
+  touchBillingAccount(db,{id:"user-3b",email:"other@example.test"});
+  assert.throws(()=>adjustBillingCredits(db,{userId:"user-3b",amount:100,description:"Cross-account replay",actorId:"admin-1",idempotencyKey:"grant-key-0001"}),e=>e.code==="BILLING_IDEMPOTENCY_CONFLICT");
   const debit = adjustBillingCredits(db,{userId:"user-3",amount:-40,description:"Correction",actorId:"admin-1",idempotencyKey:"debit-key-0002"});
   assert.equal(debit.balance,60);
   assert.equal(getBillingBalance(db,"user-3"),60);
@@ -84,5 +85,15 @@ test("account status and admin reporting expose only known application accounts"
   assert.equal(overview.users.suspended,1);
   assert.equal(overview.paymentCollectionEnabled,false);
   assert.throws(()=>setBillingAccountStatus(db,{userId:"user-4",status:"owner"}),e=>e.code==="BILLING_STATUS_INVALID");
+  db.close();
+});
+
+test("model price references require a valid source URL and retain provenance",()=>{
+  const db=setup();
+  const {saveBillingModelPrice,listBillingModelPrices}=require("../billing.mjs");
+  const price=saveBillingModelPrice(db,{provider:"fal",model:"fal-ai/seedance",capability:"video.generate",unit:"5-second 720p clip",priceMicros:35000,currency:"USD",sourceUrl:"https://fal.ai/pricing",verifiedAt:"2026-11-07"});
+  assert.equal(price.priceMicros,35000);
+  assert.equal(listBillingModelPrices(db).length,1);
+  assert.throws(()=>saveBillingModelPrice(db,{provider:"fal",model:"x",capability:"video",unit:"clip",priceMicros:1,sourceUrl:"http://bad.example"}),e=>e.code==="BILLING_MODEL_PRICE_INVALID");
   db.close();
 });
