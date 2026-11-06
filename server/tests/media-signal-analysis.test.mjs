@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {parseBlackFrameEvents,parseSilenceEvents,buildMediaSignalFindings,parseAudioMetrics,buildAudioMetricFindings,parseFreezeEvents,parseSceneChangeTimes,runOptionalSignalCheck,buildLoudnormAnalysisFilter,parseLoudnormMeasurements,buildLoudnormNormalizationFilter,parseLoudnormOutput,buildLoudnormOutputFindings} from "../media-signal-analysis.mjs";
+import {parseBlackFrameEvents,parseSilenceEvents,buildMediaSignalFindings,parseAudioMetrics,buildAudioMetricFindings,parseFreezeEvents,parseSceneChangeTimes,runOptionalSignalCheck,buildLoudnormAnalysisFilter,parseLoudnormMeasurements,buildLoudnormNormalizationFilter,parseLoudnormOutput,buildLoudnormOutputFindings,buildLoudnormAnalysisArgs,buildLoudnormNormalizationArgs} from "../media-signal-analysis.mjs";
 
 test("parses FFmpeg blackdetect intervals",()=>{
  const events=parseBlackFrameEvents("[blackdetect @ 0x1] black_start:0.500 black_end:2.000 black_duration:1.500");
@@ -79,6 +79,24 @@ test("reports linear fallback and post-render loudness or true-peak target misse
  assert.deepEqual(fallback.map(item=>item.code),["LOUDNORM_LINEAR_FALLBACK","LOUDNORM_INTEGRATED_TARGET_MISS"]);
  const truePeak=buildLoudnormOutputFindings({normalizationType:"linear",integratedLufs:-16.2,truePeakDbtp:-0.8},{integratedLufs:-16,truePeakDbtp:-1.5});
  assert.deepEqual(truePeak.map(item=>item.code),["LOUDNORM_TRUE_PEAK_TARGET_MISS"]);
+});
+
+test("builds argument-safe first-pass FFmpeg analysis commands",()=>{
+ const args=buildLoudnormAnalysisArgs({inputPath:"/tmp/mixed master.mp4"});
+ assert.deepEqual(args.slice(0,5),["-hide_banner","-i","/tmp/mixed master.mp4","-map","0:a:0"]);
+ assert.equal(args.at(-3),"-f");
+ assert.equal(args.at(-2),"null");
+ assert.equal(args.at(-1),"-");
+ assert.throws(()=>buildLoudnormAnalysisArgs({inputPath:""}),/inputPath/);
+ assert.throws(()=>buildLoudnormAnalysisArgs({inputPath:"bad\\0path"}),/inputPath/);
+});
+test("builds second-pass commands that preserve video and normalize only the mixed master audio",()=>{
+ const args=buildLoudnormNormalizationArgs({inputPath:"/tmp/mixed.mp4",outputPath:"/tmp/mastered.mp4",measurements:{integratedLufs:-20,truePeakDbtp:-2.1,loudnessRange:4.5,thresholdDb:-30,offsetDb:4}});
+ assert.deepEqual(args.slice(0,11),["-hide_banner","-y","-i","/tmp/mixed.mp4","-map","0:v:0?","-map","0:a:0","-c:v","copy","-af"]);
+ assert.ok(args.includes("loudnorm="));
+ assert.ok(args.includes("192k"));
+ assert.equal(args.at(-1),"/tmp/mastered.mp4");
+ assert.throws(()=>buildLoudnormNormalizationArgs({inputPath:"/tmp/a.mp4",outputPath:"/tmp/b.mp4",measurements:{},audioBitrate:"999999k"}),/audioBitrate/);
 });
 test("records unsupported optional filters without disguising them as clean results",async()=>{
  const result=await runOptionalSignalCheck(async()=>{throw Object.assign(new Error("missing filter"),{code:"MEDIA_PROCESS_FAILED"});});
