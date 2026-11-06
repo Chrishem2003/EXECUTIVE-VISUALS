@@ -359,7 +359,7 @@ async function refresh(){
   const projects=await apiRequest<{projects:CloudProject[]}>("/api/cloud/projects");
   state.cloudProjects=projects.projects||[];
   if(!state.cloudProjectId||!state.cloudProjects.some(p=>p.id===state.cloudProjectId))state.cloudProjectId=state.cloudProjects[0]?.id||"";
-  if(!state.cloudProjectId){state.assets=[];state.cloudTimelines=[];state.timeline=null;state.message="Create a cloud project first, then select it here.";state.status="ready";return;}
+  if(!state.cloudProjectId){state.assets=[];state.cloudTimelines=[];state.cloudRenderJobs=[];state.cloudRenderJobId="";state.cloudRenderJobStatus="";state.masteringReport=null;state.timeline=null;state.message="Create a cloud project first, then select it here.";state.status="ready";return;}
   const query="?projectId="+encodeURIComponent(state.cloudProjectId);
   const [assets,timelines,jobs]=await Promise.all([
    apiRequest<{assets:Asset[]}>("/api/cloud/assets"+query),
