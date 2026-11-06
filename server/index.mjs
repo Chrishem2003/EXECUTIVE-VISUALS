@@ -18,6 +18,7 @@ import { getProviderCatalog } from "./provider-registry.mjs";
 import { ensureRemoteUsageTable, getRemoteUsagePolicy } from "./usage-guardrails.mjs";
 import { createCloudTimelineApi } from "./cloud-timeline-api.mjs";
 import { validateSrt, validateWebVtt } from "./caption-validation.mjs";
+import { ensureResumableUploadSchema, createUploadSession, getUploadSession, appendUploadChunk, prepareUploadCompletion, releaseUploadSession, resetUploadFinalization, abortUploadSession, cleanupExpiredUploadSessions } from "./resumable-uploads.mjs";
 import { parseByteRange } from "./http-range.mjs";
 import { createWaveformCache } from "./waveform-cache.mjs";
 import { ensureTransformationPlanSchema, createTransformationPlan, approveTransformationPlan, listTransformationPlans, getTransformationPlan } from "./transformation-plans.mjs";
@@ -51,6 +52,7 @@ const EXTENSIONS = {
 const MEDIA_JOBS = new Set(["media.probe","media.thumbnail","media.transcode","media.audio_extract","media.audio-clean","media.proxy","media.denoise","media.color","media.resize","media.interpolate","media.upscale","media.ai-upscale","timeline.render"]);
 const db = openDatabase(DB_FILE);
 ensureTransformationPlanSchema(db);
+ensureResumableUploadSchema(db);
 const aiUpscaleAdapter = createRealEsrganAdapter();
 const cloudTimelineApiEnabled = process.env.CLOUD_TIMELINE_API_ENABLED === "true";
 if (cloudTimelineApiEnabled && AUTH_MODE !== "supabase") throw new Error("Cloud timeline API requires verified Supabase authentication.");
@@ -61,6 +63,7 @@ const AUTH_RATE_LIMIT = Math.max(1, Math.min(1000, Number(process.env.AUTH_RATE_
 function rateAllowed(key,limit,windowMs){const time=Date.now();const old=rateBuckets.get(key);if(!old||time-old.start>=windowMs){rateBuckets.set(key,{start:time,count:1});return true;}old.count++;return old.count<=limit;}
 await mkdir(join(MEDIA_ROOT,"uploads"), { recursive:true });
 await mkdir(join(MEDIA_ROOT,"derived"), { recursive:true });
+await cleanupExpiredUploadSessions(db).catch(error=>console.error("Upload-session cleanup failed:",error));
 const waveformCache=createWaveformCache({mediaRoot:MEDIA_ROOT});
 const cloudTimelineApi = cloudTimelineApiEnabled ? createCloudTimelineApi({maxUploadBytes:Number(process.env.CLOUD_MEDIA_MAX_UPLOAD_BYTES || MAX_UPLOAD_BYTES),waveformCache,mediaRoot:MEDIA_ROOT}) : null;
 if (cloudTimelineApi) await cloudTimelineApi.checkReadiness();
@@ -258,10 +261,10 @@ export function createAppServer() {
   return createServer(async(req,res)=>{
     const cors=originHeaders(req);
     if(cors===null){fail(res,403,"ORIGIN_DENIED","Request origin is not allowed.");return;}
-    if(req.method==="OPTIONS"){res.writeHead(204,{"access-control-allow-methods":"GET,POST,PUT,DELETE,OPTIONS","access-control-allow-headers":"content-type,authorization,x-file-name,x-project-id,idempotency-key","access-control-max-age":"600",...cors});res.end();return;}
+    if(req.method==="OPTIONS"){res.writeHead(204,{"access-control-allow-methods":"GET,POST,PUT,DELETE,OPTIONS","access-control-allow-headers":"content-type,authorization,x-file-name,x-project-id,idempotency-key,upload-offset","access-control-max-age":"600",...cors});res.end();return;}
     const url=new URL(req.url||"/","http://localhost");
     const path=url.pathname;
-    const ratePath=path.startsWith("/api/auth/")?"/auth":/^\/api\/(?:cloud\/)?assets\/[0-9a-f-]+\/waveform$/i.test(path)&&req.method==="GET"?"/waveform":(path==="/api/assets"||path==="/api/cloud/assets")&&req.method==="POST"?"/upload":path.endsWith("/research/import")&&req.method==="POST"?"/research":path==="/api/admin/ai-upscale/self-test"&&req.method==="POST"?"/ai-upscale-self-test":"";
+    const ratePath=path.startsWith("/api/auth/")?"/auth":/^\/api\/(?:cloud\/)?assets\/[0-9a-f-]+\/waveform$/i.test(path)&&req.method==="GET"?"/waveform":(path==="/api/assets"||path==="/api/cloud/assets"||path==="/api/uploads")&&req.method==="POST"?"/upload":path.endsWith("/research/import")&&req.method==="POST"?"/research":path==="/api/admin/ai-upscale/self-test"&&req.method==="POST"?"/ai-upscale-self-test":"";
     if(ratePath){const key=(req.socket.remoteAddress||"unknown")+ratePath;const limit=ratePath==="/auth"?AUTH_RATE_LIMIT:ratePath==="/research"?10:ratePath==="/ai-upscale-self-test"?2:ratePath==="/waveform"?20:30;if(!rateAllowed(key,limit,60000)){fail(res,429,"RATE_LIMITED","Too many requests. Wait before trying again.");return;}}
     try {
       if(!path.startsWith("/api/")&&req.method==="GET"){
@@ -308,6 +311,79 @@ export function createAppServer() {
       const user=await authenticate(req);
       if(!user){fail(res,401,"AUTH_REQUIRED","Sign in to access this workspace.");return;}
       if(path==="/api/me"&&req.method==="GET"){send(res,200,{user,authMode:AUTH_MODE},cors);return;}
+      if(path==="/api/uploads"&&req.method==="POST"){
+        const body=await readJson(req);
+        const mediaType=String(body.mediaType||"").split(";")[0].toLowerCase();
+        if(!ALLOWED_MEDIA.has(mediaType)){fail(res,415,"UNSUPPORTED_MEDIA_TYPE","Unsupported media type.");return;}
+        const projectId=body.projectId?String(body.projectId):null;
+        const session=await createUploadSession({
+          db,mediaRoot:MEDIA_ROOT,ownerId:user.id,projectId,
+          originalName:safeName(body.name||"upload"),mediaType,
+          totalSize:Number(body.size),expectedSha256:body.sha256||null,
+          maxUploadBytes:MAX_UPLOAD_BYTES,canWriteProject
+        });
+        send(res,201,{upload:session},cors);return;
+      }
+      const uploadMatch=path.match(/^\/api\/uploads\/([0-9a-f-]+)(?:\/(complete))?$/i);
+      if(uploadMatch){
+        const uploadId=uploadMatch[1];
+        if(req.method==="GET"&&!uploadMatch[2]){
+          const upload=getUploadSession(db,user.id,uploadId);
+          if(!upload){fail(res,404,"UPLOAD_SESSION_NOT_FOUND","Upload session not found or expired.");return;}
+          send(res,200,{upload},cors);return;
+        }
+        if(req.method==="PUT"&&!uploadMatch[2]){
+          const rawOffset=req.headers["upload-offset"];
+          const offset=rawOffset===undefined?NaN:Number(rawOffset);
+          const chunkSize=Number(req.headers["content-length"]||0);
+          const result=await appendUploadChunk({db,mediaRoot:MEDIA_ROOT,ownerId:user.id,id:uploadId,offset,request:req,expectedChunkSize:chunkSize,maxChunkBytes:8*1024*1024});
+          send(res,200,{upload:result},cors);return;
+        }
+        if(req.method==="DELETE"&&!uploadMatch[2]){
+          const removed=await abortUploadSession(db,user.id,uploadId);
+          if(!removed){fail(res,404,"UPLOAD_SESSION_NOT_FOUND","Upload session not found.");return;}
+          send(res,200,{ok:true},cors);return;
+        }
+        if(req.method==="POST"&&uploadMatch[2]==="complete"){
+          const prepared=await prepareUploadCompletion({db,ownerId:user.id,id:uploadId});
+          const sessionRow=db.prepare("SELECT * FROM upload_sessions WHERE id=? AND owner_id=? AND status='finalizing'").get(uploadId,user.id);
+          if(!sessionRow){await resetUploadFinalization(db,user.id,uploadId);fail(res,404,"UPLOAD_SESSION_NOT_FOUND","Upload session not found.");return;}
+          const fileHandle=await open(prepared.path,"r");
+          const header=Buffer.alloc(32);
+          const read=await fileHandle.read(header,0,32,0);
+          await fileHandle.close();
+          if(!validFileSignature(sessionRow.media_type,header.subarray(0,read.bytesRead))){
+            await resetUploadFinalization(db,user.id,uploadId);
+            await abortUploadSession(db,user.id,uploadId).catch(()=>{});
+            fail(res,415,"MEDIA_SIGNATURE_MISMATCH","File signature does not match the declared media type.");return;
+          }
+          const assetId=randomUUID();
+          const extension=EXTENSIONS[sessionRow.media_type]||"bin";
+          const relative="uploads/"+assetId+"."+extension;
+          const finalPath=join(MEDIA_ROOT,relative);
+          const fileExtension=extname(sessionRow.original_name).toLowerCase();
+          const metadata=(fileExtension===".srt"&&sessionRow.media_type==="text/plain")?{captionValidation:validateSrt(await readFile(prepared.path,"utf8"))}:fileExtension===".vtt"&&sessionRow.media_type==="text/vtt"?{captionValidation:validateWebVtt(await readFile(prepared.path,"utf8"))}:{};
+          let moved=false,committed=false;
+          try{
+            await rename(prepared.path,finalPath);moved=true;
+            db.exec("BEGIN IMMEDIATE");
+            try{
+              db.prepare("INSERT INTO assets(id,owner_id,project_id,original_name,media_type,byte_size,sha256,storage_path,metadata_json) VALUES(?,?,?,?,?,?,?,?,?)")
+                .run(assetId,user.id,sessionRow.project_id,sessionRow.original_name,sessionRow.media_type,sessionRow.total_size,prepared.sha256,relative,json(metadata));
+              const removed=releaseUploadSession(db,user.id,uploadId);
+              if(!removed)throw Object.assign(new Error("Upload session changed during finalization."),{status:409,code:"UPLOAD_STATE_CHANGED"});
+              db.exec("COMMIT");committed=true;
+            }catch(error){db.exec("ROLLBACK");throw error;}
+            audit(db,user.id,"asset.uploaded","asset",assetId,{name:sessionRow.original_name,mediaType:sessionRow.media_type,size:sessionRow.total_size,sha256:prepared.sha256},sessionRow.project_id);
+          }catch(error){
+            if(moved&&!committed)await rename(finalPath,prepared.path).catch(()=>{});
+            if(!committed)await resetUploadFinalization(db,user.id,uploadId);
+            throw error;
+          }
+          const asset={id:assetId,projectId:sessionRow.project_id,name:sessionRow.original_name,mediaType:sessionRow.media_type,size:sessionRow.total_size,sha256:prepared.sha256,createdAt:now()};
+          send(res,201,{asset},cors);return;
+        }
+      }
       if(cloudTimelineApi && path==="/api/cloud/assets" && req.method==="POST"){
         const uploadResult=await cloudTimelineApi.uploadAsset({
           req,ownerId:user.id,projectId:String(req.headers["x-project-id"]||""),
