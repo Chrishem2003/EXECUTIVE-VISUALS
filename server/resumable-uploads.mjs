@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, open, readFile, rm, stat } from "node:fs/promises";
+import { createReadStream } from "node:fs";
+import { mkdir, open, rm, stat } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
@@ -136,7 +137,9 @@ export async function prepareUploadCompletion({ db, ownerId, id }) {
     const path = row.storage_path;
     const info = await stat(path);
     if (info.size !== row.total_size) throw error(422, "UPLOAD_SIZE_MISMATCH", "Stored upload size does not match the declared size.");
-    const sha256 = createHash("sha256").update(await readFile(path)).digest("hex");
+    const digest = createHash("sha256");
+    for await (const chunk of createReadStream(path)) digest.update(chunk);
+    const sha256 = digest.digest("hex");
     if (row.expected_sha256 && sha256 !== row.expected_sha256) throw error(422, "UPLOAD_CHECKSUM_MISMATCH", "Uploaded file failed SHA-256 verification.");
     return { session: sessionView({ ...row, status: "finalizing" }), path, sha256, storagePath: row.storage_path };
   } catch (cause) {
