@@ -349,7 +349,7 @@ export function createAppServer() {
       if(path==="/api/billing/checkout"&&req.method==="POST"){
         fail(res,503,"BILLING_CHECKOUT_DISABLED","Payment checkout is not enabled. A verified payment-provider account, webhook integration and pricing approval are required.");return;
       }
-      if(path.startsWith("/api/admin/")){
+      if(path.startsWith("/api/admin/")&&path!=="/api/admin/ai-upscale/self-test"){
         if(!admin){fail(res,403,"ADMIN_REQUIRED","An explicitly allowlisted platform administrator is required.");return;}
         if(path==="/api/admin/overview"&&req.method==="GET"){send(res,200,{overview:getAdminOverview(db)},cors);return;}
         if(path==="/api/admin/users"&&req.method==="GET"){
