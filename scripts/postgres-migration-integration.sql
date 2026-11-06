@@ -136,6 +136,37 @@ SELECT * FROM executive_visuals.reserve_asset_publication(
   '77777777-7777-4777-8777-777777777777'
 );
 
+-- Stable idempotency keys must return the original reservation on retry.
+DO $reservation_retry$
+DECLARE
+  retry_row record;
+BEGIN
+  SELECT * INTO retry_row
+  FROM executive_visuals.reserve_asset_publication(
+    '11111111-1111-4111-8111-111111111111',
+    'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    'integration:valid-publication',repeat('c',64),
+    '77777777-7777-4777-8777-777777777777'
+  );
+  IF retry_row.asset_id <> '77777777-7777-4777-8777-777777777777'::uuid
+     OR retry_row.status <> 'reserved' THEN
+    RAISE EXCEPTION 'idempotent publication retry did not return original reservation';
+  END IF;
+
+  BEGIN
+    PERFORM * FROM executive_visuals.reserve_asset_publication(
+      '11111111-1111-4111-8111-111111111111',
+      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      'integration:valid-publication',repeat('e',64),
+      'aaaaaaaa-0000-4000-8000-000000000000'
+    );
+    RAISE EXCEPTION 'publication key payload mutation unexpectedly succeeded';
+  EXCEPTION WHEN unique_violation THEN
+    IF SQLERRM = 'publication key payload mutation unexpectedly succeeded' THEN RAISE; END IF;
+  END;
+END;
+$reservation_retry$;
+
 SELECT id FROM executive_visuals.finalize_asset_publication_v1(
   '55555555-5555-4555-8555-555555555555',
   'integration-worker',
