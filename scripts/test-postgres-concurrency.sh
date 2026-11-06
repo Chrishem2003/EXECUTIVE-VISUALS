@@ -177,7 +177,7 @@ SELECT id FROM executive_visuals.finalize_asset_publication_v1(
   '$RACE_A_KEY',repeat('a',64),'$RACE_A_ASSET','race-a.mp4','video/mp4',123,
   'executive-visuals-media','$RACE_A_PATH',NULL,'{"race":"finalizer-wins"}'::jsonb
 );
-\\! touch "$TMP_DIR/finalizer-wins-held"
+\! touch "$TMP_DIR/finalizer-wins-held"
 SELECT pg_sleep(2);
 COMMIT;
 SQL
@@ -268,7 +268,7 @@ BEGIN;
 SELECT * FROM executive_visuals.claim_asset_publication_cleanup_v1(
   '$RACE_B_JOB','$OWNER_ID','$PROJECT_ID','$RACE_B_KEY','$RACE_B_PATH',interval '24 hours'
 );
-\\! touch "$TMP_DIR/cleanup-wins-held"
+\! touch "$TMP_DIR/cleanup-wins-held"
 SELECT pg_sleep(2);
 COMMIT;
 SQL
