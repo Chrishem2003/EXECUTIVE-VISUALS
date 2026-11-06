@@ -14,6 +14,23 @@ const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]
 const safeId=(value)=>typeof value==="string"&&UUID.test(value);
 const stableJson=value=>Array.isArray(value)?"["+value.map(stableJson).join(",")+"]":value&&typeof value==="object"?"{"+Object.keys(value).sort().map(key=>JSON.stringify(key)+":"+stableJson(value[key])).join(",")+"}":JSON.stringify(value);
 
+function validateMasteringOptions(value){
+ if(value===undefined||value===null)return null;
+ if(!value||typeof value!=="object"||Array.isArray(value))throw Object.assign(new Error("Mastering settings must be an object."),{code:"INVALID_MASTERING_OPTIONS"});
+ const allowed=new Set(["enabled","integratedLufs","loudnessRange","truePeakDbtp","dualMono","tolerance"]);
+ if(Object.keys(value).some(key=>!allowed.has(key)))throw Object.assign(new Error("Mastering settings contain an unsupported option."),{code:"INVALID_MASTERING_OPTIONS"});
+ if(value.enabled!==true)throw Object.assign(new Error("Mastering settings must explicitly enable mastering."),{code:"INVALID_MASTERING_OPTIONS"});
+ const ranges={integratedLufs:[-70,-5],loudnessRange:[1,50],truePeakDbtp:[-9,0],tolerance:[0,3]};
+ const result={enabled:true};
+ for(const [key,[minimum,maximum]] of Object.entries(ranges)){
+  if(value[key]===undefined)continue;
+  if(typeof value[key]!=="number"||!Number.isFinite(value[key])||value[key]<minimum||value[key]>maximum)throw Object.assign(new Error("Mastering option "+key+" is outside its supported range."),{code:"INVALID_MASTERING_OPTIONS"});
+  result[key]=value[key];
+ }
+ if(value.dualMono!==undefined){if(typeof value.dualMono!=="boolean")throw Object.assign(new Error("Mastering option dualMono must be a boolean."),{code:"INVALID_MASTERING_OPTIONS"});result.dualMono=value.dualMono;}
+ return result;
+}
+
 /**
  * Authenticated cloud timeline API. The caller must pass the user ID returned
  * by the app's verified authentication middleware; request bodies never set
@@ -218,16 +235,17 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
      return response(404,{error:{code:"TIMELINE_NOT_FOUND",message:"Timeline not found or editor access required."}});
     const timeline=await service.timelines.get({ownerId,timelineId});
     if(!timeline)return response(404,{error:{code:"TIMELINE_NOT_FOUND",message:"Timeline not found."}});
+    const mastering=validateMasteringOptions(body?.mastering);
     const key=typeof idempotencyKey==="string"?idempotencyKey.slice(0,180):"";
     if(key){
      const existing=await request("jobs?select=id,owner_id,project_id,job_type,status,progress,input,output,error,created_at,updated_at&idempotency_key=eq."+encodeURIComponent(key)+"&owner_id=eq."+encodeURIComponent(ownerId)+"&limit=1");
      if(Array.isArray(existing)&&existing[0]){
       const row=existing[0],input=row.input||{};
-      if(row.job_type!=="timeline.render"||input.timelineId!==timelineId||input.timelineRevision!==timeline.revision)return response(409,{error:{code:"IDEMPOTENCY_CONFLICT",message:"This idempotency key belongs to a different render request."}});
+      if(row.job_type!=="timeline.render"||input.timelineId!==timelineId||input.timelineRevision!==timeline.revision||stableJson(input.mastering??null)!==stableJson(mastering??null))return response(409,{error:{code:"IDEMPOTENCY_CONFLICT",message:"This idempotency key belongs to a different render request."}});
       return response(200,{job:row,idempotentReplay:true});
      }
     }
-    const jobId=randomUUID(),input={timelineId,timelineRevision:timeline.revision};
+    const jobId=randomUUID(),input={timelineId,timelineRevision:timeline.revision,...(mastering?{mastering}:{})};
     const rows=await request("jobs?select=id,owner_id,project_id,job_type,status,progress,input,output,error,created_at,updated_at",{method:"POST",body:{id:jobId,owner_id:ownerId,project_id:timeline.projectId,job_type:"timeline.render",status:"queued",progress:0,input,idempotency_key:key||null}});
     if(!Array.isArray(rows)||rows.length!==1||rows[0].owner_id!==ownerId||rows[0].job_type!=="timeline.render")throw new Error("Cloud render job creation returned an invalid record.");
     await request("job_events",{method:"POST",body:{job_id:jobId,owner_id:ownerId,event_type:"job.queued",event_data:{jobType:"timeline.render",timelineId,timelineRevision:timeline.revision}},prefer:"return=minimal"});
@@ -243,6 +261,7 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
    }
    return null;
   }catch(error){
+   if(error.code==="INVALID_MASTERING_OPTIONS")return response(422,{error:{code:error.code,message:error.message}});
    if(error.code==="CLOUD_PROJECT_NOT_FOUND"||error.code==="CLOUD_PROJECT_ACCESS_DENIED")return response(404,{error:{code:"PROJECT_NOT_FOUND",message:"Project not found."}});
    if(error.code==="CLOUD_PROJECT_REVISION_CONFLICT")return response(409,{error:{code:"REVISION_CONFLICT",message:"Project changed since it was loaded. Refresh and retry."}});
    if(error.code==="CLOUD_ASSET_NOT_FOUND")return response(404,{error:{code:"ASSET_NOT_FOUND",message:"Asset not found."}});
