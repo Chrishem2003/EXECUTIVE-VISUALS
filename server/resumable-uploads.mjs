@@ -10,7 +10,7 @@ const isoAfter = ms => new Date(Date.now() + ms).toISOString();
 const partialPath = (root, id) => join(resolve(root), "uploads", ".partial", id + ".part");
 
 export function ensureResumableUploadSchema(db) {
-  db.exec(\`
+  db.exec(`
     CREATE TABLE IF NOT EXISTS upload_sessions (
       id TEXT PRIMARY KEY,
       owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -28,7 +28,7 @@ export function ensureResumableUploadSchema(db) {
     );
     CREATE INDEX IF NOT EXISTS upload_sessions_owner_idx ON upload_sessions(owner_id, created_at DESC);
     CREATE INDEX IF NOT EXISTS upload_sessions_expiry_idx ON upload_sessions(expires_at, status);
-  \`);
+  `);
 }
 
 function sessionView(row) {
