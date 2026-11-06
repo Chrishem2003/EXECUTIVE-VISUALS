@@ -1,4 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
+import { createReadStream } from "node:fs";
+import { stat } from "node:fs/promises";
 import { buildCloudAssetObjectPath } from "./cloud-storage.mjs";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -20,6 +22,15 @@ function plainObject(value) {
 function safeName(value) {
   const name=String(value||"upload").normalize("NFKC").replace(/[\\/\u0000-\u001f\u007f]/g,"_").replace(/[^\p{L}\p{N}._() -]/gu,"_").trim().slice(0,180);
   return name||"upload";
+}
+async function digestFile(filePath) {
+  const before=await stat(filePath);
+  if(!before.isFile()||before.size<1)throw new Error("Cloud asset file must be a non-empty regular file.");
+  const hash=createHash("sha256");let size=0;
+  for await (const chunk of createReadStream(filePath)) { size+=chunk.length;hash.update(chunk); }
+  const after=await stat(filePath);
+  if(size!==before.size||after.size!==before.size||after.mtimeMs!==before.mtimeMs)throw new Error("Cloud asset file changed while its checksum was calculated.");
+  return {size,sha256:hash.digest("hex")};
 }
 function publicAsset(row) {
   return {
