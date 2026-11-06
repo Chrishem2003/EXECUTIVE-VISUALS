@@ -83,7 +83,7 @@ export function createCloudPublicationAuditApi({
   if(path!=="/api/cloud/publication-audit")return null;
   if(method!=="GET")return{status:405,body:{error:{code:"METHOD_NOT_ALLOWED",message:"Publication audit history is read-only."}}};
   if(!user?.id||!user?.email)return{status:401,body:{error:{code:"AUTH_REQUIRED",message:"Sign in with a verified account."}}};
-  if(!admins.has(String(user.email).toLowerCase()))return{status:403,body:{error:{code:"PUBLICATION_AUDIT_ADMIN_REQUIRED",message:"An explicitly allowlisted publication-audit administrator is required."}}};
+  if(user.emailVerified!==true||!admins.has(String(user.email).toLowerCase()))return{status:403,body:{error:{code:"PUBLICATION_AUDIT_ADMIN_REQUIRED",message:"An explicitly allowlisted publication-audit administrator is required."}}};
   try{
    const projectId=safeUuid(query.projectId,"project ID");
    const jobId=safeUuid(query.jobId,"job ID");
