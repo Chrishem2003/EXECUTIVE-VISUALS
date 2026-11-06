@@ -497,6 +497,7 @@ test("cloud media probe adds local Silero speech regions for audio sources",asyn
  await writeFile(source,"fixture");
  const ffprobe=await executable(directory,"ffprobe",String.raw`printf '%s' '{"streams":[{"codec_type":"audio","codec_name":"aac","sample_rate":"48000","channels":2}],"format":{"duration":"2.0"}}'`);
  const ffmpeg=await executable(directory,"ffmpeg",String.raw`for output do :; done; printf 'RIFF' > "$output"`);
+ const previousFfprobe=process.env.FFPROBE_PATH;process.env.FFPROBE_PATH=ffprobe;
  let analyzerArgs,cleaned=false;
  try{
   const execute=createCloudMediaExecutor({
@@ -519,7 +520,7 @@ test("cloud media probe adds local Silero speech regions for audio sources",asyn
   assert.deepEqual(result.metadata.signalAnalysis.performed,["silero-vad"]);
   assert.deepEqual(result.metadata.signalAnalysis.unavailable,[]);
   assert.equal(cleaned,true);
- }finally{await rm(directory,{recursive:true,force:true});}
+ }finally{if(previousFfprobe===undefined)delete process.env.FFPROBE_PATH;else process.env.FFPROBE_PATH=previousFfprobe;await rm(directory,{recursive:true,force:true});}
 });
 
 test("cloud media probe reports unavailable VAD without failing the media probe",async()=>{
@@ -528,6 +529,7 @@ test("cloud media probe reports unavailable VAD without failing the media probe"
  await writeFile(source,"fixture");
  const ffprobe=await executable(directory,"ffprobe",String.raw`printf '%s' '{"streams":[{"codec_type":"audio","codec_name":"pcm_s16le"}],"format":{"duration":"1.0"}}'`);
  const ffmpeg=await executable(directory,"ffmpeg",String.raw`for output do :; done; printf 'RIFF' > "$output"`);
+ const previousFfprobe=process.env.FFPROBE_PATH;process.env.FFPROBE_PATH=ffprobe;
  try{
   const execute=createCloudMediaExecutor({
    tempRoot:directory,ffmpeg,ffprobe,
@@ -537,5 +539,5 @@ test("cloud media probe reports unavailable VAD without failing the media probe"
   const result=await execute({job:{id:"job-unavailable",owner_id:"owner",job_type:"media.probe",input:{sourceAssetId:"asset-unavailable"}},onProgress(){}});
   assert.equal(result.metadata.signalAnalysis.voiceActivity,null);
   assert.deepEqual(result.metadata.signalAnalysis.unavailable,[{check:"voice-activity-detection",reason:"VAD_RUNTIME_UNAVAILABLE"}]);
- }finally{await rm(directory,{recursive:true,force:true});}
+ }finally{if(previousFfprobe===undefined)delete process.env.FFPROBE_PATH;else process.env.FFPROBE_PATH=previousFfprobe;await rm(directory,{recursive:true,force:true});}
 });
