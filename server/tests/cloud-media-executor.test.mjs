@@ -1,3 +1,34 @@
+test("cloud audio probe reports heuristic non-silence activity intervals without claiming speech recognition", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "ev-cloud-audio-probe-test-"));
+  const previousProbe = process.env.FFPROBE_PATH, previousFfmpeg = process.env.FFMPEG_PATH;
+  const source = join(directory, "source.wav");
+  await writeFile(source, "fixture");
+  const ffprobe = await executable(directory, "ffprobe", String.raw`printf '%s' '{"streams":[{"codec_type":"audio","codec_name":"pcm_s16le"}],"format":{"duration":"10"}}'`);
+  const ffmpeg = await executable(directory, "ffmpeg", String.raw`if [ "$1" = "-version" ]; then echo "ffmpeg test"; exit 0; fi
+printf '%s\\n' '[silencedetect @ 0x1] silence_start:2.000' '[silencedetect @ 0x1] silence_end:4.000 | silence_duration:2.000' '[silencedetect @ 0x1] silence_start:6.000' '[silencedetect @ 0x1] silence_end:8.000 | silence_duration:2.000' >&2`);
+  process.env.FFPROBE_PATH = ffprobe; process.env.FFMPEG_PATH = ffmpeg;
+  try {
+    const execute = createCloudMediaExecutor({
+      tempRoot: directory,
+      mediaIO: {
+        async materialize() { return { path: source, asset: { id: "audio-1", name: "voice.wav", mediaType: "audio/wav", sha256: "a".repeat(64) }, async cleanup() {} }; },
+        async publish() { throw new Error("Probe jobs must not publish derivatives."); }
+      }
+    });
+    const result = await execute({ job: { id: "job-audio-probe", owner_id: "owner", project_id: "project", job_type: "media.probe", input: { sourceAssetId: "audio-1" } } });
+    const analysis = result.metadata.signalAnalysis.audioActivity;
+    assert.equal(analysis.status, "completed");
+    assert.equal(analysis.activityMethod, "non-silence-envelope");
+    assert.deepEqual(analysis.silence.map(item => [item.startSeconds, item.endSeconds]), [[2,4],[6,8]]);
+    assert.deepEqual(analysis.activityIntervals.map(item => [item.startSeconds, item.endSeconds]), [[0,1.92],[3.92,6.08],[7.92,10]]);
+    assert.ok(analysis.limitations.some(item => item.includes("not speech recognition")));
+  } finally {
+    if (previousProbe === undefined) delete process.env.FFPROBE_PATH; else process.env.FFPROBE_PATH = previousProbe;
+    if (previousFfmpeg === undefined) delete process.env.FFMPEG_PATH; else process.env.FFMPEG_PATH = previousFfmpeg;
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 import test from "node:test";
 import assert from "node:assert/strict";
 import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
