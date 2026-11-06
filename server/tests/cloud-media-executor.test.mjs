@@ -541,3 +541,25 @@ test("cloud media probe reports unavailable VAD without failing the media probe"
   assert.deepEqual(result.metadata.signalAnalysis.unavailable,[{check:"voice-activity-detection",reason:"VAD_RUNTIME_UNAVAILABLE"}]);
  }finally{if(previousFfprobe===undefined)delete process.env.FFPROBE_PATH;else process.env.FFPROBE_PATH=previousFfprobe;await rm(directory,{recursive:true,force:true});}
 });
+
+test("cloud VAD maps extracted audio timestamps to the source media timeline",async()=>{
+ const directory=await mkdtemp(join(tmpdir(),"ev-cloud-vad-offset-"));
+ const source=join(directory,"offset.mp4");
+ await writeFile(source,"fixture");
+ const ffprobe=await executable(directory,"ffprobe",String.raw`printf '%s' '{"streams":[{"codec_type":"audio","codec_name":"aac","start_time":"3.5","duration":"1.5"}],"format":{"duration":"5.0"}}'`);
+ const ffmpeg=await executable(directory,"ffmpeg",String.raw`for output do :; done; printf 'RIFF' > "$output"`);
+ const previousFfprobe=process.env.FFPROBE_PATH;process.env.FFPROBE_PATH=ffprobe;
+ let analyzerArgs;
+ try{
+  const execute=createCloudMediaExecutor({
+   tempRoot:directory,ffmpeg,ffprobe,
+   mediaIO:{async materialize(){return {path:source,asset:{id:"asset-offset",name:"offset.mp4",mediaType:"video/mp4"},async cleanup(){}};},async publish(){throw new Error("Probe jobs must not publish derivatives.");}},
+   async analyzeVoiceActivity(args){analyzerArgs=args;return {model:"silero-v6.2",segments:[{start:3.9,end:4.7}]};}
+  });
+  const result=await execute({job:{id:"job-offset",owner_id:"owner",job_type:"media.probe",input:{sourceAssetId:"asset-offset"}},onProgress(){}});
+  assert.equal(analyzerArgs.durationSeconds,5);
+  assert.equal(analyzerArgs.analysisDurationSeconds,1.5);
+  assert.equal(analyzerArgs.timestampOffsetSeconds,3.5);
+  assert.deepEqual(result.metadata.signalAnalysis.voiceActivity.segments,[{start:3.9,end:4.7}]);
+ }finally{if(previousFfprobe===undefined)delete process.env.FFPROBE_PATH;else process.env.FFPROBE_PATH=previousFfprobe;await rm(directory,{recursive:true,force:true});}
+});
