@@ -50,8 +50,10 @@ export function normalizeReviewCreate(input){
  if(frameNumber!==null&&(!Number.isSafeInteger(frameNumber)||frameNumber<0))fail("REVIEW_INVALID","Frame number must be a non-negative safe integer.");
  if(durationFrames!==null&&(!Number.isSafeInteger(durationFrames)||durationFrames<1||durationFrames>90000))fail("REVIEW_INVALID","Frame range duration must be between 1 and 90,000 frames.");
  if(timecodeSeconds!==null&&(typeof timecodeSeconds!=="number"||!Number.isFinite(timecodeSeconds)||timecodeSeconds<0||timecodeSeconds>86400))fail("REVIEW_INVALID","Timecode must be between 0 and 24 hours.");
+ if((timelineRevision!==null)!==(timelineId!==null))fail("REVIEW_INVALID","Timeline ID and revision must be supplied together.");
  if((timelineRevision!==null||frameNumber!==null||durationFrames!==null)&&!assetId)fail("REVIEW_INVALID","Frame anchors require an asset ID.");
- if(timelineRevision!==null&&!timelineId)fail("REVIEW_INVALID","Timeline revision requires a timeline ID.");
+ if(durationFrames!==null&&frameNumber===null)fail("REVIEW_INVALID","Frame range duration requires a starting frame.");
+ if(timelineId!==null&&frameNumber===null)fail("REVIEW_INVALID","Timeline revision anchors require a frame number.");
  const annotation=normalizeAnnotation(input.annotation);
  if(annotation&&frameNumber===null)fail("REVIEW_ANNOTATION_INVALID","Drawing annotations require a frame-anchored comment.");
  const decision=input.decision??"comment";
