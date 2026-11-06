@@ -64,6 +64,8 @@ function rateAllowed(key,limit,windowMs){const time=Date.now();const old=rateBuc
 await mkdir(join(MEDIA_ROOT,"uploads"), { recursive:true });
 await mkdir(join(MEDIA_ROOT,"derived"), { recursive:true });
 await cleanupExpiredUploadSessions(db).catch(error=>console.error("Upload-session cleanup failed:",error));
+const uploadCleanupTimer=setInterval(()=>cleanupExpiredUploadSessions(db).catch(error=>console.error("Upload-session cleanup failed:",error)),60*60*1000);
+uploadCleanupTimer.unref?.();
 const waveformCache=createWaveformCache({mediaRoot:MEDIA_ROOT});
 const cloudTimelineApi = cloudTimelineApiEnabled ? createCloudTimelineApi({maxUploadBytes:Number(process.env.CLOUD_MEDIA_MAX_UPLOAD_BYTES || MAX_UPLOAD_BYTES),waveformCache,mediaRoot:MEDIA_ROOT}) : null;
 if (cloudTimelineApi) await cloudTimelineApi.checkReadiness();
