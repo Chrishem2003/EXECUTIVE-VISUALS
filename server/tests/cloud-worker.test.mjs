@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { runCloudWorkerCycle } from "../cloud-worker.mjs";
 
-function queueFor({job={id:"job-1"},renew=true,finish=true,failFinish=false}={}) {
+function queueFor({job={id:"job-1",lease_token:"11111111-1111-4111-8111-111111111111"},renew=true,finish=true,failFinish=false}={}) {
  const calls=[];
  return {
   calls,
@@ -30,6 +30,7 @@ test("cloud worker executes and finishes success under its lease",async()=>{
  });
  assert.equal(result.finished,true);
  assert.equal(result.status,"succeeded");
+ assert.equal(queue.calls.find(call=>call[0]==="finish")[6],"11111111-1111-4111-8111-111111111111");
  assert.deepEqual(progress,[{jobId:"job-1",workerId:"worker-1",progress:50}]);
  assert.ok(queue.calls.some(call=>call[0]==="finish"&&call[3]==="succeeded"));
  assert.ok(events.some(event=>event.type==="job.succeeded"));
