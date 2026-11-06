@@ -13,6 +13,16 @@ BEGIN
 END;
 $roles$;
 CREATE SCHEMA IF NOT EXISTS auth;
+CREATE OR REPLACE FUNCTION auth.uid()
+RETURNS uuid
+LANGUAGE sql
+STABLE
+AS $auth_uid$
+  SELECT coalesce(
+    nullif(current_setting('request.jwt.claim.sub', true), ''),
+    nullif(current_setting('request.jwt.claims', true)::jsonb ->> 'sub', '')
+  )::uuid;
+$auth_uid$;
 CREATE TABLE IF NOT EXISTS auth.users (
   id uuid PRIMARY KEY
 );
