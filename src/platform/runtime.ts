@@ -8,11 +8,12 @@ type RuntimeJobStage={id:string;label:string;status:"pending"|"running"|"succeed
 type RuntimeReview={id:string;project_id:string;asset_id?:string|null;timecode_seconds?:number|null;decision:string;body:string;status:string;created_at:string};
 type ProviderStatus={id:string;provider:string;enabled:boolean;configured:boolean;remote:boolean;model:string|null;status:"ready"|"disabled"|"needs_configuration"|"remote_opt_in_required"|"unavailable";reason:string;capabilities:string[]};
 type RemoteUsage={window:string;configurationValid:boolean;limit:number|null;used:number;remaining:number|null;projectUsed:number|null;remoteDisabled:boolean};
+type UsageSummary={periodDays:number;scope:"account"|"project";projectId:string|null;totals:{requests:number;promptTokens:number;completionTokens:number;totalTokens:number;durationMs:number;averageDurationMs:number;knownCostMicros:number;knownCostEvents:number;unknownCostEvents:number};providers:Array<{provider:string;requests:number;totalTokens:number;averageDurationMs:number;knownCostMicros:number;knownCostEvents:number;unknownCostEvents:number}>;daily:Array<{day:string;requests:number;totalTokens:number;knownCostMicros:number;knownCostEvents:number;unknownCostEvents:number}>;costDisclosure:string};
 let workspaceRevisions=new Map<string,number>();
 let workspaceSaveTimers=new Map<string,ReturnType<typeof setTimeout>>();
 let workspaceSaveChain:Promise<void>=Promise.resolve();
-const state:{status:"checking"|"offline"|"auth-required"|"online";authMode:"local"|"supabase";user:RuntimeUser|null;projects:RuntimeProject[];assets:RuntimeAsset[];jobs:RuntimeJob[];stageTimelines:Record<string,RuntimeJobStage[]>;audit:Array<Record<string,unknown>>;auditCursor:number|null;auditHasMore:boolean;notifications:Array<Record<string,unknown>>;unreadNotifications:number;members:Array<{id:string;email:string;role:string;createdAt:string}>;reviews:RuntimeReview[];projectId:string;message:string;ffmpeg:boolean;ffprobe:boolean;textGatewayEnabled:boolean;textGatewayConfigured:boolean;imageGatewayEnabled:boolean;imageGatewayConfigured:boolean;providers:ProviderStatus[];remoteUsage:RemoteUsage|null}={
- status:"checking",authMode:"local",user:null,projects:[],assets:[],jobs:[],stageTimelines:{},audit:[],auditCursor:null,auditHasMore:false,notifications:[],unreadNotifications:0,members:[],reviews:[],projectId:"",message:"",ffmpeg:false,ffprobe:false,textGatewayEnabled:false,textGatewayConfigured:false,imageGatewayEnabled:false,imageGatewayConfigured:false,providers:[],remoteUsage:null
+const state:{status:"checking"|"offline"|"auth-required"|"online";authMode:"local"|"supabase";user:RuntimeUser|null;projects:RuntimeProject[];assets:RuntimeAsset[];jobs:RuntimeJob[];stageTimelines:Record<string,RuntimeJobStage[]>;audit:Array<Record<string,unknown>>;auditCursor:number|null;auditHasMore:boolean;notifications:Array<Record<string,unknown>>;unreadNotifications:number;members:Array<{id:string;email:string;role:string;createdAt:string}>;reviews:RuntimeReview[];projectId:string;message:string;ffmpeg:boolean;ffprobe:boolean;textGatewayEnabled:boolean;textGatewayConfigured:boolean;imageGatewayEnabled:boolean;imageGatewayConfigured:boolean;providers:ProviderStatus[];remoteUsage:RemoteUsage|null;usageSummary:UsageSummary|null}={
+ status:"checking",authMode:"local",user:null,projects:[],assets:[],jobs:[],stageTimelines:{},audit:[],auditCursor:null,auditHasMore:false,notifications:[],unreadNotifications:0,members:[],reviews:[],projectId:"",message:"",ffmpeg:false,ffprobe:false,textGatewayEnabled:false,textGatewayConfigured:false,imageGatewayEnabled:false,imageGatewayConfigured:false,providers:[],remoteUsage:null,usageSummary:null
 };
 const esc=(value:unknown)=>String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]||c));
 const fmt=(value:string)=>new Date(value).toLocaleString();
@@ -145,9 +146,10 @@ async function refresh(){
   apiRequest<{jobs:RuntimeJob[]}>("/api/jobs"),
   apiRequest<{providers:ProviderStatus[]}>("/api/providers"),
   apiRequest<{remoteUsage:RemoteUsage}>("/api/usage"),
+  apiRequest<UsageSummary>("/api/usage/summary?days=30"),
   apiRequest<{notifications:Array<Record<string,unknown>>;unreadCount:number}>("/api/notifications?limit=30")
  ]);
- state.projects=projects.projects;state.assets=assets.assets;state.jobs=jobs.jobs;state.providers=providerCatalog.providers;state.remoteUsage=usageResponse.remoteUsage;state.notifications=notificationResponse.notifications;state.unreadNotifications=notificationResponse.unreadCount;window.dispatchEvent(new Event("ev:assets-updated"));
+ state.projects=projects.projects;state.assets=assets.assets;state.jobs=jobs.jobs;state.providers=providerCatalog.providers;state.remoteUsage=usageResponse.remoteUsage;state.usageSummary=usageSummaryResponse;state.notifications=notificationResponse.notifications;state.unreadNotifications=notificationResponse.unreadCount;window.dispatchEvent(new Event("ev:assets-updated"));
   const recentJobs=state.jobs.slice(0,12);
   const timelines=await Promise.all(recentJobs.map(async job=>{
    try{const response=await apiRequest<{stages:RuntimeJobStage[]}>("/api/jobs/"+encodeURIComponent(job.id)+"/stages");return [job.id,response.stages||[]] as const;}
