@@ -154,25 +154,32 @@ export function createCloudStorage({
         throw error;
       }finally{externalSignal?.removeEventListener("abort",abortFromCaller);clearTimeout(timer);}
     },
-    async listObjects({prefix,limit=100,offset=0}={}) {
+    async listObjects({prefix,limit=100,cursor=null}={}) {
       if(typeof prefix!=="string"||!/^([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\/([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\/$/i.test(prefix)) {
         throw new Error("Storage listing requires an exact owner-or-project and asset UUID prefix.");
       }
-      if(!Number.isInteger(limit)||limit<1||limit>1000||!Number.isInteger(offset)||offset<0||offset>100000) {
+      if(!Number.isInteger(limit)||limit<1||limit>1000||cursor!==null&&(typeof cursor!=="string"||!cursor||cursor.length>4096)) {
         throw new Error("Storage listing pagination is invalid.");
       }
-      const result=await request("/storage/v1/object/list/"+BUCKET,{
+      const body={prefix,limit,with_delimiter:false,sortBy:{column:"name",order:"asc"}};
+      if(cursor!==null)body.cursor=cursor;
+      const result=await request("/storage/v1/object/list-v2/"+BUCKET,{
         method:"POST",
         headers:{"content-type":"application/json"},
-        body:JSON.stringify({prefix,limit,offset,sortBy:{column:"created_at",order:"asc"}})
+        body:JSON.stringify(body)
       });
-      if(!Array.isArray(result))throw new Error("Cloud storage returned an invalid object listing.");
-      return result.filter(item=>item&&typeof item.name==="string").map(item=>({
-        name:item.name,
-        createdAt:item.created_at||item.createdAt||null,
-        updatedAt:item.updated_at||item.updatedAt||null,
-        metadata:item.metadata&&typeof item.metadata==="object"?item.metadata:{}
-      }));
+      if(!result||!Array.isArray(result.objects)||typeof result.hasNext!=="boolean"||
+        result.hasNext&&typeof result.nextCursor!=="string")throw new Error("Cloud storage returned an invalid cursor listing.");
+      return {
+        objects:result.objects.filter(item=>item&&typeof item.name==="string"&&item.id!==null).map(item=>({
+          name:item.name,
+          createdAt:item.created_at||item.createdAt||item.createdAtTime||null,
+          updatedAt:item.updated_at||item.updatedAt||null,
+          metadata:item.metadata&&typeof item.metadata==="object"?item.metadata:{}
+        })),
+        hasNext:result.hasNext,
+        nextCursor:result.hasNext?result.nextCursor:null
+      };
     },
     async createSignedUrl(objectPath, expiresIn = 300) {
       const path = safeObjectPath(objectPath);
