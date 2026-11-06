@@ -33,7 +33,7 @@ function getVisibleCloudReviews(){
   if(state.reviewVersionFilter==="previous"&&(!review.timelineId||review.timelineRevision===null||review.timelineRevision>=(state.cloudTimelines.find(timeline=>timeline.id===review.timelineId)?.revision??0)))return false;
   if(!q)return true;
   const asset=state.cloudAssets.find(item=>item.id===review.assetId)?.name||"";
-  return [review.body,review.decision,review.status,review.visibility,asset,String(review.frameNumber??""),String(review.timecodeSeconds??"")].join(" ").toLowerCase().includes(q);
+  return [review.body,review.decision,review.status,review.visibility,asset,String(review.frameNumber??""),String(review.timecodeSeconds??""),String(review.timelineRevision??""),state.cloudTimelines.find(timeline=>timeline.id===review.timelineId)?.name||""].join(" ").toLowerCase().includes(q);
  });
  const time=(r:typeof state.cloudReviews[number])=>Date.parse(r.createdAt)||0;
  rows.sort((a,b)=>{
