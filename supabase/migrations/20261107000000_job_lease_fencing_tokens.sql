@@ -3,6 +3,10 @@
 alter table executive_visuals.jobs
   add column if not exists lease_token uuid;
 
+alter table executive_visuals.jobs
+  add constraint ev_jobs_processing_requires_lease_token
+  check (status <> 'processing' or lease_token is not null) not valid;
+
 create index if not exists ev_jobs_active_lease_token
   on executive_visuals.jobs(id, lease_token)
   where status='processing';
