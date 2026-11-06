@@ -5,7 +5,7 @@ import { createServer } from "node:http";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { openDatabase, json } from "../db.mjs";
+import { openDatabase, json, recordModelUsage } from "../db.mjs";
 
 const port=await new Promise(resolve=>{const probe=createServer();probe.listen(0,"127.0.0.1",()=>{const address=probe.address();probe.close(()=>resolve(address.port));});});
 const dataDir=await mkdtemp(join(tmpdir(),"ev-api-test-"));
@@ -77,6 +77,52 @@ test("usage API reports account request allowance without exposing secrets",asyn
   });
   assert.equal(body.costs,"not_estimated");
   assert.equal(JSON.stringify(body).includes("REMOTE_AI_DAILY_REQUEST_LIMIT"),false);
+});
+
+test("usage summary aggregates complete owner and authorized project telemetry without inventing costs",async()=>{
+  assert.equal((await fetch(base+"/api/usage/summary")).status,401);
+  const owner=await register("usage-summary-owner@example.test");
+  const outsider=await register("usage-summary-outsider@example.test");
+  const created=await request("/api/projects",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({name:"Usage summary project"})},owner);
+  assert.equal(created.status,201);
+  const project=(await created.json()).project;
+  const db=openDatabase(join(dataDir,"executive-visuals.sqlite"));
+  let ids=[];
+  try{
+    const ownerId=db.prepare("SELECT id FROM users WHERE email=?").get("usage-summary-owner@example.test").id;
+    const outsiderId=db.prepare("SELECT id FROM users WHERE email=?").get("usage-summary-outsider@example.test").id;
+    ids.push(recordModelUsage(db,{ownerId,projectId:project.id,provider:"provider-alpha",capability:"text.generate",model:"model-a",usage:{promptTokens:10,completionTokens:4},durationMs:100}).id);
+    ids.push(recordModelUsage(db,{ownerId,projectId:project.id,provider:"provider-beta",capability:"image.generate",model:"model-b",usage:{promptTokens:20,completionTokens:5},durationMs:200}).id);
+    ids.push(recordModelUsage(db,{ownerId,provider:"provider-alpha",capability:"text.generate",model:"model-a",usage:{promptTokens:3,completionTokens:2},durationMs:50}).id);
+    recordModelUsage(db,{ownerId:outsiderId,projectId:project.id,provider:"provider-collaborator",capability:"text.generate",model:"model-c",usage:{promptTokens:100,completionTokens:100},durationMs:900});
+    db.prepare("UPDATE model_usage_events SET created_at=strftime('%Y-%m-%dT%H:%M:%fZ','now','-120 days') WHERE id=?").run(ids[0]);
+  }finally{db.close();}
+
+  const account=await request("/api/usage/summary?days=30",{},owner);
+  assert.equal(account.status,200);
+  const accountBody=await account.json();
+  assert.equal(accountBody.periodDays,30);
+  assert.equal(accountBody.scope,"account");
+  assert.equal(accountBody.totals.requests,2,"older than the selected period must be excluded");
+  assert.equal(accountBody.totals.totalTokens,30);
+  assert.equal(accountBody.totals.knownCostEvents,0);
+  assert.equal(accountBody.totals.unknownCostEvents,2);
+  assert.equal(accountBody.providers[0].provider,"provider-alpha");
+
+  const projectSummary=await request("/api/usage/summary?projectId="+encodeURIComponent(project.id)+"&days=90",{},owner);
+  assert.equal(projectSummary.status,200);
+  const projectBody=await projectSummary.json();
+  assert.equal(projectBody.scope,"project");
+  assert.equal(projectBody.totals.requests,3,"project view includes authorized collaborators' events");
+  assert.equal(projectBody.totals.totalTokens,239);
+  assert.equal(projectBody.totals.unknownCostEvents,3);
+  assert.ok(projectBody.costDisclosure.includes("never treated as zero-cost"));
+
+  const denied=await request("/api/usage/summary?projectId="+encodeURIComponent(project.id),{},outsider);
+  assert.equal(denied.status,404);
+  const invalid=await request("/api/usage/summary?days=14",{},owner);
+  assert.equal(invalid.status,400);
+  assert.equal((await invalid.json()).error.code,"USAGE_PERIOD_INVALID");
 });
 
 test("static application shell applies a restrictive content security policy",async()=>{
