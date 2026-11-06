@@ -158,10 +158,12 @@ export function createCloudAssetRepository({
           p_job_id:lease.jobId,p_worker_id:lease.workerId,p_lease_token:lease.leaseToken,
           p_owner_id:ownerId,p_project_id:projectId,p_publication_key:publicationKey,
           p_payload_sha256:file.sha256,p_asset_id:id,
-          p_original_name:row.original_name||name,p_media_type:row.media_type,
-          p_byte_size:Number(row.byte_size),p_storage_bucket:row.storage_bucket,
-          p_object_path:row.object_path,p_derivative_of:row.derivative_of||null,
-          p_metadata:row.metadata||metadata
+          // Compare the stored winner against this request's intended immutable
+          // identity; never copy potentially altered row metadata into the verifier.
+          p_original_name:name,p_media_type:mediaType,
+          p_byte_size:file.size,p_storage_bucket:"executive-visuals-media",
+          p_object_path:row.object_path,p_derivative_of:derivativeOf,
+          p_metadata:metadata
         }});
         if(!Array.isArray(rows)||rows.length!==1)throw new Error("Atomic cloud asset publication returned no authoritative asset.");
         return verifyAsset(rows[0]);
