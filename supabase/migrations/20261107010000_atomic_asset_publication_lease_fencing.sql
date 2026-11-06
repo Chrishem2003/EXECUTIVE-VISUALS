@@ -10,7 +10,7 @@ returns trigger
 language plpgsql
 security definer
 set search_path = ''
-as $
+as $derivative_scope$
 declare
   parent_asset executive_visuals.assets;
 begin
@@ -49,7 +49,7 @@ begin
 
   return new;
 end;
-$;
+$derivative_scope$;
 
 revoke all on function executive_visuals.validate_asset_derivative_scope_v1()
   from public, anon, authenticated, service_role;
