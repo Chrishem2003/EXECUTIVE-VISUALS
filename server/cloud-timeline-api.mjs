@@ -252,6 +252,11 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     const result=await service.reviews.create({actorId:ownerId,input:body,idempotencyKey});
     return response(result.idempotentReplay?200:201,result);
    }
+   const eventMatch=path.match(/^\/api\/cloud\/reviews\/([0-9a-f-]+)\/events$/i);
+   if(eventMatch&&safeId(eventMatch[1])&&method==="GET"){
+    const events=await service.events.list({actorId:ownerId,reviewId:eventMatch[1],limit:Number(query.limit)||100});
+    return response(200,{events});
+   }
    const reactionMatch=path.match(/^\/api\/cloud\/reviews\/([0-9a-f-]+)\/reactions$/i);
    if(reactionMatch&&safeId(reactionMatch[1])){
     if(method==="GET"){const reactions=await service.reactions.list({actorId:ownerId,reviewId:reactionMatch[1]});return response(200,{reactions});}
