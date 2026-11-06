@@ -35,6 +35,7 @@ export function createCloudPublicationCleanupWorker({
  olderThanMs=DAY_MS,
  publicationLimit=10,
  objectLimit=100,
+ pollIntervalMs=300000,
  dryRun=true,
  confirmDelete=false,
  allowDelete=false,
@@ -46,6 +47,7 @@ export function createCloudPublicationCleanupWorker({
  if(!Number.isSafeInteger(olderThanMs)||olderThanMs<DAY_MS||olderThanMs>30*DAY_MS)throw new Error("Publication cleanup worker age must be between 1 and 30 days.");
  if(!Number.isInteger(publicationLimit)||publicationLimit<1||publicationLimit>50)throw new Error("Publication cleanup worker publication limit must be between 1 and 50.");
  if(!Number.isInteger(objectLimit)||objectLimit<1||objectLimit>100)throw new Error("Publication cleanup worker object limit must be between 1 and 100.");
+ if(!Number.isInteger(pollIntervalMs)||pollIntervalMs<10000||pollIntervalMs>3600000)throw new Error("Publication cleanup worker poll interval must be between 10 seconds and 1 hour.");
  if(typeof dryRun!=="boolean"||typeof confirmDelete!=="boolean"||typeof allowDelete!=="boolean")throw new Error("Publication cleanup worker safety gates must be boolean.");
  if(!dryRun&&(!confirmDelete||!allowDelete))throw new Error("Destructive publication cleanup requires both explicit confirmation and the worker delete enable flag.");
  if(typeof onLog!=="function")throw new Error("Publication cleanup worker logger must be a function.");
@@ -131,12 +133,14 @@ export function createCloudPublicationCleanupWorker({
    now
   });
  }
- let busy=false;
+ let busy=false,lastRunAt=0;
  return Object.freeze({
   workerId:"publication-cleanup-"+randomUUID(),
   async runCycle(){
-   if(busy)return{skipped:true};
-   busy=true;
+   if(busy)return{skipped:true,reason:"cycle_busy"};
+   const startedAt=now().getTime();
+   if(lastRunAt&&startedAt-lastRunAt<pollIntervalMs)return{skipped:true,reason:"poll_interval"};
+   busy=true;lastRunAt=startedAt;
    const runId=randomUUID(),results=[];
    try{
     const publications=await listStalePublications();
