@@ -46,7 +46,7 @@ begin
      or pg_catalog.char_length(p_publication_key) not between 1 and 200
      or p_object_path is null
      or p_min_age is null
-     or pg_catalog.extract(epoch from p_min_age) not between 86400 and 2592000
+     or extract(epoch from p_min_age) not between 86400 and 2592000
   then
     raise exception 'invalid asset publication cleanup claim parameters'
       using errcode = '22023';
@@ -85,7 +85,7 @@ begin
       using errcode = '55000';
   end if;
 
-  expected_prefix := pg_catalog.coalesce(p_project_id, p_owner_id)::text
+  expected_prefix := coalesce(p_project_id, p_owner_id)::text
     || '/' || publication_row.asset_id::text || '/';
 
   if p_object_path !~ (
@@ -149,7 +149,7 @@ begin
 
   update executive_visuals.asset_publication_cleanup_claims c
   set status = 'deleted',
-      deleted_at = pg_catalog.coalesce(c.deleted_at, pg_catalog.clock_timestamp())
+      deleted_at = coalesce(c.deleted_at, pg_catalog.clock_timestamp())
   where c.id = p_claim_id
     and c.claim_token = p_claim_token
     and c.status = 'claimed';
