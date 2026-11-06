@@ -251,4 +251,117 @@ BEGIN
 END;
 $stale_lease$;
 
+
+-- Durable cleanup claims must fence a late worker from publishing the exact
+-- object path selected for deletion. All work remains inside disposable CI DB.
+INSERT INTO executive_visuals.jobs(
+  id,owner_id,project_id,job_type,status,input
+) VALUES (
+  'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+  '11111111-1111-4111-8111-111111111111',
+  'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+  'timeline.render','queued','{"integration":"cleanup-fence"}'::jsonb
+);
+
+SELECT * FROM executive_visuals.reserve_asset_publication(
+  '11111111-1111-4111-8111-111111111111',
+  'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+  'integration:cleanup-fence',repeat('f',64),
+  'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee'
+);
+
+UPDATE executive_visuals.asset_publications
+SET updated_at=clock_timestamp()-interval '25 hours'
+WHERE owner_id='11111111-1111-4111-8111-111111111111'
+  AND publication_key='integration:cleanup-fence';
+
+CREATE TEMP TABLE cleanup_claim_result AS
+SELECT * FROM executive_visuals.claim_asset_publication_cleanup_v1(
+  'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+  '11111111-1111-4111-8111-111111111111',
+  'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+  'integration:cleanup-fence',
+  'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee/attempt-99999999-9999-4999-8999-999999999998.mp4',
+  interval '24 hours'
+);
+
+DO $cleanup_fence$
+DECLARE claim_row record;
+BEGIN
+  SELECT * INTO claim_row FROM cleanup_claim_result;
+  IF claim_row.status <> 'claimed' OR claim_row.claim_token IS NULL THEN
+    RAISE EXCEPTION 'cleanup claim did not produce a durable fencing token';
+  END IF;
+END;
+$cleanup_fence$;
+
+-- Simulate a worker being claimed after the cleanup tombstone exists.
+UPDATE executive_visuals.jobs
+SET status='processing',lease_owner='late-worker',
+    lease_token='ffffffff-ffff-4fff-8fff-ffffffffffff',
+    lease_expires_at=clock_timestamp()+interval '5 minutes'
+WHERE id='dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+
+DO $late_publication$
+BEGIN
+  BEGIN
+    PERFORM * FROM executive_visuals.finalize_asset_publication_v1(
+      'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+      'late-worker',
+      'ffffffff-ffff-4fff-8fff-ffffffffffff',
+      '11111111-1111-4111-8111-111111111111',
+      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      'integration:cleanup-fence',
+      repeat('f',64),
+      'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+      'late-render.mp4','video/mp4',123,
+      'executive-visuals-media',
+      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee/attempt-99999999-9999-4999-8999-999999999998.mp4',
+      NULL,'{"integration":"must-be-fenced"}'::jsonb
+    );
+    RAISE EXCEPTION 'late publication bypassed durable cleanup fence';
+  EXCEPTION WHEN SQLSTATE '55000' THEN
+    IF SQLERRM = 'late publication bypassed durable cleanup fence' THEN RAISE; END IF;
+  END;
+
+  IF EXISTS (
+    SELECT 1 FROM executive_visuals.assets
+    WHERE id='eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee'
+  ) THEN
+    RAISE EXCEPTION 'fenced publication inserted asset metadata';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM executive_visuals.asset_publications
+    WHERE owner_id='11111111-1111-4111-8111-111111111111'
+      AND publication_key='integration:cleanup-fence'
+      AND status='reserved'
+  ) THEN
+    RAISE EXCEPTION 'fenced publication unexpectedly changed its ledger';
+  END IF;
+END;
+$late_publication$;
+
+DO $cleanup_complete$
+DECLARE claim_row record;
+BEGIN
+  SELECT * INTO claim_row FROM cleanup_claim_result;
+  IF NOT executive_visuals.complete_asset_publication_cleanup_v1(
+    claim_row.claim_id,claim_row.claim_token
+  ) THEN
+    RAISE EXCEPTION 'cleanup claim could not be completed';
+  END IF;
+  IF NOT executive_visuals.complete_asset_publication_cleanup_v1(
+    claim_row.claim_id,claim_row.claim_token
+  ) THEN
+    RAISE EXCEPTION 'cleanup completion retry was not idempotent';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM executive_visuals.asset_publication_cleanup_claims
+    WHERE id=claim_row.claim_id AND status='deleted' AND deleted_at IS NOT NULL
+  ) THEN
+    RAISE EXCEPTION 'completed cleanup tombstone was not retained';
+  END IF;
+END;
+$cleanup_complete$;
+
 SELECT 'PostgreSQL migration integration checks passed' AS result;
