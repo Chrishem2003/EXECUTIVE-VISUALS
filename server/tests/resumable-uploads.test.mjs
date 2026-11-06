@@ -47,7 +47,7 @@ test("accepts sequential chunks and resumes from the persisted offset", async t 
 
 test("rejects chunks that exceed the declared file size", async t => {
   const f=await fixture(t), session=await create(f);
-  await assert.rejects(appendUploadChunk({db:f.db,mediaRoot:f.root,ownerId:"owner",id:session.id,offset:4,request:Readable.from([Buffer.from("12345")]),expectedChunkSize:5}),e=>e.code==="UPLOAD_OFFSET_MISMATCH");
+  await assert.rejects(appendUploadChunk({db:f.db,mediaRoot:f.root,ownerId:"owner",id:session.id,offset:0,request:Readable.from([Buffer.from("123456789")]),expectedChunkSize:9}),e=>e.code==="UPLOAD_EXCEEDS_DECLARED_SIZE");
 });
 
 test("rolls back partial chunk writes after a stream failure", async t => {
@@ -80,4 +80,11 @@ test("cleans expired open sessions but does not sweep active writes", async t =>
   f.db.prepare("UPDATE upload_sessions SET expires_at='2000-01-01T00:00:00.000Z' WHERE id=?").run(session.id);
   assert.equal(await cleanupExpiredUploadSessions(f.db),1);
   assert.equal(getUploadSession(f.db,"owner",session.id),null);
+});
+
+test("rejects a completed file whose SHA-256 differs from the declared checksum", async t => {
+  const f=await fixture(t), session=await create(f,{expectedSha256:"0".repeat(64)});
+  await appendUploadChunk({db:f.db,mediaRoot:f.root,ownerId:"owner",id:session.id,offset:0,request:Readable.from([Buffer.from("RIFFWAVE")]),expectedChunkSize:8});
+  await assert.rejects(prepareUploadCompletion({db:f.db,ownerId:"owner",id:session.id}),e=>e.code==="UPLOAD_CHECKSUM_MISMATCH");
+  assert.equal(getUploadSession(f.db,"owner",session.id).status,"open");
 });
