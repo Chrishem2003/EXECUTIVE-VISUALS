@@ -323,11 +323,12 @@ function masteringPanel(){
 }
 function readMasteringSettings(){
  if(state.mode!=="cloud")return null;
- const form=document.querySelector<HTMLFormElement>(".mastering-panel");
- if(!form)return null;
- const data=new FormData(form),enabled=document.querySelector<HTMLInputElement>("#tl-mastering-enabled")?.checked===true;
+ const panel=document.querySelector<HTMLElement>(".mastering-panel");
+ if(!panel)return null;
+ const value=(name:string)=>panel.querySelector<HTMLInputElement>('[name="'+name+'"]')?.value??"";
+ const enabled=document.querySelector<HTMLInputElement>("#tl-mastering-enabled")?.checked===true;
  if(!enabled){state.masteringSettings={...state.masteringSettings,enabled:false};return null;}
- const integratedLufs=Number(data.get("masteringIntegratedLufs")),loudnessRange=Number(data.get("masteringLoudnessRange")),truePeakDbtp=Number(data.get("masteringTruePeakDbtp")),dualMono=data.get("masteringDualMono")==="on";
+ const integratedLufs=Number(value("masteringIntegratedLufs")),loudnessRange=Number(value("masteringLoudnessRange")),truePeakDbtp=Number(value("masteringTruePeakDbtp")),dualMono=panel.querySelector<HTMLInputElement>('[name="masteringDualMono"]')?.checked===true;
  if(!Number.isFinite(integratedLufs)||integratedLufs< -70||integratedLufs> -5)throw new Error("Integrated loudness must be between −70 and −5 LUFS.");
  if(!Number.isFinite(loudnessRange)||loudnessRange<1||loudnessRange>50)throw new Error("Loudness range must be between 1 and 50 LU.");
  if(!Number.isFinite(truePeakDbtp)||truePeakDbtp< -9||truePeakDbtp>0)throw new Error("True-peak ceiling must be between −9 and 0 dBTP.");
