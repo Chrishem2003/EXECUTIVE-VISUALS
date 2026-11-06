@@ -128,6 +128,18 @@ if (!sql.includes("revoke all on function executive_visuals.claim_next_job(text,
 if (!sql.includes("lease_expires_at timestamptz") || !sql.includes("available_at timestamptz") || !sql.includes("lease_heartbeat_at timestamptz")) {
   issues.push("Durable worker lease and delayed retry fields are missing from the cloud job contract.");
 }
+
+const atomicPublicationSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261107010000_atomic_asset_publication.sql"), "utf8");
+if (/\\b(drop\\s+table|truncate|delete\\s+from)\\b/i.test(atomicPublicationSql)) issues.push("Atomic publication migration must not contain destructive DDL/DML.");
+if (!atomicPublicationSql.includes("create or replace function executive_visuals.finalize_asset_publication_v1(")) issues.push("Atomic lease-fenced publication RPC is missing.");
+if (!atomicPublicationSql.includes("from executive_visuals.jobs") || !atomicPublicationSql.includes("for update")) issues.push("Atomic publication must lock the active job row.");
+if (!atomicPublicationSql.includes("from executive_visuals.asset_publications") || !atomicPublicationSql.includes("publication_key = p_publication_key") || !atomicPublicationSql.includes("for update")) issues.push("Atomic publication must lock the matching publication ledger row.");
+if (!atomicPublicationSql.includes("active_job.lease_token is distinct from p_lease_token") || !atomicPublicationSql.includes("active_job.lease_expires_at <= clock_timestamp()")) issues.push("Atomic publication must validate the current, unexpired worker fencing token.");
+if (!atomicPublicationSql.includes("insert into executive_visuals.assets") || !atomicPublicationSql.includes("update executive_visuals.asset_publications")) issues.push("Asset metadata insert and publication-ledger completion must share one transaction.");
+if (!atomicPublicationSql.includes("asset_row.sha256 is distinct from p_payload_sha256") || !atomicPublicationSql.includes("asset_row.owner_id is distinct from p_owner_id") || !atomicPublicationSql.includes("asset_row.project_id is distinct from p_project_id")) issues.push("Existing asset recovery must verify owner, project and checksum.");
+if (!atomicPublicationSql.includes("set search_path = pg_catalog, executive_visuals")) issues.push("Atomic publication RPC must pin its search_path.");
+if (!atomicPublicationSql.includes("from public, anon, authenticated") || !atomicPublicationSql.includes("to service_role")) issues.push("Atomic publication RPC must be service-role-only.");
+
 if (issues.length) {
   console.error("Cloud migration guard failed:");
   for (const issue of issues) console.error("- " + issue);
