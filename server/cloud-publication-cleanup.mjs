@@ -79,7 +79,14 @@ export function createCloudPublicationCleanup({
         candidates.push({objectPath,createdAt:new Date(created).toISOString()});
       }
 
-      const referenced=referenceSet(await findReferencedPaths(candidates.map(item=>item.objectPath)));
+      let referenced;
+      try { referenced=referenceSet(await findReferencedPaths(candidates.map(item=>item.objectPath))); }
+      catch(error) {
+        const failure=new Error("Publication cleanup reference lookup failed; no objects were deleted.");
+        failure.code="CLOUD_PUBLICATION_CLEANUP_REFERENCE_LOOKUP_FAILED";
+        failure.cause=error;
+        throw failure;
+      }
       const eligible=[];
       for(const candidate of candidates) {
         if(referenced.has(candidate.objectPath)) {
