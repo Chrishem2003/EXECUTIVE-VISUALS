@@ -145,7 +145,10 @@ DECLARE
   retry_row record;
 BEGIN
   SELECT * INTO retry_row
-  FROM executive_visuals.reserve_asset_publication(
+  FROM executive_visuals.reserve_asset_publication_v2(
+    '55555555-5555-4555-8555-555555555555',
+    'integration-worker',
+    '66666666-6666-4666-8666-666666666666',
     '11111111-1111-4111-8111-111111111111',
     'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
     'integration:valid-publication',repeat('c',64),
@@ -157,7 +160,10 @@ BEGIN
   END IF;
 
   BEGIN
-    PERFORM * FROM executive_visuals.reserve_asset_publication(
+    PERFORM * FROM executive_visuals.reserve_asset_publication_v2(
+      '55555555-5555-4555-8555-555555555555',
+      'integration-worker',
+      '66666666-6666-4666-8666-666666666666',
       '11111111-1111-4111-8111-111111111111',
       'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
       'integration:valid-publication',repeat('e',64),
