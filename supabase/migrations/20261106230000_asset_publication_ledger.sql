@@ -11,7 +11,7 @@ create table if not exists executive_visuals.asset_publications (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   published_at timestamptz,
-  unique(owner_id, publication_key),
+  constraint asset_publications_owner_publication_key_unique unique(owner_id, publication_key),
   unique(asset_id),
   check ((status='published') = (published_at is not null))
 );
@@ -48,7 +48,7 @@ begin
     (owner_id, project_id, publication_key, payload_sha256, asset_id)
   values
     (p_owner_id, p_project_id, p_publication_key, p_payload_sha256, p_asset_id)
-  on conflict (owner_id, publication_key) do update
+  on conflict on constraint asset_publications_owner_publication_key_unique do update
     set updated_at = now()
     where current_publication.project_id is not distinct from excluded.project_id
       and current_publication.payload_sha256 = excluded.payload_sha256
