@@ -4,14 +4,15 @@ type RuntimeUser={id:string;email:string};
 type RuntimeProject={id:string;name:string;description?:string;revision?:number;access_role?:"owner"|"editor"|"reviewer"|"viewer"};
 type RuntimeAsset={id:string;projectId?:string|null;name:string;mediaType:string;size:number;sha256:string;derivativeOf?:string|null;metadata?:Record<string,unknown>;createdAt:string};
 type RuntimeJob={id:string;projectId?:string|null;jobType:string;status:string;progress:number;input:Record<string,unknown>;output?:Record<string,unknown>|null;error?:{code?:string;message?:string}|null;createdAt:string;updatedAt:string};
+type RuntimeJobStage={id:string;label:string;status:"pending"|"running"|"succeeded"|"failed"|"skipped";startedAt:string|null;completedAt:string|null;durationMs:number|null;attributes:Record<string,unknown>};
 type RuntimeReview={id:string;project_id:string;asset_id?:string|null;timecode_seconds?:number|null;decision:string;body:string;status:string;created_at:string};
 type ProviderStatus={id:string;provider:string;enabled:boolean;configured:boolean;remote:boolean;model:string|null;status:"ready"|"disabled"|"needs_configuration"|"remote_opt_in_required"|"unavailable";reason:string;capabilities:string[]};
 type RemoteUsage={window:string;configurationValid:boolean;limit:number|null;used:number;remaining:number|null;projectUsed:number|null;remoteDisabled:boolean};
 let workspaceRevisions=new Map<string,number>();
 let workspaceSaveTimers=new Map<string,ReturnType<typeof setTimeout>>();
 let workspaceSaveChain:Promise<void>=Promise.resolve();
-const state:{status:"checking"|"offline"|"auth-required"|"online";authMode:"local"|"supabase";user:RuntimeUser|null;projects:RuntimeProject[];assets:RuntimeAsset[];jobs:RuntimeJob[];audit:Array<Record<string,unknown>>;members:Array<{id:string;email:string;role:string;createdAt:string}>;reviews:RuntimeReview[];projectId:string;message:string;ffmpeg:boolean;ffprobe:boolean;textGatewayEnabled:boolean;textGatewayConfigured:boolean;imageGatewayEnabled:boolean;imageGatewayConfigured:boolean;providers:ProviderStatus[];remoteUsage:RemoteUsage|null}={
- status:"checking",authMode:"local",user:null,projects:[],assets:[],jobs:[],audit:[],members:[],reviews:[],projectId:"",message:"",ffmpeg:false,ffprobe:false,textGatewayEnabled:false,textGatewayConfigured:false,imageGatewayEnabled:false,imageGatewayConfigured:false,providers:[],remoteUsage:null
+const state:{status:"checking"|"offline"|"auth-required"|"online";authMode:"local"|"supabase";user:RuntimeUser|null;projects:RuntimeProject[];assets:RuntimeAsset[];jobs:RuntimeJob[];stageTimelines:Record<string,RuntimeJobStage[]>;audit:Array<Record<string,unknown>>;members:Array<{id:string;email:string;role:string;createdAt:string}>;reviews:RuntimeReview[];projectId:string;message:string;ffmpeg:boolean;ffprobe:boolean;textGatewayEnabled:boolean;textGatewayConfigured:boolean;imageGatewayEnabled:boolean;imageGatewayConfigured:boolean;providers:ProviderStatus[];remoteUsage:RemoteUsage|null}={
+ status:"checking",authMode:"local",user:null,projects:[],assets:[],jobs:[],stageTimelines:{},audit:[],members:[],reviews:[],projectId:"",message:"",ffmpeg:false,ffprobe:false,textGatewayEnabled:false,textGatewayConfigured:false,imageGatewayEnabled:false,imageGatewayConfigured:false,providers:[],remoteUsage:null
 };
 const esc=(value:unknown)=>String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]||c));
 const fmt=(value:string)=>new Date(value).toLocaleString();
@@ -50,8 +51,12 @@ function renderAssets(){
  }).join("")+'</div>';
 }
 function renderJobs(){
- if(!state.jobs.length)return '<div class="empty">No jobs submitted. Media processing jobs will appear here with progress, events and output assets.</div>';
- return '<div class="runtime-jobs">'+state.jobs.map(j=>'<article class="runtime-job"><div class="runtime-job-heading"><b>'+esc(j.jobType)+'</b><span class="job-status '+esc(j.status)+'">'+esc(j.status)+'</span></div><code>'+esc(j.id)+'</code><div class="progress"><i style="width:'+Math.max(0,Math.min(100,j.progress))+'%"></i></div><small>'+Math.round(j.progress)+'% · '+fmt(j.createdAt)+'</small>'+(j.error?'<p class="job-error">'+esc(j.error.code||"ERROR")+' · '+esc(j.error.message||"")+'</p>':'')+(j.status==="queued"||j.status==="running"?'<button data-ev-cancel="'+esc(j.id)+'">Cancel</button>':'')+((j.output&&typeof j.output==="object"&&"outputAsset" in j.output&&j.output.outputAsset&&typeof j.output.outputAsset==="object"&&"id" in j.output.outputAsset)?'<a class="download-output" href="/api/assets/'+esc((j.output.outputAsset as {id:string}).id)+'/file">Download output · '+esc((j.output.outputAsset as {name?:string}).name||"media file")+'</a>':'')+'</article>').join("")+'</div>';
+ if(!state.jobs.length)return '<div class="empty">No jobs submitted. Media processing jobs will appear here with progress, stage history and output assets.</div>';
+ return '<div class="runtime-jobs">'+state.jobs.map(j=>{
+  const stages=state.stageTimelines[j.id]||[];
+  const stageMarkup=stages.length?'<ol class="job-stage-list">'+stages.map(stage=>'<li class="job-stage '+esc(stage.status)+'"><span class="job-stage-indicator" aria-hidden="true"></span><div class="job-stage-copy"><b>'+esc(stage.label)+'</b><small>'+esc(stage.status)+(stage.durationMs!==null?' · '+(stage.durationMs<1000?stage.durationMs+' ms':(stage.durationMs/1000).toFixed(1)+' s'):'')+(stage.startedAt?' · '+fmt(stage.startedAt):'')+'</small>'+(stage.attributes?.errorCode?'<small class="job-stage-error">'+esc(stage.attributes.errorCode)+'</small>':'')+'</div></li>').join("")+'</ol>':'<p class="job-stage-empty">Stage details will appear as the worker reports progress.</p>';
+  return '<article class="runtime-job"><div class="runtime-job-heading"><b>'+esc(j.jobType)+'</b><span class="job-status '+esc(j.status)+'">'+esc(j.status)+'</span></div><code>'+esc(j.id)+'</code><div class="progress" role="progressbar" aria-label="Job progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="'+Math.max(0,Math.min(100,j.progress))+'"><i style="width:'+Math.max(0,Math.min(100,j.progress))+'%"></i></div><small>'+Math.round(j.progress)+'% · Updated '+fmt(j.updatedAt||j.createdAt)+'</small><details class="job-stage-details" '+(["running","failed"].includes(j.status)?"open":"")+'><summary>Execution stages <span>'+stages.length+'</span></summary>'+stageMarkup+'</details>'+(j.error?'<p class="job-error">'+esc(j.error.code||"ERROR")+' · '+esc(j.error.message||"")+'</p>':'')+(j.status==="queued"||j.status==="running"?'<button data-ev-cancel="'+esc(j.id)+'">Cancel</button>':'')+((j.output&&typeof j.output==="object"&&"outputAsset" in j.output&&j.output.outputAsset&&typeof j.output.outputAsset==="object"&&"id" in j.output.outputAsset)?'<a class="download-output" href="/api/assets/'+esc((j.output.outputAsset as {id:string}).id)+'/file">Download output · '+esc((j.output.outputAsset as {name?:string}).name||"media file")+'</a>':'')+'</article>';
+ }).join("")+'</div>';
 }
 export function renderRuntimeWorkspace(){
  return '<div id="runtime-workspace" data-runtime-view="runtime"><div class="runtime-toolbar">'+statusMarkup()+'<button class="secondary" data-ev-action="refresh">↻ Refresh</button>'+(state.user?'<button class="secondary" data-ev-action="logout">Sign out · '+esc(state.user.email)+'</button>':'')+'</div>'+
@@ -137,6 +142,12 @@ async function refresh(){
   apiRequest<{remoteUsage:RemoteUsage}>("/api/usage")
  ]);
  state.projects=projects.projects;state.assets=assets.assets;state.jobs=jobs.jobs;state.audit=audit.events;state.providers=providerCatalog.providers;state.remoteUsage=usageResponse.remoteUsage;window.dispatchEvent(new Event("ev:assets-updated"));
+  const recentJobs=state.jobs.slice(0,12);
+  const timelines=await Promise.all(recentJobs.map(async job=>{
+   try{const response=await apiRequest<{stages:RuntimeJobStage[]}>("/api/jobs/"+encodeURIComponent(job.id)+"/stages");return [job.id,response.stages||[]] as const;}
+   catch{return [job.id,[]] as const;}
+  }));
+  state.stageTimelines=Object.fromEntries(timelines);
  if(state.projectId&&!state.projects.some(p=>p.id===state.projectId))state.projectId="";
  if(!state.projectId&&state.projects.length)state.projectId=state.projects[0].id;
  if(previousProjectId!==state.projectId)window.dispatchEvent(new CustomEvent("ev:project-changed",{detail:{projectId:state.projectId}}));
@@ -154,7 +165,14 @@ export async function initRuntime(){
   catch(error){if(error instanceof ApiError&&error.status===401)state.status="auth-required";else throw error;}
  }catch(error){state.status="offline";state.message=error instanceof Error?error.message:"API unavailable";}
  paint();
+ if(!runtimePollingTimer)runtimePollingTimer=setInterval(()=>{
+  if(state.status!=="online"||document.visibilityState!=="visible"||!document.querySelector("#runtime-workspace"))return;
+  if(runtimeRefreshBusy)return;
+  runtimeRefreshBusy=true;void refresh().then(paint).catch(()=>{}).finally(()=>{runtimeRefreshBusy=false;});
+ },5000);
 }
+let runtimePollingTimer:ReturnType<typeof setInterval>|null=null;
+let runtimeRefreshBusy=false;
 async function authenticate(form:HTMLFormElement){
  const data=new FormData(form);
  try{
