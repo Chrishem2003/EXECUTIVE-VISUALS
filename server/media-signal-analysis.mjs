@@ -45,7 +45,7 @@ export function parseAudioMetrics(stderr=""){
  const peaks=[...text.matchAll(/Peak level dB:\s*(-?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)|-inf)/gi)].map(match=>match[1].toLowerCase()==="-inf"?null:Number(match[1]));
  const rms=[...text.matchAll(/RMS level dB:\s*(-?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)|-inf)/gi)].map(match=>match[1].toLowerCase()==="-inf"?null:Number(match[1]));
  const integrated=[...text.matchAll(/^\s*I:\s*(-?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+))\s*LUFS/gm)].map(match=>Number(match[1])).filter(Number.isFinite);
- const truePeaks=[...text.matchAll(/True peak:\\s*Peak:\\s*(-?(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)|-inf)\\s*dBFS/gi)].map(match=>match[1].toLowerCase()==="-inf"?null:Number(match[1]));
+ const truePeaks=[...text.matchAll(/True peak:\s*Peak:\s*(-?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)|-inf)\s*dBFS/gi)].map(match=>match[1].toLowerCase()==="-inf"?null:Number(match[1]));
  return {clippedSamples:clipped.length?Math.max(...clipped):null,peakDbfs:peaks.length?peaks.at(-1):null,truePeakDbfs:truePeaks.length?truePeaks.at(-1):null,rmsDbfs:rms.length?rms.at(-1):null,integratedLufs:integrated.length?integrated.at(-1):null};
 }
 export function buildAudioMetricFindings(metrics={}){
