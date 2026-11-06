@@ -26,16 +26,16 @@
 The cookie's Secure attribute is conditional on NODE_ENV=production or COOKIE_SECURE=true. Before any production release, verify the deployed environment sets one of these deliberately and that CORS_ORIGINS contains only the exact trusted application origins. This is a deployment verification item, not evidence that the current deployment is misconfigured.
 
 ### M8-02 — Authentication rate limiting is process-local
-**Priority:** P2  
-The in-memory limiter now prunes expired buckets and enforces a configurable capacity (`RATE_LIMIT_MAX_BUCKETS`, default 10,000), preventing unbounded growth from many distinct client addresses. Counters still do not aggregate across multiple API instances and reset when a process restarts. Before horizontally scaling or exposing local-password authentication broadly, use a shared rate-limit store and add distributed-limit tests. Do not treat the in-memory capacity guard as distributed protection.
+**Priority:** P2 architecture gate  
+The in-memory limiter prunes expired buckets and enforces a configurable capacity (`RATE_LIMIT_MAX_BUCKETS`, default 10,000). Counters do not aggregate across API instances and reset when a process restarts. The current Render blueprint defines one web service, SQLite on a persistent disk, and no shared Redis/Valkey service; this is a single-instance deployment shape, not a horizontally scalable rate-limit topology. Do not add a distributed limiter or provision infrastructure in isolation. First approve and implement the durable multi-instance data/storage architecture (PostgreSQL plus shared media storage), then select a shared rate-limit backend and test atomic behavior across instances. The local memory cap is not distributed protection.
 
-### M8-03 — Supabase identity lookup has no explicit request timeout
-**Priority:** P2 reliability/security hardening  
-The Supabase /auth/v1/user lookup uses fetch without an explicit abort deadline. Add a bounded timeout and fail closed on timeout/network errors, with tests using a controlled fetch implementation. Do not log bearer tokens or provider response bodies.
+### M8-03 — Supabase identity lookup transport and timeout
+**Priority:** Implemented; deployment verification remains  
+The Supabase `/auth/v1/user` lookup has a configurable abort deadline (`SUPABASE_AUTH_TIMEOUT_MS`, default 5 seconds, clamped to 100–30,000 ms), accepts only bounded Bearer tokens, requires HTTPS for remote identity-provider URLs (HTTP is allowed only for loopback development), and fails closed on timeout, network errors, non-success responses or malformed identity payloads. Unit tests use controlled fetch implementations. Verify timeout behavior through the deployed proxy/network path before release. Never log bearer tokens or provider response bodies.
 
 ### M8-04 — Session lifecycle coverage is incomplete
 **Priority:** P2  
-Expired-session rejection and pruning are now covered by an integration test. Session invalidation after credential changes and the intended idle/absolute lifetime policy still need review. The current implementation has a 30-day absolute expiry; production policy approval remains outstanding.
+Expired-session rejection and pruning are covered by an integration test. Session invalidation after credential changes and the intended idle/absolute lifetime policy still need review. The current implementation has a 30-day absolute expiry; there is no verified inactivity timeout or credential-change revocation policy. Document and approve these policies before changing session behavior. Relevant ASVS 5.0.0 checks include V7.1.1, V7.3.1–V7.3.2 and V7.4.1–V7.4.3.
 
 ### M8-05 — Production evidence is not yet available
 **Priority:** Release blocker  
@@ -54,12 +54,17 @@ The M8 integration test exercises:
 - Expired-session rejection and removal from persisted sessions.
 - Strict Bearer-token parsing for Supabase identity verification.
 - Supabase identity timeout, network-error, rejected-response, malformed-payload and remote cleartext-transport rejection.
+- Project permission revalidation before resumable-upload finalization after a collaborator's access is revoked.
 - Bounded in-memory rate-limit storage, expired-key pruning and capacity behavior.
 - Exact same-origin scheme matching and rejection of malformed Origin serialization.
 
 CI must pass on the draft pull request before these changes are considered verified.
 
-## 4. Release gates
+## 4. Architecture decision and release gates
+
+The current Render blueprint is a single web service backed by SQLite on a persistent disk. Multi-instance scaling is blocked until the application data store and media storage are migrated to shared durable services. A shared rate limiter is therefore a dependent architecture milestone, not a standalone Redis toggle. Preserve the current single-instance deployment until that migration has its own staging acceptance, backup/restore evidence and rollback plan.
+
+
 
 Do not enable production release based solely on green CI. Before production approval, require:
 
@@ -67,10 +72,10 @@ Do not enable production release based solely on green CI. Before production app
 2. Distributed rate limiting appropriate to the deployment topology.
 3. Verify the bounded external identity-provider timeout under the deployed network/proxy conditions.
 4. Expired-session and credential-change lifecycle tests.
-5. Tenant-isolation tests for every sensitive object family, including projects, assets, uploads, jobs, timelines, comments and usage records.
+5. Complete the tenant-isolation matrix for every sensitive object family, including projects, assets, uploads, jobs, timelines, comments, notifications and usage records; existing coverage is substantial but is not a complete independent verification.
 6. Backup/restore and rollback evidence for persistent storage and database changes.
 7. Human release approval after staging acceptance.
 
 ## 5. Scope and safety
 
-This milestone changes only malformed session-cookie parsing and adds integration tests. It does not change authentication providers, session lifetime, CORS policy, authorization roles, database schema, provider activation, or production infrastructure. All automated integration tests use the isolated local API process and temporary SQLite data.
+This milestone hardens malformed session-cookie parsing, bounded Supabase identity verification, Bearer-token parsing, remote TLS requirements, process-local rate-limit memory bounds, and exact CORS origin validation; it also adds regression tests for these controls and upload-permission revalidation. It does not change authentication providers, session lifetime, authorization roles, database schema, provider activation, or production infrastructure. All automated integration tests use the isolated local API process and temporary SQLite data.
