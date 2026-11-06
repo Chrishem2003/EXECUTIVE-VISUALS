@@ -40,12 +40,12 @@ function sessionFrom(payload){
 }
 export async function signInWithSupabasePassword({supabaseUrl,publishableKey,email,password,fetchImpl=fetch}){
  const normalizedEmail=String(email||"").trim().toLowerCase(),secret=String(password||"");
- if(!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(normalizedEmail)||secret.length<1||secret.length>256)throw fail("Enter a valid email and password.","INVALID_CREDENTIALS",400);
+ if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)||secret.length<1||secret.length>256)throw fail("Enter a valid email and password.","INVALID_CREDENTIALS",400);
  return sessionFrom(await request({supabaseUrl,publishableKey,path:"/auth/v1/token?grant_type=password",method:"POST",body:{email:normalizedEmail,password:secret},fetchImpl}));
 }
 export async function signUpWithSupabasePassword({supabaseUrl,publishableKey,email,password,fetchImpl=fetch}){
  const normalizedEmail=String(email||"").trim().toLowerCase(),secret=String(password||"");
- if(!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(normalizedEmail)||secret.length<12||secret.length>256)throw fail("Enter a valid email and a password of at least 12 characters.","INVALID_CREDENTIALS",400);
+ if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)||secret.length<12||secret.length>256)throw fail("Enter a valid email and a password of at least 12 characters.","INVALID_CREDENTIALS",400);
  const payload=await request({supabaseUrl,publishableKey,path:"/auth/v1/signup",method:"POST",body:{email:normalizedEmail,password:secret},fetchImpl});
  if(typeof payload.access_token!=="string"||typeof payload.refresh_token!=="string"||!payload.user?.id)
   return {confirmationRequired:true,user:payload.user?.id?{id:String(payload.user.id),email:String(payload.user.email||normalizedEmail)}:null};
