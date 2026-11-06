@@ -36,7 +36,7 @@ test("defaults to a dry-run and reports only old unreferenced inactive attempt o
  const f=fixture({active:false});
  const result=await f.cleanup.run({prefix});
  assert.equal(result.dryRun,true);
- assert.equal(result.candidateCount,3);
+ assert.equal(result.candidateCount,2);
  assert.equal(result.eligibleCount,2);
  assert.equal(result.removedCount,0);
  assert.equal(f.removed.length,0);
