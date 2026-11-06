@@ -210,6 +210,7 @@ async function processNextJob() {
   addJobEvent(db,job.id,job.owner_id,"job.started",{attempt:current.attempt_count,workerLease:true});
   recordJobStage(db,{jobId:job.id,ownerId:job.owner_id,stageId:"execution",label:"Job execution",status:"running",attributes:{attempt:current.attempt_count}});
   let leaseLost=false;
+  let activeStage=null;
   const heartbeat=setInterval(()=>{
     if(!renewJobLease(db,job.id,WORKER_ID)){
       leaseLost=true;
@@ -222,7 +223,11 @@ async function processNextJob() {
     const execute=current.job_type==="workflow.execute"?executeWorkflowRun:executeMediaJob;
     const result=await execute({
       db,job:current,mediaRoot:MEDIA_ROOT,activeProcesses,
-      onStage:stage=>recordJobStage(db,{jobId:job.id,ownerId:job.owner_id,stageId:stage.id,label:stage.label,status:stage.status,attributes:stage.attributes}),
+      onStage:stage=>{
+        recordJobStage(db,{jobId:job.id,ownerId:job.owner_id,stageId:stage.id,label:stage.label,status:stage.status,attributes:stage.attributes});
+        if(stage.status==="running")activeStage=stage;
+        else if(activeStage?.id===stage.id)activeStage=null;
+      },
       onProgress:value=>{
         const changed=db.prepare("UPDATE jobs SET progress=?,updated_at=? WHERE id=? AND status='running' AND lease_owner=? AND lease_expires_at>?")
           .run(value,now(),job.id,WORKER_ID,now());
@@ -240,6 +245,7 @@ async function processNextJob() {
       audit(db,job.owner_id,"job.succeeded","job",job.id,{jobType:job.job_type},job.project_id);
     }
   } catch(error) {
+    if(activeStage)recordJobStage(db,{jobId:job.id,ownerId:job.owner_id,stageId:activeStage.id,label:activeStage.label,status:"failed",attributes:{...(activeStage.attributes||{}),errorCode:error.code||"JOB_FAILED"}});
     recordJobStage(db,{jobId:job.id,ownerId:job.owner_id,stageId:"execution",label:"Job execution",status:"failed",attributes:{errorCode:error.code||"JOB_FAILED"}});
     const latest=db.prepare("SELECT status,attempt_count,max_attempts,lease_owner,lease_expires_at FROM jobs WHERE id=?").get(job.id);
     if(latest?.status==="cancelled"||leaseLost||latest?.lease_owner!==WORKER_ID||!latest?.lease_expires_at||Date.parse(latest.lease_expires_at)<=Date.now())return;
