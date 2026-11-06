@@ -177,7 +177,7 @@ document.addEventListener("click",event=>{
  const submit=form.querySelector<HTMLButtonElement>('button[type="submit"]');
  if(submit)submit.textContent=mode==="register"?"Create secure account":"Continue securely";
  const password=form.elements.namedItem("password") as HTMLInputElement|null;
- if(password)password.autocomplete=mode==="register"?"new-password":"current-password";
+ if(password){password.autocomplete=mode==="register"?"new-password":"current-password";password.minLength=mode==="register"?12:1;password.placeholder=mode==="register"?"At least 12 characters":"Your password";}
 });
 document.addEventListener("submit",event=>{
  const form=event.target as HTMLFormElement;
