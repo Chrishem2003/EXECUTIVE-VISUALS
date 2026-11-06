@@ -77,3 +77,10 @@ test("includes freeze warnings and scene-change timestamps in QA evidence",()=>{
 import { captionStyle } from "../media.mjs";
 test("caption styles render readable background panels and configurable typography",()=>{const style=captionStyle({fontSize:38,primaryColor:"#F2E8D5",backgroundColor:"#101820",backgroundOpacity:0.7,backgroundMode:"box",outline:2,shadow:1,alignment:2,marginV:54});assert.match(style,/FontSize=38/);assert.match(style,/BorderStyle=3/);assert.match(style,/BackColour=&H4D201810/i);assert.match(style,/Alignment=2/);});
 test("caption panels can be disabled without losing text styling",()=>{const style=captionStyle({backgroundMode:"none",fontSize:30});assert.match(style,/BorderStyle=1/);assert.match(style,/FontSize=30/);});
+
+test("preserves neural voice activity segments in media quality evidence",()=>{
+ const voiceActivity={method:"silero-neural-vad",model:"silero-v6.2",sampleRate:16000,threshold:0.5,holdoffMs:300,durationSeconds:10,windowCount:312,speechWindowCount:120,speechDurationSeconds:3.8,speechRatio:0.38,segments:[{start:1.2,end:2.4},{start:5.1,end:7.7}]};
+ const report=buildMediaQualityReport({format:{duration:"10"},streams:[{codec_type:"audio",codec_name:"aac",sample_rate:"48000",channels:2}],signalAnalysis:{method:"ffmpeg-and-silero-vad",performed:["silero-vad"],voiceActivity}});
+ assert.deepEqual(report.signalAnalysis.voiceActivity,voiceActivity);
+ assert.equal(report.signalAnalysis.performed.includes("silero-vad"),true);
+});
