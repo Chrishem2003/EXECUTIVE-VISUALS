@@ -88,7 +88,7 @@ test("worker drains an in-flight heartbeat before attempting terminal completion
  const queue=queueFor({renew:()=>{heartbeatStarted();return gate;}});
  const keepAlive=setTimeout(()=>{},5000);
  const running=runCloudWorkerCycle({
-  queue,workerId:"worker-1",leaseSeconds:15,heartbeatIntervalMs:5,
+  queue,workerId:"worker-1",leaseSeconds:15,heartbeatIntervalMs:1000,
   execute:async()=>{await started;return{assetId:"asset-after-heartbeat"};}
  });
  await started;
