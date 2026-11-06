@@ -1,7 +1,7 @@
 -- Frame-accurate review records and append-only review event history.
 -- Apply only after the isolated Executive Visuals core migration has been reviewed.
 alter table executive_visuals.reviews
-  add column if not exists timeline_id uuid references executive_visuals.timelines(id) on delete set null,
+  add column if not exists timeline_id uuid references executive_visuals.timelines(id) on delete restrict,
   add column if not exists timeline_revision integer,
   add column if not exists frame_number bigint,
   add column if not exists duration_frames integer,
@@ -25,7 +25,7 @@ alter table executive_visuals.reviews
   ),
   add constraint ev_reviews_timeline_anchor_consistent check (
     (timeline_id is null and timeline_revision is null)
-    or (timeline_id is not null and timeline_revision is not null and asset_id is not null and frame_number is not null)
+    or (timeline_id is not null and timeline_revision is not null and frame_number is not null)
   );
 
 create unique index if not exists ev_reviews_owner_request
@@ -37,7 +37,7 @@ create index if not exists ev_reviews_timeline_revision
 
 create table if not exists executive_visuals.review_events (
   id bigint generated always as identity primary key,
-  review_id uuid not null references executive_visuals.reviews(id) on delete cascade,
+  review_id uuid not null references executive_visuals.reviews(id) on delete restrict,
   owner_id uuid not null references auth.users(id) on delete cascade,
   project_id uuid not null references executive_visuals.projects(id) on delete cascade,
   actor_id uuid not null references auth.users(id) on delete restrict,
@@ -51,7 +51,8 @@ create index if not exists ev_review_events_review_created
 alter table executive_visuals.review_events enable row level security;
 revoke all on executive_visuals.review_events from public,anon,authenticated;
 grant select on executive_visuals.review_events to authenticated;
-grant all privileges on executive_visuals.review_events to service_role;
+grant select,insert on executive_visuals.review_events to service_role;
+revoke update,delete on executive_visuals.review_events from service_role;
 
 -- Internal comments are visible only to project owners, their author, editors and reviewers.
 drop policy if exists ev_reviews_read on executive_visuals.reviews;
