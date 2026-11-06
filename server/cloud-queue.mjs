@@ -1,5 +1,6 @@
 const SCHEMA = "executive_visuals";
 const RPC = new Set(["claim_next_job_v2","renew_job_lease_v2","recover_expired_jobs","finish_job_v2","assert_job_lease_v2"]);
+const LEASE_TOKEN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function endpoint(value) {
   let url;
@@ -79,18 +80,18 @@ export function createCloudQueue({
       if (rows === null || rows === undefined) return null;
       if (!Array.isArray(rows) || rows.length > 1) throw new Error("Cloud queue claim returned an invalid result.");
       const row = rows[0] || null;
-      if (row && (row.status !== "processing" || row.lease_owner !== workerId || !row.lease_expires_at || !row.id || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(row.lease_token || ""))) {
+      if (row && (row.status !== "processing" || row.lease_owner !== workerId || !row.lease_expires_at || !row.id || !LEASE_TOKEN.test(row.lease_token || ""))) {
         throw new Error("Cloud queue returned a job without a valid worker lease.");
       }
       return row;
     },
     async renew(jobId, workerId, leaseSeconds = 90, leaseToken) {
-      if (!jobId || !workerId || !leaseToken) throw new Error("Job ID, worker ID and lease token are required to renew a lease.");
+      if (!jobId || !workerId || !LEASE_TOKEN.test(leaseToken || "")) throw new Error("Job ID, worker ID and a valid lease token are required to renew a lease.");
       if (!Number.isInteger(leaseSeconds) || leaseSeconds < 15 || leaseSeconds > 900) throw new Error("Lease duration must be between 15 and 900 seconds.");
       return (await call("renew_job_lease_v2", { p_job_id: jobId, p_worker_id: workerId, p_lease_token: leaseToken, p_lease_seconds: leaseSeconds })) === true;
     },
     async assertLease(jobId, workerId, leaseToken) {
-      if (!jobId || !workerId || !leaseToken) throw new Error("Job ID, worker ID and lease token are required to verify a lease.");
+      if (!jobId || !workerId || !LEASE_TOKEN.test(leaseToken || "")) throw new Error("Job ID, worker ID and a valid lease token are required to verify a lease.");
       return (await call("assert_job_lease_v2", { p_job_id: jobId, p_worker_id: workerId, p_lease_token: leaseToken })) === true;
     },
     async recover(limit = 100) {
@@ -100,7 +101,7 @@ export function createCloudQueue({
       return result;
     },
     async finish(jobId, workerId, status, output = null, error = null, leaseToken) {
-      if (!jobId || !workerId || !leaseToken) throw new Error("Job ID, worker ID and lease token are required to finish a job.");
+      if (!jobId || !workerId || !LEASE_TOKEN.test(leaseToken || "")) throw new Error("Job ID, worker ID and a valid lease token are required to finish a job.");
       if (!["succeeded","partial","failed","cancelled"].includes(status)) throw new Error("Invalid terminal job status.");
       for (const [label, value] of [["output", output], ["error", error]]) {
         if (value !== null && (typeof value !== "object" || Array.isArray(value))) throw new Error("Job " + label + " must be an object or null.");
