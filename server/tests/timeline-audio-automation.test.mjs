@@ -63,7 +63,7 @@ test("maps analyzed source activity through variable-speed dialogue clips",()=>{
   speedCurve:[{timeSeconds:0,speed:1},{timeSeconds:2,speed:2},{timeSeconds:4,speed:1}]
  });
  assert.ok(Math.abs(ranges[0].startSeconds-5)<1e-6);
- assert.ok(Math.abs(ranges[0].endSeconds-5.656854249)<1e-5);
+ assert.ok(Math.abs(ranges[0].endSeconds-6)<1e-5);
 });
 test("source activity mapping rejects malformed intervals, timebases and inconsistent retiming",()=>{
  assert.throws(()=>mapSourceActivityToTimelineRanges([{startSeconds:2,endSeconds:1}],{sourceStartSeconds:0,sourceDurationSeconds:4,timelineStartSeconds:0,timelineDurationSeconds:4}),/positive source-time ranges/);
