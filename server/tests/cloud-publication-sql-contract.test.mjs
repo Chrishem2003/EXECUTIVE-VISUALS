@@ -30,6 +30,17 @@ test("asset metadata and publication ledger are finalized inside the same databa
   assert.match(sql, /asset_row.object_path !~/i);
 });
 
+test("asset derivatives cannot cross owner/project boundaries or use deleted sources", async () => {
+  const sql = await readFile(migrationUrl, "utf8");
+  assert.match(sql, /create or replace function executive_visuals\\.validate_asset_derivative_scope_v1\\s*\\(/i);
+  assert.match(sql, /from executive_visuals\\.assets[\\s\\S]*?where id = new\\.derivative_of[\\s\\S]*?for key share/i);
+  assert.match(sql, /parent_asset\\.owner_id is distinct from new\\.owner_id/i);
+  assert.match(sql, /parent_asset\\.project_id is distinct from new\\.project_id/i);
+  assert.match(sql, /parent_asset\\.deleted_at is not null/i);
+  assert.match(sql, /create trigger ev_assets_validate_derivative_scope[\\s\\S]*?before insert or update of derivative_of, owner_id, project_id[\\s\\S]*?on executive_visuals\\.assets/i);
+  assert.match(sql, /revoke all on function executive_visuals\\.validate_asset_derivative_scope_v1\\(\\)[\\s\\S]*?from public, anon, authenticated, service_role/i);
+});
+
 test("atomic publication RPC is callable only by service_role", async () => {
   const sql = await readFile(migrationUrl, "utf8");
   assert.match(sql, /security definer\s+set search_path = ''/i);
