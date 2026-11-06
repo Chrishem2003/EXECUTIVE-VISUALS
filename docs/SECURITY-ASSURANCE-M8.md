@@ -53,7 +53,7 @@ The M8 integration test exercises:
 - Logout cookie expiry and server-side session revocation.
 - Expired-session rejection and removal from persisted sessions.
 - Strict Bearer-token parsing for Supabase identity verification.
-- Supabase identity timeout, network-error, rejected-response and malformed-payload handling.
+- Supabase identity timeout, network-error, rejected-response, malformed-payload and remote cleartext-transport rejection.
 - Bounded in-memory rate-limit storage, expired-key pruning and capacity behavior.
 - Exact same-origin scheme matching and rejection of malformed Origin serialization.
 
