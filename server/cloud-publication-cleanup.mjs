@@ -43,7 +43,7 @@ export function createCloudPublicationCleanup({
     try { await onEvent(Object.freeze({...event})); }
     catch { /* Audit callback failure must never broaden cleanup or hide a deletion result. */ }
   }
-  async function recordSkip(skipped, candidate, reason, extra={}, at) {
+  async function recordSkip(skipped, candidate, reason, extra={}, at, dryRun=true) {
     const item={...candidate,reason,...extra};
     skipped.push(item);
     await emit({
@@ -51,7 +51,7 @@ export function createCloudPublicationCleanup({
       objectPath:candidate.objectPath,
       createdAt:candidate.createdAt||null,
       reason,
-      dryRun:true,
+      dryRun,
       ...(extra.claimId?{claimId:extra.claimId}:{}),
       at
     });
@@ -100,7 +100,7 @@ export function createCloudPublicationCleanup({
         const objectPath=prefix+entry.name;
         const created=Date.parse(entry.createdAt||"");
         if(!Number.isFinite(created)) {
-          await recordSkip(skipped,{objectPath},"created_at_unavailable",{},eventAt);
+          await recordSkip(skipped,{objectPath},"created_at_unavailable",{},eventAt,dryRun);
           continue;
         }
         if(created>nowMs-olderThanMs)continue;
@@ -118,18 +118,18 @@ export function createCloudPublicationCleanup({
       const eligible=[];
       for(const candidate of candidates) {
         if(referenced.has(candidate.objectPath)) {
-          await recordSkip(skipped,candidate,"asset_reference_exists",{},eventAt);
+          await recordSkip(skipped,candidate,"asset_reference_exists",{},eventAt,dryRun);
           continue;
         }
         if(typeof isAttemptActive!=="function") {
-          await recordSkip(skipped,candidate,"lease_state_unavailable",{},eventAt);
+          await recordSkip(skipped,candidate,"lease_state_unavailable",{},eventAt,dryRun);
           continue;
         }
         let active;
         try { active=await isAttemptActive({prefix,objectPath:candidate.objectPath,createdAt:candidate.createdAt}); }
         catch { active=null; }
         if(active!==false) {
-          await recordSkip(skipped,candidate,active===true?"active_worker_lease":"lease_state_unavailable",{},eventAt);
+          await recordSkip(skipped,candidate,active===true?"active_worker_lease":"lease_state_unavailable",{},eventAt,dryRun);
           continue;
         }
         eligible.push(candidate);
@@ -146,7 +146,7 @@ export function createCloudPublicationCleanup({
               throw new Error("Durable cleanup claim was not granted.");
             }
           } catch {
-            await recordSkip(skipped,candidate,"durable_cleanup_claim_failed",{},eventAt);
+            await recordSkip(skipped,candidate,"durable_cleanup_claim_failed",{},eventAt,dryRun);
             continue;
           }
           try {
@@ -155,7 +155,7 @@ export function createCloudPublicationCleanup({
           } catch {
             // Keep the durable claim. A retry can safely repeat the Storage API
             // removal with the same claim token and then complete the tombstone.
-            await recordSkip(skipped,candidate,"storage_remove_failed",{claimId:claim.claimId},eventAt);
+            await recordSkip(skipped,candidate,"storage_remove_failed",{claimId:claim.claimId},eventAt,dryRun);
             continue;
           }
           try {
@@ -163,7 +163,7 @@ export function createCloudPublicationCleanup({
             if(completed!==true)throw new Error("Durable cleanup claim completion was not confirmed.");
             await emit({type:"publication.orphan_removed",prefix,objectPath:candidate.objectPath,createdAt:candidate.createdAt,claimId:claim.claimId,at:eventAt});
           } catch {
-            await recordSkip(skipped,candidate,"cleanup_claim_completion_failed",{claimId:claim.claimId},eventAt);
+            await recordSkip(skipped,candidate,"cleanup_claim_completion_failed",{claimId:claim.claimId},eventAt,dryRun);
           }
         }
       }
