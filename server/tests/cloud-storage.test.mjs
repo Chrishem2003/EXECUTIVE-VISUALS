@@ -58,6 +58,47 @@ test("signed URLs are short-lived, validated and pinned to the configured origin
  await assert.rejects(()=>foreign.createSignedUrl(path),/unsafe signed URL/);
 });
 
+test("lists an exact asset prefix with Storage List V2 cursor pagination",async()=>{
+ const calls=[];
+ const storage=createCloudStorage({...config,fetchImpl:async(url,options)=>{
+  calls.push({url,options});
+  return response({hasNext:true,nextCursor:"cursor-next",folders:[],objects:[
+   {id:"object-1",name:"attempt-423e4567-e89b-42d3-a456-426614174000.mp4",created_at:"2026-11-01T00:00:00Z",metadata:{size:12}},
+   {id:"object-2",name:"original.mp4",created_at:"2026-11-01T00:00:00Z"}
+  ]});
+ }});
+ const prefix=uuid+"/323e4567-e89b-42d3-a456-426614174000/";
+ const result=await storage.listObjects({prefix,limit:25});
+ assert.equal(calls[0].url,"https://example.supabase.co/storage/v1/object/list-v2/executive-visuals-media");
+ assert.equal(calls[0].options.method,"POST");
+ assert.deepEqual(JSON.parse(calls[0].options.body),{prefix,limit:25,with_delimiter:false,sortBy:{column:"name",order:"asc"}});
+ assert.equal(result.objects.length,2);
+ assert.equal(result.objects[0].createdAt,"2026-11-01T00:00:00Z");
+ assert.equal(result.hasNext,true);
+ assert.equal(result.nextCursor,"cursor-next");
+ await storage.listObjects({prefix,limit:25,cursor:result.nextCursor});
+ assert.equal(JSON.parse(calls[1].options.body).cursor,"cursor-next");
+ await assert.rejects(()=>storage.listObjects({prefix:"../"}),/exact owner-or-project/);
+ await assert.rejects(()=>storage.listObjects({prefix,limit:1001}),/pagination/);
+ await assert.rejects(()=>storage.listObjects({prefix,cursor:""}),/pagination/);
+});
+
+test("aborts a streaming upload when its worker execution signal is cancelled",async()=>{
+ const root=await mkdtemp(join(tmpdir(),"ev-storage-abort-")),file=join(root,"render.mp4");
+ await writeFile(file,Buffer.from("render"));
+ const controller=new AbortController();
+ const storage=createCloudStorage({...config,fetchImpl:async(url,options)=>{
+  if(options.signal.aborted)throw Object.assign(new Error("aborted"),{name:"AbortError"});
+  return await new Promise((resolve,reject)=>{
+   options.signal.addEventListener("abort",()=>reject(Object.assign(new Error("aborted"),{name:"AbortError"})),{once:true});
+  });
+ }});
+ const pending=storage.uploadFile(path,file,"video/mp4",{signal:controller.signal});
+ controller.abort();
+ await assert.rejects(()=>pending,error=>error.code==="CLOUD_STORAGE_UPLOAD_ABORTED");
+ await rm(root,{recursive:true,force:true});
+});
+
 test("removal is scoped to the fixed bucket and exact object prefix",async()=>{
  const calls=[];
  const storage=createCloudStorage({...config,fetchImpl:async(url,options)=>{calls.push({url,options});return response({});}});
