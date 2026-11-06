@@ -54,6 +54,7 @@
 - Review links, timestamped comments, drawing annotations, approvals and revision comparison.
 - Project/sequence locking, presence and publish checkpoints.
 - Asset version lineage, shared libraries, metadata search and content provenance.
+- [x] Neural voice activity analysis (draft PR #148): run the local Silero VAD v6.2 model against a mono 16 kHz analysis copy; preserve source-time speech regions and aggregate scores in probe evidence; fail open as an explicitly unavailable optional check when the native runtime is not installed; no transcription, speaker identity or paid API calls.
 - [x] Caption package export (draft PR #136): convert validated SRT/WebVTT tracks in either direction, preserve UTF-8 text and cue timing, generate per-language filenames and a versioned multilingual manifest, and reject malformed source cues, duplicate/invalid language tags and oversized track sets. Export remains a pure packaging boundary; UI download integration is a follow-on.
 - Export presets, subtitles, language packages, distribution renditions and delivery validation.
 

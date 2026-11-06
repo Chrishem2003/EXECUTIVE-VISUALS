@@ -1,14 +1,16 @@
 import { spawn, spawnSync } from "node:child_process";
 import { createReadStream } from "node:fs";
-import { mkdir, unlink, readFile, writeFile } from "node:fs/promises";
+import { mkdir, unlink, readFile, writeFile, mkdtemp, rm } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { join, extname } from "node:path";
+import { tmpdir } from "node:os";
 import { pipeline } from "node:stream/promises";
 import { createHash } from "node:crypto";
 import { stat } from "node:fs/promises";
 import { Transform } from "node:stream";
 import { addJobEvent, getAccessibleAsset, json, parseJson } from "./db.mjs";
 import { createRealEsrganAdapter } from "./ai-upscale-engine.mjs";
+import { analyzeVoiceActivityFile } from "./voice-activity-detection.mjs";
 import { parseBlackFrameEvents, parseSilenceEvents, parseAudioMetrics, parseFreezeEvents, parseSceneChangeTimes, runOptionalSignalCheck } from "./media-signal-analysis.mjs";
 
 const ALLOWED_JOBS = new Set(["media.probe", "media.thumbnail", "media.transcode", "media.audio_extract", "media.proxy", "media.denoise", "media.color", "media.resize", "media.interpolate", "media.upscale", "media.audio-clean", "media.ai-upscale", "timeline.render"]);
@@ -384,7 +386,7 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
     const result = await run("ffprobe", ["-v","error","-show_format","-show_streams","-of","json",sourcePath],30*60*1000,job.id,activeProcesses,cancelled);
     const metadata = JSON.parse(result.stdout || "{}");
     const streams=Array.isArray(metadata.streams)?metadata.streams:[];
-    const signalAnalysis={schemaVersion:2,method:"ffmpeg-best-effort-signal-analysis",blackFrames:[],silence:[],freezes:[],sceneChanges:[],audioMetrics:null,performed:[],unavailable:[],limitations:["Black-frame and silence detection are heuristic signal checks. They cannot determine whether an intentional pause, fade, or black transition is creatively correct.","Audio clipping and loudness metrics depend on installed FFmpeg filters and are not a substitute for mastering or perceptual review."]};
+    const signalAnalysis={schemaVersion:2,method:"ffmpeg-signal-analysis-with-optional-silero-vad",blackFrames:[],silence:[],freezes:[],sceneChanges:[],audioMetrics:null,voiceActivity:null,performed:[],unavailable:[],limitations:["Black-frame and silence detection are heuristic signal checks. They cannot determine whether an intentional pause, fade, or black transition is creatively correct.","Audio clipping and loudness metrics depend on installed FFmpeg filters and are not a substitute for mastering or perceptual review.","Neural voice activity detection estimates speech presence; it does not transcribe words, identify speakers, infer emotion or certify dialogue quality."]};
     if(streams.some(stream=>stream.codec_type==="video")){
       const check=await runOptionalSignalCheck(()=>run("ffmpeg",["-hide_banner","-i",sourcePath,"-map","0:v:0","-vf","blackdetect=d=0.1:pix_th=0.10","-an","-f","null","-"],10*60*1000,job.id,activeProcesses,cancelled,2_000_000),{isCancelled:cancelled});
       if(check.status==="completed"){signalAnalysis.blackFrames=parseBlackFrameEvents(check.result.stderr);signalAnalysis.performed.push("black-frame");}
@@ -399,6 +401,17 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
         signalAnalysis.silence=parseSilenceEvents(check.result.stderr,Number(metadata.format?.duration)||0);
         signalAnalysis.audioMetrics=parseAudioMetrics(check.result.stderr);signalAnalysis.performed.push("silence","audio-metrics");
       } else signalAnalysis.unavailable.push({check:"audio-signal-and-metrics",reason:check.reason});
+      const vadCheck=await runOptionalSignalCheck(async()=>{
+        const tempDir=await mkdtemp(join(tmpdir(),"executive-visuals-vad-"));
+        try{
+          const wavPath=join(tempDir,"analysis.wav");
+          await run("ffmpeg",["-hide_banner","-y","-i",sourcePath,"-map","0:a:0","-vn","-ac","1","-ar","16000","-c:a","pcm_s16le",wavPath],10*60*1000,job.id,activeProcesses,cancelled,2_000_000);
+          if(cancelled())throw Object.assign(new Error("Job cancelled."),{code:"JOB_CANCELLED"});
+          return await analyzeVoiceActivityFile({filePath:wavPath,durationSeconds:Number(metadata.format?.duration),threshold:0.5,holdoffMs:300});
+        }finally{await rm(tempDir,{recursive:true,force:true});}
+      },{isCancelled:cancelled});
+      if(vadCheck.status==="completed"){signalAnalysis.voiceActivity=vadCheck.result;signalAnalysis.performed.push("silero-vad");}
+      else signalAnalysis.unavailable.push({check:"voice-activity-detection",reason:vadCheck.reason});
     }
     metadata.signalAnalysis=signalAnalysis;
     return { metadata, outputAsset:null };
