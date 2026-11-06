@@ -66,6 +66,7 @@ export function createCloudTimelineExecutor({timelines,mediaIO,renderTimeline,pr
       const probeValidation=validateMediaOutputProbe(probed,output.mediaType);
       const sha256=await digest(output.path);
       onProgress(90);
+      if(signal?.aborted)throw Object.assign(new Error("Timeline render was cancelled."),{code:"JOB_CANCELLED"});
       const outputAsset=await mediaIO.publish({
         ownerId:job.owner_id,projectId:record.projectId,filename:output.filename,mediaType:output.mediaType,
         path:output.path,metadata:{...(output.metadata||{}),operation:"timeline.render",timelineId:record.id,timelineRevision:record.revision,sha256,probe:probed,probeValidation,render:output.render||{}}
