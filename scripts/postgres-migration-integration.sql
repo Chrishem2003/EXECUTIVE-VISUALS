@@ -260,7 +260,7 @@ INSERT INTO executive_visuals.jobs(
   'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
   '11111111-1111-4111-8111-111111111111',
   'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-  'timeline.render','queued','{"integration":"cleanup-fence"}'::jsonb
+  'timeline.render','failed','{"integration":"cleanup-fence"}'::jsonb
 );
 
 SELECT * FROM executive_visuals.reserve_asset_publication(
