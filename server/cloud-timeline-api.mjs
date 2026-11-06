@@ -315,7 +315,7 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
   }
  }
  async function checkReadiness(){
-  const required=["projects","project_members","assets","timelines","jobs","job_events"];
+  const required=["projects","project_members","assets","timelines","jobs","job_events","reviews","review_events"];
   for(const table of required){
    const rows=await request(table+"?select=id&limit=0");
    if(!Array.isArray(rows))throw new Error("Cloud timeline API readiness check failed for table "+table+".");
