@@ -58,6 +58,23 @@ test("signed URLs are short-lived, validated and pinned to the configured origin
  await assert.rejects(()=>foreign.createSignedUrl(path),/unsafe signed URL/);
 });
 
+test("lists only a bounded exact asset prefix through the Storage API",async()=>{
+ const calls=[];
+ const storage=createCloudStorage({...config,fetchImpl:async(url,options)=>{
+  calls.push({url,options});
+  return response([{name:"attempt-423e4567-e89b-42d3-a456-426614174000.mp4",created_at:"2026-11-01T00:00:00Z",metadata:{size:12}},{name:"original.mp4",created_at:"2026-11-01T00:00:00Z"}]);
+ }});
+ const prefix=uuid+"/323e4567-e89b-42d3-a456-426614174000/";
+ const result=await storage.listObjects({prefix,limit:25,offset:50});
+ assert.equal(calls[0].url,"https://example.supabase.co/storage/v1/object/list/executive-visuals-media");
+ assert.equal(calls[0].options.method,"POST");
+ assert.deepEqual(JSON.parse(calls[0].options.body),{prefix,limit:25,offset:50,sortBy:{column:"created_at",order:"asc"}});
+ assert.equal(result.length,2);
+ assert.equal(result[0].createdAt,"2026-11-01T00:00:00Z");
+ await assert.rejects(()=>storage.listObjects({prefix:"../"}),/exact owner-or-project/);
+ await assert.rejects(()=>storage.listObjects({prefix,limit:1001}),/pagination/);
+});
+
 test("removal is scoped to the fixed bucket and exact object prefix",async()=>{
  const calls=[];
  const storage=createCloudStorage({...config,fetchImpl:async(url,options)=>{calls.push({url,options});return response({});}});
