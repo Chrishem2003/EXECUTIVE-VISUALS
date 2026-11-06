@@ -67,3 +67,26 @@ test("atomic publication RPC is callable only by service_role", async () => {
   assert.match(sql, /grant execute on function executive_visuals\.finalize_asset_publication_v1[\s\S]*?to service_role/i);
   assert.match(sql, /revoke all on function executive_visuals\.complete_asset_publication\(uuid,text,uuid\)[\s\S]*?from public, anon, authenticated, service_role/i);
 });
+
+const cleanupMigrationUrl = new URL("../../supabase/migrations/20261107020000_asset_publication_cleanup_claims.sql", import.meta.url);
+
+test("durable cleanup claims serialize with publication and retain path tombstones", async () => {
+  const sql = await readFile(cleanupMigrationUrl, "utf8");
+  const claimStart = sql.indexOf("create or replace function executive_visuals.claim_asset_publication_cleanup_v1");
+  const completeStart = sql.indexOf("create or replace function executive_visuals.complete_asset_publication_cleanup_v1");
+  const finalizeStart = sql.lastIndexOf("create or replace function executive_visuals.finalize_asset_publication_v1");
+  assert.ok(claimStart >= 0 && completeStart > claimStart && finalizeStart > completeStart);
+  const claimSql = sql.slice(claimStart, completeStart);
+  assert.ok(claimSql.indexOf("from executive_visuals.jobs") < claimSql.indexOf("from executive_visuals.asset_publications"));
+  assert.match(claimSql, /for update[\s\S]*?from executive_visuals\.asset_publications[\s\S]*?for update/i);
+  assert.match(claimSql, /publication_row\.status <> 'reserved'/i);
+  assert.match(claimSql, /publication_row\.updated_at > pg_catalog\.clock_timestamp\(\) - p_min_age/i);
+  assert.match(claimSql, /from executive_visuals\.assets[\s\S]*?where a\.object_path = p_object_path/i);
+  assert.match(claimSql, /on conflict \(object_path\) do nothing/i);
+  const finalizer = sql.slice(finalizeStart);
+  assert.match(finalizer, /from executive_visuals\.asset_publication_cleanup_claims[\s\S]*?cleanup_claim\.object_path = p_object_path/i);
+  assert.match(finalizer, /asset object path is fenced by a durable cleanup claim/i);
+  assert.match(sql, /status = 'deleted'[\s\S]*?deleted_at = coalesce/i);
+  assert.match(sql, /grant execute on function executive_visuals\.claim_asset_publication_cleanup_v1[\s\S]*?to service_role/i);
+  assert.match(sql, /grant execute on function executive_visuals\.complete_asset_publication_cleanup_v1[\s\S]*?to service_role/i);
+});
