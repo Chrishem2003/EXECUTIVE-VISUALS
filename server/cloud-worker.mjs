@@ -30,6 +30,8 @@ export async function runCloudWorkerCycle({
   let heartbeatInFlight = Promise.resolve();
   onEvent({ type: "job.started", jobId: job.id, workerId });
 
+  // The database-issued lease token identifies this claim attempt, not the worker process.
+  // Drain any in-flight renewal before terminal writes so a late heartbeat cannot race completion.
   const heartbeat = setInterval(() => {
     if (heartbeatPending || heartbeatStopped || leaseLost || controller.signal.aborted) return;
     heartbeatPending = true;
