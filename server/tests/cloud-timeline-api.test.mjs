@@ -32,6 +32,19 @@ test("cloud render submission persists validated opt-in mastering settings",asyn
  const inserted=f.calls.find(c=>c[0]==="fetch"&&c[1].includes("/jobs")&&c[2].method==="POST");
  assert.deepEqual(JSON.parse(inserted[2].body).input.mastering,{enabled:true,integratedLufs:-16,loudnessRange:11,truePeakDbtp:-1.5,dualMono:false});
 });
+test("cloud render submission persists an allow-listed delivery profile",async()=>{
+ const f=setup();
+ const result=await f.api.handle({method:"POST",path:"/api/cloud/timelines/"+timelineId+"/render",ownerId:owner,body:{deliveryProfile:"vertical-1080p"}});
+ assert.equal(result.status,202);
+ const inserted=f.calls.find(c=>c[0]==="fetch"&&c[1].includes("/jobs")&&c[2].method==="POST");
+ assert.equal(JSON.parse(inserted[2].body).input.deliveryProfile,"vertical-1080p");
+});
+test("cloud render submission rejects unsupported delivery profiles before queuing",async()=>{
+ const f=setup();
+ const result=await f.api.handle({method:"POST",path:"/api/cloud/timelines/"+timelineId+"/render",ownerId:owner,body:{deliveryProfile:"custom-8192x8192"}});
+ assert.equal(result.status,422);
+ assert.equal(f.calls.some(c=>c[0]==="fetch"&&c[1].includes("/jobs")&&c[2].method==="POST"),false);
+});
 test("cloud render submission rejects unsafe mastering targets",async()=>{
  const f=setup();
  const result=await f.api.handle({method:"POST",path:"/api/cloud/timelines/"+timelineId+"/render",ownerId:owner,body:{mastering:{enabled:true,truePeakDbtp:-12}}});
