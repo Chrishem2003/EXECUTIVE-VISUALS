@@ -94,6 +94,52 @@ export function decibelsToLinearGain(value:number):number{
 }
 
 export interface DialogueActivityRange {startSeconds:number;endSeconds:number;}
+
+export interface SourceActivityInterval {startSeconds:number;endSeconds:number;}
+export interface SourceClipTiming {
+ sourceStartSeconds:number;
+ sourceDurationSeconds:number;
+ timelineStartSeconds:number;
+ timelineDurationSeconds:number;
+ speed?:number;
+ speedCurve?:readonly {timeSeconds:number;speed:number}[];
+}
+function speedAt(curve:readonly {timeSeconds:number;speed:number}[]|undefined,time:number,fallback:number):number{
+ if(!curve?.length)return fallback;
+ if(time<=curve[0].timeSeconds)return curve[0].speed;
+ for(let i=1;i<curve.length;i++){const left=curve[i-1],right=curve[i];if(time<=right.timeSeconds){const span=right.timeSeconds-left.timeSeconds;return span<=0?right.speed:left.speed+(right.speed-left.speed)*(time-left.timeSeconds)/span;}}
+ return curve[curve.length-1].speed;
+}
+function integrateSourceTime(curve:readonly {timeSeconds:number;speed:number}[]|undefined,time:number,fallback:number):number{
+ const end=Math.max(0,time);if(!curve?.length)return end*fallback;
+ const boundaries=[0,...curve.map(point=>point.timeSeconds).filter(value=>value>0&&value<end),end].sort((a,b)=>a-b);
+ let total=0;for(let i=1;i<boundaries.length;i++){const a=boundaries[i-1],b=boundaries[i];total+=(speedAt(curve,a,fallback)+speedAt(curve,b,fallback))*.5*(b-a);}
+ return total;
+}
+function timelineTimeForSourceElapsed(curve:readonly {timeSeconds:number;speed:number}[]|undefined,target:number,duration:number,fallback:number):number{
+ let low=0,high=duration;for(let i=0;i<48;i++){const middle=(low+high)/2;if(integrateSourceTime(curve,middle,fallback)<target)low=middle;else high=middle;}return(high+low)/2;
+}
+/** Maps source-file activity timestamps through trim and speed remapping into absolute timeline intervals. */
+export function mapSourceActivityToTimelineRanges(intervals:readonly SourceActivityInterval[],clip:SourceClipTiming):DialogueActivityRange[]{
+ const values=[clip.sourceStartSeconds,clip.sourceDurationSeconds,clip.timelineStartSeconds,clip.timelineDurationSeconds,clip.speed??1];
+ if(values.some(value=>!Number.isFinite(value))||clip.sourceStartSeconds<0||clip.sourceDurationSeconds<=0||clip.timelineStartSeconds<0||clip.timelineDurationSeconds<=0||clip.speed!==undefined&&(clip.speed<.25||clip.speed>4))throw new Error("Dialogue source clip timing is invalid.");
+ const fallback=clip.speed??1,curve=clip.speedCurve;
+ if(curve!==undefined&&(!Array.isArray(curve)||curve.length<2||curve.length>64||curve[0]?.timeSeconds!==0||curve.some((point,index)=>!point||!Number.isFinite(point.timeSeconds)||!Number.isFinite(point.speed)||point.speed<.25||point.speed>4||point.timeSeconds<0||point.timeSeconds>clip.timelineDurationSeconds||(index>0&&point.timeSeconds<=curve[index-1].timeSeconds))))throw new Error("Dialogue source speed curve is invalid.");
+ const mappedSourceDuration=integrateSourceTime(curve,clip.timelineDurationSeconds,fallback);
+ if(Math.abs(mappedSourceDuration-clip.sourceDurationSeconds)>Math.max(.02,clip.sourceDurationSeconds*.02))throw new Error("Dialogue source and timeline clip durations do not match the speed mapping.");
+ const sourceEnd=clip.sourceStartSeconds+clip.sourceDurationSeconds;
+ const output:DialogueActivityRange[]=[];
+ for(const interval of intervals){
+  if(!interval||!Number.isFinite(interval.startSeconds)||!Number.isFinite(interval.endSeconds)||interval.startSeconds<0||interval.endSeconds<=interval.startSeconds)throw new Error("Analyzed audio activity intervals must be finite positive source-time ranges.");
+  const start=Math.max(clip.sourceStartSeconds,interval.startSeconds),end=Math.min(sourceEnd,interval.endSeconds);
+  if(end<=start)continue;
+  const localStart=timelineTimeForSourceElapsed(curve,start-clip.sourceStartSeconds,clip.timelineDurationSeconds,fallback);
+  const localEnd=timelineTimeForSourceElapsed(curve,end-clip.sourceStartSeconds,clip.timelineDurationSeconds,fallback);
+  if(localEnd>localStart)output.push({startSeconds:Number((clip.timelineStartSeconds+localStart).toFixed(4)),endSeconds:Number((clip.timelineStartSeconds+localEnd).toFixed(4))});
+ }
+ return output.sort((a,b)=>a.startSeconds-b.startSeconds);
+}
+
 export interface DialogueDuckingOptions {
  musicStartSeconds:number;
  musicDurationSeconds:number;
