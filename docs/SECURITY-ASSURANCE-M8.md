@@ -13,7 +13,7 @@
 | Cookie protections | HttpOnly, SameSite=Strict, root path, 30-day max age; Secure when NODE_ENV=production or COOKIE_SECURE=true | Source verified; integration test added |
 | Logout | Logout deletes the matching persisted session hash and expires the cookie | Integration test added |
 | Malformed cookie handling | Invalid percent-encoding now resolves to an empty/invalid token and fails closed | Code change and integration test added |
-| Origin handling | Requests with a non-allowlisted Origin are rejected; configured/same-host origins receive credentialed CORS headers | Integration test added |
+| Origin handling | Requests with a non-allowlisted Origin are rejected; same-origin matching checks exact serialized origin, host and effective scheme; configured/same-origin origins receive credentialed CORS headers | Integration test added |
 | API authentication | API routes authenticate before serving protected workspace data | Existing integration tests cover anonymous denial |
 | Project authorization | Existing project-access helpers and cloud asset authorization distinguish owner/editor/reviewer/viewer permissions | Existing unit/integration coverage |
 | Upload ownership | Resumable upload sessions are owner-scoped, size-bounded, time-limited and project-write checked | Existing upload tests |
@@ -55,6 +55,7 @@ The M8 integration test exercises:
 - Strict Bearer-token parsing for Supabase identity verification.
 - Supabase identity timeout, network-error, rejected-response and malformed-payload handling.
 - Bounded in-memory rate-limit storage, expired-key pruning and capacity behavior.
+- Exact same-origin scheme matching and rejection of malformed Origin serialization.
 
 CI must pass on the draft pull request before these changes are considered verified.
 
