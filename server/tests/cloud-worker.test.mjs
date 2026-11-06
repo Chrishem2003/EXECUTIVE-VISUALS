@@ -78,3 +78,22 @@ test("worker refuses to execute a claimed job without a valid fencing token",asy
  await assert.rejects(()=>runCloudWorkerCycle({queue,workerId:"worker-1",execute:async()=>{executed=true;return{};}}),/fencing token/);
  assert.equal(executed,false);
 });
+
+test("worker drains an in-flight heartbeat before attempting terminal completion",async()=>{
+ let heartbeatStarted;
+ let releaseHeartbeat;
+ const started=new Promise(resolve=>{heartbeatStarted=resolve;});
+ const gate=new Promise(resolve=>{releaseHeartbeat=resolve;});
+ const queue=queueFor({renew:()=>{heartbeatStarted();return gate;}});
+ const running=runCloudWorkerCycle({
+  queue,workerId:"worker-1",leaseSeconds:15,heartbeatIntervalMs:1000,
+  execute:async()=>{await started;return{assetId:"asset-after-heartbeat"};}
+ });
+ await started;
+ await new Promise(resolve=>setTimeout(resolve,0));
+ assert.equal(queue.calls.some(call=>call[0]==="finish"),false,"finish must wait for the pending lease renewal");
+ releaseHeartbeat(true);
+ const result=await running;
+ assert.equal(result.status,"succeeded");
+ assert.equal(queue.calls.some(call=>call[0]==="finish"),true);
+});
