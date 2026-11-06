@@ -947,8 +947,29 @@ export function createAppServer() {
         }
       }
       if(path==="/api/audit"&&req.method==="GET"){
-        const rows=db.prepare("SELECT id,project_id,event_type,subject_type,subject_id,details_json,created_at FROM audit_events WHERE (project_id IS NULL AND owner_id=?) OR project_id IN (SELECT id FROM projects WHERE owner_id=?) OR project_id IN (SELECT project_id FROM project_members WHERE member_id=?) ORDER BY id DESC LIMIT 200").all(user.id,user.id,user.id);
-        send(res,200,{events:rows.map(x=>({id:x.id,projectId:x.project_id,type:x.event_type,subjectType:x.subject_type,subjectId:x.subject_id,details:parseJson(x.details_json),createdAt:x.created_at}))},cors);return;
+        const projectId=String(url.searchParams.get("projectId")||"").trim();
+        const beforeRaw=url.searchParams.get("beforeId");
+        const beforeId=beforeRaw===null?null:Number(beforeRaw);
+        const requestedLimit=Number(url.searchParams.get("limit")||50);
+        const limit=Number.isInteger(requestedLimit)&&requestedLimit>0?Math.min(100,requestedLimit):50;
+        const eventType=String(url.searchParams.get("eventType")||"").trim().slice(0,120);
+        if(beforeRaw!==null&&(!Number.isSafeInteger(beforeId)||beforeId<1)){fail(res,400,"INVALID_AUDIT_CURSOR","Audit cursor must be a positive event identifier.");return;}
+        let where,params;
+        if(projectId){
+          const access=getProjectAccess(db,user.id,projectId);
+          if(!access){fail(res,404,"PROJECT_NOT_FOUND","Project not found.");return;}
+          where="a.project_id=?";
+          params=[projectId];
+        }else{
+          where="((a.project_id IS NULL AND a.owner_id=?) OR a.project_id IN (SELECT id FROM projects WHERE owner_id=?) OR a.project_id IN (SELECT project_id FROM project_members WHERE member_id=?))";
+          params=[user.id,user.id,user.id];
+        }
+        if(beforeId!==null){where+=" AND a.id<?";params.push(beforeId);}
+        if(eventType){where+=" AND a.event_type=?";params.push(eventType);}
+        params.push(limit+1);
+        const rows=db.prepare("SELECT a.id,a.project_id,a.owner_id,a.event_type,a.subject_type,a.subject_id,a.details_json,a.created_at,u.email AS actor_email FROM audit_events a LEFT JOIN users u ON u.id=a.owner_id WHERE "+where+" ORDER BY a.id DESC LIMIT ?").all(...params);
+        const hasMore=rows.length>limit,visible=rows.slice(0,limit);
+        send(res,200,{events:visible.map(x=>({id:x.id,projectId:x.project_id,type:x.event_type,subjectType:x.subject_type,subjectId:x.subject_id,details:parseJson(x.details_json),actorEmail:x.actor_email||null,createdAt:x.created_at})),nextCursor:hasMore?visible[visible.length-1].id:null,hasMore},cors);return;
       }
       fail(res,404,"NOT_FOUND","API route not found.");
     } catch(error) {
