@@ -14,7 +14,7 @@ import {
 async function fixture(t) {
   const root = await mkdtemp(join(tmpdir(), "ev-resumable-upload-"));
   const db = new DatabaseSync(":memory:");
-  db.exec("PRAGMA foreign_keys=ON; CREATE TABLE users(id TEXT PRIMARY KEY); CREATE TABLE projects(id TEXT PRIMARY KEY); CREATE TABLE assets(id TEXT PRIMARY KEY); INSERT INTO users(id) VALUES('owner'),('other');");
+  db.exec("PRAGMA foreign_keys=ON; CREATE TABLE users(id TEXT PRIMARY KEY); CREATE TABLE projects(id TEXT PRIMARY KEY); CREATE TABLE assets(id TEXT PRIMARY KEY); INSERT INTO users(id) VALUES('owner'),('other'); INSERT INTO projects(id) VALUES('project-1');");
   ensureResumableUploadSchema(db);
   t.after(async () => { db.close(); await rm(root, { recursive: true, force: true }); });
   return { root, db };
@@ -87,4 +87,21 @@ test("rejects a completed file whose SHA-256 differs from the declared checksum"
   await appendUploadChunk({db:f.db,mediaRoot:f.root,ownerId:"owner",id:session.id,offset:0,request:Readable.from([Buffer.from("RIFFWAVE")]),expectedChunkSize:8});
   await assert.rejects(prepareUploadCompletion({db:f.db,ownerId:"owner",id:session.id}),e=>e.code==="UPLOAD_CHECKSUM_MISMATCH");
   assert.equal(getUploadSession(f.db,"owner",session.id).status,"open");
+});
+
+test("rechecks project write permission when reading and appending chunks", async t => {
+  const f=await fixture(t), session=await create(f,{projectId:"project-1"});
+  assert.equal(getUploadSession(f.db,"owner",session.id,()=>false),null);
+  await assert.rejects(appendUploadChunk({
+    db:f.db,mediaRoot:f.root,ownerId:"owner",id:session.id,offset:0,
+    request:Readable.from([Buffer.from("RIFF")]),expectedChunkSize:4,
+    canWriteProject:()=>false
+  }),e=>e.code==="UPLOAD_SESSION_NOT_FOUND");
+  assert.equal(getUploadSession(f.db,"owner",session.id).offset,0);
+});
+
+test("limits each owner to ten active upload sessions", async t => {
+  const f=await fixture(t);
+  for(let i=0;i<10;i++) await create(f);
+  await assert.rejects(create(f),e=>e.code==="TOO_MANY_UPLOAD_SESSIONS");
 });
