@@ -166,7 +166,7 @@ BEGIN
     RAISE EXCEPTION 'anon unexpectedly has publication RPC access';
   END IF;
   IF NOT has_function_privilege('service_role',
-    'executive_visuals.finalize_asset_publication_v1(uuid,text,uuid,uuid,uuid,text,text,bigint,text,text,bigint,text,text,uuid,jsonb)',
+    'executive_visuals.finalize_asset_publication_v1(uuid,text,uuid,uuid,uuid,text,text,uuid,text,text,bigint,text,text,uuid,jsonb)',
     'EXECUTE') THEN
     RAISE EXCEPTION 'service_role lacks publication RPC access';
   END IF;
