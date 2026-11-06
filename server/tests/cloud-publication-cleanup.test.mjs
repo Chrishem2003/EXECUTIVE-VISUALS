@@ -36,6 +36,8 @@ test("defaults to a dry-run and reports only old unreferenced inactive attempt o
  const f=fixture({active:false});
  const result=await f.cleanup.run({prefix});
  assert.equal(result.dryRun,true);
+ assert.equal(result.hasNext,true);
+ assert.equal(result.nextCursor,"next-cleanup-page");
  assert.equal(result.candidateCount,2);
  assert.equal(result.eligibleCount,2);
  assert.equal(result.removedCount,0);
@@ -89,5 +91,6 @@ test("rejects unsafe prefixes, age thresholds and unbounded batches",async()=>{
  const f=fixture();
  await assert.rejects(()=>f.cleanup.run({prefix:"../"}),/exactly an owner-or-project/);
  await assert.rejects(()=>f.cleanup.run({prefix,olderThanMs:1000}),/24 hours/);
- await assert.rejects(()=>f.cleanup.run({prefix,limit:101}),/between 1 and 100/);\n await assert.rejects(()=>f.cleanup.run({prefix,cursor:""}),/cursor is invalid/);
+ await assert.rejects(()=>f.cleanup.run({prefix,limit:101}),/between 1 and 100/);
+ await assert.rejects(()=>f.cleanup.run({prefix,cursor:""}),/cursor is invalid/);
 });
