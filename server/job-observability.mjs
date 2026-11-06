@@ -46,8 +46,8 @@ export function getJobStageTimeline(db, jobId, ownerId) {
       durationMs: null, attributes: {}
     };
     if (row.event_type === "job.stage.running") {
+      if (existing.status !== "running") existing.startedAt = row.created_at;
       existing.status = "running";
-      existing.startedAt ||= row.created_at;
       existing.completedAt = null;
       existing.durationMs = null;
     } else if (row.event_type === "job.stage.succeeded" || row.event_type === "job.stage.failed" || row.event_type === "job.stage.skipped") {
