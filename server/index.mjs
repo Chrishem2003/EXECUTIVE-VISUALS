@@ -19,6 +19,7 @@ import { ensureRemoteUsageTable, getRemoteUsagePolicy } from "./usage-guardrails
 import { createCloudTimelineApi } from "./cloud-timeline-api.mjs";
 import { validateSrt, validateWebVtt } from "./caption-validation.mjs";
 import { ensureResumableUploadSchema, createUploadSession, getUploadSession, appendUploadChunk, prepareUploadCompletion, releaseUploadSession, resetUploadFinalization, abortUploadSession, cleanupExpiredUploadSessions } from "./resumable-uploads.mjs";
+import { recordJobStage, getJobStageTimeline } from "./job-observability.mjs";
 import { parseByteRange } from "./http-range.mjs";
 import { createWaveformCache } from "./waveform-cache.mjs";
 import { ensureTransformationPlanSchema, createTransformationPlan, approveTransformationPlan, listTransformationPlans, getTransformationPlan } from "./transformation-plans.mjs";
@@ -207,6 +208,7 @@ async function processNextJob() {
   if(!current)return;
   const job=current;
   addJobEvent(db,job.id,job.owner_id,"job.started",{attempt:current.attempt_count,workerLease:true});
+  recordJobStage(db,{jobId:job.id,ownerId:job.owner_id,stageId:"execution",label:"Job execution",status:"running",attributes:{attempt:current.attempt_count}});
   let leaseLost=false;
   const heartbeat=setInterval(()=>{
     if(!renewJobLease(db,job.id,WORKER_ID)){
@@ -220,6 +222,7 @@ async function processNextJob() {
     const execute=current.job_type==="workflow.execute"?executeWorkflowRun:executeMediaJob;
     const result=await execute({
       db,job:current,mediaRoot:MEDIA_ROOT,activeProcesses,
+      onStage:stage=>recordJobStage(db,{jobId:job.id,ownerId:job.owner_id,stageId:stage.id,label:stage.label,status:stage.status,attributes:stage.attributes}),
       onProgress:value=>{
         const changed=db.prepare("UPDATE jobs SET progress=?,updated_at=? WHERE id=? AND status='running' AND lease_owner=? AND lease_expires_at>?")
           .run(value,now(),job.id,WORKER_ID,now());
@@ -232,10 +235,12 @@ async function processNextJob() {
       const input=parseJson(current.input_json),source=getAccessibleAsset(db,current.owner_id,String(input.sourceAssetId||""),true);
       if(source){const existing=parseJson(source.metadata_json,{});db.prepare("UPDATE assets SET metadata_json=? WHERE id=?").run(json({...existing,probe:result.metadata}),source.id);}
     }
+    recordJobStage(db,{jobId:job.id,ownerId:job.owner_id,stageId:"execution",label:"Job execution",status:"succeeded",attributes:{progress:100}});
     if(completeJob(db,job.id,WORKER_ID,result,now())){
       audit(db,job.owner_id,"job.succeeded","job",job.id,{jobType:job.job_type},job.project_id);
     }
   } catch(error) {
+    recordJobStage(db,{jobId:job.id,ownerId:job.owner_id,stageId:"execution",label:"Job execution",status:"failed",attributes:{errorCode:error.code||"JOB_FAILED"}});
     const latest=db.prepare("SELECT status,attempt_count,max_attempts,lease_owner,lease_expires_at FROM jobs WHERE id=?").get(job.id);
     if(latest?.status==="cancelled"||leaseLost||latest?.lease_owner!==WORKER_ID||!latest?.lease_expires_at||Date.parse(latest.lease_expires_at)<=Date.now())return;
     const workflowRun=current.job_type==="workflow.execute"
@@ -862,6 +867,9 @@ export function createAppServer() {
           const active=activeProcesses.get(job.id);
           if(active&&!active.killed)active.kill("SIGTERM");
           send(res,200,{ok:true},cors);return;
+        }
+        if(jobMatch[2]==="stages"&&req.method==="GET"){
+          send(res,200,{stages:getJobStageTimeline(db,job.id,user.id)},cors);return;
         }
         if(jobMatch[2]==="events"&&req.method==="GET"){
           const events=db.prepare("SELECT id,event_type,event_json,created_at FROM job_events WHERE job_id=? ORDER BY id ASC").all(job.id);
