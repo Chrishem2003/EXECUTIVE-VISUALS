@@ -60,7 +60,7 @@ export function normalizeReviewCreate(input){
  if(!["comment","approve","request_changes"].includes(decision))fail("REVIEW_INVALID","Review decision is unsupported.");
  const visibility=input.visibility??"project";
  if(!["project","internal"].includes(visibility))fail("REVIEW_INVALID","Review visibility must be project or internal.");
- const requestId=input.requestId===undefined?null:boundedText(input.requestId,"Request ID",8,128);
+ const requestId=input.requestId===undefined||input.requestId===null?null:boundedText(input.requestId,"Request ID",8,128);
  return{projectId,assetId,timelineId,timelineRevision,frameNumber,durationFrames,timecodeSeconds,body:boundedText(input.body,"Review comment",1,10000),decision,visibility,annotation,requestId};
 }
 export function normalizeReviewPatch(input){
