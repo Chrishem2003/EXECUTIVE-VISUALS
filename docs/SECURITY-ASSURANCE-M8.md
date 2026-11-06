@@ -35,7 +35,7 @@ The Supabase /auth/v1/user lookup uses fetch without an explicit abort deadline.
 
 ### M8-04 — Session lifecycle coverage is incomplete
 **Priority:** P2  
-Add deterministic tests for expired-session rejection, session invalidation after credential changes, and the intended idle/absolute lifetime policy. The current implementation has a 30-day absolute expiry; production policy approval remains outstanding.
+Expired-session rejection and pruning are now covered by an integration test. Session invalidation after credential changes and the intended idle/absolute lifetime policy still need review. The current implementation has a 30-day absolute expiry; production policy approval remains outstanding.
 
 ### M8-05 — Production evidence is not yet available
 **Priority:** Release blocker  
@@ -51,6 +51,7 @@ The M8 integration test exercises:
 - Cross-origin request rejection.
 - Same-origin credentialed API access.
 - Logout cookie expiry and server-side session revocation.
+- Expired-session rejection and removal from persisted sessions.
 
 CI must pass on the draft pull request before this change is considered verified.
 
