@@ -9,7 +9,8 @@ on conflict do nothing;
 
 insert into executive_visuals.projects(id,owner_id,name) values
   ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','11111111-1111-4111-8111-111111111111','Integration project A'),
-  ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','22222222-2222-4222-8222-222222222222','Integration project B')
+  ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','22222222-2222-4222-8222-222222222222','Integration project B'),
+  ('cccccccc-cccc-4ccc-8ccc-cccccccccccc','11111111-1111-4111-8111-111111111111','Integration project C')
 on conflict do nothing;
 
 insert into executive_visuals.assets(
@@ -79,8 +80,7 @@ BEGIN
 
   BEGIN
     UPDATE executive_visuals.assets
-    SET owner_id='22222222-2222-4222-8222-222222222222',
-        project_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+    SET project_id='cccccccc-cccc-4ccc-8ccc-cccccccccccc'
     WHERE id='33333333-3333-4333-8333-333333333333';
     RAISE EXCEPTION 'derivative source reassignment unexpectedly succeeded';
   EXCEPTION WHEN check_violation THEN
