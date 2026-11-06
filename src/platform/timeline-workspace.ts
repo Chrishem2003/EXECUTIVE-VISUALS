@@ -530,7 +530,6 @@ document.addEventListener("change",event=>{
  if(target.name==="masteringIntegratedLufs")state.masteringSettings.integratedLufs=Number(target.value);
  if(target.name==="masteringLoudnessRange")state.masteringSettings.loudnessRange=Number(target.value);
  if(target.name==="masteringTruePeakDbtp")state.masteringSettings.truePeakDbtp=Number(target.value);
- const select=target as HTMLSelectElement;
  if(target.id==="tl-mode"){state.mode=target.value==="cloud"?"cloud":"local";state.timeline=null;state.selectedClipId="";void refresh().then(paint).catch(error=>{state.status="offline";state.message=error instanceof Error?error.message:"Workspace unavailable.";paint();});}
  if(target.id==="tl-cloud-project"){state.cloudProjectId=target.value;state.timeline=null;state.selectedClipId="";void refresh().then(paint).catch(error=>{state.status="offline";state.message=error instanceof Error?error.message:"Cloud project unavailable.";paint();});}
  if(target.id==="tl-saved-sequence"&&target.value){
