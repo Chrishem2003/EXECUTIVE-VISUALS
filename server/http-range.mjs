@@ -1,5 +1,5 @@
 function safeInteger(value) {
-  if (!/^\\d+$/.test(value)) return null;
+  if (!/^\d+$/.test(value)) return null;
   const parsed = Number(value);
   return Number.isSafeInteger(parsed) ? parsed : null;
 }
@@ -17,7 +17,7 @@ export function parseByteRange(header, size) {
   }
   if (header == null || String(header).trim() === "") return null;
   const value = String(header).trim();
-  const match = /^bytes=(\\d*)-(\\d*)$/i.exec(value);
+  const match = /^bytes=(\d*)-(\d*)$/i.exec(value);
   if (!match || (!match[1] && !match[2])) return null;
 
   if (size === 0) return { unsatisfiable: true };
