@@ -56,7 +56,7 @@ Minimum server-only configuration:
 - \`SUPABASE_URL\`
 - \`SUPABASE_SERVICE_ROLE_KEY\`
 
-The worker defaults to dry-run. It scans at most 10 stale publication records per cycle and 100 objects per publication; the polling interval defaults to five minutes. It checks that the owning job is terminal and has no live lease, verifies object references, persists an eligible-candidate audit event, obtains the database cleanup claim, removes only the exact attempt object, and completes the tombstone.
+The worker defaults to dry-run. It scans at most 10 stale publication records per cycle and up to three pages of 100 objects per publication; the polling interval defaults to five minutes. It checks that the owning job is terminal and has no live lease, verifies object references, persists an eligible-candidate audit event, obtains the database cleanup claim, removes only the exact attempt object, and completes the tombstone.
 
 ### Destructive mode
 
