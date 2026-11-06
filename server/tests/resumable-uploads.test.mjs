@@ -75,11 +75,13 @@ test("allows owner cancellation and removes partial data", async t => {
   assert.equal(getUploadSession(f.db,"owner",session.id),null);
 });
 
-test("cleans expired open sessions but does not sweep active writes", async t => {
-  const f=await fixture(t), session=await create(f);
-  f.db.prepare("UPDATE upload_sessions SET expires_at='2000-01-01T00:00:00.000Z' WHERE id=?").run(session.id);
+test("cleans expired open sessions but preserves a recently active write", async t => {
+  const f=await fixture(t), expired=await create(f), active=await create(f);
+  f.db.prepare("UPDATE upload_sessions SET expires_at='2000-01-01T00:00:00.000Z' WHERE id=?").run(expired.id);
+  f.db.prepare("UPDATE upload_sessions SET status='writing',expires_at='2000-01-01T00:00:00.000Z',updated_at=? WHERE id=?").run(new Date().toISOString(),active.id);
   assert.equal(await cleanupExpiredUploadSessions(f.db),1);
-  assert.equal(getUploadSession(f.db,"owner",session.id),null);
+  assert.equal(f.db.prepare("SELECT status FROM upload_sessions WHERE id=?").get(active.id).status,"writing");
+  assert.equal(getUploadSession(f.db,"owner",expired.id),null);
 });
 
 test("rejects a completed file whose SHA-256 differs from the declared checksum", async t => {
