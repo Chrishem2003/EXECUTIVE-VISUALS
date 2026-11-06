@@ -152,7 +152,13 @@ function originHeaders(req) {
     .split(",").map(x=>x.trim()).filter(Boolean);
   let parsed;
   try { parsed=new URL(origin); } catch { return null; }
-  if(!allowed.includes(origin) && parsed.host!==req.headers.host)return null;
+  if(parsed.origin!==origin||parsed.username||parsed.password)return null;
+  const forwardedProtocol=String(req.headers["x-forwarded-proto"]||"").split(",")[0].trim().toLowerCase();
+  const requestProtocol=forwardedProtocol==="https"||forwardedProtocol==="http"
+    ?forwardedProtocol
+    :req.socket.encrypted?"https":"http";
+  const sameOrigin=Boolean(req.headers.host)&&origin===requestProtocol+"://"+req.headers.host;
+  if(!allowed.includes(origin)&&!sameOrigin)return null;
   return {"access-control-allow-origin":origin,"access-control-allow-credentials":"true","vary":"Origin"};
 }
 function recordJob(dbRow) {
