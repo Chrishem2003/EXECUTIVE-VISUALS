@@ -456,3 +456,46 @@ This is a runnable worker entry point, not a deployed worker. Do not set the ena
 - Connected the Enhancement Lab to cloud draft create/list routes. Prompts and reference IDs are excluded from browser local storage; legacy local transformation drafts are purged on startup.
 - Added separate owner/editor budget approval metadata (estimate, covering budget, currency, adapter/capability declaration) and audit/job events. The local SQLite plan API remains available for development.
 - Submission remains intentionally blocked with an explicit adapter-unavailable response. The checkbox is not independent proof of person consent; evidence-backed consent verification is still required before person replacement can execute. No provider generation, credit spend, cloud migration or deployment has occurred.
+
+## Latest continuation — first-run onboarding
+
+- Added a responsive, actionable first-production checklist to the command centre.
+- The three steps link directly to the existing creative brief compiler, series producer and asset library; the dashboard derives completion from real local workspace records rather than a manually toggled progress value.
+- Progress is exposed with accessible progress semantics and a visible completion meter; completed steps are clearly identified.
+- The checklist disappears when all three milestones are complete. It does not create fake projects, upload files, call providers or change cloud/production state.
+- The feature is additive and local-first. Existing project and asset persistence behavior is unchanged.
+- GitHub Actions dependency installation, TypeScript checks and the full production build passed on commit `629fddcc0983d4a2df04ce258c487f49173e658c`.
+
+
+## Latest continuation — resumable production dashboard
+
+- Added a command-centre section for continuing recent creative briefs and series plans.
+- Brief cards show their saved style, audience, brief coverage score and a short brief excerpt; series cards show episode and season counts and target runtime.
+- Selecting a brief restores its existing brief and compiled Creative DNA into the AI Director. Selecting a series restores its active series context in the Series Producer.
+- The existing project list in the AI Director now has the same resume action.
+- This dashboard reads the existing browser planning state; it does not claim that these local planning drafts are cloud-persisted. Cloud projects, assets, timelines and jobs remain in their separately authenticated runtime workspace.
+- No provider is invoked, no database migration is applied, and no deployment or production configuration is changed.
+- GitHub Actions dependency installation, TypeScript checks and the full production build passed on commit `629fddcc0983d4a2df04ce258c487f49173e658c`.
+
+
+## Latest continuation — render-backed caption style presets
+
+- Added five reusable caption styles: Social high-contrast, Cinematic, Broadcast safe, Minimal and Top placement.
+- Presets populate the timeline caption clip inspector's existing font, size, color, alignment, panel, outline, shadow and safe-margin controls.
+- Preset choice is stored in clip metadata alongside the individual style values. Editing an individual style field changes the selector to Custom.
+- Presets deliberately use only properties already consumed by the local and cloud FFmpeg subtitle renderers; this avoids offering visual controls that the actual master renderer ignores.
+- Added contract checks for unique preset IDs, supported value ranges, immutable application and unknown-preset rejection. The checks are part of the production build.
+- Presets are style configuration only; they do not generate word-level karaoke timing, animated text, or a playback preview.
+- No migrations, provider activation, paid execution, or deployment changes.
+- GitHub Actions dependency installation, TypeScript checks and the full production build passed on commit `629fddcc0983d4a2df04ce258c487f49173e658c`.
+
+
+## Editorial sequence templates — 2 November 2026
+
+- Added five reusable sequence templates: Vertical short (9:16), Cinematic 4K, Podcast / interview, Product demo and Square social (1:1).
+- Each template creates a real editable timeline with explicit dimensions, frame rate, named picture/audio/graphics/caption tracks and versioned template metadata. Editors can still add, rename or remove tracks through the existing workspace.
+- Template creation is wired to both the authenticated cloud-project timeline API and the existing local timeline API. Cloud sequences remain scoped to the selected project; local sequences remain local.
+- Added build-time contract checks for unique template IDs, frame geometry, frame rate, track structure, safe empty defaults, timeline validity and unknown-template rejection.
+- Templates are starting structures only. They do not create media, invent content, trigger generation, or imply that cloud drafts are saved to a shared account unless the authenticated cloud workspace is selected.
+- Frame preview/playback, transitions and effects remain separate future milestones; no unsupported editor controls were added.
+- No migrations, provider activation, paid execution, production changes or deployment.
