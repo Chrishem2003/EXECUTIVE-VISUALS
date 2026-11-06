@@ -80,7 +80,7 @@ create or replace function executive_visuals.touch_review_updated_at()
 returns trigger
 language plpgsql
 set search_path = pg_catalog, executive_visuals
-as $
+as $$
 begin
   new.updated_at := now();
   if row(new.body,new.decision,new.status,new.visibility,new.annotation)
@@ -89,7 +89,7 @@ begin
   end if;
   return new;
 end;
-$;
+$$;
 drop trigger if exists ev_reviews_touch_updated_at on executive_visuals.reviews;
 create trigger ev_reviews_touch_updated_at
 before update on executive_visuals.reviews
