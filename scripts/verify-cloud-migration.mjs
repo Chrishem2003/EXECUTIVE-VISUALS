@@ -63,6 +63,7 @@ if (/\b(drop\s+table|truncate|delete\s+from)\b/i.test(checkpointSql)) issues.pus
 
 if (/\b(drop\s+table|truncate|delete\s+from)\b/i.test(fencingSql)) issues.push("Lease fencing migration must not contain destructive DDL/DML.");
 if (!fencingSql.includes("add column if not exists lease_token uuid")) issues.push("Jobs must store a per-attempt fencing token.");
+if (!fencingSql.includes("ev_jobs_processing_requires_lease_token") || !fencingSql.includes("check (status <> 'processing' or lease_token is not null) not valid")) issues.push("New processing jobs must require a lease token while legacy active rows drain.");
 if (!fencingSql.includes("lease_token=gen_random_uuid()")) issues.push("Every claim must generate a fresh database-side fencing token.");
 if (!fencingSql.includes("lease_token=p_lease_token")) issues.push("Lease renewal and completion must match the current fencing token.");
 if (!fencingSql.includes("lease_token=null") || !fencingSql.includes("lease_token=null,lease_expires_at=null")) issues.push("Recovery and completion must clear the prior fencing token.");
