@@ -364,4 +364,39 @@ BEGIN
 END;
 $cleanup_complete$;
 
+
+-- If a stale in-flight uploader recreates an already-cleaned attempt path,
+-- a later storage listing may re-claim that same tombstone with a fresh token.
+UPDATE executive_visuals.jobs
+SET status='failed',lease_owner=NULL,lease_token=NULL,
+    lease_expires_at=NULL,lease_heartbeat_at=NULL
+WHERE id='dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+
+CREATE TEMP TABLE cleanup_reclaim_result AS
+SELECT * FROM executive_visuals.claim_asset_publication_cleanup_v1(
+  'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+  '11111111-1111-4111-8111-111111111111',
+  'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+  'integration:cleanup-fence',
+  'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee/attempt-99999999-9999-4999-8999-999999999998.mp4',
+  interval '24 hours'
+);
+
+DO $cleanup_reclaim$
+DECLARE old_claim record; new_claim record;
+BEGIN
+  SELECT * INTO old_claim FROM cleanup_claim_result;
+  SELECT * INTO new_claim FROM cleanup_reclaim_result;
+  IF new_claim.status <> 'claimed'
+     OR new_claim.claim_token = old_claim.claim_token THEN
+    RAISE EXCEPTION 'reappeared orphan path did not receive a fresh cleanup claim token';
+  END IF;
+  IF NOT executive_visuals.complete_asset_publication_cleanup_v1(
+    new_claim.claim_id,new_claim.claim_token
+  ) THEN
+    RAISE EXCEPTION 'reclaimed orphan path could not be completed';
+  END IF;
+END;
+$cleanup_reclaim$;
+
 SELECT 'PostgreSQL migration integration checks passed' AS result;
