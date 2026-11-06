@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createTimeline, addTrack, addClip, trimClip, splitClip, rational, seconds, validateTimeline, evaluateTimelineAtFrame } from "../../src/core/timeline.ts";
-import { audioAutomationPointFromGraphPosition, buildDialogueDuckingAutomation, parseAudioAutomationEditorInput } from "../../src/core/audio-automation.ts";
+import { audioAutomationPointFromGraphPosition, buildDialogueDuckingAutomation, mapSourceActivityToTimelineRanges, parseAudioAutomationEditorInput } from "../../src/core/audio-automation.ts";
 
 test("audio automation editor parser accepts valid keyframes and normalizes ordering",()=>{
  const points=parseAudioAutomationEditorInput('[{"timeSeconds":2,"gainDb":-12},{"timeSeconds":0,"pan":-0.5}]',3);
@@ -47,6 +47,28 @@ test("dialogue ducking rejects invalid timeline ranges and bounds reduction sett
  assert.throws(()=>buildDialogueDuckingAutomation({musicStartSeconds:0,musicDurationSeconds:4,dialogueRanges:[{startSeconds:2,endSeconds:1}]}),/positive timeline intervals/);
  const points=buildDialogueDuckingAutomation({musicStartSeconds:0,musicDurationSeconds:4,duckingDb:-99,dialogueRanges:[{startSeconds:1,endSeconds:2}]});
  assert.ok(points.some(p=>p.gainDb===-36));
+});
+
+test("maps analyzed source activity through trimmed constant-speed dialogue clips",()=>{
+ const ranges=mapSourceActivityToTimelineRanges([
+  {startSeconds:0,endSeconds:2},
+  {startSeconds:3,endSeconds:7},
+  {startSeconds:10,endSeconds:12}
+ ],{sourceStartSeconds:2,sourceDurationSeconds:10,timelineStartSeconds:10,timelineDurationSeconds:5,speed:2});
+ assert.deepEqual(ranges,[{startSeconds:10.5,endSeconds:12.5},{startSeconds:14,endSeconds:15}]);
+});
+test("maps analyzed source activity through variable-speed dialogue clips",()=>{
+ const ranges=mapSourceActivityToTimelineRanges([{startSeconds:1.25,endSeconds:3}],{
+  sourceStartSeconds:0,sourceDurationSeconds:6,timelineStartSeconds:4,timelineDurationSeconds:4,speed:1,
+  speedCurve:[{timeSeconds:0,speed:1},{timeSeconds:2,speed:2},{timeSeconds:4,speed:1}]
+ });
+ assert.ok(Math.abs(ranges[0].startSeconds-5)<1e-6);
+ assert.ok(Math.abs(ranges[0].endSeconds-6)<1e-5);
+});
+test("source activity mapping rejects malformed intervals, timebases and inconsistent retiming",()=>{
+ assert.throws(()=>mapSourceActivityToTimelineRanges([{startSeconds:2,endSeconds:1}],{sourceStartSeconds:0,sourceDurationSeconds:4,timelineStartSeconds:0,timelineDurationSeconds:4}),/positive source-time ranges/);
+ assert.throws(()=>mapSourceActivityToTimelineRanges([],{sourceStartSeconds:0,sourceDurationSeconds:4,timelineStartSeconds:0,timelineDurationSeconds:4,speed:5}),/timing is invalid/);
+ assert.throws(()=>mapSourceActivityToTimelineRanges([],{sourceStartSeconds:0,sourceDurationSeconds:4,timelineStartSeconds:0,timelineDurationSeconds:2,speed:1}),/do not match/);
 });
 function fixture(){
  let timeline=createTimeline("project","timeline","Audio test",{numerator:24,denominator:1});

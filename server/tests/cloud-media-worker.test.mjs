@@ -30,3 +30,24 @@ test("cloud media worker requires an explicit stable worker identity", () => {
     /worker ID/
   );
 });
+
+test("cloud media worker persists completed probe metadata to its source asset",async()=>{
+ const job={id:"job-probe",owner_id:"123e4567-e89b-42d3-a456-426614174000",project_id:"223e4567-e89b-42d3-a456-426614174000",job_type:"media.probe",input:{sourceAssetId:"323e4567-e89b-42d3-a456-426614174000"}};
+ const calls=[];let claimed=false;
+ const queue={
+  async claim(){if(claimed)return null;claimed=true;return job;},
+  async renew(){return true;},
+  async finish(id,workerId,status,output,error){calls.push({id,workerId,status,output,error});return true;},
+  async recover(){return 0;}
+ };
+ const worker=createCloudMediaWorker({
+  workerId:"media-worker-probe",queue,
+  assetService:{assets:{async updateMetadata(input){calls.push({metadataUpdate:input});return{id:job.input.sourceAssetId};}}},
+  mediaIO:{},
+  execute:async()=>({sourceAssetId:job.input.sourceAssetId,metadata:{signalAnalysis:{audioActivity:{status:"completed"}}}})
+ });
+ const result=await worker.runCycle({heartbeatIntervalMs:1000});
+ assert.equal(result.status,"succeeded");
+ assert.deepEqual(calls[0],{metadataUpdate:{ownerId:job.owner_id,assetId:job.input.sourceAssetId,patch:{probe:{signalAnalysis:{audioActivity:{status:"completed"}}}}}});
+ assert.equal(calls[1].status,"succeeded");
+});
