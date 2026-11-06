@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createCloudPublicationAuditSink } from "../cloud-publication-audit.mjs";
+import { createCloudPublicationAuditSink,createCloudPublicationAuditHandler } from "../cloud-publication-audit.mjs";
 
 const ownerId="11111111-1111-4111-8111-111111111111";
 const projectId="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
