@@ -64,7 +64,7 @@ export function renderNotifications(){
  return '<section class="panel"><div class="runtime-section-heading"><div><div class="eyebrow">COLLABORATION INBOX</div><h3>Notifications · '+state.unreadNotifications+' unread</h3></div>'+(state.unreadNotifications?'<button class="secondary" data-ev-notifications-read-all="true">Mark all read</button>':'')+'</div>'+
  (state.notifications.length?'<div class="notification-list">'+state.notifications.map(item=>'<article class="notification-item '+(item.readAt?'read':'unread')+'"><div><b>'+esc(item.eventType||"Project update")+'</b><small>'+esc(item.message||"A project update is available.")+'</small><small>'+esc(item.createdAt||"")+'</small></div>'+(item.readAt?'':'<button class="secondary" data-ev-notification-read="'+esc(item.id)+'">Mark read</button>')+'</article>').join("")+'</div>':'<div class="empty">No project notifications yet. Review comments and decisions will appear here.</div>')+'</section>';
 }
-function renderRuntimeWorkspace(){
+export function renderRuntimeWorkspace(){
  return '<div id="runtime-workspace" data-runtime-view="runtime"><div class="runtime-toolbar">'+statusMarkup()+'<button class="secondary" data-ev-action="refresh">↻ Refresh</button>'+(state.user?'<button class="secondary" data-ev-action="logout">Sign out · '+esc(state.user.email)+'</button>':'')+'</div>'+
  (state.status==="offline"?'<div class="notice">The local API is not reachable. Start the complete stack with <code>npm run dev</code>. Planning workspaces remain available; uploads and processing require the API.</div>':'')+
  (state.status==="auth-required"?'<div class="notice">Sign in to activate persistent project and media storage. Other planning workspaces remain available.</div>':'')+
