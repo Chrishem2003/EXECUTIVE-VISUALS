@@ -6,6 +6,7 @@ const checkpointSql = await readFile(resolve(process.cwd(), "supabase/migrations
 const fencingSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261107000000_job_lease_fencing_tokens.sql"), "utf8");
 const publicationSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261106230000_asset_publication_ledger.sql"), "utf8");
 const atomicPublicationSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261107010000_atomic_asset_publication_lease_fencing.sql"), "utf8");
+const cleanupAuditSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261107030000_publication_cleanup_audit_events.sql"), "utf8");
 const issues = [];
 const tables = ["projects","project_members","project_workspace_documents","workflows","workflow_runs","workflow_node_runs","timelines","assets","jobs","job_events","consents","reviews","audit_events"];
 for (const table of tables) {
@@ -121,6 +122,24 @@ if (!atomicPublicationSql.includes("revoke all on function executive_visuals.com
 
 
 
+if (/\b(drop\s+table|truncate|delete\s+from)\b/i.test(cleanupAuditSql)) issues.push("Publication cleanup audit migration must not contain destructive DDL/DML.");
+if (!cleanupAuditSql.includes("create table if not exists executive_visuals.publication_cleanup_audit_events")) issues.push("Append-only publication cleanup audit ledger is missing.");
+if (!cleanupAuditSql.includes("alter table executive_visuals.publication_cleanup_audit_events enable row level security;")) issues.push("Publication cleanup audit ledger must enable RLS.");
+if (!cleanupAuditSql.includes("revoke all on executive_visuals.publication_cleanup_audit_events from public, anon, authenticated, service_role;")
+ || !cleanupAuditSql.includes("grant select, insert on executive_visuals.publication_cleanup_audit_events to service_role;")) {
+  issues.push("Publication cleanup audit ledger must be private and service-role append/read only.");
+}
+if (!cleanupAuditSql.includes("before update or delete on executive_visuals.publication_cleanup_audit_events")
+ || !cleanupAuditSql.includes("publication cleanup audit events are append-only")) {
+  issues.push("Publication cleanup audit ledger must reject row updates and deletes.");
+}
+if (/references\s+(?:auth\.users|executive_visuals\.projects)/i.test(cleanupAuditSql)) {
+  issues.push("Publication cleanup audit evidence must not cascade with tenant resource deletion.");
+}
+for (const field of ["run_id uuid not null","actor_type text not null","owner_id uuid not null","object_path text","dry_run boolean not null","details jsonb not null"]) {
+  if (!cleanupAuditSql.includes(field)) issues.push("Publication cleanup audit evidence is missing field: "+field+".");
+}
+
 if ((sql.match(/create or replace function executive_visuals\.(?:claim_next_job|renew_job_lease|recover_expired_jobs|finish_job)\(/g) || []).length !== 4) {
   issues.push("All four cloud queue RPC definitions must be present exactly once.");
 }
@@ -158,5 +177,5 @@ if (issues.length) {
   for (const issue of issues) console.error("- " + issue);
   process.exitCode = 1;
 } else {
-  console.log(`Cloud migration guard passed: ${tables.length} RLS tables, immutable run snapshots, private storage, and server-only job/audit writes.`);
+  console.log(`Cloud migration guard passed: ${tables.length} core RLS tables, append-only cleanup audit ledger, immutable run snapshots, private storage, and server-only job/audit writes.`);
 }
