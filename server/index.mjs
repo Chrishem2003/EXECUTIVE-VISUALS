@@ -777,7 +777,7 @@ export function createAppServer() {
         const runs=db.prepare("SELECT id,workflow_id,workflow_revision,snapshot_hash,status,job_id,error_json,created_at,updated_at,completed_at FROM workflow_runs WHERE workflow_id=? ORDER BY created_at DESC LIMIT 50").all(workflow.id);
         send(res,200,{runs:runs.map(run=>({...run,error:parseJson(run.error_json,null)}))},cors);return;
       }
-      const workflowRunDetail=path.match(/^\/api\/workflow-runs\/([0-9a-f-]+)(?:\/(approve))?$/i);
+      const workflowRunDetail=path.match(/^\/api\/workflow-runs\/([0-9a-f-]+)(?:\/(approve|recover))?$/i);
       if(workflowRunDetail){
         const run=db.prepare("SELECT * FROM workflow_runs WHERE id=? AND ((project_id IS NULL AND owner_id=?) OR project_id IN (SELECT id FROM projects WHERE owner_id=?) OR project_id IN (SELECT project_id FROM project_members WHERE member_id=?))")
           .get(workflowRunDetail[1],user.id,user.id,user.id);
@@ -787,6 +787,24 @@ export function createAppServer() {
           const nodes=db.prepare("SELECT node_id,status,attempt,input_json,output_json,error_json,started_at,completed_at FROM workflow_node_runs WHERE run_id=? ORDER BY rowid").all(run.id);
           const snapshot=parseJson(run.snapshot_json);
           send(res,200,{run:{id:run.id,workflowId:run.workflow_id,revision:run.workflow_revision,status:run.status,snapshotHash:run.snapshot_hash,target:snapshot.runPlan?.target||{kind:"all"},executionOrder:snapshot.runPlan?.executionOrder||[],error:parseJson(run.error_json,null),createdAt:run.created_at,updatedAt:run.updated_at,completedAt:run.completed_at},nodes:nodes.map(node=>({...node,input:parseJson(node.input_json,{}),output:parseJson(node.output_json,null),error:parseJson(node.error_json,null)}))},cors);return;
+        }
+        if(req.method==="POST"&&workflowRunDetail[2]==="recover"){
+          if(!["owner","editor"].includes(access?.access_role||"")){fail(res,403,"EDITOR_REQUIRED","Owner or editor access is required to recover this workflow.");return;}
+          if(run.status!=="blocked"){fail(res,409,"WORKFLOW_NOT_BLOCKED","Only a blocked workflow run can be recovered.");return;}
+          const failure=parseJson(run.error_json,{});
+          if(failure.code!=="WORKFLOW_RECOVERY_REVIEW_REQUIRED"||!failure.nodeId){fail(res,409,"RECOVERY_NOT_ELIGIBLE","This workflow is not paused for interrupted side-effect review.");return;}
+          const body=await readJson(req);
+          if(body.confirmReplay!==true){fail(res,400,"REPLAY_CONFIRMATION_REQUIRED","Explicit confirmation is required because replay may repeat an external operation.");return;}
+          const node=db.prepare("SELECT * FROM workflow_node_runs WHERE run_id=? AND node_id=? AND status='blocked'").get(run.id,failure.nodeId);
+          if(!node){fail(res,409,"INTERRUPTED_NODE_NOT_FOUND","The interrupted node is no longer blocked.");return;}
+          const jobId=randomUUID();
+          const changed=db.prepare("UPDATE workflow_node_runs SET status='pending',error_json=NULL,completed_at=NULL WHERE id=? AND status='blocked'").run(node.id);
+          if(changed.changes!==1){fail(res,409,"RECOVERY_RACE","The interrupted node changed while recovery was requested.");return;}
+          db.prepare("UPDATE workflow_runs SET status='queued',job_id=?,updated_at=?,error_json=NULL,completed_at=NULL WHERE id=? AND status='blocked'").run(jobId,now(),run.id);
+          db.prepare("INSERT INTO jobs(id,owner_id,project_id,job_type,status,progress,input_json) VALUES(?,?,?,'workflow.execute','queued',0,?)").run(jobId,run.owner_id,run.project_id,json({runId:run.id}));
+          addJobEvent(db,jobId,run.owner_id,"job.queued",{jobType:"workflow.execute",runId:run.id,recoveryNodeId:failure.nodeId,explicitReplayConfirmation:true});
+          audit(db,user.id,"workflow.recovery_replay_confirmed","workflow_run",run.id,{nodeId:failure.nodeId,nodeKind:failure.nodeKind},run.project_id);
+          send(res,202,{runId:run.id,jobId,status:"queued",replayedNodeId:failure.nodeId,warning:"The interrupted operation may be repeated."},cors);return;
         }
         if(req.method==="POST"&&workflowRunDetail[2]==="approve"){
           if(!["owner","editor","reviewer"].includes(access?.access_role||"")){fail(res,403,"REVIEWER_REQUIRED","Reviewer permission is required to approve this step.");return;}
