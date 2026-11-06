@@ -116,7 +116,7 @@ function clearSupabaseSessionCookies(res){
 async function authenticate(req,res) {
  if (AUTH_MODE === "supabase") {
   const config={supabaseUrl:process.env.SUPABASE_URL,publishableKey:process.env.SUPABASE_PUBLISHABLE_KEY};
-  let token=(req.headers.authorization||"").replace(/^Bearer\\s+/i,"")||cookieValue(req,"ev_supabase_access");
+  let token=(req.headers.authorization||"").replace(/^Bearer\s+/i,"")||cookieValue(req,"ev_supabase_access");
   let user=token?await getSupabaseUser({...config,accessToken:token}):null;
   if(!user){
    const refreshToken=cookieValue(req,"ev_supabase_refresh");
@@ -303,7 +303,7 @@ export function createAppServer() {
           setSupabaseSessionCookies(res,result);send(res,201,{user:result.user,authMode:"supabase"},cors);return;
         }
         if(AUTH_MODE!=="local"||process.env.NODE_ENV==="production"){fail(res,403,"REGISTRATION_DISABLED","Local account registration is disabled in this environment.");return;}
-        if(!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)||password.length<12){fail(res,400,"INVALID_CREDENTIALS","Enter a valid email and a password of at least 12 characters.");return;}
+        if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||password.length<12){fail(res,400,"INVALID_CREDENTIALS","Enter a valid email and a password of at least 12 characters.");return;}
         const id=randomUUID(),salt=randomBytes(16).toString("hex"),passwordHash=scryptSync(password,salt,64).toString("hex");
         try{db.prepare("INSERT INTO users(id,email,password_hash,password_salt) VALUES(?,?,?,?)").run(id,email,passwordHash,salt);}
         catch{fail(res,409,"ACCOUNT_EXISTS","An account with this email already exists.");return;}
@@ -328,7 +328,7 @@ export function createAppServer() {
       if(path==="/api/auth/logout"&&req.method==="POST"){
         const token=cookieValue(req,"ev_session");if(token)db.prepare("DELETE FROM sessions WHERE token_hash=?").run(hash(token));
         if(AUTH_MODE==="supabase"){
-          const accessToken=cookieValue(req,"ev_supabase_access")||(req.headers.authorization||"").replace(/^Bearer\\s+/i,"");
+          const accessToken=cookieValue(req,"ev_supabase_access")||(req.headers.authorization||"").replace(/^Bearer\s+/i,"");
           await revokeSupabaseSession({supabaseUrl:process.env.SUPABASE_URL,publishableKey:process.env.SUPABASE_PUBLISHABLE_KEY,accessToken});
           clearSupabaseSessionCookies(res);
         }else setCookie(res,"",0);
