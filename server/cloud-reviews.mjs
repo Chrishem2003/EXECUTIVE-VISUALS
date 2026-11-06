@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { normalizeReviewCreate,normalizeReviewPatch } from "./review-contract.mjs";
-const UUID=/^[0-9a-f]{8}-[0-9a-f]{3}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const id=(v)=>typeof v==="string"&&UUID.test(v);
 const map=row=>({id:row.id,projectId:row.project_id,assetId:row.asset_id||null,timelineId:row.timeline_id||null,timelineRevision:row.timeline_revision??null,frameNumber:row.frame_number===null?null:Number(row.frame_number),durationFrames:row.duration_frames??null,timecodeSeconds:row.timecode_seconds===null?null:Number(row.timecode_seconds),body:row.body,decision:row.decision,status:row.status,visibility:row.visibility||"project",annotation:row.annotation||null,authorId:row.reviewer_id||row.owner_id,createdAt:row.created_at,updatedAt:row.updated_at||row.created_at,editedAt:row.edited_at||null,resolvedAt:row.resolved_at||null,resolvedBy:row.resolved_by||null});
 export function createCloudReviewRepository({url=process.env.SUPABASE_URL,serviceRoleKey=process.env.SUPABASE_SERVICE_ROLE_KEY,fetchImpl=globalThis.fetch,authorize,projects,assets,timelines,timeoutMs=12000}={}){
@@ -42,7 +42,7 @@ export function createCloudReviewRepository({url=process.env.SUPABASE_URL,servic
    let timecode=normalized.timecodeSeconds;
    if(normalized.frameNumber!==null){
     if(normalized.timelineId){const timeline=await timelines.get({ownerId:actorId,timelineId:normalized.timelineId});if(timeline.projectId!==normalized.projectId||normalized.timelineRevision>timeline.revision)throw Object.assign(new Error("Timeline revision is not available in this project."),{code:"CLOUD_REVIEW_INVALID"});const rate=timeline.timeline.frameRate;timecode=normalized.frameNumber*Number(rate.denominator)/Number(rate.numerator);}
-    else if(timecode===null)timecode=0;
+
    }
    const row={id:randomUUID(),owner_id:project.ownerId,project_id:normalized.projectId,asset_id:normalized.assetId,reviewer_id:actorId,timecode_seconds:timecode,body:normalized.body,decision:normalized.decision,status:"open",timeline_id:normalized.timelineId,timeline_revision:normalized.timelineRevision,frame_number:normalized.frameNumber,duration_frames:normalized.durationFrames,annotation:normalized.annotation,visibility:normalized.visibility,request_id:normalized.requestId};
    if(normalized.requestId){
