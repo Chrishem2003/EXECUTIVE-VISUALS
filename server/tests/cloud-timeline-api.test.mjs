@@ -49,8 +49,8 @@ test("cloud render history is project-scoped and requires project read access",a
  assert.equal(result.status,200);
  assert.deepEqual(result.body.jobs,[job]);
  const request=f.calls.find(call=>call[0]==="fetch"&&call[1].includes("/jobs?"));
- assert.match(request[1],/project_id=eq\\.423e4567-e89b-42d3-a456-426614174000/);
- assert.match(request[1],/job_type=eq\\.timeline.render/);
+ assert.match(request[1],/project_id=eq\.423e4567-e89b-42d3-a456-426614174000/);
+ assert.match(request[1],/job_type=eq\.timeline.render/);
 });
 test("cloud render history rejects missing project and hides projects without read access",async()=>{
  const missing=setup();
