@@ -78,7 +78,7 @@ begin
   for update;
 
   if not found
-     or publication_row.status <> 'reserved'
+     or publication_row.status not in ('reserved','published')
      or publication_row.updated_at > pg_catalog.clock_timestamp() - p_min_age
   then
     raise exception 'publication is missing, already finalized, or not old enough for cleanup'
@@ -109,7 +109,12 @@ begin
   ) values (
     publication_row.id, p_job_id, p_owner_id, p_project_id, p_object_path
   )
-  on conflict (object_path) do nothing;
+  on conflict (object_path) do update
+    set status = 'claimed',
+        claim_token = pg_catalog.gen_random_uuid(),
+        claimed_at = pg_catalog.clock_timestamp(),
+        deleted_at = null
+    where executive_visuals.asset_publication_cleanup_claims.status = 'deleted';
 
   select c.* into claim_row
   from executive_visuals.asset_publication_cleanup_claims c
