@@ -39,7 +39,7 @@ test("creates a frame-anchored review as the verified reviewer and keeps project
  assert.equal(Number(f.rows[0].timecode_seconds),10);
 });
 test("replays only an exact reviewer-scoped idempotent create request",async()=>{
- const existing={id:reviewId,owner_id:owner,project_id:projectId,asset_id:assetId,reviewer_id:editor,last_actor_id:editor,timeline_id:timelineId,timeline_revision:4,frame_number:240,duration_frames:24,timecode_seconds:10,body:input.body,decision:"comment",status:"open",visibility:"project",annotation:input.annotation,request_id:"review-request-0001",created_at:"2026-11-06T12:00:00Z",updated_at:"2026-11-06T12:00:00Z"};
+ const existing={id:reviewId,owner_id:owner,project_id:projectId,asset_id:assetId,reviewer_id:editor,last_actor_id:editor,timeline_id:timelineId,timeline_revision:4,frame_number:240,duration_frames:24,timecode_seconds:10,body:input.body,decision:"comment",status:"open",visibility:"project",annotation:{version:1,shapes:[{type:"arrow",points:[{x:0.1,y:0.2},{x:0.8,y:0.7}],color:"#ffcc00",width:3}]},request_id:"review-request-0001",created_at:"2026-11-06T12:00:00Z",updated_at:"2026-11-06T12:00:00Z"};
  const f=setup({existing:[existing]});
  const replay=await f.repo.create({actorId:editor,input,idempotencyKey:"review-request-0001"});
  assert.equal(replay.idempotentReplay,true);assert.equal(f.rows.length,1);
