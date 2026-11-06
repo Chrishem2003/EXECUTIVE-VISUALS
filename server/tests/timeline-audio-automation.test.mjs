@@ -33,6 +33,14 @@ test("dialogue ducking creates attack, hold and release keyframes on the music c
  const points=buildDialogueDuckingAutomation({musicStartSeconds:0,musicDurationSeconds:8,baseGainDb:-3,duckingDb:-12,attackMs:100,releaseMs:300,dialogueRanges:[{startSeconds:1,endSeconds:3}]});
  assert.deepEqual(points.map(p=>[p.timeSeconds,p.gainDb]),[[1,-3],[1.1,-15],[3,-15],[3.3,-3]]);
 });
+test("dialogue ducking applies the configured attack when activity starts at the music clip boundary",()=>{
+ const points=buildDialogueDuckingAutomation({musicStartSeconds:0,musicDurationSeconds:4,duckingDb:-12,attackMs:100,releaseMs:200,dialogueRanges:[{startSeconds:0,endSeconds:1}]});
+ assert.deepEqual(points.map(p=>[p.timeSeconds,p.gainDb]),[[0,0],[0.1,-12],[1,-12],[1.2,0]]);
+});
+test("dialogue ducking remains immediate at the music clip boundary when attack is disabled",()=>{
+ const points=buildDialogueDuckingAutomation({musicStartSeconds:0,musicDurationSeconds:4,duckingDb:-12,attackMs:0,releaseMs:200,dialogueRanges:[{startSeconds:0,endSeconds:1}]});
+ assert.deepEqual(points.map(p=>[p.timeSeconds,p.gainDb]),[[0,-12],[1,-12],[1.2,0]]);
+});
 test("dialogue ducking clips ranges to music boundaries and merges overlapping dialogue ranges",()=>{
  const points=buildDialogueDuckingAutomation({musicStartSeconds:2,musicDurationSeconds:5,duckingDb:-10,attackMs:100,releaseMs:250,dialogueRanges:[{startSeconds:1,endSeconds:3},{startSeconds:3.1,endSeconds:4},{startSeconds:6.5,endSeconds:8}]});
  assert.deepEqual(points.map(p=>[p.timeSeconds,p.gainDb]),[[0,-10],[0.1,-10],[2,-10],[2.25,0],[4.5,0],[4.6,-10],[5,-10]]);
