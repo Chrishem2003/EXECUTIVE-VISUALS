@@ -47,3 +47,11 @@ test("cloud worker supervisor starts without waiting for the first long-running 
  release();await stopping;
  assert.equal(stopped,true);
 });
+test("cloud worker supervisor does not start timers or claim work if stopped during startup recovery",async()=>{
+ let releaseRecovery,recoveryStarted;const started=new Promise(resolve=>{recoveryStarted=resolve;});
+ const recovery=new Promise(resolve=>{releaseRecovery=resolve;});let ran=false;
+ const workers=[{async recoverExpired(){recoveryStarted();await recovery;return 0;},async runCycle(){ran=true;return{claimed:false};}}];
+ const supervisor=createCloudWorkerSupervisor({workers,leaseSeconds:60,heartbeatIntervalMs:10000,pollMs:10000,recoveryIntervalMs:300000});
+ const starting=supervisor.start();await started;await supervisor.stop();releaseRecovery();await starting;
+ assert.equal(ran,false,"a stopped supervisor must not claim jobs after startup recovery finishes");
+});
