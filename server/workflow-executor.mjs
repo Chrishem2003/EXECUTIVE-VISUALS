@@ -67,7 +67,7 @@ function saveNode(db,runId,nodeId,status,{input={},output=null,error=null,attemp
  db.prepare("UPDATE workflow_node_runs SET status=?,attempt=?,input_json=?,output_json=?,error_json=?,completed_at=? WHERE run_id=? AND node_id=?")
   .run(status,attempt,json(input),output===null?null:json(output),error===null?null:json(error),["completed","failed","blocked","skipped"].includes(status)?now():null,runId,nodeId);
 }
-export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new Map(),onProgress=()=>{}}){
+export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new Map(),onProgress=()=>{},onStage=()=>{}}){
  const input=parseJson(job.input_json),runId=String(input.runId||"");
  const run=db.prepare("SELECT * FROM workflow_runs WHERE id=?").get(runId);
  if(!run)throw Object.assign(new Error("Workflow run not found."),{code:"WORKFLOW_RUN_NOT_FOUND"});
@@ -128,6 +128,7 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
   const nodeInput={...config,...values};
   const attempt=(stored.find(row=>row.node_id===nodeId)?.attempt||0)+1;
   saveNode(db,runId,nodeId,"running",{input:nodeInput,attempt});
+  onStage({id:"workflow-node:"+nodeId,label:String(node.label||node.kind||"Workflow node").slice(0,160),status:"running",attributes:{attempt,nodeKind:node.kind}});
   try{
    let output={};
    if(node.kind==="text"||node.kind==="prompt"){
@@ -361,6 +362,7 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
    }
    outputs.set(nodeId,output);
    saveNode(db,runId,nodeId,"completed",{input:nodeInput,output,attempt});
+   onStage({id:"workflow-node:"+nodeId,label:String(node.label||node.kind||"Workflow node").slice(0,160),status:"succeeded",attributes:{attempt,nodeKind:node.kind}});
    completedCount++;onProgress(Math.min(95,Math.round(completedCount/nodeCount*95)));
   }catch(error){
    const latestJob=db.prepare("SELECT status FROM jobs WHERE id=?").get(job.id);
@@ -373,6 +375,7 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
    const blockedCodes=new Set(["ENGINE_UNAVAILABLE","APPROVAL_REQUIRED","PROVIDER_NOT_READY","AI_GATEWAY_DISABLED","AI_GATEWAY_CONFIG_INVALID","AI_GATEWAY_INSECURE_URL","AI_GATEWAY_REMOTE_DISABLED","IMAGE_GATEWAY_DISABLED","IMAGE_GATEWAY_CONFIG_INVALID","IMAGE_GATEWAY_INSECURE_URL","IMAGE_GATEWAY_REMOTE_DISABLED","IMAGE_GATEWAY_UNSUPPORTED_INPUT","VIDEO_GATEWAY_DISABLED","VIDEO_GATEWAY_CONFIG_INVALID","VIDEO_GATEWAY_REMOTE_DISABLED","VIDEO_GATEWAY_UNSUPPORTED_INPUT","VIDEO_GENERATION_UNSUPPORTED_CAPABILITY","VOICE_TRANSCRIPTION_DISABLED","VOICE_TRANSCRIPTION_INVALID_INPUT","VOICE_TRANSCRIPTION_TIMEOUT","VOICE_TRANSCRIPTION_UNAVAILABLE","VOICE_TRANSCRIPTION_RATE_LIMITED","VOICE_TRANSCRIPTION_SERVER_ERROR","VOICE_TRANSCRIPTION_REQUEST_REJECTED","VOICE_TRANSCRIPTION_INVALID_RESPONSE","VOICE_GATEWAY_DISABLED","VOICE_GATEWAY_CONFIG_INVALID","VOICE_GATEWAY_INSECURE_URL","VOICE_GATEWAY_REMOTE_DISABLED","VOICE_GATEWAY_TIMEOUT","VOICE_GATEWAY_UNAVAILABLE","VOICE_GATEWAY_RATE_LIMITED","VOICE_GATEWAY_SERVER_ERROR","VOICE_GATEWAY_REQUEST_REJECTED","VOICE_GATEWAY_INVALID_RESPONSE"]);
    const blocked=blockedCodes.has(detail.code)||detail.code.startsWith("REMOTE_USAGE_");
    saveNode(db,runId,nodeId,blocked?"blocked":"failed",{input:nodeInput,error:detail,attempt});
+   onStage({id:"workflow-node:"+nodeId,label:String(node.label||node.kind||"Workflow node").slice(0,160),status:"failed",attributes:{attempt,nodeKind:node.kind,errorCode:detail.code}});
    const status=blocked?"blocked":completedCount>0?"partial":"failed";
    db.prepare("UPDATE workflow_runs SET status=?,error_json=?,updated_at=?,completed_at=? WHERE id=?").run(status,json(detail),now(),now(),runId);
    throw Object.assign(new Error("Workflow stopped at node "+node.label+": "+detail.message),{code:detail.code});
