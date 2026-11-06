@@ -14,6 +14,21 @@ as $
 declare
   parent_asset executive_visuals.assets;
 begin
+  -- A source asset with existing derivatives cannot be moved to another
+  -- project: doing so would invalidate the lineage scope of its children.
+  if tg_op = 'UPDATE'
+     and (new.owner_id is distinct from old.owner_id
+          or new.project_id is distinct from old.project_id)
+     and exists (
+       select 1
+       from executive_visuals.assets
+       where derivative_of = old.id
+     )
+  then
+    raise exception 'asset with derivatives cannot change owner/project scope'
+      using errcode = '23514';
+  end if;
+
   if new.derivative_of is null then
     return new;
   end if;
