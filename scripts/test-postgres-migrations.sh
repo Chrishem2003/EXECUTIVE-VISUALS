@@ -23,6 +23,31 @@ AS $auth_uid$
     nullif(current_setting('request.jwt.claims', true)::jsonb ->> 'sub', '')
   )::uuid;
 $auth_uid$;
+
+-- Minimal Supabase Storage catalog surface needed by the isolated core migration.
+CREATE SCHEMA IF NOT EXISTS storage;
+GRANT USAGE ON SCHEMA storage TO authenticated, service_role;
+CREATE TABLE IF NOT EXISTS storage.buckets (
+  id text PRIMARY KEY,
+  name text NOT NULL,
+  public boolean NOT NULL DEFAULT false,
+  file_size_limit bigint,
+  allowed_mime_types text[]
+);
+CREATE TABLE IF NOT EXISTS storage.objects (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  bucket_id text NOT NULL,
+  name text NOT NULL
+);
+ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
+CREATE OR REPLACE FUNCTION storage.foldername(name text)
+RETURNS text[]
+LANGUAGE sql
+IMMUTABLE
+AS $foldername$
+  SELECT string_to_array(name, '/')[1:greatest(array_length(string_to_array(name, '/'), 1) - 1, 0)];
+$foldername$;
+
 CREATE TABLE IF NOT EXISTS auth.users (
   id uuid PRIMARY KEY
 );
