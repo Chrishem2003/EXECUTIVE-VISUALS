@@ -800,7 +800,8 @@ export function createAppServer() {
           const jobId=randomUUID();
           const changed=db.prepare("UPDATE workflow_node_runs SET status='pending',error_json=NULL,completed_at=NULL WHERE id=? AND status='blocked'").run(node.id);
           if(changed.changes!==1){fail(res,409,"RECOVERY_RACE","The interrupted node changed while recovery was requested.");return;}
-          db.prepare("UPDATE workflow_runs SET status='queued',job_id=?,updated_at=?,error_json=NULL,completed_at=NULL WHERE id=? AND status='blocked'").run(jobId,now(),run.id);
+          const runChanged=db.prepare("UPDATE workflow_runs SET status='queued',job_id=?,updated_at=?,error_json=NULL,completed_at=NULL WHERE id=? AND status='blocked'").run(jobId,now(),run.id);
+          if(runChanged.changes!==1){db.prepare("UPDATE workflow_node_runs SET status='blocked' WHERE id=? AND status='pending'").run(node.id);fail(res,409,"RECOVERY_RACE","The workflow changed while recovery was requested.");return;}
           db.prepare("INSERT INTO jobs(id,owner_id,project_id,job_type,status,progress,input_json) VALUES(?,?,?,'workflow.execute','queued',0,?)").run(jobId,run.owner_id,run.project_id,json({runId:run.id}));
           addJobEvent(db,jobId,run.owner_id,"job.queued",{jobType:"workflow.execute",runId:run.id,recoveryNodeId:failure.nodeId,explicitReplayConfirmation:true});
           audit(db,user.id,"workflow.recovery_replay_confirmed","workflow_run",run.id,{nodeId:failure.nodeId,nodeKind:failure.nodeKind},run.project_id);
