@@ -458,3 +458,25 @@ test("cloud FFmpeg renderer preserves linear stereo pan automation like Web Audi
   assert.ok(Math.abs(lateLeft/lateRight-expectedRightHeavy)<0.08,"stereo pan at +0.5 should follow the right-heavy StereoPannerNode matrix (ratio="+(lateLeft/lateRight)+")");
  }finally{await rm(root,{recursive:true,force:true});}
 });
+test("cloud FFmpeg renderer evaluates gain automation per sample like Web Audio preview", {skip:!hasFfmpeg||!hasFfprobe}, async()=>{
+ const root=await mkdtemp(join(tmpdir(),"ev-gain-sample-accuracy-test-"));
+ try{
+  const video=join(root,"picture.mp4"),audio=join(root,"mono.wav");
+  execFileSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-loglevel","error","-y","-f","lavfi","-i","color=c=blue:s=320x240:r=24:d=2","-c:v","libx264","-pix_fmt","yuv420p",video]);
+  execFileSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-loglevel","error","-y","-f","lavfi","-i","sine=frequency=200:sample_rate=48000:duration=2","-ac","1","-c:a","pcm_s16le",audio]);
+  const timeline={name:"Sample accurate gain automation",width:320,height:240,frameRate:{numerator:24,denominator:1},tracks:[
+   {id:"v",kind:"video",clips:[{id:"v1",assetId:"picture",timelineStart:time(0),duration:time(2),sourceRange:{start:time(0),duration:time(2)}}]},
+   {id:"a",kind:"audio",clips:[{id:"a1",assetId:"mono",timelineStart:time(0),duration:time(2),sourceRange:{start:time(0),duration:time(2)},gainDb:0,pan:0,audioAutomation:[{timeSeconds:0,gainDb:-12,interpolation:"linear"},{timeSeconds:1,gainDb:0,interpolation:"linear"}]}]}
+  ]};
+  const assets=new Map([
+   ["picture",{path:video,asset:{id:"picture",mediaType:"video/mp4",originalName:"picture.mp4"}}],
+   ["mono",{path:audio,asset:{id:"mono",mediaType:"audio/wav",originalName:"mono.wav",metadata:{probe:{streams:[{codec_type:"audio",channels:1}]}}}}]
+  ]);
+  const result=await renderCloudTimeline({timeline,assets,workDir:root,onProgress(){}});
+  const output=execFileSync(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-loglevel","error","-i",result.path,"-map","0:a:0","-f","f32le","-acodec","pcm_f32le","-ar","48000","-ac","2","pipe:1"]);
+  const samples=new Float32Array(output.buffer,output.byteOffset,output.byteLength/4);
+  const rms=(start,end)=>{let sum=0,count=0;for(let frame=Math.floor(start*48000);frame<Math.min(samples.length/2,Math.floor(end*48000));frame++){const value=samples[frame*2]||0;sum+=value*value;count++;}return Math.sqrt(sum/Math.max(1,count));};
+  const earlier=rms(0.258,0.263),later=rms(0.270,0.275),ratio=later/earlier;
+  assert.ok(ratio>1.004&&ratio<1.04,"gain must continue ramping within a single audio frame instead of stepping per frame (ratio="+ratio+")");
+ }finally{await rm(root,{recursive:true,force:true});}
+});
