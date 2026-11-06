@@ -179,6 +179,29 @@ test("removes an uploaded attempt object when the worker lease is lost before me
  await rm(root,{recursive:true,force:true});
 });
 
+test("requires a database-verifiable worker lease identity before reserving a publication",async()=>{
+ const root=await mkdtemp(join(tmpdir(),"ev-publication-requires-lease-")),file=join(root,"render.mp4");
+ await writeFile(file,bytes);
+ const f=fixture();
+ await assert.rejects(()=>f.repo.createFromFileIdempotent({ownerId,projectId,originalName:"render.mp4",mediaType:"video/mp4",filePath:file,publicationKey:"job-no-lease:output:v1"}),/claimed worker lease identity/);
+ assert.equal(f.calls.length,0);
+ assert.equal(f.storageCalls.length,0);
+ await rm(root,{recursive:true,force:true});
+});
+
+test("database rejects a stale fencing token and the unreferenced upload is compensated",async()=>{
+ const root=await mkdtemp(join(tmpdir(),"ev-publication-stale-token-")),file=join(root,"render.mp4");
+ await writeFile(file,bytes);
+ const f=fixture();
+ const staleLease={...leaseContext,leaseToken:"723e4567-e89b-42d3-a456-426614174000"};
+ await assert.rejects(()=>f.repo.createFromFileIdempotent({ownerId,projectId,originalName:"render.mp4",mediaType:"video/mp4",filePath:file,publicationKey:"job-stale-token:output:v1",leaseContext:staleLease}),error=>error.code==="CLOUD_ASSET_HTTP_409");
+ assert.equal(f.storageCalls.filter(call=>call.op==="uploadFile").length,1);
+ assert.equal(f.storageCalls.filter(call=>call.op==="remove").length,1);
+ assert.equal(f.publicationReservation.status,"reserved");
+ assert.equal(f.publicationAsset,null);
+ await rm(root,{recursive:true,force:true});
+});
+
 test("rejects reuse of a publication key for different output bytes before storage upload",async()=>{
  const root=await mkdtemp(join(tmpdir(),"ev-idempotent-conflict-")),file=join(root,"render.mp4");
  await writeFile(file,bytes);
