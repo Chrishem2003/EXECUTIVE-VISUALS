@@ -9,7 +9,7 @@ import { stat } from "node:fs/promises";
 import { Transform } from "node:stream";
 import { addJobEvent, getAccessibleAsset, json, parseJson } from "./db.mjs";
 import { createRealEsrganAdapter } from "./ai-upscale-engine.mjs";
-import { parseBlackFrameEvents, parseSilenceEvents, parseAudioMetrics, parseFreezeEvents, parseSceneChangeTimes, runOptionalSignalCheck } from "./media-signal-analysis.mjs";
+import { parseBlackFrameEvents, parseSilenceEvents, parseAudioMetrics, parseFreezeEvents, parseSceneChangeTimes, runOptionalSignalCheck, buildNonSilenceActivityIntervals } from "./media-signal-analysis.mjs";
 
 const ALLOWED_JOBS = new Set(["media.probe", "media.thumbnail", "media.transcode", "media.audio_extract", "media.proxy", "media.denoise", "media.color", "media.resize", "media.interpolate", "media.upscale", "media.audio-clean", "media.ai-upscale", "timeline.render"]);
 const CONTAINERS = new Set(["mp4", "webm", "mov", "mkv", "mp3", "wav"]);
@@ -397,7 +397,9 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
       const check=await runOptionalSignalCheck(()=>run("ffmpeg",["-hide_banner","-i",sourcePath,"-map","0:a:0","-af","silencedetect=n=-50dB:d=0.5,astats=metadata=0:reset=0,ebur128=peak=true","-vn","-f","null","-"],10*60*1000,job.id,activeProcesses,cancelled,2_000_000),{isCancelled:cancelled});
       if(check.status==="completed"){
         signalAnalysis.silence=parseSilenceEvents(check.result.stderr,Number(metadata.format?.duration)||0);
-        signalAnalysis.audioMetrics=parseAudioMetrics(check.result.stderr);signalAnalysis.performed.push("silence","audio-metrics");
+        const durationSeconds=Number(metadata.format?.duration);
+        signalAnalysis.audioActivity=Number.isFinite(durationSeconds)&&durationSeconds>0?{status:"completed",method:"ffmpeg-silence-envelope",thresholdDb:-50,minimumSilenceSeconds:0.5,activityMethod:"non-silence-envelope",activityIntervals:buildNonSilenceActivityIntervals({silence:signalAnalysis.silence,durationSeconds,minActivitySeconds:0.15,padSeconds:0.08}),limitations:["Non-silence activity is an amplitude heuristic, not speech recognition or a trained voice-activity detector. Music, noise and sound effects may be included; quiet speech may be classified as silence.","Review activity intervals before using them for dialogue ducking."]}:{status:"unavailable",reason:"MEDIA_PROBE_INVALID"};
+        signalAnalysis.audioMetrics=parseAudioMetrics(check.result.stderr);signalAnalysis.performed.push("silence","audio-metrics","audio-activity");
       } else signalAnalysis.unavailable.push({check:"audio-signal-and-metrics",reason:check.reason});
     }
     metadata.signalAnalysis=signalAnalysis;
