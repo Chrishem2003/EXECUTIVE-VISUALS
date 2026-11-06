@@ -312,6 +312,7 @@ export function createAppServer() {
       if(!user){fail(res,401,"AUTH_REQUIRED","Sign in to access this workspace.");return;}
       if(path==="/api/me"&&req.method==="GET"){send(res,200,{user,authMode:AUTH_MODE},cors);return;}
       if(path==="/api/uploads"&&req.method==="POST"){
+        await cleanupExpiredUploadSessions(db);
         const body=await readJson(req);
         const mediaType=String(body.mediaType||"").split(";")[0].toLowerCase();
         if(!ALLOWED_MEDIA.has(mediaType)){fail(res,415,"UNSUPPORTED_MEDIA_TYPE","Unsupported media type.");return;}
@@ -348,11 +349,18 @@ export function createAppServer() {
           const prepared=await prepareUploadCompletion({db,ownerId:user.id,id:uploadId});
           const sessionRow=db.prepare("SELECT * FROM upload_sessions WHERE id=? AND owner_id=? AND status='finalizing'").get(uploadId,user.id);
           if(!sessionRow){await resetUploadFinalization(db,user.id,uploadId);fail(res,404,"UPLOAD_SESSION_NOT_FOUND","Upload session not found.");return;}
-          const fileHandle=await open(prepared.path,"r");
-          const header=Buffer.alloc(32);
-          const read=await fileHandle.read(header,0,32,0);
-          await fileHandle.close();
-          if(!validFileSignature(sessionRow.media_type,header.subarray(0,read.bytesRead))){
+          let headerBytes;
+          try{
+            const fileHandle=await open(prepared.path,"r");
+            const header=Buffer.alloc(32);
+            const read=await fileHandle.read(header,0,32,0);
+            await fileHandle.close();
+            headerBytes=header.subarray(0,read.bytesRead);
+          }catch(error){
+            await resetUploadFinalization(db,user.id,uploadId);
+            throw error;
+          }
+          if(!validFileSignature(sessionRow.media_type,headerBytes)){
             await resetUploadFinalization(db,user.id,uploadId);
             await abortUploadSession(db,user.id,uploadId).catch(()=>{});
             fail(res,415,"MEDIA_SIGNATURE_MISMATCH","File signature does not match the declared media type.");return;
