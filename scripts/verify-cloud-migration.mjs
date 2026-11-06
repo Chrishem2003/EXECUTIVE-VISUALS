@@ -79,6 +79,8 @@ if (!reviewSql.includes("language plpgsql") || !reviewSql.includes("as $") || !r
 if (!reviewActorSql.includes("add column if not exists last_actor_id")) issues.push("Review API must persist the authenticated actor separately from the comment author.");
 if (!reviewActorSql.includes("coalesce(new.last_actor_id,new.reviewer_id,new.owner_id)")) issues.push("Review audit events must record the actual acting user.");
 if (!reviewActorSql.includes("on executive_visuals.reviews(reviewer_id,request_id)")) issues.push("Review idempotency keys must be scoped to the authenticated reviewer.");
+if (!reviewActorSql.includes("revoke insert,update,delete on executive_visuals.reviews from authenticated;")) issues.push("Review writes must be restricted to the authenticated server API.");
+if (!reviewActorSql.includes("revoke insert,update,delete on executive_visuals.review_events from authenticated;")) issues.push("Review event history must be server-written.");
 if (!reviewActorSql.includes("as $") || !reviewActorSql.includes("end;\n$;")) issues.push("Review actor migration trigger must use valid PL/pgSQL dollar quoting.");
 
 
