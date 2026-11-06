@@ -22,6 +22,7 @@ import { ensureResumableUploadSchema, createUploadSession, getUploadSession, app
 import { recordJobStage, getJobStageTimeline } from "./job-observability.mjs";
 import { parseByteRange } from "./http-range.mjs";
 import { createWaveformCache } from "./waveform-cache.mjs";
+import { verifySupabaseUser } from "./supabase-auth.mjs";
 import { ensureTransformationPlanSchema, createTransformationPlan, approveTransformationPlan, listTransformationPlans, getTransformationPlan } from "./transformation-plans.mjs";
 
 const PORT = Number(process.env.API_PORT || process.env.PORT || 4179);
@@ -125,11 +126,12 @@ async function authenticate(req) {
   if (AUTH_MODE === "supabase") {
     const token=(req.headers.authorization||"").replace(/^Bearer\s+/i,"");
     if(!token||!process.env.SUPABASE_URL||!process.env.SUPABASE_PUBLISHABLE_KEY)return null;
-    const response=await fetch(process.env.SUPABASE_URL.replace(/\/$/,"")+"/auth/v1/user",{
-      headers:{apikey:process.env.SUPABASE_PUBLISHABLE_KEY,authorization:"Bearer "+token}
+    const user=await verifySupabaseUser({
+      supabaseUrl:process.env.SUPABASE_URL,
+      publishableKey:process.env.SUPABASE_PUBLISHABLE_KEY,
+      accessToken:token,
+      timeoutMs:process.env.SUPABASE_AUTH_TIMEOUT_MS
     });
-    if(!response.ok)return null;
-    const user=await response.json();
     if(!user?.id)return null;
     db.prepare("INSERT INTO users(id,email,auth_source) VALUES(?,?, 'supabase') ON CONFLICT(id) DO UPDATE SET email=excluded.email")
       .run(user.id,user.email||user.id+"@supabase.invalid");
