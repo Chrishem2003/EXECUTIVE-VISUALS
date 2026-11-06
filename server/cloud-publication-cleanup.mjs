@@ -47,7 +47,7 @@ export function createCloudPublicationCleanup({
       prefix,
       olderThanMs=DAY_MS,
       limit=100,
-      offset=0,
+      cursor=null,
       dryRun=true,
       confirmDelete=false
     }={}) {
@@ -56,7 +56,7 @@ export function createCloudPublicationCleanup({
         throw new Error("Publication cleanup age must be between 24 hours and 30 days.");
       }
       if(!Number.isInteger(limit)||limit<1||limit>100)throw new Error("Publication cleanup limit must be between 1 and 100.");
-      if(!Number.isInteger(offset)||offset<0||offset>100000)throw new Error("Publication cleanup offset is invalid.");
+      if(cursor!==null&&(typeof cursor!=="string"||!cursor||cursor.length>4096))throw new Error("Publication cleanup cursor is invalid.");
       if(typeof dryRun!=="boolean"||typeof confirmDelete!=="boolean")throw new Error("Publication cleanup safety flags must be boolean.");
       if(!dryRun&&!confirmDelete)throw new Error("Destructive publication cleanup requires explicit confirmation.");
       if(!dryRun&&typeof isAttemptActive!=="function")throw new Error("Destructive cleanup requires an authoritative active-worker lease check.");
@@ -65,7 +65,9 @@ export function createCloudPublicationCleanup({
       const nowMs=current instanceof Date?current.getTime():Date.parse(current);
       if(!Number.isFinite(nowMs))throw new Error("Publication cleanup clock returned an invalid time.");
       const cutoff=new Date(nowMs-olderThanMs).toISOString();
-      const entries=await storage.listObjects({prefix,limit,offset});
+      const listing=await storage.listObjects({prefix,limit,cursor});
+      if(!listing||!Array.isArray(listing.objects)||typeof listing.hasNext!=="boolean")throw new Error("Publication cleanup storage listing is invalid.");
+      const entries=listing.objects;
       const candidates=[];
       const skipped=[];
       for(const entry of entries) {
@@ -121,7 +123,7 @@ export function createCloudPublicationCleanup({
         }
       }
       const result={
-        prefix,cutoff,scanned:entries.length,candidateCount:candidates.length,
+        prefix,cutoff,scanned:entries.length,hasNext:listing.hasNext,nextCursor:listing.nextCursor||null,candidateCount:candidates.length,
         eligibleCount:eligible.length,removedCount:removed.length,
         dryRun,confirmDelete,eligible,removed,skipped
       };
