@@ -444,3 +444,13 @@
 
 .delivery-profile-control{display:grid;gap:6px;max-width:360px;margin:12px 0;color:var(--muted);font-size:11px}
 .delivery-profile-control select{min-height:36px;width:100%;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--text);padding:7px 10px}
+
+
+.delivery-certification{margin:12px 0;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--panel)}
+.delivery-certification-head{display:flex;justify-content:space-between;gap:12px;align-items:center}
+.delivery-certification-head strong{font-size:11px;letter-spacing:.08em}
+.delivery-certification.passed .delivery-certification-head strong,.delivery-certification li.passed span{color:var(--success,#16a34a)}
+.delivery-certification.failed .delivery-certification-head strong,.delivery-certification li.failed span{color:var(--danger,#dc2626)}
+.delivery-certification ul{list-style:none;padding:0;margin:10px 0;display:grid;gap:6px}
+.delivery-certification li{font-size:11px;color:var(--muted);overflow-wrap:anywhere}
+.delivery-certification li span{font-weight:700;margin-right:5px}
