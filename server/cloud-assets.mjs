@@ -73,6 +73,30 @@ export function createCloudAssetRepository({
     if(result!==true) {const error=new Error("Cloud asset access denied.");error.code="CLOUD_ASSET_ACCESS_DENIED";throw error;}
   }
 
+  function validCleanupPath(value) {
+    const pattern=new RegExp("^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/original\\.[a-z0-9]{1,8}$","i");
+    return typeof value==="string" && pattern.test(value);
+  }
+
+  async function enqueueStorageCleanup(objectPath,reason) {
+    if(!validCleanupPath(objectPath))throw new Error("Refusing to enqueue an unsafe storage cleanup path.");
+    await request("asset_storage_cleanup?on_conflict=object_path",{
+      method:"POST",
+      prefer:"resolution=merge-duplicates,return=representation",
+      body:{storage_bucket:"executive-visuals-media",object_path:objectPath,reason:String(reason||"asset_metadata_persistence_failed").slice(0,100),attempts:0,next_attempt_at:new Date().toISOString(),completed_at:null,last_error:null}
+    });
+  }
+
+  async function compensateUpload(objectPath,error) {
+    try { await storage.remove(objectPath); }
+    catch {
+      error.cleanupPending=true;
+      try { await enqueueStorageCleanup(objectPath,error.code||"asset_metadata_persistence_failed"); }
+      catch { error.cleanupRecordFailed=true; }
+    }
+    throw error;
+  }
+
   return Object.freeze({
     async create({ownerId,projectId=null,originalName,mediaType,bytes,derivativeOf=null,metadata={}}) {
       ownerId=validUuid(ownerId,"owner ID");
@@ -95,9 +119,7 @@ export function createCloudAssetRepository({
         if(!Array.isArray(rows)||rows.length!==1||rows[0].id!==id||rows[0].owner_id!==ownerId||rows[0].project_id!==projectId||rows[0].object_path!==objectPath||rows[0].storage_bucket!=="executive-visuals-media"||Number(rows[0].byte_size)!==bytes.byteLength||rows[0].sha256!==sha256) throw new Error("Cloud asset metadata insert did not return the expected record.");
         return publicAsset(rows[0]);
       } catch(error) {
-        try { await storage.remove(objectPath); }
-        catch { error.cleanupPending=true; }
-        throw error;
+        return compensateUpload(objectPath,error);
       }
     },
     async createFromFile({ownerId,projectId=null,originalName,mediaType,filePath,derivativeOf=null,metadata={}}) {
@@ -124,8 +146,7 @@ export function createCloudAssetRepository({
         if(!Array.isArray(rows)||rows.length!==1||rows[0].id!==id||rows[0].owner_id!==ownerId||rows[0].project_id!==projectId||rows[0].object_path!==objectPath||rows[0].storage_bucket!=="executive-visuals-media"||Number(rows[0].byte_size)!==uploaded.size||rows[0].sha256!==uploaded.sha256)throw new Error("Cloud asset metadata insert did not return the expected streaming record.");
         return publicAsset(rows[0]);
       }catch(error){
-        try{await storage.remove(objectPath);}catch{error.cleanupPending=true;}
-        throw error;
+        return compensateUpload(objectPath,error);
       }
     },
     async list({ownerId,projectId=null,limit=50,offset=0}={}) {
@@ -155,6 +176,33 @@ export function createCloudAssetRepository({
       const expectedPrefix=(row.project_id||row.owner_id)+"/"+row.id+"/";
       if(row.storage_bucket!=="executive-visuals-media"||typeof row.object_path!=="string"||!row.object_path.startsWith(expectedPrefix)) throw new Error("Cloud asset storage reference is invalid.");
       return {asset:publicAsset(row),url:await storage.createSignedUrl(row.object_path,expiresIn)};
+    },
+    async reconcilePendingStorageCleanup({limit=20,now=new Date()}={}) {
+      limit=Math.max(1,Math.min(100,Number.isInteger(limit)?limit:20));
+      const instant=now instanceof Date?now.toISOString():new Date(now).toISOString();
+      const rows=await request("asset_storage_cleanup?select=id,storage_bucket,object_path,attempts&completed_at=is.null&next_attempt_at=lte."+encodeURIComponent(instant)+"&order=next_attempt_at.asc&limit="+limit);
+      const results=[];
+      for(const row of Array.isArray(rows)?rows:[]) {
+        if(row.storage_bucket!=="executive-visuals-media"||!validCleanupPath(row.object_path)) {
+          results.push({id:row.id,removed:false,permanentError:"unsafe_cleanup_record"});
+          continue;
+        }
+        try {
+          await storage.remove(row.object_path);
+          const changed=await request("asset_storage_cleanup?id=eq."+encodeURIComponent(row.id)+"&completed_at=is.null",{
+            method:"PATCH",prefer:"return=representation",body:{completed_at:instant,last_error:null}
+          });
+          results.push({id:row.id,removed:Array.isArray(changed)&&changed.length===1});
+        } catch(error) {
+          const attempts=Math.min(30,Math.max(0,Number(row.attempts)||0)+1);
+          const delay=Math.min(86400,30*Math.pow(2,Math.min(attempts-1,11)));
+          await request("asset_storage_cleanup?id=eq."+encodeURIComponent(row.id)+"&completed_at=is.null",{
+            method:"PATCH",prefer:"return=minimal",body:{attempts,next_attempt_at:new Date(Date.parse(instant)+delay*1000).toISOString(),last_error:String(error?.code||"storage_remove_failed").slice(0,100)}
+          });
+          results.push({id:row.id,removed:false,retryScheduled:true,attempts});
+        }
+      }
+      return {examined:results.length,removed:results.filter(item=>item.removed).length,results};
     },
     async softDelete({ownerId,assetId}) {
       ownerId=validUuid(ownerId,"owner ID");assetId=validUuid(assetId,"asset ID");
