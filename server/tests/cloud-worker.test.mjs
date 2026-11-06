@@ -36,6 +36,7 @@ test("cloud worker executes and finishes success under its lease",async()=>{
  assert.ok(queue.calls.some(call=>call[0]==="finish"&&call[3]==="succeeded"));
  assert.ok(events.some(event=>event.type==="job.succeeded"));
  assert.ok(events.some(event=>event.type==="job.lease_verified"&&event.stage==="worker.finalize"));
+ assert.equal(JSON.stringify(events).includes("11111111-1111-4111-8111-111111111111"),false,"telemetry must never expose the fencing token");
 });
 
 test("worker failure is persisted as a bounded failed-job result",async()=>{
