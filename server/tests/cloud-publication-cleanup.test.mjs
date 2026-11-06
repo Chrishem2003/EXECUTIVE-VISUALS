@@ -161,3 +161,41 @@ test("storage deletion retries reuse the same durable claim token until completi
  assert.equal(completed.length,1);
  assert.equal(completed[0].claimToken,stableClaim.claimToken);
 });
+
+
+test("emits bounded per-candidate dry-run audit events and summary counters",async()=>{
+ const f=fixture({referenced:[prefix+activeAttempt],active:false});
+ const result=await f.cleanup.run({prefix});
+ const eligible=f.events.filter(event=>event.type==="publication.cleanup_candidate_eligible");
+ const skipped=f.events.filter(event=>event.type==="publication.cleanup_candidate_skipped");
+ const completed=f.events.find(event=>event.type==="publication.cleanup_completed");
+ assert.equal(eligible.length,1);
+ assert.equal(eligible[0].dryRun,true);
+ assert.equal(skipped.length,2);
+ assert.ok(skipped.every(event=>event.dryRun===true));
+ assert.ok(skipped.some(event=>event.reason==="asset_reference_exists"));
+ assert.ok(skipped.some(event=>event.reason==="created_at_unavailable"));
+ assert.equal(result.skippedCount,2);
+ assert.equal(result.failureCount,0);
+ assert.equal(completed.skippedCount,2);
+ assert.equal(completed.failureCount,0);
+});
+
+test("destructive failure audit events preserve the destructive mode and never hide deletion outcomes",async()=>{
+ const f=fixture({removeError:true});
+ const result=await f.cleanup.run({...cleanupIdentity,prefix,dryRun:false,confirmDelete:true});
+ const failed=f.events.filter(event=>event.type==="publication.cleanup_candidate_skipped"&&event.reason==="storage_remove_failed");
+ assert.equal(failed.length,2);
+ assert.ok(failed.every(event=>event.dryRun===false&&event.claimId));
+ assert.equal(result.removedCount,0);
+ assert.equal(result.failureCount,2);
+ assert.equal(f.events.find(event=>event.type==="publication.cleanup_completed").failureCount,2);
+ const throwingAudit=createCloudPublicationCleanup({
+  storage:{listObjects:async()=>({objects:[],hasNext:false,nextCursor:null}),remove:async()=>true},
+  findReferencedPaths:async()=>[],
+  onEvent:async()=>{throw new Error("audit sink unavailable");},
+  now:()=>now
+ });
+ const empty=await throwingAudit.run({prefix});
+ assert.equal(empty.removedCount,0);
+});
