@@ -95,7 +95,7 @@ if (!publicationSql.includes("create or replace function executive_visuals.reser
 if (!publicationSql.includes("create or replace function executive_visuals.complete_asset_publication(") || !publicationSql.includes("asset.sha256=publication.payload_sha256") || !publicationSql.includes("grant execute on function executive_visuals.complete_asset_publication(uuid,text,uuid) to service_role")) issues.push("Asset publication completion must verify the persisted asset checksum and be restricted to service_role.");
 
 
-if (/\\b(drop\\s+table|truncate|delete\\s+from)\\b/i.test(atomicPublicationSql)) issues.push("Atomic publication migration must not contain destructive DDL/DML.");
+if (/\b(drop\s+table|truncate|delete\s+from)\b/i.test(atomicPublicationSql)) issues.push("Atomic publication migration must not contain destructive DDL/DML.");
 if (!atomicPublicationSql.includes("create or replace function executive_visuals.finalize_asset_publication_v1(")) issues.push("Atomic lease-fenced asset publication RPC is missing.");
 if (!atomicPublicationSql.includes("set search_path = ''")) issues.push("Atomic publication SECURITY DEFINER RPC must pin an empty search_path.");
 const atomicJobLock = atomicPublicationSql.indexOf("from executive_visuals.jobs");
