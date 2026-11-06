@@ -145,7 +145,7 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     const timeline=await service.timelines.create({ownerId,projectId:body.projectId||null,name:body.name||"Untitled timeline",timeline:body.timeline,otio:body.otio??null});
     return response(201,{timeline});
    }
-   const timelineVersionsMatch=path.match(/^\\/api\\/cloud\\/timelines\\/([0-9a-f-]+)\\/versions$/i);
+   const timelineVersionsMatch=path.match(new RegExp("^/api/cloud/timelines/([0-9a-f-]+)/versions$","i"));
    if(timelineVersionsMatch&&safeId(timelineVersionsMatch[1])&&method==="GET"){
     const timeline=await service.timelines.get({ownerId,timelineId:timelineVersionsMatch[1]});
     if(!timeline)return response(404,{error:{code:"TIMELINE_NOT_FOUND",message:"Timeline not found."}});
