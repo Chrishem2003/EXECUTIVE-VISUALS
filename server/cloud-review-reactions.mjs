@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-const UUID=/^[0-9a-f]{8}-[0-9a-f]{3}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const ALLOWED=new Set(["👍","❤️","🎉","👀","✅","💯"]);
 const fail=(code,message)=>{throw Object.assign(new Error(message),{code});};
 const map=row=>({id:row.id,reviewId:row.review_id,actorId:row.actor_id,emoji:row.emoji,createdAt:row.created_at});
