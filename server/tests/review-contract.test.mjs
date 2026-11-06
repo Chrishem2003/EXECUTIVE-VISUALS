@@ -26,6 +26,11 @@ test("rejects frame anchors without an asset and revisions without a timeline",(
  assert.throws(()=>normalizeReviewCreate({projectId,frameNumber:3,body:"x"}),error=>error.code==="REVIEW_INVALID");
  assert.throws(()=>normalizeReviewCreate({projectId,assetId,timelineRevision:2,body:"x"}),error=>error.code==="REVIEW_INVALID");
 });
+test("requires complete timeline anchors and a starting frame for ranges",()=>{
+ assert.throws(()=>normalizeReviewCreate({projectId,assetId,timelineId,body:"x"}),error=>error.code==="REVIEW_INVALID");
+ assert.throws(()=>normalizeReviewCreate({projectId,assetId,durationFrames:12,body:"x"}),error=>error.code==="REVIEW_INVALID");
+ assert.throws(()=>normalizeReviewCreate({projectId,assetId,timelineId,timelineRevision:2,body:"x"}),error=>error.code==="REVIEW_INVALID");
+});
 test("rejects invalid frame ranges, timecodes and unsupported decision values",()=>{
  for(const input of [{frameNumber:-1},{durationFrames:90001},{timecodeSeconds:-1},{decision:"publish"}]){
   assert.throws(()=>normalizeReviewCreate({...base,...input}),error=>error.code==="REVIEW_INVALID");
