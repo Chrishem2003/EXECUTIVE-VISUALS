@@ -66,7 +66,7 @@ test("forwards worker lease assertions and abort signals into idempotent publica
  const root=await mkdtemp(join(tmpdir(),"ev-media-lease-io-")),path=join(root,"master.mp4");
  await writeFile(path,content);
  const controller=new AbortController();let argsSeen=null,leaseChecks=0;
- const assets={async createSignedUrl(){},async createFromFileIdempotent(args){argsSeen=args;return{id:"lease-guarded-asset"};}};
+ const assets={async createSignedUrl(){},async create(){},async createFromFileIdempotent(args){argsSeen=args;return{id:"lease-guarded-asset"};}};
  const io=createCloudMediaAssetIO({assets,tempRoot:root,maxBytes:100});
  const assertLease=async()=>{leaseChecks++;return true;};
  const result=await io.publish({ownerId:"owner-1",filename:"master.mp4",mediaType:"video/mp4",path,publicationKey:"job-lease:output:v1",assertLease,signal:controller.signal});
