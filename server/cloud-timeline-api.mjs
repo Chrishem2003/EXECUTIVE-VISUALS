@@ -145,6 +145,15 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     const timeline=await service.timelines.create({ownerId,projectId:body.projectId||null,name:body.name||"Untitled timeline",timeline:body.timeline,otio:body.otio??null});
     return response(201,{timeline});
    }
+   const timelineVersionsMatch=path.match(/^\\/api\\/cloud\\/timelines\\/([0-9a-f-]+)\\/versions$/i);
+   if(timelineVersionsMatch&&safeId(timelineVersionsMatch[1])&&method==="GET"){
+    const timeline=await service.timelines.get({ownerId,timelineId:timelineVersionsMatch[1]});
+    if(!timeline)return response(404,{error:{code:"TIMELINE_NOT_FOUND",message:"Timeline not found."}});
+    if(await allow({ownerId,projectId:timeline.projectId||null,action:"read"})!==true)return response(404,{error:{code:"TIMELINE_NOT_FOUND",message:"Timeline not found."}});
+    const rows=await request("timeline_versions?select=id,timeline_id,owner_id,project_id,revision,name,timeline,otio,created_at&timeline_id=eq."+encodeURIComponent(timeline.id)+"&order=revision.desc&limit=100");
+    const versions=(Array.isArray(rows)?rows:[]).filter(row=>row.owner_id===ownerId&&row.timeline_id===timeline.id).map(row=>({id:String(row.id),timelineId:row.timeline_id,projectId:row.project_id||null,revision:Number(row.revision),name:row.name,timeline:row.timeline,otio:row.otio||null,createdAt:row.created_at}));
+    return response(200,{versions});
+   }
    const assetMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)$/i);
    if(assetMatch&&safeId(assetMatch[1])){
     if(method==="GET"){
