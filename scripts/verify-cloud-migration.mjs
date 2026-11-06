@@ -98,6 +98,7 @@ if (!publicationSql.includes("create or replace function executive_visuals.compl
 if (/\b(drop\s+table|truncate|delete\s+from)\b/i.test(atomicPublicationSql)) issues.push("Atomic publication migration must not contain destructive DDL/DML.");
 if (!atomicPublicationSql.includes("create or replace function executive_visuals.finalize_asset_publication_v1(")) issues.push("Atomic lease-fenced asset publication RPC is missing.");
 if (!atomicPublicationSql.includes("create or replace function executive_visuals.validate_asset_derivative_scope_v1()")) issues.push("Asset derivative tenant-scope trigger function is missing.");
+if (!atomicPublicationSql.includes("as $derivative_scope$") || !atomicPublicationSql.includes("$derivative_scope$;")) issues.push("Asset derivative trigger function must use valid named dollar quoting.");
 for (const required of ["parent_asset.owner_id is distinct from new.owner_id","parent_asset.project_id is distinct from new.project_id","parent_asset.deleted_at is not null","tg_op = 'UPDATE'","new.project_id is distinct from old.project_id","where derivative_of = old.id","asset with derivatives cannot change owner/project scope","for share","create trigger ev_assets_validate_derivative_scope"]) {
   if (!atomicPublicationSql.includes(required)) issues.push("Asset derivative source integrity check is missing: " + required + ".");
 }
