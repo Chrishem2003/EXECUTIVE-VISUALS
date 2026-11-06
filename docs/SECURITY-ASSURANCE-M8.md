@@ -27,7 +27,7 @@ The cookie's Secure attribute is conditional on NODE_ENV=production or COOKIE_SE
 
 ### M8-02 — Authentication rate limiting is process-local
 **Priority:** P2  
-The current rate limiter stores counters in an in-memory map keyed by remote address and route category. Limits therefore do not aggregate across multiple API instances and reset when a process restarts. Before horizontally scaling or exposing local-password authentication broadly, use a shared rate-limit store and add distributed-limit tests.
+The in-memory limiter now prunes expired buckets and enforces a configurable capacity (`RATE_LIMIT_MAX_BUCKETS`, default 10,000), preventing unbounded growth from many distinct client addresses. Counters still do not aggregate across multiple API instances and reset when a process restarts. Before horizontally scaling or exposing local-password authentication broadly, use a shared rate-limit store and add distributed-limit tests. Do not treat the in-memory capacity guard as distributed protection.
 
 ### M8-03 — Supabase identity lookup has no explicit request timeout
 **Priority:** P2 reliability/security hardening  
@@ -54,6 +54,7 @@ The M8 integration test exercises:
 - Expired-session rejection and removal from persisted sessions.
 - Strict Bearer-token parsing for Supabase identity verification.
 - Supabase identity timeout, network-error, rejected-response and malformed-payload handling.
+- Bounded in-memory rate-limit storage, expired-key pruning and capacity behavior.
 
 CI must pass on the draft pull request before these changes are considered verified.
 
