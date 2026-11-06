@@ -11,8 +11,8 @@ type RemoteUsage={window:string;configurationValid:boolean;limit:number|null;use
 let workspaceRevisions=new Map<string,number>();
 let workspaceSaveTimers=new Map<string,ReturnType<typeof setTimeout>>();
 let workspaceSaveChain:Promise<void>=Promise.resolve();
-const state:{status:"checking"|"offline"|"auth-required"|"online";authMode:"local"|"supabase";user:RuntimeUser|null;projects:RuntimeProject[];assets:RuntimeAsset[];jobs:RuntimeJob[];stageTimelines:Record<string,RuntimeJobStage[]>;audit:Array<Record<string,unknown>>;auditCursor:number|null;auditHasMore:boolean;members:Array<{id:string;email:string;role:string;createdAt:string}>;reviews:RuntimeReview[];projectId:string;message:string;ffmpeg:boolean;ffprobe:boolean;textGatewayEnabled:boolean;textGatewayConfigured:boolean;imageGatewayEnabled:boolean;imageGatewayConfigured:boolean;providers:ProviderStatus[];remoteUsage:RemoteUsage|null}={
- status:"checking",authMode:"local",user:null,projects:[],assets:[],jobs:[],stageTimelines:{},audit:[],auditCursor:null,auditHasMore:false,members:[],reviews:[],projectId:"",message:"",ffmpeg:false,ffprobe:false,textGatewayEnabled:false,textGatewayConfigured:false,imageGatewayEnabled:false,imageGatewayConfigured:false,providers:[],remoteUsage:null
+const state:{status:"checking"|"offline"|"auth-required"|"online";authMode:"local"|"supabase";user:RuntimeUser|null;projects:RuntimeProject[];assets:RuntimeAsset[];jobs:RuntimeJob[];stageTimelines:Record<string,RuntimeJobStage[]>;audit:Array<Record<string,unknown>>;auditCursor:number|null;auditHasMore:boolean;notifications:Array<Record<string,unknown>>;unreadNotifications:number;members:Array<{id:string;email:string;role:string;createdAt:string}>;reviews:RuntimeReview[];projectId:string;message:string;ffmpeg:boolean;ffprobe:boolean;textGatewayEnabled:boolean;textGatewayConfigured:boolean;imageGatewayEnabled:boolean;imageGatewayConfigured:boolean;providers:ProviderStatus[];remoteUsage:RemoteUsage|null}={
+ status:"checking",authMode:"local",user:null,projects:[],assets:[],jobs:[],stageTimelines:{},audit:[],auditCursor:null,auditHasMore:false,notifications:[],unreadNotifications:0,members:[],reviews:[],projectId:"",message:"",ffmpeg:false,ffprobe:false,textGatewayEnabled:false,textGatewayConfigured:false,imageGatewayEnabled:false,imageGatewayConfigured:false,providers:[],remoteUsage:null
 };
 const esc=(value:unknown)=>String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]||c));
 const fmt=(value:string)=>new Date(value).toLocaleString();
@@ -135,14 +135,15 @@ window.addEventListener("ev:save-creative-draft",event=>{
 
 async function refresh(){
  const previousProjectId=state.projectId;
- const [projects,assets,jobs,providerCatalog,usageResponse]=await Promise.all([
+ const [projects,assets,jobs,providerCatalog,usageResponse,notificationResponse]=await Promise.all([
   apiRequest<{projects:RuntimeProject[]}>("/api/projects"),
   apiRequest<{assets:RuntimeAsset[]}>("/api/assets"),
   apiRequest<{jobs:RuntimeJob[]}>("/api/jobs"),
   apiRequest<{providers:ProviderStatus[]}>("/api/providers"),
-  apiRequest<{remoteUsage:RemoteUsage}>("/api/usage")
+  apiRequest<{remoteUsage:RemoteUsage}>("/api/usage"),
+  apiRequest<{notifications:Array<Record<string,unknown>>;unreadCount:number}>("/api/notifications?limit=30")
  ]);
- state.projects=projects.projects;state.assets=assets.assets;state.jobs=jobs.jobs;state.providers=providerCatalog.providers;state.remoteUsage=usageResponse.remoteUsage;window.dispatchEvent(new Event("ev:assets-updated"));
+ state.projects=projects.projects;state.assets=assets.assets;state.jobs=jobs.jobs;state.providers=providerCatalog.providers;state.remoteUsage=usageResponse.remoteUsage;state.notifications=notificationResponse.notifications;state.unreadNotifications=notificationResponse.unreadCount;window.dispatchEvent(new Event("ev:assets-updated"));
   const recentJobs=state.jobs.slice(0,12);
   const timelines=await Promise.all(recentJobs.map(async job=>{
    try{const response=await apiRequest<{stages:RuntimeJobStage[]}>("/api/jobs/"+encodeURIComponent(job.id)+"/stages");return [job.id,response.stages||[]] as const;}
