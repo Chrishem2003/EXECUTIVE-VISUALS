@@ -968,7 +968,7 @@ export function createAppServer() {
         db.prepare("UPDATE notifications SET read_at=? WHERE user_id=? AND read_at IS NULL AND (project_id IS NULL OR project_id IN (SELECT p.id FROM projects p LEFT JOIN project_members pm ON pm.project_id=p.id WHERE p.owner_id=? OR pm.member_id=?))").run(now(),user.id,user.id,user.id);
         send(res,200,{ok:true},cors);return;
       }
-      const notificationReadMatch=path.match(/^\\/api\\/notifications\\/([0-9a-f-]+)\\/read$/i);
+      const notificationReadMatch=path.match(/^\/api\/notifications\/([0-9a-f-]+)\/read$/i);
       if(notificationReadMatch&&req.method==="POST"){
         const changed=db.prepare("UPDATE notifications SET read_at=COALESCE(read_at,?) WHERE id=? AND user_id=? AND (project_id IS NULL OR project_id IN (SELECT p.id FROM projects p LEFT JOIN project_members pm ON pm.project_id=p.id WHERE p.owner_id=? OR pm.member_id=?))").run(now(),notificationReadMatch[1],user.id,user.id,user.id);
         if(changed.changes!==1){fail(res,404,"NOTIFICATION_NOT_FOUND","Notification not found.");return;}
