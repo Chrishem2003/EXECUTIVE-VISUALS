@@ -13,8 +13,8 @@ function setup({role="editor",existing=[]}={}){
   calls.push({path,method:options.method,body:options.body?JSON.parse(options.body):null});
   if(path.startsWith("project_members?"))return{ok:true,status:200,async text(){return JSON.stringify(role? [{role}]:[]);}};
   if(path.startsWith("reviews?")&&options.method==="GET"){
-   const query=path.split("?")[1]||"";
-   const result=rows.filter(row=>(!query.includes("id=eq.")||query.includes("id=eq."+row.id))&&(!query.includes("project_id=eq.")||query.includes("project_id=eq."+row.project_id))&&(!query.includes("request_id=eq.")||query.includes("request_id=eq."+row.request_id)));
+   const params=new URLSearchParams(path.split("?")[1]||"");
+   const result=rows.filter(row=>(!params.has("id")||params.get("id")==="eq."+row.id)&&(!params.has("project_id")||params.get("project_id")==="eq."+row.project_id)&&(!params.has("owner_id")||params.get("owner_id")==="eq."+row.owner_id)&&(!params.has("request_id")||params.get("request_id")==="eq."+row.request_id));
    return{ok:true,status:200,async text(){return JSON.stringify(result);}};
   }
   if(path.startsWith("reviews?")&&options.method==="POST"){
@@ -35,7 +35,7 @@ const input={projectId,assetId,timelineId,timelineRevision:4,frameNumber:240,dur
 test("creates a frame-anchored review as the verified reviewer and keeps project ownership separate",async()=>{
  const f=setup();const result=await f.repo.create({actorId:editor,input,idempotencyKey:"review-request-0001"});
  assert.equal(result.review.projectId,projectId);assert.equal(result.review.authorId,editor);assert.equal(result.review.frameNumber,240);
- assert.equal(f.rows[0].owner_id,owner);assert.equal(f.rows[0].reviewer_id,editor);
+ assert.equal(f.rows[0].owner_id,owner);assert.equal(f.rows[0].reviewer_id,editor);assert.equal(f.rows[0].last_actor_id,editor);
  assert.equal(Number(f.rows[0].timecode_seconds),10);
 });
 test("rejects viewer roles from creating comments",async()=>{
