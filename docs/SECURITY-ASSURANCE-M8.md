@@ -35,8 +35,9 @@ The Supabase `/auth/v1/user` lookup has a configurable abort deadline (`SUPABASE
 
 ### M8-04 — Session lifecycle controls
 **Priority:** Implemented for local-password sessions; federated-provider lifecycle remains provider-managed  
-Local sessions now enforce a server-side sliding inactivity timeout (default 30 minutes, configurable with `SESSION_IDLE_TIMEOUT_MINUTES`, bounded to 5–1,440 minutes) and an absolute maximum lifetime (default 30 days, configurable with `SESSION_ABSOLUTE_DAYS`, bounded to 1–90 days). The browser cookie is refreshed on authenticated requests and its Max-Age is bounded by the idle and remaining absolute lifetime. Expired sessions are deleted server-side and the cookie is cleared. The `POST /api/auth/password` route requires the current password, updates the salted scrypt password hash, revokes every existing local session and issues a new session to the current device. These local-password controls do not revoke Supabase-managed sessions; federated credential changes and revocation must be configured and tested in the identity provider. Defaults are explicit starting policy values and must be reviewed against the deployment's risk classification before release. Relevant ASVS 5.0.0 checks include V7.1.1–V7.1.2, V7.3.1–V7.3.2, V7.4.1–V7.4.3 and V7.5.1–V7.5.2.
+Local sessions enforce a server-side sliding inactivity timeout (default 30 minutes, configurable with `SESSION_IDLE_TIMEOUT_MINUTES`, bounded to 5–1,440 minutes) and an absolute maximum lifetime (default 30 days, configurable with `SESSION_ABSOLUTE_DAYS`, bounded to 1–90 days). The browser cookie is refreshed on authenticated requests and its Max-Age is bounded by the idle and remaining absolute lifetime. Expired sessions are deleted server-side and the cookie is cleared. The `POST /api/auth/password` route requires the current password, updates the salted scrypt password hash, revokes every existing local session and issues a new session to the current device.
 
+Local accounts are limited to 10 concurrent sessions by default (`SESSION_MAX_CONCURRENT`, bounded to 1–25). When a new login exceeds the configured limit, the least recently active session(s) are revoked first. Authenticated users can list their own active local sessions with `GET /api/auth/sessions` and revoke an individual session with `DELETE /api/auth/sessions/:id`. The API returns opaque session identifiers and timestamps, never bearer tokens or token hashes; session ownership is enforced server-side. These endpoints permit users to review and terminate their own sessions. Supabase-managed sessions remain governed by the identity provider and must be verified there; this API does not claim to revoke provider sessions. Timeout and concurrency defaults are documented starting policy values and must be reviewed against the deployment's risk classification before release. Relevant ASVS 5.0.0 checks include V7.1.1–V7.1.3, V7.3.1–V7.3.2, V7.4.1–V7.4.5 and V7.5.1–V7.5.2.
 ### M8-05 — Production evidence is not yet available
 **Priority:** Release blocker  
 No production environment, deployment configuration, secrets, live user data, or provider credentials were inspected as part of this code review. No active penetration test or independent security assessment is claimed.
@@ -55,6 +56,8 @@ The M8 integration test exercises:
 - Sliding idle timeout, server-side activity tracking and cookie refresh.
 - Idle-expired session deletion and cookie clearing.
 - Local password change requiring the current password, rotating the active session and revoking other sessions.
+- Self-service local session inventory and individual revocation, including cross-account denial.
+- Concurrent local session cap and least-recently-active session eviction.
 - Strict Bearer-token parsing for Supabase identity verification.
 - Supabase identity timeout, network-error, rejected-response, malformed-payload and remote cleartext-transport rejection.
 - Project permission revalidation before resumable-upload finalization after a collaborator's access is revoked.
@@ -93,7 +96,7 @@ Do not enable production release based solely on green CI. Before production app
 1. Explicit production cookie and exact CORS origin configuration.
 2. Distributed rate limiting appropriate to the deployment topology.
 3. Verify the bounded external identity-provider timeout under the deployed network/proxy conditions.
-4. Review the configured inactivity/absolute timeout policy and verify local password-change revocation; verify Supabase session lifecycle separately with the identity provider.
+4. Review configured inactivity/absolute timeout and concurrent-session policies; verify local password-change and self-service revocation, then verify Supabase session lifecycle separately with the identity provider.
 5. Complete the remaining cloud storage, cloud timeline, worker, webhook and future-resource authorization review; the current local API tenant-isolation matrix is expanded but is not a complete independent verification.
 6. Backup/restore and rollback evidence for persistent storage and database changes.
 7. Human release approval after staging acceptance.
