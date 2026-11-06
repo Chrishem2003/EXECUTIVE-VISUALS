@@ -194,7 +194,7 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
    validateMediaOutputProbe(metadata,"video/mp4");
    if(!metadata.streams?.some(stream=>stream?.codec_type==="audio"))fail("Mastered output is missing its audio stream.","MEDIA_OUTPUT_VALIDATION_FAILED");
    masteringReport={enabled:true,targets:{integratedLufs:settings.integratedLufs,loudnessRange:settings.loudnessRange,truePeakDbtp:settings.truePeakDbtp},measurements,output,findings,verified:findings.length===0};
-   await Promise.all([outputPath,masteringOutputPath].filter(Boolean).map(path=>unlink(path).catch(()=>{})));
+   await unlink(outputPath).catch(()=>{});
    finalOutputPath=masteringOutputPath;
   }
   if(signal?.aborted)fail("Timeline render was cancelled.","JOB_CANCELLED");
@@ -202,7 +202,7 @@ export async function renderCloudTimeline({timeline,assets,workDir,signal,onProg
   const name=safeName(timeline.name);
   return{path:finalOutputPath,filename:name+"-master.mp4",mediaType:"video/mp4",...(masteringReport?{mastering:masteringReport}:{}),render:{width,height,frameRate:{numerator:fpsNum,denominator:fpsDen},videoClips:clips.length,audioClips:audioClips.length,automatedAudioClips:audioClips.filter(clip=>(clip.audioAutomation||[]).length>0||Number(clip.pan)!==0).length,overlayClips:overlayClips.length,captionClips:captionClips.length,durationSeconds:cursor}};
  }catch(error){
-  await unlink(outputPath).catch(()=>{});
+  await Promise.all([outputPath,masteringOutputPath].filter(Boolean).map(path=>unlink(path).catch(()=>{})));
   if(signal?.aborted)throw Object.assign(new Error("Timeline render was cancelled."),{code:"JOB_CANCELLED"});
   throw error;
  }finally{await Promise.all(captionTempPaths.map(path=>unlink(path).catch(()=>{})));}
