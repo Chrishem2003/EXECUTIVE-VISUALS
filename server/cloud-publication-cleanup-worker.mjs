@@ -79,7 +79,7 @@ export function createCloudPublicationCleanupWorker({
    select:"owner_id,project_id,job_id,publication_key,asset_id,status,updated_at",
    status:"in.(reserved,published)",
    updated_at:"lte."+cutoff,
-   order:"updated_at.asc",
+   order:"updated_at.asc,owner_id.asc,publication_key.asc",
    limit:String(publicationLimit),
    offset:String(offset)
   });
