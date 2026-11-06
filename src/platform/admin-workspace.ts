@@ -7,7 +7,6 @@ type Price={id:string;provider:string;model:string;capability:string;unit:string
 type Event={id:number;type:string;subjectType:string;subjectId:string;details:Record<string,unknown>;createdAt:string};
 const state:{allowed:boolean;overview:Overview|null;users:User[];plans:Plan[];prices:Price[];events:Event[];message:string;loading:boolean}={allowed:false,overview:null,users:[],plans:[],prices:[],events:[],message:"Checking administrator access…",loading:false};
 const esc=(v:unknown)=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]||c));
-const money=(minor:number|null,currency:string)=>minor===null?"Not priced":new Intl.NumberFormat(undefined,{style:"currency",currency}).format(minor/100);
 function options(items:Plan[]){return items.map(p=>'<option value="'+esc(p.id)+'">'+esc(p.name)+' · '+esc(p.code)+'</option>').join("");}
 export function isAdminWorkspaceEnabled(){return state.allowed;}
 export function renderAdminWorkspace(){
