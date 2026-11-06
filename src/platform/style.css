@@ -478,3 +478,7 @@
 .review-reply p{margin:5px 0;white-space:pre-wrap;overflow-wrap:anywhere}
 .review-thread form{display:grid;gap:8px;margin-top:12px}
 .review-thread textarea{width:100%;min-height:58px}
+
+
+.review-reactions-tools{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:10px 0}
+.review-reactions-tools button{min-width:34px;padding:6px 9px}
