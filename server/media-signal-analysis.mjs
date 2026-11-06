@@ -94,6 +94,40 @@ export function buildLoudnormNormalizationFilter({integratedLufs=-16,loudnessRan
  return `loudnorm=I=${formatFilterNumber(integratedLufs)}:LRA=${formatFilterNumber(loudnessRange)}:TP=${formatFilterNumber(truePeakDbtp)}:measured_I=${formatFilterNumber(measured.integratedLufs)}:measured_TP=${formatFilterNumber(measured.truePeakDbtp)}:measured_LRA=${formatFilterNumber(measured.loudnessRange)}:measured_thresh=${formatFilterNumber(measured.thresholdDb)}:offset=${formatFilterNumber(measured.offsetDb)}:linear=true:dual_mono=${dualMono}:print_format=json`;
 }
 
+
+export function parseLoudnormOutput(stderr=""){
+ const text=String(stderr||"");
+ const candidates=[...text.matchAll(/\\{[\\s\\S]*?\\}/g)].reverse();
+ const numeric=value=>typeof value==="number"||typeof value==="string"&&value.trim()!==""?Number(value):NaN;
+ for(const candidate of candidates){
+  let parsed;
+  try{parsed=JSON.parse(candidate[0]);}catch{continue;}
+  const normalizationType=String(parsed.normalization_type||"").toLowerCase();
+  if(normalizationType!=="linear"&&normalizationType!=="dynamic")continue;
+  const metric=value=>{const number=numeric(value);return Number.isFinite(number)?number:null;};
+  return {
+   normalizationType,
+   integratedLufs:metric(parsed.output_i),
+   truePeakDbtp:metric(parsed.output_tp),
+   loudnessRange:metric(parsed.output_lra),
+   thresholdDb:metric(parsed.output_thresh),
+   targetOffsetDb:metric(parsed.target_offset)
+  };
+ }
+ return null;
+}
+export function buildLoudnormOutputFindings(result,{integratedLufs=-16,truePeakDbtp=-1.5,tolerance=0.5}={}){
+ buildLoudnormAnalysisFilter({integratedLufs,truePeakDbtp,loudnessRange:50});
+ assertRange("tolerance",tolerance,[0,3]);
+ if(!result||typeof result!=="object")throw new TypeError("A parsed loudnorm output result is required.");
+ const findings=[];
+ if(result.normalizationType==="dynamic")findings.push({code:"LOUDNORM_LINEAR_FALLBACK",severity:"warning",message:"FFmpeg used dynamic normalization instead of the requested linear mode. Review source loudness range and true-peak headroom."});
+ else if(result.normalizationType!=="linear")findings.push({code:"LOUDNORM_MODE_UNKNOWN",severity:"warning",message:"The output normalization mode could not be confirmed."});
+ if(finiteNumber(result.integratedLufs)&&Math.abs(result.integratedLufs-integratedLufs)>tolerance)findings.push({code:"LOUDNORM_INTEGRATED_TARGET_MISS",severity:"warning",measuredLufs:result.integratedLufs,targetLufs:integratedLufs,message:"Rendered integrated loudness is outside the configured tolerance."});
+ if(finiteNumber(result.truePeakDbtp)&&result.truePeakDbtp>truePeakDbtp+tolerance)findings.push({code:"LOUDNORM_TRUE_PEAK_TARGET_MISS",severity:"warning",measuredTruePeakDbtp:result.truePeakDbtp,targetTruePeakDbtp:truePeakDbtp,message:"Rendered true peak exceeds the configured ceiling tolerance."});
+ return findings;
+}
+
 export async function runOptionalSignalCheck(check,{isCancelled=()=>false}={}) {
  try {
   return {status:"completed",result:await check()};
