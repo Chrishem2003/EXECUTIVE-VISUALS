@@ -49,6 +49,7 @@
 ### M4 — Professional collaboration and delivery
 - [x] Cloud mastering controls, measured output report and durable render history (draft PR chain #130–#132; merge order and release review pending).
 - [ ] Platform delivery profiles (draft PR #133): source dimensions, YouTube 1080p landscape, vertical 1080p and square 1080p; server allow-list, durable job input, H.264/AAC render settings and output-dimension tests. HDR tone mapping remains explicitly out of scope.
+- [ ] Automated delivery certification (draft PR #134): inspect the final published candidate with FFprobe; verify MP4 container, H.264, yuv420p, requested dimensions, frame rate, duration tolerance and AAC/48 kHz when audio is present; block publication on failed technical checks; display and export a versioned evidence report. This is technical profile validation, not platform acceptance, rights review or creative-quality certification.
 - Review links, timestamped comments, drawing annotations, approvals and revision comparison.
 - Project/sequence locking, presence and publish checkpoints.
 - Asset version lineage, shared libraries, metadata search and content provenance.
