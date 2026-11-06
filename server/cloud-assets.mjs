@@ -162,12 +162,13 @@ export function createCloudAssetRepository({
         }
       }
       const asset=verifyAsset(existing);
+      let cleanupPending=false;
       if(existing.object_path!==uploaded.path){
-        try{await storage.remove(uploaded.path);}catch(error){const cleanup=new Error("A losing publication attempt left an unreferenced storage object.");cleanup.code="CLOUD_ASSET_ORPHAN_CLEANUP_PENDING";cleanup.cause=error;cleanup.assetId=id;throw cleanup;}
+        try{await storage.remove(uploaded.path);}catch{cleanupPending=true;}
       }
       const completed=await request("rpc/complete_asset_publication",{method:"POST",body:{p_owner_id:ownerId,p_publication_key:publicationKey,p_asset_id:id}});
       if(!Array.isArray(completed)||completed.length!==1||completed[0].status!=="published"||completed[0].asset_id!==id)throw new Error("Cloud asset publication could not be finalized.");
-      return asset;
+      return cleanupPending?{...asset,cleanupPending:true}:asset;
     },
     async createFromFile({ownerId,projectId=null,originalName,mediaType,filePath,derivativeOf=null,metadata={}}) {
       ownerId=validUuid(ownerId,"owner ID");
