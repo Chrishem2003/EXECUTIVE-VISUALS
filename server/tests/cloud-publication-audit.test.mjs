@@ -18,6 +18,7 @@ test("persists only allowlisted cleanup event fields using server-only credentia
  assert.equal(request.options.method,"POST");
  assert.equal(request.options.headers.apikey,"server-only-secret");
  assert.equal(request.options.headers.authorization,"Bearer server-only-secret");
+ assert.equal(request.options.headers["content-profile"],"executive_visuals");
  assert.equal(request.options.headers.prefer,"return=minimal");
  assert.deepEqual(JSON.parse(request.options.body),{
   run_id:runId,event_type:"publication.cleanup_candidate_skipped",actor_type:"admin",actor_id:ownerId,
