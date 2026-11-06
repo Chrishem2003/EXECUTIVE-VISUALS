@@ -62,6 +62,21 @@ test("rejects unsafe signed download URLs before making a request",async()=>{
  await assert.rejects(()=>io.materialize({ownerId:"owner-1",assetId:"asset-1"}),/unsafe signed URL/);
  assert.equal(calls.length,0);await rm(root,{recursive:true,force:true});
 });
+test("forwards worker lease assertions and abort signals into idempotent publication",async()=>{
+ const root=await mkdtemp(join(tmpdir(),"ev-media-lease-io-")),path=join(root,"master.mp4");
+ await writeFile(path,content);
+ const controller=new AbortController();let argsSeen=null,leaseChecks=0;
+ const assets={async createSignedUrl(){},async createFromFileIdempotent(args){argsSeen=args;return{id:"lease-guarded-asset"};}};
+ const io=createCloudMediaAssetIO({assets,tempRoot:root,maxBytes:100});
+ const assertLease=async()=>{leaseChecks++;return true;};
+ const result=await io.publish({ownerId:"owner-1",filename:"master.mp4",mediaType:"video/mp4",path,publicationKey:"job-lease:output:v1",assertLease,signal:controller.signal});
+ assert.equal(result.id,"lease-guarded-asset");
+ assert.equal(leaseChecks,1);
+ assert.equal(argsSeen.assertLease,assertLease);
+ assert.equal(argsSeen.signal,controller.signal);
+ await rm(root,{recursive:true,force:true});
+});
+
 test("requires explicit repository methods and valid limits",()=>{
  assert.throws(()=>createCloudMediaAssetIO({}),/asset repository/);
  assert.throws(()=>createCloudMediaAssetIO({assets:{createSignedUrl(){},create(){}},maxBytes:0}),/byte limit/);
