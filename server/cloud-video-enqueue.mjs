@@ -292,7 +292,7 @@ export function createCloudVideoEnqueue({
         referenceAssetIds: input.referenceImageAssetIds ?? input.referenceAssetIds
       } : verifiedSourceMetadata ? {
         ...input,
-        durationSeconds: verifiedSourceMetadata.durationSeconds,
+        durationSeconds: Math.ceil(verifiedSourceMetadata.durationSeconds),
         ...(runwayUpscaleEnabled ? { outputFrames: verifiedSourceMetadata.frameCount, resolution: input.resolution ?? "2k" } : {})
       } : input;
       const normalizedRequest = normalizeVideoGenerationRequest(capabilityInput);
