@@ -1,14 +1,21 @@
 const API_BASE="https://generativelanguage.googleapis.com/v1/models/";
 const MODEL="gemini-3-pro-image";
+const MODEL_PROFILES=Object.freeze({
+ "gemini-3-pro-image":Object.freeze({label:"Nano Banana Pro · Gemini 3 Pro Image",resolutions:["1K","2K","4K"]}),
+ "gemini-3.1-flash-image":Object.freeze({label:"Nano Banana 2 · Gemini 3.1 Flash Image",resolutions:["1K","2K","4K"]})
+});
 const MAX_IMAGE_BYTES=50*1024*1024;
 const fail=(message,code)=>Object.assign(new Error(message),{code});
-export function listGeminiImageModels(){return [{id:MODEL,label:"Nano Banana Pro · Gemini 3 Pro Image",aspectRatios:["1:1","3:2","2:3"],resolutions:["1K","2K","4K"],inputModes:["text-to-image","image-to-image"],readiness:"adapter-supported; paid API key and remote opt-in required"}];}
-export function buildGeminiImageRequest({prompt,size="1024x1024",quality="medium",referenceImageDataUrl=""}={}){
+export function listGeminiImageModels(){return Object.entries(MODEL_PROFILES).map(([id,profile])=>({id,label:profile.label,aspectRatios:["1:1","3:2","2:3"],resolutions:[...profile.resolutions],inputModes:["text-to-image","image-to-image"],readiness:"adapter-supported; paid API key and remote opt-in required"}));}
+export function buildGeminiImageRequest({model=MODEL,prompt,size="1024x1024",quality="medium",referenceImageDataUrl=""}={}){
+ const profile=MODEL_PROFILES[String(model||"").trim()];
+ if(!profile)throw fail("Select a verified Gemini image model.","IMAGE_GATEWAY_UNSUPPORTED_MODEL");
  const text=typeof prompt==="string"?prompt.trim():"";
- if(!text||text.length>12000)throw fail("Nano Banana Pro prompts must contain 1 to 12000 characters.","IMAGE_GATEWAY_INVALID_INPUT");
+ if(!text||text.length>12000)throw fail("Gemini image prompts must contain 1 to 12000 characters.","IMAGE_GATEWAY_INVALID_INPUT");
  const dimensions={"1024x1024":"1:1","1536x1024":"3:2","1024x1536":"2:3"};
  const aspectRatio=dimensions[size]||"1:1";
  const imageSize=quality==="high"?"2K":"1K";
+ if(!profile.resolutions.includes(imageSize))throw fail("The selected image quality is not supported by this model.","IMAGE_GATEWAY_UNSUPPORTED_CAPABILITY");
  const parts=[{text}];
  if(referenceImageDataUrl){
   const match=/^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/]+={0,2})$/.exec(referenceImageDataUrl);
@@ -17,22 +24,22 @@ export function buildGeminiImageRequest({prompt,size="1024x1024",quality="medium
   if(!buffer.length||buffer.length>10*1024*1024||buffer.toString("base64").replace(/=+$/,"")!==match[2].replace(/=+$/,""))throw fail("Reference image is invalid or exceeds 10 MiB.","IMAGE_GATEWAY_INVALID_INPUT");
   parts.push({inline_data:{mime_type:match[1],data:match[2]}});
  }
- return {model:MODEL,body:{contents:[{role:"user",parts}],generationConfig:{responseModalities:["IMAGE"],responseFormat:{image:{aspectRatio,imageSize}}}}};
+ return {model,body:{contents:[{role:"user",parts}],generationConfig:{responseModalities:["IMAGE"],responseFormat:{image:{aspectRatio,imageSize}}}}};
 }
 export async function generateGeminiImage({prompt,size="1024x1024",quality="medium",referenceImageDataUrl="",model=process.env.GEMINI_IMAGE_MODEL||MODEL,fetchImpl=fetch}={}){
  if(process.env.IMAGE_GATEWAY_ENABLED!=="true")throw fail("Image generation is disabled by server configuration.","IMAGE_GATEWAY_DISABLED");
  if(process.env.IMAGE_GATEWAY_ALLOW_REMOTE!=="true")throw fail("Remote image generation is disabled. Review provider pricing and explicitly enable remote access on the server.","IMAGE_GATEWAY_REMOTE_DISABLED");
  const key=String(process.env.GEMINI_API_KEY||"").trim();
- if(!key)throw fail("Configure GEMINI_API_KEY on the server before using Nano Banana Pro.","IMAGE_GATEWAY_CONFIG_INVALID");
+ if(!key)throw fail("Configure GEMINI_API_KEY on the server before using a Gemini image model.","IMAGE_GATEWAY_CONFIG_INVALID");
  const selected=String(model||process.env.GEMINI_IMAGE_MODEL||MODEL).trim();
- if(selected!==MODEL)throw fail("The configured Gemini image model is not in the verified Nano Banana Pro adapter.","IMAGE_GATEWAY_UNSUPPORTED_MODEL");
- const request=buildGeminiImageRequest({prompt,size,quality,referenceImageDataUrl});
+ if(!MODEL_PROFILES[selected])throw fail("The configured Gemini image model is not in the verified adapter catalogue.","IMAGE_GATEWAY_UNSUPPORTED_MODEL");
+ const request=buildGeminiImageRequest({model:selected,prompt,size,quality,referenceImageDataUrl});
  const timeoutMs=Math.max(1000,Math.min(300000,Number(process.env.IMAGE_GATEWAY_TIMEOUT_MS)||180000));
  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs);
  try{
   let response;
   try{response=await fetchImpl(API_BASE+encodeURIComponent(selected)+":generateContent",{method:"POST",headers:{"x-goog-api-key":key,"content-type":"application/json"},body:JSON.stringify(request.body),signal:controller.signal,redirect:"error"});}
-  catch(error){throw fail(error?.name==="AbortError"?"Nano Banana Pro request timed out.":"Gemini image API could not be reached.",error?.name==="AbortError"?"IMAGE_GATEWAY_TIMEOUT":"IMAGE_GATEWAY_UNAVAILABLE");}
+  catch(error){throw fail(error?.name==="AbortError"?"Gemini image request timed out.":"Gemini image API could not be reached.",error?.name==="AbortError"?"IMAGE_GATEWAY_TIMEOUT":"IMAGE_GATEWAY_UNAVAILABLE");}
   const raw=await response.text();
   if(Buffer.byteLength(raw)>75*1024*1024)throw fail("Gemini image response exceeds the 75 MiB transport limit.","IMAGE_GATEWAY_INVALID_RESPONSE");
   let payload;try{payload=raw?JSON.parse(raw):{};}catch{throw fail("Gemini image API returned invalid JSON.","IMAGE_GATEWAY_INVALID_RESPONSE");}
