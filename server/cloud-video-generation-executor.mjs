@@ -87,14 +87,18 @@ export async function executeCloudVideoGenerationJob({
       try { await ledger.markUnknown(job.id, workerId, "PROVIDER_TASK_ID_MISSING"); } catch {}
       throw fail("Provider did not return a durable task ID; reconciliation is required.", "VIDEO_SUBMISSION_REQUIRES_RECONCILIATION");
     }
+    let recordMetadata;
     try {
-      const submittedMetadata = submitted.metadata && typeof submitted.metadata === "object" && !Array.isArray(submitted.metadata)
-        ? submitted.metadata : {};
+      if (submitted.metadata !== undefined &&
+          (!submitted.metadata || typeof submitted.metadata !== "object" || Array.isArray(submitted.metadata))) {
+        throw fail("Provider submission metadata must be a JSON object.", "VIDEO_SUBMISSION_METADATA_INVALID");
+      }
+      const submittedMetadata = submitted.metadata || {};
       const metadataText = JSON.stringify(submittedMetadata);
       if (Buffer.byteLength(metadataText) > 7000) {
         throw fail("Provider submission metadata exceeded the durable ledger limit.", "VIDEO_SUBMISSION_METADATA_INVALID");
       }
-      const recordMetadata = { acceptedStatus: submitted.status || "queued", ...submittedMetadata };
+      recordMetadata = { acceptedStatus: submitted.status || "queued", ...submittedMetadata };
       const recorded = await ledger.record(job.id, workerId, submitted.taskId, recordMetadata);
       if (!recorded) throw new Error("Provider task ID was not recorded.");
     } catch {
@@ -103,7 +107,7 @@ export async function executeCloudVideoGenerationJob({
       throw fail("Provider task ID persistence is uncertain; reconciliation is required.", "VIDEO_SUBMISSION_REQUIRES_RECONCILIATION");
     }
     providerTaskId = submitted.taskId;
-    submissionMetadata = { acceptedStatus: submitted.status || "queued", ...(submitted.metadata || {}) };
+    submissionMetadata = recordMetadata;
     state = "submitted";
   }
 
