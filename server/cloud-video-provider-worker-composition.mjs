@@ -90,8 +90,13 @@ export function createProviderAwareCloudVideoWorkerComposition({
       if (typeof resolveRunwayActualCost !== "function") {
         throw new Error("Runway cloud registration requires an authoritative task-level billing resolver.");
       }
-      if (runwayModels.includes("aleph2") && typeof prepareRunwayInput !== "function") {
-        throw new Error("Runway Aleph2 registration requires an owner-scoped source-media resolver.");
+      if (runwayModels.some(model => ["aleph2", "magnific_video_upscaler_creative"].includes(model)) &&
+          typeof prepareRunwayInput !== "function") {
+        throw new Error("Runway source operations require an owner-scoped source-media resolver.");
+      }
+      if (runwayModels.some(model => ["aleph2", "magnific_video_upscaler_creative"].includes(model)) &&
+          typeof resolveRunwaySourceMetadata !== "function") {
+        throw new Error("Runway source operations require a server-side media metadata resolver for safe budget reservation.");
       }
       for (const model of runwayModels) {
         adapters.push(createRunwayCloudVideoAdapter({
