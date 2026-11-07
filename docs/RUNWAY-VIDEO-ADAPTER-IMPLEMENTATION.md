@@ -21,7 +21,7 @@
 
 ## Explicit limitations
 
-This adapter currently implements **text-to-video only**. It does not yet implement image-to-video, video-to-video editing/extension, multi-shot prompt segmentation, image/video/audio reference uploads, native audio controls, model-specific advanced parameters, or provider-side cancellation. The UI must not advertise those features as available through this adapter.
+This adapter implements **text-to-video and one first-frame image-to-video input** for the listed models. It does not yet implement video-to-video editing/extension, last/middle keyframes, multi-shot prompt segmentation, video/audio references, native audio controls, model-specific advanced parameters, or provider-side cancellation. The first-frame image must be a valid PNG/JPEG/WebP data URI no larger than Runway’s documented 5 MiB data-URI limit. The UI must not advertise unsupported features as available.
 
 The adapter returns provider cost metadata when Runway supplies it, but Executive Visuals does not yet calculate customer-facing prices, reserve subscription credits, or reconcile provider charges against a subscription ledger.
 
