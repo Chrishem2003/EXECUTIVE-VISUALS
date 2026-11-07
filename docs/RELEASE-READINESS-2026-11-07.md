@@ -139,3 +139,15 @@ PR #206 remains open and draft. Do not merge it: Render production auto-deploys 
 - The new CLI uses the existing SQLite billing ledger in read-only mode and makes one bounded organization-usage request. It does not mutate balances, refunds, provider settings, or deployment resources.
 
 The release decision remains **blocked** for the same infrastructure and financial reasons above. The Cloudflare Worker remains a separate static/frontend preview with no `API_ORIGIN`; the Render production backend remains on `main` and has not been modified.
+
+## Continuation update — 2026-11-07 14:16 UTC
+
+- Current PR #206 head: `2dab5068f4529c86d9183b5b072e0c6679bd183f`; 399 commits ahead of `main`, 0 behind; 133 changed files.
+- Quality Checks passed on this exact head: dependency install, TypeScript typecheck, production build and the complete regression suite.
+- Google Drive Integration Quality passed on this exact head, including disposable PostgreSQL integration. The complete suite reported 763 tests passed and 0 failed.
+- Implemented multi-image generation for the OpenAI-compatible image gateway: `outputCount` 1–4 is sent as the OpenAI Images API `n` parameter; response cardinality and every base64 image payload are validated.
+- The workflow image node persists each variation as a separate private asset. The original single `image` output remains backward-compatible; a new multi-value `images` asset output can feed the existing Batch Inputs node for downstream fan-out. Reference inputs are now normalized across singular and plural workflow port IDs.
+- Runway direct image tasks remain single-output in this adapter; its catalog was corrected to reflect that. The separately documented Runway Model Router can accept 1–4 outputs but requires a saved router config and has not been substituted implicitly. Gemini and FAL remain single-output until their adapters are verified.
+- No paid provider generation was run. No Render production service, production database, Cloudflare API origin, R2 bucket, or production credential was changed.
+
+The release remains blocked pending isolated staging acceptance, durable private storage and backup/restore verification, payment sandbox acceptance, and task-correlated provider-cost settlement. Keep PR #206 as draft; do not merge this 399-commit integration candidate into production.
