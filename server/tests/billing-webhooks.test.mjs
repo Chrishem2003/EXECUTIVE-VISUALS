@@ -128,6 +128,26 @@ test("transaction mismatch never grants credits and remains retryable for reconc
   db.close();
 });
 
+test("a failed checkout attempt does not block a later successful retry", async () => {
+  const { db, order } = setup();
+  receiveFlutterwaveWebhook(db, signedPayload(payload(order, { event: "charge.failed", status: "failed", id: 123455 })));
+  const failedAttempt = await processNextFlutterwaveWebhook(db, {
+    verifyTransaction: async () => { throw new Error("failed attempt must not be settled"); }
+  });
+  assert.equal(failedAttempt.processed, true);
+  assert.equal(failedAttempt.retryableCheckout, true);
+  assert.equal(db.prepare("SELECT status FROM billing_payment_orders WHERE id=?").get(order.id).status, "pending");
+  receiveFlutterwaveWebhook(db, signedPayload(payload(order, { id: 123456 })));
+  const successfulRetry = await processNextFlutterwaveWebhook(db, {
+    verifyTransaction: async () => ({
+      id: 123456, tx_ref: order.txRef, status: "successful", currency: "UGX", amount: 50000
+    })
+  });
+  assert.equal(successfulRetry.paid, true);
+  assert.equal(getBillingBalance(db, order.userId), 1200);
+  db.close();
+});
+
 test("pending webhook states are not treated as failed payments", async () => {
   const { db, order } = setup();
   receiveFlutterwaveWebhook(db, signedPayload(payload(order, { status: "pending" })));
