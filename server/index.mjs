@@ -228,15 +228,15 @@ async function storeUpload(req,user,projectId) {
   const sha256=digest.digest("hex");
   const extension=extname(originalName).toLowerCase();
   const metadata=(extension===".srt"&&(mediaType==="text/plain"||mediaType==="application/x-subrip"))?{captionValidation:validateSrt(await readFile(absolute,"utf8"))}:extension===".vtt"&&mediaType==="text/vtt"?{captionValidation:validateWebVtt(await readFile(absolute,"utf8"))}:{};
-  db.exec("BEGIN IMMEDIATE");
   try{
+    db.exec("BEGIN IMMEDIATE");
     assertBillingStorageQuota({limitBytes:storageLimit,usedBytes:currentStorage(),incomingBytes:size});
     db.prepare("INSERT INTO assets(id,owner_id,project_id,original_name,media_type,byte_size,sha256,storage_path,metadata_json) VALUES(?,?,?,?,?,?,?,?,?)")
       .run(id,user.id,projectId||null,originalName,mediaType,size,sha256,relative,json(metadata));
     audit(db,user.id,"asset.uploaded","asset",id,{name:originalName,mediaType,size,sha256},projectId||null);
     db.exec("COMMIT");
   }catch(error){
-    db.exec("ROLLBACK");
+    try{db.exec("ROLLBACK");}catch{}
     await unlink(absolute).catch(()=>{});
     throw error;
   }
