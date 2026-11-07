@@ -449,3 +449,44 @@ test("Runway Model Router rejects non-USD ceilings and invalid config slugs befo
   assert.equal(calls, 0);
 });
 
+test("Runway Model Router video-to-video enqueue probes source metadata before durable queue submission", async () => {
+  const sourceVideoAssetId = "a23e4567-e89b-42d3-a456-426614174000";
+  let calls = 0;
+  const env = {
+    RUNWAY_MODEL_ROUTER_ENABLED: "true", CLOUD_VIDEO_WORKER_ENABLED: "true",
+    RUNWAY_VIDEO_ALLOW_REMOTE: "true", RUNWAY_VIDEO_ROUTER_CONFIG: "production-video",
+    VIDEO_GATEWAY_ENABLED: "true", VIDEO_GATEWAY_ALLOW_REMOTE: "true"
+  };
+  const metadata = {
+    ownerId, projectId, assetId: sourceVideoAssetId,
+    mediaType: "video/mp4", durationSeconds: 11.2, frameCount: 336
+  };
+  const client = createCloudVideoEnqueue({
+    ...base, env,
+    resolveRunwaySourceMetadata: async scope => {
+      assert.deepEqual(scope, { ownerId, projectId, assetId: sourceVideoAssetId });
+      return metadata;
+    },
+    fetchImpl: async () => { calls++; return response([resultRow]); }
+  });
+  const routerInput = {
+    projectId, provider: "runway", model: "model-router", requestHash,
+    operation: "video-to-video", sourceVideoAssetId,
+    prompt: "Replace the background while preserving subject motion",
+    durationSeconds: 12, aspectRatio: "16:9"
+  };
+  const queued = await client.enqueue(args({ model: "model-router", input: routerInput, reservedAmount: 5 }));
+  assert.equal(queued.jobId, resultRow.job_id);
+  assert.equal(calls, 1);
+  const invalid = createCloudVideoEnqueue({
+    ...base, env,
+    resolveRunwaySourceMetadata: async () => ({ ...metadata, durationSeconds: 12.1 }),
+    fetchImpl: async () => { calls++; return response([resultRow]); }
+  });
+  await assert.rejects(
+    invalid.enqueue(args({ model: "model-router", input: routerInput, reservedAmount: 5 })),
+    error => error.code === "VIDEO_SOURCE_METADATA_MISMATCH"
+  );
+  assert.equal(calls, 1);
+});
+
