@@ -331,3 +331,36 @@ Sources:
 - **P1:** review comments and approval history bound to exact asset/timeline versions.
 - **P1:** continuity/brand kits with reference permissions and rights/consent evidence.
 - **P2:** reusable workflow template marketplace and editor interoperability after core export contracts are stable.
+
+
+## Market intelligence refresh — November 7, 2026
+
+Official product updates show the category moving from model access toward complete creative operations:
+
+- Project credit caps with automatic pause at the customer/project budget limit (Runway, Oct 9).
+- Natural-language creative app generation using models, brand assets and project files (Runway App Studio, Oct 26).
+- Performance-aware ad variants with an approval gate before publishing (Runway Ads, Oct 27).
+- Frame-accurate asset comments and agent collaboration in review threads.
+- Reusable brand kits and agent-accessible project context.
+- Native integrations with Premiere Pro, After Effects and DaVinci Resolve.
+- Natural-language workflow construction with editable, rerunnable graphs.
+- Estimated and final task-cost visibility for downstream metering.
+
+Evidence: https://runway.com/changelog ; https://runway.com/team-plan ; https://helpx.adobe.com/premiere/desktop/edit-projects/edit-with-generative-ai/generative-media-tool-overview.html
+
+### Customer-outcome response
+
+1. Budget-aware production: project caps, estimates, reservations, actual cost, refunds/adjustments and pause-on-cap.
+2. Brief-to-campaign: turn a brief and target into scripts, shot plans, variants, review rounds and delivery packs; publishing remains approval-gated.
+3. Brand memory: versioned kits, product/character references, approved assets, voice/tone rules, rights and consent evidence.
+4. Frame-accurate client review: comments on exact asset versions/timecodes, change requests and immutable approvals.
+5. Editor handoff: stable asset references, proxies, captions, audio stems, timeline metadata and export manifests. Build standards-based interchange before claiming native plugins.
+6. Reusable agent workflows: inspectable graphs, cost preview, explicit approval and versioned reruns.
+
+### Go-to-market wedge
+
+Prioritize product launch/e-commerce video packs, short-form ad variants for agencies and small businesses, product explainers/training clips, and repeatable creator/social packages. Keep planning, scripting, storyboarding, local editing, captions, review and export useful without a paid generation request. Remote generation requires a visible estimate and explicit approval.
+
+### Success metrics
+
+Track activation-to-first-export, brief-to-first-draft time, quote acceptance, generation success, spend variance, approval turnaround, revision count, export success, repeat-project rate, 30-day team retention and contribution margin per delivered package. Model count is not the north-star metric.
