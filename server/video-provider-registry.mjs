@@ -32,6 +32,7 @@ export const VIDEO_PROVIDER_CATALOG = freeze([
           nativeAudio: true, negativePrompt: true, seed: true,
           startFrame: true, endFrame: false, motionReference: false,
           referenceImages: true, referenceVideos: true, referenceAudio: true,
+          maxReferenceImages: 4, maxReferenceVideos: 2, maxReferenceAudio: 1,
           audioModes: ["generated", "none", "reference"],
           aspectRatios: ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"],
           resolutions: ["provider_default", "480p", "720p", "1080p", "4k"],
@@ -40,10 +41,6 @@ export const VIDEO_PROVIDER_CATALOG = freeze([
         constraints: {
           promptMaxCharacters: 26000,
           negativePromptMaxCharacters: 1000,
-          maxReferenceImages: 4,
-          maxReferenceImages: 4,
-          maxReferenceVideos: 2,
-          maxReferenceAudio: 1,
           pricingSource: "https://docs.dev.runwayml.com/api/",
           pricingMode: "server-dry-run-with-approved-budget-ceiling",
           minimumPollIntervalMs: 5000,
