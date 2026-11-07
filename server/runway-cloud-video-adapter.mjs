@@ -158,10 +158,11 @@ export function createRunwayCloudVideoAdapter({
         throw fail("Runway job identity does not match the selected adapter.", "VIDEO_JOB_INPUT_MISMATCH");
       }
       const isVideoEdit = input.operation === "video-to-video";
+      const isVideoUpscale = input.operation === "video-upscale";
       const hasReferences = (Array.isArray(input.referenceAssetIds) && input.referenceAssetIds.length > 0) ||
         Boolean(input.referenceImageDataUrl) || Boolean(input.sourceVideoAssetId) ||
         (Array.isArray(input.keyframeAssetIds) && input.keyframeAssetIds.length > 0);
-      if ((hasReferences || isVideoEdit) && typeof prepareInput !== "function") {
+      if ((hasReferences || isVideoEdit || isVideoUpscale) && typeof prepareInput !== "function") {
         throw fail("Runway source and reference assets require an authenticated project-scoped input resolver.", "VIDEO_INPUT_ASSET_RESOLUTION_REQUIRED");
       }
       if (typeof prepareInput !== "function") return input;
@@ -169,7 +170,14 @@ export function createRunwayCloudVideoAdapter({
       if (!prepared || typeof prepared !== "object" || Array.isArray(prepared)) {
         throw fail("Runway private input preparation returned an invalid payload.", "VIDEO_INPUT_ASSET_RESOLUTION_FAILED");
       }
-      if (!isVideoEdit) return prepared;
+      if (!isVideoEdit && !isVideoUpscale) return prepared;
+      if (isVideoUpscale) {
+        if (selectedModel !== "magnific_video_upscaler_creative") throw fail("Video upscaling requires the verified Magnific video-upscaler profile.", "RUNWAY_ADAPTER_MODEL_UNSUPPORTED");
+        let videoUri = prepared.videoUri;
+        if (prepared.sourceVideo) videoUri = await uploadEphemeral(prepared.sourceVideo);
+        if (!isRunwayUri(videoUri)) throw fail("Video upscaling requires a Runway ephemeral URI resolved from the authorized source asset.", "VIDEO_INPUT_ASSET_RESOLUTION_REQUIRED");
+        return { ...input, videoUri };
+      }
       if (selectedModel !== "aleph2") throw fail("Video-to-video currently requires the verified Aleph2 adapter profile.", "RUNWAY_ADAPTER_MODEL_UNSUPPORTED");
       let videoUri = prepared.videoUri;
       if (prepared.sourceVideo) videoUri = await uploadEphemeral(prepared.sourceVideo);
@@ -191,11 +199,41 @@ export function createRunwayCloudVideoAdapter({
 
     async submit(input) {
       assertEnabled();
-      if (!input || input.provider !== "runway" || input.model !== selectedModel ||
-          typeof input.prompt !== "string" || !input.prompt.trim() || input.prompt.length > 1000) {
-        throw fail("Runway Gen-4.5 requires an exact model identity and a prompt of 1 to 1,000 characters.", "VIDEO_JOB_INPUT_MISMATCH");
+      if (!input || input.provider !== "runway" || input.model !== selectedModel) {
+        throw fail("Runway job identity does not match the selected adapter.", "VIDEO_JOB_INPUT_MISMATCH");
+      }
+      if (input.operation === "video-upscale") {
+        if (selectedModel !== "magnific_video_upscaler_creative" || !isRunwayUri(input.videoUri)) {
+          throw fail("Magnific video upscaling requires a prepared source video upload.", "RUNWAY_INPUT_INVALID");
+        }
+        const resolution = input.resolution ?? "2k";
+        if (!["720p", "1k", "2k", "4k"].includes(resolution)) throw fail("Video upscale resolution must be 720p, 1k, 2k or 4k.", "RUNWAY_INPUT_INVALID");
+        const bounded = (value, label) => {
+          if (value == null) return undefined;
+          if (!Number.isInteger(value) || value < 0 || value > 100) throw fail(label + " must be an integer from 0 to 100.", "RUNWAY_INPUT_INVALID");
+          return value;
+        };
+        const flavor = input.flavor ?? "natural";
+        if (!["vivid", "natural"].includes(flavor)) throw fail("Video upscale flavor must be vivid or natural.", "RUNWAY_INPUT_INVALID");
+        const creativity = bounded(input.creativity, "Creativity");
+        const sharpen = bounded(input.sharpen, "Sharpen");
+        const smartGrain = bounded(input.smartGrain, "Smart grain");
+        const submitted = await request("/video_upscale", {
+          method: "POST", submission: true,
+          body: {
+            model: selectedModel, videoUri: input.videoUri, resolution, flavor,
+            ...(creativity !== undefined ? { creativity } : {}),
+            ...(sharpen !== undefined ? { sharpen } : {}),
+            ...(smartGrain !== undefined ? { smartGrain } : {}),
+            ...(typeof input.fpsBoost === "boolean" ? { fpsBoost: input.fpsBoost } : {})
+          }
+        });
+        return { taskId: taskId(submitted.id), status: "queued" };
       }
       if (selectedModel === "aleph2") {
+        if (typeof input.prompt !== "string" || !input.prompt.trim() || input.prompt.length > 1000) {
+          throw fail("Video-edit prompts must contain 1 to 1,000 characters.", "RUNWAY_INPUT_INVALID");
+        }
         if (input.operation !== "video-to-video" || !isRunwayUri(input.videoUri)) {
           throw fail("Aleph2 requires a prepared video-to-video source upload.", "RUNWAY_INPUT_INVALID");
         }
@@ -219,6 +257,9 @@ export function createRunwayCloudVideoAdapter({
       }
       if (input.operation && input.operation !== "text-to-video") {
         throw fail("The selected Runway model does not support this operation.", "RUNWAY_INPUT_INVALID");
+      }
+      if (typeof input.prompt !== "string" || !input.prompt.trim() || input.prompt.length > 1000) {
+        throw fail("Runway Gen-4.5 requires a prompt of 1 to 1,000 characters.", "VIDEO_JOB_INPUT_MISMATCH");
       }
       const ratio = RATIOS[input.aspectRatio || "16:9"];
       if (!ratio) throw fail("Runway aspect ratio is not supported by the Gen-4.5 text-to-video contract.", "RUNWAY_INPUT_INVALID");
