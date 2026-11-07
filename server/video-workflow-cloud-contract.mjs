@@ -11,6 +11,12 @@ function firstString(...values) {
   return "";
 }
 
+function deepFreeze(value) {
+  if (!value || typeof value !== "object" || Object.isFrozen(value)) return value;
+  for (const child of Object.values(value)) deepFreeze(child);
+  return Object.freeze(value);
+}
+
 function assetList(value, label, maximum) {
   if (value == null) return [];
   if (!Array.isArray(value) || value.length > maximum ||
@@ -134,8 +140,8 @@ export function createVideoWorkflowCloudRequest({
   }
 
   const requestHash = createHash("sha256").update(JSON.stringify(normalized)).digest("hex");
-  const input = Object.freeze({ ...normalized, requestHash });
-  return Object.freeze({
+  const input = deepFreeze({ ...normalized, requestHash });
+  return deepFreeze({
     provider,
     model,
     operation: derivedOperation,
