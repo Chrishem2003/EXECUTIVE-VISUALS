@@ -109,7 +109,8 @@ export function createCloudVideoEnqueue({
       const runwayEditEnabled = provider === "runway" && model === "aleph2" && input.operation === "video-to-video";
       const runwayUpscaleEnabled = provider === "runway" && model === "magnific_video_upscaler_creative" && input.operation === "video-upscale";
       const runwayHdrEnabled = provider === "runway" && model === "ruby" && input.operation === "video-to-hdr";
-      const runwayEnabled = runwayTextEnabled || runwayImageEnabled || runwayEditEnabled || runwayUpscaleEnabled || runwayHdrEnabled;
+      const runwayAudioEnabled = provider === "runway" && model === "mirelo_sfx_2_0" && input.operation === "video-to-audio";
+      const runwayEnabled = runwayTextEnabled || runwayImageEnabled || runwayEditEnabled || runwayUpscaleEnabled || runwayHdrEnabled || runwayAudioEnabled;
       const googleEnabled = provider === "google" && model === "gemini-omni-1.1-flash";
       if (!runwayEnabled && !googleEnabled) {
         const unsupported = new Error("The selected provider/model does not have an enabled, verified cloud execution adapter.");
@@ -127,20 +128,20 @@ export function createCloudVideoEnqueue({
         throw disabled;
       }
       let verifiedSourceMetadata = null;
-      if (runwayEditEnabled || runwayUpscaleEnabled || runwayHdrEnabled) {
+      if (runwayEditEnabled || runwayUpscaleEnabled || runwayHdrEnabled || runwayAudioEnabled) {
         if (typeof resolveRunwaySourceMetadata !== "function") {
           const unavailable = new Error("Runway source operations require a server-side media probe and owner-scoped asset resolver.");
           unavailable.code = "VIDEO_SOURCE_METADATA_UNAVAILABLE";
           throw unavailable;
         }
         verifiedSourceMetadata = await resolveRunwaySourceMetadata({
-          ownerId, projectId, assetId: input.sourceVideoAssetId
+          ownerId, projectId, assetId: input.sourceVideoAssetId, operation: input.operation
         });
         if (!verifiedSourceMetadata || verifiedSourceMetadata.ownerId !== ownerId ||
             (verifiedSourceMetadata.projectId || null) !== projectId || verifiedSourceMetadata.assetId !== input.sourceVideoAssetId ||
             !["video/mp4", "video/quicktime", "video/webm"].includes(verifiedSourceMetadata.mediaType) ||
             !Number.isFinite(verifiedSourceMetadata.durationSeconds) ||
-            verifiedSourceMetadata.durationSeconds < 1 || verifiedSourceMetadata.durationSeconds > 30) {
+            verifiedSourceMetadata.durationSeconds < 1 || verifiedSourceMetadata.durationSeconds > (runwayAudioEnabled ? 600 : 30)) {
           const invalid = new Error("The source asset must have verified video metadata and a duration from 1 to 30 seconds.");
           invalid.code = "VIDEO_SOURCE_METADATA_INVALID";
           throw invalid;
@@ -186,6 +187,7 @@ export function createCloudVideoEnqueue({
         durationSeconds: pricingInput.durationSeconds,
         outputFormat: input.outputFormat, resolution: input.resolution ?? (runwayUpscaleEnabled ? "2k" : input.resolution), audio: input.audio,
         inputVideoSeconds: pricingInput.inputVideoSeconds, referenceVideoSeconds: input.referenceVideoSeconds,
+        numVariants: input.numVariants ?? 1, audioFormat: input.audioFormat ?? "mp3",
         referenceImageCount: input.referenceImageCount, referenceAudioCount: input.referenceAudioCount,
         hasStartFrame: Boolean(input.startFrameAssetId) || input.hasStartFrame === true, outputFrames: pricingInput.outputFrames,
         sourceWidth: pricingInput.sourceWidth ?? input.sourceWidth, sourceHeight: pricingInput.sourceHeight ?? input.sourceHeight,
@@ -195,7 +197,7 @@ export function createCloudVideoEnqueue({
       });
 
       const requestedOutputFormat = input.outputFormat ?? (runwayHdrEnabled ? "hdr10" : "mp4");
-      if (runwayHdrEnabled ? !["hdr10", "hlg"].includes(requestedOutputFormat) : requestedOutputFormat !== "mp4") {
+      if (!runwayAudioEnabled && (runwayHdrEnabled ? !["hdr10", "hlg"].includes(requestedOutputFormat) : requestedOutputFormat !== "mp4")) {
         const unsupported = new Error("The selected hosted video adapter supports MP4 outputs; Ruby HDR is limited to hdr10 and hlg profiles.");
         unsupported.code = "VIDEO_PRICE_OUTPUT_FORMAT_UNSUPPORTED";
         throw unsupported;
