@@ -106,8 +106,10 @@ export function receiveFlutterwaveWebhook(db, { rawBody, signature, secretHash }
     throw fail("Flutterwave webhook event fields are invalid or unsupported.", "BILLING_WEBHOOK_INVALID", 400);
   }
   const eventId = eventType + ":" + transactionId + ":" + status;
-  const payloadHash = createHash("sha256").update(rawBody).digest("hex");
   const minimalPayload = { event: eventType, data: { id: transactionId, tx_ref: txRef, status, amount, currency } };
+  // Hash the normalized fields that affect settlement, not provider-added
+  // transport metadata such as timestamps or customer profile details.
+  const payloadHash = createHash("sha256").update(json(minimalPayload)).digest("hex");
   const existing = db.prepare("SELECT payload_hash FROM billing_provider_events WHERE provider='flutterwave' AND event_id=?").get(eventId);
   if (existing) {
     if (existing.payload_hash !== payloadHash) throw fail("Flutterwave reused an event identity with different content.", "BILLING_WEBHOOK_REPLAY_CONFLICT", 409);
