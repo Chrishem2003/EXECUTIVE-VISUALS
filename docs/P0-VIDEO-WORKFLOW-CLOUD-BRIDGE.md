@@ -39,7 +39,7 @@ The branch `fix/aleph2-transformation-budget-approval` contains a source-control
 - The SQL enqueue function allows only Aleph 2 `video-to-video` MP4 requests with a 1–30 second duration and a conservative floor of max(USD 0.56, USD 0.28 × output seconds), matching Runway Dev's published Aleph 2.0 pricing.
 - The existing Aleph 2 worker registration remains explicit; this migration does not switch on remote execution or create customer budget policies.
 
-The migration is source-controlled only. It has not been applied to staging or production. The integration branch still needs CI, disposable-PostgreSQL coverage of the migration and approval ledger, and staging acceptance before the transformation submit route can be considered operational.
+The migration is source-controlled only. It has not been applied to staging or production. Disposable PostgreSQL assertions for service-role RPC privileges, approval consumption, Aleph 2 pricing floor and operation restrictions have been added to `scripts/cloud-video-postgres-integration.sql`; they still need to be executed against the disposable harness. Exact-head CI and staging acceptance are also required before the transformation submit route can be considered operational.
 
 
 ## Required work before cloud mode can be enabled
