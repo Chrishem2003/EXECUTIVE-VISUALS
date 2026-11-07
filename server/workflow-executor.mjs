@@ -329,7 +329,7 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
     }
     const provider=requireExecutionProvider("video.generate","VIDEO_GATEWAY_ALLOW_REMOTE");
     const selectedModel=provider.provider==="runway"?String(config.model??provider.model??""):"";
-    if(provider.provider==="runway"&&!listRunwayVideoModels().some(item=>item.id===selectedModel))throw Object.assign(new Error("This video model is catalogued but not enabled for legacy synchronous execution. Use its governed cloud-worker adapter after the release gates are complete."),{code:"VIDEO_MODEL_EXECUTION_DISABLED"});
+    if(provider.provider==="runway"&&!listRunwayVideoModels().some(item=>item.id===selectedModel))throw Object.assign(new Error("This video model has no verified legacy synchronous adapter. Use a supported model or wait until its governed cloud-worker adapter passes the release gates."),{code:"VIDEO_MODEL_EXECUTION_DISABLED"});
     const generationRequest=normalizeVideoGenerationRequest({
      projectId:String(job.project_id||run.project_id||""),
      prompt,
