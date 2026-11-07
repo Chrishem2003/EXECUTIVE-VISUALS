@@ -329,8 +329,8 @@ export function processNextDodoWebhook(db, { env = process.env } = {}) {
       }
       db.exec("BEGIN IMMEDIATE");
       try {
-        db.prepare(`undefined`)
-          .run(data.previous_billing_date || now(), data.next_billing_date,
+        db.prepare("UPDATE billing_subscriptions SET status='active',current_period_start=?,current_period_end=?,cancel_at_period_end=?,metadata_json=?,updated_at=? WHERE id=?")
+          .run(data.previous_billing_date || now(), data.next_billing_date, data.cancel_at_next_billing_date === true ? 1 : 0,
             safeJson({ ...currentMetadata, lastProviderTimestamp: eventTime, pastDueEndsAt: null }), now(), local.id);
         insertSubscriptionCredits(db, {
           userId: local.user_id, plan, subscriptionId, paymentId: data.payment_id,
@@ -348,13 +348,13 @@ export function processNextDodoWebhook(db, { env = process.env } = {}) {
           Number(data.recurring_pre_tax_amount) !== Number(newPlan.amount_minor)) {
         throw fail("Dodo plan change does not match a configured local plan.", "DODO_PLAN_CHANGE_MISMATCH", 409);
       }
-      db.prepare("undefined")
-        .run(newPlan.id, status, data.next_billing_date || local.current_period_end,
+      db.prepare("UPDATE billing_subscriptions SET plan_id=?,status=?,current_period_end=?,cancel_at_period_end=?,metadata_json=?,updated_at=? WHERE id=?")
+        .run(newPlan.id, status, data.next_billing_date || local.current_period_end, data.cancel_at_next_billing_date === true ? 1 : 0,
           safeJson({ ...currentMetadata, productId: data.product_id, lastProviderTimestamp: eventTime,
             pastDueEndsAt: data.past_due_ends_at || currentMetadata.pastDueEndsAt || null }), now(), local.id);
     } else {
-      db.prepare("undefined")
-        .run(status, data.next_billing_date || local.current_period_end,
+      db.prepare("UPDATE billing_subscriptions SET status=?,current_period_end=?,cancel_at_period_end=?,metadata_json=?,updated_at=? WHERE id=?")
+        .run(status, data.next_billing_date || local.current_period_end, data.cancel_at_next_billing_date === true ? 1 : 0,
           safeJson({ ...currentMetadata, lastProviderTimestamp: eventTime,
             pastDueEndsAt: data.past_due_ends_at || currentMetadata.pastDueEndsAt || null }), now(), local.id);
     }
