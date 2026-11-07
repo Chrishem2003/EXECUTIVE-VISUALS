@@ -21,6 +21,7 @@ import { validateSrt, validateWebVtt } from "./caption-validation.mjs";
 import { ensureTransformationPlanSchema, createTransformationPlan, approveTransformationPlan, listTransformationPlans, getTransformationPlan } from "./transformation-plans.mjs";
 import { signInWithSupabasePassword, signUpWithSupabasePassword, refreshSupabaseSession, getSupabaseUser, revokeSupabaseSession } from "./supabase-password-auth.mjs";
 import { ensureBillingSchema, touchBillingAccount, getBillingOverview, listBillingPlans, getAdminOverview, listAdminUsers, saveBillingPlan, assignManualSubscription, adjustBillingCredits, setBillingAccountStatus, listBillingModelPrices, saveBillingModelPrice } from "./billing.mjs";
+import { ensureBillingWebhookSchema, receiveFlutterwaveWebhook, processNextFlutterwaveWebhook } from "./billing-webhooks.mjs";
 
 const PORT = Number(process.env.PORT || process.env.API_PORT || 4179);
 const HOST = process.env.API_HOST || (process.env.NODE_ENV === "production" ? "0.0.0.0" : "127.0.0.1");
@@ -53,6 +54,7 @@ const EXTENSIONS = {
 const MEDIA_JOBS = new Set(["media.probe","media.thumbnail","media.transcode","media.audio_extract","media.audio-clean","media.proxy","media.denoise","media.color","media.resize","media.interpolate","media.upscale","media.ai-upscale","timeline.render"]);
 const db = openDatabase(DB_FILE);
 ensureBillingSchema(db);
+ensureBillingWebhookSchema(db);
 ensureTransformationPlanSchema(db);
 const aiUpscaleAdapter = createRealEsrganAdapter();
 const cloudTimelineApiEnabled = process.env.CLOUD_TIMELINE_API_ENABLED === "true";
@@ -87,6 +89,11 @@ const readJson = async (req,limit=1024*1024) => {
   for await (const chunk of req) { size+=chunk.length;if(size>limit)throw Object.assign(new Error("Request body too large."),{status:413,code:"BODY_TOO_LARGE"});chunks.push(chunk); }
   try { return JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}"); }
   catch { throw Object.assign(new Error("Request body must be valid JSON."),{status:400,code:"INVALID_JSON"}); }
+};
+const readRaw = async (req,limit=1024*1024) => {
+  const chunks=[];let size=0;
+  for await (const chunk of req) { size+=chunk.length;if(size>limit)throw Object.assign(new Error("Request body too large."),{status:413,code:"BODY_TOO_LARGE"});chunks.push(chunk); }
+  return Buffer.concat(chunks);
 };
 const cookieValue = (req,name) => {
   const raw=req.headers.cookie||"";
@@ -272,6 +279,15 @@ async function processNextJob() {
 let workerBusy=false;
 const workerTimer=process.env.DISABLE_WORKER==="true"?null:setInterval(async()=>{if(workerBusy)return;workerBusy=true;try{await processNextJob();}catch(error){process.stderr.write("Worker cycle failed: "+String(error.message)+"\\n");}finally{workerBusy=false;}},500);
 workerTimer?.unref();
+let billingWebhookBusy=false;
+const billingWebhookTimer=process.env.FLW_SECRET_KEY?setInterval(async()=>{
+  if(billingWebhookBusy)return;
+  billingWebhookBusy=true;
+  try { await processNextFlutterwaveWebhook(db,{secretKey:process.env.FLW_SECRET_KEY}); }
+  catch(error){ process.stderr.write("Billing webhook worker failed: "+String(error?.code||"PROCESSING_FAILED")+"\\n"); }
+  finally { billingWebhookBusy=false; }
+},5000):null;
+billingWebhookTimer?.unref();
 
 export function createAppServer() {
   return createServer(async(req,res)=>{
@@ -280,8 +296,8 @@ export function createAppServer() {
     if(req.method==="OPTIONS"){res.writeHead(204,{"access-control-allow-methods":"GET,POST,PUT,DELETE,OPTIONS","access-control-allow-headers":"content-type,authorization,x-file-name,x-project-id,idempotency-key","access-control-max-age":"600",...cors});res.end();return;}
     const url=new URL(req.url||"/","http://localhost");
     const path=url.pathname;
-    const ratePath=path.startsWith("/api/auth/")?"/auth":(path==="/api/assets"||path==="/api/cloud/assets")&&req.method==="POST"?"/upload":path.endsWith("/research/import")&&req.method==="POST"?"/research":path==="/api/admin/ai-upscale/self-test"&&req.method==="POST"?"/ai-upscale-self-test":"";
-    if(ratePath){const key=(req.socket.remoteAddress||"unknown")+ratePath;const limit=ratePath==="/auth"?AUTH_RATE_LIMIT:ratePath==="/research"?10:ratePath==="/ai-upscale-self-test"?2:30;if(!rateAllowed(key,limit,60000)){fail(res,429,"RATE_LIMITED","Too many requests. Wait before trying again.");return;}}
+    const ratePath=path.startsWith("/api/auth/")?"/auth":path==="/api/webhooks/flutterwave"&&req.method==="POST"?"/payment-webhook":(path==="/api/assets"||path==="/api/cloud/assets")&&req.method==="POST"?"/upload":path.endsWith("/research/import")&&req.method==="POST"?"/research":path==="/api/admin/ai-upscale/self-test"&&req.method==="POST"?"/ai-upscale-self-test":"";
+    if(ratePath){const key=(req.socket.remoteAddress||"unknown")+ratePath;const limit=ratePath==="/auth"?AUTH_RATE_LIMIT:ratePath==="/research"?10:ratePath==="/ai-upscale-self-test"?2:ratePath==="/payment-webhook"?120:30;if(!rateAllowed(key,limit,60000)){fail(res,429,"RATE_LIMITED","Too many requests. Wait before trying again.");return;}}
     try {
       if(!path.startsWith("/api/")&&req.method==="GET"){
         const decoded=decodeURIComponent(path);
@@ -299,6 +315,19 @@ export function createAppServer() {
       if(path==="/api/health"&&req.method==="GET"){
         send(res,200,{status:"ok",storage:"local-disk",database:"sqlite",media:{ffmpeg:executableAvailable("ffmpeg"),ffprobe:executableAvailable("ffprobe")},imageGateway:{enabled:process.env.IMAGE_GATEWAY_ENABLED==="true",configured:(()=>{try{const url=new URL(process.env.IMAGE_GATEWAY_URL||"");const local=["localhost","127.0.0.1","::1","[::1]"].includes(url.hostname.toLowerCase());return Boolean(process.env.IMAGE_GATEWAY_MODEL&&(local||process.env.IMAGE_GATEWAY_ALLOW_REMOTE==="true"));}catch{return false;}})()},textGateway:{enabled:process.env.AI_GATEWAY_ENABLED==="true",configured:(()=>{try{const url=new URL(process.env.AI_GATEWAY_URL||"");const local=["localhost","127.0.0.1","::1"].includes(url.hostname.toLowerCase());return Boolean(process.env.AI_GATEWAY_MODEL&&(local||process.env.AI_GATEWAY_ALLOW_REMOTE==="true"));}catch{return false;}})()},authMode:AUTH_MODE,version:"0.1.0"},cors);return;
       }
+      if(path==="/api/webhooks/flutterwave"&&req.method==="POST"){
+        if(!String(req.headers["content-type"]||"").toLowerCase().startsWith("application/json")){
+          fail(res,415,"WEBHOOK_CONTENT_TYPE_INVALID","Flutterwave webhook requests must use application/json.");return;
+        }
+        const rawBody=await readRaw(req,1024*1024);
+        const result=receiveFlutterwaveWebhook(db,{
+          rawBody,
+          signature:String(req.headers["flutterwave-signature"]||""),
+          secretHash:process.env.FLW_WEBHOOK_SECRET||""
+        });
+        send(res,200,{ok:true,accepted:true,duplicate:result.duplicate},cors);return;
+      }
+
       if(path==="/api/auth/register"&&req.method==="POST"){
         const body=await readJson(req);const email=String(body.email||"").trim().toLowerCase();const password=String(body.password||"");
         if(AUTH_MODE==="supabase"){
