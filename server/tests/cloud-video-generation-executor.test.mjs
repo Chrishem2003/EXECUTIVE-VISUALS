@@ -105,6 +105,20 @@ test("cloud executor defers transient or active status after exactly one check p
   assert.equal(running.calls.filter(call => call[0] === "poll").length, 1);
 });
 
+test("cloud executor quarantines provider-canceled tasks until cancellation billing is reconciled", async () => {
+  const f = fixture({ state: "submitted", status: {
+    taskId, status: "canceled", failure: "Runway task was canceled.",
+    failureCode: "RUNWAY_TASK_CANCELED"
+  }});
+  await assert.rejects(
+    executeCloudVideoGenerationJob({ job, workerId: "worker-1", ...f }),
+    error => error.code === "VIDEO_PROVIDER_CANCELLATION_COST_UNRESOLVED"
+  );
+  assert.equal(f.calls.some(call => call[0] === "cost"), false,
+    "canceled task cost must not be guessed from success-only billing evidence");
+  assert.equal(f.calls.some(call => call[0] === "ingest"), false);
+});
+
 test("cloud executor holds reservation when actual cost is unknown or exceeds approval", async () => {
   const unknown = fixture({ costError: new Error("no invoice") });
   await assert.rejects(executeCloudVideoGenerationJob({ job, workerId: "worker-1", ...unknown }), error => error.code === "VIDEO_BUDGET_COST_UNRESOLVED");
