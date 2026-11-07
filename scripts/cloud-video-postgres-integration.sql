@@ -48,6 +48,14 @@ from executive_visuals.video_generation_budget_policies
 where owner_id='123e4567-e89b-42d3-a456-426614174000'
   and project_id='323e4567-e89b-42d3-a456-426614174000'
   and provider='runway' and model='aleph2' and currency='USD';
+insert into executive_visuals.video_generation_budget_policies(
+ owner_id,project_id,provider,model,currency,spend_limit_amount,max_per_job_amount,
+ rolling_24h_request_limit,enabled
+) values (
+ '123e4567-e89b-42d3-a456-426614174000',
+ '323e4567-e89b-42d3-a456-426614174000',
+ 'runway','model-router','USD',10,5,10,true
+);
 do $column_guard$
 begin
  if has_column_privilege('authenticated','executive_visuals.video_generation_budget_policies','reserved_amount','UPDATE')
@@ -77,6 +85,14 @@ insert into executive_visuals.video_generation_budget_approvals(
   '323e4567-e89b-42d3-a456-426614174000','google','gemini-omni-1.1-flash',repeat('c',64),'USD',3,'Gemini under-reservation test',clock_timestamp()+interval '10 minutes'),
  ('d23e4567-e89b-42d3-a456-426614174000','123e4567-e89b-42d3-a456-426614174000',
   '323e4567-e89b-42d3-a456-426614174000','google','gemini-omni-1.1-flash',repeat('d',64),'USD',3,'Gemini resolution test',clock_timestamp()+interval '10 minutes');
+insert into executive_visuals.video_generation_budget_approvals(
+ id,owner_id,project_id,provider,model,request_hash,currency,approved_max_amount,approval_note,expires_at
+) values (
+ 'f23e4567-e89b-42d3-a456-426614174000',
+ '123e4567-e89b-42d3-a456-426614174000',
+ '323e4567-e89b-42d3-a456-426614174000',
+ 'runway','model-router',repeat('f',64),'USD',5,'Runway Model Router integration test',clock_timestamp()+interval '10 minutes'
+);
 do $owner_guard$
 begin
  begin
@@ -130,6 +146,61 @@ from executive_visuals.enqueue_video_generation_job(
  jsonb_build_object('projectId','323e4567-e89b-42d3-a456-426614174000',
    'provider','runway','model','gen4.5','requestHash',repeat('a',64),'prompt','test scene','durationSeconds',5),
  '523e4567-e89b-42d3-a456-426614174000',1.25,'USD'
+);
+
+do $router_invalid_operation$
+begin
+ begin
+  perform * from executive_visuals.enqueue_video_generation_job(
+   '123e4567-e89b-42d3-a456-426614174000',
+   '323e4567-e89b-42d3-a456-426614174000',
+   'pg-integration-router-invalid-op','runway','model-router',repeat('f',64),
+   jsonb_build_object('projectId','323e4567-e89b-42d3-a456-426614174000',
+     'provider','runway','model','model-router','requestHash',repeat('f',64),
+     'operation','audio-to-video','durationSeconds',8,'outputFormat','mp4',
+     'prompt','A cinematic product launch'),
+   'f23e4567-e89b-42d3-a456-426614174000',4.5,'USD'
+  );
+  raise exception 'unsupported Runway Model Router operation unexpectedly enqueued';
+ exception when others then
+  if sqlerrm = 'unsupported Runway Model Router operation unexpectedly enqueued' then raise; end if;
+  if sqlerrm <> 'VIDEO_PRICE_OPERATION_INVALID' then raise; end if;
+ end;
+end
+$router_invalid_operation$;
+
+do $router_duration_guard$
+begin
+ begin
+  perform * from executive_visuals.enqueue_video_generation_job(
+   '123e4567-e89b-42d3-a456-426614174000',
+   '323e4567-e89b-42d3-a456-426614174000',
+   'pg-integration-router-duration','runway','model-router',repeat('f',64),
+   jsonb_build_object('projectId','323e4567-e89b-42d3-a456-426614174000',
+     'provider','runway','model','model-router','requestHash',repeat('f',64),
+     'operation','text-to-video','durationSeconds',31,'outputFormat','mp4',
+     'prompt','A cinematic product launch'),
+   'f23e4567-e89b-42d3-a456-426614174000',4.5,'USD'
+  );
+  raise exception 'overlong Runway Model Router operation unexpectedly enqueued';
+ exception when others then
+  if sqlerrm = 'overlong Runway Model Router operation unexpectedly enqueued' then raise; end if;
+  if sqlerrm <> 'VIDEO_PRICE_DURATION_INVALID' then raise; end if;
+ end;
+end
+$router_duration_guard$;
+
+create temporary table runway_router_context as
+select job_id, budget_reservation_id as reservation_id, job_status
+from executive_visuals.enqueue_video_generation_job(
+ '123e4567-e89b-42d3-a456-426614174000',
+ '323e4567-e89b-42d3-a456-426614174000',
+ 'pg-integration-runway-router-001','runway','model-router',repeat('f',64),
+ jsonb_build_object('projectId','323e4567-e89b-42d3-a456-426614174000',
+   'provider','runway','model','model-router','requestHash',repeat('f',64),
+   'operation','text-to-video','durationSeconds',8,'outputFormat','mp4',
+   'prompt','A cinematic product launch','aspectRatio','16:9'),
+ 'f23e4567-e89b-42d3-a456-426614174000',4.5,'USD'
 );
 
 create temporary table google_context as
