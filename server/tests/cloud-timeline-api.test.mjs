@@ -212,11 +212,12 @@ test("video-to-audio transformation requires approval and queues the Mirelo mode
   durationSeconds:13,audioFormat:"wav",numVariants:2,preserveSpeech:true,rightsConfirmed:true
  }});
  assert.equal(draft.status,201);
- const approved=await api.handle({method:"POST",path:"/api/cloud/transformations/"+planId+"/approve",ownerId,body:{approvedBudgetMicros:1000000,currency:"USD"}});
+ const createdPlanId=draft.body.plan.id;
+ const approved=await api.handle({method:"POST",path:"/api/cloud/transformations/"+createdPlanId+"/approve",ownerId,body:{approvedBudgetMicros:1000000,currency:"USD"}});
  assert.equal(approved.status,200);
  assert.equal(approved.body.plan.approval.adapterId,"runway:mirelo_sfx_2_0");
  assert.equal(approved.body.plan.approval.capability,"video-to-audio");
- const submitted=await api.handle({method:"POST",path:"/api/cloud/transformations/"+planId+"/submit",ownerId,body:{}});
+ const submitted=await api.handle({method:"POST",path:"/api/cloud/transformations/"+createdPlanId+"/submit",ownerId,body:{}});
  assert.equal(submitted.status,202);
  const rpc=calls.find(call=>call.url.endsWith("/rpc/enqueue_video_generation_job"));
  const queued=JSON.parse(rpc.options.body);
