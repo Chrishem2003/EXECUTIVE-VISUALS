@@ -177,3 +177,32 @@ test("normalizes HDR conversion as a source-video operation without requiring a 
   assert.equal(request.outputFormat, "hlg");
   assert.equal(request.sourceVideoAssetId, "source-hdr");
 });
+
+test("normalizes typed private reference assets with provider-aware bounds", () => {
+  const request = normalizeVideoGenerationRequest({
+    ...base,
+    referenceImageAssetIds: ["image-1", "image-2"],
+    referenceVideoAssetIds: ["video-1"],
+    referenceAudioAssetIds: ["audio-1"],
+    audioMode: "reference"
+  });
+  assert.deepEqual(request.referenceAssetIds, ["image-1", "image-2"]);
+  assert.deepEqual(request.referenceVideoAssetIds, ["video-1"]);
+  assert.deepEqual(request.referenceAudioAssetIds, ["audio-1"]);
+  assert.equal(assertVideoCapabilities(request, {
+    referenceImages: true, referenceVideos: true, referenceAudio: true,
+    audioModes: ["reference"], aspectRatios: ["16:9"], resolutions: ["provider_default"]
+  }), true);
+  assert.throws(() => normalizeVideoGenerationRequest({ ...base, referenceAudioAssetIds: ["audio-1", "audio-2"] }), VideoGenerationValidationError);
+  assert.throws(() => normalizeVideoGenerationRequest({ ...base, referenceVideoAssetIds: Array.from({ length: 3 }, (_, i) => "video-" + i) }), VideoGenerationValidationError);
+});
+
+test("fails closed when a provider does not declare typed reference media support", () => {
+  const request = normalizeVideoGenerationRequest({
+    ...base, referenceVideoAssetIds: ["video-1"], referenceAudioAssetIds: ["audio-1"]
+  });
+  assert.throws(() => assertVideoCapabilities(request, {
+    referenceVideos: false, referenceAudio: false, audioModes: ["provider_default"]
+  }), error => error.code === "VIDEO_GENERATION_UNSUPPORTED_CAPABILITY");
+});
+
