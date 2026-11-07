@@ -30,7 +30,7 @@ The billing engine can now use the admin model-price registry before a remote jo
 
 - `BILLING_CREDIT_VALUE_MICROS` defines the customer value of one credit in USD micros. Example: `10000` means USD $0.01 per credit.
 - `BILLING_COST_MARKUP_BPS` sets a markup in basis points on the recorded upstream cost. Default: `5000` (50% markup); valid range: 0–50,000.
-- An exact active registry match is required for `provider + model + capability + unit`. The record must have a positive USD price, an HTTPS source URL and a verification timestamp.
+- An exact active registry match is required for `provider + model + capability + unit`. The record must have a positive USD price, an HTTPS source URL and a verification timestamp no older than `BILLING_MODEL_PRICE_MAX_AGE_DAYS` (default 30; allowed 1–365). Future-dated or stale records fail closed and must be re-verified.
 - Video generation passes seconds as the billable quantity; image generation passes one image; voice and text currently pass one request. The registry unit must match exactly.
 - The engine rounds up to whole credits and stores the pricing provenance, upstream unit price, quantity, markup and calculated estimate in the ledger metadata.
 - If the registry record is missing, unverified, non-USD, or either pricing environment value is absent, the existing flat capability schedule is used. No unsupported FX conversion is guessed.
