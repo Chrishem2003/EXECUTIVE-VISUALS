@@ -25,8 +25,10 @@ export function getProviderCatalog(env=process.env,media={ffmpeg:false,ffprobe:f
  if(!imageFal&&!imageGemini&&!imageRunway&&imageProvider!=="openai-compatible"){image.status="needs_configuration";image.configured=false;image.reason="Choose a supported server-side image provider before enabling image generation.";}
  image.availableModels=imageGemini?listGeminiImageModels():imageRunway?listRunwayImageModels():[];
  const videoProvider=String(env.VIDEO_GATEWAY_PROVIDER||"fal").toLowerCase();
+ const runwayVideoKey=env.RUNWAY_API_KEY||env.RUNWAYML_API_SECRET||"";
+ const runwayVideoModelValid=listRunwayVideoModels().some(item=>item.id===env.RUNWAY_VIDEO_MODEL);
  const video=videoProvider==="runway"
-  ?gatewayState({enabled:env.VIDEO_GATEWAY_ENABLED==="true",configured:Boolean(env.RUNWAYML_API_SECRET&&env.RUNWAY_VIDEO_MODEL),url:"https://api.dev.runwayml.com",id:"video",allowRemote:env.VIDEO_GATEWAY_ALLOW_REMOTE==="true",model:env.RUNWAY_VIDEO_MODEL,provider:"runway",capabilities:["video.generate"],reasonIfMissing:"Set RUNWAYML_API_SECRET and RUNWAY_VIDEO_MODEL on the server."})
+  ?gatewayState({enabled:env.VIDEO_GATEWAY_ENABLED==="true",configured:Boolean(runwayVideoKey&&runwayVideoModelValid),url:"https://api.dev.runwayml.com",id:"video",allowRemote:env.VIDEO_GATEWAY_ALLOW_REMOTE==="true",model:env.RUNWAY_VIDEO_MODEL,provider:"runway",capabilities:["video.generate"],reasonIfMissing:"Set RUNWAY_API_KEY (or RUNWAYML_API_SECRET) and select a model with an implemented Runway adapter."})
   :gatewayState({enabled:env.VIDEO_GATEWAY_ENABLED==="true",configured:Boolean(env.FAL_KEY&&env.FAL_VIDEO_MODEL),url:"https://queue.fal.run",id:"video",allowRemote:env.VIDEO_GATEWAY_ALLOW_REMOTE==="true",model:env.FAL_VIDEO_MODEL,provider:"fal",capabilities:["video.generate"],reasonIfMissing:"Set FAL_KEY and FAL_VIDEO_MODEL on the server."});
  if(videoProvider!=="runway"&&videoProvider!=="fal"){video.status="needs_configuration";video.configured=false;video.reason="VIDEO_GATEWAY_PROVIDER must be runway or fal.";}
  video.modelCapabilities=videoProvider==="runway"?getRunwayVideoCapabilities(env.RUNWAY_VIDEO_MODEL||""):getFalVideoCapabilities({imageInputField:env.FAL_VIDEO_IMAGE_INPUT_FIELD||""});
