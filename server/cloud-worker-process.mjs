@@ -48,8 +48,14 @@ export function createCloudWorkerSupervisor({workers,leaseSeconds=90,heartbeatIn
  }
  async function recover(){
   if(stopped)return;
-  try{const count=await workers[0].recoverExpired(100);if(count)onLog({kind:"recovery",count});}
-  catch(error){onError(error);}
+  try{
+   const count=await workers[0].recoverExpired(100);
+   if(count)onLog({kind:"recovery",count});
+   if(typeof workers[0].reconcileStorageCleanup==="function"){
+    const cleanup=await workers[0].reconcileStorageCleanup(20);
+    if(cleanup?.examined)onLog({kind:"storage_cleanup",...cleanup});
+   }
+  }catch(error){onError(error);}
  }
  return Object.freeze({
   async start(){

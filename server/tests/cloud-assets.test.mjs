@@ -12,10 +12,10 @@ const assetId="323e4567-e89b-42d3-a456-426614174000";
 const bytes=new Uint8Array([1,2,3,4]);
 const config={url:"https://example.supabase.co",serviceRoleKey:"private-service-key"};
 function response(body,status=200){return{ok:status>=200&&status<300,status,async text(){return JSON.stringify(body);}};}
-function fixture({authorize=async()=>true,insertResponse=null,removeError=false}={}) {
+function fixture({authorize=async()=>true,insertResponse=null,removeError=false,cleanupRows=[],uploadReceiptInvalid=false}={}) {
  const calls=[],storageCalls=[];
  const storage={
-  async upload(path,data,type){storageCalls.push({op:"upload",path,data,type});return{bucket:"executive-visuals-media",path,size:data.byteLength,contentType:type};},
+  async upload(path,data,type){storageCalls.push({op:"upload",path,data,type});return{bucket:uploadReceiptInvalid?"wrong-bucket":"executive-visuals-media",path,size:data.byteLength,contentType:type};},
   async uploadFile(path,file,type){const data=await readFile(file);storageCalls.push({op:"uploadFile",path,file,type});return{bucket:"executive-visuals-media",path,size:data.byteLength,sha256:createHash("sha256").update(data).digest("hex"),contentType:type};},
   async createSignedUrl(path,expiry){storageCalls.push({op:"sign",path,expiry});return"https://example.supabase.co/storage/signed";},
   async remove(path){storageCalls.push({op:"remove",path});if(removeError)throw new Error("storage cleanup unavailable");return true;}
@@ -23,6 +23,11 @@ function fixture({authorize=async()=>true,insertResponse=null,removeError=false}
  const row={id:assetId,owner_id:ownerId,project_id:projectId,original_name:"final cut.mp4",media_type:"video/mp4",byte_size:4,sha256:createHash("sha256").update(bytes).digest("hex"),storage_bucket:"executive-visuals-media",object_path:projectId+"/"+assetId+"/original.mp4",derivative_of:null,metadata:{role:"master"},created_at:"2026-11-01T00:00:00Z"};
  const fetchImpl=async(url,options)=>{
   calls.push({url,options});
+  if(url.includes("/asset_storage_cleanup")){
+   if(options.method==="POST")return response([{id:"cleanup-1",...JSON.parse(options.body)}]);
+   if(options.method==="PATCH")return response([{id:"cleanup-1"}]);
+   return response(cleanupRows);
+  }
   if(options.method==="POST"){const payload=JSON.parse(options.body);return response(insertResponse===null?[{...row,...payload,created_at:row.created_at}]:insertResponse);}
   if(options.method==="PATCH")return response([row]);
   return response([row]);
@@ -123,4 +128,67 @@ test("does not list project assets without read authorization",async()=>{
  const f=fixture({authorize:async()=>false});
  await assert.rejects(()=>f.repo.list({ownerId,projectId}),e=>e.code==="CLOUD_ASSET_ACCESS_DENIED");
  assert.equal(f.calls.length,0);
+});
+
+test("persists failed upload compensation in the durable cleanup outbox",async()=>{
+ const f=fixture({insertResponse:[],removeError:true});
+ await assert.rejects(()=>f.repo.create({ownerId,projectId,originalName:"x.mp4",mediaType:"video/mp4",bytes}),error=>error.cleanupPending===true&&error.cleanupRecordFailed!==true);
+ const queued=f.calls.find(call=>call.url.includes("/asset_storage_cleanup"));
+ assert.ok(queued);
+ assert.equal(queued.options.method,"POST");
+ const queuedPath=JSON.parse(queued.options.body).object_path;
+ assert.equal(queuedPath,f.storageCalls.find(call=>call.op==="upload").path);
+ assert.match(queuedPath,new RegExp("^"+ownerId+"/[0-9a-f-]{36}/original\\.mp4$","i"));
+});
+
+test("reconciles pending storage cleanup and marks the exact object complete",async()=>{
+ const objectPath=projectId+"/"+assetId+"/original.mp4";
+ const f=fixture({cleanupRows:[{id:"cleanup-1",storage_bucket:"executive-visuals-media",object_path:objectPath,attempts:0}]});
+ const result=await f.repo.reconcilePendingStorageCleanup({limit:5,now:"2026-11-06T12:00:00.000Z"});
+ assert.deepEqual({examined:result.examined,removed:result.removed},{examined:1,removed:1});
+ assert.deepEqual(f.storageCalls.map(call=>call.op),["remove"]);
+ const patch=f.calls.find(call=>call.url.includes("/asset_storage_cleanup")&&call.options.method==="PATCH");
+ assert.ok(patch);
+ assert.equal(JSON.parse(patch.options.body).completed_at,"2026-11-06T12:00:00.000Z");
+});
+
+test("reschedules failed cleanup with bounded exponential backoff",async()=>{
+ const objectPath=projectId+"/"+assetId+"/original.mp4";
+ const f=fixture({removeError:true,cleanupRows:[{id:"cleanup-1",storage_bucket:"executive-visuals-media",object_path:objectPath,attempts:1}]});
+ const result=await f.repo.reconcilePendingStorageCleanup({limit:1,now:"2026-11-06T12:00:00.000Z"});
+ assert.equal(result.removed,0);
+ assert.equal(result.results[0].retryScheduled,true);
+ assert.equal(result.results[0].attempts,2);
+ const patch=f.calls.find(call=>call.url.includes("/asset_storage_cleanup")&&call.options.method==="PATCH");
+ const body=JSON.parse(patch.options.body);
+ assert.equal(body.attempts,2);
+ assert.equal(body.next_attempt_at,"2026-11-06T12:01:00.000Z");
+});
+
+test("refuses to delete storage objects from invalid cleanup records",async()=>{
+ const f=fixture({cleanupRows:[{id:"unsafe-1",storage_bucket:"other-bucket",object_path:"../../unrelated.mp4",attempts:0}]});
+ const result=await f.repo.reconcilePendingStorageCleanup({limit:1,now:"2026-11-06T12:00:00.000Z"});
+ assert.equal(result.examined,1);
+ assert.equal(result.removed,0);
+ assert.equal(result.results[0].permanentError,"unsafe_cleanup_record");
+ assert.equal(f.storageCalls.length,0);
+});
+
+test("queues durable storage cleanup when a soft-deleted asset cannot be removed immediately",async()=>{
+ const f=fixture({removeError:true});
+ const result=await f.repo.softDelete({ownerId,assetId});
+ assert.equal(result.deleted,true);
+ assert.equal(result.storageRemoved,false);
+ assert.equal(result.cleanupPending,true);
+ const queued=f.calls.find(call=>call.url.includes("/asset_storage_cleanup")&&call.options.method==="POST");
+ assert.ok(queued);
+ assert.equal(JSON.parse(queued.options.body).object_path,f.row.object_path);
+});
+
+test("queues cleanup when an upload receipt is invalid and immediate removal fails",async()=>{
+ const f=fixture({removeError:true,uploadReceiptInvalid:true});
+ await assert.rejects(()=>f.repo.create({ownerId,projectId,originalName:"x.mp4",mediaType:"video/mp4",bytes}),error=>error.code==="CLOUD_STORAGE_UPLOAD_RECEIPT_INVALID"&&error.cleanupPending===true);
+ const queued=f.calls.find(call=>call.url.includes("/asset_storage_cleanup")&&call.options.method==="POST");
+ assert.ok(queued);
+ assert.equal(JSON.parse(queued.options.body).object_path,f.storageCalls.find(call=>call.op==="upload").path);
 });
