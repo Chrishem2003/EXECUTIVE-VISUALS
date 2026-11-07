@@ -53,29 +53,3 @@ alter table executive_visuals.google_video_interactions force row level security
 revoke all on table executive_visuals.google_video_interactions from public, anon, authenticated;
 grant usage on schema executive_visuals to service_role;
 grant select, insert, update, delete on table executive_visuals.google_video_interactions to service_role;
-
-  ),
-  submitted_at timestamptz not null default now(),
-  expires_at timestamptz not null,
-  deleted_at timestamptz,
-  metadata jsonb not null default '{}'::jsonb check (jsonb_typeof(metadata) = 'object'),
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
-
-create index if not exists google_video_interactions_owner_project_idx
-  on executive_visuals.google_video_interactions (owner_id, project_id, submitted_at desc);
-
-create index if not exists google_video_interactions_expiry_idx
-  on executive_visuals.google_video_interactions (expires_at)
-  where state <> 'deleted';
-
-create index if not exists google_video_interactions_job_idx
-  on executive_visuals.google_video_interactions (job_id, owner_id);
-
-alter table executive_visuals.google_video_interactions enable row level security;
-alter table executive_visuals.google_video_interactions force row level security;
-
-revoke all on table executive_visuals.google_video_interactions from public, anon, authenticated;
-grant usage on schema executive_visuals to service_role;
-grant select, insert, update, delete on table executive_visuals.google_video_interactions to service_role;
