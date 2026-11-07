@@ -18,7 +18,7 @@ test("Aleph 2 approval RPC is service-role-only and requires an existing scoped 
     "policy.reserved_amount + policy.spent_amount + p_approved_max_amount > policy.spend_limit_amount",
     "interval '15 minutes'"
   ]) assert.ok(migration.includes(contract), "Missing SQL approval contract: " + contract);
-  assert.ok(!migration.includes("as $\\nbegin"), "Trigger function must use a complete dollar-quote delimiter");
+  assert.ok(!migration.includes("as $" + "\n" + "begin"), "Trigger function must use a complete dollar-quote delimiter");
   assert.ok(!migration.includes("auth.role()"), "Do not use deprecated auth.role() authorization checks");
   assert.ok(!migration.includes("security definer"), "The service-only RPC must not bypass RLS");
 });
