@@ -90,3 +90,17 @@ The code includes customer billing, subscription and credit-ledger foundations, 
 Do not convert PR #206 from draft, merge it to `main`, apply migrations to either existing Supabase project, resume the suspended testing service, alter Render environment variables, or enable paid providers until the isolated staging acceptance gates and required credentials are confirmed. Because production auto-deploys from `main`, merging this PR would trigger a production deployment.
 
 This checkpoint is intentionally conservative: the implementation is pushed and automated tests are green, but staging acceptance, durable data infrastructure, live credentials and real transaction verification are not complete.
+
+
+## Live health recheck — 2026-11-07
+
+A fresh public request to `https://executive-visuals.onrender.com/api/health` first received Render's `503 Application loading` response, then returned HTTP 200 after allowing the Free instance to wake. The successful health payload reported:
+
+- `status: ok`
+- `authMode: supabase`
+- `storage: local-disk`
+- `database: sqlite`
+- FFmpeg and FFprobe available
+- image and text gateways disabled and unconfigured
+
+This confirms the earlier `AUTH_MODE=local` failures are historical; the current health response reports Supabase auth mode. It does **not** prove end-to-end user sign-in. More importantly, the live service is still using local-disk/SQLite storage, with no persistent disk in Render service metadata. The 503-to-200 wake-up behavior is consistent with a sleeping Free instance and is not itself evidence of an application defect. A reliable production release still requires durable database/media storage, backup/restore verification and a configured health-check path.
