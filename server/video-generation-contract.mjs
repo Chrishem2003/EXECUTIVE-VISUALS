@@ -97,7 +97,7 @@ export function normalizeVideoGenerationRequest(input) {
     durationSeconds: finiteNumber(input.durationSeconds ?? 5, "durationSeconds", { min: 1, max: 180, required: true, integer: true }),
     outputFormat,
     audioMode,
-    referenceAssetIds: assetIds(input.referenceAssetIds ?? input.referenceImageAssetIds, "referenceAssetIds", 4),
+    referenceAssetIds: assetIds(input.referenceAssetIds ?? input.referenceImageAssetIds, "referenceAssetIds"),
     referenceVideoAssetIds: assetIds(input.referenceVideoAssetIds, "referenceVideoAssetIds", 2),
     referenceAudioAssetIds: assetIds(input.referenceAudioAssetIds, "referenceAudioAssetIds", 1),
     ...(negativePrompt ? { negativePrompt } : {}),
@@ -187,6 +187,12 @@ export function assertVideoCapabilities(request, capabilities = {}) {
       `Selected provider/model does not declare support for: ${unsupported.join(", ")}`,
       "VIDEO_GENERATION_UNSUPPORTED_CAPABILITY",
     );
+  }
+
+  for (const [field, limit] of [["referenceAssetIds", capabilities.maxReferenceImages], ["referenceVideoAssetIds", capabilities.maxReferenceVideos], ["referenceAudioAssetIds", capabilities.maxReferenceAudio]]) {
+    if (Number.isInteger(limit) && request[field].length > limit) {
+      throw new VideoGenerationValidationError(`Selected provider/model accepts at most ${limit} ${field} assets`, "VIDEO_GENERATION_UNSUPPORTED_CAPABILITY");
+    }
   }
 
   if (capabilities.aspectRatios && !capabilities.aspectRatios.includes(request.aspectRatio)) {
