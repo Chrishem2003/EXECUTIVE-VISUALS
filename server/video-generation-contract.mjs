@@ -83,10 +83,10 @@ export function normalizeVideoGenerationRequest(input) {
     throw new VideoGenerationValidationError("resolution must be a documented provider resolution tier");
   }
 
-  const outputFormat = input.outputFormat ?? (operation === "video-to-hdr" ? "hdr10" : "mp4");
-  if (!["mp4", "hdr10", "hlg"].includes(outputFormat)) {
-    throw new VideoGenerationValidationError("outputFormat must be mp4, hdr10 or hlg in the normalized cloud video contract");
-  }
+  const outputFormat = boundedString(
+    input.outputFormat ?? (operation === "video-to-hdr" ? "hdr10" : "mp4"),
+    "outputFormat", 32, { required: true }
+  );
   const request = {
     requestId: boundedString(input.requestId, "requestId", 160) ?? randomUUID(),
     ...(input.projectId != null && input.projectId !== "" ? { projectId: boundedString(input.projectId, "projectId", 160, { required: true }) } : {}),
