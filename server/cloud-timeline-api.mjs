@@ -287,6 +287,12 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
  }
  async function checkReadiness(){
   const required=["projects","project_members","assets","timelines","jobs","job_events"];
+  if(process.env.CLOUD_VIDEO_WORKER_ENABLED==="true"){
+   required.push("video_generation_submissions","video_generation_budget_policies","video_generation_budget_approvals","video_generation_budget_reservations","video_generation_usage_reservations");
+  }
+  if(process.env.GOOGLE_OMNI_VIDEO_ENABLED==="true"||process.env.GOOGLE_OMNI_VIDEO_ALLOW_REMOTE==="true"){
+   required.push("google_video_interactions");
+  }
   for(const table of required){
    const rows=await request(table+"?select=id&limit=0");
    if(!Array.isArray(rows))throw new Error("Cloud timeline API readiness check failed for table "+table+".");
