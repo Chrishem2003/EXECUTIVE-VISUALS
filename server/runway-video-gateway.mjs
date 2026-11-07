@@ -38,7 +38,7 @@ export function listRunwayVideoModels(){
   return Object.entries(MODEL_PROFILES).map(([id,profile])=>({
     id,label:profile.label,minDurationSeconds:profile.minDurationSeconds,
     maxDurationSeconds:profile.maxDurationSeconds,aspectRatios:[...profile.aspectRatios],
-    resolutions:[...profile.resolutions],execution:"async",inputModes:["text-to-video"],
+    resolutions:[...profile.resolutions],execution:"async",inputModes:["text-to-video","image-to-video"],
     readiness:"adapter-supported; credentials and remote opt-in required"
   }));
 }
