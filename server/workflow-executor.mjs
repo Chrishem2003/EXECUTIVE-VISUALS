@@ -19,7 +19,7 @@ import { resolve, relative, sep } from "node:path";
 import { buildShotContinuityPrompt, getShotContinuityReferenceIds } from "./shot-continuity.mjs";
 import { normalizeVideoGenerationRequest, assertVideoCapabilities, createVideoRequestProvenance } from "./video-generation-contract.mjs";
 import { buildMediaQualityReport } from "./media-quality.mjs";
-import { refundBillingCredits } from "./billing.mjs";
+import { billingEnforcementEnabled, refundBillingCredits } from "./billing.mjs";
 
 const now=()=>new Date().toISOString();
 function normalizeRunwayRouterAspectRatio(value){
@@ -285,6 +285,7 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
     if(outputCount>1&&provider.provider!=="image"&&!runwayRouterEnabled)throw Object.assign(new Error("Multi-output generation requires the OpenAI-compatible image adapter or an enabled Runway Model Router; select one output or configure a compatible provider."),{code:"IMAGE_GATEWAY_UNSUPPORTED_CAPABILITY"});
     const routerAspectRatio=runwayRouterEnabled?normalizeRunwayRouterAspectRatio(imageRatio):imageRatio;
     const routerQuote=runwayRouterEnabled?await preflightRunwayRouterImage({prompt,aspectRatio:routerAspectRatio,resolution:config.resolution,referenceImages:referenceImageDataUrls,outputCount}):null;
+    if(routerQuote&&billingEnforcementEnabled()&&!process.env.BILLING_CREDIT_VALUE_MICROS)throw Object.assign(new Error("Runway Model Router paid generation requires a configured customer credit value so its dry-run estimate can be reserved accurately."),{code:"BILLING_RUNWAY_PRICING_CONFIG_REQUIRED"});
     const imageModel=String(routerQuote?.model||config.model||values.model||provider.model||"unknown");
     const runwayPricing=provider.provider==="runway"&&!runwayRouterEnabled?{ratio:imageRatio,quality:imageQuality,reasoningEffort:imageReasoning,background:imageBackground,outputCount,referenceImageCount:referenceImageDataUrls.length}:null;
     reserveRemoteRequest(db,{ownerId:job.owner_id,projectId:job.project_id||null,jobId:job.id,provider,capability:"image.generate",billingReference:job.id+":"+runId+":"+nodeId+":image.generate",costContext:{provider:provider.provider,model:imageModel,unit:"image",quantity:outputCount,runwayPricing,runwayRouterEstimateCredits:routerQuote?.estimatedCredits}});
