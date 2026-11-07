@@ -7,7 +7,7 @@ create or replace function executive_visuals.validate_video_budget_approval()
 returns trigger
 language plpgsql
 set search_path = pg_catalog, executive_visuals
-as $
+as $approval_trigger$
 begin
   -- Preserve the authenticated owner check while allowing the trusted service-role RPC.
   if current_user <> 'service_role' and new.owner_id is distinct from auth.uid() then
@@ -27,7 +27,7 @@ begin
   end if;
   return new;
 end;
-$$;
+$approval_trigger$;
 
 create or replace function executive_visuals.create_video_generation_budget_approval(
   p_approval_id uuid,
