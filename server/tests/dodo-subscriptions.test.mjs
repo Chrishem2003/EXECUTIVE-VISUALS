@@ -286,6 +286,7 @@ test("Dodo partial refunds reverse purchased subscription credits proportionally
     });
     assert.equal(receiveDodoWebhook(db,refundOne).accepted,true);
     const first=processNextDodoWebhook(db,{env});
+    assert.equal(first.processed,true,JSON.stringify(first));
     assert.equal(first.refunded,true);
     assert.equal(first.creditsReversed,50);
     assert.equal(first.reconciliationRequired,false);
