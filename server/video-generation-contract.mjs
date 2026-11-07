@@ -106,6 +106,28 @@ export function normalizeVideoGenerationRequest(input) {
     request.sourceVideoAssetId = boundedString(input.sourceVideoAssetId, "sourceVideoAssetId", 160, { required: true });
   }
   if (input.keyframeAssetIds != null) request.keyframeAssetIds = assetIds(input.keyframeAssetIds, "keyframeAssetIds", 5);
+  if (input.keyframes != null) {
+    if (!Array.isArray(input.keyframes) || input.keyframes.length > 5) {
+      throw new VideoGenerationValidationError("keyframes must be an array containing at most five timestamped assets");
+    }
+    let previousAt = -1;
+    request.keyframes = input.keyframes.map((frame, index) => {
+      if (!frame || typeof frame !== "object" || Array.isArray(frame)) {
+        throw new VideoGenerationValidationError("Each keyframe must contain an assetId and timestamp");
+      }
+      const assetId = boundedString(frame.assetId, "keyframes[" + index + "].assetId", 160, { required: true });
+      const at = finiteNumber(frame.at, "keyframes[" + index + "].at", { min: 0, max: 30, required: true });
+      if (at <= previousAt) throw new VideoGenerationValidationError("Keyframe timestamps must be strictly increasing");
+      previousAt = at;
+      return Object.freeze({ assetId, at });
+    });
+  }
+  if (request.keyframeAssetIds?.length && !request.keyframes?.length) {
+    throw new VideoGenerationValidationError("Keyframe asset IDs require explicit timestamps; use keyframes [{assetId, at}]");
+  }
+  if (request.keyframes?.length && operation !== "video-to-video") {
+    throw new VideoGenerationValidationError("Timestamped keyframes are supported only for video-to-video");
+  }
   if (["video-to-video", "video-upscale", "video-to-hdr"].includes(operation) && !request.sourceVideoAssetId) {
     throw new VideoGenerationValidationError("sourceVideoAssetId is required for this video operation");
   }
