@@ -198,7 +198,7 @@ export function spendBillingCredits(db,{
     const id=randomUUID();
     db.prepare(`INSERT INTO billing_credit_ledger
       (id,user_id,amount,event_type,description,reference_id,idempotency_key,metadata_json)
-      VALUES(?,?,?,'generation_spend',?,?,?,?,?)`)
+      VALUES(?,?,?,'generation_spend',?,?,?,?)`)
       .run(id,userId,-cost,String(capability||"remote generation").slice(0,180),referenceId?String(referenceId).slice(0,240):null,key,safeJson({capability,cost}));
     db.exec("COMMIT");
     return {enabled:true,charged:cost,replayed:false,balance:getBillingBalance(db,userId,at),ledgerId:id};
