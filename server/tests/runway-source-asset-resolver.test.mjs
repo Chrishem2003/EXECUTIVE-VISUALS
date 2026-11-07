@@ -151,7 +151,7 @@ test("Runway Model Router references are converted only from owner/project-scope
       }
     },
     supabaseUrl: "https://storage.example.com",
-    fetchImpl: async () => new Response(bytes, { status: 200, headers: { "content-type": "image/png", "content-length": String(bytes.length) } })
+    fetchImpl: async url => new Response(bytes, { status: 200, headers: { "content-type": String(url).includes(videoId) ? "video/mp4" : "image/png", "content-length": String(bytes.length) } })
   });
   const prepared = await resolver.prepare({
     provider: "runway", model: "model-router", operation: "text-to-video",
