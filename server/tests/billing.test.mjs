@@ -300,6 +300,27 @@ test("concurrent job limits count queued, running and review jobs but release te
   db.close();
 });
 
+test("Runway Model Router image preflight estimates are converted into marked-up customer credits",()=>{
+  const db=setup();
+  try{
+    const estimate=resolveBillingCreditCost(db,{
+      provider:"runway",model:"gpt_image_2_6_flare",capability:"image.generate",
+      unit:"image",quantity:3,runwayRouterEstimateCredits:42,
+      env:{BILLING_CREDIT_VALUE_MICROS:"10000",BILLING_COST_MARKUP_BPS:"5000"}
+    });
+    assert.equal(estimate.source,"runway_model_router_preflight_estimate");
+    assert.equal(estimate.providerCostCredits,42);
+    assert.equal(estimate.providerCostUsd,0.42);
+    assert.equal(estimate.credits,63);
+    assert.equal(estimate.settlementEligible,false);
+    assert.throws(()=>resolveBillingCreditCost(db,{
+      provider:"runway",model:"model-router",capability:"image.generate",
+      unit:"image",quantity:2,runwayRouterEstimateCredits:-1,
+      env:{BILLING_CREDIT_VALUE_MICROS:"10000"}
+    }),error=>error.code==="BILLING_RUNWAY_PRICING_INVALID");
+  }finally{db.close();}
+});
+
 test("Runway image and video reservations use exact published model pricing before platform markup",()=>{
   const db=setup();
   try{
