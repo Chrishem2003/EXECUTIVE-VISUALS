@@ -140,16 +140,16 @@ export function createCloudAssetRepository({
       const rows=await request("assets?select=id,owner_id,project_id,original_name,media_type,byte_size,sha256,storage_bucket,object_path,derivative_of,metadata,created_at,deleted_at&"+scope+
         "&metadata->>source=in.(video-generation,video-to-audio)&metadata->>providerTaskId=eq."+encodeURIComponent(providerTaskId)+
         "&metadata->>outputIndex=eq."+encodeURIComponent(String(outputIndex))+"&deleted_at=is.null&limit=2");
-      if(!Array.isArray(rows)||rows.length>1)throw new Error("Video output idempotency lookup returned an invalid result.");
+      if(!Array.isArray(rows)||rows.length>1)throw new Error("Provider output idempotency lookup returned an invalid result.");
       const row=rows[0]||null;
       if(!row)return null;
       const expectedPrefix=(row.project_id||row.owner_id)+"/"+row.id+"/";
       if(row.owner_id!==ownerId||row.project_id!==projectId||row.storage_bucket!=="executive-visuals-media"||
          typeof row.object_path!=="string"||!row.object_path.startsWith(expectedPrefix)||
-         !String(row.media_type||"").startsWith("video/")||row.deleted_at||
-         row.metadata?.source!=="video-generation"||row.metadata?.providerTaskId!==providerTaskId||
+         !(String(row.media_type||"").startsWith("video/")||String(row.media_type||"").startsWith("audio/"))||row.deleted_at||
+         !["video-generation","video-to-audio"].includes(row.metadata?.source)||row.metadata?.providerTaskId!==providerTaskId||
          Number(row.metadata?.outputIndex)!==outputIndex) {
-        throw new Error("Existing video output asset does not match the requested owner/task/index scope.");
+        throw new Error("Existing provider output asset does not match the requested owner/task/index scope.");
       }
       return publicAsset(row);
     },
