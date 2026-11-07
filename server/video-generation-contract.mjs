@@ -110,6 +110,12 @@ export function normalizeVideoGenerationRequest(input) {
   if (input.sourceVideoAssetId != null) {
     request.sourceVideoAssetId = boundedString(input.sourceVideoAssetId, "sourceVideoAssetId", 160, { required: true });
   }
+  if (request.sourceVideoAssetId && request.referenceVideoAssetIds.length > 1) {
+    throw new VideoGenerationValidationError("A source video leaves room for at most one additional reference video in the Runway Model Router contract");
+  }
+  if (request.sourceVideoAssetId && request.referenceVideoAssetIds.includes(request.sourceVideoAssetId)) {
+    throw new VideoGenerationValidationError("The source video cannot also be supplied as a reference video");
+  }
   if (input.keyframeAssetIds != null) request.keyframeAssetIds = assetIds(input.keyframeAssetIds, "keyframeAssetIds", 5);
   if (input.keyframes != null) {
     if (!Array.isArray(input.keyframes) || input.keyframes.length > 5) {
