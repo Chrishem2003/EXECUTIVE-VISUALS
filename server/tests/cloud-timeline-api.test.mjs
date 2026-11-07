@@ -242,3 +242,25 @@ test("cloud transformation approval rejects a budget below the server-derived pr
  assert.equal(result.body.error.code,"TRANSFORMATION_BUDGET_BELOW_ESTIMATE");
  assert.equal(patched,false);
 });
+
+
+test("cloud transformation submit remains blocked when any release gate is unverified", async () => {
+ const planId="e23e4567-e89b-42d3-a456-426614174000";
+ const row={id:planId,owner_id:owner,project_id:project,job_type:"video.transform.plan",status:"awaiting_approval",approved_by:owner,approved_at:"2026-11-07T08:00:00.000Z",estimated_cost:{approvalId:"923e4567-e89b-42d3-a456-426614174000",estimatedCostMicros:3000000,approvedBudgetMicros:5000000,currency:"USD",adapterId:"runway:aleph2",capability:"video-to-video"},input:{sourceAssetId:"b23e4567-e89b-42d3-a456-426614174000",prompt:"Replace vehicle",operation:"vehicle_replace"}};
+ let queueCalls=0;
+ const api=createCloudTimelineApi({
+  url:"https://example.supabase.co",serviceRoleKey:"service-secret",
+  fetchImpl:async(url,options)=>{
+   if(url.includes("/jobs?id=")&&options.method==="GET")return{ok:true,status:200,async text(){return JSON.stringify([row]);}};
+   if(url.endsWith("/rpc/enqueue_video_generation_job"))queueCalls++;
+   return{ok:true,status:200,async text(){return"[]";}};
+  },
+  timelineService:{timelines:{},assets:{}},authorize:async()=>true,
+  runwaySourceResolver:{async resolveMetadata(){return{ownerId:owner,projectId:project,assetId:row.input.sourceAssetId,mediaType:"video/mp4",durationSeconds:10.2,frameCount:306,width:1920,height:1080,sourceDynamicRange:"sdr"};}}
+ });
+ const result=await api.handle({method:"POST",path:"/api/cloud/transformations/"+planId+"/submit",ownerId:owner});
+ assert.equal(result.status,409);
+ assert.equal(result.body.error.code,"TRANSFORMATION_RELEASE_GATES_BLOCKED");
+ assert.equal(result.body.error.missing.length,8);
+ assert.equal(queueCalls,0);
+});
