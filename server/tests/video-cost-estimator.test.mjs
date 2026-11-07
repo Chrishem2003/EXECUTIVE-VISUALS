@@ -65,19 +65,20 @@ test("aggregates a multi-shot production quote with itemized totals",()=>{
  assert.equal(quote.available,true);
  assert.equal(quote.shotCount,2);
  assert.equal(quote.totalDurationSeconds,8);
- assert.equal(quote.amount,1.35);
+ assert.equal(quote.amount,1.37);
  assert.equal(quote.currency,"USD");
  assert.equal(quote.shots[0].shotId,"opening");
  assert.equal(quote.breakdown.video,1.2);
  assert.equal(quote.breakdown.audio,0.12);
  assert.equal(quote.breakdown.references,0.03);
+ assert.equal(quote.breakdown.minimumApplied,0.02);
 });
 
 test("rejects duplicate shot IDs, too many shots and overlong production plans",()=>{
  const shot={id:"same",provider:"fal",model:"fal-ai/example-video",durationSeconds:90,resolution:"720p"};
  assert.match(estimateVideoProductionCost({shots:[shot,{...shot}]},pricing,{now}).reason,/unique/);
  assert.equal(estimateVideoProductionCost({shots:Array.from({length:13},(_,i)=>({...shot,id:"s"+i}))},pricing,{now}).available,false);
- assert.match(estimateVideoProductionCost({shots:[{...shot,id:"a"},{...shot,id:"b"}]},pricing,{now}).reason,/180 seconds/);
+ assert.match(estimateVideoProductionCost({shots:[{...shot,id:"a",durationSeconds:91},{...shot,id:"b",durationSeconds:90}]},pricing,{now}).reason,/180 seconds/);
 });
 
 test("does not produce a total when any shot lacks a verified rate or currencies differ",()=>{
