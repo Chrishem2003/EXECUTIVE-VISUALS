@@ -281,9 +281,9 @@ export function getAdminOverview(db) {
     usage30d: { operations: Number(usage.operations||0), estimatedCostMicros: Number(usage.estimated_cost_micros||0) },
     billingProviderConfigured: !!(process.env.FLW_SECRET_KEY || process.env.DODO_PAYMENTS_API_KEY),
     paymentCollectionEnabled: process.env.BILLING_CHECKOUT_ENABLED === "true" &&
-      !!(process.env.FLW_SECRET_KEY && process.env.FLW_WEBHOOK_SECRET && process.env.PUBLIC_APP_URL),
+      billingEnforcementEnabled() && !!(process.env.FLW_SECRET_KEY && process.env.FLW_WEBHOOK_SECRET && process.env.PUBLIC_APP_URL),
     oneTimeCreditTopupsEnabled: process.env.BILLING_CHECKOUT_ENABLED === "true" &&
-      !!(process.env.FLW_SECRET_KEY && process.env.FLW_WEBHOOK_SECRET && process.env.PUBLIC_APP_URL),
+      billingEnforcementEnabled() && !!(process.env.FLW_SECRET_KEY && process.env.FLW_WEBHOOK_SECRET && process.env.PUBLIC_APP_URL),
     recurringSubscriptionsEnabled: false };
 }
 
