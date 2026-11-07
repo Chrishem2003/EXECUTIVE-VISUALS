@@ -2,7 +2,7 @@
 
 ## Architecture
 
-- Cloudflare Worker `executive-visuals-edge` serves the Vite-built SPA from Workers Static Assets.
+- Cloudflare Worker `executive-visuals` serves the Vite-built SPA from Workers Static Assets.
 - Same-origin `/api/*` requests require an explicitly configured `API_ORIGIN`. The repository must not default this to the production Render API. Configure only a dedicated, isolated staging API after its data store and credentials are approved.
 - The backend remains responsible for Node.js APIs, FFmpeg/FFprobe, durable job workers and provider adapters. Those processes are not moved into the Workers runtime.
 - The Worker validates a fixed upstream origin at runtime and does not accept arbitrary client-provided upstream URLs. If `API_ORIGIN` is absent or invalid, API requests fail closed with HTTP 502.
@@ -18,13 +18,13 @@ The repository includes `wrangler.jsonc` and `cloudflare/worker.ts`. In Cloudfla
 - Build command: `npm ci && npm run build`
 - Deploy command: `npx wrangler deploy`
 - Root directory: `/`
-- Worker name: `executive-visuals-edge`
+- Worker name: `executive-visuals`
 
 Do not point this Worker at `main` or enable automatic production releases until the edge preview has passed acceptance. Configure `API_ORIGIN` as a non-secret runtime variable only after confirming it points to an isolated staging API. Never point this preview Worker at `https://executive-visuals.onrender.com`.
 
 ## Account prerequisites
 
-The Cloudflare account currently has no Workers scripts and no `workers.dev` subdomain. Cloudflare's API directs the account owner to open the Workers & Pages dashboard once to provision the account subdomain. R2 is not enabled yet and the R2 API returns Cloudflare error 10042 until it is enabled in the dashboard.
+The Cloudflare account has an active `workers.dev` subdomain (`chrishem242.workers.dev`) and a deployed Worker named `executive-visuals`. R2 is not enabled yet and the R2 API previously returned Cloudflare error 10042 until it is enabled in the dashboard.
 
 A dedicated Cloudflare D1 database named `executive-visuals-staging` was created in the EU jurisdiction as an empty isolated resource. It is not connected to the application. The current Node.js backend uses SQLite and local disk, so D1 must not be treated as a drop-in database replacement. A dedicated data-access adapter, schema migration, ownership/RLS-equivalent controls and backup/restore tests are required before using it for customer data.
 
