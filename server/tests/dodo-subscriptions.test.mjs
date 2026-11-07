@@ -5,7 +5,7 @@ import { openDatabase } from "../db.mjs";
 import { ensureBillingSchema, touchBillingAccount, saveBillingPlan, getBillingBalance } from "../billing.mjs";
 import { ensureBillingWebhookSchema } from "../billing-webhooks.mjs";
 import {
-  ensureDodoSubscriptionSchema, dodoProductEnvName, dodoSubscriptionCheckoutEnabled,
+  ensureDodoSubscriptionSchema, dodoProductEnvName, dodoSubscriptionCheckoutEnabled, dodoCustomerPortalEnabled,
   createDodoSubscriptionCheckout, verifyDodoWebhookSignature, receiveDodoWebhook,
   processNextDodoWebhook, getDodoCheckoutStatus, createDodoCustomerPortalSession
 } from "../dodo-subscriptions.mjs";
@@ -231,4 +231,14 @@ test("Dodo customer portal is owner-scoped and returns only a verified hosted UR
       fetchImpl:async()=>new Response(JSON.stringify({link:"https://evil.example/portal"}),{status:200})
     }),error=>error.code==="DODO_RESPONSE_INVALID");
   }finally{db.close();}
+});
+
+
+test("Dodo customer portal readiness remains independent from new subscription checkout",()=>{
+  const env=baseEnv();
+  assert.equal(dodoSubscriptionCheckoutEnabled(env),true);
+  assert.equal(dodoCustomerPortalEnabled(env),true);
+  assert.equal(dodoSubscriptionCheckoutEnabled({...env,BILLING_ENFORCEMENT_ENABLED:"false"}),false);
+  assert.equal(dodoCustomerPortalEnabled({...env,BILLING_ENFORCEMENT_ENABLED:"false"}),true);
+  assert.equal(dodoCustomerPortalEnabled({...env,DODO_MERCHANT_APPROVED:"false"}),false);
 });
