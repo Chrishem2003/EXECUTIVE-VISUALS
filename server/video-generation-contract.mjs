@@ -104,6 +104,9 @@ export function normalizeVideoGenerationRequest(input) {
   };
 
   if (input.seed != null) request.seed = finiteNumber(input.seed, "seed", { min: 0, max: 4294967295, integer: true });
+  if (audioMode === "reference" && request.referenceAudioAssetIds.length !== 1) {
+    throw new VideoGenerationValidationError("Reference audio mode requires exactly one referenceAudioAssetId");
+  }
   if (input.sourceVideoAssetId != null) {
     request.sourceVideoAssetId = boundedString(input.sourceVideoAssetId, "sourceVideoAssetId", 160, { required: true });
   }
