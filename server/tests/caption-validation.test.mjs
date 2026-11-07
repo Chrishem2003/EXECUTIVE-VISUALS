@@ -12,3 +12,21 @@ import { validateSrt } from "../caption-validation.mjs";
 test("validates SRT cue timing, readability and media bounds",()=>{const srt="1\n00:00:00,000 --> 00:00:02,000\nOpening line\n\n2\n00:00:02,000 --> 00:00:04,000\nA second line\n";const r=validateSrt(srt,{durationSeconds:5});assert.equal(r.status,"passed");assert.equal(r.format,"srt");assert.equal(r.cueCount,2);});
 test("blocks malformed SRT timing and cues outside media duration",()=>{assert.equal(validateSrt("1\nwrong timing\nNo timing").status,"blocked");const r=validateSrt("1\n00:00:03,000 --> 00:00:05,000\nToo late",{durationSeconds:4});assert.equal(r.status,"blocked");assert.ok(r.findings.some(x=>x.code==="CAPTION_OUT_OF_RANGE"));});
 test("flags SRT overlap and reading-speed warnings",()=>{const r=validateSrt("1\n00:00:00,000 --> 00:00:08,000\n"+"x".repeat(50)+"\n\n2\n00:00:07,000 --> 00:00:08,000\n"+"y".repeat(50));assert.equal(r.status,"review");assert.ok(r.findings.some(x=>x.code==="CAPTION_CUE_OVERLAP"));});
+
+test("accepts a UTF-8 BOM before the WebVTT header",()=>{
+ const r=validateWebVtt("\uFEFF"+vtt([["00:00:00.000","00:00:02.000","BOM-prefixed captions"]]));
+ assert.equal(r.status,"passed");
+ assert.equal(r.cueCount,1);
+});
+
+test("enforces the configured cue limit without accepting an extra cue",()=>{
+ const content=vtt([
+  ["00:00:00.000","00:00:01.000","One"],
+  ["00:00:01.000","00:00:02.000","Two"],
+  ["00:00:02.000","00:00:03.000","Three"]
+ ]);
+ const report=validateWebVtt(content,{maxCues:2});
+ assert.equal(report.cueCount,2);
+ assert.equal(report.status,"blocked");
+ assert.ok(report.findings.some(item=>item.code==="CAPTION_CUE_LIMIT_EXCEEDED"));
+});
