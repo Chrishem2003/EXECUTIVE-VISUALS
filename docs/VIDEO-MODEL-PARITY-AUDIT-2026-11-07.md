@@ -93,3 +93,34 @@ A source-level contract comparison found a separate runtime blocker:
 - The same SQL function applies fixed duration/reservation rules only for those two models.
 
 Therefore, enabling an application-level adapter flag does not make the corresponding model enqueueable: Postgres rejects the job with `VIDEO_ENQUEUE_PROVIDER_NOT_ENABLED` (or the fixed pricing guard). Do not loosen the SQL allowlist generically. Align each model's exact operation, input limits, quote source, currency, approved reservation ceiling, and settlement evidence in one reviewed migration plus contract tests. Until then, surface these model profiles as unavailable for hosted execution.
+
+
+## Official API research refresh — 2026-11-07
+
+The following details were rechecked against vendor-owned sources and should drive adapter contracts rather than third-party model roundups.
+
+### Kling
+
+- **Kling 4.0 Flash:** 3–20 seconds, 720p; text-to-video, single-first-frame image-to-video, and Omni reference-to-video endpoints. Its Omni endpoint accepts up to 10 reference images and 5 reference videos, with up to 15 combined inputs. Billing depends on total duration, including supplied reference/source video duration.
+- **Kling 4.0 (non-Flash):** up to 30 seconds, 720p/1080p, up to 10 keyframes, plus Omni reference-to-video. Do not mix its duration/resolution/price contract with Flash.
+- The adapter must distinguish the three endpoint modes, reject invalid mixed input sets before provider submission, and calculate a quote using provider-defined billable input plus output duration.
+
+Official sources:
+- https://kling.ai/document-api/updates/api?date=2026-02-11
+- https://kling.ai/dev/api
+
+### Gemini Omni
+
+- Google officially announced **Gemini Omni 1.2 Flash** on November 5, 2026. It is generally available through the Gemini API and Google business offerings.
+- Native output is 3–15 seconds in one-second increments. Google announced $0.07/second at 720p, 30% below Omni 1.1's 720p rate.
+- The release emphasizes multi-turn editing, stronger image/reference adherence, short motion clips and audio cues. The Interactions API remains the correct integration surface for stateful conversational edits.
+- The existing database enqueue contract is still explicitly written for `gemini-omni-1.1-flash`; do not change the model ID in the application alone. Add 1.2 only with a dedicated provider adapter, exact price table and migration that binds quote, approval, request hash and settlement to the 1.2 model identity.
+
+Official sources:
+- https://blog.google/innovation-and-ai/technology/developers-tools/introducing-gemini-omni-1-2-flash/
+- https://ai.google.dev/gemini-api/docs/omni
+- https://ai.google.dev/gemini-api/docs/interactions-overview
+
+### Product implication
+
+Prioritize repeatable business workflows over a raw model catalogue: reusable brand kits, product/character reference packs, vertical and landscape ad variants, multi-turn revisions, captioned/social-ready exports, and clear per-output credit quotes. These are the customer-facing outcomes that make the underlying model capabilities commercially useful.
