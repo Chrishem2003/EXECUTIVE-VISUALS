@@ -142,3 +142,24 @@ test("Gen-4.5 HDR formats add the documented professional surcharge",()=>{
   assert.equal(estimateRunwayVideoCredits({...base,outputFormat:"hdr_png_sequence"}).estimatedCredits,160);
   assert.equal(estimateRunwayVideoCredits({...base,outputFormat:"hdr_exr_acescg_sequence_2_0"}).estimatedCredits,160);
 });
+
+test("prices Kling 4.0 Flash with its minimum, input-video formula and combined-reference cap",()=>{
+  assert.equal(estimateRunwayVideoCredits({model:"kling_4_flash",durationSeconds:5,resolution:"720p",pricingDate:"2026-11-07"}).estimatedCredits,47);
+  assert.equal(estimateRunwayVideoCredits({model:"kling_4_flash",durationSeconds:5,resolution:"720p",inputVideoSeconds:3,pricingDate:"2026-11-07"}).estimatedCredits,63);
+  assert.equal(estimateRunwayVideoCredits({model:"kling_4_flash",durationSeconds:5,resolution:"720p",inputVideoSeconds:10,pricingDate:"2026-11-07"}).estimatedCredits,95);
+  assert.equal(estimateRunwayVideoCredits({model:"kling_4_flash",durationSeconds:3,resolution:"720p",pricingDate:"2026-11-07"}).estimatedCredits,29);
+  assert.throws(()=>estimateRunwayVideoCredits({model:"kling_4_flash",durationSeconds:2,resolution:"720p",pricingDate:"2026-11-07"}),e=>e.code==="RUNWAY_PRICE_INVALID_INPUT");
+  assert.throws(()=>estimateRunwayVideoCredits({model:"kling_4_flash",durationSeconds:5,resolution:"1080p",pricingDate:"2026-11-07"}),e=>e.code==="RUNWAY_PRICE_INPUT_REQUIRED");
+  assert.throws(()=>estimateRunwayVideoCredits({model:"kling_4_flash",durationSeconds:5,resolution:"720p",referenceImageCount:10,hasStartFrame:true,pricingDate:"2026-11-07"}),e=>e.code==="RUNWAY_PRICE_INVALID_INPUT");
+});
+
+test("prices Gemini Omni 1.2 by output resolution, image/keyframe and input-video charges",()=>{
+  assert.equal(estimateRunwayVideoCredits({model:"gemini_omni_flash_1.2",durationSeconds:5,resolution:"360p",pricingDate:"2026-11-07"}).estimatedCredits,10);
+  assert.equal(estimateRunwayVideoCredits({model:"gemini_omni_flash_1.2",durationSeconds:5,resolution:"720p",pricingDate:"2026-11-07"}).estimatedCredits,35);
+  assert.equal(estimateRunwayVideoCredits({model:"gemini_omni_flash_1.2",durationSeconds:5,resolution:"1080p",pricingDate:"2026-11-07"}).estimatedCredits,50);
+  assert.equal(estimateRunwayVideoCredits({model:"gemini_omni_flash_1.2",durationSeconds:5,resolution:"4k",pricingDate:"2026-11-07"}).estimatedCredits,105);
+  assert.equal(estimateRunwayVideoCredits({model:"gemini_omni_flash_1.2",durationSeconds:5,resolution:"720p",referenceImageCount:2,hasStartFrame:true,inputVideoSeconds:4,pricingDate:"2026-11-07"}).estimatedCredits,42);
+  assert.equal(estimateRunwayVideoCredits({model:"gemini_omni_flash_1.2",durationSeconds:3,resolution:"360p",pricingDate:"2026-11-07"}).estimatedCredits,6);
+  assert.throws(()=>estimateRunwayVideoCredits({model:"gemini_omni_flash_1.2",durationSeconds:16,resolution:"720p",pricingDate:"2026-11-07"}),e=>e.code==="RUNWAY_PRICE_INVALID_INPUT");
+  assert.throws(()=>estimateRunwayVideoCredits({model:"gemini_omni_flash_1.2",durationSeconds:5,resolution:"720p",referenceImageCount:5,hasStartFrame:true,pricingDate:"2026-11-07"}),e=>e.code==="RUNWAY_PRICE_INVALID_INPUT");
+});
