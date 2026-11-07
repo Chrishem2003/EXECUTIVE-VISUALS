@@ -57,6 +57,12 @@ jobs:
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/cloud-video-postgres-bootstrap.sql
       - name: Seed isolated owner, project and private asset
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/google-drive-postgres-fixtures.sql
+      - name: Apply durable video submission ledger migration
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261104120000_cloud_video_submission_ledger.sql
+      - name: Apply video budget reservation and enqueue migration
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261104143000_cloud_video_budget_enqueue.sql
+      - name: Verify video queue, budget reservations and lease constraints
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/cloud-video-postgres-integration.sql
       - name: Apply encrypted Google Drive connection migration
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261105150000_google_drive_connections.sql
       - name: Apply one-time OAuth state migration
