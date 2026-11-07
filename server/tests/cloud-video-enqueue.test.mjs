@@ -518,7 +518,7 @@ test("Runway Model Router video-to-video enqueue probes source metadata before d
 
 test("Aleph 2 enqueue is enabled only for the reviewed video-to-video MP4 contract",async()=>{
  const calls=[];
- const client=createCloudVideoEnqueue({...base,fetchImpl:async(url,options)=>{calls.push({url,body:JSON.parse(options.body)});return response([resultRow]);}});
+ const client=createCloudVideoEnqueue({...base,resolveRunwaySourceMetadata:async({ownerId,projectId,assetId})=>({ownerId,projectId,assetId,mediaType:"video/mp4",durationSeconds:8,frameCount:192,width:1920,height:1080}),fetchImpl:async(url,options)=>{calls.push({url,body:JSON.parse(options.body)});return response([resultRow]);}});
  const alephInput={
   projectId,provider:"runway",model:"aleph2",requestHash,
   operation:"video-to-video",sourceVideoAssetId:"823e4567-e89b-42d3-a456-426614174000",
@@ -531,7 +531,7 @@ test("Aleph 2 enqueue is enabled only for the reviewed video-to-video MP4 contra
  assert.equal(calls.length,1);
  assert.equal(calls[0].body.p_model,"aleph2");
  assert.equal(calls[0].body.p_input.operation,"video-to-video");
- await assert.rejects(()=>client.enqueue(args({model:"aleph2",input:{...alephInput,operation:"text-to-video"},reservedAmount:3})),error=>error.code==="VIDEO_ENQUEUE_PROVIDER_NOT_ENABLED");
+ await assert.rejects(()=>client.enqueue(args({model:"aleph2",input:{...alephInput,operation:"text-to-video"},reservedAmount:3})),error=>error.code==="VIDEO_GENERATION_UNSUPPORTED_CAPABILITY");
  await assert.rejects(()=>client.enqueue(args({model:"aleph2",input:{...alephInput,outputFormat:"prores"},reservedAmount:3})),/supports MP4 outputs/);
  assert.equal(calls.length,1);
 });
