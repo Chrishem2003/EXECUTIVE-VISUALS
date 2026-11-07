@@ -194,7 +194,6 @@ export function receiveDodoWebhook(db, {
       payment_id: data.payment_id || null,
       has_payment_method: data.has_payment_method === true,
       customer_id: String(data.customer?.customer_id || ""),
-      customer_email: String(data.customer?.email || "").trim().toLowerCase(),
       metadata: {
         executive_visuals_order_id: String(metadata.executive_visuals_order_id || ""),
         executive_visuals_user_id: String(metadata.executive_visuals_user_id || ""),
@@ -292,7 +291,7 @@ export function processNextDodoWebhook(db, { env = process.env } = {}) {
           (id,user_id,plan_id,status,provider,provider_customer_id,provider_subscription_id,current_period_start,current_period_end,metadata_json)
           VALUES(?,?,?,'active','dodo',?,?,?,?,?)`)
           .run(randomUUID(), checkout.user_id, plan.id, data.customer_id || null, subscriptionId,
-            periodStart, periodEnd, safeJson({ productId: data.product_id, lastProviderTimestamp: payload.timestamp, customerEmail: data.customer_email }));
+            periodStart, periodEnd, safeJson({ productId: data.product_id, lastProviderTimestamp: payload.timestamp }));
         insertSubscriptionCredits(db, {
           userId: checkout.user_id, plan, subscriptionId, paymentId: data.payment_id,
           periodEnd, idempotencyKey: "dodo-subscription-active:" + subscriptionId + ":" + periodStart,
