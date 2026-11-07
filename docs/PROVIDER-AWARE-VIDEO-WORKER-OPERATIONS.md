@@ -176,3 +176,20 @@ Source of truth:
 - https://docs.dev.runwayml.com/api-details/api_changelog/
 - https://docs.dev.runwayml.com/guides/pricing/
 
+## Runway Model Router video worker — integration checkpoint 2026-11-07
+
+The hosted worker now has an explicit opt-in registration for the saved Runway video Model Router config:
+
+- `RUNWAY_MODEL_ROUTER_ENABLED=true`
+- `RUNWAY_VIDEO_ROUTER_CONFIG=<saved-config-slug>`
+- `RUNWAY_VIDEO_ALLOW_REMOTE=true`
+- `VIDEO_GATEWAY_ENABLED=true` and `VIDEO_GATEWAY_ALLOW_REMOTE=true`
+- Server-side Runway API credentials and the existing Supabase private-asset/worker configuration.
+
+The router remains unavailable by default. The queue accepts the synthetic `runway:model-router` identity only when all gates are explicitly enabled and a USD budget ceiling is approved. The queue reserves that approved ceiling (not a guessed model-specific price). Before any paid provider POST, the worker performs a non-billable Runway dry-run using the prepared input and rejects the job if the quote is malformed or exceeds the approved reservation. The compact quote evidence is stored with the provider submission ledger. The completed task's actual `cost.credits` is reconciled against the task estimate and the approved budget before private output ingestion and job finalization.
+
+Image/video references are resolved from owner- and project-scoped private assets to short-lived signed URLs by the worker; callers cannot supply arbitrary private object paths. Provider outputs still pass the existing hostname allowlist, media validation, size limits and private asset ingestion path.
+
+Important limitation: the dry-run currently occurs in the hosted worker after the queue/budget reservation has been created. A customer-facing pre-approval quote endpoint that binds the exact prepared input hash, quote expiry and user approval is still required for a complete purchase UX. The route supports the current normalized text-to-video and first-frame image-to-video paths; audio-reference inputs, source-video edit/extend, and a user-facing Model Router config manager are not enabled. Keep the route disabled until isolated staging tests, the pre-approval quote flow, and task-cost settlement tests pass.
+
+No paid provider calls are part of CI. This integration does not enable the route in production or change any production environment.
