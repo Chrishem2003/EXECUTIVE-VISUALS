@@ -1,9 +1,9 @@
-## Live application
+## Live application and environment boundaries
 
-- **Cloudflare staging preview:** https://executive-visuals.chrishem242.workers.dev
 - **Existing Render production:** https://executive-visuals.onrender.com
+- **Cloudflare Workers preview:** https://executive-visuals.chrishem242.workers.dev
 
-The Cloudflare address serves the current staging candidate and proxies API requests to the existing Render backend. It is not yet the final custom-domain production release. The backend currently reports SQLite/local-disk storage; do not use this staging preview for valuable customer data or paid transactions until durable storage and billing acceptance gates are complete.
+The Cloudflare URL is an edge/frontend preview, **not an isolated staging environment**. The previously checked-in Worker configuration set `API_ORIGIN` to the Render production service, so API calls from an already-deployed Worker may still reach production until its live runtime configuration is separately inspected. This branch removes that production-origin default; it does not change the already-deployed Worker. Do not use the preview for staging acceptance, paid transactions, or test writes. The Render production backend currently reports SQLite/local-disk storage, which is not durable customer storage.
 
 # CHRISHEM EXCLUSIVE VISUALS
 
