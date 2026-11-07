@@ -121,3 +121,18 @@ test("AI upscaler requires independent fixture evidence, not a claimed inference
  assert.deepEqual(verifiedProvider.capabilities,["media.ai-upscale"]);
  assert.equal(findProviderForCapability(qualityChecked,"media.ai-upscale").provider,"local");
 });
+
+
+test("provider catalog exposes only source-attributed pricing metadata and never assumes a price",()=>{
+ const raw=JSON.stringify([{provider:"fal",model:"fal-ai/example",currency:"USD",sourceUrl:"https://fal.ai/pricing",observedAt:"2026-11-01T00:00:00.000Z",expiresAt:"2026-11-08T00:00:00.000Z",ratesPerSecond:{"720p":0.1}}]);
+ const catalog=getProviderCatalog({VIDEO_MODEL_PRICING_JSON:raw});
+ const video=catalog.providers.find(item=>item.id==="video");
+ assert.equal(catalog.policy.pricesEstimated,true);
+ assert.equal(video.pricing.configured,true);
+ assert.equal(video.pricing.models[0].model,"fal-ai/example");
+ assert.equal(video.pricing.models[0].sourceUrl,"https://fal.ai/pricing");
+ assert.equal(JSON.stringify(catalog).includes("FAL_KEY"),false);
+ const empty=getProviderCatalog({});
+ assert.equal(empty.policy.pricesEstimated,false);
+ assert.deepEqual(empty.providers.find(item=>item.id==="video").pricing.models,[]);
+});
