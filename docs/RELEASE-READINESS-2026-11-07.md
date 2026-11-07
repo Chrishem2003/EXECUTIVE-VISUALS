@@ -199,3 +199,12 @@ This is now a P0 release blocker, not a cosmetic follow-up. Build an authenticat
 - No Render settings, production service, test service, database, secrets or storage were changed during this inspection.
 
 Therefore, CI passing does not constitute staging acceptance or production readiness. Keep PR #206 draft and all remote generation gates disabled until a separate active staging target is authorized and the bridge is end-to-end verified.
+
+## Runway Model Router source-video capability — implementation checkpoint
+
+- Added `video-to-video` to the Model Router's accepted operations.
+- Source videos are resolved from private owner/project-scoped assets, represented as Runway `referenceVideos` with exactly one `source` role; one distinct additional reference video is supported.
+- Enqueue validates server-probed source metadata and the approved rounded-up duration before queue insertion.
+- Adapter validates exactly one source video for this operation and rejects source role in text/image generation.
+- No paid provider task was submitted. The route remains disabled behind existing remote/worker/config gates.
+- This is routed source-video editing. Specific edit/extend behavior is model-dependent and described in the prompt; it is not a guarantee that every router model supports every operation.
