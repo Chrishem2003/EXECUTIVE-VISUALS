@@ -63,7 +63,7 @@ export async function refreshBillingWorkspace(){
    apiRequest<{billing:Overview;payment:{checkoutEnabled:boolean;subscriptionCheckoutEnabled:boolean;customerPortalEnabled:boolean}}>("/api/billing/overview"),
    apiRequest<{plans:Plan[]}>("/api/billing/plans")
   ]);
-  state.overview=overview.billing;state.checkoutEnabled=overview.payment?.checkoutEnabled===true;state.subscriptionCheckoutEnabled=overview.payment?.subscriptionCheckoutEnabled===true;state.customerPortalEnabled=overview.payment?.customerPortalEnabled===true;state.plans=plans.plans;state.message="";
+  state.overview=overview.billing;const accountActive=overview.billing.accountStatus==="active";state.checkoutEnabled=accountActive&&overview.payment?.checkoutEnabled===true;state.subscriptionCheckoutEnabled=accountActive&&overview.payment?.subscriptionCheckoutEnabled===true;state.customerPortalEnabled=overview.payment?.customerPortalEnabled===true;state.plans=plans.plans;state.message="";
  }catch(error){state.message=error instanceof Error?error.message:"Billing information could not be loaded.";}
  finally{state.loading=false;paint();}
 }
