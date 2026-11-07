@@ -95,6 +95,51 @@ try{
  assert.equal(db.prepare("SELECT status FROM workflow_runs WHERE id=?").get("run-provider").status,"blocked");
  assert.equal(db.prepare("SELECT status FROM workflow_node_runs WHERE run_id=? AND node_id='image'").get("run-provider").status,"blocked");
 
+
+ // A cloud-worker-only model must fail before the legacy path can reserve
+ // remote usage or invoke the synchronous provider gateway.
+ const videoGraph={
+  id:"unsupported-video-model",projectId:"",revision:1,nodes:[
+   {id:"prompt",kind:"text",label:"Prompt",inputs:[],outputs:[{id:"text",type:"text"}],config:{text:"A cinematic product reveal"}},
+   {id:"gate",kind:"approval",label:"Human approval",inputs:[],outputs:[{id:"approved",type:"any"}],config:{}},
+   {id:"video",kind:"video.generate",label:"Video generation",inputs:[{id:"prompt",type:"text",required:true},{id:"approval",type:"any"}],outputs:[{id:"video",type:"video"}],config:{model:"veo3.1",duration:5,aspectRatio:"16:9"}}
+  ],edges:[
+   {id:"video-prompt",sourceNodeId:"prompt",sourcePortId:"text",targetNodeId:"video",targetPortId:"prompt"},
+   {id:"video-approval",sourceNodeId:"gate",sourcePortId:"approved",targetNodeId:"video",targetPortId:"approval"}
+  ]
+ };
+ const videoJob=seedRun("run-unsupported-video-model",videoGraph);
+ db.prepare("UPDATE workflow_node_runs SET status='completed',output_json=?,completed_at=? WHERE run_id=? AND node_id='gate'")
+  .run(json({approved:true}),now,"run-unsupported-video-model");
+ const previousEnv={
+  VIDEO_GATEWAY_PROVIDER:process.env.VIDEO_GATEWAY_PROVIDER,
+  VIDEO_GATEWAY_ENABLED:process.env.VIDEO_GATEWAY_ENABLED,
+  VIDEO_GATEWAY_ALLOW_REMOTE:process.env.VIDEO_GATEWAY_ALLOW_REMOTE,
+  RUNWAYML_API_SECRET:process.env.RUNWAYML_API_SECRET,
+  RUNWAY_VIDEO_MODEL:process.env.RUNWAY_VIDEO_MODEL
+ };
+ const originalFetch=globalThis.fetch;
+ let providerCalls=0;
+ try{
+  process.env.VIDEO_GATEWAY_PROVIDER="runway";
+  process.env.VIDEO_GATEWAY_ENABLED="true";
+  process.env.VIDEO_GATEWAY_ALLOW_REMOTE="true";
+  process.env.RUNWAYML_API_SECRET="workflow-test-secret";
+  process.env.RUNWAY_VIDEO_MODEL="gen4.5";
+  globalThis.fetch=async()=>{providerCalls++;throw new Error("provider must not be called for unsupported model");};
+  await assert.rejects(
+   ()=>executeWorkflowRun({db,job:videoJob,mediaRoot,activeProcesses:new Map(),onProgress:()=>{}}),
+   error=>error.code==="VIDEO_MODEL_EXECUTION_DISABLED"
+  );
+  assert.equal(providerCalls,0,"unsupported model must be rejected before provider submission");
+  const reservationTable=db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='remote_usage_reservations'").get();
+  assert.equal(reservationTable,undefined,"unsupported model must be rejected before remote usage reservation");
+  assert.equal(db.prepare("SELECT status FROM workflow_node_runs WHERE run_id=? AND node_id='video'").get("run-unsupported-video-model").status,"failed");
+ }finally{
+  globalThis.fetch=originalFetch;
+  for(const [key,value] of Object.entries(previousEnv))if(value===undefined)delete process.env[key];else process.env[key]=value;
+ }
+
  const referenceBytes=Buffer.from([137,80,78,71,13,10,26,10,1,2,3]);
  await writeFile(join(mediaRoot,"uploads","reference.png"),referenceBytes);
  db.prepare("INSERT INTO assets(id,owner_id,original_name,media_type,byte_size,sha256,storage_path,metadata_json) VALUES(?,?,?,?,?,?,?,?)")
