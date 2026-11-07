@@ -4,7 +4,7 @@ import { openDatabase } from "../db.mjs";
 import {
   ensureBillingSchema,touchBillingAccount,listBillingPlans,saveBillingPlan,assignManualSubscription,
   getBillingOverview,getBillingBalance,getAdminOverview,listAdminUsers,adjustBillingCredits,
-  setBillingAccountStatus,canUsePaidModels,saveBillingModelPrice,listBillingModelPrices,
+  setBillingAccountStatus,canUsePaidModels,saveBillingModelPrice,listBillingModelPrices,resolveBillingCreditCost,
   spendBillingCredits,refundBillingCredits,applyDailyFreeCredits
 } from "../billing.mjs";
 
@@ -147,4 +147,61 @@ test("insufficient billing credits fail closed before a paid provider request",(
     if(previousEnabled===undefined)delete process.env.BILLING_ENFORCEMENT_ENABLED;else process.env.BILLING_ENFORCEMENT_ENABLED=previousEnabled;
     if(previousDaily===undefined)delete process.env.CREDITS_DAILY_FREE;else process.env.CREDITS_DAILY_FREE=previousDaily;
   }
+});
+
+
+test("verified provider prices convert to credits using configured value and margin",()=>{
+  const db=setup();
+  const price=saveBillingModelPrice(db,{
+    provider:"runway",model:"seedance2_5",capability:"video.generate",
+    unit:"second",priceMicros:300000,currency:"USD",
+    sourceUrl:"https://dev.runway.com/pricing",verifiedAt:"2026-11-07T00:00:00.000Z"
+  });
+  assert.equal(price.active,true);
+  const estimate=resolveBillingCreditCost(db,{
+    provider:"runway",model:"seedance2_5",capability:"video.generate",
+    unit:"second",quantity:5,
+    env:{BILLING_CREDIT_VALUE_MICROS:"10000",BILLING_COST_MARKUP_BPS:"5000"}
+  });
+  assert.equal(estimate.source,"verified_model_price");
+  assert.equal(estimate.rawCostMicros,1500000);
+  assert.equal(estimate.markedCostMicros,2250000);
+  assert.equal(estimate.credits,225);
+  db.close();
+});
+
+test("unverified, missing or non-USD model prices never override conservative fallback credits",()=>{
+  const db=setup();
+  saveBillingModelPrice(db,{
+    provider:"runway",model:"unverified",capability:"video.generate",
+    unit:"second",priceMicros:1,currency:"USD",sourceUrl:"https://example.com/pricing"
+  });
+  const estimate=resolveBillingCreditCost(db,{
+    provider:"runway",model:"unverified",capability:"video.generate",
+    unit:"second",quantity:5,
+    env:{BILLING_CREDIT_VALUE_MICROS:"10000"}
+  });
+  assert.equal(estimate.source,"flat_capability_fallback");
+  assert.equal(estimate.credits,15);
+  const noConfig=resolveBillingCreditCost(db,{
+    provider:"runway",model:"unverified",capability:"video.generate",
+    unit:"second",quantity:5,env:{}
+  });
+  assert.equal(noConfig.credits,15);
+  db.close();
+});
+
+test("dynamic billing estimates reject overflow rather than silently undercharging",()=>{
+  const db=setup();
+  saveBillingModelPrice(db,{
+    provider:"runway",model:"overflow",capability:"video.generate",
+    unit:"second",priceMicros:Number.MAX_SAFE_INTEGER,currency:"USD",
+    sourceUrl:"https://example.com/pricing",verifiedAt:"2026-11-07T00:00:00.000Z"
+  });
+  assert.throws(()=>resolveBillingCreditCost(db,{
+    provider:"runway",model:"overflow",capability:"video.generate",
+    unit:"second",quantity:2,
+    env:{BILLING_CREDIT_VALUE_MICROS:"1",BILLING_COST_MARKUP_BPS:"50000"}
+  }),error=>error.code==="BILLING_COST_ESTIMATE_INVALID");
+  db.close();
 });
