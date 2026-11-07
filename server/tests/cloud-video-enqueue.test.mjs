@@ -304,7 +304,7 @@ test("Google Omni enqueue normalizes provider-default resolution to the verified
 });
 
 
-test("Aleph2 validates owner-scoped source metadata but is blocked by the durable SQL enqueue allowlist", async () => {
+test("Aleph2 validates owner-scoped source metadata and reaches the durable SQL enqueue boundary", async () => {
   let calls = 0;
   const sourceVideoAssetId = "823e4567-e89b-42d3-a456-426614174000";
   const input = {
@@ -330,10 +330,11 @@ test("Aleph2 validates owner-scoped source metadata but is blocked by the durabl
     },
     fetchImpl: async () => { calls++; return response([resultRow]); }
   });
-  await assert.rejects(() => client.enqueue(args({
+  const queued = await client.enqueue(args({
     model: "aleph2", input, reservedAmount: 4
-  })), error => error.code === "VIDEO_ENQUEUE_PROVIDER_NOT_ENABLED");
-  assert.equal(calls, 0);
+  }));
+  assert.equal(queued.status, "queued");
+  assert.equal(calls, 1);
 });
 
 test("Magnific upscale budget uses verified source frames, not caller-supplied lower values", async () => {
@@ -514,3 +515,24 @@ test("Runway Model Router video-to-video enqueue probes source metadata before d
   assert.equal(calls, 0);
 });
 
+
+
+test("Aleph 2 enqueue is enabled only for the reviewed video-to-video MP4 contract",async()=>{
+ const calls=[];
+ const client=createCloudVideoEnqueue({...base,resolveRunwaySourceMetadata:async({ownerId,projectId,assetId})=>({ownerId,projectId,assetId,mediaType:"video/mp4",durationSeconds:8,frameCount:192,width:1920,height:1080}),fetchImpl:async(url,options)=>{calls.push({url,body:JSON.parse(options.body)});return response([resultRow]);}});
+ const alephInput={
+  projectId,provider:"runway",model:"aleph2",requestHash,
+  operation:"video-to-video",sourceVideoAssetId:"823e4567-e89b-42d3-a456-426614174000",
+  durationSeconds:8,prompt:"Edit the source video while preserving its camera movement.",outputFormat:"mp4",resolution:"provider_default",audioMode:"provider_default"
+ };
+ const estimate=estimateVideoGenerationCost({provider:"runway",model:"aleph2",operation:"video-to-video",durationSeconds:8,inputVideoSeconds:8,inputType:"video",outputFormat:"mp4",resolution:"provider_default"});
+ assert.equal(estimate.amount,2.24);
+ const queued=await client.enqueue(args({model:"aleph2",input:alephInput,reservedAmount:3}));
+ assert.equal(queued.jobId,resultRow.job_id);
+ assert.equal(calls.length,1);
+ assert.equal(calls[0].body.p_model,"aleph2");
+ assert.equal(calls[0].body.p_input.operation,"video-to-video");
+ await assert.rejects(()=>client.enqueue(args({model:"aleph2",input:{...alephInput,operation:"text-to-video"},reservedAmount:3})),error=>error.code==="VIDEO_GENERATION_UNSUPPORTED_CAPABILITY");
+ await assert.rejects(()=>client.enqueue(args({model:"aleph2",input:{...alephInput,outputFormat:"prores"},reservedAmount:3})),/supports MP4 outputs/);
+ assert.equal(calls.length,1);
+});

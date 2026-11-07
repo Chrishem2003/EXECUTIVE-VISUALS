@@ -35,6 +35,19 @@ from executive_visuals.video_generation_budget_policies
 where owner_id='123e4567-e89b-42d3-a456-426614174000'
   and project_id='323e4567-e89b-42d3-a456-426614174000'
   and provider='google' and model='gemini-omni-1.1-flash' and currency='USD';
+insert into executive_visuals.video_generation_budget_policies(
+ owner_id,project_id,provider,model,currency,spend_limit_amount,max_per_job_amount,
+ rolling_24h_request_limit,enabled
+) values (
+ '123e4567-e89b-42d3-a456-426614174000',
+ '323e4567-e89b-42d3-a456-426614174000',
+ 'runway','aleph2','USD',10,5,10,true
+);
+select set_config('test.aleph2_video_policy_id',id::text,false)
+from executive_visuals.video_generation_budget_policies
+where owner_id='123e4567-e89b-42d3-a456-426614174000'
+  and project_id='323e4567-e89b-42d3-a456-426614174000'
+  and provider='runway' and model='aleph2' and currency='USD';
 do $column_guard$
 begin
  if has_column_privilege('authenticated','executive_visuals.video_generation_budget_policies','reserved_amount','UPDATE')
@@ -423,6 +436,118 @@ begin
  end if;
 end
 $overrun_state$;
+
+
+-- Aleph 2 transformation approval is service-role-only and exact-request bound.
+do $aleph2_rpc_acl$
+begin
+ if has_function_privilege('authenticated',
+    'executive_visuals.create_video_generation_budget_approval(uuid,uuid,uuid,text,text,text,text,numeric,text,timestamptz)','EXECUTE')
+    or has_function_privilege('anon',
+    'executive_visuals.create_video_generation_budget_approval(uuid,uuid,uuid,text,text,text,text,numeric,text,timestamptz)','EXECUTE') then
+   raise exception 'untrusted role can execute the Aleph 2 approval RPC';
+ end if;
+ if not has_function_privilege('service_role',
+    'executive_visuals.create_video_generation_budget_approval(uuid,uuid,uuid,text,text,text,text,numeric,text,timestamptz)','EXECUTE') then
+   raise exception 'service_role cannot execute the Aleph 2 approval RPC';
+ end if;
+end
+$aleph2_rpc_acl$;
+
+select executive_visuals.create_video_generation_budget_approval(
+ 'a23e4567-e89b-42d3-a456-426614174000',
+ '123e4567-e89b-42d3-a456-426614174000',
+ '323e4567-e89b-42d3-a456-426614174000',
+ 'runway','aleph2',repeat('e',64),'USD',3.00,
+ 'Aleph 2 integration test',clock_timestamp()+interval '10 minutes'
+);
+create temporary table aleph2_context as
+select job_id,job_status,budget_reservation_id
+from executive_visuals.enqueue_video_generation_job(
+ '123e4567-e89b-42d3-a456-426614174000',
+ '323e4567-e89b-42d3-a456-426614174000',
+ 'pg-integration-aleph2-video-001','runway','aleph2',repeat('e',64),
+ jsonb_build_object(
+  'projectId','323e4567-e89b-42d3-a456-426614174000',
+  'provider','runway','model','aleph2','requestHash',repeat('e',64),
+  'operation','video-to-video','sourceVideoAssetId','b23e4567-e89b-42d3-a456-426614174000',
+  'prompt','Preserve the camera movement and replace the background.',
+  'durationSeconds',8,'outputFormat','mp4','resolution','provider_default'
+ ),
+ 'a23e4567-e89b-42d3-a456-426614174000',3.00,'USD'
+);
+do $aleph2_enqueue_assertion$
+declare queued aleph2_context; policy_row executive_visuals.video_generation_budget_policies;
+begin
+ select * into queued from aleph2_context;
+ select * into policy_row from executive_visuals.video_generation_budget_policies
+ where id=current_setting('test.aleph2_video_policy_id')::uuid;
+ if queued.job_status <> 'queued' or policy_row.reserved_amount <> 3.00 then
+  raise exception 'Aleph 2 enqueue did not create the expected queued reservation';
+ end if;
+ if not exists(select 1 from executive_visuals.video_generation_budget_approvals
+   where id='a23e4567-e89b-42d3-a456-426614174000' and consumed_at is not null
+     and request_hash=repeat('e',64)) then
+  raise exception 'Aleph 2 approval was not consumed against its exact request hash';
+ end if;
+end
+$aleph2_enqueue_assertion$;
+
+select executive_visuals.create_video_generation_budget_approval(
+ 'b23e4567-e89b-42d3-a456-426614174001',
+ '123e4567-e89b-42d3-a456-426614174000',
+ '323e4567-e89b-42d3-a456-426614174000',
+ 'runway','aleph2',repeat('f',64),'USD',2.23,
+ 'Aleph 2 under-reservation test',clock_timestamp()+interval '10 minutes'
+);
+do $aleph2_price_floor$
+begin
+ begin
+  perform * from executive_visuals.enqueue_video_generation_job(
+   '123e4567-e89b-42d3-a456-426614174000',
+   '323e4567-e89b-42d3-a456-426614174000',
+   'pg-integration-aleph2-underpriced','runway','aleph2',repeat('f',64),
+   jsonb_build_object('projectId','323e4567-e89b-42d3-a456-426614174000',
+    'provider','runway','model','aleph2','requestHash',repeat('f',64),
+    'operation','video-to-video','sourceVideoAssetId','b23e4567-e89b-42d3-a456-426614174000',
+    'prompt','Edit source','durationSeconds',8,'outputFormat','mp4'),
+   'b23e4567-e89b-42d3-a456-426614174001',2.23,'USD'
+  );
+  raise exception 'underpriced Aleph 2 generation unexpectedly enqueued';
+ exception when others then
+  if sqlerrm = 'underpriced Aleph 2 generation unexpectedly enqueued' then raise; end if;
+  if sqlerrm <> 'VIDEO_BUDGET_BELOW_PROVIDER_ESTIMATE' then raise; end if;
+ end;
+end
+$aleph2_price_floor$;
+
+select executive_visuals.create_video_generation_budget_approval(
+ 'c23e4567-e89b-42d3-a456-426614174001',
+ '123e4567-e89b-42d3-a456-426614174000',
+ '323e4567-e89b-42d3-a456-426614174000',
+ 'runway','aleph2',repeat('c',64),'USD',3.00,
+ 'Aleph 2 operation gate test',clock_timestamp()+interval '10 minutes'
+);
+do $aleph2_operation_gate$
+begin
+ begin
+  perform * from executive_visuals.enqueue_video_generation_job(
+   '123e4567-e89b-42d3-a456-426614174000',
+   '323e4567-e89b-42d3-a456-426614174000',
+   'pg-integration-aleph2-wrong-operation','runway','aleph2',repeat('c',64),
+   jsonb_build_object('projectId','323e4567-e89b-42d3-a456-426614174000',
+    'provider','runway','model','aleph2','requestHash',repeat('c',64),
+    'operation','text-to-video','sourceVideoAssetId','b23e4567-e89b-42d3-a456-426614174000',
+    'prompt','Edit source','durationSeconds',8,'outputFormat','mp4'),
+   'c23e4567-e89b-42d3-a456-426614174001',3.00,'USD'
+  );
+  raise exception 'Aleph 2 non-edit operation unexpectedly enqueued';
+ exception when others then
+  if sqlerrm = 'Aleph 2 non-edit operation unexpectedly enqueued' then raise; end if;
+  if sqlerrm <> 'VIDEO_PRICE_DURATION_OR_OPERATION_INVALID' then raise; end if;
+ end;
+end
+$aleph2_operation_gate$;
 
 reset role;
 select 'cloud video PostgreSQL integration checks passed' as result;

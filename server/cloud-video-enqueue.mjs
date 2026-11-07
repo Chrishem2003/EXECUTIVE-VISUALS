@@ -354,13 +354,12 @@ export function createCloudVideoEnqueue({
         error.estimate = estimate;
         throw error;
       }
-      // Keep the application boundary aligned with the currently deployed SQL
-      // enqueue function. The database is authoritative and presently permits
-      // only these two model identities; other adapters may be registered for
-      // worker development, but cannot be advertised as enqueueable until a
-      // reviewed pricing/approval migration adds their exact contracts.
+      // Keep this application gate aligned with the reviewed SQL migration.
+      // Aleph 2 is enabled only for video-to-video MP4 edits; SQL independently
+      // enforces duration, minimum price, exact approval and project budget policy.
       const sqlEnqueueSupported =
         (provider === "runway" && model === "gen4.5") ||
+        (provider === "runway" && model === "aleph2" && input.operation === "video-to-video" && input.outputFormat === "mp4") ||
         (provider === "google" && model === "gemini-omni-1.1-flash");
       if (!sqlEnqueueSupported) {
         const unavailable = new Error("This provider/model has a worker adapter but is not yet enabled by the durable database enqueue and pricing policy.");

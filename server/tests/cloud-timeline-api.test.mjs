@@ -149,7 +149,7 @@ test("cloud caption uploads persist SRT validation evidence for readiness checks
 });
 
 
-test("approved Aleph2 cloud transformation is blocked before enqueue while the durable SQL allowlist excludes it", async () => {
+test("legacy Aleph2 approvals without a canonical request hash are blocked before enqueue", async () => {
  const planId="823e4567-e89b-42d3-a456-426614174000";
  const approvalId="923e4567-e89b-42d3-a456-426614174000";
  const row={
@@ -175,8 +175,8 @@ test("approved Aleph2 cloud transformation is blocked before enqueue while the d
   }}
  });
  const result=await api.handle({method:"POST",path:"/api/cloud/transformations/"+planId+"/submit",ownerId:owner,body:{}});
- assert.equal(result.status,503);
- assert.equal(result.body.error.code,"VIDEO_ENQUEUE_PROVIDER_NOT_ENABLED");
+ assert.equal(result.status,409);
+ assert.equal(result.body.error.code,"TRANSFORMATION_APPROVAL_REQUEST_MISMATCH");
  assert.ok(!calls.some(call=>call.url.endsWith("/rpc/enqueue_video_generation_job")));
  assert.ok(!calls.some(call=>call.url.includes("/jobs?")&&call.options.method==="PATCH"));
 });
@@ -226,6 +226,13 @@ test("cloud transformation approval derives its estimate from probed source medi
  assert.equal(approval.adapterId,"runway:aleph2");
  assert.equal(approval.capability,"video-to-video");
  assert.equal(approval.sourceMetadata.durationSeconds,10.2);
+ const ledgerCall=calls.find(call=>call.url.endsWith("/rpc/create_video_generation_budget_approval"));
+ assert.ok(ledgerCall,"approval must be persisted to the durable budget ledger before plan approval");
+ const ledger=JSON.parse(ledgerCall.options.body);
+ assert.equal(ledger.p_approval_id,approval.approvalId);
+ assert.equal(ledger.p_request_hash,approval.requestHash);
+ assert.equal(ledger.p_approved_max_amount,5);
+ assert.match(ledger.p_request_hash,/^[a-f0-9]{64}$/);
 });
 
 test("cloud transformation approval rejects a budget below the server-derived provider estimate", async () => {
