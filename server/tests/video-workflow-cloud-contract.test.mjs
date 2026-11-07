@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createVideoWorkflowCloudRequest } from "../video-workflow-cloud-contract.mjs";
+import { createRunwaySourceAssetResolver } from "../runway-source-asset-resolver.mjs";
 
 const node = { id: "video-1", kind: "video.generate", config: {
   provider: "runway", model: "model-router", durationSeconds: 8, aspectRatio: "16:9"
@@ -107,6 +108,98 @@ test("rejects invalid router durations and unsupported reference audio combinati
     }),
     /exactly one connected reference-audio asset/
   );
+});
+
+
+test("cloud node contract resolves through the existing owner-scoped Model Router asset resolver", async () => {
+  const ownerId = "owner-1";
+  const projectId = "project-1";
+  const records = new Map([
+    ["source-video", { id: "source-video", ownerId, projectId, storageBucket: "executive-visuals-media", objectPath: "owner/source.mp4", size: 4, mediaType: "video/mp4", name: "source.mp4" }],
+    ["reference-video", { id: "reference-video", ownerId, projectId, storageBucket: "executive-visuals-media", objectPath: "owner/reference.mp4", size: 4, mediaType: "video/mp4", name: "reference.mp4" }],
+    ["first-frame", { id: "first-frame", ownerId, projectId, storageBucket: "executive-visuals-media", objectPath: "owner/first.png", size: 8, mediaType: "image/png", name: "first.png" }],
+    ["reference-image", { id: "reference-image", ownerId, projectId, storageBucket: "executive-visuals-media", objectPath: "owner/reference.png", size: 8, mediaType: "image/png", name: "reference.png" }],
+    ["reference-audio", { id: "reference-audio", ownerId, projectId, storageBucket: "executive-visuals-media", objectPath: "owner/reference.mp3", size: 4, mediaType: "audio/mpeg", name: "reference.mp3" }]
+  ]);
+  const signedUrls = new Map();
+  for (const asset of records.values()) {
+    signedUrls.set("https://project.supabase.co/storage/v1/object/sign/" + asset.objectPath + "?token=test", asset);
+  }
+  const resolver = createRunwaySourceAssetResolver({
+    supabaseUrl: "https://project.supabase.co",
+    assets: {
+      async get({ ownerId: requestedOwner, assetId }) {
+        const asset = records.get(assetId);
+        return asset && asset.ownerId === requestedOwner ? asset : null;
+      },
+      async createSignedUrl({ ownerId: requestedOwner, assetId }) {
+        const asset = records.get(assetId);
+        if (!asset || asset.ownerId !== requestedOwner) return null;
+        return {
+          asset: { id: asset.id, objectPath: asset.objectPath, storageBucket: asset.storageBucket },
+          url: "https://project.supabase.co/storage/v1/object/sign/" + asset.objectPath + "?token=test"
+        };
+      }
+    },
+    fetchImpl: async url => {
+      const asset = signedUrls.get(String(url));
+      if (!asset) return new Response("not found", { status: 404 });
+      const bytes = asset.mediaType === "image/png"
+        ? Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])
+        : Buffer.from("test");
+      return new Response(bytes, { status: 200, headers: {
+        "content-type": asset.mediaType, "content-length": String(bytes.length)
+      }});
+    }
+  });
+  const request = createVideoWorkflowCloudRequest({
+    node: { ...node, config: {
+      ...node.config, audioMode: "reference",
+      referenceVideoAssetIds: ["reference-video"],
+      referenceAudioAssetIds: ["reference-audio"]
+    }},
+    projectId, requestId: "workflow-run-2:video-1",
+    values: {
+      prompt: "Edit the source while preserving the product",
+      sourceVideoAssetId: "source-video",
+      startFrameAssetId: "first-frame",
+      referenceImageAssetIds: ["reference-image"]
+    }
+  });
+  const prepared = await resolver.prepare(request.input, {
+    job: { owner_id: ownerId, project_id: projectId }
+  });
+  assert.equal(prepared.operation, "video-to-video");
+  assert.equal(prepared.referenceVideos[0].role, "source");
+  assert.equal(prepared.referenceVideos[1].role, "reference");
+  assert.deepEqual(prepared.referenceImages.map(item => item.role), ["first", "reference"]);
+  assert.equal(prepared.referenceAudio.length, 1);
+  assert.match(prepared.referenceImages[0].uri, /^https:\/\/project\.supabase\.co\//);
+  assert.equal(prepared.requestHash, request.requestHash);
+});
+
+test("existing source resolver rejects a cross-project workflow asset before signing or downloading", async () => {
+  let signed = 0;
+  const resolver = createRunwaySourceAssetResolver({
+    supabaseUrl: "https://project.supabase.co",
+    assets: {
+      async get() {
+        return { id: "foreign-image", projectId: "another-project", storageBucket: "executive-visuals-media",
+          objectPath: "foreign/image.png", size: 8, mediaType: "image/png", name: "foreign.png" };
+      },
+      async createSignedUrl() { signed++; throw new Error("must not sign"); }
+    },
+    fetchImpl: async () => { throw new Error("must not download"); }
+  });
+  const request = createVideoWorkflowCloudRequest({
+    ...base,
+    values: { prompt: "Animate this reference", image: "foreign-image" }
+  });
+  await assert.rejects(
+    resolver.prepare(request.input, { job: { owner_id: "owner-1", project_id: "project-1" } }),
+    error => error.code === "VIDEO_INPUT_ASSET_RESOLUTION_FAILED"
+  );
+  assert.equal(signed, 0);
 });
 
 test("rejects duplicate or excessive reference assets", () => {
