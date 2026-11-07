@@ -58,6 +58,7 @@ export interface TimelineDeliveryProfile {
  frameRates?:number[];
  requireAudio?:boolean;
  requireCaptions?:boolean;
+ requireValidatedCaptions?:boolean;
 }
 
 /**
@@ -68,6 +69,7 @@ export interface TimelineDeliveryProfile {
 export function analyzeTimelineDelivery(
  timeline:EditorialTimeline|null,
  profile:TimelineDeliveryProfile,
+ assets:TimelineQualityAsset[]=[],
 ):TimelineQualityFinding[]{
  const findings:TimelineQualityFinding[]=[];
  const add=(code:string,severity:TimelineQualitySeverity,title:string,detail:string)=>findings.push({code,severity,title,detail});
@@ -110,6 +112,25 @@ export function analyzeTimelineDelivery(
  }
  if(profile.requireCaptions&&!tracks.some(track=>track.kind==="caption"&&track.enabled!==false&&track.clips.length)){
   add("DELIVERY_CAPTIONS_REQUIRED","error","Required captions are missing","Profile “"+profile.name+"” requires at least one caption clip on an enabled caption track.");
+ }
+ if(profile.requireValidatedCaptions){
+  const captionClips=tracks.filter(track=>track.kind==="caption"&&track.enabled!==false).flatMap(track=>track.clips.filter(clip=>clip.enabled!==false));
+  if(!captionClips.length){
+   add("DELIVERY_CAPTION_EVIDENCE_MISSING","error","Validated captions are required","Profile “"+profile.name+"” requires at least one enabled caption clip with saved validation evidence.");
+  }else{
+   const assetMap=new Map(assets.map(asset=>[asset.id,asset]));
+   for(const clip of captionClips){
+    const asset=assetMap.get(clip.assetId);
+    const validation=asset?.metadata?.captionValidation as {status?:string}|undefined;
+    if(!asset||!validation||!["passed","review","blocked"].includes(String(validation.status))){
+     add("DELIVERY_CAPTION_VALIDATION_MISSING","error","Caption validation evidence is missing","Caption clip “"+clip.name+"” does not reference an asset with a saved cue-level validation report.");
+    }else if(validation.status==="blocked"){
+     add("DELIVERY_CAPTION_VALIDATION_BLOCKED","error","Caption validation is blocked","Caption clip “"+clip.name+"” has blocking timing, format or duration findings.");
+    }else if(validation.status==="review"){
+     add("DELIVERY_CAPTION_VALIDATION_REVIEW","warning","Caption readability needs review","Caption clip “"+clip.name+"” has readability warnings that require human review before delivery.");
+    }
+   }
+  }
  }
  if(!findings.length)add("DELIVERY_PROFILE_PASSED","info","Delivery profile passed","The sequence matches the declared technical requirements for “"+profile.name+"”. This check does not assess perceptual quality or provider encoding behavior.");
  return findings;
