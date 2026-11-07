@@ -387,3 +387,8 @@ Implication: prioritize reliable timeline-native handoff, project budgets, revie
 ### Boundaries
 
 PR #206 remains draft and unmerged. No provider call, paid generation, billing transaction, database migration, production deployment, shared Supabase change, suspended Render activation or R2 enablement was performed.
+
+
+### Follow-up coverage expansion
+
+A comparison of all legacy Runway gateway IDs against the evidence-backed provider registry found two additional overlap cases: `seedance2_5` and `kling_4` also have catalogue records marked `not_implemented`. The execution gate and regression tests now cover **all four** overlapping legacy aliases: `seedance2_5`, `kling_4`, `kling_4_flash` and `gemini_omni_flash_1.2`. Gen-4.5 and existing legacy model IDs without a `not_implemented` catalogue adapter are not blocked by this targeted guard.
