@@ -75,7 +75,7 @@ test("submits a live routed task and durably returns the complete routing decisi
     input: { promptText: "A cinematic sunrise", duration: 5, aspectRatio: "16:9" }
   });
   assert.equal(result.taskId, id);
-  assert.deepEqual(result.metadata, { routeType: "runway-model-router", configId: "production-video", routing });
+  assert.deepEqual(result.metadata, { routeType: "runway-model-router", configId: "production-video", routing, estimatedCredits: 50 });
 });
 
 test("never treats dry-run estimates as actual customer/provider settlement", async () => {
@@ -135,7 +135,7 @@ test("is disabled by default and requires private output ingestion", async () =>
     error => error.code === "RUNWAY_ROUTER_DISABLED"
   );
   assert.throws(
-    () => createRunwayModelRouterVideoAdapter({ configId: "production-video", apiKey: "key", ingestOutputs: async () => ({}) }),
+    () => createRunwayModelRouterVideoAdapter({ configId: "production-video", apiKey: "key" }),
     error => error.code === "RUNWAY_ROUTER_EXECUTION_GATES_MISSING"
   );
 });
