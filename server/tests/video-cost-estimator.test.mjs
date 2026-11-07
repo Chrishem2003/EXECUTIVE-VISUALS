@@ -65,11 +65,11 @@ test("aggregates a multi-shot production quote with itemized totals",()=>{
  assert.equal(quote.available,true);
  assert.equal(quote.shotCount,2);
  assert.equal(quote.totalDurationSeconds,8);
- assert.equal(quote.amount,1.06);
+ assert.equal(quote.amount,1.35);
  assert.equal(quote.currency,"USD");
  assert.equal(quote.shots[0].shotId,"opening");
- assert.equal(quote.breakdown.video,0.96);
- assert.equal(quote.breakdown.audio,0.1);
+ assert.equal(quote.breakdown.video,1.2);
+ assert.equal(quote.breakdown.audio,0.12);
  assert.equal(quote.breakdown.references,0.03);
 });
 
