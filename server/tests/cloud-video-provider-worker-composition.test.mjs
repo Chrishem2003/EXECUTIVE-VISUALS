@@ -141,8 +141,8 @@ test("refuses Runway worker registration without authoritative task-level cost r
   }), /authoritative task-level billing resolver/);
 });
 
-test("refuses Aleph2 worker registration without owner-scoped source-media resolution", () => {
-  assert.throws(() => createProviderAwareCloudVideoWorkerComposition({
+test("Aleph2 worker registration composes the built-in owner-scoped private source resolver", () => {
+  const worker = createProviderAwareCloudVideoWorkerComposition({
     ...base,
     createAdapters: undefined,
     env: {
@@ -156,7 +156,8 @@ test("refuses Aleph2 worker registration without owner-scoped source-media resol
     resolveRunwayActualCost: async () => ({
       amount: 1, currency: "USD", evidenceReference: "test:runway-task-ledger"
     })
-  }), /owner-scoped source-media resolver/);
+  });
+  assert.ok(worker.listSupported().includes("runway:aleph2"));
 });
 
 
@@ -170,8 +171,8 @@ test("rejects unknown or duplicate Runway model registrations before constructin
 });
 
 
-test("refuses source-edit model registration without server-side source metadata resolution", () => {
-  assert.throws(() => createProviderAwareCloudVideoWorkerComposition({
+test("source-edit model registration composes server-side source metadata probing by default", () => {
+  const worker = createProviderAwareCloudVideoWorkerComposition({
     ...base,
     createAdapters: undefined,
     env: {
@@ -184,7 +185,7 @@ test("refuses source-edit model registration without server-side source metadata
     },
     resolveRunwayActualCost: async () => ({
       amount: 1, currency: "USD", evidenceReference: "test:runway-task-ledger"
-    }),
-    prepareRunwayInput: async () => ({})
-  }), /server-side media metadata resolver/);
+    })
+  });
+  assert.ok(worker.listSupported().includes("runway:aleph2"));
 });
