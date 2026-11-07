@@ -415,3 +415,16 @@ At the time of this audit, the latest exact-head build checks for PRs #152–#15
 - Estimates disclose pricing provenance; paid provider work requires explicit approval and budget reservation.
 - Staging acceptance covers owner, editor, reviewer and viewer roles, plus expired sessions, offline API, failed workers and interrupted uploads.
 - Production rollout is a separate approved step after staging evidence is recorded.
+
+
+### Render production visibility audit — November 7, 2026
+
+Read-only inspection of the connected Render workspace confirmed:
+
+- The live `EXECUTIVE-VISUALS` web service tracks GitHub `main`, with automatic deploys enabled.
+- Its latest live deploy is commit `18cb97bf027dc5037fc1d932f36dd4d00f6e6c67` (UI typography/readability), deployed November 7 at 07:13 UTC.
+- The `EXECUTIVE-VISUALS-1` service tracks `feat/credits` but is suspended.
+- Render pull-request previews are disabled for the live service.
+- The current integration candidate PR #206 and its later feature commits are not part of the live `main` deployment.
+
+This confirms why new branch features are not appearing in the live application: they have not been merged into the deployed branch and deployed. No Render settings, services, secrets, production data or deployments were changed during this audit.
