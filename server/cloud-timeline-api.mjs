@@ -100,7 +100,7 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     const evidence=await transformationReadiness({ownerId,projectId});
     return response(200,{readiness:buildTransformationReadinessReport(evidence)});
    }
-   const transformationOps=new Set(["vehicle_replace","wardrobe_replace","object_replace","background_replace","person_replace","style_transfer","object_remove","relight"]);
+   const transformationOps=new Set(["vehicle_replace","wardrobe_replace","object_replace","background_replace","person_replace","style_transfer","object_remove","relight","sound_design_from_video"]);
    const preservationOptions=new Set(["camera_motion","timing","composition","source_audio","subject_identity","pose","lighting","background"]);
    const mapTransformation=row=>{
     const input=row.input||{},approval=row.estimated_cost||{};
@@ -118,9 +118,21 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     const projectId=String(body.projectId||""),sourceAssetId=String(body.sourceAssetId||""),operation=String(body.operation||"");
     if(!safeId(projectId)||await allow({ownerId,projectId,action:"write"})!==true)return response(404,{error:{code:"PROJECT_NOT_FOUND",message:"Project not found or editor access required."}});
     if(!transformationOps.has(operation))return response(400,{error:{code:"TRANSFORMATION_OPERATION_INVALID",message:"Choose a supported transformation."}});
+    const audioOperation=operation==="sound_design_from_video";
     const prompt=typeof body.prompt==="string"?body.prompt.trim():"";
     const duration=Number(body.durationSeconds);
-    if(prompt.length<8||prompt.length>1000||!Number.isInteger(duration)||duration<1||duration>30)return response(400,{error:{code:"TRANSFORMATION_INPUT_INVALID",message:"Provide an Aleph 2 edit prompt of 8 to 1,000 characters and a duration from 1 to 30 seconds."}});
+    if((audioOperation ? prompt.length>2000 : prompt.length<8||prompt.length>1000)||
+       !Number.isInteger(duration)||duration<1||duration>(audioOperation?600:30)) {
+      return response(400,{error:{code:"TRANSFORMATION_INPUT_INVALID",message:audioOperation
+        ?"Provide a video-to-audio prompt up to 2,000 characters and a source duration from 1 to 600 seconds."
+        :"Provide an Aleph 2 edit prompt of 8 to 1,000 characters and a duration from 1 to 30 seconds."}});
+    }
+    const audioFormat=String(body.audioFormat||"mp3");
+    const numVariants=Number(body.numVariants??1);
+    const preserveSpeech=body.preserveSpeech!==false;
+    if(audioOperation&&(!["mp3","wav","flac"].includes(audioFormat)||!Number.isInteger(numVariants)||numVariants<1||numVariants>4||typeof preserveSpeech!=="boolean")) {
+      return response(400,{error:{code:"TRANSFORMATION_AUDIO_OPTIONS_INVALID",message:"Choose MP3, WAV or FLAC, 1–4 variants and a valid speech-preservation setting."}});
+    }
     if(body.rightsConfirmed!==true)return response(403,{error:{code:"MEDIA_RIGHTS_REQUIRED",message:"Confirm rights to use the source and reference media."}});
     if(operation==="person_replace"&&body.subjectConsentConfirmed!==true)return response(403,{error:{code:"SUBJECT_CONSENT_REQUIRED",message:"Explicit subject consent is required for person replacement."}});
     const source=await service.assets.get({ownerId,assetId:sourceAssetId});
@@ -132,7 +144,7 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     const preservation=Array.isArray(body.preservation)?[...new Set(body.preservation.filter(value=>preservationOptions.has(value)))]:[];
     const key=String(idempotencyKey||"").trim().slice(0,180);
     if(key.length<8)return response(400,{error:{code:"IDEMPOTENCY_KEY_REQUIRED",message:"An idempotency key is required."}});
-    const input={projectId,sourceAssetId,operation,prompt,durationSeconds:duration,referenceAssetIds:refs,preservation,rightsConfirmed:true,subjectConsentConfirmed:body.subjectConsentConfirmed===true};
+    const input={projectId,sourceAssetId,operation,prompt,durationSeconds:duration,referenceAssetIds:refs,preservation,rightsConfirmed:true,subjectConsentConfirmed:body.subjectConsentConfirmed===true,...(audioOperation?{audioFormat,numVariants,preserveSpeech}: {})};
     const existing=await request("jobs?select=id,owner_id,project_id,job_type,status,input,estimated_cost,approved_by,approved_at,created_at,updated_at&owner_id=eq."+encodeURIComponent(ownerId)+"&idempotency_key=eq."+encodeURIComponent(key)+"&limit=1");
     if(Array.isArray(existing)&&existing[0]){
      const row=existing[0];
@@ -157,18 +169,20 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
      if(!Number.isSafeInteger(budget)||budget<1||currency!=="USD")return response(400,{error:{code:"TRANSFORMATION_BUDGET_INVALID",message:"Provide a positive USD budget limit in micros."}});
      if(!sourceResolver)return response(503,{error:{code:"VIDEO_SOURCE_RESOLVER_UNAVAILABLE",message:"A private server-side source resolver is required before budget approval."}});
      const planInput=row.input||{};
-     const metadata=await sourceResolver.resolveMetadata({ownerId,projectId:row.project_id,assetId:planInput.sourceAssetId});
+     const audioOperation=planInput.operation==="sound_design_from_video";
+     const metadata=await sourceResolver.resolveMetadata({ownerId,projectId:row.project_id,assetId:planInput.sourceAssetId,operation:audioOperation?"video-to-audio":"video-to-video"});
      const estimate=estimateVideoGenerationCost({
-      provider:"runway",model:"aleph2",operation:"video-to-video",
+      provider:"runway",model:audioOperation?"mirelo_sfx_2_0":"aleph2",
+      operation:audioOperation?"video-to-audio":"video-to-video",
       durationSeconds:Math.ceil(metadata.durationSeconds),
       inputVideoSeconds:metadata.durationSeconds,inputType:"video",
-      outputFormat:"mp4",resolution:"provider_default"
+      ...(audioOperation?{numVariants:planInput.numVariants??1,audioFormat:planInput.audioFormat??"mp3"}:{outputFormat:"mp4",resolution:"provider_default"})
      });
      const estimatedCostMicros=Math.ceil(Number(estimate.amount)*1000000);
      if(!Number.isSafeInteger(estimatedCostMicros)||estimatedCostMicros<1||budget<estimatedCostMicros){
       return response(409,{error:{code:"TRANSFORMATION_BUDGET_BELOW_ESTIMATE",message:"The approved budget must cover the server-calculated provider estimate of "+(estimatedCostMicros/1000000).toFixed(2)+" USD."}});
      }
-     const approval={approvalId:randomUUID(),estimatedCostMicros,approvedBudgetMicros:budget,currency:"USD",adapterId:"runway:aleph2",capability:"video-to-video",sourceMetadata:{durationSeconds:metadata.durationSeconds,frameCount:metadata.frameCount,width:metadata.width,height:metadata.height}};
+     const approval={approvalId:randomUUID(),estimatedCostMicros,approvedBudgetMicros:budget,currency:"USD",adapterId:audioOperation?"runway:mirelo_sfx_2_0":"runway:aleph2",capability:audioOperation?"video-to-audio":"video-to-video",sourceMetadata:{durationSeconds:metadata.durationSeconds,frameCount:metadata.frameCount,width:metadata.width,height:metadata.height}};
      const updated=await request("jobs?id=eq."+encodeURIComponent(row.id)+"&status=eq.draft&approved_at=is.null",{method:"PATCH",body:{status:"awaiting_approval",estimated_cost:approval,approved_by:ownerId,approved_at:new Date().toISOString(),updated_at:new Date().toISOString()}});
      if(!Array.isArray(updated)||updated.length!==1)return response(409,{error:{code:"TRANSFORMATION_STATE_CONFLICT",message:"Transformation plan changed while approval was recorded."}});
      await request("job_events",{method:"POST",body:{job_id:row.id,owner_id:row.owner_id,event_type:"transformation.approved",event_data:{approvalId:approval.approvalId,estimatedCostMicros:estimate,currency}}});
@@ -182,33 +196,44 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
      const readiness=buildTransformationReadinessReport(await transformationReadiness({ownerId,projectId:row.project_id}));
      if(!readiness.canSubmit)return response(409,{error:{code:"TRANSFORMATION_RELEASE_GATES_BLOCKED",message:"Video execution is blocked until all eight release gates are verified.",missing:readiness.missing}});
      const approval=row.estimated_cost;
-     if(approval.adapterId!=="runway:aleph2"||approval.capability!=="video-to-video"||String(approval.currency||"").toUpperCase()!=="USD"){
-      return response(409,{error:{code:"TRANSFORMATION_ADAPTER_UNAVAILABLE",message:"This transformation is not approved for the verified Runway Aleph 2 video-edit adapter."}});
+     const audioOperation=row.input?.operation==="sound_design_from_video";
+     const expectedAdapter=audioOperation?"runway:mirelo_sfx_2_0":"runway:aleph2";
+     const expectedCapability=audioOperation?"video-to-audio":"video-to-video";
+     if(approval.adapterId!==expectedAdapter||approval.capability!==expectedCapability||String(approval.currency||"").toUpperCase()!=="USD"){
+      return response(409,{error:{code:"TRANSFORMATION_ADAPTER_UNAVAILABLE",message:"This transformation is not approved for its verified Runway provider adapter."}});
      }
      if(!sourceResolver)return response(503,{error:{code:"VIDEO_SOURCE_RESOLVER_UNAVAILABLE",message:"Private source-media resolution is not configured. No provider request or charge was made."}});
      try{
       const input=row.input||{};
-      const metadata=await sourceResolver.resolveMetadata({ownerId,projectId:row.project_id,assetId:input.sourceAssetId});
+      const audioOperation=input.operation==="sound_design_from_video";
+      const metadata=await sourceResolver.resolveMetadata({ownerId,projectId:row.project_id,assetId:input.sourceAssetId,operation:audioOperation?"video-to-audio":"video-to-video"});
       const preserve=Array.isArray(input.preservation)?input.preservation:[];
       const prompt=String(input.prompt||"").trim()+(preserve.length?"\n\nPreserve: "+preserve.join(", "):"");
       if(prompt.length>1000)return response(422,{error:{code:"VIDEO_PROMPT_TOO_LONG",message:"The edit instructions and preservation requirements exceed Aleph 2's 1,000-character prompt limit."}});
+      const model=audioOperation?"mirelo_sfx_2_0":"aleph2";
       const generationInput={
-       projectId:row.project_id,provider:"runway",model:"aleph2",operation:"video-to-video",
-       sourceVideoAssetId:input.sourceAssetId,prompt,
-       durationSeconds:Math.ceil(metadata.durationSeconds),outputFormat:"mp4",
-       resolution:"provider_default",audioMode:"provider_default",
-       transformationOperation:input.operation
+       projectId:row.project_id,provider:"runway",model,
+       operation:audioOperation?"video-to-audio":"video-to-video",
+       sourceVideoAssetId:input.sourceAssetId,prompt:audioOperation?String(input.prompt||"").trim():prompt,
+       durationSeconds:Math.ceil(metadata.durationSeconds),
+       ...(audioOperation?{
+         audioFormat:input.audioFormat||"mp3",numVariants:input.numVariants||1,
+         preserveSpeech:input.preserveSpeech!==false
+       }:{
+         outputFormat:"mp4",resolution:"provider_default",audioMode:"provider_default",
+         transformationOperation:input.operation
+       })
       };
       const requestHash=createHash("sha256").update(stableJson(generationInput)).digest("hex");
       generationInput.requestHash=requestHash;
       const queued=await videoEnqueue.enqueue({
        ownerId,projectId:row.project_id,idempotencyKey:"video-transform:"+row.id,
-       provider:"runway",model:"aleph2",requestHash,input:generationInput,
+       provider:"runway",model,requestHash,input:generationInput,
        budgetApprovalId:approval.approvalId,
        reservedAmount:Number(approval.approvedBudgetMicros)/1000000,
        currency:"USD"
       });
-      const output={videoJobId:queued.jobId,videoJobStatus:queued.status,provider:"runway",model:"aleph2"};
+      const output={videoJobId:queued.jobId,videoJobStatus:queued.status,provider:"runway",model,mediaType:audioOperation?"audio/*":"video/mp4"};
       const changed=await request("jobs?id=eq."+encodeURIComponent(row.id)+"&status=eq.awaiting_approval&approved_at=not.is.null",{
        method:"PATCH",body:{status:"submitted",output,updated_at:new Date().toISOString()}
       });
@@ -216,7 +241,7 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
        // The enqueue idempotency key makes a retry safe if the plan status update races.
        return response(202,{job:{id:queued.jobId,status:queued.status},planUpdatePending:true});
       }
-      await request("job_events",{method:"POST",body:{job_id:row.id,owner_id:row.owner_id,event_type:"transformation.submitted",event_data:{videoJobId:queued.jobId,provider:"runway",model:"aleph2"}}});
+      await request("job_events",{method:"POST",body:{job_id:row.id,owner_id:row.owner_id,event_type:"transformation.submitted",event_data:{videoJobId:queued.jobId,provider:"runway",model}}});
       return response(202,{job:{id:queued.jobId,status:queued.status},idempotentReplay:queued.idempotentReplay===true});
      }catch(error){
       const code=typeof error?.code==="string"?error.code:"VIDEO_TRANSFORMATION_SUBMIT_FAILED";
