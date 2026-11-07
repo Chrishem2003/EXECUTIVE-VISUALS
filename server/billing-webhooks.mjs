@@ -138,6 +138,83 @@ export async function verifyFlutterwaveTransaction({ transactionId, secretKey, f
   return body.data;
 }
 
+
+export async function createFlutterwaveCheckout(db, {
+  user,
+  planId,
+  secretKey,
+  publicAppUrl,
+  fetchImpl = fetch
+} = {}) {
+  if (!user?.id || !user?.email) throw fail("Authenticated customer identity is required.", "BILLING_USER_REQUIRED", 401);
+  if (typeof secretKey !== "string" || secretKey.length < 12) {
+    throw fail("Flutterwave checkout is not configured.", "BILLING_PROVIDER_CONFIG_INVALID", 503);
+  }
+  let baseUrl;
+  try { baseUrl = new URL(publicAppUrl); } catch {
+    throw fail("A valid public application URL is required for payment redirects.", "BILLING_REDIRECT_URL_INVALID", 503);
+  }
+  const local = ["localhost", "127.0.0.1"].includes(baseUrl.hostname);
+  if (baseUrl.protocol !== "https:" && !(local && process.env.NODE_ENV !== "production")) {
+    throw fail("Payment return URLs must use HTTPS.", "BILLING_REDIRECT_URL_INVALID", 503);
+  }
+  if (baseUrl.username || baseUrl.password || baseUrl.search || baseUrl.hash) {
+    throw fail("Payment return URL must not contain credentials, query parameters or fragments.", "BILLING_REDIRECT_URL_INVALID", 503);
+  }
+  const order = createBillingPurchaseOrder(db, { userId: user.id, planId, provider: "flutterwave" });
+  const exponent = currencyExponent(order.currency);
+  const amount = order.amountMinor / (10 ** exponent);
+  const returnUrl = new URL("/billing/return", baseUrl).toString();
+  const paymentOptions = order.currency === "UGX" ? "card, mobilemoneyuganda" : "card";
+  let response;
+  try {
+    response = await fetchImpl("https://api.flutterwave.com/v3/payments", {
+      method: "POST",
+      headers: {
+        authorization: "Bearer " + secretKey,
+        "content-type": "application/json",
+        accept: "application/json"
+      },
+      body: JSON.stringify({
+        tx_ref: order.txRef,
+        amount,
+        currency: order.currency,
+        redirect_url: returnUrl,
+        customer: { email: String(user.email).trim().toLowerCase() },
+        customizations: { title: "Executive Visuals", description: "Credit purchase" },
+        payment_options: paymentOptions,
+        meta: { payment_order_id: order.id }
+      }),
+      redirect: "error",
+      signal: AbortSignal.timeout(15000)
+    });
+  } catch {
+    db.prepare("UPDATE billing_payment_orders SET status='failed',updated_at=? WHERE id=? AND status='pending'").run(now(), order.id);
+    throw fail("Flutterwave checkout could not be created. No credits were granted.", "BILLING_CHECKOUT_CREATE_FAILED", 502);
+  }
+  if (!response.ok) {
+    db.prepare("UPDATE billing_payment_orders SET status='failed',updated_at=? WHERE id=? AND status='pending'").run(now(), order.id);
+    throw fail("Flutterwave rejected the checkout request. No credits were granted.", "BILLING_CHECKOUT_CREATE_FAILED", 502);
+  }
+  let body;
+  try { body = await response.json(); } catch {
+    db.prepare("UPDATE billing_payment_orders SET status='failed',updated_at=? WHERE id=? AND status='pending'").run(now(), order.id);
+    throw fail("Flutterwave returned an invalid checkout response.", "BILLING_PROVIDER_RESPONSE_INVALID", 502);
+  }
+  let checkoutUrl;
+  try { checkoutUrl = new URL(body?.data?.link); } catch {
+    db.prepare("UPDATE billing_payment_orders SET status='failed',updated_at=? WHERE id=? AND status='pending'").run(now(), order.id);
+    throw fail("Flutterwave did not return a valid hosted checkout URL.", "BILLING_PROVIDER_RESPONSE_INVALID", 502);
+  }
+  if (body?.status !== "success" || checkoutUrl.protocol !== "https:" ||
+      !(checkoutUrl.hostname === "flutterwave.com" || checkoutUrl.hostname.endsWith(".flutterwave.com"))) {
+    db.prepare("UPDATE billing_payment_orders SET status='failed',updated_at=? WHERE id=? AND status='pending'").run(now(), order.id);
+    throw fail("Flutterwave returned an untrusted checkout destination.", "BILLING_PROVIDER_RESPONSE_INVALID", 502);
+  }
+  return { orderId: order.id, txRef: order.txRef, checkoutUrl: checkoutUrl.toString(),
+    amountMinor: order.amountMinor, currency: order.currency, credits: order.credits };
+}
+
 /**
  * Process one persisted webhook. Grant credits only after server-to-server
  * transaction verification and exact tx_ref/currency/amount matching.
