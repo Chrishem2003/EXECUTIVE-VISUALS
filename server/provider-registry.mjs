@@ -1,5 +1,6 @@
 import { getFalVideoCapabilities } from "./fal-video-gateway.mjs";
 import { getRunwayVideoCapabilities, listRunwayVideoModels } from "./runway-video-gateway.mjs";
+import { listGeminiImageModels } from "./gemini-image-gateway.mjs";
 const LOOPBACKS=new Set(["localhost","127.0.0.1","::1","[::1]"]);
 function gatewayState({enabled,configured,url,allowRemote,model,provider,capabilities,id=provider,reasonIfMissing="Set the server-side endpoint and model."}){
  let local=false,validUrl=false;
@@ -15,9 +16,10 @@ function gatewayState({enabled,configured,url,allowRemote,model,provider,capabil
 export function getProviderCatalog(env=process.env,media={ffmpeg:false,ffprobe:false,aiUpscale:null}){
  const text=gatewayState({enabled:env.AI_GATEWAY_ENABLED==="true",configured:Boolean(env.AI_GATEWAY_URL&&env.AI_GATEWAY_MODEL),url:env.AI_GATEWAY_URL,allowRemote:env.AI_GATEWAY_ALLOW_REMOTE==="true",model:env.AI_GATEWAY_MODEL,provider:"text",capabilities:["text.generate","text.rewrite","text.translate","text.summarize"]});
  const imageProvider=String(env.IMAGE_GATEWAY_PROVIDER||"openai-compatible").toLowerCase();
- const imageFal=imageProvider==="fal";
- const image=gatewayState({enabled:env.IMAGE_GATEWAY_ENABLED==="true",configured:imageFal?Boolean(env.FAL_KEY&&env.FAL_IMAGE_MODEL):Boolean(env.IMAGE_GATEWAY_URL&&env.IMAGE_GATEWAY_MODEL),url:imageFal?"https://queue.fal.run":env.IMAGE_GATEWAY_URL,allowRemote:imageFal?env.IMAGE_GATEWAY_ALLOW_REMOTE==="true":env.IMAGE_GATEWAY_ALLOW_REMOTE==="true",model:imageFal?env.FAL_IMAGE_MODEL:env.IMAGE_GATEWAY_MODEL,provider:"image",capabilities:["image.generate"]});
- if(!imageFal&&imageProvider!=="openai-compatible"){image.status="needs_configuration";image.configured=false;image.reason="Choose a supported server-side image provider before enabling image generation."; }
+ const imageFal=imageProvider==="fal",imageGemini=imageProvider==="gemini";
+ const image=gatewayState({enabled:env.IMAGE_GATEWAY_ENABLED==="true",configured:imageGemini?Boolean(env.GEMINI_API_KEY&&env.GEMINI_IMAGE_MODEL):imageFal?Boolean(env.FAL_KEY&&env.FAL_IMAGE_MODEL):Boolean(env.IMAGE_GATEWAY_URL&&env.IMAGE_GATEWAY_MODEL),url:imageGemini?"https://generativelanguage.googleapis.com":imageFal?"https://queue.fal.run":env.IMAGE_GATEWAY_URL,id:"image",allowRemote:env.IMAGE_GATEWAY_ALLOW_REMOTE==="true",model:imageGemini?env.GEMINI_IMAGE_MODEL:imageFal?env.FAL_IMAGE_MODEL:env.IMAGE_GATEWAY_MODEL,provider:imageGemini?"gemini":"image",capabilities:["image.generate"],reasonIfMissing:imageGemini?"Set GEMINI_API_KEY and GEMINI_IMAGE_MODEL on the server.":imageFal?"Set FAL_KEY and FAL_IMAGE_MODEL on the server.":"Set the server-side image gateway URL and model."});
+ if(!imageFal&&!imageGemini&&imageProvider!=="openai-compatible"){image.status="needs_configuration";image.configured=false;image.reason="Choose a supported server-side image provider before enabling image generation.";}
+ image.availableModels=imageGemini?listGeminiImageModels():[];
  const videoProvider=String(env.VIDEO_GATEWAY_PROVIDER||"fal").toLowerCase();
  const video=videoProvider==="runway"
   ?gatewayState({enabled:env.VIDEO_GATEWAY_ENABLED==="true",configured:Boolean(env.RUNWAYML_API_SECRET&&env.RUNWAY_VIDEO_MODEL),url:"https://api.dev.runwayml.com",id:"video",allowRemote:env.VIDEO_GATEWAY_ALLOW_REMOTE==="true",model:env.RUNWAY_VIDEO_MODEL,provider:"runway",capabilities:["video.generate"],reasonIfMissing:"Set RUNWAYML_API_SECRET and RUNWAY_VIDEO_MODEL on the server."})
