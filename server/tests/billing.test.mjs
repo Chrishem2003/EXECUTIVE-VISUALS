@@ -264,7 +264,7 @@ test("admin finance overview separates verified gross receipts from committed mo
   assignManualSubscription(db,{userId:"finance-one",planId:monthly.id,periodDays:30,status:"active",actorId:"admin"});
   assignManualSubscription(db,{userId:"finance-two",planId:annual.id,periodDays:365,status:"active",actorId:"admin"});
   const overview=getAdminOverview(db);
-  assert.deepEqual(overview.verifiedGrossReceipts30d,[{currency:"UGX",amountMinor:50000},{currency:"USD",amountMinor:1200}]);
+  assert.deepEqual(overview.verifiedGrossReceipts30d,[{currency:"USD",amountMinor:1200},{currency:"UGX",amountMinor:50000}]);
   assert.deepEqual(overview.committedMrrByCurrency,[{currency:"USD",amountMinor:2200}]);
   assert.equal(overview.usage30d.estimatedCostMicros>=0,true);
   db.close();
