@@ -364,3 +364,54 @@ Prioritize product launch/e-commerce video packs, short-form ad variants for age
 ### Success metrics
 
 Track activation-to-first-export, brief-to-first-draft time, quote acceptance, generation success, spend variance, approval turnaround, revision count, export success, repeat-project rate, 30-day team retention and contribution margin per delivered package. Model count is not the north-star metric.
+
+
+## Release integration and feature visibility audit — November 7, 2026
+
+### Why implemented work is not appearing in the deployed application
+
+A capability can exist in a feature branch, API module or capability registry without being present in the deployed `main` application. The open pull-request inventory contains multiple dependent release trains. Several features that look like one product experience are currently split across those trains.
+
+The current application integration candidate is PR #206 (`integration/omni-provider-workers-2026`). It is an independent branch from `main`; it must not be assumed to contain every feature from the other stacks.
+
+### Confirmed dependent release trains
+
+- **Review and version history:** PRs #137 → #138 → #139 → #140 → #141 → #142 → #143 → #144 → #145 → #146 → #147. Covers authenticated review APIs, workspace UI, frame annotations, threaded discussions, reactions, attributed completion history, search/filter/export, revision-aware feedback and immutable timeline comparisons. This train depends on PR #136.
+- **Captions, voice activity and job operations:** PR #136 → #148 → #151 → #152 → #153 → #154 → #155 → #156 → #157 → #158. Covers validated caption packages, local voice activity detection, range downloads, resumable uploads, job-stage events, live job recovery/quality, project activity, notifications and usage/operations analytics. PRs #149 and #150 are sibling fixes based on #148.
+- **Audio and timeline engine:** PR #88 → #89 and the dependent renderer/audio work through #103–#135. Includes preview/export audio parity, multitrack composition, transitions, retiming, automation, dialogue-aware ducking, loudness mastering, and delivery certification. Dependencies must be merged in graph order, not by PR number alone.
+- **Durable asset publication:** PR #171 → #172 → #174 → #175 → #178 → #207 → #208. PR #173 is a sibling observability branch from #172; PR #177 is a sibling publication branch from #175. Includes idempotent publication, lease fencing, orphan cleanup, atomic publication, cleanup reconciliation and source-attributed quotes.
+- **Provider/billing/Drive integration:** PR #206 is an independent main-based integration candidate for subscriptions, Google Drive and provider-aware video workers. It must be reconciled with the dependent stacks after their common-base and file-overlap review.
+- **Additional provider lanes:** PR #195 → #204 and independent PR #194 require their own provider, budget, rights and output-ingestion release gates.
+
+### Verification snapshot
+
+At the time of this audit, the latest exact-head build checks for PRs #152–#157 were successful. Their Supabase Preview checks were skipped. This is not proof that the full upstream dependency chain is merged, deployed or production-ready. PRs remain draft and their parent branches must be verified in order.
+
+### UI integration completed in PR #206
+
+- Reinitialize Timeline and Workflow workspaces after successful authentication and when their navigation destinations are opened.
+- Add a live job queue that polls authenticated `GET /api/jobs` every five seconds only while the Runtime workspace is visible and the browser tab is visible.
+- Prevent overlapping poll requests; transient polling failures preserve the last known queue state.
+- Update only the job queue panel during polling so unrelated forms, file selections and user input are not destroyed by a full workspace repaint.
+- Show queued, running, completed and failed counts, plus the last successful check time.
+- Add regression tests to the full build chain.
+
+### Safe consolidation policy
+
+1. Merge only dependency roots whose exact-head CI, review and release requirements are satisfied.
+2. Advance each stacked train one parent at a time; do not merge a child before its base feature is present.
+3. Before reconciling independent trains, inspect common ancestors and overlapping changes in `src/platform/runtime.ts`, `src/platform/app.ts`, `server/index.mjs`, `package.json`, storage contracts and migrations.
+4. Keep the production branch and hosted resources unchanged until staging acceptance passes.
+5. A capability is customer-visible only after its navigation/control, authenticated API, persistence, loading/error/recovery states and end-to-end tests are verified in the deployed staging application.
+6. Mark catalogue-only or adapter-required capabilities honestly; never advertise them as executable features.
+
+### Release acceptance gates
+
+- Authenticated navigation and workspace initialization after login, reload and route changes.
+- Jobs remain observable after navigation and refresh; cancellation/recovery are authorization-checked and duplicate external side effects are guarded.
+- Project activity and notifications enforce current membership on every read/write.
+- Usage analytics distinguish unknown costs from zero and scope project data correctly.
+- Assets remain private, immutable and traceable from source through derivative, approval and delivery.
+- Estimates disclose pricing provenance; paid provider work requires explicit approval and budget reservation.
+- Staging acceptance covers owner, editor, reviewer and viewer roles, plus expired sessions, offline API, failed workers and interrupted uploads.
+- Production rollout is a separate approved step after staging evidence is recorded.
