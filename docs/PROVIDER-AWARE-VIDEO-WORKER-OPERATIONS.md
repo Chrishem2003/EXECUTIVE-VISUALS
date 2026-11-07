@@ -118,3 +118,27 @@ Official references:
 - Uganda payment methods: https://developer.flutterwave.com/docs/payment-methods
 - Uganda mobile money: https://developer.flutterwave.com/docs/uganda
 - Uganda pricing: https://www.flutterwave.com/ug/pricing
+
+
+## Runway Model Router adapter foundation (2026-11-07)
+
+A separate opt-in adapter now exists at `server/runway-model-router-video-adapter.mjs`. It targets the documented `POST /v1/generate/video` and `GET /v1/tasks/{id}` API, validates the router slug, task ID, routing configuration, selected model/provider and HTTPS output URLs, and returns the routing decision as provider submission metadata.
+
+The shared executor now persists provider submission metadata in the existing Postgres submission ledger in the same record operation as the provider task ID. When a worker resumes a submitted job after restart, it passes the durable metadata to the provider cost resolver. Metadata is bounded below the existing 8 KB ledger constraint. This prevents the route decision from existing only in process memory.
+
+### Explicit activation boundary
+
+The new adapter is disabled by default and is not yet registered in the worker composition or customer enqueue path. That is deliberate:
+
+- The existing enqueue path requires an approved, server-computed budget reservation before dispatch. The Model Router must first be integrated with a non-billable dry-run quote on the exact same input, then bind the approved credit ceiling to the job. A live generation must never be started from a dry-run estimate alone.
+- Runway's current public docs describe the live response as including realized cost in credits, but the published JSON schema does not identify a stable property path for that realized-cost value. The adapter therefore requires an injected `resolveRealizedCredits` contract and will hold settlement if the resolver cannot return a finite non-negative realized-credit amount. Do not guess a response property or fall back to `estimatedCost.credits`.
+- The adapter converts validated realized credits to USD using the published $0.01 per Runway credit rate. The job's approved USD reservation must cover that amount. The provider-selected model is persisted in the cost result.
+- Private input resolution, allowed output hosts, output ingestion, user authorization, router config management, request idempotency/reconciliation and per-user budget approval must be wired before enabling the adapter.
+- Do not add `model-router` to the public capability catalogue or expose it in customer UI until the enqueue preflight, budget approval and runtime registration paths are complete and tested together.
+
+Tests added for adapter gates, durable route metadata, realized-credit settlement, missing evidence, mismatched router config, task polling and HTTPS output validation. CI must pass before considering the adapter ready. No Runway API key, router configuration, paid generation or production deployment was created by this code change.
+
+Official contracts:
+- https://docs.dev.runwayml.com/model-routers/generating/
+- https://docs.dev.runwayml.com/api/
+- https://docs.dev.runwayml.com/guides/pricing/
