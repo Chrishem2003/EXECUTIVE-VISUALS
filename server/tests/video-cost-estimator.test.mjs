@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { estimateVideoGenerationCost, parseVideoPricingCatalog } from "../video-cost-estimator.mjs";
+import { estimateVideoGenerationCost, estimateVideoProductionCost, parseVideoPricingCatalog } from "../video-cost-estimator.mjs";
 
 const now=()=>new Date("2026-11-07T12:00:00.000Z");
 const pricing=[{
@@ -55,4 +55,42 @@ test("parses only unique, bounded, source-attributed pricing records",()=>{
  assert.equal(parsed.configured,true);
  assert.equal(parseVideoPricingCatalog("not-json").configured,false);
  assert.equal(parseVideoPricingCatalog(JSON.stringify({})).configured,false);
+});
+
+test("aggregates a multi-shot production quote with itemized totals",()=>{
+ const quote=estimateVideoProductionCost({shots:[
+  {id:"opening",provider:"fal",model:"fal-ai/example-video",durationSeconds:5,resolution:"720p",audioMode:"generated",referenceImageCount:1},
+  {id:"close",provider:"fal",model:"fal-ai/example-video",durationSeconds:3,resolution:"720p",audioMode:"none",referenceImageCount:0}
+ ]},pricing,{now});
+ assert.equal(quote.available,true);
+ assert.equal(quote.shotCount,2);
+ assert.equal(quote.totalDurationSeconds,8);
+ assert.equal(quote.amount,1.06);
+ assert.equal(quote.currency,"USD");
+ assert.equal(quote.shots[0].shotId,"opening");
+ assert.equal(quote.breakdown.video,0.96);
+ assert.equal(quote.breakdown.audio,0.1);
+ assert.equal(quote.breakdown.references,0.03);
+});
+
+test("rejects duplicate shot IDs, too many shots and overlong production plans",()=>{
+ const shot={id:"same",provider:"fal",model:"fal-ai/example-video",durationSeconds:90,resolution:"720p"};
+ assert.match(estimateVideoProductionCost({shots:[shot,{...shot}]},pricing,{now}).reason,/unique/);
+ assert.equal(estimateVideoProductionCost({shots:Array.from({length:13},(_,i)=>({...shot,id:"s"+i}))},pricing,{now}).available,false);
+ assert.match(estimateVideoProductionCost({shots:[{...shot,id:"a"},{...shot,id:"b"}]},pricing,{now}).reason,/180 seconds/);
+});
+
+test("does not produce a total when any shot lacks a verified rate or currencies differ",()=>{
+ const missing=estimateVideoProductionCost({shots:[
+  {id:"a",provider:"fal",model:"fal-ai/example-video",durationSeconds:3,resolution:"720p"},
+  {id:"b",provider:"fal",model:"fal-ai/example-video",durationSeconds:3,resolution:"1080p"}
+ ]},pricing,{now});
+ assert.equal(missing.available,false);
+ assert.equal(missing.shotId,"b");
+ const euro=[{...pricing[0],provider:"other",currency:"EUR"}];
+ const mixed=estimateVideoProductionCost({shots:[
+  {id:"a",provider:"fal",model:"fal-ai/example-video",durationSeconds:3,resolution:"720p"},
+  {id:"b",provider:"other",model:"fal-ai/example-video",durationSeconds:3,resolution:"720p"}
+ ]},[...pricing,...euro],{now});
+ assert.match(mixed.reason,/different currencies/);
 });
