@@ -108,6 +108,6 @@ test("polls a routed task and returns only validated HTTPS output URLs", async (
     fetchImpl: async () => new Response(JSON.stringify({ id, status: "SUCCEEDED", output: ["https://cdn.example.test/video.mp4"] }))
   });
   assert.deepEqual(await adapter.getStatus(id), {
-    status: "succeeded", taskId: id, outputUrls: ["https://cdn.example.test/video.mp4/"], provider: "runway", model: "model-router"
+    status: "succeeded", taskId: id, outputUrls: ["https://cdn.example.test/video.mp4"], provider: "runway", model: "model-router"
   });
 });
