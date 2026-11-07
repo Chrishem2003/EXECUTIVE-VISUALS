@@ -175,3 +175,27 @@ test("maps one reference audio asset and rejects invalid reference media roles o
   );
 });
 
+test("Model Router submits a source video with the documented source role", async () => {
+  let body;
+  const adapter = createRunwayModelRouterVideoAdapter({
+    ...base,
+    fetchImpl: async (_url, options) => {
+      body = JSON.parse(options.body);
+      return new Response(JSON.stringify({ id, routing }));
+    }
+  });
+  const result = await adapter.submit({
+    provider: "runway", model: "model-router", operation: "video-to-video",
+    prompt: "Replace the background with a modern studio while preserving the presenter and camera motion",
+    durationSeconds: 12,
+    referenceVideos: [{ uri: "https://storage.example.test/source.mp4", role: "source" }]
+  });
+  assert.equal(body.input.referenceVideos[0].role, "source");
+  assert.equal(body.input.duration, 12);
+  assert.equal(result.taskId, id);
+  await assert.rejects(
+    adapter.submit({ provider: "runway", model: "model-router", operation: "video-to-video", prompt: "Edit this", durationSeconds: 12 }),
+    error => error.code === "RUNWAY_ROUTER_INPUT_INVALID"
+  );
+});
+
