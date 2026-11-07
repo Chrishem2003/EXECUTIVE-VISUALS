@@ -102,6 +102,45 @@ test("Aleph 2 transformation draft rejects source durations below the provider m
  assert.match(result.body.error.message,/2 to 30 seconds/);
 });
 
+test("video cancellation creates a durable owner-authorized request without calling the provider inline",async()=>{
+ const jobId="a23e4567-e89b-42d3-a456-426614174000",requestId="b23e4567-e89b-42d3-a456-426614174000";
+ const calls=[];
+ const job={id:jobId,owner_id:owner,project_id:project,job_type:"video.generate",status:"processing",cancel_requested_at:null};
+ const api=createCloudTimelineApi({
+  url:"https://example.supabase.co",serviceRoleKey:"service-secret",
+  fetchImpl:async(url,options)=>{
+   calls.push({url,options});
+   if(url.includes("/jobs?"))return{ok:true,status:200,async text(){return JSON.stringify([job]);}};
+   if(url.endsWith("/rpc/request_video_generation_cancellation"))return{ok:true,status:200,async text(){return JSON.stringify([{request_id:requestId,job_id:jobId,request_status:"requested",cancel_requested_at:"2026-11-08T12:00:00Z",idempotent_replay:false}]);}};
+   return{ok:true,status:200,async text(){return"[]";}};
+  },
+  timelineService:{timelines:{},assets:{}},
+  authorize:async input=>input.ownerId===owner&&input.projectId===project&&input.action==="write"
+ });
+ const result=await api.handle({method:"POST",path:"/api/cloud/jobs/"+jobId+"/cancel",ownerId:owner,body:{}});
+ assert.equal(result.status,202);
+ assert.equal(result.body.cancellation.id,requestId);
+ assert.equal(result.body.providerCancellationPending,true);
+ assert.ok(calls.some(call=>call.url.endsWith("/rpc/request_video_generation_cancellation")));
+ assert.equal(calls.some(call=>call.url.includes("api.dev.runwayml.com")),false,
+  "HTTP request records intent; a worker performs provider cancellation and billing reconciliation");
+ const rpc= calls.find(call=>call.url.endsWith("/rpc/request_video_generation_cancellation"));
+ assert.deepEqual(JSON.parse(rpc.options.body),{p_job_id:jobId,p_requested_by:owner});
+});
+
+test("video cancellation requires editor authorization and does not write when denied",async()=>{
+ const jobId="a23e4567-e89b-42d3-a456-426614174000";
+ const calls=[];
+ const api=createCloudTimelineApi({
+  url:"https://example.supabase.co",serviceRoleKey:"service-secret",
+  fetchImpl:async(url,options)=>{calls.push({url,options});return{ok:true,status:200,async text(){return JSON.stringify([{id:jobId,owner_id:owner,project_id:project,job_type:"video.generate",status:"processing"}]);}};},
+  timelineService:{timelines:{},assets:{}},authorize:async()=>false
+ });
+ const result=await api.handle({method:"POST",path:"/api/cloud/jobs/"+jobId+"/cancel",ownerId:editor,body:{}});
+ assert.equal(result.status,404);
+ assert.equal(calls.some(call=>call.url.includes("/rpc/request_video_generation_cancellation")),false);
+});
+
 test("cloud timeline API rejects unverified or malformed owner IDs and ignores unrelated routes",async()=>{const f=setup();assert.equal((await f.api.handle({method:"GET",path:"/api/cloud/timelines/"+timelineId,ownerId:"not-uuid"})).status,401);assert.equal(await f.api.handle({method:"GET",path:"/api/not-cloud",ownerId:owner}),null);});
 
 test("cloud render job inspection allows project reviewers and returns durable status",async()=>{
