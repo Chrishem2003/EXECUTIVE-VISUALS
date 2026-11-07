@@ -289,3 +289,45 @@ A standalone non-billable estimate module, `server/runway-image-pricing.mjs`, an
 
 This is deliberately not wired into `generateImage`, checkout, billing settlement or provider selection. The Runway Dev image adapter, request/response validation, task polling, model-specific prompt/reference ownership, output ingestion, and actual-cost reconciliation are still required. Do not advertise GPT Image 2.6 as an executable model in the customer UI yet.
 
+
+
+## Competitive delta — verified public product patterns (2026-11-07)
+
+Fresh review of Runway's public changelog and workflow documentation shows that competition has moved beyond a broad model catalogue:
+
+- **Agent-built workflows:** users can describe a workflow in natural language, inspect/edit the resulting graph, and rerun reusable pipelines.
+- **Project budgets:** project-level credit caps can pause generation when a client/project reaches its allocation.
+- **Brand kits and project context:** agents can use reusable brand assets and project files without repeated uploads.
+- **In-context review:** comments can be pinned to assets and video moments, with team mentions and review history.
+- **Timeline-native creation:** generation, assembly, refinement and export are increasingly presented as one continuous creative workflow.
+- **External editor integration:** Runway's Premiere Pro and After Effects panels place generation/edit results directly into an existing editing sequence.
+
+Sources:
+- Runway changelog (Oct 27, 2026): https://runway.com/changelog
+- Runway workflows: https://runway.com/workflows
+- Runway Adobe integration (Sep 8, 2026): https://runway.com/news/company-news/runway-for-adobe
+- Adobe Premiere generative media overview (Sep 9, 2026): https://helpx.adobe.com/premiere/desktop/edit-projects/edit-with-generative-ai/generative-media-tool-overview.html
+
+### Product response — prioritized differentiation
+
+1. **Brief-to-delivery copilot:** turn a customer brief into a reviewable shot plan, script, assets, timeline and export checklist. Every generated workflow remains editable and approval-gated.
+2. **Client/project budgets:** per-project caps, spend forecast, quote before generation, actual-cost ledger, alert thresholds and pause-on-cap. No surprise charges.
+3. **Continuity system:** reusable character/brand bibles, approved reference assets, shot-to-shot continuity notes, consent/rights evidence and version lineage.
+4. **Review in context:** timestamp/frame comments, annotated change requests, reviewer approvals and immutable approval history.
+5. **Editor-friendly handoff:** durable asset IDs, proxies, captions, audio stems, timeline interchange and delivery manifests so customers can continue in their existing editor.
+6. **Reusable workflow templates:** publishable team recipes with versioned inputs, capability checks, deterministic validation and explicit cost previews.
+
+### Fit-to-market guardrails
+
+- Optimize the first paid use cases for short-form ads, product explainers, social video packages and repeatable creator content; do not attempt to outbuild a full NLE before the core workflows are reliable.
+- Provide local-first planning/editing and transparent low-cost iteration where possible; paid remote model execution must be opt-in and quoted.
+- Do not promise Premiere/After Effects/DaVinci integration until an actual tested plugin or interchange flow exists.
+- Measure activation-to-first-export, quote acceptance, generation success, time-to-first-draft, revision count, export completion, gross margin per job and 30-day project reuse. Instrument these before optimizing model catalogue breadth.
+
+### Engineering priority update
+
+- **P0:** finish the general Studio workflow → governed cloud worker bridge (see issue #209); the existing Aleph 2 cloud transformation lane is partial and must be reused.
+- **P1:** project budgets/credit caps and customer-visible quote/actual-cost reporting.
+- **P1:** review comments and approval history bound to exact asset/timeline versions.
+- **P1:** continuity/brand kits with reference permissions and rights/consent evidence.
+- **P2:** reusable workflow template marketplace and editor interoperability after core export contracts are stable.
