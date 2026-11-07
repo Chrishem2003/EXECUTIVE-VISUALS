@@ -288,7 +288,8 @@ export function getAdminOverview(db) {
       billingEnforcementEnabled() && !!(process.env.FLW_SECRET_KEY && process.env.FLW_WEBHOOK_SECRET && process.env.PUBLIC_APP_URL),
     recurringSubscriptionsEnabled: process.env.DODO_SUBSCRIPTIONS_ENABLED === "true" &&
       process.env.DODO_MERCHANT_APPROVED === "true" && billingEnforcementEnabled() &&
-      !!(process.env.DODO_PAYMENTS_API_KEY && process.env.DODO_PAYMENTS_WEBHOOK_KEY && process.env.PUBLIC_APP_URL) };
+      !!(process.env.DODO_PAYMENTS_API_KEY && process.env.DODO_PAYMENTS_WEBHOOK_KEY && process.env.PUBLIC_APP_URL) &&
+      Object.entries(process.env).some(([key,value]) => key.startsWith("DODO_PRODUCT_ID_") && /^pdt_[A-Za-z0-9_-]{6,120}$/.test(String(value || ""))) };
 }
 
 export function listAdminUsers(db, { query = "", limit = 100 } = {}) {
