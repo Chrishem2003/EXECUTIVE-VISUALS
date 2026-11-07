@@ -140,8 +140,14 @@ export async function executeCloudVideoGenerationJob({
     throw fail("Provider status is temporarily unavailable; polling will resume on a later lease.", "VIDEO_PROVIDER_POLL_DEFERRED");
   }
   if (signal?.aborted) throw fail("Cloud video worker lease was lost.", "VIDEO_WORKER_LEASE_LOST");
-  if (task.status === "failed" || task.status === "canceled") {
-    throw fail(task.failure || "Video provider task did not complete.", task.failureCode || "VIDEO_PROVIDER_FAILED");
+  if (task.status === "canceled") {
+    // Provider cancellation is not proof of a refund. Runway may still charge
+    // when cancellation races with a transition to RUNNING, so retain the
+    // reservation and require provider billing evidence before settlement.
+    throw fail("Provider task is canceled, but its final billable amount is not yet verified; retain the reservation for reconciliation.", "VIDEO_PROVIDER_CANCELLATION_COST_UNRESOLVED");
+  }
+  if (task.status === "failed") {
+    throw fail(task.failure || "Video provider task failed.", task.failureCode || "VIDEO_PROVIDER_FAILED");
   }
   if (task.status !== "succeeded") {
     if (task.status !== "queued" && task.status !== "running") {
