@@ -12,7 +12,7 @@ const dataDir=await mkdtemp(join(tmpdir(),"ev-api-test-"));
 const webDir=join(dataDir,"web");await mkdir(webDir,{recursive:true});await writeFile(join(webDir,"index.html"),"<!doctype html><html><body>test</body></html>");
 const child=spawn(process.execPath,["server/index.mjs"],{
   cwd:process.cwd(),
-  env:{...process.env,NODE_ENV:"development",AUTH_MODE:"local",AUTH_RATE_LIMIT:"1000",REMOTE_AI_DAILY_REQUEST_LIMIT:"7",API_HOST:"127.0.0.1",API_PORT:String(port),DATA_DIR:dataDir,MEDIA_ROOT:join(dataDir,"media"),WEB_ROOT:webDir,DISABLE_WORKER:"true"},
+  env:{...process.env,NODE_ENV:"development",AUTH_MODE:"local",AUTH_RATE_LIMIT:"1000",REMOTE_AI_DAILY_REQUEST_LIMIT:"7",API_HOST:"127.0.0.1",API_PORT:String(port),DATA_DIR:dataDir,MEDIA_ROOT:join(dataDir,"media"),WEB_ROOT:webDir,DISABLE_WORKER:"true",ADMIN_EMAILS:"admin@example.test"},
   stdio:["ignore","pipe","pipe"]
 });
 let stdout="",stderr="";
@@ -554,4 +554,48 @@ test.after(async()=>{
   child.kill("SIGTERM");
   await new Promise(resolve=>{const timer=setTimeout(resolve,1500);child.once("exit",()=>{clearTimeout(timer);resolve();});});
   await rm(dataDir,{recursive:true,force:true});
+});
+
+
+test("billing plans and subscription overview are authenticated and default to Free",async()=>{
+  const cookie=await register("billing-member@example.test");
+  const plans=await request("/api/billing/plans",{},cookie);
+  assert.equal(plans.status,200);
+  const planBody=await plans.json();
+  assert.equal(planBody.plans.some(plan=>plan.code==="free"),true);
+  const overview=await request("/api/billing/overview",{},cookie);
+  assert.equal(overview.status,200);
+  const body=await overview.json();
+  assert.equal(body.billing.plan.code,"free");
+  assert.equal(body.billing.balance,0);
+  assert.equal((await fetch(base+"/api/billing/overview")).status,401);
+  const checkout=await request("/api/billing/checkout",{method:"POST",headers:{"content-type":"application/json"},body:"{}"},cookie);
+  assert.equal(checkout.status,503);
+});
+
+test("administrator APIs enforce allowlisting and manage plans, subscriptions, credits and account status",async()=>{
+  const adminCookie=await register("admin@example.test");
+  const memberCookie=await register("managed-member@example.test");
+  const adminMe=await request("/api/me",{},adminCookie);
+  assert.equal((await adminMe.json()).capabilities.admin,true);
+  const memberMe=await request("/api/me",{},memberCookie);
+  const memberId=(await memberMe.json()).user.id;
+  assert.equal((await request("/api/admin/overview",{},memberCookie)).status,403);
+  const planResponse=await request("/api/admin/plans",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({
+    code:"studio-test",name:"Studio Test",description:"Automated test plan",amountMinor:2900,currency:"USD",interval:"month",
+    creditsPerPeriod:900,limits:{seats:3,concurrentJobs:2,storageBytes:1073741824,modelAllowlist:["test-model"]},features:["Video tools"]
+  })},adminCookie);
+  assert.equal(planResponse.status,200);
+  const plan=(await planResponse.json()).plan;
+  const assignment=await request("/api/admin/users/"+memberId+"/subscription",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({planId:plan.id,periodDays:30,status:"active"})},adminCookie);
+  assert.equal(assignment.status,200);
+  const credit=await request("/api/admin/users/"+memberId+"/credits",{method:"POST",headers:{"content-type":"application/json","idempotency-key":"api-credit-grant-0001"},body:JSON.stringify({amount:100,description:"Test allowance"})},adminCookie);
+  assert.equal(credit.status,200);
+  const billing=await request("/api/billing/overview",{},memberCookie);
+  assert.equal((await billing.json()).billing.balance,1000);
+  const users=await request("/api/admin/users",{},adminCookie);
+  assert.equal((await users.json()).users.some(user=>user.id===memberId&&user.creditBalance===1000),true);
+  const suspended=await request("/api/admin/users/"+memberId+"/status",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({status:"suspended"})},adminCookie);
+  assert.equal(suspended.status,200);
+  assert.equal((await request("/api/billing/overview",{},memberCookie)).status,403);
 });
