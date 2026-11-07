@@ -104,7 +104,7 @@ test("registers Runway text and video-edit adapters only with explicit task-cost
       FAL_VIDEO_MODEL: "fal-ai/wan/v2.7/text-to-video",
       FAL_KEY: "queue-test-key",
       FAL_BILLING_KEY: "billing-test-key",
-      RUNWAY_VIDEO_MODELS: "gen4.5,aleph2",
+      RUNWAY_VIDEO_MODELS: "gen4.5,aleph2,magnific_video_upscaler_creative",
       RUNWAY_API_KEY: "runway-test-key",
       RUNWAY_VIDEO_ALLOW_REMOTE: "false"
     },
@@ -116,7 +116,8 @@ test("registers Runway text and video-edit adapters only with explicit task-cost
   assert.deepEqual(worker.listSupported(), [
     "fal:fal-ai/wan/v2.7/text-to-video",
     "runway:gen4.5",
-    "runway:aleph2"
+    "runway:aleph2",
+    "runway:magnific_video_upscaler_creative"
   ]);
 });
 
@@ -152,4 +153,14 @@ test("refuses Aleph2 worker registration without owner-scoped source-media resol
       amount: 1, currency: "USD", evidenceReference: "test:runway-task-ledger"
     })
   }), /owner-scoped source-media resolver/);
+});
+
+
+test("rejects unknown or duplicate Runway model registrations before constructing a worker", () => {
+  assert.throws(() => createProviderAwareCloudVideoWorkerComposition({
+    ...base, runwayModels: ["gen4.5", "unknown-model"]
+  }), /unique list of explicitly supported model profiles/);
+  assert.throws(() => createProviderAwareCloudVideoWorkerComposition({
+    ...base, runwayModels: ["gen4.5", "gen4.5"]
+  }), /unique list of explicitly supported model profiles/);
 });
