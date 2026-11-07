@@ -292,3 +292,16 @@ test("Google Gemini Omni Flash catalog matches the current Interactions API cont
   assert.match(model.constraints.source, /^https:\/\/ai\.google\.dev\/gemini-api\/docs\/omni$/);
   assert.equal(listSelectableVideoProviderModels().length, 0);
 });
+
+test("Runway Model Router is catalogued as a disabled synthetic route, not a concrete model", () => {
+  const model = getVideoProviderModel("runway", "model-router");
+  assert.ok(model);
+  assert.equal(model.availability, "disabled");
+  assert.equal(model.executionAdapter, "runway-model-router-cloud-worker");
+  assert.equal(model.capabilities.textToVideo, true);
+  assert.equal(model.capabilities.imageToVideo, true);
+  assert.equal(model.capabilities.nativeAudio, true);
+  assert.equal(model.constraints.pricingMode, "server-dry-run-with-approved-budget-ceiling");
+  assert.equal(listSelectableVideoProviderModels().length, 0);
+});
+
