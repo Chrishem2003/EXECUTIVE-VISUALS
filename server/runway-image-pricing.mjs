@@ -36,7 +36,7 @@ const ratioCategory=value=>{
     const d=Math.abs(r-candidate);
     if(d<distance){distance=d;best=name;}
   }
-  if(distance>0.012)throw fail("ratio is outside the supported GPT Image 2.6 aspect-ratio set.","RUNWAY_IMAGE_PRICE_UNSUPPORTED_OPTION");
+  if(distance>0.02)throw fail("ratio is outside the supported GPT Image 2.6 aspect-ratio set.","RUNWAY_IMAGE_PRICE_UNSUPPORTED_OPTION");
   return best;
 };
 export function estimateRunwayImageCredits(options={}){
