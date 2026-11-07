@@ -56,7 +56,7 @@ async function openGoogleDrivePicker(){
   if(!google?.picker)throw new Error("Google Picker did not initialize.");
   const view=new google.picker.DocsView(google.picker.ViewId.DOCS);
   view.setIncludeFolders(false);
-  view.setMimeTypes("image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime,video/x-matroska,audio/mpeg,audio/wav,audio/mp4,audio/ogg,application/pdf,text/plain,text/vtt");
+  view.setMimeTypes("image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime,video/x-matroska,audio/mpeg,audio/wav,audio/mp4,audio/ogg,audio/flac,application/pdf,text/plain,text/vtt");
   const picker=new google.picker.PickerBuilder()
    .setAppId(config.appId).setDeveloperKey(config.developerKey).setOAuthToken(config.accessToken)
    .setOrigin(window.location.protocol+"//"+window.location.host)
