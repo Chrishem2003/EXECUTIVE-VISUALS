@@ -15,7 +15,7 @@ const dataDir=await mkdtemp(join(tmpdir(),"ev-api-test-"));
 const webDir=join(dataDir,"web");await mkdir(webDir,{recursive:true});await writeFile(join(webDir,"index.html"),"<!doctype html><html><body>test</body></html>");
 const child=spawn(process.execPath,["server/index.mjs"],{
   cwd:process.cwd(),
-  env:{...process.env,NODE_ENV:"development",AUTH_MODE:"local",AUTH_RATE_LIMIT:"1000",REMOTE_AI_DAILY_REQUEST_LIMIT:"7",API_HOST:"127.0.0.1",API_PORT:String(port),DATA_DIR:dataDir,MEDIA_ROOT:join(dataDir,"media"),WEB_ROOT:webDir,DISABLE_WORKER:"true",ADMIN_EMAILS:"admin@example.test,refund-admin@example.test"},
+  env:{...process.env,NODE_ENV:"development",AUTH_MODE:"local",AUTH_RATE_LIMIT:"1000",REMOTE_AI_DAILY_REQUEST_LIMIT:"7",GOOGLE_DRIVE_OAUTH_ENABLED:"false",API_HOST:"127.0.0.1",API_PORT:String(port),DATA_DIR:dataDir,MEDIA_ROOT:join(dataDir,"media"),WEB_ROOT:webDir,DISABLE_WORKER:"true",ADMIN_EMAILS:"admin@example.test,refund-admin@example.test"},
   stdio:["ignore","pipe","pipe"]
 });
 let stdout="",stderr="";
@@ -75,6 +75,27 @@ test("provider catalog is authenticated, safe and read-only",async()=>{
   assert.equal(JSON.stringify(catalog).includes("Bearer "),false);
 });
 
+test("Google Drive routes remain disabled by default and fail closed",async()=>{
+  const callback=await fetch(base+"/api/integrations/google-drive/callback");
+  assert.equal(callback.status,503);
+  assert.equal((await callback.json()).error.code,"GOOGLE_DRIVE_OAUTH_NOT_CONFIGURED");
+  const anonymous=await fetch(base+"/api/integrations/google-drive/status");
+  assert.equal(anonymous.status,401);
+  const cookie=await register("drive-disabled@example.test");
+  for(const [path,method] of [
+    ["/api/integrations/google-drive/status","GET"],
+    ["/api/integrations/google-drive/connect","POST"],
+    ["/api/integrations/google-drive/picker-token","POST"],
+    ["/api/integrations/google-drive/disconnect","POST"],
+    ["/api/integrations/google-drive/import","POST"],
+    ["/api/integrations/google-drive/export","POST"]
+  ]){
+    const response=await request(path,{method,headers:{"content-type":"application/json"},body:method==="POST"?"{}":undefined},cookie);
+    assert.equal(response.status,503,path+" must fail closed while Drive is disabled");
+    assert.equal((await response.json()).error.code,"GOOGLE_DRIVE_OAUTH_NOT_CONFIGURED");
+  }
+});
+
 test("usage API reports account request allowance without exposing secrets",async()=>{
   assert.equal((await fetch(base+"/api/usage")).status,401);
   const cookie=await register("usage-owner@example.test");
@@ -95,6 +116,8 @@ test("static application shell applies a restrictive content security policy",as
   assert.ok(policy.includes("script-src 'self'"));
   assert.ok(policy.includes("frame-ancestors 'none'"));
   assert.ok(policy.includes("object-src 'none'"));
+  assert.ok(policy.includes("https://apis.google.com"));
+  assert.ok(policy.includes("https://docs.google.com"));
 });
 
 test("registration, project ownership, binary upload and asset isolation work",async()=>{
