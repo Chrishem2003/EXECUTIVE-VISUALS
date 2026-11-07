@@ -242,3 +242,26 @@ test("Dodo customer portal readiness remains independent from new subscription c
   assert.equal(dodoCustomerPortalEnabled({...env,BILLING_ENFORCEMENT_ENABLED:"false"}),true);
   assert.equal(dodoCustomerPortalEnabled({...env,DODO_MERCHANT_APPROVED:"false"}),false);
 });
+
+
+test("Dodo webhook worker respects active processing leases and releases completed leases",()=>{
+  const {db}=setup();
+  const timestamp=new Date().toISOString();
+  const payload={type:"subscription.update_payment_method",timestamp,data:{subscription_id:"sub_lease_test",status:"active",metadata:{}}};
+  db.prepare(`INSERT INTO billing_provider_events
+    (id,provider,event_id,event_type,payload_hash,payload_json,created_at)
+    VALUES('dodo-lease-event','dodo','lease-event-1','subscription.update_payment_method','hash',?,?)`)
+    .run(JSON.stringify(payload),timestamp);
+  db.prepare("UPDATE billing_provider_events SET lease_owner='other-worker',lease_expires_at=? WHERE id='dodo-lease-event'")
+    .run(new Date(Date.now()+60000).toISOString());
+  assert.deepEqual(processNextDodoWebhook(db),{processed:false});
+  db.prepare("UPDATE billing_provider_events SET lease_expires_at=? WHERE id='dodo-lease-event'")
+    .run(new Date(Date.now()-1000).toISOString());
+  const processed=processNextDodoWebhook(db);
+  assert.equal(processed.processed,true);
+  const row=db.prepare("SELECT processed_at,lease_owner,lease_expires_at FROM billing_provider_events WHERE id='dodo-lease-event'").get();
+  assert.ok(row.processed_at);
+  assert.equal(row.lease_owner,null);
+  assert.equal(row.lease_expires_at,null);
+  db.close();
+});
