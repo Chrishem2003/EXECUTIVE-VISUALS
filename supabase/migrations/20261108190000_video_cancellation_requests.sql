@@ -40,6 +40,7 @@ declare
   existing_request executive_visuals.video_generation_cancellation_requests;
   provider_name text;
   provider_task text;
+  reserved_provider text;
   requested_at_value timestamptz;
 begin
   if p_job_id is null or p_requested_by is null then
@@ -82,7 +83,10 @@ begin
     raise exception 'VIDEO_CANCELLATION_JOB_NOT_ACTIVE';
   end if;
 
-  provider_name := coalesce(target_job.input->>'provider','');
+  select r.provider into reserved_provider
+  from executive_visuals.video_generation_budget_reservations r
+  where r.job_id = p_job_id;
+  provider_name := coalesce(reserved_provider,'');
   if provider_name not in ('runway','fal') then
     raise exception 'VIDEO_CANCELLATION_PROVIDER_UNSUPPORTED';
   end if;
