@@ -261,8 +261,14 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
     const usageStarted=Date.now();
     const provider=requireExecutionProvider("image.generate","IMAGE_GATEWAY_ALLOW_REMOTE");
     if(referenceImageDataUrls.length>1&&provider.provider!=="runway")throw Object.assign(new Error("The selected image provider supports only one reference image in this workflow."),{code:"IMAGE_GATEWAY_UNSUPPORTED_INPUT"});
-    reserveRemoteRequest(db,{ownerId:job.owner_id,projectId:job.project_id||null,jobId:job.id,provider,capability:"image.generate",billingReference:job.id+":"+runId+":"+nodeId+":image.generate",costContext:{provider:provider.provider,model:String(config.model||values.model||provider.model||"unknown"),unit:"image",quantity:1}});
-    const result=await generateImage({prompt,size:String(config.size||"1024x1024"),quality:String(config.quality||(provider.provider==="runway"?"high":"medium")),referenceImageDataUrl,referenceImages:referenceImageDataUrls,model:String(config.model||values.model||""),ratio:String(config.ratio||"auto"),reasoningEffort:String(config.reasoningEffort||"high"),background:String(config.background||"auto"),outputCount:1});
+    const imageModel=String(config.model||values.model||provider.model||"unknown");
+    const imageQuality=String(config.quality||(provider.provider==="runway"?"high":"medium"));
+    const imageRatio=String(config.ratio||"auto");
+    const imageReasoning=String(config.reasoningEffort||"high");
+    const imageBackground=String(config.background||"auto");
+    const runwayPricing=provider.provider==="runway"?{ratio:imageRatio,quality:imageQuality,reasoningEffort:imageReasoning,background:imageBackground,outputCount:1,referenceImageCount:referenceImageDataUrls.length}:null;
+    reserveRemoteRequest(db,{ownerId:job.owner_id,projectId:job.project_id||null,jobId:job.id,provider,capability:"image.generate",billingReference:job.id+":"+runId+":"+nodeId+":image.generate",costContext:{provider:provider.provider,model:imageModel,unit:"image",quantity:1,runwayPricing}});
+    const result=await generateImage({prompt,size:String(config.size||"1024x1024"),quality:imageQuality,referenceImageDataUrl,referenceImages:referenceImageDataUrls,model:imageModel,ratio:imageRatio,reasoningEffort:imageReasoning,background:imageBackground,outputCount:1});
     recordModelUsage(db,{ownerId:job.owner_id,projectId:job.project_id||null,jobId:job.id,workflowRunId:runId,nodeId,provider:provider.provider,capability:"image.generate",model:result.model,usage:result.usage,durationMs:Date.now()-usageStarted});
     const asset=await storeGeneratedImage({db,mediaRoot,ownerId:job.owner_id,projectId:job.project_id||null,jobId:job.id,prompt,model:result.model,buffer:result.buffer});
     output=nodeOutput(node,asset.id);output.asset=asset.id;output.assetId=asset.id;output.mimeType=asset.mediaType;output.sha256=asset.sha256;output.usage=result.usage;
@@ -313,7 +319,13 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
     const capabilities=provider.provider==="runway"?getRunwayVideoCapabilities(selectedModel):getFalVideoCapabilities();
     assertVideoCapabilities(generationRequest,capabilities);
     const usageStarted=Date.now();
-    reserveRemoteRequest(db,{ownerId:job.owner_id,projectId:job.project_id||null,jobId:job.id,provider,capability:"video.generate",billingReference:job.id+":"+runId+":"+nodeId+":video.generate",costContext:{provider:provider.provider,model:selectedModel||provider.model||"unknown",unit:"second",quantity:generationRequest.durationSeconds}});
+    const runwayPricing=provider.provider==="runway"&&["kling_4_flash","gemini_omni_flash_1.2"].includes(selectedModel)?{
+     durationSeconds:generationRequest.durationSeconds,
+     resolution:generationRequest.resolution==="provider_default"?"720p":generationRequest.resolution,
+     inputType:referenceImageDataUrl?"image":"text",hasStartFrame:Boolean(referenceImageDataUrl),
+     referenceImageCount:0,audio:true
+    }:null;
+    reserveRemoteRequest(db,{ownerId:job.owner_id,projectId:job.project_id||null,jobId:job.id,provider,capability:"video.generate",billingReference:job.id+":"+runId+":"+nodeId+":video.generate",costContext:{provider:provider.provider,model:selectedModel||provider.model||"unknown",unit:"second",quantity:generationRequest.durationSeconds,runwayPricing}});
     const result=provider.provider==="runway"
      ?await generateRunwayVideo({model:selectedModel,prompt:generationRequest.prompt,durationSeconds:generationRequest.durationSeconds,aspectRatio:generationRequest.aspectRatio,resolution:generationRequest.resolution,referenceImageDataUrl})
      :await generateFalVideo({prompt:generationRequest.prompt,duration:generationRequest.durationSeconds,aspectRatio:generationRequest.aspectRatio,referenceImageDataUrl});
