@@ -61,6 +61,8 @@ export async function executeCloudVideoGenerationJob({
   });
   let state = prepared.state;
   let providerTaskId = prepared.provider_task_id || null;
+  let submissionMetadata = prepared.metadata && typeof prepared.metadata === "object" && !Array.isArray(prepared.metadata)
+    ? prepared.metadata : {};
   if (state === "unknown" || state === "submitting") {
     throw fail("Provider submission outcome is ambiguous and requires reconciliation.", "VIDEO_SUBMISSION_REQUIRES_RECONCILIATION");
   }
@@ -86,7 +88,14 @@ export async function executeCloudVideoGenerationJob({
       throw fail("Provider did not return a durable task ID; reconciliation is required.", "VIDEO_SUBMISSION_REQUIRES_RECONCILIATION");
     }
     try {
-      const recorded = await ledger.record(job.id, workerId, submitted.taskId, { acceptedStatus: submitted.status || "queued" });
+      const submittedMetadata = submitted.metadata && typeof submitted.metadata === "object" && !Array.isArray(submitted.metadata)
+        ? submitted.metadata : {};
+      const metadataText = JSON.stringify(submittedMetadata);
+      if (Buffer.byteLength(metadataText) > 7000) {
+        throw fail("Provider submission metadata exceeded the durable ledger limit.", "VIDEO_SUBMISSION_METADATA_INVALID");
+      }
+      const recordMetadata = { acceptedStatus: submitted.status || "queued", ...submittedMetadata };
+      const recorded = await ledger.record(job.id, workerId, submitted.taskId, recordMetadata);
       if (!recorded) throw new Error("Provider task ID was not recorded.");
     } catch {
       // The RPC may have committed despite a lost response. The job is held
@@ -94,6 +103,7 @@ export async function executeCloudVideoGenerationJob({
       throw fail("Provider task ID persistence is uncertain; reconciliation is required.", "VIDEO_SUBMISSION_REQUIRES_RECONCILIATION");
     }
     providerTaskId = submitted.taskId;
+    submissionMetadata = { acceptedStatus: submitted.status || "queued", ...(submitted.metadata || {}) };
     state = "submitted";
   }
 
@@ -122,7 +132,7 @@ export async function executeCloudVideoGenerationJob({
     throw fail("Provider completed without a bounded output collection.", "VIDEO_OUTPUT_COLLECTION_INVALID");
   }
   let cost;
-  try { cost = await selectedResolveActualCost({ job, input, task, providerTaskId }); }
+  try { cost = await selectedResolveActualCost({ job, input, task, providerTaskId, submissionMetadata }); }
   catch { throw fail("Actual provider cost could not be verified; budget remains reserved for review.", "VIDEO_BUDGET_COST_UNRESOLVED"); }
   if (signal?.aborted) throw fail("Cloud video worker lease was lost.", "VIDEO_WORKER_LEASE_LOST");
   const approved = job.estimated_cost;
@@ -153,7 +163,7 @@ export async function executeCloudVideoGenerationJob({
   }
   return Object.freeze({
     provider: input.provider,
-    model: input.model,
+    model: typeof cost.model === "string" && cost.model.trim() ? cost.model : input.model,
     providerTaskId,
     assetIds: Object.freeze([...ingested.assetIds]),
     usage: ingested.usage || null,
