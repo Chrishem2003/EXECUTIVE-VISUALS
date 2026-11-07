@@ -31,6 +31,7 @@ test("Aleph 2 SQL enqueue is restricted to MP4 video-to-video with the published
     "p_provider = 'runway' and p_model = 'aleph2'",
     "coalesce(p_input ->> 'operation','') <> 'video-to-video'",
     "length(coalesce(p_input ->> 'durationSeconds','')) > 2",
+    "(p_input ->> 'durationSeconds')::numeric < 2",
     "(p_input ->> 'durationSeconds')::numeric > 30",
     "greatest(0.56, (p_input ->> 'durationSeconds')::numeric * 0.28)",
     "coalesce(p_input ->> 'outputFormat','mp4') <> 'mp4'"
@@ -45,6 +46,7 @@ test("disposable PostgreSQL harness covers Aleph 2 approval ACL, exact hash, pri
     "has_function_privilege('service_role'",
     "Aleph 2 approval was not consumed against its exact request hash",
     "VIDEO_BUDGET_BELOW_PROVIDER_ESTIMATE",
-    "VIDEO_PRICE_DURATION_OR_OPERATION_INVALID"
+    "VIDEO_PRICE_DURATION_OR_OPERATION_INVALID",
+    "'durationSeconds',1"
   ]) assert.ok(postgresIntegration.includes(contract), "Missing PostgreSQL integration assertion: " + contract);
 });
