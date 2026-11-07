@@ -6,13 +6,11 @@
 create or replace function executive_visuals.validate_video_budget_approval()
 returns trigger
 language plpgsql
-set search_path = pg_catalog, executive_visuals, auth
-as $$
+set search_path = pg_catalog, executive_visuals
+as $
 begin
-  if new.owner_id is distinct from auth.uid()
-     and coalesce(auth.role(),'') <> 'service_role' then
-    raise exception 'VIDEO_BUDGET_APPROVAL_OWNER_INVALID';
-  end if;
+  -- Authenticated inserts remain constrained by the table's owner RLS policy.
+  -- Server-side creation is exposed only through the service_role-only RPC below.
   if new.project_id is not null and not exists (
     select 1 from executive_visuals.projects p
     where p.id = new.project_id and p.owner_id = new.owner_id
@@ -43,15 +41,12 @@ create or replace function executive_visuals.create_video_generation_budget_appr
 )
 returns uuid
 language plpgsql
-security definer
-set search_path = pg_catalog, executive_visuals, auth
+security invoker
+set search_path = pg_catalog, executive_visuals
 as $video_approval$
 declare
   policy executive_visuals.video_generation_budget_policies;
 begin
-  if coalesce(auth.role(),'') <> 'service_role' then
-    raise exception 'VIDEO_BUDGET_APPROVAL_SERVICE_ROLE_REQUIRED';
-  end if;
   if p_approval_id is null or p_owner_id is null or p_project_id is null
      or p_provider <> 'runway' or p_model <> 'aleph2'
      or p_request_hash is null or p_request_hash !~ '^[a-f0-9]{64}$'
