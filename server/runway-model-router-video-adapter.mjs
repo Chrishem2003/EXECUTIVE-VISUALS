@@ -56,6 +56,9 @@ function routedInput(input) {
     result.seed = input.seed;
   }
   const referenceLimits = { referenceImages: 4, referenceVideos: 2, referenceAudio: 1, keyframes: 5 };
+  if (input.audioMode === "reference" && (!Array.isArray(input.referenceAudio) || input.referenceAudio.length !== 1)) {
+    throw fail("Reference audio mode requires exactly one resolved audio reference.", "RUNWAY_ROUTER_INPUT_INVALID");
+  }
   for (const field of Object.keys(referenceLimits)) {
     if (input[field] !== undefined) {
       if (!Array.isArray(input[field]) || input[field].length > referenceLimits[field] ||
