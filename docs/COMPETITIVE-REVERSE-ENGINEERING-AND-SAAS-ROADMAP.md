@@ -240,3 +240,46 @@ Official references:
 - Runway API pricing and costs: https://docs.dev.runwayml.com/guides/pricing/
 - Runway API changelog: https://docs.dev.runwayml.com/api-details/api_changelog/
 
+## 9. Runway Dev model contracts — verified pricing update (2026-11-07)
+
+The November 5 Runway Dev releases were rechecked against both the API changelog and the live pricing table. The catalogue and estimate engine now use the published credit formulas rather than the earlier USD "from" rates.
+
+### Kling 4.0 Flash (`kling_4_flash`)
+
+- 720p only; 3–20 seconds; 5-second default.
+- Text-to-video, first-frame image-to-video and source-video editing; generated audio is included.
+- Up to 10 images including the first frame; up to 5 input/reference videos with a combined 20-second input-video budget.
+- No separate image-reference charge.
+- No input video: 9.4 credits per output second.
+- With input video: 6.3 credits per output second plus 6.3 credits per second of the greater of combined input-video duration and output duration; round the total up once.
+- 29-credit minimum. The published examples are 47 credits for 5 seconds without input video, 63 credits with 3 seconds of input, and 95 credits with 10 seconds of input.
+
+### Gemini Omni 1.2 Flash (`gemini_omni_flash_1.2`)
+
+- 3–15 seconds; 360p, 720p, 1080p and 4K; 4,000-character prompt limit.
+- Text, first/last keyframes and up to 5 image references / 3 video references; video-to-video editing and extension.
+- Output rate: 2 / 7 / 10 / 21 credits per second by resolution.
+- Add 1 credit per reference image/keyframe and 1 credit per second of input video. Round the combined total up; minimum 6 credits.
+- Auto duration reserves 15 seconds, then settles to generated duration rounded up to a whole second.
+- Extension bills newly added output footage plus input video; editing bills input duration at the output rate plus input-video and reference charges. The general estimator currently covers the ordinary duration-based preflight; edit/extend-specific settlement remains a separate adapter acceptance requirement.
+
+### Implementation status
+
+- [x] Registry metadata updated with documented capability, resolution, duration, reference and pricing constraints.
+- [x] Deterministic price estimators added for Kling 4.0 Flash and Gemini Omni 1.2 Flash.
+- [x] Regression tests added for official examples, minimums, resolution tiers, duration limits and reference limits.
+- [ ] Provider-specific request adapters and task lifecycle for these two model IDs.
+- [ ] Actual task-cost reconciliation and private output ingestion for both models.
+- [ ] Staging acceptance with provider account entitlements; no live paid generation is performed by CI.
+
+### Separate image-generation control plane
+
+The same November 5 release adds GPT Image 2.6 Flare and Sunburst. These are image endpoints, not video models. They support PNG output, up to 16 reference images, 1–10 outputs, 1K/2K/4K aspect-ratio tiers, low/medium/high quality and reasoning effort, with transparent backgrounds. Pricing depends on quality, resolution and aspect ratio (1–19 credits per image) plus one credit per reference image per output.
+
+Do not route these through the video registry or assume the current generic image adapter supports their request schema. Implement a separate Runway image adapter with strict allowlisted model IDs, per-image pricing, reference ownership, output-count bounds, asynchronous task polling, private ingestion and model-specific response validation. Keep it disabled until those gates pass.
+
+Official evidence:
+- https://docs.dev.runwayml.com/api-details/api_changelog/
+- https://docs.dev.runwayml.com/guides/pricing/
+- https://docs.dev.runwayml.com/guides/models/
+
