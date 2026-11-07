@@ -244,8 +244,8 @@ export function createRunwayModelRouterVideoAdapter({
       return {
         status: "succeeded", taskId: providerTaskId, outputUrls,
         provider: "runway", model: "model-router",
-        cost: task.cost,
-        estimatedCost: task.estimatedCost
+        ...(task.cost && typeof task.cost === "object" ? { cost: task.cost } : {}),
+        ...(task.estimatedCost && typeof task.estimatedCost === "object" ? { estimatedCost: task.estimatedCost } : {})
       };
     },
     async ingestOutputs(args) { return ingestOutputs(args); },
