@@ -143,8 +143,8 @@ test("approved cloud transformation submits to the durable Runway queue with ser
  const fetchImpl=async(url,options)=>{
   calls.push({url,options});
   if(url.endsWith("/rpc/enqueue_video_generation_job"))return{ok:true,status:200,async text(){return JSON.stringify([{job_id:videoJobId,job_status:"queued",idempotent_replay:false,budget_reservation_id:"c23e4567-e89b-42d3-a456-426614174000"}]);}};
-  if(url.includes("/jobs?id=")&&options.method==="GET")return{ok:true,status:200,async text(){return JSON.stringify([row]);}};
-  if(url.includes("/jobs?id=")&&options.method==="PATCH")return{ok:true,status:200,async text(){return JSON.stringify([{...row,status:"submitted",output:{videoJobId,videoJobStatus:"queued"}}]);}};
+  if(url.includes("/jobs?")&&options.method==="GET")return{ok:true,status:200,async text(){return JSON.stringify([row]);}};
+  if(url.includes("/jobs?")&&options.method==="PATCH")return{ok:true,status:200,async text(){return JSON.stringify([{...row,status:"submitted",output:{videoJobId,videoJobStatus:"queued"}}]);}};
   return{ok:true,status:201,async text(){return"";}};
  };
  const api=createCloudTimelineApi({
@@ -173,7 +173,7 @@ test("approved cloud transformation submits to the durable Runway queue with ser
  assert.equal(args.p_input.sourceVideoAssetId,row.input.sourceAssetId);
  assert.equal(args.p_input.transformationOperation,"vehicle_replace");
  assert.match(args.p_request_hash,/^[a-f0-9]{64}$/);
- assert.ok(calls.some(call=>call.url.includes("/jobs?id=")&&call.options.method==="PATCH"));
+ assert.ok(calls.some(call=>call.url.includes("/jobs?")&&call.options.method==="PATCH"));
 });
 
 test("cloud transformation submission refuses unapproved or non-Aleph adapters before queueing", async () => {
@@ -182,7 +182,7 @@ test("cloud transformation submission refuses unapproved or non-Aleph adapters b
  let queued=false;
  const api=createCloudTimelineApi({
   url:"https://example.supabase.co",serviceRoleKey:"service-secret",
-  fetchImpl:async(url,options)=>({ok:true,status:200,async text(){return url.includes("/jobs?id=")&&options.method==="GET"?JSON.stringify([row]):"[]";}}),
+  fetchImpl:async(url,options)=>({ok:true,status:200,async text(){return url.includes("/jobs?")&&options.method==="GET"?JSON.stringify([row]):"[]";}}),
   timelineService:{timelines:{},assets:{}},authorize:async()=>true,
   transformationReadiness:()=>({adapterVerified:true,workerAvailable:true,privateStorageVerified:true,durableCheckpointsAvailable:true,costPolicyVerified:true,consentVerifierAvailable:true,visualQaAvailable:true,cloudSchemaApplied:true}),
   runwaySourceResolver:{async resolveMetadata(){throw new Error("must not resolve source");}}
@@ -251,7 +251,7 @@ test("cloud transformation submit remains blocked when any release gate is unver
  const api=createCloudTimelineApi({
   url:"https://example.supabase.co",serviceRoleKey:"service-secret",
   fetchImpl:async(url,options)=>{
-   if(url.includes("/jobs?id=")&&options.method==="GET")return{ok:true,status:200,async text(){return JSON.stringify([row]);}};
+   if(url.includes("/jobs?")&&options.method==="GET")return{ok:true,status:200,async text(){return JSON.stringify([row]);}};
    if(url.endsWith("/rpc/enqueue_video_generation_job"))queueCalls++;
    return{ok:true,status:200,async text(){return"[]";}};
   },
