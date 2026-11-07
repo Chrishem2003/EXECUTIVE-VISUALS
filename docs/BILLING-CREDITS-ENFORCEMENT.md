@@ -50,3 +50,27 @@ These are **customer credit units**, not provider USD costs. They are conservati
 4. Reconcile crash-after-submit cases against provider task IDs before allowing retries.
 5. Complete staging sandbox tests and finance approval.
 6. Use isolated durable Postgres and private object storage with tested backup/restore before charging customers.
+
+
+## Dodo recurring subscriptions — approval-gated
+
+Dodo Payments is the proposed recurring subscription provider, while Flutterwave remains the Uganda-oriented one-time UGX top-up provider. The Dodo adapter uses hosted Checkout Sessions and Standard Webhooks. It is intentionally disabled unless all of these are explicitly configured:
+
+- `DODO_MERCHANT_APPROVED=true` — set only after written merchant acceptance for Executive Visuals.
+- `DODO_SUBSCRIPTIONS_ENABLED=true`
+- `BILLING_ENFORCEMENT_ENABLED=true` (or the existing `CREDITS_ENABLED=true` compatibility flag)
+- `DODO_PAYMENTS_API_KEY`
+- `DODO_PAYMENTS_WEBHOOK_KEY`
+- `DODO_PAYMENTS_ENVIRONMENT=test_mode` for staging; `live_mode` only after approval.
+- `DODO_PRODUCT_ID_<PLAN_CODE>` for each recurring plan created in the Dodo dashboard.
+
+The browser return is never proof of subscription activation. A subscription becomes active and credits are granted only after a signed webhook is verified and the subscription product, amount, currency, user, and local plan match. Renewal events grant the next period's credits idempotently; past-due, on-hold, paused, cancelled, and expired events update local subscription status.
+
+Dodo's published merchant policy lists Uganda among accepted merchant countries, but AI content-generation tools are a review category. Dodo requires no impersonation, scraping, deepfakes, face-swap features, or voice cloning. Executive Visuals must receive written approval before the `DODO_MERCHANT_APPROVED` flag is set. No Dodo account, product, API key, webhook endpoint, or live payment was created during this implementation.
+
+Official references:
+- Checkout Sessions (recommended for one-time and subscription checkout): https://github.com/dodopayments/skills/blob/main/dodo-payments/checkout-integration/SKILL.md
+- Webhook signature verification and delivery: https://docs.dodopayments.com/developer-resources/webhooks
+- Subscription event payloads: https://docs.dodopayments.com/developer-resources/webhooks/intents/subscription
+- Merchant acceptance policy and AI-content review category: https://docs.dodopayments.com/miscellaneous/merchant-acceptance
+- Accepted merchant countries: https://docs.dodopayments.com/miscellaneous/list-of-countries-we-accept-payments-from
