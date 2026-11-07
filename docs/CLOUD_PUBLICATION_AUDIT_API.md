@@ -56,7 +56,7 @@ Minimum server-only configuration:
 - \`SUPABASE_URL\`
 - \`SUPABASE_SERVICE_ROLE_KEY\`
 
-The worker defaults to dry-run. It scans at most 10 stale publication records per cycle and up to three pages of 100 objects per publication; the polling interval defaults to five minutes. It checks that the owning job is terminal and has no live lease, verifies object references, persists an eligible-candidate audit event, obtains the database cleanup claim, removes only the exact attempt object, and completes the tombstone.
+The worker defaults to dry-run. It first reconciles up to 100 previously claimed cleanup records per cycle, rotating through bounded pages so an ineligible older claim cannot starve later claims, then scans at most 10 stale publication records and up to three pages of 100 objects per publication; the polling interval defaults to five minutes. Pending claims are revalidated against the publication, terminal job lease and asset-reference ledger. If a prior process removed an object but failed to complete its tombstone, the restarted worker verifies the exact object path, treats a confirmed missing object as already removed, persists removal evidence, and completes the original claim token. This recovery is safe to retry and remains bounded. It checks that the owning job is terminal and has no live lease, verifies object references, persists an eligible-candidate audit event, obtains the database cleanup claim, removes only the exact attempt object, and completes the tombstone.
 
 ### Destructive mode
 
