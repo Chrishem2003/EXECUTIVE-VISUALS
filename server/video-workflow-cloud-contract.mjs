@@ -62,7 +62,7 @@ export function createVideoWorkflowCloudRequest({
     config.sourceVideoAssetId
   );
   const startFrameAssetId = firstString(
-    values.startFrameAssetId, values["start-frame"], config.startFrameAssetId
+    values.startFrameAssetId, values["start-frame"], values.image, values.referenceImage, values.reference, config.startFrameAssetId
   );
   const referenceAssetIds = assetList(
     config.referenceImageAssetIds ?? values.referenceImageAssetIds ?? values.references,
@@ -114,7 +114,7 @@ export function createVideoWorkflowCloudRequest({
     operation: derivedOperation,
     prompt,
     negativePrompt: config.negativePrompt ?? values.negativePrompt,
-    durationSeconds: config.durationSeconds ?? config.duration ?? 5,
+    durationSeconds: Number(config.durationSeconds ?? config.duration ?? 5),
     aspectRatio: config.aspectRatio ?? "16:9",
     resolution: config.resolution ?? "provider_default",
     audioMode,
