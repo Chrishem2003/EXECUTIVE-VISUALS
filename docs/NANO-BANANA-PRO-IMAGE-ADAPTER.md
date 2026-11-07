@@ -19,7 +19,7 @@
 
 This adapter supports Nano Banana Pro and Nano Banana 2. It does not yet implement multi-turn editing sessions, multiple references, search grounding, video input, 4K UI controls or other Nano Banana model variants. Do not present those as available until separately implemented and tested.
 
-Both Nano Banana Pro and Nano Banana 2 are paid API models; the current official pricing page lists no free tier for either. Standard output pricing currently starts at about $0.067 per 1K image for Nano Banana 2 and $0.134 per 1K/2K image for Nano Banana Pro. These are upstream Google API prices, not Executive Visuals subscription prices, and can change. The adapter remains disabled unless the owner supplies a server-side key, enables the image gateway and explicitly opts into remote execution. No key is committed and no live request was made.
+Both models require a paid API plan for image generation. Provider prices and billing eligibility can change; consult the official Google Gemini API pricing page before enabling remote generation. These are upstream provider charges, not Executive Visuals subscription prices. The adapter remains disabled unless the owner supplies a server-side key, enables the image gateway and explicitly opts into remote execution. No key is committed and no live request was made.
 
 ## Configuration
 
