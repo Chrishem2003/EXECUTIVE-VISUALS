@@ -60,6 +60,14 @@ The current Runway API exposes three distinct evidence surfaces:
 
 Accordingly, daily aggregate reconciliation can flag differences between platform reservations and Runway API usage. It cannot safely settle individual jobs or calculate individual customer refunds. The durable cloud video worker still requires a task-correlated actual-cost resolver; it must remain disabled for Runway until such evidence is available.
 
+Read-only operator command (requires `DB_FILE` or `DATA_DIR` and server-side `RUNWAY_API_KEY`):
+
+```bash
+npm run reconcile:runway-usage -- --from=2026-11-01 --before=2026-11-08
+```
+
+The end date is exclusive. The command does not write to the database or alter credit balances. It is a daily model-level variance report, not per-task settlement.
+
 Official evidence:
 - https://docs.dev.runwayml.com/api/ (Organization → Query credit usage; Organization → List linked workspace usage)
 - https://docs.dev.runwayml.com/usage/workspace-reporting/
