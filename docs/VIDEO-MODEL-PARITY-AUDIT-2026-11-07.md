@@ -187,3 +187,28 @@ It also enforces the existing fixed duration, output-format, currency, and reser
 - No paid provider request, live Google transfer, payment transaction, production migration, or production deployment was performed during this verification.
 
 **Decision:** automated CI is green for the current code head, but this is not staging acceptance. Keep PR #206 draft and all paid/remote generation paths disabled.
+
+
+## Latest source-level architecture clarification — 2026-11-07
+
+A deeper pass corrected an over-broad description in the earlier P0 notes.
+
+### What already exists
+
+- `server/index.mjs` constructs `createCloudTimelineApi` only when `CLOUD_TIMELINE_API_ENABLED=true`; it fails startup unless `AUTH_MODE=supabase`.
+- The authenticated API dispatcher forwards `/api/cloud/transformations` routes to that service after authenticating the user.
+- `server/cloud-timeline-api.mjs` already implements a narrow Aleph 2 video-to-video transformation flow: create draft, verify source/reference assets within the project, require rights confirmation (and subject consent for person replacement), calculate a source-duration-aware estimate, record an approval budget, require transformation readiness gates, idempotently enqueue `runway/aleph2`, and return a durable job ID.
+- The transformation flow is intentionally narrow: it rejects generic reference-image routing for the current Aleph 2 workflow and only submits when the configured readiness report passes.
+- `server/cloud-video-provider-worker-composition.mjs` composes the existing queue, submission ledger, private asset repository, provider adapters, private output ingestion and actual-cost resolver.
+
+### What is still missing
+
+- The interactive local workflow path in `server/workflow-executor.mjs` still imports and invokes `generateRunwayVideo` / `generateFalVideo` for `video.generate` nodes and persists the result through local generated assets.
+- The general `/api/workflows/:id/run` and workflow-node execution lifecycle is not yet composed with the cloud queue/worker lifecycle.
+- The current cloud transformation approval is not a universal quote/approval contract for arbitrary workflow node types, providers, reference inputs or output settings.
+- The Studio workflow UI does not yet present a common cloud quote → approval → durable job → private output asset → actual settlement lifecycle for general supported generation nodes.
+
+### Corrected implementation direction
+
+Issue #209 has been narrowed to extending/reusing the existing cloud transformation and provider-aware worker architecture for supported general Studio workflow nodes. Do not duplicate queue/ledger/provider infrastructure, and do not remove the existing safe local-development path. Hosted execution must fail closed rather than silently fall back to legacy synchronous generation.
+
