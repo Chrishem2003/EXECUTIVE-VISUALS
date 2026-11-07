@@ -69,11 +69,11 @@ test("cloud approval records budget metadata but submit remains blocked without 
  const f=fixture();
  const created=await f.api.handle({method:"POST",path:"/api/cloud/transformations",ownerId:owner,body:f.body,idempotencyKey:"cloud-transform-006"});
  const id=created.body.plan.id;
- const bad=await f.api.handle({method:"POST",path:"/api/cloud/transformations/"+id+"/approve",ownerId,body:{approvedBudgetMicros:99,currency:"USD"}});
+ const bad=await f.api.handle({method:"POST",path:"/api/cloud/transformations/"+id+"/approve",ownerId:owner,body:{approvedBudgetMicros:99,currency:"USD"}});
  assert.equal(bad.body.error.code,"TRANSFORMATION_BUDGET_BELOW_ESTIMATE");
- const approved=await f.api.handle({method:"POST",path:"/api/cloud/transformations/"+id+"/approve",ownerId,body:{approvedBudgetMicros:3000000,currency:"USD"}});
+ const approved=await f.api.handle({method:"POST",path:"/api/cloud/transformations/"+id+"/approve",ownerId:owner,body:{approvedBudgetMicros:3000000,currency:"USD"}});
  assert.equal(approved.status,200);assert.equal(approved.body.plan.status,"approved");assert.ok(approved.body.plan.approval.id);assert.ok(approved.body.plan.approval.estimatedCostMicros>100);
- const submit=await f.api.handle({method:"POST",path:"/api/cloud/transformations/"+id+"/submit",ownerId,body:{}});
+ const submit=await f.api.handle({method:"POST",path:"/api/cloud/transformations/"+id+"/submit",ownerId:owner,body:{}});
  assert.equal(submit.status,409);assert.equal(submit.body.error.code,"TRANSFORMATION_RELEASE_GATES_BLOCKED");
  assert.equal(f.state.jobs[0].status,"awaiting_approval");assert.equal(f.state.events.length,2);
 });
