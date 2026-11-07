@@ -189,7 +189,7 @@ export function createCloudVideoEnqueue({
         referenceImageCount: input.referenceImageCount, referenceAudioCount: input.referenceAudioCount,
         hasStartFrame: Boolean(input.startFrameAssetId) || input.hasStartFrame === true, outputFrames: pricingInput.outputFrames,
         sourceWidth: pricingInput.sourceWidth ?? input.sourceWidth, sourceHeight: pricingInput.sourceHeight ?? input.sourceHeight,
-        sourceDynamicRange: pricingInput.sourceDynamicRange ?? input.sourceDynamicRange, outputWidth: input.outputWidth,
+        sourceDynamicRange: model === "ruby" ? (pricingInput.sourceDynamicRange ?? input.sourceDynamicRange) : undefined, outputWidth: input.outputWidth,
         outputHeight: input.outputHeight, targetFramerate: input.targetFramerate,
         inputType: input.sourceVideoAssetId ? "video" : input.startFrameAssetId ? "image" : input.inputType
       });
