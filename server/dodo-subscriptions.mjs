@@ -457,7 +457,7 @@ export function processNextDodoWebhook(db, { env = process.env } = {}) {
             (id,user_id,amount,event_type,description,reference_id,idempotency_key,metadata_json)
             VALUES(?,?,?,'admin_adjustment',?,?,?,?)`)
             .run(randomUUID(),grantOwnerId,-creditsToReverse,"Dodo subscription refund credit reversal",paymentId,
-              "dodo-refund:"+refundId,json({refundProvider:"dodo",paymentId,refundId,amountMinor,currency,creditsReversed:creditsToReverse}));
+              "dodo-refund:"+refundId,safeJson({refundProvider:"dodo",paymentId,refundId,amountMinor,currency,creditsReversed:creditsToReverse}));
         }
         markProcessed();
         db.exec("COMMIT");
@@ -550,7 +550,7 @@ export function processNextDodoWebhook(db, { env = process.env } = {}) {
     db.prepare(`UPDATE billing_provider_events SET attempts=attempts+1,last_error=?,lease_owner=NULL,lease_expires_at=NULL
       WHERE id=? AND lease_owner=?`)
       .run(String(error?.code || "DODO_PROCESSING_FAILED").slice(0, 120), event.id, leaseOwner);
-    return { processed: false, retryable: true, eventId: event.event_id, errorCode: error?.code || "DODO_PROCESSING_FAILED", errorMessage: String(error?.message || "Dodo event processing failed").slice(0, 180) };
+    return { processed: false, retryable: true, eventId: event.event_id, errorCode: error?.code || "DODO_PROCESSING_FAILED" };
   }
 }
 
