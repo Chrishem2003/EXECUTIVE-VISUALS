@@ -257,3 +257,15 @@ test("registers Runway Model Router only from an explicit saved config and remot
   }), /RUNWAY_VIDEO_ROUTER_CONFIG/);
 });
 
+test("Runway Model Router worker can be composed without FAL credentials", () => {
+ const worker=createProviderAwareCloudVideoWorkerComposition({
+  ...base,createAdapters:undefined,
+  env:{
+   CLOUD_VIDEO_WORKER_ENABLED:"true",VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",
+   RUNWAY_MODEL_ROUTER_ENABLED:"true",RUNWAY_VIDEO_ROUTER_CONFIG:"production-video",
+   RUNWAY_API_KEY:"runway-test-key",RUNWAY_VIDEO_ALLOW_REMOTE:"true"
+  }
+ });
+ assert.deepEqual(worker.listSupported(),["runway:model-router"]);
+});
+
