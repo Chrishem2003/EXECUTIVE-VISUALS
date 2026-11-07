@@ -283,3 +283,9 @@ Official evidence:
 - https://docs.dev.runwayml.com/guides/pricing/
 - https://docs.dev.runwayml.com/guides/models/
 
+### GPT Image 2.6 pricing preflight implementation
+
+A standalone non-billable estimate module, `server/runway-image-pricing.mjs`, and deterministic tests now encode the published Flare/Sunburst pricing table for 1K/2K/4K, six aspect-ratio families, low/medium/high quality, 1–10 outputs and up to 16 reference images. The `auto` ratio path explicitly reserves the 4K square price. It returns `published_price_estimate`, `billable: false`, and `settlementEligible: false`.
+
+This is deliberately not wired into `generateImage`, checkout, billing settlement or provider selection. The Runway Dev image adapter, request/response validation, task polling, model-specific prompt/reference ownership, output ingestion, and actual-cost reconciliation are still required. Do not advertise GPT Image 2.6 as an executable model in the customer UI yet.
+
