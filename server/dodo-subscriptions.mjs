@@ -304,14 +304,14 @@ function findPlanForDodoProduct(db, productId, env = process.env) {
   return plans.find(plan => productIdForPlan(plan.code, env) === productId) || null;
 }
 
-function insertSubscriptionCredits(db, { userId, plan, subscriptionId, paymentId, periodEnd, idempotencyKey, description }) {
+function insertSubscriptionCredits(db, { userId, plan, subscriptionId, paymentId, paymentAmountMinor, currency, periodEnd, idempotencyKey, description }) {
   const amount = Number(plan.credits_per_period || 0);
   if (amount <= 0) return;
   db.prepare(`INSERT OR IGNORE INTO billing_credit_ledger
     (id,user_id,amount,event_type,description,reference_id,idempotency_key,expires_at,metadata_json)
     VALUES(?,?,?,'subscription_grant',?,?,?,?,?)`)
     .run(randomUUID(), userId, amount, description, subscriptionId, idempotencyKey,
-      periodEnd || null, safeJson({ provider: "dodo", subscriptionId, paymentId: paymentId || null, planId: plan.id }));
+      periodEnd || null, safeJson({ provider: "dodo", subscriptionId, paymentId: paymentId || null, paymentAmountMinor:Number(paymentAmountMinor)||null, currency:String(currency||"").toUpperCase()||null, planId: plan.id }));
 }
 
 export function processNextDodoWebhook(db, { env = process.env } = {}) {
@@ -386,7 +386,7 @@ export function processNextDodoWebhook(db, { env = process.env } = {}) {
             safeJson({ productId: data.product_id, lastProviderTimestamp: payload.timestamp }));
         insertSubscriptionCredits(db, {
           userId: checkout.user_id, plan, subscriptionId, paymentId: data.payment_id,
-          periodEnd, idempotencyKey: "dodo-subscription-active:" + subscriptionId + ":" + periodStart,
+          paymentAmountMinor:data.recurring_pre_tax_amount,currency:data.currency,periodEnd, idempotencyKey: "dodo-subscription-active:" + subscriptionId + ":" + periodStart,
           description: "Dodo subscription activation credits"
         });
         db.prepare("UPDATE billing_dodo_checkout_sessions SET status='active',updated_at=? WHERE id=?").run(now(), checkout.id);
@@ -416,7 +416,7 @@ export function processNextDodoWebhook(db, { env = process.env } = {}) {
             safeJson({ ...currentMetadata, lastProviderTimestamp: eventTime, pastDueEndsAt: null }), now(), local.id);
         insertSubscriptionCredits(db, {
           userId: local.user_id, plan, subscriptionId, paymentId: data.payment_id,
-          periodEnd: data.next_billing_date, idempotencyKey: "dodo-subscription-renewal:" + subscriptionId + ":" + data.payment_id,
+          paymentAmountMinor:data.recurring_pre_tax_amount,currency:data.currency,periodEnd: data.next_billing_date, idempotencyKey: "dodo-subscription-renewal:" + subscriptionId + ":" + data.payment_id,
           description: "Dodo subscription renewal credits"
         });
         markProcessed();
