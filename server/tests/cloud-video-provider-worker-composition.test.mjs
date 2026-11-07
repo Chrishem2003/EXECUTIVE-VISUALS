@@ -233,3 +233,27 @@ test("Google Omni adapter can be injected only behind all explicit gates", () =>
   });
   assert.ok(worker.listSupported().includes("google:gemini-omni-1.1-flash"));
 });
+
+test("registers Runway Model Router only from an explicit saved config and remote opt-in", () => {
+  const worker = createProviderAwareCloudVideoWorkerComposition({
+    ...base,
+    createAdapters: undefined,
+    env: {
+      ...env,
+      RUNWAY_MODEL_ROUTER_ENABLED: "true",
+      RUNWAY_VIDEO_ROUTER_CONFIG: "production-video",
+      RUNWAY_API_KEY: "runway-test-key",
+      RUNWAY_VIDEO_ALLOW_REMOTE: "true"
+    }
+  });
+  assert.ok(worker.listSupported().includes("runway:model-router"));
+  assert.throws(() => createProviderAwareCloudVideoWorkerComposition({
+    ...base,
+    createAdapters: undefined,
+    env: {
+      ...env, RUNWAY_MODEL_ROUTER_ENABLED: "true",
+      RUNWAY_API_KEY: "runway-test-key", RUNWAY_VIDEO_ALLOW_REMOTE: "true"
+    }
+  }), /RUNWAY_VIDEO_ROUTER_CONFIG/);
+});
+
