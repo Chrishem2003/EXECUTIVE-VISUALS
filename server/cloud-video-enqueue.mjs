@@ -26,7 +26,8 @@ export function createCloudVideoEnqueue({
   serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY,
   fetchImpl = globalThis.fetch,
   timeoutMs = 15000,
-  env = process.env
+  env = process.env,
+  resolveRunwaySourceMetadata
 } = {}) {
   if (!url || !serviceRoleKey) throw new Error("Cloud video enqueue requires server-side SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.");
   if (typeof fetchImpl !== "function") throw new Error("Cloud video enqueue requires a fetch implementation.");
@@ -124,9 +125,39 @@ export function createCloudVideoEnqueue({
         disabled.code = "GEMINI_OMNI_REMOTE_DISABLED";
         throw disabled;
       }
+      let verifiedSourceMetadata = null;
+      if (runwayEditEnabled || runwayUpscaleEnabled) {
+        if (typeof resolveRunwaySourceMetadata !== "function") {
+          const unavailable = new Error("Runway source operations require a server-side media probe and owner-scoped asset resolver.");
+          unavailable.code = "VIDEO_SOURCE_METADATA_UNAVAILABLE";
+          throw unavailable;
+        }
+        verifiedSourceMetadata = await resolveRunwaySourceMetadata({
+          ownerId, projectId, assetId: input.sourceVideoAssetId
+        });
+        if (!verifiedSourceMetadata || !["video/mp4", "video/quicktime", "video/webm"].includes(verifiedSourceMetadata.mediaType) ||
+            !Number.isFinite(verifiedSourceMetadata.durationSeconds) ||
+            verifiedSourceMetadata.durationSeconds < 1 || verifiedSourceMetadata.durationSeconds > 30) {
+          const invalid = new Error("The source asset must have verified video metadata and a duration from 1 to 30 seconds.");
+          invalid.code = "VIDEO_SOURCE_METADATA_INVALID";
+          throw invalid;
+        }
+        if (runwayUpscaleEnabled && (!Number.isSafeInteger(verifiedSourceMetadata.frameCount) ||
+            verifiedSourceMetadata.frameCount < 1 || verifiedSourceMetadata.frameCount > 1000000)) {
+          const invalid = new Error("Video upscaling requires a server-probed frame count for accurate credit reservation.");
+          invalid.code = "VIDEO_SOURCE_METADATA_INVALID";
+          throw invalid;
+        }
+      }
+      const pricingInput = verifiedSourceMetadata ? {
+        ...input,
+        durationSeconds: verifiedSourceMetadata.durationSeconds,
+        inputVideoSeconds: verifiedSourceMetadata.durationSeconds,
+        outputFrames: verifiedSourceMetadata.frameCount
+      } : input;
       const estimate = estimateVideoGenerationCost({
         provider, model, operation: input.operation || (input.startFrameAssetId ? "image-to-video" : "text-to-video"),
-        durationSeconds: input.durationSeconds,
+        durationSeconds: pricingInput.durationSeconds,
         outputFormat: input.outputFormat, resolution: input.resolution, audio: input.audio,
         inputVideoSeconds: input.inputVideoSeconds, referenceVideoSeconds: input.referenceVideoSeconds,
         referenceImageCount: input.referenceImageCount, referenceAudioCount: input.referenceAudioCount,
@@ -168,8 +199,8 @@ export function createCloudVideoEnqueue({
           invalid.code = "VIDEO_GENERATION_UNSUPPORTED_CAPABILITY";
           throw invalid;
         }
-        if (!Number.isInteger(input.durationSeconds) || input.durationSeconds < 1 || input.durationSeconds > 30) {
-          const invalid = new Error("Aleph2 source video duration must be between 1 and 30 seconds.");
+        if (!Number.isFinite(verifiedSourceMetadata?.durationSeconds) || verifiedSourceMetadata.durationSeconds < 1 || verifiedSourceMetadata.durationSeconds > 30) {
+          const invalid = new Error("Aleph2 source video duration must be server-verified and between 1 and 30 seconds.");
           invalid.code = "VIDEO_PRICE_DURATION_INVALID";
           throw invalid;
         }
@@ -178,14 +209,14 @@ export function createCloudVideoEnqueue({
           throw new Error("Aleph2 accepts at most five keyframe guidance assets.");
         }
       } else if (runwayUpscaleEnabled) {
-        if (!input.sourceVideoAssetId || !Number.isInteger(input.durationSeconds) ||
-            input.durationSeconds < 1 || input.durationSeconds > 30) {
+        if (!input.sourceVideoAssetId || !Number.isFinite(verifiedSourceMetadata?.durationSeconds) ||
+            verifiedSourceMetadata.durationSeconds < 1 || verifiedSourceMetadata.durationSeconds > 30) {
           const invalid = new Error("Magnific video upscaling requires an authorized source video no longer than 30 seconds.");
           invalid.code = "VIDEO_GENERATION_UNSUPPORTED_CAPABILITY";
           throw invalid;
         }
-        if (!Number.isSafeInteger(input.outputFrames) || input.outputFrames < 1 || input.outputFrames > 1000000) {
-          const invalid = new Error("Magnific video upscaling requires a probed output frame count for safe credit reservation.");
+        if (!Number.isSafeInteger(verifiedSourceMetadata?.frameCount) || verifiedSourceMetadata.frameCount < 1 || verifiedSourceMetadata.frameCount > 1000000) {
+          const invalid = new Error("Magnific video upscaling requires a server-probed output frame count for safe credit reservation.");
           invalid.code = "VIDEO_PRICE_INPUT_REQUIRED";
           throw invalid;
         }
@@ -246,6 +277,10 @@ export function createCloudVideoEnqueue({
         startFrameAssetId: input.firstFrameAssetId ?? input.startFrameAssetId,
         endFrameAssetId: input.lastFrameAssetId ?? input.endFrameAssetId,
         referenceAssetIds: input.referenceImageAssetIds ?? input.referenceAssetIds
+      } : verifiedSourceMetadata ? {
+        ...input,
+        durationSeconds: verifiedSourceMetadata.durationSeconds,
+        ...(runwayUpscaleEnabled ? { outputFrames: verifiedSourceMetadata.frameCount, resolution: input.resolution ?? "2k" } : {})
       } : input;
       const normalizedRequest = normalizeVideoGenerationRequest(capabilityInput);
       assertVideoCapabilities(normalizedRequest, modelRecord.capabilities);
