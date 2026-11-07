@@ -130,7 +130,8 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     const audioFormat=String(body.audioFormat||"mp3");
     const numVariants=Number(body.numVariants??1);
     const preserveSpeech=body.preserveSpeech!==false;
-    if(audioOperation&&(!["mp3","wav","flac"].includes(audioFormat)||!Number.isInteger(numVariants)||numVariants<1||numVariants>4||typeof preserveSpeech!=="boolean")) {
+    if(audioOperation&&(!["mp3","wav","flac"].includes(audioFormat)||!Number.isInteger(numVariants)||numVariants<1||numVariants>4||
+       body.preserveSpeech!==undefined&&typeof body.preserveSpeech!=="boolean")) {
       return response(400,{error:{code:"TRANSFORMATION_AUDIO_OPTIONS_INVALID",message:"Choose MP3, WAV or FLAC, 1–4 variants and a valid speech-preservation setting."}});
     }
     if(body.rightsConfirmed!==true)return response(403,{error:{code:"MEDIA_RIGHTS_REQUIRED",message:"Confirm rights to use the source and reference media."}});
