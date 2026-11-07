@@ -257,7 +257,7 @@ export function receiveDodoWebhook(db, {
     minimal={
       type,timestamp:eventTimestamp,
       data:{payload_type:"Refund",refund_id:refundId,payment_id:paymentId,amount,currency,
-        status:String(data.status||"succeeded"),customer_id:String(data.customer?.customer_id||"")}
+        status:String(data.status||"succeeded"),customer_id:String(data.customer?.customer_id||""),customer:{customer_id:String(data.customer?.customer_id||"")}}
     };
   }else{
     if(!SUBSCRIPTION_EVENTS.has(type))throw fail("Dodo webhook event is unsupported or malformed.","DODO_WEBHOOK_INVALID");
