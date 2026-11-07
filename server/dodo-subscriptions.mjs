@@ -359,7 +359,7 @@ export function processNextDodoWebhook(db, { env = process.env } = {}) {
       return { processed: true, failed: true, eventId: event.event_id };
     }
     if (type === "subscription.update_payment_method") {
-      db.prepare("UPDATE billing_provider_events SET processed_at=?,last_error=NULL WHERE id=?").run(now(), event.id);
+      markProcessed();
       return { processed: true, eventId: event.event_id };
     }
     const status = statusForDodoEvent(type, data.status);
@@ -392,7 +392,7 @@ export function processNextDodoWebhook(db, { env = process.env } = {}) {
           description: "Dodo subscription activation credits"
         });
         db.prepare("UPDATE billing_dodo_checkout_sessions SET status='active',updated_at=? WHERE id=?").run(now(), checkout.id);
-        db.prepare("UPDATE billing_provider_events SET processed_at=?,last_error=NULL WHERE id=?").run(now(), event.id);
+        markProcessed();
         db.exec("COMMIT");
       } catch (error) { db.exec("ROLLBACK"); throw error; }
       return { processed: true, activated: true, eventId: event.event_id };
@@ -401,7 +401,7 @@ export function processNextDodoWebhook(db, { env = process.env } = {}) {
     const currentMetadata = parseJson(local.metadata_json);
     const eventTime = String(payload.timestamp || "");
     if (currentMetadata.lastProviderTimestamp && eventTime && eventTime < currentMetadata.lastProviderTimestamp) {
-      db.prepare("UPDATE billing_provider_events SET processed_at=?,last_error=NULL WHERE id=?").run(now(), event.id);
+      markProcessed();
       return { processed: true, stale: true, eventId: event.event_id };
     }
     if (type === "subscription.renewed") {
@@ -421,7 +421,7 @@ export function processNextDodoWebhook(db, { env = process.env } = {}) {
           periodEnd: data.next_billing_date, idempotencyKey: "dodo-subscription-renewal:" + subscriptionId + ":" + data.payment_id,
           description: "Dodo subscription renewal credits"
         });
-        db.prepare("UPDATE billing_provider_events SET processed_at=?,last_error=NULL WHERE id=?").run(now(), event.id);
+        markProcessed();
         db.exec("COMMIT");
       } catch (error) { db.exec("ROLLBACK"); throw error; }
       return { processed: true, renewed: true, eventId: event.event_id };
@@ -442,7 +442,7 @@ export function processNextDodoWebhook(db, { env = process.env } = {}) {
           safeJson({ ...currentMetadata, lastProviderTimestamp: eventTime,
             pastDueEndsAt: data.past_due_ends_at || currentMetadata.pastDueEndsAt || null }), now(), local.id);
     }
-    db.prepare("UPDATE billing_provider_events SET processed_at=?,last_error=NULL WHERE id=?").run(now(), event.id);
+    markProcessed();
     return { processed: true, status, eventId: event.event_id };
   } catch (error) {
     db.prepare(`UPDATE billing_provider_events SET attempts=attempts+1,last_error=?,lease_owner=NULL,lease_expires_at=NULL
