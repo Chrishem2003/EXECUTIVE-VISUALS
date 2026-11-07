@@ -85,7 +85,7 @@ test("video provider catalog exposes the configured adapter's actual model capab
  assert.deepEqual(video.modelCapabilities.aspectRatios,["16:9","9:16","1:1"]);
  assert.deepEqual(video.modelCapabilities.resolutions,["provider_default"]);
  assert.equal(video.modelCapabilities.negativePrompt,false);
- assert.equal(video.modelCapabilities.referenceImages,false);
+ assert.equal(video.modelCapabilities.referenceImages,true);
  const configuredReference=getProviderCatalog({FAL_VIDEO_IMAGE_INPUT_FIELD:"image_url"});
  assert.equal(configuredReference.providers.find(item=>item.id==="video").modelCapabilities.referenceImages,true);
  assert.equal(JSON.stringify(unconfigured).includes("secret"),false);
