@@ -97,3 +97,38 @@ test("Runway source resolver rejects image assets for video source operations", 
     error => error.code === "VIDEO_INPUT_ASSET_TYPE_INVALID"
   );
 });
+
+
+test("Runway video edits resolve ordered keyframe images from the same private project", async () => {
+  const imageOne = "44444444-4444-4444-8444-444444444444";
+  const imageTwo = "55555555-5555-4555-8555-555555555555";
+  const imageBytes = Buffer.alloc(2048, 9);
+  const assetById = new Map([
+    [ASSET, { id: ASSET, ownerId: OWNER, projectId: PROJECT, name: "source.mp4", mediaType: "video/mp4", size: bytes.length, storageBucket: "executive-visuals-media", objectPath: PROJECT + "/" + ASSET + "/original.mp4" }],
+    [imageOne, { id: imageOne, ownerId: OWNER, projectId: PROJECT, name: "frame-one.png", mediaType: "image/png", size: imageBytes.length, storageBucket: "executive-visuals-media", objectPath: PROJECT + "/" + imageOne + "/original.png" }],
+    [imageTwo, { id: imageTwo, ownerId: OWNER, projectId: PROJECT, name: "frame-two.png", mediaType: "image/png", size: imageBytes.length, storageBucket: "executive-visuals-media", objectPath: PROJECT + "/" + imageTwo + "/original.png" }]
+  ]);
+  const assets = {
+    async get({ assetId }) { return assetById.get(assetId); },
+    async createSignedUrl({ assetId }) {
+      return { asset: assetById.get(assetId), url: "https://storage.example.com/storage/v1/object/sign/private/" + assetId + "?token=valid" };
+    }
+  };
+  const resolver = createRunwaySourceAssetResolver({
+    assets, supabaseUrl: "https://storage.example.com",
+    fetchImpl: async url => {
+      const image = String(url).includes(imageOne) || String(url).includes(imageTwo);
+      return new Response(image ? imageBytes : bytes, {
+        status: 200, headers: { "content-type": image ? "image/png" : "video/mp4", "content-length": String(image ? imageBytes.length : bytes.length) }
+      });
+    }
+  });
+  const result = await resolver.prepare({
+    operation: "video-to-video", projectId: PROJECT, sourceVideoAssetId: ASSET,
+    keyframes: [{ assetId: imageOne, at: 1.25 }, { assetId: imageTwo, at: 8.5 }]
+  }, { job: { owner_id: OWNER } });
+  assert.equal(result.keyframes.length, 2);
+  assert.deepEqual(result.keyframes.map(frame => frame.at), [1.25, 8.5]);
+  assert.deepEqual(result.keyframes.map(frame => frame.mimeType), ["image/png", "image/png"]);
+  assert.equal(result.keyframes[0].buffer.length, imageBytes.length);
+});
