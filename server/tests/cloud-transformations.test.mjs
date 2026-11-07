@@ -24,7 +24,7 @@ function fixture({canWrite=true,readiness={}}={}){
   if(table==="create_video_generation_budget_approval"&&method==="POST"){
    const approval=JSON.parse(options.body);state.approvals.push(approval);result=approval.p_approval_id;
   }else if(table==="enqueue_video_generation_job"&&method==="POST"){
-   state.enqueueCalls.push(JSON.parse(options.body));result={job_id:"55555555-5555-4555-8555-555555555555",job_status:"queued",idempotent_replay:false};
+   state.enqueueCalls.push(JSON.parse(options.body));result=[{job_id:"55555555-5555-4555-8555-555555555555",job_status:"queued",idempotent_replay:false,budget_reservation_id:"66666666-6666-4666-8666-666666666666"}];
   }else if(table==="jobs"){
    if(method==="GET"){
     result=state.jobs.filter(row=>{
@@ -121,4 +121,23 @@ test("Aleph 2 submit rejects changed transformation inputs after approval withou
  assert.equal(submit.status,409);
  assert.equal(submit.body.error.code,"TRANSFORMATION_APPROVAL_REQUEST_MISMATCH");
  assert.equal(f.state.enqueueCalls.length,0);
+});
+
+
+test("Aleph 2 transformation approval and submit use the same durable approval and request hash",async()=>{
+ const readiness={adapterVerified:true,workerAvailable:true,privateStorageVerified:true,durableCheckpointsAvailable:true,costPolicyVerified:true,consentVerifierAvailable:true,visualQaAvailable:true,cloudSchemaApplied:true};
+ const f=fixture({readiness});
+ const created=await f.api.handle({method:"POST",path:"/api/cloud/transformations",ownerId:owner,body:f.body,idempotencyKey:"cloud-transform-008"});
+ const id=created.body.plan.id;
+ const approved=await f.api.handle({method:"POST",path:"/api/cloud/transformations/"+id+"/approve",ownerId:owner,body:{approvedBudgetMicros:3000000,currency:"USD"}});
+ assert.equal(approved.status,200);
+ const submitted=await f.api.handle({method:"POST",path:"/api/cloud/transformations/"+id+"/submit",ownerId:owner,body:{}});
+ assert.equal(submitted.status,202);
+ assert.equal(f.state.approvals.length,1);
+ assert.equal(f.state.enqueueCalls.length,1);
+ assert.equal(f.state.enqueueCalls[0].p_budget_approval_id,f.state.approvals[0].p_approval_id);
+ assert.equal(f.state.enqueueCalls[0].p_request_hash,f.state.approvals[0].p_request_hash);
+ assert.equal(f.state.enqueueCalls[0].p_model,"aleph2");
+ assert.equal(f.state.enqueueCalls[0].p_reserved_amount,3);
+ assert.equal(submitted.body.job.status,"queued");
 });
