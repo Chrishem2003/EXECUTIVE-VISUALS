@@ -240,7 +240,7 @@ test("Dodo customer portal readiness remains independent from new subscription c
   assert.equal(dodoCustomerPortalEnabled(env),true);
   assert.equal(dodoSubscriptionCheckoutEnabled({...env,BILLING_ENFORCEMENT_ENABLED:"false"}),false);
   assert.equal(dodoCustomerPortalEnabled({...env,BILLING_ENFORCEMENT_ENABLED:"false"}),true);
-  assert.equal(dodoCustomerPortalEnabled({...env,DODO_MERCHANT_APPROVED:"false"}),false);
+  assert.equal(dodoCustomerPortalEnabled({...env,DODO_MERCHANT_APPROVED:"false"}),true);
 });
 
 
