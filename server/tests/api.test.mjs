@@ -45,6 +45,12 @@ test("health reports local storage and media-engine availability without secrets
   const body=await response.json();
   assert.equal(body.status,"ok");
   assert.equal(body.storage,"local-disk");
+  assert.equal(body.database,"sqlite");
+  assert.equal(body.platform.primaryDatabase,"sqlite");
+  assert.equal(body.platform.cloudWorkspace.enabled,false);
+  assert.equal(body.platform.cloudWorkspace.objectStorage,"disabled");
+  assert.equal(body.platform.billing.recurringSubscriptionsEnabled,false);
+  assert.equal(body.platform.workers.enabled,false);
   assert.equal("SUPABASE_SERVICE_ROLE_KEY" in body,false);
   assert.equal(response.headers.get("x-frame-options"),"DENY");
   assert.equal(response.headers.get("referrer-policy"),"strict-origin-when-cross-origin");
