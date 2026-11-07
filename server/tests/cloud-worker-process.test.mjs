@@ -35,3 +35,18 @@ test("cloud worker supervisor waits for all families and reports individual fail
  await supervisor.start();await supervisor.stop();
  assert.deepEqual(calls,["failed","completed"]);assert.deepEqual(errors,["queue unavailable"]);
 });
+
+test("cloud video worker may be configured with Runway Model Router without FAL credentials", () => {
+ const config=readCloudWorkerConfig({
+  ...env,CLOUD_MEDIA_WORKER_ENABLED:"false",CLOUD_TIMELINE_WORKER_ENABLED:"false",CLOUD_VIDEO_WORKER_ENABLED:"true",
+  VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",CLOUD_VIDEO_OUTPUT_HOSTS:"cdn.runwayml.com",
+  RUNWAY_MODEL_ROUTER_ENABLED:"true",RUNWAY_VIDEO_ALLOW_REMOTE:"true",RUNWAY_VIDEO_ROUTER_CONFIG:"production-video",RUNWAY_API_KEY:"runway-secret"
+ });
+ assert.equal(config.video,true);
+ assert.throws(()=>readCloudWorkerConfig({
+  ...env,CLOUD_MEDIA_WORKER_ENABLED:"false",CLOUD_TIMELINE_WORKER_ENABLED:"false",CLOUD_VIDEO_WORKER_ENABLED:"true",
+  VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",CLOUD_VIDEO_OUTPUT_HOSTS:"cdn.runwayml.com",
+  RUNWAY_MODEL_ROUTER_ENABLED:"true",RUNWAY_VIDEO_ALLOW_REMOTE:"true",RUNWAY_API_KEY:"runway-secret"
+ }),/saved config/);
+});
+
