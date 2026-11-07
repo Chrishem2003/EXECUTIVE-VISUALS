@@ -74,11 +74,27 @@ export async function executeCloudVideoGenerationJob({
     const providerInput = typeof selectedAdapter.prepareInput === "function"
       ? await selectedAdapter.prepareInput(input, { job })
       : input;
+    let preflightQuote = null;
+    if (typeof selectedAdapter.preflight === "function") {
+      try {
+        preflightQuote = await selectedAdapter.preflight(providerInput, { job });
+      } catch {
+        throw fail("Provider preflight could not establish a safe generation quote; no paid task was submitted.", "VIDEO_PREFLIGHT_REJECTED");
+      }
+      const reservedAmount = Number(job.estimated_cost?.amount);
+      if (!preflightQuote || preflightQuote.billable !== false ||
+          typeof preflightQuote.estimatedUsd !== "number" || !Number.isFinite(preflightQuote.estimatedUsd) ||
+          preflightQuote.estimatedUsd < 0 || preflightQuote.currency !== job.estimated_cost?.currency ||
+          !Number.isFinite(reservedAmount) || preflightQuote.estimatedUsd > reservedAmount ||
+          typeof preflightQuote.model !== "string" || !preflightQuote.model.trim()) {
+        throw fail("Provider preflight quote is invalid or exceeds the approved reservation; no paid task was submitted.", "VIDEO_PREFLIGHT_REJECTED");
+      }
+    }
     const began = await ledger.begin(job.id, workerId);
     if (!began) throw fail("Another worker owns the provider submission transition.", "VIDEO_SUBMISSION_IN_PROGRESS");
     let submitted;
     try {
-      submitted = await selectedAdapter.submit(providerInput, { job });
+      submitted = await selectedAdapter.submit(providerInput, { job, preflightQuote });
     } catch (error) {
       try { await ledger.markUnknown(job.id, workerId, error?.code || "PROVIDER_SUBMISSION_OUTCOME_UNKNOWN"); } catch {}
       throw fail("Provider submission outcome is unknown and has been quarantined.", "VIDEO_SUBMISSION_REQUIRES_RECONCILIATION");
@@ -98,7 +114,7 @@ export async function executeCloudVideoGenerationJob({
       if (Buffer.byteLength(metadataText) > 7000) {
         throw fail("Provider submission metadata exceeded the durable ledger limit.", "VIDEO_SUBMISSION_METADATA_INVALID");
       }
-      recordMetadata = { acceptedStatus: submitted.status || "queued", ...submittedMetadata };
+      recordMetadata = { acceptedStatus: submitted.status || "queued", ...(preflightQuote ? { preflightQuote } : {}), ...submittedMetadata };
       const recorded = await ledger.record(job.id, workerId, submitted.taskId, recordMetadata);
       if (!recorded) throw new Error("Provider task ID was not recorded.");
     } catch {
