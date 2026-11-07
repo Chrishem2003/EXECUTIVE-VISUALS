@@ -92,6 +92,26 @@ test("video provider catalog exposes the configured adapter's actual model capab
 });
 
 
+test("Runway adapter exposes verified text-to-video models without advertising reference inputs",()=>{
+ const catalog=getProviderCatalog({
+  VIDEO_GATEWAY_PROVIDER:"runway",VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",
+  RUNWAYML_API_SECRET:"do-not-return",RUNWAY_VIDEO_MODEL:"seedance2_5"
+ });
+ const video=catalog.providers.find(item=>item.id==="video");
+ assert.equal(video.provider,"runway");
+ assert.equal(video.status,"ready");
+ assert.equal(video.model,"seedance2_5");
+ assert.equal(video.modelCapabilities.maxDurationSeconds,30);
+ assert.equal(video.modelCapabilities.referenceImages,false);
+ assert.ok(video.availableModels.some(model=>model.id==="kling_4"));
+ assert.equal(JSON.stringify(catalog).includes("do-not-return"),false);
+});
+test("Runway remains blocked without remote opt-in or credentials",()=>{
+ const noKey=getProviderCatalog({VIDEO_GATEWAY_PROVIDER:"runway",VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",RUNWAY_VIDEO_MODEL:"seedance2_5"});
+ assert.equal(noKey.providers.find(item=>item.id==="video").status,"needs_configuration");
+ const noOptIn=getProviderCatalog({VIDEO_GATEWAY_PROVIDER:"runway",VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"false",RUNWAYML_API_SECRET:"secret",RUNWAY_VIDEO_MODEL:"seedance2_5"});
+ assert.equal(noOptIn.providers.find(item=>item.id==="video").status,"remote_opt_in_required");
+});
 test("AI upscaler is visible as a separate local capability and remains unavailable without a configured engine",()=>{
  const catalog=getProviderCatalog({});
  const provider=catalog.providers.find(item=>item.id==="ai-upscale");

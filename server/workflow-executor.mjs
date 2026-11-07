@@ -6,6 +6,7 @@ import { searchProjectKnowledge, formatKnowledgeForWorkflow } from "./knowledge-
 import { generateText } from "./ai-gateway.mjs";
 import { generateImage } from "./image-gateway.mjs";
 import { generateFalVideo, getFalVideoCapabilities } from "./fal-video-gateway.mjs";
+import { generateRunwayVideo, getRunwayVideoCapabilities } from "./runway-video-gateway.mjs";
 import { storeGeneratedImage, storeGeneratedVideo, storeGeneratedAudio } from "./generated-assets.mjs";
 import { assertIdentityUseAllowed } from "./identity-consent.mjs";
 import { generateVoice, transcribeVoice } from "./voice-gateway.mjs";
@@ -281,6 +282,8 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
      if(!validSignature)throw Object.assign(new Error("Video reference must be a valid JPEG, PNG or WebP image."),{code:"VIDEO_GATEWAY_INVALID_INPUT"});
      referenceImageDataUrl="data:"+mime+";base64,"+buffer.toString("base64");
     }
+    const provider=requireExecutionProvider("video.generate","VIDEO_GATEWAY_ALLOW_REMOTE");
+    const selectedModel=provider.provider==="runway"?String(config.model??provider.model??""):"";
     const generationRequest=normalizeVideoGenerationRequest({
      projectId:String(job.project_id||run.project_id||""),
      prompt,
@@ -289,18 +292,22 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
      resolution:String(config.resolution??"provider_default"),
      audioMode:String(config.audioMode??"provider_default"),
      referenceAssetIds:referenceId?[referenceId]:[],
+     ...(selectedModel?{model:selectedModel}:{}),
      negativePrompt:config.negativePrompt??values.negativePrompt,
      seed:config.seed??values.seed,
      startFrameAssetId:config.startFrameAssetId??values.startFrameAssetId,
      endFrameAssetId:config.endFrameAssetId??values.endFrameAssetId,
      motionReferenceAssetId:config.motionReferenceAssetId??values.motionReferenceAssetId,
     });
-    assertVideoCapabilities(generationRequest,getFalVideoCapabilities());
+    const capabilities=provider.provider==="runway"?getRunwayVideoCapabilities(selectedModel):getFalVideoCapabilities();
+    assertVideoCapabilities(generationRequest,capabilities);
+    if(provider.provider==="runway"&&referenceId)throw Object.assign(new Error("The current Runway adapter supports text-to-video only. Image-to-video will be enabled after its model-specific input contract is implemented."),{code:"VIDEO_GATEWAY_UNSUPPORTED_INPUT"});
     const usageStarted=Date.now();
-    const provider=requireExecutionProvider("video.generate","VIDEO_GATEWAY_ALLOW_REMOTE");
     reserveRemoteRequest(db,{ownerId:job.owner_id,projectId:job.project_id||null,jobId:job.id,provider,capability:"video.generate"});
-    const result=await generateFalVideo({prompt:generationRequest.prompt,duration:generationRequest.durationSeconds,aspectRatio:generationRequest.aspectRatio,referenceImageDataUrl});
-    const provenance=createVideoRequestProvenance(generationRequest,{provider:result.provider,model:result.model,adapterVersion:"fal-video-gateway-v1"});
+    const result=provider.provider==="runway"
+     ?await generateRunwayVideo({model:selectedModel,prompt:generationRequest.prompt,durationSeconds:generationRequest.durationSeconds,aspectRatio:generationRequest.aspectRatio,resolution:generationRequest.resolution})
+     :await generateFalVideo({prompt:generationRequest.prompt,duration:generationRequest.durationSeconds,aspectRatio:generationRequest.aspectRatio,referenceImageDataUrl});
+    const provenance=createVideoRequestProvenance(generationRequest,{provider:result.provider,model:result.model,adapterVersion:result.adapterVersion||"fal-video-gateway-v1"});
     recordModelUsage(db,{ownerId:job.owner_id,projectId:job.project_id||null,jobId:job.id,workflowRunId:runId,nodeId,provider:provider.provider,capability:"video.generate",model:result.model,usage:result.usage,durationMs:Date.now()-usageStarted});
     const asset=await storeGeneratedVideo({db,mediaRoot,ownerId:job.owner_id,projectId:job.project_id||null,jobId:job.id,prompt:generationRequest.prompt,model:result.model,provenance,buffer:result.buffer});
     output=nodeOutput(node,asset.id);output.asset=asset.id;output.assetId=asset.id;output.mimeType=asset.mediaType;output.sha256=asset.sha256;output.usage=result.usage;

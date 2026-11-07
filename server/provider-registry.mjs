@@ -1,6 +1,7 @@
 import { getFalVideoCapabilities } from "./fal-video-gateway.mjs";
+import { getRunwayVideoCapabilities, listRunwayVideoModels } from "./runway-video-gateway.mjs";
 const LOOPBACKS=new Set(["localhost","127.0.0.1","::1","[::1]"]);
-function gatewayState({enabled,configured,url,allowRemote,model,provider,capabilities,reasonIfMissing="Set the server-side endpoint and model."}){
+function gatewayState({enabled,configured,url,allowRemote,model,provider,capabilities,id=provider,reasonIfMissing="Set the server-side endpoint and model."}){
  let local=false,validUrl=false;
  if(url){try{const parsed=new URL(url);local=LOOPBACKS.has(parsed.hostname.toLowerCase());validUrl=!parsed.username&&!parsed.password&&!parsed.search&&!parsed.hash&&(parsed.protocol==="https:"||local);}catch{}}
  let status="disabled",reason="Execution is disabled by server configuration.";
@@ -9,7 +10,7 @@ function gatewayState({enabled,configured,url,allowRemote,model,provider,capabil
   else if(!local&&!allowRemote){status="remote_opt_in_required";reason="Remote execution requires explicit server-side opt-in after reviewing provider pricing and data handling.";}
   else {status="ready";reason="Configured and enabled. No request has been submitted.";}
  }
- return {id:provider,provider,enabled:Boolean(enabled),configured:Boolean(configured&&validUrl),remote:validUrl&&!local,model:model||null,status,reason,capabilities};
+ return {id,provider,enabled:Boolean(enabled),configured:Boolean(configured&&validUrl),remote:validUrl&&!local,model:model||null,status,reason,capabilities};
 }
 export function getProviderCatalog(env=process.env,media={ffmpeg:false,ffprobe:false,aiUpscale:null}){
  const text=gatewayState({enabled:env.AI_GATEWAY_ENABLED==="true",configured:Boolean(env.AI_GATEWAY_URL&&env.AI_GATEWAY_MODEL),url:env.AI_GATEWAY_URL,allowRemote:env.AI_GATEWAY_ALLOW_REMOTE==="true",model:env.AI_GATEWAY_MODEL,provider:"text",capabilities:["text.generate","text.rewrite","text.translate","text.summarize"]});
@@ -17,8 +18,13 @@ export function getProviderCatalog(env=process.env,media={ffmpeg:false,ffprobe:f
  const imageFal=imageProvider==="fal";
  const image=gatewayState({enabled:env.IMAGE_GATEWAY_ENABLED==="true",configured:imageFal?Boolean(env.FAL_KEY&&env.FAL_IMAGE_MODEL):Boolean(env.IMAGE_GATEWAY_URL&&env.IMAGE_GATEWAY_MODEL),url:imageFal?"https://queue.fal.run":env.IMAGE_GATEWAY_URL,allowRemote:imageFal?env.IMAGE_GATEWAY_ALLOW_REMOTE==="true":env.IMAGE_GATEWAY_ALLOW_REMOTE==="true",model:imageFal?env.FAL_IMAGE_MODEL:env.IMAGE_GATEWAY_MODEL,provider:"image",capabilities:["image.generate"]});
  if(!imageFal&&imageProvider!=="openai-compatible"){image.status="needs_configuration";image.configured=false;image.reason="Choose a supported server-side image provider before enabling image generation."; }
- const video=gatewayState({enabled:env.VIDEO_GATEWAY_ENABLED==="true",configured:Boolean(env.FAL_KEY&&env.FAL_VIDEO_MODEL),url:"https://queue.fal.run",allowRemote:env.VIDEO_GATEWAY_ALLOW_REMOTE==="true",model:env.FAL_VIDEO_MODEL,provider:"video",capabilities:["video.generate"]});
- video.modelCapabilities=getFalVideoCapabilities({imageInputField:env.FAL_VIDEO_IMAGE_INPUT_FIELD||""});
+ const videoProvider=String(env.VIDEO_GATEWAY_PROVIDER||"fal").toLowerCase();
+ const video=videoProvider==="runway"
+  ?gatewayState({enabled:env.VIDEO_GATEWAY_ENABLED==="true",configured:Boolean(env.RUNWAYML_API_SECRET&&env.RUNWAY_VIDEO_MODEL),url:"https://api.dev.runwayml.com",id:"video",allowRemote:env.VIDEO_GATEWAY_ALLOW_REMOTE==="true",model:env.RUNWAY_VIDEO_MODEL,provider:"runway",capabilities:["video.generate"],reasonIfMissing:"Set RUNWAYML_API_SECRET and RUNWAY_VIDEO_MODEL on the server."})
+  :gatewayState({enabled:env.VIDEO_GATEWAY_ENABLED==="true",configured:Boolean(env.FAL_KEY&&env.FAL_VIDEO_MODEL),url:"https://queue.fal.run",id:"video",allowRemote:env.VIDEO_GATEWAY_ALLOW_REMOTE==="true",model:env.FAL_VIDEO_MODEL,provider:"fal",capabilities:["video.generate"],reasonIfMissing:"Set FAL_KEY and FAL_VIDEO_MODEL on the server."});
+ if(videoProvider!=="runway"&&videoProvider!=="fal"){video.status="needs_configuration";video.configured=false;video.reason="VIDEO_GATEWAY_PROVIDER must be runway or fal.";}
+ video.modelCapabilities=videoProvider==="runway"?getRunwayVideoCapabilities(env.RUNWAY_VIDEO_MODEL||""):getFalVideoCapabilities({imageInputField:env.FAL_VIDEO_IMAGE_INPUT_FIELD||""});
+ video.availableModels=videoProvider==="runway"?listRunwayVideoModels():[];
  const voice=gatewayState({enabled:env.VOICE_GATEWAY_ENABLED==="true",configured:Boolean(env.VOICE_GATEWAY_URL&&env.VOICE_GATEWAY_MODEL),url:env.VOICE_GATEWAY_URL,allowRemote:env.VOICE_GATEWAY_ALLOW_REMOTE==="true",model:env.VOICE_GATEWAY_MODEL,provider:"voice",capabilities:["voice.generate"]});
  const transcription=gatewayState({enabled:env.VOICE_GATEWAY_ENABLED==="true"&&env.VOICE_TRANSCRIPTION_ENABLED==="true",configured:Boolean(env.VOICE_GATEWAY_URL&&(env.VOICE_TRANSCRIPTION_MODEL||env.VOICE_GATEWAY_MODEL)),url:env.VOICE_GATEWAY_URL,allowRemote:env.VOICE_GATEWAY_ALLOW_REMOTE==="true",model:env.VOICE_TRANSCRIPTION_MODEL||env.VOICE_GATEWAY_MODEL,provider:"transcription",capabilities:["voice.transcribe"]});
  const localMedia={id:"local-media",provider:"local",enabled:Boolean(media.ffmpeg&&media.ffprobe),configured:Boolean(media.ffmpeg&&media.ffprobe),remote:false,model:"FFmpeg / FFprobe",status:media.ffmpeg&&media.ffprobe?"ready":"unavailable",reason:media.ffmpeg&&media.ffprobe?"Local media tools are available.":"Install FFmpeg and FFprobe on the worker host.",capabilities:["media.probe","media.thumbnail","media.transcode","media.proxy","media.audio_extract","media.audio-clean","media.denoise","media.color","media.resize","media.interpolate","media.upscale","timeline.render"]};
