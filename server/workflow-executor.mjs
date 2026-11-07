@@ -232,7 +232,7 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
     if(!hasApprovedAncestor(graph,nodeId,outputs))throw Object.assign(new Error("A completed upstream human-approval node is required before image generation."),{code:"APPROVAL_REQUIRED"});
     let prompt=String(values.prompt??values.text??values.input??config.prompt??"");
     if(values.brand)throw Object.assign(new Error("Brand bundles are not supported by the configured image adapter."),{code:"IMAGE_GATEWAY_UNSUPPORTED_INPUT"});
-    const explicitReference=String(values.reference??values.image??values.referenceImage??config.referenceAssetId??"").trim();
+    const explicitReference=String((Array.isArray(values.reference)?values.reference[0]:values.reference)??values.image??values.referenceImage??config.referenceAssetId??"").trim();
     const continuity=applyShotContinuity(db,job,run,config,values,prompt,"likeness",explicitReference);
     prompt=continuity.prompt;
     const rawReferences=[values.references,values.reference].flatMap(value=>Array.isArray(value)?value:value?[value]:[]);
