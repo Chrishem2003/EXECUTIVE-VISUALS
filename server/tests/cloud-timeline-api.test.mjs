@@ -24,6 +24,46 @@ test("cloud timeline get and update use verified owner and optimistic revision",
 test("cloud render submission queues a durable job using current saved timeline revision",async()=>{const f=setup();const result=await f.api.handle({method:"POST",path:"/api/cloud/timelines/"+timelineId+"/render",ownerId:owner,body:{ownerId:editor,timelineId:"bad"},idempotencyKey:"render-1"});assert.equal(result.status,202);const inserted=f.calls.find(c=>c[0]==="fetch"&&c[1].includes("/jobs")&&c[2].method==="POST");const body=JSON.parse(inserted[2].body);assert.equal(body.owner_id,owner);assert.equal(body.input.timelineId,timelineId);assert.equal(body.input.timelineRevision,2);assert.equal(body.job_type,"timeline.render");});
 test("cloud render submission requires project editor authorization",async()=>{const f=setup({canWrite:false});const result=await f.api.handle({method:"POST",path:"/api/cloud/timelines/"+timelineId+"/render",ownerId:owner,body:{}});assert.equal(result.status,404);assert.equal(f.calls.some(c=>c[0]==="fetch"&&c[1].includes("/jobs")&&c[2].method==="POST"),false);});
 test("cloud render idempotency replays only the exact same timeline revision",async()=>{const existing=[{id:"623e4567-e89b-42d3-a456-426614174000",owner_id:owner,project_id:project,job_type:"timeline.render",status:"queued",input:{timelineId,timelineRevision:2}}];const f=setup({existing});const result=await f.api.handle({method:"POST",path:"/api/cloud/timelines/"+timelineId+"/render",ownerId:owner,idempotencyKey:"render-1"});assert.equal(result.status,200);assert.equal(result.body.idempotentReplay,true);assert.equal(f.calls.some(c=>c[0]==="fetch"&&c[1].endsWith("/jobs")),false);});
+test("Aleph 2 quote is non-mutating, source-probed and provider-priced",async()=>{
+ const calls=[];
+ const sourceAsset={id:"b23e4567-e89b-42d3-a456-426614174000",projectId:project,mediaType:"video/mp4"};
+ const api=createCloudTimelineApi({
+  url:"https://example.supabase.co",serviceRoleKey:"service-secret",
+  fetchImpl:async(url,options)=>{calls.push({url,options});return{ok:true,status:200,async text(){return"[]";}};},
+  timelineService:{timelines:{},assets:{async get(input){assert.deepEqual(input,{ownerId:owner,assetId:sourceAsset.id});return sourceAsset;}}},
+  authorize:async({ownerId,projectId,action})=>ownerId===owner&&projectId===project&&action==="write",
+  runwaySourceResolver:{async resolveMetadata(input){assert.deepEqual(input,{ownerId:owner,projectId:project,assetId:sourceAsset.id});return{ownerId:owner,projectId:project,assetId:sourceAsset.id,mediaType:"video/mp4",durationSeconds:10.2,frameCount:306,width:1920,height:1080,sourceDynamicRange:"sdr"};}}
+ });
+ const result=await api.handle({method:"POST",path:"/api/cloud/transformations/quote",ownerId:owner,body:{projectId:project,sourceAssetId:sourceAsset.id,operation:"vehicle_replace",prompt:"Replace the vehicle and preserve the original camera movement.",rightsConfirmed:true}});
+ assert.equal(result.status,200);
+ assert.equal(result.body.quote.provider,"runway");
+ assert.equal(result.body.quote.model,"aleph2");
+ assert.equal(result.body.quote.currency,"USD");
+ assert.ok(result.body.quote.estimatedCostMicros>=560000);
+ assert.equal(result.body.quote.source.durationSeconds,10.2);
+ assert.equal(result.body.quote.output.durationSeconds,11);
+ assert.equal(result.body.quote.billable,false);
+ assert.equal(result.body.quote.requiresApproval,true);
+ assert.ok(Date.parse(result.body.quote.expiresAt)>Date.now());
+ assert.equal(calls.length,0,"quote must not write approvals, jobs, reservations or provider submissions");
+});
+
+test("Aleph 2 quote requires editor access and explicit media rights",async()=>{
+ const sourceAsset={id:"b23e4567-e89b-42d3-a456-426614174000",projectId:project,mediaType:"video/mp4"};
+ const makeApi=canWrite=>createCloudTimelineApi({
+  url:"https://example.supabase.co",serviceRoleKey:"service-secret",
+  fetchImpl:async()=>({ok:true,status:200,async text(){return"[]";}}),
+  timelineService:{timelines:{},assets:{async get(){return sourceAsset;}}},
+  authorize:async()=>canWrite,
+  runwaySourceResolver:{async resolveMetadata(){return{mediaType:"video/mp4",durationSeconds:10,width:1920,height:1080,frameCount:300};}}
+ });
+ const denied=await makeApi(false).handle({method:"POST",path:"/api/cloud/transformations/quote",ownerId:owner,body:{projectId:project,sourceAssetId:sourceAsset.id,operation:"vehicle_replace",prompt:"Replace the vehicle safely.",rightsConfirmed:true}});
+ assert.equal(denied.status,404);
+ const noRights=await makeApi(true).handle({method:"POST",path:"/api/cloud/transformations/quote",ownerId:owner,body:{projectId:project,sourceAssetId:sourceAsset.id,operation:"vehicle_replace",prompt:"Replace the vehicle safely."}});
+ assert.equal(noRights.status,403);
+ assert.equal(noRights.body.error.code,"MEDIA_RIGHTS_REQUIRED");
+});
+
 test("Aleph 2 transformation draft rejects source durations below the provider minimum",async()=>{
  const f=setup();
  const result=await f.api.handle({
