@@ -19,7 +19,8 @@ import { resolve, relative, sep } from "node:path";
 import { buildShotContinuityPrompt, getShotContinuityReferenceIds } from "./shot-continuity.mjs";
 import { normalizeVideoGenerationRequest, assertVideoCapabilities, createVideoRequestProvenance } from "./video-generation-contract.mjs";
 import { buildMediaQualityReport } from "./media-quality.mjs";
-import { billingEnforcementEnabled, refundBillingCredits } from "./billing.mjs";\nimport { isLegacyVideoModelSelectable } from "./video-provider-registry.mjs";
+import { billingEnforcementEnabled, refundBillingCredits } from "./billing.mjs";
+import { isLegacyVideoModelSelectable } from "./video-provider-registry.mjs";
 
 const now=()=>new Date().toISOString();
 function normalizeRunwayRouterAspectRatio(value){
@@ -328,7 +329,8 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
      referenceImageDataUrl="data:"+mime+";base64,"+buffer.toString("base64");
     }
     const provider=requireExecutionProvider("video.generate","VIDEO_GATEWAY_ALLOW_REMOTE");
-    const selectedModel=provider.provider==="runway"?String(config.model??provider.model??""):"";\n    if(provider.provider==="runway"&&!isLegacyVideoModelSelectable(selectedModel))throw Object.assign(new Error("This video model is catalogued but not enabled for legacy synchronous execution. Use its governed cloud-worker adapter after the release gates are complete."),{code:"VIDEO_MODEL_EXECUTION_DISABLED"});
+    const selectedModel=provider.provider==="runway"?String(config.model??provider.model??""):"";
+    if(provider.provider==="runway"&&!isLegacyVideoModelSelectable(selectedModel))throw Object.assign(new Error("This video model is catalogued but not enabled for legacy synchronous execution. Use its governed cloud-worker adapter after the release gates are complete."),{code:"VIDEO_MODEL_EXECUTION_DISABLED"});
     const generationRequest=normalizeVideoGenerationRequest({
      projectId:String(job.project_id||run.project_id||""),
      prompt,
