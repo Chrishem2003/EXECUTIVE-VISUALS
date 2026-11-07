@@ -21,7 +21,7 @@ test("Aleph 2 approval RPC is service-role-only and requires an existing scoped 
   assert.ok(!migration.includes("as $" + "\n" + "begin"), "Trigger function must use a complete dollar-quote delimiter");
   assert.ok(!migration.includes("auth.role()"), "Do not use deprecated auth.role() authorization checks");
   assert.ok(!migration.includes("security definer"), "The service-only RPC must not bypass RLS");
-  assert.equal((migration.match(/create or replace function executive_visuals\\.enqueue_video_generation_job/g) || []).length, 1,
+  assert.equal((migration.split("create or replace function executive_visuals.enqueue_video_generation_job").length - 1), 1,
     "Migration must contain exactly one complete enqueue function definition");
 });
 
