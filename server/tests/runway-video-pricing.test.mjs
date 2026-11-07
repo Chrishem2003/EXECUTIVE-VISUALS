@@ -163,3 +163,12 @@ test("prices Gemini Omni 1.2 by output resolution, image/keyframe and input-vide
   assert.throws(()=>estimateRunwayVideoCredits({model:"gemini_omni_flash_1.2",durationSeconds:16,resolution:"720p",pricingDate:"2026-11-07"}),e=>e.code==="RUNWAY_PRICE_INVALID_INPUT");
   assert.throws(()=>estimateRunwayVideoCredits({model:"gemini_omni_flash_1.2",durationSeconds:5,resolution:"720p",referenceImageCount:5,hasStartFrame:true,pricingDate:"2026-11-07"}),e=>e.code==="RUNWAY_PRICE_INVALID_INPUT");
 });
+
+test("Gemini Omni 1.2 auto-duration reserves the documented 15-second maximum",()=>{
+  const estimate=estimateRunwayVideoCredits({model:"gemini_omni_flash_1.2",durationAuto:true,resolution:"720p",pricingDate:"2026-11-07"});
+  assert.equal(estimate.estimatedCredits,105);
+  assert.equal(estimate.durationAutoReservationSeconds,15);
+  assert.equal(estimate.billable,false);
+  assert.equal(estimate.settlementEligible,false);
+  assert.throws(()=>estimateRunwayVideoCredits({model:"gemini_omni_flash_1.2",durationAuto:true,durationSeconds:5,resolution:"720p",pricingDate:"2026-11-07"}),e=>e.code==="RUNWAY_PRICE_INVALID_INPUT");
+});
