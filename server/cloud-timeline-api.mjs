@@ -137,8 +137,7 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     const estimate=estimateVideoGenerationCost({
      provider:"runway",model:"aleph2",operation:"video-to-video",
      durationSeconds:generationInput.durationSeconds,inputVideoSeconds:metadata.durationSeconds,
-     inputType:"video",outputFormat:"mp4",resolution:"provider_default",
-     sourceWidth:metadata.width,sourceHeight:metadata.height,sourceDynamicRange:metadata.sourceDynamicRange
+     inputType:"video",outputFormat:"mp4",resolution:"provider_default"
     });
     const estimatedCostMicros=Math.ceil(Number(estimate.amount)*1000000);
     if(!Number.isSafeInteger(estimatedCostMicros)||estimatedCostMicros<1)return response(503,{error:{code:"VIDEO_PRICE_ESTIMATE_INVALID",message:"The provider returned an unusable cost estimate."}});
