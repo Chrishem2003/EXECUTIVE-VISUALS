@@ -144,17 +144,28 @@ export function createCloudVideoEnqueue({
           invalid.code = "VIDEO_SOURCE_METADATA_INVALID";
           throw invalid;
         }
+        const billableDurationSeconds = Math.ceil(verifiedSourceMetadata.durationSeconds);
+        if (input.durationSeconds !== billableDurationSeconds) {
+          const invalid = new Error("The submitted duration must match the server-probed, rounded-up source duration.");
+          invalid.code = "VIDEO_SOURCE_METADATA_MISMATCH";
+          throw invalid;
+        }
         if (runwayUpscaleEnabled && (!Number.isSafeInteger(verifiedSourceMetadata.frameCount) ||
             verifiedSourceMetadata.frameCount < 1 || verifiedSourceMetadata.frameCount > 1000000)) {
           const invalid = new Error("Video upscaling requires a server-probed frame count for accurate credit reservation.");
           invalid.code = "VIDEO_SOURCE_METADATA_INVALID";
           throw invalid;
         }
+        if (runwayUpscaleEnabled && input.outputFrames !== verifiedSourceMetadata.frameCount) {
+          const invalid = new Error("The submitted output frame count must match the server-probed source frame count.");
+          invalid.code = "VIDEO_SOURCE_METADATA_MISMATCH";
+          throw invalid;
+        }
       }
       const pricingInput = verifiedSourceMetadata ? {
         ...input,
-        durationSeconds: verifiedSourceMetadata.durationSeconds,
-        inputVideoSeconds: verifiedSourceMetadata.durationSeconds,
+        durationSeconds: Math.ceil(verifiedSourceMetadata.durationSeconds),
+        inputVideoSeconds: Math.ceil(verifiedSourceMetadata.durationSeconds),
         outputFrames: verifiedSourceMetadata.frameCount
       } : input;
       const estimate = estimateVideoGenerationCost({
