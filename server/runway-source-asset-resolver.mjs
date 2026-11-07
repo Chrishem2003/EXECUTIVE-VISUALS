@@ -146,11 +146,22 @@ export function createRunwaySourceAssetResolver({
           const image = await resolveAsset({ ownerId, projectId, assetId, kinds: "image" });
           referenceImages.push({ uri: image.url, role: "reference" });
         }
+        const sourceVideoId = input.sourceVideoAssetId || null;
         const videoIds = input.referenceVideoAssetIds || [];
-        if (!Array.isArray(videoIds) || videoIds.length > 2) {
-          throw fail("Runway Model Router accepts at most two owner-scoped reference videos.", "VIDEO_INPUT_ASSET_RESOLUTION_FAILED");
+        if (!Array.isArray(videoIds) || videoIds.length > (sourceVideoId ? 1 : 2) ||
+            sourceVideoId && videoIds.includes(sourceVideoId)) {
+          throw fail("Runway Model Router accepts one source video and at most one distinct reference video.", "VIDEO_INPUT_ASSET_RESOLUTION_FAILED");
         }
         const referenceVideos = [];
+        if (sourceVideoId) {
+          if (input.operation !== "video-to-video") {
+            throw fail("A source video is only valid for the video-to-video operation.", "VIDEO_INPUT_ASSET_RESOLUTION_FAILED");
+          }
+          const source = await resolveAsset({ ownerId, projectId, assetId: sourceVideoId, kinds: "video" });
+          referenceVideos.push({ uri: source.url, role: "source" });
+        } else if (input.operation === "video-to-video") {
+          throw fail("Video-to-video requires an owner-scoped source video asset.", "VIDEO_INPUT_ASSET_RESOLUTION_FAILED");
+        }
         for (const assetId of videoIds) {
           const video = await resolveAsset({ ownerId, projectId, assetId, kinds: "video" });
           referenceVideos.push({ uri: video.url, role: "reference" });
