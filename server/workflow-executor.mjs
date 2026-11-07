@@ -18,12 +18,20 @@ import { resolve, relative, sep } from "node:path";
 import { buildShotContinuityPrompt, getShotContinuityReferenceIds } from "./shot-continuity.mjs";
 import { normalizeVideoGenerationRequest, assertVideoCapabilities, createVideoRequestProvenance } from "./video-generation-contract.mjs";
 import { buildMediaQualityReport } from "./media-quality.mjs";
+import { refundBillingCredits } from "./billing.mjs";
 
 const now=()=>new Date().toISOString();
 function requireExecutionProvider(capability,remoteOptInVariable){
  return requireProviderForCapability(getProviderCatalog(),capability,{
   allowRemote:remoteOptInVariable?process.env[remoteOptInVariable]==="true":false
  });
+}
+function refundFailedNodeSpend(db,job,runId,nodeId,reason){
+ const prefix=job.id+":"+runId+":"+nodeId+":";
+ const spend=db.prepare("SELECT idempotency_key FROM billing_credit_ledger WHERE user_id=? AND event_type='generation_spend' AND substr(reference_id,1,?)=? ORDER BY created_at DESC LIMIT 1")
+  .get(job.owner_id,prefix.length,prefix);
+ if(!spend)return null;
+ return refundBillingCredits(db,{userId:job.owner_id,spendIdempotencyKey:spend.idempotency_key,reason});
 }
 export function hasApprovedAncestor(graph,nodeId,outputs){
  const parents=new Map(graph.nodes.map(node=>[node.id,[]]));
@@ -370,13 +378,17 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
    completedCount++;onProgress(Math.min(95,Math.round(completedCount/nodeCount*95)));
   }catch(error){
    const latestJob=db.prepare("SELECT status FROM jobs WHERE id=?").get(job.id);
+   if(error?.code!=="BILLING_SPEND_ALREADY_RESERVED"){
+    try{refundFailedNodeSpend(db,job,runId,nodeId,"Provider node failed: "+String(error?.code||"NODE_FAILED"));}
+    catch(refundError){process.stderr.write("Billing refund failed: "+String(refundError?.code||"REFUND_FAILED")+"\\n");}
+   }
    if(latestJob?.status==="cancelled"){
     saveNode(db,runId,nodeId,"skipped",{input:nodeInput,attempt});
     db.prepare("UPDATE workflow_runs SET status='cancelled',updated_at=?,completed_at=? WHERE id=?").run(now(),now(),runId);
     return {status:"cancelled",runId,completedNodes:completedCount,totalNodes:nodeCount};
    }
    const detail={code:error.code||"NODE_FAILED",message:error.message||"Workflow node failed."};
-   const blockedCodes=new Set(["ENGINE_UNAVAILABLE","APPROVAL_REQUIRED","PROVIDER_NOT_READY","AI_GATEWAY_DISABLED","AI_GATEWAY_CONFIG_INVALID","AI_GATEWAY_INSECURE_URL","AI_GATEWAY_REMOTE_DISABLED","IMAGE_GATEWAY_DISABLED","IMAGE_GATEWAY_CONFIG_INVALID","IMAGE_GATEWAY_INSECURE_URL","IMAGE_GATEWAY_REMOTE_DISABLED","IMAGE_GATEWAY_UNSUPPORTED_INPUT","VIDEO_GATEWAY_DISABLED","VIDEO_GATEWAY_CONFIG_INVALID","VIDEO_GATEWAY_REMOTE_DISABLED","VIDEO_GATEWAY_UNSUPPORTED_INPUT","VIDEO_GENERATION_UNSUPPORTED_CAPABILITY","VOICE_TRANSCRIPTION_DISABLED","VOICE_TRANSCRIPTION_INVALID_INPUT","VOICE_TRANSCRIPTION_TIMEOUT","VOICE_TRANSCRIPTION_UNAVAILABLE","VOICE_TRANSCRIPTION_RATE_LIMITED","VOICE_TRANSCRIPTION_SERVER_ERROR","VOICE_TRANSCRIPTION_REQUEST_REJECTED","VOICE_TRANSCRIPTION_INVALID_RESPONSE","VOICE_GATEWAY_DISABLED","VOICE_GATEWAY_CONFIG_INVALID","VOICE_GATEWAY_INSECURE_URL","VOICE_GATEWAY_REMOTE_DISABLED","VOICE_GATEWAY_TIMEOUT","VOICE_GATEWAY_UNAVAILABLE","VOICE_GATEWAY_RATE_LIMITED","VOICE_GATEWAY_SERVER_ERROR","VOICE_GATEWAY_REQUEST_REJECTED","VOICE_GATEWAY_INVALID_RESPONSE"]);
+   const blockedCodes=new Set(["ENGINE_UNAVAILABLE","APPROVAL_REQUIRED","PROVIDER_NOT_READY","AI_GATEWAY_DISABLED","AI_GATEWAY_CONFIG_INVALID","AI_GATEWAY_INSECURE_URL","AI_GATEWAY_REMOTE_DISABLED","IMAGE_GATEWAY_DISABLED","IMAGE_GATEWAY_CONFIG_INVALID","IMAGE_GATEWAY_INSECURE_URL","IMAGE_GATEWAY_REMOTE_DISABLED","IMAGE_GATEWAY_UNSUPPORTED_INPUT","VIDEO_GATEWAY_DISABLED","VIDEO_GATEWAY_CONFIG_INVALID","VIDEO_GATEWAY_REMOTE_DISABLED","VIDEO_GATEWAY_UNSUPPORTED_INPUT","VIDEO_GENERATION_UNSUPPORTED_CAPABILITY","VOICE_TRANSCRIPTION_DISABLED","VOICE_TRANSCRIPTION_INVALID_INPUT","VOICE_TRANSCRIPTION_TIMEOUT","VOICE_TRANSCRIPTION_UNAVAILABLE","VOICE_TRANSCRIPTION_RATE_LIMITED","VOICE_TRANSCRIPTION_SERVER_ERROR","VOICE_TRANSCRIPTION_REQUEST_REJECTED","VOICE_TRANSCRIPTION_INVALID_RESPONSE","VOICE_GATEWAY_DISABLED","VOICE_GATEWAY_CONFIG_INVALID","VOICE_GATEWAY_INSECURE_URL","VOICE_GATEWAY_REMOTE_DISABLED","VOICE_GATEWAY_TIMEOUT","VOICE_GATEWAY_UNAVAILABLE","VOICE_GATEWAY_RATE_LIMITED","VOICE_GATEWAY_SERVER_ERROR","VOICE_GATEWAY_REQUEST_REJECTED","VOICE_GATEWAY_INVALID_RESPONSE","BILLING_INSUFFICIENT_CREDITS","BILLING_ACCOUNT_SUSPENDED","BILLING_SPEND_ALREADY_RESERVED","BILLING_CREDIT_CONFIG_INVALID"]);
    const blocked=blockedCodes.has(detail.code)||detail.code.startsWith("REMOTE_USAGE_");
    saveNode(db,runId,nodeId,blocked?"blocked":"failed",{input:nodeInput,error:detail,attempt});
    const status=blocked?"blocked":completedCount>0?"partial":"failed";
