@@ -6,6 +6,8 @@ import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openDatabase, json } from "../db.mjs";
+import { saveBillingPlan } from "../billing.mjs";
+import { createBillingPurchaseOrder } from "../billing-webhooks.mjs";
 
 const port=await new Promise(resolve=>{const probe=createServer();probe.listen(0,"127.0.0.1",()=>{const address=probe.address();probe.close(()=>resolve(address.port));});});
 const dataDir=await mkdtemp(join(tmpdir(),"ev-api-test-"));
@@ -604,4 +606,27 @@ test("administrator APIs enforce allowlisting and manage plans, subscriptions, c
   const suspended=await request("/api/admin/users/"+memberId+"/status",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({status:"suspended"})},adminCookie);
   assert.equal(suspended.status,200);
   assert.equal((await request("/api/billing/overview",{},memberCookie)).status,403);
+});
+
+
+test("billing payment order status is authenticated and scoped to its owner",async()=>{
+  const ownerCookie=await register("payment-order-owner@example.test");
+  const strangerCookie=await register("payment-order-stranger@example.test");
+  const me=await request("/api/me",{},ownerCookie);
+  const ownerId=(await me.json()).user.id;
+  const db=openDatabase(join(dataDir,"executive-visuals.sqlite"));
+  let order;
+  try{
+    const plan=saveBillingPlan(db,{code:"order-test",name:"Order Test",amountMinor:50000,currency:"UGX",interval:"one_time",creditsPerPeriod:120});
+    order=createBillingPurchaseOrder(db,{userId:ownerId,planId:plan.id});
+  }finally{db.close();}
+  assert.equal((await fetch(base+"/api/billing/orders/"+order.txRef)).status,401);
+  const own=await request("/api/billing/orders/"+order.txRef,{},ownerCookie);
+  assert.equal(own.status,200);
+  const body=(await own.json()).order;
+  assert.equal(body.txRef,order.txRef);
+  assert.equal(body.status,"pending");
+  assert.equal(body.amountMinor,50000);
+  const other=await request("/api/billing/orders/"+order.txRef,{},strangerCookie);
+  assert.equal(other.status,404);
 });
