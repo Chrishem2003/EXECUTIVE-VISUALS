@@ -142,3 +142,22 @@ Official contracts:
 - https://docs.dev.runwayml.com/model-routers/generating/
 - https://docs.dev.runwayml.com/api/
 - https://docs.dev.runwayml.com/guides/pricing/
+
+
+### Runway task-cost contract correction (2026-11-07)
+
+The current Runway Dev integration guide and API reference now make the billing lifecycle explicit:
+
+- Router dry-run: `routing.estimatedCost.credits` is an estimate only. A dry-run creates no task and charges no generation credits.
+- Live task creation: the returned task includes `estimatedCost.credits`, the maximum it may charge.
+- Completed task: `GET /v1/tasks/{id}` reports `cost.credits`, the realized charge. This is the authoritative settlement field.
+- Routed task metadata identifies the selected model, provider, config and routing settings. The adapter stores that routing evidence with the durable task submission record.
+- The adapter now exposes a `preflight(input)` method which hardcodes `dryRun: true`, rejects unexpected task IDs, and returns a non-billable quote with the selected model and estimate.
+- Settlement now reads only the completed task's `cost.credits`, validates it against the task's `estimatedCost.credits` ceiling, and uses the selected model from the durable route evidence. It does not accept estimates as realized cost.
+
+The public customer API still needs to call this preflight method behind authenticated project/asset authorization, persist the quote and expiry, and bind the exact input hash plus maximum credit ceiling to the user's explicit approval before enqueue. Until that API and approval binding are complete, the adapter remains unregistered and remote execution remains off by default.
+
+References:
+- https://dev.runway.com/learn/add-ai-video-generation-to-your-app
+- https://docs.dev.runwayml.com/api/
+- https://docs.dev.runwayml.com/model-routers/generating/
