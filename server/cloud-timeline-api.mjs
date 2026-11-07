@@ -134,7 +134,7 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     if(!transformationOps.has(operation))return response(400,{error:{code:"TRANSFORMATION_OPERATION_INVALID",message:"Choose a supported transformation."}});
     const prompt=typeof body.prompt==="string"?body.prompt.trim():"";
     const duration=Number(body.durationSeconds);
-    if(prompt.length<8||prompt.length>1000||!Number.isInteger(duration)||duration<1||duration>30)return response(400,{error:{code:"TRANSFORMATION_INPUT_INVALID",message:"Provide an Aleph 2 edit prompt of 8 to 1,000 characters and a duration from 1 to 30 seconds."}});
+    if(prompt.length<8||prompt.length>1000||!Number.isInteger(duration)||duration<2||duration>30)return response(400,{error:{code:"TRANSFORMATION_INPUT_INVALID",message:"Provide an Aleph 2 edit prompt of 8 to 1,000 characters and a duration from 2 to 30 seconds."}});
     if(body.rightsConfirmed!==true)return response(403,{error:{code:"MEDIA_RIGHTS_REQUIRED",message:"Confirm rights to use the source and reference media."}});
     if(operation==="person_replace"&&body.subjectConsentConfirmed!==true)return response(403,{error:{code:"SUBJECT_CONSENT_REQUIRED",message:"Explicit subject consent is required for person replacement."}});
     const source=await service.assets.get({ownerId,assetId:sourceAssetId});
