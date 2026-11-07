@@ -236,7 +236,7 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
     const continuity=applyShotContinuity(db,job,run,config,values,prompt,"likeness",explicitReference);
     prompt=continuity.prompt;
     if(config.referenceAssetIds!==undefined&&!Array.isArray(config.referenceAssetIds))throw Object.assign(new Error("Image reference IDs must be an array."),{code:"IMAGE_GATEWAY_INVALID_INPUT"});
-    const rawReferences=[values.references,values.reference].flatMap(value=>Array.isArray(value)?value:value?[value]:[]);
+    const rawReferences=[values.references,values.reference].flatMap(value=>value===undefined||value===null?[]:Array.isArray(value)?value.flat(Infinity):[value]).filter(Boolean);
     const configuredReferences=Array.isArray(config.referenceAssetIds)?config.referenceAssetIds:[];
     const referenceIds=[...new Set([...rawReferences,...configuredReferences,explicitReference||continuity.referenceAssetId].map(value=>String(value||"").trim()).filter(Boolean))];
     if(referenceIds.length>16)throw Object.assign(new Error("GPT Image 2.6 accepts at most 16 reference images."),{code:"IMAGE_GATEWAY_UNSUPPORTED_INPUT"});
