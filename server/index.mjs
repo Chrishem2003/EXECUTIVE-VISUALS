@@ -484,17 +484,45 @@ const billingAccount=touchBillingAccount(db,user);
           if(!["credit_adjusted","no_credit_entitlement"].includes(resolution)||note.length<5){
             fail(res,400,"REFUND_RECONCILIATION_INVALID","Choose a valid resolution and provide an audit note.");return;
           }
+          const grantTotal=refund.user_id?Number(db.prepare(`SELECT COALESCE(SUM(amount),0) AS credits FROM billing_credit_ledger
+            WHERE user_id=? AND event_type='subscription_grant' AND amount>0
+              AND json_extract(metadata_json,'$.provider')='dodo'
+              AND json_extract(metadata_json,'$.paymentId')=?`).get(refund.user_id,refund.payment_id).credits||0):0;
+          const alreadyReversed=refund.user_id?Number(db.prepare(`SELECT COALESCE(SUM(-amount),0) AS credits FROM billing_credit_ledger
+            WHERE user_id=? AND event_type='admin_adjustment' AND amount<0
+              AND json_extract(metadata_json,'$.refundProvider')='dodo'
+              AND json_extract(metadata_json,'$.paymentId')=?`).get(refund.user_id,refund.payment_id).credits||0):0;
+          let creditsToReverse=0;
           if(resolution==="credit_adjusted"){
-            const adjustment=db.prepare("SELECT id,user_id,amount FROM billing_credit_ledger WHERE id=? AND event_type='admin_adjustment' AND amount<0").get(String(body.adjustmentLedgerId||""));
-            if(!adjustment||!refund.user_id||adjustment.user_id!==refund.user_id){
-              fail(res,400,"REFUND_ADJUSTMENT_REQUIRED","A matching negative credit adjustment for the affected user is required before reconciliation.");return;
+            creditsToReverse=Number(body.creditsToReverse);
+            if(!refund.user_id||!Number.isSafeInteger(creditsToReverse)||creditsToReverse<=0||creditsToReverse>grantTotal-alreadyReversed){
+              fail(res,400,"REFUND_ADJUSTMENT_INVALID","Enter a positive credit reversal no greater than the remaining credits granted for this payment.");return;
             }
+          }else if(grantTotal>0&&grantTotal>alreadyReversed){
+            fail(res,400,"REFUND_CREDITS_STILL_OUTSTANDING","This payment has granted credits. Record a credit reversal before resolving the refund.");return;
           }
-          const changed=db.prepare("UPDATE billing_refund_events SET reconciliation_required=0,reconciled_at=?,reconciled_by=?,reconciliation_note=? WHERE id=? AND reconciliation_required=1")
-            .run(now(),user.id,resolution+": "+note,refund.id);
-          if(changed.changes!==1){fail(res,409,"REFUND_RECONCILIATION_CONFLICT","Refund record changed during reconciliation.");return;}
-          audit(db,user.id,"admin.refund_reconciled","refund",refund.id,{provider:refund.provider,refundId:refund.refund_id,paymentId:refund.payment_id,resolution,adjustmentLedgerId:body.adjustmentLedgerId||null});
-          send(res,200,{ok:true,refundId:refund.id,resolution},cors);return;
+          db.exec("BEGIN IMMEDIATE");
+          try{
+            let adjustmentLedgerId=null;
+            if(creditsToReverse>0){
+              adjustmentLedgerId=randomUUID();
+              db.prepare(`INSERT INTO billing_credit_ledger
+                (id,user_id,amount,event_type,description,reference_id,idempotency_key,metadata_json)
+                VALUES(?,?,?,'admin_adjustment',?,?,?,?)`)
+                .run(adjustmentLedgerId,refund.user_id,-creditsToReverse,"Dodo refund credit reversal (manual reconciliation)",refund.payment_id,
+                  "dodo-refund-manual:"+refund.refund_id,json({refundProvider:"dodo",paymentId:refund.payment_id,refundId:refund.refund_id,creditsReversed:creditsToReverse,manualReconciliation:true}));
+            }
+            const changed=db.prepare("UPDATE billing_refund_events SET reconciliation_required=0,reconciled_at=?,reconciled_by=?,reconciliation_note=? WHERE id=? AND reconciliation_required=1")
+              .run(now(),user.id,resolution+": "+note,refund.id);
+            if(changed.changes!==1)throw Object.assign(new Error("Refund record changed during reconciliation."),{code:"REFUND_RECONCILIATION_CONFLICT",status:409});
+            audit(db,user.id,"admin.refund_reconciled","refund",refund.id,{provider:refund.provider,refundId:refund.refund_id,paymentId:refund.payment_id,resolution,creditsReversed:creditsToReverse,adjustmentLedgerId});
+            db.exec("COMMIT");
+            send(res,200,{ok:true,refundId:refund.id,resolution,creditsReversed:creditsToReverse,adjustmentLedgerId},cors);return;
+          }catch(error){
+            db.exec("ROLLBACK");
+            if(error?.code==="REFUND_RECONCILIATION_CONFLICT"){fail(res,409,error.code,error.message);return;}
+            throw error;
+          }
         }
         if(path==="/api/admin/audit"&&req.method==="GET"){
           const events=db.prepare("SELECT id,event_type,subject_type,subject_id,details_json,created_at FROM audit_events WHERE event_type LIKE 'admin.%' ORDER BY id DESC LIMIT 100").all();
