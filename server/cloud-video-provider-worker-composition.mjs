@@ -10,6 +10,10 @@ import { createProviderAwareCloudVideoWorker } from "./cloud-video-provider-work
 import { createFalVideoProviderAdapter } from "./fal-video-provider-registration.mjs";
 import { createRunwayCloudVideoAdapter } from "./runway-cloud-video-adapter.mjs";
 import { createRunwaySourceAssetResolver } from "./runway-source-asset-resolver.mjs";
+import { createGoogleOmniCloudVideoComposition } from "./google-omni-cloud-video-composition.mjs";
+import { createGeminiOmniFlashClient } from "./google-omni-flash-client.mjs";
+import { createGoogleVideoInteractionRepository } from "./google-video-interaction-repository.mjs";
+import { createGoogleInteractionRetentionPolicy } from "./google-interaction-retention-policy.mjs";
 
 /**
  * Build the provider-aware worker against the existing Supabase queue,
@@ -27,6 +31,7 @@ export function createProviderAwareCloudVideoWorkerComposition({
   env = process.env,
   fetchImpl = globalThis.fetch,
   createAdapters,
+  providerDependencies = {},
   prepareRunwayInput,
   resolveRunwaySourceMetadata,
   resolveRunwayActualCost,
@@ -95,6 +100,49 @@ export function createProviderAwareCloudVideoWorkerComposition({
   const enqueue = createCloudVideoEnqueue({
     ...clientOptions, env, resolveRunwaySourceMetadata: resolveSourceMetadata
   });
+  const googleEnabled = env.GOOGLE_OMNI_VIDEO_ENABLED === "true" || env.GOOGLE_OMNI_VIDEO_ALLOW_REMOTE === "true";
+  let googleOmniIntegration = providerDependencies.googleOmniIntegration;
+  if (googleEnabled && (
+      env.GOOGLE_OMNI_VIDEO_ENABLED !== "true" ||
+      env.GOOGLE_OMNI_VIDEO_ALLOW_REMOTE !== "true" ||
+      env.GEMINI_OMNI_ENABLED !== "true" ||
+      env.GEMINI_OMNI_ALLOW_REMOTE !== "true"
+  )) {
+    throw new Error("Google Omni requires both provider registration gates and both Gemini transport gates to be explicitly enabled.");
+  }
+  if (googleEnabled && !googleOmniIntegration) {
+    const {
+      googleOmniAssertApprovedSubmission,
+      googleOmniAuthorizeInteraction,
+      googleOmniPreparePlan,
+      googleOmniClient,
+      googleOmniInteractions,
+      googleOmniRetentionExpiresAt
+    } = providerDependencies;
+    if (typeof googleOmniAssertApprovedSubmission !== "function" ||
+        typeof googleOmniAuthorizeInteraction !== "function" ||
+        typeof googleOmniPreparePlan !== "function") {
+      throw new Error("Google Omni worker bootstrap requires durable approval, owner/project authorization and private-input planning callbacks.");
+    }
+    const interactions = googleOmniInteractions || createGoogleVideoInteractionRepository({
+      ...clientOptions, timeoutMs: Math.min(timeoutMs, 30000)
+    });
+    const client = googleOmniClient || createGeminiOmniFlashClient({
+      env, fetchImpl,
+      assertApprovedSubmission: googleOmniAssertApprovedSubmission,
+      authorizeInteraction: googleOmniAuthorizeInteraction,
+      timeoutMs: Math.min(timeoutMs, 30000)
+    });
+    const retention = createGoogleInteractionRetentionPolicy({ env });
+    googleOmniIntegration = createGoogleOmniCloudVideoComposition({
+      assets: privateAssets.assets, client, interactions,
+      preparePlan: googleOmniPreparePlan,
+      retentionExpiresAt: googleOmniRetentionExpiresAt || retention.expiresAt,
+      authorizeOutputIngestion: providerDependencies.googleOmniAuthorizeOutputIngestion,
+      env, fetchImpl, timeoutMs: Math.min(timeoutMs, 120000),
+      maxOutputBytes: maxBytesPerOutput
+    });
+  }
   const adapterFactory = createAdapters || (({ env: providerEnv, fetchImpl: providerFetch, ingestOutputs: ingest }) => {
     const adapters = [
       createFalVideoProviderAdapter({ env: providerEnv, fetchImpl: providerFetch, ingestOutputs: ingest })
@@ -127,12 +175,21 @@ export function createProviderAwareCloudVideoWorkerComposition({
     }
     return adapters;
   });
-  const adapters = adapterFactory({
+  const adapters = [...adapterFactory({
     env,
     fetchImpl,
     assets: privateAssets.assets,
-    ingestOutputs
-  });
+    ingestOutputs,
+    ...providerDependencies,
+    googleOmniIntegration
+  })];
+  if (googleOmniIntegration) {
+    adapters.push(Object.freeze({
+      ...googleOmniIntegration.adapter,
+      async ingestOutputs(args) { return googleOmniIntegration.ingestOutputs(args); },
+      async resolveActualCost(args) { return googleOmniIntegration.resolveActualCost(args); }
+    }));
+  }
   if (!Array.isArray(adapters) || adapters.length < 1 || adapters.length > 100) {
     throw new Error("Provider adapter factory must return between 1 and 100 adapters.");
   }
