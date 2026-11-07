@@ -226,6 +226,13 @@ test("cloud transformation approval derives its estimate from probed source medi
  assert.equal(approval.adapterId,"runway:aleph2");
  assert.equal(approval.capability,"video-to-video");
  assert.equal(approval.sourceMetadata.durationSeconds,10.2);
+ const ledgerCall=calls.find(call=>call.url.endsWith("/rpc/create_video_generation_budget_approval"));
+ assert.ok(ledgerCall,"approval must be persisted to the durable budget ledger before plan approval");
+ const ledger=JSON.parse(ledgerCall.options.body);
+ assert.equal(ledger.p_approval_id,approval.approvalId);
+ assert.equal(ledger.p_request_hash,approval.requestHash);
+ assert.equal(ledger.p_approved_max_amount,5);
+ assert.match(ledger.p_request_hash,/^[a-f0-9]{64}$/);
 });
 
 test("cloud transformation approval rejects a budget below the server-derived provider estimate", async () => {
