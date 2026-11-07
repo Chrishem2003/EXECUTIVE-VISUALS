@@ -305,3 +305,50 @@ References:
 ### Boundaries
 
 No production merge/deploy, paid provider generation, billing transaction, production/shared database migration, suspended Render service activation or R2 enablement was performed. PR #206 remains draft.
+
+
+## Continuation checkpoint — architecture correction and competitive review (2026-11-07)
+
+### Exact branch state at start of this pass
+
+- PR #206 remained open, draft and unmerged.
+- Integration branch: `integration/omni-provider-workers-2026`.
+- Exact head before this pass: `4170b557abb8552906e7d7d28b4fe7396d628e12`.
+- Exact-head Quality Checks and Google Drive integration quality were both completed successfully.
+- The PR remained 486 commits ahead / 0 behind at the last metadata read, with 134 changed files. This unusually large divergence remains a separate reviewability/reconciliation risk; do not merge simply because CI passes.
+
+### Reverse-engineering correction
+
+The first P0 issue description was too broad about the absence of a cloud API. Source inspection established that `CLOUD_TIMELINE_API_ENABLED=true` conditionally mounts an authenticated Supabase-only cloud timeline API. It already supports a restricted Runway Aleph 2 video-to-video transformation plan with project authorization, rights/consent checks, cost estimate, approval budget, readiness gates and idempotent queue submission.
+
+The remaining gap is specifically the general workflow execution lifecycle: interactive `video.generate` nodes still use the legacy synchronous Runway/FAL adapters and local asset persistence, while the cloud transformation lane and provider-aware worker are separate. Issue #209 was updated to reflect this partial implementation and to require reuse rather than duplication.
+
+### Market-driven product priorities
+
+Current Runway public product updates demonstrate demand for agent-built editable workflows, project-level credit caps, brand kits, project context, in-context asset comments, timeline-native creation and external-editor integrations. Executive Visuals should differentiate through brief-to-delivery workflows, customer/project budgets, continuity/rights evidence, version-bound review, and editor-friendly export—not catalogue size alone.
+
+Primary evidence:
+- https://runway.com/changelog
+- https://runway.com/workflows
+- https://runway.com/news/company-news/runway-for-adobe
+- https://helpx.adobe.com/premiere/desktop/edit-projects/edit-with-generative-ai/generative-media-tool-overview.html
+
+### Work completed in this pass
+
+- Updated issue #209 to distinguish the existing Aleph 2 cloud transformation lane from the still-unconnected general workflow graph.
+- Added a verified competitive-product delta and prioritized product response to the SaaS roadmap.
+- Added a corrected source-level architecture audit to the model parity document.
+- No application code, database schema, deployment, provider credential or billing setting was changed in this pass.
+
+### Next engineering sequence
+
+1. Implement a provider-neutral supported-node execution adapter that reuses the existing cloud queue, ledger, worker, budget controls and private asset ingestion.
+2. Define one canonical quote/approval/request-hash contract for supported workflow nodes; preserve the Aleph 2 transformation lane's current release gates.
+3. Add workflow-run/node-run state mapping, polling, cancellation, output asset references and actual settlement.
+4. Add API and PostgreSQL integration tests for tenant/project isolation, role checks, duplicate requests, retries, ambiguous submissions, cancellation, partial outputs and settlement.
+5. Add UI states for quote, approval, queued/running, failure/retry, actual cost and generated assets.
+6. Keep new catalogue-only models disabled until each exact provider/model path has an executable adapter and verified pricing.
+
+### Release boundaries
+
+No production merge/deployment, staging activation, paid provider request, payment transaction, shared/production database migration, suspended Render service activation or Cloudflare R2 enablement was performed. PR #206 remains draft.
