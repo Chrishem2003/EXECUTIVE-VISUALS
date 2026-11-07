@@ -189,7 +189,7 @@ export function applyDailyFreeCredits(db,userId,{now=Date.now(),env=process.env}
  * absent, the established flat capability schedule remains in force.
  */
 export function resolveBillingCreditCost(db, {
-  capability, provider, model, unit, quantity = 1, runwayPricing = null, env = process.env
+  capability, provider, model, unit, quantity = 1, runwayPricing = null, runwayRouterEstimateCredits = null, env = process.env
 } = {}) {
   const fallback = Object.prototype.hasOwnProperty.call(BILLING_CREDIT_COSTS, capability)
     ? BILLING_CREDIT_COSTS[capability] : 1;
@@ -207,6 +207,26 @@ export function resolveBillingCreditCost(db, {
   if (env.BILLING_COST_MARKUP_BPS !== undefined && env.BILLING_COST_MARKUP_BPS !== "" &&
       (!Number.isSafeInteger(markupBps) || markupBps < 0 || markupBps > 50000)) {
     throw fail("BILLING_COST_MARKUP_BPS must be an integer from 0 to 50000.", "BILLING_COST_CONFIG_INVALID", 500);
+  }
+  if (providerName === "runway" && runwayRouterEstimateCredits !== null && runwayRouterEstimateCredits !== undefined && creditValueConfigured) {
+    const estimatedCredits = Number(runwayRouterEstimateCredits);
+    if (!Number.isSafeInteger(estimatedCredits) || estimatedCredits <= 0 || estimatedCredits > 100000000) {
+      throw fail("Runway Model Router preflight estimate must be a positive integer credit amount.", "BILLING_RUNWAY_PRICING_INVALID", 503);
+    }
+    const rawCostMicros = estimatedCredits * 10000;
+    if (!Number.isSafeInteger(rawCostMicros)) throw fail("Runway Model Router estimate exceeds the supported billing range.", "BILLING_COST_ESTIMATE_INVALID", 500);
+    const markedCostMicros = Math.ceil(rawCostMicros * (10000 + markupBps) / 10000);
+    if (!Number.isSafeInteger(markedCostMicros) || markedCostMicros <= 0) throw fail("Marked-up Runway Model Router estimate exceeds the supported billing range.", "BILLING_COST_ESTIMATE_INVALID", 500);
+    const credits = Math.max(1, Math.ceil(markedCostMicros / creditValueMicros));
+    if (!Number.isSafeInteger(credits) || credits > 100000000) throw fail("Runway Model Router estimate exceeds the supported credit range.", "BILLING_COST_ESTIMATE_INVALID", 500);
+    return {
+      credits, source: "runway_model_router_preflight_estimate", provider: providerName,
+      model: modelName, capability, unit: unitName, quantity: Number(quantity) || 1,
+      providerCostCredits: estimatedCredits, providerCostUsd: estimatedCredits * 0.01,
+      rawCostMicros, markedCostMicros, currency: "USD", creditValueMicros, markupBps,
+      pricingSource: "Runway Model Router dry-run response", evidenceType: "provider_preflight_estimate",
+      billable: false, settlementEligible: false
+    };
   }
   if (providerName === "runway" && runwayPricing && creditValueConfigured) {
     let estimate;
