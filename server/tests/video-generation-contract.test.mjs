@@ -120,3 +120,39 @@ test("accepts the documented unsigned 32-bit provider seed range",()=>{
   assert.equal(request.seed,4294967295);
   assert.throws(()=>normalizeVideoGenerationRequest({...base,seed:4294967296}),VideoGenerationValidationError);
 });
+
+test("normalizes video-to-video source assets and ordered keyframe asset references", () => {
+  const request = normalizeVideoGenerationRequest({
+    ...base, operation: "video-to-video", sourceVideoAssetId: "source-video",
+    keyframeAssetIds: ["frame-1", "frame-2"], durationSeconds: 12
+  });
+  assert.equal(request.operation, "video-to-video");
+  assert.equal(request.sourceVideoAssetId, "source-video");
+  assert.deepEqual(request.keyframeAssetIds, ["frame-1", "frame-2"]);
+});
+
+test("normalizes prompt-free video upscale controls and defaults to 2k", () => {
+  const request = normalizeVideoGenerationRequest({
+    operation: "video-upscale", sourceVideoAssetId: "source-video",
+    outputFrames: 900, creativity: 25, sharpen: 60, smartGrain: 10,
+    flavor: "vivid", fpsBoost: true, durationSeconds: 30
+  });
+  assert.equal(request.prompt, undefined);
+  assert.equal(request.resolution, "2k");
+  assert.equal(request.outputFrames, 900);
+  assert.equal(request.fpsBoost, true);
+  assert.equal(request.flavor, "vivid");
+});
+
+test("requires a source asset for video editing and rejects invalid upscale controls", () => {
+  assert.throws(() => normalizeVideoGenerationRequest({
+    operation: "video-to-video", prompt: "Edit this clip"
+  }), VideoGenerationValidationError);
+  assert.throws(() => normalizeVideoGenerationRequest({
+    operation: "video-upscale", sourceVideoAssetId: "source", creativity: 101
+  }), VideoGenerationValidationError);
+  assert.throws(() => normalizeVideoGenerationRequest({
+    operation: "video-to-video", prompt: "Edit this clip",
+    sourceVideoAssetId: "source", keyframeAssetIds: Array.from({ length: 6 }, (_, i) => "frame-" + i)
+  }), VideoGenerationValidationError);
+});
