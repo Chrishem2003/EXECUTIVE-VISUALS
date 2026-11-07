@@ -537,16 +537,20 @@ export const VIDEO_PROVIDER_CATALOG = freeze([
         executionAdapter: "not_implemented",
         gateway: "runway",
         capabilities: {
-          textToVideo: true, imageToVideo: true, videoToVideo: true,
+          textToVideo: true, imageToVideo: false, videoToVideo: true,
           videoEdit: true, videoExtend: true, videoReframe: false,
           nativeAudio: false, negativePrompt: false, seed: false,
-          startFrame: true, endFrame: true, motionReference: false,
-          referenceImages: true, referenceVideos: true, referenceAudio: false,
+          startFrame: true, endFrame: false, motionReference: false,
+          referenceImages: false, referenceVideos: false, referenceAudio: false,
           audioModes: [],
           resolutions: ["360p", "480p", "720p", "1080p", "4k"]
         },
         constraints: {
           keyframeGuidance: true,
+          referenceInputsSupported: true,
+          referenceInputTypesUnverified: true,
+          audioSupportUnverified: true,
+          durationLimitsUnverified: true,
           pricingStatus: "published_starting_rate_tier_matrix_pending",
           startingUsdPerSecond: 0.02,
           pricingSnapshotDate: "2026-11-07",
