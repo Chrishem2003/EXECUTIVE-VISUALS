@@ -92,7 +92,7 @@ test("video provider catalog exposes the configured adapter's actual model capab
 });
 
 
-test("Runway adapter exposes verified text-to-video models without advertising reference inputs",()=>{
+test("Runway adapter exposes verified text-to-video and first-frame image-to-video models",()=>{
  const catalog=getProviderCatalog({
   VIDEO_GATEWAY_PROVIDER:"runway",VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",
   RUNWAYML_API_SECRET:"do-not-return",RUNWAY_VIDEO_MODEL:"seedance2_5"
@@ -102,7 +102,7 @@ test("Runway adapter exposes verified text-to-video models without advertising r
  assert.equal(video.status,"ready");
  assert.equal(video.model,"seedance2_5");
  assert.equal(video.modelCapabilities.maxDurationSeconds,30);
- assert.equal(video.modelCapabilities.referenceImages,false);
+ assert.equal(video.modelCapabilities.referenceImages,true);
  assert.ok(video.availableModels.some(model=>model.id==="kling_4"));
  assert.equal(JSON.stringify(catalog).includes("do-not-return"),false);
 });

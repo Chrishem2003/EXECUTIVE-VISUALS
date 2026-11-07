@@ -70,6 +70,10 @@ export function renderAssetLibrary(){
  '<section class="panel"><div class="runtime-section-heading"><div><div class="eyebrow">PRIVATE MEDIA LIBRARY</div><h3>Originals and derivatives</h3></div><span>'+state.assets.length+' stored assets</span></div><label>Project scope</label><select id="ev-project-select">'+projectOptions()+'</select><p>Upload originals, inspect media metadata, create thumbnails, proxies and audio extracts. Source files remain unchanged.</p><label class="upload primary">＋ Import media<input id="ev-upload" type="file" multiple accept="image/*,video/*,audio/*,application/pdf,text/plain"></label>'+renderAssets()+'</section>'+
  '<section class="panel"><div class="eyebrow">PROCESSING HISTORY</div><h3>Recent media jobs</h3>'+renderJobs()+'</section></div>';
 }
+export function renderReferenceImageOptions(){
+ const images=state.assets.filter(asset=>String(asset.mediaType||"").startsWith("image/"));
+ return '<option value="">No reference image · text-to-image/video</option>'+images.map(asset=>'<option value="'+esc(asset.id)+'">'+esc(asset.name)+'</option>').join("");
+}
 export function renderImageModelOptions(){
  const provider=state.providers.find(item=>item.id==="image"&&item.provider==="gemini");
  if(!provider)return '<option value="">Server-configured model</option>';
@@ -78,7 +82,7 @@ export function renderImageModelOptions(){
 export function renderImageModelNote(){
  const provider=state.providers.find(item=>item.id==="image"&&item.provider==="gemini");
  if(!provider)return "The image model is configured server-side. Nano Banana Pro appears when the Gemini image adapter is selected by the administrator.";
- return esc(provider.status==="ready"?"Nano Banana Pro is configured. Google API charges apply to approved generations.":provider.reason)+" The API adapter accepts one validated reference image, but the standard image form does not yet expose a reference picker.";
+ return esc(provider.status==="ready"?"Nano Banana Pro is configured. Google API charges apply to approved generations.":provider.reason)+" The image workspace now accepts one validated reference asset for image editing.";
 }
 export function renderVideoModelOptions(){
  const provider=state.providers.find(item=>item.provider==="runway");
@@ -88,7 +92,7 @@ export function renderVideoModelOptions(){
 export function renderVideoModelNote(){
  const provider=state.providers.find(item=>item.provider==="runway");
  if(!provider)return "The active provider is configured server-side. Runway model selection appears when the Runway adapter is selected by the administrator.";
- return esc(provider.status==="ready"?"Runway is configured. Provider billing applies to each approved generation.":provider.reason)+" The current adapter supports text-to-video; image/video references and native audio controls are not yet enabled here.";
+ return esc(provider.status==="ready"?"Runway is configured. Provider billing applies to each approved generation.":provider.reason)+" The adapter supports text-to-video and one first-frame image-to-video reference. Multi-frame references, video-to-video and native audio controls are not yet enabled.";
 }
 export function renderEngineStatus(){
  const local=state.ffmpeg&&state.ffprobe?"Ready":state.ffprobe?"Probe only":"Unavailable";

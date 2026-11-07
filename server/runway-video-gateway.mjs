@@ -38,7 +38,7 @@ export function listRunwayVideoModels(){
   return Object.entries(MODEL_PROFILES).map(([id,profile])=>({
     id,label:profile.label,minDurationSeconds:profile.minDurationSeconds,
     maxDurationSeconds:profile.maxDurationSeconds,aspectRatios:[...profile.aspectRatios],
-    resolutions:[...profile.resolutions],execution:"async",inputModes:["text-to-video"],
+    resolutions:[...profile.resolutions],execution:"async",inputModes:["text-to-video","image-to-video"],
     readiness:"adapter-supported; credentials and remote opt-in required"
   }));
 }
@@ -46,8 +46,8 @@ export function getRunwayVideoCapabilities(model=process.env.RUNWAY_VIDEO_MODEL|
   const profile=MODEL_PROFILES[String(model||"").trim()];
   if(!profile)return Object.freeze({negativePrompt:false,seed:false,startFrame:false,endFrame:false,motionReference:false,referenceImages:false,audioModes:[],aspectRatios:[],resolutions:[],minDurationSeconds:0,maxDurationSeconds:0});
   return Object.freeze({
-    negativePrompt:false,seed:false,startFrame:false,endFrame:false,motionReference:false,
-    referenceImages:false,audioModes:Object.freeze([]),
+    negativePrompt:false,seed:false,startFrame:true,endFrame:false,motionReference:false,
+    referenceImages:true,audioModes:Object.freeze([]),
     aspectRatios:Object.freeze([...profile.aspectRatios]),
     resolutions:Object.freeze([...profile.resolutions]),
     minDurationSeconds:profile.minDurationSeconds,maxDurationSeconds:profile.maxDurationSeconds
@@ -67,6 +67,30 @@ export function buildRunwayVideoPayload({model,prompt,durationSeconds=5,aspectRa
   const payload={model:id,promptText:text,ratio,duration:durationSeconds};
   if(id==="seedance2_5"&&effectiveResolution!=="provider_default")payload.resolution=effectiveResolution;
   return Object.freeze(payload);
+}
+export function buildRunwayImageToVideoPayload({model,prompt,promptImage,durationSeconds=5,aspectRatio="16:9",resolution="provider_default"}={}){
+ const id=String(model||"").trim(),profile=MODEL_PROFILES[id];
+ if(!profile)throw fail("Select a Runway model with a verified image-to-video adapter.","VIDEO_GATEWAY_UNSUPPORTED_MODEL");
+ const text=typeof prompt==="string"?prompt.trim():"";
+ if(!text||text.length>1000)throw fail("Runway image-to-video prompts must contain 1 to 1000 characters.","VIDEO_GATEWAY_INVALID_INPUT");
+ if(typeof promptImage!=="string"||!/^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(promptImage)||Buffer.byteLength(promptImage)>5*1024*1024)throw fail("Runway first-frame images must be valid PNG, JPEG or WebP data URIs no larger than 5 MiB.","VIDEO_GATEWAY_INVALID_INPUT");
+ if(!Number.isInteger(durationSeconds)||durationSeconds<profile.minDurationSeconds||durationSeconds>profile.maxDurationSeconds)throw fail("Duration is outside the selected model's documented range.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
+ if(!profile.aspectRatios.includes(aspectRatio))throw fail("Aspect ratio is not supported by the selected Runway model.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
+ const payload={model:id,promptText:text,promptImage,duration:durationSeconds};
+ if(id==="seedance2_5"){
+  const effectiveResolution=resolution==="provider_default"?profile.defaultResolution:resolution;
+  if(!profile.resolutions.includes(resolution))throw fail("Resolution is not supported by the selected Runway model.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
+  const ratio=ratioFor(id,aspectRatio,effectiveResolution);
+  if(!ratio)throw fail("No verified Seedance image-to-video ratio mapping exists.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
+  payload.ratio=ratio;
+  if(effectiveResolution!=="provider_default")payload.resolution=effectiveResolution;
+ }else if(id==="gen4.5"){
+  const ratio={"16:9":"1280:720","9:16":"720:1280"}[aspectRatio];
+  if(!ratio)throw fail("Gen-4.5 image-to-video ratio is unsupported.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
+  payload.ratio=ratio;
+ }
+ // Kling 4 and Kling 3 follow the supplied first frame's framing; omit ratio.
+ return Object.freeze(payload);
 }
 async function requestJson(url,{method="GET",headers={},body,timeoutMs=30000,fetchImpl=fetch}={}){
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs);
@@ -102,14 +126,16 @@ async function downloadMp4(raw,{fetchImpl=fetch,timeoutMs=60000}={}){
     return buffer;
   }finally{clearTimeout(timer);}
 }
-export async function generateRunwayVideo({model=process.env.RUNWAY_VIDEO_MODEL,prompt,durationSeconds=5,aspectRatio="16:9",resolution="provider_default",fetchImpl=fetch,sleepImpl=sleep,now=Date.now}={}){
+export async function generateRunwayVideo({model=process.env.RUNWAY_VIDEO_MODEL,prompt,durationSeconds=5,aspectRatio="16:9",resolution="provider_default",referenceImageDataUrl="",fetchImpl=fetch,sleepImpl=sleep,now=Date.now}={}){
   if(process.env.VIDEO_GATEWAY_ENABLED!=="true")throw fail("Video generation is disabled by server configuration.","VIDEO_GATEWAY_DISABLED");
   if(process.env.VIDEO_GATEWAY_ALLOW_REMOTE!=="true")throw fail("Remote video providers are disabled. Review Runway pricing and explicitly enable remote access on the server.","VIDEO_GATEWAY_REMOTE_DISABLED");
   const key=String(process.env.RUNWAYML_API_SECRET||"").trim();
   if(!key)throw fail("Configure RUNWAYML_API_SECRET on the server before using Runway models.","VIDEO_GATEWAY_CONFIG_INVALID");
-  const payload=buildRunwayVideoPayload({model,prompt,durationSeconds,aspectRatio,resolution});
+  const payload=referenceImageDataUrl
+   ?buildRunwayImageToVideoPayload({model,prompt,promptImage:referenceImageDataUrl,durationSeconds,aspectRatio,resolution})
+   :buildRunwayVideoPayload({model,prompt,durationSeconds,aspectRatio,resolution});
   const headers={authorization:"Bearer "+key,"content-type":"application/json","X-Runway-Version":API_VERSION};
-  const submitted=await requestJson(API_BASE+"/text_to_video",{method:"POST",headers,body:JSON.stringify(payload),timeoutMs:30000,fetchImpl});
+  const submitted=await requestJson(API_BASE+(referenceImageDataUrl?"/image_to_video":"/text_to_video"),{method:"POST",headers,body:JSON.stringify(payload),timeoutMs:30000,fetchImpl});
   const taskId=String(submitted.id||"");
   if(!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(taskId))throw fail("Runway did not return a valid task identifier.","VIDEO_GATEWAY_INVALID_RESPONSE");
   const timeoutMs=Math.max(10000,Math.min(600000,Number(process.env.VIDEO_GATEWAY_TIMEOUT_MS)||300000));

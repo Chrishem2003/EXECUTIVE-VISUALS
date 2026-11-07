@@ -301,11 +301,10 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
     });
     const capabilities=provider.provider==="runway"?getRunwayVideoCapabilities(selectedModel):getFalVideoCapabilities();
     assertVideoCapabilities(generationRequest,capabilities);
-    if(provider.provider==="runway"&&referenceId)throw Object.assign(new Error("The current Runway adapter supports text-to-video only. Image-to-video will be enabled after its model-specific input contract is implemented."),{code:"VIDEO_GATEWAY_UNSUPPORTED_INPUT"});
     const usageStarted=Date.now();
     reserveRemoteRequest(db,{ownerId:job.owner_id,projectId:job.project_id||null,jobId:job.id,provider,capability:"video.generate"});
     const result=provider.provider==="runway"
-     ?await generateRunwayVideo({model:selectedModel,prompt:generationRequest.prompt,durationSeconds:generationRequest.durationSeconds,aspectRatio:generationRequest.aspectRatio,resolution:generationRequest.resolution})
+     ?await generateRunwayVideo({model:selectedModel,prompt:generationRequest.prompt,durationSeconds:generationRequest.durationSeconds,aspectRatio:generationRequest.aspectRatio,resolution:generationRequest.resolution,referenceImageDataUrl})
      :await generateFalVideo({prompt:generationRequest.prompt,duration:generationRequest.durationSeconds,aspectRatio:generationRequest.aspectRatio,referenceImageDataUrl});
     const provenance=createVideoRequestProvenance(generationRequest,{provider:result.provider,model:result.model,adapterVersion:result.adapterVersion||"fal-video-gateway-v1"});
     recordModelUsage(db,{ownerId:job.owner_id,projectId:job.project_id||null,jobId:job.id,workflowRunId:runId,nodeId,provider:provider.provider,capability:"video.generate",model:result.model,usage:result.usage,durationMs:Date.now()-usageStarted});
