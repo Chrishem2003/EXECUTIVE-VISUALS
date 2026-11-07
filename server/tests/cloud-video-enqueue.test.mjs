@@ -256,6 +256,26 @@ test("Google Omni enqueue accepts only its verified 720p model and reserves the 
   assert.deepEqual(calls[0].body.p_input,googleInput);
 });
 
+test("Gemini Omni 1.2 remains blocked until its dedicated pricing and SQL contract are deployed", async () => {
+  let calls = 0;
+  const client = createCloudVideoEnqueue({
+    ...base,
+    env: googleEnv,
+    fetchImpl: async () => { calls++; return response([resultRow]); }
+  });
+  const input = {
+    ...googleInput,
+    model: "gemini-omni-1.2-flash",
+    durationSeconds: 15,
+    resolution: "720p"
+  };
+  await assert.rejects(
+    client.enqueue(googleArgs({ model: "gemini-omni-1.2-flash", input, reservedAmount: 2 })),
+    error => error.code === "VIDEO_ENQUEUE_PROVIDER_NOT_ENABLED"
+  );
+  assert.equal(calls, 0);
+});
+
 test("Google Omni enqueue rejects under-reservation, unsupported resolution, invalid duration and unsupported controls", async () => {
   let calls=0;
   const client=createCloudVideoEnqueue({...base,env:googleEnv,fetchImpl:async()=>{calls++;return response([resultRow]);}});
