@@ -205,3 +205,17 @@ test("dynamic billing estimates reject overflow rather than silently underchargi
   }),error=>error.code==="BILLING_COST_ESTIMATE_INVALID");
   db.close();
 });
+
+
+test("invalid finance pricing configuration fails closed instead of falling back",()=>{
+  const db=setup();
+  assert.throws(()=>resolveBillingCreditCost(db,{
+    capability:"video.generate",provider:"runway",model:"seedance2_5",unit:"second",quantity:5,
+    env:{BILLING_CREDIT_VALUE_MICROS:"not-a-number"}
+  }),error=>error.code==="BILLING_COST_CONFIG_INVALID");
+  assert.throws(()=>resolveBillingCreditCost(db,{
+    capability:"video.generate",provider:"runway",model:"seedance2_5",unit:"second",quantity:5,
+    env:{BILLING_CREDIT_VALUE_MICROS:"10000",BILLING_COST_MARKUP_BPS:"999999"}
+  }),error=>error.code==="BILLING_COST_CONFIG_INVALID");
+  db.close();
+});
