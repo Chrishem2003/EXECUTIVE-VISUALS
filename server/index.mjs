@@ -376,6 +376,14 @@ const billingAccount=touchBillingAccount(db,user);
       if(path==="/api/me"&&req.method==="GET"){send(res,200,{user,authMode:AUTH_MODE,capabilities:{admin,billing:true}},cors);return;}
       if(path==="/api/billing/plans"&&req.method==="GET"){send(res,200,{plans:listBillingPlans(db)},cors);return;}
       if(path==="/api/billing/overview"&&req.method==="GET"){send(res,200,{billing:getBillingOverview(db,user.id)},cors);return;}
+      const billingOrderMatch=path.match(/^\/api\/billing\/orders\/(ev_[a-f0-9]{32})$/);
+      if(billingOrderMatch&&req.method==="GET"){
+        const order=db.prepare(`SELECT o.tx_ref,o.status,o.expected_amount_minor,o.currency,o.credits,o.verified_at,o.created_at,p.name AS plan_name,p.interval
+          FROM billing_payment_orders o JOIN billing_plans p ON p.id=o.plan_id
+          WHERE o.tx_ref=? AND o.user_id=? LIMIT 1`).get(billingOrderMatch[1],user.id);
+        if(!order){fail(res,404,"BILLING_ORDER_NOT_FOUND","Payment order not found.");return;}
+        send(res,200,{order:{txRef:order.tx_ref,status:order.status,amountMinor:Number(order.expected_amount_minor),currency:order.currency,credits:Number(order.credits),verifiedAt:order.verified_at,createdAt:order.created_at,planName:order.plan_name,interval:order.interval}},cors);return;
+      }
       if(path==="/api/billing/checkout"&&req.method==="POST"){
         if(process.env.BILLING_CHECKOUT_ENABLED!=="true" || !process.env.FLW_SECRET_KEY ||
             !process.env.FLW_WEBHOOK_SECRET || !process.env.PUBLIC_APP_URL){
