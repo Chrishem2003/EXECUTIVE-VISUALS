@@ -272,3 +272,25 @@ The provider catalog now exposes the actual configured video adapter capability 
 ## AI upscaling research and selection
 
 Added docs/AI_UPSCALING_ENGINE_SELECTION.md. The initial low-cost candidate is Real-ESRGAN NCNN/Vulkan because its upstream documentation describes portable Intel/AMD/NVIDIA GPU executables without requiring CUDA or PyTorch. It is not enabled or claimed as installed. Video2X is not selected as the hosted dependency because of its AGPL-3.0 licence. The design requires runtime/device probing, adaptive tiling, frame/audio/timebase preservation, temporal-flicker review, derivative-only publishing and explicit licence checks. The existing FFmpeg scaler remains the verified fallback.
+
+
+## 2026-11-07 competitive update: model routing, pricing and multi-shot generation
+
+A fresh review of official provider documentation shows that model selection is becoming a first-class production feature rather than a simple dropdown:
+
+- Runway Dev documents a model router that can route by cost, latency, or quality, evaluate the same prompt across models, and expose cost visibility by model and endpoint. Its documentation currently lists 64 models. See https://docs.dev.runwayml.com/guides/models/ and https://docs.dev.runwayml.com/api/.
+- Runway Dev's published pricing is model-, resolution-, duration-, and sometimes audio-mode-specific. Its pricing guide also documents minimum charges and distinct input/reference fees. These rates apply to Runway Dev's own billing system and must not be copied into another provider's price table. See https://docs.dev.runway.com/pricing and https://docs.dev.runwayml.com/guides/pricing/.
+- Kling 3.0's documented API supports up to six shots in one request, with individual shot prompts and durations and generated audio. This makes multi-shot continuity and shot-level cost aggregation important workflow requirements. See https://dev.runwayml.com/learn/kling-3-0-api.
+
+### Implementation status after this review
+
+| Capability | Current repository status | Next engineering requirement |
+|---|---|---|
+| Exact model pricing metadata | Implemented in the video cost estimator; source URL and validity window required | Provider-specific pricing refresh and admin review workflow |
+| Itemized generation estimate | Implemented as authenticated read-only API | Connect quote to saved production plans and approval budgets |
+| Cost/latency/quality model routing | Not implemented | Add explicit routing policies, capability filters, and measured evaluation data; never silently switch models |
+| Multi-shot generation API | Planning/timeline foundations exist; provider adapter is not complete | Add shot-batch contract, per-shot duration/prompt, continuity references, and provider capability checks |
+| Cost aggregation across shots | Not implemented | Aggregate only when the selected provider's exact pricing rules and billing increments are known |
+| Provider evaluation | Not implemented as a complete workflow | Store benchmark fixtures and score quality, latency, reliability, and actual cost before automatic routing |
+
+The cost estimator is deliberately separate from generation execution. A quote is not a reservation, provider call, or guarantee of final billing. Automatic routing must remain disabled until the project has reliable evaluation evidence and explicit user policy for cost, latency, quality, data handling, and model substitution.

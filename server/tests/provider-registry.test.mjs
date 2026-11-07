@@ -9,7 +9,7 @@ test("provider catalog is safe by default and never exposes credentials or submi
  assert.equal(catalog.summary.disabled,5);
  assert.equal(catalog.providers.find(x=>x.id==="local-media").status,"unavailable");
  assert.equal(catalog.providers.find(x=>x.id==="local-media").capabilities.includes("media.upscale"),true);
- assert.deepEqual(catalog.policy,{remoteCallsRequireExplicitOptIn:true,credentialsExposed:false,pricesEstimated:false,requestsSubmitted:false});
+ assert.deepEqual(catalog.policy,{remoteCallsRequireExplicitOptIn:true,credentialsExposed:false,pricesEstimated:false,pricingSchedulesConfigured:false,requestsSubmitted:false});
  assert.equal(JSON.stringify(catalog).includes("API_KEY"),false);
 });
 
@@ -120,4 +120,21 @@ test("AI upscaler requires independent fixture evidence, not a claimed inference
  assert.equal(verifiedProvider.status,"ready");
  assert.deepEqual(verifiedProvider.capabilities,["media.ai-upscale"]);
  assert.equal(findProviderForCapability(qualityChecked,"media.ai-upscale").provider,"local");
+});
+
+
+test("provider catalog exposes only source-attributed pricing metadata and never assumes a price",()=>{
+ const raw=JSON.stringify([{provider:"fal",model:"fal-ai/example",currency:"USD",sourceUrl:"https://fal.ai/pricing",observedAt:"2026-11-01T00:00:00.000Z",expiresAt:"2026-11-08T00:00:00.000Z",ratesPerSecond:{"720p":0.1}}]);
+ const catalog=getProviderCatalog({VIDEO_MODEL_PRICING_JSON:raw});
+ const video=catalog.providers.find(item=>item.id==="video");
+ assert.equal(catalog.policy.pricesEstimated,false);
+ assert.equal(catalog.policy.pricingSchedulesConfigured,true);
+ assert.equal(video.pricing.configured,true);
+ assert.equal(video.pricing.models[0].model,"fal-ai/example");
+ assert.equal(video.pricing.models[0].sourceUrl,"https://fal.ai/pricing");
+ assert.equal(JSON.stringify(catalog).includes("FAL_KEY"),false);
+ const empty=getProviderCatalog({});
+ assert.equal(empty.policy.pricesEstimated,false);
+ assert.equal(empty.policy.pricingSchedulesConfigured,false);
+ assert.deepEqual(empty.providers.find(item=>item.id==="video").pricing.models,[]);
 });

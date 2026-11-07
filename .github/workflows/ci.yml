@@ -1,7 +1,7 @@
 name: Quality checks
 on:
   push:
-    branches: [main, feat/atomic-asset-publication-pr, fix/reconcile-pending-publication-cleanup-claims]
+    branches: [main, feat/atomic-asset-publication-pr, fix/reconcile-pending-publication-cleanup-claims, feat/video-cost-estimation-guardrails]
   pull_request:
     branches: [main, feat/idempotent-asset-publication-ledger, feat/lease-fencing-tokens-v2, feat/immutable-asset-publication, feat/durable-publication-cleanup, feat/atomic-asset-publication-pr, fix/reconcile-pending-publication-cleanup-claims]
   workflow_dispatch:
