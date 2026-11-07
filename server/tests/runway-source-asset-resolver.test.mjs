@@ -27,7 +27,7 @@ function fixture({ projectId = PROJECT, mediaType = "video/mp4", signedUrl = "ht
       })),
       execFileImpl: execFileImpl || ((_path, _args, _options, callback) => callback(null, JSON.stringify({
         format: { duration: "11.2" },
-        streams: [{ codec_type: "video", width: 1920, height: 1080, nb_read_frames: "336", color_transfer: "bt709", color_primaries: "bt709", color_space: "bt709" }]
+        streams: [{ codec_type: "video", width: 1920, height: 1080, nb_read_frames: "336", avg_frame_rate: "30/1", r_frame_rate: "30/1", color_transfer: "bt709", color_primaries: "bt709", color_space: "bt709" }]
       })))
     })
   };
@@ -85,6 +85,7 @@ test("Runway metadata resolver probes the private source and returns authoritati
   assert.equal(result.projectId, PROJECT);
   assert.equal(result.durationSeconds, 11.2);
   assert.equal(result.frameCount, 336);
+  assert.equal(result.frameRate, 30);
   assert.equal(result.width, 1920);
   assert.equal(result.height, 1080);
   assert.equal(result.sourceWidth, 1920);
