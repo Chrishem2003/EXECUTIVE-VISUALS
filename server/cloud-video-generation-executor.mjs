@@ -114,7 +114,8 @@ export async function executeCloudVideoGenerationJob({
       if (Buffer.byteLength(metadataText) > 7000) {
         throw fail("Provider submission metadata exceeded the durable ledger limit.", "VIDEO_SUBMISSION_METADATA_INVALID");
       }
-      recordMetadata = { acceptedStatus: submitted.status || "queued", ...(preflightQuote ? { preflightQuote } : {}), ...submittedMetadata };
+      recordMetadata = { acceptedStatus: submitted.status || "queued", ...(preflightQuote ? { preflightQuote: { configId: preflightQuote.configId, model: preflightQuote.model, provider: preflightQuote.provider, estimatedCredits: preflightQuote.estimatedCredits, estimatedUsd: preflightQuote.estimatedUsd, currency: preflightQuote.currency } } : {}), ...submittedMetadata };
+      if (Buffer.byteLength(JSON.stringify(recordMetadata)) > 7000) throw fail("Durable provider submission metadata exceeded the ledger limit.", "VIDEO_SUBMISSION_METADATA_INVALID");
       const recorded = await ledger.record(job.id, workerId, submitted.taskId, recordMetadata);
       if (!recorded) throw new Error("Provider task ID was not recorded.");
     } catch {
