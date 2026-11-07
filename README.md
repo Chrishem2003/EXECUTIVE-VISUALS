@@ -3,7 +3,7 @@
 - **Existing Render production:** https://executive-visuals.onrender.com
 - **Cloudflare Workers preview:** https://executive-visuals.chrishem242.workers.dev
 
-The Cloudflare URL is an edge/frontend preview, **not an isolated staging environment**. The previously checked-in Worker configuration set `API_ORIGIN` to the Render production service, so API calls from an already-deployed Worker may still reach production until its live runtime configuration is separately inspected. This branch removes that production-origin default; it does not change the already-deployed Worker. Do not use the preview for staging acceptance, paid transactions, or test writes. The Render production backend currently reports SQLite/local-disk storage, which is not durable customer storage.
+The Cloudflare URL is an edge/frontend preview, **not an isolated staging environment**. A read-only inspection of the latest deployed Worker version (2026-11-07 13:54 UTC) confirmed that its only binding is static assets and that `API_ORIGIN` is absent. Therefore its API proxy fails closed with HTTP 502 rather than routing to Render production. The branch also removes the production-origin default from `wrangler.jsonc`. Do not configure an API origin until a dedicated isolated staging backend exists. The Render production backend currently reports SQLite/local-disk storage, which is not durable customer storage.
 
 # CHRISHEM EXCLUSIVE VISUALS
 
