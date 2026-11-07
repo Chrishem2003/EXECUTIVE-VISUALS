@@ -5,14 +5,15 @@
 
 ## Supported behavior
 
-The OpenAI-compatible image gateway accepts `outputCount` from 1 through 4. It sends that value as the Images API `n` parameter and validates that the response contains exactly the requested number of base64 image payloads. Each image is independently validated and persisted through `storeGeneratedImage`, producing its own private asset row, UUID, checksum and storage path.
+The OpenAI-compatible image gateway and gated Runway Model Router accept `outputCount` from 1 through 4. It sends that value as the Images API `n` parameter and validates that the response contains exactly the requested number of base64 image payloads. Each image is independently validated and persisted through `storeGeneratedImage`, producing its own private asset row, UUID, checksum and storage path.
 
 The workflow image-generation node keeps the original `image` output as the first generated asset for backward compatibility. It additionally exposes `images` as a multi-value asset output. Connect `images` to the existing Batch Inputs node to pass all variations into downstream workflow steps.
 
 ## Provider-specific constraints
 
 - OpenAI-compatible image endpoints: 1–4 outputs per request, subject to the configured model's own API limits.
-- Runway direct `POST /v1/text_to_image` adapter: one output per task in this implementation. The pricing estimator can calculate a quantity for repeated outputs, but the direct adapter does not claim a multi-output request capability.
+- Runway direct `POST /v1/text_to_image` adapter: one output per task in this implementation.
+- Runway Model Router `POST /v1/generate/image`: 1–4 outputs are supported in this workflow through a saved config slug. The adapter performs a `dryRun: true` preflight and uses the returned estimated credits for customer-credit reservation before creating the task. Router output is polled, validated and persisted as private assets. The provider's task-level actual cost is captured in the execution result but still requires task-correlated settlement reconciliation before production release.
 - Runway Model Router `POST /v1/generate/image`: the public API documents `outputCount` 1–4. This route requires a saved Model Router `configId`; it is not silently substituted for the existing model-specific direct adapter.
 - Gemini and FAL adapters: one output per workflow node until their model-specific multi-output contracts are implemented and tested.
 
