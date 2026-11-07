@@ -1,7 +1,6 @@
 import { getFalVideoCapabilities } from "./fal-video-gateway.mjs";
 import { getRunwayVideoCapabilities, listRunwayVideoModels } from "./runway-video-gateway.mjs";
 import { listGeminiImageModels } from "./gemini-image-gateway.mjs";
-import { isLegacyVideoModelSelectable } from "./video-provider-registry.mjs";
 import { listRunwayImageModels } from "./runway-image-pricing.mjs";
 const LOOPBACKS=new Set(["localhost","127.0.0.1","::1","[::1]"]);
 function gatewayState({enabled,configured,url,allowRemote,model,provider,capabilities,id=provider,reasonIfMissing="Set the server-side endpoint and model."}){
@@ -31,13 +30,13 @@ export function getProviderCatalog(env=process.env,media={ffmpeg:false,ffprobe:f
  image.availableModels=imageGemini?listGeminiImageModels():imageRunway?(runwayRouterEnabled?[{id:"model-router",label:"Runway Model Router",provider:"runway",readiness:image.status,outputCounts:{min:1,max:4},referenceImages:true,pricing:"preflight-quote"} ,...listRunwayImageModels()]:listRunwayImageModels()):[];
  const videoProvider=String(env.VIDEO_GATEWAY_PROVIDER||"fal").toLowerCase();
  const runwayVideoKey=env.RUNWAY_API_KEY||env.RUNWAYML_API_SECRET||"";
- const runwayVideoModelValid=listRunwayVideoModels().some(item=>item.id===env.RUNWAY_VIDEO_MODEL&&isLegacyVideoModelSelectable(item.id));
+ const runwayVideoModelValid=listRunwayVideoModels().some(item=>item.id===env.RUNWAY_VIDEO_MODEL);
  const video=videoProvider==="runway"
   ?gatewayState({enabled:env.VIDEO_GATEWAY_ENABLED==="true",configured:Boolean(runwayVideoKey&&runwayVideoModelValid),url:"https://api.dev.runwayml.com",id:"video",allowRemote:env.VIDEO_GATEWAY_ALLOW_REMOTE==="true",model:env.RUNWAY_VIDEO_MODEL,provider:"runway",capabilities:["video.generate"],reasonIfMissing:"Set RUNWAY_API_KEY (or RUNWAYML_API_SECRET) and select a model with an implemented Runway adapter."})
   :gatewayState({enabled:env.VIDEO_GATEWAY_ENABLED==="true",configured:Boolean(env.FAL_KEY&&env.FAL_VIDEO_MODEL),url:"https://queue.fal.run",id:"video",allowRemote:env.VIDEO_GATEWAY_ALLOW_REMOTE==="true",model:env.FAL_VIDEO_MODEL,provider:"fal",capabilities:["video.generate"],reasonIfMissing:"Set FAL_KEY and FAL_VIDEO_MODEL on the server."});
  if(videoProvider!=="runway"&&videoProvider!=="fal"){video.status="needs_configuration";video.configured=false;video.reason="VIDEO_GATEWAY_PROVIDER must be runway or fal.";}
  video.modelCapabilities=videoProvider==="runway"?getRunwayVideoCapabilities(env.RUNWAY_VIDEO_MODEL||""):getFalVideoCapabilities({imageInputField:env.FAL_VIDEO_IMAGE_INPUT_FIELD||""});
- video.availableModels=videoProvider==="runway"?listRunwayVideoModels().filter(item=>isLegacyVideoModelSelectable(item.id)):(video.model?[{
+ video.availableModels=videoProvider==="runway"?listRunwayVideoModels():(video.model?[{
   id:video.model,label:video.model,
   inputModes:["text",...(video.modelCapabilities.referenceImages?["image"]:[])],
   capabilities:video.capabilities,readiness:video.status
