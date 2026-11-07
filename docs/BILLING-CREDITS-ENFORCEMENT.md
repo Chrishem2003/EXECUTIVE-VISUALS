@@ -49,7 +49,7 @@ This is a preflight estimate, not provider invoice reconciliation. Actual asynch
 
 Verified Dodo `refund.succeeded` events are stored idempotently. When the refund maps to a subscription credit grant with a verified original amount and currency, credits are reversed proportionally and cumulatively in the append-only ledger. Reversal uses a stable refund idempotency key; a balance may become negative if the user already spent the refunded credits, which blocks further paid generation.
 
-If the original payment cannot be matched, the amount/currency is missing, or the cumulative refund exceeds the recorded payment, the event is retained in the administrator reconciliation queue instead of silently changing credits. An administrator must post a matching negative credit adjustment before marking a user-linked refund reconciled, or explicitly document that no credits were granted. Every resolution is audited.
+If the original payment cannot be matched, the amount/currency is missing, or the cumulative refund exceeds the recorded payment, the event is retained in the administrator reconciliation queue instead of silently changing credits. For a user-linked refund that needs manual credit correction, an administrator enters the number of credits to reverse; the server verifies that the amount does not exceed the remaining grants for that payment and creates a negative append-only ledger adjustment, even if the user already spent the credits. Alternatively, the administrator can explicitly document that no credits were granted. Every resolution is audited.
 
 ## Administrator finance reporting
 
