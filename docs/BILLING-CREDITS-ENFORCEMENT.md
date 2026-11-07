@@ -24,6 +24,20 @@ No payment collection is enabled by default. Do not enable checkout until the pr
 
 These are **customer credit units**, not provider USD costs. They are conservative starter values inherited from the existing staging credit policy. They must be reconciled against verified provider costs, model-specific quality tiers, output duration/resolution, currency conversion, payment fees and target gross margin before public pricing is launched.
 
+### Verified model-price preflight (opt-in)
+
+The billing engine can now use the admin model-price registry before a remote job is submitted:
+
+- `BILLING_CREDIT_VALUE_MICROS` defines the customer value of one credit in USD micros. Example: `10000` means USD $0.01 per credit.
+- `BILLING_COST_MARKUP_BPS` sets a markup in basis points on the recorded upstream cost. Default: `5000` (50% markup); valid range: 0–50,000.
+- An exact active registry match is required for `provider + model + capability + unit`. The record must have a positive USD price, an HTTPS source URL and a verification timestamp.
+- Video generation passes seconds as the billable quantity; image generation passes one image; voice and text currently pass one request. The registry unit must match exactly.
+- The engine rounds up to whole credits and stores the pricing provenance, upstream unit price, quantity, markup and calculated estimate in the ledger metadata.
+- If the registry record is missing, unverified, non-USD, or either pricing environment value is absent, the existing flat capability schedule is used. No unsupported FX conversion is guessed.
+- Set the credit value and markup only after finance approves actual payment fees, provider costs, currency exposure, refunds and desired gross margin. Never enable enforcement on production based only on example values.
+
+This is a preflight estimate, not provider invoice reconciliation. Actual asynchronous task costs and provider refunds still need settlement reconciliation before commercial launch.
+
 ## Enforcement behavior
 
 - Only remote providers consume credits. Local processing remains uncharged.
