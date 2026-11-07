@@ -205,7 +205,7 @@ test("Dodo customer portal is owner-scoped and returns only a verified hosted UR
   const env=baseEnv();
   db.prepare(`INSERT INTO billing_subscriptions
     (id,user_id,plan_id,status,provider,provider_customer_id,provider_subscription_id,current_period_start,current_period_end,metadata_json)
-    VALUES(?,?,?,'active','dodo',?,?,?,?,'{}')`)
+    undefined`)
     .run("dodo-subscription-portal","dodo-user",plan.id,"cus_dodo_123","sub_dodo_123",
       "2026-11-07T00:00:00.000Z","2026-12-07T00:00:00.000Z");
   try{
