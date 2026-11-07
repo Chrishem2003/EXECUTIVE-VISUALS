@@ -57,9 +57,15 @@ test("webhook intake verifies signature, stores minimal data and deduplicates ex
   const signed = signedPayload(payload(order));
   const first = receiveFlutterwaveWebhook(db, signed);
   const duplicate = receiveFlutterwaveWebhook(db, signed);
+  const withProviderMetadata = signedPayload({
+    ...payload(order),
+    data: { ...payload(order).data, customer: { email: "private@example.test" }, created_at: "2026-11-07T00:00:00Z" }
+  });
+  const metadataDuplicate = receiveFlutterwaveWebhook(db, withProviderMetadata);
   assert.equal(first.accepted, true);
   assert.equal(first.duplicate, false);
   assert.equal(duplicate.duplicate, true);
+  assert.equal(metadataDuplicate.duplicate, true);
   const stored = db.prepare("SELECT payload_json FROM billing_provider_events").get();
   const storedPayload = JSON.parse(stored.payload_json);
   assert.equal(storedPayload.data.tx_ref, order.txRef);
