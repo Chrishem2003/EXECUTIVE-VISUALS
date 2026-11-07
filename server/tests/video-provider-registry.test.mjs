@@ -301,6 +301,11 @@ test("Runway Model Router is catalogued as a disabled synthetic route, not a con
   assert.equal(model.capabilities.textToVideo, true);
   assert.equal(model.capabilities.imageToVideo, true);
   assert.equal(model.capabilities.nativeAudio, true);
+  assert.equal(model.capabilities.referenceAudio, true);
+  assert.deepEqual(model.capabilities.audioModes, ["generated", "none", "reference"]);
+  assert.equal(model.capabilities.maxReferenceImages, 4);
+  assert.equal(model.capabilities.maxReferenceVideos, 2);
+  assert.equal(model.capabilities.maxReferenceAudio, 1);
   assert.equal(model.constraints.pricingMode, "server-dry-run-with-approved-budget-ceiling");
   assert.equal(listSelectableVideoProviderModels().length, 0);
 });
