@@ -44,14 +44,27 @@ The migration is source-controlled only. It has not been applied to staging or p
 
 ## Required work before cloud mode can be enabled
 
-1. Add an authenticated customer API for quote, exact-input approval, enqueue, status and cancellation.
-2. Bind the quote and approval to the authenticated actor, tenant, project, canonical request hash, provider/model/operation, private asset IDs and expiry.
-3. Validate ownership, media type, checksum, duration, size and project scope server-side before enqueue.
-4. Atomically reserve customer credits and provider budget; idempotently enqueue using the existing durable queue and submission ledger.
-5. Map durable job state into workflow run/node state and publish stable private asset IDs for downstream timeline nodes.
-6. Settle only from provider-authoritative realized usage; reconcile ambiguous submission, cancellation, partial output and refunds without double charging.
-7. Add disposable-PostgreSQL end-to-end tests for tenant isolation, replay, idempotency, retry/recovery, no legacy fallback and downstream asset consumption.
-8. Complete isolated staging acceptance, rollback and operational runbooks before enabling the mode.
+### Customer transformation API — partially implemented
+
+The authenticated cloud timeline API now exposes:
+- `GET/POST /api/cloud/transformations` for project-scoped plan listing and idempotent draft creation.
+- `POST /api/cloud/transformations/:id/approve` for server-probed source metadata, provider-derived cost estimation and a short-lived exact-request approval ledger entry.
+- `POST /api/cloud/transformations/:id/submit` for approval-hash verification, budget reservation and durable enqueue.
+- `GET /api/cloud/transformations/:id` and `GET /api/cloud/jobs/:id` for plan/job status.
+
+These endpoints remain behind verified Supabase authentication and the cloud timeline API feature gate. Submit remains fail-closed until all eight readiness gates below are explicitly true. This is not yet an end-to-end interactive workflow-node bridge.
+
+### Remaining work
+
+1. Add a dedicated non-mutating quote endpoint so users can inspect provider/model, source eligibility and estimated cost before creating an approval.
+2. Add owner/editor-authorized cancellation and expose cancellation/refund/reconciliation outcomes without double charging.
+3. Bind quote and approval to the authenticated actor, tenant, project, canonical request hash, provider/model/operation, private asset IDs and expiry.
+4. Complete server-side media eligibility checks for provider limits, including frame rate and resolution, in addition to ownership, media type, checksum, duration, size and project scope.
+5. Atomically reserve customer credits and provider budget; idempotently enqueue using the existing durable queue and submission ledger.
+6. Map durable job state into workflow run/node state and publish stable private asset IDs for downstream timeline nodes.
+7. Settle only from provider-authoritative realized usage; reconcile ambiguous submission, cancellation, partial output and refunds without double charging.
+8. Add disposable-PostgreSQL end-to-end tests for tenant isolation, replay, idempotency, retry/recovery, cancellation and downstream asset consumption.
+9. Complete isolated staging acceptance, rollback and operational runbooks before enabling the mode.
 
 ## CI integration finding
 
