@@ -21,7 +21,7 @@ import { validateSrt, validateWebVtt } from "./caption-validation.mjs";
 import { ensureTransformationPlanSchema, createTransformationPlan, approveTransformationPlan, listTransformationPlans, getTransformationPlan } from "./transformation-plans.mjs";
 import { signInWithSupabasePassword, signUpWithSupabasePassword, refreshSupabaseSession, getSupabaseUser, revokeSupabaseSession } from "./supabase-password-auth.mjs";
 import { ensureBillingSchema, touchBillingAccount, getBillingOverview, listBillingPlans, getAdminOverview, listAdminUsers, saveBillingPlan, assignManualSubscription, adjustBillingCredits, setBillingAccountStatus, listBillingModelPrices, saveBillingModelPrice } from "./billing.mjs";
-import { ensureBillingWebhookSchema, receiveFlutterwaveWebhook, processNextFlutterwaveWebhook } from "./billing-webhooks.mjs";
+import { ensureBillingWebhookSchema, receiveFlutterwaveWebhook, processNextFlutterwaveWebhook, createFlutterwaveCheckout } from "./billing-webhooks.mjs";
 
 const PORT = Number(process.env.PORT || process.env.API_PORT || 4179);
 const HOST = process.env.API_HOST || (process.env.NODE_ENV === "production" ? "0.0.0.0" : "127.0.0.1");
@@ -376,7 +376,17 @@ export function createAppServer() {
       if(path==="/api/billing/plans"&&req.method==="GET"){send(res,200,{plans:listBillingPlans(db)},cors);return;}
       if(path==="/api/billing/overview"&&req.method==="GET"){send(res,200,{billing:getBillingOverview(db,user.id)},cors);return;}
       if(path==="/api/billing/checkout"&&req.method==="POST"){
-        fail(res,503,"BILLING_CHECKOUT_DISABLED","Payment checkout is not enabled. A verified payment-provider account, webhook integration and pricing approval are required.");return;
+        if(process.env.BILLING_CHECKOUT_ENABLED!=="true" || !process.env.FLW_SECRET_KEY ||
+            !process.env.FLW_WEBHOOK_SECRET || !process.env.PUBLIC_APP_URL){
+          fail(res,503,"BILLING_CHECKOUT_DISABLED","Flutterwave checkout is disabled until merchant approval, webhook secrets and the public return URL are configured.");return;
+        }
+        const body=await readJson(req,16*1024);
+        const checkout=await createFlutterwaveCheckout(db,{
+          user,planId:String(body.planId||""),
+          secretKey:process.env.FLW_SECRET_KEY,
+          publicAppUrl:process.env.PUBLIC_APP_URL
+        });
+        send(res,200,{checkout},cors);return;
       }
       if(path.startsWith("/api/admin/")&&path!=="/api/admin/ai-upscale/self-test"){
         if(!admin){fail(res,403,"ADMIN_REQUIRED","An explicitly allowlisted platform administrator is required.");return;}
