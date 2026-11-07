@@ -5,7 +5,7 @@ import { ensureBillingWebhookSchema, createBillingPurchaseOrder } from "../billi
 import {
   ensureBillingSchema,touchBillingAccount,listBillingPlans,saveBillingPlan,assignManualSubscription,
   getBillingOverview,getBillingBalance,getAdminOverview,listAdminUsers,adjustBillingCredits,
-  setBillingAccountStatus,canUsePaidModels,saveBillingModelPrice,listBillingModelPrices,resolveBillingCreditCost,
+  setBillingAccountStatus,canUsePaidModels,saveBillingModelPrice,listBillingModelPrices,resolveBillingCreditCost,assertBillingStorageQuota,assertConcurrentJobCapacity,
   spendBillingCredits,refundBillingCredits,applyDailyFreeCredits
 } from "../billing.mjs";
 
@@ -267,5 +267,30 @@ test("admin finance overview separates verified gross receipts from committed mo
   assert.deepEqual(overview.verifiedGrossReceipts30d,[{currency:"UGX",amountMinor:50000},{currency:"USD",amountMinor:1200}]);
   assert.deepEqual(overview.committedMrrByCurrency,[{currency:"USD",amountMinor:2200}]);
   assert.equal(overview.usage30d.estimatedCostMicros>=0,true);
+  db.close();
+});
+
+
+test("storage quotas reject uploads beyond the current plan allowance",()=>{
+  assert.deepEqual(assertBillingStorageQuota({limitBytes:100,usedBytes:40,incomingBytes:60}),
+    {allowed:true,limitBytes:100,usedBytes:40,incomingBytes:60,remainingBytes:0});
+  assert.throws(()=>assertBillingStorageQuota({limitBytes:100,usedBytes:40,incomingBytes:61}),
+    error=>error.code==="BILLING_STORAGE_QUOTA_EXCEEDED"&&error.status===413&&error.remainingBytes===60);
+  assert.throws(()=>assertBillingStorageQuota({limitBytes:0,usedBytes:0,incomingBytes:1}),
+    error=>error.code==="BILLING_STORAGE_QUOTA_EXCEEDED");
+  assert.equal(assertBillingStorageQuota({limitBytes:null,usedBytes:999,incomingBytes:1}).unlimited,true);
+});
+
+test("concurrent job limits count queued, running and review jobs but release terminal slots",()=>{
+  const db=setup();
+  db.prepare("INSERT INTO users(id,email) VALUES(?,?)").run("job-limit-user","jobs@example.test");
+  db.prepare("INSERT INTO jobs(id,owner_id,job_type,status,input_json) VALUES(?,?,?,?,?)")
+    .run("job-queued","job-limit-user","media.probe","queued","{}");
+  assert.throws(()=>assertConcurrentJobCapacity(db,{userId:"job-limit-user",limit:1}),
+    error=>error.code==="BILLING_CONCURRENT_JOB_LIMIT"&&error.status===429&&error.used===1);
+  assert.equal(assertConcurrentJobCapacity(db,{userId:"job-limit-user",limit:2}).allowed,true);
+  db.prepare("UPDATE jobs SET status='succeeded' WHERE id='job-queued'").run();
+  assert.deepEqual(assertConcurrentJobCapacity(db,{userId:"job-limit-user",limit:1}),
+    {allowed:true,limit:1,used:0});
   db.close();
 });
