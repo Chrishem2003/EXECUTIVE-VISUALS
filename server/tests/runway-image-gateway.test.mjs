@@ -1,10 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildRunwayImagePayload, generateRunwayImage } from "../runway-image-gateway.mjs";
+import { buildRunwayImagePayload, generateRunwayImage, preflightRunwayRouterImage, generateRunwayRouterImage } from "../runway-image-gateway.mjs";
 
 const taskId="123e4567-e89b-42d3-a456-426614174000";
 const png=Buffer.from([137,80,78,71,13,10,26,10,0,0,0,0]);
-const envKeys=["IMAGE_GATEWAY_ENABLED","IMAGE_GATEWAY_ALLOW_REMOTE","IMAGE_GATEWAY_TIMEOUT_MS","RUNWAY_API_KEY","RUNWAYML_API_SECRET"];
+const envKeys=["IMAGE_GATEWAY_ENABLED","IMAGE_GATEWAY_ALLOW_REMOTE","IMAGE_GATEWAY_TIMEOUT_MS","RUNWAY_API_KEY","RUNWAYML_API_SECRET","RUNWAY_IMAGE_ROUTER_ENABLED","RUNWAY_IMAGE_ROUTER_CONFIG"];
 const snapshot=()=>Object.fromEntries(envKeys.map(key=>[key,process.env[key]]));
 const restore=values=>envKeys.forEach(key=>values[key]===undefined?delete process.env[key]:process.env[key]=values[key]);
 const enable=()=>{process.env.IMAGE_GATEWAY_ENABLED="true";process.env.IMAGE_GATEWAY_ALLOW_REMOTE="true";process.env.RUNWAY_API_KEY="test-runway-key";process.env.IMAGE_GATEWAY_TIMEOUT_MS="10000";};
@@ -68,3 +68,52 @@ test("Runway image task rejects untrusted output URLs",async()=>{
   await assert.rejects(()=>generateRunwayImage({model:"gpt_image_2_6_flare",prompt:"test",fetchImpl,sleepImpl:async()=>{}}),e=>e.code==="IMAGE_GATEWAY_INVALID_RESPONSE");
  }finally{restore(previous);}
 });
+
+test("Runway image Model Router preflight is a non-billable dry-run with validated route estimate",async()=>{
+ const previous=snapshot();enable();process.env.RUNWAY_IMAGE_ROUTER_ENABLED="true";process.env.RUNWAY_IMAGE_ROUTER_CONFIG="campaign-images";
+ let calls=0;
+ const fetchImpl=async(url,options)=>{
+  calls++;assert.equal(String(url),"https://api.dev.runwayml.com/v1/generate/image");
+  assert.equal(options.headers["X-Runway-Version"],"2024-11-06");
+  const body=JSON.parse(options.body);
+  assert.equal(body.configId,"campaign-images");assert.equal(body.dryRun,true);
+  assert.deepEqual(body.input,{promptText:"A premium campaign",referenceImages:[{uri:"data:image/png;base64,iVBORw0KGgo="}],outputCount:3,aspectRatio:"16:9",resolution:"2k"});
+  return new Response(JSON.stringify({routing:{configId:"campaign-images",model:"gpt_image_2_6_flare",provider:"openai",estimatedCost:{credits:42}}}),{status:200});
+ };
+ try{
+  const quote=await preflightRunwayRouterImage({prompt:"A premium campaign",aspectRatio:"16:9",resolution:"2k",referenceImages:["data:image/png;base64,iVBORw0KGgo="],outputCount:3,fetchImpl});
+  assert.equal(quote.billable,false);assert.equal(quote.model,"gpt_image_2_6_flare");assert.equal(quote.estimatedCredits,42);assert.equal(quote.estimatedUsd,0.42);assert.equal(calls,1);
+ }finally{restore(previous);}
+});
+
+test("Runway image Model Router submits, polls and ingests exactly the requested variations",async()=>{
+ const previous=snapshot();enable();process.env.RUNWAY_IMAGE_ROUTER_ENABLED="true";process.env.RUNWAY_IMAGE_ROUTER_CONFIG="campaign-images";
+ const calls=[];
+ const fetchImpl=async(url,options={})=>{
+  const target=String(url);calls.push(target);
+  if(target==="https://api.dev.runwayml.com/v1/generate/image"){
+   const body=JSON.parse(options.body);assert.equal(body.configId,"campaign-images");assert.equal(body.input.outputCount,2);assert.equal(body.dryRun,undefined);
+   return new Response(JSON.stringify({id:taskId,routing:{configId:"campaign-images",model:"gpt_image_2_6_flare",provider:"openai",estimatedCost:{credits:30}},estimatedCost:{credits:30}}),{status:200});
+  }
+  if(target==="https://api.dev.runwayml.com/v1/tasks/"+taskId)return new Response(JSON.stringify({id:taskId,status:"SUCCEEDED",model:"gpt_image_2_6_flare",output:["https://images.cloudfront.net/one.png","https://images.cloudfront.net/two.png"],estimatedCost:{credits:30},cost:{credits:28}}),{status:200});
+  if(target==="https://images.cloudfront.net/one.png"||target==="https://images.cloudfront.net/two.png")return new Response(png,{status:200,headers:{"content-type":"image/png"}});
+  throw new Error("unexpected URL "+target);
+ };
+ try{
+  const result=await generateRunwayRouterImage({prompt:"Two campaign variations",outputCount:2,fetchImpl,sleepImpl:async()=>{}});
+  assert.equal(result.routeType,"runway-model-router");assert.equal(result.configId,"campaign-images");
+  assert.equal(result.model,"gpt_image_2_6_flare");assert.equal(result.estimatedCostCredits,30);assert.equal(result.actualCostCredits,28);
+  assert.equal(result.outputs.length,2);assert.deepEqual(result.outputs[0].buffer,png);assert.deepEqual(result.outputs[1].buffer,png);
+  assert.equal(calls.length,4);
+ }finally{restore(previous);}
+});
+
+test("Runway image Model Router rejects unsupported ratios, malformed quote and wrong output cardinality",async()=>{
+ const previous=snapshot();enable();process.env.RUNWAY_IMAGE_ROUTER_ENABLED="true";process.env.RUNWAY_IMAGE_ROUTER_CONFIG="campaign-images";
+ try{
+  await assert.rejects(()=>preflightRunwayRouterImage({prompt:"test",aspectRatio:"30:17",fetchImpl:async()=>new Response("{}")}),e=>e.code==="IMAGE_GATEWAY_UNSUPPORTED_CAPABILITY");
+  await assert.rejects(()=>preflightRunwayRouterImage({prompt:"test",fetchImpl:async()=>new Response(JSON.stringify({routing:{configId:"wrong",model:"x",provider:"x",estimatedCost:{credits:2}}}))}),e=>e.code==="RUNWAY_ROUTER_DRY_RUN_INVALID");
+  await assert.rejects(()=>generateRunwayRouterImage({prompt:"test",outputCount:2,fetchImpl:async()=>new Response(JSON.stringify({id:taskId,routing:{configId:"campaign-images",model:"x",provider:"x",estimatedCost:{credits:2}},estimatedCost:{credits:2}}))}),e=>e.code==="IMAGE_GATEWAY_INVALID_RESPONSE");
+ }finally{restore(previous);}
+});
+
