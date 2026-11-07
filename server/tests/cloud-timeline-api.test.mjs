@@ -48,6 +48,19 @@ test("Aleph 2 quote is non-mutating, source-probed and provider-priced",async()=
  assert.equal(calls.length,0,"quote must not write approvals, jobs, reservations or provider submissions");
 });
 
+test("Aleph 2 quote rejects server-probed clips below the provider minimum",async()=>{
+ const api=createCloudTimelineApi({
+  url:"https://example.supabase.co",serviceRoleKey:"service-secret",
+  fetchImpl:async()=>({ok:true,status:200,async text(){return"[]";}}),
+  timelineService:{timelines:{},assets:{async get(){return{id:"b23e4567-e89b-42d3-a456-426614174000",projectId:project,mediaType:"video/mp4"};}}},
+  authorize:async()=>true,
+  runwaySourceResolver:{async resolveMetadata(){return{mediaType:"video/mp4",durationSeconds:1.5,width:1920,height:1080,frameCount:45};}}
+ });
+ const result=await api.handle({method:"POST",path:"/api/cloud/transformations/quote",ownerId:owner,body:{projectId:project,sourceAssetId:"b23e4567-e89b-42d3-a456-426614174000",operation:"vehicle_replace",prompt:"Replace the vehicle carefully.",rightsConfirmed:true}});
+ assert.equal(result.status,422);
+ assert.equal(result.body.error.code,"VIDEO_DURATION_UNSUPPORTED");
+});
+
 test("Aleph 2 quote requires editor access and explicit media rights",async()=>{
  const sourceAsset={id:"b23e4567-e89b-42d3-a456-426614174000",projectId:project,mediaType:"video/mp4"};
  const makeApi=canWrite=>createCloudTimelineApi({
