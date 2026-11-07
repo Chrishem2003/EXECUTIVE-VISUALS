@@ -5,7 +5,7 @@ import {
   ensureBillingSchema,touchBillingAccount,listBillingPlans,saveBillingPlan,assignManualSubscription,
   getBillingOverview,getBillingBalance,getAdminOverview,listAdminUsers,adjustBillingCredits,
   setBillingAccountStatus,canUsePaidModels,saveBillingModelPrice,listBillingModelPrices,
-  spendBillingCredits,refundBillingCredits,getBillingBalance,applyDailyFreeCredits
+  spendBillingCredits,refundBillingCredits,applyDailyFreeCredits
 } from "../billing.mjs";
 
 function setup() {
