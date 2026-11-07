@@ -235,17 +235,18 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
     const explicitReference=String(values.reference??values.image??values.referenceImage??config.referenceAssetId??"").trim();
     const continuity=applyShotContinuity(db,job,run,config,values,prompt,"likeness",explicitReference);
     prompt=continuity.prompt;
-    const rawReference=explicitReference||continuity.referenceAssetId;
-    if(Array.isArray(rawReference)||Array.isArray(values.references))throw Object.assign(new Error("Image generation accepts at most one reference image."),{code:"IMAGE_GATEWAY_UNSUPPORTED_INPUT"});
-    const referenceId=String(rawReference||"").trim();
-    let referenceImageDataUrl="";
-    if(referenceId){
+    const rawReferences=Array.isArray(values.references)?values.references:config.referenceAssetIds||[];
+    if(!Array.isArray(rawReferences))throw Object.assign(new Error("Image reference IDs must be an array."),{code:"IMAGE_GATEWAY_INVALID_INPUT"});
+    const referenceIds=[...new Set([...rawReferences,explicitReference||continuity.referenceAssetId].map(value=>String(value||"").trim()).filter(Boolean))];
+    if(referenceIds.length>16)throw Object.assign(new Error("GPT Image 2.6 accepts at most 16 reference images."),{code:"IMAGE_GATEWAY_UNSUPPORTED_INPUT"});
+    const referenceImageDataUrls=[];
+    for(const referenceId of referenceIds){
      const source=getAccessibleAsset(db,job.owner_id,referenceId,false);
      if(!source||!String(source.media_type||"").startsWith("image/"))throw Object.assign(new Error("Image reference must be an accessible image asset."),{code:"IMAGE_GATEWAY_INVALID_INPUT"});
      const root=resolve(mediaRoot),absolute=resolve(root,source.storage_path),storedRelative=relative(root,absolute);
      if(!storedRelative||storedRelative===".."||storedRelative.startsWith(".."+sep)||absolute===root)throw Object.assign(new Error("Image reference asset path failed validation."),{code:"ASSET_PATH_INVALID"});
      const buffer=await readFile(absolute);
-     if(!buffer.length||buffer.length>10*1024*1024||buffer.length!==source.byte_size)throw Object.assign(new Error("Image reference is empty, oversized or changed since ingest."),{code:"IMAGE_GATEWAY_INVALID_INPUT"});
+     if(!buffer.length||buffer.length>5*1024*1024||buffer.length!==source.byte_size)throw Object.assign(new Error("Image reference is empty, oversized or changed since ingest."),{code:"IMAGE_GATEWAY_INVALID_INPUT"});
      const checksum=createHash("sha256").update(buffer).digest("hex");
      if(checksum!==source.sha256)throw Object.assign(new Error("Image reference checksum verification failed."),{code:"ASSET_CHECKSUM_MISMATCH"});
      const mime=String(source.media_type).toLowerCase();
@@ -253,13 +254,15 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
       :mime==="image/png"?buffer.length>=8&&buffer.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10]))
       :mime==="image/webp"?buffer.length>=12&&buffer.toString("ascii",0,4)==="RIFF"&&buffer.toString("ascii",8,12)==="WEBP":false;
      if(!validSignature)throw Object.assign(new Error("Image reference must be a valid JPEG, PNG or WebP image."),{code:"IMAGE_GATEWAY_INVALID_INPUT"});
-     referenceImageDataUrl="data:"+mime+";base64,"+buffer.toString("base64");
+     referenceImageDataUrls.push("data:"+mime+";base64,"+buffer.toString("base64"));
     }
+    const referenceImageDataUrl=referenceImageDataUrls[0]||"";
     if(!prompt.trim())throw Object.assign(new Error("Image-generation node requires a non-empty prompt input."),{code:"PROMPT_REQUIRED"});
     const usageStarted=Date.now();
     const provider=requireExecutionProvider("image.generate","IMAGE_GATEWAY_ALLOW_REMOTE");
+    if(referenceImageDataUrls.length>1&&provider.provider!=="runway")throw Object.assign(new Error("The selected image provider supports only one reference image in this workflow."),{code:"IMAGE_GATEWAY_UNSUPPORTED_INPUT"});
     reserveRemoteRequest(db,{ownerId:job.owner_id,projectId:job.project_id||null,jobId:job.id,provider,capability:"image.generate",billingReference:job.id+":"+runId+":"+nodeId+":image.generate",costContext:{provider:provider.provider,model:String(config.model||values.model||provider.model||"unknown"),unit:"image",quantity:1}});
-    const result=await generateImage({prompt,size:String(config.size||"1024x1024"),quality:String(config.quality||"medium"),referenceImageDataUrl,model:String(config.model||values.model||""),ratio:String(config.ratio||"auto"),reasoningEffort:String(config.reasoningEffort||"high"),background:String(config.background||"auto"),outputCount:1});
+    const result=await generateImage({prompt,size:String(config.size||"1024x1024"),quality:String(config.quality||"medium"),referenceImageDataUrl,referenceImages:referenceImageDataUrls,model:String(config.model||values.model||""),ratio:String(config.ratio||"auto"),reasoningEffort:String(config.reasoningEffort||"high"),background:String(config.background||"auto"),outputCount:1});
     recordModelUsage(db,{ownerId:job.owner_id,projectId:job.project_id||null,jobId:job.id,workflowRunId:runId,nodeId,provider:provider.provider,capability:"image.generate",model:result.model,usage:result.usage,durationMs:Date.now()-usageStarted});
     const asset=await storeGeneratedImage({db,mediaRoot,ownerId:job.owner_id,projectId:job.project_id||null,jobId:job.id,prompt,model:result.model,buffer:result.buffer});
     output=nodeOutput(node,asset.id);output.asset=asset.id;output.assetId=asset.id;output.mimeType=asset.mediaType;output.sha256=asset.sha256;output.usage=result.usage;
