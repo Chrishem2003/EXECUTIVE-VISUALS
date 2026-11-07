@@ -94,3 +94,62 @@ test("defaults to the exact FAL provider registration when no custom adapter fac
   assert.deepEqual(worker.listSupported(), ["fal:fal-ai/wan/v2.7/text-to-video"]);
   assert.equal(networkCalls, 0);
 });
+
+
+test("registers Runway text and video-edit adapters only with explicit task-cost and source-resolution dependencies", () => {
+  const worker = createProviderAwareCloudVideoWorkerComposition({
+    ...base,
+    env: {
+      ...env,
+      FAL_VIDEO_MODEL: "fal-ai/wan/v2.7/text-to-video",
+      FAL_KEY: "queue-test-key",
+      FAL_BILLING_KEY: "billing-test-key",
+      RUNWAY_VIDEO_MODELS: "gen4.5,aleph2",
+      RUNWAY_API_KEY: "runway-test-key",
+      RUNWAY_VIDEO_ALLOW_REMOTE: "false"
+    },
+    resolveRunwayActualCost: async () => ({
+      amount: 1, currency: "USD", evidenceReference: "test:runway-task-ledger"
+    }),
+    prepareRunwayInput: async () => ({})
+  });
+  assert.deepEqual(worker.listSupported(), [
+    "fal:fal-ai/wan/v2.7/text-to-video",
+    "runway:gen4.5",
+    "runway:aleph2"
+  ]);
+});
+
+test("refuses Runway worker registration without authoritative task-level cost resolution", () => {
+  assert.throws(() => createProviderAwareCloudVideoWorkerComposition({
+    ...base,
+    createAdapters: undefined,
+    env: {
+      ...env,
+      FAL_VIDEO_MODEL: "fal-ai/wan/v2.7/text-to-video",
+      FAL_KEY: "queue-test-key",
+      FAL_BILLING_KEY: "billing-test-key",
+      RUNWAY_VIDEO_MODELS: "aleph2",
+      RUNWAY_API_KEY: "runway-test-key"
+    },
+    prepareRunwayInput: async () => ({})
+  }), /authoritative task-level billing resolver/);
+});
+
+test("refuses Aleph2 worker registration without owner-scoped source-media resolution", () => {
+  assert.throws(() => createProviderAwareCloudVideoWorkerComposition({
+    ...base,
+    createAdapters: undefined,
+    env: {
+      ...env,
+      FAL_VIDEO_MODEL: "fal-ai/wan/v2.7/text-to-video",
+      FAL_KEY: "queue-test-key",
+      FAL_BILLING_KEY: "billing-test-key",
+      RUNWAY_VIDEO_MODELS: "aleph2",
+      RUNWAY_API_KEY: "runway-test-key"
+    },
+    resolveRunwayActualCost: async () => ({
+      amount: 1, currency: "USD", evidenceReference: "test:runway-task-ledger"
+    })
+  }), /owner-scoped source-media resolver/);
+});
