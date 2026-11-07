@@ -16,6 +16,18 @@ import { estimateVideoGenerationCost } from "./video-generation-cost-estimator.m
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const safeId=(value)=>typeof value==="string"&&UUID.test(value);
 const stableJson=value=>Array.isArray(value)?"["+value.map(stableJson).join(",")+"]":value&&typeof value==="object"?"{"+Object.keys(value).sort().map(key=>JSON.stringify(key)+":"+stableJson(value[key])).join(",")+"}":JSON.stringify(value);
+function buildAleph2GenerationInput({projectId,input,metadata}={}){
+ const preserve=Array.isArray(input?.preservation)?input.preservation:[];
+ const prompt=String(input?.prompt||"").trim()+(preserve.length?"\n\nPreserve: "+preserve.join(", "):"");
+ if(prompt.length>1000){const error=new Error("The edit instructions and preservation requirements exceed Aleph 2's 1,000-character prompt limit.");error.code="VIDEO_PROMPT_TOO_LONG";throw error;}
+ return {
+  projectId,provider:"runway",model:"aleph2",operation:"video-to-video",
+  sourceVideoAssetId:input.sourceAssetId,prompt,
+  durationSeconds:Math.ceil(metadata.durationSeconds),outputFormat:"mp4",
+  resolution:"provider_default",audioMode:"provider_default",
+  transformationOperation:input.operation
+ };
+}
 
 /**
  * Authenticated cloud timeline API. The caller must pass the user ID returned
@@ -168,7 +180,16 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
      if(!Number.isSafeInteger(estimatedCostMicros)||estimatedCostMicros<1||budget<estimatedCostMicros){
       return response(409,{error:{code:"TRANSFORMATION_BUDGET_BELOW_ESTIMATE",message:"The approved budget must cover the server-calculated provider estimate of "+(estimatedCostMicros/1000000).toFixed(2)+" USD."}});
      }
-     const approval={approvalId:randomUUID(),estimatedCostMicros,approvedBudgetMicros:budget,currency:"USD",adapterId:"runway:aleph2",capability:"video-to-video",sourceMetadata:{durationSeconds:metadata.durationSeconds,frameCount:metadata.frameCount,width:metadata.width,height:metadata.height}};
+     const generationInput=buildAleph2GenerationInput({projectId:row.project_id,input:planInput,metadata});
+     const requestHash=createHash("sha256").update(stableJson(generationInput)).digest("hex");
+     const approvalId=randomUUID(),expiresAt=new Date(Date.now()+10*60*1000).toISOString();
+     const approval={approvalId,requestHash,estimatedCostMicros,approvedBudgetMicros:budget,currency:"USD",adapterId:"runway:aleph2",capability:"video-to-video",expiresAt,sourceMetadata:{durationSeconds:metadata.durationSeconds,frameCount:metadata.frameCount,width:metadata.width,height:metadata.height}};
+     await request("rpc/create_video_generation_budget_approval",{method:"POST",body:{
+      p_approval_id:approvalId,p_owner_id:ownerId,p_project_id:row.project_id,
+      p_provider:"runway",p_model:"aleph2",p_request_hash:requestHash,p_currency:"USD",
+      p_approved_max_amount:budget/1000000,p_approval_note:"Aleph 2 transformation plan "+row.id,
+      p_expires_at:expiresAt
+     }});
      const updated=await request("jobs?id=eq."+encodeURIComponent(row.id)+"&status=eq.draft&approved_at=is.null",{method:"PATCH",body:{status:"awaiting_approval",estimated_cost:approval,approved_by:ownerId,approved_at:new Date().toISOString(),updated_at:new Date().toISOString()}});
      if(!Array.isArray(updated)||updated.length!==1)return response(409,{error:{code:"TRANSFORMATION_STATE_CONFLICT",message:"Transformation plan changed while approval was recorded."}});
      await request("job_events",{method:"POST",body:{job_id:row.id,owner_id:row.owner_id,event_type:"transformation.approved",event_data:{approvalId:approval.approvalId,estimatedCostMicros:estimate,currency}}});
@@ -189,17 +210,9 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
      try{
       const input=row.input||{};
       const metadata=await sourceResolver.resolveMetadata({ownerId,projectId:row.project_id,assetId:input.sourceAssetId});
-      const preserve=Array.isArray(input.preservation)?input.preservation:[];
-      const prompt=String(input.prompt||"").trim()+(preserve.length?"\n\nPreserve: "+preserve.join(", "):"");
-      if(prompt.length>1000)return response(422,{error:{code:"VIDEO_PROMPT_TOO_LONG",message:"The edit instructions and preservation requirements exceed Aleph 2's 1,000-character prompt limit."}});
-      const generationInput={
-       projectId:row.project_id,provider:"runway",model:"aleph2",operation:"video-to-video",
-       sourceVideoAssetId:input.sourceAssetId,prompt,
-       durationSeconds:Math.ceil(metadata.durationSeconds),outputFormat:"mp4",
-       resolution:"provider_default",audioMode:"provider_default",
-       transformationOperation:input.operation
-      };
+      const generationInput=buildAleph2GenerationInput({projectId:row.project_id,input,metadata});
       const requestHash=createHash("sha256").update(stableJson(generationInput)).digest("hex");
+      if(approval.requestHash!==requestHash)return response(409,{error:{code:"TRANSFORMATION_APPROVAL_REQUEST_MISMATCH",message:"The source media or transformation inputs changed after approval. Create a new approval."}});
       generationInput.requestHash=requestHash;
       const queued=await videoEnqueue.enqueue({
        ownerId,projectId:row.project_id,idempotencyKey:"video-transform:"+row.id,
