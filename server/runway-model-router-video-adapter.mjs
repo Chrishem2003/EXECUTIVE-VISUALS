@@ -55,11 +55,21 @@ function routedInput(input) {
     }
     result.seed = input.seed;
   }
-  for (const field of ["referenceImages", "referenceVideos", "referenceAudio", "keyframes"]) {
+  const referenceLimits = { referenceImages: 4, referenceVideos: 2, referenceAudio: 1, keyframes: 5 };
+  for (const field of Object.keys(referenceLimits)) {
     if (input[field] !== undefined) {
-      if (!Array.isArray(input[field]) || input[field].length > 4 ||
+      if (!Array.isArray(input[field]) || input[field].length > referenceLimits[field] ||
           input[field].some(item => !item || typeof item.uri !== "string" || !/^https:\/\//i.test(item.uri) && !/^runway:\/\//i.test(item.uri))) {
-        throw fail("Runway routed " + field + " must contain authorized HTTPS or Runway asset URIs.", "RUNWAY_ROUTER_INPUT_INVALID");
+        throw fail("Runway routed " + field + " exceeds its documented count or URI constraints.", "RUNWAY_ROUTER_INPUT_INVALID");
+      }
+      if (field === "referenceImages" && input[field].some(item => !["first", "last", "reference"].includes(item.role))) {
+        throw fail("Runway reference images require first, last or reference roles.", "RUNWAY_ROUTER_INPUT_INVALID");
+      }
+      if (field === "referenceVideos" && input[field].some(item => !["source", "reference"].includes(item.role))) {
+        throw fail("Runway reference videos require source or reference roles.", "RUNWAY_ROUTER_INPUT_INVALID");
+      }
+      if (field === "referenceAudio" && input[field].some(item => item.role !== undefined)) {
+        throw fail("Runway reference audio does not accept a role field.", "RUNWAY_ROUTER_INPUT_INVALID");
       }
       result[field] = input[field].map(item => ({ ...item }));
     }
