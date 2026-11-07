@@ -347,6 +347,13 @@ export function createCloudVideoEnqueue({
       const normalizedRequest = normalizeVideoGenerationRequest(capabilityInput);
       assertVideoCapabilities(normalizedRequest, modelRecord.capabilities);
 
+      if (currency !== estimate.currency) throw new Error("Budget approval currency must match the verified provider price.");
+      if (reservedAmount < estimate.amount) {
+        const error = new Error("Budget reservation is below the verified provider/model price estimate.");
+        error.code = "VIDEO_BUDGET_BELOW_PROVIDER_ESTIMATE";
+        error.estimate = estimate;
+        throw error;
+      }
       // Keep the application boundary aligned with the currently deployed SQL
       // enqueue function. The database is authoritative and presently permits
       // only these two model identities; other adapters may be registered for
@@ -361,13 +368,6 @@ export function createCloudVideoEnqueue({
         throw unavailable;
       }
 
-      if (currency !== estimate.currency) throw new Error("Budget approval currency must match the verified provider price.");
-      if (reservedAmount < estimate.amount) {
-        const error = new Error("Budget reservation is below the verified provider/model price estimate.");
-        error.code = "VIDEO_BUDGET_BELOW_PROVIDER_ESTIMATE";
-        error.estimate = estimate;
-        throw error;
-      }
       const rows = await call(RPC.enqueue, {
         p_owner_id: ownerId, p_project_id: projectId, p_idempotency_key: idempotencyKey,
         p_provider: provider, p_model: model, p_request_hash: requestHash, p_input: input,
