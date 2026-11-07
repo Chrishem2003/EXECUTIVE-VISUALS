@@ -206,3 +206,21 @@ test("fails closed when a provider does not declare typed reference media suppor
   }), error => error.code === "VIDEO_GENERATION_UNSUPPORTED_CAPABILITY");
 });
 
+
+test("source video counts toward the two-video Runway Router limit", () => {
+  const sourceVideoAssetId = "source-video";
+  assert.throws(() => normalizeVideoGenerationRequest({
+    ...base, operation: "video-to-video", sourceVideoAssetId,
+    referenceVideoAssetIds: ["ref-1", "ref-2"]
+  }), VideoGenerationValidationError);
+  assert.throws(() => normalizeVideoGenerationRequest({
+    ...base, operation: "video-to-video", sourceVideoAssetId,
+    referenceVideoAssetIds: [sourceVideoAssetId]
+  }), VideoGenerationValidationError);
+  const request = normalizeVideoGenerationRequest({
+    ...base, operation: "video-to-video", sourceVideoAssetId,
+    referenceVideoAssetIds: ["ref-1"]
+  });
+  assert.equal(request.referenceVideoAssetIds.length + 1, 2);
+});
+
