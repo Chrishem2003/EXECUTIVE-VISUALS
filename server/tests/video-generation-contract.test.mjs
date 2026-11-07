@@ -124,11 +124,20 @@ test("accepts the documented unsigned 32-bit provider seed range",()=>{
 test("normalizes video-to-video source assets and ordered keyframe asset references", () => {
   const request = normalizeVideoGenerationRequest({
     ...base, operation: "video-to-video", sourceVideoAssetId: "source-video",
-    keyframeAssetIds: ["frame-1", "frame-2"], durationSeconds: 12
+    keyframes: [{ assetId: "frame-1", at: 2.5 }, { assetId: "frame-2", at: 7 }],
+    durationSeconds: 12
   });
   assert.equal(request.operation, "video-to-video");
   assert.equal(request.sourceVideoAssetId, "source-video");
-  assert.deepEqual(request.keyframeAssetIds, ["frame-1", "frame-2"]);
+  assert.deepEqual(request.keyframes, [{ assetId: "frame-1", at: 2.5 }, { assetId: "frame-2", at: 7 }]);
+  assert.throws(() => normalizeVideoGenerationRequest({
+    ...base, operation: "video-to-video", sourceVideoAssetId: "source-video",
+    keyframes: [{ assetId: "frame-1", at: 5 }, { assetId: "frame-2", at: 2 }]
+  }), VideoGenerationValidationError);
+  assert.throws(() => normalizeVideoGenerationRequest({
+    ...base, operation: "video-to-video", sourceVideoAssetId: "source-video",
+    keyframeAssetIds: ["frame-1"]
+  }), VideoGenerationValidationError);
 });
 
 test("normalizes prompt-free video upscale controls and defaults to 2k", () => {
