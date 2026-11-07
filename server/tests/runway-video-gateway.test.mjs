@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {buildRunwayVideoPayload,getRunwayVideoCapabilities,listRunwayVideoModels,generateRunwayVideo} from "../runway-video-gateway.mjs";
+import {buildRunwayVideoPayload,buildRunwayImageToVideoPayload,getRunwayVideoCapabilities,listRunwayVideoModels,generateRunwayVideo} from "../runway-video-gateway.mjs";
 
 test("catalog contains only models with explicit text-to-video profiles",()=>{
  const models=listRunwayVideoModels();
@@ -27,10 +27,23 @@ test("unsupported models and malformed prompts fail closed",()=>{
  assert.throws(()=>buildRunwayVideoPayload({model:"not-a-model",prompt:"x"}),e=>e.code==="VIDEO_GATEWAY_UNSUPPORTED_MODEL");
  assert.throws(()=>buildRunwayVideoPayload({model:"seedance2_5",prompt:""}),e=>e.code==="VIDEO_GATEWAY_INVALID_INPUT");
 });
+test("first-frame image-to-video payload uses the correct endpoint contract per model",()=>{
+ const image="data:image/png;base64,iVBORw0KGgo=";
+ const gen=buildRunwayImageToVideoPayload({model:"gen4.5",prompt:"A moving camera",promptImage:image,durationSeconds:5,aspectRatio:"16:9"});
+ assert.equal(gen.promptImage,image);assert.equal(gen.ratio,"1280:720");
+ const seedance=buildRunwayImageToVideoPayload({model:"seedance2_5",prompt:"A cinematic scene",promptImage:image,durationSeconds:5,aspectRatio:"9:16"});
+ assert.equal(seedance.ratio,"480:854");
+ const kling=buildRunwayImageToVideoPayload({model:"kling_4",prompt:"A cinematic scene",promptImage:image,durationSeconds:5,aspectRatio:"9:16"});
+ assert.equal("ratio" in kling,false);
+});
+test("image-to-video rejects oversized or malformed frame data",()=>{
+ assert.throws(()=>buildRunwayImageToVideoPayload({model:"seedance2_5",prompt:"A scene",promptImage:"https://example.com/frame.png"}),e=>e.code==="VIDEO_GATEWAY_INVALID_INPUT");
+ assert.throws(()=>buildRunwayImageToVideoPayload({model:"seedance2_5",prompt:"A scene",promptImage:"data:image/png;base64,"+"A".repeat(7*1024*1024)}),e=>e.code==="VIDEO_GATEWAY_INVALID_INPUT");
+});
 test("capabilities are model-specific and never claim reference inputs for text-only adapter",()=>{
  const caps=getRunwayVideoCapabilities("seedance2_5");
- assert.equal(caps.referenceImages,false);
- assert.equal(caps.startFrame,false);
+ assert.equal(caps.referenceImages,true);
+ assert.equal(caps.startFrame,true);
  assert.equal(caps.maxDurationSeconds,30);
  assert.deepEqual(caps.resolutions,["provider_default","480p","720p","1080p"]);
 });
@@ -38,6 +51,22 @@ test("remote execution stays disabled until explicit server opt-in",async()=>{
  const original={enabled:process.env.VIDEO_GATEWAY_ENABLED,remote:process.env.VIDEO_GATEWAY_ALLOW_REMOTE,key:process.env.RUNWAYML_API_SECRET};
  process.env.VIDEO_GATEWAY_ENABLED="true";process.env.VIDEO_GATEWAY_ALLOW_REMOTE="false";process.env.RUNWAYML_API_SECRET="test";
  await assert.rejects(()=>generateRunwayVideo({model:"seedance2_5",prompt:"A sunrise"}),e=>e.code==="VIDEO_GATEWAY_REMOTE_DISABLED");
+ for(const [k,v] of Object.entries({VIDEO_GATEWAY_ENABLED:original.enabled,VIDEO_GATEWAY_ALLOW_REMOTE:original.remote,RUNWAYML_API_SECRET:original.key}))if(v===undefined)delete process.env[k];else process.env[k]=v;
+});
+test("image-to-video uses the Runway image endpoint with a validated first frame",async()=>{
+ const original={enabled:process.env.VIDEO_GATEWAY_ENABLED,remote:process.env.VIDEO_GATEWAY_ALLOW_REMOTE,key:process.env.RUNWAYML_API_SECRET};
+ process.env.VIDEO_GATEWAY_ENABLED="true";process.env.VIDEO_GATEWAY_ALLOW_REMOTE="true";process.env.RUNWAYML_API_SECRET="test";
+ const calls=[];
+ const fetchImpl=async(url,options={})=>{
+  const u=String(url);calls.push({url:u,body:options.body?JSON.parse(options.body):null});
+  if(u.endsWith("/image_to_video"))return new Response(JSON.stringify({id:"123e4567-e89b-42d3-a456-426614174000"}),{status:200});
+  if(u.includes("/tasks/"))return new Response(JSON.stringify({status:"FAILED"}),{status:200});
+  throw new Error("unexpected URL "+u);
+ };
+ await assert.rejects(()=>generateRunwayVideo({model:"seedance2_5",prompt:"A moving scene",durationSeconds:5,aspectRatio:"16:9",referenceImageDataUrl:"data:image/png;base64,iVBORw0KGgo=",fetchImpl,sleepImpl:async()=>{}}),e=>e.code==="VIDEO_GATEWAY_JOB_FAILED");
+ assert.equal(calls[0].url,"https://api.dev.runwayml.com/v1/image_to_video");
+ assert.equal(calls[0].body.promptImage,"data:image/png;base64,iVBORw0KGgo=");
+ assert.equal(calls[0].body.model,"seedance2_5");
  for(const [k,v] of Object.entries({VIDEO_GATEWAY_ENABLED:original.enabled,VIDEO_GATEWAY_ALLOW_REMOTE:original.remote,RUNWAYML_API_SECRET:original.key}))if(v===undefined)delete process.env[k];else process.env[k]=v;
 });
 test("task polling downloads only bounded MP4 output from the documented CDN host",async()=>{
