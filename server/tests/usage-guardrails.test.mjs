@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openDatabase } from "../db.mjs";
 import { reserveRemoteRequest } from "../usage-guardrails.mjs";
-import { ensureBillingSchema,touchBillingAccount,getBillingBalance } from "../billing.mjs";
+import { ensureBillingSchema,touchBillingAccount,getBillingBalance,saveBillingModelPrice } from "../billing.mjs";
 
 test("remote usage guardrail reserves requests before dispatch and blocks over-limit calls", async () => {
   const root = await mkdtemp(join(tmpdir(), "ev-remote-usage-"));
@@ -88,5 +88,39 @@ test("billing credits are reserved with remote usage and insufficient balance re
     db.close();await rm(root,{recursive:true,force:true});
     if(previousEnabled===undefined)delete process.env.BILLING_ENFORCEMENT_ENABLED;else process.env.BILLING_ENFORCEMENT_ENABLED=previousEnabled;
     if(previousDaily===undefined)delete process.env.CREDITS_DAILY_FREE;else process.env.CREDITS_DAILY_FREE=previousDaily;
+  }
+});
+
+
+test("remote usage reservation applies verified model-specific preflight credits before provider dispatch",async()=>{
+  const previous={enabled:process.env.BILLING_ENFORCEMENT_ENABLED,daily:process.env.CREDITS_DAILY_FREE,value:process.env.BILLING_CREDIT_VALUE_MICROS,markup:process.env.BILLING_COST_MARKUP_BPS};
+  process.env.BILLING_ENFORCEMENT_ENABLED="true";
+  process.env.CREDITS_DAILY_FREE="1000";
+  process.env.BILLING_CREDIT_VALUE_MICROS="10000";
+  process.env.BILLING_COST_MARKUP_BPS="5000";
+  const root=await mkdtemp(join(tmpdir(),"ev-dynamic-cost-"));
+  const db=openDatabase(join(root,"usage.sqlite"));
+  try{
+    ensureBillingSchema(db);
+    db.prepare("INSERT INTO users(id,email) VALUES(?,?)").run("dynamic-owner","dynamic@example.test");
+    touchBillingAccount(db,{id:"dynamic-owner",email:"dynamic@example.test"});
+    saveBillingModelPrice(db,{
+      provider:"runway",model:"seedance2_5",capability:"video.generate",unit:"second",
+      priceMicros:300000,currency:"USD",sourceUrl:"https://dev.runway.com/pricing",verifiedAt:"2026-11-07T00:00:00.000Z"
+    });
+    const reservation=reserveRemoteRequest(db,{
+      ownerId:"dynamic-owner",jobId:"video-job",provider:{provider:"runway",remote:true},
+      capability:"video.generate",limit:10,billingReference:"video-job:run-1:node-1",
+      costContext:{provider:"runway",model:"seedance2_5",unit:"second",quantity:5}
+    });
+    assert.equal(reservation.billingCharge.charged,225);
+    assert.equal(reservation.billingCharge.costEstimate.source,"verified_model_price");
+    assert.equal(reservation.billingCharge.costEstimate.quantity,5);
+    assert.equal(getBillingBalance(db,"dynamic-owner"),775);
+  }finally{
+    db.close();await rm(root,{recursive:true,force:true});
+    for(const [key,value] of Object.entries({BILLING_ENFORCEMENT_ENABLED:previous.enabled,CREDITS_DAILY_FREE:previous.daily,BILLING_CREDIT_VALUE_MICROS:previous.value,BILLING_COST_MARKUP_BPS:previous.markup})){
+      if(value===undefined)delete process.env[key];else process.env[key]=value;
+    }
   }
 });
