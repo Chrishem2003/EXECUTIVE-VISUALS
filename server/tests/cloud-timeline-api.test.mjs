@@ -203,7 +203,7 @@ test("video-to-audio transformation requires approval and queues the Mirelo mode
   authorize:async()=>true,
   transformationReadiness:()=>({adapterVerified:true,workerAvailable:true,privateStorageVerified:true,durableCheckpointsAvailable:true,costPolicyVerified:true,consentVerifierAvailable:true,visualQaAvailable:true,cloudSchemaApplied:true}),
   runwaySourceResolver:{async resolveMetadata(args){
-   assert.deepEqual(args,{ownerId,projectId,assetId:sourceAssetId,operation:"video-to-audio"});
+   assert.deepEqual(args,{ownerId:owner,projectId,assetId:sourceAssetId,operation:"video-to-audio"});
    return metadata;
   }}
  });
