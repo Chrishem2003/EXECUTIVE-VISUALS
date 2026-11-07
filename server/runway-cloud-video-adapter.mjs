@@ -141,7 +141,8 @@ export function createRunwayCloudVideoAdapter({
     if (!response.ok) throw fail("Runway ephemeral upload failed; allocate a new upload before retrying.", "RUNWAY_UPLOAD_FAILED");
     return created.runwayUri;
   }
-\n  function taskId(value) {
+
+  function taskId(value) {
     const id = String(value || "");
     if (!UUID.test(id)) throw fail("Runway task ID is invalid.", "RUNWAY_TASK_ID_INVALID");
     return id;
