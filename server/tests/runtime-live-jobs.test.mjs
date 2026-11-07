@@ -21,10 +21,20 @@ test("runtime polling prevents overlapping requests and preserves the last known
 
 test("job queue exposes actionable status counts and explains its refresh cadence", () => {
   const start = runtime.indexOf("function renderJobs()");
-  const end = runtime.indexOf("\nexport function renderRuntimeWorkspace()", start);
+  const end = runtime.indexOf("\nfunction renderJobQueue()", start);
   const renderJobs = runtime.slice(start, end);
   for (const status of ["queued", "running", "completed", "failed"]) {
     assert.ok(renderJobs.includes('job.status==="'+status+'"'), "missing "+status+" counter");
   }
   assert.match(renderJobs, /Live queue refreshes every 5 seconds/);
+});
+
+test("live polling updates only the job queue and preserves unrelated workspace forms", () => {
+  const start = runtime.indexOf("function startRuntimeJobPolling()");
+  const end = runtime.indexOf("\nexport async function initRuntime()", start);
+  const poller = runtime.slice(start, end);
+  assert.match(runtime, /id="runtime-job-queue"/);
+  assert.match(poller, /document\.querySelector<HTMLElement>\("#runtime-job-queue"\)/);
+  assert.match(poller, /queue\.innerHTML=renderJobQueue\(\)/);
+  assert.doesNotMatch(poller, /\bpaint\(\)/);
 });
