@@ -4,6 +4,19 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openDatabase, json } from "../server/db.mjs";
 import { executeWorkflowRun, hasApprovedAncestor } from "../server/workflow-executor.mjs";
+assert.equal(assertVideoWorkflowExecutionMode("legacy"),"legacy","legacy mode remains explicit and backward compatible");
+assert.throws(
+ ()=>assertVideoWorkflowExecutionMode("cloud"),
+ error=>error.code==="CLOUD_VIDEO_WORKFLOW_BRIDGE_NOT_CONFIGURED",
+ "cloud mode must fail closed until the governed workflow bridge is actually connected"
+);
+assert.throws(
+ ()=>assertVideoWorkflowExecutionMode("unknown"),
+ error=>error.code==="VIDEO_WORKFLOW_EXECUTION_MODE_INVALID",
+ "unknown execution modes must fail closed"
+);
+
+import { assertVideoWorkflowExecutionMode } from "../server/video-workflow-execution-mode.mjs";
 
 
 const approvalGraph={

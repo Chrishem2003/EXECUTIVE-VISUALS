@@ -20,6 +20,7 @@ import { buildShotContinuityPrompt, getShotContinuityReferenceIds } from "./shot
 import { normalizeVideoGenerationRequest, assertVideoCapabilities, createVideoRequestProvenance } from "./video-generation-contract.mjs";
 import { buildMediaQualityReport } from "./media-quality.mjs";
 import { billingEnforcementEnabled, refundBillingCredits } from "./billing.mjs";
+import { assertVideoWorkflowExecutionMode } from "./video-workflow-execution-mode.mjs";
 
 const now=()=>new Date().toISOString();
 function normalizeRunwayRouterAspectRatio(value){
@@ -301,6 +302,7 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
     const assetIds=assets.map(asset=>asset.id),asset=assets[0];
     output=nodeOutput(node,asset.id);output.asset=asset.id;output.assetId=asset.id;output.image=asset.id;output.images=assetIds;output.assetIds=assetIds;output.assets=assetIds;output.outputCount=assetIds.length;output.mimeType=asset.mediaType;output.sha256=asset.sha256;output.usage=result.usage;
    }else if(node.kind==="video.generate"){
+    assertVideoWorkflowExecutionMode();
     enforceIdentityPermission(db,job,config,values,"face-animation");
     if(!hasApprovedAncestor(graph,nodeId,outputs))throw Object.assign(new Error("A completed upstream human-approval node is required before video generation."),{code:"APPROVAL_REQUIRED"});
     let prompt=String(values.prompt??values.text??values.input??config.prompt??"");
