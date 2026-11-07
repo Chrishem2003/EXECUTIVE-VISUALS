@@ -288,7 +288,7 @@ export async function processNextFlutterwaveWebhook(db, {
         db.prepare("UPDATE billing_payment_orders SET status='paid',provider_transaction_id=?,verified_at=?,updated_at=? WHERE id=?")
           .run(String(verified.id), timestamp, timestamp, latest.id);
       }
-      db.prepare("UPDATE billing_provider_events SET processed_at=?,last_error=NULL WHERE id=?").run(timestamp, event.id);
+      db.prepare("UPDATE billing_provider_events SET processed_at=?,last_error=NULL,processing_at=NULL,lease_expires_at=NULL WHERE id=?").run(timestamp, event.id);
       db.exec("COMMIT");
     } catch (error) { db.exec("ROLLBACK"); throw error; }
     return { processed: true, paid: true, eventId: event.event_id, paymentOrderId: order.id };
