@@ -83,6 +83,7 @@ test("video provider catalog exposes the configured adapter's actual model capab
  const unconfigured=getProviderCatalog({VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",FAL_KEY:"secret",FAL_VIDEO_MODEL:"fal-ai/model"});
  const video=unconfigured.providers.find(item=>item.id==="video");
  assert.deepEqual(video.modelCapabilities.aspectRatios,["16:9","9:16","1:1"]);
+ assert.equal(video.availableModels[0].id,"fal-ai/model");
  assert.deepEqual(video.modelCapabilities.resolutions,["provider_default"]);
  assert.equal(video.modelCapabilities.negativePrompt,false);
  assert.equal(video.modelCapabilities.referenceImages,false);
