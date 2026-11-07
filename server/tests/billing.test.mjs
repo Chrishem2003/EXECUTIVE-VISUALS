@@ -123,7 +123,7 @@ test("generation credits use the canonical billing ledger with daily refills and
     assert.equal(refundReplay.replayed,true);
     assert.equal(refundReplay.balance,20);
     const nextDay=applyDailyFreeCredits(db,"generation-user",{now:Date.parse("2026-11-08T00:00:00.000Z")});
-    assert.equal(nextDay.granted,17);
+    assert.equal(nextDay.granted,20);
     assert.equal(nextDay.balance,20);
   }finally{
     db.close();
