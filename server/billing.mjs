@@ -168,6 +168,10 @@ function applyDailyFreeCreditsInTransaction(db,userId,{now=Date.now(),env=proces
 }
 
 export function applyDailyFreeCredits(db,userId,{now=Date.now(),env=process.env}={}) {
+  if(!billingEnforcementEnabled(env))return {granted:0,balance:getBillingBalance(db,userId,new Date(now).toISOString())};
+  const day=new Date(now).toISOString().slice(0,10);
+  const existing=db.prepare("SELECT 1 AS found FROM billing_daily_refills WHERE user_id=? AND refill_day=?").get(userId,day);
+  if(existing)return {granted:0,balance:getBillingBalance(db,userId,new Date(now).toISOString())};
   db.exec("BEGIN IMMEDIATE");
   try{
     const result=applyDailyFreeCreditsInTransaction(db,userId,{now,env});
