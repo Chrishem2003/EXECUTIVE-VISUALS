@@ -199,7 +199,7 @@ test("video-to-audio transformation requires approval and queues the Mirelo mode
  };
  const api=createCloudTimelineApi({
   url:"https://example.supabase.co",serviceRoleKey:"service-secret",fetchImpl,
-  timelineService:{timelines:{},assets:{async get(){return{id:sourceAssetId,owner,projectId,mediaType:"video/mp4",name:"source.mp4",size:1024};}}},
+  timelineService:{timelines:{},assets:{async get(){return{id:sourceAssetId,ownerId:owner,projectId:project,mediaType:"video/mp4",name:"source.mp4",size:1024};}}},
   authorize:async()=>true,
   transformationReadiness:()=>({adapterVerified:true,workerAvailable:true,privateStorageVerified:true,durableCheckpointsAvailable:true,costPolicyVerified:true,consentVerifierAvailable:true,visualQaAvailable:true,cloudSchemaApplied:true}),
   runwaySourceResolver:{async resolveMetadata(args){
@@ -208,7 +208,7 @@ test("video-to-audio transformation requires approval and queues the Mirelo mode
   }}
  });
  const draft=await api.handle({method:"POST",path:"/api/cloud/transformations",owner,idempotencyKey:"sound-design-plan-1",body:{
-  projectId,sourceAssetId,operation:"sound_design_from_video",prompt:"TARGET RESULT: Rain ambience. Preserve dialogue.",
+  projectId:project,sourceAssetId,operation:"sound_design_from_video",prompt:"TARGET RESULT: Rain ambience. Preserve dialogue.",
   durationSeconds:13,audioFormat:"wav",numVariants:2,preserveSpeech:true,rightsConfirmed:true
  }});
  assert.equal(draft.status,201);
