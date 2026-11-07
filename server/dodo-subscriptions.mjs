@@ -26,6 +26,12 @@ export function dodoSubscriptionCheckoutEnabled(env = process.env) {
     ["test_mode", "live_mode"].includes(env.DODO_PAYMENTS_ENVIRONMENT || "test_mode");
 }
 
+export function dodoCustomerPortalEnabled(env = process.env) {
+  return env.DODO_MERCHANT_APPROVED === "true" &&
+    !!(env.DODO_PAYMENTS_API_KEY && env.PUBLIC_APP_URL) &&
+    ["test_mode", "live_mode"].includes(env.DODO_PAYMENTS_ENVIRONMENT || "test_mode");
+}
+
 export function ensureDodoSubscriptionSchema(db) {
   db.exec(`
     CREATE TABLE IF NOT EXISTS billing_dodo_checkout_sessions (
@@ -147,8 +153,8 @@ export async function createDodoSubscriptionCheckout(db, {
 export async function createDodoCustomerPortalSession(db, {
   user, env = process.env, fetchImpl = fetch
 } = {}) {
-  if (!dodoSubscriptionCheckoutEnabled(env)) {
-    throw fail("Dodo customer portal is unavailable until merchant approval and subscription configuration are complete.", "DODO_SUBSCRIPTIONS_DISABLED", 503);
+  if (!dodoCustomerPortalEnabled(env)) {
+    throw fail("Dodo customer portal is unavailable until merchant approval and portal credentials are configured.", "DODO_PORTAL_DISABLED", 503);
   }
   if (!user?.id) throw fail("Authenticated customer identity is required.", "BILLING_USER_REQUIRED", 401);
   const subscription = db.prepare(`SELECT provider_customer_id FROM billing_subscriptions
