@@ -49,3 +49,17 @@ test("GPT Image 2.6 models are catalogued but cannot be selected for execution",
     assert.deepEqual(model.backgrounds,["auto","opaque","transparent"]);
   }
 });
+
+test("GPT Image 2.6 accepts only the exact documented pixel dimensions and matching tiers",()=>{
+  assert.equal(estimateRunwayImageCredits({model:"gpt_image_2_6_flare",ratio:"1088:1920",quality:"high",pricingDate:date}).ratioCategory,"9:16");
+  assert.equal(estimateRunwayImageCredits({model:"gpt_image_2_6_flare",ratio:"1536:1920",quality:"high",pricingDate:date}).estimatedCredits,8);
+  assert.throws(()=>estimateRunwayImageCredits({model:"gpt_image_2_6_flare",ratio:"1600:900",quality:"high",pricingDate:date}),e=>e.code==="RUNWAY_IMAGE_PRICE_UNSUPPORTED_OPTION");
+  assert.throws(()=>estimateRunwayImageCredits({model:"gpt_image_2_6_flare",resolution:"1K",ratio:"2560:2560",quality:"high",pricingDate:date}),e=>e.code==="RUNWAY_IMAGE_PRICE_INVALID_INPUT");
+});
+test("reasoning effort and background are accepted but do not alter published image price",()=>{
+  const base=estimateRunwayImageCredits({model:"gpt_image_2_6_flare",ratio:"1920:1920",quality:"high",pricingDate:date});
+  const variant=estimateRunwayImageCredits({model:"gpt_image_2_6_flare",ratio:"1920:1920",quality:"high",reasoningEffort:"low",background:"transparent",pricingDate:date});
+  assert.equal(variant.estimatedCredits,base.estimatedCredits);
+  assert.equal(variant.reasoningEffort,"low");
+  assert.equal(variant.background,"transparent");
+});
