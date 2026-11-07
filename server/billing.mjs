@@ -217,6 +217,9 @@ export function resolveBillingCreditCost(db, {
     throw fail("Provider cost estimate exceeds the supported billing range.", "BILLING_COST_ESTIMATE_INVALID", 500);
   }
   const markedCost = Math.ceil(rawCost * (10000 + markupBps) / 10000);
+  if (!Number.isSafeInteger(markedCost) || markedCost <= 0) {
+    throw fail("Marked-up provider cost exceeds the supported billing range.", "BILLING_COST_ESTIMATE_INVALID", 500);
+  }
   const credits = Math.max(1, Math.ceil(markedCost / creditValueMicros));
   if (!Number.isSafeInteger(credits) || credits > 100000000) {
     throw fail("Provider cost estimate exceeds the supported credit range.", "BILLING_COST_ESTIMATE_INVALID", 500);
