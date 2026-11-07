@@ -35,7 +35,7 @@ The application now includes a local API service with:
 - Asset ownership isolation and original/derivative relationships.
 - Persistent workflow records and an observable job/event queue with renewable leases, stale-worker recovery, bounded retries, backoff and cross-process cancellation polling.
 - A local FFmpeg media adapter for probe, thumbnail, transcode, audio extraction, proxy generation and master-timeline rendering with synchronized audio, still-image overlays and burned-in captions when FFmpeg/FFprobe are installed.
-- Explicit rejection of unimplemented image/video/speech generation; no fake success. A server-side text gateway is available but disabled by default, requires a completed upstream human-approval node, and requires explicit remote-access opt-in for non-local endpoints.
+- Provider-backed image generation through the existing compatible gateway, Fal, Gemini and the new guarded Runway GPT Image 2.6 adapter. Image jobs require a completed upstream human-approval node; remote execution is disabled unless explicitly opted in. Video and speech generation remain adapter- and provider-configuration-dependent; unsupported paths fail closed.
 - Audit events, idempotency keys, upload limits, secure cookies, restrictive content security policy and server-side credential boundaries.
 - Persistent creative briefs, shot lists, characters, scripts and variants stored per project with optimistic revision conflicts.
 - Searchable capability atlas with 110 definitions across 23 domains.
@@ -61,7 +61,7 @@ npm run verify:server
 ## Production boundary
 Production mode refuses local-password authentication. Configure a trusted identity provider, persistent storage, HTTPS, rate limits and deployment-specific security controls before exposing the service. Do not attach this project to another product's database. A dedicated database migration is included for review but is not automatically applied.
 
-Actual image/video generation, speech/dubbing, timeline preview playback, transitions, effects, animated/video overlays, multi-host cloud storage, live collaboration and publishing are not considered complete until their adapters and end-to-end tests pass. The text gateway records usage but does not calculate provider pricing; verify cost before enabling a remote/billable endpoint.
+Actual video generation, speech/dubbing, timeline preview playback, transitions, effects, animated/video overlays, multi-host cloud storage, live collaboration and publishing are not considered complete until their adapters and end-to-end tests pass. Runway GPT Image 2.6 supports one output per workflow job today; multi-output fan-out, production billing settlement and staging acceptance remain open. The text gateway records usage but does not calculate provider pricing; verify cost before enabling a remote/billable endpoint.
 
 
 ## Staging deployment
