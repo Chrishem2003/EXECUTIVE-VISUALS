@@ -46,7 +46,8 @@
     "verify:audio-evidence": "node --experimental-strip-types --test server/tests/audio-evidence.test.mjs",
     "verify:caption-validation": "node --test server/tests/caption-validation.test.mjs server/tests/captions.test.mjs",
     "verify:caption-evidence": "node --experimental-strip-types --test server/tests/caption-evidence.test.mjs",
-    "verify:delivery-evidence": "node --experimental-strip-types --test server/tests/delivery-evidence.test.mjs"
+    "verify:delivery-evidence": "node --experimental-strip-types --test server/tests/delivery-evidence.test.mjs",
+    "reconcile:runway-usage": "node scripts/reconcile-runway-usage.mjs"
   },
   "devDependencies": {
     "typescript": "^5.8.3",
