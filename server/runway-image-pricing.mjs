@@ -64,3 +64,21 @@ export function estimateRunwayImageCredits(options={}){
     evidenceType:"published_price_estimate",billable:false,settlementEligible:false
   });
 }
+
+export function listRunwayImageModels(){
+  return ["gpt_image_2_6_flare","gpt_image_2_6_sunburst"].map(id=>Object.freeze({
+    id,
+    provider:"runway",
+    availability:"disabled",
+    executionAdapter:"not_implemented",
+    promptMaxCharacters:32000,
+    maxReferenceImages:16,
+    outputCounts:Object.freeze({min:1,max:10}),
+    resolutions:Object.freeze(["1K","2K","4K"]),
+    qualities:Object.freeze(["low","medium","high"]),
+    reasoningEfforts:Object.freeze(["low","medium","high"]),
+    backgrounds:Object.freeze(["auto","opaque","transparent"]),
+    outputFormat:"png",
+    pricingSource:SOURCE
+  }));
+}
