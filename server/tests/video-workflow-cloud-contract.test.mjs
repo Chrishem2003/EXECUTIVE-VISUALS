@@ -33,7 +33,7 @@ test("maps one first-frame asset to image-to-video without resolving private sto
 test("maps existing image/reference workflow ports and numeric UI duration values", () => {
   const result = createVideoWorkflowCloudRequest({
     ...base,
-    node: { ...node, config: { ...node.config, duration: "10" } },
+    node: { ...node, config: { ...node.config, durationSeconds: undefined, duration: "10" } },
     values: { prompt: "Animate the image", image: "asset-image-2" }
   });
   assert.equal(result.operation, "image-to-video");
