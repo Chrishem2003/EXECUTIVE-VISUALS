@@ -444,6 +444,42 @@ test("Runway Model Router validates config gates but is blocked by the durable S
   assert.equal(calls, 0);
 });
 
+test("Runway Model Router reaches durable enqueue only for explicit supported operations", async () => {
+  const routerInput = {
+    projectId, provider: "runway", model: "model-router", requestHash,
+    operation: "text-to-video", prompt: "A cinematic product launch", durationSeconds: 8,
+    aspectRatio: "16:9", outputFormat: "mp4"
+  };
+  const calls = [];
+  const env = {
+    RUNWAY_MODEL_ROUTER_ENABLED: "true", CLOUD_VIDEO_WORKER_ENABLED: "true",
+    RUNWAY_VIDEO_ALLOW_REMOTE: "true", RUNWAY_VIDEO_ROUTER_CONFIG: "production-video",
+    VIDEO_GATEWAY_ENABLED: "true", VIDEO_GATEWAY_ALLOW_REMOTE: "true"
+  };
+  const client = createCloudVideoEnqueue({
+    ...base, env,
+    fetchImpl: async (url, options) => {
+      calls.push({ url, body: JSON.parse(options.body) });
+      return response([resultRow]);
+    }
+  });
+  const queued = await client.enqueue(args({
+    provider: "runway", model: "model-router", input: routerInput, reservedAmount: 4.5
+  }));
+  assert.equal(queued.jobId, resultRow.job_id);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].body.p_provider, "runway");
+  assert.equal(calls[0].body.p_model, "model-router");
+  assert.equal(calls[0].body.p_input.operation, "text-to-video");
+
+  await assert.rejects(() => client.enqueue(args({
+    provider: "runway", model: "model-router",
+    input: { ...routerInput, operation: "audio-to-video" },
+    idempotencyKey: "router-invalid-operation"
+  })), error => error.code === "VIDEO_GENERATION_UNSUPPORTED_CAPABILITY");
+  assert.equal(calls.length, 1);
+});
+
 test("Runway Model Router rejects non-USD ceilings and invalid config slugs before queue submission", async () => {
   const routerInput = {
     projectId, provider: "runway", model: "model-router", requestHash,
