@@ -87,6 +87,8 @@ test("Runway metadata resolver probes the private source and returns authoritati
   assert.equal(result.frameCount, 336);
   assert.equal(result.width, 1920);
   assert.equal(result.height, 1080);
+  assert.equal(result.sourceWidth, 1920);
+  assert.equal(result.sourceHeight, 1080);
   assert.equal(result.sourceDynamicRange, "sdr");
 });
 
