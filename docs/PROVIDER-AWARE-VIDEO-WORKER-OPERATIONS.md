@@ -193,3 +193,9 @@ Image, video and audio references are resolved from owner- and project-scoped pr
 Important limitation: the dry-run currently occurs in the hosted worker after the queue/budget reservation has been created. A customer-facing pre-approval quote endpoint that binds the exact prepared input hash, quote expiry and user approval is still required for a complete purchase UX. The route supports normalized text-to-video, first-frame image-to-video and reference-guided generation with image, video and audio inputs. Source-video edit/extend through the router and a user-facing Model Router config manager are not enabled. Keep the route disabled until isolated staging tests, the pre-approval quote flow, and task-cost settlement tests pass.
 
 No paid provider calls are part of CI. This integration does not enable the route in production or change any production environment.
+
+## Application integration boundary — release blocker
+
+The hosted Supabase video queue/worker is currently a separate execution path from the interactive local workflow runner. The existing `video.generate` node in `server/workflow-executor.mjs` still calls the legacy synchronous Runway/FAL gateways and stores its result in the local SQLite media library. The hosted worker writes to the Supabase private-asset/queue boundary. The current `server/index.mjs` does not expose a customer-facing `/api/cloud/video` enqueue/quote route, and the interactive `queueGenerationWorkflow` currently creates a local workflow with a human-approval node.
+
+Do not advertise the hosted Model Router as a completed customer-facing generation path until an authenticated bridge is implemented. That bridge must preserve the same user/project identity, budget approval, exact request hash, quote expiry, durable queue state, asset visibility and downstream workflow references. Do not silently fall back from cloud execution to the legacy local gateway, or vice versa.
