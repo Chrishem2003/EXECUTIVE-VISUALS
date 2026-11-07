@@ -36,7 +36,7 @@ function readLimit(raw = process.env.REMOTE_AI_DAILY_REQUEST_LIMIT) {
  */
 export function reserveRemoteRequest(db, {
   ownerId, projectId = null, jobId = null, provider, capability,
-  limit, billingReference = null
+  limit, billingReference = null, costContext = null
 }) {
   if (!provider?.remote) return { reserved: false, reason: "local_provider" };
   if (limit === undefined) limit = readLimit();
@@ -77,7 +77,8 @@ export function reserveRemoteRequest(db, {
       const reference=String(billingReference||jobId&&jobId+":"+capability||id).slice(0,180);
       billingCharge=spendBillingCredits(db,{
         userId:ownerId,capability,referenceId:reference,
-        idempotencyKey:"generation-spend:"+reference
+        idempotencyKey:"generation-spend:"+reference,
+        costContext
       });
       if(billingCharge?.replayed){
         db.prepare("DELETE FROM remote_usage_reservations WHERE id=?").run(id);
