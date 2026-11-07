@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { openDatabase } from "../db.mjs";
+import { ensureBillingWebhookSchema, createBillingPurchaseOrder } from "../billing-webhooks.mjs";
 import {
   ensureBillingSchema,touchBillingAccount,listBillingPlans,saveBillingPlan,assignManualSubscription,
   getBillingOverview,getBillingBalance,getAdminOverview,listAdminUsers,adjustBillingCredits,
@@ -232,5 +233,34 @@ test("stale or future provider prices fail closed until re-verified",()=>{
     provider:"runway",model:"stale",capability:"video.generate",unit:"second",quantity:5,
     env:{BILLING_CREDIT_VALUE_MICROS:"10000"}
   }),error=>error.code==="BILLING_MODEL_PRICE_STALE"&&error.status===503);
+  db.close();
+});
+
+
+test("admin finance overview separates verified gross receipts from committed monthly recurring value",()=>{
+  const db=setup();
+  ensureBillingWebhookSchema(db);
+  touchBillingAccount(db,{id:"finance-one",email:"finance-one@example.test"});
+  touchBillingAccount(db,{id:"finance-two",email:"finance-two@example.test"});
+  const topup=saveBillingPlan(db,{
+    code:"ugx-topup",name:"UGX Top-up",amountMinor:50000,currency:"UGX",
+    interval:"one_time",creditsPerPeriod:1000
+  });
+  const order=createBillingPurchaseOrder(db,{userId:"finance-one",planId:topup.id});
+  db.prepare("UPDATE billing_payment_orders SET status='paid',verified_at=? WHERE id=?").run(new Date().toISOString(),order.id);
+  const monthly=saveBillingPlan(db,{
+    code:"monthly-finance",name:"Monthly Finance",amountMinor:1200,currency:"USD",
+    interval:"month",creditsPerPeriod:100
+  });
+  const annual=saveBillingPlan(db,{
+    code:"annual-finance",name:"Annual Finance",amountMinor:12000,currency:"USD",
+    interval:"year",creditsPerPeriod:100
+  });
+  assignManualSubscription(db,{userId:"finance-one",planId:monthly.id,periodDays:30,status:"active",actorId:"admin"});
+  assignManualSubscription(db,{userId:"finance-two",planId:annual.id,periodDays:365,status:"active",actorId:"admin"});
+  const overview=getAdminOverview(db);
+  assert.deepEqual(overview.verifiedGrossReceipts30d,[{currency:"UGX",amountMinor:50000}]);
+  assert.deepEqual(overview.committedMrrByCurrency,[{currency:"USD",amountMinor:2200}]);
+  assert.equal(overview.usage30d.estimatedCostMicros>=0,true);
   db.close();
 });
