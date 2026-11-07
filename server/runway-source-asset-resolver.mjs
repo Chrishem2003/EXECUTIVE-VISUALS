@@ -75,7 +75,7 @@ export function createRunwaySourceAssetResolver({
     if (bytes.length !== asset.size || bytes.length > maxBytes) {
       throw fail("Private source asset size does not match its stored record.", "VIDEO_INPUT_ASSET_INTEGRITY_FAILED");
     }
-    return { asset, bytes };
+    return { asset, bytes, url: url.toString() };
   }
 
   async function probeVideo(bytes) {
@@ -130,6 +130,36 @@ export function createRunwaySourceAssetResolver({
       const job = context.job || {};
       const ownerId = job.owner_id;
       const projectId = input?.projectId || null;
+      if (input?.model === "model-router") {
+        const referenceImages = [];
+        const firstFrameId = input.startFrameAssetId || null;
+        if (firstFrameId) {
+          const first = await resolveAsset({ ownerId, projectId, assetId: firstFrameId, kinds: "image" });
+          referenceImages.push({ uri: first.url, role: "first" });
+        }
+        const imageIds = input.referenceImageAssetIds || input.referenceAssetIds || [];
+        if (!Array.isArray(imageIds) || imageIds.length > (firstFrameId ? 3 : 4)) {
+          throw fail("Runway Model Router accepts at most four owner-scoped reference images including the first frame.", "VIDEO_INPUT_ASSET_RESOLUTION_FAILED");
+        }
+        for (const assetId of imageIds) {
+          const image = await resolveAsset({ ownerId, projectId, assetId, kinds: "image" });
+          referenceImages.push({ uri: image.url, role: "reference" });
+        }
+        const videoIds = input.referenceVideoAssetIds || [];
+        if (!Array.isArray(videoIds) || videoIds.length > 4) {
+          throw fail("Runway Model Router accepts at most four owner-scoped reference videos.", "VIDEO_INPUT_ASSET_RESOLUTION_FAILED");
+        }
+        const referenceVideos = [];
+        for (const assetId of videoIds) {
+          const video = await resolveAsset({ ownerId, projectId, assetId, kinds: "video" });
+          referenceVideos.push({ uri: video.url, role: "reference" });
+        }
+        return {
+          ...input,
+          ...(referenceImages.length ? { referenceImages } : {}),
+          ...(referenceVideos.length ? { referenceVideos } : {})
+        };
+      }
       if (input?.operation === "image-to-video" || input?.startFrameAssetId) {
         const resolved = await resolveAsset({ ownerId, projectId, assetId: input.startFrameAssetId, kinds: "image" });
         return { firstFrame: { buffer: resolved.bytes, filename: resolved.asset.name, mimeType: resolved.asset.mediaType } };
