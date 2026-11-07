@@ -111,7 +111,8 @@ test("registers Runway text and video-edit adapters only with explicit task-cost
     resolveRunwayActualCost: async () => ({
       amount: 1, currency: "USD", evidenceReference: "test:runway-task-ledger"
     }),
-    prepareRunwayInput: async () => ({})
+    prepareRunwayInput: async () => ({}),
+    resolveRunwaySourceMetadata: async () => ({})
   });
   assert.deepEqual(worker.listSupported(), [
     "fal:fal-ai/wan/v2.7/text-to-video",
@@ -163,4 +164,23 @@ test("rejects unknown or duplicate Runway model registrations before constructin
   assert.throws(() => createProviderAwareCloudVideoWorkerComposition({
     ...base, runwayModels: ["gen4.5", "gen4.5"]
   }), /unique list of explicitly supported model profiles/);
+});
+
+
+test("refuses source-edit model registration without server-side source metadata resolution", () => {
+  assert.throws(() => createProviderAwareCloudVideoWorkerComposition({
+    ...base,
+    env: {
+      ...env,
+      FAL_VIDEO_MODEL: "fal-ai/wan/v2.7/text-to-video",
+      FAL_KEY: "queue-test-key",
+      FAL_BILLING_KEY: "billing-test-key",
+      RUNWAY_VIDEO_MODELS: "aleph2",
+      RUNWAY_API_KEY: "runway-test-key"
+    },
+    resolveRunwayActualCost: async () => ({
+      amount: 1, currency: "USD", evidenceReference: "test:runway-task-ledger"
+    }),
+    prepareRunwayInput: async () => ({})
+  }), /server-side media metadata resolver/);
 });
