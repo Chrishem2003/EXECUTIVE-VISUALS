@@ -7,7 +7,7 @@ import { ensureBillingWebhookSchema } from "../billing-webhooks.mjs";
 import {
   ensureDodoSubscriptionSchema, dodoProductEnvName, dodoSubscriptionCheckoutEnabled,
   createDodoSubscriptionCheckout, verifyDodoWebhookSignature, receiveDodoWebhook,
-  processNextDodoWebhook, getDodoCheckoutStatus
+  processNextDodoWebhook, getDodoCheckoutStatus, createDodoCustomerPortalSession
 } from "../dodo-subscriptions.mjs";
 
 const baseEnv = () => ({
@@ -197,4 +197,38 @@ test("Dodo subscription price mismatch never activates or grants credits", async
     assert.equal(getBillingBalance(db, "dodo-user"), 0);
     assert.equal(db.prepare("SELECT COUNT(*) AS count FROM billing_subscriptions WHERE provider='dodo'").get().count, 0);
   } finally { db.close(); }
+});
+
+
+test("Dodo customer portal is owner-scoped and returns only a verified hosted URL",async()=>{
+  const {db,plan}=setup();
+  const env=baseEnv();
+  db.prepare(`INSERT INTO billing_subscriptions
+    (id,user_id,plan_id,status,provider,provider_customer_id,provider_subscription_id,current_period_start,current_period_end,metadata_json)
+    VALUES(?,?,?,'active','dodo',?,?,?,?,'{}')`)
+    .run("dodo-subscription-portal","dodo-user",plan.id,"cus_dodo_123","sub_dodo_123",
+      "2026-11-07T00:00:00.000Z","2026-12-07T00:00:00.000Z");
+  try{
+    const portal=await createDodoCustomerPortalSession(db,{
+      user:{id:"dodo-user",email:"dodo@example.test"},env,
+      fetchImpl:async(url,options)=>{
+        const parsed=new URL(String(url));
+        assert.equal(parsed.origin,"https://test.dodopayments.com");
+        assert.equal(parsed.pathname,"/customers/cus_dodo_123/customer-portal/session");
+        assert.equal(parsed.searchParams.get("return_url"),"https://executive.example.test/");
+        assert.equal(options.method,"POST");
+        assert.equal(options.headers.authorization,"Bearer test_api_key");
+        return new Response(JSON.stringify({link:"https://customer.dodopayments.com/portal/session-123"}),{status:200});
+      }
+    });
+    assert.equal(portal.url,"https://customer.dodopayments.com/portal/session-123");
+    await assert.rejects(()=>createDodoCustomerPortalSession(db,{
+      user:{id:"another-user",email:"other@example.test"},env,
+      fetchImpl:async()=>{throw new Error("must not call Dodo for a different account");}
+    }),error=>error.code==="DODO_CUSTOMER_NOT_FOUND");
+    await assert.rejects(()=>createDodoCustomerPortalSession(db,{
+      user:{id:"dodo-user"},env,
+      fetchImpl:async()=>new Response(JSON.stringify({link:"https://evil.example/portal"}),{status:200})
+    }),error=>error.code==="DODO_RESPONSE_INVALID");
+  }finally{db.close();}
 });
