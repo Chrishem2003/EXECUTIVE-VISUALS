@@ -32,7 +32,7 @@ test("Aleph 2 quote is non-mutating, source-probed and provider-priced",async()=
   fetchImpl:async(url,options)=>{calls.push({url,options});return{ok:true,status:200,async text(){return"[]";}};},
   timelineService:{timelines:{},assets:{async get(input){assert.deepEqual(input,{ownerId:owner,assetId:sourceAsset.id});return sourceAsset;}}},
   authorize:async({ownerId,projectId,action})=>ownerId===owner&&projectId===project&&action==="write",
-  runwaySourceResolver:{async resolveMetadata(input){assert.deepEqual(input,{ownerId:owner,projectId:project,assetId:sourceAsset.id});return{ownerId:owner,projectId:project,assetId:sourceAsset.id,mediaType:"video/mp4",durationSeconds:10.2,frameCount:306,width:1920,height:1080,sourceDynamicRange:"sdr"};}}
+  runwaySourceResolver:{async resolveMetadata(input){assert.deepEqual(input,{ownerId:owner,projectId:project,assetId:sourceAsset.id});return{ownerId:owner,projectId:project,assetId:sourceAsset.id,mediaType:"video/mp4",durationSeconds:10.2,frameRate:30,frameCount:306,width:1920,height:1080,sourceDynamicRange:"sdr"};}}
  });
  const result=await api.handle({method:"POST",path:"/api/cloud/transformations/quote",ownerId:owner,body:{projectId:project,sourceAssetId:sourceAsset.id,operation:"vehicle_replace",prompt:"Replace the vehicle and preserve the original camera movement.",rightsConfirmed:true}});
  assert.equal(result.status,200);
@@ -41,6 +41,7 @@ test("Aleph 2 quote is non-mutating, source-probed and provider-priced",async()=
  assert.equal(result.body.quote.currency,"USD");
  assert.ok(result.body.quote.estimatedCostMicros>=560000);
  assert.equal(result.body.quote.source.durationSeconds,10.2);
+ assert.equal(result.body.quote.source.frameRate,30);
  assert.equal(result.body.quote.output.durationSeconds,11);
  assert.equal(result.body.quote.billable,false);
  assert.equal(result.body.quote.requiresApproval,true);
