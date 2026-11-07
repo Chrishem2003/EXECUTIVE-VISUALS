@@ -172,3 +172,12 @@ The release remains blocked pending isolated staging acceptance, durable private
 - Extended owner/project-scoped source asset preparation for private image and video references, and mapped normalized audio mode and provider-default resolution into the router request.
 - Added tests for worker registration, queue gating, budget ceiling, dry-run ordering, quote rejection, registry state, and private reference resolution.
 - This is not yet a complete customer-facing purchase flow: a pre-approval quote endpoint that binds prepared-input hash, quote expiry and explicit user approval remains outstanding. Audio-reference, source-video edit/extend and user-facing router config management remain unsupported. No paid API requests were made and all production gates remain off.
+
+## Verification update — 2026-11-07 (typed Runway reference media)
+
+- Extended the provider-neutral video contract to preserve and validate typed image, video and audio reference asset IDs. Model-specific reference-count limits are enforced at capability validation rather than globally restricting other providers.
+- Runway Model Router now supports one owner/project-scoped reference-audio asset in addition to up to four images and two reference videos. The worker resolves each asset to a short-lived signed URL, validates its media type and stored size, and passes only the supported URI/role shape to Runway.
+- Reference-audio mode fails closed unless exactly one authorized audio asset is present. The registry now exposes the matching capability and count limits.
+- CI on commit `ba0ef47e99e96f8d14aed8ff3110ac7de230745e`: typecheck passed, build and 782/782 regression tests passed, Google Drive integration suite passed, and disposable PostgreSQL integration passed.
+- The integration branch remains 454 commits ahead of main and zero commits behind; PR #206 remains draft. The route remains disabled by default and no paid provider generation or production mutation was performed.
+- Still outstanding: customer-facing pre-approval quote endpoint binding the exact prepared input hash and quote expiry to explicit approval; task-correlated provider-cost settlement/refund UX; source-video edit/extend through Model Router; user-facing router configuration; isolated staging acceptance and full production smoke tests.
