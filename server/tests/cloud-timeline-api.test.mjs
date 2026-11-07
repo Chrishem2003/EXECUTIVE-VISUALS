@@ -49,6 +49,26 @@ test("cloud timeline API readiness requires exposed schema tables and a private 
  const api=createCloudTimelineApi({url:"https://example.supabase.co",serviceRoleKey:"service-secret",timelineService:{timelines:{},assets:{}},authorize:async()=>true,fetchImpl:async(url)=>({ok:true,status:200,async text(){return"[]";},async json(){return{public:false};}})});
  const result=await api.checkReadiness();assert.equal(result.ready,true);assert.equal(result.storage,"private");
 });
+test("cloud timeline API checks video ledger and budget tables before video worker startup", async () => {
+ const checked=[];
+ const api=createCloudTimelineApi({
+  url:"https://example.supabase.co",serviceRoleKey:"service-secret",
+  env:{CLOUD_VIDEO_WORKER_ENABLED:"true"},
+  timelineService:{timelines:{},assets:{}},authorize:async()=>true,
+  fetchImpl:async(url)=>{
+   const value=String(url);
+   if(value.includes("/storage/v1/bucket/"))return{ok:true,status:200,async json(){return{public:false};}};
+   checked.push(value);
+   return{ok:true,status:200,async text(){return"[]";}};
+  }
+ });
+ const result=await api.checkReadiness();
+ assert.equal(result.ready,true);
+ for(const table of ["video_generation_submissions","video_generation_budget_policies","video_generation_budget_approvals","video_generation_budget_reservations","video_generation_usage_reservations"]){
+  assert.ok(checked.some(url=>url.includes("/"+table+"?")),table+" must be checked");
+ }
+});
+
 test("cloud timeline API refuses a public media bucket",async()=>{
  const api=createCloudTimelineApi({url:"https://example.supabase.co",serviceRoleKey:"service-secret",timelineService:{timelines:{},assets:{}},authorize:async()=>true,fetchImpl:async(url)=>({ok:true,status:200,async text(){return"[]";},async json(){return{public:true};}})});
  await assert.rejects(()=>api.checkReadiness(),/not confirmed private/);
