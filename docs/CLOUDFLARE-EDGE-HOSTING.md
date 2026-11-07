@@ -38,3 +38,39 @@ A dedicated Cloudflare D1 database named `executive-visuals-staging` was created
 6. Add a real public marketing landing page before requesting broad search indexing.
 
 No Render service, production DNS zone, production database or customer media was modified by this Cloudflare preparation.
+
+
+## Deployment result — 2026-11-07
+
+Cloudflare GitHub authorization is now active and Workers Builds is connected to the repository. The existing Worker resource `executive-visuals` had previously been an unused Hello World placeholder (no workers.dev subdomain enabled); it was safely replaced with this application edge Worker.
+
+- Account workers.dev subdomain: `chrishem242.workers.dev`
+- Worker: `executive-visuals`
+- Public URL: https://executive-visuals.chrishem242.workers.dev
+- GitHub repository: `Chrishem2003/EXECUTIVE-VISUALS`
+- Build branch: `integration/omni-provider-workers-2026`
+- Build UUID: `ac75db88-ec36-4c76-8121-bac5b9e38db8`
+- Build outcome: success
+- Deployed Worker version: `684a2cf2-87e8-44b3-b66e-0ffb35d94ee9`
+- Build command: `npx tsc -b && npx vite build`
+- Deploy command: `npx wrangler@4.45.0 deploy`
+- Static assets uploaded: index.html, CSS bundle and JS bundle.
+- Workers Builds production branch is set to the integration branch and previews are disabled. The Worker is separate from Render's production service; the Worker proxy forwards API calls to the existing Render API origin.
+
+### Live verification
+
+- Public root: HTTP 200, page title `Executive Visuals — Creative Production Studio`.
+- `/edge-health`: HTTP 200; Worker reports `status=ok` and API proxy configured.
+- `/api/health`: HTTP 200 through Cloudflare proxy; backend reports `status=ok`, `authMode=supabase`, FFmpeg/FFprobe available.
+- `/robots.txt`: HTTP 200.
+- `/sitemap.xml`: HTTP 200.
+- The first proxied health request returned Render's 503 cold-start page; after allowing the Free backend to wake, the same endpoint returned HTTP 200. This remains the Render Free sleep limitation.
+
+### Important remaining boundaries
+
+- The current backend health response still reports `storage=local-disk` and `database=sqlite`. Customer projects, billing, and generated media are therefore not yet on durable Cloudflare storage.
+- Cloudflare D1 `executive-visuals-staging` exists in EU jurisdiction but has zero tables and is not bound to the Worker or backend. No SQLite-to-D1 repository adapter or migrations have been deployed.
+- R2 is still not enabled for this account; the API returns error 10042 requiring dashboard activation. No R2 bucket exists and no customer media has been migrated.
+- The Worker hosts the actual existing SPA and proxies API calls, but the current app shell is not yet a separate public marketing landing page. Search indexing and custom-domain setup remain future tasks.
+- The successful Cloudflare build intentionally runs TypeScript/Vite frontend build only. Full FFmpeg/media integration and backend test suites remain in GitHub CI and the Render Node service, not in the Workers runtime.
+- A first Cloudflare build against the prior configuration failed because the full application test suite tried to spawn FFmpeg in the Cloudflare build environment. The build command was corrected to frontend-only TypeScript/Vite build; the subsequent build and deployment passed.
