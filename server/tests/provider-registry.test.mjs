@@ -188,3 +188,19 @@ test("Runway image provider requires an allowlisted model and server key",()=>{
  const wrongModel=getProviderCatalog({IMAGE_GATEWAY_PROVIDER:"runway",IMAGE_GATEWAY_ENABLED:"true",RUNWAY_API_KEY:"secret",RUNWAY_IMAGE_MODEL:"unknown"});
  assert.equal(wrongModel.providers.find(item=>item.id==="image").status,"needs_configuration");
 });
+
+test("Runway video provider exposes the new Flash profiles but rejects unknown model IDs",()=>{
+ const catalog=getProviderCatalog({
+  VIDEO_GATEWAY_PROVIDER:"runway",VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",
+  RUNWAY_API_KEY:"secret",RUNWAY_VIDEO_MODEL:"kling_4_flash"
+ });
+ const video=catalog.providers.find(item=>item.id==="video");
+ assert.equal(video.status,"ready");
+ assert.ok(video.availableModels.some(model=>model.id==="kling_4_flash"&&model.maxDurationSeconds===20));
+ assert.ok(video.availableModels.some(model=>model.id==="gemini_omni_flash_1.2"&&model.maxDurationSeconds===15));
+ const unknown=getProviderCatalog({
+  VIDEO_GATEWAY_PROVIDER:"runway",VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",
+  RUNWAY_API_KEY:"secret",RUNWAY_VIDEO_MODEL:"not-an-adapter"
+ });
+ assert.equal(unknown.providers.find(item=>item.id==="video").status,"needs_configuration");
+});
