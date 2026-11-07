@@ -45,11 +45,14 @@ export function estimateRunwayVideoCredits(options={}) {
     hasStartFrame=false,outputFrames,sourceWidth,sourceHeight,sourceDynamicRange,outputWidth,outputHeight,outputFormat:requestedOutputFormat,targetFramerate,inputType="text",pricingDate
   }=options;
   const outputFormat=requestedOutputFormat??(model==="ruby"?"hdr10":"mp4");
-  const durationLimit=model==="enhance_frame_rate"?300:30;
+  const durationLimit=model==="enhance_frame_rate"?300:model==="gemini_omni_flash_1.2"?15:model==="kling_4_flash"?20:30;
   const duration=finiteDuration(durationSeconds,"durationSeconds",{max:durationLimit});
   const inputVideoLimit=model==="enhance_frame_rate"?300:30;
   const inputVideo=finiteDuration(requestedInputVideoSeconds??(model==="enhance_frame_rate"?durationSeconds:0),"inputVideoSeconds",{allowZero:true,max:inputVideoLimit});
   if(model==="gen4.5"&&(duration<2||duration>10))throw fail("durationSeconds must be between 2 and 10 for Gen-4.5.","RUNWAY_PRICE_INVALID_INPUT");
+  if(["kling_4_flash","gemini_omni_flash_1.2"].includes(model)&&duration<3) {
+    throw fail("durationSeconds must be at least 3 for "+model+".","RUNWAY_PRICE_INVALID_INPUT");
+  }
   const referenceVideo=finiteDuration(referenceVideoSeconds,"referenceVideoSeconds",{allowZero:true,max:30});
   if(!["text","image","video"].includes(inputType))throw fail("inputType must be text, image or video.","RUNWAY_PRICE_INVALID_INPUT");
   if(model==="ruby"&&sourceDynamicRange!=="sdr")throw fail("Ruby requires an explicitly verified SDR source video.","RUNWAY_PRICE_INPUT_REQUIRED");
@@ -186,6 +189,28 @@ export function estimateRunwayVideoCredits(options={}) {
         credits=duration*10+(hasImageStartFrame?1:0);
         formula=duration+"s × 10"+(hasImageStartFrame?" + 1 first-frame image":"");
       }
+      break;
+    }
+
+    case "kling_4_flash": {
+      resolution(outputResolution,["720p"]);
+      if(billableImageReferences>10)throw fail("Kling 4.0 Flash accepts at most 10 images including the first frame.","RUNWAY_PRICE_INVALID_INPUT");
+      const billableInputVideo=Math.min(20,inputVideo+referenceVideo);
+      const raw=billableInputVideo>0
+        ? duration*6.3+Math.max(billableInputVideo,duration)*6.3
+        : duration*9.4;
+      credits=Math.max(29,Math.ceil(raw));
+      formula=billableInputVideo>0
+        ? "max(29, ceil("+duration+"s output × 6.3 + max("+billableInputVideo+"s combined input/reference video, "+duration+"s output) × 6.3))"
+        : "max(29, ceil("+duration+"s output × 9.4))";
+      break;
+    }
+    case "gemini_omni_flash_1.2": {
+      const rate=resolutionRate({"360p":2,"720p":7,"1080p":10,"4k":21});
+      if(imageCount>5||billableImageReferences>5)throw fail("Gemini Omni 1.2 Flash accepts at most 5 image references/keyframes.","RUNWAY_PRICE_INVALID_INPUT");
+      if(referenceVideo>0&&inputVideo+referenceVideo>30)throw fail("Gemini Omni 1.2 Flash combined input/reference video duration must not exceed 30 seconds.","RUNWAY_PRICE_INVALID_INPUT");
+      credits=Math.max(6,Math.ceil(duration*rate+billableImageReferences+inputVideo+referenceVideo));
+      formula="max(6, ceil("+duration+"s output × "+rate+" + "+billableImageReferences+" image references/keyframes + "+(inputVideo+referenceVideo)+"s input/reference video))";
       break;
     }
     case "gemini_omni_flash_1.1": {
