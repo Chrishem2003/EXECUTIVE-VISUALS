@@ -207,17 +207,17 @@ test("video-to-audio transformation requires approval and queues the Mirelo mode
    return metadata;
   }}
  });
- const draft=await api.handle({method:"POST",path:"/api/cloud/transformations",owner,idempotencyKey:"sound-design-plan-1",body:{
+ const draft=await api.handle({method:"POST",path:"/api/cloud/transformations",ownerId:owner,idempotencyKey:"sound-design-plan-1",body:{
   projectId:project,sourceAssetId,operation:"sound_design_from_video",prompt:"TARGET RESULT: Rain ambience. Preserve dialogue.",
   durationSeconds:13,audioFormat:"wav",numVariants:2,preserveSpeech:true,rightsConfirmed:true
  }});
  assert.equal(draft.status,201);
  const createdPlanId=draft.body.plan.id;
- const approved=await api.handle({method:"POST",path:"/api/cloud/transformations/"+createdPlanId+"/approve",owner,body:{approvedBudgetMicros:1000000,currency:"USD"}});
+ const approved=await api.handle({method:"POST",path:"/api/cloud/transformations/"+createdPlanId+"/approve",ownerId:owner,body:{approvedBudgetMicros:1000000,currency:"USD"}});
  assert.equal(approved.status,200);
  assert.equal(approved.body.plan.approval.adapterId,"runway:mirelo_sfx_2_0");
  assert.equal(approved.body.plan.approval.capability,"video-to-audio");
- const submitted=await api.handle({method:"POST",path:"/api/cloud/transformations/"+createdPlanId+"/submit",owner,body:{}});
+ const submitted=await api.handle({method:"POST",path:"/api/cloud/transformations/"+createdPlanId+"/submit",ownerId:owner,body:{}});
  assert.equal(submitted.status,202);
  const rpc=calls.find(call=>call.url.endsWith("/rpc/enqueue_video_generation_job"));
  const queued=JSON.parse(rpc.options.body);
