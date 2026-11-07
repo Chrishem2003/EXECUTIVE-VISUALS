@@ -64,7 +64,7 @@ export function normalizeVideoGenerationRequest(input) {
   }
 
   const operation = input.operation;
-  if (operation != null && !["text-to-video", "image-to-video", "video-to-video", "video-upscale", "video-to-hdr"].includes(operation)) {
+  if (operation != null && !["text-to-video", "image-to-video", "video-to-video", "video-upscale", "video-to-hdr", "generate", "edit", "extend"].includes(operation)) {
     throw new VideoGenerationValidationError("operation is not supported by the normalized video contract");
   }
   const prompt = boundedString(input.prompt, "prompt", MAX_PROMPT_LENGTH, { required: !["video-upscale", "video-to-hdr"].includes(operation) });
