@@ -60,6 +60,12 @@ export function ensureBillingWebhookSchema(db) {
     CREATE INDEX IF NOT EXISTS billing_refund_payment_idx
       ON billing_refund_events(provider,payment_id,created_at);
   `);
+  const refundColumns=new Set(db.prepare("PRAGMA table_info(billing_refund_events)").all().map(row=>row.name));
+  if(!refundColumns.has("user_id"))db.exec("ALTER TABLE billing_refund_events ADD COLUMN user_id TEXT");
+  if(!refundColumns.has("reconciliation_required"))db.exec("ALTER TABLE billing_refund_events ADD COLUMN reconciliation_required INTEGER NOT NULL DEFAULT 0");
+  if(!refundColumns.has("reconciliation_note"))db.exec("ALTER TABLE billing_refund_events ADD COLUMN reconciliation_note TEXT");
+  if(!refundColumns.has("reconciled_at"))db.exec("ALTER TABLE billing_refund_events ADD COLUMN reconciled_at TEXT");
+  if(!refundColumns.has("reconciled_by"))db.exec("ALTER TABLE billing_refund_events ADD COLUMN reconciled_by TEXT");
 }
 
 export function createBillingPurchaseOrder(db, { userId, planId, provider = "flutterwave" } = {}) {
