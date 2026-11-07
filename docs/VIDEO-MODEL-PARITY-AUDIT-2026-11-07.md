@@ -82,3 +82,14 @@ Runway's Model Router documentation explicitly distinguishes dry-run routing met
 6. **P1 — Commercial polish:** clear model capability/availability labels, quote transparency, job progress, failure recovery, credit history, project asset lineage and accessible mobile layouts.
 
 **Release decision:** the code candidate has green automated checks on its reviewed head, but hosted generation is not yet a sellable end-to-end feature. Keep PR #206 draft and production untouched until the gates above are implemented and accepted.
+
+
+### 5. Application enqueue validation and SQL enqueue policy are not aligned
+
+A source-level contract comparison found a separate runtime blocker:
+
+- `server/cloud-video-enqueue.mjs` accepts the gated Runway Model Router path and recognizes Runway Aleph2, Magnific video upscaling, and Ruby HDR operations.
+- The source-controlled `20261104143000_cloud_video_budget_enqueue.sql` function currently permits only `runway/gen4.5` and `google/gemini-omni-1.1-flash`.
+- The same SQL function applies fixed duration/reservation rules only for those two models.
+
+Therefore, enabling an application-level adapter flag does not make the corresponding model enqueueable: Postgres rejects the job with `VIDEO_ENQUEUE_PROVIDER_NOT_ENABLED` (or the fixed pricing guard). Do not loosen the SQL allowlist generically. Align each model's exact operation, input limits, quote source, currency, approved reservation ceiling, and settlement evidence in one reviewed migration plus contract tests. Until then, surface these model profiles as unavailable for hosted execution.
