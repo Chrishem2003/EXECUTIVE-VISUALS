@@ -55,6 +55,14 @@ begin
     raise exception 'Google interactions must persist output-file metadata';
   end if;
 
+  if not exists (
+    select 1 from pg_attribute
+     where attrelid = v_table and attname = 'output_uri'
+       and attnum > 0 and not attisdropped
+  ) then
+    raise exception 'Google interactions must persist creation-time output URIs';
+  end if;
+
 
   if not exists (
     select 1 from pg_constraint
