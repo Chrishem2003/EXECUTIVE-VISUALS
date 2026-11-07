@@ -4,7 +4,8 @@ import {
   VIDEO_PROVIDER_CATALOG,
   getVideoProviderModel,
   listSelectableVideoProviderModels,
-  listVideoProviders
+  listVideoProviders,
+  isLegacyVideoModelSelectable
 } from "../video-provider-registry.mjs";
 
 test("provider catalog is evidence-backed metadata and all remote providers remain disabled", () => {
