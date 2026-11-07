@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {buildRunwayVideoPayload,buildRunwayImageToVideoPayload,buildRunwayVideoToVideoPayload,getRunwayVideoCapabilities,listRunwayVideoModels,generateRunwayVideo,editRunwayVideo} from "../runway-video-gateway.mjs";
+import {buildRunwayVideoPayload,buildRunwayImageToVideoPayload,buildRunwayVideoToVideoPayload,uploadRunwayEphemeralAsset,getRunwayVideoCapabilities,listRunwayVideoModels,generateRunwayVideo,editRunwayVideo} from "../runway-video-gateway.mjs";
 
 test("catalog contains only models with explicit text-to-video profiles",()=>{
  const models=listRunwayVideoModels();
@@ -141,4 +141,48 @@ test("video-to-video submits only after both server-side gates and downloads a p
  } finally {
   for(const [k,v] of Object.entries({VIDEO_GATEWAY_ENABLED:original.enabled,VIDEO_GATEWAY_ALLOW_REMOTE:original.remote,RUNWAYML_API_SECRET:original.key,VIDEO_GATEWAY_TIMEOUT_MS:original.timeout}))if(v===undefined)delete process.env[k];else process.env[k]=v;
  }
+});
+
+
+test("ephemeral upload validates the media and follows Runway's signed multipart upload flow", async () => {
+ const original=process.env.RUNWAYML_API_SECRET;
+ process.env.RUNWAYML_API_SECRET="test";
+ const calls=[];
+ const fetchImpl=async(url,options={})=>{
+  const u=String(url);calls.push({url:u,options});
+  if(u.endsWith("/uploads"))return new Response(JSON.stringify({
+   uploadUrl:"https://uploads.runway.example/signed",
+   fields:{key:"ephemeral/object",policy:"signed-policy"},
+   runwayUri:"runway://ephemeral/source-video"
+  }),{status:200});
+  if(u==="https://uploads.runway.example/signed")return new Response(null,{status:204});
+  throw new Error("unexpected URL "+u);
+ };
+ try {
+  const result=await uploadRunwayEphemeralAsset({
+   buffer:Buffer.alloc(512),filename:"source.mp4",mimeType:"video/mp4",fetchImpl
+  });
+  assert.equal(result.runwayUri,"runway://ephemeral/source-video");
+  assert.equal(result.expiresInHours,24);
+  assert.equal(calls.length,2);
+  assert.equal(calls[0].options.body,JSON.stringify({filename:"source.mp4",type:"ephemeral"}));
+  assert.equal(calls[1].options.body instanceof FormData,true);
+  assert.equal(calls[1].options.body.get("key"),"ephemeral/object");
+  assert.equal(calls[1].options.body.get("file").size,512);
+ } finally {
+  if(original===undefined)delete process.env.RUNWAYML_API_SECRET;else process.env.RUNWAYML_API_SECRET=original;
+ }
+});
+
+test("ephemeral upload rejects invalid media before making provider requests", async () => {
+ let calls=0;
+ await assert.rejects(()=>uploadRunwayEphemeralAsset({
+  buffer:Buffer.alloc(511),filename:"source.mp4",mimeType:"video/mp4",
+  fetchImpl:async()=>{calls++;throw new Error("must not be called");}
+ }),e=>e.code==="VIDEO_GATEWAY_INVALID_INPUT");
+ await assert.rejects(()=>uploadRunwayEphemeralAsset({
+  buffer:Buffer.alloc(512),filename:"source.exe",mimeType:"video/mp4",
+  fetchImpl:async()=>{calls++;throw new Error("must not be called");}
+ }),e=>e.code==="VIDEO_GATEWAY_INVALID_INPUT");
+ assert.equal(calls,0);
 });
