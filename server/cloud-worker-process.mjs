@@ -84,7 +84,7 @@ export async function startCloudWorkerProcess(env=process.env){
  const config=readCloudWorkerConfig(env);
  if((config.media||config.timeline||config.video)&&(!executableAvailable("ffmpeg")||!executableAvailable("ffprobe")) )throw new Error("Cloud media workers require FFmpeg and FFprobe on PATH.");
  const cloudCredentials={url:env.SUPABASE_URL,serviceRoleKey:env.SUPABASE_SERVICE_ROLE_KEY};
- const readiness=createCloudTimelineApi({...cloudCredentials,maxUploadBytes:config.maxBytes});
+ const readiness=createCloudTimelineApi({...cloudCredentials,maxUploadBytes:config.maxBytes,env});
  await readiness.checkReadiness();
  const workers=[];
  if(config.media)workers.push(createCloudMediaWorker({workerId:"media-"+randomUUID(),...cloudCredentials,tempRoot:config.tempRoot,maxBytes:config.maxBytes}));
