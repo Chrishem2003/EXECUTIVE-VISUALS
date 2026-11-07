@@ -7,7 +7,8 @@ import {
   createPrivateVideoOutputIngestor
 } from "./private-video-output-ingestion.mjs";
 import { createProviderAwareCloudVideoWorker } from "./cloud-video-provider-worker.mjs";
-import { createFalVideoProviderAdapter } from "./fal-video-provider-registration.mjs";\nimport { createRunwayCloudVideoAdapter } from "./runway-cloud-video-adapter.mjs";
+import { createFalVideoProviderAdapter } from "./fal-video-provider-registration.mjs";
+import { createRunwayCloudVideoAdapter } from "./runway-cloud-video-adapter.mjs";
 
 /**
  * Build the provider-aware worker against the existing Supabase queue,
