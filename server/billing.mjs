@@ -356,9 +356,15 @@ export function getAdminOverview(db) {
     if(!/^[A-Z]{3}$/.test(code)||!Number.isSafeInteger(value)||value<=0)return;
     receipts.set(code,(receipts.get(code)||0)+value);
   };
-  const topups = db.prepare("SELECT expected_amount_minor,currency FROM billing_payment_orders WHERE status='paid' AND verified_at>=?").all(since);
-  for(const row of topups)addReceipt(row.currency,row.expected_amount_minor);
-  const dodoEvents = db.prepare("SELECT event_id,payload_json FROM billing_provider_events WHERE provider='dodo' AND processed_at IS NOT NULL AND created_at>=? AND event_type IN ('subscription.active','subscription.renewed')").all(since);
+  const hasPaymentOrders = !!db.prepare("SELECT 1 AS found FROM sqlite_master WHERE type='table' AND name='billing_payment_orders'").get();
+  if(hasPaymentOrders){
+    const topups = db.prepare("SELECT expected_amount_minor,currency FROM billing_payment_orders WHERE status='paid' AND verified_at>=?").all(since);
+    for(const row of topups)addReceipt(row.currency,row.expected_amount_minor);
+  }
+  const eventColumns = new Set(db.prepare("PRAGMA table_info(billing_provider_events)").all().map(row=>row.name));
+  const dodoEvents = eventColumns.has("payload_json")
+    ? db.prepare("SELECT event_id,payload_json FROM billing_provider_events WHERE provider='dodo' AND processed_at IS NOT NULL AND created_at>=? AND event_type IN ('subscription.active','subscription.renewed')").all(since)
+    : [];
   const seenPayments = new Set();
   for(const row of dodoEvents){
     const data=parseJson(row.payload_json)?.data||{};
