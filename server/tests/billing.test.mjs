@@ -84,6 +84,8 @@ test("account status and admin reporting expose only known application accounts"
   assert.equal(overview.users.total,1);
   assert.equal(overview.users.suspended,1);
   assert.equal(overview.paymentCollectionEnabled,false);
+  assert.equal(overview.oneTimeCreditTopupsEnabled,false);
+  assert.equal(overview.recurringSubscriptionsEnabled,false);
   assert.throws(()=>setBillingAccountStatus(db,{userId:"user-4",status:"owner"}),e=>e.code==="BILLING_STATUS_INVALID");
   db.close();
 });
