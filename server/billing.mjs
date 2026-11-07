@@ -214,10 +214,24 @@ export function resolveBillingCreditCost(db, {
   const row = db.prepare(`SELECT price_micros,currency,source_url,verified_at FROM billing_model_prices
     WHERE provider=? AND model=? AND capability=? AND unit=? AND active=1
     LIMIT 1`).get(providerName, modelName, capability, unitName);
-  if (!row || !row.verified_at || !row.source_url || String(row.currency).toUpperCase() !== "USD" ||
+  if (!row) {
+    return { credits: fallback, source: "flat_capability_fallback", provider: providerName,
+      model: modelName, unit: unitName, quantity: count };
+  }
+  if (!row.verified_at || !row.source_url || String(row.currency).toUpperCase() !== "USD" ||
       !Number.isSafeInteger(Number(row.price_micros)) || Number(row.price_micros) <= 0) {
     return { credits: fallback, source: "flat_capability_fallback", provider: providerName,
       model: modelName, unit: unitName, quantity: count };
+  }
+  const maxAgeDays = env.BILLING_MODEL_PRICE_MAX_AGE_DAYS === undefined || env.BILLING_MODEL_PRICE_MAX_AGE_DAYS === ""
+    ? 30 : Number(env.BILLING_MODEL_PRICE_MAX_AGE_DAYS);
+  if (!Number.isSafeInteger(maxAgeDays) || maxAgeDays < 1 || maxAgeDays > 365) {
+    throw fail("BILLING_MODEL_PRICE_MAX_AGE_DAYS must be an integer from 1 to 365.", "BILLING_COST_CONFIG_INVALID", 500);
+  }
+  const verifiedAtMs = Date.parse(row.verified_at);
+  if (!Number.isFinite(verifiedAtMs) || verifiedAtMs > Date.now() + 5 * 60 * 1000 ||
+      Date.now() - verifiedAtMs > maxAgeDays * 86400000) {
+    throw fail("The configured provider price is stale or future-dated. Refresh its verified source before enabling generation.", "BILLING_MODEL_PRICE_STALE", 503);
   }
   const rawCost = Number(row.price_micros) * count;
   if (!Number.isSafeInteger(rawCost) || rawCost <= 0) {
