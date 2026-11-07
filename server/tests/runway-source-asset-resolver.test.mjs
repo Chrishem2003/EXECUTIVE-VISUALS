@@ -66,6 +66,49 @@ test("Runway source preparation rejects untrusted signed URL origins before fetc
   assert.equal(fetched, false);
 });
 
+test("Runway source resolver cancels oversized streamed bodies before buffering the full asset", async () => {
+  let cancelled = false;
+  const { resolver } = fixture({
+    fetchImpl: async () => new Response(new ReadableStream({
+      start(controller) {
+        controller.enqueue(new Uint8Array(1024));
+        controller.enqueue(new Uint8Array(1024));
+      },
+      cancel() { cancelled = true; }
+    }), {
+      status: 200,
+      headers: { "content-type": "video/mp4", "content-length": String(bytes.length) }
+    })
+  });
+  const boundedResolver = createRunwaySourceAssetResolver({
+    assets: {
+      async get() {
+        return { id: ASSET, projectId: PROJECT, name: "source.mp4", mediaType: "video/mp4",
+          size: 1024, storageBucket: "executive-visuals-media", objectPath: PROJECT + "/" + ASSET + "/original.mp4" };
+      },
+      async createSignedUrl() {
+        return { asset: { id: ASSET, projectId: PROJECT, storageBucket: "executive-visuals-media",
+          objectPath: PROJECT + "/" + ASSET + "/original.mp4" },
+          url: "https://storage.example.com/storage/v1/object/sign/private/a?token=x" };
+      }
+    },
+    supabaseUrl: "https://storage.example.com",
+    maxBytes: 1024,
+    fetchImpl: async () => new Response(new ReadableStream({
+      start(controller) {
+        controller.enqueue(new Uint8Array(1024));
+        controller.enqueue(new Uint8Array(1024));
+      },
+      cancel() { cancelled = true; }
+    }), { status: 200, headers: { "content-type": "video/mp4", "content-length": "1024" } })
+  });
+  await assert.rejects(
+    () => boundedResolver.prepare({ operation: "video-to-video", projectId: PROJECT, sourceVideoAssetId: ASSET }, { job: { owner_id: OWNER } }),
+    error => error.code === "VIDEO_INPUT_ASSET_INTEGRITY_FAILED"
+  );
+  assert.equal(cancelled, true);
+});
+
 test("Runway source preparation validates content type and byte length against asset metadata", async () => {
   const { resolver } = fixture({
     fetchImpl: async () => new Response(bytes, {
