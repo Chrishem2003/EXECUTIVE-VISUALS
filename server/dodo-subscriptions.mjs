@@ -431,7 +431,7 @@ export function processNextDodoWebhook(db, { env = process.env } = {}) {
       try{
         db.prepare(`INSERT INTO billing_refund_events
           (id,provider,refund_id,payment_id,amount_minor,currency,created_at,user_id,reconciliation_required,reconciliation_note)
-          VALUES(?,'dodo',?,?,?,?,?,?,?,?,?)`)
+          VALUES(?,'dodo',?,?,?,?,?,?,?,?)`)
           .run(randomUUID(),refundId,paymentId,amountMinor,currency,now(),refundOwnerId,reconciliationRequired?1:0,reconciliationNote);
         if(creditsToReverse>0){
           if(!grantOwnerId)throw fail("Dodo refund has no matching credit owner.","DODO_REFUND_OWNER_NOT_FOUND",409);
