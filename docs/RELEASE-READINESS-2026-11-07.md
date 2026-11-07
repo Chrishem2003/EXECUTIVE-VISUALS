@@ -104,3 +104,8 @@ A fresh public request to `https://executive-visuals.onrender.com/api/health` fi
 - image and text gateways disabled and unconfigured
 
 This confirms the earlier `AUTH_MODE=local` failures are historical; the current health response reports Supabase auth mode. It does **not** prove end-to-end user sign-in. More importantly, the live service is still using local-disk/SQLite storage, with no persistent disk in Render service metadata. The 503-to-200 wake-up behavior is consistent with a sleeping Free instance and is not itself evidence of an application defect. A reliable production release still requires durable database/media storage, backup/restore verification and a configured health-check path.
+
+
+## Billing persistence boundary
+
+The current billing and Dodo subscription repositories create their ledger/account/subscription tables in the application's SQLite database. The live production health endpoint confirms `database=sqlite` and `storage=local-disk`. Therefore, the billing UI and webhook/credit logic are code-integrated, but they are not yet backed by an independently durable managed database. A persistent Render disk could preserve the SQLite database for a single-instance deployment, but requires a paid service configuration and backup/restore plan. A dedicated Postgres implementation would require a separately designed and tested repository/migration path. Do not accept real customer payments or sell credit balances until the selected durable persistence path is in place and verified.
