@@ -264,3 +264,17 @@ test("cloud transformation submit remains blocked when any release gate is unver
  assert.equal(result.body.error.missing.length,8);
  assert.equal(queueCalls,0);
 });
+
+
+test("cloud transformation mapper does not turn submitted jobs back into approved drafts", async () => {
+ const row={id:"f23e4567-e89b-42d3-a456-426614174000",owner_id:owner,project_id:project,job_type:"video.transform.plan",status:"submitted",approved_by:owner,approved_at:"2026-11-07T08:00:00.000Z",estimated_cost:{approvalId:"923e4567-e89b-42d3-a456-426614174000",estimatedCostMicros:3000000,approvedBudgetMicros:5000000,currency:"USD",adapterId:"runway:aleph2",capability:"video-to-video"},input:{sourceAssetId:"b23e4567-e89b-42d3-a456-426614174000",operation:"vehicle_replace",prompt:"Replace vehicle",durationSeconds:11,referenceAssetIds:[],preservation:[]}};
+ const api=createCloudTimelineApi({
+  url:"https://example.supabase.co",serviceRoleKey:"service-secret",
+  fetchImpl:async()=>({ok:true,status:200,async text(){return JSON.stringify([row]);}}),
+  timelineService:{timelines:{},assets:{}},authorize:async()=>true
+ });
+ const result=await api.handle({method:"GET",path:"/api/cloud/transformations",ownerId:owner,query:{projectId:project}});
+ assert.equal(result.status,200);
+ assert.equal(result.body.plans[0].status,"submitted");
+ assert.equal(result.body.plans[0].approval.adapterId,"runway:aleph2");
+});
