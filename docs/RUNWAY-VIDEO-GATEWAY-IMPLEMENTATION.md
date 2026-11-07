@@ -50,6 +50,21 @@ The workflow billing boundary now uses the model-specific Runway published-price
 
 The billing resolver converts the provider estimate into platform credits using the configured credit value and markup. The estimate is stored with the reservation metadata. It remains an estimate, not task-level actual-cost settlement; successful jobs must not be described as reconciled invoices. The production release gate remains blocked until provider usage reconciliation, cancellation/refund behavior and durable ledger acceptance are proven.
 
+## Runway cost evidence and reconciliation boundary
+
+The current Runway API exposes three distinct evidence surfaces:
+
+- Task creation and task detail expose `estimatedCost.credits`; this is a task estimate, not an authoritative final charge.
+- `POST /v1/organization/usage` reports credit usage aggregated by UTC day, model and API key. It is useful for daily variance monitoring, but it does not return the task ID needed to settle an individual customer job.
+- `GET /v1/organization/webapp/usage` returns per-generation rows for linked Runway web-app workspaces. This is a different billing scope from the API project's direct task usage and must not be used to attribute direct API tasks without a verified join.
+
+Accordingly, daily aggregate reconciliation can flag differences between platform reservations and Runway API usage. It cannot safely settle individual jobs or calculate individual customer refunds. The durable cloud video worker still requires a task-correlated actual-cost resolver; it must remain disabled for Runway until such evidence is available.
+
+Official evidence:
+- https://docs.dev.runwayml.com/api/ (Organization → Query credit usage; Organization → List linked workspace usage)
+- https://docs.dev.runwayml.com/usage/workspace-reporting/
+- https://docs.dev.runwayml.com/guides/pricing/
+
 ## Commercial and release gates
 
 - Video estimates are separate from authoritative provider settlement. Do not invoice customers from `estimatedCostCredits`.
