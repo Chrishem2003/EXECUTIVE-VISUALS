@@ -286,7 +286,9 @@ export function getAdminOverview(db) {
       billingEnforcementEnabled() && !!(process.env.FLW_SECRET_KEY && process.env.FLW_WEBHOOK_SECRET && process.env.PUBLIC_APP_URL),
     oneTimeCreditTopupsEnabled: process.env.BILLING_CHECKOUT_ENABLED === "true" &&
       billingEnforcementEnabled() && !!(process.env.FLW_SECRET_KEY && process.env.FLW_WEBHOOK_SECRET && process.env.PUBLIC_APP_URL),
-    recurringSubscriptionsEnabled: false };
+    recurringSubscriptionsEnabled: process.env.DODO_SUBSCRIPTIONS_ENABLED === "true" &&
+      process.env.DODO_MERCHANT_APPROVED === "true" && billingEnforcementEnabled() &&
+      !!(process.env.DODO_PAYMENTS_API_KEY && process.env.DODO_PAYMENTS_WEBHOOK_KEY && process.env.PUBLIC_APP_URL) };
 }
 
 export function listAdminUsers(db, { query = "", limit = 100 } = {}) {
