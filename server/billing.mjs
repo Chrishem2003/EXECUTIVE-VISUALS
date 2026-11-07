@@ -180,11 +180,59 @@ export function applyDailyFreeCredits(db,userId,{now=Date.now(),env=process.env}
   }catch(error){db.exec("ROLLBACK");throw error;}
 }
 
+/**
+ * Resolve a conservative customer-credit preflight from a verified provider
+ * price record. Dynamic pricing is opt-in: the platform owner must configure
+ * the USD value of one credit and a markup in basis points. If either is
+ * absent, the established flat capability schedule remains in force.
+ */
+export function resolveBillingCreditCost(db, {
+  capability, provider, model, unit, quantity = 1, env = process.env
+} = {}) {
+  const fallback = Object.prototype.hasOwnProperty.call(BILLING_CREDIT_COSTS, capability)
+    ? BILLING_CREDIT_COSTS[capability] : 1;
+  const providerName = String(provider || "").trim().toLowerCase();
+  const modelName = String(model || "").trim();
+  const unitName = String(unit || "").trim();
+  const count = Number(quantity);
+  const creditValueMicros = Number(env.BILLING_CREDIT_VALUE_MICROS);
+  const markupBps = env.BILLING_COST_MARKUP_BPS === undefined || env.BILLING_COST_MARKUP_BPS === ""
+    ? 5000 : Number(env.BILLING_COST_MARKUP_BPS);
+  if (!providerName || !modelName || !unitName || !Number.isSafeInteger(count) || count <= 0 ||
+      !Number.isSafeInteger(creditValueMicros) || creditValueMicros <= 0 ||
+      !Number.isSafeInteger(markupBps) || markupBps < 0 || markupBps > 50000) {
+    return { credits: fallback, source: "flat_capability_fallback", provider: providerName || null,
+      model: modelName || null, unit: unitName || null, quantity: Number.isSafeInteger(count) && count > 0 ? count : 1 };
+  }
+  const row = db.prepare(`SELECT price_micros,currency,source_url,verified_at FROM billing_model_prices
+    WHERE provider=? AND model=? AND capability=? AND unit=? AND active=1
+    LIMIT 1`).get(providerName, modelName, capability, unitName);
+  if (!row || !row.verified_at || !row.source_url || String(row.currency).toUpperCase() !== "USD" ||
+      !Number.isSafeInteger(Number(row.price_micros)) || Number(row.price_micros) <= 0) {
+    return { credits: fallback, source: "flat_capability_fallback", provider: providerName,
+      model: modelName, unit: unitName, quantity: count };
+  }
+  const rawCost = Number(row.price_micros) * count;
+  if (!Number.isSafeInteger(rawCost) || rawCost <= 0) {
+    throw fail("Provider cost estimate exceeds the supported billing range.", "BILLING_COST_ESTIMATE_INVALID", 500);
+  }
+  const markedCost = Math.ceil(rawCost * (10000 + markupBps) / 10000);
+  const credits = Math.max(1, Math.ceil(markedCost / creditValueMicros));
+  if (!Number.isSafeInteger(credits) || credits > 100000000) {
+    throw fail("Provider cost estimate exceeds the supported credit range.", "BILLING_COST_ESTIMATE_INVALID", 500);
+  }
+  return { credits, source: "verified_model_price", provider: providerName, model: modelName,
+    capability, unit: unitName, quantity: count, priceMicrosPerUnit: Number(row.price_micros),
+    rawCostMicros: rawCost, markedCostMicros: markedCost, currency: "USD",
+    creditValueMicros, markupBps, sourceUrl: row.source_url, verifiedAt: row.verified_at };
+}
+
 export function spendBillingCredits(db,{
-  userId,capability,referenceId=null,idempotencyKey,now=Date.now(),env=process.env
+  userId,capability,referenceId=null,idempotencyKey,now=Date.now(),env=process.env,costContext=null
 }={}) {
   if(!billingEnforcementEnabled(env))return {enabled:false,charged:0,balance:getBillingBalance(db,userId)};
-  const cost=Object.prototype.hasOwnProperty.call(BILLING_CREDIT_COSTS,capability)?BILLING_CREDIT_COSTS[capability]:1;
+  const costEstimate=resolveBillingCreditCost(db,{capability,...(costContext||{}),env});
+  const cost=costEstimate.credits;
   const key=String(idempotencyKey||"").trim();
   if(!userId||key.length<8||key.length>200)throw fail("Credit spend requires a user and idempotency key.","BILLING_IDEMPOTENCY_REQUIRED",400);
   // Commit the daily allowance independently so an insufficient paid request
@@ -205,9 +253,9 @@ export function spendBillingCredits(db,{
     db.prepare(`INSERT INTO billing_credit_ledger
       (id,user_id,amount,event_type,description,reference_id,idempotency_key,metadata_json)
       VALUES(?,?,?,'generation_spend',?,?,?,?)`)
-      .run(id,userId,-cost,String(capability||"remote generation").slice(0,180),referenceId?String(referenceId).slice(0,240):null,key,safeJson({capability,cost}));
+      .run(id,userId,-cost,String(capability||"remote generation").slice(0,180),referenceId?String(referenceId).slice(0,240):null,key,safeJson({capability,cost,costEstimate}));
     db.exec("COMMIT");
-    return {enabled:true,charged:cost,replayed:false,balance:getBillingBalance(db,userId,at),ledgerId:id};
+    return {enabled:true,charged:cost,replayed:false,balance:getBillingBalance(db,userId,at),ledgerId:id,costEstimate};
   }catch(error){db.exec("ROLLBACK");throw error;}
 }
 
