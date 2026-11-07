@@ -145,7 +145,7 @@ begin
        or coalesce(p_input ->> 'durationSeconds','') !~ '^[0-9]'
        or coalesce(p_input ->> 'durationSeconds','') ~ '[^0-9]'
        or length(coalesce(p_input ->> 'durationSeconds','')) > 2
-       or (p_input ->> 'durationSeconds')::numeric < 1
+       or (p_input ->> 'durationSeconds')::numeric < 2
        or (p_input ->> 'durationSeconds')::numeric > 30 then
       raise exception 'VIDEO_PRICE_DURATION_OR_OPERATION_INVALID';
     end if;
