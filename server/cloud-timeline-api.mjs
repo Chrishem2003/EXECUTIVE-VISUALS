@@ -20,10 +20,12 @@ function buildAleph2GenerationInput({projectId,input,metadata}={}){
  const preserve=Array.isArray(input?.preservation)?input.preservation:[];
  const prompt=String(input?.prompt||"").trim()+(preserve.length?"\n\nPreserve: "+preserve.join(", "):"");
  if(prompt.length>1000){const error=new Error("The edit instructions and preservation requirements exceed Aleph 2's 1,000-character prompt limit.");error.code="VIDEO_PROMPT_TOO_LONG";throw error;}
+ const durationSeconds=Math.ceil(Number(metadata?.durationSeconds));
+ if(!Number.isFinite(durationSeconds)||durationSeconds<2||durationSeconds>30){const error=new Error("Aleph 2 video-to-video requires a source duration between 2 and 30 seconds.");error.code="VIDEO_DURATION_UNSUPPORTED";throw error;}
  return {
   projectId,provider:"runway",model:"aleph2",operation:"video-to-video",
   sourceVideoAssetId:input.sourceAssetId,prompt,
-  durationSeconds:Math.ceil(metadata.durationSeconds),outputFormat:"mp4",
+  durationSeconds,outputFormat:"mp4",
   resolution:"provider_default",audioMode:"provider_default",
   transformationOperation:input.operation
  };
