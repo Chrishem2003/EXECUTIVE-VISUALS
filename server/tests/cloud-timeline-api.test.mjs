@@ -153,7 +153,7 @@ test("approved cloud transformation submits to the durable Runway queue with ser
   authorize:async()=>true,
   transformationReadiness:()=>({adapterVerified:true,workerAvailable:true,privateStorageVerified:true,durableCheckpointsAvailable:true,costPolicyVerified:true,consentVerifierAvailable:true,visualQaAvailable:true,cloudSchemaApplied:true}),
   runwaySourceResolver:{async resolveMetadata(args){
-   assert.deepEqual(args,{ownerId:owner,projectId:project,assetId:row.input.sourceAssetId});
+   assert.deepEqual(args,{ownerId:owner,projectId:project,assetId:row.input.sourceAssetId,operation:"video-to-video"});
    return{ownerId:owner,projectId:project,assetId:row.input.sourceAssetId,mediaType:"video/mp4",durationSeconds:10.2,frameCount:306,width:1920,height:1080,sourceDynamicRange:"sdr"};
   }}
  });
