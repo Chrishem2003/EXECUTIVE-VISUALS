@@ -52,6 +52,7 @@ test("Runway usage client fails closed on missing key and provider errors",async
   await assert.rejects(()=>queryRunwayOrganizationUsage({apiKey:"",startDate:"2026-11-01",beforeDate:"2026-11-02"}),e=>e.code==="RUNWAY_USAGE_KEY_REQUIRED");
   await assert.rejects(()=>queryRunwayOrganizationUsage({apiKey:"x",startDate:"2026-11-01",beforeDate:"2026-11-02",fetchImpl:async()=>new Response("no",{status:403})}),e=>e.code==="RUNWAY_USAGE_ACCESS_DENIED");
   await assert.rejects(()=>queryRunwayOrganizationUsage({apiKey:"x",startDate:"2026-11-01",beforeDate:"2026-11-02",fetchImpl:async()=>new Response("bad",{status:200})}),e=>e.code==="RUNWAY_USAGE_RESPONSE_INVALID");
+  await assert.rejects(()=>queryRunwayOrganizationUsage({apiKey:"x",startDate:"2026-11-01",beforeDate:"2026-11-02",fetchImpl:async()=>new Response(JSON.stringify({results:[{date:"2026-11-02",usedCredits:[]}]}),{status:200})}),e=>e.code==="RUNWAY_USAGE_RESPONSE_INVALID");
 });
 
 test("local billing estimates aggregate from immutable ledger metadata without mutating it",()=>{
