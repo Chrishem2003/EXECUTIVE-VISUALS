@@ -169,8 +169,9 @@ export function getAdminOverview(db) {
     subscriptions: { total: Number(subscriptions.total||0), active: Number(subscriptions.active||0), pastDue: Number(subscriptions.past_due||0) },
     jobs: { total: Number(jobs.total||0), inFlight: Number(jobs.in_flight||0) },
     usage30d: { operations: Number(usage.operations||0), estimatedCostMicros: Number(usage.estimated_cost_micros||0) },
-    billingProviderConfigured: !!(process.env.FLW_SECRET_KEY || process.env.DODO_PAYMENTS_API_KEY),
+    billingProviderConfigured: !!(process.env.FLW_SECRET_KEY && process.env.FLW_WEBHOOK_SECRET),
     paymentCollectionEnabled: process.env.BILLING_CHECKOUT_ENABLED === "true" &&
+      process.env.AUTH_MODE === "supabase" && process.env.REQUIRE_PERSISTENT_DATA_DIR === "true" &&
       !!(process.env.FLW_SECRET_KEY && process.env.FLW_WEBHOOK_SECRET && process.env.PUBLIC_APP_URL) };
 }
 
