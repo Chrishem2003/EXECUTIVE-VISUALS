@@ -943,3 +943,21 @@ export function listSelectableVideoProviderModels() {
       .map(model => ({ providerId: provider.id, ...model }))
   );
 }
+
+
+/**
+ * Legacy synchronous adapters must not bypass the governed cloud-worker
+ * release gate for models that are catalogued but not enabled for execution.
+ * Unknown legacy model IDs retain their existing adapter-specific validation.
+ */
+const LEGACY_MODEL_CATALOG_IDS = Object.freeze({
+  kling_4_flash: ["kling", "kling-4.0-flash"],
+  "gemini_omni_flash_1.2": ["google", "gemini-omni-1.2-flash"]
+});
+
+export function isLegacyVideoModelSelectable(modelId) {
+  const mapping = LEGACY_MODEL_CATALOG_IDS[String(modelId || "").trim()];
+  if (!mapping) return true;
+  const model = getVideoProviderModel(mapping[0], mapping[1]);
+  return Boolean(model && model.availability === "enabled" && model.executionAdapter && model.executionAdapter !== "not_implemented");
+}
