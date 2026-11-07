@@ -261,7 +261,7 @@ export async function processNextFlutterwaveWebhook(db, {
     }
     if (payload.event === "charge.failed" || data.status === "failed") {
       db.prepare("UPDATE billing_payment_orders SET status='failed',updated_at=? WHERE id=? AND status='pending'").run(now(), order.id);
-      db.prepare("UPDATE billing_provider_events SET processed_at=?,last_error=NULL WHERE id=?").run(now(), event.id);
+      db.prepare("UPDATE billing_provider_events SET processed_at=?,last_error=NULL,processing_at=NULL,lease_expires_at=NULL WHERE id=?").run(now(), event.id);
       return { processed: true, paid: false, eventId: event.event_id };
     }
     if (payload.event !== "charge.completed" || data.status !== "successful") {
