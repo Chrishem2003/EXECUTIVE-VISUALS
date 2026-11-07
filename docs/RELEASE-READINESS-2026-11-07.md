@@ -151,3 +151,15 @@ The release decision remains **blocked** for the same infrastructure and financi
 - No paid provider generation was run. No Render production service, production database, Cloudflare API origin, R2 bucket, or production credential was changed.
 
 The release remains blocked pending isolated staging acceptance, durable private storage and backup/restore verification, payment sandbox acceptance, and task-correlated provider-cost settlement. Keep PR #206 as draft; do not merge this 399-commit integration candidate into production.
+
+## Continuation update — 2026-11-07 14:28 UTC
+
+- PR #206 remains open and draft. Its current integration head is `7936afb560dde982325b28bae42dc3f80fb6e9ef`; it is 414 commits ahead of `main`, 0 behind, with 133 changed files. Do not merge this broad integration candidate into production.
+- Quality Checks passed on this exact code head: dependency installation, TypeScript typecheck, production build, and full regression suite. Google Drive integration quality passed, including disposable PostgreSQL integration. The full suite reported 768 tests passed and 0 failed.
+- Added an opt-in Runway Model Router image adapter using the documented `POST /v1/generate/image` endpoint. It requires a saved config slug and explicit server-side enablement; the adapter performs a non-billable dry-run quote before customer-credit reservation and paid task submission.
+- Runway routed image output is limited to 1–4 variations by this workflow (the provider API permits a larger maximum). It validates the route metadata, estimated credit amount, output cardinality, private reference payload sizes, and downloaded PNG signatures. Each variation is saved as its own private application asset and is exposed through the existing multi-value `images` output for Batch Inputs fan-out.
+- Routed Runway billing uses the dry-run estimated credits with configured platform markup and requires `BILLING_CREDIT_VALUE_MICROS` when billing enforcement is active. Task-level actual credits are captured in the adapter result; task-correlated settlement/refund reconciliation remains a release gate, so the estimate is not claimed as final provider settlement.
+- Added provider catalog discovery, workflow inspector guidance, environment examples, documentation, and tests for route preflight, task execution, output count, reference limits, provider opt-in, and billing estimate conversion.
+- No paid provider generation was run. No Render production service, production database, production credentials, Cloudflare API origin, or R2 bucket was changed.
+
+The release remains blocked pending isolated staging acceptance, durable private storage and backup/restore verification, payment sandbox acceptance, end-to-end task-correlated provider-cost settlement, and full production smoke tests. Keep PR #206 as draft and keep production untouched.
