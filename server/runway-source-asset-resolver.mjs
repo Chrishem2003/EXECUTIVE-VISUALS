@@ -111,6 +111,7 @@ export function createRunwaySourceAssetResolver({
       const transfer = String(video.color_transfer || "").toLowerCase();
       return Object.freeze({
         durationSeconds, frameCount, width, height,
+        sourceWidth: width, sourceHeight: height,
         sourceDynamicRange: ["smpte2084", "arib-std-b67"].includes(transfer) ? "hdr" : "sdr",
         colorTransfer: transfer || "unknown",
         colorPrimaries: String(video.color_primaries || "").slice(0, 40),
