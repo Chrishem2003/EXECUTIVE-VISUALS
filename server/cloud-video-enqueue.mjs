@@ -101,7 +101,13 @@ export function createCloudVideoEnqueue({
         throw new Error("Reserved amount must be a positive bounded number.");
       }
       if (typeof currency !== "string" || !/^[A-Z]{3}$/.test(currency)) throw new Error("Currency must be a three-letter uppercase code.");
-      const runwayEnabled = provider === "runway" && model === "gen4.5";
+      const runwayTextEnabled = provider === "runway" && model === "gen4.5" &&
+        (input.operation === undefined || input.operation === "text-to-video") && !input.startFrameAssetId;
+      const runwayImageEnabled = provider === "runway" && model === "gen4.5" &&
+        (input.operation === "image-to-video" || Boolean(input.startFrameAssetId));
+      const runwayEditEnabled = provider === "runway" && model === "aleph2" && input.operation === "video-to-video";
+      const runwayUpscaleEnabled = provider === "runway" && model === "magnific_video_upscaler_creative" && input.operation === "video-upscale";
+      const runwayEnabled = runwayTextEnabled || runwayImageEnabled || runwayEditEnabled || runwayUpscaleEnabled;
       const googleEnabled = provider === "google" && model === "gemini-omni-1.1-flash";
       if (!runwayEnabled && !googleEnabled) {
         const unsupported = new Error("The selected provider/model does not have an enabled, verified cloud execution adapter.");
@@ -119,14 +125,16 @@ export function createCloudVideoEnqueue({
         throw disabled;
       }
       const estimate = estimateVideoGenerationCost({
-        provider, model, durationSeconds: input.durationSeconds,
+        provider, model, operation: input.operation || (input.startFrameAssetId ? "image-to-video" : "text-to-video"),
+        durationSeconds: input.durationSeconds,
         outputFormat: input.outputFormat, resolution: input.resolution, audio: input.audio,
         inputVideoSeconds: input.inputVideoSeconds, referenceVideoSeconds: input.referenceVideoSeconds,
         referenceImageCount: input.referenceImageCount, referenceAudioCount: input.referenceAudioCount,
-        hasStartFrame: input.hasStartFrame, outputFrames: input.outputFrames,
+        hasStartFrame: Boolean(input.startFrameAssetId) || input.hasStartFrame === true, outputFrames: input.outputFrames,
         sourceWidth: input.sourceWidth, sourceHeight: input.sourceHeight,
         sourceDynamicRange: input.sourceDynamicRange, outputWidth: input.outputWidth,
-        outputHeight: input.outputHeight, targetFramerate: input.targetFramerate, inputType: input.inputType
+        outputHeight: input.outputHeight, targetFramerate: input.targetFramerate,
+        inputType: input.sourceVideoAssetId ? "video" : input.startFrameAssetId ? "image" : input.inputType
       });
 
       if ((input.outputFormat || "mp4") !== "mp4") {
@@ -134,14 +142,17 @@ export function createCloudVideoEnqueue({
         unsupported.code = "VIDEO_PRICE_OUTPUT_FORMAT_UNSUPPORTED";
         throw unsupported;
       }
-      if (runwayEnabled) {
-        // Model capability and worker implementation are separate contracts.
-        // Gen-4.5 accepts 720p at provider level, but this worker currently only
-        // supports provider_default and must reject explicit resolution requests.
+      if (runwayTextEnabled || runwayImageEnabled) {
+        // Gen-4.5's hosted worker currently supports provider-default resolution only.
         if (input.resolution !== undefined && input.resolution !== "provider_default") {
           const unsupported = new Error("The current Gen-4.5 worker only supports provider-default resolution.");
           unsupported.code = "VIDEO_GENERATION_UNSUPPORTED_CAPABILITY";
           throw unsupported;
+        }
+        if (runwayImageEnabled && !input.startFrameAssetId) {
+          const invalid = new Error("Gen-4.5 image-to-video requires an owner-scoped first-frame asset.");
+          invalid.code = "VIDEO_INPUT_ASSET_RESOLUTION_REQUIRED";
+          throw invalid;
         }
         const unpricedExecutionFields = ["audio","inputVideoSeconds","referenceVideoSeconds","referenceImageCount",
           "referenceAudioCount","hasStartFrame","outputFrames","sourceWidth","sourceHeight","sourceDynamicRange",
@@ -150,6 +161,36 @@ export function createCloudVideoEnqueue({
           const unsupported = new Error("The current Gen-4.5 worker does not yet accept these finishing or reference-media options.");
           unsupported.code = "VIDEO_GENERATION_UNSUPPORTED_CAPABILITY";
           throw unsupported;
+        }
+      } else if (runwayEditEnabled) {
+        if (!input.sourceVideoAssetId || typeof input.prompt !== "string" || !input.prompt.trim() || input.prompt.length > 1000) {
+          const invalid = new Error("Aleph2 video editing requires an authorized source video asset and a prompt of 1 to 1,000 characters.");
+          invalid.code = "VIDEO_GENERATION_UNSUPPORTED_CAPABILITY";
+          throw invalid;
+        }
+        if (!Number.isInteger(input.durationSeconds) || input.durationSeconds < 1 || input.durationSeconds > 30) {
+          const invalid = new Error("Aleph2 source video duration must be between 1 and 30 seconds.");
+          invalid.code = "VIDEO_PRICE_DURATION_INVALID";
+          throw invalid;
+        }
+        if (input.keyframeAssetIds !== undefined &&
+            (!Array.isArray(input.keyframeAssetIds) || input.keyframeAssetIds.length > 5)) {
+          throw new Error("Aleph2 accepts at most five keyframe guidance assets.");
+        }
+      } else if (runwayUpscaleEnabled) {
+        if (!input.sourceVideoAssetId || !Number.isInteger(input.durationSeconds) ||
+            input.durationSeconds < 1 || input.durationSeconds > 30) {
+          const invalid = new Error("Magnific video upscaling requires an authorized source video no longer than 30 seconds.");
+          invalid.code = "VIDEO_GENERATION_UNSUPPORTED_CAPABILITY";
+          throw invalid;
+        }
+        if (!Number.isSafeInteger(input.outputFrames) || input.outputFrames < 1 || input.outputFrames > 1000000) {
+          const invalid = new Error("Magnific video upscaling requires a probed output frame count for safe credit reservation.");
+          invalid.code = "VIDEO_PRICE_INPUT_REQUIRED";
+          throw invalid;
+        }
+        if (!["720p", "1k", "2k", "4k"].includes(input.resolution ?? "2k")) {
+          throw new Error("Magnific video upscaling resolution must be 720p, 1k, 2k or 4k.");
         }
       } else {
         if (input.resolution !== undefined && !["provider_default","720p"].includes(input.resolution)) {
