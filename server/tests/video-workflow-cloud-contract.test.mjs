@@ -30,6 +30,17 @@ test("maps one first-frame asset to image-to-video without resolving private sto
   assert.equal(result.input.startFrameAssetId, "asset-image-1");
 });
 
+test("maps existing image/reference workflow ports and numeric UI duration values", () => {
+  const result = createVideoWorkflowCloudRequest({
+    ...base,
+    node: { ...node, config: { ...node.config, duration: "10" } },
+    values: { prompt: "Animate the image", image: "asset-image-2" }
+  });
+  assert.equal(result.operation, "image-to-video");
+  assert.equal(result.input.startFrameAssetId, "asset-image-2");
+  assert.equal(result.input.durationSeconds, 10);
+});
+
 test("maps source video to video-to-video and retains asset lineage IDs", () => {
   const result = createVideoWorkflowCloudRequest({
     ...base, values: {
