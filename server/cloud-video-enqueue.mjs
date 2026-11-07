@@ -135,7 +135,9 @@ export function createCloudVideoEnqueue({
         verifiedSourceMetadata = await resolveRunwaySourceMetadata({
           ownerId, projectId, assetId: input.sourceVideoAssetId
         });
-        if (!verifiedSourceMetadata || !["video/mp4", "video/quicktime", "video/webm"].includes(verifiedSourceMetadata.mediaType) ||
+        if (!verifiedSourceMetadata || verifiedSourceMetadata.ownerId !== ownerId ||
+            (verifiedSourceMetadata.projectId || null) !== projectId || verifiedSourceMetadata.assetId !== input.sourceVideoAssetId ||
+            !["video/mp4", "video/quicktime", "video/webm"].includes(verifiedSourceMetadata.mediaType) ||
             !Number.isFinite(verifiedSourceMetadata.durationSeconds) ||
             verifiedSourceMetadata.durationSeconds < 1 || verifiedSourceMetadata.durationSeconds > 30) {
           const invalid = new Error("The source asset must have verified video metadata and a duration from 1 to 30 seconds.");
