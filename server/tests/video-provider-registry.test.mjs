@@ -221,6 +221,30 @@ test("Runway's expanded model directory is catalogued with dated pricing and dis
   assert.equal(listSelectableVideoProviderModels().length, 0);
 });
 
+test("November 2026 Runway model releases are catalogued without enabling unimplemented execution", () => {
+  const kling = getVideoProviderModel("runway", "kling_4_flash");
+  const omni = getVideoProviderModel("runway", "gemini_omni_flash_1.2");
+  for (const model of [kling, omni]) {
+    assert.ok(model);
+    assert.equal(model.availability, "disabled");
+    assert.equal(model.executionAdapter, "not_implemented");
+    assert.equal(model.gateway, "runway");
+    assert.equal(model.constraints.pricingSnapshotDate, "2026-11-07");
+    assert.equal(model.constraints.pricingStatus, "published_starting_rate_tier_matrix_pending");
+  }
+  assert.deepEqual(kling.capabilities.resolutions, ["720p"]);
+  assert.equal(kling.capabilities.minDurationSeconds, 3);
+  assert.equal(kling.capabilities.maxDurationSeconds, 20);
+  assert.equal(kling.capabilities.videoToVideo, true);
+  assert.equal(kling.constraints.startingUsdPerSecond, 0.094);
+  assert.deepEqual(omni.capabilities.resolutions, ["360p", "480p", "720p", "1080p", "4k"]);
+  assert.equal(omni.capabilities.videoEdit, true);
+  assert.equal(omni.capabilities.videoExtend, true);
+  assert.equal(omni.constraints.keyframeGuidance, true);
+  assert.equal(omni.constraints.startingUsdPerSecond, 0.02);
+  assert.equal(listSelectableVideoProviderModels().length, 0);
+});
+
 test("Runway Veo model IDs are distinct from the retired Gemini API preview endpoint", () => {
   const runwayVeo = getVideoProviderModel("runway", "veo3.1");
   const googleOmni = getVideoProviderModel("google", "gemini-omni-1.1-flash");
