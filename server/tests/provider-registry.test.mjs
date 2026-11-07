@@ -4,9 +4,9 @@ import { getProviderCatalog, findProviderForCapability, requireProviderForCapabi
 
 test("provider catalog is safe by default and never exposes credentials or submits work",()=>{
  const catalog=getProviderCatalog({});
- assert.equal(catalog.summary.total,7);
+ assert.equal(catalog.summary.total,8);
  assert.equal(catalog.summary.ready,0);
- assert.equal(catalog.summary.disabled,5);
+ assert.equal(catalog.summary.disabled,6);
  assert.equal(catalog.providers.find(x=>x.id==="local-media").status,"unavailable");
  assert.equal(catalog.providers.find(x=>x.id==="local-media").capabilities.includes("media.upscale"),true);
  assert.deepEqual(catalog.policy,{remoteCallsRequireExplicitOptIn:true,credentialsExposed:false,pricesEstimated:false,requestsSubmitted:false});
@@ -83,6 +83,7 @@ test("video provider catalog exposes the configured adapter's actual model capab
  const unconfigured=getProviderCatalog({VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",FAL_KEY:"secret",FAL_VIDEO_MODEL:"fal-ai/model"});
  const video=unconfigured.providers.find(item=>item.id==="video");
  assert.deepEqual(video.modelCapabilities.aspectRatios,["16:9","9:16","1:1"]);
+ assert.equal(video.availableModels[0].id,"fal-ai/model");
  assert.deepEqual(video.modelCapabilities.resolutions,["provider_default"]);
  assert.equal(video.modelCapabilities.negativePrompt,false);
  assert.equal(video.modelCapabilities.referenceImages,false);
@@ -102,7 +103,7 @@ test("Runway adapter exposes verified text-to-video and first-frame image-to-vid
  assert.equal(video.status,"ready");
  assert.equal(video.model,"seedance2_5");
  assert.equal(video.modelCapabilities.maxDurationSeconds,30);
- assert.equal(video.modelCapabilities.referenceImages,true);
+ assert.equal(video.modelCapabilities.referenceImages,false);
  assert.ok(video.availableModels.some(model=>model.id==="kling_4"));
  assert.equal(JSON.stringify(catalog).includes("do-not-return"),false);
 });
@@ -149,4 +150,91 @@ test("AI upscaler requires independent fixture evidence, not a claimed inference
  assert.equal(verifiedProvider.status,"ready");
  assert.deepEqual(verifiedProvider.capabilities,["media.ai-upscale"]);
  assert.equal(findProviderForCapability(qualityChecked,"media.ai-upscale").provider,"local");
+});
+
+
+test("Gemini Omni is visible in settings but remains blocked until app authorization callbacks are composed", () => {
+ const catalog = getProviderCatalog({
+  GEMINI_API_KEY: "never-return-this",
+  GOOGLE_OMNI_VIDEO_ENABLED: "true",
+  GOOGLE_OMNI_VIDEO_ALLOW_REMOTE: "true",
+  GEMINI_OMNI_ENABLED: "true",
+  GEMINI_OMNI_ALLOW_REMOTE: "true"
+ });
+ const provider = catalog.providers.find(item => item.id === "video-google-omni");
+ assert.equal(provider.status, "needs_configuration");
+ assert.equal(provider.model, "gemini-omni-1.1-flash");
+ assert.match(provider.reason, /application-injected approval/);
+ assert.equal(findProviderForCapability(catalog, "video.edit", { allowRemote: true }), null);
+ assert.equal(JSON.stringify(catalog).includes("never-return-this"), false);
+});
+
+test("Runway GPT Image 2.6 adapter is discoverable but remains disabled until explicit opt-in",()=>{
+ const catalog=getProviderCatalog({
+  IMAGE_GATEWAY_PROVIDER:"runway",IMAGE_GATEWAY_ENABLED:"true",IMAGE_GATEWAY_ALLOW_REMOTE:"false",
+  RUNWAY_API_KEY:"do-not-return",RUNWAY_IMAGE_MODEL:"gpt_image_2_6_flare"
+ });
+ const image=catalog.providers.find(item=>item.id==="image");
+ assert.equal(image.provider,"runway");
+ assert.equal(image.status,"remote_opt_in_required");
+ assert.ok(image.availableModels.some(model=>model.id==="gpt_image_2_6_flare"&&model.executionAdapter==="runway-image-v1"));
+ assert.ok(image.availableModels.some(model=>model.id==="gpt_image_2_6_sunburst"));
+ assert.equal(findProviderForCapability(catalog,"image.generate"),null);
+ assert.equal(JSON.stringify(catalog).includes("do-not-return"),false);
+});
+test("Runway image provider requires an allowlisted model and server key",()=>{
+ const noKey=getProviderCatalog({IMAGE_GATEWAY_PROVIDER:"runway",IMAGE_GATEWAY_ENABLED:"true",RUNWAY_IMAGE_MODEL:"gpt_image_2_6_flare"});
+ assert.equal(noKey.providers.find(item=>item.id==="image").status,"needs_configuration");
+ const wrongModel=getProviderCatalog({IMAGE_GATEWAY_PROVIDER:"runway",IMAGE_GATEWAY_ENABLED:"true",RUNWAY_API_KEY:"secret",RUNWAY_IMAGE_MODEL:"unknown"});
+ assert.equal(wrongModel.providers.find(item=>item.id==="image").status,"needs_configuration");
+});
+
+test("Runway image Model Router is discoverable only with a valid saved config and remains opt-in gated",()=>{
+ const catalog=getProviderCatalog({
+  IMAGE_GATEWAY_PROVIDER:"runway",IMAGE_GATEWAY_ENABLED:"true",IMAGE_GATEWAY_ALLOW_REMOTE:"false",
+  RUNWAY_IMAGE_ROUTER_ENABLED:"true",RUNWAY_IMAGE_ROUTER_CONFIG:"campaign-images",RUNWAY_API_KEY:"secret"
+ });
+ const image=catalog.providers.find(item=>item.id==="image");
+ assert.equal(image.model,"model-router");
+ assert.equal(image.status,"remote_opt_in_required");
+ assert.ok(image.availableModels.some(model=>model.id==="model-router"&&model.outputCounts.max===4));
+ assert.equal(findProviderForCapability(catalog,"image.generate"),null);
+ const invalid=getProviderCatalog({
+  IMAGE_GATEWAY_PROVIDER:"runway",IMAGE_GATEWAY_ENABLED:"true",IMAGE_GATEWAY_ALLOW_REMOTE:"true",
+  RUNWAY_IMAGE_ROUTER_ENABLED:"true",RUNWAY_IMAGE_ROUTER_CONFIG:"INVALID SLUG",RUNWAY_API_KEY:"secret"
+ });
+ assert.equal(invalid.providers.find(item=>item.id==="image").status,"needs_configuration");
+});
+test("Runway video provider exposes the new Flash profiles but rejects unknown model IDs",()=>{
+ const catalog=getProviderCatalog({
+  VIDEO_GATEWAY_PROVIDER:"runway",VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",
+  RUNWAY_API_KEY:"secret",RUNWAY_VIDEO_MODEL:"kling_4_flash"
+ });
+ const video=catalog.providers.find(item=>item.id==="video");
+ assert.equal(video.status,"ready");
+ assert.ok(video.availableModels.some(model=>model.id==="kling_4_flash"&&model.maxDurationSeconds===20));
+ assert.ok(video.availableModels.some(model=>model.id==="gemini_omni_flash_1.2"&&model.maxDurationSeconds===15&&model.nativeAudio===true));
+ const unknown=getProviderCatalog({
+  VIDEO_GATEWAY_PROVIDER:"runway",VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",
+  RUNWAY_API_KEY:"secret",RUNWAY_VIDEO_MODEL:"not-an-adapter"
+ });
+ assert.equal(unknown.providers.find(item=>item.id==="video").status,"needs_configuration");
+});
+
+
+
+test("legacy provider exposes only models with a verified synchronous adapter, independent of cloud-worker readiness", () => {
+ const catalog=getProviderCatalog({
+  VIDEO_GATEWAY_PROVIDER:"runway",VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",
+  RUNWAYML_API_SECRET:"do-not-return",RUNWAY_VIDEO_MODEL:"seedance2_5"
+ });
+ const video=catalog.providers.find(item=>item.id==="video");
+ assert.equal(video.status,"ready");
+ for(const id of ["seedance2_5","kling_4","kling_4_flash","gemini_omni_flash_1.2"]){
+  assert.equal(video.availableModels.some(model=>model.id===id),true,id+" has a verified legacy adapter");
+ }
+ for(const id of ["veo3.1","veo3.1_fast","seedance2","seedance2_fast"]){
+  assert.equal(video.availableModels.some(model=>model.id===id),false,id+" has no verified legacy adapter");
+ }
+ assert.equal(JSON.stringify(catalog).includes("do-not-return"),false);
 });

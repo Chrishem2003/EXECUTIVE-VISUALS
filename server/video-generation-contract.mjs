@@ -63,7 +63,11 @@ export function normalizeVideoGenerationRequest(input) {
     throw new VideoGenerationValidationError("Request must be an object");
   }
 
-  const prompt = boundedString(input.prompt, "prompt", MAX_PROMPT_LENGTH, { required: true });
+  const operation = input.operation;
+  if (operation != null && !["text-to-video", "image-to-video", "video-to-video", "video-upscale", "video-to-hdr", "generate", "edit", "extend"].includes(operation)) {
+    throw new VideoGenerationValidationError("operation is not supported by the normalized video contract");
+  }
+  const prompt = boundedString(input.prompt, "prompt", MAX_PROMPT_LENGTH, { required: !["video-upscale", "video-to-hdr"].includes(operation) });
   const negativePrompt = boundedString(input.negativePrompt, "negativePrompt", 4000);
   const aspectRatio = input.aspectRatio ?? "16:9";
   if (!ALLOWED_ASPECT_RATIOS.has(aspectRatio)) {
@@ -74,24 +78,85 @@ export function normalizeVideoGenerationRequest(input) {
     throw new VideoGenerationValidationError("audioMode is not supported by the normalized contract");
   }
 
-  const resolution = input.resolution ?? "provider_default";
-  if (!["provider_default", "480p", "720p", "1080p", "1440p", "2160p"].includes(resolution)) {
-    throw new VideoGenerationValidationError("resolution must be provider_default, 480p, 720p, 1080p, 1440p, or 2160p");
+  const resolution = input.resolution ?? (operation === "video-upscale" ? "2k" : "provider_default");
+  if (!["provider_default", "480p", "720p", "1080p", "1440p", "2160p", "1k", "2k", "4k"].includes(resolution)) {
+    throw new VideoGenerationValidationError("resolution must be a documented provider resolution tier");
   }
 
+  const outputFormat = boundedString(
+    input.outputFormat ?? (operation === "video-to-hdr" ? "hdr10" : "mp4"),
+    "outputFormat", 32, { required: true }
+  );
   const request = {
     requestId: boundedString(input.requestId, "requestId", 160) ?? randomUUID(),
     ...(input.projectId != null && input.projectId !== "" ? { projectId: boundedString(input.projectId, "projectId", 160, { required: true }) } : {}),
-    prompt,
+    ...(prompt !== undefined ? { prompt } : {}),
+    ...(operation !== undefined ? { operation } : {}),
     aspectRatio,
     resolution,
     durationSeconds: finiteNumber(input.durationSeconds ?? 5, "durationSeconds", { min: 1, max: 180, required: true, integer: true }),
+    outputFormat,
     audioMode,
-    referenceAssetIds: assetIds(input.referenceAssetIds, "referenceAssetIds"),
+    referenceAssetIds: assetIds(input.referenceAssetIds ?? input.referenceImageAssetIds, "referenceAssetIds"),
+    referenceVideoAssetIds: assetIds(input.referenceVideoAssetIds, "referenceVideoAssetIds", 2),
+    referenceAudioAssetIds: assetIds(input.referenceAudioAssetIds, "referenceAudioAssetIds", 1),
     ...(negativePrompt ? { negativePrompt } : {}),
   };
 
-  if (input.seed != null) request.seed = finiteNumber(input.seed, "seed", { min: 0, max: 2147483647, integer: true });
+  if (input.seed != null) request.seed = finiteNumber(input.seed, "seed", { min: 0, max: 4294967295, integer: true });
+  if (audioMode === "reference" && request.referenceAudioAssetIds.length !== 1) {
+    throw new VideoGenerationValidationError("Reference audio mode requires exactly one referenceAudioAssetId");
+  }
+  if (input.sourceVideoAssetId != null) {
+    request.sourceVideoAssetId = boundedString(input.sourceVideoAssetId, "sourceVideoAssetId", 160, { required: true });
+  }
+  if (request.sourceVideoAssetId && request.referenceVideoAssetIds.length > 1) {
+    throw new VideoGenerationValidationError("A source video leaves room for at most one additional reference video in the Runway Model Router contract");
+  }
+  if (request.sourceVideoAssetId && request.referenceVideoAssetIds.includes(request.sourceVideoAssetId)) {
+    throw new VideoGenerationValidationError("The source video cannot also be supplied as a reference video");
+  }
+  if (input.keyframeAssetIds != null) request.keyframeAssetIds = assetIds(input.keyframeAssetIds, "keyframeAssetIds", 5);
+  if (input.keyframes != null) {
+    if (!Array.isArray(input.keyframes) || input.keyframes.length > 5) {
+      throw new VideoGenerationValidationError("keyframes must be an array containing at most five timestamped assets");
+    }
+    let previousAt = -1;
+    request.keyframes = input.keyframes.map((frame, index) => {
+      if (!frame || typeof frame !== "object" || Array.isArray(frame)) {
+        throw new VideoGenerationValidationError("Each keyframe must contain an assetId and timestamp");
+      }
+      const assetId = boundedString(frame.assetId, "keyframes[" + index + "].assetId", 160, { required: true });
+      const at = finiteNumber(frame.at, "keyframes[" + index + "].at", { min: 0, max: 30, required: true });
+      if (at <= previousAt) throw new VideoGenerationValidationError("Keyframe timestamps must be strictly increasing");
+      previousAt = at;
+      return Object.freeze({ assetId, at });
+    });
+  }
+  if (request.keyframeAssetIds?.length && !request.keyframes?.length) {
+    throw new VideoGenerationValidationError("Keyframe asset IDs require explicit timestamps; use keyframes [{assetId, at}]");
+  }
+  if (request.keyframes?.length && operation !== "video-to-video") {
+    throw new VideoGenerationValidationError("Timestamped keyframes are supported only for video-to-video");
+  }
+  if (["video-to-video", "video-upscale", "video-to-hdr"].includes(operation) && !request.sourceVideoAssetId) {
+    throw new VideoGenerationValidationError("sourceVideoAssetId is required for this video operation");
+  }
+  if (operation !== "video-to-video" && request.keyframeAssetIds?.length) {
+    throw new VideoGenerationValidationError("keyframeAssetIds are supported only for video-to-video");
+  }
+  if (input.outputFrames != null) request.outputFrames = finiteNumber(input.outputFrames, "outputFrames", { min: 1, max: 1000000, integer: true });
+  for (const field of ["creativity", "sharpen", "smartGrain"]) {
+    if (input[field] != null) request[field] = finiteNumber(input[field], field, { min: 0, max: 100, integer: true });
+  }
+  if (input.flavor != null) {
+    if (!["vivid", "natural"].includes(input.flavor)) throw new VideoGenerationValidationError("flavor must be vivid or natural");
+    request.flavor = input.flavor;
+  }
+  if (input.fpsBoost != null) {
+    if (typeof input.fpsBoost !== "boolean") throw new VideoGenerationValidationError("fpsBoost must be a boolean");
+    request.fpsBoost = input.fpsBoost;
+  }
   if (input.startFrameAssetId != null) {
     request.startFrameAssetId = boundedString(input.startFrameAssetId, "startFrameAssetId", 160, { required: true });
   }
@@ -118,6 +183,8 @@ export function assertVideoCapabilities(request, capabilities = {}) {
     [request.endFrameAssetId != null, capabilities.endFrame === true, "endFrameAssetId"],
     [request.motionReferenceAssetId != null, capabilities.motionReference === true, "motionReferenceAssetId"],
     [request.referenceAssetIds.length > 0, capabilities.referenceImages === true, "referenceAssetIds"],
+    [request.referenceVideoAssetIds.length > 0, capabilities.referenceVideos === true, "referenceVideoAssetIds"],
+    [request.referenceAudioAssetIds.length > 0, capabilities.referenceAudio === true, "referenceAudioAssetIds"],
     [request.audioMode !== "provider_default", capabilities.audioModes?.includes?.(request.audioMode) === true, "audioMode"],
   ];
   const unsupported = checks.filter(([requested, supported]) => requested && !supported).map(([, , field]) => field);
@@ -126,6 +193,12 @@ export function assertVideoCapabilities(request, capabilities = {}) {
       `Selected provider/model does not declare support for: ${unsupported.join(", ")}`,
       "VIDEO_GENERATION_UNSUPPORTED_CAPABILITY",
     );
+  }
+
+  for (const [field, limit] of [["referenceAssetIds", capabilities.maxReferenceImages], ["referenceVideoAssetIds", capabilities.maxReferenceVideos], ["referenceAudioAssetIds", capabilities.maxReferenceAudio]]) {
+    if (Number.isInteger(limit) && request[field].length > limit) {
+      throw new VideoGenerationValidationError(`Selected provider/model accepts at most ${limit} ${field} assets`, "VIDEO_GENERATION_UNSUPPORTED_CAPABILITY");
+    }
   }
 
   if (capabilities.aspectRatios && !capabilities.aspectRatios.includes(request.aspectRatio)) {

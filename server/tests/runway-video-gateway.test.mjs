@@ -42,7 +42,7 @@ test("image-to-video rejects oversized or malformed frame data",()=>{
 });
 test("capabilities are model-specific and declare only implemented first-frame reference inputs",()=>{
  const caps=getRunwayVideoCapabilities("seedance2_5");
- assert.equal(caps.referenceImages,true);
+ assert.equal(caps.referenceImages,false);
  assert.equal(caps.startFrame,true);
  assert.equal(caps.maxDurationSeconds,30);
  assert.deepEqual(caps.resolutions,["provider_default","480p","720p","1080p"]);
@@ -96,4 +96,49 @@ test("rejects a task output URL outside the provider CDN",async()=>{
    :new Response("no",{status:500});
  await assert.rejects(()=>generateRunwayVideo({model:"seedance2_5",prompt:"A sunrise",fetchImpl,sleepImpl:async()=>{}}),e=>e.code==="VIDEO_GATEWAY_INVALID_RESPONSE");
  for(const [k,v] of Object.entries({VIDEO_GATEWAY_ENABLED:original.enabled,VIDEO_GATEWAY_ALLOW_REMOTE:original.remote,RUNWAYML_API_SECRET:original.key}))if(v===undefined)delete process.env[k];else process.env[k]=v;
+});
+
+test("Kling 4.0 Flash exposes the documented 720p, audio and duration profile",()=>{
+ const models=listRunwayVideoModels();
+ const model=models.find(item=>item.id==="kling_4_flash");
+ assert.ok(model);
+ assert.equal(model.minDurationSeconds,3);
+ assert.equal(model.maxDurationSeconds,20);
+ assert.equal(model.promptMaxCharacters,26000);
+ assert.equal(model.nativeAudio,true);
+ assert.ok(model.inputModes.includes("image-to-video"));
+ assert.deepEqual(getRunwayVideoCapabilities("kling_4_flash").audioModes,["generated"]);
+ assert.deepEqual(buildRunwayVideoPayload({model:"kling_4_flash",prompt:"A fast action sequence",durationSeconds:5,aspectRatio:"21:9"}),{
+  model:"kling_4_flash",promptText:"A fast action sequence",ratio:"1464:628",duration:5
+ });
+});
+test("Kling 4.0 Flash image-to-video follows the first frame and omits a forced ratio",()=>{
+ const payload=buildRunwayImageToVideoPayload({model:"kling_4_flash",prompt:"Animate this first frame",promptImage:"data:image/png;base64,iVBORw0KGgo=",durationSeconds:5,aspectRatio:"9:16"});
+ assert.equal(payload.model,"kling_4_flash");
+ assert.equal(payload.promptImage,"data:image/png;base64,iVBORw0KGgo=");
+ assert.equal("ratio" in payload,false);
+ assert.throws(()=>buildRunwayVideoPayload({model:"kling_4_flash",prompt:"x".repeat(26001)}),e=>e.code==="VIDEO_GATEWAY_INVALID_INPUT");
+});
+test("Gemini Omni 1.2 Flash maps resolution tiers to exact text-to-video pixel ratios",()=>{
+ const model=listRunwayVideoModels().find(item=>item.id==="gemini_omni_flash_1.2");
+ assert.ok(model);
+ assert.equal(model.minDurationSeconds,3);
+ assert.equal(model.maxDurationSeconds,15);
+ assert.equal(model.promptMaxCharacters,4000);
+ assert.equal(model.nativeAudio,true);
+ assert.deepEqual(getRunwayVideoCapabilities("gemini_omni_flash_1.2").audioModes,["generated"]);
+ assert.deepEqual(buildRunwayVideoPayload({model:"gemini_omni_flash_1.2",prompt:"A cinematic landscape",durationSeconds:8,aspectRatio:"16:9",resolution:"4k"}),{
+  model:"gemini_omni_flash_1.2",promptText:"A cinematic landscape",ratio:"3840:2160",duration:8
+ });
+ assert.deepEqual(buildRunwayVideoPayload({model:"gemini_omni_flash_1.2",prompt:"A vertical story",durationSeconds:5,aspectRatio:"9:16",resolution:"360p"}),{
+  model:"gemini_omni_flash_1.2",promptText:"A vertical story",ratio:"360:640",duration:5
+ });
+ assert.throws(()=>buildRunwayVideoPayload({model:"gemini_omni_flash_1.2",prompt:"x".repeat(4001)}),e=>e.code==="VIDEO_GATEWAY_INVALID_INPUT");
+ assert.throws(()=>buildRunwayVideoPayload({model:"gemini_omni_flash_1.2",prompt:"x",durationSeconds:16}),e=>e.code==="VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
+});
+test("Gemini Omni 1.2 Flash image-to-video supports the first frame with model-mapped ratio",()=>{
+ const payload=buildRunwayImageToVideoPayload({model:"gemini_omni_flash_1.2",prompt:"Use this as the opening frame",promptImage:"data:image/png;base64,iVBORw0KGgo=",durationSeconds:5,aspectRatio:"9:16",resolution:"1080p"});
+ assert.equal(payload.model,"gemini_omni_flash_1.2");
+ assert.equal(payload.ratio,"1080:1920");
+ assert.equal(payload.promptImage,"data:image/png;base64,iVBORw0KGgo=");
 });

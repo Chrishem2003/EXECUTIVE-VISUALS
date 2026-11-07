@@ -1,18 +1,21 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openDatabase, json } from "../db.mjs";
+import { saveBillingPlan } from "../billing.mjs";
+import { createBillingPurchaseOrder } from "../billing-webhooks.mjs";
 
 const port=await new Promise(resolve=>{const probe=createServer();probe.listen(0,"127.0.0.1",()=>{const address=probe.address();probe.close(()=>resolve(address.port));});});
 const dataDir=await mkdtemp(join(tmpdir(),"ev-api-test-"));
 const webDir=join(dataDir,"web");await mkdir(webDir,{recursive:true});await writeFile(join(webDir,"index.html"),"<!doctype html><html><body>test</body></html>");
 const child=spawn(process.execPath,["server/index.mjs"],{
   cwd:process.cwd(),
-  env:{...process.env,NODE_ENV:"development",AUTH_MODE:"local",AUTH_RATE_LIMIT:"1000",REMOTE_AI_DAILY_REQUEST_LIMIT:"7",API_HOST:"127.0.0.1",API_PORT:String(port),DATA_DIR:dataDir,MEDIA_ROOT:join(dataDir,"media"),WEB_ROOT:webDir,DISABLE_WORKER:"true"},
+  env:{...process.env,NODE_ENV:"development",AUTH_MODE:"local",AUTH_RATE_LIMIT:"1000",REMOTE_AI_DAILY_REQUEST_LIMIT:"7",GOOGLE_DRIVE_OAUTH_ENABLED:"false",API_HOST:"127.0.0.1",API_PORT:String(port),DATA_DIR:dataDir,MEDIA_ROOT:join(dataDir,"media"),WEB_ROOT:webDir,DISABLE_WORKER:"true",ADMIN_EMAILS:"admin@example.test,refund-admin@example.test"},
   stdio:["ignore","pipe","pipe"]
 });
 let stdout="",stderr="";
@@ -45,6 +48,12 @@ test("health reports local storage and media-engine availability without secrets
   const body=await response.json();
   assert.equal(body.status,"ok");
   assert.equal(body.storage,"local-disk");
+  assert.equal(body.database,"sqlite");
+  assert.equal(body.platform.primaryDatabase,"sqlite");
+  assert.equal(body.platform.cloudWorkspace.enabled,false);
+  assert.equal(body.platform.cloudWorkspace.objectStorage,"disabled");
+  assert.equal(body.platform.billing.recurringSubscriptionsEnabled,false);
+  assert.equal(body.platform.workers.enabled,false);
   assert.equal("SUPABASE_SERVICE_ROLE_KEY" in body,false);
   assert.equal(response.headers.get("x-frame-options"),"DENY");
   assert.equal(response.headers.get("referrer-policy"),"strict-origin-when-cross-origin");
@@ -58,12 +67,33 @@ test("provider catalog is authenticated, safe and read-only",async()=>{
   assert.equal(response.status,200);
   const catalog=await response.json();
   assert.equal(catalog.version,1);
-  assert.equal(catalog.providers.length,7);
+  assert.equal(catalog.providers.length,8);
   assert.equal(catalog.policy.requestsSubmitted,false);
   assert.equal(catalog.policy.credentialsExposed,false);
   assert.equal(catalog.policy.pricesEstimated,false);
   assert.equal(JSON.stringify(catalog).includes("API_KEY"),false);
   assert.equal(JSON.stringify(catalog).includes("Bearer "),false);
+});
+
+test("Google Drive routes remain disabled by default and fail closed",async()=>{
+  const callback=await fetch(base+"/api/integrations/google-drive/callback");
+  assert.equal(callback.status,503);
+  assert.equal((await callback.json()).error.code,"GOOGLE_DRIVE_OAUTH_NOT_CONFIGURED");
+  const anonymous=await fetch(base+"/api/integrations/google-drive/status");
+  assert.equal(anonymous.status,401);
+  const cookie=await register("drive-disabled@example.test");
+  for(const [path,method] of [
+    ["/api/integrations/google-drive/status","GET"],
+    ["/api/integrations/google-drive/connect","POST"],
+    ["/api/integrations/google-drive/picker-token","POST"],
+    ["/api/integrations/google-drive/disconnect","POST"],
+    ["/api/integrations/google-drive/import","POST"],
+    ["/api/integrations/google-drive/export","POST"]
+  ]){
+    const response=await request(path,{method,headers:{"content-type":"application/json"},body:method==="POST"?"{}":undefined},cookie);
+    assert.equal(response.status,503,path+" must fail closed while Drive is disabled");
+    assert.equal((await response.json()).error.code,"GOOGLE_DRIVE_OAUTH_NOT_CONFIGURED");
+  }
 });
 
 test("usage API reports account request allowance without exposing secrets",async()=>{
@@ -86,6 +116,8 @@ test("static application shell applies a restrictive content security policy",as
   assert.ok(policy.includes("script-src 'self'"));
   assert.ok(policy.includes("frame-ancestors 'none'"));
   assert.ok(policy.includes("object-src 'none'"));
+  assert.ok(policy.includes("https://apis.google.com"));
+  assert.ok(policy.includes("https://docs.google.com"));
 });
 
 test("registration, project ownership, binary upload and asset isolation work",async()=>{
@@ -554,4 +586,109 @@ test.after(async()=>{
   child.kill("SIGTERM");
   await new Promise(resolve=>{const timer=setTimeout(resolve,1500);child.once("exit",()=>{clearTimeout(timer);resolve();});});
   await rm(dataDir,{recursive:true,force:true});
+});
+
+
+test("billing plans and subscription overview are authenticated and default to Free",async()=>{
+  const cookie=await register("billing-member@example.test");
+  const plans=await request("/api/billing/plans",{},cookie);
+  assert.equal(plans.status,200);
+  const planBody=await plans.json();
+  assert.equal(planBody.plans.some(plan=>plan.code==="free"),true);
+  const overview=await request("/api/billing/overview",{},cookie);
+  assert.equal(overview.status,200);
+  const body=await overview.json();
+  assert.equal(body.billing.plan.code,"free");
+  assert.equal(body.billing.balance,0);
+  assert.equal((await fetch(base+"/api/billing/overview")).status,401);
+  const checkout=await request("/api/billing/checkout",{method:"POST",headers:{"content-type":"application/json"},body:"{}"},cookie);
+  assert.equal(checkout.status,503);
+});
+
+test("administrator APIs enforce allowlisting and manage plans, subscriptions, credits and account status",async()=>{
+  const adminCookie=await register("admin@example.test");
+  const memberCookie=await register("managed-member@example.test");
+  const adminMe=await request("/api/me",{},adminCookie);
+  assert.equal((await adminMe.json()).capabilities.admin,true);
+  const memberMe=await request("/api/me",{},memberCookie);
+  const memberId=(await memberMe.json()).user.id;
+  assert.equal((await request("/api/admin/overview",{},memberCookie)).status,403);
+  const planResponse=await request("/api/admin/plans",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({
+    code:"studio-test",name:"Studio Test",description:"Automated test plan",amountMinor:2900,currency:"USD",interval:"month",
+    creditsPerPeriod:900,limits:{seats:3,concurrentJobs:2,storageBytes:1073741824,modelAllowlist:["test-model"]},features:["Video tools"]
+  })},adminCookie);
+  assert.equal(planResponse.status,200);
+  const plan=(await planResponse.json()).plan;
+  const assignment=await request("/api/admin/users/"+memberId+"/subscription",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({planId:plan.id,periodDays:30,status:"active"})},adminCookie);
+  assert.equal(assignment.status,200);
+  const credit=await request("/api/admin/users/"+memberId+"/credits",{method:"POST",headers:{"content-type":"application/json","idempotency-key":"api-credit-grant-0001"},body:JSON.stringify({amount:100,description:"Test allowance"})},adminCookie);
+  assert.equal(credit.status,200);
+  const billing=await request("/api/billing/overview",{},memberCookie);
+  assert.equal((await billing.json()).billing.balance,1000);
+  const users=await request("/api/admin/users",{},adminCookie);
+  assert.equal((await users.json()).users.some(user=>user.id===memberId&&user.creditBalance===1000),true);
+  const suspended=await request("/api/admin/users/"+memberId+"/status",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({status:"suspended"})},adminCookie);
+  assert.equal(suspended.status,200);
+  assert.equal((await request("/api/billing/overview",{},memberCookie)).status,200);
+  assert.equal((await request("/api/billing/customer-portal",{method:"POST"},memberCookie)).status,503);
+  assert.equal((await request("/api/billing/checkout",{method:"POST",headers:{"content-type":"application/json"},body:"{}"},memberCookie)).status,403);
+});
+
+
+test("billing payment order status is authenticated and scoped to its owner",async()=>{
+  const ownerCookie=await register("payment-order-owner@example.test");
+  const strangerCookie=await register("payment-order-stranger@example.test");
+  const me=await request("/api/me",{},ownerCookie);
+  const ownerId=(await me.json()).user.id;
+  const db=openDatabase(join(dataDir,"executive-visuals.sqlite"));
+  let order;
+  try{
+    const plan=saveBillingPlan(db,{code:"order-test",name:"Order Test",amountMinor:50000,currency:"UGX",interval:"one_time",creditsPerPeriod:120});
+    order=createBillingPurchaseOrder(db,{userId:ownerId,planId:plan.id});
+  }finally{db.close();}
+  assert.equal((await fetch(base+"/api/billing/orders/"+order.txRef)).status,401);
+  const own=await request("/api/billing/orders/"+order.txRef,{},ownerCookie);
+  assert.equal(own.status,200);
+  const body=(await own.json()).order;
+  assert.equal(body.txRef,order.txRef);
+  assert.equal(body.status,"pending");
+  assert.equal(body.amountMinor,50000);
+  const other=await request("/api/billing/orders/"+order.txRef,{},strangerCookie);
+  assert.equal(other.status,404);
+});
+
+
+test("administrator refund reconciliation posts a bounded negative credit ledger entry atomically",async()=>{
+  const adminCookie=await register("refund-admin@example.test");
+  const memberCookie=await register("refund-member@example.test");
+  const adminMe=await request("/api/me",{},adminCookie);
+  const memberMe=await request("/api/me",{},memberCookie);
+  const adminId=(await adminMe.json()).user.id;
+  const memberId=(await memberMe.json()).user.id;
+  await request("/api/billing/overview",{},memberCookie);
+  const db=openDatabase(join(dataDir,"executive-visuals.sqlite"));
+  const refundId=randomUUID();
+  try{
+    db.prepare(`INSERT INTO billing_credit_ledger
+      (id,user_id,amount,event_type,description,reference_id,idempotency_key,metadata_json)
+      VALUES(?,?,100,'subscription_grant','Dodo test grant','pay_api_refund_001','api-dodo-grant-001',?)`)
+      .run(randomUUID(),memberId,json({provider:"dodo",paymentId:"pay_api_refund_001",paymentAmountMinor:1200,currency:"USD"}));
+    db.prepare(`INSERT INTO billing_refund_events
+      (id,provider,refund_id,payment_id,amount_minor,currency,created_at,user_id,reconciliation_required,reconciliation_note)
+      VALUES(?,'dodo','ref_api_refund_001','pay_api_refund_001',600,'USD',?,?,1,'Manual review required')`)
+      .run(refundId,new Date().toISOString(),memberId);
+  }finally{db.close();}
+  const response=await request("/api/admin/refunds/"+refundId+"/reconcile",{
+    method:"POST",headers:{"content-type":"application/json"},
+    body:JSON.stringify({resolution:"credit_adjusted",creditsToReverse:40,note:"Verified partial refund against original payment"})
+  },adminCookie);
+  assert.equal(response.status,200);
+  const result=await response.json();
+  assert.equal(result.creditsReversed,40);
+  const overview=await request("/api/billing/overview",{},memberCookie);
+  assert.equal((await overview.json()).billing.balance,60);
+  const refunds=await request("/api/admin/refunds",{},adminCookie);
+  const record=(await refunds.json()).refunds.find(x=>x.id===refundId);
+  assert.equal(record.reconciliation_required,0);
+  assert.equal(record.reconciled_by,adminId);
 });

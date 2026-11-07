@@ -63,3 +63,55 @@ test("image gateway rejects malformed or non-image base64 output",async()=>{
   await assert.rejects(async()=>{const result=await generateImage({prompt:"test"});await storeGeneratedImage({db:{prepare(){throw new Error("should not reach database");}},mediaRoot:tmpdir(),ownerId:"x",jobId:"x",prompt:"test",model:result.model,buffer:result.buffer});},error=>error.code==="IMAGE_SIGNATURE_INVALID");
  }finally{restore();await new Promise(resolve=>server.close(resolve));}
 });
+
+test("OpenAI-compatible image gateway requests and validates multiple outputs for asset fan-out",async()=>{
+ const server=createServer(async(req,res)=>{
+  let body="";for await(const chunk of req)body+=chunk;
+  const payload=JSON.parse(body);
+  assert.equal(payload.n,3);
+  assert.equal(payload.response_format,"b64_json");
+  res.writeHead(200,{"content-type":"application/json"});
+  res.end(JSON.stringify({model:"image-test-model",data:[{b64_json:png},{b64_json:png},{b64_json:png}],usage:{prompt_tokens:30,total_tokens:30}}));
+ });
+ await new Promise(resolve=>server.listen(0,"127.0.0.1",resolve));
+ try{
+  const address=server.address();
+  process.env.IMAGE_GATEWAY_ENABLED="true";
+  process.env.IMAGE_GATEWAY_URL="http://127.0.0.1:"+address.port+"/v1";
+  process.env.IMAGE_GATEWAY_MODEL="image-test-model";
+  process.env.IMAGE_GATEWAY_API_KEY="image-test-secret";
+  process.env.IMAGE_GATEWAY_TIMEOUT_MS="5000";
+  process.env.IMAGE_GATEWAY_ALLOW_REMOTE="false";
+  const generated=await generateImage({prompt:"Three editorial campaign variations",outputCount:3});
+  assert.equal(generated.outputs.length,3);
+  assert.deepEqual(generated.buffer,generated.outputs[0].buffer);
+  assert.equal(generated.outputs[2].outputIndex,3);
+  assert.equal(generated.usage.totalTokens,30);
+ }finally{
+  server.close();
+  restore();
+ }
+});
+
+test("image gateway rejects unsupported output counts and incomplete multi-image responses",async()=>{
+ await assert.rejects(()=>generateImage({prompt:"x",outputCount:5}),e=>e.code==="IMAGE_GATEWAY_INVALID_INPUT");
+ const server=createServer((req,res)=>{
+  res.writeHead(200,{"content-type":"application/json"});
+  res.end(JSON.stringify({data:[{b64_json:png}]}));
+ });
+ await new Promise(resolve=>server.listen(0,"127.0.0.1",resolve));
+ try{
+  const address=server.address();
+  process.env.IMAGE_GATEWAY_ENABLED="true";
+  process.env.IMAGE_GATEWAY_URL="http://127.0.0.1:"+address.port+"/v1";
+  process.env.IMAGE_GATEWAY_MODEL="image-test-model";
+  process.env.IMAGE_GATEWAY_API_KEY="image-test-secret";
+  process.env.IMAGE_GATEWAY_TIMEOUT_MS="5000";
+  process.env.IMAGE_GATEWAY_ALLOW_REMOTE="false";
+  await assert.rejects(()=>generateImage({prompt:"Two variations",outputCount:2}),e=>e.code==="IMAGE_GATEWAY_INVALID_RESPONSE");
+ }finally{
+  server.close();
+  restore();
+ }
+});
+

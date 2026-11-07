@@ -1,10 +1,16 @@
 import { generateFalImage } from "./fal-image-gateway.mjs";
 import { generateGeminiImage } from "./gemini-image-gateway.mjs";
+import { generateRunwayImage, generateRunwayRouterImage } from "./runway-image-gateway.mjs";
 const loopbacks=new Set(["localhost","127.0.0.1","::1","[::1]"]);
-export async function generateImage({prompt,size="1024x1024",quality="medium",referenceImageDataUrl="",model=""}={}){
+export async function generateImage({prompt,size="1024x1024",quality="medium",referenceImageDataUrl="",referenceImages=[],model="",ratio="auto",reasoningEffort="high",background="auto",outputCount=1,resolution=""}={}){
  const provider=String(process.env.IMAGE_GATEWAY_PROVIDER||"openai-compatible").trim().toLowerCase();
- if(provider==="fal")return generateFalImage({prompt,size,quality,referenceImageDataUrl});
- if(provider==="gemini")return generateGeminiImage({prompt,size,quality,referenceImageDataUrl,model:model||process.env.GEMINI_IMAGE_MODEL});
+ if(!Number.isSafeInteger(outputCount)||outputCount<1||outputCount>4)throw Object.assign(new Error("Image output count must be an integer from 1 to 4."),{code:"IMAGE_GATEWAY_INVALID_INPUT"});
+ if(provider==="runway"){const refs=referenceImages.length?referenceImages:(referenceImageDataUrl?[referenceImageDataUrl]:[]);if(process.env.RUNWAY_IMAGE_ROUTER_ENABLED==="true"&&process.env.RUNWAY_IMAGE_ROUTER_CONFIG)return generateRunwayRouterImage({prompt,aspectRatio:ratio,resolution,referenceImages:refs,outputCount});return generateRunwayImage({prompt,ratio,quality,reasoningEffort,background,referenceImages:refs,model:model||process.env.RUNWAY_IMAGE_MODEL||process.env.IMAGE_GATEWAY_MODEL,outputCount});}
+ if(provider==="fal"||provider==="gemini"){
+  if(outputCount!==1)throw Object.assign(new Error("The configured image adapter does not yet support multi-output generation."),{code:"IMAGE_GATEWAY_UNSUPPORTED_CAPABILITY"});
+  if(provider==="fal")return generateFalImage({prompt,size,quality,referenceImageDataUrl});
+  return generateGeminiImage({prompt,size,quality,referenceImageDataUrl,model:model||process.env.GEMINI_IMAGE_MODEL});
+ }
  if(provider!=="openai-compatible")throw Object.assign(new Error("The configured image provider is not supported."),{code:"IMAGE_GATEWAY_CONFIG_INVALID"});
  if(referenceImageDataUrl)throw Object.assign(new Error("Reference-conditioned image generation requires a configured model-specific reference input field."),{code:"IMAGE_GATEWAY_UNSUPPORTED_INPUT"});
  if(process.env.IMAGE_GATEWAY_ENABLED!=="true")throw Object.assign(new Error("Image generation is disabled by server configuration."),{code:"IMAGE_GATEWAY_DISABLED"});
@@ -23,7 +29,7 @@ export async function generateImage({prompt,size="1024x1024",quality="medium",re
  const key=String(process.env.IMAGE_GATEWAY_API_KEY||"").trim();if(key)headers.authorization="Bearer "+key;
  const allowedSizes=new Set(["512x512","1024x1024","1536x1024","1024x1536"]);
  const allowedQualities=new Set(["low","medium","high"]);
- const request={model:configuredModel,prompt:String(prompt||"").slice(0,20000),size:allowedSizes.has(size)?size:"1024x1024",quality:allowedQualities.has(quality)?quality:"medium",n:1,response_format:"b64_json"};
+ const request={model:configuredModel,prompt:String(prompt||"").slice(0,20000),size:allowedSizes.has(size)?size:"1024x1024",quality:allowedQualities.has(quality)?quality:"medium",n:outputCount,response_format:"b64_json"};
  if(!request.prompt.trim()){clearTimeout(timer);throw Object.assign(new Error("Image generation requires a non-empty prompt."),{code:"PROMPT_REQUIRED"});}
  try{
   let response;
@@ -37,12 +43,15 @@ export async function generateImage({prompt,size="1024x1024",quality="medium",re
   let raw;try{raw=await response.text();}catch{throw Object.assign(new Error("Image gateway returned an unreadable response."),{code:"IMAGE_GATEWAY_INVALID_RESPONSE"});}
   if(Buffer.byteLength(raw,"utf8")>75*1024*1024)throw Object.assign(new Error("Image gateway response exceeds the 75 MiB transport limit."),{code:"IMAGE_GATEWAY_INVALID_RESPONSE"});
   let payload;try{payload=JSON.parse(raw);}catch{throw Object.assign(new Error("Image gateway returned an invalid response."),{code:"IMAGE_GATEWAY_INVALID_RESPONSE"});}
-  const encoded=payload?.data?.[0]?.b64_json;
-  if(typeof encoded!=="string"||encoded.length===0||encoded.length>70*1024*1024)throw Object.assign(new Error("Image gateway did not return a supported base64 image payload."),{code:"IMAGE_GATEWAY_INVALID_RESPONSE"});
-  if(!/^[A-Za-z0-9+/]+={0,2}$/.test(encoded))throw Object.assign(new Error("Image gateway returned malformed base64 data."),{code:"IMAGE_GATEWAY_INVALID_RESPONSE"});
-  const buffer=Buffer.from(encoded,"base64");
-  if(buffer.length===0||buffer.length>50*1024*1024||buffer.toString("base64").replace(/=+$/,"")!==encoded.replace(/=+$/,""))throw Object.assign(new Error("Image output failed binary validation or exceeds the 50 MiB limit."),{code:"IMAGE_GATEWAY_INVALID_RESPONSE"});
+  if(!Array.isArray(payload?.data)||payload.data.length!==outputCount)throw Object.assign(new Error("Image gateway returned an unexpected number of image outputs."),{code:"IMAGE_GATEWAY_INVALID_RESPONSE"});
+  const outputs=payload.data.map((item,index)=>{
+   const encoded=item?.b64_json;
+   if(typeof encoded!=="string"||encoded.length===0||encoded.length>70*1024*1024||!/^[A-Za-z0-9+/]+={0,2}$/.test(encoded))throw Object.assign(new Error("Image gateway returned an invalid base64 payload at output "+(index+1)+"."),{code:"IMAGE_GATEWAY_INVALID_RESPONSE"});
+   const buffer=Buffer.from(encoded,"base64");
+   if(buffer.length===0||buffer.length>50*1024*1024||buffer.toString("base64").replace(/=+$/,"")!==encoded.replace(/=+$/,""))throw Object.assign(new Error("Image output "+(index+1)+" failed binary validation or exceeds the 50 MiB limit."),{code:"IMAGE_GATEWAY_INVALID_RESPONSE"});
+   return {buffer,outputIndex:index+1};
+  });
   const usage=payload.usage?{inputTokens:Number(payload.usage.prompt_tokens)||0,outputTokens:Number(payload.usage.completion_tokens)||0,totalTokens:Number(payload.usage.total_tokens)||0}:null;
-  return {buffer,model:String(payload.model||configuredModel),usage};
+  return {buffer:outputs[0].buffer,outputs,model:String(payload.model||configuredModel),usage};
  }finally{clearTimeout(timer);}
 }

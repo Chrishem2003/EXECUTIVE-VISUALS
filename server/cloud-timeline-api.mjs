@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { randomUUID, createHash } from "node:crypto";
 import { createWriteStream } from "node:fs";
 import { mkdtemp, rm, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -9,6 +9,9 @@ import { createCloudAssetAuthorizer } from "./cloud-asset-auth.mjs";
 import { createCloudTimelineService } from "./cloud-timeline-service.mjs";
 import { buildTransformationReadinessReport } from "./transformation-readiness.mjs";
 import { validateSrt, validateWebVtt } from "./caption-validation.mjs";
+import { createCloudVideoEnqueue } from "./cloud-video-enqueue.mjs";
+import { createRunwaySourceAssetResolver } from "./runway-source-asset-resolver.mjs";
+import { estimateVideoGenerationCost } from "./video-generation-cost-estimator.mjs";
 
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const safeId=(value)=>typeof value==="string"&&UUID.test(value);
@@ -19,7 +22,7 @@ const stableJson=value=>Array.isArray(value)?"["+value.map(stableJson).join(",")
  * by the app's verified authentication middleware; request bodies never set
  * owner_id. Service-role credentials remain inside this server-only module.
  */
-export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRoleKey=process.env.SUPABASE_SERVICE_ROLE_KEY,fetchImpl=globalThis.fetch,timelineService,authorize,maxJobBytes=5*1024*1024,timeoutMs=15000,maxUploadBytes=250*1024*1024,tempRoot=tmpdir(),transformationReadiness=()=>({})}={}){
+export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRoleKey=process.env.SUPABASE_SERVICE_ROLE_KEY,fetchImpl=globalThis.fetch,timelineService,authorize,maxJobBytes=5*1024*1024,timeoutMs=15000,maxUploadBytes=250*1024*1024,tempRoot=tmpdir(),transformationReadiness=()=>({}),runwaySourceResolver=null,env=process.env}={}){
  if(!url||!serviceRoleKey)throw new Error("Cloud timeline API requires server-side Supabase credentials.");
  if(typeof fetchImpl!=="function")throw new Error("Cloud timeline API requires fetch.");
  if(!Number.isInteger(maxJobBytes)||maxJobBytes<1024||maxJobBytes>10*1024*1024)throw new Error("Cloud timeline API payload limit is invalid.");
@@ -28,6 +31,13 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
  const service=timelineService||createCloudTimelineService({url,serviceRoleKey,fetchImpl});
  const allow=authorize||createCloudAssetAuthorizer({url,serviceRoleKey,fetchImpl});
  const base=new URL(url).origin;
+ const sourceResolver=runwaySourceResolver || (service.assets?.get&&service.assets?.createSignedUrl
+  ? createRunwaySourceAssetResolver({assets:service.assets,fetchImpl,supabaseUrl:url})
+  : null);
+ const videoEnqueue=createCloudVideoEnqueue({
+  url,serviceRoleKey,fetchImpl,
+  resolveRunwaySourceMetadata:sourceResolver?.resolveMetadata
+ });
  async function request(path,{method="GET",body=null,prefer="return=representation"}={}){
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs);
   try{
@@ -94,7 +104,7 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
    const preservationOptions=new Set(["camera_motion","timing","composition","source_audio","subject_identity","pose","lighting","background"]);
    const mapTransformation=row=>{
     const input=row.input||{},approval=row.estimated_cost||{};
-    return {id:row.id,projectId:row.project_id,sourceAssetId:input.sourceAssetId,operation:input.operation,prompt:input.prompt,durationSeconds:input.durationSeconds,referenceAssetIds:input.referenceAssetIds||[],preservation:input.preservation||[],status:row.approved_at?"approved":row.status==="draft"?"draft":row.status,rightsConfirmed:input.rightsConfirmed===true,subjectConsentConfirmed:input.subjectConsentConfirmed===true,approval:row.approved_at?{id:approval.approvalId,estimatedCostMicros:approval.estimatedCostMicros,approvedBudgetMicros:approval.approvedBudgetMicros,currency:approval.currency,adapterId:approval.adapterId,capability:approval.capability,approvedAt:row.approved_at}:null,createdAt:row.created_at,updatedAt:row.updated_at};
+    return {id:row.id,projectId:row.project_id,sourceAssetId:input.sourceAssetId,operation:input.operation,prompt:input.prompt,durationSeconds:input.durationSeconds,referenceAssetIds:input.referenceAssetIds||[],preservation:input.preservation||[],status:row.status==="awaiting_approval"&&row.approved_at?"approved":row.status==="draft"?"draft":row.status,rightsConfirmed:input.rightsConfirmed===true,subjectConsentConfirmed:input.subjectConsentConfirmed===true,approval:row.approved_at?{id:approval.approvalId,estimatedCostMicros:approval.estimatedCostMicros,approvedBudgetMicros:approval.approvedBudgetMicros,currency:approval.currency,adapterId:approval.adapterId,capability:approval.capability,approvedAt:row.approved_at}:null,createdAt:row.created_at,updatedAt:row.updated_at};
    };
    if(path==="/api/cloud/transformations"&&method==="GET"){
     const projectId=String(query.projectId||"");
@@ -108,9 +118,9 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     const projectId=String(body.projectId||""),sourceAssetId=String(body.sourceAssetId||""),operation=String(body.operation||"");
     if(!safeId(projectId)||await allow({ownerId,projectId,action:"write"})!==true)return response(404,{error:{code:"PROJECT_NOT_FOUND",message:"Project not found or editor access required."}});
     if(!transformationOps.has(operation))return response(400,{error:{code:"TRANSFORMATION_OPERATION_INVALID",message:"Choose a supported transformation."}});
-    const prompt=typeof body.prompt==="string"?body.prompt.trim().slice(0,12000):"";
+    const prompt=typeof body.prompt==="string"?body.prompt.trim():"";
     const duration=Number(body.durationSeconds);
-    if(prompt.length<8||!Number.isInteger(duration)||duration<1||duration>30)return response(400,{error:{code:"TRANSFORMATION_INPUT_INVALID",message:"Provide an edit prompt and a duration from 1 to 30 seconds."}});
+    if(prompt.length<8||prompt.length>1000||!Number.isInteger(duration)||duration<1||duration>30)return response(400,{error:{code:"TRANSFORMATION_INPUT_INVALID",message:"Provide an Aleph 2 edit prompt of 8 to 1,000 characters and a duration from 1 to 30 seconds."}});
     if(body.rightsConfirmed!==true)return response(403,{error:{code:"MEDIA_RIGHTS_REQUIRED",message:"Confirm rights to use the source and reference media."}});
     if(operation==="person_replace"&&body.subjectConsentConfirmed!==true)return response(403,{error:{code:"SUBJECT_CONSENT_REQUIRED",message:"Explicit subject consent is required for person replacement."}});
     const source=await service.assets.get({ownerId,assetId:sourceAssetId});
@@ -118,6 +128,7 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     const refs=Array.isArray(body.referenceAssetIds)?[...new Set(body.referenceAssetIds.map(String))]:[];
     if(refs.length>4)return response(400,{error:{code:"REFERENCE_LIMIT_EXCEEDED",message:"Use no more than four reference images."}});
     for(const id of refs){const asset=await service.assets.get({ownerId,assetId:id});if(asset.projectId!==projectId||!asset.mediaType.startsWith("image/"))return response(422,{error:{code:"REFERENCE_ASSET_INVALID",message:"Every reference must be a project image asset."}});}
+    if(refs.length>0)return response(422,{error:{code:"VIDEO_REFERENCES_UNSUPPORTED",message:"The current Aleph 2 workflow does not yet route generic reference images. Use timestamped keyframes after that input is exposed."}});
     const preservation=Array.isArray(body.preservation)?[...new Set(body.preservation.filter(value=>preservationOptions.has(value)))]:[];
     const key=String(idempotencyKey||"").trim().slice(0,180);
     if(key.length<8)return response(400,{error:{code:"IDEMPOTENCY_KEY_REQUIRED",message:"An idempotency key is required."}});
@@ -142,9 +153,22 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     if(cloudTransformationMatch[2]==="approve"&&method==="POST"){
      if(await allow({ownerId,projectId:row.project_id,action:"write"})!==true)return response(403,{error:{code:"EDITOR_REQUIRED",message:"Owner or editor access is required."}});
      if(row.status!=="draft"||row.approved_at)return response(409,{error:{code:"TRANSFORMATION_STATE_CONFLICT",message:"Only an unapproved draft can be approved."}});
-     const estimate=body?.estimatedCostMicros,budget=body?.approvedBudgetMicros,currency=String(body?.currency||"").toUpperCase(),adapterId=String(body?.adapterId||"").trim(),capability=String(body?.capability||"").trim();
-     if(!Number.isSafeInteger(estimate)||estimate<0||!Number.isSafeInteger(budget)||budget<estimate||! /^[A-Z]{3}$/.test(currency)||!adapterId||!capability)return response(400,{error:{code:"TRANSFORMATION_BUDGET_INVALID",message:"Provide a known estimate, a covering budget, currency, adapter and capability."}});
-     const approval={approvalId:randomUUID(),estimatedCostMicros:estimate,approvedBudgetMicros:budget,currency,adapterId,capability};
+     const budget=body?.approvedBudgetMicros,currency=String(body?.currency||"USD").toUpperCase();
+     if(!Number.isSafeInteger(budget)||budget<1||currency!=="USD")return response(400,{error:{code:"TRANSFORMATION_BUDGET_INVALID",message:"Provide a positive USD budget limit in micros."}});
+     if(!sourceResolver)return response(503,{error:{code:"VIDEO_SOURCE_RESOLVER_UNAVAILABLE",message:"A private server-side source resolver is required before budget approval."}});
+     const planInput=row.input||{};
+     const metadata=await sourceResolver.resolveMetadata({ownerId,projectId:row.project_id,assetId:planInput.sourceAssetId});
+     const estimate=estimateVideoGenerationCost({
+      provider:"runway",model:"aleph2",operation:"video-to-video",
+      durationSeconds:Math.ceil(metadata.durationSeconds),
+      inputVideoSeconds:metadata.durationSeconds,inputType:"video",
+      outputFormat:"mp4",resolution:"provider_default"
+     });
+     const estimatedCostMicros=Math.ceil(Number(estimate.amount)*1000000);
+     if(!Number.isSafeInteger(estimatedCostMicros)||estimatedCostMicros<1||budget<estimatedCostMicros){
+      return response(409,{error:{code:"TRANSFORMATION_BUDGET_BELOW_ESTIMATE",message:"The approved budget must cover the server-calculated provider estimate of "+(estimatedCostMicros/1000000).toFixed(2)+" USD."}});
+     }
+     const approval={approvalId:randomUUID(),estimatedCostMicros,approvedBudgetMicros:budget,currency:"USD",adapterId:"runway:aleph2",capability:"video-to-video",sourceMetadata:{durationSeconds:metadata.durationSeconds,frameCount:metadata.frameCount,width:metadata.width,height:metadata.height}};
      const updated=await request("jobs?id=eq."+encodeURIComponent(row.id)+"&status=eq.draft&approved_at=is.null",{method:"PATCH",body:{status:"awaiting_approval",estimated_cost:approval,approved_by:ownerId,approved_at:new Date().toISOString(),updated_at:new Date().toISOString()}});
      if(!Array.isArray(updated)||updated.length!==1)return response(409,{error:{code:"TRANSFORMATION_STATE_CONFLICT",message:"Transformation plan changed while approval was recorded."}});
      await request("job_events",{method:"POST",body:{job_id:row.id,owner_id:row.owner_id,event_type:"transformation.approved",event_data:{approvalId:approval.approvalId,estimatedCostMicros:estimate,currency}}});
@@ -152,8 +176,55 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     }
     if(cloudTransformationMatch[2]==="submit"&&method==="POST"){
      if(await allow({ownerId,projectId:row.project_id,action:"write"})!==true)return response(403,{error:{code:"EDITOR_REQUIRED",message:"Owner or editor access is required."}});
-     if(!row.approved_at||!row.approved_by)return response(409,{error:{code:"TRANSFORMATION_APPROVAL_REQUIRED",message:"Approve the plan and budget before submission."}});
-     return response(409,{error:{code:"TRANSFORMATION_ADAPTER_UNAVAILABLE",message:"No verified video-transformation adapter is enabled. No provider request or charge was made."}});
+     if(!row.approved_at||!row.approved_by||!row.estimated_cost?.approvalId)return response(409,{error:{code:"TRANSFORMATION_APPROVAL_REQUIRED",message:"Approve the plan and budget before submission."}});
+     if(row.status==="submitted"&&row.output?.videoJobId)return response(200,{job:{id:row.output.videoJobId,status:row.output.videoJobStatus||"queued"},idempotentReplay:true});
+     if(row.status!=="awaiting_approval")return response(409,{error:{code:"TRANSFORMATION_STATE_CONFLICT",message:"Only an approved, unsubmitted transformation can be submitted."}});
+     const readiness=buildTransformationReadinessReport(await transformationReadiness({ownerId,projectId:row.project_id}));
+     if(!readiness.canSubmit)return response(409,{error:{code:"TRANSFORMATION_RELEASE_GATES_BLOCKED",message:"Video execution is blocked until all eight release gates are verified.",missing:readiness.missing}});
+     const approval=row.estimated_cost;
+     if(approval.adapterId!=="runway:aleph2"||approval.capability!=="video-to-video"||String(approval.currency||"").toUpperCase()!=="USD"){
+      return response(409,{error:{code:"TRANSFORMATION_ADAPTER_UNAVAILABLE",message:"This transformation is not approved for the verified Runway Aleph 2 video-edit adapter."}});
+     }
+     if(!sourceResolver)return response(503,{error:{code:"VIDEO_SOURCE_RESOLVER_UNAVAILABLE",message:"Private source-media resolution is not configured. No provider request or charge was made."}});
+     try{
+      const input=row.input||{};
+      const metadata=await sourceResolver.resolveMetadata({ownerId,projectId:row.project_id,assetId:input.sourceAssetId});
+      const preserve=Array.isArray(input.preservation)?input.preservation:[];
+      const prompt=String(input.prompt||"").trim()+(preserve.length?"\n\nPreserve: "+preserve.join(", "):"");
+      if(prompt.length>1000)return response(422,{error:{code:"VIDEO_PROMPT_TOO_LONG",message:"The edit instructions and preservation requirements exceed Aleph 2's 1,000-character prompt limit."}});
+      const generationInput={
+       projectId:row.project_id,provider:"runway",model:"aleph2",operation:"video-to-video",
+       sourceVideoAssetId:input.sourceAssetId,prompt,
+       durationSeconds:Math.ceil(metadata.durationSeconds),outputFormat:"mp4",
+       resolution:"provider_default",audioMode:"provider_default",
+       transformationOperation:input.operation
+      };
+      const requestHash=createHash("sha256").update(stableJson(generationInput)).digest("hex");
+      generationInput.requestHash=requestHash;
+      const queued=await videoEnqueue.enqueue({
+       ownerId,projectId:row.project_id,idempotencyKey:"video-transform:"+row.id,
+       provider:"runway",model:"aleph2",requestHash,input:generationInput,
+       budgetApprovalId:approval.approvalId,
+       reservedAmount:Number(approval.approvedBudgetMicros)/1000000,
+       currency:"USD"
+      });
+      const output={videoJobId:queued.jobId,videoJobStatus:queued.status,provider:"runway",model:"aleph2"};
+      const changed=await request("jobs?id=eq."+encodeURIComponent(row.id)+"&status=eq.awaiting_approval&approved_at=not.is.null",{
+       method:"PATCH",body:{status:"submitted",output,updated_at:new Date().toISOString()}
+      });
+      if(!Array.isArray(changed)||changed.length!==1){
+       // The enqueue idempotency key makes a retry safe if the plan status update races.
+       return response(202,{job:{id:queued.jobId,status:queued.status},planUpdatePending:true});
+      }
+      await request("job_events",{method:"POST",body:{job_id:row.id,owner_id:row.owner_id,event_type:"transformation.submitted",event_data:{videoJobId:queued.jobId,provider:"runway",model:"aleph2"}}});
+      return response(202,{job:{id:queued.jobId,status:queued.status},idempotentReplay:queued.idempotentReplay===true});
+     }catch(error){
+      const code=typeof error?.code==="string"?error.code:"VIDEO_TRANSFORMATION_SUBMIT_FAILED";
+      const status=Number.isInteger(error?.status)&&error.status>=400&&error.status<500?error.status:
+       code.includes("INVALID")||code.includes("MISMATCH")||code.includes("UNSUPPORTED")?422:
+       code.includes("BUDGET")?409:503;
+      return response(status,{error:{code,message:String(error?.message||"Video transformation could not be queued.").slice(0,300)}});
+     }
     }
    }
    const jobMatch=path.match(/^\/api\/cloud\/jobs\/([0-9a-f-]+)(?:\/(events))?$/i);
@@ -216,6 +287,12 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
  }
  async function checkReadiness(){
   const required=["projects","project_members","assets","timelines","jobs","job_events"];
+  if(env.CLOUD_VIDEO_WORKER_ENABLED==="true"){
+   required.push("video_generation_submissions","video_generation_budget_policies","video_generation_budget_approvals","video_generation_budget_reservations","video_generation_usage_reservations");
+  }
+  if(env.GOOGLE_OMNI_VIDEO_ENABLED==="true"||env.GOOGLE_OMNI_VIDEO_ALLOW_REMOTE==="true"){
+   required.push("google_video_interactions");
+  }
   for(const table of required){
    const rows=await request(table+"?select=id&limit=0");
    if(!Array.isArray(rows))throw new Error("Cloud timeline API readiness check failed for table "+table+".");
