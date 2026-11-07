@@ -8,6 +8,7 @@ const postgresIntegration = await readFile(new URL("../../scripts/cloud-video-po
 test("Aleph 2 approval RPC is service-role-only and requires an existing scoped budget policy", () => {
   for (const contract of [
     "create or replace function executive_visuals.create_video_generation_budget_approval",
+    "as $approval_trigger$",
     "security invoker",
     "current_user <> 'service_role' and new.owner_id is distinct from auth.uid()",
     "grant execute on function executive_visuals.create_video_generation_budget_approval",
@@ -17,6 +18,7 @@ test("Aleph 2 approval RPC is service-role-only and requires an existing scoped 
     "policy.reserved_amount + policy.spent_amount + p_approved_max_amount > policy.spend_limit_amount",
     "interval '15 minutes'"
   ]) assert.ok(migration.includes(contract), "Missing SQL approval contract: " + contract);
+  assert.ok(!migration.includes("as $\\nbegin"), "Trigger function must use a complete dollar-quote delimiter");
   assert.ok(!migration.includes("auth.role()"), "Do not use deprecated auth.role() authorization checks");
   assert.ok(!migration.includes("security definer"), "The service-only RPC must not bypass RLS");
 });
