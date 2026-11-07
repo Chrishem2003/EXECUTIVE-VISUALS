@@ -79,6 +79,10 @@ export function reserveRemoteRequest(db, {
         userId:ownerId,capability,referenceId:reference,
         idempotencyKey:"generation-spend:"+reference
       });
+      if(billingCharge?.replayed){
+        db.prepare("DELETE FROM remote_usage_reservations WHERE id=?").run(id);
+        throw Object.assign(new Error("This workflow node already has a credit reservation. Reuse its saved output or start a new run; duplicate provider submission is blocked."),{code:"BILLING_SPEND_ALREADY_RESERVED",status:409});
+      }
     }
   } catch(error) {
     db.prepare("DELETE FROM remote_usage_reservations WHERE id=?").run(id);
