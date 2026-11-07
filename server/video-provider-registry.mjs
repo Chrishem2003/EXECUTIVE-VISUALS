@@ -103,6 +103,27 @@ export const VIDEO_PROVIDER_CATALOG = freeze([
         }
       },
       {
+        id: "ruby",
+        name: "Runway Ruby HDR",
+        availability: "disabled",
+        executionAdapter: "runway-cloud-worker",
+        capabilities: {
+          textToVideo: false, imageToVideo: false, videoToVideo: false,
+          videoEdit: false, videoToHdr: true, videoUpscale: false,
+          videoExtend: false, videoReframe: false, nativeAudio: false,
+          negativePrompt: false, seed: false, startFrame: false,
+          endFrame: false, motionReference: false, referenceImages: false,
+          audioModes: [], aspectRatios: ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"],
+          resolutions: ["provider_default"], minDurationSeconds: 1, maxDurationSeconds: 30
+        },
+        constraints: {
+          inputVideoMaxSeconds: 30, sourceDynamicRange: "sdr",
+          outputFormats: ["hdr10", "hlg"], sourceDimensionsRequired: true,
+          outputContainer: "mp4", sourceAssetRequired: true,
+          pricingSource: "https://docs.dev.runwayml.com/guides/pricing/"
+        }
+      },
+      {
         id: "seedance2_5",
         name: "Seedance 2.5",
         availability: "disabled",
