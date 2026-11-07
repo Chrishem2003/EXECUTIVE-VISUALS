@@ -21,6 +21,34 @@ export const VIDEO_PROVIDER_CATALOG = freeze([
     remote: true,
     models: [
       {
+        id: "model-router",
+        name: "Runway Model Router",
+        availability: "disabled",
+        executionAdapter: "runway-model-router-cloud-worker",
+        gateway: "runway",
+        capabilities: {
+          textToVideo: true, imageToVideo: false, videoToVideo: false,
+          videoEdit: false, videoExtend: false, videoReframe: false,
+          nativeAudio: true, negativePrompt: true, seed: true,
+          startFrame: false, endFrame: false, motionReference: false,
+          referenceImages: true, referenceVideos: true, referenceAudio: false,
+          audioModes: ["generated"],
+          aspectRatios: ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"],
+          resolutions: ["480p", "720p", "1080p", "4k"],
+          minDurationSeconds: 2, maxDurationSeconds: 30
+        },
+        constraints: {
+          promptMaxCharacters: 26000,
+          negativePromptMaxCharacters: 1000,
+          maxReferenceImages: 4,
+          maxReferenceVideos: 4,
+          pricingSource: "https://docs.dev.runwayml.com/api/",
+          pricingMode: "server-dry-run-with-approved-budget-ceiling",
+          minimumPollIntervalMs: 5000,
+          outputUrlTemporary: true
+        }
+      },
+      {
         id: "gen4.5",
         name: "Gen-4.5",
         availability: "disabled",
