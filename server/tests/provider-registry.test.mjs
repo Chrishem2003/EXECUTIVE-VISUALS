@@ -186,5 +186,5 @@ test("Runway image provider requires an allowlisted model and server key",()=>{
  const noKey=getProviderCatalog({IMAGE_GATEWAY_PROVIDER:"runway",IMAGE_GATEWAY_ENABLED:"true",RUNWAY_IMAGE_MODEL:"gpt_image_2_6_flare"});
  assert.equal(noKey.providers.find(item=>item.id==="image").status,"needs_configuration");
  const wrongModel=getProviderCatalog({IMAGE_GATEWAY_PROVIDER:"runway",IMAGE_GATEWAY_ENABLED:"true",RUNWAY_API_KEY:"secret",RUNWAY_IMAGE_MODEL:"unknown"});
- assert.equal(wrongModel.providers.find(item=>item.id==="image").status,"ready");
+ assert.equal(wrongModel.providers.find(item=>item.id==="image").status,"needs_configuration");
 });
