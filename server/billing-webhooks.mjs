@@ -227,17 +227,34 @@ export async function processNextFlutterwaveWebhook(db, {
   secretKey,
   verifyTransaction = args => verifyFlutterwaveTransaction({ ...args, secretKey })
 } = {}) {
-  const event = db.prepare(`SELECT * FROM billing_provider_events
-    WHERE provider='flutterwave' AND processed_at IS NULL AND attempts<10
-    ORDER BY created_at ASC LIMIT 1`).get();
-  if (!event) return { processed: false };
+  const leaseOwner=randomUUID();
+  let event=null;
+  db.exec("BEGIN IMMEDIATE");
+  try{
+    const current=now();
+    event=db.prepare(`SELECT * FROM billing_provider_events
+      WHERE provider='flutterwave' AND processed_at IS NULL AND attempts<10
+        AND (lease_expires_at IS NULL OR lease_expires_at<=?)
+      ORDER BY created_at ASC LIMIT 1`).get(current)||null;
+    if(!event){db.exec("COMMIT");return {processed:false};}
+    const claimed=db.prepare(`UPDATE billing_provider_events SET lease_owner=?,lease_expires_at=?
+      WHERE id=? AND processed_at IS NULL AND (lease_expires_at IS NULL OR lease_expires_at<=?)`)
+      .run(leaseOwner,new Date(Date.now()+120000).toISOString(),event.id,current);
+    if(claimed.changes!==1){db.exec("COMMIT");return {processed:false};}
+    db.exec("COMMIT");
+  }catch(error){db.exec("ROLLBACK");throw error;}
+  const markProcessed=(timestamp=now())=>{
+    const result=db.prepare(`UPDATE billing_provider_events SET processed_at=?,last_error=NULL,lease_owner=NULL,lease_expires_at=NULL
+      WHERE id=? AND lease_owner=? AND processed_at IS NULL`).run(timestamp,event.id,leaseOwner);
+    if(result.changes!==1)throw fail("Flutterwave webhook processing lease was lost.","BILLING_WEBHOOK_LEASE_LOST",409);
+  };
   const payload = parse(event.payload_json);
   const data = payload.data || {};
   try {
     const order = db.prepare("SELECT * FROM billing_payment_orders WHERE tx_ref=? AND provider='flutterwave'").get(data.tx_ref);
     if (!order) throw fail("No pending billing order matches this payment reference.", "BILLING_ORDER_NOT_FOUND", 404);
     if (order.status === "paid") {
-      db.prepare("UPDATE billing_provider_events SET processed_at=?,last_error=NULL WHERE id=?").run(now(), event.id);
+      markProcessed();
       return { processed: true, duplicate: true, eventId: event.event_id };
     }
     if (order.status !== "pending") {
@@ -246,7 +263,7 @@ export async function processNextFlutterwaveWebhook(db, {
     if (payload.event === "charge.failed" || data.status === "failed") {
       // A failed attempt does not close the hosted checkout: Flutterwave can
       // emit another transaction for the same tx_ref when the customer retries.
-      db.prepare("UPDATE billing_provider_events SET processed_at=?,last_error=NULL WHERE id=?").run(now(), event.id);
+      markProcessed();
       return { processed: true, paid: false, retryableCheckout: true, eventId: event.event_id };
     }
     if (payload.event !== "charge.completed" || data.status !== "successful") {
@@ -273,13 +290,14 @@ export async function processNextFlutterwaveWebhook(db, {
         db.prepare("UPDATE billing_payment_orders SET status='paid',provider_transaction_id=?,verified_at=?,updated_at=? WHERE id=?")
           .run(String(verified.id), timestamp, timestamp, latest.id);
       }
-      db.prepare("UPDATE billing_provider_events SET processed_at=?,last_error=NULL WHERE id=?").run(timestamp, event.id);
+      markProcessed(timestamp);
       db.exec("COMMIT");
     } catch (error) { db.exec("ROLLBACK"); throw error; }
     return { processed: true, paid: true, eventId: event.event_id, paymentOrderId: order.id };
   } catch (error) {
-    db.prepare("UPDATE billing_provider_events SET attempts=attempts+1,last_error=? WHERE id=?")
-      .run(String(error?.code || "PROCESSING_FAILED").slice(0, 120), event.id);
+    db.prepare(`UPDATE billing_provider_events SET attempts=attempts+1,last_error=?,lease_owner=NULL,lease_expires_at=NULL
+      WHERE id=? AND lease_owner=?`)
+      .run(String(error?.code || "PROCESSING_FAILED").slice(0, 120), event.id, leaseOwner);
     return { processed: false, retryable: true, eventId: event.event_id, errorCode: error?.code || "PROCESSING_FAILED" };
   }
 }
