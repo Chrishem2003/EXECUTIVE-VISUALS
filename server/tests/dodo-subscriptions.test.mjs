@@ -265,3 +265,76 @@ test("Dodo webhook worker respects active processing leases and releases complet
   assert.equal(row.lease_expires_at,null);
   db.close();
 });
+
+
+test("Dodo partial refunds reverse purchased subscription credits proportionally and idempotently",async()=>{
+  const {db,plan}=setup();
+  const env=baseEnv();
+  try{
+    const checkout=await createCheckout(db,plan);
+    const active=signedWebhook(subscriptionPayload(checkout.orderId,plan,{
+      paymentId:"pay_dodo_refund_001",timestamp:"2026-11-07T10:00:00.000Z"
+    }));
+    receiveDodoWebhook(db,active);
+    assert.equal(processNextDodoWebhook(db,{env}).activated,true);
+    assert.equal(getBillingBalance(db,"dodo-user"),100);
+
+    const refundOne=signedWebhook({
+      type:"refund.succeeded",timestamp:"2026-11-08T10:00:00.000Z",
+      data:{payload_type:"Refund",refund_id:"ref_dodo_refund_001",payment_id:"pay_dodo_refund_001",
+        amount:600,currency:"USD",status:"succeeded",customer:{customer_id:"cus_dodo_123"}}
+    });
+    assert.equal(receiveDodoWebhook(db,refundOne).accepted,true);
+    const first=processNextDodoWebhook(db,{env});
+    assert.equal(first.refunded,true);
+    assert.equal(first.creditsReversed,50);
+    assert.equal(first.reconciliationRequired,false);
+    assert.equal(getBillingBalance(db,"dodo-user"),50);
+
+    const duplicate=signedWebhook({
+      type:"refund.succeeded",timestamp:"2026-11-08T10:01:00.000Z",
+      data:{payload_type:"Refund",refund_id:"ref_dodo_refund_001",payment_id:"pay_dodo_refund_001",
+        amount:600,currency:"USD",status:"succeeded",customer:{customer_id:"cus_dodo_123"}}
+    });
+    receiveDodoWebhook(db,duplicate);
+    assert.equal(processNextDodoWebhook(db,{env}).duplicate,true);
+    assert.equal(getBillingBalance(db,"dodo-user"),50);
+
+    const refundTwo=signedWebhook({
+      type:"refund.succeeded",timestamp:"2026-11-08T10:02:00.000Z",
+      data:{payload_type:"Refund",refund_id:"ref_dodo_refund_002",payment_id:"pay_dodo_refund_001",
+        amount:600,currency:"USD",status:"succeeded",customer:{customer_id:"cus_dodo_123"}}
+    });
+    receiveDodoWebhook(db,refundTwo);
+    const second=processNextDodoWebhook(db,{env});
+    assert.equal(second.creditsReversed,50);
+    assert.equal(getBillingBalance(db,"dodo-user"),0);
+    assert.equal(db.prepare("SELECT COUNT(*) AS n FROM billing_refund_events WHERE payment_id=?").get("pay_dodo_refund_001").n,2);
+  }finally{db.close();}
+});
+
+test("Dodo refunds without a matched credit grant are recorded for administrator reconciliation",async()=>{
+  const {db,plan}=setup();
+  const env=baseEnv();
+  try{
+    const checkout=await createCheckout(db,plan);
+    const active=signedWebhook(subscriptionPayload(checkout.orderId,plan,{
+      timestamp:"2026-11-07T10:00:00.000Z"
+    }));
+    receiveDodoWebhook(db,active);
+    processNextDodoWebhook(db,{env});
+    const refund=signedWebhook({
+      type:"refund.succeeded",timestamp:"2026-11-08T10:00:00.000Z",
+      data:{payload_type:"Refund",refund_id:"ref_dodo_unmatched_001",payment_id:"pay_dodo_unknown_001",
+        amount:1200,currency:"USD",status:"succeeded",customer:{customer_id:"cus_dodo_123"}}
+    });
+    receiveDodoWebhook(db,refund);
+    const result=processNextDodoWebhook(db,{env});
+    assert.equal(result.refunded,true);
+    assert.equal(result.reconciliationRequired,true);
+    const record=db.prepare("SELECT user_id,reconciliation_required,reconciliation_note FROM billing_refund_events WHERE refund_id=?").get("ref_dodo_unmatched_001");
+    assert.equal(record.user_id,"dodo-user");
+    assert.equal(record.reconciliation_required,1);
+    assert.match(record.reconciliation_note,/manual/i);
+  }finally{db.close();}
+});
