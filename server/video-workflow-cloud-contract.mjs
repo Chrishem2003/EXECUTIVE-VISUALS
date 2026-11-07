@@ -85,6 +85,20 @@ export function createVideoWorkflowCloudRequest({
     "Reference audio", 1
   );
 
+  const allAssetIds = [
+    sourceVideoAssetId,
+    startFrameAssetId,
+    ...referenceAssetIds,
+    ...referenceVideoAssetIds,
+    ...referenceAudioAssetIds
+  ].filter(Boolean);
+  if (new Set(allAssetIds).size !== allAssetIds.length) {
+    throw fail(
+      "A workflow asset cannot be assigned to more than one source/reference role.",
+      "VIDEO_WORKFLOW_CLOUD_ASSET_ROLE_CONFLICT"
+    );
+  }
+
   const derivedOperation = sourceVideoAssetId
     ? "video-to-video"
     : startFrameAssetId || referenceAssetIds.length
