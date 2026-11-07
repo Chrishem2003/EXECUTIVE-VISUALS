@@ -65,3 +65,10 @@ A second read-only inspection confirmed:
 - The connected Supabase projects were inspected read-only. `Chrishem Project` contains NEMA/platform tables and an empty `ev_workspace_snapshots` table but no `executive_visuals` schema. `Chrishem Platform Staging` contains NEMA/platform job tables and no `executive_visuals` schema. Neither is an approved isolated Executive Visuals database; do not apply the new migrations to either project.
 
 The consolidated code candidate is in draft PR #206. Its exact-head quality and Google Drive/PostgreSQL CI runs passed. Production auto-deploys from `main`, so merging PR #206 would trigger production deployment. Keep it draft until the user approves a dedicated isolated database, staging activation, durable storage, required credentials, and acceptance testing.
+
+
+## Live HTTP health recheck — 2026-11-07
+
+The production public health endpoint was rechecked with a fresh request. The first response was Render `503 Application loading`; after allowing the Free instance to wake, the endpoint returned **HTTP 200** with `status=ok`, `authMode=supabase`, `storage=local-disk`, `database=sqlite`, and FFmpeg/FFprobe available. The image and text gateways reported disabled/unconfigured.
+
+This updates the earlier note that external health could not be verified. Current public health is now verified as HTTP 200 after wake-up. The historical `AUTH_MODE=local` startup errors are not the current reported auth mode. However, local-disk/SQLite remains the active storage backend and no persistent disk is configured, so durable customer data is still not release-safe. The first 503 followed by 200 after a 12-second wake allowance is consistent with Render Free instance sleep behavior. No service configuration was changed.
