@@ -104,7 +104,7 @@ test("registers Runway text and video-edit adapters only with explicit task-cost
       FAL_VIDEO_MODEL: "fal-ai/wan/v2.7/text-to-video",
       FAL_KEY: "queue-test-key",
       FAL_BILLING_KEY: "billing-test-key",
-      RUNWAY_VIDEO_MODELS: "gen4.5,aleph2,magnific_video_upscaler_creative",
+      RUNWAY_VIDEO_MODELS: "gen4.5,aleph2,magnific_video_upscaler_creative,ruby",
       RUNWAY_API_KEY: "runway-test-key",
       RUNWAY_VIDEO_ALLOW_REMOTE: "false"
     },
@@ -118,7 +118,7 @@ test("registers Runway text and video-edit adapters only with explicit task-cost
     "fal:fal-ai/wan/v2.7/text-to-video",
     "runway:gen4.5",
     "runway:aleph2",
-    "runway:magnific_video_upscaler_creative"
+    "runway:magnific_video_upscaler_creative",\n    "runway:ruby"
   ]);
 });
 
