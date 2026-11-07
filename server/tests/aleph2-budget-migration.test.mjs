@@ -8,6 +8,7 @@ test("Aleph 2 approval RPC is service-role-only and requires an existing scoped 
   for (const contract of [
     "create or replace function executive_visuals.create_video_generation_budget_approval",
     "security invoker",
+    "current_user <> 'service_role' and new.owner_id is distinct from auth.uid()",
     "grant execute on function executive_visuals.create_video_generation_budget_approval",
     "b.owner_id = p_owner_id and b.project_id = p_project_id",
     "b.provider = p_provider and b.model = p_model",
