@@ -44,6 +44,7 @@ test("GPT Image 2.6 models are catalogued but cannot be selected for execution",
     assert.equal(model.executionAdapter,"runway-image-v1");
     assert.equal(model.promptMaxCharacters,32000);
     assert.equal(model.maxReferenceImages,16);
+    assert.deepEqual(model.outputCounts,{min:1,max:1});
     assert.deepEqual(model.resolutions,["1K","2K","4K"]);
     assert.deepEqual(model.qualities,["low","medium","high"]);
     assert.deepEqual(model.backgrounds,["auto","opaque","transparent"]);
