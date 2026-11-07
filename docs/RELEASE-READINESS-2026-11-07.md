@@ -7,11 +7,11 @@
 The consolidated candidate is PR #206:
 https://github.com/Chrishem2003/EXECUTIVE-VISUALS/pull/206
 
-- Head: `870d6a22c0e798a31b17913116ca66607148e743`
-- Base: `main`
-- Branch comparison at audit time: 285 commits ahead, 0 behind.
-- Quality checks: passed.
-- Google Drive integration quality: passed, including disposable PostgreSQL integration.
+- Current head at latest continuation check: `47f5d92606971930c3f2e2fc161a744d92e916b4`
+- Base: `main` (`18cb97bf027dc5037fc1d932f36dd4d00f6e6c67`)
+- Branch comparison: 376 commits ahead, 0 behind; 124 changed files.
+- Quality checks on the current head: passed.
+- Google Drive integration quality on the current head: passed, including disposable PostgreSQL integration.
 - No production migrations, live provider requests, Google account transfers, or payment transactions were performed.
 
 ## Confirmed deployment topology
@@ -109,3 +109,23 @@ This confirms the earlier `AUTH_MODE=local` failures are historical; the current
 ## Billing persistence boundary
 
 The current billing and Dodo subscription repositories create their ledger/account/subscription tables in the application's SQLite database. The live production health endpoint confirms `database=sqlite` and `storage=local-disk`. Therefore, the billing UI and webhook/credit logic are code-integrated, but they are not yet backed by an independently durable managed database. A persistent Render disk could preserve the SQLite database for a single-instance deployment, but requires a paid service configuration and backup/restore plan. A dedicated Postgres implementation would require a separately designed and tested repository/migration path. Do not accept real customer payments or sell credit balances until the selected durable persistence path is in place and verified.
+
+
+## Continuation update — 2026-11-07 13:57 UTC
+
+The latest isolated implementation work on PR #206 includes:
+
+- Runway GPT Image 2.6 Flare/Sunburst execution adapter, strict input validation and published-price estimation.
+- Runway Kling 4.0 Flash and Gemini Omni 1.2 Flash video profiles; Gemini native-audio capability is now represented accurately.
+- Billing reservations now use the model-specific published Runway image/video price estimator when platform credit value and markup are configured. These remain **preflight estimates**, not actual provider settlement or task-correlated invoices.
+- CI on head `47f5d92606971930c3f2e2fc161a744d92e916b4`: Quality Checks passed; Google Drive Integration Quality passed; PostgreSQL integration passed.
+
+### Cloudflare edge isolation correction
+
+A read-only Cloudflare API inspection confirmed that Worker `executive-visuals` is built from `integration/omni-provider-workers-2026` with previews disabled. The latest deployed version observed at 2026-11-07 13:54 UTC is `97936ed8-e869-4c9f-9540-bfb6fb141f92`. Its only binding is `ASSETS`; `API_ORIGIN` is absent. Thus `/api/*` fails closed rather than proxying to Render production. The repository's `wrangler.jsonc` no longer defaults `API_ORIGIN` to the production Render URL.
+
+Because the integration branch is the Workers Builds production branch, future changes to Worker-relevant files on this branch may publish another edge version. This is a separate Cloudflare Worker deployment, not a Render production deployment. Do not add an API origin until an isolated staging backend exists.
+
+### Current release decision
+
+PR #206 remains open and draft. Do not merge it: Render production auto-deploys from `main`, the branch is 376 commits ahead, and the candidate still lacks isolated staging acceptance, durable database/media storage, backup/restore verification, payment sandbox acceptance, and actual provider-cost reconciliation. The separate Render testing service remains suspended. No Render service configuration, production database, production credentials, or paid provider request was changed during this continuation.
