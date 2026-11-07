@@ -102,6 +102,7 @@ export function createProviderAwareCloudVideoWorkerComposition({
   });
   const googleEnabled = env.GOOGLE_OMNI_VIDEO_ENABLED === "true" || env.GOOGLE_OMNI_VIDEO_ALLOW_REMOTE === "true";
   let googleOmniIntegration = providerDependencies.googleOmniIntegration;
+  if (googleOmniIntegration && !googleEnabled) throw new Error("Google Omni integration cannot be injected while its explicit provider gates are disabled.");
   if (googleEnabled && (
       env.GOOGLE_OMNI_VIDEO_ENABLED !== "true" ||
       env.GOOGLE_OMNI_VIDEO_ALLOW_REMOTE !== "true" ||
