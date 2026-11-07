@@ -181,7 +181,7 @@ test("cloud timeline API checks video ledger and budget tables before video work
  });
  const result=await api.checkReadiness();
  assert.equal(result.ready,true);
- for(const table of ["video_generation_submissions","video_generation_budget_policies","video_generation_budget_approvals","video_generation_budget_reservations","video_generation_usage_reservations"]){
+ for(const table of ["video_generation_submissions","video_generation_budget_policies","video_generation_budget_approvals","video_generation_budget_reservations","video_generation_usage_reservations","video_generation_cancellation_requests"]){
   assert.ok(checked.some(url=>url.includes("/"+table+"?")),table+" must be checked");
  }
 });
