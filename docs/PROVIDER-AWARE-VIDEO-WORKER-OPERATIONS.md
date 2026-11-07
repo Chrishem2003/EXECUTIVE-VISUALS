@@ -161,3 +161,18 @@ References:
 - https://dev.runway.com/learn/add-ai-video-generation-to-your-app
 - https://docs.dev.runwayml.com/api/
 - https://docs.dev.runwayml.com/model-routers/generating/
+
+## Runway Dev November 5 model release — verified price and capability update
+
+The current official changelog and pricing table were rechecked on 2026-11-07.
+
+- Kling 4.0 Flash: 720p, 3–20 seconds, audio included; up to 10 images including first frame and 5 videos with a combined 20-second video-input budget. Pricing is 9.4 credits/output-second without input video, or 6.3 credits/output-second plus 6.3 credits for each second of max(combined input video, output duration) with input video; total rounded up, 29-credit minimum.
+- Gemini Omni 1.2 Flash: 3–15 seconds at 360p/720p/1080p/4K; text, image/keyframe and video workflows, including edit and extension. Rates are 2/7/10/21 credits per output second by resolution, plus 1 credit per reference image/keyframe and 1 credit per input-video second; total rounded up, 6-credit minimum.
+- GPT Image 2.6 Flare and Sunburst: image-only endpoints. Their pricing is quality/resolution/aspect-ratio dependent (1–19 credits/image), plus one credit per reference image per generated output. They require a separate image adapter and estimator.
+
+The registry and deterministic preflight estimator now encode the ordinary video-generation formulas and tests. All new model entries remain disabled and non-executable. Do not treat preflight estimates as invoices or settlement evidence. Gemini Omni 1.2 auto-duration reserve/settlement and edit/extend-specific billing require mode-aware adapter work before those operations can be sold. Kling Flash video-to-video requires source duration to be provided to the estimate path. No live paid API calls or provider activation are part of CI.
+
+Source of truth:
+- https://docs.dev.runwayml.com/api-details/api_changelog/
+- https://docs.dev.runwayml.com/guides/pricing/
+
