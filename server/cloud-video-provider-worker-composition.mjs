@@ -9,6 +9,7 @@ import {
 import { createProviderAwareCloudVideoWorker } from "./cloud-video-provider-worker.mjs";
 import { createFalVideoProviderAdapter } from "./fal-video-provider-registration.mjs";
 import { createRunwayCloudVideoAdapter } from "./runway-cloud-video-adapter.mjs";
+import { createRunwaySourceAssetResolver } from "./runway-source-asset-resolver.mjs";
 
 /**
  * Build the provider-aware worker against the existing Supabase queue,
@@ -65,7 +66,6 @@ export function createProviderAwareCloudVideoWorkerComposition({
 
   const clientOptions = { url, serviceRoleKey, fetchImpl, timeoutMs };
   const queue = createCloudQueue(clientOptions);
-  const enqueue = createCloudVideoEnqueue({ ...clientOptions, env, resolveRunwaySourceMetadata });
   const ledger = createCloudVideoSubmissionLedger(clientOptions);
   const privateAssets = createCloudAssetService({
     ...clientOptions,
@@ -87,6 +87,14 @@ export function createProviderAwareCloudVideoWorkerComposition({
     maxTotalBytes
   });
   const ingestOutputs = args => outputIngestor.ingest(args);
+  const sourceResolver = createRunwaySourceAssetResolver({
+    assets: privateAssets.assets, fetchImpl, supabaseUrl: url, ffprobePath
+  });
+  const prepareInput = prepareRunwayInput || sourceResolver.prepare;
+  const resolveSourceMetadata = resolveRunwaySourceMetadata || sourceResolver.resolveMetadata;
+  const enqueue = createCloudVideoEnqueue({
+    ...clientOptions, env, resolveRunwaySourceMetadata: resolveSourceMetadata
+  });
   const adapterFactory = createAdapters || (({ env: providerEnv, fetchImpl: providerFetch, ingestOutputs: ingest }) => {
     const adapters = [
       createFalVideoProviderAdapter({ env: providerEnv, fetchImpl: providerFetch, ingestOutputs: ingest })
@@ -96,11 +104,11 @@ export function createProviderAwareCloudVideoWorkerComposition({
         throw new Error("Runway cloud registration requires an authoritative task-level billing resolver.");
       }
       if (runwayModels.some(model => ["aleph2", "magnific_video_upscaler_creative", "ruby"].includes(model)) &&
-          typeof prepareRunwayInput !== "function") {
+          typeof prepareInput !== "function") {
         throw new Error("Runway source operations require an owner-scoped source-media resolver.");
       }
       if (runwayModels.some(model => ["aleph2", "magnific_video_upscaler_creative"].includes(model)) &&
-          typeof resolveRunwaySourceMetadata !== "function") {
+          typeof resolveSourceMetadata !== "function") {
         throw new Error("Runway source operations require a server-side media metadata resolver for safe budget reservation.");
       }
       for (const model of runwayModels) {
@@ -110,7 +118,7 @@ export function createProviderAwareCloudVideoWorkerComposition({
           enabled: providerEnv.VIDEO_GATEWAY_ENABLED === "true",
           allowRemote: providerEnv.RUNWAY_VIDEO_ALLOW_REMOTE === "true",
           fetchImpl: providerFetch,
-          prepareInput: prepareRunwayInput,
+          prepareInput,
           ingestOutputs: ingest,
           resolveActualCost: resolveRunwayActualCost,
           timeoutMs: Math.min(timeoutMs, 30000)
