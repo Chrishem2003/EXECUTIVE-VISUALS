@@ -16,9 +16,7 @@
       "/edge-health"
     ]
   },
-  "vars": {
-    "API_ORIGIN": "https://executive-visuals.onrender.com"
-  },
+  // API_ORIGIN is intentionally not defaulted here. Configure it only for an isolated staging API.
   "observability": {
     "enabled": true,
     "traces": {
