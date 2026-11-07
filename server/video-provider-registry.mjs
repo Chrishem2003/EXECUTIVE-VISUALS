@@ -113,7 +113,7 @@ export const VIDEO_PROVIDER_CATALOG = freeze([
           videoReframe: false, nativeAudio: false, negativePrompt: true,
           seed: true, startFrame: false, endFrame: false,
           motionReference: false, referenceImages: false, audioModes: [],
-          aspectRatios: [], resolutions: ["provider_default"],
+          aspectRatios: ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"], resolutions: ["provider_default"],
           minDurationSeconds: 1, maxDurationSeconds: 600
         },
         constraints: {
