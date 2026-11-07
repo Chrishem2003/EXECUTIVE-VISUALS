@@ -159,16 +159,25 @@ export function createRunwayCloudVideoAdapter({
       }
       const isVideoEdit = input.operation === "video-to-video";
       const isVideoUpscale = input.operation === "video-upscale";
+      const isImageToVideo = input.operation === "image-to-video" || Boolean(input.startFrameAssetId);
       const hasReferences = (Array.isArray(input.referenceAssetIds) && input.referenceAssetIds.length > 0) ||
         Boolean(input.referenceImageDataUrl) || Boolean(input.sourceVideoAssetId) ||
+        Boolean(input.startFrameAssetId) ||
         (Array.isArray(input.keyframeAssetIds) && input.keyframeAssetIds.length > 0);
-      if ((hasReferences || isVideoEdit || isVideoUpscale) && typeof prepareInput !== "function") {
+      if ((hasReferences || isVideoEdit || isVideoUpscale || isImageToVideo) && typeof prepareInput !== "function") {
         throw fail("Runway source and reference assets require an authenticated project-scoped input resolver.", "VIDEO_INPUT_ASSET_RESOLUTION_REQUIRED");
       }
       if (typeof prepareInput !== "function") return input;
       const prepared = await prepareInput(input, context);
       if (!prepared || typeof prepared !== "object" || Array.isArray(prepared)) {
         throw fail("Runway private input preparation returned an invalid payload.", "VIDEO_INPUT_ASSET_RESOLUTION_FAILED");
+      }
+      if (isImageToVideo) {
+        if (selectedModel !== "gen4.5") throw fail("First-frame generation currently requires the verified Gen-4.5 profile.", "RUNWAY_ADAPTER_MODEL_UNSUPPORTED");
+        let promptImageUri = prepared.promptImageUri;
+        if (prepared.firstFrame) promptImageUri = await uploadEphemeral(prepared.firstFrame);
+        if (!isRunwayUri(promptImageUri)) throw fail("Image-to-video requires a Runway ephemeral first-frame upload resolved from the authorized asset.", "VIDEO_INPUT_ASSET_RESOLUTION_REQUIRED");
+        return { ...input, promptImageUri };
       }
       if (!isVideoEdit && !isVideoUpscale) return prepared;
       if (isVideoUpscale) {
@@ -268,12 +277,17 @@ export function createRunwayCloudVideoAdapter({
       if (input.referenceAssetIds?.length || input.referenceImageDataUrl) {
         throw fail("Runway text-to-video does not accept unresolved reference media.", "VIDEO_INPUT_ASSET_RESOLUTION_REQUIRED");
       }
-      const submitted = await request("/text_to_video", {
+      const imageToVideo = input.operation === "image-to-video" || Boolean(input.startFrameAssetId);
+      if (imageToVideo && !isRunwayUri(input.promptImageUri)) {
+        throw fail("Gen-4.5 image-to-video requires a prepared Runway first-frame upload.", "VIDEO_INPUT_ASSET_RESOLUTION_REQUIRED");
+      }
+      const submitted = await request(imageToVideo ? "/image_to_video" : "/text_to_video", {
         method: "POST",
         submission: true,
         body: {
           model: selectedModel,
           promptText: input.prompt.trim(),
+          ...(imageToVideo ? { promptImage: input.promptImageUri } : {}),
           ratio,
           duration,
           ...(typeof input.audio === "boolean" ? { audio: input.audio } : {})
