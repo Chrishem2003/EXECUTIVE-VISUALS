@@ -348,7 +348,7 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
  async function checkReadiness(){
   const required=["projects","project_members","assets","timelines","jobs","job_events"];
   if(env.CLOUD_VIDEO_WORKER_ENABLED==="true"){
-   required.push("video_generation_submissions","video_generation_budget_policies","video_generation_budget_approvals","video_generation_budget_reservations","video_generation_usage_reservations");
+   required.push("video_generation_submissions","video_generation_budget_policies","video_generation_budget_approvals","video_generation_budget_reservations","video_generation_usage_reservations","video_generation_cancellation_requests");
   }
   if(env.GOOGLE_OMNI_VIDEO_ENABLED==="true"||env.GOOGLE_OMNI_VIDEO_ALLOW_REMOTE==="true"){
    required.push("google_video_interactions");
