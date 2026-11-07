@@ -34,7 +34,13 @@ function fixture({canWrite=true,readiness={}}={}){
    }else if(method==="POST"){
     const row=JSON.parse(options.body);row.created_at=new Date().toISOString();row.updated_at=row.created_at;state.jobs.push(row);result=[row];
    }else if(method==="PATCH"){
-    result=state.jobs.filter(row=>{for(const key of ["id","status"]){const value=parsed.searchParams.get(key);if(value&&value.startsWith("eq.")&&String(row[key])!==decodeURIComponent(value.slice(3)))return false;}if(parsed.searchParams.has("approved_at")&&row.approved_at!==null&&row.approved_at!==undefined)return false;return true;});
+    result=state.jobs.filter(row=>{
+     for(const key of ["id","status"]){const value=parsed.searchParams.get(key);if(value&&value.startsWith("eq.")&&String(row[key])!==decodeURIComponent(value.slice(3)))return false;}
+     const approvedAt=parsed.searchParams.get("approved_at");
+     if(approvedAt==="is.null"&&row.approved_at!==null&&row.approved_at!==undefined)return false;
+     if(approvedAt==="not.is.null"&&(row.approved_at===null||row.approved_at===undefined))return false;
+     return true;
+    });
     for(const row of result)Object.assign(row,JSON.parse(options.body));
    }
   }else if(table==="job_events"&&method==="POST"){state.events.push(JSON.parse(options.body));result=[];}
@@ -140,4 +146,6 @@ test("Aleph 2 transformation approval and submit use the same durable approval a
  assert.equal(f.state.enqueueCalls[0].p_model,"aleph2");
  assert.equal(f.state.enqueueCalls[0].p_reserved_amount,3);
  assert.equal(submitted.body.job.status,"queued");
+ assert.equal(f.state.jobs[0].status,"submitted");
+ assert.equal(f.state.jobs[0].output.videoJobId,submitted.body.job.id);
 });
