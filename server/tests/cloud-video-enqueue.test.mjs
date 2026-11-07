@@ -140,7 +140,7 @@ test("enqueue rejects mismatched request scope and invalid budget inputs before 
   await assert.rejects(() => client.enqueue(args({ reservedAmount: 0.59 })), error =>
     error.code === "VIDEO_BUDGET_BELOW_PROVIDER_ESTIMATE" && error.estimate.amount === 0.6
   );
-  await assert.rejects(() => client.enqueue(args({ input: { ...input, outputFormat: "prores" } })), /MP4 output only/);
+  await assert.rejects(() => client.enqueue(args({ input: { ...input, outputFormat: "prores" } })), /supports MP4 outputs/);
   await assert.rejects(() => client.enqueue(args({ input: { ...input, durationSeconds: 11 } })), /pricing bounds/);
   await assert.rejects(() => client.enqueue(args({ currency: "EUR" })), /must match the verified provider price/);
   await assert.rejects(() => client.enqueue(args({
