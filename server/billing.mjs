@@ -187,6 +187,9 @@ export function spendBillingCredits(db,{
   const cost=Object.prototype.hasOwnProperty.call(BILLING_CREDIT_COSTS,capability)?BILLING_CREDIT_COSTS[capability]:1;
   const key=String(idempotencyKey||"").trim();
   if(!userId||key.length<8||key.length>200)throw fail("Credit spend requires a user and idempotency key.","BILLING_IDEMPOTENCY_REQUIRED",400);
+  // Commit the daily allowance independently so an insufficient paid request
+  // cannot roll back a user's free credits.
+  applyDailyFreeCredits(db,userId,{now,env});
   db.exec("BEGIN IMMEDIATE");
   try{
     const account=db.prepare("SELECT status FROM billing_accounts WHERE user_id=?").get(userId);
@@ -195,7 +198,6 @@ export function spendBillingCredits(db,{
     const existing=db.prepare("SELECT id,user_id,amount FROM billing_credit_ledger WHERE idempotency_key=?").get(key);
     if(existing&&existing.user_id!==userId)throw fail("This idempotency key belongs to another account.","BILLING_IDEMPOTENCY_CONFLICT",409);
     if(existing){db.exec("COMMIT");return {enabled:true,charged:Math.max(0,-Number(existing.amount)),replayed:true,balance:getBillingBalance(db,userId,new Date(now).toISOString())};}
-    applyDailyFreeCreditsInTransaction(db,userId,{now,env});
     const at=new Date(now).toISOString();
     const balance=getBillingBalance(db,userId,at);
     if(balance<cost)throw fail("Not enough credits for this operation. You have "+balance+" and it requires "+cost+". Free credits refill daily.","BILLING_INSUFFICIENT_CREDITS",402);
