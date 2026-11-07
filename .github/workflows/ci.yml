@@ -1,9 +1,9 @@
 name: Quality checks
 on:
   push:
-    branches: [main]
+    branches: [main, integration/omni-provider-workers-2026]
   pull_request:
-    branches: [main]
+    branches: [main, integration/omni-provider-workers-2026]
 concurrency:
   group: quality-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
