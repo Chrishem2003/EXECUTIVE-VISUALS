@@ -202,3 +202,14 @@ test("Runway Model Router rejects reference audio mode without a private audio a
   );
 });
 
+test("Runway Model Router resolves a private source video with source role", async () => {
+  const { resolver } = fixture();
+  const prepared = await resolver.prepare({
+    provider: "runway", model: "model-router", operation: "video-to-video",
+    projectId: PROJECT, sourceVideoAssetId: ASSET, prompt: "Restyle the source clip"
+  }, { job: { owner_id: OWNER } });
+  assert.equal(prepared.referenceVideos.length, 1);
+  assert.equal(prepared.referenceVideos[0].role, "source");
+  assert.match(prepared.referenceVideos[0].uri, /^https:\/\/storage\.example\.com\//);
+});
+
