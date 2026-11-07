@@ -7,7 +7,7 @@ import {
   createPrivateVideoOutputIngestor
 } from "./private-video-output-ingestion.mjs";
 import { createProviderAwareCloudVideoWorker } from "./cloud-video-provider-worker.mjs";
-import { createFalVideoProviderAdapter } from "./fal-video-provider-registration.mjs";
+import { createFalVideoProviderAdapter } from "./fal-video-provider-registration.mjs";\nimport { createRunwayCloudVideoAdapter } from "./runway-cloud-video-adapter.mjs";
 
 /**
  * Build the provider-aware worker against the existing Supabase queue,
@@ -77,9 +77,33 @@ export function createProviderAwareCloudVideoWorkerComposition({
     maxTotalBytes
   });
   const ingestOutputs = args => outputIngestor.ingest(args);
-  const adapterFactory = createAdapters || (({ env: providerEnv, fetchImpl: providerFetch, ingestOutputs: ingest }) => [
-    createFalVideoProviderAdapter({ env: providerEnv, fetchImpl: providerFetch, ingestOutputs: ingest })
-  ]);
+  const adapterFactory = createAdapters || (({ env: providerEnv, fetchImpl: providerFetch, ingestOutputs: ingest }) => {
+    const adapters = [
+      createFalVideoProviderAdapter({ env: providerEnv, fetchImpl: providerFetch, ingestOutputs: ingest })
+    ];
+    if (runwayModels.length) {
+      if (typeof resolveRunwayActualCost !== "function") {
+        throw new Error("Runway cloud registration requires an authoritative task-level billing resolver.");
+      }
+      if (runwayModels.includes("aleph2") && typeof prepareRunwayInput !== "function") {
+        throw new Error("Runway Aleph2 registration requires an owner-scoped source-media resolver.");
+      }
+      for (const model of runwayModels) {
+        adapters.push(createRunwayCloudVideoAdapter({
+          model,
+          apiKey: providerEnv.RUNWAY_API_KEY || providerEnv.RUNWAYML_API_SECRET,
+          enabled: providerEnv.VIDEO_GATEWAY_ENABLED === "true",
+          allowRemote: providerEnv.RUNWAY_VIDEO_ALLOW_REMOTE === "true",
+          fetchImpl: providerFetch,
+          prepareInput: prepareRunwayInput,
+          ingestOutputs: ingest,
+          resolveActualCost: resolveRunwayActualCost,
+          timeoutMs: Math.min(timeoutMs, 30000)
+        }));
+      }
+    }
+    return adapters;
+  });
   const adapters = adapterFactory({
     env,
     fetchImpl,
