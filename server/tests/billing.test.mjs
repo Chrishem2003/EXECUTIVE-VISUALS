@@ -248,6 +248,10 @@ test("admin finance overview separates verified gross receipts from committed mo
   });
   const order=createBillingPurchaseOrder(db,{userId:"finance-one",planId:topup.id});
   db.prepare("UPDATE billing_payment_orders SET status='paid',verified_at=? WHERE id=?").run(new Date().toISOString(),order.id);
+  db.prepare(`INSERT INTO billing_refund_events
+    (id,provider,refund_id,payment_id,amount_minor,currency,created_at,user_id,reconciliation_required,reconciliation_note)
+    VALUES('refund-pending-1','dodo','ref_pending_001','pay_pending_001',600,'USD',?,'finance-one',1,'Needs manual review')`)
+    .run(new Date().toISOString());
   const timestamp=new Date().toISOString();
   db.prepare(`INSERT INTO billing_provider_events
     (id,provider,event_id,event_type,payload_hash,payload_json,processed_at,created_at)
@@ -267,6 +271,7 @@ test("admin finance overview separates verified gross receipts from committed mo
   assert.deepEqual(overview.verifiedGrossReceipts30d,[{currency:"UGX",amountMinor:50000},{currency:"USD",amountMinor:1200}]);
   assert.deepEqual(overview.committedMrrByCurrency,[{currency:"USD",amountMinor:2200}]);
   assert.equal(overview.usage30d.estimatedCostMicros>=0,true);
+  assert.equal(overview.pendingRefundReconciliation,1);
   db.close();
 });
 
