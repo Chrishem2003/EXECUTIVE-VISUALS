@@ -158,10 +158,10 @@ export function createCloudVideoEnqueue({
       const estimate = estimateVideoGenerationCost({
         provider, model, operation: input.operation || (input.startFrameAssetId ? "image-to-video" : "text-to-video"),
         durationSeconds: pricingInput.durationSeconds,
-        outputFormat: input.outputFormat, resolution: input.resolution, audio: input.audio,
-        inputVideoSeconds: input.inputVideoSeconds, referenceVideoSeconds: input.referenceVideoSeconds,
+        outputFormat: input.outputFormat, resolution: input.resolution ?? (runwayUpscaleEnabled ? "2k" : input.resolution), audio: input.audio,
+        inputVideoSeconds: pricingInput.inputVideoSeconds, referenceVideoSeconds: input.referenceVideoSeconds,
         referenceImageCount: input.referenceImageCount, referenceAudioCount: input.referenceAudioCount,
-        hasStartFrame: Boolean(input.startFrameAssetId) || input.hasStartFrame === true, outputFrames: input.outputFrames,
+        hasStartFrame: Boolean(input.startFrameAssetId) || input.hasStartFrame === true, outputFrames: pricingInput.outputFrames,
         sourceWidth: input.sourceWidth, sourceHeight: input.sourceHeight,
         sourceDynamicRange: input.sourceDynamicRange, outputWidth: input.outputWidth,
         outputHeight: input.outputHeight, targetFramerate: input.targetFramerate,
