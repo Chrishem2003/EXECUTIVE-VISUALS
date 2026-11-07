@@ -208,3 +208,12 @@ Therefore, CI passing does not constitute staging acceptance or production readi
 - Adapter validates exactly one source video for this operation and rejects source role in text/image generation.
 - No paid provider task was submitted. The route remains disabled behind existing remote/worker/config gates.
 - This is routed source-video editing. Specific edit/extend behavior is model-dependent and described in the prompt; it is not a guarantee that every router model supports every operation.
+
+## Latest CI verification — source-inclusive media limits
+
+- Latest integration commit: `86a68d1944fa7da0377ba303b1c7d3e40322e712`.
+- Quality checks: typecheck passed, build passed, 786/786 tests passed, zero failures.
+- Google Drive integration build and disposable PostgreSQL integration passed.
+- Runway Router source video plus at most one additional reference is enforced at contract, resolver, enqueue and adapter boundaries.
+- PR #206 remains draft; branch is 469 commits ahead of main and 0 behind.
+- Production and suspended test Render services remain unchanged; this branch is not deployed.
