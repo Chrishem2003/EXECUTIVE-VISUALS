@@ -52,7 +52,7 @@ test("Runway usage client fails closed on missing key and provider errors",async
   await assert.rejects(()=>queryRunwayOrganizationUsage({apiKey:"",startDate:"2026-11-01",beforeDate:"2026-11-02"}),e=>e.code==="RUNWAY_USAGE_KEY_REQUIRED");
   await assert.rejects(()=>queryRunwayOrganizationUsage({apiKey:"x",startDate:"2026-11-01",beforeDate:"2026-11-02",fetchImpl:async()=>new Response("no",{status:403})}),e=>e.code==="RUNWAY_USAGE_ACCESS_DENIED");
   await assert.rejects(()=>queryRunwayOrganizationUsage({apiKey:"x",startDate:"2026-11-01",beforeDate:"2026-11-02",fetchImpl:async()=>new Response("bad",{status:200})}),e=>e.code==="RUNWAY_USAGE_RESPONSE_INVALID");
-  await assert.rejects(()=>queryRunwayOrganizationUsage({apiKey:"x",startDate:"2026-11-01",beforeDate:"2026-11-02",fetchImpl:async()=>new Response(JSON.stringify({results:[{date:"2026-11-02",usedCredits:[]}]}),{status:200})}),e=>e.code==="RUNWAY_USAGE_RESPONSE_INVALID");
+  await assert.rejects(()=>queryRunwayOrganizationUsage({apiKey:"x",startDate:"2026-11-01",beforeDate:"2026-11-02",fetchImpl:async()=>new Response(JSON.stringify({results:[{date:"2026-11-02",usedCredits:[{model:"gen4.5",amount:-1}]}]}),{status:200})}),e=>e.code==="RUNWAY_USAGE_RESPONSE_INVALID");
 });
 
 test("local billing estimates aggregate from immutable ledger metadata without mutating it",()=>{
@@ -83,10 +83,13 @@ test("daily reconciliation reports variances and unmatched rows but never marks 
       {date:"2026-11-02",model:"gemini_omni_flash_1.2",estimatedCredits:35,jobCount:1}
     ]
   });
-  assert.equal(rows[0].varianceCredits,3);
-  assert.equal(rows[0].variancePercent,6.38);
-  assert.equal(rows[0].status,"aggregate_compared");
-  assert.equal(rows[0].settlementEligible,false);
-  assert.equal(rows[1].status,"provider_usage_only");
-  assert.equal(rows[2].status,"platform_estimate_only");
+  const matched=rows.find(row=>row.model==="kling_4_flash");
+  const providerOnly=rows.find(row=>row.model==="gen4.5");
+  const platformOnly=rows.find(row=>row.model==="gemini_omni_flash_1.2");
+  assert.equal(matched.varianceCredits,3);
+  assert.equal(matched.variancePercent,6.38);
+  assert.equal(matched.status,"aggregate_compared");
+  assert.equal(matched.settlementEligible,false);
+  assert.equal(providerOnly.status,"provider_usage_only");
+  assert.equal(platformOnly.status,"platform_estimate_only");
 });
