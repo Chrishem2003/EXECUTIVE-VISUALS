@@ -115,6 +115,7 @@ export function createCloudVideoEnqueue({
       const googleEnabled = provider === "google" && model === "gemini-omni-1.1-flash";
       if (runwayRouterEnabled && (
         env.RUNWAY_MODEL_ROUTER_ENABLED !== "true" ||
+        env.CLOUD_VIDEO_WORKER_ENABLED !== "true" ||
         env.RUNWAY_VIDEO_ALLOW_REMOTE !== "true" ||
         env.VIDEO_GATEWAY_ENABLED !== "true" ||
         env.VIDEO_GATEWAY_ALLOW_REMOTE !== "true" ||
