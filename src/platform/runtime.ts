@@ -151,6 +151,7 @@ export async function initRuntime(){
   catch(error){if(error instanceof ApiError&&error.status===401)state.status="auth-required";else throw error;}
  }catch(error){state.status="offline";state.message=error instanceof Error?error.message:"API unavailable";}
  paint();
+ window.dispatchEvent(new Event("ev:runtime-ready"));
 }
 async function authenticate(form:HTMLFormElement){
  const data=new FormData(form);
