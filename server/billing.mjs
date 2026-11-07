@@ -348,11 +348,44 @@ export function getAdminOverview(db) {
   const users = db.prepare("SELECT COUNT(*) AS total,SUM(CASE WHEN status='active' THEN 1 ELSE 0 END) AS active,SUM(CASE WHEN status='suspended' THEN 1 ELSE 0 END) AS suspended FROM billing_accounts").get();
   const subscriptions = db.prepare("SELECT COUNT(*) AS total,SUM(CASE WHEN status IN ('active','trialing') AND current_period_end>? THEN 1 ELSE 0 END) AS active,SUM(CASE WHEN status='past_due' AND current_period_end>? THEN 1 ELSE 0 END) AS past_due FROM billing_subscriptions").get(isoNow(),isoNow());
   const jobs = db.prepare("SELECT COUNT(*) AS total,SUM(CASE WHEN status IN ('queued','running','reviewing') THEN 1 ELSE 0 END) AS in_flight FROM jobs").get();
-  const usage = db.prepare("SELECT COUNT(*) AS operations,COALESCE(SUM(estimated_cost_micros),0) AS estimated_cost_micros FROM model_usage_events WHERE created_at>=?").get(new Date(Date.now()-30*86400000).toISOString());
-  return { users: { total: Number(users.total||0), active: Number(users.active||0), suspended: Number(users.suspended||0) },
+  const since = new Date(Date.now()-30*86400000).toISOString();
+  const usage = db.prepare("SELECT COUNT(*) AS operations,COALESCE(SUM(estimated_cost_micros),0) AS estimated_cost_micros FROM model_usage_events WHERE created_at>=?").get(since);
+  const receipts = new Map();
+  const addReceipt = (currency, amount) => {
+    const code=String(currency||"").toUpperCase(),value=Number(amount);
+    if(!/^[A-Z]{3}$/.test(code)||!Number.isSafeInteger(value)||value<=0)return;
+    receipts.set(code,(receipts.get(code)||0)+value);
+  };
+  const topups = db.prepare("SELECT expected_amount_minor,currency FROM billing_payment_orders WHERE status='paid' AND verified_at>=?").all(since);
+  for(const row of topups)addReceipt(row.currency,row.expected_amount_minor);
+  const dodoEvents = db.prepare("SELECT event_id,payload_json FROM billing_provider_events WHERE provider='dodo' AND processed_at IS NOT NULL AND created_at>=? AND event_type IN ('subscription.active','subscription.renewed')").all(since);
+  const seenPayments = new Set();
+  for(const row of dodoEvents){
+    const data=parseJson(row.payload_json)?.data||{};
+    const paymentId=String(data.payment_id||"");
+    if(!paymentId||seenPayments.has(paymentId))continue;
+    seenPayments.add(paymentId);
+    addReceipt(data.currency,data.recurring_pre_tax_amount);
+  }
+  const mrr = new Map();
+  const activePlans = db.prepare(`SELECT p.amount_minor,p.currency,p.interval FROM billing_subscriptions s
+    JOIN billing_plans p ON p.id=s.plan_id
+    WHERE s.status IN ('active','trialing') AND s.current_period_end>? AND p.active=1
+      AND p.amount_minor>0 AND p.interval IN ('month','year')`).all(isoNow());
+  for(const row of activePlans){
+    const currency=String(row.currency||"").toUpperCase();
+    const amount=Number(row.amount_minor);
+    if(!/^[A-Z]{3}$/.test(currency)||!Number.isSafeInteger(amount)||amount<=0)continue;
+    const monthly=row.interval==="year"?Math.ceil(amount/12):amount;
+    mrr.set(currency,(mrr.get(currency)||0)+monthly);
+  }
+  return {
+    users: { total: Number(users.total||0), active: Number(users.active||0), suspended: Number(users.suspended||0) },
     subscriptions: { total: Number(subscriptions.total||0), active: Number(subscriptions.active||0), pastDue: Number(subscriptions.past_due||0) },
     jobs: { total: Number(jobs.total||0), inFlight: Number(jobs.in_flight||0) },
     usage30d: { operations: Number(usage.operations||0), estimatedCostMicros: Number(usage.estimated_cost_micros||0) },
+    verifiedGrossReceipts30d: [...receipts.entries()].map(([currency,amountMinor])=>({currency,amountMinor})).sort((a,b)=>a.currency.localeCompare(b.currency)),
+    committedMrrByCurrency: [...mrr.entries()].map(([currency,amountMinor])=>({currency,amountMinor})).sort((a,b)=>a.currency.localeCompare(b.currency)),
     billingProviderConfigured: !!(process.env.FLW_SECRET_KEY || process.env.DODO_PAYMENTS_API_KEY),
     paymentCollectionEnabled: process.env.BILLING_CHECKOUT_ENABLED === "true" &&
       billingEnforcementEnabled() && !!(process.env.FLW_SECRET_KEY && process.env.FLW_WEBHOOK_SECRET && process.env.PUBLIC_APP_URL),
@@ -361,7 +394,8 @@ export function getAdminOverview(db) {
     recurringSubscriptionsEnabled: process.env.DODO_SUBSCRIPTIONS_ENABLED === "true" &&
       process.env.DODO_MERCHANT_APPROVED === "true" && billingEnforcementEnabled() &&
       !!(process.env.DODO_PAYMENTS_API_KEY && process.env.DODO_PAYMENTS_WEBHOOK_KEY && process.env.PUBLIC_APP_URL) &&
-      Object.entries(process.env).some(([key,value]) => key.startsWith("DODO_PRODUCT_ID_") && /^pdt_[A-Za-z0-9_-]{6,120}$/.test(String(value || ""))) };
+      Object.entries(process.env).some(([key,value]) => key.startsWith("DODO_PRODUCT_ID_") && /^pdt_[A-Za-z0-9_-]{6,120}$/.test(String(value || "")))
+  };
 }
 
 export function listAdminUsers(db, { query = "", limit = 100 } = {}) {
