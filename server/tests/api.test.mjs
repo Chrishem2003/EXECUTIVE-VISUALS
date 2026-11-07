@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -14,7 +15,7 @@ const dataDir=await mkdtemp(join(tmpdir(),"ev-api-test-"));
 const webDir=join(dataDir,"web");await mkdir(webDir,{recursive:true});await writeFile(join(webDir,"index.html"),"<!doctype html><html><body>test</body></html>");
 const child=spawn(process.execPath,["server/index.mjs"],{
   cwd:process.cwd(),
-  env:{...process.env,NODE_ENV:"development",AUTH_MODE:"local",AUTH_RATE_LIMIT:"1000",REMOTE_AI_DAILY_REQUEST_LIMIT:"7",API_HOST:"127.0.0.1",API_PORT:String(port),DATA_DIR:dataDir,MEDIA_ROOT:join(dataDir,"media"),WEB_ROOT:webDir,DISABLE_WORKER:"true",ADMIN_EMAILS:"admin@example.test"},
+  env:{...process.env,NODE_ENV:"development",AUTH_MODE:"local",AUTH_RATE_LIMIT:"1000",REMOTE_AI_DAILY_REQUEST_LIMIT:"7",API_HOST:"127.0.0.1",API_PORT:String(port),DATA_DIR:dataDir,MEDIA_ROOT:join(dataDir,"media"),WEB_ROOT:webDir,DISABLE_WORKER:"true",ADMIN_EMAILS:"admin@example.test,refund-admin@example.test"},
   stdio:["ignore","pipe","pipe"]
 });
 let stdout="",stderr="";
@@ -631,4 +632,40 @@ test("billing payment order status is authenticated and scoped to its owner",asy
   assert.equal(body.amountMinor,50000);
   const other=await request("/api/billing/orders/"+order.txRef,{},strangerCookie);
   assert.equal(other.status,404);
+});
+
+
+test("administrator refund reconciliation posts a bounded negative credit ledger entry atomically",async()=>{
+  const adminCookie=await register("refund-admin@example.test");
+  const memberCookie=await register("refund-member@example.test");
+  const adminMe=await request("/api/me",{},adminCookie);
+  const memberMe=await request("/api/me",{},memberCookie);
+  const adminId=(await adminMe.json()).user.id;
+  const memberId=(await memberMe.json()).user.id;
+  await request("/api/billing/overview",{},memberCookie);
+  const db=openDatabase(join(dataDir,"executive-visuals.sqlite"));
+  const refundId=randomUUID();
+  try{
+    db.prepare(`INSERT INTO billing_credit_ledger
+      (id,user_id,amount,event_type,description,reference_id,idempotency_key,metadata_json)
+      VALUES(?,?,100,'subscription_grant','Dodo test grant','pay_api_refund_001','api-dodo-grant-001',?)`)
+      .run(randomUUID(),memberId,json({provider:"dodo",paymentId:"pay_api_refund_001",paymentAmountMinor:1200,currency:"USD"}));
+    db.prepare(`INSERT INTO billing_refund_events
+      (id,provider,refund_id,payment_id,amount_minor,currency,created_at,user_id,reconciliation_required,reconciliation_note)
+      VALUES(?,'dodo','ref_api_refund_001','pay_api_refund_001',600,'USD',?,?,1,'Manual review required')`)
+      .run(refundId,new Date().toISOString(),memberId);
+  }finally{db.close();}
+  const response=await request("/api/admin/refunds/"+refundId+"/reconcile",{
+    method:"POST",headers:{"content-type":"application/json"},
+    body:JSON.stringify({resolution:"credit_adjusted",creditsToReverse:40,note:"Verified partial refund against original payment"})
+  },adminCookie);
+  assert.equal(response.status,200);
+  const result=await response.json();
+  assert.equal(result.creditsReversed,40);
+  const overview=await request("/api/billing/overview",{},memberCookie);
+  assert.equal((await overview.json()).billing.balance,60);
+  const refunds=await request("/api/admin/refunds",{},adminCookie);
+  const record=(await refunds.json()).refunds.find(x=>x.id===refundId);
+  assert.equal(record.reconciliation_required,0);
+  assert.equal(record.reconciled_by,adminId);
 });
