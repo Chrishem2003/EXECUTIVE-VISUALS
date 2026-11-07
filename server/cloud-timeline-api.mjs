@@ -208,8 +208,8 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
       const audioOperation=input.operation==="sound_design_from_video";
       const metadata=await sourceResolver.resolveMetadata({ownerId,projectId:row.project_id,assetId:input.sourceAssetId,operation:audioOperation?"video-to-audio":"video-to-video"});
       const preserve=Array.isArray(input.preservation)?input.preservation:[];
-      const prompt=String(input.prompt||"").trim()+(preserve.length?"\n\nPreserve: "+preserve.join(", "):"");
-      if(prompt.length>1000)return response(422,{error:{code:"VIDEO_PROMPT_TOO_LONG",message:"The edit instructions and preservation requirements exceed Aleph 2's 1,000-character prompt limit."}});
+      const prompt=audioOperation?String(input.prompt||"").trim():String(input.prompt||"").trim()+(preserve.length?"\n\nPreserve: "+preserve.join(", "):"");
+      if(prompt.length>(audioOperation?2000:1000))return response(422,{error:{code:"VIDEO_PROMPT_TOO_LONG",message:audioOperation?"Video-to-audio prompt exceeds 2,000 characters.":"The edit instructions and preservation requirements exceed Aleph 2's 1,000-character prompt limit."}});
       const model=audioOperation?"mirelo_sfx_2_0":"aleph2";
       const generationInput={
        projectId:row.project_id,provider:"runway",model,
