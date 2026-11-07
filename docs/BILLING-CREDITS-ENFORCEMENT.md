@@ -38,6 +38,13 @@ The billing engine can now use the admin model-price registry before a remote jo
 
 This is a preflight estimate, not provider invoice reconciliation. Actual asynchronous task costs and provider refunds still need settlement reconciliation before commercial launch.
 
+## Plan entitlement enforcement
+
+- Local private asset uploads are checked against the owning account's `storageBytes` allowance. Project uploads are charged to the project owner's storage pool, including assets uploaded by project members.
+- The server checks declared size before writing, enforces the quota while streaming, and rechecks under a SQLite write transaction before committing asset metadata. Failed uploads are deleted.
+- Job enqueue enforces `concurrentJobs` atomically across queued, running and review jobs. Terminal jobs release their slots. Idempotent retries return the existing job without consuming another slot.
+- These limits are enforced by the core local-storage/job APIs. The separate Supabase cloud workspace still requires isolated staging acceptance and its own quota reconciliation before it can be treated as the production storage system.
+
 ## Administrator finance reporting
 
 The admin overview distinguishes:
