@@ -118,8 +118,18 @@ function runwayRouterInput({prompt,aspectRatio,resolution,referenceImages=[],out
  if(aspectRatio!==undefined&&aspectRatio!==null&&aspectRatio!==""&&aspectRatio!=="auto"&&!ROUTER_ASPECT_RATIOS.has(aspectRatio))throw fail("Runway Model Router aspect ratio is unsupported.","IMAGE_GATEWAY_UNSUPPORTED_CAPABILITY");
  if(resolution!==undefined&&resolution!==null&&resolution!==""&&!["1k","2k","4k"].includes(String(resolution).toLowerCase()))throw fail("Runway Model Router resolution must be 1k, 2k or 4k.","IMAGE_GATEWAY_INVALID_INPUT");
  if(!Array.isArray(referenceImages)||referenceImages.length>16)throw fail("Runway Model Router accepts at most 16 reference images.","IMAGE_GATEWAY_INVALID_INPUT");
+ let referenceBytes=0;
  const refs=referenceImages.map(value=>{
-  if(typeof value!=="string"||value.length>7*1024*1024||!(/^https:\/\//i.test(value)||/^runway:\/\//i.test(value)||/^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(value)))throw fail("Runway Model Router references must be valid HTTPS, Runway or image data URIs.","IMAGE_GATEWAY_INVALID_INPUT");
+  if(typeof value!=="string")throw fail("Runway Model Router references must be strings.","IMAGE_GATEWAY_INVALID_INPUT");
+  if(/^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(value)){
+   const encoded=value.slice(value.indexOf(",")+1),bytes=Buffer.from(encoded,"base64");
+   if(!bytes.length||bytes.length>MAX_REFERENCE_BYTES||bytes.toString("base64").replace(/=+$/,"")!==encoded.replace(/=+$/,""))throw fail("Runway Model Router reference data is malformed or exceeds 5 MiB.","IMAGE_GATEWAY_INVALID_INPUT");
+   referenceBytes+=bytes.length;
+  }else if(/^https:\/\//i.test(value)){
+   let url;try{url=new URL(value);}catch{throw fail("Runway reference URL is invalid.","IMAGE_GATEWAY_INVALID_INPUT");}
+   if(url.protocol!=="https:"||url.username||url.password||url.hash||value.length>2048)throw fail("Runway reference URL is not permitted.","IMAGE_GATEWAY_INVALID_INPUT");
+  }else if(!/^runway:\/\//i.test(value)||value.length>5000)throw fail("Runway Model Router references must be valid HTTPS, Runway or image data URIs.","IMAGE_GATEWAY_INVALID_INPUT");
+  if(referenceBytes>MAX_REFERENCE_TOTAL_BYTES)throw fail("Combined Runway image references exceed the 32 MiB request budget.","IMAGE_GATEWAY_INVALID_INPUT");
   return {uri:value};
  });
  return {promptText:text,referenceImages:refs,outputCount,...(aspectRatio&&aspectRatio!=="auto"?{aspectRatio}:{}),...(resolution?{resolution:String(resolution).toLowerCase()}: {})};
@@ -127,7 +137,7 @@ function runwayRouterInput({prompt,aspectRatio,resolution,referenceImages=[],out
 function validateRouterQuote(response,slug){
  if(response?.id)throw fail("Runway image dry-run unexpectedly created a task; quote quarantined.","RUNWAY_ROUTER_DRY_RUN_INVALID");
  const routing=response?.routing,credits=routing?.estimatedCost?.credits;
- if(!routing||routing.configId!==slug||typeof routing.model!=="string"||!routing.model.trim()||typeof routing.provider!=="string"||!routing.provider.trim()||typeof credits!=="number"||!Number.isFinite(credits)||credits<0)throw fail("Runway image dry-run omitted a valid routing decision and estimated credit cost.","RUNWAY_ROUTER_DRY_RUN_INVALID");
+ if(!routing||routing.configId!==slug||typeof routing.model!=="string"||!routing.model.trim()||typeof routing.provider!=="string"||!routing.provider.trim()||!Number.isSafeInteger(credits)||credits<=0)throw fail("Runway image dry-run omitted a valid routing decision and positive integer credit estimate.","RUNWAY_ROUTER_DRY_RUN_INVALID");
  return Object.freeze({billable:false,configId:slug,model:routing.model,provider:routing.provider,estimatedCredits:credits,estimatedUsd:Math.round(credits*0.01*10000)/10000,routing});
 }
 export async function preflightRunwayRouterImage({prompt,aspectRatio,resolution,referenceImages=[],outputCount=1,fetchImpl=fetch}={}){
