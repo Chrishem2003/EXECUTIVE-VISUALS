@@ -9,6 +9,7 @@ import {
 import { createProviderAwareCloudVideoWorker } from "./cloud-video-provider-worker.mjs";
 import { createFalVideoProviderAdapter } from "./fal-video-provider-registration.mjs";
 import { createRunwayCloudVideoAdapter } from "./runway-cloud-video-adapter.mjs";
+import { createRunwayModelRouterVideoAdapter } from "./runway-model-router-video-adapter.mjs";
 import { createRunwaySourceAssetResolver } from "./runway-source-asset-resolver.mjs";
 import { createGoogleOmniCloudVideoComposition } from "./google-omni-cloud-video-composition.mjs";
 import { createGeminiOmniFlashClient } from "./google-omni-flash-client.mjs";
@@ -173,6 +174,22 @@ export function createProviderAwareCloudVideoWorkerComposition({
           timeoutMs: Math.min(timeoutMs, 30000)
         }));
       }
+    }
+    if (providerEnv.RUNWAY_MODEL_ROUTER_ENABLED === "true") {
+      const configId = String(providerEnv.RUNWAY_VIDEO_ROUTER_CONFIG || "");
+      if (!/^[a-z][a-z0-9_-]{0,63}$/.test(configId)) {
+        throw new Error("Runway Model Router requires RUNWAY_VIDEO_ROUTER_CONFIG to name an existing saved config slug.");
+      }
+      adapters.push(createRunwayModelRouterVideoAdapter({
+        configId,
+        apiKey: providerEnv.RUNWAY_API_KEY || providerEnv.RUNWAYML_API_SECRET,
+        enabled: providerEnv.RUNWAY_MODEL_ROUTER_ENABLED === "true",
+        allowRemote: providerEnv.RUNWAY_VIDEO_ALLOW_REMOTE === "true",
+        fetchImpl: providerFetch,
+        prepareInput,
+        ingestOutputs: ingest,
+        timeoutMs: Math.min(timeoutMs, 30000)
+      }));
     }
     return adapters;
   });
