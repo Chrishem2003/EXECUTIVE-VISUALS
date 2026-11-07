@@ -605,7 +605,9 @@ test("administrator APIs enforce allowlisting and manage plans, subscriptions, c
   assert.equal((await users.json()).users.some(user=>user.id===memberId&&user.creditBalance===1000),true);
   const suspended=await request("/api/admin/users/"+memberId+"/status",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({status:"suspended"})},adminCookie);
   assert.equal(suspended.status,200);
-  assert.equal((await request("/api/billing/overview",{},memberCookie)).status,403);
+  assert.equal((await request("/api/billing/overview",{},memberCookie)).status,200);
+  assert.equal((await request("/api/billing/customer-portal",{method:"POST"},memberCookie)).status,503);
+  assert.equal((await request("/api/billing/checkout",{method:"POST",headers:{"content-type":"application/json"},body:"{}"},memberCookie)).status,403);
 });
 
 
