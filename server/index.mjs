@@ -90,6 +90,11 @@ const readJson = async (req,limit=1024*1024) => {
   try { return JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}"); }
   catch { throw Object.assign(new Error("Request body must be valid JSON."),{status:400,code:"INVALID_JSON"}); }
 };
+const readRaw = async (req,limit=1024*1024) => {
+  const chunks=[];let size=0;
+  for await (const chunk of req) { size+=chunk.length;if(size>limit)throw Object.assign(new Error("Request body too large."),{status:413,code:"BODY_TOO_LARGE"});chunks.push(chunk); }
+  return Buffer.concat(chunks);
+};
 const cookieValue = (req,name) => {
   const raw=req.headers.cookie||"";
   for(const part of raw.split(";")){const [key,...rest]=part.trim().split("=");if(key===name)return decodeURIComponent(rest.join("="));}
