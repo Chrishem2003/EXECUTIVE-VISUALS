@@ -139,6 +139,66 @@ export async function createDodoSubscriptionCheckout(db, {
   return { orderId: localOrderId, sessionId: body.session_id, checkoutUrl: checkoutUrl.toString(), planId: plan.id };
 }
 
+/**
+ * Create a short-lived Dodo customer-portal link for the authenticated owner.
+ * Dodo's hosted portal handles invoices, payment methods and cancellation;
+ * the signed-in user's local subscription record is the source of ownership.
+ */
+export async function createDodoCustomerPortalSession(db, {
+  user, env = process.env, fetchImpl = fetch
+} = {}) {
+  if (!dodoSubscriptionCheckoutEnabled(env)) {
+    throw fail("Dodo customer portal is unavailable until merchant approval and subscription configuration are complete.", "DODO_SUBSCRIPTIONS_DISABLED", 503);
+  }
+  if (!user?.id) throw fail("Authenticated customer identity is required.", "BILLING_USER_REQUIRED", 401);
+  const subscription = db.prepare(`SELECT provider_customer_id FROM billing_subscriptions
+    WHERE user_id=? AND provider='dodo' AND provider_customer_id IS NOT NULL
+      AND status IN ('active','trialing','past_due','on_hold')
+    ORDER BY current_period_end DESC LIMIT 1`).get(String(user.id));
+  const customerId = String(subscription?.provider_customer_id || "").trim();
+  if (!/^cus_[A-Za-z0-9_-]{6,120}$/.test(customerId)) {
+    throw fail("No active Dodo customer is linked to this account.", "DODO_CUSTOMER_NOT_FOUND", 404);
+  }
+  let base;
+  try { base = new URL(env.PUBLIC_APP_URL); } catch {
+    throw fail("A valid public application URL is required.", "DODO_RETURN_URL_INVALID", 503);
+  }
+  const local = ["localhost", "127.0.0.1"].includes(base.hostname);
+  if (base.protocol !== "https:" && !(local && env.NODE_ENV !== "production")) {
+    throw fail("Dodo portal return URLs must use HTTPS.", "DODO_RETURN_URL_INVALID", 503);
+  }
+  if (base.username || base.password || base.search || base.hash) {
+    throw fail("Public application URL must not contain credentials, query parameters or fragments.", "DODO_RETURN_URL_INVALID", 503);
+  }
+  const host = env.DODO_PAYMENTS_ENVIRONMENT === "live_mode" ? "https://live.dodopayments.com" : "https://test.dodopayments.com";
+  const endpoint = new URL("/customers/" + encodeURIComponent(customerId) + "/customer-portal/session", host);
+  endpoint.searchParams.set("return_url", new URL("/", base).toString());
+  let response;
+  try {
+    response = await fetchImpl(endpoint, {
+      method: "POST",
+      headers: { authorization: "Bearer " + String(env.DODO_PAYMENTS_API_KEY), accept: "application/json" },
+      redirect: "error",
+      signal: AbortSignal.timeout(15000)
+    });
+  } catch {
+    throw fail("Dodo customer portal could not be reached.", "DODO_PORTAL_CREATE_FAILED", 502);
+  }
+  if (!response.ok) throw fail("Dodo rejected the customer portal request.", "DODO_PORTAL_CREATE_FAILED", 502);
+  let body;
+  try { body = await response.json(); } catch {
+    throw fail("Dodo returned an invalid customer portal response.", "DODO_RESPONSE_INVALID", 502);
+  }
+  let link;
+  try { link = new URL(body?.link); } catch {
+    throw fail("Dodo did not return a valid customer portal link.", "DODO_RESPONSE_INVALID", 502);
+  }
+  if (link.protocol !== "https:" || !(link.hostname === "dodopayments.com" || link.hostname.endsWith(".dodopayments.com"))) {
+    throw fail("Dodo returned an untrusted customer portal destination.", "DODO_RESPONSE_INVALID", 502);
+  }
+  return { url: link.toString() };
+}
+
 function safeEqual(left, right) {
   if (typeof left !== "string" || typeof right !== "string" || !left || !right) return false;
   const a = Buffer.from(left), b = Buffer.from(right);
