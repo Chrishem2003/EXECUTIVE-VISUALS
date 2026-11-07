@@ -41,6 +41,15 @@ test("maps existing image/reference workflow ports and numeric UI duration value
   assert.equal(result.input.durationSeconds, 10);
 });
 
+test("preserves the existing referenceAssetId node configuration", () => {
+  const result = createVideoWorkflowCloudRequest({
+    ...base,
+    node: { ...node, config: { ...node.config, referenceAssetId: "asset-reference-legacy" } }
+  });
+  assert.equal(result.operation, "image-to-video");
+  assert.equal(result.input.startFrameAssetId, "asset-reference-legacy");
+});
+
 test("maps source video to video-to-video and retains asset lineage IDs", () => {
   const result = createVideoWorkflowCloudRequest({
     ...base, values: {
