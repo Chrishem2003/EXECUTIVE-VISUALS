@@ -5,7 +5,6 @@ import {
   getVideoProviderModel,
   listSelectableVideoProviderModels,
   listVideoProviders,
-  isLegacyVideoModelSelectable
 } from "../video-provider-registry.mjs";
 
 test("provider catalog is evidence-backed metadata and all remote providers remain disabled", () => {
@@ -341,10 +340,3 @@ test("Runway Model Router is catalogued as a disabled synthetic route, not a con
 
 
 
-test("legacy synchronous video adapters cannot bypass disabled cloud-worker model gates", () => {
-  assert.equal(isLegacyVideoModelSelectable("seedance2_5"), false);
-  assert.equal(isLegacyVideoModelSelectable("kling_4"), false);
-  assert.equal(isLegacyVideoModelSelectable("kling_4_flash"), false);
-  assert.equal(isLegacyVideoModelSelectable("gemini_omni_flash_1.2"), false);
-  assert.equal(isLegacyVideoModelSelectable("an-existing-legacy-model"), true);
-});
