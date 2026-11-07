@@ -317,15 +317,33 @@ function insertSubscriptionCredits(db, { userId, plan, subscriptionId, paymentId
 }
 
 export function processNextDodoWebhook(db, { env = process.env } = {}) {
-  const pendingEvents = db.prepare(`SELECT * FROM billing_provider_events
-    WHERE provider='dodo' AND processed_at IS NULL AND attempts<1000
-    ORDER BY created_at ASC LIMIT 100`).all();
-  const event = pendingEvents.sort((a,b) => {
-    const left = Date.parse(parseJson(a.payload_json).timestamp || "") || 0;
-    const right = Date.parse(parseJson(b.payload_json).timestamp || "") || 0;
-    return left - right || String(a.created_at).localeCompare(String(b.created_at));
-  })[0];
-  if (!event) return { processed: false };
+  const leaseOwner=randomUUID();
+  let event=null;
+  db.exec("BEGIN IMMEDIATE");
+  try{
+    const current=now();
+    const pendingEvents = db.prepare(`SELECT * FROM billing_provider_events
+      WHERE provider='dodo' AND processed_at IS NULL AND attempts<1000
+        AND (lease_expires_at IS NULL OR lease_expires_at<=?)
+      ORDER BY created_at ASC LIMIT 100`).all(current);
+    event = pendingEvents.sort((a,b) => {
+      const left = Date.parse(parseJson(a.payload_json).timestamp || "") || 0;
+      const right = Date.parse(parseJson(b.payload_json).timestamp || "") || 0;
+      return left - right || String(a.created_at).localeCompare(String(b.created_at));
+    })[0] || null;
+    if(!event){db.exec("COMMIT");return {processed:false};}
+    const leaseExpiresAt=new Date(Date.now()+120000).toISOString();
+    const claimed=db.prepare(`UPDATE billing_provider_events SET lease_owner=?,lease_expires_at=?
+      WHERE id=? AND processed_at IS NULL AND (lease_expires_at IS NULL OR lease_expires_at<=?)`)
+      .run(leaseOwner,leaseExpiresAt,event.id,current);
+    if(claimed.changes!==1){db.exec("COMMIT");return {processed:false};}
+    db.exec("COMMIT");
+  }catch(error){db.exec("ROLLBACK");throw error;}
+  const markProcessed=()=>{
+    const result=db.prepare(`UPDATE billing_provider_events SET processed_at=?,last_error=NULL,lease_owner=NULL,lease_expires_at=NULL
+      WHERE id=? AND lease_owner=? AND processed_at IS NULL`).run(now(),event.id,leaseOwner);
+    if(result.changes!==1)throw fail("Dodo webhook processing lease was lost.", "DODO_WEBHOOK_LEASE_LOST", 409);
+  };
   const payload = parseJson(event.payload_json);
   const type = payload.type;
   const data = payload.data || {};
@@ -337,7 +355,7 @@ export function processNextDodoWebhook(db, { env = process.env } = {}) {
     if ((type === "subscription.failed" || type === "subscription.cancelled" || type === "subscription.expired") && !local && checkoutId) {
       db.prepare("UPDATE billing_dodo_checkout_sessions SET status=?,updated_at=? WHERE id=?")
         .run(type === "subscription.expired" ? "expired" : "failed", now(), checkoutId);
-      db.prepare("UPDATE billing_provider_events SET processed_at=?,last_error=NULL WHERE id=?").run(now(), event.id);
+      markProcessed();
       return { processed: true, failed: true, eventId: event.event_id };
     }
     if (type === "subscription.update_payment_method") {
@@ -427,8 +445,9 @@ export function processNextDodoWebhook(db, { env = process.env } = {}) {
     db.prepare("UPDATE billing_provider_events SET processed_at=?,last_error=NULL WHERE id=?").run(now(), event.id);
     return { processed: true, status, eventId: event.event_id };
   } catch (error) {
-    db.prepare("UPDATE billing_provider_events SET attempts=attempts+1,last_error=? WHERE id=?")
-      .run(String(error?.code || "DODO_PROCESSING_FAILED").slice(0, 120), event.id);
+    db.prepare(`UPDATE billing_provider_events SET attempts=attempts+1,last_error=?,lease_owner=NULL,lease_expires_at=NULL
+      WHERE id=? AND lease_owner=?`)
+      .run(String(error?.code || "DODO_PROCESSING_FAILED").slice(0, 120), event.id, leaseOwner);
     return { processed: false, retryable: true, eventId: event.event_id, errorCode: error?.code || "DODO_PROCESSING_FAILED" };
   }
 }
