@@ -103,7 +103,7 @@ test("Runway adapter exposes verified text-to-video and first-frame image-to-vid
  assert.equal(video.status,"ready");
  assert.equal(video.model,"seedance2_5");
  assert.equal(video.modelCapabilities.maxDurationSeconds,30);
- assert.equal(video.modelCapabilities.referenceImages,true);
+ assert.equal(video.modelCapabilities.referenceImages,false);
  assert.ok(video.availableModels.some(model=>model.id==="kling_4"));
  assert.equal(JSON.stringify(catalog).includes("do-not-return"),false);
 });
