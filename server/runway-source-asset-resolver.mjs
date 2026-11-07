@@ -87,7 +87,7 @@ export function createRunwaySourceAssetResolver({
       const output = await new Promise((resolve, reject) => {
         execFileImpl(ffprobePath, [
           "-v", "error", "-count_frames", "-show_entries",
-          "format=duration:stream=codec_type,width,height,nb_read_frames,nb_frames,r_frame_rate,color_transfer,color_primaries,color_space",
+          "format=duration:stream=codec_type,width,height,nb_read_frames,nb_frames,r_frame_rate,avg_frame_rate,color_transfer,color_primaries,color_space",
           "-of", "json", file
         ], { timeout: Math.min(timeoutMs, 20000), maxBuffer: 1024 * 1024, windowsHide: true }, (error, stdout) => {
           if (error) reject(error); else resolve(stdout);
@@ -98,10 +98,10 @@ export function createRunwaySourceAssetResolver({
       const video = streams.find(stream => stream.codec_type === "video");
       const durationSeconds = Number(parsed?.format?.duration);
       const width = Number(video?.width), height = Number(video?.height);
+      const frameRate = parseRate(video?.avg_frame_rate) || parseRate(video?.r_frame_rate);
       let frameCount = Number(video?.nb_read_frames || video?.nb_frames);
       if (!Number.isSafeInteger(frameCount) || frameCount < 1) {
-        const rate = parseRate(video?.r_frame_rate);
-        frameCount = rate ? Math.ceil(rate * durationSeconds) : NaN;
+        frameCount = frameRate ? Math.ceil(frameRate * durationSeconds) : NaN;
       }
       if (!video || !Number.isFinite(durationSeconds) || durationSeconds <= 0 || durationSeconds > 30 ||
           !Number.isInteger(width) || width < 16 || width > 8192 ||
@@ -111,7 +111,7 @@ export function createRunwaySourceAssetResolver({
       }
       const transfer = String(video.color_transfer || "").toLowerCase();
       return Object.freeze({
-        durationSeconds, frameCount, width, height,
+        durationSeconds, frameCount, frameRate, width, height,
         sourceWidth: width, sourceHeight: height,
         sourceDynamicRange: ["smpte2084", "arib-std-b67"].includes(transfer) ? "hdr" : "sdr",
         colorTransfer: transfer || "unknown",
