@@ -22,6 +22,7 @@ import { ensureTransformationPlanSchema, createTransformationPlan, approveTransf
 import { signInWithSupabasePassword, signUpWithSupabasePassword, refreshSupabaseSession, getSupabaseUser, revokeSupabaseSession } from "./supabase-password-auth.mjs";
 import { ensureBillingSchema, touchBillingAccount, getBillingOverview, listBillingPlans, getAdminOverview, listAdminUsers, saveBillingPlan, assignManualSubscription, adjustBillingCredits, setBillingAccountStatus, listBillingModelPrices, saveBillingModelPrice } from "./billing.mjs";
 import { ensureBillingWebhookSchema, receiveFlutterwaveWebhook, processNextFlutterwaveWebhook, createFlutterwaveCheckout } from "./billing-webhooks.mjs";
+import { ensureDodoSubscriptionSchema, dodoProductEnvName, dodoSubscriptionCheckoutEnabled, createDodoSubscriptionCheckout, receiveDodoWebhook, processNextDodoWebhook, getDodoCheckoutStatus } from "./dodo-subscriptions.mjs";
 
 const PORT = Number(process.env.PORT || process.env.API_PORT || 4179);
 const HOST = process.env.API_HOST || (process.env.NODE_ENV === "production" ? "0.0.0.0" : "127.0.0.1");
@@ -55,6 +56,7 @@ const MEDIA_JOBS = new Set(["media.probe","media.thumbnail","media.transcode","m
 const db = openDatabase(DB_FILE);
 ensureBillingSchema(db);
 ensureBillingWebhookSchema(db);
+ensureDodoSubscriptionSchema(db);
 ensureTransformationPlanSchema(db);
 const aiUpscaleAdapter = createRealEsrganAdapter();
 const cloudTimelineApiEnabled = process.env.CLOUD_TIMELINE_API_ENABLED === "true";
@@ -280,10 +282,13 @@ let workerBusy=false;
 const workerTimer=process.env.DISABLE_WORKER==="true"?null:setInterval(async()=>{if(workerBusy)return;workerBusy=true;try{await processNextJob();}catch(error){process.stderr.write("Worker cycle failed: "+String(error.message)+"\\n");}finally{workerBusy=false;}},500);
 workerTimer?.unref();
 let billingWebhookBusy=false;
-const billingWebhookTimer=process.env.FLW_SECRET_KEY?setInterval(async()=>{
+const billingWebhookTimer=(process.env.FLW_SECRET_KEY||process.env.DODO_PAYMENTS_WEBHOOK_KEY)?setInterval(async()=>{
   if(billingWebhookBusy)return;
   billingWebhookBusy=true;
-  try { await processNextFlutterwaveWebhook(db,{secretKey:process.env.FLW_SECRET_KEY}); }
+  try {
+    if(process.env.FLW_SECRET_KEY)await processNextFlutterwaveWebhook(db,{secretKey:process.env.FLW_SECRET_KEY});
+    if(process.env.DODO_PAYMENTS_WEBHOOK_KEY)processNextDodoWebhook(db);
+  }
   catch(error){ process.stderr.write("Billing webhook worker failed: "+String(error?.code||"PROCESSING_FAILED")+"\\n"); }
   finally { billingWebhookBusy=false; }
 },5000):null;
@@ -297,7 +302,7 @@ export function createAppServer() {
     if(req.method==="OPTIONS"){res.writeHead(204,{"access-control-allow-methods":"GET,POST,PUT,DELETE,OPTIONS","access-control-allow-headers":"content-type,authorization,x-file-name,x-project-id,idempotency-key","access-control-max-age":"600",...cors});res.end();return;}
     const url=new URL(req.url||"/","http://localhost");
     const path=url.pathname;
-    const ratePath=path==="/api/webhooks/flutterwave"&&req.method==="POST"?"/payment-webhook":path.startsWith("/api/auth/")?"/auth":(path==="/api/assets"||path==="/api/cloud/assets")&&req.method==="POST"?"/upload":path.endsWith("/research/import")&&req.method==="POST"?"/research":path==="/api/admin/ai-upscale/self-test"&&req.method==="POST"?"/ai-upscale-self-test":"";
+    const ratePath=(path==="/api/webhooks/flutterwave"||path==="/api/webhooks/dodo")&&req.method==="POST"?"/payment-webhook":path.startsWith("/api/auth/")?"/auth":(path==="/api/assets"||path==="/api/cloud/assets")&&req.method==="POST"?"/upload":path.endsWith("/research/import")&&req.method==="POST"?"/research":path==="/api/admin/ai-upscale/self-test"&&req.method==="POST"?"/ai-upscale-self-test":"";
     if(ratePath){const key=(req.socket.remoteAddress||"unknown")+ratePath;const limit=ratePath==="/auth"?AUTH_RATE_LIMIT:ratePath==="/research"?10:ratePath==="/ai-upscale-self-test"?2:ratePath==="/payment-webhook"?120:30;if(!rateAllowed(key,limit,60000)){fail(res,429,"RATE_LIMITED","Too many requests. Wait before trying again.");return;}}
     try {
       if(!path.startsWith("/api/")&&req.method==="GET"){
@@ -328,6 +333,21 @@ export function createAppServer() {
         });
         send(res,200,{ok:true,accepted:true,duplicate:result.duplicate},cors);return;
       }
+      if(path==="/api/webhooks/dodo"&&req.method==="POST"){
+        if(!String(req.headers["content-type"]||"").toLowerCase().startsWith("application/json")){
+          fail(res,415,"WEBHOOK_CONTENT_TYPE_INVALID","Dodo webhook requests must use application/json.");return;
+        }
+        const rawBody=await readRaw(req,1024*1024);
+        const result=receiveDodoWebhook(db,{
+          rawBody,
+          webhookId:String(req.headers["webhook-id"]||""),
+          signature:String(req.headers["webhook-signature"]||""),
+          timestamp:String(req.headers["webhook-timestamp"]||""),
+          webhookKey:process.env.DODO_PAYMENTS_WEBHOOK_KEY||""
+        });
+        send(res,200,{ok:true,accepted:true,duplicate:result.duplicate},cors);return;
+      }
+
 
       if(path==="/api/auth/register"&&req.method==="POST"){
         const body=await readJson(req);const email=String(body.email||"").trim().toLowerCase();const password=String(body.password||"");
@@ -374,8 +394,8 @@ const billingAccount=touchBillingAccount(db,user);
       if(billingAccount.status==="suspended"){fail(res,403,"ACCOUNT_SUSPENDED","This account is suspended. Contact workspace support.");return;}
       const admin=isAdminUser(user);
       if(path==="/api/me"&&req.method==="GET"){send(res,200,{user,authMode:AUTH_MODE,capabilities:{admin,billing:true}},cors);return;}
-      if(path==="/api/billing/plans"&&req.method==="GET"){send(res,200,{plans:listBillingPlans(db)},cors);return;}
-      if(path==="/api/billing/overview"&&req.method==="GET"){send(res,200,{billing:getBillingOverview(db,user.id),payment:{checkoutEnabled:process.env.BILLING_CHECKOUT_ENABLED==="true"&&(process.env.BILLING_ENFORCEMENT_ENABLED==="true"||process.env.CREDITS_ENABLED==="true")&&Boolean(process.env.FLW_SECRET_KEY&&process.env.FLW_WEBHOOK_SECRET&&process.env.PUBLIC_APP_URL),recurringSubscriptionsEnabled:false}},cors);return;}
+      if(path==="/api/billing/plans"&&req.method==="GET"){const plans=listBillingPlans(db).map(plan=>({...plan,subscriptionCheckoutAvailable:dodoSubscriptionCheckoutEnabled()&&!!process.env[dodoProductEnvName(plan.code)]}));send(res,200,{plans},cors);return;}
+      if(path==="/api/billing/overview"&&req.method==="GET"){send(res,200,{billing:getBillingOverview(db,user.id),payment:{checkoutEnabled:process.env.BILLING_CHECKOUT_ENABLED==="true"&&(process.env.BILLING_ENFORCEMENT_ENABLED==="true"||process.env.CREDITS_ENABLED==="true")&&Boolean(process.env.FLW_SECRET_KEY&&process.env.FLW_WEBHOOK_SECRET&&process.env.PUBLIC_APP_URL),subscriptionCheckoutEnabled:dodoSubscriptionCheckoutEnabled(),recurringSubscriptionsEnabled:dodoSubscriptionCheckoutEnabled()}},cors);return;}
       const billingOrderMatch=path.match(/^\/api\/billing\/orders\/(ev_[a-f0-9]{32})$/);
       if(billingOrderMatch&&req.method==="GET"){
         const order=db.prepare(`SELECT o.tx_ref,o.status,o.expected_amount_minor,o.currency,o.credits,o.verified_at,o.created_at,p.name AS plan_name,p.interval
@@ -383,6 +403,17 @@ const billingAccount=touchBillingAccount(db,user);
           WHERE o.tx_ref=? AND o.user_id=? LIMIT 1`).get(billingOrderMatch[1],user.id);
         if(!order){fail(res,404,"BILLING_ORDER_NOT_FOUND","Payment order not found.");return;}
         send(res,200,{order:{txRef:order.tx_ref,status:order.status,amountMinor:Number(order.expected_amount_minor),currency:order.currency,credits:Number(order.credits),verifiedAt:order.verified_at,createdAt:order.created_at,planName:order.plan_name,interval:order.interval}},cors);return;
+      }
+
+      if(path==="/api/billing/subscription-checkout"&&req.method==="POST"){
+        const body=await readJson(req,16*1024);
+        const checkout=await createDodoSubscriptionCheckout(db,{user,planId:String(body.planId||"")});
+        send(res,200,{checkout},cors);return;
+      }
+      const dodoOrderMatch=path.match(/^\/api\/billing\/dodo-orders\/([0-9a-f-]{36})$/i);
+      if(dodoOrderMatch&&req.method==="GET"){
+        const order=getDodoCheckoutStatus(db,{orderId:dodoOrderMatch[1],userId:user.id});
+        send(res,200,{order},cors);return;
       }
       if(path==="/api/billing/checkout"&&req.method==="POST"){
         if(process.env.BILLING_CHECKOUT_ENABLED!=="true" || (process.env.BILLING_ENFORCEMENT_ENABLED!=="true" && process.env.CREDITS_ENABLED!=="true") || !process.env.FLW_SECRET_KEY ||
