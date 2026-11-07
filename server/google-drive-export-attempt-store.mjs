@@ -7,7 +7,7 @@ const SESSION_PREFIX="gdrive-session:v1:";
 export function createGoogleDriveExportAttemptStore({
   url=process.env.SUPABASE_URL,
   serviceRoleKey=process.env.SUPABASE_SERVICE_ROLE_KEY,
-  encryptionKey=process.env.GOOGLE_DRIVE_TOKEN_ENCRYPTION_KEY,
+  encryptionKey=process.env.GOOGLE_DRIVE_EXPORT_SESSION_ENCRYPTION_KEY,
   fetchImpl=globalThis.fetch,
   timeoutMs=10000
 }={}){
