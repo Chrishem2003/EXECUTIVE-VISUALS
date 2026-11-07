@@ -277,6 +277,7 @@ export function receiveDodoWebhook(db, {
         has_payment_method: data.has_payment_method === true,
         cancel_at_next_billing_date: data.cancel_at_next_billing_date === true,
         past_due_ends_at: data.past_due_ends_at || null,
+        customer_id: String(data.customer?.customer_id || ""),
         customer: { customer_id: String(data.customer?.customer_id || "") },
         metadata: {
           executive_visuals_order_id: String(metadata.executive_visuals_order_id || ""),
