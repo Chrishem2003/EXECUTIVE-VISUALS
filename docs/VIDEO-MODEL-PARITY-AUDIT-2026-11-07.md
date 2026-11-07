@@ -137,3 +137,53 @@ The official Kling pricing table currently expresses Kling 4.0 Flash pricing in 
 The published prepaid packages have different discounted unit prices and validity terms. Consequently, do not hardcode a USD-per-second constant from a reseller or package example. The quote adapter must resolve the user's actual Kling account/package unit price, include all billable reference/source video durations, record the pricing evidence and expiry, and refuse enqueue if the account price cannot be verified. Flash is 720p only and supports 3–20 seconds.
 
 Official pricing source: https://kling.ai/dev/model/image
+
+
+## Continuation verification — 2026-11-07 21:20 EAT
+
+This addendum supersedes the earlier reviewed-head and branch-size figures above where they differ.
+
+### Live GitHub state
+
+- PR #206 remains **open, draft, and unmerged**.
+- Integration branch: `integration/omni-provider-workers-2026`.
+- Exact PR head: `f61f4990231d456e3d9ae3be5ac68305d17e28aa`.
+- Base: `main` at `18cb97bf027dc5037fc1d932f36dd4d00f6e6c67`.
+- Current comparison: **483 commits ahead, 0 behind**; PR reports 134 changed files.
+- Exact-head GitHub Actions: **Quality checks passed** and **Google Drive integration quality passed**.
+- Latest commits catalogue Kling 4.0 Flash and Gemini Omni 1.2 Flash, add the account-aware Kling Flash billing formula, and add regression assertions that the new catalogue entries remain non-selectable.
+
+### New catalogue entries are not executable
+
+The provider registry now records:
+- Kling 4.0 Flash: 720p, 3–20 seconds, up to 10 reference images and 5 reference videos (15 combined), with provider-account/package-specific resource-unit pricing. The entry is disabled and its execution adapter is `not_implemented`.
+- Gemini Omni 1.2 Flash: 3–15 seconds, generation at 360p/720p and finishing at 1080p/4K, with the published 720p price recorded separately from unverified resolution prices. The entry is disabled and its execution adapter is `not_implemented`; it requires the Interactions API.
+- The current registry test explicitly asserts both entries are disabled, not implemented, and absent from the selectable model list.
+
+Do not enable either entry merely because its capability and pricing metadata are present. A catalogue record is not an execution adapter, a quote, or proof of a supported end-to-end workflow.
+
+### SQL/application enqueue contract remains intentionally narrower
+
+The current source-controlled `20261104143000_cloud_video_budget_enqueue.sql` allowlist still accepts only:
+- `runway / gen4.5`
+- `google / gemini-omni-1.1-flash`
+
+It also enforces the existing fixed duration, output-format, currency, and reservation rules for those two model identities. It does not yet define a verified quote/approval/reservation policy for Kling 4.0 Flash or Gemini Omni 1.2 Flash. Application-level catalogue additions must not be treated as permission to enqueue them. Do not broaden the SQL allowlist or reuse another model's price formula.
+
+### Next implementation gates
+
+1. Build the authenticated Studio-to-cloud bridge: project authorization, private input resolution, non-billable quote, canonical request hash and expiry, explicit approval bound to that exact request, atomic credit/budget reservation, idempotent durable enqueue, job polling, and private output asset publication.
+2. Reconcile the application and SQL contracts per exact provider/model/operation, including pricing evidence and billable source/reference duration. Add migration and PostgreSQL integration tests only after each quote formula is verified.
+3. Add task-correlated settlement and explicit cancellation/refund/ambiguous-submission reconciliation. Estimates and reservations must never be recorded as actual provider spend.
+4. Keep Kling Flash and Gemini Omni 1.2 disabled until their dedicated adapters, private media handling, pricing, retention, output ingestion and end-to-end tests are complete.
+5. Obtain a dedicated isolated Executive Visuals database and private storage target, then explicit approval for staging activation. Existing shared Supabase projects and the suspended Render test service remain out of scope.
+
+### Release and infrastructure boundaries reconfirmed
+
+- Production `main` remains untouched; merging PR #206 would trigger the production auto-deploy.
+- The separate Render test service remains suspended and must not be resumed without explicit approval.
+- The connected Supabase projects are not approved Executive Visuals databases; do not apply these migrations to them.
+- Cloudflare R2 remains unavailable/not enabled; no activation or paid infrastructure changes are authorized.
+- No paid provider request, live Google transfer, payment transaction, production migration, or production deployment was performed during this verification.
+
+**Decision:** automated CI is green for the current code head, but this is not staging acceptance. Keep PR #206 draft and all paid/remote generation paths disabled.
