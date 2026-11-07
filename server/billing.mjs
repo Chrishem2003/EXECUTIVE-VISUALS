@@ -393,8 +393,11 @@ export function listBillingLedger(db, userId, limit = 100) {
 }
 
 export function canUsePaidModels(db, userId) {
+  const at=isoNow();
   const row = db.prepare(`SELECT p.limits_json FROM billing_subscriptions s JOIN billing_plans p ON p.id=s.plan_id
-    WHERE s.user_id=? AND s.status IN ('active','trialing') AND s.current_period_end>? ORDER BY s.current_period_end DESC LIMIT 1`).get(userId,isoNow());
+    WHERE s.user_id=? AND (s.status IN ('active','trialing') OR
+      (s.status='past_due' AND json_extract(s.metadata_json,'$.pastDueEndsAt')>?))
+      AND s.current_period_end>? ORDER BY s.current_period_end DESC LIMIT 1`).get(userId,at,at);
   if (!row) return false;
   const limits = parseJson(row.limits_json);
   return Array.isArray(limits.modelAllowlist) && limits.modelAllowlist.length > 0;
