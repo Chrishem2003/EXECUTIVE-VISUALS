@@ -125,6 +125,8 @@ test("Gemini Omni 1.2 Flash maps resolution tiers to exact text-to-video pixel r
  assert.equal(model.minDurationSeconds,3);
  assert.equal(model.maxDurationSeconds,15);
  assert.equal(model.promptMaxCharacters,4000);
+ assert.equal(model.nativeAudio,true);
+ assert.deepEqual(getRunwayVideoCapabilities("gemini_omni_flash_1.2").audioModes,["generated"]);
  assert.deepEqual(buildRunwayVideoPayload({model:"gemini_omni_flash_1.2",prompt:"A cinematic landscape",durationSeconds:8,aspectRatio:"16:9",resolution:"4k"}),{
   model:"gemini_omni_flash_1.2",promptText:"A cinematic landscape",ratio:"3840:2160",duration:8
  });
