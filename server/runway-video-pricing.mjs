@@ -195,6 +195,7 @@ export function estimateRunwayVideoCredits(options={}) {
     case "kling_4_flash": {
       resolution(outputResolution,["720p"]);
       if(billableImageReferences>10)throw fail("Kling 4.0 Flash accepts at most 10 images including the first frame.","RUNWAY_PRICE_INVALID_INPUT");
+      if(inputType==="video"&&inputVideo<=0)throw fail("inputVideoSeconds is required for Kling 4.0 Flash video-to-video pricing.","RUNWAY_PRICE_INPUT_REQUIRED");
       const billableInputVideo=Math.min(20,inputVideo+referenceVideo);
       const raw=billableInputVideo>0
         ? duration*6.3+Math.max(billableInputVideo,duration)*6.3
@@ -208,6 +209,7 @@ export function estimateRunwayVideoCredits(options={}) {
     case "gemini_omni_flash_1.2": {
       const rate=resolutionRate({"360p":2,"720p":7,"1080p":10,"4k":21});
       if(imageCount>5||billableImageReferences>5)throw fail("Gemini Omni 1.2 Flash accepts at most 5 image references/keyframes.","RUNWAY_PRICE_INVALID_INPUT");
+      if(inputType==="video"&&inputVideo<=0)throw fail("inputVideoSeconds is required for Gemini Omni 1.2 video-to-video pricing.","RUNWAY_PRICE_INPUT_REQUIRED");
       if(referenceVideo>0&&inputVideo+referenceVideo>30)throw fail("Gemini Omni 1.2 Flash combined input/reference video duration must not exceed 30 seconds.","RUNWAY_PRICE_INVALID_INPUT");
       credits=Math.max(6,Math.ceil(duration*rate+billableImageReferences+inputVideo+referenceVideo));
       formula="max(6, ceil("+duration+"s output × "+rate+" + "+billableImageReferences+" image references/keyframes + "+(inputVideo+referenceVideo)+"s input/reference video))";
