@@ -11,7 +11,8 @@ import { pipeline } from "node:stream/promises";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const VIDEO_TYPES = new Set(["video/mp4", "video/webm", "video/quicktime"]);
-const RESPONSE_TYPES = new Set([...VIDEO_TYPES, "application/octet-stream"]);
+const AUDIO_TYPES = new Set(["audio/mpeg", "audio/wav", "audio/flac"]);
+const RESPONSE_TYPES = new Set([...VIDEO_TYPES, ...AUDIO_TYPES, "application/octet-stream"]);
 
 function fail(message, code) { return Object.assign(new Error(message), { code }); }
 
@@ -62,6 +63,24 @@ export function createFfprobeVideoOutputValidator({
     const audios = streams.filter(stream => stream?.codec_type === "audio");
     const duration = Number(probe?.format?.duration);
     const formatNames = String(probe?.format?.format_name || "").toLowerCase().split(",");
+    if (input?.operation === "video-to-audio") {
+      if (videos.length !== 0 || audios.length < 1 || audios.length > 4 ||
+          !Number.isFinite(duration) || duration <= 0 || duration > Math.min(maxDurationSeconds, 600)) {
+        return { valid: false, reason: "AUDIO_STREAM_LAYOUT_OR_DURATION_INVALID" };
+      }
+      const mediaType = formatNames.includes("mp3") ? "audio/mpeg" :
+        formatNames.some(name => ["wav", "wavpack"].includes(name)) ? "audio/wav" :
+        formatNames.includes("flac") ? "audio/flac" : null;
+      if (!mediaType || contentType !== "application/octet-stream" && contentType !== mediaType) {
+        return { valid: false, reason: "AUDIO_CONTAINER_OR_MIME_MISMATCH" };
+      }
+      return { valid: true, mediaType, metadata: {
+        durationSeconds: duration,
+        audioCodec: String(audios[0]?.codec_name || "").slice(0, 40),
+        audioStreamCount: audios.length,
+        container: formatNames.slice(0, 4)
+      }};
+    }
     if (videos.length < 1 || videos.length > 4 || audios.length > 8 ||
         !Number.isFinite(duration) || duration <= 0 || duration > maxDurationSeconds) {
       return { valid: false, reason: "STREAM_LAYOUT_OR_DURATION_INVALID" };
@@ -296,7 +315,7 @@ export function createPrivateVideoOutputIngestor({
           });
           if (existing) {
             if (!UUID.test(String(existing.id || "")) || existing.ownerId !== job.owner_id ||
-                (existing.projectId || null) !== (job.project_id || null) || !String(existing.mediaType || "").startsWith("video/")) {
+                (existing.projectId || null) !== (job.project_id || null) || !(input?.operation === "video-to-audio" ? String(existing.mediaType || "").startsWith("audio/") : String(existing.mediaType || "").startsWith("video/"))) {
               throw fail("Existing provider output asset does not match the job scope.", "VIDEO_OUTPUT_ASSET_REGISTRATION_INVALID");
             }
             if (!Number.isSafeInteger(existing.size) || existing.size < 1 || existing.size > maxBytesPerOutput) {
@@ -317,17 +336,21 @@ export function createPrivateVideoOutputIngestor({
           totalBytes += receipt.size;
           if (totalBytes > maxTotalBytes) throw fail("Provider output collection exceeds its total size limit.", "VIDEO_OUTPUT_TOTAL_TOO_LARGE");
           const validation = await validateMedia({ path, contentType: receipt.contentType, size: receipt.size, task, input });
-          if (!validation || validation.valid !== true || !VIDEO_TYPES.has(validation.mediaType)) {
+          if (!validation || validation.valid !== true ||
+              !(input?.operation === "video-to-audio" ? AUDIO_TYPES.has(validation.mediaType) : VIDEO_TYPES.has(validation.mediaType))) {
             throw fail("Provider output failed media validation.", "VIDEO_OUTPUT_MEDIA_INVALID");
           }
           const asset = await assets.createFromFile({
             ownerId: job.owner_id,
             projectId: job.project_id || null,
-            originalName: "generated-video-" + (index + 1) + "." + (validation.mediaType === "video/webm" ? "webm" : validation.mediaType === "video/quicktime" ? "mov" : "mp4"),
+            originalName: (input?.operation === "video-to-audio" ? "generated-audio-" : "generated-video-") + (index + 1) + "." +
+              (validation.mediaType === "video/webm" ? "webm" : validation.mediaType === "video/quicktime" ? "mov" :
+                validation.mediaType === "audio/mpeg" ? "mp3" : validation.mediaType === "audio/wav" ? "wav" :
+                  validation.mediaType === "audio/flac" ? "flac" : "mp4"),
             mediaType: validation.mediaType,
             filePath: path,
             metadata: {
-              source: "video-generation",
+              source: input?.operation === "video-to-audio" ? "video-to-audio" : "video-generation",
               provider: String(input?.provider || "").slice(0, 100),
               model: String(input?.model || "").slice(0, 160),
               providerTaskId: task.taskId.slice(0, 256),
