@@ -1,0 +1,235 @@
+const API_ORIGIN = "https://api.dev.runwayml.com";
+const API_VERSION = "2024-11-06";
+const TASK_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const fail = (message, code) => Object.assign(new Error(message), { code });
+
+function routerSlug(value) {
+  const slug = String(value || "").trim();
+  if (!/^[a-z][a-z0-9_-]{0,63}$/.test(slug)) {
+    throw fail("A valid saved Runway Model Router slug is required.", "RUNWAY_ROUTER_CONFIG_INVALID");
+  }
+  return slug;
+}
+
+function routedInput(input) {
+  if (!input || typeof input !== "object" || Array.isArray(input) ||
+      typeof input.prompt !== "string" || !input.prompt.trim() || input.prompt.length > 26000) {
+    throw fail("Runway Model Router requires a valid video prompt.", "RUNWAY_ROUTER_INPUT_INVALID");
+  }
+  const result = { promptText: input.prompt.trim() };
+  if (input.negativePrompt !== undefined) {
+    if (typeof input.negativePrompt !== "string" || input.negativePrompt.length > 1000) {
+      throw fail("Runway negative prompt exceeds 1,000 characters.", "RUNWAY_ROUTER_INPUT_INVALID");
+    }
+    if (input.negativePrompt.trim()) result.negativePrompt = input.negativePrompt.trim();
+  }
+  if (input.durationSeconds !== undefined) {
+    if (!Number.isInteger(input.durationSeconds) || input.durationSeconds < 2 || input.durationSeconds > 30) {
+      throw fail("Runway routed duration must be between 2 and 30 seconds.", "RUNWAY_ROUTER_INPUT_INVALID");
+    }
+    result.duration = input.durationSeconds;
+  }
+  if (input.aspectRatio !== undefined) {
+    if (!["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"].includes(input.aspectRatio)) {
+      throw fail("Runway routed aspect ratio is unsupported.", "RUNWAY_ROUTER_INPUT_INVALID");
+    }
+    result.aspectRatio = input.aspectRatio;
+  }
+  if (input.resolution !== undefined) {
+    if (!["480p", "720p", "1080p", "4k"].includes(input.resolution)) {
+      throw fail("Runway routed resolution is unsupported.", "RUNWAY_ROUTER_INPUT_INVALID");
+    }
+    result.resolution = input.resolution;
+  }
+  if (input.audio !== undefined) {
+    if (typeof input.audio !== "boolean") throw fail("Runway routed audio flag must be boolean.", "RUNWAY_ROUTER_INPUT_INVALID");
+    result.audio = input.audio;
+  }
+  if (input.seed !== undefined) {
+    if (!Number.isInteger(input.seed) || input.seed < 0 || input.seed > 4294967295) {
+      throw fail("Runway routed seed is invalid.", "RUNWAY_ROUTER_INPUT_INVALID");
+    }
+    result.seed = input.seed;
+  }
+  for (const field of ["referenceImages", "referenceVideos", "referenceAudio", "keyframes"]) {
+    if (input[field] !== undefined) {
+      if (!Array.isArray(input[field]) || input[field].length > 4 ||
+          input[field].some(item => !item || typeof item.uri !== "string" || !/^https:\/\//i.test(item.uri) && !/^runway:\/\//i.test(item.uri))) {
+        throw fail("Runway routed " + field + " must contain authorized HTTPS or Runway asset URIs.", "RUNWAY_ROUTER_INPUT_INVALID");
+      }
+      result[field] = input[field].map(item => ({ ...item }));
+    }
+  }
+  if (input.contentModeration !== undefined) {
+    if (!input.contentModeration || !["auto", "low"].includes(input.contentModeration.publicFigureThreshold)) {
+      throw fail("Runway content moderation setting is invalid.", "RUNWAY_ROUTER_INPUT_INVALID");
+    }
+    result.contentModeration = { publicFigureThreshold: input.contentModeration.publicFigureThreshold };
+  }
+  return result;
+}
+
+function boundedObject(value, label) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw fail("Runway omitted " + label + ".", "RUNWAY_ROUTER_RESPONSE_INVALID");
+  }
+  const text = JSON.stringify(value);
+  if (Buffer.byteLength(text) > 6500) throw fail("Runway " + label + " exceeded the durable metadata limit.", "RUNWAY_ROUTER_RESPONSE_INVALID");
+  return JSON.parse(text);
+}
+
+/**
+ * Opt-in live Model Router adapter. It never runs dry-runs as paid jobs.
+ * Realized-credit extraction is injected deliberately: Runway documents the
+ * realized credit cost but does not publish a stable JSON property name in its
+ * prose contract. A missing/invalid resolver prevents registration.
+ */
+export function createRunwayModelRouterVideoAdapter({
+  configId = process.env.RUNWAY_VIDEO_ROUTER_CONFIG,
+  model = "model-router",
+  apiKey = process.env.RUNWAY_API_KEY || process.env.RUNWAYML_API_SECRET,
+  enabled = process.env.RUNWAY_MODEL_ROUTER_ENABLED === "true",
+  allowRemote = process.env.RUNWAY_VIDEO_ALLOW_REMOTE === "true",
+  fetchImpl = globalThis.fetch,
+  prepareInput,
+  ingestOutputs,
+  resolveRealizedCredits,
+  timeoutMs = 30000
+} = {}) {
+  const slug = routerSlug(configId);
+  const key = String(apiKey || "").trim();
+  if (typeof fetchImpl !== "function") throw new Error("Runway Model Router requires fetch.");
+  if (!Number.isInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 120000) throw new Error("Runway Model Router timeout is invalid.");
+  if (typeof ingestOutputs !== "function" || typeof resolveRealizedCredits !== "function") {
+    throw fail("Runway Model Router requires private output ingestion and a documented realized-credit resolver.", "RUNWAY_ROUTER_EXECUTION_GATES_MISSING");
+  }
+
+  const assertEnabled = () => {
+    if (enabled !== true || allowRemote !== true || !key) {
+      throw fail("Runway Model Router is disabled until explicit server-side opt-ins and credentials are configured.", "RUNWAY_ROUTER_DISABLED");
+    }
+  };
+
+  async function request(path, { method = "GET", body, submission = false } = {}) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      let response;
+      try {
+        response = await fetchImpl(API_ORIGIN + "/v1" + path, {
+          method,
+          headers: {
+            authorization: "Bearer " + key,
+            "X-Runway-Version": API_VERSION,
+            accept: "application/json",
+            ...(body === undefined ? {} : { "content-type": "application/json" })
+          },
+          ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+          signal: controller.signal,
+          redirect: "error"
+        });
+      } catch (error) {
+        throw fail(
+          submission
+            ? "Runway routed submission outcome is unknown; reconcile before retrying."
+            : "Runway task status is temporarily unavailable.",
+          submission ? "RUNWAY_SUBMISSION_UNKNOWN" : "RUNWAY_UNAVAILABLE"
+        );
+      }
+      if (response.status === 429) throw fail("Runway rate limit reached.", "RUNWAY_RATE_LIMITED");
+      if (response.status === 401 || response.status === 403) throw fail("Runway API key is not authorized.", "RUNWAY_ACCESS_DENIED");
+      if (response.status >= 500) throw fail("Runway returned a temporary server error.", "RUNWAY_SERVER_ERROR");
+      if (!response.ok) throw fail("Runway rejected the routed request (HTTP " + response.status + ").", "RUNWAY_REQUEST_REJECTED");
+      const raw = await response.text();
+      if (Buffer.byteLength(raw) > 1024 * 1024) throw fail("Runway response exceeded the 1 MB limit.", "RUNWAY_RESPONSE_INVALID");
+      let data;
+      try { data = raw ? JSON.parse(raw) : {}; } catch { throw fail("Runway returned invalid JSON.", "RUNWAY_RESPONSE_INVALID"); }
+      if (!data || typeof data !== "object" || Array.isArray(data)) throw fail("Runway returned an invalid response object.", "RUNWAY_RESPONSE_INVALID");
+      return data;
+    } finally { clearTimeout(timer); }
+  }
+
+  return Object.freeze({
+    provider: "runway",
+    model,
+    minimumPollIntervalMs: 5000,
+    async prepareInput(input, context) {
+      if (!input || input.provider !== "runway" || input.model !== model || input.operation && input.operation !== "text-to-video") {
+        throw fail("Runway router job identity or operation is invalid.", "VIDEO_JOB_INPUT_MISMATCH");
+      }
+      if (typeof prepareInput !== "function") return routedInput(input);
+      const prepared = await prepareInput(input, context);
+      return routedInput({ ...input, ...prepared });
+    },
+    async submit(input) {
+      assertEnabled();
+      const body = { configId: slug, input: routedInput(input) };
+      const response = await request("/generate/video", { method: "POST", body, submission: true });
+      if (typeof response.id !== "string" || !TASK_ID.test(response.id)) {
+        throw fail("Runway routed generation omitted a valid task ID; reconcile before retrying.", "RUNWAY_SUBMISSION_UNKNOWN");
+      }
+      const routing = boundedObject(response.routing, "routing metadata");
+      if (routing.configId !== slug || typeof routing.model !== "string" || !routing.model.trim() ||
+          typeof routing.provider !== "string" || !routing.provider.trim()) {
+        throw fail("Runway routed generation returned mismatched routing metadata.", "RUNWAY_ROUTER_RESPONSE_INVALID");
+      }
+      return {
+        taskId: response.id,
+        status: "queued",
+        metadata: {
+          routeType: "runway-model-router",
+          configId: slug,
+          routing
+        }
+      };
+    },
+    async getStatus(providerTaskId) {
+      if (typeof providerTaskId !== "string" || !TASK_ID.test(providerTaskId)) {
+        throw fail("Runway task ID is invalid.", "RUNWAY_TASK_ID_INVALID");
+      }
+      const task = await request("/tasks/" + providerTaskId);
+      if (task.id !== providerTaskId) throw fail("Runway task response ID did not match the requested task.", "RUNWAY_TASK_ID_MISMATCH");
+      const status = String(task.status || "").toUpperCase();
+      if (["PENDING", "THROTTLED"].includes(status)) return { status: "queued", taskId: providerTaskId };
+      if (["RUNNING"].includes(status)) return { status: "running", taskId: providerTaskId };
+      if (["FAILED", "CANCELED"].includes(status)) return {
+        status: status === "CANCELED" ? "canceled" : "failed",
+        taskId: providerTaskId,
+        failure: "Runway routed video task did not complete.",
+        failureCode: "RUNWAY_TASK_FAILED"
+      };
+      if (status !== "SUCCEEDED") throw fail("Runway returned an unsupported task state.", "VIDEO_PROVIDER_STATUS_INVALID");
+      if (!Array.isArray(task.output) || task.output.length < 1 || task.output.length > 10) {
+        throw fail("Runway completed without a bounded output collection.", "VIDEO_OUTPUT_COLLECTION_INVALID");
+      }
+      const outputUrls = task.output.map(value => {
+        let parsed;
+        try { parsed = new URL(value); } catch { throw fail("Runway output URL is invalid.", "VIDEO_OUTPUT_URL_REJECTED"); }
+        if (parsed.protocol !== "https:" || parsed.username || parsed.password) throw fail("Runway output URL is unsafe.", "VIDEO_OUTPUT_URL_REJECTED");
+        return parsed.toString();
+      });
+      return { status: "succeeded", taskId: providerTaskId, outputUrls, provider: "runway", model: "model-router" };
+    },
+    async ingestOutputs(args) { return ingestOutputs(args); },
+    async resolveActualCost(args) {
+      const metadata = args.submissionMetadata;
+      if (!metadata || metadata.routeType !== "runway-model-router" || metadata.configId !== slug ||
+          !metadata.routing || typeof metadata.routing !== "object") {
+        throw fail("Durable Runway routing evidence is missing; budget remains reserved.", "VIDEO_BUDGET_COST_UNRESOLVED");
+      }
+      let credits;
+      try { credits = await resolveRealizedCredits({ routing: metadata.routing, task: args.task, providerTaskId: args.providerTaskId }); }
+      catch { throw fail("Runway realized generation credits could not be verified.", "VIDEO_BUDGET_COST_UNRESOLVED"); }
+      if (typeof credits !== "number" || !Number.isFinite(credits) || credits < 0) {
+        throw fail("Runway realized generation credits are invalid.", "VIDEO_BUDGET_COST_UNRESOLVED");
+      }
+      const modelUsed = metadata.routing.model;
+      return {
+        amount: Math.round(credits * 0.01 * 10000) / 10000,
+        currency: "USD",
+        model: modelUsed,
+        evidenceReference: "runway:model-router:" + slug + ":" + args.providerTaskId + ":credits:" + credits
+      };
+    }
+  });
+}
