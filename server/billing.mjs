@@ -63,6 +63,12 @@ export function ensureBillingSchema(db) {
       created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
     );
     CREATE INDEX IF NOT EXISTS billing_ledger_user_idx ON billing_credit_ledger(user_id,created_at DESC);
+    CREATE TABLE IF NOT EXISTS billing_daily_refills (
+      user_id TEXT NOT NULL REFERENCES billing_accounts(user_id) ON DELETE CASCADE,
+      refill_day TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      PRIMARY KEY(user_id,refill_day)
+    );
     CREATE TABLE IF NOT EXISTS billing_provider_events (
       id TEXT PRIMARY KEY,
       provider TEXT NOT NULL,
@@ -112,12 +118,112 @@ export function touchBillingAccount(db, user) {
         .run(randomUUID(), String(user.id), free.id, start, end);
     }
   }
+  if (billingEnforcementEnabled()) applyDailyFreeCredits(db,String(user.id));
   return db.prepare("SELECT status FROM billing_accounts WHERE user_id=?").get(String(user.id));
 }
 
 export function getBillingBalance(db, userId, at = isoNow()) {
   const row = db.prepare("SELECT COALESCE(SUM(amount),0) AS balance FROM billing_credit_ledger WHERE user_id=? AND (expires_at IS NULL OR expires_at>?)").get(userId, at);
   return Number(row?.balance || 0);
+}
+
+export const BILLING_CREDIT_COSTS = Object.freeze({
+  "text.generate": 1,
+  "text.summarize": 1,
+  "text.translate": 1,
+  "voice.generate": 2,
+  "voice.transcribe": 1,
+  "image.generate": 3,
+  "video.generate": 15
+});
+
+export function billingEnforcementEnabled(env=process.env) {
+  return env.BILLING_ENFORCEMENT_ENABLED === "true" || env.CREDITS_ENABLED === "true";
+}
+
+export function billingDailyFreeCredits(env=process.env) {
+  const raw=env.CREDITS_DAILY_FREE;
+  if(raw===undefined||raw==="")return 20;
+  if(!/^[0-9]+$/.test(String(raw))||Number(raw)>10000)throw fail("CREDITS_DAILY_FREE must be a whole number from 0 to 10000.","BILLING_CREDIT_CONFIG_INVALID",500);
+  return Number(raw);
+}
+
+function applyDailyFreeCreditsInTransaction(db,userId,{now=Date.now(),env=process.env}={}) {
+  if(!billingEnforcementEnabled(env))return {granted:0,balance:getBillingBalance(db,userId,new Date(now).toISOString())};
+  const timestamp=new Date(now).toISOString();
+  const day=timestamp.slice(0,10);
+  const inserted=db.prepare("INSERT OR IGNORE INTO billing_daily_refills(user_id,refill_day) VALUES(?,?)").run(userId,day);
+  if(inserted.changes!==1)return {granted:0,balance:getBillingBalance(db,userId,timestamp)};
+  const target=billingDailyFreeCredits(env);
+  const balance=getBillingBalance(db,userId,timestamp);
+  const amount=Math.max(0,target-balance);
+  if(amount>0){
+    const nextDay=new Date(Date.parse(day+"T00:00:00.000Z")+86400000).toISOString();
+    db.prepare(`INSERT INTO billing_credit_ledger
+      (id,user_id,amount,event_type,description,reference_id,idempotency_key,expires_at,metadata_json)
+      VALUES(?,?,?,'migration','Daily free credits',?,?,?,?)`)
+      .run(randomUUID(),userId,amount,day,"daily-free:"+userId+":"+day,nextDay,safeJson({source:"daily_free",dailyAllowance:target}));
+  }
+  return {granted:amount,balance:balance+amount};
+}
+
+export function applyDailyFreeCredits(db,userId,{now=Date.now(),env=process.env}={}) {
+  db.exec("BEGIN IMMEDIATE");
+  try{
+    const result=applyDailyFreeCreditsInTransaction(db,userId,{now,env});
+    db.exec("COMMIT");
+    return result;
+  }catch(error){db.exec("ROLLBACK");throw error;}
+}
+
+export function spendBillingCredits(db,{
+  userId,capability,referenceId=null,idempotencyKey,now=Date.now(),env=process.env
+}={}) {
+  if(!billingEnforcementEnabled(env))return {enabled:false,charged:0,balance:getBillingBalance(db,userId)};
+  const cost=Object.prototype.hasOwnProperty.call(BILLING_CREDIT_COSTS,capability)?BILLING_CREDIT_COSTS[capability]:1;
+  const key=String(idempotencyKey||"").trim();
+  if(!userId||key.length<8||key.length>200)throw fail("Credit spend requires a user and idempotency key.","BILLING_IDEMPOTENCY_REQUIRED",400);
+  db.exec("BEGIN IMMEDIATE");
+  try{
+    const account=db.prepare("SELECT status FROM billing_accounts WHERE user_id=?").get(userId);
+    if(!account)throw fail("Billing account was not found.","BILLING_TARGET_NOT_FOUND",404);
+    if(account.status!=="active")throw fail("This account is suspended and cannot use paid generation.","BILLING_ACCOUNT_SUSPENDED",403);
+    const existing=db.prepare("SELECT id,user_id,amount FROM billing_credit_ledger WHERE idempotency_key=?").get(key);
+    if(existing&&existing.user_id!==userId)throw fail("This idempotency key belongs to another account.","BILLING_IDEMPOTENCY_CONFLICT",409);
+    if(existing){db.exec("COMMIT");return {enabled:true,charged:Math.max(0,-Number(existing.amount)),replayed:true,balance:getBillingBalance(db,userId,new Date(now).toISOString())};}
+    applyDailyFreeCreditsInTransaction(db,userId,{now,env});
+    const at=new Date(now).toISOString();
+    const balance=getBillingBalance(db,userId,at);
+    if(balance<cost)throw fail("Not enough credits for this operation. You have "+balance+" and it requires "+cost+". Free credits refill daily.","BILLING_INSUFFICIENT_CREDITS",402);
+    const id=randomUUID();
+    db.prepare(`INSERT INTO billing_credit_ledger
+      (id,user_id,amount,event_type,description,reference_id,idempotency_key,metadata_json)
+      VALUES(?,?,?,'generation_spend',?,?,?,?,?)`)
+      .run(id,userId,-cost,String(capability||"remote generation").slice(0,180),referenceId?String(referenceId).slice(0,240):null,key,safeJson({capability,cost}));
+    db.exec("COMMIT");
+    return {enabled:true,charged:cost,replayed:false,balance:getBillingBalance(db,userId,at),ledgerId:id};
+  }catch(error){db.exec("ROLLBACK");throw error;}
+}
+
+export function refundBillingCredits(db,{userId,spendIdempotencyKey,reason="Provider request failed",now=Date.now()}={}) {
+  const key=String(spendIdempotencyKey||"").trim();
+  if(!userId||key.length<8)throw fail("Credit refund requires the original spend reference.","BILLING_REFUND_INVALID");
+  db.exec("BEGIN IMMEDIATE");
+  try{
+    const spend=db.prepare("SELECT id,amount,reference_id FROM billing_credit_ledger WHERE user_id=? AND idempotency_key=? AND event_type='generation_spend'").get(userId,key);
+    if(!spend){db.exec("COMMIT");return {refunded:0,balance:getBillingBalance(db,userId,new Date(now).toISOString())};}
+    const refundKey="generation-refund:"+spend.id;
+    const existing=db.prepare("SELECT id FROM billing_credit_ledger WHERE idempotency_key=?").get(refundKey);
+    if(existing){db.exec("COMMIT");return {refunded:0,replayed:true,balance:getBillingBalance(db,userId,new Date(now).toISOString())};}
+    const amount=Math.abs(Number(spend.amount));
+    const id=randomUUID();
+    db.prepare(`INSERT INTO billing_credit_ledger
+      (id,user_id,amount,event_type,description,reference_id,idempotency_key,metadata_json)
+      VALUES(?,?,?,'generation_refund',?,?,?,?)`)
+      .run(id,userId,amount,String(reason).slice(0,240),spend.reference_id,refundKey,safeJson({originalSpendId:spend.id}));
+    db.exec("COMMIT");
+    return {refunded:amount,replayed:false,balance:getBillingBalance(db,userId,new Date(now).toISOString())};
+  }catch(error){db.exec("ROLLBACK");throw error;}
 }
 
 export function listBillingPlans(db, { activeOnly = true } = {}) {
