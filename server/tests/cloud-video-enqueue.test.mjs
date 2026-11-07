@@ -386,3 +386,66 @@ test("Ruby HDR enqueue requires verified SDR dimensions and reserves the publish
   })), error => error.code === "VIDEO_SOURCE_METADATA_INVALID");
   assert.equal(calls, 1);
 });
+
+
+test("Mirelo video-to-audio enqueue binds source metadata and reserves per-variant audio cost", async () => {
+  const calls = [];
+  const source = {
+    ownerId, projectId, assetId: "323e4567-e89b-42d3-a456-426614174001",
+    mediaType: "video/mp4", durationSeconds: 12.2, frameCount: 366,
+    sourceWidth: 1920, sourceHeight: 1080, sourceDynamicRange: "sdr"
+  };
+  const client = createCloudVideoEnqueue({
+    ...base,
+    resolveRunwaySourceMetadata: async args => {
+      assert.equal(args.ownerId, ownerId);
+      assert.equal(args.projectId, projectId);
+      assert.equal(args.assetId, source.assetId);
+      assert.equal(args.operation, "video-to-audio");
+      return source;
+    },
+    fetchImpl: async (url, options) => {
+      calls.push({ url: String(url), body: JSON.parse(options.body) });
+      return response([resultRow]);
+    }
+  });
+  const audioInput = {
+    ...input, model: "mirelo_sfx_2_0", operation: "video-to-audio",
+    sourceVideoAssetId: source.assetId, durationSeconds: 13,
+    prompt: "Rain and distant traffic", numVariants: 2, audioFormat: "wav",
+    preserveSpeech: true
+  };
+  const estimate = estimateVideoGenerationCost({
+    provider: "runway", model: "mirelo_sfx_2_0", operation: "video-to-audio",
+    durationSeconds: 13, numVariants: 2, audioFormat: "wav"
+  });
+  assert.equal(estimate.amount, 0.52);
+  const result = await client.enqueue(args({
+    model: "mirelo_sfx_2_0", input: audioInput,
+    reservedAmount: estimate.amount
+  }));
+  assert.equal(result.jobId, resultRow.job_id);
+  assert.equal(calls[0].body.p_model, "mirelo_sfx_2_0");
+  assert.equal(calls[0].body.p_input.durationSeconds, 13);
+  assert.equal(calls[0].body.p_reserved_amount, 0.52);
+});
+
+test("Mirelo enqueue rejects a duration that differs from the probed source video", async () => {
+  const client = createCloudVideoEnqueue({
+    ...base,
+    resolveRunwaySourceMetadata: async () => ({
+      ownerId, projectId, assetId: "323e4567-e89b-42d3-a456-426614174001",
+      mediaType: "video/mp4", durationSeconds: 12.2, frameCount: 366,
+      sourceWidth: 1920, sourceHeight: 1080, sourceDynamicRange: "sdr"
+    }),
+    fetchImpl: async () => { throw new Error("must not enqueue"); }
+  });
+  await assert.rejects(() => client.enqueue(args({
+    model: "mirelo_sfx_2_0",
+    input: {
+      ...input, model: "mirelo_sfx_2_0", operation: "video-to-audio",
+      sourceVideoAssetId: "323e4567-e89b-42d3-a456-426614174001",
+      durationSeconds: 12, numVariants: 1, audioFormat: "mp3"
+    }
+  })), error => error.code === "VIDEO_SOURCE_METADATA_MISMATCH");
+});
