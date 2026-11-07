@@ -126,9 +126,9 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     const source=await service.assets.get({ownerId,assetId:sourceAssetId});
     if(source.projectId!==projectId||!source.mediaType.startsWith("video/"))return response(422,{error:{code:"SOURCE_VIDEO_INVALID",message:"Source video must be an asset in this project."}});
     const refs=Array.isArray(body.referenceAssetIds)?[...new Set(body.referenceAssetIds.map(String))]:[];
-    if(refs.length>0)return response(422,{error:{code:"VIDEO_REFERENCES_UNSUPPORTED",message:"The current Aleph 2 workflow does not yet route generic reference images. Use timestamped keyframes after that input is exposed."}});
     if(refs.length>4)return response(400,{error:{code:"REFERENCE_LIMIT_EXCEEDED",message:"Use no more than four reference images."}});
     for(const id of refs){const asset=await service.assets.get({ownerId,assetId:id});if(asset.projectId!==projectId||!asset.mediaType.startsWith("image/"))return response(422,{error:{code:"REFERENCE_ASSET_INVALID",message:"Every reference must be a project image asset."}});}
+    if(refs.length>0)return response(422,{error:{code:"VIDEO_REFERENCES_UNSUPPORTED",message:"The current Aleph 2 workflow does not yet route generic reference images. Use timestamped keyframes after that input is exposed."}});
     const preservation=Array.isArray(body.preservation)?[...new Set(body.preservation.filter(value=>preservationOptions.has(value)))]:[];
     const key=String(idempotencyKey||"").trim().slice(0,180);
     if(key.length<8)return response(400,{error:{code:"IDEMPOTENCY_KEY_REQUIRED",message:"An idempotency key is required."}});
