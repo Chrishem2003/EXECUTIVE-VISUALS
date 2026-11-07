@@ -57,7 +57,8 @@ export function getRunwayVideoCapabilities(model=process.env.RUNWAY_VIDEO_MODEL|
   if(!profile)return Object.freeze({negativePrompt:false,seed:false,startFrame:false,endFrame:false,motionReference:false,referenceImages:false,audioModes:[],aspectRatios:[],resolutions:[],minDurationSeconds:0,maxDurationSeconds:0});
   return Object.freeze({
     negativePrompt:false,seed:false,startFrame:true,endFrame:false,motionReference:false,
-    referenceImages:true,audioModes:Object.freeze(profile.nativeAudio?["generated"]:[]),
+    // This gateway currently implements a single first-frame input, not separate reference-image collections.
+    referenceImages:false,audioModes:Object.freeze(profile.nativeAudio?["generated"]:[]),
     aspectRatios:Object.freeze([...profile.aspectRatios]),
     resolutions:Object.freeze([...profile.resolutions]),
     minDurationSeconds:profile.minDurationSeconds,maxDurationSeconds:profile.maxDurationSeconds
@@ -86,6 +87,7 @@ export function buildRunwayImageToVideoPayload({model,prompt,promptImage,duratio
  if(typeof promptImage!=="string"||!/^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(promptImage)||Buffer.byteLength(promptImage)>5*1024*1024)throw fail("Runway first-frame images must be valid PNG, JPEG or WebP data URIs no larger than 5 MiB.","VIDEO_GATEWAY_INVALID_INPUT");
  if(!Number.isInteger(durationSeconds)||durationSeconds<profile.minDurationSeconds||durationSeconds>profile.maxDurationSeconds)throw fail("Duration is outside the selected model's documented range.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
  if(!profile.aspectRatios.includes(aspectRatio))throw fail("Aspect ratio is not supported by the selected Runway model.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
+ if(!profile.resolutions.includes(resolution))throw fail("Resolution is not supported by the selected Runway model.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
  const payload={model:id,promptText:text,promptImage,duration:durationSeconds};
  if(id==="seedance2_5"){
   const effectiveResolution=resolution==="provider_default"?profile.defaultResolution:resolution;
