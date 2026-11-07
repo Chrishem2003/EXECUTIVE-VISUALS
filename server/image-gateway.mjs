@@ -1,8 +1,10 @@
 import { generateFalImage } from "./fal-image-gateway.mjs";
+import { generateGeminiImage } from "./gemini-image-gateway.mjs";
 const loopbacks=new Set(["localhost","127.0.0.1","::1","[::1]"]);
-export async function generateImage({prompt,size="1024x1024",quality="medium",referenceImageDataUrl=""}={}){
+export async function generateImage({prompt,size="1024x1024",quality="medium",referenceImageDataUrl="",model=""}={}){
  const provider=String(process.env.IMAGE_GATEWAY_PROVIDER||"openai-compatible").trim().toLowerCase();
  if(provider==="fal")return generateFalImage({prompt,size,quality,referenceImageDataUrl});
+ if(provider==="gemini")return generateGeminiImage({prompt,size,quality,referenceImageDataUrl,model:model||process.env.GEMINI_IMAGE_MODEL});
  if(provider!=="openai-compatible")throw Object.assign(new Error("The configured image provider is not supported."),{code:"IMAGE_GATEWAY_CONFIG_INVALID"});
  if(referenceImageDataUrl)throw Object.assign(new Error("Reference-conditioned image generation requires a configured model-specific reference input field."),{code:"IMAGE_GATEWAY_UNSUPPORTED_INPUT"});
  if(process.env.IMAGE_GATEWAY_ENABLED!=="true")throw Object.assign(new Error("Image generation is disabled by server configuration."),{code:"IMAGE_GATEWAY_DISABLED"});
