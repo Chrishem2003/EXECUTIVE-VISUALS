@@ -273,9 +273,23 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
      }
     }
    }
-   const jobMatch=path.match(/^\/api\/cloud\/jobs\/([0-9a-f-]+)(?:\/(events))?$/i);
-   if(jobMatch&&safeId(jobMatch[1])&&method==="GET"){
-    const jobRows=await request("jobs?select=id,owner_id,project_id,job_type,status,progress,input,output,error,attempt_count,created_at,updated_at,completed_at&id=eq."+encodeURIComponent(jobMatch[1])+"&limit=1");
+   const jobMatch=path.match(/^\\/api\\/cloud\\/jobs\\/([0-9a-f-]+)(?:\\/(events|cancel))?$/i);
+   if(jobMatch&&safeId(jobMatch[1])&&jobMatch[2]==="cancel"&&method==="POST"){
+    const jobRows=await request("jobs?select=id,owner_id,project_id,job_type,status,cancel_requested_at&id=eq."+encodeURIComponent(jobMatch[1])+"&limit=1");
+    const job=Array.isArray(jobRows)?jobRows[0]:null;
+    if(!job||job.job_type!=="video.generate")return response(404,{error:{code:"JOB_NOT_FOUND",message:"Video job not found."}});
+    if(job.project_id){
+     if(await allow({ownerId,projectId:job.project_id,action:"write"})!==true)return response(404,{error:{code:"JOB_NOT_FOUND",message:"Video job not found or editor access required."}});
+    }else if(job.owner_id!==ownerId)return response(404,{error:{code:"JOB_NOT_FOUND",message:"Video job not found."}});
+    const result=await request("rpc/request_video_generation_cancellation",{method:"POST",body:{p_job_id:job.id,p_requested_by:ownerId}});
+    const receipt=Array.isArray(result)?result[0]:null;
+    if(!receipt||receipt.job_id!==job.id||typeof receipt.request_id!=="string"||!["requested","dispatching","provider_cancelled","reconciliation_required","settled"].includes(receipt.request_status)){
+     throw new Error("Video cancellation request returned an invalid durable receipt.");
+    }
+    return response(202,{cancellation:{id:receipt.request_id,jobId:receipt.job_id,status:receipt.request_status,requestedAt:receipt.cancel_requested_at},idempotentReplay:receipt.idempotent_replay===true,providerCancellationPending:true});
+   }
+   if(jobMatch&&safeId(jobMatch[1])&&method==="GET"&&jobMatch[2]!=="cancel"){
+    const jobRows=await request("jobs?select=id,owner_id,project_id,job_type,status,progress,input,output,error,attempt_count,cancel_requested_at,created_at,updated_at,completed_at&id=eq."+encodeURIComponent(jobMatch[1])+"&limit=1");
     const job=Array.isArray(jobRows)?jobRows[0]:null;
     if(!job)return response(404,{error:{code:"JOB_NOT_FOUND",message:"Job not found."}});
     if(job.project_id){if(await allow({ownerId,projectId:job.project_id,action:"read"})!==true)return response(404,{error:{code:"JOB_NOT_FOUND",message:"Job not found."}});}
