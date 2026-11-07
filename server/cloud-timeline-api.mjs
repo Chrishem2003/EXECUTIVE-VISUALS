@@ -131,7 +131,7 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     if(operation==="person_replace"&&body.subjectConsentConfirmed!==true)return response(403,{error:{code:"SUBJECT_CONSENT_REQUIRED",message:"Explicit subject consent is required for person replacement."}});
     if(!sourceResolver)return response(503,{error:{code:"VIDEO_SOURCE_RESOLVER_UNAVAILABLE",message:"A private server-side source resolver is required to quote this source."}});
     const source=await service.assets.get({ownerId,assetId:sourceAssetId});
-    if(source.projectId!==projectId||!String(source.mediaType||"").startsWith("video/"))return response(422,{error:{code:"SOURCE_VIDEO_INVALID",message:"Source video must be an asset in this project."}});
+    if(!source||source.projectId!==projectId||!String(source.mediaType||"").startsWith("video/"))return response(422,{error:{code:"SOURCE_VIDEO_INVALID",message:"Source video must be an asset in this project."}});
     const metadata=await sourceResolver.resolveMetadata({ownerId,projectId,assetId:sourceAssetId});
     if(!Number.isFinite(metadata?.durationSeconds)||metadata.durationSeconds<2||metadata.durationSeconds>30)return response(422,{error:{code:"VIDEO_DURATION_UNSUPPORTED",message:"Aleph 2 source videos must be between 2 and 30 seconds."}});
     const generationInput=buildAleph2GenerationInput({projectId,input:{sourceAssetId,operation,prompt,preservation:Array.isArray(body.preservation)?[...new Set(body.preservation.filter(value=>preservationOptions.has(value)))]:[]},metadata});
