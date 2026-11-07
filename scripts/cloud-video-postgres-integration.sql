@@ -549,5 +549,34 @@ begin
 end
 $aleph2_operation_gate$;
 
+
+select executive_visuals.create_video_generation_budget_approval(
+ 'd23e4567-e89b-42d3-a456-426614174001',
+ '123e4567-e89b-42d3-a456-426614174000',
+ '323e4567-e89b-42d3-a456-426614174000',
+ 'runway','aleph2',repeat('b',64),'USD',3.00,
+ 'Aleph 2 minimum duration test',clock_timestamp()+interval '10 minutes'
+);
+do $aleph2_minimum_duration$
+begin
+ begin
+  perform * from executive_visuals.enqueue_video_generation_job(
+   '123e4567-e89b-42d3-a456-426614174000',
+   '323e4567-e89b-42d3-a456-426614174000',
+   'pg-integration-aleph2-one-second','runway','aleph2',repeat('b',64),
+   jsonb_build_object('projectId','323e4567-e89b-42d3-a456-426614174000',
+    'provider','runway','model','aleph2','requestHash',repeat('b',64),
+    'operation','video-to-video','sourceVideoAssetId','b23e4567-e89b-42d3-a456-426614174000',
+    'prompt','Edit source','durationSeconds',1,'outputFormat','mp4'),
+   'd23e4567-e89b-42d3-a456-426614174001',3.00,'USD'
+  );
+  raise exception 'one-second Aleph 2 generation unexpectedly enqueued';
+ exception when others then
+  if sqlerrm = 'one-second Aleph 2 generation unexpectedly enqueued' then raise; end if;
+  if sqlerrm <> 'VIDEO_PRICE_DURATION_OR_OPERATION_INVALID' then raise; end if;
+ end;
+end
+$aleph2_minimum_duration$;
+
 reset role;
 select 'cloud video PostgreSQL integration checks passed' as result;
