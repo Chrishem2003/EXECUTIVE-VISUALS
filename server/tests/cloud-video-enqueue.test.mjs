@@ -283,3 +283,68 @@ test("Google Omni enqueue normalizes provider-default resolution to the verified
   assert.equal(captured.p_reserved_amount,2.586464);
   assert.equal(captured.p_input.resolution,undefined);
 });
+
+
+test("Aleph2 enqueue requires owner-scoped probed source metadata and reserves from the verified duration", async () => {
+  let calls = 0;
+  const sourceVideoAssetId = "823e4567-e89b-42d3-a456-426614174000";
+  const input = {
+    projectId, provider: "runway", model: "aleph2", requestHash,
+    operation: "video-to-video", sourceVideoAssetId,
+    durationSeconds: 12, prompt: "Preserve the subject; replace the background.",
+    outputFormat: "mp4"
+  };
+  const noResolver = createCloudVideoEnqueue({
+    ...base, fetchImpl: async () => { calls++; return response([resultRow]); }
+  });
+  await assert.rejects(() => noResolver.enqueue(args({
+    model: "aleph2", input, reservedAmount: 4
+  })), error => error.code === "VIDEO_SOURCE_METADATA_UNAVAILABLE");
+  const client = createCloudVideoEnqueue({
+    ...base,
+    resolveRunwaySourceMetadata: async scope => {
+      assert.deepEqual(scope, { ownerId, projectId, assetId: sourceVideoAssetId });
+      return {
+        ownerId, projectId, assetId: sourceVideoAssetId,
+        mediaType: "video/mp4", durationSeconds: 11.2, frameCount: 336
+      };
+    },
+    fetchImpl: async () => { calls++; return response([resultRow]); }
+  });
+  const queued = await client.enqueue(args({
+    model: "aleph2", input, reservedAmount: 4
+  }));
+  assert.equal(queued.status, "queued");
+  assert.equal(calls, 1);
+});
+
+test("Magnific upscale budget uses verified source frames, not caller-supplied lower values", async () => {
+  let calls = 0;
+  const sourceVideoAssetId = "923e4567-e89b-42d3-a456-426614174000";
+  const metadata = {
+    ownerId, projectId, assetId: sourceVideoAssetId,
+    mediaType: "video/mp4", durationSeconds: 11.2, frameCount: 336
+  };
+  const client = createCloudVideoEnqueue({
+    ...base,
+    resolveRunwaySourceMetadata: async () => metadata,
+    fetchImpl: async () => { calls++; return response([resultRow]); }
+  });
+  const input = {
+    projectId, provider: "runway", model: "magnific_video_upscaler_creative",
+    requestHash, operation: "video-upscale", sourceVideoAssetId,
+    durationSeconds: 12, outputFrames: 336, resolution: "2k", outputFormat: "mp4"
+  };
+  await assert.rejects(() => client.enqueue(args({
+    model: "magnific_video_upscaler_creative", input, reservedAmount: 3.2
+  })), error => error.code === "VIDEO_BUDGET_BELOW_PROVIDER_ESTIMATE" && error.estimate.amount === 3.03);
+  await assert.rejects(() => client.enqueue(args({
+    model: "magnific_video_upscaler_creative",
+    input: { ...input, outputFrames: 1 }, reservedAmount: 4
+  })), error => error.code === "VIDEO_SOURCE_METADATA_MISMATCH");
+  await assert.rejects(() => client.enqueue(args({
+    model: "magnific_video_upscaler_creative",
+    input: { ...input, durationSeconds: 11 }, reservedAmount: 4
+  })), error => error.code === "VIDEO_SOURCE_METADATA_MISMATCH");
+  assert.equal(calls, 0);
+});
