@@ -246,3 +246,26 @@ test("late successful events cannot settle failed or expired orders", async () =
   assert.equal(getBillingBalance(db, order.userId), 0);
   db.close();
 });
+
+
+test("Flutterwave webhook worker respects active leases and releases completed leases",async()=>{
+  const {db,order}=setup();
+  const timestamp=new Date().toISOString();
+  const payload={event:"charge.failed",data:{id:123456,tx_ref:order.txRef,status:"failed",amount:50000,currency:"UGX"}};
+  db.prepare(`INSERT INTO billing_provider_events
+    (id,provider,event_id,event_type,payload_hash,payload_json,created_at)
+    VALUES('flw-lease-event','flutterwave','charge.failed:123456:failed','charge.failed','hash',?,?)`)
+    .run(JSON.stringify(payload),timestamp);
+  db.prepare("UPDATE billing_provider_events SET lease_owner='other-worker',lease_expires_at=? WHERE id='flw-lease-event'")
+    .run(new Date(Date.now()+60000).toISOString());
+  assert.deepEqual(await processNextFlutterwaveWebhook(db,{verifyTransaction:async()=>{throw new Error("must not verify a failed charge");}}),{processed:false});
+  db.prepare("UPDATE billing_provider_events SET lease_expires_at=? WHERE id='flw-lease-event'")
+    .run(new Date(Date.now()-1000).toISOString());
+  const processed=await processNextFlutterwaveWebhook(db,{verifyTransaction:async()=>{throw new Error("must not verify a failed charge");}});
+  assert.equal(processed.processed,true);
+  const row=db.prepare("SELECT processed_at,lease_owner,lease_expires_at FROM billing_provider_events WHERE id='flw-lease-event'").get();
+  assert.ok(row.processed_at);
+  assert.equal(row.lease_owner,null);
+  assert.equal(row.lease_expires_at,null);
+  db.close();
+});
