@@ -189,3 +189,44 @@ test("source-edit model registration composes server-side source metadata probin
   });
   assert.ok(worker.listSupported().includes("runway:aleph2"));
 });
+
+
+test("Google Omni worker registration requires all explicit transport gates and approved-input callbacks", () => {
+  assert.throws(() => createProviderAwareCloudVideoWorkerComposition({
+    ...base, createAdapters: undefined,
+    env: { ...env, GOOGLE_OMNI_VIDEO_ENABLED: "true", GOOGLE_OMNI_VIDEO_ALLOW_REMOTE: "true" }
+  }), /both Gemini transport gates/);
+  assert.throws(() => createProviderAwareCloudVideoWorkerComposition({
+    ...base, createAdapters: undefined,
+    env: {
+      ...env, GOOGLE_OMNI_VIDEO_ENABLED: "true", GOOGLE_OMNI_VIDEO_ALLOW_REMOTE: "true",
+      GEMINI_OMNI_ENABLED: "true", GEMINI_OMNI_ALLOW_REMOTE: "true"
+    }
+  }), /durable approval, owner\/project authorization and private-input planning callbacks/);
+});
+
+test("Google Omni adapter can be injected only behind all explicit gates", () => {
+  const googleOmniIntegration = {
+    adapter: {
+      provider: "google", model: "gemini-omni-1.1-flash",
+      async prepareInput() { return {}; },
+      async submit() { return { taskId: "v1_test123", status: "queued" }; },
+      async getStatus() { return { taskId: "v1_test123", status: "succeeded" }; }
+    },
+    async ingestOutputs() { return { assetIds: ["asset-google"] }; },
+    async resolveActualCost() { return { amount: 0.1, currency: "USD", evidenceReference: "test:google-cost" }; }
+  };
+  assert.throws(() => createProviderAwareCloudVideoWorkerComposition({
+    ...base, createAdapters: undefined,
+    providerDependencies: { googleOmniIntegration }
+  }), /cannot be injected while its explicit provider gates are disabled/);
+  const worker = createProviderAwareCloudVideoWorkerComposition({
+    ...base, createAdapters: undefined,
+    env: {
+      ...env, GOOGLE_OMNI_VIDEO_ENABLED: "true", GOOGLE_OMNI_VIDEO_ALLOW_REMOTE: "true",
+      GEMINI_OMNI_ENABLED: "true", GEMINI_OMNI_ALLOW_REMOTE: "true"
+    },
+    providerDependencies: { googleOmniIntegration }
+  });
+  assert.ok(worker.listSupported().includes("google:gemini-omni-1.1-flash"));
+});
