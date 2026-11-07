@@ -180,3 +180,36 @@ Do not activate public paid subscriptions until:
 - Flutterwave Uganda payment methods: https://developer.flutterwave.com/docs/payment-methods
 - Flutterwave webhook signature verification: https://developer.flutterwave.com/v3.0.0/docs/webhooks
 - Paddle supported countries: https://developer.paddle.com/concepts/sell/supported-countries-locales/
+
+
+## 7. Provider and payment contract updates — verified 2026-11-07
+
+### Runway execution and spend contract
+
+The current Runway Dev API exposes distinct text-to-video, image-to-video and video-to-video task creation endpoints. Video-to-video accepts Aleph 2 and other supported models, requires a source video URI, and documents a maximum 30-second input. Tasks return an estimated maximum cost before execution; the platform must use that estimate as a budget reservation, then reconcile the final task result before settling customer credits.
+
+Current Runway Dev pricing examples (USD, subject to provider changes):
+- Seedance 2.5: $0.20/sec at 480p, $0.30/sec at 720p and $0.68/sec at 1080p.
+- Aleph 2.0: $0.28/sec, with a minimum request cost.
+- Non-MP4 outputs and advanced finishing operations can add separate per-second or per-frame charges.
+
+Do not hard-code these public rates as customer prices. Refresh provider cost data, record its source and verification time, and apply a margin plus a bounded safety reserve. Provider-returned task estimates are the authoritative preflight input when available.
+
+### Flutterwave payment contract
+
+The implemented one-time credit checkout uses Flutterwave Standard API v3:
+- Checkout creation uses a server-generated transaction reference and a server-stored plan price.
+- UGX one-time top-ups may offer card and Uganda mobile money.
+- Webhooks use the configured secret hash in the `verif-hash` header for v3.
+- Every successful payment is verified server-to-server for reference, amount, currency and status before credits are granted.
+- Event intake is idempotent and asynchronous processing must not block the webhook acknowledgement.
+
+Flutterwave recurring payment plans are a separate card-only product. When a payment plan is supplied to checkout, Flutterwave fixes the payment method to card. Therefore, Uganda mobile money is suitable for one-time credit top-ups in this implementation, not recurring mobile-money subscriptions. Do not enable recurring plans until renewal, cancellation, failed-charge, credit renewal, and provider reconciliation events have been verified in the merchant sandbox.
+
+### Verified references
+- Runway API endpoints and task contracts: https://docs.dev.runwayml.com/api/
+- Runway Dev model pricing and estimated task costs: https://dev.runway.com/pricing
+- Flutterwave v3 webhook signature and retry guidance: https://developer.flutterwave.com/docs/webhooks
+- Flutterwave transaction verification: https://developer.flutterwave.com/docs/transaction-verification
+- Flutterwave recurring payment-plan and card-only limitation: https://developer.flutterwave.com/docs/payment-plans-1
+- Flutterwave Uganda mobile-money flow: https://developer.flutterwave.com/docs/uganda
