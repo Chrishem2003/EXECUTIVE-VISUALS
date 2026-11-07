@@ -14,6 +14,12 @@ The interactive `video.generate` workflow node still uses the existing synchrono
 
 This prevents an operator from assuming that setting a cloud-mode flag will route Studio workflow nodes through the durable worker. It deliberately does not add a second queue or pretend to provide hosted generation.
 
+## Additional integration finding
+
+The repository contains a Runway Model Router adapter with a non-billable `preflight()`, durable routing metadata on submit, task polling, private output ingestion and actual-cost resolution from the completed task's realized `cost.credits`. This is valuable existing infrastructure and should be reused rather than reimplemented.
+
+However, the current `server/cloud-video-enqueue.mjs` explicitly limits the deployed SQL enqueue contract to `runway/gen4.5` and `google/gemini-omni-1.1-flash`. A Runway Model Router identity is therefore not currently accepted by the durable enqueue boundary, even though its adapter exists. Enabling it requires a reviewed database contract/migration, provider/model registry alignment, pricing and approval semantics, and PostgreSQL tests. Do not work around this by changing the allowlist in application code alone.
+
 ## Required work before cloud mode can be enabled
 
 1. Add an authenticated customer API for quote, exact-input approval, enqueue, status and cancellation.
