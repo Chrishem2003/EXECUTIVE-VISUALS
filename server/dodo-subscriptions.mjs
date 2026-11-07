@@ -360,6 +360,75 @@ export function processNextDodoWebhook(db, { env = process.env } = {}) {
       markProcessed();
       return { processed: true, eventId: event.event_id };
     }
+    if (type === "refund.succeeded") {
+      const refundId=String(data.refund_id||"");
+      const paymentId=String(data.payment_id||"");
+      const amountMinor=Number(data.amount);
+      const currency=String(data.currency||"").toUpperCase();
+      if(!/^[A-Za-z0-9_-]{6,128}$/.test(refundId)||!/^[A-Za-z0-9_-]{6,128}$/.test(paymentId)||
+          !Number.isSafeInteger(amountMinor)||amountMinor<=0||!/^[A-Z]{3}$/.test(currency)){
+        throw fail("Dodo refund event fields are invalid or unsupported.","DODO_REFUND_INVALID",400);
+      }
+      const existingRefund=db.prepare("SELECT id FROM billing_refund_events WHERE provider='dodo' AND refund_id=?").get(refundId);
+      if(existingRefund){
+        markProcessed();
+        return {processed:true,duplicate:true,refundId,eventId:event.event_id};
+      }
+      const grants=db.prepare(`SELECT amount,metadata_json FROM billing_credit_ledger
+        WHERE event_type='subscription_grant' AND amount>0
+          AND json_extract(metadata_json,'$.provider')='dodo'
+          AND json_extract(metadata_json,'$.paymentId')=?`).all(paymentId);
+      let totalCredits=0,originalAmountMinor=null,originalCurrency=null;
+      for(const grant of grants){
+        const metadata=parseJson(grant.metadata_json);
+        const recordedAmount=Number(metadata.paymentAmountMinor);
+        const recordedCurrency=String(metadata.currency||"").toUpperCase();
+        if(!Number.isSafeInteger(recordedAmount)||recordedAmount<=0||recordedCurrency!==currency){
+          throw fail("Original Dodo payment amount is unavailable for safe refund credit reconciliation.","DODO_REFUND_ORIGINAL_PAYMENT_UNVERIFIED",409);
+        }
+        if(originalAmountMinor!==null&&(originalAmountMinor!==recordedAmount||originalCurrency!==recordedCurrency)){
+          throw fail("Dodo payment reference maps to inconsistent credit grant metadata.","DODO_REFUND_PAYMENT_CONFLICT",409);
+        }
+        originalAmountMinor=recordedAmount;originalCurrency=recordedCurrency;
+        totalCredits+=Number(grant.amount);
+      }
+      const previousRefundAmount=Number(db.prepare("SELECT COALESCE(SUM(amount_minor),0) AS amount FROM billing_refund_events WHERE provider='dodo' AND payment_id=?").get(paymentId).amount||0);
+      const previousReversedCredits=Number(db.prepare(`SELECT COALESCE(SUM(-amount),0) AS credits FROM billing_credit_ledger
+        WHERE event_type='admin_adjustment' AND amount<0
+          AND json_extract(metadata_json,'$.refundProvider')='dodo'
+          AND json_extract(metadata_json,'$.paymentId')=?`).get(paymentId).credits||0);
+      let creditsToReverse=0;
+      if(grants.length){
+        const cumulativeRefund=previousRefundAmount+amountMinor;
+        if(!Number.isSafeInteger(cumulativeRefund)||cumulativeRefund>originalAmountMinor){
+          throw fail("Cumulative Dodo refunds exceed the verified original payment amount.","DODO_REFUND_AMOUNT_EXCEEDED",409);
+        }
+        const targetReversal=Math.ceil(totalCredits*cumulativeRefund/originalAmountMinor);
+        creditsToReverse=targetReversal-previousReversedCredits;
+        if(!Number.isSafeInteger(creditsToReverse)||creditsToReverse<0||targetReversal>totalCredits){
+          throw fail("Dodo refund credit reconciliation is inconsistent.","DODO_REFUND_CREDIT_MISMATCH",409);
+        }
+      }
+      db.exec("BEGIN IMMEDIATE");
+      try{
+        db.prepare(`INSERT INTO billing_refund_events(id,provider,refund_id,payment_id,amount_minor,currency,created_at)
+          VALUES(?,'dodo',?,?,?,?,?)`).run(randomUUID(),refundId,paymentId,amountMinor,currency,now());
+        if(creditsToReverse>0){
+          const grantOwner=db.prepare(`SELECT user_id FROM billing_credit_ledger WHERE event_type='subscription_grant'
+            AND json_extract(metadata_json,'$.provider')='dodo'
+            AND json_extract(metadata_json,'$.paymentId')=? LIMIT 1`).get(paymentId)?.user_id;
+          if(!grantOwner)throw fail("Dodo refund has no matching credit owner.","DODO_REFUND_OWNER_NOT_FOUND",409);
+          db.prepare(`INSERT OR IGNORE INTO billing_credit_ledger
+            (id,user_id,amount,event_type,description,reference_id,idempotency_key,metadata_json)
+            VALUES(?,?,?,'admin_adjustment',?,?,?,?)`)
+            .run(randomUUID(),grantOwner,-creditsToReverse,"Dodo subscription refund credit reversal",paymentId,
+              "dodo-refund:"+refundId,json({refundProvider:"dodo",paymentId,refundId,amountMinor,currency,creditsReversed:creditsToReverse}));
+        }
+        markProcessed();
+        db.exec("COMMIT");
+      }catch(error){db.exec("ROLLBACK");throw error;}
+      return {processed:true,refunded:true,creditsReversed:creditsToReverse,refundId,paymentId,eventId:event.event_id};
+    }
     const status = statusForDodoEvent(type, data.status);
     if (!status) throw fail("Dodo subscription status is unsupported.", "DODO_SUBSCRIPTION_STATUS_INVALID");
     if (!local && type === "subscription.active") {
