@@ -118,7 +118,8 @@ test("registers Runway text and video-edit adapters only with explicit task-cost
     "fal:fal-ai/wan/v2.7/text-to-video",
     "runway:gen4.5",
     "runway:aleph2",
-    "runway:magnific_video_upscaler_creative",\n    "runway:ruby"
+    "runway:magnific_video_upscaler_creative",
+    "runway:ruby"
   ]);
 });
 
