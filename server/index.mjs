@@ -469,6 +469,33 @@ const billingAccount=touchBillingAccount(db,user);
           audit(db,user.id,"admin.model_price_saved","model_price",price.id,{provider:price.provider,model:price.model,capability:price.capability,priceMicros:price.priceMicros,currency:price.currency,verifiedAt:price.verifiedAt});
           send(res,200,{price},cors);return;
         }
+        if(path==="/api/admin/refunds"&&req.method==="GET"){
+          const refunds=db.prepare("SELECT id,provider,refund_id,payment_id,amount_minor,currency,user_id,reconciliation_required,reconciliation_note,created_at,reconciled_at,reconciled_by FROM billing_refund_events ORDER BY created_at DESC LIMIT 100").all();
+          send(res,200,{refunds},cors);return;
+        }
+        const refundReconcileMatch=path.match(/^\/api\/admin\/refunds\/([0-9a-f-]{36})\/reconcile$/i);
+        if(refundReconcileMatch&&req.method==="POST"){
+          const refund=db.prepare("SELECT * FROM billing_refund_events WHERE id=?").get(refundReconcileMatch[1]);
+          if(!refund){fail(res,404,"REFUND_NOT_FOUND","Refund record not found.");return;}
+          if(Number(refund.reconciliation_required)!==1){fail(res,409,"REFUND_ALREADY_RECONCILED","Refund record does not require reconciliation.");return;}
+          const body=await readJson(req,8*1024);
+          const resolution=String(body.resolution||"");
+          const note=String(body.note||"").trim().slice(0,1000);
+          if(!["credit_adjusted","no_credit_entitlement"].includes(resolution)||note.length<5){
+            fail(res,400,"REFUND_RECONCILIATION_INVALID","Choose a valid resolution and provide an audit note.");return;
+          }
+          if(resolution==="credit_adjusted"){
+            const adjustment=db.prepare("SELECT id,user_id,amount FROM billing_credit_ledger WHERE id=? AND event_type='admin_adjustment' AND amount<0").get(String(body.adjustmentLedgerId||""));
+            if(!adjustment||!refund.user_id||adjustment.user_id!==refund.user_id){
+              fail(res,400,"REFUND_ADJUSTMENT_REQUIRED","A matching negative credit adjustment for the affected user is required before reconciliation.");return;
+            }
+          }
+          const changed=db.prepare("UPDATE billing_refund_events SET reconciliation_required=0,reconciled_at=?,reconciled_by=?,reconciliation_note=? WHERE id=? AND reconciliation_required=1")
+            .run(now(),user.id,resolution+": "+note,refund.id);
+          if(changed.changes!==1){fail(res,409,"REFUND_RECONCILIATION_CONFLICT","Refund record changed during reconciliation.");return;}
+          audit(db,user.id,"admin.refund_reconciled","refund",refund.id,{provider:refund.provider,refundId:refund.refund_id,paymentId:refund.payment_id,resolution,adjustmentLedgerId:body.adjustmentLedgerId||null});
+          send(res,200,{ok:true,refundId:refund.id,resolution},cors);return;
+        }
         if(path==="/api/admin/audit"&&req.method==="GET"){
           const events=db.prepare("SELECT id,event_type,subject_type,subject_id,details_json,created_at FROM audit_events WHERE event_type LIKE 'admin.%' ORDER BY id DESC LIMIT 100").all();
           send(res,200,{events:events.map(row=>({id:row.id,type:row.event_type,subjectType:row.subject_type,subjectId:row.subject_id,details:parseJson(row.details_json),createdAt:row.created_at}))},cors);return;
