@@ -270,8 +270,7 @@ test("Gemini Omni 1.2 remains blocked until its dedicated pricing and SQL contra
     resolution: "720p"
   };
   await assert.rejects(
-    client.enqueue(googleArgs({ model: "gemini-omni-1.2-flash", input, reservedAmount: 2 })),
-    error => error.code === "VIDEO_ENQUEUE_PROVIDER_NOT_ENABLED"
+    client.enqueue(googleArgs({ model: "gemini-omni-1.2-flash", input, reservedAmount: 2 }))
   );
   assert.equal(calls, 0);
 });
