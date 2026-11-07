@@ -20,10 +20,14 @@ import { createCloudTimelineApi } from "./cloud-timeline-api.mjs";
 import { validateSrt, validateWebVtt } from "./caption-validation.mjs";
 import { ensureTransformationPlanSchema, createTransformationPlan, approveTransformationPlan, listTransformationPlans, getTransformationPlan } from "./transformation-plans.mjs";
 import { signInWithSupabasePassword, signUpWithSupabasePassword, refreshSupabaseSession, getSupabaseUser, revokeSupabaseSession } from "./supabase-password-auth.mjs";
+import { ensureBillingSchema, touchBillingAccount, getBillingOverview, listBillingPlans, getAdminOverview, listAdminUsers, saveBillingPlan, assignManualSubscription, adjustBillingCredits, setBillingAccountStatus, listBillingModelPrices, saveBillingModelPrice } from "./billing.mjs";
+import { ensureBillingWebhookSchema, receiveFlutterwaveWebhook, processNextFlutterwaveWebhook, createFlutterwaveCheckout } from "./billing-webhooks.mjs";
 
 const PORT = Number(process.env.PORT || process.env.API_PORT || 4179);
 const HOST = process.env.API_HOST || (process.env.NODE_ENV === "production" ? "0.0.0.0" : "127.0.0.1");
 const AUTH_MODE = process.env.AUTH_MODE || "local";
+const ADMIN_EMAILS = new Set(String(process.env.ADMIN_EMAILS || "").split(",").map(value => value.trim().toLowerCase()).filter(Boolean));
+const isAdminUser = user => !!user?.email && ADMIN_EMAILS.has(String(user.email).trim().toLowerCase());
 const DATA_DIR = resolve(process.env.DATA_DIR || "./data");
 const MEDIA_ROOT = resolve(process.env.MEDIA_ROOT || join(DATA_DIR, "media"));
 const WEB_ROOT = resolve(process.env.WEB_ROOT || "./dist");
@@ -50,6 +54,8 @@ const EXTENSIONS = {
 const MEDIA_JOBS = new Set(["media.probe","media.thumbnail","media.transcode","media.audio_extract","media.audio-clean","media.proxy","media.denoise","media.color","media.resize","media.interpolate","media.upscale","media.ai-upscale","timeline.render"]);
 const db = openDatabase(DB_FILE);
 ensureTransformationPlanSchema(db);
+ensureBillingSchema(db);
+ensureBillingWebhookSchema(db);
 const aiUpscaleAdapter = createRealEsrganAdapter();
 const cloudTimelineApiEnabled = process.env.CLOUD_TIMELINE_API_ENABLED === "true";
 if (cloudTimelineApiEnabled && AUTH_MODE !== "supabase") throw new Error("Cloud timeline API requires verified Supabase authentication.");
@@ -83,6 +89,11 @@ const readJson = async (req,limit=1024*1024) => {
   for await (const chunk of req) { size+=chunk.length;if(size>limit)throw Object.assign(new Error("Request body too large."),{status:413,code:"BODY_TOO_LARGE"});chunks.push(chunk); }
   try { return JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}"); }
   catch { throw Object.assign(new Error("Request body must be valid JSON."),{status:400,code:"INVALID_JSON"}); }
+};
+const readRaw = async (req,limit=1024*1024) => {
+  const chunks=[];let size=0;
+  for await (const chunk of req) { size+=chunk.length;if(size>limit)throw Object.assign(new Error("Request body too large."),{status:413,code:"BODY_TOO_LARGE"});chunks.push(chunk); }
+  return Buffer.concat(chunks);
 };
 const cookieValue = (req,name) => {
   const raw=req.headers.cookie||"";
@@ -276,8 +287,8 @@ export function createAppServer() {
     if(req.method==="OPTIONS"){res.writeHead(204,{"access-control-allow-methods":"GET,POST,PUT,DELETE,OPTIONS","access-control-allow-headers":"content-type,authorization,x-file-name,x-project-id,idempotency-key","access-control-max-age":"600",...cors});res.end();return;}
     const url=new URL(req.url||"/","http://localhost");
     const path=url.pathname;
-    const ratePath=path.startsWith("/api/auth/")?"/auth":(path==="/api/assets"||path==="/api/cloud/assets")&&req.method==="POST"?"/upload":path.endsWith("/research/import")&&req.method==="POST"?"/research":path==="/api/admin/ai-upscale/self-test"&&req.method==="POST"?"/ai-upscale-self-test":"";
-    if(ratePath){const key=(req.socket.remoteAddress||"unknown")+ratePath;const limit=ratePath==="/auth"?AUTH_RATE_LIMIT:ratePath==="/research"?10:ratePath==="/ai-upscale-self-test"?2:30;if(!rateAllowed(key,limit,60000)){fail(res,429,"RATE_LIMITED","Too many requests. Wait before trying again.");return;}}
+    const ratePath=path.startsWith("/api/auth/")?"/auth":path==="/api/webhooks/flutterwave"&&req.method==="POST"?"/payment-webhook":(path==="/api/assets"||path==="/api/cloud/assets")&&req.method==="POST"?"/upload":path.endsWith("/research/import")&&req.method==="POST"?"/research":path==="/api/admin/ai-upscale/self-test"&&req.method==="POST"?"/ai-upscale-self-test":"";
+    if(ratePath){const key=(req.socket.remoteAddress||"unknown")+ratePath;const limit=ratePath==="/auth"?AUTH_RATE_LIMIT:ratePath==="/research"?10:ratePath==="/ai-upscale-self-test"?2:ratePath==="/payment-webhook"?120:30;if(!rateAllowed(key,limit,60000)){fail(res,429,"RATE_LIMITED","Too many requests. Wait before trying again.");return;}}
     try {
       if(!path.startsWith("/api/")&&req.method==="GET"){
         const decoded=decodeURIComponent(path);
@@ -295,6 +306,18 @@ export function createAppServer() {
       if(path==="/api/health"&&req.method==="GET"){
         send(res,200,{status:"ok",storage:"local-disk",database:"sqlite",media:{ffmpeg:executableAvailable("ffmpeg"),ffprobe:executableAvailable("ffprobe")},imageGateway:{enabled:process.env.IMAGE_GATEWAY_ENABLED==="true",configured:(()=>{const provider=String(process.env.IMAGE_GATEWAY_PROVIDER||"openai-compatible").toLowerCase();if(provider==="gemini")return Boolean(process.env.GEMINI_API_KEY&&process.env.GEMINI_IMAGE_MODEL&&process.env.IMAGE_GATEWAY_ALLOW_REMOTE==="true");if(provider==="fal")return Boolean(process.env.FAL_KEY&&process.env.FAL_IMAGE_MODEL&&process.env.IMAGE_GATEWAY_ALLOW_REMOTE==="true");try{const url=new URL(process.env.IMAGE_GATEWAY_URL||"");const local=["localhost","127.0.0.1","::1"].includes(url.hostname.toLowerCase());return Boolean(process.env.IMAGE_GATEWAY_MODEL&&(local||process.env.IMAGE_GATEWAY_ALLOW_REMOTE==="true"));}catch{return false;}})()},textGateway:{enabled:process.env.AI_GATEWAY_ENABLED==="true",configured:(()=>{try{const url=new URL(process.env.AI_GATEWAY_URL||"");const local=["localhost","127.0.0.1","::1"].includes(url.hostname.toLowerCase());return Boolean(process.env.AI_GATEWAY_MODEL&&(local||process.env.AI_GATEWAY_ALLOW_REMOTE==="true"));}catch{return false;}})()},authMode:AUTH_MODE,version:"0.1.0"},cors);return;
       }
+      if(path==="/api/webhooks/flutterwave"&&req.method==="POST"){
+        if(!String(req.headers["content-type"]||"").toLowerCase().startsWith("application/json")){
+          fail(res,415,"WEBHOOK_CONTENT_TYPE_INVALID","Flutterwave webhook requests must use application/json.");return;
+        }
+        const rawBody=await readRaw(req,1024*1024);
+        const result=receiveFlutterwaveWebhook(db,{
+          rawBody,signature:String(req.headers["verif-hash"]||""),
+          secretHash:process.env.FLW_WEBHOOK_SECRET||""
+        });
+        send(res,200,{ok:true,accepted:true,duplicate:result.duplicate},cors);return;
+      }
+
       if(path==="/api/auth/register"&&req.method==="POST"){
         const body=await readJson(req);const email=String(body.email||"").trim().toLowerCase();const password=String(body.password||"");
         if(AUTH_MODE==="supabase"){
@@ -336,6 +359,69 @@ export function createAppServer() {
       }
       const user=await authenticate(req,res);
       if(!user){fail(res,401,"AUTH_REQUIRED","Sign in to access this workspace.");return;}
+      const billingAccount=touchBillingAccount(db,user);
+      if(billingAccount.status==="suspended"){fail(res,403,"ACCOUNT_SUSPENDED","This account is suspended. Contact workspace support.");return;}
+      const admin=isAdminUser(user);
+      if(path==="/api/me"&&req.method==="GET"){send(res,200,{user,authMode:AUTH_MODE,capabilities:{admin,billing:true}},cors);return;}
+      if(path==="/api/billing/plans"&&req.method==="GET"){send(res,200,{plans:listBillingPlans(db)},cors);return;}
+      if(path==="/api/billing/overview"&&req.method==="GET"){send(res,200,{billing:getBillingOverview(db,user.id)},cors);return;}
+      if(path==="/api/billing/checkout"&&req.method==="POST"){
+        if(process.env.BILLING_CHECKOUT_ENABLED!=="true"||AUTH_MODE!=="supabase"||REQUIRE_PERSISTENT_DATA_DIR!==true||!process.env.FLW_SECRET_KEY||!process.env.FLW_WEBHOOK_SECRET||!process.env.PUBLIC_APP_URL){
+          fail(res,503,"BILLING_CHECKOUT_DISABLED","Flutterwave checkout is disabled until merchant approval, Supabase authentication, persistent database storage, webhook secret and public return URL are configured.");return;
+        }
+        const body=await readJson(req,16*1024);
+        const checkout=await createFlutterwaveCheckout(db,{user,planId:String(body.planId||""),secretKey:process.env.FLW_SECRET_KEY,publicAppUrl:process.env.PUBLIC_APP_URL});
+        send(res,200,{checkout},cors);return;
+      }
+      if(path.startsWith("/api/admin/")&&path!=="/api/admin/ai-upscale/self-test"){
+        if(!admin){fail(res,403,"ADMIN_REQUIRED","An explicitly allowlisted platform administrator is required.");return;}
+        if(path==="/api/admin/overview"&&req.method==="GET"){send(res,200,{overview:getAdminOverview(db)},cors);return;}
+        if(path==="/api/admin/users"&&req.method==="GET"){
+          const query=String(url.searchParams.get("q")||"");
+          const limit=Number(url.searchParams.get("limit")||100);
+          send(res,200,{users:listAdminUsers(db,{query,limit})},cors);return;
+        }
+        if(path==="/api/admin/plans"&&req.method==="GET"){send(res,200,{plans:listBillingPlans(db,{activeOnly:false})},cors);return;}
+        if(path==="/api/admin/model-prices"&&req.method==="GET"){send(res,200,{prices:listBillingModelPrices(db)},cors);return;}
+        if(path==="/api/admin/model-prices"&&req.method==="POST"){
+          const body=await readJson(req,16*1024);
+          const price=saveBillingModelPrice(db,body);
+          audit(db,user.id,"admin.model_price_saved","model_price",price.id,{provider:price.provider,model:price.model,capability:price.capability,priceMicros:price.priceMicros,currency:price.currency,verifiedAt:price.verifiedAt});
+          send(res,200,{price},cors);return;
+        }
+        if(path==="/api/admin/audit"&&req.method==="GET"){
+          const events=db.prepare("SELECT id,event_type,subject_type,subject_id,details_json,created_at FROM audit_events WHERE event_type LIKE 'admin.%' ORDER BY id DESC LIMIT 100").all();
+          send(res,200,{events:events.map(row=>({id:row.id,type:row.event_type,subjectType:row.subject_type,subjectId:row.subject_id,details:parseJson(row.details_json),createdAt:row.created_at}))},cors);return;
+        }
+        if(path==="/api/admin/plans"&&req.method==="POST"){
+          const body=await readJson(req,64*1024);
+          const plan=saveBillingPlan(db,body);
+          audit(db,user.id,"admin.billing_plan_saved","billing_plan",plan.id,{code:plan.code,active:plan.active});
+          send(res,200,{plan},cors);return;
+        }
+        const subscriptionMatch=path.match(new RegExp("^/api/admin/users/([a-zA-Z0-9_-]+)/subscription$"));
+        if(subscriptionMatch&&req.method==="POST"){
+          const body=await readJson(req,16*1024);
+          const result=assignManualSubscription(db,{userId:subscriptionMatch[1],planId:String(body.planId||""),periodDays:Number(body.periodDays||30),status:String(body.status||"active"),actorId:user.id});
+          audit(db,user.id,"admin.subscription_assigned","subscription",result.id,{userId:result.userId,planId:result.planId,status:result.status});
+          send(res,200,{subscription:result},cors);return;
+        }
+        const creditsMatch=path.match(new RegExp("^/api/admin/users/([a-zA-Z0-9_-]+)/credits$"));
+        if(creditsMatch&&req.method==="POST"){
+          const body=await readJson(req,16*1024);
+          const result=adjustBillingCredits(db,{userId:creditsMatch[1],amount:Number(body.amount),description:String(body.description||""),actorId:user.id,idempotencyKey:String(req.headers["idempotency-key"]||body.idempotencyKey||"")});
+          audit(db,user.id,"admin.credits_adjusted","user",creditsMatch[1],{amount:result.amount,ledgerId:result.id,replayed:result.replayed});
+          send(res,200,{adjustment:result},cors);return;
+        }
+        const statusMatch=path.match(new RegExp("^/api/admin/users/([a-zA-Z0-9_-]+)/status$"));
+        if(statusMatch&&req.method==="POST"){
+          const body=await readJson(req,8*1024);
+          const result=setBillingAccountStatus(db,{userId:statusMatch[1],status:String(body.status||"")});
+          audit(db,user.id,"admin.account_status_changed","user",statusMatch[1],{status:result.status});
+          send(res,200,{account:result},cors);return;
+        }
+        fail(res,404,"ADMIN_ROUTE_NOT_FOUND","Administrator route not found.");return;
+      }
       if(path==="/api/me"&&req.method==="GET"){send(res,200,{user,authMode:AUTH_MODE},cors);return;}
       if(cloudTimelineApi && path==="/api/cloud/assets" && req.method==="POST"){
         const uploadResult=await cloudTimelineApi.uploadAsset({
@@ -838,6 +924,15 @@ if (AUTH_MODE==="supabase"&&(!process.env.SUPABASE_URL||!process.env.SUPABASE_PU
 if (process.env.NODE_ENV!=="test") {
   const server=createAppServer();
   server.listen(PORT,HOST,()=>process.stdout.write(`Executive Visuals API listening on http://${HOST}:${PORT}\n`));
-  const shutdown=()=>{if(workerTimer)clearInterval(workerTimer);for(const child of activeProcesses.values())if(!child.killed)child.kill("SIGTERM");server.close(()=>{db.close();process.exit(0);});setTimeout(()=>process.exit(1),10000).unref();};
+  let billingWebhookBusy=false;
+  const billingWebhookTimer=process.env.FLW_SECRET_KEY?setInterval(async()=>{
+    if(billingWebhookBusy)return;
+    billingWebhookBusy=true;
+    try{await processNextFlutterwaveWebhook(db,{secretKey:process.env.FLW_SECRET_KEY});}
+    catch(error){process.stderr.write("Billing webhook worker failed: "+String(error?.code||"PROCESSING_FAILED")+"\\n");}
+    finally{billingWebhookBusy=false;}
+  },5000):null;
+  billingWebhookTimer?.unref();
+  const shutdown=()=>{if(workerTimer)clearInterval(workerTimer);if(billingWebhookTimer)clearInterval(billingWebhookTimer);for(const child of activeProcesses.values())if(!child.killed)child.kill("SIGTERM");server.close(()=>{db.close();process.exit(0);});setTimeout(()=>process.exit(1),10000).unref();};
   process.on("SIGINT",shutdown);process.on("SIGTERM",shutdown);
 }
