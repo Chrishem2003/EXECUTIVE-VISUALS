@@ -13,30 +13,31 @@ const job = {
 };
 const succeeded = { taskId, status: "succeeded", outputUrls: ["https://cdn.example.test/output.mp4"] };
 function fixture({ state = "prepared", submitError = null, recordResult = true, status = succeeded,
-  cost = { amount: 0.75, currency: "USD", evidenceReference: "provider-invoice:line-9" },
+  metadata = {}, submittedMetadata = {}, cost = { amount: 0.75, currency: "USD", evidenceReference: "provider-invoice:line-9" },
   costError = null, ingestError = null } = {}) {
   const calls = [];
   let currentState = state;
   let currentTaskId = state === "submitted" ? taskId : null;
+  let currentMetadata = metadata;
   const ledger = {
-    async prepare(value) { calls.push(["prepare", value]); return { job_id: jobId, owner_id: ownerId, state: currentState, provider_task_id: currentTaskId }; },
+    async prepare(value) { calls.push(["prepare", value]); return { job_id: jobId, owner_id: ownerId, state: currentState, provider_task_id: currentTaskId, metadata: currentMetadata }; },
     async begin(id, worker) { calls.push(["begin", id, worker]); return true; },
     async record(id, worker, idValue, metadata) {
       calls.push(["record", id, worker, idValue, metadata]);
-      if (recordResult) { currentState = "submitted"; currentTaskId = idValue; }
+      if (recordResult) { currentState = "submitted"; currentTaskId = idValue; currentMetadata = metadata; }
       return recordResult;
     },
     async markUnknown(id, worker, code) { calls.push(["unknown", id, worker, code]); currentState = "unknown"; return true; }
   };
   const adapter = {
     provider: "runway", model: "gen4.5", minimumPollIntervalMs: 5000,
-    async submit(input, context) { calls.push(["submit", input.requestHash, context?.job?.id, context?.job?.owner_id]); if (submitError) throw submitError; return { taskId, status: "queued" }; },
+    async submit(input, context) { calls.push(["submit", input.requestHash, context?.job?.id, context?.job?.owner_id]); if (submitError) throw submitError; return { taskId, status: "queued", metadata: submittedMetadata }; },
     async getStatus(id, context) { calls.push(["poll", id, context?.job?.id, context?.workerId]); if (status instanceof Error) throw status; return status; }
   };
   return {
     calls, ledger, adapter,
     ingestOutputs: async value => { calls.push(["ingest", value.providerTaskId]); if (ingestError) throw ingestError; return { assetIds: ["423e4567-e89b-42d3-a456-426614174000"], usage: { outputCount: 1 } }; },
-    resolveActualCost: async value => { calls.push(["cost", value.providerTaskId]); if (costError) throw costError; return cost; }
+    resolveActualCost: async value => { calls.push(["cost", value.providerTaskId, value.submissionMetadata]); if (costError) throw costError; return cost; }
   };
 }
 
@@ -150,4 +151,22 @@ test("cloud executor passes the current leased job scope to provider status poll
   const poll = f.calls.find(call => call[0] === "poll");
   assert.equal(poll[2], job.id);
   assert.equal(poll[3], "worker-context");
+});
+
+test("persists provider routing metadata and reuses it after a worker restart", async () => {
+  const routeEvidence = {
+    routeType: "runway-model-router", configId: "production-video",
+    routing: { configId: "production-video", model: "gen4.5", provider: "runway", realizedCost: { credits: 48 } }
+  };
+  const first = fixture({ submittedMetadata: routeEvidence });
+  await executeCloudVideoGenerationJob({ job, workerId: "worker-1", ...first });
+  const recordCall = first.calls.find(call => call[0] === "record");
+  assert.deepEqual(recordCall[4], { acceptedStatus: "queued", ...routeEvidence });
+
+  const resumed = fixture({ state: "submitted", metadata: { acceptedStatus: "queued", ...routeEvidence } });
+  const resolved = await executeCloudVideoGenerationJob({ job, workerId: "worker-2", ...resumed });
+  const costCall = resumed.calls.find(call => call[0] === "cost");
+  assert.deepEqual(costCall[2], { acceptedStatus: "queued", ...routeEvidence });
+  assert.equal(resolved.providerTaskId, taskId);
+  assert.equal(resumed.calls.some(call => call[0] === "submit"), false);
 });
