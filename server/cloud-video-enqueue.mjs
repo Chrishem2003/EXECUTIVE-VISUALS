@@ -26,7 +26,8 @@ export function createCloudVideoEnqueue({
   serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY,
   fetchImpl = globalThis.fetch,
   timeoutMs = 15000,
-  env = process.env
+  env = process.env,
+  resolveRunwaySourceMetadata
 } = {}) {
   if (!url || !serviceRoleKey) throw new Error("Cloud video enqueue requires server-side SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.");
   if (typeof fetchImpl !== "function") throw new Error("Cloud video enqueue requires a fetch implementation.");
@@ -101,7 +102,14 @@ export function createCloudVideoEnqueue({
         throw new Error("Reserved amount must be a positive bounded number.");
       }
       if (typeof currency !== "string" || !/^[A-Z]{3}$/.test(currency)) throw new Error("Currency must be a three-letter uppercase code.");
-      const runwayEnabled = provider === "runway" && model === "gen4.5";
+      const runwayTextEnabled = provider === "runway" && model === "gen4.5" &&
+        (input.operation === undefined || input.operation === "text-to-video") && !input.startFrameAssetId;
+      const runwayImageEnabled = provider === "runway" && model === "gen4.5" &&
+        (input.operation === "image-to-video" || Boolean(input.startFrameAssetId));
+      const runwayEditEnabled = provider === "runway" && model === "aleph2" && input.operation === "video-to-video";
+      const runwayUpscaleEnabled = provider === "runway" && model === "magnific_video_upscaler_creative" && input.operation === "video-upscale";
+      const runwayHdrEnabled = provider === "runway" && model === "ruby" && input.operation === "video-to-hdr";
+      const runwayEnabled = runwayTextEnabled || runwayImageEnabled || runwayEditEnabled || runwayUpscaleEnabled || runwayHdrEnabled;
       const googleEnabled = provider === "google" && model === "gemini-omni-1.1-flash";
       if (!runwayEnabled && !googleEnabled) {
         const unsupported = new Error("The selected provider/model does not have an enabled, verified cloud execution adapter.");
@@ -118,30 +126,91 @@ export function createCloudVideoEnqueue({
         disabled.code = "GEMINI_OMNI_REMOTE_DISABLED";
         throw disabled;
       }
+      let verifiedSourceMetadata = null;
+      if (runwayEditEnabled || runwayUpscaleEnabled || runwayHdrEnabled) {
+        if (typeof resolveRunwaySourceMetadata !== "function") {
+          const unavailable = new Error("Runway source operations require a server-side media probe and owner-scoped asset resolver.");
+          unavailable.code = "VIDEO_SOURCE_METADATA_UNAVAILABLE";
+          throw unavailable;
+        }
+        verifiedSourceMetadata = await resolveRunwaySourceMetadata({
+          ownerId, projectId, assetId: input.sourceVideoAssetId
+        });
+        if (!verifiedSourceMetadata || verifiedSourceMetadata.ownerId !== ownerId ||
+            (verifiedSourceMetadata.projectId || null) !== projectId || verifiedSourceMetadata.assetId !== input.sourceVideoAssetId ||
+            !["video/mp4", "video/quicktime", "video/webm"].includes(verifiedSourceMetadata.mediaType) ||
+            !Number.isFinite(verifiedSourceMetadata.durationSeconds) ||
+            verifiedSourceMetadata.durationSeconds < 1 || verifiedSourceMetadata.durationSeconds > 30) {
+          const invalid = new Error("The source asset must have verified video metadata and a duration from 1 to 30 seconds.");
+          invalid.code = "VIDEO_SOURCE_METADATA_INVALID";
+          throw invalid;
+        }
+        const billableDurationSeconds = Math.ceil(verifiedSourceMetadata.durationSeconds);
+        if (input.durationSeconds !== billableDurationSeconds) {
+          const invalid = new Error("The submitted duration must match the server-probed, rounded-up source duration.");
+          invalid.code = "VIDEO_SOURCE_METADATA_MISMATCH";
+          throw invalid;
+        }
+        if (runwayUpscaleEnabled && (!Number.isSafeInteger(verifiedSourceMetadata.frameCount) ||
+            verifiedSourceMetadata.frameCount < 1 || verifiedSourceMetadata.frameCount > 1000000)) {
+          const invalid = new Error("Video upscaling requires a server-probed frame count for accurate credit reservation.");
+          invalid.code = "VIDEO_SOURCE_METADATA_INVALID";
+          throw invalid;
+        }
+        if (runwayUpscaleEnabled && input.outputFrames !== verifiedSourceMetadata.frameCount) {
+          const invalid = new Error("The submitted output frame count must match the server-probed source frame count.");
+          invalid.code = "VIDEO_SOURCE_METADATA_MISMATCH";
+          throw invalid;
+        }
+        if (runwayHdrEnabled && (
+          verifiedSourceMetadata.sourceDynamicRange !== "sdr" ||
+          !Number.isSafeInteger(verifiedSourceMetadata.sourceWidth) || verifiedSourceMetadata.sourceWidth < 16 || verifiedSourceMetadata.sourceWidth > 4096 ||
+          !Number.isSafeInteger(verifiedSourceMetadata.sourceHeight) || verifiedSourceMetadata.sourceHeight < 16 || verifiedSourceMetadata.sourceHeight > 4096
+        )) {
+          const invalid = new Error("Ruby HDR requires server-probed SDR source metadata and verified dimensions.");
+          invalid.code = "VIDEO_SOURCE_METADATA_INVALID";
+          throw invalid;
+        }
+      }
+      const pricingInput = verifiedSourceMetadata ? {
+        ...input,
+        durationSeconds: Math.ceil(verifiedSourceMetadata.durationSeconds),
+        inputVideoSeconds: Math.ceil(verifiedSourceMetadata.durationSeconds),
+        outputFrames: verifiedSourceMetadata.frameCount,
+        sourceWidth: verifiedSourceMetadata.sourceWidth,
+        sourceHeight: verifiedSourceMetadata.sourceHeight,
+        sourceDynamicRange: verifiedSourceMetadata.sourceDynamicRange
+      } : input;
       const estimate = estimateVideoGenerationCost({
-        provider, model, durationSeconds: input.durationSeconds,
-        outputFormat: input.outputFormat, resolution: input.resolution, audio: input.audio,
-        inputVideoSeconds: input.inputVideoSeconds, referenceVideoSeconds: input.referenceVideoSeconds,
+        provider, model, operation: input.operation || (input.startFrameAssetId ? "image-to-video" : "text-to-video"),
+        durationSeconds: pricingInput.durationSeconds,
+        outputFormat: input.outputFormat, resolution: input.resolution ?? (runwayUpscaleEnabled ? "2k" : input.resolution), audio: input.audio,
+        inputVideoSeconds: pricingInput.inputVideoSeconds, referenceVideoSeconds: input.referenceVideoSeconds,
         referenceImageCount: input.referenceImageCount, referenceAudioCount: input.referenceAudioCount,
-        hasStartFrame: input.hasStartFrame, outputFrames: input.outputFrames,
-        sourceWidth: input.sourceWidth, sourceHeight: input.sourceHeight,
-        sourceDynamicRange: input.sourceDynamicRange, outputWidth: input.outputWidth,
-        outputHeight: input.outputHeight, targetFramerate: input.targetFramerate, inputType: input.inputType
+        hasStartFrame: Boolean(input.startFrameAssetId) || input.hasStartFrame === true, outputFrames: pricingInput.outputFrames,
+        sourceWidth: pricingInput.sourceWidth ?? input.sourceWidth, sourceHeight: pricingInput.sourceHeight ?? input.sourceHeight,
+        sourceDynamicRange: model === "ruby" ? (pricingInput.sourceDynamicRange ?? input.sourceDynamicRange) : undefined, outputWidth: input.outputWidth,
+        outputHeight: input.outputHeight, targetFramerate: input.targetFramerate,
+        inputType: input.sourceVideoAssetId ? "video" : input.startFrameAssetId ? "image" : input.inputType
       });
 
-      if ((input.outputFormat || "mp4") !== "mp4") {
-        const unsupported = new Error("The selected hosted video adapter currently supports MP4 output only.");
+      const requestedOutputFormat = input.outputFormat ?? (runwayHdrEnabled ? "hdr10" : "mp4");
+      if (runwayHdrEnabled ? !["hdr10", "hlg"].includes(requestedOutputFormat) : requestedOutputFormat !== "mp4") {
+        const unsupported = new Error("The selected hosted video adapter supports MP4 outputs; Ruby HDR is limited to hdr10 and hlg profiles.");
         unsupported.code = "VIDEO_PRICE_OUTPUT_FORMAT_UNSUPPORTED";
         throw unsupported;
       }
-      if (runwayEnabled) {
-        // Model capability and worker implementation are separate contracts.
-        // Gen-4.5 accepts 720p at provider level, but this worker currently only
-        // supports provider_default and must reject explicit resolution requests.
+      if (runwayTextEnabled || runwayImageEnabled) {
+        // Gen-4.5's hosted worker currently supports provider-default resolution only.
         if (input.resolution !== undefined && input.resolution !== "provider_default") {
           const unsupported = new Error("The current Gen-4.5 worker only supports provider-default resolution.");
           unsupported.code = "VIDEO_GENERATION_UNSUPPORTED_CAPABILITY";
           throw unsupported;
+        }
+        if (runwayImageEnabled && !input.startFrameAssetId) {
+          const invalid = new Error("Gen-4.5 image-to-video requires an owner-scoped first-frame asset.");
+          invalid.code = "VIDEO_INPUT_ASSET_RESOLUTION_REQUIRED";
+          throw invalid;
         }
         const unpricedExecutionFields = ["audio","inputVideoSeconds","referenceVideoSeconds","referenceImageCount",
           "referenceAudioCount","hasStartFrame","outputFrames","sourceWidth","sourceHeight","sourceDynamicRange",
@@ -150,6 +219,43 @@ export function createCloudVideoEnqueue({
           const unsupported = new Error("The current Gen-4.5 worker does not yet accept these finishing or reference-media options.");
           unsupported.code = "VIDEO_GENERATION_UNSUPPORTED_CAPABILITY";
           throw unsupported;
+        }
+      } else if (runwayEditEnabled) {
+        if (!input.sourceVideoAssetId || typeof input.prompt !== "string" || !input.prompt.trim() || input.prompt.length > 1000) {
+          const invalid = new Error("Aleph2 video editing requires an authorized source video asset and a prompt of 1 to 1,000 characters.");
+          invalid.code = "VIDEO_GENERATION_UNSUPPORTED_CAPABILITY";
+          throw invalid;
+        }
+        if (!Number.isFinite(verifiedSourceMetadata?.durationSeconds) || verifiedSourceMetadata.durationSeconds < 1 || verifiedSourceMetadata.durationSeconds > 30) {
+          const invalid = new Error("Aleph2 source video duration must be server-verified and between 1 and 30 seconds.");
+          invalid.code = "VIDEO_PRICE_DURATION_INVALID";
+          throw invalid;
+        }
+        if (input.keyframeAssetIds !== undefined &&
+            (!Array.isArray(input.keyframeAssetIds) || input.keyframeAssetIds.length > 5)) {
+          throw new Error("Aleph2 accepts at most five keyframe guidance assets.");
+        }
+      } else if (runwayUpscaleEnabled) {
+        if (!input.sourceVideoAssetId || !Number.isFinite(verifiedSourceMetadata?.durationSeconds) ||
+            verifiedSourceMetadata.durationSeconds < 1 || verifiedSourceMetadata.durationSeconds > 30) {
+          const invalid = new Error("Magnific video upscaling requires an authorized source video no longer than 30 seconds.");
+          invalid.code = "VIDEO_GENERATION_UNSUPPORTED_CAPABILITY";
+          throw invalid;
+        }
+        if (!Number.isSafeInteger(verifiedSourceMetadata?.frameCount) || verifiedSourceMetadata.frameCount < 1 || verifiedSourceMetadata.frameCount > 1000000) {
+          const invalid = new Error("Magnific video upscaling requires a server-probed output frame count for safe credit reservation.");
+          invalid.code = "VIDEO_PRICE_INPUT_REQUIRED";
+          throw invalid;
+        }
+        if (!["720p", "1k", "2k", "4k"].includes(input.resolution ?? "2k")) {
+          throw new Error("Magnific video upscaling resolution must be 720p, 1k, 2k or 4k.");
+        }
+      } else if (runwayHdrEnabled) {
+        if (!input.sourceVideoAssetId || !Number.isFinite(verifiedSourceMetadata?.durationSeconds) ||
+            Math.ceil(verifiedSourceMetadata.durationSeconds) !== input.durationSeconds) {
+          const invalid = new Error("Ruby HDR requires a verified source video and matching duration.");
+          invalid.code = "VIDEO_SOURCE_METADATA_MISMATCH";
+          throw invalid;
         }
       } else {
         if (input.resolution !== undefined && !["provider_default","720p"].includes(input.resolution)) {
@@ -205,6 +311,10 @@ export function createCloudVideoEnqueue({
         startFrameAssetId: input.firstFrameAssetId ?? input.startFrameAssetId,
         endFrameAssetId: input.lastFrameAssetId ?? input.endFrameAssetId,
         referenceAssetIds: input.referenceImageAssetIds ?? input.referenceAssetIds
+      } : verifiedSourceMetadata ? {
+        ...input,
+        durationSeconds: Math.ceil(verifiedSourceMetadata.durationSeconds),
+        ...(runwayUpscaleEnabled ? { outputFrames: verifiedSourceMetadata.frameCount, resolution: input.resolution ?? "2k" } : {})
       } : input;
       const normalizedRequest = normalizeVideoGenerationRequest(capabilityInput);
       assertVideoCapabilities(normalizedRequest, modelRecord.capabilities);

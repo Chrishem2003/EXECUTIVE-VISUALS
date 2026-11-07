@@ -82,6 +82,7 @@ test("defaults to the exact FAL provider registration when no custom adapter fac
   let networkCalls = 0;
   const worker = createProviderAwareCloudVideoWorkerComposition({
     ...base,
+    createAdapters: undefined,
     env: {
       ...env,
       FAL_VIDEO_MODEL: "fal-ai/wan/v2.7/text-to-video",
@@ -93,4 +94,98 @@ test("defaults to the exact FAL provider registration when no custom adapter fac
   });
   assert.deepEqual(worker.listSupported(), ["fal:fal-ai/wan/v2.7/text-to-video"]);
   assert.equal(networkCalls, 0);
+});
+
+
+test("registers Runway text and video-edit adapters only with explicit task-cost and source-resolution dependencies", () => {
+  const worker = createProviderAwareCloudVideoWorkerComposition({
+    ...base,
+    createAdapters: undefined,
+    env: {
+      ...env,
+      FAL_VIDEO_MODEL: "fal-ai/wan/v2.7/text-to-video",
+      FAL_KEY: "queue-test-key",
+      FAL_BILLING_KEY: "billing-test-key",
+      RUNWAY_VIDEO_MODELS: "gen4.5,aleph2,magnific_video_upscaler_creative,ruby",
+      RUNWAY_API_KEY: "runway-test-key",
+      RUNWAY_VIDEO_ALLOW_REMOTE: "false"
+    },
+    resolveRunwayActualCost: async () => ({
+      amount: 1, currency: "USD", evidenceReference: "test:runway-task-ledger"
+    }),
+    prepareRunwayInput: async () => ({}),
+    resolveRunwaySourceMetadata: async () => ({})
+  });
+  assert.deepEqual(worker.listSupported(), [
+    "fal:fal-ai/wan/v2.7/text-to-video",
+    "runway:aleph2",
+    "runway:gen4.5",
+    "runway:magnific_video_upscaler_creative",
+    "runway:ruby"
+  ]);
+});
+
+test("refuses Runway worker registration without authoritative task-level cost resolution", () => {
+  assert.throws(() => createProviderAwareCloudVideoWorkerComposition({
+    ...base,
+    createAdapters: undefined,
+    env: {
+      ...env,
+      FAL_VIDEO_MODEL: "fal-ai/wan/v2.7/text-to-video",
+      FAL_KEY: "queue-test-key",
+      FAL_BILLING_KEY: "billing-test-key",
+      RUNWAY_VIDEO_MODELS: "aleph2",
+      RUNWAY_API_KEY: "runway-test-key"
+    },
+    prepareRunwayInput: async () => ({})
+  }), /authoritative task-level billing resolver/);
+});
+
+test("Aleph2 worker registration composes the built-in owner-scoped private source resolver", () => {
+  const worker = createProviderAwareCloudVideoWorkerComposition({
+    ...base,
+    createAdapters: undefined,
+    env: {
+      ...env,
+      FAL_VIDEO_MODEL: "fal-ai/wan/v2.7/text-to-video",
+      FAL_KEY: "queue-test-key",
+      FAL_BILLING_KEY: "billing-test-key",
+      RUNWAY_VIDEO_MODELS: "aleph2",
+      RUNWAY_API_KEY: "runway-test-key"
+    },
+    resolveRunwayActualCost: async () => ({
+      amount: 1, currency: "USD", evidenceReference: "test:runway-task-ledger"
+    })
+  });
+  assert.ok(worker.listSupported().includes("runway:aleph2"));
+});
+
+
+test("rejects unknown or duplicate Runway model registrations before constructing a worker", () => {
+  assert.throws(() => createProviderAwareCloudVideoWorkerComposition({
+    ...base, runwayModels: ["gen4.5", "unknown-model"]
+  }), /unique list of explicitly supported model profiles/);
+  assert.throws(() => createProviderAwareCloudVideoWorkerComposition({
+    ...base, runwayModels: ["gen4.5", "gen4.5"]
+  }), /unique list of explicitly supported model profiles/);
+});
+
+
+test("source-edit model registration composes server-side source metadata probing by default", () => {
+  const worker = createProviderAwareCloudVideoWorkerComposition({
+    ...base,
+    createAdapters: undefined,
+    env: {
+      ...env,
+      FAL_VIDEO_MODEL: "fal-ai/wan/v2.7/text-to-video",
+      FAL_KEY: "queue-test-key",
+      FAL_BILLING_KEY: "billing-test-key",
+      RUNWAY_VIDEO_MODELS: "aleph2",
+      RUNWAY_API_KEY: "runway-test-key"
+    },
+    resolveRunwayActualCost: async () => ({
+      amount: 1, currency: "USD", evidenceReference: "test:runway-task-ledger"
+    })
+  });
+  assert.ok(worker.listSupported().includes("runway:aleph2"));
 });

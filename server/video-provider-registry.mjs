@@ -57,6 +57,73 @@ export const VIDEO_PROVIDER_CATALOG = freeze([
         }
       },
       {
+        id: "aleph2",
+        name: "Aleph 2.0",
+        availability: "disabled",
+        executionAdapter: "runway-cloud-worker",
+        capabilities: {
+          textToVideo: false, imageToVideo: false, videoToVideo: true,
+          videoEdit: true, videoExtend: false, videoReframe: false,
+          nativeAudio: false, negativePrompt: false, seed: false,
+          startFrame: false, endFrame: false, motionReference: false,
+          referenceImages: false, audioModes: [],
+          aspectRatios: ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"],
+          resolutions: ["provider_default"],
+          minDurationSeconds: 1, maxDurationSeconds: 30
+        },
+        constraints: {
+          maxPromptCharacters: 1000, maxKeyframes: 5,
+          inputVideoMaxSeconds: 30, outputFormat: "mp4",
+          sourceAssetRequired: true, sourceIsImmutable: true,
+          minimumPollIntervalMs: 5000,
+          pricingSource: "https://docs.dev.runwayml.com/guides/pricing/"
+        }
+      },
+      {
+        id: "magnific_video_upscaler_creative",
+        name: "Magnific Video Upscaler",
+        availability: "disabled",
+        executionAdapter: "runway-cloud-worker",
+        capabilities: {
+          textToVideo: false, imageToVideo: false, videoToVideo: false,
+          videoEdit: false, videoUpscale: true, videoExtend: false,
+          videoReframe: false, nativeAudio: false, negativePrompt: false,
+          seed: false, startFrame: false, endFrame: false,
+          motionReference: false, referenceImages: false, audioModes: [],
+          aspectRatios: ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"],
+          resolutions: ["720p", "1k", "2k", "4k"],
+          minDurationSeconds: 1, maxDurationSeconds: 30
+        },
+        constraints: {
+          inputVideoMaxSeconds: 30, requiresProbedOutputFrameCount: true,
+          creativity: [0, 100], sharpen: [0, 100], smartGrain: [0, 100],
+          flavors: ["vivid", "natural"], fpsBoost: true,
+          outputFormat: "mp4", sourceAssetRequired: true,
+          pricingSource: "https://docs.dev.runwayml.com/guides/pricing/"
+        }
+      },
+      {
+        id: "ruby",
+        name: "Runway Ruby HDR",
+        availability: "disabled",
+        executionAdapter: "runway-cloud-worker",
+        capabilities: {
+          textToVideo: false, imageToVideo: false, videoToVideo: false,
+          videoEdit: false, videoToHdr: true, videoUpscale: false,
+          videoExtend: false, videoReframe: false, nativeAudio: false,
+          negativePrompt: false, seed: false, startFrame: false,
+          endFrame: false, motionReference: false, referenceImages: false,
+          audioModes: [], aspectRatios: ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"],
+          resolutions: ["provider_default"], minDurationSeconds: 1, maxDurationSeconds: 30
+        },
+        constraints: {
+          inputVideoMaxSeconds: 30, sourceDynamicRange: "sdr",
+          outputFormats: ["hdr10", "hlg"], sourceDimensionsRequired: true,
+          outputContainer: "mp4", sourceAssetRequired: true,
+          pricingSource: "https://docs.dev.runwayml.com/guides/pricing/"
+        }
+      },
+      {
         id: "seedance2_5",
         name: "Seedance 2.5",
         availability: "disabled",
