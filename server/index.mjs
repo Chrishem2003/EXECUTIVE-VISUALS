@@ -366,8 +366,8 @@ export function createAppServer() {
       if(path==="/api/billing/plans"&&req.method==="GET"){send(res,200,{plans:listBillingPlans(db)},cors);return;}
       if(path==="/api/billing/overview"&&req.method==="GET"){send(res,200,{billing:getBillingOverview(db,user.id)},cors);return;}
       if(path==="/api/billing/checkout"&&req.method==="POST"){
-        if(process.env.BILLING_CHECKOUT_ENABLED!=="true"||!process.env.FLW_SECRET_KEY||!process.env.FLW_WEBHOOK_SECRET||!process.env.PUBLIC_APP_URL){
-          fail(res,503,"BILLING_CHECKOUT_DISABLED","Flutterwave checkout is disabled until merchant approval, webhook secret and public return URL are configured.");return;
+        if(process.env.BILLING_CHECKOUT_ENABLED!=="true"||AUTH_MODE!=="supabase"||REQUIRE_PERSISTENT_DATA_DIR!==true||!process.env.FLW_SECRET_KEY||!process.env.FLW_WEBHOOK_SECRET||!process.env.PUBLIC_APP_URL){
+          fail(res,503,"BILLING_CHECKOUT_DISABLED","Flutterwave checkout is disabled until merchant approval, Supabase authentication, persistent database storage, webhook secret and public return URL are configured.");return;
         }
         const body=await readJson(req,16*1024);
         const checkout=await createFlutterwaveCheckout(db,{user,planId:String(body.planId||""),secretKey:process.env.FLW_SECRET_KEY,publicAppUrl:process.env.PUBLIC_APP_URL});
@@ -924,6 +924,15 @@ if (AUTH_MODE==="supabase"&&(!process.env.SUPABASE_URL||!process.env.SUPABASE_PU
 if (process.env.NODE_ENV!=="test") {
   const server=createAppServer();
   server.listen(PORT,HOST,()=>process.stdout.write(`Executive Visuals API listening on http://${HOST}:${PORT}\n`));
-  const shutdown=()=>{if(workerTimer)clearInterval(workerTimer);for(const child of activeProcesses.values())if(!child.killed)child.kill("SIGTERM");server.close(()=>{db.close();process.exit(0);});setTimeout(()=>process.exit(1),10000).unref();};
+  let billingWebhookBusy=false;
+  const billingWebhookTimer=process.env.FLW_SECRET_KEY?setInterval(async()=>{
+    if(billingWebhookBusy)return;
+    billingWebhookBusy=true;
+    try{await processNextFlutterwaveWebhook(db,{secretKey:process.env.FLW_SECRET_KEY});}
+    catch(error){process.stderr.write("Billing webhook worker failed: "+String(error?.code||"PROCESSING_FAILED")+"\\n");}
+    finally{billingWebhookBusy=false;}
+  },5000):null;
+  billingWebhookTimer?.unref();
+  const shutdown=()=>{if(workerTimer)clearInterval(workerTimer);if(billingWebhookTimer)clearInterval(billingWebhookTimer);for(const child of activeProcesses.values())if(!child.killed)child.kill("SIGTERM");server.close(()=>{db.close();process.exit(0);});setTimeout(()=>process.exit(1),10000).unref();};
   process.on("SIGINT",shutdown);process.on("SIGTERM",shutdown);
 }
