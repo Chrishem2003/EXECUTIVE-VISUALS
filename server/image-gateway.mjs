@@ -1,8 +1,10 @@
 import { generateFalImage } from "./fal-image-gateway.mjs";
 import { generateGeminiImage } from "./gemini-image-gateway.mjs";
+import { generateRunwayImage } from "./runway-image-gateway.mjs";
 const loopbacks=new Set(["localhost","127.0.0.1","::1","[::1]"]);
-export async function generateImage({prompt,size="1024x1024",quality="medium",referenceImageDataUrl="",model=""}={}){
+export async function generateImage({prompt,size="1024x1024",quality="medium",referenceImageDataUrl="",referenceImages=[],model="",ratio="auto",reasoningEffort="high",background="auto",outputCount=1}={}){
  const provider=String(process.env.IMAGE_GATEWAY_PROVIDER||"openai-compatible").trim().toLowerCase();
+ if(provider==="runway")return generateRunwayImage({prompt,ratio,quality,reasoningEffort,background,referenceImages:referenceImages.length?referenceImages:(referenceImageDataUrl?[referenceImageDataUrl]:[]),model:model||process.env.RUNWAY_IMAGE_MODEL||process.env.IMAGE_GATEWAY_MODEL,outputCount});
  if(provider==="fal")return generateFalImage({prompt,size,quality,referenceImageDataUrl});
  if(provider==="gemini")return generateGeminiImage({prompt,size,quality,referenceImageDataUrl,model:model||process.env.GEMINI_IMAGE_MODEL});
  if(provider!=="openai-compatible")throw Object.assign(new Error("The configured image provider is not supported."),{code:"IMAGE_GATEWAY_CONFIG_INVALID"});
