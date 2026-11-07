@@ -5,6 +5,7 @@ import { validateWorkflowGraph } from "./workflow-validation.mjs";
 import { searchProjectKnowledge, formatKnowledgeForWorkflow } from "./knowledge-search.mjs";
 import { generateText } from "./ai-gateway.mjs";
 import { generateImage } from "./image-gateway.mjs";
+import { preflightRunwayRouterImage } from "./runway-image-gateway.mjs";
 import { generateFalVideo, getFalVideoCapabilities } from "./fal-video-gateway.mjs";
 import { generateRunwayVideo, getRunwayVideoCapabilities } from "./runway-video-gateway.mjs";
 import { storeGeneratedImage, storeGeneratedVideo, storeGeneratedAudio } from "./generated-assets.mjs";
@@ -21,6 +22,18 @@ import { buildMediaQualityReport } from "./media-quality.mjs";
 import { refundBillingCredits } from "./billing.mjs";
 
 const now=()=>new Date().toISOString();
+function normalizeRunwayRouterAspectRatio(value){
+ const raw=String(value||"auto");
+ if(raw==="auto")return "auto";
+ if(/^(16:9|9:16|1:1|4:3|3:4|21:9|2:3|3:2|4:5|5:4)$/.test(raw))return raw;
+ const match=/^(\\d{2,5}):(\\d{2,5})$/.exec(raw);
+ if(!match)throw Object.assign(new Error("Runway Model Router requires a supported aspect ratio."),{code:"IMAGE_GATEWAY_UNSUPPORTED_CAPABILITY"});
+ let a=Number(match[1]),b=Number(match[2]),x=a,y=b;
+ while(y){const t=x%y;x=y;y=t;}
+ const normalized=(a/x)+":"+(b/x);
+ if(!["16:9","9:16","1:1","4:3","3:4","21:9","2:3","3:2","4:5","5:4"].includes(normalized))throw Object.assign(new Error("The selected pixel ratio does not map to a supported Runway Model Router aspect ratio."),{code:"IMAGE_GATEWAY_UNSUPPORTED_CAPABILITY"});
+ return normalized;
+}
 function requireExecutionProvider(capability,remoteOptInVariable){
  return requireProviderForCapability(getProviderCatalog(),capability,{
   allowRemote:remoteOptInVariable?process.env[remoteOptInVariable]==="true":false
@@ -262,17 +275,20 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
     const usageStarted=Date.now();
     const provider=requireExecutionProvider("image.generate","IMAGE_GATEWAY_ALLOW_REMOTE");
     if(referenceImageDataUrls.length>1&&provider.provider!=="runway")throw Object.assign(new Error("The selected image provider supports only one reference image in this workflow."),{code:"IMAGE_GATEWAY_UNSUPPORTED_INPUT"});
-    const imageModel=String(config.model||values.model||provider.model||"unknown");
     const imageQuality=String(config.quality||(provider.provider==="runway"?"high":"medium"));
     const imageRatio=String(config.ratio||"auto");
     const imageReasoning=String(config.reasoningEffort||"high");
     const imageBackground=String(config.background||"auto");
     const outputCount=Number(config.outputCount??1);
     if(!Number.isSafeInteger(outputCount)||outputCount<1||outputCount>4)throw Object.assign(new Error("Image outputCount must be an integer from 1 to 4."),{code:"IMAGE_GATEWAY_INVALID_INPUT"});
-    if(outputCount>1&&provider.provider!=="image")throw Object.assign(new Error("Multi-output generation is currently supported only by the OpenAI-compatible image adapter; select one output or configure a compatible provider."),{code:"IMAGE_GATEWAY_UNSUPPORTED_CAPABILITY"});
-    const runwayPricing=provider.provider==="runway"?{ratio:imageRatio,quality:imageQuality,reasoningEffort:imageReasoning,background:imageBackground,outputCount,referenceImageCount:referenceImageDataUrls.length}:null;
-    reserveRemoteRequest(db,{ownerId:job.owner_id,projectId:job.project_id||null,jobId:job.id,provider,capability:"image.generate",billingReference:job.id+":"+runId+":"+nodeId+":image.generate",costContext:{provider:provider.provider,model:imageModel,unit:"image",quantity:outputCount,runwayPricing}});
-    const result=await generateImage({prompt,size:String(config.size||"1024x1024"),quality:imageQuality,referenceImageDataUrl,referenceImages:referenceImageDataUrls,model:imageModel,ratio:imageRatio,reasoningEffort:imageReasoning,background:imageBackground,outputCount});
+    const runwayRouterEnabled=provider.provider==="runway"&&process.env.RUNWAY_IMAGE_ROUTER_ENABLED==="true"&&Boolean(process.env.RUNWAY_IMAGE_ROUTER_CONFIG);
+    if(outputCount>1&&provider.provider!=="image"&&!runwayRouterEnabled)throw Object.assign(new Error("Multi-output generation requires the OpenAI-compatible image adapter or an enabled Runway Model Router; select one output or configure a compatible provider."),{code:"IMAGE_GATEWAY_UNSUPPORTED_CAPABILITY"});
+    const routerAspectRatio=runwayRouterEnabled?normalizeRunwayRouterAspectRatio(imageRatio):imageRatio;
+    const routerQuote=runwayRouterEnabled?await preflightRunwayRouterImage({prompt,aspectRatio:routerAspectRatio,resolution:config.resolution,referenceImages:referenceImageDataUrls,outputCount}):null;
+    const imageModel=String(routerQuote?.model||config.model||values.model||provider.model||"unknown");
+    const runwayPricing=provider.provider==="runway"&&!runwayRouterEnabled?{ratio:imageRatio,quality:imageQuality,reasoningEffort:imageReasoning,background:imageBackground,outputCount,referenceImageCount:referenceImageDataUrls.length}:null;
+    reserveRemoteRequest(db,{ownerId:job.owner_id,projectId:job.project_id||null,jobId:job.id,provider,capability:"image.generate",billingReference:job.id+":"+runId+":"+nodeId+":image.generate",costContext:{provider:provider.provider,model:imageModel,unit:"image",quantity:outputCount,runwayPricing,runwayRouterEstimateCredits:routerQuote?.estimatedCredits}});
+    const result=await generateImage({prompt,size:String(config.size||"1024x1024"),quality:imageQuality,referenceImageDataUrl,referenceImages:referenceImageDataUrls,model:imageModel,ratio:runwayRouterEnabled?routerAspectRatio:imageRatio,reasoningEffort:imageReasoning,background:imageBackground,outputCount,resolution:String(config.resolution||"")});
     const generated=Array.isArray(result.outputs)&&result.outputs.length?result.outputs:[{buffer:result.buffer}];
     if(generated.length!==outputCount)throw Object.assign(new Error("Image provider returned an unexpected number of generated assets."),{code:"IMAGE_GATEWAY_INVALID_RESPONSE"});
     recordModelUsage(db,{ownerId:job.owner_id,projectId:job.project_id||null,jobId:job.id,workflowRunId:runId,nodeId,provider:provider.provider,capability:"image.generate",model:result.model,usage:result.usage,durationMs:Date.now()-usageStarted});
