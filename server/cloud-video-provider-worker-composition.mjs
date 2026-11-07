@@ -58,7 +58,7 @@ export function createProviderAwareCloudVideoWorkerComposition({
     throw new Error("Provider-aware cloud video worker timeout is invalid.");
   }
   if (!Array.isArray(runwayModels) || runwayModels.length > 10 ||
-      runwayModels.some(model => typeof model !== "string" || !["gen4.5", "aleph2", "magnific_video_upscaler_creative"].includes(model)) ||
+      runwayModels.some(model => typeof model !== "string" || !["gen4.5", "aleph2", "magnific_video_upscaler_creative", "ruby"].includes(model)) ||
       new Set(runwayModels).size !== runwayModels.length) {
     throw new Error("Runway model registration must be a unique list of explicitly supported model profiles.");
   }
@@ -95,7 +95,7 @@ export function createProviderAwareCloudVideoWorkerComposition({
       if (typeof resolveRunwayActualCost !== "function") {
         throw new Error("Runway cloud registration requires an authoritative task-level billing resolver.");
       }
-      if (runwayModels.some(model => ["aleph2", "magnific_video_upscaler_creative"].includes(model)) &&
+      if (runwayModels.some(model => ["aleph2", "magnific_video_upscaler_creative", "ruby"].includes(model)) &&
           typeof prepareRunwayInput !== "function") {
         throw new Error("Runway source operations require an owner-scoped source-media resolver.");
       }
