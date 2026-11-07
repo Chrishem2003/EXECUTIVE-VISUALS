@@ -195,12 +195,19 @@ export function resolveBillingCreditCost(db, {
   const modelName = String(model || "").trim();
   const unitName = String(unit || "").trim();
   const count = Number(quantity);
+  const creditValueConfigured = env.BILLING_CREDIT_VALUE_MICROS !== undefined && env.BILLING_CREDIT_VALUE_MICROS !== "";
   const creditValueMicros = Number(env.BILLING_CREDIT_VALUE_MICROS);
   const markupBps = env.BILLING_COST_MARKUP_BPS === undefined || env.BILLING_COST_MARKUP_BPS === ""
     ? 5000 : Number(env.BILLING_COST_MARKUP_BPS);
-  if (!providerName || !modelName || !unitName || !Number.isSafeInteger(count) || count <= 0 ||
-      !Number.isSafeInteger(creditValueMicros) || creditValueMicros <= 0 ||
-      !Number.isSafeInteger(markupBps) || markupBps < 0 || markupBps > 50000) {
+  if (creditValueConfigured && (!Number.isSafeInteger(creditValueMicros) || creditValueMicros <= 0)) {
+    throw fail("BILLING_CREDIT_VALUE_MICROS must be a positive integer.", "BILLING_COST_CONFIG_INVALID", 500);
+  }
+  if (env.BILLING_COST_MARKUP_BPS !== undefined && env.BILLING_COST_MARKUP_BPS !== "" &&
+      (!Number.isSafeInteger(markupBps) || markupBps < 0 || markupBps > 50000)) {
+    throw fail("BILLING_COST_MARKUP_BPS must be an integer from 0 to 50000.", "BILLING_COST_CONFIG_INVALID", 500);
+  }
+  if (!creditValueConfigured || !providerName || !modelName || !unitName ||
+      !Number.isSafeInteger(count) || count <= 0) {
     return { credits: fallback, source: "flat_capability_fallback", provider: providerName || null,
       model: modelName || null, unit: unitName || null, quantity: Number.isSafeInteger(count) && count > 0 ? count : 1 };
   }
