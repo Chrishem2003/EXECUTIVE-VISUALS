@@ -20,7 +20,7 @@ import { createCloudTimelineApi } from "./cloud-timeline-api.mjs";
 import { validateSrt, validateWebVtt } from "./caption-validation.mjs";
 import { ensureTransformationPlanSchema, createTransformationPlan, approveTransformationPlan, listTransformationPlans, getTransformationPlan } from "./transformation-plans.mjs";
 import { signInWithSupabasePassword, signUpWithSupabasePassword, refreshSupabaseSession, getSupabaseUser, revokeSupabaseSession } from "./supabase-password-auth.mjs";
-import { ensureBillingSchema, touchBillingAccount, getBillingOverview, listBillingPlans, getAdminOverview, listAdminUsers, saveBillingPlan, assignManualSubscription, adjustBillingCredits, setBillingAccountStatus, listBillingModelPrices, saveBillingModelPrice } from "./billing.mjs";
+import { ensureBillingSchema, touchBillingAccount, getBillingOverview, assertBillingStorageQuota, assertConcurrentJobCapacity, listBillingPlans, getAdminOverview, listAdminUsers, saveBillingPlan, assignManualSubscription, adjustBillingCredits, setBillingAccountStatus, listBillingModelPrices, saveBillingModelPrice } from "./billing.mjs";
 import { ensureBillingWebhookSchema, receiveFlutterwaveWebhook, processNextFlutterwaveWebhook, createFlutterwaveCheckout } from "./billing-webhooks.mjs";
 import { ensureDodoSubscriptionSchema, dodoProductEnvName, dodoSubscriptionCheckoutEnabled, dodoCustomerPortalEnabled, createDodoSubscriptionCheckout, receiveDodoWebhook, processNextDodoWebhook, getDodoCheckoutStatus, createDodoCustomerPortalSession } from "./dodo-subscriptions.mjs";
 
@@ -198,7 +198,15 @@ async function storeUpload(req,user,projectId) {
   if(!ALLOWED_MEDIA.has(mediaType))throw Object.assign(new Error("Unsupported media type."),{status:415,code:"UNSUPPORTED_MEDIA_TYPE"});
   if(projectId&&!canWriteProject(db,user.id,projectId))throw Object.assign(new Error("Project not found or you do not have editor access."),{status:404,code:"PROJECT_NOT_FOUND"});
   const declaredSize=Number(req.headers["content-length"]||0);
+  if(!Number.isSafeInteger(declaredSize)||declaredSize<0)throw Object.assign(new Error("Upload Content-Length is invalid."),{status:400,code:"UPLOAD_LENGTH_INVALID"});
   if(declaredSize>MAX_UPLOAD_BYTES)throw Object.assign(new Error("Upload exceeds the configured size limit."),{status:413,code:"UPLOAD_TOO_LARGE"});
+  const projectOwner=projectId?db.prepare("SELECT owner_id FROM projects WHERE id=?").get(projectId)?.owner_id:user.id;
+  if(!projectOwner)throw Object.assign(new Error("Project owner could not be resolved."),{status:404,code:"PROJECT_NOT_FOUND"});
+  const storagePlan=getBillingOverview(db,projectOwner).plan;
+  const storageLimit=storagePlan?.limits?.storageBytes===undefined?null:Number(storagePlan.limits.storageBytes);
+  const currentStorage=()=>Number(db.prepare(`SELECT COALESCE(SUM(byte_size),0) AS bytes FROM assets
+    WHERE deleted_at IS NULL AND (owner_id=? OR project_id IN (SELECT id FROM projects WHERE owner_id=?))`).get(projectOwner,projectOwner).bytes||0);
+  assertBillingStorageQuota({limitBytes:storageLimit,usedBytes:currentStorage(),incomingBytes:declaredSize});
   let decodedName="upload";
   try{decodedName=decodeURIComponent(String(req.headers["x-file-name"]||"upload"));}
   catch{throw Object.assign(new Error("File name header is malformed."),{status:400,code:"INVALID_FILE_NAME"});}
@@ -220,9 +228,18 @@ async function storeUpload(req,user,projectId) {
   const sha256=digest.digest("hex");
   const extension=extname(originalName).toLowerCase();
   const metadata=(extension===".srt"&&(mediaType==="text/plain"||mediaType==="application/x-subrip"))?{captionValidation:validateSrt(await readFile(absolute,"utf8"))}:extension===".vtt"&&mediaType==="text/vtt"?{captionValidation:validateWebVtt(await readFile(absolute,"utf8"))}:{};
-  db.prepare("INSERT INTO assets(id,owner_id,project_id,original_name,media_type,byte_size,sha256,storage_path,metadata_json) VALUES(?,?,?,?,?,?,?,?,?)")
-    .run(id,user.id,projectId||null,originalName,mediaType,size,sha256,relative,json(metadata));
-  audit(db,user.id,"asset.uploaded","asset",id,{name:originalName,mediaType,size,sha256},projectId||null);
+  db.exec("BEGIN IMMEDIATE");
+  try{
+    assertBillingStorageQuota({limitBytes:storageLimit,usedBytes:currentStorage(),incomingBytes:size});
+    db.prepare("INSERT INTO assets(id,owner_id,project_id,original_name,media_type,byte_size,sha256,storage_path,metadata_json) VALUES(?,?,?,?,?,?,?,?,?)")
+      .run(id,user.id,projectId||null,originalName,mediaType,size,sha256,relative,json(metadata));
+    audit(db,user.id,"asset.uploaded","asset",id,{name:originalName,mediaType,size,sha256},projectId||null);
+    db.exec("COMMIT");
+  }catch(error){
+    db.exec("ROLLBACK");
+    await unlink(absolute).catch(()=>{});
+    throw error;
+  }
   return {id,projectId:projectId||null,name:originalName,mediaType,size,sha256,createdAt:now()};
 }
 async function processNextJob() {
