@@ -33,7 +33,7 @@ export function estimateRunwayVideoCredits(options={}) {
   const allowed=new Set([
     "model","durationSeconds","resolution","audio","inputVideoSeconds","referenceVideoSeconds",
     "referenceImageCount","referenceAudioCount","hasStartFrame","outputFrames","sourceWidth",
-    "sourceHeight","sourceDynamicRange","outputWidth","outputHeight","outputFormat","targetFramerate","inputType","pricingDate"
+    "sourceHeight","sourceDynamicRange","outputWidth","outputHeight","outputFormat","targetFramerate","inputType","durationAuto","pricingDate"
   ]);
   const unknown=Object.keys(options).filter(key=>!allowed.has(key));
   if(unknown.length) {
@@ -42,11 +42,14 @@ export function estimateRunwayVideoCredits(options={}) {
   const {
     model,durationSeconds,resolution:outputResolution,audio:hasAudio,
     inputVideoSeconds:requestedInputVideoSeconds,referenceVideoSeconds=0,referenceImageCount=0,referenceAudioCount=0,
-    hasStartFrame=false,outputFrames,sourceWidth,sourceHeight,sourceDynamicRange,outputWidth,outputHeight,outputFormat:requestedOutputFormat,targetFramerate,inputType="text",pricingDate
+    hasStartFrame=false,outputFrames,sourceWidth,sourceHeight,sourceDynamicRange,outputWidth,outputHeight,outputFormat:requestedOutputFormat,targetFramerate,inputType="text",durationAuto=false,pricingDate
   }=options;
   const outputFormat=requestedOutputFormat??(model==="ruby"?"hdr10":"mp4");
   const durationLimit=model==="enhance_frame_rate"?300:model==="gemini_omni_flash_1.2"?15:model==="kling_4_flash"?20:30;
-  const duration=finiteDuration(durationSeconds,"durationSeconds",{max:durationLimit});
+  if(typeof durationAuto!=="boolean")throw fail("durationAuto must be a boolean.","RUNWAY_PRICE_INVALID_INPUT");
+  if(durationAuto&&model!=="gemini_omni_flash_1.2")throw fail("Automatic duration reservation is supported only for Gemini Omni 1.2 Flash.","RUNWAY_PRICE_UNSUPPORTED_OPTION");
+  if(durationAuto&&durationSeconds!==undefined)throw fail("Provide either durationSeconds or durationAuto, not both.","RUNWAY_PRICE_INVALID_INPUT");
+  const duration=durationAuto?15:finiteDuration(durationSeconds,"durationSeconds",{max:durationLimit});
   const inputVideoLimit=model==="enhance_frame_rate"?300:30;
   const inputVideo=finiteDuration(requestedInputVideoSeconds??(model==="enhance_frame_rate"?durationSeconds:0),"inputVideoSeconds",{allowZero:true,max:inputVideoLimit});
   if(model==="gen4.5"&&(duration<2||duration>10))throw fail("durationSeconds must be between 2 and 10 for Gen-4.5.","RUNWAY_PRICE_INVALID_INPUT");
@@ -271,6 +274,7 @@ export function estimateRunwayVideoCredits(options={}) {
     provider:"runway",model:pricingModel,pricingDate,source:SOURCE,
     estimatedCredits:credits,estimatedUsd:Math.round(credits*0.01*10000)/10000,
     currency:"USD",formula,discount,
+    durationAutoReservationSeconds:durationAuto?15:null,
     evidenceType:"published_price_estimate",billable:false,settlementEligible:false
   });
 }
