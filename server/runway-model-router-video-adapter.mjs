@@ -35,7 +35,7 @@ function routedInput(input) {
     }
     result.aspectRatio = input.aspectRatio;
   }
-  if (input.resolution !== undefined) {
+  if (input.resolution !== undefined && input.resolution !== "provider_default") {
     if (!["480p", "720p", "1080p", "4k"].includes(input.resolution)) {
       throw fail("Runway routed resolution is unsupported.", "RUNWAY_ROUTER_INPUT_INVALID");
     }
@@ -44,6 +44,10 @@ function routedInput(input) {
   if (input.audio !== undefined) {
     if (typeof input.audio !== "boolean") throw fail("Runway routed audio flag must be boolean.", "RUNWAY_ROUTER_INPUT_INVALID");
     result.audio = input.audio;
+  } else if (input.audioMode === "generated") {
+    result.audio = true;
+  } else if (input.audioMode === "none") {
+    result.audio = false;
   }
   if (input.seed !== undefined) {
     if (!Number.isInteger(input.seed) || input.seed < 0 || input.seed > 4294967295) {
@@ -152,7 +156,7 @@ export function createRunwayModelRouterVideoAdapter({
     model,
     minimumPollIntervalMs: 5000,
     async prepareInput(input, context) {
-      if (!input || input.provider !== "runway" || input.model !== model || input.operation && input.operation !== "text-to-video") {
+      if (!input || input.provider !== "runway" || input.model !== model || input.operation && !["text-to-video", "image-to-video"].includes(input.operation)) {
         throw fail("Runway router job identity or operation is invalid.", "VIDEO_JOB_INPUT_MISMATCH");
       }
       if (typeof prepareInput !== "function") {
