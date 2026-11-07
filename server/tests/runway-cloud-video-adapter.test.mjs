@@ -147,3 +147,63 @@ test("Runway cloud adapter rejects video-to-video operation on Gen-4.5 text-only
     prompt: "Edit source", videoUri: "runway://ephemeral/source"
   }), error => error.code === "RUNWAY_INPUT_INVALID");
 });
+
+
+test("prepares an authorized source and submits a durable Magnific video-upscale task", async () => {
+  const calls = [];
+  const adapter = createRunwayCloudVideoAdapter({
+    ...base,
+    model: "magnific_video_upscaler_creative",
+    prepareInput: async (input, context) => {
+      assert.equal(input.sourceVideoAssetId, "master-asset");
+      assert.equal(context.job.owner_id, "owner-1");
+      return { sourceVideo: { buffer: Buffer.alloc(512), filename: "master.mp4", mimeType: "video/mp4" } };
+    },
+    fetchImpl: async (url, options = {}) => {
+      const target = String(url);
+      calls.push({ url: target, options });
+      if (target.endsWith("/uploads")) return new Response(JSON.stringify({
+        uploadUrl: "https://uploads.runway.example/signed-upscale",
+        fields: { key: "upscale-source" },
+        runwayUri: "runway://ephemeral/upscale-source"
+      }), { status: 200 });
+      if (target === "https://uploads.runway.example/signed-upscale") return new Response(null, { status: 204 });
+      if (target.endsWith("/video_upscale")) return new Response(JSON.stringify({ id }), { status: 200 });
+      throw new Error("unexpected URL " + target);
+    }
+  });
+  const input = {
+    provider: "runway", model: "magnific_video_upscaler_creative",
+    operation: "video-upscale", sourceVideoAssetId: "master-asset",
+    resolution: "4k", creativity: 30, sharpen: 55, smartGrain: 10,
+    flavor: "vivid", fpsBoost: true
+  };
+  const prepared = await adapter.prepareInput(input, { job: { owner_id: "owner-1" } });
+  assert.equal(prepared.videoUri, "runway://ephemeral/upscale-source");
+  const submitted = await adapter.submit(prepared);
+  assert.deepEqual(submitted, { taskId: id, status: "queued" });
+  const post = calls.find(call => call.url.endsWith("/video_upscale"));
+  assert.ok(post);
+  assert.deepEqual(JSON.parse(post.options.body), {
+    model: "magnific_video_upscaler_creative",
+    videoUri: "runway://ephemeral/upscale-source",
+    resolution: "4k", flavor: "vivid",
+    creativity: 30, sharpen: 55, smartGrain: 10, fpsBoost: true
+  });
+});
+
+test("video upscale rejects invalid quality controls and mismatched model profiles", async () => {
+  const adapter = createRunwayCloudVideoAdapter({
+    ...base, model: "magnific_video_upscaler_creative"
+  });
+  await assert.rejects(() => adapter.submit({
+    provider: "runway", model: "magnific_video_upscaler_creative",
+    operation: "video-upscale", videoUri: "runway://ephemeral/source",
+    resolution: "8k"
+  }), error => error.code === "RUNWAY_INPUT_INVALID");
+  await assert.rejects(() => adapter.submit({
+    provider: "runway", model: "magnific_video_upscaler_creative",
+    operation: "video-upscale", videoUri: "runway://ephemeral/source",
+    creativity: 101
+  }), error => error.code === "RUNWAY_INPUT_INVALID");
+});
