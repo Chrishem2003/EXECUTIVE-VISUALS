@@ -24,6 +24,8 @@ export function ensureBillingWebhookSchema(db) {
   if (!columns.has("payload_json")) db.exec("ALTER TABLE billing_provider_events ADD COLUMN payload_json TEXT NOT NULL DEFAULT '{}'");
   if (!columns.has("attempts")) db.exec("ALTER TABLE billing_provider_events ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0");
   if (!columns.has("last_error")) db.exec("ALTER TABLE billing_provider_events ADD COLUMN last_error TEXT");
+  if (!columns.has("lease_owner")) db.exec("ALTER TABLE billing_provider_events ADD COLUMN lease_owner TEXT");
+  if (!columns.has("lease_expires_at")) db.exec("ALTER TABLE billing_provider_events ADD COLUMN lease_expires_at TEXT");
   db.exec(`
     CREATE TABLE IF NOT EXISTS billing_payment_orders (
       id TEXT PRIMARY KEY,
