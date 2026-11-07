@@ -120,6 +120,37 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     const input=row.input||{},approval=row.estimated_cost||{};
     return {id:row.id,projectId:row.project_id,sourceAssetId:input.sourceAssetId,operation:input.operation,prompt:input.prompt,durationSeconds:input.durationSeconds,referenceAssetIds:input.referenceAssetIds||[],preservation:input.preservation||[],status:row.status==="awaiting_approval"&&row.approved_at?"approved":row.status==="draft"?"draft":row.status,rightsConfirmed:input.rightsConfirmed===true,subjectConsentConfirmed:input.subjectConsentConfirmed===true,approval:row.approved_at?{id:approval.approvalId,estimatedCostMicros:approval.estimatedCostMicros,approvedBudgetMicros:approval.approvedBudgetMicros,currency:approval.currency,adapterId:approval.adapterId,capability:approval.capability,approvedAt:row.approved_at}:null,createdAt:row.created_at,updatedAt:row.updated_at};
    };
+   if(path==="/api/cloud/transformations/quote"&&method==="POST"){
+    if(!body||typeof body!=="object"||Array.isArray(body))return response(400,{error:{code:"TRANSFORMATION_BODY_INVALID",message:"Transformation quote must be a JSON object."}});
+    const projectId=String(body.projectId||""),sourceAssetId=String(body.sourceAssetId||""),operation=String(body.operation||"");
+    if(!safeId(projectId)||await allow({ownerId,projectId,action:"write"})!==true)return response(404,{error:{code:"PROJECT_NOT_FOUND",message:"Project not found or editor access required."}});
+    if(!transformationOps.has(operation))return response(400,{error:{code:"TRANSFORMATION_OPERATION_INVALID",message:"Choose a supported transformation."}});
+    const prompt=typeof body.prompt==="string"?body.prompt.trim():"";
+    if(prompt.length<8||prompt.length>1000)return response(400,{error:{code:"TRANSFORMATION_INPUT_INVALID",message:"Provide Aleph 2 edit instructions of 8 to 1,000 characters."}});
+    if(body.rightsConfirmed!==true)return response(403,{error:{code:"MEDIA_RIGHTS_REQUIRED",message:"Confirm rights to use the source media."}});
+    if(operation==="person_replace"&&body.subjectConsentConfirmed!==true)return response(403,{error:{code:"SUBJECT_CONSENT_REQUIRED",message:"Explicit subject consent is required for person replacement."}});
+    if(!sourceResolver)return response(503,{error:{code:"VIDEO_SOURCE_RESOLVER_UNAVAILABLE",message:"A private server-side source resolver is required to quote this source."}});
+    const source=await service.assets.get({ownerId,assetId:sourceAssetId});
+    if(source.projectId!==projectId||!String(source.mediaType||"").startsWith("video/"))return response(422,{error:{code:"SOURCE_VIDEO_INVALID",message:"Source video must be an asset in this project."}});
+    const metadata=await sourceResolver.resolveMetadata({ownerId,projectId,assetId:sourceAssetId});
+    const generationInput=buildAleph2GenerationInput({projectId,input:{sourceAssetId,operation,prompt,preservation:Array.isArray(body.preservation)?[...new Set(body.preservation.filter(value=>preservationOptions.has(value)))]:[]},metadata});
+    const estimate=estimateVideoGenerationCost({
+     provider:"runway",model:"aleph2",operation:"video-to-video",
+     durationSeconds:generationInput.durationSeconds,inputVideoSeconds:metadata.durationSeconds,
+     inputType:"video",outputFormat:"mp4",resolution:"provider_default",
+     sourceWidth:metadata.width,sourceHeight:metadata.height,sourceDynamicRange:metadata.sourceDynamicRange
+    });
+    const estimatedCostMicros=Math.ceil(Number(estimate.amount)*1000000);
+    if(!Number.isSafeInteger(estimatedCostMicros)||estimatedCostMicros<1)return response(503,{error:{code:"VIDEO_PRICE_ESTIMATE_INVALID",message:"The provider returned an unusable cost estimate."}});
+    return response(200,{quote:{
+     provider:"runway",model:"aleph2",operation:"video-to-video",currency:"USD",
+     estimatedCostMicros,estimatedAmount:Number(estimate.amount),basis:estimate.basis,
+     pricingSource:estimate.pricingSource,pricingDate:estimate.pricingDate,
+     source:{assetId:sourceAssetId,mediaType:metadata.mediaType,durationSeconds:metadata.durationSeconds,width:metadata.width,height:metadata.height,frameCount:metadata.frameCount},
+     output:{durationSeconds:generationInput.durationSeconds,format:"mp4"},
+     billable:false,requiresApproval:true,expiresAt:new Date(Date.now()+5*60*1000).toISOString()
+    }});
+   }
    if(path==="/api/cloud/transformations"&&method==="GET"){
     const projectId=String(query.projectId||"");
     if(!safeId(projectId))return response(400,{error:{code:"INVALID_PROJECT_ID",message:"Choose a valid project."}});
