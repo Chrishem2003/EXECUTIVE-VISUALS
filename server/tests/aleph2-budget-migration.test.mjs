@@ -31,6 +31,7 @@ test("Aleph 2 SQL enqueue is restricted to MP4 video-to-video with the published
     "p_provider = 'runway' and p_model = 'aleph2'",
     "coalesce(p_input ->> 'operation','') <> 'video-to-video'",
     "length(coalesce(p_input ->> 'durationSeconds','')) > 2",
+    "(p_input ->> 'durationSeconds')::numeric < 2",
     "(p_input ->> 'durationSeconds')::numeric > 30",
     "greatest(0.56, (p_input ->> 'durationSeconds')::numeric * 0.28)",
     "coalesce(p_input ->> 'outputFormat','mp4') <> 'mp4'"
