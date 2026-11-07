@@ -951,8 +951,10 @@ export function listSelectableVideoProviderModels() {
  * Unknown legacy model IDs retain their existing adapter-specific validation.
  */
 const LEGACY_MODEL_CATALOG_IDS = Object.freeze({
-  kling_4_flash: ["kling", "kling-4.0-flash"],
-  "gemini_omni_flash_1.2": ["google", "gemini-omni-1.2-flash"]
+  seedance2_5: ["runway", "seedance2_5"],
+  kling_4: ["runway", "kling_4"],
+  kling_4_flash: ["runway", "kling_4_flash"],
+  "gemini_omni_flash_1.2": ["runway", "gemini_omni_flash_1.2"]
 });
 
 export function isLegacyVideoModelSelectable(modelId) {
