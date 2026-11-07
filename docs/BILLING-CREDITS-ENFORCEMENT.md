@@ -78,7 +78,7 @@ Dodo Payments is the proposed recurring subscription provider, while Flutterwave
 - `DODO_PAYMENTS_ENVIRONMENT=test_mode` for staging; `live_mode` only after approval.
 - `DODO_PRODUCT_ID_<PLAN_CODE>` for each recurring plan created in the Dodo dashboard.
 
-The browser return is never proof of subscription activation. A subscription becomes active and credits are granted only after a signed webhook is verified and the subscription product, amount, currency, user, and local plan match. Renewal events grant the next period's credits idempotently; past-due, on-hold, paused, cancelled, and expired events update local subscription status.
+The browser return is never proof of subscription activation. A subscription becomes active and credits are granted only after a signed webhook is verified and the subscription product, amount, currency, user, and local plan match. Renewal events grant the next period's credits idempotently; past-due, on-hold, paused, cancelled, and expired events update local subscription status. The authenticated billing workspace can create a short-lived, owner-scoped Dodo customer-portal session so customers can manage payment methods, invoices and cancellation in Dodo's hosted portal; the local customer ID is never accepted from the browser.
 
 Dodo's published merchant policy lists Uganda among accepted merchant countries, but AI content-generation tools are a review category. Dodo requires no impersonation, scraping, deepfakes, face-swap features, or voice cloning. Executive Visuals must receive written approval before the `DODO_MERCHANT_APPROVED` flag is set. No Dodo account, product, API key, webhook endpoint, or live payment was created during this implementation.
 
@@ -88,3 +88,4 @@ Official references:
 - Subscription event payloads: https://docs.dodopayments.com/developer-resources/webhooks/intents/subscription
 - Merchant acceptance policy and AI-content review category: https://docs.dodopayments.com/miscellaneous/merchant-acceptance
 - Accepted merchant countries: https://docs.dodopayments.com/miscellaneous/list-of-countries-we-accept-payments-from
+- Customer portal sessions: https://docs.dodopayments.com/api-reference/customers/post-customers-customer-id-customer-portal-session
