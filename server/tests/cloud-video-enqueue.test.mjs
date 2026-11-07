@@ -396,6 +396,7 @@ test("Runway Model Router enqueue requires explicit config gates and treats appr
   let calls = 0;
   const env = {
     RUNWAY_MODEL_ROUTER_ENABLED: "true",
+    CLOUD_VIDEO_WORKER_ENABLED: "true",
     RUNWAY_VIDEO_ALLOW_REMOTE: "true",
     RUNWAY_VIDEO_ROUTER_CONFIG: "production-video",
     VIDEO_GATEWAY_ENABLED: "true",
@@ -427,7 +428,7 @@ test("Runway Model Router rejects non-USD ceilings and invalid config slugs befo
   };
   let calls = 0;
   const env = {
-    RUNWAY_MODEL_ROUTER_ENABLED: "true", RUNWAY_VIDEO_ALLOW_REMOTE: "true",
+    RUNWAY_MODEL_ROUTER_ENABLED: "true", CLOUD_VIDEO_WORKER_ENABLED: "true", RUNWAY_VIDEO_ALLOW_REMOTE: "true",
     RUNWAY_VIDEO_ROUTER_CONFIG: "INVALID SLUG",
     VIDEO_GATEWAY_ENABLED: "true", VIDEO_GATEWAY_ALLOW_REMOTE: "true"
   };
