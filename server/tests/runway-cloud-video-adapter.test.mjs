@@ -207,3 +207,40 @@ test("video upscale rejects invalid quality controls and mismatched model profil
     creativity: 101
   }), error => error.code === "RUNWAY_INPUT_INVALID");
 });
+
+
+test("prepares an owner-scoped first frame and submits Gen-4.5 image-to-video", async () => {
+  const calls = [];
+  const adapter = createRunwayCloudVideoAdapter({
+    ...base,
+    prepareInput: async (input, context) => {
+      assert.equal(input.startFrameAssetId, "first-frame-asset");
+      assert.equal(context.job.owner_id, "owner-1");
+      return { firstFrame: { buffer: Buffer.alloc(512), filename: "first.png", mimeType: "image/png" } };
+    },
+    fetchImpl: async (url, options = {}) => {
+      const target = String(url);
+      calls.push({ url: target, options });
+      if (target.endsWith("/uploads")) return new Response(JSON.stringify({
+        uploadUrl: "https://uploads.runway.example/signed-frame",
+        fields: { key: "first-frame" },
+        runwayUri: "runway://ephemeral/first-frame"
+      }), { status: 200 });
+      if (target === "https://uploads.runway.example/signed-frame") return new Response(null, { status: 204 });
+      if (target.endsWith("/image_to_video")) return new Response(JSON.stringify({ id }), { status: 200 });
+      throw new Error("unexpected URL " + target);
+    }
+  });
+  const input = {
+    provider: "runway", model: "gen4.5", operation: "image-to-video",
+    prompt: "Animate the opening frame", startFrameAssetId: "first-frame-asset",
+    durationSeconds: 5, aspectRatio: "16:9"
+  };
+  const prepared = await adapter.prepareInput(input, { job: { owner_id: "owner-1" } });
+  assert.equal(prepared.promptImageUri, "runway://ephemeral/first-frame");
+  const submitted = await adapter.submit(prepared);
+  assert.deepEqual(submitted, { taskId: id, status: "queued" });
+  const post = calls.find(call => call.url.endsWith("/image_to_video"));
+  assert.ok(post);
+  assert.equal(JSON.parse(post.options.body).promptImage, "runway://ephemeral/first-frame");
+});
