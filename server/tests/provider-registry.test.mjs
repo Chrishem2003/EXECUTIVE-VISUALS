@@ -168,3 +168,23 @@ test("Gemini Omni is visible in settings but remains blocked until app authoriza
  assert.equal(findProviderForCapability(catalog, "video.edit", { allowRemote: true }), null);
  assert.equal(JSON.stringify(catalog).includes("never-return-this"), false);
 });
+
+test("Runway GPT Image 2.6 adapter is discoverable but remains disabled until explicit opt-in",()=>{
+ const catalog=getProviderCatalog({
+  IMAGE_GATEWAY_PROVIDER:"runway",IMAGE_GATEWAY_ENABLED:"true",IMAGE_GATEWAY_ALLOW_REMOTE:"false",
+  RUNWAY_API_KEY:"do-not-return",RUNWAY_IMAGE_MODEL:"gpt_image_2_6_flare"
+ });
+ const image=catalog.providers.find(item=>item.id==="image");
+ assert.equal(image.provider,"runway");
+ assert.equal(image.status,"remote_opt_in_required");
+ assert.ok(image.availableModels.some(model=>model.id==="gpt_image_2_6_flare"&&model.executionAdapter==="runway-image-v1"));
+ assert.ok(image.availableModels.some(model=>model.id==="gpt_image_2_6_sunburst"));
+ assert.equal(findProviderForCapability(catalog,"image.generate"),null);
+ assert.equal(JSON.stringify(catalog).includes("do-not-return"),false);
+});
+test("Runway image provider requires an allowlisted model and server key",()=>{
+ const noKey=getProviderCatalog({IMAGE_GATEWAY_PROVIDER:"runway",IMAGE_GATEWAY_ENABLED:"true",RUNWAY_IMAGE_MODEL:"gpt_image_2_6_flare"});
+ assert.equal(noKey.providers.find(item=>item.id==="image").status,"needs_configuration");
+ const wrongModel=getProviderCatalog({IMAGE_GATEWAY_PROVIDER:"runway",IMAGE_GATEWAY_ENABLED:"true",RUNWAY_API_KEY:"secret",RUNWAY_IMAGE_MODEL:"unknown"});
+ assert.equal(wrongModel.providers.find(item=>item.id==="image").status,"ready");
+});
