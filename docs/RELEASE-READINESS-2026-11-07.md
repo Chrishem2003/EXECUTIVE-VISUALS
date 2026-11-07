@@ -181,3 +181,21 @@ The release remains blocked pending isolated staging acceptance, durable private
 - CI on commit `ba0ef47e99e96f8d14aed8ff3110ac7de230745e`: typecheck passed, build and 782/782 regression tests passed, Google Drive integration suite passed, and disposable PostgreSQL integration passed.
 - The integration branch remains 454 commits ahead of main and zero commits behind; PR #206 remains draft. The route remains disabled by default and no paid provider generation or production mutation was performed.
 - Still outstanding: customer-facing pre-approval quote endpoint binding the exact prepared input hash and quote expiry to explicit approval; task-correlated provider-cost settlement/refund UX; source-video edit/extend through Model Router; user-facing router configuration; isolated staging acceptance and full production smoke tests.
+
+## Reverse-engineering finding — interactive video path is not yet unified
+
+A read-only trace of the application UI and backend found two separate video execution paths:
+
+- The interactive Video Studio builds a local `video.generate` workflow with a human approval node. `server/workflow-executor.mjs` then calls the legacy synchronous `generateRunwayVideo` / `generateFalVideo` gateways and writes the result into the local SQLite media library.
+- The newer provider-aware hosted worker uses the Supabase queue, durable submission ledger, approved budget reservation, owner/project-scoped private assets and asynchronous provider polling. It is not currently invoked by the interactive workflow route; no customer-facing cloud video enqueue or quote endpoint is present in `server/index.mjs`.
+
+This is now a P0 release blocker, not a cosmetic follow-up. Build an authenticated application bridge and customer quote/approval API before enabling or selling the hosted Model Router. The bridge must preserve the user's identity and project scope, use a single durable asset identity visible to downstream editing nodes, and never silently fall back to legacy local generation.
+
+## Deployment boundary — read-only Render inspection
+
+- The live `EXECUTIVE-VISUALS` service tracks `main`; its latest live deployment is commit `18cb97bf027dc5037fc1d932f36dd4d00f6e6c67`.
+- The separate `EXECUTIVE-VISUALS-1` test service tracks `feat/credits` and is suspended.
+- PR #206's integration branch is not attached to either service. It has not been deployed to isolated staging.
+- No Render settings, production service, test service, database, secrets or storage were changed during this inspection.
+
+Therefore, CI passing does not constitute staging acceptance or production readiness. Keep PR #206 draft and all remote generation gates disabled until a separate active staging target is authorized and the bridge is end-to-end verified.
