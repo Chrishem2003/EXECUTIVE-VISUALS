@@ -220,3 +220,17 @@ test("Runway video provider exposes the new Flash profiles but rejects unknown m
  });
  assert.equal(unknown.providers.find(item=>item.id==="video").status,"needs_configuration");
 });
+
+
+test("catalogued but disabled cloud-worker models are not exposed by the legacy synchronous provider catalog", () => {
+ const catalog=getProviderCatalog({
+  VIDEO_GATEWAY_PROVIDER:"runway",VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",
+  RUNWAYML_API_SECRET:"do-not-return",RUNWAY_VIDEO_MODEL:"kling_4_flash"
+ });
+ const video=catalog.providers.find(item=>item.id==="video");
+ assert.equal(video.status,"needs_configuration");
+ assert.equal(video.configured,false);
+ assert.equal(video.availableModels.some(model=>model.id==="kling_4_flash"),false);
+ assert.equal(video.availableModels.some(model=>model.id==="gemini_omni_flash_1.2"),false);
+ assert.equal(JSON.stringify(catalog).includes("do-not-return"),false);
+});
