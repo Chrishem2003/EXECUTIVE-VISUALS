@@ -88,9 +88,13 @@ export async function queryRunwayOrganizationUsage({
     let payload;
     try { payload = raw ? JSON.parse(raw) : null; }
     catch { throw fail("Runway usage response was not valid JSON.", "RUNWAY_USAGE_RESPONSE_INVALID", 502); }
+    const totals = normalizeRunwayOrganizationUsage(payload);
+    if (totals.some(row => row.date < startDate || row.date >= beforeDate)) {
+      throw fail("Runway usage response contains dates outside the requested window.", "RUNWAY_USAGE_RESPONSE_INVALID", 502);
+    }
     return Object.freeze({
       window: Object.freeze({ startDate, beforeDate }),
-      totals: normalizeRunwayOrganizationUsage(payload),
+      totals,
       evidenceType: "provider_daily_model_aggregate",
       settlementEligible: false
     });
