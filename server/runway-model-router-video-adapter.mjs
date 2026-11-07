@@ -157,9 +157,17 @@ export function createRunwayModelRouterVideoAdapter({
       if (!input || input.provider !== "runway" || input.model !== model || input.operation && input.operation !== "text-to-video") {
         throw fail("Runway router job identity or operation is invalid.", "VIDEO_JOB_INPUT_MISMATCH");
       }
-      if (typeof prepareInput !== "function") return routedInput(input);
+      if (typeof prepareInput !== "function") {
+        routedInput(input);
+        return input;
+      }
       const prepared = await prepareInput(input, context);
-      return routedInput({ ...input, ...prepared });
+      if (!prepared || typeof prepared !== "object" || Array.isArray(prepared)) {
+        throw fail("Runway router private input preparation returned an invalid object.", "VIDEO_INPUT_ASSET_RESOLUTION_FAILED");
+      }
+      const merged = { ...input, ...prepared };
+      routedInput(merged);
+      return merged;
     },
     async submit(input) {
       assertEnabled();
