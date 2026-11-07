@@ -39,7 +39,16 @@ export function renderBillingWorkspace(){
  '<div class="notice">'+(state.checkoutEnabled?"One-time credit top-ups can be purchased when an eligible credit pack is available. Recurring subscription checkout and renewal are not enabled.":"Payment processing is not active. No payment details are collected.")+'</div>';
 }
 let initialized=false;
+export async function refreshDodoReturn(){
+ const orderId=new URLSearchParams(window.location.search).get("order_id")||"";
+ if(!/^[0-9a-f-]{36}$/i.test(orderId)){state.dodoOrder=null;state.message="No valid subscription order reference was supplied.";paint();return;}
+ state.loading=true;
+ try{const result=await apiRequest<{order:DodoOrder}>("/api/billing/dodo-orders/"+orderId);state.dodoOrder=result.order;state.message="";}
+ catch(error){state.dodoOrder=null;state.message=error instanceof Error?error.message:"Subscription status could not be checked.";}
+ finally{state.loading=false;paint();}
+}
 export async function refreshBillingReturn(){
+ if(new URLSearchParams(window.location.search).get("provider")==="dodo")return refreshDodoReturn();
  const txRef=new URLSearchParams(window.location.search).get("tx_ref")||"";
  if(!/^ev_[a-f0-9]{32}$/.test(txRef)){state.paymentOrder=null;state.message="No valid payment reference was supplied.";paint();return;}
  state.loading=true;
@@ -51,16 +60,16 @@ export async function refreshBillingWorkspace(){
  state.loading=true;
  try{
   const [overview,plans]=await Promise.all([
-   apiRequest<{billing:Overview;payment:{checkoutEnabled:boolean}}>("/api/billing/overview"),
+   apiRequest<{billing:Overview;payment:{checkoutEnabled:boolean;subscriptionCheckoutEnabled:boolean}}>("/api/billing/overview"),
    apiRequest<{plans:Plan[]}>("/api/billing/plans")
   ]);
-  state.overview=overview.billing;state.checkoutEnabled=overview.payment?.checkoutEnabled===true;state.plans=plans.plans;state.message="";
+  state.overview=overview.billing;state.checkoutEnabled=overview.payment?.checkoutEnabled===true;state.subscriptionCheckoutEnabled=overview.payment?.subscriptionCheckoutEnabled===true;state.plans=plans.plans;state.message="";
  }catch(error){state.message=error instanceof Error?error.message:"Billing information could not be loaded.";}
  finally{state.loading=false;paint();}
 }
 function paint(){const view=document.querySelector<HTMLElement>("#view");if(view?.dataset.billingView==="true")view.innerHTML=renderBillingWorkspace();}
 export function initBillingWorkspace(){
- if(!initialized){initialized=true;document.addEventListener("click",event=>{const target=event.target as HTMLElement;if(target.closest("[data-billing-refresh]")){void(window.location.pathname==="/billing/return"?refreshBillingReturn():refreshBillingWorkspace());return;}const checkout=target.closest<HTMLElement>("[data-billing-checkout]");if(checkout){const planId=checkout.dataset.billingCheckout||"";checkout.setAttribute("disabled","true");state.message="Creating a secure checkout session…";paint();void apiRequest<{checkout:{checkoutUrl:string}}>("/api/billing/checkout",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({planId})}).then(result=>{const url=new URL(result.checkout.checkoutUrl);if(url.protocol!=="https:"||!(url.hostname==="flutterwave.com"||url.hostname.endsWith(".flutterwave.com")))throw new Error("The payment provider returned an untrusted checkout URL.");window.location.assign(url.toString());}).catch(error=>{state.message=error instanceof Error?error.message:"Checkout could not be created.";paint();});}});}
+ if(!initialized){initialized=true;document.addEventListener("click",event=>{const target=event.target as HTMLElement;if(target.closest("[data-billing-refresh]")){void(window.location.pathname==="/billing/return"?refreshBillingReturn():refreshBillingWorkspace());return;}const checkout=target.closest<HTMLElement>("[data-billing-checkout]");if(checkout){const planId=checkout.dataset.billingCheckout||"";checkout.setAttribute("disabled","true");state.message="Creating a secure checkout session…";paint();void apiRequest<{checkout:{checkoutUrl:string}}>("/api/billing/checkout",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({planId})}).then(result=>{const url=new URL(result.checkout.checkoutUrl);if(url.protocol!=="https:"||!(url.hostname==="flutterwave.com"||url.hostname.endsWith(".flutterwave.com")))throw new Error("The payment provider returned an untrusted checkout URL.");window.location.assign(url.toString());}).catch(error=>{state.message=error instanceof Error?error.message:"Checkout could not be created.";paint();});return;}const subscribe=target.closest<HTMLElement>("[data-billing-subscribe]");if(subscribe){const planId=subscribe.dataset.billingSubscribe||"";subscribe.setAttribute("disabled","true");state.message="Creating a secure subscription session…";paint();void apiRequest<{checkout:{checkoutUrl:string}}>("/api/billing/subscription-checkout",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({planId})}).then(result=>{const url=new URL(result.checkout.checkoutUrl);if(url.protocol!=="https:"||!(url.hostname==="checkout.dodopayments.com"||url.hostname==="test.checkout.dodopayments.com"))throw new Error("The payment provider returned an untrusted checkout URL.");window.location.assign(url.toString());}).catch(error=>{state.message=error instanceof Error?error.message:"Subscription checkout could not be created.";paint();});}});}
  if(window.location.pathname==="/billing/return")void refreshBillingReturn();else void refreshBillingWorkspace();
 }
 export function billingWorkspaceEnabled(){return true;}
