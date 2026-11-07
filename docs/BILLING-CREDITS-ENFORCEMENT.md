@@ -38,6 +38,15 @@ The billing engine can now use the admin model-price registry before a remote jo
 
 This is a preflight estimate, not provider invoice reconciliation. Actual asynchronous task costs and provider refunds still need settlement reconciliation before commercial launch.
 
+## Administrator finance reporting
+
+The admin overview distinguishes:
+- **Verified gross receipts (30 days):** settled one-time top-ups plus processed Dodo subscription activation/renewal events, grouped by currency.
+- **Committed MRR (pre-tax):** active monthly subscription value plus one-twelfth of active annual plan value, grouped by currency.
+- **Estimated provider cost:** the existing model-usage estimate, not a provider invoice.
+
+These figures are not net revenue or profit. Payment fees, taxes, refunds, chargebacks, FX settlement and actual provider task invoices must be reconciled before publishing profitability or margin figures.
+
 ## Enforcement behavior
 
 - Only remote providers consume credits. Local processing remains uncharged.
