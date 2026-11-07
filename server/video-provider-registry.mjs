@@ -27,8 +27,8 @@ export const VIDEO_PROVIDER_CATALOG = freeze([
         executionAdapter: "runway-model-router-cloud-worker",
         gateway: "runway",
         capabilities: {
-          textToVideo: true, imageToVideo: true, videoToVideo: false,
-          videoEdit: false, videoExtend: false, videoReframe: false,
+          textToVideo: true, imageToVideo: true, videoToVideo: true,
+          videoEdit: true, videoExtend: true, videoReframe: false,
           nativeAudio: true, negativePrompt: true, seed: true,
           startFrame: true, endFrame: false, motionReference: false,
           referenceImages: true, referenceVideos: true, referenceAudio: true,
