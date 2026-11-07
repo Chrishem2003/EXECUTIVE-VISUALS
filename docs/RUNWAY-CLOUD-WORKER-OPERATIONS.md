@@ -27,8 +27,8 @@ All of these must be deliberately configured before remote execution can happen:
 - `RUNWAY_API_KEY` (or the existing `RUNWAYML_API_SECRET`)
 - `RUNWAY_VIDEO_MODELS` as a comma-separated allowlist of verified model profiles
 - An injected authoritative `resolveRunwayActualCost` implementation for provider task settlement
-- An injected owner/project-scoped `prepareRunwayInput` implementation for source assets
-- An injected `resolveRunwaySourceMetadata` implementation for budget preflight on source-video operations
+- The built-in owner/project-scoped private source resolver, which reads only authorized cloud assets through short-lived Supabase signed URLs and server-probes source media with FFprobe. An injected resolver may replace it for a controlled integration.
+- The same resolver supplies server-probed duration, frame count, dimensions and dynamic-range metadata for budget preflight. An injected metadata resolver may replace it for a controlled integration.
 
 No Runway model is registered by default. The worker composition rejects source-operation registration if source resolution or verified metadata resolution is absent.
 
@@ -83,12 +83,14 @@ Must reconcile authoritative provider billing evidence for the persisted task ID
 - [ ] Dependency PRs #53, #57 and #58 are reviewed and integrated in order.
 - [ ] Current-head Quality checks pass, including typecheck and full test suite.
 - [ ] Disposable PostgreSQL integration passes.
-- [ ] Staging source resolvers are implemented and tested against real private test assets.
+- [x] Built-in private source resolver implemented with owner/project authorization, signed-URL origin checks, bounded downloads, integrity checks and server-side FFprobe metadata tests.
+- [ ] Staging source resolver acceptance against real private test assets.
 - [ ] Runway account entitlement and current model IDs are verified.
 - [ ] Provider billing resolver reconciles task-level usage and handles unknown outcomes.
 - [ ] Output host allowlist, MP4 validation and private storage ingestion are verified in isolated staging.
 - [ ] Credit reservation/settlement and cancellation semantics are tested.
-- [ ] Product UI exposes only the operations that passed these gates.
+- [x] Product UI exposes budget approval and paid submission controls, with submission disabled unless all eight server readiness gates pass.
+- [ ] Timestamped keyframe input controls are exposed in the product UI.
 - [ ] Explicit production approval is recorded before any model is enabled.
 
 ## Safety
