@@ -247,9 +247,6 @@ export function createRunwayCloudVideoAdapter({
         if (input.operation !== "video-to-video" || !isRunwayUri(input.videoUri)) {
           throw fail("Aleph2 requires a prepared video-to-video source upload.", "RUNWAY_INPUT_INVALID");
         }
-        if (typeof input.prompt !== "string" || !input.prompt.trim() || input.prompt.length > 1000) {
-          throw fail("Video-edit prompts must contain 1 to 1,000 characters.", "RUNWAY_INPUT_INVALID");
-        }
         const keyframes = Array.isArray(input.keyframes) ? input.keyframes : [];
         if (keyframes.length > 5 || keyframes.some((frame, index) =>
           !isRunwayUri(frame?.uri) || !Number.isFinite(frame.at) || frame.at < 0 || frame.at > 30 ||
@@ -265,7 +262,7 @@ export function createRunwayCloudVideoAdapter({
         });
         return { taskId: taskId(submitted.id), status: "queued" };
       }
-      if (input.operation && input.operation !== "text-to-video") {
+      if (input.operation && !["text-to-video", "image-to-video"].includes(input.operation)) {
         throw fail("The selected Runway model does not support this operation.", "RUNWAY_INPUT_INVALID");
       }
       if (typeof input.prompt !== "string" || !input.prompt.trim() || input.prompt.length > 1000) {
