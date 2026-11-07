@@ -273,7 +273,7 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
      }
     }
    }
-   const jobMatch=path.match(/^\\/api\\/cloud\\/jobs\\/([0-9a-f-]+)(?:\\/(events|cancel))?$/i);
+   const jobMatch=path.match(/^\/api\/cloud\/jobs\/([0-9a-f-]+)(?:\/(events|cancel))?$/i);
    if(jobMatch&&safeId(jobMatch[1])&&jobMatch[2]==="cancel"&&method==="POST"){
     const jobRows=await request("jobs?select=id,owner_id,project_id,job_type,status,cancel_requested_at&id=eq."+encodeURIComponent(jobMatch[1])+"&limit=1");
     const job=Array.isArray(jobRows)?jobRows[0]:null;
