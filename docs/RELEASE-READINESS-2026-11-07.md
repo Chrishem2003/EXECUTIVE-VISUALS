@@ -392,3 +392,33 @@ PR #206 remains draft and unmerged. No provider call, paid generation, billing t
 ### Follow-up coverage expansion
 
 A comparison of all legacy Runway gateway IDs against the evidence-backed provider registry found two additional overlap cases: `seedance2_5` and `kling_4` also have catalogue records marked `not_implemented`. The execution gate and regression tests now cover **all four** overlapping legacy aliases: `seedance2_5`, `kling_4`, `kling_4_flash` and `gemini_omni_flash_1.2`. Gen-4.5 and existing legacy model IDs without a `not_implemented` catalogue adapter are not blocked by this targeted guard.
+
+
+## CI regression analysis and compatibility correction — 2026-11-07
+
+### Observed CI result at prior head `d009a4af8f62c0e68e8029836532aa8fa2ab3beb`
+
+- PostgreSQL integration passed.
+- The full quality suite ran 790 tests: 787 passed and 3 failed.
+- All three failures were existing provider-registry expectations that valid legacy Runway models remain `ready` when credentials and remote opt-in are supplied.
+- The failure was introduced by conflating two distinct facts: a model's newer governed cloud-worker adapter may be `not_implemented`, while the existing legacy Runway gateway can already have a verified synchronous adapter for that same model ID.
+
+### Corrected policy
+
+- Cloud-worker availability remains disabled until its separate approval, budget, durable job and private-asset release gates pass.
+- Legacy synchronous execution is governed by the executable allowlist in `runway-video-gateway.mjs` (`MODEL_PROFILES` and `listRunwayVideoModels()`), not by cloud-worker availability metadata.
+- The provider settings catalogue now exposes only models returned by the executable legacy adapter.
+- Workflow node-level model overrides are checked against that same executable adapter list before generation budget reservation/provider submission.
+- Unknown/catalogue-only models remain blocked by the legacy allowlist and the adapter's own validation.
+- Tests now explicitly distinguish legacy adapter support from cloud-worker readiness and retain coverage for unsupported catalogue-only models.
+
+### Latest remediation commits
+
+- `466c836`: restore verified legacy model discovery and readiness.
+- `e1a4f14`: validate workflow model overrides against executable legacy adapter list.
+- `e7c94d3`: remove the incorrect cross-layer policy helper.
+- `914f027`: remove the conflated helper test.
+- `2419235`: add regression coverage for the correct legacy/cloud distinction.
+- `8e8f3b5`: clarify unsupported-model error.
+
+The remediation is pushed, but the exact latest PR head must pass fresh CI before the change is accepted. No local test run is claimed.
