@@ -286,6 +286,13 @@ export function createCloudVideoEnqueue({
           invalid.code = "VIDEO_SOURCE_METADATA_MISMATCH";
           throw invalid;
         }
+      } else if (runwayAudioEnabled) {
+        if (!input.sourceVideoAssetId || !Number.isFinite(verifiedSourceMetadata?.durationSeconds) ||
+            Math.ceil(verifiedSourceMetadata.durationSeconds) !== input.durationSeconds) {
+          const invalid = new Error("Mirelo requires a verified source video and matching duration.");
+          invalid.code = "VIDEO_SOURCE_METADATA_MISMATCH";
+          throw invalid;
+        }
       } else {
         if (input.resolution !== undefined && !["provider_default","720p"].includes(input.resolution)) {
           const unsupported = new Error("Gemini Omni budget reservation currently supports 720p only.");
