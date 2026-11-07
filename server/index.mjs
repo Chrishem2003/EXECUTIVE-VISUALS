@@ -20,10 +20,13 @@ import { createCloudTimelineApi } from "./cloud-timeline-api.mjs";
 import { validateSrt, validateWebVtt } from "./caption-validation.mjs";
 import { ensureTransformationPlanSchema, createTransformationPlan, approveTransformationPlan, listTransformationPlans, getTransformationPlan } from "./transformation-plans.mjs";
 import { signInWithSupabasePassword, signUpWithSupabasePassword, refreshSupabaseSession, getSupabaseUser, revokeSupabaseSession } from "./supabase-password-auth.mjs";
+import { ensureBillingSchema, touchBillingAccount, getBillingOverview, listBillingPlans, getAdminOverview, listAdminUsers, saveBillingPlan, assignManualSubscription, adjustBillingCredits, setBillingAccountStatus, listBillingModelPrices, saveBillingModelPrice } from "./billing.mjs";
 
 const PORT = Number(process.env.PORT || process.env.API_PORT || 4179);
 const HOST = process.env.API_HOST || (process.env.NODE_ENV === "production" ? "0.0.0.0" : "127.0.0.1");
 const AUTH_MODE = process.env.AUTH_MODE || "local";
+const ADMIN_EMAILS = new Set(String(process.env.ADMIN_EMAILS || "").split(",").map(value => value.trim().toLowerCase()).filter(Boolean));
+const isAdminUser = user => !!user?.email && ADMIN_EMAILS.has(String(user.email).trim().toLowerCase());
 const DATA_DIR = resolve(process.env.DATA_DIR || "./data");
 const MEDIA_ROOT = resolve(process.env.MEDIA_ROOT || join(DATA_DIR, "media"));
 const WEB_ROOT = resolve(process.env.WEB_ROOT || "./dist");
@@ -49,6 +52,7 @@ const EXTENSIONS = {
 };
 const MEDIA_JOBS = new Set(["media.probe","media.thumbnail","media.transcode","media.audio_extract","media.audio-clean","media.proxy","media.denoise","media.color","media.resize","media.interpolate","media.upscale","media.ai-upscale","timeline.render"]);
 const db = openDatabase(DB_FILE);
+ensureBillingSchema(db);
 ensureTransformationPlanSchema(db);
 const aiUpscaleAdapter = createRealEsrganAdapter();
 const cloudTimelineApiEnabled = process.env.CLOUD_TIMELINE_API_ENABLED === "true";
@@ -336,7 +340,64 @@ export function createAppServer() {
       }
       const user=await authenticate(req,res);
       if(!user){fail(res,401,"AUTH_REQUIRED","Sign in to access this workspace.");return;}
-      if(path==="/api/me"&&req.method==="GET"){send(res,200,{user,authMode:AUTH_MODE},cors);return;}
+      const billingAccount=touchBillingAccount(db,user);
+      if(billingAccount.status==="suspended"){fail(res,403,"ACCOUNT_SUSPENDED","This account is suspended. Contact workspace support.");return;}
+      const admin=isAdminUser(user);
+      if(path==="/api/me"&&req.method==="GET"){send(res,200,{user,authMode:AUTH_MODE,capabilities:{admin,billing:true}},cors);return;}
+      if(path==="/api/billing/plans"&&req.method==="GET"){send(res,200,{plans:listBillingPlans(db)},cors);return;}
+      if(path==="/api/billing/overview"&&req.method==="GET"){send(res,200,{billing:getBillingOverview(db,user.id)},cors);return;}
+      if(path==="/api/billing/checkout"&&req.method==="POST"){
+        fail(res,503,"BILLING_CHECKOUT_DISABLED","Payment checkout is not enabled. A verified payment-provider account, webhook integration and pricing approval are required.");return;
+      }
+      if(path.startsWith("/api/admin/")&&path!=="/api/admin/ai-upscale/self-test"){
+        if(!admin){fail(res,403,"ADMIN_REQUIRED","An explicitly allowlisted platform administrator is required.");return;}
+        if(path==="/api/admin/overview"&&req.method==="GET"){send(res,200,{overview:getAdminOverview(db)},cors);return;}
+        if(path==="/api/admin/users"&&req.method==="GET"){
+          const query=String(url.searchParams.get("q")||"");
+          const limit=Number(url.searchParams.get("limit")||100);
+          send(res,200,{users:listAdminUsers(db,{query,limit})},cors);return;
+        }
+        if(path==="/api/admin/plans"&&req.method==="GET"){send(res,200,{plans:listBillingPlans(db,{activeOnly:false})},cors);return;}
+        if(path==="/api/admin/model-prices"&&req.method==="GET"){send(res,200,{prices:listBillingModelPrices(db)},cors);return;}
+        if(path==="/api/admin/model-prices"&&req.method==="POST"){
+          const body=await readJson(req,16*1024);
+          const price=saveBillingModelPrice(db,body);
+          audit(db,user.id,"admin.model_price_saved","model_price",price.id,{provider:price.provider,model:price.model,capability:price.capability,priceMicros:price.priceMicros,currency:price.currency,verifiedAt:price.verifiedAt});
+          send(res,200,{price},cors);return;
+        }
+        if(path==="/api/admin/audit"&&req.method==="GET"){
+          const events=db.prepare("SELECT id,event_type,subject_type,subject_id,details_json,created_at FROM audit_events WHERE event_type LIKE 'admin.%' ORDER BY id DESC LIMIT 100").all();
+          send(res,200,{events:events.map(row=>({id:row.id,type:row.event_type,subjectType:row.subject_type,subjectId:row.subject_id,details:parseJson(row.details_json),createdAt:row.created_at}))},cors);return;
+        }
+        if(path==="/api/admin/plans"&&req.method==="POST"){
+          const body=await readJson(req,64*1024);
+          const plan=saveBillingPlan(db,body);
+          audit(db,user.id,"admin.billing_plan_saved","billing_plan",plan.id,{code:plan.code,active:plan.active});
+          send(res,200,{plan},cors);return;
+        }
+        const subscriptionMatch=path.match(new RegExp("^/api/admin/users/([a-zA-Z0-9_-]+)/subscription$"));
+        if(subscriptionMatch&&req.method==="POST"){
+          const body=await readJson(req,16*1024);
+          const result=assignManualSubscription(db,{userId:subscriptionMatch[1],planId:String(body.planId||""),periodDays:Number(body.periodDays||30),status:String(body.status||"active"),actorId:user.id});
+          audit(db,user.id,"admin.subscription_assigned","subscription",result.id,{userId:result.userId,planId:result.planId,status:result.status});
+          send(res,200,{subscription:result},cors);return;
+        }
+        const creditsMatch=path.match(new RegExp("^/api/admin/users/([a-zA-Z0-9_-]+)/credits$"));
+        if(creditsMatch&&req.method==="POST"){
+          const body=await readJson(req,16*1024);
+          const result=adjustBillingCredits(db,{userId:creditsMatch[1],amount:Number(body.amount),description:String(body.description||""),actorId:user.id,idempotencyKey:String(req.headers["idempotency-key"]||body.idempotencyKey||"")});
+          audit(db,user.id,"admin.credits_adjusted","user",creditsMatch[1],{amount:result.amount,ledgerId:result.id,replayed:result.replayed});
+          send(res,200,{adjustment:result},cors);return;
+        }
+        const statusMatch=path.match(new RegExp("^/api/admin/users/([a-zA-Z0-9_-]+)/status$"));
+        if(statusMatch&&req.method==="POST"){
+          const body=await readJson(req,8*1024);
+          const result=setBillingAccountStatus(db,{userId:statusMatch[1],status:String(body.status||"")});
+          audit(db,user.id,"admin.account_status_changed","user",statusMatch[1],{status:result.status});
+          send(res,200,{account:result},cors);return;
+        }
+        fail(res,404,"ADMIN_ROUTE_NOT_FOUND","Administrator route not found.");return;
+      }
       if(cloudTimelineApi && path==="/api/cloud/assets" && req.method==="POST"){
         const uploadResult=await cloudTimelineApi.uploadAsset({
           req,ownerId:user.id,projectId:String(req.headers["x-project-id"]||""),
