@@ -300,7 +300,7 @@ test("prepares a private video upload and submits Mirelo synchronized video-to-a
           fields: { key: "test-upload" }
         }), { status: 200 });
       }
-      if (String(url) === "https://uploads.runway.com/ephemeral") return new Response("", { status: 204 });
+      if (String(url) === "https://uploads.runway.com/ephemeral") return new Response("", { status: 200 });
       if (String(url) === "https://api.dev.runwayml.com/v1/video_to_audio") {
         return new Response(JSON.stringify({ id }), { status: 200 });
       }
