@@ -19,12 +19,12 @@ export function buildGeminiImageRequest({prompt,size="1024x1024",quality="medium
  }
  return {model:MODEL,body:{contents:[{role:"user",parts}],generationConfig:{responseModalities:["IMAGE"],responseFormat:{image:{aspectRatio,imageSize}}}}};
 }
-export async function generateGeminiImage({prompt,size="1024x1024",quality="medium",referenceImageDataUrl="",fetchImpl=fetch}={}){
+export async function generateGeminiImage({prompt,size="1024x1024",quality="medium",referenceImageDataUrl="",model=process.env.GEMINI_IMAGE_MODEL||MODEL,fetchImpl=fetch}={}){
  if(process.env.IMAGE_GATEWAY_ENABLED!=="true")throw fail("Image generation is disabled by server configuration.","IMAGE_GATEWAY_DISABLED");
  if(process.env.IMAGE_GATEWAY_ALLOW_REMOTE!=="true")throw fail("Remote image generation is disabled. Review provider pricing and explicitly enable remote access on the server.","IMAGE_GATEWAY_REMOTE_DISABLED");
  const key=String(process.env.GEMINI_API_KEY||"").trim();
  if(!key)throw fail("Configure GEMINI_API_KEY on the server before using Nano Banana Pro.","IMAGE_GATEWAY_CONFIG_INVALID");
- const selected=String(process.env.GEMINI_IMAGE_MODEL||MODEL).trim();
+ const selected=String(model||process.env.GEMINI_IMAGE_MODEL||MODEL).trim();
  if(selected!==MODEL)throw fail("The configured Gemini image model is not in the verified Nano Banana Pro adapter.","IMAGE_GATEWAY_UNSUPPORTED_MODEL");
  const request=buildGeminiImageRequest({prompt,size,quality,referenceImageDataUrl});
  const timeoutMs=Math.max(1000,Math.min(300000,Number(process.env.IMAGE_GATEWAY_TIMEOUT_MS)||180000));
