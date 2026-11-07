@@ -57,9 +57,10 @@ export function estimateVideoGenerationCost(request,pricingCatalog,{now=()=>new 
  if(!["provider_default","generated","none","reference"].includes(audioMode))return unavailable("The requested audio mode is invalid.");
  const referenceImageCount=request.referenceImageCount??0;
  if(!Number.isInteger(referenceImageCount)||referenceImageCount<0||referenceImageCount>12)return unavailable("Reference image count must be between 0 and 12.");
- const records=Array.isArray(pricingCatalog)?pricingCatalog:pricingCatalog?.records;
- if(!Array.isArray(records))return unavailable("No verified pricing schedule is configured.");
- const record=records.find(item=>item?.provider===provider&&item?.model===model);
+ const sourceRecords=Array.isArray(pricingCatalog)?pricingCatalog:pricingCatalog?.records;
+ if(!Array.isArray(sourceRecords))return unavailable("No verified pricing schedule is configured.");
+ const records=sourceRecords.map(normalizePricingRecord).filter(Boolean);
+ const record=records.find(item=>item.provider===provider&&item.model===model);
  if(!record)return unavailable("No pricing schedule matches this exact provider and model.");
  const current=now(),currentMs=current instanceof Date?current.getTime():Date.parse(current);
  if(!Number.isFinite(currentMs))return unavailable("The pricing clock is invalid.");
