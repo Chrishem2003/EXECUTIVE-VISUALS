@@ -217,3 +217,47 @@ Therefore, CI passing does not constitute staging acceptance or production readi
 - Runway Router source video plus at most one additional reference is enforced at contract, resolver, enqueue and adapter boundaries.
 - PR #206 remains draft; branch is 469 commits ahead of main and 0 behind.
 - Production and suspended test Render services remain unchanged; this branch is not deployed.
+
+
+## Live continuation recheck — 2026-11-07 21:20 EAT
+
+This addendum supersedes the earlier head and branch-size figures above.
+
+### Current GitHub state
+
+- PR #206 remains open, draft, and unmerged.
+- Integration branch: `integration/omni-provider-workers-2026`.
+- Current head after the documentation refresh: `f6545a43eea1f4e549eff3d07414326ca4159275`.
+- Base `main`: `18cb97bf027dc5037fc1d932f36dd4d00f6e6c67`.
+- Branch comparison: 484 commits ahead, 0 behind; 134 changed files.
+- The immediately preceding code head `f61f4990231d456e3d9ae3be5ac68305d17e28aa` had both Quality Checks and Google Drive integration quality completed successfully.
+- The current head is a documentation-only refresh. Its Quality Checks and Google Drive integration quality runs were observed in progress at this checkpoint; do not report them as passed until their exact-head conclusions are available.
+
+### Additional source-level P0 confirmation
+
+A fresh read-only inspection of the current branch confirms the Studio/cloud execution paths are still separate:
+
+- `server/index.mjs` contains no cloud-video quote/enqueue API route or provider-aware worker composition wiring.
+- `server/workflow-executor.mjs` still imports and invokes the legacy synchronous `generateRunwayVideo` / `generateFalVideo` gateways for the interactive `video.generate` node, then stores the generated result through the local generated-assets/SQLite path.
+- `server/cloud-video-provider-worker-composition.mjs` constructs a separate opt-in Supabase-backed queue, submission ledger, budget-enforced enqueue service, provider adapters, and private output ingestion. It is not called by the interactive Studio execution route.
+
+This confirms that a green worker test suite does not establish that a customer can safely use hosted generation from Video Studio. The P0 bridge must be implemented before hosted generation is offered as a paid customer feature. It must not silently fall back to local synchronous provider calls.
+
+### Current model-catalogue guard
+
+The latest code head adds evidence-backed metadata for Kling 4.0 Flash and Gemini Omni 1.2 Flash. Both remain disabled with `executionAdapter: not_implemented`; regression tests assert they are not selectable. The SQL enqueue migration still allows only the existing exact `runway/gen4.5` and `google/gemini-omni-1.1-flash` identities. No new model should be enabled until adapter, exact quote/approval, SQL policy, private media and settlement contracts agree.
+
+The detailed current model/SQL parity findings are appended to `docs/VIDEO-MODEL-PARITY-AUDIT-2026-11-07.md`.
+
+### Immediate engineering sequence
+
+1. Add authenticated quote and enqueue endpoints in the application API, with verified user/project write access and strict request normalization.
+2. Bind a short-lived quote to a canonical hash of prompt, model, operation, duration, references, settings, owner and project; require explicit approval of that exact quote.
+3. Atomically reserve platform credits and provider budget, enqueue idempotently to the durable queue, and return a job ID for Studio polling.
+4. Publish only private asset IDs after output ingestion; ensure downstream workflow nodes can resolve the same durable asset identity.
+5. Add PostgreSQL integration and end-to-end API tests for ownership isolation, replay, expiry, changed-input rejection, duplicate/ambiguous provider submission, cancellation, refunds, settlement, worker restart and partial output failure.
+6. Keep the current legacy local workflow available only under its existing explicit development/local configuration; never use it as a hosted fallback.
+
+### Release decision
+
+No staging service was resumed, no production or shared Supabase database was modified, no R2 resource was enabled, no paid provider request was made, and no production deployment or merge was performed. PR #206 remains draft. Production release and paid hosted generation remain blocked pending the P0 bridge, isolated durable infrastructure, exact financial reconciliation and explicit staging acceptance.
