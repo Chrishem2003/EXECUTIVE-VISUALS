@@ -124,3 +124,16 @@ Official sources:
 ### Product implication
 
 Prioritize repeatable business workflows over a raw model catalogue: reusable brand kits, product/character reference packs, vertical and landscape ad variants, multi-turn revisions, captioned/social-ready exports, and clear per-output credit quotes. These are the customer-facing outcomes that make the underlying model capabilities commercially useful.
+
+
+### Kling 4.0 Flash billing formula — exact quote requirement
+
+The official Kling pricing table currently expresses Kling 4.0 Flash pricing in resource units per second, not a universal fixed USD rate:
+
+- No input video: `output_seconds × 0.6 units/second`.
+- Input video duration less than or equal to output duration: `output_seconds × 2 × 0.4 units/second`.
+- Input video duration greater than output duration: `(input_seconds + output_seconds) × 0.4 units/second`.
+
+The published prepaid packages have different discounted unit prices and validity terms. Consequently, do not hardcode a USD-per-second constant from a reseller or package example. The quote adapter must resolve the user's actual Kling account/package unit price, include all billable reference/source video durations, record the pricing evidence and expiry, and refuse enqueue if the account price cannot be verified. Flash is 720p only and supports 3–20 seconds.
+
+Official pricing source: https://kling.ai/dev/model/image
