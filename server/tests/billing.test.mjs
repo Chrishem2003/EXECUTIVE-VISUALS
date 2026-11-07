@@ -248,6 +248,11 @@ test("admin finance overview separates verified gross receipts from committed mo
   });
   const order=createBillingPurchaseOrder(db,{userId:"finance-one",planId:topup.id});
   db.prepare("UPDATE billing_payment_orders SET status='paid',verified_at=? WHERE id=?").run(new Date().toISOString(),order.id);
+  const timestamp=new Date().toISOString();
+  db.prepare(`INSERT INTO billing_provider_events
+    (id,provider,event_id,event_type,payload_hash,payload_json,processed_at,created_at)
+    VALUES('dodo-event-1','dodo','subscription.renewed:payment-1','subscription.renewed','hash',?,?,?)`)
+    .run(JSON.stringify({type:"subscription.renewed",data:{payment_id:"payment-1",currency:"USD",recurring_pre_tax_amount:1200}}),timestamp,timestamp);
   const monthly=saveBillingPlan(db,{
     code:"monthly-finance",name:"Monthly Finance",amountMinor:1200,currency:"USD",
     interval:"month",creditsPerPeriod:100
@@ -259,7 +264,7 @@ test("admin finance overview separates verified gross receipts from committed mo
   assignManualSubscription(db,{userId:"finance-one",planId:monthly.id,periodDays:30,status:"active",actorId:"admin"});
   assignManualSubscription(db,{userId:"finance-two",planId:annual.id,periodDays:365,status:"active",actorId:"admin"});
   const overview=getAdminOverview(db);
-  assert.deepEqual(overview.verifiedGrossReceipts30d,[{currency:"UGX",amountMinor:50000}]);
+  assert.deepEqual(overview.verifiedGrossReceipts30d,[{currency:"UGX",amountMinor:50000},{currency:"USD",amountMinor:1200}]);
   assert.deepEqual(overview.committedMrrByCurrency,[{currency:"USD",amountMinor:2200}]);
   assert.equal(overview.usage30d.estimatedCostMicros>=0,true);
   db.close();
