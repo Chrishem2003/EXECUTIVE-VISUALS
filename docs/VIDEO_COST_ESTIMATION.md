@@ -44,3 +44,15 @@ The endpoint is authenticated, rate-limited, and performs no external network re
 - No default or example price is shipped as a live price.
 - The provider catalog exposes only model identifiers and pricing provenance, not credentials.
 - Remote generation remains independently disabled unless the existing server-side opt-in is enabled.
+
+## Multi-shot production quote
+
+Authenticated callers may request a read-only quote for a production containing 1–12 shots:
+
+`POST /api/video-production-quote`
+
+Each shot supplies a unique `id` and the same exact provider/model/resolution/audio/reference fields accepted by the single-generation estimator. Each shot is priced independently using its own billing increment and minimum charge. The combined duration is capped at 180 seconds. The API returns shot-level estimates and an itemized production total.
+
+A total is unavailable if any shot lacks a current verified rate, if the shot IDs are invalid or duplicated, if the plan exceeds the shot or duration limits, or if currencies differ. Currency conversion is never inferred. Provider batch discounts are not assumed.
+
+This endpoint is a budgeting aid only. It does not submit, queue, reserve, or charge for any generation.
