@@ -24,7 +24,7 @@ export function buildGeminiImageRequest({model=MODEL,prompt,size="1024x1024",qua
   if(!buffer.length||buffer.length>10*1024*1024||buffer.toString("base64").replace(/=+$/,"")!==match[2].replace(/=+$/,""))throw fail("Reference image is invalid or exceeds 10 MiB.","IMAGE_GATEWAY_INVALID_INPUT");
   parts.push({inline_data:{mime_type:match[1],data:match[2]}});
  }
- return {model,body:{contents:[{role:"user",parts}],generationConfig:{responseModalities:["IMAGE"],responseFormat:{image:{aspectRatio,imageSize}}}}};
+ return {model,body:{contents:[{role:"user",parts}],generationConfig:{responseModalities:["IMAGE"],imageConfig:{aspectRatio,imageSize}}}};
 }
 export async function generateGeminiImage({prompt,size="1024x1024",quality="medium",referenceImageDataUrl="",model=process.env.GEMINI_IMAGE_MODEL||MODEL,fetchImpl=fetch}={}){
  if(process.env.IMAGE_GATEWAY_ENABLED!=="true")throw fail("Image generation is disabled by server configuration.","IMAGE_GATEWAY_DISABLED");
