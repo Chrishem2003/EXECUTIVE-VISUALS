@@ -78,7 +78,7 @@ export function createRunwaySourceAssetResolver({
     return { asset, bytes };
   }
 
-  async function probeVideo(bytes) {
+  async function probeVideo(bytes, maxDurationSeconds = 30) {
     const dir = await mkdtemp(join(tmpdir(), "ev-runway-probe-"));
     const file = join(dir, "source-video");
     try {
@@ -102,7 +102,7 @@ export function createRunwaySourceAssetResolver({
         const rate = parseRate(video?.r_frame_rate);
         frameCount = rate ? Math.ceil(rate * durationSeconds) : NaN;
       }
-      if (!video || !Number.isFinite(durationSeconds) || durationSeconds <= 0 || durationSeconds > 30 ||
+      if (!video || !Number.isFinite(durationSeconds) || durationSeconds <= 0 || durationSeconds > maxDurationSeconds ||
           !Number.isInteger(width) || width < 16 || width > 8192 ||
           !Number.isInteger(height) || height < 16 || height > 8192 ||
           !Number.isSafeInteger(frameCount) || frameCount < 1 || frameCount > 100000) {
@@ -134,7 +134,7 @@ export function createRunwaySourceAssetResolver({
         const resolved = await resolveAsset({ ownerId, projectId, assetId: input.startFrameAssetId, kinds: "image" });
         return { firstFrame: { buffer: resolved.bytes, filename: resolved.asset.name, mimeType: resolved.asset.mediaType } };
       }
-      if (["video-to-video", "video-upscale", "video-to-hdr"].includes(input?.operation)) {
+      if (["video-to-video", "video-to-audio", "video-upscale", "video-to-hdr"].includes(input?.operation)) {
         const resolved = await resolveAsset({ ownerId, projectId, assetId: input.sourceVideoAssetId, kinds: "video" });
         const prepared = {
           sourceVideo: { buffer: resolved.bytes, filename: resolved.asset.name, mimeType: resolved.asset.mediaType }
@@ -161,9 +161,9 @@ export function createRunwaySourceAssetResolver({
       }
       return input;
     },
-    async resolveMetadata({ ownerId, projectId = null, assetId } = {}) {
+    async resolveMetadata({ ownerId, projectId = null, assetId, operation } = {}) {
       const resolved = await resolveAsset({ ownerId, projectId, assetId, kinds: "video" });
-      const metadata = await probeVideo(resolved.bytes);
+      const metadata = await probeVideo(resolved.bytes, operation === "video-to-audio" ? 600 : 30);
       return {
         ownerId,
         projectId,

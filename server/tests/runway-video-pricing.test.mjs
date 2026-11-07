@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { estimateRunwayVideoCredits } from "../runway-video-pricing.mjs";
+import { estimateRunwayVideoCredits, estimateRunwayVideoAudioCredits } from "../runway-video-pricing.mjs";
 
 const date="2026-11-04";
 
@@ -141,4 +141,16 @@ test("Gen-4.5 HDR formats add the documented professional surcharge",()=>{
   assert.equal(estimateRunwayVideoCredits({...base,outputFormat:"hdr_pq_12bit_master"}).estimatedCredits,160);
   assert.equal(estimateRunwayVideoCredits({...base,outputFormat:"hdr_png_sequence"}).estimatedCredits,160);
   assert.equal(estimateRunwayVideoCredits({...base,outputFormat:"hdr_exr_acescg_sequence_2_0"}).estimatedCredits,160);
+});
+
+
+test("prices Mirelo synchronized video-to-audio per second and per variant",()=>{
+  const estimate=estimateRunwayVideoAudioCredits({durationSeconds:12.4,numVariants:3,format:"flac",pricingDate:date});
+  assert.equal(estimate.estimatedCredits,78);
+  assert.equal(estimate.estimatedUsd,0.78);
+  assert.equal(estimate.billableSeconds,13);
+  assert.match(estimate.pricingSource,/mirelo_sfx_2_0/);
+  assert.throws(()=>estimateRunwayVideoAudioCredits({durationSeconds:601,pricingDate:date}),e=>e.code==="RUNWAY_PRICE_INVALID_INPUT");
+  assert.throws(()=>estimateRunwayVideoAudioCredits({durationSeconds:5,numVariants:5,pricingDate:date}),e=>e.code==="RUNWAY_PRICE_INVALID_INPUT");
+  assert.throws(()=>estimateRunwayVideoAudioCredits({durationSeconds:5,format:"aac",pricingDate:date}),e=>e.code==="RUNWAY_PRICE_UNSUPPORTED_OPTION");
 });

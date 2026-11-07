@@ -177,3 +177,25 @@ test("normalizes HDR conversion as a source-video operation without requiring a 
   assert.equal(request.outputFormat, "hlg");
   assert.equal(request.sourceVideoAssetId, "source-hdr");
 });
+
+
+test("normalizes synchronized video-to-audio source, variants and audio output format", () => {
+  const request = normalizeVideoGenerationRequest({
+    operation: "video-to-audio", sourceVideoAssetId: "source-asset",
+    durationSeconds: 600, audioFormat: "flac", numVariants: 4,
+    preserveSpeech: false, prompt: "Rain ambience"
+  });
+  assert.equal(request.operation, "video-to-audio");
+  assert.equal(request.durationSeconds, 600);
+  assert.equal(request.audioFormat, "flac");
+  assert.equal(request.numVariants, 4);
+  assert.equal(request.preserveSpeech, false);
+  assert.throws(() => normalizeVideoGenerationRequest({
+    operation: "video-to-audio", sourceVideoAssetId: "source-asset",
+    durationSeconds: 601
+  }));
+  assert.throws(() => normalizeVideoGenerationRequest({
+    operation: "video-to-audio", sourceVideoAssetId: "source-asset",
+    durationSeconds: 10, audioFormat: "aac"
+  }));
+});

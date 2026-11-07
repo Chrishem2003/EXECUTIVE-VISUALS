@@ -134,3 +134,21 @@ test("Runway video edits resolve ordered keyframe images from the same private p
   assert.deepEqual(result.keyframes.map(frame => frame.mimeType), ["image/png", "image/png"]);
   assert.equal(result.keyframes[0].buffer.length, imageBytes.length);
 });
+
+
+test("Runway source resolver allows the documented 600-second ceiling only for video-to-audio", async () => {
+  const { resolver } = fixture({
+    execFileImpl: (_path, _args, _options, callback) => callback(null, JSON.stringify({
+      format: { duration: "301.2" },
+      streams: [{ codec_type: "video", width: 1920, height: 1080, nb_read_frames: "9036", color_transfer: "bt709" }]
+    }))
+  });
+  const result = await resolver.resolveMetadata({
+    ownerId: OWNER, projectId: PROJECT, assetId: ASSET, operation: "video-to-audio"
+  });
+  assert.equal(result.durationSeconds, 301.2);
+  await assert.rejects(
+    () => resolver.resolveMetadata({ ownerId: OWNER, projectId: PROJECT, assetId: ASSET }),
+    error => error.code === "VIDEO_INPUT_ASSET_PROBE_INVALID"
+  );
+});

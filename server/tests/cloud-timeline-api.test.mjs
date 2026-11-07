@@ -153,7 +153,7 @@ test("approved cloud transformation submits to the durable Runway queue with ser
   authorize:async()=>true,
   transformationReadiness:()=>({adapterVerified:true,workerAvailable:true,privateStorageVerified:true,durableCheckpointsAvailable:true,costPolicyVerified:true,consentVerifierAvailable:true,visualQaAvailable:true,cloudSchemaApplied:true}),
   runwaySourceResolver:{async resolveMetadata(args){
-   assert.deepEqual(args,{ownerId:owner,projectId:project,assetId:row.input.sourceAssetId});
+   assert.deepEqual(args,{ownerId:owner,projectId:project,assetId:row.input.sourceAssetId,operation:"video-to-video"});
    return{ownerId:owner,projectId:project,assetId:row.input.sourceAssetId,mediaType:"video/mp4",durationSeconds:10.2,frameCount:306,width:1920,height:1080,sourceDynamicRange:"sdr"};
   }}
  });
@@ -174,6 +174,61 @@ test("approved cloud transformation submits to the durable Runway queue with ser
  assert.equal(args.p_input.transformationOperation,"vehicle_replace");
  assert.match(args.p_request_hash,/^[a-f0-9]{64}$/);
  assert.ok(calls.some(call=>call.url.includes("/jobs?")&&call.options.method==="PATCH"));
+});
+
+test("video-to-audio transformation requires approval and queues the Mirelo model with verified source duration and credits", async () => {
+ const planId="b23e4567-e89b-42d3-a456-426614174001";
+ const sourceAssetId="b23e4567-e89b-42d3-a456-426614174002";
+ const jobId="b23e4567-e89b-42d3-a456-426614174003";
+ let plan=null;
+ const calls=[];
+ const metadata={ownerId:owner,projectId:project,assetId:sourceAssetId,mediaType:"video/mp4",durationSeconds:12.2,frameCount:366,width:1920,height:1080,sourceDynamicRange:"sdr"};
+ const fetchImpl=async(url,options={})=>{
+  calls.push({url,options});
+  if(url.endsWith("/rpc/enqueue_video_generation_job"))return{ok:true,status:200,async text(){return JSON.stringify([{job_id:jobId,job_status:"queued",idempotent_replay:false,budget_reservation_id:"c23e4567-e89b-42d3-a456-426614174003"}]);}};
+  if(url.includes("/jobs?")&&options.method==="GET")return{ok:true,status:200,async text(){return JSON.stringify(plan?[plan]:[]);}};
+  if(url.includes("/jobs?")&&options.method==="POST"){
+   const body=JSON.parse(options.body);plan={...body,created_at:"2026-11-07T09:00:00.000Z",updated_at:"2026-11-07T09:00:00.000Z"};
+   return{ok:true,status:201,async text(){return JSON.stringify([plan]);}};
+  }
+  if(url.includes("/jobs?")&&options.method==="PATCH"){
+   plan={...plan,...JSON.parse(options.body)};
+   return{ok:true,status:200,async text(){return JSON.stringify([plan]);}};
+  }
+  return{ok:true,status:201,async text(){return"[]";}};
+ };
+ const api=createCloudTimelineApi({
+  url:"https://example.supabase.co",serviceRoleKey:"service-secret",fetchImpl,
+  timelineService:{timelines:{},assets:{async get(){return{id:sourceAssetId,ownerId:owner,projectId:project,mediaType:"video/mp4",name:"source.mp4",size:1024};}}},
+  authorize:async()=>true,
+  transformationReadiness:()=>({adapterVerified:true,workerAvailable:true,privateStorageVerified:true,durableCheckpointsAvailable:true,costPolicyVerified:true,consentVerifierAvailable:true,visualQaAvailable:true,cloudSchemaApplied:true}),
+  runwaySourceResolver:{async resolveMetadata(args){
+   assert.deepEqual(args,{ownerId:owner,projectId:project,assetId:sourceAssetId,operation:"video-to-audio"});
+   return metadata;
+  }}
+ });
+ const draft=await api.handle({method:"POST",path:"/api/cloud/transformations",ownerId:owner,idempotencyKey:"sound-design-plan-1",body:{
+  projectId:project,sourceAssetId,operation:"sound_design_from_video",prompt:"TARGET RESULT: Rain ambience. Preserve dialogue.",
+  durationSeconds:13,audioFormat:"wav",numVariants:2,preserveSpeech:true,rightsConfirmed:true
+ }});
+ assert.equal(draft.status,201);
+ const createdPlanId=draft.body.plan.id;
+ const approved=await api.handle({method:"POST",path:"/api/cloud/transformations/"+createdPlanId+"/approve",ownerId:owner,body:{approvedBudgetMicros:1000000,currency:"USD"}});
+ assert.equal(approved.status,200);
+ assert.equal(approved.body.plan.approval.adapterId,"runway:mirelo_sfx_2_0");
+ assert.equal(approved.body.plan.approval.capability,"video-to-audio");
+ const submitted=await api.handle({method:"POST",path:"/api/cloud/transformations/"+createdPlanId+"/submit",ownerId:owner,body:{}});
+ assert.equal(submitted.status,202);
+ const rpc=calls.find(call=>call.url.endsWith("/rpc/enqueue_video_generation_job"));
+ const queued=JSON.parse(rpc.options.body);
+ assert.equal(queued.p_provider,"runway");
+ assert.equal(queued.p_model,"mirelo_sfx_2_0");
+ assert.equal(queued.p_input.operation,"video-to-audio");
+ assert.equal(queued.p_input.durationSeconds,13);
+ assert.equal(queued.p_input.audioFormat,"wav");
+ assert.equal(queued.p_input.numVariants,2);
+ assert.equal(queued.p_input.preserveSpeech,true);
+ assert.equal(queued.p_reserved_amount,1);
 });
 
 test("cloud transformation submission refuses unapproved or non-Aleph adapters before queueing", async () => {
@@ -208,7 +263,7 @@ test("cloud transformation approval derives its estimate from probed source medi
   },
   timelineService:{timelines:{},assets:{}},authorize:async()=>true,
   runwaySourceResolver:{async resolveMetadata(args){
-   assert.deepEqual(args,{ownerId:owner,projectId:project,assetId:row.input.sourceAssetId});
+   assert.deepEqual(args,{ownerId:owner,projectId:project,assetId:row.input.sourceAssetId,operation:"video-to-video"});
    return{ownerId:owner,projectId:project,assetId:row.input.sourceAssetId,mediaType:"video/mp4",durationSeconds:10.2,frameCount:306,width:1920,height:1080,sourceDynamicRange:"sdr"};
   }}
  });

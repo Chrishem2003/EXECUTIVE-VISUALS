@@ -103,6 +103,29 @@ export const VIDEO_PROVIDER_CATALOG = freeze([
         }
       },
       {
+        id: "mirelo_sfx_2_0",
+        name: "Mirelo SFX 2.0 — Video to Audio",
+        availability: "disabled",
+        executionAdapter: "runway-cloud-worker",
+        capabilities: {
+          textToVideo: false, imageToVideo: false, videoToVideo: false,
+          videoToAudio: true, videoEdit: false, videoExtend: false,
+          videoReframe: false, nativeAudio: false, negativePrompt: true,
+          seed: true, startFrame: false, endFrame: false,
+          motionReference: false, referenceImages: false, audioModes: [],
+          aspectRatios: ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"], resolutions: ["provider_default"],
+          minDurationSeconds: 1, maxDurationSeconds: 600
+        },
+        constraints: {
+          sourceAssetRequired: true, sourceIsImmutable: true,
+          outputMediaType: "audio/*", maxVariants: 4,
+          outputFormats: ["mp3", "wav", "flac"],
+          preserveSpeech: "best_effort",
+          minimumPollIntervalMs: 5000,
+          pricingSource: "https://dev.runway.com/endpoints/sound_effect?modelId=mirelo_sfx_2_0"
+        }
+      },
+      {
         id: "ruby",
         name: "Runway Ruby HDR",
         availability: "disabled",
