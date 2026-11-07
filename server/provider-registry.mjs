@@ -1,6 +1,7 @@
 import { getFalVideoCapabilities } from "./fal-video-gateway.mjs";
 import { getRunwayVideoCapabilities, listRunwayVideoModels } from "./runway-video-gateway.mjs";
-import { listGeminiImageModels } from "./gemini-image-gateway.mjs";\nimport { isLegacyVideoModelSelectable } from "./video-provider-registry.mjs";
+import { listGeminiImageModels } from "./gemini-image-gateway.mjs";
+import { isLegacyVideoModelSelectable } from "./video-provider-registry.mjs";
 import { listRunwayImageModels } from "./runway-image-pricing.mjs";
 const LOOPBACKS=new Set(["localhost","127.0.0.1","::1","[::1]"]);
 function gatewayState({enabled,configured,url,allowRemote,model,provider,capabilities,id=provider,reasonIfMissing="Set the server-side endpoint and model."}){
