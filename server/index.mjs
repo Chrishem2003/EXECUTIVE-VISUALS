@@ -375,7 +375,7 @@ const billingAccount=touchBillingAccount(db,user);
       const admin=isAdminUser(user);
       if(path==="/api/me"&&req.method==="GET"){send(res,200,{user,authMode:AUTH_MODE,capabilities:{admin,billing:true}},cors);return;}
       if(path==="/api/billing/plans"&&req.method==="GET"){send(res,200,{plans:listBillingPlans(db)},cors);return;}
-      if(path==="/api/billing/overview"&&req.method==="GET"){send(res,200,{billing:getBillingOverview(db,user.id)},cors);return;}
+      if(path==="/api/billing/overview"&&req.method==="GET"){send(res,200,{billing:getBillingOverview(db,user.id),payment:{checkoutEnabled:process.env.BILLING_CHECKOUT_ENABLED==="true"&&Boolean(process.env.FLW_SECRET_KEY&&process.env.FLW_WEBHOOK_SECRET&&process.env.PUBLIC_APP_URL),recurringSubscriptionsEnabled:false}},cors);return;}
       const billingOrderMatch=path.match(/^\/api\/billing\/orders\/(ev_[a-f0-9]{32})$/);
       if(billingOrderMatch&&req.method==="GET"){
         const order=db.prepare(`SELECT o.tx_ref,o.status,o.expected_amount_minor,o.currency,o.credits,o.verified_at,o.created_at,p.name AS plan_name,p.interval
