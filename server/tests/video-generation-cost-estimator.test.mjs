@@ -75,3 +75,16 @@ test("preflight estimates are immutable and never authorize provider execution",
   assert.equal(result.settlementEligible, false);
   assert.equal(result.pricingStatus, "subject_to_change_before_general_availability");
 });
+
+test("shared preflight prices the November 2026 Runway Flash video models without treating estimates as settlement",()=>{
+  const kling=estimateVideoGenerationCost({provider:"runway",model:"kling_4_flash",durationSeconds:5,resolution:"720p"});
+  assert.equal(kling.credits,47);
+  assert.equal(kling.amount,0.47);
+  assert.equal(kling.billable,false);
+  assert.equal(kling.settlementEligible,false);
+  const gemini=estimateVideoGenerationCost({provider:"runway",model:"gemini_omni_flash_1.2",durationSeconds:5,resolution:"720p"});
+  assert.equal(gemini.credits,35);
+  assert.equal(gemini.amount,0.35);
+  assert.equal(gemini.billable,false);
+  assert.equal(gemini.settlementEligible,false);
+});
