@@ -80,9 +80,8 @@ function boundedObject(value, label) {
 
 /**
  * Opt-in live Model Router adapter. It never runs dry-runs as paid jobs.
- * Realized-credit extraction is injected deliberately: Runway documents the
- * realized credit cost but does not publish a stable JSON property name in its
- * prose contract. A missing/invalid resolver prevents registration.
+ * The completed task's documented cost.credits field is the authoritative
+ * realized charge; estimatedCost.credits is only the pre-generation ceiling.
  */
 export function createRunwayModelRouterVideoAdapter({
   configId = process.env.RUNWAY_VIDEO_ROUTER_CONFIG,
@@ -93,15 +92,14 @@ export function createRunwayModelRouterVideoAdapter({
   fetchImpl = globalThis.fetch,
   prepareInput,
   ingestOutputs,
-  resolveRealizedCredits,
   timeoutMs = 30000
 } = {}) {
   const slug = routerSlug(configId);
   const key = String(apiKey || "").trim();
   if (typeof fetchImpl !== "function") throw new Error("Runway Model Router requires fetch.");
   if (!Number.isInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 120000) throw new Error("Runway Model Router timeout is invalid.");
-  if (typeof ingestOutputs !== "function" || typeof resolveRealizedCredits !== "function") {
-    throw fail("Runway Model Router requires private output ingestion and a documented realized-credit resolver.", "RUNWAY_ROUTER_EXECUTION_GATES_MISSING");
+  if (typeof ingestOutputs !== "function") {
+    throw fail("Runway Model Router requires private output ingestion.", "RUNWAY_ROUTER_EXECUTION_GATES_MISSING");
   }
 
   const assertEnabled = () => {
@@ -187,7 +185,8 @@ export function createRunwayModelRouterVideoAdapter({
         metadata: {
           routeType: "runway-model-router",
           configId: slug,
-          routing
+          routing,
+          estimatedCredits: routing.estimatedCost?.credits
         }
       };
     },
@@ -216,27 +215,37 @@ export function createRunwayModelRouterVideoAdapter({
         if (parsed.protocol !== "https:" || parsed.username || parsed.password) throw fail("Runway output URL is unsafe.", "VIDEO_OUTPUT_URL_REJECTED");
         return parsed.toString();
       });
-      return { status: "succeeded", taskId: providerTaskId, outputUrls, provider: "runway", model: "model-router" };
+      return {
+        status: "succeeded", taskId: providerTaskId, outputUrls,
+        provider: "runway", model: "model-router",
+        cost: task.cost,
+        estimatedCost: task.estimatedCost
+      };
     },
     async ingestOutputs(args) { return ingestOutputs(args); },
     async resolveActualCost(args) {
       const metadata = args.submissionMetadata;
+      const task = args.task;
       if (!metadata || metadata.routeType !== "runway-model-router" || metadata.configId !== slug ||
-          !metadata.routing || typeof metadata.routing !== "object") {
-        throw fail("Durable Runway routing evidence is missing; budget remains reserved.", "VIDEO_BUDGET_COST_UNRESOLVED");
+          !metadata.routing || typeof metadata.routing !== "object" ||
+          metadata.routing.configId !== slug || typeof metadata.routing.model !== "string" ||
+          !metadata.routing.model.trim() || !task || task.status !== "succeeded" ||
+          task.taskId !== args.providerTaskId) {
+        throw fail("Durable Runway route and completed task evidence are required; budget remains reserved.", "VIDEO_BUDGET_COST_UNRESOLVED");
       }
-      let credits;
-      try { credits = await resolveRealizedCredits({ routing: metadata.routing, task: args.task, providerTaskId: args.providerTaskId }); }
-      catch { throw fail("Runway realized generation credits could not be verified.", "VIDEO_BUDGET_COST_UNRESOLVED"); }
-      if (typeof credits !== "number" || !Number.isFinite(credits) || credits < 0) {
-        throw fail("Runway realized generation credits are invalid.", "VIDEO_BUDGET_COST_UNRESOLVED");
+      const credits = task.cost?.credits;
+      const estimatedCredits = task.estimatedCost?.credits;
+      if (typeof credits !== "number" || !Number.isFinite(credits) || credits < 0 ||
+          typeof estimatedCredits !== "number" || !Number.isFinite(estimatedCredits) ||
+          estimatedCredits < 0 || credits > estimatedCredits) {
+        throw fail("Runway completed task omitted valid realized cost or exceeded its task estimate.", "VIDEO_BUDGET_COST_UNRESOLVED");
       }
       const modelUsed = metadata.routing.model;
       return {
         amount: Math.round(credits * 0.01 * 10000) / 10000,
         currency: "USD",
         model: modelUsed,
-        evidenceReference: "runway:model-router:" + slug + ":" + args.providerTaskId + ":credits:" + credits
+        evidenceReference: "runway:model-router:" + slug + ":" + args.providerTaskId + ":task-cost-credits:" + credits
       };
     }
   });
