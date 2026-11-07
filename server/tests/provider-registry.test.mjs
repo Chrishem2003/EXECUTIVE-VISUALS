@@ -197,7 +197,7 @@ test("Runway video provider exposes the new Flash profiles but rejects unknown m
  const video=catalog.providers.find(item=>item.id==="video");
  assert.equal(video.status,"ready");
  assert.ok(video.availableModels.some(model=>model.id==="kling_4_flash"&&model.maxDurationSeconds===20));
- assert.ok(video.availableModels.some(model=>model.id==="gemini_omni_flash_1.2"&&model.maxDurationSeconds===15));
+ assert.ok(video.availableModels.some(model=>model.id==="gemini_omni_flash_1.2"&&model.maxDurationSeconds===15&&model.nativeAudio===true));
  const unknown=getProviderCatalog({
   VIDEO_GATEWAY_PROVIDER:"runway",VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",
   RUNWAY_API_KEY:"secret",RUNWAY_VIDEO_MODEL:"not-an-adapter"
