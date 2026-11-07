@@ -1,11 +1,11 @@
 import { generateFalImage } from "./fal-image-gateway.mjs";
 import { generateGeminiImage } from "./gemini-image-gateway.mjs";
-import { generateRunwayImage } from "./runway-image-gateway.mjs";
+import { generateRunwayImage, generateRunwayRouterImage } from "./runway-image-gateway.mjs";
 const loopbacks=new Set(["localhost","127.0.0.1","::1","[::1]"]);
-export async function generateImage({prompt,size="1024x1024",quality="medium",referenceImageDataUrl="",referenceImages=[],model="",ratio="auto",reasoningEffort="high",background="auto",outputCount=1}={}){
+export async function generateImage({prompt,size="1024x1024",quality="medium",referenceImageDataUrl="",referenceImages=[],model="",ratio="auto",reasoningEffort="high",background="auto",outputCount=1,resolution=""}={}){
  const provider=String(process.env.IMAGE_GATEWAY_PROVIDER||"openai-compatible").trim().toLowerCase();
  if(!Number.isSafeInteger(outputCount)||outputCount<1||outputCount>4)throw Object.assign(new Error("Image output count must be an integer from 1 to 4."),{code:"IMAGE_GATEWAY_INVALID_INPUT"});
- if(provider==="runway")return generateRunwayImage({prompt,ratio,quality,reasoningEffort,background,referenceImages:referenceImages.length?referenceImages:(referenceImageDataUrl?[referenceImageDataUrl]:[]),model:model||process.env.RUNWAY_IMAGE_MODEL||process.env.IMAGE_GATEWAY_MODEL,outputCount});
+ if(provider==="runway"){const refs=referenceImages.length?referenceImages:(referenceImageDataUrl?[referenceImageDataUrl]:[]);if(process.env.RUNWAY_IMAGE_ROUTER_ENABLED==="true"&&process.env.RUNWAY_IMAGE_ROUTER_CONFIG)return generateRunwayRouterImage({prompt,aspectRatio:ratio,resolution,referenceImages:refs,outputCount});return generateRunwayImage({prompt,ratio,quality,reasoningEffort,background,referenceImages:refs,model:model||process.env.RUNWAY_IMAGE_MODEL||process.env.IMAGE_GATEWAY_MODEL,outputCount});}
  if(provider==="fal"||provider==="gemini"){
   if(outputCount!==1)throw Object.assign(new Error("The configured image adapter does not yet support multi-output generation."),{code:"IMAGE_GATEWAY_UNSUPPORTED_CAPABILITY"});
   if(provider==="fal")return generateFalImage({prompt,size,quality,referenceImageDataUrl});
