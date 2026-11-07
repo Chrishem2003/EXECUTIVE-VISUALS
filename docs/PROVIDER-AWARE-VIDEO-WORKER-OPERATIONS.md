@@ -207,3 +207,7 @@ The routed video contract now accepts `operation: "video-to-video"` with an expl
 The enqueue boundary server-probes source metadata, validates the owner/project/asset identity and supported video MIME type, enforces the 1–30 second source window and requires the approved duration to equal the rounded-up source duration before the durable queue RPC. The same exact normalized input is used for dry-run routing and live submission; dry-run estimates remain a ceiling, not settlement.
 
 This exposes Runway's documented Model Router video-to-video path. It does not claim that every routed model supports every edit or extension instruction: Runway filters eligible models based on source-video support, and the prompt must describe the intended edit or continuation. Keep the feature disabled until authenticated quote/approval and end-to-end UI wiring are complete.
+
+## Latest source-video validation checkpoint
+
+The provider-neutral contract now counts the source video toward the Runway Model Router's maximum of two video inputs. A source clip plus two additional references, or the same asset supplied as both source and reference, is rejected before queueing. The adapter independently enforces exactly one `source` role for `video-to-video`.
