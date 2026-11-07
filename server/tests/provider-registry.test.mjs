@@ -4,9 +4,9 @@ import { getProviderCatalog, findProviderForCapability, requireProviderForCapabi
 
 test("provider catalog is safe by default and never exposes credentials or submits work",()=>{
  const catalog=getProviderCatalog({});
- assert.equal(catalog.summary.total,7);
+ assert.equal(catalog.summary.total,8);
  assert.equal(catalog.summary.ready,0);
- assert.equal(catalog.summary.disabled,5);
+ assert.equal(catalog.summary.disabled,6);
  assert.equal(catalog.providers.find(x=>x.id==="local-media").status,"unavailable");
  assert.equal(catalog.providers.find(x=>x.id==="local-media").capabilities.includes("media.upscale"),true);
  assert.deepEqual(catalog.policy,{remoteCallsRequireExplicitOptIn:true,credentialsExposed:false,pricesEstimated:false,requestsSubmitted:false});
@@ -149,4 +149,21 @@ test("AI upscaler requires independent fixture evidence, not a claimed inference
  assert.equal(verifiedProvider.status,"ready");
  assert.deepEqual(verifiedProvider.capabilities,["media.ai-upscale"]);
  assert.equal(findProviderForCapability(qualityChecked,"media.ai-upscale").provider,"local");
+});
+
+
+test("Gemini Omni is visible in settings but remains blocked until app authorization callbacks are composed", () => {
+ const catalog = getProviderCatalog({
+  GEMINI_API_KEY: "never-return-this",
+  GOOGLE_OMNI_VIDEO_ENABLED: "true",
+  GOOGLE_OMNI_VIDEO_ALLOW_REMOTE: "true",
+  GEMINI_OMNI_ENABLED: "true",
+  GEMINI_OMNI_ALLOW_REMOTE: "true"
+ });
+ const provider = catalog.providers.find(item => item.id === "video-google-omni");
+ assert.equal(provider.status, "needs_configuration");
+ assert.equal(provider.model, "gemini-omni-1.1-flash");
+ assert.match(provider.reason, /application-injected approval/);
+ assert.equal(findProviderForCapability(catalog, "video.edit", { allowRemote: true }), null);
+ assert.equal(JSON.stringify(catalog).includes("never-return-this"), false);
 });
