@@ -71,11 +71,10 @@ export function estimateRunwayImageCredits(options={}){
 export function listRunwayImageModels(){
   return ["gpt_image_2_6_flare","gpt_image_2_6_sunburst"].map(id=>Object.freeze({
     id,provider:"runway",availability:"adapter_supported",executionAdapter:"runway-image-v1",
-    promptMaxCharacters:32000,maxReferenceImages:16,resolutions:Object.freeze(["1K","2K","4K"]),outputCounts:Object.freeze({min:1,max:10}),
+    promptMaxCharacters:32000,maxReferenceImages:16,resolutions:Object.freeze(["1K","2K","4K"]),outputCounts:Object.freeze({min:1,max:1}),
     sizeTiers:Object.freeze(Object.keys(TIERS)),supportedPixelSizes:Object.freeze(Object.fromEntries(Object.entries(TIERS).map(([tier,sizes])=>[tier,Object.freeze(Object.keys(sizes))]))),
     qualities:Object.freeze(["low","medium","high"]),reasoningEfforts:Object.freeze(["low","medium","high"]),
     backgrounds:Object.freeze(["auto","opaque","transparent"]),outputFormat:"png",
-    specialModes:id==="gpt_image_2_6_sunburst"?Object.freeze({typographyPromptMaxCharacters:4000,referenceRemixMaxReferences:1,referenceRemixOutputCount:Object.freeze({min:1,max:4})}):null,
     pricingSource:SOURCE
   }));
 }
