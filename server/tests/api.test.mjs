@@ -87,6 +87,23 @@ test("video cost estimate API is authenticated, read-only and uses configured mo
   assert.equal((await unknown.json()).available,false);
 });
 
+test("multi-shot production quote API is authenticated, itemized and read-only",async()=>{
+  assert.equal((await fetch(base+"/api/video-production-quote",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({shots:[]})})).status,401);
+  const cookie=await register("production-quote-owner@example.test");
+  const response=await request("/api/video-production-quote",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({shots:[
+    {id:"opening",provider:"fal",model:"fal-ai/example-video",durationSeconds:5,resolution:"720p",audioMode:"generated",referenceImageCount:1},
+    {id:"close",provider:"fal",model:"fal-ai/example-video",durationSeconds:3,resolution:"720p",audioMode:"none",referenceImageCount:0}
+  ]})},cookie);
+  assert.equal(response.status,200);
+  const quote=await response.json();
+  assert.equal(quote.available,true);
+  assert.equal(quote.shotCount,2);
+  assert.equal(quote.totalDurationSeconds,8);
+  assert.equal(quote.amount,1.06);
+  assert.equal(quote.shots.length,2);
+  assert.equal(quote.disclaimer.includes("No generation jobs were submitted"),true);
+});
+
 test("usage API reports account request allowance without exposing secrets",async()=>{
   assert.equal((await fetch(base+"/api/usage")).status,401);
   const cookie=await register("usage-owner@example.test");
