@@ -195,6 +195,8 @@ export function receiveDodoWebhook(db, {
       next_billing_date: data.next_billing_date || null,
       payment_id: data.payment_id || null,
       has_payment_method: data.has_payment_method === true,
+      cancel_at_next_billing_date: data.cancel_at_next_billing_date === true,
+      past_due_ends_at: data.past_due_ends_at || null,
       customer_id: String(data.customer?.customer_id || ""),
       metadata: {
         executive_visuals_order_id: String(metadata.executive_visuals_order_id || ""),
@@ -295,10 +297,11 @@ export function processNextDodoWebhook(db, { env = process.env } = {}) {
       db.exec("BEGIN IMMEDIATE");
       try {
         db.prepare(`INSERT INTO billing_subscriptions
-          (id,user_id,plan_id,status,provider,provider_customer_id,provider_subscription_id,current_period_start,current_period_end,metadata_json)
-          VALUES(?,?,?,'active','dodo',?,?,?,?,?)`)
+          (id,user_id,plan_id,status,provider,provider_customer_id,provider_subscription_id,current_period_start,current_period_end,cancel_at_period_end,metadata_json)
+          VALUES(?,?,?,'active','dodo',?,?,?,?,?,?)`)
           .run(randomUUID(), checkout.user_id, plan.id, data.customer_id || null, subscriptionId,
-            periodStart, periodEnd, safeJson({ productId: data.product_id, lastProviderTimestamp: payload.timestamp }));
+            periodStart, periodEnd, data.cancel_at_next_billing_date === true ? 1 : 0,
+            safeJson({ productId: data.product_id, lastProviderTimestamp: payload.timestamp }));
         insertSubscriptionCredits(db, {
           userId: checkout.user_id, plan, subscriptionId, paymentId: data.payment_id,
           periodEnd, idempotencyKey: "dodo-subscription-active:" + subscriptionId + ":" + periodStart,
@@ -326,9 +329,9 @@ export function processNextDodoWebhook(db, { env = process.env } = {}) {
       }
       db.exec("BEGIN IMMEDIATE");
       try {
-        db.prepare(`UPDATE billing_subscriptions SET status='active',current_period_start=?,current_period_end=?,metadata_json=?,updated_at=? WHERE id=?`)
+        db.prepare(`undefined`)
           .run(data.previous_billing_date || now(), data.next_billing_date,
-            safeJson({ ...currentMetadata, lastProviderTimestamp: eventTime }), now(), local.id);
+            safeJson({ ...currentMetadata, lastProviderTimestamp: eventTime, pastDueEndsAt: null }), now(), local.id);
         insertSubscriptionCredits(db, {
           userId: local.user_id, plan, subscriptionId, paymentId: data.payment_id,
           periodEnd: data.next_billing_date, idempotencyKey: "dodo-subscription-renewal:" + subscriptionId + ":" + data.payment_id,
@@ -345,13 +348,15 @@ export function processNextDodoWebhook(db, { env = process.env } = {}) {
           Number(data.recurring_pre_tax_amount) !== Number(newPlan.amount_minor)) {
         throw fail("Dodo plan change does not match a configured local plan.", "DODO_PLAN_CHANGE_MISMATCH", 409);
       }
-      db.prepare("UPDATE billing_subscriptions SET plan_id=?,status=?,current_period_end=?,metadata_json=?,updated_at=? WHERE id=?")
+      db.prepare("undefined")
         .run(newPlan.id, status, data.next_billing_date || local.current_period_end,
-          safeJson({ ...currentMetadata, productId: data.product_id, lastProviderTimestamp: eventTime }), now(), local.id);
+          safeJson({ ...currentMetadata, productId: data.product_id, lastProviderTimestamp: eventTime,
+            pastDueEndsAt: data.past_due_ends_at || currentMetadata.pastDueEndsAt || null }), now(), local.id);
     } else {
-      db.prepare("UPDATE billing_subscriptions SET status=?,current_period_end=?,metadata_json=?,updated_at=? WHERE id=?")
+      db.prepare("undefined")
         .run(status, data.next_billing_date || local.current_period_end,
-          safeJson({ ...currentMetadata, lastProviderTimestamp: eventTime }), now(), local.id);
+          safeJson({ ...currentMetadata, lastProviderTimestamp: eventTime,
+            pastDueEndsAt: data.past_due_ends_at || currentMetadata.pastDueEndsAt || null }), now(), local.id);
     }
     db.prepare("UPDATE billing_provider_events SET processed_at=?,last_error=NULL WHERE id=?").run(now(), event.id);
     return { processed: true, status, eventId: event.event_id };
