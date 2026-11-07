@@ -5,6 +5,7 @@ import { join } from "node:path";
 
 const VIDEO_TYPES = new Set(["video/mp4", "video/quicktime", "video/webm"]);
 const IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
+const AUDIO_TYPES = new Set(["audio/mpeg", "audio/mp4", "audio/wav", "audio/x-wav", "audio/aac", "audio/ogg", "audio/webm", "audio/flac"]);
 const fail = (message, code) => Object.assign(new Error(message), { code });
 
 function parseRate(value) {
@@ -46,7 +47,7 @@ export function createRunwaySourceAssetResolver({
         !Number.isSafeInteger(asset.size) || asset.size < 1 || asset.size > maxBytes) {
       throw fail("Source asset is not available in this job's exact owner/project scope.", "VIDEO_INPUT_ASSET_RESOLUTION_FAILED");
     }
-    const allowed = kinds === "image" ? IMAGE_TYPES : VIDEO_TYPES;
+    const allowed = kinds === "image" ? IMAGE_TYPES : kinds === "audio" ? AUDIO_TYPES : VIDEO_TYPES;
     if (!allowed.has(asset.mediaType)) throw fail("Source asset media type is not supported for this operation.", "VIDEO_INPUT_ASSET_TYPE_INVALID");
     const signed = await assets.createSignedUrl({ ownerId, assetId, expiresIn: 300 });
     if (!signed?.asset || signed.asset.id !== assetId || signed.asset.objectPath !== asset.objectPath ||
@@ -146,18 +147,31 @@ export function createRunwaySourceAssetResolver({
           referenceImages.push({ uri: image.url, role: "reference" });
         }
         const videoIds = input.referenceVideoAssetIds || [];
-        if (!Array.isArray(videoIds) || videoIds.length > 4) {
-          throw fail("Runway Model Router accepts at most four owner-scoped reference videos.", "VIDEO_INPUT_ASSET_RESOLUTION_FAILED");
+        if (!Array.isArray(videoIds) || videoIds.length > 2) {
+          throw fail("Runway Model Router accepts at most two owner-scoped reference videos.", "VIDEO_INPUT_ASSET_RESOLUTION_FAILED");
         }
         const referenceVideos = [];
         for (const assetId of videoIds) {
           const video = await resolveAsset({ ownerId, projectId, assetId, kinds: "video" });
           referenceVideos.push({ uri: video.url, role: "reference" });
         }
+        const audioIds = input.referenceAudioAssetIds || (input.referenceAudioAssetId ? [input.referenceAudioAssetId] : []);
+        if (!Array.isArray(audioIds) || audioIds.length > 1) {
+          throw fail("Runway Model Router accepts at most one owner-scoped reference audio asset.", "VIDEO_INPUT_ASSET_RESOLUTION_FAILED");
+        }
+        const referenceAudio = [];
+        for (const assetId of audioIds) {
+          const audio = await resolveAsset({ ownerId, projectId, assetId, kinds: "audio" });
+          referenceAudio.push({ uri: audio.url });
+        }
+        if (input.audioMode === "reference" && referenceAudio.length !== 1) {
+          throw fail("Reference audio mode requires exactly one owner-scoped audio asset.", "VIDEO_INPUT_ASSET_RESOLUTION_FAILED");
+        }
         return {
           ...input,
           ...(referenceImages.length ? { referenceImages } : {}),
-          ...(referenceVideos.length ? { referenceVideos } : {})
+          ...(referenceVideos.length ? { referenceVideos } : {}),
+          ...(referenceAudio.length ? { referenceAudio } : {})
         };
       }
       if (input?.operation === "image-to-video" || input?.startFrameAssetId) {
