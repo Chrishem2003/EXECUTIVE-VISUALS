@@ -210,7 +210,6 @@ export function estimateRunwayVideoCredits(options={}) {
       const rate=resolutionRate({"360p":2,"720p":7,"1080p":10,"4k":21});
       if(imageCount>5||billableImageReferences>5)throw fail("Gemini Omni 1.2 Flash accepts at most 5 image references/keyframes.","RUNWAY_PRICE_INVALID_INPUT");
       if(inputType==="video"&&inputVideo<=0)throw fail("inputVideoSeconds is required for Gemini Omni 1.2 video-to-video pricing.","RUNWAY_PRICE_INPUT_REQUIRED");
-      if(referenceVideo>0&&inputVideo+referenceVideo>30)throw fail("Gemini Omni 1.2 Flash combined input/reference video duration must not exceed 30 seconds.","RUNWAY_PRICE_INVALID_INPUT");
       credits=Math.max(6,Math.ceil(duration*rate+billableImageReferences+inputVideo+referenceVideo));
       formula="max(6, ceil("+duration+"s output × "+rate+" + "+billableImageReferences+" image references/keyframes + "+(inputVideo+referenceVideo)+"s input/reference video))";
       break;
