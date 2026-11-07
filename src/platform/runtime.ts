@@ -82,7 +82,7 @@ export function renderImageModelOptions(){
 export function renderImageModelNote(){
  const provider=state.providers.find(item=>item.id==="image"&&item.provider==="gemini");
  if(!provider)return "The image model is configured server-side. Nano Banana Pro appears when the Gemini image adapter is selected by the administrator.";
- return esc(provider.status==="ready"?"Nano Banana Pro is configured. Google API charges apply to approved generations.":provider.reason)+" The API adapter accepts one validated reference image, but the standard image form does not yet expose a reference picker.";
+ return esc(provider.status==="ready"?"Nano Banana Pro is configured. Google API charges apply to approved generations.":provider.reason)+" The image workspace now accepts one validated reference asset for image editing.";
 }
 export function renderVideoModelOptions(){
  const provider=state.providers.find(item=>item.provider==="runway");
