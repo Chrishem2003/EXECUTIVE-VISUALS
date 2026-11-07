@@ -504,3 +504,6 @@ button:disabled{opacity:.55;cursor:not-allowed}
 .admin-list small,.admin-list span{font-size:8px;color:var(--muted);margin-top:4px;overflow-wrap:anywhere}
 @media(max-width:900px){.billing-plan-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.admin-grid{grid-template-columns:1fr}}
 @media(max-width:560px){.billing-plan-grid{grid-template-columns:1fr}}
+
+
+.admin-finance{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px;margin:16px 0}.admin-finance>div{min-width:0}.admin-finance h2{font:700 21px Manrope;margin:8px 0}.admin-finance small{display:block;color:var(--muted);font-size:11px;line-height:1.5}@media(max-width:760px){.admin-finance{grid-template-columns:1fr}}
