@@ -213,3 +213,30 @@ Flutterwave recurring payment plans are a separate card-only product. When a pay
 - Flutterwave transaction verification: https://developer.flutterwave.com/docs/transaction-verification
 - Flutterwave recurring payment-plan and card-only limitation: https://developer.flutterwave.com/docs/payment-plans-1
 - Flutterwave Uganda mobile-money flow: https://developer.flutterwave.com/docs/uganda
+
+## 8. Runway model-catalogue drift audit — 2026-11-07
+
+The official Runway Dev model directory now lists 64 models across video, image, audio, real-time and professional-output categories. The model directory is a changing catalogue, not a promise that every model has a stable direct endpoint or that this application can execute it.
+
+Newly documented video releases on 2026-11-05 include:
+
+- **Kling 4.0 Flash** (`kling_4_flash`): 720p, 3–20 seconds, text/first-frame/image/video references and source-video editing; published starting price from $0.094/second.
+- **Gemini Omni 1.2 Flash** (`gemini_omni_flash_1.2`): text, keyframe and reference-driven video generation, plus editing and extension, with listed output tiers from 360p through 4K; published starting price from $0.02/second.
+
+The provider registry now records both video models as disabled, non-executable catalogue entries. Their starting rates are evidence only; they are not complete tiered pricing formulas and must not be used for customer quotes. The public model catalogue and pricing page must be rechecked before any quote or provider activation.
+
+The same directory also lists new image models GPT Image 2.6 Flare and GPT Image 2.6 Sunburst. They are deliberately not inserted into the video provider registry: image generation needs its own capability contract, input/reference schema, output ingestion and pricing estimator. Add them only through that separate image-generation control plane.
+
+### Catalogue governance requirements
+
+1. Store provider model IDs separately from internal product IDs and provider adapter names.
+2. Track source URL, verified-at date, pricing evidence type, capability evidence and model lifecycle state.
+3. Distinguish exact tier pricing from a published "from" price; only exact tier formulas can power an automatic customer quote.
+4. Keep new and changed models disabled until adapter contract tests, cost reservation, output ingestion, safety policy and owner/project isolation pass.
+5. Add a scheduled catalogue-drift review, but never auto-enable a newly discovered model or silently change customer-facing prices.
+
+Official references:
+- Runway model directory: https://docs.dev.runwayml.com/guides/models/
+- Runway API pricing and costs: https://docs.dev.runwayml.com/guides/pricing/
+- Runway API changelog: https://docs.dev.runwayml.com/api-details/api_changelog/
+
