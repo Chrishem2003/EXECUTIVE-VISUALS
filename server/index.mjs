@@ -22,7 +22,7 @@ import { ensureTransformationPlanSchema, createTransformationPlan, approveTransf
 import { signInWithSupabasePassword, signUpWithSupabasePassword, refreshSupabaseSession, getSupabaseUser, revokeSupabaseSession } from "./supabase-password-auth.mjs";
 import { ensureBillingSchema, touchBillingAccount, getBillingOverview, listBillingPlans, getAdminOverview, listAdminUsers, saveBillingPlan, assignManualSubscription, adjustBillingCredits, setBillingAccountStatus, listBillingModelPrices, saveBillingModelPrice } from "./billing.mjs";
 import { ensureBillingWebhookSchema, receiveFlutterwaveWebhook, processNextFlutterwaveWebhook, createFlutterwaveCheckout } from "./billing-webhooks.mjs";
-import { ensureDodoSubscriptionSchema, dodoProductEnvName, dodoSubscriptionCheckoutEnabled, createDodoSubscriptionCheckout, receiveDodoWebhook, processNextDodoWebhook, getDodoCheckoutStatus } from "./dodo-subscriptions.mjs";
+import { ensureDodoSubscriptionSchema, dodoProductEnvName, dodoSubscriptionCheckoutEnabled, createDodoSubscriptionCheckout, receiveDodoWebhook, processNextDodoWebhook, getDodoCheckoutStatus, createDodoCustomerPortalSession } from "./dodo-subscriptions.mjs";
 
 const PORT = Number(process.env.PORT || process.env.API_PORT || 4179);
 const HOST = process.env.API_HOST || (process.env.NODE_ENV === "production" ? "0.0.0.0" : "127.0.0.1");
@@ -410,6 +410,10 @@ const billingAccount=touchBillingAccount(db,user);
         const body=await readJson(req,16*1024);
         const checkout=await createDodoSubscriptionCheckout(db,{user,planId:String(body.planId||"")});
         send(res,200,{checkout},cors);return;
+      }
+      if(path==="/api/billing/customer-portal"&&req.method==="POST"){
+        const portal=await createDodoCustomerPortalSession(db,{user});
+        send(res,200,{portal},cors);return;
       }
       const dodoOrderMatch=path.match(/^\/api\/billing\/dodo-orders\/([0-9a-f-]{36})$/i);
       if(dodoOrderMatch&&req.method==="GET"){
