@@ -1,4 +1,4 @@
-import { createHash, createHmac, timingSafeEqual, randomUUID } from "node:crypto";
+import { createHash, timingSafeEqual, randomUUID } from "node:crypto";
 
 const now = () => new Date().toISOString();
 const json = value => JSON.stringify(value ?? {});
@@ -74,15 +74,15 @@ export function createBillingPurchaseOrder(db, { userId, planId, provider = "flu
 }
 
 /**
- * Flutterwave V4 webhook signature: base64(HMAC-SHA256(rawBody, secretHash)).
- * Raw bytes are required; parsed/re-serialized JSON is not equivalent.
+ * Flutterwave Standard API v3 webhooks use the dashboard-configured secret
+ * hash in the "verif-hash" header. Transaction authenticity is then confirmed
+ * independently against the v3 transaction-verification API before settlement.
  */
 export function verifyFlutterwaveWebhookSignature({ rawBody, signature, secretHash } = {}) {
   if (!Buffer.isBuffer(rawBody) || rawBody.length === 0 || rawBody.length > 1024 * 1024 ||
       typeof secretHash !== "string" || secretHash.length < 24 || secretHash.length > 512 ||
-      typeof signature !== "string" || signature.length > 256) return false;
-  const expected = createHmac("sha256", secretHash).update(rawBody).digest("base64");
-  return safeEqual(signature, expected);
+      typeof signature !== "string" || signature.length > 512) return false;
+  return safeEqual(signature, secretHash);
 }
 
 export function receiveFlutterwaveWebhook(db, { rawBody, signature, secretHash } = {}) {
