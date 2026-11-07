@@ -110,7 +110,8 @@ export function createCloudVideoEnqueue({
       const runwayUpscaleEnabled = provider === "runway" && model === "magnific_video_upscaler_creative" && input.operation === "video-upscale";
       const runwayHdrEnabled = provider === "runway" && model === "ruby" && input.operation === "video-to-hdr";
       const runwayRouterEnabled = provider === "runway" && model === "model-router" &&
-        (input.operation === undefined || ["text-to-video", "image-to-video"].includes(input.operation));
+        (input.operation === undefined || ["text-to-video", "image-to-video", "video-to-video"].includes(input.operation));
+      const runwayRouterVideoEditEnabled = runwayRouterEnabled && input.operation === "video-to-video";
       const runwayEnabled = runwayTextEnabled || runwayImageEnabled || runwayEditEnabled || runwayUpscaleEnabled || runwayHdrEnabled || runwayRouterEnabled;
       const googleEnabled = provider === "google" && model === "gemini-omni-1.1-flash";
       if (runwayRouterEnabled && (
@@ -142,7 +143,7 @@ export function createCloudVideoEnqueue({
         throw disabled;
       }
       let verifiedSourceMetadata = null;
-      if (runwayEditEnabled || runwayUpscaleEnabled || runwayHdrEnabled) {
+      if (runwayEditEnabled || runwayUpscaleEnabled || runwayHdrEnabled || runwayRouterVideoEditEnabled) {
         if (typeof resolveRunwaySourceMetadata !== "function") {
           const unavailable = new Error("Runway source operations require a server-side media probe and owner-scoped asset resolver.");
           unavailable.code = "VIDEO_SOURCE_METADATA_UNAVAILABLE";
