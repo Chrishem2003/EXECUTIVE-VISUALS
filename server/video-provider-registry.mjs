@@ -41,6 +41,7 @@ export const VIDEO_PROVIDER_CATALOG = freeze([
           promptMaxCharacters: 26000,
           negativePromptMaxCharacters: 1000,
           maxReferenceImages: 4,
+          maxReferenceImages: 4,
           maxReferenceVideos: 2,
           maxReferenceAudio: 1,
           pricingSource: "https://docs.dev.runwayml.com/api/",
