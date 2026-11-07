@@ -422,3 +422,15 @@ A comparison of all legacy Runway gateway IDs against the evidence-backed provid
 - `8e8f3b5`: clarify unsupported-model error.
 
 The remediation is pushed, but the exact latest PR head must pass fresh CI before the change is accepted. No local test run is claimed.
+
+
+## Workflow guard acceptance coverage — pushed 2026-11-07
+
+Added an end-to-end workflow-executor verification case for a cloud-worker-only/catalogue-only model (`veo3.1`) routed toward the legacy Runway synchronous provider. The test configures a valid legacy Runway provider and a completed upstream approval, then asserts:
+
+- the workflow rejects the unsupported model with `VIDEO_MODEL_EXECUTION_DISABLED`;
+- the provider fetch/submission function is never invoked;
+- `remote_usage_reservations` is not even created, proving the rejection precedes remote usage/budget reservation;
+- the video node is marked failed and the workflow is stopped.
+
+This closes the previously documented workflow-level acceptance gap for the legacy fallback guard. It is pushed in `eb305460dcaa0c4be6279f7d1b9131179f3a8d7b`; the exact new head still requires fresh CI before acceptance. The hosted Studio-to-cloud-worker bridge in issue #209 remains separate and unimplemented.
