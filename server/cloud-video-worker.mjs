@@ -2,6 +2,7 @@ import { executeCloudVideoGenerationJob } from "./cloud-video-generation-executo
 
 const QUARANTINE_CODES = new Set([
   "VIDEO_SUBMISSION_REQUIRES_RECONCILIATION",
+  "VIDEO_PREFLIGHT_REJECTED",
   "VIDEO_SUBMISSION_IN_PROGRESS",
   "VIDEO_SUBMISSION_TERMINAL",
   "VIDEO_BUDGET_COST_UNRESOLVED",
