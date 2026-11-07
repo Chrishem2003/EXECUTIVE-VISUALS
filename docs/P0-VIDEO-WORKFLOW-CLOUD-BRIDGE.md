@@ -56,7 +56,7 @@ These endpoints remain behind verified Supabase authentication and the cloud tim
 
 ### Remaining work
 
-1. **Completed in integration:** `POST /api/cloud/transformations/quote` provides a non-mutating, source-probed Aleph 2 estimate with provider/model, USD amount, pricing evidence/date, source metadata, 5-minute quote expiry and explicit non-billable/approval-required flags. It requires project editor access and media-rights confirmation, checks person-replacement consent, rejects source clips outside 2–30 seconds, and performs no approval, reservation, job write or provider submission.
+1. **Completed in integration:** `POST /api/cloud/transformations/quote` provides a non-mutating, source-probed Aleph 2 estimate with provider/model, USD amount, pricing evidence/date, source metadata including server-probed frame rate, 5-minute quote expiry and explicit non-billable/approval-required flags. It requires project editor access and media-rights confirmation, checks person-replacement consent, rejects source clips outside 2–30 seconds, and performs no approval, reservation, job write or provider submission.
 2. Add owner/editor-authorized cancellation and expose cancellation/refund/reconciliation outcomes without double charging.
 3. Bind quote and approval to the authenticated actor, tenant, project, canonical request hash, provider/model/operation, private asset IDs and expiry.
 4. Complete server-side media eligibility checks for provider limits, including frame rate and resolution, in addition to ownership, media type, checksum, duration, size and project scope.
