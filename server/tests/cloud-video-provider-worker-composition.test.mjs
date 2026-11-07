@@ -5,7 +5,10 @@ import { createProviderAwareCloudVideoWorkerComposition } from "../cloud-video-p
 const env = {
   CLOUD_VIDEO_WORKER_ENABLED: "true",
   VIDEO_GATEWAY_ENABLED: "true",
-  VIDEO_GATEWAY_ALLOW_REMOTE: "true"
+  VIDEO_GATEWAY_ALLOW_REMOTE: "true",
+  FAL_VIDEO_MODEL: "fal-ai/wan/v2.7/text-to-video",
+  FAL_KEY: "queue-test-key",
+  FAL_BILLING_KEY: "billing-test-key"
 };
 const base = {
   workerId: "provider-worker-test",
