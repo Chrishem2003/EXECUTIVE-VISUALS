@@ -40,8 +40,8 @@ test("GPT Image 2.6 models are catalogued but cannot be selected for execution",
   const models=listRunwayImageModels();
   assert.deepEqual(models.map(model=>model.id),["gpt_image_2_6_flare","gpt_image_2_6_sunburst"]);
   for(const model of models){
-    assert.equal(model.availability,"disabled");
-    assert.equal(model.executionAdapter,"not_implemented");
+    assert.equal(model.availability,"adapter_supported");
+    assert.equal(model.executionAdapter,"runway-image-v1");
     assert.equal(model.promptMaxCharacters,32000);
     assert.equal(model.maxReferenceImages,16);
     assert.deepEqual(model.resolutions,["1K","2K","4K"]);
