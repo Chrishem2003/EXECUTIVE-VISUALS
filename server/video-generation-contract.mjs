@@ -97,7 +97,9 @@ export function normalizeVideoGenerationRequest(input) {
     durationSeconds: finiteNumber(input.durationSeconds ?? 5, "durationSeconds", { min: 1, max: 180, required: true, integer: true }),
     outputFormat,
     audioMode,
-    referenceAssetIds: assetIds(input.referenceAssetIds, "referenceAssetIds"),
+    referenceAssetIds: assetIds(input.referenceAssetIds ?? input.referenceImageAssetIds, "referenceAssetIds", 4),
+    referenceVideoAssetIds: assetIds(input.referenceVideoAssetIds, "referenceVideoAssetIds", 2),
+    referenceAudioAssetIds: assetIds(input.referenceAudioAssetIds, "referenceAudioAssetIds", 1),
     ...(negativePrompt ? { negativePrompt } : {}),
   };
 
@@ -172,6 +174,8 @@ export function assertVideoCapabilities(request, capabilities = {}) {
     [request.endFrameAssetId != null, capabilities.endFrame === true, "endFrameAssetId"],
     [request.motionReferenceAssetId != null, capabilities.motionReference === true, "motionReferenceAssetId"],
     [request.referenceAssetIds.length > 0, capabilities.referenceImages === true, "referenceAssetIds"],
+    [request.referenceVideoAssetIds.length > 0, capabilities.referenceVideos === true, "referenceVideoAssetIds"],
+    [request.referenceAudioAssetIds.length > 0, capabilities.referenceAudio === true, "referenceAudioAssetIds"],
     [request.audioMode !== "provider_default", capabilities.audioModes?.includes?.(request.audioMode) === true, "audioMode"],
   ];
   const unsupported = checks.filter(([requested, supported]) => requested && !supported).map(([, , field]) => field);
