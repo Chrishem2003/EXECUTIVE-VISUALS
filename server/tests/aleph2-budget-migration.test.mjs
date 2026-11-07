@@ -7,13 +7,16 @@ const migration = await readFile(new URL("../../supabase/migrations/202611081200
 test("Aleph 2 approval RPC is service-role-only and requires an existing scoped budget policy", () => {
   for (const contract of [
     "create or replace function executive_visuals.create_video_generation_budget_approval",
-    "coalesce(auth.role(),'') <> 'service_role'",
+    "security invoker",
+    "grant execute on function executive_visuals.create_video_generation_budget_approval",
     "b.owner_id = p_owner_id and b.project_id = p_project_id",
     "b.provider = p_provider and b.model = p_model",
     "p_approved_max_amount > policy.max_per_job_amount",
     "policy.reserved_amount + policy.spent_amount + p_approved_max_amount > policy.spend_limit_amount",
     "interval '15 minutes'"
   ]) assert.ok(migration.includes(contract), "Missing SQL approval contract: " + contract);
+  assert.ok(!migration.includes("auth.role()"), "Do not use deprecated auth.role() authorization checks");
+  assert.ok(!migration.includes("security definer"), "The service-only RPC must not bypass RLS");
 });
 
 test("Aleph 2 SQL enqueue is restricted to MP4 video-to-video with the published minimum price floor", () => {
