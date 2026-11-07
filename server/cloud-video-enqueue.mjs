@@ -108,7 +108,8 @@ export function createCloudVideoEnqueue({
         (input.operation === "image-to-video" || Boolean(input.startFrameAssetId));
       const runwayEditEnabled = provider === "runway" && model === "aleph2" && input.operation === "video-to-video";
       const runwayUpscaleEnabled = provider === "runway" && model === "magnific_video_upscaler_creative" && input.operation === "video-upscale";
-      const runwayEnabled = runwayTextEnabled || runwayImageEnabled || runwayEditEnabled || runwayUpscaleEnabled;
+      const runwayHdrEnabled = provider === "runway" && model === "ruby" && input.operation === "video-to-hdr";
+      const runwayEnabled = runwayTextEnabled || runwayImageEnabled || runwayEditEnabled || runwayUpscaleEnabled || runwayHdrEnabled;
       const googleEnabled = provider === "google" && model === "gemini-omni-1.1-flash";
       if (!runwayEnabled && !googleEnabled) {
         const unsupported = new Error("The selected provider/model does not have an enabled, verified cloud execution adapter.");
@@ -126,7 +127,7 @@ export function createCloudVideoEnqueue({
         throw disabled;
       }
       let verifiedSourceMetadata = null;
-      if (runwayEditEnabled || runwayUpscaleEnabled) {
+      if (runwayEditEnabled || runwayUpscaleEnabled || runwayHdrEnabled) {
         if (typeof resolveRunwaySourceMetadata !== "function") {
           const unavailable = new Error("Runway source operations require a server-side media probe and owner-scoped asset resolver.");
           unavailable.code = "VIDEO_SOURCE_METADATA_UNAVAILABLE";
@@ -161,12 +162,24 @@ export function createCloudVideoEnqueue({
           invalid.code = "VIDEO_SOURCE_METADATA_MISMATCH";
           throw invalid;
         }
+        if (runwayHdrEnabled && (
+          verifiedSourceMetadata.sourceDynamicRange !== "sdr" ||
+          !Number.isSafeInteger(verifiedSourceMetadata.sourceWidth) || verifiedSourceMetadata.sourceWidth < 16 || verifiedSourceMetadata.sourceWidth > 4096 ||
+          !Number.isSafeInteger(verifiedSourceMetadata.sourceHeight) || verifiedSourceMetadata.sourceHeight < 16 || verifiedSourceMetadata.sourceHeight > 4096
+        )) {
+          const invalid = new Error("Ruby HDR requires server-probed SDR source metadata and verified dimensions.");
+          invalid.code = "VIDEO_SOURCE_METADATA_INVALID";
+          throw invalid;
+        }
       }
       const pricingInput = verifiedSourceMetadata ? {
         ...input,
         durationSeconds: Math.ceil(verifiedSourceMetadata.durationSeconds),
         inputVideoSeconds: Math.ceil(verifiedSourceMetadata.durationSeconds),
-        outputFrames: verifiedSourceMetadata.frameCount
+        outputFrames: verifiedSourceMetadata.frameCount,
+        sourceWidth: verifiedSourceMetadata.sourceWidth,
+        sourceHeight: verifiedSourceMetadata.sourceHeight,
+        sourceDynamicRange: verifiedSourceMetadata.sourceDynamicRange
       } : input;
       const estimate = estimateVideoGenerationCost({
         provider, model, operation: input.operation || (input.startFrameAssetId ? "image-to-video" : "text-to-video"),
@@ -175,14 +188,15 @@ export function createCloudVideoEnqueue({
         inputVideoSeconds: pricingInput.inputVideoSeconds, referenceVideoSeconds: input.referenceVideoSeconds,
         referenceImageCount: input.referenceImageCount, referenceAudioCount: input.referenceAudioCount,
         hasStartFrame: Boolean(input.startFrameAssetId) || input.hasStartFrame === true, outputFrames: pricingInput.outputFrames,
-        sourceWidth: input.sourceWidth, sourceHeight: input.sourceHeight,
-        sourceDynamicRange: input.sourceDynamicRange, outputWidth: input.outputWidth,
+        sourceWidth: pricingInput.sourceWidth ?? input.sourceWidth, sourceHeight: pricingInput.sourceHeight ?? input.sourceHeight,
+        sourceDynamicRange: pricingInput.sourceDynamicRange ?? input.sourceDynamicRange, outputWidth: input.outputWidth,
         outputHeight: input.outputHeight, targetFramerate: input.targetFramerate,
         inputType: input.sourceVideoAssetId ? "video" : input.startFrameAssetId ? "image" : input.inputType
       });
 
-      if ((input.outputFormat || "mp4") !== "mp4") {
-        const unsupported = new Error("The selected hosted video adapter currently supports MP4 output only.");
+      const requestedOutputFormat = input.outputFormat ?? (runwayHdrEnabled ? "hdr10" : "mp4");
+      if (runwayHdrEnabled ? !["hdr10", "hlg"].includes(requestedOutputFormat) : requestedOutputFormat !== "mp4") {
+        const unsupported = new Error("The selected hosted video adapter supports MP4 outputs; Ruby HDR is limited to hdr10 and hlg profiles.");
         unsupported.code = "VIDEO_PRICE_OUTPUT_FORMAT_UNSUPPORTED";
         throw unsupported;
       }
@@ -235,6 +249,13 @@ export function createCloudVideoEnqueue({
         }
         if (!["720p", "1k", "2k", "4k"].includes(input.resolution ?? "2k")) {
           throw new Error("Magnific video upscaling resolution must be 720p, 1k, 2k or 4k.");
+        }
+      } else if (runwayHdrEnabled) {
+        if (!input.sourceVideoAssetId || !Number.isFinite(verifiedSourceMetadata?.durationSeconds) ||
+            Math.ceil(verifiedSourceMetadata.durationSeconds) !== input.durationSeconds) {
+          const invalid = new Error("Ruby HDR requires a verified source video and matching duration.");
+          invalid.code = "VIDEO_SOURCE_METADATA_MISMATCH";
+          throw invalid;
         }
       } else {
         if (input.resolution !== undefined && !["provider_default","720p"].includes(input.resolution)) {
