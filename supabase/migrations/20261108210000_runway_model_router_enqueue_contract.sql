@@ -8,11 +8,11 @@ do $runway_router_enqueue$
 declare
   function_oid regprocedure;
   function_sql text;
-  old_allowlist text := $old_allowlist$if not (
+  old_allowlist text := $old_allowlist$  if not (
     (p_provider = 'runway' and p_model in ('gen4.5','aleph2'))
     or (p_provider = 'google' and p_model = 'gemini-omni-1.1-flash')
   ) then$old_allowlist$;
-  new_allowlist text := $new_allowlist$if not (
+  new_allowlist text := $new_allowlist$  if not (
     (p_provider = 'runway' and p_model in ('gen4.5','aleph2','model-router'))
     or (p_provider = 'google' and p_model = 'gemini-omni-1.1-flash')
   ) then$new_allowlist$;
