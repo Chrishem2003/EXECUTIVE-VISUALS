@@ -285,7 +285,7 @@ test("Google Omni enqueue normalizes provider-default resolution to the verified
 });
 
 
-test("Aleph2 enqueue requires owner-scoped probed source metadata and reserves from the verified duration", async () => {
+test("Aleph2 validates owner-scoped source metadata but is blocked by the durable SQL enqueue allowlist", async () => {
   let calls = 0;
   const sourceVideoAssetId = "823e4567-e89b-42d3-a456-426614174000";
   const input = {
@@ -311,11 +311,10 @@ test("Aleph2 enqueue requires owner-scoped probed source metadata and reserves f
     },
     fetchImpl: async () => { calls++; return response([resultRow]); }
   });
-  const queued = await client.enqueue(args({
+  await assert.rejects(() => client.enqueue(args({
     model: "aleph2", input, reservedAmount: 4
-  }));
-  assert.equal(queued.status, "queued");
-  assert.equal(calls, 1);
+  })), error => error.code === "VIDEO_ENQUEUE_PROVIDER_NOT_ENABLED");
+  assert.equal(calls, 0);
 });
 
 test("Magnific upscale budget uses verified source frames, not caller-supplied lower values", async () => {
@@ -346,11 +345,14 @@ test("Magnific upscale budget uses verified source frames, not caller-supplied l
     model: "magnific_video_upscaler_creative",
     input: { ...input, durationSeconds: 11 }, reservedAmount: 4
   })), error => error.code === "VIDEO_SOURCE_METADATA_MISMATCH");
+  await assert.rejects(() => client.enqueue(args({
+    model: "magnific_video_upscaler_creative", input, reservedAmount: 4
+  })), error => error.code === "VIDEO_ENQUEUE_PROVIDER_NOT_ENABLED");
   assert.equal(calls, 0);
 });
 
 
-test("Ruby HDR enqueue requires verified SDR dimensions and reserves the published per-second cost", async () => {
+test("Ruby HDR validates verified SDR dimensions but is blocked by the durable SQL enqueue allowlist", async () => {
   let calls = 0;
   const sourceVideoAssetId = "a23e4567-e89b-42d3-a456-426614174000";
   const input = {
@@ -371,11 +373,10 @@ test("Ruby HDR enqueue requires verified SDR dimensions and reserves the publish
     },
     fetchImpl: async () => { calls++; return response([resultRow]); }
   });
-  const queued = await client.enqueue(args({
+  await assert.rejects(() => client.enqueue(args({
     model: "ruby", input, reservedAmount: 3.5
-  }));
-  assert.equal(queued.status, "queued");
-  assert.equal(calls, 1);
+  })), error => error.code === "VIDEO_ENQUEUE_PROVIDER_NOT_ENABLED");
+  assert.equal(calls, 0);
   const nonSdr = createCloudVideoEnqueue({
     ...base,
     resolveRunwaySourceMetadata: async () => ({ ...sourceMetadata, sourceDynamicRange: "hdr" }),
@@ -384,10 +385,10 @@ test("Ruby HDR enqueue requires verified SDR dimensions and reserves the publish
   await assert.rejects(() => nonSdr.enqueue(args({
     model: "ruby", input, reservedAmount: 3.5
   })), error => error.code === "VIDEO_SOURCE_METADATA_INVALID");
-  assert.equal(calls, 1);
+  assert.equal(calls, 0);
 });
 
-test("Runway Model Router enqueue requires explicit config gates and treats approved USD budget as a hard preflight ceiling", async () => {
+test("Runway Model Router validates config gates but is blocked by the durable SQL enqueue allowlist", async () => {
   const routerInput = {
     projectId, provider: "runway", model: "model-router", requestHash,
     operation: "text-to-video", prompt: "A cinematic product launch", durationSeconds: 8,
@@ -406,9 +407,11 @@ test("Runway Model Router enqueue requires explicit config gates and treats appr
     ...base, env,
     fetchImpl: async () => { calls++; return response([resultRow]); }
   });
-  const result = await client.enqueue(args({ model: "model-router", input: routerInput, reservedAmount: 4.5 }));
-  assert.equal(result.jobId, resultRow.job_id);
-  assert.equal(calls, 1);
+  await assert.rejects(
+    client.enqueue(args({ model: "model-router", input: routerInput, reservedAmount: 4.5 })),
+    error => error.code === "VIDEO_ENQUEUE_PROVIDER_NOT_ENABLED"
+  );
+  assert.equal(calls, 0);
 
   const disabled = createCloudVideoEnqueue({
     ...base, env: { ...env, RUNWAY_MODEL_ROUTER_ENABLED: "false" },
@@ -418,7 +421,7 @@ test("Runway Model Router enqueue requires explicit config gates and treats appr
     disabled.enqueue(args({ model: "model-router", input: routerInput, reservedAmount: 4.5 })),
     error => error.code === "RUNWAY_ROUTER_REMOTE_DISABLED"
   );
-  assert.equal(calls, 1);
+  assert.equal(calls, 0);
 });
 
 test("Runway Model Router rejects non-USD ceilings and invalid config slugs before queue submission", async () => {
@@ -475,9 +478,11 @@ test("Runway Model Router video-to-video enqueue probes source metadata before d
     prompt: "Replace the background while preserving subject motion",
     durationSeconds: 12, aspectRatio: "16:9"
   };
-  const queued = await client.enqueue(args({ model: "model-router", input: routerInput, reservedAmount: 5 }));
-  assert.equal(queued.jobId, resultRow.job_id);
-  assert.equal(calls, 1);
+  await assert.rejects(
+    client.enqueue(args({ model: "model-router", input: routerInput, reservedAmount: 5 })),
+    error => error.code === "VIDEO_ENQUEUE_PROVIDER_NOT_ENABLED"
+  );
+  assert.equal(calls, 0);
   const invalid = createCloudVideoEnqueue({
     ...base, env,
     resolveRunwaySourceMetadata: async () => ({ ...metadata, durationSeconds: 12.1 }),
@@ -487,6 +492,6 @@ test("Runway Model Router video-to-video enqueue probes source metadata before d
     invalid.enqueue(args({ model: "model-router", input: routerInput, reservedAmount: 5 })),
     error => error.code === "VIDEO_SOURCE_METADATA_MISMATCH"
   );
-  assert.equal(calls, 1);
+  assert.equal(calls, 0);
 });
 
