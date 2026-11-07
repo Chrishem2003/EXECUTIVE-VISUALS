@@ -159,10 +159,13 @@ export async function processNextFlutterwaveWebhook(db, {
       db.prepare("UPDATE billing_provider_events SET processed_at=?,last_error=NULL WHERE id=?").run(now(), event.id);
       return { processed: true, duplicate: true, eventId: event.event_id };
     }
-    if (payload.event !== "charge.completed" || data.status !== "successful") {
+    if (payload.event === "charge.failed" || data.status === "failed") {
       db.prepare("UPDATE billing_payment_orders SET status='failed',updated_at=? WHERE id=? AND status='pending'").run(now(), order.id);
       db.prepare("UPDATE billing_provider_events SET processed_at=?,last_error=NULL WHERE id=?").run(now(), event.id);
       return { processed: true, paid: false, eventId: event.event_id };
+    }
+    if (payload.event !== "charge.completed" || data.status !== "successful") {
+      throw fail("Flutterwave payment is not in a terminal successful state yet.", "BILLING_PAYMENT_PENDING", 409);
     }
     const verified = await verifyTransaction({ transactionId: String(data.id) });
     const exponent = currencyExponent(order.currency);
