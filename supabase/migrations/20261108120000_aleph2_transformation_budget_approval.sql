@@ -13,12 +13,6 @@ begin
   if current_user <> 'service_role' and new.owner_id is distinct from auth.uid() then
     raise exception 'VIDEO_BUDGET_APPROVAL_OWNER_INVALID';
   end if;
-  if new.project_id is not null and not exists (
-    select 1 from executive_visuals.projects p
-    where p.id = new.project_id and p.owner_id = new.owner_id
-  ) then
-    raise exception 'VIDEO_BUDGET_APPROVAL_PROJECT_INVALID';
-  end if;
   new.created_at := clock_timestamp();
   new.consumed_at := null;
   if new.expires_at <= clock_timestamp()
