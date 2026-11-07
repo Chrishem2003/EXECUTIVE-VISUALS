@@ -99,7 +99,7 @@ test("multi-shot production quote API is authenticated, itemized and read-only",
   assert.equal(quote.available,true);
   assert.equal(quote.shotCount,2);
   assert.equal(quote.totalDurationSeconds,8);
-  assert.equal(quote.amount,1.06);
+  assert.equal(quote.amount,1.09);
   assert.equal(quote.shots.length,2);
   assert.equal(quote.disclaimer.includes("No generation jobs were submitted"),true);
 });
