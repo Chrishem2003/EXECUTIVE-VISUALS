@@ -23,6 +23,19 @@ test("builds deterministic text-to-video contract for the exact router adapter",
   assert.equal(first.input.requestHash, first.requestHash);
 });
 
+test("deep-freezes nested request data so approved inputs cannot mutate after hashing", () => {
+  const result = createVideoWorkflowCloudRequest({
+    ...base,
+    values: { prompt: "Animate the product", referenceImageAssetIds: ["asset-ref-1"] }
+  });
+  assert.equal(Object.isFrozen(result), true);
+  assert.equal(Object.isFrozen(result.input), true);
+  assert.equal(Object.isFrozen(result.input.referenceAssetIds), true);
+  assert.throws(() => result.input.referenceAssetIds.push("asset-ref-2"), TypeError);
+  assert.throws(() => { result.input.prompt = "Changed after quote"; }, TypeError);
+  assert.equal(result.input.requestHash, result.requestHash);
+});
+
 test("maps one first-frame asset to image-to-video without resolving private storage", () => {
   const result = createVideoWorkflowCloudRequest({
     ...base, values: { prompt: "Animate the product", "start-frame": "asset-image-1" }
