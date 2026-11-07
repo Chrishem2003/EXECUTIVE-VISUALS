@@ -507,6 +507,53 @@ export const VIDEO_PROVIDER_CATALOG = freeze([
         }
       },
       {
+        id: "kling_4_flash",
+        name: "Kling 4.0 Flash",
+        availability: "disabled",
+        executionAdapter: "not_implemented",
+        gateway: "runway",
+        capabilities: {
+          textToVideo: true, imageToVideo: true, videoToVideo: true,
+          videoEdit: true, videoExtend: false, videoReframe: false,
+          nativeAudio: false, negativePrompt: false, seed: false,
+          startFrame: true, endFrame: false, motionReference: false,
+          referenceImages: true, referenceVideos: true, referenceAudio: false,
+          audioModes: [],
+          resolutions: ["720p"],
+          minDurationSeconds: 3, maxDurationSeconds: 20
+        },
+        constraints: {
+          sourceVideoEditing: true,
+          pricingStatus: "published_starting_rate_tier_matrix_pending",
+          startingUsdPerSecond: 0.094,
+          pricingSnapshotDate: "2026-11-07",
+          source: "https://docs.dev.runwayml.com/guides/models/"
+        }
+      },
+      {
+        id: "gemini_omni_flash_1.2",
+        name: "Gemini Omni 1.2 Flash",
+        availability: "disabled",
+        executionAdapter: "not_implemented",
+        gateway: "runway",
+        capabilities: {
+          textToVideo: true, imageToVideo: true, videoToVideo: true,
+          videoEdit: true, videoExtend: true, videoReframe: false,
+          nativeAudio: false, negativePrompt: false, seed: false,
+          startFrame: true, endFrame: true, motionReference: false,
+          referenceImages: true, referenceVideos: true, referenceAudio: false,
+          audioModes: [],
+          resolutions: ["360p", "480p", "720p", "1080p", "4k"]
+        },
+        constraints: {
+          keyframeGuidance: true,
+          pricingStatus: "published_starting_rate_tier_matrix_pending",
+          startingUsdPerSecond: 0.02,
+          pricingSnapshotDate: "2026-11-07",
+          source: "https://docs.dev.runwayml.com/guides/models/"
+        }
+      },
+      {
         id: "gemini_omni_flash_1.1",
         name: "Gemini Omni Flash 1.1 (Runway Dev)",
         availability: "disabled",
