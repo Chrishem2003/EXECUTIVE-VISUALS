@@ -8,6 +8,31 @@ const IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
 const AUDIO_TYPES = new Set(["audio/mpeg", "audio/mp4", "audio/wav", "audio/x-wav", "audio/aac", "audio/ogg", "audio/webm", "audio/flac"]);
 const fail = (message, code) => Object.assign(new Error(message), { code });
 
+async function readResponseBodyBounded(response, maximumBytes) {
+  if (!response.body || typeof response.body.getReader !== "function") {
+    throw fail("Private source response did not provide a readable body.", "VIDEO_INPUT_ASSET_DOWNLOAD_FAILED");
+  }
+  const reader = response.body.getReader();
+  const chunks = [];
+  let totalBytes = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const chunk = Buffer.from(value);
+      totalBytes += chunk.length;
+      if (totalBytes > maximumBytes) {
+        await reader.cancel().catch(() => {});
+        throw fail("Private source asset exceeds the configured download limit.", "VIDEO_INPUT_ASSET_INTEGRITY_FAILED");
+      }
+      chunks.push(chunk);
+    }
+    return Buffer.concat(chunks, totalBytes);
+  } finally {
+    reader.releaseLock();
+  }
+}
+
 function parseRate(value) {
   const match = String(value || "").match(/^(\d+)\/(\d+)$/);
   if (!match || Number(match[2]) === 0) return null;
@@ -68,12 +93,14 @@ export function createRunwaySourceAssetResolver({
     }
     if (!response.ok) throw fail("Private source asset download failed.", "VIDEO_INPUT_ASSET_DOWNLOAD_FAILED");
     const type = String(response.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
-    const declared = Number(response.headers.get("content-length") || 0);
-    if (type !== asset.mediaType || declared > maxBytes || (declared && declared !== asset.size)) {
+    const contentLength = response.headers.get("content-length");
+    const declared = contentLength == null ? null : Number(contentLength);
+    if (type !== asset.mediaType ||
+        declared !== null && (!Number.isSafeInteger(declared) || declared < 0 || declared > maxBytes || declared !== asset.size)) {
       throw fail("Private source asset headers do not match stored metadata.", "VIDEO_INPUT_ASSET_INTEGRITY_FAILED");
     }
-    const bytes = Buffer.from(await response.arrayBuffer());
-    if (bytes.length !== asset.size || bytes.length > maxBytes) {
+    const bytes = await readResponseBodyBounded(response, maxBytes);
+    if (bytes.length !== asset.size) {
       throw fail("Private source asset size does not match its stored record.", "VIDEO_INPUT_ASSET_INTEGRITY_FAILED");
     }
     return { asset, bytes, url: url.toString() };
