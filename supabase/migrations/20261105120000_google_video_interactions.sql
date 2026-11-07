@@ -17,8 +17,19 @@ create table if not exists executive_visuals.google_video_interactions (
     'running', 'waiting', 'succeeded', 'failed', 'canceled', 'incomplete', 'unknown', 'deleting', 'deleted'
   )),
   output_file_name text,
-  output_uri text check (
-    output_uri is null or output_uri ~ '^https://generativelanguage[.]googleapis[.]com/v1beta/files/[A-Za-z0-9_-]+(:download[?]alt=media)?  submitted_at timestamptz not null default now(),
+  output_uri text,
+  constraint google_video_interactions_output_uri_check check (
+    output_uri is null or (
+      split_part(output_uri, '/', 1) = 'https:' and
+      split_part(output_uri, '/', 2) = '' and
+      split_part(output_uri, '/', 3) = 'generativelanguage.googleapis.com' and
+      split_part(output_uri, '/', 4) = 'v1beta' and
+      split_part(output_uri, '/', 5) = 'files' and
+      split_part(output_uri, '/', 6) ~ '^[A-Za-z0-9_-]+(:download[?]alt=media)?$' and
+      array_length(string_to_array(output_uri, '/'), 1) = 6
+    )
+  ),
+  submitted_at timestamptz not null default now(),
   expires_at timestamptz not null,
   deleted_at timestamptz,
   metadata jsonb not null default '{}'::jsonb check (jsonb_typeof(metadata) = 'object'),
