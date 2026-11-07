@@ -1,3 +1,4 @@
+import { billingEnforcementEnabled, spendBillingCredits } from "./billing.mjs";
 import { randomUUID } from "node:crypto";
 
 const DEFAULT_REMOTE_DAILY_LIMIT = 50;
@@ -35,7 +36,7 @@ function readLimit(raw = process.env.REMOTE_AI_DAILY_REQUEST_LIMIT) {
  */
 export function reserveRemoteRequest(db, {
   ownerId, projectId = null, jobId = null, provider, capability,
-  limit
+  limit, billingReference = null
 }) {
   if (!provider?.remote) return { reserved: false, reason: "local_provider" };
   if (limit === undefined) limit = readLimit();
@@ -70,5 +71,18 @@ export function reserveRemoteRequest(db, {
       code: "REMOTE_USAGE_LIMIT_REACHED", limit, used, window: "rolling_24_hours"
     });
   }
-  return { reserved: true, reservationId: id, limit, window: "rolling_24_hours" };
+  let billingCharge=null;
+  try {
+    if(billingEnforcementEnabled()){
+      const reference=String(billingReference||jobId&&jobId+":"+capability||id).slice(0,180);
+      billingCharge=spendBillingCredits(db,{
+        userId:ownerId,capability,referenceId:reference,
+        idempotencyKey:"generation-spend:"+reference
+      });
+    }
+  } catch(error) {
+    db.prepare("DELETE FROM remote_usage_reservations WHERE id=?").run(id);
+    throw error;
+  }
+  return { reserved: true, reservationId: id, limit, window: "rolling_24_hours", billingCharge };
 }
