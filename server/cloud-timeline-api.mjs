@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { randomUUID, createHash } from "node:crypto";
 import { createWriteStream } from "node:fs";
 import { mkdtemp, rm, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -9,6 +9,8 @@ import { createCloudAssetAuthorizer } from "./cloud-asset-auth.mjs";
 import { createCloudTimelineService } from "./cloud-timeline-service.mjs";
 import { buildTransformationReadinessReport } from "./transformation-readiness.mjs";
 import { validateSrt, validateWebVtt } from "./caption-validation.mjs";
+import { createCloudVideoEnqueue } from "./cloud-video-enqueue.mjs";
+import { createRunwaySourceAssetResolver } from "./runway-source-asset-resolver.mjs";
 
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const safeId=(value)=>typeof value==="string"&&UUID.test(value);
@@ -28,6 +30,13 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
  const service=timelineService||createCloudTimelineService({url,serviceRoleKey,fetchImpl});
  const allow=authorize||createCloudAssetAuthorizer({url,serviceRoleKey,fetchImpl});
  const base=new URL(url).origin;
+ const sourceResolver=service.assets?.get&&service.assets?.createSignedUrl
+  ? createRunwaySourceAssetResolver({assets:service.assets,fetchImpl,supabaseUrl:url})
+  : null;
+ const videoEnqueue=createCloudVideoEnqueue({
+  url,serviceRoleKey,fetchImpl,
+  resolveRunwaySourceMetadata:sourceResolver?.resolveMetadata
+ });
  async function request(path,{method="GET",body=null,prefer="return=representation"}={}){
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs);
   try{
@@ -152,8 +161,51 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     }
     if(cloudTransformationMatch[2]==="submit"&&method==="POST"){
      if(await allow({ownerId,projectId:row.project_id,action:"write"})!==true)return response(403,{error:{code:"EDITOR_REQUIRED",message:"Owner or editor access is required."}});
-     if(!row.approved_at||!row.approved_by)return response(409,{error:{code:"TRANSFORMATION_APPROVAL_REQUIRED",message:"Approve the plan and budget before submission."}});
-     return response(409,{error:{code:"TRANSFORMATION_ADAPTER_UNAVAILABLE",message:"No verified video-transformation adapter is enabled. No provider request or charge was made."}});
+     if(!row.approved_at||!row.approved_by||!row.estimated_cost?.approvalId)return response(409,{error:{code:"TRANSFORMATION_APPROVAL_REQUIRED",message:"Approve the plan and budget before submission."}});
+     if(row.status==="submitted"&&row.output?.videoJobId)return response(200,{job:{id:row.output.videoJobId,status:row.output.videoJobStatus||"queued"},idempotentReplay:true});
+     if(row.status!=="awaiting_approval")return response(409,{error:{code:"TRANSFORMATION_STATE_CONFLICT",message:"Only an approved, unsubmitted transformation can be submitted."}});
+     const approval=row.estimated_cost;
+     if(approval.adapterId!=="runway:aleph2"||approval.capability!=="video-to-video"||String(approval.currency||"").toUpperCase()!=="USD"){
+      return response(409,{error:{code:"TRANSFORMATION_ADAPTER_UNAVAILABLE",message:"This transformation is not approved for the verified Runway Aleph 2 video-edit adapter."}});
+     }
+     if(!sourceResolver)return response(503,{error:{code:"VIDEO_SOURCE_RESOLVER_UNAVAILABLE",message:"Private source-media resolution is not configured. No provider request or charge was made."}});
+     try{
+      const input=row.input||{};
+      const metadata=await sourceResolver.resolveMetadata({ownerId,projectId:row.project_id,assetId:input.sourceAssetId});
+      const generationInput={
+       projectId:row.project_id,provider:"runway",model:"aleph2",operation:"video-to-video",
+       sourceVideoAssetId:input.sourceAssetId,prompt:String(input.prompt||"").trim(),
+       durationSeconds:Math.ceil(metadata.durationSeconds),outputFormat:"mp4",
+       resolution:"provider_default",audioMode:"provider_default",
+       transformationOperation:input.operation,
+       preservation:Array.isArray(input.preservation)?input.preservation:[]
+      };
+      const requestHash=createHash("sha256").update(stableJson(generationInput)).digest("hex");
+      generationInput.requestHash=requestHash;
+      const queued=await videoEnqueue.enqueue({
+       ownerId,projectId:row.project_id,idempotencyKey:"video-transform:"+row.id,
+       provider:"runway",model:"aleph2",requestHash,input:generationInput,
+       budgetApprovalId:approval.approvalId,
+       reservedAmount:Number(approval.approvedBudgetMicros)/1000000,
+       currency:"USD"
+      });
+      const output={videoJobId:queued.jobId,videoJobStatus:queued.status,provider:"runway",model:"aleph2"};
+      const changed=await request("jobs?id=eq."+encodeURIComponent(row.id)+"&status=eq.awaiting_approval&approved_at=not.is.null",{
+       method:"PATCH",body:{status:"submitted",output,updated_at:new Date().toISOString()}
+      });
+      if(!Array.isArray(changed)||changed.length!==1){
+       // The enqueue idempotency key makes a retry safe if the plan status update races.
+       return response(202,{job:{id:queued.jobId,status:queued.status},planUpdatePending:true});
+      }
+      await request("job_events",{method:"POST",body:{job_id:row.id,owner_id:row.owner_id,event_type:"transformation.submitted",event_data:{videoJobId:queued.jobId,provider:"runway",model:"aleph2"}}});
+      return response(202,{job:{id:queued.jobId,status:queued.status},idempotentReplay:queued.idempotentReplay===true});
+     }catch(error){
+      const code=typeof error?.code==="string"?error.code:"VIDEO_TRANSFORMATION_SUBMIT_FAILED";
+      const status=Number.isInteger(error?.status)&&error.status>=400&&error.status<500?error.status:
+       code.includes("INVALID")||code.includes("MISMATCH")||code.includes("UNSUPPORTED")?422:
+       code.includes("BUDGET")?409:503;
+      return response(status,{error:{code,message:String(error?.message||"Video transformation could not be queued.").slice(0,300)}});
+     }
     }
    }
    const jobMatch=path.match(/^\/api\/cloud\/jobs\/([0-9a-f-]+)(?:\/(events))?$/i);
