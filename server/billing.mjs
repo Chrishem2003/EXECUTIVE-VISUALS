@@ -315,7 +315,7 @@ export function listBillingPlans(db, { activeOnly = true } = {}) {
 }
 
 export function assertBillingStorageQuota({ limitBytes, usedBytes = 0, incomingBytes = 0 } = {}) {
-  if (limitBytes === null || limitBytes === undefined || limitBytes === 0) return { allowed: true, unlimited: true };
+  if (limitBytes === null || limitBytes === undefined) return { allowed: true, unlimited: true };
   const limit=Number(limitBytes),used=Number(usedBytes),incoming=Number(incomingBytes);
   if (!Number.isSafeInteger(limit)||limit<0||!Number.isSafeInteger(used)||used<0||!Number.isSafeInteger(incoming)||incoming<0) {
     throw fail("Storage quota values must be non-negative safe integers.", "BILLING_STORAGE_QUOTA_CONFIG_INVALID", 500);
