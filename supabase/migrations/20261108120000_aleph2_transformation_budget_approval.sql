@@ -9,8 +9,10 @@ language plpgsql
 set search_path = pg_catalog, executive_visuals
 as $
 begin
-  -- Authenticated inserts remain constrained by the table's owner RLS policy.
-  -- Server-side creation is exposed only through the service_role-only RPC below.
+  -- Preserve the authenticated owner check while allowing the trusted service-role RPC.
+  if current_user <> 'service_role' and new.owner_id is distinct from auth.uid() then
+    raise exception 'VIDEO_BUDGET_APPROVAL_OWNER_INVALID';
+  end if;
   if new.project_id is not null and not exists (
     select 1 from executive_visuals.projects p
     where p.id = new.project_id and p.owner_id = new.owner_id
