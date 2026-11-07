@@ -149,10 +149,9 @@ test("cloud caption uploads persist SRT validation evidence for readiness checks
 });
 
 
-test("approved cloud transformation submits to the durable Runway queue with server-probed duration and budget reservation", async () => {
+test("approved Aleph2 cloud transformation is blocked before enqueue while the durable SQL allowlist excludes it", async () => {
  const planId="823e4567-e89b-42d3-a456-426614174000";
  const approvalId="923e4567-e89b-42d3-a456-426614174000";
- const videoJobId="a23e4567-e89b-42d3-a456-426614174000";
  const row={
   id:planId,owner_id:owner,project_id:project,job_type:"video.transform.plan",
   status:"awaiting_approval",approved_by:owner,approved_at:"2026-11-07T08:00:00.000Z",
@@ -162,9 +161,7 @@ test("approved cloud transformation submits to the durable Runway queue with ser
  const calls=[];
  const fetchImpl=async(url,options)=>{
   calls.push({url,options});
-  if(url.endsWith("/rpc/enqueue_video_generation_job"))return{ok:true,status:200,async text(){return JSON.stringify([{job_id:videoJobId,job_status:"queued",idempotent_replay:false,budget_reservation_id:"c23e4567-e89b-42d3-a456-426614174000"}]);}};
   if(url.includes("/jobs?")&&options.method==="GET")return{ok:true,status:200,async text(){return JSON.stringify([row]);}};
-  if(url.includes("/jobs?")&&options.method==="PATCH")return{ok:true,status:200,async text(){return JSON.stringify([{...row,status:"submitted",output:{videoJobId,videoJobStatus:"queued"}}]);}};
   return{ok:true,status:201,async text(){return"";}};
  };
  const api=createCloudTimelineApi({
@@ -178,22 +175,10 @@ test("approved cloud transformation submits to the durable Runway queue with ser
   }}
  });
  const result=await api.handle({method:"POST",path:"/api/cloud/transformations/"+planId+"/submit",ownerId:owner,body:{}});
- assert.equal(result.status,202);
- assert.equal(result.body.job.id,videoJobId);
- const rpc=calls.find(call=>call.url.endsWith("/rpc/enqueue_video_generation_job"));
- const args=JSON.parse(rpc.options.body);
- assert.equal(args.p_owner_id,owner);
- assert.equal(args.p_project_id,project);
- assert.equal(args.p_model,"aleph2");
- assert.equal(args.p_provider,"runway");
- assert.equal(args.p_budget_approval_id,approvalId);
- assert.equal(args.p_reserved_amount,5);
- assert.equal(args.p_input.durationSeconds,11);
- assert.equal(args.p_input.operation,"video-to-video");
- assert.equal(args.p_input.sourceVideoAssetId,row.input.sourceAssetId);
- assert.equal(args.p_input.transformationOperation,"vehicle_replace");
- assert.match(args.p_request_hash,/^[a-f0-9]{64}$/);
- assert.ok(calls.some(call=>call.url.includes("/jobs?")&&call.options.method==="PATCH"));
+ assert.equal(result.status,503);
+ assert.equal(result.body.error.code,"VIDEO_ENQUEUE_PROVIDER_NOT_ENABLED");
+ assert.ok(!calls.some(call=>call.url.endsWith("/rpc/enqueue_video_generation_job")));
+ assert.ok(!calls.some(call=>call.url.includes("/jobs?")&&call.options.method==="PATCH"));
 });
 
 test("cloud transformation submission refuses unapproved or non-Aleph adapters before queueing", async () => {
