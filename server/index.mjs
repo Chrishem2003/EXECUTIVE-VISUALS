@@ -79,9 +79,15 @@ if (googleDriveOAuthEnabled && (
   !process.env.GOOGLE_OAUTH_CLIENT_SECRET ||
   !process.env.GOOGLE_OAUTH_REDIRECT_URI ||
   !process.env.GOOGLE_DRIVE_TOKEN_ENCRYPTION_KEY ||
-  !process.env.GOOGLE_DRIVE_EXPORT_SESSION_ENCRYPTION_KEY
+  !process.env.GOOGLE_DRIVE_EXPORT_SESSION_ENCRYPTION_KEY ||
+  process.env.GOOGLE_DRIVE_TOKEN_ENCRYPTION_KEY === process.env.GOOGLE_DRIVE_EXPORT_SESSION_ENCRYPTION_KEY ||
+  !process.env.GOOGLE_PICKER_API_KEY ||
+  !/^\\d{6,24}$/.test(String(process.env.GOOGLE_CLOUD_PROJECT_NUMBER || ""))
 )) {
-  throw new Error("Google Drive requires Supabase auth, the enabled private cloud workspace, server-side OAuth credentials and two independent encryption keys.");
+  throw new Error("Google Drive requires Supabase auth, a healthy private cloud workspace, OAuth and Picker credentials, and two different encryption keys.");
+}
+if (googleDriveOAuthEnabled && new URL(process.env.GOOGLE_OAUTH_REDIRECT_URI).pathname !== "/api/integrations/google-drive/callback") {
+  throw new Error("Google Drive OAuth redirect URI must use /api/integrations/google-drive/callback.");
 }
 const googleDriveConnectionStore = googleDriveOAuthEnabled ? createGoogleDriveConnectionStore() : null;
 const googleDriveExportAttemptStore = googleDriveOAuthEnabled ? createGoogleDriveExportAttemptStore({
