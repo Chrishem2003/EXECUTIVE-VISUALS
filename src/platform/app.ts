@@ -268,6 +268,7 @@ function filterCapabilities(){
  const count=document.querySelector<HTMLElement>("#capability-count");
  if(count)count.textContent=items.length+" of "+CAPABILITY_ATLAS.length+" capabilities";
 }
+window.addEventListener("ev:runtime-ready",()=>{if(state.tab==="home")render();});
 window.addEventListener("ev:project-changed",async event=>{
  const projectId=(event as CustomEvent<{projectId:string}>).detail?.projectId||"";
  try{
