@@ -163,3 +163,12 @@ The release remains blocked pending isolated staging acceptance, durable private
 - No paid provider generation was run. No Render production service, production database, production credentials, Cloudflare API origin, or R2 bucket was changed.
 
 The release remains blocked pending isolated staging acceptance, durable private storage and backup/restore verification, payment sandbox acceptance, end-to-end task-correlated provider-cost settlement, and full production smoke tests. Keep PR #206 as draft and keep production untouched.
+
+## Continuation update — 2026-11-07 (Runway routed video)
+
+- Integrated the existing Runway Model Router video adapter into the opt-in Supabase-backed hosted worker composition. It requires an explicit saved config slug and server-side remote gates; the environment example keeps it disabled.
+- Added a synthetic `runway:model-router` capability entry, plus queue-side gate validation and an explicit approved USD budget ceiling. The queue does not invent a provider price for this dynamic route.
+- The worker now runs the provider's non-billable dry-run before the paid POST, checks the returned USD estimate against the job's approved reservation, and stores compact quote evidence in the durable submission ledger. Rejected quotes are quarantined before provider submission.
+- Extended owner/project-scoped source asset preparation for private image and video references, and mapped normalized audio mode and provider-default resolution into the router request.
+- Added tests for worker registration, queue gating, budget ceiling, dry-run ordering, quote rejection, registry state, and private reference resolution.
+- This is not yet a complete customer-facing purchase flow: a pre-approval quote endpoint that binds prepared-input hash, quote expiry and explicit user approval remains outstanding. Audio-reference, source-video edit/extend and user-facing router config management remain unsupported. No paid API requests were made and all production gates remain off.
