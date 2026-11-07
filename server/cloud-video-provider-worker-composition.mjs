@@ -60,7 +60,7 @@ export function createProviderAwareCloudVideoWorkerComposition({
 
   const clientOptions = { url, serviceRoleKey, fetchImpl, timeoutMs };
   const queue = createCloudQueue(clientOptions);
-  const enqueue = createCloudVideoEnqueue({ ...clientOptions, env });
+  const enqueue = createCloudVideoEnqueue({ ...clientOptions, env, resolveRunwaySourceMetadata });
   const ledger = createCloudVideoSubmissionLedger(clientOptions);
   const privateAssets = createCloudAssetService({
     ...clientOptions,
