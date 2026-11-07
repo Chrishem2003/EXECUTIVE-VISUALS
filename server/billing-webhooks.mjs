@@ -242,9 +242,10 @@ export async function processNextFlutterwaveWebhook(db, {
       throw fail("Billing order is no longer eligible for payment settlement.", "BILLING_ORDER_NOT_PENDING", 409);
     }
     if (payload.event === "charge.failed" || data.status === "failed") {
-      db.prepare("UPDATE billing_payment_orders SET status='failed',updated_at=? WHERE id=? AND status='pending'").run(now(), order.id);
+      // A failed attempt does not close the hosted checkout: Flutterwave can
+      // emit another transaction for the same tx_ref when the customer retries.
       db.prepare("UPDATE billing_provider_events SET processed_at=?,last_error=NULL WHERE id=?").run(now(), event.id);
-      return { processed: true, paid: false, eventId: event.event_id };
+      return { processed: true, paid: false, retryableCheckout: true, eventId: event.event_id };
     }
     if (payload.event !== "charge.completed" || data.status !== "successful") {
       throw fail("Flutterwave payment is not in a terminal successful state yet.", "BILLING_PAYMENT_PENDING", 409);
