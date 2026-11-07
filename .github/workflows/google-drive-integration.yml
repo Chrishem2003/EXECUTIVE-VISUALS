@@ -1,9 +1,9 @@
 name: Google Drive integration quality
 on:
   push:
-    branches: [integration/drive-billing-settings-2026]
+    branches: [integration/drive-billing-settings-2026, integration/omni-provider-workers-2026]
   pull_request:
-    branches: [main]
+    branches: [main, integration/drive-billing-settings-2026]
 concurrency:
   group: google-drive-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
