@@ -293,6 +293,34 @@ test("Google Gemini Omni Flash catalog matches the current Interactions API cont
   assert.equal(listSelectableVideoProviderModels().length, 0);
 });
 
+test("Kling 4.0 Flash and Gemini Omni 1.2 are accurately catalogued but remain non-selectable", () => {
+  const kling = getVideoProviderModel("kling", "kling-4.0-flash");
+  assert.ok(kling);
+  assert.equal(kling.availability, "disabled");
+  assert.equal(kling.executionAdapter, "not_implemented");
+  assert.deepEqual(kling.capabilities.resolutions, ["720p"]);
+  assert.equal(kling.capabilities.minDurationSeconds, 3);
+  assert.equal(kling.capabilities.maxDurationSeconds, 20);
+  assert.equal(kling.pricing.noInputVideoUnitsPerOutputSecond, 0.6);
+  assert.equal(kling.pricing.withInputVideoUnitsPerBillableSecond, 0.4);
+  assert.equal(kling.pricing.accountPackagePriceRequired, true);
+  assert.equal(kling.constraints.maxReferenceImages, 10);
+  assert.equal(kling.constraints.maxReferenceVideos, 5);
+  assert.equal(kling.constraints.maxCombinedReferences, 15);
+
+  const gemini = getVideoProviderModel("google", "gemini-omni-1.2-flash");
+  assert.ok(gemini);
+  assert.equal(gemini.availability, "disabled");
+  assert.equal(gemini.executionAdapter, "not_implemented");
+  assert.equal(gemini.capabilities.maxDurationSeconds, 15);
+  assert.deepEqual(gemini.constraints.generationResolutions, ["360p", "720p"]);
+  assert.deepEqual(gemini.constraints.finishingResolutions, ["1080p", "4k"]);
+  assert.equal(gemini.pricing.outputUsdPerSecondAt720p, 0.07);
+  assert.equal(gemini.pricing.otherResolutionPricesVerified, false);
+  assert.equal(gemini.constraints.requiresInteractionsApi, true);
+  assert.equal(listSelectableVideoProviderModels().length, 0);
+});
+
 test("Runway Model Router is catalogued as a disabled synthetic route, not a concrete model", () => {
   const model = getVideoProviderModel("runway", "model-router");
   assert.ok(model);
