@@ -146,9 +146,11 @@ export function createProviderAwareCloudVideoWorkerComposition({
     });
   }
   const adapterFactory = createAdapters || (({ env: providerEnv, fetchImpl: providerFetch, ingestOutputs: ingest }) => {
-    const adapters = [
-      createFalVideoProviderAdapter({ env: providerEnv, fetchImpl: providerFetch, ingestOutputs: ingest })
-    ];
+    const adapters = [];
+    const falConfigured = Boolean(providerEnv.FAL_VIDEO_MODEL && providerEnv.FAL_KEY && providerEnv.FAL_BILLING_KEY);
+    if (falConfigured) {
+      adapters.push(createFalVideoProviderAdapter({ env: providerEnv, fetchImpl: providerFetch, ingestOutputs: ingest }));
+    }
     if (runwayModels.length) {
       if (typeof resolveRunwayActualCost !== "function") {
         throw new Error("Runway cloud registration requires an authoritative task-level billing resolver.");
