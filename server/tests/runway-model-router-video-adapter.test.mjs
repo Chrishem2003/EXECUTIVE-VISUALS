@@ -18,6 +18,43 @@ const base = {
   ingestOutputs: async () => ({ assetIds: ["asset-1"] })
 };
 
+test("preflights a quote without creating a task or charging credits", async () => {
+  let body;
+  const adapter = createRunwayModelRouterVideoAdapter({
+    ...base,
+    fetchImpl: async (_url, options) => {
+      body = JSON.parse(options.body);
+      return new Response(JSON.stringify({
+        routing: {
+          configId: "production-video", model: "gen4.5", provider: "runway",
+          resolvedSettings: { optimizeFor: "cost", priceCeiling: 100 },
+          estimatedCost: { credits: 50 }
+        }
+      }), { status: 200 });
+    }
+  });
+  const quote = await adapter.preflight({ prompt: "A cinematic sunrise", durationSeconds: 5 });
+  assert.deepEqual(body, {
+    configId: "production-video", dryRun: true,
+    input: { promptText: "A cinematic sunrise", duration: 5 }
+  });
+  assert.equal(quote.billable, false);
+  assert.equal(quote.estimatedCredits, 50);
+  assert.equal(quote.estimatedUsd, 0.5);
+  assert.equal(quote.model, "gen4.5");
+});
+
+test("rejects a dry-run response that unexpectedly creates a task", async () => {
+  const adapter = createRunwayModelRouterVideoAdapter({
+    ...base,
+    fetchImpl: async () => new Response(JSON.stringify({ id, routing }))
+  });
+  await assert.rejects(
+    adapter.preflight({ prompt: "Test" }),
+    error => error.code === "RUNWAY_ROUTER_DRY_RUN_INVALID"
+  );
+});
+
 test("submits a live routed task and durably returns the complete routing decision", async () => {
   let request;
   const adapter = createRunwayModelRouterVideoAdapter({
