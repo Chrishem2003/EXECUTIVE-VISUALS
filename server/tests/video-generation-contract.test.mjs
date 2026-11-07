@@ -156,3 +156,15 @@ test("requires a source asset for video editing and rejects invalid upscale cont
     sourceVideoAssetId: "source", keyframeAssetIds: Array.from({ length: 6 }, (_, i) => "frame-" + i)
   }), VideoGenerationValidationError);
 });
+
+
+test("normalizes HDR conversion as a source-video operation without requiring a prompt", () => {
+  const request = normalizeVideoGenerationRequest({
+    operation: "video-to-hdr", sourceVideoAssetId: "source-hdr", durationSeconds: 15,
+    outputFormat: "hlg"
+  });
+  assert.equal(request.operation, "video-to-hdr");
+  assert.equal(request.prompt, undefined);
+  assert.equal(request.outputFormat, "hlg");
+  assert.equal(request.sourceVideoAssetId, "source-hdr");
+});
