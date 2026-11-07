@@ -1,3 +1,4 @@
+import { billingEnforcementEnabled } from "./billing.mjs";
 import { createHash, createHmac, timingSafeEqual, randomUUID } from "node:crypto";
 
 const now = () => new Date().toISOString();
@@ -20,6 +21,7 @@ export function dodoProductEnvName(planCode) {
 export function dodoSubscriptionCheckoutEnabled(env = process.env) {
   return env.DODO_SUBSCRIPTIONS_ENABLED === "true" &&
     env.DODO_MERCHANT_APPROVED === "true" &&
+    billingEnforcementEnabled(env) &&
     !!(env.DODO_PAYMENTS_API_KEY && env.DODO_PAYMENTS_WEBHOOK_KEY && env.PUBLIC_APP_URL) &&
     ["test_mode", "live_mode"].includes(env.DODO_PAYMENTS_ENVIRONMENT || "test_mode");
 }
@@ -247,7 +249,7 @@ function insertSubscriptionCredits(db, { userId, plan, subscriptionId, paymentId
 
 export function processNextDodoWebhook(db, { env = process.env } = {}) {
   const event = db.prepare(`SELECT * FROM billing_provider_events
-    WHERE provider='dodo' AND processed_at IS NULL AND attempts<10
+    WHERE provider='dodo' AND processed_at IS NULL AND attempts<100
     ORDER BY created_at ASC LIMIT 1`).get();
   if (!event) return { processed: false };
   const payload = parseJson(event.payload_json);
@@ -258,10 +260,15 @@ export function processNextDodoWebhook(db, { env = process.env } = {}) {
     const checkoutId = metadata.executive_visuals_order_id;
     const subscriptionId = data.subscription_id;
     let local = subscriptionId ? db.prepare("SELECT * FROM billing_subscriptions WHERE provider='dodo' AND provider_subscription_id=?").get(subscriptionId) : null;
-    if (type === "subscription.failed" && !local && checkoutId) {
-      db.prepare("UPDATE billing_dodo_checkout_sessions SET status='failed',updated_at=? WHERE id=?").run(now(), checkoutId);
+    if ((type === "subscription.failed" || type === "subscription.cancelled" || type === "subscription.expired") && !local && checkoutId) {
+      db.prepare("UPDATE billing_dodo_checkout_sessions SET status=?,updated_at=? WHERE id=?")
+        .run(type === "subscription.expired" ? "expired" : "failed", now(), checkoutId);
       db.prepare("UPDATE billing_provider_events SET processed_at=?,last_error=NULL WHERE id=?").run(now(), event.id);
       return { processed: true, failed: true, eventId: event.event_id };
+    }
+    if (type === "subscription.update_payment_method") {
+      db.prepare("UPDATE billing_provider_events SET processed_at=?,last_error=NULL WHERE id=?").run(now(), event.id);
+      return { processed: true, eventId: event.event_id };
     }
     const status = statusForDodoEvent(type, data.status);
     if (!status) throw fail("Dodo subscription status is unsupported.", "DODO_SUBSCRIPTION_STATUS_INVALID");
