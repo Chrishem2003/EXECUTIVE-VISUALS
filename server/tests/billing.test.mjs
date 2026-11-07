@@ -219,3 +219,18 @@ test("invalid finance pricing configuration fails closed instead of falling back
   }),error=>error.code==="BILLING_COST_CONFIG_INVALID");
   db.close();
 });
+
+
+test("stale or future provider prices fail closed until re-verified",()=>{
+  const db=setup();
+  saveBillingModelPrice(db,{
+    provider:"runway",model:"stale",capability:"video.generate",unit:"second",
+    priceMicros:300000,currency:"USD",sourceUrl:"https://dev.runway.com/pricing",
+    verifiedAt:"2025-01-01T00:00:00.000Z"
+  });
+  assert.throws(()=>resolveBillingCreditCost(db,{
+    provider:"runway",model:"stale",capability:"video.generate",unit:"second",quantity:5,
+    env:{BILLING_CREDIT_VALUE_MICROS:"10000"}
+  }),error=>error.code==="BILLING_MODEL_PRICE_STALE"&&error.status===503);
+  db.close();
+});
