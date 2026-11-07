@@ -346,6 +346,21 @@ export function createCloudVideoEnqueue({
       } : input;
       const normalizedRequest = normalizeVideoGenerationRequest(capabilityInput);
       assertVideoCapabilities(normalizedRequest, modelRecord.capabilities);
+
+      // Keep the application boundary aligned with the currently deployed SQL
+      // enqueue function. The database is authoritative and presently permits
+      // only these two model identities; other adapters may be registered for
+      // worker development, but cannot be advertised as enqueueable until a
+      // reviewed pricing/approval migration adds their exact contracts.
+      const sqlEnqueueSupported =
+        (provider === "runway" && model === "gen4.5") ||
+        (provider === "google" && model === "gemini-omni-1.1-flash");
+      if (!sqlEnqueueSupported) {
+        const unavailable = new Error("This provider/model has a worker adapter but is not yet enabled by the durable database enqueue and pricing policy.");
+        unavailable.code = "VIDEO_ENQUEUE_PROVIDER_NOT_ENABLED";
+        throw unavailable;
+      }
+
       if (currency !== estimate.currency) throw new Error("Budget approval currency must match the verified provider price.");
       if (reservedAmount < estimate.amount) {
         const error = new Error("Budget reservation is below the verified provider/model price estimate.");
