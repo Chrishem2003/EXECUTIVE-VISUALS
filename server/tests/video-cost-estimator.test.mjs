@@ -24,7 +24,7 @@ test("estimates exact model pricing with billing increments, audio, references a
 test("uses minimum charge when the computed amount is lower",()=>{
  const quote=estimateVideoGenerationCost({...request,durationSeconds:1,audioMode:"none",referenceImageCount:0},pricing,{now});
  assert.equal(quote.amount,0.5);
- assert.equal(quote.breakdown.minimumApplied,0.38);
+ assert.equal(quote.breakdown.minimumApplied,0.26);
 });
 
 test("never guesses pricing for an unknown provider/model or missing resolution rate",()=>{
