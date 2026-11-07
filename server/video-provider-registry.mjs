@@ -734,6 +734,43 @@ export const VIDEO_PROVIDER_CATALOG = freeze([
     remote: true,
     models: [
       {
+        id: "kling-4.0-flash",
+        name: "Kling 4.0 Flash",
+        availability: "disabled",
+        executionAdapter: "not_implemented",
+        capabilities: {
+          textToVideo: true,
+          imageToVideo: true,
+          videoToVideo: true,
+          videoEdit: true,
+          videoExtend: false,
+          videoReframe: false,
+          nativeAudio: true,
+          referenceImages: true,
+          referenceVideos: true,
+          resolutions: ["720p"],
+          minDurationSeconds: 3,
+          maxDurationSeconds: 20
+        },
+        pricing: {
+          currency: "Kling resource units",
+          noInputVideoUnitsPerOutputSecond: 0.6,
+          withInputVideoUnitsPerBillableSecond: 0.4,
+          billingBasis: "output_duration_without_input_video; otherwise twice_output_duration_when_input_le_output_or_input_plus_output_when_input_gt_output",
+          accountPackagePriceRequired: true,
+          source: "https://kling.ai/dev/model/image",
+          snapshotDate: "2026-11-07"
+        },
+        constraints: {
+          maxReferenceImages: 10,
+          maxReferenceVideos: 5,
+          maxCombinedReferences: 15,
+          referenceVideoBillingIncluded: true,
+          sourceVideoEditing: true,
+          source: "https://kling.ai/dev/api"
+        }
+      },
+      {
         id: "kling-4.0",
         name: "Kling 4.0",
         availability: "disabled",
@@ -767,6 +804,45 @@ export const VIDEO_PROVIDER_CATALOG = freeze([
     availability: "disabled",
     remote: true,
     models: [
+      {
+        id: "gemini-omni-1.2-flash",
+        name: "Gemini Omni 1.2 Flash",
+        availability: "disabled",
+        executionAdapter: "not_implemented",
+        capabilities: {
+          textToVideo: true,
+          imageToVideo: true,
+          videoToVideo: true,
+          videoEdit: true,
+          videoExtend: true,
+          nativeAudio: true,
+          referenceImages: true,
+          referenceVideos: true,
+          referenceAudio: true,
+          resolutions: ["360p", "720p", "1080p", "4k"],
+          minDurationSeconds: 3,
+          maxDurationSeconds: 15
+        },
+        pricing: {
+          currency: "USD",
+          outputUsdPerSecondAt720p: 0.07,
+          pricingResolution: "720p",
+          otherResolutionPricesVerified: false,
+          source: "https://cloud.google.com/blog/products/ai-machine-learning/gemini-omni-1-2-flash-generally-available",
+          snapshotDate: "2026-11-07",
+          paidTierOnly: true
+        },
+        constraints: {
+          durationStepSeconds: 1,
+          generationResolutions: ["360p", "720p"],
+          finishingResolutions: ["1080p", "4k"],
+          maxMotionReferenceSeconds: 3,
+          supportsConversationalEdits: true,
+          requiresInteractionsApi: true,
+          modelCard: "https://deepmind.google/models/model-cards/gemini-omni-1-2-flash/",
+          apiDocumentation: "https://ai.google.dev/gemini-api/docs/video"
+        }
+      },
       {
         id: "gemini-omni-1.1-flash",
         name: "Gemini Omni Flash 1.1",
