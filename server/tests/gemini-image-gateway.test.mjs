@@ -6,6 +6,13 @@ test("Nano Banana Pro catalog uses the official Gemini model ID",()=>{
  const models=listGeminiImageModels();
  assert.equal(models[0].id,"gemini-3-pro-image");
  assert.deepEqual(models[0].resolutions,["1K","2K","4K"]);
+ assert.equal(models[1].id,"gemini-3.1-flash-image");
+ assert.deepEqual(models[1].resolutions,["1K","2K","4K"]);
+});
+test("Nano Banana 2 request selects the official Flash Image model ID",()=>{
+ const request=buildGeminiImageRequest({model:"gemini-3.1-flash-image",prompt:"A quick social campaign",quality:"medium"});
+ assert.equal(request.model,"gemini-3.1-flash-image");
+ assert.deepEqual(request.body.generationConfig.responseFormat.image,{aspectRatio:"1:1",imageSize:"1K"});
 });
 test("request maps output size and quality to documented aspect ratio and image size",()=>{
  const request=buildGeminiImageRequest({prompt:"A premium product campaign",size:"1536x1024",quality:"high"});
