@@ -153,3 +153,214 @@ export async function generateRunwayVideo({model=process.env.RUNWAY_VIDEO_MODEL,
   const buffer=await downloadMp4(output,{fetchImpl,timeoutMs:Math.min(60000,Math.max(1000,deadline-now()))});
   return {buffer,model:String(task.model||model),provider:"runway",requestId:taskId,usage:null,estimatedCostCredits:Number(submitted.estimatedCost?.credits)||null,mimeType:"video/mp4",adapterVersion:"runway-video-gateway-v1"};
 }
+
+
+
+const MAX_EPHEMERAL_UPLOAD_BYTES = 200 * 1024 * 1024;
+const UPLOAD_TYPES = Object.freeze({
+  "video/mp4": ".mp4",
+  "video/quicktime": ".mov",
+  "image/png": ".png",
+  "image/jpeg": ".jpg",
+  "image/webp": ".webp"
+});
+
+/**
+ * Upload an already-authorized project asset to Runway's 24-hour ephemeral
+ * storage. The caller is responsible for resolving ownership/permissions and
+ * reading the file from private storage before calling this function.
+ */
+export async function uploadRunwayEphemeralAsset({
+  buffer,
+  filename,
+  mimeType,
+  fetchImpl = fetch
+} = {}) {
+  if (!Buffer.isBuffer(buffer) || buffer.length < 512 || buffer.length > MAX_EPHEMERAL_UPLOAD_BYTES) {
+    throw fail("Runway ephemeral uploads must be between 512 bytes and 200 MiB.", "VIDEO_GATEWAY_INVALID_INPUT");
+  }
+  const type = String(mimeType || "").toLowerCase();
+  const expectedExtension = UPLOAD_TYPES[type];
+  const safeName = typeof filename === "string" ? filename.trim() : "";
+  if (!expectedExtension || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,180}$/.test(safeName) || safeName.includes("..") ||
+      safeName.slice(safeName.lastIndexOf(".")).toLowerCase() !== expectedExtension) {
+    throw fail("Upload filename extension and supported media type must match.", "VIDEO_GATEWAY_INVALID_INPUT");
+  }
+  const key = String(process.env.RUNWAYML_API_SECRET || "").trim();
+  if (!key) throw fail("Configure RUNWAYML_API_SECRET on the server before uploading to Runway.", "VIDEO_GATEWAY_CONFIG_INVALID");
+  const headers = { authorization: "Bearer " + key, "content-type": "application/json", "X-Runway-Version": API_VERSION };
+  const created = await requestJson(API_BASE + "/uploads", {
+    method: "POST", headers, body: JSON.stringify({ filename: safeName, type: "ephemeral" }),
+    timeoutMs: 30000, fetchImpl
+  });
+  const runwayUri = assertRunwayUploadUri(created.runwayUri, "Runway upload response");
+  let uploadUrl;
+  try { uploadUrl = new URL(created.uploadUrl); } catch {
+    throw fail("Runway returned an invalid ephemeral upload URL.", "VIDEO_GATEWAY_INVALID_RESPONSE");
+  }
+  if (uploadUrl.protocol !== "https:" || uploadUrl.username || uploadUrl.password || uploadUrl.port || uploadUrl.hash) {
+    throw fail("Runway returned an unsafe ephemeral upload URL.", "VIDEO_GATEWAY_INVALID_RESPONSE");
+  }
+  if (!created.fields || typeof created.fields !== "object" || Array.isArray(created.fields) ||
+      Object.keys(created.fields).length > 30 ||
+      Object.entries(created.fields).some(([name, value]) =>
+        !/^[A-Za-z0-9_-]{1,128}$/.test(name) || typeof value !== "string" || value.length > 4096)) {
+    throw fail("Runway returned invalid ephemeral upload fields.", "VIDEO_GATEWAY_INVALID_RESPONSE");
+  }
+  const form = new FormData();
+  for (const [name, value] of Object.entries(created.fields)) form.append(name, value);
+  form.append("file", new Blob([buffer], { type }), safeName);
+  let response;
+  try {
+    response = await fetchImpl(uploadUrl, { method: "POST", body: form, redirect: "error" });
+  } catch {
+    // Runway explicitly requires a fresh upload allocation after upload failure.
+    throw fail("Runway ephemeral upload failed. Start a new upload allocation before retrying.", "VIDEO_GATEWAY_UPLOAD_FAILED");
+  }
+  if (!response.ok) {
+    throw fail("Runway ephemeral upload failed. Start a new upload allocation before retrying.", "VIDEO_GATEWAY_UPLOAD_FAILED");
+  }
+  return Object.freeze({ runwayUri, filename: safeName, mimeType: type, byteSize: buffer.length, expiresInHours: 24 });
+}
+
+const VIDEO_TO_VIDEO_MODELS = new Set(["aleph2"]);
+const RUNWAY_UPLOAD_URI = /^runway:\/\/[A-Za-z0-9._~:/?#[\]@!$&'()*+,;=%-]{1,4980}$/;
+
+function assertRunwayUploadUri(value, label) {
+  if (typeof value !== "string" || value.length > 5000 || !RUNWAY_UPLOAD_URI.test(value)) {
+    throw fail(label + " must be a Runway ephemeral upload URI created from an authorized source asset.", "VIDEO_GATEWAY_INVALID_INPUT");
+  }
+  return value;
+}
+
+/**
+ * Build the documented Runway video-to-video request.
+ * Only model profiles verified against the current adapter contract are exposed.
+ * Inputs must already have been uploaded through Runway's ephemeral upload API;
+ * callers must resolve and authorize source assets before uploading them.
+ */
+export function buildRunwayVideoToVideoPayload({
+  model = "aleph2",
+  videoUri,
+  prompt,
+  keyframes = [],
+  outputFormat = "mp4",
+  durationSeconds,
+} = {}) {
+  const id = String(model || "").trim();
+  if (!VIDEO_TO_VIDEO_MODELS.has(id)) {
+    throw fail("The selected Runway model has no verified video-to-video adapter profile.", "VIDEO_GATEWAY_UNSUPPORTED_MODEL");
+  }
+  const source = assertRunwayUploadUri(videoUri, "Source video");
+  const text = typeof prompt === "string" ? prompt.trim() : "";
+  if (!text || text.length > 1000) {
+    throw fail("Video-edit prompts must contain 1 to 1000 characters.", "VIDEO_GATEWAY_INVALID_INPUT");
+  }
+  if (!Array.isArray(keyframes) || keyframes.length > 5) {
+    throw fail("Video editing accepts at most five keyframe guidance images.", "VIDEO_GATEWAY_INVALID_INPUT");
+  }
+  let previousAt = -1;
+  const normalizedKeyframes = keyframes.map((frame, index) => {
+    if (!frame || typeof frame !== "object" || Array.isArray(frame)) {
+      throw fail("Each keyframe must contain an upload URI and timestamp.", "VIDEO_GATEWAY_INVALID_INPUT");
+    }
+    const uri = assertRunwayUploadUri(frame.uri, "Keyframe " + (index + 1));
+    if (!Number.isFinite(frame.at) || frame.at < 0 || frame.at > 30 || frame.at <= previousAt) {
+      throw fail("Keyframe timestamps must be strictly increasing and between 0 and 30 seconds.", "VIDEO_GATEWAY_INVALID_INPUT");
+    }
+    previousAt = frame.at;
+    return Object.freeze({ uri, at: frame.at });
+  });
+  if (outputFormat !== "mp4") {
+    throw fail("Only MP4 output is currently supported by the private media ingestor.", "VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
+  }
+  if (durationSeconds != null && (!Number.isInteger(durationSeconds) || durationSeconds < 1 || durationSeconds > 30)) {
+    throw fail("Source video duration must be between 1 and 30 seconds.", "VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
+  }
+  return Object.freeze({
+    model: id,
+    videoUri: source,
+    promptText: text,
+    ...(normalizedKeyframes.length ? { keyframes: Object.freeze(normalizedKeyframes) } : {}),
+    outputFormat: "mp4"
+  });
+}
+
+/**
+ * Submit, reconcile and privately download a Runway video-to-video derivative.
+ * No source asset is modified. This synchronous adapter is intended for the
+ * existing governed executor; durable worker integrations should persist the
+ * provider task ID and poll on subsequent leases instead of holding a lease.
+ */
+export async function editRunwayVideo({
+  model = "aleph2",
+  videoUri,
+  sourceVideo,
+  prompt,
+  keyframes = [],
+  outputFormat = "mp4",
+  fetchImpl = fetch,
+  sleepImpl = sleep,
+  now = Date.now
+} = {}) {
+  if (process.env.VIDEO_GATEWAY_ENABLED !== "true") {
+    throw fail("Video generation is disabled by server configuration.", "VIDEO_GATEWAY_DISABLED");
+  }
+  if (process.env.VIDEO_GATEWAY_ALLOW_REMOTE !== "true") {
+    throw fail("Remote video providers are disabled. Review Runway pricing and explicitly enable remote access on the server.", "VIDEO_GATEWAY_REMOTE_DISABLED");
+  }
+  const key = String(process.env.RUNWAYML_API_SECRET || "").trim();
+  if (!key) throw fail("Configure RUNWAYML_API_SECRET on the server before using Runway models.", "VIDEO_GATEWAY_CONFIG_INVALID");
+  let resolvedVideoUri = videoUri;
+  if (sourceVideo) {
+    const uploaded = await uploadRunwayEphemeralAsset({ ...sourceVideo, fetchImpl });
+    resolvedVideoUri = uploaded.runwayUri;
+  }
+  let resolvedKeyframes = keyframes;
+  if (Array.isArray(keyframes) && keyframes.some(frame => frame?.buffer)) {
+    resolvedKeyframes = [];
+    for (const frame of keyframes) {
+      if (frame?.buffer) {
+        const uploaded = await uploadRunwayEphemeralAsset({
+          buffer: frame.buffer, filename: frame.filename, mimeType: frame.mimeType, fetchImpl
+        });
+        resolvedKeyframes.push({ uri: uploaded.runwayUri, at: frame.at });
+      } else {
+        resolvedKeyframes.push(frame);
+      }
+    }
+  }
+  const payload = buildRunwayVideoToVideoPayload({ model, videoUri: resolvedVideoUri, prompt, keyframes: resolvedKeyframes, outputFormat });
+  const headers = { authorization: "Bearer " + key, "content-type": "application/json", "X-Runway-Version": API_VERSION };
+  const submitted = await requestJson(API_BASE + "/video_to_video", {
+    method: "POST", headers, body: JSON.stringify(payload), timeoutMs: 30000, fetchImpl
+  });
+  const taskId = String(submitted.id || "");
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(taskId)) {
+    throw fail("Runway did not return a valid task identifier.", "VIDEO_GATEWAY_INVALID_RESPONSE");
+  }
+  const timeoutMs = Math.max(10000, Math.min(600000, Number(process.env.VIDEO_GATEWAY_TIMEOUT_MS) || 300000));
+  const deadline = now() + timeoutMs;
+  let task;
+  while (now() < deadline) {
+    task = await requestJson(API_BASE + "/tasks/" + encodeURIComponent(taskId), { headers, timeoutMs: 15000, fetchImpl });
+    if (task.status === "SUCCEEDED") break;
+    if (["FAILED", "CANCELED", "CANCELLED"].includes(task.status)) {
+      throw fail("Runway video edit failed. Review the provider task details before retrying.", "VIDEO_GATEWAY_JOB_FAILED");
+    }
+    if (!["PENDING", "RUNNING", "THROTTLED"].includes(task.status)) {
+      throw fail("Runway returned an unknown task state.", "VIDEO_GATEWAY_INVALID_RESPONSE");
+    }
+    await sleepImpl(Math.min(5000, Math.max(0, deadline - now())));
+  }
+  if (task?.status !== "SUCCEEDED") throw fail("Runway video edit timed out before completion.", "VIDEO_GATEWAY_TIMEOUT");
+  const output = Array.isArray(task.output) ? task.output.find(item => typeof item === "string" && item.length > 0) : "";
+  if (!output) throw fail("Runway task succeeded without an output video URL.", "VIDEO_GATEWAY_INVALID_RESPONSE");
+  const buffer = await downloadMp4(output, { fetchImpl, timeoutMs: Math.min(60000, Math.max(1000, deadline - now())) });
+  return {
+    buffer, model: String(task.model || model), provider: "runway", requestId: taskId,
+    usage: null, estimatedCostCredits: Number(submitted.estimatedCost?.credits) || null,
+    mimeType: "video/mp4", adapterVersion: "runway-video-to-video-v1",
+    operation: "video-to-video", sourceIsImmutable: true
+  };
+}
