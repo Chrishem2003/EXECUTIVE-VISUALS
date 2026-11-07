@@ -27,8 +27,7 @@ export function dodoSubscriptionCheckoutEnabled(env = process.env) {
 }
 
 export function dodoCustomerPortalEnabled(env = process.env) {
-  return env.DODO_MERCHANT_APPROVED === "true" &&
-    !!(env.DODO_PAYMENTS_API_KEY && env.PUBLIC_APP_URL) &&
+  return !!(env.DODO_PAYMENTS_API_KEY && env.PUBLIC_APP_URL) &&
     ["test_mode", "live_mode"].includes(env.DODO_PAYMENTS_ENVIRONMENT || "test_mode");
 }
 
