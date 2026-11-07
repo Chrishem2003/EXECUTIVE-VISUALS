@@ -386,3 +386,65 @@ test("Ruby HDR enqueue requires verified SDR dimensions and reserves the publish
   })), error => error.code === "VIDEO_SOURCE_METADATA_INVALID");
   assert.equal(calls, 1);
 });
+
+test("Runway Model Router enqueue requires explicit config gates and treats approved USD budget as a hard preflight ceiling", async () => {
+  const routerInput = {
+    projectId, provider: "runway", model: "model-router", requestHash,
+    operation: "text-to-video", prompt: "A cinematic product launch", durationSeconds: 8,
+    aspectRatio: "16:9", audioMode: "generated"
+  };
+  let calls = 0;
+  const env = {
+    RUNWAY_MODEL_ROUTER_ENABLED: "true",
+    RUNWAY_VIDEO_ALLOW_REMOTE: "true",
+    RUNWAY_VIDEO_ROUTER_CONFIG: "production-video",
+    VIDEO_GATEWAY_ENABLED: "true",
+    VIDEO_GATEWAY_ALLOW_REMOTE: "true"
+  };
+  const client = createCloudVideoEnqueue({
+    ...base, env,
+    fetchImpl: async () => { calls++; return response([resultRow]); }
+  });
+  const result = await client.enqueue(args({ model: "model-router", input: routerInput, reservedAmount: 4.5 }));
+  assert.equal(result.jobId, resultRow.job_id);
+  assert.equal(calls, 1);
+
+  const disabled = createCloudVideoEnqueue({
+    ...base, env: { ...env, RUNWAY_MODEL_ROUTER_ENABLED: "false" },
+    fetchImpl: async () => { calls++; return response([resultRow]); }
+  });
+  await assert.rejects(
+    disabled.enqueue(args({ model: "model-router", input: routerInput, reservedAmount: 4.5 })),
+    error => error.code === "RUNWAY_ROUTER_REMOTE_DISABLED"
+  );
+  assert.equal(calls, 1);
+});
+
+test("Runway Model Router rejects non-USD ceilings and invalid config slugs before queue submission", async () => {
+  const routerInput = {
+    projectId, provider: "runway", model: "model-router", requestHash,
+    operation: "text-to-video", prompt: "A cinematic product launch", durationSeconds: 8
+  };
+  let calls = 0;
+  const env = {
+    RUNWAY_MODEL_ROUTER_ENABLED: "true", RUNWAY_VIDEO_ALLOW_REMOTE: "true",
+    RUNWAY_VIDEO_ROUTER_CONFIG: "INVALID SLUG",
+    VIDEO_GATEWAY_ENABLED: "true", VIDEO_GATEWAY_ALLOW_REMOTE: "true"
+  };
+  const client = createCloudVideoEnqueue({
+    ...base, env, fetchImpl: async () => { calls++; return response([resultRow]); }
+  });
+  await assert.rejects(
+    client.enqueue(args({ model: "model-router", input: routerInput, reservedAmount: 4.5 })),
+    error => error.code === "RUNWAY_ROUTER_REMOTE_DISABLED"
+  );
+  await assert.rejects(
+    createCloudVideoEnqueue({
+      ...base, env: { ...env, RUNWAY_VIDEO_ROUTER_CONFIG: "production-video" },
+      fetchImpl: async () => { calls++; return response([resultRow]); }
+    }).enqueue(args({ model: "model-router", input: routerInput, reservedAmount: 4.5, currency: "EUR" })),
+    error => error.code === "RUNWAY_ROUTER_REMOTE_DISABLED"
+  );
+  assert.equal(calls, 0);
+});
+
