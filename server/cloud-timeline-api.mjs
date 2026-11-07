@@ -146,7 +146,7 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
      provider:"runway",model:"aleph2",operation:"video-to-video",currency:"USD",
      estimatedCostMicros,estimatedAmount:Number(estimate.amount),basis:estimate.basis,
      pricingSource:estimate.pricingSource,pricingDate:estimate.pricingDate,
-     source:{assetId:sourceAssetId,mediaType:metadata.mediaType,durationSeconds:metadata.durationSeconds,width:metadata.width,height:metadata.height,frameCount:metadata.frameCount},
+     source:{assetId:sourceAssetId,mediaType:metadata.mediaType,durationSeconds:metadata.durationSeconds,width:metadata.width,height:metadata.height,frameRate:metadata.frameRate??null,frameCount:metadata.frameCount},
      output:{durationSeconds:generationInput.durationSeconds,format:"mp4"},
      billable:false,requiresApproval:true,expiresAt:new Date(Date.now()+5*60*1000).toISOString()
     }});
