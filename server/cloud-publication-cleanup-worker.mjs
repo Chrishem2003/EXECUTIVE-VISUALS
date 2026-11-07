@@ -72,7 +72,7 @@ export function createCloudPublicationCleanupWorker({
   const rows=await request("rpc/"+name,{method:"POST",body:args});
   return rows;
  }
- let publicationOffset=0;
+ let publicationOffset=0,pendingClaimOffset=0;
  const publicationCursors=new Map();
  async function listStalePublications(offset=0){
   const cutoff=new Date(now().getTime()-olderThanMs).toISOString();
@@ -139,12 +139,13 @@ export function createCloudPublicationCleanupWorker({
    now
   });
  }
- async function listPendingClaims(){
+ async function listPendingClaims(offset=0){
   const params=new URLSearchParams({
    select:"id,claim_token,object_path,job_id,owner_id,project_id,publication_id,claimed_at",
    status:"eq.claimed",
-   order:"claimed_at.asc",
-   limit:String(objectLimit)
+   order:"claimed_at.asc,id.asc",
+   limit:String(objectLimit),
+   offset:String(offset)
   });
   const rows=await request("asset_publication_cleanup_claims?"+params.toString());
   if(!Array.isArray(rows))throw new Error("Pending publication cleanup claims returned an invalid list.");
@@ -174,8 +175,9 @@ export function createCloudPublicationCleanupWorker({
   throw new Error("Pending cleanup storage verification exceeded its bounded page limit.");
  }
  async function reconcilePendingClaims(runId){
-  const claims=await listPendingClaims();
-  const summary={scanned:claims.length,completed:0,skipped:0,failed:0};
+  const claims=await listPendingClaims(pendingClaimOffset);
+  pendingClaimOffset=claims.length<objectLimit?0:pendingClaimOffset+claims.length;
+  const summary={scanned:claims.length,completed:0,skipped:0,failed:0,offset:pendingClaimOffset};
   for(const claim of claims){
    try{
     if(!claim||!UUID.test(claim.id||"")||!UUID.test(claim.claim_token||"")||
