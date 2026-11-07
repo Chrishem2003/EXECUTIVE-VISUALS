@@ -515,19 +515,27 @@ export const VIDEO_PROVIDER_CATALOG = freeze([
         capabilities: {
           textToVideo: true, imageToVideo: true, videoToVideo: true,
           videoEdit: true, videoExtend: false, videoReframe: false,
-          nativeAudio: false, negativePrompt: false, seed: false,
+          nativeAudio: true, negativePrompt: false, seed: false,
           startFrame: true, endFrame: false, motionReference: false,
           referenceImages: true, referenceVideos: true, referenceAudio: false,
-          audioModes: [],
+          audioModes: ["generated"],
           resolutions: ["720p"],
           minDurationSeconds: 3, maxDurationSeconds: 20
         },
         constraints: {
-          sourceVideoEditing: true,
-          pricingStatus: "published_starting_rate_tier_matrix_pending",
-          startingUsdPerSecond: 0.094,
+          defaultDurationSeconds: 5,
+          maxReferenceImagesIncludingFirstFrame: 10,
+          maxReferenceVideos: 5,
+          maxInputVideoSecondsPerClip: 20,
+          maxCombinedInputVideoSeconds: 20,
+          outputAudioIncluded: true,
+          billingRounding: "ceil_total_generation",
+          minimumCredits: 29,
+          outputCreditsPerSecondWithoutInputVideo: 9.4,
+          outputCreditsPerSecondWithInputVideo: 6.3,
+          inputVideoCreditsPerSecond: 6.3,
           pricingSnapshotDate: "2026-11-07",
-          source: "https://docs.dev.runwayml.com/guides/models/"
+          source: "https://docs.dev.runwayml.com/guides/pricing/"
         }
       },
       {
@@ -537,24 +545,30 @@ export const VIDEO_PROVIDER_CATALOG = freeze([
         executionAdapter: "not_implemented",
         gateway: "runway",
         capabilities: {
-          textToVideo: true, imageToVideo: false, videoToVideo: true,
+          textToVideo: true, imageToVideo: true, videoToVideo: true,
           videoEdit: true, videoExtend: true, videoReframe: false,
           nativeAudio: false, negativePrompt: false, seed: false,
-          startFrame: true, endFrame: false, motionReference: false,
-          referenceImages: false, referenceVideos: false, referenceAudio: false,
+          startFrame: true, endFrame: true, motionReference: false,
+          referenceImages: true, referenceVideos: true, referenceAudio: false,
           audioModes: [],
-          resolutions: ["360p", "480p", "720p", "1080p", "4k"]
+          resolutions: ["360p", "720p", "1080p", "4k"],
+          minDurationSeconds: 3, maxDurationSeconds: 15
         },
         constraints: {
-          keyframeGuidance: true,
-          referenceInputsSupported: true,
-          referenceInputTypesUnverified: true,
-          audioSupportUnverified: true,
-          durationLimitsUnverified: true,
-          pricingStatus: "published_starting_rate_tier_matrix_pending",
-          startingUsdPerSecond: 0.02,
+          maxPromptCharacters: 4000,
+          maxReferenceImages: 5,
+          maxReferenceVideos: 3,
+          durationAuto: true,
+          autoDurationReservationSeconds: 15,
+          outputCreditsPerSecondByResolution: { "360p": 2, "720p": 7, "1080p": 10, "4k": 21 },
+          referenceImageCredits: 1,
+          inputVideoCreditsPerSecond: 1,
+          minimumCredits: 6,
+          billingRounding: "ceil_total_generation",
+          editBillingBasis: "input_video_duration_at_output_rate_plus_input_video_and_reference_charges",
+          extendBillingBasis: "new_output_duration_at_output_rate_plus_input_video_and_reference_charges",
           pricingSnapshotDate: "2026-11-07",
-          source: "https://docs.dev.runwayml.com/guides/models/"
+          source: "https://docs.dev.runwayml.com/guides/pricing/"
         }
       },
       {
