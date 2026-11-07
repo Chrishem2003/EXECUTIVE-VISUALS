@@ -915,9 +915,21 @@ const billingAccount=touchBillingAccount(db,user);
           }
         }
         const id=randomUUID();
-        db.prepare("INSERT INTO jobs(id,owner_id,project_id,job_type,status,input_json,idempotency_key) VALUES(?,?,?,?,'queued',?,?)")
-          .run(id,user.id,projectId,type,inputJson,key||null);
-        addJobEvent(db,id,user.id,"job.queued",{jobType:type});audit(db,user.id,"job.queued","job",id,{jobType:type},projectId);
+        const concurrencyLimit=Number(getBillingOverview(db,user.id).plan?.limits?.concurrentJobs??1);
+        db.exec("BEGIN IMMEDIATE");
+        try{
+          assertConcurrentJobCapacity(db,{userId:user.id,limit:concurrencyLimit});
+          db.prepare("INSERT INTO jobs(id,owner_id,project_id,job_type,status,input_json,idempotency_key) VALUES(?,?,?,?,'queued',?,?)")
+            .run(id,user.id,projectId,type,inputJson,key||null);
+          addJobEvent(db,id,user.id,"job.queued",{jobType:type});audit(db,user.id,"job.queued","job",id,{jobType:type},projectId);
+          db.exec("COMMIT");
+        }catch(error){
+          db.exec("ROLLBACK");
+          if(error?.code==="BILLING_CONCURRENT_JOB_LIMIT"||error?.code==="BILLING_CONCURRENCY_CONFIG_INVALID"){
+            fail(res,error.status||429,error.code,error.message);return;
+          }
+          throw error;
+        }
         send(res,202,{job:recordJob(db.prepare("SELECT * FROM jobs WHERE id=?").get(id))},cors);return;
       }
       const jobMatch=path.match(/^\/api\/jobs\/([0-9a-f-]+)(?:\/(cancel|events))?$/i);
