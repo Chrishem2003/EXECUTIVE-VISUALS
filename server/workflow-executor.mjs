@@ -7,7 +7,7 @@ import { generateText } from "./ai-gateway.mjs";
 import { generateImage } from "./image-gateway.mjs";
 import { preflightRunwayRouterImage } from "./runway-image-gateway.mjs";
 import { generateFalVideo, getFalVideoCapabilities } from "./fal-video-gateway.mjs";
-import { generateRunwayVideo, getRunwayVideoCapabilities } from "./runway-video-gateway.mjs";
+import { generateRunwayVideo, getRunwayVideoCapabilities, listRunwayVideoModels } from "./runway-video-gateway.mjs";
 import { storeGeneratedImage, storeGeneratedVideo, storeGeneratedAudio } from "./generated-assets.mjs";
 import { assertIdentityUseAllowed } from "./identity-consent.mjs";
 import { generateVoice, transcribeVoice } from "./voice-gateway.mjs";
@@ -20,7 +20,6 @@ import { buildShotContinuityPrompt, getShotContinuityReferenceIds } from "./shot
 import { normalizeVideoGenerationRequest, assertVideoCapabilities, createVideoRequestProvenance } from "./video-generation-contract.mjs";
 import { buildMediaQualityReport } from "./media-quality.mjs";
 import { billingEnforcementEnabled, refundBillingCredits } from "./billing.mjs";
-import { isLegacyVideoModelSelectable } from "./video-provider-registry.mjs";
 
 const now=()=>new Date().toISOString();
 function normalizeRunwayRouterAspectRatio(value){
@@ -330,7 +329,7 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
     }
     const provider=requireExecutionProvider("video.generate","VIDEO_GATEWAY_ALLOW_REMOTE");
     const selectedModel=provider.provider==="runway"?String(config.model??provider.model??""):"";
-    if(provider.provider==="runway"&&!isLegacyVideoModelSelectable(selectedModel))throw Object.assign(new Error("This video model is catalogued but not enabled for legacy synchronous execution. Use its governed cloud-worker adapter after the release gates are complete."),{code:"VIDEO_MODEL_EXECUTION_DISABLED"});
+    if(provider.provider==="runway"&&!listRunwayVideoModels().some(item=>item.id===selectedModel))throw Object.assign(new Error("This video model is catalogued but not enabled for legacy synchronous execution. Use its governed cloud-worker adapter after the release gates are complete."),{code:"VIDEO_MODEL_EXECUTION_DISABLED"});
     const generationRequest=normalizeVideoGenerationRequest({
      projectId:String(job.project_id||run.project_id||""),
      prompt,
