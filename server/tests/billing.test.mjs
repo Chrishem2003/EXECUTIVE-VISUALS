@@ -299,3 +299,39 @@ test("concurrent job limits count queued, running and review jobs but release te
     {allowed:true,limit:1,used:0});
   db.close();
 });
+
+test("Runway image and video reservations use exact published model pricing before platform markup",()=>{
+  const db=setup();
+  try{
+    const image=resolveBillingCreditCost(db,{
+      provider:"runway",model:"gpt_image_2_6_flare",capability:"image.generate",
+      unit:"image",quantity:1,
+      runwayPricing:{ratio:"1920:1920",quality:"high",reasoningEffort:"high",background:"auto",outputCount:1,referenceImageCount:2},
+      env:{BILLING_CREDIT_VALUE_MICROS:"10000",BILLING_COST_MARKUP_BPS:"5000"}
+    });
+    assert.equal(image.source,"runway_published_price_estimate");
+    assert.equal(image.providerCostCredits,13);
+    assert.equal(image.providerCostUsd,0.13);
+    assert.equal(image.credits,20);
+    assert.equal(image.settlementEligible,false);
+
+    const kling=resolveBillingCreditCost(db,{
+      provider:"runway",model:"kling_4_flash",capability:"video.generate",
+      unit:"second",quantity:5,
+      runwayPricing:{durationSeconds:5,resolution:"720p",inputType:"text",hasStartFrame:false,referenceImageCount:0,audio:true},
+      env:{BILLING_CREDIT_VALUE_MICROS:"10000",BILLING_COST_MARKUP_BPS:"5000"}
+    });
+    assert.equal(kling.providerCostCredits,47);
+    assert.equal(kling.credits,71);
+
+    const gemini=resolveBillingCreditCost(db,{
+      provider:"runway",model:"gemini_omni_flash_1.2",capability:"video.generate",
+      unit:"second",quantity:5,
+      runwayPricing:{durationSeconds:5,resolution:"720p",inputType:"text",hasStartFrame:false,referenceImageCount:0,audio:true},
+      env:{BILLING_CREDIT_VALUE_MICROS:"10000",BILLING_COST_MARKUP_BPS:"5000"}
+    });
+    assert.equal(gemini.providerCostCredits,35);
+    assert.equal(gemini.credits,53);
+    assert.equal(gemini.settlementEligible,false);
+  }finally{db.close();}
+});
