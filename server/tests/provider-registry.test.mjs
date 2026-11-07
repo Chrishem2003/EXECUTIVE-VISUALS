@@ -189,6 +189,22 @@ test("Runway image provider requires an allowlisted model and server key",()=>{
  assert.equal(wrongModel.providers.find(item=>item.id==="image").status,"needs_configuration");
 });
 
+test("Runway image Model Router is discoverable only with a valid saved config and remains opt-in gated",()=>{
+ const catalog=getProviderCatalog({
+  IMAGE_GATEWAY_PROVIDER:"runway",IMAGE_GATEWAY_ENABLED:"true",IMAGE_GATEWAY_ALLOW_REMOTE:"false",
+  RUNWAY_IMAGE_ROUTER_ENABLED:"true",RUNWAY_IMAGE_ROUTER_CONFIG:"campaign-images",RUNWAY_API_KEY:"secret"
+ });
+ const image=catalog.providers.find(item=>item.id==="image");
+ assert.equal(image.model,"model-router");
+ assert.equal(image.status,"remote_opt_in_required");
+ assert.ok(image.availableModels.some(model=>model.id==="model-router"&&model.outputCounts.max===4));
+ assert.equal(findProviderForCapability(catalog,"image.generate"),null);
+ const invalid=getProviderCatalog({
+  IMAGE_GATEWAY_PROVIDER:"runway",IMAGE_GATEWAY_ENABLED:"true",IMAGE_GATEWAY_ALLOW_REMOTE:"true",
+  RUNWAY_IMAGE_ROUTER_ENABLED:"true",RUNWAY_IMAGE_ROUTER_CONFIG:"INVALID SLUG",RUNWAY_API_KEY:"secret"
+ });
+ assert.equal(invalid.providers.find(item=>item.id==="image").status,"needs_configuration");
+});
 test("Runway video provider exposes the new Flash profiles but rejects unknown model IDs",()=>{
  const catalog=getProviderCatalog({
   VIDEO_GATEWAY_PROVIDER:"runway",VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",
