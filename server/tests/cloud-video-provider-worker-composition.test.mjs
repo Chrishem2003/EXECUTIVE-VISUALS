@@ -82,6 +82,7 @@ test("defaults to the exact FAL provider registration when no custom adapter fac
   let networkCalls = 0;
   const worker = createProviderAwareCloudVideoWorkerComposition({
     ...base,
+    createAdapters: undefined,
     env: {
       ...env,
       FAL_VIDEO_MODEL: "fal-ai/wan/v2.7/text-to-video",
@@ -171,6 +172,7 @@ test("rejects unknown or duplicate Runway model registrations before constructin
 test("refuses source-edit model registration without server-side source metadata resolution", () => {
   assert.throws(() => createProviderAwareCloudVideoWorkerComposition({
     ...base,
+    createAdapters: undefined,
     env: {
       ...env,
       FAL_VIDEO_MODEL: "fal-ai/wan/v2.7/text-to-video",
