@@ -22,7 +22,7 @@ const stableJson=value=>Array.isArray(value)?"["+value.map(stableJson).join(",")
  * by the app's verified authentication middleware; request bodies never set
  * owner_id. Service-role credentials remain inside this server-only module.
  */
-export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRoleKey=process.env.SUPABASE_SERVICE_ROLE_KEY,fetchImpl=globalThis.fetch,timelineService,authorize,maxJobBytes=5*1024*1024,timeoutMs=15000,maxUploadBytes=250*1024*1024,tempRoot=tmpdir(),transformationReadiness=()=>({}),runwaySourceResolver=null}={}){
+export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRoleKey=process.env.SUPABASE_SERVICE_ROLE_KEY,fetchImpl=globalThis.fetch,timelineService,authorize,maxJobBytes=5*1024*1024,timeoutMs=15000,maxUploadBytes=250*1024*1024,tempRoot=tmpdir(),transformationReadiness=()=>({}),runwaySourceResolver=null,env=process.env}={}){
  if(!url||!serviceRoleKey)throw new Error("Cloud timeline API requires server-side Supabase credentials.");
  if(typeof fetchImpl!=="function")throw new Error("Cloud timeline API requires fetch.");
  if(!Number.isInteger(maxJobBytes)||maxJobBytes<1024||maxJobBytes>10*1024*1024)throw new Error("Cloud timeline API payload limit is invalid.");
@@ -287,10 +287,10 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
  }
  async function checkReadiness(){
   const required=["projects","project_members","assets","timelines","jobs","job_events"];
-  if(process.env.CLOUD_VIDEO_WORKER_ENABLED==="true"){
+  if(env.CLOUD_VIDEO_WORKER_ENABLED==="true"){
    required.push("video_generation_submissions","video_generation_budget_policies","video_generation_budget_approvals","video_generation_budget_reservations","video_generation_usage_reservations");
   }
-  if(process.env.GOOGLE_OMNI_VIDEO_ENABLED==="true"||process.env.GOOGLE_OMNI_VIDEO_ALLOW_REMOTE==="true"){
+  if(env.GOOGLE_OMNI_VIDEO_ENABLED==="true"||env.GOOGLE_OMNI_VIDEO_ALLOW_REMOTE==="true"){
    required.push("google_video_interactions");
   }
   for(const table of required){
