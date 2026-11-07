@@ -110,6 +110,33 @@ export function createCloudVideoEnqueue({
       const runwayUpscaleEnabled = provider === "runway" && model === "magnific_video_upscaler_creative" && input.operation === "video-upscale";
       const runwayHdrEnabled = provider === "runway" && model === "ruby" && input.operation === "video-to-hdr";
       const runwayAudioEnabled = provider === "runway" && model === "mirelo_sfx_2_0" && input.operation === "video-to-audio";
+      if (runwayAudioEnabled) {
+        if (input.prompt != null && (typeof input.prompt !== "string" || input.prompt.length > 2000)) {
+          const invalid = new Error("Video-to-audio prompt must be no longer than 2,000 characters.");
+          invalid.code = "VIDEO_GENERATION_UNSUPPORTED_CAPABILITY";
+          throw invalid;
+        }
+        if (input.negativePrompt != null && (typeof input.negativePrompt !== "string" || !input.negativePrompt.trim() || input.negativePrompt.length > 1000)) {
+          const invalid = new Error("Video-to-audio negative prompt must contain 1 to 1,000 characters.");
+          invalid.code = "VIDEO_GENERATION_UNSUPPORTED_CAPABILITY";
+          throw invalid;
+        }
+        if (input.numVariants !== undefined && (!Number.isInteger(input.numVariants) || input.numVariants < 1 || input.numVariants > 4)) {
+          const invalid = new Error("Video-to-audio variants must be an integer from 1 to 4.");
+          invalid.code = "VIDEO_GENERATION_UNSUPPORTED_CAPABILITY";
+          throw invalid;
+        }
+        if (input.audioFormat !== undefined && !["mp3", "wav", "flac"].includes(input.audioFormat)) {
+          const invalid = new Error("Video-to-audio format must be mp3, wav or flac.");
+          invalid.code = "VIDEO_GENERATION_UNSUPPORTED_CAPABILITY";
+          throw invalid;
+        }
+        if (input.preserveSpeech !== undefined && typeof input.preserveSpeech !== "boolean") {
+          const invalid = new Error("preserveSpeech must be a boolean.");
+          invalid.code = "VIDEO_GENERATION_UNSUPPORTED_CAPABILITY";
+          throw invalid;
+        }
+      }
       const runwayEnabled = runwayTextEnabled || runwayImageEnabled || runwayEditEnabled || runwayUpscaleEnabled || runwayHdrEnabled || runwayAudioEnabled;
       const googleEnabled = provider === "google" && model === "gemini-omni-1.1-flash";
       if (!runwayEnabled && !googleEnabled) {
@@ -142,7 +169,7 @@ export function createCloudVideoEnqueue({
             !["video/mp4", "video/quicktime", "video/webm"].includes(verifiedSourceMetadata.mediaType) ||
             !Number.isFinite(verifiedSourceMetadata.durationSeconds) ||
             verifiedSourceMetadata.durationSeconds < 1 || verifiedSourceMetadata.durationSeconds > (runwayAudioEnabled ? 600 : 30)) {
-          const invalid = new Error("The source asset must have verified video metadata and a duration from 1 to 30 seconds.");
+          const invalid = new Error("The source asset must have verified video metadata and a duration within the selected operation's supported range.");
           invalid.code = "VIDEO_SOURCE_METADATA_INVALID";
           throw invalid;
         }
