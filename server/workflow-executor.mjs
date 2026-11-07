@@ -251,7 +251,7 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
     const usageStarted=Date.now();
     const provider=requireExecutionProvider("image.generate","IMAGE_GATEWAY_ALLOW_REMOTE");
     reserveRemoteRequest(db,{ownerId:job.owner_id,projectId:job.project_id||null,jobId:job.id,provider,capability:"image.generate"});
-    const result=await generateImage({prompt,size:String(config.size||"1024x1024"),quality:String(config.quality||"medium"),referenceImageDataUrl});
+    const result=await generateImage({prompt,size:String(config.size||"1024x1024"),quality:String(config.quality||"medium"),referenceImageDataUrl,model:String(config.model||values.model||"")});
     recordModelUsage(db,{ownerId:job.owner_id,projectId:job.project_id||null,jobId:job.id,workflowRunId:runId,nodeId,provider:provider.provider,capability:"image.generate",model:result.model,usage:result.usage,durationMs:Date.now()-usageStarted});
     const asset=await storeGeneratedImage({db,mediaRoot,ownerId:job.owner_id,projectId:job.project_id||null,jobId:job.id,prompt,model:result.model,buffer:result.buffer});
     output=nodeOutput(node,asset.id);output.asset=asset.id;output.assetId=asset.id;output.mimeType=asset.mediaType;output.sha256=asset.sha256;output.usage=result.usage;
