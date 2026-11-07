@@ -39,8 +39,8 @@ export function createRunwayCloudVideoAdapter({
   timeoutMs = 30000
 } = {}) {
   const selectedModel = String(model || "").trim();
-  if (!["gen4.5", "aleph2", "magnific_video_upscaler_creative"].includes(selectedModel)) {
-    throw fail("This Runway cloud adapter supports only verified Gen-4.5 generation, Aleph2 editing and Magnific video upscaling profiles.", "RUNWAY_ADAPTER_MODEL_UNSUPPORTED");
+  if (!["gen4.5", "aleph2", "magnific_video_upscaler_creative", "ruby"].includes(selectedModel)) {
+    throw fail("This Runway cloud adapter supports only verified Gen-4.5 generation, Aleph2 editing, Magnific upscaling and Ruby HDR profiles.", "RUNWAY_ADAPTER_MODEL_UNSUPPORTED");
   }
   const key = String(apiKey || "").trim();
   if (typeof fetchImpl !== "function") throw new Error("Runway cloud adapter requires fetch.");
@@ -160,12 +160,13 @@ export function createRunwayCloudVideoAdapter({
       }
       const isVideoEdit = input.operation === "video-to-video";
       const isVideoUpscale = input.operation === "video-upscale";
+      const isVideoHdr = input.operation === "video-to-hdr";
       const isImageToVideo = input.operation === "image-to-video" || Boolean(input.startFrameAssetId);
       const hasReferences = (Array.isArray(input.referenceAssetIds) && input.referenceAssetIds.length > 0) ||
         Boolean(input.referenceImageDataUrl) || Boolean(input.sourceVideoAssetId) ||
         Boolean(input.startFrameAssetId) ||
         (Array.isArray(input.keyframeAssetIds) && input.keyframeAssetIds.length > 0);
-      if ((hasReferences || isVideoEdit || isVideoUpscale || isImageToVideo) && typeof prepareInput !== "function") {
+      if ((hasReferences || isVideoEdit || isVideoUpscale || isVideoHdr || isImageToVideo) && typeof prepareInput !== "function") {
         throw fail("Runway source and reference assets require an authenticated project-scoped input resolver.", "VIDEO_INPUT_ASSET_RESOLUTION_REQUIRED");
       }
       if (typeof prepareInput !== "function") return input;
@@ -179,6 +180,13 @@ export function createRunwayCloudVideoAdapter({
         if (prepared.firstFrame) promptImageUri = await uploadEphemeral(prepared.firstFrame);
         if (!isRunwayUri(promptImageUri)) throw fail("Image-to-video requires a Runway ephemeral first-frame upload resolved from the authorized asset.", "VIDEO_INPUT_ASSET_RESOLUTION_REQUIRED");
         return { ...input, promptImageUri };
+      }
+      if (isVideoHdr) {
+        if (selectedModel !== "ruby") throw fail("HDR conversion requires the verified Ruby profile.", "RUNWAY_ADAPTER_MODEL_UNSUPPORTED");
+        let videoUri = prepared.videoUri;
+        if (prepared.sourceVideo) videoUri = await uploadEphemeral(prepared.sourceVideo);
+        if (!isRunwayUri(videoUri)) throw fail("HDR conversion requires a Runway ephemeral URI resolved from the authorized source asset.", "VIDEO_INPUT_ASSET_RESOLUTION_REQUIRED");
+        return { ...input, videoUri };
       }
       if (!isVideoEdit && !isVideoUpscale) return prepared;
       if (isVideoUpscale) {
@@ -211,6 +219,18 @@ export function createRunwayCloudVideoAdapter({
       assertEnabled();
       if (!input || input.provider !== "runway" || input.model !== selectedModel) {
         throw fail("Runway job identity does not match the selected adapter.", "VIDEO_JOB_INPUT_MISMATCH");
+      }
+      if (input.operation === "video-to-hdr") {
+        if (selectedModel !== "ruby" || !isRunwayUri(input.videoUri)) {
+          throw fail("Ruby HDR requires a prepared source video upload.", "RUNWAY_INPUT_INVALID");
+        }
+        const outputFormat = input.outputFormat ?? "hdr10";
+        if (!["hdr10", "hlg"].includes(outputFormat)) throw fail("Ruby HDR output must be hdr10 or hlg in this MP4 worker.", "RUNWAY_INPUT_INVALID");
+        const submitted = await request("/video_to_hdr", {
+          method: "POST", submission: true,
+          body: { model: "ruby", videoUri: input.videoUri, outputFormat }
+        });
+        return { taskId: taskId(submitted.id), status: "queued" };
       }
       if (input.operation === "video-upscale") {
         if (selectedModel !== "magnific_video_upscaler_creative" || !isRunwayUri(input.videoUri)) {
