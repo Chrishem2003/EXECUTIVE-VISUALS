@@ -70,6 +70,10 @@ export function renderAssetLibrary(){
  '<section class="panel"><div class="runtime-section-heading"><div><div class="eyebrow">PRIVATE MEDIA LIBRARY</div><h3>Originals and derivatives</h3></div><span>'+state.assets.length+' stored assets</span></div><label>Project scope</label><select id="ev-project-select">'+projectOptions()+'</select><p>Upload originals, inspect media metadata, create thumbnails, proxies and audio extracts. Source files remain unchanged.</p><label class="upload primary">＋ Import media<input id="ev-upload" type="file" multiple accept="image/*,video/*,audio/*,application/pdf,text/plain"></label>'+renderAssets()+'</section>'+
  '<section class="panel"><div class="eyebrow">PROCESSING HISTORY</div><h3>Recent media jobs</h3>'+renderJobs()+'</section></div>';
 }
+export function renderReferenceImageOptions(){
+ const images=state.assets.filter(asset=>String(asset.mediaType||"").startsWith("image/"));
+ return '<option value="">No reference image · text-to-image/video</option>'+images.map(asset=>'<option value="'+esc(asset.id)+'">'+esc(asset.name)+'</option>').join("");
+}
 export function renderImageModelOptions(){
  const provider=state.providers.find(item=>item.id==="image"&&item.provider==="gemini");
  if(!provider)return '<option value="">Server-configured model</option>';
