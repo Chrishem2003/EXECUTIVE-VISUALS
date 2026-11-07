@@ -182,7 +182,7 @@ test("video-to-audio transformation requires approval and queues the Mirelo mode
  const jobId="b23e4567-e89b-42d3-a456-426614174003";
  let plan=null;
  const calls=[];
- const metadata={owner:owner,projectId:project,assetId:sourceAssetId,mediaType:"video/mp4",durationSeconds:12.2,frameCount:366,width:1920,height:1080,sourceDynamicRange:"sdr"};
+ const metadata={ownerId:owner,projectId:project,assetId:sourceAssetId,mediaType:"video/mp4",durationSeconds:12.2,frameCount:366,width:1920,height:1080,sourceDynamicRange:"sdr"};
  const fetchImpl=async(url,options={})=>{
   calls.push({url,options});
   if(url.endsWith("/rpc/enqueue_video_generation_job"))return{ok:true,status:200,async text(){return JSON.stringify([{job_id:jobId,job_status:"queued",idempotent_replay:false,budget_reservation_id:"c23e4567-e89b-42d3-a456-426614174003"}]);}};
@@ -203,7 +203,7 @@ test("video-to-audio transformation requires approval and queues the Mirelo mode
   authorize:async()=>true,
   transformationReadiness:()=>({adapterVerified:true,workerAvailable:true,privateStorageVerified:true,durableCheckpointsAvailable:true,costPolicyVerified:true,consentVerifierAvailable:true,visualQaAvailable:true,cloudSchemaApplied:true}),
   runwaySourceResolver:{async resolveMetadata(args){
-   assert.deepEqual(args,{owner:owner,projectId,assetId:sourceAssetId,operation:"video-to-audio"});
+   assert.deepEqual(args,{ownerId:owner,projectId:project,assetId:sourceAssetId,operation:"video-to-audio"});
    return metadata;
   }}
  });
