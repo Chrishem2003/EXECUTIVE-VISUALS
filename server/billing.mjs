@@ -314,6 +314,36 @@ export function listBillingPlans(db, { activeOnly = true } = {}) {
   }));
 }
 
+export function assertBillingStorageQuota({ limitBytes, usedBytes = 0, incomingBytes = 0 } = {}) {
+  if (limitBytes === null || limitBytes === undefined || limitBytes === 0) return { allowed: true, unlimited: true };
+  const limit=Number(limitBytes),used=Number(usedBytes),incoming=Number(incomingBytes);
+  if (!Number.isSafeInteger(limit)||limit<0||!Number.isSafeInteger(used)||used<0||!Number.isSafeInteger(incoming)||incoming<0) {
+    throw fail("Storage quota values must be non-negative safe integers.", "BILLING_STORAGE_QUOTA_CONFIG_INVALID", 500);
+  }
+  if (used+incoming>limit) {
+    throw Object.assign(fail("This upload would exceed the storage allowance for the current plan.", "BILLING_STORAGE_QUOTA_EXCEEDED", 413), {
+      limitBytes:limit,usedBytes:used,incomingBytes:incoming,remainingBytes:Math.max(0,limit-used)
+    });
+  }
+  return { allowed:true,limitBytes:limit,usedBytes:used,incomingBytes:incoming,remainingBytes:limit-used-incoming };
+}
+
+export function assertConcurrentJobCapacity(db, { userId, limit, excludeJobId = null } = {}) {
+  const maximum=Number(limit);
+  if (!userId||!Number.isSafeInteger(maximum)||maximum<1||maximum>1000) {
+    throw fail("The concurrent job allowance is not configured correctly.", "BILLING_CONCURRENCY_CONFIG_INVALID", 500);
+  }
+  const current=Number(db.prepare(`SELECT COUNT(*) AS count FROM jobs
+    WHERE owner_id=? AND status IN ('queued','running','reviewing') AND (? IS NULL OR id<>?)`)
+    .get(String(userId),excludeJobId,excludeJobId).count||0);
+  if(current>=maximum){
+    throw Object.assign(fail("Your plan's concurrent job limit has been reached. Wait for an existing job to finish or upgrade your plan.", "BILLING_CONCURRENT_JOB_LIMIT", 429), {
+      limit:maximum,used:current
+    });
+  }
+  return { allowed:true,limit:maximum,used:current };
+}
+
 export function getBillingOverview(db, userId) {
   const at = isoNow();
   const subscription = db.prepare(`SELECT s.*,p.code AS plan_code,p.name AS plan_name,p.description AS plan_description,
