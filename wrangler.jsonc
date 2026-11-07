@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "executive-visuals-edge",
+  "name": "executive-visuals",
   "main": "cloudflare/worker.ts",
   "compatibility_date": "2026-11-07",
   "workers_dev": true,
