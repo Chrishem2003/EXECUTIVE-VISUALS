@@ -138,7 +138,7 @@ export function createCloudAssetRepository({
         ? "owner_id=eq."+encodeURIComponent(ownerId)+"&project_id=eq."+encodeURIComponent(projectId)
         : "owner_id=eq."+encodeURIComponent(ownerId)+"&project_id=is.null";
       const rows=await request("assets?select=id,owner_id,project_id,original_name,media_type,byte_size,sha256,storage_bucket,object_path,derivative_of,metadata,created_at,deleted_at&"+scope+
-        "&metadata->>source=eq.video-generation&metadata->>providerTaskId=eq."+encodeURIComponent(providerTaskId)+
+        "&metadata->>source=in.(video-generation,video-to-audio)&metadata->>providerTaskId=eq."+encodeURIComponent(providerTaskId)+
         "&metadata->>outputIndex=eq."+encodeURIComponent(String(outputIndex))+"&deleted_at=is.null&limit=2");
       if(!Array.isArray(rows)||rows.length>1)throw new Error("Video output idempotency lookup returned an invalid result.");
       const row=rows[0]||null;
