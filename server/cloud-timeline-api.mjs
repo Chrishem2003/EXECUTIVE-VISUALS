@@ -11,6 +11,7 @@ import { buildTransformationReadinessReport } from "./transformation-readiness.m
 import { validateSrt, validateWebVtt } from "./caption-validation.mjs";
 import { createCloudVideoEnqueue } from "./cloud-video-enqueue.mjs";
 import { createRunwaySourceAssetResolver } from "./runway-source-asset-resolver.mjs";
+import { estimateVideoGenerationCost } from "./video-generation-cost-estimator.mjs";
 
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const safeId=(value)=>typeof value==="string"&&UUID.test(value);
@@ -151,9 +152,22 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     if(cloudTransformationMatch[2]==="approve"&&method==="POST"){
      if(await allow({ownerId,projectId:row.project_id,action:"write"})!==true)return response(403,{error:{code:"EDITOR_REQUIRED",message:"Owner or editor access is required."}});
      if(row.status!=="draft"||row.approved_at)return response(409,{error:{code:"TRANSFORMATION_STATE_CONFLICT",message:"Only an unapproved draft can be approved."}});
-     const estimate=body?.estimatedCostMicros,budget=body?.approvedBudgetMicros,currency=String(body?.currency||"").toUpperCase(),adapterId=String(body?.adapterId||"").trim(),capability=String(body?.capability||"").trim();
-     if(!Number.isSafeInteger(estimate)||estimate<0||!Number.isSafeInteger(budget)||budget<estimate||! /^[A-Z]{3}$/.test(currency)||!adapterId||!capability)return response(400,{error:{code:"TRANSFORMATION_BUDGET_INVALID",message:"Provide a known estimate, a covering budget, currency, adapter and capability."}});
-     const approval={approvalId:randomUUID(),estimatedCostMicros:estimate,approvedBudgetMicros:budget,currency,adapterId,capability};
+     const budget=body?.approvedBudgetMicros,currency=String(body?.currency||"USD").toUpperCase();
+     if(!Number.isSafeInteger(budget)||budget<1||currency!=="USD")return response(400,{error:{code:"TRANSFORMATION_BUDGET_INVALID",message:"Provide a positive USD budget limit in micros."}});
+     if(!sourceResolver)return response(503,{error:{code:"VIDEO_SOURCE_RESOLVER_UNAVAILABLE",message:"A private server-side source resolver is required before budget approval."}});
+     const planInput=row.input||{};
+     const metadata=await sourceResolver.resolveMetadata({ownerId,projectId:row.project_id,assetId:planInput.sourceAssetId});
+     const estimate=estimateVideoGenerationCost({
+      provider:"runway",model:"aleph2",operation:"video-to-video",
+      durationSeconds:Math.ceil(metadata.durationSeconds),
+      inputVideoSeconds:metadata.durationSeconds,inputType:"video",
+      outputFormat:"mp4",resolution:"provider_default"
+     });
+     const estimatedCostMicros=Math.ceil(Number(estimate.amount)*1000000);
+     if(!Number.isSafeInteger(estimatedCostMicros)||estimatedCostMicros<1||budget<estimatedCostMicros){
+      return response(409,{error:{code:"TRANSFORMATION_BUDGET_BELOW_ESTIMATE",message:"The approved budget must cover the server-calculated provider estimate of "+(estimatedCostMicros/1000000).toFixed(2)+" USD."}});
+     }
+     const approval={approvalId:randomUUID(),estimatedCostMicros,approvedBudgetMicros:budget,currency:"USD",adapterId:"runway:aleph2",capability:"video-to-video",sourceMetadata:{durationSeconds:metadata.durationSeconds,frameCount:metadata.frameCount,width:metadata.width,height:metadata.height}};
      const updated=await request("jobs?id=eq."+encodeURIComponent(row.id)+"&status=eq.draft&approved_at=is.null",{method:"PATCH",body:{status:"awaiting_approval",estimated_cost:approval,approved_by:ownerId,approved_at:new Date().toISOString(),updated_at:new Date().toISOString()}});
      if(!Array.isArray(updated)||updated.length!==1)return response(409,{error:{code:"TRANSFORMATION_STATE_CONFLICT",message:"Transformation plan changed while approval was recorded."}});
      await request("job_events",{method:"POST",body:{job_id:row.id,owner_id:row.owner_id,event_type:"transformation.approved",event_data:{approvalId:approval.approvalId,estimatedCostMicros:estimate,currency}}});
@@ -164,6 +178,8 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
      if(!row.approved_at||!row.approved_by||!row.estimated_cost?.approvalId)return response(409,{error:{code:"TRANSFORMATION_APPROVAL_REQUIRED",message:"Approve the plan and budget before submission."}});
      if(row.status==="submitted"&&row.output?.videoJobId)return response(200,{job:{id:row.output.videoJobId,status:row.output.videoJobStatus||"queued"},idempotentReplay:true});
      if(row.status!=="awaiting_approval")return response(409,{error:{code:"TRANSFORMATION_STATE_CONFLICT",message:"Only an approved, unsubmitted transformation can be submitted."}});
+     const readiness=buildTransformationReadinessReport(await transformationReadiness({ownerId,projectId:row.project_id}));
+     if(!readiness.canSubmit)return response(409,{error:{code:"TRANSFORMATION_RELEASE_GATES_BLOCKED",message:"Video execution is blocked until all eight release gates are verified.",missing:readiness.missing}});
      const approval=row.estimated_cost;
      if(approval.adapterId!=="runway:aleph2"||approval.capability!=="video-to-video"||String(approval.currency||"").toUpperCase()!=="USD"){
       return response(409,{error:{code:"TRANSFORMATION_ADAPTER_UNAVAILABLE",message:"This transformation is not approved for the verified Runway Aleph 2 video-edit adapter."}});
