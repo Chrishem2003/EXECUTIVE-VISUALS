@@ -42,7 +42,7 @@ test("image-to-video rejects oversized or malformed frame data",()=>{
 });
 test("capabilities are model-specific and declare only implemented first-frame reference inputs",()=>{
  const caps=getRunwayVideoCapabilities("seedance2_5");
- assert.equal(caps.referenceImages,true);
+ assert.equal(caps.referenceImages,false);
  assert.equal(caps.startFrame,true);
  assert.equal(caps.maxDurationSeconds,30);
  assert.deepEqual(caps.resolutions,["provider_default","480p","720p","1080p"]);
