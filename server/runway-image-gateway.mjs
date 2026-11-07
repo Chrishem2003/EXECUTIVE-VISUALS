@@ -97,6 +97,6 @@ export async function generateRunwayImage({
  if(!task||task.status!=="SUCCEEDED")throw fail("Runway image task timed out; reconcile its status before retrying.","IMAGE_GATEWAY_TIMEOUT");
  if(!Array.isArray(task.output)||task.output.length!==1||typeof task.output[0]!=="string")throw fail("Runway image task returned an unexpected output collection.","IMAGE_GATEWAY_INVALID_RESPONSE");
  const buffer=await downloadPng(task.output[0],{fetchImpl,timeoutMs:Math.min(60000,Math.max(1000,deadline-now()))});
- const credits=Number(task?.actualCost?.credits??task?.estimatedCost?.credits);
+ const credits=Number(task?.estimatedCost?.credits);
  return {buffer,model:String(task.model||payload.model),provider:"runway",taskId,estimatedCostCredits:Number.isFinite(credits)&&credits>=0?credits:null,usage:null,outputFormat:"png"};
 }
