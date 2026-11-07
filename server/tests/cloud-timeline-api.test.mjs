@@ -182,7 +182,7 @@ test("video-to-audio transformation requires approval and queues the Mirelo mode
  const jobId="b23e4567-e89b-42d3-a456-426614174003";
  let plan=null;
  const calls=[];
- const metadata={ownerId:owner,projectId:project,assetId:sourceAssetId,mediaType:"video/mp4",durationSeconds:12.2,frameCount:366,width:1920,height:1080,sourceDynamicRange:"sdr"};
+ const metadata={owner:owner,projectId:project,assetId:sourceAssetId,mediaType:"video/mp4",durationSeconds:12.2,frameCount:366,width:1920,height:1080,sourceDynamicRange:"sdr"};
  const fetchImpl=async(url,options={})=>{
   calls.push({url,options});
   if(url.endsWith("/rpc/enqueue_video_generation_job"))return{ok:true,status:200,async text(){return JSON.stringify([{job_id:jobId,job_status:"queued",idempotent_replay:false,budget_reservation_id:"c23e4567-e89b-42d3-a456-426614174003"}]);}};
@@ -199,25 +199,25 @@ test("video-to-audio transformation requires approval and queues the Mirelo mode
  };
  const api=createCloudTimelineApi({
   url:"https://example.supabase.co",serviceRoleKey:"service-secret",fetchImpl,
-  timelineService:{timelines:{},assets:{async get(){return{id:sourceAssetId,ownerId,projectId,mediaType:"video/mp4",name:"source.mp4",size:1024};}}},
+  timelineService:{timelines:{},assets:{async get(){return{id:sourceAssetId,owner,projectId,mediaType:"video/mp4",name:"source.mp4",size:1024};}}},
   authorize:async()=>true,
   transformationReadiness:()=>({adapterVerified:true,workerAvailable:true,privateStorageVerified:true,durableCheckpointsAvailable:true,costPolicyVerified:true,consentVerifierAvailable:true,visualQaAvailable:true,cloudSchemaApplied:true}),
   runwaySourceResolver:{async resolveMetadata(args){
-   assert.deepEqual(args,{ownerId:owner,projectId,assetId:sourceAssetId,operation:"video-to-audio"});
+   assert.deepEqual(args,{owner:owner,projectId,assetId:sourceAssetId,operation:"video-to-audio"});
    return metadata;
   }}
  });
- const draft=await api.handle({method:"POST",path:"/api/cloud/transformations",ownerId,idempotencyKey:"sound-design-plan-1",body:{
+ const draft=await api.handle({method:"POST",path:"/api/cloud/transformations",owner,idempotencyKey:"sound-design-plan-1",body:{
   projectId,sourceAssetId,operation:"sound_design_from_video",prompt:"TARGET RESULT: Rain ambience. Preserve dialogue.",
   durationSeconds:13,audioFormat:"wav",numVariants:2,preserveSpeech:true,rightsConfirmed:true
  }});
  assert.equal(draft.status,201);
  const createdPlanId=draft.body.plan.id;
- const approved=await api.handle({method:"POST",path:"/api/cloud/transformations/"+createdPlanId+"/approve",ownerId,body:{approvedBudgetMicros:1000000,currency:"USD"}});
+ const approved=await api.handle({method:"POST",path:"/api/cloud/transformations/"+createdPlanId+"/approve",owner,body:{approvedBudgetMicros:1000000,currency:"USD"}});
  assert.equal(approved.status,200);
  assert.equal(approved.body.plan.approval.adapterId,"runway:mirelo_sfx_2_0");
  assert.equal(approved.body.plan.approval.capability,"video-to-audio");
- const submitted=await api.handle({method:"POST",path:"/api/cloud/transformations/"+createdPlanId+"/submit",ownerId,body:{}});
+ const submitted=await api.handle({method:"POST",path:"/api/cloud/transformations/"+createdPlanId+"/submit",owner,body:{}});
  assert.equal(submitted.status,202);
  const rpc=calls.find(call=>call.url.endsWith("/rpc/enqueue_video_generation_job"));
  const queued=JSON.parse(rpc.options.body);
@@ -263,7 +263,7 @@ test("cloud transformation approval derives its estimate from probed source medi
   },
   timelineService:{timelines:{},assets:{}},authorize:async()=>true,
   runwaySourceResolver:{async resolveMetadata(args){
-   assert.deepEqual(args,{ownerId:owner,projectId:project,assetId:row.input.sourceAssetId});
+   assert.deepEqual(args,{ownerId:owner,projectId:project,assetId:row.input.sourceAssetId,operation:"video-to-video"});
    return{ownerId:owner,projectId:project,assetId:row.input.sourceAssetId,mediaType:"video/mp4",durationSeconds:10.2,frameCount:306,width:1920,height:1080,sourceDynamicRange:"sdr"};
   }}
  });
