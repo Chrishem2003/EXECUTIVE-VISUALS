@@ -100,6 +100,7 @@ test("defaults to the exact FAL provider registration when no custom adapter fac
 test("registers Runway text and video-edit adapters only with explicit task-cost and source-resolution dependencies", () => {
   const worker = createProviderAwareCloudVideoWorkerComposition({
     ...base,
+    createAdapters: undefined,
     env: {
       ...env,
       FAL_VIDEO_MODEL: "fal-ai/wan/v2.7/text-to-video",
