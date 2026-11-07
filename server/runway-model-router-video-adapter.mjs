@@ -180,7 +180,7 @@ export function createRunwayModelRouterVideoAdapter({
       const credits = routing.estimatedCost?.credits;
       if (routing.configId !== slug || typeof routing.model !== "string" || !routing.model.trim() ||
           typeof routing.provider !== "string" || !routing.provider.trim() ||
-          typeof credits !== "number" || !Number.isFinite(credits) || credits < 0) {
+          !Number.isSafeInteger(credits) || credits <= 0) {
         throw fail("Runway dry-run omitted a valid model, route or estimated credit ceiling.", "RUNWAY_ROUTER_DRY_RUN_INVALID");
       }
       return Object.freeze({
@@ -190,6 +190,7 @@ export function createRunwayModelRouterVideoAdapter({
         provider: routing.provider,
         estimatedCredits: credits,
         estimatedUsd: Math.round(credits * 0.01 * 10000) / 10000,
+        currency: "USD",
         routing
       });
     },
