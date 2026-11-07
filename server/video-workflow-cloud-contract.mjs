@@ -62,7 +62,7 @@ export function createVideoWorkflowCloudRequest({
     config.sourceVideoAssetId
   );
   const startFrameAssetId = firstString(
-    values.startFrameAssetId, values["start-frame"], values.image, values.referenceImage, values.reference, config.startFrameAssetId
+    values.startFrameAssetId, values["start-frame"], values.image, values.referenceImage, values.reference, config.startFrameAssetId, config.referenceAssetId
   );
   const referenceAssetIds = assetList(
     config.referenceImageAssetIds ?? values.referenceImageAssetIds ?? values.references,
