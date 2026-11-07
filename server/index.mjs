@@ -484,25 +484,25 @@ const billingAccount=touchBillingAccount(db,user);
           if(!["credit_adjusted","no_credit_entitlement"].includes(resolution)||note.length<5){
             fail(res,400,"REFUND_RECONCILIATION_INVALID","Choose a valid resolution and provide an audit note.");return;
           }
-          const grantTotal=refund.user_id?Number(db.prepare(`SELECT COALESCE(SUM(amount),0) AS credits FROM billing_credit_ledger
-            WHERE user_id=? AND event_type='subscription_grant' AND amount>0
-              AND json_extract(metadata_json,'$.provider')='dodo'
-              AND json_extract(metadata_json,'$.paymentId')=?`).get(refund.user_id,refund.payment_id).credits||0):0;
-          const alreadyReversed=refund.user_id?Number(db.prepare(`SELECT COALESCE(SUM(-amount),0) AS credits FROM billing_credit_ledger
-            WHERE user_id=? AND event_type='admin_adjustment' AND amount<0
-              AND json_extract(metadata_json,'$.refundProvider')='dodo'
-              AND json_extract(metadata_json,'$.paymentId')=?`).get(refund.user_id,refund.payment_id).credits||0):0;
-          let creditsToReverse=0;
-          if(resolution==="credit_adjusted"){
-            creditsToReverse=Number(body.creditsToReverse);
-            if(!refund.user_id||!Number.isSafeInteger(creditsToReverse)||creditsToReverse<=0||creditsToReverse>grantTotal-alreadyReversed){
-              fail(res,400,"REFUND_ADJUSTMENT_INVALID","Enter a positive credit reversal no greater than the remaining credits granted for this payment.");return;
-            }
-          }else if(grantTotal>0&&grantTotal>alreadyReversed){
-            fail(res,400,"REFUND_CREDITS_STILL_OUTSTANDING","This payment has granted credits. Record a credit reversal before resolving the refund.");return;
-          }
           db.exec("BEGIN IMMEDIATE");
           try{
+            const grantTotal=refund.user_id?Number(db.prepare(`SELECT COALESCE(SUM(amount),0) AS credits FROM billing_credit_ledger
+              WHERE user_id=? AND event_type='subscription_grant' AND amount>0
+                AND json_extract(metadata_json,'$.provider')='dodo'
+                AND json_extract(metadata_json,'$.paymentId')=?`).get(refund.user_id,refund.payment_id).credits||0):0;
+            const alreadyReversed=refund.user_id?Number(db.prepare(`SELECT COALESCE(SUM(-amount),0) AS credits FROM billing_credit_ledger
+              WHERE user_id=? AND event_type='admin_adjustment' AND amount<0
+                AND json_extract(metadata_json,'$.refundProvider')='dodo'
+                AND json_extract(metadata_json,'$.paymentId')=?`).get(refund.user_id,refund.payment_id).credits||0):0;
+            let creditsToReverse=0;
+            if(resolution==="credit_adjusted"){
+              creditsToReverse=Number(body.creditsToReverse);
+              if(!refund.user_id||!Number.isSafeInteger(creditsToReverse)||creditsToReverse<=0||creditsToReverse>grantTotal-alreadyReversed){
+                throw Object.assign(new Error("Enter a positive credit reversal no greater than the remaining credits granted for this payment."),{code:"REFUND_ADJUSTMENT_INVALID",status:400});
+              }
+            }else if(grantTotal>alreadyReversed){
+              throw Object.assign(new Error("This payment has granted credits. Record a credit reversal before resolving the refund."),{code:"REFUND_CREDITS_STILL_OUTSTANDING",status:400});
+            }
             let adjustmentLedgerId=null;
             if(creditsToReverse>0){
               adjustmentLedgerId=randomUUID();
@@ -519,8 +519,8 @@ const billingAccount=touchBillingAccount(db,user);
             db.exec("COMMIT");
             send(res,200,{ok:true,refundId:refund.id,resolution,creditsReversed:creditsToReverse,adjustmentLedgerId},cors);return;
           }catch(error){
-            db.exec("ROLLBACK");
-            if(error?.code==="REFUND_RECONCILIATION_CONFLICT"){fail(res,409,error.code,error.message);return;}
+            try{db.exec("ROLLBACK");}catch{}
+            if(String(error?.code||"").startsWith("REFUND_")){fail(res,error.status||400,error.code,error.message);return;}
             throw error;
           }
         }
