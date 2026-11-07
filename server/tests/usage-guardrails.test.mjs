@@ -71,11 +71,11 @@ test("billing credits are reserved with remote usage and insufficient balance re
     });
     assert.equal(first.billingCharge.charged,3);
     assert.equal(getBillingBalance(db,"billing-remote-owner"),17);
-    const replay=reserveRemoteRequest(db,{
+    assert.throws(()=>reserveRemoteRequest(db,{
       ownerId:"billing-remote-owner",jobId:"job-billing-1",provider:{provider:"remote-image",remote:true},
       capability:"image.generate",limit:10,billingReference:"job-billing-1:run-1:node-1:image.generate"
-    });
-    assert.equal(replay.billingCharge.replayed,true);
+    }),error=>error.code==="BILLING_SPEND_ALREADY_RESERVED"&&error.status===409);
+    assert.equal(db.prepare("SELECT COUNT(*) AS count FROM remote_usage_reservations WHERE owner_id=?").get("billing-remote-owner").count,1);
     assert.equal(getBillingBalance(db,"billing-remote-owner"),17);
     process.env.CREDITS_DAILY_FREE="0";
     touchBillingAccount(db,{id:"billing-empty-owner",email:"billing-empty@example.test"});
