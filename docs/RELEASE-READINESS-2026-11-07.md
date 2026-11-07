@@ -352,3 +352,38 @@ Primary evidence:
 ### Release boundaries
 
 No production merge/deployment, staging activation, paid provider request, payment transaction, shared/production database migration, suspended Render service activation or Cloudflare R2 enablement was performed. PR #206 remains draft.
+
+
+## Continuation checkpoint — legacy model execution hardening (2026-11-07)
+
+### Reverse-engineering finding
+
+The newer evidence-backed `VIDEO_PROVIDER_CATALOG` correctly marks Kling 4.0 Flash (`kling-4.0-flash`) and Gemini Omni 1.2 Flash (`gemini-omni-1.2-flash`) as disabled / `not_implemented`. However, the older synchronous Runway gateway also exposes these model IDs through `listRunwayVideoModels()`, and the legacy `video.generate` workflow executor accepts a node-level model override. This created a policy-bypass risk: catalogue-only models could be selected through the older path despite the governed cloud-worker release gate.
+
+### Code changes pushed
+
+- Added `isLegacyVideoModelSelectable(modelId)` to `server/video-provider-registry.mjs`, explicitly mapping the two legacy aliases to their evidence-backed catalogue records.
+- Updated `server/provider-registry.mjs` to exclude these models from the legacy provider's available-model list and to mark a disabled configured model as not ready.
+- Updated `server/workflow-executor.mjs` to reject a node-level override for a disabled model before budget reservation or provider submission, returning `VIDEO_MODEL_EXECUTION_DISABLED`.
+- Added unit coverage in `server/tests/video-provider-registry.test.mjs` and `server/tests/provider-registry.test.mjs`.
+
+### Verification status
+
+- Source changes are present on `integration/omni-provider-workers-2026`.
+- Latest source head at the time of this note: `344baee1b57a1ef18c6a42bd0d84635412ac4a8b` was the head observed by the first triggered CI runs; follow-up formatting/import corrections were subsequently pushed in `5c75dc165eefbb9dd3d5a21456075c5095bb8828`.
+- CI was queued/in progress for the earlier head and has **not yet been verified against the latest corrected head**. Do not mark this fix CI-passed until GitHub Actions checks on the exact current PR head complete successfully.
+- No local test execution is claimed.
+
+### Market research update
+
+Fresh public product evidence confirms the competitive bar:
+- Runway's September 8, 2026 plugin places generation and Aleph editing inside Premiere Pro and After Effects: https://runway.com/news/company-news/runway-for-adobe
+- Adobe Premiere's September 2026 Generative Media Tool generates video and sound effects directly into editable timeline clips, with reference frames and partner-model choice: https://helpx.adobe.com/premiere/desktop/edit-projects/edit-with-generative-ai/generative-media-tool-overview.html
+- Adobe's collaboration workflow emphasizes timestamped comments, annotations, review versions and importing feedback as timeline markers: https://helpx.adobe.com/premiere/desktop/collaborate-with-others/collaboration-in-premiere.html
+- Runway's September 4, 2026 Team Plan describes pooled credits, shared projects, storage and collaboration: https://runway.com/changelog
+
+Implication: prioritize reliable timeline-native handoff, project budgets, review/versioning and cross-editor interoperability after the governed generation bridge; do not compete on model count alone.
+
+### Boundaries
+
+PR #206 remains draft and unmerged. No provider call, paid generation, billing transaction, database migration, production deployment, shared Supabase change, suspended Render activation or R2 enablement was performed.
