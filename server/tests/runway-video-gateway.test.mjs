@@ -40,7 +40,7 @@ test("image-to-video rejects oversized or malformed frame data",()=>{
  assert.throws(()=>buildRunwayImageToVideoPayload({model:"seedance2_5",prompt:"A scene",promptImage:"https://example.com/frame.png"}),e=>e.code==="VIDEO_GATEWAY_INVALID_INPUT");
  assert.throws(()=>buildRunwayImageToVideoPayload({model:"seedance2_5",prompt:"A scene",promptImage:"data:image/png;base64,"+"A".repeat(7*1024*1024)}),e=>e.code==="VIDEO_GATEWAY_INVALID_INPUT");
 });
-test("capabilities are model-specific and never claim reference inputs for text-only adapter",()=>{
+test("capabilities are model-specific and declare only implemented first-frame reference inputs",()=>{
  const caps=getRunwayVideoCapabilities("seedance2_5");
  assert.equal(caps.referenceImages,true);
  assert.equal(caps.startFrame,true);
