@@ -241,37 +241,54 @@ export function receiveDodoWebhook(db, {
   const type = String(payload?.type || "");
   const eventTimestamp = String(payload?.timestamp || "");
   const data = payload?.data;
-  if (!Number.isFinite(Date.parse(eventTimestamp))) throw fail("Dodo webhook event timestamp is invalid.", "DODO_WEBHOOK_INVALID");
-  if (!SUBSCRIPTION_EVENTS.has(type) || !data || typeof data !== "object") {
-    throw fail("Dodo webhook event is unsupported or malformed.", "DODO_WEBHOOK_INVALID");
+  if (!Number.isFinite(Date.parse(eventTimestamp)) || !data || typeof data !== "object") {
+    throw fail("Dodo webhook event timestamp or payload is invalid.", "DODO_WEBHOOK_INVALID");
   }
-  const metadata = data.metadata && typeof data.metadata === "object" ? data.metadata : {};
-  const minimal = {
-    type,
-    timestamp: String(payload.timestamp || ""),
-    data: {
-      subscription_id: String(data.subscription_id || ""),
-      product_id: String(data.product_id || ""),
-      status: String(data.status || ""),
-      currency: String(data.currency || "").toUpperCase(),
-      recurring_pre_tax_amount: Number(data.recurring_pre_tax_amount || 0),
-      previous_billing_date: data.previous_billing_date || null,
-      next_billing_date: data.next_billing_date || null,
-      payment_id: data.payment_id || null,
-      has_payment_method: data.has_payment_method === true,
-      cancel_at_next_billing_date: data.cancel_at_next_billing_date === true,
-      past_due_ends_at: data.past_due_ends_at || null,
-      customer_id: String(data.customer?.customer_id || ""),
-      metadata: {
-        executive_visuals_order_id: String(metadata.executive_visuals_order_id || ""),
-        executive_visuals_user_id: String(metadata.executive_visuals_user_id || ""),
-        executive_visuals_plan_id: String(metadata.executive_visuals_plan_id || ""),
-        executive_visuals_plan_code: String(metadata.executive_visuals_plan_code || "")
-      }
+  let minimal;
+  if(type==="refund.succeeded"){
+    const refundId=String(data.refund_id||"");
+    const paymentId=String(data.payment_id||"");
+    const amount=Number(data.amount);
+    const currency=String(data.currency||"").toUpperCase();
+    if(!/^[A-Za-z0-9_-]{6,128}$/.test(refundId)||!/^[A-Za-z0-9_-]{6,128}$/.test(paymentId)||
+        !Number.isSafeInteger(amount)||amount<=0||!/^[A-Z]{3}$/.test(currency)){
+      throw fail("Dodo refund webhook fields are invalid.","DODO_REFUND_INVALID");
     }
-  };
-  if (!minimal.data.subscription_id && !minimal.data.metadata.executive_visuals_order_id) {
-    throw fail("Dodo event lacks a subscription or local checkout reference.", "DODO_WEBHOOK_INVALID");
+    minimal={
+      type,timestamp:eventTimestamp,
+      data:{payload_type:"Refund",refund_id:refundId,payment_id:paymentId,amount,currency,
+        status:String(data.status||"succeeded"),customer_id:String(data.customer?.customer_id||"")}
+    };
+  }else{
+    if(!SUBSCRIPTION_EVENTS.has(type))throw fail("Dodo webhook event is unsupported or malformed.","DODO_WEBHOOK_INVALID");
+    const metadata = data.metadata && typeof data.metadata === "object" ? data.metadata : {};
+    minimal = {
+      type,
+      timestamp: eventTimestamp,
+      data: {
+        subscription_id: String(data.subscription_id || ""),
+        product_id: String(data.product_id || ""),
+        status: String(data.status || ""),
+        currency: String(data.currency || "").toUpperCase(),
+        recurring_pre_tax_amount: Number(data.recurring_pre_tax_amount || 0),
+        previous_billing_date: data.previous_billing_date || null,
+        next_billing_date: data.next_billing_date || null,
+        payment_id: data.payment_id || null,
+        has_payment_method: data.has_payment_method === true,
+        cancel_at_next_billing_date: data.cancel_at_next_billing_date === true,
+        past_due_ends_at: data.past_due_ends_at || null,
+        customer: { customer_id: String(data.customer?.customer_id || "") },
+        metadata: {
+          executive_visuals_order_id: String(metadata.executive_visuals_order_id || ""),
+          executive_visuals_user_id: String(metadata.executive_visuals_user_id || ""),
+          executive_visuals_plan_id: String(metadata.executive_visuals_plan_id || ""),
+          executive_visuals_plan_code: String(metadata.executive_visuals_plan_code || "")
+        }
+      }
+    };
+    if (!minimal.data.subscription_id && !minimal.data.metadata.executive_visuals_order_id) {
+      throw fail("Dodo event lacks a subscription or local checkout reference.", "DODO_WEBHOOK_INVALID");
+    }
   }
   const hash = createHash("sha256").update(safeJson(minimal)).digest("hex");
   const existing = db.prepare("SELECT payload_hash FROM billing_provider_events WHERE provider='dodo' AND event_id=?").get(webhookId);
