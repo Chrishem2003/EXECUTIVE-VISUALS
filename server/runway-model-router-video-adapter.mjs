@@ -167,6 +167,32 @@ export function createRunwayModelRouterVideoAdapter({
       routedInput(merged);
       return merged;
     },
+    async preflight(input) {
+      assertEnabled();
+      const response = await request("/generate/video", {
+        method: "POST",
+        body: { configId: slug, dryRun: true, input: routedInput(input) }
+      });
+      if (typeof response.id === "string" && response.id.trim()) {
+        throw fail("Runway dry-run unexpectedly returned a task ID; quote was quarantined.", "RUNWAY_ROUTER_DRY_RUN_INVALID");
+      }
+      const routing = boundedObject(response.routing, "dry-run routing metadata");
+      const credits = routing.estimatedCost?.credits;
+      if (routing.configId !== slug || typeof routing.model !== "string" || !routing.model.trim() ||
+          typeof routing.provider !== "string" || !routing.provider.trim() ||
+          typeof credits !== "number" || !Number.isFinite(credits) || credits < 0) {
+        throw fail("Runway dry-run omitted a valid model, route or estimated credit ceiling.", "RUNWAY_ROUTER_DRY_RUN_INVALID");
+      }
+      return Object.freeze({
+        billable: false,
+        configId: slug,
+        model: routing.model,
+        provider: routing.provider,
+        estimatedCredits: credits,
+        estimatedUsd: Math.round(credits * 0.01 * 10000) / 10000,
+        routing
+      });
+    },
     async submit(input) {
       assertEnabled();
       const body = { configId: slug, input: routedInput(input) };
