@@ -220,3 +220,34 @@ test("late successful events cannot settle failed or expired orders", async () =
   assert.equal(getBillingBalance(db, order.userId), 0);
   db.close();
 });
+
+
+test("concurrent webhook workers claim an event once using a short processing lease", async () => {
+  const { db, order } = setup();
+  receiveFlutterwaveWebhook(db, signedPayload(payload(order)));
+  let release;
+  const wait = new Promise(resolve => { release = resolve; });
+  let verifyCalls = 0;
+  const first = processNextFlutterwaveWebhook(db, {
+    verifyTransaction: async () => {
+      verifyCalls += 1;
+      await wait;
+      return { id: 123456, tx_ref: order.txRef, status: "successful", currency: "UGX", amount: 50000 };
+    }
+  });
+  await new Promise(resolve => setImmediate(resolve));
+  const second = await processNextFlutterwaveWebhook(db, {
+    verifyTransaction: async () => {
+      verifyCalls += 1;
+      return { id: 123456, tx_ref: order.txRef, status: "successful", currency: "UGX", amount: 50000 };
+    }
+  });
+  assert.equal(second.processed, false);
+  assert.equal(verifyCalls, 1);
+  release();
+  const completed = await first;
+  assert.equal(completed.paid, true);
+  assert.equal(getBillingBalance(db, order.userId), 1200);
+  assert.equal(db.prepare("SELECT processing_at,lease_expires_at FROM billing_provider_events").get().processing_at, null);
+  db.close();
+});
