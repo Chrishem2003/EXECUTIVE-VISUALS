@@ -392,7 +392,9 @@ export function createAppServer() {
       const user=await authenticate(req,res);
       if(!user){fail(res,401,"AUTH_REQUIRED","Sign in to access this workspace.");return;}
 const billingAccount=touchBillingAccount(db,user);
-      if(billingAccount.status==="suspended"){fail(res,403,"ACCOUNT_SUSPENDED","This account is suspended. Contact workspace support.");return;}
+      const suspendedBillingAccess=path==="/api/billing/overview"||path==="/api/billing/plans"||path==="/api/billing/customer-portal"||
+        /^\/api\/billing\/(?:orders\/ev_[a-f0-9]{32}|dodo-orders\/[0-9a-f-]{36})$/i.test(path);
+      if(billingAccount.status==="suspended"&&!suspendedBillingAccess){fail(res,403,"ACCOUNT_SUSPENDED","This account is suspended. Billing status and cancellation access remain available.");return;}
       const admin=isAdminUser(user);
       if(path==="/api/me"&&req.method==="GET"){send(res,200,{user,authMode:AUTH_MODE,capabilities:{admin,billing:true}},cors);return;}
       if(path==="/api/billing/plans"&&req.method==="GET"){const plans=listBillingPlans(db).map(plan=>({...plan,subscriptionCheckoutAvailable:dodoRecurringCheckoutReady()&&/^pdt_[A-Za-z0-9_-]{6,120}$/.test(String(process.env[dodoProductEnvName(plan.code)]||""))}));send(res,200,{plans},cors);return;}
