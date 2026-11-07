@@ -47,3 +47,28 @@ test("rejects malformed profile dimensions, aspect ratios and frame rates",()=>{
 test("reports a missing sequence as a delivery error",()=>{
  assert.equal(analyzeTimelineDelivery(null,{name:"Social"} )[0].code,"NO_SEQUENCE");
 });
+
+test("requires saved cue-level caption evidence when the delivery profile requests it",()=>{
+ const value=timeline();
+ value.tracks[2].clips=[{id:"caption-clip",name:"English captions",assetId:"caption-asset",enabled:true}];
+ const missing=analyzeTimelineDelivery(value,{name:"Accessible social",requireCaptions:true,requireValidatedCaptions:true});
+ assert.ok(missing.some(item=>item.code==="DELIVERY_CAPTION_VALIDATION_MISSING"));
+ const passed=analyzeTimelineDelivery(value,{name:"Accessible social",requireCaptions:true,requireValidatedCaptions:true},[
+  {id:"caption-asset",name:"captions.vtt",mediaType:"text/vtt",metadata:{captionValidation:{status:"passed",cueCount:12}}}
+ ]);
+ assert.deepEqual(passed.map(item=>item.code),["DELIVERY_PROFILE_PASSED"]);
+});
+
+test("keeps caption readability warnings visible and blocks invalid caption evidence",()=>{
+ const value=timeline();
+ value.tracks[2].clips=[{id:"caption-clip",name:"English captions",assetId:"caption-asset",enabled:true}];
+ const review=analyzeTimelineDelivery(value,{name:"Accessible social",requireValidatedCaptions:true},[
+  {id:"caption-asset",metadata:{captionValidation:{status:"review"}}}
+ ]);
+ assert.ok(review.some(item=>item.code==="DELIVERY_CAPTION_VALIDATION_REVIEW"&&item.severity==="warning"));
+ assert.ok(!review.some(item=>item.code==="DELIVERY_PROFILE_PASSED"));
+ const blocked=analyzeTimelineDelivery(value,{name:"Accessible social",requireValidatedCaptions:true},[
+  {id:"caption-asset",metadata:{captionValidation:{status:"blocked"}}}
+ ]);
+ assert.ok(blocked.some(item=>item.code==="DELIVERY_CAPTION_VALIDATION_BLOCKED"&&item.severity==="error"));
+});
