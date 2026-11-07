@@ -13,6 +13,9 @@ let workspaceSaveChain:Promise<void>=Promise.resolve();
 const state:{status:"checking"|"offline"|"auth-required"|"online";authMode:"local"|"supabase";user:RuntimeUser|null;projects:RuntimeProject[];assets:RuntimeAsset[];jobs:RuntimeJob[];audit:Array<Record<string,unknown>>;members:Array<{id:string;email:string;role:string;createdAt:string}>;reviews:RuntimeReview[];projectId:string;message:string;ffmpeg:boolean;ffprobe:boolean;textGatewayEnabled:boolean;textGatewayConfigured:boolean;imageGatewayEnabled:boolean;imageGatewayConfigured:boolean;providers:ProviderStatus[];remoteUsage:RemoteUsage|null}={
  status:"checking",authMode:"local",user:null,projects:[],assets:[],jobs:[],audit:[],members:[],reviews:[],projectId:"",message:"",ffmpeg:false,ffprobe:false,textGatewayEnabled:false,textGatewayConfigured:false,imageGatewayEnabled:false,imageGatewayConfigured:false,providers:[],remoteUsage:null
 };
+let jobsPollTimer:number|null=null;
+let jobsPollInFlight=false;
+let jobsLastCheckedAt=0;
 const esc=(value:unknown)=>String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]||c));
 const fmt=(value:string)=>new Date(value).toLocaleString();
 function statusMarkup(){return '<span class="runtime-status '+state.status+'"><i></i>'+esc(state.status==="online"?"API CONNECTED":state.status==="auth-required"?"SIGN IN REQUIRED":state.status==="offline"?"OFFLINE":"CONNECTING")+'</span>';}
@@ -47,9 +50,15 @@ function renderAssets(){
  }).join("")+'</div>';
 }
 function renderJobs(){
- if(!state.jobs.length)return '<div class="empty">No jobs submitted. Media processing jobs will appear here with progress, events and output assets.</div>';
- return '<div class="runtime-jobs">'+state.jobs.map(j=>'<article class="runtime-job"><div class="runtime-job-heading"><b>'+esc(j.jobType)+'</b><span class="job-status '+esc(j.status)+'">'+esc(j.status)+'</span></div><code>'+esc(j.id)+'</code><div class="progress"><i style="width:'+Math.max(0,Math.min(100,j.progress))+'%"></i></div><small>'+Math.round(j.progress)+'% · '+fmt(j.createdAt)+'</small>'+(j.error?'<p class="job-error">'+esc(j.error.code||"ERROR")+' · '+esc(j.error.message||"")+'</p>':'')+(j.status==="queued"||j.status==="running"?'<button data-ev-cancel="'+esc(j.id)+'">Cancel</button>':'')+((j.output&&typeof j.output==="object"&&"outputAsset" in j.output&&j.output.outputAsset&&typeof j.output.outputAsset==="object"&&"id" in j.output.outputAsset)?'<a class="download-output" href="/api/assets/'+esc((j.output.outputAsset as {id:string}).id)+'/file">Download output · '+esc((j.output.outputAsset as {name?:string}).name||"media file")+'</a>':'')+'</article>').join("")+'</div>';
+ const queued=state.jobs.filter(job=>job.status==="queued").length;
+ const running=state.jobs.filter(job=>job.status==="running").length;
+ const failed=state.jobs.filter(job=>job.status==="failed").length;
+ const completed=state.jobs.filter(job=>job.status==="completed").length;
+ const summary='<div class="runtime-summary"><div><small>Queued</small><b>'+queued+'</b></div><div><small>Running</small><b>'+running+'</b></div><div><small>Completed</small><b>'+completed+'</b></div><div><small>Failed</small><b>'+failed+'</b></div></div><p class="runtime-engine-note">Live queue refreshes every 5 seconds while this workspace is visible'+(jobsLastCheckedAt?' · last checked '+fmt(new Date(jobsLastCheckedAt).toISOString()):' · waiting for first refresh')+'.</p>';
+ if(!state.jobs.length)return summary+'<div class="empty">No jobs submitted. New processing tasks will appear here automatically.</div>';
+ return summary+'<div class="runtime-jobs">'+state.jobs.map(j=>'<article class="runtime-job"><div class="runtime-job-heading"><b>'+esc(j.jobType)+'</b><span class="job-status '+esc(j.status)+'">'+esc(j.status)+'</span></div><code>'+esc(j.id)+'</code><div class="progress"><i style="width:'+Math.max(0,Math.min(100,j.progress))+'%"></i></div><small>'+Math.round(j.progress)+'% · '+fmt(j.createdAt)+'</small>'+(j.error?'<p class="job-error">'+esc(j.error.code||"ERROR")+' · '+esc(j.error.message||"")+'</p>':'')+(j.status==="queued"||j.status==="running"?'<button data-ev-cancel="'+esc(j.id)+'">Cancel</button>':'')+((j.output&&typeof j.output==="object"&&"outputAsset" in j.output&&j.output.outputAsset&&typeof j.output.outputAsset==="object"&&"id" in j.output.outputAsset)?'<a class="download-output" href="/api/assets/'+esc((j.output.outputAsset as {id:string}).id)+'/file">Download output · '+esc((j.output.outputAsset as {name?:string}).name||"media file")+'</a>':'')+'</article>').join("")+'</div>';
 }
+
 export function renderRuntimeWorkspace(){
  return '<div id="runtime-workspace" data-runtime-view="runtime"><div class="runtime-toolbar">'+statusMarkup()+'<button class="secondary" data-ev-action="refresh">↻ Refresh</button>'+(state.user?'<button class="secondary" data-ev-action="logout">Sign out · '+esc(state.user.email)+'</button>':'')+'</div>'+
  (state.status==="offline"?'<div class="notice">The local API is not reachable. Start the complete stack with <code>npm run dev</code>. Planning workspaces remain available; uploads and processing require the API.</div>':'')+
@@ -178,6 +187,21 @@ async function refresh(){
  else {state.members=[];state.reviews=[];}
 }
 function paint(){updateShell();renderGate();const root=document.querySelector<HTMLElement>("#runtime-workspace");if(root){const view=root.dataset.runtimeView;root.outerHTML=view==="library"?renderAssetLibrary():view==="engines"?renderEngineStatus():view==="overview"?renderRuntimeOverview():renderRuntimeWorkspace();}}
+function startRuntimeJobPolling(){
+ if(jobsPollTimer!==null)window.clearInterval(jobsPollTimer);
+ jobsPollTimer=window.setInterval(async()=>{
+  if(jobsPollInFlight||state.status!=="online"||document.visibilityState!=="visible"||!document.querySelector("#runtime-workspace[data-runtime-view='runtime']"))return;
+  jobsPollInFlight=true;
+  try{
+   const response=await apiRequest<{jobs:RuntimeJob[]}>("/api/jobs");
+   state.jobs=response.jobs||[];
+   jobsLastCheckedAt=Date.now();
+   paint();
+  }catch{
+   // Preserve the last known queue state; a transient poll failure must not sign the user out.
+  }finally{jobsPollInFlight=false;}
+ },5000);
+}
 export async function initRuntime(){
  try{
   const health=await apiRequest<{authMode:"local"|"supabase";media:{ffmpeg:boolean;ffprobe:boolean};textGateway:{enabled:boolean;configured:boolean};imageGateway:{enabled:boolean;configured:boolean}}>("/api/health");
@@ -186,6 +210,7 @@ export async function initRuntime(){
   catch(error){if(error instanceof ApiError&&error.status===401)state.status="auth-required";else throw error;}
  }catch(error){state.status="offline";state.message=error instanceof Error?error.message:"API unavailable";}
  paint();
+ if(state.status==="online")startRuntimeJobPolling();
  window.dispatchEvent(new Event("ev:runtime-ready"));
 }
 async function authenticate(form:HTMLFormElement){
@@ -198,7 +223,7 @@ async function authenticate(form:HTMLFormElement){
    if(response.confirmationRequired){state.user=null;state.status="auth-required";state.message="Account created. Check your email to confirm the address, then sign in.";paint();return;}
    state.user=response.user;
   }
-  const me=await apiRequest<{user:RuntimeUser}>("/api/me");state.user=me.user;state.status="online";state.message="";await refresh();window.dispatchEvent(new Event("ev:authenticated"));paint();
+  const me=await apiRequest<{user:RuntimeUser}>("/api/me");state.user=me.user;state.status="online";state.message="";await refresh();window.dispatchEvent(new Event("ev:authenticated"));paint();startRuntimeJobPolling();
  }catch(error){clearApiAccessToken();state.status="auth-required";state.message=error instanceof Error?error.message:"Authentication failed.";paint();}
 }
 document.addEventListener("click",event=>{
