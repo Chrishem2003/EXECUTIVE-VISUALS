@@ -244,3 +244,40 @@ test("prepares an owner-scoped first frame and submits Gen-4.5 image-to-video", 
   assert.ok(post);
   assert.equal(JSON.parse(post.options.body).promptImage, "runway://ephemeral/first-frame");
 });
+
+
+test("prepares an authorized SDR source and submits a durable Ruby HDR task", async () => {
+  const calls = [];
+  const adapter = createRunwayCloudVideoAdapter({
+    ...base, model: "ruby",
+    prepareInput: async (input, context) => {
+      assert.equal(input.sourceVideoAssetId, "sdr-source");
+      assert.equal(context.job.owner_id, "owner-1");
+      return { sourceVideo: { buffer: Buffer.alloc(512), filename: "sdr.mp4", mimeType: "video/mp4" } };
+    },
+    fetchImpl: async (url, options = {}) => {
+      const target = String(url);
+      calls.push({ url: target, options });
+      if (target.endsWith("/uploads")) return new Response(JSON.stringify({
+        uploadUrl: "https://uploads.runway.example/signed-hdr",
+        fields: { key: "hdr-source" },
+        runwayUri: "runway://ephemeral/hdr-source"
+      }), { status: 200 });
+      if (target === "https://uploads.runway.example/signed-hdr") return new Response(null, { status: 204 });
+      if (target.endsWith("/video_to_hdr")) return new Response(JSON.stringify({ id }), { status: 200 });
+      throw new Error("unexpected URL " + target);
+    }
+  });
+  const input = {
+    provider: "runway", model: "ruby", operation: "video-to-hdr",
+    sourceVideoAssetId: "sdr-source", durationSeconds: 10, outputFormat: "hlg"
+  };
+  const prepared = await adapter.prepareInput(input, { job: { owner_id: "owner-1" } });
+  assert.equal(prepared.videoUri, "runway://ephemeral/hdr-source");
+  assert.deepEqual(await adapter.submit(prepared), { taskId: id, status: "queued" });
+  const post = calls.find(call => call.url.endsWith("/video_to_hdr"));
+  assert.ok(post);
+  assert.deepEqual(JSON.parse(post.options.body), {
+    model: "ruby", videoUri: "runway://ephemeral/hdr-source", outputFormat: "hlg"
+  });
+});
