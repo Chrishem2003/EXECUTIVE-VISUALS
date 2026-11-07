@@ -175,7 +175,9 @@ export function receiveDodoWebhook(db, {
     throw fail("Dodo webhook body is not valid JSON.", "DODO_WEBHOOK_INVALID");
   }
   const type = String(payload?.type || "");
+  const eventTimestamp = String(payload?.timestamp || "");
   const data = payload?.data;
+  if (!Number.isFinite(Date.parse(eventTimestamp))) throw fail("Dodo webhook event timestamp is invalid.", "DODO_WEBHOOK_INVALID");
   if (!SUBSCRIPTION_EVENTS.has(type) || !data || typeof data !== "object") {
     throw fail("Dodo webhook event is unsupported or malformed.", "DODO_WEBHOOK_INVALID");
   }
@@ -247,9 +249,14 @@ function insertSubscriptionCredits(db, { userId, plan, subscriptionId, paymentId
 }
 
 export function processNextDodoWebhook(db, { env = process.env } = {}) {
-  const event = db.prepare(`SELECT * FROM billing_provider_events
-    WHERE provider='dodo' AND processed_at IS NULL AND attempts<100
-    ORDER BY created_at ASC LIMIT 1`).get();
+  const pendingEvents = db.prepare(`SELECT * FROM billing_provider_events
+    WHERE provider='dodo' AND processed_at IS NULL AND attempts<1000
+    ORDER BY created_at ASC LIMIT 100`).all();
+  const event = pendingEvents.sort((a,b) => {
+    const left = Date.parse(parseJson(a.payload_json).timestamp || "") || 0;
+    const right = Date.parse(parseJson(b.payload_json).timestamp || "") || 0;
+    return left - right || String(a.created_at).localeCompare(String(b.created_at));
+  })[0];
   if (!event) return { processed: false };
   const payload = parseJson(event.payload_json);
   const type = payload.type;
