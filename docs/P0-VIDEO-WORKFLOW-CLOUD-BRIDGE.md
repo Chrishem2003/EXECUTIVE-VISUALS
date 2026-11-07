@@ -20,6 +20,26 @@ The repository contains a Runway Model Router adapter with a non-billable `prefl
 
 The application enqueue layer recognizes the logical `runway/model-router` identity behind explicit remote, worker, saved-config and USD budget gates, and the worker composition contains the router adapter. However, the source-controlled PostgreSQL function `enqueue_video_generation_job` still only allows `runway/gen4.5` and `google/gemini-omni-1.1-flash`; the worker's default `runwayModels` allowlist also omits `model-router`. The router is therefore not end-to-end enqueueable through the current SQL/worker contract. Enabling it requires a reviewed migration and explicit worker model registration, then disposable-PostgreSQL tests. Do not work around this by changing only the application allowlist.
 
+## Newly confirmed transformation submission blocker (2026-11-08)
+
+A source trace of `POST /api/cloud/transformations/:id/submit` confirms that the current Aleph 2 transformation path cannot successfully reach a paid enqueue:
+
+1. The transformation approval handler stores an `approvalId` only inside the `jobs.estimated_cost` JSON on the transformation-plan row. It does not insert a matching row into `video_generation_budget_approvals`.
+2. The durable enqueue RPC requires that exact approval UUID to exist in `video_generation_budget_approvals`, with matching owner, project, provider, model, request hash, currency, unexpired status and unused state.
+3. The enqueue client allowlist and SQL RPC currently accept only `runway/gen4.5` and `google/gemini-omni-1.1-flash`; they reject `runway/aleph2`.
+4. The Aleph 2 path also requires an enabled owner/project budget policy for `runway/aleph2`, with enough remaining spend and a matching rolling usage policy.
+
+Therefore the current transformation UI can create and approve a plan, but submit will fail before a durable job is created. This is a dead-end feature path, not a provider outage. Do not enable paid Aleph 2 execution or change only the model allowlist.
+
+### Required implementation sequence
+
+- At approval time, create a short-lived, exact-request approval record in `video_generation_budget_approvals`, bound to the server-derived request hash and the verified actor/project. Ensure the database write path respects the existing approval-owner trigger and least-privilege grants.
+- Require a preconfigured, enabled `runway/aleph2` budget policy; do not auto-create or silently raise customer limits.
+- Add a reviewed SQL migration for Aleph 2 only on `video-to-video` MP4 jobs. The database minimum must match the pricing snapshot: 28 credits / USD 0.28 per output second with the documented 56-credit / USD 0.56 minimum. The app estimator remains the more detailed source-media-aware check; SQL must enforce a conservative floor.
+- Update the enqueue client allowlist and worker model registration only after the migration exists.
+- Add disposable-PostgreSQL tests for approval owner/project/hash/expiry/consumption, policy limits, Aleph 2 operation restrictions, idempotency, and budget settlement/refund.
+- Keep the transformation submit route disabled until those tests and isolated staging acceptance pass.
+
 ## Required work before cloud mode can be enabled
 
 1. Add an authenticated customer API for quote, exact-input approval, enqueue, status and cancellation.
