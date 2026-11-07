@@ -18,7 +18,7 @@ This prevents an operator from assuming that setting a cloud-mode flag will rout
 
 The repository contains a Runway Model Router adapter with a non-billable `preflight()`, durable routing metadata on submit, task polling, private output ingestion and actual-cost resolution from the completed task's realized `cost.credits`. This is valuable existing infrastructure and should be reused rather than reimplemented.
 
-However, the current `server/cloud-video-enqueue.mjs` explicitly limits the deployed SQL enqueue contract to `runway/gen4.5` and `google/gemini-omni-1.1-flash`. A Runway Model Router identity is therefore not currently accepted by the durable enqueue boundary, even though its adapter exists. Enabling it requires a reviewed database contract/migration, provider/model registry alignment, pricing and approval semantics, and PostgreSQL tests. Do not work around this by changing the allowlist in application code alone.
+The application enqueue layer recognizes the logical `runway/model-router` identity behind explicit remote, worker, saved-config and USD budget gates, and the worker composition contains the router adapter. However, the source-controlled PostgreSQL function `enqueue_video_generation_job` still only allows `runway/gen4.5` and `google/gemini-omni-1.1-flash`; the worker's default `runwayModels` allowlist also omits `model-router`. The router is therefore not end-to-end enqueueable through the current SQL/worker contract. Enabling it requires a reviewed migration and explicit worker model registration, then disposable-PostgreSQL tests. Do not work around this by changing only the application allowlist.
 
 ## Required work before cloud mode can be enabled
 
@@ -30,6 +30,10 @@ However, the current `server/cloud-video-enqueue.mjs` explicitly limits the depl
 6. Settle only from provider-authoritative realized usage; reconcile ambiguous submission, cancellation, partial output and refunds without double charging.
 7. Add disposable-PostgreSQL end-to-end tests for tenant isolation, replay, idempotency, retry/recovery, no legacy fallback and downstream asset consumption.
 8. Complete isolated staging acceptance, rollback and operational runbooks before enabling the mode.
+
+## CI integration finding
+
+The current GitHub Actions quality workflow originally targeted only pull requests whose base is `main`. PR #211 targets the integration branch, so its changes did not receive the repository's full quality workflow. The workflow trigger now includes both `main` and `integration/omni-provider-workers-2026`, and pushes to that integration branch. This ensures feature PRs stacked on the integration branch can receive the same typecheck/build checks. Confirm the workflow actually triggers on the next push before treating CI as active.
 
 ## Verification
 
