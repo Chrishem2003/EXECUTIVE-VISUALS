@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { estimateRunwayImageCredits } from "../runway-image-pricing.mjs";
+import { estimateRunwayImageCredits, listRunwayImageModels } from "../runway-image-pricing.mjs";
 
 const date="2026-11-07";
 test("GPT Image 2.6 pricing matches documented 1K quality/aspect-ratio tiers",()=>{
@@ -34,4 +34,18 @@ test("unsupported models, ratio values, quality and dates fail closed",()=>{
   assert.throws(()=>estimateRunwayImageCredits({model:"gpt_image_2_6_flare",ratio:"16:10",pricingDate:date}),e=>e.code==="RUNWAY_IMAGE_PRICE_UNSUPPORTED_OPTION");
   assert.throws(()=>estimateRunwayImageCredits({model:"gpt_image_2_6_flare",quality:"xhigh",pricingDate:date}),e=>e.code==="RUNWAY_IMAGE_PRICE_INVALID_INPUT");
   assert.throws(()=>estimateRunwayImageCredits({model:"gpt_image_2_6_flare",pricingDate:"2026-02-31"}),e=>e.code==="RUNWAY_IMAGE_PRICE_INPUT_REQUIRED");
+});
+
+test("GPT Image 2.6 models are catalogued but cannot be selected for execution",()=>{
+  const models=listRunwayImageModels();
+  assert.deepEqual(models.map(model=>model.id),["gpt_image_2_6_flare","gpt_image_2_6_sunburst"]);
+  for(const model of models){
+    assert.equal(model.availability,"disabled");
+    assert.equal(model.executionAdapter,"not_implemented");
+    assert.equal(model.promptMaxCharacters,32000);
+    assert.equal(model.maxReferenceImages,16);
+    assert.deepEqual(model.resolutions,["1K","2K","4K"]);
+    assert.deepEqual(model.qualities,["low","medium","high"]);
+    assert.deepEqual(model.backgrounds,["auto","opaque","transparent"]);
+  }
 });
