@@ -68,18 +68,6 @@ test("Runway source preparation rejects untrusted signed URL origins before fetc
 
 test("Runway source resolver cancels oversized streamed bodies before buffering the full asset", async () => {
   let cancelled = false;
-  const { resolver } = fixture({
-    fetchImpl: async () => new Response(new ReadableStream({
-      start(controller) {
-        controller.enqueue(new Uint8Array(1024));
-        controller.enqueue(new Uint8Array(1024));
-      },
-      cancel() { cancelled = true; }
-    }), {
-      status: 200,
-      headers: { "content-type": "video/mp4", "content-length": String(bytes.length) }
-    })
-  });
   const boundedResolver = createRunwaySourceAssetResolver({
     assets: {
       async get() {
