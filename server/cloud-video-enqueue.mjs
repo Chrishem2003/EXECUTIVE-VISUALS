@@ -110,7 +110,7 @@ export function createCloudVideoEnqueue({
       const runwayUpscaleEnabled = provider === "runway" && model === "magnific_video_upscaler_creative" && input.operation === "video-upscale";
       const runwayHdrEnabled = provider === "runway" && model === "ruby" && input.operation === "video-to-hdr";
       const runwayRouterEnabled = provider === "runway" && model === "model-router" &&
-        (input.operation === undefined || input.operation === "text-to-video");
+        (input.operation === undefined || ["text-to-video", "image-to-video"].includes(input.operation));
       const runwayEnabled = runwayTextEnabled || runwayImageEnabled || runwayEditEnabled || runwayUpscaleEnabled || runwayHdrEnabled || runwayRouterEnabled;
       const googleEnabled = provider === "google" && model === "gemini-omni-1.1-flash";
       if (runwayRouterEnabled && (
