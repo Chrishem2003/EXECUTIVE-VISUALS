@@ -303,7 +303,7 @@ test("Aleph2 enqueue requires owner-scoped probed source metadata and reserves f
   const client = createCloudVideoEnqueue({
     ...base,
     resolveRunwaySourceMetadata: async scope => {
-      assert.deepEqual(scope, { ownerId, projectId, assetId: sourceVideoAssetId });
+      assert.deepEqual(scope, { ownerId, projectId, assetId: sourceVideoAssetId, operation: "video-to-video" });
       return {
         ownerId, projectId, assetId: sourceVideoAssetId,
         mediaType: "video/mp4", durationSeconds: 11.2, frameCount: 336
