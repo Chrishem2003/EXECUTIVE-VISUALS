@@ -348,3 +348,41 @@ test("Magnific upscale budget uses verified source frames, not caller-supplied l
   })), error => error.code === "VIDEO_SOURCE_METADATA_MISMATCH");
   assert.equal(calls, 0);
 });
+
+
+test("Ruby HDR enqueue requires verified SDR dimensions and reserves the published per-second cost", async () => {
+  let calls = 0;
+  const sourceVideoAssetId = "a23e4567-e89b-42d3-a456-426614174000";
+  const input = {
+    projectId, provider: "runway", model: "ruby", requestHash,
+    operation: "video-to-hdr", sourceVideoAssetId,
+    durationSeconds: 15, outputFormat: "hdr10"
+  };
+  const sourceMetadata = {
+    ownerId, projectId, assetId: sourceVideoAssetId,
+    mediaType: "video/mp4", durationSeconds: 14.2, frameCount: 426,
+    sourceDynamicRange: "sdr", sourceWidth: 1920, sourceHeight: 1080
+  };
+  const client = createCloudVideoEnqueue({
+    ...base,
+    resolveRunwaySourceMetadata: async scope => {
+      assert.deepEqual(scope, { ownerId, projectId, assetId: sourceVideoAssetId });
+      return sourceMetadata;
+    },
+    fetchImpl: async () => { calls++; return response([resultRow]); }
+  });
+  const queued = await client.enqueue(args({
+    model: "ruby", input, reservedAmount: 3.5
+  }));
+  assert.equal(queued.status, "queued");
+  assert.equal(calls, 1);
+  const nonSdr = createCloudVideoEnqueue({
+    ...base,
+    resolveRunwaySourceMetadata: async () => ({ ...sourceMetadata, sourceDynamicRange: "hdr" }),
+    fetchImpl: async () => { calls++; return response([resultRow]); }
+  });
+  await assert.rejects(() => nonSdr.enqueue(args({
+    model: "ruby", input, reservedAmount: 3.5
+  })), error => error.code === "VIDEO_SOURCE_METADATA_INVALID");
+  assert.equal(calls, 1);
+});
