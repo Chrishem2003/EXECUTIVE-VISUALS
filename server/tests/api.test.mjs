@@ -12,7 +12,7 @@ const dataDir=await mkdtemp(join(tmpdir(),"ev-api-test-"));
 const webDir=join(dataDir,"web");await mkdir(webDir,{recursive:true});await writeFile(join(webDir,"index.html"),"<!doctype html><html><body>test</body></html>");
 const child=spawn(process.execPath,["server/index.mjs"],{
   cwd:process.cwd(),
-  env:{...process.env,NODE_ENV:"development",AUTH_MODE:"local",AUTH_RATE_LIMIT:"1000",REMOTE_AI_DAILY_REQUEST_LIMIT:"7",API_HOST:"127.0.0.1",API_PORT:String(port),DATA_DIR:dataDir,MEDIA_ROOT:join(dataDir,"media"),WEB_ROOT:webDir,DISABLE_WORKER:"true"},
+  env:{...process.env,NODE_ENV:"development",AUTH_MODE:"local",AUTH_RATE_LIMIT:"1000",REMOTE_AI_DAILY_REQUEST_LIMIT:"7",API_HOST:"127.0.0.1",API_PORT:String(port),DATA_DIR:dataDir,MEDIA_ROOT:join(dataDir,"media"),WEB_ROOT:webDir,VIDEO_MODEL_PRICING_JSON:JSON.stringify([{provider:"fal",model:"fal-ai/example-video",currency:"USD",sourceUrl:"https://fal.ai/pricing",observedAt:"2026-11-01T00:00:00.000Z",expiresAt:"2026-12-01T00:00:00.000Z",ratesPerSecond:{"720p":0.12},audioSurchargePerSecond:0.02,referenceImageFee:0.03,billingIncrementSeconds:1}]),DISABLE_WORKER:"true"},
   stdio:["ignore","pipe","pipe"]
 });
 let stdout="",stderr="";
@@ -61,9 +61,29 @@ test("provider catalog is authenticated, safe and read-only",async()=>{
   assert.equal(catalog.providers.length,7);
   assert.equal(catalog.policy.requestsSubmitted,false);
   assert.equal(catalog.policy.credentialsExposed,false);
-  assert.equal(catalog.policy.pricesEstimated,false);
+  assert.equal(catalog.policy.pricesEstimated,true);
+  assert.equal(catalog.providers.find(item=>item.id==="video").pricing.models[0].model,"fal-ai/example-video");
   assert.equal(JSON.stringify(catalog).includes("API_KEY"),false);
   assert.equal(JSON.stringify(catalog).includes("Bearer "),false);
+});
+
+test("video cost estimate API is authenticated, read-only and uses configured model pricing",async()=>{
+  assert.equal((await fetch(base+"/api/video-cost-estimate",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({provider:"fal",model:"fal-ai/example-video",durationSeconds:5,resolution:"720p",audioMode:"generated",referenceImageCount:1})})).status,401);
+  const cookie=await register("video-cost-owner@example.test");
+  const response=await request("/api/video-cost-estimate",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({provider:"fal",model:"fal-ai/example-video",durationSeconds:5,resolution:"720p",audioMode:"generated",referenceImageCount:1})},cookie);
+  assert.equal(response.status,200);
+  const quote=await response.json();
+  assert.equal(quote.available,true);
+  assert.equal(quote.estimated,true);
+  assert.equal(quote.amount,0.78);
+  assert.equal(quote.currency,"USD");
+  assert.equal(quote.pricing.sourceUrl,"https://fal.ai/pricing");
+  assert.equal(quote.breakdown.video,0.6);
+  assert.equal(quote.breakdown.audio,0.1);
+  assert.equal(quote.breakdown.references,0.03);
+  assert.equal(quote.disclaimer.includes("Estimate only"),true);
+  const unknown=await request("/api/video-cost-estimate",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({provider:"fal",model:"unknown",durationSeconds:5})},cookie);
+  assert.equal((await unknown.json()).available,false);
 });
 
 test("usage API reports account request allowance without exposing secrets",async()=>{
