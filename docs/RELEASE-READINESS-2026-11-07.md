@@ -7,9 +7,9 @@
 The consolidated candidate is PR #206:
 https://github.com/Chrishem2003/EXECUTIVE-VISUALS/pull/206
 
-- Current head at latest continuation check: `47f5d92606971930c3f2e2fc161a744d92e916b4`
+- Current head at latest continuation check: `cd9974577850a4d28850301f0edcc3313bbb6141`
 - Base: `main` (`18cb97bf027dc5037fc1d932f36dd4d00f6e6c67`)
-- Branch comparison: 376 commits ahead, 0 behind; 124 changed files.
+- Branch comparison: 385 commits ahead, 0 behind; 128 changed files.
 - Quality checks on the current head: passed.
 - Google Drive integration quality on the current head: passed, including disposable PostgreSQL integration.
 - No production migrations, live provider requests, Google account transfers, or payment transactions were performed.
@@ -129,3 +129,13 @@ Because the integration branch is the Workers Builds production branch, future c
 ### Current release decision
 
 PR #206 remains open and draft. Do not merge it: Render production auto-deploys from `main`, the branch is 376 commits ahead, and the candidate still lacks isolated staging acceptance, durable database/media storage, backup/restore verification, payment sandbox acceptance, and actual provider-cost reconciliation. The separate Render testing service remains suspended. No Render service configuration, production database, production credentials, or paid provider request was changed during this continuation.
+
+## Continuation update — 2026-11-07 14:03 UTC
+
+- Latest PR #206 head: `cd9974577850a4d28850301f0edcc3313bbb6141`; 385 commits ahead of `main`, 0 behind; 128 changed files.
+- Quality Checks passed on this exact head.
+- Google Drive Integration Quality passed on this exact head, including disposable PostgreSQL integration.
+- Added a read-only Runway daily-usage reconciliation module and CLI. It compares Runway's organization-level daily model/API-key usage totals with local platform generation-spend estimates. It deliberately reports variance only and marks every row `settlementEligible=false`; it cannot settle individual customer jobs because the direct API usage endpoint is not task-correlated.
+- The new CLI uses the existing SQLite billing ledger in read-only mode and makes one bounded organization-usage request. It does not mutate balances, refunds, provider settings, or deployment resources.
+
+The release decision remains **blocked** for the same infrastructure and financial reasons above. The Cloudflare Worker remains a separate static/frontend preview with no `API_ORIGIN`; the Render production backend remains on `main` and has not been modified.
