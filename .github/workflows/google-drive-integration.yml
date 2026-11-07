@@ -63,6 +63,10 @@ jobs:
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261104143000_cloud_video_budget_enqueue.sql
       - name: Verify video queue, budget reservations and lease constraints
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/cloud-video-postgres-integration.sql
+      - name: Apply Gemini Omni interaction ownership and retention migration
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261105120000_google_video_interactions.sql
+      - name: Verify Gemini interaction ownership and retention constraints
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/google-video-interactions-postgres-integration.sql
       - name: Apply encrypted Google Drive connection migration
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261105150000_google_drive_connections.sql
       - name: Apply one-time OAuth state migration
