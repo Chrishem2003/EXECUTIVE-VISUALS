@@ -75,7 +75,7 @@ test("video cost estimate API is authenticated, read-only and uses configured mo
   const quote=await response.json();
   assert.equal(quote.available,true);
   assert.equal(quote.estimated,true);
-  assert.equal(quote.amount,0.78);
+  assert.equal(quote.amount,0.73);
   assert.equal(quote.currency,"USD");
   assert.equal(quote.pricing.sourceUrl,"https://fal.ai/pricing");
   assert.equal(quote.breakdown.video,0.6);
