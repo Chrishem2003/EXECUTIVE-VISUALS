@@ -39,8 +39,8 @@ export function createRunwayCloudVideoAdapter({
   timeoutMs = 30000
 } = {}) {
   const selectedModel = String(model || "").trim();
-  if (selectedModel !== "gen4.5") {
-    throw fail("This Runway cloud adapter currently supports only the verified gen4.5 text-to-video contract.", "RUNWAY_ADAPTER_MODEL_UNSUPPORTED");
+  if (!["gen4.5", "aleph2", "magnific_video_upscaler_creative"].includes(selectedModel)) {
+    throw fail("This Runway cloud adapter supports only verified Gen-4.5 generation, Aleph2 editing and Magnific video upscaling profiles.", "RUNWAY_ADAPTER_MODEL_UNSUPPORTED");
   }
   const key = String(apiKey || "").trim();
   if (typeof fetchImpl !== "function") throw new Error("Runway cloud adapter requires fetch.");
