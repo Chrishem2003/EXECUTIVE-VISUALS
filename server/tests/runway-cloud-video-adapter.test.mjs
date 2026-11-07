@@ -79,3 +79,71 @@ test("does not mistake Runway's estimated credits for actual billing", async () 
   assert.equal(cost.amount, 11);
   assert.equal(actualResolverCalls, 1);
 });
+
+
+test("prepares authorized source media with ephemeral uploads and submits durable Aleph2 video-to-video task", async () => {
+  const calls = [];
+  let uploadIndex = 0;
+  const adapter = createRunwayCloudVideoAdapter({
+    ...base,
+    model: "aleph2",
+    prepareInput: async (input, context) => {
+      assert.equal(input.sourceVideoAssetId, "source-asset");
+      assert.equal(context.job.owner_id, "owner-1");
+      return {
+        sourceVideo: { buffer: Buffer.alloc(512), filename: "source.mp4", mimeType: "video/mp4" },
+        keyframes: [{ buffer: Buffer.alloc(512), filename: "guide.png", mimeType: "image/png", at: 0 }]
+      };
+    },
+    fetchImpl: async (url, options = {}) => {
+      const target = String(url);
+      calls.push({ url: target, options });
+      if (target.endsWith("/uploads")) {
+        uploadIndex += 1;
+        return new Response(JSON.stringify({
+          uploadUrl: "https://uploads.runway.example/signed-" + uploadIndex,
+          fields: { key: "ephemeral-" + uploadIndex },
+          runwayUri: "runway://ephemeral/asset-" + uploadIndex
+        }), { status: 200 });
+      }
+      if (target.startsWith("https://uploads.runway.example/")) return new Response(null, { status: 204 });
+      if (target.endsWith("/video_to_video")) return new Response(JSON.stringify({ id }), { status: 200 });
+      throw new Error("unexpected URL " + target);
+    }
+  });
+  const input = {
+    provider: "runway", model: "aleph2", operation: "video-to-video",
+    prompt: "Preserve the actor and camera motion; replace the background.",
+    sourceVideoAssetId: "source-asset", keyframeAssetIds: ["guide-asset"]
+  };
+  const prepared = await adapter.prepareInput(input, { job: { owner_id: "owner-1" } });
+  assert.equal(prepared.videoUri, "runway://ephemeral/asset-1");
+  assert.deepEqual(prepared.keyframes, [{ uri: "runway://ephemeral/asset-2", at: 0 }]);
+  const submitted = await adapter.submit(prepared);
+  assert.deepEqual(submitted, { taskId: id, status: "queued" });
+  const post = calls.find(call => call.url.endsWith("/video_to_video"));
+  assert.ok(post);
+  assert.deepEqual(JSON.parse(post.options.body), {
+    model: "aleph2", videoUri: "runway://ephemeral/asset-1",
+    promptText: "Preserve the actor and camera motion; replace the background.",
+    keyframes: [{ uri: "runway://ephemeral/asset-2", at: 0 }],
+    outputFormat: "mp4"
+  });
+  assert.equal(calls.filter(call => call.url.endsWith("/uploads")).length, 2);
+});
+
+test("video-to-video requires an owner-scoped input resolver and never accepts unresolved asset IDs", async () => {
+  const adapter = createRunwayCloudVideoAdapter({ ...base, model: "aleph2" });
+  await assert.rejects(() => adapter.prepareInput({
+    provider: "runway", model: "aleph2", operation: "video-to-video",
+    prompt: "Edit source", sourceVideoAssetId: "private-asset"
+  }, { job: { owner_id: "owner-1" } }), error => error.code === "VIDEO_INPUT_ASSET_RESOLUTION_REQUIRED");
+});
+
+test("Runway cloud adapter rejects video-to-video operation on Gen-4.5 text-only profile", async () => {
+  const adapter = createRunwayCloudVideoAdapter(base);
+  await assert.rejects(() => adapter.submit({
+    provider: "runway", model: "gen4.5", operation: "video-to-video",
+    prompt: "Edit source", videoUri: "runway://ephemeral/source"
+  }), error => error.code === "RUNWAY_INPUT_INVALID");
+});
