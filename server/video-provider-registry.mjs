@@ -27,14 +27,14 @@ export const VIDEO_PROVIDER_CATALOG = freeze([
         executionAdapter: "runway-model-router-cloud-worker",
         gateway: "runway",
         capabilities: {
-          textToVideo: true, imageToVideo: false, videoToVideo: false,
+          textToVideo: true, imageToVideo: true, videoToVideo: false,
           videoEdit: false, videoExtend: false, videoReframe: false,
           nativeAudio: true, negativePrompt: true, seed: true,
-          startFrame: false, endFrame: false, motionReference: false,
+          startFrame: true, endFrame: false, motionReference: false,
           referenceImages: true, referenceVideos: true, referenceAudio: false,
-          audioModes: ["generated"],
+          audioModes: ["generated", "none"],
           aspectRatios: ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"],
-          resolutions: ["480p", "720p", "1080p", "4k"],
+          resolutions: ["provider_default", "480p", "720p", "1080p", "4k"],
           minDurationSeconds: 2, maxDurationSeconds: 30
         },
         constraints: {
