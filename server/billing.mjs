@@ -415,6 +415,14 @@ export function getAdminOverview(db) {
     const monthly=row.interval==="year"?Math.ceil(amount/12):amount;
     mrr.set(currency,(mrr.get(currency)||0)+monthly);
   }
+  const oneTimeCreditTopupsEnabled=process.env.BILLING_CHECKOUT_ENABLED==="true"&&billingEnforcementEnabled()&&
+    !!(process.env.FLW_SECRET_KEY&&process.env.FLW_WEBHOOK_SECRET&&process.env.PUBLIC_APP_URL);
+  const recurringSubscriptionsEnabled=process.env.DODO_SUBSCRIPTIONS_ENABLED==="true"&&
+    process.env.DODO_MERCHANT_APPROVED==="true"&&billingEnforcementEnabled()&&
+    !!(process.env.DODO_PAYMENTS_API_KEY&&process.env.DODO_PAYMENTS_WEBHOOK_KEY&&process.env.PUBLIC_APP_URL)&&
+    Object.entries(process.env).some(([key,value])=>key.startsWith("DODO_PRODUCT_ID_")&&/^pdt_[A-Za-z0-9_-]{6,120}$/.test(String(value||"")));
+  const refundTableExists=!!db.prepare("SELECT 1 AS found FROM sqlite_master WHERE type='table' AND name='billing_refund_events'").get();
+  const pendingRefundReconciliation=refundTableExists?Number(db.prepare("SELECT COUNT(*) AS count FROM billing_refund_events WHERE reconciliation_required=1").get().count||0):0;
   return {
     users: { total: Number(users.total||0), active: Number(users.active||0), suspended: Number(users.suspended||0) },
     subscriptions: { total: Number(subscriptions.total||0), active: Number(subscriptions.active||0), pastDue: Number(subscriptions.past_due||0) },
@@ -422,15 +430,11 @@ export function getAdminOverview(db) {
     usage30d: { operations: Number(usage.operations||0), estimatedCostMicros: Number(usage.estimated_cost_micros||0) },
     verifiedGrossReceipts30d: [...receipts.entries()].map(([currency,amountMinor])=>({currency,amountMinor})).sort((a,b)=>a.currency.localeCompare(b.currency)),
     committedMrrByCurrency: [...mrr.entries()].map(([currency,amountMinor])=>({currency,amountMinor})).sort((a,b)=>a.currency.localeCompare(b.currency)),
+    pendingRefundReconciliation,
     billingProviderConfigured: !!(process.env.FLW_SECRET_KEY || process.env.DODO_PAYMENTS_API_KEY),
-    paymentCollectionEnabled: process.env.BILLING_CHECKOUT_ENABLED === "true" &&
-      billingEnforcementEnabled() && !!(process.env.FLW_SECRET_KEY && process.env.FLW_WEBHOOK_SECRET && process.env.PUBLIC_APP_URL),
-    oneTimeCreditTopupsEnabled: process.env.BILLING_CHECKOUT_ENABLED === "true" &&
-      billingEnforcementEnabled() && !!(process.env.FLW_SECRET_KEY && process.env.FLW_WEBHOOK_SECRET && process.env.PUBLIC_APP_URL),
-    recurringSubscriptionsEnabled: process.env.DODO_SUBSCRIPTIONS_ENABLED === "true" &&
-      process.env.DODO_MERCHANT_APPROVED === "true" && billingEnforcementEnabled() &&
-      !!(process.env.DODO_PAYMENTS_API_KEY && process.env.DODO_PAYMENTS_WEBHOOK_KEY && process.env.PUBLIC_APP_URL) &&
-      Object.entries(process.env).some(([key,value]) => key.startsWith("DODO_PRODUCT_ID_") && /^pdt_[A-Za-z0-9_-]{6,120}$/.test(String(value || "")))
+    paymentCollectionEnabled: oneTimeCreditTopupsEnabled||recurringSubscriptionsEnabled,
+    oneTimeCreditTopupsEnabled,
+    recurringSubscriptionsEnabled
   };
 }
 
