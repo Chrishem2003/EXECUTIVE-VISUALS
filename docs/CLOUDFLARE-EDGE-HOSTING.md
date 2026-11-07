@@ -3,9 +3,9 @@
 ## Architecture
 
 - Cloudflare Worker `executive-visuals-edge` serves the Vite-built SPA from Workers Static Assets.
-- Same-origin `/api/*` requests are streamed to the existing Render Node.js API at `https://executive-visuals.onrender.com`.
+- Same-origin `/api/*` requests require an explicitly configured `API_ORIGIN`. The repository must not default this to the production Render API. Configure only a dedicated, isolated staging API after its data store and credentials are approved.
 - The backend remains responsible for Node.js APIs, FFmpeg/FFprobe, durable job workers and provider adapters. Those processes are not moved into the Workers runtime.
-- The Worker fixes the upstream origin in configuration; it does not accept arbitrary client-provided upstream URLs.
+- The Worker validates a fixed upstream origin at runtime and does not accept arbitrary client-provided upstream URLs. If `API_ORIGIN` is absent or invalid, API requests fail closed with HTTP 502.
 - API responses are not cached. Browser cookies and authorization headers are forwarded. The backend sees its own origin for its existing same-origin origin check.
 - `/edge-health` verifies the edge process, not backend health. `/api/health` verifies the backend through the proxy.
 - `robots.txt` and a minimal sitemap are served at the edge. The application shell is still an authenticated SPA, not a separate public marketing site.
@@ -14,13 +14,13 @@
 
 The repository includes `wrangler.jsonc` and `cloudflare/worker.ts`. In Cloudflare Workers & Pages, connect the GitHub repository `Chrishem2003/EXECUTIVE-VISUALS` and configure a Workers Builds project:
 
-- Production branch: `integration/omni-provider-workers-2026` for initial isolated validation only.
+- Preview branch: `integration/omni-provider-workers-2026` for static/frontend review only; API requests must remain disabled until an isolated staging backend is approved.
 - Build command: `npm ci && npm run build`
 - Deploy command: `npx wrangler deploy`
 - Root directory: `/`
 - Worker name: `executive-visuals-edge`
 
-Do not point this Worker at `main` or enable automatic production releases until the edge preview has passed acceptance. Configure `API_ORIGIN` as a non-secret runtime variable if the origin changes.
+Do not point this Worker at `main` or enable automatic production releases until the edge preview has passed acceptance. Configure `API_ORIGIN` as a non-secret runtime variable only after confirming it points to an isolated staging API. Never point this preview Worker at `https://executive-visuals.onrender.com`.
 
 ## Account prerequisites
 
