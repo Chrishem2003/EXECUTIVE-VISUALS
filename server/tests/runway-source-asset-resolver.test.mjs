@@ -163,3 +163,42 @@ test("Runway Model Router references are converted only from owner/project-scope
   assert.equal(prepared.referenceVideos[0].role, "reference");
 });
 
+test("Runway Model Router resolves exactly one owner/project-scoped private reference audio asset", async () => {
+  const audioId = "66666666-6666-4666-8666-666666666666";
+  const audioBytes = Buffer.from("validated-audio-reference");
+  const asset = { id: audioId, projectId: PROJECT, name: "voice.mp3", mediaType: "audio/mpeg", size: audioBytes.length, storageBucket: "executive-visuals-media", objectPath: PROJECT + "/" + audioId + "/original.mp3" };
+  const resolver = createRunwaySourceAssetResolver({
+    assets: {
+      async get({ ownerId, assetId }) { assert.equal(ownerId, OWNER); assert.equal(assetId, audioId); return asset; },
+      async createSignedUrl({ ownerId, assetId, expiresIn }) {
+        assert.equal(ownerId, OWNER); assert.equal(assetId, audioId); assert.equal(expiresIn, 300);
+        return { asset, url: "https://storage.example.com/storage/v1/object/sign/private/" + audioId + "?token=audio" };
+      }
+    },
+    supabaseUrl: "https://storage.example.com",
+    fetchImpl: async () => new Response(audioBytes, { status: 200, headers: { "content-type": "audio/mpeg", "content-length": String(audioBytes.length) } })
+  });
+  const prepared = await resolver.prepare({
+    provider: "runway", model: "model-router", operation: "text-to-video",
+    projectId: PROJECT, audioMode: "reference", referenceAudioAssetIds: [audioId]
+  }, { job: { owner_id: OWNER } });
+  assert.deepEqual(prepared.referenceAudio, [{
+    uri: "https://storage.example.com/storage/v1/object/sign/private/" + audioId + "?token=audio"
+  }]);
+});
+
+test("Runway Model Router rejects reference audio mode without a private audio asset", async () => {
+  const resolver = createRunwaySourceAssetResolver({
+    assets: { async get() { throw new Error("must not resolve"); }, async createSignedUrl() { throw new Error("must not sign"); } },
+    supabaseUrl: "https://storage.example.com",
+    fetchImpl: async () => { throw new Error("must not download"); }
+  });
+  await assert.rejects(
+    resolver.prepare({
+      provider: "runway", model: "model-router", projectId: PROJECT,
+      audioMode: "reference", referenceAudioAssetIds: []
+    }, { job: { owner_id: OWNER } }),
+    error => error.code === "VIDEO_INPUT_ASSET_RESOLUTION_FAILED"
+  );
+});
+
