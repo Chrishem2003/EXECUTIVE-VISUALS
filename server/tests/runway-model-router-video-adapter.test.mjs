@@ -149,3 +149,29 @@ test("polls a routed task and returns only validated HTTPS output URLs", async (
     status: "succeeded", taskId: id, outputUrls: ["https://cdn.example.test/video.mp4"], provider: "runway", model: "model-router"
   });
 });
+
+test("maps one reference audio asset and rejects invalid reference media roles or counts", async () => {
+  let body;
+  const adapter = createRunwayModelRouterVideoAdapter({
+    ...base,
+    fetchImpl: async (_url, options) => {
+      body = JSON.parse(options.body);
+      return new Response(JSON.stringify({ routing }));
+    }
+  });
+  await adapter.preflight({
+    prompt: "A presenter explaining a product",
+    audioMode: "reference",
+    referenceAudio: [{ uri: "https://storage.example.test/audio.mp3" }]
+  });
+  assert.deepEqual(body.input.referenceAudio, [{ uri: "https://storage.example.test/audio.mp3" }]);
+  await assert.rejects(
+    adapter.preflight({ prompt: "Test", audioMode: "reference" }),
+    error => error.code === "RUNWAY_ROUTER_INPUT_INVALID"
+  );
+  await assert.rejects(
+    adapter.preflight({ prompt: "Test", referenceAudio: [{ uri: "https://storage.example.test/audio.mp3" }, { uri: "https://storage.example.test/audio2.mp3" }] }),
+    error => error.code === "RUNWAY_ROUTER_INPUT_INVALID"
+  );
+});
+
