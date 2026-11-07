@@ -106,7 +106,7 @@ export function renderEngineStatus(){
    model.readiness||null].filter(Boolean).join(" · ");
   return '<div class="engine"><i></i><b>'+esc(model.label)+'</b><small>'+esc(provider.id)+' · '+esc(model.id)+'</small><small>'+esc(details||"Catalogued model profile")+'</small></div>';
  })).join("");
- const remoteAdapters=state.providers.filter(provider=>["video","voice","transcription"].includes(provider.id)).map(provider=>
+ const remoteAdapters=state.providers.filter(provider=>["video","video-google-omni","voice","transcription"].includes(provider.id)).map(provider=>
   '<div class="engine"><i></i><b>'+esc(provider.id)+' · '+esc(provider.status.replace(/_/g," "))+'</b><small>'+esc(provider.model||"No model selected")+' · '+esc(provider.reason)+'</small><small>Capabilities: '+esc(provider.capabilities.join(", "))+'</small></div>'
  ).join("");
  return '<div id="runtime-workspace" data-runtime-view="engines"><div class="runtime-toolbar">'+statusMarkup()+'<button class="secondary" data-ev-action="refresh">↻ Refresh status</button></div>'+
