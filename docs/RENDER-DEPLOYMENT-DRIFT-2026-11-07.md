@@ -51,3 +51,17 @@ The Render request-log query returned no matching `/api/health` request entries 
 - Approve a staging-only Supabase/Postgres and private object-storage acceptance test.
 - Confirm the required backup/restore procedure and perform a restore drill against isolated test data.
 - Configure a health-check path and durable storage only after explicit infrastructure approval.
+
+
+## Follow-up verification — 2026-11-07 (after initial read-only audit)
+
+A second read-only inspection confirmed:
+
+- Production `EXECUTIVE-VISUALS` remains on `main`, not suspended, with latest observed deploy `18cb97bf027dc5037fc1d932f36dd4d00f6e6c67` marked live.
+- The separate `EXECUTIVE-VISUALS-1` service is now **suspended by the user** (Render event at 2026-11-07 09:39:22 UTC). Its branch remains `feat/credits`; latest observed deploy remains `22aba4e5b543924ab2f4b679daebacfa4bcb0496`. It was not resumed or modified.
+- Production logs contain historical startup failures because `AUTH_MODE=local` is rejected in production. The latest inspected process started at 09:40:25 UTC and received SIGTERM at 09:55:39 UTC. The service was still marked not suspended; no conclusion about live HTTP health can be drawn from that SIGTERM alone.
+- The latest production build log reports 378 tests passed and zero failed, then Vite built successfully. This is build evidence, not proof of live authentication, storage durability, or customer workflow acceptance.
+- No request logs were returned for the inspected post-deploy window. External health endpoint retrieval was unavailable, and neither existing Render service has a configured health-check path.
+- The connected Supabase projects were inspected read-only. `Chrishem Project` contains NEMA/platform tables and an empty `ev_workspace_snapshots` table but no `executive_visuals` schema. `Chrishem Platform Staging` contains NEMA/platform job tables and no `executive_visuals` schema. Neither is an approved isolated Executive Visuals database; do not apply the new migrations to either project.
+
+The consolidated code candidate is in draft PR #206. Its exact-head quality and Google Drive/PostgreSQL CI runs passed. Production auto-deploys from `main`, so merging PR #206 would trigger production deployment. Keep it draft until the user approves a dedicated isolated database, staging activation, durable storage, required credentials, and acceptance testing.
