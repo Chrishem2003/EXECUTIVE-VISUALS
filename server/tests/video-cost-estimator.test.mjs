@@ -14,7 +14,7 @@ const request={provider:"fal",model:"fal-ai/example-video",durationSeconds:5,res
 test("estimates exact model pricing with billing increments, audio, references and minimums",()=>{
  const quote=estimateVideoGenerationCost(request,pricing,{now});
  assert.equal(quote.available,true);
- assert.equal(quote.amount,0.84);
+ assert.equal(quote.amount,0.9);
  assert.equal(quote.billableSeconds,6);
  assert.deepEqual(quote.breakdown,{video:0.72,audio:0.12,references:0.06,minimumApplied:0});
  assert.equal(quote.pricing.sourceUrl,"https://fal.ai/pricing");
