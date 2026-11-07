@@ -12,7 +12,7 @@ const now=()=>new Date("2026-11-07T12:00:00.000Z");
 const publication={owner_id:owner,project_id:null,job_id:jobId,publication_key:publicationKey,asset_id:asset,status:"reserved",updated_at:"2026-11-05T00:00:00.000Z"};
 const job={id:jobId,status:"failed",lease_expires_at:"2026-11-06T00:00:00.000Z"};
 function response(data,status=200){return{ok:status>=200&&status<300,status,async text(){return JSON.stringify(data);}};}
-function fixture({jobRow=job,deleteEnabled=false,confirmDelete=false,storageOverride=null,completeFailures=0,objectLimit=10,initialPendingClaims=[],clock=now}={}){
+function fixture({jobRow=job,deleteEnabled=false,confirmDelete=false,storageOverride=null,completeFailures=0,objectLimit=10,initialPendingClaims=[],publicationRows=[publication],clock=now}={}){
  const calls=[],removed=[],audit=[];
  let pendingClaims=[...initialPendingClaims],objectExists=true,remainingCompleteFailures=completeFailures;
  const fetchImpl=async(url,options)=>{
@@ -22,7 +22,7 @@ function fixture({jobRow=job,deleteEnabled=false,confirmDelete=false,storageOver
    const offset=Number(parsed.searchParams.get("offset")||0),limit=Number(parsed.searchParams.get("limit")||objectLimit);
    return response(pendingClaims.slice(offset,offset+limit));
   }
-  if(parsed.pathname.endsWith("/asset_publications"))return response([publication]);
+  if(parsed.pathname.endsWith("/asset_publications"))return response(parsed.searchParams.has("id")?[publication]:publicationRows);
   if(parsed.pathname.endsWith("/jobs"))return response(jobRow?[jobRow]:[]);
   if(parsed.pathname.endsWith("/assets"))return response([]);
   if(parsed.pathname.endsWith("/rpc/claim_asset_publication_cleanup_v1")){
@@ -126,7 +126,7 @@ test("rotates bounded pending-claim pages so an invalid oldest claim cannot star
  const clock=()=>new Date(instant+=10001);
  const invalid={id:"invalid-claim"};
  const valid={id:"77777777-7777-4777-8777-777777777777",claim_token:"99999999-9999-4999-8999-999999999999",object_path:objectPath,job_id:jobId,owner_id:owner,project_id:null,publication_id:"66666666-6666-4666-8666-666666666666",status:"claimed"};
- const f=fixture({deleteEnabled:true,confirmDelete:true,objectLimit:1,initialPendingClaims:[invalid,valid],clock});
+ const f=fixture({deleteEnabled:true,confirmDelete:true,objectLimit:1,initialPendingClaims:[invalid,valid],publicationRows:[],clock});
  const first=await f.worker.runCycle();
  assert.equal(first.pendingClaims.scanned,1);
  assert.equal(first.pendingClaims.skipped,1);
