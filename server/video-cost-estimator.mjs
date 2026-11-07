@@ -65,7 +65,7 @@ export function estimateVideoGenerationCost(request,pricingCatalog,{now=()=>new 
  const current=now(),currentMs=current instanceof Date?current.getTime():Date.parse(current);
  if(!Number.isFinite(currentMs))return unavailable("The pricing clock is invalid.");
  if(!validDate(record.observedAt)||!validDate(record.expiresAt)||Date.parse(record.observedAt)>currentMs||Date.parse(record.expiresAt)<=currentMs)return unavailable("The pricing schedule is expired or not yet valid; refresh its source before quoting.");
- const rate=record.ratesPerSecond?.[resolution]??record.ratesPerSecond?.provider_default;
+ const rate=resolution==="provider_default"?record.ratesPerSecond?.provider_default:record.ratesPerSecond?.[resolution];
  if(!finite(rate))return unavailable("The selected resolution has no verified price.");
  const increment=record.billingIncrementSeconds??1;
  if(!finite(increment,0.001,180))return unavailable("The pricing billing increment is invalid.");
