@@ -206,14 +206,15 @@ async function storeUpload(req,user,projectId) {
   const storageLimit=storagePlan?.limits?.storageBytes===undefined?null:Number(storagePlan.limits.storageBytes);
   const currentStorage=()=>Number(db.prepare(`SELECT COALESCE(SUM(byte_size),0) AS bytes FROM assets
     WHERE deleted_at IS NULL AND (owner_id=? OR project_id IN (SELECT id FROM projects WHERE owner_id=?))`).get(projectOwner,projectOwner).bytes||0);
-  assertBillingStorageQuota({limitBytes:storageLimit,usedBytes:currentStorage(),incomingBytes:declaredSize});
+  const storageUsedBeforeUpload=currentStorage();
+  assertBillingStorageQuota({limitBytes:storageLimit,usedBytes:storageUsedBeforeUpload,incomingBytes:declaredSize});
   let decodedName="upload";
   try{decodedName=decodeURIComponent(String(req.headers["x-file-name"]||"upload"));}
   catch{throw Object.assign(new Error("File name header is malformed."),{status:400,code:"INVALID_FILE_NAME"});}
   const originalName=safeName(decodedName);
   const id=randomUUID(), ext=EXTENSIONS[mediaType]||"bin", relative="uploads/"+id+"."+ext, absolute=join(MEDIA_ROOT,relative);
   const digest=createHash("sha256");let size=0;
-  const meter=new Transform({transform(chunk,encoding,callback){size+=chunk.length;if(size>MAX_UPLOAD_BYTES){callback(Object.assign(new Error("Upload exceeds the configured size limit."),{status:413,code:"UPLOAD_TOO_LARGE"}));return;}digest.update(chunk);callback(null,chunk);}});
+  const meter=new Transform({transform(chunk,encoding,callback){size+=chunk.length;if(size>MAX_UPLOAD_BYTES){callback(Object.assign(new Error("Upload exceeds the configured size limit."),{status:413,code:"UPLOAD_TOO_LARGE"}));return;}if(storageLimit!==null){try{assertBillingStorageQuota({limitBytes:storageLimit,usedBytes:storageUsedBeforeUpload,incomingBytes:size});}catch(error){callback(error);return;}}digest.update(chunk);callback(null,chunk);}});
   try { await pipeline(req,meter,createWriteStream(absolute,{flags:"wx"})); }
   catch(error){await unlink(absolute).catch(()=>{});throw error;}
   if(size===0){await unlink(absolute).catch(()=>{});throw Object.assign(new Error("Empty uploads are not accepted."),{status:400,code:"EMPTY_UPLOAD"});}
