@@ -221,7 +221,7 @@ test("Runway's expanded model directory is catalogued with dated pricing and dis
   assert.equal(listSelectableVideoProviderModels().length, 0);
 });
 
-test("November 2026 Runway model releases are catalogued without enabling unimplemented execution", () => {
+test("November 2026 Runway model releases are catalogued with verified constraints but disabled execution", () => {
   const kling = getVideoProviderModel("runway", "kling_4_flash");
   const omni = getVideoProviderModel("runway", "gemini_omni_flash_1.2");
   for (const model of [kling, omni]) {
@@ -230,18 +230,27 @@ test("November 2026 Runway model releases are catalogued without enabling unimpl
     assert.equal(model.executionAdapter, "not_implemented");
     assert.equal(model.gateway, "runway");
     assert.equal(model.constraints.pricingSnapshotDate, "2026-11-07");
-    assert.equal(model.constraints.pricingStatus, "published_starting_rate_tier_matrix_pending");
   }
-  assert.deepEqual(kling.capabilities.resolutions, ["720p"]);
-  assert.equal(kling.capabilities.minDurationSeconds, 3);
+  assert.equal(kling.capabilities.nativeAudio, true);
   assert.equal(kling.capabilities.maxDurationSeconds, 20);
-  assert.equal(kling.capabilities.videoToVideo, true);
-  assert.equal(kling.constraints.startingUsdPerSecond, 0.094);
-  assert.deepEqual(omni.capabilities.resolutions, ["360p", "480p", "720p", "1080p", "4k"]);
+  assert.deepEqual(kling.capabilities.resolutions, ["720p"]);
+  assert.equal(kling.constraints.maxReferenceImagesIncludingFirstFrame, 10);
+  assert.equal(kling.constraints.maxReferenceVideos, 5);
+  assert.equal(kling.constraints.minimumCredits, 29);
+  assert.equal(kling.constraints.outputCreditsPerSecondWithoutInputVideo, 9.4);
+  assert.equal(kling.constraints.outputCreditsPerSecondWithInputVideo, 6.3);
+  assert.equal(kling.constraints.inputVideoCreditsPerSecond, 6.3);
+  assert.equal(omni.capabilities.imageToVideo, true);
   assert.equal(omni.capabilities.videoEdit, true);
   assert.equal(omni.capabilities.videoExtend, true);
-  assert.equal(omni.constraints.keyframeGuidance, true);
-  assert.equal(omni.constraints.startingUsdPerSecond, 0.02);
+  assert.equal(omni.capabilities.minDurationSeconds, 3);
+  assert.equal(omni.capabilities.maxDurationSeconds, 15);
+  assert.deepEqual(omni.capabilities.resolutions, ["360p", "720p", "1080p", "4k"]);
+  assert.deepEqual(omni.constraints.outputCreditsPerSecondByResolution, {"360p":2,"720p":7,"1080p":10,"4k":21});
+  assert.equal(omni.constraints.maxReferenceImages, 5);
+  assert.equal(omni.constraints.maxReferenceVideos, 3);
+  assert.equal(omni.constraints.minimumCredits, 6);
+  assert.equal(omni.constraints.inputVideoCreditsPerSecond, 1);
   assert.equal(listSelectableVideoProviderModels().length, 0);
 });
 
