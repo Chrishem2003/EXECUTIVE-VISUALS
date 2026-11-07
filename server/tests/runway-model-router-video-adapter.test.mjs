@@ -8,17 +8,14 @@ const routing = {
   model: "gen4.5",
   provider: "runway",
   resolvedSettings: { optimizeFor: "cost", priceCeiling: 100 },
-  estimatedCost: { credits: 50 },
-  // The exact realized-cost property is intentionally interpreted only by the injected resolver.
-  realizedCost: { credits: 48 }
+  estimatedCost: { credits: 50 }
 };
 const base = {
   configId: "production-video",
   apiKey: "test-key",
   enabled: true,
   allowRemote: true,
-  ingestOutputs: async () => ({ assetIds: ["asset-1"] }),
-  resolveRealizedCredits: async ({ routing: value }) => value.realizedCost.credits
+  ingestOutputs: async () => ({ assetIds: ["asset-1"] })
 };
 
 test("submits a live routed task and durably returns the complete routing decision", async () => {
@@ -53,7 +50,7 @@ test("never treats dry-run estimates as actual customer/provider settlement", as
   const cost = await adapter.resolveActualCost({
     submissionMetadata: submitted.metadata,
     providerTaskId: id,
-    task: { status: "succeeded" }
+    task: { taskId: id, status: "succeeded", estimatedCost: { credits: 50 }, cost: { credits: 48 } }
   });
   assert.equal(cost.amount, 0.48);
   assert.equal(cost.currency, "USD");
@@ -61,11 +58,8 @@ test("never treats dry-run estimates as actual customer/provider settlement", as
   assert.match(cost.evidenceReference, /credits:48$/);
 });
 
-test("holds settlement when durable route metadata or realized credits are missing", async () => {
-  const adapter = createRunwayModelRouterVideoAdapter({
-    ...base,
-    resolveRealizedCredits: async () => undefined
-  });
+test("holds settlement when durable route metadata or completed task cost is missing", async () => {
+  const adapter = createRunwayModelRouterVideoAdapter({ ...base });
   await assert.rejects(
     adapter.resolveActualCost({ submissionMetadata: {}, providerTaskId: id, task: {} }),
     error => error.code === "VIDEO_BUDGET_COST_UNRESOLVED"
@@ -73,7 +67,14 @@ test("holds settlement when durable route metadata or realized credits are missi
   await assert.rejects(
     adapter.resolveActualCost({
       submissionMetadata: { routeType: "runway-model-router", configId: "production-video", routing },
-      providerTaskId: id, task: {}
+      providerTaskId: id, task: { taskId: id, status: "succeeded", estimatedCost: { credits: 50 } }
+    }),
+    error => error.code === "VIDEO_BUDGET_COST_UNRESOLVED"
+  );
+  await assert.rejects(
+    adapter.resolveActualCost({
+      submissionMetadata: { routeType: "runway-model-router", configId: "production-video", routing },
+      providerTaskId: id, task: { taskId: id, status: "succeeded", estimatedCost: { credits: 50 }, cost: { credits: 51 } }
     }),
     error => error.code === "VIDEO_BUDGET_COST_UNRESOLVED"
   );
@@ -90,7 +91,7 @@ test("rejects mismatched router config and missing task identity", async () => {
   );
 });
 
-test("is disabled by default and requires output ingestion plus realized-credit resolver", async () => {
+test("is disabled by default and requires private output ingestion", async () => {
   const disabled = createRunwayModelRouterVideoAdapter({ ...base, enabled: false });
   await assert.rejects(
     disabled.submit({ provider: "runway", model: "model-router", prompt: "Test" }),
