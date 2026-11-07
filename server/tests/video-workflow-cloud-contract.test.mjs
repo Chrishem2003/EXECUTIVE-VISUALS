@@ -215,6 +215,32 @@ test("existing source resolver rejects a cross-project workflow asset before sig
   assert.equal(signed, 0);
 });
 
+test("rejects one asset ID reused across distinct source and reference roles", () => {
+  const cases = [
+    {
+      values: { prompt: "Edit", sourceVideoAssetId: "same", referenceVideoAssetIds: ["same"] }
+    },
+    {
+      values: { prompt: "Animate", image: "same", referenceImageAssetIds: ["same"] }
+    },
+    {
+      values: { prompt: "Edit", sourceVideoAssetId: "same", referenceAudioAssetIds: ["same"] },
+      config: { audioMode: "reference" }
+    }
+  ];
+  for (const item of cases) {
+    const configuredNode = item.config
+      ? { ...node, config: { ...node.config, ...item.config } }
+      : node;
+    assert.throws(
+      () => createVideoWorkflowCloudRequest({
+        ...base, node: configuredNode, values: item.values
+      }),
+      error => error.code === "VIDEO_WORKFLOW_CLOUD_ASSET_ROLE_CONFLICT"
+    );
+  }
+});
+
 test("rejects duplicate or excessive reference assets", () => {
   assert.throws(
     () => createVideoWorkflowCloudRequest({
