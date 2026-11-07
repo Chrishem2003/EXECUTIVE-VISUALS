@@ -92,6 +92,7 @@ test("cloud media enhancement publishes a checksummed derivative using the claim
     assert.equal(published.ownerId, "verified-owner");
     assert.equal(published.projectId, "project-2");
     assert.equal(published.derivativeOf, "asset-source");
+    assert.equal(published.publicationKey, "job-2:output:v1");
     assert.equal(published.mediaType, "video/mp4");
     assert.equal(result.outputAsset.id, "asset-output");
     assert.equal(result.sha256.length, 64);

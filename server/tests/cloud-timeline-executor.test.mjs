@@ -25,7 +25,7 @@ test("cloud timeline executor materializes all unique sources and publishes a re
  const result=await executor({job:{id:"job-1",owner_id:owner,project_id:project,job_type:"timeline.render",input:{timelineId,timelineRevision:7}},onProgress(){}});
  assert.equal(materialized.length,2);assert.deepEqual(materialized.map(x=>x.assetId).sort(),["asset-a","asset-b"]);
  assert.deepEqual(cleanups.sort(),["asset-a","asset-b"]);
- assert.equal(published[0].ownerId,owner);assert.equal(published[0].projectId,project);
+ assert.equal(published[0].ownerId,owner);assert.equal(published[0].projectId,project);assert.equal(published[0].publicationKey,"job-1:output:v1");
  assert.equal(published[0].metadata.timelineRevision,7);assert.equal(published[0].metadata.probe.streams[0].codec_name,"h264");assert.equal(published[0].metadata.render.durationSeconds,12);assert.equal(published[0].content,"final-master");
  assert.equal(result.outputAsset.id,"master-asset");assert.equal(result.byteSize,12);assert.equal(result.timelineRevision,7);assert.equal(result.probeValidation.validatedStreamType,"video");
  await rm(root,{recursive:true,force:true});
