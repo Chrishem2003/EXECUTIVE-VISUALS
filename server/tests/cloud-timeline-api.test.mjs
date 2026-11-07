@@ -151,6 +151,7 @@ test("approved cloud transformation submits to the durable Runway queue with ser
   url:"https://example.supabase.co",serviceRoleKey:"service-secret",fetchImpl,
   timelineService:{timelines:{},assets:{}},
   authorize:async()=>true,
+  transformationReadiness:()=>({adapterVerified:true,workerAvailable:true,privateStorageVerified:true,durableCheckpointsAvailable:true,costPolicyVerified:true,consentVerifierAvailable:true,visualQaAvailable:true,cloudSchemaApplied:true}),
   runwaySourceResolver:{async resolveMetadata(args){
    assert.deepEqual(args,{ownerId:owner,projectId:project,assetId:row.input.sourceAssetId});
    return{ownerId:owner,projectId:project,assetId:row.input.sourceAssetId,mediaType:"video/mp4",durationSeconds:10.2,frameCount:306,width:1920,height:1080,sourceDynamicRange:"sdr"};
@@ -183,6 +184,7 @@ test("cloud transformation submission refuses unapproved or non-Aleph adapters b
   url:"https://example.supabase.co",serviceRoleKey:"service-secret",
   fetchImpl:async(url,options)=>({ok:true,status:200,async text(){return url.includes("/jobs?id=")&&options.method==="GET"?JSON.stringify([row]):"[]";}}),
   timelineService:{timelines:{},assets:{}},authorize:async()=>true,
+  transformationReadiness:()=>({adapterVerified:true,workerAvailable:true,privateStorageVerified:true,durableCheckpointsAvailable:true,costPolicyVerified:true,consentVerifierAvailable:true,visualQaAvailable:true,cloudSchemaApplied:true}),
   runwaySourceResolver:{async resolveMetadata(){throw new Error("must not resolve source");}}
  });
  const result=await api.handle({method:"POST",path:"/api/cloud/transformations/"+planId+"/submit",ownerId:owner});
