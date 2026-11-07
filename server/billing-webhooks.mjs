@@ -236,6 +236,9 @@ export async function processNextFlutterwaveWebhook(db, {
       db.prepare("UPDATE billing_provider_events SET processed_at=?,last_error=NULL WHERE id=?").run(now(), event.id);
       return { processed: true, duplicate: true, eventId: event.event_id };
     }
+    if (order.status !== "pending") {
+      throw fail("Billing order is no longer eligible for payment settlement.", "BILLING_ORDER_NOT_PENDING", 409);
+    }
     if (payload.event === "charge.failed" || data.status === "failed") {
       db.prepare("UPDATE billing_payment_orders SET status='failed',updated_at=? WHERE id=? AND status='pending'").run(now(), order.id);
       db.prepare("UPDATE billing_provider_events SET processed_at=?,last_error=NULL WHERE id=?").run(now(), event.id);
