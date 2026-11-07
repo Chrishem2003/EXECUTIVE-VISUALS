@@ -3,12 +3,21 @@ import { apiRequest } from "../core/api";
 type Plan={id:string;code:string;name:string;description:string;amountMinor:number|null;currency:string;interval:string;creditsPerPeriod:number;limits:Record<string,unknown>;features:string[];active?:boolean};
 type Ledger={id:string;amount:number;type:string;description:string;createdAt:string;expiresAt?:string|null};
 type Overview={accountStatus:string;balance:number;plan:Plan|null;subscription:{id:string;status:string;provider:string;currentPeriodStart:string;currentPeriodEnd:string;cancelAtPeriodEnd:boolean}|null;usage30d:{operations:number;estimatedCostMicros:number};ledger:Ledger[]};
-const state:{overview:Overview|null;plans:Plan[];message:string;loading:boolean}={overview:null,plans:[],message:"Loading billing information…",loading:false};
+type PaymentOrder={txRef:string;status:string;amountMinor:number;currency:string;credits:number;verifiedAt:string|null;createdAt:string;planName:string;interval:string};
+const state:{overview:Overview|null;plans:Plan[];message:string;loading:boolean;paymentOrder:PaymentOrder|null}={overview:null,plans:[],message:"Loading billing information…",loading:false,paymentOrder:null};
 const esc=(v:unknown)=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]||c));
 const date=(v:string)=>new Date(v).toLocaleDateString();
 const money=(minor:number|null,currency:string)=>minor===null?"Not priced":new Intl.NumberFormat(undefined,{style:"currency",currency}).format(minor/100);
 function planCard(plan:Plan,current:boolean){return '<article class="billing-plan '+(current?"is-current":"")+'"><div class="eyebrow">'+esc(plan.code.toUpperCase())+'</div><h3>'+esc(plan.name)+'</h3><div class="billing-price">'+money(plan.amountMinor,plan.currency)+' <small>/ '+esc(plan.interval)+'</small></div><p>'+esc(plan.description)+'</p><div class="billing-credit">'+Number(plan.creditsPerPeriod).toLocaleString()+' credits per period</div><ul>'+plan.features.map(x=>'<li>'+esc(x)+'</li>').join("")+'</ul>'+(current?'<span class="billing-current">Current plan</span>':'<button class="secondary" disabled title="Checkout is not connected yet">Checkout not enabled</button>')+'</article>';}
 export function renderBillingWorkspace(){
+ if(window.location.pathname==="/billing/return"){
+  const order=state.paymentOrder;
+  const status=order?.status||"checking";
+  const heading=status==="paid"?"Payment confirmed":status==="failed"||status==="expired"?"Payment not completed":"Payment processing";
+  const detail=status==="paid"?"Your payment has been verified by the server. Your credits are available in your account.":status==="failed"||status==="expired"?"This payment was not completed. No credits were granted.":"We are waiting for verified confirmation from Flutterwave. Do not pay again while this status is pending.";
+  return '<div class="page-head"><div><div class="eyebrow">SECURE PAYMENT RETURN</div><h1>'+heading+'</h1><p>'+detail+'</p></div><button class="secondary" data-billing-refresh>↻ Check status</button></div>'+
+   '<section class="panel"><div class="eyebrow">PAYMENT ORDER</div><h2>'+esc(order?.planName||"Your order")+'</h2><div class="runtime-summary"><div><small>Payment status</small><b>'+esc(status.toUpperCase())+'</b></div><div><small>Amount</small><b>'+ (order?money(order.amountMinor,order.currency):"—")+'</b></div><div><small>Credits</small><b>'+ (order?order.credits.toLocaleString():"—")+'</b></div><div><small>Reference</small><b>'+esc(order?.txRef||new URLSearchParams(window.location.search).get("tx_ref")||"—")+'</b></div></div><p class="muted">The browser redirect is not proof of payment. Executive Visuals grants value only after the signed webhook and server-side transaction verification succeed.</p><button class="primary" data-tab="billing">Return to billing</button></section>';
+ }
  const b=state.overview;
  if(!b)return '<div class="page-head"><div><div class="eyebrow">ACCOUNT & USAGE</div><h1>Plan & billing</h1><p>Subscription status, included credits and usage records.</p></div><button class="secondary" data-billing-refresh>Refresh</button></div><div class="notice">'+esc(state.message)+'</div>';
  return '<div class="page-head"><div><div class="eyebrow">ACCOUNT & USAGE</div><h1>Plan & billing</h1><p>Know your allowance and generation usage before spending. Paid checkout remains disabled until a payment provider is verified.</p></div><button class="secondary" data-billing-refresh>Refresh</button></div>'+
@@ -19,6 +28,14 @@ export function renderBillingWorkspace(){
  '<div class="notice">Payment processing is not active. You cannot purchase or renew a subscription from this screen yet, and no payment details are collected.</div>';
 }
 let initialized=false;
+export async function refreshBillingReturn(){
+ const txRef=new URLSearchParams(window.location.search).get("tx_ref")||"";
+ if(!/^ev_[a-f0-9]{32}$/.test(txRef)){state.paymentOrder=null;state.message="No valid payment reference was supplied.";paint();return;}
+ state.loading=true;
+ try{const result=await apiRequest<{order:PaymentOrder}>("/api/billing/orders/"+txRef);state.paymentOrder=result.order;state.message="";}
+ catch(error){state.paymentOrder=null;state.message=error instanceof Error?error.message:"Payment status could not be checked.";}
+ finally{state.loading=false;paint();}
+}
 export async function refreshBillingWorkspace(){
  state.loading=true;
  try{
@@ -32,7 +49,7 @@ export async function refreshBillingWorkspace(){
 }
 function paint(){const view=document.querySelector<HTMLElement>("#view");if(view?.dataset.billingView==="true")view.innerHTML=renderBillingWorkspace();}
 export function initBillingWorkspace(){
- if(!initialized){initialized=true;document.addEventListener("click",event=>{if((event.target as HTMLElement).closest("[data-billing-refresh]"))void refreshBillingWorkspace();});}
- void refreshBillingWorkspace();
+ if(!initialized){initialized=true;document.addEventListener("click",event=>{if((event.target as HTMLElement).closest("[data-billing-refresh]"))void(window.location.pathname==="/billing/return"?refreshBillingReturn():refreshBillingWorkspace());});}
+ if(window.location.pathname==="/billing/return")void refreshBillingReturn();else void refreshBillingWorkspace();
 }
 export function billingWorkspaceEnabled(){return true;}
