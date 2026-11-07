@@ -84,3 +84,35 @@ export function estimateVideoGenerationCost(request,pricingCatalog,{now=()=>new 
   disclaimer:"Estimate only. Provider taxes, account discounts, retries, moderation charges and billing changes may affect the final charge."
  });
 }
+
+export function estimateVideoProductionCost(plan,pricingCatalog,options={}){
+ const unavailable=(reason)=>Object.freeze({available:false,estimated:false,reason});
+ if(!plan||typeof plan!=="object"||Array.isArray(plan)||!Array.isArray(plan.shots)||plan.shots.length<1||plan.shots.length>12)
+  return unavailable("A production quote requires between 1 and 12 shots.");
+ const ids=new Set();let totalDuration=0;
+ for(const shot of plan.shots){
+  if(!shot||typeof shot!=="object"||Array.isArray(shot))return unavailable("Every shot must be an object.");
+  if(typeof shot.id!=="string"||!/^[a-zA-Z0-9_-]{1,48}$/.test(shot.id)||ids.has(shot.id))return unavailable("Every shot needs a unique, valid identifier.");
+  ids.add(shot.id);
+  if(!Number.isInteger(shot.durationSeconds)||!finite(shot.durationSeconds,1,MAX_DURATION_SECONDS))return unavailable("Every shot duration must be a whole number between 1 and 180 seconds.");
+  totalDuration+=shot.durationSeconds;
+  if(totalDuration>MAX_DURATION_SECONDS)return unavailable("The combined production duration cannot exceed 180 seconds.");
+ }
+ const quotes=[];
+ for(const shot of plan.shots){
+  const quote=estimateVideoGenerationCost(shot,pricingCatalog,options);
+  if(!quote.available)return Object.freeze({available:false,estimated:false,reason:quote.reason,shotId:shot.id,shotIndex:quotes.length});
+  quotes.push(Object.freeze({shotId:shot.id,durationSeconds:shot.durationSeconds,provider:quote.provider,model:quote.model,currency:quote.currency,amount:quote.amount,breakdown:quote.breakdown,pricing:quote.pricing}));
+ }
+ const currencies=new Set(quotes.map(quote=>quote.currency));
+ if(currencies.size!==1)return unavailable("A production quote cannot combine different currencies; convert currencies using an explicitly sourced exchange rate first.");
+ const sum=key=>roundMoney(quotes.reduce((total,quote)=>total+quote.breakdown[key],0));
+ const amount=roundMoney(quotes.reduce((total,quote)=>total+quote.amount,0));
+ return Object.freeze({
+  available:true,estimated:true,shotCount:quotes.length,totalDurationSeconds:totalDuration,
+  currency:quotes[0].currency,amount,
+  breakdown:Object.freeze({video:sum("video"),audio:sum("audio"),references:sum("references"),minimumApplied:sum("minimumApplied")}),
+  shots:Object.freeze(quotes),
+  disclaimer:"Production estimate only. Each shot is priced independently; provider batch discounts, taxes, account discounts, retries, moderation charges and billing changes are not included. No generation jobs were submitted."
+ });
+}
