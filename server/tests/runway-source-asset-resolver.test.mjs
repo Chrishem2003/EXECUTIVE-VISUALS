@@ -134,3 +134,32 @@ test("Runway video edits resolve ordered keyframe images from the same private p
   assert.deepEqual(result.keyframes.map(frame => frame.mimeType), ["image/png", "image/png"]);
   assert.equal(result.keyframes[0].buffer.length, imageBytes.length);
 });
+
+test("Runway Model Router references are converted only from owner/project-scoped private image and video assets", async () => {
+  const imageId = "44444444-4444-4444-8444-444444444444";
+  const videoId = "55555555-5555-4555-8555-555555555555";
+  const byId = new Map([
+    [imageId, { id: imageId, projectId: PROJECT, name: "ref.png", mediaType: "image/png", size: 1024, storageBucket: "executive-visuals-media", objectPath: PROJECT + "/" + imageId + "/original.png" }],
+    [videoId, { id: videoId, projectId: PROJECT, name: "ref.mp4", mediaType: "video/mp4", size: 1024, storageBucket: "executive-visuals-media", objectPath: PROJECT + "/" + videoId + "/original.mp4" }]
+  ]);
+  const resolver = createRunwaySourceAssetResolver({
+    assets: {
+      async get({ ownerId, assetId }) { assert.equal(ownerId, OWNER); return byId.get(assetId); },
+      async createSignedUrl({ ownerId, assetId, expiresIn }) {
+        assert.equal(ownerId, OWNER); assert.equal(expiresIn, 300);
+        return { asset: byId.get(assetId), url: "https://storage.example.com/storage/v1/object/sign/private/" + assetId + "?token=private" };
+      }
+    },
+    supabaseUrl: "https://storage.example.com",
+    fetchImpl: async () => new Response(bytes, { status: 200, headers: { "content-type": "image/png", "content-length": String(bytes.length) } })
+  });
+  const prepared = await resolver.prepare({
+    provider: "runway", model: "model-router", operation: "text-to-video",
+    projectId: PROJECT, referenceImageAssetIds: [imageId], referenceVideoAssetIds: [videoId]
+  }, { job: { owner_id: OWNER } });
+  assert.equal(prepared.referenceImages[0].uri, "https://storage.example.com/storage/v1/object/sign/private/" + imageId + "?token=private");
+  assert.equal(prepared.referenceImages[0].role, "reference");
+  assert.equal(prepared.referenceVideos[0].uri, "https://storage.example.com/storage/v1/object/sign/private/" + videoId + "?token=private");
+  assert.equal(prepared.referenceVideos[0].role, "reference");
+});
+
