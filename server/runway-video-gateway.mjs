@@ -2,11 +2,13 @@ const API_BASE="https://api.dev.runwayml.com/v1";
 const API_VERSION="2024-11-06";
 const MAX_OUTPUT_BYTES=250*1024*1024;
 const MODEL_PROFILES=Object.freeze({
-  "gen4.5":Object.freeze({label:"Runway Gen-4.5",minDurationSeconds:2,maxDurationSeconds:10,aspectRatios:["16:9","9:16"],resolutions:["provider_default"],defaultResolution:"provider_default"}),
-  "seedance2_5":Object.freeze({label:"Seedance 2.5",minDurationSeconds:4,maxDurationSeconds:30,aspectRatios:["16:9","9:16","1:1","4:3","3:4","3:2","2:3","21:9"],resolutions:["provider_default","480p","720p","1080p"],defaultResolution:"480p"}),
-  "kling_4":Object.freeze({label:"Kling 4.0",minDurationSeconds:3,maxDurationSeconds:30,aspectRatios:["16:9","9:16","1:1","21:9"],resolutions:["provider_default","720p","1080p"],defaultResolution:"720p"}),
-  "kling3.0_standard":Object.freeze({label:"Kling 3.0 Standard",minDurationSeconds:3,maxDurationSeconds:15,aspectRatios:["16:9","9:16","1:1"],resolutions:["provider_default"],defaultResolution:"provider_default"}),
-  "kling3.0_pro":Object.freeze({label:"Kling 3.0 Pro",minDurationSeconds:3,maxDurationSeconds:15,aspectRatios:["16:9","9:16","1:1"],resolutions:["provider_default"],defaultResolution:"provider_default"})
+  "gen4.5":Object.freeze({label:"Runway Gen-4.5",minDurationSeconds:2,maxDurationSeconds:10,promptMaxCharacters:1000,aspectRatios:["16:9","9:16"],resolutions:["provider_default"],defaultResolution:"provider_default",nativeAudio:false}),
+  "seedance2_5":Object.freeze({label:"Seedance 2.5",minDurationSeconds:4,maxDurationSeconds:30,promptMaxCharacters:1000,aspectRatios:["16:9","9:16","1:1","4:3","3:4","3:2","2:3","21:9"],resolutions:["provider_default","480p","720p","1080p"],defaultResolution:"480p",nativeAudio:true}),
+  "kling_4":Object.freeze({label:"Kling 4.0",minDurationSeconds:3,maxDurationSeconds:30,promptMaxCharacters:1000,aspectRatios:["16:9","9:16","1:1","21:9"],resolutions:["provider_default","720p","1080p"],defaultResolution:"720p",nativeAudio:true}),
+  "kling_4_flash":Object.freeze({label:"Kling 4.0 Flash",minDurationSeconds:3,maxDurationSeconds:20,promptMaxCharacters:26000,aspectRatios:["16:9","9:16","1:1","21:9"],resolutions:["provider_default","720p"],defaultResolution:"720p",nativeAudio:true}),
+  "gemini_omni_flash_1.2":Object.freeze({label:"Gemini Omni 1.2 Flash",minDurationSeconds:3,maxDurationSeconds:15,promptMaxCharacters:4000,aspectRatios:["16:9","9:16"],resolutions:["provider_default","360p","720p","1080p","4k"],defaultResolution:"720p",nativeAudio:false}),
+  "kling3.0_standard":Object.freeze({label:"Kling 3.0 Standard",minDurationSeconds:3,maxDurationSeconds:15,promptMaxCharacters:1000,aspectRatios:["16:9","9:16","1:1"],resolutions:["provider_default"],defaultResolution:"provider_default",nativeAudio:true}),
+  "kling3.0_pro":Object.freeze({label:"Kling 3.0 Pro",minDurationSeconds:3,maxDurationSeconds:15,promptMaxCharacters:1000,aspectRatios:["16:9","9:16","1:1"],resolutions:["provider_default"],defaultResolution:"provider_default",nativeAudio:true})
 });
 const fail=(message,code)=>Object.assign(new Error(message),{code});
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
@@ -29,6 +31,13 @@ const ratioFor=(model,ratio,resolution)=>{
       "1:1":resolution==="1080p"?"1440:1440":"940:940",
       "21:9":resolution==="1080p"?"2200:940":"1460:624"
     },
+    "kling_4_flash":{
+      "16:9":"1280:720","9:16":"720:1280","1:1":"960:960","21:9":"1464:628"
+    },
+    "gemini_omni_flash_1.2":{
+      "16:9":resolution==="4k"?"3840:2160":resolution==="1080p"?"1920:1080":resolution==="360p"?"640:360":"1280:720",
+      "9:16":resolution==="4k"?"2160:3840":resolution==="1080p"?"1080:1920":resolution==="360p"?"360:640":"720:1280"
+    },
     "kling3.0_standard":{"16:9":"1280:720","9:16":"720:1280","1:1":"960:960"},
     "kling3.0_pro":{"16:9":"1920:1080","9:16":"1080:1920","1:1":"1440:1440"}
   };
@@ -37,9 +46,10 @@ const ratioFor=(model,ratio,resolution)=>{
 export function listRunwayVideoModels(){
   return Object.entries(MODEL_PROFILES).map(([id,profile])=>({
     id,label:profile.label,minDurationSeconds:profile.minDurationSeconds,
-    maxDurationSeconds:profile.maxDurationSeconds,aspectRatios:[...profile.aspectRatios],
-    resolutions:[...profile.resolutions],execution:"async",inputModes:["text-to-video","image-to-video"],
-    readiness:"adapter-supported; credentials and remote opt-in required"
+    maxDurationSeconds:profile.maxDurationSeconds,promptMaxCharacters:profile.promptMaxCharacters,
+    aspectRatios:[...profile.aspectRatios],resolutions:[...profile.resolutions],
+    nativeAudio:profile.nativeAudio,execution:"async",inputModes:["text-to-video","image-to-video"],
+    readiness:"adapter-supported for text-to-video and first-frame image-to-video; credentials and remote opt-in required"
   }));
 }
 export function getRunwayVideoCapabilities(model=process.env.RUNWAY_VIDEO_MODEL||""){
@@ -47,7 +57,7 @@ export function getRunwayVideoCapabilities(model=process.env.RUNWAY_VIDEO_MODEL|
   if(!profile)return Object.freeze({negativePrompt:false,seed:false,startFrame:false,endFrame:false,motionReference:false,referenceImages:false,audioModes:[],aspectRatios:[],resolutions:[],minDurationSeconds:0,maxDurationSeconds:0});
   return Object.freeze({
     negativePrompt:false,seed:false,startFrame:true,endFrame:false,motionReference:false,
-    referenceImages:true,audioModes:Object.freeze([]),
+    referenceImages:true,audioModes:Object.freeze(profile.nativeAudio?["generated"]:[]),
     aspectRatios:Object.freeze([...profile.aspectRatios]),
     resolutions:Object.freeze([...profile.resolutions]),
     minDurationSeconds:profile.minDurationSeconds,maxDurationSeconds:profile.maxDurationSeconds
@@ -57,7 +67,7 @@ export function buildRunwayVideoPayload({model,prompt,durationSeconds=5,aspectRa
   const id=String(model||"").trim(),profile=MODEL_PROFILES[id];
   if(!profile)throw fail("Select a Runway video model with a verified text-to-video adapter.","VIDEO_GATEWAY_UNSUPPORTED_MODEL");
   const text=typeof prompt==="string"?prompt.trim():"";
-  if(!text||text.length>1000)throw fail("Runway text-to-video prompts must contain 1 to 1000 characters.","VIDEO_GATEWAY_INVALID_INPUT");
+  if(!text||text.length>profile.promptMaxCharacters)throw fail("Runway text-to-video prompt exceeds the selected model's documented limit.","VIDEO_GATEWAY_INVALID_INPUT");
   if(!Number.isInteger(durationSeconds)||durationSeconds<profile.minDurationSeconds||durationSeconds>profile.maxDurationSeconds)throw fail("Duration is outside the selected model's documented range.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
   if(!profile.aspectRatios.includes(aspectRatio))throw fail("Aspect ratio is not supported by the selected Runway model.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
   if(!profile.resolutions.includes(resolution))throw fail("Resolution is not supported by the selected Runway model.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
@@ -72,7 +82,7 @@ export function buildRunwayImageToVideoPayload({model,prompt,promptImage,duratio
  const id=String(model||"").trim(),profile=MODEL_PROFILES[id];
  if(!profile)throw fail("Select a Runway model with a verified image-to-video adapter.","VIDEO_GATEWAY_UNSUPPORTED_MODEL");
  const text=typeof prompt==="string"?prompt.trim():"";
- if(!text||text.length>1000)throw fail("Runway image-to-video prompts must contain 1 to 1000 characters.","VIDEO_GATEWAY_INVALID_INPUT");
+ if(!text||text.length>profile.promptMaxCharacters)throw fail("Runway image-to-video prompt exceeds the selected model's documented limit.","VIDEO_GATEWAY_INVALID_INPUT");
  if(typeof promptImage!=="string"||!/^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(promptImage)||Buffer.byteLength(promptImage)>5*1024*1024)throw fail("Runway first-frame images must be valid PNG, JPEG or WebP data URIs no larger than 5 MiB.","VIDEO_GATEWAY_INVALID_INPUT");
  if(!Number.isInteger(durationSeconds)||durationSeconds<profile.minDurationSeconds||durationSeconds>profile.maxDurationSeconds)throw fail("Duration is outside the selected model's documented range.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
  if(!profile.aspectRatios.includes(aspectRatio))throw fail("Aspect ratio is not supported by the selected Runway model.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
@@ -88,8 +98,14 @@ export function buildRunwayImageToVideoPayload({model,prompt,promptImage,duratio
   const ratio={"16:9":"1280:720","9:16":"720:1280"}[aspectRatio];
   if(!ratio)throw fail("Gen-4.5 image-to-video ratio is unsupported.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
   payload.ratio=ratio;
+ }else if(id==="gemini_omni_flash_1.2"){
+  const effectiveResolution=resolution==="provider_default"?profile.defaultResolution:resolution;
+  if(!profile.resolutions.includes(resolution))throw fail("Resolution is not supported by Gemini Omni 1.2 Flash.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
+  const ratio=ratioFor(id,aspectRatio,effectiveResolution);
+  if(!ratio)throw fail("Gemini Omni 1.2 Flash image-to-video ratio is unsupported.","VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
+  payload.ratio=ratio;
  }
- // Kling 4 and Kling 3 follow the supplied first frame's framing; omit ratio.
+ // Kling models follow the supplied first frame's framing; omit ratio.
  return Object.freeze(payload);
 }
 async function requestJson(url,{method="GET",headers={},body,timeoutMs=30000,fetchImpl=fetch}={}){
@@ -129,7 +145,7 @@ async function downloadMp4(raw,{fetchImpl=fetch,timeoutMs=60000}={}){
 export async function generateRunwayVideo({model=process.env.RUNWAY_VIDEO_MODEL,prompt,durationSeconds=5,aspectRatio="16:9",resolution="provider_default",referenceImageDataUrl="",fetchImpl=fetch,sleepImpl=sleep,now=Date.now}={}){
   if(process.env.VIDEO_GATEWAY_ENABLED!=="true")throw fail("Video generation is disabled by server configuration.","VIDEO_GATEWAY_DISABLED");
   if(process.env.VIDEO_GATEWAY_ALLOW_REMOTE!=="true")throw fail("Remote video providers are disabled. Review Runway pricing and explicitly enable remote access on the server.","VIDEO_GATEWAY_REMOTE_DISABLED");
-  const key=String(process.env.RUNWAYML_API_SECRET||"").trim();
+  const key=String(process.env.RUNWAY_API_KEY||process.env.RUNWAYML_API_SECRET||"").trim();
   if(!key)throw fail("Configure RUNWAYML_API_SECRET on the server before using Runway models.","VIDEO_GATEWAY_CONFIG_INVALID");
   const payload=referenceImageDataUrl
    ?buildRunwayImageToVideoPayload({model,prompt,promptImage:referenceImageDataUrl,durationSeconds,aspectRatio,resolution})
