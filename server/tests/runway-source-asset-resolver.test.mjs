@@ -97,6 +97,37 @@ test("Runway source resolver cancels oversized streamed bodies before buffering 
   assert.equal(cancelled, true);
 });
 
+test("Runway source resolver enforces the byte limit when Content-Length is absent", async () => {
+  let cancelled = false;
+  const boundedResolver = createRunwaySourceAssetResolver({
+    assets: {
+      async get() {
+        return { id: ASSET, projectId: PROJECT, name: "source.mp4", mediaType: "video/mp4",
+          size: 1024, storageBucket: "executive-visuals-media", objectPath: PROJECT + "/" + ASSET + "/original.mp4" };
+      },
+      async createSignedUrl() {
+        return { asset: { id: ASSET, projectId: PROJECT, storageBucket: "executive-visuals-media",
+          objectPath: PROJECT + "/" + ASSET + "/original.mp4" },
+          url: "https://storage.example.com/storage/v1/object/sign/private/a?token=x" };
+      }
+    },
+    supabaseUrl: "https://storage.example.com",
+    maxBytes: 1024,
+    fetchImpl: async () => new Response(new ReadableStream({
+      start(controller) {
+        controller.enqueue(new Uint8Array(768));
+        controller.enqueue(new Uint8Array(768));
+      },
+      cancel() { cancelled = true; }
+    }), { status: 200, headers: { "content-type": "video/mp4" } })
+  });
+  await assert.rejects(
+    () => boundedResolver.prepare({ operation: "video-to-video", projectId: PROJECT, sourceVideoAssetId: ASSET }, { job: { owner_id: OWNER } }),
+    error => error.code === "VIDEO_INPUT_ASSET_INTEGRITY_FAILED"
+  );
+  assert.equal(cancelled, true);
+});
+
 test("Runway source preparation validates content type and byte length against asset metadata", async () => {
   const { resolver } = fixture({
     fetchImpl: async () => new Response(bytes, {
