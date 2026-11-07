@@ -44,7 +44,7 @@ test("Runway image generation submits, polls and downloads only validated PNG ou
  try{
   const result=await generateRunwayImage({model:"gpt_image_2_6_sunburst",prompt:"A clear product image",fetchImpl,sleepImpl:async()=>{}});
   assert.equal(result.provider,"runway");assert.equal(result.model,"gpt_image_2_6_sunburst");assert.equal(result.taskId,taskId);
-  assert.equal(result.estimatedCostCredits,17);assert.equal(result.outputFormat,"png");assert.deepEqual(result.buffer,png);
+  assert.equal(result.estimatedCostCredits,19);assert.equal(result.outputFormat,"png");assert.deepEqual(result.buffer,png);
   assert.equal(calls.length,3);
  }finally{restore(previous);}
 });
