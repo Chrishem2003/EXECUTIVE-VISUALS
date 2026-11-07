@@ -1,3 +1,10 @@
+## Live application
+
+- **Cloudflare staging preview:** https://executive-visuals.chrishem242.workers.dev
+- **Existing Render production:** https://executive-visuals.onrender.com
+
+The Cloudflare address serves the current staging candidate and proxies API requests to the existing Render backend. It is not yet the final custom-domain production release. The backend currently reports SQLite/local-disk storage; do not use this staging preview for valuable customer data or paid transactions until durable storage and billing acceptance gates are complete.
+
 # CHRISHEM EXCLUSIVE VISUALS
 
 **One integrated visual-production system — from creative brief to reviewed deliverable.**
