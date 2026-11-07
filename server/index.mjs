@@ -23,6 +23,11 @@ import { signInWithSupabasePassword, signUpWithSupabasePassword, refreshSupabase
 import { ensureBillingSchema, touchBillingAccount, getBillingOverview, assertBillingStorageQuota, assertConcurrentJobCapacity, listBillingPlans, getAdminOverview, listAdminUsers, saveBillingPlan, assignManualSubscription, adjustBillingCredits, setBillingAccountStatus, listBillingModelPrices, saveBillingModelPrice } from "./billing.mjs";
 import { ensureBillingWebhookSchema, receiveFlutterwaveWebhook, processNextFlutterwaveWebhook, createFlutterwaveCheckout } from "./billing-webhooks.mjs";
 import { ensureDodoSubscriptionSchema, dodoProductEnvName, dodoSubscriptionCheckoutEnabled, dodoCustomerPortalEnabled, createDodoSubscriptionCheckout, receiveDodoWebhook, processNextDodoWebhook, getDodoCheckoutStatus, createDodoCustomerPortalSession } from "./dodo-subscriptions.mjs";
+import { createGoogleDriveOAuth } from "./google-drive-oauth.mjs";
+import { createGoogleDriveConnectionStore, createGoogleDriveOAuthStateStore } from "./google-drive-connection-store.mjs";
+import { createGoogleDriveExportAttemptStore } from "./google-drive-export-attempt-store.mjs";
+import { createGoogleDrivePrivateFileBridge } from "./google-drive-private-file-bridge.mjs";
+import { createCloudAssetService } from "./cloud-asset-service.mjs";
 
 const PORT = Number(process.env.PORT || process.env.API_PORT || 4179);
 const HOST = process.env.API_HOST || (process.env.NODE_ENV === "production" ? "0.0.0.0" : "127.0.0.1");
@@ -64,6 +69,71 @@ const cloudTimelineApiEnabled = process.env.CLOUD_TIMELINE_API_ENABLED === "true
 if (cloudTimelineApiEnabled && AUTH_MODE !== "supabase") throw new Error("Cloud timeline API requires verified Supabase authentication.");
 const cloudTimelineApi = cloudTimelineApiEnabled ? createCloudTimelineApi({maxUploadBytes:Number(process.env.CLOUD_MEDIA_MAX_UPLOAD_BYTES || MAX_UPLOAD_BYTES)}) : null;
 if (cloudTimelineApi) await cloudTimelineApi.checkReadiness();
+const googleDriveOAuthEnabled = process.env.GOOGLE_DRIVE_OAUTH_ENABLED === "true";
+if (googleDriveOAuthEnabled && (
+  AUTH_MODE !== "supabase" ||
+  !cloudTimelineApiEnabled ||
+  !process.env.SUPABASE_URL ||
+  !process.env.SUPABASE_SERVICE_ROLE_KEY ||
+  !process.env.GOOGLE_OAUTH_CLIENT_ID ||
+  !process.env.GOOGLE_OAUTH_CLIENT_SECRET ||
+  !process.env.GOOGLE_OAUTH_REDIRECT_URI ||
+  !process.env.GOOGLE_DRIVE_TOKEN_ENCRYPTION_KEY ||
+  !process.env.GOOGLE_DRIVE_EXPORT_SESSION_ENCRYPTION_KEY
+)) {
+  throw new Error("Google Drive requires Supabase auth, the enabled private cloud workspace, server-side OAuth credentials and two independent encryption keys.");
+}
+const googleDriveConnectionStore = googleDriveOAuthEnabled ? createGoogleDriveConnectionStore() : null;
+const googleDriveExportAttemptStore = googleDriveOAuthEnabled ? createGoogleDriveExportAttemptStore({
+  encryptionKey: process.env.GOOGLE_DRIVE_EXPORT_SESSION_ENCRYPTION_KEY
+}) : null;
+const googleDriveOAuthStateStore = googleDriveOAuthEnabled ? createGoogleDriveOAuthStateStore() : null;
+const googleDriveOAuth = googleDriveOAuthEnabled ? createGoogleDriveOAuth({
+  stateStore: googleDriveOAuthStateStore,
+  connections: googleDriveConnectionStore
+}) : null;
+const googleDriveAssetService = googleDriveOAuthEnabled ? createCloudAssetService({
+  maxBytes: Number(process.env.CLOUD_MEDIA_MAX_UPLOAD_BYTES || MAX_UPLOAD_BYTES)
+}) : null;
+const googleDriveBridge = googleDriveOAuthEnabled ? createGoogleDrivePrivateFileBridge({
+  attempts: googleDriveExportAttemptStore,
+  getUserAccessToken: ({ ownerId }) => googleDriveOAuth.getAccessToken({ ownerId }),
+  assets: googleDriveAssetService.assets,
+  maxBytes: Number(process.env.CLOUD_MEDIA_MAX_UPLOAD_BYTES || MAX_UPLOAD_BYTES),
+  loadPrivateAsset: async ({ ownerId, projectId = null, assetId }) => {
+    const asset = await googleDriveAssetService.assets.get({ ownerId, assetId });
+    if ((asset.projectId || null) !== (projectId || null)) throw Object.assign(new Error("Private asset project scope does not match."), { code: "GOOGLE_DRIVE_ASSET_FORBIDDEN" });
+    const signed = await googleDriveAssetService.assets.createSignedUrl({ ownerId, assetId, expiresIn: 60 });
+    const signedUrl = new URL(signed.url), storageOrigin = new URL(process.env.SUPABASE_URL).origin;
+    if (signedUrl.protocol !== "https:" || signedUrl.origin !== storageOrigin || signedUrl.username || signedUrl.password) {
+      throw Object.assign(new Error("Private asset storage returned an unsafe signed URL."), { code: "GOOGLE_DRIVE_ASSET_INVALID" });
+    }
+    const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 30000);
+    try {
+      const response = await fetch(signedUrl, { redirect: "error", signal: controller.signal });
+      if (!response.ok || !response.body) throw Object.assign(new Error("Private asset download failed."), { code: "GOOGLE_DRIVE_ASSET_DOWNLOAD_FAILED" });
+      const declared = Number(response.headers.get("content-length") || asset.size);
+      const maxBytes = Number(process.env.CLOUD_MEDIA_MAX_UPLOAD_BYTES || MAX_UPLOAD_BYTES);
+      if (declared !== asset.size || declared > maxBytes) throw Object.assign(new Error("Private asset download size is invalid."), { code: "GOOGLE_DRIVE_ASSET_INVALID" });
+      const reader = response.body.getReader(), chunks = []; let total = 0;
+      try {
+        while (true) {
+          const part = await reader.read(); if (part.done) break;
+          total += part.value.byteLength;
+          if (total > maxBytes) { await reader.cancel().catch(() => {}); throw Object.assign(new Error("Private asset exceeds the export limit."), { code: "GOOGLE_DRIVE_ASSET_INVALID" }); }
+          chunks.push(part.value);
+        }
+      } finally { reader.releaseLock(); }
+      const bytes = new Uint8Array(total); let offset = 0;
+      for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+      if (bytes.byteLength !== asset.size || createHash("sha256").update(bytes).digest("hex") !== asset.sha256) {
+        throw Object.assign(new Error("Private asset integrity verification failed."), { code: "GOOGLE_DRIVE_ASSET_INVALID" });
+      }
+      return { asset, bytes };
+    } finally { clearTimeout(timer); }
+  }
+}) : null;
+
 const activeProcesses = new Map();
 const WORKER_ID = randomUUID();
 const rateBuckets = new Map();
@@ -321,7 +391,7 @@ export function createAppServer() {
     if(req.method==="OPTIONS"){res.writeHead(204,{"access-control-allow-methods":"GET,POST,PUT,DELETE,OPTIONS","access-control-allow-headers":"content-type,authorization,x-file-name,x-project-id,idempotency-key","access-control-max-age":"600",...cors});res.end();return;}
     const url=new URL(req.url||"/","http://localhost");
     const path=url.pathname;
-    const ratePath=(path==="/api/webhooks/flutterwave"||path==="/api/webhooks/dodo")&&req.method==="POST"?"/payment-webhook":path.startsWith("/api/auth/")?"/auth":(path==="/api/assets"||path==="/api/cloud/assets")&&req.method==="POST"?"/upload":path.endsWith("/research/import")&&req.method==="POST"?"/research":path==="/api/admin/ai-upscale/self-test"&&req.method==="POST"?"/ai-upscale-self-test":"";
+    const ratePath=(path==="/api/webhooks/flutterwave"||path==="/api/webhooks/dodo")&&req.method==="POST"?"/payment-webhook":path.startsWith("/api/auth/")?"/auth":path.startsWith("/api/integrations/google-drive/")?"/google-drive-oauth":(path==="/api/assets"||path==="/api/cloud/assets")&&req.method==="POST"?"/upload":path.endsWith("/research/import")&&req.method==="POST"?"/research":path==="/api/admin/ai-upscale/self-test"&&req.method==="POST"?"/ai-upscale-self-test":"";
     if(ratePath){const key=(req.socket.remoteAddress||"unknown")+ratePath;const limit=ratePath==="/auth"?AUTH_RATE_LIMIT:ratePath==="/research"?10:ratePath==="/ai-upscale-self-test"?2:ratePath==="/payment-webhook"?120:30;if(!rateAllowed(key,limit,60000)){fail(res,429,"RATE_LIMITED","Too many requests. Wait before trying again.");return;}}
     try {
       if(!path.startsWith("/api/")&&req.method==="GET"){
@@ -407,12 +477,82 @@ export function createAppServer() {
         }else setCookie(res,"",0);
         send(res,200,{ok:true},cors);return;
       }
+
+      if(path==="/api/integrations/google-drive/callback"&&req.method==="GET"){
+        if(!googleDriveOAuth){fail(res,503,"GOOGLE_DRIVE_OAUTH_NOT_CONFIGURED","Google Drive connection is not enabled.");return;}
+        if(url.searchParams.has("error")){
+          res.writeHead(303,{"location":"/?googleDrive=error","cache-control":"no-store",...SECURITY_HEADERS});res.end();return;
+        }
+        try{
+          await googleDriveOAuth.complete({state:url.searchParams.get("state"),code:url.searchParams.get("code")});
+          res.writeHead(303,{"location":"/?googleDrive=connected","cache-control":"no-store",...SECURITY_HEADERS});res.end();return;
+        }catch(error){
+          process.stderr.write("Google Drive OAuth callback failed: "+String(error.code||"GOOGLE_OAUTH_CALLBACK_FAILED")+"\\n");
+          res.writeHead(303,{"location":"/?googleDrive=error","cache-control":"no-store",...SECURITY_HEADERS});res.end();return;
+        }
+      }
       const user=await authenticate(req,res);
       if(!user){fail(res,401,"AUTH_REQUIRED","Sign in to access this workspace.");return;}
 const billingAccount=touchBillingAccount(db,user);
-      const suspendedBillingAccess=path==="/api/billing/overview"||path==="/api/billing/plans"||path==="/api/billing/customer-portal"||
+      const suspendedBillingAccess=path==="/api/integrations/google-drive/status"||path==="/api/integrations/google-drive/disconnect"||path==="/api/billing/overview"||path==="/api/billing/plans"||path==="/api/billing/customer-portal"||
         /^\/api\/billing\/(?:orders\/ev_[a-f0-9]{32}|dodo-orders\/[0-9a-f-]{36})$/i.test(path);
       if(billingAccount.status==="suspended"&&!suspendedBillingAccess){fail(res,403,"ACCOUNT_SUSPENDED","This account is suspended. Billing status and cancellation access remain available.");return;}
+
+      if(path==="/api/integrations/google-drive/status"&&req.method==="GET"){
+        if(!googleDriveOAuth||!googleDriveConnectionStore){fail(res,503,"GOOGLE_DRIVE_OAUTH_NOT_CONFIGURED","Google Drive connection is not enabled.");return;}
+        try{
+          const connection=await googleDriveConnectionStore.get(user.id);
+          send(res,200,{connected:Boolean(connection),email:connection?.email||null,grantedScopes:connection?.grantedScopes||[]},cors);return;
+        }catch(error){fail(res,503,error.code||"GOOGLE_CONNECTION_STORE_UNAVAILABLE","Google Drive connection status is temporarily unavailable.");return;}
+      }
+      if(path==="/api/integrations/google-drive/connect"&&req.method==="POST"){
+        if(!googleDriveOAuth){fail(res,503,"GOOGLE_DRIVE_OAUTH_NOT_CONFIGURED","Google Drive connection is not enabled.");return;}
+        try{send(res,200,await googleDriveOAuth.begin({ownerId:user.id}),cors);return;}
+        catch(error){fail(res,503,error.code||"GOOGLE_OAUTH_UNAVAILABLE","Google Drive authorization could not be started.");return;}
+      }
+      if(path==="/api/integrations/google-drive/picker-token"&&req.method==="POST"){
+        if(!googleDriveOAuth){fail(res,503,"GOOGLE_DRIVE_OAUTH_NOT_CONFIGURED","Google Drive connection is not enabled.");return;}
+        const developerKey=String(process.env.GOOGLE_PICKER_API_KEY||"").trim();
+        const appId=String(process.env.GOOGLE_CLOUD_PROJECT_NUMBER||"").trim();
+        if(!developerKey||developerKey.length>512||!/^\\d{6,24}$/.test(appId)){fail(res,503,"GOOGLE_PICKER_NOT_CONFIGURED","Google Picker API key and numeric Cloud project number are not configured.");return;}
+        try{
+          const accessToken=await googleDriveOAuth.getAccessToken({ownerId:user.id});
+          send(res,200,{accessToken,developerKey,appId,expiresInSeconds:300},cors);return;
+        }catch(error){fail(res,401,error.code||"GOOGLE_OAUTH_NOT_CONNECTED","Connect Google Drive before opening the file picker.");return;}
+      }
+      if(path==="/api/integrations/google-drive/disconnect"&&req.method==="POST"){
+        if(!googleDriveOAuth){fail(res,503,"GOOGLE_DRIVE_OAUTH_NOT_CONFIGURED","Google Drive connection is not enabled.");return;}
+        try{
+          const result=await googleDriveOAuth.disconnect({ownerId:user.id});
+          audit(db,user.id,"integration.google_drive.disconnected","integration","google-drive",{revoked:result.revoked});
+          send(res,200,result,cors);return;
+        }catch(error){fail(res,503,error.code||"GOOGLE_OAUTH_DISCONNECT_FAILED","Google Drive could not be disconnected cleanly.");return;}
+      }
+      if(path==="/api/integrations/google-drive/import"&&req.method==="POST"){
+        if(!googleDriveBridge){fail(res,503,"GOOGLE_DRIVE_OAUTH_NOT_CONFIGURED","Google Drive file import is not enabled.");return;}
+        const body=await readJson(req);
+        try{
+          const result=await googleDriveBridge.importFile({ownerId:user.id,projectId:body.projectId||null,fileId:body.fileId});
+          audit(db,user.id,"integration.google_drive.file_imported","asset",result.asset.id,{providerFileId:result.sourceFileId,projectId:body.projectId||null});
+          send(res,201,{asset:result.asset,source:result.source},cors);return;
+        }catch(error){const status=error.code==="GOOGLE_DRIVE_AUTH_REQUIRED"?401:error.code==="GOOGLE_DRIVE_FILE_UNSUPPORTED"||error.code==="GOOGLE_DRIVE_FILE_ID_INVALID"?400:error.code==="GOOGLE_DRIVE_ACCESS_DENIED"||error.code==="GOOGLE_DRIVE_ASSET_FORBIDDEN"?403:502;fail(res,status,error.code||"GOOGLE_DRIVE_IMPORT_FAILED",error.message||"Google Drive file import failed.");return;}
+      }
+      if(path==="/api/integrations/google-drive/export"&&req.method==="POST"){
+        if(!googleDriveBridge){fail(res,503,"GOOGLE_DRIVE_OAUTH_NOT_CONFIGURED","Google Drive file export is not enabled.");return;}
+        const body=await readJson(req);
+        try{
+          const result=await googleDriveBridge.uploadPrivateAsset({ownerId:user.id,projectId:body.projectId||null,assetId:body.assetId,parentFolderId:body.parentFolderId||null});
+          audit(db,user.id,"integration.google_drive.file_exported","asset",body.assetId,{driveFileId:result.id,projectId:body.projectId||null});
+          send(res,201,{file:result},cors);return;
+        }catch(error){
+          const status=error.code==="GOOGLE_DRIVE_AUTH_REQUIRED"?401:
+            ["GOOGLE_DRIVE_ASSET_FORBIDDEN","GOOGLE_DRIVE_FOLDER_UNAVAILABLE"].includes(error.code)?403:
+            ["GOOGLE_DRIVE_EXPORT_SCOPE_INVALID","GOOGLE_DRIVE_EXPORT_ATTEMPT_INVALID"].includes(error.code)?400:
+            ["GOOGLE_DRIVE_EXPORT_IDEMPOTENCY_CONFLICT","GOOGLE_DRIVE_EXPORT_RECONCILIATION_REQUIRED","GOOGLE_DRIVE_EXPORT_RECONCILIATION_CONFLICT","GOOGLE_DRIVE_UPLOAD_SESSION_EXPIRED","GOOGLE_DRIVE_EXPORT_IN_PROGRESS"].includes(error.code)?409:
+            ["GOOGLE_DRIVE_EXPORT_STORE_UNAVAILABLE","GOOGLE_DRIVE_EXPORT_STORE_TIMEOUT"].includes(error.code)?503:502;
+          fail(res,status,error.code||"GOOGLE_DRIVE_EXPORT_FAILED",error.message||"Google Drive file export failed.");return;
+        }
+      }
       const admin=isAdminUser(user);
       if(path==="/api/me"&&req.method==="GET"){send(res,200,{user,authMode:AUTH_MODE,capabilities:{admin,billing:true}},cors);return;}
       if(path==="/api/billing/plans"&&req.method==="GET"){const plans=listBillingPlans(db).map(plan=>({...plan,subscriptionCheckoutAvailable:dodoRecurringCheckoutReady()&&/^pdt_[A-Za-z0-9_-]{6,120}$/.test(String(process.env[dodoProductEnvName(plan.code)]||""))}));send(res,200,{plans},cors);return;}
