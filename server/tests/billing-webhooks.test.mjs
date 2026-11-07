@@ -1,6 +1,5 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createHmac } from "node:crypto";
 import { openDatabase } from "../db.mjs";
 import {
   ensureBillingSchema, touchBillingAccount, saveBillingPlan, getBillingBalance
@@ -29,7 +28,7 @@ function setup() {
 
 function signedPayload(payload, secret = "test-webhook-secret-with-at-least-24-chars") {
   const rawBody = Buffer.from(JSON.stringify(payload));
-  const signature = createHmac("sha256", secret).update(rawBody).digest("base64");
+  const signature = secret;
   return { rawBody, signature, secretHash: secret };
 }
 
@@ -40,13 +39,13 @@ function payload(order, { event = "charge.completed", status = "successful", amo
   };
 }
 
-test("Flutterwave V4 webhook signatures use raw-body HMAC-SHA256 and reject tampering", () => {
+test("Flutterwave v3 webhook secret-hash header is compared safely", () => {
   const signed = signedPayload({ event: "charge.completed", data: { id: 1 } });
   assert.equal(verifyFlutterwaveWebhookSignature({
     rawBody: signed.rawBody, signature: signed.signature, secretHash: signed.secretHash
   }), true);
   assert.equal(verifyFlutterwaveWebhookSignature({
-    rawBody: Buffer.from(signed.rawBody.toString() + " "), signature: signed.signature, secretHash: signed.secretHash
+    rawBody: signed.rawBody, signature: "incorrect-secret-hash", secretHash: signed.secretHash
   }), false);
   assert.equal(verifyFlutterwaveWebhookSignature({
     rawBody: signed.rawBody, signature: signed.signature, secretHash: ""
@@ -65,9 +64,8 @@ test("webhook intake verifies signature, stores minimal data and deduplicates ex
   const storedPayload = JSON.parse(stored.payload_json);
   assert.equal(storedPayload.data.tx_ref, order.txRef);
   assert.equal(storedPayload.data.customer, undefined);
-  const tampered = signedPayload(payload(order, { amount: 1 }));
   assert.throws(() => receiveFlutterwaveWebhook(db, {
-    rawBody: tampered.rawBody, signature: signed.signature, secretHash: signed.secretHash
+    rawBody: signed.rawBody, signature: "wrong-secret", secretHash: signed.secretHash
   }), error => error.code === "BILLING_WEBHOOK_SIGNATURE_INVALID");
   db.close();
 });
