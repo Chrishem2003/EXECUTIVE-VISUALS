@@ -5,7 +5,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 const EXTENSIONS = new Map([
   ["image/jpeg","jpg"],["image/png","png"],["image/webp","webp"],["image/gif","gif"],
   ["video/mp4","mp4"],["video/webm","webm"],["video/quicktime","mov"],["video/x-matroska","mkv"],
-  ["audio/mpeg","mp3"],["audio/wav","wav"],["audio/x-wav","wav"],["audio/mp4","m4a"],["audio/ogg","ogg"],
+  ["audio/mpeg","mp3"],["audio/wav","wav"],["audio/x-wav","wav"],["audio/mp4","m4a"],["audio/ogg","ogg"],["audio/flac","flac"],
   ["application/pdf","pdf"],["text/plain","txt"],["text/vtt","vtt"],["application/json","json"]
 ]);
 
