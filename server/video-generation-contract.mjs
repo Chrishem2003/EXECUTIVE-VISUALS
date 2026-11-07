@@ -64,10 +64,10 @@ export function normalizeVideoGenerationRequest(input) {
   }
 
   const operation = input.operation;
-  if (operation != null && !["text-to-video", "image-to-video", "video-to-video", "video-upscale"].includes(operation)) {
+  if (operation != null && !["text-to-video", "image-to-video", "video-to-video", "video-upscale", "video-to-hdr"].includes(operation)) {
     throw new VideoGenerationValidationError("operation is not supported by the normalized video contract");
   }
-  const prompt = boundedString(input.prompt, "prompt", MAX_PROMPT_LENGTH, { required: operation !== "video-upscale" });
+  const prompt = boundedString(input.prompt, "prompt", MAX_PROMPT_LENGTH, { required: !["video-upscale", "video-to-hdr"].includes(operation) });
   const negativePrompt = boundedString(input.negativePrompt, "negativePrompt", 4000);
   const aspectRatio = input.aspectRatio ?? "16:9";
   if (!ALLOWED_ASPECT_RATIOS.has(aspectRatio)) {
@@ -83,6 +83,10 @@ export function normalizeVideoGenerationRequest(input) {
     throw new VideoGenerationValidationError("resolution must be a documented provider resolution tier");
   }
 
+  const outputFormat = input.outputFormat ?? (operation === "video-to-hdr" ? "hdr10" : "mp4");
+  if (!["mp4", "hdr10", "hlg"].includes(outputFormat)) {
+    throw new VideoGenerationValidationError("outputFormat must be mp4, hdr10 or hlg in the normalized cloud video contract");
+  }
   const request = {
     requestId: boundedString(input.requestId, "requestId", 160) ?? randomUUID(),
     ...(input.projectId != null && input.projectId !== "" ? { projectId: boundedString(input.projectId, "projectId", 160, { required: true }) } : {}),
@@ -91,6 +95,7 @@ export function normalizeVideoGenerationRequest(input) {
     aspectRatio,
     resolution,
     durationSeconds: finiteNumber(input.durationSeconds ?? 5, "durationSeconds", { min: 1, max: 180, required: true, integer: true }),
+    outputFormat,
     audioMode,
     referenceAssetIds: assetIds(input.referenceAssetIds, "referenceAssetIds"),
     ...(negativePrompt ? { negativePrompt } : {}),
@@ -101,7 +106,7 @@ export function normalizeVideoGenerationRequest(input) {
     request.sourceVideoAssetId = boundedString(input.sourceVideoAssetId, "sourceVideoAssetId", 160, { required: true });
   }
   if (input.keyframeAssetIds != null) request.keyframeAssetIds = assetIds(input.keyframeAssetIds, "keyframeAssetIds", 5);
-  if (["video-to-video", "video-upscale"].includes(operation) && !request.sourceVideoAssetId) {
+  if (["video-to-video", "video-upscale", "video-to-hdr"].includes(operation) && !request.sourceVideoAssetId) {
     throw new VideoGenerationValidationError("sourceVideoAssetId is required for this video operation");
   }
   if (operation !== "video-to-video" && request.keyframeAssetIds?.length) {
