@@ -17,9 +17,12 @@ export function readCloudWorkerConfig(env=process.env){
  if(!media&&!timeline&&!video)throw new Error("Enable at least one supported cloud worker family.");
  if(video){
   if(env.VIDEO_GATEWAY_ENABLED!=="true"||env.VIDEO_GATEWAY_ALLOW_REMOTE!=="true")throw new Error("Cloud video worker requires both explicit remote-execution gates.");
-  if(!env.FAL_VIDEO_MODEL||!env.FAL_KEY||!env.FAL_BILLING_KEY)throw new Error("Cloud video worker requires an exact FAL model, provider key and billing key.");
+  const falConfigured=Boolean(env.FAL_VIDEO_MODEL&&env.FAL_KEY&&env.FAL_BILLING_KEY);
+  const runwayRouterConfigured=env.RUNWAY_MODEL_ROUTER_ENABLED==="true"&&env.RUNWAY_VIDEO_ALLOW_REMOTE==="true"&&
+   /^[a-z][a-z0-9_-]{0,63}$/.test(String(env.RUNWAY_VIDEO_ROUTER_CONFIG||""))&&Boolean(env.RUNWAY_API_KEY||env.RUNWAYML_API_SECRET);
+  if(!falConfigured&&!runwayRouterConfigured)throw new Error("Cloud video worker requires either a fully configured FAL adapter or an explicitly enabled Runway Model Router with a saved config.");
   if(!String(env.CLOUD_VIDEO_OUTPUT_HOSTS||"").trim())throw new Error("Cloud video worker requires an explicit output-host allowlist.");
-  if(String(env.RUNWAY_VIDEO_MODELS||"").trim())throw new Error("Runway execution remains disabled until an authoritative task-level actual-cost resolver is integrated.");
+  if(String(env.RUNWAY_VIDEO_MODELS||"").trim())throw new Error("Direct Runway model execution remains disabled until its task-level actual-cost resolver is integrated.");
  }
  if(!env.SUPABASE_URL||!env.SUPABASE_SERVICE_ROLE_KEY)throw new Error("Cloud workers require server-side Supabase credentials.");
  const leaseSeconds=integer(env.CLOUD_WORKER_LEASE_SECONDS,90,30,900,"Cloud worker lease duration");
