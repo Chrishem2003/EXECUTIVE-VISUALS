@@ -40,6 +40,16 @@ The current Runway model catalogue and input guide list these exact model IDs an
 - https://docs.dev.runwayml.com/guides/pricing/
 - https://docs.dev.runwayml.com/api-details/api_changelog/
 
+## Published-price preflight and billing reservation
+
+The workflow billing boundary now uses the model-specific Runway published-price estimator for the two newly added profiles when platform credit value and markup configuration are present:
+
+- Kling 4.0 Flash: 9.4 Runway credits per output second, with a 29-credit minimum; 5 seconds estimates 47 provider credits.
+- Gemini Omni 1.2 Flash: 2 / 7 / 10 / 21 Runway credits per second at 360p / 720p / 1080p / 4K, plus applicable image and input-video charges; 5 seconds at 720p estimates 35 provider credits before references.
+- GPT Image 2.6: pricing varies by exact pixel ratio, resolution tier and quality; each reference image adds one credit per output image.
+
+The billing resolver converts the provider estimate into platform credits using the configured credit value and markup. The estimate is stored with the reservation metadata. It remains an estimate, not task-level actual-cost settlement; successful jobs must not be described as reconciled invoices. The production release gate remains blocked until provider usage reconciliation, cancellation/refund behavior and durable ledger acceptance are proven.
+
 ## Commercial and release gates
 
 - Video estimates are separate from authoritative provider settlement. Do not invoice customers from `estimatedCostCredits`.
