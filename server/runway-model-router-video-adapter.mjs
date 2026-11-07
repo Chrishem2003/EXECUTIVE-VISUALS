@@ -55,6 +55,10 @@ function routedInput(input) {
     }
     result.seed = input.seed;
   }
+  const sourceVideos = Array.isArray(input.referenceVideos) ? input.referenceVideos.filter(item => item?.role === "source") : [];
+  if (sourceVideos.length > 1 || (input.operation === "video-to-video" && sourceVideos.length !== 1) || (input.operation !== "video-to-video" && sourceVideos.length !== 0)) {
+    throw fail("Runway video-to-video requires exactly one source video; other operations cannot include a source video.", "RUNWAY_ROUTER_INPUT_INVALID");
+  }
   const referenceLimits = { referenceImages: 4, referenceVideos: 2, referenceAudio: 1, keyframes: 5 };
   if (input.audioMode === "reference" && (!Array.isArray(input.referenceAudio) || input.referenceAudio.length !== 1)) {
     throw fail("Reference audio mode requires exactly one resolved audio reference.", "RUNWAY_ROUTER_INPUT_INVALID");
@@ -169,7 +173,7 @@ export function createRunwayModelRouterVideoAdapter({
     model,
     minimumPollIntervalMs: 5000,
     async prepareInput(input, context) {
-      if (!input || input.provider !== "runway" || input.model !== model || input.operation && !["text-to-video", "image-to-video"].includes(input.operation)) {
+      if (!input || input.provider !== "runway" || input.model !== model || input.operation && !["text-to-video", "image-to-video", "video-to-video"].includes(input.operation)) {
         throw fail("Runway router job identity or operation is invalid.", "VIDEO_JOB_INPUT_MISMATCH");
       }
       if (typeof prepareInput !== "function") {
