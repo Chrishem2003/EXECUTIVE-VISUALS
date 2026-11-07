@@ -336,7 +336,7 @@ test("Magnific upscale budget uses verified source frames, not caller-supplied l
     durationSeconds: 12, outputFrames: 336, resolution: "2k", outputFormat: "mp4"
   };
   await assert.rejects(() => client.enqueue(args({
-    model: "magnific_video_upscaler_creative", input, reservedAmount: 3.2
+    model: "magnific_video_upscaler_creative", input, reservedAmount: 3.0
   })), error => error.code === "VIDEO_BUDGET_BELOW_PROVIDER_ESTIMATE" && error.estimate.amount === 3.03);
   await assert.rejects(() => client.enqueue(args({
     model: "magnific_video_upscaler_creative",
