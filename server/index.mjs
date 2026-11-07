@@ -22,7 +22,7 @@ import { ensureTransformationPlanSchema, createTransformationPlan, approveTransf
 import { signInWithSupabasePassword, signUpWithSupabasePassword, refreshSupabaseSession, getSupabaseUser, revokeSupabaseSession } from "./supabase-password-auth.mjs";
 import { ensureBillingSchema, touchBillingAccount, getBillingOverview, listBillingPlans, getAdminOverview, listAdminUsers, saveBillingPlan, assignManualSubscription, adjustBillingCredits, setBillingAccountStatus, listBillingModelPrices, saveBillingModelPrice } from "./billing.mjs";
 import { ensureBillingWebhookSchema, receiveFlutterwaveWebhook, processNextFlutterwaveWebhook, createFlutterwaveCheckout } from "./billing-webhooks.mjs";
-import { ensureDodoSubscriptionSchema, dodoProductEnvName, dodoSubscriptionCheckoutEnabled, createDodoSubscriptionCheckout, receiveDodoWebhook, processNextDodoWebhook, getDodoCheckoutStatus, createDodoCustomerPortalSession } from "./dodo-subscriptions.mjs";
+import { ensureDodoSubscriptionSchema, dodoProductEnvName, dodoSubscriptionCheckoutEnabled, dodoCustomerPortalEnabled, createDodoSubscriptionCheckout, receiveDodoWebhook, processNextDodoWebhook, getDodoCheckoutStatus, createDodoCustomerPortalSession } from "./dodo-subscriptions.mjs";
 
 const PORT = Number(process.env.PORT || process.env.API_PORT || 4179);
 const HOST = process.env.API_HOST || (process.env.NODE_ENV === "production" ? "0.0.0.0" : "127.0.0.1");
@@ -396,7 +396,7 @@ const billingAccount=touchBillingAccount(db,user);
       const admin=isAdminUser(user);
       if(path==="/api/me"&&req.method==="GET"){send(res,200,{user,authMode:AUTH_MODE,capabilities:{admin,billing:true}},cors);return;}
       if(path==="/api/billing/plans"&&req.method==="GET"){const plans=listBillingPlans(db).map(plan=>({...plan,subscriptionCheckoutAvailable:dodoRecurringCheckoutReady()&&/^pdt_[A-Za-z0-9_-]{6,120}$/.test(String(process.env[dodoProductEnvName(plan.code)]||""))}));send(res,200,{plans},cors);return;}
-      if(path==="/api/billing/overview"&&req.method==="GET"){send(res,200,{billing:getBillingOverview(db,user.id),payment:{checkoutEnabled:process.env.BILLING_CHECKOUT_ENABLED==="true"&&(process.env.BILLING_ENFORCEMENT_ENABLED==="true"||process.env.CREDITS_ENABLED==="true")&&Boolean(process.env.FLW_SECRET_KEY&&process.env.FLW_WEBHOOK_SECRET&&process.env.PUBLIC_APP_URL),subscriptionCheckoutEnabled:dodoRecurringCheckoutReady(),recurringSubscriptionsEnabled:dodoSubscriptionCheckoutEnabled()}},cors);return;}
+      if(path==="/api/billing/overview"&&req.method==="GET"){send(res,200,{billing:getBillingOverview(db,user.id),payment:{checkoutEnabled:process.env.BILLING_CHECKOUT_ENABLED==="true"&&(process.env.BILLING_ENFORCEMENT_ENABLED==="true"||process.env.CREDITS_ENABLED==="true")&&Boolean(process.env.FLW_SECRET_KEY&&process.env.FLW_WEBHOOK_SECRET&&process.env.PUBLIC_APP_URL),subscriptionCheckoutEnabled:dodoRecurringCheckoutReady(),recurringSubscriptionsEnabled:dodoSubscriptionCheckoutEnabled(),customerPortalEnabled:dodoCustomerPortalEnabled()}},cors);return;}
       const billingOrderMatch=path.match(/^\/api\/billing\/orders\/(ev_[a-f0-9]{32})$/);
       if(billingOrderMatch&&req.method==="GET"){
         const order=db.prepare(`SELECT o.tx_ref,o.status,o.expected_amount_minor,o.currency,o.credits,o.verified_at,o.created_at,p.name AS plan_name,p.interval
