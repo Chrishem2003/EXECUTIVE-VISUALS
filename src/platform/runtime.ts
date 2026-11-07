@@ -5,7 +5,7 @@ type RuntimeProject={id:string;name:string;description?:string;revision?:number;
 type RuntimeAsset={id:string;projectId?:string|null;name:string;mediaType:string;size:number;sha256:string;derivativeOf?:string|null;metadata?:Record<string,unknown>;createdAt:string};
 type RuntimeJob={id:string;projectId?:string|null;jobType:string;status:string;progress:number;input:Record<string,unknown>;output?:Record<string,unknown>|null;error?:{code?:string;message?:string}|null;createdAt:string;updatedAt:string};
 type RuntimeReview={id:string;project_id:string;asset_id?:string|null;timecode_seconds?:number|null;decision:string;body:string;status:string;created_at:string};
-type ProviderStatus={id:string;provider:string;enabled:boolean;configured:boolean;remote:boolean;model:string|null;availableModels?:Array<{id:string;label:string;minDurationSeconds:number;maxDurationSeconds:number;aspectRatios:string[];resolutions:string[];inputModes:string[];readiness:string}>;status:"ready"|"disabled"|"needs_configuration"|"remote_opt_in_required"|"unavailable";reason:string;capabilities:string[]};
+type ProviderStatus={id:string;provider:string;enabled:boolean;configured:boolean;remote:boolean;model:string|null;availableModels?:Array<{id:string;label:string;minDurationSeconds?:number;maxDurationSeconds?:number;aspectRatios?:string[];resolutions?:string[];inputModes?:string[];readiness?:string}>;status:"ready"|"disabled"|"needs_configuration"|"remote_opt_in_required"|"unavailable";reason:string;capabilities:string[]};
 type RemoteUsage={window:string;configurationValid:boolean;limit:number|null;used:number;remaining:number|null;projectUsed:number|null;remoteDisabled:boolean};
 let workspaceRevisions=new Map<string,number>();
 let workspaceSaveTimers=new Map<string,ReturnType<typeof setTimeout>>();
@@ -69,6 +69,16 @@ export function renderAssetLibrary(){
  (state.status==="offline"||state.status==="auth-required"?'<div class="notice">Sign in to use the persistent asset library. Browser planning drafts remain available offline.</div>':'')+
  '<section class="panel"><div class="runtime-section-heading"><div><div class="eyebrow">PRIVATE MEDIA LIBRARY</div><h3>Originals and derivatives</h3></div><span>'+state.assets.length+' stored assets</span></div><label>Project scope</label><select id="ev-project-select">'+projectOptions()+'</select><p>Upload originals, inspect media metadata, create thumbnails, proxies and audio extracts. Source files remain unchanged.</p><label class="upload primary">＋ Import media<input id="ev-upload" type="file" multiple accept="image/*,video/*,audio/*,application/pdf,text/plain"></label>'+renderAssets()+'</section>'+
  '<section class="panel"><div class="eyebrow">PROCESSING HISTORY</div><h3>Recent media jobs</h3>'+renderJobs()+'</section></div>';
+}
+export function renderImageModelOptions(){
+ const provider=state.providers.find(item=>item.id==="image"&&item.provider==="gemini");
+ if(!provider)return '<option value="">Server-configured model</option>';
+ return (provider.availableModels||[]).map(model=>'<option value="'+esc(model.id)+'" '+(provider.model===model.id?"selected":"")+'>'+esc(model.label)+'</option>').join("")||'<option value="">No verified Gemini image models available</option>';
+}
+export function renderImageModelNote(){
+ const provider=state.providers.find(item=>item.id==="image"&&item.provider==="gemini");
+ if(!provider)return "The image model is configured server-side. Nano Banana Pro appears when the Gemini image adapter is selected by the administrator.";
+ return esc(provider.status==="ready"?"Nano Banana Pro is configured. Google API charges apply to approved generations.":provider.reason)+" Reference-image editing is supported for one uploaded reference in this first adapter.";
 }
 export function renderVideoModelOptions(){
  const provider=state.providers.find(item=>item.provider==="runway");
