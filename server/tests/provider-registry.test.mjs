@@ -112,6 +112,15 @@ test("Runway remains blocked without remote opt-in or credentials",()=>{
  const noOptIn=getProviderCatalog({VIDEO_GATEWAY_PROVIDER:"runway",VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"false",RUNWAYML_API_SECRET:"secret",RUNWAY_VIDEO_MODEL:"seedance2_5"});
  assert.equal(noOptIn.providers.find(item=>item.id==="video").status,"remote_opt_in_required");
 });
+test("Gemini Nano Banana Pro is exposed only when configured and explicitly opted in",()=>{
+ const ready=getProviderCatalog({IMAGE_GATEWAY_PROVIDER:"gemini",IMAGE_GATEWAY_ENABLED:"true",IMAGE_GATEWAY_ALLOW_REMOTE:"true",GEMINI_API_KEY:"do-not-return",GEMINI_IMAGE_MODEL:"gemini-3-pro-image"});
+ const image=ready.providers.find(item=>item.id==="image");
+ assert.equal(image.provider,"gemini");assert.equal(image.status,"ready");assert.equal(image.model,"gemini-3-pro-image");
+ assert.equal(image.availableModels[0].id,"gemini-3-pro-image");
+ assert.equal(JSON.stringify(ready).includes("do-not-return"),false);
+ const blocked=getProviderCatalog({IMAGE_GATEWAY_PROVIDER:"gemini",IMAGE_GATEWAY_ENABLED:"true",IMAGE_GATEWAY_ALLOW_REMOTE:"false",GEMINI_API_KEY:"secret",GEMINI_IMAGE_MODEL:"gemini-3-pro-image"});
+ assert.equal(blocked.providers.find(item=>item.id==="image").status,"remote_opt_in_required");
+});
 test("AI upscaler is visible as a separate local capability and remains unavailable without a configured engine",()=>{
  const catalog=getProviderCatalog({});
  const provider=catalog.providers.find(item=>item.id==="ai-upscale");
