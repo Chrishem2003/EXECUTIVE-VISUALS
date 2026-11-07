@@ -54,6 +54,32 @@ test("cloud executor submits once, records task, verifies cost and ingests priva
   assert.equal(submission[3], ownerId);
 });
 
+
+test("cloud executor runs non-billable provider preflight before the paid submission", async () => {
+  const f = fixture();
+  f.adapter.preflight = async input => {
+    f.calls.push(["preflight", input.requestHash]);
+    return { billable: false, estimatedUsd: 1.25, currency: "USD", model: "gen4.5" };
+  };
+  await executeCloudVideoGenerationJob({ job, workerId: "worker-1", ...f });
+  assert.deepEqual(f.calls.map(call => call[0]), ["prepare", "preflight", "begin", "submit", "record", "poll", "cost", "ingest"]);
+  const recorded = f.calls.find(call => call[0] === "record")[4];
+  assert.equal(recorded.preflightQuote.estimatedUsd, 1.25);
+});
+
+test("cloud executor refuses provider quote above the approved reservation without submitting", async () => {
+  const f = fixture();
+  f.adapter.preflight = async () => ({
+    billable: false, estimatedUsd: 2.01, currency: "USD", model: "gen4.5"
+  });
+  await assert.rejects(
+    executeCloudVideoGenerationJob({ job, workerId: "worker-1", ...f }),
+    error => error.code === "VIDEO_PREFLIGHT_REJECTED"
+  );
+  assert.equal(f.calls.some(call => call[0] === "begin"), false);
+  assert.equal(f.calls.some(call => call[0] === "submit"), false);
+});
+
 test("cloud executor resumes submitted task without a second provider POST", async () => {
   const f = fixture({ state: "submitted" });
   const result = await executeCloudVideoGenerationJob({ job, workerId: "worker-1", ...f });
