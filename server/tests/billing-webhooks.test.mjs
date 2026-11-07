@@ -8,7 +8,7 @@ import {
 import {
   ensureBillingWebhookSchema, createBillingPurchaseOrder,
   verifyFlutterwaveWebhookSignature, receiveFlutterwaveWebhook,
-  processNextFlutterwaveWebhook
+  processNextFlutterwaveWebhook, createFlutterwaveCheckout
 } from "../billing-webhooks.mjs";
 
 function setup() {
@@ -149,5 +149,60 @@ test("only active one-time credit products can create Flutterwave payment orders
   assert.match(order.txRef, /^ev_[a-f0-9]{32}$/);
   assert.equal(order.amountMinor, 50000);
   assert.equal(order.credits, 1200);
+  db.close();
+});
+
+
+test("Flutterwave checkout uses the stored one-time price and Uganda mobile-money options", async () => {
+  const { db, plan } = setup();
+  let requestBody;
+  const checkout = await createFlutterwaveCheckout(db, {
+    user: { id: "user-pay-1", email: "pay@example.test" },
+    planId: plan.id, secretKey: "flw-test-secret-key",
+    publicAppUrl: "https://executive.example.com",
+    fetchImpl: async (url, options) => {
+      assert.equal(String(url), "https://api.flutterwave.com/v3/payments");
+      requestBody = JSON.parse(options.body);
+      return new Response(JSON.stringify({
+        status: "success",
+        data: { link: "https://checkout.flutterwave.com/v3/hosted/pay/test-session" }
+      }), { status: 200 });
+    }
+  });
+  assert.equal(requestBody.amount, 50000);
+  assert.equal(requestBody.currency, "UGX");
+  assert.equal(requestBody.payment_options, "card, mobilemoneyuganda");
+  assert.equal(requestBody.tx_ref, checkout.txRef);
+  assert.equal(checkout.currency, "UGX");
+  assert.equal(new URL(checkout.checkoutUrl).hostname, "checkout.flutterwave.com");
+  assert.equal(db.prepare("SELECT status FROM billing_payment_orders WHERE id=?").get(checkout.orderId).status, "pending");
+  db.close();
+});
+
+test("Flutterwave checkout rejects untrusted provider URLs and fails the order closed", async () => {
+  const { db, plan } = setup();
+  await assert.rejects(() => createFlutterwaveCheckout(db, {
+    user: { id: "user-pay-1", email: "pay@example.test" },
+    planId: plan.id, secretKey: "flw-test-secret-key",
+    publicAppUrl: "https://executive.example.com",
+    fetchImpl: async () => new Response(JSON.stringify({
+      status: "success", data: { link: "https://evil.example/steal" }
+    }), { status: 200 })
+  }), error => error.code === "BILLING_PROVIDER_RESPONSE_INVALID");
+  assert.equal(db.prepare("SELECT status FROM billing_payment_orders ORDER BY created_at DESC LIMIT 1").get().status, "failed");
+  db.close();
+});
+
+test("Flutterwave checkout requires HTTPS redirects and a configured secret", async () => {
+  const { db, plan } = setup();
+  await assert.rejects(() => createFlutterwaveCheckout(db, {
+    user: { id: "user-pay-1", email: "pay@example.test" },
+    planId: plan.id, secretKey: "flw-test-secret-key", publicAppUrl: "http://public.example.com",
+    fetchImpl: async () => { throw new Error("must not call provider"); }
+  }), error => error.code === "BILLING_REDIRECT_URL_INVALID");
+  await assert.rejects(() => createFlutterwaveCheckout(db, {
+    user: { id: "user-pay-1", email: "pay@example.test" },
+    planId: plan.id, secretKey: "", publicAppUrl: "https://executive.example.com"
+  }), error => error.code === "BILLING_PROVIDER_CONFIG_INVALID");
   db.close();
 });
