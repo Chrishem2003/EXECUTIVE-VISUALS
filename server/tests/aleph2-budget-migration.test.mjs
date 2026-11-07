@@ -46,6 +46,7 @@ test("disposable PostgreSQL harness covers Aleph 2 approval ACL, exact hash, pri
     "has_function_privilege('service_role'",
     "Aleph 2 approval was not consumed against its exact request hash",
     "VIDEO_BUDGET_BELOW_PROVIDER_ESTIMATE",
-    "VIDEO_PRICE_DURATION_OR_OPERATION_INVALID"
+    "VIDEO_PRICE_DURATION_OR_OPERATION_INVALID",
+    "'durationSeconds',1"
   ]) assert.ok(postgresIntegration.includes(contract), "Missing PostgreSQL integration assertion: " + contract);
 });
