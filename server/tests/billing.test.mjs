@@ -4,7 +4,8 @@ import { openDatabase } from "../db.mjs";
 import {
   ensureBillingSchema,touchBillingAccount,listBillingPlans,saveBillingPlan,assignManualSubscription,
   getBillingOverview,getBillingBalance,getAdminOverview,listAdminUsers,adjustBillingCredits,
-  setBillingAccountStatus,canUsePaidModels,saveBillingModelPrice,listBillingModelPrices
+  setBillingAccountStatus,canUsePaidModels,saveBillingModelPrice,listBillingModelPrices,
+  spendBillingCredits,refundBillingCredits,getBillingBalance,applyDailyFreeCredits
 } from "../billing.mjs";
 
 function setup() {
@@ -97,4 +98,53 @@ test("model price references require a valid source URL and retain provenance",(
   assert.equal(listBillingModelPrices(db).length,1);
   assert.throws(()=>saveBillingModelPrice(db,{provider:"fal",model:"x",capability:"video",unit:"clip",priceMicros:1,sourceUrl:"http://bad.example"}),e=>e.code==="BILLING_MODEL_PRICE_INVALID");
   db.close();
+});
+
+
+test("generation credits use the canonical billing ledger with daily refills and idempotent refunds",()=>{
+  const previousEnabled=process.env.BILLING_ENFORCEMENT_ENABLED;
+  const previousDaily=process.env.CREDITS_DAILY_FREE;
+  process.env.BILLING_ENFORCEMENT_ENABLED="true";
+  process.env.CREDITS_DAILY_FREE="20";
+  const db=setup();
+  try{
+    touchBillingAccount(db,{id:"generation-user",email:"generation@example.test"});
+    assert.equal(getBillingBalance(db,"generation-user"),20);
+    const spend=spendBillingCredits(db,{userId:"generation-user",capability:"image.generate",referenceId:"job-1:node-1",idempotencyKey:"generation-spend:job-1:node-1"});
+    assert.equal(spend.charged,3);
+    assert.equal(spend.balance,17);
+    const replay=spendBillingCredits(db,{userId:"generation-user",capability:"image.generate",referenceId:"job-1:node-1",idempotencyKey:"generation-spend:job-1:node-1"});
+    assert.equal(replay.replayed,true);
+    assert.equal(replay.balance,17);
+    const refund=refundBillingCredits(db,{userId:"generation-user",spendIdempotencyKey:"generation-spend:job-1:node-1"});
+    assert.equal(refund.refunded,3);
+    assert.equal(refund.balance,20);
+    const refundReplay=refundBillingCredits(db,{userId:"generation-user",spendIdempotencyKey:"generation-spend:job-1:node-1"});
+    assert.equal(refundReplay.replayed,true);
+    assert.equal(refundReplay.balance,20);
+    const nextDay=applyDailyFreeCredits(db,"generation-user",{now:Date.parse("2026-11-08T00:00:00.000Z")});
+    assert.equal(nextDay.granted,17);
+    assert.equal(nextDay.balance,20);
+  }finally{
+    db.close();
+    if(previousEnabled===undefined)delete process.env.BILLING_ENFORCEMENT_ENABLED;else process.env.BILLING_ENFORCEMENT_ENABLED=previousEnabled;
+    if(previousDaily===undefined)delete process.env.CREDITS_DAILY_FREE;else process.env.CREDITS_DAILY_FREE=previousDaily;
+  }
+});
+
+test("insufficient billing credits fail closed before a paid provider request",()=>{
+  const previousEnabled=process.env.BILLING_ENFORCEMENT_ENABLED;
+  const previousDaily=process.env.CREDITS_DAILY_FREE;
+  process.env.BILLING_ENFORCEMENT_ENABLED="true";
+  process.env.CREDITS_DAILY_FREE="0";
+  const db=setup();
+  try{
+    touchBillingAccount(db,{id:"empty-generation-user",email:"empty@example.test"});
+    assert.throws(()=>spendBillingCredits(db,{userId:"empty-generation-user",capability:"video.generate",idempotencyKey:"generation-spend:empty:video"}),error=>error.code==="BILLING_INSUFFICIENT_CREDITS"&&error.status===402);
+    assert.equal(getBillingBalance(db,"empty-generation-user"),0);
+  }finally{
+    db.close();
+    if(previousEnabled===undefined)delete process.env.BILLING_ENFORCEMENT_ENABLED;else process.env.BILLING_ENFORCEMENT_ENABLED=previousEnabled;
+    if(previousDaily===undefined)delete process.env.CREDITS_DAILY_FREE;else process.env.CREDITS_DAILY_FREE=previousDaily;
+  }
 });
