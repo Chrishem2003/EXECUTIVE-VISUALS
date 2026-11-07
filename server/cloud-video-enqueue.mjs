@@ -109,8 +109,22 @@ export function createCloudVideoEnqueue({
       const runwayEditEnabled = provider === "runway" && model === "aleph2" && input.operation === "video-to-video";
       const runwayUpscaleEnabled = provider === "runway" && model === "magnific_video_upscaler_creative" && input.operation === "video-upscale";
       const runwayHdrEnabled = provider === "runway" && model === "ruby" && input.operation === "video-to-hdr";
-      const runwayEnabled = runwayTextEnabled || runwayImageEnabled || runwayEditEnabled || runwayUpscaleEnabled || runwayHdrEnabled;
+      const runwayRouterEnabled = provider === "runway" && model === "model-router" &&
+        (input.operation === undefined || input.operation === "text-to-video");
+      const runwayEnabled = runwayTextEnabled || runwayImageEnabled || runwayEditEnabled || runwayUpscaleEnabled || runwayHdrEnabled || runwayRouterEnabled;
       const googleEnabled = provider === "google" && model === "gemini-omni-1.1-flash";
+      if (runwayRouterEnabled && (
+        env.RUNWAY_MODEL_ROUTER_ENABLED !== "true" ||
+        env.RUNWAY_VIDEO_ALLOW_REMOTE !== "true" ||
+        env.VIDEO_GATEWAY_ENABLED !== "true" ||
+        env.VIDEO_GATEWAY_ALLOW_REMOTE !== "true" ||
+        !/^[a-z][a-z0-9_-]{0,63}$/.test(String(env.RUNWAY_VIDEO_ROUTER_CONFIG || "")) ||
+        currency !== "USD"
+      )) {
+        const disabled = new Error("Runway Model Router enqueue requires explicit worker, remote and saved-config gates plus a USD budget ceiling.");
+        disabled.code = "RUNWAY_ROUTER_REMOTE_DISABLED";
+        throw disabled;
+      }
       if (!runwayEnabled && !googleEnabled) {
         const unsupported = new Error("The selected provider/model does not have an enabled, verified cloud execution adapter.");
         unsupported.code = "VIDEO_GENERATION_UNSUPPORTED_CAPABILITY";
@@ -181,7 +195,9 @@ export function createCloudVideoEnqueue({
         sourceHeight: verifiedSourceMetadata.sourceHeight,
         sourceDynamicRange: verifiedSourceMetadata.sourceDynamicRange
       } : input;
-      const estimate = estimateVideoGenerationCost({
+      const estimate = runwayRouterEnabled
+        ? { amount: reservedAmount, currency: "USD", source: "approved_budget_ceiling_pending_runway_router_preflight" }
+        : estimateVideoGenerationCost({
         provider, model, operation: input.operation || (input.startFrameAssetId ? "image-to-video" : "text-to-video"),
         durationSeconds: pricingInput.durationSeconds,
         outputFormat: input.outputFormat, resolution: input.resolution ?? (runwayUpscaleEnabled ? "2k" : input.resolution), audio: input.audio,
@@ -200,7 +216,17 @@ export function createCloudVideoEnqueue({
         unsupported.code = "VIDEO_PRICE_OUTPUT_FORMAT_UNSUPPORTED";
         throw unsupported;
       }
-      if (runwayTextEnabled || runwayImageEnabled) {
+      if (runwayRouterEnabled) {
+        if (typeof input.prompt !== "string" || !input.prompt.trim() || input.prompt.length > 26000 ||
+            input.durationSeconds !== undefined && (!Number.isInteger(input.durationSeconds) || input.durationSeconds < 2 || input.durationSeconds > 30) ||
+            input.resolution !== undefined && !["480p", "720p", "1080p", "4k"].includes(input.resolution) ||
+            input.aspectRatio !== undefined && !["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"].includes(input.aspectRatio) ||
+            input.negativePrompt !== undefined && (typeof input.negativePrompt !== "string" || input.negativePrompt.length > 1000)) {
+          const invalid = new Error("Runway Model Router video input exceeds its documented prompt, duration, ratio, resolution or negative-prompt limits.");
+          invalid.code = "VIDEO_GENERATION_UNSUPPORTED_CAPABILITY";
+          throw invalid;
+        }
+      } else if (runwayTextEnabled || runwayImageEnabled) {
         // Gen-4.5's hosted worker currently supports provider-default resolution only.
         if (input.resolution !== undefined && input.resolution !== "provider_default") {
           const unsupported = new Error("The current Gen-4.5 worker only supports provider-default resolution.");
