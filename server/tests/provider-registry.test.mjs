@@ -230,7 +230,8 @@ test("catalogued but disabled cloud-worker models are not exposed by the legacy 
  const video=catalog.providers.find(item=>item.id==="video");
  assert.equal(video.status,"needs_configuration");
  assert.equal(video.configured,false);
- assert.equal(video.availableModels.some(model=>model.id==="kling_4_flash"),false);
- assert.equal(video.availableModels.some(model=>model.id==="gemini_omni_flash_1.2"),false);
+ for(const id of ["seedance2_5","kling_4","kling_4_flash","gemini_omni_flash_1.2"]){
+  assert.equal(video.availableModels.some(model=>model.id===id),false,id+" must stay out of the legacy selectable model list");
+ }
  assert.equal(JSON.stringify(catalog).includes("do-not-return"),false);
 });
