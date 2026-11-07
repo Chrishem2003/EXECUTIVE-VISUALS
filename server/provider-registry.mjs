@@ -26,7 +26,11 @@ export function getProviderCatalog(env=process.env,media={ffmpeg:false,ffprobe:f
   :gatewayState({enabled:env.VIDEO_GATEWAY_ENABLED==="true",configured:Boolean(env.FAL_KEY&&env.FAL_VIDEO_MODEL),url:"https://queue.fal.run",id:"video",allowRemote:env.VIDEO_GATEWAY_ALLOW_REMOTE==="true",model:env.FAL_VIDEO_MODEL,provider:"fal",capabilities:["video.generate"],reasonIfMissing:"Set FAL_KEY and FAL_VIDEO_MODEL on the server."});
  if(videoProvider!=="runway"&&videoProvider!=="fal"){video.status="needs_configuration";video.configured=false;video.reason="VIDEO_GATEWAY_PROVIDER must be runway or fal.";}
  video.modelCapabilities=videoProvider==="runway"?getRunwayVideoCapabilities(env.RUNWAY_VIDEO_MODEL||""):getFalVideoCapabilities({imageInputField:env.FAL_VIDEO_IMAGE_INPUT_FIELD||""});
- video.availableModels=videoProvider==="runway"?listRunwayVideoModels():[];
+ video.availableModels=videoProvider==="runway"?listRunwayVideoModels():(video.model?[{
+  id:video.model,label:video.model,
+  inputModes:["text",...(video.modelCapabilities.referenceImages?["image"]:[])],
+  capabilities:video.capabilities,readiness:video.status
+}]:[]);
  const googleOmni=gatewayState({enabled:env.GOOGLE_OMNI_VIDEO_ENABLED==="true"&&env.GEMINI_OMNI_ENABLED==="true",configured:Boolean(env.GEMINI_API_KEY),url:"https://generativelanguage.googleapis.com",allowRemote:env.GOOGLE_OMNI_VIDEO_ALLOW_REMOTE==="true"&&env.GEMINI_OMNI_ALLOW_REMOTE==="true",model:"gemini-omni-1.1-flash",id:"video-google-omni",provider:"google",capabilities:["video.generate","video.edit"],reasonIfMissing:"Set GEMINI_API_KEY and complete the approved-submission, owner/project authorization and private-input planning callbacks."});
  if(googleOmni.status==="ready"){googleOmni.status="needs_configuration";googleOmni.reason="The Gemini Omni worker still requires application-injected approval, owner/project authorization and private-input planning callbacks; these are not enabled by default.";}
  googleOmni.availableModels=[{id:"gemini-omni-1.1-flash",label:"Gemini Omni Flash 1.1",readiness:googleOmni.status==="ready"?"Ready":"Disabled pending worker authorization callbacks",inputModes:["text","image","video","audio"],capabilities:["video.generate","video.edit"]}];
