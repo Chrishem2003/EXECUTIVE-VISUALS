@@ -158,7 +158,6 @@ export async function createDodoCustomerPortalSession(db, {
   if (!user?.id) throw fail("Authenticated customer identity is required.", "BILLING_USER_REQUIRED", 401);
   const subscription = db.prepare(`SELECT provider_customer_id FROM billing_subscriptions
     WHERE user_id=? AND provider='dodo' AND provider_customer_id IS NOT NULL
-      AND status IN ('active','trialing','past_due','on_hold')
     ORDER BY current_period_end DESC LIMIT 1`).get(String(user.id));
   const customerId = String(subscription?.provider_customer_id || "").trim();
   if (!/^cus_[A-Za-z0-9_-]{6,120}$/.test(customerId)) {
