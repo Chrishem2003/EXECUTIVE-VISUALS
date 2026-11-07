@@ -135,7 +135,28 @@ export function createRunwaySourceAssetResolver({
       }
       if (["video-to-video", "video-upscale", "video-to-hdr"].includes(input?.operation)) {
         const resolved = await resolveAsset({ ownerId, projectId, assetId: input.sourceVideoAssetId, kinds: "video" });
-        return { sourceVideo: { buffer: resolved.bytes, filename: resolved.asset.name, mimeType: resolved.asset.mediaType } };
+        const prepared = {
+          sourceVideo: { buffer: resolved.bytes, filename: resolved.asset.name, mimeType: resolved.asset.mediaType }
+        };
+        if (Array.isArray(input.keyframes) && input.keyframes.length) {
+          if (input.operation !== "video-to-video" || input.keyframes.length > 5) {
+            throw fail("Timestamped keyframes are supported only for video-to-video and are limited to five.", "VIDEO_INPUT_KEYFRAMES_INVALID");
+          }
+          prepared.keyframes = [];
+          let previousAt = -1;
+          for (const frame of input.keyframes) {
+            if (!Number.isFinite(frame?.at) || frame.at <= previousAt || frame.at > 30) {
+              throw fail("Video edit keyframe timestamps must be strictly increasing and within the source window.", "VIDEO_INPUT_KEYFRAMES_INVALID");
+            }
+            previousAt = frame.at;
+            const image = await resolveAsset({ ownerId, projectId, assetId: frame.assetId, kinds: "image" });
+            prepared.keyframes.push({
+              buffer: image.bytes, filename: image.asset.name,
+              mimeType: image.asset.mediaType, at: frame.at
+            });
+          }
+        }
+        return prepared;
       }
       return input;
     },
