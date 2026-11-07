@@ -4,6 +4,22 @@ import { resolve } from "node:path";
 const sql = await readFile(resolve(process.cwd(), "supabase/migrations/20261031210000_executive_visuals_core.sql"), "utf8");
 const checkpointSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261102090000_video_pipeline_checkpoints.sql"), "utf8");
 const issues = [];
+
+const googleDriveMigrations = [
+  ["20261105150000_google_drive_connections.sql", ["alter table executive_visuals.google_drive_connections enable row level security;", "alter table executive_visuals.google_drive_connections force row level security;", "revoke all on table executive_visuals.google_drive_connections from public, anon, authenticated;", "grant select, insert, update, delete on table executive_visuals.google_drive_connections to service_role;"]],
+  ["20261105153000_google_drive_oauth_states.sql", ["alter table executive_visuals.google_drive_oauth_states enable row level security;", "alter table executive_visuals.google_drive_oauth_states force row level security;", "revoke all on table executive_visuals.google_drive_oauth_states from public, anon, authenticated;", "grant select, insert, update, delete on table executive_visuals.google_drive_oauth_states to service_role;"]],
+  ["20261105170000_google_drive_export_attempts.sql", ["alter table executive_visuals.google_drive_export_attempts enable row level security;", "alter table executive_visuals.google_drive_export_attempts force row level security;", "revoke all on table executive_visuals.google_drive_export_attempts from public, anon, authenticated;", "grant select, insert, update on table executive_visuals.google_drive_export_attempts to service_role;"]],
+  ["20261105180000_google_drive_export_lease_integrity.sql", ["google_drive_export_attempts_lease_pair_check", "google_drive_export_attempts_expired_lease_idx"]]
+];
+for (const [filename, required] of googleDriveMigrations) {
+  const migration = await readFile(resolve(process.cwd(), "supabase/migrations/" + filename), "utf8");
+  for (const marker of required) if (!migration.includes(marker)) issues.push("Google Drive migration " + filename + " is missing required security/integrity rule: " + marker);
+  if (/\\b(drop\\s+table|truncate|delete\\s+from)\\b/i.test(migration)) issues.push("Google Drive migration " + filename + " contains destructive SQL.");
+}
+for (const filename of ["20261105150000_google_drive_connections.sql", "20261105153000_google_drive_oauth_states.sql", "20261105170000_google_drive_export_attempts.sql"]) {
+  const migration = await readFile(resolve(process.cwd(), "supabase/migrations/" + filename), "utf8");
+  if (/grant\\s+.*\\s+to\\s+(public|anon|authenticated)/i.test(migration)) issues.push("Google Drive migration " + filename + " grants access to an untrusted role.");
+}
 const tables = ["projects","project_members","project_workspace_documents","workflows","workflow_runs","workflow_node_runs","timelines","assets","jobs","job_events","consents","reviews","audit_events"];
 for (const table of tables) {
   if (!sql.includes(`alter table executive_visuals.${table} enable row level security;`)) {
