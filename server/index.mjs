@@ -322,7 +322,7 @@ export function createAppServer() {
         const rawBody=await readRaw(req,1024*1024);
         const result=receiveFlutterwaveWebhook(db,{
           rawBody,
-          signature:String(req.headers["flutterwave-signature"]||""),
+          signature:String(req.headers["verif-hash"]||""),
           secretHash:process.env.FLW_WEBHOOK_SECRET||""
         });
         send(res,200,{ok:true,accepted:true,duplicate:result.duplicate},cors);return;
