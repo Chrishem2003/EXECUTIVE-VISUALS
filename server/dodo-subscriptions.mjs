@@ -550,7 +550,7 @@ export function processNextDodoWebhook(db, { env = process.env } = {}) {
     db.prepare(`UPDATE billing_provider_events SET attempts=attempts+1,last_error=?,lease_owner=NULL,lease_expires_at=NULL
       WHERE id=? AND lease_owner=?`)
       .run(String(error?.code || "DODO_PROCESSING_FAILED").slice(0, 120), event.id, leaseOwner);
-    return { processed: false, retryable: true, eventId: event.event_id, errorCode: error?.code || "DODO_PROCESSING_FAILED" };
+    return { processed: false, retryable: true, eventId: event.event_id, errorCode: error?.code || "DODO_PROCESSING_FAILED", errorMessage: String(error?.message || "Dodo event processing failed").slice(0, 180) };
   }
 }
 
