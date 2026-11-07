@@ -36,7 +36,7 @@ export function createFfprobeVideoOutputValidator({
       !Number.isInteger(maxHeight) || maxHeight < 16 || maxHeight > 16384) {
     throw new Error("FFprobe video validator configuration is invalid.");
   }
-  return async function validateMedia({ path, contentType, size } = {}) {
+  return async function validateMedia({ path, contentType, size, input } = {}) {
     if (typeof path !== "string" || !path || !Number.isSafeInteger(size) || size < 1 || !RESPONSE_TYPES.has(contentType)) {
       return { valid: false, reason: "INPUT_INVALID" };
     }
