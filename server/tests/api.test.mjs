@@ -61,7 +61,8 @@ test("provider catalog is authenticated, safe and read-only",async()=>{
   assert.equal(catalog.providers.length,7);
   assert.equal(catalog.policy.requestsSubmitted,false);
   assert.equal(catalog.policy.credentialsExposed,false);
-  assert.equal(catalog.policy.pricesEstimated,true);
+  assert.equal(catalog.policy.pricesEstimated,false);
+  assert.equal(catalog.policy.pricingSchedulesConfigured,true);
   assert.equal(catalog.providers.find(item=>item.id==="video").pricing.models[0].model,"fal-ai/example-video");
   assert.equal(JSON.stringify(catalog).includes("API_KEY"),false);
   assert.equal(JSON.stringify(catalog).includes("Bearer "),false);
