@@ -235,9 +235,9 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
     const explicitReference=String(values.reference??values.image??values.referenceImage??config.referenceAssetId??"").trim();
     const continuity=applyShotContinuity(db,job,run,config,values,prompt,"likeness",explicitReference);
     prompt=continuity.prompt;
-    const rawReferences=Array.isArray(values.references)?values.references:config.referenceAssetIds||[];
-    if(!Array.isArray(rawReferences))throw Object.assign(new Error("Image reference IDs must be an array."),{code:"IMAGE_GATEWAY_INVALID_INPUT"});
-    const referenceIds=[...new Set([...rawReferences,explicitReference||continuity.referenceAssetId].map(value=>String(value||"").trim()).filter(Boolean))];
+    const rawReferences=[values.references,values.reference].flatMap(value=>Array.isArray(value)?value:value?[value]:[]);
+    const configuredReferences=Array.isArray(config.referenceAssetIds)?config.referenceAssetIds:[];
+    const referenceIds=[...new Set([...rawReferences,...configuredReferences,explicitReference||continuity.referenceAssetId].map(value=>String(value||"").trim()).filter(Boolean))];
     if(referenceIds.length>16)throw Object.assign(new Error("GPT Image 2.6 accepts at most 16 reference images."),{code:"IMAGE_GATEWAY_UNSUPPORTED_INPUT"});
     const referenceImageDataUrls=[];
     for(const referenceId of referenceIds){
@@ -266,12 +266,22 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
     const imageRatio=String(config.ratio||"auto");
     const imageReasoning=String(config.reasoningEffort||"high");
     const imageBackground=String(config.background||"auto");
-    const runwayPricing=provider.provider==="runway"?{ratio:imageRatio,quality:imageQuality,reasoningEffort:imageReasoning,background:imageBackground,outputCount:1,referenceImageCount:referenceImageDataUrls.length}:null;
-    reserveRemoteRequest(db,{ownerId:job.owner_id,projectId:job.project_id||null,jobId:job.id,provider,capability:"image.generate",billingReference:job.id+":"+runId+":"+nodeId+":image.generate",costContext:{provider:provider.provider,model:imageModel,unit:"image",quantity:1,runwayPricing}});
-    const result=await generateImage({prompt,size:String(config.size||"1024x1024"),quality:imageQuality,referenceImageDataUrl,referenceImages:referenceImageDataUrls,model:imageModel,ratio:imageRatio,reasoningEffort:imageReasoning,background:imageBackground,outputCount:1});
+    const outputCount=Number(config.outputCount??1);
+    if(!Number.isSafeInteger(outputCount)||outputCount<1||outputCount>4)throw Object.assign(new Error("Image outputCount must be an integer from 1 to 4."),{code:"IMAGE_GATEWAY_INVALID_INPUT"});
+    if(outputCount>1&&provider.provider!=="image")throw Object.assign(new Error("Multi-output generation is currently supported only by the OpenAI-compatible image adapter; select one output or configure a compatible provider."),{code:"IMAGE_GATEWAY_UNSUPPORTED_CAPABILITY"});
+    const runwayPricing=provider.provider==="runway"?{ratio:imageRatio,quality:imageQuality,reasoningEffort:imageReasoning,background:imageBackground,outputCount,referenceImageCount:referenceImageDataUrls.length}:null;
+    reserveRemoteRequest(db,{ownerId:job.owner_id,projectId:job.project_id||null,jobId:job.id,provider,capability:"image.generate",billingReference:job.id+":"+runId+":"+nodeId+":image.generate",costContext:{provider:provider.provider,model:imageModel,unit:"image",quantity:outputCount,runwayPricing}});
+    const result=await generateImage({prompt,size:String(config.size||"1024x1024"),quality:imageQuality,referenceImageDataUrl,referenceImages:referenceImageDataUrls,model:imageModel,ratio:imageRatio,reasoningEffort:imageReasoning,background:imageBackground,outputCount});
+    const generated=Array.isArray(result.outputs)&&result.outputs.length?result.outputs:[{buffer:result.buffer}];
+    if(generated.length!==outputCount)throw Object.assign(new Error("Image provider returned an unexpected number of generated assets."),{code:"IMAGE_GATEWAY_INVALID_RESPONSE"});
     recordModelUsage(db,{ownerId:job.owner_id,projectId:job.project_id||null,jobId:job.id,workflowRunId:runId,nodeId,provider:provider.provider,capability:"image.generate",model:result.model,usage:result.usage,durationMs:Date.now()-usageStarted});
-    const asset=await storeGeneratedImage({db,mediaRoot,ownerId:job.owner_id,projectId:job.project_id||null,jobId:job.id,prompt,model:result.model,buffer:result.buffer});
-    output=nodeOutput(node,asset.id);output.asset=asset.id;output.assetId=asset.id;output.mimeType=asset.mediaType;output.sha256=asset.sha256;output.usage=result.usage;
+    const assets=[];
+    for(const item of generated){
+     if(!Buffer.isBuffer(item?.buffer))throw Object.assign(new Error("Image provider returned an invalid image buffer."),{code:"IMAGE_GATEWAY_INVALID_RESPONSE"});
+     assets.push(await storeGeneratedImage({db,mediaRoot,ownerId:job.owner_id,projectId:job.project_id||null,jobId:job.id,prompt,model:result.model,buffer:item.buffer}));
+    }
+    const assetIds=assets.map(asset=>asset.id),asset=assets[0];
+    output=nodeOutput(node,asset.id);output.asset=asset.id;output.assetId=asset.id;output.image=asset.id;output.images=assetIds;output.assetIds=assetIds;output.assets=assetIds;output.outputCount=assetIds.length;output.mimeType=asset.mediaType;output.sha256=asset.sha256;output.usage=result.usage;
    }else if(node.kind==="video.generate"){
     enforceIdentityPermission(db,job,config,values,"face-animation");
     if(!hasApprovedAncestor(graph,nodeId,outputs))throw Object.assign(new Error("A completed upstream human-approval node is required before video generation."),{code:"APPROVAL_REQUIRED"});
