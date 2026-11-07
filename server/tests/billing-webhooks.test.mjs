@@ -206,3 +206,19 @@ test("Flutterwave checkout requires HTTPS redirects and a configured secret", as
   }), error => error.code === "BILLING_PROVIDER_CONFIG_INVALID");
   db.close();
 });
+
+
+test("late successful events cannot settle failed or expired orders", async () => {
+  const { db, order } = setup();
+  db.prepare("UPDATE billing_payment_orders SET status='failed' WHERE id=?").run(order.id);
+  receiveFlutterwaveWebhook(db, signedPayload(payload(order)));
+  const result = await processNextFlutterwaveWebhook(db, {
+    verifyTransaction: async () => ({
+      id: 123456, tx_ref: order.txRef, status: "successful", currency: "UGX", amount: 50000
+    })
+  });
+  assert.equal(result.processed, false);
+  assert.equal(result.errorCode, "BILLING_ORDER_NOT_PENDING");
+  assert.equal(getBillingBalance(db, order.userId), 0);
+  db.close();
+});
