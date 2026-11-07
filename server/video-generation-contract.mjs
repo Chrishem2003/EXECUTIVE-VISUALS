@@ -64,10 +64,10 @@ export function normalizeVideoGenerationRequest(input) {
   }
 
   const operation = input.operation;
-  if (operation != null && !["text-to-video", "image-to-video", "video-to-video", "video-upscale", "video-to-hdr", "generate", "edit", "extend"].includes(operation)) {
+  if (operation != null && !["text-to-video", "image-to-video", "video-to-video", "video-to-audio", "video-upscale", "video-to-hdr", "generate", "edit", "extend"].includes(operation)) {
     throw new VideoGenerationValidationError("operation is not supported by the normalized video contract");
   }
-  const prompt = boundedString(input.prompt, "prompt", MAX_PROMPT_LENGTH, { required: !["video-upscale", "video-to-hdr"].includes(operation) });
+  const prompt = boundedString(input.prompt, "prompt", MAX_PROMPT_LENGTH, { required: !["video-to-audio", "video-upscale", "video-to-hdr"].includes(operation) });
   const negativePrompt = boundedString(input.negativePrompt, "negativePrompt", 4000);
   const aspectRatio = input.aspectRatio ?? "16:9";
   if (!ALLOWED_ASPECT_RATIOS.has(aspectRatio)) {
@@ -94,7 +94,7 @@ export function normalizeVideoGenerationRequest(input) {
     ...(operation !== undefined ? { operation } : {}),
     aspectRatio,
     resolution,
-    durationSeconds: finiteNumber(input.durationSeconds ?? 5, "durationSeconds", { min: 1, max: 180, required: true, integer: true }),
+    durationSeconds: finiteNumber(input.durationSeconds ?? 5, "durationSeconds", { min: 1, max: operation === "video-to-audio" ? 600 : 180, required: true, integer: true }),
     outputFormat,
     audioMode,
     referenceAssetIds: assetIds(input.referenceAssetIds, "referenceAssetIds"),
@@ -128,11 +128,20 @@ export function normalizeVideoGenerationRequest(input) {
   if (request.keyframes?.length && operation !== "video-to-video") {
     throw new VideoGenerationValidationError("Timestamped keyframes are supported only for video-to-video");
   }
-  if (["video-to-video", "video-upscale", "video-to-hdr"].includes(operation) && !request.sourceVideoAssetId) {
+  if (["video-to-video", "video-to-audio", "video-upscale", "video-to-hdr"].includes(operation) && !request.sourceVideoAssetId) {
     throw new VideoGenerationValidationError("sourceVideoAssetId is required for this video operation");
   }
   if (operation !== "video-to-video" && request.keyframeAssetIds?.length) {
     throw new VideoGenerationValidationError("keyframeAssetIds are supported only for video-to-video");
+  }
+  if (input.audioFormat != null) {
+    if (!["mp3", "wav", "flac"].includes(input.audioFormat)) throw new VideoGenerationValidationError("audioFormat must be mp3, wav or flac");
+    request.audioFormat = input.audioFormat;
+  }
+  if (input.numVariants != null) request.numVariants = finiteNumber(input.numVariants, "numVariants", { min: 1, max: 4, integer: true });
+  if (input.preserveSpeech != null) {
+    if (typeof input.preserveSpeech !== "boolean") throw new VideoGenerationValidationError("preserveSpeech must be a boolean");
+    request.preserveSpeech = input.preserveSpeech;
   }
   if (input.outputFrames != null) request.outputFrames = finiteNumber(input.outputFrames, "outputFrames", { min: 1, max: 1000000, integer: true });
   for (const field of ["creativity", "sharpen", "smartGrain"]) {
