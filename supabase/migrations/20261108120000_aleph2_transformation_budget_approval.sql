@@ -151,137 +151,14 @@ begin
   end if;
   if p_provider = 'runway' and p_model = 'aleph2' then
     if coalesce(p_input ->> 'operation','') <> 'video-to-video'
-       or coalesce(p_input ->> 'durationSeconds','') !~ '^[0-9]{1,2} 1,048,576 input tokens at $1.50/M
-    -- plus 57,920 output video tokens (10s at 5,792 tokens/s) at $17.50/M.
-    -- The reservation is deliberately conservative; actual usage is reconciled
-    -- from the completed interaction before budget settlement.
-    if coalesce(p_input ->> 'durationSeconds','') not in ('3','4','5','6','7','8','9','10') then
-      raise exception 'VIDEO_PRICE_DURATION_INVALID';
-    end if;
-    if coalesce(p_input ->> 'resolution','provider_default') not in ('provider_default','720p') then
-      raise exception 'VIDEO_PRICE_UNSUPPORTED_RESOLUTION';
-    end if;
-    if p_reserved_amount < 2.586464 then
-      raise exception 'VIDEO_BUDGET_BELOW_PROVIDER_ESTIMATE';
-    end if;
-  end if;
-  perform pg_advisory_xact_lock(hashtextextended(p_owner_id::text || ':' || p_idempotency_key, 0));
-  perform pg_advisory_xact_lock(hashtextextended(p_owner_id::text || ':video.generate', 0));
-
-  select * into existing from executive_visuals.jobs
-  where owner_id = p_owner_id and idempotency_key = p_idempotency_key
-  for update;
-  if existing.id is not null then
-    if existing.job_type <> 'video.generate'
-       or existing.project_id is distinct from p_project_id
-       or coalesce(existing.input ->> 'requestHash','') <> p_request_hash
-       or coalesce(existing.input ->> 'provider','') <> p_provider
-       or coalesce(existing.input ->> 'model','') <> p_model then
-      raise exception 'VIDEO_JOB_IDEMPOTENCY_CONFLICT';
-    end if;
-    select r.id into reservation_id
-    from executive_visuals.video_generation_budget_reservations r
-    where r.job_id = existing.id;
-    return query select existing.id, existing.status, true, reservation_id;
-    return;
-  end if;
-
-  if p_project_id is not null and not exists (
-    select 1 from executive_visuals.projects p
-    where p.id = p_project_id and p.owner_id = p_owner_id
-  ) then
-    raise exception 'VIDEO_JOB_PROJECT_FORBIDDEN';
-  end if;
-
-  select * into policy
-  from executive_visuals.video_generation_budget_policies b
-  where b.owner_id = p_owner_id
-    and b.project_id is not distinct from p_project_id
-    and b.provider = p_provider and b.model = p_model
-    and b.currency = p_currency and b.enabled = true
-  for update;
-  if policy.id is null then raise exception 'VIDEO_JOB_BUDGET_POLICY_DISABLED'; end if;
-  if p_reserved_amount > policy.max_per_job_amount
-     or policy.reserved_amount + policy.spent_amount + p_reserved_amount > policy.spend_limit_amount then
-    raise exception 'VIDEO_JOB_BUDGET_LIMIT_REACHED';
-  end if;
-
-  select * into approval
-  from executive_visuals.video_generation_budget_approvals a
-  where a.id = p_budget_approval_id and a.owner_id = p_owner_id
-  for update;
-  if approval.id is null
-     or approval.project_id is distinct from p_project_id
-     or approval.provider <> p_provider or approval.model <> p_model
-     or approval.request_hash <> p_request_hash or approval.currency <> p_currency
-     or approval.approved_max_amount < p_reserved_amount
-     or approval.expires_at <= clock_timestamp()
-     or approval.consumed_at is not null then
-    raise exception 'VIDEO_JOB_BUDGET_APPROVAL_INVALID';
-  end if;
-
-  select count(*) into used_requests
-  from executive_visuals.video_generation_usage_reservations u
-  where u.owner_id = p_owner_id and u.provider = p_provider and u.model = p_model
-    and u.created_at >= clock_timestamp() - interval '24 hours';
-  if policy.rolling_24h_request_limit = 0 or used_requests >= policy.rolling_24h_request_limit then
-    raise exception 'VIDEO_JOB_USAGE_LIMIT_REACHED';
-  end if;
-
-  insert into executive_visuals.jobs(
-    owner_id, project_id, job_type, status, input, idempotency_key,
-    estimated_cost, approved_by, approved_at
-  ) values (
-    p_owner_id, p_project_id, 'video.generate', 'queued', p_input, p_idempotency_key,
-    jsonb_build_object('amount', p_reserved_amount, 'currency', p_currency),
-    p_owner_id, clock_timestamp()
-  ) returning * into inserted_job;
-
-  insert into executive_visuals.video_generation_budget_reservations(
-    job_id, approval_id, policy_id, owner_id, project_id, provider, model, currency, reserved_amount
-  ) values (
-    inserted_job.id, approval.id, policy.id, p_owner_id, p_project_id,
-    p_provider, p_model, p_currency, p_reserved_amount
-  ) returning id into reservation_id;
-
-  insert into executive_visuals.video_generation_usage_reservations(
-    job_id, owner_id, provider, model
-  ) values (inserted_job.id, p_owner_id, p_provider, p_model);
-
-  update executive_visuals.video_generation_budget_policies
-  set reserved_amount = reserved_amount + p_reserved_amount,
-      updated_at = clock_timestamp()
-  where id = policy.id;
-
-  update executive_visuals.video_generation_budget_approvals
-  set consumed_at = clock_timestamp()
-  where id = approval.id;
-
-  insert into executive_visuals.job_events(job_id, owner_id, event_type, event_data)
-  values (
-    inserted_job.id, p_owner_id, 'job.queued',
-    jsonb_build_object('jobType','video.generate','provider',p_provider,'model',p_model,
-      'requestHash',p_request_hash,'budgetReservationId',reservation_id,
-      'reservedAmount',p_reserved_amount,'currency',p_currency)
-  );
-
-  insert into executive_visuals.audit_events(owner_id, project_id, event_type, subject_type, subject_id, details)
-  values (
-    p_owner_id, p_project_id, 'job.queued', 'job', inserted_job.id::text,
-    jsonb_build_object('jobType','video.generate','provider',p_provider,'model',p_model,
-      'requestHash',p_request_hash,'budgetReservationId',reservation_id)
-  );
-
-  return query select inserted_job.id, inserted_job.status, false, reservation_id;
-end;
-$video_enqueue$;
-
-
+       or coalesce(p_input ->> 'durationSeconds','') !~ '^[0-9]'
+       or coalesce(p_input ->> 'durationSeconds','') ~ '[^0-9]'
+       or length(coalesce(p_input ->> 'durationSeconds','')) > 2
        or (p_input ->> 'durationSeconds')::numeric < 1
        or (p_input ->> 'durationSeconds')::numeric > 30 then
       raise exception 'VIDEO_PRICE_DURATION_OR_OPERATION_INVALID';
     end if;
-    -- Runway Dev Aleph 2.0: $0.28/output second, $0.56 minimum generation.
+    -- Aleph 2.0: 28 credits per output second, 56-credit minimum.
     if p_reserved_amount < greatest(0.56, (p_input ->> 'durationSeconds')::numeric * 0.28) then
       raise exception 'VIDEO_BUDGET_BELOW_PROVIDER_ESTIMATE';
     end if;
