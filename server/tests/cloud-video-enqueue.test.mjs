@@ -366,7 +366,7 @@ test("Ruby HDR enqueue requires verified SDR dimensions and reserves the publish
   const client = createCloudVideoEnqueue({
     ...base,
     resolveRunwaySourceMetadata: async scope => {
-      assert.deepEqual(scope, { ownerId, projectId, assetId: sourceVideoAssetId });
+      assert.deepEqual(scope, { ownerId, projectId, assetId: sourceVideoAssetId, operation: "video-to-hdr" });
       return sourceMetadata;
     },
     fetchImpl: async () => { calls++; return response([resultRow]); }
