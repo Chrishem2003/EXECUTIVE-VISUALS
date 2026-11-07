@@ -1,7 +1,7 @@
 import { getFalVideoCapabilities } from "./fal-video-gateway.mjs";
 import { getRunwayVideoCapabilities, listRunwayVideoModels } from "./runway-video-gateway.mjs";
 const LOOPBACKS=new Set(["localhost","127.0.0.1","::1","[::1]"]);
-function gatewayState({id=provider,enabled,configured,url,allowRemote,model,provider,capabilities,reasonIfMissing="Set the server-side endpoint and model."}){
+function gatewayState({enabled,configured,url,allowRemote,model,provider,capabilities,id=provider,reasonIfMissing="Set the server-side endpoint and model."}){
  let local=false,validUrl=false;
  if(url){try{const parsed=new URL(url);local=LOOPBACKS.has(parsed.hostname.toLowerCase());validUrl=!parsed.username&&!parsed.password&&!parsed.search&&!parsed.hash&&(parsed.protocol==="https:"||local);}catch{}}
  let status="disabled",reason="Execution is disabled by server configuration.";
