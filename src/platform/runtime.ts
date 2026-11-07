@@ -92,7 +92,7 @@ export function renderVideoModelOptions(){
 export function renderVideoModelNote(){
  const provider=state.providers.find(item=>item.provider==="runway");
  if(!provider)return "The active provider is configured server-side. Runway model selection appears when the Runway adapter is selected by the administrator.";
- return esc(provider.status==="ready"?"Runway is configured. Provider billing applies to each approved generation.":provider.reason)+" The current adapter supports text-to-video; image/video references and native audio controls are not yet enabled here.";
+ return esc(provider.status==="ready"?"Runway is configured. Provider billing applies to each approved generation.":provider.reason)+" The adapter supports text-to-video and one first-frame image-to-video reference. Multi-frame references, video-to-video and native audio controls are not yet enabled.";
 }
 export function renderEngineStatus(){
  const local=state.ffmpeg&&state.ffprobe?"Ready":state.ffprobe?"Probe only":"Unavailable";
