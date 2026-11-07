@@ -916,9 +916,9 @@ const billingAccount=touchBillingAccount(db,user);
           }
         }
         const id=randomUUID();
-        const concurrencyLimit=Number(getBillingOverview(db,user.id).plan?.limits?.concurrentJobs??1);
         db.exec("BEGIN IMMEDIATE");
         try{
+          const concurrencyLimit=Number(getBillingOverview(db,user.id).plan?.limits?.concurrentJobs??1);
           assertConcurrentJobCapacity(db,{userId:user.id,limit:concurrencyLimit});
           db.prepare("INSERT INTO jobs(id,owner_id,project_id,job_type,status,input_json,idempotency_key) VALUES(?,?,?,?,'queued',?,?)")
             .run(id,user.id,projectId,type,inputJson,key||null);
