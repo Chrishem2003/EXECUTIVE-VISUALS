@@ -50,9 +50,11 @@ export function estimateVideoGenerationCost(request,pricingCatalog,{now=()=>new 
  const provider=typeof request.provider==="string"?request.provider:"";
  const model=typeof request.model==="string"?request.model:"";
  if(!provider||!model)return unavailable("Select an exact provider and model before estimating cost.");
- if(!finite(request.durationSeconds,1,MAX_DURATION_SECONDS))return unavailable("Duration must be between 1 and 180 seconds.");
+ if(!Number.isInteger(request.durationSeconds)||!finite(request.durationSeconds,1,MAX_DURATION_SECONDS))return unavailable("Duration must be a whole number between 1 and 180 seconds.");
  const resolution=request.resolution??"provider_default";
  if(!RESOLUTIONS.has(resolution))return unavailable("The requested resolution is invalid.");
+ const audioMode=request.audioMode??"provider_default";
+ if(!["provider_default","generated","none","reference"].includes(audioMode))return unavailable("The requested audio mode is invalid.");
  const referenceImageCount=request.referenceImageCount??0;
  if(!Number.isInteger(referenceImageCount)||referenceImageCount<0||referenceImageCount>12)return unavailable("Reference image count must be between 0 and 12.");
  const records=Array.isArray(pricingCatalog)?pricingCatalog:pricingCatalog?.records;
@@ -68,7 +70,7 @@ export function estimateVideoGenerationCost(request,pricingCatalog,{now=()=>new 
  if(!finite(increment,0.001,180))return unavailable("The pricing billing increment is invalid.");
  const billableSeconds=Math.ceil(request.durationSeconds/increment)*increment;
  const video=roundMoney(rate*billableSeconds);
- const audio=request.audioMode==="generated"?roundMoney((record.audioSurchargePerSecond??0)*billableSeconds):0;
+ const audio=audioMode==="generated"?roundMoney((record.audioSurchargePerSecond??0)*billableSeconds):0;
  const references=roundMoney((record.referenceImageFee??0)*referenceImageCount);
  const subtotal=roundMoney(video+audio+references);
  const minimum=record.minimumCharge??0;
