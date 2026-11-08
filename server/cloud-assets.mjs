@@ -84,6 +84,29 @@ export function createCloudAssetRepository({
     if(result!==true) {const error=new Error("Cloud asset access denied.");error.code="CLOUD_ASSET_ACCESS_DENIED";throw error;}
   }
 
+  function validCleanupPath(value) {
+    return typeof value==="string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\/[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\/original\.[a-z0-9]{1,8}$/i.test(value);
+  }
+
+  async function enqueueStorageCleanup(objectPath,reason) {
+    if(!validCleanupPath(objectPath))throw new Error("Refusing to enqueue an unsafe storage cleanup path.");
+    await request("asset_storage_cleanup?on_conflict=object_path",{
+      method:"POST",
+      prefer:"resolution=merge-duplicates,return=representation",
+      body:{storage_bucket:"executive-visuals-media",object_path:objectPath,reason:String(reason||"asset_metadata_persistence_failed").slice(0,100),attempts:0,next_attempt_at:new Date().toISOString(),completed_at:null,last_error:null}
+    });
+  }
+
+  async function compensateUpload(objectPath,error) {
+    try { await storage.remove(objectPath); }
+    catch {
+      error.cleanupPending=true;
+      try { await enqueueStorageCleanup(objectPath,error.code||"asset_metadata_persistence_failed"); }
+      catch { error.cleanupRecordFailed=true; }
+    }
+    throw error;
+  }
+
   return Object.freeze({
     async create({ownerId,projectId=null,originalName,mediaType,bytes,derivativeOf=null,metadata={}}) {
       ownerId=validUuid(ownerId,"owner ID");
@@ -96,8 +119,13 @@ export function createCloudAssetRepository({
       await allowed(ownerId,projectId,"write");
       const id=randomUUID(),name=safeName(originalName),sha256=createHash("sha256").update(bytes).digest("hex");
       const objectPath=buildCloudAssetObjectPath({ownerId,projectId,assetId:id,filename:"original."+EXTENSIONS.get(mediaType)});
-      const uploaded=await storage.upload(objectPath,bytes,mediaType);
-      if(uploaded?.bucket!=="executive-visuals-media"||uploaded?.path!==objectPath||uploaded?.size!==bytes.byteLength){try{await storage.remove(objectPath);}catch{}throw new Error("Cloud storage returned an unexpected upload receipt.");}
+      let uploaded;
+      try { uploaded=await storage.upload(objectPath,bytes,mediaType); }
+      catch(error) { return compensateUpload(objectPath,error); }
+      if(uploaded?.bucket!=="executive-visuals-media"||uploaded?.path!==objectPath||uploaded?.size!==bytes.byteLength){
+        const error=new Error("Cloud storage returned an unexpected upload receipt.");error.code="CLOUD_STORAGE_UPLOAD_RECEIPT_INVALID";
+        return compensateUpload(objectPath,error);
+      }
       try {
         const rows=await request("assets?select=id,owner_id,project_id,original_name,media_type,byte_size,sha256,storage_bucket,object_path,derivative_of,metadata,created_at",{
           method:"POST",prefer:"return=representation",
@@ -106,9 +134,7 @@ export function createCloudAssetRepository({
         if(!Array.isArray(rows)||rows.length!==1||rows[0].id!==id||rows[0].owner_id!==ownerId||rows[0].project_id!==projectId||rows[0].object_path!==objectPath||rows[0].storage_bucket!=="executive-visuals-media"||Number(rows[0].byte_size)!==bytes.byteLength||rows[0].sha256!==sha256) throw new Error("Cloud asset metadata insert did not return the expected record.");
         return publicAsset(rows[0]);
       } catch(error) {
-        try { await storage.remove(objectPath); }
-        catch { error.cleanupPending=true; }
-        throw error;
+        return compensateUpload(objectPath,error);
       }
     },
     async createFromFileIdempotent({ownerId,projectId=null,originalName,mediaType,filePath,publicationKey,derivativeOf=null,metadata={}}) {
@@ -144,16 +170,17 @@ export function createCloudAssetRepository({
         return asset;
       }
       if(reservation.status==="published")throw new Error("Published asset publication record is missing its asset metadata.");
-      const uploaded=await storage.uploadFile(objectPath,filePath,mediaType,{upsert:true});
+      let uploaded;
+      try { uploaded=await storage.uploadFile(objectPath,filePath,mediaType,{upsert:true}); }
+      catch(error) { return compensateUpload(objectPath,error); }
       if(uploaded?.bucket!=="executive-visuals-media"||uploaded?.path!==objectPath||uploaded?.size!==file.size||uploaded?.sha256!==file.sha256){
-        const error=new Error("Cloud storage upload did not match the reserved publication checksum.");
-        try{await storage.remove(objectPath);}catch{error.cleanupPending=true;}
-        throw error;
+        const error=new Error("Cloud storage upload did not match the reserved publication checksum.");error.code="CLOUD_STORAGE_UPLOAD_RECEIPT_INVALID";
+        return compensateUpload(objectPath,error);
       }
       try{
         const rows=await request("assets?select="+select,{method:"POST",prefer:"return=representation",body:{id,owner_id:ownerId,project_id:projectId,original_name:name,media_type:mediaType,byte_size:file.size,sha256:file.sha256,storage_bucket:uploaded.bucket,object_path:objectPath,derivative_of:derivativeOf,metadata}});
         existing=Array.isArray(rows)?rows[0]||null:null;
-      }catch(error){existing=await readAsset();if(!existing)throw error;}
+      }catch(error){existing=await readAsset();if(!existing)return compensateUpload(objectPath,error);}
       const asset=verifyAsset(existing);
       const completed=await request("rpc/complete_asset_publication",{method:"POST",body:{p_owner_id:ownerId,p_publication_key:publicationKey,p_asset_id:id}});
       if(!Array.isArray(completed)||completed.length!==1||completed[0].status!=="published"||completed[0].asset_id!==id)throw new Error("Cloud asset publication could not be finalized.");
@@ -170,10 +197,12 @@ export function createCloudAssetRepository({
       if(typeof storage.uploadFile!=="function")throw new Error("Cloud storage adapter does not support streaming file uploads.");
       await allowed(ownerId,projectId,"write");
       const id=randomUUID(),name=safeName(originalName),objectPath=buildCloudAssetObjectPath({ownerId,projectId,assetId:id,filename:"original."+EXTENSIONS.get(mediaType)});
-      const uploaded=await storage.uploadFile(objectPath,filePath,mediaType);
+      let uploaded;
+      try { uploaded=await storage.uploadFile(objectPath,filePath,mediaType); }
+      catch(error) { return compensateUpload(objectPath,error); }
       if(uploaded?.bucket!=="executive-visuals-media"||uploaded?.path!==objectPath||!Number.isSafeInteger(uploaded?.size)||uploaded.size<1||typeof uploaded?.sha256!=="string"||!/^[a-f0-9]{64}$/i.test(uploaded.sha256)){
-        try{await storage.remove(objectPath);}catch{}
-        throw new Error("Cloud storage returned an unexpected streaming upload receipt.");
+        const error=new Error("Cloud storage returned an unexpected streaming upload receipt.");error.code="CLOUD_STORAGE_UPLOAD_RECEIPT_INVALID";
+        return compensateUpload(objectPath,error);
       }
       try{
         const rows=await request("assets?select=id,owner_id,project_id,original_name,media_type,byte_size,sha256,storage_bucket,object_path,derivative_of,metadata,created_at",{
@@ -183,8 +212,7 @@ export function createCloudAssetRepository({
         if(!Array.isArray(rows)||rows.length!==1||rows[0].id!==id||rows[0].owner_id!==ownerId||rows[0].project_id!==projectId||rows[0].object_path!==objectPath||rows[0].storage_bucket!=="executive-visuals-media"||Number(rows[0].byte_size)!==uploaded.size||rows[0].sha256!==uploaded.sha256)throw new Error("Cloud asset metadata insert did not return the expected streaming record.");
         return publicAsset(rows[0]);
       }catch(error){
-        try{await storage.remove(objectPath);}catch{error.cleanupPending=true;}
-        throw error;
+        return compensateUpload(objectPath,error);
       }
     },
     async list({ownerId,projectId=null,limit=50,offset=0}={}) {
@@ -212,8 +240,35 @@ export function createCloudAssetRepository({
       if(!row||(!row.project_id&&row.owner_id!==ownerId)) {const error=new Error("Cloud asset not found.");error.code="CLOUD_ASSET_NOT_FOUND";throw error;}
       await allowed(ownerId,row.project_id||null,"read");
       const expectedPrefix=(row.project_id||row.owner_id)+"/"+row.id+"/";
-      if(row.storage_bucket!=="executive-visuals-media"||typeof row.object_path!=="string"||!row.object_path.startsWith(expectedPrefix)) throw new Error("Cloud asset storage reference is invalid.");
+      if(row.storage_bucket!=="executive-visuals-media"||!validCleanupPath(row.object_path)||!row.object_path.startsWith(expectedPrefix)) throw new Error("Cloud asset storage reference is invalid.");
       return {asset:publicAsset(row),url:await storage.createSignedUrl(row.object_path,expiresIn)};
+    },
+    async reconcilePendingStorageCleanup({limit=20,now=new Date()}={}) {
+      limit=Math.max(1,Math.min(100,Number.isInteger(limit)?limit:20));
+      const instant=now instanceof Date?now.toISOString():new Date(now).toISOString();
+      const rows=await request("asset_storage_cleanup?select=id,storage_bucket,object_path,attempts&completed_at=is.null&next_attempt_at=lte."+encodeURIComponent(instant)+"&order=next_attempt_at.asc&limit="+limit);
+      const results=[];
+      for(const row of Array.isArray(rows)?rows:[]) {
+        if(row.storage_bucket!=="executive-visuals-media"||!validCleanupPath(row.object_path)) {
+          results.push({id:row.id,removed:false,permanentError:"unsafe_cleanup_record"});
+          continue;
+        }
+        try {
+          await storage.remove(row.object_path);
+          const changed=await request("asset_storage_cleanup?id=eq."+encodeURIComponent(row.id)+"&completed_at=is.null",{
+            method:"PATCH",prefer:"return=representation",body:{completed_at:instant,last_error:null}
+          });
+          results.push({id:row.id,removed:Array.isArray(changed)&&changed.length===1});
+        } catch(error) {
+          const attempts=Math.min(30,Math.max(0,Number(row.attempts)||0)+1);
+          const delay=Math.min(86400,30*Math.pow(2,Math.min(attempts-1,11)));
+          await request("asset_storage_cleanup?id=eq."+encodeURIComponent(row.id)+"&completed_at=is.null",{
+            method:"PATCH",prefer:"return=minimal",body:{attempts,next_attempt_at:new Date(Date.parse(instant)+delay*1000).toISOString(),last_error:String(error?.code||"storage_remove_failed").slice(0,100)}
+          });
+          results.push({id:row.id,removed:false,retryScheduled:true,attempts});
+        }
+      }
+      return {examined:results.length,removed:results.filter(item=>item.removed).length,results};
     },
     async softDelete({ownerId,assetId}) {
       ownerId=validUuid(ownerId,"owner ID");assetId=validUuid(assetId,"asset ID");
@@ -222,13 +277,17 @@ export function createCloudAssetRepository({
       if(!row||(!row.project_id&&row.owner_id!==ownerId)) {const error=new Error("Cloud asset not found.");error.code="CLOUD_ASSET_NOT_FOUND";throw error;}
       await allowed(ownerId,row.project_id||null,"write");
       const expectedPrefix=(row.project_id||row.owner_id)+"/"+row.id+"/";
-      if(row.storage_bucket!=="executive-visuals-media"||typeof row.object_path!=="string"||!row.object_path.startsWith(expectedPrefix)) throw new Error("Cloud asset storage reference is invalid.");
+      if(row.storage_bucket!=="executive-visuals-media"||!validCleanupPath(row.object_path)||!row.object_path.startsWith(expectedPrefix)) throw new Error("Cloud asset storage reference is invalid.");
       const changed=await request("assets?id=eq."+encodeURIComponent(assetId)+"&deleted_at=is.null",{method:"PATCH",prefer:"return=representation",body:{deleted_at:new Date().toISOString()}});
       if(!Array.isArray(changed)||changed.length!==1) throw new Error("Cloud asset could not be safely marked deleted.");
-      let storageRemoved=false;
-      try { if(row.storage_bucket!=="executive-visuals-media") throw new Error("Unexpected cloud asset bucket."); await storage.remove(row.object_path); storageRemoved=true; }
-      catch { storageRemoved=false; }
-      return {id:assetId,deleted:true,storageRemoved,cleanupPending:!storageRemoved};
+      let storageRemoved=false,cleanupRecordFailed=false;
+      try { await storage.remove(row.object_path); storageRemoved=true; }
+      catch(error) {
+        storageRemoved=false;
+        try { await enqueueStorageCleanup(row.object_path,error?.code||"asset_soft_delete_storage_cleanup_failed"); }
+        catch { cleanupRecordFailed=true; }
+      }
+      return {id:assetId,deleted:true,storageRemoved,cleanupPending:!storageRemoved,...(cleanupRecordFailed?{cleanupRecordFailed:true}:{})};
     }
   });
 }
