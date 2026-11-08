@@ -128,28 +128,34 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     const projectId=String(body.projectId||"");
     if(!safeId(projectId)||await allow({ownerId,projectId,action:"write"})!==true)return response(404,{error:{code:"PROJECT_NOT_FOUND",message:"Project not found or editor access required."}});
     if(!workflowRouterAdapter)return response(503,{error:{code:"VIDEO_WORKFLOW_QUOTE_UNAVAILABLE",message:"A configured Runway Model Router quote adapter and private asset resolver are required. Paid execution remains disabled."}});
-    const requestId=String(body.requestId||"");
-    const workflowRequest=createVideoWorkflowCloudRequest({node:body.node,values:body.values||{},projectId,requestId});
-    const prepared=await workflowRouterAdapter.prepareInput(workflowRequest.input,{job:{owner_id:ownerId}});
-    const estimate=await workflowRouterAdapter.preflight(prepared);
-    if(!estimate||estimate.billable!==false||estimate.currency!=="USD"||
-       !Number.isFinite(estimate.estimatedUsd)||estimate.estimatedUsd<=0||
-       !Number.isSafeInteger(estimate.estimatedCredits)||estimate.estimatedCredits<=0||
-       typeof estimate.model!=="string"||!estimate.model.trim()||
-       typeof estimate.provider!=="string"||!estimate.provider.trim()){
-     return response(503,{error:{code:"VIDEO_WORKFLOW_QUOTE_INVALID",message:"The provider dry-run did not return a verifiable non-billable quote."}});
+    try{
+     const requestId=String(body.requestId||"");
+     const workflowRequest=createVideoWorkflowCloudRequest({node:body.node,values:body.values||{},projectId,requestId});
+     const prepared=await workflowRouterAdapter.prepareInput(workflowRequest.input,{job:{owner_id:ownerId}});
+     const estimate=await workflowRouterAdapter.preflight(prepared);
+     if(!estimate||estimate.billable!==false||estimate.currency!=="USD"||
+        !Number.isFinite(estimate.estimatedUsd)||estimate.estimatedUsd<=0||
+        !Number.isSafeInteger(estimate.estimatedCredits)||estimate.estimatedCredits<=0||
+        typeof estimate.model!=="string"||!estimate.model.trim()||
+        typeof estimate.provider!=="string"||!estimate.provider.trim()){
+      return response(503,{error:{code:"VIDEO_WORKFLOW_QUOTE_INVALID",message:"The provider dry-run did not return a verifiable non-billable quote."}});
+     }
+     return response(200,{quote:{
+      id:randomUUID(),projectId,requestId:workflowRequest.requestId,
+      requestHash:workflowRequest.requestHash,provider:workflowRequest.provider,
+      model:workflowRequest.model,operation:workflowRequest.operation,
+      routedProvider:estimate.provider,routedModel:estimate.model,
+      estimatedCredits:estimate.estimatedCredits,estimatedAmount:estimate.estimatedUsd,
+      currency:estimate.currency,configId:estimate.configId,
+      pricingSource:"runway_model_router_dry_run",billable:false,
+      requiresExplicitApproval:true,paidExecutionEnabled:env.RUNWAY_MODEL_ROUTER_ENABLED==="true"&&env.RUNWAY_VIDEO_ALLOW_REMOTE==="true",
+      expiresAt:new Date(Date.now()+5*60*1000).toISOString()
+     }});
+    }catch(error){
+     const code=String(error?.code||"VIDEO_WORKFLOW_QUOTE_FAILED");
+     const status=code.includes("UNSUPPORTED")||code.includes("INVALID")||code.includes("MISMATCH")||code.includes("REQUIRED")?422:503;
+     return response(status,{error:{code,message:String(error?.message||"Video workflow quote failed.").slice(0,300)}});
     }
-    return response(200,{quote:{
-     id:randomUUID(),projectId,requestId:workflowRequest.requestId,
-     requestHash:workflowRequest.requestHash,provider:workflowRequest.provider,
-     model:workflowRequest.model,operation:workflowRequest.operation,
-     routedProvider:estimate.provider,routedModel:estimate.model,
-     estimatedCredits:estimate.estimatedCredits,estimatedAmount:estimate.estimatedUsd,
-     currency:estimate.currency,configId:estimate.configId,
-     pricingSource:"runway_model_router_dry_run",billable:false,
-     requiresExplicitApproval:true,paidExecutionEnabled:env.RUNWAY_MODEL_ROUTER_ENABLED==="true"&&env.RUNWAY_VIDEO_ALLOW_REMOTE==="true",
-     expiresAt:new Date(Date.now()+5*60*1000).toISOString()
-    }});
    }
    if(path==="/api/cloud/transformations/readiness"&&method==="GET"){
     const projectId=String(query.projectId||"");
