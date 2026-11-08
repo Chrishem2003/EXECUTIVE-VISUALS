@@ -1,6 +1,6 @@
 # Asset provenance and Content Credentials
 
-**Status:** application-level SHA-256 provenance and a server-side CAI Node SDK verification adapter are implemented on the feature branch. The SDK is pinned to 0.10.0 and connected to the authenticated asset provenance route. Production signing and transformation-manifest creation are not yet implemented.
+**Status (8 November 2026):** application-level SHA-256 provenance, server-side CAI Node SDK verification, Asset Library verification UI, and an optional protected callback-signing adapter are implemented on `feat/c2pa-protected-signing`. The adapter can create and verify transformation manifests and preserve source ingredients when invoked by the cloud media worker with an injected signer. Production signing is not enabled: no production KMS/HSM provider, certificate, TSA, trust policy, or local timeline/export integration has been provisioned.
 
 ## Current implementation
 
@@ -24,14 +24,14 @@ The application record is **not** a C2PA Content Credential, digital signature, 
 
 ## Official CAI Node SDK integration
 
-Use the maintained official `@contentauth/c2pa-node` package from the CAI `c2pa-js` monorepo. The SDK is server-side native Node code, not a browser dependency. This feature branch pins package version `0.10.0` and wires the adapter into the asset route.
+Use the maintained official `@contentauth/c2pa-node` package from the CAI `c2pa-js` monorepo. The SDK is server-side native Node code, not a browser dependency. The current feature branch pins package version `0.10.0` and wires the adapter into the asset route.
 
 - [Official Node API documentation](https://contentauth.github.io/c2pa-js/modules/_contentauth_c2pa-node.html)
 - [Official CAI documentation](https://opensource.contentauthenticity.org/docs/)
 - [Published package](https://www.npmjs.com/package/@contentauth/c2pa-node)
 - [C2PA specification](https://spec.c2pa.org/specifications/)
 
-At the time this guide was revised, the published package was `0.10.0`. Review the exact release and its changelog before pinning it. The documented runtime requirement is Node.js 22 or later; use a current patched release. Normal installation downloads precompiled native binaries; Rust is needed for source builds, not the normal package install.
+The repository currently pins `0.10.0`; check the official release notes and compatibility before upgrading. The documented runtime requirement is Node.js 22 or later; use a current patched release. Normal installation downloads precompiled native binaries; Rust is needed for source builds, not the normal package install.
 
 ### Implemented verification adapter
 
@@ -92,7 +92,7 @@ These are application-level labels. Preserve the exact SDK validation codes and 
 
 ## Signing and protected key management
 
-### Implemented callback signer adapter
+### Implemented callback signer adapter (provider-injected; production disabled)
 
 `server/c2pa-signing.mjs` now provides a server-only transformation signing adapter built on the official SDK `Builder` and `CallbackSigner` APIs.
 
