@@ -123,3 +123,23 @@ Branch `feat/p0-video-workflow-bridge-quote` adds
 - The endpoint does not create an approval, reserve provider budget or customer credits, enqueue a job, or invoke paid generation. It is a quote surface only, not the P0 bridge acceptance.
 
 Remaining P0 work is exact quote/actor approval persistence, atomic customer-credit plus provider-budget reservation, durable idempotent enqueue through the existing queue, workflow run/node status mapping, cancellation dispatch/reconciliation, stable private output asset propagation, and isolated staging end-to-end acceptance.
+
+## Durable workflow quote ledger (2026-11-08)
+
+Branch `feat/p0-workflow-quote-ledger` adds a server-controlled quote record
+for the authenticated non-billable Model Router preflight. The quote API now
+persists the quote ID, actor, project, stable request ID/hash, provider/model/
+operation, routed provider/model, estimated credits/USD, configuration ID,
+pricing source and five-minute expiry before returning a quote to Studio.
+
+The new `video_workflow_quotes` table is private to the service role; browser
+roles cannot read or mutate quote records directly. The PostgreSQL CI job
+applies the migration and verifies service-role-only access, exact quote
+scope, and rejection of invalid amounts. A failed persistence call prevents
+the API from returning a usable quote.
+
+This is still a non-billable quote ledger only. It does not approve a quote,
+reserve customer credits or provider budget, enqueue work, or enable paid
+execution. The next slice must bind an explicit authenticated approval to
+the persisted quote and request hash, then atomically reserve both budgets
+and enqueue exactly one durable job.
