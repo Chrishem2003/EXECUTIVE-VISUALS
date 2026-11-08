@@ -129,8 +129,7 @@ begin
    v_job.id,v_job.owner_id,v_job.project_id,'job-atomic:output:v1',v_path,interval '24 hours'
   );
   raise exception using errcode='P9999',message='referenced asset object was eligible for orphan cleanup';
- exception when raise_exception then
-  if sqlerrm='referenced asset object was eligible for orphan cleanup' then raise; end if;
+ exception when sqlstate '55000' then
   if sqlerrm<>'referenced asset objects cannot be claimed for cleanup' then raise; end if;
  end;
 end
