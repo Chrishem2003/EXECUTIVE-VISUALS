@@ -39,7 +39,7 @@ function fixture({authorize=async()=>true,insertResponse=null,removeError=false,
    return response([{owner_id:publicationReservation.owner_id,publication_key:publicationReservation.publication_key,asset_id:publicationReservation.asset_id,status:"published"}]);
   }
   if(url.includes("/assets?")&&options.method==="POST"&&publicationReservation){
-   if(publicationInsertResponse!==null)return response(publicationInsertResponse);
+   if(publicationInsertResponse!==null)return response(publicationInsertResponse.body??publicationInsertResponse,publicationInsertResponse.status??200);
    const payload=JSON.parse(options.body);publicationAsset={...row,...payload,created_at:row.created_at};return response([publicationAsset]);
   }
   if(url.includes("/assets?")&&url.includes("id=eq.")&&publicationReservation)return response(publicationAsset?[publicationAsset]:[]);
@@ -263,7 +263,7 @@ test("queues cleanup when an upload receipt is invalid and immediate removal fai
 test("queues durable cleanup when idempotent publication metadata fails after upload",async()=>{
  const root=await mkdtemp(join(tmpdir(),"ev-idempotent-cleanup-outbox-")),file=join(root,"render.mp4");
  await writeFile(file,bytes);
- const f=fixture({removeError:true,publicationInsertResponse:[]});
+ const f=fixture({removeError:true,publicationInsertResponse:{status:500,body:{message:"metadata persistence unavailable"}}});
  await assert.rejects(()=>f.repo.createFromFileIdempotent({ownerId,projectId,originalName:"render.mp4",mediaType:"video/mp4",filePath:file,publicationKey:"job-outbox:output:v1"}),error=>error.cleanupPending===true&&error.cleanupRecordFailed!==true);
  const queued=f.calls.find(call=>call.url.includes("/asset_storage_cleanup")&&call.options.method==="POST");
  assert.ok(queued);
