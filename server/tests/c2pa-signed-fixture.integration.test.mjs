@@ -1,14 +1,26 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { mkdtemp, writeFile, readFile, stat, rm } from "node:fs/promises";
-import { join, dirname } from "node:path";
+import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { fileURLToPath } from "node:url";
 import { deflateSync, inflateSync } from "node:zlib";
 import { execFileSync } from "node:child_process";
 import { createC2paVerifier } from "../c2pa-verification.mjs";
 
-const fixtureDir = join(dirname(fileURLToPath(import.meta.url)), "fixtures", "c2pa");
+
+async function createTestSigningIdentity(dir) {
+  const rootKey=join(dir,"ephemeral-test-root-key.pem"),rootCert=join(dir,"ephemeral-test-root-cert.pem");
+  const signerKey=join(dir,"ephemeral-test-signer-key.pem"),signerCsr=join(dir,"ephemeral-test-signer.csr");
+  const signerCert=join(dir,"ephemeral-test-signer-cert.pem"),chainPath=join(dir,"ephemeral-test-chain.pem");
+  const extensionsPath=join(dir,"ephemeral-test-extensions.cnf");
+  await writeFile(extensionsPath,"basicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature\nextendedKeyUsage=critical,emailProtection,1.3.6.1.4.1.62558.2.1\nsubjectKeyIdentifier=hash\nauthorityKeyIdentifier=keyid,issuer\n");
+  execFileSync("openssl",["req","-x509","-newkey","ec","-pkeyopt","ec_paramgen_curve:P-256","-nodes","-keyout",rootKey,"-out",rootCert,"-days","1","-subj","/CN=Executive Visuals Ephemeral Test Root","-addext","basicConstraints=critical,CA:TRUE","-addext","keyUsage=critical,keyCertSign,cRLSign","-addext","subjectKeyIdentifier=hash","-addext","authorityKeyIdentifier=keyid:always"],{stdio:"ignore"});
+  execFileSync("openssl",["req","-new","-newkey","ec","-pkeyopt","ec_paramgen_curve:P-256","-nodes","-keyout",signerKey,"-out",signerCsr,"-subj","/CN=Executive Visuals Ephemeral Test Signer"],{stdio:"ignore"});
+  execFileSync("openssl",["x509","-req","-in",signerCsr,"-CA",rootCert,"-CAkey",rootKey,"-CAcreateserial","-out",signerCert,"-days","1","-sha256","-extfile",extensionsPath],{stdio:"ignore"});
+  await writeFile(chainPath,Buffer.concat([await readFile(signerCert),await readFile(rootCert)]));
+  return {certificateChain:await readFile(chainPath),privateKey:await readFile(signerKey)};
+}
 
 function crc32(buffer) {
   let crc = 0xffffffff;
@@ -85,8 +97,7 @@ test("real CAI SDK validates signed media, applies explicit signer policy and re
   const dir = await mkdtemp(join(tmpdir(), "ev-c2pa-signed-"));
   t.after(() => rm(dir, { recursive: true, force: true }));
   const inputPath = join(dir, "source.png"), signedPath = join(dir, "signed.png"), tamperedPath = join(dir, "tampered.png");
-  const certificateChain = await readFile(join(fixtureDir, "es256-test-only.chain.pem"));
-  const privateKey = await readFile(join(fixtureDir, "es256-test-only.private.pem"));
+  const {certificateChain,privateKey}=await createTestSigningIdentity(dir);
   const certificateBlocks = certificateChain.toString("utf8").match(/-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g) || [];
   assert.ok(certificateBlocks.length >= 2, "upstream test fixture must contain a signer and intermediate certificate");
   const anchorPath = join(dir, "user-anchors.pem");
@@ -123,8 +134,7 @@ test("real CAI Node SDK signs and verifies an MP4 video with the same explicit t
   const dir = await mkdtemp(join(tmpdir(), "ev-c2pa-video-"));
   t.after(() => rm(dir, { recursive: true, force: true }));
   const sourcePath = join(dir, "source.mp4"), signedPath = join(dir, "signed.mp4"), tamperedPath = join(dir, "tampered.mp4");
-  const certificateChain = await readFile(join(fixtureDir, "es256-test-only.chain.pem"));
-  const privateKey = await readFile(join(fixtureDir, "es256-test-only.private.pem"));
+  const {certificateChain,privateKey}=await createTestSigningIdentity(dir);
   const certificateBlocks = certificateChain.toString("utf8").match(/-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g) || [];
   assert.ok(certificateBlocks.length >= 2, "upstream test fixture must contain a signer and intermediate certificate");
   const anchorPath = join(dir, "user-anchors.pem");
