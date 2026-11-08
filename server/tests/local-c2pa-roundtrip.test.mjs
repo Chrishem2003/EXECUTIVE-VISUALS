@@ -3,9 +3,8 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rm, stat } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { Builder, Context, LocalSigner, Reader } from "@contentauth/c2pa-node";
 import { openDatabase } from "../db.mjs";
@@ -26,7 +25,6 @@ test("local SQLite media transcode preserves a real CAI-signed source through pu
  const mediaRoot=join(root,"media"),uploads=join(mediaRoot,"uploads"),derived=join(mediaRoot,"derived");
  await mkdir(uploads,{recursive:true});await mkdir(derived,{recursive:true});
  const unsignedPath=join(root,"unsigned.mp4"),sourcePath=join(uploads,"signed-source.mp4");
- const outputPath=join(mediaRoot,"derived");
  const db=openDatabase(join(root,"runtime.sqlite"));
  try{
   run(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-loglevel","error","-f","lavfi","-i","color=c=blue:s=320x240:r=24","-t","2","-pix_fmt","yuv420p","-c:v","libx264","-preset","ultrafast","-y",unsignedPath]);
@@ -55,7 +53,7 @@ test("local SQLite media transcode preserves a real CAI-signed source through pu
   assert.ok(result.outputAsset?.id);
   const publishedPath=join(mediaRoot,result.outputAsset.storage_path);
   const publishedInfo=await stat(publishedPath);
-  assert.equal(result.outputAsset.byteSize,publishedInfo.size);
+  assert.equal(result.outputAsset.size,publishedInfo.size);
   assert.equal(result.outputAsset.sha256,await hashFile(publishedPath),"published SHA-256 must be computed after C2PA signing");
 
   const publishedReader=await Reader.fromAsset({path:publishedPath,mimeType:"video/mp4"},new Context({verify:{verifyAfterReading:true,verifyTrust:true,ocspFetch:false,remoteManifestFetch:false}}));
