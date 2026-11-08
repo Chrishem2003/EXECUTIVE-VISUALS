@@ -2,7 +2,7 @@
 
 **Current decision: NOT APPROVED for public users.**  
 **Scope:** isolated staging acceptance for Executive Visuals.  
-**Last reviewed:** 8 November 2026.
+**Last reviewed:** 8 November 2026. Current implementation branch: PR #240, feat/c2pa-protected-signing.
 
 A green source build is necessary but not sufficient. This checklist records the actual boundary between implemented local capabilities and a hosted multi-user product.
 
@@ -16,7 +16,7 @@ A green source build is necessary but not sufficient. This checklist records the
 | Isolated identity/database | Blocked | No dedicated application Supabase project has been provisioned and reviewed. Existing NEMA/shared-platform projects are out of scope and must not be reused. |
 | Durable private media storage | Blocked | The active `/api/assets` API and Asset Library still use local disk. Cloud object-storage and cloud asset APIs exist separately, but are not yet the active asset lifecycle used by the browser. |
 | Durable application database | Limited to single instance | Active local runtime uses SQLite. It is not a horizontally scalable multi-tenant data plane. Cloud Postgres migrations and queue adapters require a dedicated project and verified deployment wiring. |
-| Worker recovery/publication | Partial | Local queue leases/retries and a publication ledger exist. Lease-token fencing, immutable publication attempts, cleanup reconciliation and atomic finalization remain in a divergent historical PR chain and must be ported onto the current branch in focused slices. Cloud workers are not deployed as the active runtime. |
+| Worker recovery/publication | Implemented in feature branch; hosted gate blocked | Current PR #240 includes database-generated per-attempt fencing tokens, v2 queue RPCs, heartbeat drain, pre-publication checks, job-bound reservations, atomic asset+ledger finalization, unique attempt paths, same-tenant derivative validation and tombstone-claimed cleanup. PostgreSQL integration tests are added. Exact-head CI must pass; migrations are not applied to a dedicated Supabase project and no cloud worker is deployed. |
 | Media generation | Explicitly limited | Local FFmpeg probe/edit/enhancement and timeline rendering work when binaries are installed. Image/video generation and advanced provider operations remain adapter-gated; no paid provider is enabled by default. |
 | C2PA provenance | Implemented foundation; production signing disabled | Server-side CAI verification and Asset Library inspection are implemented. A protected callback signer and cloud media-worker hook exist, but no production KMS/HSM, certificate, TSA or trust-list policy is provisioned; local timeline/export signing remains incomplete. |
 | Security review | Partial | Authenticated ownership checks, server-side credential boundaries, path validation, rate limiting and regression tests exist. Full RLS/storage-policy review, tenant route audit, upload isolation, dependency review and external security assessment remain required. |
