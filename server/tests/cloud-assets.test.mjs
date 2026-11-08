@@ -155,13 +155,13 @@ test("publishes the same logical output once across repeated publication attempt
  const root=await mkdtemp(join(tmpdir(),"ev-idempotent-publication-")),file=join(root,"render.mp4");
  await writeFile(file,bytes);
  const f=fixture();
- const args={ownerId,projectId,originalName:"render.mp4",mediaType:"video/mp4",filePath:file,publicationKey:"job-123:output:v1",metadata:{operation:"timeline.render"}};
+ const args={ownerId,projectId,originalName:"render.mp4",mediaType:"video/mp4",filePath:file,publicationKey:"job-123:output:v1",metadata:{operation:"timeline.render"},leaseContext,assertLease:async()=>true};
  const first=await f.repo.createFromFileIdempotent(args);
  const second=await f.repo.createFromFileIdempotent(args);
  assert.equal(first.id,second.id);
  assert.equal(first.objectPath,second.objectPath);
  assert.equal(f.storageCalls.filter(call=>call.op==="uploadFile").length,1);
- assert.equal(f.storageCalls[0].options.upsert,true);
+ assert.equal(f.storageCalls[0].options.upsert,false);
  assert.equal(f.publicationReservation.status,"published");
  await rm(root,{recursive:true,force:true});
 });
@@ -170,7 +170,7 @@ test("rejects reuse of a publication key for different output bytes before stora
  const root=await mkdtemp(join(tmpdir(),"ev-idempotent-conflict-")),file=join(root,"render.mp4");
  await writeFile(file,bytes);
  const f=fixture();
- const args={ownerId,projectId,originalName:"render.mp4",mediaType:"video/mp4",filePath:file,publicationKey:"job-123:output:v1"};
+ const args={ownerId,projectId,originalName:"render.mp4",mediaType:"video/mp4",filePath:file,publicationKey:"job-123:output:v1",leaseContext,assertLease:async()=>true};
  await f.repo.createFromFileIdempotent(args);
  await writeFile(file,Buffer.from("different output"));
  await assert.rejects(()=>f.repo.createFromFileIdempotent(args),error=>error.code==="CLOUD_ASSET_HTTP_409");
@@ -182,13 +182,14 @@ test("concurrent attempts for one publication key converge on the same asset ide
  const root=await mkdtemp(join(tmpdir(),"ev-idempotent-concurrent-")),file=join(root,"render.mp4");
  await writeFile(file,bytes);
  const f=fixture();
- const args={ownerId,projectId,originalName:"render.mp4",mediaType:"video/mp4",filePath:file,publicationKey:"job-concurrent:output:v1"};
+ const args={ownerId,projectId,originalName:"render.mp4",mediaType:"video/mp4",filePath:file,publicationKey:"job-concurrent:output:v1",leaseContext,assertLease:async()=>true};
  const [left,right]=await Promise.all([f.repo.createFromFileIdempotent(args),f.repo.createFromFileIdempotent(args)]);
  assert.equal(left.id,right.id);
  assert.equal(left.objectPath,right.objectPath);
  const uploads=f.storageCalls.filter(call=>call.op==="uploadFile");
  assert.ok(uploads.length>=1&&uploads.length<=2);
- assert.equal(new Set(uploads.map(call=>call.path)).size,1);
+ assert.equal(new Set(uploads.map(call=>call.path)).size,uploads.length);
+ assert.ok(uploads.some(call=>call.path===f.publicationAsset.object_path));
  await rm(root,{recursive:true,force:true});
 });
 
@@ -196,7 +197,7 @@ test("removes a reserved storage object when the streaming upload receipt fails 
  const root=await mkdtemp(join(tmpdir(),"ev-idempotent-invalid-receipt-")),file=join(root,"render.mp4");
  await writeFile(file,bytes);
  const f=fixture({uploadFileReceipt:{bucket:"executive-visuals-media",path:"wrong/path",size:bytes.length,sha256:createHash("sha256").update(bytes).digest("hex")}});
- await assert.rejects(()=>f.repo.createFromFileIdempotent({ownerId,projectId,originalName:"render.mp4",mediaType:"video/mp4",filePath:file,publicationKey:"job-invalid-receipt:output:v1"}),/did not match the reserved publication checksum/);
+ await assert.rejects(()=>f.repo.createFromFileIdempotent({ownerId,projectId,originalName:"render.mp4",mediaType:"video/mp4",filePath:file,publicationKey:"job-invalid-receipt:output:v1",leaseContext,assertLease:async()=>true}),/did not match the reserved publication checksum/);
  assert.deepEqual(f.storageCalls.map(call=>call.op),["uploadFile","remove"]);
  await rm(root,{recursive:true,force:true});
 });
@@ -266,11 +267,11 @@ test("queues cleanup when an upload receipt is invalid and immediate removal fai
  assert.equal(JSON.parse(queued.options.body).object_path,f.storageCalls.find(call=>call.op==="upload").path);
 });
 
-test("queues durable cleanup when idempotent publication metadata fails after upload",async()=>{
+test("queues durable cleanup when atomic publication finalization fails after upload",async()=>{
  const root=await mkdtemp(join(tmpdir(),"ev-idempotent-cleanup-outbox-")),file=join(root,"render.mp4");
  await writeFile(file,bytes);
- const f=fixture({removeError:true,publicationInsertResponse:{status:500,body:{message:"metadata persistence unavailable"}}});
- await assert.rejects(()=>f.repo.createFromFileIdempotent({ownerId,projectId,originalName:"render.mp4",mediaType:"video/mp4",filePath:file,publicationKey:"job-outbox:output:v1"}),error=>error.cleanupPending===true&&error.cleanupRecordFailed!==true);
+ const f=fixture({removeError:true,finalizationError:{status:500}});
+ await assert.rejects(()=>f.repo.createFromFileIdempotent({ownerId,projectId,originalName:"render.mp4",mediaType:"video/mp4",filePath:file,publicationKey:"job-outbox:output:v1",leaseContext,assertLease:async()=>true}),error=>error.cleanupPending===true&&error.cleanupRecordFailed!==true);
  const queued=f.calls.find(call=>call.url.includes("/asset_storage_cleanup")&&call.options.method==="POST");
  assert.ok(queued);
  assert.equal(JSON.parse(queued.options.body).object_path,f.storageCalls.find(call=>call.op==="uploadFile").path);
