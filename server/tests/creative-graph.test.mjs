@@ -111,6 +111,7 @@ test("verified evidence supports a target only when source hash, project and tar
  const foreignProject=buildCreativeGraph({...fixture,evidenceRecords:[{...record,id:"evidence-other-project",projectId:"project-elsewhere"}]});
  assert.ok(foreignProject.unlinkedEvidence.includes("evidence-other-project"));
  assert.equal(foreignProject.nodes.find(node=>node.id==="evidence:evidence-other-project").status,"review");
+ assert.equal(foreignProject.edges.some(edge=>edge.to==="evidence:evidence-other-project"||edge.from==="evidence:evidence-other-project"),false);
 });
 
 test("source asset fingerprint changes become graph revisions and flag dependent production items",()=>{
