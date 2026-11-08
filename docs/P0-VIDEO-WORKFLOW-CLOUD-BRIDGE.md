@@ -78,3 +78,27 @@ The existing `verify:workflow-executor` build step now asserts:
 - unknown modes fail closed.
 
 These policy tests do not constitute end-to-end cloud workflow acceptance. Paid generation and production deployment remain disabled until the full bridge is implemented and accepted.
+
+
+## Workflow-node cloud contract foundation (2026-11-08)
+
+Branch `feat/workflow-cloud-node-contract` introduces a pure, side-effect-free
+`createVideoWorkflowCloudRequest()` contract builder for validated
+`video.generate` nodes. The first adapter is deliberately limited to the
+explicit `runway/model-router` identity and derives text-to-video,
+image-to-video or video-to-video from the configured/connected source assets.
+It preserves stable request identity, project scope, source/reference asset IDs,
+settings and a canonical SHA-256 request hash.
+
+The builder performs no authentication, private asset lookup, signing, quoting,
+approval, reservation, enqueue, provider submission or storage writes. Those
+are mandatory responsibilities of the future authenticated orchestration layer;
+the helper must not be called as a substitute for those gates. Unsupported
+node kinds, provider/model pairs, mismatched operations, invalid media
+combinations and unsupported Model Router settings fail closed.
+
+Focused tests cover deterministic hashing, all three operation families,
+existing workflow image-port compatibility, project/request identity, and
+unsupported operation/adapter combinations. This is a contract foundation only:
+it does not enable `VIDEO_WORKFLOW_EXECUTION_MODE=cloud` and does not change
+legacy workflow execution.
