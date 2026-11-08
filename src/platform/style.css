@@ -520,3 +520,22 @@ button:disabled{opacity:.55;cursor:not-allowed}
 @media(max-width:760px){.provenance-stage-list{grid-template-columns:1fr}.provenance-score{gap:7px}.provenance-score>div{padding:11px}.provenance-score strong{font-size:24px}.provenance-score span{font-size:9px}}
 
 .c2pa-unsupported-note{display:inline-block;font-size:10px;color:#d5b98e;line-height:1.5}
+
+
+/* Persistent account identity in the application shell and overview */
+.sidebar-foot .account-avatar{width:30px;height:30px;flex:0 0 30px;display:grid;place-items:center;border:1px solid #8b5cf6;border-radius:50%;background:#252039;color:#ddd6fe;font-size:12px;font-weight:800}
+.ev-account-chip{display:flex;align-items:center;gap:9px;max-width:310px;min-width:0;padding:6px 10px;border:1px solid var(--line);border-radius:9px;background:#121722;color:var(--text);text-align:left}
+.ev-account-chip:hover{border-color:#8b5cf6;background:#191d2a}
+.ev-account-avatar,.ev-account-panel-avatar{display:grid;place-items:center;flex:0 0 auto;width:30px;height:30px;border:1px solid #8b5cf6;border-radius:50%;background:#252039;color:#ddd6fe;font-weight:800}
+.ev-account-copy{display:grid;gap:3px;min-width:0}
+.ev-account-copy b{max-width:210px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;color:#f1f2f6}
+.ev-account-copy small{font-size:8px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ev-account-chevron{color:#b8a7ef;font-size:13px}
+.ev-account-panel{grid-column:1/-1;display:flex;align-items:center;gap:14px;padding:16px 18px;margin:-17px 0 18px;border:1px solid #3b3451;border-radius:10px;background:linear-gradient(110deg,#1b1b2a,#141923 70%)}
+.ev-account-panel-avatar{width:42px;height:42px;font-size:16px}
+.ev-account-panel-main{min-width:0;flex:1}
+.ev-account-panel-main h3{font-size:13px;margin:5px 0 3px;overflow-wrap:anywhere}
+.ev-account-panel-main p,.ev-account-panel-main small{display:block;margin:0;font-size:9px;color:var(--muted);line-height:1.6}
+.ev-account-panel-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.ev-account-panel.is-guest{margin-top:0}
+@media(max-width:760px){.ev-account-chip{max-width:44px;padding:6px}.ev-account-copy,.ev-account-chevron{display:none}.ev-account-panel{align-items:flex-start;flex-wrap:wrap}.ev-account-panel-actions{width:100%}}
