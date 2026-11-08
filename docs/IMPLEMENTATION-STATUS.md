@@ -60,7 +60,7 @@
 - Local media output paths now call preservation before asset insertion, including AI upscaling and the FFmpeg finishing operations. Timeline masters include all enabled video, audio and still-image overlay sources; caption text assets are not treated as media ingredients.
 - Cloud timeline rendering now performs the same preservation step after rendering and before final probe/checksum/publication.
 - Signed outputs are re-hashed after preservation; metadata records the preservation result. Local cancellation and cloud abort signals are passed through the preservation step.
-- CI coverage includes a real CAI SDK multi-source signing/ingredient test and cloud timeline preservation-before-publication test. Full branch CI is the release gate for these latest changes.
+- CI passed at exact branch head `d9784b4`: reproducible `npm ci`, typecheck, full build/regression suite, real CAI SDK multi-source signing/ingredient validation, local timeline provenance-hook checks (including real FFmpeg render), cloud timeline preservation-before-publication test, and disposable PostgreSQL asset-publication integration.
 - No production signer, private key, trust anchor, external signing service, deployment, paid provider request or database migration is configured or invoked.
 - Remaining validation: exercise local SQLite media and local timeline paths with credential-bearing media fixtures in independent integration tests; test large media and cancellation; run isolated staging acceptance with an approved signer.
 
