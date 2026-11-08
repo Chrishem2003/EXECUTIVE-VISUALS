@@ -15,9 +15,12 @@ const formats=[
  {extension:"jpg",mimeType:"image/jpeg",kind:"image"},
  {extension:"png",mimeType:"image/png",kind:"image"},
  {extension:"webp",mimeType:"image/webp",kind:"image"},
+ {extension:"gif",mimeType:"image/gif",kind:"image"},
  {extension:"mp3",mimeType:"audio/mpeg",kind:"audio"},
  {extension:"wav",mimeType:"audio/wav",kind:"audio"},
- {extension:"mp4",mimeType:"video/mp4",kind:"video"}
+ {extension:"m4a",mimeType:"audio/mp4",kind:"audio"},
+ {extension:"mp4",mimeType:"video/mp4",kind:"video"},
+ {extension:"mov",mimeType:"video/quicktime",kind:"video"}
 ];
 function run(args){
  const result=spawnSync(process.env.FFMPEG_PATH||"ffmpeg",args,{encoding:"utf8"});
@@ -28,7 +31,7 @@ function generate(path,format,color){
   const codec=format.extension==="jpg"?["-c:v","mjpeg"]:format.extension==="webp"?["-c:v","libwebp"]:[];
   run(["-hide_banner","-loglevel","error","-f","lavfi","-i",`color=c=${color}:s=64x64`,"-frames:v","1",...codec,"-y",path]);
  }else if(format.kind==="audio"){
-  const codec=format.extension==="mp3"?["-c:a","libmp3lame","-q:a","5"]:["-c:a","pcm_s16le"];
+  const codec=format.extension==="mp3"?["-c:a","libmp3lame","-q:a","5"]:format.extension==="m4a"?["-c:a","aac","-b:a","96k"]:["-c:a","pcm_s16le"];
   run(["-hide_banner","-loglevel","error","-f","lavfi","-i","sine=frequency=440:duration=0.6",...codec,"-y",path]);
  }else{
   run(["-hide_banner","-loglevel","error","-f","lavfi","-i",`color=c=${color}:s=64x64:r=24`,"-t","1","-pix_fmt","yuv420p","-c:v","libx264","-preset","ultrafast","-y",path]);
