@@ -28,6 +28,8 @@ export function buildCreativeGraph(input:CreativeGraphInput):CreativeGraph{
  const evidenceCandidates=(input.creativeDNA?.proofAndTrustChecks||[]).map(x=>clean(x,500)).filter(Boolean);
  const proofCandidate=evidenceCandidates.find(x=>/^proof candidate supplied:/i.test(x));
  if(proofCandidate){const id="evidence:"+projectId+":"+key(proofCandidate).slice(0,100);add({id,type:"evidence",label:"Proof candidate",detail:proofCandidate,status:"needs_evidence"});link(intentNode,id,"supports");}
+ const assetIds=new Set<string>();
+ for(const asset of input.assets||[]){const id=clean(asset.id,120);if(!id)continue;assetIds.add(id);add({id:"asset:"+id,type:"asset",label:clean(asset.name,180)||id,detail:clean(asset.mediaType,80),status:"linked"});if(projectNode)link(projectNode,"asset:"+id,"contains","project_scope");}
  const characterMap=new Map<string,string>();
  const addCharacter=(character:{id:string;name:string;description?:string;referenceAssetIds?:string[]})=>{const id=clean(character.id,120);if(!id)return;const nodeId="character:"+id;characterMap.set(id,nodeId);add({id:nodeId,type:"character",label:clean(character.name,160)||"Unnamed character",detail:clean(character.description,1000),status:"linked"});if(projectNode)link(projectNode,nodeId,"contains","project_scope");for(const assetId of character.referenceAssetIds||[]){const assetNode="asset:"+clean(assetId,120);if(nodes.has(assetNode))link(assetNode,nodeId,"features");}};
  for(const character of input.characters||[])addCharacter(character);
@@ -43,7 +45,6 @@ export function buildCreativeGraph(input:CreativeGraphInput):CreativeGraph{
   const proof=clean(shot.proofReference,200);if(proof){const proofNode="evidence-ref:"+key(proof).slice(0,120);add({id:proofNode,type:"evidence",label:"Shot evidence reference",detail:proof,status:"needs_evidence"});link(proofNode,nodeId,"supports");}
   for(const assetId of shot.referenceAssetIds||[]){const assetNode="asset:"+clean(assetId,120);if(nodes.has(assetNode))link(assetNode,nodeId,"features");}
  };
- for(const shot of input.shots||[]){const scene=clean(shot.scene,160),sceneNode=scene?sceneByKey.get(key(scene)):undefined;addShot(shot,sceneNode);}
  for(const series of input.seriesPlans||[])for(const season of series.seasons||[])for(const episode of season.episodes||[])for(const scene of episode.scenes||[]){
   const sceneId=clean(scene.id,120);if(!sceneId)continue;const nodeId="scene:"+sceneId;
   add({id:nodeId,type:"scene",label:clean(scene.title,160)||sceneId,detail:clean(scene.purpose,500),status:"linked"});
@@ -51,8 +52,7 @@ export function buildCreativeGraph(input:CreativeGraphInput):CreativeGraph{
   sceneByKey.set(key(scene.title||sceneId),nodeId);
   for(const shot of scene.shots||[])addShot(shot,nodeId);
  }
- const assetIds=new Set<string>();
- for(const asset of input.assets||[]){const id=clean(asset.id,120);if(!id)continue;assetIds.add(id);add({id:"asset:"+id,type:"asset",label:clean(asset.name,180)||id,detail:clean(asset.mediaType,80),status:"linked"});if(projectNode)link(projectNode,"asset:"+id,"contains","project_scope");}
+ for(const shot of input.shots||[]){const scene=clean(shot.scene,160),sceneNode=scene?sceneByKey.get(key(scene)):undefined;addShot(shot,sceneNode);}
  const timelineNodes=new Map<string,string>();
  for(const timeline of input.timelines||[]){
   const id=clean(timeline.id,120);if(!id)continue;const nodeId="timeline:"+id;timelineNodes.set(id,nodeId);
