@@ -5,6 +5,7 @@ import { join, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { deflateSync, inflateSync } from "node:zlib";
+import { execFileSync } from "node:child_process";
 import { createC2paVerifier } from "../c2pa-verification.mjs";
 
 const fixtureDir = join(dirname(fileURLToPath(import.meta.url)), "fixtures", "c2pa");
@@ -89,4 +90,42 @@ test("real CAI SDK validates signed media, applies explicit signer policy and re
   const tamperedSize = (await stat(tamperedPath)).size;
   const tampered = await trustedVerifier({ path: tamperedPath, mimeType: "image/png", size: tamperedSize });
   assert.equal(tampered.status, "invalid");
+});
+
+test("real CAI Node SDK signs and verifies an MP4 video with the same explicit trust policy", async t => {
+  const dir = await mkdtemp(join(tmpdir(), "ev-c2pa-video-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const sourcePath = join(dir, "source.mp4"), signedPath = join(dir, "signed.mp4");
+  const certificateChain = await readFile(join(fixtureDir, "es256-test-only.chain.pem"));
+  const privateKey = await readFile(join(fixtureDir, "es256-test-only.private.pem"));
+  const certificateBlocks = certificateChain.toString("utf8").match(/-----BEGIN CERTIFICATE-----[\\s\\S]*?-----END CERTIFICATE-----/g) || [];
+  assert.ok(certificateBlocks.length >= 2, "upstream test fixture must contain a signer and intermediate certificate");
+  const anchorPath = join(dir, "user-anchors.pem");
+  await writeFile(anchorPath, certificateBlocks[1] + "\\n");
+  execFileSync("ffmpeg", [
+    "-hide_banner", "-loglevel", "error", "-y",
+    "-f", "lavfi", "-i", "color=c=blue:s=160x120:r=24",
+    "-t", "1", "-an", "-c:v", "libx264", "-pix_fmt", "yuv420p",
+    "-movflags", "+faststart", sourcePath
+  ], { stdio: "pipe" });
+
+  const { Builder, LocalSigner } = await import("@contentauth/c2pa-node");
+  const signer = LocalSigner.newSigner(certificateChain, privateKey, "es256");
+  const builder = await Builder.newAsync();
+  builder.setIntent({ create: "http://cv.iptc.org/newscodes/digitalsourcetype/algorithmicMedia" });
+  builder.sign(signer, { path: sourcePath, mimeType: "video/mp4" }, { path: signedPath, mimeType: "video/mp4" });
+
+  const signedSize = (await stat(signedPath)).size;
+  const untrusted = await createC2paVerifier({ sdkLoader: () => import("@contentauth/c2pa-node") })({
+    path: signedPath, mimeType: "video/mp4", size: signedSize
+  });
+  assert.equal(untrusted.status, "valid_untrusted");
+  assert.equal(untrusted.manifestPresent, true);
+
+  const trusted = await createC2paVerifier({
+    sdkLoader: () => import("@contentauth/c2pa-node"),
+    trustAnchors: anchorPath
+  })({ path: signedPath, mimeType: "video/mp4", size: signedSize });
+  assert.equal(trusted.status, "valid_trusted", JSON.stringify(trusted, null, 2));
+  assert.equal(trusted.trustPolicyType, "user_anchors");
 });
