@@ -1,8 +1,9 @@
-FROM node:22-bookworm-slim AS build
+FROM node:24.22.1-bookworm-slim AS build
 RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg fonts-dejavu-core ca-certificates && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
+RUN npm install --no-save --package-lock=false @contentauth/c2pa-node@0.10.0
 COPY . .
 RUN npm run build
 
