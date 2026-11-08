@@ -95,6 +95,24 @@ test("D1 Worker never writes an identity when the upstream session is unauthenti
   DB.close();
 });
 
+test("D1 Worker treats identity redirects as unauthenticated without following them", async t => {
+  const DB = makeD1();
+  let followed = false;
+  t.mock.method(globalThis, "fetch", async request => {
+    assert.equal(new URL(request.url).pathname, "/api/me");
+    assert.equal(request.redirect, "manual");
+    return new Response(null, { status: 302, headers: { location: "https://executive-visuals.onrender.com/login" } });
+  });
+  const response = await worker.fetch(new Request("https://staging.example/api/d1/projects", {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: "No identity" })
+  }), { DB, API_ORIGIN: "https://executive-visuals.onrender.com" });
+  assert.equal(response.status, 401);
+  assert.equal((await response.json()).error.code, "AUTH_REQUIRED");
+  assert.equal(DB.countUsers(), 0);
+  assert.equal(followed, false);
+  DB.close();
+});
+
 test("D1 Worker health reports staging binding without exposing data", async () => {
   const DB = makeD1();
   const response = await worker.fetch(new Request("https://staging.example/api/d1/health"), { DB });
