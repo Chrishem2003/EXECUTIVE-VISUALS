@@ -24,7 +24,7 @@ The local API service includes:
 
 - Local account registration and sign-in for development.
 - User-owned projects, project-scoped creative workspace documents and optimistic revision checks.
-- Binary media uploads to local disk with SHA-256 integrity metadata.
+- Binary media uploads to local disk with SHA-256 integrity metadata, plus on-demand Content Credentials verification in the asset library using the official CAI Node SDK.
 - Asset ownership isolation and original/derivative relationships.
 - Persistent workflow records and an observable job/event queue with renewable leases, stale-worker recovery, bounded retries, backoff and cross-process cancellation polling.
 - A local FFmpeg media adapter for probe, thumbnail, transcode, audio extraction, proxy generation and master-timeline rendering when FFmpeg/FFprobe are installed.
@@ -77,7 +77,7 @@ Cookie: ev_session=...
 
 It is protected by the same asset-access boundary as the underlying asset. The current `integrity_verified` state means only that the application's SHA-256 record is internally consistent with the asset row. The route now invokes a server-side adapter backed by the maintained CAI package `@contentauth/c2pa-node` (pinned to 0.10.0). The adapter uses `Reader.fromAsset` with the stored file path and known MIME type, disables remote manifest fetching, and returns the SDK manifest validation state and bounded validation findings. It distinguishes `not_available`, `not_supported`, `invalid`, `valid_untrusted`, `valid_trusted` and `verification_error`. The initial format allowlist covers JPEG, PNG, WebP, GIF, MP4, MOV, MP3, M4A, WAV and PDF when the stored extension matches the MIME type. A C2PA `Trusted` result is only surfaced as `valid_trusted` when an explicit trust-anchor file is configured through `C2PA_TRUST_ANCHORS`; without that policy it is downgraded to `valid_untrusted`. The existing application SHA-256 integrity record remains separate.
 
-The current adapter performs verification only. It does not yet create or sign manifests. Do not report an asset as trusted merely because a manifest is present. Signing requires a protected signer and an approved certificate/timestamp policy.
+The asset library now exposes a **Verify Content Credentials** action for each stored asset and displays the resulting state and validation findings. The current adapter performs verification only. It does not yet create or sign manifests. Do not report an asset as trusted merely because a manifest is present. Signing requires a protected signer and an approved certificate/timestamp policy.
 
 Current C2PA settings:
 
