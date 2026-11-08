@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import { Builder, Context, LocalSigner, Reader } from "@contentauth/c2pa-node";
 import { createC2paVerifier } from "../c2pa-verification.mjs";
+import { createC2paTransformationPreserver } from "../c2pa-transformation-preserver.mjs";
 
 const here=dirname(fileURLToPath(import.meta.url));
 const fixtureRoot=join(here,"fixtures","c2pa");
@@ -25,12 +26,12 @@ function pngChunk(type,data){
  checksum.writeUInt32BE(crc32(Buffer.concat([name,data])));
  return Buffer.concat([length,name,data,checksum]);
 }
-function onePixelPng(){
+function onePixelPng(red=24,green=48,blue=72){
  const signature=Buffer.from([137,80,78,71,13,10,26,10]);
  const header=Buffer.alloc(13);
  header.writeUInt32BE(1,0);header.writeUInt32BE(1,4);
  header[8]=8;header[9]=6;
- const pixels=deflateSync(Buffer.from([0,24,48,72,255]));
+ const pixels=deflateSync(Buffer.from([0,red,green,blue,255]));
  return Buffer.concat([signature,pngChunk("IHDR",header),pngChunk("IDAT",pixels),pngChunk("IEND",Buffer.alloc(0))]);
 }
 
@@ -67,5 +68,22 @@ test("official CAI SDK signs and validates a real embedded C2PA manifest",async(
   assert.ok(["valid_untrusted","trusted"].includes(verification.status));
   assert.equal(verification.assetSha256,sha256);
   assert.ok(verification.manifest?.activeManifestLabel);
+
+  const sourcePath=join(dir,"signed-source.png"),outputPath=join(dir,"transformed-output.png");
+  await writeFile(sourcePath,output.buffer);
+  await writeFile(outputPath,onePixelPng(90,80,70));
+  const preserve=createC2paTransformationPreserver({sdkLoader:async()=>({Reader,Builder,Context}),maxBytes:1024*1024});
+  const lineage=await preserve({sourcePath,outputPath,sourceMimeType:"image/png",outputMimeType:"image/png",signer,operation:"test:color-adjust"});
+  assert.equal(lineage.status,"preserved");
+  assert.equal(lineage.preserved,true);
+  assert.equal(lineage.ingredientCount,1);
+  const transformedReader=await Reader.fromAsset(
+   {path:outputPath,mimeType:"image/png"},
+   new Context({verify:{verifyAfterReading:true,verifyTrust:true,ocspFetch:false,remoteManifestFetch:false}})
+  );
+  const transformedStore=transformedReader.json();
+  const transformedManifest=transformedStore.manifests[transformedStore.active_manifest];
+  assert.ok(transformedManifest.ingredients.some(item=>item.manifest_data),"source C2PA manifest must remain embedded as a transformation ingredient");
+  assert.notEqual(transformedStore.validation_state,"Invalid");
  }finally{await rm(dir,{recursive:true,force:true});}
 });
