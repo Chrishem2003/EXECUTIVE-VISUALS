@@ -99,3 +99,17 @@ The current implementation branch feat/p0-workflow-quote-ledger extends PR #248 
 - Both cloud-video and Google Drive integration CI workflows applying the new migrations in order.
 
 This does not yet connect cloud jobs to workflow-node progress/output, and it does not submit provider tasks. The next integration slice is the workflow executor/job bridge, followed by settlement/recovery and isolated staging acceptance.
+
+## 6. Live branch and pull-request consolidation checkpoint (8 November 2026)
+
+| PR | Scope | Observed state | Integration decision |
+|---|---|---|---|
+| #245 | Official C2PA/Content Credentials verification | Non-draft; mergeable clean; build and asset-publication PostgreSQL checks passed | Review for mainline integration; do not duplicate its implementation |
+| #246 | Worker lease fencing and atomic media publication | Non-draft; asset-publication PostgreSQL passed; build still running at checkpoint | Wait for exact-head build, then review against #247 |
+| #247 | Combined C2PA and lease-fenced publication reconciliation | Draft; asset-publication PostgreSQL and local Supabase stack passed; build still running | Keep draft until overlap with #245/#246 is reconciled |
+| #206 | Billing, Google Drive and provider-aware video worker integration | Draft; dirty merge state; 573 commits ahead and 16 behind main; 17 changed files overlap with main's post-merge-base changes | Resolve the 17-file integration boundary before treating this as a mergeable foundation |
+| #248 | Durable workflow quote, explicit approval, atomic reservation/enqueue and local/cloud project identity | Draft; exact-head build and both disposable PostgreSQL workflows passed at commit 12290fb | Keep draft: cloud workflow-node progress and output handoff are still incomplete |
+
+PR #248 is stacked on the PR #206 integration branch. Its own checks are green, but that does not make the base integration branch mergeable into main. Do not merge #248 ahead of the base reconciliation. The next consolidation task is to review the #245/#246/#247 overlap, resolve #206's 17-file divergence against current main without discarding its provider/billing/Drive work, and then continue the local workflow executor → cloud job status → verified asset import bridge.
+
+Supabase Preview checks were skipped because no preview deployment was requested; they are not represented as successful hosted staging validation. No hosted deployment, shared database migration or provider generation was performed for these changes.
