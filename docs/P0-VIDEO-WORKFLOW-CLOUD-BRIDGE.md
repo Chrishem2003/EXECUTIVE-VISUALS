@@ -78,3 +78,34 @@ The existing `verify:workflow-executor` build step now asserts:
 - unknown modes fail closed.
 
 These policy tests do not constitute end-to-end cloud workflow acceptance. Paid generation and production deployment remain disabled until the full bridge is implemented and accepted.
+
+
+## Workflow-node cloud contract foundation (2026-11-08)
+
+Branch `feat/workflow-cloud-node-contract` introduces a pure, side-effect-free
+`createVideoWorkflowCloudRequest()` contract builder for validated
+`video.generate` nodes. The first adapter is deliberately limited to the
+explicit `runway/model-router` identity and derives text-to-video,
+image-to-video or video-to-video from the configured/connected source assets.
+It preserves stable request identity, project scope, source/reference asset IDs,
+settings and a canonical SHA-256 request hash.
+
+The builder performs no authentication, private asset lookup, signing, quoting,
+approval, reservation, enqueue, provider submission or storage writes. Those
+are mandatory responsibilities of the future authenticated orchestration layer;
+the helper must not be called as a substitute for those gates. Unsupported
+node kinds, provider/model pairs, mismatched operations, invalid media
+combinations and unsupported Model Router settings fail closed.
+
+Focused tests cover deterministic hashing, all three operation families,
+existing workflow image-port compatibility, project/request identity, and
+unsupported operation/adapter combinations. This is a contract foundation only:
+it does not enable `VIDEO_WORKFLOW_EXECUTION_MODE=cloud` and does not change
+legacy workflow execution.
+
+
+## Runway Model Router durable enqueue contract (2026-11-08)
+
+The integration branch now contains the guarded application and PostgreSQL enqueue contract for the dedicated `runway/model-router` worker adapter. The contract accepts only explicit `text-to-video`, `image-to-video` and `video-to-video` operations, and enforces a 2–30 second duration at the SQL boundary. The migration is source-controlled and exercised by the disposable PostgreSQL 16 integration job. It does not activate remote execution, create customer budget policies or call the provider. The worker's non-billable preflight must remain within the exact approved USD ceiling before paid submission, and settlement must use provider-reported realized task cost.
+
+This closes the previously documented application/SQL allowlist gap. It does **not** complete the general Studio workflow bridge: authenticated workflow-node orchestration, quote/approval binding, atomic credit and provider-budget reservation, durable job-to-node status mapping, cancellation/recovery, private output publication and actual-cost reconciliation remain required under P0 issue #209.
