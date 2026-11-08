@@ -21,6 +21,34 @@ function endpoint(value) {
   return url.origin;
 }
 
+async function readResponseTextBounded(response, maximumBytes = 1024 * 1024) {
+  if (typeof response?.body?.getReader !== "function") {
+    const text = await response.text();
+    if (Buffer.byteLength(text, "utf8") > maximumBytes) {
+      throw new Error("Cloud video enqueue response exceeded the 1 MB limit.");
+    }
+    return text;
+  }
+  const reader = response.body.getReader();
+  const chunks = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > maximumBytes) {
+        await reader.cancel().catch(() => {});
+        throw new Error("Cloud video enqueue response exceeded the 1 MB limit.");
+      }
+      chunks.push(Buffer.from(value));
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  return Buffer.concat(chunks, total).toString("utf8");
+}
+
 export function createCloudVideoEnqueue({
   url = process.env.SUPABASE_URL,
   serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY,
@@ -52,7 +80,7 @@ export function createCloudVideoEnqueue({
         body: JSON.stringify(args),
         signal: controller.signal
       });
-      const body = await response.text();
+      const body = await readResponseTextBounded(response);
       let parsed = null;
       if (body) {
         try { parsed = JSON.parse(body); }
