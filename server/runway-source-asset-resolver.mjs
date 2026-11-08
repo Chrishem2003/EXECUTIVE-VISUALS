@@ -171,14 +171,14 @@ export function createRunwaySourceAssetResolver({
       if (input?.model === "model-router") {
         const referenceImages = [];
         const firstFrameId = input.startFrameAssetId || null;
-        if (firstFrameId) {
-          const first = await resolveAsset({ ownerId, projectId, assetId: firstFrameId, kinds: "image" });
-          referenceImages.push({ uri: first.url, role: "first" });
-        }
         const imageIds = input.referenceImageAssetIds || input.referenceAssetIds || [];
         if (!Array.isArray(imageIds) || imageIds.length > (firstFrameId ? 3 : 4) ||
             new Set(imageIds).size !== imageIds.length || firstFrameId && imageIds.includes(firstFrameId)) {
           throw fail("Runway Model Router accepts at most four distinct owner-scoped reference images including the first frame.", "VIDEO_INPUT_ASSET_RESOLUTION_FAILED");
+        }
+        if (firstFrameId) {
+          const first = await resolveAsset({ ownerId, projectId, assetId: firstFrameId, kinds: "image" });
+          referenceImages.push({ uri: first.url, role: "first" });
         }
         for (const assetId of imageIds) {
           const image = await resolveAsset({ ownerId, projectId, assetId, kinds: "image" });
