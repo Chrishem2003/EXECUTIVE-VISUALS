@@ -48,7 +48,8 @@ Current environment settings:
 
 | Variable | Purpose | Default |
 |---|---|---|
-| `C2PA_TRUST_ANCHORS` | Local PEM root trust-anchor file; its PEM content is loaded server-side and passed as CAI user anchors | Unset |\n| `C2PA_MAX_VERIFY_BYTES` | Maximum asset size passed to the native parser | 262144000 bytes (250 MiB) |
+| `C2PA_TRUST_ANCHORS` | Local PEM root trust-anchor file; its PEM content is loaded server-side and passed as CAI user anchors | Unset |
+| `C2PA_MAX_VERIFY_BYTES` | Maximum asset size passed to the native parser | 262144000 bytes (250 MiB) |
 
 The adapter is verification-only. It does not sign assets or claim transformation continuity.
 
@@ -80,7 +81,8 @@ Do not infer the SDK's trust result from a manifest being present or from an emp
 
 The application API should distinguish at least:
 
-- `not_available`: no C2PA manifest found.\n- `not_supported`: the media type is not in the current adapter allowlist or the file extension does not match its declared MIME type.
+- `not_available`: no C2PA manifest found.
+- `not_supported`: the media type is not in the current adapter allowlist or the file extension does not match its declared MIME type.
 - `invalid`: cryptographic or structural validation failed.
 - `valid_untrusted`: cryptographic validation succeeded, but the configured signer/trust policy does not establish trust.
 - `valid_trusted`: cryptographic validation and the explicitly configured trust policy both succeeded.
