@@ -1,6 +1,6 @@
 # Product integration and scale plan
 
-**Updated:** 1 November 2026  
+**Updated:** 8 November 2026  
 **Target:** one dependable, multi-user visual production platform  
 **Status:** engineering plan; no cloud resources provisioned and no public release approval implied.
 
@@ -22,11 +22,11 @@ The core user journey is:
 
 ### P0 — Make the hosted product safe to use
 
-- Replace manual access-token entry with ordinary Supabase Auth sign-in/sign-up, email confirmation, password recovery, session refresh and logout. Keep tokens in memory or secure server-managed sessions; never persist access tokens in localStorage.
+- Ordinary Supabase Auth email/password sign-in/sign-up, email confirmation, HttpOnly access/refresh cookies, refresh-on-authentication and logout are implemented. Complete password recovery/reset and hosted acceptance; keep tokens in secure server-managed sessions and never persist access tokens in localStorage.
 - Add signup abuse controls, login throttling, generic authentication errors, session expiry handling and a clear account-disabled path.
 - Complete project role enforcement consistently across projects, creative documents, workflows, jobs, assets, timelines, reviews, exports and audit records.
 - Connect the active asset API to private object storage; use short-lived signed downloads, ownership checks, checksum verification, byte limits and safe cleanup.
-- Move job state and worker leases to the isolated Postgres schema before supporting multiple hosts. Keep the SQLite/local mode as a development option only.
+- Move active job state to the isolated Postgres schema before supporting multiple hosts. The feature branch now contains database-generated per-attempt fencing tokens, lease-aware worker heartbeats, pre-publication checks and atomic asset finalization; deploy and verify them only in the dedicated staging project. Keep SQLite/local mode as a development option only.
 - Add resumable uploads, safe range downloads, retention controls and storage quota enforcement.
 - Add health/readiness endpoints that distinguish process health, database connectivity, storage connectivity, worker heartbeat and provider readiness.
 - Add operational logs with request/job correlation IDs, redaction, bounded retention and no prompt/media/secret leakage.
@@ -80,13 +80,13 @@ The core user journey is:
 
 ## Current blockers to close first
 
-1. Browser auth is still a manual Supabase access-token gate.
+1. Supabase email/password signup/sign-in, email-confirmation handling, HttpOnly session cookies and refresh-on-authentication exist; password recovery, MFA/SSO, hosted configuration and end-to-end account recovery are still open.
 2. The active runtime asset API still uses local disk; the private cloud storage adapter is not yet wired through the active asset lifecycle.
-3. SQLite remains the active runtime database; the cloud Postgres queue and worker pieces are not yet the verified hosted runtime.
+3. SQLite remains the active runtime database. The feature branch now contains v2 fenced queue RPCs, atomic publication, tenant-scoped derivative validation and tombstone-based cleanup claims with PostgreSQL integration tests, but those migrations are not applied and no cloud worker is deployed.
 4. The Render blueprint is staging-only and requires paid compute plus persistent disk; no service has been created.
-5. The latest deployment-guard workflow was pending at last inspection; rerun and inspect before treating it as passed.
+5. Exact-head CI must pass after the latest lease-fencing and atomic-publication changes; verify typecheck, full build, Docker image inspection and PostgreSQL integration before merge.
 6. Neural upscaling must remain unavailable to ordinary users until the model binary/weights are present, a worker self-test passes, output integrity is verified and an independent quality benchmark is recorded.
 
 ## Next engineering slice
 
-Implement the authentication UX and session lifecycle first, then connect private object storage to the active asset API and browser library. Keep the branch in draft until those changes pass unit, integration and hosted staging tests. Do not create paid infrastructure or apply migrations until the user approves the isolated project and recurring costs.
+Connect the lease-fenced private cloud asset lifecycle to the active asset API and browser Asset Library, then deploy the cloud media/timeline workers in isolated staging. Complete password recovery and hosted auth acceptance alongside upload/download, derivative, cleanup, backup and multi-role tests. Keep local SQLite/disk as the explicit development mode until the cloud path is proven end-to-end. Do not create paid infrastructure or apply migrations until the user approves the isolated project and recurring costs.
