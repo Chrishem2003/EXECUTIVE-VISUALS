@@ -56,4 +56,5 @@ jobs:
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/20261104143000_cloud_video_budget_enqueue.sql
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/20261108120000_aleph2_transformation_budget_approval.sql
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/20261108210000_runway_model_router_enqueue_contract.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/20261108230000_video_workflow_quote_ledger.sql
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/cloud-video-postgres-integration.sql
