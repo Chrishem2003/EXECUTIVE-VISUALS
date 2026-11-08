@@ -8,7 +8,7 @@ const runId="523e4567-e89b-42d3-a456-426614174000";
 const nodeId="video-node";
 const cloudJobId="623e4567-e89b-42d3-a456-426614174000";
 
-function fixture(cloudStatus="succeeded"){
+function fixture(cloudStatus="succeeded",originalJobStatus="blocked"){
  const run={id:runId,owner_id:owner,project_id:project,status:"blocked",job_id:"old-local-job"};
  const node={status:"blocked",output_json:JSON.stringify({cloudJobId}),error_json:JSON.stringify({code:"CLOUD_VIDEO_JOB_PENDING"})};
  const jobs=[],events=[],audits=[];
@@ -16,6 +16,7 @@ function fixture(cloudStatus="succeeded"){
   transaction(fn){return()=>fn();},
   prepare(sql){
    if(sql.startsWith("SELECT n.run_id"))return{all:()=>node.status==="blocked"&&run.status==="blocked"?[{run_id:runId,node_id:nodeId,owner_id:owner,project_id:project,status:"blocked",output_json:node.output_json,error_json:node.error_json}]:[]};
+   if(sql.startsWith("SELECT status FROM jobs WHERE id=?"))return{get:()=>({status:originalJobStatus})};
    if(sql.startsWith("SELECT * FROM workflow_runs"))return{get:()=>({...run})};
    if(sql.startsWith("SELECT status,output_json,error_json FROM workflow_node_runs"))return{get:()=>({...node})};
    if(sql.startsWith("SELECT id FROM jobs WHERE owner_id"))return{get:(ownerId,key)=>jobs.find(job=>job.owner_id===ownerId&&job.idempotency_key===key)||null};
@@ -61,5 +62,14 @@ test("running cloud job leaves the workflow parked without creating local jobs",
  const result=await resumeCompletedCloudVideoWorkflows({db:f.db,cloudTimelineApi:f.cloudTimelineApi});
  assert.deepEqual(result,{scanned:1,resumed:0,terminal:0});
  assert.equal(f.run.status,"blocked");
+ assert.equal(f.jobs.length,0);
+});
+
+test("does not requeue while the original local workflow worker still owns its job",async()=>{
+ const f=fixture("succeeded","running");
+ const result=await resumeCompletedCloudVideoWorkflows({db:f.db,cloudTimelineApi:f.cloudTimelineApi});
+ assert.deepEqual(result,{scanned:1,resumed:0,terminal:0});
+ assert.equal(f.run.status,"blocked");
+ assert.equal(f.node.status,"blocked");
  assert.equal(f.jobs.length,0);
 });
