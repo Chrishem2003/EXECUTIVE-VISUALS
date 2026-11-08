@@ -85,7 +85,7 @@ export function buildCreativeGraph(input:CreativeGraphInput):CreativeGraph{
   const targetType=record.target?.type,targetId=clean(record.target?.id,120);
   const targetNode=targetType==="project"?"project:"+targetId:targetType==="scene"?"scene:"+targetId:targetType==="shot"?"shot:"+targetId:targetType==="timeline"?"timeline:"+targetId:targetType==="asset"?"asset:"+targetId:"";
   const sourceAsset=assetById.get(sourceId),hashMatches=Boolean(sourceAsset?.sha256&&record.sourceSha256&&sourceAsset.sha256.toLowerCase()===record.sourceSha256.toLowerCase());
-  const sameProject=record.projectId===undefined||record.projectId===null||record.projectId===projectId;
+  const sameProject=Boolean(projectId)&&record.projectId===projectId;
   const targetExists=Boolean(targetNode&&nodes.has(targetNode));
   const verified=record.status==="verified"&&hashMatches&&sameProject&&targetExists;
   add({id:evidenceNode,type:"evidence",label:clean(record.kind,100)||"Evidence record",detail:clean(record.claim,1000)+(hashMatches?"":" · Source asset hash mismatch or unavailable")+(sameProject?"":" · Project scope mismatch")+(targetExists?"":" · Target is unresolved"),status:verified?"linked":"review"});
