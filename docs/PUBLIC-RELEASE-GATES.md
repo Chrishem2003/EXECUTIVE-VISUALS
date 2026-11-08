@@ -1,50 +1,52 @@
 # Public release gates
 
 **Current decision: NOT APPROVED for public users.**  
-**Scope:** staging deployment review for the unified production application.  
-**Last reviewed:** 1 November 2026.
+**Scope:** isolated staging acceptance for Executive Visuals.  
+**Last reviewed:** 8 November 2026. Current implementation branch: PR #240, feat/c2pa-protected-signing.
 
-This checklist separates a successful source build from a safe, usable hosted service. Do not promote the feature branch to the production branch or expose the application to public users until every mandatory gate below has evidence.
+A green source build is necessary but not sufficient. This checklist records the actual boundary between implemented local capabilities and a hosted multi-user product.
 
 ## Current evidence
 
 | Gate | Status | Evidence / remaining work |
 |---|---|---|
-| Source build | Passed on the last completed quality workflow | Workflow 1692 completed successfully: dependency install, TypeScript check and full build. |
-| Latest deployment guard | Running | Workflow 1696 includes the new checks that reject development-only authentication in the Render production-mode blueprint. |
-| Production-mode authentication | Blueprint corrected; user flow incomplete | Render blueprint now requires Supabase auth and non-synchronized secret inputs. Browser gate still asks users to paste an access token; implement email/password or passwordless sign-in, refresh, logout and account recovery before beta. |
-| Isolated identity/database | Blocked | Connected Supabase projects already contain unrelated NEMA and shared platform tables. Do not reuse or migrate either for this application. Provision and review a dedicated project before applying the application schema. |
-| Durable media storage | Blocked | Current active API uses SQLite and a local media directory. Cloud object-storage adapter is not integrated into the main asset API/UI. |
-| Durable application database | Blocked for multi-instance use | Current runtime uses SQLite on one persistent disk. It is a single-instance staging architecture, not a horizontally scalable multi-tenant deployment. |
-| Worker recovery | Partial | Local queue leases/retries exist. Cloud worker process is not deployed or connected to the active application queue. |
-| Media generation | Explicitly limited | Local FFmpeg editing/enhancement is implemented. Actual image/video generation and verified neural super-resolution are not generally available; provider adapters remain gated. |
-| Security review | Partial | API tests and headers exist. Complete Supabase RLS/storage policy review, auth abuse controls, upload isolation and dependency/security review are required on the dedicated project. |
-| Recovery / backups | Blocked | No tested backup-and-restore procedure for the application's SQLite database and media files is recorded. |
-| Operational monitoring | Blocked | No application-specific alerting, retention policy, capacity limits or tested incident/rollback procedure. |
-| User acceptance | Not run | No hosted end-to-end tests with separate owner/editor/reviewer/viewer accounts and real media files. |
+| Source build | Pending fresh exact-head CI | On source-code head `6e6034605fd10f888d79186eef38d11535470bf1`, workflow [42474400274](https://github.com/Chrishem2003/EXECUTIVE-VISUALS/actions/runs/42474400274) passed PostgreSQL asset-publication integration, npm install and TypeScript validation; the build job was subsequently cancelled when newer documentation commits superseded that SHA, so Docker inspection was skipped. The current PR head includes README/status/plan corrections; no PR-triggered workflow was visible for that newer docs-only head at the last check. Re-run and verify build + Docker on the exact current head before marking this gate green. Earlier SQL bootstrap and derivative-lineage failures were corrected and are covered by the passing PostgreSQL job. |
+| Deployment guard | Corrected; rerun required | Docker now pins both stages to patched Node 24.22.1 and checks the checksum-pinned CAI native binary. The deployment guard was updated to assert the pinned image. |
+| Ordinary user authentication | Partially implemented | Supabase email/password registration and sign-in, email-confirmation response, HttpOnly access/refresh cookies, refresh-on-authentication and logout/revocation are implemented. Password recovery/reset UX, MFA/SSO and hosted acceptance are still open. |
+| Isolated identity/database | Blocked | No dedicated application Supabase project has been provisioned and reviewed. Existing NEMA/shared-platform projects are out of scope and must not be reused. |
+| Durable private media storage | Integrated in code; staging gate blocked | The Runtime Asset Library has a private cloud shelf, streamed uploads, SHA-256 metadata and short-lived signed preview links. PR #240 now connects it to a gated cloud media job API and queue history: type-aware operations, owner/project/editor authorization, per-operation option allowlists, mandatory idempotency keys and persisted job events. `CLOUD_MEDIA_JOBS_API_ENABLED` defaults off and does not start a worker. Local `/api/assets` remains the default processing lifecycle. Dedicated isolated Supabase migrations, private bucket/RLS review, separate media-worker deployment and end-to-end staging acceptance remain mandatory. |
+| Durable application database | Limited to single instance | Active local runtime uses SQLite. It is not a horizontally scalable multi-tenant data plane. Cloud Postgres migrations and queue adapters require a dedicated project and verified deployment wiring. |
+| Worker recovery/publication | Implemented in feature branch; hosted gate blocked | Current PR #240 includes database-generated per-attempt fencing tokens, v2 queue RPCs, heartbeat drain, pre-publication checks, job-bound reservations, atomic asset+ledger finalization, unique attempt paths, same-tenant derivative validation and tombstone-claimed cleanup. PostgreSQL integration tests are added. Exact-head CI must pass; migrations are not applied to a dedicated Supabase project and no cloud worker is deployed. |
+| Media generation | Explicitly limited | Local FFmpeg probe/edit/enhancement and timeline rendering work when binaries are installed. Image/video generation and advanced provider operations remain adapter-gated; no paid provider is enabled by default. |
+| C2PA provenance | Verification + test signing implemented; production signing disabled | Server-side `@contentauth/c2pa-node` verification and Asset Library inspection are connected. Native integration tests exercise genuine test-signed PNG/MP4, trust-anchor mapping and tamper rejection. A protected callback signer preserves source ingredients and is optionally invoked by the cloud media executor before publication. No production KMS/HSM, certificate, TSA or reviewed trust/revocation policy is provisioned; the default worker has no signer and local timeline/export signing remains incomplete. |
+| Security review | Partial | Authenticated ownership checks, server-side credential boundaries, path validation, rate limiting and regression tests exist. Full RLS/storage-policy review, tenant route audit, upload isolation, dependency review and external security assessment remain required. |
+| Recovery / backups | Blocked | No tested backup-and-restore rehearsal for the application database and media files is recorded. |
+| Operational monitoring | Blocked | Application-specific alerting, retention, resource quotas, capacity monitoring and incident/rollback rehearsal are not accepted. |
+| User acceptance | Not run | Hosted end-to-end tests with separate owner/editor/reviewer/viewer accounts, real media and recovery scenarios have not passed. |
 
 ## Mandatory staging sequence
 
-1. Create a dedicated isolated Supabase project for this application. Do not use the existing NEMA/shared-platform projects.
-2. Review and apply only this application's migration to that isolated project. Verify RLS, grants, storage policies and security/performance advisors before connecting services.
-3. Complete a normal user sign-in flow. Access tokens must never be requested from ordinary users as a manual setup step. Implement session refresh, logout, email confirmation/recovery and signup abuse controls.
-4. Connect the application's active asset API and UI to private object storage. Verify authorization, checksum, byte limits, cleanup and signed-link expiry.
-5. Choose a persistent runtime architecture. The current SQLite/local-media approach must remain single-instance with durable disk and tested backups; for horizontal scaling, complete the Postgres queue/data migration and deploy the worker.
-6. Add resource limits for concurrent FFmpeg jobs, media duration, source size, output size and disk quota. A 1 GB disk is only a smoke-test/staging allocation, not a practical multi-user media library.
-7. Run hosted smoke tests: registration/login, project isolation, role checks, upload/download, job queue, cancellation, media probe, derivative creation, review/approval, timeline render and logout/session expiry.
-8. Perform a backup-and-restore rehearsal, check logs/metrics, test rollback and confirm a safe support/contact path.
-9. Review the provider readiness catalog and costs. Keep paid generation disabled until each provider is priced, budgeted, approved and end-to-end tested.
+1. Provision a dedicated isolated Supabase project for Executive Visuals. Do not reuse any NEMA or shared-platform project.
+2. Review and apply only this application's migrations. Verify RLS, grants, private storage policies and database security/performance advisors before connecting services.
+3. Complete ordinary account recovery: email/password registration and sign-in, email confirmation, refresh, logout, password-reset request and secure password update. Test expiry, replay, enumeration resistance and abuse controls.
+4. Connect the active asset API and browser Asset Library to private object storage. Verify project/owner authorization, checksum, byte limits, range access, signed-link expiry, cleanup and derivative lineage.
+5. Choose and prove the runtime architecture. SQLite/local media may be used only as a single-instance staging mode with persistent disk and tested backups. Horizontal scaling requires the Postgres data/queue path and deployed workers.
+6. Port lease fencing and publication recovery to the current branch. Prove stale workers cannot publish after lease loss; duplicate attempts cannot create duplicate finalization; failed publication and cleanup reconcile deterministically.
+7. Enforce limits for concurrent FFmpeg jobs, media duration, source/output size, disk quota and worker memory/CPU. A 1 GB disk is only a smoke-test allocation, not a multi-user media library.
+8. Run hosted smoke tests for registration/login/recovery, project isolation, role checks, upload/download, job queue, cancellation, media probe, derivative creation, review/approval, timeline render, provenance inspection and logout/session expiry.
+9. Perform a backup-and-restore rehearsal; verify monitoring, log redaction, rollback and support/contact procedures.
+10. Review provider readiness and costs. Keep paid generation disabled until each provider is priced, budgeted, approved and end-to-end tested.
 
 ## Deployment guardrails
 
-- The Render Blueprint is staging-only and points to the feature branch. Do not retarget it to `main` until release approval.
-- The blueprint requires `AUTH_MODE=supabase`, `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY`. Configure these only on the new isolated application service.
-- The blueprint uses a persistent disk. Free ephemeral hosting is not suitable for user uploads or the SQLite database.
-- Never copy service-role keys into the browser or into source control.
-- Do not apply this project's migration to any existing shared Supabase database.
-- Do not enable remote AI/image/video/speech providers without a price and approval gate.
-- Keep original user media immutable; all edits create traceable derivatives.
+- The Render Blueprint is staging-only and points to the feature branch. Do not retarget it to `main` before release approval.
+- Configure Supabase URL and publishable key only on the isolated application service. Never place service-role keys in browser code or source control.
+- Do not apply this project's migrations to any existing shared Supabase database.
+- Keep originals immutable; every transformation creates a traceable derivative.
+- Keep production C2PA signing disabled until a reviewed KMS/HSM provider, certificate chain, TSA, trust/revocation policy and audit procedures are configured.
+- Do not enable remote AI/image/video/speech providers without a verified price, explicit user approval and hard budget controls.
+- Do not deploy production, change production credentials or run irreversible migrations as part of this staging work.
 
 ## Approval rule
 
-A green GitHub build is necessary but not sufficient. Public release requires a dedicated isolated backend, ordinary user authentication, durable private media storage, verified backups, hosted end-to-end tests and an explicit owner approval of recurring infrastructure/provider costs.
+Public release requires a green exact-head build, dedicated isolated backend, ordinary authentication and account recovery, private durable media storage, verified worker/publication recovery, backup restore, hosted end-to-end tests, monitoring and an explicit owner approval of recurring infrastructure/provider costs. A successful source build alone does not satisfy these gates.
