@@ -337,7 +337,7 @@ async function processNextJob() {
   try {
     const execute=current.job_type==="workflow.execute"?executeWorkflowRun:executeMediaJob;
     const result=await execute({
-      db,job:current,mediaRoot:MEDIA_ROOT,activeProcesses,
+      db,job:current,mediaRoot:MEDIA_ROOT,activeProcesses,cloudTimelineApi,
       onProgress:value=>{
         const changed=db.prepare("UPDATE jobs SET progress=?,updated_at=? WHERE id=? AND status='running' AND lease_owner=? AND lease_expires_at>?")
           .run(value,now(),job.id,WORKER_ID,now());
