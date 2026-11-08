@@ -178,6 +178,8 @@ The product should converge on a shared domain language. Reuse existing records 
 ### P2 — Creative intelligence and trust
 - Creative Intent Graph and change-impact analysis.
 - Claim-to-shot/evidence ledger, source citations and uncertainty.
+  - Source integrity gate: re-hash the managed file and verify byte size against ingest metadata before evidence submission and before every reviewer decision; fail closed on missing or modified bytes.
+  - Reviewer decisions require a written rationale and append-only actor/event history; the UI exposes the source SHA-256 fingerprint and source reference. This verifies byte continuity, not claim truth or legal rights.
 - Project Canon for character/product/location/wardrobe/prop continuity.
 - Semantic asset indexing with consent and access filters.
 - C2PA inspection/preservation and export manifest where supported.
