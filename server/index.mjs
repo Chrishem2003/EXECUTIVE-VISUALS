@@ -616,7 +616,8 @@ export function createAppServer() {
           if(evidenceAsset.project_id&&!canWriteProject(db,user.id,evidenceAsset.project_id)){fail(res,403,"EVIDENCE_WRITE_FORBIDDEN","Editor access is required to submit evidence.");return;}
           const body=await readJson(req);
           if(body.status!==undefined){fail(res,400,"EVIDENCE_STATUS_SERVER_MANAGED","Evidence submissions always begin in submitted status and must be reviewed separately.");return;}
-          if(!evidenceTargetExists(db,user.id,evidenceAsset,body.targetType,body.targetId)){fail(res,404,"EVIDENCE_TARGET_NOT_FOUND","Evidence target is not available in the same project.");return;}\n          const record=createEvidenceRecord(db,{ownerId:user.id,projectId:evidenceAsset.project_id,sourceAsset:{id:evidenceAsset.id,sha256:evidenceAsset.sha256},targetType:body.targetType,targetId:body.targetId,kind:body.kind,claim:body.claim,method:body.method,sourceRef:body.sourceRef,observedAt:body.observedAt,note:body.note});
+          if(!evidenceTargetExists(db,user.id,evidenceAsset,body.targetType,body.targetId)){fail(res,404,"EVIDENCE_TARGET_NOT_FOUND","Evidence target is not available in the same project.");return;}
+          const record=createEvidenceRecord(db,{ownerId:user.id,projectId:evidenceAsset.project_id,sourceAsset:{id:evidenceAsset.id,sha256:evidenceAsset.sha256},targetType:body.targetType,targetId:body.targetId,kind:body.kind,claim:body.claim,method:body.method,sourceRef:body.sourceRef,observedAt:body.observedAt,note:body.note});
           audit(db,user.id,"evidence.submitted","evidence",record.id,{sourceAssetId:evidenceAsset.id,target:record.target,kind:record.kind},evidenceAsset.project_id);
           send(res,201,{record,events:listEvidenceEvents(db,record.id)},cors);return;
         }
