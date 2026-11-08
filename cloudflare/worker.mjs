@@ -143,7 +143,12 @@ async function d1Api(request, env, url) {
       const project = await repo.updateProject({ actorId: principal.id, projectId: match[1], expectedRevision: Number(body.expectedRevision ?? body.revision), name: body.name, description: body.description, settings: body.settings });
       return withCookies(json({ project, storage: "cloudflare-d1-staging" }), sessionCookies);
     }
-    const workspaceMatch = url.pathname.match(/^\\/api\\/d1\\/projects\\/([0-9a-f-]{36})\\/workspace$/i);
+    const workspacePrefix = "/api/d1/projects/";
+    const workspaceSuffix = "/workspace";
+    const workspaceId = url.pathname.startsWith(workspacePrefix) && url.pathname.endsWith(workspaceSuffix)
+      ? url.pathname.slice(workspacePrefix.length, -workspaceSuffix.length)
+      : "";
+    const workspaceMatch = /^[0-9a-f-]{36}$/i.test(workspaceId) ? [url.pathname, workspaceId] : null;
     if (workspaceMatch && request.method === "GET") {
       const workspace = await repo.getWorkspaceDocument({ actorId: principal.id, projectId: workspaceMatch[1] });
       return withCookies(json(workspace), sessionCookies);
