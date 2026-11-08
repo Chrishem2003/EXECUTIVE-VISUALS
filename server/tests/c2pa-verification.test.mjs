@@ -66,14 +66,15 @@ test("never promotes Trusted to trusted without an explicit trust-anchor policy"
 test("accepts the SDK Trusted state only when a configured trust policy exists", async t => {
   const f = await fixture(); t.after(() => rm(f.dir, { recursive: true, force: true }));
   const anchor = join(f.dir, "anchors.pem");
-  await writeFile(anchor, "test trust anchor placeholder");
+  const anchorPem = "-----BEGIN CERTIFICATE-----\\nTEST TRUST ANCHOR\\n-----END CERTIFICATE-----\\n";
+  await writeFile(anchor, anchorPem);
   const fake = fakeSdk("Trusted");
   const verify = createC2paVerifier({ sdkLoader: async () => fake.sdk, trustAnchors: anchor });
   const result = await verify(f);
   assert.equal(result.status, "valid_trusted");
   assert.equal(result.trustPolicyConfigured, true);
   assert.equal(fake.received().context.verify.verifyTrust, true);
-  assert.equal(fake.received().context.trust.userAnchors, anchor);
+  assert.equal(fake.received().context.trust.userAnchors, anchorPem);
   assert.equal(fake.received().context.trust.verifyTrustList, true);
 });
 
