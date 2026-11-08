@@ -1,6 +1,6 @@
 # Asset provenance and Content Credentials
 
-**Status:** application-level asset integrity records implemented for new local uploads. C2PA verification/signing is not implemented by this feature.
+**Status:** application-level integrity records are implemented for new uploads. An authenticated read-only C2PA inspection adapter is implemented using the official CAI Node SDK. C2PA signing and transformation-manifest preservation remain incomplete.
 
 ## What is implemented
 
@@ -30,9 +30,15 @@ Cookie: ev_session=...
 
 The endpoint returns the manifest, a verification result and an explicit limitation notice. Access is denied whenever the caller cannot access the underlying asset.
 
-## C2PA integration path
+## C2PA inspection
 
-A separate future adapter should use the Content Authenticity Initiative's maintained SDK for Node.js (`@contentauth/c2pa-node`) or an appropriate C2PA CLI for offline inspection. Before production signing:
+`GET /api/assets/ASSET_ID/c2pa` is protected by the existing asset access check. The endpoint reads the server-stored file using `Reader.fromAsset` and an explicit MIME type, disables remote manifest fetching, and reports the SDK's explicit `validation_state` only. It never promotes `Valid` to `Trusted`, and it returns `indeterminate` when the SDK does not provide a complete active manifest and validation state. A missing SDK is reported as `not_available`; it is not treated as a successful inspection.
+
+The Docker build uses Node 24.22.1 (a patched release) and installs the exact `@contentauth/c2pa-node@0.10.0` package. Local developers can install the same package with the command in the README. The SDK's native binary is installed at build time; Rust is not required for the normal package installation.
+
+## Remaining C2PA integration path
+
+Before production signing and lineage preservation:
 - Pin and review the SDK release and supported media formats.
 - Validate untrusted files with resource limits and safe parser isolation.
 - Distinguish missing, invalid, valid and trusted credentials; trust requires an explicit trust policy.
@@ -40,6 +46,7 @@ A separate future adapter should use the Content Authenticity Initiative's maint
 - Obtain a suitable C2PA signing certificate and protect private keys with KMS/HSM-backed signing; never ship private keys to browsers or repository files.
 - Record certificate chain, timestamping, revocation/trust-list policy and verification result.
 - Keep C2PA validation separate from rights, consent, factual accuracy and editorial approval.
+- Add real signed C2PA fixtures from a controlled test certificate and verify them in CI.
 - Test metadata survival through transcode, edit, proxy, render and publish workflows.
 
 Reference: https://opensource.contentauthenticity.org/docs/
@@ -47,4 +54,4 @@ Specification: https://spec.c2pa.org/specifications/specifications/2.5/specs/C2P
 
 ## Acceptance tests
 
-The provenance test suite verifies deterministic record creation, record tampering, media checksum mismatch, invalid input, derived-source requirements, missing legacy records and the explicit `c2pa: not_checked` boundary.
+The provenance test suite verifies deterministic record creation, record tampering, media checksum mismatch, invalid input, derived-source requirements, missing legacy records and the explicit `c2pa: not_checked` boundary. The C2PA adapter suite covers explicit trusted/valid/invalid states, missing manifests, indeterminate validation, absent SDK behavior and MIME/path requirements. These adapter tests use injected SDK fixtures; they are not a substitute for real signed binary fixtures.
