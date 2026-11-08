@@ -80,7 +80,7 @@ The core user journey is:
 
 ## Current blockers to close first
 
-1. Browser auth is still a manual Supabase access-token gate.
+1. Supabase email/password signup/sign-in, email-confirmation handling, HttpOnly session cookies and refresh-on-authentication exist; password recovery, MFA/SSO, hosted configuration and end-to-end account recovery are still open.
 2. The active runtime asset API still uses local disk; the private cloud storage adapter is not yet wired through the active asset lifecycle.
 3. SQLite remains the active runtime database; the cloud Postgres queue and worker pieces are not yet the verified hosted runtime.
 4. The Render blueprint is staging-only and requires paid compute plus persistent disk; no service has been created.
@@ -89,4 +89,4 @@ The core user journey is:
 
 ## Next engineering slice
 
-Implement the authentication UX and session lifecycle first, then connect private object storage to the active asset API and browser library. Keep the branch in draft until those changes pass unit, integration and hosted staging tests. Do not create paid infrastructure or apply migrations until the user approves the isolated project and recurring costs.
+Complete password recovery and hosted auth acceptance, then connect private object storage to the active asset API and browser library. Keep the local SQLite/disk backend as the explicit development mode until cloud storage is proven end-to-end. Keep the branch in draft until those changes pass unit, integration and hosted staging tests. Do not create paid infrastructure or apply migrations until the user approves the isolated project and recurring costs.
