@@ -23,7 +23,7 @@ jobs:
           fi
           ffmpeg -version
           fc-match "DejaVu Sans"
-      - run: npm install
+      - run: npm ci
       - run: npm run typecheck
       - run: npm run build
 
