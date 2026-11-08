@@ -146,14 +146,14 @@ async function loadCloudWorkspace(){
   state.cloudAssets=assets.assets||[];
   await loadTransformationPlans(state.cloudProjectId);
   await loadTransformationReadiness(state.cloudProjectId);
-  const timelines=await apiRequest<{timelines:Array<{id:string;name:string;revision:number;updatedAt:string}>}>("/api/cloud/timelines"+query);
+  const timelines=state.cloudProjectId?await apiRequest<{timelines:Array<{id:string;name:string;revision:number;updatedAt:string}>}>("/api/cloud/timelines"+query):{timelines:[]};
   state.cloudTimelines=timelines.timelines||[];
   state.cloudTimelineDocuments=(await Promise.all(state.cloudTimelines.map(async item=>{
    try{const result=await apiRequest<{timeline:{id:string;name:string;revision:number;timeline:EditorialTimeline}}>("/api/cloud/timelines/"+encodeURIComponent(item.id));return{id:item.id,name:item.name,revision:item.revision,timeline:result.timeline.timeline};}
    catch{return null;}
   }))).filter((item):item is {id:string;name:string;revision:number;timeline:EditorialTimeline}=>!!item&&!!item.timeline);
   state.creativeImpactReport=null;state.cloudMessage="Private cloud workspace connected.";
- }catch(error){state.cloudMessage=error instanceof Error?error.message:"Cloud workspace is unavailable. Check Supabase sign-in and cloud API configuration.";state.cloudAssets=[];state.transformationDrafts=[];}
+ }catch(error){state.cloudMessage=error instanceof Error?error.message:"Cloud workspace is unavailable. Check Supabase sign-in and cloud API configuration.";state.cloudAssets=[];state.cloudTimelines=[];state.cloudTimelineDocuments=[];state.creativeImpactReport=null;state.transformationDrafts=[];}
  finally{state.cloudLoading=false;render();}
 }
 function cloudWorkspace(){
