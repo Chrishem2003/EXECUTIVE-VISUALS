@@ -60,11 +60,15 @@ The build pipeline runs:
 2. Workflow graph validation, targeted-run behavior and project-knowledge retrieval checks.
 3. API integration tests for authentication, ownership isolation, project workspace persistence, revision conflicts, role permissions, uploads and idempotency.
 4. Mock-gateway tests for server-side text generation, remote-access controls and approval gating.
-5. API tests for research-source URL validation, source-linked knowledge persistence, partial document saves, role enforcement and safe research import rejection.\n6. Workflow context tests ensure imported source text is passed as untrusted quoted data, not executable instructions.\n6. Research importer tests for HTTPS restrictions, private-network blocking, HTML extraction, metadata capture, size limits and unreadable pages.
-5. Real FFmpeg rendering and output inspection.
-6. Real FFmpeg/FFprobe fixture execution for denoise, color correction, resize, interpolation and scaling with invalid-parameter rejection.
-6. TypeScript typecheck.
-7. Production Vite build.
+5. Research-source API tests for URL validation, source-linked persistence, partial saves, role enforcement and safe import rejection.
+6. Workflow-context tests proving imported source text is treated as untrusted quoted data, not executable instructions.
+7. Research importer tests for HTTPS restrictions, private-network blocking, HTML extraction, metadata capture, size limits and unreadable pages.
+8. Real FFmpeg rendering and output inspection.
+9. Real FFmpeg/FFprobe fixture execution for denoise, color correction, resize, interpolation and scaling with invalid-parameter rejection.
+10. Application provenance and C2PA adapter tests, including native CAI SDK signed/tampered fixture checks.
+11. PostgreSQL integration for lease fencing, atomic publication, derivative tenant scope and cleanup claims.
+12. TypeScript typecheck and production Vite build.
+13. Production Docker build and image/deployment-guard inspection.
 
 A green build does not prove external provider execution, cloud durability, frame-accurate playback or collaborative editing.
 
@@ -545,10 +549,11 @@ This is a runnable worker entry point, not a deployed worker. Do not set the ena
 Creative graph asset nodes now include the recorded SHA-256 fingerprint and byte size. A source fingerprint change is detected by graph snapshot comparison and downstream references (including character reference use, evidence lineage and timeline clips) are marked as potentially stale for human review. This is dependency propagation only; it does not mutate or invalidate exports.
 
 
-### Production worker/publication stack audit — 8 November 2026
+### Production worker/publication stack audit — reconciled on 8 November 2026
 
-- Main already contains the idempotent publication ledger delivered by merged PR #226; the earlier ledger PR #171 is closed as superseded.
-- The lease-fencing stack (#172 onward) is still based on the old `feat/idempotent-asset-publication-ledger` branch. Its head is 61 commits ahead and 28 commits behind current `main`; it must not be merged as-is because its ancestry and migration history are stale.
-- Historical CI for lease fencing (#172), worker telemetry (#173), immutable publication (#174), orphan cleanup (#175), atomic publication (#178) and cleanup reconciliation (#207) is green at the inspected heads. This is not current-main integration proof.
-- PR #177 is an alternative atomic-publication branch; PR #178 is the chosen continuation because cleanup reconciliation PR #207 is stacked on it. Keep both draft until a current-main integration branch is rebased/ported, the complete migration sequence is verified, and worker/storage failure-recovery tests pass together.
-- Next engineering action: port the lease-token/worker fencing contract onto current main without replaying the superseded ledger implementation, then re-run all worker, publication, cleanup and PostgreSQL integration gates. No production deployment or merge is authorized by this audit.
+- Main contains the idempotent publication ledger delivered by merged PR #226; the earlier ledger PR #171 is superseded.
+- The old lease-fencing PR stack (#172–#178 and #207) has divergent ancestry and must not be mechanically merged.
+- PR #240, branch `feat/c2pa-protected-signing`, is the active current-main consolidation path. It carries database-generated per-attempt lease tokens, v2 claim/renew/assert/finish RPCs, heartbeat draining, pre-publication lease checks, job-bound reservations, atomic asset+ledger finalization, immutable attempt paths, same-tenant derivative checks and tombstone-claimed cleanup.
+- Exact-head evidence at SHA `6e6034605fd10f888d79186eef38d11535470bf1`: PostgreSQL asset-publication integration passed in workflow run [42474400274](https://github.com/Chrishem2003/EXECUTIVE-VISUALS/actions/runs/42474400274); TypeScript validation passed; the full build was still in progress at the last inspection, with Docker inspection pending. Re-check the latest exact-head run before treating the source-build gate as green.
+- The migrations remain feature-branch code. They have not been applied to an isolated Supabase project, and no cloud worker has been deployed. The Runtime Asset Library cloud shelf is opt-in and separate from the default local SQLite/disk processing path.
+- Next: complete exact-head build and Docker verification; reconcile any failures; then provision a dedicated isolated staging project, review RLS/private-bucket policies, apply only this application's migrations there, and run owner/editor/reviewer/viewer end-to-end recovery and publication tests. No production deployment or merge is authorized by this audit.
