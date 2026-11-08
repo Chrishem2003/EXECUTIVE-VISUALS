@@ -36,8 +36,8 @@ function fixture({canWrite=true,readiness={}}={}){
   }else if(table==="job_events"&&method==="POST"){state.events.push(JSON.parse(options.body));result=[];}
   return new Response(JSON.stringify(result),{status:200,headers:{"content-type":"application/json"}});
  };
- const api=createCloudTimelineApi({url:"https://cloud.example.test",serviceRoleKey:"server-only-test-secret",fetchImpl,timelineService:service,authorize:async({action})=>action==="read"||canWrite,transformationReadiness:async()=>readiness});
- const body={projectId:project,sourceAssetId:source,operation:"vehicle_replace",prompt:"Replace the vehicle with a graphite electric SUV.",durationSeconds:8,referenceAssetIds:[reference],preservation:["camera_motion","composition"],rightsConfirmed:true,subjectConsentConfirmed:false};
+ const api=createCloudTimelineApi({url:"https://cloud.example.test",serviceRoleKey:"server-only-test-secret",fetchImpl,timelineService:service,authorize:async({action})=>action==="read"||canWrite,transformationReadiness:async()=>readiness,runwaySourceResolver:{async resolveMetadata({ownerId,projectId,assetId}){return{ownerId,projectId,assetId,mediaType:"video/mp4",durationSeconds:8,frameCount:192,width:1920,height:1080,sourceWidth:1920,sourceHeight:1080,sourceDynamicRange:"sdr"};}}});
+ const body={projectId:project,sourceAssetId:source,operation:"vehicle_replace",prompt:"Replace the vehicle with a graphite electric SUV.",durationSeconds:8,referenceAssetIds:[],preservation:["camera_motion","composition"],rightsConfirmed:true,subjectConsentConfirmed:false};
  return{api,state,body,assets};
 }
 
@@ -58,7 +58,7 @@ test("cloud transformation creation enforces rights, person consent, project ass
  const noConsent=await f.api.handle({method:"POST",path:"/api/cloud/transformations",ownerId:owner,body:{...f.body,operation:"person_replace"},idempotencyKey:"cloud-transform-003"});
  assert.equal(noConsent.body.error.code,"SUBJECT_CONSENT_REQUIRED");
  f.assets.set(reference,{id:reference,ownerId:owner,projectId:"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",mediaType:"image/png"});
- const wrongProject=await f.api.handle({method:"POST",path:"/api/cloud/transformations",ownerId:owner,body:f.body,idempotencyKey:"cloud-transform-004"});
+ const wrongProject=await f.api.handle({method:"POST",path:"/api/cloud/transformations",ownerId:owner,body:{...f.body,referenceAssetIds:[reference]},idempotencyKey:"cloud-transform-004"});
  assert.equal(wrongProject.body.error.code,"REFERENCE_ASSET_INVALID");
  const viewer=fixture({canWrite:false});
  const denied=await viewer.api.handle({method:"POST",path:"/api/cloud/transformations",ownerId:owner,body:viewer.body,idempotencyKey:"cloud-transform-005"});
@@ -69,12 +69,12 @@ test("cloud approval records budget metadata but submit remains blocked without 
  const f=fixture();
  const created=await f.api.handle({method:"POST",path:"/api/cloud/transformations",ownerId:owner,body:f.body,idempotencyKey:"cloud-transform-006"});
  const id=created.body.plan.id;
- const bad=await f.api.handle({method:"POST",path:"/api/cloud/transformations/"+id+"/approve",ownerId:owner,body:{estimatedCostMicros:100,approvedBudgetMicros:99,currency:"USD",adapterId:"video",capability:"video.transform"}});
- assert.equal(bad.body.error.code,"TRANSFORMATION_BUDGET_INVALID");
- const approved=await f.api.handle({method:"POST",path:"/api/cloud/transformations/"+id+"/approve",ownerId:owner,body:{estimatedCostMicros:100,approvedBudgetMicros:150,currency:"USD",adapterId:"video-transform",capability:"video.transform"}});
- assert.equal(approved.status,200);assert.equal(approved.body.plan.status,"approved");assert.ok(approved.body.plan.approval.id);
+ const bad=await f.api.handle({method:"POST",path:"/api/cloud/transformations/"+id+"/approve",ownerId:owner,body:{approvedBudgetMicros:99,currency:"USD"}});
+ assert.equal(bad.body.error.code,"TRANSFORMATION_BUDGET_BELOW_ESTIMATE");
+ const approved=await f.api.handle({method:"POST",path:"/api/cloud/transformations/"+id+"/approve",ownerId:owner,body:{approvedBudgetMicros:3000000,currency:"USD"}});
+ assert.equal(approved.status,200);assert.equal(approved.body.plan.status,"approved");assert.ok(approved.body.plan.approval.id);assert.ok(approved.body.plan.approval.estimatedCostMicros>100);
  const submit=await f.api.handle({method:"POST",path:"/api/cloud/transformations/"+id+"/submit",ownerId:owner,body:{}});
- assert.equal(submit.status,409);assert.equal(submit.body.error.code,"TRANSFORMATION_ADAPTER_UNAVAILABLE");
+ assert.equal(submit.status,409);assert.equal(submit.body.error.code,"TRANSFORMATION_RELEASE_GATES_BLOCKED");
  assert.equal(f.state.jobs[0].status,"awaiting_approval");assert.equal(f.state.events.length,2);
 });
 

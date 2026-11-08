@@ -279,3 +279,40 @@ Added docs/AI_UPSCALING_ENGINE_SELECTION.md. The initial low-cost candidate is R
 The first provider-aware executor polled repeatedly inside a single worker lease (up to 120 checks with sleeps). This could occupy workers unnecessarily and risk missing provider result retention windows. The executor now performs exactly one provider status check per lease. Queued/running tasks and transient status failures return VIDEO_PROVIDER_POLL_DEFERRED; the worker atomically defers the job and the next lease resumes from the persisted submission ledger without another provider POST. Successful tasks proceed immediately to cost reconciliation and private output ingestion.
 
 This is particularly important for FAL: its documented result retention is one hour by default, or six minutes for result payloads at least 10 KB unless payload storage is enabled. The worker should retrieve and privately ingest a completed result as soon as it observes completion.
+
+
+### Multi-provider worker composition — 2026-11-05
+
+Added `createProviderAwareCloudVideoWorker`, a side-effect-free composition factory that binds the existing durable queue, Postgres submission ledger and lease-aware worker to an immutable exact-match provider/model router. Every registered adapter must provide its own private output ingestion and authoritative actual-cost resolver; a provider cannot silently inherit another adapter's accounting or storage gates. The factory exposes the existing `runCycle` and expired-job recovery operations plus a read-only supported-model list. Construction does not call a provider or database.
+
+This is the composition seam for registering the separately implemented FAL and Runway adapters once their draft changes are reviewed together. It does not activate remote providers, configure credentials, perform migrations, or change the production worker process. The new composition contract tests are included in the cloud-queue verification suite.
+
+
+### Provider-aware runtime composition — 2026-11-05
+
+Added `createProviderAwareCloudVideoWorkerComposition` as the concrete bridge from the exact-match multi-provider worker to the existing Supabase queue, Postgres submission ledger, private cloud asset repository, FFprobe media validation and private output ingestor. Provider adapters are supplied by an explicit factory, allowing each provider to bind its own task-level billing resolver while sharing the hardened storage boundary.
+
+The runtime composition requires `CLOUD_VIDEO_WORKER_ENABLED=true`, `VIDEO_GATEWAY_ENABLED=true`, and `VIDEO_GATEWAY_ALLOW_REMOTE=true`, plus an explicit bounded output-host allowlist. It is side-effect free during construction; provider and database network calls occur only when a host invokes the worker cycle. It is not registered in `cloud-worker-process.mjs` and therefore does not change the running production worker.
+
+
+### FAL provider registration — 2026-11-05
+
+Added the FAL async client, exact-model cloud adapter and request-level billing resolver to the runtime-composition branch, then introduced `createFalVideoProviderAdapter` to bind them to the shared private output ingestor. The runtime composition now defaults to one FAL adapter when no custom adapter factory is supplied; a custom factory can still register additional exact-match providers. FAL registration requires `FAL_VIDEO_MODEL` and a server-side billing key (`FAL_BILLING_KEY`, falling back to `FAL_KEY`). Remote execution remains blocked unless both video gateway flags and the cloud-worker flag are explicitly enabled.
+
+Reference-asset generation remains fail-closed unless an authenticated project-scoped `prepareInput` resolver is explicitly supplied. The output host allowlist remains mandatory and must include the FAL media hosts. Construction performs no provider or Supabase requests. FAL queue, billing and runtime registration contract tests are included in the cloud-queue suite.
+
+The separate PR #56 remains an independently reviewable implementation branch; this stacked runtime branch includes the provider modules needed for a self-contained integration path, pending final CI and code review.
+
+
+### Runway Gen-4.5 task adapter — 2026-11-05
+
+Added `createRunwayCloudVideoAdapter` for the official Gen-4.5 text-to-video task lifecycle: one-shot `POST /v1/text_to_video`, durable task-ID persistence, `GET /v1/tasks/{id}` polling, terminal state mapping and private output handoff. The adapter pins `X-Runway-Version: 2024-11-06`, requires both gateway/Runway remote opt-ins, and fails closed for unsupported model, duration, ratio and unresolved private references. Runway output URLs are handed directly to the private ingestor; they are never returned as product-facing asset URLs.
+
+**Billing limitation discovered:** Runway task creation returns `estimatedCost.credits`, which is an estimate, not a task settlement receipt. The official organization linked-workspace usage endpoint documents per-generation rows with timestamp, workspace, tool, credits and type, but the documented response does not expose a task ID that can unambiguously bind one charge to one concurrent job. Therefore the adapter requires an injected authoritative task-level `resolveActualCost` function and cannot be enabled in the default runtime until a trustworthy correlation source is supplied. Estimated credits are never treated as actual cost.
+
+Runway task status should not be polled more frequently than every five seconds; this worker defers between leases. Successful output URLs are ephemeral (documented 24–48 hour expiry), so private ingestion must happen promptly. The current adapter supports Gen-4.5 text-to-video only; image/video references and other models remain separate, gated work.
+
+Official references:
+- API reference and task lifecycle: https://docs.dev.runwayml.com/api/
+- API getting started: https://docs.dev.runwayml.com/guides/using-the-api/
+- Output URL retention: https://docs.dev.runwayml.com/assets/outputs/
