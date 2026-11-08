@@ -210,7 +210,7 @@ select * from executive_visuals.approve_and_enqueue_video_workflow(
  'a23e4567-e89b-42d3-a456-426614174000',
  '123e4567-e89b-42d3-a456-426614174000',
  '323e4567-e89b-42d3-a456-426614174000',
- repeat('e',64),'pg-workflow-quote-001','studio-video',
+ repeat('e',64),'studio-video','pg-workflow-quote-001',
  jsonb_build_object(
   'projectId','323e4567-e89b-42d3-a456-426614174000',
   'provider','runway','model','model-router','requestHash',repeat('e',64),
@@ -257,7 +257,7 @@ select * from executive_visuals.approve_and_enqueue_video_workflow(
  'b23e4567-e89b-42d3-a456-426614174000',
  '123e4567-e89b-42d3-a456-426614174000',
  '323e4567-e89b-42d3-a456-426614174000',
- repeat('e',64),'pg-workflow-quote-001','studio-video',
+ repeat('e',64),'studio-video','pg-workflow-quote-001',
  jsonb_build_object(
   'projectId','323e4567-e89b-42d3-a456-426614174000',
   'provider','runway','model','model-router','requestHash',repeat('e',64),
