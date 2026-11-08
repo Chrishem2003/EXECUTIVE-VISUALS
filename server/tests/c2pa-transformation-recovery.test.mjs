@@ -1,19 +1,21 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, readdir, rm, stat, truncate, writeFile } from "node:fs/promises";
+import { copyFile, mkdtemp, readFile, readdir, rm, stat, truncate, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { createReadStream } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createC2paTransformationPreserver } from "../c2pa-transformation-preserver.mjs";
 
 const validStore={active_manifest:"active",validation_state:"Valid",manifests:{active:{title:"Signed source",ingredients:[]}}};
-function fakeSdk({signAsync}={}){
+function fakeSdk({signAsync,store=validStore}={}){
  class Context{}
- const Reader={async fromAsset(){return{isEmbedded:()=>true,remoteUrl:()=>null,json:()=>validStore};}};
+ const Reader={async fromAsset(){return{isEmbedded:()=>true,remoteUrl:()=>null,json:()=>store};}};
  const Builder={async newAsync(){return{
   async addIngredient(){},setIntent(){},addAction(){},
   async signAsync(signer,input,destination){
    if(signAsync)return signAsync(signer,input,destination);
-   await writeFile(destination.path,await readFile(input.path));
+   await copyFile(input.path,destination.path);
   }
  };}};
  return{Context,Reader,Builder};
@@ -43,6 +45,27 @@ test("normalizes pre-aborted work to the stable cancellation error",async()=>{
   await assert.rejects(preserve({sourcePath,sourceMimeType:"image/png",outputPath,outputMimeType:"image/png",signal:controller.signal}),error=>error.code==="C2PA_TRANSFORM_ABORTED"&&error.status===499);
   assert.equal(sdkLoaded,false);
   assert.equal(await readFile(outputPath,"utf8"),"output");
+ }finally{await rm(dir,{recursive:true,force:true});}
+});
+
+test("streams a large signed source through preservation without whole-file buffering",async()=>{
+ const dir=await mkdtemp(join(tmpdir(),"ev-c2pa-large-stream-"));
+ try{
+  const sourcePath=join(dir,"large-source.bin"),outputPath=join(dir,"large-output.bin");
+  const bytes=96*1024*1024;
+  await writeFile(sourcePath,Buffer.alloc(0));await truncate(sourcePath,bytes);
+  await writeFile(outputPath,Buffer.alloc(0));await truncate(outputPath,bytes);
+  const store={...validStore,manifests:{active:{title:"Large signed source",ingredients:[{manifest_data:{active_manifest:"source"}}]}}};
+  const sdk=fakeSdk({store,signAsync:async(_signer,input,destination)=>copyFile(input.path,destination.path)});
+  const signer={async sign(){return Buffer.from("fixture-signature");}};
+  const preserve=createC2paTransformationPreserver({maxBytes:128*1024*1024,sdkLoader:async()=>sdk});
+  const result=await preserve({sourcePath,sourceMimeType:"application/octet-stream",outputPath,outputMimeType:"application/octet-stream",signer,signerMode:"callback",operation:"test:large-stream"});
+  assert.equal(result.status,"preserved");
+  assert.equal(result.outputBytes,bytes);
+  assert.equal((await stat(outputPath)).size,bytes);
+  const digest=async path=>{const hash=createHash("sha256");for await(const chunk of createReadStream(path))hash.update(chunk);return hash.digest("hex");};
+  assert.equal(result.outputSha256,await digest(outputPath));
+  assert.equal(result.sourceSha256,await digest(sourcePath));
  }finally{await rm(dir,{recursive:true,force:true});}
 });
 
