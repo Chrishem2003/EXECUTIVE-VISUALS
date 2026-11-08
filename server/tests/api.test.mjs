@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, writeFile, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openDatabase, json } from "../db.mjs";
@@ -159,7 +159,22 @@ test("registration, project ownership, binary upload and asset isolation work",a
   assert.equal(provenance.status,200);
   const provenanceBody=await provenance.json();
   assert.equal(provenanceBody.verification.status,"integrity_verified");
-  assert.equal(provenanceBody.verification.c2pa,"not_checked");
+  assert.equal(typeof provenanceBody.c2pa.status,"string");
+  assert.notEqual(provenanceBody.c2pa.status,"not_checked");
+
+  const db=openDatabase(join(dataDir,"executive-visuals.sqlite"));
+  const stored=db.prepare("SELECT storage_path FROM assets WHERE id=?").get(asset.id);
+  const outside=join(dataDir,"outside-managed-media.png");
+  const escape=join(dataDir,"media","uploads","c2pa-path-escape.png");
+  await writeFile(outside,Buffer.from([137,80,78,71,13,10,26,10,0,1,2,3]));
+  await symlink(outside,escape);
+  db.prepare("UPDATE assets SET storage_path=? WHERE id=?").run("uploads/c2pa-path-escape.png",asset.id);
+  const escaped=await request("/api/assets/"+asset.id+"/provenance",{},cookieA);
+  assert.equal(escaped.status,200);
+  assert.equal((await escaped.json()).c2pa.errorCode,"C2PA_ASSET_PATH_INVALID");
+  db.prepare("UPDATE assets SET storage_path=? WHERE id=?").run(stored.storage_path,asset.id);
+  await rm(escape,{force:true});
+  db.close();
 
   const assets=await request("/api/assets",{},cookieA);
   assert.equal((await assets.json()).assets.length,1);
