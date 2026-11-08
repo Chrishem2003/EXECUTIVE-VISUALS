@@ -40,8 +40,8 @@ test("local SQLite media transcode preserves a real CAI-signed source through pu
   assert.ok(["Valid","Trusted"].includes(sourceReader.json().validation_state),"source fixture must have a valid embedded C2PA manifest");
 
   db.prepare("INSERT INTO users(id,email) VALUES(?,?)").run("local-c2pa-user","local-c2pa@example.test");
-  db.prepare("INSERT INTO assets(id,owner_id,original_name,media_type,byte_size,sha256,storage_path,metadata_json) VALUES(?,?,?,?,?,?,?,?)")
-   .run("local-c2pa-source","local-c2pa-user","signed-source.mp4","video/mp4",sourceInfo.size,sourceSha256,"uploads/signed-source.mp4","{}");
+  db.prepare("INSERT INTO assets(id,owner_id,project_id,original_name,media_type,byte_size,sha256,storage_path,metadata_json) VALUES(?,?,?,?,?,?,?,?,?)")
+   .run("local-c2pa-source","local-c2pa-user",null,"signed-source.mp4","video/mp4",sourceInfo.size,sourceSha256,"uploads/signed-source.mp4","{}");
 
   const result=await executeMediaJob({
    db,mediaRoot,activeProcesses:new Map(),onProgress:()=>{},
@@ -51,10 +51,11 @@ test("local SQLite media transcode preserves a real CAI-signed source through pu
   assert.equal(result.c2paPreservation.status,"preserved");
   assert.equal(result.c2paPreservation.credentialSourceCount,1);
   assert.ok(result.outputAsset?.id);
-  const publishedPath=join(mediaRoot,result.outputAsset.storage_path);
+  const row=db.prepare("SELECT storage_path,byte_size,sha256,metadata_json FROM assets WHERE id=?").get(result.outputAsset.id);
+  const publishedPath=join(mediaRoot,row.storage_path);
   const publishedInfo=await stat(publishedPath);
-  assert.equal(result.outputAsset.size,publishedInfo.size);
-  assert.equal(result.outputAsset.sha256,await hashFile(publishedPath),"published SHA-256 must be computed after C2PA signing");
+  assert.equal(row.byte_size,publishedInfo.size);
+  assert.equal(row.sha256,await hashFile(publishedPath),"published SHA-256 must be computed after C2PA signing");
 
   const publishedReader=await Reader.fromAsset({path:publishedPath,mimeType:"video/mp4"},new Context({verify:{verifyAfterReading:true,verifyTrust:true,ocspFetch:false,remoteManifestFetch:false}}));
   assert.equal(publishedReader.isEmbedded(),true);
@@ -62,10 +63,9 @@ test("local SQLite media transcode preserves a real CAI-signed source through pu
   assert.ok(["Valid","Trusted"].includes(store.validation_state),JSON.stringify(store.validation_status));
   const manifest=store.manifests[store.active_manifest];
   assert.ok(manifest.ingredients.some(item=>Boolean(item.manifest_data)),"the published local derivative must embed its signed source manifest as an ingredient");
-  const row=db.prepare("SELECT metadata_json FROM assets WHERE id=?").get(result.outputAsset.id);
   const metadata=JSON.parse(row.metadata_json);
   assert.equal(metadata.c2paPreservation.status,"preserved");
-  assert.equal(metadata.c2paPreservation.outputSha256,result.outputAsset.sha256);
+  assert.equal(metadata.c2paPreservation.outputSha256,row.sha256);
  }finally{
   db.close();
   await rm(root,{recursive:true,force:true});
