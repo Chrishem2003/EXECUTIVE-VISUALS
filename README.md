@@ -163,3 +163,8 @@ Actual image/video generation, speech/dubbing, timeline preview playback, transi
 Open **AI Director** and save a production to a private cloud project. The graph panel reads the saved creative-production record, private project assets and each accessible cloud timeline. It follows explicit shot/character IDs, series story-bible entry IDs attached to scenes and shots, scene and shot marker IDs, and timeline clip asset IDs. Project-scope membership is labelled separately from authored dependencies. Missing or unresolved relationships are not guessed.
 
 Choose a graph node and run **Analyze downstream impact** before changing it. The report lists dependent shots, clips and timelines that may need human review. It is a dependency analysis only: it does not automatically rewrite timelines, invalidate exports, or claim semantic understanding of media. The automated test is `npm run verify:creative-graph`.
+
+
+## Evidence intelligence and review
+
+Executive Visuals now has a project-scoped evidence ledger for source-backed production claims. Editors submit evidence against an asset and an explicit project/scene/shot/timeline/asset target; the API snapshots the source SHA-256 and records a submission event. Project owners, editors and reviewers can review the record, with reviewer identity and decision preserved in a separate event history. Client-submitted records always begin as `submitted`; clients cannot self-verify evidence. See [Evidence intelligence and review ledger](docs/EVIDENCE-INTELLIGENCE-AND-REVIEW-LEDGER.md) for API routes, lifecycle, permission rules and interpretation limits. Evidence review is not a guarantee of factual truth, legal rights or identity.
