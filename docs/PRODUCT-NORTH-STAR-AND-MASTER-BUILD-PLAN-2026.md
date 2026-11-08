@@ -394,9 +394,9 @@ The first real C2PA implementation slice is now on feature branch `feat/c2pa-ser
 
 ### Remaining C2PA delivery gates
 
-1. Run the full CI suite, including native package installation and the real SDK smoke test.
-2. Add known-good signed image and supported video fixtures and byte-tampering cases.
-3. Verify certificate-chain, timestamp, revocation and trust-list behavior against a reviewed trust policy.
+1. Run the full CI suite, including native package installation, genuine signed PNG fixture generation, trust-anchor validation and pixel-tampering rejection.
+2. Extend genuine signed/tampered fixtures to supported video formats.
+3. Verify timestamp, revocation and production trust-list behavior against a reviewed trust policy.
 4. Add parser isolation and enforceable CPU/memory/time limits.
 5. Implement a protected callback signer backed by KMS/HSM; production signing stays disabled.
 6. Add new manifest creation for derivatives, including source ingredients and transformation actions.
