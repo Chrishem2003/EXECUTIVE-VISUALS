@@ -214,3 +214,38 @@ test("Runway Model Router resolves a private source video with source role", asy
   assert.match(prepared.referenceVideos[0].uri, /^https:\/\/storage\.example\.com\//);
 });
 
+
+
+test("Runway source resolver enforces the stored byte ceiling while streaming responses without Content-Length", async () => {
+  const oversized = new Response(new ReadableStream({
+    start(controller) {
+      controller.enqueue(Buffer.alloc(bytes.length, 1));
+      controller.enqueue(Buffer.from([2]));
+      controller.close();
+    }
+  }), { status: 200, headers: { "content-type": "video/mp4" } });
+  const { resolver } = fixture({ fetchImpl: async () => oversized });
+  await assert.rejects(
+    () => resolver.prepare({
+      operation: "video-to-video", projectId: PROJECT, sourceVideoAssetId: ASSET
+    }, { job: { owner_id: OWNER } }),
+    error => error.code === "VIDEO_INPUT_ASSET_INTEGRITY_FAILED"
+  );
+});
+
+test("Runway source resolver accepts chunked private assets when streamed bytes match the stored size", async () => {
+  const chunked = new Response(new ReadableStream({
+    start(controller) {
+      controller.enqueue(bytes.subarray(0, 128));
+      controller.enqueue(bytes.subarray(128, 700));
+      controller.enqueue(bytes.subarray(700));
+      controller.close();
+    }
+  }), { status: 200, headers: { "content-type": "video/mp4" } });
+  const { resolver } = fixture({ fetchImpl: async () => chunked });
+  const result = await resolver.prepare({
+    operation: "video-to-video", projectId: PROJECT, sourceVideoAssetId: ASSET
+  }, { job: { owner_id: OWNER } });
+  assert.equal(result.sourceVideo.buffer.length, bytes.length);
+  assert.deepEqual(result.sourceVideo.buffer, bytes);
+});
