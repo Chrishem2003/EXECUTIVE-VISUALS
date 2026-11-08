@@ -66,7 +66,12 @@ test("cloud workflow node quotes, explicitly approves, waits for durable complet
   assert.equal(approval.body.confirmed,true);
   assert.equal(approval.body.approvedMaxAmount,2);
   assert.equal(f.stored.filter(item=>item.sql.startsWith("INSERT INTO assets")).length,1);
-  assert.equal(f.stored.filter(item=>item.sql.startsWith("UPDATE assets SET metadata_json")).length,1);
+  assert.equal(f.stored.filter(item=>item.sql.startsWith("UPDATE assets SET metadata_json")).length,0);
+  const inserted=f.stored.find(item=>item.sql.startsWith("INSERT INTO assets"));
+  const metadata=JSON.parse(inserted.args[8]);
+  assert.equal(metadata.cloudWorkspaceAssetId,cloudAssetId);
+  assert.equal(metadata.cloudVideoJobId,cloudJobId);
+  assert.equal(metadata.cloudSha256,sha256);
  }finally{
   if(prior===undefined)delete process.env.SUPABASE_URL;else process.env.SUPABASE_URL=prior;
   await rm(mediaRoot,{recursive:true,force:true});
