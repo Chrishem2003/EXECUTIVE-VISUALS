@@ -77,11 +77,11 @@ create table executive_visuals.jobs (
 );
 -- Legacy worker RPC signatures are present so the fencing migration can prove they are revoked.
 create or replace function executive_visuals.claim_next_job(text,integer,text[])
-returns setof executive_visuals.jobs language sql as $ select * from executive_visuals.jobs where false $;
+returns setof executive_visuals.jobs language sql as $legacy$ select * from executive_visuals.jobs where false $legacy$;
 create or replace function executive_visuals.renew_job_lease(uuid,text,integer)
-returns boolean language sql as $ select false $;
+returns boolean language sql as $legacy$ select false $legacy$;
 create or replace function executive_visuals.finish_job(uuid,text,text,jsonb,jsonb)
-returns boolean language sql as $ select false $;
+returns boolean language sql as $legacy$ select false $legacy$;
 
 create table executive_visuals.assets (
   id uuid primary key,
