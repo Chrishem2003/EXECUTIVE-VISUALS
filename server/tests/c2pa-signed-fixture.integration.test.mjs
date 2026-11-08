@@ -59,10 +59,10 @@ test("real CAI SDK validates signed media, applies explicit signer policy and re
   const inputPath = join(dir, "source.png"), signedPath = join(dir, "signed.png"), tamperedPath = join(dir, "tampered.png");
   const certificateChain = await readFile(join(fixtureDir, "es256-test-only.chain.pem"));
   const privateKey = await readFile(join(fixtureDir, "es256-test-only.private.pem"));
-  const leafCertificate = certificateChain.toString("utf8").match(/-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/);
-  assert.ok(leafCertificate, "upstream test fixture must contain an end-entity certificate");
-  const anchorPath = join(dir, "allowed-signers.pem");
-  await writeFile(anchorPath, leafCertificate[0] + "\n");
+  const certificateBlocks = certificateChain.toString("utf8").match(/-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g) || [];
+  assert.ok(certificateBlocks.length >= 2, "upstream test fixture must contain a signer and intermediate certificate");
+  const anchorPath = join(dir, "user-anchors.pem");
+  await writeFile(anchorPath, certificateBlocks[1] + "\n");
   await writeFile(inputPath, onePixelPng());
 
   const { Builder, LocalSigner } = await import("@contentauth/c2pa-node");
