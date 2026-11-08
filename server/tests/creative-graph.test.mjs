@@ -27,7 +27,7 @@ test("creative graph links explicit brief, intent, evidence, characters, scenes,
  assert.ok(has("clip:clip-1","timeline:timeline-1","appears_in"));
  assert.equal(graph.counts.evidence,2);
  assert.equal(graph.counts.evidence_candidate,2);
- assert.ok(has("asset:asset-1","evidence:evidence-1","supports"));
+ assert.ok(has("asset:asset-1","evidence:evidence-1","derived_from"));
  assert.ok(has("evidence:evidence-1","shot:shot-1","supports"));
  assert.ok(has("evidence:evidence-2","scene:scene-1","evidence_for"));
  assert.equal(graph.nodes.find(node=>node.id==="evidence:evidence-1").status,"linked");
@@ -105,6 +105,12 @@ test("verified evidence supports a target only when source hash, project and tar
  const badTarget=buildCreativeGraph({...fixture,evidenceRecords:[{...record,id:"evidence-target-missing",target:{type:"shot",id:"missing"}}]});
  assert.ok(badTarget.unlinkedEvidence.includes("evidence-target-missing"));
  assert.equal(badTarget.nodes.find(node=>node.id==="evidence:evidence-target-missing").status,"review");
+ const missingProject=buildCreativeGraph({...fixture,evidenceRecords:[{...record,id:"evidence-no-project",projectId:null}]});
+ assert.ok(missingProject.unlinkedEvidence.includes("evidence-no-project"));
+ assert.equal(missingProject.edges.some(edge=>edge.to==="evidence:evidence-no-project"||edge.from==="evidence:evidence-no-project"),false);
+ const foreignProject=buildCreativeGraph({...fixture,evidenceRecords:[{...record,id:"evidence-other-project",projectId:"project-elsewhere"}]});
+ assert.ok(foreignProject.unlinkedEvidence.includes("evidence-other-project"));
+ assert.equal(foreignProject.nodes.find(node=>node.id==="evidence:evidence-other-project").status,"review");
 });
 
 test("source asset fingerprint changes become graph revisions and flag dependent production items",()=>{
