@@ -107,7 +107,7 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     };
     if(!Object.hasOwn(optionKeys,jobType))return response(400,{error:{code:"MEDIA_JOB_TYPE_INVALID",message:"Choose a supported cloud media operation."}});
     const mediaType=String(asset.mediaType||"");
-    const compatible=jobType==="media.probe"?/^(image|video|audio)\\//.test(mediaType):
+    const compatible=jobType==="media.probe"?/^(image|video|audio)\//.test(mediaType):
      jobType==="media.thumbnail"||jobType==="media.audio_extract"||["media.denoise","media.color","media.resize","media.interpolate","media.upscale","media.proxy"].includes(jobType)?mediaType.startsWith("video/"):
      jobType==="media.audio-clean"?mediaType.startsWith("audio/"):
      jobType==="media.ai-upscale"?mediaType.startsWith("image/"):
