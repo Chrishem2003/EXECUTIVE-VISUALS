@@ -336,7 +336,8 @@ async function renderTimelineJob({db,job,mediaRoot,activeProcesses,onProgress,c2
     if(!asset)throw Object.assign(new Error("A timeline source asset is no longer accessible."),{code:"SOURCE_ASSET_NOT_FOUND"});
     return{path:join(mediaRoot,asset.storage_path),mediaType:asset.media_type,sha256:asset.sha256};
   });
-  const c2paPreservation=await c2paPreserver({sources:timelineSources,outputPath,outputMimeType:"video/mp4",signer:c2paSigner,signerMode:c2paSignerMode,operation:"timeline.render",signal:null});
+  const c2paSignal={get aborted(){return cancelled();}};
+  const c2paPreservation=await c2paPreserver({sources:timelineSources,outputPath,outputMimeType:"video/mp4",signer:c2paSigner,signerMode:c2paSignerMode,operation:"timeline.render",signal:c2paSignal});
   const fileStat=await stat(outputPath),hash=createHash("sha256");
   await pipeline(createReadStream(outputPath),new Transform({transform(chunk,enc,cb){hash.update(chunk);cb(null,chunk);}}),new Transform({transform(chunk,enc,cb){cb();}}));
   const outputAsset=addAsset(db,job,"derived/"+outputId+".mp4",String(timeline.name||record.name||"sequence")+"-master.mp4","video/mp4",fileStat.size,hash.digest("hex"),null,{operation:"timeline.render",timelineId:record.id,timelineRevision:record.revision,width,height,frameRate:{numerator:fpsNum,denominator:fpsDen},c2paPreservation});
@@ -466,7 +467,7 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
   try { outputMetadata=JSON.parse(probeResult.stdout||"{}"); }
   catch { throw Object.assign(new Error("Media output metadata could not be parsed."),{code:"MEDIA_OUTPUT_VALIDATION_FAILED"}); }
   const validation=validateMediaOutputProbe(outputMetadata,mime);
-  const c2paPreservation=await c2paPreserver({sourcePath,outputPath,sourceMimeType:source.media_type,outputMimeType:mime,expectedSourceSha256:source.sha256,signer:c2paSigner,signerMode:c2paSignerMode,operation:job.job_type,signal:null});
+  const c2paPreservation=await c2paPreserver({sourcePath,outputPath,sourceMimeType:source.media_type,outputMimeType:mime,expectedSourceSha256:source.sha256,signer:c2paSigner,signerMode:c2paSignerMode,operation:job.job_type,signal:{get aborted(){return cancelled();}}});
   const fileStat = await stat(outputPath);
   if(fileStat.size<=0)throw Object.assign(new Error("Media output is empty."),{code:"MEDIA_OUTPUT_VALIDATION_FAILED"});
   const hash = createHash("sha256");
