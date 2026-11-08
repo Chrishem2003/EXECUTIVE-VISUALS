@@ -176,8 +176,9 @@ export function createRunwaySourceAssetResolver({
           referenceImages.push({ uri: first.url, role: "first" });
         }
         const imageIds = input.referenceImageAssetIds || input.referenceAssetIds || [];
-        if (!Array.isArray(imageIds) || imageIds.length > (firstFrameId ? 3 : 4)) {
-          throw fail("Runway Model Router accepts at most four owner-scoped reference images including the first frame.", "VIDEO_INPUT_ASSET_RESOLUTION_FAILED");
+        if (!Array.isArray(imageIds) || imageIds.length > (firstFrameId ? 3 : 4) ||
+            new Set(imageIds).size !== imageIds.length || firstFrameId && imageIds.includes(firstFrameId)) {
+          throw fail("Runway Model Router accepts at most four distinct owner-scoped reference images including the first frame.", "VIDEO_INPUT_ASSET_RESOLUTION_FAILED");
         }
         for (const assetId of imageIds) {
           const image = await resolveAsset({ ownerId, projectId, assetId, kinds: "image" });
@@ -186,7 +187,7 @@ export function createRunwaySourceAssetResolver({
         const sourceVideoId = input.sourceVideoAssetId || null;
         const videoIds = input.referenceVideoAssetIds || [];
         if (!Array.isArray(videoIds) || videoIds.length > (sourceVideoId ? 1 : 2) ||
-            sourceVideoId && videoIds.includes(sourceVideoId)) {
+            new Set(videoIds).size !== videoIds.length || sourceVideoId && videoIds.includes(sourceVideoId)) {
           throw fail("Runway Model Router accepts one source video and at most one distinct reference video.", "VIDEO_INPUT_ASSET_RESOLUTION_FAILED");
         }
         const referenceVideos = [];
