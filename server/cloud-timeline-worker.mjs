@@ -33,7 +33,7 @@ export function createCloudTimelineWorker({
     runCycle(options={}){return runCloudWorkerCycle({
       queue:timelineQueue,workerId,execute,
       leaseSeconds:options.leaseSeconds??90,
-      heartbeatIntervalMs:options.heartbeatIntervalMs??15000,
+      heartbeatIntervalMs:options.heartbeatIntervalMs??15000,\n      signal:options.signal,
       onProgress:options.onProgress??(()=>{}),
       onEvent:options.onEvent??(()=>{})
     });},
