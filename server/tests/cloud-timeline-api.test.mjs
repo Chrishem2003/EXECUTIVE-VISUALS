@@ -407,3 +407,63 @@ test("cloud transformation mapper does not turn submitted jobs back into approve
  assert.equal(result.body.plans[0].status,"submitted");
  assert.equal(result.body.plans[0].approval.adapterId,"runway:aleph2");
 });
+
+
+test("cloud workflow video quote authorizes the project and returns a non-billable exact-request quote",async()=>{
+ const prepared=[],preflights=[];
+ const routerAdapter={
+  async prepareInput(input,context){prepared.push({input,context});return{...input,referenceImages:[]};},
+  async preflight(input){preflights.push(input);return{billable:false,estimatedCredits:275,estimatedUsd:2.75,currency:"USD",provider:"runway",model:"gen4.5",configId:"studio-video"};}
+ };
+ const api=createCloudTimelineApi({
+  url:"https://example.supabase.co",serviceRoleKey:"service-secret",
+  fetchImpl:async()=>({ok:true,status:200,async text(){return"[]";}}),
+  timelineService:{timelines:{},assets:{}},
+  authorize:async({ownerId,projectId,action})=>ownerId===owner&&projectId===project&&action==="write",
+  runwayRouterAdapter,
+  env:{RUNWAY_MODEL_ROUTER_ENABLED:"false",RUNWAY_VIDEO_ALLOW_REMOTE:"false"}
+ });
+ const node={id:"video-node",kind:"video.generate",config:{provider:"runway",model:"model-router",durationSeconds:8,aspectRatio:"16:9",resolution:"provider_default",audioMode:"generated"},inputs:[],outputs:[]};
+ const result=await api.handle({method:"POST",path:"/api/cloud/workflows/video/quote",ownerId:owner,body:{projectId:project,requestId:"workflow-1:video-node:1",node,values:{prompt:"A cinematic product launch"}}});
+ assert.equal(result.status,200);
+ assert.equal(result.body.quote.billable,false);
+ assert.equal(result.body.quote.requiresExplicitApproval,true);
+ assert.equal(result.body.quote.paidExecutionEnabled,false);
+ assert.equal(result.body.quote.estimatedAmount,2.75);
+ assert.equal(result.body.quote.estimatedCredits,275);
+ assert.match(result.body.quote.requestHash,/^[a-f0-9]{64}$/);
+ assert.equal(prepared.length,1);
+ assert.equal(prepared[0].context.job.owner_id,owner);
+ assert.equal(preflights.length,1);
+ assert.equal(preflights[0].operation,"text-to-video");
+});
+
+test("cloud workflow video quote rejects viewers before resolving private inputs or contacting provider",async()=>{
+ let prepared=0,preflight=0;
+ const api=createCloudTimelineApi({
+  url:"https://example.supabase.co",serviceRoleKey:"service-secret",
+  fetchImpl:async()=>({ok:true,status:200,async text(){return"[]";}}),
+  timelineService:{timelines:{},assets:{}},
+  authorize:async()=>false,
+  runwayRouterAdapter:{
+   async prepareInput(){prepared++;return{};},
+   async preflight(){preflight++;return{billable:false,estimatedCredits:100,estimatedUsd:1,currency:"USD",provider:"runway",model:"gen4.5",configId:"studio-video"};}
+  }
+ });
+ const result=await api.handle({method:"POST",path:"/api/cloud/workflows/video/quote",ownerId:owner,body:{projectId:project,requestId:"workflow-1:video-node:1",node:{kind:"video.generate",config:{provider:"runway",model:"model-router"}},values:{prompt:"A cinematic launch"}}});
+ assert.equal(result.status,404);
+ assert.equal(prepared,0);
+ assert.equal(preflight,0);
+});
+
+test("cloud workflow video quote fails closed for unsupported nodes and unavailable quote adapters",async()=>{
+ const api=createCloudTimelineApi({
+  url:"https://example.supabase.co",serviceRoleKey:"service-secret",
+  fetchImpl:async()=>({ok:true,status:200,async text(){return"[]";}}),
+  timelineService:{timelines:{},assets:{}},authorize:async()=>true
+ });
+ const unsupported=await api.handle({method:"POST",path:"/api/cloud/workflows/video/quote",ownerId:owner,body:{projectId:project,requestId:"workflow-1:node-1",node:{kind:"image.generate",config:{provider:"runway",model:"model-router"}},values:{prompt:"A cinematic launch"}}});
+ assert.equal(unsupported.status,422);
+ const unavailable=await api.handle({method:"POST",path:"/api/cloud/workflows/video/quote",ownerId:owner,body:{projectId:project,requestId:"workflow-1:node-1",node:{kind:"video.generate",config:{provider:"runway",model:"model-router"}},values:{prompt:"A cinematic launch"}}});
+ assert.equal(unavailable.status,503);
+});
