@@ -8,11 +8,12 @@ export interface CreativeGraphInput {
  shots?:Array<{id:string;scene?:string;action?:string;characterIds?:string[];storyBibleEntryIds?:string[];proofReference?:string;referenceAssetIds?:string[]}>;
  seriesPlans?:Array<{id:string;title?:string;storyBible?:{entries?:Array<{id:string;kind:string;name:string;description?:string;referenceAssetIds?:string[]}>};seasons?:Array<{episodes?:Array<{id:string;title?:string;scenes?:Array<{id:string;title?:string;purpose?:string;storyBibleEntryIds?:string[];shots?:Array<{id:string;prompt?:string;characterIds?:string[];storyBibleEntryIds?:string[];proofReference?:string;referenceAssetIds?:string[]}>}>}>}>}>;
  timelines?:Array<{id:string;name:string;timeline?:{markers?:Array<{id:string;name?:string;note?:string}>;tracks?:Array<{clips?:Array<{id:string;assetId:string;name?:string;metadata?:Record<string,unknown>}>}>}}>;
- assets?:Array<{id:string;name:string;mediaType?:string;sha256?:string}>;\n evidenceRecords?:Array<{id:string;projectId?:string|null;sourceAssetId:string;sourceSha256:string;target:{type:string;id:string};kind:string;claim:string;status:string}>;
+ assets?:Array<{id:string;name:string;mediaType?:string;sha256?:string}>;
+ evidenceRecords?:Array<{id:string;projectId?:string|null;sourceAssetId:string;sourceSha256:string;target:{type:string;id:string};kind:string;claim:string;status:string}>;
 }
 export interface CreativeGraph { nodes:CreativeGraphNode[]; edges:CreativeGraphEdge[]; counts:Record<CreativeGraphNodeType,number>; unlinkedShots:string[]; unlinkedEvidence:string[]; notes:string[]; }
-const clean=(value:unknown,max=500)=>typeof value==="string"?value.trim().replace(/\\s+/g," ").slice(0,max):"";
-const key=(value:string)=>value.toLocaleLowerCase().replace(/\\s+/g," ").trim();
+const clean=(value:unknown,max=500)=>typeof value==="string"?value.trim().replace(/\s+/g," ").slice(0,max):"";
+const key=(value:string)=>value.toLocaleLowerCase().replace(/\s+/g," ").trim();
 export function buildCreativeGraph(input:CreativeGraphInput):CreativeGraph{
  const nodes=new Map<string,CreativeGraphNode>(),edges:CreativeGraphEdge[]=[],edgeKeys=new Set<string>(),unlinkedShots:string[]=[],unlinkedEvidence:string[]=[];
  const add=(node:CreativeGraphNode)=>{if(!nodes.has(node.id))nodes.set(node.id,node);};
