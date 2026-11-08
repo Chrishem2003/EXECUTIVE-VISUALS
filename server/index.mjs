@@ -26,6 +26,33 @@ import { createEvidenceRecord, listEvidenceRecords, reviewEvidenceRecord, listEv
 import { ensureTransformationPlanSchema, createTransformationPlan, approveTransformationPlan, listTransformationPlans, getTransformationPlan } from "./transformation-plans.mjs";
 import { signInWithSupabasePassword, signUpWithSupabasePassword, refreshSupabaseSession, getSupabaseUser, revokeSupabaseSession } from "./supabase-password-auth.mjs";
 
+function containsCreativeTarget(value,targetType,targetId){
+  if(Array.isArray(value))return value.some(item=>containsCreativeTarget(item,targetType,targetId));
+  if(!value||typeof value!=="object")return false;
+  const item=value;
+  if(item.id===targetId){
+    if(targetType==="scene"&&Array.isArray(item.shots))return true;
+    if(targetType==="shot"&&(typeof item.prompt==="string"||typeof item.action==="string"))return true;
+  }
+  return Object.values(item).some(child=>containsCreativeTarget(child,targetType,targetId));
+}
+function evidenceTargetExists(db,userId,asset,targetType,targetId){
+  if(targetType==="asset"){
+    const target=getAccessibleAsset(db,userId,targetId,false);
+    return Boolean(target&&target.project_id===asset.project_id);
+  }
+  if(!asset.project_id)return false;
+  if(targetType==="project")return targetId===asset.project_id;
+  if(targetType==="timeline")return Boolean(db.prepare("SELECT id FROM timelines WHERE id=? AND project_id=?").get(targetId,asset.project_id));
+  if(targetType==="scene"||targetType==="shot"){
+    const project=getProjectAccess(db,userId,asset.project_id);
+    if(!project)return false;
+    const settings=parseJson(project.settings_json,{});
+    return containsCreativeTarget(settings.creativeProduction||{},targetType,targetId);
+  }
+  return false;
+}
+
 const PORT = Number(process.env.PORT || process.env.API_PORT || 4179);
 const HOST = process.env.API_HOST || (process.env.NODE_ENV === "production" ? "0.0.0.0" : "127.0.0.1");
 const AUTH_MODE = process.env.AUTH_MODE || "local";
@@ -589,7 +616,7 @@ export function createAppServer() {
           if(evidenceAsset.project_id&&!canWriteProject(db,user.id,evidenceAsset.project_id)){fail(res,403,"EVIDENCE_WRITE_FORBIDDEN","Editor access is required to submit evidence.");return;}
           const body=await readJson(req);
           if(body.status!==undefined){fail(res,400,"EVIDENCE_STATUS_SERVER_MANAGED","Evidence submissions always begin in submitted status and must be reviewed separately.");return;}
-          const record=createEvidenceRecord(db,{ownerId:user.id,projectId:evidenceAsset.project_id,sourceAsset:{id:evidenceAsset.id,sha256:evidenceAsset.sha256},targetType:body.targetType,targetId:body.targetId,kind:body.kind,claim:body.claim,method:body.method,sourceRef:body.sourceRef,observedAt:body.observedAt,note:body.note});
+          if(!evidenceTargetExists(db,user.id,evidenceAsset,body.targetType,body.targetId)){fail(res,404,"EVIDENCE_TARGET_NOT_FOUND","Evidence target is not available in the same project.");return;}\n          const record=createEvidenceRecord(db,{ownerId:user.id,projectId:evidenceAsset.project_id,sourceAsset:{id:evidenceAsset.id,sha256:evidenceAsset.sha256},targetType:body.targetType,targetId:body.targetId,kind:body.kind,claim:body.claim,method:body.method,sourceRef:body.sourceRef,observedAt:body.observedAt,note:body.note});
           audit(db,user.id,"evidence.submitted","evidence",record.id,{sourceAssetId:evidenceAsset.id,target:record.target,kind:record.kind},evidenceAsset.project_id);
           send(res,201,{record,events:listEvidenceEvents(db,record.id)},cors);return;
         }
