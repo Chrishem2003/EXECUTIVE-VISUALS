@@ -25,8 +25,6 @@ export function createC2paTransformationPreserver({sdkLoader=()=>import("@conten
  }={}){
   if(typeof sourcePath!=="string"||!sourcePath||typeof outputPath!=="string"||!outputPath||sourcePath===outputPath)throw failure("C2PA_TRANSFORM_PATH_INVALID","Distinct source and output file paths are required.");
   if(typeof sourceMimeType!=="string"||!sourceMimeType.includes("/")||typeof outputMimeType!=="string"||!outputMimeType.includes("/"))throw failure("C2PA_TRANSFORM_MEDIA_TYPE_INVALID","Source and output media types are required.");
-  if(!signer||typeof signer.sign!=="function")throw failure("C2PA_SIGNER_REQUIRED","An approved C2PA signer must be supplied by the server-side signing adapter.",503);
-  if(!["local","callback"].includes(signerMode))throw failure("C2PA_SIGNER_MODE_INVALID","Unsupported C2PA signer mode.");
   if(typeof operation!=="string"||!operation.trim()||operation.length>120)throw failure("C2PA_TRANSFORM_OPERATION_INVALID","A bounded transformation operation is required.");
   if(signal?.aborted)throw signal.reason||failure("C2PA_TRANSFORM_ABORTED","C2PA preservation was cancelled.",499);
   const sourceInfo=await stat(sourcePath).catch(()=>null),outputInfo=await stat(outputPath).catch(()=>null);
@@ -48,6 +46,8 @@ export function createC2paTransformationPreserver({sdkLoader=()=>import("@conten
   };
   const sourceStore=sourceReader.json();
   if(!sourceStore?.active_manifest||!sourceStore?.manifests||sourceStore.validation_state==="Invalid")throw failure("C2PA_SOURCE_MANIFEST_INVALID","The source C2PA manifest is invalid; transformation lineage was not signed.");
+  if(!signer||typeof signer.sign!=="function")throw failure("C2PA_SIGNER_REQUIRED","An approved C2PA signer must be supplied by the server-side signing adapter.",503);
+  if(!["local","callback"].includes(signerMode))throw failure("C2PA_SIGNER_MODE_INVALID","Unsupported C2PA signer mode.");
   const builder=await sdk.Builder.newAsync();
   builder.addIngredientFromReader(sourceReader);
   builder.setIntent("edit");
