@@ -97,3 +97,11 @@ Open **Manage → Trust & provenance** in the app to see the completed Content C
 The current app upload allowlist overlaps the CAI core format list for nine image/audio/video formats: JPEG, PNG, WebP, GIF, MP3, WAV, M4A, MP4 and MOV. WebM, MKV and OGG are ingestable by the app but are not listed in the current CAI core supported-format table, so do not assume C2PA signing/preservation support for them. The format round-trip matrix verifies the nine overlapping formats. The recovery suite also includes a 96 MiB streaming preservation stress point; near-limit memory/throughput certification remains a separate release gate.
 
 Open **Manage → Trust & provenance** in the app for the implementation ledger, test evidence and remaining release gates. Open **Manage → Asset library** to inspect Content Credentials on individual image, audio and video assets.
+
+
+## Signed-in account display
+
+The application shell now surfaces the authenticated account in the persistent top bar and sidebar. The overview dashboard also shows the signed-in email, authentication mode, active project and project role, with direct access to the account/runtime console and sign-out. The display is populated from the authenticated `/api/me` response and the currently selected project membership; it does not expose internal account IDs or session tokens. On narrow screens the top-bar identity collapses to an accessible avatar control to preserve workspace space.
+
+
+Project collaboration in the Runtime Console now includes a visible member list, each member's access role and owner-only add/remove controls. Adding a member requires an existing account in the workspace; the UI explicitly states that it does not send an email invitation. Editor, reviewer and viewer roles remain enforced by the API.
