@@ -324,7 +324,7 @@ export function createAppServer() {
       }
       if(path==="/api/auth/password"&&req.method==="PUT"){
         if(AUTH_MODE!=="supabase"){fail(res,501,"PASSWORD_RECOVERY_UNAVAILABLE","Password recovery is available only when Supabase authentication is configured.");return;}
-        const accessToken=String(req.headers.authorization||"").replace(/^Bearer\\s+/i,"");
+        const accessToken=String(req.headers.authorization||"").replace(/^Bearer\s+/i,"");
         if(!accessToken){fail(res,401,"RECOVERY_SESSION_REQUIRED","Open the password recovery link from your email before choosing a new password.");return;}
         const config={supabaseUrl:process.env.SUPABASE_URL,publishableKey:process.env.SUPABASE_PUBLISHABLE_KEY};
         const recoveryUser=await getSupabaseUser({...config,accessToken});
