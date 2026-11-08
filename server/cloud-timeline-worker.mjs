@@ -37,6 +37,11 @@ export function createCloudTimelineWorker({
       onProgress:options.onProgress??(()=>{}),
       onEvent:options.onEvent??(()=>{})
     });},
-    recoverExpired(limit=100){return cloudQueue.recover(limit);}
+    recoverExpired(limit=100){return cloudQueue.recover(limit);},
+    reconcileStorageCleanup(limit=20){
+      return typeof assetRepository.reconcilePendingStorageCleanup==="function"
+        ? assetRepository.reconcilePendingStorageCleanup({limit})
+        : Promise.resolve({examined:0,removed:0,results:[]});
+    }
   });
 }
