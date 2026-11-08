@@ -138,7 +138,7 @@ export function createCloudVideoEnqueue({
       const runwayUpscaleEnabled = provider === "runway" && model === "magnific_video_upscaler_creative" && input.operation === "video-upscale";
       const runwayHdrEnabled = provider === "runway" && model === "ruby" && input.operation === "video-to-hdr";
       const runwayRouterEnabled = provider === "runway" && model === "model-router" &&
-        (input.operation === undefined || ["text-to-video", "image-to-video", "video-to-video"].includes(input.operation));
+        ["text-to-video", "image-to-video", "video-to-video"].includes(input.operation);
       const runwayRouterVideoEditEnabled = runwayRouterEnabled && input.operation === "video-to-video";
       const runwayEnabled = runwayTextEnabled || runwayImageEnabled || runwayEditEnabled || runwayUpscaleEnabled || runwayHdrEnabled || runwayRouterEnabled;
       const googleEnabled = provider === "google" && model === "gemini-omni-1.1-flash";
@@ -388,6 +388,7 @@ export function createCloudVideoEnqueue({
       const sqlEnqueueSupported =
         (provider === "runway" && model === "gen4.5") ||
         (provider === "runway" && model === "aleph2" && input.operation === "video-to-video" && input.outputFormat === "mp4") ||
+        (provider === "runway" && model === "model-router" && ["text-to-video", "image-to-video", "video-to-video"].includes(input.operation)) ||
         (provider === "google" && model === "gemini-omni-1.1-flash");
       if (!sqlEnqueueSupported) {
         const unavailable = new Error("This provider/model has a worker adapter but is not yet enabled by the durable database enqueue and pricing policy.");

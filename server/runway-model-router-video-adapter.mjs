@@ -90,6 +90,10 @@ function routedInput(input) {
   return result;
 }
 
+async function cancelResponseBody(response) {
+  await response?.body?.cancel().catch(() => {});
+}
+
 function boundedObject(value, label) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw fail("Runway omitted " + label + ".", "RUNWAY_ROUTER_RESPONSE_INVALID");
@@ -155,10 +159,10 @@ export function createRunwayModelRouterVideoAdapter({
           submission ? "RUNWAY_SUBMISSION_UNKNOWN" : "RUNWAY_UNAVAILABLE"
         );
       }
-      if (response.status === 429) throw fail("Runway rate limit reached.", "RUNWAY_RATE_LIMITED");
-      if (response.status === 401 || response.status === 403) throw fail("Runway API key is not authorized.", "RUNWAY_ACCESS_DENIED");
-      if (response.status >= 500) throw fail("Runway returned a temporary server error.", "RUNWAY_SERVER_ERROR");
-      if (!response.ok) throw fail("Runway rejected the routed request (HTTP " + response.status + ").", "RUNWAY_REQUEST_REJECTED");
+      if (response.status === 429) { await cancelResponseBody(response); throw fail("Runway rate limit reached.", "RUNWAY_RATE_LIMITED"); }
+      if (response.status === 401 || response.status === 403) { await cancelResponseBody(response); throw fail("Runway API key is not authorized.", "RUNWAY_ACCESS_DENIED"); }
+      if (response.status >= 500) { await cancelResponseBody(response); throw fail("Runway returned a temporary server error.", "RUNWAY_SERVER_ERROR"); }
+      if (!response.ok) { await cancelResponseBody(response); throw fail("Runway rejected the routed request (HTTP " + response.status + ").", "RUNWAY_REQUEST_REJECTED"); }
       const raw = await response.text();
       if (Buffer.byteLength(raw) > 1024 * 1024) throw fail("Runway response exceeded the 1 MB limit.", "RUNWAY_RESPONSE_INVALID");
       let data;
