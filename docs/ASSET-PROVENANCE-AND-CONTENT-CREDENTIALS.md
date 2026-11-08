@@ -119,7 +119,7 @@ Test the full chain through proxy generation, transcode, timeline render, export
 
 ## Acceptance tests
 
-The feature branch includes deterministic adapter tests for missing manifests, SDK `Valid`/`Invalid`/`Trusted` states, root-anchor and end-entity allowlist policy gating, bounded findings, missing SDK, unknown states, unsupported formats, oversized files and changed on-disk size. Native integration tests use the installed SDK to inspect a valid unsigned PNG, generate an actual signed PNG using an ephemeral test-only certificate chain, verify it as valid-but-untrusted without a trust policy, verify it as trusted with an explicit end-entity allowlist, and reject altered pixel data. These ephemeral test keys are generated in a temporary directory and are not production signing credentials.
+The feature branch includes deterministic adapter tests for missing manifests, SDK `Valid`/`Invalid`/`Trusted` states, root-anchor and end-entity allowlist policy gating, bounded findings, missing SDK, unknown states, unsupported formats, oversized files and changed on-disk size. Native integration tests use the installed SDK to inspect a valid unsigned PNG, generate an actual signed PNG using the official upstream CAI test-only certificate chain, verify it as valid-but-untrusted without a trust policy, verify it as trusted with an explicit end-entity allowlist, and reject altered pixel data. These ephemeral test keys are generated in a temporary directory and are not production signing credentials.
 
 - A known-good signed JPEG/PNG fixture is detected and cryptographically validated.
 - A known-good signed supported video fixture is detected and cryptographically validated.
