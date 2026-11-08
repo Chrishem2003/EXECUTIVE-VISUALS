@@ -38,9 +38,9 @@ export function buildCreativeGraph(input:CreativeGraphInput):CreativeGraph{
   else{const id=clean(entry.id,120);if(!id)continue;const nodeId="world-record:"+id;storyBibleMap.set(id,nodeId);add({id:nodeId,type:"world_record",label:clean(entry.name,160)||entry.kind,detail:clean(entry.description,1000),status:"linked"});if(projectNode)link(projectNode,nodeId,"contains","project_scope");if(intentNode)link(intentNode,nodeId,"guides","project_scope");for(const assetId of entry.referenceAssetIds||[]){const assetNode="asset:"+clean(assetId,120);if(nodes.has(assetNode))link(assetNode,nodeId,"features");}}
  }
  const shotIds=new Set<string>(),sceneByKey=new Map<string,string>();
- const addShot=(shot:{id:string;scene?:string;action?:string;characterIds?:string[];storyBibleEntryIds?:string[];proofReference?:string;referenceAssetIds?:string[]},sceneNode?:string)=>{
+ const addShot=(shot:{id:string;scene?:string;action?:string;prompt?:string;characterIds?:string[];storyBibleEntryIds?:string[];proofReference?:string;referenceAssetIds?:string[]},sceneNode?:string)=>{
   const id=clean(shot.id,120);if(!id||shotIds.has(id))return;shotIds.add(id);const nodeId="shot:"+id;
-  add({id:nodeId,type:"shot",label:id,detail:clean(shot.action,600),status:"linked"});
+  add({id:nodeId,type:"shot",label:id,detail:clean(shot.action||shot.prompt,600),status:"linked"});
   if(sceneNode)link(sceneNode,nodeId,"contains");
   else if(projectNode)link(projectNode,nodeId,"contains","project_scope");
   const requestedCharacters=(shot.characterIds||[]).map(value=>clean(value,120)).filter(Boolean);
@@ -113,7 +113,7 @@ export interface CreativeGraphSnapshotComparison {
  potentiallyStale:CreativeGraphNode[];
  potentiallyStaleIds:string[];
 }
-const stable=(value:unknown):string=>Array.isArray(value)?"["+value.map(stable).join(",")+"]":value&&typeof value==="object"?"{"+Object.keys(value as Record<string,unknown>).sort().map(key=>JSON.stringify(key)+":"+stable((value as Record<string,unknown>)[key])).join(",")+"}":JSON.stringify(value);
+const stable=(value:unknown):string=>Array.isArray(value)?"["+value.map(stable).join(",")+"]":value&&typeof value==="object"?"{"+Object.keys(value as Record<string,unknown>).sort().map(key=>JSON.stringify(key)+":"+stable((value as Record<string,unknown>)[key])).join(",")+"}":(JSON.stringify(value)??"null");
 function nodeFingerprint(graph:Pick<CreativeGraph,"nodes"|"edges">,nodeId:string){
  const node=graph.nodes.find(item=>item.id===nodeId);
  const edges=graph.edges.filter(edge=>edge.from===nodeId||edge.to===nodeId).map(edge=>({from:edge.from,to:edge.to,relation:edge.relation,evidence:edge.evidence})).sort((a,b)=>stable(a).localeCompare(stable(b)));
