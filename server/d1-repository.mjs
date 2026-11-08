@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SHA256 = /^[0-9a-f]{64}$/;
 const object = value => value !== null && typeof value === "object" && !Array.isArray(value);
@@ -28,7 +30,7 @@ function mapAsset(row) {
   };
 }
 
-export function createD1Repository({ db, id = () => globalThis.crypto.randomUUID(), clock = isoNow, allowR2 = false } = {}) {
+export function createD1Repository({ db, id = randomUUID, clock = isoNow, allowR2 = false } = {}) {
   if (!db || typeof db.prepare !== "function") throw new Error("D1 repository requires a Cloudflare D1 database binding.");
   if (typeof id !== "function" || typeof clock !== "function") throw new Error("D1 repository requires valid ID and clock functions.");
 
