@@ -10,18 +10,32 @@ import { createC2paTransformationSigner } from "../c2pa-signing.mjs";
 
 
 async function createTestSigningIdentity(dir) {
-  const privateKeyPath = join(dir, "ephemeral-test-signing-key.pem");
-  const certificatePath = join(dir, "ephemeral-test-signing-certificate.pem");
+  const rootKey = join(dir, "ephemeral-test-root-key.pem");
+  const rootCert = join(dir, "ephemeral-test-root-cert.pem");
+  const signerKey = join(dir, "ephemeral-test-signer-key.pem");
+  const signerCsr = join(dir, "ephemeral-test-signer.csr");
+  const signerCert = join(dir, "ephemeral-test-signer-cert.pem");
+  const certificateChainPath = join(dir, "ephemeral-test-chain.pem");
   execFileSync("openssl", [
     "req", "-x509", "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:P-256",
-    "-nodes", "-keyout", privateKeyPath, "-out", certificatePath, "-days", "1",
-    "-subj", "/CN=Executive Visuals Ephemeral Test Signer",
-    "-addext", "keyUsage=critical,digitalSignature",
-    "-addext", "extendedKeyUsage=critical,codeSigning"
+    "-nodes", "-keyout", rootKey, "-out", rootCert, "-days", "1",
+    "-subj", "/CN=Executive Visuals Ephemeral Test Root",
+    "-addext", "basicConstraints=critical,CA:TRUE",
+    "-addext", "keyUsage=critical,keyCertSign,cRLSign"
   ], { stdio: "ignore" });
-  return { certificateChain: await readFile(certificatePath), privateKey: await readFile(privateKeyPath) };
+  execFileSync("openssl", [
+    "req", "-new", "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:P-256",
+    "-nodes", "-keyout", signerKey, "-out", signerCsr,
+    "-subj", "/CN=Executive Visuals Ephemeral Test Signer"
+  ], { stdio: "ignore" });
+  execFileSync("openssl", [
+    "x509", "-req", "-in", signerCsr, "-CA", rootCert, "-CAkey", rootKey,
+    "-CAcreateserial", "-out", signerCert, "-days", "1", "-sha256",
+    "-extfile", "/dev/stdin"
+  ], { input: "basicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature\nextendedKeyUsage=critical,codeSigning\n", stdio: ["pipe", "ignore", "ignore"] });
+  await writeFile(certificateChainPath, Buffer.concat([await readFile(signerCert), await readFile(rootCert)]));
+  return { certificateChain: await readFile(certificateChainPath), privateKey: await readFile(signerKey) };
 }
-
 function crc32(buffer) {
   let crc = 0xffffffff;
   for (const byte of buffer) {
