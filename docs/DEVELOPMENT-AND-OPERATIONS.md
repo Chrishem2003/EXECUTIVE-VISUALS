@@ -20,7 +20,8 @@ Requirements:
 
 - Node.js 24.22.1+ (recommended); CAI supports patched Node 22.23.4+, 24.22.1+ and 26.12.1+ releases.
 - npm.
-- FFmpeg and FFprobe for local media execution.\n- The signed C2PA integration test uses the upstream CAI test signer fixture; OpenSSL CLI is not required.
+- FFmpeg and FFprobe for local media execution.
+- The signed C2PA integration test uses the upstream CAI test signer fixture; OpenSSL CLI is not required.
 
 Commands:
 
@@ -55,7 +56,11 @@ Common local defaults are defined in `server/index.mjs`. Use environment variabl
 | `SUPABASE_PUBLISHABLE_KEY` | unset | Public client key; not a service-role secret. |
 | `COOKIE_SECURE` | inferred from production mode | Use secure cookies over HTTPS. |
 | `MAX_UPLOAD_BYTES` | 250 MiB | Keep bounded; verify file signatures and MIME type. |
-| `CLOUD_TIMELINE_API_ENABLED` | false | Keep off until cloud release gates are complete. |\n| `C2PA_TRUST_ANCHORS` | unset | Optional administrator-managed PEM trust-anchor file; without it, the adapter cannot return `valid_trusted`. |\n| `C2PA_MAX_VERIFY_BYTES` | 250 MiB | Maximum file size passed to the CAI native parser. |\n| `C2PA_TRUST_ANCHORS` | unset | PEM root anchors loaded server-side and supplied as CAI user anchors. |\n
+| `CLOUD_TIMELINE_API_ENABLED` | false | Keep off until cloud release gates are complete. |
+| `C2PA_TRUST_ANCHORS` | unset | Optional administrator-managed PEM trust-anchor file; without it, the adapter cannot return `valid_trusted`. |
+| `C2PA_MAX_VERIFY_BYTES` | 250 MiB | Maximum file size passed to the CAI native parser. |
+| `C2PA_TRUST_ANCHORS` | unset | PEM root anchors loaded server-side and supplied as CAI user anchors. |
+
 The current code also has provider-specific settings. Inspect the adapter and readiness check before configuring any provider. A variable existing in code does not imply that its external service has been provisioned or approved.
 
 ## 4. Asset storage and provenance
