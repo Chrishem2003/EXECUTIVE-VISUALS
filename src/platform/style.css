@@ -362,3 +362,18 @@
 @media(max-width:500px){.auth-story-copy h1{font-size:36px}.auth-feature-list{grid-template-columns:1fr}.auth-feature-list>div{gap:10px}.auth-panel-wrap{padding:25px 20px}}
 
 @media(max-width:760px){.nav-collapse{display:none}.sidebar-brand-row .brand{flex:1}.mobile-nav-open{flex:0 0 34px}}
+
+
+/* Read-only video cost preflight */
+.wf-cost-estimate{margin-top:14px;padding:14px;border:1px solid var(--line);border-radius:10px;background:rgba(124,103,190,.07);font-size:12px}
+.wf-cost-estimate>p{color:var(--muted);font-size:11px;line-height:1.65;margin:8px 0}
+.wf-cost-estimate.is-unavailable{border-color:rgba(220,160,90,.35);background:rgba(220,160,90,.06)}
+.wf-cost-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.wf-cost-heading strong{font-size:17px;color:var(--text);font-variant-numeric:tabular-nums}
+.wf-cost-estimate dl{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:12px 0}
+.wf-cost-estimate dl div{padding:8px;border:1px solid var(--line);border-radius:7px}
+.wf-cost-estimate dt{color:var(--muted);font-size:10px}
+.wf-cost-estimate dd{margin:4px 0 0;font-weight:700;font-variant-numeric:tabular-nums}
+.wf-cost-estimate>small{display:block;color:var(--muted);font-size:10px;line-height:1.6;overflow-wrap:anywhere}
+.wf-cost-estimate a{color:var(--accent,#b9a4ff)}
+.wf-cost-disclaimer{font-size:10px!important}
