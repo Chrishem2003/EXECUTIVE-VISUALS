@@ -18,7 +18,7 @@ Do not force-push, rewrite shared history, merge a draft, or deploy to productio
 
 Requirements:
 
-- Node.js compatible with the repository scripts. The planned CAI Node SDK requires Node 22 or later and recommends patched releases.
+- Node.js 24.22.1+ (recommended); CAI supports patched Node 22.23.4+, 24.22.1+ and 26.12.1+ releases.
 - npm.
 - FFmpeg and FFprobe for local media execution.
 
@@ -29,6 +29,7 @@ npm ci
 npm run dev
 npm run typecheck
 npm run verify:provenance
+npm run verify:c2pa
 npm run verify:server
 npm run build
 ```
@@ -68,13 +69,13 @@ Uploads are written to the configured local media store and receive a SHA-256 di
 GET /api/assets/:assetId/provenance
 ```
 
-uses the asset's normal access check. It returns the application record and integrity verification. Its `c2pa` value is currently `not_checked`.
+uses the asset's normal access check. It returns the application record and integrity verification plus a separate CAI SDK verification result. The SDK adapter is server-only and uses the stored file path, known MIME type and a file-size check. Remote manifest fetching is disabled.
 
 This application record is useful for detecting accidental or unauthorized content/metadata mismatches when the trusted record is protected. It is not a signed C2PA manifest, a real-world identity assertion, rights clearance or proof that the depicted content is true.
 
-### Planned CAI Node SDK integration
+### Implemented CAI Node SDK verification
 
-The official package is `@contentauth/c2pa-node`. Its current documented API uses `Reader.fromAsset`, `Context`, `reader.json()`, `reader.getActive()` and the Builder APIs. Review the versioned official docs before implementing against a package release:
+The official package `@contentauth/c2pa-node` is pinned to `0.10.0` in this feature branch. The adapter uses `Reader.fromAsset`, `Context` and `reader.json()`; signing APIs are not yet connected. Review the versioned official docs before upgrading:
 
 - [CAI Node API documentation](https://contentauth.github.io/c2pa-js/modules/_contentauth_c2pa-node.html)
 - [CAI open-source documentation](https://opensource.contentauthenticity.org/docs/)
