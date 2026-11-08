@@ -78,14 +78,14 @@ Cookie: ev_session=...
 
 It is protected by the same asset-access boundary as the underlying asset. The current `integrity_verified` state means only that the application's SHA-256 record is internally consistent with the asset row. The route now invokes a server-side adapter backed by the maintained CAI package `@contentauth/c2pa-node` (pinned to 0.10.0). The adapter uses `Reader.fromAsset` with the stored file path and known MIME type, disables remote manifest fetching, and returns the SDK manifest validation state and bounded validation findings. It distinguishes `not_available`, `not_supported`, `invalid`, `valid_untrusted`, `valid_trusted` and `verification_error`. The initial format allowlist covers JPEG, PNG, WebP, GIF, MP4, MOV, MP3, M4A, WAV and PDF when the stored extension matches the MIME type. A C2PA `Trusted` result is only surfaced as `valid_trusted` when an explicit administrator-controlled trust policy is configured through `C2PA_TRUST_ANCHORS`; without that policy it is downgraded to `valid_untrusted`. The existing application SHA-256 integrity record remains separate.
 
-The asset library now exposes a **Verify Content Credentials** action for each stored asset and displays the resulting state and validation findings. The current adapter performs verification only. It does not yet create or sign manifests. Do not report an asset as trusted merely because a manifest is present. Signing requires a protected signer and an approved certificate/timestamp policy.
+The asset library now exposes a **Verify Content Credentials** action for each stored asset and displays the resulting state and validation findings. Verification remains a read-only server operation. A separate server-only callback signing adapter creates a new manifest for transformed bytes, records the original source as an ingredient, signs through an injected protected signer, then reopens and verifies the signed output. The cloud media executor can invoke this adapter before publishing a derivative when an authorized signer callback is injected. No signer is configured in the default worker process, so production signing remains disabled.
 
 Current C2PA settings:
 
 | Variable | Purpose | Guidance |
 |---|---|---|
 | `C2PA_TRUST_ANCHORS` | PEM root trust-anchor file path | Optional administrator-controlled root anchors. |
-| `C2PA_MAX_VERIFY_BYTES` | Maximum bytes passed to the native verifier | Defaults to 250 MiB; retain a conservative limit. |
+| `C2PA_MAX_VERIFY_BYTES` | Maximum bytes passed to the native verifier and signer | Defaults to 250 MiB; retain a conservative limit. |\n| `C2PA_SIGNING_ENABLED` | Callback signing gate | Defaults to `false`; enabling it alone does not provision a signer. |\n| `C2PA_SIGNING_KEY_REF` | External KMS/HSM key reference | Identifier only; never store private key material here. |\n| `C2PA_TSA_URL` | Timestamp authority | HTTPS endpoint; required by default for signing. |\n| `C2PA_SIGNING_MEDIA_ROOT` | Private signing workspace root | Must match the cloud worker's `CLOUD_WORKER_TEMP_ROOT`; use a dedicated, private scratch directory. |
 
 Planned signing and lineage constraints:
 
@@ -97,10 +97,12 @@ Planned signing and lineage constraints:
 - A server-only callback signing adapter now exists in `server/c2pa-signing.mjs`. It uses the official SDK `CallbackSigner`, writes a new transformation manifest, retains source ingredients and verifies the signed output.
 - The adapter is disabled by default and requires an injected `signingProvider.sign({ keyRef, algorithm, payload })` implementation. The application never receives a private key; production integration must connect this callback to an authenticated KMS/HSM service.
 - Timestamping is required by default. The test-only callback explicitly disables timestamp requirements; production must configure an approved HTTPS TSA.
-- The callback adapter is not yet connected to the production worker/export path, and no KMS/HSM provider or production signing certificate has been provisioned.
+- The callback is wired into `createCloudMediaExecutor` and `createCloudMediaWorker`: when injected, it signs the actual transformed file with the original source as its ingredient before durable publication, then verifies the signed output hash and media stream. The default `cloud-worker-process` does not instantiate a signing provider; no KMS/HSM provider, production certificate or TSA has been provisioned. Local timeline rendering/export is not yet connected.
 - Keep signing keys outside the repository, browser, application configuration and ordinary environment-variable values. Do not enable production signing until certificate issuance, key custody, rotation, timestamping, revocation and incident-response procedures are approved.
 
 See [Asset provenance and Content Credentials](docs/ASSET-PROVENANCE-AND-CONTENT-CREDENTIALS.md) for the detailed integration contract and acceptance criteria.
+
+For C2PA verification, mount `C2PA_TRUST_ANCHORS` as a read-only PEM public-certificate bundle outside the repository. For optional cloud-worker signing, set `C2PA_SIGNING_MEDIA_ROOT` to the same private scratch directory used by `CLOUD_WORKER_TEMP_ROOT`, then inject an authenticated `signingProvider` into `createC2paTransformationSigner` and pass the returned callback to `createCloudMediaWorker`. Do not enable signing until the provider, certificate chain, HTTPS TSA, key custody and rotation policy have been approved. Setting environment flags without the protected provider does not make signing operational.
 
 ## Configuration and secrets
 
