@@ -1,14 +1,26 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createSign } from "node:crypto";
+import { execFileSync } from "node:child_process";
 import { mkdtemp, writeFile, readFile, stat, rm } from "node:fs/promises";
-import { join, dirname } from "node:path";
+import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { fileURLToPath } from "node:url";
 import { deflateSync } from "node:zlib";
 import { createC2paTransformationSigner } from "../c2pa-signing.mjs";
 
-const fixtureDir = join(dirname(fileURLToPath(import.meta.url)), "fixtures", "c2pa");
+
+async function createTestSigningIdentity(dir) {
+  const privateKeyPath = join(dir, "ephemeral-test-signing-key.pem");
+  const certificatePath = join(dir, "ephemeral-test-signing-certificate.pem");
+  execFileSync("openssl", [
+    "req", "-x509", "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:P-256",
+    "-nodes", "-keyout", privateKeyPath, "-out", certificatePath, "-days", "1",
+    "-subj", "/CN=Executive Visuals Ephemeral Test Signer",
+    "-addext", "keyUsage=critical,digitalSignature",
+    "-addext", "extendedKeyUsage=critical,codeSigning"
+  ], { stdio: "ignore" });
+  return { certificateChain: await readFile(certificatePath), privateKey: await readFile(privateKeyPath) };
+}
 
 function crc32(buffer) {
   let crc = 0xffffffff;
@@ -40,7 +52,7 @@ test("protected signer is disabled by default", async () => {
 test("production signing requires a timestamp authority unless explicitly waived", async t => {
   const dir = await mkdtemp(join(tmpdir(), "ev-c2pa-sign-config-"));
   t.after(() => rm(dir, { recursive: true, force: true }));
-  const certificateChain = await readFile(join(fixtureDir, "es256-test-only.chain.pem"));
+  const { certificateChain } = await createTestSigningIdentity(dir);
   const sign = createC2paTransformationSigner({
     enabled: true, mediaRoot: dir, certificateChain, keyRef: "kms-test-key",
     signingProvider: { sign: async () => Buffer.alloc(64) }
@@ -51,8 +63,7 @@ test("production signing requires a timestamp authority unless explicitly waived
 test("CallbackSigner signs transformed bytes and preserves original source ingredient lineage", async t => {
   const dir = await mkdtemp(join(tmpdir(), "ev-c2pa-callback-"));
   t.after(() => rm(dir, { recursive: true, force: true }));
-  const certificateChain = await readFile(join(fixtureDir, "es256-test-only.chain.pem"));
-  const privateKey = await readFile(join(fixtureDir, "es256-test-only.private.pem"));
+  const { certificateChain, privateKey } = await createTestSigningIdentity(dir);
   const sourcePath = join(dir, "source.png");
   const firstInput = join(dir, "first-transformed.png");
   const firstOutput = join(dir, "first-edit.png");
@@ -124,7 +135,7 @@ test("CallbackSigner signs transformed bytes and preserves original source ingre
 test("signer rejects output overwrite and paths outside its media root", async t => {
   const dir = await mkdtemp(join(tmpdir(), "ev-c2pa-path-"));
   t.after(() => rm(dir, { recursive: true, force: true }));
-  const certificateChain = await readFile(join(fixtureDir, "es256-test-only.chain.pem"));
+  const { certificateChain } = await createTestSigningIdentity(dir);
   const source = join(dir, "source.png"), output = join(dir, "existing.png");
   await writeFile(source, onePixelPng());
   await writeFile(output, onePixelPng());
@@ -139,8 +150,7 @@ test("signer rejects output overwrite and paths outside its media root", async t
 test("cancellation during protected signing aborts publication and removes the partial output", async t => {
   const dir = await mkdtemp(join(tmpdir(), "ev-c2pa-cancel-"));
   t.after(() => rm(dir, { recursive: true, force: true }));
-  const certificateChain = await readFile(join(fixtureDir, "es256-test-only.chain.pem"));
-  const privateKey = await readFile(join(fixtureDir, "es256-test-only.private.pem"));
+  const { certificateChain, privateKey } = await createTestSigningIdentity(dir);
   const sourcePath = join(dir, "source.png"), inputPath = join(dir, "transformed.png"), outputPath = join(dir, "cancelled.png");
   await writeFile(sourcePath, onePixelPng());
   await writeFile(inputPath, onePixelPng(0, 255, 0));
