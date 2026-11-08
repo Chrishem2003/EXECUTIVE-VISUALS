@@ -39,8 +39,13 @@ function errorResult(code) {
   };
 }
 
-function buildContext(Sdk, trustAnchors) {
-  const hasTrustPolicy = Boolean(trustAnchors);
+function buildContext(Sdk, trustAnchorPem, allowedSignerPem) {
+  const hasTrustPolicy = Boolean(trustAnchorPem || allowedSignerPem);
+  const trust = {
+    verifyTrustList: true,
+    ...(trustAnchorPem ? { userAnchors: trustAnchorPem } : {}),
+    ...(allowedSignerPem ? { allowedList: allowedSignerPem } : {})
+  };
   const settings = {
     verify: {
       verifyAfterReading: true,
@@ -49,14 +54,19 @@ function buildContext(Sdk, trustAnchors) {
       ocspFetch: false,
       remoteManifestFetch: false
     },
-    ...(hasTrustPolicy ? { trust: { userAnchors: trustAnchors, verifyTrustList: true } } : {})
+    ...(hasTrustPolicy ? { trust } : {})
   };
-  return { context: new Sdk.Context(settings), hasTrustPolicy };
+  return {
+    context: new Sdk.Context(settings),
+    hasTrustPolicy,
+    trustPolicyType: allowedSignerPem ? "allowed_list" : trustAnchorPem ? "user_anchors" : "none"
+  };
 }
 
 export function createC2paVerifier({
   sdkLoader = () => import("@contentauth/c2pa-node"),
   trustAnchors = process.env.C2PA_TRUST_ANCHORS || "",
+  allowedSigners = process.env.C2PA_ALLOWED_SIGNERS || "",
   maxBytes = Number(process.env.C2PA_MAX_VERIFY_BYTES || DEFAULT_MAX_BYTES)
 } = {}) {
   let sdkPromise;
@@ -89,22 +99,23 @@ export function createC2paVerifier({
       return errorResult("C2PA_ASSET_UNAVAILABLE");
     }
     if (actualSize !== size) return errorResult("C2PA_ASSET_SIZE_MISMATCH");
-    let trustAnchorPem = "";
-    if (trustAnchors) {
+    const readPemPolicy = (filePath, invalidCode, unavailableCode) => {
+      if (!filePath) return "";
       try {
-        const anchorPath = resolve(trustAnchors);
-        const anchorInfo = statSync(anchorPath);
-        if (!anchorInfo.isFile() || anchorInfo.size < 1 || anchorInfo.size > 4 * 1024 * 1024) {
-          return errorResult("C2PA_TRUST_ANCHORS_INVALID");
-        }
-        trustAnchorPem = readFileSync(anchorPath, "utf8");
-        if (!trustAnchorPem.includes("-----BEGIN CERTIFICATE-----")) {
-          return errorResult("C2PA_TRUST_ANCHORS_INVALID");
-        }
-      } catch {
-        return errorResult("C2PA_TRUST_ANCHORS_UNAVAILABLE");
+        const absolute = resolve(filePath);
+        const info = statSync(absolute);
+        if (!info.isFile() || info.size < 1 || info.size > 4 * 1024 * 1024) throw new Error("invalid policy file");
+        const pem = readFileSync(absolute, "utf8");
+        if (!pem.includes("-----BEGIN CERTIFICATE-----")) throw new Error("invalid PEM");
+        return pem;
+      } catch (error) {
+        return { errorCode: error?.message === "invalid policy file" || error?.message === "invalid PEM" ? invalidCode : unavailableCode };
       }
-    }
+    };
+    const trustAnchorPem = readPemPolicy(trustAnchors, "C2PA_TRUST_ANCHORS_INVALID", "C2PA_TRUST_ANCHORS_UNAVAILABLE");
+    if (typeof trustAnchorPem !== "string") return errorResult(trustAnchorPem.errorCode);
+    const allowedSignerPem = readPemPolicy(allowedSigners, "C2PA_ALLOWED_SIGNERS_INVALID", "C2PA_ALLOWED_SIGNERS_UNAVAILABLE");
+    if (typeof allowedSignerPem !== "string") return errorResult(allowedSignerPem.errorCode);
 
     try {
       sdkPromise ||= Promise.resolve().then(sdkLoader);
@@ -112,7 +123,7 @@ export function createC2paVerifier({
       if (typeof Sdk?.Reader?.fromAsset !== "function" || typeof Sdk?.Context !== "function") {
         return errorResult("C2PA_SDK_API_UNSUPPORTED");
       }
-      const { context, hasTrustPolicy } = buildContext(Sdk, trustAnchorPem);
+      const { context, hasTrustPolicy, trustPolicyType } = buildContext(Sdk, trustAnchorPem, allowedSignerPem);
       const reader = await Sdk.Reader.fromAsset({ path: absolutePath, mimeType }, context);
       if (!reader) {
         return {
@@ -144,7 +155,8 @@ export function createC2paVerifier({
         embedded: Boolean(reader.isEmbedded?.()),
         validationState,
         validationFindings,
-        trustPolicyConfigured: hasTrustPolicy
+        trustPolicyConfigured: hasTrustPolicy,
+        trustPolicyType
       };
     } catch (error) {
       return errorResult(error?.code === "ERR_MODULE_NOT_FOUND" ? "C2PA_SDK_UNAVAILABLE" : "C2PA_SDK_VERIFICATION_FAILED");
