@@ -306,7 +306,7 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
       const signing = await signOutput({
         inputPath: outputPath, extension: outputExtension, mimeType: plan.mediaType,
         sourcePath, sourceMimeType: materialized.asset.mediaType,
-        sourceAssetId: sourceId, job, workDir
+        sourceAssetId: sourceId, job, workDir, signal
       });
       if (signing.c2pa.status === "signed_and_verified") {
         const signedProbe = await runProcess(ffprobe, ["-v", "error", "-show_format", "-show_streams", "-of", "json", signing.path], { signal, timeoutMs, onProgress });
