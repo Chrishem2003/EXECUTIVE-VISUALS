@@ -45,7 +45,7 @@ function makeD1() {
 
 test("D1 migration creates isolated tables and required indexes", () => {
   const db = makeD1();
-  const names = db.prepare("SELECT name FROM sqlite_master WHERE type='table'").bind().all();
+  const names = await db.prepare("SELECT name FROM sqlite_master WHERE type='table'").bind().all();
   assert.ok(names.results.some(row => row.name === "ev_projects"));
   assert.ok(names.results.some(row => row.name === "ev_assets"));
   assert.ok(names.results.some(row => row.name === "ev_jobs"));
@@ -82,7 +82,7 @@ test("project membership and revision checks isolate tenants and roles", async (
 
 test("asset metadata requires checksum, private storage key and same-tenant derivative", async () => {
   const db = makeD1();
-  const repo = createD1Repository({ db, id: () => "55555555-5555-4555-8555-555555555555", clock: () => "2026-11-08T00:00:00.000Z" });
+  const repo = createD1Repository({ db, id: (() => { let n=0; return () => [ownerId, "55555555-5555-4555-8555-555555555555"][n++]; })(), clock: () => "2026-11-08T00:00:00.000Z" });
   await repo.resolvePrincipal({ subject: ownerSubject, provider: "supabase" });
   const asset = await repo.createAsset({ actorId: ownerId, name: "source.mp4", mediaType: "video/mp4", size: 1024, sha256: "a".repeat(64), storageProvider: "local-staging", storageKey: ownerId + "/source.mp4" });
   assert.equal(asset.sha256, "a".repeat(64));
