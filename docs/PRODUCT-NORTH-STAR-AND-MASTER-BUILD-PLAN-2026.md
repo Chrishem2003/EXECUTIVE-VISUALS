@@ -354,6 +354,18 @@ The declared bases form a dependency chain around #172 → #174 → #175, with #
 - #194/#195/#204 contain Runway video-to-video, cloud video editing and video-to-audio work. Keep paid provider operations gated; verify provider contracts, cost reservations, cancellation and staging tests before enabling.
 - #207/#208 extend publication cleanup and source-attributed cost estimation. Re-evaluate their bases and test evidence after selecting the canonical publication chain.
 
+### Main-branch ancestry check
+
+A second comparison against the actual current `main` exposed a critical integration constraint:
+
+- `feat/atomic-asset-publication-pr` (#178 head) is **238 commits ahead and 25 commits behind main**, with 43 files in the comparison.
+- `feat/durable-publication-cleanup` (#175 head / #178 base) is **101 commits ahead and 25 commits behind main**, with 25 files in the comparison.
+- Therefore, the green #178 workflow is not a green build on current main and is not a merge-ready release candidate. Its branch contains a substantial history divergence and needs a controlled rebase/cherry-pick or equivalent reconciliation into a fresh branch from current main.
+- The 43-file comparison includes overlapping core runtime files, worker/queue code, delivery manifest, migrations and CI. Resolve those conflicts and rerun full CI on the reconciled exact head.
+- #177's observed failed assertion is a useful test signal, not a reason to bypass the competing #178 path. Keep #177 unpromoted until its failure is understood and the canonical implementation is chosen.
+
+**Updated recommendation:** do not merge #172–#178 as a mechanical PR stack and do not merge #178 directly to main. First construct a fresh integration branch from current main, port only the verified dependency slices in order, run migration/SQL concurrency tests against PostgreSQL, run the full build, then perform a staging restore and end-to-end publication test. Keep the existing branches untouched as evidence until the fresh branch passes.
+
 ### What this audit did and did not prove
 - The listed CI observations are the latest workflow-run results found for the inspected commit SHAs at audit time; they are not a substitute for rerunning checks after any rebase or merge.
 - PR review submissions and inline review threads were empty for #172–#178 at the time checked. Absence of review comments is not approval.
