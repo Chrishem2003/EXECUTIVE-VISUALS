@@ -145,7 +145,11 @@ export function createCloudAssetRepository({
       }
       if(reservation.status==="published")throw new Error("Published asset publication record is missing its asset metadata.");
       const uploaded=await storage.uploadFile(objectPath,filePath,mediaType,{upsert:true});
-      if(uploaded?.bucket!=="executive-visuals-media"||uploaded?.path!==objectPath||uploaded?.size!==file.size||uploaded?.sha256!==file.sha256)throw new Error("Cloud storage upload did not match the reserved publication checksum.");
+      if(uploaded?.bucket!=="executive-visuals-media"||uploaded?.path!==objectPath||uploaded?.size!==file.size||uploaded?.sha256!==file.sha256){
+        const error=new Error("Cloud storage upload did not match the reserved publication checksum.");
+        try{await storage.remove(objectPath);}catch{error.cleanupPending=true;}
+        throw error;
+      }
       try{
         const rows=await request("assets?select="+select,{method:"POST",prefer:"return=representation",body:{id,owner_id:ownerId,project_id:projectId,original_name:name,media_type:mediaType,byte_size:file.size,sha256:file.sha256,storage_bucket:uploaded.bucket,object_path:objectPath,derivative_of:derivativeOf,metadata}});
         existing=Array.isArray(rows)?rows[0]||null:null;
