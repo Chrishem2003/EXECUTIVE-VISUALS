@@ -12,22 +12,34 @@ const assetId="323e4567-e89b-42d3-a456-426614174000";
 const bytes=new Uint8Array([1,2,3,4]);
 const config={url:"https://example.supabase.co",serviceRoleKey:"private-service-key"};
 function response(body,status=200){return{ok:status>=200&&status<300,status,async text(){return JSON.stringify(body);}};}
-function fixture({authorize=async()=>true,insertResponse=null,removeError=false}={}) {
- const calls=[],storageCalls=[];
+function fixture({authorize=async()=>true,insertResponse=null,removeError=false,uploadFileReceipt=null}={}) {
+ const calls=[],storageCalls=[];let publicationReservation=null,publicationAsset=null;
  const storage={
   async upload(path,data,type){storageCalls.push({op:"upload",path,data,type});return{bucket:"executive-visuals-media",path,size:data.byteLength,contentType:type};},
-  async uploadFile(path,file,type){const data=await readFile(file);storageCalls.push({op:"uploadFile",path,file,type});return{bucket:"executive-visuals-media",path,size:data.byteLength,sha256:createHash("sha256").update(data).digest("hex"),contentType:type};},
+  async uploadFile(path,file,type,options={}){const data=await readFile(file);storageCalls.push({op:"uploadFile",path,file,type,options});return uploadFileReceipt||{bucket:"executive-visuals-media",path,size:data.byteLength,sha256:createHash("sha256").update(data).digest("hex"),contentType:type};},
   async createSignedUrl(path,expiry){storageCalls.push({op:"sign",path,expiry});return"https://example.supabase.co/storage/signed";},
   async remove(path){storageCalls.push({op:"remove",path});if(removeError)throw new Error("storage cleanup unavailable");return true;}
  };
  const row={id:assetId,owner_id:ownerId,project_id:projectId,original_name:"final cut.mp4",media_type:"video/mp4",byte_size:4,sha256:createHash("sha256").update(bytes).digest("hex"),storage_bucket:"executive-visuals-media",object_path:projectId+"/"+assetId+"/original.mp4",derivative_of:null,metadata:{role:"master"},created_at:"2026-11-01T00:00:00Z"};
  const fetchImpl=async(url,options)=>{
   calls.push({url,options});
+  if(url.includes("/rpc/reserve_asset_publication")){
+   const payload=JSON.parse(options.body);
+   if(publicationReservation&&(publicationReservation.payload_sha256!==payload.p_payload_sha256||publicationReservation.project_id!==payload.p_project_id))return response({message:"publication conflict"},409);
+   if(!publicationReservation)publicationReservation={owner_id:payload.p_owner_id,project_id:payload.p_project_id,publication_key:payload.p_publication_key,payload_sha256:payload.p_payload_sha256,asset_id:payload.p_asset_id,status:"reserved"};
+   return response([publicationReservation]);
+  }
+  if(url.includes("/rpc/complete_asset_publication")){
+   publicationReservation={...publicationReservation,status:"published"};
+   return response([{owner_id:publicationReservation.owner_id,publication_key:publicationReservation.publication_key,asset_id:publicationReservation.asset_id,status:"published"}]);
+  }
+  if(url.includes("/assets?")&&options.method==="POST"&&publicationReservation){const payload=JSON.parse(options.body);publicationAsset={...row,...payload,created_at:row.created_at};return response([publicationAsset]);}
+  if(url.includes("/assets?")&&url.includes("id=eq.")&&publicationReservation)return response(publicationAsset?[publicationAsset]:[]);
   if(options.method==="POST"){const payload=JSON.parse(options.body);return response(insertResponse===null?[{...row,...payload,created_at:row.created_at}]:insertResponse);}
   if(options.method==="PATCH")return response([row]);
   return response([row]);
  };
- return {repo:createCloudAssetRepository({...config,storage,authorize,fetchImpl}),calls,storageCalls,row};
+ return {repo:createCloudAssetRepository({...config,storage,authorize,fetchImpl}),calls,storageCalls,row,get publicationReservation(){return publicationReservation;},get publicationAsset(){return publicationAsset;}};
 }
 
 test("creates a cloud asset only after project authorization and verifies metadata ownership",async()=>{
@@ -123,4 +135,54 @@ test("does not list project assets without read authorization",async()=>{
  const f=fixture({authorize:async()=>false});
  await assert.rejects(()=>f.repo.list({ownerId,projectId}),e=>e.code==="CLOUD_ASSET_ACCESS_DENIED");
  assert.equal(f.calls.length,0);
+});
+
+test("publishes the same logical output once across repeated publication attempts",async()=>{
+ const root=await mkdtemp(join(tmpdir(),"ev-idempotent-publication-")),file=join(root,"render.mp4");
+ await writeFile(file,bytes);
+ const f=fixture();
+ const args={ownerId,projectId,originalName:"render.mp4",mediaType:"video/mp4",filePath:file,publicationKey:"job-123:output:v1",metadata:{operation:"timeline.render"}};
+ const first=await f.repo.createFromFileIdempotent(args);
+ const second=await f.repo.createFromFileIdempotent(args);
+ assert.equal(first.id,second.id);
+ assert.equal(first.objectPath,second.objectPath);
+ assert.equal(f.storageCalls.filter(call=>call.op==="uploadFile").length,1);
+ assert.equal(f.storageCalls[0].options.upsert,true);
+ assert.equal(f.publicationReservation.status,"published");
+ await rm(root,{recursive:true,force:true});
+});
+
+test("rejects reuse of a publication key for different output bytes before storage upload",async()=>{
+ const root=await mkdtemp(join(tmpdir(),"ev-idempotent-conflict-")),file=join(root,"render.mp4");
+ await writeFile(file,bytes);
+ const f=fixture();
+ const args={ownerId,projectId,originalName:"render.mp4",mediaType:"video/mp4",filePath:file,publicationKey:"job-123:output:v1"};
+ await f.repo.createFromFileIdempotent(args);
+ await writeFile(file,Buffer.from("different output"));
+ await assert.rejects(()=>f.repo.createFromFileIdempotent(args),error=>error.code==="CLOUD_ASSET_HTTP_409");
+ assert.equal(f.storageCalls.filter(call=>call.op==="uploadFile").length,1);
+ await rm(root,{recursive:true,force:true});
+});
+
+test("concurrent attempts for one publication key converge on the same asset identity",async()=>{
+ const root=await mkdtemp(join(tmpdir(),"ev-idempotent-concurrent-")),file=join(root,"render.mp4");
+ await writeFile(file,bytes);
+ const f=fixture();
+ const args={ownerId,projectId,originalName:"render.mp4",mediaType:"video/mp4",filePath:file,publicationKey:"job-concurrent:output:v1"};
+ const [left,right]=await Promise.all([f.repo.createFromFileIdempotent(args),f.repo.createFromFileIdempotent(args)]);
+ assert.equal(left.id,right.id);
+ assert.equal(left.objectPath,right.objectPath);
+ const uploads=f.storageCalls.filter(call=>call.op==="uploadFile");
+ assert.ok(uploads.length>=1&&uploads.length<=2);
+ assert.equal(new Set(uploads.map(call=>call.path)).size,1);
+ await rm(root,{recursive:true,force:true});
+});
+
+test("removes a reserved storage object when the streaming upload receipt fails validation",async()=>{
+ const root=await mkdtemp(join(tmpdir(),"ev-idempotent-invalid-receipt-")),file=join(root,"render.mp4");
+ await writeFile(file,bytes);
+ const f=fixture({uploadFileReceipt:{bucket:"executive-visuals-media",path:"wrong/path",size:bytes.length,sha256:createHash("sha256").update(bytes).digest("hex")}});
+ await assert.rejects(()=>f.repo.createFromFileIdempotent({ownerId,projectId,originalName:"render.mp4",mediaType:"video/mp4",filePath:file,publicationKey:"job-invalid-receipt:output:v1"}),/did not match the reserved publication checksum/);
+ assert.deepEqual(f.storageCalls.map(call=>call.op),["uploadFile","remove"]);
+ await rm(root,{recursive:true,force:true});
 });

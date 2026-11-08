@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 
 const sql = await readFile(resolve(process.cwd(), "supabase/migrations/20261031210000_executive_visuals_core.sql"), "utf8");
 const checkpointSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261102090000_video_pipeline_checkpoints.sql"), "utf8");
+const publicationSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261106230000_asset_publication_ledger.sql"), "utf8");
 const issues = [];
 const tables = ["projects","project_members","project_workspace_documents","workflows","workflow_runs","workflow_node_runs","timelines","assets","jobs","job_events","consents","reviews","audit_events"];
 for (const table of tables) {
@@ -58,6 +59,16 @@ if (!checkpointSql.includes("output_asset.derivative_of = new.input_asset_id")) 
 if (!checkpointSql.includes("output_asset.owner_id = new.owner_id") || !checkpointSql.includes("output_asset.project_id = new.project_id")) issues.push("Cloud checkpoint output assets must match the checkpoint owner and project.");
 if (!checkpointSql.includes("output_asset.sha256 = lower(new.output_json ->> 'sha256')")) issues.push("Cloud checkpoint output checksums must match persisted asset metadata.");
 if (/\\b(drop\\s+table|truncate|delete\\s+from)\\b/i.test(checkpointSql)) issues.push("Checkpoint migration must not contain destructive DDL/DML.");
+
+if (/\b(drop\s+table|truncate|delete\s+from)\b/i.test(publicationSql)) issues.push("Publication ledger migration must not contain destructive DDL/DML.");
+if (!publicationSql.includes("unique(owner_id, publication_key)") || !publicationSql.includes("unique(asset_id)")) issues.push("Asset publication identity must be unique per owner and asset.");
+if (!publicationSql.includes("payload_sha256") || !publicationSql.includes("status in ('reserved','published')")) issues.push("Asset publication ledger must bind a checksum to a recoverable state.");
+if (!publicationSql.includes("alter table executive_visuals.asset_publications enable row level security;")) issues.push("Asset publication ledger must enable RLS.");
+if (!publicationSql.includes("revoke all on executive_visuals.asset_publications from public, anon, authenticated;")) issues.push("Asset publication ledger must be unavailable to untrusted roles.");
+if (!publicationSql.includes("grant select, insert, update on executive_visuals.asset_publications to service_role;")) issues.push("Asset publication ledger must be service-role-only.");
+if (!publicationSql.includes("create or replace function executive_visuals.reserve_asset_publication(") || !publicationSql.includes("grant execute on function executive_visuals.reserve_asset_publication(uuid,uuid,text,text,uuid) to service_role")) issues.push("Asset publication reservation RPC must be restricted to service_role.");
+if (!publicationSql.includes("create or replace function executive_visuals.complete_asset_publication(") || !publicationSql.includes("asset.sha256=publication.payload_sha256") || !publicationSql.includes("grant execute on function executive_visuals.complete_asset_publication(uuid,text,uuid) to service_role")) issues.push("Asset publication completion must verify the persisted asset checksum and be restricted to service_role.");
+
 
 
 
