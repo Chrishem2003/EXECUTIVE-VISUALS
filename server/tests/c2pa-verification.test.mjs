@@ -122,3 +122,16 @@ test("fails closed when the configured parser limit is invalid", async t => {
   const verify = createC2paVerifier({ maxBytes: Number.NaN, sdkLoader: async () => fakeSdk("Valid").sdk });
   assert.equal((await verify(f)).errorCode, "C2PA_LIMIT_CONFIG_INVALID");
 });
+
+test("accepts the SDK Trusted state when an explicit end-entity allowlist is configured", async t => {
+  const f = await fixture(); t.after(() => rm(f.dir, { recursive: true, force: true }));
+  const allowed = join(f.dir, "allowed.pem");
+  const allowedPem = "-----BEGIN CERTIFICATE-----\\nTEST SIGNER\\n-----END CERTIFICATE-----\\n";
+  await writeFile(allowed, allowedPem);
+  const fake = fakeSdk("Trusted");
+  const verify = createC2paVerifier({ sdkLoader: async () => fake.sdk, allowedSigners: allowed });
+  const result = await verify(f);
+  assert.equal(result.status, "valid_trusted");
+  assert.equal(result.trustPolicyType, "allowed_list");
+  assert.equal(fake.received().context.trust.allowedList, allowedPem);
+});
