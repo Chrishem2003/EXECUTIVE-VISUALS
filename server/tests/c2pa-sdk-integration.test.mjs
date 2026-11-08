@@ -6,9 +6,10 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
-import { Builder, Context, LocalSigner, Reader } from "@contentauth/c2pa-node";
+import { Builder, CallbackSigner, Context, LocalSigner, Reader } from "@contentauth/c2pa-node";
 import { createC2paVerifier } from "../c2pa-verification.mjs";
 import { createC2paTransformationPreserver } from "../c2pa-transformation-preserver.mjs";
+import { createC2paCallbackSigner } from "../c2pa-callback-signer.mjs";
 
 const here=dirname(fileURLToPath(import.meta.url));
 const fixtureRoot=join(here,"fixtures","c2pa");
@@ -91,6 +92,45 @@ test("official CAI SDK signs and validates a real embedded C2PA manifest",async(
   await assert.rejects(preserve({sourcePath,outputPath:blockedOutputPath,sourceMimeType:"image/png",outputMimeType:"image/png",expectedSourceSha256:createHash("sha256").update(output.buffer).digest("hex"),operation:"test:without-signer"}),error=>error.code==="C2PA_SIGNER_REQUIRED");
   const blockedAfter=createHash("sha256").update(await readFile(blockedOutputPath)).digest("hex");
   assert.equal(blockedAfter,blockedBefore,"missing production signer must not modify or publish C2PA-bearing media");
+ }finally{await rm(dir,{recursive:true,force:true});}
+});
+
+
+test("official CAI CallbackSigner delegates C2PA signing to a protected callback",async()=>{
+ const cert=await readFile(join(fixtureRoot,"test-signing-chain.pem"));
+ const key=await readFile(join(fixtureRoot,"test-signing-key.pem"));
+ const testOnlySigner=LocalSigner.newSigner(cert,key,"es256");
+ let callbackCalls=0;
+ const callbackSigner=await createC2paCallbackSigner({
+  sdkLoader:async()=>({CallbackSigner}),algorithm:"es256",certificateChain:[cert],reserveSize:4096,
+  sign:async(data,context)=>{
+   callbackCalls++;
+   assert.equal(context.algorithm,"es256");
+   assert.ok(Buffer.isBuffer(data)&&data.length>0);
+   return testOnlySigner.sign(data);
+  }
+ });
+ const sourceUnsigned=onePixelPng(22,44,66),signedSource={buffer:null};
+ const sourceBuilder=await Builder.newAsync();
+ sourceBuilder.setIntent({create:"http://cv.iptc.org/newscodes/digitalsourcetype/digitalCapture"});
+ await sourceBuilder.signAsync(testOnlySigner,{buffer:sourceUnsigned,mimeType:"image/png"},signedSource);
+ const dir=await mkdtemp(join(tmpdir(),"ev-c2pa-callback-signer-"));
+ try{
+  const sourcePath=join(dir,"source.png"),outputPath=join(dir,"derivative.png");
+  await writeFile(sourcePath,signedSource.buffer);
+  await writeFile(outputPath,onePixelPng(80,60,40));
+  const preserve=createC2paTransformationPreserver({sdkLoader:async()=>({Reader,Builder,Context}),maxBytes:1024*1024});
+  const result=await preserve({
+   sourcePath,sourceMimeType:"image/png",expectedSourceSha256:createHash("sha256").update(signedSource.buffer).digest("hex"),
+   outputPath,outputMimeType:"image/png",signer:callbackSigner,signerMode:"callback",operation:"test:protected-callback-sign"
+  });
+  assert.equal(result.status,"preserved");
+  assert.ok(callbackCalls>0,"the CAI SDK must invoke the protected callback signer");
+  const reader=await Reader.fromAsset({path:outputPath,mimeType:"image/png"},new Context({verify:{verifyAfterReading:true,verifyTrust:true,ocspFetch:false,remoteManifestFetch:false}}));
+  assert.equal(reader.isEmbedded(),true);
+  const store=reader.json(),manifest=store.manifests[store.active_manifest];
+  assert.ok(["Valid","Trusted"].includes(store.validation_state),JSON.stringify(store.validation_status));
+  assert.ok(manifest.ingredients.some(item=>Boolean(item.manifest_data)),"callback-signed output must retain the source ingredient");
  }finally{await rm(dir,{recursive:true,force:true});}
 });
 
