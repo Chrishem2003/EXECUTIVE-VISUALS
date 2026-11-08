@@ -140,6 +140,7 @@ export async function executeCloudVideoWorkflowNode({
   if(!approval||![200,202].includes(approval.status))throw cloudResultError(approval,"VIDEO_WORKFLOW_APPROVAL_FAILED");
   cloudJobId=String(approval.body?.job?.id||"");
   if(!UUID.test(cloudJobId))throw fail("Cloud approval did not return a durable video job ID.","VIDEO_WORKFLOW_JOB_RECEIPT_INVALID");
+  onJobEnqueued({cloudJobId,quoteId,requestId,routedModel,approvedMaxAmount,status:approval.body?.job?.status||"queued"});
  }
 
  while(true){
