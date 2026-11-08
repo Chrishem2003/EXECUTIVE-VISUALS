@@ -145,7 +145,7 @@ begin
   if not found
      or job_row.owner_id is distinct from p_owner_id
      or job_row.project_id is distinct from p_project_id
-     or job_row.status not in ('failed','cancelled','expired')
+     or job_row.status not in ('succeeded','partial','failed','cancelled','expired')
      or (job_row.lease_expires_at is not null
          and job_row.lease_expires_at > pg_catalog.clock_timestamp())
   then
