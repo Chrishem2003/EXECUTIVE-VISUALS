@@ -206,3 +206,15 @@ test("Asset Library cloud media job API stays disabled unless a worker deploymen
  assert.equal(result.status,503);
  assert.equal(result.body.error.code,"CLOUD_MEDIA_WORKER_DISABLED");
 });
+
+
+test("cloud media job history is restricted to the selected authorized project",async()=>{
+ const row={id:"923e4567-e89b-42d3-a456-426614174000",owner_id:owner,project_id:project,job_type:"media.thumbnail",status:"succeeded",progress:100};
+ const f=mediaJobApi({existing:[row]});
+ const result=await f.api.handle({method:"GET",path:"/api/cloud/jobs",ownerId:owner,query:{projectId:project}});
+ assert.equal(result.status,200);
+ assert.equal(result.body.jobs.length,1);
+ assert.equal(f.calls.some(call=>call.url.includes("project_id=eq."+project)),true);
+ const invalid=await f.api.handle({method:"GET",path:"/api/cloud/jobs",ownerId:owner,query:{projectId:"not-a-uuid"}});
+ assert.equal(invalid.status,400);
+});
