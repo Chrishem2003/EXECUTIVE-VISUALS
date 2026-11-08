@@ -4,9 +4,25 @@ import { rename, stat, unlink } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 
 const DEFAULT_MAX_BYTES=250*1024*1024;
-async function hashFile(filePath){
+function throwIfAborted(signal){
+ if(!signal?.aborted)return;
+ if(signal.reason&&typeof signal.reason==="object"&&signal.reason.code)throw signal.reason;
+ const error=failure("C2PA_TRANSFORM_ABORTED","C2PA preservation was cancelled.",499);
+ error.name="AbortError";
+ throw error;
+}
+async function hashFile(filePath,signal){
  const hash=createHash("sha256");let size=0;
- for await(const chunk of createReadStream(filePath)){size+=chunk.length;hash.update(chunk);}
+ try{
+  for await(const chunk of createReadStream(filePath,signal?{signal}:{})){
+   throwIfAborted(signal);
+   size+=chunk.length;hash.update(chunk);
+  }
+ }catch(error){
+  if(signal?.aborted)throwIfAborted(signal);
+  throw error;
+ }
+ throwIfAborted(signal);
  return{size,sha256:hash.digest("hex")};
 }
 function failure(code,message,status=422){const error=new Error(message);error.code=code;error.status=status;return error;}
@@ -30,20 +46,20 @@ export function createC2paTransformationPreserver({sdkLoader=()=>import("@conten
   if(typeof operation!=="string"||!operation.trim()||operation.length>120)throw failure("C2PA_TRANSFORM_OPERATION_INVALID","A bounded transformation operation is required.");
   const inputSources=Array.isArray(sources)?sources:(sourcePath?[{path:sourcePath,mediaType:sourceMimeType,sha256:expectedSourceSha256}]:[]);
   if(!inputSources.length||inputSources.length>5000)throw failure("C2PA_SOURCE_ASSETS_INVALID","Between one and 5,000 source assets are required.");
-  if(signal?.aborted)throw signal.reason||failure("C2PA_TRANSFORM_ABORTED","C2PA preservation was cancelled.",499);
+  throwIfAborted(signal);
   const prepared=[];
   for(const source of inputSources){
    if(typeof source?.path!=="string"||!source.path||source.path===outputPath||typeof source.mediaType!=="string"||!source.mediaType.includes("/"))throw failure("C2PA_TRANSFORM_PATH_INVALID","Each source requires a distinct path and valid media type.");
    const info=await stat(source.path).catch(()=>null);
    if(!info?.isFile()||info.size<1||info.size>maxBytes)throw failure("C2PA_TRANSFORM_SIZE_UNSUPPORTED","A source asset is missing, empty or exceeds the C2PA preservation size limit.",413);
-   const hash=await hashFile(source.path);
+   const hash=await hashFile(source.path,signal);
    if(hash.size!==info.size)throw failure("C2PA_TRANSFORM_FILE_CHANGED","A source changed during preflight.",409);
    if(source.sha256!==undefined&&source.sha256!==null&&(!/^[a-f0-9]{64}$/i.test(String(source.sha256))||hash.sha256!==String(source.sha256).toLowerCase()))throw failure("C2PA_SOURCE_INTEGRITY_MISMATCH","A source file does not match its registered asset checksum.",409);
    prepared.push({...source,info,hash});
   }
   const outputInfo=await stat(outputPath).catch(()=>null);
   if(!outputInfo?.isFile()||outputInfo.size<1||outputInfo.size>maxBytes)throw failure("C2PA_TRANSFORM_SIZE_UNSUPPORTED","The transformed output is missing, empty or exceeds the C2PA preservation size limit.",413);
-  const outputHash=await hashFile(outputPath);
+  const outputHash=await hashFile(outputPath,signal);
   if(outputHash.size!==outputInfo.size)throw failure("C2PA_TRANSFORM_FILE_CHANGED","The transformed output changed during preflight.",409);
   let sdk;
   try{sdk=await sdkLoader();}catch{throw failure("C2PA_SDK_UNAVAILABLE","The official CAI C2PA Node SDK is unavailable.",503);}
@@ -90,10 +106,10 @@ export function createC2paTransformationPreserver({sdkLoader=()=>import("@conten
   try{
    const input={path:outputPath,mimeType:outputMimeType},destination={path:temporaryPath,mimeType:outputMimeType};
    if(signerMode==="callback")await builder.signAsync(signer,input,destination);else builder.sign(signer,input,destination);
-   if(signal?.aborted)throw signal.reason||failure("C2PA_TRANSFORM_ABORTED","C2PA preservation was cancelled.",499);
+   throwIfAborted(signal);
    const signedInfo=await stat(temporaryPath).catch(()=>null);
    if(!signedInfo?.isFile()||signedInfo.size<1||signedInfo.size>maxBytes)throw failure("C2PA_SIGNED_OUTPUT_INVALID","The signed transformation output is missing or exceeds the size limit.");
-   const signedHash=await hashFile(temporaryPath);
+   const signedHash=await hashFile(temporaryPath,signal);
    const signedReader=await sdk.Reader.fromAsset({path:temporaryPath,mimeType:outputMimeType},verifyContext);
    if(!signedReader)throw failure("C2PA_LINEAGE_VALIDATION_FAILED","The signed derivative does not contain an embedded C2PA manifest.");
    const signedStore=signedReader.json(),active=signedStore?.active_manifest&&signedStore?.manifests?.[signedStore.active_manifest];
@@ -101,12 +117,12 @@ export function createC2paTransformationPreserver({sdkLoader=()=>import("@conten
    const embeddedIngredients=ingredients.filter(item=>Boolean(item?.manifest_data));
    if(!signedReader.isEmbedded()||!active||!["Valid","Trusted"].includes(signedStore.validation_state)||embeddedIngredients.length<credentialSources.length)throw failure("C2PA_LINEAGE_VALIDATION_FAILED","The new C2PA manifest did not validate with every credential-bearing source preserved as an ingredient.");
    for(const source of prepared){
-    const current=await hashFile(source.path);
+    const current=await hashFile(source.path,signal);
     if(current.sha256!==source.hash.sha256||current.size!==source.hash.size)throw failure("C2PA_SOURCE_CHANGED","A source asset changed while its C2PA lineage was being preserved.",409);
    }
-   const currentOutput=await hashFile(outputPath);
+   const currentOutput=await hashFile(outputPath,signal);
    if(currentOutput.sha256!==outputHash.sha256||currentOutput.size!==outputHash.size)throw failure("C2PA_OUTPUT_CHANGED","The transformed output changed while its C2PA manifest was being signed.",409);
-   if(signal?.aborted)throw signal.reason||failure("C2PA_TRANSFORM_ABORTED","C2PA preservation was cancelled.",499);
+   throwIfAborted(signal);
    await rename(temporaryPath,outputPath);
    return{
     status:"preserved",preserved:true,sourceCount:prepared.length,credentialSourceCount:credentialSources.length,
