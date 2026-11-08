@@ -463,6 +463,7 @@ This is a runnable worker entry point, not a deployed worker. Do not set the ena
 **Pull request:** #248 (draft; not merged)
 
 ### Implemented in source control
+- Local/cloud project identity link: an active local owner project can be linked to the cloud workspace using the same UUID after local ownership validation; cloud-side creation is idempotent and refuses foreign-owned or archived IDs. Project documents, memberships and local asset bytes are not implicitly synchronized.
 - Durable, service-role-only workflow quote ledger, bound to verified actor, project owner, canonical request hash, operation, router config, route evidence, USD estimate and short expiry.
 - Non-billable quote API persists the quote before returning it; failed persistence fails closed.
 - Explicit approval API requires confirmed=true, project editor authorization, a bounded USD approval ceiling and current private-input revalidation.
