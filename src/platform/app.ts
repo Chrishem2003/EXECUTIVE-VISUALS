@@ -243,7 +243,7 @@ function readiness(){
   ["Protected callback signer contract","PR #249","Official CallbackSigner adapter is tested with test-only key material. No production KMS/HSM or TSA is configured.","https://github.com/Chrishem2003/EXECUTIVE-VISUALS/pull/249"],
   ["Asset Library Content Credentials inspection","PR #249","Authenticated image, audio and video asset inspection shows manifests, ingredients, findings and checksum details.","https://github.com/Chrishem2003/EXECUTIVE-VISUALS/pull/249"],
   ["Automated acceptance","CI #8487","39/39 provenance tests and 460/460 regression tests passed; typecheck, build and disposable PostgreSQL integration passed.","https://github.com/Chrishem2003/EXECUTIVE-VISUALS/actions/runs/42511740955"]
-;
+];
  const inProgress=[
   ["Account recovery","PR #251 · draft","465 regression tests pass on the branch. Hosted recovery still needs a dedicated Auth project and redirect/email configuration.","https://github.com/Chrishem2003/EXECUTIVE-VISUALS/pull/251"],
   ["Lease-fenced cloud media publication","PR #247 · draft/conflicts","Mainline reconciliation is incomplete; the branch conflicts with current main and must be reconciled before review or merge.","https://github.com/Chrishem2003/EXECUTIVE-VISUALS/pull/247"],
