@@ -63,7 +63,7 @@ The verifier pins the maintained CAI Node SDK at `@contentauth/c2pa-node@0.10.0`
 - API tests verify authenticated asset access and cross-user isolation.
 
 Remaining production gates:
-- Extend end-to-end local coverage to the AI-upscale executor and run real near-limit large-file throughput/memory stress; current tests cover local SQLite transcode, local timeline with signed video/audio/overlay ingredients, all six application media formats, oversize preflight and cancellation recovery.
+- Verify actual Real-ESRGAN model inference end-to-end and run real near-limit large-file throughput/memory stress; the local AI-upscale job path currently passes with a deterministic test-only Lanczos adapter. Other tests cover local SQLite transcode, local timeline with signed video/audio/overlay ingredients, all six application media formats, oversize preflight and cancellation recovery.
 - Implement and independently verify a provider-specific KMS/HSM adapter using non-exportable keys, workload identity, certificate matching, signature encoding, rotation, revocation, timestamping and audit evidence. The provider-neutral CAI CallbackSigner adapter is implemented and tested; no real KMS/HSM provider is configured.
 - Run isolated staging acceptance with a dedicated non-production signer and approved trust anchors before enabling any deployed signing path.
 - Keep C2PA validation separate from rights, consent, factual accuracy and editorial approval.
