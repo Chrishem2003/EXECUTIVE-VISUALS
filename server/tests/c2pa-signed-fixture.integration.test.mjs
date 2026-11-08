@@ -78,7 +78,7 @@ test("real CAI SDK validates signed media, applies explicit signer policy and re
   assert.equal(untrusted.status, "valid_untrusted");
   assert.ok(Array.isArray(untrusted.validationFindings));
 
-  const trustedVerifier = createC2paVerifier({ sdkLoader: () => import("@contentauth/c2pa-node"), allowedSigners: allowedPath });
+  const trustedVerifier = createC2paVerifier({ sdkLoader: () => import("@contentauth/c2pa-node"), trustAnchors: anchorPath });
   const trusted = await trustedVerifier({ path: signedPath, mimeType: "image/png", size: signedSize });
   assert.equal(trusted.manifestPresent, true);
   assert.equal(trusted.status, "valid_trusted", JSON.stringify(trusted, null, 2));
