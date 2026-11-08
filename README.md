@@ -1,3 +1,15 @@
+# Current release status — 8 November 2026
+
+The merged application now includes the Content Credentials/provenance work, signed-in account and project-membership UI, and the in-app **Manage → Release readiness** inventory. The detailed, continuously maintained status is in [Full-System Release Readiness](docs/FULL-SYSTEM-RELEASE-READINESS.md).
+
+**Important distinction:** account identity and owner-managed membership display are implemented; emailed invitations, hosted password recovery, and a complete account/session lifecycle are not yet release-approved. Password recovery is being developed in draft PR [#251](https://github.com/Chrishem2003/EXECUTIVE-VISUALS/pull/251) and must not be described as live until a dedicated Executive Visuals identity project, redirect configuration, email delivery, and hosted acceptance are available.
+
+**Storage is not yet durable for hosted customer data.** The existing Render Free service uses ephemeral local storage. The isolated Cloudflare D1 staging database is not yet connected to the application Worker, and R2 has not been activated. The two existing Supabase projects contain NEMA/platform data and must not be reused. See [Persistence and Release Blockers](docs/PERSISTENCE-AND-RELEASE-BLOCKERS.md).
+
+The older Render Blueprint section below describes a paid-compute/persistent-disk deployment option, not an approved free staging environment. Do not provision it or incur charges as part of this plan. No production resources, credentials, database migrations, paid services, or provider execution should be changed without explicit approval.
+
+---
+
 ## Storage persistence and deployment checks
 
 See [Storage persistence status and deployment truth](docs/STORAGE-PERSISTENCE-TRUTH.md). Configure an operator-confirmed volume only after verifying the host mount, and test backup/restore separately.
