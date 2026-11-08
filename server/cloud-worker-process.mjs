@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { executableAvailable } from "./media.mjs";
 import { createCloudTimelineApi } from "./cloud-timeline-api.mjs";
 import { createCloudMediaWorker } from "./cloud-media-worker.mjs";
+import { createC2paTransformationSigner } from "./c2pa-signing.mjs";
 import { createCloudTimelineWorker } from "./cloud-timeline-worker.mjs";
 
 const truth=(value)=>value==="true";
@@ -18,12 +19,27 @@ export function readCloudWorkerConfig(env=process.env){
  const leaseSeconds=integer(env.CLOUD_WORKER_LEASE_SECONDS,90,30,900,"Cloud worker lease duration");
  const heartbeatIntervalMs=integer(env.CLOUD_WORKER_HEARTBEAT_MS,15000,1000,30000,"Cloud worker heartbeat");
  if(heartbeatIntervalMs>=leaseSeconds*1000)throw new Error("Cloud worker heartbeat must be shorter than the lease duration.");
+ const tempRoot=resolve(env.CLOUD_WORKER_TEMP_ROOT||tmpdir());
+ const c2paSigningEnabled=truth(env.C2PA_SIGNING_ENABLED);
+ let c2paSigningMediaRoot="",c2paSigningKeyRef="",c2paTsaUrl="";
+ if(c2paSigningEnabled){
+  if(!media)throw new Error("C2PA signing requires the cloud media worker family.");
+  if(!env.CLOUD_WORKER_TEMP_ROOT||!env.C2PA_SIGNING_MEDIA_ROOT)throw new Error("C2PA signing requires explicit private CLOUD_WORKER_TEMP_ROOT and C2PA_SIGNING_MEDIA_ROOT paths.");
+  c2paSigningMediaRoot=resolve(env.C2PA_SIGNING_MEDIA_ROOT);
+  if(c2paSigningMediaRoot!==tempRoot)throw new Error("C2PA_SIGNING_MEDIA_ROOT must match CLOUD_WORKER_TEMP_ROOT.");
+  c2paSigningKeyRef=String(env.C2PA_SIGNING_KEY_REF||"").trim();
+  if(!c2paSigningKeyRef)throw new Error("C2PA signing requires an external C2PA_SIGNING_KEY_REF.");
+  c2paTsaUrl=String(env.C2PA_TSA_URL||"").trim();
+  let tsa;
+  try{tsa=new URL(c2paTsaUrl);}catch{throw new Error("C2PA signing requires a valid HTTPS C2PA_TSA_URL.");}
+  if(tsa.protocol!=="https:")throw new Error("C2PA signing requires a valid HTTPS C2PA_TSA_URL.");
+ }
  return Object.freeze({
-  media,timeline,
+  media,timeline,c2paSigningEnabled,c2paSigningMediaRoot,c2paSigningKeyRef,c2paTsaUrl,
   pollMs:integer(env.CLOUD_WORKER_POLL_MS,1000,500,10000,"Cloud worker poll interval"),
   leaseSeconds,heartbeatIntervalMs,
   maxBytes:integer(env.CLOUD_WORKER_MAX_BYTES,250*1024*1024,1024,1024*1024*1024,"Cloud worker media limit"),
-  tempRoot:resolve(env.CLOUD_WORKER_TEMP_ROOT||tmpdir())
+  tempRoot
  });
 }
 
@@ -31,12 +47,13 @@ export function createCloudWorkerSupervisor({workers,leaseSeconds=90,heartbeatIn
  if(!Array.isArray(workers)||workers.length<1||workers.some(worker=>typeof worker?.runCycle!=="function"||typeof worker?.recoverExpired!=="function"))throw new Error("Cloud worker supervisor requires one or more compatible worker families.");
  if(!Number.isInteger(pollMs)||pollMs<500||pollMs>10000)throw new Error("Cloud worker poll interval is invalid.");
  if(!Number.isInteger(recoveryIntervalMs)||recoveryIntervalMs<10000||recoveryIntervalMs>300000)throw new Error("Cloud worker recovery interval is invalid.");
- let stopped=true,timer=null,recoveryTimer=null,active=null,busy=false;
+ let stopped=true,timer=null,recoveryTimer=null,active=null,cycleController=null,busy=false;
  async function cycle(){
   if(stopped||busy)return{skipped:true};
   busy=true;
+  const controller=new AbortController();cycleController=controller;
   active=(async()=>{
-   const settled=await Promise.allSettled(workers.map(worker=>worker.runCycle({leaseSeconds,heartbeatIntervalMs,onEvent:event=>onLog({kind:"event",...event})})));
+   const settled=await Promise.allSettled(workers.map(worker=>worker.runCycle({leaseSeconds,heartbeatIntervalMs,signal:controller.signal,onEvent:event=>onLog({kind:"event",...event})})));
    const results=settled.map((item,index)=>{
     if(item.status==="rejected"){onError(item.reason);return null;}
     if(item.value?.claimed)onLog({kind:"cycle",result:item.value,workerIndex:index});
@@ -44,7 +61,7 @@ export function createCloudWorkerSupervisor({workers,leaseSeconds=90,heartbeatIn
    });
    return results;
   })();
-  try{return await active;}finally{active=null;busy=false;}
+  try{return await active;}finally{active=null;cycleController=null;busy=false;}
  }
  async function recover(){
   if(stopped)return;
@@ -78,6 +95,7 @@ export function createCloudWorkerSupervisor({workers,leaseSeconds=90,heartbeatIn
    stopped=true;
    if(timer)clearInterval(timer);if(recoveryTimer)clearInterval(recoveryTimer);
    timer=null;recoveryTimer=null;
+   cycleController?.abort(new Error("Worker shutdown requested."));
    if(active)await active.catch(()=>{});
    onLog({kind:"stopped"});
   },
@@ -85,14 +103,24 @@ export function createCloudWorkerSupervisor({workers,leaseSeconds=90,heartbeatIn
  });
 }
 
-export async function startCloudWorkerProcess(env=process.env){
+export async function startCloudWorkerProcess(env=process.env,dependencies={}){
  const config=readCloudWorkerConfig(env);
+ let signC2paTransformation;
+ if(config.c2paSigningEnabled){
+  if(typeof dependencies.signingProvider?.sign!=="function")throw new Error("C2PA signing is enabled but no authenticated KMS/HSM signingProvider was injected.");
+  if(!Buffer.isBuffer(dependencies.certificateChain)||!dependencies.certificateChain.includes(Buffer.from("-----BEGIN CERTIFICATE-----")))throw new Error("C2PA signing requires an injected public certificate chain.");
+  signC2paTransformation=createC2paTransformationSigner({
+   enabled:true,mediaRoot:config.c2paSigningMediaRoot,certificateChain:dependencies.certificateChain,
+   keyRef:config.c2paSigningKeyRef,signingProvider:dependencies.signingProvider,
+   tsaUrl:config.c2paTsaUrl,requireTimestamp:true
+  });
+ }
  if((config.media||config.timeline)&&(!executableAvailable("ffmpeg")||!executableAvailable("ffprobe")))throw new Error("Cloud media workers require FFmpeg and FFprobe on PATH.");
  const cloudCredentials={url:env.SUPABASE_URL,serviceRoleKey:env.SUPABASE_SERVICE_ROLE_KEY};
  const readiness=createCloudTimelineApi({...cloudCredentials,maxUploadBytes:config.maxBytes});
  await readiness.checkReadiness();
  const workers=[];
- if(config.media)workers.push(createCloudMediaWorker({workerId:"media-"+randomUUID(),...cloudCredentials,tempRoot:config.tempRoot,maxBytes:config.maxBytes}));
+ if(config.media)workers.push(createCloudMediaWorker({workerId:"media-"+randomUUID(),...cloudCredentials,tempRoot:config.tempRoot,maxBytes:config.maxBytes,signC2paTransformation}));
  if(config.timeline)workers.push(createCloudTimelineWorker({workerId:"timeline-"+randomUUID(),...cloudCredentials,tempRoot:config.tempRoot,maxBytes:config.maxBytes,maxOutputBytes:config.maxBytes}));
  const supervisor=createCloudWorkerSupervisor({
   workers,leaseSeconds:config.leaseSeconds,heartbeatIntervalMs:config.heartbeatIntervalMs,pollMs:config.pollMs,
