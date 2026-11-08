@@ -24,7 +24,7 @@ export function sanitizeCreativeWorkspaceDocument(input){
   const width=Math.max(1,Math.min(8192,Math.trunc(Number(item.width)||1080)));
   const height=Math.max(1,Math.min(8192,Math.trunc(Number(item.height)||1920)));
   const aspectRatio=text(item.aspectRatio,12).trim();
-  if(!/^\\d{1,5}:\\d{1,5}$/.test(aspectRatio))throw Object.assign(new Error("Campaign template aspect ratio must use W:H notation."),{code:"INVALID_CAMPAIGN_TEMPLATE"});
+  if(!/^\d{1,5}:\d{1,5}$/.test(aspectRatio))throw Object.assign(new Error("Campaign template aspect ratio must use W:H notation."),{code:"INVALID_CAMPAIGN_TEMPLATE"});
   const safe=value=>Math.max(0,Math.min(40,Number(value)||0));
   return {id:text(item.id,80),name:text(item.name,120).trim(),channel:text(item.channel,80).trim(),aspectRatio,width,height,maxDurationSeconds:Math.max(1,Math.min(3600,Math.trunc(Number(item.maxDurationSeconds)||60))),safeArea:{top:safe(item.safeArea?.top),right:safe(item.safeArea?.right),bottom:safe(item.safeArea?.bottom),left:safe(item.safeArea?.left)},subtitleSafeArea:Boolean(item.subtitleSafeArea),enabled:item.enabled!==false};
  });
