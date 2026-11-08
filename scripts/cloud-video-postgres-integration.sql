@@ -137,6 +137,61 @@ select set_config('request.jwt.claim.sub','123e4567-e89b-42d3-a456-426614174000'
 reset role;
 set role service_role;
 
+-- Workflow quote ledger: service-role-only immutable quote recording.
+do $workflow_quote_privileges$
+begin
+ if has_table_privilege('authenticated','executive_visuals.video_workflow_quotes','SELECT')
+    or has_table_privilege('authenticated','executive_visuals.video_workflow_quotes','INSERT')
+    or has_table_privilege('authenticated','executive_visuals.video_workflow_quotes','UPDATE') then
+   raise exception 'authenticated unexpectedly has direct workflow quote table access';
+ end if;
+ if has_function_privilege('authenticated',
+   'executive_visuals.record_video_workflow_quote(uuid,uuid,uuid,text,text,text,text,text,text,text,integer,numeric,text,text,text,timestamptz)',
+   'EXECUTE') then
+   raise exception 'authenticated unexpectedly can record workflow quotes';
+ end if;
+end
+$workflow_quote_privileges$;
+
+select executive_visuals.record_video_workflow_quote(
+ '723e4567-e89b-42d3-a456-426614174000',
+ '123e4567-e89b-42d3-a456-426614174000',
+ '323e4567-e89b-42d3-a456-426614174000',
+ 'pg-workflow-quote-001',repeat('e',64),'runway','model-router','text-to-video',
+ 'runway','gen4.5',275,2.75,'USD','studio-video',
+ 'runway_model_router_dry_run',clock_timestamp()+interval '4 minutes'
+);
+
+do $workflow_quote_record$
+declare quote_row executive_visuals.video_workflow_quotes;
+begin
+ select * into quote_row from executive_visuals.video_workflow_quotes
+ where id='723e4567-e89b-42d3-a456-426614174000';
+ if quote_row.id is null or quote_row.owner_id <> '123e4567-e89b-42d3-a456-426614174000'
+    or quote_row.project_id <> '323e4567-e89b-42d3-a456-426614174000'
+    or quote_row.request_hash <> repeat('e',64)
+    or quote_row.state <> 'quoted'
+    or quote_row.estimated_amount <> 2.75
+    or quote_row.currency <> 'USD' then
+   raise exception 'workflow quote ledger did not preserve the exact quote scope';
+ end if;
+ begin
+  perform executive_visuals.record_video_workflow_quote(
+   '823e4567-e89b-42d3-a456-426614174000',
+   '123e4567-e89b-42d3-a456-426614174000',
+   '323e4567-e89b-42d3-a456-426614174000',
+   'pg-workflow-quote-invalid',repeat('d',64),'runway','model-router','text-to-video',
+   'runway','gen4.5',275,-1,'USD','studio-video',
+   'runway_model_router_dry_run',clock_timestamp()+interval '4 minutes'
+  );
+  raise exception 'invalid workflow quote amount unexpectedly recorded';
+ exception when others then
+  if sqlerrm = 'invalid workflow quote amount unexpectedly recorded' then raise; end if;
+  if sqlerrm <> 'VIDEO_WORKFLOW_QUOTE_ARGUMENTS_INVALID' then raise; end if;
+ end;
+end
+$workflow_quote_record$;
+
 create temporary table test_context as
 select job_id, budget_reservation_id as reservation_id
 from executive_visuals.enqueue_video_generation_job(
