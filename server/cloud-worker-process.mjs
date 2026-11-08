@@ -47,12 +47,13 @@ export function createCloudWorkerSupervisor({workers,leaseSeconds=90,heartbeatIn
  if(!Array.isArray(workers)||workers.length<1||workers.some(worker=>typeof worker?.runCycle!=="function"||typeof worker?.recoverExpired!=="function"))throw new Error("Cloud worker supervisor requires one or more compatible worker families.");
  if(!Number.isInteger(pollMs)||pollMs<500||pollMs>10000)throw new Error("Cloud worker poll interval is invalid.");
  if(!Number.isInteger(recoveryIntervalMs)||recoveryIntervalMs<10000||recoveryIntervalMs>300000)throw new Error("Cloud worker recovery interval is invalid.");
- let stopped=true,timer=null,recoveryTimer=null,active=null,busy=false;
+ let stopped=true,timer=null,recoveryTimer=null,active=null,cycleController=null,busy=false;
  async function cycle(){
   if(stopped||busy)return{skipped:true};
   busy=true;
+  const controller=new AbortController();cycleController=controller;
   active=(async()=>{
-   const settled=await Promise.allSettled(workers.map(worker=>worker.runCycle({leaseSeconds,heartbeatIntervalMs,onEvent:event=>onLog({kind:"event",...event})})));
+   const settled=await Promise.allSettled(workers.map(worker=>worker.runCycle({leaseSeconds,heartbeatIntervalMs,signal:controller.signal,onEvent:event=>onLog({kind:"event",...event})})));
    const results=settled.map((item,index)=>{
     if(item.status==="rejected"){onError(item.reason);return null;}
     if(item.value?.claimed)onLog({kind:"cycle",result:item.value,workerIndex:index});
@@ -60,7 +61,7 @@ export function createCloudWorkerSupervisor({workers,leaseSeconds=90,heartbeatIn
    });
    return results;
   })();
-  try{return await active;}finally{active=null;busy=false;}
+  try{return await active;}finally{active=null;cycleController=null;busy=false;}
  }
  async function recover(){
   if(stopped)return;
@@ -94,6 +95,7 @@ export function createCloudWorkerSupervisor({workers,leaseSeconds=90,heartbeatIn
    stopped=true;
    if(timer)clearInterval(timer);if(recoveryTimer)clearInterval(recoveryTimer);
    timer=null;recoveryTimer=null;
+   cycleController?.abort(new Error("Worker shutdown requested."));
    if(active)await active.catch(()=>{});
    onLog({kind:"stopped"});
   },
