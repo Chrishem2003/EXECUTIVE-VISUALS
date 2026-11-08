@@ -94,6 +94,9 @@ export function createRunwaySourceAssetResolver({
         }
         chunks.push(chunk);
       }
+    } catch (error) {
+      if (error?.code === "VIDEO_INPUT_ASSET_INTEGRITY_FAILED") throw error;
+      throw fail("Private source asset download failed while streaming.", "VIDEO_INPUT_ASSET_DOWNLOAD_FAILED");
     } finally {
       reader.releaseLock();
     }
