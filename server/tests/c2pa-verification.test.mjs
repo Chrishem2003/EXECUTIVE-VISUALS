@@ -124,3 +124,25 @@ test("fails closed when the configured parser limit is invalid", async t => {
 });
 
 
+
+test("fails closed when the configured trust-anchor file is unavailable", async t => {
+  const f = await fixture(); t.after(() => rm(f.dir, { recursive: true, force: true }));
+  let loads = 0;
+  const verify = createC2paVerifier({ trustAnchors: join(f.dir, "missing-anchors.pem"), sdkLoader: async () => { loads++; return fakeSdk("Trusted").sdk; } });
+  const result = await verify(f);
+  assert.equal(result.status, "verification_error");
+  assert.equal(result.errorCode, "C2PA_TRUST_ANCHORS_UNAVAILABLE");
+  assert.equal(loads, 0);
+});
+
+test("rejects malformed trust-anchor files before invoking the native SDK", async t => {
+  const f = await fixture(); t.after(() => rm(f.dir, { recursive: true, force: true }));
+  const anchor = join(f.dir, "malformed-anchors.pem");
+  await writeFile(anchor, "not a PEM certificate");
+  let loads = 0;
+  const verify = createC2paVerifier({ trustAnchors: anchor, sdkLoader: async () => { loads++; return fakeSdk("Trusted").sdk; } });
+  const result = await verify(f);
+  assert.equal(result.status, "verification_error");
+  assert.equal(result.errorCode, "C2PA_TRUST_ANCHORS_INVALID");
+  assert.equal(loads, 0);
+});
