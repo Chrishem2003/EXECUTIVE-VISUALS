@@ -4,7 +4,7 @@ import { createCloudTimelineWorker } from "../cloud-timeline-worker.mjs";
 
 test("cloud timeline worker only claims timeline render jobs",async()=>{
  let filters=null;
- const queue={async claim(id,leaseSeconds,jobTypes){filters=jobTypes;return null;},async renew(){return true;},async finish(){return true;},async recover(){return 0;}};
+ const queue={async claim(id,leaseSeconds,jobTypes){filters=jobTypes;return null;},async renew(){return true;},async assertLease(){return true;},async finish(){return true;},async recover(){return 0;}};
  const worker=createCloudTimelineWorker({
   workerId:"timeline-worker-1",queue,
   timelineService:{timelines:{get(){}},assets:{}},
@@ -17,7 +17,7 @@ test("cloud timeline worker only claims timeline render jobs",async()=>{
 
 test("cloud timeline worker defaults to the cloud FFmpeg renderer",()=>{
  assert.doesNotThrow(()=>createCloudTimelineWorker({
-  workerId:"timeline-worker-2",queue:{claim(){},renew(){},finish(){},recover(){}},
+  workerId:"timeline-worker-2",queue:{claim(){},renew(){},assertLease(){return true;},finish(){},recover(){}},
   timelineService:{timelines:{get(){}},assets:{}},
   mediaIO:{materialize(){},publish(){}}
  }));
