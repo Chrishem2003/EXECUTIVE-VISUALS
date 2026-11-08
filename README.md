@@ -1,3 +1,7 @@
+## Storage persistence and deployment checks
+
+See [Storage persistence status and deployment truth](docs/STORAGE-PERSISTENCE-TRUTH.md). Configure an operator-confirmed volume only after verifying the host mount, and test backup/restore separately.
+
 # CHRISHEM EXCLUSIVE VISUALS
 
 **One integrated visual-production system — from creative brief to reviewed deliverable.**
