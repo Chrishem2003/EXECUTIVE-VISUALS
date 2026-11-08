@@ -67,7 +67,7 @@ export function createC2paTransformationSigner({
   }) {
     if (!enabled) fail("C2PA_SIGNING_DISABLED");
     if (!mediaRoot) fail("C2PA_MEDIA_ROOT_REQUIRED");
-    if (!Buffer.isBuffer(certificateChain) || !certificateChain.includes(Buffer.from("-----BEGIN CERTIFICATE-----"))) {
+    if (!Buffer.isBuffer(certificateChain) || !certificateChain.includes(Buffer.from("-----BEGIN CERTIFICATE-----")) || certificateChain.includes(Buffer.from("PRIVATE KEY"))) {
       fail("C2PA_SIGNING_CERTIFICATE_REQUIRED");
     }
     if (typeof keyRef !== "string" || !keyRef.trim()) fail("C2PA_SIGNING_KEY_REFERENCE_REQUIRED");
