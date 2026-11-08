@@ -19,10 +19,25 @@ jobs:
         run: |
           if ! command -v ffmpeg >/dev/null 2>&1 || ! fc-match "DejaVu Sans" >/dev/null 2>&1; then
             sudo apt-get update
-            sudo apt-get install -y ffmpeg fonts-dejavu-core
+            sudo apt-get install -y ffmpeg fonts-dejavu-core unzip
           fi
           ffmpeg -version
           fc-match "DejaVu Sans"
+      - name: Install checksum-pinned CAI Node native binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/c2pa-node_x86_64-unknown-linux-gnu-v0.10.0.zip"
+          url="https://github.com/contentauth/c2pa-js/releases/download/%40contentauth%2Fc2pa-node%400.10.0/c2pa-node_x86_64-unknown-linux-gnu-v0.10.0.zip"
+          expected="4da99fadf6caef86c9cc4a3ee3e126672c19e4f0dba2e2a0f81d4e0cfc691cfa"
+          mkdir -p "$RUNNER_TEMP/c2pa"
+          curl --fail --location --retry 5 --retry-all-errors --connect-timeout 20 --max-time 300 "$url" --output "$archive"
+          echo "$expected  $archive" | sha256sum --check -
+          entry="$(unzip -Z1 "$archive" | head -n 1)"
+          test -n "$entry"
+          unzip -p "$archive" "$entry" > "$RUNNER_TEMP/c2pa/index.node"
+          test -s "$RUNNER_TEMP/c2pa/index.node"
+          echo "C2PA_LIBRARY_PATH=$RUNNER_TEMP/c2pa/index.node" >> "$GITHUB_ENV"
       - run: npm ci
       - run: npm run typecheck
       - run: npm run build
