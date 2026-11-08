@@ -10,6 +10,7 @@ function sdkFor(store, embedded = true) {
         assert.equal(asset.mimeType, "image/jpeg");
         assert.equal(context.settings.verify.verifyAfterReading, true);
         assert.equal(context.settings.verify.remoteManifestFetch, false);
+        assert.equal(context.settings.trust.verifyTrustList, true);
         return { json: () => store, isEmbedded: () => embedded };
       }
     }
