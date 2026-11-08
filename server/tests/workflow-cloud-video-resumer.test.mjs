@@ -18,7 +18,7 @@ function fixture(cloudStatus="succeeded"){
    if(sql.startsWith("SELECT n.run_id"))return{all:()=>node.status==="blocked"&&run.status==="blocked"?[{run_id:runId,node_id:nodeId,owner_id:owner,project_id:project,status:"blocked",output_json:node.output_json,error_json:node.error_json}]:[]};
    if(sql.startsWith("SELECT * FROM workflow_runs"))return{get:()=>({...run})};
    if(sql.startsWith("SELECT status,output_json,error_json FROM workflow_node_runs"))return{get:()=>({...node})};
-   if(sql.startsWith("SELECT id FROM jobs WHERE owner_id"))return{get:()=>jobs.find(job=>job.owner_id===owner&&job.idempotency_key===arguments[1])||null};
+   if(sql.startsWith("SELECT id FROM jobs WHERE owner_id"))return{get:(ownerId,key)=>jobs.find(job=>job.owner_id===ownerId&&job.idempotency_key===key)||null};
    if(sql.startsWith("INSERT INTO jobs"))return{run(...args){jobs.push({id:args[0],owner_id:args[1],project_id:args[2],idempotency_key:args[4]});}};
    if(sql.startsWith("UPDATE workflow_node_runs SET status='pending'"))return{run(){if(node.status!=="blocked")return{changes:0};node.status="pending";node.error_json=null;return{changes:1};}};
    if(sql.startsWith("UPDATE workflow_runs SET status='queued'"))return{run(...args){if(run.status!=="blocked")return{changes:0};run.status="queued";run.job_id=args[0];run.error_json=null;return{changes:1};}};
