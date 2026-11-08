@@ -49,7 +49,7 @@ function buildContext(Sdk, trustAnchors) {
       ocspFetch: false,
       remoteManifestFetch: false
     },
-    ...(hasTrustPolicy ? { trust: { trustAnchors, verifyTrustList: true } } : {})
+    ...(hasTrustPolicy ? { trust: { userAnchors: trustAnchors, verifyTrustList: true } } : {})
   };
   return { context: new Sdk.Context(settings), hasTrustPolicy };
 }
