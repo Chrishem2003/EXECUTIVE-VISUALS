@@ -149,6 +149,8 @@ async function loadCloudWorkspace(){
   state.cloudAssets=assets.assets||[];
   const evidence=state.cloudProjectId?await apiRequest<{records:Array<{id:string;projectId:string|null;sourceAssetId:string;sourceSha256:string;target:{type:string;id:string};kind:string;claim:string;status:string;sourceAssetName?:string;reviewNote?:string;createdAt?:string;reviewedAt?:string}>}>("/api/evidence"+query):{records:[]};
   state.cloudEvidenceRecords=evidence.records||[];
+  const graphSnapshot=state.cloudProjectId?await apiRequest<{snapshot:{id:string;revision:number;graphHash:string;graph:{nodes:Array<{id:string;type:any;label:string;detail?:string;status:"linked"|"needs_evidence"|"review"}>;edges:Array<{from:string;to:string;relation:any;evidence:"explicit"|"project_scope"}>};createdAt:string}|null}>("/api/projects/"+encodeURIComponent(state.cloudProjectId)+"/creative-graph/snapshot"):{snapshot:null};
+  state.cloudCreativeGraphSnapshot=graphSnapshot.snapshot;
   await loadTransformationPlans(state.cloudProjectId);
   await loadTransformationReadiness(state.cloudProjectId);
   const timelines=state.cloudProjectId?await apiRequest<{timelines:Array<{id:string;name:string;revision:number;updatedAt:string}>}>("/api/cloud/timelines"+query):{timelines:[]};
