@@ -1,6 +1,6 @@
 const MAX_PRICING_RECORDS=100;
 const MAX_DURATION_SECONDS=180;
-const RESOLUTIONS=new Set(["provider_default","480p","720p","1080p","1440p","2160p"]);
+const RESOLUTIONS=new Set(["provider_default","480p","720p","1080p","1440p","2160p","1k","2k","4k"]);
 const ISO_CURRENCY=/^[A-Z]{3}$/;
 const roundMoney=value=>Math.round((value+Number.EPSILON)*1e6)/1e6;
 const finite=(value,min=0,max=1e6)=>typeof value==="number"&&Number.isFinite(value)&&value>=min&&value<=max;
