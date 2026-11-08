@@ -192,6 +192,95 @@ begin
 end
 $workflow_quote_record$;
 
+-- Explicit workflow approval atomically consumes the quote, records the approval,
+-- reserves the project budget and queues one idempotent durable job.
+do $workflow_quote_approval_privileges$
+begin
+ if has_function_privilege('authenticated',
+   'executive_visuals.approve_and_enqueue_video_workflow(uuid,uuid,uuid,uuid,text,text,text,jsonb,numeric,text)',
+   'EXECUTE') then
+  raise exception 'authenticated unexpectedly can approve and enqueue workflow video';
+ end if;
+end
+$workflow_quote_approval_privileges$;
+
+create temporary table workflow_approval_result as
+select * from executive_visuals.approve_and_enqueue_video_workflow(
+ '723e4567-e89b-42d3-a456-426614174000',
+ 'a23e4567-e89b-42d3-a456-426614174000',
+ '123e4567-e89b-42d3-a456-426614174000',
+ '323e4567-e89b-42d3-a456-426614174000',
+ repeat('e',64),'pg-workflow-quote-001','studio-video',
+ jsonb_build_object(
+  'projectId','323e4567-e89b-42d3-a456-426614174000',
+  'provider','runway','model','model-router','requestHash',repeat('e',64),
+  'operation','text-to-video','durationSeconds',5,'outputFormat','mp4',
+  'workflowQuoteId','723e4567-e89b-42d3-a456-426614174000',
+  'workflowRequestId','pg-workflow-quote-001'
+ ),2.75,'Approved exact workflow quote integration test'
+);
+
+do $workflow_quote_approval_result$
+declare result_row record; quote_row executive_visuals.video_workflow_quotes;
+       reservation executive_visuals.video_generation_budget_reservations;
+       approval executive_visuals.video_generation_budget_approvals;
+       policy executive_visuals.video_generation_budget_policies;
+begin
+ select * into result_row from workflow_approval_result;
+ select * into quote_row from executive_visuals.video_workflow_quotes
+  where id='723e4567-e89b-42d3-a456-426614174000';
+ select * into reservation from executive_visuals.video_generation_budget_reservations
+  where job_id=result_row.job_id;
+ select * into approval from executive_visuals.video_generation_budget_approvals
+  where id=reservation.approval_id;
+ select * into policy from executive_visuals.video_generation_budget_policies
+  where owner_id='123e4567-e89b-42d3-a456-426614174000'
+   and project_id='323e4567-e89b-42d3-a456-426614174000'
+   and provider='runway' and model='model-router';
+ if result_row.job_id is null or result_row.job_status <> 'queued'
+    or result_row.idempotent_replay
+    or result_row.budget_reservation_id is distinct from reservation.id
+    or result_row.approval_id is distinct from approval.id
+    or quote_row.state <> 'consumed'
+    or reservation.state <> 'reserved'
+    or reservation.reserved_amount <> 2.75
+    or approval.consumed_at is null
+    or policy.reserved_amount <> 2.75 then
+  raise exception 'workflow approval did not atomically consume quote, approve, reserve and enqueue';
+ end if;
+end
+$workflow_quote_approval_result$;
+
+create temporary table workflow_approval_replay as
+select * from executive_visuals.approve_and_enqueue_video_workflow(
+ '723e4567-e89b-42d3-a456-426614174000',
+ 'b23e4567-e89b-42d3-a456-426614174000',
+ '123e4567-e89b-42d3-a456-426614174000',
+ '323e4567-e89b-42d3-a456-426614174000',
+ repeat('e',64),'pg-workflow-quote-001','studio-video',
+ jsonb_build_object(
+  'projectId','323e4567-e89b-42d3-a456-426614174000',
+  'provider','runway','model','model-router','requestHash',repeat('e',64),
+  'operation','text-to-video','durationSeconds',5,'outputFormat','mp4',
+  'workflowQuoteId','723e4567-e89b-42d3-a456-426614174000',
+  'workflowRequestId','pg-workflow-quote-001'
+ ),2.75,'Idempotent replay of approved workflow quote'
+);
+
+do $workflow_quote_approval_replay$
+declare first_row record; replay_row record;
+begin
+ select * into first_row from workflow_approval_result;
+ select * into replay_row from workflow_approval_replay;
+ if not replay_row.idempotent_replay
+    or replay_row.job_id is distinct from first_row.job_id
+    or replay_row.budget_reservation_id is distinct from first_row.budget_reservation_id
+    or replay_row.approval_id is distinct from first_row.approval_id then
+  raise exception 'workflow approval retry did not return the original job and reservation';
+ end if;
+end
+$workflow_quote_approval_replay$;
+
 create temporary table test_context as
 select job_id, budget_reservation_id as reservation_id
 from executive_visuals.enqueue_video_generation_job(
