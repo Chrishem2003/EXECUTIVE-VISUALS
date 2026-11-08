@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readCloudWorkerConfig,createCloudWorkerSupervisor,startCloudWorkerProcess } from "../cloud-worker-process.mjs";
+import { runCloudWorkerCycle } from "../cloud-worker.mjs";
 
 const env={CLOUD_WORKER_ENABLED:"true",CLOUD_MEDIA_WORKER_ENABLED:"true",CLOUD_TIMELINE_WORKER_ENABLED:"true",SUPABASE_URL:"https://example.supabase.co",SUPABASE_SERVICE_ROLE_KEY:"server-secret"};
 test("cloud worker config remains disabled unless explicitly enabled",()=>{assert.throws(()=>readCloudWorkerConfig({...env,CLOUD_WORKER_ENABLED:"false"}),/disabled/);});
@@ -83,4 +84,26 @@ test("cloud worker startup fails closed when C2PA signing lacks an injected prot
  };
  await assert.rejects(()=>startCloudWorkerProcess(signingEnv),/no authenticated KMS\/HSM signingProvider/);
  await assert.rejects(()=>startCloudWorkerProcess(signingEnv,{signingProvider:{sign:async()=>Buffer.alloc(64)}}),/public certificate chain/);
+});
+
+
+test("supervisor stop aborts active media execution and persists a cancelled job",async()=>{
+ const calls=[];let markStarted;
+ const started=new Promise(resolve=>{markStarted=resolve;});
+ const queue={
+  async claim(){calls.push("claim");return{id:"long-render"};},
+  async renew(){calls.push("renew");return true;},
+  async finish(id,workerId,status,output,error){calls.push(["finish",status,error]);return true;}
+ };
+ const worker={
+  async recoverExpired(){return 0;},
+  async runCycle(options){return runCloudWorkerCycle({
+   queue,workerId:"media-worker",leaseSeconds:60,heartbeatIntervalMs:10000,signal:options.signal,
+   execute:async({signal})=>{markStarted();return new Promise((resolve,reject)=>signal.addEventListener("abort",()=>reject(signal.reason),{once:true}));}
+  });}
+ };
+ const supervisor=createCloudWorkerSupervisor({workers:[worker],leaseSeconds:60,heartbeatIntervalMs:10000,pollMs:10000,recoveryIntervalMs:300000});
+ await supervisor.start();await started;await supervisor.stop();
+ assert.deepEqual(calls[0],"claim");
+ assert.equal(calls.some(call=>Array.isArray(call)&&call[0]==="finish"&&call[1]==="cancelled"),true);
 });
