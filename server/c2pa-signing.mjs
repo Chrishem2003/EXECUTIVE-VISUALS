@@ -162,7 +162,9 @@ export function createC2paTransformationSigner({
       if (sourceReader) {
         const sourceIngredient = await builder.addIngredientFromReader(sourceReader);
         expectedSourceInstanceId = sourceIngredient?.instance_id || null;
-      } else if (source !== input) {
+      } else {
+        // A first-generation asset is its own source. Record it as the parent
+        // ingredient even when the signing input and source are the same file.
         expectedSourceInstanceId = "urn:sha256:" + await sha256File(source);
         await builder.addIngredient(JSON.stringify({
           title: basename(source),
