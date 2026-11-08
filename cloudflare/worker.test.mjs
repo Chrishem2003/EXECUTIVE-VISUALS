@@ -55,7 +55,10 @@ test("D1 Worker authenticates through the existing API before creating staging r
     assert.equal(new URL(request.url).pathname, "/api/me");
     assert.equal(request.headers.get("authorization"), "Bearer staging-test-token");
     assert.equal(request.headers.get("origin"), "https://executive-visuals.onrender.com");
-    return new Response(JSON.stringify({ user: { id: userId, email: "editor@example.test" }, authMode: "supabase" }), { status: 200, headers: { "content-type": "application/json" } });
+    const headers = new Headers({ "content-type": "application/json" });
+    headers.append("set-cookie", "ev_supabase_access=rotated-access; HttpOnly; Secure");
+    headers.append("set-cookie", "ev_supabase_refresh=rotated-refresh; HttpOnly; Secure");
+    return new Response(JSON.stringify({ user: { id: userId, email: "editor@example.test" }, authMode: "supabase" }), { status: 200, headers });
   });
   const env = { DB, API_ORIGIN: "https://executive-visuals.onrender.com" };
   const create = await worker.fetch(new Request("https://staging.example/api/d1/projects", {
@@ -65,6 +68,7 @@ test("D1 Worker authenticates through the existing API before creating staging r
   }), env);
   const createdResponse = await create.json();
   assert.equal(create.status, 201, JSON.stringify(createdResponse));
+  assert.deepEqual(create.headers.getSetCookie().sort(), ["ev_supabase_access=rotated-access; HttpOnly; Secure", "ev_supabase_refresh=rotated-refresh; HttpOnly; Secure"].sort());
   const created = createdResponse;
   assert.equal(created.project.name, "D1 staging project");
   assert.match(created.project.ownerId, /^[0-9a-f-]{36}$/i);
