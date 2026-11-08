@@ -54,7 +54,7 @@ export function createC2paTransformationSigner({
   algorithm = "es256",
   reserveSize = 10000,
   maxBytes = Number(process.env.C2PA_MAX_VERIFY_BYTES || DEFAULT_MAX_BYTES),
-  appName = "CHRISHEM EXCLUSIVE VISUALS",
+  appName = "Executive Visuals",
   appVersion = "0.1.0",
   sdkLoader = () => import("@contentauth/c2pa-node")
 } = {}) {
