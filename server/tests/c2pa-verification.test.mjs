@@ -113,3 +113,13 @@ test("does not infer Invalid from validation finding text when SDK state is abse
   assert.equal(result.status, "indeterminate");
   assert.equal(result.validationState, null);
 });
+
+test("preserves an explicit Invalid state even when the active manifest is unavailable", async () => {
+  const result = await inspectC2paAsset({
+    path: "/private/media/broken.jpg",
+    mimeType: "image/jpeg",
+    sdkLoader: async () => sdkFor({ validation_state: "Invalid", manifests: {}, validation_status: [] })
+  });
+  assert.equal(result.status, "invalid");
+  assert.equal(result.validationState, "Invalid");
+});
