@@ -127,9 +127,16 @@ export function createRunwayModelRouterVideoAdapter({
     throw fail("Runway Model Router requires private output ingestion.", "RUNWAY_ROUTER_EXECUTION_GATES_MISSING");
   }
 
+  const assertConfigured = () => {
+    if (!key) {
+      throw fail("Runway Model Router quotes require a server-side API key.", "RUNWAY_ROUTER_NOT_CONFIGURED");
+    }
+  };
+
   const assertEnabled = () => {
-    if (enabled !== true || allowRemote !== true || !key) {
-      throw fail("Runway Model Router is disabled until explicit server-side opt-ins and credentials are configured.", "RUNWAY_ROUTER_DISABLED");
+    assertConfigured();
+    if (enabled !== true || allowRemote !== true) {
+      throw fail("Runway Model Router paid submission is disabled until explicit server-side opt-ins are configured.", "RUNWAY_ROUTER_DISABLED");
     }
   };
 
@@ -193,7 +200,9 @@ export function createRunwayModelRouterVideoAdapter({
       return merged;
     },
     async preflight(input) {
-      assertEnabled();
+      // Dry-run quotes are explicitly non-billable and may be offered before
+      // paid execution is enabled. The submit path still requires both flags.
+      assertConfigured();
       const response = await request("/generate/video", {
         method: "POST",
         body: { configId: slug, dryRun: true, input: routedInput(input) }
