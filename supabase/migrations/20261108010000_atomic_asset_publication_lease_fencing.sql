@@ -5,6 +5,14 @@
 -- A foreign key proves that a derivative source exists, but not that it
 -- belongs to the same tenant/project. Enforce that invariant for every asset
 -- write path, not only the atomic publication RPC.
+alter table executive_visuals.assets
+  add column if not exists derivative_of uuid
+  references executive_visuals.assets(id) on delete set null;
+
+create index if not exists ev_assets_derivative_source
+  on executive_visuals.assets(derivative_of)
+  where derivative_of is not null;
+
 create or replace function executive_visuals.validate_asset_derivative_scope_v1()
 returns trigger
 language plpgsql
