@@ -245,6 +245,7 @@ This closes the renderer-adapter gap in the cloud timeline execution contract. I
 
 - Added a standalone `start:cloud-worker` entry point for separately hosted media and timeline worker families. It is independent of the web API process and does not start when imported.
 - Both worker families are disabled by default and require explicit `CLOUD_WORKER_ENABLED`, `CLOUD_MEDIA_WORKER_ENABLED` and/or `CLOUD_TIMELINE_WORKER_ENABLED` flags plus server-side Supabase credentials.
+- The Asset Library's cloud media submission API has its own `CLOUD_MEDIA_JOBS_API_ENABLED` gate, which must remain off until the media worker is actually deployed and healthy; setting this flag does not start a worker.
 - Startup checks the isolated schema and private media bucket, verifies FFmpeg/FFprobe availability, validates lease/heartbeat/poll/byte limits, and fails closed when prerequisites are missing.
 - The supervisor runs supported worker cycles, recovers expired leases, reports bounded structured status/error events, and stops scheduling work during graceful shutdown.
 - Tests cover disabled configuration, missing credentials/families, configuration bounds, recovery, family cycles and shutdown.
@@ -283,7 +284,10 @@ This is a runnable worker entry point, not a deployed worker. Do not set the ena
 - Added streamed personal cloud uploads to the private bucket, with server-side size/signature checks, checksummed metadata and owner-scoped authorization.
 - Added on-demand five-minute signed preview/download links. URLs stay in transient browser memory and are never stored in project documents.
 - Project-scoped cloud uploads remain in the Cloud Projects workspace, where the selected project role is checked by the server.
-- This is a separate cloud shelf, not a silent migration of the active local asset lifecycle. Cloud media processing, derivative creation from cloud sources and cloud worker activation remain gated on isolated staging acceptance.
+- Connected the cloud shelf to the lease-fenced media queue through `POST /api/cloud/assets/:assetId/media-jobs`: server-side asset lookup, owner/project authorization, editor-only project writes, media-type compatibility, per-operation option allowlists, mandatory idempotency keys, safe job creation and `job.queued` audit events. The API returns the persisted job receipt and rejects conflicting idempotency-key reuse.
+- Added `GET /api/cloud/jobs` for owner- or project-scoped media job history. The Runtime Asset Library now renders type-aware Inspect / Thumbnail / Proxy / Denoise / Clean audio actions and recent cloud job status when the capability is enabled.
+- Added a separate `CLOUD_MEDIA_JOBS_API_ENABLED` feature gate. It defaults off, requires the cloud timeline API and Supabase auth, and is exposed through `/api/health`; a disabled endpoint returns 503. The UI does not show cloud-processing controls unless this flag is active.
+- This is an integrated, tested code path, not a deployed cloud worker. The flag must remain off until a separate media worker is deployed in isolated staging, database migrations and private bucket policies pass review, and owner/editor/viewer recovery/publication tests succeed. Local `/api/assets` remains the default processing path.
 
 ## Shared local/cloud editorial editor — 1 November 2026
 
