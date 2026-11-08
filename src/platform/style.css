@@ -518,3 +518,5 @@ button:disabled{opacity:.55;cursor:not-allowed}
 .provenance-state.complete{background:#1b3026;color:#a8dfbd;border:1px solid #355b43}
 .provenance-state.gated{background:#33281c;color:#e8c28d;border:1px solid #6a5132}
 @media(max-width:760px){.provenance-stage-list{grid-template-columns:1fr}.provenance-score{gap:7px}.provenance-score>div{padding:11px}.provenance-score strong{font-size:24px}.provenance-score span{font-size:9px}}
+
+.c2pa-unsupported-note{display:inline-block;font-size:10px;color:#d5b98e;line-height:1.5}
