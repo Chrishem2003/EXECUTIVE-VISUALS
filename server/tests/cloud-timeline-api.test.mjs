@@ -478,7 +478,7 @@ test("cloud workflow video-to-video quote binds duration to server-probed source
   timelineService:{timelines:{},assets:{}},
   authorize:async()=>true,
   runwaySourceResolver:{
-   async resolveMetadata(){return{ownerId,projectId,assetId:sourceId,mediaType:"video/mp4",durationSeconds:6.2};},
+   async resolveMetadata(){return{ownerId:owner,projectId:project,assetId:sourceId,mediaType:"video/mp4",durationSeconds:6.2};},
    async prepare(){return{};}
   },
   runwayRouterAdapter:{
@@ -487,7 +487,7 @@ test("cloud workflow video-to-video quote binds duration to server-probed source
   }
  });
  const result=await api.handle({method:"POST",path:"/api/cloud/workflows/video/quote",ownerId:owner,body:{
-  projectId,requestId:"workflow-1:video-node:2",
+  projectId:project,requestId:"workflow-1:video-node:2",
   node:{kind:"video.generate",config:{provider:"runway",model:"model-router",durationSeconds:5}},
   values:{prompt:"Edit this source while preserving the camera movement",sourceVideoAssetId:sourceId}
  }});
