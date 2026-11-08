@@ -47,12 +47,13 @@ The platform should normalize these capabilities into typed operations, while pr
 ## 3. Critical integration order
 
 ### P0 — make existing infrastructure one product
-1. Complete quote → explicit approval → atomic reservation/enqueue; verify exact-head PostgreSQL CI.
-2. Connect workflow editor video.generate nodes to authenticated cloud job creation.
-3. Map cloud job stages, cancellation, retry and reconciliation into workflow run/node state.
-4. Publish verified private asset IDs and provenance into workflow outputs and timeline nodes.
-5. Complete provider-authoritative actual-cost settlement, ambiguous submission recovery and cancellation/partial-output accounting.
-6. Run isolated staging end-to-end acceptance without production changes or paid generation.
+1. Link local and cloud projects with one owner-verified UUID and stable asset/timeline scope.
+2. Complete quote → explicit approval → atomic reservation/enqueue; verify exact-head PostgreSQL CI.
+3. Connect workflow editor video.generate nodes to authenticated cloud job creation.
+4. Map cloud job stages, cancellation, retry and reconciliation into workflow run/node state.
+5. Publish verified private asset IDs and provenance into workflow outputs and timeline nodes.
+6. Complete provider-authoritative actual-cost settlement, ambiguous submission recovery and cancellation/partial-output accounting.
+7. Run isolated staging end-to-end acceptance without production changes or paid generation.
 
 ### P1 — complete the professional production loop
 1. Consolidate storyboard/shot compiler, character continuity and reference manifests.
