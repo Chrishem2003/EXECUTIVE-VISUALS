@@ -119,8 +119,8 @@ function outputPlan(jobType, input, source, sourcePath, outputPath) {
  * Timeline rendering remains deliberately separate until its timeline document
  * and asset references are migrated to the cloud repository.
  */
-async function preserveC2paOutput({c2paPreserver,c2paSigner,c2paSignerMode,sourcePath,outputPath,sourceMimeType,outputMimeType,operation,signal}){
-  return c2paPreserver({sourcePath,outputPath,sourceMimeType,outputMimeType,signer:c2paSigner,signerMode:c2paSignerMode,operation,signal});
+async function preserveC2paOutput({c2paPreserver,c2paSigner,c2paSignerMode,sourcePath,outputPath,sourceMimeType,outputMimeType,expectedSourceSha256,operation,signal}){
+  return c2paPreserver({sourcePath,outputPath,sourceMimeType,outputMimeType,expectedSourceSha256,signer:c2paSigner,signerMode:c2paSignerMode,operation,signal});
 }
 export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.env.FFMPEG_PATH || "ffmpeg", ffprobe = process.env.FFPROBE_PATH || "ffprobe", timeoutMs = 30 * 60 * 1000, c2paPreserver = createC2paTransformationPreserver(), c2paSigner = null, c2paSignerMode = "local" } = {}) {
   if (!mediaIO || typeof mediaIO.materialize !== "function" || typeof mediaIO.publish !== "function") throw new Error("Cloud media executor requires cloud media IO.");
@@ -180,7 +180,7 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
         const plan = { name: sourceName.replace(/\.[^.]+$/, "").slice(0, 140) + "-ai-upscaled." + format, mediaType };
         const processing = { engine: result.engine, method: result.method, model: result.model, scale: result.scale, tile: Number(input.tile ?? 0), sourceWidth, sourceHeight, outputWidth: expectedWidth, outputHeight: expectedHeight, dimensionsVerified: true };
         if (signal?.aborted) throw Object.assign(new Error("Media job was cancelled."), { code: "JOB_CANCELLED" });
-        const c2paPreservation=await preserveC2paOutput({c2paPreserver,c2paSigner,c2paSignerMode,sourcePath,outputPath,sourceMimeType:materialized.asset.mediaType,outputMimeType:mediaType,operation:job.job_type,signal});
+        const c2paPreservation=await preserveC2paOutput({c2paPreserver,c2paSigner,c2paSignerMode,sourcePath,outputPath,sourceMimeType:materialized.asset.mediaType,outputMimeType:mediaType,expectedSourceSha256:materialized.asset.sha256,operation:job.job_type,signal});
         const info=await stat(outputPath);
         const digest=await checksum(outputPath);
        const asset = await mediaIO.publish({
@@ -291,7 +291,7 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
         audioPreserved: sourceAudioStreamCount === null ? null : sourceAudioStreamCount === 0 || (outputProbe?.streams || []).some(stream => stream.codec_type === "audio"),
         outputVideo: outputProbe?.streams?.find(stream => stream.codec_type === "video") || null
       } : null;
-      const c2paPreservation=await preserveC2paOutput({c2paPreserver,c2paSigner,c2paSignerMode,sourcePath,outputPath,sourceMimeType:materialized.asset.mediaType,outputMimeType:plan.mediaType,operation:job.job_type,signal});
+      const c2paPreservation=await preserveC2paOutput({c2paPreserver,c2paSigner,c2paSignerMode,sourcePath,outputPath,sourceMimeType:materialized.asset.mediaType,outputMimeType:plan.mediaType,expectedSourceSha256:materialized.asset.sha256,operation:job.job_type,signal});
       const info=await stat(outputPath);
       const digest=await checksum(outputPath);
       const asset = await mediaIO.publish({
