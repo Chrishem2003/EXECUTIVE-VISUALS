@@ -65,3 +65,11 @@ test("does not allow client-selected review states",async t=>{
   const {db}=await fixture(t);
   assert.throws(()=>reviewEvidenceRecord(db,{evidenceId:"missing",reviewerId:"owner",status:"submitted"}),/EVIDENCE_REVIEW_STATE_INVALID/);
 });
+
+
+test("requires a meaningful reviewer reason before changing evidence status",async t=>{
+ const {db,asset}=await fixture(t);
+ const record=createEvidenceRecord(db,submission(asset));
+ assert.throws(()=>reviewEvidenceRecord(db,{evidenceId:record.id,reviewerId:"reviewer",status:"verified",reviewNote:"ok"}),/EVIDENCE_REVIEW_REASON_REQUIRED/);
+ assert.equal(listEvidenceEvents(db,record.id).length,1);
+});
