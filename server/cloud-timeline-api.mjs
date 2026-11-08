@@ -218,6 +218,7 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     }
    }
    if(path==="/api/cloud/jobs"&&method==="GET"){
+    if(!mediaJobsEnabled)return response(503,{error:{code:"CLOUD_MEDIA_WORKER_DISABLED",message:"Cloud media processing is not enabled for this environment."}});
     const projectId=String(query.projectId||"");
     if(projectId&&!safeId(projectId))return response(400,{error:{code:"INVALID_PROJECT_ID",message:"Choose a valid project."}});
     if(projectId&&await allow({ownerId,projectId,action:"read"})!==true)return response(404,{error:{code:"PROJECT_NOT_FOUND",message:"Project not found."}});
