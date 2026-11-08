@@ -30,7 +30,7 @@ function mapAsset(row) {
   };
 }
 
-export function createD1Repository({ db, id = randomUUID, clock = isoNow } = {}) {
+export function createD1Repository({ db, id = randomUUID, clock = isoNow, allowR2 = false } = {}) {
   if (!db || typeof db.prepare !== "function") throw new Error("D1 repository requires a Cloudflare D1 database binding.");
   if (typeof id !== "function" || typeof clock !== "function") throw new Error("D1 repository requires valid ID and clock functions.");
 
@@ -154,7 +154,7 @@ export function createD1Repository({ db, id = randomUUID, clock = isoNow } = {})
       if (typeof mediaType !== "string" || !/^[\w.+-]+\/[\w.+-]+$/.test(mediaType) || mediaType.length > 120) throw new Error("Asset media type is invalid.");
       if (!Number.isSafeInteger(size) || size < 1 || size > 1024 * 1024 * 1024) throw new Error("Asset size is outside the supported range.");
       if (typeof sha256 !== "string" || !SHA256.test(sha256)) throw new Error("Asset SHA-256 checksum is invalid.");
-      if (!["r2", "local-staging"].includes(storageProvider)) throw new Error("Asset storage provider is not enabled.");
+      if (!["r2", "local-staging"].includes(storageProvider) || storageProvider === "r2" && allowR2 !== true) throw new Error("Asset storage provider is not enabled.");
       if (typeof storageKey !== "string" || !/^[A-Za-z0-9/_ .-]{1,512}$/.test(storageKey) || storageKey.startsWith("/") || storageKey.split("/").some(part => !part || part === "." || part === "..")) throw new Error("Asset storage key is invalid.");
       if (!object(metadata) || json(metadata).length > 16000) throw new Error("Asset metadata must be an object no larger than 16 KB.");
       if (provenance !== null && (!object(provenance) || json(provenance).length > 32000)) throw new Error("Asset provenance must be an object no larger than 32 KB.");
