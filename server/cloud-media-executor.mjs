@@ -354,6 +354,7 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
         audioPreserved: sourceAudioStreamCount === null ? null : sourceAudioStreamCount === 0 || (outputProbe?.streams || []).some(stream => stream.codec_type === "audio"),
         outputVideo: outputProbe?.streams?.find(stream => stream.codec_type === "video") || null
       } : null;
+      await assertLease();
       const asset = await mediaIO.publish({
         ownerId: job.owner_id,
         projectId: job.project_id || null,
