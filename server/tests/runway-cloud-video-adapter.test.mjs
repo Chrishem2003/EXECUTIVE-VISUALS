@@ -281,3 +281,68 @@ test("prepares an authorized SDR source and submits a durable Ruby HDR task", as
     model: "ruby", videoUri: "runway://ephemeral/hdr-source", outputFormat: "hlg"
   });
 });
+
+
+test("prepares a private video upload and submits Mirelo synchronized video-to-audio", async () => {
+  const calls = [];
+  const adapter = createRunwayCloudVideoAdapter({
+    ...base,
+    model: "mirelo_sfx_2_0",
+    prepareInput: async () => ({
+      sourceVideo: { buffer: Buffer.alloc(1024, 1), filename: "source.mp4", mimeType: "video/mp4" }
+    }),
+    fetchImpl: async (url, options = {}) => {
+      calls.push({ url: String(url), options });
+      if (String(url) === "https://api.dev.runwayml.com/v1/uploads") {
+        return new Response(JSON.stringify({
+          runwayUri: "runway://video-to-audio/source",
+          uploadUrl: "https://uploads.runway.com/ephemeral",
+          fields: { key: "test-upload" }
+        }), { status: 200 });
+      }
+      if (String(url) === "https://uploads.runway.com/ephemeral") return new Response("", { status: 200 });
+      if (String(url) === "https://api.dev.runwayml.com/v1/video_to_audio") {
+        return new Response(JSON.stringify({ id }), { status: 200 });
+      }
+      if (String(url) === "https://api.dev.runwayml.com/v1/tasks/" + id) {
+        return new Response(JSON.stringify({ id, status: "SUCCEEDED", output: ["https://cdn.example.net/generated-audio.mp3"] }), { status: 200 });
+      }
+      throw new Error("Unexpected Runway request: " + String(url));
+    }
+  });
+  const prepared = await adapter.prepareInput({
+    provider: "runway", model: "mirelo_sfx_2_0", operation: "video-to-audio",
+    sourceVideoAssetId: "source-asset", durationSeconds: 12,
+    prompt: "Natural outdoor ambience", numVariants: 2, audioFormat: "mp3",
+    preserveSpeech: true
+  }, { job: { owner_id: "owner-1", project_id: "project-1" } });
+  assert.equal(prepared.videoUri, "runway://video-to-audio/source");
+  const submitted = await adapter.submit(prepared);
+  assert.deepEqual(submitted, { taskId: id, status: "queued" });
+  const body = JSON.parse(calls.find(call => call.url.endsWith("/video_to_audio")).options.body);
+  assert.deepEqual(body, {
+    model: "mirelo_sfx_2_0", videoUri: "runway://video-to-audio/source",
+    duration: 12, format: "mp3", numVariants: 2,
+    promptText: "Natural outdoor ambience", preserveSpeech: true
+  });
+  assert.equal((await adapter.getStatus(id)).status, "succeeded");
+});
+
+test("Mirelo rejects unprepared sources, invalid duration and unsupported audio options before paid submission", async () => {
+  const calls = [];
+  const adapter = createRunwayCloudVideoAdapter({
+    ...base,
+    model: "mirelo_sfx_2_0",
+    prepareInput: async () => ({ sourceVideo: { buffer: Buffer.alloc(1024), filename: "source.mp4", mimeType: "video/mp4" } }),
+    fetchImpl: async (...args) => { calls.push(args); return new Response(JSON.stringify({ id })); }
+  });
+  await assert.rejects(() => adapter.submit({
+    provider: "runway", model: "mirelo_sfx_2_0", operation: "video-to-audio",
+    videoUri: "runway://source", durationSeconds: 601
+  }), error => error.code === "RUNWAY_INPUT_INVALID");
+  await assert.rejects(() => adapter.submit({
+    provider: "runway", model: "mirelo_sfx_2_0", operation: "video-to-audio",
+    videoUri: "runway://source", durationSeconds: 5, numVariants: 5
+  }), error => error.code === "RUNWAY_INPUT_INVALID");
+  assert.equal(calls.length, 0);
+});

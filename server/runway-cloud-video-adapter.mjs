@@ -14,6 +14,7 @@ const MAX_UPLOAD_BYTES = 200 * 1024 * 1024;
 const UPLOAD_TYPES = Object.freeze({
   "video/mp4": ".mp4",
   "video/quicktime": ".mov",
+  "video/webm": ".webm",
   "image/png": ".png",
   "image/jpeg": ".jpg",
   "image/webp": ".webp"
@@ -39,7 +40,7 @@ export function createRunwayCloudVideoAdapter({
   timeoutMs = 30000
 } = {}) {
   const selectedModel = String(model || "").trim();
-  if (!["gen4.5", "aleph2", "magnific_video_upscaler_creative", "ruby"].includes(selectedModel)) {
+  if (!["gen4.5", "aleph2", "magnific_video_upscaler_creative", "ruby", "mirelo_sfx_2_0"].includes(selectedModel)) {
     throw fail("This Runway cloud adapter supports only verified Gen-4.5 generation, Aleph2 editing, Magnific upscaling and Ruby HDR profiles.", "RUNWAY_ADAPTER_MODEL_UNSUPPORTED");
   }
   const key = String(apiKey || "").trim();
@@ -161,10 +162,11 @@ export function createRunwayCloudVideoAdapter({
       const isVideoEdit = input.operation === "video-to-video";
       const isVideoUpscale = input.operation === "video-upscale";
       const isVideoHdr = input.operation === "video-to-hdr";
+      const isVideoToAudio = input.operation === "video-to-audio";
       const isImageToVideo = input.operation === "image-to-video" || Boolean(input.startFrameAssetId);
       const hasReferences = (Array.isArray(input.referenceAssetIds) && input.referenceAssetIds.length > 0) ||
         Boolean(input.referenceImageDataUrl) || Boolean(input.sourceVideoAssetId) ||
-        Boolean(input.startFrameAssetId) ||
+        Boolean(input.startFrameAssetId) || isVideoToAudio ||
         (Array.isArray(input.keyframeAssetIds) && input.keyframeAssetIds.length > 0);
       if ((hasReferences || isVideoEdit || isVideoUpscale || isVideoHdr || isImageToVideo) && typeof prepareInput !== "function") {
         throw fail("Runway source and reference assets require an authenticated project-scoped input resolver.", "VIDEO_INPUT_ASSET_RESOLUTION_REQUIRED");
@@ -186,6 +188,13 @@ export function createRunwayCloudVideoAdapter({
         let videoUri = prepared.videoUri;
         if (prepared.sourceVideo) videoUri = await uploadEphemeral(prepared.sourceVideo);
         if (!isRunwayUri(videoUri)) throw fail("HDR conversion requires a Runway ephemeral URI resolved from the authorized source asset.", "VIDEO_INPUT_ASSET_RESOLUTION_REQUIRED");
+        return { ...input, videoUri };
+      }
+      if (isVideoToAudio) {
+        if (selectedModel !== "mirelo_sfx_2_0") throw fail("Video-to-audio requires the verified Mirelo SFX 2.0 profile.", "RUNWAY_ADAPTER_MODEL_UNSUPPORTED");
+        let videoUri = prepared.videoUri;
+        if (prepared.sourceVideo) videoUri = await uploadEphemeral(prepared.sourceVideo);
+        if (!isRunwayUri(videoUri)) throw fail("Video-to-audio requires a Runway ephemeral source upload.", "VIDEO_INPUT_ASSET_RESOLUTION_REQUIRED");
         return { ...input, videoUri };
       }
       if (!isVideoEdit && !isVideoUpscale) return prepared;
@@ -219,6 +228,45 @@ export function createRunwayCloudVideoAdapter({
       assertEnabled();
       if (!input || input.provider !== "runway" || input.model !== selectedModel) {
         throw fail("Runway job identity does not match the selected adapter.", "VIDEO_JOB_INPUT_MISMATCH");
+      }
+      if (input.operation === "video-to-audio") {
+        if (selectedModel !== "mirelo_sfx_2_0" || !isRunwayUri(input.videoUri)) {
+          throw fail("Mirelo SFX 2.0 requires a prepared source video upload.", "RUNWAY_INPUT_INVALID");
+        }
+        if (!Number.isInteger(input.durationSeconds) || input.durationSeconds < 1 || input.durationSeconds > 600) {
+          throw fail("Video-to-audio duration must be an integer from 1 to 600 seconds.", "RUNWAY_INPUT_INVALID");
+        }
+        const numVariants = input.numVariants ?? 1;
+        if (!Number.isInteger(numVariants) || numVariants < 1 || numVariants > 4) {
+          throw fail("Video-to-audio variants must be an integer from 1 to 4.", "RUNWAY_INPUT_INVALID");
+        }
+        const format = input.audioFormat ?? "mp3";
+        if (!["mp3", "wav", "flac"].includes(format)) throw fail("Video-to-audio format must be mp3, wav or flac.", "RUNWAY_INPUT_INVALID");
+        if (input.prompt != null && (typeof input.prompt !== "string" || input.prompt.length > 2000)) {
+          throw fail("Video-to-audio prompt must be no longer than 2,000 characters.", "RUNWAY_INPUT_INVALID");
+        }
+        if (input.negativePrompt != null && (typeof input.negativePrompt !== "string" || !input.negativePrompt.trim() || input.negativePrompt.length > 1000)) {
+          throw fail("Video-to-audio negative prompt must contain 1 to 1,000 characters.", "RUNWAY_INPUT_INVALID");
+        }
+        if (input.preserveSpeech != null && typeof input.preserveSpeech !== "boolean") {
+          throw fail("preserveSpeech must be a boolean.", "RUNWAY_INPUT_INVALID");
+        }
+        if (input.seed != null && (!Number.isInteger(input.seed) || input.seed < 0 || input.seed > 4294967295)) {
+          throw fail("Video-to-audio seed must be an unsigned 32-bit integer.", "RUNWAY_INPUT_INVALID");
+        }
+        const body = {
+          model: "mirelo_sfx_2_0",
+          videoUri: input.videoUri,
+          duration: input.durationSeconds,
+          format,
+          numVariants,
+          ...(input.prompt ? { promptText: input.prompt } : {}),
+          ...(input.negativePrompt ? { negativePrompt: input.negativePrompt } : {}),
+          ...(input.preserveSpeech !== undefined ? { preserveSpeech: input.preserveSpeech } : {}),
+          ...(input.seed !== undefined ? { seed: input.seed } : {})
+        };
+        const submitted = await request("/video_to_audio", { method: "POST", submission: true, body });
+        return { taskId: taskId(submitted.id), status: "queued" };
       }
       if (input.operation === "video-to-hdr") {
         if (selectedModel !== "ruby" || !isRunwayUri(input.videoUri)) {

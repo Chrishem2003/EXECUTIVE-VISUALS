@@ -5,7 +5,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 const EXTENSIONS = new Map([
   ["image/jpeg","jpg"],["image/png","png"],["image/webp","webp"],["image/gif","gif"],
   ["video/mp4","mp4"],["video/webm","webm"],["video/quicktime","mov"],["video/x-matroska","mkv"],
-  ["audio/mpeg","mp3"],["audio/wav","wav"],["audio/x-wav","wav"],["audio/mp4","m4a"],["audio/ogg","ogg"],
+  ["audio/mpeg","mp3"],["audio/wav","wav"],["audio/x-wav","wav"],["audio/mp4","m4a"],["audio/ogg","ogg"],["audio/flac","flac"],
   ["application/pdf","pdf"],["text/plain","txt"],["text/vtt","vtt"],["application/json","json"]
 ]);
 
@@ -138,18 +138,18 @@ export function createCloudAssetRepository({
         ? "owner_id=eq."+encodeURIComponent(ownerId)+"&project_id=eq."+encodeURIComponent(projectId)
         : "owner_id=eq."+encodeURIComponent(ownerId)+"&project_id=is.null";
       const rows=await request("assets?select=id,owner_id,project_id,original_name,media_type,byte_size,sha256,storage_bucket,object_path,derivative_of,metadata,created_at,deleted_at&"+scope+
-        "&metadata->>source=eq.video-generation&metadata->>providerTaskId=eq."+encodeURIComponent(providerTaskId)+
+        "&metadata->>source=in.(video-generation,video-to-audio)&metadata->>providerTaskId=eq."+encodeURIComponent(providerTaskId)+
         "&metadata->>outputIndex=eq."+encodeURIComponent(String(outputIndex))+"&deleted_at=is.null&limit=2");
-      if(!Array.isArray(rows)||rows.length>1)throw new Error("Video output idempotency lookup returned an invalid result.");
+      if(!Array.isArray(rows)||rows.length>1)throw new Error("Provider output idempotency lookup returned an invalid result.");
       const row=rows[0]||null;
       if(!row)return null;
       const expectedPrefix=(row.project_id||row.owner_id)+"/"+row.id+"/";
       if(row.owner_id!==ownerId||row.project_id!==projectId||row.storage_bucket!=="executive-visuals-media"||
          typeof row.object_path!=="string"||!row.object_path.startsWith(expectedPrefix)||
-         !String(row.media_type||"").startsWith("video/")||row.deleted_at||
-         row.metadata?.source!=="video-generation"||row.metadata?.providerTaskId!==providerTaskId||
+         !(String(row.media_type||"").startsWith("video/")||String(row.media_type||"").startsWith("audio/"))||row.deleted_at||
+         !["video-generation","video-to-audio"].includes(row.metadata?.source)||row.metadata?.providerTaskId!==providerTaskId||
          Number(row.metadata?.outputIndex)!==outputIndex) {
-        throw new Error("Existing video output asset does not match the requested owner/task/index scope.");
+        throw new Error("Existing provider output asset does not match the requested owner/task/index scope.");
       }
       return publicAsset(row);
     },

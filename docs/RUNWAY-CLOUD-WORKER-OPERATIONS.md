@@ -102,3 +102,26 @@ No live provider generation, paid API request, production deployment, Render con
 - Runway API reference: https://docs.dev.runwayml.com/api/
 - Ephemeral uploads: https://docs.dev.runwayml.com/assets/uploads/
 - Pricing: https://docs.dev.runwayml.com/guides/pricing/
+
+
+## Mirelo SFX 2.0 — synchronized video-to-audio (draft capability)
+
+The worker branch now contains a gated adapter path for Runway's `POST /v1/video_to_audio` endpoint. It generates synchronized sound effects as an audio-only output; it does not replace the source video's soundtrack or produce a new video file.
+
+Verified request contract:
+- Model: `mirelo_sfx_2_0`.
+- Input: an owner/project-scoped source video, privately resolved and uploaded to a short-lived Runway ephemeral URI.
+- Source duration: 1–600 seconds, probed server-side; the enqueue duration must match the rounded-up source duration.
+- Optional creative prompt (max 2,000 chars), negative prompt (max 1,000 chars), speech preservation flag and deterministic seed.
+- Output: 1–4 audio variants, MP3/WAV/FLAC.
+- Output URLs are downloaded only from the configured provider host allowlist, FFprobe-validated as audio-only, and ingested into the existing private Supabase media bucket.
+- The original source video is never modified.
+
+Pricing preflight is based on Runway's published Mirelo rate of 2 credits per second per variant (1 Runway credit = USD 0.01). This is a provider list-price estimate, not settlement evidence. The worker still requires the injected authoritative task-level actual-cost resolver before it can register or execute this model. The model remains disabled unless it is explicitly included in `RUNWAY_VIDEO_MODELS` and the global worker/provider opt-in gates are satisfied.
+
+References:
+- Endpoint contract: https://docs.dev.runwayml.com/api/
+- Model pricing and settings: https://dev.runway.com/endpoints/sound_effect?modelId=mirelo_sfx_2_0
+- Pricing overview: https://dev.runway.com/pricing
+
+This is a code-only draft. No Runway API key, provider request, Supabase schema, Render service or production configuration was changed.
