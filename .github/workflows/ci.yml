@@ -14,18 +14,37 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24.22.1
       - name: Ensure media test tools are available
         run: |
-          if ! command -v ffmpeg >/dev/null 2>&1 || ! fc-match "DejaVu Sans" >/dev/null 2>&1; then
+          if ! command -v ffmpeg >/dev/null 2>&1 || ! fc-match "DejaVu Sans" >/dev/null 2>&1 || ! command -v unzip >/dev/null 2>&1; then
             sudo apt-get update
-            sudo apt-get install -y ffmpeg fonts-dejavu-core
+            sudo apt-get install -y ffmpeg fonts-dejavu-core unzip
           fi
           ffmpeg -version
           fc-match "DejaVu Sans"
+      - name: Install checksum-pinned CAI Node native binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/c2pa-node_x86_64-unknown-linux-gnu-v0.10.0.zip"
+          url="https://github.com/contentauth/c2pa-js/releases/download/%40contentauth%2Fc2pa-node%400.10.0/c2pa-node_x86_64-unknown-linux-gnu-v0.10.0.zip"
+          expected="4da99fadf6caef86c9cc4a3ee3e126672c19e4f0dba2e2a0f81d4e0cfc691cfa"
+          mkdir -p "$RUNNER_TEMP/c2pa"
+          curl --fail --location --retry 5 --retry-all-errors --retry-delay 3 --retry-max-time 240 --connect-timeout 20 --max-time 180 "$url" --output "$archive"
+          echo "$expected  $archive" | sha256sum --check -
+          entry="$(unzip -Z1 "$archive" | sed -n '1p')"
+          test -n "$entry"
+          unzip -p "$archive" "$entry" > "$RUNNER_TEMP/c2pa/index.node"
+          test -s "$RUNNER_TEMP/c2pa/index.node"
+          echo "C2PA_LIBRARY_PATH=$RUNNER_TEMP/c2pa/index.node" >> "$GITHUB_ENV"
       - run: npm ci
       - run: npm run typecheck
       - run: npm run build
+      - name: Build and inspect production Docker image
+        run: |
+          docker build --pull -t executive-visuals-ci .
+          docker run --rm --entrypoint sh executive-visuals-ci -c 'test -s "$C2PA_LIBRARY_PATH" && test ! -d /app/server/tests'
 
   asset-publication-postgres:
     runs-on: ubuntu-latest
@@ -61,3 +80,41 @@ jobs:
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261106230000_asset_publication_ledger.sql
       - name: Verify publication ledger permissions, replay, conflicts and completion
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/asset-publication-postgres-integration.sql
+      - name: Apply per-attempt lease fencing migration
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261108000000_job_lease_fencing_tokens.sql
+      - name: Verify lease fencing privileges, stale token rejection and atomic completion
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/job-lease-fencing-postgres-integration.sql
+      - name: Apply atomic asset publication migration
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261108010000_atomic_asset_publication_lease_fencing.sql
+      - name: Apply lease-aware publication cleanup claims
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261108020000_asset_publication_cleanup_claims.sql
+      - name: Extend cleanup outbox to immutable publication attempt paths
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261108030000_storage_cleanup_attempt_paths.sql
+      - name: Verify atomic publication and derivative tenant scope
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/atomic-asset-publication-postgres-integration.sql
+
+
+  supabase-local-stack:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: Start isolated Supabase services
+        run: supabase start
+      - name: Apply every repository migration to a clean local database
+        run: supabase db reset --local
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+      - name: Verify isolated schema, RLS and private media bucket
+        env:
+          PGPASSWORD: postgres
+        run: psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" -X -v ON_ERROR_STOP=1 -f scripts/verify-supabase-local-stack.sql
+      - name: Stop isolated Supabase services
+        if: always()
+        run: supabase stop --no-backup
