@@ -64,6 +64,7 @@ export async function runCloudWorkerCycle({
       onEvent({ type: "job.cancelled", jobId: job.id, workerId, reason: "worker_shutdown" });
       return { claimed: true, finished: true, status: "cancelled", reason: "worker_shutdown", jobId: job.id };
     } catch (error) {
+      if (leaseLost) return { claimed: true, finished: false, reason: "lease_lost", jobId: job.id };
       onEvent({ type: "job.cancel_finish_failed", jobId: job.id, workerId, code: typeof error?.code === "string" ? error.code : "CANCEL_FINISH_FAILED" });
       return { claimed: true, finished: false, reason: "cancel_finish_failed", jobId: job.id };
     }
