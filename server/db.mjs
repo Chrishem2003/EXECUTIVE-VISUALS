@@ -163,6 +163,17 @@ export function openDatabase(filename) {
     CREATE INDEX IF NOT EXISTS model_usage_owner_idx ON model_usage_events(owner_id,created_at DESC);
     CREATE INDEX IF NOT EXISTS model_usage_project_idx ON model_usage_events(project_id,created_at DESC);
     CREATE INDEX IF NOT EXISTS model_usage_job_idx ON model_usage_events(job_id);
+    CREATE TABLE IF NOT EXISTS creative_graph_snapshots (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      owner_id TEXT NOT NULL REFERENCES users(id),
+      revision INTEGER NOT NULL CHECK(revision > 0),
+      graph_hash TEXT NOT NULL,
+      graph_json TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      UNIQUE(project_id,revision)
+    );
+    CREATE INDEX IF NOT EXISTS creative_graph_snapshots_project_idx ON creative_graph_snapshots(project_id,revision DESC);
     CREATE TABLE IF NOT EXISTS evidence_records (
       id TEXT PRIMARY KEY,
       owner_id TEXT NOT NULL REFERENCES users(id),
