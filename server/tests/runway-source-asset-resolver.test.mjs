@@ -249,3 +249,20 @@ test("Runway source resolver accepts chunked private assets when streamed bytes 
   assert.equal(result.sourceVideo.buffer.length, bytes.length);
   assert.deepEqual(result.sourceVideo.buffer, bytes);
 });
+
+
+test("Runway source resolver normalizes failures raised after private download headers", async () => {
+  const interrupted = new Response(new ReadableStream({
+    start(controller) {
+      controller.enqueue(bytes.subarray(0, 100));
+      controller.error(new Error("simulated storage stream interruption"));
+    }
+  }), { status: 200, headers: { "content-type": "video/mp4" } });
+  const { resolver } = fixture({ fetchImpl: async () => interrupted });
+  await assert.rejects(
+    () => resolver.prepare({
+      operation: "video-to-video", projectId: PROJECT, sourceVideoAssetId: ASSET
+    }, { job: { owner_id: OWNER } }),
+    error => error.code === "VIDEO_INPUT_ASSET_DOWNLOAD_FAILED"
+  );
+});
