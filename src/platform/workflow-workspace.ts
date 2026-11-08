@@ -97,7 +97,7 @@ async function refresh(){
   const created=await apiRequest<{workflow:SavedWorkflow}>("/api/workflows",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({name:"Untitled workflow",graph})});
   state.graph=created.workflow.graph||graph;state.serverRevision=created.workflow.revision;
  }
- state.selectedNode=state.graph?.nodes[0]?.id||"";
+ state.selectedNode=state.graph?.nodes[0]?.id||"";state.costEstimate=null;
  const runs=await apiRequest<{runs:Array<{id:string;status:string}>}>("/api/workflows/"+state.graph!.id+"/runs");
  state.latestRunId=runs.runs[0]?.id||"";
  if(state.latestRunId)await loadRun();else{state.runStatus="";state.runNodes=[];}
@@ -116,7 +116,7 @@ async function persist(){
 async function createNew(){
  const graph=createEmptyWorkflow("","local-workflow");
  const created=await apiRequest<{workflow:SavedWorkflow}>("/api/workflows",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({name:"Untitled workflow",graph})});
- state.graph=created.workflow.graph||graph;state.serverRevision=created.workflow.revision;state.workflows.unshift(created.workflow);state.selectedNode="";state.plan="";state.latestRunId="";state.runStatus="";state.runNodes=[];state.message="New workflow created.";paint();
+ state.graph=created.workflow.graph||graph;state.serverRevision=created.workflow.revision;state.workflows.unshift(created.workflow);state.selectedNode="";state.plan="";state.costEstimate=null;state.latestRunId="";state.runStatus="";state.runNodes=[];state.message="New workflow created.";paint();
 }
 export async function initWorkflowWorkspace(){
  try{await refresh();}catch(error){state.status=error instanceof Error&&error.message.includes("Sign in")?"auth":"offline";state.message=error instanceof Error?error.message:"Workflow service unavailable.";}
@@ -159,9 +159,9 @@ document.addEventListener("click",event=>{
  const actionButton=target.closest<HTMLElement>("[data-wf-action]");if(actionButton){void action(actionButton.dataset.wfAction||"");return;}
  const add=target.closest<HTMLElement>("[data-wf-add]");if(add){addNode(add.dataset.wfAdd as keyof typeof palette);return;}
  const removeNode=target.closest<HTMLElement>("[data-wf-remove-node]");
- if(removeNode&&state.graph){const id=removeNode.dataset.wfRemoveNode||"";state.graph={...state.graph,revision:state.graph.revision+1,nodes:state.graph.nodes.filter(n=>n.id!==id),edges:state.graph.edges.filter(e=>e.sourceNodeId!==id&&e.targetNodeId!==id)};state.selectedNode="";state.plan="";void persist().then(paint).catch(error=>{state.message=error.message;paint();});return;}
+ if(removeNode&&state.graph){const id=removeNode.dataset.wfRemoveNode||"";state.graph={...state.graph,revision:state.graph.revision+1,nodes:state.graph.nodes.filter(n=>n.id!==id),edges:state.graph.edges.filter(e=>e.sourceNodeId!==id&&e.targetNodeId!==id)};state.selectedNode="";state.plan="";state.costEstimate=null;void persist().then(paint).catch(error=>{state.message=error.message;paint();});return;}
  const removeEdge=target.closest<HTMLElement>("[data-wf-remove-edge]");
- if(removeEdge&&state.graph){const id=removeEdge.dataset.wfRemoveEdge||"";state.graph={...state.graph,revision:state.graph.revision+1,edges:state.graph.edges.filter(e=>e.id!==id)};void persist().then(paint).catch(error=>{state.message=error.message;paint();});return;}
+ if(removeEdge&&state.graph){const id=removeEdge.dataset.wfRemoveEdge||"";state.graph={...state.graph,revision:state.graph.revision+1,edges:state.graph.edges.filter(e=>e.id!==id)};state.costEstimate=null;void persist().then(paint).catch(error=>{state.message=error.message;paint();});return;}
  const node=target.closest<HTMLElement>("[data-wf-node]");
  if(node){state.selectedNode=node.dataset.wfNode||"";state.costEstimate=null;paint();}
 });
@@ -170,7 +170,7 @@ document.addEventListener("submit",event=>{
  if(form.id==="wf-connect-form"){
   event.preventDefault();const data=new FormData(form),sourceNodeId=String(data.get("sourceNode")),sourcePortId=String(data.get("sourcePort")),targetNodeId=String(data.get("targetNode")),targetPortId=String(data.get("targetPort"));
   const edge:WorkflowEdge={id:crypto.randomUUID(),sourceNodeId,sourcePortId,targetNodeId,targetPortId};
-  state.graph={...state.graph,revision:state.graph.revision+1,edges:[...state.graph.edges,edge]};state.plan="";void persist().then(paint).catch(error=>{state.message=error.message;paint();});
+  state.graph={...state.graph,revision:state.graph.revision+1,edges:[...state.graph.edges,edge]};state.plan="";state.costEstimate=null;void persist().then(paint).catch(error=>{state.message=error.message;paint();});
  }
  if(form.id==="wf-config-form"){
   event.preventDefault();const data=new FormData(form),nodeId=String(data.get("nodeId")),node=state.graph.nodes.find(n=>n.id===nodeId);if(!node)return;
