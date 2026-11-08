@@ -534,3 +534,12 @@ This is a runnable worker entry point, not a deployed worker. Do not set the ena
 ### Source-fingerprint change propagation
 
 Creative graph asset nodes now include the recorded SHA-256 fingerprint and byte size. A source fingerprint change is detected by graph snapshot comparison and downstream references (including character reference use, evidence lineage and timeline clips) are marked as potentially stale for human review. This is dependency propagation only; it does not mutate or invalidate exports.
+
+
+### Production worker/publication stack audit — 8 November 2026
+
+- Main already contains the idempotent publication ledger delivered by merged PR #226; the earlier ledger PR #171 is closed as superseded.
+- The lease-fencing stack (#172 onward) is still based on the old `feat/idempotent-asset-publication-ledger` branch. Its head is 61 commits ahead and 28 commits behind current `main`; it must not be merged as-is because its ancestry and migration history are stale.
+- Historical CI for lease fencing (#172), worker telemetry (#173), immutable publication (#174), orphan cleanup (#175), atomic publication (#178) and cleanup reconciliation (#207) is green at the inspected heads. This is not current-main integration proof.
+- PR #177 is an alternative atomic-publication branch; PR #178 is the chosen continuation because cleanup reconciliation PR #207 is stacked on it. Keep both draft until a current-main integration branch is rebased/ported, the complete migration sequence is verified, and worker/storage failure-recovery tests pass together.
+- Next engineering action: port the lease-token/worker fencing contract onto current main without replaying the superseded ledger implementation, then re-run all worker, publication, cleanup and PostgreSQL integration gates. No production deployment or merge is authorized by this audit.
