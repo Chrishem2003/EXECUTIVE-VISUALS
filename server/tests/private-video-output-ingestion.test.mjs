@@ -283,3 +283,40 @@ test("FFprobe validator fails closed when the binary is missing or output is mal
   });
   assert.equal((await malformed({ path: "/tmp/output", contentType: "video/mp4", size: 1024 })).reason, "FFPROBE_INVALID_JSON");
 });
+
+
+test("FFprobe validates audio-only outputs for video-to-audio without accepting video streams", async () => {
+  const validate = createFfprobeVideoOutputValidator({
+    execFileImpl: (_path, _args, _options, callback) => callback(null, JSON.stringify({
+      format: { duration: "5.25", format_name: "mp3" },
+      streams: [{ codec_type: "audio", codec_name: "mp3" }]
+    }))
+  });
+  const result = await validate({
+    path: "/tmp/audio.mp3", contentType: "audio/mpeg", size: 1024,
+    input: { operation: "video-to-audio" }
+  });
+  assert.equal(result.valid, true);
+  assert.equal(result.mediaType, "audio/mpeg");
+  assert.equal(result.metadata.durationSeconds, 5.25);
+});
+
+test("video-to-audio outputs are downloaded, media-validated and stored as private audio assets", async () => {
+  const assets = assetRepo();
+  const ingest = createPrivateVideoOutputIngestor({
+    ...config, assets,
+    download: async () => ({ size: 1024, contentType: "audio/mpeg" }),
+    validateMedia: async ({ input }) => input?.operation === "video-to-audio"
+      ? { valid: true, mediaType: "audio/mpeg", metadata: { durationSeconds: 5, audioCodec: "mp3" } }
+      : { valid: false }
+  });
+  const result = await ingest.ingest({
+    job: { id: "job-audio-1", owner_id: ownerId, project_id: projectId },
+    task: { taskId: "runway-audio-task-1", outputUrls: ["https://cdn.example.test/audio.mp3"] },
+    input: { operation: "video-to-audio", provider: "runway", model: "mirelo_sfx_2_0" }
+  });
+  assert.equal(result.assetIds.length, 1);
+  assert.equal(assets.created[0].mediaType, "audio/mpeg");
+  assert.equal(assets.created[0].value.originalName, "generated-audio-1.mp3");
+  assert.equal(assets.created[0].value.metadata.source, "video-to-audio");
+});

@@ -8,7 +8,7 @@ const BUCKET = "executive-visuals-media";
 const MIME_TYPES = new Set([
   "image/jpeg","image/png","image/webp","image/gif",
   "video/mp4","video/webm","video/quicktime","video/x-matroska",
-  "audio/mpeg","audio/wav","audio/x-wav","audio/mp4","audio/ogg",
+  "audio/mpeg","audio/wav","audio/x-wav","audio/mp4","audio/ogg","audio/flac",
   "application/pdf","text/plain","text/vtt","application/json"
 ]);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;

@@ -1,4 +1,4 @@
-import { estimateRunwayVideoCredits } from "./runway-video-pricing.mjs";
+import { estimateRunwayVideoCredits, estimateRunwayVideoAudioCredits } from "./runway-video-pricing.mjs";
 import { estimateLumaRay32Cost } from "./luma-video-pricing.mjs";
 import { estimateGoogleOmniVideoCost } from "./google-omni-pricing.mjs";
 
@@ -18,7 +18,7 @@ export function estimateVideoGenerationCost({
   resolution, audio, inputVideoSeconds, referenceVideoSeconds, referenceImageCount,
   referenceAudioCount, hasStartFrame, outputFrames, sourceWidth, sourceHeight,
   sourceDynamicRange, outputWidth, outputHeight, targetFramerate, inputType,
-  hdr = false, exrExport = false
+  hdr = false, exrExport = false, numVariants = 1, audioFormat = "mp3"
 } = {}) {
   const pricingDate = new Date().toISOString().slice(0, 10);
 
@@ -71,6 +71,21 @@ export function estimateVideoGenerationCost({
 
   if (provider !== "runway") {
     throw priceError("No verified video price is configured for this provider/model.", "VIDEO_PRICE_UNVERIFIED");
+  }
+
+  if (model === "mirelo_sfx_2_0") {
+    const estimate = estimateRunwayVideoAudioCredits({
+      durationSeconds, numVariants, format: audioFormat, pricingDate
+    });
+    return Object.freeze({
+      provider, model, operation, durationSeconds,
+      credits: estimate.estimatedCredits, currency: estimate.currency,
+      amount: Number(estimate.estimatedUsd.toFixed(6)),
+      basis: "provider_list_price_estimate",
+      pricingSource: estimate.pricingSource, pricingDate: estimate.pricingDate,
+      pricingFormula: estimate.formula, evidenceType: estimate.evidenceType,
+      billable: false, settlementEligible: false
+    });
   }
 
   const effectiveOutputFormat = outputFormat ?? (model === "ruby" ? "hdr10" : "mp4");
