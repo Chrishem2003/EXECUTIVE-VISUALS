@@ -138,8 +138,12 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
       signal
     });
     if (signal?.aborted) throw Object.assign(new Error("Media job was cancelled."), { code: "JOB_CANCELLED" });
-    if (!c2pa || c2pa.status !== "signed_and_verified") {
-      throw Object.assign(new Error("C2PA signer did not return a verified signed derivative."), { code: "C2PA_SIGNING_RESULT_INVALID" });
+    if (!c2pa || c2pa.status !== "signed_and_verified" ||
+        !/^[a-f0-9]{64}$/i.test(String(c2pa.sha256 || "")) ||
+        !Number.isSafeInteger(c2pa.byteSize) || c2pa.byteSize < 1 ||
+        !Number.isSafeInteger(c2pa.ingredientCount) || c2pa.ingredientCount < 1 ||
+        !["Valid", "Trusted"].includes(c2pa.validationState)) {
+      throw Object.assign(new Error("C2PA signer did not return a complete verified signed-derivative result."), { code: "C2PA_SIGNING_RESULT_INVALID" });
     }
     return { path: signedPath, c2pa };
   }
@@ -209,7 +213,9 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
         const digest = await checksum(signing.path);
         if (signing.c2pa.sha256 && signing.c2pa.sha256 !== digest) throw Object.assign(new Error("C2PA signer checksum does not match the published file."), { code: "C2PA_SIGNED_OUTPUT_HASH_MISMATCH" });
         if (signing.c2pa.byteSize && signing.c2pa.byteSize !== info.size) throw Object.assign(new Error("C2PA signer size does not match the published file."), { code: "C2PA_SIGNED_OUTPUT_SIZE_MISMATCH" });
-        const asset = await mediaIO.publish({
+        if (signal?.aborted) throw Object.assign(new Error("Media job was cancelled."), { code: "JOB_CANCELLED" });
+        if (signal?.aborted) throw Object.assign(new Error("Media job was cancelled."), { code: "JOB_CANCELLED" });
+      const asset = await mediaIO.publish({
           ownerId: job.owner_id, projectId: job.project_id || null, filename: plan.name,
           mediaType, path: signing.path, derivativeOf: sourceId,
           metadata: { operation: job.job_type, sourceSha256: materialized.asset.sha256, sha256: digest, processing, c2pa: signing.c2pa },
