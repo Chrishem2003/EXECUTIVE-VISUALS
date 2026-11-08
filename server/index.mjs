@@ -714,11 +714,24 @@ const billingAccount=touchBillingAccount(db,user);
       if(cloudTimelineApi && (path.startsWith("/api/cloud/timelines")||path.startsWith("/api/cloud/jobs")||path.startsWith("/api/cloud/assets")||path.startsWith("/api/cloud/projects")||path.startsWith("/api/cloud/transformations")||path.startsWith("/api/cloud/workflows"))){
         const isCloudMutation=(path.startsWith("/api/cloud/transformations")&&(req.method==="POST"||path.endsWith("/approve")&&req.method==="POST"||path.endsWith("/submit")&&req.method==="POST"))||(path.startsWith("/api/cloud/workflows")&&req.method==="POST")||(path.startsWith("/api/cloud/timelines")&&(req.method==="POST"||req.method==="PUT"))||(path==="/api/cloud/projects"&&req.method==="POST")||(path.startsWith("/api/cloud/projects/")&&(req.method==="PATCH"||req.method==="DELETE"));
         const body=isCloudMutation?await readJson(req,5*1024*1024):{};
+        let cloudBody=body;
+        if(path==="/api/cloud/projects"&&req.method==="POST"&&body.localProjectId){
+          const localProjectId=String(body.localProjectId);
+          const localProject=getOwnedProject(db,user.id,localProjectId);
+          if(!localProject||localProject.archived_at){fail(res,404,"LOCAL_PROJECT_NOT_FOUND","An active local project owned by this account is required for cloud linking.");return;}
+          if(body.projectId&&String(body.projectId)!==localProject.id){fail(res,400,"PROJECT_ID_MISMATCH","The supplied cloud project ID must match the selected local project ID.");return;}
+          cloudBody={...body,projectId:localProject.id,name:body.name||localProject.name,description:body.description??localProject.description};
+        }
         const cloudResult=await cloudTimelineApi.handle({
-          method:req.method,path,ownerId:user.id,body,query:Object.fromEntries(url.searchParams.entries()),
+          method:req.method,path,ownerId:user.id,body:cloudBody,query:Object.fromEntries(url.searchParams.entries()),
           idempotencyKey:String(req.headers["idempotency-key"]||"")
         });
-        if(cloudResult){send(res,cloudResult.status,cloudResult.body,cors);return;}
+        if(cloudResult){
+          if(path==="/api/cloud/projects"&&req.method==="POST"&&body.localProjectId&&cloudResult.status>=200&&cloudResult.status<300){
+            audit(db,user.id,"cloud.project_linked","project",String(body.localProjectId),{cloudProjectId:cloudResult.body?.project?.id||null},String(body.localProjectId));
+          }
+          send(res,cloudResult.status,cloudResult.body,cors);return;
+        }
       }
       if(path==="/api/admin/ai-upscale/self-test"&&req.method==="POST"){
         const allowedAdmins=String(process.env.AI_UPSCALE_ADMIN_EMAILS||"").split(",").map(value=>value.trim().toLowerCase()).filter(Boolean);
