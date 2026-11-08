@@ -32,6 +32,33 @@ function onePixelPng() {
   const pixel = deflateSync(Buffer.from([0, 255, 0, 0, 255]));
   return Buffer.concat([signature, pngChunk("IHDR", header), pngChunk("IDAT", pixel), pngChunk("IEND", Buffer.alloc(0))]);
 }
+
+function alterMp4MediaData(bytes) {
+  const changed = Buffer.from(bytes);
+  let offset = 0;
+  while (offset + 8 <= changed.length) {
+    let size = changed.readUInt32BE(offset);
+    const type = changed.toString("ascii", offset + 4, offset + 8);
+    let headerSize = 8;
+    if (size === 1) {
+      if (offset + 16 > changed.length) throw new Error("Truncated extended MP4 box");
+      const extended = changed.readBigUInt64BE(offset + 8);
+      if (extended > BigInt(Number.MAX_SAFE_INTEGER)) throw new Error("MP4 box is too large to inspect");
+      size = Number(extended);
+      headerSize = 16;
+    } else if (size === 0) {
+      size = changed.length - offset;
+    }
+    if (size < headerSize || offset + size > changed.length) throw new Error("Invalid MP4 box bounds");
+    if (type === "mdat" && size > headerSize + 16) {
+      const payloadOffset = offset + headerSize + Math.min(16, size - headerSize - 1);
+      changed[payloadOffset] ^= 0x01;
+      return changed;
+    }
+    offset += size;
+  }
+  throw new Error("No mutable MP4 media-data payload was found");
+}
 function alterPngPixels(bytes) {
   const signature = bytes.subarray(0, 8);
   const chunks = [];
@@ -95,13 +122,13 @@ test("real CAI SDK validates signed media, applies explicit signer policy and re
 test("real CAI Node SDK signs and verifies an MP4 video with the same explicit trust policy", async t => {
   const dir = await mkdtemp(join(tmpdir(), "ev-c2pa-video-"));
   t.after(() => rm(dir, { recursive: true, force: true }));
-  const sourcePath = join(dir, "source.mp4"), signedPath = join(dir, "signed.mp4");
+  const sourcePath = join(dir, "source.mp4"), signedPath = join(dir, "signed.mp4"), tamperedPath = join(dir, "tampered.mp4");
   const certificateChain = await readFile(join(fixtureDir, "es256-test-only.chain.pem"));
   const privateKey = await readFile(join(fixtureDir, "es256-test-only.private.pem"));
   const certificateBlocks = certificateChain.toString("utf8").match(/-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g) || [];
   assert.ok(certificateBlocks.length >= 2, "upstream test fixture must contain a signer and intermediate certificate");
   const anchorPath = join(dir, "user-anchors.pem");
-  await writeFile(anchorPath, certificateBlocks[1] + "\\n");
+  await writeFile(anchorPath, certificateBlocks[1] + "\n");
   execFileSync("ffmpeg", [
     "-hide_banner", "-loglevel", "error", "-y",
     "-f", "lavfi", "-i", "color=c=blue:s=160x120:r=24",
@@ -128,4 +155,13 @@ test("real CAI Node SDK signs and verifies an MP4 video with the same explicit t
   })({ path: signedPath, mimeType: "video/mp4", size: signedSize });
   assert.equal(trusted.status, "valid_trusted", JSON.stringify(trusted, null, 2));
   assert.equal(trusted.trustPolicyType, "user_anchors");
+
+  const signedBytes = await readFile(signedPath);
+  await writeFile(tamperedPath, alterMp4MediaData(signedBytes));
+  const tamperedSize = (await stat(tamperedPath)).size;
+  const tampered = await createC2paVerifier({
+    sdkLoader: () => import("@contentauth/c2pa-node"),
+    trustAnchors: anchorPath
+  })({ path: tamperedPath, mimeType: "video/mp4", size: tamperedSize });
+  assert.equal(tampered.status, "invalid", JSON.stringify(tampered, null, 2));
 });
