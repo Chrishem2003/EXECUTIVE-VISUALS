@@ -1,6 +1,6 @@
 # Executive Visuals — implementation status
 
-**Updated:** 2 November 2026  
+**Updated:** 8 November 2026  
 **Branch:** `feat/executive-visuals-unified-platform`  
 **Delivery posture:** local runtime implemented; external-auth staging blueprint hardened; public release not approved pending account sign-in UX, isolated auth configuration, durable-data recovery tests and deployment verification.
 
@@ -468,7 +468,13 @@ This is a runnable worker entry point, not a deployed worker. Do not set the ena
 - Legacy assets without a record return `not_available`, not a false pass.
 - API integration tests cover successful verification and cross-account denial.
 - Unit tests cover deterministic records, tampering, checksum mismatch, malformed inputs and missing records.
-- The verifier explicitly returns `c2pa: not_checked`. This feature is not C2PA, a signature, identity proof, rights clearance or factual verification.
-- Full build includes `verify:provenance`; the broader server suite includes the API authorization integration test.
+- The official `@contentauth/c2pa-node` SDK is pinned to `0.10.0` with its npm lockfile synchronized. CI and the Docker runtime use the patched Node 24 line.
+- A server-only `server/c2pa-verification.mjs` adapter invokes `Reader.fromAsset` with a file-backed asset and explicit MIME type. Remote manifest fetching is disabled.
+- The authenticated provenance route first applies the existing asset authorization check, then returns separate application-integrity and C2PA verification results.
+- C2PA outcomes are mapped from the SDK's `validation_state`: `Invalid` → `invalid`, `Valid` → `valid_untrusted`, and `Trusted` → `valid_trusted` only when an administrator-controlled PEM trust anchor is configured. Without that policy, `Trusted` is conservatively downgraded to `valid_untrusted`.
+- The adapter checks the on-disk file and byte size, enforces a default 250 MiB parser limit, bounds returned validation findings, and fails closed on missing SDK, unknown state, unavailable files or SDK errors.
+- Deterministic adapter tests cover no-manifest, invalid/valid/trusted state mapping, trust-policy gating, malformed state, bounded findings and file safety. A separate integration test exercises the installed native SDK against a generated valid PNG without a manifest.
+- This integration is verification-only. It does not create manifests, sign media, preserve ingredients through transformations, prove identity, establish rights or verify factual accuracy.
+- Full build includes `verify:c2pa` and the existing provenance verification suite.
 
-**Next:** add the supported CAI C2PA SDK as a separate adapter after dependency review, certificate/trust policy design and supported-format tests. Do not claim signing/validation until real signed fixtures pass.
+**Next:** add genuine signed and byte-tampered image/video fixtures, validate the trust-anchor policy against a controlled test certificate, then implement ingredient-aware transformation manifests and protected callback signing. Production signing remains disabled.
