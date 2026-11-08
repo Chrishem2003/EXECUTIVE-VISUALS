@@ -143,3 +143,16 @@ reserve customer credits or provider budget, enqueue work, or enable paid
 execution. The next slice must bind an explicit authenticated approval to
 the persisted quote and request hash, then atomically reserve both budgets
 and enqueue exactly one durable job.
+
+## Durable quote → explicit approval → atomic enqueue (2026-11-08)
+
+The feat/p0-workflow-quote-ledger branch now extends the first quote-ledger slice into an explicit, server-authorized approval and durable enqueue transaction:
+
+- POST /api/cloud/workflows/video/quote performs a non-billable Model Router dry-run and persists the exact quote, actor, project, canonical request hash, routed model, estimated credits/USD, router config and short expiry before returning it.
+- POST /api/cloud/workflows/video/approve requires an explicit confirmed: true action, a positive USD approval ceiling and project editor authorization. It revalidates private workflow inputs and the configured router identity.
+- The service-role-only approve_and_enqueue_video_workflow RPC locks the quote, pins the router config, verifies actor/project/request/operation/expiry and that the approved ceiling covers the estimate, creates the exact-request budget approval, invokes the existing atomic queue/reservation RPC, and marks the quote consumed in one PostgreSQL transaction.
+- Retries with the same quote, request ID and request hash return the original job, approval and reservation; conflicting retries fail.
+- The database requires an enabled project-scoped runway/model-router budget policy. Policy and remote-worker flags remain disabled by default; no default policy or provider activation is created.
+- Both disposable PostgreSQL workflows now apply the quote and approval migrations before their shared integration assertions. The Google Drive integration workflow also applies these migrations because it reuses the cloud-video PostgreSQL integration script.
+
+This is a queue/approval bridge, not a claim of end-to-end workflow execution. The interactive workflow executor still defaults to legacy mode; cloud-mode node progress, cancellation reconciliation, worker output publication into workflow node outputs, and full staging acceptance remain separate release gates. No provider task is submitted by either API handler.
