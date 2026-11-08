@@ -56,7 +56,7 @@ function createTestCertificates(dir) {
   const extensions = join(dir, "leaf.ext");
   execFileSync("openssl", ["ecparam", "-name", "prime256v1", "-genkey", "-noout", "-out", rootKey]);
   execFileSync("openssl", ["req", "-x509", "-new", "-key", rootKey, "-sha256", "-days", "3", "-out", rootCert, "-subj", "/CN=Executive Visuals Test Root", "-addext", "basicConstraints=critical,CA:TRUE", "-addext", "keyUsage=critical,keyCertSign,cRLSign", "-addext", "subjectKeyIdentifier=hash"]);
-  execFileSync("openssl", ["ecparam", "-name", "prime256v1", "-genkey", "-noout", "-out", leafKey]);
+  execFileSync("openssl", ["genpkey", "-algorithm", "EC", "-pkeyopt", "ec_paramgen_curve:P-256", "-out", leafKey]);
   execFileSync("openssl", ["req", "-new", "-key", leafKey, "-out", leafCsr, "-subj", "/CN=Executive Visuals Test Signer"]);
   return writeFile(extensions, "basicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature\nextendedKeyUsage=emailProtection\nauthorityKeyIdentifier=keyid,issuer\nsubjectKeyIdentifier=hash\n")
     .then(() => {
@@ -65,7 +65,10 @@ function createTestCertificates(dir) {
     });
 }
 
-test("real CAI SDK validates a cryptographically signed PNG, applies trust anchors and rejects altered pixels", async t => {
+let opensslAvailable = true;
+try { execFileSync("openssl", ["version"], { stdio: "ignore" }); } catch { opensslAvailable = false; }
+
+test("real CAI SDK validates a cryptographically signed PNG, applies trust anchors and rejects altered pixels", { skip: opensslAvailable ? false : "OpenSSL is required to generate the ephemeral test certificate chain" }, async t => {
   const dir = await mkdtemp(join(tmpdir(), "ev-c2pa-signed-"));
   t.after(() => rm(dir, { recursive: true, force: true }));
   const { rootCert, leafKey, leafCert } = await createTestCertificates(dir);
