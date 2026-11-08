@@ -7,7 +7,7 @@ const fixture={
  creativeDNA:{creativePromise:"Make complex work feel simple.",proofAndTrustChecks:["Separate fact from opinion","Proof candidate supplied: A recorded before/after test"],storyBeats:["OPEN","PROVE","PAY OFF"]},
  characters:[{id:"character-1",name:"Maya",description:"Presenter",referenceAssetIds:["asset-1"]}],
  shots:[],
- seriesPlans:[{id:"series-1",title:"Launch series",storyBible:{entries:[{id:"character-2",kind:"character",name:"Engineer",description:"Technical expert",referenceAssetIds:[]}]},seasons:[{episodes:[{id:"episode-1",title:"Episode 1",scenes:[{id:"scene-1",title:"The problem",purpose:"Establish friction",shots:[{id:"shot-1",prompt:"Maya demonstrates the old workflow",characterIds:["character-1"],proofReference:"recording-1",referenceAssetIds:["asset-1"]}]}]}]}]}],
+ seriesPlans:[{id:"series-1",title:"Launch series",storyBible:{entries:[{id:"character-2",kind:"character",name:"Engineer",description:"Technical expert",referenceAssetIds:[]}]},seasons:[{episodes:[{id:"episode-1",title:"Episode 1",scenes:[{id:"scene-1",title:"The problem",purpose:"Establish friction",storyBibleEntryIds:["character-2"],shots:[{id:"shot-1",prompt:"Maya demonstrates the old workflow",characterIds:["character-1"],storyBibleEntryIds:["character-2"],proofReference:"recording-1",referenceAssetIds:["asset-1"]}]}]}]}]}],
  timelines:[{id:"timeline-1",name:"Episode edit",timeline:{markers:[{id:"scene-1",name:"The problem"},{id:"shot-1",name:"Shot 1"}],tracks:[{clips:[{id:"clip-1",assetId:"asset-1",name:"Opening shot"}]}]}}],
  assets:[{id:"asset-1",name:"Approved presenter reference",mediaType:"image/jpeg"}]
 };
@@ -18,6 +18,8 @@ test("creative graph links explicit brief, intent, evidence, characters, scenes,
  assert.ok(has("project:project-1","brief:project-1","contains"));
  assert.ok(has("brief:project-1","intent:project-1","guides"));
  assert.ok(has("character:character-1","shot:shot-1","features"));
+ assert.ok(has("character:character-2","scene:scene-1","features"));
+ assert.ok(has("character:character-2","shot:shot-1","features"));
  assert.ok(has("scene:scene-1","shot:shot-1","contains"));
  assert.ok(has("shot:shot-1","timeline:timeline-1","appears_in"));
  assert.ok(has("asset:asset-1","clip:clip-1","uses"));
