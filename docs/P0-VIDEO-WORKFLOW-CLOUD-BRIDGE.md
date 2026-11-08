@@ -2,23 +2,24 @@
 
 ## Current behavior
 
-The interactive `video.generate` workflow node still uses the existing synchronous Runway/FAL gateways and local generated-asset persistence. The durable provider-aware cloud video queue is a separate execution surface; this document does not claim that the surfaces are integrated.
+The interactive `video.generate` workflow node retains its existing synchronous Runway/FAL path for legacy providers. A second, explicitly configured `runway/model-router` path now connects the workflow executor to the durable cloud quote/approval/queue/worker pipeline and imports verified outputs into local workflow assets. The cloud path is source-integrated but remains operationally disabled until all authentication, worker, provider, saved-config and budget gates are deliberately configured.
 
 ## Fail-closed mode selector
 
 `server/video-workflow-execution-mode.mjs` defines the explicit workflow execution mode:
 
-- `legacy` (default): preserves the existing behavior while the bridge is unfinished.
-- `cloud`: currently rejects with `CLOUD_VIDEO_WORKFLOW_BRIDGE_NOT_CONFIGURED` before identity checks, private-asset reads, budget reservations or provider submission.
+- `legacy` remains the default for existing local provider adapters.
+- The explicit `runway/model-router` node path requires an injected authenticated cloud timeline API; without it, it rejects with `CLOUD_VIDEO_WORKFLOW_BRIDGE_NOT_CONFIGURED` before provider submission.
+- Even with the bridge present, cloud approval/enqueue rejects unless the saved router, worker, remote gateway, API key and enabled project budget policy are configured.
 - Any other value rejects with `VIDEO_WORKFLOW_EXECUTION_MODE_INVALID`.
 
-This prevents an operator from assuming that setting a cloud-mode flag will route Studio workflow nodes through the durable worker. It deliberately does not add a second queue or pretend to provide hosted generation.
+This prevents an operator from assuming that a UI-only provider selection activates hosted generation. The bridge reuses the existing durable cloud queue and never submits provider work from the request handler.
 
 ## Additional integration finding
 
 The repository contains a Runway Model Router adapter with a non-billable `preflight()`, durable routing metadata on submit, task polling, private output ingestion and actual-cost resolution from the completed task's realized `cost.credits`. This is valuable existing infrastructure and should be reused rather than reimplemented.
 
-The application enqueue layer recognizes the logical `runway/model-router` identity behind explicit remote, worker, saved-config and USD budget gates, and the worker composition contains the router adapter. However, the source-controlled PostgreSQL function `enqueue_video_generation_job` still only allows `runway/gen4.5` and `google/gemini-omni-1.1-flash`; the worker's default `runwayModels` allowlist also omits `model-router`. The router is therefore not end-to-end enqueueable through the current SQL/worker contract. Enabling it requires a reviewed migration and explicit worker model registration, then disposable-PostgreSQL tests. Do not work around this by changing only the application allowlist.
+The application enqueue layer, source-controlled `20261108210000_runway_model_router_enqueue_contract.sql` migration and provider-aware worker composition now register the logical `runway/model-router` identity behind explicit remote, worker, saved-config and USD budget gates. The router is registered as its own adapter rather than added to the fixed legacy `runwayModels` list. Disposable PostgreSQL integration applies the migration and verifies the enqueue contract. This does not switch on remote execution or create a customer budget policy.
 
 ## Aleph 2 transformation submission blocker and implementation (2026-11-08)
 
@@ -69,7 +70,7 @@ Connect a completed human-approval node upstream. The approval node click is the
 
 The code path is implemented but not activated. `CLOUD_TIMELINE_API_ENABLED`, Supabase auth, the saved Runway router config, provider API credentials, cloud worker, remote video gateway flags, and an enabled per-project budget policy are separate operational prerequisites. All must be deliberately configured and tested in isolated staging before any paid generation is possible. Production remains untouched.
 
-## Required work before cloud mode can be enabled
+## Remaining acceptance work before paid cloud mode can be enabled
 
 ### Customer transformation API — partially implemented
 
@@ -85,12 +86,12 @@ These endpoints remain behind verified Supabase authentication and the cloud tim
 
 1. **Completed in integration:** `POST /api/cloud/transformations/quote` provides a non-mutating, source-probed Aleph 2 estimate with provider/model, USD amount, pricing evidence/date, source metadata including server-probed frame rate, 5-minute quote expiry and explicit non-billable/approval-required flags. It requires project editor access and media-rights confirmation, checks person-replacement consent, rejects source clips outside 2–30 seconds, and performs no approval, reservation, job write or provider submission.
 2. **Cancellation intent API implemented in integration:** `POST /api/cloud/jobs/:id/cancel` requires verified identity plus project-owner/editor authorization, writes a durable idempotent cancellation request through a service-role-only RPC, records an audit/event trail, and exposes `cancel_requested_at`. Provider cancellation dispatch, worker pickup/retry, authoritative post-cancel usage reconciliation, and evidence-backed partial settlement remain outstanding. Provider-reported cancellation without verified final billing is still quarantined as `needs_input`; the reservation is not released.
-3. Bind quote and approval to the authenticated actor, tenant, project, canonical request hash, provider/model/operation, private asset IDs and expiry.
+3. **Implemented in integration:** bind quote and approval to the authenticated actor, project, canonical request hash, provider/model/operation, private asset IDs, saved router config and short expiry.
 4. Complete server-side media eligibility checks for provider limits, including frame rate and resolution, in addition to ownership, media type, checksum, duration, size and project scope.
-5. Atomically reserve customer credits and provider budget; idempotently enqueue using the existing durable queue and submission ledger.
-6. Map durable job state into workflow run/node state and publish stable private asset IDs for downstream timeline nodes.
-7. Settle only from provider-authoritative realized usage; reconcile ambiguous submission, cancellation, partial output and refunds without double charging.
-8. Add disposable-PostgreSQL end-to-end tests for tenant isolation, replay, idempotency, retry/recovery, cancellation and downstream asset consumption.
+5. **Implemented in integration:** atomically create the approval, reserve the project provider budget and enqueue through the idempotent durable queue. Customer-credit billing remains a separate reconciliation boundary and must not be assumed to be settled by the provider reservation.
+6. **Implemented in source:** poll the durable cloud job from the local workflow executor and publish verified private outputs as local asset IDs for downstream nodes and timeline use.
+7. **Partially implemented:** the cloud worker settles against provider-authoritative realized usage and quarantines ambiguous submissions/output/cancellation. Remaining work is complete recovery, cancellation, partial-output and customer-credit reconciliation evidence without double charging.
+8. **Partially implemented:** disposable PostgreSQL CI verifies quote, approval, budget reservation, enqueue and replay; focused Node tests verify workflow orchestration and output import. Extend coverage to full tenant-isolation, worker recovery, cancellation and downstream editor consumption.
 9. Complete isolated staging acceptance, rollback and operational runbooks before enabling the mode.
 
 ## CI integration finding
@@ -99,12 +100,12 @@ The current GitHub Actions quality workflow originally targeted only pull reques
 
 ## Verification
 
-The existing `verify:workflow-executor` build step now asserts:
-- explicit legacy mode remains compatible;
-- cloud mode fails closed with the stable bridge-not-configured code;
-- unknown modes fail closed.
+The build now includes focused workflow-cloud-bridge tests for:
+- non-billable quote → explicit upstream approval → durable cloud enqueue → completed job → checksum-verified private output import;
+- rejection of an approval ceiling below the fresh quote;
+- rejection when the authenticated cloud API is unavailable.
 
-These policy tests do not constitute end-to-end cloud workflow acceptance. Paid generation and production deployment remain disabled until the full bridge is implemented and accepted.
+Disposable PostgreSQL CI separately applies and verifies the quote and approval/enqueue migrations. These tests do not constitute hosted staging acceptance. Paid generation and production deployment remain disabled until the full bridge is implemented and accepted.
 
 
 ## Workflow-node cloud contract foundation (2026-11-08)
