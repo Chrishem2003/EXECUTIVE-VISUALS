@@ -85,8 +85,10 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
   if(Buffer.byteLength(JSON.stringify(body||{}))>maxJobBytes)return response(413,{error:{code:"PAYLOAD_TOO_LARGE",message:"Cloud timeline request is too large."}});
   try{
    if(path==="/api/cloud/projects"&&method==="POST"){
-    const project=await service.projects.create({ownerId,name:body.name,description:body.description||"",settings:body.settings||{}});
-    return response(201,{project});
+    const requestedProjectId=body.projectId==null?null:String(body.projectId);
+    if(requestedProjectId!==null&&!safeId(requestedProjectId))return response(400,{error:{code:"PROJECT_ID_INVALID",message:"Cloud project ID must be a valid UUID."}});
+    const project=await service.projects.create({ownerId,projectId:requestedProjectId,name:body.name,description:body.description||"",settings:body.settings||{}});
+    return response(requestedProjectId?200:201,{project,linkedExistingOrLocal:Boolean(requestedProjectId)});
    }
    if(path==="/api/cloud/projects"&&method==="GET"){
     const projects=await service.projects.list({ownerId,limit:Number(query.limit)||50,offset:Number(query.offset)||0});
