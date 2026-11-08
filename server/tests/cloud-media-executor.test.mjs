@@ -1,8 +1,10 @@
 import test from "node:test";
+import { createHash } from "node:crypto";
 import assert from "node:assert/strict";
 import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { access, readdir } from "node:fs/promises";
 import { createCloudMediaExecutor } from "../cloud-media-executor.mjs";
 
 async function executable(directory, name, body) {
@@ -60,10 +62,25 @@ test("cloud media enhancement publishes a checksummed derivative using the claim
   const ffprobe = await executable(directory, "ffprobe", String.raw`printf '%s' '{"streams":[{"codec_type":"video","width":640,"height":360}],"format":{"duration":"1.0"}}'`);
   process.env.FFMPEG_PATH = ffmpeg;
   process.env.FFPROBE_PATH = ffprobe;
-  let published, publishedContent, cleaned = false;
+  let published, publishedContent, cleaned = false, signingCall; const publicationOrder=[];
   try {
     const execute = createCloudMediaExecutor({
       tempRoot: directory,
+      signC2paTransformation: async args => {
+        signingCall = args;
+        assert.equal(await readFile(args.inputPath, "utf8"), "rendered-media");
+        assert.equal(await readFile(args.sourcePath, "utf8"), "source-media");
+        assert.equal(args.sourceMimeType, "video/mp4");
+        assert.equal(args.mimeType, "video/mp4");
+        await writeFile(args.outputPath, "rendered-media-signed");
+        return {
+          status: "signed_and_verified",
+          validationState: "Valid",
+          sha256: createHash("sha256").update("rendered-media-signed").digest("hex"),
+          byteSize: Buffer.byteLength("rendered-media-signed"),
+          ingredientCount: 1
+        };
+      },
       mediaIO: {
         async materialize({ ownerId, assetId }) {
           assert.equal(ownerId, "verified-owner");
@@ -75,6 +92,7 @@ test("cloud media enhancement publishes a checksummed derivative using the claim
           };
         },
         async publish(args) {
+          publicationOrder.push("publish");
           published = args;
           publishedContent = await readFile(args.path, "utf8");
           return { id: "asset-output", name: args.filename, mediaType: args.mediaType };
@@ -87,8 +105,10 @@ test("cloud media enhancement publishes a checksummed derivative using the claim
         job_type: "media.color",
         input: { sourceAssetId: "asset-source", brightness: 0.1, contrast: 1, saturation: 1 }
       },
-      onProgress() {}
+      onProgress() {},
+      async assertLease() { publicationOrder.push("assert-lease"); }
     });
+    assert.deepEqual(publicationOrder,["assert-lease","publish"]);
     assert.equal(published.ownerId, "verified-owner");
     assert.equal(published.projectId, "project-2");
     assert.equal(published.derivativeOf, "asset-source");
@@ -96,9 +116,13 @@ test("cloud media enhancement publishes a checksummed derivative using the claim
     assert.equal(published.mediaType, "video/mp4");
     assert.equal(result.outputAsset.id, "asset-output");
     assert.equal(result.sha256.length, 64);
-    assert.equal(result.byteSize, Buffer.byteLength("rendered-media"));
+    assert.equal(result.byteSize, Buffer.byteLength("rendered-media-signed"));
     assert.equal(cleaned, true);
-    assert.equal(publishedContent, "rendered-media");
+    assert.equal(publishedContent, "rendered-media-signed");
+    assert.equal(signingCall.sourceAssetId, "asset-source");
+    assert.equal(signingCall.actionDescription, "Executed media.color media operation.");
+    assert.equal(published.metadata.c2pa.status, "signed_and_verified");
+    assert.equal(result.c2pa.ingredientCount, 1);
   } finally {
     if (previous === undefined) delete process.env.FFMPEG_PATH;
     else process.env.FFMPEG_PATH = previous;
@@ -414,6 +438,7 @@ test("cloud AI upscale publishes a separate image derivative with engine provena
     assert.equal(published.derivativeOf, "image-source");
     assert.equal(published.mediaType, "image/png");
     assert.equal(published.metadata.processing.method, "ai-super-resolution");
+    assert.equal(published.metadata.c2pa.status, "not_configured");
   } finally {
     if (previousBinary === undefined) delete process.env.REALESRGAN_NCNN_PATH; else process.env.REALESRGAN_NCNN_PATH = previousBinary;
     if (previousModels === undefined) delete process.env.REALESRGAN_MODEL_DIR; else process.env.REALESRGAN_MODEL_DIR = previousModels;
@@ -490,4 +515,32 @@ test("cloud AI upscale rejects video instead of treating frame-by-frame resampli
       onProgress() {}
     }), error => error.code === "UNSUPPORTED_MEDIA_TYPE");
   } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+
+test("aborted FFmpeg work waits for child exit before removing the private workspace",async()=>{
+ const directory=await mkdtemp(join(tmpdir(),"ev-cloud-abort-test-"));
+ const source=join(directory,"source.mp4"),marker=join(directory,"ffmpeg-started");
+ await writeFile(source,"source-media");
+ const ffmpeg=await executable(directory,"ffmpeg",'printf started > "$EV_FFMPEG_MARKER"; exec sleep 30');
+ let cleaned=false;const previous=process.env.EV_FFMPEG_MARKER;process.env.EV_FFMPEG_MARKER=marker;
+ try{
+  const execute=createCloudMediaExecutor({tempRoot:directory,ffmpeg,mediaIO:{
+   async materialize(){return{path:source,asset:{id:"asset-source",name:"clip.mp4",mediaType:"video/mp4",sha256:"c".repeat(64)},async cleanup(){cleaned=true;}};},
+   async publish(){throw new Error("An aborted operation must not publish.");}
+  }});
+  const controller=new AbortController();
+  const running=execute({job:{id:"job-abort",owner_id:"owner",job_type:"media.thumbnail",input:{sourceAssetId:"asset-source"}},signal:controller.signal,onProgress(){}});
+  let started=false;
+  for(let attempt=0;attempt<100;attempt++){try{await access(marker);started=true;break;}catch{await new Promise(resolve=>setTimeout(resolve,10));}}
+  assert.equal(started,true,"FFmpeg test process should have started");
+  controller.abort(new Error("test shutdown"));
+  await assert.rejects(running,error=>error.code==="JOB_CANCELLED");
+  assert.equal(cleaned,true);
+  const entries=await readdir(directory);
+  assert.equal(entries.some(name=>name.startsWith("ev-cloud-job-")),false,"temporary job workspace must be removed after FFmpeg exits");
+ }finally{
+  if(previous===undefined)delete process.env.EV_FFMPEG_MARKER;else process.env.EV_FFMPEG_MARKER=previous;
+  await rm(directory,{recursive:true,force:true});
+ }
 });
