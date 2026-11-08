@@ -38,6 +38,8 @@ end
 $atomic_publication_privileges$;
 
 set role service_role;
+insert into executive_visuals.asset_storage_cleanup(storage_bucket,object_path,reason)
+values('executive-visuals-media','22222222-2222-4222-8222-222222222222/77777777-7777-4777-8777-777777777777/attempt-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa.mp4','attempt_compensation_test');
 do $atomic_publication_behavior$
 declare
  v_job executive_visuals.jobs;
