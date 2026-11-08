@@ -66,14 +66,14 @@ function renderCanvas(){
  if(!state.graph)return '<div class="empty">'+esc(state.message)+'</div>';
  return '<div class="wf-canvas-scroll"><div id="wf-canvas" class="wf-canvas">'+renderGraphSvg()+state.graph.nodes.map(renderNode).join("")+'</div></div>';
 }
-export function renderVideoCostEstimate(){
+function renderVideoCostEstimate(){
  const quote=state.costEstimate;
  if(!quote)return '<section class="wf-cost-estimate"><b>Cost preflight</b><p>Configure an exact provider, model and duration, then estimate against a current source-attributed pricing schedule. This check never submits a generation job or reserves credits.</p></section>';
  if(!quote.available)return '<section class="wf-cost-estimate is-unavailable"><b>Estimate unavailable</b><p>'+esc(quote.reason||"No verified pricing is available for this configuration.")+'</p></section>';
  const breakdown=quote.breakdown||{video:0,audio:0,references:0,minimumApplied:0};
  return '<section class="wf-cost-estimate"><div class="wf-cost-heading"><b>Estimated generation cost</b><strong>'+esc(Number(quote.amount||0).toFixed(4))+' '+esc(quote.currency||"")+'</strong></div><p>'+esc(quote.provider||"")+' · '+esc(quote.model||"")+' · '+esc(String(quote.billableSeconds||0))+' billable seconds</p><dl><div><dt>Video</dt><dd>'+esc(breakdown.video.toFixed(4))+'</dd></div><div><dt>Audio</dt><dd>'+esc(breakdown.audio.toFixed(4))+'</dd></div><div><dt>References</dt><dd>'+esc(breakdown.references.toFixed(4))+'</dd></div><div><dt>Minimum applied</dt><dd>'+esc(breakdown.minimumApplied.toFixed(4))+'</dd></div></dl><small>Source: <a href="'+esc(quote.pricing?.sourceUrl||"#")+'" target="_blank" rel="noopener noreferrer">pricing schedule</a> · observed '+esc(quote.pricing?.observedAt||"")+' · expires '+esc(quote.pricing?.expiresAt||"")+'</small><p class="wf-cost-disclaimer">'+esc(quote.disclaimer||"Estimate only; the provider invoice is authoritative.")+'</p></section>';
 }
-function renderWorkflowWorkspace(){
+export function renderWorkflowWorkspace(){
  const nodes=state.graph?.nodes||[];
  const selected=nodes.find(n=>n.id===state.selectedNode)||nodes[0];
  return '<div id="workflow-workspace"><div class="wf-toolbar"><span class="runtime-status '+state.status+'"><i></i>'+esc(state.status==="ready"?"WORKFLOW SAVED":state.status==="auth"?"SIGN IN REQUIRED":state.status==="offline"?"API OFFLINE":"LOADING")+'</span><select id="wf-select">'+options(state.workflows.map(w=>({id:w.id,label:w.name+" · r"+w.revision})),state.graph?.id||"")+'</select><button class="secondary" data-wf-action="new">＋ New workflow</button><button class="secondary" data-wf-action="validate">Validate</button><button class="secondary" data-wf-action="plan">Preview run</button><button class="primary" data-wf-action="run">Run local workflow</button><button class="primary" data-wf-action="save">Save version</button></div>'+
