@@ -54,13 +54,13 @@ test("principal mapping stores verified provider subject, never credentials", as
 
 test("project membership and revision checks isolate tenants and roles", async () => {
   const db = makeD1();
-  const repo = createD1Repository({ db, id: (() => { let n=0; return () => [ownerId, projectId, otherId, "44444444-4444-4444-8444-444444444444"][n++]; })(), clock: () => "2026-11-08T00:00:00.000Z" });
+  const repo = createD1Repository({ db, id: (() => { let n=0; return () => [ownerId, otherId, projectId, "44444444-4444-4444-8444-444444444444"][n++]; })(), clock: () => "2026-11-08T00:00:00.000Z" });
   await repo.resolvePrincipal({ subject: ownerSubject, provider: "supabase" });
   await repo.resolvePrincipal({ subject: otherSubject, provider: "supabase" });
   const project = await repo.createProject({ ownerId, name: "Studio", settings: { fps: 24 } });
   assert.equal(project.id, projectId);
-  assert.equal((await repo.getProject({ actorId: otherId, projectId })).id, projectId);
   await repo.addMember({ actorId: ownerId, projectId, memberId: otherId, role: "viewer" });
+  assert.equal((await repo.getProject({ actorId: otherId, projectId })).id, projectId);
   await assert.rejects(repo.updateProject({ actorId: otherId, projectId, expectedRevision: 1, name: "Changed" }), { code: "D1_PROJECT_ACCESS_DENIED" });
   const changed = await repo.updateProject({ actorId: ownerId, projectId, expectedRevision: 1, name: "Studio v2" });
   assert.equal(changed.revision, 2);
