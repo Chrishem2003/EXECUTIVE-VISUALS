@@ -277,9 +277,9 @@ grant execute on function executive_visuals.approve_and_enqueue_video_workflow(u
 end;
 $approve_and_enqueue_video_workflow$;
 
-revoke all on function executive_visuals.approve_and_enqueue_video_workflow(uuid,uuid,uuid,uuid,text,text,jsonb,numeric,text)
+revoke all on function executive_visuals.approve_and_enqueue_video_workflow(uuid,uuid,uuid,uuid,text,text,text,jsonb,numeric,text)
   from public, anon, authenticated;
-grant execute on function executive_visuals.approve_and_enqueue_video_workflow(uuid,uuid,uuid,uuid,text,text,jsonb,numeric,text)
+grant execute on function executive_visuals.approve_and_enqueue_video_workflow(uuid,uuid,uuid,uuid,text,text,text,jsonb,numeric,text)
   to service_role;
 
      or p_idempotency_key is null or p_idempotency_key !~ '^[A-Za-z0-9._:-]{1,180}$'
@@ -399,7 +399,7 @@ grant execute on function executive_visuals.approve_and_enqueue_video_workflow(u
 end;
 $approve_and_enqueue_video_workflow$;
 
-revoke all on function executive_visuals.approve_and_enqueue_video_workflow(uuid,uuid,uuid,uuid,text,text,jsonb,numeric,text)
+revoke all on function executive_visuals.approve_and_enqueue_video_workflow(uuid,uuid,uuid,uuid,text,text,text,jsonb,numeric,text)
   from public, anon, authenticated;
-grant execute on function executive_visuals.approve_and_enqueue_video_workflow(uuid,uuid,uuid,uuid,text,text,jsonb,numeric,text)
+grant execute on function executive_visuals.approve_and_enqueue_video_workflow(uuid,uuid,uuid,uuid,text,text,text,jsonb,numeric,text)
   to service_role;
