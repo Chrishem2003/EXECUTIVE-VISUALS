@@ -56,7 +56,7 @@
 
 ## C2PA transformation-preservation expansion — current branch
 
-- The shared preserver accepts multiple source assets, checks each registered SHA-256, validates each embedded source manifest, and writes each credential-bearing source as a `parentOf` ingredient.
+- The shared preserver accepts multiple source assets, checks each registered SHA-256, validates each embedded source manifest, and writes the primary credential-bearing source as `parentOf` and additional sources as `componentOf` ingredients.
 - Local media output paths now call preservation before asset insertion, including AI upscaling and the FFmpeg finishing operations. Timeline masters include all enabled video, audio and still-image overlay sources; caption text assets are not treated as media ingredients.
 - Cloud timeline rendering now performs the same preservation step after rendering and before final probe/checksum/publication.
 - Signed outputs are re-hashed after preservation; metadata records the preservation result. Local cancellation and cloud abort signals are passed through the preservation step.
