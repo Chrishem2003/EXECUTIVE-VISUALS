@@ -85,6 +85,12 @@ test("official CAI SDK signs and validates a real embedded C2PA manifest",async(
   const transformedManifest=transformedStore.manifests[transformedStore.active_manifest];
   assert.ok(transformedManifest.ingredients.some(item=>item.manifest_data),"source C2PA manifest must remain embedded as a transformation ingredient");
   assert.notEqual(transformedStore.validation_state,"Invalid");
+  const blockedOutputPath=join(dir,"blocked-output.png");
+  await writeFile(blockedOutputPath,onePixelPng(10,20,30));
+  const blockedBefore=createHash("sha256").update(await readFile(blockedOutputPath)).digest("hex");
+  await assert.rejects(preserve({sourcePath,outputPath:blockedOutputPath,sourceMimeType:"image/png",outputMimeType:"image/png",expectedSourceSha256:createHash("sha256").update(output.buffer).digest("hex"),operation:"test:without-signer"}),error=>error.code==="C2PA_SIGNER_REQUIRED");
+  const blockedAfter=createHash("sha256").update(await readFile(blockedOutputPath)).digest("hex");
+  assert.equal(blockedAfter,blockedBefore,"missing production signer must not modify or publish C2PA-bearing media");
  }finally{await rm(dir,{recursive:true,force:true});}
 });
 
