@@ -61,6 +61,17 @@ export async function requestSupabasePasswordRecovery({supabaseUrl,publishableKe
  await request({supabaseUrl,publishableKey,path:"/auth/v1/recover?redirect_to="+encodeURIComponent(redirect.toString()),method:"POST",body:{email:normalizedEmail},fetchImpl});
  return {ok:true};
 }
+export function isSupabaseRecoveryToken({accessToken,userId,supabaseUrl,now=Date.now()}){
+ try{
+  const parts=String(accessToken||"").split(".");
+  if(parts.length!==3||!parts[1])return false;
+  const claims=JSON.parse(Buffer.from(parts[1],"base64url").toString("utf8"));
+  const issuer=new URL(supabaseUrl).origin+"/auth/v1";
+  const audience=Array.isArray(claims.aud)?claims.aud.includes("authenticated"):claims.aud==="authenticated";
+  const recovery=Array.isArray(claims.amr)&&claims.amr.some(entry=>entry&&entry.method==="recovery");
+  return Boolean(claims.sub===String(userId||"")&&claims.iss===issuer&&claims.role==="authenticated"&&audience&&recovery&&Number(claims.exp)>Math.floor(now/1000));
+ }catch{return false;}
+}
 export async function updateSupabasePassword({supabaseUrl,publishableKey,accessToken,password,fetchImpl=fetch}){
  const token=String(accessToken||"").trim(),secret=String(password||"");
  if(!token||token.length>8192)throw fail("A valid password-recovery session is required.","RECOVERY_SESSION_REQUIRED",401);
