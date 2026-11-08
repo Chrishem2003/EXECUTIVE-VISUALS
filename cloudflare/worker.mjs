@@ -74,7 +74,7 @@ async function authenticate(request, env) {
 
 async function requireSchema(db) {
   try {
-    const row = await db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'ev_users' LIMIT 1").first();
+    const row = await db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'ev_users' LIMIT 1").bind().first();
     return Boolean(row);
   } catch {
     return false;
