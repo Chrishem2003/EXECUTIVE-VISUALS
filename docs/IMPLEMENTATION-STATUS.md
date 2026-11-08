@@ -456,3 +456,19 @@ This is a runnable worker entry point, not a deployed worker. Do not set the ena
 - Connected the Enhancement Lab to cloud draft create/list routes. Prompts and reference IDs are excluded from browser local storage; legacy local transformation drafts are purged on startup.
 - Added separate owner/editor budget approval metadata (estimate, covering budget, currency, adapter/capability declaration) and audit/job events. The local SQLite plan API remains available for development.
 - Submission remains intentionally blocked with an explicit adapter-unavailable response. The checkbox is not independent proof of person consent; evidence-backed consent verification is still required before person replacement can execute. No provider generation, credit spend, cloud migration or deployment has occurred.
+
+
+## New implementation slice — asset provenance (PR #235)
+
+**Status:** implemented on `feat/asset-provenance-ledger-v1`; awaiting final CI/review before promotion.
+
+- New uploads receive a canonical SHA-256 application provenance record bound to asset ID, content hash, media type, byte size, source kind and ingest timestamp.
+- The record is persisted with the existing asset metadata and its hash is included in the upload audit event.
+- Authenticated `GET /api/assets/:assetId/provenance` verifies record integrity and asset-row binding through the existing asset authorization boundary.
+- Legacy assets without a record return `not_available`, not a false pass.
+- API integration tests cover successful verification and cross-account denial.
+- Unit tests cover deterministic records, tampering, checksum mismatch, malformed inputs and missing records.
+- The verifier explicitly returns `c2pa: not_checked`. This feature is not C2PA, a signature, identity proof, rights clearance or factual verification.
+- Full build includes `verify:provenance`; the broader server suite includes the API authorization integration test.
+
+**Next:** add the supported CAI C2PA SDK as a separate adapter after dependency review, certificate/trust policy design and supported-format tests. Do not claim signing/validation until real signed fixtures pass.
