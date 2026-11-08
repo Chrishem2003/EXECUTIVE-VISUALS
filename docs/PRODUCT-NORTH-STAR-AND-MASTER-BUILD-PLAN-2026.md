@@ -371,3 +371,37 @@ A second comparison against the actual current `main` exposed a critical integra
 - PR review submissions and inline review threads were empty for #172–#178 at the time checked. Absence of review comments is not approval.
 - A green build proves only the checks configured in that workflow. It does not prove production readiness, storage restore, tenant isolation, billing correctness or provider acceptance unless those tests explicitly cover them.
 - No code, database, provider settings, deployment or production resource was changed during this audit.
+
+
+---
+
+## 12. Implementation update — 8 November 2026: CAI verification foundation
+
+The first real C2PA implementation slice is now on feature branch `feat/c2pa-server-verification`.
+
+### Delivered in this branch
+
+- Pinned the maintained official `@contentauth/c2pa-node` package to `0.10.0` and synchronized the npm lockfile.
+- Added a server-only adapter using `Reader.fromAsset`, `Context` and the SDK's manifest `validation_state`.
+- Connected verification to the existing authenticated `GET /api/assets/:assetId/provenance` route after asset authorization.
+- Disabled remote manifest fetching and added file-backed parsing, byte-size checks and a default 250 MiB verification cap.
+- Preserved bounded SDK validation findings and mapped `Invalid`, `Valid` and `Trusted` to explicit application states.
+- Required an administrator-controlled PEM trust-anchor file before returning `valid_trusted`; without a configured trust policy the result is conservatively downgraded to `valid_untrusted`.
+- Added deterministic adapter tests and a native-SDK integration smoke test using a generated valid PNG.
+- Updated the Node runtime in CI and the Docker image to the Node 24 line; added C2PA verification to the build verification chain.
+- Revised README, developer operations guide, provenance guide and implementation status.
+
+### Remaining C2PA delivery gates
+
+1. Run the full CI suite, including native package installation and the real SDK smoke test.
+2. Add known-good signed image and supported video fixtures and byte-tampering cases.
+3. Verify certificate-chain, timestamp, revocation and trust-list behavior against a reviewed trust policy.
+4. Add parser isolation and enforceable CPU/memory/time limits.
+5. Implement a protected callback signer backed by KMS/HSM; production signing stays disabled.
+6. Add new manifest creation for derivatives, including source ingredients and transformation actions.
+7. Verify the final output after every supported proxy, transcode, timeline render and export operation.
+8. Test cross-user and cross-project denial through the actual provenance endpoint.
+
+### Release posture
+
+This branch is implementation work, not a production release. Do not merge to `main` or deploy until native SDK CI, genuine signed fixtures, security review, full user journey and isolated staging gates pass. No production service, shared database, production storage or signing key has been modified.
