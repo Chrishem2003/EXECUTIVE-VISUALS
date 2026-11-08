@@ -1,11 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, writeFile, readFile, stat, rm } from "node:fs/promises";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
 import { tmpdir } from "node:os";
-import { execFileSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { deflateSync, inflateSync } from "node:zlib";
 import { createC2paVerifier } from "../c2pa-verification.mjs";
+
+const fixtureDir = join(dirname(fileURLToPath(import.meta.url)), "fixtures", "c2pa");
 
 function crc32(buffer) {
   let crc = 0xffffffff;
@@ -50,34 +52,20 @@ function alterPngPixels(bytes) {
   if (!changed || offset !== bytes.length) throw new Error("Could not safely rewrite PNG pixel data");
   return Buffer.concat([signature, ...chunks]);
 }
-function createTestCertificates(dir) {
-  const rootKey = join(dir, "root.key"), rootCert = join(dir, "root.pem");
-  const leafKey = join(dir, "leaf.key"), leafCsr = join(dir, "leaf.csr"), leafCert = join(dir, "leaf.pem");
-  const extensions = join(dir, "leaf.ext");
-  execFileSync("openssl", ["ecparam", "-name", "prime256v1", "-genkey", "-noout", "-out", rootKey]);
-  execFileSync("openssl", ["req", "-x509", "-new", "-key", rootKey, "-sha256", "-days", "3", "-out", rootCert, "-subj", "/CN=Executive Visuals Test Root", "-addext", "basicConstraints=critical,CA:TRUE", "-addext", "keyUsage=critical,keyCertSign,cRLSign", "-addext", "subjectKeyIdentifier=hash"]);
-  execFileSync("openssl", ["genpkey", "-algorithm", "EC", "-pkeyopt", "ec_paramgen_curve:P-256", "-out", leafKey]);
-  execFileSync("openssl", ["req", "-new", "-key", leafKey, "-out", leafCsr, "-subj", "/CN=Executive Visuals Test Signer"]);
-  return writeFile(extensions, "basicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature\nextendedKeyUsage=emailProtection\nauthorityKeyIdentifier=keyid,issuer\nsubjectKeyIdentifier=hash\n")
-    .then(() => {
-      execFileSync("openssl", ["x509", "-req", "-in", leafCsr, "-CA", rootCert, "-CAkey", rootKey, "-CAcreateserial", "-out", leafCert, "-days", "3", "-sha256", "-extfile", extensions]);
-      return { rootCert, leafKey, leafCert };
-    });
-}
 
-let opensslAvailable = true;
-try { execFileSync("openssl", ["version"], { stdio: "ignore" }); } catch { opensslAvailable = false; }
-
-test("real CAI SDK validates a cryptographically signed PNG, applies trust anchors and rejects altered pixels", { skip: opensslAvailable ? false : "OpenSSL is required to generate the ephemeral test certificate chain" }, async t => {
+test("real CAI SDK validates signed media, applies explicit signer policy and rejects altered pixels", async t => {
   const dir = await mkdtemp(join(tmpdir(), "ev-c2pa-signed-"));
   t.after(() => rm(dir, { recursive: true, force: true }));
-  const { rootCert, leafKey, leafCert } = await createTestCertificates(dir);
   const inputPath = join(dir, "source.png"), signedPath = join(dir, "signed.png"), tamperedPath = join(dir, "tampered.png");
+  const certificateChain = await readFile(join(fixtureDir, "es256-test-only.chain.pem"));
+  const privateKey = await readFile(join(fixtureDir, "es256-test-only.private.pem"));
+  const leafCertificate = certificateChain.toString("utf8").match(/-----BEGIN CERTIFICATE-----[\\s\\S]*?-----END CERTIFICATE-----/);
+  assert.ok(leafCertificate, "upstream test fixture must contain an end-entity certificate");
+  const allowedPath = join(dir, "allowed-signers.pem");
+  await writeFile(allowedPath, leafCertificate[0] + "\\n");
   await writeFile(inputPath, onePixelPng());
 
   const { Builder, LocalSigner } = await import("@contentauth/c2pa-node");
-  const certificateChain = Buffer.concat([await readFile(leafCert), await readFile(rootCert)]);
-  const privateKey = await readFile(leafKey);
   const signer = LocalSigner.newSigner(certificateChain, privateKey, "es256");
   const builder = await Builder.newAsync();
   builder.setIntent({ create: "http://cv.iptc.org/newscodes/digitalsourcetype/algorithmicMedia" });
@@ -88,11 +76,13 @@ test("real CAI SDK validates a cryptographically signed PNG, applies trust ancho
   const untrusted = await untrustedVerifier({ path: signedPath, mimeType: "image/png", size: signedSize });
   assert.equal(untrusted.manifestPresent, true);
   assert.equal(untrusted.status, "valid_untrusted");
+  assert.ok(untrusted.validationFindings.some(item => item.code === "signingCredential.untrusted"));
 
-  const trustedVerifier = createC2paVerifier({ sdkLoader: () => import("@contentauth/c2pa-node"), allowedSigners: leafCert });
+  const trustedVerifier = createC2paVerifier({ sdkLoader: () => import("@contentauth/c2pa-node"), allowedSigners: allowedPath });
   const trusted = await trustedVerifier({ path: signedPath, mimeType: "image/png", size: signedSize });
   assert.equal(trusted.manifestPresent, true);
   assert.equal(trusted.status, "valid_trusted", JSON.stringify(trusted, null, 2));
+  assert.equal(trusted.trustPolicyType, "allowed_list");
 
   const signedBytes = await readFile(signedPath);
   await writeFile(tamperedPath, alterPngPixels(signedBytes));
