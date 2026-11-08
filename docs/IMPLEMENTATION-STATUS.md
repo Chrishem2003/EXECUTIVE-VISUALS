@@ -503,3 +503,12 @@ This is a runnable worker entry point, not a deployed worker. Do not set the ena
 - Added database-backed tests and included `verify:evidence-ledger` in the full build gate. README and dedicated lifecycle/API documentation updated.
 - The AI Director now loads evidence records through an authorized project-scoped endpoint and connects only verified records whose source hash and project scope match a resolvable graph target. Submitted/rejected records remain review-only; unresolved targets are disclosed as disconnected.
 - Limitation: the current evidence ledger is asset-attached and review-driven. Next build work is revision-aware evidence invalidation and broader proof capture/review UX. Review acceptance is not a factual/legal guarantee.
+
+
+## Creative graph revision baselines (feature branch)
+- Added append-only per-project graph snapshots with monotonically increasing revisions and SHA-256 graph hashes.
+- Added owner/editor-only baseline creation and authorized project-member retrieval APIs. The server validates graph size, node types/statuses, unique IDs, matching project node and edge endpoints.
+- AI Director can record a review baseline and compare the current graph to it, listing changed/added/removed nodes and downstream potentially stale items.
+- Fingerprints include node content and explicit relationships but exclude project-scope membership edges to avoid broad false positives. Removed nodes use the baseline graph for impact traversal.
+- Results are review candidates only; no automatic timeline mutation, export deletion, publication block or approval invalidation is claimed. README and dedicated guidance updated.
+- Added `verify:creative-graph-snapshot` tests for revision increments, hash changes, project identity, invalid edges and snapshot normalization.
