@@ -108,3 +108,8 @@ Project collaboration in the Runtime Console now includes a visible member list,
 
 
 The in-app **Release readiness** workspace provides the current merged/in-progress/blocked inventory. See [Full-System Release Readiness](docs/FULL-SYSTEM-RELEASE-READINESS.md) and [Persistence and Release Blockers](docs/PERSISTENCE-AND-RELEASE-BLOCKERS.md) for detailed dependencies and infrastructure requirements.
+
+
+## Cloudflare D1 staging foundation
+
+The first isolated D1 metadata schema and tenant-scoped repository adapter are under review; they are **not yet connected to the deployed Worker and have not been applied to the remote staging database**. The implementation maps an already verified external identity subject to a D1 principal and stores metadata only. It does not store passwords, tokens, media bytes or provider credentials. See [D1 Staging Foundation](docs/D1-STAGING-FOUNDATION.md). Run `npm run verify:d1` for the local migration and repository tests. Do not use remote bindings or apply remote migrations until the PR has passed CI and the staging target has been re-verified.
