@@ -58,5 +58,8 @@
   },
   "dependencies": {
     "@contentauth/c2pa-node": "0.10.0"
+  },
+  "engines": {
+    "node": ">=22.23.4 <23"
   }
 }
