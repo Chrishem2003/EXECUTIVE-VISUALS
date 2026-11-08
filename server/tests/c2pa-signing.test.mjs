@@ -121,6 +121,40 @@ test("CallbackSigner signs transformed bytes and preserves original source ingre
   assert.ok(calls >= 2, "the KMS/HSM callback must be invoked for each derivative");
 });
 
+test("first-generation signing records the input itself as the parent ingredient", async t => {
+  const dir = await mkdtemp(join(tmpdir(), "ev-c2pa-first-generation-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const certificateChain = await readFile(join(fixtureDir, "es256-test-only.chain.pem"));
+  const privateKey = await readFile(join(fixtureDir, "es256-test-only.private.pem"));
+  const inputPath = join(dir, "original.png"), outputPath = join(dir, "signed-original.png");
+  const originalBytes = onePixelPng(15, 120, 220);
+  await writeFile(inputPath, originalBytes);
+  const sign = createC2paTransformationSigner({
+    enabled: true, mediaRoot: dir, certificateChain, keyRef: "test-first-generation-key",
+    requireTimestamp: false,
+    signingProvider: {
+      async sign({ payload }) {
+        const signer = createSign("SHA256");
+        signer.update(payload); signer.end();
+        return signer.sign(privateKey);
+      }
+    },
+    sdkLoader: () => import("@contentauth/c2pa-node")
+  });
+  const result = await sign({
+    inputPath, outputPath, mimeType: "image/png",
+    actionDescription: "First signed original"
+  });
+  assert.equal(result.status, "signed_and_verified");
+  assert.equal(result.sourceAndInputDiffer, false);
+  assert.equal(result.ingredientCount, 1);
+  const { Reader, Context } = await import("@contentauth/c2pa-node");
+  const reader = await Reader.fromAsset({ path: outputPath, mimeType: "image/png" }, new Context({ verify: { verifyAfterReading: true, verifyTrust: false } }));
+  const parent = reader.getActive().ingredients.find(ingredient => ingredient.relationship === "parentOf");
+  const digest = (await import("node:crypto")).createHash("sha256").update(originalBytes).digest("hex");
+  assert.equal(parent.instance_id, "urn:sha256:" + digest);
+});
+
 test("signer rejects output overwrite and paths outside its media root", async t => {
   const dir = await mkdtemp(join(tmpdir(), "ev-c2pa-path-"));
   t.after(() => rm(dir, { recursive: true, force: true }));
