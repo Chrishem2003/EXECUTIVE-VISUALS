@@ -138,7 +138,7 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     }
     const jobId=randomUUID();
     const rows=await request("jobs?select=id,owner_id,project_id,job_type,status,progress,input,output,error,created_at,updated_at",{method:"POST",body:{id:jobId,owner_id:ownerId,project_id:asset.projectId||null,job_type:jobType,status:"queued",progress:0,input,idempotency_key:key}});
-    if(!Array.isArray(rows)||rows.length!==1||rows[0].id!==jobId||rows[0].owner_id!==ownerId||rows[0].job_type!==jobType||rows[0].status!=="queued")
+    if(!Array.isArray(rows)||rows.length!==1||rows[0].id!==jobId||rows[0].owner_id!==ownerId||rows[0].project_id!==(asset.projectId||null)||rows[0].job_type!==jobType||rows[0].status!=="queued")
      throw new Error("Cloud media job creation returned an invalid receipt.");
     await request("job_events",{method:"POST",body:{job_id:jobId,owner_id:ownerId,event_type:"job.queued",event_data:{jobType,sourceAssetId:asset.id}},prefer:"return=minimal"});
     return response(202,{job:rows[0],idempotentReplay:false});
