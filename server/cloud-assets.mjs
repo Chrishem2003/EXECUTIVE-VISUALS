@@ -19,6 +19,11 @@ function validUuid(value,label) {
 function plainObject(value) {
   return value!==null && typeof value==="object" && !Array.isArray(value);
 }
+function canonicalJson(value) {
+  if(Array.isArray(value))return "["+value.map(canonicalJson).join(",")+"]";
+  if(value!==null&&typeof value==="object")return "{"+Object.keys(value).sort().map(key=>JSON.stringify(key)+":"+canonicalJson(value[key])).join(",")+"}";
+  return JSON.stringify(value);
+}
 function safeName(value) {
   const name=String(value||"upload").normalize("NFKC").replace(/[\\/\u0000-\u001f\u007f]/g,"_").replace(/[^\p{L}\p{N}._() -]/gu,"_").trim().slice(0,180);
   return name||"upload";
@@ -179,7 +184,7 @@ export function createCloudAssetRepository({
       const verifyAsset=row=>{
         const suffix=typeof row?.object_path==="string"&&row.object_path.startsWith(assetPrefix)?row.object_path.slice(assetPrefix.length):"";
         const validObjectPath=suffix==="original."+EXTENSIONS.get(mediaType)||attemptPattern.test(suffix);
-        if(!row||row.id!==id||row.owner_id!==ownerId||(row.project_id||null)!==projectId||!validObjectPath||row.storage_bucket!=="executive-visuals-media"||row.original_name!==name||row.media_type!==mediaType||row.derivative_of!==(derivativeOf||null)||row.deleted_at||Number(row.byte_size)!==file.size||row.sha256!==file.sha256||JSON.stringify(row.metadata||{})!==JSON.stringify(metadata))throw new Error("Existing publication asset does not match its reserved identity and checksum.");
+        if(!row||row.id!==id||row.owner_id!==ownerId||(row.project_id||null)!==projectId||!validObjectPath||row.storage_bucket!=="executive-visuals-media"||row.original_name!==name||row.media_type!==mediaType||row.derivative_of!==(derivativeOf||null)||row.deleted_at||Number(row.byte_size)!==file.size||row.sha256!==file.sha256||canonicalJson(row.metadata||{})!==canonicalJson(metadata))throw new Error("Existing publication asset does not match its reserved identity and checksum.");
         return publicAsset(row);
       };
       const finalize=async row=>{
