@@ -35,7 +35,7 @@ At the time this guide was revised, the published package was `0.10.0`. Review t
 
 ### Implemented verification adapter
 
-The current adapter lives in `server/c2pa-verification.mjs` and is invoked by `GET /api/assets/:assetId/provenance` after the existing asset access check. It:
+The current adapter lives in `server/c2pa-verification.mjs` and is invoked by `GET /api/assets/:assetId/provenance` after the existing asset access check. The first allowlist covers JPEG, PNG, WebP, GIF, MP4, MOV, MP3, M4A, WAV and PDF where the corresponding file extension matches. Other file types are explicitly returned as `not_supported` without calling the native parser. It:
 
 - Uses `Reader.fromAsset({ path, mimeType }, new Context(...))` against the server-owned media file; it does not accept browser-supplied paths or verification results.
 - Disables remote manifest fetching to prevent parser-triggered outbound URL requests.
@@ -81,7 +81,7 @@ Do not infer the SDK's trust result from a manifest being present or from an emp
 
 The application API should distinguish at least:
 
-- `not_available`: no C2PA manifest found.
+- `not_available`: no C2PA manifest found.\n- `not_supported`: the media type is not in the current adapter allowlist or the file extension does not match its declared MIME type.
 - `invalid`: cryptographic or structural validation failed.
 - `valid_untrusted`: cryptographic validation succeeded, but the configured signer/trust policy does not establish trust.
 - `valid_trusted`: cryptographic validation and the explicitly configured trust policy both succeeded.
