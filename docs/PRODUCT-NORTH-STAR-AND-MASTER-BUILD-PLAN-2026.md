@@ -422,3 +422,8 @@ A server-only `server/c2pa-signing.mjs` adapter is implemented on `feat/c2pa-pro
 - GitHub Quality checks passed on the latest full build and PostgreSQL publication/cleanup integration run.
 
 This is still not production signing: the default `cloud-worker-process` does not instantiate a KMS/HSM provider, no production certificate or TSA is configured, and local timeline render/export is not connected. Keep `C2PA_SIGNING_ENABLED=false`. Next steps are protected provider provisioning and review, production certificate/rotation/revocation policy, timestamp trust, additional video/audio format fixtures, and timeline/export integration.
+
+
+## Delivered integration update — Creative Intelligence Graph
+
+The AI Director now reads cloud production records, proof candidates, character bibles, episode scenes/shots, private project assets and cloud timeline documents into one explicit dependency graph. It connects only persisted IDs and references (including timeline markers and clip asset IDs), separates project-scope membership from authored relationships, and computes downstream review impact without changing source records. README usage guidance and automated graph tests are included. Remaining graph work: connect evidence records with durable source IDs, introduce project-wide scene/shot identifiers for non-series productions, and propagate revision/staleness state into exports and publishing.
