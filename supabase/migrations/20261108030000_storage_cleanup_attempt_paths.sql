@@ -6,6 +6,9 @@ alter table executive_visuals.asset_storage_cleanup
 alter table executive_visuals.asset_storage_cleanup
   drop constraint if exists asset_storage_cleanup_check;
 
+alter table executive_visuals.asset_storage_cleanup
+  drop constraint if exists asset_storage_cleanup_check1;
+
 do $existing_cleanup_paths$
 declare
   invalid_path text;
