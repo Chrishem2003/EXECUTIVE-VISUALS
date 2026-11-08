@@ -118,7 +118,7 @@ export function createCloudStorage({
       });
       return { bucket:BUCKET, path:objectPath, size:bytes.byteLength, contentType };
     },
-    async uploadFile(objectPath,filePath,contentType) {
+    async uploadFile(objectPath,filePath,contentType,{upsert=false}={}) {
       const path=safeObjectPath(objectPath);
       if(!MIME_TYPES.has(contentType))throw new Error("Unsupported cloud media content type.");
       const info=await stat(filePath);
@@ -131,7 +131,7 @@ export function createCloudStorage({
       try{
         const response=await fetchImpl(base+"/storage/v1/object/"+BUCKET+"/"+path,{
           method:"POST",
-          headers:{apikey:serviceRoleKey,authorization:"Bearer "+serviceRoleKey,"content-type":contentType,"content-length":String(info.size),"cache-control":"max-age=3600","x-upsert":"false"},
+          headers:{apikey:serviceRoleKey,authorization:"Bearer "+serviceRoleKey,"content-type":contentType,"content-length":String(info.size),"cache-control":"max-age=3600","x-upsert":upsert?"true":"false"},
           body:meter,duplex:"half",signal:controller.signal
         });
         await streamDone;
