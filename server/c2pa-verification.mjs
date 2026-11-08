@@ -1,4 +1,4 @@
-import { statSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { extname, resolve } from "node:path";
 
 const DEFAULT_MAX_BYTES = 250 * 1024 * 1024;
@@ -89,10 +89,16 @@ export function createC2paVerifier({
       return errorResult("C2PA_ASSET_UNAVAILABLE");
     }
     if (actualSize !== size) return errorResult("C2PA_ASSET_SIZE_MISMATCH");
+    let trustAnchorPem = "";
     if (trustAnchors) {
       try {
-        const anchorInfo = statSync(resolve(trustAnchors));
+        const anchorPath = resolve(trustAnchors);
+        const anchorInfo = statSync(anchorPath);
         if (!anchorInfo.isFile() || anchorInfo.size < 1 || anchorInfo.size > 4 * 1024 * 1024) {
+          return errorResult("C2PA_TRUST_ANCHORS_INVALID");
+        }
+        trustAnchorPem = readFileSync(anchorPath, "utf8");
+        if (!trustAnchorPem.includes("-----BEGIN CERTIFICATE-----")) {
           return errorResult("C2PA_TRUST_ANCHORS_INVALID");
         }
       } catch {
@@ -106,7 +112,7 @@ export function createC2paVerifier({
       if (typeof Sdk?.Reader?.fromAsset !== "function" || typeof Sdk?.Context !== "function") {
         return errorResult("C2PA_SDK_API_UNSUPPORTED");
       }
-      const { context, hasTrustPolicy } = buildContext(Sdk, trustAnchors ? resolve(trustAnchors) : "");
+      const { context, hasTrustPolicy } = buildContext(Sdk, trustAnchorPem);
       const reader = await Sdk.Reader.fromAsset({ path: absolutePath, mimeType }, context);
       if (!reader) {
         return {
