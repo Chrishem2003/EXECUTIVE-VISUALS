@@ -1,0 +1,43 @@
+# Evidence intelligence and review ledger
+
+**Status:** durable, project-scoped evidence submission and human-review APIs are implemented on the feature branch. The ledger is append-only at the event-history level. It does not claim that a reviewer can establish objective truth merely by accepting a source.
+
+## Evidence lifecycle
+
+1. An authenticated project editor submits an evidence record against an existing source asset.
+2. The API snapshots the source asset SHA-256 and stores the target reference (project, scene, shot, timeline or asset), evidence kind, claim, method, source reference, observation time and notes.
+3. Every submission creates a `submitted` event.
+4. An authorized project owner, editor or reviewer may mark the record `needs_review`, `verified` or `rejected`, with a review note.
+5. Every review creates a separate event recording the reviewer and decision. A terminal `verified` or `rejected` record cannot be silently rewritten; a new record is required to supersede it.
+
+The source asset row is referenced by foreign key, and the evidence record retains the SHA-256 value that was current at submission. If the source is replaced by a derivative, the evidence record continues to identify the original source hash.
+
+## API
+
+All routes require an authenticated session and the same project/asset access boundary as the asset API.
+
+- `GET /api/evidence?projectId=:projectId` — list evidence for an authorized project for use in the Creative Intelligence Graph.\n- `GET /api/assets/:assetId/evidence` — list evidence submitted against an asset.
+- `POST /api/assets/:assetId/evidence` — submit evidence. Body fields: `targetType`, `targetId`, `kind`, `claim`, and optional `method`, `sourceRef`, `observedAt`, `note`. The server always assigns `submitted`; clients cannot self-verify.
+- `POST /api/assets/:assetId/evidence/:evidenceId/review` — review with `status` (`needs_review`, `verified`, `rejected`) and optional `reviewNote`. Owners, editors and reviewers may review project evidence.
+- `GET /api/assets/:assetId/evidence/:evidenceId/events` — retrieve the append-only event history.
+
+Project viewers may read evidence but cannot submit or review it. Personal assets are restricted to their owner. Missing or inaccessible assets and records return not-found responses to avoid leaking cross-project identifiers.
+
+## Interpretation and limitations
+
+- `submitted` means a user supplied a source and claim; it is not verification.
+- `needs_review` means a human review is still required.
+- `verified` means an authorized reviewer accepted the submitted evidence for the stated target and scope. It is not a legal finding, identity proof, rights clearance or guarantee that every statement is true.
+- C2PA cryptographic validation, application provenance integrity, rights attestations and human evidence review remain separate signals. None should be silently promoted into another.
+- The ledger captures an explicit target reference. The AI Director loads records only through the authorized project endpoint and resolves the target against the current project's graph. Unresolved targets, project mismatches and source-hash mismatches remain disconnected and review-only. Only a verified record with a matching source hash and resolvable target creates a supporting edge.
+
+## Validation
+
+Run `npm run verify:evidence-ledger` for database-backed tests covering source hash snapshots, submission events, reviewer attribution, terminal review behavior and input validation. The command is included in `npm run build`.
+
+
+## Source integrity enforcement
+
+Evidence submission and reviewer decisions verify the current managed file bytes against both the stored byte size and the asset's recorded SHA-256. If the file is missing, has changed size, or hashes differently, the API returns `EVIDENCE_SOURCE_INTEGRITY_FAILED` and does not create or approve the evidence record. Restore the original source through a controlled recovery process; do not overwrite the evidence record or substitute another file under the same asset ID. Every review decision (`verified`, `needs_review`, or `rejected`) requires a reason of at least eight characters; the reviewer identity, decision and reason are retained in the append-only event history. The AI Director displays a shortened source SHA-256 fingerprint, method and source reference to help reviewers identify the exact source.
+
+This check proves that the bytes currently being reviewed match the bytes recorded at ingest. It does not prove the claim itself, establish rights or consent, or replace C2PA signature/trust validation.
