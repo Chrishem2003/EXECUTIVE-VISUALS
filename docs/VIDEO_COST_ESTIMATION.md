@@ -9,7 +9,7 @@ Set `VIDEO_MODEL_PRICING_JSON` on the API service to a JSON array of explicitly 
 - `provider` and exact `model` identifiers.
 - ISO 4217 `currency`.
 - HTTPS `sourceUrl`, `observedAt`, and `expiresAt` timestamps.
-- `ratesPerSecond`, keyed by supported resolution (`provider_default`, `480p`, `720p`, `1080p`, `1440p`, or `2160p`).
+- `ratesPerSecond`, keyed by supported resolution (`provider_default`, `480p`, `720p`, `1080p`, `1440p`, `2160p`, `1k`, `2k`, or `4k`).
 - Optional `minimumCharge`, `audioSurchargePerSecond`, `referenceImageFee`, and `billingIncrementSeconds`.
 
 Pricing records are rejected if malformed, duplicated for the same provider/model, missing source attribution, or using a non-HTTPS source. Estimates are unavailable when the record is expired, not yet valid, or does not cover the requested resolution. The estimator never substitutes a different model or guesses a price. Keep the JSON configuration current and review provider terms before enabling remote execution.
