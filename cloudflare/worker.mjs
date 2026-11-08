@@ -140,7 +140,7 @@ async function proxyAuth(request, env) {
   const upstreamRequest = new Request(target, {
     method: request.method,
     headers,
-    body: request.method === "GET" || request.method === "HEAD" ? undefined : request.body,
+    body: request.method === "GET" || request.method === "HEAD" ? undefined : await request.arrayBuffer(),
     redirect: "manual"
   });
   const upstream = await fetch(upstreamRequest);
