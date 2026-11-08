@@ -96,6 +96,7 @@ if (!atomicPublicationSql.includes("create or replace function executive_visuals
  || !atomicPublicationSql.includes("set status = 'published'")) {
   issues.push("Asset metadata and publication ledger must finalize atomically under the active worker lease.");
 }
+if (!atomicPublicationSql.includes("add column if not exists derivative_of uuid")) issues.push("Cloud assets must persist explicit derivative lineage.");
 if (!atomicPublicationSql.includes("create trigger ev_assets_validate_derivative_scope")
  || !atomicPublicationSql.includes("parent_asset.owner_id is distinct from new.owner_id")
  || !atomicPublicationSql.includes("parent_asset.project_id is distinct from new.project_id")) {
