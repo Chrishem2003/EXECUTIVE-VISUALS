@@ -89,7 +89,7 @@ test("real CAI SDK validates a cryptographically signed PNG, applies trust ancho
   assert.equal(untrusted.manifestPresent, true);
   assert.equal(untrusted.status, "valid_untrusted");
 
-  const trustedVerifier = createC2paVerifier({ sdkLoader: () => import("@contentauth/c2pa-node"), trustAnchors: rootCert });
+  const trustedVerifier = createC2paVerifier({ sdkLoader: () => import("@contentauth/c2pa-node"), allowedSigners: leafCert });
   const trusted = await trustedVerifier({ path: signedPath, mimeType: "image/png", size: signedSize });
   assert.equal(trusted.manifestPresent, true);
   assert.equal(trusted.status, "valid_trusted", JSON.stringify(trusted, null, 2));
