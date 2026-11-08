@@ -23,7 +23,7 @@ test("rejects oversized source assets before loading the native SDK",async()=>{
  const dir=await mkdtemp(join(tmpdir(),"ev-c2pa-size-limit-"));
  try{
   const sourcePath=join(dir,"source.png"),outputPath=join(dir,"output.png");
-  await truncate(sourcePath,2048);await writeFile(outputPath,"output");
+  await writeFile(sourcePath,Buffer.alloc(0));await truncate(sourcePath,2048);await writeFile(outputPath,"output");
   let sdkLoaded=false;
   const preserve=createC2paTransformationPreserver({maxBytes:1024,sdkLoader:async()=>{sdkLoaded=true;return fakeSdk();}});
   await assert.rejects(preserve({sourcePath,sourceMimeType:"image/png",outputPath,outputMimeType:"image/png"}),error=>error.code==="C2PA_TRANSFORM_SIZE_UNSUPPORTED"&&error.status===413);
@@ -73,7 +73,7 @@ test("cancellation interrupts a streaming checksum before native parsing",async(
  const dir=await mkdtemp(join(tmpdir(),"ev-c2pa-hash-cancel-"));
  try{
   const sourcePath=join(dir,"large-source.bin"),outputPath=join(dir,"output.png");
-  await truncate(sourcePath,96*1024*1024);await writeFile(outputPath,"output");
+  await writeFile(sourcePath,Buffer.alloc(0));await truncate(sourcePath,96*1024*1024);await writeFile(outputPath,"output");
   const controller=new AbortController();
   setTimeout(()=>controller.abort(),1);
   let sdkLoaded=false;
