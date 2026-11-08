@@ -16,7 +16,7 @@ Verified in this slice:
 - Bounded parser input and findings; the runtime Docker payload excludes test fixtures and includes a build guard against shipping them.
 - README and operations guidance explain the administrator-managed PEM trust bundle; production signing keys are not configured.
 
-Still open and deliberately not represented as complete: certificate-chain and timestamp/revocation policy validation beyond the current test fixture, video-format signed fixtures, ingredient-aware transformation manifests, protected KMS/HSM signing, and the end-to-end preservation of lineage through every media transformation. Production remains untouched. Do not merge until the PR review is complete and the remaining C2PA trust semantics are reviewed against the pinned SDK and deployment trust policy.
+Still open and deliberately not represented as complete: certificate-chain and timestamp/revocation policy validation beyond the current test fixture, additional video/audio container fixtures beyond the new MP4 coverage, ingredient-aware transformation manifests, protected KMS/HSM signing, and the end-to-end preservation of lineage through every media transformation. Production remains untouched. Do not merge until the PR review is complete and the remaining C2PA trust semantics are reviewed against the pinned SDK and deployment trust policy.
 
 ## 1. Product North Star
 
