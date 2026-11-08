@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, writeFile, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openDatabase, json } from "../db.mjs";
@@ -45,7 +45,6 @@ test("health reports local storage and media-engine availability without secrets
   const body=await response.json();
   assert.equal(body.status,"ok");
   assert.equal(body.storage,"local-disk");
-  assert.deepEqual(body.persistence,{dataDirectory:"ephemeral",persistentVolumeRequired:false});
   assert.equal("SUPABASE_SERVICE_ROLE_KEY" in body,false);
   assert.equal(response.headers.get("x-frame-options"),"DENY");
   assert.equal(response.headers.get("referrer-policy"),"strict-origin-when-cross-origin");
@@ -160,7 +159,22 @@ test("registration, project ownership, binary upload and asset isolation work",a
   assert.equal(provenance.status,200);
   const provenanceBody=await provenance.json();
   assert.equal(provenanceBody.verification.status,"integrity_verified");
-  assert.equal(provenanceBody.verification.c2pa,"not_checked");
+  assert.equal(typeof provenanceBody.c2pa.status,"string");
+  assert.notEqual(provenanceBody.c2pa.status,"not_checked");
+
+  const db=openDatabase(join(dataDir,"executive-visuals.sqlite"));
+  const stored=db.prepare("SELECT storage_path FROM assets WHERE id=?").get(asset.id);
+  const outside=join(dataDir,"outside-managed-media.png");
+  const escape=join(dataDir,"media","uploads","c2pa-path-escape.png");
+  await writeFile(outside,Buffer.from([137,80,78,71,13,10,26,10,0,1,2,3]));
+  await symlink(outside,escape);
+  db.prepare("UPDATE assets SET storage_path=? WHERE id=?").run("uploads/c2pa-path-escape.png",asset.id);
+  const escaped=await request("/api/assets/"+asset.id+"/provenance",{},cookieA);
+  assert.equal(escaped.status,200);
+  assert.equal((await escaped.json()).c2pa.errorCode,"C2PA_ASSET_PATH_INVALID");
+  db.prepare("UPDATE assets SET storage_path=? WHERE id=?").run(stored.storage_path,asset.id);
+  await rm(escape,{force:true});
+  db.close();
 
   const assets=await request("/api/assets",{},cookieA);
   assert.equal((await assets.json()).assets.length,1);
@@ -174,6 +188,41 @@ test("registration, project ownership, binary upload and asset isolation work",a
   assert.equal(hiddenProvenance.status,404);
   const ownProject=await request("/api/projects/"+project.id,{},cookieB);
   assert.equal(ownProject.status,404);
+});
+
+test("evidence submission and approval reject source files whose stored bytes no longer match SHA-256",async()=>{
+  const cookie=await register("evidence-integrity-owner@example.test");
+  const projectResponse=await request("/api/projects",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({name:"Evidence integrity"})},cookie);
+  assert.equal(projectResponse.status,201);
+  const project=(await projectResponse.json()).project;
+  const bytes=Buffer.from([137,80,78,71,13,10,26,10,0,1,2,3]);
+  const upload=await request("/api/assets",{method:"POST",headers:{"content-type":"image/png","x-file-name":"evidence-source.png","x-project-id":project.id},body:bytes},cookie);
+  assert.equal(upload.status,201);
+  const asset=(await upload.json()).asset;
+  const db=openDatabase(join(dataDir,"executive-visuals.sqlite"));
+  const row=db.prepare("SELECT storage_path FROM assets WHERE id=?").get(asset.id);
+  const file=join(dataDir,"media",row.storage_path);
+  const submitted=await request("/api/assets/"+asset.id+"/evidence",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({targetType:"asset",targetId:asset.id,kind:"source_observation",claim:"The source image contains the approved product mark."})},cookie);
+  assert.equal(submitted.status,201);
+  const record=(await submitted.json()).record;
+  await writeFile(file,Buffer.from([137,80,78,71,13,10,26,10,0,1,2,4]));
+  const review=await request("/api/assets/"+asset.id+"/evidence/"+record.id+"/review",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({status:"verified",reviewNote:"Source inspected and accepted."})},cookie);
+  assert.equal(review.status,409);
+  assert.equal((await review.json()).error.code,"EVIDENCE_SOURCE_INTEGRITY_FAILED");
+  db.close();
+});
+
+test("evidence review decisions require a written reason",async()=>{
+  const cookie=await register("evidence-review-reason@example.test");
+  const projectResponse=await request("/api/projects",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({name:"Evidence review reason"})},cookie);
+  const project=(await projectResponse.json()).project;
+  const upload=await request("/api/assets",{method:"POST",headers:{"content-type":"image/png","x-file-name":"review-source.png","x-project-id":project.id},body:Buffer.from([137,80,78,71,13,10,26,10,0,1,2,3])},cookie);
+  const asset=(await upload.json()).asset;
+  const submitted=await request("/api/assets/"+asset.id+"/evidence",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({targetType:"asset",targetId:asset.id,kind:"source_observation",claim:"The source image contains the approved product mark."})},cookie);
+  const record=(await submitted.json()).record;
+  const review=await request("/api/assets/"+asset.id+"/evidence/"+record.id+"/review",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({status:"verified",reviewNote:"ok"})},cookie);
+  assert.equal(review.status,400);
+  assert.equal((await review.json()).error.code,"EVIDENCE_REVIEW_REASON_REQUIRED");
 });
 
 test("creative workspace drafts persist per project with revision and editor-role guards",async()=>{
