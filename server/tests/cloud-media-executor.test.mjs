@@ -5,6 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createCloudMediaExecutor } from "../cloud-media-executor.mjs";
 
+const noC2paPreservation=async()=>({status:"not_present",preserved:false});
+
 async function executable(directory, name, body) {
   const path = join(directory, name);
   await writeFile(path, "#!/bin/sh\n" + body + "\n", "utf8");
@@ -21,7 +23,7 @@ test("cloud media probe uses the leased owner and cleans up its materialized sou
   process.env.FFPROBE_PATH = ffprobe;
   let materializedArgs, cleaned = false;
   try {
-    const execute = createCloudMediaExecutor({
+    const execute = createCloudMediaExecutor({ c2paPreserver,
       tempRoot: directory,
       mediaIO: {
         async materialize(args) {
@@ -61,8 +63,10 @@ test("cloud media enhancement publishes a checksummed derivative using the claim
   process.env.FFMPEG_PATH = ffmpeg;
   process.env.FFPROBE_PATH = ffprobe;
   let published, publishedContent, cleaned = false;
+  const c2paCalls=[];
+  const c2paPreserver=async args=>{c2paCalls.push(args);return{status:"preserved",preserved:true,ingredientCount:1,outputSha256:"c".repeat(64)};};
   try {
-    const execute = createCloudMediaExecutor({
+    const execute = createCloudMediaExecutor({ c2paPreserver: noC2paPreservation,
       tempRoot: directory,
       mediaIO: {
         async materialize({ ownerId, assetId }) {
@@ -94,6 +98,11 @@ test("cloud media enhancement publishes a checksummed derivative using the claim
     assert.equal(published.derivativeOf, "asset-source");
     assert.equal(published.publicationKey, "job-2:output:v1");
     assert.equal(published.mediaType, "video/mp4");
+    assert.equal(published.metadata.c2paPreservation.status,"preserved");
+    assert.equal(result.c2paPreservation.status,"preserved");
+    assert.equal(c2paCalls.length,1);
+    assert.equal(c2paCalls[0].sourceMimeType,"video/mp4");
+    assert.equal(c2paCalls[0].outputMimeType,"video/mp4");
     assert.equal(result.outputAsset.id, "asset-output");
     assert.equal(result.sha256.length, 64);
     assert.equal(result.byteSize, Buffer.byteLength("rendered-media"));
@@ -110,7 +119,7 @@ test("cloud media enhancement publishes a checksummed derivative using the claim
 
 test("cloud media executor rejects timeline jobs until timeline persistence is cloud-backed", async () => {
   let materialized = false;
-  const execute = createCloudMediaExecutor({
+  const execute = createCloudMediaExecutor({ c2paPreserver: noC2paPreservation,
     mediaIO: {
       async materialize() { materialized = true; throw new Error("Should not materialize."); },
       async publish() {}
@@ -124,7 +133,7 @@ test("cloud media executor rejects timeline jobs until timeline persistence is c
 });
 
 test("cloud media executor rejects source IDs missing from the leased job input", async () => {
-  const execute = createCloudMediaExecutor({
+  const execute = createCloudMediaExecutor({ c2paPreserver: noC2paPreservation,
     mediaIO: { async materialize() { throw new Error("Should not materialize."); }, async publish() {} }
   });
   await assert.rejects(
@@ -146,7 +155,7 @@ case "$last" in */source.mp4) printf '%s' '{"streams":[{"codec_type":"video"},{"
   process.env.FFPROBE_PATH = ffprobe;
   let published;
   try {
-    const execute = createCloudMediaExecutor({
+    const execute = createCloudMediaExecutor({ c2paPreserver: noC2paPreservation,
       tempRoot: directory,
       mediaIO: {
         async materialize() {
@@ -192,7 +201,7 @@ test("cloud upscale refuses to publish when FFprobe dimensions differ from the r
 case "$last" in */source.mp4) printf '%s' '{"streams":[{"codec_type":"video"},{"codec_type":"audio"}],"format":{"duration":"1.25"}}';; *) printf '%s' '{"streams":[{"codec_type":"video","codec_name":"h264","pix_fmt":"yuv420p","width":320,"height":180},{"codec_type":"audio"}],"format":{"duration":"1.25"}}';; esac`);
   let publishCount = 0;
   try {
-    const execute = createCloudMediaExecutor({
+    const execute = createCloudMediaExecutor({ c2paPreserver: noC2paPreservation,
       tempRoot: directory,
       mediaIO: {
         async materialize() { return { path: source, asset: { id: "asset-reject", name: "scene.mp4", mediaType: "video/mp4", sha256: "d".repeat(64) }, async cleanup() {} }; },
@@ -223,7 +232,7 @@ test("cloud upscale refuses to publish when FFprobe uses an incompatible output 
 case "$last" in */source.mp4) printf '%s' '{"streams":[{"codec_type":"video"},{"codec_type":"audio"}],"format":{"duration":"1.25"}}';; *) printf '%s' '{"streams":[{"codec_type":"video","codec_name":"mpeg4","pix_fmt":"yuv420p","width":640,"height":360},{"codec_type":"audio"}],"format":{"duration":"1.25"}}';; esac`);
   let publishCount = 0;
   try {
-    const execute = createCloudMediaExecutor({
+    const execute = createCloudMediaExecutor({ c2paPreserver: noC2paPreservation,
       tempRoot: directory,
       mediaIO: {
         async materialize() { return { path: source, asset: { id: "asset-codec", name: "scene.mp4", mediaType: "video/mp4", sha256: "b".repeat(64) }, async cleanup() {} }; },
@@ -254,7 +263,7 @@ test("cloud upscale refuses to publish when the source audio stream is lost", as
 case "$last" in */source.mp4) printf '%s' '{"streams":[{"codec_type":"video"},{"codec_type":"audio"}],"format":{"duration":"1.25"}}';; *) printf '%s' '{"streams":[{"codec_type":"video","codec_name":"h264","pix_fmt":"yuv420p","width":640,"height":360}],"format":{"duration":"1.25"}}';; esac`);
   let publishCount = 0;
   try {
-    const execute = createCloudMediaExecutor({
+    const execute = createCloudMediaExecutor({ c2paPreserver: noC2paPreservation,
       tempRoot: directory,
       mediaIO: {
         async materialize() { return { path: source, asset: { id: "asset-audio", name: "scene.mp4", mediaType: "video/mp4", sha256: "e".repeat(64) }, async cleanup() {} }; },
@@ -285,7 +294,7 @@ test("cloud upscale refuses to publish when the output duration drifts from sour
 case "$last" in */source.mp4) printf '%s' '{"streams":[{"codec_type":"video"},{"codec_type":"audio"}],"format":{"duration":"1.25"}}';; *) printf '%s' '{"streams":[{"codec_type":"video","codec_name":"h264","pix_fmt":"yuv420p","width":640,"height":360},{"codec_type":"audio"}],"format":{"duration":"2.5"}}';; esac`);
   let publishCount = 0;
   try {
-    const execute = createCloudMediaExecutor({
+    const execute = createCloudMediaExecutor({ c2paPreserver: noC2paPreservation,
       tempRoot: directory,
       mediaIO: {
         async materialize() { return { path: source, asset: { id: "asset-duration", name: "scene.mp4", mediaType: "video/mp4", sha256: "f".repeat(64) }, async cleanup() {} }; },
@@ -316,7 +325,7 @@ test("cloud upscale refuses to publish an unsupported video codec", async () => 
 case "$last" in */source.mp4) printf '%s' '{"streams":[{"codec_type":"video"},{"codec_type":"audio"}],"format":{"duration":"1.25"}}';; *) printf '%s' '{"streams":[{"codec_type":"video","codec_name":"mpeg4","pix_fmt":"yuv420p","width":640,"height":360},{"codec_type":"audio"}],"format":{"duration":"2.5"}}';; esac`);
   let publishCount = 0;
   try {
-    const execute = createCloudMediaExecutor({
+    const execute = createCloudMediaExecutor({ c2paPreserver: noC2paPreservation,
       tempRoot: directory,
       mediaIO: {
         async materialize() { return { path: source, asset: { id: "asset-codec", name: "scene.mp4", mediaType: "video/mp4", sha256: "a".repeat(64) }, async cleanup() {} }; },
@@ -347,7 +356,7 @@ test("cloud upscale refuses to publish an incompatible pixel format", async () =
 case "$last" in */source.mp4) printf '%s' '{"streams":[{"codec_type":"video"},{"codec_type":"audio"}],"format":{"duration":"1.25"}}';; *) printf '%s' '{"streams":[{"codec_type":"video","codec_name":"h264","pix_fmt":"yuv444p","width":640,"height":360},{"codec_type":"audio"}],"format":{"duration":"2.5"}}';; esac`);
   let publishCount = 0;
   try {
-    const execute = createCloudMediaExecutor({
+    const execute = createCloudMediaExecutor({ c2paPreserver: noC2paPreservation,
       tempRoot: directory,
       mediaIO: {
         async materialize() { return { path: source, asset: { id: "asset-pixfmt", name: "scene.mp4", mediaType: "video/mp4", sha256: "b".repeat(64) }, async cleanup() {} }; },
@@ -387,7 +396,7 @@ test("cloud AI upscale publishes a separate image derivative with engine provena
   process.env.FFPROBE_PATH = await executable(directory, "ffprobe", "for last do :; done\ncase \"$last\" in *source.png) echo '{\"streams\":[{\"width\":10,\"height\":10}]}' ;; *) echo '{\"streams\":[{\"width\":40,\"height\":40}]}' ;; esac");
   let published;
   try {
-    const execute = createCloudMediaExecutor({
+    const execute = createCloudMediaExecutor({ c2paPreserver: noC2paPreservation,
       tempRoot: directory,
       mediaIO: {
         async materialize() {
@@ -445,7 +454,7 @@ test("cloud AI upscale blocks publication when output dimensions do not match", 
   process.env.FFPROBE_PATH = await executable(directory, "ffprobe", "case \"$last\" in *source.png) echo '{\"streams\":[{\"width\":10,\"height\":10}]}' ;; *) echo '{\"streams\":[{\"width\":40,\"height\":40}]}' ;; esac");
   let published;
   try {
-    const execute = createCloudMediaExecutor({
+    const execute = createCloudMediaExecutor({ c2paPreserver: noC2paPreservation,
       tempRoot: directory,
       mediaIO: {
         async materialize() {
@@ -478,7 +487,7 @@ test("cloud AI upscale rejects video instead of treating frame-by-frame resampli
   const source = join(directory, "source.mp4");
   await writeFile(source, "video-source");
   try {
-    const execute = createCloudMediaExecutor({
+    const execute = createCloudMediaExecutor({ c2paPreserver: noC2paPreservation,
       tempRoot: directory,
       mediaIO: {
         async materialize() { return { path: source, asset: { id: "video-source", name: "clip.mp4", mediaType: "video/mp4", sha256: "e".repeat(64) }, async cleanup() {} }; },
