@@ -3,8 +3,6 @@
 -- Apply first to the executive-visuals-staging D1 database only.
 -- Authentication remains external: auth_subject is a verified provider subject,
 -- never a password, access token, refresh token, or client-supplied identity.
-PRAGMA foreign_keys = ON;
-
 CREATE TABLE IF NOT EXISTS ev_users (
   id TEXT PRIMARY KEY,
   auth_subject TEXT NOT NULL UNIQUE,
