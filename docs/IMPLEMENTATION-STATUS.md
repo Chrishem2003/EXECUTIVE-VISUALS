@@ -540,3 +540,8 @@ This is a runnable worker entry point, not a deployed worker. Do not set the ena
 - The API validates the short-lived bearer recovery token against Supabase before updating the password. Tokens are held only in page memory and are not written to local storage.
 - Before enabling on a hosted app, set `PUBLIC_APP_URL=https://executive-visuals.onrender.com` and add that exact redirect URL in Supabase Auth URL Configuration. Supabase's default email service is best-effort and rate-limited; custom SMTP remains an operator decision.
 - Automated unit and API integration coverage is being added; hosted email delivery and recovery acceptance remain unverified until a dedicated application Supabase project and its redirect settings are configured.
+
+
+## Verified infrastructure release blockers
+
+The current Cloudflare D1 staging database `executive-visuals-staging` is empty and not bound to the existing Worker. The Worker currently has only the static `ASSETS` binding and proxies API calls to Render. R2 is not activated. Both existing Supabase Free projects contain NEMA/platform tables and must not be reused; the organisation already uses its two-project Free allowance. See [PERSISTENCE-AND-RELEASE-BLOCKERS.md](PERSISTENCE-AND-RELEASE-BLOCKERS.md) for exact observed facts, target architecture, free-tier quotas and release gates. No existing data service was modified during this audit.
