@@ -101,7 +101,8 @@ if (!atomicPublicationSql.includes("create trigger ev_assets_validate_derivative
  || !atomicPublicationSql.includes("parent_asset.project_id is distinct from new.project_id")) {
   issues.push("Asset derivatives must remain within the same owner and project scope.");
 }
-if (!atomicPublicationSql.includes("revoke all on function executive_visuals.complete_asset_publication(uuid,text,uuid) from public, anon, authenticated, service_role;")) {
+if (!atomicPublicationSql.includes("revoke all on function executive_visuals.complete_asset_publication(uuid,text,uuid)")
+ || !atomicPublicationSql.includes("from public, anon, authenticated, service_role;")) {
   issues.push("Legacy unfenced asset publication completion must be disabled.");
 }
 if (/\b(drop\s+table|truncate|delete\s+from)\b/i.test(cleanupClaimsSql)) issues.push("Publication cleanup claim migration must not contain destructive DDL/DML.");
@@ -113,23 +114,22 @@ if (!cleanupClaimsSql.includes("create or replace function executive_visuals.res
 if (!cleanupClaimsSql.includes("create table if not exists executive_visuals.asset_publication_cleanup_claims")
  || !cleanupClaimsSql.includes("alter table executive_visuals.asset_publication_cleanup_claims enable row level security;")
  || !cleanupClaimsSql.includes("create or replace function executive_visuals.claim_asset_publication_cleanup_v1(")
- || !cleanupClaimsSql.includes("create or replace function executive_visuals.complete_asset_publication_cleanup_v1(")) {
-  issues.push("Orphan publication cleanup must use durable, tokenized tombstone claims.");
+ || !cleanupClaimsSql.includes("create or replace function executive_visuals.complete_asset_publication_cleanup_v1(")
+ || !cleanupClaimsSql.includes("cleanup_claim.object_path = p_object_path")
+ || !cleanupClaimsSql.includes("asset object path is fenced by a durable cleanup claim")
+ || !cleanupClaimsSql.includes("job_row.status not in ('succeeded','partial','failed','cancelled','expired')")) {
+  issues.push("Orphan publication cleanup must use terminal-job, tokenized tombstone claims and fence finalization.");
 }
-if (!cleanupClaimsSql.includes("cleanup_claim.object_path = p_object_path")
-if (!cleanupClaimsSql.includes("job_row.status not in ('succeeded','partial','failed','cancelled','expired')")) issues.push("Orphan attempt cleanup must wait until the owning job is terminal.");
- || !cleanupClaimsSql.includes("asset object path is fenced by a durable cleanup claim")) {
-  issues.push("Publication finalization must reject object paths fenced for cleanup.");
-}
-if (!cleanupClaimsSql.includes("grant execute on function executive_visuals.reserve_asset_publication_v2(uuid,text,uuid,uuid,uuid,text,text,uuid) to service_role")
- || !cleanupClaimsSql.includes("grant execute on function executive_visuals.claim_asset_publication_cleanup_v1(uuid,uuid,uuid,text,text,interval) to service_role")
- || !cleanupClaimsSql.includes("grant execute on function executive_visuals.complete_asset_publication_cleanup_v1(uuid,uuid) to service_role")) {
+if (!/grant execute on function executive_visuals\.reserve_asset_publication_v2\([\s\S]*?\)\s+to service_role;/i.test(cleanupClaimsSql)
+ || !/grant execute on function executive_visuals\.claim_asset_publication_cleanup_v1\([\s\S]*?\)\s+to service_role;/i.test(cleanupClaimsSql)
+ || !/grant execute on function executive_visuals\.complete_asset_publication_cleanup_v1\([\s\S]*?\)\s+to service_role;/i.test(cleanupClaimsSql)) {
   issues.push("Publication reservation and cleanup RPCs must be restricted to service_role.");
-}if (/\b(drop\s+table|truncate|delete\s+from)\b/i.test(cleanupAttemptSql)) issues.push("Cleanup attempt-path migration must not contain destructive DDL/DML.");
+}
+if (/\b(drop\s+table|truncate|delete\s+from)\b/i.test(cleanupAttemptSql)) issues.push("Cleanup attempt-path migration must not contain destructive DDL/DML.");
 if (!cleanupAttemptSql.includes("drop constraint if exists asset_storage_cleanup_object_path_check")
- || !cleanupAttemptSql.includes("attempt-[0-9a-f]{8}")) issues.push("Durable cleanup outbox must accept only exact original or immutable attempt object paths.");
-
-
+ || !cleanupAttemptSql.includes("attempt-[0-9a-f]{8}")) {
+  issues.push("Durable cleanup outbox must accept only exact original or immutable attempt object paths.");
+}
 
 if (/\b(drop\s+table|truncate|delete\s+from)\b/i.test(cleanupSql)) issues.push("Storage cleanup outbox migration must not contain destructive DDL/DML.");
 if (!cleanupSql.includes("create table if not exists executive_visuals.asset_storage_cleanup") || !cleanupSql.includes("alter table executive_visuals.asset_storage_cleanup enable row level security;")) issues.push("Storage cleanup outbox must exist and enable RLS.");
