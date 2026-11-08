@@ -73,7 +73,7 @@ export function createC2paVerifier({
       if (typeof Sdk?.Reader?.fromAsset !== "function" || typeof Sdk?.Context !== "function") {
         return errorResult("C2PA_SDK_API_UNSUPPORTED");
       }
-      const { context, hasTrustPolicy } = buildContext(Sdk, trustAnchors);
+      const { context, hasTrustPolicy } = buildContext(Sdk, trustAnchors ? resolve(trustAnchors) : "");
       const reader = await Sdk.Reader.fromAsset({ path: absolutePath, mimeType }, context);
       if (!reader) {
         return {
@@ -107,8 +107,8 @@ export function createC2paVerifier({
         validationFindings,
         trustPolicyConfigured: hasTrustPolicy
       };
-    } catch {
-      return errorResult("C2PA_SDK_VERIFICATION_FAILED");
+    } catch (error) {
+      return errorResult(error?.code === "ERR_MODULE_NOT_FOUND" ? "C2PA_SDK_UNAVAILABLE" : "C2PA_SDK_VERIFICATION_FAILED");
     }
   };
 }
