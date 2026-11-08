@@ -25,6 +25,7 @@ The schema stores metadata only. It does not store media bytes, provider secrets
 - Sign in: `POST /api/auth/login` (proxied only to the existing Render auth endpoint)
 - Create/list staging projects: `POST/GET /api/d1/projects`
 - Read/update staging project: `GET/PATCH /api/d1/projects/:id`
+- Read/update persisted workspace documents: `GET/PUT /api/d1/projects/:id/workspace` (revision checked; maximum document size 256 KB)
 
 The staging Worker blocks production business routes such as `/api/projects` and `/api/assets`.
 
