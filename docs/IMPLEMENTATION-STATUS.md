@@ -1,8 +1,8 @@
 # Executive Visuals — implementation status
 
-**Updated:** 2 November 2026  
-**Branch:** `feat/executive-visuals-unified-platform`  
-**Delivery posture:** local runtime implemented; external-auth staging blueprint hardened; public release not approved pending account sign-in UX, isolated auth configuration, durable-data recovery tests and deployment verification.
+**Updated:** 8 November 2026  
+**Branch:** `feat/c2pa-protected-signing`  
+**Delivery posture:** local runtime implemented; Supabase email/password sign-in, registration and refresh-cookie lifecycle implemented; external-auth staging blueprint hardened; public release not approved pending password recovery, dedicated isolated backend, private durable storage, backup/restore tests and hosted deployment verification.
 
 ## Implemented in the current branch
 
@@ -41,7 +41,7 @@
 | Source-media readiness evidence | Production gate consumes saved FFprobe evidence for every referenced source; verifies readable streams, expected video/audio track type and clip source ranges against probed duration; missing or invalid sources block, unprobed sources remain not-run | Probe-backed structural evidence only; no full decode, checksum revalidation, perceptual quality or corruption scan |
 | Timeline variants and comparison | One-click independent timeline duplication with original/parent lineage; deterministic comparison of added, removed and changed clips, timing, source trims, track moves, markers and creative-intent annotations; local and cloud project creation; original sequence remains untouched | Structural comparison only; no pixel-level A/B playback, render-difference analysis, multi-user branch merge or automatic conflict resolution |
 | Timeline persistence | Owner-scoped timelines, asset ownership checks, optimistic revisions and saved interchange package | SQLite local DB; isolated SQL migration pending dedicated database review |
-| Database migration and cloud queue adapter | Dedicated multi-tenant schema, row-level security, immutable workflow-run snapshots, private object-storage policies, atomic `SKIP LOCKED` job claiming with server-side job-type filters, owner-bound lease renewal, bounded expired-lease recovery and lease-fenced completion RPCs; provider-neutral PostgREST queue adapter calls the four RPCs with server-only credentials, schema-scoped headers, argument/result validation and bounded request timeouts; private object-storage adapter supports bounded uploads, exact-path removal and same-origin expiring signed URLs; ownership-aware object-path builder matches the bucket policies (project UUID prefix for project assets, owner UUID for personal assets); generic cloud worker cycle claims, heartbeats, executes with an abort signal, and lease-fenced finishes or failures; cloud media worker factory composes the cloud queue, private asset service, media IO and executor into an explicit one-cycle worker entry point; its claim filter ensures it only leases supported media jobs (it does not start automatically); cloud media executor connects leased single-source media jobs (probe, thumbnail, audio extraction/cleanup, video enhancement, proxy and transcode) to verified cloud asset materialization and streamed derivative publication with checksum lineage; authorization-aware cloud asset repository validates ownership/project permissions before upload/read/delete, verifies SHA-256, persists metadata through the isolated schema, compensates failed metadata inserts by removing uploaded objects, and reports cleanup-pending states | Adapter contract tests are in CI, but the migration is **not applied**, the custom schema must be exposed in the isolated project's API settings, cloud storage policies must be applied, the cloud worker cycle and single-source cloud media executor are implemented and contract-tested, but no cloud worker process is deployed or auto-started; workflow execution still depends on SQLite and local asset paths; cloud timeline rendering now has a dedicated materialized-file FFmpeg worker, and a separate opt-in cloud asset API now supports bounded streaming ingest, private signed reads and soft-delete, but it is **not yet integrated into the existing asset-library UI/local asset API**; an opt-in authenticated cloud timeline API now exposes revision-checked timeline create/read/update, durable timeline.render job submission with idempotency, and role-checked job/event inspection using the verified Supabase user ID; CLOUD_TIMELINE_API_ENABLED defaults to false and refuses to start unless AUTH_MODE=supabase; never apply to shared staging or another product's database |
+| Database migration and cloud queue adapter | Dedicated multi-tenant schema, RLS, immutable workflow snapshots and private object storage; database-generated per-attempt UUID lease fencing with v2 claim/renew/assert/finish RPCs; worker heartbeat drain and lease checks before derivative/master publication; atomic asset-publication reservation and finalization in one database transaction under the current job row lock; unique immutable attempt object paths; derivative owner/project-scope trigger; durable cleanup tombstones and age-gated orphan-attempt cleanup; server-only PostgREST adapters and PostgreSQL integration tests | Migrations and integration harness are committed to this feature branch; exact-head CI must pass before merge. They have **not** been applied to a dedicated Supabase project. No cloud worker process is deployed or auto-started; the active Asset Library and `/api/assets` lifecycle still use local SQLite/disk. Cloud asset/timeline APIs remain opt-in and are not yet the active browser asset backend. Never apply these migrations to a shared NEMA or other product database. |
 | Text-model adapter | Server-side chat-completions-compatible text gateway with request timeouts, sanitized errors, usage normalization, server-only credentials and upstream approval ancestry | Disabled by default; remote gateways require explicit server opt-in; no provider price estimator; local/remote endpoint must be configured |
 | Speech synthesis | Approved `voice.generate` workflow node using a provider-neutral speech gateway; checks presenter voice scope when an identity profile is selected; validates and stores MP3/WAV/FLAC/OGG narration as a private checksummed asset | Disabled by default; remote HTTPS requires explicit server opt-in; no live provider call used for verification; transcription, diarization, cloning, dubbing and lip-sync remain unimplemented |
 | Speech transcription | `voice.transcribe` workflow node accepts an accessible audio asset, verifies its path, size and SHA-256, requires upstream human approval, sends bounded multipart audio to the configured speech gateway and persists transcript, language, duration and timestamped segments in the immutable workflow node output | Disabled by default; shares server-side speech gateway and remote HTTPS opt-in; local mock-server end-to-end test; no provider call used |
@@ -60,18 +60,22 @@ The build pipeline runs:
 2. Workflow graph validation, targeted-run behavior and project-knowledge retrieval checks.
 3. API integration tests for authentication, ownership isolation, project workspace persistence, revision conflicts, role permissions, uploads and idempotency.
 4. Mock-gateway tests for server-side text generation, remote-access controls and approval gating.
-5. API tests for research-source URL validation, source-linked knowledge persistence, partial document saves, role enforcement and safe research import rejection.\n6. Workflow context tests ensure imported source text is passed as untrusted quoted data, not executable instructions.\n6. Research importer tests for HTTPS restrictions, private-network blocking, HTML extraction, metadata capture, size limits and unreadable pages.
-5. Real FFmpeg rendering and output inspection.
-6. Real FFmpeg/FFprobe fixture execution for denoise, color correction, resize, interpolation and scaling with invalid-parameter rejection.
-6. TypeScript typecheck.
-7. Production Vite build.
+5. Research-source API tests for URL validation, source-linked persistence, partial saves, role enforcement and safe import rejection.
+6. Workflow-context tests proving imported source text is treated as untrusted quoted data, not executable instructions.
+7. Research importer tests for HTTPS restrictions, private-network blocking, HTML extraction, metadata capture, size limits and unreadable pages.
+8. Real FFmpeg rendering and output inspection.
+9. Real FFmpeg/FFprobe fixture execution for denoise, color correction, resize, interpolation and scaling with invalid-parameter rejection.
+10. Application provenance and C2PA adapter tests, including native CAI SDK signed/tampered fixture checks.
+11. PostgreSQL integration for lease fencing, atomic publication, derivative tenant scope and cleanup claims.
+12. TypeScript typecheck and production Vite build.
+13. Production Docker build and image/deployment-guard inspection.
 
 A green build does not prove external provider execution, cloud durability, frame-accurate playback or collaborative editing.
 
 ## Not yet production-complete
 
 - Durable cloud database and object storage in a dedicated isolated project; PostgREST queue and private object-storage adapters plus a lease-aware worker-cycle orchestrator are implemented and contract-tested, but remain intentionally disconnected until the isolated schema is exposed, storage policies and credentials are configured, and the media/workflow data layer is cloud-compatible.
-- Production OAuth/session refresh, email invitations and distributed multi-tenant collaboration. The current browser auth gate requires users to paste a Supabase access token; ordinary email/password sign-in and refresh-session UX are not yet implemented.
+- Password recovery/reset UX, MFA/SSO and email invitation delivery. Supabase email/password registration/sign-in, confirmation-required handling, HttpOnly access/refresh cookies, refresh-on-authentication and logout/revocation are implemented and unit-tested; hosted identity configuration and recovery acceptance remain outstanding.
 - Multi-host workers, dead-letter queue, lease metrics and guaranteed process-tree termination on cancellation.
 - Resumable/chunked uploads and range downloads.
 - Timeline preview playback, transitions, effects, animated/video overlays, cache invalidation and round-trip tests against an independent interchange implementation.
@@ -231,7 +235,7 @@ This closes the renderer-adapter gap in the cloud timeline execution contract. I
 - Server-role credentials remain server-side. Database requests are bounded by a timeout and API payloads are capped at 5 MiB. Cloud API routes are disabled unless CLOUD_TIMELINE_API_ENABLED=true; startup also requires AUTH_MODE=supabase.
 - Added mock-backed tests for verified ownership, revision conflicts, render enqueue, role enforcement, idempotency, job visibility and event history.
 
-**Not yet connected:** cloud asset listing, asset-library browser UI, cloud worker deployment/activation, and cloud workflow execution. The API must remain disabled until the dedicated executive_visuals schema and private bucket policies are applied to an isolated Supabase project and verified. No migration was applied and no cloud job was submitted during implementation.
+**Remaining integration gaps:** cloud worker deployment/activation, cloud media-job execution from the main Runtime Asset Library, and a unified cloud/local processing lifecycle. Cloud asset listing, personal cloud upload and signed preview links are now exposed in the Runtime Asset Library behind the existing opt-in API gate. The API must remain disabled until the dedicated executive_visuals schema and private bucket policies are applied to an isolated Supabase project and verified. No migration was applied and no cloud job was submitted during implementation.
 
 - Cloud asset ingest is streamed to an isolated temporary file, enforces the configured upload ceiling and MIME/file-signature agreement, then publishes through the private storage repository with checksum metadata. Temporary files are removed after completion or failure. The API exposes short-lived signed reads and soft deletion; original objects are not made public.
 - Startup readiness checks verify the required isolated-schema tables and confirm the media bucket is private. The check runs only when the cloud API opt-in is enabled.
@@ -241,6 +245,7 @@ This closes the renderer-adapter gap in the cloud timeline execution contract. I
 
 - Added a standalone `start:cloud-worker` entry point for separately hosted media and timeline worker families. It is independent of the web API process and does not start when imported.
 - Both worker families are disabled by default and require explicit `CLOUD_WORKER_ENABLED`, `CLOUD_MEDIA_WORKER_ENABLED` and/or `CLOUD_TIMELINE_WORKER_ENABLED` flags plus server-side Supabase credentials.
+- The Asset Library's cloud media submission API has its own `CLOUD_MEDIA_JOBS_API_ENABLED` gate, which must remain off until the media worker is actually deployed and healthy; setting this flag does not start a worker.
 - Startup checks the isolated schema and private media bucket, verifies FFmpeg/FFprobe availability, validates lease/heartbeat/poll/byte limits, and fails closed when prerequisites are missing.
 - The supervisor runs supported worker cycles, recovers expired leases, reports bounded structured status/error events, and stops scheduling work during graceful shutdown.
 - Tests cover disabled configuration, missing credentials/families, configuration bounds, recovery, family cycles and shutdown.
@@ -271,6 +276,18 @@ This is a runnable worker entry point, not a deployed worker. Do not set the ena
 - The UI exposes an open/download link after the server has verified ownership or project read permission. The underlying bucket remains private; no public object URL is introduced.
 - Signed URLs are held in transient browser memory, not persisted with workspace drafts, and are cleared when switching projects. The link lifetime is five minutes; users can request a fresh one.
 - This is a link-based preview/download path. It does not yet provide inline video playback, image thumbnails, or a cloud asset preview modal. Verification is pending current CI.
+
+## Runtime Asset Library — private cloud shelf
+
+- The server health response now exposes a non-secret `cloudAssetApi.enabled` capability flag derived from the cloud API opt-in and verified Supabase auth mode.
+- The Runtime Asset Library conditionally loads the authenticated cloud asset listing when that capability is enabled; local assets and local media jobs remain unchanged.
+- Added streamed personal cloud uploads to the private bucket, with server-side size/signature checks, checksummed metadata and owner-scoped authorization.
+- Added on-demand five-minute signed preview/download links. URLs stay in transient browser memory and are never stored in project documents.
+- Project-scoped cloud uploads remain in the Cloud Projects workspace, where the selected project role is checked by the server.
+- Connected the cloud shelf to the lease-fenced media queue through `POST /api/cloud/assets/:assetId/media-jobs`: server-side asset lookup, owner/project authorization, editor-only project writes, media-type compatibility, per-operation option allowlists, mandatory idempotency keys, safe job creation and `job.queued` audit events. The API returns the persisted job receipt and rejects conflicting idempotency-key reuse.
+- Added `GET /api/cloud/jobs` for owner- or project-scoped media job history. The Runtime Asset Library now renders type-aware Inspect / Thumbnail / Proxy / Denoise / Clean audio actions and recent cloud job status when the capability is enabled.
+- Added a separate `CLOUD_MEDIA_JOBS_API_ENABLED` feature gate. It defaults off, requires the cloud timeline API and Supabase auth, and is exposed through `/api/health`; a disabled endpoint returns 503. The UI does not show cloud-processing controls unless this flag is active.
+- This is an integrated, tested code path, not a deployed cloud worker. The flag must remain off until a separate media worker is deployed in isolated staging, database migrations and private bucket policies pass review, and owner/editor/viewer recovery/publication tests succeed. Local `/api/assets` remains the default processing path.
 
 ## Shared local/cloud editorial editor — 1 November 2026
 
@@ -468,7 +485,79 @@ This is a runnable worker entry point, not a deployed worker. Do not set the ena
 - Legacy assets without a record return `not_available`, not a false pass.
 - API integration tests cover successful verification and cross-account denial.
 - Unit tests cover deterministic records, tampering, checksum mismatch, malformed inputs and missing records.
-- The verifier explicitly returns `c2pa: not_checked`. This feature is not C2PA, a signature, identity proof, rights clearance or factual verification.
-- Full build includes `verify:provenance`; the broader server suite includes the API authorization integration test.
+- The official `@contentauth/c2pa-node` SDK is pinned to `0.10.0` with its npm lockfile synchronized. CI and the Docker runtime use the patched Node 24 line.
+- A server-only `server/c2pa-verification.mjs` adapter invokes `Reader.fromAsset` with a file-backed asset and explicit MIME type. Remote manifest fetching is disabled.
+- The authenticated provenance route first applies the existing asset authorization check, then returns separate application-integrity and C2PA verification results.
+- C2PA outcomes are mapped from the SDK's `validation_state`: `Invalid` → `invalid`, `Valid` → `valid_untrusted`, and `Trusted` → `valid_trusted` only when an administrator-controlled PEM trust anchor is configured. Without that policy, `Trusted` is conservatively downgraded to `valid_untrusted`.
+- The adapter checks the on-disk file and byte size, enforces a default 250 MiB parser limit, bounds returned validation findings, and fails closed on missing SDK, unknown state, unavailable files or SDK errors.
+- Deterministic adapter tests cover no-manifest, invalid/valid/trusted state mapping, trust-policy gating, malformed state, bounded findings, unsupported formats and file safety. Native integration tests exercise a valid unsigned PNG, generate genuine signed PNG and MP4 fixtures with the upstream CAI test-only certificate chain, validate the untrusted/trusted paths, reject altered PNG pixel data, and mutate an MP4 `mdat` payload to verify the signed video is rejected as invalid.
+- The verifier is integrated into the Asset Library. A separate callback signer adapter now exists in `server/c2pa-signing.mjs`; it signs the already-transformed output bytes while recording the original source as an ingredient, then reopens and verifies the signed output. `createCloudMediaExecutor` and `createCloudMediaWorker` accept the callback and invoke it before derivative publication. `startCloudWorkerProcess` now accepts the authenticated signer provider and public certificate chain through dependency injection; its default CLI entry point supplies neither and fails closed if signing is enabled without them. Local timeline render/export is not yet connected. No KMS/HSM provider, production certificate or TSA is configured; production signing remains off.
+- Full build includes `verify:c2pa` and the existing provenance verification suite.
 
-**Next:** add the supported CAI C2PA SDK as a separate adapter after dependency review, certificate/trust policy design and supported-format tests. Do not claim signing/validation until real signed fixtures pass.
+**Next:** provision and independently review a protected KMS/HSM provider, production certificate chain and HTTPS TSA; wire that provider into the cloud worker process; then extend signed/tampered fixtures across additional supported video/audio formats and verify certificate-chain/timestamp/revocation behavior. Connect timeline render/export after its durable cloud persistence boundary is ready. Production signing remains disabled.
+
+
+### C2PA asset-library user journey
+
+- Asset-library users can request Content Credentials verification for an asset and see manifest presence, validation state, trust-policy status, error code and up to five validation findings.
+- The UI makes no verification claim before the user invokes the endpoint; the server performs the actual check after asset authorization.
+- The result is displayed separately from the application's SHA-256 provenance record.
+- Ingredient-aware signing exists as a server-side adapter and is available as an optional cloud media worker dependency; the default worker process has no provider configured. KMS/HSM integration, production certificate/TSA provisioning, timeline export integration and production signing remain incomplete.
+
+
+## Creative Intelligence Graph (new integration)
+
+- AI Director now builds a project-scoped dependency graph from saved cloud production records, creative DNA, characters, series scenes/shots, proof candidates, private assets and accessible cloud timeline documents.
+- Links are created only from explicit IDs, series story-bible references, marker IDs and asset references. Shared project membership is labelled as scope, not misrepresented as a creative dependency.
+- Downstream change-impact analysis lists dependent shots, clips and timelines for human review. It does not mutate production data or infer missing links.
+- Verification: `npm run verify:creative-graph`; full CI also runs TypeScript checks and production build.
+
+
+## Evidence intelligence (feature branch)
+- Added project-scoped evidence records attached to source assets, including source SHA-256 snapshots, explicit target references, claim/method/source metadata and observation time.
+- Added server-assigned `submitted` state and role-gated human review (`needs_review`, `verified`, `rejected`) with append-only submission/review events and audit events.
+- Added authenticated asset evidence list, submit, review and event-history routes. Viewers can read; editors can submit; owners/editors/reviewers can review. Personal assets remain owner-only.
+- Added database-backed tests and included `verify:evidence-ledger` in the full build gate. README and dedicated lifecycle/API documentation updated.
+- The AI Director now loads evidence records through an authorized project-scoped endpoint and connects only verified records whose source hash and project scope match a resolvable graph target. Submitted/rejected records remain review-only; unresolved targets are disclosed as disconnected.
+- Limitation: the current evidence ledger is asset-attached and review-driven. Next build work is revision-aware evidence invalidation and broader proof capture/review UX. Review acceptance is not a factual/legal guarantee.
+
+
+## Creative graph revision baselines (feature branch)
+- Added append-only per-project graph snapshots with monotonically increasing revisions and SHA-256 graph hashes.
+- Added owner/editor-only baseline creation and authorized project-member retrieval APIs. The server validates graph size, node types/statuses, unique IDs, matching project node and edge endpoints.
+- AI Director can record a review baseline and compare the current graph to it, listing changed/added/removed nodes and downstream potentially stale items.
+- Fingerprints include node content and explicit relationships but exclude project-scope membership edges to avoid broad false positives. Removed nodes use the baseline graph for impact traversal.
+- Results are review candidates only; no automatic timeline mutation, export deletion, publication block or approval invalidation is claimed. README and dedicated guidance updated.
+- Added `verify:creative-graph-snapshot` tests for revision increments, hash changes, project identity, invalid edges and snapshot normalization.
+
+
+## Production execution — graceful worker shutdown (feature branch)
+- Propagated supervisor SIGINT/SIGTERM shutdown through both media and timeline worker cycles.
+- Active executors receive an AbortSignal; supported FFmpeg/download paths can terminate and clean private temporary workspaces.
+- A job interrupted by graceful shutdown is persisted as `cancelled` while its lease remains valid. If the terminal update cannot be confirmed, durable lease recovery remains responsible; the worker does not claim success.
+- A shutdown signal received before claim prevents acquiring another job. Added worker-cycle and supervisor integration tests.
+- Next: complete storage publication/recovery reconciliation and exercise authorization across owner/editor/reviewer/viewer roles before production worker enablement.
+
+
+### Evidence source integrity hardening — 8 November 2026
+
+- Evidence submission and review now re-hash the actual managed file and compare its byte size and SHA-256 with the immutable asset record; missing or modified source bytes fail closed.
+- All evidence review decisions require a written rationale (minimum eight characters), retained with reviewer identity in the event history.
+- AI Director evidence cards display the source fingerprint plus available method and source reference.
+- Added API-level tamper and review-reason regression tests, in addition to the evidence-ledger unit test.
+- This verifies source-byte continuity at submission and review time; it does not establish factual truth, legal rights or C2PA trust.
+
+
+### Source-fingerprint change propagation
+
+Creative graph asset nodes now include the recorded SHA-256 fingerprint and byte size. A source fingerprint change is detected by graph snapshot comparison and downstream references (including character reference use, evidence lineage and timeline clips) are marked as potentially stale for human review. This is dependency propagation only; it does not mutate or invalidate exports.
+
+
+### Production worker/publication stack audit — reconciled on 8 November 2026
+
+- Main contains the idempotent publication ledger delivered by merged PR #226; the earlier ledger PR #171 is superseded.
+- The old lease-fencing PR stack (#172–#178 and #207) has divergent ancestry and must not be mechanically merged.
+- PR #240, branch `feat/c2pa-protected-signing`, is the active current-main consolidation path. It carries database-generated per-attempt lease tokens, v2 claim/renew/assert/finish RPCs, heartbeat draining, pre-publication lease checks, job-bound reservations, atomic asset+ledger finalization, immutable attempt paths, same-tenant derivative checks and tombstone-claimed cleanup.
+- The last source-code head with workflow evidence was `6e6034605fd10f888d79186eef38d11535470bf1`: PostgreSQL asset-publication integration, npm installation and TypeScript validation passed in workflow [42474400274](https://github.com/Chrishem2003/EXECUTIVE-VISUALS/actions/runs/42474400274). Its production build was later cancelled when documentation commits superseded that SHA, and Docker inspection was skipped. The current PR head contains documentation-only follow-up commits and requires a fresh exact-head workflow; do not treat the source-build gate as green.
+- The migrations remain feature-branch code. They have not been applied to an isolated Supabase project, and no cloud worker has been deployed. The Runtime Asset Library cloud shelf is opt-in and separate from the default local SQLite/disk processing path.
+- Next: complete exact-head build and Docker verification; reconcile any failures; then provision a dedicated isolated staging project, review RLS/private-bucket policies, apply only this application's migrations there, and run owner/editor/reviewer/viewer end-to-end recovery and publication tests. No production deployment or merge is authorized by this audit.
