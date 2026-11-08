@@ -467,3 +467,32 @@ test("cloud workflow video quote fails closed for unsupported nodes and unavaila
  const unavailable=await api.handle({method:"POST",path:"/api/cloud/workflows/video/quote",ownerId:owner,body:{projectId:project,requestId:"workflow-1:node-1",node:{kind:"video.generate",config:{provider:"runway",model:"model-router"}},values:{prompt:"A cinematic launch"}}});
  assert.equal(unavailable.status,503);
 });
+
+
+test("cloud workflow video-to-video quote binds duration to server-probed source metadata",async()=>{
+ let prepared=0,preflight=0;
+ const sourceId="b23e4567-e89b-42d3-a456-426614174000";
+ const api=createCloudTimelineApi({
+  url:"https://example.supabase.co",serviceRoleKey:"service-secret",
+  fetchImpl:async()=>({ok:true,status:200,async text(){return"[]";}}),
+  timelineService:{timelines:{},assets:{}},
+  authorize:async()=>true,
+  runwaySourceResolver:{
+   async resolveMetadata(){return{ownerId,projectId,assetId:sourceId,mediaType:"video/mp4",durationSeconds:6.2};},
+   async prepare(){return{};}
+  },
+  runwayRouterAdapter:{
+   async prepareInput(){prepared++;return{};},
+   async preflight(){preflight++;return{billable:false,estimatedCredits:100,estimatedUsd:1,currency:"USD",provider:"runway",model:"gen4.5",configId:"studio-video"};}
+  }
+ });
+ const result=await api.handle({method:"POST",path:"/api/cloud/workflows/video/quote",ownerId,body:{
+  projectId,requestId:"workflow-1:video-node:2",
+  node:{kind:"video.generate",config:{provider:"runway",model:"model-router",durationSeconds:5}},
+  values:{prompt:"Edit this source while preserving the camera movement",sourceVideoAssetId:sourceId}
+ }});
+ assert.equal(result.status,422);
+ assert.equal(result.body.error.code,"VIDEO_SOURCE_METADATA_MISMATCH");
+ assert.equal(prepared,0);
+ assert.equal(preflight,0);
+});
