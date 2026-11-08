@@ -63,8 +63,9 @@ For a cloud-backed `video.generate` node, set:
 - `provider: "runway"`
 - `model: "model-router"`
 - `approvedMaxAmount: <USD ceiling>`
+- `rightsConfirmed: true` when source/reference assets are connected
 
-Connect a completed human-approval node upstream. The approval node click is the human confirmation; the numeric ceiling is a separate hard upper bound and must cover the fresh quote. Do not set a ceiling automatically from the quote or use an unlimited default. Other providers/models continue to use the legacy execution path.
+Set the server-side `VIDEO_WORKFLOW_EXECUTION_MODE=cloud` only after isolated cloud worker and budget acceptance. Connect a completed human-approval node upstream. The approval node click is the human confirmation; the numeric ceiling is a separate hard upper bound and must cover the fresh quote. Do not set a ceiling automatically from the quote or use an unlimited default. Other providers/models continue to use the legacy execution path.
 
 ### Current release boundary
 
