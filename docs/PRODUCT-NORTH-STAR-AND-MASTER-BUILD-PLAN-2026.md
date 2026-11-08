@@ -432,4 +432,5 @@ The AI Director now reads cloud production records, proof candidates, character 
 ### Evidence intelligence implementation checkpoint
 - Implemented a durable evidence ledger with source asset hash snapshots, explicit target references, role-gated review and append-only event history.
 - Build gate: `npm run verify:evidence-ledger`.
-- Next: enforce same-project target resolution and feed accepted evidence records into the Creative Intelligence Graph; then use graph revisions for stale-impact propagation.
+- Integrated authorized project evidence records into the Creative Intelligence Graph. Only verified records with matching source SHA-256 and a resolvable same-project target create supporting edges; unresolved or non-verified records remain review-only.
+- Next: implement revision-aware evidence invalidation and downstream stale-impact propagation across shots, timelines, variants, exports and publishing.
