@@ -176,8 +176,10 @@ The product should converge on a shared domain language. Reuse existing records 
 - **Exit:** user can take one project from brief to reviewed, verified master export with no manual database edits and with full provenance.
 
 ### P2 — Creative intelligence and trust
-- Creative Intent Graph and change-impact analysis.
+- Creative Intent Graph and change-impact analysis, including asset SHA-256/size fingerprints in revision comparison and downstream review flags.
 - Claim-to-shot/evidence ledger, source citations and uncertainty.
+  - Source integrity gate: re-hash the managed file and verify byte size against ingest metadata before evidence submission and before every reviewer decision; fail closed on missing or modified bytes.
+  - Reviewer decisions require a written rationale and append-only actor/event history; the UI exposes the source SHA-256 fingerprint and source reference. This verifies byte continuity, not claim truth or legal rights.
 - Project Canon for character/product/location/wardrobe/prop continuity.
 - Semantic asset indexing with consent and access filters.
 - C2PA inspection/preservation and export manifest where supported.
@@ -313,13 +315,14 @@ Research caveat: competitor feature descriptions are limited to public documenta
 
 ## 14. Immediate next engineering actions
 
-1. Re-audit the live main branch and all open PR heads; do not rely on old branch ancestry or previous summaries.
-2. Build a dependency graph for the P0 publication/worker/storage PR chain and identify the canonical branch to reconcile first.
-3. Run current CI/test evidence for main and the exact P0 heads; inspect failing tests, review comments and changed-file overlap.
-4. Reconcile only one dependency slice at a time; never merge a large divergent integration PR simply to expose hidden features.
-5. Close the P0 security/recovery gaps before turning on paid providers or external publishing.
-6. Deliver one complete staging journey before broad P2/P3 feature expansion.
-7. Keep this document updated in the same PR whenever priorities, acceptance evidence or implementation status change.
+1. Treat PR #240 on feat/c2pa-protected-signing as the current consolidation/reconciliation branch from current main; keep historical stacked PRs #172–#178 and #207 unmerged unless a specific missing slice is proven.
+2. Complete exact-head CI for PR #240, including Node/typecheck/build, C2PA native tests, Docker image inspection, PostgreSQL lease fencing and atomic-publication/cleanup integration.
+3. Audit the newly ported worker fencing and publication code for SQL/runtime contract parity; fix failures rather than weakening the guards.
+4. Implemented the first Asset Library → cloud worker bridge on PR #240: gated UI actions, type-safe job submission, owner/project authorization, idempotent queue receipts and cloud job history. Next prove it end-to-end in isolated staging (worker deployment, private storage, migrations, recovery, publication and derivative preview) while preserving local SQLite/disk as the default.
+5. Deploy the cloud API and worker processes only into a dedicated isolated staging Supabase/Render environment after explicit resource and cost approval.
+6. Close password recovery, backups/restore, worker observability, storage quotas, multi-role end-to-end acceptance and incident/rollback exercises before public release.
+7. Keep paid providers, production signing, external publishing and production migrations disabled until their independent release gates pass.
+8. Update this plan and README in the same PR whenever priorities, acceptance evidence or implementation status change.
 
 ## 15. Non-negotiable project protections
 
@@ -371,3 +374,97 @@ A second comparison against the actual current `main` exposed a critical integra
 - PR review submissions and inline review threads were empty for #172–#178 at the time checked. Absence of review comments is not approval.
 - A green build proves only the checks configured in that workflow. It does not prove production readiness, storage restore, tenant isolation, billing correctness or provider acceptance unless those tests explicitly cover them.
 - No code, database, provider settings, deployment or production resource was changed during this audit.
+
+
+---
+
+## 12. Implementation update — 8 November 2026: CAI verification foundation
+
+The first real C2PA implementation slice is now on feature branch `feat/c2pa-server-verification`.
+
+### Delivered in this branch
+
+- Pinned the maintained official `@contentauth/c2pa-node` package to `0.10.0` and synchronized the npm lockfile.
+- Added a server-only adapter using `Reader.fromAsset`, `Context` and the SDK's manifest `validation_state`.
+- Connected verification to the existing authenticated `GET /api/assets/:assetId/provenance` route after asset authorization.
+- Added a per-asset Verify Content Credentials action in the Asset Library and a results panel for manifest state, trust status and validation findings.
+- Disabled remote manifest fetching and added file-backed parsing, byte-size checks and a default 250 MiB verification cap.
+- Preserved bounded SDK validation findings and mapped `Invalid`, `Valid` and `Trusted` to explicit application states.
+- Required an administrator-controlled PEM trust-anchor file before returning `valid_trusted`; without a configured trust policy the result is conservatively downgraded to `valid_untrusted`.
+- Added deterministic adapter tests and a native-SDK integration smoke test using a generated valid PNG.
+- Updated the Node runtime in CI and the Docker image to the Node 24 line; added C2PA verification to the build verification chain.
+- Revised README, developer operations guide, provenance guide and implementation status.
+
+### Remaining C2PA delivery gates
+
+1. Run the full CI suite, including native package installation, genuine signed PNG and MP4 fixture generation with the upstream CAI test signer, trust-anchor validation and PNG pixel-tampering rejection.
+2. Extend genuine signed/tampered fixtures to additional supported video and audio formats beyond MP4.
+3. Verify timestamp, revocation and production trust-list behavior against a reviewed trust policy.
+4. Add parser isolation and enforceable CPU/memory/time limits.
+5. Provision and review a protected KMS/HSM provider; the callback adapter and cloud media worker hook exist, but production signing stays disabled.
+6. Extend ingredient-aware manifest creation from the current cloud media derivative hook into timeline render, export and publishing.
+7. Verify the final output after every supported proxy, transcode, timeline render and export operation.
+8. Test cross-user and cross-project denial through the actual provenance endpoint.
+
+### Release posture
+
+This branch is implementation work, not a production release. Do not merge to `main` or deploy until native SDK CI, genuine signed fixtures, security review, full user journey and isolated staging gates pass. No production service, shared database, production storage or signing key has been modified.
+
+
+## 13. Implementation update — 8 November 2026: protected callback signer and cloud-worker hook
+
+A server-only `server/c2pa-signing.mjs` adapter is implemented on `feat/c2pa-protected-signing`.
+
+- Uses the official CAI `Builder` and `CallbackSigner` APIs. Private-key operations are delegated to an injected `signingProvider.sign({ keyRef, algorithm, payload })` callback; the application receives only a public certificate chain and opaque key reference.
+- Requires an HTTPS timestamp authority by default and a dedicated private workspace root (`C2PA_SIGNING_MEDIA_ROOT`) matching `CLOUD_WORKER_TEMP_ROOT`.
+- Distinguishes the already-transformed bytes (`inputPath`) from the original parent (`sourcePath`) and the new signed destination. This prevents a false lineage claim where the signer merely re-signs the unmodified source.
+- Preserves an existing source manifest through `addIngredientFromReader`; for unsigned sources it explicitly records the original source as a file-backed parent ingredient.
+- Records a `c2pa.edited` action, signs the transformed bytes, reopens and validates the output, and returns checksum/size/ingredient metadata. Partial outputs are removed on failure.
+- `createCloudMediaExecutor` and `createCloudMediaWorker` now accept an optional signer callback. When supplied, the cloud media worker signs a validated derivative before durable publication, checks the returned checksum/size, re-probes the signed media and stores the C2PA result with the derivative metadata.
+- Integration tests exercise two actual changed PNG outputs in sequence, preserve the first signed asset as the next ingredient, and test that the cloud media executor publishes the signed file rather than the unsigned intermediate.
+- Last source-code head with workflow evidence: `6e6034605fd10f888d79186eef38d11535470bf1`. PostgreSQL asset-publication integration, npm installation and TypeScript validation passed in workflow [42474400274](https://github.com/Chrishem2003/EXECUTIVE-VISUALS/actions/runs/42474400274); its production build was later cancelled when documentation commits superseded that SHA, and Docker inspection was skipped. The current PR head contains documentation-only follow-ups and requires fresh exact-head CI. Do not mark the source-build gate green.
+
+This is still not production signing: the default `cloud-worker-process` does not instantiate a KMS/HSM provider, no production certificate or TSA is configured, and local timeline render/export is not connected. Keep `C2PA_SIGNING_ENABLED=false`. Next steps are protected provider provisioning and review, production certificate/rotation/revocation policy, timestamp trust, additional video/audio format fixtures, and timeline/export integration.
+
+
+## Delivered integration update — Creative Intelligence Graph
+
+The AI Director now reads cloud production records, proof candidates, character bibles, episode scenes/shots, private project assets and cloud timeline documents into one explicit dependency graph. It connects only persisted IDs and references (including story-bible references, timeline markers and clip asset IDs), separates project-scope membership from authored relationships, and computes downstream review impact without changing source records. README usage guidance and automated graph tests are included. Remaining graph work: connect evidence records with durable source IDs, introduce project-wide scene/shot identifiers for non-series productions, and propagate revision/staleness state into exports and publishing.
+
+
+### Evidence intelligence implementation checkpoint
+- Implemented a durable evidence ledger with source asset hash snapshots, explicit target references, role-gated review and append-only event history.
+- Build gate: `npm run verify:evidence-ledger`.
+- Integrated authorized project evidence records into the Creative Intelligence Graph. Only verified records with matching source SHA-256 and a resolvable same-project target create supporting edges; unresolved or non-verified records remain review-only.
+- Next: implement revision-aware evidence invalidation and downstream stale-impact propagation across shots, timelines, variants, exports and publishing.
+
+
+### Revision-aware change propagation checkpoint
+- Added immutable per-project Creative Intelligence Graph baselines and graph-hash revisions.
+- AI Director compares the current graph with the latest reviewed baseline and identifies changed nodes plus downstream potentially stale dependencies.
+- Next: connect these review signals to durable timeline/export/variant/publishing revision records and require explicit reapproval where dependencies changed. No automatic invalidation or publication block exists yet.
+
+
+### Production execution hardening checkpoint
+- Added graceful cancellation for active media/timeline jobs on worker shutdown, with explicit `cancelled` terminal status while the lease is valid and durable recovery fallback when finishing cannot be confirmed.
+- Next: reconcile storage publication and cleanup failure paths, then run multi-role authorization and retry/replay acceptance tests before enabling worker services in staging.
+
+
+### Production execution stack — integration decision (8 November 2026)
+
+The current `main` already contains the idempotent publication ledger from merged PR #226; closed PR #171 is superseded. The worker lease-fencing branch chain (#172–#175, #178 and #207) remains stacked on the old ledger branch and is not a safe direct merge: the lease-fencing head is 61 commits ahead / 28 behind current main. Historical CI is green on the inspected stack heads, but this does not prove compatibility with current main. Keep the stack in draft; do not merge both alternative atomic-publication PRs (#177 and #178). Continue with #178 because #207 cleanup reconciliation is based on it, and port only the lease-fencing/worker/storage changes onto current main before validating the full stack and migration ordering together.
+
+
+## 17. Current reconciliation update (2026-11-08)
+
+PR #240 (feat/c2pa-protected-signing) is now the active consolidation branch based on current main. Rather than merging the divergent historical worker/publication stack, the required P0 mechanics have been ported into the current branch in focused commits:
+
+- Per-attempt UUID lease tokens generated by Postgres; old unfenced claim/renew/finish RPCs are revoked from worker roles.
+- Cloud workers verify the current token, drain in-flight heartbeats before terminal writes, and re-check ownership before publishing media/timeline outputs.
+- Asset publication reservations bind a job, project, owner, immutable key and output checksum.
+- Asset metadata and the publication ledger finalize in one transaction while the job row is locked and the current lease token is checked.
+- Each upload attempt uses a unique immutable object path; derivative rows are constrained to the same owner and project as their source.
+- Ambiguous publication failures are recorded for deferred cleanup rather than immediately deleting a possibly committed object. Attempt cleanup requires a durable database tombstone, terminal owning job and minimum age; finalization refuses tombstoned paths.
+- PostgreSQL integration tests cover lease recovery/reclaim, stale token rejection, atomic finalization/replay, derivative tenant scope, cleanup claims and attempt-path outbox constraints.
+
+These migrations and adapters remain feature-branch code. They have not been applied to an isolated Supabase project, the cloud workers are not deployed, and the active Asset Library still uses local SQLite/disk. Exact-head CI must be checked on PR #240, not inferred from historical PR #178 runs. At source-code SHA `6e6034605fd10f888d79186eef38d11535470bf1`, PostgreSQL publication integration and TypeScript validation passed, but the build was later cancelled when documentation commits superseded that SHA and Docker inspection was skipped. The current PR head requires fresh exact-head CI; re-check all jobs before promotion. PR #241 was closed as superseded by the consolidated PR #240.
