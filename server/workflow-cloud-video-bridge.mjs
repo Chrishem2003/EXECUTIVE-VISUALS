@@ -81,6 +81,7 @@ export async function executeCloudVideoWorkflowNode({
   ...(initial.input.referenceAssetIds||[]),...(initial.input.referenceVideoAssetIds||[]),
   ...(initial.input.referenceAudioAssetIds||[])
  ].filter(Boolean))];
+ if(localIds.length&&node.config?.rightsConfirmed!==true)throw fail("Confirm that you have the rights to use every connected source/reference asset before cloud video generation.","MEDIA_RIGHTS_REQUIRED");
  const mapping=new Map();
  for(const localAssetId of localIds){
   const local=getAccessibleAsset(db,job.owner_id,localAssetId,false);
