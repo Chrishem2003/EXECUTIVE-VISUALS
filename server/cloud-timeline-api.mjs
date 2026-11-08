@@ -83,7 +83,7 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
      return response(200,{asset:result});
     }
    }
-   const mediaJobMatch=path.match(/^\\/api\\/cloud\\/assets\\/([0-9a-f-]+)\\/media-jobs$/i);
+   const mediaJobMatch=path.match(/^\/api\/cloud\/assets\/([0-9a-f-]+)\/media-jobs$/i);
    if(mediaJobMatch&&method==="POST"&&!mediaJobsEnabled)return response(503,{error:{code:"CLOUD_MEDIA_WORKER_DISABLED",message:"Cloud media processing is not enabled for this environment."}});
    if(mediaJobMatch&&safeId(mediaJobMatch[1])&&method==="POST"){
     const assetId=mediaJobMatch[1];
