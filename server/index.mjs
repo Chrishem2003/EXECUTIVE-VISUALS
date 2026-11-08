@@ -15,6 +15,7 @@ import { claimNextJob, completeJob, recoverExpiredJobs, renewJobLease } from "./
 import { sanitizeCreativeWorkspaceDocument } from "./workspace-documents.mjs";
 import { importResearchUrl } from "./research-import.mjs";
 import { getProviderCatalog } from "./provider-registry.mjs";
+import { getProviderCapabilityAtlas } from "./provider-capability-atlas.mjs";
 import { ensureRemoteUsageTable, getRemoteUsagePolicy } from "./usage-guardrails.mjs";
 import { createCloudTimelineApi } from "./cloud-timeline-api.mjs";
 import { validateSrt, validateWebVtt } from "./caption-validation.mjs";
@@ -411,6 +412,10 @@ export function createAppServer() {
           if(plan.status!=="approved"){fail(res,409,"TRANSFORMATION_APPROVAL_REQUIRED","Approve the plan and budget before submission.");return;}
           fail(res,409,"TRANSFORMATION_ADAPTER_UNAVAILABLE","No verified video-transformation adapter is enabled. The approved plan remains saved; no provider request or charge was made.");return;
         }
+      }
+      if(path==="/api/capabilities"&&req.method==="GET"){
+        const atlas=getProviderCapabilityAtlas({runwayModel:process.env.RUNWAY_VIDEO_MODEL||""});
+        send(res,200,atlas,cors);return;
       }
       if(path==="/api/providers"&&req.method==="GET"){
         const aiUpscale=await aiUpscaleAdapter.probe();
