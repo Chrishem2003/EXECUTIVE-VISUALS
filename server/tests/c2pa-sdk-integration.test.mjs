@@ -73,7 +73,7 @@ test("official CAI SDK signs and validates a real embedded C2PA manifest",async(
   await writeFile(sourcePath,output.buffer);
   await writeFile(outputPath,onePixelPng(90,80,70));
   const preserve=createC2paTransformationPreserver({sdkLoader:async()=>({Reader,Builder,Context}),maxBytes:1024*1024});
-  const lineage=await preserve({sourcePath,outputPath,sourceMimeType:"image/png",outputMimeType:"image/png",signer,operation:"test:color-adjust"});
+  const lineage=await preserve({sourcePath,outputPath,sourceMimeType:"image/png",outputMimeType:"image/png",expectedSourceSha256:createHash("sha256").update(output.buffer).digest("hex"),signer,operation:"test:color-adjust"});
   assert.equal(lineage.status,"preserved");
   assert.equal(lineage.preserved,true);
   assert.equal(lineage.ingredientCount,1);
