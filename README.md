@@ -87,6 +87,15 @@ Current C2PA settings:
 | `C2PA_TRUST_ANCHORS` | PEM root trust-anchor file path | Optional administrator-controlled root anchors. |
 | `C2PA_MAX_VERIFY_BYTES` | Maximum bytes passed to the native verifier | Defaults to 250 MiB; retain a conservative limit. |
 
+For a deployment that has an approved trust bundle, configure an absolute path to a PEM file mounted read-only outside the application repository. The server reads the PEM and passes it to the CAI SDK as `userAnchors`:
+
+```bash
+C2PA_TRUST_ANCHORS=/run/secrets/c2pa-user-anchors.pem
+C2PA_MAX_VERIFY_BYTES=262144000
+```
+
+Do not put private signing keys in this file: it contains public trust certificates only. Keep the trust bundle administrator-controlled, versioned through your deployment's secret/configuration process, and reviewed before changes. If it is unset, signed manifests may still validate as `valid_untrusted`; the application will not promote the SDK's `Trusted` state to `valid_trusted` without an explicit policy. The upstream CAI test signer under `server/tests/fixtures/c2pa/` is test-only and must never be used as a production identity.
+
 Planned signing and lineage constraints:
 
 - Use the official Node SDK on the server, not browser-supplied validation claims.
