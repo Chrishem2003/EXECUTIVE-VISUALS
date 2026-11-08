@@ -98,6 +98,15 @@ await mkdir(join(MEDIA_ROOT,"derived"), { recursive:true });
 
 const now = () => new Date().toISOString();
 const hash = value => createHash("sha256").update(value).digest("hex");
+async function sha256ManagedAsset(asset){
+  const file=resolve(MEDIA_ROOT,asset.storage_path||"");
+  const root=MEDIA_ROOT.endsWith(sep)?MEDIA_ROOT:MEDIA_ROOT+sep;
+  if(!file.startsWith(root)||!existsSync(file)||!statSync(file).isFile())return {valid:false};
+  if(statSync(file).size!==asset.byte_size)return {valid:false};
+  const digest=createHash("sha256");
+  for await(const chunk of createReadStream(file))digest.update(chunk);
+  return {valid:digest.digest("hex")===String(asset.sha256||"").toLowerCase()};
+}
 const stableJson = value => Array.isArray(value) ? "["+value.map(stableJson).join(",")+"]" : value && typeof value==="object" ? "{"+Object.keys(value).sort().map(key=>JSON.stringify(key)+":"+stableJson(value[key])).join(",")+"}" : JSON.stringify(value);
 const safeName = value => basename(String(value || "upload")).replace(/[\u0000-\u001f\u007f]/g,"").replace(/[^\p{L}\p{N}._() -]/gu,"_").slice(0,180) || "upload";
 const SECURITY_HEADERS = {
@@ -638,6 +647,7 @@ export function createAppServer() {
           if(evidenceAsset.project_id&&!canWriteProject(db,user.id,evidenceAsset.project_id)){fail(res,403,"EVIDENCE_WRITE_FORBIDDEN","Editor access is required to submit evidence.");return;}
           const body=await readJson(req);
           if(body.status!==undefined){fail(res,400,"EVIDENCE_STATUS_SERVER_MANAGED","Evidence submissions always begin in submitted status and must be reviewed separately.");return;}
+          const integrity=await sha256ManagedAsset(evidenceAsset);if(!integrity.valid){fail(res,409,"EVIDENCE_SOURCE_INTEGRITY_FAILED","The stored source asset no longer matches its recorded size and SHA-256. Restore the original source before submitting evidence.");return;}
           if(!evidenceTargetExists(db,user.id,evidenceAsset,body.targetType,body.targetId)){fail(res,404,"EVIDENCE_TARGET_NOT_FOUND","Evidence target is not available in the same project.");return;}
           const record=createEvidenceRecord(db,{ownerId:user.id,projectId:evidenceAsset.project_id,sourceAsset:{id:evidenceAsset.id,sha256:evidenceAsset.sha256},targetType:body.targetType,targetId:body.targetId,kind:body.kind,claim:body.claim,method:body.method,sourceRef:body.sourceRef,observedAt:body.observedAt,note:body.note});
           audit(db,user.id,"evidence.submitted","evidence",record.id,{sourceAssetId:evidenceAsset.id,target:record.target,kind:record.kind},evidenceAsset.project_id);
@@ -653,6 +663,8 @@ export function createAppServer() {
           const allowed=recordRow.project_id?Boolean(access&&["owner","editor","reviewer"].includes(access.access_role)):evidenceAsset.owner_id===user.id;
           if(!allowed){fail(res,403,"EVIDENCE_REVIEW_FORBIDDEN","Project reviewer, editor or owner access is required to review evidence.");return;}
           const body=await readJson(req);
+          if(typeof body.reviewNote!=="string"||body.reviewNote.trim().length<8){fail(res,400,"EVIDENCE_REVIEW_REASON_REQUIRED","Provide a review reason of at least eight characters for every evidence decision.");return;}
+          const integrity=await sha256ManagedAsset(evidenceAsset);if(!integrity.valid){fail(res,409,"EVIDENCE_SOURCE_INTEGRITY_FAILED","The stored source asset no longer matches its recorded size and SHA-256. Evidence cannot be approved until the source is restored.");return;}
           const record=reviewEvidenceRecord(db,{evidenceId:recordRow.id,reviewerId:user.id,status:body.status,reviewNote:body.reviewNote});
           if(!record){fail(res,404,"EVIDENCE_NOT_FOUND","Evidence record not found.");return;}
           audit(db,user.id,"evidence.reviewed","evidence",record.id,{status:record.status,sourceAssetId:evidenceAsset.id},evidenceAsset.project_id);
