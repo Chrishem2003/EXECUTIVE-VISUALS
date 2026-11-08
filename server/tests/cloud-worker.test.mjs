@@ -70,3 +70,28 @@ test("worker validates inputs and output before finishing",async()=>{
  });
  assert.equal(invalid.status,"failed");
 });
+
+
+test("worker shutdown signal aborts execution and records a cancelled terminal state",async()=>{
+ const queue=queueFor();const controller=new AbortController();let markStarted;
+ const started=new Promise(resolve=>{markStarted=resolve;});const events=[];
+ const cycle=runCloudWorkerCycle({
+  queue,workerId:"worker-shutdown",heartbeatIntervalMs:60000,signal:controller.signal,onEvent:event=>events.push(event),
+  execute:async({signal})=>{markStarted();return new Promise((resolve,reject)=>signal.addEventListener("abort",()=>reject(signal.reason),{once:true}));}
+ });
+ await started;controller.abort(new Error("test shutdown"));
+ const result=await cycle;
+ assert.equal(result.status,"cancelled");
+ assert.equal(result.reason,"worker_shutdown");
+ const finish=queue.calls.find(call=>call[0]==="finish");
+ assert.equal(finish[3],"cancelled");
+ assert.equal(finish[5].code,"WORKER_SHUTDOWN");
+ assert.ok(events.some(event=>event.type==="job.cancelled"));
+});
+
+test("already-aborted shutdown signal does not claim a new job",async()=>{
+ const queue=queueFor();const controller=new AbortController();controller.abort();
+ const result=await runCloudWorkerCycle({queue,workerId:"worker-shutdown",signal:controller.signal,execute:async()=>({})});
+ assert.deepEqual(result,{claimed:false,skipped:true,reason:"shutdown"});
+ assert.equal(queue.calls.length,0);
+});
