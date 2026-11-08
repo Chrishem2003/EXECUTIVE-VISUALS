@@ -156,3 +156,10 @@ Actual image/video generation, speech/dubbing, timeline preview playback, transi
 - [Additional workflow research](docs/ADDITIONAL-WORKFLOW-RESEARCH.md)
 - [Adapter contract](docs/ADAPTER-CONTRACT.md)
 - [Original creative intelligence and innovation atlas](docs/ORIGINAL-CREATIVE-INTELLIGENCE-AND-INNOVATION-ATLAS.md)
+
+
+### Creative Intelligence Graph
+
+Open **AI Director** and save a production to a private cloud project. The graph panel reads the saved creative-production record, private project assets and each accessible cloud timeline. It follows explicit shot/character IDs, scene and shot marker IDs, and timeline clip asset IDs. Project-scope membership is labelled separately from authored dependencies. Missing or unresolved relationships are not guessed.
+
+Choose a graph node and run **Analyze downstream impact** before changing it. The report lists dependent shots, clips and timelines that may need human review. It is a dependency analysis only: it does not automatically rewrite timelines, invalidate exports, or claim semantic understanding of media. The automated test is `npm run verify:creative-graph`.
