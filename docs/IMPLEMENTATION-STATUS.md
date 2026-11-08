@@ -494,3 +494,11 @@ This is a runnable worker entry point, not a deployed worker. Do not set the ena
 - Links are created only from explicit IDs, series story-bible references, marker IDs and asset references. Shared project membership is labelled as scope, not misrepresented as a creative dependency.
 - Downstream change-impact analysis lists dependent shots, clips and timelines for human review. It does not mutate production data or infer missing links.
 - Verification: `npm run verify:creative-graph`; full CI also runs TypeScript checks and production build.
+
+
+## Evidence intelligence (feature branch)
+- Added project-scoped evidence records attached to source assets, including source SHA-256 snapshots, explicit target references, claim/method/source metadata and observation time.
+- Added server-assigned `submitted` state and role-gated human review (`needs_review`, `verified`, `rejected`) with append-only submission/review events and audit events.
+- Added authenticated asset evidence list, submit, review and event-history routes. Viewers can read; editors can submit; owners/editors/reviewers can review. Personal assets remain owner-only.
+- Added database-backed tests and included `verify:evidence-ledger` in the full build gate. README and dedicated lifecycle/API documentation updated.
+- Limitation: evidence targets are stored as explicit project references; the next step is resolving and displaying them in the Creative Intelligence Graph with same-project validation. Review acceptance is not a factual/legal guarantee.
