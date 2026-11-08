@@ -113,7 +113,7 @@ test("official CAI CallbackSigner delegates C2PA signing to a protected callback
  const sourceUnsigned=onePixelPng(22,44,66),signedSource={buffer:null};
  const sourceBuilder=await Builder.newAsync();
  sourceBuilder.setIntent({create:"http://cv.iptc.org/newscodes/digitalsourcetype/digitalCapture"});
- await sourceBuilder.signAsync(testOnlySigner,{buffer:sourceUnsigned,mimeType:"image/png"},signedSource);
+ sourceBuilder.sign(testOnlySigner,{buffer:sourceUnsigned,mimeType:"image/png"},signedSource);
  const dir=await mkdtemp(join(tmpdir(),"ev-c2pa-callback-signer-"));
  try{
   const sourcePath=join(dir,"source.png"),outputPath=join(dir,"derivative.png");
