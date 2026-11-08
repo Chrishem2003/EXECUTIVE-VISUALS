@@ -151,13 +151,11 @@ export function createC2paTransformationSigner({
         await builder.addIngredientFromReader(sourceReader);
       }
       builder.setIntent("edit");
-      builder.addAssertion("c2pa.actions", {
-        actions: [{
-          action: "c2pa.edited",
-          softwareAgent: { name: appName, version: appVersion },
-          parameters: { description: actionDescription }
-        }]
-      });
+      builder.addAction(JSON.stringify({
+        action: "c2pa.edited",
+        softwareAgent: { name: appName, version: appVersion },
+        parameters: { description: actionDescription }
+      }));
 
       const callbackSigner = Sdk.CallbackSigner.newSigner({
         alg: algorithm,
