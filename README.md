@@ -122,7 +122,7 @@ The API reads configuration from environment variables. Important settings inclu
 | `SUPABASE_PUBLISHABLE_KEY` | Supabase public client key | Configure as deployment secret/config; never commit credentials. |
 | `COOKIE_SECURE` | Secure cookie override | Set to `true` behind HTTPS where required. |
 | `MAX_UPLOAD_BYTES` | Upload limit | Keep limits conservative and validate actual media signatures. |
-| `CLOUD_TIMELINE_API_ENABLED` | Cloud timeline API gate | Keep disabled until the isolated staging release gates pass. |
+| `CLOUD_TIMELINE_API_ENABLED` | Cloud timeline API gate | Keep disabled until the isolated staging release gates pass. |\n| `CLOUD_WORKER_TEMP_ROOT` | Private cloud worker scratch directory | Must exist and be private; when C2PA signing is enabled it must match `C2PA_SIGNING_MEDIA_ROOT`. |\n| `C2PA_TRUST_ANCHORS` | PEM public trust bundle path | Administrator-managed, read-only public certificates only. |\n| `C2PA_MAX_VERIFY_BYTES` | C2PA parser/signing size limit | Defaults to 250 MiB. |\n| `C2PA_SIGNING_MEDIA_ROOT` | Dedicated signing workspace root | Must match `CLOUD_WORKER_TEMP_ROOT`; never use a shared or browser-writable directory. |
 | `C2PA_SIGNING_ENABLED` | Callback signing gate | Defaults to `false`; do not enable without an approved protected signer provider. |
 | `C2PA_SIGNING_KEY_REF` | External key reference | Identifier only; never a private key or secret value. |
 | `C2PA_TSA_URL` | Timestamp authority | Must be HTTPS; required by default for signing. |
