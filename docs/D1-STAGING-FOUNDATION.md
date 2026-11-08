@@ -14,6 +14,7 @@ The schema stores metadata only. It does not store media bytes, provider secrets
 - `server/d1-repository.mjs`: parameterized D1 repository. Project reads are scoped to owner/member; writes enforce owner/editor roles and optimistic revisions.
 - `server/tests/d1-repository.test.mjs`: local in-memory SQLite tests using the same SQL migration. No remote D1 binding is used.
 - `cloudflare/worker.mjs`: separate staging Worker that exposes isolated `/api/d1/*` endpoints and proxies only login/logout plus the authenticated `/api/me` identity check. All other production business API routes are blocked.
+- `server/index.mjs`: an environment-gated same-origin `/api/d1/*` proxy. It requires the existing application session, forwards only the session cookie/Bearer header and bounded JSON body, and is disabled unless `D1_STAGING_WORKER_URL` is explicitly configured. Production remains unchanged while that variable is absent.
 - `cloudflare/worker.test.mjs`: Worker tests for schema readiness, upstream authentication, project creation/listing, revisioned workspace persistence, redirect handling, CORS origin restrictions and rejection of unauthenticated writes.
 - `wrangler.jsonc`: separate `executive-visuals-d1-staging` Worker configuration, bound only to the existing `executive-visuals-staging` D1 database and restricted to the exact Executive Visuals app origin for browser API calls.
 - `docs/D1-STAGING-FOUNDATION.md`: this integration boundary and rollout plan.
@@ -27,7 +28,7 @@ The schema stores metadata only. It does not store media bytes, provider secrets
 - Read/update staging project: `GET/PATCH /api/d1/projects/:id`
 - Read/update persisted workspace documents: `GET/PUT /api/d1/projects/:id/workspace` (revision checked; maximum document size 256 KB)
 
-The staging Worker blocks production business routes such as `/api/projects` and `/api/assets`. D1 browser requests use an explicit Bearer token; CORS permits only `https://executive-visuals.onrender.com`, allows the `authorization` and `content-type` headers, and does not enable cross-origin cookies.
+The staging Worker blocks production business routes such as `/api/projects` and `/api/assets`. The supported browser path is the same-origin Render `/api/d1/*` proxy, which forwards the existing HttpOnly session cookie server-to-server. The Worker also has a strict origin allow-list for direct Bearer-token calls, but browser cookies are not shared across the Render and workers.dev domains.
 
 ## Local verification
 
@@ -48,13 +49,14 @@ For Cloudflare local development, configure a D1 binding with `remote = false` (
 5. **Completed:** deploy `executive-visuals-d1-staging` as a separate Worker on its workers.dev subdomain, with no custom domain or production route. It permits only login/logout, `/api/me`, and `/api/d1/*`; all other application/business routes return 404. The Render API is contacted only for authentication and identity verification.
 6. **Completed:** add revisioned D1 workspace-document GET/PUT endpoints, strict body bounds, and owner/editor write authorization; viewers/reviewers remain read-only.
 7. **Completed in code, awaiting CI/deployment:** restrict browser CORS to the exact Executive Visuals app origin and Bearer authorization; cross-origin cookies are disabled.
-8. Run a live authenticated smoke test and workspace round-trip; confirm unauthenticated requests cannot create D1 principals or projects.
-9. Keep Render SQLite as the current application source of truth until API compatibility, consistency, recovery, export/restore and tenant-isolation acceptance pass. Do not redirect the existing `/api/projects` route until all project-dependent endpoints have been migrated together.
+8. Configure `D1_STAGING_WORKER_URL` only on a separately approved isolated Executive Visuals staging service; do not set it on production.
+9. Run a live authenticated smoke test and workspace round-trip through the same-origin proxy; confirm unauthenticated requests cannot create D1 principals or projects.
+10. Keep Render SQLite as the current application source of truth until API compatibility, consistency, recovery, export/restore and tenant-isolation acceptance pass. Do not redirect the existing `/api/projects` route until all project-dependent endpoints have been migrated together.
 
 ## Deliberately not done
 
 - No production Worker binding, deployed Worker code, route, or environment variable was changed.
-- No production route, main application API, or Render service has been switched to D1.
+- No production route, main application API, or Render service has been switched to D1. The new same-origin proxy is inert until its staging-only environment variable is set.
 - No Render deployment or production service was changed.
 - No Supabase project, key, or auth configuration was changed.
 - No R2 bucket was activated or created.
