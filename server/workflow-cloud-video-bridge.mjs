@@ -53,8 +53,8 @@ async function readBounded(response,maximum){
  */
 export async function executeCloudVideoWorkflowNode({
  db,job,run,node,values={},mediaRoot,cloudTimelineApi,
- onProgress=()=>{},fetchImpl=globalThis.fetch,
- pollIntervalMs=5000,maxWaitMs=30*60*1000
+ onProgress=()=>{},onJobEnqueued=()=>{},fetchImpl=globalThis.fetch,
+ pollIntervalMs=5000,waitForCompletion=false
 }={}){
  if(!cloudTimelineApi||typeof cloudTimelineApi.handle!=="function"||typeof cloudTimelineApi.uploadAsset!=="function"){
   throw fail("The authenticated cloud workspace is not enabled for this workflow.","VIDEO_WORKFLOW_CLOUD_DISABLED");
