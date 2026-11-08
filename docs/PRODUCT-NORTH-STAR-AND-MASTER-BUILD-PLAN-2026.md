@@ -318,7 +318,7 @@ Research caveat: competitor feature descriptions are limited to public documenta
 1. Treat PR #240 on feat/c2pa-protected-signing as the current consolidation/reconciliation branch from current main; keep historical stacked PRs #172–#178 and #207 unmerged unless a specific missing slice is proven.
 2. Complete exact-head CI for PR #240, including Node/typecheck/build, C2PA native tests, Docker image inspection, PostgreSQL lease fencing and atomic-publication/cleanup integration.
 3. Audit the newly ported worker fencing and publication code for SQL/runtime contract parity; fix failures rather than weakening the guards.
-4. Connect the lease-fenced cloud asset lifecycle to the active Asset Library and /api/assets interface without breaking the local SQLite/disk development mode.
+4. Implemented the first Asset Library → cloud worker bridge on PR #240: gated UI actions, type-safe job submission, owner/project authorization, idempotent queue receipts and cloud job history. Next prove it end-to-end in isolated staging (worker deployment, private storage, migrations, recovery, publication and derivative preview) while preserving local SQLite/disk as the default.
 5. Deploy the cloud API and worker processes only into a dedicated isolated staging Supabase/Render environment after explicit resource and cost approval.
 6. Close password recovery, backups/restore, worker observability, storage quotas, multi-role end-to-end acceptance and incident/rollback exercises before public release.
 7. Keep paid providers, production signing, external publishing and production migrations disabled until their independent release gates pass.
