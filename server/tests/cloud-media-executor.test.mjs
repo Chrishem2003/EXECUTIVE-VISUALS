@@ -500,3 +500,29 @@ test("cloud AI upscale rejects video instead of treating frame-by-frame resampli
     }), error => error.code === "UNSUPPORTED_MEDIA_TYPE");
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
+
+test("cloud media executor fails closed instead of publishing when C2PA lineage preservation is required but unavailable",async()=>{
+ const directory=await mkdtemp(join(tmpdir(),"ev-cloud-c2pa-required-"));
+ const previous=process.env.FFMPEG_PATH,previousProbe=process.env.FFPROBE_PATH;
+ const source=join(directory,"source.mp4");await writeFile(source,"source-media");
+ const ffmpeg=await executable(directory,"ffmpeg",'for last do :; done\nprintf "rendered-media" > "$last"');
+ const ffprobe=await executable(directory,"ffprobe",String.raw`printf '%s' '{"streams":[{"codec_type":"video","width":640,"height":360}],"format":{"duration":"1.0"}}'`);
+ process.env.FFMPEG_PATH=ffmpeg;process.env.FFPROBE_PATH=ffprobe;
+ let published=false;
+ try{
+  const execute=createCloudMediaExecutor({
+   tempRoot:directory,
+   c2paPreserver:async()=>{throw Object.assign(new Error("Signer is not configured"),{code:"C2PA_SIGNER_REQUIRED",status:503});},
+   mediaIO:{
+    async materialize(){return{path:source,asset:{id:"asset-source",name:"source.mp4",mediaType:"video/mp4",sha256:"d".repeat(64)},async cleanup(){}};},
+    async publish(){published=true;return{id:"asset-output"};}
+   }
+  });
+  await assert.rejects(execute({job:{id:"job-c2pa",owner_id:"owner",project_id:"project",job_type:"media.color",input:{sourceAssetId:"asset-source"}},onProgress(){}}),error=>error.code==="C2PA_SIGNER_REQUIRED");
+  assert.equal(published,false,"derivative must not be published when C2PA preservation fails");
+ }finally{
+  if(previous===undefined)delete process.env.FFMPEG_PATH;else process.env.FFMPEG_PATH=previous;
+  if(previousProbe===undefined)delete process.env.FFPROBE_PATH;else process.env.FFPROBE_PATH=previousProbe;
+  await rm(directory,{recursive:true,force:true});
+ }
+});
