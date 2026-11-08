@@ -118,9 +118,28 @@ function outputPlan(jobType, input, source, sourcePath, outputPath) {
  * Timeline rendering remains deliberately separate until its timeline document
  * and asset references are migrated to the cloud repository.
  */
-export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.env.FFMPEG_PATH || "ffmpeg", ffprobe = process.env.FFPROBE_PATH || "ffprobe", timeoutMs = 30 * 60 * 1000 } = {}) {
+export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.env.FFMPEG_PATH || "ffmpeg", ffprobe = process.env.FFPROBE_PATH || "ffprobe", timeoutMs = 30 * 60 * 1000, signC2paTransformation } = {}) {
   if (!mediaIO || typeof mediaIO.materialize !== "function" || typeof mediaIO.publish !== "function") throw new Error("Cloud media executor requires cloud media IO.");
   if (!Number.isInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 60 * 60 * 1000) throw new Error("Cloud media execution timeout is invalid.");
+  if (signC2paTransformation !== undefined && typeof signC2paTransformation !== "function") throw new Error("C2PA transformation signer must be a function.");
+
+  async function signOutput({ inputPath, extension, mimeType, sourcePath, sourceMimeType, sourceAssetId, job, workDir }) {
+    if (!signC2paTransformation) return { path: inputPath, c2pa: { status: "not_configured" } };
+    const signedPath = join(workDir, randomUUID() + "." + extension);
+    const c2pa = await signC2paTransformation({
+      inputPath,
+      sourcePath,
+      sourceMimeType,
+      outputPath: signedPath,
+      mimeType,
+      sourceAssetId,
+      actionDescription: "Executed " + job.job_type + " media operation."
+    });
+    if (!c2pa || c2pa.status !== "signed_and_verified") {
+      throw Object.assign(new Error("C2PA signer did not return a verified signed derivative."), { code: "C2PA_SIGNING_RESULT_INVALID" });
+    }
+    return { path: signedPath, c2pa };
+  }
 
   return async function execute({ job, signal, onProgress = () => {} }) {
     if (!job || typeof job.id !== "string" || typeof job.owner_id !== "string" || !SUPPORTED.has(job.job_type)) {
@@ -170,21 +189,31 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
         if (Number(outputImage?.width) !== expectedWidth || Number(outputImage?.height) !== expectedHeight) throw Object.assign(new Error("AI-upscaled image dimensions do not match the requested scale; derivative was not published."), { code: "MEDIA_OUTPUT_VALIDATION_FAILED" });
         await runProcess(ffmpeg, ["-v", "error", "-i", outputPath, "-f", "null", "-"], { signal, timeoutMs: Math.min(timeoutMs, 120000), onProgress });
         if (signal?.aborted) throw Object.assign(new Error("Media job was cancelled."), { code: "JOB_CANCELLED" });
-        const info = await stat(outputPath);
-        const digest = await checksum(outputPath);
         const mediaType = format === "jpg" ? "image/jpeg" : "image/" + format;
         const sourceName = String(materialized.asset.name || "image");
         const plan = { name: sourceName.replace(/\.[^.]+$/, "").slice(0, 140) + "-ai-upscaled." + format, mediaType };
         const processing = { engine: result.engine, method: result.method, model: result.model, scale: result.scale, tile: Number(input.tile ?? 0), sourceWidth, sourceHeight, outputWidth: expectedWidth, outputHeight: expectedHeight, dimensionsVerified: true };
         if (signal?.aborted) throw Object.assign(new Error("Media job was cancelled."), { code: "JOB_CANCELLED" });
+        const signing = await signOutput({
+          inputPath: outputPath, extension: format, mimeType: mediaType,
+          sourcePath, sourceMimeType: materialized.asset.mediaType,
+          sourceAssetId: sourceId, job, workDir
+        });
+        if (signing.c2pa.status === "signed_and_verified") {
+          await runProcess(ffmpeg, ["-v", "error", "-i", signing.path, "-f", "null", "-"], { signal, timeoutMs: Math.min(timeoutMs, 120000), onProgress });
+        }
+        const info = await stat(signing.path);
+        const digest = await checksum(signing.path);
+        if (signing.c2pa.sha256 && signing.c2pa.sha256 !== digest) throw Object.assign(new Error("C2PA signer checksum does not match the published file."), { code: "C2PA_SIGNED_OUTPUT_HASH_MISMATCH" });
+        if (signing.c2pa.byteSize && signing.c2pa.byteSize !== info.size) throw Object.assign(new Error("C2PA signer size does not match the published file."), { code: "C2PA_SIGNED_OUTPUT_SIZE_MISMATCH" });
         const asset = await mediaIO.publish({
           ownerId: job.owner_id, projectId: job.project_id || null, filename: plan.name,
-          mediaType, path: outputPath, derivativeOf: sourceId,
-          metadata: { operation: job.job_type, sourceSha256: materialized.asset.sha256, sha256: digest, processing },
+          mediaType, path: signing.path, derivativeOf: sourceId,
+          metadata: { operation: job.job_type, sourceSha256: materialized.asset.sha256, sha256: digest, processing, c2pa: signing.c2pa },
           publicationKey: job.id + ":output:v1"
         });
         onProgress(100);
-        return { sourceAssetId: sourceId, outputAsset: asset, sha256: digest, byteSize: info.size, operation: job.job_type, processing };
+        return { sourceAssetId: sourceId, outputAsset: asset, sha256: digest, byteSize: info.size, operation: job.job_type, processing, c2pa: signing.c2pa };
       }
       if (job.job_type === "media.probe") {
         if (!executableAvailable("ffprobe")) throw Object.assign(new Error("FFprobe is not installed on this worker."), { code: "MEDIA_ENGINE_MISSING" });
@@ -271,7 +300,27 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
         }
       }
       onProgress(85);
-      const digest = await checksum(outputPath);
+      const signing = await signOutput({
+        inputPath: outputPath, extension: outputExtension, mimeType: plan.mediaType,
+        sourcePath, sourceMimeType: materialized.asset.mediaType,
+        sourceAssetId: sourceId, job, workDir
+      });
+      if (signing.c2pa.status === "signed_and_verified") {
+        const signedProbe = await runProcess(ffprobe, ["-v", "error", "-show_format", "-show_streams", "-of", "json", signing.path], { signal, timeoutMs, onProgress });
+        let signedMetadata;
+        try { signedMetadata = JSON.parse(signedProbe.stdout || "{}"); }
+        catch { throw Object.assign(new Error("FFprobe could not validate the signed C2PA derivative."), { code: "MEDIA_PROBE_INVALID" }); }
+        const signedStreams = Array.isArray(signedMetadata.streams) ? signedMetadata.streams : [];
+        const signedExpectedStream = plan.mediaType.startsWith("audio/") ? "audio" : "video";
+        if (!signedStreams.some(stream => stream?.codec_type === signedExpectedStream)) {
+          throw Object.assign(new Error("Signed C2PA derivative lost its expected media stream."), { code: "MEDIA_OUTPUT_VALIDATION_FAILED" });
+        }
+      }
+      const publishedInfo = await stat(signing.path);
+      if (!publishedInfo.isFile() || publishedInfo.size < 1) throw Object.assign(new Error("Signed media output is empty."), { code: "MEDIA_OUTPUT_EMPTY" });
+      const digest = await checksum(signing.path);
+      if (signing.c2pa.sha256 && signing.c2pa.sha256 !== digest) throw Object.assign(new Error("C2PA signer checksum does not match the published file."), { code: "C2PA_SIGNED_OUTPUT_HASH_MISMATCH" });
+      if (signing.c2pa.byteSize && signing.c2pa.byteSize !== publishedInfo.size) throw Object.assign(new Error("C2PA signer size does not match the published file."), { code: "C2PA_SIGNED_OUTPUT_SIZE_MISMATCH" });
       const processing = job.job_type === "media.upscale" ? {
         method: "classical-resampling",
         algorithm: ["lanczos", "bicubic", "spline36"].includes(input.algorithm) ? input.algorithm : "lanczos",
@@ -291,13 +340,13 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
         projectId: job.project_id || null,
         filename: plan.name,
         mediaType: plan.mediaType,
-        path: outputPath,
+        path: signing.path,
         derivativeOf: sourceId,
-        metadata: { operation: job.job_type, sourceSha256: materialized.asset.sha256, sha256: digest, ...(processing ? { processing } : {}) },
+        metadata: { operation: job.job_type, sourceSha256: materialized.asset.sha256, sha256: digest, c2pa: signing.c2pa, ...(processing ? { processing } : {}) },
         publicationKey: job.id + ":output:v1"
       });
       onProgress(100);
-      return { sourceAssetId: sourceId, outputAsset: asset, sha256: digest, byteSize: info.size, operation: job.job_type, ...(processing ? { processing } : {}) };
+      return { sourceAssetId: sourceId, outputAsset: asset, sha256: digest, byteSize: publishedInfo.size, operation: job.job_type, c2pa: signing.c2pa, ...(processing ? { processing } : {}) };
     } finally {
       await materialized.cleanup?.().catch(() => {});
       await rm(workDir, { recursive: true, force: true }).catch(() => {});
