@@ -8,6 +8,10 @@ const IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
 const AUDIO_TYPES = new Set(["audio/mpeg", "audio/mp4", "audio/wav", "audio/x-wav", "audio/aac", "audio/ogg", "audio/webm", "audio/flac"]);
 const fail = (message, code) => Object.assign(new Error(message), { code });
 
+async function cancelResponseBody(response) {
+  await response?.body?.cancel().catch(() => {});
+}
+
 async function readResponseBodyBounded(response, maximumBytes) {
   if (!response.body || typeof response.body.getReader !== "function") {
     throw fail("Private source response did not provide a readable body.", "VIDEO_INPUT_ASSET_DOWNLOAD_FAILED");
@@ -91,12 +95,16 @@ export function createRunwaySourceAssetResolver({
     } catch {
       throw fail("Private source asset download failed.", "VIDEO_INPUT_ASSET_DOWNLOAD_FAILED");
     }
-    if (!response.ok) throw fail("Private source asset download failed.", "VIDEO_INPUT_ASSET_DOWNLOAD_FAILED");
+    if (!response.ok) {
+      await cancelResponseBody(response);
+      throw fail("Private source asset download failed.", "VIDEO_INPUT_ASSET_DOWNLOAD_FAILED");
+    }
     const type = String(response.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
     const contentLength = response.headers.get("content-length");
     const declared = contentLength == null ? null : Number(contentLength);
     if (type !== asset.mediaType ||
         declared !== null && (!Number.isSafeInteger(declared) || declared < 0 || declared > maxBytes || declared !== asset.size)) {
+      await cancelResponseBody(response);
       throw fail("Private source asset headers do not match stored metadata.", "VIDEO_INPUT_ASSET_INTEGRITY_FAILED");
     }
     const bytes = await readResponseBodyBounded(response, asset.size);
