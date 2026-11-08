@@ -35,7 +35,7 @@ export async function runCloudWorkerCycle({
   let heartbeatStopped = false;
   let heartbeatInFlight = Promise.resolve();
   async function assertLease() {
-    if (leaseLost || controller.signal.aborted) throw Object.assign(new Error("Worker lease is no longer valid."), { code: "CLOUD_WORKER_LEASE_LOST" });
+    if (leaseLost) throw Object.assign(new Error("Worker lease is no longer valid."), { code: "CLOUD_WORKER_LEASE_LOST" });
     try {
       const valid = await queue.assertLease(job.id, workerId, job.lease_token);
       if (!valid) throw new Error("Worker lease is no longer valid.");
