@@ -59,7 +59,10 @@ Common local defaults are defined in `server/index.mjs`. Use environment variabl
 | `CLOUD_TIMELINE_API_ENABLED` | false | Keep off until cloud release gates are complete. |
 | `C2PA_TRUST_ANCHORS` | unset | Optional administrator-managed PEM trust-anchor file; without it, the adapter cannot return `valid_trusted`. |
 | `C2PA_MAX_VERIFY_BYTES` | 250 MiB | Maximum file size passed to the CAI native parser. |
-| `C2PA_TRUST_ANCHORS` | unset | PEM trust anchors loaded server-side and supplied as CAI user anchors. |\n| `C2PA_SIGNING_ENABLED` | false | Callback signing remains disabled unless explicitly enabled. |\n| `C2PA_SIGNING_KEY_REF` | unset | External KMS/HSM key identifier only; never a private key. |\n| `C2PA_TSA_URL` | unset | HTTPS timestamp authority; required by default by the signing adapter. |
+| `C2PA_TRUST_ANCHORS` | unset | PEM trust anchors loaded server-side and supplied as CAI user anchors. |
+| `C2PA_SIGNING_ENABLED` | false | Callback signing remains disabled unless explicitly enabled. |
+| `C2PA_SIGNING_KEY_REF` | unset | External KMS/HSM key identifier only; never a private key. |
+| `C2PA_TSA_URL` | unset | HTTPS timestamp authority; required by default by the signing adapter. |
 
 The current code also has provider-specific settings. Inspect the adapter and readiness check before configuring any provider. A variable existing in code does not imply that its external service has been provisioned or approved.
 
