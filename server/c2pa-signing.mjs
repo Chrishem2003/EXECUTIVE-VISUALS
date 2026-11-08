@@ -65,8 +65,10 @@ export function createC2paTransformationSigner({
     sourcePath = inputPath,
     sourceMimeType = mimeType,
     actionDescription,
-    sourceAssetId = null
+    sourceAssetId = null,
+    signal
   }) {
+    if (signal?.aborted) fail("JOB_CANCELLED");
     if (!enabled) fail("C2PA_SIGNING_DISABLED");
     if (!mediaRoot) fail("C2PA_MEDIA_ROOT_REQUIRED");
     if (!Buffer.isBuffer(certificateChain) || !certificateChain.includes(Buffer.from("-----BEGIN CERTIFICATE-----")) || certificateChain.includes(Buffer.from("PRIVATE KEY"))) {
@@ -180,7 +182,8 @@ export function createC2paTransformationSigner({
         ...(tsaUrl ? { tsaUrl } : {})
       }, async data => {
         const payload = Buffer.from(data);
-        const signature = await signingProvider.sign({ keyRef, algorithm, payload });
+        const signature = await signingProvider.sign({ keyRef, algorithm, payload, signal });
+        if (signal?.aborted) fail("JOB_CANCELLED");
         if (!Buffer.isBuffer(signature) && !(signature instanceof Uint8Array)) {
           fail("C2PA_PROTECTED_SIGNER_RESPONSE_INVALID");
         }
@@ -193,6 +196,7 @@ export function createC2paTransformationSigner({
         { path: destination, mimeType }
       );
       outputCreated = true;
+      if (signal?.aborted) fail("JOB_CANCELLED");
 
       const outputInfo = statSync(destination);
       if (!outputInfo.isFile() || outputInfo.size < 1 || outputInfo.size > maxBytes) {
