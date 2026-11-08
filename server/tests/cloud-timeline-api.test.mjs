@@ -451,6 +451,29 @@ test("cloud workflow video quote authorizes the project and returns a non-billab
  assert.equal(persisted[0].p_quote_id,result.body.quote.id);
 });
 
+test("cloud workflow video quote fails closed when durable persistence is unavailable",async()=>{
+ let providerCalls=0;
+ const api=createCloudTimelineApi({
+  url:"https://example.supabase.co",serviceRoleKey:"service-secret",
+  fetchImpl:async(url)=>url.endsWith("/rpc/record_video_workflow_quote")
+   ?{ok:false,status:503,async text(){return JSON.stringify({message:"database unavailable"});}}
+   :{ok:true,status:200,async text(){return"[]";}},
+  timelineService:{timelines:{},assets:{}},authorize:async()=>true,
+  runwayRouterAdapter:{
+   async prepareInput(input){return input;},
+   async preflight(){providerCalls++;return{billable:false,estimatedCredits:100,estimatedUsd:1,currency:"USD",provider:"runway",model:"gen4.5",configId:"studio-video"};}
+  }
+ });
+ const result=await api.handle({method:"POST",path:"/api/cloud/workflows/video/quote",ownerId:owner,body:{
+  projectId:project,requestId:"workflow-1:video-node:persist-failure",
+  node:{kind:"video.generate",config:{provider:"runway",model:"model-router"}},
+  values:{prompt:"A cinematic launch"}
+ }});
+ assert.equal(result.status,503);
+ assert.equal(result.body.error.code,"CLOUD_TIMELINE_API_DATABASE_ERROR");
+ assert.equal(providerCalls,1,"only the non-billable dry-run may run before quote persistence");
+});
+
 test("cloud workflow video quote rejects viewers before resolving private inputs or contacting provider",async()=>{
  let prepared=0,preflight=0;
  const api=createCloudTimelineApi({
