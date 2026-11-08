@@ -73,7 +73,7 @@ test("accepts the SDK Trusted state only when a configured trust policy exists",
   assert.equal(result.status, "valid_trusted");
   assert.equal(result.trustPolicyConfigured, true);
   assert.equal(fake.received().context.verify.verifyTrust, true);
-  assert.equal(fake.received().context.trust.trustAnchors, anchor);
+  assert.equal(fake.received().context.trust.userAnchors, anchor);
   assert.equal(fake.received().context.trust.verifyTrustList, true);
 });
 
