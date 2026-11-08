@@ -13,7 +13,7 @@ const bytes=new Uint8Array([1,2,3,4]);
 const config={url:"https://example.supabase.co",serviceRoleKey:"private-service-key"};
 const leaseContext={jobId:"523e4567-e89b-42d3-a456-426614174000",workerId:"worker-test-1",leaseToken:"623e4567-e89b-42d3-a456-426614174000"};
 function response(body,status=200){return{ok:status>=200&&status<300,status,async text(){return JSON.stringify(body);}};}
-function fixture({authorize=async()=>true,insertResponse=null,removeError=false,uploadFileReceipt=null,cleanupRows=[],uploadReceiptInvalid=false,finalizationError=null}={}) {
+function fixture({authorize=async()=>true,insertResponse=null,removeError=false,uploadFileReceipt=null,cleanupRows=[],uploadReceiptInvalid=false,finalizationError=null,publicationCleanupClaimError=null}={}) {
  const calls=[],storageCalls=[];let publicationReservation=null,publicationAsset=null;
  const storage={
   async upload(path,data,type){storageCalls.push({op:"upload",path,data,type});return{bucket:uploadReceiptInvalid?"wrong-bucket":"executive-visuals-media",path,size:data.byteLength,contentType:type};},
@@ -35,6 +35,13 @@ function fixture({authorize=async()=>true,insertResponse=null,removeError=false,
    if(!publicationReservation)publicationReservation={job_id:payload.p_job_id,owner_id:payload.p_owner_id,project_id:payload.p_project_id,publication_key:payload.p_publication_key,payload_sha256:payload.p_payload_sha256,asset_id:payload.p_asset_id,status:"reserved"};
    return response([publicationReservation]);
   }
+  if(url.includes("/rpc/claim_asset_publication_cleanup_v1")){
+   if(publicationCleanupClaimError)return response({message:"cleanup not eligible"},publicationCleanupClaimError.status||409);
+   const payload=JSON.parse(options.body);
+   return response([{claim_id:"823e4567-e89b-42d3-a456-426614174000",claim_token:"923e4567-e89b-42d3-a456-426614174000",object_path:payload.p_object_path,status:"claimed"}]);
+  }
+  if(url.includes("/rpc/complete_asset_publication_cleanup_v1"))return response(true);
+  if(url.includes("/asset_publications?"))return response(publicationReservation?[publicationReservation]:[]);
   if(url.includes("/rpc/finalize_asset_publication_v1")){
    if(finalizationError)return response({message:"atomic finalization unavailable"},finalizationError.status||500);
    const payload=JSON.parse(options.body);
@@ -255,6 +262,40 @@ test("reconciles pending storage cleanup and marks the exact object complete",as
  const patch=f.calls.find(call=>call.url.includes("/asset_storage_cleanup")&&call.options.method==="PATCH");
  assert.ok(patch);
  assert.equal(JSON.parse(patch.options.body).completed_at,"2026-11-06T12:00:00.000Z");
+});
+
+test("attempt cleanup requires a durable database claim before deleting storage",async()=>{
+ const root=await mkdtemp(join(tmpdir(),"ev-publication-attempt-cleanup-")),file=join(root,"render.mp4");
+ await writeFile(file,bytes);
+ const cleanupRows=[];
+ const f=fixture({cleanupRows});
+ const published=await f.repo.createFromFileIdempotent({ownerId,projectId,originalName:"render.mp4",mediaType:"video/mp4",filePath:file,publicationKey:"job-cleanup-attempt:output:v1",leaseContext,assertLease:async()=>true});
+ const orphanPath=projectId+"/"+published.id+"/attempt-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa.mp4";
+ cleanupRows.push({id:"cleanup-attempt-1",storage_bucket:"executive-visuals-media",object_path:orphanPath,attempts:0});
+ const result=await f.repo.reconcilePendingStorageCleanup({limit:5,now:"2026-11-08T12:00:00.000Z"});
+ assert.equal(result.removed,1);
+ assert.ok(f.storageCalls.some(call=>call.op==="remove"&&call.path===orphanPath));
+ const claim=f.calls.find(call=>call.url.includes("/rpc/claim_asset_publication_cleanup_v1"));
+ assert.ok(claim);
+ assert.equal(JSON.parse(claim.options.body).p_job_id,leaseContext.jobId);
+ assert.equal(JSON.parse(claim.options.body).p_object_path,orphanPath);
+ assert.ok(f.calls.some(call=>call.url.includes("/rpc/complete_asset_publication_cleanup_v1")));
+ await rm(root,{recursive:true,force:true});
+});
+
+test("attempt cleanup never deletes an object while the database refuses its tombstone claim",async()=>{
+ const root=await mkdtemp(join(tmpdir(),"ev-publication-attempt-cleanup-blocked-")),file=join(root,"render.mp4");
+ await writeFile(file,bytes);
+ const cleanupRows=[];
+ const f=fixture({cleanupRows,publicationCleanupClaimError:{status:409}});
+ const published=await f.repo.createFromFileIdempotent({ownerId,projectId,originalName:"render.mp4",mediaType:"video/mp4",filePath:file,publicationKey:"job-cleanup-blocked:output:v1",leaseContext,assertLease:async()=>true});
+ const orphanPath=projectId+"/"+published.id+"/attempt-bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb.mp4";
+ cleanupRows.push({id:"cleanup-attempt-2",storage_bucket:"executive-visuals-media",object_path:orphanPath,attempts:0});
+ const result=await f.repo.reconcilePendingStorageCleanup({limit:5,now:"2026-11-08T12:00:00.000Z"});
+ assert.equal(result.removed,0);
+ assert.equal(result.results[0].retryScheduled,true);
+ assert.equal(f.storageCalls.some(call=>call.op==="remove"&&call.path===orphanPath),false);
+ await rm(root,{recursive:true,force:true});
 });
 
 test("reschedules failed cleanup with bounded exponential backoff",async()=>{
