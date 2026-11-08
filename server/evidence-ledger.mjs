@@ -76,7 +76,7 @@ export function listEvidenceRecords(db, { sourceAssetId = null, projectId = null
 export function reviewEvidenceRecord(db, { evidenceId, reviewerId, status, reviewNote = "" }) {
   if (!REVIEW_STATES.has(status)) throw new Error("EVIDENCE_REVIEW_STATE_INVALID");
   const note = clean(reviewNote,2000);
-  const transaction = db.transaction(() => {
+  const transaction = () => atomic(db, () => {
     const row = db.prepare("SELECT * FROM evidence_records WHERE id=?").get(evidenceId);
     if (!row) return null;
     if (row.status === "verified" || row.status === "rejected") throw new Error("EVIDENCE_ALREADY_REVIEWED");
