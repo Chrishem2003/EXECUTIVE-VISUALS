@@ -22,6 +22,7 @@ function fixture({budget=2,jobStatus="running",cloudStatus="succeeded"}={}){
  const db={prepare(sql){
   if(sql.startsWith("SELECT id,owner_id,name,description FROM projects"))return{get:()=>({id:projectId,owner_id:owner,name:"Project",description:""})};
   if(sql.startsWith("SELECT status,lease_owner,lease_expires_at FROM jobs"))return{get:()=>localJob};
+  if(sql.startsWith("SELECT output_json FROM workflow_node_runs"))return{get:()=>null};
   if(sql.startsWith("SELECT id,metadata_json FROM assets"))return{get:()=>null};
   if(sql.startsWith("INSERT INTO assets"))return{run(...args){stored.push({sql,args});}};
   if(sql.startsWith("UPDATE assets SET metadata_json"))return{run(...args){stored.push({sql,args});}};
