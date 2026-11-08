@@ -109,3 +109,36 @@ test("transformation preservation does not invent a C2PA source lineage when non
   assert.equal(after,before,"an asset without source C2PA must not be modified");
  }finally{await rm(dir,{recursive:true,force:true});}
 });
+
+test("preserves every credential-bearing source in a multi-source transformation",async()=>{
+ const cert=await readFile(join(fixtureRoot,"test-signing-chain.pem"));
+ const key=await readFile(join(fixtureRoot,"test-signing-key.pem"));
+ const signer=LocalSigner.newSigner(cert,key,"es256");
+ const dir=await mkdtemp(join(tmpdir(),"ev-c2pa-multi-source-"));
+ const sourceA=join(dir,"source-a.png"),sourceB=join(dir,"source-b.png"),outputPath=join(dir,"timeline.mp4");
+ try{
+  const signSource=async(path,bytes)=>{
+   const builder=await Builder.newAsync();
+   builder.setIntent({create:"http://cv.iptc.org/newscodes/digitalsourcetype/digitalCapture"});
+   const destination={buffer:null};
+   builder.sign(signer,{buffer:bytes,mimeType:"image/png"},destination);
+   await writeFile(path,destination.buffer);
+   return createHash("sha256").update(destination.buffer).digest("hex");
+  };
+  const hashA=await signSource(sourceA,onePixelPng(10,20,30));
+  const hashB=await signSource(sourceB,onePixelPng(40,50,60));
+  await writeFile(outputPath,onePixelPng(70,80,90));
+  const preserve=createC2paTransformationPreserver({sdkLoader:async()=>({Reader,Builder,Context}),maxBytes:1024*1024});
+  const result=await preserve({
+   sources:[{path:sourceA,mediaType:"image/png",sha256:hashA},{path:sourceB,mediaType:"image/png",sha256:hashB}],
+   outputPath,outputMimeType:"image/png",signer,operation:"test:multi-source-render"
+  });
+  assert.equal(result.status,"preserved");
+  assert.equal(result.sourceCount,2);
+  assert.equal(result.credentialSourceCount,2);
+  assert.equal(result.ingredientCount,2);
+  const reader=await Reader.fromAsset({path:outputPath,mimeType:"image/png"},new Context({verify:{verifyAfterReading:true,verifyTrust:true,ocspFetch:false,remoteManifestFetch:false}}));
+  const manifest=reader.json().manifests[reader.json().active_manifest];
+  assert.equal(manifest.ingredients.filter(item=>Boolean(item.manifest_data)).length,2);
+ }finally{await rm(dir,{recursive:true,force:true});}
+});
