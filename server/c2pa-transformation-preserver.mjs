@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { rename, stat, unlink } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 
 const DEFAULT_MAX_BYTES=250*1024*1024;
 async function hashFile(filePath){
@@ -10,6 +10,7 @@ async function hashFile(filePath){
  return{size,sha256:hash.digest("hex")};
 }
 function failure(code,message,status=422){const error=new Error(message);error.code=code;error.status=status;return error;}
+function safeIngredientTitle(value,fallback){return typeof value==="string"&&value.trim()?value.slice(0,256):String(fallback||"source-asset").slice(0,256);}
 
 /**
  * Creates an opt-in C2PA lineage-preserving transformation step.
@@ -41,6 +42,10 @@ export function createC2paTransformationPreserver({sdkLoader=()=>import("@conten
   try{sourceReader=await sdk.Reader.fromAsset({path:sourcePath,mimeType:sourceMimeType},verifyContext);}catch{
    throw failure("C2PA_SOURCE_MANIFEST_INVALID","The source C2PA manifest could not be parsed; transformation lineage was not signed.");
   }
+  if(!sourceReader)return{
+   status:"not_present",preserved:false,sourceSha256:sourceHash.sha256,outputSha256:outputHash.sha256,
+   reason:"SOURCE_C2PA_MANIFEST_NOT_PRESENT"
+  };
   const embedded=typeof sourceReader.isEmbedded==="function"?sourceReader.isEmbedded():true;
   const remoteUrl=typeof sourceReader.remoteUrl==="function"?sourceReader.remoteUrl():null;
   if(!embedded&&remoteUrl)throw failure("C2PA_REMOTE_MANIFEST_UNAVAILABLE","The source references a remote C2PA manifest, but remote manifest fetching is disabled; derivative publication is blocked.",503);
@@ -53,7 +58,8 @@ export function createC2paTransformationPreserver({sdkLoader=()=>import("@conten
   if(!signer||typeof signer.sign!=="function")throw failure("C2PA_SIGNER_REQUIRED","An approved C2PA signer must be supplied by the server-side signing adapter.",503);
   if(!["local","callback"].includes(signerMode))throw failure("C2PA_SIGNER_MODE_INVALID","Unsupported C2PA signer mode.");
   const builder=await sdk.Builder.newAsync();
-  builder.addIngredientFromReader(sourceReader);
+  const sourceManifest=sourceStore.manifests[sourceStore.active_manifest];
+  await builder.addIngredient(JSON.stringify({title:safeIngredientTitle(sourceManifest?.title,basename(sourcePath)),format:sourceMimeType,instance_id:"xmp:iid:"+randomUUID(),relationship:"parentOf"}),{path:sourcePath,mimeType:sourceMimeType});
   builder.setIntent("edit");
   builder.addAction(JSON.stringify({
    action:"c2pa.edited",
