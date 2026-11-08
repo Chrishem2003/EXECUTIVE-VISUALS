@@ -65,7 +65,7 @@ npm run verify:server
 npm run build
 ```
 
-The build runs the repository's configured verification suites before TypeScript compilation and Vite bundling. Run the focused test for the subsystem you changed first, then the complete build. Do not describe a test as passing unless it was actually run against the current commit.
+The C2PA suite exercises native SDK manifest inspection, signed/tampered PNG verification and callback-signer ingredient-lineage tests using the upstream test-only fixture. The build runs the repository's configured verification suites before TypeScript compilation and Vite bundling. Run the focused test for the subsystem you changed first, then the complete build. Do not describe a test as passing unless it was actually run against the current commit.
 
 ## Asset provenance and C2PA
 
