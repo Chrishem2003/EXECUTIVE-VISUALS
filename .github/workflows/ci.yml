@@ -41,6 +41,10 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm run build
+      - name: Build and inspect production Docker image
+        run: |
+          docker build --pull -t executive-visuals-ci .
+          docker run --rm --entrypoint sh executive-visuals-ci -c 'test -s "$C2PA_LIBRARY_PATH" && test ! -d /app/server/tests'
 
   asset-publication-postgres:
     runs-on: ubuntu-latest
