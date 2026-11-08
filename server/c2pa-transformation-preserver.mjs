@@ -6,7 +6,7 @@ import { basename, dirname, join } from "node:path";
 const DEFAULT_MAX_BYTES=250*1024*1024;
 function throwIfAborted(signal){
  if(!signal?.aborted)return;
- if(signal.reason&&typeof signal.reason==="object"&&signal.reason.code)throw signal.reason;
+ if(signal.reason&&typeof signal.reason==="object"&&typeof signal.reason.code==="string")throw signal.reason;
  const error=failure("C2PA_TRANSFORM_ABORTED","C2PA preservation was cancelled.",499);
  error.name="AbortError";
  throw error;
