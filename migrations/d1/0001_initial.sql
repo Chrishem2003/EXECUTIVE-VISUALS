@@ -5,11 +5,12 @@
 -- never a password, access token, refresh token, or client-supplied identity.
 CREATE TABLE IF NOT EXISTS ev_users (
   id TEXT PRIMARY KEY,
-  auth_subject TEXT NOT NULL UNIQUE,
+  auth_subject TEXT NOT NULL,
   auth_provider TEXT NOT NULL CHECK (length(auth_provider) BETWEEN 1 AND 40),
   email TEXT,
   created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
+  updated_at TEXT NOT NULL,
+  UNIQUE (auth_provider, auth_subject)
 );
 
 CREATE TABLE IF NOT EXISTS ev_projects (
