@@ -156,7 +156,7 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
     return { path: signedPath, c2pa };
   }
 
-  return async function execute({ job, signal, onProgress = () => {} }) {
+  return async function execute({ job, signal, onProgress = () => {}, assertLease = async () => true }) {
     if (!job || typeof job.id !== "string" || typeof job.owner_id !== "string" || !SUPPORTED.has(job.job_type)) {
       throw Object.assign(new Error("Cloud media job is missing required lease-scoped fields or uses an unsupported operation."), { code: "CLOUD_MEDIA_OPERATION_UNSUPPORTED" });
     }
@@ -223,6 +223,7 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
         if (signing.c2pa.byteSize && signing.c2pa.byteSize !== info.size) throw Object.assign(new Error("C2PA signer size does not match the published file."), { code: "C2PA_SIGNED_OUTPUT_SIZE_MISMATCH" });
         if (signal?.aborted) throw Object.assign(new Error("Media job was cancelled."), { code: "JOB_CANCELLED" });
         if (signal?.aborted) throw Object.assign(new Error("Media job was cancelled."), { code: "JOB_CANCELLED" });
+      await assertLease();
       const asset = await mediaIO.publish({
           ownerId: job.owner_id, projectId: job.project_id || null, filename: plan.name,
           mediaType, path: signing.path, derivativeOf: sourceId,
