@@ -148,7 +148,7 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
       estimatedCredits:estimate.estimatedCredits,estimatedAmount:estimate.estimatedUsd,
       currency:estimate.currency,configId:estimate.configId,
       pricingSource:"runway_model_router_dry_run",billable:false,
-      requiresExplicitApproval:true,paidExecutionEnabled:env.RUNWAY_MODEL_ROUTER_ENABLED==="true"&&env.RUNWAY_VIDEO_ALLOW_REMOTE==="true",
+      requiresExplicitApproval:true,paidExecutionEnabled:env.RUNWAY_MODEL_ROUTER_ENABLED==="true"&&env.CLOUD_VIDEO_WORKER_ENABLED==="true"&&env.RUNWAY_VIDEO_ALLOW_REMOTE==="true"&&env.VIDEO_GATEWAY_ENABLED==="true"&&env.VIDEO_GATEWAY_ALLOW_REMOTE==="true"&&/^[a-z][a-z0-9_-]{0,63}$/.test(String(env.RUNWAY_VIDEO_ROUTER_CONFIG||""))&&Boolean(env.RUNWAY_API_KEY||env.RUNWAYML_API_SECRET),
       expiresAt:new Date(Date.now()+5*60*1000).toISOString()
      }});
     }catch(error){
