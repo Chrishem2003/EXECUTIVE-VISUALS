@@ -48,7 +48,7 @@
     "verify:caption-evidence": "node --experimental-strip-types --test server/tests/caption-evidence.test.mjs",
     "verify:delivery-evidence": "node --experimental-strip-types --test server/tests/delivery-evidence.test.mjs",
     "verify:provenance": "node --test server/tests/provenance.test.mjs",
-    "verify:c2pa": "node --test server/tests/c2pa-verification.test.mjs"
+    "verify:c2pa": "node --test server/tests/c2pa-verification.test.mjs server/tests/c2pa-sdk.integration.test.mjs"
   },
   "devDependencies": {
     "typescript": "^5.8.3",
