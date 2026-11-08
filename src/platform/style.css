@@ -485,3 +485,42 @@ button:disabled{opacity:.55;cursor:not-allowed}
 .wf-cost-estimate>small{display:block;color:var(--muted);font-size:10px;line-height:1.6;overflow-wrap:anywhere}
 .wf-cost-estimate a{color:var(--accent,#b9a4ff)}
 .wf-cost-disclaimer{font-size:10px!important}
+
+.runtime-asset-actions button:disabled{opacity:.55;cursor:wait}
+.asset-provenance-result{grid-column:1/-1;min-width:0;border:1px solid #344153;border-radius:6px;background:#111925;padding:10px;display:grid;gap:5px}
+.asset-provenance-result .eyebrow{font-size:8px;letter-spacing:.8px;color:#b7c5d8}
+.asset-provenance-result b{font-size:10px;color:#e5eaf2}
+.asset-provenance-result small{font-size:8px;line-height:1.5;color:var(--muted);overflow-wrap:anywhere}
+.asset-provenance-result ul{margin:2px 0 0;padding-left:16px}
+.asset-provenance-result li{font-size:8px;line-height:1.5;color:#c5cfdd;overflow-wrap:anywhere}
+.asset-provenance-result code{font-size:8px;color:#e2c28a}
+
+/* Explicit creative dependency graph and impact review */
+.creative-graph-panel{margin:22px 0}
+.creative-graph-counts{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0}
+.creative-graph-counts span{padding:8px 11px;border:1px solid var(--line);border-radius:9px;background:var(--surface-soft);font-size:12px;color:var(--muted)}
+.creative-graph-counts b{color:var(--text);font-variant-numeric:tabular-nums;margin-right:4px}
+.creative-graph-columns{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(260px,.85fr);gap:18px;margin-top:12px}
+.creative-graph-columns>div{min-width:0;padding:16px;border:1px solid var(--line);border-radius:12px;background:var(--surface-soft)}
+.creative-graph-edges{padding-left:18px;display:grid;gap:8px;overflow-wrap:anywhere}
+.creative-graph-edges li{font-size:12px;line-height:1.5}
+.creative-graph-panel select{width:100%;margin:8px 0 12px}
+.creative-impact-result{margin-top:14px;padding:13px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+.creative-impact-result ul{padding-left:18px;max-height:220px;overflow:auto}
+@media(max-width:850px){.creative-graph-columns{grid-template-columns:1fr}}
+
+/* Source-backed evidence capture and reviewer decision history */
+.evidence-ledger-panel{margin-top:20px;padding:16px;border:1px solid var(--line);border-radius:12px;background:var(--surface-soft)}
+.evidence-ledger-panel .form-grid{margin:14px 0 18px}
+.evidence-ledger-list{display:grid;gap:10px;margin-top:16px}
+.evidence-ledger-record{min-width:0;padding:13px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+.evidence-ledger-record p{overflow-wrap:anywhere}
+.evidence-ledger-record small{display:block;overflow-wrap:anywhere}
+.evidence-ledger-record .button-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+
+/* Explicit graph review baselines and downstream stale candidates */
+.creative-baseline-panel{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center;margin:16px 0;padding:15px;border:1px solid var(--line);border-radius:12px;background:var(--surface-soft)}
+.creative-baseline-panel p{grid-column:1/-1;margin:4px 0}
+.creative-stale-review{grid-column:1/-1;padding:12px;border-left:3px solid var(--warning,var(--line));background:var(--surface)}
+.creative-stale-review ul{padding-left:20px;max-height:220px;overflow:auto}
+@media(max-width:700px){.creative-baseline-panel{grid-template-columns:1fr}.creative-baseline-panel button{width:100%}}
