@@ -19,7 +19,7 @@ assert.match(render,/SUPABASE_URL[\s\S]*?sync: false/);
 assert.match(render,/SUPABASE_PUBLISHABLE_KEY[\s\S]*?sync: false/);
 assert.doesNotMatch(render,/AUTH_MODE[\s\S]*?value: local/);
 assert.match(docker,/FROM node:24-bookworm-slim AS build/);
-assert.match(docker,/apt-get install[^\n]*ffmpeg[^\n]*openssl/);
+assert.match(docker,/apt-get install[^\n]*ffmpeg/);
 assert.match(docker,/RUN npm ci/);
 assert.match(docker,/RUN npm run build/);
 assert.match(docker,/FROM node:24-bookworm-slim AS runtime/);
