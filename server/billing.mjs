@@ -105,7 +105,7 @@ export function ensureBillingSchema(db) {
   }
 }
 
-export function touchBillingAccount(db, user) {
+export function touchBillingAccount(db, user, { env = process.env } = {}) {
   if (!user?.id || !user?.email) throw fail("Authenticated user identity is required.", "BILLING_USER_REQUIRED", 401);
   db.prepare(`INSERT INTO billing_accounts(user_id,email,status) VALUES(?,?,'active')
     ON CONFLICT(user_id) DO UPDATE SET email=excluded.email,last_seen_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')`)
@@ -120,7 +120,7 @@ export function touchBillingAccount(db, user) {
         .run(randomUUID(), String(user.id), free.id, start, end);
     }
   }
-  if (billingEnforcementEnabled()) applyDailyFreeCredits(db,String(user.id));
+  if (billingEnforcementEnabled(env)) applyDailyFreeCredits(db,String(user.id),{env});
   return db.prepare("SELECT status FROM billing_accounts WHERE user_id=?").get(String(user.id));
 }
 
