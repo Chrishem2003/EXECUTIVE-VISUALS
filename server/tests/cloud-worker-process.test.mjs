@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readCloudWorkerConfig,createCloudWorkerSupervisor } from "../cloud-worker-process.mjs";
+import { readCloudWorkerConfig,createCloudWorkerSupervisor,startCloudWorkerProcess } from "../cloud-worker-process.mjs";
 
 const env={CLOUD_WORKER_ENABLED:"true",CLOUD_MEDIA_WORKER_ENABLED:"true",CLOUD_TIMELINE_WORKER_ENABLED:"true",SUPABASE_URL:"https://example.supabase.co",SUPABASE_SERVICE_ROLE_KEY:"server-secret"};
 test("cloud worker config remains disabled unless explicitly enabled",()=>{assert.throws(()=>readCloudWorkerConfig({...env,CLOUD_WORKER_ENABLED:"false"}),/disabled/);});
@@ -73,4 +73,14 @@ test("C2PA cloud-worker signing requires a dedicated matching workspace, key ref
  assert.throws(()=>readCloudWorkerConfig({...signingEnv,C2PA_SIGNING_KEY_REF:""}),/C2PA_SIGNING_KEY_REF/);
  assert.throws(()=>readCloudWorkerConfig({...signingEnv,C2PA_TSA_URL:"http://tsa.example.com"}),/HTTPS/);
  assert.throws(()=>readCloudWorkerConfig({...signingEnv,CLOUD_MEDIA_WORKER_ENABLED:"false"}),/media worker family/);
+});
+
+test("cloud worker startup fails closed when C2PA signing lacks an injected protected provider or public chain",async()=>{
+ const signingEnv={
+  ...env,CLOUD_WORKER_TEMP_ROOT:"/var/tmp/ev-c2pa-signing",
+  C2PA_SIGNING_ENABLED:"true",C2PA_SIGNING_MEDIA_ROOT:"/var/tmp/ev-c2pa-signing",
+  C2PA_SIGNING_KEY_REF:"kms-key-alias/ev-production",C2PA_TSA_URL:"https://tsa.example.com"
+ };
+ await assert.rejects(()=>startCloudWorkerProcess(signingEnv),/no authenticated KMS\/HSM signingProvider/);
+ await assert.rejects(()=>startCloudWorkerProcess(signingEnv,{signingProvider:{sign:async()=>Buffer.alloc(64)}}),/public certificate chain/);
 });
