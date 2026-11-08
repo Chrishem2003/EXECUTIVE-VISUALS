@@ -38,7 +38,7 @@ function addNode(definition:keyof typeof palette){
  const spec=palette[definition],id=crypto.randomUUID();
  const node:WorkflowNode={id,kind:spec.kind,label:spec.label,inputs:spec.inputs.map(x=>({...x})),outputs:spec.outputs.map(x=>({...x})),config:{},position:nodePosition(state.graph.nodes.length)};
  state.graph={...state.graph,revision:state.graph.revision+1,nodes:[...state.graph.nodes,node]};
- state.selectedNode=id;state.plan="";void persist().then(paint).catch(error=>{state.message=error.message;paint();});
+ state.selectedNode=id;state.plan="";state.costEstimate=null;void persist().then(paint).catch(error=>{state.message=error.message;paint();});
 }
 function options(values:Array<{id:string;label:string}> ,selected=""){return values.map(x=>'<option value="'+esc(x.id)+'" '+(selected===x.id?"selected":"")+'>'+esc(x.label)+'</option>').join("");}
 function portOptions(node:WorkflowNode|undefined,side:"inputs"|"outputs"){
@@ -116,7 +116,7 @@ async function persist(){
 async function createNew(){
  const graph=createEmptyWorkflow("","local-workflow");
  const created=await apiRequest<{workflow:SavedWorkflow}>("/api/workflows",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({name:"Untitled workflow",graph})});
- state.graph=created.workflow.graph||graph;state.serverRevision=created.workflow.revision;state.workflows.unshift(created.workflow);state.selectedNode="";state.plan="";state.latestRunId="";state.runStatus="";state.runNodes=[];state.message="New workflow created.";paint();
+ state.graph=created.workflow.graph||graph;state.serverRevision=created.workflow.revision;state.workflows.unshift(created.workflow);state.selectedNode="";state.plan="";state.costEstimate=null;state.latestRunId="";state.runStatus="";state.runNodes=[];state.message="New workflow created.";paint();
 }
 export async function initWorkflowWorkspace(){
  try{await refresh();}catch(error){state.status=error instanceof Error&&error.message.includes("Sign in")?"auth":"offline";state.message=error instanceof Error?error.message:"Workflow service unavailable.";}
@@ -174,7 +174,7 @@ document.addEventListener("submit",event=>{
 });
 document.addEventListener("change",event=>{
  const target=event.target as HTMLSelectElement;if(!state.graph)return;
- if(target.id==="wf-select"){void apiRequest<{workflow:SavedWorkflow}>("/api/workflows/"+target.value).then(response=>{state.graph=response.workflow.graph||null;state.serverRevision=response.workflow.revision;state.selectedNode=state.graph?.nodes[0]?.id||"";state.plan="";paint();}).catch(error=>alert(error.message||error));}
+ if(target.id==="wf-select"){void apiRequest<{workflow:SavedWorkflow}>("/api/workflows/"+target.value).then(response=>{state.graph=response.workflow.graph||null;state.serverRevision=response.workflow.revision;state.selectedNode=state.graph?.nodes[0]?.id||"";state.plan="";state.costEstimate=null;paint();}).catch(error=>alert(error.message||error));}
  if(target.name==="sourceNode"||target.name==="targetNode"){const form=target.closest("form");if(!form)return;const source=form.querySelector<HTMLSelectElement>('[name="sourceNode"]'),targetNode=form.querySelector<HTMLSelectElement>('[name="targetNode"]');const sourceNode=state.graph.nodes.find(n=>n.id===source?.value),dest=state.graph.nodes.find(n=>n.id===targetNode?.value);const sourcePort=form.querySelector<HTMLSelectElement>('[name="sourcePort"]'),targetPort=form.querySelector<HTMLSelectElement>('[name="targetPort"]');if(sourcePort)sourcePort.innerHTML=portOptions(sourceNode,"outputs");if(targetPort)targetPort.innerHTML=portOptions(dest,"inputs");}
 });
 document.addEventListener("dragstart",event=>{
