@@ -346,7 +346,7 @@ async function renderTimelineJob({db,job,mediaRoot,activeProcesses,onProgress,c2
   return {outputAsset,c2paPreservation,render:{timelineId:record.id,width,height,frameRate:{numerator:fpsNum,denominator:fpsDen},videoClips:clips.length,audioClips:audioClips.length,overlayClips:overlayClips.length,captionClips:captionClips.length,durationSeconds:cursor}};
 }
 
-export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = new Map(), onProgress = () => {}, c2paPreserver=defaultC2paPreserver, c2paSigner=null, c2paSignerMode="local" }) {
+export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = new Map(), onProgress = () => {}, c2paPreserver=defaultC2paPreserver, c2paSigner=null, c2paSignerMode="local", aiUpscalerFactory=createRealEsrganAdapter }) {
   if (!ALLOWED_JOBS.has(job.job_type)) throw Object.assign(new Error("No execution adapter is registered for this job type."), { code:"ENGINE_UNAVAILABLE" });
   if(job.job_type==="timeline.render"){
     if(!executableAvailable("ffmpeg"))throw Object.assign(new Error("FFmpeg is not installed on this worker."),{code:"MEDIA_ENGINE_MISSING"});
@@ -374,7 +374,7 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
     const poll = setInterval(() => { if (cancelled()) controller.abort(); }, 500);
     poll.unref?.();
     try {
-      const adapter = createRealEsrganAdapter({ timeoutMs:30*60*1000, maxOutputBytes:250*1024*1024 });
+      const adapter = aiUpscalerFactory({ timeoutMs:30*60*1000, maxOutputBytes:250*1024*1024 });
       const result = await adapter.execute({
         inputPath:sourcePath, outputPath, model:input.model||"realesrgan-x4plus",
         scale:input.scale??4, tile:input.tile??0, format, signal:controller.signal
