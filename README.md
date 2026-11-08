@@ -2,6 +2,10 @@
 
 See [Storage persistence status and deployment truth](docs/STORAGE-PERSISTENCE-TRUTH.md). Configure an operator-confirmed volume only after verifying the host mount, and test backup/restore separately.
 
+## Cloud worker safety and publication
+
+See [Cloud worker lease fencing and atomic asset publication](docs/CLOUD-WORKER-LEASE-AND-PUBLICATION.md) for the fenced job lifecycle, immutable publication, cleanup and staging gates. Cloud media job submission remains disabled by default.
+
 # CHRISHEM EXCLUSIVE VISUALS
 
 **One integrated visual-production system — from creative brief to reviewed deliverable.**
