@@ -382,8 +382,7 @@ export function createAppServer() {
           const payload=await upstream.json().catch(()=>null);
           if(payload===null){fail(res,502,"D1_STAGING_INVALID_RESPONSE","The staging Worker returned an invalid response.");return;}
           const cookies=typeof upstream.headers.getSetCookie==="function"?upstream.headers.getSetCookie():[upstream.headers.get("set-cookie")].filter(Boolean);
-          if(cookies.length)res.setHeader("set-cookie",cookies);
-          send(res,upstream.status,payload,cors);return;
+          send(res,upstream.status,payload,{...cors,...(cookies.length?{"set-cookie":cookies}:{})});return;
         }catch(error){
           fail(res,502,"D1_STAGING_UNAVAILABLE",error?.name==="TimeoutError"?"The staging Worker did not respond in time.":"The isolated D1 staging Worker could not be reached.");return;
         }
