@@ -33,7 +33,7 @@ async function createTestSigningIdentity(dir) {
     "-CAcreateserial", "-out", signerCert, "-days", "1", "-sha256",
     "-extfile", "/dev/stdin"
   ], { input: "basicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature\nextendedKeyUsage=critical,codeSigning\n", stdio: ["pipe", "ignore", "ignore"] });
-  execFileSync("sh", ["-c", "cat \"$1\" \"$2\" > \"$3\"", "sh", signerCert, rootCert, certificateChainPath]);
+  await writeFile(certificateChainPath, Buffer.concat([await readFile(signerCert), await readFile(rootCert)]));
   return { certificateChain: await readFile(certificateChainPath), privateKey: await readFile(signerKey) };
 }
 function crc32(buffer) {
