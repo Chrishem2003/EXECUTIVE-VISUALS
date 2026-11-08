@@ -103,3 +103,20 @@ test("rejects oversized, missing, changed-size and non-file assets before SDK lo
   assert.equal((await verify({ ...f, path: join(f.dir, "missing.jpg") })).errorCode, "C2PA_ASSET_UNAVAILABLE");
   assert.equal(loads, 0);
 });
+
+test("does not send unsupported media types or MIME/extension mismatches to the native parser", async t => {
+  const f = await fixture(); t.after(() => rm(f.dir, { recursive: true, force: true }));
+  let loads = 0;
+  const verify = createC2paVerifier({ sdkLoader: async () => { loads++; return fakeSdk("Valid").sdk; } });
+  const unsupported = await verify({ ...f, mimeType: "video/webm" });
+  assert.equal(unsupported.status, "not_supported");
+  const mismatch = await verify({ ...f, mimeType: "image/png" });
+  assert.equal(mismatch.status, "not_supported");
+  assert.equal(loads, 0);
+});
+
+test("fails closed when the configured parser limit is invalid", async t => {
+  const f = await fixture(); t.after(() => rm(f.dir, { recursive: true, force: true }));
+  const verify = createC2paVerifier({ maxBytes: Number.NaN, sdkLoader: async () => fakeSdk("Valid").sdk });
+  assert.equal((await verify(f)).errorCode, "C2PA_LIMIT_CONFIG_INVALID");
+});
