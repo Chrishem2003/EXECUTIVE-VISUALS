@@ -1,6 +1,7 @@
 import { getFalVideoCapabilities } from "./fal-video-gateway.mjs";
 import { getRunwayVideoCapabilities, listRunwayVideoModels } from "./runway-video-gateway.mjs";
 import { listGeminiImageModels } from "./gemini-image-gateway.mjs";
+import { parseVideoPricingCatalog } from "./video-cost-estimator.mjs";
 const LOOPBACKS=new Set(["localhost","127.0.0.1","::1","[::1]"]);
 function gatewayState({enabled,configured,url,allowRemote,model,provider,capabilities,id=provider,reasonIfMissing="Set the server-side endpoint and model."}){
  let local=false,validUrl=false;
@@ -36,9 +37,11 @@ export function getProviderCatalog(env=process.env,media={ffmpeg:false,ffprobe:f
  const qualityEvidence=ai.qualityEvidence&&typeof ai.qualityEvidence==="object"?ai.qualityEvidence:null;
  const qualityVerified=Boolean(ai.qualityVerified&&typeof qualityEvidence?.fixtureId==="string"&&qualityEvidence.fixtureId.trim()&&typeof qualityEvidence?.checkedAt==="string"&&Number.isFinite(Date.parse(qualityEvidence.checkedAt)));
  const aiUpscale={id:"ai-upscale",provider:"local",enabled:Boolean(ai.executionEnabled),configured:Boolean(ai.available),remote:false,model:ai.model||"Real-ESRGAN NCNN/Vulkan",executionVerified,qualityVerified,status:!ai.available?"unavailable":!ai.executionEnabled?"disabled":qualityVerified?"ready":"unverified",reason:!ai.available?"Configure the engine executable and allowlisted model files.":!ai.executionEnabled?"AI upscaling is not enabled.":qualityVerified?"Independent fixture-based quality evidence is recorded.":executionVerified?"Execution checks passed; neural inference quality remains unverified.":"Engine files are present, but an execution self-test has not passed in this worker process.",capabilities:ai.available&&ai.executionEnabled&&qualityVerified?["media.ai-upscale"]:[]};
+ const pricingCatalog=parseVideoPricingCatalog(env.VIDEO_MODEL_PRICING_JSON||"");
+ video.pricing={configured:pricingCatalog.configured,models:pricingCatalog.records.map(record=>({provider:record.provider,model:record.model,currency:record.currency,sourceUrl:record.sourceUrl,observedAt:record.observedAt,expiresAt:record.expiresAt})),rejectedCount:pricingCatalog.rejectedCount};
  const providers=[text,image,video,voice,transcription,localMedia,aiUpscale];
  const counts=providers.reduce((out,item)=>{out[item.status]=(out[item.status]||0)+1;return out;},{});
- return {version:1,providers,summary:{total:providers.length,ready:providers.filter(x=>x.status==="ready").length,disabled:counts.disabled||0,unverified:counts.unverified||0,needsConfiguration:counts.needs_configuration||0,remoteOptInRequired:counts.remote_opt_in_required||0,unavailable:counts.unavailable||0},policy:{remoteCallsRequireExplicitOptIn:true,credentialsExposed:false,pricesEstimated:false,requestsSubmitted:false}};
+ return {version:1,providers,summary:{total:providers.length,ready:providers.filter(x=>x.status==="ready").length,disabled:counts.disabled||0,unverified:counts.unverified||0,needsConfiguration:counts.needs_configuration||0,remoteOptInRequired:counts.remote_opt_in_required||0,unavailable:counts.unavailable||0},policy:{remoteCallsRequireExplicitOptIn:true,credentialsExposed:false,pricesEstimated:false,pricingSchedulesConfigured:pricingCatalog.configured,requestsSubmitted:false}};
 }
 export function findProviderForCapability(catalog,capability,{allowRemote=false}={}){
  const match=catalog.providers.find(provider=>provider.capabilities.includes(capability)&&provider.status==="ready"&&(!provider.remote||allowRemote));
