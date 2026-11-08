@@ -22,6 +22,7 @@ import { ensureRemoteUsageTable, getRemoteUsagePolicy } from "./usage-guardrails
 import { createCloudTimelineApi } from "./cloud-timeline-api.mjs";
 import { validateSrt, validateWebVtt } from "./caption-validation.mjs";
 import { createAssetProvenanceRecord, verifyAssetProvenanceRecord } from "./provenance.mjs";
+import { verifyC2paAsset } from "./c2pa-verification.mjs";
 import { ensureTransformationPlanSchema, createTransformationPlan, approveTransformationPlan, listTransformationPlans, getTransformationPlan } from "./transformation-plans.mjs";
 import { signInWithSupabasePassword, signUpWithSupabasePassword, refreshSupabaseSession, getSupabaseUser, revokeSupabaseSession } from "./supabase-password-auth.mjs";
 
@@ -586,7 +587,17 @@ export function createAppServer() {
         if(assetMatch[2]==="provenance"&&req.method==="GET"){
           const metadata=parseJson(asset.metadata_json,{}),provenance=metadata.provenance||null;
           const verification=verifyAssetProvenanceRecord(provenance,{id:asset.id,sha256:asset.sha256,mediaType:asset.media_type,size:Number(asset.byte_size)});
-          send(res,200,{assetId:asset.id,provenance,verification,notice:"Internal integrity verification is not a C2PA signature, identity proof, rights clearance or factual verification."},cors);return;
+          const file=resolve(MEDIA_ROOT,asset.storage_path),mediaPrefix=MEDIA_ROOT.endsWith(sep)?MEDIA_ROOT:MEDIA_ROOT+sep;
+          let c2paPathValid=false;
+          try{
+            const root=realpathSync(MEDIA_ROOT),candidate=realpathSync(file),realPrefix=root.endsWith(sep)?root:root+sep;
+            const info=statSync(candidate);
+            c2paPathValid=file.startsWith(mediaPrefix)&&candidate.startsWith(realPrefix)&&info.isFile()&&info.size===Number(asset.byte_size);
+          }catch{}
+          const c2pa=c2paPathValid
+            ? await verifyC2paAsset({path:file,mimeType:asset.media_type,size:Number(asset.byte_size)})
+            : {status:"verification_error",manifestPresent:false,embedded:false,validationState:null,validationFindings:[],errorCode:"C2PA_ASSET_PATH_INVALID"};
+          send(res,200,{assetId:asset.id,provenance,verification,c2pa,notice:"Application integrity verification is distinct from C2PA cryptographic validation. C2PA trust requires an explicitly configured trust policy; neither establishes identity, rights clearance or factual accuracy."},cors);return;
         }
         if(assetMatch[2]==="file"&&req.method==="GET"){
           const file=resolve(MEDIA_ROOT,asset.storage_path);const mediaPrefix=MEDIA_ROOT.endsWith(sep)?MEDIA_ROOT:MEDIA_ROOT+sep;if(!file.startsWith(mediaPrefix)){fail(res,404,"ASSET_NOT_FOUND","Asset not found.");return;}
