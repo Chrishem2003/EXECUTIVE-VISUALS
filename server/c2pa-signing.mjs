@@ -210,7 +210,7 @@ export function createC2paTransformationSigner({
       if (outputCreated || existsSync(destination)) {
         try { await unlink(destination); } catch { /* best-effort cleanup of partial derivative */ }
       }
-      if (error?.code?.startsWith("C2PA_")) throw error;
+      if ((typeof error?.code === "string" && error.code.startsWith("C2PA_"))) throw error;
       fail("C2PA_TRANSFORMATION_SIGNING_FAILED");
     }
   };
