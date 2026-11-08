@@ -16,7 +16,7 @@ The source asset row is referenced by foreign key, and the evidence record retai
 
 All routes require an authenticated session and the same project/asset access boundary as the asset API.
 
-- `GET /api/assets/:assetId/evidence` — list evidence submitted against an asset.
+- `GET /api/evidence?projectId=:projectId` — list evidence for an authorized project for use in the Creative Intelligence Graph.\n- `GET /api/assets/:assetId/evidence` — list evidence submitted against an asset.
 - `POST /api/assets/:assetId/evidence` — submit evidence. Body fields: `targetType`, `targetId`, `kind`, `claim`, and optional `method`, `sourceRef`, `observedAt`, `note`. The server always assigns `submitted`; clients cannot self-verify.
 - `POST /api/assets/:assetId/evidence/:evidenceId/review` — review with `status` (`needs_review`, `verified`, `rejected`) and optional `reviewNote`. Owners, editors and reviewers may review project evidence.
 - `GET /api/assets/:assetId/evidence/:evidenceId/events` — retrieve the append-only event history.
@@ -29,7 +29,7 @@ Project viewers may read evidence but cannot submit or review it. Personal asset
 - `needs_review` means a human review is still required.
 - `verified` means an authorized reviewer accepted the submitted evidence for the stated target and scope. It is not a legal finding, identity proof, rights clearance or guarantee that every statement is true.
 - C2PA cryptographic validation, application provenance integrity, rights attestations and human evidence review remain separate signals. None should be silently promoted into another.
-- The ledger captures an explicit target reference. Downstream graph linking must still resolve that target inside the same project before displaying a relationship.
+- The ledger captures an explicit target reference. The AI Director loads records only through the authorized project endpoint and resolves the target against the current project's graph. Unresolved targets, project mismatches and source-hash mismatches remain disconnected and review-only. Only a verified record with a matching source hash and resolvable target creates a supporting edge.
 
 ## Validation
 
