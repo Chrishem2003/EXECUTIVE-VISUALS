@@ -485,3 +485,18 @@ button:disabled{opacity:.55;cursor:not-allowed}
 .wf-cost-estimate>small{display:block;color:var(--muted);font-size:10px;line-height:1.6;overflow-wrap:anywhere}
 .wf-cost-estimate a{color:var(--accent,#b9a4ff)}
 .wf-cost-disclaimer{font-size:10px!important}
+
+
+/* C2PA Content Credentials inspection */
+.c2pa-inspection{grid-column:1/-1;display:grid;gap:8px;margin:8px 0 4px;padding:11px;border:1px solid var(--line);border-radius:8px;background:#101824;min-width:0}
+.c2pa-inspection-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.c2pa-inspection-heading>b,.c2pa-ingredients>b,.c2pa-findings>b{font-size:10px;letter-spacing:.04em}
+.c2pa-manifest-summary,.c2pa-ingredients,.c2pa-findings,.c2pa-validation{display:grid;gap:5px;padding:8px;border-radius:6px;background:#0b111a}
+.c2pa-manifest-summary>b{font-size:10px;overflow-wrap:anywhere}
+.c2pa-manifest-summary small,.c2pa-ingredients small,.c2pa-validation small,.c2pa-trust-note{font-size:8px;line-height:1.5;color:var(--muted);overflow-wrap:anywhere}
+.c2pa-ingredients>div,.c2pa-validation>div{display:grid;gap:2px;padding-top:5px;border-top:1px solid var(--line)}
+.c2pa-ingredients>div>span,.c2pa-validation>div>b{font-size:9px;overflow-wrap:anywhere}
+.c2pa-findings ul{margin:0;padding-left:18px}
+.c2pa-findings li{font-size:8px;color:#e5b9a8;overflow-wrap:anywhere}
+.c2pa-validation summary{font-size:9px;color:var(--text);cursor:pointer}
+.c2pa-inspection>p{margin:0}
