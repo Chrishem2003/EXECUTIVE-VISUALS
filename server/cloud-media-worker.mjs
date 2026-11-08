@@ -28,7 +28,8 @@ export function createCloudMediaWorker({
   maxBytes,
   timeoutMs,
   ffmpeg,
-  ffprobe
+  ffprobe,
+  signC2paTransformation
 } = {}) {
   if (typeof workerId !== "string" || !workerId.trim() || workerId.length > 128) {
     throw new Error("Cloud media worker ID must contain between 1 and 128 characters.");
@@ -49,13 +50,15 @@ export function createCloudMediaWorker({
     tempRoot,
     ffmpeg,
     ffprobe,
-    timeoutMs
+    timeoutMs,
+    signC2paTransformation
   });
   // The cloud queue is shared by future worker families. Restrict this worker
   // at claim time so it never leases and fails workflow or other job types.
   const mediaQueue = Object.freeze({
     claim: (id, leaseSeconds) => cloudQueue.claim(id, leaseSeconds, MEDIA_JOB_TYPES),
     renew: (...args) => cloudQueue.renew(...args),
+    assertLease: (...args) => cloudQueue.assertLease(...args),
     finish: (...args) => cloudQueue.finish(...args),
     recover: (...args) => cloudQueue.recover(...args)
   });
@@ -69,6 +72,7 @@ export function createCloudMediaWorker({
         execute: executor,
         leaseSeconds: options.leaseSeconds ?? 90,
         heartbeatIntervalMs: options.heartbeatIntervalMs ?? 15000,
+        signal: options.signal,
         onProgress: options.onProgress ?? (() => {}),
         onEvent: options.onEvent ?? (() => {})
       });
