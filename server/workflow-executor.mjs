@@ -150,8 +150,11 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
    continue;
   }
   const nodeInput={...config,...values};
-  const attempt=(stored.find(row=>row.node_id===nodeId)?.attempt||0)+1;
-  saveNode(db,runId,nodeId,"running",{input:nodeInput,attempt});
+  const priorNodeRun=stored.find(row=>row.node_id===nodeId);
+  const priorNodeOutput=parseJson(priorNodeRun?.output_json,{});
+  const resumeReceipt=priorNodeRun?.status==="pending"&&priorNodeOutput.cloudJobId?priorNodeOutput:null;
+  const attempt=(priorNodeRun?.attempt||0)+1;
+  saveNode(db,runId,nodeId,"running",{input:nodeInput,output:resumeReceipt,attempt});
   try{
    let output={};
    if(node.kind==="text"||node.kind==="prompt"){
