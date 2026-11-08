@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {signInWithSupabasePassword,signUpWithSupabasePassword,refreshSupabaseSession,getSupabaseUser,requestSupabasePasswordRecovery,updateSupabasePassword} from "../supabase-password-auth.mjs";
+import {signInWithSupabasePassword,signUpWithSupabasePassword,refreshSupabaseSession,getSupabaseUser,requestSupabasePasswordRecovery,updateSupabasePassword,isSupabaseRecoveryToken} from "../supabase-password-auth.mjs";
 const config={supabaseUrl:"https://example.supabase.co",publishableKey:"sb_publishable_test"};
 function mockFetch(payload,status=200){return async (url,options)=>({ok:status>=200&&status<300,status,text:async()=>JSON.stringify(payload),url:String(url),options});}
 const session={access_token:"access-token",refresh_token:"refresh-token",expires_in:3600,user:{id:"user-1",email:"test@example.com"}};
@@ -52,4 +52,14 @@ test("updates a password only with a recovery access token and strong password",
 test("rejects weak passwords and missing recovery tokens",async()=>{
  await assert.rejects(()=>updateSupabasePassword({...config,accessToken:"recovery-token",password:"short"}),e=>e.code==="WEAK_PASSWORD");
  await assert.rejects(()=>updateSupabasePassword({...config,accessToken:"",password:"new-strong-password"}),e=>e.code==="RECOVERY_SESSION_REQUIRED");
+});
+
+function jwt(payload){return "header."+Buffer.from(JSON.stringify(payload)).toString("base64url")+".signature";}
+test("accepts only an unexpired Supabase recovery token for the same user",()=>{
+ const payload={sub:"user-1",iss:"https://example.supabase.co/auth/v1",aud:"authenticated",role:"authenticated",exp:2000,amr:[{method:"recovery",timestamp:1000}]};
+ assert.equal(isSupabaseRecoveryToken({accessToken:jwt(payload),userId:"user-1",supabaseUrl:config.supabaseUrl,now:1000000}),true);
+ assert.equal(isSupabaseRecoveryToken({accessToken:jwt({...payload,amr:[{method:"password",timestamp:1000}]}),userId:"user-1",supabaseUrl:config.supabaseUrl,now:1000000}),false);
+ assert.equal(isSupabaseRecoveryToken({accessToken:jwt(payload),userId:"another-user",supabaseUrl:config.supabaseUrl,now:1000000}),false);
+ assert.equal(isSupabaseRecoveryToken({accessToken:jwt({...payload,exp:999}),userId:"user-1",supabaseUrl:config.supabaseUrl,now:1000000}),false);
+ assert.equal(isSupabaseRecoveryToken({accessToken:jwt({...payload,iss:"https://attacker.example/auth/v1"}),userId:"user-1",supabaseUrl:config.supabaseUrl,now:1000000}),false);
 });
