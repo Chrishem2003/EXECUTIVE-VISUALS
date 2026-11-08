@@ -102,7 +102,7 @@ Planned signing and lineage constraints:
 
 See [Asset provenance and Content Credentials](docs/ASSET-PROVENANCE-AND-CONTENT-CREDENTIALS.md) for the detailed integration contract and acceptance criteria.
 
-For C2PA verification, mount `C2PA_TRUST_ANCHORS` as a read-only PEM public-certificate bundle outside the repository. For optional cloud-worker signing, set `C2PA_SIGNING_MEDIA_ROOT` to the same private scratch directory used by `CLOUD_WORKER_TEMP_ROOT`, then inject an authenticated `signingProvider` into `createC2paTransformationSigner` and pass the returned callback to `createCloudMediaWorker`. Do not enable signing until the provider, certificate chain, HTTPS TSA, key custody and rotation policy have been approved. Setting environment flags without the protected provider does not make signing operational.
+For C2PA verification, mount `C2PA_TRUST_ANCHORS` as a read-only PEM public-certificate bundle outside the repository. For optional cloud-worker signing, set `CLOUD_WORKER_TEMP_ROOT` and `C2PA_SIGNING_MEDIA_ROOT` to the same dedicated private scratch directory, set `C2PA_SIGNING_ENABLED=true`, and supply an authenticated `signingProvider` plus public certificate chain through `startCloudWorkerProcess(env, { signingProvider, certificateChain })`. The default CLI process does not contain a provider and fails closed if signing is enabled without the injected dependency. Do not enable signing until the provider, certificate chain, HTTPS TSA, key custody and rotation policy have been approved. Setting environment flags without the protected provider does not make signing operational.
 
 ## Configuration and secrets
 
