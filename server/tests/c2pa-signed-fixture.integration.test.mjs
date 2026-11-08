@@ -59,7 +59,7 @@ test("real CAI SDK validates signed media, applies explicit signer policy and re
   const inputPath = join(dir, "source.png"), signedPath = join(dir, "signed.png"), tamperedPath = join(dir, "tampered.png");
   const certificateChain = await readFile(join(fixtureDir, "es256-test-only.chain.pem"));
   const privateKey = await readFile(join(fixtureDir, "es256-test-only.private.pem"));
-  const leafCertificate = certificateChain.toString("utf8").match(/-----BEGIN CERTIFICATE-----[\\s\\S]*?-----END CERTIFICATE-----/);
+  const leafCertificate = certificateChain.toString("utf8").match(/-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/);
   assert.ok(leafCertificate, "upstream test fixture must contain an end-entity certificate");
   const allowedPath = join(dir, "allowed-signers.pem");
   await writeFile(allowedPath, leafCertificate[0] + "\\n");
