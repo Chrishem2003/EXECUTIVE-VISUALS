@@ -440,3 +440,8 @@ The AI Director now reads cloud production records, proof candidates, character 
 - Added immutable per-project Creative Intelligence Graph baselines and graph-hash revisions.
 - AI Director compares the current graph with the latest reviewed baseline and identifies changed nodes plus downstream potentially stale dependencies.
 - Next: connect these review signals to durable timeline/export/variant/publishing revision records and require explicit reapproval where dependencies changed. No automatic invalidation or publication block exists yet.
+
+
+### Production execution hardening checkpoint
+- Added graceful cancellation for active media/timeline jobs on worker shutdown, with explicit `cancelled` terminal status while the lease is valid and durable recovery fallback when finishing cannot be confirmed.
+- Next: reconcile storage publication and cleanup failure paths, then run multi-role authorization and retry/replay acceptance tests before enabling worker services in staging.
