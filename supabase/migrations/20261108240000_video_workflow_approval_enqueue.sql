@@ -35,7 +35,9 @@ declare
   consumed_approval_id uuid;
 begin
   if p_quote_id is null or p_approval_id is null or p_owner_id is null or p_project_id is null
-     or p_request_hash is null or p_request_hash !~ '^[a-f0-9]{64} is null or p_idempotency_key !~ '^[A-Za-z0-9._:-]{1,180}$'
+     or p_request_hash is null or p_request_hash !~ '^[a-f0-9]{64}$'
+     or p_config_id is null or p_config_id !~ '^[a-z][a-z0-9_-]{0,63}$'
+     or p_idempotency_key is null or p_idempotency_key !~ '^[A-Za-z0-9._:-]{1,180}$'
      or jsonb_typeof(p_input) is distinct from 'object'
      or octet_length(p_input::text) > 32000
      or p_approved_max_amount is null or p_approved_max_amount <= 0 or p_approved_max_amount > 1000000
@@ -155,7 +157,7 @@ $approve_and_enqueue_video_workflow$;
 
 revoke all on function executive_visuals.approve_and_enqueue_video_workflow(uuid,uuid,uuid,uuid,text,text,text,jsonb,numeric,text)
   from public, anon, authenticated;
-grant execute on function executive_visuals.approve_and_enqueue_video_workflow(uuid,uuid,uuid,uuid,text,text,jsonb,numeric,text)
+grant execute on function executive_visuals.approve_and_enqueue_video_workflow(uuid,uuid,uuid,uuid,text,text,text,jsonb,numeric,text)
   to service_role;
 
      or p_config_id is null or p_config_id !~ '^[a-z][a-z0-9_-]{0,63} is null or p_idempotency_key !~ '^[A-Za-z0-9._:-]{1,180}$'
