@@ -11,7 +11,7 @@ function sdkFor(store, embedded = true) {
         assert.equal(context.settings.verify.verifyAfterReading, true);
         assert.equal(context.settings.verify.remoteManifestFetch, false);
         assert.equal(context.settings.trust.verifyTrustList, true);
-        return { json: () => store, isEmbedded: () => embedded };
+        return store === null ? null : { json: () => store, isEmbedded: () => embedded };
       }
     }
   };
@@ -48,7 +48,7 @@ test("reports invalid manifests and bounded validation findings", async () => {
       active_manifest: "urn:manifest:1",
       manifests: { "urn:manifest:1": active },
       validation_state: "Invalid",
-      validation_status: [{ code: "claimHash.mismatch", explanation: "Claim hash mismatch", severity: "error" }]
+      validation_status: [{ code: "claimHash.mismatch", explanation: "Claim hash mismatch", success: false }]
     })
   });
   assert.equal(result.status, "invalid");
@@ -87,4 +87,29 @@ test("returns an explicit unavailable state when the optional SDK is absent", as
 test("rejects missing server asset paths and MIME types", async () => {
   await assert.rejects(() => inspectC2paAsset({ path: "", mimeType: "image/jpeg" }), /server-controlled asset path/);
   await assert.rejects(() => inspectC2paAsset({ path: "/private/media/a", mimeType: "bad" }), /MIME type/);
+});
+
+test("handles the official SDK null return for assets without a manifest", async () => {
+  const result = await inspectC2paAsset({
+    path: "/private/media/plain.jpg",
+    mimeType: "image/jpeg",
+    sdkLoader: async () => sdkFor(null, false)
+  });
+  assert.equal(result.status, "not_found");
+  assert.equal(result.configured, true);
+  assert.equal(result.validationState, null);
+});
+
+test("does not infer Invalid from validation finding text when SDK state is absent", async () => {
+  const result = await inspectC2paAsset({
+    path: "/private/media/asset.jpg",
+    mimeType: "image/jpeg",
+    sdkLoader: async () => sdkFor({
+      active_manifest: "urn:manifest:1",
+      manifests: { "urn:manifest:1": active },
+      validation_status: [{ code: "claimHash.mismatch", explanation: "Claim hash mismatch" }]
+    })
+  });
+  assert.equal(result.status, "indeterminate");
+  assert.equal(result.validationState, null);
 });
