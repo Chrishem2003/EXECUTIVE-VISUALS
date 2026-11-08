@@ -28,7 +28,8 @@ export function createCloudMediaWorker({
   maxBytes,
   timeoutMs,
   ffmpeg,
-  ffprobe
+  ffprobe,
+  signC2paTransformation
 } = {}) {
   if (typeof workerId !== "string" || !workerId.trim() || workerId.length > 128) {
     throw new Error("Cloud media worker ID must contain between 1 and 128 characters.");
@@ -49,7 +50,8 @@ export function createCloudMediaWorker({
     tempRoot,
     ffmpeg,
     ffprobe,
-    timeoutMs
+    timeoutMs,
+    signC2paTransformation
   });
   // The cloud queue is shared by future worker families. Restrict this worker
   // at claim time so it never leases and fails workflow or other job types.
