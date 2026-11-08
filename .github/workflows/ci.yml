@@ -92,3 +92,29 @@ jobs:
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261108030000_storage_cleanup_attempt_paths.sql
       - name: Verify atomic publication and derivative tenant scope
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/atomic-asset-publication-postgres-integration.sql
+
+
+  supabase-local-stack:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: Start isolated Supabase services
+        run: supabase start
+      - name: Apply every repository migration to a clean local database
+        run: supabase db reset --local
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+      - name: Verify isolated schema, RLS and private media bucket
+        env:
+          PGPASSWORD: postgres
+        run: psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" -X -v ON_ERROR_STOP=1 -f scripts/verify-supabase-local-stack.sql
+      - name: Stop isolated Supabase services
+        if: always()
+        run: supabase stop --no-backup
