@@ -111,10 +111,10 @@ test("generation credits use the canonical billing ledger with daily refills and
   try{
     touchBillingAccount(db,{id:"generation-user",email:"generation@example.test"});
     assert.equal(getBillingBalance(db,"generation-user"),20);
-    const spend=spendBillingCredits(db,{userId:"generation-user",capability:"image.generate",referenceId:"job-1:node-1",idempotencyKey:"generation-spend:job-1:node-1",env});
+    const spend=spendBillingCredits(db,{userId:"generation-user",capability:"image.generate",referenceId:"job-1:node-1",idempotencyKey:"generation-spend:job-1:node-1"});
     assert.equal(spend.charged,3);
     assert.equal(spend.balance,17);
-    const replay=spendBillingCredits(db,{userId:"generation-user",capability:"image.generate",referenceId:"job-1:node-1",idempotencyKey:"generation-spend:job-1:node-1",env});
+    const replay=spendBillingCredits(db,{userId:"generation-user",capability:"image.generate",referenceId:"job-1:node-1",idempotencyKey:"generation-spend:job-1:node-1"});
     assert.equal(replay.replayed,true);
     assert.equal(replay.balance,17);
     const refund=refundBillingCredits(db,{userId:"generation-user",spendIdempotencyKey:"generation-spend:job-1:node-1"});
@@ -141,7 +141,7 @@ test("insufficient billing credits fail closed before a paid provider request",(
   const db=setup();
   try{
     touchBillingAccount(db,{id:"empty-generation-user",email:"empty@example.test"});
-    assert.throws(()=>spendBillingCredits(db,{userId:"empty-generation-user",capability:"video.generate",idempotencyKey:"generation-spend:empty:video",env}),error=>error.code==="BILLING_INSUFFICIENT_CREDITS"&&error.status===402);
+    assert.throws(()=>spendBillingCredits(db,{userId:"empty-generation-user",capability:"video.generate",idempotencyKey:"generation-spend:empty:video"}),error=>error.code==="BILLING_INSUFFICIENT_CREDITS"&&error.status===402);
     assert.equal(getBillingBalance(db,"empty-generation-user"),0);
   }finally{
     db.close();
