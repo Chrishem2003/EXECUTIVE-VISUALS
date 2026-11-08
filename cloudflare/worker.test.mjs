@@ -67,7 +67,8 @@ test("D1 Worker authenticates through the existing API before creating staging r
   assert.equal(create.status, 201, JSON.stringify(createdResponse));
   const created = createdResponse;
   assert.equal(created.project.name, "D1 staging project");
-  assert.equal(created.project.ownerId, userId);
+  assert.match(created.project.ownerId, /^[0-9a-f-]{36}$/i);
+  assert.notEqual(created.project.ownerId, userId);
   assert.equal(created.storage, "cloudflare-d1-staging");
 
   const list = await worker.fetch(new Request("https://staging.example/api/d1/projects", {
