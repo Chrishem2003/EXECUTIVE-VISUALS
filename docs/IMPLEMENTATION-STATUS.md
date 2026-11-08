@@ -474,10 +474,10 @@ This is a runnable worker entry point, not a deployed worker. Do not set the ena
 - C2PA outcomes are mapped from the SDK's `validation_state`: `Invalid` → `invalid`, `Valid` → `valid_untrusted`, and `Trusted` → `valid_trusted` only when an administrator-controlled PEM trust anchor is configured. Without that policy, `Trusted` is conservatively downgraded to `valid_untrusted`.
 - The adapter checks the on-disk file and byte size, enforces a default 250 MiB parser limit, bounds returned validation findings, and fails closed on missing SDK, unknown state, unavailable files or SDK errors.
 - Deterministic adapter tests cover no-manifest, invalid/valid/trusted state mapping, trust-policy gating, malformed state, bounded findings, unsupported formats and file safety. Native integration tests exercise a valid unsigned PNG, generate a genuine signed PNG with the upstream CAI test-only certificate chain, validate the untrusted/trusted paths and reject altered pixel data.
-- This integration is verification-only. It does not create manifests, sign media, preserve ingredients through transformations, prove identity, establish rights or verify factual accuracy.
+- The verifier is integrated into the Asset Library. A separate callback signer adapter now exists in `server/c2pa-signing.mjs`; it creates new transformation manifests, preserves source ingredients and verifies output. It remains disabled by default, is not wired to production exports and has no KMS/HSM provider configured. Production signing remains off.
 - Full build includes `verify:c2pa` and the existing provenance verification suite.
 
-**Next:** expand genuine signed/tampered fixtures across supported video formats, validate certificate-chain/timestamp/revocation behavior, then implement ingredient-aware transformation manifests and protected callback signing. Production signing remains disabled.
+**Next:** connect the callback signer to the governed worker/export path, provision a protected KMS/HSM provider and production certificate/TSA, then expand signed/tampered fixtures across supported video formats and verify certificate-chain/timestamp/revocation behavior. Production signing remains disabled.
 
 
 ### C2PA asset-library user journey
@@ -485,4 +485,4 @@ This is a runnable worker entry point, not a deployed worker. Do not set the ena
 - Asset-library users can request Content Credentials verification for an asset and see manifest presence, validation state, trust-policy status, error code and up to five validation findings.
 - The UI makes no verification claim before the user invokes the endpoint; the server performs the actual check after asset authorization.
 - The result is displayed separately from the application's SHA-256 provenance record.
-- Production signing, ingredient-aware transformation manifests and KMS/HSM integration are not yet implemented.
+- Ingredient-aware signing exists as a server-side adapter but is not connected to production exports. KMS/HSM integration, production certificate/TSA provisioning and production signing remain incomplete.
