@@ -86,11 +86,12 @@ export function buildCreativeGraph(input:CreativeGraphInput):CreativeGraph{
   const targetNode=targetType==="project"?"project:"+targetId:targetType==="scene"?"scene:"+targetId:targetType==="shot"?"shot:"+targetId:targetType==="timeline"?"timeline:"+targetId:targetType==="asset"?"asset:"+targetId:"";
   const sourceAsset=assetById.get(sourceId),hashMatches=Boolean(sourceAsset?.sha256&&record.sourceSha256&&sourceAsset.sha256.toLowerCase()===record.sourceSha256.toLowerCase());
   const sameProject=record.projectId===undefined||record.projectId===null||record.projectId===projectId;
-  const verified=record.status==="verified"&&hashMatches&&sameProject;
-  add({id:evidenceNode,type:"evidence",label:clean(record.kind,100)||"Evidence record",detail:clean(record.claim,1000)+(hashMatches?"":" · Source asset hash mismatch or unavailable")+(sameProject?"":" · Project scope mismatch"),status:verified?"linked":"review"});
-  if(nodes.has(sourceNode))link(sourceNode,evidenceNode,"supports");
-  if(targetNode&&nodes.has(targetNode)&&sameProject)link(evidenceNode,targetNode,verified?"supports":"evidence_for");
-  else unlinkedEvidence.push(id);
+  const targetExists=Boolean(targetNode&&nodes.has(targetNode));
+  const verified=record.status==="verified"&&hashMatches&&sameProject&&targetExists;
+  add({id:evidenceNode,type:"evidence",label:clean(record.kind,100)||"Evidence record",detail:clean(record.claim,1000)+(hashMatches?"":" · Source asset hash mismatch or unavailable")+(sameProject?"":" · Project scope mismatch")+(targetExists?"":" · Target is unresolved"),status:verified?"linked":"review"});
+  if(hashMatches&&sameProject&&nodes.has(sourceNode))link(sourceNode,evidenceNode,"derived_from");
+  if(targetExists&&sameProject)link(evidenceNode,targetNode,verified?"supports":"evidence_for");
+  if(!hashMatches||!sameProject||!targetExists)unlinkedEvidence.push(id);
  }
  const counts={} as Record<CreativeGraphNodeType,number>;
  for(const type of ["project","brief","intent","evidence","evidence_candidate","character","world_record","scene","shot","timeline","clip","asset"] as CreativeGraphNodeType[])counts[type]=[...nodes.values()].filter(n=>n.type===type).length;
