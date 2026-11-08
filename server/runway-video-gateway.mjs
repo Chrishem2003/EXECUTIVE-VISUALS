@@ -265,8 +265,8 @@ export function buildRunwayVideoToVideoPayload({
       throw fail("Each keyframe must contain an upload URI and timestamp.", "VIDEO_GATEWAY_INVALID_INPUT");
     }
     const uri = assertRunwayUploadUri(frame.uri, "Keyframe " + (index + 1));
-    if (!Number.isFinite(frame.at) || frame.at < 0 || frame.at > 30 || frame.at <= previousAt) {
-      throw fail("Keyframe timestamps must be strictly increasing and between 0 and 30 seconds.", "VIDEO_GATEWAY_INVALID_INPUT");
+    if (!Number.isFinite(frame.at) || frame.at < 0 || frame.at > 1 || frame.at <= previousAt) {
+      throw fail("Keyframe timestamps must be strictly increasing and between 0 and 1 (fraction of source duration).", "VIDEO_GATEWAY_INVALID_INPUT");
     }
     previousAt = frame.at;
     return Object.freeze({ uri, at: frame.at });
