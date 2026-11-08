@@ -486,7 +486,7 @@ test("cloud workflow video-to-video quote binds duration to server-probed source
    async preflight(){preflight++;return{billable:false,estimatedCredits:100,estimatedUsd:1,currency:"USD",provider:"runway",model:"gen4.5",configId:"studio-video"};}
   }
  });
- const result=await api.handle({method:"POST",path:"/api/cloud/workflows/video/quote",ownerId,body:{
+ const result=await api.handle({method:"POST",path:"/api/cloud/workflows/video/quote",ownerId:owner,body:{
   projectId,requestId:"workflow-1:video-node:2",
   node:{kind:"video.generate",config:{provider:"runway",model:"model-router",durationSeconds:5}},
   values:{prompt:"Edit this source while preserving the camera movement",sourceVideoAssetId:sourceId}
