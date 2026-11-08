@@ -117,6 +117,7 @@ if (!cleanupClaimsSql.includes("create table if not exists executive_visuals.ass
   issues.push("Orphan publication cleanup must use durable, tokenized tombstone claims.");
 }
 if (!cleanupClaimsSql.includes("cleanup_claim.object_path = p_object_path")
+if (!cleanupClaimsSql.includes("job_row.status not in ('succeeded','partial','failed','cancelled','expired')")) issues.push("Orphan attempt cleanup must wait until the owning job is terminal.");
  || !cleanupClaimsSql.includes("asset object path is fenced by a durable cleanup claim")) {
   issues.push("Publication finalization must reject object paths fenced for cleanup.");
 }
