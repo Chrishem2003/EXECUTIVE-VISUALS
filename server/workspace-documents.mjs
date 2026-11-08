@@ -9,6 +9,25 @@ export function sanitizeCreativeWorkspaceDocument(input){
  const knowledgeRows=Array.isArray(input.knowledgeRecords)?input.knowledgeRecords.slice(0,500).filter(item=>item&&typeof item==="object"&&!Array.isArray(item)):[];
  const knowledgeRecords=knowledgeRows.map(item=>({id:text(item.id,80),title:text(item.title,240),content:text(item.content,12000),tags:Array.isArray(item.tags)?item.tags.slice(0,30).map(value=>text(value,80)):[],sourceIds:Array.isArray(item.sourceIds)?item.sourceIds.slice(0,100).map(value=>text(value,80)).filter(id=>sourceIds.has(id)):[],kind:text(item.kind,80),status:text(item.status,80),createdAt:text(item.createdAt,40),updatedAt:text(item.updatedAt,40)}));
  if(knowledgeRecords.some(item=>item.status==="Verified"&&item.sourceIds.length===0))throw Object.assign(new Error("Verified knowledge records must cite at least one saved project source."),{code:"KNOWLEDGE_EVIDENCE_REQUIRED"});
+ const rawBrand=input.brandKit&&typeof input.brandKit==="object"&&!Array.isArray(input.brandKit)?input.brandKit:{};
+ const color=(value,fallback)=>{const candidate=text(value,7).trim();if(!candidate)return fallback;if(!/^#[0-9a-fA-F]{6}$/.test(candidate))throw Object.assign(new Error("Brand colors must use six-digit hexadecimal values."),{code:"INVALID_BRAND_COLOR"});return candidate.toUpperCase();};
+ const brandKit={
+  version:1,name:text(rawBrand.name,120).trim(),tagline:text(rawBrand.tagline,240).trim(),
+  voice:text(rawBrand.voice,1200).trim(),visualStyle:text(rawBrand.visualStyle,1200).trim(),
+  colors:{primary:color(rawBrand.colors?.primary,"#202124"),secondary:color(rawBrand.colors?.secondary,"#5F6368"),accent:color(rawBrand.colors?.accent,"#7C5CFC"),background:color(rawBrand.colors?.background,"#FFFFFF"),text:color(rawBrand.colors?.text,"#202124")},
+  typography:{heading:text(rawBrand.typography?.heading,80).trim(),body:text(rawBrand.typography?.body,80).trim()},
+  logoAssetIds:stringList(rawBrand.logoAssetIds,12,80),prohibitedTerms:stringList(rawBrand.prohibitedTerms,40,120),
+  legalFooter:text(rawBrand.legalFooter,600).trim(),updatedAt:text(rawBrand.updatedAt,40)
+ };
+ const templateRows=Array.isArray(input.campaignTemplates)?input.campaignTemplates.slice(0,40).filter(item=>item&&typeof item==="object"&&!Array.isArray(item)):[];
+ const campaignTemplates=templateRows.map(item=>{
+  const width=Math.max(1,Math.min(8192,Math.trunc(Number(item.width)||1080)));
+  const height=Math.max(1,Math.min(8192,Math.trunc(Number(item.height)||1920)));
+  const aspectRatio=text(item.aspectRatio,12).trim();
+  if(!/^\\d{1,5}:\\d{1,5}$/.test(aspectRatio))throw Object.assign(new Error("Campaign template aspect ratio must use W:H notation."),{code:"INVALID_CAMPAIGN_TEMPLATE"});
+  const safe=value=>Math.max(0,Math.min(40,Number(value)||0));
+  return {id:text(item.id,80),name:text(item.name,120).trim(),channel:text(item.channel,80).trim(),aspectRatio,width,height,maxDurationSeconds:Math.max(1,Math.min(3600,Math.trunc(Number(item.maxDurationSeconds)||60))),safeArea:{top:safe(item.safeArea?.top),right:safe(item.safeArea?.right),bottom:safe(item.safeArea?.bottom),left:safe(item.safeArea?.left)},subtitleSafeArea:Boolean(item.subtitleSafeArea),enabled:item.enabled!==false};
+ });
  const document={
   schemaVersion:1,
   creativeProjects:records(input.creativeProjects,100,[["id",80],["name",160],["brief",10000],["audience",2000],["style",200],["created",40]]),
@@ -41,6 +60,8 @@ export function sanitizeCreativeWorkspaceDocument(input){
   variants:Array.isArray(input.variants)?input.variants.slice(0,100).map(value=>text(value,4000)):[],
   researchSources:sources,
   knowledgeRecords,
+  brandKit,
+  campaignTemplates,
  };
  if(Buffer.byteLength(JSON.stringify(document),"utf8")>2*1024*1024)throw Object.assign(new Error("Workspace document exceeds the 2 MiB limit."),{code:"WORKSPACE_TOO_LARGE"});
  return document;
