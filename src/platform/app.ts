@@ -232,10 +232,17 @@ function provenance(){
 function readiness(){
  const completed=[
   ["Account and workspace identity","PR #250","Signed-in account, selected project, project role and sign-out navigation are visible in the app.","https://github.com/Chrishem2003/EXECUTIVE-VISUALS/pull/250"],
-  ["Project member and role display","PR #250","Owner-only add/remove controls and read-only collaborator list are visible. Invitations are not emailed yet.","https://github.com/Chrishem2003/EXECUTIVE-VISUALS/pull/250"],
-  ["C2PA provenance and Asset Library inspection","PR #249","Embedded credentials, ingredients, validation findings and checksum details can be inspected.","https://github.com/Chrishem2003/EXECUTIVE-VISUALS/pull/249"],
-  ["Local media and timeline provenance","PR #249","Local transcode, timeline and executor-level upscaling preservation have automated round-trip evidence.","https://github.com/Chrishem2003/EXECUTIVE-VISUALS/actions/runs/42510033410"]
- ];
+  ["Project member and role display","PR #250","Owner-only add/remove controls and read-only collaborator list are visible. Adds existing accounts; no email invitation is sent.","https://github.com/Chrishem2003/EXECUTIVE-VISUALS/pull/250"],
+  ["Official CAI Node SDK and verification","PR #249","Official SDK is pinned; authenticated inspection verifies stored bytes and distinguishes trusted, valid-untrusted, invalid, absent and unavailable states.","https://github.com/Chrishem2003/EXECUTIVE-VISUALS/pull/249"],
+  ["Transformation provenance preservation","PR #249","Derivative relationships and embedded ingredient manifests are preserved and validated across supported local transformation paths.","https://github.com/Chrishem2003/EXECUTIVE-VISUALS/pull/249"],
+  ["Six-format real SDK round-trip matrix","PR #249","JPEG, PNG, WebP, MP3, WAV and MP4 fixtures verify embedded credentials and source ingredients.","https://github.com/Chrishem2003/EXECUTIVE-VISUALS/pull/249"],
+  ["Local transcode and multi-source timeline","PR #249","SQLite media transcode and real local timeline renders verify source credentials and post-sign checksums.","https://github.com/Chrishem2003/EXECUTIVE-VISUALS/pull/249"],
+  ["AI-upscale executor preservation fixture","PR #249","Executor-level round-trip uses deterministic Lanczos processing; this does not claim real neural Real-ESRGAN inference.","https://github.com/Chrishem2003/EXECUTIVE-VISUALS/pull/249"],
+  ["Cancellation, streaming checksum and size guards","PR #249","Pre-abort, cancellation cleanup, output immutability and oversized preflight rejection are covered by automated tests.","https://github.com/Chrishem2003/EXECUTIVE-VISUALS/pull/249"],
+  ["Protected callback signer contract","PR #249","Official CallbackSigner adapter is tested with test-only key material. No production KMS/HSM or TSA is configured.","https://github.com/Chrishem2003/EXECUTIVE-VISUALS/pull/249"],
+  ["Asset Library Content Credentials inspection","PR #249","Authenticated image, audio and video asset inspection shows manifests, ingredients, findings and checksum details.","https://github.com/Chrishem2003/EXECUTIVE-VISUALS/pull/249"],
+  ["Automated acceptance","CI #8487","39/39 provenance tests and 460/460 regression tests passed; typecheck, build and disposable PostgreSQL integration passed.","https://github.com/Chrishem2003/EXECUTIVE-VISUALS/actions/runs/42511740955"]
+;
  const inProgress=[
   ["Account recovery","PR #251 · draft","465 regression tests pass on the branch. Hosted recovery still needs a dedicated Auth project and redirect/email configuration.","https://github.com/Chrishem2003/EXECUTIVE-VISUALS/pull/251"],
   ["Lease-fenced cloud media publication","PR #247 · draft/conflicts","Mainline reconciliation is incomplete; the branch conflicts with current main and must be reconciled before review or merge.","https://github.com/Chrishem2003/EXECUTIVE-VISUALS/pull/247"],
