@@ -72,7 +72,35 @@ export function createRunwaySourceAssetResolver({
     if (type !== asset.mediaType || declared > maxBytes || (declared && declared !== asset.size)) {
       throw fail("Private source asset headers do not match stored metadata.", "VIDEO_INPUT_ASSET_INTEGRITY_FAILED");
     }
-    const bytes = Buffer.from(await response.arrayBuffer());
+    // Stream with a hard byte ceiling. Do not call arrayBuffer() on an
+    // untrusted storage response: a missing/false Content-Length must not let
+    // a compromised endpoint allocate an unbounded buffer in the API worker.
+    const reader = response.body?.getReader?.();
+    if (!reader) {
+      throw fail("Private source asset response is not stream-readable.", "VIDEO_INPUT_ASSET_DOWNLOAD_FAILED");
+    }
+    const chunks = [];
+    let totalBytes = 0;
+    const byteLimit = Math.min(maxBytes, asset.size);
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = Buffer.from(value);
+        totalBytes += chunk.length;
+        if (totalBytes > byteLimit) {
+          await reader.cancel().catch(() => {});
+          throw fail("Private source asset exceeded its stored byte limit.", "VIDEO_INPUT_ASSET_INTEGRITY_FAILED");
+        }
+        chunks.push(chunk);
+      }
+    } catch (error) {
+      if (error?.code === "VIDEO_INPUT_ASSET_INTEGRITY_FAILED") throw error;
+      throw fail("Private source asset download failed while streaming.", "VIDEO_INPUT_ASSET_DOWNLOAD_FAILED");
+    } finally {
+      reader.releaseLock();
+    }
+    const bytes = Buffer.concat(chunks, totalBytes);
     if (bytes.length !== asset.size || bytes.length > maxBytes) {
       throw fail("Private source asset size does not match its stored record.", "VIDEO_INPUT_ASSET_INTEGRITY_FAILED");
     }
