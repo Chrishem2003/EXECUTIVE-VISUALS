@@ -43,5 +43,5 @@ test("graph does not invent character-to-shot links from names or descriptions",
 });
 
 test("impact analysis rejects unknown node IDs",()=>{
- assert.throws(()=>analyzeCreativeImpact(buildCreativeGraph(fixture),"missing"),/does not exist/);
+ assert.throws(()=>analyzeCreativeImpact(buildCreativeGraph(fixture),"missing"),/exists in the current creative graph/);
 });
