@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildCreativeGraph, analyzeCreativeImpact } from "../../src/core/creative-graph.ts";
+import { buildCreativeGraph, analyzeCreativeImpact, compareCreativeGraphSnapshot } from "../../src/core/creative-graph.ts";
 
 const fixture={
  project:{id:"project-1",name:"Launch film",brief:"Show how the product changes the daily workflow."},
@@ -60,4 +60,26 @@ test("evidence with an unresolved target or mismatched source hash stays unlinke
  assert.deepEqual(graph.unlinkedEvidence,["evidence-bad"]);
  assert.equal(graph.nodes.find(node=>node.id==="evidence:evidence-bad").status,"review");
  assert.equal(graph.edges.some(edge=>edge.to==="shot:missing-shot"),false);
+});
+
+
+test("revision comparison identifies changed shots and downstream timeline review candidates",()=>{
+ const baseline=buildCreativeGraph(fixture);
+ const changed=structuredClone(fixture);
+ changed.seriesPlans[0].seasons[0].episodes[0].scenes[0].shots[0].prompt="Maya demonstrates the revised workflow and new proof.";
+ const current=buildCreativeGraph(changed);
+ const comparison=compareCreativeGraphSnapshot(current,baseline);
+ assert.ok(comparison.changedNodeIds.includes("shot:shot-1"));
+ assert.ok(comparison.potentiallyStaleIds.includes("timeline:timeline-1"));
+ assert.equal(comparison.addedNodeIds.length,0);
+ assert.equal(comparison.removedNodeIds.length,0);
+});
+
+test("revision comparison distinguishes added and removed production nodes",()=>{
+ const baseline=buildCreativeGraph(fixture);
+ const withoutShot=structuredClone(fixture);
+ withoutShot.seriesPlans[0].seasons[0].episodes[0].scenes[0].shots=[];
+ const comparison=compareCreativeGraphSnapshot(buildCreativeGraph(withoutShot),baseline);
+ assert.ok(comparison.removedNodeIds.includes("shot:shot-1"));
+ assert.ok(comparison.changedNodeIds.includes("scene:scene-1"));
 });
