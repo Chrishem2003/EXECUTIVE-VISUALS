@@ -14,7 +14,8 @@ function throwIfAborted(signal){
 async function hashFile(filePath,signal){
  const hash=createHash("sha256");let size=0;
  try{
-  for await(const chunk of createReadStream(filePath,signal?{signal}:{})){
+  const streamOptions=typeof signal?.addEventListener==="function"?{signal}:{};
+  for await(const chunk of createReadStream(filePath,streamOptions)){
    throwIfAborted(signal);
    size+=chunk.length;hash.update(chunk);
   }
