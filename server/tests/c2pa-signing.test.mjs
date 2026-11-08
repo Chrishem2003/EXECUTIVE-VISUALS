@@ -33,7 +33,7 @@ function onePixelPng() {
 }
 
 test("protected signer is disabled by default", async () => {
-  const sign = createC2paTransformationSigner();
+  const sign = createC2paTransformationSigner({ enabled: false });
   await assert.rejects(() => sign({}), error => error.code === "C2PA_SIGNING_DISABLED");
 });
 
