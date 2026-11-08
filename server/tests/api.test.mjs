@@ -160,7 +160,8 @@ test("registration, project ownership, binary upload and asset isolation work",a
   assert.equal(provenance.status,200);
   const provenanceBody=await provenance.json();
   assert.equal(provenanceBody.verification.status,"integrity_verified");
-  assert.equal(provenanceBody.verification.c2pa,"not_checked");
+  assert.equal(typeof provenanceBody.c2pa.status,"string");
+  assert.notEqual(provenanceBody.c2pa.status,"not_checked");
 
   const assets=await request("/api/assets",{},cookieA);
   assert.equal((await assets.json()).assets.length,1);
