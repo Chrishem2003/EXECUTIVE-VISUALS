@@ -17,7 +17,7 @@ The `supabase-local-stack` job in `.github/workflows/ci.yml`:
 
 - starts Supabase locally in the isolated GitHub runner;
 - runs `supabase db reset --local`, applying all migrations from `supabase/migrations`;
-- verifies the 13 application tables exist and have RLS enabled;
+- verifies the 14 application tables exist and have RLS enabled;
 - verifies the private `executive-visuals-media` bucket and all four storage access policies;
 - stops the local stack even when a preceding step fails.
 
