@@ -394,12 +394,12 @@ The first real C2PA implementation slice is now on feature branch `feat/c2pa-ser
 
 ### Remaining C2PA delivery gates
 
-1. Run the full CI suite, including native package installation, genuine signed PNG fixture generation with the upstream CAI test signer, trust-anchor validation and pixel-tampering rejection.
-2. Extend genuine signed/tampered fixtures to supported video formats.
+1. Run the full CI suite, including native package installation, genuine signed PNG and MP4 fixture generation with the upstream CAI test signer, trust-anchor validation and PNG pixel-tampering rejection.
+2. Extend genuine signed/tampered fixtures to additional supported video and audio formats beyond MP4.
 3. Verify timestamp, revocation and production trust-list behavior against a reviewed trust policy.
 4. Add parser isolation and enforceable CPU/memory/time limits.
-5. Implement a protected callback signer backed by KMS/HSM; production signing stays disabled.
-6. Add new manifest creation for derivatives, including source ingredients and transformation actions.
+5. Provision and review a protected KMS/HSM provider; the callback adapter and cloud media worker hook exist, but production signing stays disabled.
+6. Extend ingredient-aware manifest creation from the current cloud media derivative hook into timeline render, export and publishing.
 7. Verify the final output after every supported proxy, transcode, timeline render and export operation.
 8. Test cross-user and cross-project denial through the actual provenance endpoint.
 
