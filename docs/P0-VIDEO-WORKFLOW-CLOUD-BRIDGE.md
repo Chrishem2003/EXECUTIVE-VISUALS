@@ -68,7 +68,7 @@ Connect a completed human-approval node upstream. The approval node click is the
 
 ### Current release boundary
 
-The code path is implemented but not activated. `CLOUD_TIMELINE_API_ENABLED`, Supabase auth, the saved Runway router config, provider API credentials, cloud worker, remote video gateway flags, and an enabled per-project budget policy are separate operational prerequisites. All must be deliberately configured and tested in isolated staging before any paid generation is possible. Production remains untouched.
+The code path is implemented but not activated. `VIDEO_WORKFLOW_EXECUTION_MODE=cloud` is an additional explicit operator opt-in; the default remains `legacy`. `CLOUD_TIMELINE_API_ENABLED`, Supabase auth, the saved Runway router config, provider API credentials, cloud worker, remote video gateway flags, and an enabled per-project budget policy are separate operational prerequisites. All must be deliberately configured and tested in isolated staging before any paid generation is possible. Production remains untouched.
 
 ## Remaining acceptance work before paid cloud mode can be enabled
 
