@@ -2,9 +2,10 @@ import { createServer } from "node:http";
 import { createHash, randomBytes, randomUUID, scryptSync, timingSafeEqual } from "node:crypto";
 import { createReadStream, createWriteStream, existsSync, statSync } from "node:fs";
 import { mkdir, unlink, open, readFile } from "node:fs/promises";
-import { dirname, extname, join, resolve, basename, sep } from "node:path";
+import { dirname, extname, join, resolve, basename, sep, relative, isAbsolute } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { Transform } from "node:stream";
+import { tmpdir } from "node:os";
 import { openDatabase, audit, addJobEvent, getOwnedProject, getOwnedAsset, getProjectAccess, canWriteProject, getAccessibleAsset, json, parseJson } from "./db.mjs";
 import { executeMediaJob, executableAvailable } from "./media.mjs";
 import { createRealEsrganAdapter } from "./ai-upscale-engine.mjs";
@@ -33,7 +34,9 @@ const WEB_ROOT = resolve(process.env.WEB_ROOT || "./dist");
 const DB_FILE = resolve(process.env.DB_FILE || join(DATA_DIR, "executive-visuals.sqlite"));
 const REQUIRE_PERSISTENT_DATA_DIR = process.env.REQUIRE_PERSISTENT_DATA_DIR === "true";
 // Persistence is an operator assertion, not something inferred from a non-/tmp path.
-const DATA_DIR_PERSISTENCE = process.env.DATA_DIR_PERSISTENCE === "persistent-volume" ? "operator-confirmed-volume" : (DATA_DIR === "/tmp" || DATA_DIR.startsWith("/tmp/")) ? "ephemeral" : "unverified";
+const tempRelative = relative(resolve(tmpdir()), DATA_DIR);
+const dataDirIsEphemeral = tempRelative === "" || (tempRelative !== ".." && !tempRelative.startsWith(".." + sep) && !isAbsolute(tempRelative));
+const DATA_DIR_PERSISTENCE = process.env.DATA_DIR_PERSISTENCE === "persistent-volume" ? "operator-confirmed-volume" : dataDirIsEphemeral ? "ephemeral" : "unverified";
 const isWithinDataDir = path => path === DATA_DIR || path.startsWith(DATA_DIR + sep);
 if (REQUIRE_PERSISTENT_DATA_DIR && (!existsSync(DATA_DIR) || !isWithinDataDir(DB_FILE) || !isWithinDataDir(MEDIA_ROOT))) {
   throw new Error("Persistent storage is required. Mount the configured data volume before starting the service.");
