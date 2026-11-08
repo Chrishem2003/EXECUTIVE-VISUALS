@@ -176,7 +176,7 @@ The product should converge on a shared domain language. Reuse existing records 
 - **Exit:** user can take one project from brief to reviewed, verified master export with no manual database edits and with full provenance.
 
 ### P2 — Creative intelligence and trust
-- Creative Intent Graph and change-impact analysis.
+- Creative Intent Graph and change-impact analysis, including asset SHA-256/size fingerprints in revision comparison and downstream review flags.
 - Claim-to-shot/evidence ledger, source citations and uncertainty.
   - Source integrity gate: re-hash the managed file and verify byte size against ingest metadata before evidence submission and before every reviewer decision; fail closed on missing or modified bytes.
   - Reviewer decisions require a written rationale and append-only actor/event history; the UI exposes the source SHA-256 fingerprint and source reference. This verifies byte continuity, not claim truth or legal rights.
