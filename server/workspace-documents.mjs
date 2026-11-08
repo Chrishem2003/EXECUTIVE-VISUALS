@@ -10,7 +10,7 @@ export function sanitizeCreativeWorkspaceDocument(input){
  const knowledgeRecords=knowledgeRows.map(item=>({id:text(item.id,80),title:text(item.title,240),content:text(item.content,12000),tags:Array.isArray(item.tags)?item.tags.slice(0,30).map(value=>text(value,80)):[],sourceIds:Array.isArray(item.sourceIds)?item.sourceIds.slice(0,100).map(value=>text(value,80)).filter(id=>sourceIds.has(id)):[],kind:text(item.kind,80),status:text(item.status,80),createdAt:text(item.createdAt,40),updatedAt:text(item.updatedAt,40)}));
  if(knowledgeRecords.some(item=>item.status==="Verified"&&item.sourceIds.length===0))throw Object.assign(new Error("Verified knowledge records must cite at least one saved project source."),{code:"KNOWLEDGE_EVIDENCE_REQUIRED"});
  const rawBrand=input.brandKit&&typeof input.brandKit==="object"&&!Array.isArray(input.brandKit)?input.brandKit:{};
- const color=(value,fallback)=>{const candidate=text(value,7).trim();if(!candidate)return fallback;if(!/^#[0-9a-fA-F]{6}$/.test(candidate))throw Object.assign(new Error("Brand colors must use six-digit hexadecimal values."),{code:"INVALID_BRAND_COLOR"});return candidate.toUpperCase();};
+ const color=(value,fallback)=>{const candidate=String(value??"").trim();if(!candidate)return fallback;if(candidate.length!==7||!/^#[0-9a-fA-F]{6}$/.test(candidate))throw Object.assign(new Error("Brand colors must use six-digit hexadecimal values."),{code:"INVALID_BRAND_COLOR"});return candidate.toUpperCase();};
  const brandKit={
   version:1,name:text(rawBrand.name,120).trim(),tagline:text(rawBrand.tagline,240).trim(),
   voice:text(rawBrand.voice,1200).trim(),visualStyle:text(rawBrand.visualStyle,1200).trim(),
