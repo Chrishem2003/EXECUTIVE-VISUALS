@@ -123,6 +123,29 @@ done
   }
 });
 
+test("AI upscaler rejects malformed source image headers before launching the engine", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "ev-ai-upscale-invalid-source-"));
+  const binary = join(directory, "engine");
+  const model = "realesrgan-x4plus";
+  const input = join(directory, "source.png");
+  const output = join(directory, "output.png");
+  await writeFile(input, Buffer.from([137,80,78,71,13,10,26,10]));
+  await writeFakeEngine(binary);
+  await writeFile(join(directory, model + ".param"), "model");
+  await writeFile(join(directory, model + ".bin"), "weights");
+  try {
+    const adapter = createRealEsrganAdapter({ binaryPath: binary, modelDirectory: directory, timeoutMs: 5000, enabled: true });
+    await assert.rejects(
+      adapter.execute({ inputPath: input, outputPath: output, model, scale: 2, format: "png" }),
+      error => error.code === "AI_UPSCALE_IMAGE_DIMENSIONS_INVALID"
+    );
+    const { access } = await import("node:fs/promises");
+    await assert.rejects(access(output));
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("AI upscaler rejects valid image files whose dimensions do not match the requested scale", async () => {
   const directory = await mkdtemp(join(tmpdir(), "ev-ai-upscale-dimensions-"));
   const binary = join(directory, "engine");
