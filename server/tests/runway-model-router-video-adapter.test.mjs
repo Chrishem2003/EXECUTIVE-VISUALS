@@ -140,6 +140,31 @@ test("is disabled by default and requires private output ingestion", async () =>
   );
 });
 
+test("cancels rejected Runway response bodies before returning status errors", async () => {
+  for (const [status, code] of [
+    [401, "RUNWAY_ACCESS_DENIED"],
+    [403, "RUNWAY_ACCESS_DENIED"],
+    [422, "RUNWAY_REQUEST_REJECTED"],
+    [429, "RUNWAY_RATE_LIMITED"],
+    [500, "RUNWAY_SERVER_ERROR"],
+    [503, "RUNWAY_SERVER_ERROR"]
+  ]) {
+    let cancelled = false;
+    const adapter = createRunwayModelRouterVideoAdapter({
+      ...base,
+      fetchImpl: async () => new Response(new ReadableStream({
+        start(controller) { controller.enqueue(new Uint8Array([1, 2, 3])); },
+        cancel() { cancelled = true; }
+      }), { status })
+    });
+    await assert.rejects(
+      adapter.getStatus(id),
+      error => error.code === code
+    );
+    assert.equal(cancelled, true, "response body for HTTP " + status + " should be cancelled");
+  }
+});
+
 test("polls a routed task and returns only validated HTTPS output URLs", async () => {
   const adapter = createRunwayModelRouterVideoAdapter({
     ...base,
