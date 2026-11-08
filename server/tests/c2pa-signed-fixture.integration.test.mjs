@@ -98,7 +98,7 @@ test("real CAI Node SDK signs and verifies an MP4 video with the same explicit t
   const sourcePath = join(dir, "source.mp4"), signedPath = join(dir, "signed.mp4");
   const certificateChain = await readFile(join(fixtureDir, "es256-test-only.chain.pem"));
   const privateKey = await readFile(join(fixtureDir, "es256-test-only.private.pem"));
-  const certificateBlocks = certificateChain.toString("utf8").match(/-----BEGIN CERTIFICATE-----[\\s\\S]*?-----END CERTIFICATE-----/g) || [];
+  const certificateBlocks = certificateChain.toString("utf8").match(/-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g) || [];
   assert.ok(certificateBlocks.length >= 2, "upstream test fixture must contain a signer and intermediate certificate");
   const anchorPath = join(dir, "user-anchors.pem");
   await writeFile(anchorPath, certificateBlocks[1] + "\\n");
