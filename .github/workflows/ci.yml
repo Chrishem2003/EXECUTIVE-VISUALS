@@ -88,5 +88,7 @@ jobs:
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261108010000_atomic_asset_publication_lease_fencing.sql
       - name: Apply lease-aware publication cleanup claims
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261108020000_asset_publication_cleanup_claims.sql
+      - name: Extend cleanup outbox to immutable publication attempt paths
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261108030000_storage_cleanup_attempt_paths.sql
       - name: Verify atomic publication and derivative tenant scope
         run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/atomic-asset-publication-postgres-integration.sql
