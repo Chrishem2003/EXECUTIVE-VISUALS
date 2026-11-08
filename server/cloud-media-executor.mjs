@@ -6,6 +6,7 @@ import { extname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { pipeline } from "node:stream/promises";
 import { Transform } from "node:stream";
+import { createC2paTransformationPreserver } from "./c2pa-transformation-preserver.mjs";
 import { buildMediaOperationArgs, executableAvailable } from "./media.mjs";
 import { createRealEsrganAdapter } from "./ai-upscale-engine.mjs";
 
@@ -118,9 +119,13 @@ function outputPlan(jobType, input, source, sourcePath, outputPath) {
  * Timeline rendering remains deliberately separate until its timeline document
  * and asset references are migrated to the cloud repository.
  */
-export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.env.FFMPEG_PATH || "ffmpeg", ffprobe = process.env.FFPROBE_PATH || "ffprobe", timeoutMs = 30 * 60 * 1000 } = {}) {
+async function preserveC2paOutput({c2paPreserver,c2paSigner,c2paSignerMode,sourcePath,outputPath,sourceMimeType,outputMimeType,expectedSourceSha256,operation,signal}){
+  return c2paPreserver({sourcePath,outputPath,sourceMimeType,outputMimeType,expectedSourceSha256,signer:c2paSigner,signerMode:c2paSignerMode,operation,signal});
+}
+export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.env.FFMPEG_PATH || "ffmpeg", ffprobe = process.env.FFPROBE_PATH || "ffprobe", timeoutMs = 30 * 60 * 1000, c2paPreserver = createC2paTransformationPreserver(), c2paSigner = null, c2paSignerMode = "local" } = {}) {
   if (!mediaIO || typeof mediaIO.materialize !== "function" || typeof mediaIO.publish !== "function") throw new Error("Cloud media executor requires cloud media IO.");
   if (!Number.isInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 60 * 60 * 1000) throw new Error("Cloud media execution timeout is invalid.");
+  if(typeof c2paPreserver!=="function")throw new Error("Cloud media executor requires a C2PA preservation adapter.");
 
   return async function execute({ job, signal, onProgress = () => {} }) {
     if (!job || typeof job.id !== "string" || typeof job.owner_id !== "string" || !SUPPORTED.has(job.job_type)) {
@@ -170,21 +175,22 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
         if (Number(outputImage?.width) !== expectedWidth || Number(outputImage?.height) !== expectedHeight) throw Object.assign(new Error("AI-upscaled image dimensions do not match the requested scale; derivative was not published."), { code: "MEDIA_OUTPUT_VALIDATION_FAILED" });
         await runProcess(ffmpeg, ["-v", "error", "-i", outputPath, "-f", "null", "-"], { signal, timeoutMs: Math.min(timeoutMs, 120000), onProgress });
         if (signal?.aborted) throw Object.assign(new Error("Media job was cancelled."), { code: "JOB_CANCELLED" });
-        const info = await stat(outputPath);
-        const digest = await checksum(outputPath);
         const mediaType = format === "jpg" ? "image/jpeg" : "image/" + format;
         const sourceName = String(materialized.asset.name || "image");
         const plan = { name: sourceName.replace(/\.[^.]+$/, "").slice(0, 140) + "-ai-upscaled." + format, mediaType };
         const processing = { engine: result.engine, method: result.method, model: result.model, scale: result.scale, tile: Number(input.tile ?? 0), sourceWidth, sourceHeight, outputWidth: expectedWidth, outputHeight: expectedHeight, dimensionsVerified: true };
         if (signal?.aborted) throw Object.assign(new Error("Media job was cancelled."), { code: "JOB_CANCELLED" });
-        const asset = await mediaIO.publish({
+        const c2paPreservation=await preserveC2paOutput({c2paPreserver,c2paSigner,c2paSignerMode,sourcePath,outputPath,sourceMimeType:materialized.asset.mediaType,outputMimeType:mediaType,expectedSourceSha256:materialized.asset.sha256,operation:job.job_type,signal});
+        const info=await stat(outputPath);
+        const digest=await checksum(outputPath);
+       const asset = await mediaIO.publish({
           ownerId: job.owner_id, projectId: job.project_id || null, filename: plan.name,
           mediaType, path: outputPath, derivativeOf: sourceId,
-          metadata: { operation: job.job_type, sourceSha256: materialized.asset.sha256, sha256: digest, processing },
+          metadata: { operation: job.job_type, sourceSha256: materialized.asset.sha256, sha256: digest, processing, c2paPreservation },
           publicationKey: job.id + ":output:v1"
         });
         onProgress(100);
-        return { sourceAssetId: sourceId, outputAsset: asset, sha256: digest, byteSize: info.size, operation: job.job_type, processing };
+        return { sourceAssetId: sourceId, outputAsset: asset, sha256: digest, byteSize: info.size, operation: job.job_type, processing, c2paPreservation };
       }
       if (job.job_type === "media.probe") {
         if (!executableAvailable("ffprobe")) throw Object.assign(new Error("FFprobe is not installed on this worker."), { code: "MEDIA_ENGINE_MISSING" });
@@ -215,8 +221,8 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
       if (!executableAvailable("ffprobe")) throw Object.assign(new Error("FFprobe is required to validate cloud media derivatives before publication."), { code: "MEDIA_ENGINE_MISSING" });
       await runProcess(ffmpeg, plan.args, { signal, timeoutMs, onProgress });
       if (signal?.aborted) throw Object.assign(new Error("Media job was cancelled."), { code: "JOB_CANCELLED" });
-      const info = await stat(outputPath);
-      if (!info.isFile() || info.size < 1) throw Object.assign(new Error("Media engine produced an empty output."), { code: "MEDIA_OUTPUT_EMPTY" });
+      const preSignInfo=await stat(outputPath);
+      if (!preSignInfo.isFile() || preSignInfo.size < 1) throw Object.assign(new Error("Media engine produced an empty output."), { code: "MEDIA_OUTPUT_EMPTY" });
       let outputProbe = null;
       const structuralProbe = await runProcess(ffprobe, ["-v","error","-show_format","-show_streams","-of","json",outputPath], { signal, timeoutMs, onProgress });
       let structuralMetadata;
@@ -271,7 +277,6 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
         }
       }
       onProgress(85);
-      const digest = await checksum(outputPath);
       const processing = job.job_type === "media.upscale" ? {
         method: "classical-resampling",
         algorithm: ["lanczos", "bicubic", "spline36"].includes(input.algorithm) ? input.algorithm : "lanczos",
@@ -286,6 +291,9 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
         audioPreserved: sourceAudioStreamCount === null ? null : sourceAudioStreamCount === 0 || (outputProbe?.streams || []).some(stream => stream.codec_type === "audio"),
         outputVideo: outputProbe?.streams?.find(stream => stream.codec_type === "video") || null
       } : null;
+      const c2paPreservation=await preserveC2paOutput({c2paPreserver,c2paSigner,c2paSignerMode,sourcePath,outputPath,sourceMimeType:materialized.asset.mediaType,outputMimeType:plan.mediaType,expectedSourceSha256:materialized.asset.sha256,operation:job.job_type,signal});
+      const info=await stat(outputPath);
+      const digest=await checksum(outputPath);
       const asset = await mediaIO.publish({
         ownerId: job.owner_id,
         projectId: job.project_id || null,
@@ -293,11 +301,11 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
         mediaType: plan.mediaType,
         path: outputPath,
         derivativeOf: sourceId,
-        metadata: { operation: job.job_type, sourceSha256: materialized.asset.sha256, sha256: digest, ...(processing ? { processing } : {}) },
+        metadata: { operation: job.job_type, sourceSha256: materialized.asset.sha256, sha256: digest, ...(processing ? { processing } : {}), c2paPreservation },
         publicationKey: job.id + ":output:v1"
       });
       onProgress(100);
-      return { sourceAssetId: sourceId, outputAsset: asset, sha256: digest, byteSize: info.size, operation: job.job_type, ...(processing ? { processing } : {}) };
+      return { sourceAssetId: sourceId, outputAsset: asset, sha256: digest, byteSize: info.size, operation: job.job_type, ...(processing ? { processing } : {}), c2paPreservation };
     } finally {
       await materialized.cleanup?.().catch(() => {});
       await rm(workDir, { recursive: true, force: true }).catch(() => {});

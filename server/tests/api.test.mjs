@@ -161,6 +161,11 @@ test("registration, project ownership, binary upload and asset isolation work",a
   const provenanceBody=await provenance.json();
   assert.equal(provenanceBody.verification.status,"integrity_verified");
   assert.equal(provenanceBody.verification.c2pa,"not_checked");
+  const c2pa=await request("/api/assets/"+asset.id+"/c2pa",{},cookieA);
+  assert.equal(c2pa.status,200,await c2pa.clone().text());
+  const c2paBody=await c2pa.json();
+  assert.equal(c2paBody.assetId,asset.id);
+  assert.ok(["not_present","invalid","valid_untrusted","trusted","validation_unavailable"].includes(c2paBody.verification.status));
 
   const assets=await request("/api/assets",{},cookieA);
   assert.equal((await assets.json()).assets.length,1);
@@ -172,6 +177,8 @@ test("registration, project ownership, binary upload and asset isolation work",a
   assert.equal(forbidden.status,404);
   const hiddenProvenance=await request("/api/assets/"+asset.id+"/provenance",{},cookieB);
   assert.equal(hiddenProvenance.status,404);
+  const hiddenC2pa=await request("/api/assets/"+asset.id+"/c2pa",{},cookieB);
+  assert.equal(hiddenC2pa.status,404);
   const ownProject=await request("/api/projects/"+project.id,{},cookieB);
   assert.equal(ownProject.status,404);
 });

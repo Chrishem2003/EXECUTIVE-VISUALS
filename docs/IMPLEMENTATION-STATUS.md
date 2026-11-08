@@ -1,7 +1,7 @@
 # Executive Visuals — implementation status
 
-**Updated:** 2 November 2026  
-**Branch:** `feat/executive-visuals-unified-platform`  
+**Updated:** 8 November 2026  
+**Branch:** `feat/c2pa-node-provenance-verification` (provenance increment; based on `main`)  
 **Delivery posture:** local runtime implemented; external-auth staging blueprint hardened; public release not approved pending account sign-in UX, isolated auth configuration, durable-data recovery tests and deployment verification.
 
 ## Implemented in the current branch
@@ -25,6 +25,7 @@
 | Projects | Persistent project creation, listing, optimistic revision updates, archive and project-scoped creative workspace documents with revision conflict protection | SQLite local database; owner/editor writes and viewer reads |
 | Media ingest | Binary uploads to local disk, MIME allowlist, upload-size limit and SHA-256 checksum | Local disk; cloud object storage not connected |
 | Asset library | Owner isolation, metadata, original/derivative relationship, private file reads, image/video/audio/document previews and processing history | Local media volume; cloud storage upload/signing adapter is contract-tested but not connected to asset API |
+| Asset provenance and C2PA Content Credentials | Deterministic application provenance records on upload; authenticated `GET /api/assets/:assetId/c2pa` uses pinned `@contentauth/c2pa-node@0.10.0` Reader/Context APIs; checksum and size are checked before/after native parsing; statuses distinguish trusted, valid-but-untrusted, invalid, absent and unavailable; real CAI-signed fixtures validate in CI | Signer-injected preservation hooks now cover cloud single-source media, local SQLite media (including AI upscale), local timeline masters and cloud timeline masters. Multi-source timelines preserve every credential-bearing source as an ingredient; output is re-hashed after signing; failed preservation blocks publication. Production signer and trust anchor remain unconfigured; Node 22.23.4+ required |
 | Job queue | Persistent queue, idempotency keys, normalized states, progress events, renewable worker leases, stale-worker recovery, bounded retries with exponential backoff, cross-process cancellation polling and audit trail | Multi-process lease coordination on a shared SQLite database; multi-host workers still require a shared Postgres queue |
 | Local media engine | Probe, thumbnail, transcode, audio extraction, proxy generation, video denoise, color correction, resize/reframe, frame interpolation, FFmpeg scaling, audio denoise/loudness normalization and timeline MP4 master rendering | Requires FFmpeg/FFprobe; neural restoration, advanced stabilization, animated/video overlays, transitions and advanced effects remain pending |
 | Runtime console | Sign-in, project creation, persistent asset library, live engine readiness, uploads, media job submission, job inspection and audit view | Browser UI uses the local API; creative briefs, shot lists, characters, research sources and linked knowledge records sync to project workspace documents |
@@ -53,6 +54,26 @@
 
 | Quality checks | Capability parity, queue lease/retry tests, approval-gated AI workflow integration, project workspace API role/revision tests, workflow planner, timeline validation, real FFmpeg MP4 output/probe and pixel checks, API security tests, TypeScript and Vite build | CI verifies local behavior, not cloud durability or external media-generation providers |
 
+## C2PA transformation-preservation expansion — current branch
+
+- The shared preserver accepts multiple source assets, checks each registered SHA-256, validates each embedded source manifest, and writes the primary credential-bearing source as `parentOf` and additional sources as `componentOf` ingredients.
+- Local media output paths now call preservation before asset insertion, including AI upscaling and the FFmpeg finishing operations. Timeline masters include all enabled video, audio and still-image overlay sources; caption text assets are not treated as media ingredients.
+- Cloud timeline rendering now performs the same preservation step after rendering and before final probe/checksum/publication.
+- Signed outputs are re-hashed after preservation; metadata records the preservation result. Local cancellation and cloud abort signals are passed through the preservation step.
+- Baseline CI passed at exact branch head `d9784b4`: reproducible `npm ci`, typecheck, full build/regression suite, real CAI SDK multi-source signing/ingredient validation, local timeline provenance-hook checks (including real FFmpeg render), cloud timeline preservation-before-publication test, and disposable PostgreSQL asset-publication integration.
+- Expanded acceptance CI passed at commit `4edd495` in run `8435`: `npm ci`, typecheck, full build/regression suite including the new local SQLite C2PA transcode round-trip (21/21 provenance tests), and the disposable PostgreSQL publication integration job.
+- No production signer, private key, trust anchor, external signing service, deployment, paid provider request or database migration is configured or invoked.
+- Added `server/tests/local-c2pa-roundtrip.test.mjs` to exercise the real local SQLite `media.transcode` publication path with an upstream test-only CAI signer, then read the published MP4 back and verify its embedded source ingredient and post-signing checksum. The first CI attempt exposed a missing persisted-job fixture; after correcting the fixture to create the real queued job row, the test passed (21/21 provenance tests) in GitHub Actions run `8435` at commit `4edd495`.
+- Added `server/tests/c2pa-format-roundtrip.test.mjs` for real CAI SDK signing, transformation preservation and Reader validation across the application's six media formats: JPEG, PNG, WebP, MP3, WAV and MP4. All six round-trips passed; the provenance suite passed 28/28 tests in GitHub Actions run `8439` at commit `f5a4cc0`.
+- Full branch CI run `8439` also passed dependency installation, typecheck, full build/regression suite and disposable PostgreSQL asset-publication integration.
+- The preserver now hashes with native `AbortSignal` support, checks cancellation between SDK stages, normalizes aborts to `C2PA_TRANSFORM_ABORTED`, and retains compatibility with the local executor's lightweight cancellation adapter. Tests cover pre-abort, abort during callback signing (no output replacement and temp cleanup), streaming-hash cancellation, and oversize rejection before SDK loading. CI run `8447` passed the provenance suite (32/32), full server/build regression suite (453/453), typecheck and disposable PostgreSQL integration.
+- Added `server/c2pa-callback-signer.mjs`, which wraps the official CAI `CallbackSigner.newSigner` using public X.509 certificates and a protected signing callback; it validates algorithm, certificate chain, reserve size, HTTPS TSA URL and returned signature bounds. A real CAI callback-signing transformation round-trip passed with test-only key material. CI run `8453` passed 33/33 provenance tests, 453/453 broader server tests, typecheck, full build and disposable PostgreSQL integration.
+- Added `server/tests/local-c2pa-timeline-roundtrip.test.mjs`: the actual local SQLite timeline executor renders a signed video source with signed audio and still-image overlay inputs, then verifies all three embedded ingredient manifests in the final MP4 and checks the post-signing asset checksum. CI run `8456` passed 34/34 provenance tests, the full build/regression suite, typecheck and disposable PostgreSQL integration.
+- Added `server/tests/local-c2pa-ai-upscale-roundtrip.test.mjs` and an injectable upscaler factory to the local executor. The test runs the actual SQLite `media.ai-upscale` job, uses a deterministic test-only Lanczos adapter (not a neural model), then verifies C2PA ingredient preservation, derivative linkage and post-signing checksum. CI run `8465` passed 35/35 provenance tests and 456/456 full regression tests, plus typecheck, full build and disposable PostgreSQL integration.
+- Added visual Asset Library inspection for image/audio/video cards. The authenticated `GET /api/assets/:assetId/c2pa` response is displayed with separate trusted/valid-untrusted/invalid/not-present states, manifest summary, embedded source ingredients, validation findings and asset checksum. The existing API tests cover authenticated access and cross-user isolation; CI run `8460` passed the typecheck, full build/regression suite and disposable PostgreSQL integration.
+- The KMS/HSM boundary, key isolation, workload-identity requirements, signing audit metadata, certificate policy and production release gates are documented in `docs/C2PA-PROTECTED-SIGNER-ARCHITECTURE.md`. No provider adapter or production key is activated.
+- Remaining validation: actual Real-ESRGAN model inference end-to-end (the current executor test injects a deterministic non-neural fixture adapter), real near-limit large-file throughput/memory stress, broader codec/container variants, independent browser review of the asset inspection panel and isolated staging acceptance with an approved non-production signer.
+
 ## Build verification
 
 The build pipeline runs:
@@ -61,7 +82,9 @@ The build pipeline runs:
 3. API integration tests for authentication, ownership isolation, project workspace persistence, revision conflicts, role permissions, uploads and idempotency.
 4. Mock-gateway tests for server-side text generation, remote-access controls and approval gating.
 5. API tests for research-source URL validation, source-linked knowledge persistence, partial document saves, role enforcement and safe research import rejection.\n6. Workflow context tests ensure imported source text is passed as untrusted quoted data, not executable instructions.\n6. Research importer tests for HTTPS restrictions, private-network blocking, HTML extraction, metadata capture, size limits and unreadable pages.
-5. Real FFmpeg rendering and output inspection.
+5. Real CAI C2PA signing/Reader round-trip with an upstream test-only certificate, verifier trust-state and asset-integrity tests.
+6. Local SQLite media transcode round-trip: signed source MP4 → FFmpeg derivative → embedded ingredient validation → post-signing SHA-256/publication metadata check (`npm run verify:provenance`).
+6. Real FFmpeg rendering and output inspection.
 6. Real FFmpeg/FFprobe fixture execution for denoise, color correction, resize, interpolation and scaling with invalid-parameter rejection.
 6. TypeScript typecheck.
 7. Production Vite build.
@@ -472,3 +495,21 @@ This is a runnable worker entry point, not a deployed worker. Do not set the ena
 - Full build includes `verify:provenance`; the broader server suite includes the API authorization integration test.
 
 **Next:** add the supported CAI C2PA SDK as a separate adapter after dependency review, certificate/trust policy design and supported-format tests. Do not claim signing/validation until real signed fixtures pass.
+
+
+## C2PA provenance milestone — visible app evidence and expanded streaming test
+
+- Added a dedicated **Manage → Trust & provenance** workspace to the browser app. It lists nine implemented/tested stages and five open release gates, with direct links to PR #249, the successful CI run, and the Asset Library inspection flow.
+- The page distinguishes completed code/test evidence from release approval. It explicitly states that the callback signer is not a connected KMS/HSM, the AI-upscale executor fixture is not Real-ESRGAN inference, and no staging signer/deployment has been provisioned.
+- Expanded cancellation/recovery verification with a 96 MiB streaming preservation test. The fake signer copies the file without whole-file buffering; the preserver hashes source/output streams, validates the embedded ingredient and confirms the final output hash. This is a large-file stress point, not a substitute for a measured near-limit throughput/memory run.
+- The Asset Library continues to expose per-asset Content Credentials inspection for images, audio and video.
+- Next independent gates remain: actual Real-ESRGAN inference, near-limit throughput/memory and additional codec/container coverage, a concrete provider-specific KMS/HSM adapter with protected key controls, independent browser acceptance, and isolated staging sign-off with a dedicated non-production signer.
+- Safety boundary unchanged: no production or staging keys, paid provider calls, shared migrations, deployment or merge.
+
+
+## Expanded C2PA format coverage — verified in CI run #8479
+
+- Cross-checked the application's media upload allowlist with the current CAI supported-format documentation.
+- Extended the real CAI SDK round-trip matrix from six to nine formats by adding GIF, QuickTime MOV and M4A, alongside JPEG, PNG, WebP, MP3, WAV and MP4. All nine real SDK round-trips passed.
+- WebM, Matroska/MKV and Ogg remain accepted ingest formats but are not listed in the current CAI core supported-format table. Do not claim C2PA preservation for those formats; credential-bearing transformations remain fail-closed until an SDK-supported path is demonstrated.
+- The previous revision passed 36/36 provenance tests and 457/457 regression tests in CI run #8473. The nine-format expansion passed CI run #8479: 39/39 provenance tests and 460/460 full regression tests passed, alongside typecheck, full build and disposable PostgreSQL publication integration.

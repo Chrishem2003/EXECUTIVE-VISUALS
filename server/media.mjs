@@ -9,6 +9,9 @@ import { stat } from "node:fs/promises";
 import { Transform } from "node:stream";
 import { addJobEvent, getAccessibleAsset, json, parseJson } from "./db.mjs";
 import { createRealEsrganAdapter } from "./ai-upscale-engine.mjs";
+import { createC2paTransformationPreserver } from "./c2pa-transformation-preserver.mjs";
+
+const defaultC2paPreserver=createC2paTransformationPreserver();
 import { parseBlackFrameEvents, parseSilenceEvents, parseAudioMetrics, parseFreezeEvents, parseSceneChangeTimes, runOptionalSignalCheck } from "./media-signal-analysis.mjs";
 
 const ALLOWED_JOBS = new Set(["media.probe", "media.thumbnail", "media.transcode", "media.audio_extract", "media.proxy", "media.denoise", "media.color", "media.resize", "media.interpolate", "media.upscale", "media.audio-clean", "media.ai-upscale", "timeline.render"]);
@@ -199,7 +202,7 @@ function addAsset(db, job, filePath, originalName, mediaType, size, sha256, deri
   return { id, name:originalName, mediaType, size, sha256, derivativeOf, metadata };
 }
 
-async function renderTimelineJob({db,job,mediaRoot,activeProcesses,onProgress}){
+async function renderTimelineJob({db,job,mediaRoot,activeProcesses,onProgress,c2paPreserver=defaultC2paPreserver,c2paSigner=null,c2paSignerMode="local"}){
   const input=parseJson(job.input_json);
   const record=db.prepare("SELECT * FROM timelines WHERE id=? AND archived_at IS NULL").get(String(input.timelineId||""));
   if(!record)throw Object.assign(new Error("Timeline not found."),{code:"TIMELINE_NOT_FOUND"});
@@ -327,17 +330,27 @@ async function renderTimelineJob({db,job,mediaRoot,activeProcesses,onProgress}){
     throw Object.assign(new Error("Job cancelled."),{code:"JOB_CANCELLED"});
   }
   onProgress(92);
+  const timelineSourceIds=[...new Set(activeTracks.filter(track=>["video","audio","overlay"].includes(track.kind)).flatMap(track=>(track.clips||[]).filter(clip=>clip.enabled!==false&&clip.assetId).map(clip=>String(clip.assetId))))];
+  const timelineSources=timelineSourceIds.map(assetId=>{
+    const asset=getAccessibleAsset(db,job.owner_id,assetId,true);
+    if(!asset)throw Object.assign(new Error("A timeline source asset is no longer accessible."),{code:"SOURCE_ASSET_NOT_FOUND"});
+    return{path:join(mediaRoot,asset.storage_path),mediaType:asset.media_type,sha256:asset.sha256};
+  });
+  const c2paSignal={get aborted(){return cancelled();}};
+  let c2paPreservation;
+  try{c2paPreservation=await c2paPreserver({sources:timelineSources,outputPath,outputMimeType:"video/mp4",signer:c2paSigner,signerMode:c2paSignerMode,operation:"timeline.render",signal:c2paSignal});}
+  catch(error){await unlink(outputPath).catch(()=>{});throw error;}
   const fileStat=await stat(outputPath),hash=createHash("sha256");
   await pipeline(createReadStream(outputPath),new Transform({transform(chunk,enc,cb){hash.update(chunk);cb(null,chunk);}}),new Transform({transform(chunk,enc,cb){cb();}}));
-  const outputAsset=addAsset(db,job,"derived/"+outputId+".mp4",String(timeline.name||record.name||"sequence")+"-master.mp4","video/mp4",fileStat.size,hash.digest("hex"),null,{operation:"timeline.render",timelineId:record.id,timelineRevision:record.revision,width,height,frameRate:{numerator:fpsNum,denominator:fpsDen}});
-  return {outputAsset,render:{timelineId:record.id,width,height,frameRate:{numerator:fpsNum,denominator:fpsDen},videoClips:clips.length,audioClips:audioClips.length,overlayClips:overlayClips.length,captionClips:captionClips.length,durationSeconds:cursor}};
+  const outputAsset=addAsset(db,job,"derived/"+outputId+".mp4",String(timeline.name||record.name||"sequence")+"-master.mp4","video/mp4",fileStat.size,hash.digest("hex"),null,{operation:"timeline.render",timelineId:record.id,timelineRevision:record.revision,width,height,frameRate:{numerator:fpsNum,denominator:fpsDen},c2paPreservation});
+  return {outputAsset,c2paPreservation,render:{timelineId:record.id,width,height,frameRate:{numerator:fpsNum,denominator:fpsDen},videoClips:clips.length,audioClips:audioClips.length,overlayClips:overlayClips.length,captionClips:captionClips.length,durationSeconds:cursor}};
 }
 
-export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = new Map(), onProgress = () => {} }) {
+export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = new Map(), onProgress = () => {}, c2paPreserver=defaultC2paPreserver, c2paSigner=null, c2paSignerMode="local", aiUpscalerFactory=createRealEsrganAdapter }) {
   if (!ALLOWED_JOBS.has(job.job_type)) throw Object.assign(new Error("No execution adapter is registered for this job type."), { code:"ENGINE_UNAVAILABLE" });
   if(job.job_type==="timeline.render"){
     if(!executableAvailable("ffmpeg"))throw Object.assign(new Error("FFmpeg is not installed on this worker."),{code:"MEDIA_ENGINE_MISSING"});
-    const result=await renderTimelineJob({db,job,mediaRoot,activeProcesses,onProgress});
+    const result=await renderTimelineJob({db,job,mediaRoot,activeProcesses,onProgress,c2paPreserver,c2paSigner,c2paSignerMode});
     return result;
   }
   if (!executableAvailable("ffmpeg") && job.job_type !== "media.probe" && job.job_type !== "media.ai-upscale") throw Object.assign(new Error("FFmpeg is not installed on this worker."), { code:"MEDIA_ENGINE_MISSING" });
@@ -361,22 +374,25 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
     const poll = setInterval(() => { if (cancelled()) controller.abort(); }, 500);
     poll.unref?.();
     try {
-      const adapter = createRealEsrganAdapter({ timeoutMs:30*60*1000, maxOutputBytes:250*1024*1024 });
+      const adapter = aiUpscalerFactory({ timeoutMs:30*60*1000, maxOutputBytes:250*1024*1024 });
       const result = await adapter.execute({
         inputPath:sourcePath, outputPath, model:input.model||"realesrgan-x4plus",
         scale:input.scale??4, tile:input.tile??0, format, signal:controller.signal
       });
       if (controller.signal.aborted || cancelled()) throw Object.assign(new Error("Job cancelled."), { code:"JOB_CANCELLED" });
+      let c2paPreservation;
+      try{c2paPreservation=await c2paPreserver({sourcePath,outputPath,sourceMimeType:source.media_type,outputMimeType:format==="jpg"?"image/jpeg":"image/"+format,expectedSourceSha256:source.sha256,signer:c2paSigner,signerMode:c2paSignerMode,operation:job.job_type,signal:controller.signal});}
+      catch(error){await unlink(outputPath).catch(()=>{});throw error;}
       const fileStat = await stat(outputPath);
       const hash = createHash("sha256");
       await pipeline(createReadStream(outputPath),new Transform({transform(chunk,enc,cb){hash.update(chunk);cb(null,chunk);}}),new Transform({transform(chunk,enc,cb){cb();}}));
       const mime = format==="jpg"?"image/jpeg":"image/"+format;
       const baseName = source.original_name.split(".").slice(0,-1).join(".") || source.original_name;
       const processing = {engine:result.engine,method:result.method,model:result.model,scale:result.scale,tile:result.tile};
-      const outputAsset = addAsset(db,job,"derived/"+id+"."+format,baseName+"-ai-upscaled."+format,mime,fileStat.size,hash.digest("hex"),source.id,{operation:job.job_type,processing});
+      const outputAsset = addAsset(db,job,"derived/"+id+"."+format,baseName+"-ai-upscaled."+format,mime,fileStat.size,hash.digest("hex"),source.id,{operation:job.job_type,processing,c2paPreservation});
       emit("media.output_created",{assetId:outputAsset.id,sha256:outputAsset.sha256});
       onProgress(100);
-      return {outputAsset,processing};
+      return {outputAsset,processing,c2paPreservation};
     } finally { clearInterval(poll); }
   }
 
@@ -455,12 +471,15 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
   try { outputMetadata=JSON.parse(probeResult.stdout||"{}"); }
   catch { throw Object.assign(new Error("Media output metadata could not be parsed."),{code:"MEDIA_OUTPUT_VALIDATION_FAILED"}); }
   const validation=validateMediaOutputProbe(outputMetadata,mime);
+  let c2paPreservation;
+  try{c2paPreservation=await c2paPreserver({sourcePath,outputPath,sourceMimeType:source.media_type,outputMimeType:mime,expectedSourceSha256:source.sha256,signer:c2paSigner,signerMode:c2paSignerMode,operation:job.job_type,signal:{get aborted(){return cancelled();}}});}
+  catch(error){await unlink(outputPath).catch(()=>{});throw error;}
   const fileStat = await stat(outputPath);
   if(fileStat.size<=0)throw Object.assign(new Error("Media output is empty."),{code:"MEDIA_OUTPUT_VALIDATION_FAILED"});
   const hash = createHash("sha256");
   await pipeline(createReadStream(outputPath), new Transform({ transform(chunk, enc, cb) { hash.update(chunk); cb(null, chunk); } }), new Transform({ transform(chunk, enc, cb) { cb(); } }));
   const provenance=buildMediaProcessingProvenance({jobType:job.job_type,input,sourceAsset:source});
-  const outputAsset = addAsset(db, job, "derived/"+id+"."+ext, outputName, mime, fileStat.size, hash.digest("hex"), source.id, { operation:job.job_type, ...(provenance?{processing:provenance}:{}) });
+  const outputAsset = addAsset(db, job, "derived/"+id+"."+ext, outputName, mime, fileStat.size, hash.digest("hex"), source.id, { operation:job.job_type, ...(provenance?{processing:provenance}:{}), c2paPreservation });
   emit("media.output_created", { assetId:outputAsset.id, sha256:outputAsset.sha256 });
-  return { outputAsset, validation };
+  return { outputAsset, validation, c2paPreservation };
 }

@@ -47,7 +47,7 @@
     "verify:caption-validation": "node --test server/tests/caption-validation.test.mjs server/tests/captions.test.mjs",
     "verify:caption-evidence": "node --experimental-strip-types --test server/tests/caption-evidence.test.mjs",
     "verify:delivery-evidence": "node --experimental-strip-types --test server/tests/delivery-evidence.test.mjs",
-    "verify:provenance": "node --test server/tests/provenance.test.mjs"
+    "verify:provenance": "node --test server/tests/provenance.test.mjs server/tests/c2pa-verification.test.mjs server/tests/c2pa-sdk-integration.test.mjs server/tests/local-c2pa-roundtrip.test.mjs server/tests/local-c2pa-timeline-roundtrip.test.mjs server/tests/local-c2pa-ai-upscale-roundtrip.test.mjs server/tests/c2pa-format-roundtrip.test.mjs server/tests/c2pa-transformation-recovery.test.mjs"
   },
   "devDependencies": {
     "typescript": "^5.8.3",
@@ -55,5 +55,11 @@
   },
   "overrides": {
     "rollup": "4.67.2"
+  },
+  "dependencies": {
+    "@contentauth/c2pa-node": "0.10.0"
+  },
+  "engines": {
+    "node": ">=22.23.4 <23"
   }
 }

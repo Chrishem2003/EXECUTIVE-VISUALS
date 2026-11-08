@@ -36,7 +36,12 @@ try{
    .run("timeline-1","user-1",null,"Render test",JSON.stringify(timeline));
  const job={id:"job-1",owner_id:"user-1",project_id:null,job_type:"timeline.render",input_json:JSON.stringify({timelineId:"timeline-1"})};
  const progress=[];
- const result=await executeMediaJob({db,job,mediaRoot,activeProcesses:new Map(),onProgress:value=>progress.push(value)});
+ const c2paCalls=[];
+ const result=await executeMediaJob({db,job,mediaRoot,activeProcesses:new Map(),onProgress:value=>progress.push(value),c2paPreserver:async args=>{c2paCalls.push(args);return{status:"not_present",preserved:false};}});
+ assert.equal(c2paCalls.length,1);
+ assert.equal(c2paCalls[0].operation,"timeline.render");
+ assert.equal(c2paCalls[0].sources.length,2);
+ assert.equal(c2paCalls[0].outputMimeType,"video/mp4");
  assert.equal(result.outputAsset.mediaType,"video/mp4");
  assert.equal(result.render.videoClips,1);
  assert.equal(result.render.width,1280);

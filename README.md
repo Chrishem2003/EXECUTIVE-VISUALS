@@ -53,6 +53,7 @@ For media processing, install FFmpeg and FFprobe and ensure both executables are
 npm run typecheck
 npm run build
 npm run verify:server
+npm run verify:provenance
 ```
 
 ## Production boundary
@@ -70,6 +71,7 @@ A Docker-based Render Blueprint is provided in `render.yaml`. It uses a private 
 - [Product North Star and Master Build Plan (2026)](docs/PRODUCT-NORTH-STAR-AND-MASTER-BUILD-PLAN-2026.md) — canonical competitive discoveries, original feature strategy, domain model, phased backlog and acceptance evidence.
 
 - [Asset provenance and Content Credentials](docs/ASSET-PROVENANCE-AND-CONTENT-CREDENTIALS.md) — upload-bound integrity records, verification API and the separate C2PA integration path.
+- [Protected C2PA signer architecture](docs/C2PA-PROTECTED-SIGNER-ARCHITECTURE.md) — callback-based KMS/HSM boundary, key isolation, audit controls and release gates.
 
 
 - [Public release gates](docs/PUBLIC-RELEASE-GATES.md)
@@ -80,3 +82,18 @@ A Docker-based Render Blueprint is provided in `render.yaml`. It uses a private 
 - [Additional workflow research](docs/ADDITIONAL-WORKFLOW-RESEARCH.md)
 - [Adapter contract](docs/ADAPTER-CONTRACT.md)
 - [Original creative intelligence and innovation atlas](docs/ORIGINAL-CREATIVE-INTELLIGENCE-AND-INNOVATION-ATLAS.md)
+
+
+## Content Credentials and asset provenance
+
+Application-level SHA-256 provenance records are created for uploads. An authenticated `GET /api/assets/:assetId/c2pa` endpoint inspects embedded C2PA manifests with the pinned official CAI Node SDK, distinguishes trusted, valid-but-untrusted, invalid and absent credentials, and checks the stored asset checksum before and after parsing. This is not a signing service or rights/factual-accuracy verification. See `docs/ASSET-PROVENANCE-AND-CONTENT-CREDENTIALS.md`. Signer-injected C2PA transformation preservation now covers cloud media, local SQLite media and local/cloud timeline rendering. Multi-source timelines carry each credential-bearing source as an ingredient; outputs are re-hashed after signing and are not published if any known source credential cannot be preserved. No production signer is configured, so C2PA-bearing transformations remain blocked until an approved signer and trust policy are supplied. Run `npm run verify:provenance` to exercise the real CAI SDK verifier/signing fixture and local SQLite media transcode round-trip; the latter requires FFmpeg and FFprobe. The fixture key is public test-only material and must never be used for real assets. See `docs/ASSET-PROVENANCE-AND-CONTENT-CREDENTIALS.md`.
+
+
+### Trust & provenance workspace
+
+Open **Manage → Trust & provenance** in the app to see the completed Content Credentials stages, their verification evidence and the remaining release gates. The page links directly to the Asset Library inspection flow and the PR/CI evidence. It deliberately separates completed implementation from production sign-off; no KMS/HSM, neural model, or staging gate is marked complete without its own evidence.
+
+
+The current app upload allowlist overlaps the CAI core format list for nine image/audio/video formats: JPEG, PNG, WebP, GIF, MP3, WAV, M4A, MP4 and MOV. WebM, MKV and OGG are ingestable by the app but are not listed in the current CAI core supported-format table, so do not assume C2PA signing/preservation support for them. The format round-trip matrix verifies the nine overlapping formats. The recovery suite also includes a 96 MiB streaming preservation stress point; near-limit memory/throughput certification remains a separate release gate.
+
+Open **Manage → Trust & provenance** in the app for the implementation ledger, test evidence and remaining release gates. Open **Manage → Asset library** to inspect Content Credentials on individual image, audio and video assets.

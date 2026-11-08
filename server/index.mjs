@@ -22,6 +22,7 @@ import { ensureRemoteUsageTable, getRemoteUsagePolicy } from "./usage-guardrails
 import { createCloudTimelineApi } from "./cloud-timeline-api.mjs";
 import { validateSrt, validateWebVtt } from "./caption-validation.mjs";
 import { createAssetProvenanceRecord, verifyAssetProvenanceRecord } from "./provenance.mjs";
+import { verifyC2paAsset } from "./c2pa-verification.mjs";
 import { ensureTransformationPlanSchema, createTransformationPlan, approveTransformationPlan, listTransformationPlans, getTransformationPlan } from "./transformation-plans.mjs";
 import { signInWithSupabasePassword, signUpWithSupabasePassword, refreshSupabaseSession, getSupabaseUser, revokeSupabaseSession } from "./supabase-password-auth.mjs";
 
@@ -580,7 +581,7 @@ export function createAppServer() {
       if(path==="/api/assets"&&req.method==="POST"){
         const result=await storeUpload(req,user,req.headers["x-project-id"]||null);send(res,201,{asset:result},cors);return;
       }
-      const assetMatch=path.match(/^\/api\/assets\/([0-9a-f-]+)(?:\/(file|provenance))?$/i);
+      const assetMatch=path.match(/^\/api\/assets\/([0-9a-f-]+)(?:\/(file|provenance|c2pa))?$/i);
       if(assetMatch){
         const asset=getAccessibleAsset(db,user.id,assetMatch[1],req.method==="DELETE");if(!asset){fail(res,404,"ASSET_NOT_FOUND","Asset not found.");return;}
         if(assetMatch[2]==="provenance"&&req.method==="GET"){
@@ -588,7 +589,13 @@ export function createAppServer() {
           const verification=verifyAssetProvenanceRecord(provenance,{id:asset.id,sha256:asset.sha256,mediaType:asset.media_type,size:Number(asset.byte_size)});
           send(res,200,{assetId:asset.id,provenance,verification,notice:"Internal integrity verification is not a C2PA signature, identity proof, rights clearance or factual verification."},cors);return;
         }
-        if(assetMatch[2]==="file"&&req.method==="GET"){
+        if(assetMatch[2]==="c2pa"&&req.method==="GET"){
+           const file=resolve(MEDIA_ROOT,asset.storage_path),mediaPrefix=MEDIA_ROOT.endsWith(sep)?MEDIA_ROOT:MEDIA_ROOT+sep;
+           if(!file.startsWith(mediaPrefix)){fail(res,404,"ASSET_NOT_FOUND","Asset not found.");return;}
+           const verification=await verifyC2paAsset({filePath:file,mediaType:asset.media_type,expectedSha256:asset.sha256,expectedSize:Number(asset.byte_size)});
+           send(res,200,{assetId:asset.id,verification,notice:"C2PA validity and signer trust are separate from application provenance, identity, rights clearance and factual accuracy."},cors);return;
+         }
+         if(assetMatch[2]==="file"&&req.method==="GET"){
           const file=resolve(MEDIA_ROOT,asset.storage_path);const mediaPrefix=MEDIA_ROOT.endsWith(sep)?MEDIA_ROOT:MEDIA_ROOT+sep;if(!file.startsWith(mediaPrefix)){fail(res,404,"ASSET_NOT_FOUND","Asset not found.");return;}
           res.writeHead(200,{"content-type":asset.media_type,"content-length":asset.byte_size,"content-disposition":`inline; filename="${safeName(asset.original_name)}"`,...SECURITY_HEADERS,...cors});
           createReadStream(file).pipe(res);return;
