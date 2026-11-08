@@ -131,6 +131,18 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
      const requestId=String(body.requestId||"");
      const workflowRequest=createVideoWorkflowCloudRequest({node:body.node,values:body.values||{},projectId,requestId});
      if(!workflowRouterAdapter)return response(503,{error:{code:"VIDEO_WORKFLOW_QUOTE_UNAVAILABLE",message:"A configured Runway Model Router quote adapter and private asset resolver are required. Paid execution remains disabled."}});
+     if(workflowRequest.input.sourceVideoAssetId){
+      if(typeof sourceResolver?.resolveMetadata!=="function")return response(503,{error:{code:"VIDEO_SOURCE_METADATA_UNAVAILABLE",message:"Video-to-video quotes require a server-side private source metadata probe."}});
+      const metadata=await sourceResolver.resolveMetadata({ownerId,projectId,assetId:workflowRequest.input.sourceVideoAssetId});
+      if(!metadata||metadata.ownerId!==ownerId||metadata.projectId!==projectId||metadata.assetId!==workflowRequest.input.sourceVideoAssetId||
+         !String(metadata.mediaType||"").startsWith("video/")||!Number.isFinite(metadata.durationSeconds)||
+         metadata.durationSeconds<2||metadata.durationSeconds>30){
+       return response(422,{error:{code:"VIDEO_SOURCE_METADATA_INVALID",message:"The source video must be a verified project asset between 2 and 30 seconds."}});
+      }
+      if(Math.ceil(metadata.durationSeconds)!==workflowRequest.input.durationSeconds){
+       return response(422,{error:{code:"VIDEO_SOURCE_METADATA_MISMATCH",message:"Video-to-video duration must match the server-probed source duration rounded up to whole seconds."}});
+      }
+     }
      const prepared=await workflowRouterAdapter.prepareInput(workflowRequest.input,{job:{owner_id:ownerId}});
      const estimate=await workflowRouterAdapter.preflight(prepared);
      if(!estimate||estimate.billable!==false||estimate.currency!=="USD"||
