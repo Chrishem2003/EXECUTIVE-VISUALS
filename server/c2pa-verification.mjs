@@ -95,7 +95,13 @@ export function createC2paVerifier({sdkLoader=()=>import("@contentauth/c2pa-node
   const after=await stat(filePath).catch(()=>null);
   const finalHash=after?.isFile()?await hashFile(filePath).catch(()=>null):null;
   if(!after||!finalHash||finalHash.size!==before.size||finalHash.sha256!==first.sha256)throw fail("C2PA_ASSET_CHANGED_DURING_READ","The asset changed during C2PA inspection.",409);
-  if(typeof reader.isEmbedded==="function"&&!reader.isEmbedded())return{
+  const embedded=typeof reader.isEmbedded==="function"?reader.isEmbedded():true;
+  const remoteUrl=typeof reader.remoteUrl==="function"?reader.remoteUrl():null;
+  if(!embedded&&remoteUrl)return{
+   status:"validation_unavailable",present:true,valid:false,trusted:false,assetSha256:first.sha256,
+   validationState:null,findings:["C2PA_REMOTE_MANIFEST_FETCH_DISABLED"],manifest:null,validationStatuses:[]
+  };
+  if(!embedded)return{
    status:"not_present",present:false,valid:false,trusted:false,assetSha256:first.sha256,
    validationState:null,findings:["C2PA_MANIFEST_NOT_PRESENT"],manifest:null,validationStatuses:[]
   };
