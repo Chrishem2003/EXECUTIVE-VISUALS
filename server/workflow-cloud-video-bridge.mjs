@@ -179,13 +179,13 @@ export async function executeCloudVideoWorkflowNode({
     const buffer=await readBounded(response,MAX_VIDEO_BYTES);
     if(buffer.length!==asset.size||createHash("sha256").update(buffer).digest("hex")!==asset.sha256)throw fail("Downloaded cloud output failed byte-size or SHA-256 verification.","VIDEO_WORKFLOW_OUTPUT_CHECKSUM_MISMATCH");
     const provenance=createVideoRequestProvenance(initial.input,{provider:"runway",model:cloudJob.output?.model||routedModel||"model-router",adapterVersion:"runway-model-router-cloud-worker-v1"});
-    const local=await storeGeneratedVideo({db,mediaRoot,ownerId:job.owner_id,projectId,jobId:job.id,prompt:initial.input.prompt,model:cloudJob.output?.model||quote.body.quote.routedModel||"model-router",provenance,buffer});
+    const local=await storeGeneratedVideo({db,mediaRoot,ownerId:job.owner_id,projectId,jobId:job.id,prompt:initial.input.prompt,model:cloudJob.output?.model||routedModel||"model-router",provenance,buffer});
     const localMetadata={...local.metadata,cloudWorkspaceAssetId:cloudAssetId,cloudVideoJobId:cloudJobId,cloudSha256:asset.sha256};
     db.prepare("UPDATE assets SET metadata_json=? WHERE id=? AND owner_id=?").run(json(localMetadata),local.id,job.owner_id);
     imported.push(local.id);
    }
    const output={asset:imported[0],assetId:imported[0],video:imported[0],assetIds:imported,assets:imported,
-    provider:"runway",model:cloudJob.output?.model||quote.body.quote.routedModel||"model-router",
+    provider:"runway",model:cloudJob.output?.model||routedModel||"model-router",
     cloudJobId,usage:cloudJob.output?.usage||null,quoteId,
     approvedMaxAmount,currency:"USD",costEvidenceReference:cloudJob.output?.costEvidenceReference||null};
    onProgress(95);
