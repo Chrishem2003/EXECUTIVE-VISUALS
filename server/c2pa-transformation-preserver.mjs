@@ -72,11 +72,13 @@ export function createC2paTransformationPreserver({sdkLoader=()=>import("@conten
   if(!signer||typeof signer.sign!=="function")throw failure("C2PA_SIGNER_REQUIRED","An approved C2PA signer must be supplied by the server-side signing adapter.",503);
   if(!["local","callback"].includes(signerMode))throw failure("C2PA_SIGNER_MODE_INVALID","Unsupported C2PA signer mode.");
   const builder=await sdk.Builder.newAsync();
-  for(const {source,store} of credentialSources){
+  for(let index=0;index<credentialSources.length;index++){
+   const {source,store}=credentialSources[index];
    const manifest=store.manifests[store.active_manifest];
    await builder.addIngredient(JSON.stringify({
     title:safeIngredientTitle(manifest?.title,basename(source.path)),
-    format:source.mediaType,instance_id:"xmp:iid:"+randomUUID(),relationship:"parentOf"
+    format:source.mediaType,instance_id:"xmp:iid:"+randomUUID(),
+    relationship:index===0?"parentOf":"componentOf"
    }),{path:source.path,mimeType:source.mediaType});
   }
   builder.setIntent("edit");
