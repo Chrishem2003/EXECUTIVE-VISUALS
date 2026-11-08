@@ -329,3 +329,33 @@ Research caveat: competitor feature descriptions are limited to public documenta
 - Preserve current production resources and existing user data.
 - Push work on focused branches; open reviewable PRs; merge only exact verified heads.
 - Report exact commit, PR, test outcomes, blockers and what remains unverified.
+
+
+## 16. Live repository audit snapshot (2026-11-08)
+
+This snapshot was taken after the plan was drafted. It is evidence for prioritization, not approval to merge.
+
+### P0 publication chain: open PR evidence
+
+| PR | Purpose | Branch comparison | Latest observed CI | Assessment |
+|---|---|---|---|---|
+| #172 | Unique worker lease/fencing tokens | 37 commits ahead of its declared base; 0 behind | Quality checks passed | Dependency candidate; validate exact base and integration before promotion |
+| #173 | Structured lease lifecycle telemetry | Diverged: 8 ahead / 3 behind its declared base | Quality checks passed | Rebase/reconcile before promotion |
+| #174 | Isolate immutable publication attempts | 7 ahead / 0 behind its declared base | Quality checks passed | Candidate dependency slice |
+| #175 | Lease-aware orphan publication recovery | 33 ahead / 0 behind its declared base | Quality checks passed | Candidate dependency slice; inspect overlap with #178 |
+| #177 | Atomic lease-fenced asset publication | Diverged: 26 ahead / 1 behind its declared base | Build failed | Blocked; observed failing assertion: "Missing expected rejection." Do not promote until fixed and re-run |
+| #178 | Atomic publication under worker lease, audit API, cleanup worker and PostgreSQL integration tests | 137 ahead / 0 behind its declared base; 32 files changed | Build passed | Strongest current integration candidate by CI evidence, but draft and review still required; large commit distance requires careful ancestry/diff review |
+
+The declared bases form a dependency chain around #172 → #174 → #175, with #173 on a diverged telemetry branch and #177/#178 competing atomic-publication paths. Do not merge #177 and #178 together by default. Determine which path is canonical, whether #178 already subsumes earlier commits, and whether all migrations are ordered and safe before promotion.
+
+### Other open work
+- #193 is a draft research PR; the canonical product plan is now recorded in this document on a focused branch instead of relying on that divergent research branch.
+- #206 is a large draft integration candidate for billing, Google Drive and provider-aware workers. It must be decomposed and reviewed by dependency, not merged as one bulk integration.
+- #194/#195/#204 contain Runway video-to-video, cloud video editing and video-to-audio work. Keep paid provider operations gated; verify provider contracts, cost reservations, cancellation and staging tests before enabling.
+- #207/#208 extend publication cleanup and source-attributed cost estimation. Re-evaluate their bases and test evidence after selecting the canonical publication chain.
+
+### What this audit did and did not prove
+- The listed CI observations are the latest workflow-run results found for the inspected commit SHAs at audit time; they are not a substitute for rerunning checks after any rebase or merge.
+- PR review submissions and inline review threads were empty for #172–#178 at the time checked. Absence of review comments is not approval.
+- A green build proves only the checks configured in that workflow. It does not prove production readiness, storage restore, tenant isolation, billing correctness or provider acceptance unless those tests explicitly cover them.
+- No code, database, provider settings, deployment or production resource was changed during this audit.
