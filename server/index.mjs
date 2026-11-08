@@ -634,6 +634,14 @@ export function createAppServer() {
         }
       }
 
+      if(path==="/api/evidence"&&req.method==="GET"){
+        const projectId=url.searchParams.get("projectId")||"";
+        const access=projectId?getProjectAccess(db,user.id,projectId):null;
+        if(!access){fail(res,404,"PROJECT_NOT_FOUND","Project not found.");return;}
+        const records=listEvidenceRecords(db,{projectId});
+        send(res,200,{projectId,records},cors);return;
+      }
+
       if(path==="/api/workflows"&&req.method==="GET"){
         const rows=db.prepare("SELECT id,project_id,name,revision,graph_json,graph_hash,created_at,updated_at FROM workflows WHERE (project_id IS NULL AND owner_id=?) OR project_id IN (SELECT id FROM projects WHERE owner_id=?) OR project_id IN (SELECT project_id FROM project_members WHERE member_id=?) ORDER BY updated_at DESC").all(user.id,user.id,user.id);
         send(res,200,{workflows:rows.map(x=>({id:x.id,projectId:x.project_id,name:x.name,revision:x.revision,graph:parseJson(x.graph_json),graphHash:x.graph_hash,createdAt:x.created_at,updatedAt:x.updated_at}))},cors);return;
