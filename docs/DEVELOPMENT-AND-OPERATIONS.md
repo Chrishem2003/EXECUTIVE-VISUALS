@@ -55,7 +55,7 @@ Common local defaults are defined in `server/index.mjs`. Use environment variabl
 | `SUPABASE_PUBLISHABLE_KEY` | unset | Public client key; not a service-role secret. |
 | `COOKIE_SECURE` | inferred from production mode | Use secure cookies over HTTPS. |
 | `MAX_UPLOAD_BYTES` | 250 MiB | Keep bounded; verify file signatures and MIME type. |
-| `CLOUD_TIMELINE_API_ENABLED` | false | Keep off until cloud release gates are complete. |\n| `C2PA_TRUST_ANCHORS` | unset | Optional administrator-managed PEM trust-anchor file; without it, the adapter cannot return `valid_trusted`. |\n| `C2PA_MAX_VERIFY_BYTES` | 250 MiB | Maximum file size passed to the CAI native parser. |
+| `CLOUD_TIMELINE_API_ENABLED` | false | Keep off until cloud release gates are complete. |\n| `C2PA_TRUST_ANCHORS` | unset | Optional administrator-managed PEM trust-anchor file; without it, the adapter cannot return `valid_trusted`. |\n| `C2PA_MAX_VERIFY_BYTES` | 250 MiB | Maximum file size passed to the CAI native parser. |\n| `C2PA_TRUST_ANCHORS` | unset | PEM root anchors loaded server-side and supplied as CAI user anchors. |\n| `C2PA_ALLOWED_SIGNERS` | unset | PEM end-entity signer allowlist. This directly trusts listed certificates and bypasses chain construction; keep tightly restricted. |
 
 The current code also has provider-specific settings. Inspect the adapter and readiness check before configuring any provider. A variable existing in code does not imply that its external service has been provisioned or approved.
 
