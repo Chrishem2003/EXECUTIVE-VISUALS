@@ -505,3 +505,11 @@ This is a runnable worker entry point, not a deployed worker. Do not set the ena
 - The Asset Library continues to expose per-asset Content Credentials inspection for images, audio and video.
 - Next independent gates remain: actual Real-ESRGAN inference, near-limit throughput/memory and additional codec/container coverage, a concrete provider-specific KMS/HSM adapter with protected key controls, independent browser acceptance, and isolated staging sign-off with a dedicated non-production signer.
 - Safety boundary unchanged: no production or staging keys, paid provider calls, shared migrations, deployment or merge.
+
+
+## Expanded C2PA format coverage — pending CI
+
+- Cross-checked the application's media upload allowlist with the current CAI supported-format documentation.
+- Extended the real CAI SDK round-trip matrix from six to nine formats by adding GIF, QuickTime MOV and M4A, alongside JPEG, PNG, WebP, MP3, WAV and MP4.
+- WebM, Matroska/MKV and Ogg remain accepted ingest formats but are not listed in the current CAI core supported-format table. Do not claim C2PA preservation for those formats; credential-bearing transformations remain fail-closed until an SDK-supported path is demonstrated.
+- The previous revision passed 36/36 provenance tests and 457/457 regression tests in CI run #8473. The nine-format expansion is committed and must pass the current CI run before being called complete.
