@@ -120,7 +120,10 @@ The API reads configuration from environment variables. Important settings inclu
 | `SUPABASE_PUBLISHABLE_KEY` | Supabase public client key | Configure as deployment secret/config; never commit credentials. |
 | `COOKIE_SECURE` | Secure cookie override | Set to `true` behind HTTPS where required. |
 | `MAX_UPLOAD_BYTES` | Upload limit | Keep limits conservative and validate actual media signatures. |
-| `CLOUD_TIMELINE_API_ENABLED` | Cloud timeline API gate | Keep disabled until the isolated staging release gates pass. |\n| `C2PA_SIGNING_ENABLED` | Callback signing gate | Defaults to `false`; do not enable without an approved protected signer provider. |\n| `C2PA_SIGNING_KEY_REF` | External key reference | Identifier only; never a private key or secret value. |\n| `C2PA_TSA_URL` | Timestamp authority | Must be HTTPS; required by default for signing. |
+| `CLOUD_TIMELINE_API_ENABLED` | Cloud timeline API gate | Keep disabled until the isolated staging release gates pass. |
+| `C2PA_SIGNING_ENABLED` | Callback signing gate | Defaults to `false`; do not enable without an approved protected signer provider. |
+| `C2PA_SIGNING_KEY_REF` | External key reference | Identifier only; never a private key or secret value. |
+| `C2PA_TSA_URL` | Timestamp authority | Must be HTTPS; required by default for signing. |
 
 Never commit API keys, service-role keys, provider tokens, certificates, private keys, signing-service credentials or production data. Do not put Supabase service-role credentials in browser-visible variables. A `.env.example` file should contain placeholders only.
 
