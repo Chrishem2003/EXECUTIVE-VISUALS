@@ -183,7 +183,6 @@ export function createC2paTransformationSigner({
       }, async data => {
         const payload = Buffer.from(data);
         const signature = await signingProvider.sign({ keyRef, algorithm, payload, signal });
-        if (signal?.aborted) fail("JOB_CANCELLED");
         if (!Buffer.isBuffer(signature) && !(signature instanceof Uint8Array)) {
           fail("C2PA_PROTECTED_SIGNER_RESPONSE_INVALID");
         }
@@ -228,6 +227,7 @@ export function createC2paTransformationSigner({
       if (outputCreated || existsSync(destination)) {
         try { await unlink(destination); } catch { /* best-effort cleanup of partial derivative */ }
       }
+      if (signal?.aborted) fail("JOB_CANCELLED");
       if (error?.code === "JOB_CANCELLED" || (typeof error?.code === "string" && error.code.startsWith("C2PA_"))) throw error;
       fail("C2PA_TRANSFORMATION_SIGNING_FAILED");
     }
