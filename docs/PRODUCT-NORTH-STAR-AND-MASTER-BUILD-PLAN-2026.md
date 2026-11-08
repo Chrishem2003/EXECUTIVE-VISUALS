@@ -4,6 +4,20 @@
 
 **Repository baseline inspected:** `main` at `80b868463284f97813a5ce32cd29ea8c3a236607`.
 
+## Delivery checkpoint — 8 November 2026
+
+The C2PA verification slice is implemented on draft PR #239 (`feat/c2pa-server-verification`) and is **not merged or deployed**. The exact current head `9e6d8dccc1ad8996fa89cfb2c398eff62e31c193` passed the GitHub Quality checks, including the full application build and PostgreSQL publication/cleanup integration job.
+
+Verified in this slice:
+- Server-side integration with the maintained CAI Node SDK `@contentauth/c2pa-node@0.10.0`, using file-backed assets, explicit MIME types and remote-manifest fetching disabled.
+- Separate application SHA-256 integrity and C2PA manifest validation results.
+- Fail-closed mapping for invalid, valid-but-untrusted, trusted-with-explicit-policy and parser/error outcomes.
+- Genuine signed PNG fixture generated with the upstream CAI test-only signer, explicit PEM user-anchor validation, and pixel-tampering rejection.
+- Bounded parser input and findings; the runtime Docker payload excludes test fixtures and includes a build guard against shipping them.
+- README and operations guidance explain the administrator-managed PEM trust bundle; production signing keys are not configured.
+
+Still open and deliberately not represented as complete: certificate-chain and timestamp/revocation policy validation beyond the current test fixture, video-format signed fixtures, ingredient-aware transformation manifests, protected KMS/HSM signing, and the end-to-end preservation of lineage through every media transformation. Production remains untouched. Do not merge until the PR review is complete and the remaining C2PA trust semantics are reviewed against the pinned SDK and deployment trust policy.
+
 ## 1. Product North Star
 
 Build an original, provider-neutral **Creative Production Operating System** for solo creators, production teams, agencies and marketing departments.
