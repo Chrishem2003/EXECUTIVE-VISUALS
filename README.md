@@ -53,6 +53,7 @@ For media processing, install FFmpeg and FFprobe and ensure both executables are
 npm run typecheck
 npm run build
 npm run verify:server
+npm run verify:provenance
 ```
 
 ## Production boundary
@@ -84,4 +85,4 @@ A Docker-based Render Blueprint is provided in `render.yaml`. It uses a private 
 
 ## Content Credentials and asset provenance
 
-Application-level SHA-256 provenance records are created for uploads. An authenticated `GET /api/assets/:assetId/c2pa` endpoint inspects embedded C2PA manifests with the pinned official CAI Node SDK, distinguishes trusted, valid-but-untrusted, invalid and absent credentials, and checks the stored asset checksum before and after parsing. This is not a signing service or rights/factual-accuracy verification. See `docs/ASSET-PROVENANCE-AND-CONTENT-CREDENTIALS.md`. Signer-injected C2PA transformation preservation now covers cloud media, local SQLite media and local/cloud timeline rendering. Multi-source timelines carry each credential-bearing source as an ingredient; outputs are re-hashed after signing and are not published if any known source credential cannot be preserved. No production signer is configured, so C2PA-bearing transformations remain blocked until an approved signer and trust policy are supplied. See `docs/ASSET-PROVENANCE-AND-CONTENT-CREDENTIALS.md`.
+Application-level SHA-256 provenance records are created for uploads. An authenticated `GET /api/assets/:assetId/c2pa` endpoint inspects embedded C2PA manifests with the pinned official CAI Node SDK, distinguishes trusted, valid-but-untrusted, invalid and absent credentials, and checks the stored asset checksum before and after parsing. This is not a signing service or rights/factual-accuracy verification. See `docs/ASSET-PROVENANCE-AND-CONTENT-CREDENTIALS.md`. Signer-injected C2PA transformation preservation now covers cloud media, local SQLite media and local/cloud timeline rendering. Multi-source timelines carry each credential-bearing source as an ingredient; outputs are re-hashed after signing and are not published if any known source credential cannot be preserved. No production signer is configured, so C2PA-bearing transformations remain blocked until an approved signer and trust policy are supplied. Run `npm run verify:provenance` to exercise the real CAI SDK verifier/signing fixture and local SQLite media transcode round-trip; the latter requires FFmpeg and FFprobe. The fixture key is public test-only material and must never be used for real assets. See `docs/ASSET-PROVENANCE-AND-CONTENT-CREDENTIALS.md`.
