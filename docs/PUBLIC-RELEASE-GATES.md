@@ -10,7 +10,7 @@ A green source build is necessary but not sufficient. This checklist records the
 
 | Gate | Status | Evidence / remaining work |
 |---|---|---|
-| Source build | Blocked pending rerun | Workflow #8114 passed TypeScript and PostgreSQL publication integration but failed in `verify:creative-graph` because a regression assertion compared a canonical evidence-node ID to a bare ID. The test was corrected on the current feature branch; the new exact-head workflow must pass before this gate is marked green. |
+| Source build | Exact-head run pending | Workflow #8177 exposed a bootstrap SQL dollar-quoting typo; corrected. Run #8178 then passed bootstrap and lease-fencing PostgreSQL integration, but exposed a missing `derivative_of` column in the atomic-publication trigger setup; the migration now adds that lineage column before installing the trigger. Exact-head workflow #8180 is queued; do not mark this gate green until build, Docker and every PostgreSQL integration pass. |
 | Deployment guard | Corrected; rerun required | Docker now pins both stages to patched Node 24.22.1 and checks the checksum-pinned CAI native binary. The deployment guard was updated to assert the pinned image. |
 | Ordinary user authentication | Partially implemented | Supabase email/password registration and sign-in, email-confirmation response, HttpOnly access/refresh cookies, refresh-on-authentication and logout/revocation are implemented. Password recovery/reset UX, MFA/SSO and hosted acceptance are still open. |
 | Isolated identity/database | Blocked | No dedicated application Supabase project has been provisioned and reviewed. Existing NEMA/shared-platform projects are out of scope and must not be reused. |
