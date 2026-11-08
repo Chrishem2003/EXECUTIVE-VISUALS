@@ -5,7 +5,6 @@ import { mkdtemp, writeFile, readFile, stat, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { deflateSync, inflateSync } from "node:zlib";
-import { execFileSync } from "node:child_process";
 import { createC2paVerifier } from "../c2pa-verification.mjs";
 
 
