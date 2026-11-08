@@ -4,6 +4,7 @@ export async function runCloudWorkerCycle({
   execute,
   leaseSeconds = 90,
   heartbeatIntervalMs = 15000,
+  signal,
   onProgress = () => {},
   onEvent = () => {}
 }) {
@@ -16,14 +17,36 @@ export async function runCloudWorkerCycle({
   if (!Number.isInteger(heartbeatIntervalMs) || heartbeatIntervalMs < 1000 || heartbeatIntervalMs >= leaseSeconds * 1000) {
     throw new Error("Heartbeat interval must be at least one second and shorter than the lease.");
   }
+  if (signal && typeof signal.addEventListener !== "function") throw new Error("Cloud worker shutdown signal is invalid.");
+  if (signal?.aborted) return { claimed: false, skipped: true, reason: "shutdown" };
 
   const job = await queue.claim(workerId, leaseSeconds);
   if (!job) return { claimed: false };
   const controller = new AbortController();
+  const abortForShutdown = () => controller.abort(new Error("Worker shutdown requested."));
+  signal?.addEventListener("abort", abortForShutdown, { once: true });
+  if (signal?.aborted) abortForShutdown();
   let leaseLost = false;
   let heartbeatPending = false;
   let heartbeatError = null;
   onEvent({ type: "job.started", jobId: job.id, workerId });
+
+  const finishCancelled = async () => {
+    const details = { code: "WORKER_SHUTDOWN", message: "Worker shutdown requested; the job was cancelled for recovery." };
+    try {
+      const finished = await queue.finish(job.id, workerId, "cancelled", null, details);
+      if (!finished) {
+        leaseLost = true;
+        onEvent({ type: "job.lease_lost", jobId: job.id, workerId });
+        return { claimed: true, finished: false, reason: "lease_lost", jobId: job.id };
+      }
+      onEvent({ type: "job.cancelled", jobId: job.id, workerId, reason: "worker_shutdown" });
+      return { claimed: true, finished: true, status: "cancelled", reason: "worker_shutdown", jobId: job.id };
+    } catch (error) {
+      onEvent({ type: "job.cancel_finish_failed", jobId: job.id, workerId, code: typeof error?.code === "string" ? error.code : "CANCEL_FINISH_FAILED" });
+      return { claimed: true, finished: false, reason: "cancel_finish_failed", jobId: job.id };
+    }
+  };
 
   const heartbeat = setInterval(async () => {
     if (heartbeatPending || leaseLost || controller.signal.aborted) return;
@@ -47,6 +70,7 @@ export async function runCloudWorkerCycle({
   heartbeat.unref?.();
 
   try {
+    if (controller.signal.aborted) return await finishCancelled();
     const output = await execute({
       job,
       signal: controller.signal,
@@ -56,9 +80,8 @@ export async function runCloudWorkerCycle({
         onProgress({ jobId: job.id, workerId, progress: value });
       }
     });
-    if (leaseLost || controller.signal.aborted) {
-      return { claimed: true, finished: false, reason: "lease_lost", jobId: job.id };
-    }
+    if (leaseLost) return { claimed: true, finished: false, reason: "lease_lost", jobId: job.id };
+    if (controller.signal.aborted) return await finishCancelled();
     if (output !== null && (typeof output !== "object" || Array.isArray(output))) {
       throw new Error("Cloud worker output must be an object or null.");
     }
@@ -71,9 +94,8 @@ export async function runCloudWorkerCycle({
     onEvent({ type: "job.succeeded", jobId: job.id, workerId });
     return { claimed: true, finished: true, status: "succeeded", jobId: job.id, output: output ?? {} };
   } catch (error) {
-    if (leaseLost || controller.signal.aborted) {
-      return { claimed: true, finished: false, reason: "lease_lost", jobId: job.id };
-    }
+    if (leaseLost) return { claimed: true, finished: false, reason: "lease_lost", jobId: job.id };
+    if (controller.signal.aborted) return await finishCancelled();
     const details = {
       code: typeof error?.code === "string" ? error.code.slice(0, 100) : "CLOUD_JOB_FAILED",
       message: String(error?.message || "Cloud job execution failed.").slice(0, 500)
@@ -88,6 +110,7 @@ export async function runCloudWorkerCycle({
     return { claimed: true, finished: true, status: "failed", jobId: job.id, error: details };
   } finally {
     clearInterval(heartbeat);
+    signal?.removeEventListener("abort", abortForShutdown);
     if (heartbeatError) onEvent({ type: "job.heartbeat_error", jobId: job.id, workerId });
   }
 }
