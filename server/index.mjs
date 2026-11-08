@@ -1,6 +1,6 @@
 import { createServer } from "node:http";
 import { createHash, randomBytes, randomUUID, scryptSync, timingSafeEqual } from "node:crypto";
-import { createReadStream, createWriteStream, existsSync, statSync } from "node:fs";
+import { createReadStream, createWriteStream, existsSync, realpathSync, statSync } from "node:fs";
 import { mkdir, unlink, open, readFile } from "node:fs/promises";
 import { dirname, extname, join, resolve, basename, sep, relative, isAbsolute } from "node:path";
 import { pipeline } from "node:stream/promises";
@@ -22,8 +22,38 @@ import { ensureRemoteUsageTable, getRemoteUsagePolicy } from "./usage-guardrails
 import { createCloudTimelineApi } from "./cloud-timeline-api.mjs";
 import { validateSrt, validateWebVtt } from "./caption-validation.mjs";
 import { createAssetProvenanceRecord, verifyAssetProvenanceRecord } from "./provenance.mjs";
+import { verifyC2paAsset } from "./c2pa-verification.mjs";
+import { createEvidenceRecord, listEvidenceRecords, reviewEvidenceRecord, listEvidenceEvents } from "./evidence-ledger.mjs";
+import { saveCreativeGraphSnapshot, getLatestCreativeGraphSnapshot } from "./creative-graph-snapshots.mjs";
 import { ensureTransformationPlanSchema, createTransformationPlan, approveTransformationPlan, listTransformationPlans, getTransformationPlan } from "./transformation-plans.mjs";
 import { signInWithSupabasePassword, signUpWithSupabasePassword, refreshSupabaseSession, getSupabaseUser, revokeSupabaseSession } from "./supabase-password-auth.mjs";
+
+function containsCreativeTarget(value,targetType,targetId){
+  if(Array.isArray(value))return value.some(item=>containsCreativeTarget(item,targetType,targetId));
+  if(!value||typeof value!=="object")return false;
+  const item=value;
+  if(item.id===targetId){
+    if(targetType==="scene"&&Array.isArray(item.shots))return true;
+    if(targetType==="shot"&&(typeof item.prompt==="string"||typeof item.action==="string"))return true;
+  }
+  return Object.values(item).some(child=>containsCreativeTarget(child,targetType,targetId));
+}
+function evidenceTargetExists(db,userId,asset,targetType,targetId){
+  if(targetType==="asset"){
+    const target=getAccessibleAsset(db,userId,targetId,false);
+    return Boolean(target&&target.project_id===asset.project_id);
+  }
+  if(!asset.project_id)return false;
+  if(targetType==="project")return targetId===asset.project_id;
+  if(targetType==="timeline")return Boolean(db.prepare("SELECT id FROM timelines WHERE id=? AND project_id=?").get(targetId,asset.project_id));
+  if(targetType==="scene"||targetType==="shot"){
+    const project=getProjectAccess(db,userId,asset.project_id);
+    if(!project)return false;
+    const settings=parseJson(project.settings_json,{});
+    return containsCreativeTarget(settings.creativeProduction||{},targetType,targetId);
+  }
+  return false;
+}
 
 const PORT = Number(process.env.PORT || process.env.API_PORT || 4179);
 const HOST = process.env.API_HOST || (process.env.NODE_ENV === "production" ? "0.0.0.0" : "127.0.0.1");
@@ -33,7 +63,6 @@ const MEDIA_ROOT = resolve(process.env.MEDIA_ROOT || join(DATA_DIR, "media"));
 const WEB_ROOT = resolve(process.env.WEB_ROOT || "./dist");
 const DB_FILE = resolve(process.env.DB_FILE || join(DATA_DIR, "executive-visuals.sqlite"));
 const REQUIRE_PERSISTENT_DATA_DIR = process.env.REQUIRE_PERSISTENT_DATA_DIR === "true";
-// Persistence is an operator assertion, not something inferred from a non-/tmp path.
 const tempRelative = relative(resolve(tmpdir()), DATA_DIR);
 const dataDirIsEphemeral = tempRelative === "" || (tempRelative !== ".." && !tempRelative.startsWith(".." + sep) && !isAbsolute(tempRelative));
 const DATA_DIR_PERSISTENCE = process.env.DATA_DIR_PERSISTENCE === "persistent-volume" ? "operator-confirmed-volume" : dataDirIsEphemeral ? "ephemeral" : "unverified";
@@ -60,8 +89,10 @@ const db = openDatabase(DB_FILE);
 ensureTransformationPlanSchema(db);
 const aiUpscaleAdapter = createRealEsrganAdapter();
 const cloudTimelineApiEnabled = process.env.CLOUD_TIMELINE_API_ENABLED === "true";
+const cloudMediaJobsApiEnabled = process.env.CLOUD_MEDIA_JOBS_API_ENABLED === "true";
 if (cloudTimelineApiEnabled && AUTH_MODE !== "supabase") throw new Error("Cloud timeline API requires verified Supabase authentication.");
-const cloudTimelineApi = cloudTimelineApiEnabled ? createCloudTimelineApi({maxUploadBytes:Number(process.env.CLOUD_MEDIA_MAX_UPLOAD_BYTES || MAX_UPLOAD_BYTES)}) : null;
+if (cloudMediaJobsApiEnabled && (!cloudTimelineApiEnabled || AUTH_MODE !== "supabase")) throw new Error("Cloud media job submission requires the verified cloud timeline API and Supabase authentication.");
+const cloudTimelineApi = cloudTimelineApiEnabled ? createCloudTimelineApi({maxUploadBytes:Number(process.env.CLOUD_MEDIA_MAX_UPLOAD_BYTES || MAX_UPLOAD_BYTES),mediaJobsEnabled:cloudMediaJobsApiEnabled}) : null;
 if (cloudTimelineApi) await cloudTimelineApi.checkReadiness();
 const activeProcesses = new Map();
 const WORKER_ID = randomUUID();
@@ -73,6 +104,18 @@ await mkdir(join(MEDIA_ROOT,"derived"), { recursive:true });
 
 const now = () => new Date().toISOString();
 const hash = value => createHash("sha256").update(value).digest("hex");
+async function sha256ManagedAsset(asset){
+  const candidate=resolve(MEDIA_ROOT,asset.storage_path||"");
+  const lexicalRoot=MEDIA_ROOT.endsWith(sep)?MEDIA_ROOT:MEDIA_ROOT+sep;
+  if(!candidate.startsWith(lexicalRoot)||!existsSync(candidate))return {valid:false};
+  let file,root;
+  try{file=realpathSync(candidate);root=realpathSync(MEDIA_ROOT);}catch{return {valid:false};}
+  const realRoot=root.endsWith(sep)?root:root+sep;
+  if(!file.startsWith(realRoot)||!statSync(file).isFile()||statSync(file).size!==asset.byte_size)return {valid:false};
+  const digest=createHash("sha256");
+  for await(const chunk of createReadStream(file))digest.update(chunk);
+  return {valid:digest.digest("hex")===String(asset.sha256||"").toLowerCase()};
+}
 const stableJson = value => Array.isArray(value) ? "["+value.map(stableJson).join(",")+"]" : value && typeof value==="object" ? "{"+Object.keys(value).sort().map(key=>JSON.stringify(key)+":"+stableJson(value[key])).join(",")+"}" : JSON.stringify(value);
 const safeName = value => basename(String(value || "upload")).replace(/[\u0000-\u001f\u007f]/g,"").replace(/[^\p{L}\p{N}._() -]/gu,"_").slice(0,180) || "upload";
 const SECURITY_HEADERS = {
@@ -306,7 +349,7 @@ export function createAppServer() {
         }
       }
       if(path==="/api/health"&&req.method==="GET"){
-        send(res,200,{status:"ok",storage:"local-disk",database:"sqlite",persistence:{dataDirectory:DATA_DIR_PERSISTENCE,persistentVolumeRequired:REQUIRE_PERSISTENT_DATA_DIR},media:{ffmpeg:executableAvailable("ffmpeg"),ffprobe:executableAvailable("ffprobe")},imageGateway:{enabled:process.env.IMAGE_GATEWAY_ENABLED==="true",configured:(()=>{const provider=String(process.env.IMAGE_GATEWAY_PROVIDER||"openai-compatible").toLowerCase();if(provider==="gemini")return Boolean(process.env.GEMINI_API_KEY&&process.env.GEMINI_IMAGE_MODEL&&process.env.IMAGE_GATEWAY_ALLOW_REMOTE==="true");if(provider==="fal")return Boolean(process.env.FAL_KEY&&process.env.FAL_IMAGE_MODEL&&process.env.IMAGE_GATEWAY_ALLOW_REMOTE==="true");try{const url=new URL(process.env.IMAGE_GATEWAY_URL||"");const local=["localhost","127.0.0.1","::1"].includes(url.hostname.toLowerCase());return Boolean(process.env.IMAGE_GATEWAY_MODEL&&(local||process.env.IMAGE_GATEWAY_ALLOW_REMOTE==="true"));}catch{return false;}})()},textGateway:{enabled:process.env.AI_GATEWAY_ENABLED==="true",configured:(()=>{try{const url=new URL(process.env.AI_GATEWAY_URL||"");const local=["localhost","127.0.0.1","::1"].includes(url.hostname.toLowerCase());return Boolean(process.env.AI_GATEWAY_MODEL&&(local||process.env.AI_GATEWAY_ALLOW_REMOTE==="true"));}catch{return false;}})()},authMode:AUTH_MODE,version:"0.1.0"},cors);return;
+        send(res,200,{status:"ok",storage:"local-disk",database:"sqlite",persistence:{dataDirectory:DATA_DIR_PERSISTENCE,persistentVolumeRequired:REQUIRE_PERSISTENT_DATA_DIR},cloudAssetApi:{enabled:cloudTimelineApiEnabled&&AUTH_MODE==="supabase"},cloudMediaJobsApi:{enabled:cloudMediaJobsApiEnabled&&cloudTimelineApiEnabled&&AUTH_MODE==="supabase"},media:{ffmpeg:executableAvailable("ffmpeg"),ffprobe:executableAvailable("ffprobe")},imageGateway:{enabled:process.env.IMAGE_GATEWAY_ENABLED==="true",configured:(()=>{const provider=String(process.env.IMAGE_GATEWAY_PROVIDER||"openai-compatible").toLowerCase();if(provider==="gemini")return Boolean(process.env.GEMINI_API_KEY&&process.env.GEMINI_IMAGE_MODEL&&process.env.IMAGE_GATEWAY_ALLOW_REMOTE==="true");if(provider==="fal")return Boolean(process.env.FAL_KEY&&process.env.FAL_IMAGE_MODEL&&process.env.IMAGE_GATEWAY_ALLOW_REMOTE==="true");try{const url=new URL(process.env.IMAGE_GATEWAY_URL||"");const local=["localhost","127.0.0.1","::1"].includes(url.hostname.toLowerCase());return Boolean(process.env.IMAGE_GATEWAY_MODEL&&(local||process.env.IMAGE_GATEWAY_ALLOW_REMOTE==="true"));}catch{return false;}})()},textGateway:{enabled:process.env.AI_GATEWAY_ENABLED==="true",configured:(()=>{try{const url=new URL(process.env.AI_GATEWAY_URL||"");const local=["localhost","127.0.0.1","::1"].includes(url.hostname.toLowerCase());return Boolean(process.env.AI_GATEWAY_MODEL&&(local||process.env.AI_GATEWAY_ALLOW_REMOTE==="true"));}catch{return false;}})()},authMode:AUTH_MODE,version:"0.1.0"},cors);return;
       }
       if(path==="/api/auth/register"&&req.method==="POST"){
         const body=await readJson(req);const email=String(body.email||"").trim().toLowerCase();const password=String(body.password||"");
@@ -499,6 +542,27 @@ export function createAppServer() {
           send(res,200,{ok:true},cors);return;
         }
       }
+      const creativeGraphSnapshotMatch=path.match(/^\/api\/projects\/([0-9a-f-]+)\/creative-graph\/snapshot$/i);
+      if(creativeGraphSnapshotMatch){
+        const projectId=creativeGraphSnapshotMatch[1],project=getProjectAccess(db,user.id,projectId);
+        if(!project){fail(res,404,"PROJECT_NOT_FOUND","Project not found.");return;}
+        if(req.method==="GET"){
+          send(res,200,{snapshot:getLatestCreativeGraphSnapshot(db,projectId)},cors);return;
+        }
+        if(req.method==="POST"){
+          if(!canWriteProject(db,user.id,projectId)){fail(res,403,"CREATIVE_GRAPH_SNAPSHOT_FORBIDDEN","Editor access is required to record a review baseline.");return;}
+          const body=await readJson(req,2*1024*1024);
+          let snapshot;
+          try{snapshot=saveCreativeGraphSnapshot(db,{projectId,ownerId:user.id,graph:body.graph});}
+          catch(error){
+            const code=error?.message==="CREATIVE_GRAPH_PROJECT_MISMATCH"?"CREATIVE_GRAPH_PROJECT_MISMATCH":"CREATIVE_GRAPH_SNAPSHOT_INVALID";
+            fail(res,400,code,code==="CREATIVE_GRAPH_PROJECT_MISMATCH"?"The graph must contain the selected project node.":"The graph snapshot is invalid or contains unsupported nodes or edges.");return;
+          }
+          audit(db,user.id,"creative_graph.snapshot_created","creative_graph_snapshot",snapshot.id,{revision:snapshot.revision,graphHash:snapshot.graphHash,nodeCount:snapshot.graph.nodes.length,edgeCount:snapshot.graph.edges.length},projectId);
+          send(res,201,{snapshot},cors);return;
+        }
+        fail(res,405,"METHOD_NOT_ALLOWED","Method not allowed for creative graph snapshots.");return;
+      }
       const projectMatch=path.match(/^\/api\/projects\/([0-9a-f-]+)$/i);
       if(projectMatch){
         const id=projectMatch[1],project=getProjectAccess(db,user.id,id);if(!project){fail(res,404,"PROJECT_NOT_FOUND","Project not found.");return;}
@@ -580,13 +644,60 @@ export function createAppServer() {
       if(path==="/api/assets"&&req.method==="POST"){
         const result=await storeUpload(req,user,req.headers["x-project-id"]||null);send(res,201,{asset:result},cors);return;
       }
+      const evidenceMatch=path.match(/^\/api\/assets\/([0-9a-f-]+)\/evidence(?:\/([0-9a-f-]+)\/(review|events))?$/i);
+      if(evidenceMatch){
+        const evidenceAsset=getAccessibleAsset(db,user.id,evidenceMatch[1],req.method==="POST"&&!evidenceMatch[2]);
+        if(!evidenceAsset){fail(res,404,"ASSET_NOT_FOUND","Asset not found.");return;}
+        if(!evidenceMatch[2]&&req.method==="GET"){
+          const records=listEvidenceRecords(db,{sourceAssetId:evidenceAsset.id});
+          send(res,200,{assetId:evidenceAsset.id,records,notice:"Evidence status records review of the submitted material and its relevance; it does not independently prove the underlying claim."},cors);return;
+        }
+        if(!evidenceMatch[2]&&req.method==="POST"){
+          if(evidenceAsset.project_id&&!canWriteProject(db,user.id,evidenceAsset.project_id)){fail(res,403,"EVIDENCE_WRITE_FORBIDDEN","Editor access is required to submit evidence.");return;}
+          const body=await readJson(req);
+          if(body.status!==undefined){fail(res,400,"EVIDENCE_STATUS_SERVER_MANAGED","Evidence submissions always begin in submitted status and must be reviewed separately.");return;}
+          const integrity=await sha256ManagedAsset(evidenceAsset);if(!integrity.valid){fail(res,409,"EVIDENCE_SOURCE_INTEGRITY_FAILED","The stored source asset no longer matches its recorded size and SHA-256. Restore the original source before submitting evidence.");return;}
+          if(!evidenceTargetExists(db,user.id,evidenceAsset,body.targetType,body.targetId)){fail(res,404,"EVIDENCE_TARGET_NOT_FOUND","Evidence target is not available in the same project.");return;}
+          const record=createEvidenceRecord(db,{ownerId:user.id,projectId:evidenceAsset.project_id,sourceAsset:{id:evidenceAsset.id,sha256:evidenceAsset.sha256},targetType:body.targetType,targetId:body.targetId,kind:body.kind,claim:body.claim,method:body.method,sourceRef:body.sourceRef,observedAt:body.observedAt,note:body.note});
+          audit(db,user.id,"evidence.submitted","evidence",record.id,{sourceAssetId:evidenceAsset.id,target:record.target,kind:record.kind},evidenceAsset.project_id);
+          send(res,201,{record,events:listEvidenceEvents(db,record.id)},cors);return;
+        }
+        const recordRow=db.prepare("SELECT id,source_asset_id,project_id FROM evidence_records WHERE id=? AND source_asset_id=?").get(evidenceMatch[2],evidenceAsset.id);
+        if(!recordRow){fail(res,404,"EVIDENCE_NOT_FOUND","Evidence record not found.");return;}
+        if(evidenceMatch[3]==="events"&&req.method==="GET"){
+          send(res,200,{evidenceId:recordRow.id,events:listEvidenceEvents(db,recordRow.id)},cors);return;
+        }
+        if(evidenceMatch[3]==="review"&&req.method==="POST"){
+          const access=recordRow.project_id?getProjectAccess(db,user.id,recordRow.project_id):null;
+          const allowed=recordRow.project_id?Boolean(access&&["owner","editor","reviewer"].includes(access.access_role)):evidenceAsset.owner_id===user.id;
+          if(!allowed){fail(res,403,"EVIDENCE_REVIEW_FORBIDDEN","Project reviewer, editor or owner access is required to review evidence.");return;}
+          const body=await readJson(req);
+          if(typeof body.reviewNote!=="string"||body.reviewNote.trim().length<8){fail(res,400,"EVIDENCE_REVIEW_REASON_REQUIRED","Provide a review reason of at least eight characters for every evidence decision.");return;}
+          const integrity=await sha256ManagedAsset(evidenceAsset);if(!integrity.valid){fail(res,409,"EVIDENCE_SOURCE_INTEGRITY_FAILED","The stored source asset no longer matches its recorded size and SHA-256. Evidence cannot be approved until the source is restored.");return;}
+          const record=reviewEvidenceRecord(db,{evidenceId:recordRow.id,reviewerId:user.id,status:body.status,reviewNote:body.reviewNote});
+          if(!record){fail(res,404,"EVIDENCE_NOT_FOUND","Evidence record not found.");return;}
+          audit(db,user.id,"evidence.reviewed","evidence",record.id,{status:record.status,sourceAssetId:evidenceAsset.id},evidenceAsset.project_id);
+          send(res,200,{record,events:listEvidenceEvents(db,record.id)},cors);return;
+        }
+        fail(res,405,"METHOD_NOT_ALLOWED","Method not allowed for this evidence resource.");return;
+      }
       const assetMatch=path.match(/^\/api\/assets\/([0-9a-f-]+)(?:\/(file|provenance))?$/i);
       if(assetMatch){
         const asset=getAccessibleAsset(db,user.id,assetMatch[1],req.method==="DELETE");if(!asset){fail(res,404,"ASSET_NOT_FOUND","Asset not found.");return;}
         if(assetMatch[2]==="provenance"&&req.method==="GET"){
           const metadata=parseJson(asset.metadata_json,{}),provenance=metadata.provenance||null;
           const verification=verifyAssetProvenanceRecord(provenance,{id:asset.id,sha256:asset.sha256,mediaType:asset.media_type,size:Number(asset.byte_size)});
-          send(res,200,{assetId:asset.id,provenance,verification,notice:"Internal integrity verification is not a C2PA signature, identity proof, rights clearance or factual verification."},cors);return;
+          const file=resolve(MEDIA_ROOT,asset.storage_path),mediaPrefix=MEDIA_ROOT.endsWith(sep)?MEDIA_ROOT:MEDIA_ROOT+sep;
+          let c2paPathValid=false;
+          try{
+            const root=realpathSync(MEDIA_ROOT),candidate=realpathSync(file),realPrefix=root.endsWith(sep)?root:root+sep;
+            const info=statSync(candidate);
+            c2paPathValid=file.startsWith(mediaPrefix)&&candidate.startsWith(realPrefix)&&info.isFile()&&info.size===Number(asset.byte_size);
+          }catch{}
+          const c2pa=c2paPathValid
+            ? await verifyC2paAsset({path:file,mimeType:asset.media_type,size:Number(asset.byte_size)})
+            : {status:"verification_error",manifestPresent:false,embedded:false,validationState:null,validationFindings:[],errorCode:"C2PA_ASSET_PATH_INVALID"};
+          send(res,200,{assetId:asset.id,provenance,verification,c2pa,notice:"Application integrity verification is distinct from C2PA cryptographic validation. C2PA trust requires an explicitly configured trust policy; neither establishes identity, rights clearance or factual accuracy."},cors);return;
         }
         if(assetMatch[2]==="file"&&req.method==="GET"){
           const file=resolve(MEDIA_ROOT,asset.storage_path);const mediaPrefix=MEDIA_ROOT.endsWith(sep)?MEDIA_ROOT:MEDIA_ROOT+sep;if(!file.startsWith(mediaPrefix)){fail(res,404,"ASSET_NOT_FOUND","Asset not found.");return;}
@@ -598,6 +709,14 @@ export function createAppServer() {
           if(changed.changes!==1){fail(res,404,"ASSET_NOT_FOUND","Asset not found.");return;}
           audit(db,user.id,"asset.archived","asset",asset.id,{},asset.project_id);send(res,200,{ok:true},cors);return;
         }
+      }
+
+      if(path==="/api/evidence"&&req.method==="GET"){
+        const projectId=url.searchParams.get("projectId")||"";
+        const access=projectId?getProjectAccess(db,user.id,projectId):null;
+        if(!access){fail(res,404,"PROJECT_NOT_FOUND","Project not found.");return;}
+        const records=listEvidenceRecords(db,{projectId});
+        send(res,200,{projectId,records},cors);return;
       }
 
       if(path==="/api/workflows"&&req.method==="GET"){
