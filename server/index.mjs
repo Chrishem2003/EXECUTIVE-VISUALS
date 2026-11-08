@@ -22,6 +22,7 @@ import { createCloudTimelineApi } from "./cloud-timeline-api.mjs";
 import { validateSrt, validateWebVtt } from "./caption-validation.mjs";
 import { createAssetProvenanceRecord, verifyAssetProvenanceRecord } from "./provenance.mjs";
 import { verifyC2paAsset } from "./c2pa-verification.mjs";
+import { createEvidenceRecord, listEvidenceRecords, reviewEvidenceRecord, listEvidenceEvents } from "./evidence-ledger.mjs";
 import { ensureTransformationPlanSchema, createTransformationPlan, approveTransformationPlan, listTransformationPlans, getTransformationPlan } from "./transformation-plans.mjs";
 import { signInWithSupabasePassword, signUpWithSupabasePassword, refreshSupabaseSession, getSupabaseUser, revokeSupabaseSession } from "./supabase-password-auth.mjs";
 
@@ -575,6 +576,39 @@ export function createAppServer() {
       }
       if(path==="/api/assets"&&req.method==="POST"){
         const result=await storeUpload(req,user,req.headers["x-project-id"]||null);send(res,201,{asset:result},cors);return;
+      }
+      const evidenceMatch=path.match(/^\\/api\\/assets\\/([0-9a-f-]+)\\/evidence(?:\\/([0-9a-f-]+)\\/(review|events))?$/i);
+      if(evidenceMatch){
+        const evidenceAsset=getAccessibleAsset(db,user.id,evidenceMatch[1],req.method==="POST"&&!evidenceMatch[2]);
+        if(!evidenceAsset){fail(res,404,"ASSET_NOT_FOUND","Asset not found.");return;}
+        if(!evidenceMatch[2]&&req.method==="GET"){
+          const records=listEvidenceRecords(db,{sourceAssetId:evidenceAsset.id});
+          send(res,200,{assetId:evidenceAsset.id,records,notice:"Evidence status records review of the submitted material and its relevance; it does not independently prove the underlying claim."},cors);return;
+        }
+        if(!evidenceMatch[2]&&req.method==="POST"){
+          if(evidenceAsset.project_id&&!canWriteProject(db,user.id,evidenceAsset.project_id)){fail(res,403,"EVIDENCE_WRITE_FORBIDDEN","Editor access is required to submit evidence.");return;}
+          const body=await readJson(req);
+          if(body.status!==undefined){fail(res,400,"EVIDENCE_STATUS_SERVER_MANAGED","Evidence submissions always begin in submitted status and must be reviewed separately.");return;}
+          const record=createEvidenceRecord(db,{ownerId:user.id,projectId:evidenceAsset.project_id,sourceAsset:{id:evidenceAsset.id,sha256:evidenceAsset.sha256},targetType:body.targetType,targetId:body.targetId,kind:body.kind,claim:body.claim,method:body.method,sourceRef:body.sourceRef,observedAt:body.observedAt,note:body.note});
+          audit(db,user.id,"evidence.submitted","evidence",record.id,{sourceAssetId:evidenceAsset.id,target:record.target,kind:record.kind},evidenceAsset.project_id);
+          send(res,201,{record,events:listEvidenceEvents(db,record.id)},cors);return;
+        }
+        const recordRow=db.prepare("SELECT id,source_asset_id,project_id FROM evidence_records WHERE id=? AND source_asset_id=?").get(evidenceMatch[2],evidenceAsset.id);
+        if(!recordRow){fail(res,404,"EVIDENCE_NOT_FOUND","Evidence record not found.");return;}
+        if(evidenceMatch[3]==="events"&&req.method==="GET"){
+          send(res,200,{evidenceId:recordRow.id,events:listEvidenceEvents(db,recordRow.id)},cors);return;
+        }
+        if(evidenceMatch[3]==="review"&&req.method==="POST"){
+          const access=recordRow.project_id?getProjectAccess(db,user.id,recordRow.project_id):null;
+          const allowed=recordRow.project_id?Boolean(access&&["owner","editor","reviewer"].includes(access.access_role)):evidenceAsset.owner_id===user.id;
+          if(!allowed){fail(res,403,"EVIDENCE_REVIEW_FORBIDDEN","Project reviewer, editor or owner access is required to review evidence.");return;}
+          const body=await readJson(req);
+          const record=reviewEvidenceRecord(db,{evidenceId:recordRow.id,reviewerId:user.id,status:body.status,reviewNote:body.reviewNote});
+          if(!record){fail(res,404,"EVIDENCE_NOT_FOUND","Evidence record not found.");return;}
+          audit(db,user.id,"evidence.reviewed","evidence",record.id,{status:record.status,sourceAssetId:evidenceAsset.id},evidenceAsset.project_id);
+          send(res,200,{record,events:listEvidenceEvents(db,record.id)},cors);return;
+        }
+        fail(res,405,"METHOD_NOT_ALLOWED","Method not allowed for this evidence resource.");return;
       }
       const assetMatch=path.match(/^\/api\/assets\/([0-9a-f-]+)(?:\/(file|provenance))?$/i);
       if(assetMatch){
