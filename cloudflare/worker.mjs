@@ -1,0 +1,171 @@
+import { createD1Repository } from "../server/d1-repository.mjs";
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function json(body, status = 200, headers = {}) {
+  const output = new Headers(headers);
+  output.set("content-type", "application/json; charset=utf-8");
+  output.set("cache-control", "no-store");
+  output.set("x-content-type-options", "nosniff");
+  return new Response(JSON.stringify(body), { status, headers: output });
+}
+
+function safeApiOrigin(value) {
+  const origin = new URL(value);
+  if (origin.protocol !== "https:" || origin.username || origin.password || origin.pathname !== "/" || origin.search || origin.hash) {
+    throw new Error("API_ORIGIN must be a plain HTTPS origin.");
+  }
+  return origin;
+}
+
+function errorResponse(error) {
+  const status = error?.code === "D1_PROJECT_NOT_FOUND" ? 404
+    : error?.code === "D1_PROJECT_ACCESS_DENIED" ? 403
+    : error?.code === "D1_PROJECT_REVISION_CONFLICT" ? 409
+    : 400;
+  return json({ error: { code: error?.code || "D1_REQUEST_INVALID", message: String(error?.message || "The D1 request could not be completed.").slice(0, 300) } }, status);
+}
+
+async function readJson(request, maxBytes = 32 * 1024) {
+  const declared = Number(request.headers.get("content-length") || 0);
+  if (declared > maxBytes) throw Object.assign(new Error("Request body is too large."), { status: 413, code: "BODY_TOO_LARGE" });
+  const raw = await request.text();
+  if (new TextEncoder().encode(raw).byteLength > maxBytes) throw Object.assign(new Error("Request body is too large."), { status: 413, code: "BODY_TOO_LARGE" });
+  try {
+    const value = JSON.parse(raw || "{}");
+    if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("JSON body must be an object.");
+    return value;
+  } catch {
+    throw Object.assign(new Error("Request body must be a JSON object."), { status: 400, code: "INVALID_JSON" });
+  }
+}
+
+async function authenticate(request, env) {
+  const apiOrigin = safeApiOrigin(env.API_ORIGIN);
+  const headers = new Headers();
+  const cookie = request.headers.get("cookie");
+  const authorization = request.headers.get("authorization");
+  if (cookie) headers.set("cookie", cookie);
+  if (authorization) headers.set("authorization", authorization);
+  headers.set("origin", apiOrigin.origin);
+  headers.set("accept", "application/json");
+  let response;
+  try {
+    response = await fetch(new Request(new URL("/api/me", apiOrigin), { method: "GET", headers, redirect: "error" }));
+  } catch {
+    throw Object.assign(new Error("The application identity service is unavailable."), { status: 502, code: "IDENTITY_SERVICE_UNAVAILABLE" });
+  }
+  if (response.status === 401 || response.status === 403) {
+    throw Object.assign(new Error("Sign in to access the staging workspace."), { status: 401, code: "AUTH_REQUIRED" });
+  }
+  if (!response.ok) throw Object.assign(new Error("The application identity service rejected the request."), { status: 502, code: "IDENTITY_SERVICE_UNAVAILABLE" });
+  let payload;
+  try { payload = await response.json(); } catch {
+    throw Object.assign(new Error("The application identity service returned an invalid response."), { status: 502, code: "IDENTITY_RESPONSE_INVALID" });
+  }
+  const user = payload?.user;
+  if (!user || typeof user.id !== "string" || !UUID.test(user.id)) {
+    throw Object.assign(new Error("The authenticated account identity is invalid."), { status: 401, code: "AUTH_REQUIRED" });
+  }
+  const provider = payload.authMode === "supabase" ? "supabase" : payload.authMode === "local" ? "local" : "";
+  if (!provider) throw Object.assign(new Error("The account authentication mode is not supported by D1 staging."), { status: 403, code: "AUTH_MODE_UNSUPPORTED" });
+  return { id: user.id, email: typeof user.email === "string" ? user.email : null, provider };
+}
+
+async function requireSchema(db) {
+  try {
+    const row = await db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'ev_users' LIMIT 1").first();
+    return Boolean(row);
+  } catch {
+    return false;
+  }
+}
+
+async function d1Api(request, env, url) {
+  if (!env.DB || typeof env.DB.prepare !== "function") {
+    return json({ error: { code: "D1_BINDING_MISSING", message: "The staging D1 binding is not configured." } }, 503);
+  }
+  if (request.method === "OPTIONS") {
+    return new Response(null, { status: 204, headers: { "allow": "GET,POST,PATCH,OPTIONS", "access-control-allow-methods": "GET,POST,PATCH,OPTIONS", "access-control-allow-headers": "authorization,content-type", "cache-control": "no-store" } });
+  }
+  if (url.pathname === "/api/d1/health" && request.method === "GET") {
+    const ready = await requireSchema(env.DB);
+    return json({ status: ready ? "ready" : "migration_required", database: "executive-visuals-staging", metadataOnly: true, r2Enabled: false }, ready ? 200 : 503);
+  }
+  if (!await requireSchema(env.DB)) {
+    return json({ error: { code: "D1_MIGRATION_REQUIRED", message: "The isolated staging schema has not been applied." } }, 503);
+  }
+  let user;
+  try { user = await authenticate(request, env); }
+  catch (error) { return json({ error: { code: error.code || "AUTH_REQUIRED", message: error.message } }, error.status || 401); }
+
+  const repo = createD1Repository({ db: env.DB, allowR2: false });
+  try {
+    await repo.resolvePrincipal({ subject: user.id, provider: user.provider, email: user.email });
+    if (url.pathname === "/api/d1/projects" && request.method === "GET") {
+      const projects = await repo.listProjects({ actorId: user.id });
+      return json({ projects, storage: "cloudflare-d1-staging" });
+    }
+    if (url.pathname === "/api/d1/projects" && request.method === "POST") {
+      const body = await readJson(request);
+      const project = await repo.createProject({ ownerId: user.id, name: body.name, description: body.description || "", settings: body.settings || {} });
+      return json({ project, storage: "cloudflare-d1-staging" }, 201);
+    }
+    const match = url.pathname.match(/^\/api\/d1\/projects\/([0-9a-f-]{36})$/i);
+    if (match && request.method === "GET") {
+      const project = await repo.getProject({ actorId: user.id, projectId: match[1] });
+      return project ? json({ project, storage: "cloudflare-d1-staging" }) : json({ error: { code: "D1_PROJECT_NOT_FOUND", message: "Project not found." } }, 404);
+    }
+    if (match && request.method === "PATCH") {
+      const body = await readJson(request);
+      const project = await repo.updateProject({ actorId: user.id, projectId: match[1], expectedRevision: Number(body.expectedRevision ?? body.revision), name: body.name, description: body.description, settings: body.settings });
+      return json({ project, storage: "cloudflare-d1-staging" });
+    }
+    return json({ error: { code: "D1_ROUTE_NOT_FOUND", message: "D1 staging endpoint not found." } }, 404);
+  } catch (error) {
+    return errorResponse(error);
+  }
+}
+
+async function proxyApplication(request, env) {
+  const origin = safeApiOrigin(env.API_ORIGIN);
+  const incoming = new URL(request.url);
+  const target = new URL(incoming.pathname + incoming.search, origin);
+  const headers = new Headers(request.headers);
+  headers.set("origin", origin.origin);
+  headers.set("x-forwarded-host", incoming.host);
+  headers.set("x-forwarded-proto", incoming.protocol.slice(0, -1));
+  headers.set("cache-control", "no-store");
+  headers.delete("host");
+  headers.delete("connection");
+  headers.delete("content-length");
+  const upstreamRequest = new Request(target, {
+    method: request.method,
+    headers,
+    body: request.method === "GET" || request.method === "HEAD" ? undefined : request.body,
+    redirect: "manual"
+  });
+  const upstream = await fetch(upstreamRequest);
+  const responseHeaders = new Headers(upstream.headers);
+  responseHeaders.set("cache-control", "no-store");
+  responseHeaders.delete("access-control-allow-origin");
+  responseHeaders.delete("access-control-allow-credentials");
+  return new Response(upstream.body, { status: upstream.status, statusText: upstream.statusText, headers: responseHeaders });
+}
+
+export default {
+  async fetch(request, env) {
+    const url = new URL(request.url);
+    if (url.pathname === "/edge-health") {
+      return json({ status: "ok", edge: "cloudflare-workers", d1Bound: Boolean(env.DB), apiProxyConfigured: Boolean(env.API_ORIGIN), stagingOnly: true });
+    }
+    if (url.pathname === "/api/d1" || url.pathname.startsWith("/api/d1/")) {
+      try { return await d1Api(request, env, url); }
+      catch (error) { return json({ error: { code: error.code || "D1_UNAVAILABLE", message: "The staging data service is temporarily unavailable." } }, 503); }
+    }
+    try { return await proxyApplication(request, env); }
+    catch {
+      return json({ error: { code: "EDGE_UPSTREAM_UNAVAILABLE", message: "The application API is temporarily unavailable. Please retry shortly." } }, 502);
+    }
+  }
+};
