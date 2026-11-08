@@ -4,6 +4,10 @@ import { resolve } from "node:path";
 const sql = await readFile(resolve(process.cwd(), "supabase/migrations/20261031210000_executive_visuals_core.sql"), "utf8");
 const checkpointSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261102090000_video_pipeline_checkpoints.sql"), "utf8");
 const publicationSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261106230000_asset_publication_ledger.sql"), "utf8");
+const fencingSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261108000000_job_lease_fencing_tokens.sql"), "utf8");
+const atomicPublicationSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261108010000_atomic_asset_publication_lease_fencing.sql"), "utf8");
+const cleanupClaimsSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261108020000_asset_publication_cleanup_claims.sql"), "utf8");
+const cleanupAttemptSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261108030000_storage_cleanup_attempt_paths.sql"), "utf8");
 const cleanupSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261106190000_asset_storage_cleanup_outbox.sql"), "utf8");
 const issues = [];
 const tables = ["projects","project_members","project_workspace_documents","workflows","workflow_runs","workflow_node_runs","timelines","assets","jobs","job_events","consents","reviews","audit_events"];
@@ -63,6 +67,71 @@ if (/\\b(drop\\s+table|truncate|delete\\s+from)\\b/i.test(checkpointSql)) issues
 
 if (/\b(drop\s+table|truncate|delete\s+from)\b/i.test(publicationSql)) issues.push("Publication ledger migration must not contain destructive DDL/DML.");
 
+if (/\b(drop\s+table|truncate|delete\s+from)\b/i.test(fencingSql)) issues.push("Lease fencing migration must not contain destructive DDL/DML.");
+if (!fencingSql.includes("add column if not exists lease_token uuid")) issues.push("Jobs must store a per-attempt fencing token.");
+if (!fencingSql.includes("ev_jobs_processing_requires_lease_token") || !fencingSql.includes("check (status <> 'processing' or lease_token is not null) not valid")) issues.push("New processing jobs must require a lease token while legacy active rows drain.");
+if (!fencingSql.includes("lease_token=gen_random_uuid()")) issues.push("Every claim must generate a fresh database-side fencing token.");
+if (!fencingSql.includes("lease_token=p_lease_token")) issues.push("Lease renewal and completion must match the current fencing token.");
+if (!fencingSql.includes("lease_token=null")) issues.push("Recovery and completion must clear the prior fencing token.");
+const fencedGrants = {
+  claim_next_job_v2: "grant execute on function executive_visuals.claim_next_job_v2(text,integer,text[]) to service_role",
+  renew_job_lease_v2: "grant execute on function executive_visuals.renew_job_lease_v2(uuid,text,uuid,integer) to service_role",
+  finish_job_v2: "grant execute on function executive_visuals.finish_job_v2(uuid,text,uuid,text,jsonb,jsonb) to service_role",
+  assert_job_lease_v2: "grant execute on function executive_visuals.assert_job_lease_v2(uuid,text,uuid) to service_role"
+};
+for (const [fn,grant] of Object.entries(fencedGrants)) {
+  if (!fencingSql.includes("create or replace function executive_visuals."+fn+"(")) issues.push("Fenced queue RPC is missing: "+fn+".");
+  if (!fencingSql.includes(grant)) issues.push("Fenced queue RPC permissions must be restricted to service_role: "+fn+".");
+}
+if (!fencingSql.includes("revoke all on function executive_visuals.claim_next_job(text,integer,text[]) from public,anon,authenticated,service_role;")
+ || !fencingSql.includes("revoke all on function executive_visuals.renew_job_lease(uuid,text,integer) from public,anon,authenticated,service_role;")
+ || !fencingSql.includes("revoke all on function executive_visuals.finish_job(uuid,text,text,jsonb,jsonb) from public,anon,authenticated,service_role;")) {
+  issues.push("Legacy unfenced worker RPCs must be disabled after v2 migration.");
+}
+if (/\b(drop\s+table|truncate|delete\s+from)\b/i.test(atomicPublicationSql)) issues.push("Atomic publication migration must not contain destructive DDL/DML.");
+if (!atomicPublicationSql.includes("create or replace function executive_visuals.finalize_asset_publication_v1(")
+ || !atomicPublicationSql.includes("job_row.lease_token is distinct from p_lease_token")
+ || !atomicPublicationSql.includes("for update")
+ || !atomicPublicationSql.includes("insert into executive_visuals.assets")
+ || !atomicPublicationSql.includes("set status = 'published'")) {
+  issues.push("Asset metadata and publication ledger must finalize atomically under the active worker lease.");
+}
+if (!atomicPublicationSql.includes("add column if not exists derivative_of uuid")) issues.push("Cloud assets must persist explicit derivative lineage.");
+if (!atomicPublicationSql.includes("create trigger ev_assets_validate_derivative_scope")
+ || !atomicPublicationSql.includes("parent_asset.owner_id is distinct from new.owner_id")
+ || !atomicPublicationSql.includes("parent_asset.project_id is distinct from new.project_id")) {
+  issues.push("Asset derivatives must remain within the same owner and project scope.");
+}
+if (!atomicPublicationSql.includes("revoke all on function executive_visuals.complete_asset_publication(uuid,text,uuid)")
+ || !atomicPublicationSql.includes("from public, anon, authenticated, service_role;")) {
+  issues.push("Legacy unfenced asset publication completion must be disabled.");
+}
+if (/\b(drop\s+table|truncate|delete\s+from)\b/i.test(cleanupClaimsSql)) issues.push("Publication cleanup claim migration must not contain destructive DDL/DML.");
+if (!cleanupClaimsSql.includes("create or replace function executive_visuals.reserve_asset_publication_v2(")
+ || !cleanupClaimsSql.includes("job_row.lease_token is distinct from p_lease_token")
+ || !cleanupClaimsSql.includes("publication_row.job_id is distinct from p_job_id")) {
+  issues.push("Publication reservations must bind the immutable key and checksum to the current job lease.");
+}
+if (!cleanupClaimsSql.includes("create table if not exists executive_visuals.asset_publication_cleanup_claims")
+ || !cleanupClaimsSql.includes("alter table executive_visuals.asset_publication_cleanup_claims enable row level security;")
+ || !cleanupClaimsSql.includes("create or replace function executive_visuals.claim_asset_publication_cleanup_v1(")
+ || !cleanupClaimsSql.includes("create or replace function executive_visuals.complete_asset_publication_cleanup_v1(")
+ || !cleanupClaimsSql.includes("cleanup_claim.object_path = p_object_path")
+ || !cleanupClaimsSql.includes("asset object path is fenced by a durable cleanup claim")
+ || !cleanupClaimsSql.includes("job_row.status not in ('succeeded','partial','failed','cancelled','expired')")) {
+  issues.push("Orphan publication cleanup must use terminal-job, tokenized tombstone claims and fence finalization.");
+}
+if (!/grant execute on function executive_visuals\.reserve_asset_publication_v2\([\s\S]*?\)\s+to service_role;/i.test(cleanupClaimsSql)
+ || !/grant execute on function executive_visuals\.claim_asset_publication_cleanup_v1\([\s\S]*?\)\s+to service_role;/i.test(cleanupClaimsSql)
+ || !/grant execute on function executive_visuals\.complete_asset_publication_cleanup_v1\([\s\S]*?\)\s+to service_role;/i.test(cleanupClaimsSql)) {
+  issues.push("Publication reservation and cleanup RPCs must be restricted to service_role.");
+}
+if (/\b(drop\s+table|truncate|delete\s+from)\b/i.test(cleanupAttemptSql)) issues.push("Cleanup attempt-path migration must not contain destructive DDL/DML.");
+if (!cleanupAttemptSql.includes("drop constraint if exists asset_storage_cleanup_object_path_check")
+ || !cleanupAttemptSql.includes("attempt-[0-9a-f]{8}")) {
+  issues.push("Durable cleanup outbox must accept only exact original or immutable attempt object paths.");
+}
+
 if (/\b(drop\s+table|truncate|delete\s+from)\b/i.test(cleanupSql)) issues.push("Storage cleanup outbox migration must not contain destructive DDL/DML.");
 if (!cleanupSql.includes("create table if not exists executive_visuals.asset_storage_cleanup") || !cleanupSql.includes("alter table executive_visuals.asset_storage_cleanup enable row level security;")) issues.push("Storage cleanup outbox must exist and enable RLS.");
 if (!cleanupSql.includes("revoke all on executive_visuals.asset_storage_cleanup from public, anon, authenticated;") || !cleanupSql.includes("grant select, insert, update on executive_visuals.asset_storage_cleanup to service_role;")) issues.push("Storage cleanup outbox must be service-role-only.");
@@ -116,5 +185,5 @@ if (issues.length) {
   for (const issue of issues) console.error("- " + issue);
   process.exitCode = 1;
 } else {
-  console.log(`Cloud migration guard passed: ${tables.length} RLS tables, immutable run snapshots, private storage, and server-only job/audit writes.`);
+  console.log(`Cloud migration guard passed: ${tables.length} RLS tables, immutable run snapshots, private storage, server-only job/audit writes, per-attempt lease fencing and atomic asset publication.`);
 }
