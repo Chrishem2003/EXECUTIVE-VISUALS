@@ -127,3 +127,37 @@ test("cloud caption uploads persist SRT validation evidence for readiness checks
  const result=await api.uploadAsset({req,ownerId:owner,projectId:project,originalName:"captions.srt",mediaType:"text/plain"});
  assert.equal(result.status,201);assert.equal(stored.metadata.captionValidation.format,"srt");assert.equal(stored.metadata.captionValidation.status,"passed");
 });
+
+test("cloud video cancellation RPC is owner-scoped and returns an explicit pending state",async()=>{
+ const calls=[];
+ const api=createCloudTimelineApi({
+  url:"https://example.supabase.co",serviceRoleKey:"service-secret",
+  fetchImpl:async(url,options)=>{
+   calls.push({url,options});
+   return{ok:true,status:200,async text(){return JSON.stringify([{
+    job_id:timelineId,job_status:"processing",cancellation_requested:true,submission_state:"submitted"
+   }]);}};
+  },
+  timelineService:{timelines:{},assets:{},projects:{}},
+  authorize:async()=>true
+ });
+ const result=await api.handle({method:"POST",path:"/api/cloud/jobs/"+timelineId+"/cancel",ownerId:owner});
+ assert.equal(result.status,202);
+ assert.equal(result.body.job.cancellationRequested,true);
+ assert.match(result.body.notice,/best-effort/);
+ const request=calls[0];
+ assert.match(request.url,/rpc\/request_video_generation_cancellation$/);
+ assert.equal(JSON.parse(request.options.body).p_owner_id,owner);
+ assert.equal(JSON.parse(request.options.body).p_job_id,timelineId);
+});
+
+test("cloud video cancellation hides jobs outside the authenticated owner scope",async()=>{
+ const api=createCloudTimelineApi({
+  url:"https://example.supabase.co",serviceRoleKey:"service-secret",
+  fetchImpl:async()=>({ok:true,status:200,async text(){return"[]";}}),
+  timelineService:{timelines:{},assets:{},projects:{}},
+  authorize:async()=>true
+ });
+ const result=await api.handle({method:"POST",path:"/api/cloud/jobs/"+timelineId+"/cancel",ownerId:editor});
+ assert.equal(result.status,404);
+});

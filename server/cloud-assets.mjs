@@ -128,6 +128,31 @@ export function createCloudAssetRepository({
         throw error;
       }
     },
+    async findVideoGenerationOutput({ownerId,projectId=null,providerTaskId,outputIndex}={}) {
+      ownerId=validUuid(ownerId,"owner ID");
+      if(projectId!==null&&projectId!==undefined&&projectId!=="")projectId=validUuid(projectId,"project ID");else projectId=null;
+      if(typeof providerTaskId!=="string"||!providerTaskId.trim()||providerTaskId.length>256)throw new Error("Provider task ID is invalid.");
+      if(!Number.isInteger(outputIndex)||outputIndex<0||outputIndex>9)throw new Error("Video output index is invalid.");
+      await allowed(ownerId,projectId,"read");
+      const scope=projectId
+        ? "owner_id=eq."+encodeURIComponent(ownerId)+"&project_id=eq."+encodeURIComponent(projectId)
+        : "owner_id=eq."+encodeURIComponent(ownerId)+"&project_id=is.null";
+      const rows=await request("assets?select=id,owner_id,project_id,original_name,media_type,byte_size,sha256,storage_bucket,object_path,derivative_of,metadata,created_at,deleted_at&"+scope+
+        "&metadata->>source=eq.video-generation&metadata->>providerTaskId=eq."+encodeURIComponent(providerTaskId)+
+        "&metadata->>outputIndex=eq."+encodeURIComponent(String(outputIndex))+"&deleted_at=is.null&limit=2");
+      if(!Array.isArray(rows)||rows.length>1)throw new Error("Video output idempotency lookup returned an invalid result.");
+      const row=rows[0]||null;
+      if(!row)return null;
+      const expectedPrefix=(row.project_id||row.owner_id)+"/"+row.id+"/";
+      if(row.owner_id!==ownerId||row.project_id!==projectId||row.storage_bucket!=="executive-visuals-media"||
+         typeof row.object_path!=="string"||!row.object_path.startsWith(expectedPrefix)||
+         !String(row.media_type||"").startsWith("video/")||row.deleted_at||
+         row.metadata?.source!=="video-generation"||row.metadata?.providerTaskId!==providerTaskId||
+         Number(row.metadata?.outputIndex)!==outputIndex) {
+        throw new Error("Existing video output asset does not match the requested owner/task/index scope.");
+      }
+      return publicAsset(row);
+    },
     async list({ownerId,projectId=null,limit=50,offset=0}={}) {
       ownerId=validUuid(ownerId,"owner ID");
       if(projectId!==null&&projectId!==undefined&&projectId!=="")projectId=validUuid(projectId,"project ID");else projectId=null;

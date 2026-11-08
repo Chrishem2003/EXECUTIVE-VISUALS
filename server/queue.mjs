@@ -34,10 +34,14 @@ export function recoverExpiredJobs(db, timestamp = new Date().toISOString()) {
   return recovered;
 }
 
-export function claimNextJob(db, workerId, leaseMs = 90000, timestamp = new Date().toISOString()) {
+export function claimNextJob(db, workerId, leaseMs = 90000, timestamp = new Date().toISOString(), allowedJobTypes = null) {
+  if (allowedJobTypes !== null && (!Array.isArray(allowedJobTypes) || allowedJobTypes.length === 0 || allowedJobTypes.some(type => typeof type !== "string" || !type.trim()))) {
+    throw new Error("Allowed job types must be a non-empty list of job type identifiers.");
+  }
+  const typeFilter = allowedJobTypes ? " AND job_type IN (" + allowedJobTypes.map(() => "?").join(",") + ")" : "";
   const candidate = db.prepare(
-    "SELECT id FROM jobs WHERE status='queued' AND (available_at IS NULL OR available_at<=?) ORDER BY created_at ASC LIMIT 1"
-  ).get(timestamp);
+    "SELECT id FROM jobs WHERE status='queued' AND (available_at IS NULL OR available_at<=?)" + typeFilter + " ORDER BY created_at ASC LIMIT 1"
+  ).get(timestamp, ...(allowedJobTypes || []));
   if (!candidate) return null;
   const expires = iso(Date.parse(timestamp) + leaseMs);
   const claimed = db.prepare(

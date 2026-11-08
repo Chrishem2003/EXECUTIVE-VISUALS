@@ -1,0 +1,215 @@
+const freeze = value => {
+  if (!value || typeof value !== "object" || Object.isFrozen(value)) return value;
+  for (const child of Object.values(value)) freeze(child);
+  return Object.freeze(value);
+};
+
+/**
+ * Evidence-backed metadata only. This registry does not load credentials,
+ * make provider requests, or enable remote generation.
+ *
+ * availability remains "disabled" until the application-level governance,
+ * budget reservation, durable job lifecycle and private output ingestion gates
+ * have all been implemented and accepted.
+ */
+export const VIDEO_PROVIDER_CATALOG = freeze([
+  {
+    id: "runway",
+    name: "Runway",
+    adapterState: "foundation",
+    availability: "disabled",
+    remote: true,
+    models: [
+      {
+        id: "gen4.5",
+        name: "Gen-4.5",
+        availability: "disabled",
+        capabilities: {
+          textToVideo: true,
+          imageToVideo: true,
+          videoToVideo: false,
+          videoEdit: false,
+          videoExtend: false,
+          videoReframe: false,
+          nativeAudio: false,
+          negativePrompt: false,
+          seed: true,
+          startFrame: false,
+          endFrame: false,
+          motionReference: false,
+          referenceImages: false,
+          audioModes: [],
+          aspectRatios: ["16:9", "9:16"],
+          resolutions: ["provider_default"],
+          minDurationSeconds: 2,
+          maxDurationSeconds: 10
+        },
+        constraints: {
+          promptMaxCharacters: 1000,
+          durationStepSeconds: 1,
+          outputUrlTemporary: true,
+          minimumPollIntervalMs: 5000,
+          cancellation: "best_effort"
+        }
+      }
+    ]
+  },
+  {
+    id: "luma",
+    name: "Luma",
+    adapterState: "research_only",
+    availability: "disabled",
+    remote: true,
+    models: [
+      {
+        id: "ray-3.2",
+        name: "Ray 3.2",
+        availability: "disabled",
+        capabilities: {
+          textToVideo: true,
+          imageToVideo: true,
+          videoToVideo: false,
+          videoEdit: true,
+          videoExtend: true,
+          videoReframe: true,
+          nativeAudio: false,
+          negativePrompt: false,
+          seed: false,
+          startFrame: true,
+          endFrame: true,
+          motionReference: false,
+          referenceImages: true,
+          audioModes: [],
+          aspectRatios: ["9:16", "3:4", "1:1", "4:3", "16:9", "21:9"],
+          resolutions: ["540p", "720p", "1080p"],
+          minDurationSeconds: 5,
+          maxDurationSeconds: 10
+        },
+        constraints: {
+          supportedDurationsSeconds: [5, 10],
+          maxKeyframes: 64,
+          hdrOutput: true,
+          hdrGenerationDurationsSeconds: [5],
+          hdrGenerationResolutions: ["720p", "1080p"],
+          hdrVideoEditDurationsSeconds: [5, 10],
+          exrExportRequiresHdr: true,
+          reframeDynamicRange: "sdr_only",
+          outputUrlExpirySeconds: 3600,
+          cancellation: "unsupported",
+          source: "https://docs.agents.lumalabs.ai/guides/model/"
+        }
+      }
+    ]
+  },
+  {
+    id: "kling",
+    name: "Kling",
+    adapterState: "research_only",
+    availability: "disabled",
+    remote: true,
+    models: [
+      {
+        id: "kling-4.0",
+        name: "Kling 4.0",
+        availability: "disabled",
+        capabilities: {
+          textToVideo: true,
+          imageToVideo: true,
+          videoToVideo: false,
+          videoEdit: false,
+          videoExtend: false,
+          videoReframe: false,
+          negativePrompt: false,
+          seed: false,
+          motionReference: false,
+          referenceImages: true
+        },
+        constraints: {
+          maxDurationSeconds: 30,
+          maxKeyframes: 10,
+          maxReferenceImages: 10,
+          maxReferenceVideos: 5,
+          maxCombinedReferences: 15,
+          billingBasis: "input_and_output_duration"
+        }
+      }
+    ]
+  },
+  {
+    id: "google",
+    name: "Google",
+    adapterState: "research_only",
+    availability: "disabled",
+    remote: true,
+    models: [
+      {
+        id: "gemini-omni-1.1-flash",
+        name: "Gemini Omni Flash",
+        availability: "disabled",
+        capabilities: {
+          textToVideo: true,
+          imageToVideo: true,
+          videoToVideo: false,
+          videoEdit: true,
+          videoExtend: true,
+          videoReframe: false,
+          nativeAudio: true,
+          negativePrompt: false,
+          seed: false,
+          startFrame: true,
+          endFrame: true,
+          motionReference: false,
+          referenceImages: true,
+          minDurationSeconds: 3,
+          maxDurationSeconds: 10
+        },
+        constraints: {
+          frameRate: 24,
+          supportsConversationalEdits: true,
+          lineageField: "previous_interaction_id",
+          outputEncoding: "base64_in_interaction_steps",
+          paidTierOnly: true
+        }
+      }
+    ]
+  },
+  {
+    id: "openai",
+    name: "OpenAI",
+    adapterState: "retired_api",
+    availability: "unavailable",
+    remote: true,
+    models: [
+      {
+        id: "sora-2",
+        name: "Sora 2",
+        availability: "unavailable",
+        capabilities: {},
+        constraints: {
+          apiShutdownDate: "2026-09-24",
+          replacementVerified: false
+        }
+      }
+    ]
+  }
+]);
+
+export function listVideoProviders({ includeUnavailable = true } = {}) {
+  return VIDEO_PROVIDER_CATALOG.filter(provider =>
+    includeUnavailable || provider.availability !== "unavailable"
+  );
+}
+
+export function getVideoProviderModel(providerId, modelId) {
+  const provider = VIDEO_PROVIDER_CATALOG.find(item => item.id === providerId);
+  return provider?.models.find(model => model.id === modelId) ?? null;
+}
+
+/** No provider is user-selectable until the release gates are implemented. */
+export function listSelectableVideoProviderModels() {
+  return VIDEO_PROVIDER_CATALOG.flatMap(provider =>
+    provider.models
+      .filter(model => provider.availability === "enabled" && model.availability === "enabled")
+      .map(model => ({ providerId: provider.id, ...model }))
+  );
+}

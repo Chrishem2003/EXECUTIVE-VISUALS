@@ -8,6 +8,21 @@ test("cloud worker config requires a selected worker family and server credentia
  assert.throws(()=>readCloudWorkerConfig({...env,CLOUD_MEDIA_WORKER_ENABLED:"false",CLOUD_TIMELINE_WORKER_ENABLED:"false"}),/at least one/);
  assert.throws(()=>readCloudWorkerConfig({...env,SUPABASE_SERVICE_ROLE_KEY:""}),/server-side Supabase credentials/);
 });
+test("cloud video worker requires isolated staging acceptance, explicit provider opt-in and exact output hosts",()=>{
+ const requested={...env,CLOUD_VIDEO_WORKER_ENABLED:"true"};
+ assert.throws(()=>readCloudWorkerConfig(requested),/isolated-staging acceptance/);
+ const staged={...requested,CLOUD_VIDEO_WORKER_STAGING_ACCEPTED:"true"};
+ assert.throws(()=>readCloudWorkerConfig(staged),/cancellation acceptance/);
+ const accepted={...staged,CLOUD_VIDEO_WORKER_CANCELLATION_ACCEPTED:"true"};
+ assert.throws(()=>readCloudWorkerConfig(accepted),/Runway remote-execution opt-in/);
+ const optedIn={...accepted,RUNWAY_VIDEO_ENABLED:"true",RUNWAY_VIDEO_ALLOW_REMOTE:"true",RUNWAY_API_KEY:"server-only",RUNWAY_VIDEO_OUTPUT_HOSTS:"cdn.example.com,media.example.com"};
+ const config=readCloudWorkerConfig(optedIn);
+ assert.equal(config.video,true);
+ assert.deepEqual(config.outputHosts,["cdn.example.com","media.example.com"]);
+ assert.throws(()=>readCloudWorkerConfig({...optedIn,RUNWAY_VIDEO_OUTPUT_HOSTS:"*.example.com"}),/exact-host/);
+ assert.throws(()=>readCloudWorkerConfig({...optedIn,RUNWAY_VIDEO_OUTPUT_HOSTS:""}),/exact-host/);
+});
+
 test("cloud worker config validates lease, heartbeat, polling and byte limits",()=>{
  const config=readCloudWorkerConfig(env);assert.equal(config.media,true);assert.equal(config.timeline,true);assert.equal(config.leaseSeconds,90);
  assert.throws(()=>readCloudWorkerConfig({...env,CLOUD_WORKER_HEARTBEAT_MS:"90000"}),/heartbeat/);
@@ -17,10 +32,10 @@ test("cloud worker config validates lease, heartbeat, polling and byte limits",(
 test("cloud worker supervisor recovers, runs enabled families and stops cleanly",async()=>{
  const events=[],calls=[];
  const workers=[{async recoverExpired(limit){calls.push(["recover",limit]);return 2;},async runCycle(options){calls.push(["media",options.leaseSeconds]);options.onEvent({type:"job.succeeded"});return{claimed:true,jobId:"job-1"};}},
- {async recoverExpired(){return 0;},async runCycle(options){calls.push(["timeline",options.leaseSeconds]);return{claimed:false};}}];
+ {async recoverExpired(limit){calls.push(["recover-timeline",limit]);return 0;},async runCycle(options){calls.push(["timeline",options.leaseSeconds]);return{claimed:false};}}];
  const supervisor=createCloudWorkerSupervisor({workers,leaseSeconds:60,heartbeatIntervalMs:10000,pollMs:1000,onLog:event=>events.push(event)});
  await supervisor.start();await supervisor.stop();
- assert.deepEqual(calls.slice(0,3),[["recover",100],["media",60],["timeline",60]]);
+ assert.deepEqual(calls.slice(0,4),[["recover",100],["recover-timeline",100],["media",60],["timeline",60]]);
  assert.ok(events.some(event=>event.kind==="started"));assert.ok(events.some(event=>event.kind==="stopped"));
 });
 test("cloud worker supervisor rejects missing worker families",()=>{assert.throws(()=>createCloudWorkerSupervisor({workers:[]}),/one or more/);});

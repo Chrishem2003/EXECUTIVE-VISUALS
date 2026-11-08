@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { isIP } from "node:net";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -6,20 +7,30 @@ import { executableAvailable } from "./media.mjs";
 import { createCloudTimelineApi } from "./cloud-timeline-api.mjs";
 import { createCloudMediaWorker } from "./cloud-media-worker.mjs";
 import { createCloudTimelineWorker } from "./cloud-timeline-worker.mjs";
+import { createCloudVideoWorkerComposition } from "./cloud-video-worker-composition.mjs";
 
 const truth=(value)=>value==="true";
 const integer=(value,fallback,min,max,label)=>{const parsed=value===undefined||value===""?fallback:Number(value);if(!Number.isInteger(parsed)||parsed<min||parsed>max)throw new Error(label+" is outside the supported range.");return parsed;};
 
 export function readCloudWorkerConfig(env=process.env){
  if(!truth(env.CLOUD_WORKER_ENABLED))throw new Error("Cloud worker process is disabled. Set CLOUD_WORKER_ENABLED=true only after the isolated database and private storage are ready.");
- const media=truth(env.CLOUD_MEDIA_WORKER_ENABLED),timeline=truth(env.CLOUD_TIMELINE_WORKER_ENABLED);
- if(!media&&!timeline)throw new Error("Enable at least one supported cloud worker family.");
+ const media=truth(env.CLOUD_MEDIA_WORKER_ENABLED),timeline=truth(env.CLOUD_TIMELINE_WORKER_ENABLED),video=truth(env.CLOUD_VIDEO_WORKER_ENABLED);
+ if(!media&&!timeline&&!video)throw new Error("Enable at least one supported cloud worker family.");
+ if(video){
+  if(env.CLOUD_VIDEO_WORKER_STAGING_ACCEPTED!=="true")throw new Error("Cloud video worker requires explicit isolated-staging acceptance before activation.");
+  if(env.CLOUD_VIDEO_WORKER_CANCELLATION_ACCEPTED!=="true")throw new Error("Cloud video worker requires end-to-end cancellation acceptance before activation.");
+  if(env.RUNWAY_VIDEO_ENABLED!=="true"||env.RUNWAY_VIDEO_ALLOW_REMOTE!=="true"||!env.RUNWAY_API_KEY)throw new Error("Cloud video requires explicit Runway remote-execution opt-in and a server-side API key.");
+  const hosts=String(env.RUNWAY_VIDEO_OUTPUT_HOSTS||"").split(",").map(host=>host.trim()).filter(Boolean);
+  const validHost=host=>host.length<=253&&host.includes(".")&&!isIP(host)&&host.split(".").every(label=>label.length<=63&&/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/i.test(label));
+  if(hosts.length<1||hosts.length>100||hosts.some(host=>!validHost(host)))throw new Error("Cloud video requires an explicit exact-host RUNWAY_VIDEO_OUTPUT_HOSTS allowlist.");
+ }
  if(!env.SUPABASE_URL||!env.SUPABASE_SERVICE_ROLE_KEY)throw new Error("Cloud workers require server-side Supabase credentials.");
  const leaseSeconds=integer(env.CLOUD_WORKER_LEASE_SECONDS,90,30,900,"Cloud worker lease duration");
  const heartbeatIntervalMs=integer(env.CLOUD_WORKER_HEARTBEAT_MS,15000,1000,30000,"Cloud worker heartbeat");
  if(heartbeatIntervalMs>=leaseSeconds*1000)throw new Error("Cloud worker heartbeat must be shorter than the lease duration.");
  return Object.freeze({
-  media,timeline,
+  media,timeline,video,
+  outputHosts:video?Object.freeze(String(env.RUNWAY_VIDEO_OUTPUT_HOSTS).split(",").map(host=>host.trim()).filter(Boolean)):Object.freeze([]),
   pollMs:integer(env.CLOUD_WORKER_POLL_MS,1000,500,10000,"Cloud worker poll interval"),
   leaseSeconds,heartbeatIntervalMs,
   maxBytes:integer(env.CLOUD_WORKER_MAX_BYTES,250*1024*1024,1024,1024*1024*1024,"Cloud worker media limit"),
@@ -48,8 +59,13 @@ export function createCloudWorkerSupervisor({workers,leaseSeconds=90,heartbeatIn
  }
  async function recover(){
   if(stopped)return;
-  try{const count=await workers[0].recoverExpired(100);if(count)onLog({kind:"recovery",count});}
-  catch(error){onError(error);}
+  const settled=await Promise.allSettled(workers.map(worker=>worker.recoverExpired(100)));
+  let total=0;
+  for(const item of settled){
+   if(item.status==="rejected"){onError(item.reason);continue;}
+   if(Number.isInteger(item.value)&&item.value>0)total+=item.value;
+  }
+  if(total)onLog({kind:"recovery",count:total});
  }
  return Object.freeze({
   async start(){
@@ -75,13 +91,17 @@ export function createCloudWorkerSupervisor({workers,leaseSeconds=90,heartbeatIn
 
 export async function startCloudWorkerProcess(env=process.env){
  const config=readCloudWorkerConfig(env);
- if((config.media||config.timeline)&&(!executableAvailable("ffmpeg")||!executableAvailable("ffprobe")))throw new Error("Cloud media workers require FFmpeg and FFprobe on PATH.");
+ if((config.media||config.timeline)&&!executableAvailable("ffmpeg"))throw new Error("Cloud media and timeline workers require FFmpeg on PATH.");
+ if((config.media||config.timeline||config.video)&&!executableAvailable("ffprobe"))throw new Error("Cloud workers require FFprobe on PATH.");
  const cloudCredentials={url:env.SUPABASE_URL,serviceRoleKey:env.SUPABASE_SERVICE_ROLE_KEY};
  const readiness=createCloudTimelineApi({...cloudCredentials,maxUploadBytes:config.maxBytes});
  await readiness.checkReadiness();
  const workers=[];
  if(config.media)workers.push(createCloudMediaWorker({workerId:"media-"+randomUUID(),...cloudCredentials,tempRoot:config.tempRoot,maxBytes:config.maxBytes}));
  if(config.timeline)workers.push(createCloudTimelineWorker({workerId:"timeline-"+randomUUID(),...cloudCredentials,tempRoot:config.tempRoot,maxBytes:config.maxBytes,maxOutputBytes:config.maxBytes}));
+ if(config.video)workers.push(createCloudVideoWorkerComposition({
+  env,workerId:"video-"+randomUUID(),tempRoot:config.tempRoot,maxBytes:config.maxBytes,outputHosts:config.outputHosts
+ }));
  const supervisor=createCloudWorkerSupervisor({
   workers,leaseSeconds:config.leaseSeconds,heartbeatIntervalMs:config.heartbeatIntervalMs,pollMs:config.pollMs,
   onLog:event=>process.stdout.write(JSON.stringify(event)+"\n"),

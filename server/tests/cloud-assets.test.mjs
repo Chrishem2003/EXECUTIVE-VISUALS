@@ -12,7 +12,7 @@ const assetId="323e4567-e89b-42d3-a456-426614174000";
 const bytes=new Uint8Array([1,2,3,4]);
 const config={url:"https://example.supabase.co",serviceRoleKey:"private-service-key"};
 function response(body,status=200){return{ok:status>=200&&status<300,status,async text(){return JSON.stringify(body);}};}
-function fixture({authorize=async()=>true,insertResponse=null,removeError=false}={}) {
+function fixture({authorize=async()=>true,insertResponse=null,removeError=false,assetMetadata={role:"master"}}={}) {
  const calls=[],storageCalls=[];
  const storage={
   async upload(path,data,type){storageCalls.push({op:"upload",path,data,type});return{bucket:"executive-visuals-media",path,size:data.byteLength,contentType:type};},
@@ -20,7 +20,7 @@ function fixture({authorize=async()=>true,insertResponse=null,removeError=false}
   async createSignedUrl(path,expiry){storageCalls.push({op:"sign",path,expiry});return"https://example.supabase.co/storage/signed";},
   async remove(path){storageCalls.push({op:"remove",path});if(removeError)throw new Error("storage cleanup unavailable");return true;}
  };
- const row={id:assetId,owner_id:ownerId,project_id:projectId,original_name:"final cut.mp4",media_type:"video/mp4",byte_size:4,sha256:createHash("sha256").update(bytes).digest("hex"),storage_bucket:"executive-visuals-media",object_path:projectId+"/"+assetId+"/original.mp4",derivative_of:null,metadata:{role:"master"},created_at:"2026-11-01T00:00:00Z"};
+ const row={id:assetId,owner_id:ownerId,project_id:projectId,original_name:"final cut.mp4",media_type:"video/mp4",byte_size:4,sha256:createHash("sha256").update(bytes).digest("hex"),storage_bucket:"executive-visuals-media",object_path:projectId+"/"+assetId+"/original.mp4",derivative_of:null,metadata:assetMetadata,created_at:"2026-11-01T00:00:00Z"};
  const fetchImpl=async(url,options)=>{
   calls.push({url,options});
   if(options.method==="POST"){const payload=JSON.parse(options.body);return response(insertResponse===null?[{...row,...payload,created_at:row.created_at}]:insertResponse);}
@@ -109,6 +109,23 @@ test("project collaborators can read and delete shared assets when the role call
  assert.equal(f.storageCalls[0].op,"sign");
  const deleted=await f.repo.softDelete({ownerId:collaboratorId,assetId});
  assert.equal(deleted.deleted,true);
+});
+
+test("finds an existing generated video output only within owner, project, task and output index",async()=>{
+ const metadata={source:"video-generation",providerTaskId:"runway-task-1",outputIndex:0};
+ const f=fixture({assetMetadata:metadata});
+ const found=await f.repo.findVideoGenerationOutput({ownerId,projectId,providerTaskId:"runway-task-1",outputIndex:0});
+ assert.equal(found.id,assetId);assert.equal(found.ownerId,ownerId);assert.equal(found.projectId,projectId);
+ assert.ok(f.calls[0].url.includes("metadata->>source=eq.video-generation"));
+ assert.ok(f.calls[0].url.includes("metadata->>providerTaskId=eq.runway-task-1"));
+ assert.ok(f.calls[0].url.includes("metadata->>outputIndex=eq.0"));
+});
+test("rejects a mismatched generated-output row and denies lookup without read permission",async()=>{
+ const wrong=fixture();
+ await assert.rejects(()=>wrong.repo.findVideoGenerationOutput({ownerId,projectId,providerTaskId:"runway-task-1",outputIndex:0}),/does not match/);
+ const denied=fixture({authorize:async()=>false});
+ await assert.rejects(()=>denied.repo.findVideoGenerationOutput({ownerId,projectId,providerTaskId:"runway-task-1",outputIndex:0}),e=>e.code==="CLOUD_ASSET_ACCESS_DENIED");
+ assert.equal(denied.calls.length,0);
 });
 
 test("lists only active assets within the authorized project and bounded page",async()=>{

@@ -1,0 +1,50 @@
+name: Cloud video PostgreSQL integration
+on:
+  push:
+    branches: ["feat/**"]
+  pull_request:
+    branches: ["main", "feat/**"]
+concurrency:
+  group: cloud-video-postgres-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  postgres-integration:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: executive_visuals_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d executive_visuals_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/executive_visuals_test
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+      - name: Bootstrap disposable Supabase-compatible schema
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/cloud-video-postgres-bootstrap.sql
+      - name: Apply cloud submission ledger migration
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261104120000_cloud_video_submission_ledger.sql
+      - name: Apply cloud budget and enqueue migration
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261104143000_cloud_video_budget_enqueue.sql
+      - name: Apply reviewed cost evidence migration
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261105100000_video_generation_cost_evidence.sql
+      - name: Apply cloud video cancellation migration
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261105120000_cloud_video_cancellation.sql
+      - name: Verify authorization, atomic enqueue and finalization
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/cloud-video-postgres-integration.sql
+      - name: Prepare concurrency test approval
+        run: psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/cloud-video-postgres-concurrency-approval.sql
+      - name: Verify concurrent idempotent enqueue
+        run: bash scripts/cloud-video-postgres-concurrency.sh

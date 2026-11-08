@@ -156,9 +156,20 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
      return response(409,{error:{code:"TRANSFORMATION_ADAPTER_UNAVAILABLE",message:"No verified video-transformation adapter is enabled. No provider request or charge was made."}});
     }
    }
+   const cancelVideoMatch=path.match(/^\/api\/cloud\/jobs\/([0-9a-f-]+)\/cancel$/i);
+   if(cancelVideoMatch&&safeId(cancelVideoMatch[1])&&method==="POST"){
+    const rows=await request("rpc/request_video_generation_cancellation",{method:"POST",body:{p_job_id:cancelVideoMatch[1],p_owner_id:ownerId}});
+    if(!Array.isArray(rows)||rows.length>1)throw new Error("Cloud video cancellation returned an invalid database receipt.");
+    if(!rows.length)return response(404,{error:{code:"JOB_NOT_FOUND",message:"Cloud video job not found."}});
+    const row=rows[0];
+    if(row.job_id!==cancelVideoMatch[1]||typeof row.job_status!=="string"||typeof row.cancellation_requested!=="boolean")throw new Error("Cloud video cancellation returned an invalid job receipt.");
+    if(row.job_status==="cancelled")return response(200,{job:{id:row.job_id,status:"cancelled",cancellationRequested:false,submissionState:row.submission_state||null}});
+    if(row.cancellation_requested)return response(202,{job:{id:row.job_id,status:row.job_status,cancellationRequested:true,submissionState:row.submission_state||null},notice:"Cancellation was requested. Provider cancellation is best-effort; generation and billing must be reconciled before the job can be marked cancelled."});
+    return response(409,{error:{code:"JOB_CANCELLATION_NOT_AVAILABLE",message:"This cloud video job cannot be cancelled in its current state.",status:row.job_status}});
+   }
    const jobMatch=path.match(/^\/api\/cloud\/jobs\/([0-9a-f-]+)(?:\/(events))?$/i);
    if(jobMatch&&safeId(jobMatch[1])&&method==="GET"){
-    const jobRows=await request("jobs?select=id,owner_id,project_id,job_type,status,progress,input,output,error,attempt_count,created_at,updated_at,completed_at&id=eq."+encodeURIComponent(jobMatch[1])+"&limit=1");
+    const jobRows=await request("jobs?select=id,owner_id,project_id,job_type,status,progress,input,output,error,attempt_count,cancellation_requested_at,created_at,updated_at,completed_at&id=eq."+encodeURIComponent(jobMatch[1])+"&limit=1");
     const job=Array.isArray(jobRows)?jobRows[0]:null;
     if(!job)return response(404,{error:{code:"JOB_NOT_FOUND",message:"Job not found."}});
     if(job.project_id){if(await allow({ownerId,projectId:job.project_id,action:"read"})!==true)return response(404,{error:{code:"JOB_NOT_FOUND",message:"Job not found."}});}
