@@ -70,7 +70,7 @@ test("C2PA cloud-worker signing requires a dedicated matching workspace, key ref
  assert.equal(config.c2paSigningKeyRef,"kms-key-alias/ev-production");
  assert.throws(()=>readCloudWorkerConfig({...signingEnv,CLOUD_WORKER_TEMP_ROOT:""}),/explicit private/);
  assert.throws(()=>readCloudWorkerConfig({...signingEnv,C2PA_SIGNING_MEDIA_ROOT:"/tmp/other"}),/must match/);
- assert.throws(()=>readCloudWorkerConfig({...signingEnv,C2PA_SIGNING_KEY_REF:""}),/key reference/);
+ assert.throws(()=>readCloudWorkerConfig({...signingEnv,C2PA_SIGNING_KEY_REF:""}),/C2PA_SIGNING_KEY_REF/);
  assert.throws(()=>readCloudWorkerConfig({...signingEnv,C2PA_TSA_URL:"http://tsa.example.com"}),/HTTPS/);
  assert.throws(()=>readCloudWorkerConfig({...signingEnv,CLOUD_MEDIA_WORKER_ENABLED:"false"}),/media worker family/);
 });
