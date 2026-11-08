@@ -1,0 +1,135 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { createC2paVerifier } from "../c2pa-verification.mjs";
+
+async function fixture(bytes=Buffer.from("stable media bytes")){
+ const dir=await mkdtemp(join(tmpdir(),"ev-c2pa-test-")),filePath=join(dir,"asset.mp4");
+ await writeFile(filePath,bytes);
+ return{dir,filePath,sha256:createHash("sha256").update(bytes).digest("hex"),size:bytes.length,cleanup:()=>rm(dir,{recursive:true,force:true})};
+}
+function sdkFor(store,{embedded=true,onRead=null}={}){
+ class Context{constructor(settings){this.settings=settings;}}
+ const Reader={async fromAsset(asset,context){
+  assert.equal(asset.mimeType,"video/mp4");
+  assert.ok(context instanceof Context);
+  assert.equal(context.settings.verify.verifyAfterReading,true);
+  assert.equal(context.settings.verify.remoteManifestFetch,false);
+  if(onRead)await onRead(asset);
+  return{isEmbedded:()=>embedded,json:()=>store};
+ }};
+ return{Reader,Context};
+}
+const validStore={
+ active_manifest:"urn:uuid:active",
+ validation_state:"Valid",
+ manifests:{"urn:uuid:active":{
+  title:"Generated sample",format:"video/mp4",claim_generator:"Executive Visuals/0.1",
+  ingredients:[{title:"source.mp4",format:"video/mp4",relationship:"parentOf",instance_id:"source-1",manifest_data:{identifier:"manifest"}}]
+ }},
+ validation_status:[{code:"claimSignature.validated",success:true},{code:"assertion.dataHash.match",success:true}]
+};
+
+test("validates a real SDK Reader result without claiming signer trust",async()=>{
+ const f=await fixture();
+ try{
+  const verify=createC2paVerifier({sdkLoader:async()=>sdkFor(validStore),maxBytes:1024});
+  const result=await verify({filePath:f.filePath,mediaType:"video/mp4",expectedSha256:f.sha256,expectedSize:f.size});
+  assert.equal(result.status,"valid_untrusted");
+  assert.equal(result.present,true);
+  assert.equal(result.valid,true);
+  assert.equal(result.trusted,false);
+  assert.equal(result.manifest.title,"Generated sample");
+  assert.equal(result.manifest.ingredientCount,1);
+  assert.equal(result.validationStatuses[0].code,"claimSignature.validated");
+ }finally{await f.cleanup();}
+});
+
+test("only SDK Trusted validation state is exposed as trusted",async()=>{
+ const f=await fixture();
+ try{
+  const store={...validStore,validation_state:"Trusted"};
+  const result=await createC2paVerifier({sdkLoader:async()=>sdkFor(store),maxBytes:1024})({
+   filePath:f.filePath,mediaType:"video/mp4",expectedSha256:f.sha256,expectedSize:f.size
+  });
+  assert.equal(result.status,"trusted");
+  assert.equal(result.trusted,true);
+ }finally{await f.cleanup();}
+});
+
+test("reports missing embedded credentials separately from invalid credentials",async()=>{
+ const f=await fixture();
+ try{
+  const verify=createC2paVerifier({sdkLoader:async()=>sdkFor({}, {embedded:false}),maxBytes:1024});
+  const result=await verify({filePath:f.filePath,mediaType:"video/mp4",expectedSha256:f.sha256});
+  assert.equal(result.status,"not_present");
+  assert.equal(result.present,false);
+ }finally{await f.cleanup();}
+});
+
+test("fails closed when the SDK rejects a manifest-bearing asset",async()=>{
+ const f=await fixture();
+ try{
+  const sdk=sdkFor(null);
+  sdk.Reader.fromAsset=async()=>{throw new Error("untrusted parser detail");};
+  const result=await createC2paVerifier({sdkLoader:async()=>sdk,maxBytes:1024})({
+   filePath:f.filePath,mediaType:"video/mp4",expectedSha256:f.sha256
+  });
+  assert.equal(result.status,"invalid");
+  assert.deepEqual(result.findings,["C2PA_READER_REJECTED_ASSET"]);
+ }finally{await f.cleanup();}
+});
+
+test("does not trust a manifest with validation failures",async()=>{
+ const f=await fixture();
+ try{
+  const store={...validStore,validation_state:"Invalid",validation_status:[{code:"assertion.dataHash.mismatch",success:false}]};
+  const result=await createC2paVerifier({sdkLoader:async()=>sdkFor(store),maxBytes:1024})({
+   filePath:f.filePath,mediaType:"video/mp4",expectedSha256:f.sha256
+  });
+  assert.equal(result.status,"invalid");
+  assert.ok(result.findings.includes("assertion.dataHash.mismatch"));
+ }finally{await f.cleanup();}
+});
+
+test("rejects files whose bytes no longer match the asset row",async()=>{
+ const f=await fixture();
+ try{
+  await assert.rejects(createC2paVerifier({sdkLoader:async()=>sdkFor(validStore),maxBytes:1024})({
+   filePath:f.filePath,mediaType:"video/mp4",expectedSha256:"a".repeat(64)
+  }),error=>error.code==="C2PA_ASSET_INTEGRITY_MISMATCH");
+ }finally{await f.cleanup();}
+});
+
+test("enforces the inspection size limit before invoking the SDK",async()=>{
+ const f=await fixture(Buffer.alloc(2048,1));
+ try{
+  let called=false;
+  await assert.rejects(createC2paVerifier({sdkLoader:async()=>{called=true;return sdkFor(validStore);},maxBytes:1024})({
+   filePath:f.filePath,mediaType:"video/mp4",expectedSha256:f.sha256
+  }),error=>error.code==="C2PA_ASSET_SIZE_UNSUPPORTED");
+  assert.equal(called,false);
+ }finally{await f.cleanup();}
+});
+
+test("detects media mutation while the native reader is running",async()=>{
+ const f=await fixture();
+ try{
+  const sdk=sdkFor(validStore,{onRead:()=>writeFile(f.filePath,"tampered media bytes")});
+  await assert.rejects(createC2paVerifier({sdkLoader:async()=>sdk,maxBytes:1024})({
+   filePath:f.filePath,mediaType:"video/mp4",expectedSha256:f.sha256
+  }),error=>error.code==="C2PA_ASSET_CHANGED_DURING_READ");
+ }finally{await f.cleanup();}
+});
+
+test("reports an unavailable native SDK without weakening verification",async()=>{
+ const f=await fixture();
+ try{
+  await assert.rejects(createC2paVerifier({sdkLoader:async()=>{throw new Error("module missing");},maxBytes:1024})({
+   filePath:f.filePath,mediaType:"video/mp4",expectedSha256:f.sha256
+  }),error=>error.code==="C2PA_SDK_UNAVAILABLE"&&error.status===503);
+ }finally{await f.cleanup();}
+});
