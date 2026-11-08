@@ -53,7 +53,7 @@ export async function signUpWithSupabasePassword({supabaseUrl,publishableKey,ema
 }
 export async function requestSupabasePasswordRecovery({supabaseUrl,publishableKey,email,redirectTo,fetchImpl=fetch}){
  const normalizedEmail=String(email||"").trim().toLowerCase();
- if(!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(normalizedEmail))throw fail("Enter a valid email address.","INVALID_EMAIL",400);
+ if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail))throw fail("Enter a valid email address.","INVALID_EMAIL",400);
  let redirect;
  try{redirect=new URL(String(redirectTo||""));}catch{throw fail("Password recovery redirect is not configured.","SUPABASE_AUTH_CONFIG_INVALID",503);}
  if(redirect.protocol!=="https:"&&![ "localhost","127.0.0.1","::1"].includes(redirect.hostname))throw fail("Password recovery redirect must use HTTPS.","SUPABASE_AUTH_CONFIG_INVALID",500);
