@@ -103,6 +103,7 @@ test("cloud media enhancement publishes a checksummed derivative using the claim
     assert.equal(c2paCalls.length,1);
     assert.equal(c2paCalls[0].sourceMimeType,"video/mp4");
     assert.equal(c2paCalls[0].outputMimeType,"video/mp4");
+    assert.equal(c2paCalls[0].expectedSourceSha256,"b".repeat(64));
     assert.equal(result.outputAsset.id, "asset-output");
     assert.equal(result.sha256.length, 64);
     assert.equal(result.byteSize, Buffer.byteLength("rendered-media"));
