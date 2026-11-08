@@ -20,7 +20,7 @@ export function createC2paTransformationPreserver({sdkLoader=()=>import("@conten
  if(typeof sdkLoader!=="function")throw new TypeError("C2PA SDK loader must be a function.");
  if(!Number.isSafeInteger(maxBytes)||maxBytes<1024||maxBytes>2*1024*1024*1024)throw new TypeError("C2PA transformation size limit is invalid.");
  return async function preserveC2paTransformation({
-  sourcePath,outputPath,sourceMimeType,outputMimeType,signer,signerMode="local",
+  sourcePath,outputPath,sourceMimeType,outputMimeType,expectedSourceSha256=null,signer,signerMode="local",
   operation="edit",softwareName="Executive Visuals",softwareVersion="0.1.0",signal
  }={}){
   if(typeof sourcePath!=="string"||!sourcePath||typeof outputPath!=="string"||!outputPath||sourcePath===outputPath)throw failure("C2PA_TRANSFORM_PATH_INVALID","Distinct source and output file paths are required.");
@@ -32,6 +32,7 @@ export function createC2paTransformationPreserver({sdkLoader=()=>import("@conten
   if(sourceInfo.size<1||outputInfo.size<1||sourceInfo.size>maxBytes||outputInfo.size>maxBytes)throw failure("C2PA_TRANSFORM_SIZE_UNSUPPORTED","Source or output exceeds the C2PA preservation size limit.",413);
   const sourceHash=await hashFile(sourcePath),outputHash=await hashFile(outputPath);
   if(sourceHash.size!==sourceInfo.size||outputHash.size!==outputInfo.size)throw failure("C2PA_TRANSFORM_FILE_CHANGED","Source or output changed during preflight.",409);
+  if(expectedSourceSha256!==null&&(!/^[a-f0-9]{64}$/i.test(String(expectedSourceSha256))||sourceHash.sha256!==String(expectedSourceSha256).toLowerCase()))throw failure("C2PA_SOURCE_INTEGRITY_MISMATCH","The source file does not match its registered asset checksum.",409);
   let sdk;
   try{sdk=await sdkLoader();}catch{throw failure("C2PA_SDK_UNAVAILABLE","The official CAI C2PA Node SDK is unavailable.",503);}
   if(!sdk?.Reader||!sdk?.Builder||!sdk?.Context)throw failure("C2PA_SDK_INVALID","The installed CAI SDK does not expose Reader, Builder and Context APIs.",503);
@@ -40,12 +41,15 @@ export function createC2paTransformationPreserver({sdkLoader=()=>import("@conten
   try{sourceReader=await sdk.Reader.fromAsset({path:sourcePath,mimeType:sourceMimeType},verifyContext);}catch{
    throw failure("C2PA_SOURCE_MANIFEST_INVALID","The source C2PA manifest could not be parsed; transformation lineage was not signed.");
   }
-  if(typeof sourceReader.isEmbedded==="function"&&!sourceReader.isEmbedded())return{
+  const embedded=typeof sourceReader.isEmbedded==="function"?sourceReader.isEmbedded():true;
+  const remoteUrl=typeof sourceReader.remoteUrl==="function"?sourceReader.remoteUrl():null;
+  if(!embedded&&remoteUrl)throw failure("C2PA_REMOTE_MANIFEST_UNAVAILABLE","The source references a remote C2PA manifest, but remote manifest fetching is disabled; derivative publication is blocked.",503);
+  if(!embedded)return{
    status:"not_present",preserved:false,sourceSha256:sourceHash.sha256,outputSha256:outputHash.sha256,
    reason:"SOURCE_C2PA_MANIFEST_NOT_PRESENT"
   };
   const sourceStore=sourceReader.json();
-  if(!sourceStore?.active_manifest||!sourceStore?.manifests||sourceStore.validation_state==="Invalid")throw failure("C2PA_SOURCE_MANIFEST_INVALID","The source C2PA manifest is invalid; transformation lineage was not signed.");
+  if(!sourceStore?.active_manifest||!sourceStore?.manifests||!["Valid","Trusted"].includes(sourceStore.validation_state))throw failure("C2PA_SOURCE_MANIFEST_INVALID","The source C2PA manifest is invalid or not fully validated; transformation lineage was not signed.");
   if(!signer||typeof signer.sign!=="function")throw failure("C2PA_SIGNER_REQUIRED","An approved C2PA signer must be supplied by the server-side signing adapter.",503);
   if(!["local","callback"].includes(signerMode))throw failure("C2PA_SIGNER_MODE_INVALID","Unsupported C2PA signer mode.");
   const builder=await sdk.Builder.newAsync();
@@ -70,7 +74,7 @@ export function createC2paTransformationPreserver({sdkLoader=()=>import("@conten
    const signedStore=signedReader.json();
    const active=signedStore?.active_manifest&&signedStore?.manifests?.[signedStore.active_manifest];
    const ingredients=Array.isArray(active?.ingredients)?active.ingredients:[];
-   if(!signedReader.isEmbedded()||!signedStore?.active_manifest||signedStore.validation_state==="Invalid"||!ingredients.some(item=>Boolean(item?.manifest_data)))throw failure("C2PA_LINEAGE_VALIDATION_FAILED","The new C2PA manifest did not validate with the source manifest preserved as an ingredient.");
+   if(!signedReader.isEmbedded()||!signedStore?.active_manifest||!["Valid","Trusted"].includes(signedStore.validation_state)||!ingredients.some(item=>Boolean(item?.manifest_data)))throw failure("C2PA_LINEAGE_VALIDATION_FAILED","The new C2PA manifest did not validate with the source manifest preserved as an ingredient.");
    const currentSource=await hashFile(sourcePath);
    if(currentSource.sha256!==sourceHash.sha256||currentSource.size!==sourceHash.size)throw failure("C2PA_SOURCE_CHANGED","The source asset changed while its C2PA lineage was being preserved.",409);
    const currentOutput=await hashFile(outputPath);
