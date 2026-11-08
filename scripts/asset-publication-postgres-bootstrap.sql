@@ -93,6 +93,8 @@ create table executive_visuals.assets (
   sha256 text not null,
   storage_bucket text not null,
   object_path text not null unique,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
   deleted_at timestamptz
 );
 create table executive_visuals.job_events (
