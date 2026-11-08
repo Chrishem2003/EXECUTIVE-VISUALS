@@ -1,8 +1,22 @@
 import { statSync } from "node:fs";
-import { resolve } from "node:path";
+import { extname, resolve } from "node:path";
 
 const DEFAULT_MAX_BYTES = 250 * 1024 * 1024;
 const VALIDATION_STATES = new Set(["Invalid", "Valid", "Trusted"]);
+const SUPPORTED_EXTENSIONS = {
+  "image/jpeg": [".jpg", ".jpeg"],
+  "image/png": [".png"],
+  "image/webp": [".webp"],
+  "image/gif": [".gif"],
+  "video/mp4": [".mp4"],
+  "application/mp4": [".mp4"],
+  "video/quicktime": [".mov"],
+  "audio/mpeg": [".mp3"],
+  "audio/mp4": [".m4a"],
+  "audio/wav": [".wav"],
+  "audio/x-wav": [".wav"],
+  "application/pdf": [".pdf"]
+};
 
 function safeFindings(statuses) {
   if (!Array.isArray(statuses)) return [];
@@ -55,6 +69,17 @@ export function createC2paVerifier({
       return errorResult(size > maxBytes ? "C2PA_ASSET_TOO_LARGE" : "C2PA_ASSET_SIZE_INVALID");
     }
     const absolutePath = resolve(path);
+    const supportedExtensions = SUPPORTED_EXTENSIONS[mimeType.toLowerCase()];
+    if (!supportedExtensions || !supportedExtensions.includes(extname(absolutePath).toLowerCase())) {
+      return {
+        status: "not_supported",
+        manifestPresent: false,
+        embedded: false,
+        validationState: null,
+        validationFindings: [],
+        errorCode: "C2PA_FORMAT_UNSUPPORTED_OR_EXTENSION_MISMATCH"
+      };
+    }
     let actualSize;
     try {
       const info = statSync(absolutePath);
