@@ -220,3 +220,17 @@ test("cloud media job history is restricted to the selected authorized project",
  const invalid=await f.api.handle({method:"GET",path:"/api/cloud/jobs",ownerId:owner,query:{projectId:"not-a-uuid"}});
  assert.equal(invalid.status,400);
 });
+
+
+test("cloud media job history hides project records from users without read access",async()=>{
+ let queried=false;
+ const api=createCloudTimelineApi({
+  url:"https://example.supabase.co",serviceRoleKey:"service-secret",mediaJobsEnabled:true,
+  fetchImpl:async()=>{queried=true;return{ok:true,status:200,async text(){return"[]";}};},
+  timelineService:{timelines:{},assets:{}},
+  authorize:async({action})=>action!=="read"
+ });
+ const result=await api.handle({method:"GET",path:"/api/cloud/jobs",ownerId:owner,query:{projectId:project}});
+ assert.equal(result.status,404);
+ assert.equal(queried,false,"unauthorized project history must not be queried");
+});
