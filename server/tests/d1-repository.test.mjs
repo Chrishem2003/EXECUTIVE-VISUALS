@@ -88,6 +88,7 @@ test("asset metadata requires checksum, private storage key and same-tenant deri
   assert.equal(asset.sha256, "a".repeat(64));
   assert.equal(asset.storageKey, ownerId + "/source.mp4");
   await assert.rejects(repo.createAsset({ actorId: ownerId, name: "bad.mp4", mediaType: "video/mp4", size: 10, sha256: "bad", storageProvider: "local-staging", storageKey: ownerId + "/bad.mp4" }), /checksum/);
+  await assert.rejects(repo.createAsset({ actorId: ownerId, name: "r2.mp4", mediaType: "video/mp4", size: 10, sha256: "a".repeat(64), storageProvider: "r2", storageKey: ownerId + "/r2.mp4" }), /not enabled/);
   await assert.rejects(repo.createAsset({ actorId: ownerId, name: "bad.mp4", mediaType: "video/mp4", size: 10, sha256: "a".repeat(64), storageProvider: "local-staging", storageKey: ownerId + "/../bad.mp4" }), /storage key/);
   db.close();
 });
