@@ -133,3 +133,17 @@ test("reports an unavailable native SDK without weakening verification",async()=
   }),error=>error.code==="C2PA_SDK_UNAVAILABLE"&&error.status===503);
  }finally{await f.cleanup();}
 });
+
+test("reports a remote-only manifest as unavailable instead of absent",async()=>{
+ const f=await fixture();
+ try{
+  const sdk=sdkFor({}, {embedded:false});
+  sdk.Reader.fromAsset=async()=>({isEmbedded:()=>false,remoteUrl:()=>"https://credentials.example/manifest.c2pa",json:()=>({})});
+  const result=await createC2paVerifier({sdkLoader:async()=>sdk,maxBytes:1024})({
+   filePath:f.filePath,mediaType:"video/mp4",expectedSha256:f.sha256
+  });
+  assert.equal(result.status,"validation_unavailable");
+  assert.equal(result.present,true);
+  assert.ok(result.findings.includes("C2PA_REMOTE_MANIFEST_FETCH_DISABLED"));
+ }finally{await f.cleanup();}
+});
