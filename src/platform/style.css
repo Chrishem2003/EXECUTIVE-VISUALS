@@ -478,3 +478,17 @@ button:disabled{opacity:.55;cursor:not-allowed}
 #view h3{font-size:17px}
 #view button{min-height:36px}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
+
+/* Explicit creative dependency graph and impact review */
+.creative-graph-panel{margin:22px 0}
+.creative-graph-counts{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0}
+.creative-graph-counts span{padding:8px 11px;border:1px solid var(--line);border-radius:9px;background:var(--surface-soft);font-size:12px;color:var(--muted)}
+.creative-graph-counts b{color:var(--text);font-variant-numeric:tabular-nums;margin-right:4px}
+.creative-graph-columns{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(260px,.85fr);gap:18px;margin-top:12px}
+.creative-graph-columns>div{min-width:0;padding:16px;border:1px solid var(--line);border-radius:12px;background:var(--surface-soft)}
+.creative-graph-edges{padding-left:18px;display:grid;gap:8px;overflow-wrap:anywhere}
+.creative-graph-edges li{font-size:12px;line-height:1.5}
+.creative-graph-panel select{width:100%;margin:8px 0 12px}
+.creative-impact-result{margin-top:14px;padding:13px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+.creative-impact-result ul{padding-left:18px;max-height:220px;overflow:auto}
+@media(max-width:850px){.creative-graph-columns{grid-template-columns:1fr}}
