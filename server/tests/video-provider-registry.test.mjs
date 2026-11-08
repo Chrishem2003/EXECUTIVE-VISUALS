@@ -42,6 +42,26 @@ test("Luma no-cancel and temporary output semantics remain explicit", () => {
   assert.equal(model.constraints.cancellation, "unsupported");
 });
 
+test("Luma Ray 3.2 declares supported anchor frames, keyframes, edit, reframe and HDR outputs", () => {
+  const model = getVideoProviderModel("luma", "ray-3.2");
+  assert.equal(model.capabilities.startFrame, true);
+  assert.equal(model.capabilities.endFrame, true);
+  assert.equal(model.capabilities.videoEdit, true);
+  assert.equal(model.capabilities.videoExtend, true);
+  assert.equal(model.capabilities.videoReframe, true);
+  assert.deepEqual(model.capabilities.aspectRatios, ["9:16", "3:4", "1:1", "4:3", "16:9", "21:9"]);
+  assert.deepEqual(model.capabilities.resolutions, ["540p", "720p", "1080p"]);
+  assert.deepEqual(model.constraints.supportedDurationsSeconds, [5, 10]);
+  assert.equal(model.constraints.maxKeyframes, 64);
+  assert.equal(model.constraints.hdrOutput, true);
+  assert.deepEqual(model.constraints.hdrGenerationDurationsSeconds, [5]);
+  assert.deepEqual(model.constraints.hdrGenerationResolutions, ["720p", "1080p"]);
+  assert.deepEqual(model.constraints.hdrVideoEditDurationsSeconds, [5, 10]);
+  assert.equal(model.constraints.reframeDynamicRange, "sdr_only");
+  assert.equal(model.constraints.exrExportRequiresHdr, true);
+  assert.equal(model.constraints.outputUrlExpirySeconds, 3600);
+  assert.equal(model.availability, "disabled");
+});
 test("Kling mixed-reference and duration limits are represented without enabling the adapter", () => {
   const model = getVideoProviderModel("kling", "kling-4.0");
   assert.equal(model.availability, "disabled");
