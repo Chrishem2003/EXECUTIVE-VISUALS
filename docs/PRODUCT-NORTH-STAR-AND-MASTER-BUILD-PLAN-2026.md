@@ -427,3 +427,9 @@ This is still not production signing: the default `cloud-worker-process` does no
 ## Delivered integration update — Creative Intelligence Graph
 
 The AI Director now reads cloud production records, proof candidates, character bibles, episode scenes/shots, private project assets and cloud timeline documents into one explicit dependency graph. It connects only persisted IDs and references (including story-bible references, timeline markers and clip asset IDs), separates project-scope membership from authored relationships, and computes downstream review impact without changing source records. README usage guidance and automated graph tests are included. Remaining graph work: connect evidence records with durable source IDs, introduce project-wide scene/shot identifiers for non-series productions, and propagate revision/staleness state into exports and publishing.
+
+
+### Evidence intelligence implementation checkpoint
+- Implemented a durable evidence ledger with source asset hash snapshots, explicit target references, role-gated review and append-only event history.
+- Build gate: `npm run verify:evidence-ledger`.
+- Next: enforce same-project target resolution and feed accepted evidence records into the Creative Intelligence Graph; then use graph revisions for stale-impact propagation.
