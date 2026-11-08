@@ -231,7 +231,7 @@ This closes the renderer-adapter gap in the cloud timeline execution contract. I
 - Server-role credentials remain server-side. Database requests are bounded by a timeout and API payloads are capped at 5 MiB. Cloud API routes are disabled unless CLOUD_TIMELINE_API_ENABLED=true; startup also requires AUTH_MODE=supabase.
 - Added mock-backed tests for verified ownership, revision conflicts, render enqueue, role enforcement, idempotency, job visibility and event history.
 
-**Not yet connected:** cloud asset listing, asset-library browser UI, cloud worker deployment/activation, and cloud workflow execution. The API must remain disabled until the dedicated executive_visuals schema and private bucket policies are applied to an isolated Supabase project and verified. No migration was applied and no cloud job was submitted during implementation.
+**Remaining integration gaps:** cloud worker deployment/activation, cloud media-job execution from the main Runtime Asset Library, and a unified cloud/local processing lifecycle. Cloud asset listing, personal cloud upload and signed preview links are now exposed in the Runtime Asset Library behind the existing opt-in API gate. The API must remain disabled until the dedicated executive_visuals schema and private bucket policies are applied to an isolated Supabase project and verified. No migration was applied and no cloud job was submitted during implementation.
 
 - Cloud asset ingest is streamed to an isolated temporary file, enforces the configured upload ceiling and MIME/file-signature agreement, then publishes through the private storage repository with checksum metadata. Temporary files are removed after completion or failure. The API exposes short-lived signed reads and soft deletion; original objects are not made public.
 - Startup readiness checks verify the required isolated-schema tables and confirm the media bucket is private. The check runs only when the cloud API opt-in is enabled.
@@ -271,6 +271,15 @@ This is a runnable worker entry point, not a deployed worker. Do not set the ena
 - The UI exposes an open/download link after the server has verified ownership or project read permission. The underlying bucket remains private; no public object URL is introduced.
 - Signed URLs are held in transient browser memory, not persisted with workspace drafts, and are cleared when switching projects. The link lifetime is five minutes; users can request a fresh one.
 - This is a link-based preview/download path. It does not yet provide inline video playback, image thumbnails, or a cloud asset preview modal. Verification is pending current CI.
+
+## Runtime Asset Library — private cloud shelf
+
+- The server health response now exposes a non-secret `cloudAssetApi.enabled` capability flag derived from the cloud API opt-in and verified Supabase auth mode.
+- The Runtime Asset Library conditionally loads the authenticated cloud asset listing when that capability is enabled; local assets and local media jobs remain unchanged.
+- Added streamed personal cloud uploads to the private bucket, with server-side size/signature checks, checksummed metadata and owner-scoped authorization.
+- Added on-demand five-minute signed preview/download links. URLs stay in transient browser memory and are never stored in project documents.
+- Project-scoped cloud uploads remain in the Cloud Projects workspace, where the selected project role is checked by the server.
+- This is a separate cloud shelf, not a silent migration of the active local asset lifecycle. Cloud media processing, derivative creation from cloud sources and cloud worker activation remain gated on isolated staging acceptance.
 
 ## Shared local/cloud editorial editor — 1 November 2026
 
