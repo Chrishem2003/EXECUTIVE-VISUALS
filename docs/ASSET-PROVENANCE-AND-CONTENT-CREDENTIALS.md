@@ -48,8 +48,7 @@ Current environment settings:
 
 | Variable | Purpose | Default |
 |---|---|---|
-| `C2PA_TRUST_ANCHORS` | Local PEM root trust-anchor file; its PEM content is loaded server-side and passed as CAI user anchors | Unset |\n| `C2PA_ALLOWED_SIGNERS` | Local PEM end-entity certificate allowlist; direct trust of listed signing certificates | Unset; use only for tightly controlled signer identities |
-| `C2PA_MAX_VERIFY_BYTES` | Maximum asset size passed to the native parser | 262144000 bytes (250 MiB) |
+| `C2PA_TRUST_ANCHORS` | Local PEM root trust-anchor file; its PEM content is loaded server-side and passed as CAI user anchors | Unset |\n| `C2PA_MAX_VERIFY_BYTES` | Maximum asset size passed to the native parser | 262144000 bytes (250 MiB) |
 
 The adapter is verification-only. It does not sign assets or claim transformation continuity.
 
