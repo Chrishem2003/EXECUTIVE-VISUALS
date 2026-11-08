@@ -207,7 +207,7 @@ $workflow_quote_approval_privileges$;
 create temporary table workflow_approval_result as
 select * from executive_visuals.approve_and_enqueue_video_workflow(
  '723e4567-e89b-42d3-a456-426614174000',
- 'a23e4567-e89b-42d3-a456-426614174000',
+ 'e23e4567-e89b-42d3-a456-426614174000',
  '123e4567-e89b-42d3-a456-426614174000',
  '323e4567-e89b-42d3-a456-426614174000',
  repeat('e',64),'studio-video','pg-workflow-quote-001',
@@ -254,7 +254,7 @@ $workflow_quote_approval_result$;
 create temporary table workflow_approval_replay as
 select * from executive_visuals.approve_and_enqueue_video_workflow(
  '723e4567-e89b-42d3-a456-426614174000',
- 'b23e4567-e89b-42d3-a456-426614174000',
+ 'e23e4567-e89b-42d3-a456-426614174001',
  '123e4567-e89b-42d3-a456-426614174000',
  '323e4567-e89b-42d3-a456-426614174000',
  repeat('e',64),'studio-video','pg-workflow-quote-001',
