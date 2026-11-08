@@ -6,6 +6,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { Transform } from "node:stream";
+import { createC2paTransformationPreserver } from "./c2pa-transformation-preserver.mjs";
+
+const defaultC2paPreserver=createC2paTransformationPreserver();
 
 function parseInput(value){
   if(value&&typeof value==="object"&&!Array.isArray(value))return value;
@@ -28,7 +31,7 @@ function referencedAssets(timeline){
  * assembly and receives only verified materialized asset paths; the local
  * SQLite renderer is never passed cloud records or storage references.
  */
-export function createCloudTimelineExecutor({timelines,mediaIO,renderTimeline,probeOutput=async path=>{const result=await run("ffprobe",["-v","error","-show_format","-show_streams","-of","json",path],60000);return JSON.parse(result.stdout||"{}");},tempRoot,maxAssets=5000,maxOutputBytes=1024*1024*1024}={}){
+export function createCloudTimelineExecutor({timelines,mediaIO,renderTimeline,probeOutput=async path=>{const result=await run("ffprobe",["-v","error","-show_format","-show_streams","-of","json",path],60000);return JSON.parse(result.stdout||"{}");},tempRoot,maxAssets=5000,maxOutputBytes=1024*1024*1024,c2paPreserver=defaultC2paPreserver,c2paSigner=null,c2paSignerMode="local"}={}){
   if(!timelines||typeof timelines.get!=="function")throw new Error("Cloud timeline executor requires the cloud timeline repository.");
   if(!mediaIO||typeof mediaIO.materialize!=="function"||typeof mediaIO.publish!=="function")throw new Error("Cloud timeline executor requires cloud media IO.");
   if(typeof renderTimeline!=="function")throw new Error("Cloud timeline executor requires an explicit render engine.");
@@ -59,9 +62,13 @@ export function createCloudTimelineExecutor({timelines,mediaIO,renderTimeline,pr
       const output=await renderTimeline({timeline:record.timeline,assets:materialized,workDir,signal,onProgress});
       if(signal?.aborted)throw Object.assign(new Error("Timeline render was cancelled."),{code:"JOB_CANCELLED"});
       if(!output||typeof output.path!=="string"||typeof output.filename!=="string"||typeof output.mediaType!=="string")throw new Error("Cloud timeline renderer returned invalid output metadata.");
+      const initialInfo=await stat(output.path);
+      if(!initialInfo.isFile()||initialInfo.size<1)throw Object.assign(new Error("Timeline renderer produced an empty output."),{code:"CLOUD_TIMELINE_OUTPUT_EMPTY"});
+      if(initialInfo.size>maxOutputBytes)throw Object.assign(new Error("Timeline output exceeds the configured limit."),{code:"CLOUD_TIMELINE_OUTPUT_TOO_LARGE"});
+      const sourceAssets=[...materialized.values()].map(item=>({path:item.path,mediaType:item.asset.mediaType||item.asset.media_type,sha256:item.asset.sha256})).filter(item=>/^(image|video|audio)\\//.test(String(item.mediaType||"")));
+      const c2paPreservation=await c2paPreserver({sources:sourceAssets,outputPath:output.path,outputMimeType:output.mediaType,signer:c2paSigner,signerMode:c2paSignerMode,operation:"timeline.render",signal});
       const info=await stat(output.path);
-      if(!info.isFile()||info.size<1)throw Object.assign(new Error("Timeline renderer produced an empty output."),{code:"CLOUD_TIMELINE_OUTPUT_EMPTY"});
-      if(info.size>maxOutputBytes)throw Object.assign(new Error("Timeline output exceeds the configured limit."),{code:"CLOUD_TIMELINE_OUTPUT_TOO_LARGE"});
+      if(!info.isFile()||info.size<1||info.size>maxOutputBytes)throw Object.assign(new Error("Signed timeline output is empty or exceeds the configured limit."),{code:"CLOUD_TIMELINE_OUTPUT_INVALID"});
       const probed=await probeOutput(output.path);
       const probeValidation=validateMediaOutputProbe(probed,output.mediaType);
       const sha256=await digest(output.path);
@@ -69,10 +76,10 @@ export function createCloudTimelineExecutor({timelines,mediaIO,renderTimeline,pr
       if(signal?.aborted)throw Object.assign(new Error("Timeline render was cancelled."),{code:"JOB_CANCELLED"});
       const outputAsset=await mediaIO.publish({
         ownerId:job.owner_id,projectId:record.projectId,filename:output.filename,mediaType:output.mediaType,
-        path:output.path,publicationKey:job.id+":output:v1",metadata:{...(output.metadata||{}),operation:"timeline.render",timelineId:record.id,timelineRevision:record.revision,sha256,probe:probed,probeValidation,render:output.render||{}}
+        path:output.path,publicationKey:job.id+":output:v1",metadata:{...(output.metadata||{}),operation:"timeline.render",timelineId:record.id,timelineRevision:record.revision,sha256,probe:probed,probeValidation,c2paPreservation,render:output.render||{}}
       });
       onProgress(100);
-      return{timelineId:record.id,timelineRevision:record.revision,outputAsset,sha256,byteSize:info.size,probeValidation,render:output.render||{}};
+      return{timelineId:record.id,timelineRevision:record.revision,outputAsset,sha256,byteSize:info.size,probeValidation,c2paPreservation,render:output.render||{}};
     }finally{
       await Promise.all([...materialized.values()].map(asset=>asset.cleanup?.().catch(()=>{})));
       await rm(workDir,{recursive:true,force:true}).catch(()=>{});
