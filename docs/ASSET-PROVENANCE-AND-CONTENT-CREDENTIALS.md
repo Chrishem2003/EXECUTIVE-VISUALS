@@ -74,3 +74,10 @@ Specification: https://spec.c2pa.org/specifications/specifications/2.5/specs/C2P
 ## Acceptance tests
 
 The provenance test suite verifies deterministic record creation, record tampering, media checksum mismatch, invalid input, derived-source requirements, missing legacy records, real CAI-signed manifest parsing, source-ingredient preservation through a second signed transformation, trust-state classification, C2PA asset integrity, cloud derivative fail-closed behavior and API authorization.
+
+
+## In-app milestone visibility
+
+The browser app now includes **Manage → Trust & provenance**, a concise evidence ledger showing completed implementation stages, the exact verification scope, and release gates that remain open. It links to the Asset Library's authenticated per-asset inspection panel, PR #249 and CI evidence. The page does not equate a valid signature with trusted identity, rights clearance or factual accuracy, and does not represent an unconfigured KMS/HSM or staging environment as complete.
+
+A 96 MiB streaming preservation stress test now exercises file-backed copy, streamed checksum verification, ingredient validation and final output integrity. The near-limit performance/memory profile remains a separate release gate.
