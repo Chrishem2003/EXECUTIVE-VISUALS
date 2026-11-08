@@ -577,7 +577,7 @@ export function createAppServer() {
       if(path==="/api/assets"&&req.method==="POST"){
         const result=await storeUpload(req,user,req.headers["x-project-id"]||null);send(res,201,{asset:result},cors);return;
       }
-      const evidenceMatch=path.match(/^\\/api\\/assets\\/([0-9a-f-]+)\\/evidence(?:\\/([0-9a-f-]+)\\/(review|events))?$/i);
+      const evidenceMatch=path.match(/^\/api\/assets\/([0-9a-f-]+)\/evidence(?:\/([0-9a-f-]+)\/(review|events))?$/i);
       if(evidenceMatch){
         const evidenceAsset=getAccessibleAsset(db,user.id,evidenceMatch[1],req.method==="POST"&&!evidenceMatch[2]);
         if(!evidenceAsset){fail(res,404,"ASSET_NOT_FOUND","Asset not found.");return;}
