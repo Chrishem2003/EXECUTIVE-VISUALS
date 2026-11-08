@@ -28,10 +28,10 @@ jobs:
         run: |
           set -euo pipefail
           archive="$RUNNER_TEMP/c2pa-node_x86_64-unknown-linux-gnu-v0.10.0.zip"
-          url="https://github.com/contentauth/c2pa-js/releases/download/%40contentauth%2Fc2pa-node%400.10.0/c2pa-node_x86_64-unknown-linux-gnu-v0.10.0.zip"
+          url="https://api.github.com/repos/contentauth/c2pa-js/releases/assets/711148157"
           expected="4da99fadf6caef86c9cc4a3ee3e126672c19e4f0dba2e2a0f81d4e0cfc691cfa"
           mkdir -p "$RUNNER_TEMP/c2pa"
-          curl --fail --location --retry 5 --retry-all-errors --connect-timeout 20 --max-time 300 "$url" --output "$archive"
+          curl --fail --location --retry 5 --retry-all-errors --connect-timeout 20 --max-time 300 -H "Accept: application/octet-stream" "$url" --output "$archive"
           echo "$expected  $archive" | sha256sum --check -
           entry="$(unzip -Z1 "$archive" | sed -n '1p')"
           test -n "$entry"
