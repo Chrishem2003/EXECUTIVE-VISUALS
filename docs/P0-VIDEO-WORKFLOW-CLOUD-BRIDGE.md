@@ -102,3 +102,10 @@ existing workflow image-port compatibility, project/request identity, and
 unsupported operation/adapter combinations. This is a contract foundation only:
 it does not enable `VIDEO_WORKFLOW_EXECUTION_MODE=cloud` and does not change
 legacy workflow execution.
+
+
+## Runway Model Router durable enqueue contract (2026-11-08)
+
+The integration branch now contains the guarded application and PostgreSQL enqueue contract for the dedicated `runway/model-router` worker adapter. The contract accepts only explicit `text-to-video`, `image-to-video` and `video-to-video` operations, and enforces a 2–30 second duration at the SQL boundary. The migration is source-controlled and exercised by the disposable PostgreSQL 16 integration job. It does not activate remote execution, create customer budget policies or call the provider. The worker's non-billable preflight must remain within the exact approved USD ceiling before paid submission, and settlement must use provider-reported realized task cost.
+
+This closes the previously documented application/SQL allowlist gap. It does **not** complete the general Studio workflow bridge: authenticated workflow-node orchestration, quote/approval binding, atomic credit and provider-budget reservation, durable job-to-node status mapping, cancellation/recovery, private output publication and actual-cost reconciliation remain required under P0 issue #209.
