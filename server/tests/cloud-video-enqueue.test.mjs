@@ -427,7 +427,7 @@ test("Ruby HDR validates verified SDR dimensions but is blocked by the durable S
   assert.equal(calls, 0);
 });
 
-test("Runway Model Router validates config gates but is blocked by the durable SQL enqueue allowlist", async () => {
+test("Runway Model Router requires explicit config gates, supports durable enqueue and rejects unsupported operations", async () => {
   const routerInput = {
     projectId, provider: "runway", model: "model-router", requestHash,
     operation: "text-to-video", prompt: "A cinematic product launch", durationSeconds: 8,
@@ -435,32 +435,36 @@ test("Runway Model Router validates config gates but is blocked by the durable S
   };
   let calls = 0;
   const env = {
-    RUNWAY_MODEL_ROUTER_ENABLED: "true",
-    CLOUD_VIDEO_WORKER_ENABLED: "true",
-    RUNWAY_VIDEO_ALLOW_REMOTE: "true",
-    RUNWAY_VIDEO_ROUTER_CONFIG: "production-video",
-    VIDEO_GATEWAY_ENABLED: "true",
-    VIDEO_GATEWAY_ALLOW_REMOTE: "true"
+    RUNWAY_MODEL_ROUTER_ENABLED: "true", CLOUD_VIDEO_WORKER_ENABLED: "true",
+    RUNWAY_VIDEO_ALLOW_REMOTE: "true", RUNWAY_VIDEO_ROUTER_CONFIG: "production-video",
+    VIDEO_GATEWAY_ENABLED: "true", VIDEO_GATEWAY_ALLOW_REMOTE: "true"
   };
   const client = createCloudVideoEnqueue({
     ...base, env,
     fetchImpl: async () => { calls++; return response([resultRow]); }
   });
-  await assert.rejects(
-    client.enqueue(args({ model: "model-router", input: routerInput, reservedAmount: 4.5 })),
-    error => error.code === "VIDEO_ENQUEUE_PROVIDER_NOT_ENABLED"
-  );
-  assert.equal(calls, 0);
+  const queued = await client.enqueue(args({
+    provider: "runway", model: "model-router", input: routerInput, reservedAmount: 4.5
+  }));
+  assert.equal(queued.jobId, resultRow.job_id);
+  assert.equal(calls, 1);
+
+  await assert.rejects(() => client.enqueue(args({
+    provider: "runway", model: "model-router",
+    input: { ...routerInput, operation: "audio-to-video" },
+    reservedAmount: 4.5, idempotencyKey: "router-invalid-operation"
+  })), error => error.code === "VIDEO_GENERATION_UNSUPPORTED_CAPABILITY");
+  assert.equal(calls, 1);
 
   const disabled = createCloudVideoEnqueue({
     ...base, env: { ...env, RUNWAY_MODEL_ROUTER_ENABLED: "false" },
     fetchImpl: async () => { calls++; return response([resultRow]); }
   });
   await assert.rejects(
-    disabled.enqueue(args({ model: "model-router", input: routerInput, reservedAmount: 4.5 })),
+    disabled.enqueue(args({ provider: "runway", model: "model-router", input: routerInput, reservedAmount: 4.5 })),
     error => error.code === "RUNWAY_ROUTER_REMOTE_DISABLED"
   );
-  assert.equal(calls, 0);
+  assert.equal(calls, 1);
 });
 
 test("Runway Model Router rejects non-USD ceilings and invalid config slugs before queue submission", async () => {
@@ -517,11 +521,9 @@ test("Runway Model Router video-to-video enqueue probes source metadata before d
     prompt: "Replace the background while preserving subject motion",
     durationSeconds: 12, aspectRatio: "16:9"
   };
-  await assert.rejects(
-    client.enqueue(args({ model: "model-router", input: routerInput, reservedAmount: 5 })),
-    error => error.code === "VIDEO_ENQUEUE_PROVIDER_NOT_ENABLED"
-  );
-  assert.equal(calls, 0);
+  const queued = await client.enqueue(args({ model: "model-router", input: routerInput, reservedAmount: 5 }));
+  assert.equal(queued.jobId, resultRow.job_id);
+  assert.equal(calls, 1);
   const invalid = createCloudVideoEnqueue({
     ...base, env,
     resolveRunwaySourceMetadata: async () => ({ ...metadata, durationSeconds: 12.1 }),
@@ -531,7 +533,7 @@ test("Runway Model Router video-to-video enqueue probes source metadata before d
     invalid.enqueue(args({ model: "model-router", input: routerInput, reservedAmount: 5 })),
     error => error.code === "VIDEO_SOURCE_METADATA_MISMATCH"
   );
-  assert.equal(calls, 0);
+  assert.equal(calls, 1);
 });
 
 
