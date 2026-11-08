@@ -501,4 +501,5 @@ This is a runnable worker entry point, not a deployed worker. Do not set the ena
 - Added server-assigned `submitted` state and role-gated human review (`needs_review`, `verified`, `rejected`) with append-only submission/review events and audit events.
 - Added authenticated asset evidence list, submit, review and event-history routes. Viewers can read; editors can submit; owners/editors/reviewers can review. Personal assets remain owner-only.
 - Added database-backed tests and included `verify:evidence-ledger` in the full build gate. README and dedicated lifecycle/API documentation updated.
-- Limitation: evidence targets are stored as explicit project references; the next step is resolving and displaying them in the Creative Intelligence Graph with same-project validation. Review acceptance is not a factual/legal guarantee.
+- The AI Director now loads evidence records through an authorized project-scoped endpoint and connects only verified records whose source hash and project scope match a resolvable graph target. Submitted/rejected records remain review-only; unresolved targets are disclosed as disconnected.
+- Limitation: the current evidence ledger is asset-attached and review-driven. Next build work is revision-aware evidence invalidation and broader proof capture/review UX. Review acceptance is not a factual/legal guarantee.
