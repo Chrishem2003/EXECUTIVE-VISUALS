@@ -20,7 +20,7 @@ Requirements:
 
 - Node.js 24.22.1+ (recommended); CAI supports patched Node 22.23.4+, 24.22.1+ and 26.12.1+ releases.
 - npm.
-- FFmpeg and FFprobe for local media execution.\n- OpenSSL CLI for the genuine signed C2PA integration test; the signed fixture test skips when OpenSSL is unavailable.
+- FFmpeg and FFprobe for local media execution.\n- The signed C2PA integration test uses the upstream CAI test signer fixture; OpenSSL CLI is not required.
 
 Commands:
 
