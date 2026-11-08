@@ -98,19 +98,15 @@ export async function inspectC2paAsset({ path, mimeType, sdkLoader = () => impor
   const findings = collectFindings(store);
   const embedded = Boolean(reader.isEmbedded());
 
-  if (!activeManifest && !validationState) {
+  if (validationState === "Invalid") {
     return {
-      status: "indeterminate",
+      status: "invalid",
       configured: true,
-      validationState: null,
+      validationState,
       embedded,
       activeManifest: activeLabel,
       manifestCount: Object.keys(store?.manifests || {}).length,
-      findings: [...findings, {
-        code: "C2PA_VALIDATION_INCOMPLETE",
-        explanation: "The SDK did not provide a complete active manifest and validation state. No validity or trust is inferred.",
-        success: null
-      }]
+      findings
     };
   }
   if (!activeManifest || !validationState) {
