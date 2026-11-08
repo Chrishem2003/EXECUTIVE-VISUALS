@@ -127,10 +127,10 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     if(!body||typeof body!=="object"||Array.isArray(body))return response(400,{error:{code:"VIDEO_WORKFLOW_QUOTE_BODY_INVALID",message:"Video workflow quote must be a JSON object."}});
     const projectId=String(body.projectId||"");
     if(!safeId(projectId)||await allow({ownerId,projectId,action:"write"})!==true)return response(404,{error:{code:"PROJECT_NOT_FOUND",message:"Project not found or editor access required."}});
-    if(!workflowRouterAdapter)return response(503,{error:{code:"VIDEO_WORKFLOW_QUOTE_UNAVAILABLE",message:"A configured Runway Model Router quote adapter and private asset resolver are required. Paid execution remains disabled."}});
     try{
      const requestId=String(body.requestId||"");
      const workflowRequest=createVideoWorkflowCloudRequest({node:body.node,values:body.values||{},projectId,requestId});
+     if(!workflowRouterAdapter)return response(503,{error:{code:"VIDEO_WORKFLOW_QUOTE_UNAVAILABLE",message:"A configured Runway Model Router quote adapter and private asset resolver are required. Paid execution remains disabled."}});
      const prepared=await workflowRouterAdapter.prepareInput(workflowRequest.input,{job:{owner_id:ownerId}});
      const estimate=await workflowRouterAdapter.preflight(prepared);
      if(!estimate||estimate.billable!==false||estimate.currency!=="USD"||
