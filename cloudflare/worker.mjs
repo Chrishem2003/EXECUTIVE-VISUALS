@@ -103,7 +103,7 @@ async function d1Api(request, env, url) {
     return json({ error: { code: "D1_BINDING_MISSING", message: "The staging D1 binding is not configured." } }, 503);
   }
   if (request.method === "OPTIONS") {
-    return new Response(null, { status: 204, headers: { "allow": "GET,POST,PATCH,OPTIONS", "access-control-allow-methods": "GET,POST,PATCH,OPTIONS", "access-control-allow-headers": "authorization,content-type", "cache-control": "no-store" } });
+    return new Response(null, { status: 204, headers: { "allow": "GET,POST,PATCH,PUT,OPTIONS", "access-control-allow-methods": "GET,POST,PATCH,PUT,OPTIONS", "access-control-allow-headers": "authorization,content-type", "cache-control": "no-store" } });
   }
   if (url.pathname === "/api/d1/health" && request.method === "GET") {
     const ready = await requireSchema(env.DB);
@@ -142,6 +142,16 @@ async function d1Api(request, env, url) {
       const body = await readJson(request);
       const project = await repo.updateProject({ actorId: principal.id, projectId: match[1], expectedRevision: Number(body.expectedRevision ?? body.revision), name: body.name, description: body.description, settings: body.settings });
       return withCookies(json({ project, storage: "cloudflare-d1-staging" }), sessionCookies);
+    }
+    const workspaceMatch = url.pathname.match(/^\\/api\\/d1\\/projects\\/([0-9a-f-]{36})\\/workspace$/i);
+    if (workspaceMatch && request.method === "GET") {
+      const workspace = await repo.getWorkspaceDocument({ actorId: principal.id, projectId: workspaceMatch[1] });
+      return withCookies(json(workspace), sessionCookies);
+    }
+    if (workspaceMatch && request.method === "PUT") {
+      const body = await readJson(request, 256 * 1024);
+      const workspace = await repo.updateWorkspaceDocument({ actorId: principal.id, projectId: workspaceMatch[1], expectedRevision: Number(body.expectedRevision ?? body.revision), document: body.document });
+      return withCookies(json(workspace), sessionCookies);
     }
     return withCookies(json({ error: { code: "D1_ROUTE_NOT_FOUND", message: "D1 staging endpoint not found." } }, 404), sessionCookies);
   } catch (error) {
