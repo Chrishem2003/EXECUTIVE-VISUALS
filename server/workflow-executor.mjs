@@ -311,6 +311,15 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
      const cloudStarted=Date.now();
      const result=await executeCloudVideoWorkflowNode({db,job,run,node,values,mediaRoot,cloudTimelineApi,
       onProgress:value=>onProgress(Math.min(94,Math.round((completedCount+value/100)/nodeCount*100)))});
+     if(result.pending===true){
+      const pendingOutput={cloudJobId:result.cloudJobId,quoteId:result.quoteId,requestId:result.requestId,
+       routedModel:result.routedModel,approvedMaxAmount:result.approvedMaxAmount,cloudJobStatus:result.status};
+      const detail={code:"CLOUD_VIDEO_JOB_PENDING",message:"The approved cloud video job is queued. This workflow will resume automatically after the private output is ready."};
+      saveNode(db,runId,nodeId,"blocked",{input:nodeInput,output:pendingOutput,error:detail,attempt});
+      db.prepare("UPDATE workflow_runs SET status='blocked',error_json=?,updated_at=?,completed_at=NULL WHERE id=?")
+       .run(json(detail),now(),runId);
+      return {status:"blocked",runId,waitingNodeId:nodeId,cloudJobId:result.cloudJobId,completedNodes:completedCount,totalNodes:nodeCount};
+     }
      recordModelUsage(db,{ownerId:job.owner_id,projectId:job.project_id||null,jobId:job.id,workflowRunId:runId,nodeId,
       provider:"runway",capability:"video.generate",model:result.model,usage:result.usage,durationMs:Date.now()-cloudStarted});
      output=nodeOutput(node,result.assetId);output.asset=result.assetId;output.assetId=result.assetId;
