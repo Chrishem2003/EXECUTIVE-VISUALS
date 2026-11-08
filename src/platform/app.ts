@@ -238,7 +238,7 @@ function readiness(){
  ];
  const inProgress=[
   ["Account recovery","PR #251 · draft","465 regression tests pass on the branch. Hosted recovery still needs a dedicated Auth project and redirect/email configuration.","https://github.com/Chrishem2003/EXECUTIVE-VISUALS/pull/251"],
-  ["Lease-fenced cloud media publication","PR #247 · draft/conflicts","Mainline reconciliation is incomplete; current branch conflicts with main and its build gate was still running at last audit.","https://github.com/Chrishem2003/EXECUTIVE-VISUALS/pull/247"],
+  ["Lease-fenced cloud media publication","PR #247 · draft/conflicts","Mainline reconciliation is incomplete; the branch conflicts with current main and must be reconciled before review or merge.","https://github.com/Chrishem2003/EXECUTIVE-VISUALS/pull/247"],
   ["Provider-aware video, Google Drive and billing","PR #206 · draft","Source and CI exist, but cloud execution, OAuth, provider keys, storage and budget policy remain default-off or unconfigured.","https://github.com/Chrishem2003/EXECUTIVE-VISUALS/pull/206"],
   ["Video quote and approval ledger","PR #248 · draft","CI passed on its branch, but it depends on the #206 integration branch and is not merged to main.","https://github.com/Chrishem2003/EXECUTIVE-VISUALS/pull/248"],
   ["Audio, review, upload and delivery feature chain","PRs #130–#166","Many branches depend on one another; they need ordered integration rather than out-of-order individual merges.","https://github.com/Chrishem2003/EXECUTIVE-VISUALS/pulls"]
