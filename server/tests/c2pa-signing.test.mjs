@@ -17,7 +17,7 @@ async function createTestSigningIdentity(dir) {
   const signerCert = join(dir, "ephemeral-test-signer-cert.pem");
   const certificateChainPath = join(dir, "ephemeral-test-chain.pem");
   const extensionsPath = join(dir, "ephemeral-test-extensions.cnf");
-  await writeFile(extensionsPath, "basicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature\nextendedKeyUsage=critical,codeSigning\n");
+  await writeFile(extensionsPath, "basicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature\nextendedKeyUsage=critical,emailProtection,1.3.6.1.4.1.62558.2.1\nsubjectKeyIdentifier=hash\nauthorityKeyIdentifier=keyid,issuer\n");
   execFileSync("openssl", [
     "req", "-x509", "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:P-256",
     "-nodes", "-keyout", rootKey, "-out", rootCert, "-days", "1",
