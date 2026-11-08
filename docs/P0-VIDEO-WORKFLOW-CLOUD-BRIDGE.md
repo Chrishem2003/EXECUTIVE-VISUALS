@@ -42,6 +42,33 @@ The branch `fix/aleph2-transformation-budget-approval` contains a source-control
 The migration is source-controlled only. It has not been applied to staging or production. Disposable PostgreSQL assertions for service-role RPC privileges, approval consumption, Aleph 2 pricing floor and operation restrictions are in `scripts/cloud-video-postgres-integration.sql`. The GitHub Actions workflow now applies the cloud video migrations and runs this script against a fresh PostgreSQL 16 service for each integration PR. Exact-head CI and isolated staging acceptance are still required before the transformation submit route can be considered operational.
 
 
+## Workflow-node integration implementation (2026-11-08)
+
+The feature branch now contains the first end-to-end source integration in `server/workflow-cloud-video-bridge.mjs`:
+
+1. The workflow executor recognizes the explicit `video.generate` identity `provider=runway, model=model-router` and requires a completed upstream human-approval node.
+2. It verifies the local project, establishes the same-UUID cloud project link when the local user owns the project, and refuses to create a link on behalf of a non-owner.
+3. Every connected local image/video/audio asset is read through an owner/project access check, path-validated, byte-size checked and SHA-256 verified before upload to private cloud storage. The returned cloud asset ID is recorded in local asset metadata for reuse.
+4. The executor obtains a fresh non-billable quote and requires an explicit `node.config.approvedMaxAmount` USD ceiling that covers the current estimate. It then invokes the explicit-confirmation approval endpoint only after the upstream approval node has completed.
+5. The existing service-role-only RPC atomically creates the approval, reserves the project budget, enqueues the idempotent cloud job and consumes the quote. The cloud provider worker remains responsible for provider submission, task polling, private output ingestion and authoritative actual-cost settlement.
+6. The local workflow runner polls the authorized cloud job at a five-second minimum interval while renewing its existing local worker lease. On success it obtains short-lived private asset URLs, requires the configured Supabase origin, checks the returned media type and byte count, verifies SHA-256, and stores local MP4 assets with request provenance and cloud-asset lineage.
+7. The node output exposes the imported local asset IDs to downstream workflow nodes and the local timeline. Failed or unavailable cloud paths fail closed; budget, project-link and release-gate problems become blocked workflow runs.
+
+The bridge has focused tests for the approval/quote/asset-import path, insufficient budget ceilings and missing cloud API configuration. It does not turn on any provider flags, create budget policies, provision secrets, run a paid task or deploy a hosted service. The branch still needs exact-head quality CI, review of the stacked integration base, and isolated staging acceptance before operators should enable the cloud worker.
+
+### Required per-node configuration
+
+For a cloud-backed `video.generate` node, set:
+- `provider: "runway"`
+- `model: "model-router"`
+- `approvedMaxAmount: <USD ceiling>`
+
+Connect a completed human-approval node upstream. The approval node click is the human confirmation; the numeric ceiling is a separate hard upper bound and must cover the fresh quote. Do not set a ceiling automatically from the quote or use an unlimited default. Other providers/models continue to use the legacy execution path.
+
+### Current release boundary
+
+The code path is implemented but not activated. `CLOUD_TIMELINE_API_ENABLED`, Supabase auth, the saved Runway router config, provider API credentials, cloud worker, remote video gateway flags, and an enabled per-project budget policy are separate operational prerequisites. All must be deliberately configured and tested in isolated staging before any paid generation is possible. Production remains untouched.
+
 ## Required work before cloud mode can be enabled
 
 ### Customer transformation API — partially implemented
