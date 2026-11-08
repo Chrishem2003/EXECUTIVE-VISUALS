@@ -1,6 +1,6 @@
-export type CreativeGraphNodeType = "project"|"brief"|"intent"|"evidence"|"character"|"scene"|"shot"|"timeline"|"clip"|"asset"|"world_record";
+export type CreativeGraphNodeType = "project"|"brief"|"intent"|"evidence"|"evidence_candidate"|"character"|"scene"|"shot"|"timeline"|"clip"|"asset"|"world_record";
 export interface CreativeGraphNode { id:string; type:CreativeGraphNodeType; label:string; detail?:string; status:"linked"|"needs_evidence"|"review"; }
-export interface CreativeGraphEdge { from:string; to:string; relation:"contains"|"guides"|"supports"|"features"|"uses"|"appears_in"|"derived_from"; evidence:"explicit"|"project_scope"; }
+export interface CreativeGraphEdge { from:string; to:string; relation:"contains"|"guides"|"supports"|"features"|"uses"|"appears_in"|"derived_from"|"evidence_for"; evidence:"explicit"|"project_scope"; }
 export interface CreativeGraphInput {
  project?:{id:string;name:string;brief?:string};
  creativeDNA?:{creativePromise?:string;proofAndTrustChecks?:string[];storyBeats?:string[]};
@@ -8,13 +8,13 @@ export interface CreativeGraphInput {
  shots?:Array<{id:string;scene?:string;action?:string;characterIds?:string[];storyBibleEntryIds?:string[];proofReference?:string;referenceAssetIds?:string[]}>;
  seriesPlans?:Array<{id:string;title?:string;storyBible?:{entries?:Array<{id:string;kind:string;name:string;description?:string;referenceAssetIds?:string[]}>};seasons?:Array<{episodes?:Array<{id:string;title?:string;scenes?:Array<{id:string;title?:string;purpose?:string;storyBibleEntryIds?:string[];shots?:Array<{id:string;prompt?:string;characterIds?:string[];storyBibleEntryIds?:string[];proofReference?:string;referenceAssetIds?:string[]}>}>}>}>}>;
  timelines?:Array<{id:string;name:string;timeline?:{markers?:Array<{id:string;name?:string;note?:string}>;tracks?:Array<{clips?:Array<{id:string;assetId:string;name?:string;metadata?:Record<string,unknown>}>}>}}>;
- assets?:Array<{id:string;name:string;mediaType?:string}>;
+ assets?:Array<{id:string;name:string;mediaType?:string;sha256?:string}>;\n evidenceRecords?:Array<{id:string;projectId?:string|null;sourceAssetId:string;sourceSha256:string;target:{type:string;id:string};kind:string;claim:string;status:string}>;
 }
-export interface CreativeGraph { nodes:CreativeGraphNode[]; edges:CreativeGraphEdge[]; counts:Record<CreativeGraphNodeType,number>; unlinkedShots:string[]; notes:string[]; }
+export interface CreativeGraph { nodes:CreativeGraphNode[]; edges:CreativeGraphEdge[]; counts:Record<CreativeGraphNodeType,number>; unlinkedShots:string[]; unlinkedEvidence:string[]; notes:string[]; }
 const clean=(value:unknown,max=500)=>typeof value==="string"?value.trim().replace(/\\s+/g," ").slice(0,max):"";
 const key=(value:string)=>value.toLocaleLowerCase().replace(/\\s+/g," ").trim();
 export function buildCreativeGraph(input:CreativeGraphInput):CreativeGraph{
- const nodes=new Map<string,CreativeGraphNode>(),edges:CreativeGraphEdge[]=[],edgeKeys=new Set<string>(),unlinkedShots:string[]=[];
+ const nodes=new Map<string,CreativeGraphNode>(),edges:CreativeGraphEdge[]=[],edgeKeys=new Set<string>(),unlinkedShots:string[]=[],unlinkedEvidence:string[]=[];
  const add=(node:CreativeGraphNode)=>{if(!nodes.has(node.id))nodes.set(node.id,node);};
  const link=(from:string,to:string,relation:CreativeGraphEdge["relation"],evidence:CreativeGraphEdge["evidence"]="explicit")=>{if(!nodes.has(from)||!nodes.has(to)||from===to)return;const id=from+"|"+to+"|"+relation;if(!edgeKeys.has(id)){edgeKeys.add(id);edges.push({from,to,relation,evidence});}};
  const projectId=clean(input.project?.id,120),projectNode=projectId?"project:"+projectId:"";
@@ -27,7 +27,7 @@ export function buildCreativeGraph(input:CreativeGraphInput):CreativeGraph{
  if(intentNode){add({id:intentNode,type:"intent",label:"Creative intent",detail:promise,status:"linked"});link(briefNode,intentNode,"guides");}
  const evidenceCandidates=(input.creativeDNA?.proofAndTrustChecks||[]).map(x=>clean(x,500)).filter(Boolean);
  const proofCandidate=evidenceCandidates.find(x=>/^proof candidate supplied:/i.test(x));
- if(proofCandidate){const id="evidence:"+projectId+":"+key(proofCandidate).slice(0,100);add({id,type:"evidence",label:"Proof candidate",detail:proofCandidate,status:"needs_evidence"});link(intentNode,id,"supports");}
+ if(proofCandidate){const id="evidence:"+projectId+":"+key(proofCandidate).slice(0,100);add({id,type:"evidence_candidate",label:"Proof candidate",detail:proofCandidate,status:"needs_evidence"});link(intentNode,id,"supports");}
  for(const asset of input.assets||[]){const id=clean(asset.id,120);if(!id)continue;add({id:"asset:"+id,type:"asset",label:clean(asset.name,180)||id,detail:clean(asset.mediaType,80),status:"linked"});if(projectNode)link(projectNode,"asset:"+id,"contains","project_scope");}
  const characterMap=new Map<string,string>(),storyBibleMap=new Map<string,string>();
  const addCharacter=(character:{id:string;name:string;description?:string;referenceAssetIds?:string[]})=>{const id=clean(character.id,120);if(!id)return;const nodeId="character:"+id;characterMap.set(id,nodeId);add({id:nodeId,type:"character",label:clean(character.name,160)||"Unnamed character",detail:clean(character.description,1000),status:"linked"});if(projectNode)link(projectNode,nodeId,"contains","project_scope");if(intentNode)link(intentNode,nodeId,"guides","project_scope");for(const assetId of character.referenceAssetIds||[]){const assetNode="asset:"+clean(assetId,120);if(nodes.has(assetNode))link(assetNode,nodeId,"features");}};
@@ -47,7 +47,7 @@ export function buildCreativeGraph(input:CreativeGraphInput):CreativeGraph{
   const requestedBible=(shot.storyBibleEntryIds||[]).map(value=>clean(value,120)).filter(Boolean);
   for(const entryId of requestedBible){const target=storyBibleMap.get(entryId);if(target)link(target,nodeId,"features");}
   if(requestedCharacters.some(characterId=>!characterMap.has(characterId))||requestedBible.some(entryId=>!storyBibleMap.has(entryId)))unlinkedShots.push(id);
-  const proof=clean(shot.proofReference,200);if(proof){const proofNode="evidence-ref:"+key(proof).slice(0,120);add({id:proofNode,type:"evidence",label:"Shot evidence reference",detail:proof,status:"needs_evidence"});link(proofNode,nodeId,"supports");}
+  const proof=clean(shot.proofReference,200);if(proof){const proofNode="evidence-ref:"+key(proof).slice(0,120);add({id:proofNode,type:"evidence_candidate",label:"Shot evidence reference",detail:proof,status:"needs_evidence"});link(proofNode,nodeId,"supports");}
   for(const assetId of shot.referenceAssetIds||[]){const assetNode="asset:"+clean(assetId,120);if(nodes.has(assetNode))link(assetNode,nodeId,"features");}
  };
  for(const series of input.seriesPlans||[])for(const season of series.seasons||[])for(const episode of season.episodes||[])for(const scene of episode.scenes||[]){
@@ -76,9 +76,24 @@ export function buildCreativeGraph(input:CreativeGraphInput):CreativeGraph{
    const assetNode="asset:"+clean(clip.assetId,120);if(nodes.has(assetNode))link(assetNode,clipNode,"uses");
   }
  }
+ const assetById=new Map((input.assets||[]).map(asset=>[clean(asset.id,120),asset]));
+ for(const record of input.evidenceRecords||[]){
+  const id=clean(record.id,120),sourceId=clean(record.sourceAssetId,120);
+  if(!id||!sourceId)continue;
+  const evidenceNode="evidence:"+id,sourceNode="asset:"+sourceId;
+  const targetType=record.target?.type,targetId=clean(record.target?.id,120);
+  const targetNode=targetType==="project"?"project:"+targetId:targetType==="scene"?"scene:"+targetId:targetType==="shot"?"shot:"+targetId:targetType==="timeline"?"timeline:"+targetId:targetType==="asset"?"asset:"+targetId:"";
+  const sourceAsset=assetById.get(sourceId),hashMatches=Boolean(sourceAsset?.sha256&&record.sourceSha256&&sourceAsset.sha256.toLowerCase()===record.sourceSha256.toLowerCase());
+  const sameProject=record.projectId===undefined||record.projectId===null||record.projectId===projectId;
+  const verified=record.status==="verified"&&hashMatches&&sameProject;
+  add({id:evidenceNode,type:"evidence",label:clean(record.kind,100)||"Evidence record",detail:clean(record.claim,1000)+(hashMatches?"":" · Source asset hash mismatch or unavailable")+(sameProject?"":" · Project scope mismatch"),status:verified?"linked":"review"});
+  if(nodes.has(sourceNode))link(sourceNode,evidenceNode,"supports");
+  if(targetNode&&nodes.has(targetNode)&&sameProject)link(evidenceNode,targetNode,verified?"supports":"evidence_for");
+  else unlinkedEvidence.push(id);
+ }
  const counts={} as Record<CreativeGraphNodeType,number>;
- for(const type of ["project","brief","intent","evidence","character","world_record","scene","shot","timeline","clip","asset"] as CreativeGraphNodeType[])counts[type]=[...nodes.values()].filter(n=>n.type===type).length;
- return {nodes:[...nodes.values()],edges,counts,unlinkedShots,notes:["Only explicit IDs and saved project membership create links. Shared project scope is labelled separately from authored relationships.","Proof candidates are not verified evidence. Missing references remain visible; no character-to-shot relationship is inferred from names or descriptions."]};
+ for(const type of ["project","brief","intent","evidence","evidence_candidate","character","world_record","scene","shot","timeline","clip","asset"] as CreativeGraphNodeType[])counts[type]=[...nodes.values()].filter(n=>n.type===type).length;
+ return {nodes:[...nodes.values()],edges,counts,unlinkedShots,unlinkedEvidence,notes:["Only explicit IDs and saved project membership create links. Shared project scope is labelled separately from authored relationships.","Proof candidates are separate from submitted evidence. Only reviewer-verified records with matching source hashes and project scope create a supporting edge; other records remain review-only."]};
 }
 export function analyzeCreativeImpact(graph:CreativeGraph,changedNodeId:string){
  if(!graph.nodes.some(node=>node.id===changedNodeId))throw new Error("Choose a node that exists in the current creative graph.");
