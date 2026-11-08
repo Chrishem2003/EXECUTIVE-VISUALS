@@ -272,6 +272,42 @@ test("Runway Model Router references are converted only from owner/project-scope
   assert.equal(prepared.referenceVideos[0].role, "reference");
 });
 
+test("Runway Model Router rejects duplicate reference image IDs before asset lookup", async () => {
+  const { resolver, calls } = fixture();
+  await assert.rejects(
+    resolver.prepare({
+      provider: "runway", model: "model-router", operation: "text-to-video",
+      projectId: PROJECT, referenceImageAssetIds: [ASSET, ASSET]
+    }, { job: { owner_id: OWNER } }),
+    error => error.code === "VIDEO_INPUT_ASSET_RESOLUTION_FAILED"
+  );
+  assert.equal(calls.length, 0);
+});
+
+test("Runway Model Router rejects duplicate reference video IDs before asset lookup", async () => {
+  const { resolver, calls } = fixture();
+  await assert.rejects(
+    resolver.prepare({
+      provider: "runway", model: "model-router", operation: "text-to-video",
+      projectId: PROJECT, referenceVideoAssetIds: [ASSET, ASSET]
+    }, { job: { owner_id: OWNER } }),
+    error => error.code === "VIDEO_INPUT_ASSET_RESOLUTION_FAILED"
+  );
+  assert.equal(calls.length, 0);
+});
+
+test("Runway Model Router rejects a reference image repeated as the first frame", async () => {
+  const { resolver, calls } = fixture();
+  await assert.rejects(
+    resolver.prepare({
+      provider: "runway", model: "model-router", operation: "image-to-video",
+      projectId: PROJECT, startFrameAssetId: ASSET, referenceImageAssetIds: [ASSET]
+    }, { job: { owner_id: OWNER } }),
+    error => error.code === "VIDEO_INPUT_ASSET_RESOLUTION_FAILED"
+  );
+  assert.equal(calls.length, 0);
+});
+
 test("Runway Model Router resolves exactly one owner/project-scoped private reference audio asset", async () => {
   const audioId = "66666666-6666-4666-8666-666666666666";
   const audioBytes = Buffer.from("validated-audio-reference");
