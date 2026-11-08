@@ -7,6 +7,7 @@ const publicationSql = await readFile(resolve(process.cwd(), "supabase/migration
 const fencingSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261108000000_job_lease_fencing_tokens.sql"), "utf8");
 const atomicPublicationSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261108010000_atomic_asset_publication_lease_fencing.sql"), "utf8");
 const cleanupClaimsSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261108020000_asset_publication_cleanup_claims.sql"), "utf8");
+const cleanupAttemptSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261108030000_storage_cleanup_attempt_paths.sql"), "utf8");
 const cleanupSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261106190000_asset_storage_cleanup_outbox.sql"), "utf8");
 const issues = [];
 const tables = ["projects","project_members","project_workspace_documents","workflows","workflow_runs","workflow_node_runs","timelines","assets","jobs","job_events","consents","reviews","audit_events"];
@@ -123,7 +124,10 @@ if (!cleanupClaimsSql.includes("grant execute on function executive_visuals.rese
  || !cleanupClaimsSql.includes("grant execute on function executive_visuals.claim_asset_publication_cleanup_v1(uuid,uuid,uuid,text,text,interval) to service_role")
  || !cleanupClaimsSql.includes("grant execute on function executive_visuals.complete_asset_publication_cleanup_v1(uuid,uuid) to service_role")) {
   issues.push("Publication reservation and cleanup RPCs must be restricted to service_role.");
-}
+}if (/\b(drop\s+table|truncate|delete\s+from)\b/i.test(cleanupAttemptSql)) issues.push("Cleanup attempt-path migration must not contain destructive DDL/DML.");
+if (!cleanupAttemptSql.includes("drop constraint if exists asset_storage_cleanup_object_path_check")
+ || !cleanupAttemptSql.includes("attempt-[0-9a-f]{8}")) issues.push("Durable cleanup outbox must accept only exact original or immutable attempt object paths.");
+
 
 
 if (/\b(drop\s+table|truncate|delete\s+from)\b/i.test(cleanupSql)) issues.push("Storage cleanup outbox migration must not contain destructive DDL/DML.");
