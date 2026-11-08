@@ -59,6 +59,8 @@ set search_path = pg_catalog, executive_visuals
 as $record_video_workflow_quote$
 begin
   if p_quote_id is null or p_owner_id is null or p_project_id is null
+     or p_provider is null or p_model is null or p_operation is null
+     or p_currency is null or p_pricing_source is null
      or p_request_id is null or p_request_id !~ '^[A-Za-z0-9._:-]{1,160}$'
      or p_request_hash is null or p_request_hash !~ '^[a-f0-9]{64}$'
      or p_provider <> 'runway' or p_model <> 'model-router'
