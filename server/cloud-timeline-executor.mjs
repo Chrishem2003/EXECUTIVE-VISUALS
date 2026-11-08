@@ -35,7 +35,7 @@ export function createCloudTimelineExecutor({timelines,mediaIO,renderTimeline,pr
   if(!Number.isInteger(maxAssets)||maxAssets<1||maxAssets>5000)throw new Error("Cloud timeline asset limit is invalid.");
   if(!Number.isSafeInteger(maxOutputBytes)||maxOutputBytes<1||maxOutputBytes>5*1024*1024*1024)throw new Error("Cloud timeline output limit is invalid.");
 
-  return async function execute({job,signal,onProgress=()=>{}}={}){
+  return async function execute({job,signal,onProgress=()=>{},assertLease=async()=>true}={}){
     if(!job||typeof job.id!=="string"||typeof job.owner_id!=="string"||job.job_type!=="timeline.render")throw Object.assign(new Error("Cloud timeline worker received an unsupported job."),{code:"CLOUD_TIMELINE_JOB_UNSUPPORTED"});
     if(signal?.aborted)throw Object.assign(new Error("Timeline render was cancelled."),{code:"JOB_CANCELLED"});
     const input=parseInput(job.input??job.input_json),timelineId=String(input.timelineId||"");
@@ -67,6 +67,7 @@ export function createCloudTimelineExecutor({timelines,mediaIO,renderTimeline,pr
       const sha256=await digest(output.path);
       onProgress(90);
       if(signal?.aborted)throw Object.assign(new Error("Timeline render was cancelled."),{code:"JOB_CANCELLED"});
+      await assertLease();
       const outputAsset=await mediaIO.publish({
         ownerId:job.owner_id,projectId:record.projectId,filename:output.filename,mediaType:output.mediaType,
         path:output.path,publicationKey:job.id+":output:v1",metadata:{...(output.metadata||{}),operation:"timeline.render",timelineId:record.id,timelineRevision:record.revision,sha256,probe:probed,probeValidation,render:output.render||{}}
