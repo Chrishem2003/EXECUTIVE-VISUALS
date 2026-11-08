@@ -54,11 +54,11 @@ export function createD1Repository({ db, id = randomUUID, clock = isoNow } = {})
       const row = await db.prepare(`
         INSERT INTO ev_users (id, auth_subject, auth_provider, email, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?)
-        ON CONFLICT(auth_subject) DO UPDATE SET
+        ON CONFLICT(auth_provider, auth_subject) DO UPDATE SET
           email = excluded.email, auth_provider = excluded.auth_provider, updated_at = excluded.updated_at
         RETURNING id, auth_subject, auth_provider, email, created_at, updated_at
       `).bind(id(), subject.trim(), provider, email, timestamp, timestamp).first();
-      if (!row || row.auth_subject !== subject.trim()) throw new Error("D1 principal resolution returned an invalid identity.");
+      if (!row || row.auth_subject !== subject.trim() || row.auth_provider !== provider) throw new Error("D1 principal resolution returned an invalid identity.");
       return { id: row.id, subject: row.auth_subject, provider: row.auth_provider, email: row.email, createdAt: row.created_at, updatedAt: row.updated_at };
     },
 
