@@ -17,7 +17,8 @@ DECLARE
     'job_events',
     'consents',
     'reviews',
-    'audit_events'
+    'audit_events',
+    'video_pipeline_checkpoints'
   ];
   applied_migrations bigint;
 BEGIN
@@ -48,6 +49,19 @@ BEGIN
       AND file_size_limit = 262144000
   ) THEN
     RAISE EXCEPTION 'Private Executive Visuals media bucket is missing or misconfigured';
+  END IF;
+
+  IF to_regprocedure('executive_visuals.validate_video_pipeline_checkpoint_scope()') IS NULL THEN
+    RAISE EXCEPTION 'Video pipeline checkpoint scope trigger function is missing';
+  END IF;
+
+  IF has_table_privilege('anon', 'executive_visuals.video_pipeline_checkpoints', 'SELECT')
+     OR has_table_privilege('authenticated', 'executive_visuals.video_pipeline_checkpoints', 'SELECT') THEN
+    RAISE EXCEPTION 'Video pipeline checkpoints must remain server-only';
+  END IF;
+
+  IF NOT has_table_privilege('service_role', 'executive_visuals.video_pipeline_checkpoints', 'INSERT') THEN
+    RAISE EXCEPTION 'Service role is missing video pipeline checkpoint insert permission';
   END IF;
 
   IF (
