@@ -55,7 +55,7 @@ Common local defaults are defined in `server/index.mjs`. Use environment variabl
 | `SUPABASE_PUBLISHABLE_KEY` | unset | Public client key; not a service-role secret. |
 | `COOKIE_SECURE` | inferred from production mode | Use secure cookies over HTTPS. |
 | `MAX_UPLOAD_BYTES` | 250 MiB | Keep bounded; verify file signatures and MIME type. |
-| `CLOUD_TIMELINE_API_ENABLED` | false | Keep off until cloud release gates are complete. |
+| `CLOUD_TIMELINE_API_ENABLED` | false | Keep off until cloud release gates are complete. |\n| `C2PA_TRUST_ANCHORS` | unset | Optional administrator-managed PEM trust-anchor file; without it, the adapter cannot return `valid_trusted`. |\n| `C2PA_MAX_VERIFY_BYTES` | 250 MiB | Maximum file size passed to the CAI native parser. |
 
 The current code also has provider-specific settings. Inspect the adapter and readiness check before configuring any provider. A variable existing in code does not imply that its external service has been provisioned or approved.
 
@@ -169,7 +169,7 @@ Production release requires a separate approval. Merging to `main` may trigger d
 ### Provenance says integrity verified
 
 - This currently means application record consistency only.
-- It does not mean a C2PA manifest was found, a signature is valid, or a signer is trusted. The API explicitly reports `c2pa: not_checked` until the CAI adapter is integrated.
+- It does not mean a C2PA manifest was found, a signature is valid, or a signer is trusted. Check the separate `c2pa` object in the same response. `not_available` means no manifest; `not_supported` means the file format or extension is outside the adapter allowlist; `invalid`, `valid_untrusted`, `valid_trusted` and `verification_error` are separate SDK outcomes.
 
 ### Hosted service loses work after restart
 
