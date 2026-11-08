@@ -502,3 +502,11 @@ button:disabled{opacity:.55;cursor:not-allowed}
 .evidence-ledger-record p{overflow-wrap:anywhere}
 .evidence-ledger-record small{display:block;overflow-wrap:anywhere}
 .evidence-ledger-record .button-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+
+
+/* Explicit graph review baselines and downstream stale candidates */
+.creative-baseline-panel{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center;margin:16px 0;padding:15px;border:1px solid var(--line);border-radius:12px;background:var(--surface-soft)}
+.creative-baseline-panel p{grid-column:1/-1;margin:4px 0}
+.creative-stale-review{grid-column:1/-1;padding:12px;border-left:3px solid var(--warning,var(--line));background:var(--surface)}
+.creative-stale-review ul{padding-left:20px;max-height:220px;overflow:auto}
+@media(max-width:700px){.creative-baseline-panel{grid-template-columns:1fr}.creative-baseline-panel button{width:100%}}
