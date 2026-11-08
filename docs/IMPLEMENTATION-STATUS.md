@@ -66,7 +66,8 @@
 - Added `server/tests/local-c2pa-roundtrip.test.mjs` to exercise the real local SQLite `media.transcode` publication path with an upstream test-only CAI signer, then read the published MP4 back and verify its embedded source ingredient and post-signing checksum. The first CI attempt exposed a missing persisted-job fixture; after correcting the fixture to create the real queued job row, the test passed (21/21 provenance tests) in GitHub Actions run `8435` at commit `4edd495`.
 - Added `server/tests/c2pa-format-roundtrip.test.mjs` for real CAI SDK signing, transformation preservation and Reader validation across the application's six media formats: JPEG, PNG, WebP, MP3, WAV and MP4. All six round-trips passed; the provenance suite passed 28/28 tests in GitHub Actions run `8439` at commit `f5a4cc0`.
 - Full branch CI run `8439` also passed dependency installation, typecheck, full build/regression suite and disposable PostgreSQL asset-publication integration.
-- Remaining validation: local AI upscale/timeline operations, broader format/codec variants, large media and cancellation; run isolated staging acceptance with an approved signer.
+- The preserver now hashes with native `AbortSignal` support, checks cancellation between SDK stages, normalizes aborts to `C2PA_TRANSFORM_ABORTED`, and retains compatibility with the local executor's lightweight cancellation adapter. Tests cover pre-abort, abort during callback signing (no output replacement and temp cleanup), streaming-hash cancellation, and oversize rejection before SDK loading. CI run `8447` passed the provenance suite (32/32), full server/build regression suite (453/453), typecheck and disposable PostgreSQL integration.
+- Remaining validation: local AI-upscale/timeline end-to-end round-trips, real near-limit large-file throughput/memory stress, broader codec/container variants and isolated staging acceptance with an approved signer.
 
 ## Build verification
 
