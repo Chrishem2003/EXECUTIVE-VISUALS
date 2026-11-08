@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 const sql = await readFile(resolve(process.cwd(), "supabase/migrations/20261031210000_executive_visuals_core.sql"), "utf8");
 const checkpointSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261102090000_video_pipeline_checkpoints.sql"), "utf8");
 const publicationSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261106230000_asset_publication_ledger.sql"), "utf8");
+const cleanupSql = await readFile(resolve(process.cwd(), "supabase/migrations/20261106190000_asset_storage_cleanup_outbox.sql"), "utf8");
 const issues = [];
 const tables = ["projects","project_members","project_workspace_documents","workflows","workflow_runs","workflow_node_runs","timelines","assets","jobs","job_events","consents","reviews","audit_events"];
 for (const table of tables) {
@@ -61,6 +62,12 @@ if (!checkpointSql.includes("output_asset.sha256 = lower(new.output_json ->> 'sh
 if (/\\b(drop\\s+table|truncate|delete\\s+from)\\b/i.test(checkpointSql)) issues.push("Checkpoint migration must not contain destructive DDL/DML.");
 
 if (/\b(drop\s+table|truncate|delete\s+from)\b/i.test(publicationSql)) issues.push("Publication ledger migration must not contain destructive DDL/DML.");
+
+if (/\b(drop\s+table|truncate|delete\s+from)\b/i.test(cleanupSql)) issues.push("Storage cleanup outbox migration must not contain destructive DDL/DML.");
+if (!cleanupSql.includes("create table if not exists executive_visuals.asset_storage_cleanup") || !cleanupSql.includes("alter table executive_visuals.asset_storage_cleanup enable row level security;")) issues.push("Storage cleanup outbox must exist and enable RLS.");
+if (!cleanupSql.includes("revoke all on executive_visuals.asset_storage_cleanup from public, anon, authenticated;") || !cleanupSql.includes("grant select, insert, update on executive_visuals.asset_storage_cleanup to service_role;")) issues.push("Storage cleanup outbox must be service-role-only.");
+if (!cleanupSql.includes("object_path text not null unique") || !cleanupSql.includes("object_path ~*")) issues.push("Storage cleanup outbox must enforce unique, owner-scoped original asset paths.");
+
 if (!publicationSql.includes("unique(owner_id, publication_key)") || !publicationSql.includes("unique(asset_id)")) issues.push("Asset publication identity must be unique per owner and asset.");
 if (!publicationSql.includes("payload_sha256") || !publicationSql.includes("status in ('reserved','published')")) issues.push("Asset publication ledger must bind a checksum to a recoverable state.");
 if (!publicationSql.includes("alter table executive_visuals.asset_publications enable row level security;")) issues.push("Asset publication ledger must enable RLS.");
