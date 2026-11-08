@@ -57,6 +57,11 @@ Common local defaults are defined in `server/index.mjs`. Use environment variabl
 | `COOKIE_SECURE` | inferred from production mode | Use secure cookies over HTTPS. |
 | `MAX_UPLOAD_BYTES` | 250 MiB | Keep bounded; verify file signatures and MIME type. |
 | `CLOUD_TIMELINE_API_ENABLED` | false | Keep off until cloud release gates are complete. |
+| `CLOUD_MEDIA_JOBS_API_ENABLED` | false | API-only submission/history gate; requires cloud timeline API + Supabase auth and a separately deployed, verified media worker. Does not start or health-check the worker. |
+| `CLOUD_WORKER_ENABLED` | false | Master gate on the separate worker service. |
+| `CLOUD_MEDIA_WORKER_ENABLED` | false | Enables the cloud media worker family on the separate worker service. |
+| `CLOUD_TIMELINE_WORKER_ENABLED` | false | Enables the cloud timeline worker family independently. |
+| `SUPABASE_SERVICE_ROLE_KEY` | unset | Server-only credential for API/worker service; never expose in browser code. |
 | `C2PA_MAX_VERIFY_BYTES` | 250 MiB | Maximum file size passed to the CAI native parser. |
 | `C2PA_TRUST_ANCHORS` | unset | Absolute path to a read-only, administrator-managed PEM public-certificate bundle supplied as CAI `userAnchors`; without it, the adapter cannot return `valid_trusted`. |
 | `C2PA_SIGNING_ENABLED` | false | Callback signing remains disabled unless explicitly enabled. |
@@ -135,6 +140,18 @@ Before connecting a new worker/provider:
 
 Do not enable paid execution by default.
 
+### Cloud Asset Library → media worker contract
+
+The Runtime Asset Library's cloud processing controls are a separate opt-in path from local `/api/assets` jobs.
+
+- `POST /api/cloud/assets/:assetId/media-jobs` accepts an asset ID, one supported media operation and operation-specific options. The verified session supplies the owner; the server reads the asset and derives its project. Clients cannot set `owner_id`, `project_id`, storage paths or worker lease data.
+- Project assets require owner/editor write access. The route checks source media type, rejects unknown options, requires an idempotency key, and persists a queued job plus a `job.queued` event.
+- `GET /api/cloud/jobs` lists the authenticated user's personal jobs; `GET /api/cloud/jobs?projectId=<uuid>` lists jobs only after project read authorization. Job detail and event routes remain owner/project scoped.
+- The UI and API stay gated by `CLOUD_MEDIA_JOBS_API_ENABLED`, which defaults to false. The API refuses job submission and history reads with 503 while the gate is closed.
+- Local `/api/assets` remains the default. Do not turn on the cloud API gate merely because the UI is present or the queue migration exists.
+
+The media worker is a distinct process (`npm run start:cloud-worker`) and requires `CLOUD_WORKER_ENABLED=true` plus `CLOUD_MEDIA_WORKER_ENABLED=true`, server-only `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY`, FFmpeg/FFprobe, a private temporary workspace, the approved isolated schema and private storage policies. Keep `CLOUD_MEDIA_JOBS_API_ENABLED=false` until that worker has been deployed to the same isolated staging project and has passed a real upload → queue → process → derivative publication → preview → cleanup test.
+
 ## 7. Staging and release
 
 The repository includes a Render Blueprint. Review `render.yaml`, the Dockerfile, environment requirements, persistent disk configuration and estimated costs before creating or resuming a service.
@@ -147,7 +164,8 @@ Staging checklist:
 - Configure Supabase authentication and secure cookies.
 - Confirm the API and worker use the intended shared durable state.
 - Verify tenant isolation and role boundaries.
-- Keep cloud timeline and paid provider flags off until their acceptance tests pass.
+- Keep `CLOUD_TIMELINE_API_ENABLED`, `CLOUD_MEDIA_JOBS_API_ENABLED`, cloud worker flags and paid provider flags off until their independent acceptance tests pass.
+- Deploy the cloud media worker separately from the web API; verify it starts, claims only supported media job types, publishes lease-fenced derivatives and reconciles cleanup before enabling the API submission gate.
 - Exercise upload, processing, review, export, recovery and cleanup end to end.
 - Capture test output, deployment commit, migration status and rollback procedure.
 
