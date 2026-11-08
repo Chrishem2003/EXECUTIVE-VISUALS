@@ -351,7 +351,17 @@ async function processNextJob() {
       const input=parseJson(current.input_json),source=getAccessibleAsset(db,current.owner_id,String(input.sourceAssetId||""),true);
       if(source){const existing=parseJson(source.metadata_json,{});db.prepare("UPDATE assets SET metadata_json=? WHERE id=?").run(json({...existing,probe:result.metadata}),source.id);}
     }
-    if(completeJob(db,job.id,WORKER_ID,result,now())){
+    if(current.job_type==="workflow.execute"&&result?.status==="blocked"){
+      const runId=String(parseJson(current.input_json,{}).runId||"");
+      const workflowError=runId?db.prepare("SELECT error_json FROM workflow_runs WHERE id=?").get(runId):null;
+      const details=parseJson(workflowError?.error_json,{code:"WORKFLOW_BLOCKED",message:"Workflow is waiting for an external job."});
+      const changed=db.prepare("UPDATE jobs SET status='blocked',output_json=?,error_json=?,updated_at=?,completed_at=?,available_at=NULL,lease_owner=NULL,lease_expires_at=NULL,lease_heartbeat_at=NULL WHERE id=? AND status='running' AND lease_owner=? AND lease_expires_at>?")
+        .run(json(result),json(details),now(),now(),job.id,WORKER_ID,now());
+      if(changed.changes===1){
+        addJobEvent(db,job.id,job.owner_id,"job.blocked",details);
+        audit(db,job.owner_id,"job.blocked","job",job.id,{jobType:job.job_type,runId},job.project_id);
+      }
+    }else if(completeJob(db,job.id,WORKER_ID,result,now())){
       audit(db,job.owner_id,"job.succeeded","job",job.id,{jobType:job.job_type},job.project_id);
     }
   } catch(error) {
