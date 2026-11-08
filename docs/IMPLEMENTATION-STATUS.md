@@ -60,7 +60,9 @@ The build pipeline runs:
 2. Workflow graph validation, targeted-run behavior and project-knowledge retrieval checks.
 3. API integration tests for authentication, ownership isolation, project workspace persistence, revision conflicts, role permissions, uploads and idempotency.
 4. Mock-gateway tests for server-side text generation, remote-access controls and approval gating.
-5. API tests for research-source URL validation, source-linked knowledge persistence, partial document saves, role enforcement and safe research import rejection.\n6. Workflow context tests ensure imported source text is passed as untrusted quoted data, not executable instructions.\n6. Research importer tests for HTTPS restrictions, private-network blocking, HTML extraction, metadata capture, size limits and unreadable pages.
+5. API tests for research-source URL validation, source-linked knowledge persistence, partial document saves, role enforcement and safe research import rejection.
+6. Workflow context tests ensure imported source text is passed as untrusted quoted data, not executable instructions.
+6. Research importer tests for HTTPS restrictions, private-network blocking, HTML extraction, metadata capture, size limits and unreadable pages.
 5. Real FFmpeg rendering and output inspection.
 6. Real FFmpeg/FFprobe fixture execution for denoise, color correction, resize, interpolation and scaling with invalid-parameter rejection.
 6. TypeScript typecheck.
@@ -481,4 +483,8 @@ This is a runnable worker entry point, not a deployed worker. Do not set the ena
 
 ### Verification checkpoint
 The first integration attempt exposed a migration-order gap in the Google Drive workflow; that workflow now applies the quote and approval migrations before reusing the cloud-video PostgreSQL script. The next exact-head CI run must verify the corrected approval migration and argument order. Do not mark this bridge complete or merge PR #248 until both build and PostgreSQL workflows pass on the current head.
-\n\n## 8 November 2026 — workflow cloud bridge\n\nThe feature branch now connects approved `runway/model-router` workflow nodes to the durable cloud queue and returns verified private outputs as local assets for downstream nodes. The bridge requires an upstream human-approval node and explicit `approvedMaxAmount` USD ceiling. Source inputs are owner/project checked and checksum verified before private upload; outputs are downloaded only from the configured Supabase origin and SHA-256 verified before registration. Provider execution remains off by default; no remote flags, secrets, budget policies or hosted deployments were enabled. See `docs/P0-VIDEO-WORKFLOW-CLOUD-BRIDGE.md` for the detailed release boundary.\n
+
+
+## 8 November 2026 — workflow cloud bridge
+
+The feature branch now connects approved `runway/model-router` workflow nodes to the durable cloud queue and returns verified private outputs as local assets for downstream nodes. The bridge requires an upstream human-approval node and explicit `approvedMaxAmount` USD ceiling. Source inputs are owner/project checked and checksum verified before private upload; outputs are downloaded only from the configured Supabase origin and SHA-256 verified before registration. Provider execution remains off by default; no remote flags, secrets, budget policies or hosted deployments were enabled. See `docs/P0-VIDEO-WORKFLOW-CLOUD-BRIDGE.md` for the detailed release boundary.
