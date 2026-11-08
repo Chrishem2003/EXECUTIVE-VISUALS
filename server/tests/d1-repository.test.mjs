@@ -92,3 +92,22 @@ test("asset metadata requires checksum, private storage key and same-tenant deri
   await assert.rejects(repo.createAsset({ actorId: ownerId, name: "bad.mp4", mediaType: "video/mp4", size: 10, sha256: "a".repeat(64), storageProvider: "local-staging", storageKey: ownerId + "/../bad.mp4" }), /storage key/);
   db.close();
 });
+
+test("workspace documents persist with revision checks and member write permissions", async () => {
+  const db = makeD1();
+  const repo = createD1Repository({ db, id: (() => { let n=0; return () => [ownerId, otherId, projectId][n++]; })(), clock: (() => { let n=0; return () => `2026-11-08T00:00:0${n++}.000Z`; })() });
+  await repo.resolvePrincipal({ subject: ownerSubject, provider: "supabase" });
+  await repo.resolvePrincipal({ subject: otherSubject, provider: "supabase" });
+  await repo.createProject({ ownerId, name: "Workspace persistence" });
+  const initial = await repo.getWorkspaceDocument({ actorId: ownerId, projectId });
+  assert.equal(initial.revision, 1);
+  assert.deepEqual(initial.document, {});
+  const updated = await repo.updateWorkspaceDocument({ actorId: ownerId, projectId, expectedRevision: 1, document: { brief: "A real persisted workspace", timeline: { frameRate: 24 } } });
+  assert.equal(updated.revision, 2);
+  assert.equal(updated.document.brief, "A real persisted workspace");
+  await repo.addMember({ actorId: ownerId, projectId, memberId: otherId, role: "viewer" });
+  await assert.rejects(repo.updateWorkspaceDocument({ actorId: otherId, projectId, expectedRevision: 2, document: { brief: "forbidden" } }), { code: "D1_PROJECT_ACCESS_DENIED" });
+  await assert.rejects(repo.updateWorkspaceDocument({ actorId: ownerId, projectId, expectedRevision: 1, document: { brief: "stale" } }), { code: "D1_PROJECT_REVISION_CONFLICT" });
+  db.close();
+});
+
