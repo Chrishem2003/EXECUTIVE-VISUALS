@@ -9,7 +9,6 @@ import { createVideoRequestProvenance } from "./video-generation-contract.mjs";
 
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const MAX_VIDEO_BYTES=250*1024*1024;
-const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const fail=(message,code)=>Object.assign(new Error(message),{code});
 function safeAssetPath(mediaRoot,asset){
  const root=resolve(mediaRoot),absolute=resolve(root,String(asset.storage_path||""));
@@ -62,8 +61,7 @@ export async function executeCloudVideoWorkflowNode({
  }
  const projectId=String(job.project_id||run?.project_id||"");
  if(!UUID.test(projectId))throw fail("Cloud video workflow execution requires a saved UUID project.","VIDEO_WORKFLOW_CLOUD_PROJECT_REQUIRED");
- if(!Number.isInteger(pollIntervalMs)||pollIntervalMs<5000||pollIntervalMs>60000||
-    !Number.isInteger(maxWaitMs)||maxWaitMs<5000||maxWaitMs>2*60*60*1000){
+ if(!Number.isInteger(pollIntervalMs)||pollIntervalMs<5000||pollIntervalMs>60000||typeof waitForCompletion!=="boolean"){
   throw fail("Cloud workflow polling limits are invalid.","VIDEO_WORKFLOW_CLOUD_CONFIG_INVALID");
  }
  const project=db.prepare("SELECT id,owner_id,name,description FROM projects WHERE id=?").get(projectId);
@@ -114,24 +112,37 @@ export async function executeCloudVideoWorkflowNode({
  const cloudNode=replaceAssetReferences(node,mapping);
  const cloudValues=replaceAssetReferences(values,mapping);
  const requestId=initial.requestId;
- const quote=await cloudTimelineApi.handle({method:"POST",path:"/api/cloud/workflows/video/quote",ownerId:job.owner_id,body:{projectId,node:cloudNode,values:cloudValues,requestId}});
- if(quote?.status!==200)throw cloudResultError(quote,"VIDEO_WORKFLOW_QUOTE_FAILED");
- if(quote.body?.quote?.billable!==false||quote.body?.quote?.requiresExplicitApproval!==true)throw fail("Cloud quote did not prove a non-billable estimate requiring explicit approval.","VIDEO_WORKFLOW_QUOTE_INVALID");
- const approvedMaxAmount=Number(node.config?.approvedMaxAmount);
- if(!Number.isFinite(approvedMaxAmount)||approvedMaxAmount<=0||approvedMaxAmount>1000000||
-    Math.round(approvedMaxAmount*1000000)<Math.ceil(Number(quote.body.quote.estimatedAmount)*1000000)){
-  throw fail("Set video.generate config.approvedMaxAmount to a USD ceiling at least as high as the current quote, then approve the workflow step.","VIDEO_WORKFLOW_BUDGET_CEILING_REQUIRED");
+ const priorNode=db.prepare("SELECT output_json FROM workflow_node_runs WHERE run_id=? AND node_id=?").get(run.id,node.id);
+ const priorOutput=parseJson(priorNode?.output_json,{});
+ let cloudJobId=String(priorOutput.cloudJobId||"");
+ let quoteId=String(priorOutput.quoteId||"");
+ let routedModel=String(priorOutput.routedModel||"");
+ let approvedMaxAmount=Number(priorOutput.approvedMaxAmount);
+ if(cloudJobId){
+  if(!UUID.test(cloudJobId)||!UUID.test(quoteId)||!Number.isFinite(approvedMaxAmount)||approvedMaxAmount<=0){
+   throw fail("Persisted cloud workflow receipt is incomplete or invalid.","VIDEO_WORKFLOW_JOB_RECEIPT_INVALID");
+  }
+ }else{
+  const quote=await cloudTimelineApi.handle({method:"POST",path:"/api/cloud/workflows/video/quote",ownerId:job.owner_id,body:{projectId,node:cloudNode,values:cloudValues,requestId}});
+  if(quote?.status!==200)throw cloudResultError(quote,"VIDEO_WORKFLOW_QUOTE_FAILED");
+  if(quote.body?.quote?.billable!==false||quote.body?.quote?.requiresExplicitApproval!==true)throw fail("Cloud quote did not prove a non-billable estimate requiring explicit approval.","VIDEO_WORKFLOW_QUOTE_INVALID");
+  quoteId=String(quote.body.quote.id||"");
+  routedModel=String(quote.body.quote.routedModel||"");
+  approvedMaxAmount=Number(node.config?.approvedMaxAmount);
+  if(!UUID.test(quoteId)||!Number.isFinite(approvedMaxAmount)||approvedMaxAmount<=0||approvedMaxAmount>1000000||
+     Math.round(approvedMaxAmount*1000000)<Math.ceil(Number(quote.body.quote.estimatedAmount)*1000000)){
+   throw fail("Set video.generate config.approvedMaxAmount to a USD ceiling at least as high as the current quote, then approve the workflow step.","VIDEO_WORKFLOW_BUDGET_CEILING_REQUIRED");
+  }
+  const approval=await cloudTimelineApi.handle({method:"POST",path:"/api/cloud/workflows/video/approve",ownerId:job.owner_id,body:{
+   confirmed:true,projectId,quoteId,requestId,node:cloudNode,values:cloudValues,
+   approvedMaxAmount,approvalNote:"Approved through workflow run "+run.id+" at node "+node.id
+  }});
+  if(!approval||![200,202].includes(approval.status))throw cloudResultError(approval,"VIDEO_WORKFLOW_APPROVAL_FAILED");
+  cloudJobId=String(approval.body?.job?.id||"");
+  if(!UUID.test(cloudJobId))throw fail("Cloud approval did not return a durable video job ID.","VIDEO_WORKFLOW_JOB_RECEIPT_INVALID");
  }
- const approval=await cloudTimelineApi.handle({method:"POST",path:"/api/cloud/workflows/video/approve",ownerId:job.owner_id,body:{
-  confirmed:true,projectId,quoteId:quote.body.quote.id,requestId,node:cloudNode,values:cloudValues,
-  approvedMaxAmount,approvalNote:"Approved through workflow run "+run.id+" at node "+node.id
- }});
- if(!approval||![200,202].includes(approval.status))throw cloudResultError(approval,"VIDEO_WORKFLOW_APPROVAL_FAILED");
- const cloudJobId=String(approval.body?.job?.id||"");
- if(!UUID.test(cloudJobId))throw fail("Cloud approval did not return a durable video job ID.","VIDEO_WORKFLOW_JOB_RECEIPT_INVALID");
 
- const started=Date.now();
- while(Date.now()-started<maxWaitMs){
+ while(true){
   const localJob=db.prepare("SELECT status,lease_owner,lease_expires_at FROM jobs WHERE id=?").get(job.id);
   if(localJob?.status==="cancelled"){
    await cloudTimelineApi.handle({method:"POST",path:"/api/cloud/jobs/"+cloudJobId+"/cancel",ownerId:job.owner_id,body:{}});
@@ -167,7 +178,7 @@ export async function executeCloudVideoWorkflowNode({
     if(!response.ok)throw fail("Private cloud output download failed (HTTP "+response.status+").","VIDEO_WORKFLOW_OUTPUT_DOWNLOAD_FAILED");
     const buffer=await readBounded(response,MAX_VIDEO_BYTES);
     if(buffer.length!==asset.size||createHash("sha256").update(buffer).digest("hex")!==asset.sha256)throw fail("Downloaded cloud output failed byte-size or SHA-256 verification.","VIDEO_WORKFLOW_OUTPUT_CHECKSUM_MISMATCH");
-    const provenance=createVideoRequestProvenance(initial.input,{provider:"runway",model:cloudJob.output?.model||quote.body.quote.routedModel||"model-router",adapterVersion:"runway-model-router-cloud-worker-v1"});
+    const provenance=createVideoRequestProvenance(initial.input,{provider:"runway",model:cloudJob.output?.model||routedModel||"model-router",adapterVersion:"runway-model-router-cloud-worker-v1"});
     const local=await storeGeneratedVideo({db,mediaRoot,ownerId:job.owner_id,projectId,jobId:job.id,prompt:initial.input.prompt,model:cloudJob.output?.model||quote.body.quote.routedModel||"model-router",provenance,buffer});
     const localMetadata={...local.metadata,cloudWorkspaceAssetId:cloudAssetId,cloudVideoJobId:cloudJobId,cloudSha256:asset.sha256};
     db.prepare("UPDATE assets SET metadata_json=? WHERE id=? AND owner_id=?").run(json(localMetadata),local.id,job.owner_id);
@@ -175,7 +186,7 @@ export async function executeCloudVideoWorkflowNode({
    }
    const output={asset:imported[0],assetId:imported[0],video:imported[0],assetIds:imported,assets:imported,
     provider:"runway",model:cloudJob.output?.model||quote.body.quote.routedModel||"model-router",
-    cloudJobId,usage:cloudJob.output?.usage||null,quoteId:quote.body.quote.id,
+    cloudJobId,usage:cloudJob.output?.usage||null,quoteId,
     approvedMaxAmount,currency:"USD",costEvidenceReference:cloudJob.output?.costEvidenceReference||null};
    onProgress(95);
    return output;
@@ -185,8 +196,8 @@ export async function executeCloudVideoWorkflowNode({
    throw fail(String(detail.message||"Cloud video job ended with status "+cloudJob.status).slice(0,500),
     cloudJob.status==="needs_input"?"VIDEO_WORKFLOW_CLOUD_JOB_NEEDS_INPUT":"VIDEO_WORKFLOW_CLOUD_JOB_FAILED");
   }
-  onProgress(Math.min(90,70+Math.floor((Date.now()-started)/maxWaitMs*20)));
-  await sleep(pollIntervalMs);
+  if(!waitForCompletion)return {pending:true,cloudJobId,quoteId,requestId,routedModel,approvedMaxAmount,status:cloudJob.status};
+  onProgress(cloudJob.status==="running"?80:72);
+  await new Promise(resolve=>setTimeout(resolve,pollIntervalMs));
  }
- throw fail("Cloud video job is still running. Retry the workflow to reconcile the same idempotent cloud job.","VIDEO_WORKFLOW_CLOUD_JOB_TIMEOUT");
 }
