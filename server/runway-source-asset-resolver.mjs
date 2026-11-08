@@ -99,7 +99,7 @@ export function createRunwaySourceAssetResolver({
         declared !== null && (!Number.isSafeInteger(declared) || declared < 0 || declared > maxBytes || declared !== asset.size)) {
       throw fail("Private source asset headers do not match stored metadata.", "VIDEO_INPUT_ASSET_INTEGRITY_FAILED");
     }
-    const bytes = await readResponseBodyBounded(response, maxBytes);
+    const bytes = await readResponseBodyBounded(response, asset.size);
     if (bytes.length !== asset.size) {
       throw fail("Private source asset size does not match its stored record.", "VIDEO_INPUT_ASSET_INTEGRITY_FAILED");
     }
