@@ -92,3 +92,8 @@ Application-level SHA-256 provenance records are created for uploads. An authent
 ### Trust & provenance workspace
 
 Open **Manage → Trust & provenance** in the app to see the completed Content Credentials stages, their verification evidence and the remaining release gates. The page links directly to the Asset Library inspection flow and the PR/CI evidence. It deliberately separates completed implementation from production sign-off; no KMS/HSM, neural model, or staging gate is marked complete without its own evidence.
+
+
+The current app upload allowlist overlaps the CAI core format list for nine image/audio/video formats: JPEG, PNG, WebP, GIF, MP3, WAV, M4A, MP4 and MOV. WebM, MKV and OGG are ingestable by the app but are not listed in the current CAI core supported-format table, so do not assume C2PA signing/preservation support for them. The format round-trip matrix verifies the nine overlapping formats. The recovery suite also includes a 96 MiB streaming preservation stress point; near-limit memory/throughput certification remains a separate release gate.
+
+Open **Manage → Trust & provenance** in the app for the implementation ledger, test evidence and remaining release gates. Open **Manage → Asset library** to inspect Content Credentials on individual image, audio and video assets.
