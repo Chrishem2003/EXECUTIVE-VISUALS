@@ -39,12 +39,11 @@ function errorResult(code) {
   };
 }
 
-function buildContext(Sdk, trustAnchorPem, allowedSignerPem) {
-  const hasTrustPolicy = Boolean(trustAnchorPem || allowedSignerPem);
+function buildContext(Sdk, trustAnchorPem) {
+  const hasTrustPolicy = Boolean(trustAnchorPem);
   const trust = {
     verifyTrustList: true,
-    ...(trustAnchorPem ? { userAnchors: trustAnchorPem } : {}),
-    ...(allowedSignerPem ? { allowedList: allowedSignerPem } : {})
+    ...(trustAnchorPem ? { userAnchors: trustAnchorPem } : {})
   };
   const settings = {
     verify: {
@@ -59,14 +58,13 @@ function buildContext(Sdk, trustAnchorPem, allowedSignerPem) {
   return {
     context: new Sdk.Context(settings),
     hasTrustPolicy,
-    trustPolicyType: allowedSignerPem ? "allowed_list" : trustAnchorPem ? "user_anchors" : "none"
+    trustPolicyType: trustAnchorPem ? "user_anchors" : "none"
   };
 }
 
 export function createC2paVerifier({
   sdkLoader = () => import("@contentauth/c2pa-node"),
   trustAnchors = process.env.C2PA_TRUST_ANCHORS || "",
-  allowedSigners = process.env.C2PA_ALLOWED_SIGNERS || "",
   maxBytes = Number(process.env.C2PA_MAX_VERIFY_BYTES || DEFAULT_MAX_BYTES)
 } = {}) {
   let sdkPromise;
@@ -114,16 +112,13 @@ export function createC2paVerifier({
     };
     const trustAnchorPem = readPemPolicy(trustAnchors, "C2PA_TRUST_ANCHORS_INVALID", "C2PA_TRUST_ANCHORS_UNAVAILABLE");
     if (typeof trustAnchorPem !== "string") return errorResult(trustAnchorPem.errorCode);
-    const allowedSignerPem = readPemPolicy(allowedSigners, "C2PA_ALLOWED_SIGNERS_INVALID", "C2PA_ALLOWED_SIGNERS_UNAVAILABLE");
-    if (typeof allowedSignerPem !== "string") return errorResult(allowedSignerPem.errorCode);
-
     try {
       sdkPromise ||= Promise.resolve().then(sdkLoader);
       const Sdk = await sdkPromise;
       if (typeof Sdk?.Reader?.fromAsset !== "function" || typeof Sdk?.Context !== "function") {
         return errorResult("C2PA_SDK_API_UNSUPPORTED");
       }
-      const { context, hasTrustPolicy, trustPolicyType } = buildContext(Sdk, trustAnchorPem, allowedSignerPem);
+      const { context, hasTrustPolicy, trustPolicyType } = buildContext(Sdk, trustAnchorPem);
       const reader = await Sdk.Reader.fromAsset({ path: absolutePath, mimeType }, context);
       if (!reader) {
         return {
