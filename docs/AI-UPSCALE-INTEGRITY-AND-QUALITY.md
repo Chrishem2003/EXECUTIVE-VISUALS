@@ -40,7 +40,7 @@ A quality-verification candidate must include independently captured records for
 4. Animation and illustration.
 5. Low-light and noisy source material.
 
-Each benchmark record pins SHA-256 hashes for the source, output, executable, and model files; records source/output dimensions, scale, model version, duration and execution result; and distinguishes `not_reviewed`, `reviewed_pass` and `reviewed_fail`.
+Each benchmark record pins SHA-256 hashes for the source, output, executable, and model files; records source/output dimensions, scale, model version, duration and execution result; and distinguishes `not_reviewed`, `reviewed_pass` and `reviewed_fail`. A reviewed record must also include a reviewer identifier, review timestamp, substantive review notes (at least 20 characters), and a SHA-256 digest of the review artifact. LPIPS and SSIM values are constrained to the normalized 0–1 range.
 
 A reviewer must compare source, output and a suitable reference where one exists. Review should consider:
 - Real detail recovery versus invented detail.
