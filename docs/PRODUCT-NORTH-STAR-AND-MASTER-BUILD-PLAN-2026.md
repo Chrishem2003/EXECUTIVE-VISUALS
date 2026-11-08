@@ -447,3 +447,8 @@ The AI Director now reads cloud production records, proof candidates, character 
 ### Production execution hardening checkpoint
 - Added graceful cancellation for active media/timeline jobs on worker shutdown, with explicit `cancelled` terminal status while the lease is valid and durable recovery fallback when finishing cannot be confirmed.
 - Next: reconcile storage publication and cleanup failure paths, then run multi-role authorization and retry/replay acceptance tests before enabling worker services in staging.
+
+
+### Production execution stack — integration decision (8 November 2026)
+
+The current `main` already contains the idempotent publication ledger from merged PR #226; closed PR #171 is superseded. The worker lease-fencing branch chain (#172–#175, #178 and #207) remains stacked on the old ledger branch and is not a safe direct merge: the lease-fencing head is 61 commits ahead / 28 behind current main. Historical CI is green on the inspected stack heads, but this does not prove compatibility with current main. Keep the stack in draft; do not merge both alternative atomic-publication PRs (#177 and #178). Continue with #178 because #207 cleanup reconciliation is based on it, and port only the lease-fencing/worker/storage changes onto current main before validating the full stack and migration ordering together.
