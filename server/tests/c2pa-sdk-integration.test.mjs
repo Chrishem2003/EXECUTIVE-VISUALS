@@ -87,3 +87,22 @@ test("official CAI SDK signs and validates a real embedded C2PA manifest",async(
   assert.notEqual(transformedStore.validation_state,"Invalid");
  }finally{await rm(dir,{recursive:true,force:true});}
 });
+
+test("transformation preservation does not invent a C2PA source lineage when none exists",async()=>{
+ const cert=await readFile(join(fixtureRoot,"test-signing-chain.pem"));
+ const key=await readFile(join(fixtureRoot,"test-signing-key.pem"));
+ const signer=LocalSigner.newSigner(cert,key,"es256");
+ const dir=await mkdtemp(join(tmpdir(),"ev-c2pa-no-lineage-"));
+ const sourcePath=join(dir,"source.png"),outputPath=join(dir,"output.png");
+ try{
+  await writeFile(sourcePath,onePixelPng());
+  await writeFile(outputPath,onePixelPng(40,50,60));
+  const before=createHash("sha256").update(await readFile(outputPath)).digest("hex");
+  const preserve=createC2paTransformationPreserver({sdkLoader:async()=>({Reader,Builder,Context}),maxBytes:1024*1024});
+  const result=await preserve({sourcePath,outputPath,sourceMimeType:"image/png",outputMimeType:"image/png",signer});
+  const after=createHash("sha256").update(await readFile(outputPath)).digest("hex");
+  assert.equal(result.status,"not_present");
+  assert.equal(result.preserved,false);
+  assert.equal(after,before,"an asset without source C2PA must not be modified");
+ }finally{await rm(dir,{recursive:true,force:true});}
+});
