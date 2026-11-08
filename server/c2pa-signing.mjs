@@ -142,6 +142,7 @@ export function createC2paTransformationSigner({
         }
       });
       const sourceReader = await Sdk.Reader.fromAsset({ path: source, mimeType: sourceMimeType }, readContext);
+      if (signal?.aborted) fail("JOB_CANCELLED");
       let sourceManifestState = null;
       if (sourceReader) {
         sourceManifestState = sourceReader.json()?.validation_state ?? null;
@@ -202,6 +203,7 @@ export function createC2paTransformationSigner({
         fail("C2PA_SIGNED_OUTPUT_SIZE_INVALID");
       }
       const outputReader = await Sdk.Reader.fromAsset({ path: destination, mimeType }, readContext);
+      if (signal?.aborted) fail("JOB_CANCELLED");
       if (!outputReader || !outputReader.isEmbedded?.()) fail("C2PA_SIGNED_OUTPUT_MANIFEST_MISSING");
       const outputStore = outputReader.json();
       const validationState = outputStore?.validation_state ?? null;
@@ -210,11 +212,13 @@ export function createC2paTransformationSigner({
       const ingredientCount = Array.isArray(activeManifest?.ingredients) ? activeManifest.ingredients.length : 0;
       if (ingredientCount < 1) fail("C2PA_INGREDIENT_LINEAGE_MISSING");
 
+      const outputSha256 = await sha256File(destination);
+      if (signal?.aborted) fail("JOB_CANCELLED");
       return {
         status: "signed_and_verified",
         mimeType,
         byteSize: outputInfo.size,
-        sha256: await sha256File(destination),
+        sha256: outputSha256,
         validationState,
         sourceManifestState,
         sourceManifestPreserved: Boolean(sourceReader),
