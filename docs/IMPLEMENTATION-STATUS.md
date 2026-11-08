@@ -523,3 +523,10 @@ This is a runnable worker entry point, not a deployed worker. Do not set the ena
 - Added responsive mobile treatment and accessible control labels.
 - The merged C2PA/provenance release is already live on the existing `EXECUTIVE-VISUALS` Render service at commit `a7643b9`; this account-display increment is on `feat/user-facing-account-dashboard` and is not yet deployed pending CI and review.
 - Important platform limitation remains: the live service is on the free plan with no attached persistent disk and no Render Postgres instance. Its storage durability is not certified for customer-critical projects. Do not imply that the current app has durable cloud media storage.
+
+
+### Project member display
+
+- Runtime Console now renders the project member list and role badges from the authenticated members API.
+- Owner-only controls add an existing account by email and remove a project member. The UI explicitly states that the person must already have an account and that adding them does not send an email invitation.
+- Non-owners see the current role and a read-only membership list; the API continues to enforce owner-only membership changes.
