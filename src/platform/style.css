@@ -53,6 +53,15 @@
 .runtime-asset-actions{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:5px}
 .runtime-asset-actions button,.runtime-job button{border:1px solid #384253;background:#202735;color:#e5d1a8;border-radius:5px;padding:6px 8px;font-size:8px}
 .runtime-asset-actions button:hover,.runtime-job button:hover{border-color:#a78bfa}
+.runtime-asset-actions button:disabled{opacity:.55;cursor:wait}
+.asset-provenance-result{grid-column:1/-1;min-width:0;border:1px solid #344153;border-radius:6px;background:#111925;padding:10px;display:grid;gap:5px}
+.asset-provenance-result .eyebrow{font-size:8px;letter-spacing:.8px;color:#b7c5d8}
+.asset-provenance-result b{font-size:10px;color:#e5eaf2}
+.asset-provenance-result small{font-size:8px;line-height:1.5;color:var(--muted);overflow-wrap:anywhere}
+.asset-provenance-result ul{margin:2px 0 0;padding-left:16px}
+.asset-provenance-result li{font-size:8px;line-height:1.5;color:#c5cfdd;overflow-wrap:anywhere}
+.asset-provenance-result code{font-size:8px;color:#e2c28a}
+
 .runtime-job-heading b{font-size:10px}
 .job-status{font-size:8px;color:#d7c18e;text-transform:uppercase;letter-spacing:.7px}
 .runtime-job>code{display:block;font-size:8px;color:var(--muted);overflow-wrap:anywhere;margin:8px 0}
