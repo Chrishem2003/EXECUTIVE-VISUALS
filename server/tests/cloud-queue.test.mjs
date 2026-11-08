@@ -40,8 +40,9 @@ test("renew, recovery and finish map to the committed RPC contracts",async()=>{
   assert.equal(await queue.finish("job-1","worker-1","failed",null,{code:"FAILED"},"11111111-1111-4111-8111-111111111111"),false);
   assert.deepEqual(requests.map(x=>x.url.split("/").pop()),["renew_job_lease_v2","assert_job_lease_v2","recover_expired_jobs","finish_job_v2","finish_job_v2"]);
   assert.deepEqual(requests[0].body,{p_job_id:"job-1",p_worker_id:"worker-1",p_lease_token:"11111111-1111-4111-8111-111111111111",p_lease_seconds:90});
-  assert.deepEqual(requests[1].body,{p_limit:25});
-  assert.deepEqual(requests[2].body,{p_job_id:"job-1",p_worker_id:"worker-1",p_lease_token:"11111111-1111-4111-8111-111111111111",p_status:"succeeded",p_output:{assetId:"asset-1"},p_error:null});
+  assert.deepEqual(requests[1].body,{p_job_id:"job-1",p_worker_id:"worker-1",p_lease_token:"11111111-1111-4111-8111-111111111111"});
+  assert.deepEqual(requests[2].body,{p_limit:25});
+  assert.deepEqual(requests[3].body,{p_job_id:"job-1",p_worker_id:"worker-1",p_lease_token:"11111111-1111-4111-8111-111111111111",p_status:"succeeded",p_output:{assetId:"asset-1"},p_error:null});
 });
 
 test("configuration, arguments and HTTP errors fail closed",async()=>{
