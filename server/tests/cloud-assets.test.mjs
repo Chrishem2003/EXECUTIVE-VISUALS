@@ -12,11 +12,11 @@ const assetId="323e4567-e89b-42d3-a456-426614174000";
 const bytes=new Uint8Array([1,2,3,4]);
 const config={url:"https://example.supabase.co",serviceRoleKey:"private-service-key"};
 function response(body,status=200){return{ok:status>=200&&status<300,status,async text(){return JSON.stringify(body);}};}
-function fixture({authorize=async()=>true,insertResponse=null,removeError=false}={}) {
+function fixture({authorize=async()=>true,insertResponse=null,removeError=false,uploadFileReceipt=null}={}) {
  const calls=[],storageCalls=[];let publicationReservation=null,publicationAsset=null;
  const storage={
   async upload(path,data,type){storageCalls.push({op:"upload",path,data,type});return{bucket:"executive-visuals-media",path,size:data.byteLength,contentType:type};},
-  async uploadFile(path,file,type,options={}){const data=await readFile(file);storageCalls.push({op:"uploadFile",path,file,type,options});return{bucket:"executive-visuals-media",path,size:data.byteLength,sha256:createHash("sha256").update(data).digest("hex"),contentType:type};},
+  async uploadFile(path,file,type,options={}){const data=await readFile(file);storageCalls.push({op:"uploadFile",path,file,type,options});return uploadFileReceipt||{bucket:"executive-visuals-media",path,size:data.byteLength,sha256:createHash("sha256").update(data).digest("hex"),contentType:type};},
   async createSignedUrl(path,expiry){storageCalls.push({op:"sign",path,expiry});return"https://example.supabase.co/storage/signed";},
   async remove(path){storageCalls.push({op:"remove",path});if(removeError)throw new Error("storage cleanup unavailable");return true;}
  };
@@ -175,5 +175,14 @@ test("concurrent attempts for one publication key converge on the same asset ide
  const uploads=f.storageCalls.filter(call=>call.op==="uploadFile");
  assert.ok(uploads.length>=1&&uploads.length<=2);
  assert.equal(new Set(uploads.map(call=>call.path)).size,1);
+ await rm(root,{recursive:true,force:true});
+});
+
+test("removes a reserved storage object when the streaming upload receipt fails validation",async()=>{
+ const root=await mkdtemp(join(tmpdir(),"ev-idempotent-invalid-receipt-")),file=join(root,"render.mp4");
+ await writeFile(file,bytes);
+ const f=fixture({uploadFileReceipt:{bucket:"executive-visuals-media",path:"wrong/path",size:bytes.length,sha256:createHash("sha256").update(bytes).digest("hex")}});
+ await assert.rejects(()=>f.repo.createFromFileIdempotent({ownerId,projectId,originalName:"render.mp4",mediaType:"video/mp4",filePath:file,publicationKey:"job-invalid-receipt:output:v1"}),/did not match the reserved publication checksum/);
+ assert.deepEqual(f.storageCalls.map(call=>call.op),["uploadFile","remove"]);
  await rm(root,{recursive:true,force:true});
 });
