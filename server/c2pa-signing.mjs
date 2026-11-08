@@ -45,7 +45,7 @@ async function sha256File(path) {
  */
 export function createC2paTransformationSigner({
   enabled = process.env.C2PA_SIGNING_ENABLED === "true",
-  mediaRoot = process.env.MEDIA_ROOT || "",
+  mediaRoot = process.env.C2PA_SIGNING_MEDIA_ROOT || "",
   certificateChain,
   keyRef = process.env.C2PA_SIGNING_KEY_REF || "",
   signingProvider,
