@@ -65,7 +65,7 @@ export function createCloudTimelineExecutor({timelines,mediaIO,renderTimeline,pr
       const initialInfo=await stat(output.path);
       if(!initialInfo.isFile()||initialInfo.size<1)throw Object.assign(new Error("Timeline renderer produced an empty output."),{code:"CLOUD_TIMELINE_OUTPUT_EMPTY"});
       if(initialInfo.size>maxOutputBytes)throw Object.assign(new Error("Timeline output exceeds the configured limit."),{code:"CLOUD_TIMELINE_OUTPUT_TOO_LARGE"});
-      const sourceAssets=[...materialized.values()].map(item=>({path:item.path,mediaType:item.asset.mediaType||item.asset.media_type,sha256:item.asset.sha256})).filter(item=>/^(image|video|audio)\\//.test(String(item.mediaType||"")));
+      const sourceAssets=[...materialized.values()].map(item=>({path:item.path,mediaType:item.asset.mediaType||item.asset.media_type,sha256:item.asset.sha256})).filter(item=>/^(image|video|audio)\//.test(String(item.mediaType||"")));
       const c2paPreservation=sourceAssets.length?await c2paPreserver({sources:sourceAssets,outputPath:output.path,outputMimeType:output.mediaType,signer:c2paSigner,signerMode:c2paSignerMode,operation:"timeline.render",signal}):{status:"not_checked",preserved:false,reason:"NO_SUPPORTED_MEDIA_SOURCES"};
       const info=await stat(output.path);
       if(!info.isFile()||info.size<1||info.size>maxOutputBytes)throw Object.assign(new Error("Signed timeline output is empty or exceeds the configured limit."),{code:"CLOUD_TIMELINE_OUTPUT_INVALID"});
