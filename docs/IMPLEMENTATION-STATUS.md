@@ -529,3 +529,8 @@ This is a runnable worker entry point, not a deployed worker. Do not set the ena
 - AI Director evidence cards display the source fingerprint plus available method and source reference.
 - Added API-level tamper and review-reason regression tests, in addition to the evidence-ledger unit test.
 - This verifies source-byte continuity at submission and review time; it does not establish factual truth, legal rights or C2PA trust.
+
+
+### Source-fingerprint change propagation
+
+Creative graph asset nodes now include the recorded SHA-256 fingerprint and byte size. A source fingerprint change is detected by graph snapshot comparison and downstream references (including character reference use, evidence lineage and timeline clips) are marked as potentially stale for human review. This is dependency propagation only; it does not mutate or invalidate exports.
