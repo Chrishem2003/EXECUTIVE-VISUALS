@@ -16,6 +16,10 @@ test("cloud execution fails closed until the governed bridge is implemented", ()
   );
 });
 
+test("cloud execution is available only when the authenticated bridge is injected", () => {
+  assert.equal(assertVideoWorkflowExecutionMode("cloud", { cloudBridgeAvailable: true }), "cloud");
+});
+
 test("unknown execution modes fail closed rather than silently selecting legacy", () => {
   for (const mode of ["", "automatic", "legacy-cloud", "true", "disabled"]) {
     if (mode === "") continue;
