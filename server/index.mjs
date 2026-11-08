@@ -17,6 +17,7 @@ import { importResearchUrl } from "./research-import.mjs";
 import { getProviderCatalog } from "./provider-registry.mjs";
 import { ensureRemoteUsageTable, getRemoteUsagePolicy } from "./usage-guardrails.mjs";
 import { createCloudTimelineApi } from "./cloud-timeline-api.mjs";
+import { resumeCompletedCloudVideoWorkflows } from "./workflow-cloud-video-resumer.mjs";
 import { validateSrt, validateWebVtt } from "./caption-validation.mjs";
 import { ensureTransformationPlanSchema, createTransformationPlan, approveTransformationPlan, listTransformationPlans, getTransformationPlan } from "./transformation-plans.mjs";
 import { signInWithSupabasePassword, signUpWithSupabasePassword, refreshSupabaseSession, getSupabaseUser, revokeSupabaseSession } from "./supabase-password-auth.mjs";
@@ -376,6 +377,15 @@ async function processNextJob() {
 let workerBusy=false;
 const workerTimer=process.env.DISABLE_WORKER==="true"?null:setInterval(async()=>{if(workerBusy)return;workerBusy=true;try{await processNextJob();}catch(error){process.stderr.write("Worker cycle failed: "+String(error.message)+"\\n");}finally{workerBusy=false;}},500);
 workerTimer?.unref();
+let cloudWorkflowResumeBusy=false;
+const cloudWorkflowResumeTimer=cloudTimelineApi&&process.env.DISABLE_WORKER!=="true"?setInterval(async()=>{
+ if(cloudWorkflowResumeBusy)return;
+ cloudWorkflowResumeBusy=true;
+ try{await resumeCompletedCloudVideoWorkflows({db,cloudTimelineApi,onError:error=>process.stderr.write("Cloud workflow resume check failed: "+String(error?.code||error?.message||"RESUME_FAILED")+"\\n")});}
+ catch(error){process.stderr.write("Cloud workflow resume cycle failed: "+String(error?.code||error?.message||"RESUME_FAILED")+"\\n");}
+ finally{cloudWorkflowResumeBusy=false;}
+},5000):null;
+cloudWorkflowResumeTimer?.unref();
 let billingWebhookBusy=false;
 const billingWebhookTimer=(process.env.FLW_SECRET_KEY||process.env.DODO_PAYMENTS_WEBHOOK_KEY)?setInterval(async()=>{
   if(billingWebhookBusy)return;
