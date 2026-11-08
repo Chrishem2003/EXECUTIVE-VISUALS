@@ -33,6 +33,16 @@ test("never guesses pricing for an unknown provider/model or missing resolution 
  assert.equal(estimateVideoGenerationCost(request,[],{now}).available,false);
 });
 
+test("supports explicitly priced 1k, 2k and 4k provider tiers without resolution substitution",()=>{
+ const highRes=[{...pricing[0],ratesPerSecond:{...pricing[0].ratesPerSecond,"1k":0.15,"2k":0.22,"4k":0.4}}];
+ for(const [resolution,expected] of [["1k",0.9],["2k",1.32],["4k",2.4]]){
+  const quote=estimateVideoGenerationCost({...request,resolution,durationSeconds:6,audioMode:"none",referenceImageCount:0},highRes,{now});
+  assert.equal(quote.available,true);
+  assert.equal(quote.amount,expected);
+ }
+ assert.equal(estimateVideoGenerationCost({...request,resolution:"4k"},pricing,{now}).available,false);
+});
+
 test("rejects expired or future-dated pricing schedules",()=>{
  const expired=[{...pricing[0],expiresAt:"2026-11-07T11:59:59.000Z"}];
  const future=[{...pricing[0],observedAt:"2026-11-07T12:00:01.000Z"}];
