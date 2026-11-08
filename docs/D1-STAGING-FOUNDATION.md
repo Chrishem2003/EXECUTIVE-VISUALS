@@ -1,6 +1,6 @@
 # Cloudflare D1 staging foundation
 
-**Status:** isolated schema and repository adapter proposed for review. Not connected to the deployed Worker and not applied to any remote database.
+**Status:** isolated D1 schema and Worker deployed to the dedicated staging subdomain. Authenticated browser sign-in and workspace round-trip remain acceptance gates.
 
 ## Boundary and identity
 
@@ -14,8 +14,8 @@ The schema stores metadata only. It does not store media bytes, provider secrets
 - `server/d1-repository.mjs`: parameterized D1 repository. Project reads are scoped to owner/member; writes enforce owner/editor roles and optimistic revisions.
 - `server/tests/d1-repository.test.mjs`: local in-memory SQLite tests using the same SQL migration. No remote D1 binding is used.
 - `cloudflare/worker.mjs`: separate staging Worker that exposes isolated `/api/d1/*` endpoints and proxies only login/logout plus the authenticated `/api/me` identity check. All other production business API routes are blocked.
-- `cloudflare/worker.test.mjs`: Worker tests for schema readiness, upstream authentication, project creation/listing and rejection of unauthenticated writes.
-- `wrangler.jsonc`: separate `executive-visuals-d1-staging` Worker configuration, bound only to the existing `executive-visuals-staging` D1 database.
+- `cloudflare/worker.test.mjs`: Worker tests for schema readiness, upstream authentication, project creation/listing, revisioned workspace persistence, redirect handling, CORS origin restrictions and rejection of unauthenticated writes.
+- `wrangler.jsonc`: separate `executive-visuals-d1-staging` Worker configuration, bound only to the existing `executive-visuals-staging` D1 database and restricted to the exact Executive Visuals app origin for browser API calls.
 - `docs/D1-STAGING-FOUNDATION.md`: this integration boundary and rollout plan.
 
 ## Staging endpoints
@@ -27,7 +27,7 @@ The schema stores metadata only. It does not store media bytes, provider secrets
 - Read/update staging project: `GET/PATCH /api/d1/projects/:id`
 - Read/update persisted workspace documents: `GET/PUT /api/d1/projects/:id/workspace` (revision checked; maximum document size 256 KB)
 
-The staging Worker blocks production business routes such as `/api/projects` and `/api/assets`.
+The staging Worker blocks production business routes such as `/api/projects` and `/api/assets`. D1 browser requests use an explicit Bearer token; CORS permits only `https://executive-visuals.onrender.com`, allows the `authorization` and `content-type` headers, and does not enable cross-origin cookies.
 
 ## Local verification
 
@@ -35,7 +35,7 @@ The staging Worker blocks production business routes such as `/api/projects` and
 npm run verify:d1
 ```
 
-The test suite applies the migration to local in-memory SQLite databases. It verifies schema creation, external-principal mapping, project access roles, revision conflicts, asset checksum/storage-key validation, Worker identity verification through the existing `/api/me` endpoint, and the D1 project API. The Worker does not trust browser-supplied owner IDs; it derives identity from the existing API's authenticated session. It cannot proxy production project, asset, job, or other business APIs.
+The test suite applies the migration to local in-memory SQLite databases. It verifies schema creation, external-principal mapping, project access roles, revision conflicts, asset checksum/storage-key validation, Worker identity verification through the existing `/api/me` endpoint, revisioned workspace persistence, CORS allow-list enforcement, and rejection of production business API routes. The Worker does not trust browser-supplied owner IDs; it derives identity from the existing API's authenticated session. It cannot proxy production project, asset, job, or other business APIs.
 
 For Cloudflare local development, configure a D1 binding with `remote = false` (the default) and use Wrangler local migrations. Never use `--remote` during ordinary tests. Cloudflare documents that local D1 state is separate from remote state; remote writes are irreversible through local development.
 
@@ -46,13 +46,15 @@ For Cloudflare local development, configure a D1 binding with `remote = false` (
 3. Run `wrangler d1 migrations apply executive-visuals-staging --local` against a local simulator and verify the migration ledger.
 4. **Completed:** apply `0001_initial.sql` to the isolated remote `executive-visuals-staging` database and record it in `d1_migrations`. Verified seven `ev_*` tables and zero user/project/asset/job rows.
 5. **Completed:** deploy `executive-visuals-d1-staging` as a separate Worker on its workers.dev subdomain, with no custom domain or production route. It permits only login/logout, `/api/me`, and `/api/d1/*`; all other application/business routes return 404. The Render API is contacted only for authentication and identity verification.
-6. Run a live authenticated smoke test; confirm unauthenticated requests cannot create D1 principals or projects.
-7. Keep Render SQLite as the current application source of truth until API compatibility, consistency, recovery, export/restore and tenant-isolation acceptance pass. Do not redirect the existing `/api/projects` route until all project-dependent endpoints have been migrated together.
+6. **Completed:** add revisioned D1 workspace-document GET/PUT endpoints, strict body bounds, and owner/editor write authorization; viewers/reviewers remain read-only.
+7. **Completed in code, awaiting CI/deployment:** restrict browser CORS to the exact Executive Visuals app origin and Bearer authorization; cross-origin cookies are disabled.
+8. Run a live authenticated smoke test and workspace round-trip; confirm unauthenticated requests cannot create D1 principals or projects.
+9. Keep Render SQLite as the current application source of truth until API compatibility, consistency, recovery, export/restore and tenant-isolation acceptance pass. Do not redirect the existing `/api/projects` route until all project-dependent endpoints have been migrated together.
 
 ## Deliberately not done
 
 - No production Worker binding, deployed Worker code, route, or environment variable was changed.
-- No staging Worker has been deployed yet.
+- No production route, main application API, or Render service has been switched to D1.
 - No Render deployment or production service was changed.
 - No Supabase project, key, or auth configuration was changed.
 - No R2 bucket was activated or created.
