@@ -152,8 +152,20 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
         typeof estimate.provider!=="string"||!estimate.provider.trim()){
       return response(503,{error:{code:"VIDEO_WORKFLOW_QUOTE_INVALID",message:"The provider dry-run did not return a verifiable non-billable quote."}});
      }
+     const quoteId=randomUUID();
+     const expiresAt=new Date(Date.now()+5*60*1000).toISOString();
+     const quoteRecord=await request("rpc/record_video_workflow_quote",{method:"POST",body:{
+      p_quote_id:quoteId,p_owner_id:ownerId,p_project_id:projectId,
+      p_request_id:workflowRequest.requestId,p_request_hash:workflowRequest.requestHash,
+      p_provider:workflowRequest.provider,p_model:workflowRequest.model,p_operation:workflowRequest.operation,
+      p_routed_provider:estimate.provider,p_routed_model:estimate.model,
+      p_estimated_credits:estimate.estimatedCredits,p_estimated_amount:estimate.estimatedUsd,
+      p_currency:estimate.currency,p_config_id:String(estimate.configId||""),
+      p_pricing_source:"runway_model_router_dry_run",p_expires_at:expiresAt
+     }});
+     if(quoteRecord!==quoteId)throw Object.assign(new Error("The non-billable workflow quote could not be durably recorded."),{code:"VIDEO_WORKFLOW_QUOTE_PERSISTENCE_FAILED"});
      return response(200,{quote:{
-      id:randomUUID(),projectId,requestId:workflowRequest.requestId,
+      id:quoteId,projectId,requestId:workflowRequest.requestId,
       requestHash:workflowRequest.requestHash,provider:workflowRequest.provider,
       model:workflowRequest.model,operation:workflowRequest.operation,
       routedProvider:estimate.provider,routedModel:estimate.model,
@@ -161,7 +173,7 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
       currency:estimate.currency,configId:estimate.configId,
       pricingSource:"runway_model_router_dry_run",billable:false,
       requiresExplicitApproval:true,paidExecutionEnabled:env.RUNWAY_MODEL_ROUTER_ENABLED==="true"&&env.CLOUD_VIDEO_WORKER_ENABLED==="true"&&env.RUNWAY_VIDEO_ALLOW_REMOTE==="true"&&env.VIDEO_GATEWAY_ENABLED==="true"&&env.VIDEO_GATEWAY_ALLOW_REMOTE==="true"&&/^[a-z][a-z0-9_-]{0,63}$/.test(String(env.RUNWAY_VIDEO_ROUTER_CONFIG||""))&&Boolean(env.RUNWAY_API_KEY||env.RUNWAYML_API_SECRET),
-      expiresAt:new Date(Date.now()+5*60*1000).toISOString()
+      expiresAt
      }});
     }catch(error){
      const code=String(error?.code||"VIDEO_WORKFLOW_QUOTE_FAILED");
