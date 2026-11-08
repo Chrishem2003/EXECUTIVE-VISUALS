@@ -21,6 +21,12 @@ The verifier checks the record hash and compares its asset identity, media type,
 
 The application record is **not** a C2PA Content Credential, digital signature, real-world identity proof, legal rights clearance or factual verification. C2PA is inspected separately through `GET /api/assets/:assetId/c2pa`, which uses the official `@contentauth/c2pa-node` SDK and returns one of `trusted`, `valid_untrusted`, `invalid`, `not_present` or `validation_unavailable`. Only the SDK's explicit `Trusted` validation state is reported as trusted; a cryptographically valid but untrusted signer remains `valid_untrusted`. SHA-256 protects consistency only when the trusted record itself is protected; a privileged attacker who can rewrite both the asset row and record could replace them together.
 
+## Transformation preservation
+
+The cloud media executor now calls the C2PA transformation preserver before publishing an image/video derivative. When the source has no embedded C2PA manifest, it records `not_present` and leaves the derivative unchanged. When the source has a valid C2PA manifest and an authorized server-side signer is supplied, the preserver creates a new `edit` manifest, carries the source Reader into the new manifest as an ingredient, adds a `c2pa.edited` action, verifies that the output manifest remains valid and that the source manifest data is present, then atomically replaces the temporary output before publication. If a source manifest is invalid or signing is unavailable, derivative publication fails closed; the system does not silently strip existing credentials.
+
+The signer is injected into `createCloudMediaWorker` as a `LocalSigner` or callback signer. The default deployment has **no signer configured**, so ordinary non-C2PA media can continue, while C2PA-bearing source assets are held until an approved signer is configured. This is a source-code integration and test path, not production signing enablement. The local SQLite media executor and timeline render pipeline are not yet wired to this signer adapter.
+
 ## API examples
 
 ```http
@@ -44,7 +50,7 @@ The verifier pins the maintained CAI Node SDK at `@contentauth/c2pa-node@0.10.0`
 - API tests verify authenticated asset access and cross-user isolation.
 
 Remaining production gates:
-- Preserve ingredient relationships and record transformations in new manifests across transcode, edit, proxy, render and publish workflows.
+- Extend the current cloud-media derivative preservation path to the local media and timeline-render pipelines, then run independent transcode/proxy/render round-trip tests.
 - Obtain a suitable production C2PA signing certificate and protect private keys with KMS/HSM-backed signing; never ship private keys to browsers or repository files.
 - Define and review the production trust-anchor, certificate-chain, timestamping, revocation and trust-list policy; no production trust anchor is bundled by this feature.
 - Keep C2PA validation separate from rights, consent, factual accuracy and editorial approval.
@@ -54,4 +60,4 @@ Specification: https://spec.c2pa.org/specifications/specifications/2.5/specs/C2P
 
 ## Acceptance tests
 
-The provenance test suite verifies deterministic record creation, record tampering, media checksum mismatch, invalid input, derived-source requirements, missing legacy records, real CAI-signed manifest parsing, trust-state classification, C2PA asset integrity and API authorization.
+The provenance test suite verifies deterministic record creation, record tampering, media checksum mismatch, invalid input, derived-source requirements, missing legacy records, real CAI-signed manifest parsing, source-ingredient preservation through a second signed transformation, trust-state classification, C2PA asset integrity, cloud derivative fail-closed behavior and API authorization.
