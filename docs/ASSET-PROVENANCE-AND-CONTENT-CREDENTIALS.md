@@ -32,7 +32,7 @@ The endpoint returns the manifest, a verification result and an explicit limitat
 
 ## C2PA inspection
 
-`GET /api/assets/ASSET_ID/c2pa` is protected by the existing asset access check. The endpoint reads the server-stored file using `Reader.fromAsset` and an explicit MIME type, disables remote manifest fetching, and reports the SDK's explicit `validation_state` only. It never promotes `Valid` to `Trusted`, and it returns `indeterminate` when the SDK does not provide a complete active manifest and validation state. A missing SDK is reported as `not_available`; it is not treated as a successful inspection.
+`GET /api/assets/ASSET_ID/c2pa` is protected by the existing asset access check. The endpoint reads the server-stored file using `Reader.fromAsset` and an explicit MIME type, disables remote manifest fetching, and reports the SDK's explicit `validation_state` only. It never promotes `Valid` to `Trusted`, and it does not infer `Invalid` from individual finding text when the overall state is absent. The SDK's documented `null` reader result is handled as `not_found`; incomplete manifest/state combinations return `indeterminate`. Missing SDK installation is reported as `not_available`.
 
 The Docker build uses Node 24.22.1 (a patched release) and installs the exact `@contentauth/c2pa-node@0.10.0` package. Local developers can install the same package with the command in the README. The SDK's native binary is installed at build time; Rust is not required for the normal package installation.
 
@@ -54,4 +54,4 @@ Specification: https://spec.c2pa.org/specifications/specifications/2.5/specs/C2P
 
 ## Acceptance tests
 
-The provenance test suite verifies deterministic record creation, record tampering, media checksum mismatch, invalid input, derived-source requirements, missing legacy records and the explicit `c2pa: not_checked` boundary. The C2PA adapter suite covers explicit trusted/valid/invalid states, missing manifests, indeterminate validation, absent SDK behavior and MIME/path requirements. These adapter tests use injected SDK fixtures; they are not a substitute for real signed binary fixtures.
+The provenance test suite verifies deterministic record creation, record tampering, media checksum mismatch, invalid input, derived-source requirements, missing legacy records and the explicit `c2pa: not_checked` boundary. The C2PA adapter suite covers explicit trusted/valid/invalid states, missing manifests, indeterminate validation, absent SDK behavior, null reader results, and MIME/path requirements. A native SDK smoke test also sends a generated valid PNG through the installed native parser and verifies the documented no-manifest result. These tests do not yet replace signed-manifest fixture coverage for trusted, invalid-signature and tampered-asset cases.
