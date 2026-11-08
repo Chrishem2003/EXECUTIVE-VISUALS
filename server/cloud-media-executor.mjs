@@ -175,14 +175,14 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
         if (Number(outputImage?.width) !== expectedWidth || Number(outputImage?.height) !== expectedHeight) throw Object.assign(new Error("AI-upscaled image dimensions do not match the requested scale; derivative was not published."), { code: "MEDIA_OUTPUT_VALIDATION_FAILED" });
         await runProcess(ffmpeg, ["-v", "error", "-i", outputPath, "-f", "null", "-"], { signal, timeoutMs: Math.min(timeoutMs, 120000), onProgress });
         if (signal?.aborted) throw Object.assign(new Error("Media job was cancelled."), { code: "JOB_CANCELLED" });
-        const info = await stat(outputPath);
-        const digest = await checksum(outputPath);
         const mediaType = format === "jpg" ? "image/jpeg" : "image/" + format;
         const sourceName = String(materialized.asset.name || "image");
         const plan = { name: sourceName.replace(/\.[^.]+$/, "").slice(0, 140) + "-ai-upscaled." + format, mediaType };
         const processing = { engine: result.engine, method: result.method, model: result.model, scale: result.scale, tile: Number(input.tile ?? 0), sourceWidth, sourceHeight, outputWidth: expectedWidth, outputHeight: expectedHeight, dimensionsVerified: true };
         if (signal?.aborted) throw Object.assign(new Error("Media job was cancelled."), { code: "JOB_CANCELLED" });
         const c2paPreservation=await preserveC2paOutput({c2paPreserver,c2paSigner,c2paSignerMode,sourcePath,outputPath,sourceMimeType:materialized.asset.mediaType,outputMimeType:mediaType,operation:job.job_type,signal});
+        const info=await stat(outputPath);
+        const digest=await checksum(outputPath);
        const asset = await mediaIO.publish({
           ownerId: job.owner_id, projectId: job.project_id || null, filename: plan.name,
           mediaType, path: outputPath, derivativeOf: sourceId,
@@ -277,7 +277,6 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
         }
       }
       onProgress(85);
-      const digest = await checksum(outputPath);
       const processing = job.job_type === "media.upscale" ? {
         method: "classical-resampling",
         algorithm: ["lanczos", "bicubic", "spline36"].includes(input.algorithm) ? input.algorithm : "lanczos",
@@ -293,6 +292,8 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
         outputVideo: outputProbe?.streams?.find(stream => stream.codec_type === "video") || null
       } : null;
       const c2paPreservation=await preserveC2paOutput({c2paPreserver,c2paSigner,c2paSignerMode,sourcePath,outputPath,sourceMimeType:materialized.asset.mediaType,outputMimeType:plan.mediaType,operation:job.job_type,signal});
+      const info=await stat(outputPath);
+      const digest=await checksum(outputPath);
       const asset = await mediaIO.publish({
         ownerId: job.owner_id,
         projectId: job.project_id || null,
