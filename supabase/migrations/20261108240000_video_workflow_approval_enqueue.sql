@@ -33,6 +33,7 @@ declare
   enqueued record;
   reservation_id uuid;
   consumed_approval_id uuid;
+  reservation_amount numeric;
 begin
   if p_quote_id is null or p_approval_id is null or p_owner_id is null or p_project_id is null
      or p_request_hash is null or p_request_hash !~ '^[a-f0-9]{64}$'
@@ -67,20 +68,23 @@ begin
     if existing.job_type <> 'video.generate'
        or existing.project_id is distinct from p_project_id
        or coalesce(existing.input ->> 'requestHash','') <> p_request_hash
+       or existing.input is distinct from p_input
        or coalesce(existing.input ->> 'workflowQuoteId','') <> p_quote_id::text
        or coalesce(existing.input ->> 'workflowRequestId','') <> quote_row.request_id
        or coalesce(existing.input ->> 'provider','') <> 'runway'
        or coalesce(existing.input ->> 'model','') <> 'model-router'
+       or quote_row.request_hash <> p_request_hash
+       or quote_row.request_id <> p_idempotency_key
        or quote_row.config_id <> p_config_id
        or quote_row.state <> 'consumed' then
       raise exception 'VIDEO_WORKFLOW_APPROVAL_IDEMPOTENCY_CONFLICT';
     end if;
 
-    select r.id, r.approval_id into reservation_id, consumed_approval_id
+    select r.id, r.approval_id, r.reserved_amount into reservation_id, consumed_approval_id, reservation_amount
     from executive_visuals.video_generation_budget_reservations r
     where r.job_id = existing.id;
 
-    if reservation_id is null or consumed_approval_id is null then
+    if reservation_id is null or consumed_approval_id is null or reservation_amount is distinct from p_approved_max_amount then
       raise exception 'VIDEO_WORKFLOW_APPROVAL_RESERVATION_MISSING';
     end if;
 
