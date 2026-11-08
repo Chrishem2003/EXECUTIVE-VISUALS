@@ -151,6 +151,7 @@ export function createCloudAssetRepository({
       if(typeof publicationKey!=="string"||!publicationKey.trim()||publicationKey.length>200)throw new Error("Cloud asset publication key must contain 1 to 200 characters.");
       if(!plainObject(metadata))throw new Error("Cloud asset metadata must be a JSON object.");
       if(JSON.stringify(metadata).length>16000)throw new Error("Cloud asset metadata exceeds the 16 KB limit.");
+      metadata=JSON.parse(JSON.stringify(metadata));
       if(typeof storage.uploadFile!=="function")throw new Error("Cloud storage adapter does not support streaming file uploads.");
       if(typeof assertLease!=="function")throw new Error("Cloud asset publication requires a worker lease assertion.");
       if(!plainObject(leaseContext))throw new Error("Atomic asset publication requires the claimed worker lease identity.");
