@@ -451,6 +451,70 @@ test("cloud workflow video quote authorizes the project and returns a non-billab
  assert.equal(persisted[0].p_quote_id,result.body.quote.id);
 });
 
+test("cloud workflow approval requires confirmation, revalidates inputs and atomically queues the exact quote",async()=>{
+ const calls=[],prepared=[];
+ const api=createCloudTimelineApi({
+  url:"https://example.supabase.co",serviceRoleKey:"service-secret",
+  fetchImpl:async(url,options)=>{
+   calls.push({url,options});
+   if(url.endsWith("/rpc/approve_and_enqueue_video_workflow")){
+    return{ok:true,status:200,async text(){return JSON.stringify([{
+     job_id:"823e4567-e89b-42d3-a456-426614174000",job_status:"queued",
+     idempotent_replay:false,budget_reservation_id:"923e4567-e89b-42d3-a456-426614174000",
+     approval_id:"a23e4567-e89b-42d3-a456-426614174000"
+    }]);}};
+   }
+   return{ok:true,status:200,async text(){return"[]";}};
+  },
+  timelineService:{timelines:{},assets:{}},
+  authorize:async({ownerId,projectId,action})=>ownerId===owner&&projectId===project&&action==="write",
+  runwayRouterAdapter:{async prepareInput(input,context){prepared.push({input,context});return{...input};},async preflight(){throw new Error("approval must not call provider preflight");}},
+  env:{RUNWAY_MODEL_ROUTER_ENABLED:"true",CLOUD_VIDEO_WORKER_ENABLED:"true",RUNWAY_VIDEO_ALLOW_REMOTE:"true",VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",RUNWAY_VIDEO_ROUTER_CONFIG:"studio-video",RUNWAY_API_KEY:"test-key"}
+ });
+ const node={id:"video-node",kind:"video.generate",config:{provider:"runway",model:"model-router",durationSeconds:8,aspectRatio:"16:9",resolution:"provider_default",audioMode:"generated"},inputs:[],outputs:[]};
+ const result=await api.handle({method:"POST",path:"/api/cloud/workflows/video/approve",ownerId:owner,body:{
+  confirmed:true,projectId:project,quoteId:"723e4567-e89b-42d3-a456-426614174000",
+  requestId:"workflow-1:video-node:1",node,values:{prompt:"A cinematic product launch"},
+  approvedMaxAmount:2.75,approvalNote:"Approved for the exact quoted video workflow"
+ }});
+ assert.equal(result.status,202);
+ assert.equal(result.body.job.status,"queued");
+ assert.equal(result.body.idempotentReplay,false);
+ assert.equal(prepared.length,1);
+ assert.equal(calls.length,1,"approval must use one atomic database RPC and must not call the provider");
+ const rpc=calls[0];
+ assert.ok(rpc.url.endsWith("/rpc/approve_and_enqueue_video_workflow"));
+ const args=JSON.parse(rpc.options.body);
+ assert.equal(args.p_quote_id,"723e4567-e89b-42d3-a456-426614174000");
+ assert.equal(args.p_owner_id,owner);
+ assert.equal(args.p_project_id,project);
+ assert.equal(args.p_config_id,"studio-video");
+ assert.equal(args.p_idempotency_key,"workflow-1:video-node:1");
+ assert.equal(args.p_approved_max_amount,2.75);
+ assert.equal(args.p_input.workflowQuoteId,args.p_quote_id);
+ assert.equal(args.p_input.workflowRequestId,args.p_idempotency_key);
+ assert.equal(args.p_input.requestHash,args.p_request_hash);
+});
+
+test("cloud workflow approval rejects missing explicit confirmation without database writes",async()=>{
+ let writes=0;
+ const api=createCloudTimelineApi({
+  url:"https://example.supabase.co",serviceRoleKey:"service-secret",
+  fetchImpl:async()=>{writes++;return{ok:true,status:200,async text(){return"[]";}};},
+  timelineService:{timelines:{},assets:{}},authorize:async()=>true,
+  runwayRouterAdapter:{async prepareInput(input){return input;}},
+  env:{RUNWAY_MODEL_ROUTER_ENABLED:"true",CLOUD_VIDEO_WORKER_ENABLED:"true",RUNWAY_VIDEO_ALLOW_REMOTE:"true",VIDEO_GATEWAY_ENABLED:"true",VIDEO_GATEWAY_ALLOW_REMOTE:"true",RUNWAY_VIDEO_ROUTER_CONFIG:"studio-video",RUNWAY_API_KEY:"test-key"}
+ });
+ const result=await api.handle({method:"POST",path:"/api/cloud/workflows/video/approve",ownerId:owner,body:{
+  confirmed:false,projectId:project,quoteId:"723e4567-e89b-42d3-a456-426614174000",
+  requestId:"workflow-1:video-node:1",node:{kind:"video.generate",config:{provider:"runway",model:"model-router"}},
+  values:{prompt:"A cinematic product launch"},approvedMaxAmount:2.75
+ }});
+ assert.equal(result.status,403);
+ assert.equal(result.body.error.code,"VIDEO_WORKFLOW_APPROVAL_CONFIRMATION_REQUIRED");
+ assert.equal(writes,0);
+});
+
 test("cloud workflow video quote fails closed when durable persistence is unavailable",async()=>{
  let providerCalls=0;
  const api=createCloudTimelineApi({
