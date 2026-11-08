@@ -103,12 +103,12 @@ test("video-to-video builds a documented Aleph2 request with ordered guidance ke
  const payload=buildRunwayVideoToVideoPayload({
   model:"aleph2",videoUri:"runway://upload/source-video",
   prompt:"Replace the background with a forest; preserve the subject and camera movement.",
-  keyframes:[{uri:"runway://upload/frame-1",at:0},{uri:"runway://upload/frame-2",at:4.5}]
+  keyframes:[{uri:"runway://upload/frame-1",at:0},{uri:"runway://upload/frame-2",at:0.15}]
  });
  assert.deepEqual(payload,{
   model:"aleph2",videoUri:"runway://upload/source-video",
   promptText:"Replace the background with a forest; preserve the subject and camera movement.",
-  keyframes:[{uri:"runway://upload/frame-1",at:0},{uri:"runway://upload/frame-2",at:4.5}],
+  keyframes:[{uri:"runway://upload/frame-1",at:0},{uri:"runway://upload/frame-2",at:0.15}],
   outputFormat:"mp4"
  });
 });
@@ -117,7 +117,8 @@ test("video-to-video fails closed on unverified models, unsafe inputs and unsupp
  assert.throws(()=>buildRunwayVideoToVideoPayload({model:"kling_4",videoUri:"runway://upload/v",prompt:"Edit"}),e=>e.code==="VIDEO_GATEWAY_UNSUPPORTED_MODEL");
  assert.throws(()=>buildRunwayVideoToVideoPayload({videoUri:"https://127.0.0.1/private.mp4",prompt:"Edit"}),e=>e.code==="VIDEO_GATEWAY_INVALID_INPUT");
  assert.throws(()=>buildRunwayVideoToVideoPayload({videoUri:"runway://upload/v",prompt:"Edit",keyframes:Array.from({length:6},(_,i)=>({uri:"runway://upload/f"+i,at:i}))}),e=>e.code==="VIDEO_GATEWAY_INVALID_INPUT");
- assert.throws(()=>buildRunwayVideoToVideoPayload({videoUri:"runway://upload/v",prompt:"Edit",keyframes:[{uri:"runway://upload/f1",at:4},{uri:"runway://upload/f2",at:3}]}),e=>e.code==="VIDEO_GATEWAY_INVALID_INPUT");
+ assert.throws(()=>buildRunwayVideoToVideoPayload({videoUri:"runway://upload/v",prompt:"Edit",keyframes:[{uri:"runway://upload/f1",at:0.8},{uri:"runway://upload/f2",at:0.6}]}),e=>e.code==="VIDEO_GATEWAY_INVALID_INPUT");
+ assert.throws(()=>buildRunwayVideoToVideoPayload({videoUri:"runway://upload/v",prompt:"Edit",keyframes:[{uri:"runway://upload/f1",at:1.01}]}),e=>e.code==="VIDEO_GATEWAY_INVALID_INPUT");
  assert.throws(()=>buildRunwayVideoToVideoPayload({videoUri:"runway://upload/v",prompt:"Edit",outputFormat:"prores"}),e=>e.code==="VIDEO_GATEWAY_UNSUPPORTED_CAPABILITY");
 });
 
