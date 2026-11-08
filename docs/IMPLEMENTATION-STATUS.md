@@ -512,3 +512,11 @@ This is a runnable worker entry point, not a deployed worker. Do not set the ena
 - Fingerprints include node content and explicit relationships but exclude project-scope membership edges to avoid broad false positives. Removed nodes use the baseline graph for impact traversal.
 - Results are review candidates only; no automatic timeline mutation, export deletion, publication block or approval invalidation is claimed. README and dedicated guidance updated.
 - Added `verify:creative-graph-snapshot` tests for revision increments, hash changes, project identity, invalid edges and snapshot normalization.
+
+
+## Production execution — graceful worker shutdown (feature branch)
+- Propagated supervisor SIGINT/SIGTERM shutdown through both media and timeline worker cycles.
+- Active executors receive an AbortSignal; supported FFmpeg/download paths can terminate and clean private temporary workspaces.
+- A job interrupted by graceful shutdown is persisted as `cancelled` while its lease remains valid. If the terminal update cannot be confirmed, durable lease recovery remains responsible; the worker does not claim success.
+- A shutdown signal received before claim prevents acquiring another job. Added worker-cycle and supervisor integration tests.
+- Next: complete storage publication/recovery reconciliation and exercise authorization across owner/editor/reviewer/viewer roles before production worker enablement.
