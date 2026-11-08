@@ -42,10 +42,13 @@ test("local SQLite media transcode preserves a real CAI-signed source through pu
   db.prepare("INSERT INTO users(id,email) VALUES(?,?)").run("local-c2pa-user","local-c2pa@example.test");
   db.prepare("INSERT INTO assets(id,owner_id,project_id,original_name,media_type,byte_size,sha256,storage_path,metadata_json) VALUES(?,?,?,?,?,?,?,?,?)")
    .run("local-c2pa-source","local-c2pa-user",null,"signed-source.mp4","video/mp4",sourceInfo.size,sourceSha256,"uploads/signed-source.mp4","{}");
+  const jobInput=JSON.stringify({sourceAssetId:"local-c2pa-source",container:"mp4",videoCodec:"libx264",audioCodec:"aac",preset:"ultrafast"});
+  db.prepare("INSERT INTO jobs(id,owner_id,project_id,job_type,status,input_json) VALUES(?,?,?,?,?,?)")
+   .run("local-c2pa-transcode","local-c2pa-user",null,"media.transcode","queued",jobInput);
 
   const result=await executeMediaJob({
    db,mediaRoot,activeProcesses:new Map(),onProgress:()=>{},
-   job:{id:"local-c2pa-transcode",owner_id:"local-c2pa-user",project_id:null,job_type:"media.transcode",input_json:JSON.stringify({sourceAssetId:"local-c2pa-source",container:"mp4",videoCodec:"libx264",audioCodec:"aac",preset:"ultrafast"})},
+   job:{id:"local-c2pa-transcode",owner_id:"local-c2pa-user",project_id:null,job_type:"media.transcode",input_json:jobInput},
    c2paSigner:signer
   });
   assert.equal(result.c2paPreservation.status,"preserved");
