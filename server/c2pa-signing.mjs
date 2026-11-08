@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { createReadStream, existsSync, realpathSync, statSync } from "node:fs";
 import { unlink } from "node:fs/promises";
-import { dirname, extname, isAbsolute, relative, resolve, sep } from "node:path";
+import { basename, dirname, extname, isAbsolute, relative, resolve, sep } from "node:path";
 
 const DEFAULT_MAX_BYTES = 250 * 1024 * 1024;
 const MIME_EXTENSIONS = {
@@ -62,6 +62,8 @@ export function createC2paTransformationSigner({
     inputPath,
     outputPath,
     mimeType,
+    sourcePath = inputPath,
+    sourceMimeType = mimeType,
     actionDescription,
     sourceAssetId = null
   }) {
@@ -87,34 +89,40 @@ export function createC2paTransformationSigner({
     if (typeof inputPath !== "string" || typeof outputPath !== "string" || !inputPath || !outputPath || !mimeType) {
       fail("C2PA_ASSET_DESCRIPTOR_INVALID");
     }
-    const allowedExtensions = MIME_EXTENSIONS[mimeType.toLowerCase()];
-    if (!allowedExtensions || !allowedExtensions.includes(extname(inputPath).toLowerCase()) ||
-        !allowedExtensions.includes(extname(outputPath).toLowerCase())) {
+    const inputExtensions = MIME_EXTENSIONS[mimeType.toLowerCase()];
+    const sourceExtensions = MIME_EXTENSIONS[sourceMimeType.toLowerCase()];
+    if (!inputExtensions || !inputExtensions.includes(extname(inputPath).toLowerCase()) ||
+        !inputExtensions.includes(extname(outputPath).toLowerCase()) ||
+        !sourceExtensions || !sourceExtensions.includes(extname(sourcePath).toLowerCase())) {
       fail("C2PA_FORMAT_UNSUPPORTED_OR_EXTENSION_MISMATCH");
     }
 
-    let root, source, destination, outputParent;
+    let root, source, input, destination, outputParent;
     try {
       root = realpathSync(resolve(mediaRoot));
-      source = realpathSync(resolve(inputPath));
+      source = realpathSync(resolve(sourcePath));
+      input = realpathSync(resolve(inputPath));
       outputParent = realpathSync(dirname(resolve(outputPath)));
       destination = resolve(outputPath);
     } catch {
       fail("C2PA_ASSET_PATH_UNAVAILABLE");
     }
-    if (!isWithin(root, source) || !isWithin(root, outputParent) || !isWithin(root, destination)) {
+    if (!isWithin(root, source) || !isWithin(root, input) || !isWithin(root, outputParent) || !isWithin(root, destination)) {
       fail("C2PA_ASSET_PATH_OUTSIDE_MEDIA_ROOT");
     }
-    if (source === destination) fail("C2PA_SOURCE_OUTPUT_MUST_DIFFER");
-    let sourceInfo;
+    if (source === destination || input === destination) fail("C2PA_SOURCE_OUTPUT_MUST_DIFFER");
+    let sourceInfo, inputInfo;
     try {
       sourceInfo = statSync(source);
+      inputInfo = statSync(input);
       if (!sourceInfo.isFile()) fail("C2PA_SOURCE_NOT_FILE");
+      if (!inputInfo.isFile()) fail("C2PA_INPUT_NOT_FILE");
     } catch (error) {
       if (typeof error?.code === "string" && error.code.startsWith("C2PA_")) throw error;
       fail("C2PA_SOURCE_UNAVAILABLE");
     }
     if (sourceInfo.size < 1 || sourceInfo.size > maxBytes) fail("C2PA_SOURCE_SIZE_INVALID");
+    if (inputInfo.size < 1 || inputInfo.size > maxBytes) fail("C2PA_INPUT_SIZE_INVALID");
     if (existsSync(destination)) fail("C2PA_OUTPUT_ALREADY_EXISTS");
 
     let outputCreated = false;
@@ -131,7 +139,7 @@ export function createC2paTransformationSigner({
           ocspFetch: false
         }
       });
-      const sourceReader = await Sdk.Reader.fromAsset({ path: source, mimeType }, readContext);
+      const sourceReader = await Sdk.Reader.fromAsset({ path: source, mimeType: sourceMimeType }, readContext);
       let sourceManifestState = null;
       if (sourceReader) {
         sourceManifestState = sourceReader.json()?.validation_state ?? null;
@@ -149,6 +157,13 @@ export function createC2paTransformationSigner({
       const builder = await Sdk.Builder.newAsync(builderContext);
       if (sourceReader) {
         await builder.addIngredientFromReader(sourceReader);
+      } else if (source !== input) {
+        await builder.addIngredient(JSON.stringify({
+          title: basename(source),
+          format: sourceMimeType,
+          instance_id: "urn:sha256:" + await sha256File(source),
+          relationship: "parentOf"
+        }), { path: source, mimeType: sourceMimeType });
       }
       builder.setIntent("edit");
       builder.addAction(JSON.stringify({
@@ -174,7 +189,7 @@ export function createC2paTransformationSigner({
 
       await builder.signAsync(
         callbackSigner,
-        { path: source, mimeType },
+        { path: input, mimeType },
         { path: destination, mimeType }
       );
       outputCreated = true;
@@ -202,6 +217,7 @@ export function createC2paTransformationSigner({
         sourceManifestPreserved: Boolean(sourceReader),
         ingredientCount,
         sourceAssetId: typeof sourceAssetId === "string" ? sourceAssetId : null,
+        sourceAndInputDiffer: source !== input,
         timestampConfigured: Boolean(tsaUrl)
       };
     } catch (error) {
