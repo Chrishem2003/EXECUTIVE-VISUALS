@@ -75,7 +75,7 @@ async function authenticate(request, env) {
   if (!response.ok) throw Object.assign(new Error("The application identity service rejected the request."), { status: 502, code: "IDENTITY_SERVICE_UNAVAILABLE", setCookies: sessionCookies });
   let payload;
   try { payload = await response.json(); } catch {
-    throw Object.assign(new Error("The application identity service returned an invalid response."), { status: 502, code: "IDENTITY_RESPONSE_INVALID" });
+    throw Object.assign(new Error("The application identity service returned an invalid response."), { status: 502, code: "IDENTITY_RESPONSE_INVALID", setCookies: sessionCookies });
   }
   const user = payload?.user;
   if (!user || typeof user.id !== "string" || !UUID.test(user.id)) {
