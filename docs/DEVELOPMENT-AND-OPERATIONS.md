@@ -61,9 +61,9 @@ Common local defaults are defined in `server/index.mjs`. Use environment variabl
 | `C2PA_TRUST_ANCHORS` | unset | Absolute path to a read-only, administrator-managed PEM public-certificate bundle supplied as CAI `userAnchors`; without it, the adapter cannot return `valid_trusted`. |
 | `C2PA_SIGNING_ENABLED` | false | Callback signing remains disabled unless explicitly enabled. |
 | `C2PA_SIGNING_KEY_REF` | unset | External KMS/HSM key identifier only; never a private key. |
-| `C2PA_TSA_URL` | unset | HTTPS timestamp authority; required by default by the signing adapter. |\n| `C2PA_SIGNING_MEDIA_ROOT` | unset | Dedicated private scratch root; must match `CLOUD_WORKER_TEMP_ROOT` for cloud media signing. |
+| `C2PA_TSA_URL` | unset | HTTPS timestamp authority; required by default by the signing adapter. |\n| `C2PA_SIGNING_MEDIA_ROOT` | unset | Dedicated private scratch root; must match `CLOUD_WORKER_TEMP_ROOT` for cloud media signing. |\n| `CLOUD_WORKER_TEMP_ROOT` | OS temp directory unless configured | When C2PA signing is enabled, set an explicit private directory and make it exactly match `C2PA_SIGNING_MEDIA_ROOT`. |
 
-The current code also has provider-specific settings. Inspect the adapter and readiness check before configuring any provider. A variable existing in code does not imply that its external service has been provisioned or approved.
+When `C2PA_SIGNING_ENABLED=true`, `readCloudWorkerConfig` requires the cloud media worker family, explicit matching private workspace paths, a non-empty external key reference and an HTTPS TSA. `startCloudWorkerProcess(env, { signingProvider, certificateChain })` additionally requires an injected authenticated KMS/HSM callback and a public certificate chain; the default CLI entry point supplies neither and therefore fails closed. A variable existing in code does not imply that its external service has been provisioned or approved.
 
 ## 4. Asset storage and provenance
 
