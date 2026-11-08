@@ -156,3 +156,9 @@ The feat/p0-workflow-quote-ledger branch now extends the first quote-ledger slic
 - Both disposable PostgreSQL workflows now apply the quote and approval migrations before their shared integration assertions. The Google Drive integration workflow also applies these migrations because it reuses the cloud-video PostgreSQL integration script.
 
 This is a queue/approval bridge, not a claim of end-to-end workflow execution. The interactive workflow executor still defaults to legacy mode; cloud-mode node progress, cancellation reconciliation, worker output publication into workflow node outputs, and full staging acceptance remain separate release gates. No provider task is submitted by either API handler.
+
+## Local/cloud project identity link (2026-11-08)
+
+The local API can now link an active, locally owned project to the cloud workspace using the exact same UUID. The server verifies ownership in the local SQLite project store before forwarding the ID; callers cannot link a project they merely view or edit. The cloud repository validates the UUID, refuses IDs owned by another account or archived cloud projects, and makes repeated same-owner linking idempotent without overwriting cloud metadata. This gives later workflow-node bridge calls, cloud assets and timelines a stable project scope across the local and cloud services.
+
+This is identity alignment only. It does not yet synchronize local project settings/documents, memberships, asset bytes or workflow run records to cloud storage.
