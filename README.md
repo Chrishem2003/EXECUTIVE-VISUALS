@@ -80,3 +80,8 @@ A Docker-based Render Blueprint is provided in `render.yaml`. It uses a private 
 - [Additional workflow research](docs/ADDITIONAL-WORKFLOW-RESEARCH.md)
 - [Adapter contract](docs/ADAPTER-CONTRACT.md)
 - [Original creative intelligence and innovation atlas](docs/ORIGINAL-CREATIVE-INTELLIGENCE-AND-INNOVATION-ATLAS.md)
+
+
+## Content Credentials and asset provenance
+
+Application-level SHA-256 provenance records are created for uploads. An authenticated `GET /api/assets/:assetId/c2pa` endpoint inspects embedded C2PA manifests with the pinned official CAI Node SDK, distinguishes trusted, valid-but-untrusted, invalid and absent credentials, and checks the stored asset checksum before and after parsing. This is not a signing service or rights/factual-accuracy verification. See `docs/ASSET-PROVENANCE-AND-CONTENT-CREDENTIALS.md`.
