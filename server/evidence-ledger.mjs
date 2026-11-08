@@ -3,9 +3,13 @@ import { json, parseJson } from "./db.mjs";
 
 const TARGET_TYPES = new Set(["project","scene","shot","timeline","asset"]);
 const REVIEW_STATES = new Set(["needs_review","verified","rejected"]);
-const clean = (value, max) => typeof value === "string" ? value.trim().replace(/\\s+/g," ").slice(0,max) : "";
+const clean = (value, max) => typeof value === "string" ? value.trim().replace(/\s+/g," ").slice(0,max) : "";
 
-function atomic(db, work) {\n  db.exec("BEGIN IMMEDIATE");\n  try { const result = work(); db.exec("COMMIT"); return result; }\n  catch (error) { try { db.exec("ROLLBACK"); } catch {} throw error; }\n}\n\nfunction toRecord(row) {
+function atomic(db, work) {
+  db.exec("BEGIN IMMEDIATE");\n  try { const result = work(); db.exec("COMMIT"); return result; }\n  catch (error) { try { db.exec("ROLLBACK"); } catch {} throw error; }
+}
+
+function toRecord(row) {
   return {
     id: row.id,
     projectId: row.project_id,
