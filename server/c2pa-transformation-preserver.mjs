@@ -77,6 +77,7 @@ export function createC2paTransformationPreserver({sdkLoader=()=>import("@conten
    if(!signedInfo?.isFile()||signedInfo.size<1||signedInfo.size>maxBytes)throw failure("C2PA_SIGNED_OUTPUT_INVALID","The signed transformation output is missing or exceeds the size limit.");
    const signedHash=await hashFile(temporaryPath);
    const signedReader=await sdk.Reader.fromAsset({path:temporaryPath,mimeType:outputMimeType},verifyContext);
+   if(!signedReader)throw failure("C2PA_LINEAGE_VALIDATION_FAILED","The signed derivative does not contain an embedded C2PA manifest.");
    const signedStore=signedReader.json();
    const active=signedStore?.active_manifest&&signedStore?.manifests?.[signedStore.active_manifest];
    const ingredients=Array.isArray(active?.ingredients)?active.ingredients:[];
