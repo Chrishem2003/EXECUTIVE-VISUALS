@@ -230,6 +230,8 @@ export function createCloudAssetRepository({
         catch(readError){
           error.cleanupPending=true;
           error.reconciliationPending=true;
+          try{await enqueueStorageCleanup(uploaded.path,"publication_finalization_indeterminate");}
+          catch{error.cleanupRecordFailed=true;}
           throw error;
         }
         if(existing){
@@ -250,7 +252,11 @@ export function createCloudAssetRepository({
           }
           return cleanupPending?{...asset,cleanupPending:true}:asset;
         }
-        return compensateUpload(uploaded.path,error);
+        error.cleanupPending=true;
+        error.reconciliationPending=true;
+        try{await enqueueStorageCleanup(uploaded.path,"publication_finalization_failed");}
+        catch{error.cleanupRecordFailed=true;}
+        throw error;
       }
     },
     async createFromFile({ownerId,projectId=null,originalName,mediaType,filePath,derivativeOf=null,metadata={}}) {
