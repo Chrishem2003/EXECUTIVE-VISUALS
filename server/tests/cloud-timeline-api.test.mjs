@@ -155,7 +155,7 @@ test("Asset Library cloud media job endpoint enqueues an authorized lease-scoped
  assert.equal(f.calls.some(call=>call.options?.method==="POST"),false);
  const accepted=await f.api.handle({method:"POST",path:"/api/cloud/assets/823e4567-e89b-42d3-a456-426614174000/media-jobs",ownerId:owner,idempotencyKey:"media-color-002",body:{jobType:"media.color",options:{brightness:0.1,contrast:1.1,saturation:0.9}}});
  assert.equal(accepted.status,202);
- assert.equal(accepted.body.job.owner_id,undefined,"job receipt is the database representation and should not synthesize caller identity");
+ assert.equal(accepted.body.job.owner_id,owner);
  const created=JSON.parse(f.calls.find(call=>call.url.includes("/jobs?")&&call.options.method==="POST").options.body);
  assert.equal(created.owner_id,owner);
  assert.equal(created.project_id,project);
