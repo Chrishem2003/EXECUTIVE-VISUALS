@@ -333,7 +333,7 @@ export function createCloudAssetRepository({
             const assetId=validUuid(parts[1],"cleanup asset ID");
             const publications=await request("asset_publications?select=id,job_id,owner_id,project_id,publication_key,asset_id&asset_id=eq."+encodeURIComponent(assetId)+"&limit=1");
             const publication=Array.isArray(publications)?publications[0]:null;
-            if(!publication||!publication.job_id||publication.asset_id!==assetId||publication.owner_id!==parts[0]&&publication.project_id!==parts[0]){
+            if(!publication||!publication.job_id||publication.asset_id!==assetId||String(publication.project_id||publication.owner_id)!==parts[0]){
               throw Object.assign(new Error("Attempt cleanup has no matching owner-scoped publication reservation."),{code:"PUBLICATION_CLEANUP_RESERVATION_MISSING"});
             }
             const claims=await request("rpc/claim_asset_publication_cleanup_v1",{method:"POST",body:{
