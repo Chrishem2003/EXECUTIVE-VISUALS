@@ -36,3 +36,24 @@ test("cloud worker supervisor waits for all families and reports individual fail
  await supervisor.start();await supervisor.stop();
  assert.deepEqual(calls,["failed","completed"]);assert.deepEqual(errors,["queue unavailable"]);
 });
+
+test("cloud worker supervisor starts without waiting for the first long-running job and drains it on stop",async()=>{
+ let release;const gate=new Promise(resolve=>{release=resolve;});let executionStarted=false,stopped=false;
+ const workers=[{async recoverExpired(){return 0;},async runCycle(){executionStarted=true;await gate;return{claimed:true,jobId:"long-render"};}}];
+ const supervisor=createCloudWorkerSupervisor({workers,leaseSeconds:60,heartbeatIntervalMs:10000,pollMs:10000,recoveryIntervalMs:300000});
+ await supervisor.start();
+ assert.equal(executionStarted,true,"the first worker cycle should start immediately");
+ const stopping=supervisor.stop().then(()=>{stopped=true;});
+ await Promise.resolve();
+ assert.equal(stopped,false,"shutdown should wait for the active leased job to settle");
+ release();await stopping;
+ assert.equal(stopped,true);
+});
+test("cloud worker supervisor does not start timers or claim work if stopped during startup recovery",async()=>{
+ let releaseRecovery,recoveryStarted;const started=new Promise(resolve=>{recoveryStarted=resolve;});
+ const recovery=new Promise(resolve=>{releaseRecovery=resolve;});let ran=false;
+ const workers=[{async recoverExpired(){recoveryStarted();await recovery;return 0;},async runCycle(){ran=true;return{claimed:false};}}];
+ const supervisor=createCloudWorkerSupervisor({workers,leaseSeconds:60,heartbeatIntervalMs:10000,pollMs:10000,recoveryIntervalMs:300000});
+ const starting=supervisor.start();await started;await supervisor.stop();releaseRecovery();await starting;
+ assert.equal(ran,false,"a stopped supervisor must not claim jobs after startup recovery finishes");
+});
