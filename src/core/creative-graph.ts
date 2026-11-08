@@ -116,7 +116,7 @@ export interface CreativeGraphSnapshotComparison {
 const stable=(value:unknown):string=>Array.isArray(value)?"["+value.map(stable).join(",")+"]":value&&typeof value==="object"?"{"+Object.keys(value as Record<string,unknown>).sort().map(key=>JSON.stringify(key)+":"+stable((value as Record<string,unknown>)[key])).join(",")+"}":(JSON.stringify(value)??"null");
 function nodeFingerprint(graph:Pick<CreativeGraph,"nodes"|"edges">,nodeId:string){
  const node=graph.nodes.find(item=>item.id===nodeId);
- const edges=graph.edges.filter(edge=>edge.from===nodeId||edge.to===nodeId).map(edge=>({from:edge.from,to:edge.to,relation:edge.relation,evidence:edge.evidence})).sort((a,b)=>stable(a).localeCompare(stable(b)));
+ const edges=graph.edges.filter(edge=>(edge.from===nodeId||edge.to===nodeId)&&edge.evidence==="explicit").map(edge=>({from:edge.from,to:edge.to,relation:edge.relation,evidence:edge.evidence})).sort((a,b)=>stable(a).localeCompare(stable(b)));
  return stable({node:node||null,edges});
 }
 /** Compare a saved human-review baseline with the current graph. This flags possible downstream staleness; it never mutates or invalidates production records. */
