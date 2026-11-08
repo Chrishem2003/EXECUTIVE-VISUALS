@@ -75,7 +75,7 @@ GET /api/assets/:assetId/provenance
 Cookie: ev_session=...
 ```
 
-It is protected by the same asset-access boundary as the underlying asset. The current `integrity_verified` state means only that the application's SHA-256 record is internally consistent with the asset row. The route now invokes a server-side adapter backed by the maintained CAI package `@contentauth/c2pa-node` (pinned to 0.10.0). The adapter uses `Reader.fromAsset` with the stored file path and known MIME type, disables remote manifest fetching, and returns the SDK manifest validation state and bounded validation findings. It distinguishes `not_available`, `not_supported`, `invalid`, `valid_untrusted`, `valid_trusted` and `verification_error`. The initial format allowlist covers JPEG, PNG, WebP, GIF, MP4, MOV, MP3, M4A, WAV and PDF when the stored extension matches the MIME type. A C2PA `Trusted` result is only surfaced as `valid_trusted` when an explicit administrator-controlled trust policy is configured through `C2PA_TRUST_ANCHORS` or `C2PA_ALLOWED_SIGNERS`; without that policy it is downgraded to `valid_untrusted`. The existing application SHA-256 integrity record remains separate.
+It is protected by the same asset-access boundary as the underlying asset. The current `integrity_verified` state means only that the application's SHA-256 record is internally consistent with the asset row. The route now invokes a server-side adapter backed by the maintained CAI package `@contentauth/c2pa-node` (pinned to 0.10.0). The adapter uses `Reader.fromAsset` with the stored file path and known MIME type, disables remote manifest fetching, and returns the SDK manifest validation state and bounded validation findings. It distinguishes `not_available`, `not_supported`, `invalid`, `valid_untrusted`, `valid_trusted` and `verification_error`. The initial format allowlist covers JPEG, PNG, WebP, GIF, MP4, MOV, MP3, M4A, WAV and PDF when the stored extension matches the MIME type. A C2PA `Trusted` result is only surfaced as `valid_trusted` when an explicit administrator-controlled trust policy is configured through `C2PA_TRUST_ANCHORS`; without that policy it is downgraded to `valid_untrusted`. The existing application SHA-256 integrity record remains separate.
 
 The asset library now exposes a **Verify Content Credentials** action for each stored asset and displays the resulting state and validation findings. The current adapter performs verification only. It does not yet create or sign manifests. Do not report an asset as trusted merely because a manifest is present. Signing requires a protected signer and an approved certificate/timestamp policy.
 
@@ -83,8 +83,7 @@ Current C2PA settings:
 
 | Variable | Purpose | Guidance |
 |---|---|---|
-| `C2PA_TRUST_ANCHORS` | PEM root trust-anchor file path | Optional administrator-controlled root anchors. |\n| `C2PA_ALLOWED_SIGNERS` | PEM end-entity signer allowlist path | Optional; trusts listed signer certificates directly without requiring chain construction. Use only for tightly controlled signer identities. |
-| `C2PA_MAX_VERIFY_BYTES` | Maximum bytes passed to the native verifier | Defaults to 250 MiB; retain a conservative limit. |
+| `C2PA_TRUST_ANCHORS` | PEM root trust-anchor file path | Optional administrator-controlled root anchors. |\n| `C2PA_MAX_VERIFY_BYTES` | Maximum bytes passed to the native verifier | Defaults to 250 MiB; retain a conservative limit. |
 
 Planned signing and lineage constraints:
 
