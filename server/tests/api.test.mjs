@@ -46,6 +46,7 @@ test("health reports local storage and media-engine availability without secrets
   assert.equal(body.status,"ok");
   assert.equal(body.storage,"local-disk");
   assert.deepEqual(body.persistence,{dataDirectory:"ephemeral",persistentVolumeRequired:false});
+  assert.equal(body.cloudMediaJobsApi.enabled,false);
   assert.equal("SUPABASE_SERVICE_ROLE_KEY" in body,false);
   assert.equal(response.headers.get("x-frame-options"),"DENY");
   assert.equal(response.headers.get("referrer-policy"),"strict-origin-when-cross-origin");
