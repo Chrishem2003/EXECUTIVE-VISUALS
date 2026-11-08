@@ -420,7 +420,7 @@ test("cloud workflow video quote authorizes the project and returns a non-billab
   fetchImpl:async()=>({ok:true,status:200,async text(){return"[]";}}),
   timelineService:{timelines:{},assets:{}},
   authorize:async({ownerId,projectId,action})=>ownerId===owner&&projectId===project&&action==="write",
-  runwayRouterAdapter,
+  runwayRouterAdapter:routerAdapter,
   env:{RUNWAY_MODEL_ROUTER_ENABLED:"false",RUNWAY_VIDEO_ALLOW_REMOTE:"false"}
  });
  const node={id:"video-node",kind:"video.generate",config:{provider:"runway",model:"model-router",durationSeconds:8,aspectRatio:"16:9",resolution:"provider_default",audioMode:"generated"},inputs:[],outputs:[]};
