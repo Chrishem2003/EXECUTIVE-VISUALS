@@ -500,3 +500,21 @@ button:disabled{opacity:.55;cursor:not-allowed}
 .c2pa-findings li{font-size:8px;color:#e5b9a8;overflow-wrap:anywhere}
 .c2pa-validation summary{font-size:9px;color:var(--text);cursor:pointer}
 .c2pa-inspection>p{margin:0}
+
+/* Trust & provenance evidence workspace */
+.provenance-hero{border-color:#3c5b4b;background:linear-gradient(125deg,#17251f,#151b20 68%)}
+.provenance-score{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:22px 0}
+.provenance-score>div{display:grid;gap:4px;padding:15px;border:1px solid #34463d;border-radius:9px;background:#111a16}
+.provenance-score strong{font-size:30px;line-height:1;color:#d8eee1;font-variant-numeric:tabular-nums}
+.provenance-score span{font-size:11px;color:#aabdb2}
+.provenance-actions{display:flex;gap:18px;flex-wrap:wrap}
+.provenance-actions a,.provenance-hero a{font-size:12px;color:#b8dfc8;text-decoration:underline;text-underline-offset:3px}
+.provenance-stage-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.provenance-stage{display:grid;gap:9px;padding:17px;border:1px solid #303a43;border-radius:10px;background:#151b20;min-width:0}
+.provenance-stage-top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.provenance-stage-top>b{font-size:13px;line-height:1.45}
+.provenance-stage>p{margin:0;font-size:12px;line-height:1.7;color:#aebbc5}
+.provenance-state{flex:0 0 auto;border-radius:999px;padding:4px 8px;font-size:9px;font-style:normal;font-weight:700;letter-spacing:.3px}
+.provenance-state.complete{background:#1b3026;color:#a8dfbd;border:1px solid #355b43}
+.provenance-state.gated{background:#33281c;color:#e8c28d;border:1px solid #6a5132}
+@media(max-width:760px){.provenance-stage-list{grid-template-columns:1fr}.provenance-score{gap:7px}.provenance-score>div{padding:11px}.provenance-score strong{font-size:24px}.provenance-score span{font-size:9px}}
