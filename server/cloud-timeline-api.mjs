@@ -88,7 +88,7 @@ export function createCloudTimelineApi({url=process.env.SUPABASE_URL,serviceRole
     const requestedProjectId=body.projectId==null?null:String(body.projectId);
     if(requestedProjectId!==null&&!safeId(requestedProjectId))return response(400,{error:{code:"PROJECT_ID_INVALID",message:"Cloud project ID must be a valid UUID."}});
     const project=await service.projects.create({ownerId,projectId:requestedProjectId,name:body.name,description:body.description||"",settings:body.settings||{}});
-    return response(requestedProjectId?200:201,{project,linkedExistingOrLocal:Boolean(requestedProjectId)});
+    return response(requestedProjectId?200:201,{project,projectIdBound:Boolean(requestedProjectId)});
    }
    if(path==="/api/cloud/projects"&&method==="GET"){
     const projects=await service.projects.list({ownerId,limit:Number(query.limit)||50,offset:Number(query.offset)||0});
