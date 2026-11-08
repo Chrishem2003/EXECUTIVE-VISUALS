@@ -7,7 +7,7 @@ import { createRealEsrganAdapter } from "../ai-upscale-engine.mjs";
 
 function pngHeader(width, height) {
   const bytes = Buffer.alloc(24);
-  pngHeader(1,1).copy(bytes,0);
+  Buffer.from([137,80,78,71,13,10,26,10]).copy(bytes,0);
   bytes.writeUInt32BE(13,8);
   bytes.write("IHDR",12,"ascii");
   bytes.writeUInt32BE(width,16);
@@ -24,7 +24,7 @@ const out = args[args.indexOf("-o") + 1];
 const requestedScale = Number(args[args.indexOf("-s") + 1] || 2);
 const size = ${sizeExpression};
 const png = Buffer.alloc(24);
-pngHeader(1,1).copy(png,0);
+Buffer.from([137,80,78,71,13,10,26,10]).copy(png,0);
 png.writeUInt32BE(13,8);
 png.write("IHDR",12,"ascii");
 png.writeUInt32BE(size,16);
