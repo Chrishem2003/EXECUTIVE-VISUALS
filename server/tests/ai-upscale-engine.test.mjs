@@ -50,6 +50,17 @@ test("AI upscaler validates model, scale, tile and distinct paths before executi
   assert.throws(() => adapter.plan({ inputPath: "/tmp/a.png", outputPath: "/tmp/a.png" }), error => error.code === "AI_UPSCALE_INVALID_PATH");
 });
 
+test("AI upscale model names match the supported NCNN model catalog", () => {
+  const adapter = createRealEsrganAdapter({ binaryPath: "/bin/true", modelDirectory: "/tmp" });
+  for (const model of ["realesrgan-x4plus", "realesrgan-x4plus-anime", "realesr-animevideov3", "realesrnet-x4plus"]) {
+    assert.equal(adapter.plan({ inputPath: "/tmp/input.png", outputPath: "/tmp/output.png", model }).model, model);
+  }
+  assert.throws(
+    () => adapter.plan({ inputPath: "/tmp/input.png", outputPath: "/tmp/output.png", model: "realesrgan-x2plus" }),
+    error => error.code === "AI_UPSCALE_INVALID_MODEL"
+  );
+});
+
 test("AI upscaler launches without a shell and publishes only a new bounded output", async () => {
   const directory = await mkdtemp(join(tmpdir(), "ev-ai-upscale-"));
   const binary = join(directory, "engine");
