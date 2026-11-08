@@ -94,8 +94,11 @@ Planned signing and lineage constraints:
 - Preserve SDK validation findings and distinguish signature validity from certificate/trust-policy status.
 - Keep missing credentials, invalid credentials, valid-but-untrusted credentials and trusted credentials distinct.
 - Preserve ingredient relationships and record each transformation in a new manifest; do not claim an old signature remains valid after media bytes change.
-- Keep signing keys outside the repository, browser, application configuration and ordinary environment-variable values. Production signing should use an authenticated KMS/HSM-backed callback signer and an approved certificate/timestamp policy.
-- Do not enable production signing until certificate issuance, key custody, rotation, timestamping, revocation and incident-response procedures are approved.
+- A server-only callback signing adapter now exists in `server/c2pa-signing.mjs`. It uses the official SDK `CallbackSigner`, writes a new transformation manifest, retains source ingredients and verifies the signed output.
+- The adapter is disabled by default and requires an injected `signingProvider.sign({ keyRef, algorithm, payload })` implementation. The application never receives a private key; production integration must connect this callback to an authenticated KMS/HSM service.
+- Timestamping is required by default. The test-only callback explicitly disables timestamp requirements; production must configure an approved HTTPS TSA.
+- The callback adapter is not yet connected to the production worker/export path, and no KMS/HSM provider or production signing certificate has been provisioned.
+- Keep signing keys outside the repository, browser, application configuration and ordinary environment-variable values. Do not enable production signing until certificate issuance, key custody, rotation, timestamping, revocation and incident-response procedures are approved.
 
 See [Asset provenance and Content Credentials](docs/ASSET-PROVENANCE-AND-CONTENT-CREDENTIALS.md) for the detailed integration contract and acceptance criteria.
 
@@ -117,7 +120,7 @@ The API reads configuration from environment variables. Important settings inclu
 | `SUPABASE_PUBLISHABLE_KEY` | Supabase public client key | Configure as deployment secret/config; never commit credentials. |
 | `COOKIE_SECURE` | Secure cookie override | Set to `true` behind HTTPS where required. |
 | `MAX_UPLOAD_BYTES` | Upload limit | Keep limits conservative and validate actual media signatures. |
-| `CLOUD_TIMELINE_API_ENABLED` | Cloud timeline API gate | Keep disabled until the isolated staging release gates pass. |
+| `CLOUD_TIMELINE_API_ENABLED` | Cloud timeline API gate | Keep disabled until the isolated staging release gates pass. |\n| `C2PA_SIGNING_ENABLED` | Callback signing gate | Defaults to `false`; do not enable without an approved protected signer provider. |\n| `C2PA_SIGNING_KEY_REF` | External key reference | Identifier only; never a private key or secret value. |\n| `C2PA_TSA_URL` | Timestamp authority | Must be HTTPS; required by default for signing. |
 
 Never commit API keys, service-role keys, provider tokens, certificates, private keys, signing-service credentials or production data. Do not put Supabase service-role credentials in browser-visible variables. A `.env.example` file should contain placeholders only.
 
