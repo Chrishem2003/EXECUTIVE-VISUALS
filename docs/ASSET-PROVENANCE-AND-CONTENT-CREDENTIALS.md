@@ -119,7 +119,7 @@ Test the full chain through proxy generation, transcode, timeline render, export
 
 ## Acceptance tests
 
-The feature branch includes deterministic adapter tests for missing manifests, SDK `Valid`/`Invalid`/`Trusted` states, trust-policy gating, bounded findings, missing SDK, unknown states, oversized files and changed on-disk size. These unit tests use an injected SDK boundary; they do not replace a genuine signed-media fixture suite against the native binary.
+The feature branch includes deterministic adapter tests for missing manifests, SDK `Valid`/`Invalid`/`Trusted` states, trust-policy gating, bounded findings, missing SDK, unknown states, unsupported formats, oversized files and changed on-disk size. Native integration tests use the installed SDK to inspect a valid unsigned PNG, generate an actual signed PNG using an ephemeral test-only certificate chain, verify it as valid-but-untrusted without trust anchors, verify it as trusted with the explicit test root anchor, and reject altered pixel data. These ephemeral test keys are generated in a temporary directory and are not production signing credentials.
 
 - A known-good signed JPEG/PNG fixture is detected and cryptographically validated.
 - A known-good signed supported video fixture is detected and cryptographically validated.
