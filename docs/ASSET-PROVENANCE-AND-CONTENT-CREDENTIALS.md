@@ -52,7 +52,7 @@ GET /api/assets/ASSET_ID/c2pa
 Cookie: ev_session=...
 ```
 
-The application-provenance endpoint returns the stored record and its internal integrity result. The C2PA endpoint reads the original stored media using the official native SDK and returns a bounded manifest summary, validation findings and explicit trust state. Both endpoints use the same asset/project authorization check; inaccessible assets return 404.
+The application-provenance endpoint returns the stored record and its internal integrity result. The C2PA endpoint reads the original stored media using the official native SDK and returns a bounded manifest summary, validation findings and explicit trust state. Both endpoints use the same asset/project authorization check; inaccessible assets return 404. The visual Asset Library exposes an **Inspect Content Credentials** action on image, audio and video asset cards. It displays the verification state, manifest summary, embedded source ingredients, findings, validation details and verified asset checksum without conflating signature validity with signer trust.
 
 ## C2PA integration path
 
@@ -63,9 +63,9 @@ The verifier pins the maintained CAI Node SDK at `@contentauth/c2pa-node@0.10.0`
 - API tests verify authenticated asset access and cross-user isolation.
 
 Remaining production gates:
-- Run independent local/cloud transcode, proxy, AI-upscale and timeline round-trip tests against credential-bearing fixtures, including large media and cancellation paths.
-- Obtain a suitable production C2PA signing certificate and protect private keys with KMS/HSM-backed signing; never ship private keys to browsers or repository files.
-- Define and review the production trust-anchor, certificate-chain, timestamping, revocation and trust-list policy; no production trust anchor is bundled by this feature.
+- Extend end-to-end local coverage to the AI-upscale executor and run real near-limit large-file throughput/memory stress; current tests cover local SQLite transcode, local timeline with signed video/audio/overlay ingredients, all six application media formats, oversize preflight and cancellation recovery.
+- Implement and independently verify a provider-specific KMS/HSM adapter using non-exportable keys, workload identity, certificate matching, signature encoding, rotation, revocation, timestamping and audit evidence. The provider-neutral CAI CallbackSigner adapter is implemented and tested; no real KMS/HSM provider is configured.
+- Run isolated staging acceptance with a dedicated non-production signer and approved trust anchors before enabling any deployed signing path.
 - Keep C2PA validation separate from rights, consent, factual accuracy and editorial approval.
 
 Reference: https://opensource.contentauthenticity.org/docs/
