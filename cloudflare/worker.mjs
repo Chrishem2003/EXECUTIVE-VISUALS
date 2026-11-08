@@ -64,11 +64,14 @@ async function authenticate(request, env) {
   headers.set("accept", "application/json");
   let response;
   try {
-    response = await fetch(new Request(new URL("/api/me", apiOrigin), { method: "GET", headers, redirect: "error" }));
+    response = await fetch(new Request(new URL("/api/me", apiOrigin), { method: "GET", headers, redirect: "manual" }));
   } catch {
     throw Object.assign(new Error("The application identity service is unavailable."), { status: 502, code: "IDENTITY_SERVICE_UNAVAILABLE" });
   }
   const sessionCookies = responseCookies(response);
+  if (response.status >= 300 && response.status < 400) {
+    throw Object.assign(new Error("Sign in to access the staging workspace."), { status: 401, code: "AUTH_REQUIRED", setCookies: sessionCookies });
+  }
   if (response.status === 401 || response.status === 403) {
     throw Object.assign(new Error("Sign in to access the staging workspace."), { status: 401, code: "AUTH_REQUIRED", setCookies: sessionCookies });
   }
