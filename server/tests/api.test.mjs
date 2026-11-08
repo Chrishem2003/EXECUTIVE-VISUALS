@@ -175,6 +175,41 @@ test("registration, project ownership, binary upload and asset isolation work",a
   assert.equal(ownProject.status,404);
 });
 
+test("evidence submission and approval reject source files whose stored bytes no longer match SHA-256",async()=>{
+  const cookie=await register("evidence-integrity-owner@example.test");
+  const projectResponse=await request("/api/projects",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({name:"Evidence integrity"})},cookie);
+  assert.equal(projectResponse.status,201);
+  const project=(await projectResponse.json()).project;
+  const bytes=Buffer.from([137,80,78,71,13,10,26,10,0,1,2,3]);
+  const upload=await request("/api/assets",{method:"POST",headers:{"content-type":"image/png","x-file-name":"evidence-source.png","x-project-id":project.id},body:bytes},cookie);
+  assert.equal(upload.status,201);
+  const asset=(await upload.json()).asset;
+  const db=openDatabase(join(dataDir,"executive-visuals.sqlite"));
+  const row=db.prepare("SELECT storage_path FROM assets WHERE id=?").get(asset.id);
+  const file=join(dataDir,"media",row.storage_path);
+  const submitted=await request("/api/assets/"+asset.id+"/evidence",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({targetType:"asset",targetId:asset.id,kind:"source_observation",claim:"The source image contains the approved product mark."})},cookie);
+  assert.equal(submitted.status,201);
+  const record=(await submitted.json()).record;
+  await writeFile(file,Buffer.from([137,80,78,71,13,10,26,10,0,1,2,4]));
+  const review=await request("/api/assets/"+asset.id+"/evidence/"+record.id+"/review",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({status:"verified",reviewNote:"Source inspected and accepted."})},cookie);
+  assert.equal(review.status,409);
+  assert.equal((await review.json()).error.code,"EVIDENCE_SOURCE_INTEGRITY_FAILED");
+  db.close();
+});
+
+test("evidence review decisions require a written reason",async()=>{
+  const cookie=await register("evidence-review-reason@example.test");
+  const projectResponse=await request("/api/projects",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({name:"Evidence review reason"})},cookie);
+  const project=(await projectResponse.json()).project;
+  const upload=await request("/api/assets",{method:"POST",headers:{"content-type":"image/png","x-file-name":"review-source.png","x-project-id":project.id},body:Buffer.from([137,80,78,71,13,10,26,10,0,1,2,3])},cookie);
+  const asset=(await upload.json()).asset;
+  const submitted=await request("/api/assets/"+asset.id+"/evidence",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({targetType:"asset",targetId:asset.id,kind:"source_observation",claim:"The source image contains the approved product mark."})},cookie);
+  const record=(await submitted.json()).record;
+  const review=await request("/api/assets/"+asset.id+"/evidence/"+record.id+"/review",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({status:"verified",reviewNote:"ok"})},cookie);
+  assert.equal(review.status,400);
+  assert.equal((await review.json()).error.code,"EVIDENCE_REVIEW_REASON_REQUIRED");
+});
+
 test("creative workspace drafts persist per project with revision and editor-role guards",async()=>{
   const owner=await register("workspace-owner@example.test");
   const created=await request("/api/projects",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({name:"Persistent creative workspace"})},owner);
