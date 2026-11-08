@@ -3,13 +3,13 @@ ARG TARGETARCH
 RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg fonts-dejavu-core ca-certificates curl unzip && rm -rf /var/lib/apt/lists/*
 RUN set -eux; \
     case "${TARGETARCH:-amd64}" in \
-      amd64) asset="c2pa-node_x86_64-unknown-linux-gnu-v0.10.0.zip"; digest="4da99fadf6caef86c9cc4a3ee3e126672c19e4f0dba2e2a0f81d4e0cfc691cfa" ;; \
-      arm64) asset="c2pa-node_aarch64-unknown-linux-gnu-v0.10.0.zip"; digest="26eb6ec9ffe1ad80a02aad6b4e5cae545b32f09e3050cc4a0e7076d4bf0960ba" ;; \
+      amd64) asset_id="711148157"; digest="4da99fadf6caef86c9cc4a3ee3e126672c19e4f0dba2e2a0f81d4e0cfc691cfa" ;; \
+      arm64) asset_id="711150248"; digest="26eb6ec9ffe1ad80a02aad6b4e5cae545b32f09e3050cc4a0e7076d4bf0960ba" ;; \
       *) echo "Unsupported C2PA Node binary architecture: ${TARGETARCH}" >&2; exit 1 ;; \
     esac; \
     mkdir -p /opt/c2pa; \
-    url="https://github.com/contentauth/c2pa-js/releases/download/%40contentauth%2Fc2pa-node%400.10.0/${asset}"; \
-    curl --fail --location --retry 5 --retry-all-errors --connect-timeout 20 --max-time 300 "$url" --output /tmp/c2pa-node.zip; \
+    url="https://api.github.com/repos/contentauth/c2pa-js/releases/assets/${asset_id}"; \
+    curl --fail --location --retry 5 --retry-all-errors --connect-timeout 20 --max-time 300 -H "Accept: application/octet-stream" "$url" --output /tmp/c2pa-node.zip; \
     echo "$digest  /tmp/c2pa-node.zip" | sha256sum --check -; \
     entry="$(unzip -Z1 /tmp/c2pa-node.zip | sed -n '1p')"; \
     test -n "$entry"; \
