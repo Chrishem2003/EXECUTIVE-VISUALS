@@ -228,7 +228,8 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
           ownerId: job.owner_id, projectId: job.project_id || null, filename: plan.name,
           mediaType, path: signing.path, derivativeOf: sourceId,
           metadata: { operation: job.job_type, sourceSha256: materialized.asset.sha256, sha256: digest, processing, c2pa: signing.c2pa },
-          publicationKey: job.id + ":output:v1"
+          publicationKey: job.id + ":output:v1",
+          assertLease, signal, leaseContext: { jobId: job.id, workerId: job.lease_owner, leaseToken: job.lease_token }
         });
         onProgress(100);
         return { sourceAssetId: sourceId, outputAsset: asset, sha256: digest, byteSize: info.size, operation: job.job_type, processing, c2pa: signing.c2pa };
@@ -361,7 +362,8 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
         path: signing.path,
         derivativeOf: sourceId,
         metadata: { operation: job.job_type, sourceSha256: materialized.asset.sha256, sha256: digest, c2pa: signing.c2pa, ...(processing ? { processing } : {}) },
-        publicationKey: job.id + ":output:v1"
+        publicationKey: job.id + ":output:v1",
+          assertLease, signal, leaseContext: { jobId: job.id, workerId: job.lease_owner, leaseToken: job.lease_token }
       });
       onProgress(100);
       return { sourceAssetId: sourceId, outputAsset: asset, sha256: digest, byteSize: publishedInfo.size, operation: job.job_type, c2pa: signing.c2pa, ...(processing ? { processing } : {}) };
