@@ -315,7 +315,7 @@ export function createAppServer() {
         if(!publicAppUrl){fail(res,503,"PASSWORD_RECOVERY_NOT_CONFIGURED","Password recovery needs PUBLIC_APP_URL and an exact matching Supabase Auth redirect URL.");return;}
         let redirect;
         try{redirect=new URL(publicAppUrl);}catch{fail(res,503,"PASSWORD_RECOVERY_NOT_CONFIGURED","PUBLIC_APP_URL is not a valid absolute URL.");return;}
-        if((redirect.protocol!=="https:"&&process.env.NODE_ENV!=="test")||redirect.username||redirect.password||redirect.search||redirect.hash||redirect.pathname!=="/"){
+        const localRedirect=["localhost","127.0.0.1","::1"].includes(redirect.hostname);\n        if((redirect.protocol!=="https:"&&!localRedirect)||redirect.username||redirect.password||redirect.search||redirect.hash||redirect.pathname!=="/"){
           fail(res,503,"PASSWORD_RECOVERY_NOT_CONFIGURED","PUBLIC_APP_URL must be an HTTPS site origin ending in /, without credentials, query parameters or fragments.");return;
         }
         const body=await readJson(req);
