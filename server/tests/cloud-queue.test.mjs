@@ -55,7 +55,7 @@ test("configuration, arguments and HTTP errors fail closed",async()=>{
   await assert.rejects(()=>queue.claim("worker-1",90,[]),/Job type filters/);
   await assert.rejects(()=>queue.claim("worker-1",90,["media.color","media.color"]),/Job type filters/);
   await assert.rejects(()=>queue.recover(1001),/Recovery limit/);
-  await assert.rejects(()=>queue.finish("job-1","worker-1","processing"),/terminal job status/);
+  await assert.rejects(()=>queue.finish("job-1","worker-1","processing",null,null,"11111111-1111-4111-8111-111111111111"),/terminal job status/);
   await assert.rejects(()=>queue.finish("job-1","worker-1","failed",[]),/lease token/);
   await assert.rejects(()=>queue.renew("job-1","worker-1"),/lease token/);
 });
