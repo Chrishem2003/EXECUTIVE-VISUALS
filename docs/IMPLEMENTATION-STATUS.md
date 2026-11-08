@@ -495,3 +495,13 @@ This is a runnable worker entry point, not a deployed worker. Do not set the ena
 - Full build includes `verify:provenance`; the broader server suite includes the API authorization integration test.
 
 **Next:** add the supported CAI C2PA SDK as a separate adapter after dependency review, certificate/trust policy design and supported-format tests. Do not claim signing/validation until real signed fixtures pass.
+
+
+## C2PA provenance milestone — visible app evidence and expanded streaming test
+
+- Added a dedicated **Manage → Trust & provenance** workspace to the browser app. It lists nine implemented/tested stages and five open release gates, with direct links to PR #249, the successful CI run, and the Asset Library inspection flow.
+- The page distinguishes completed code/test evidence from release approval. It explicitly states that the callback signer is not a connected KMS/HSM, the AI-upscale executor fixture is not Real-ESRGAN inference, and no staging signer/deployment has been provisioned.
+- Expanded cancellation/recovery verification with a 96 MiB streaming preservation test. The fake signer copies the file without whole-file buffering; the preserver hashes source/output streams, validates the embedded ingredient and confirms the final output hash. This is a large-file stress point, not a substitute for a measured near-limit throughput/memory run.
+- The Asset Library continues to expose per-asset Content Credentials inspection for images, audio and video.
+- Next independent gates remain: actual Real-ESRGAN inference, near-limit throughput/memory and additional codec/container coverage, a concrete provider-specific KMS/HSM adapter with protected key controls, independent browser acceptance, and isolated staging sign-off with a dedicated non-production signer.
+- Safety boundary unchanged: no production or staging keys, paid provider calls, shared migrations, deployment or merge.
