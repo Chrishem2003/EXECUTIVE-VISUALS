@@ -128,6 +128,10 @@ The API reads configuration from environment variables. Important settings inclu
 | `MAX_UPLOAD_BYTES` | Upload limit | Keep limits conservative and validate actual media signatures. |
 | `CLOUD_TIMELINE_API_ENABLED` | Cloud Projects, private cloud asset shelf and timeline API gate | Keep disabled until the dedicated isolated Supabase schema, private bucket, RLS/storage policies and staging release gates pass. Requires `AUTH_MODE=supabase`. |
 | `CLOUD_MEDIA_JOBS_API_ENABLED` | Cloud Asset Library processing controls and job-history API gate | Defaults to `false`; requires `CLOUD_TIMELINE_API_ENABLED=true` and `AUTH_MODE=supabase`. Enable only after the isolated cloud media worker is deployed and verified; it is not a worker health check. |
+| `CLOUD_WORKER_ENABLED` | Separate cloud worker process master gate | Defaults to `false`; requires isolated schema, private bucket, server-side Supabase credentials and FFmpeg/FFprobe. |
+| `CLOUD_MEDIA_WORKER_ENABLED` | Cloud media worker family | Defaults to `false`; set only on the separate worker service after staging readiness checks. |
+| `CLOUD_TIMELINE_WORKER_ENABLED` | Cloud timeline worker family | Defaults to `false`; independent worker family, enabled only after its own staging acceptance. |
+| `SUPABASE_SERVICE_ROLE_KEY` | Server-side worker/API database and storage credential | Secret only; never expose to browser code or commit it. |
 | `CLOUD_WORKER_TEMP_ROOT` | Private cloud worker scratch directory | Must exist and be private; when C2PA signing is enabled it must match `C2PA_SIGNING_MEDIA_ROOT`. |
 | `C2PA_TRUST_ANCHORS` | PEM public trust bundle path | Administrator-managed, read-only public certificates only. |
 | `C2PA_MAX_VERIFY_BYTES` | C2PA parser/signing size limit | Defaults to 250 MiB. |
