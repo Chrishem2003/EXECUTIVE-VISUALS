@@ -75,6 +75,14 @@ create table executive_visuals.jobs (
   completed_at timestamptz,
   unique(owner_id,idempotency_key)
 );
+-- Legacy worker RPC signatures are present so the fencing migration can prove they are revoked.
+create or replace function executive_visuals.claim_next_job(text,integer,text[])
+returns setof executive_visuals.jobs language sql as $ select * from executive_visuals.jobs where false $;
+create or replace function executive_visuals.renew_job_lease(uuid,text,integer)
+returns boolean language sql as $ select false $;
+create or replace function executive_visuals.finish_job(uuid,text,text,jsonb,jsonb)
+returns boolean language sql as $ select false $;
+
 create table executive_visuals.assets (
   id uuid primary key,
   owner_id uuid not null references auth.users(id),
