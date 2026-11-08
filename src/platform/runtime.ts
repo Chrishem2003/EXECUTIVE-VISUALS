@@ -28,7 +28,7 @@ function updateShell(){
  const footTitle=document.querySelector<HTMLElement>(".sidebar-foot b");
  if(footTitle)footTitle.textContent=state.user?state.user.email:"Executive Visuals";
  const footIcon=document.querySelector<HTMLElement>(".sidebar-foot .local-dot");
- if(footIcon){footIcon.textContent=state.user?state.user.email.trim().slice(0,1).toUpperCase():"";footIcon.classList.toggle("account-avatar",Boolean(state.user));}
+ if(footIcon){footIcon.textContent=state.user?state.user.email.trim().slice(0,1).toUpperCase():"";footIcon.classList.toggle("account-avatar",Boolean(state.user));footIcon.style.background=state.user?"#252039":state.status==="online"?"#68c9a2":state.status==="offline"?"#d8a65b":"#8791a1";}
  const badge=document.querySelector<HTMLElement>(".local-badge");
  if(badge)badge.textContent=state.status==="online"?"API CONNECTED":state.status==="auth-required"?"SIGN IN REQUIRED":state.status==="offline"?"OFFLINE MODE":"CONNECTING";
  const dot=document.querySelector<HTMLElement>(".local-dot");
