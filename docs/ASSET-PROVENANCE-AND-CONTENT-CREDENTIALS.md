@@ -1,6 +1,6 @@
 # Asset provenance and Content Credentials
 
-**Status:** application-level asset integrity records and an authenticated CAI Node SDK verification endpoint are implemented. Manifest signing and automatic provenance preservation through every transformation remain gated follow-on work.
+**Status:** application-level integrity records, authenticated CAI Node SDK verification, and signer-injected C2PA preservation hooks for cloud media, local SQLite media, local timeline rendering and cloud timeline rendering are implemented on this branch. Production signing remains disabled pending an approved signer and trust policy.
 
 ## What is implemented
 
@@ -23,9 +23,22 @@ The application record is **not** a C2PA Content Credential, digital signature, 
 
 ## Transformation preservation
 
-The cloud media executor now calls the C2PA transformation preserver before publishing an image/video derivative. When the source has no embedded C2PA manifest, it records `not_present` and leaves the derivative unchanged. When the source has a valid C2PA manifest and an authorized server-side signer is supplied, the preserver creates a new `edit` manifest, carries the source Reader into the new manifest as an ingredient, adds a `c2pa.edited` action, verifies that the output manifest remains valid and that the source manifest data is present, then atomically replaces the temporary output before publication. If a source manifest is invalid or signing is unavailable, derivative publication fails closed; the system does not silently strip existing credentials.
+The same C2PA transformation preserver is now shared by cloud media, local SQLite media, local timeline rendering and cloud timeline rendering. It supports multiple source assets: every source is checked against its registered SHA-256, each credential-bearing source is independently parsed and validated, and each valid source manifest is added as a `parentOf` ingredient to the new output manifest. Sources without embedded credentials are not represented as signed lineage. A remote-only manifest is not fetched and blocks publication rather than being mislabeled as absent.
 
-The signer is injected into `createCloudMediaWorker` as a `LocalSigner` or callback signer. The default deployment has **no signer configured**, so ordinary non-C2PA media can continue, while C2PA-bearing source assets are held until an approved signer is configured. This is a source-code integration and test path, not production signing enablement. The local SQLite media executor and timeline render pipeline are not yet wired to this signer adapter.
+The preserver creates a new `edit` manifest, adds a `c2pa.edited` action with the operation and source counts, signs to a temporary sibling file, validates the resulting embedded manifest and its ingredient manifest data, rechecks all source and output hashes, and only then atomically replaces the derivative. The output checksum is computed after signing and is the checksum stored with the published asset.
+
+Local operations covered:
+- AI upscaling.
+- FFmpeg thumbnail, audio extraction/cleanup, proxy, transcode, denoise, color, resize, interpolation and enhancement outputs.
+- Local SQLite timeline masters, carrying every enabled video, audio and still-image overlay source as an ingredient.
+
+Cloud operations covered:
+- Existing cloud single-source media derivative executor.
+- Cloud timeline masters, carrying every materialized video, audio and still-image source asset.
+
+If no source contains an embedded C2PA manifest, the derivative is left unchanged and the result is explicitly `not_present`. If any credential-bearing source is invalid, remote-only, unsupported, or cannot be re-signed because no authorized signer is configured, publication fails closed. This prevents silently dropping known credentials. A failed operation does not publish a derivative.
+
+The signer is dependency-injected as a local or callback signer. No private key, production signer, trust anchor or signing-service credential is configured in this branch. The local and cloud hooks are implementation paths, not production signing enablement. Operators must supply an approved server-side signer before C2PA-bearing transformations can complete.
 
 ## API examples
 
@@ -50,7 +63,7 @@ The verifier pins the maintained CAI Node SDK at `@contentauth/c2pa-node@0.10.0`
 - API tests verify authenticated asset access and cross-user isolation.
 
 Remaining production gates:
-- Extend the current cloud-media derivative preservation path to the local media and timeline-render pipelines, then run independent transcode/proxy/render round-trip tests.
+- Run independent local/cloud transcode, proxy, AI-upscale and timeline round-trip tests against credential-bearing fixtures, including large media and cancellation paths.
 - Obtain a suitable production C2PA signing certificate and protect private keys with KMS/HSM-backed signing; never ship private keys to browsers or repository files.
 - Define and review the production trust-anchor, certificate-chain, timestamping, revocation and trust-list policy; no production trust anchor is bundled by this feature.
 - Keep C2PA validation separate from rights, consent, factual accuracy and editorial approval.
