@@ -337,7 +337,9 @@ async function renderTimelineJob({db,job,mediaRoot,activeProcesses,onProgress,c2
     return{path:join(mediaRoot,asset.storage_path),mediaType:asset.media_type,sha256:asset.sha256};
   });
   const c2paSignal={get aborted(){return cancelled();}};
-  const c2paPreservation=await c2paPreserver({sources:timelineSources,outputPath,outputMimeType:"video/mp4",signer:c2paSigner,signerMode:c2paSignerMode,operation:"timeline.render",signal:c2paSignal});
+  let c2paPreservation;
+  try{c2paPreservation=await c2paPreserver({sources:timelineSources,outputPath,outputMimeType:"video/mp4",signer:c2paSigner,signerMode:c2paSignerMode,operation:"timeline.render",signal:c2paSignal});}
+  catch(error){await unlink(outputPath).catch(()=>{});throw error;}
   const fileStat=await stat(outputPath),hash=createHash("sha256");
   await pipeline(createReadStream(outputPath),new Transform({transform(chunk,enc,cb){hash.update(chunk);cb(null,chunk);}}),new Transform({transform(chunk,enc,cb){cb();}}));
   const outputAsset=addAsset(db,job,"derived/"+outputId+".mp4",String(timeline.name||record.name||"sequence")+"-master.mp4","video/mp4",fileStat.size,hash.digest("hex"),null,{operation:"timeline.render",timelineId:record.id,timelineRevision:record.revision,width,height,frameRate:{numerator:fpsNum,denominator:fpsDen},c2paPreservation});
@@ -378,7 +380,9 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
         scale:input.scale??4, tile:input.tile??0, format, signal:controller.signal
       });
       if (controller.signal.aborted || cancelled()) throw Object.assign(new Error("Job cancelled."), { code:"JOB_CANCELLED" });
-      const c2paPreservation=await c2paPreserver({sourcePath,outputPath,sourceMimeType:source.media_type,outputMimeType:format==="jpg"?"image/jpeg":"image/"+format,expectedSourceSha256:source.sha256,signer:c2paSigner,signerMode:c2paSignerMode,operation:job.job_type,signal:controller.signal});
+      let c2paPreservation;
+      try{c2paPreservation=await c2paPreserver({sourcePath,outputPath,sourceMimeType:source.media_type,outputMimeType:format==="jpg"?"image/jpeg":"image/"+format,expectedSourceSha256:source.sha256,signer:c2paSigner,signerMode:c2paSignerMode,operation:job.job_type,signal:controller.signal});}
+      catch(error){await unlink(outputPath).catch(()=>{});throw error;}
       const fileStat = await stat(outputPath);
       const hash = createHash("sha256");
       await pipeline(createReadStream(outputPath),new Transform({transform(chunk,enc,cb){hash.update(chunk);cb(null,chunk);}}),new Transform({transform(chunk,enc,cb){cb();}}));
@@ -467,7 +471,9 @@ export async function executeMediaJob({ db, job, mediaRoot, activeProcesses = ne
   try { outputMetadata=JSON.parse(probeResult.stdout||"{}"); }
   catch { throw Object.assign(new Error("Media output metadata could not be parsed."),{code:"MEDIA_OUTPUT_VALIDATION_FAILED"}); }
   const validation=validateMediaOutputProbe(outputMetadata,mime);
-  const c2paPreservation=await c2paPreserver({sourcePath,outputPath,sourceMimeType:source.media_type,outputMimeType:mime,expectedSourceSha256:source.sha256,signer:c2paSigner,signerMode:c2paSignerMode,operation:job.job_type,signal:{get aborted(){return cancelled();}}});
+  let c2paPreservation;
+  try{c2paPreservation=await c2paPreserver({sourcePath,outputPath,sourceMimeType:source.media_type,outputMimeType:mime,expectedSourceSha256:source.sha256,signer:c2paSigner,signerMode:c2paSignerMode,operation:job.job_type,signal:{get aborted(){return cancelled();}}});}
+  catch(error){await unlink(outputPath).catch(()=>{});throw error;}
   const fileStat = await stat(outputPath);
   if(fileStat.size<=0)throw Object.assign(new Error("Media output is empty."),{code:"MEDIA_OUTPUT_VALIDATION_FAILED"});
   const hash = createHash("sha256");
