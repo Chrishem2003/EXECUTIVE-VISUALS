@@ -1,9 +1,9 @@
 name: Quality checks
 on:
   push:
-    branches: [main, feat/atomic-asset-publication-pr]
+    branches: [main, feat/atomic-asset-publication-pr, fix/reconcile-pending-publication-cleanup-claims]
   pull_request:
-    branches: [main, feat/idempotent-asset-publication-ledger, feat/lease-fencing-tokens-v2, feat/immutable-asset-publication, feat/durable-publication-cleanup]
+    branches: [main, feat/idempotent-asset-publication-ledger, feat/lease-fencing-tokens-v2, feat/immutable-asset-publication, feat/durable-publication-cleanup, feat/atomic-asset-publication-pr, fix/reconcile-pending-publication-cleanup-claims]
   workflow_dispatch:
 concurrency:
   group: quality-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}

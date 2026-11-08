@@ -72,7 +72,7 @@ export function createCloudPublicationCleanupWorker({
   const rows=await request("rpc/"+name,{method:"POST",body:args});
   return rows;
  }
- let publicationOffset=0;
+ let publicationOffset=0,pendingClaimOffset=0;
  const publicationCursors=new Map();
  async function listStalePublications(offset=0){
   const cutoff=new Date(now().getTime()-olderThanMs).toISOString();
@@ -93,14 +93,17 @@ export function createCloudPublicationCleanupWorker({
   const rows=await request("jobs?"+params.toString());
   return Array.isArray(rows)&&rows.length===1?rows[0]:null;
  }
- async function createCleanupFor(publication,runId){
-  const scopeId=publication.project_id||publication.owner_id;
-  const prefix=scopeId+"/"+publication.asset_id+"/";
+ function createAuditFor(publication,runId){
   const sink=createCloudPublicationAuditSink({
    url,serviceRoleKey,ownerId:publication.owner_id,projectId:publication.project_id,
    jobId:publication.job_id,publicationKey:publication.publication_key,actorType:"system",runId,fetchImpl
   });
-  const audit=createCloudPublicationAuditHandler({sink,maxAttempts:3,retryDelayMs:250,onRetry:event=>onLog({kind:"audit_retry",...event})});
+  return createCloudPublicationAuditHandler({sink,maxAttempts:3,retryDelayMs:250,onRetry:event=>onLog({kind:"audit_retry",...event})});
+ }
+ async function createCleanupFor(publication,runId){
+  const scopeId=publication.project_id||publication.owner_id;
+  const prefix=scopeId+"/"+publication.asset_id+"/";
+  const audit=createAuditFor(publication,runId);
   return createCloudPublicationCleanup({
    storage:cloudStorage,
    requireAudit:true,
@@ -136,6 +139,100 @@ export function createCloudPublicationCleanupWorker({
    now
   });
  }
+ async function listPendingClaims(offset=0){
+  const params=new URLSearchParams({
+   select:"id,claim_token,object_path,job_id,owner_id,project_id,publication_id,claimed_at",
+   status:"eq.claimed",
+   order:"claimed_at.asc,id.asc",
+   limit:String(objectLimit),
+   offset:String(offset)
+  });
+  const rows=await request("asset_publication_cleanup_claims?"+params.toString());
+  if(!Array.isArray(rows))throw new Error("Pending publication cleanup claims returned an invalid list.");
+  return rows;
+ }
+ async function getPublicationById(publicationId){
+  const params=new URLSearchParams({
+   select:"owner_id,project_id,job_id,publication_key,asset_id,status,updated_at",
+   id:"eq."+publicationId,
+   limit:"1"
+  });
+  const rows=await request("asset_publications?"+params.toString());
+  if(!Array.isArray(rows)||rows.length!==1)return null;
+  return safePublication(rows[0]);
+ }
+ async function isStorageObjectPresent(objectPath){
+  const slash=objectPath.lastIndexOf("/");
+  const prefix=objectPath.slice(0,slash+1),name=objectPath.slice(slash+1);
+  let cursor=null;
+  for(let page=0;page<10;page++){
+   const listing=await cloudStorage.listObjects({prefix,limit:1000,cursor});
+   if(!listing||!Array.isArray(listing.objects)||typeof listing.hasNext!=="boolean")throw new Error("Pending cleanup storage verification returned an invalid page.");
+   if(listing.objects.some(item=>item?.name===name))return true;
+   if(!listing.hasNext)return false;
+   cursor=listing.nextCursor;
+  }
+  throw new Error("Pending cleanup storage verification exceeded its bounded page limit.");
+ }
+ async function reconcilePendingClaims(runId){
+  const claims=await listPendingClaims(pendingClaimOffset);
+  pendingClaimOffset=claims.length<objectLimit?0:pendingClaimOffset+claims.length;
+  const summary={scanned:claims.length,completed:0,skipped:0,failed:0,offset:pendingClaimOffset};
+  for(const claim of claims){
+   try{
+    if(!claim||!UUID.test(claim.id||"")||!UUID.test(claim.claim_token||"")||
+       !UUID.test(claim.job_id||"")||!UUID.test(claim.owner_id||"")||
+       !UUID.test(claim.publication_id||"")||
+       claim.project_id!==null&&!UUID.test(claim.project_id||"")||
+       typeof claim.object_path!=="string"){
+     summary.skipped++;continue;
+    }
+    const publication=await getPublicationById(claim.publication_id);
+    if(!publication||publication.job_id!==claim.job_id||publication.owner_id!==claim.owner_id||
+       publication.project_id!==claim.project_id){
+     summary.skipped++;continue;
+    }
+    const expectedPrefix=(publication.project_id||publication.owner_id)+"/"+publication.asset_id+"/";
+    const filename=claim.object_path.startsWith(expectedPrefix)?claim.object_path.slice(expectedPrefix.length):"";
+    const attempt=/^attempt-[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.[A-Za-z0-9]{1,12}$/i;
+    if(!attempt.test(filename)){summary.skipped++;continue;}
+    const job=await getJob(publication.job_id);
+    if(!job||!TERMINAL_CLEANUP_STATES.has(job.status)||
+       (job.lease_expires_at&&Date.parse(job.lease_expires_at)>now().getTime())){
+     summary.skipped++;continue;
+    }
+    const referenceParams=new URLSearchParams({select:"object_path",object_path:"eq."+claim.object_path,limit:"1"});
+    const references=await request("assets?"+referenceParams.toString());
+    if(!Array.isArray(references))throw new Error("Pending cleanup reference lookup returned an invalid response.");
+    const audit=createAuditFor(publication,runId);
+    if(references.length){
+     await audit.onEvent({type:"publication.cleanup_candidate_skipped",objectPath:claim.object_path,reason:"asset_reference_exists",claimId:claim.id,dryRun,at:now()});
+     summary.skipped++;continue;
+    }
+    if(dryRun){
+     await audit.onEvent({type:"publication.cleanup_candidate_skipped",objectPath:claim.object_path,reason:"cleanup_worker_dry_run",claimId:claim.id,dryRun:true,at:now()});
+     summary.skipped++;continue;
+    }
+    await audit.onEvent({type:"publication.cleanup_candidate_eligible",objectPath:claim.object_path,claimId:claim.id,dryRun:false,at:now()});
+    try{
+     await cloudStorage.remove(claim.object_path);
+    }catch(error){
+     const missing=error?.status===404||error?.code==="CLOUD_STORAGE_HTTP_404";
+     if(!missing||await isStorageObjectPresent(claim.object_path))throw error;
+    }
+    // Persist the removal evidence before completing the tombstone. If either
+    // operation is interrupted, the still-claimed row is retried next cycle.
+    await audit.onEvent({type:"publication.orphan_removed",objectPath:claim.object_path,claimId:claim.id,dryRun:false,at:now()});
+    const completed=await rpc("complete_asset_publication_cleanup_v1",{p_claim_id:claim.id,p_claim_token:claim.claim_token});
+    if(completed!==true)throw new Error("Pending cleanup claim completion was not confirmed.");
+    summary.completed++;
+   }catch(error){
+    summary.failed++;
+    onLog({kind:"pending_cleanup_reconciliation_failed",code:error?.code||"CLEANUP_RECONCILIATION_FAILED"});
+   }
+  }
+  return summary;
+ }
  let busy=false,lastRunAt=0;
  return Object.freeze({
   workerId:"publication-cleanup-"+randomUUID(),
@@ -146,6 +243,7 @@ export function createCloudPublicationCleanupWorker({
    busy=true;lastRunAt=startedAt;
    const runId=randomUUID(),results=[];
    try{
+    const pendingClaims=await reconcilePendingClaims(runId);
     const publications=await listStalePublications(publicationOffset);
     publicationOffset=publications.length<publicationLimit?0:publicationOffset+publications.length;
     for(const publication of publications){
@@ -188,8 +286,8 @@ export function createCloudPublicationCleanupWorker({
      };
      results.push({publicationKey:publication.publication_key,...result});
     }
-    const summary={claimed:false,runId,dryRun,publicationsScanned:publications.length,results};
-    onLog({kind:"publication_cleanup_cycle",runId,dryRun,publicationsScanned:publications.length,cleanupRuns:results.length});
+    const summary={claimed:false,runId,dryRun,pendingClaims,publicationsScanned:publications.length,results};
+    onLog({kind:"publication_cleanup_cycle",runId,dryRun,pendingClaims,publicationsScanned:publications.length,cleanupRuns:results.length});
     return summary;
    }finally{busy=false;}
   },
