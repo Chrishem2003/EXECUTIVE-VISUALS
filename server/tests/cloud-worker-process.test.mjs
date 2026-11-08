@@ -9,7 +9,7 @@ test("cloud worker config requires a selected worker family and server credentia
  assert.throws(()=>readCloudWorkerConfig({...env,SUPABASE_SERVICE_ROLE_KEY:""}),/server-side Supabase credentials/);
 });
 test("cloud worker config validates lease, heartbeat, polling and byte limits",()=>{
- const config=readCloudWorkerConfig(env);assert.equal(config.media,true);assert.equal(config.timeline,true);assert.equal(config.leaseSeconds,90);
+ const config=readCloudWorkerConfig(env);assert.equal(config.media,true);assert.equal(config.timeline,true);assert.equal(config.leaseSeconds,90);assert.equal(config.c2paSigningEnabled,false);
  assert.throws(()=>readCloudWorkerConfig({...env,CLOUD_WORKER_HEARTBEAT_MS:"90000"}),/heartbeat/);
  assert.throws(()=>readCloudWorkerConfig({...env,CLOUD_WORKER_POLL_MS:"10"}),/poll interval/);
  assert.throws(()=>readCloudWorkerConfig({...env,CLOUD_WORKER_LEASE_SECONDS:"30",CLOUD_WORKER_HEARTBEAT_MS:"30000"}),/shorter than the lease/);
@@ -56,4 +56,21 @@ test("cloud worker supervisor does not start timers or claim work if stopped dur
  const supervisor=createCloudWorkerSupervisor({workers,leaseSeconds:60,heartbeatIntervalMs:10000,pollMs:10000,recoveryIntervalMs:300000});
  const starting=supervisor.start();await started;await supervisor.stop();releaseRecovery();await starting;
  assert.equal(ran,false,"a stopped supervisor must not claim jobs after startup recovery finishes");
+});
+
+test("C2PA cloud-worker signing requires a dedicated matching workspace, key reference and HTTPS TSA",()=>{
+ const signingEnv={
+  ...env,CLOUD_WORKER_TEMP_ROOT:"/var/tmp/ev-c2pa-signing",
+  C2PA_SIGNING_ENABLED:"true",C2PA_SIGNING_MEDIA_ROOT:"/var/tmp/ev-c2pa-signing",
+  C2PA_SIGNING_KEY_REF:"kms-key-alias/ev-production",C2PA_TSA_URL:"https://tsa.example.com"
+ };
+ const config=readCloudWorkerConfig(signingEnv);
+ assert.equal(config.c2paSigningEnabled,true);
+ assert.equal(config.c2paSigningMediaRoot,config.tempRoot);
+ assert.equal(config.c2paSigningKeyRef,"kms-key-alias/ev-production");
+ assert.throws(()=>readCloudWorkerConfig({...signingEnv,CLOUD_WORKER_TEMP_ROOT:""}),/explicit private/);
+ assert.throws(()=>readCloudWorkerConfig({...signingEnv,C2PA_SIGNING_MEDIA_ROOT:"/tmp/other"}),/must match/);
+ assert.throws(()=>readCloudWorkerConfig({...signingEnv,C2PA_SIGNING_KEY_REF:""}),/key reference/);
+ assert.throws(()=>readCloudWorkerConfig({...signingEnv,C2PA_TSA_URL:"http://tsa.example.com"}),/HTTPS/);
+ assert.throws(()=>readCloudWorkerConfig({...signingEnv,CLOUD_MEDIA_WORKER_ENABLED:"false"}),/media worker family/);
 });
