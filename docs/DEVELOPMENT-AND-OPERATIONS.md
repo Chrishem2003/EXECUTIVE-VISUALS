@@ -193,3 +193,8 @@ When a capability changes, update all applicable records in the same PR:
 - Master build plan: priority and dependency changes.
 
 Never promote a planned feature to implemented status based only on a design, UI control, mocked test or merged but unverified code.
+
+
+## Graceful cloud worker shutdown
+
+The worker supervisor stops polling and aborts the active worker-cycle signal on `SIGINT`/`SIGTERM`. Media and timeline worker adapters pass that signal into the leased execution cycle. FFmpeg/download executors receive the abort signal, clean up their private temporary workspaces, and the worker records the active job as `cancelled` while its lease is still valid. If the finish request cannot be confirmed, the lease is left for the durable recovery loop rather than falsely reported as cancelled. A shutdown signal received before claiming work prevents a new lease from being acquired.
