@@ -99,3 +99,31 @@ test("cloud timeline executor does not publish a master when cancellation arrive
   assert.equal(published.length,0,"cancelled master must not become a durable asset");
  }finally{await rm(root,{recursive:true,force:true});}
 });
+
+test("cloud timeline preserves all credential-bearing source assets before publication",async()=>{
+ const root=await mkdtemp(join(tmpdir(),"ev-cloud-timeline-c2pa-"));
+ const published=[],preserved=[];
+ const executor=createCloudTimelineExecutor({
+  tempRoot:root,
+  timelines:{async get(){return{id:timelineId,projectId:null,revision:1,timeline};}},
+  mediaIO:{
+   async materialize({assetId}){
+    const path=join(root,assetId);await writeFile(path,assetId);
+    return{path,asset:{id:assetId,mediaType:"video/mp4",sha256:"a".repeat(64)},async cleanup(){}};
+   },
+   async publish(args){published.push(args);return{id:"signed-master"};}
+  },
+  async renderTimeline({workDir}){const path=join(workDir,"master.mp4");await writeFile(path,"rendered");return{path,filename:"master.mp4",mediaType:"video/mp4"};},
+  async probeOutput(){return{format:{duration:"1",format_name:"mov,mp4,m4a,3gp,3g2,mj2"},streams:[{codec_type:"video",codec_name:"h264",width:320,height:240,avg_frame_rate:"24/1"}]};},
+  async c2paPreserver(args){preserved.push(args);return{status:"preserved",preserved:true,credentialSourceCount:2,ingredientCount:2,outputSha256:"c".repeat(64)};}
+ });
+ try{
+  const result=await executor({job:{id:"job-c2pa",owner_id:owner,project_id:null,job_type:"timeline.render",input:{timelineId,timelineRevision:1}}});
+  assert.equal(preserved.length,1);
+  assert.equal(preserved[0].sources.length,2);
+  assert.equal(preserved[0].operation,"timeline.render");
+  assert.equal(published.length,1);
+  assert.equal(published[0].metadata.c2paPreservation.status,"preserved");
+  assert.equal(result.c2paPreservation.ingredientCount,2);
+ }finally{await rm(root,{recursive:true,force:true});}
+});
