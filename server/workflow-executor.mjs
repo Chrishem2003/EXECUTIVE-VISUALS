@@ -310,7 +310,7 @@ export async function executeWorkflowRun({db,job,mediaRoot,activeProcesses=new M
      const cloudStarted=Date.now();
      const result=await executeCloudVideoWorkflowNode({db,job,run,node,values,mediaRoot,cloudTimelineApi,
       onProgress:value=>onProgress(Math.min(94,Math.round((completedCount+value/100)/nodeCount*100)))});
-     recordModelUsage({db,ownerId:job.owner_id,projectId:job.project_id||null,jobId:job.id,workflowRunId:runId,nodeId,
+     recordModelUsage(db,{ownerId:job.owner_id,projectId:job.project_id||null,jobId:job.id,workflowRunId:runId,nodeId,
       provider:"runway",capability:"video.generate",model:result.model,usage:result.usage,durationMs:Date.now()-cloudStarted});
      output=nodeOutput(node,result.assetId);output.asset=result.assetId;output.assetId=result.assetId;
      output.video=result.assetId;output.assetIds=result.assetIds;output.assets=result.assetIds;
