@@ -173,3 +173,8 @@ Executive Visuals now has a project-scoped evidence ledger for source-backed pro
 ## Creative graph revision baselines
 
 AI Director can record immutable, per-project Creative Intelligence Graph review baselines. Later graph changes are compared against the saved revision; added, removed and changed nodes are identified and downstream dependencies are surfaced as potentially stale for human review. Project-scope membership edges are excluded from change fingerprints to avoid falsely marking every project item stale. This does not automatically mutate timelines or invalidate exports. See [Creative graph revision baselines](docs/CREATIVE-GRAPH-REVISION-BASELINES.md).
+
+
+## Production execution integration status
+
+The current `main` contains the idempotent asset-publication ledger (merged PR #226). The worker lease-fencing, immutable publication, cleanup and atomic-finalization work remains in a historical stacked PR chain; those branches have green historical CI but are not yet rebased onto current `main`. See [Implementation status](docs/IMPLEMENTATION-STATUS.md) for the audited branch ancestry and safe integration sequence. Do not treat the draft stack as production-ready or deploy it until its current-main port passes the combined worker, publication, cleanup and PostgreSQL recovery gates.
