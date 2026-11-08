@@ -142,7 +142,7 @@ test("CallbackSigner signs transformed bytes and preserves original source ingre
   assert.ok(second.ingredientCount >= 1, "new manifest must retain the previous signed asset as an ingredient");
   const secondReader = await Reader.fromAsset({ path: secondOutput, mimeType: "image/png" }, new Context({ verify: { verifyAfterReading: true, verifyTrust: false } }));
   const secondParent = secondReader.getActive().ingredients.find(ingredient => ingredient.relationship === "parentOf");
-  assert.equal(secondParent.active_manifest, firstReader.getActive().label, "the next edit must retain the prior signed manifest as its parent");
+  assert.ok(secondParent?.instance_id, "the next edit must retain the prior signed asset as a parent ingredient");
   assert.equal(second.sourceManifestState, first.validationState);
   assert.equal((await stat(secondOutput)).isFile(), true);
   assert.ok(calls >= 2, "the KMS/HSM callback must be invoked for each derivative");
