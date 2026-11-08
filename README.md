@@ -24,6 +24,8 @@ durable workflow job mapping and private output publication remain release
 gates. Cloud workflow mode and paid provider execution remain disabled.
 
 ## Governed Video Studio workflow bridge
+Local projects can now be linked to the cloud workspace using the same UUID after server-side ownership verification. This establishes a shared project scope for the upcoming workflow-node/cloud-job bridge; project documents, memberships and local asset bytes are not implicitly synchronized.
+
 
 The source-controlled cloud bridge now supports a non-billable, durable Model Router quote and an explicit approval endpoint that atomically creates the budget approval, reserves the project budget and queues one idempotent cloud video job. The quote and approval are bound to the authenticated actor, project, canonical request hash, operation, short expiry and saved router configuration. Both disposable PostgreSQL CI paths verify the ledger and enqueue contract. Provider execution remains independently gated; the interactive workflow executor has not yet switched to cloud mode, and provider output-to-node handoff remains a release gate.
 
