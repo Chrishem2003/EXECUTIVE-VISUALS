@@ -57,12 +57,11 @@ Common local defaults are defined in `server/index.mjs`. Use environment variabl
 | `COOKIE_SECURE` | inferred from production mode | Use secure cookies over HTTPS. |
 | `MAX_UPLOAD_BYTES` | 250 MiB | Keep bounded; verify file signatures and MIME type. |
 | `CLOUD_TIMELINE_API_ENABLED` | false | Keep off until cloud release gates are complete. |
-| `C2PA_TRUST_ANCHORS` | unset | Optional administrator-managed PEM trust-anchor file; without it, the adapter cannot return `valid_trusted`. |
 | `C2PA_MAX_VERIFY_BYTES` | 250 MiB | Maximum file size passed to the CAI native parser. |
-| `C2PA_TRUST_ANCHORS` | unset | PEM trust anchors loaded server-side and supplied as CAI user anchors. |
+| `C2PA_TRUST_ANCHORS` | unset | Absolute path to a read-only, administrator-managed PEM public-certificate bundle supplied as CAI `userAnchors`; without it, the adapter cannot return `valid_trusted`. |
 | `C2PA_SIGNING_ENABLED` | false | Callback signing remains disabled unless explicitly enabled. |
 | `C2PA_SIGNING_KEY_REF` | unset | External KMS/HSM key identifier only; never a private key. |
-| `C2PA_TSA_URL` | unset | HTTPS timestamp authority; required by default by the signing adapter. |
+| `C2PA_TSA_URL` | unset | HTTPS timestamp authority; required by default by the signing adapter. |\n| `C2PA_SIGNING_MEDIA_ROOT` | unset | Dedicated private scratch root; must match `CLOUD_WORKER_TEMP_ROOT` for cloud media signing. |
 
 The current code also has provider-specific settings. Inspect the adapter and readiness check before configuring any provider. A variable existing in code does not imply that its external service has been provisioned or approved.
 
@@ -82,7 +81,7 @@ This application record is useful for detecting accidental or unauthorized conte
 
 ### Implemented CAI Node SDK verification
 
-The official package `@contentauth/c2pa-node` is pinned to `0.10.0` in this feature branch. The adapter uses `Reader.fromAsset`, `Context` and `reader.json()`; signing APIs are not yet connected. Review the versioned official docs before upgrading:
+The official package `@contentauth/c2pa-node` is pinned to `0.10.0` in this feature branch. The verifier uses `Reader.fromAsset`, `Context` and `reader.json()`. The protected signer uses `Builder`, `CallbackSigner` and `addIngredientFromReader`; the cloud media executor accepts an optional signer callback before derivative publication. Review the versioned official docs before upgrading:
 
 - [CAI Node API documentation](https://contentauth.github.io/c2pa-js/modules/_contentauth_c2pa-node.html)
 - [CAI open-source documentation](https://opensource.contentauthenticity.org/docs/)
