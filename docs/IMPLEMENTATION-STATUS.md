@@ -530,3 +530,13 @@ This is a runnable worker entry point, not a deployed worker. Do not set the ena
 - Runtime Console now renders the project member list and role badges from the authenticated members API.
 - Owner-only controls add an existing account by email and remove a project member. The UI explicitly states that the person must already have an account and that adding them does not send an email invitation.
 - Non-owners see the current role and a read-only membership list; the API continues to enforce owner-only membership changes.
+
+
+## Account recovery — implemented in branch, not yet deployed
+
+- Added Supabase password recovery request and password update operations using the Auth REST API.
+- Added a public recovery screen, reset form, password confirmation, minimum 12-character validation, fragment-token handling and URL fragment cleanup.
+- Recovery requests use a fixed `PUBLIC_APP_URL` origin and do not accept caller-provided redirect destinations. Unknown account addresses receive the same success message to reduce account enumeration.
+- The API validates the short-lived bearer recovery token against Supabase before updating the password. Tokens are held only in page memory and are not written to local storage.
+- Before enabling on a hosted app, set `PUBLIC_APP_URL=https://executive-visuals.onrender.com` and add that exact redirect URL in Supabase Auth URL Configuration. Supabase's default email service is best-effort and rate-limited; custom SMTP remains an operator decision.
+- Automated unit and API integration coverage is being added; hosted email delivery and recovery acceptance remain unverified until a dedicated application Supabase project and its redirect settings are configured.
