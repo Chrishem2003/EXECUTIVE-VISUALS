@@ -43,7 +43,7 @@ function makeD1() {
   };
 }
 
-test("D1 migration creates isolated tables and required indexes", () => {
+test("D1 migration creates isolated tables and required indexes", async () => {
   const db = makeD1();
   const names = await db.prepare("SELECT name FROM sqlite_master WHERE type='table'").bind().all();
   assert.ok(names.results.some(row => row.name === "ev_projects"));
