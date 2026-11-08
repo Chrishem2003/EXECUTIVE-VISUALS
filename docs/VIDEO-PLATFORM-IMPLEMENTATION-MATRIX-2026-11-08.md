@@ -100,7 +100,19 @@ The current implementation branch feat/p0-workflow-quote-ledger extends PR #248 
 
 This does not yet connect cloud jobs to workflow-node progress/output, and it does not submit provider tasks. The next integration slice is the workflow executor/job bridge, followed by settlement/recovery and isolated staging acceptance.
 
-## 6. Live branch and pull-request consolidation checkpoint (8 November 2026)
+## 6. Workflow cloud bridge implementation checkpoint (8 November 2026)
+
+The feature branch now implements the first integrated `video.generate` → cloud worker → local timeline asset path:
+- Project identity is shared by UUID; the executor links a cloud project only when the current account owns the local project, otherwise it requires an owner-created link.
+- Local reference assets are checked for project access, safe storage paths, byte size and SHA-256 before upload to the private cloud bucket; cloud IDs are retained in local metadata.
+- A non-billable Model Router quote is persisted, and the executor requires a completed upstream human-approval node plus a separately configured USD `approvedMaxAmount` ceiling.
+- Approval, budget reservation and durable cloud enqueue use the atomic service-role-only SQL RPC.
+- The existing cloud worker handles provider submission, task polling, output ingestion and authoritative cost settlement.
+- The local workflow runner polls the cloud job, imports only private assets from the configured Supabase origin, verifies size/SHA-256, and publishes local asset IDs as workflow-node outputs.
+
+Focused tests cover quote/approval, budget-ceiling rejection, private output checksum import and missing cloud configuration. Exact-head CI is running for this integration; passing CI is not hosted staging acceptance. No provider flags, credentials, customer budget policies or paid generation were enabled.
+
+## 7. Live branch and pull-request consolidation checkpoint (8 November 2026)
 
 | PR | Scope | Observed state | Integration decision |
 |---|---|---|---|
