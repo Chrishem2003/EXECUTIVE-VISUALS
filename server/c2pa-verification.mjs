@@ -1,4 +1,4 @@
-import { existsSync, statSync } from "node:fs";
+import { statSync } from "node:fs";
 import { resolve } from "node:path";
 
 const DEFAULT_MAX_BYTES = 250 * 1024 * 1024;
@@ -47,6 +47,7 @@ export function createC2paVerifier({
 } = {}) {
   let sdkPromise;
   return async function verifyC2paAsset({ path, mimeType, size }) {
+    if (!Number.isSafeInteger(maxBytes) || maxBytes < 1) return errorResult("C2PA_LIMIT_CONFIG_INVALID");
     if (typeof path !== "string" || !path || typeof mimeType !== "string" || !mimeType) {
       return errorResult("C2PA_ASSET_DESCRIPTOR_INVALID");
     }
@@ -63,8 +64,15 @@ export function createC2paVerifier({
       return errorResult("C2PA_ASSET_UNAVAILABLE");
     }
     if (actualSize !== size) return errorResult("C2PA_ASSET_SIZE_MISMATCH");
-    if (trustAnchors && !existsSync(resolve(trustAnchors))) {
-      return errorResult("C2PA_TRUST_ANCHORS_UNAVAILABLE");
+    if (trustAnchors) {
+      try {
+        const anchorInfo = statSync(resolve(trustAnchors));
+        if (!anchorInfo.isFile() || anchorInfo.size < 1 || anchorInfo.size > 4 * 1024 * 1024) {
+          return errorResult("C2PA_TRUST_ANCHORS_INVALID");
+        }
+      } catch {
+        return errorResult("C2PA_TRUST_ANCHORS_UNAVAILABLE");
+      }
     }
 
     try {
