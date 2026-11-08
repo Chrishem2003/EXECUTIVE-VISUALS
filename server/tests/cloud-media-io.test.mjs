@@ -66,3 +66,16 @@ test("requires explicit repository methods and valid limits",()=>{
  assert.throws(()=>createCloudMediaAssetIO({}),/asset repository/);
  assert.throws(()=>createCloudMediaAssetIO({assets:{createSignedUrl(){},create(){}},maxBytes:0}),/byte limit/);
 });
+
+test("routes a stable publication key to the idempotent asset repository method",async()=>{
+ const root=await mkdtemp(join(tmpdir(),"ev-media-idempotent-test-")),path=join(root,"render.mp4");
+ await writeFile(path,content);
+ let call=null;
+ const assets={async createSignedUrl(){},async createFromFile(){throw new Error("non-idempotent path must not be used");},async createFromFileIdempotent(args){call=args;return{id:"stable-asset"};}};
+ const io=createCloudMediaAssetIO({assets,tempRoot:root,maxBytes:100});
+ const result=await io.publish({ownerId:"owner-1",projectId:"project-1",filename:"render.mp4",mediaType:"video/mp4",path,publicationKey:"job-1:output:v1"});
+ assert.equal(result.id,"stable-asset");
+ assert.equal(call.publicationKey,"job-1:output:v1");
+ assert.equal(call.filePath,path);
+ await rm(root,{recursive:true,force:true});
+});
