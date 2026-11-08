@@ -23,6 +23,24 @@ function withCookies(response, cookies = []) {
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }
 
+function withCors(response, request, env) {
+  const requestOrigin = request.headers.get("origin");
+  if (!requestOrigin || !env.APP_ORIGIN) return response;
+  let allowedOrigin = "";
+  try {
+    const configured = new URL(env.APP_ORIGIN);
+    if (configured.protocol === "https:" && configured.origin === env.APP_ORIGIN) allowedOrigin = configured.origin;
+  } catch {}
+  if (!allowedOrigin || requestOrigin !== allowedOrigin) return response;
+  const headers = new Headers(response.headers);
+  headers.set("access-control-allow-origin", allowedOrigin);
+  headers.set("access-control-allow-methods", "GET,POST,PATCH,PUT,OPTIONS");
+  headers.set("access-control-allow-headers", "authorization,content-type");
+  headers.set("access-control-max-age", "600");
+  headers.append("vary", "Origin");
+  return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+}
+
 function safeApiOrigin(value) {
   const origin = new URL(value);
   if (origin.protocol !== "https:" || origin.username || origin.password || origin.pathname !== "/" || origin.search || origin.hash) {
@@ -191,21 +209,27 @@ async function proxyAuth(request, env) {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+    if (request.method === "OPTIONS") {
+      if (!url.pathname.startsWith("/api/d1/") || !env.APP_ORIGIN || request.headers.get("origin") !== env.APP_ORIGIN) {
+        return json({ error: { code: "CORS_ORIGIN_DENIED", message: "This origin is not allowed to access staging APIs." } }, 403);
+      }
+      return withCors(new Response(null, { status: 204, headers: { "cache-control": "no-store" } }), request, env);
+    }
     if (url.pathname === "/edge-health") {
-      return json({ status: "ok", edge: "cloudflare-workers", d1Bound: Boolean(env.DB), apiProxyConfigured: Boolean(env.API_ORIGIN), stagingOnly: true });
+      return withCors(json({ status: "ok", edge: "cloudflare-workers", d1Bound: Boolean(env.DB), apiProxyConfigured: Boolean(env.API_ORIGIN), stagingOnly: true }), request, env);
     }
     if (url.pathname === "/api/d1" || url.pathname.startsWith("/api/d1/")) {
-      try { return await d1Api(request, env, url); }
-      catch (error) { return json({ error: { code: error.code || "D1_UNAVAILABLE", message: "The staging data service is temporarily unavailable." } }, 503); }
+      try { return withCors(await d1Api(request, env, url), request, env); }
+      catch (error) { return withCors(json({ error: { code: error.code || "D1_UNAVAILABLE", message: "The staging data service is temporarily unavailable." } }, 503), request, env); }
     }
     const authRoute = (url.pathname === "/api/auth/login" || url.pathname === "/api/auth/logout") && request.method === "POST";
     const identityRoute = url.pathname === "/api/me" && request.method === "GET";
     if (!authRoute && !identityRoute) {
-      return json({ error: { code: "STAGING_ROUTE_NOT_FOUND", message: "This isolated Worker exposes only D1 staging APIs and authentication." } }, 404);
+      return withCors(json({ error: { code: "STAGING_ROUTE_NOT_FOUND", message: "This isolated Worker exposes only D1 staging APIs and authentication." } }, 404), request, env);
     }
-    try { return await proxyAuth(request, env); }
+    try { return withCors(await proxyAuth(request, env), request, env); }
     catch {
-      return json({ error: { code: "IDENTITY_SERVICE_UNAVAILABLE", message: "The application identity service is temporarily unavailable." } }, 502);
+      return withCors(json({ error: { code: "IDENTITY_SERVICE_UNAVAILABLE", message: "The application identity service is temporarily unavailable." } }, 502), request, env);
     }
   }
 };
