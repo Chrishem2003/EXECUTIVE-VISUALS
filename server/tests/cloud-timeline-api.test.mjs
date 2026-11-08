@@ -410,14 +410,20 @@ test("cloud transformation mapper does not turn submitted jobs back into approve
 
 
 test("cloud workflow video quote authorizes the project and returns a non-billable exact-request quote",async()=>{
- const prepared=[],preflights=[];
+ const prepared=[],preflights=[],persisted=[];
  const routerAdapter={
   async prepareInput(input,context){prepared.push({input,context});return{...input,referenceImages:[]};},
   async preflight(input){preflights.push(input);return{billable:false,estimatedCredits:275,estimatedUsd:2.75,currency:"USD",provider:"runway",model:"gen4.5",configId:"studio-video"};}
  };
  const api=createCloudTimelineApi({
   url:"https://example.supabase.co",serviceRoleKey:"service-secret",
-  fetchImpl:async()=>({ok:true,status:200,async text(){return"[]";}}),
+  fetchImpl:async(url,options)=>{
+   if(url.endsWith("/rpc/record_video_workflow_quote")){
+    const args=JSON.parse(options.body);persisted.push(args);
+    return{ok:true,status:200,async text(){return JSON.stringify(args.p_quote_id);}};
+   }
+   return{ok:true,status:200,async text(){return"[]";}};
+  },
   timelineService:{timelines:{},assets:{}},
   authorize:async({ownerId,projectId,action})=>ownerId===owner&&projectId===project&&action==="write",
   runwayRouterAdapter:routerAdapter,
@@ -436,6 +442,13 @@ test("cloud workflow video quote authorizes the project and returns a non-billab
  assert.equal(prepared[0].context.job.owner_id,owner);
  assert.equal(preflights.length,1);
  assert.equal(preflights[0].operation,"text-to-video");
+ assert.equal(persisted.length,1,"quote must be persisted before it is returned");
+ assert.equal(persisted[0].p_owner_id,owner);
+ assert.equal(persisted[0].p_project_id,project);
+ assert.equal(persisted[0].p_request_hash,result.body.quote.requestHash);
+ assert.equal(persisted[0].p_estimated_amount,2.75);
+ assert.equal(persisted[0].p_pricing_source,"runway_model_router_dry_run");
+ assert.equal(persisted[0].p_quote_id,result.body.quote.id);
 });
 
 test("cloud workflow video quote rejects viewers before resolving private inputs or contacting provider",async()=>{
