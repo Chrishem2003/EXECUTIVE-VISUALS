@@ -123,7 +123,8 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
   if (!Number.isInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 60 * 60 * 1000) throw new Error("Cloud media execution timeout is invalid.");
   if (signC2paTransformation !== undefined && typeof signC2paTransformation !== "function") throw new Error("C2PA transformation signer must be a function.");
 
-  async function signOutput({ inputPath, extension, mimeType, sourcePath, sourceMimeType, sourceAssetId, job, workDir }) {
+  async function signOutput({ inputPath, extension, mimeType, sourcePath, sourceMimeType, sourceAssetId, job, workDir, signal }) {
+    if (signal?.aborted) throw Object.assign(new Error("Media job was cancelled."), { code: "JOB_CANCELLED" });
     if (!signC2paTransformation) return { path: inputPath, c2pa: { status: "not_configured" } };
     const signedPath = join(workDir, randomUUID() + "." + extension);
     const c2pa = await signC2paTransformation({
@@ -133,8 +134,10 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
       outputPath: signedPath,
       mimeType,
       sourceAssetId,
-      actionDescription: "Executed " + job.job_type + " media operation."
+      actionDescription: "Executed " + job.job_type + " media operation.",
+      signal
     });
+    if (signal?.aborted) throw Object.assign(new Error("Media job was cancelled."), { code: "JOB_CANCELLED" });
     if (!c2pa || c2pa.status !== "signed_and_verified") {
       throw Object.assign(new Error("C2PA signer did not return a verified signed derivative."), { code: "C2PA_SIGNING_RESULT_INVALID" });
     }
@@ -197,7 +200,7 @@ export function createCloudMediaExecutor({ mediaIO, tempRoot, ffmpeg = process.e
         const signing = await signOutput({
           inputPath: outputPath, extension: format, mimeType: mediaType,
           sourcePath, sourceMimeType: materialized.asset.mediaType,
-          sourceAssetId: sourceId, job, workDir
+          sourceAssetId: sourceId, job, workDir, signal
         });
         if (signing.c2pa.status === "signed_and_verified") {
           await runProcess(ffmpeg, ["-v", "error", "-i", signing.path, "-f", "null", "-"], { signal, timeoutMs: Math.min(timeoutMs, 120000), onProgress });
