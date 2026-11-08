@@ -9,7 +9,7 @@ test("provider catalog is safe by default and never exposes credentials or submi
  assert.equal(catalog.summary.disabled,5);
  assert.equal(catalog.providers.find(x=>x.id==="local-media").status,"unavailable");
  assert.equal(catalog.providers.find(x=>x.id==="local-media").capabilities.includes("media.upscale"),true);
- assert.deepEqual(catalog.policy,{remoteCallsRequireExplicitOptIn:true,credentialsExposed:false,pricesEstimated:false,requestsSubmitted:false});
+ assert.deepEqual(catalog.policy,{remoteCallsRequireExplicitOptIn:true,credentialsExposed:false,pricesEstimated:false,pricingSchedulesConfigured:false,requestsSubmitted:false});
  assert.equal(JSON.stringify(catalog).includes("API_KEY"),false);
 });
 
