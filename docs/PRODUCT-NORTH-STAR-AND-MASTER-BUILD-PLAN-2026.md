@@ -408,16 +408,17 @@ The first real C2PA implementation slice is now on feature branch `feat/c2pa-ser
 This branch is implementation work, not a production release. Do not merge to `main` or deploy until native SDK CI, genuine signed fixtures, security review, full user journey and isolated staging gates pass. No production service, shared database, production storage or signing key has been modified.
 
 
-## 13. Implementation update — 8 November 2026: protected callback signer foundation
+## 13. Implementation update — 8 November 2026: protected callback signer and cloud-worker hook
 
-A server-only `server/c2pa-signing.mjs` adapter has been added on `feat/c2pa-protected-signing`.
+A server-only `server/c2pa-signing.mjs` adapter is implemented on `feat/c2pa-protected-signing`.
 
-- Uses CAI `Builder` and `CallbackSigner` to sign a new derivative manifest.
-- Requires an injected protected provider callback receiving only a key reference, algorithm and signing payload; no production private key enters the application.
-- Requires an HTTPS timestamp authority by default; the integration test explicitly opts out for the upstream test signer only.
-- Rejects path traversal/out-of-root paths, output overwrites, unsupported formats, oversized inputs and invalid source manifests.
-- Preserves an existing source manifest through `addIngredientFromReader`; unsigned source media receives an edit-intent parent ingredient.
-- Records a `c2pa.edited` action, verifies the signed output and returns checksum/size/ingredient metadata.
-- Integration tests use the public upstream CAI test-only signer fixture to sign two sequential edits and verify source ingredient lineage.
+- Uses the official CAI `Builder` and `CallbackSigner` APIs. Private-key operations are delegated to an injected `signingProvider.sign({ keyRef, algorithm, payload })` callback; the application receives only a public certificate chain and opaque key reference.
+- Requires an HTTPS timestamp authority by default and a dedicated private workspace root (`C2PA_SIGNING_MEDIA_ROOT`) matching `CLOUD_WORKER_TEMP_ROOT`.
+- Distinguishes the already-transformed bytes (`inputPath`) from the original parent (`sourcePath`) and the new signed destination. This prevents a false lineage claim where the signer merely re-signs the unmodified source.
+- Preserves an existing source manifest through `addIngredientFromReader`; for unsigned sources it explicitly records the original source as a file-backed parent ingredient.
+- Records a `c2pa.edited` action, signs the transformed bytes, reopens and validates the output, and returns checksum/size/ingredient metadata. Partial outputs are removed on failure.
+- `createCloudMediaExecutor` and `createCloudMediaWorker` now accept an optional signer callback. When supplied, the cloud media worker signs a validated derivative before durable publication, checks the returned checksum/size, re-probes the signed media and stores the C2PA result with the derivative metadata.
+- Integration tests exercise two actual changed PNG outputs in sequence, preserve the first signed asset as the next ingredient, and test that the cloud media executor publishes the signed file rather than the unsigned intermediate.
+- GitHub Quality checks passed on the latest full build and PostgreSQL publication/cleanup integration run.
 
-This is not yet production signing: no KMS/HSM adapter, production certificate or TSA is configured, and the module is not connected to the production export worker. Keep the signing feature flag off. Next steps are worker/export integration, real protected key-provider wiring, timestamp/revocation policy, and supported video fixtures.
+This is still not production signing: the default `cloud-worker-process` does not instantiate a KMS/HSM provider, no production certificate or TSA is configured, and local timeline render/export is not connected. Keep `C2PA_SIGNING_ENABLED=false`. Next steps are protected provider provisioning and review, production certificate/rotation/revocation policy, timestamp trust, additional video/audio format fixtures, and timeline/export integration.
