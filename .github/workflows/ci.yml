@@ -17,7 +17,7 @@ jobs:
           node-version: 24.22.1
       - name: Ensure media test tools are available
         run: |
-          if ! command -v ffmpeg >/dev/null 2>&1 || ! fc-match "DejaVu Sans" >/dev/null 2>&1; then
+          if ! command -v ffmpeg >/dev/null 2>&1 || ! fc-match "DejaVu Sans" >/dev/null 2>&1 || ! command -v unzip >/dev/null 2>&1; then
             sudo apt-get update
             sudo apt-get install -y ffmpeg fonts-dejavu-core unzip
           fi
@@ -33,7 +33,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/c2pa"
           curl --fail --location --retry 5 --retry-all-errors --connect-timeout 20 --max-time 300 "$url" --output "$archive"
           echo "$expected  $archive" | sha256sum --check -
-          entry="$(unzip -Z1 "$archive" | head -n 1)"
+          entry="$(unzip -Z1 "$archive" | sed -n '1p')"
           test -n "$entry"
           unzip -p "$archive" "$entry" > "$RUNNER_TEMP/c2pa/index.node"
           test -s "$RUNNER_TEMP/c2pa/index.node"
