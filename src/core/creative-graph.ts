@@ -104,3 +104,38 @@ export function analyzeCreativeImpact(graph:CreativeGraph,changedNodeId:string){
  const nodes=graph.nodes.filter(node=>visited.has(node.id));
  return {changed:graph.nodes.find(node=>node.id===changedNodeId)!,impacted:nodes,impactedCount:nodes.length,requiresReview:nodes.filter(node=>["timeline","clip","shot"].includes(node.type)).map(node=>node.id),message:nodes.length?nodes.length+" downstream item(s) may need review. This is dependency-based impact, not an automatic edit or stale-state assertion.":"No downstream dependencies are recorded for this node."};
 }
+
+export interface CreativeGraphSnapshotComparison {
+ changedNodes:CreativeGraphNode[];
+ changedNodeIds:string[];
+ addedNodeIds:string[];
+ removedNodeIds:string[];
+ potentiallyStale:CreativeGraphNode[];
+ potentiallyStaleIds:string[];
+}
+const stable=(value:unknown):string=>Array.isArray(value)?"["+value.map(stable).join(",")+"]":value&&typeof value==="object"?"{"+Object.keys(value as Record<string,unknown>).sort().map(key=>JSON.stringify(key)+":"+stable((value as Record<string,unknown>)[key])).join(",")+"}":JSON.stringify(value);
+function nodeFingerprint(graph:Pick<CreativeGraph,"nodes"|"edges">,nodeId:string){
+ const node=graph.nodes.find(item=>item.id===nodeId);
+ const edges=graph.edges.filter(edge=>edge.from===nodeId||edge.to===nodeId).map(edge=>({from:edge.from,to:edge.to,relation:edge.relation,evidence:edge.evidence})).sort((a,b)=>stable(a).localeCompare(stable(b)));
+ return stable({node:node||null,edges});
+}
+/** Compare a saved human-review baseline with the current graph. This flags possible downstream staleness; it never mutates or invalidates production records. */
+export function compareCreativeGraphSnapshot(current:CreativeGraph,baseline:Pick<CreativeGraph,"nodes"|"edges">):CreativeGraphSnapshotComparison{
+ const currentIds=new Set(current.nodes.map(node=>node.id)),baselineIds=new Set(baseline.nodes.map(node=>node.id));
+ const allIds=new Set([...currentIds,...baselineIds]),changedNodeIds:string[]=[],addedNodeIds:string[]=[],removedNodeIds:string[]=[];
+ for(const id of allIds){
+  const existsNow=currentIds.has(id),existed=baselineIds.has(id);
+  if(existsNow&&!existed){addedNodeIds.push(id);changedNodeIds.push(id);}
+  else if(!existsNow&&existed){removedNodeIds.push(id);changedNodeIds.push(id);}
+  else if(nodeFingerprint(current,id)!==nodeFingerprint(baseline,id))changedNodeIds.push(id);
+ }
+ const changedNodes=changedNodeIds.map(id=>current.nodes.find(node=>node.id===id)||baseline.nodes.find(node=>node.id===id)!).filter(Boolean);
+ const staleIds=new Set<string>();
+ for(const id of changedNodeIds){
+  const graph=currentIds.has(id)?current:baseline as CreativeGraph;
+  const report=analyzeCreativeImpact(graph,id);
+  for(const node of report.impacted)if(!changedNodeIds.includes(node.id))staleIds.add(node.id);
+ }
+ const potentiallyStale=[...current.nodes,...baseline.nodes].filter((node,index,all)=>staleIds.has(node.id)&&all.findIndex(item=>item.id===node.id)===index);
+ return {changedNodes,changedNodeIds:changedNodeIds.sort(),addedNodeIds:addedNodeIds.sort(),removedNodeIds:removedNodeIds.sort(),potentiallyStale,potentiallyStaleIds:potentiallyStale.map(node=>node.id).sort()};
+}
