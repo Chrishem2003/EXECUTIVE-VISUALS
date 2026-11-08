@@ -105,3 +105,6 @@ The application shell now surfaces the authenticated account in the persistent t
 
 
 Project collaboration in the Runtime Console now includes a visible member list, each member's access role and owner-only add/remove controls. Adding a member requires an existing account in the workspace; the UI explicitly states that it does not send an email invitation. Editor, reviewer and viewer roles remain enforced by the API.
+
+
+The in-app **Release readiness** workspace provides the current merged/in-progress/blocked inventory. See [Full-System Release Readiness](docs/FULL-SYSTEM-RELEASE-READINESS.md) and [Persistence and Release Blockers](docs/PERSISTENCE-AND-RELEASE-BLOCKERS.md) for detailed dependencies and infrastructure requirements.
