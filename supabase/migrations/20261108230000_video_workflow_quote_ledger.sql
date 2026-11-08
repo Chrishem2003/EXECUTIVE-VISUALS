@@ -77,7 +77,7 @@ begin
     raise exception 'VIDEO_WORKFLOW_QUOTE_ARGUMENTS_INVALID';
   end if;
   if not exists (
-    select 1 from executive_visuals.projects p where p.id = p_project_id
+    select 1 from executive_visuals.projects p where p.id = p_project_id and p.owner_id = p_owner_id
   ) then
     raise exception 'VIDEO_WORKFLOW_QUOTE_PROJECT_NOT_FOUND';
   end if;
