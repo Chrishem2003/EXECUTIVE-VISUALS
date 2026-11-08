@@ -73,6 +73,8 @@ export function createC2paTransformationPreserver({sdkLoader=()=>import("@conten
    if(!signedReader.isEmbedded()||!signedStore?.active_manifest||signedStore.validation_state==="Invalid"||!ingredients.some(item=>Boolean(item?.manifest_data)))throw failure("C2PA_LINEAGE_VALIDATION_FAILED","The new C2PA manifest did not validate with the source manifest preserved as an ingredient.");
    const currentSource=await hashFile(sourcePath);
    if(currentSource.sha256!==sourceHash.sha256||currentSource.size!==sourceHash.size)throw failure("C2PA_SOURCE_CHANGED","The source asset changed while its C2PA lineage was being preserved.",409);
+   const currentOutput=await hashFile(outputPath);
+   if(currentOutput.sha256!==outputHash.sha256||currentOutput.size!==outputHash.size)throw failure("C2PA_OUTPUT_CHANGED","The transformed output changed while its C2PA manifest was being signed.",409);
    if(signal?.aborted)throw signal.reason||failure("C2PA_TRANSFORM_ABORTED","C2PA preservation was cancelled.",499);
    await rename(temporaryPath,outputPath);
    return{
