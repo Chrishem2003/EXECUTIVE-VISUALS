@@ -25,6 +25,25 @@ function args(overrides = {}) {
   };
 }
 
+test("cloud enqueue cancels oversized RPC response streams before buffering unbounded data", async () => {
+  let cancelled = false;
+  const client = createCloudVideoEnqueue({
+    ...base,
+    fetchImpl: async () => new Response(new ReadableStream({
+      start(controller) {
+        controller.enqueue(new Uint8Array(1024 * 1024));
+        controller.enqueue(new Uint8Array(1));
+      },
+      cancel() { cancelled = true; }
+    }), { status: 200 })
+  });
+  await assert.rejects(
+    () => client.enqueue(args()),
+    /response exceeded the 1 MB limit/
+  );
+  assert.equal(cancelled, true);
+});
+
 test("cloud enqueue uses service-role credentials and the private schema", async () => {
   const calls = [];
   const client = createCloudVideoEnqueue({
