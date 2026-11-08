@@ -112,7 +112,7 @@ test("Runway source resolver enforces the byte limit when Content-Length is abse
       }
     },
     supabaseUrl: "https://storage.example.com",
-    maxBytes: 1024,
+    maxBytes: 4096,
     fetchImpl: async () => new Response(new ReadableStream({
       start(controller) {
         controller.enqueue(new Uint8Array(768));
