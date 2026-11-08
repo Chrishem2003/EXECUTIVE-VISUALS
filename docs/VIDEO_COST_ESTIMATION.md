@@ -56,3 +56,11 @@ Each shot supplies a unique `id` and the same exact provider/model/resolution/au
 A total is unavailable if any shot lacks a current verified rate, if the shot IDs are invalid or duplicated, if the plan exceeds the shot or duration limits, or if currencies differ. Currency conversion is never inferred. Provider batch discounts are not assumed.
 
 This endpoint is a budgeting aid only. It does not submit, queue, reserve, or charge for any generation.
+
+## Workflow canvas preflight
+
+In the Workflow workspace, select a **Video Generation** node and configure its JSON with the exact `provider`, `model`, `durationSeconds`, and optional `resolution`, `audioMode`, and `referenceImageCount` values. Apply the configuration, then choose **Estimate generation cost** in the node inspector.
+
+The inspector displays the estimate, itemized video/audio/reference/minimum charges, pricing source, observation time and expiry. A missing, expired or incomplete schedule is shown as unavailable rather than replaced with a guessed price. Switching workflows, nodes or changing the node configuration clears the previous quote so stale estimates are not presented as current.
+
+The UI calls only the authenticated read-only estimate endpoint. It does not run the workflow, submit a provider request, upload media, reserve credits or charge an account.
