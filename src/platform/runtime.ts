@@ -20,14 +20,29 @@ const fmt=(value:string)=>new Date(value).toLocaleString();
 const C2PA_SUPPORTED_MEDIA_TYPES=new Set(["image/jpeg","image/png","image/webp","image/gif","audio/mpeg","audio/wav","audio/x-wav","audio/mp4","video/mp4","video/quicktime"]);
 function statusMarkup(){return '<span class="runtime-status '+state.status+'"><i></i>'+esc(state.status==="online"?"API CONNECTED":state.status==="auth-required"?"SIGN IN REQUIRED":state.status==="offline"?"OFFLINE":"CONNECTING")+'</span>';}
 function updateShell(){
+ const project=state.projects.find(item=>item.id===state.projectId);
  const projectLabel=document.querySelector<HTMLElement>("#project-name");
- if(projectLabel)projectLabel.textContent=state.projects.find(project=>project.id===state.projectId)?.name||"No project selected";
+ if(projectLabel)projectLabel.textContent=project?.name||"No project selected";
  const foot=document.querySelector<HTMLElement>(".sidebar-foot small");
- if(foot)foot.textContent=state.status==="online"?(state.dataDirectoryPersistence==="ephemeral"?"Preview storage · temporary":state.dataDirectoryPersistence==="operator-confirmed-volume"?"Persistent volume · operator configured":"Storage persistence unverified"):state.status==="auth-required"?"Sign in to access account-backed projects":state.status==="offline"?"API offline · local planning only":"Connecting to local API";
+ if(foot)foot.textContent=state.status==="online"?(state.dataDirectoryPersistence==="ephemeral"?"Preview storage · temporary":state.dataDirectoryPersistence==="operator-confirmed-volume"?"Persistent volume · operator configured":"Storage persistence unverified"):state.status==="auth-required"?"Sign in to access account-backed projects":state.status==="offline"?"API offline · local planning only":"Connecting to API";
+ const footTitle=document.querySelector<HTMLElement>(".sidebar-foot b");
+ if(footTitle)footTitle.textContent=state.user?state.user.email:"Executive Visuals";
+ const footIcon=document.querySelector<HTMLElement>(".sidebar-foot .local-dot");
+ if(footIcon){footIcon.textContent=state.user?state.user.email.trim().slice(0,1).toUpperCase():"";footIcon.classList.toggle("account-avatar",Boolean(state.user));}
  const badge=document.querySelector<HTMLElement>(".local-badge");
  if(badge)badge.textContent=state.status==="online"?"API CONNECTED":state.status==="auth-required"?"SIGN IN REQUIRED":state.status==="offline"?"OFFLINE MODE":"CONNECTING";
  const dot=document.querySelector<HTMLElement>(".local-dot");
- if(dot)dot.style.background=state.status==="online"?"#68c9a2":state.status==="offline"?"#d8a65b":"#8791a1";
+ if(dot&&!state.user)dot.style.background=state.status==="online"?"#68c9a2":state.status==="offline"?"#d8a65b":"#8791a1";
+ const actions=document.querySelector<HTMLElement>(".topbar > div:last-child");
+ if(actions){
+  let chip=actions.querySelector<HTMLButtonElement>(".ev-account-chip");
+  if(state.user){
+   if(!chip){chip=document.createElement("button");chip.type="button";chip.className="ev-account-chip";chip.dataset.tab="runtime";chip.setAttribute("aria-label","Open account and workspace console");actions.insertBefore(chip,actions.firstChild);}
+   const initials=state.user.email.trim().slice(0,1).toUpperCase();
+   chip.innerHTML='<span class="ev-account-avatar">'+esc(initials)+'</span><span class="ev-account-copy"><b>'+esc(state.user.email)+'</b><small>'+esc(project?.access_role||"Personal account")+' · '+esc(project?.name||"Personal workspace")+'</small></span><span class="ev-account-chevron">⌄</span>';
+   chip.title="Signed in as "+state.user.email+" · Open account and workspace console";
+  }else chip?.remove();
+ }
 }
 function renderGate(){
  document.querySelector("#ev-auth-gate")?.remove();
@@ -127,7 +142,10 @@ export function renderEngineStatus(){
  '<section class="panel"><div class="eyebrow">APPROVAL-GATED IMAGE ADAPTER</div><h3>Image generation</h3><p>'+image+'. Configure <code>IMAGE_GATEWAY_ENABLED</code>, <code>IMAGE_GATEWAY_URL</code> and <code>IMAGE_GATEWAY_MODEL</code> on the server. Outputs are validated and stored as private assets. A completed upstream human-approval node is required before a request is sent.</p></section><section class="panel"><div class="eyebrow">NOT CONNECTED</div><h3>Other external media generation</h3><p>Remote video generation, voice generation, dubbing, lip-sync, neural restoration models and publishing adapters are not connected. Local video denoise, color correction, resize/reframe, interpolation and scaling are available from video asset actions. Their nodes fail closed; the application does not pretend a missing provider has completed a job.</p></section></div>';
 }
 export function renderRuntimeOverview(){
- return '<div id="runtime-workspace" data-runtime-view="overview" class="stats"><div><small>Project records</small><b>'+state.projects.length+'</b><span>Account-scoped</span></div><div><small>Uploaded assets</small><b>'+state.assets.length+'</b><span>Private to this account</span></div><div><small>Active jobs</small><b>'+state.jobs.filter(j=>["queued","running"].includes(j.status)).length+'</b><span>Queued or running</span></div><div><small>Media tools</small><b>'+(state.ffmpeg&&state.ffprobe?"Ready":state.ffprobe?"Probe only":"Unavailable")+'</b><span>FFmpeg / FFprobe</span></div></div><div class="notice">'+(state.dataDirectoryPersistence==="ephemeral"?"This environment uses an ephemeral data directory. Projects, SQLite records and media may be lost when the instance is replaced or restarted. Do not use it for important customer work.":state.dataDirectoryPersistence==="operator-confirmed-volume"?"A persistent data volume has been declared by the operator. Backup, restore and failover behavior still require separate verification before production use.":"Storage durability is unverified. A non-temporary path does not prove that a persistent volume is mounted. Configure DATA_DIR_PERSISTENCE=persistent-volume only after confirming the host volume is attached.")+'</div>';
+ const project=state.projects.find(item=>item.id===state.projectId);
+ const role=project?.access_role||"Personal account";
+ const account=state.user?'<section class="ev-account-panel"><div class="ev-account-panel-avatar">'+esc(state.user.email.trim().slice(0,1).toUpperCase())+'</div><div class="ev-account-panel-main"><div class="eyebrow">SIGNED-IN ACCOUNT</div><h3>'+esc(state.user.email)+'</h3><p>'+(state.authMode==="supabase"?"Authenticated workspace account":"Local development account")+' · '+esc(role)+'</p><small>Active workspace: '+esc(project?.name||"Personal library")+'</small></div><div class="ev-account-panel-actions"><button class="secondary" data-tab="runtime">Account & access</button><button class="quiet" data-ev-action="logout">Sign out</button></div></section>':'<section class="ev-account-panel is-guest"><div class="ev-account-panel-avatar">EV</div><div class="ev-account-panel-main"><div class="eyebrow">WORKSPACE ACCESS</div><h3>Sign in to your private studio</h3><p>Projects, media and collaboration are available after account authentication.</p></div><button class="secondary" data-tab="runtime">Open account console</button></section>';
+ return '<div id="runtime-workspace" data-runtime-view="overview" class="stats"><div><small>Project records</small><b>'+state.projects.length+'</b><span>Account-scoped</span></div><div><small>Uploaded assets</small><b>'+state.assets.length+'</b><span>Private to this account</span></div><div><small>Active jobs</small><b>'+state.jobs.filter(j=>["queued","running"].includes(j.status)).length+'</b><span>Queued or running</span></div><div><small>Media tools</small><b>'+(state.ffmpeg&&state.ffprobe?"Ready":state.ffprobe?"Probe only":"Unavailable")+'</b><span>FFmpeg / FFprobe</span></div></div>'+account+'<div class="notice">'+(state.dataDirectoryPersistence==="ephemeral"?"This environment uses an ephemeral data directory. Projects, SQLite records and media may be lost when the instance is replaced or restarted. Do not use it for important customer work.":state.dataDirectoryPersistence==="operator-confirmed-volume"?"A persistent data volume has been declared by the operator. Backup, restore and failover behavior still require separate verification before production use.":"Storage durability is unverified. A non-temporary path does not prove that a persistent volume is mounted. Configure DATA_DIR_PERSISTENCE=persistent-volume only after confirming the host volume is attached.")+'</div>';
 }
 
 export function getCurrentProjectId(){return state.projectId;}
