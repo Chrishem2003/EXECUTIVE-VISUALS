@@ -163,6 +163,37 @@ test("publishes the same logical output once across repeated publication attempt
  assert.equal(f.storageCalls.filter(call=>call.op==="uploadFile").length,1);
  assert.equal(f.storageCalls[0].options.upsert,false);
  assert.equal(f.publicationReservation.status,"published");
+ assert.equal(f.publicationReservation.job_id,leaseContext.jobId);
+ const reserveCall=f.calls.find(call=>call.url.includes("/rpc/reserve_asset_publication_v2"));
+ assert.equal(JSON.parse(reserveCall.options.body).p_lease_token,leaseContext.leaseToken);
+ const finalizeCall=f.calls.find(call=>call.url.includes("/rpc/finalize_asset_publication_v1"));
+ assert.ok(finalizeCall,"asset metadata and publication ledger must finalize through one database transaction");
+ assert.equal(JSON.parse(finalizeCall.options.body).p_lease_token,leaseContext.leaseToken);
+ assert.equal(f.calls.some(call=>call.url.includes("/assets?")&&call.options.method==="POST"),false,"publication must not insert asset metadata outside the lease transaction");
+ await rm(root,{recursive:true,force:true});
+});
+
+test("requires a database-verifiable lease identity before reserving a publication",async()=>{
+ const root=await mkdtemp(join(tmpdir(),"ev-publication-requires-lease-")),file=join(root,"render.mp4");
+ await writeFile(file,bytes);
+ const f=fixture();
+ await assert.rejects(()=>f.repo.createFromFileIdempotent({ownerId,projectId,originalName:"render.mp4",mediaType:"video/mp4",filePath:file,publicationKey:"job-no-lease:output:v1",assertLease:async()=>true}),/claimed worker lease identity/);
+ assert.equal(f.calls.length,0);assert.equal(f.storageCalls.length,0);
+ await assert.rejects(()=>f.repo.createFromFileIdempotent({ownerId,projectId,originalName:"render.mp4",mediaType:"video/mp4",filePath:file,publicationKey:"job-no-lease-check:output:v1",leaseContext,assertLease:async()=>false}),error=>error.code==="CLOUD_ASSET_PUBLICATION_LEASE_LOST");
+ assert.equal(f.calls.length,0);assert.equal(f.storageCalls.length,0);
+ await rm(root,{recursive:true,force:true});
+});
+
+test("a stale token is rejected by atomic finalization and its unique upload is compensated",async()=>{
+ const root=await mkdtemp(join(tmpdir(),"ev-publication-stale-token-")),file=join(root,"render.mp4");
+ await writeFile(file,bytes);
+ const f=fixture();
+ const staleLease={...leaseContext,leaseToken:"723e4567-e89b-42d3-a456-426614174000"};
+ await assert.rejects(()=>f.repo.createFromFileIdempotent({ownerId,projectId,originalName:"render.mp4",mediaType:"video/mp4",filePath:file,publicationKey:"job-stale-token:output:v1",leaseContext:staleLease,assertLease:async()=>true}),error=>error.code==="CLOUD_ASSET_HTTP_409");
+ assert.equal(f.storageCalls.filter(call=>call.op==="uploadFile").length,1);
+ assert.equal(f.storageCalls.filter(call=>call.op==="remove").length,1);
+ assert.equal(f.publicationReservation.status,"reserved");
+ assert.equal(f.publicationAsset,null);
  await rm(root,{recursive:true,force:true});
 });
 
