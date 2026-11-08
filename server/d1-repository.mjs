@@ -68,15 +68,21 @@ export function createD1Repository({ db, id = randomUUID, clock = isoNow } = {})
       if (typeof description !== "string" || description.length > 4000) throw new Error("Project description is too long.");
       if (!object(settings)) throw new Error("Project settings must be an object.");
       const timestamp = clock(), projectId = id();
-      const row = await db.prepare(`
-        INSERT INTO ev_projects (id, owner_id, name, description, settings_json, revision, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, 1, ?, ?) RETURNING *
-      `).bind(projectId, ownerId, name.trim(), description, json(settings), timestamp, timestamp).first();
-      if (!row || row.owner_id !== ownerId) throw new Error("D1 project creation returned an invalid record.");
-      await db.prepare(`
-        INSERT INTO ev_project_workspace_documents (project_id, revision, document_json, updated_at)
-        VALUES (?, 1, '{}', ?)
-      `).bind(projectId, timestamp).run();
+      const inserted = await db.batch([
+        db.prepare(`
+          INSERT INTO ev_projects (id, owner_id, name, description, settings_json, revision, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, 1, ?, ?)
+        `).bind(projectId, ownerId, name.trim(), description, json(settings), timestamp, timestamp),
+        db.prepare(`
+          INSERT INTO ev_project_workspace_documents (project_id, revision, document_json, updated_at)
+          VALUES (?, 1, '{}', ?)
+        `).bind(projectId, timestamp)
+      ]);
+      if (!Array.isArray(inserted) || inserted.length !== 2 || inserted.some(result => result?.success === false)) {
+        throw new Error("D1 project and workspace initialization did not complete atomically.");
+      }
+      const row = await db.prepare("SELECT * FROM ev_projects WHERE id = ? AND owner_id = ? LIMIT 1").bind(projectId, ownerId).first();
+      if (!row) throw new Error("D1 project creation returned an invalid record.");
       return mapProject(row);
     },
 
@@ -139,8 +145,9 @@ export function createD1Repository({ db, id = randomUUID, clock = isoNow } = {})
       return { projectId, memberId, role };
     },
 
-    async createAsset({ ownerId, projectId = null, name, mediaType, size, sha256, storageProvider, storageKey, derivativeOf = null, metadata = {}, provenance = null } = {}) {
-      validUuid(ownerId, "Owner ID");
+    async createAsset({ actorId, ownerId = actorId, projectId = null, name, mediaType, size, sha256, storageProvider, storageKey, derivativeOf = null, metadata = {}, provenance = null } = {}) {
+      validUuid(actorId, "Actor ID");
+      if (ownerId !== actorId) throw new Error("Asset owner must be the authenticated actor.");
       if (projectId !== null) validUuid(projectId, "Project ID");
       if (derivativeOf !== null) validUuid(derivativeOf, "Derivative asset ID");
       if (typeof name !== "string" || !name.trim() || name.length > 180) throw new Error("Asset name is invalid.");
@@ -152,8 +159,8 @@ export function createD1Repository({ db, id = randomUUID, clock = isoNow } = {})
       if (!object(metadata) || json(metadata).length > 16000) throw new Error("Asset metadata must be an object no larger than 16 KB.");
       if (provenance !== null && (!object(provenance) || json(provenance).length > 32000)) throw new Error("Asset provenance must be an object no larger than 32 KB.");
       if (projectId) {
-        const project = await projectAccess(ownerId, projectId);
-        if (!project || project.owner_id !== ownerId) { const error = new Error("Only the project owner may currently register project assets."); error.code = "D1_PROJECT_ACCESS_DENIED"; throw error; }
+        const project = await projectAccess(actorId, projectId);
+        if (!project || !["owner", "editor"].includes(project.actor_role)) { const error = new Error("Project asset registration requires owner or editor access."); error.code = "D1_PROJECT_ACCESS_DENIED"; throw error; }
       }
       if (derivativeOf) {
         const source = await db.prepare("SELECT id, owner_id, project_id FROM ev_assets WHERE id = ? AND deleted_at IS NULL LIMIT 1").bind(derivativeOf).first();
